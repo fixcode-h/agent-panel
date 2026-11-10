@@ -32,6 +32,7 @@ import { StatusPill } from '@/components/ui/status-pill'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Segmented } from '@/components/ui/segmented'
 import { BugOverview } from '@/components/overview/BugOverview'
+import { AwayCard } from '@/components/overview/AwayCard'
 import { PageFrame } from '@/components/library/parts'
 
 type Tab = 'all' | OverviewGroup
@@ -231,6 +232,8 @@ export function OverviewPage() {
       )}
       {view === 'tasks' && (
         <>
+          {/* 「我不在」开关和它替你选过的（分析稿 A4）：放在最上面，回来第一眼看到 */}
+          <AwayCard />
           <div
             className="grid grid-cols-2 gap-3 md:grid-cols-4"
             role="group"

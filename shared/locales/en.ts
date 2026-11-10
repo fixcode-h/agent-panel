@@ -28,6 +28,7 @@ import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
 import { EN_BUG_INPLACE } from './en/bug-inplace.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
+import { EN_AWAY } from './en/away.ts'
 import { EN_VIDEO } from './en/video.ts'
 import { EN_RESTORE } from './en/restore.ts'
 import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
@@ -56,6 +57,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_EVIDENCE,
   ...EN_BUG_INPLACE,
   ...EN_USER_ACTION,
+  ...EN_AWAY,
   ...EN_DESIGN,
   ...EN_RESTORE,
   ...EN_RESTORE_FLOW,

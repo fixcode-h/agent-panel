@@ -13,6 +13,47 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await check(p, '首页', ['新建任务'])
+  // 输入框下面（分析稿 U6）：等你处理的几件和最近三个对话，点一行直接进那个对话
+  await p
+    .locator('[data-home-glance]')
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('首页：输入框下面没有等你处理和最近的对话'))
+  const recentRows = await p.locator('[data-home-recent] [data-home-row]').count()
+  if (recentRows < 1 || recentRows > 3) errors.push(`首页：最近对话应该列 1~3 个（实际 ${recentRows}）`)
+  if (!(await p.locator('[data-home-waiting] [data-home-row]').count()))
+    errors.push('首页：演示里有等你处理的对话，输入框下面没列出来')
+  await check(p, '首页-等你处理和最近', ['最近', /等你处理 \d+ 件/])
+  await p.locator('[data-home-recent] [data-home-row]').first().click()
+  await p
+    .waitForURL(/#\/(projects|chat)\/.+/, { timeout: 5000 })
+    .catch(() => errors.push('首页：点最近的对话没有进到那个对话'))
+  await p.goto(base)
+  // 第一次用（一个对话都没有）：换成三个示例任务，点了填进输入框
+  {
+    const e = await page({ width: 1440, height: 900 })
+    await e.goto(base)
+    await settle(e)
+    await e.evaluate(() => {
+      const k = 'agent-panel-demo-v3'
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      db.tasks = []
+      localStorage.setItem(k, JSON.stringify(db))
+    })
+    await e.reload()
+    const examples = e.locator('[data-home-examples] [data-home-example]')
+    await examples
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('首页：一个对话都没有时没有示例任务'))
+    if ((await examples.count()) !== 3) errors.push(`首页：示例任务应该是 3 个（实际 ${await examples.count()}）`)
+    await examples.first().click()
+    await check(e, '首页-示例填进输入框', ['试试这些'])
+    if (!((await e.locator('#task-prompt').innerText()) ?? '').includes('通读这个项目'))
+      errors.push('首页：点示例任务后输入框里没有填进这句话')
+    await e.setViewportSize({ width: 390, height: 844 })
+    await check(e, '首页-示例-手机宽度', ['试试这些'])
+    await e.close()
+  }
   // 工作流、计划这些功能页在最左边的图标栏里（只有图标，名字在读屏名和悬停提示）
   if (!(await p.locator('nav[aria-label="功能栏"]').getByRole('button', { name: '工作流', exact: true }).count()))
     errors.push('首页：图标栏里没有「工作流」')

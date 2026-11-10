@@ -1093,6 +1093,47 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await settle(p).catch(() => {})
     await check(p, '对话总览-手机宽度')
   }
+  // ---- 我不在（分析稿 A4）----
+  // 总览顶上的开关；演示放了一条自动选过的记录：点「去改」回到那个对话，输入框里先填好一句；开着时首页有提示
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/overview')
+    const card = p.locator('[data-away]')
+    await p
+      .locator('[data-away-pick]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('我不在：总览上没有列出自动选过的'))
+    await check(p, '我不在-关着', ['我不在', '自动选过的 1 项', '去改', '新加的配置项放在哪个文件？'])
+    await card.getByRole('switch').click()
+    await p
+      .locator('[data-away-since]')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('我不在：打开后没有写从几点开着'))
+    await check(p, '我不在-开着', ['起开着'])
+    await p.goto(base + '#/')
+    await check(p, '首页-我不在开着', ['「我不在」开着 · 替你选了 1 项'])
+    await p.goto(base + '#/overview')
+    await p.locator('[data-away-pick]').first().getByRole('button', { name: '去改' }).click()
+    await p
+      .waitForURL(/#\/projects\/.+/, { timeout: 5000 })
+      .catch(() => errors.push('我不在：点「去改」没有回到那个对话'))
+    await p
+      .locator('#task-prompt, [contenteditable]')
+      .filter({ hasText: '面板替我选了' })
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('我不在：回到对话后输入框里没有先填好「我改成」'))
+    await check(p, '我不在-去改', ['我改成'])
+    await p.goto(base + '#/overview')
+    await p.setViewportSize({ width: 390, height: 844 })
+    await check(p, '我不在-手机宽度', ['我不在'])
+    await p.locator('[data-away-pick]').first().getByRole('button', { name: '知道了' }).click()
+    await p
+      .locator('[data-away-picks]')
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('我不在：点「知道了」后记录没去掉'))
+  }
   // ---- 对话总览 · Bug 视图 ----
   // 所有用户报的 Bug（子对话）一页看：顶上是流程数据，下面按「等你处理 / 进行中 / 已结束」分组，
   // 每行画五步进度和现在等谁；点一行打开父对话并在右栏切到那个子对话；手机宽度不横向滚动

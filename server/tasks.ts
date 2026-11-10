@@ -77,6 +77,7 @@ import { createTaskLearner } from './tasks/experience.ts'
 import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
+import { createAwaySweep } from './tasks/away-sweep.ts'
 import { createPeer } from './tasks/peer.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
@@ -661,6 +662,7 @@ export function tasksApi(deps: {
   const { attachOrchestra, forwardSpawn, messageParent, remindParentFix } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
+  createAwaySweep(scope)
   const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
   // 工作流运行（不是子对话）：父对话的 start_workflow 等工具落到这里
   const flowRuns = createFlowRuns(scope)

@@ -14,6 +14,12 @@ export const AskQuestion = z.object({
   question: z.string(),
   options: z.array(z.object({ label: z.string(), description: z.string().default('') })).default([]),
   multiSelect: z.boolean().default(false),
+  /**
+   * Agent 推荐第几个选项（从 0 数）、选错了回头改不改得了：「我不在」模式只按这两个字段替用户选（shared/away.ts）。
+   * CLI 自带的提问（Claude Code 的 AskUserQuestion）没有这两个字段，旧数据也没有：都当拿不准，照旧等用户
+   */
+  recommended: z.number().int().min(0).optional(),
+  reversible: z.boolean().optional(),
 })
 export type AskQuestion = z.infer<typeof AskQuestion>
 
