@@ -6,6 +6,7 @@ import type { Task, TaskRequest } from '../../shared/schema.ts'
 import { ruleAllowed, ruleText } from '../../shared/allow-rules.ts'
 import { t } from '../../shared/i18n.ts'
 import type { CliEvent } from './parsers.ts'
+import { awayPicked } from './away-pick.ts'
 
 type AskEvent = Extract<CliEvent, { type: 'ask' }>
 
@@ -22,7 +23,8 @@ export function autoAllowed(
   /** 不确认的那一档权限的名字（CLI 定义里 autoAllow 的权限）；不是这一档时为空 */
   skipAll = '',
 ): boolean {
-  if (ev.kind === 'question') return false
+  // 提问不按放行规则走；只有「我不在」开着、问题标了能反悔和推荐项时由面板替用户选（away-pick.ts）
+  if (ev.kind === 'question') return awayPicked(task, ev, meta)
   const byRule = ruleAllowed(task.allowRules ?? [], ev.rule)
   if (!byRule && !skipAll) return false
   task.messages.push({

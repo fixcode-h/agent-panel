@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { ArrowUp, Bot, Check, ChevronDown, CornerDownRight, FolderGit2, GitBranch, MessageSquare } from 'lucide-react'
 import { type ParamValues, type Project, type Task } from '@shared/schema'
@@ -46,6 +46,7 @@ export function TaskComposer({
   autoFocus,
   standalone,
   plugin,
+  fill,
 }: {
   project?: Project
   onCreated: (t: Task) => void
@@ -57,6 +58,8 @@ export function TaskComposer({
    * 不选 Chat 角色（插件自己给工具和说明），草稿单独记
    */
   plugin?: string
+  /** 从外面填进输入框的话（首页的示例任务）：n 每次点都变，同一句点两次也重新填 */
+  fill?: { text: string; n: number }
 }) {
   const { workflows, agents, projects, loading } = useData()
   const { tasks } = useTasks()
@@ -124,6 +127,14 @@ export function TaskComposer({
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
+  // 首页点了示例：换掉输入框里的内容并把光标放进去，用户改两句就能发
+  useEffect(() => {
+    if (!fill) return
+    setPrompt(fill.text)
+    editor.current?.focus()
+    // 只跟着这次点击（n）走；setPrompt 换草稿键时会变，不该因此再填一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill?.n])
   // Chat 页的新建输入框没有项目：@ 在所有项目里一起搜
   const mention = useFileMention(project, editor, files, standalone ? projects : [])
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
