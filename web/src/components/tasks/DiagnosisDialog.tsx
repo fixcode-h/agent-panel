@@ -51,7 +51,9 @@ const statusOf = (d: Diagnosis) => {
 }
 
 /** 关键代码的那几行：codeRef 写的是位置，代码从对话的工作区读（不让 Agent 抄，抄的会和实际对不上） */
-const refKey = (d: Diagnosis) => (d.codeRef?.file ? `${d.codeRef.file}:${d.codeRef.start}-${d.codeRef.end}` : '')
+// 有 codeRefs 的新报告用交报告时取的快照（shared/bug-quotes.ts），不再现读
+const refKey = (d: Diagnosis) =>
+  d.codeRef?.file && !d.codeRefs?.length ? `${d.codeRef.file}:${d.codeRef.start}-${d.codeRef.end}` : ''
 
 /** 最多显示这么多行：Agent 写的范围太大时只取开头，出错行在范围外就不标 */
 const MAX_LINES = 30

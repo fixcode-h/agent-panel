@@ -18,7 +18,8 @@ import {
   type Diagnosis,
   type DiagnosisNote,
 } from './bug-diagnosis-schema.ts'
-import { cleanupPrompt } from './bug-cleanup.ts'
+import { cleanupPrompt, TEMP_LOG } from './bug-cleanup.ts'
+import { fixDiffs, resolveSources, type BugSource } from './bug-quotes.ts'
 import {
   causeAgreed,
   closedOrCleaning,
@@ -137,6 +138,12 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
   else {
     if (c.logPlan.some((l) => !l.file.trim() || !l.print.trim() || !l.hypothesis.trim()))
       lack.push('logPlan 每一处都要写 file（加在哪）、print（打什么）和 hypothesis（对应的假设编号，或「路标」）')
+    // 实跑 F9：print 写成了描述，打出来的日志和计划对不上，命中表也算不出来
+    const loose = c.logPlan.filter((l) => l.print.trim() && !l.print.includes(TEMP_LOG)).map((l) => l.id || l.file)
+    if (loose.length)
+      lack.push(
+        `logPlan 的 print 写要加的那一行语句原文，以 [排查-<主题>] L<n> 开头（${loose.join('、')} 没有）：面板按前缀和编号在用户贴的日志里数出现了几次`,
+      )
     const bare = uncovered(c)
     if (bare.length)
       lack.push(
@@ -146,8 +153,9 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
   if (againAfterLogs(list) && (!c.next.trim() || c.next.trim() === list.at(-1)!.next.trim()))
     lack.push('next（又一轮论证：上一轮的日志看到了什么、为什么没能定论、新假设从哪来）')
   if (input.collect === undefined || !c.collect?.steps.length) lack.push('collect.steps（怎么复现）')
-  if (!c.collect?.expect.trim() && !c.collect?.outcomes.length)
-    lack.push('collect.outcomes（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个）')
+  // 实跑 F10：outcomes 空着、expect 写「见 outcomes」也放过了，用户复现完不知道怎么对
+  if ((c.collect?.outcomes.length ?? 0) < 2)
+    lack.push('collect.outcomes 至少两项（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个；能核对的写 match）')
   return lack.length
     ? `论证这一版还缺：${lack.join('；')}。还没定论就按这个交，用户同意后加日志、复现；根因已经证实就交 phase: cause。`
     : ''
@@ -340,6 +348,7 @@ export function submitDiagnosis(
   input: DiagnosisInput,
   newId: () => string,
   now = new Date().toISOString(),
+  src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
   if (!task.bug)
     return {
@@ -355,6 +364,9 @@ export function submitDiagnosis(
   const bad = diagnosisProblem(c, list, answers, input)
   if (bad) return { ok: false, info: bad }
   const phase = inputPhase(input, c, list)
+  // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
+  const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
+  if (sources.error) return { ok: false, info: sources.error }
   // 用户的决定（取消、同意、贴了日志）留着：那是用户做过的事，不是被新一版顶掉的
   if (prev && (prev.status === 'pending' || prev.status === 'questioned')) prev.status = 'superseded'
   const version = (prev?.version ?? 0) + 1
@@ -385,6 +397,7 @@ export function submitDiagnosis(
     logFiles: [],
     result: phase === 'verify' ? result : undefined,
     before: (task.changes ?? []).map((x) => normPath(x.path)).filter(Boolean),
+    fixDiffs: phase === 'verify' && src ? fixDiffs(list, src) : [],
   }
   ;(task.diagnoses ??= []).push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写
@@ -409,7 +422,7 @@ export function submitDiagnosis(
   return {
     ok: true,
     version,
-    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。`,
+    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。${sources.notes.length ? `\n\n面板提醒：\n${sources.notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
   }
 }
 

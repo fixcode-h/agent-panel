@@ -1,5 +1,6 @@
 /** 真实执行一轮：调度交给执行引擎（shared/engine.ts），调用 Agent 时经 runner 启动对应 CLI。从 runner.ts 拆出 */
 import { HANDOFF_DIR } from '../store.ts'
+import { bugSource, workDirOf } from './bug-source.ts'
 import { docRootOf, lookupModuleDocs, moduleIndexText } from '../module-map.ts'
 import { type EngineHost, runEngineTurn } from '../../shared/engine.ts'
 import type { RealContext } from './real-context.ts'
@@ -83,6 +84,8 @@ export async function runRealTurn(ctx: RealContext) {
     prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
     changed: ctx.changed,
     newId: ctx.newId,
+    // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug-quotes.ts）
+    bugSource: ctx.task.bug ? bugSource(workDirOf(ctx.task, ctx.project)) : undefined,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段

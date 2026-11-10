@@ -57,6 +57,8 @@ export const BugAttribution = z.object({
   how: z.enum(['blame', 'bisect', 'diff', 'log', 'none']).catch('none').default('none'),
   confidence: z.enum(['high', 'medium', 'low']).catch('low').default('low'),
   note: str(2000),
+  /** 引入那次改动里出错点那几行的 diff 原文：面板交报告时用版本管理取（git show），Agent 不用写 */
+  diff: z.string().max(8000).optional().catch(undefined),
 })
 export type BugAttribution = z.infer<typeof BugAttribution>
 
@@ -139,11 +141,64 @@ export const BugCollect = z.object({
   expect: str(2000),
   /** expect 的结构化写法：看到什么 → 说明什么，一种结果一行（用户复现完自己就能对上） */
   outcomes: z
-    .array(z.object({ see: str(1000), means: str(1000) }))
+    .array(
+      z.object({
+        see: str(1000),
+        means: str(1000),
+        /**
+         * 可核对的写法：日志计划的编号（L2）出现了 / 没出现。用户贴了日志后面板自己对上是哪一种结果
+         * （设计稿 2026-11-10 第 3.2 节）
+         */
+        match: z
+          .object({ point: str(20), seen: z.boolean() })
+          .optional()
+          .catch(undefined),
+      }),
+    )
     .catch([])
     .default([]),
 })
 export type BugCollect = z.infer<typeof BugCollect>
+
+/** 关键代码里的一处标记：line 那一行，text 是行里真正出错的那几个字（面板逐字核对、行内高亮），note 行尾说明 */
+export const CodeMark = z.object({
+  line: z.coerce.number().int().positive(),
+  text: str(300),
+  note: str(200),
+  level: z.enum(['fault', 'related', 'skipped']).catch('related').default('related'),
+})
+export type CodeMark = z.infer<typeof CodeMark>
+
+/** 一段关键代码：Agent 只写位置和标记，代码原文由面板交报告时读出来存进 snapshot（之后回看都是当时的代码） */
+export const CodeRef = z.object({
+  id: str(20),
+  role: z.enum(['fault', 'trigger', 'caller', 'expected']).catch('fault').default('fault'),
+  file: str(500),
+  start: z.coerce.number().int().positive(),
+  end: z.coerce.number().int().positive(),
+  marks: z.array(CodeMark).max(20).catch([]).default([]),
+  snapshot: z
+    .object({ text: z.string().max(20000), at: z.string() })
+    .optional()
+    .catch(undefined),
+})
+export type CodeRef = z.infer<typeof CodeRef>
+
+/**
+ * 一条原文引用：log 用户贴的日志（from 第几份报告上贴的，start~end 行，面板取原文），
+ * run 本对话跑过的命令输出（text 原样复制，面板在工具输出里逐字找），note 描述（不核对，报告上标成「描述」）
+ */
+export const BugQuote = z.object({
+  id: str(20),
+  kind: z.enum(['log', 'run', 'note']).catch('note').default('note'),
+  from: z.coerce.number().int().positive().optional().catch(undefined),
+  start: z.coerce.number().int().positive().optional().catch(undefined),
+  end: z.coerce.number().int().positive().optional().catch(undefined),
+  text: str(4000),
+  /** 原文里的关键值（left=0）：要在原文里逐字出现，报告上高亮 */
+  highlight: z.array(z.string().max(200)).max(10).catch([]).default([]),
+})
+export type BugQuote = z.infer<typeof BugQuote>
 
 /** 档案里结构化的几块（ADR 0046）：诊断报告的每一版都带着，草稿也是这几块 */
 export const BugCaseFields = {
@@ -164,6 +219,8 @@ export const BugCaseFields = {
         text: str(1500),
         status: z.enum(['confirmed', 'excluded', 'open']).catch('open').default('open'),
         basis: str(2000),
+        /** 依据引用的原文编号：构造数据复现时，已排除的假设要有日志或命令输出原文 */
+        refs: z.array(z.string().max(20)).max(10).catch([]).default([]),
       }),
     )
     .catch([])
@@ -186,6 +243,8 @@ export const BugCaseFields = {
         step: z.enum(['trigger', 'fault', 'symptom']).catch('fault').default('fault'),
         text: str(1500),
         proof: str(2000),
+        /** 这一环引用的原文编号（quotes 的 Q1、codeRefs 的 C1）：面板核对编号存在，报告上带原文 */
+        refs: z.array(z.string().max(20)).max(10).catch([]).default([]),
       }),
     )
     .catch([])
@@ -200,6 +259,18 @@ export const BugCaseFields = {
     })
     .optional()
     .catch(undefined),
+  /** 多段关键代码（出错点、触发条件、调用方、对照的正确写法），代码由面板交报告时取快照（bug-quotes.ts） */
+  codeRefs: z.array(CodeRef).max(6).catch([]).default([]),
+  /** 日志、命令输出的原文引用：面板按来源取原文或逐字核对，对不上拒收 */
+  quotes: z.array(BugQuote).max(30).catch([]).default([]),
+  /** 期望和实际：一行一个值，actual 引用原文编号 */
+  expectVsActual: z
+    .array(z.object({ what: str(300), expected: str(500), actual: str(500), ref: str(100) }))
+    .max(10)
+    .catch([])
+    .default([]),
+  /** 复现用的是什么：user 用户的数据 / 环境，constructed 构造的数据（只算推演），test 测试用例 */
+  reproKind: z.enum(['user', 'constructed', 'test']).optional().catch(undefined),
   /** 具体改动：一个文件一行写要改什么（方案页的「具体改动」表；files 没写时由它补） */
   changes: z
     .array(z.object({ file: str(500), what: str(2000), isNew: z.boolean().catch(false).default(false) }))
@@ -302,6 +373,8 @@ export const Diagnosis = z.object({
   decidedAt: z.string().optional(),
   /** 交报告时工作区已经改了的文件：确认之前就动了手的，审阅时摆出来 */
   before: z.array(z.string()).default([]),
+  /** 验证这一版：出错点那几段代码修前（根因版的快照）和现在的对照，面板交验证时算出来 */
+  fixDiffs: z.array(z.object({ id: z.string(), file: z.string(), diff: z.string().max(8000) })).default([]),
   /** 用户取消修复后删临时日志的进度（shared/bug-cleanup.ts）：Agent 删、面板核对，通过了才关闭报告 */
   cleanup: CleanupState.optional().catch(undefined),
 })

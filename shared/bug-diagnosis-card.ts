@@ -35,6 +35,15 @@ export interface DiagnosisCard {
  */
 export function fillDiagnosis(d: Diagnosis): Diagnosis {
   d.chain ??= []
+  for (const x of d.chain) x.refs ??= []
+  // 原文定位（设计稿 2026-11-10）以前的报告没有这几块
+  d.codeRefs ??= []
+  for (const r of d.codeRefs) r.marks ??= []
+  d.quotes ??= []
+  for (const q of d.quotes) q.highlight ??= []
+  d.expectVsActual ??= []
+  d.fixDiffs ??= []
+  d.logPlan ??= []
   d.changes ??= []
   d.whatChanged ??= ''
   d.options ??= []

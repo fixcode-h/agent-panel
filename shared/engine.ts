@@ -1831,7 +1831,7 @@ function diagnoseTask(host: EngineHost, input: DiagnosisInput, draft?: boolean |
       ? requestLogs(host.task, input)
       : draft
         ? updateBugCase(host.task, input)
-        : submitDiagnosis(host.task, input, host.newId)
+        : submitDiagnosis(host.task, input, host.newId, undefined, host.bugSource)
   if (r.ok) host.changed(true)
   return r
 }
