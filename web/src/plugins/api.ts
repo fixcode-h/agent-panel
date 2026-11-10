@@ -1,4 +1,5 @@
 import type { PluginManifest, PluginSource } from '@shared/plugins/types'
+import type { PluginUpdate } from '@shared/plugins/version'
 import { t } from '@shared/i18n'
 import { request } from '@/lib/api'
 import { trackedFetch } from '@/lib/connection'
@@ -42,6 +43,11 @@ const json = (method: string, body: unknown): RequestInit => ({ method, body: JS
 export const pluginApi = {
   market: (repo: string) =>
     request<{ repo: string; plugins: MarketEntry[] | null }>(`/plugins/market?repo=${encodeURIComponent(repo)}`),
+  /** 从 GitHub 装的插件和上游比版本 */
+  updates: () =>
+    request<{ updates: PluginUpdate[]; errors: { repo: string; error: string }[]; checkedAt: string }>(
+      '/plugins/updates',
+    ),
   fromGithub: (input: { repo: string; id?: string; ref?: string; path?: string }) =>
     request<InstallPreview>('/plugins/install/github', json('POST', input)),
   fromDir: (dir: string) => request<InstallPreview>('/plugins/install/dir', json('POST', { dir })),

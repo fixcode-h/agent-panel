@@ -19,6 +19,7 @@ import {
 import { pluginMcpApi } from './mcp.ts'
 import { pluginError, pluginStatus, runningPlugin } from './runtime.ts'
 import { linkPackage, packageRoot, parseManifest, writePackage, type Installed } from './store.ts'
+import { checkPluginUpdates } from './updates.ts'
 import { readZip, type ZipEntry } from './zip.ts'
 
 /**
@@ -118,6 +119,8 @@ export function pluginsApi() {
           return c.json(fail(e), 400)
         }
       })
+      // 检查更新：从 GitHub 装的插件和上游比版本，只读不装；升级还是走 /install/github 的预览和确认
+      .get('/updates', async (c) => c.json(await checkPluginUpdates(installedList())))
       .post('/install/github', async (c) => {
         const body = (await c.req.json().catch(() => ({}))) as {
           repo?: string

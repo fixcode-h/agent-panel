@@ -13,7 +13,8 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Row } from '@/components/settings/parts'
-import { pluginApi, type KeptItem, type RemovalPreview } from './api'
+import { pluginApi, type InstallPreview, type KeptItem, type RemovalPreview } from './api'
+import { UpdateNotice } from './PluginUpdates'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
 
 /** 清单里的 icon：角色图标之外再认几个插件常用的；不认识的用拼图 */
@@ -165,7 +166,7 @@ function StatusPanel({ row }: { row: PluginRow }) {
   )
 }
 
-export function PluginCard({ row }: { row: PluginRow }) {
+export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p: InstallPreview) => void }) {
   const { webErrors } = usePlugins()
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState<'off' | 'delete'>()
@@ -281,6 +282,7 @@ export function PluginCard({ row }: { row: PluginRow }) {
           />
         </div>
       </div>
+      <UpdateNotice row={row} onPreview={onPreview} />
       {error && <p className="text-xs break-all text-danger">{error}</p>}
       {!!kept.length && (
         <div className="text-xs text-subtle">

@@ -4,7 +4,7 @@
 - 职责：插件包的安装、删除、开关、参数，插件服务端和网页部分的加载，插件给 Agent 的 MCP 工具
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
-- 关键词：插件、插件市场、安装插件、删除插件、plugin.json、agent-plugins、Blender 插件、设计模式
+- 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、设计模式
 - 更新：2026-11-10
 
 ## 职责
@@ -21,6 +21,9 @@
 | `server/plugins/store.ts`                              | 读包、校验清单（格式、接口版本、和内置模板重名、保留 id）、写包（临时目录换入）、链接本机目录、删包                                           |
 | `server/plugins/zip.ts`                                | 读 zip（存储和 deflate，限单文件和总大小）                                                                                                    |
 | `server/plugins/github.ts`                             | 读仓库的 `plugins.json`，下载 Release 附件或源码包                                                                                            |
+| `server/plugins/updates.ts`                            | 检查更新：从 GitHub 装的插件按仓库读一次 `plugins.json`（没有就读安装分支上的 `plugin.json`），和装着的版本比                                 |
+| `shared/plugins/version.ts`                            | 插件版本比较（semver，含 `-alpha.1` 这类预发布段；面板自己的 `compareVersions` 只认 `-dev`，不能拿来比插件）                                  |
+| `web/src/plugins/updates.ts`、`PluginUpdates.tsx`      | 「已安装」上方的检查更新（打开插件页自动查，十分钟内不重复）、卡片里的升级提示；升级走安装预览和确认                                          |
 | `server/plugins/manager.ts`                            | 启动加载、开关和参数变化、删除、关着的插件的副本清理；核心数据的读写由 `server/index.ts` 交进来                                               |
 | `server/plugins/runtime.ts`                            | 服务端入口的启动和停止、每轮对话问插件要工具、插件状态                                                                                        |
 | `server/plugins/mcp.ts`                                | 插件 MCP 工具的协议（每轮一个令牌地址 `/api/plugins/mcp/<令牌>`）                                                                             |
@@ -37,6 +40,7 @@
 
 - 启动：`ensureProjectWorkflows` 先 `initPlugins`（读包 → `setInstalledPlugins` → 按设置 `setEnabledPlugins` → 启动开着的插件的服务端入口），再装内置模板（开着的插件带的角色和工作流算内置），最后 `cleanupDisabledPlugins`。
 - 安装：`POST /api/plugins/install/{github,zip,dir}` 下载、校验，返回预览和令牌；`POST /install/confirm` 写盘、重读，开着的插件补上新版本多出来的内容。
+- 更新：`GET /api/plugins/updates` 只读不装，返回有新版本的插件和去哪儿装（`install`）；点「升级」用它调 `/install/github` 拿预览，确认后同安装。装好后 `loadPlugins` 按装着的版本去掉过期的提示。
 - 开关、参数：`PUT /api/plugins/:id`。设置页整份保存（`PUT /settings`）不改 `plugins`，免得自动保存盖掉插件页的改动。
 - 对话：`runner` 在 `def.mcp` 的 CLI 上调 `pluginRunTools`（`server/exec/plugin-run.ts` → `pluginToolsForRun`），插件按项目、模式返回 MCP 服务和提示，面板开令牌地址传给 CLI，这一轮结束关掉；插件工具调 `confirm` 时出请求卡片，这一轮结束还没回答的作废。
 - 网页：`App` 启动时 `loadPlugins`；开着的插件 import 包里的 web 入口（地址带安装时间），登记设计模式、整页和右栏页签；关掉、删除后从登记里撤下。
