@@ -10,7 +10,7 @@
 
 import { chipAlignProblems, runShard, tabAlignProblems } from './harness.mjs'
 import { scrollPairProblems } from './scroll-pair.mjs'
-import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
+import { closeChildTab, openCartTask, patchDemoOnce, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
   const { base, check, errors, settle, shotOf } = api
@@ -1208,12 +1208,10 @@ await runShard(import.meta.filename, async (api) => {
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k))
-      const task = db.tasks.find((x) => x.title.includes('购物车'))
-      task.status = 'running'
-      localStorage.setItem(k, JSON.stringify(db))
-    }, key)
+    // 在下一次导航、页面脚本运行之前改（patchDemoOnce）：直接改 localStorage 可能被当前页写回的内存数据盖掉
+    await patchDemoOnce(p, 'trace-running', (db) => {
+      db.tasks.find((x) => x.title.includes('购物车')).status = 'running'
+    })
     // 整页导航：只改 hash 会被内存里的演示数据盖回去（见 docs/lessons/ui-check.md）
     await p.goto(base)
     const conv = p.getByText('购物车右上角', { exact: false }).first()
@@ -1270,13 +1268,10 @@ await runShard(import.meta.filename, async (api) => {
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k))
+    await patchDemoOnce(p, 'trace-no-dev', (db) => {
       db.settings = { ...db.settings, developerMode: false }
-      const task = db.tasks.find((x) => x.title.includes('购物车'))
-      task.status = 'running'
-      localStorage.setItem(k, JSON.stringify(db))
-    }, key)
+      db.tasks.find((x) => x.title.includes('购物车')).status = 'running'
+    })
     await p.goto(base)
     const conv = p.getByText('购物车右上角', { exact: false }).first()
     if (

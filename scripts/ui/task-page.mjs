@@ -33,15 +33,13 @@ export async function openCartTask(
       () => false,
     )
   let found = await listed()
-  // 开发者模式：加载日志（分步面板、后台胶囊）只在开发者模式里显示。演示数据生成后改设置再整页导航
-  // （只改 hash 会被内存里的演示数据盖回去，见 docs/lessons/ui-check.md）
+  // 开发者模式：加载日志（分步面板、后台胶囊）只在开发者模式里显示。演示数据生成后改设置再整页导航。
+  // 改设置要放在下一次导航、页面脚本运行之前（patchDemoOnce）：列表项出现时演示数据的种子任务可能还在写盘，
+  // 这时直接改 localStorage，机器慢时会被内存里没开开发者模式的那份盖回去（CI 上 PR #253 偶发失败的原因）
   if (found && devMode) {
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k) ?? 'null')
-      if (!db) return
+    await patchDemoOnce(p, 'dev-mode', (db) => {
       db.settings = { ...db.settings, developerMode: true }
-      localStorage.setItem(k, JSON.stringify(db))
-    }, DEMO_KEY)
+    })
     await p.goto(base)
     found = await listed()
   }
@@ -58,6 +56,29 @@ export async function openCartTask(
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('任务页：点开对话后没有出现输入框'))
   return p
+}
+
+/**
+ * 在下一次导航、页面脚本运行之前改一次演示数据（addInitScript），之后的导航不再改。
+ * 为什么不在页面里直接改 localStorage 再导航：当前页的演示后端还可能把内存里的数据写回去（种子任务收尾、
+ * 执行中的对话），改动会被盖掉，机器慢时更容易撞上。只改一次：同一片后面的用例还会自己改回去，不能每次导航都覆盖。
+ * patch 在浏览器里运行，只能用参数 db，不能引用外面的变量。
+ */
+export async function patchDemoOnce(p, name, patch) {
+  await p.addInitScript(
+    ([k, flag, src]) => {
+      try {
+        if (sessionStorage.getItem(flag)) return
+        const db = JSON.parse(localStorage.getItem(k) ?? 'null')
+        if (!db) return
+        // oxlint-disable-next-line no-new-func -- 界面检查脚本：把 Node 里写的改法带进页面执行
+        new Function('db', `(${src})(db)`)(db)
+        localStorage.setItem(k, JSON.stringify(db))
+        sessionStorage.setItem(flag, '1')
+      } catch {}
+    },
+    [DEMO_KEY, `ui-check-patched:${name}`, patch.toString()],
+  )
 }
 
 /** 中间打开的子对话（页签）：父对话页签在前台时它是隐藏的，读屏树里没有 */
