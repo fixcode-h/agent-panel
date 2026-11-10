@@ -13,6 +13,7 @@ import { Field, Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
+import { appendDraft } from '@/components/chat/ChatComposer'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { TaskView } from '@/components/tasks/TaskView'
 
@@ -29,6 +30,21 @@ function usePluginRoute(id: string) {
     path: here ? (route.msg ?? '') : '',
     go: (page: string, path?: string) => go({ page: 'plugin', id, sub: page, msg: path || undefined }),
   }
+}
+
+/**
+ * 把一段文字放进对话的输入框再打开那个对话（插件的「发给对话」）：不直接发送，用户看过、补两句再发。
+ * 给了 taskId 接在那个对话的草稿后面；没给就放进项目新建对话的输入框
+ */
+function useToChat() {
+  const { go } = useNav()
+  return React.useCallback(
+    ({ projectId, taskId, text }: { projectId: string; taskId?: string; text: string }) => {
+      appendDraft(taskId ? `task:${taskId}` : `new:project:${projectId}`, text)
+      go(taskId ? { page: 'projects', id: projectId, sub: taskId } : { page: 'projects', id: projectId })
+    },
+    [go],
+  )
 }
 
 export function host(id: string, config: () => PluginConfig) {
@@ -55,7 +71,15 @@ export function host(id: string, config: () => PluginConfig) {
       createProject: api.createProject,
       makeDir: api.makeDir,
     },
-    hooks: { useData, useTasks, useNav, useDirInfo, useNewAskUser, usePluginRoute: () => usePluginRoute(id) },
+    hooks: {
+      useData,
+      useTasks,
+      useNav,
+      useDirInfo,
+      useNewAskUser,
+      usePluginRoute: () => usePluginRoute(id),
+      useToChat,
+    },
     ui: { Button, IconButton, EmptyPanel, Field, Input, Select, Textarea, Modal, Segmented, DirPicker, TaskView },
     toast,
     cn,
