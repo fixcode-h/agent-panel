@@ -13,6 +13,24 @@ import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
+ * 从对话现在的目录开独立分支（开不了时返回原因）。改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的。
+ * 单独导出：用户在共用目录的提醒上点「这个对话开独立分支」（shared-dir-routes.ts）走的是同一段
+ */
+export async function openTaskWorktree(s: Pick<TasksScope, 'taskDir'>, tk: Task): Promise<string> {
+  const base = await s.taskDir({ ...tk, worktree: null })
+  try {
+    tk.worktree = await createWorktree(base, tk.id, tk.title)
+  } catch (e) {
+    log.warn('task', '开独立分支失败', { task: tk.id, error: (e as Error).message })
+    return (e as Error).message
+  }
+  tk.wantsWorktree = false
+  tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
+  tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? {}
+  return ''
+}
+
+/**
  * 子对话的独立分支：同一个父分支上的合并排队、恢复和开出 worktree、begin_edit（要改文件时才开）。
  */
 export function createEditWorktree(s: TasksScope) {
@@ -125,20 +143,7 @@ export function createEditWorktree(s: TasksScope) {
     await s.store.update(tk.id, entry.task)
   }
 
-  /** 从对话现在的目录开独立分支（开不了时返回原因）。改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的 */
-  async function openWorktree(tk: Task): Promise<string> {
-    const base = await s.taskDir({ ...tk, worktree: null })
-    try {
-      tk.worktree = await createWorktree(base, tk.id, tk.title)
-    } catch (e) {
-      log.warn('task', '开独立分支失败', { task: tk.id, error: (e as Error).message })
-      return (e as Error).message
-    }
-    tk.wantsWorktree = false
-    tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
-    tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? {}
-    return ''
-  }
+  const openWorktree = (tk: Task) => openTaskWorktree(s, tk)
 
   /** 还在执行或正在启动的子对话 */
   async function busyChildren(parentId: string) {

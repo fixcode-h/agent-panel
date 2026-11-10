@@ -135,6 +135,12 @@ export function ConvChangesCard({ task }: { task: Pick<Task, 'id' | 'working' | 
           </button>
         </div>
       )}
+      {/* 同目录别的对话那段时间改的文件已经剔除（server/turn-owners.ts）：说一句，免得用户以为少记了，悬停能看到是哪些 */}
+      {!reverted && ch.others.length > 0 && (
+        <div className="turn-changes-others border-t px-3.5 py-1.5 text-xs text-subtle" title={ch.others.join('\n')}>
+          {t('另有 {n} 个文件是同目录里别的对话改的，没有算进来，撤销时也不会动', { n: ch.others.length })}
+        </div>
+      )}
       {conflicts.length > 0 && (
         <div className="flex flex-col gap-1 border-t bg-warning/10 px-3.5 py-2 text-xs leading-relaxed text-warning">
           <span className="flex items-center gap-1.5 font-medium">

@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { FolderPlus } from 'lucide-react'
 import { useData, useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
 import { RestartResumeBar } from '@/components/tasks/RestartResumeBar'
+import { HomeGlance } from '@/components/tasks/HomeGlance'
 import { Logo } from '@/components/layout/Sidebar'
 import { t } from '@shared/i18n'
 
@@ -12,10 +14,12 @@ const greeting = () => {
   return h < 5 ? t('夜深了') : h < 11 ? t('早上好') : h < 13 ? t('中午好') : h < 18 ? t('下午好') : t('晚上好')
 }
 
-/** 首页：参考 Claude 的新对话页，中间一句问候和任务输入框 */
+/** 首页：参考 Claude 的新对话页，中间一句问候和任务输入框，下面是等你处理的和最近的对话 */
 export function HomePage() {
   const { projects, loading, upsertTask } = useData()
   const { go, openProject } = useNav()
+  // 示例任务点了填进输入框（HomeGlance）
+  const [fill, setFill] = useState<{ text: string; n: number }>()
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
       {/* 首页单独限宽：输入框 760px（加上左右内边距 808），宽屏下不再跟着内容宽度拉到 950px，一行字视线不用扫太远；对话页不受影响 */}
@@ -35,13 +39,18 @@ export function HomePage() {
             </Button>
           </EmptyPanel>
         ) : (
-          <TaskComposer
-            autoFocus
-            onCreated={(t) => {
-              upsertTask(t)
-              go({ page: 'projects', id: t.projectId, sub: t.id })
-            }}
-          />
+          <>
+            <TaskComposer
+              autoFocus
+              fill={fill}
+              onCreated={(t) => {
+                upsertTask(t)
+                go({ page: 'projects', id: t.projectId, sub: t.id })
+              }}
+            />
+            {/* 输入框下面：等你处理的、最近的对话；一个对话都没有时是示例任务（分析稿 U6） */}
+            <HomeGlance onExample={(text) => setFill((f) => ({ text, n: (f?.n ?? 0) + 1 }))} />
+          </>
         )}
         {/* 上次面板退出时还在运行的对话：问一次要不要全部继续，放在输入框下面，不挤开问候和输入框 */}
         <RestartResumeBar />

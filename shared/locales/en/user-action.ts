@@ -4,7 +4,6 @@ export const EN_USER_ACTION: Record<string, string> = {
   '等你操作：{title}': 'Waiting on you: {title}',
   '在等你操作：{title}，已等 {took}': 'Waiting on you: {title} ({took} so far)',
   '已等 {took}': '{took} so far',
-  '等{who}操作': 'Waiting on {who} to act',
   去操作: 'Go do it',
   你的操作: 'Your action',
   请你操作: 'Asked you to do',

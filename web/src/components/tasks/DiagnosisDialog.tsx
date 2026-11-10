@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { FileSearch } from 'lucide-react'
 import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown, diagnosisView } from '@shared/bug-diagnosis'
 import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug-phase'
+import { autoOn } from '@shared/bug-auto'
+import { recheckVerdict } from '@shared/bug-recheck'
+import { Checkbox } from '@/components/ui/checkbox'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -14,6 +17,8 @@ import { ReviewDialog, type NoteKind, type ReviewRaw } from './ReviewDialog'
 import { DiagnosisStages } from './DiagnosisStages'
 import { DiagnosisCard, ReportFold } from './DiagnosisCard'
 import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
+import { LogWatch, PatchReminder, usePatch, WorkspacePatch } from './DiagnosisEvidence'
+import { patchKindOf } from '@shared/bug-patch'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -47,6 +52,8 @@ const statusOf = (d: Diagnosis) => {
   if (d.status === 'cancelled' && d.cleanup?.state === 'failed') return t('已取消，日志没删干净')
   if (phaseOf(d) === 'verify' && d.status === 'answered') return t('你给了验证结果，它在分析')
   if (phaseOf(d) === 'verify' && d.status === 'approved') return t('你结束了验证')
+  // 面板按「没有要注意的就自动通过」替你同意的（分析稿 B2）：和你亲手点的分开写
+  if (d.status === 'approved' && d.auto) return t('面板自动通过（没有要注意的）')
   return STATUS[d.status]()
 }
 
@@ -201,6 +208,16 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
       },
     }
   // 修复（用户 2026-11-10 定）：看改了哪些代码、为什么，确认了才验证；在代码上标疑问，它逐条判断，对的改、不对的用事实反驳
+  // 面板复核过回归测试改前失败、改后通过（分析稿 B9）：确认修复就同时算验证通过，少一次确认（B2 第 ① 条）
+  if (phase === 'fix' && recheckVerdict(d.recheck) === 'pass')
+    return {
+      texts: {
+        approve: t('确认修复，验证也算通过'),
+        revise: t('有疑问，让它分析'),
+        hintApprove: t('面板自己跑过回归测试：改前失败、改后通过。确认后它跑完影响面验证就收尾，不再单独请你验证'),
+        hintRevise: t('「有疑问」把标注交回：它逐条判断，你说得对就改代码，不对会用代码、测试结果说明理由，再交给你看'),
+      },
+    }
   if (phase === 'fix')
     return {
       texts: {
@@ -233,6 +250,7 @@ export function DiagnosisDialog({
   onOpenChange,
   onDone,
   version,
+  dock,
 }: {
   task: Pick<Task, 'id' | 'title' | 'diagnoses'> & Partial<Pick<Task, 'changes'>>
   /** 打开时先看哪一份（交报告的顺序号）；不传看最新那份 */
@@ -240,6 +258,8 @@ export function DiagnosisDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone?: (task: Task) => void
+  /** 停靠到右栏（分析稿 U7，见 diagnosis-window.tsx）：只管放在哪，审阅本身不变 */
+  dock?: ComponentProps<typeof ReviewDialog>['dock']
 }) {
   const { settings, agents } = useData()
   const author = settings?.bugAuthor !== false
@@ -251,7 +271,14 @@ export function DiagnosisDialog({
   const changed = task.changes?.map((c) => c.path)
   // 修复、验证这两步代码已经改了：取消时可以选连修复一起撤掉
   const cleanup = useCancelCleanup(task.id, !!last && (phaseOf(last) === 'fix' || phaseOf(last) === 'verify'))
+  // 排查补丁（分析稿 B1）：等你复现 / 验证时能把独立分支里的日志或修复放到你的工作区；打开时查一次状态
+  const patchKind = patchKindOf(last)
+  const patch = usePatch(task.id, open && !!last)
+  // 「后面几步没有要注意的就自动通过」（分析稿 B2）：默认沿用你上一次同意时的选择
+  const [autoNext, setAutoNext] = useState(() => autoOn(list))
   if (!last) return null
+  // 面板自己取日志（分析稿 B3）：等你复现、等你验证时，报告里写了日志文件就出「开始复现 / 取日志」
+  const watchWhere = patchKind ? (last.awaiting?.collect ?? last.collect)?.where : undefined
   const req: Pick<TaskRequest, 'id' | 'title' | 'detail'> = {
     // 等你复现是同一版回到等你：换一个 id，标注和输入从头开始
     id: `${task.id}:${last.version}${last.awaiting ? ':logs' : ''}`,
@@ -292,9 +319,16 @@ export function DiagnosisDialog({
       onOpenChange={onOpenChange}
       kinds={KINDS()}
       versions={versionsOf(list, author, snippets, changed, teamNames, (d) => (
-        <CleanupStatus task={task} d={d} onDone={onDone} />
+        <>
+          {d === last && <WorkspacePatch patch={patch} kind={patchKind} />}
+          <CleanupStatus task={task} d={d} onDone={onDone} />
+        </>
       ))}
+      overallTools={
+        watchWhere ? (fill) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} onFill={fill} /> : undefined
+      }
       initialVersion={version ? String(version) : undefined}
+      dock={dock}
       presets={presets}
       readOnly={last.status !== 'pending'}
       // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边
@@ -337,8 +371,18 @@ export function DiagnosisDialog({
         label: t('取消修复'),
         title: t('取消这次修复？'),
         description: cleanup.description,
-        extra: cleanup.extra,
-        onAsk: cleanup.ask,
+        // 补丁还在你的工作区里：提醒先还原（取消后分支不合回，留在工作区的日志、修复没人管）
+        extra:
+          patch.status?.applied || cleanup.extra ? (
+            <div className="flex flex-col gap-3">
+              <PatchReminder patch={patch} />
+              {cleanup.extra}
+            </div>
+          ) : undefined,
+        onAsk: () => {
+          cleanup.ask()
+          patch.refresh()
+        },
         confirm: t('不修了'),
         // 代码里有临时日志：服务端返回叫它删日志的话，交给子对话（删完面板核对干净才关闭报告，用户 2026-11-10 定）；
         // 没有日志就不发话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
@@ -355,11 +399,25 @@ export function DiagnosisDialog({
           else onDone?.(r.task)
         },
       }}
+      approveExtra={
+        // 验证那一步的「确认」是结束验证，等你复现的那一版没有确认：都不放
+        last.status === 'pending' && !last.awaiting && phaseOf(last) !== 'verify' ? (
+          <Checkbox
+            checked={autoNext}
+            onChange={setAutoNext}
+            label={<span className="text-xs text-muted">{t('后面几步没有要注意的就自动通过')}</span>}
+            tip={t(
+              '之后交上来的根因、修复方案、修复，决策卡上没有「要注意」的由面板直接通过，报告随时能打开回看；有「要注意」的、要你复现验证的照常停下等你',
+            )}
+          />
+        ) : undefined
+      }
       onAnswer={async (allow, _text, raw) => {
         const r = await api.decideDiagnosis(task.id, last.version, {
           approve: allow,
           notes: notesOf(raw),
           overall: raw?.overall ?? '',
+          ...(allow && { autoNext }),
         })
         await hand(r.message, raw?.files ?? [], r.task)
       }}

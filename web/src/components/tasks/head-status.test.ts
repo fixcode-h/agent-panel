@@ -35,7 +35,7 @@ test('等子对话时只显示累计执行时长，在等什么放进提示', ()
 test('运行中按累计时长走：已完成的段加上正在跑的这段，不从最后一条用户消息重算', () => {
   const view = headStatus(task({ working: true, runMs: 16 * 60_000, runStartedAt: ago(2 * 60_000) }), NOW)
   assert.equal(view?.text, '18:00')
-  assert.equal(view?.hint, '运行中 · 18:00')
+  assert.equal(view?.hint, '执行中 · 18:00')
 })
 
 test('超过一小时写成 1:02:05', () => {

@@ -25,6 +25,37 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     `侧栏项目没有按添加时间排序：${order0.join('、')}`,
   )
   await check(p, '侧栏-项目按添加时间', ['商城前台', '运营后台'])
+  // 图标栏能展开成带字的（分析稿 U4）：每格写名字，刷新后还是展开的；收起回到只有图标
+  {
+    const bar = p.locator('nav[aria-label="功能栏"]')
+    const narrowW = (await bar.boundingBox())?.width ?? 0
+    await bar.getByRole('button', { name: '图标旁显示名字', exact: true }).click()
+    await bar
+      .getByText('对话总览', { exact: true })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    for (const name of ['对话总览', '工作流', '设置'])
+      if (
+        !(await bar
+          .getByText(name, { exact: true })
+          .isVisible()
+          .catch(() => false))
+      )
+        errors.push(`图标栏：展开后没有写出「${name}」`)
+    if (((await bar.boundingBox())?.width ?? 0) <= narrowW) errors.push('图标栏：展开后没有变宽')
+    await check(p, '图标栏-展开')
+    await p.reload()
+    if (
+      !(await bar
+        .getByRole('button', { name: '只显示图标', exact: true })
+        .isVisible()
+        .catch(() => false))
+    )
+      errors.push('图标栏：刷新后没记住展开')
+    await bar.getByRole('button', { name: '只显示图标', exact: true }).click()
+    if (await bar.getByText('对话总览', { exact: true }).count()) errors.push('图标栏：收起后还写着名字')
+    await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
+  }
   // 拖住「运营后台」的手柄，放到「商城前台」上：出现插入提示
   const orderGrip = p.getByRole('button', { name: '拖动调整「运营后台」的顺序' })
   const target = (await p.locator('[data-sidebar] section').nth(0).boundingBox()) ?? null
@@ -90,6 +121,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务'])
+  // 新建对话时单独设用量上限（分析稿 A6）：输入框工具条上的图标，点开填 token 和费用；
+  // 演示里默认的 CLI 自己报费用，不出「算不了费用」那句
+  {
+    await p.getByText('商城前台', { exact: true }).first().click()
+    const chip = p.getByRole('button', { name: '这个对话的用量上限', exact: true })
+    await chip.waitFor({ timeout: 10000 })
+    await chip.click()
+    const pop = p.locator('[data-conv-budget]')
+    await pop.waitFor({ timeout: 5000 })
+    await pop.getByLabel('token 上限（百万）').fill('2')
+    await check(p, '新建对话-用量上限', ['这个对话的用量上限', 'token 上限（百万）', '费用上限（美元）'])
+    if (await pop.locator('[data-no-cost]').count())
+      errors.push('新建对话-用量上限：自己报费用的 CLI 不该写「算不了费用」')
+    await p.keyboard.press('Escape')
+    if (!/2M/.test((await chip.textContent()) ?? '')) errors.push('新建对话-用量上限：设了以后图标旁边没显示上限')
+  }
   errors.push(...(await segmentedContrastProblems(p, '侧栏-浅色')))
   // 浅色主题下再看一眼 Token 用量（会话栏开着时在会话栏里）：分隔线、速度的颜色都要跟着主题
   {
@@ -505,6 +552,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       'WSL 发行版',
       '小改动也跑',
       '按改动大小决定验证范围',
+      // 完成依据的拦截开关（分析稿 A3）：默认关，开了 end_turn 前要跑过测试步骤
+      '改了代码要跑过测试步骤才能结束',
       '每条可以写「适用改动」',
       // 范围三档（ADR 0020）：每条的选择器、头部那段说明（子对话只跑增量的那部分）都要显示出来。
       // 断言用页面上看得见的文字，悬停提示（title）不算

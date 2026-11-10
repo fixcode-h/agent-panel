@@ -19,6 +19,8 @@ import {
   type ChildEntry,
 } from '@shared/task'
 import type { ChildRequest } from '@shared/child-needs'
+import { childWord } from '@shared/task-word'
+import type { LastTool } from '@shared/child-doing'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -32,15 +34,39 @@ export interface ChildSummary extends ChildEntry {
   activity?: ChildActivity
   /** 第一条待确认的请求：父对话页直接写出确认什么、给「允许 / 拒绝」（见 ChildRequestBar） */
   request?: ChildRequest
+  /** 最后一次工具调用（shared/child-doing.ts）：行上写「计划这一步 · 改 store.ts」（分析稿 U5） */
+  lastTool?: LastTool
+  /** Bug 走到五步里的第几步（0–4，5 是都走完了）：行上画五个小点（分析稿 U8） */
+  bugStep?: number
 }
 
-/** 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果 */
+/**
+ * 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果。
+ * 执行中按「计划这一步 · 在做的事」写（分析稿 U5）：在做的事优先是跑着的工作流节点、在等的子任务，
+ * 其次是正在调用或最后一次的工具调用（改 store.ts、运行命令 npm test）；回复开头截的一段没信息量，
+ * 只在既没有计划也没有工具调用时才回退到它（以前的样子）
+ */
 export function childNote(c: ChildSummary, running: boolean) {
-  const doing = activityText(c.activity)
   const plan = c.plan?.step || c.plan?.child
-  // 在等后台命令 / 子任务 / 工作流时 activity 是空的：补上在等什么，不然那一行只剩个状态标签
-  if (running) return [doing, childWaitText(c.waiting), plan].filter(Boolean).join(' · ')
-  return childWaitText(c.waiting) || c.summary
+  const wait = childWaitText(c.waiting)
+  if (running) {
+    const a = c.activity
+    const busy = a?.steps?.length || a?.helpers?.length ? activityText(a) : toolLine(a?.tool ?? c.lastTool)
+    const doing = busy || (a?.thinking && plan ? t('正在思考…') : '')
+    if (plan || busy) return [plan, doing, wait].filter(Boolean).join(' · ')
+    // 在等后台命令 / 子任务 / 工作流时 activity 是空的：补上在等什么，不然那一行只剩个状态标签
+    return [activityText(a), wait].filter(Boolean).join(' · ')
+  }
+  return wait || c.summary
+}
+
+/** 一次工具调用的短说法：动作 + 对象，文件只写文件名（行很窄，整条路径会把文件名挤没） */
+function toolLine(tool: LastTool | undefined) {
+  if (!tool) return ''
+  // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
+  const v = toolView({ ...tool, detail: '' })?.tool ?? { ...tool, detail: '' }
+  const label = v.kind === 'edit' || v.kind === 'read' ? (v.label.split(/[\\/]/).pop() ?? v.label) : v.label
+  return `${toolVerb(v)} ${label}`.trim()
 }
 
 /**
@@ -64,11 +90,7 @@ export function staleLine(c: ChildSummary) {
 export function activityText(a: ChildActivity | undefined) {
   if (!a) return ''
   if (a.steps?.length) return a.steps.join(t('、'))
-  if (a.tool) {
-    // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
-    const v = toolView({ ...a.tool, detail: '' })?.tool ?? { ...a.tool, detail: '' }
-    return `${toolVerb(v)} ${v.label}`.trim()
-  }
+  if (a.tool) return toolLine(a.tool)
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
   // 只有服务端说「还没有输出、在想」（thinking，只在 working 时给）才写正在思考。
@@ -97,6 +119,8 @@ export interface ChildLabel {
   tone: ChildLabelTone
   /** 已解决带一个对勾（和图标、分组同一处判定） */
   icon?: 'check'
+  /** Bug 的标签后面画五个小点（分析稿 U8，见 BugStepDots）：值是走到第几步 */
+  dots?: number
 }
 
 /**
@@ -124,36 +148,27 @@ function convGone(c: ChildSummary): 'closed' | 'hint' | '' {
 }
 
 /**
- * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等用户选择（who 是设置里的称呼）→ 计划 n/m → 执行中 / 等结果 / 待收尾 →
+ * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等你处理的短词（见 childWord）→ 计划 n/m → 执行中 / 等结果 / 待收尾 →
  * 停下的原因。同一行只说一件事，全部从 childIcon / childState 派生，
  * 所以不会出现「已解决」和「执行中」同屏（以前徽标按 resolved/asking/plan 各算一套就是这么来的）。
  * 「已关闭」也一样只认 childIcon（见 convGone）：还在跑的对话不说它关了。
  */
-export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
+export function childLabels(c: ChildSummary): ChildLabel[] {
   const icon = childIcon(c)
   const state = childState(c)
   const out: ChildLabel[] = []
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
-  // 等的是权限确认（或它下面的子对话在等）时写「等你确认」：说成「选择」用户会去找提问卡
-  // 工作流节点做完等你确认结果的（见 stageConfirm）写「阶段待确认」，和「报告待确认」一个说法
-  if (icon === 'waiting')
-    out.push({
-      text: stageConfirm(c)
-        ? t('阶段待确认')
-        : // 等你操作（request_user_action）：要你去做事，不是选择也不是确认
-          c.action && !c.asking && !c.requests
-          ? t('等{who}操作', { who })
-          : c.asking || !(c.requests || c.childNeeds)
-            ? t('等{who}选择', { who })
-            : t('等{who}确认', { who }),
-      tone: 'warning',
-    })
+  // 等你处理的短词（等你回答 / 等你确认 / 阶段待确认 / 等你操作 / 子对话等你处理）和标题栏、侧栏、
+  // 子对话自己页面的输入框占位同一处取（shared/task-word.ts，分析稿 A8、U2）：以前这里写「等用户选择」，
+  // 侧栏写「等你回复」，同一件事两种说法
+  if (icon === 'waiting') out.push({ text: childWord(c).word, tone: 'warning' })
   // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug
   if (c.bug)
     out.push({
       text: c.diagnosis || icon === 'done' ? t('Bug') : t('Bug · {stage}', { stage: c.bug }),
       tone: 'plain',
+      dots: c.bugStep,
     })
   // 进程回收了的「未完成」画成静止（见 childIcon），计划进度和「未完成」照样写，只是不再用执行中的颜色
   const parked = icon === 'idle' && state === 'unfinished'

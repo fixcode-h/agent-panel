@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ClipboardCheck, Highlighter, Loader2, Trash2 } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ChevronLeft, ClipboardCheck, Highlighter, Loader2, PanelRight, PictureInPicture2, Trash2 } from 'lucide-react'
 import type { Attachment, TaskRequest } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import { Modal, ModalHeader } from '@/components/ui/modal'
+import { MODAL_HEADER, MODAL_TITLE, Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Select, Textarea } from '@/components/ui/input'
@@ -18,6 +19,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
 import { OverallComposer, useLogFiles } from './LogAttach'
+import { useChosenColumn } from './review-table'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -86,6 +88,9 @@ export function ReviewDialog({
   attach,
   overallPlaceholder,
   initialVersion,
+  overallTools,
+  approveExtra,
+  dock,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -137,12 +142,23 @@ export function ReviewDialog({
   overallPlaceholder?: string
   /** 打开时先看哪一版（versions 的 key）：对话里点某一份报告的卡片打开的就是那一份；之后换了请求仍回到最新 */
   initialVersion?: string
+  /** 整体意见框上面多放的（诊断报告「面板自己取日志」）：fill 把取到的文字整个填进整体意见框 */
+  overallTools?: (fill: (text: string) => void) => ReactNode
+  /** 「确认」按钮旁边多放的（诊断报告「后面几步没有要注意的就自动通过」）：能审、有确认按钮时才画 */
+  approveExtra?: ReactNode
+  /**
+   * 能停靠到右栏（诊断报告，分析稿 U7）：docked 时不画弹窗外壳，整块放进任务页右栏的页签里，
+   * 审方案时能同时翻对话、点开文件；toggle 在弹窗和右栏之间切换（宽屏才有右栏，canDock 为假时不给按钮）
+   */
+  dock?: { docked: boolean; canDock: boolean; toggle: () => void; slot: HTMLElement | null }
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const scrollRef = useRef<HTMLDivElement>(null)
   const docRef = useRef<HTMLDivElement>(null)
+  // 候选方案表撑满、选定那一列整列上色（分析稿 U7）
+  useChosenColumn(docRef)
   const seq = useRef(0)
   const [notes, setNotes] = useState<Note[]>([])
   const [overall, setOverall] = useState('')
@@ -163,6 +179,10 @@ export function ReviewDialog({
   )
   const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
+  // 标注栏没有标注时收成一条窄边（分析稿 U7）：点它展开；加了标注、写了意见、附了日志就一直展开。
+  // 要交日志的几步（supply）整体意见框就是主要输入，不收
+  const [noteOpen, setNoteOpen] = useState(false)
+  const docked = !!dock?.docked
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
   const [ver, setVer] = useState(initialVersion ?? '')
   // 只在打开时用一次：之后来了新一版（换了请求）照旧回到最新那版
@@ -267,6 +287,10 @@ export function ReviewDialog({
   const said = attach ? logs.plain(overall) : overall
   const hasFeedback = notes.length > 0 || !!said.trim()
   const hasLogs = !!said.trim() || logs.list.length > 0
+  const noteKeep = notes.length > 0 || hasLogs || !!supply
+  const notesShown = noteOpen || noteKeep
+  // 收起时快捷标注（「改用方案 B」）挪到底栏左边，点了加一条标注、标注栏跟着展开
+  const quick = presets && presets.length > 0 && !locked ? presets : []
   const raw = (): ReviewRaw => ({
     notes: notes.map((n) => ({ quote: n.quote, comment: n.comment, kind: n.kind ?? '' })),
     overall: said,
@@ -312,23 +336,54 @@ export function ReviewDialog({
     />
   )
 
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
-      <ModalHeader icon={ClipboardCheck} iconClass="text-warning" title={req.title} aside={!top && picker}>
-        {agent && (
-          <span className="hidden min-w-0 items-center gap-1.5 text-footnote text-subtle sm:flex">
-            <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
-            <span className="truncate">{agent.name}</span>
-          </span>
-        )}
-      </ModalHeader>
-      <div ref={rowRef} className="flex min-h-0 flex-1 flex-col md:flex-row">
+  const who = agent && (
+    <span className="hidden min-w-0 items-center gap-1.5 text-footnote text-subtle sm:flex">
+      <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+      <span className="truncate">{agent.name}</span>
+    </span>
+  )
+  // 弹窗和右栏之间切换：和对话的「转成弹窗」同一个图标；停靠用右栏的图标（和标题栏的右栏开关一样）
+  const dockBtn = dock && (dock.docked || dock.canDock) && (
+    <ModalButton
+      icon={dock.docked ? PictureInPicture2 : PanelRight}
+      label={dock.docked ? t('转成弹窗') : t('停靠到右栏')}
+      onClick={dock.toggle}
+    />
+  )
+  const body = (
+    <>
+      {docked ? (
+        // 停靠在右栏时不在 Dialog 里，不能用 ModalHeader（它的标题是 Dialog.Title）；样子和弹窗标题栏一样
+        <header className={MODAL_HEADER}>
+          <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
+          <h2 className={MODAL_TITLE} title={req.title}>
+            {req.title}
+          </h2>
+          <span className="flex-1" />
+          {!top && picker}
+          {dockBtn}
+        </header>
+      ) : (
+        <ModalHeader
+          icon={ClipboardCheck}
+          iconClass="text-warning"
+          title={req.title}
+          aside={!top && picker}
+          actions={dockBtn || undefined}
+        >
+          {who}
+        </ModalHeader>
+      )}
+      <div ref={rowRef} className={cn('flex min-h-0 flex-1 flex-col', !docked && 'md:flex-row')}>
         {/* 套一层 relative：标题目录浮在滚动区右边、不跟着滚 */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             ref={scrollRef}
             // overflow-x 隐藏：吸顶条的毛玻璃底左右伸出去，靠这里裁到正好铺满滚动区（FrostBarBg）
-            className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 md:px-8 md:py-6"
+            className={cn(
+              'relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4',
+              !docked && 'md:px-8 md:py-6',
+            )}
             onMouseUp={readSelection}
             onKeyUp={readSelection}
             onScroll={(e) => {
@@ -341,7 +396,13 @@ export function ReviewDialog({
               // 吸在滚动区顶上（top 取负的上内边距：吸顶按滚动区的内容框算，不抵掉内边距会离顶边留一截），样式和对话的回复头一样是毛玻璃通栏（用户 2026-11-06 要求）；
               // 放在 docRef 外面，选中文字标注时不会把阶段名选进去
               // 版本下拉放在这条的最右边（用户 2026-11-06 要求）
-              <div className="frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none md:-top-6 md:-mt-6">
+              <div
+                className={cn(
+                  'frost-bar sticky -top-4 z-20 [--frost-bg:var(--c-modal-bg)] -mt-4 mb-3 flex items-center gap-3 py-2.5 select-none',
+                  // 停靠在右栏时窄：阶段条和版本下拉放不下一行就折行
+                  docked ? 'flex-wrap' : 'md:-top-6 md:-mt-6',
+                )}
+              >
                 <FrostBarBg />
                 <div className="min-w-0 flex-1">
                   {typeof top === 'function'
@@ -355,7 +416,7 @@ export function ReviewDialog({
               </div>
             )}
             {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
-            <div ref={docRef} onClick={onDocClick}>
+            <div ref={docRef} onClick={onDocClick} data-review-doc>
               {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
               {shown?.lead}
               {detail ? (
@@ -381,116 +442,169 @@ export function ReviewDialog({
           </div>
           <DocOutline scrollEl={scrollRef} className="right-2" />
         </div>
-        <aside
-          aria-label={t('标注')}
-          style={{ '--note-w': `${notePane.width}px` } as React.CSSProperties}
-          className="relative flex max-h-[45%] min-h-0 shrink-0 flex-col border-t bg-panel md:max-h-none md:w-(--note-w) md:max-w-[calc(100%-320px)] md:border-t-0 md:border-l"
-        >
-          <ResizeHandle pane={notePane} label={t('拖动调整标注栏宽度')} className="hidden md:block" />
-          <div className="flex items-center gap-2 px-4 pt-3 pb-2 text-xs font-medium text-muted">
-            <Highlighter className="h-3.5 w-3.5" />
-            {t('标注')}
-            {notes.length > 0 && <span className="text-subtle">{notes.length}</span>}
-          </div>
-          {presets && presets.length > 0 && !locked && (
-            <div className="flex flex-wrap gap-1.5 px-3 pb-2" data-review-presets>
-              {presets.map((p) => (
-                <Button key={p.label} size="sm" variant="secondary" onClick={() => addPreset(p)}>
-                  {p.label}
-                </Button>
-              ))}
-            </div>
-          )}
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
-            {notes.length === 0 && (
-              <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">
-                {t('选中左边的文字，点「标注」写下要改的地方')}
-              </p>
+        {!notesShown ? (
+          // 收成一条：宽屏是右边一道窄边（竖着写「标注」），窄屏和停靠在右栏时是底下一行
+          <button
+            type="button"
+            data-notes-folded
+            aria-label={t('展开标注栏')}
+            title={t('展开标注栏：选中左边的文字可以标注，也可以写整体意见')}
+            onClick={() => setNoteOpen(true)}
+            className={cn(
+              'flex shrink-0 cursor-pointer items-center gap-2 border-t bg-panel px-4 py-2 text-xs font-medium text-muted hover:bg-hover hover:text-fg',
+              !docked && 'md:w-9 md:flex-col md:border-t-0 md:border-l md:px-0 md:py-3',
             )}
-            {notes.map((n, i) => (
-              <div
-                key={n.id}
-                id={`review-note-${n.id}`}
-                onClick={() => reveal(n)}
-                className={cn(
-                  'group flex flex-col gap-2 rounded-xl border bg-card p-2.5 transition-colors',
-                  active === n.id ? 'border-warning/60' : 'border-line hover:border-line-strong',
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="mt-px grid h-4.5 w-4.5 shrink-0 place-items-center rounded-full bg-warning/15 text-caption font-semibold text-warning">
-                    {i + 1}
-                  </span>
-                  <span className="line-clamp-3 min-w-0 flex-1 border-l-2 border-warning/40 pl-2 text-xs leading-relaxed text-muted [overflow-wrap:anywhere]">
-                    {n.quote}
-                  </span>
-                  <IconButton
-                    icon={Trash2}
-                    label={t('删除标注')}
-                    tone="danger"
-                    size="2xs"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setNotes((ns) => ns.filter((x) => x.id !== n.id))
+          >
+            <Highlighter className="h-3.5 w-3.5 shrink-0" />
+            <span className={cn(!docked && 'md:[writing-mode:vertical-rl]')}>{t('标注')}</span>
+            <span className={cn('ml-auto truncate text-subtle', !docked && 'md:hidden')}>
+              {t('选中文字标注，或写整体意见')}
+            </span>
+          </button>
+        ) : (
+          <aside
+            aria-label={t('标注')}
+            style={{ '--note-w': `${notePane.width}px` } as React.CSSProperties}
+            className={cn(
+              'relative flex max-h-[45%] min-h-0 shrink-0 flex-col border-t bg-panel',
+              !docked && 'md:max-h-none md:w-(--note-w) md:max-w-[calc(100%-320px)] md:border-t-0 md:border-l',
+            )}
+          >
+            {!docked && <ResizeHandle pane={notePane} label={t('拖动调整标注栏宽度')} className="hidden md:block" />}
+            <div className="flex items-center gap-2 px-4 pt-3 pb-2 text-xs font-medium text-muted">
+              <Highlighter className="h-3.5 w-3.5" />
+              {t('标注')}
+              {notes.length > 0 && <span className="text-subtle">{notes.length}</span>}
+              {/* 没有要保留的内容时能收回成一条 */}
+              {!noteKeep && (
+                <IconButton
+                  icon={ChevronLeft}
+                  label={t('收起标注栏')}
+                  size="2xs"
+                  tone="bare"
+                  onClick={() => setNoteOpen(false)}
+                  className={cn('ml-auto', !docked && 'md:rotate-180')}
+                />
+              )}
+            </div>
+            {presets && presets.length > 0 && !locked && (
+              <div className="flex flex-wrap gap-1.5 px-3 pb-2" data-review-presets>
+                {presets.map((p) => (
+                  <Button key={p.label} size="sm" variant="secondary" onClick={() => addPreset(p)}>
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
+              {notes.length === 0 && (
+                <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">
+                  {t('选中左边的文字，点「标注」写下要改的地方')}
+                </p>
+              )}
+              {notes.map((n, i) => (
+                <div
+                  key={n.id}
+                  id={`review-note-${n.id}`}
+                  onClick={() => reveal(n)}
+                  className={cn(
+                    'group flex flex-col gap-2 rounded-xl border bg-card p-2.5 transition-colors',
+                    active === n.id ? 'border-warning/60' : 'border-line hover:border-line-strong',
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="mt-px grid h-4.5 w-4.5 shrink-0 place-items-center rounded-full bg-warning/15 text-caption font-semibold text-warning">
+                      {i + 1}
+                    </span>
+                    <span className="line-clamp-3 min-w-0 flex-1 border-l-2 border-warning/40 pl-2 text-xs leading-relaxed text-muted [overflow-wrap:anywhere]">
+                      {n.quote}
+                    </span>
+                    <IconButton
+                      icon={Trash2}
+                      label={t('删除标注')}
+                      tone="danger"
+                      size="2xs"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setNotes((ns) => ns.filter((x) => x.id !== n.id))
+                      }}
+                    />
+                  </div>
+                  {kinds && (
+                    <Segmented
+                      size="sm"
+                      value={n.kind ?? kinds[0].id}
+                      onChange={(v) => setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, kind: v } : x)))}
+                      label={t('标注 {n} 的种类', { n: i + 1 })}
+                      options={kinds.map((k) => ({ id: k.id, label: k.label }))}
+                      className="self-start"
+                    />
+                  )}
+                  <Textarea
+                    ref={(el) => {
+                      if (el && focusId === n.id) {
+                        el.focus()
+                        setFocusId(null)
+                      }
                     }}
+                    value={n.comment}
+                    onFocus={() => setActive(n.id)}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, comment: v } : x)))
+                    }}
+                    rows={2}
+                    placeholder={kinds?.find((k) => k.id === n.kind)?.placeholder ?? t('这里要怎么改')}
+                    aria-label={t('标注 {n} 的意见', { n: i + 1 })}
+                    className="min-w-0 resize-none py-1.5 text-body"
                   />
                 </div>
-                {kinds && (
-                  <Segmented
-                    size="sm"
-                    value={n.kind ?? kinds[0].id}
-                    onChange={(v) => setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, kind: v } : x)))}
-                    label={t('标注 {n} 的种类', { n: i + 1 })}
-                    options={kinds.map((k) => ({ id: k.id, label: k.label }))}
-                    className="self-start"
-                  />
-                )}
+              ))}
+            </div>
+            <div className="border-t px-3 py-3">
+              {!locked && overallTools?.(setOverall)}
+              {attach ? (
+                <OverallComposer
+                  value={overall}
+                  onChange={setOverall}
+                  logs={logs}
+                  placeholder={overallPlaceholder ?? t('整体意见（可选）')}
+                  disabled={locked}
+                />
+              ) : (
                 <Textarea
-                  ref={(el) => {
-                    if (el && focusId === n.id) {
-                      el.focus()
-                      setFocusId(null)
-                    }
-                  }}
-                  value={n.comment}
-                  onFocus={() => setActive(n.id)}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, comment: v } : x)))
-                  }}
+                  value={overall}
+                  onChange={(e) => setOverall(e.target.value)}
                   rows={2}
-                  placeholder={kinds?.find((k) => k.id === n.kind)?.placeholder ?? t('这里要怎么改')}
-                  aria-label={t('标注 {n} 的意见', { n: i + 1 })}
+                  placeholder={overallPlaceholder ?? t('整体意见（可选）')}
+                  aria-label={t('整体意见')}
+                  disabled={locked}
                   className="min-w-0 resize-none py-1.5 text-body"
                 />
-              </div>
-            ))}
-          </div>
-          <div className="border-t px-3 py-3">
-            {attach ? (
-              <OverallComposer
-                value={overall}
-                onChange={setOverall}
-                logs={logs}
-                placeholder={overallPlaceholder ?? t('整体意见（可选）')}
-                disabled={locked}
-              />
-            ) : (
-              <Textarea
-                value={overall}
-                onChange={(e) => setOverall(e.target.value)}
-                rows={2}
-                placeholder={overallPlaceholder ?? t('整体意见（可选）')}
-                aria-label={t('整体意见')}
-                disabled={locked}
-                className="min-w-0 resize-none py-1.5 text-body"
-              />
-            )}
-          </div>
-        </aside>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
-      <div className="flex items-center gap-2 border-t px-5 py-3">
-        <span className="min-w-0 truncate text-xs text-subtle">
+      {/* 窄（停靠在右栏、手机宽度）时提示单独一行、按钮换到下一行：一行放不下时主按钮会被挤出窗口（分析稿 U9） */}
+      <div
+        className={cn(
+          'flex items-center gap-2 border-t px-5 py-3',
+          docked ? 'flex-wrap px-4' : 'max-md:flex-wrap max-md:px-4',
+        )}
+      >
+        {!notesShown &&
+          quick.map((p) => (
+            <Button key={p.label} size="sm" variant="secondary" className="shrink-0" onClick={() => addPreset(p)}>
+              {p.label}
+            </Button>
+          ))}
+        <span
+          className={cn(
+            'min-w-0 truncate text-xs text-subtle',
+            docked ? 'basis-full whitespace-normal' : 'max-md:basis-full max-md:whitespace-normal',
+          )}
+        >
           {locked
             ? readOnly
               ? t('这一版已经处理过了，只能查看')
@@ -501,7 +615,14 @@ export function ReviewDialog({
                 ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
                 : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
-        <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
+        {/* 窄时按钮组也能折行，「自动通过」勾选框独占一行：不然多出的勾选框会把主按钮挤出屏幕 */}
+        <div
+          className={cn(
+            'ml-auto flex shrink-0 gap-2',
+            docked ? 'basis-full flex-wrap justify-end' : 'max-md:basis-full max-md:flex-wrap max-md:justify-end',
+            locked && 'hidden',
+          )}
+        >
           {cancel && (
             <Button
               size="sm"
@@ -538,6 +659,16 @@ export function ReviewDialog({
             {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {texts?.revise ?? t('修改')}
           </Button>
+          {!noApprove && approveExtra && (
+            <div
+              className={cn(
+                'flex items-center',
+                docked ? 'basis-full justify-end' : 'max-md:basis-full max-md:justify-end',
+              )}
+            >
+              {approveExtra}
+            </div>
+          )}
           {!noApprove && (
             <Button
               size="sm"
@@ -582,6 +713,21 @@ export function ReviewDialog({
           }}
         />
       )}
+    </>
+  )
+  // 停靠时画进任务页右栏的页签（Portal）：组件本身还挂在任务页顶层，切换弹窗 / 右栏不丢标注和意见
+  if (docked)
+    return dock.slot
+      ? createPortal(
+          <section aria-label={req.title} data-review-docked className="flex min-h-0 flex-1 flex-col bg-(--c-modal-bg)">
+            {body}
+          </section>,
+          dock.slot,
+        )
+      : null
+  return (
+    <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
+      {body}
     </Modal>
   )
 }

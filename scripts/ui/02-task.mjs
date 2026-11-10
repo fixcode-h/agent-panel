@@ -660,6 +660,16 @@ await runShard(import.meta.filename, async (api) => {
     if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
     else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
     await check(p, '子对话-运行区1024')
+    // 行上的活动文字写「计划这一步 · 最后一次工具调用」（分析稿 U5），不再是回复开头截的一段
+    {
+      const notes = await p
+        .locator('[aria-label="运行中"] span.font-sans.truncate')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('title') || e.textContent || ''))
+      const talk = notes.find((n) => n.includes('我先看了相关代码'))
+      if (talk) errors.push(`运行区：子对话行还在写回复开头那一段（${talk}），应写在做的事`)
+      if (!notes.some((n) => /(读取|编辑|运行命令) \S/.test(n)))
+        errors.push(`运行区：子对话行没有写最后一次工具调用（${notes.join(' / ')}）`)
+    }
     // 文件面板默认最宽 440，挤不出窄行：先把它「拖」到 600（写本地记的宽度），测完删掉。
     // 过程行不再缩进一列头像宽度后同样的窗口里行宽多了 38px，560 时这一行已经放得下活动文字
     await p.evaluate(() => localStorage.setItem('pane:task-panel', '600'))
@@ -958,7 +968,22 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await p.locator('[data-life-ai]').count()) || !(await p.locator('[data-life-copy]').count()))
         errors.push('对话菜单「状态」：标题栏没有「AI 分析」或「复制诊断文件」')
       // 点计数块只看那一类日志，再点一次取消
-      // 对话节点：在执行给「停止」，停了给「重启」（父对话已说完，两个都不该同时出现）
+      // 最上面一句写在等谁、等了多久，后面跟下一步按钮（分析稿 U11）：购物车对话名下有子对话在等你，
+      // 这句和标题栏胶囊写同一个词（分析稿 A8），按钮带你回去处理
+      {
+        const next = p.locator('[data-life-next]').first()
+        const text = await next.innerText().catch(() => '')
+        if (!text.includes('子对话等你处理'))
+          errors.push(`对话菜单「状态」：最上面那句应写「子对话等你处理」和等了多久，实际「${text}」`)
+        else if (!/已等 /.test(text)) errors.push(`对话菜单「状态」：最上面那句没写等了多久（「${text}」）`)
+        if (!(await next.locator('[data-life-next-action="go"]').count()))
+          errors.push('对话菜单「状态」：最上面那句后面没有「去处理」按钮')
+        // 状态胶囊和树上的状态也是同一个短词，不再写「已完成」
+        const pill = await p.locator('[data-lifecycle] section header').first().innerText()
+        if (!pill.includes('子对话等你处理'))
+          errors.push(`对话菜单「状态」：详情的状态胶囊不是同一个短词（「${pill}」）`)
+      }
+      // 对话节点：在执行给「停止」；继续 / 重试并进了最上面那一句，详情标题旁不再有第二个
       if ((await p.locator('[data-life-stop]').count()) + (await p.locator('[data-life-resume]').count()) > 1)
         errors.push('对话菜单「状态」：停止和重启按钮同时出现')
       await p.locator('[data-life-counts] button').first().click()
@@ -1520,10 +1545,15 @@ await runShard(import.meta.filename, async (api) => {
     }
     await p.getByRole('button', { name: '更多操作', exact: true }).first().click()
     if (!(await p.getByRole('menuitem', { name: /^转成弹窗/ }).count())) errors.push('更多操作：菜单里没有「转成弹窗」')
-    for (const name of ['状态', '对话进程']) {
-      const pin = p.getByRole('button', { name: `从标题栏取下：${name}`, exact: true })
-      if (!(await pin.count())) errors.push(`更多操作：「${name}」默认应钉在标题栏`)
+    // 标题栏默认只钉「状态」和「会话栏」（分析稿 U4），对话进程、任务进度这些收在菜单里
+    for (const [name, re] of [
+      ['状态', /^从标题栏取下：状态$/],
+      ['会话栏', /^从标题栏取下：(隐藏|显示)会话栏$/],
+    ]) {
+      if (!(await p.getByRole('button', { name: re }).count())) errors.push(`更多操作：「${name}」默认应钉在标题栏`)
     }
+    if (!(await p.getByRole('button', { name: '钉在标题栏：对话进程', exact: true }).count()))
+      errors.push('更多操作：「对话进程」默认不该钉在标题栏（只留状态和会话栏）')
     await p.getByRole('button', { name: '钉在标题栏：转成弹窗', exact: true }).click()
     await check(p, '任务-更多操作-钉住转成弹窗')
     await p.keyboard.press('Escape')
@@ -1881,5 +1911,57 @@ await runShard(import.meta.filename, async (api) => {
         document.documentElement.classList.remove('dark')
       })
     }
+  }
+  // 失败后「换个模型重试」（分析稿 A7）：这一轮失败时，「重试」旁边能换成这个 CLI 下的另一个模型重发；
+  // 选了之后对话离开失败、重新执行，列表里不列正在用的那个模型
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'failed'
+      task.working = false
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    // 整页导航：只改 hash 会被内存里的演示数据盖回去（见 docs/lessons/ui-check.md）
+    await p.goto(base)
+    await backToTask()
+    const retry = p.getByRole('button', { name: '换个模型重试' })
+    if (
+      !(await retry.waitFor({ timeout: 8000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('换个模型重试：失败的对话上没有「换个模型重试」按钮')
+    else {
+      if (!(await p.getByRole('button', { name: '重试', exact: true }).count()))
+        errors.push('换个模型重试：原来的「重试」按钮不该被换掉')
+      if (await retry.isDisabled()) errors.push('换个模型重试：按钮是灰的（这个 CLI 下应该有别的模型可选）')
+      await retry.click()
+      const menu = p.getByRole('menu')
+      await menu.waitFor({ timeout: 5000 }).catch(() => errors.push('换个模型重试：点了没有弹出模型列表'))
+      const items = menu.getByRole('menuitem')
+      if (!(await items.count())) errors.push('换个模型重试：列表里一个模型都没有')
+      await check(p, '任务-换个模型重试', ['的其他模型（现在是'])
+      // 列表不列正在用的模型：标题里写的「现在是 X」不能再出现在选项里
+      const head = (await menu.locator('p').first().textContent()) ?? ''
+      const now = head.match(/现在是 (.+)）/)?.[1] ?? ''
+      const names = await items.allTextContents()
+      if (now && names.some((x) => x.startsWith(now) && x.slice(now.length).match(/^\s|^$/)))
+        errors.push(`换个模型重试：列表里还列着正在用的模型 ${now}`)
+      if (await items.count()) {
+        await items.first().click()
+        await retry
+          .waitFor({ state: 'detached', timeout: 8000 })
+          .catch(() => errors.push('换个模型重试：选了模型后对话没有离开失败状态（按钮还在）'))
+        await check(p, '任务-换个模型重试-已重发')
+      }
+    }
+    // 改回现场
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
   }
 })

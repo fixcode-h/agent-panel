@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { budgetLevel, budgetNote, budgetUse, type BudgetLevel } from '../../shared/budget.ts'
+import { budgetFor, budgetLevel, budgetNote, budgetUse, type BudgetLevel } from '../../shared/budget.ts'
+import { addSample, rateNote, rateSpike, treeRunMs, type RateSample } from '../../shared/budget-rate.ts'
 import type { Task } from '../../shared/schema.ts'
 import { wakeHold, type WakeHold } from '../../shared/wake.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
- * 父对话的用量上限（见 shared/budget.ts）：每一轮结束时按整棵对话树核一次。
+ * 父对话的用量上限（见 shared/budget.ts）：每一轮结束时按整棵对话树核一次，顺带记速率样本（见 checkRate）。
  * 过了提醒线在顶层对话里说一次；到了上限停下树上所有还在跑的对话（StopReason 'budget'），也只说一次。
  * 到上限后用户再发消息照样跑一轮（那是用户自己要的），跑完这里又会停下；调高上限后提醒级别跟着回落。
  */
@@ -28,11 +29,12 @@ export function createBudget(s: TasksScope) {
   async function measure(tk: Task) {
     const root = await rootOf(tk)
     if (!root.projectId) return undefined
-    const budget = (await s.deps.projects.get(root.projectId))?.budget
+    // 新建时单独设了上限的对话用它自己的，没设用项目的（A6 ①）
+    const { budget, own } = budgetFor(root, await s.deps.projects.get(root.projectId))
     // 列表里的用量最多落后一次落盘：在跑的对话用内存里那一份
     const all = (await s.store.list()).map((x) => s.live.get(x.id)?.task ?? x)
     const use = budgetUse(root.id, all)
-    return { root, budget, all, use, level: budgetLevel(use, budget) }
+    return { root, budget, own, all, use, level: budgetLevel(use, budget) }
   }
 
   /**
@@ -78,20 +80,48 @@ export function createBudget(s: TasksScope) {
     try {
       const m = await measure(tk)
       if (!m) return false
-      const { root, budget, all, use, level } = m
+      const { root, budget, own, all, use, level } = m
       if (level === 'over') {
         for (const x of all) if (s.live.has(x.id) && inTree(x, root.id, all)) s.stopTask(x.id, 'budget')
       }
       await notice(
         root.id,
         level,
-        (level === 'warn' || level === 'over') && budget ? budgetNote(level, use, budget) : '',
+        (level === 'warn' || level === 'over') && budget ? budgetNote(level, use, budget, own) : '',
       )
+      if (level !== 'over') await checkRate(root, use.tokens, all)
       return level === 'over'
     } catch (e) {
       log.warn('task', '核对用量上限失败', { task: tk.id, error: (e as Error).message })
       return false
     }
+  }
+
+  /** 每个顶层对话最近的用量样本（速率提醒用，只在内存里：重启后重新攒） */
+  const samples = new Map<string, RateSample[]>()
+
+  /**
+   * 速率提醒（shared/budget-rate.ts）：每一轮结束记一个整棵树的样本，最近 10 分钟比平均快很多时在顶层对话里说一次。
+   * 只提醒、不停；提醒过的对话（rateNoticeAt）不再记样本。不动 budgetNotice：通知渠道按它的 warn / over 发
+   */
+  async function checkRate(root: Task, tokens: number, all: Task[]) {
+    if (root.rateNoticeAt) return
+    const now = Date.now()
+    const list = addSample(samples.get(root.id) ?? [], { at: now, tokens, runMs: treeRunMs(root.id, all, now) })
+    samples.set(root.id, list)
+    const spike = rateSpike(list)
+    if (!spike) return
+    samples.delete(root.id)
+    const entry = s.live.get(root.id)
+    const tk = entry?.task ?? (await s.store.get(root.id))
+    if (!tk || tk.rateNoticeAt) return
+    const at = new Date(now).toISOString()
+    tk.rateNoticeAt = at
+    tk.messages.push({ id: randomUUID(), role: 'system', agentId: '', step: '', text: rateNote(spike), tools: [], at })
+    tk.updatedAt = at
+    log.info('task', '用量速率提醒', { task: root.id, tokens: spike.tokens, factor: Math.floor(spike.factor) })
+    if (entry) entry.rev++
+    await s.store.update(root.id, tk)
   }
 
   /** 记下提醒到了哪一级：升级时在顶层对话里写一条，回落（调高了上限）时只清标记 */

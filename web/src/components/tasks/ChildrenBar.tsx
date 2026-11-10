@@ -3,10 +3,10 @@ import { ChevronRight, CircleAlert, GitFork, Hand, Loader2, MessageCircleQuestio
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { childCounts, sortChildren } from '@shared/task'
+import { childWord } from '@shared/task-word'
 import { cn } from '@/lib/utils'
 import { ChildReportButton } from './ChildReport'
 import { useEscape } from '@/lib/useEscape'
-import { useUserName } from '@/lib/user-name'
 import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
 import { Button } from '@/components/ui/button'
@@ -61,7 +61,6 @@ export function ChildrenBar({
   /** 停下的子对话一键继续：重新占执行位，从停下的地方接着做 */
   onResume: (id: string) => void
 }) {
-  const user = useUserName()
   const [open, setOpen] = useState(false)
   const [all, setAll] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -183,9 +182,11 @@ export function ChildrenBar({
               >
                 <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 truncate">
+                  {/* 短词和标题栏、运行区那一行同一处取（shared/task-word.ts 的 childWord，分析稿 A8、U2）：
+                      以前这里写「请用户选择」，运行区写「等用户选择」，侧栏写「等你回复」 */}
                   {asking.length > 1
-                    ? t('{n} 个子对话请{who}选择', { n: asking.length, who: user })
-                    : t('「{title}」请{who}选择', { title: asking[0].title, who: user })}
+                    ? t('{n} 个子对话等你回答', { n: asking.length })
+                    : t('「{title}」{word}', { title: asking[0].title, word: childWord(asking[0]).word })}
                 </span>
               </button>
             )}

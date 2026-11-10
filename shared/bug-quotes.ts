@@ -8,7 +8,7 @@
  * - 构造数据的复现只算推演，不能当排除假设的依据（实跑 F8）。
  * 这里只放纯函数；读文件、取版本管理的 diff 由宿主给（BugSource，server/exec 里接上）
  */
-import type { BugCase, BugCollect, BugLogPoint, CodeRef, Diagnosis } from './bug-diagnosis-schema.ts'
+import type { BugCase, BugCollect, BugEnv, BugLogPoint, CodeRef, Diagnosis } from './bug-diagnosis-schema.ts'
 import { lineDiff, TEMP_LOG } from './bug-cleanup.ts'
 import { phaseOf } from './bug-phase.ts'
 import type { TaskMessage } from './schema.ts'
@@ -19,8 +19,12 @@ export interface BugSource {
   read(file: string): string | undefined
   /** 版本管理里某次改动对这个文件的 diff（git show）；取不到返回 undefined */
   show?(rev: string, file: string): string | undefined
+  /** 版本管理里某次改动的作者、日期、标题（git show -s）；取不到返回 undefined */
+  commit?(rev: string): { author: string; date: string; title: string } | undefined
   /** 这个文件现在和对话开始时比的 diff（unified diff，新文件和空文件比）；取不到返回 undefined */
   diff?(file: string): string | undefined
+  /** 环境（操作系统、分支、最近提交…，shared/bug-env.ts）：交第一份报告时取一次；取不到返回 undefined */
+  env?(): BugEnv | undefined
 }
 
 /** 一段代码最多引用这么多行：出错的那几行，调用方另起一段 */
@@ -208,6 +212,22 @@ function reminders(c: BugCase, phase: string): string[] {
   return out
 }
 
+/**
+ * 提交人以版本记录为准（用户 2026-11-10 定：有版本管理就要给出是谁提交的）：能取到就用面板取的覆盖 Agent 写的，
+ * 标成已核对；取不到（P4、SVN、提交号写错）保留 Agent 写的，不标
+ */
+function verifyAuthor(a: NonNullable<BugCase['attribution']>, src?: BugSource) {
+  a.verified = undefined
+  const rev = a.change.trim()
+  if (!src?.commit || !/^[\w./~^@-]{4,80}$/.test(rev)) return
+  const got = src.commit(rev)
+  if (!got?.author) return
+  a.author = got.author
+  a.date = got.date || a.date
+  a.title = got.title || a.title
+  a.verified = true
+}
+
 /** 引入那次改动的 diff：只留碰到出错点那几行原文的段落，取不到就空 */
 function attributionDiff(c: BugCase, src: BugSource): string {
   const a = c.attribution
@@ -290,7 +310,10 @@ export function resolveSources(
   if (q) return { error: q, notes }
   const refs = refsProblem(c)
   if (refs) return { error: refs, notes }
-  if (c.attribution) c.attribution.diff = (src && attributionDiff(c, src)) || undefined
+  if (c.attribution) {
+    c.attribution.diff = (src && attributionDiff(c, src)) || undefined
+    verifyAuthor(c.attribution, src)
+  }
   notes.push(...reminders(c, ctx.phase))
   return { error: '', notes }
 }

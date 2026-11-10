@@ -52,6 +52,7 @@ import { SystemNote } from '@/components/tasks/SystemNote'
 import { conversationAround } from '@shared/fix'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
+import { FloatAbove } from '@/components/chat/FloatAbove'
 import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
@@ -725,6 +726,8 @@ export function DesignChat({
 
   // 消息区贴底：和任务对话共用同一个判定（只有真的往上滚才松开），换设计时重新贴底
   const scroller = useConversationScroll(designId)
+  // 输入框上方悬浮层的高度：消息流底部按它多留一段（见 FloatAbove）
+  const [floatPad, setFloatPad] = useState(0)
 
   // 从「+」里引入的风格：随下一条消息一起发出，设计就按它的整体风格做
   const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
@@ -852,7 +855,7 @@ export function DesignChat({
   const lastChanged = running ? -1 : messages.map((m) => m.role === 'agent' && !!m.undoVersion).lastIndexOf(true)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ConversationShell scroller={scroller}>
+      <ConversationShell scroller={scroller} floatPad={floatPad}>
         {!messages.length && !running && (
           <div className="mt-6 flex flex-col items-center gap-3 px-2 text-center">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent-text">
@@ -924,8 +927,16 @@ export function DesignChat({
           {designing && job && <LiveReply job={job} />}
         </div>
       </ConversationShell>
+      {/* 要你点头的请求（运行命令、改文件、调用工具）浮在输入框上方，不把输入框往下顶；提问照旧换掉输入框 */}
+      <FloatAbove className="px-3" onHeight={setFloatPad}>
+        {!asksQuestion(asks.list) && (
+          <RequestCard requests={asks.list} onAnswer={asks.answer} className="w-full shadow-pop" />
+        )}
+      </FloatAbove>
       <div className="relative shrink-0 px-3 pb-3">
-        <RequestCard requests={asks.list} onAnswer={asks.answer} onClose={asks.close} className="mb-2" />
+        {asksQuestion(asks.list) && (
+          <RequestCard requests={asks.list} onAnswer={asks.answer} onClose={asks.close} className="mb-2" />
+        )}
         {askDesign && (
           <QuestionPanel
             questions={designQs.map((q) => ({

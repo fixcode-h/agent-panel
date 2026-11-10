@@ -539,6 +539,9 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
     'shared/builtin/agents.ts',
     'shared/builtin/bug-method.ts',
     'shared/engine.ts',
+    // 从 engine.ts 拆出去的提示词段落、子任务交回的说明：拆文件不能让句子查重漏掉它们
+    'shared/engine-prompt-parts.ts',
+    'shared/engine-helpers.ts',
     'shared/push-auth.ts',
     'shared/turn-rules.ts',
     ...files.filter(

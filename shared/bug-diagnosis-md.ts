@@ -7,13 +7,22 @@
  * 能成表的用表格，一段里写了 ①②③、1) 2)、← 链的拆成一行一条（prose），文件名、函数名补代码标记（bug-terms.ts）。
  * 小节名是界面文案，走 t()
  */
-import type { BugBlame, BugCollect, Diagnosis, Grade } from './bug-diagnosis-schema.ts'
-import { cardMarkdown, diagnosisCard, earlyFiles, fillDiagnosis, type DiagnosisCard } from './bug-diagnosis-card.ts'
-import { causeInPlan, KIND_TEXT, logFilesOf, phaseOf } from './bug-phase.ts'
+import type { BugCollect, Diagnosis, Grade } from './bug-diagnosis-schema.ts'
+import {
+  blameLabel,
+  cardMarkdown,
+  diagnosisCard,
+  earlyFiles,
+  fillDiagnosis,
+  type DiagnosisCard,
+} from './bug-diagnosis-card.ts'
+import { causeInPlan, KIND_TEXT, logFilesOf, NOFIX_TEXT, noFixOf, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
 import { alert, at, px, sec, table } from './bug-md.ts'
 import { fixCardParts, fixSections } from './bug-fix-md.ts'
+import { envMd, envOf } from './bug-env.ts'
+import { recheckMd, recheckTag } from './bug-recheck.ts'
 import {
   attributionDiffMd,
   codeRefsMd,
@@ -27,18 +36,8 @@ import {
   reproKindMd,
 } from './bug-quotes-md.ts'
 
-/** 责任类别在界面上的说法 */
-export const blameLabel = (b: BugBlame) =>
-  ({
-    current: t('本次改动'),
-    recent: t('近期变更'),
-    legacy: t('历史遗留'),
-    external: t('外部依赖'),
-    environment: t('环境配置'),
-    data: t('数据'),
-    user: t('用户操作'),
-    unknown: t('未确定'),
-  })[b]
+/** 责任类别在界面上的说法：定义在决策卡那边（卡片也要用），这里照旧导出 */
+export { blameLabel }
 
 const PHASE_LABEL = () => ({
   evidence: t('论证'),
@@ -190,7 +189,16 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
   const base = diagnosisCard(d, opts)
   // 修复这一步：一句话写按哪个方案改的，胶囊和要注意按实际改动算（bug-fix-md.ts）
   const fixed = phase === 'fix' ? fixCardParts(d, opts.list ?? [d]) : undefined
-  const card = fixed ? { ...base, ...fixed, attention: [...base.attention, ...fixed.attention].slice(0, 3) } : base
+  // 面板复核回归测试的胶囊（分析稿 B9）在修复这一步也要留着：fixed.tags 会换掉通用的那几个
+  const re = recheckTag(d)
+  const card = fixed
+    ? {
+        ...base,
+        ...fixed,
+        tags: [...fixed.tags, ...(re ? [re] : [])],
+        attention: [...base.attention, ...fixed.attention].slice(0, 3),
+      }
+    : base
   const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意') }
   const answers = prev
     ? d.answers
@@ -370,6 +378,8 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(rootTitle, root),
+      // 不用改代码（分析稿 B5）：怎么处理放在根因下面，用户同意的就是这一段
+      sec(t('怎么处理（不用改代码）'), noFixOf(d) ? `**${NOFIX_TEXT()[d.noFix!.kind]}**\n\n${px(d.noFix!.how)}` : ''),
       sec(t('期望和实际'), expectMd(d)),
       sec(t('证据链'), chainOf(d)),
       sec(t('原文'), quotes),
@@ -383,8 +393,10 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
             sec(t('影响面和验证'), impact),
             sec(t('影响和风险'), alert('warning', px(d.risk))),
           ]
-        : // 提前写好的修法只是草案，这一版只确认根因：只留一行提示，不摆出来（实测用户以为点「同意根因」就开始修）
-          [d.options.length || d.fix.trim() ? t('已经想好修法，同意根因后单独交一版方案给你确认。') : '']),
+        : noFixOf(d)
+          ? []
+          : // 提前写好的修法只是草案，这一版只确认根因：只留一行提示，不摆出来（实测用户以为点「同意根因」就开始修）
+            [d.options.length || d.fix.trim() ? t('已经想好修法，同意根因后单独交一版方案给你确认。') : '']),
       earlySec,
     ]
     back = [
@@ -414,12 +426,14 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     ]
   } else if (phase === 'fix') {
     const fix = fixSections(d, opts.list ?? [d])
-    main = [...head, ...fix.main, earlySec]
+    // 面板复核放在长长的代码 diff 前面（fix.main 最后一节是改动的代码），不然要翻到底才看得到
+    main = [...head, ...fix.main.slice(0, -1), recheckMd(d), ...fix.main.slice(-1), earlySec]
     back = [...fix.background, bg(t('原文'), quotes)]
   } else {
     main = [
       ...head,
       sec(t('自测结果'), result),
+      recheckMd(d),
       sec(t('出错点修前修后'), fixDiffsMd(d)),
       sec(t('你来验证'), stepsOf(d.collect)),
       sec(t('看到什么算修好了'), outcomesOf(d.collect)),
@@ -439,6 +453,8 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     ]
     back = [bg(rootTitle, root), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
   }
+  // 环境由面板采集（分析稿 B4），每一步的「依据和背景」最后都带：旧报告没有就不出这一节
+  back.push(bg(t('环境（面板自动采集）'), envMd(envOf(d, opts.list), { author: opts.author })))
   return {
     card,
     main: main.filter(Boolean).join('\n\n'),

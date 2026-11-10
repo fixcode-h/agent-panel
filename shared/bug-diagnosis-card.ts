@@ -4,9 +4,10 @@
  * 「要注意」由面板按档案字段算，不靠 Agent 自己写（所以不会漏），最多三条，红的排在前面。
  * 审阅弹窗画成卡片（web/src/components/tasks/DiagnosisCard.tsx），别处（测试、整份 Markdown）用 cardMarkdown
  */
-import type { Diagnosis } from './bug-diagnosis-schema.ts'
-import { causeInPlan, logFilesOf, normPath, outOfPlan, phaseOf } from './bug-phase.ts'
+import type { BugBlame, Diagnosis } from './bug-diagnosis-schema.ts'
+import { causeInPlan, logFilesOf, NOFIX_TEXT, noFixOf, normPath, outOfPlan, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
+import { recheckTag, recheckVerdict } from './bug-recheck.ts'
 import { t } from './i18n.ts'
 
 export type CardTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
@@ -20,6 +21,12 @@ export interface DiagnosisCard {
   quote: string
   /** 一句话结论（Markdown 行内） */
   headline: string
+  /**
+   * 根因评级和引入的人（用户 2026-11-10 定：等级、百分比、提交人要醒目）：论证那一步没有。
+   * rating 没写时只有 origin；origin 是版本记录里的引入点，author 关了作者显示时是空的
+   */
+  rating?: { tier: 'low' | 'mid' | 'high'; label: string; hint: string; percent: number; why: string }
+  origin?: { change: string; title: string; author: string; date: string; category: string; verified: boolean }
   /** 要你做的 */
   todo: string
   /** 要注意：最多三条 */
@@ -85,19 +92,26 @@ export function nextStep(d: Diagnosis, withCause = false): string {
   if (d.status === 'approved')
     return {
       evidence: t('你同意了，它在加日志'),
-      cause: t('你同意了根因，它在设计修复方案'),
+      cause: noFixOf(d) ? t('你同意了：不用改代码，它在告诉你怎么处理并收尾') : t('你同意了根因，它在设计修复方案'),
       plan: withCause ? t('你同意了根因和方案，它在修') : t('你确认了方案，它在修'),
-      fix: t('你确认了修复，它在验证'),
+      fix: d.merged ? t('面板复核过回归测试，验证和修复一起通过了，它在收尾') : t('你确认了修复，它在验证'),
       verify: t('你结束了验证，它在收尾'),
     }[phase]
   if (d.awaiting) return t('按下面的步骤复现一次，把日志贴在右边，点「交日志，继续分析」')
   return {
     evidence: t('同意加日志，它只在日志计划里的文件加临时日志、不改逻辑；手上已有日志可以直接贴在右边'),
-    cause: t('同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」'),
+    cause: noFixOf(d)
+      ? t('它查下来不用改代码：同意这个结论，它告诉你怎么处理后收尾；不同意就选中文字标出疑问，点「否决」')
+      : t('同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」'),
     plan: withCause ? t('根因和修复方案一起确认，确认了它才开始改代码') : t('确认方案，它才开始改代码'),
-    fix: t(
-      '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据',
-    ),
+    fix:
+      recheckVerdict(d.recheck) === 'pass'
+        ? t(
+            '面板复核过回归测试（改前失败、改后通过）：看下面改了哪些代码、为什么这么改，没问题就确认，验证一起算通过；对哪几行有疑问就选中标注',
+          )
+        : t(
+            '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据',
+          ),
     verify: t('按下面的步骤复现一次，贴日志确认；不想验证可以直接结束'),
   }[phase]
 }
@@ -109,7 +123,7 @@ function statusOf(d: Diagnosis): DiagnosisCard['status'] {
       text: d.awaiting ? t('等你复现') : phase === 'verify' ? t('等你验证') : t('等你确认'),
       tone: 'warning',
     }
-  if (d.status === 'approved') return { text: t('你已同意'), tone: 'success' }
+  if (d.status === 'approved') return { text: d.auto ? t('面板自动通过') : t('你已同意'), tone: 'success' }
   if (d.status === 'cancelled')
     return d.cleanup?.state === 'running'
       ? { text: t('在删临时日志'), tone: 'accent' }
@@ -140,6 +154,8 @@ function headlineOf(d: Diagnosis, withCause: boolean): string {
   const plan = opt
     ? t('选方案 {id}：{title}', { id: opt.id, title: codeTerms(opt.title) })
     : codeTerms(first(d.fix)) || t('修复方案')
+  const nf = noFixOf(d)
+  if (phase === 'cause' && nf) return `${root}\n\n${t('不用改代码：{kind}', { kind: NOFIX_TEXT()[nf.kind] })}`
   if (phase === 'cause') return root
   if (phase === 'plan') return withCause ? `${root}\n\n${plan}` : plan
   const r = d.result
@@ -153,7 +169,10 @@ function tagsOf(d: Diagnosis, files: number): DiagnosisCard['tags'] {
   const tags: DiagnosisCard['tags'] = [{ text: level, tone: 'neutral' }]
   if (phase === 'evidence') tags.push({ text: t('根因未证实'), tone: 'warning' })
   else tags.push(d.confirmed ? { text: t('已证实'), tone: 'success' } : { text: t('根因未证实'), tone: 'danger' })
+  if (noFixOf(d)) tags.push({ text: t('不用改代码'), tone: 'accent' })
   if (phase === 'plan' && files) tags.push({ text: t('改 {n} 个文件', { n: files }), tone: 'neutral' })
+  const re = recheckTag(d)
+  if (re) tags.push(re)
   return tags
 }
 
@@ -167,6 +186,9 @@ function attentionOf(d: Diagnosis, list: Diagnosis[] | undefined, changed?: stri
     out.push({ text: t('根因还没用日志或测试证实'), tone: 'danger' })
   const fails = d.result?.impactChecks.filter((x) => !x.output.trim()).length ?? 0
   if (phase === 'verify' && fails) out.push({ text: t('{n} 项影响面还没有验证结果', { n: fails }), tone: 'danger' })
+  // 面板自己跑的回归测试和「改前失败、改后通过」对不上（分析稿 B9）
+  if ((phase === 'fix' || phase === 'verify') && recheckVerdict(d.recheck) === 'fail')
+    out.push({ text: t('面板复核回归测试没通过'), tone: 'danger' })
   const early = earlyFiles(d, list)
   if (early.length)
     out.push({ text: t('交报告前已经改了 {n} 个你没同意过的文件', { n: early.length }), tone: 'warning' })
@@ -196,7 +218,49 @@ function attentionOf(d: Diagnosis, list: Diagnosis[] | undefined, changed?: stri
   return [...out.filter((x) => x.tone === 'danger'), ...out.filter((x) => x.tone === 'warning')].slice(0, 3)
 }
 
-export function diagnosisCard(d: Diagnosis, opts: { list?: Diagnosis[]; changed?: string[] } = {}): DiagnosisCard {
+/** 根因等级的说法：低级是粗心疏漏，中级是逻辑和边界，高级是设计、并发、跨模块 */
+export const RATING_TEXT = (): Record<'low' | 'mid' | 'high', { label: string; hint: string }> => ({
+  low: { label: t('低级'), hint: t('粗心疏漏') },
+  mid: { label: t('中级'), hint: t('逻辑和边界') },
+  high: { label: t('高级'), hint: t('设计、并发或跨模块') },
+})
+
+/** 责任类别在界面上的说法（引入点一节和决策卡共用） */
+export const blameLabel = (c: BugBlame) =>
+  ({
+    current: t('本次改动'),
+    recent: t('近期变更'),
+    legacy: t('历史遗留'),
+    external: t('外部依赖'),
+    environment: t('环境配置'),
+    data: t('数据'),
+    user: t('用户操作'),
+    unknown: t('未确定'),
+  })[c]
+
+function ratingOf(d: Diagnosis): DiagnosisCard['rating'] {
+  if (phaseOf(d) === 'evidence' || !d.rating) return undefined
+  const { tier, percent, why } = d.rating
+  return { tier, ...RATING_TEXT()[tier], percent, why: codeTerms(why.trim()) }
+}
+
+function originOf(d: Diagnosis, author: boolean): DiagnosisCard['origin'] {
+  const a = d.attribution
+  if (phaseOf(d) === 'evidence' || !a || !(a.change || a.title || a.author)) return undefined
+  return {
+    change: a.change,
+    title: a.title,
+    author: author ? a.author : '',
+    date: a.date,
+    category: blameLabel(a.category),
+    verified: !!a.verified,
+  }
+}
+
+export function diagnosisCard(
+  d: Diagnosis,
+  opts: { list?: Diagnosis[]; changed?: string[]; author?: boolean } = {},
+): DiagnosisCard {
   fillDiagnosis(d)
   opts.list?.forEach(fillDiagnosis)
   const phase = phaseOf(d)
@@ -208,6 +272,8 @@ export function diagnosisCard(d: Diagnosis, opts: { list?: Diagnosis[]; changed?
     quote:
       (phase === 'plan' && !withCause) || phase === 'fix' || phase === 'verify' ? codeTerms(first(d.rootCause)) : '',
     headline: headlineOf(d, withCause),
+    rating: ratingOf(d),
+    origin: originOf(d, opts.author !== false),
     todo: nextStep(d, withCause),
     attention: attentionOf(d, opts.list, opts.changed),
     changed: codeTerms(d.whatChanged.trim()),
@@ -220,6 +286,20 @@ export function cardMarkdown(c: DiagnosisCard, phaseLabel: string): string {
     `**${phaseLabel}** · ${c.status.text} · ${c.tags.map((x) => x.text).join(' · ')}`,
     c.quote && `${t('根因')}：${c.quote}`,
     `**${c.headline.replace(/\n\n/g, '**\n\n**')}**`,
+    c.rating &&
+      t('根因等级：**{label}**（{hint}）· 把握 **{n}%**', {
+        label: c.rating.label,
+        hint: c.rating.hint,
+        n: c.rating.percent,
+      }) + (c.rating.why ? `：${c.rating.why}` : ''),
+    c.origin &&
+      t('引入：{who}{change}{title}{date} · {category}', {
+        who: c.origin.author ? `**${c.origin.author}** · ` : '',
+        change: c.origin.change ? `\`${c.origin.change}\`` : '',
+        title: c.origin.title ? `《${c.origin.title}》` : '',
+        date: c.origin.date ? ` · ${c.origin.date}` : '',
+        category: c.origin.category,
+      }),
     `${t('要你做的')}：${c.todo}`,
   ].filter(Boolean)
   const body = head.join('\n\n')

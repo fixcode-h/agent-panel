@@ -120,9 +120,34 @@ export const ownedDesign = (task: Pick<Task, 'plugin' | 'modelDesign'>, modes: D
 }
 
 /** 开着的插件登记的整页（图标栏里的格子）：带上插件 id，地址 #/plugin/<插件>/<页面> */
-export const usePluginPages = (): (PluginPage & { plugin: string })[] => {
+type OwnedPage = PluginPage & { plugin: string }
+const pluginPages = (s: State = state): OwnedPage[] =>
+  [...s.web.entries()].flatMap(([plugin, p]) => (p.pages ?? []).map((x) => ({ ...x, plugin })))
+export const usePluginPages = (): OwnedPage[] => pluginPages(usePlugins())
+
+/** 对话归开着的插件的整页（PluginPage.taskPlugin，例如 Blender 的模型设计页）；插件不在时当普通对话 */
+export const ownedPage = (task: Pick<Task, 'plugin' | 'modelDesign'>, pages: OwnedPage[] = pluginPages()) => {
+  const id = taskPlugin(task)
+  return id ? pages.find((p) => p.taskPlugin === id) : undefined
+}
+
+/** 归整页管的对话在哪打开：#/plugin/<插件>/<页面>/<对话 id> */
+export const ownedPageRoute = (page: OwnedPage, taskId: string) => ({
+  page: 'plugin' as const,
+  id: page.plugin,
+  sub: page.id,
+  msg: taskId,
+})
+
+/**
+ * 对话归插件管（设计模式或插件整页）：Agent 项目的对话列表、Chat 列表都不列它，在插件那边看。
+ * 返回判断函数，列表筛选时逐个调
+ */
+export const useOwnedByPlugin = () => {
   const s = usePlugins()
-  return [...s.web.entries()].flatMap(([plugin, p]) => (p.pages ?? []).map((x) => ({ ...x, plugin })))
+  const modes = designModes(s)
+  const pages = pluginPages(s)
+  return (task: Pick<Task, 'plugin' | 'modelDesign'>) => !!ownedDesign(task, modes) || !!ownedPage(task, pages)
 }
 
 /** 这个对话右栏多出来的页签 */

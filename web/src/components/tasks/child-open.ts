@@ -33,6 +33,11 @@ export interface PaneNav {
   diagnosis?: (task: Pick<Task, 'id' | 'title' | 'diagnoses'>, auto?: boolean, version?: number) => void
   /** 顶层的诊断报告弹窗这一刻开着：自动弹的等它关了再弹下一个 */
   diagnosisShowing?: boolean
+  /**
+   * 有并排右栏的顶层对话页提供：把诊断报告停靠到它的右栏（分析稿 U7）。右栏里的子对话面板自己没有右栏，
+   * 选了停靠时交给它（见 diagnosis-window.tsx）
+   */
+  diagnosisRail?: (task: Pick<Task, 'id' | 'title' | 'diagnoses'>, auto?: boolean, version?: number) => void
 }
 
 export const PaneNavCtx = createContext<PaneNav | null>(null)

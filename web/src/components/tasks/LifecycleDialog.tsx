@@ -19,7 +19,16 @@ import { LifeDetail, nodeState, STATE_TONE, TONE_TEXT, worst } from './Lifecycle
  * 右上角：「AI 分析」把选中节点的材料交给 AI 判断卡在哪；「复制诊断文件」把完整的诊断文件放进系统剪贴板，
  * 粘贴到对话里就是附件，复现了问题直接交给开发
  */
-export function LifecycleDialog({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+export function LifecycleDialog({
+  taskId,
+  onClose,
+  onOpenChild,
+}: {
+  taskId: string
+  onClose: () => void
+  /** 最上面那句的「去回答」落在子对话上时：在右栏打开它（任务页给；没有就只关窗口） */
+  onOpenChild?: (id: string) => void
+}) {
   const [report, setReport] = useState<LifeReport | null>(null)
   const [error, setError] = useState('')
   const [picked, setPicked] = useState(taskId)
@@ -145,7 +154,16 @@ export function LifecycleDialog({ taskId, onClose }: { taskId: string; onClose: 
       ) : (
         <div className="flex min-h-0 flex-1 flex-col md:flex-row" data-lifecycle>
           <LifeTree report={report} picked={node.id} onPick={setPicked} />
-          <LifeDetail node={node} parent={report.nodes.find((n) => n.id === node.parentId)} />
+          <LifeDetail
+            node={node}
+            parent={report.nodes.find((n) => n.id === node.parentId)}
+            onPick={setPicked}
+            // 去回答 / 去回复：回到那个对话。就是打开窗口的这个对话时关掉窗口即可（卡片、输入框都在下面）
+            onGo={(n) => {
+              if (n.taskId !== taskId) onOpenChild?.(n.taskId)
+              onClose()
+            }}
+          />
         </div>
       )}
     </Modal>
@@ -171,7 +189,8 @@ function rowState(n: LifeNode) {
         : t('排队中')
       : convStateText(f.status === 'failed' ? 'failed' : f.status === 'stopped' ? 'stopped' : 'done')
   }
-  return f.state ? convStateText(f.state) : ''
+  // 和标题栏、侧栏同一个短词（服务端按 taskWord 填的）；旧的诊断文件没有，退回状态名
+  return f.word || (f.state ? convStateText(f.state) : '')
 }
 
 function LifeTree({ report, picked, onPick }: { report: LifeReport; picked: string; onPick: (id: string) => void }) {

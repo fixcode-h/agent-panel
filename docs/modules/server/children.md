@@ -27,3 +27,12 @@
 - 没计划：不逼着列计划。动手 ≥3 处没计划，或新输入后第一轮一个工具都没调，补一次「收尾自检」，看自检那一轮有没有再动手判定，不解析文字。
 - 子对话推满了还停着，`merge.ts` 的 `stuckAfterNudge` 才成立，`reportChild` 报父对话一次「卡住」，信里写明不要只发「继续」。
 - 每个判断写对话日志「计划推进」「收尾自检」，诊断（`server/tasks/lifecycle.ts`）带 `plan` / `nudge`；回归：`shared/drive.test.ts`、e2e `03-chat`、`09-subagent-runtime`。
+
+## 「我不在」模式（分析稿 A4，2026-11-10）
+
+- 开关全局生效，存数据目录的 `config/away.json`（`server/away.ts`，`GET/PUT /away`、`DELETE /away/picks/:id?`）；状态常驻内存，runner 收到提问时同步查。
+- 只认数据里的字段（`shared/away.ts` 的 `awayAnswers`）：`AskQuestion` 上的 `reversible === true`、`recommended` 是合法序号、单选，每个问题都满足才替用户选；`purpose`（推送授权）、审批、工作流确认、诊断报告、`request_user_action` 都不走这里。不看 label 里的「（推荐）」字样（ADR 0041、0049）。
+- 字段来自面板的 `ask_user`（`server/ask-mcp.ts` 的 `toQuestions` 经 `askMeta` 收下）。Claude Code 的 `AskUserQuestion`、Codex 的提问协议没有这两个字段，按「拿不准」照旧等用户。
+- 选了以后（`server/exec/away-pick.ts`）：对话里写一行系统消息（带 `answers`，照回答的样子显示），记进 `away.json` 的 `picks`，再把答案交回 CLI。入口挂在 `ask-request.ts` 的 `autoAllowed` 里（提问原来在那里直接返回 false），runner 不用改。
+- 打开开关时，执行位里已经挂着的、能选的提问一起选掉（`server/tasks/away-sweep.ts` 登记给开关接口）；没在执行的对话没有能交回的回调，不动。
+- 子对话的提问先交给父对话（`askViaParent`），不经过这里。

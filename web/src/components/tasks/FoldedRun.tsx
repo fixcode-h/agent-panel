@@ -31,6 +31,7 @@ import { NoteMessage } from './SystemNote'
 import { ToolRow } from './ToolRow'
 import { runningTools } from './RunningNow'
 import { ConvChangesCard } from './TurnChanges'
+import { DoneEvidenceCard } from './DoneEvidenceCard'
 import { useEffortOf } from './ChatModelPicker'
 import { DispatchSlot, InlineRoutes, useDispatchOpen, useRouteAnchors } from './route-context'
 
@@ -369,6 +370,7 @@ export function ChatReply({
             running={
               convCard ? (
                 <>
+                  <DoneEvidenceCard task={task!} />
                   <ConvChangesCard task={task!} />
                   {footer}
                 </>

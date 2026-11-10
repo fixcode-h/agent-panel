@@ -226,7 +226,11 @@ export function registerActionRoutes(s: TasksScope) {
     const beforeAgentId = cur.agentId
     const agentChanged = p.data.agentId !== undefined && p.data.agentId !== beforeAgentId
     const touchesRun =
-      p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined || agentChanged
+      p.data.cli !== undefined ||
+      p.data.model !== undefined ||
+      p.data.effort !== undefined ||
+      p.data.modelOverride !== undefined ||
+      agentChanged
     if (touchesRun && cur.mode !== 'chat') return s.bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await s.deps.agents.list() : undefined

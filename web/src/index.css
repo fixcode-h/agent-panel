@@ -2464,6 +2464,21 @@ body,
 .chat-md tbody tr:nth-child(even) {
   background: var(--md-table-zebra);
 }
+/*
+ * 诊断报告的候选方案表（分析稿 U7，web/src/components/tasks/review-table.ts 标记）：撑满正文宽度、
+ * 选定的那一列整列浅浅地铺一层强调色，表头再深一档、字用强调色，一眼看出选的是哪一个
+ */
+.chat-md table[data-chosen-table] {
+  display: table;
+  width: 100%;
+}
+.chat-md [data-chosen] {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.chat-md th[data-chosen] {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
 .chat-md .mention {
   @apply rounded-md px-1 py-px font-medium;
   font-size: calc(0.93 * var(--md-base));
