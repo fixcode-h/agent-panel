@@ -1176,8 +1176,10 @@ export function TaskView({
       </main>
     )
 
-  // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
-  const noFiles = !task.projectId
+  const pluginHome = pluginTabs.some((x) => x.home)
+  // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示。
+  // 插件页签标了 home 的对话（例如模型设计的 3D 预览，不属于项目）照样要右栏放那个页签
+  const noFiles = !task.projectId && !pluginHome
   // Chat 页的聊天换成自己的标题栏和右栏（Chat.dc.html）；项目里的对话照旧用页签条。
   // 聊天派出了子对话或开着运行页签时也退回页签条，那些页签要有地方放
   const chatPage = noFiles && !pane && !embed && task.mode === 'chat' && !children.length && !openRun
@@ -1201,7 +1203,6 @@ export function TaskView({
   const chatRailW = Math.min(420, rowW * 0.4)
   const sideW = reportOn ? reportPane.width : chatRailWanted ? chatRailW : taskPanel.width
   const sideWanted = reportOn || childOn || (!filesFolded && !noFiles) || chatRailWanted
-  const pluginHome = pluginTabs.some((x) => x.home)
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =

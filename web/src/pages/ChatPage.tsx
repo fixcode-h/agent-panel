@@ -1,6 +1,7 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { FileUp } from 'lucide-react'
-import { useData, useNav } from '@/lib/data'
+import { useData, useNav, useTasks } from '@/lib/data'
+import { ownedPage, ownedPageRoute, usePluginPages } from '@/plugins/registry'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
 import { TaskView } from '@/components/tasks/TaskView'
 import { Logo } from '@/components/layout/Sidebar'
@@ -17,6 +18,16 @@ import { t } from '@shared/i18n'
 export function ChatPage() {
   const { route, go } = useNav()
   const { upsertTask } = useData()
+  const { tasks } = useTasks()
+  // 插件整页管的对话（例如模型设计，不属于项目）：通知、命令面板按聊天的地址打开，转到插件页里看
+  const pages = usePluginPages()
+  const opened = route.id ? tasks.find((x) => x.id === route.id) : undefined
+  const page = opened && ownedPage(opened, pages)
+  useEffect(() => {
+    if (page && route.id) go(ownedPageRoute(page, route.id))
+    // 导航函数每次渲染都是新的
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, route.id])
   // 导入别人导出的对话：以前只能在项目工作区里导入，不属于任何项目的聊天没有入口
   const file = useRef<HTMLInputElement>(null)
   const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,6 +47,7 @@ export function ChatPage() {
       toastError(err)
     }
   }
+  if (page) return null
   if (route.id) return <TaskView key={route.id} taskId={route.id} />
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">

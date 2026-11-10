@@ -50,6 +50,11 @@ export interface PluginPage {
   icon: (p: { className?: string; strokeWidth?: number }) => ReactNode
   /** 图标右上角的小点（有新内容、出错），给文字时也写进悬停提示 */
   useDot?: () => string | boolean | undefined
+  /**
+   * 这一页管的对话（task.plugin 等于它的对话，例如 Blender 插件的 blender.model）：Agent 项目和 Chat 的列表不列这些对话，
+   * 从通知、旧链接打开时转到这一页（#/plugin/<插件>/<页面>/<对话 id>）。插件关掉后对话照常列在原处
+   */
+  taskPlugin?: string
   Page: ComponentType<{ path: string }>
 }
 
