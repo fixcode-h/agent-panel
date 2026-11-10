@@ -85,6 +85,16 @@ export const UI_SHARD_COVERS = {
     'web/src/lib/diff-html.ts',
     'web/src/components/ui/UnifiedDiff.tsx',
   ],
+  // 诊断报告「等你复现」的取证：放到工作区 / 还原、面板自己取日志、自动采集的环境
+  '02g-bug-evidence': [
+    'web/src/components/tasks/DiagnosisEvidence.tsx',
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'web/src/lib/demo-evidence.ts',
+    'shared/bug-env.ts',
+    'shared/bug-patch.ts',
+    'shared/bug-log-watch.ts',
+  ],
   // 对话里「学到经验」的卡片（演示数据在 demo-experience.ts）
   '02e-learned': [
     'web/src/components/tasks/LearnedCard.tsx',

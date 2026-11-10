@@ -21,6 +21,7 @@ import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
 import { alert, at, px, sec, table } from './bug-md.ts'
 import { fixCardParts, fixSections } from './bug-fix-md.ts'
+import { envMd, envOf } from './bug-env.ts'
 import {
   attributionDiffMd,
   codeRefsMd,
@@ -440,6 +441,8 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     ]
     back = [bg(rootTitle, root), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
   }
+  // 环境由面板采集（分析稿 B4），每一步的「依据和背景」最后都带：旧报告没有就不出这一节
+  back.push(bg(t('环境（面板自动采集）'), envMd(envOf(d, opts.list), { author: opts.author })))
   return {
     card,
     main: main.filter(Boolean).join('\n\n'),

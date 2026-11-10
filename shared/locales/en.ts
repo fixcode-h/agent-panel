@@ -24,6 +24,7 @@ import { EN_FILE_REF } from './en/file-ref.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
+import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
 import { EN_VIDEO } from './en/video.ts'
 import { EN_RESTORE } from './en/restore.ts'
@@ -50,6 +51,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_FLOW,
   ...EN_BUG_LOCATE,
   ...EN_BUG_OVERVIEW,
+  ...EN_BUG_EVIDENCE,
   ...EN_USER_ACTION,
   ...EN_DESIGN,
   ...EN_RESTORE,
