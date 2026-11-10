@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Archive,
   BellDot,
@@ -13,9 +13,11 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
+import { bugRows, type BugBrief } from '@shared/bug-overview'
 import { t } from '@shared/i18n'
 import { OVERVIEW_GROUPS, overviewRows, type OverviewGroup, type OverviewRow } from '@shared/overview'
 import { taskWaitText, timeAgo } from '@shared/task'
+import { showChildInPane } from '@/lib/ai-window'
 import { api } from '@/lib/api'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { fmtTokens } from '@/lib/tasks'
@@ -28,6 +30,8 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { StatusPill } from '@/components/ui/status-pill'
 import { EmptyPanel } from '@/components/ui/empty-panel'
+import { Segmented } from '@/components/ui/segmented'
+import { BugOverview } from '@/components/overview/BugOverview'
 import { PageFrame } from '@/components/library/parts'
 
 type Tab = 'all' | OverviewGroup
@@ -59,9 +63,13 @@ const GROUP_TONE: Record<Tab, { icon: LucideIcon; tile: string }> = {
 /** 「最近」那一组只列这么多：总览是看「现在要管什么」的，历史在侧栏和搜索里 */
 const REST_MAX = 30
 
+/** Bug 视图开着时多久重新取一次：子对话的变化不一定带动顶层对话列表变，靠它兜底 */
+const BUGS_POLL_MS = 15_000
+
 /**
  * 对话总览：所有项目的顶层对话按「要不要你管」分组（分组规则见 shared/overview.ts），
- * 顶部四张统计卡片兼做筛选；每组一张卡片，勾选后底部浮出批量停止 / 归档。点一行打开那个对话
+ * 顶部四张统计卡片兼做筛选；每组一张卡片，勾选后底部浮出批量停止 / 归档。点一行打开那个对话。
+ * 页头可以切到「Bug」视图：所有用户报的 Bug（含子对话）走到哪一步、在等谁，顶上是流程数据（BugOverview）
  */
 export function OverviewPage() {
   const { projects, upsertTask } = useData()
@@ -71,6 +79,42 @@ export function OverviewPage() {
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [view, setView] = useState<'tasks' | 'bugs'>('tasks')
+  const [bugs, setBugs] = useState<BugBrief[]>()
+  const [now, setNow] = useState(() => Date.now())
+
+  // Bug 多半是子对话，顶层对话列表里没有，要单独取。对话视图下也取：页头「Bug」上的提示点要知道有没有在等你的。
+  // 顶层列表一变就重新取（子对话等你确认会带动父对话的摘要变）；取失败报出来，不悄悄当成没有
+  useEffect(() => {
+    let alive = true
+    api
+      .taskBugs()
+      .then((list) => {
+        if (!alive) return
+        setBugs(list)
+        setNow(Date.now())
+      })
+      .catch((e) => alive && toast.error((e as Error).message))
+    return () => {
+      alive = false
+    }
+  }, [tasks])
+  useEffect(() => {
+    if (view !== 'bugs') return
+    const timer = setInterval(() => {
+      if (document.hidden) return
+      // 轮询失败不弹提示：上面那次已经报过，15 秒弹一次只会刷屏
+      void api
+        .taskBugs()
+        .then((list) => {
+          setBugs(list)
+          setNow(Date.now())
+        })
+        .catch(() => {})
+    }, BUGS_POLL_MS)
+    return () => clearInterval(timer)
+  }, [view])
+  const bugsWaiting = useMemo(() => bugRows(bugs ?? []).filter((r) => r.group === 'you').length, [bugs])
 
   const rows = useMemo(() => overviewRows(tasks), [tasks])
   const count = (g: OverviewGroup) => rows.filter((r) => r.group === g).length
@@ -87,6 +131,13 @@ export function OverviewPage() {
     r.task.projectId
       ? go({ page: 'projects', id: r.task.projectId, sub: r.task.id })
       : go({ page: 'chat', id: r.task.id })
+
+  /** 打开 Bug 所在的对话：子对话要打开它的顶层对话，再让右栏切到它（和「去对话里看」同一套，见 ai-window.ts） */
+  const openBug = (b: BugBrief) => {
+    const top = b.rootId || b.id
+    if (b.rootId) showChildInPane(b.rootId, b.paneId)
+    go(b.projectId ? { page: 'projects', id: b.projectId, sub: top } : { page: 'chat', id: top })
+  }
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -133,121 +184,161 @@ export function OverviewPage() {
   return (
     <PageFrame
       title={t('对话总览')}
-      intro={t('所有项目的对话一页看，按要不要你管分组。点卡片只看那一组，勾选后可以一起停止或归档。')}
+      intro={
+        view === 'bugs'
+          ? t('所有用户报的 Bug 一页看：走到五步里的哪一步、现在等谁、停了多久。点一行打开那个对话。')
+          : t('所有项目的对话一页看，按要不要你管分组。点卡片只看那一组，勾选后可以一起停止或归档。')
+      }
       align="left"
       actions={
-        <div className="relative w-56 max-sm:w-full">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
-          <Input
+        // 手机宽度下这一组独占一行（外层按内容定宽，这里按页面留白后的宽度写死）：切换不折行，搜索框占剩下的宽度
+        <div className="flex items-center gap-2 max-sm:w-[calc(100vw-2rem)]">
+          <Segmented
             size="sm"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('搜标题或项目')}
-            aria-label={t('搜标题或项目')}
-            className="pl-8"
+            className="shrink-0 flex-nowrap"
+            label={t('视图')}
+            value={view}
+            onChange={(v) => {
+              setView(v)
+              // 勾选是对话视图的：切走就清掉，免得底部的批量操作条留在 Bug 视图上
+              setPicked(new Set())
+            }}
+            options={[
+              { id: 'tasks', label: t('对话') },
+              {
+                id: 'bugs',
+                label: 'Bug',
+                dot: bugsWaiting ? t('{n} 个 Bug 等你处理', { n: bugsWaiting }) : undefined,
+              },
+            ]}
           />
+          <div className="relative w-56 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
+            <Input
+              size="sm"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('搜标题或项目')}
+              aria-label={t('搜标题或项目')}
+              className="pl-8"
+            />
+          </div>
         </div>
       }
     >
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4" role="group" aria-label={t('分组')} data-overview-stats>
-        {stats.map((s) => (
-          <StatCard
-            key={s.id}
-            id={s.id}
-            label={s.label}
-            n={s.n}
-            on={tab === s.id}
-            // 再点一次选中的卡片回到「全部」，不用去找另一张
-            onClick={() => setTab(tab === s.id ? 'all' : s.id)}
-          />
-        ))}
-      </div>
-
-      {!shown.length ? (
-        <EmptyPanel size="xl">{q ? t('没有符合的对话') : t('这一组现在没有对话')}</EmptyPanel>
-      ) : (
-        <div className="flex flex-col gap-4" data-overview>
-          {OVERVIEW_GROUPS.map((g) => {
-            const list = shown.filter((r) => r.group === g)
-            if (!list.length) return null
-            const cut = g === 'rest' ? list.slice(0, REST_MAX) : list
-            const ids = cut.map((r) => r.task.id)
-            return (
-              <Card as="section" key={g} aria-label={GROUP_LABEL[g]} data-overview-group={g} className="py-1.5">
-                <header className="flex min-w-0 items-center gap-2.5 px-4 pt-2 pb-1.5">
-                  <Checkbox
-                    checked={ids.every((id) => picked.has(id))}
-                    onChange={() => toggleAll(ids)}
-                    ariaLabel={t('选择「{title}」里的全部对话', { title: GROUP_LABEL[g] })}
-                  />
-                  <h2 className="text-body font-medium text-fg">{GROUP_LABEL[g]}</h2>
-                  <span className="rounded-full bg-sel px-1.5 text-caption text-muted tabular-nums">{list.length}</span>
-                  <span className="hidden min-w-0 truncate text-xs text-subtle sm:block">{GROUP_HINT[g]}</span>
-                </header>
-                <ul className="flex flex-col gap-0.5 px-1.5">
-                  {cut.map((r) => (
-                    <Row
-                      key={r.task.id}
-                      r={r}
-                      project={projectName(r.task.projectId)}
-                      picked={picked.has(r.task.id)}
-                      selecting={picked.size > 0}
-                      onPick={() => toggle(r.task.id)}
-                      onOpen={() => open(r)}
-                    />
-                  ))}
-                </ul>
-                {list.length > cut.length && (
-                  <p className="px-4 pt-1.5 pb-1 text-xs text-subtle">
-                    {t('还有 {n} 个更早的对话，在侧栏或搜索里找', { n: list.length - cut.length })}
-                  </p>
-                )}
-              </Card>
-            )
-          })}
-        </div>
+      {view === 'bugs' && (
+        <BugOverview briefs={bugs} query={query} now={now} projectName={projectName} onOpen={openBug} />
       )}
+      {view === 'tasks' && (
+        <>
+          <div
+            className="grid grid-cols-2 gap-3 md:grid-cols-4"
+            role="group"
+            aria-label={t('分组')}
+            data-overview-stats
+          >
+            {stats.map((s) => (
+              <StatCard
+                key={s.id}
+                id={s.id}
+                label={s.label}
+                n={s.n}
+                on={tab === s.id}
+                // 再点一次选中的卡片回到「全部」，不用去找另一张
+                onClick={() => setTab(tab === s.id ? 'all' : s.id)}
+              />
+            ))}
+          </div>
 
-      {picked.size > 0 && (
-        // 浮在滚动区底部：列表很长时勾完不用滚回顶上去点按钮
-        <div
-          className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 self-center rounded-xl border border-line frost-card py-2 pr-2 pl-4 shadow-card"
-          data-overview-batch
-        >
-          <span className="mr-2 text-body text-fg tabular-nums">{t('已选 {n} 个', { n: picked.size })}</span>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={() =>
-              void batch(
-                (id) => api.stopTaskSummary(id),
-                (n) => t('已停止 {n} 个对话', { n }),
-              )
-            }
-          >
-            <Square className="h-3.5 w-3.5" />
-            {t('停止')}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={() =>
-              void batch(
-                (id) => api.archiveTaskSummary(id, true),
-                (n) => t('已归档 {n} 个对话', { n }),
-              )
-            }
-          >
-            <Archive className="h-3.5 w-3.5" />
-            {t('归档')}
-          </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPicked(new Set())}>
-            <X className="h-3.5 w-3.5" />
-            {t('取消选择')}
-          </Button>
-        </div>
+          {!shown.length ? (
+            <EmptyPanel size="xl">{q ? t('没有符合的对话') : t('这一组现在没有对话')}</EmptyPanel>
+          ) : (
+            <div className="flex flex-col gap-4" data-overview>
+              {OVERVIEW_GROUPS.map((g) => {
+                const list = shown.filter((r) => r.group === g)
+                if (!list.length) return null
+                const cut = g === 'rest' ? list.slice(0, REST_MAX) : list
+                const ids = cut.map((r) => r.task.id)
+                return (
+                  <Card as="section" key={g} aria-label={GROUP_LABEL[g]} data-overview-group={g} className="py-1.5">
+                    <header className="flex min-w-0 items-center gap-2.5 px-4 pt-2 pb-1.5">
+                      <Checkbox
+                        checked={ids.every((id) => picked.has(id))}
+                        onChange={() => toggleAll(ids)}
+                        ariaLabel={t('选择「{title}」里的全部对话', { title: GROUP_LABEL[g] })}
+                      />
+                      <h2 className="text-body font-medium text-fg">{GROUP_LABEL[g]}</h2>
+                      <span className="rounded-full bg-sel px-1.5 text-caption text-muted tabular-nums">
+                        {list.length}
+                      </span>
+                      <span className="hidden min-w-0 truncate text-xs text-subtle sm:block">{GROUP_HINT[g]}</span>
+                    </header>
+                    <ul className="flex flex-col gap-0.5 px-1.5">
+                      {cut.map((r) => (
+                        <Row
+                          key={r.task.id}
+                          r={r}
+                          project={projectName(r.task.projectId)}
+                          picked={picked.has(r.task.id)}
+                          selecting={picked.size > 0}
+                          onPick={() => toggle(r.task.id)}
+                          onOpen={() => open(r)}
+                        />
+                      ))}
+                    </ul>
+                    {list.length > cut.length && (
+                      <p className="px-4 pt-1.5 pb-1 text-xs text-subtle">
+                        {t('还有 {n} 个更早的对话，在侧栏或搜索里找', { n: list.length - cut.length })}
+                      </p>
+                    )}
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+
+          {picked.size > 0 && (
+            // 浮在滚动区底部：列表很长时勾完不用滚回顶上去点按钮
+            <div
+              className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 self-center rounded-xl border border-line frost-card py-2 pr-2 pl-4 shadow-card"
+              data-overview-batch
+            >
+              <span className="mr-2 text-body text-fg tabular-nums">{t('已选 {n} 个', { n: picked.size })}</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void batch(
+                    (id) => api.stopTaskSummary(id),
+                    (n) => t('已停止 {n} 个对话', { n }),
+                  )
+                }
+              >
+                <Square className="h-3.5 w-3.5" />
+                {t('停止')}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void batch(
+                    (id) => api.archiveTaskSummary(id, true),
+                    (n) => t('已归档 {n} 个对话', { n }),
+                  )
+                }
+              >
+                <Archive className="h-3.5 w-3.5" />
+                {t('归档')}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPicked(new Set())}>
+                <X className="h-3.5 w-3.5" />
+                {t('取消选择')}
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </PageFrame>
   )

@@ -1,12 +1,12 @@
 /**
- * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）、对话总览、对话右上角的轮次导航。
+ * 界面检查分片：ComfyUI 模板商店与工作流链、统一的悬停提示、计划面板、工作总结（报告树、提炼、采纳）、对话总览（含 Bug 视图）、对话右上角的轮次导航。
  *
  * 这四块各自只有 8~13 步（8 + 9 + 10 + 13 = 40），固定开销（起静态服务 + 开浏览器）就占掉一半：
  * 以前是四个分片、四个浏览器，现在合成一片按顺序跑，断言一条不少。
  * 每一块自己开页面（见 harness.mjs 的 page()）：演示数据各在自己的浏览器上下文里，互不影响。
  */
 import { runShard } from './harness.mjs'
-import { openCartTask } from './task-page.mjs'
+import { openCartTask, patchDemoOnce } from './task-page.mjs'
 
 /**
  * 和 web/src/components/ui/hint.tsx 里的 SKIP_TAGS 一致：
@@ -1092,6 +1092,197 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.setViewportSize({ width: 480, height: 900 })
     await settle(p).catch(() => {})
     await check(p, '对话总览-手机宽度')
+  }
+  // ---- 对话总览 · Bug 视图 ----
+  // 所有用户报的 Bug（子对话）一页看：顶上是流程数据，下面按「等你处理 / 进行中 / 已结束」分组，
+  // 每行画五步进度和现在等谁；点一行打开父对话并在右栏切到那个子对话；手机宽度不横向滚动
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/overview')
+    await p
+      .locator('[data-overview-row]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('Bug 视图：对话总览没有列出对话'))
+    // 演示数据里没有 Bug：没有时切过去是空态，不是空白
+    await p.locator('[data-seg-id="bugs"]').click()
+    await check(p, 'Bug 视图-空态', ['还没有用户报的 Bug', 'Bug 总数'])
+
+    // 造七个走到不同地方的 Bug（演示数据种子写完之后、下一次加载之前改，见 patchDemoOnce）
+    await patchDemoOnce(p, 'bug-overview', (db) => {
+      const parent = db.tasks.find((x) => x.title.includes('购物车右上角'))
+      const seed = db.tasks.find((x) => x.parentTaskId === parent.id && x.title.includes('修侧栏时间显示'))
+      const ago = (min) => new Date(Date.now() - min * 60000).toISOString()
+      let seq = 0
+      const d = (phase, status, min, more = {}) => ({
+        version: ++seq,
+        rev: 1,
+        phase,
+        confirmed: phase !== 'evidence',
+        level: 'standard',
+        at: ago(min),
+        status,
+        decidedAt: status === 'pending' || status === 'superseded' ? undefined : ago(min - 2),
+        notes: [],
+        answers: [],
+        files: [],
+        logPlan: [],
+        ...more,
+      })
+      const add = (id, title, diagnoses, more = {}) =>
+        db.tasks.push({
+          ...JSON.parse(JSON.stringify(seed)),
+          id: `bug-${id}`,
+          title,
+          bug: true,
+          status: 'done',
+          working: false,
+          resolved: false,
+          requests: [],
+          createdAt: ago(60 * 30),
+          diagnoses,
+          ...more,
+        })
+      add('confirm', '购物车角标删完最后一件还显示 1', [
+        d('evidence', 'answered', 300, { awaiting: { at: ago(290), added: [] } }),
+        d('cause', 'approved', 200, { rating: { tier: 'low', percent: 90, why: '' } }),
+        d('plan', 'pending', 135, { rating: { tier: 'low', percent: 90, why: '' } }),
+      ])
+      add('repro', '导出订单 CSV 中文乱码', [
+        d('evidence', 'answered', 400, { awaiting: { at: ago(390), added: [] } }),
+        d('evidence', 'pending', 50, { decidedAt: ago(48), awaiting: { at: ago(42), added: [] } }),
+      ])
+      add('verify', '结算页优惠券叠加后金额算错', [
+        d('cause', 'superseded', 900, { decidedAt: ago(880), level: 'deep' }),
+        d('evidence', 'answered', 800, { level: 'deep' }),
+        d('cause', 'approved', 700, { level: 'deep' }),
+        d('plan', 'approved', 600, { level: 'deep' }),
+        d('fix', 'approved', 500, { level: 'deep' }),
+        d('verify', 'pending', 60 * 26, { level: 'deep', rating: { tier: 'high', percent: 75, why: '' } }),
+      ])
+      add('idle', '列表滚动到底不加载下一页', [
+        d('cause', 'approved', 20, { rating: { tier: 'mid', percent: 80, why: '' } }),
+      ])
+      add('fixed', '登录后头像偶尔不刷新', [
+        d('plan', 'approved', 1000, { level: 'quick', rating: { tier: 'mid', percent: 85, why: '' } }),
+        d('fix', 'approved', 900, { level: 'quick' }),
+        d('verify', 'approved', 800, { level: 'quick' }),
+      ])
+      add('fixed2', '侧栏折叠后图标错位', [
+        d('cause', 'approved', 3000, { rating: { tier: 'low', percent: 95, why: '' } }),
+        d('plan', 'approved', 2900),
+        d('fix', 'approved', 2800),
+        d('verify', 'answered', 2700),
+        d('plan', 'approved', 2600),
+        d('fix', 'approved', 2500),
+        d('verify', 'approved', 2400),
+      ])
+      add('cancelled', '设置页保存按钮要点两次才生效', [d('cause', 'cancelled', 60 * 50)])
+    })
+    await p.reload()
+    await p
+      .locator('[data-overview-row]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => {})
+    // 页头「Bug」上有提示点：不切过去也知道有 Bug 在等你
+    await p
+      .locator('[data-seg-id="bugs"] [aria-label="3 个 Bug 等你处理"]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('Bug 视图：页头「Bug」上没有「3 个 Bug 等你处理」的提示点'))
+    await p.locator('[data-seg-id="bugs"]').click()
+    await p
+      .locator('[data-bug-row]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('Bug 视图：没有列出 Bug'))
+    await check(p, 'Bug 视图', [
+      'Bug 总数',
+      '一次修好',
+      '平均确认次数',
+      '平均论证轮数',
+      '根因等级',
+      '各步平均停留',
+      '等你处理',
+      '进行中',
+      '已结束',
+      '等你确认',
+      '等你复现',
+      '等你验证',
+      '没在执行',
+      '已修好',
+      '已取消',
+      '论证 · 第 2 轮',
+    ])
+    const view = await p.evaluate(() => ({
+      groups: [...document.querySelectorAll('[data-bug-group]')].map(
+        (g) => `${g.dataset.bugGroup}:${g.querySelectorAll('[data-bug-row]').length}`,
+      ),
+      who: [...document.querySelectorAll('[data-bug-row]')].map((r) => `${r.dataset.bugRow}=${r.dataset.bugWho}`),
+      stat: Object.fromEntries(
+        [...document.querySelectorAll('[data-bug-stat]')].map((c) => [
+          c.dataset.bugStat,
+          c.querySelector('.text-xl')?.textContent ?? c.textContent,
+        ]),
+      ),
+      // 等你确认方案的那一行：论证、根因打勾，修复方案高亮，后两步还没到
+      steps: [...document.querySelectorAll('[data-bug-row="bug-confirm"] [data-bug-steps]')]
+        .filter((el) => el.getClientRects().length)
+        .map((el) => [...el.querySelectorAll('[data-step]')].map((x) => x.dataset.step).join(',')),
+      checks: [...document.querySelectorAll('[data-bug-row="bug-confirm"] [data-bug-steps]')]
+        .filter((el) => el.getClientRects().length)
+        .map((el) => el.querySelectorAll('svg').length),
+    }))
+    if (view.groups.join(' ') !== 'you:3 active:1 ended:3')
+      errors.push(`Bug 视图：分组不是「等你 3 / 进行中 1 / 已结束 3」（${view.groups.join(' ')}）`)
+    // 等你处理的在最上面、等得最久的在前；已结束的最近结束的在前
+    const order = [
+      'bug-verify=verify',
+      'bug-confirm=confirm',
+      'bug-repro=repro',
+      'bug-idle=idle',
+      'bug-fixed=fixed',
+      'bug-fixed2=fixed',
+      'bug-cancelled=cancelled',
+    ]
+    if (view.who.join(' ') !== order.join(' ')) errors.push(`Bug 视图：行的顺序或状态不对（${view.who.join(' ')}）`)
+    if (view.steps.join('|') !== 'done,done,current,todo,todo' || view.checks.join() !== '2')
+      errors.push(`Bug 视图：五步进度不是两个打勾、第三步高亮（${view.steps.join('|')}，勾 ${view.checks.join()} 个）`)
+    // 七个 Bug；修好的两个里一个验证没过重出了方案，一次修好是 50%
+    if (view.stat.total !== '7' || view.stat['first-try'] !== '50%')
+      errors.push(`Bug 视图：汇总不是「总数 7、一次修好 50%」（${JSON.stringify(view.stat)}）`)
+    if (!/低级\s*2.*中级\s*2.*高级\s*1/.test(view.stat.tiers ?? ''))
+      errors.push(`Bug 视图：根因等级分布不是低级 2、中级 2、高级 1（${view.stat.tiers}）`)
+
+    // 搜索框对 Bug 视图也管用
+    await p.getByLabel('搜标题或项目').fill('优惠券')
+    await settle(p).catch(() => {})
+    const hits = await p.locator('[data-bug-row]').count()
+    if (hits !== 1) errors.push(`Bug 视图：搜「优惠券」应只剩 1 行（实际 ${hits}）`)
+    await p.getByLabel('搜标题或项目').fill('')
+
+    await p.setViewportSize({ width: 375, height: 800 })
+    await settle(p).catch(() => {})
+    await check(p, 'Bug 视图-手机宽度', ['等你验证', '修复方案'])
+    // 手机宽度下五步进度挪到标题下面，仍然看得见，行不超出卡片
+    const narrow = await p.evaluate(() => {
+      const row = document.querySelector('[data-bug-row="bug-confirm"]')
+      const steps = [...row.querySelectorAll('[data-bug-steps]')].filter((el) => el.getClientRects().length)
+      return { steps: steps.length, right: row.getBoundingClientRect().right, width: window.innerWidth }
+    })
+    if (narrow.steps !== 1) errors.push(`Bug 视图-手机宽度：五步进度应只显示一份（实际 ${narrow.steps}）`)
+    if (narrow.right > narrow.width) errors.push('Bug 视图-手机宽度：行超出了屏幕')
+
+    // 点一行：打开它的父对话，右栏切到这个子对话
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await p.locator('[data-bug-row="bug-confirm"] button').click()
+    await p
+      .locator('[role="tab"]')
+      .filter({ hasText: '购物车角标删完最后一件还显示 1' })
+      .first()
+      .waitFor({ state: 'attached', timeout: 8000 })
+      .catch(() => errors.push('Bug 视图：点一行没有在父对话的右栏打开那个子对话'))
+    if (!p.url().includes('#/projects/')) errors.push(`Bug 视图：点一行没有跳到项目对话（${p.url()}）`)
   }
   // ---- 轮次导航 ----
   // 对话右上角每轮一根横杠：悬停弹出那一轮的要求和回复开头，点横杠跳过去并高亮那一根

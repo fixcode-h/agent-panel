@@ -10,6 +10,7 @@ import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
 import { descendantNeeds } from '@shared/child-needs'
+import { bugBriefs } from '@shared/bug-overview'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
 import { demoSettleAction, demoUserAction } from './demo-user-action'
@@ -3195,6 +3196,8 @@ function tasksRoute(
   // 正文搜索 / 回收站列表：路径里带的 id 是 'search'、'trash'，要在按 id 找任务之前接住
   if (id === 'search' && method === 'GET') return demoTasksSearch(tasks, query)
   if (id === 'trash' && method === 'GET') return demoTrash(tasks)
+  // 总览页的 Bug 视图：和正式版同一个裁剪函数
+  if (id === 'bugs' && method === 'GET') return bugBriefs(tasks)
   // 导入别人导出的任务：和正式版一样连同包里的子对话一起建成只读的，返回父任务在前的整棵树
   if (id === 'import' && method === 'POST') {
     const b = (body ?? {}) as { projectId?: string; bundle?: unknown }

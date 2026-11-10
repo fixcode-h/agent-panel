@@ -156,6 +156,12 @@ export const UI_SHARD_COVERS = {
     'web/src/lib/demo-summary.ts',
     // 报告树分组、拼报告的逻辑：页面直接调，改了它就跑这一片
     'shared/summary.ts',
+    // 对话总览和它的 Bug 视图（分组、五步进度、流程数据）
+    'web/src/pages/OverviewPage.tsx',
+    'web/src/components/overview/',
+    'shared/overview.ts',
+    'shared/bug-overview.ts',
+    'shared/bug-stats.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
   // 弹窗调整大小：只登记专门承载这套逻辑的两个文件；modal.tsx / dialog.tsx 是所有页面都用的
