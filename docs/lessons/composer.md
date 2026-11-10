@@ -22,3 +22,10 @@ paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, we
 - 规则：文件拖进输入框用左键长按（`fileDrag.ts` 的 `longPressed`，约 300ms），右键留给菜单；拖完压掉补发的 click。
 - 起因：拖引用原为右键按住拖动，用户要求改成长按。
 - 防线：`scripts/ui/02c-element-pick.mjs` 的「任务-长按拖入引用」。
+
+## 等你确认、等你操作这类提醒浮在输入框上方，不排进停靠区
+
+- 规则：要用户点头或处理的提醒（运行命令 / 改文件 / 调用工具 / 节点确认的请求卡、子对话等你确认、等你操作、流程没走完）放进 `FloatAbove`（`web/src/components/chat/FloatAbove.tsx`）：零高度的锚点，卡片从它往上叠、盖在消息上，不把输入框往下顶；离输入框越近越要紧。卡片要有不透明的底和 `shadow-pop`（深色主题的 `--ask-bg` 是半透明的，下面垫 `bg-card`）。把高度交给 `ConversationShell` 的 `floatPad`，被盖住的最后几行才滚得出来。
+- 规则：换掉输入框的（AI 提问 `QuestionPanel`、已收尾 / 导入只读的那一行）和常驻的信息条（独立分支条）不浮；没有输入框可靠的地方（设置弹窗、侧栏按钮下面的 `ScopeRequests`）照旧排在原地。
+- 起因：用户 2026-11-10 要求「警告弹窗都改成悬浮在输入框的上方，不再固定挤占位置」；53753b9 只改了对话页自己的请求卡，直接锚在输入框那一块上，会盖住计划和子对话那几行。
+- 防线：`scripts/ui/02d-workflow.mjs`（改文件审批卡在 `[data-float-above]` 里）。
