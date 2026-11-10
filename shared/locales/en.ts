@@ -31,6 +31,7 @@ import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
 import { EN_AWAY } from './en/away.ts'
 import { EN_VIDEO } from './en/video.ts'
+import { EN_STATE_WORD } from './en/state-word.ts'
 import { EN_RESTORE } from './en/restore.ts'
 import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
 import { EN_REMOTE } from './en/remote.ts'
@@ -78,4 +79,5 @@ export const EN: Record<string, string> = {
   ...EN_FILE_REF,
   ...EN_PLUGINS,
   ...EN_SHARED_DIR,
+  ...EN_STATE_WORD,
 }

@@ -19,6 +19,7 @@ import {
   type ChildEntry,
 } from '@shared/task'
 import type { ChildRequest } from '@shared/child-needs'
+import { childWord } from '@shared/task-word'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -124,31 +125,21 @@ function convGone(c: ChildSummary): 'closed' | 'hint' | '' {
 }
 
 /**
- * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等用户选择（who 是设置里的称呼）→ 计划 n/m → 执行中 / 等结果 / 待收尾 →
+ * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等你处理的短词（见 childWord）→ 计划 n/m → 执行中 / 等结果 / 待收尾 →
  * 停下的原因。同一行只说一件事，全部从 childIcon / childState 派生，
  * 所以不会出现「已解决」和「执行中」同屏（以前徽标按 resolved/asking/plan 各算一套就是这么来的）。
  * 「已关闭」也一样只认 childIcon（见 convGone）：还在跑的对话不说它关了。
  */
-export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
+export function childLabels(c: ChildSummary): ChildLabel[] {
   const icon = childIcon(c)
   const state = childState(c)
   const out: ChildLabel[] = []
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
-  // 等的是权限确认（或它下面的子对话在等）时写「等你确认」：说成「选择」用户会去找提问卡
-  // 工作流节点做完等你确认结果的（见 stageConfirm）写「阶段待确认」，和「报告待确认」一个说法
-  if (icon === 'waiting')
-    out.push({
-      text: stageConfirm(c)
-        ? t('阶段待确认')
-        : // 等你操作（request_user_action）：要你去做事，不是选择也不是确认
-          c.action && !c.asking && !c.requests
-          ? t('等{who}操作', { who })
-          : c.asking || !(c.requests || c.childNeeds)
-            ? t('等{who}选择', { who })
-            : t('等{who}确认', { who }),
-      tone: 'warning',
-    })
+  // 等你处理的短词（等你回答 / 等你确认 / 阶段待确认 / 等你操作 / 子对话等你处理）和标题栏、侧栏、
+  // 子对话自己页面的输入框占位同一处取（shared/task-word.ts，分析稿 A8、U2）：以前这里写「等用户选择」，
+  // 侧栏写「等你回复」，同一件事两种说法
+  if (icon === 'waiting') out.push({ text: childWord(c).word, tone: 'warning' })
   // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug
   if (c.bug)
     out.push({

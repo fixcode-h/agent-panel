@@ -145,7 +145,7 @@ function RunTag({ children, className }: { children: ReactNode; className?: stri
 }
 
 /**
- * 任务行右边的状态：同一时刻只出一个，优先级 等你回复 > 子对话在跑 > 自己在跑 > 失败 > 卡住 / 未完成 > 未读。
+ * 任务行右边的状态：同一时刻只出一个，优先级 等你处理 > 子对话在跑 > 自己在跑 > 失败 > 卡住 / 未完成 > 未读。
  * 判定由调用方从 taskState / taskDoneDot 取（一个状态只在一处算），这里只管画
  */
 export function TaskRowStatus({
@@ -160,7 +160,7 @@ export function TaskRowStatus({
 }: {
   /** 有没回答的提问、待确认的请求 */
   needs?: boolean
-  /** 等的是什么（「子对话等你处理」）：和标题栏用同一句，不传就是「等你回复」 */
+  /** 等的是什么（shared/task-word.ts 的短词，如「等你回答」「子对话等你处理」）：和标题栏用同一个词，不传就是「等你处理」 */
   needsText?: string
   /** 自己挂着「等你操作」（request_user_action） */
   acting?: boolean
@@ -173,7 +173,7 @@ export function TaskRowStatus({
   left?: { done: number; total: number; stuck: boolean }
   unread?: boolean
 }) {
-  // 等你操作：它在等你离开对话去做一件事，和「等你回复」分开写，一眼知道是要去动手
+  // 等你操作：它在等你离开对话去做一件事，和别的「等你处理」分开写，一眼知道是要去动手
   if (acting)
     return (
       <StatusPill tone="wait" spin className={SMALL_PILL}>
@@ -183,7 +183,7 @@ export function TaskRowStatus({
   if (needs)
     return (
       <StatusPill tone="wait" className={SMALL_PILL}>
-        {needsText || t('等你回复')}
+        {needsText || t('等你处理')}
       </StatusPill>
     )
   if (kids > 0) return <RunTag>{t('{n} 子对话', { n: kids })}</RunTag>

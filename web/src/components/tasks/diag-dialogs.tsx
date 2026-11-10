@@ -14,7 +14,7 @@ export function useDiagDialogs(taskId: string) {
   const dialogs = (onOpenChild?: (id: string) => void) => (
     <>
       {collab && <CollabLog taskId={taskId} onClose={() => setCollab(false)} onOpenChild={onOpenChild} />}
-      {status && <LifecycleDialog taskId={taskId} onClose={() => setStatus(false)} />}
+      {status && <LifecycleDialog taskId={taskId} onClose={() => setStatus(false)} onOpenChild={onOpenChild} />}
     </>
   )
   return { dialogs, openStatus: () => setStatus(true), openCollab: () => setCollab(true) }

@@ -72,6 +72,7 @@ import {
   deliveryActive,
   TRASH_RETENTION_DAYS,
 } from '@shared/task'
+import { taskWord } from '@shared/task-word'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api, type TaskPage } from '@/lib/api'
@@ -1830,7 +1831,7 @@ export function TaskView({
         working={taskBusy(task)}
         spin={taskBusy(task)}
         waiting={taskState(task) === 'needs'}
-        label={taskWaitText(task) || undefined}
+        label={taskWord(task).word}
         className="ml-1"
       />
       {titleNode}
@@ -2016,7 +2017,7 @@ export function TaskView({
           working={taskBusy(task)}
           spin={taskBusy(task)}
           waiting={taskState(task) === 'needs'}
-          label={taskWaitText(task) || undefined}
+          label={taskWord(task).word}
           className="shrink-0"
         />
         {titleNode}
