@@ -40,3 +40,20 @@ test('推进账本：只在真推出去时记；同一进度推满就停，进�
   assert.equal(b.can('c', 'k1', 3, 'u1'), 'ok')
   assert.equal(b.state('c'), undefined)
 })
+
+test('推进次数存进对话（A10）：面板重启后（新的账本）接着存着的次数数，用户发消息清零也写回', () => {
+  const saved = new Map<string, import('./task-runtime-schema.ts').DriveCount | undefined>()
+  const store = { load: (id: string) => saved.get(id), save: (id: string, c: never) => saved.set(id, c) }
+  const before = new DriveBudget(2, store)
+  assert.equal(before.take('c', 'k1', 2, 'u1'), 1)
+  assert.deepEqual(saved.get('c'), { key: 'k1', n: 1, input: 'u1', total: 1 })
+  // 重启：新账本从对话上存着的接着数，同一进度第 2 次推完就满了
+  const after = new DriveBudget(2, store)
+  assert.deepEqual(after.state('c'), { key: 'k1', n: 1 })
+  assert.equal(after.take('c', 'k1', 2, 'u1'), 2)
+  assert.deepEqual(after.state('c'), { key: 'k1', n: 2 })
+  assert.equal(after.can('c', 'k2', 2, 'u1'), 'total-cap', '同一条输入之后的总次数也接着数')
+  after.reset('c')
+  assert.equal(saved.get('c'), undefined)
+  assert.equal(new DriveBudget(2, store).can('c', 'k1', 2, 'u1'), 'ok')
+})

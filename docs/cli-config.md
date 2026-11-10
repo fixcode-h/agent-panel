@@ -373,6 +373,7 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 | `autoCompact` | 自动压缩：`config` 把 token 数写进参数（规则里用 `{autoCompactTokens}`，Codex）；`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩 |
 | `review` | 审查改动：`native` 走 CLI 自己的审查模式（Codex，内置适配器）；`prompt`（默认）按审查要求跑一轮 |
 | `limits` | 账号额度：`query` 能主动查（配合 `rpc.limitsQuery`，Codex）；`push` 执行时 CLI 才报告（Claude Code）；`none`（默认）没有 |
+| `cost` | CLI 自己报每轮费用（Claude Code、Pi 为 `true`）。`false`（默认，Codex、Command Code）按模型目录里填的单价折算，没填单价就算不了费用：新建对话设费用上限时界面写明「这个模型算不了费用，只有 token 上限生效」 |
 | `limitArgs` | 设置里手动改的上限哪几项写成了参数（`context`、`maxOutput`，规则里用 `{contextWindow}`、`{maxOutput}`），例如 Codex 的 `model_context_window` |
 | `slash` | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求 |
 | `nativeCommands` | 会话里自己就有的内置命令（例如 `init`）：面板的同名内置命令原样发过去，不再展开；其他内置命令和「所有 Agent」的命令都由面板展开 |

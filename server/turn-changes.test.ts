@@ -6,6 +6,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../shared/i18n.ts'
 import type { TurnChanges } from '../shared/schema.ts'
+import type { TurnTrack } from '../shared/task-runtime-schema.ts'
 import { gitSnapshot, spansFileDiff, undoSpans } from './exec/git.ts'
 import { aroundMerge, beginTurnChanges, endTurnChanges } from './turn-changes.ts'
 import { taskChanges } from './own-changes.ts'
@@ -191,4 +192,30 @@ test('撤销：Windows 的 autocrlf 下，只差换行符不算「之后又改�
   const crlf = await undoSpans(dir, c2.spans, ['a.txt'])
   assert.equal(crlf.ok, true)
   assert.equal(read(dir, 'a.txt'), 'one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n')
+})
+
+test('起点存进任务（A10）：面板重启后进行中的那一轮接着存着的起点算，收了的一轮不接', async () => {
+  const dir = repo()
+  let saved: TurnTrack | undefined
+  const keep = () => ({ saved, save: (r: TurnTrack) => (saved = r) })
+  // 重启前：这一轮开了，改了 a.txt，还没收面板就停了
+  await beginTurnChanges('t-restart-old', dir, [], false, keep())
+  assert.equal(saved?.open, true, '开一轮就把起点写进任务')
+  writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\nthree\nfour\nfive\n')
+  // 重启后：内存里没有这个对话（换个 id 模拟），这一轮按存着的起点算，重启前改的 a.txt 也在卡片里
+  let got: TurnChanges | undefined
+  await beginTurnChanges('t-restart-new', dir, [], false, keep())
+  writeFileSync(path.join(dir, 'b.txt'), 'changed\n')
+  await endTurnChanges('t-restart-new', (c) => (got = c))
+  assert.deepEqual(got?.files.map((f) => f.path).sort(), ['a.txt', 'b.txt'])
+  assert.equal(saved?.open, false, '收了以后记成已收')
+  // 收了的一轮：用户新发一条（不接着做），重新拍起点，上一轮的改动不再算
+  let next: TurnChanges | undefined
+  await beginTurnChanges('t-restart-next', dir, [], false, keep())
+  writeFileSync(path.join(dir, 'c.txt'), 'new\n')
+  await endTurnChanges('t-restart-next', (c) => (next = c))
+  assert.deepEqual(
+    next?.files.map((f) => f.path),
+    ['c.txt'],
+  )
 })

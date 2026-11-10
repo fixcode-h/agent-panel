@@ -1,3 +1,4 @@
+import { demoDoneEvidence } from './demo-done-evidence'
 import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
@@ -4568,6 +4569,7 @@ async function seedTasks(d: Db) {
           { path: 'tests/cart.test.ts', add: 0, del: 62 },
         ],
       }
+    demoDoneEvidence(task)
     // 对话完成后学到经验：总结和改动卡片后面挂一张按条展示的经验卡片（LearnedCard.tsx）
     if (summary) {
       const learned = demoLearnedNote()

@@ -37,6 +37,7 @@ import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
 import { EN_REMOTE } from './en/remote.ts'
 import { EN_PLUGINS } from './en/plugins.ts'
 import { EN_SHARED_DIR } from './en/shared-dir.ts'
+import { EN_DONE_GUARD } from './en/done-guard.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -80,4 +81,5 @@ export const EN: Record<string, string> = {
   ...EN_PLUGINS,
   ...EN_SHARED_DIR,
   ...EN_STATE_WORD,
+  ...EN_DONE_GUARD,
 }

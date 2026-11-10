@@ -31,6 +31,8 @@ import { ParamsChip } from '@/components/agents/ParamFields'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { pickableChatRole, scopeOf } from '@shared/conv-mode'
 import { t } from '@shared/i18n'
+import { agentRun, defaultSettings } from '@shared/settings'
+import { ConvBudgetChip } from './ConvBudgetChip'
 
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
@@ -61,7 +63,7 @@ export function TaskComposer({
   /** 从外面填进输入框的话（首页的示例任务）：n 每次点都变，同一句点两次也重新填 */
   fill?: { text: string; n: number }
 }) {
-  const { workflows, agents, projects, loading } = useData()
+  const { workflows, agents, projects, loading, settings } = useData()
   const { tasks } = useTasks()
   const [projectId, setProjectId] = useState(() => {
     try {
@@ -125,6 +127,15 @@ export function TaskComposer({
     setIsolate(isolateDefault)
   }
   const [askUser, setAskUser] = useNewAskUser()
+  // 这个对话单独设的用量上限（A6 ①）：换了项目清掉，上限是按项目里的这件事设的
+  const [convBudget, setConvBudget] = useState({ tokens: 0, costUsd: 0 })
+  const [budgetFor, setBudgetFor] = useState(project?.id)
+  if (budgetFor !== project?.id) {
+    setBudgetFor(project?.id)
+    setConvBudget({ tokens: 0, costUsd: 0 })
+  }
+  // 费用算不算得出来看这一轮实际用的 CLI 和模型：用角色时按角色的
+  const costRun = byCli ? chatRun : agent ? agentRun(agent, settings ?? defaultSettings()) : chatRun
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
   // 首页点了示例：换掉输入框里的内容并把光标放进去，用户改两句就能发
@@ -227,6 +238,7 @@ export function TaskComposer({
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
           plugin,
+          ...(project && (convBudget.tokens || convBudget.costUsd) ? { convBudget } : {}),
         }),
       )
       setPrompt('')
@@ -379,6 +391,16 @@ export function TaskComposer({
               </AgentPicker>
             )}
             {isolateSwitch}
+            {!standalone && project && (
+              <ConvBudgetChip
+                value={convBudget}
+                onChange={setConvBudget}
+                cli={costRun.cli}
+                model={costRun.model}
+                projectBudget={project.budget}
+                chip={chip}
+              />
+            )}
             {byCli ? (
               <ChatModelPicker value={chat} onChange={setChat} />
             ) : (

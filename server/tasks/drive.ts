@@ -36,7 +36,16 @@ export function createDrive(
    * 推对话「接着做」的次数账本：Agent 模式不限次数（用户 2026-11-05 定），只计数给状态诊断看；
    * 收住靠 end_turn 交代结束和空转保护（settledByEnd）。Chat 页的对话仍只推一次（见 shared/conv-mode.ts、ADR 0037）
    */
-  const budget = new DriveBudget(Infinity)
+  const budget = new DriveBudget(Infinity, {
+    // 次数存进对话（A10）：面板重启后接着数。只写在跑的对话（推的时候它一定在内存里），随它下一次落盘一起存
+    load: (id) => sc.live.get(id)?.task.driveCount,
+    save: (id, c) => {
+      const entry = sc.live.get(id)
+      if (!entry) return
+      entry.task.driveCount = c
+      entry.rev++
+    },
+  })
   /** 一条输入：用户或父对话最近的一条消息（面板自己推的不算） */
   const inputOf = (tk: Task) => [...tk.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
   /**

@@ -121,6 +121,7 @@ export function newTask(
     ...(input.analysis && { analysis: input.analysis }),
     ...(input.analysisOf && { analysisOf: input.analysisOf }),
     ...(input.plugin && { plugin: input.plugin }),
+    ...(input.convBudget && (input.convBudget.tokens || input.convBudget.costUsd) && { convBudget: input.convBudget }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,

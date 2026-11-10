@@ -64,3 +64,11 @@ test('用满：停下树上所有在跑的对话（别的对话不动），在�
   assert.equal(r.map.get('root')!.budgetNotice, 'over')
   assert.match(r.map.get('root')!.messages.at(-1)!.text, /用量上限.*停下了整个对话/)
 })
+
+test('对话自己设的上限盖过项目的（A6 ①）：提醒里说是这个对话设的，通知等级照旧记在 budgetNotice', async () => {
+  const root = { ...task('root', '', 900), convBudget: { tokens: 1000, costUsd: 0 } }
+  const r = rig([root, task('kid', 'root', 0)], { tokens: 100_000, costUsd: 0 }, ['kid'])
+  assert.equal(await r.checkBudget(r.map.get('kid')!), false)
+  assert.equal(r.map.get('root')!.budgetNotice, 'warn')
+  assert.match(r.map.get('root')!.messages.at(-1)!.text, /这个对话设的上限的 90%/)
+})

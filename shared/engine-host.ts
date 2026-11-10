@@ -479,6 +479,11 @@ export interface EngineHost {
   resolveWorkflow?: (
     id: string,
   ) => { workflow: Workflow; workflows: Workflow[]; skillSlots: Record<string, string> } | undefined
+  /**
+   * 项目打开了「改了代码要跑过测试步骤才能结束」（Project.requireVerify）：end_turn 记成做完前按这些步骤核对（shared/done-evidence.ts）。
+   * 没开时不传，只记完成依据、卡片上标出来
+   */
+  verifyGate?: { steps: { name: string; command: string }[] }
   /** 子对话列表：协调 Agent 判断这条消息该交给哪个子对话 */
   listConversations?: () => Promise<
     {

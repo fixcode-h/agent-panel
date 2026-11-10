@@ -10,6 +10,7 @@ import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { ProjectCliTrust } from './cli-trust.ts'
 import { EndTurnRecord } from './turn-end.ts'
+import { ConvBudget, TaskRuntimeFields } from './task-runtime-schema.ts'
 import { RolePlugins } from './role-plugins.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { NotifyChannels, ScheduleWebhook } from './notify-channels.ts'
@@ -972,6 +973,8 @@ const ProjectFields = z.object({
    * 两项都是 0 表示不限；旧项目没有这个字段，也是不限
    */
   budget: z.object({ tokens: z.number().int().min(0).default(0), costUsd: z.number().min(0).default(0) }).optional(),
+  /** 改了代码要跑过测试步骤才能用 end_turn 记成做完（shared/done-evidence.ts）；默认不拦，只在完成依据上标出来 */
+  requireVerify: z.boolean().optional(),
   /**
    * 「AI 初始化项目」完成并应用的时间（ISO）。空表示还没初始化：项目设置里要先初始化才能确认保存，
    * 旧项目也是空的，第一次打开设置时补做一次
@@ -1130,6 +1133,8 @@ export const NewTaskInput = z.object({
    */
   budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).optional(),
   budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).optional(),
+  /** 这个对话自己的用量上限（连同名下子对话），设了就不用项目的（Task.convBudget） */
+  convBudget: ConvBudget.optional(),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -2014,6 +2019,7 @@ export const TaskData = z.object({
   plans: z.array(TaskPlan).default([]),
   /** Agent 用 end_turn 交代的结束（最近的在最后，只留最近 50 条），见 shared/turn-end.ts */
   turnEnds: z.array(EndTurnRecord).optional(),
+  ...TaskRuntimeFields,
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
   /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */
