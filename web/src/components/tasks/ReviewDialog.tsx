@@ -615,7 +615,14 @@ export function ReviewDialog({
                 ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
                 : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
-        <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
+        {/* 窄时按钮组也能折行，「自动通过」勾选框独占一行：不然多出的勾选框会把主按钮挤出屏幕 */}
+        <div
+          className={cn(
+            'ml-auto flex shrink-0 gap-2',
+            docked ? 'basis-full flex-wrap justify-end' : 'max-md:basis-full max-md:flex-wrap max-md:justify-end',
+            locked && 'hidden',
+          )}
+        >
           {cancel && (
             <Button
               size="sm"
@@ -652,7 +659,16 @@ export function ReviewDialog({
             {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {texts?.revise ?? t('修改')}
           </Button>
-          {!noApprove && approveExtra && <div className="flex items-center">{approveExtra}</div>}
+          {!noApprove && approveExtra && (
+            <div
+              className={cn(
+                'flex items-center',
+                docked ? 'basis-full justify-end' : 'max-md:basis-full max-md:justify-end',
+              )}
+            >
+              {approveExtra}
+            </div>
+          )}
           {!noApprove && (
             <Button
               size="sm"
