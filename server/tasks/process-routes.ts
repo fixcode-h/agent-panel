@@ -91,7 +91,7 @@ export function registerProcessRoutes(sc: TasksScope) {
   sc.routes.post('/:id/background/stop', async (c) => {
     const id = c.req.param('id')
     if (!(await sc.current(id))) return sc.bad(c, t('任务不存在'), 404)
-    const kids = (await sc.store.list()).filter((x) => x.parentTaskId === id)
+    const kids = await sc.store.childrenOf(id)
     const before = [id, ...kids.map((k) => k.id)].reduce(
       (n, tid) => n + sc.background.list(tid).filter((j) => j.state === 'queued' || j.state === 'running').length,
       0,

@@ -21,7 +21,12 @@ const box = (tex: string, display: boolean) => {
 const block: TokenizerAndRendererExtension = {
   name: 'mathBlock',
   level: 'block',
-  start: (src) => src.match(/^\s*(\$\$|\\\[)/m)?.index,
+  // marked 每切一段正文都会用剩下的整篇调一次 start：每次都扫到文末，长文档（几百 KB 的 Markdown 文件）就是平方级。
+  // 段落到空行就结束，公式只可能在这一段里打断它，只看到第一个空行为止
+  start: (src) => {
+    const blank = /\n[ \t]*\n/.exec(src)
+    return (blank ? src.slice(0, blank.index + 1) : src).match(/^\s*(\$\$|\\\[)/m)?.index
+  },
   tokenizer(src) {
     const m = /^ {0,3}(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])[ \t]*(?:\n|$)/.exec(src)
     if (!m) return undefined

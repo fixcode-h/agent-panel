@@ -50,7 +50,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
     const tk = await s.current(id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const project = tk.projectId ? await s.deps.projects.get(tk.projectId) : null
-    const kids = (await s.store.list()).filter((x) => x.parentTaskId === id).map((k) => s.live.get(k.id)?.task ?? k)
+    const kids = (await s.store.childrenOf(id)).map((k) => s.live.get(k.id)?.task ?? k)
     const list = [tk, ...kids].filter((x) => x.worktree)
     const items = await Promise.all(
       list.map(async (x) => {

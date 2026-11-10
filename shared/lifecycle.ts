@@ -10,6 +10,8 @@
 import { t } from './i18n.ts'
 import type { StopReason, TaskStatus } from './schema.ts'
 import { convStateText, stopReasonText, type ConvState } from './task.ts'
+import type { TrailItem } from './end-turn.ts'
+import type { EndTurnRecord } from './turn-end.ts'
 
 /** 对话日志里的一行（server/task-log.ts 写的格式：`2026-10-30 09:07:12.123 [事件] 键=值 …`） */
 export interface LogLine {
@@ -72,10 +74,11 @@ export function lastExit(lines: LogLine[], step = ''): ProcessExit | undefined {
 }
 
 /**
- * 日志事件按六类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
- * 只认事件名（server 里 taskLog 的第二个参数），新增事件时在这里归类；归不了类的不计数
+ * 日志事件按类计数：弹窗顶上的数字块、日志的筛选和配色、诊断文件里的 counts 都按这一份分，免得三处口径不一。
+ * 只认事件名（server 里 taskLog 的第二个参数），新增事件时在这里归类；归不了类的不计数。
+ * done（它说做完了）不从日志数：按对话记下的 end_turn(done)（Task.turnEnds）算，见 countDone
  */
-export const EVENT_KINDS = ['requests', 'nudges', 'retries', 'errors', 'stops', 'exits'] as const
+export const EVENT_KINDS = ['requests', 'nudges', 'done', 'retries', 'errors', 'stops', 'exits'] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 
 export function eventKind(event: string, fields: Record<string, string> = {}): EventKind | undefined {
@@ -84,6 +87,8 @@ export function eventKind(event: string, fields: Record<string, string> = {}): E
   // 只是判断了没推（cancel、stuck、send-failed）的不算
   if ((event === '计划推进' || event === '收尾提醒') && fields.action === 'continue') return 'nudges'
   if (event === '收尾自检' && fields.action === 'check') return 'nudges'
+  // 结束前钩子在同一轮里拦住（server/tasks/before-end.ts）：和一轮结束后补发的一样算一次面板提醒
+  if (event === '结束前钩子：拦住') return 'nudges'
   if (event === 'CLI 重试模型请求' || event === '模型请求没有输出就换了下一次') return 'retries'
   if (event === 'CLI 进程退出') return 'exits'
   if (event === 'CLI 报这一轮结束') return fields.ok === 'false' ? 'errors' : undefined
@@ -108,7 +113,7 @@ function brief(l: LogLine) {
 }
 
 /**
- * 按完整日志数六类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
+ * 按完整日志数各类事件（服务端读整份日志时算，弹窗只拿到最近 200 行，自己数会少）。
  * step 为空时数对话自己这一轮（日志里没有 step 的行），否则只数这一步的
  */
 export function countEvents(lines: LogLine[], step = ''): LifeCounts {
@@ -121,6 +126,20 @@ export function countEvents(lines: LogLine[], step = ''): LifeCounts {
     out[k].last = { at: l.at, text: brief(l) }
   }
   return out
+}
+
+/**
+ * 「它说做完了」：Agent 用 end_turn(outcome: done) 交代做完的次数（用户 2026-11-06 要在计数里看到、点开定位）。
+ * 只认这次工具调用的记录，不读回复文字（ADR 0041、0049）；记录只留最近 50 条（shared/end-turn.ts 的 pushTurnEnd）
+ */
+export function countDone(counts: LifeCounts, ends: EndTurnRecord[] = []): LifeCounts {
+  const done = ends.filter((e) => e.outcome === 'done')
+  const last = done.at(-1)
+  const ms = last ? Date.parse(last.at) : NaN
+  return {
+    ...counts,
+    done: { n: done.length, ...(!Number.isNaN(ms) && { last: { at: ms, text: 'end_turn outcome=done' } }) },
+  }
 }
 
 /** 模型请求轨迹（server/exec/cli-trace.ts 的 CliTrace，时间是毫秒时间戳） */
@@ -177,8 +196,8 @@ export interface LifeFacts {
   exit?: ProcessExit
   /** 面板计划（没有就是 undefined）：做了几步、一共几步、在等几步、还剩几步要做、进度指纹（短） */
   plan?: { title: string; done: number; total: number; waiting: number; open: number; key: string }
-  /** 面板推进（自驱）的计数：最后一个进度指纹（短）、这个进度推了几次、最多几次 */
-  nudge?: { key: string; n: number; max: number }
+  /** 面板推进（自驱）的计数：最后一个进度指纹（短）、这个进度推了几次（不限次数，2026-11-05 起） */
+  nudge?: { key: string; n: number }
   /** runner 已经把这一轮标成卡住（没有响应检测，见 server/exec/stall-watch.ts）：从什么时候起没输出 */
   stalled?: { since: number }
 }
@@ -204,8 +223,10 @@ const sec = (ms: number) => Math.max(0, Math.round(ms / 1000))
 
 /** 模型多久没回算异常：大上下文的第一段输出几十秒很常见，一分半还没有就该看一眼了 */
 export const MODEL_SILENT_MS = 90_000
-/** 输出到一半停住多久算异常（没有工具在跑时）：和 runner 标卡住的 90 秒一致，免得面板已标卡住、诊断还说在输出 */
+/** 工具结果交回后多久没等到下一次回复算异常：和 runner 标卡住的 90 秒一致，免得面板已标卡住、诊断还说在输出 */
 export const OUTPUT_STALL_MS = 90_000
+/** 输出到一半停住多久算异常（没有工具在跑时）：和 runner 的 MIDWAY_STALL_MS（30 秒）一致 */
+export const MIDWAY_STALL_MS = 30_000
 /** 停止发出后多久还没收完算异常（正常几十毫秒，兜底 3 秒收口） */
 export const STOP_SLOW_MS = 5_000
 
@@ -281,7 +302,7 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
             : afterTool
               ? t('工具结果交回 {s} 秒了，等模型的下一次回复', { s: sec(ms) })
               : t('模型在输出：最后一段输出在 {s} 秒前', { s: sec(ms) })
-        if (ms > OUTPUT_STALL_MS || f.stalled)
+        if (ms > (afterTool ? OUTPUT_STALL_MS : MIDWAY_STALL_MS) || f.stalled)
           add(
             'output-stalled',
             'warning',
@@ -340,7 +361,7 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
           list: kidsText(wrap),
           m: Math.max(0, Math.round((now - oldest) / 60000)),
         }),
-        f.nudge ? t('面板已提醒 {n}/{max} 次', { n: f.nudge.n, max: f.nudge.max }) : '',
+        f.nudge ? t('面板已提醒 {n} 次', { n: f.nudge.n }) : '',
       ]
         .filter(Boolean)
         .join(' '),
@@ -379,8 +400,9 @@ export function verdictOf(f: LifeFacts, now = Date.now()): LifeVerdict {
     add(
       'plan-stalled',
       'warning',
-      f.nudge && f.nudge.key === pl.key && f.nudge.n >= f.nudge.max
-        ? t('计划才做了 {done}/{total}，面板按这个进度推满了 {n} 次，停在这里', {
+      // 面板提醒不限次数（2026-11-05）：停在这里多半是它说了卡住、或者空转保护停下了，提醒次数写在后面
+      f.nudge && f.nudge.key === pl.key
+        ? t('计划才做了 {done}/{total}，面板按这个进度提醒了 {n} 次，停在这里', {
             done: pl.done,
             total: pl.total,
             n: f.nudge.n,
@@ -429,8 +451,10 @@ export interface LifeNode {
   facts: LifeFacts
   verdict: LifeVerdict
   processes: LifeProcess[]
-  /** 按完整日志数的六类事件（旧的诊断文件没有；面板提醒是后加的，更旧的文件里也没有） */
+  /** 按完整日志数的各类事件（旧的诊断文件没有；面板提醒是后加的，更旧的文件里也没有） */
   counts?: LifeCounts
+  /** 面板提醒和 Agent 用 end_turn 交代的结束，按时间排（对话才有；提醒不画进对话，只在这里看） */
+  trail?: TrailItem[]
   /** 最近的日志行（原样） */
   log: string[]
 }

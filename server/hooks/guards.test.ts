@@ -52,13 +52,24 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
   assert.match(bugDeny(ctx({ task: { bug: true } }), edit(path.join(proj, 'src/a.ts'))), /submit_diagnosis/)
   assert.match(bugDeny(ctx(diag('pending')), edit(path.join(proj, 'src/a.ts'))), /等用户确认/)
   assert.match(bugDeny(ctx(diag('questioned')), edit(path.join(proj, 'src/a.ts'))), /提了意见/)
-  assert.match(
-    bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))),
-    /取消了诊断报告.*先用 submit_diagnosis 交新一版/,
-  )
+  assert.match(bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))), /第 1 版点了「不修了」.*不改文件/)
   assert.equal(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/a.ts'))), '')
-  assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户确认的方案/)
+  assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)
+  assert.equal(
+    bugDeny(ctx(diag('approved')), edit(path.join(data, 'tasks/files/t/tmp/build_editor.bat'))),
+    '',
+    '面板给的临时目录不按方案拦',
+  )
   assert.equal(bugDeny(ctx(), edit(path.join(proj, 'src/b.ts'))), '', '不是 Bug 不管')
+  // 按阶段（用户 2026-11-05 定的）：同意了根因还不能改，确认了方案放行方案里的文件和论证时加过日志的文件
+  const list = (...ds: object[]) => ({ task: { bug: true, diagnoses: ds } }) as never
+  const ev = { version: 1, phase: 'evidence', status: 'answered', files: ['src/log.ts'], logPlan: [] }
+  const cause = { version: 2, phase: 'cause', status: 'approved', files: [], logPlan: [] }
+  const plan = { version: 3, phase: 'plan', status: 'approved', files: ['src/a.ts'], logPlan: [] }
+  assert.match(bugDeny(ctx(list(ev)), edit(path.join(proj, 'src/log.ts'))), /先分析/)
+  assert.match(bugDeny(ctx(list(ev, cause)), edit(path.join(proj, 'src/a.ts'))), /先交 phase: plan/)
+  assert.equal(bugDeny(ctx(list(ev, cause, plan)), edit(path.join(proj, 'src/log.ts'))), '', '删临时日志')
+  assert.match(bugDeny(ctx(list(ev, cause, plan)), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)
 })
 
 test('危险命令：递归删根、家、项目，原分支上清工作区，强推、删主干都拦；普通删除和独立分支里的 reset 放行', () => {
@@ -97,6 +108,45 @@ test('长命令转后台：开发服务器、完整测试在前台跑时拒绝�
   assert.equal(longDeny(ctx(), sh('npm run typecheck')), '')
   assert.equal(longDeny(ctx({ canBackground: false }), sh('npm run test:e2e')), '', '没有后台工具时不拦')
   assert.ok(longDeny(ctx({ list: () => ['cargo test'] }), sh('cargo test --all')), '设置里加的也算')
+  assert.match(longDeny(ctx(), sh('npm run dev')), /service/, '常驻进程提示用 service')
+})
+
+test('长命令转后台：只看真正运行的程序，写文件、查文件、提交说明里出现 e2e、--watch 不拦（用户 2026-11-05 报）', () => {
+  for (const cmd of [
+    "cat > docs/a.md <<'EOF'\n先跑 npm run test:e2e\n再用 vite --watch\nEOF",
+    "git commit -m '修复 e2e 超时'",
+    'grep -rn e2e scripts',
+    'cat scripts/e2e/07-local.mjs',
+    'ls scripts/ui-check.mjs',
+    'sed -n 1,20p docs/e2e.md',
+    "@'\nnpm run test:e2e\n'@ | Set-Content a.md",
+  ])
+    assert.equal(longDeny(ctx(), sh(cmd)), '', cmd)
+  assert.match(
+    longDeny(ctx(), sh("cat > a.md <<'EOF'\nx\nEOF\nnpm run test:e2e")),
+    /完整检查/,
+    'heredoc 之后真跑的照样拦',
+  )
+  assert.match(longDeny(ctx(), sh('CI=1 npx playwright test')), /完整检查/, '前面的环境变量跳过')
+  // heredoc 正文不当命令：里面写着 git push --force 不触发危险命令守卫
+  assert.equal(dangerDeny(ctx(), sh("cat > notes.md <<'EOF'\n不要 git push --force\nEOF")), '')
+  assert.match(dangerDeny(ctx(), sh('git push --force origin dev')), /强制推送/)
+})
+
+test('长命令转后台：从项目根起的全项目 grep -r 放前台时拒绝，子目录、rg 放行（用户 2026-11-07 报前台 grep 跑了 2 分钟）', () => {
+  assert.match(longDeny(ctx(), sh(`grep -rl "Win-UE5" "${proj}" --include="*.ini"`)), /run_background/)
+  assert.match(longDeny(ctx(), sh('grep -rn foo .')), /rg/)
+  assert.match(longDeny(ctx(), sh(`grep -r foo ${path.dirname(proj)}`)), /run_background/, '项目根的上层也算')
+  assert.match(longDeny(ctx(), sh('find . -type f | xargs grep -l foo')), /run_background/)
+  for (const cmd of [
+    'grep -rn foo src',
+    'rg -n foo .',
+    'git grep foo',
+    'grep -n foo a.ts',
+    `grep -r foo ${proj}/Source`,
+  ])
+    assert.equal(longDeny(ctx(), sh(cmd)), '', cmd)
+  assert.equal(longDeny(ctx({ canBackground: false }), sh('grep -rn foo .')), '', '没有后台工具时不拦')
 })
 
 test('测试步骤归属：独立分支里的子对话跑「合回后由父对话跑」的步骤时拒绝，共用目录照常', () => {
@@ -126,4 +176,31 @@ test('独立分支越界：子对话改分支目录以外的文件拒绝；自�
   assert.equal(worktreeDeny(wt, edit('src/a.ts')), '')
   assert.equal(worktreeDeny(wt, edit(path.join(tmpdir(), 'x.txt'))), '')
   assert.equal(worktreeDeny(ctx(), edit(path.join(proj, 'src/a.ts'))), '')
+})
+
+test('取消后删临时日志：不许整文件还原，一处一处删', () => {
+  const task = {
+    bug: true,
+    diagnoses: [
+      {
+        version: 1,
+        phase: 'evidence',
+        status: 'cancelled',
+        cleanup: {
+          state: 'running',
+          found: [{ file: 'src/a.ts', line: 1, text: '[排查-x]' }],
+          drop: [],
+          revertFix: false,
+          failed: [],
+          kept: [],
+          pre: {},
+          at: '',
+        },
+      },
+    ],
+  } as unknown as Partial<Ctx['task']>
+  assert.match(bugDeny(ctx({ task }), sh('git checkout -- src/a.ts')), /一处一处删/)
+  assert.match(bugDeny(ctx({ task }), sh('git restore src/a.ts')), /一处一处删/)
+  assert.match(bugDeny(ctx({ task }), sh('p4 revert src/a.ts')), /一处一处删/)
+  assert.doesNotMatch(bugDeny(ctx({ task }), sh('git status')), /一处一处删/)
 })

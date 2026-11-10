@@ -1,3 +1,5 @@
+import { ExperienceSettings, LearnedNote } from './experience.ts'
+import { RestoreThresholds } from './restore/thresholds.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
 import { DARK_TEXT_LEVEL_DEFAULT, LINE_HEIGHT_DEFAULT } from './appearance-defaults.ts'
@@ -7,6 +9,7 @@ import { ComponentStyle } from './component-style.ts'
 import { API_PROTOCOLS, ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { ProjectCliTrust } from './cli-trust.ts'
+import { EndTurnRecord } from './turn-end.ts'
 import { RolePlugins } from './role-plugins.ts'
 import { RemoteAccess } from './remote-schema.ts'
 import { NotifyChannels, ScheduleWebhook } from './notify-channels.ts'
@@ -24,12 +27,14 @@ import {
   TTS_VOICE_COUNT,
 } from './tts.ts'
 import type { ProjectProposal } from './project-init.ts'
-import { AskQuestion, TaskRequest } from './task-request.ts'
-import { TaskFlow, WorkflowKind } from './task-flow-schema.ts'
+import { AskQuestion, TaskRequest, UserAction } from './task-request.ts'
+import { FlowRun, WorkflowKind } from './task-flow-schema.ts'
+import { StopReason } from './stop-reason.ts'
 import { BugCase, Diagnosis } from './bug-diagnosis-schema.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
+import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan-schema.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -501,21 +506,14 @@ export const WorkflowExpose = z.object({
 export type WorkflowExpose = z.infer<typeof WorkflowExpose>
 
 /**
- * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
- * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
+ * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow-run.ts）。
+ * 没有主 Agent（workflow-runs 设计 D1）：节点按连线执行，没指定角色的节点用默认执行角色。
  */
 export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
-  /** 主 Agent；为空表示还没选 */
+  /** 默认执行角色：节点没单独指定角色时用它（字段名沿用旧的「主 Agent」，老数据照读）；为空表示还没选 */
   mainAgentId: z.string().default(''),
-  /**
-   * 主 Agent 调度：子 Agent 的节点完成后交给主 Agent 评估（通过、退回、委派其他工作流、停下），
-   * 条件连线由主 Agent 选路，流程结束时主 Agent 整理最终结果。关掉（false）时按连线自动往下走；没写等于打开
-   */
-  dispatch: z.boolean().optional(),
-  /** 主 Agent 调度时用默认 CLI 的哪一档；为空按 Agent 设的档位 */
-  mainTier: NodeTier.optional(),
   /** 旧版的「团队」：子 Agent 现在直接在节点上选，这里只为读旧数据保留 */
   members: z.array(WorkflowMember).default([]),
   /** 流程：第一个默认是主流程；entryFlowId 指定任务从哪个流程开始 */
@@ -531,6 +529,8 @@ export const WorkflowFields = z.object({
   when: z.string().trim().max(200).optional(),
   notFor: z.string().trim().max(200).optional(),
   kind: WorkflowKind.optional(),
+  /** 同一节点修改几轮后在运行结尾提示（不强制终止，用户 2026-11-05 定）；0 表示不提示，不写按 3 */
+  reviseLimit: z.number().int().min(0).max(50).optional(),
   /** 对外暴露的配置项：项目设置里按它渲染表单 */
   expose: z.array(WorkflowExpose).max(20).default([]),
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
@@ -954,11 +954,12 @@ const ProjectFields = z.object({
    */
   childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
   /**
-   * 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改）。默认开：同一个项目里几个顶层对话
-   * 同时改同一个目录会互相覆盖，「改了哪些文件」和「撤销这一轮」也会算进别的对话的改动（用户 2026-11-04 定）。
-   * 旧字段 isolateDefault 界面从来没能改过，存的 false 只是写盘带上的默认值：换名后由 zod 剥掉，旧项目一律按新默认
+   * 新建对话时「独立分支」默认勾不勾（只是输入框里的默认值，每次新建仍可以改）。默认不勾，要的在项目设置里打开
+   * （用户 2026-11-05 定，撤回 2026-11-04 的默认开）。
+   * 旧字段 isolateNew 默认是 true，存的 true 多半只是写盘带上的默认值、不是用户选的；存的 false 和新默认一样。
+   * 所以换名后由 zod 剥掉旧字段，旧项目一律按新默认不勾；更早的 isolateDefault 同理
    */
-  isolateNew: z.boolean().default(true),
+  isolateByDefault: z.boolean().default(false),
   /**
    * cherry-pick 的目标：Git 项目是本地分支名，P4 项目是目标工作区里的项目路径（另一条分支映射到本机的目录）。
    * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）
@@ -1067,8 +1068,6 @@ export const Attachment = z.object({
   quote: z.string().max(50000).optional(),
 })
 export type Attachment = z.infer<typeof Attachment>
-/** 一次最多附上的文件数 */
-export const MAX_ATTACHMENTS = 10
 /**
  * 上传一个附件最大多少（字节）。比设置里「大文件」小的才上传；大文件先在本机找回原路径直接引用，
  * 找不到时没超过这个上限的仍然上传一份
@@ -1106,7 +1105,7 @@ export const NewTaskInput = z.object({
   model: z.string().trim().max(200).default(''),
   effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  attachments: z.array(Attachment).default([]),
   /** chat 模式：Agent 参数的值（没给的用默认值） */
   params: z.record(z.string(), ParamValue).default({}),
   /**
@@ -1123,8 +1122,8 @@ export const NewTaskInput = z.object({
   analysis: AnalysisKind.optional(),
   /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」把修复建议发回它）；和对话无关的分析不填 */
   analysisOf: z.string().max(100).optional(),
-  /** 模型设计对话：挂上 Blender 工具，右栏多一个 3D 预览（见 docs/adr/0025-model-design-blender.md） */
-  modelDesign: z.boolean().optional(),
+  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填 */
+  plugin: z.string().max(80).optional(),
   /**
    * 执行上限（定时计划带的）：token 上限和时长上限（分钟）。
    * 0 表示不限；计划里的值在创建对话时落进任务，之后改计划不影响已经启动的对话
@@ -1184,12 +1183,14 @@ export type TaskSeenResult = z.infer<typeof TaskSeenResult>
 
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  attachments: z.array(Attachment).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
   /** 页面生成的消息 id（待认领）：服务端沿用，推送到达后按 id 换成真实的一份、不出现两条；必须是 uuid，免得撞 id */
   messageId: z.uuid().optional(),
   from: z.string().optional(), // 别的对话替它发的（task.send）：发件对话 id，记成 peer（ADR 0041）
+  /** 这条是交回「等你操作」的结果（输入框上挂着「交回给」）：那件事的 id，服务端收口后给 CLI 的内容前面加一句说明 */
+  userAction: z.string().max(100).optional(),
 })
 /** 父对话发布的一条全局规则 */
 export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })
@@ -1242,6 +1243,7 @@ export const AlertKind = z.enum([
   'cli_missing', // 找不到 CLI 命令
   'cli_exit', // CLI 没做完这一轮就退出、执行失败
   'no_response', // 交给 CLI 后迟迟没有任何输出
+  'mcp_slow', // 项目里配的 MCP 服务连不上或不响应，CLI 第一轮可能先等它
   'idle', // 执行中很久没有输出
   'timeout', // 超过单步时限被停掉
   'empty_turn', // CLI 报这一轮结束，却什么都没返回
@@ -1368,6 +1370,14 @@ export const FileChange = z.object({ path: z.string(), add: z.number().int(), de
 export type FileChange = z.infer<typeof FileChange>
 
 /**
+ * 项目根之外、这个对话的 Agent 写出过的一个文件：只有绝对路径。
+ * 不在 git 快照里，算不了增删行数、做不了差异和撤销，右栏只列出来供查看。
+ * 和 FileChange 分开：changes 只放相对项目根、能算差异的改动，审查和撤销只认它
+ */
+export const OutsideChange = z.object({ path: z.string() })
+export type OutsideChange = z.infer<typeof OutsideChange>
+
+/**
  * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn-changes.ts）：
  * spans 是 git 快照树的起止（中间被子对话合并隔开时有几段），撤销时只撤这几段自己的改动。
  * revertedAt 是撤销的时间：撤过的卡片只显示「已撤销」，不能再撤
@@ -1414,8 +1424,11 @@ export const TaskMessage = z.object({
    */
   planStart: z.boolean().optional(),
   bugReport: z.number().int().optional(), // Bug 诊断报告第几版（ADR 0045）：对话里画成可点开报告的一行
+  learned: LearnedNote.optional(), // 学到经验的那条系统消息：对话里画成按条展示的卡片（旧消息没有，照旧一行字）
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
+  /** panel 为 helpers 时：这次交回结果的是哪几个子任务（步骤 id）。旧数据没有，按正文的「### 」标题数 */
+  results: z.array(z.string()).optional(),
   /** 面板推回的消息和父子对话之间的往来是哪一种（见 shared/panel-kind.ts）；用户、Agent 说的话没有 */
   panel: PanelKind.optional(),
   /**
@@ -1565,6 +1578,7 @@ export const TaskStep = z.object({
   submitted: Submitted.optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  awaitConfirm: z.boolean().optional(), // 做完了、停在等用户确认：继续时直接回到确认，不重跑节点
   /** 子任务 / 节点在排队等 API 的并发名额；拿到就去掉 */
   apiWait: ApiWait.optional(),
   /**
@@ -1594,29 +1608,8 @@ export type TaskStep = z.infer<typeof TaskStep>
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
 
-/**
- * 任务停在 stopped 的原因。只有 'user' 是用户自己按的暂停，其余都是别的动作顺带把这一轮结束了：
- * 以前 stopTask 只有一个 boolean，全走同一条，界面一律显示「已暂停」，用户没按暂停却看到几只子对话被停了。
- * 界面按它决定说「已暂停」还是说清是谁结束的（见 shared/task.ts 的 childIcon / stopReasonText）。
- */
-export const StopReason = z.enum([
-  'user', // 用户点「暂停」
-  'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
-  'switch', // 换 CLI / 模型 / 角色，这一轮重启
-  'archive', // 归档
-  'delete', // 删除对话（进回收站时结束）
-  'restart', // 面板重启、服务退出
-  'presence', // 页面切走、宽限期到了，CLI 不再等下一句
-  'idle', // 闲置回收（手动释放保活会话等，不是用户按的暂停）
-  'supersede', // 用户发了新消息，打断当前这一轮
-  'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
-  'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
-  'close', // 用户从对话菜单点「关闭 Agent」，只结束 CLI 进程，下一条消息续接会话
-  'lost', // 记录写着在执行，面板里却已经没人在跑它（哪条路径忘了落状态），定时核对时收口（见 shared/task-settle.ts）
-  'budget', // 对话树用到了项目设的用量上限（见 shared/budget.ts）
-  'replaced', // 子对话卡住、面板重启也没恢复，换成新开的子对话接手（见 shared/stuck-child.ts）
-])
-export type StopReason = z.infer<typeof StopReason>
+// 停止原因拆到 stop-reason.ts（这个文件到了行数上限），这里照旧导出
+export { StopReason } from './stop-reason.ts'
 
 /**
  * 一轮（TaskTurn）是怎么结束的：只有 done 是正常结束，其余几种在报告里分开写，
@@ -1719,116 +1712,8 @@ export const TaskTestRun = z.object({
 })
 export type TaskTestRun = z.infer<typeof TaskTestRun>
 
-/**
- * 对话的执行计划：对话分析完列出主步骤，每个主步骤最多再分一层子步骤。
- * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
- * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它。
- * running 与 waiting 分开：running 是「对话现在在动手」（一份计划里最多一个），waiting 是「在等外部结果」（必须挂着 waits）。
- * skipped：明确不做，终态（见 ADR 0020）。
- * 没有「失败」：等的结果没成功、工作流没走完，那一步退回进行中、备注写「需要修复：原因」，对话去查问题修好重做，
- * 不在计划上留一个失败的步骤（用户 2026-10-30 定的，见 ADR 0032）。旧数据里的 failed 读出来就是进行中
- */
-export const PlanStatus = z.preprocess(
-  (v) => (v === 'failed' ? 'running' : v),
-  z.enum(['pending', 'running', 'waiting', 'done', 'skipped']),
-)
-export type PlanStatus = z.infer<typeof PlanStatus>
-
-/**
- * 步骤在等的东西：后台命令（编号）、子对话（id）、子任务（spawn_agents 派出的步骤 id）；
- * 结果回来时按 kind + ref 找到挂在计划里的那一步
- */
-export const PlanWait = z.object({
-  /** parent：子对话把不是自己改出来的报错交给父对话，等父对话通知修好（ref 固定 fix） */
-  kind: z.enum(['background', 'child', 'helper', 'parent']),
-  ref: z.string(),
-  label: z.string().default(''),
-  state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
-  /** 开始等的时间（子对话是它的创建时间）：步骤用时从真正开工算起。旧数据没有 */
-  at: z.string().optional(),
-})
-export type PlanWait = z.infer<typeof PlanWait>
-
-export const PlanItem = z.object({
-  id: z.string(),
-  title: z.string(),
-  status: PlanStatus.default('pending'),
-  /** Agent 写的一句备注（在等什么、卡在哪），或者面板写的等待结果 */
-  note: z.string().default(''),
-  waits: z.array(PlanWait).default([]),
-  startedAt: z.string().default(''),
-  endedAt: z.string().default(''),
-  /**
-   * 这一项最后一次真正变化（状态、标题、备注、等待项）的时间：滞后检测和界面的「N 分钟前更新」读它。
-   * 旧数据没有这个字段，读时退回 startedAt（见 shared/plan.ts 的 itemUpdatedAt）
-   */
-  updatedAt: z.string().optional(),
-})
-export type PlanItem = z.infer<typeof PlanItem>
-
-export const PlanStep = PlanItem.extend({
-  /** 子步骤；主步骤是一次工作流运行时为空，子步骤就是那次运行的节点（run） */
-  children: z.array(PlanItem).default([]),
-  /** 这个主步骤是第几次工作流运行（工作流子对话的流程图） */
-  run: z.number().int().optional(),
-  /**
-   * 面板加的收尾步骤，永远是计划的最后一步（见 plan.ts 的 ensureWrapUp）：merge 是子对话的独立分支合回父对话
-   * 所在的分支，由合并结果标完成；p4 是子对话把改动按文件类型分进各自的 pending changelist 后请父对话验收、
-   * deliver 是共用目录或没有版本管理的子对话请父对话验收，这两种都由父对话收下后面板标完成；
-   * push 是父对话把分支推到远端，Agent 推完自己标。旧数据没有这个字段，当普通步骤
-   */
-  wrapUp: z.enum(['merge', 'p4', 'deliver', 'push']).optional(),
-  /**
-   * 评审本次改动的一步：子对话收尾前必须把它写进计划（标 review: true）并做完，
-   * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
-   */
-  review: z.boolean().optional(),
-  /**
-   * 面板按子对话自动补的步骤（见 plan.ts 的 ensureChildStep）：派子对话时计划里没有能挂的一步就补一步，
-   * 免得子对话在父对话的计划里看不见。Agent 交整份计划时没写到的自动步骤不会被当成「不做了」删掉。
-   * 旧数据没有这个字段
-   */
-  auto: z.boolean().optional(),
-})
-export type PlanStep = z.infer<typeof PlanStep>
-
-export const TaskPlan = z.object({
-  id: z.string(),
-  title: z.string().default(''),
-  steps: z.array(PlanStep).default([]),
-  createdAt: z.string(),
-  /**
-   * 面板重开这份计划的时间（见 plan.ts 的 ensureChildStep）：计划已结束后又派了子对话，就重开它。
-   * 总用时从重开时刻重新算，不把上一轮的历史时长并进这一轮（旧数据没有这个字段）
-   */
-  reopenedAt: z.string().optional(),
-  /** 所有步骤都完成的时间；没完成时为空 */
-  doneAt: z.string().default(''),
-  /**
-   * 这份计划最后一次变化（任何一步的状态、标题、备注，或计划的标题）的时间：
-   * 界面的「N 分钟前更新」和「新输入之后计划有没有动过」都读它。旧数据没有，退回 createdAt
-   */
-  updatedAt: z.string().optional(),
-  /**
-   * 最近一次「带新要求性质」的输入到达时间（用户消息、父对话转达、子对话 / 后台结果里带了新任务）。
-   * 只用来判断「新输入之后计划有没有动过」，不参与状态推进（见 ADR 0020）
-   */
-  lastInputAt: z.string().optional(),
-  /**
-   * 已经为哪一次输入提醒过「计划没跟着改」（对应 lastInputAt 的值）：只提醒一次，
-   * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
-   */
-  inputNotedAt: z.string().optional(),
-  /**
-   * 对话自己（set_plan）最后一次改这份计划的时间。「新要求进来后计划有没有跟着改」只认它：
-   * 面板替它推进的变化（结果回来标完成、派子对话挂等待、子对话上报改备注）不算对话看过了新要求
-   */
-  agentUpdatedAt: z.string().optional(),
-  /** 对话自己写的这份计划的总结：收尾时随 set_plan / finish_plan 交（ADR 0041）；autoSummary 是旧数据的标记 */
-  summary: z.string().default(''),
-  autoSummary: z.boolean().default(false),
-})
-export type TaskPlan = z.infer<typeof TaskPlan>
+// 执行计划的结构拆到 plan-schema.ts（这个文件到了行数上限），从这里引用的地方不用改
+export { PlanStatus, PlanWait, PlanItem, PlanStep, TaskPlan }
 
 // 请求和问题的结构拆到 task-request.ts（这个文件到了行数上限），从这里引用的地方不用改
 export { AskQuestion, TaskRequest }
@@ -1887,6 +1772,8 @@ export const TaskJob = z.object({
   state: z.enum(['queued', 'running']),
   /** 开始跑的时间；排队中为空 */
   startedAt: z.string().default(''),
+  /** 常驻服务（开发服务器、监听）：运行区照样列出、能停掉，但对话不算在等它的结果（server/background.ts 的 awaitedJob） */
+  service: z.boolean().optional(),
 })
 export type TaskJob = z.infer<typeof TaskJob>
 
@@ -2011,7 +1898,9 @@ export const TaskData = z.object({
   analysis: AnalysisKind.optional(),
   /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」发回它）；旧数据、和对话无关的分析没有 */
   analysisOf: z.string().optional(),
-  /** 模型设计对话：后台有一个 Blender，Agent 用 blender_python 工具建模，网页右栏实时预览（ADR 0025） */
+  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填，读法见 taskPlugin */
+  plugin: z.string().optional(),
+  /** 旧版的模型设计对话（ADR 0025，现在是 Blender 插件的 blender.model），只读不写 */
   modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
@@ -2040,6 +1929,12 @@ export const TaskData = z.object({
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
   changes: z.array(FileChange).default([]),
+  /**
+   * 项目根之外、这个对话的 Agent 写出过的文件（CLI 写文件事件报的路径，存绝对路径）。
+   * 面板自己的产物在收集时排除：数据目录里的附件、对话目录的截图 / 临时文件、任务交接和系统临时目录
+   * （见 server/own-changes.ts 的 outsideFiles）。没有 git 快照，只能列出来看，不算进 changes
+   */
+  outsideChanges: z.array(OutsideChange).default([]),
   /** 在线演示里的任务，输出是示例 */
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
@@ -2115,6 +2010,8 @@ export const TaskData = z.object({
   todos: z.array(TaskTodo).default([]),
   /** 对话的执行计划：最后一份没完成的是当前计划，之前的连同总结留着看 */
   plans: z.array(TaskPlan).default([]),
+  /** Agent 用 end_turn 交代的结束（最近的在最后，只留最近 50 条），见 shared/turn-end.ts */
+  turnEnds: z.array(EndTurnRecord).optional(),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
   /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */
@@ -2178,6 +2075,8 @@ export const TaskData = z.object({
   budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
+  /** 模型正在写一个工具调用的入参（写大段报告、大文件时要一二十秒）：哪个工具、从什么时候开始。不存盘意义不大，调用到了就去掉 */
+  drafting: z.object({ tool: z.string(), at: z.string() }).optional(),
   /**
    * 还在跑或排队的后台命令：服务端发给界面时按当时的情况带上，不存盘。
    * 对话这一轮已经说完、命令还在后台跑时，界面靠它在回复上面转圈
@@ -2257,10 +2156,17 @@ export const TaskData = z.object({
   remotePush: z.enum(['allowed', 'denied']).optional(),
   remotePushAt: z.string().optional(),
   runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
-  flow: TaskFlow.optional(), // 工作流子对话（ADR 0044）：见 task-flow-schema.ts
+  flowRun: FlowRun.optional(), // 工作流运行（不是子对话）：属于哪个父对话、阶段、决定记录，见 task-flow-schema.ts
   bug: z.boolean().optional(), // 父对话派来的 Bug（ADR 0045）：修之前交诊断报告 diagnoses，用户确认方案才能改
   diagnoses: z.array(Diagnosis).optional(),
+  /**
+   * 加临时日志之前各文件的快照（文件相对路径 → 内容哈希，内容存在对话目录的 log-base/ 下；不存在的文件记空串）。
+   * 用户同意加日志时拍，只用来在取消修复后核对日志删干净了没有（shared/bug-cleanup.ts），不拿来还原
+   */
+  logBase: z.record(z.string(), z.string()).optional(),
+  userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts
   bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
+  bugMethodPending: z.boolean().optional(), // 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({
@@ -2442,11 +2348,11 @@ export const ElementPicker = z.object({
 })
 export type ElementPicker = z.infer<typeof ElementPicker>
 
-/** 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
- * 外网的请求一律要求访问令牌，和本机访问不同。
+/** 从外网访问面板：默认关闭。打开后另起一个带密码登录的外网专用端口，主端口仍然只给本机用。
+ * 外网的请求一律要求登录会话，和本机访问不同。
  */
 // 外部访问的设置拆在 remote-schema.ts（schema.ts 有行数上限），这里转出，调用方照旧从 schema 引
-export { FrpMapping, RemoteAccess, RemoteFrp } from './remote-schema.ts'
+export { FrpMapping, RemoteAccess, RemoteFrp, RemoteTailscale } from './remote-schema.ts'
 
 /**
  * 设置里各项默认值的迁移版本：改过默认值的项按版本升级一次。
@@ -2467,7 +2373,7 @@ export const Settings = z.object({
    * 还没回复就停掉、接回原会话重启，重启没恢复就新开子对话接手（见 shared/stuck-child.ts）。和 idleTimeoutMinutes 是两个独立的档位
    */
   childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
-  nudgeMax: z.number().int().min(0).max(20).catch(6).default(6), // 计划没做完就停下时最多推几次接着做；0 表示不自动推。子对话和顶层对话共用，Chat 页固定 1 次（见 shared/conv-mode.ts 的 nudgeMax）
+  nudgeMax: z.number().int().min(0).max(20).catch(6).default(6), // 已不用（2026-11-05 起提醒不限次数，见 shared/end-turn.ts）：旧设置文件里有，留着免得读写时报错
   /**
    * 对话页切走后，CLI 还停在等下一句的工具上多久（分钟）；0 表示回复完就结束这一轮。
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多。
@@ -2585,6 +2491,11 @@ export const Settings = z.object({
    */
   fileFormat: FileFormat.prefault({}),
   language: z.enum(['auto', 'zh', 'en']).default('auto'), // 界面语言：auto 跟随浏览器
+  /**
+   * 语言设成 auto 时，浏览器识别出的语言（页面加载后回报，见 web/src/lib/data.tsx）。
+   * 服务端按它定界面文案和交给 Agent 的回复语言；没有（旧数据、还没打开过页面）才退回系统 locale
+   */
+  browserLang: z.enum(['zh', 'en']).optional().catch(undefined),
   bugAuthor: z.boolean().catch(true).default(true), // Bug 诊断报告的引入点显示作者（ADR 0046）；关了只显示提交号
   /**
    * 命令行环境：面板替 Agent 跑整行命令（后台命令、合并时编译里「自动」环境的步骤）用哪个 shell。
@@ -2623,8 +2534,25 @@ export const Settings = z.object({
       concurrency: 3,
       local: { mirror: false, port: 8188, url: '' },
     }),
-  /** 模型设计用的 Blender（见 docs/adr/0025-model-design-blender.md）：可执行文件；空时按 PATH 和常见安装位置找 */
-  blender: z.object({ path: z.string().trim().default('') }).prefault({}),
+  /** UI 设计照原画还原的门槛：位置差几像素算对上、对上的要占多少、切图相似度至少多少 */
+  designRestore: RestoreThresholds.prefault({}),
+  /**
+   * 插件（ADR 0059）：插件 id → 开没开、参数。没有记录 = 关。参数按插件清单里的声明取默认值和校验（shared/plugins）。
+   * 老设置里的 blender.path 在解析前搬进 plugins.blender.config.blenderPath（shared/settings.ts）
+   */
+  plugins: z
+    .record(
+      z.string(),
+      z.object({
+        enabled: z.boolean().default(false),
+        config: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .catch({})
+          .default({}),
+      }),
+    )
+    .catch({})
+    .default({}),
   /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */
   modelCatalog: z
     .object({
@@ -2651,6 +2579,7 @@ export const Settings = z.object({
       workflowRules: z.string().max(8000).default(''),
     })
     .default({ cli: '', model: '', agentRules: '', workflowRules: '' }),
+  experience: ExperienceSettings, // 项目经验：总开关、自动学习、提炼用的模型（shared/experience.ts）
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -2661,6 +2590,8 @@ export const RequestAnswer = z.object({
   answers: z.array(z.string().max(20000)).max(20).optional(),
   /** 允许并且这个对话里一直允许这类（请求的 rule 记进 task.allowRules，见 shared/allow-rules.ts） */
   always: z.boolean().optional(),
+  /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow-run.ts 的 noteConfirm） */
+  ask: z.boolean().optional(),
 })
 
 /** 一个保存下来的账号 */

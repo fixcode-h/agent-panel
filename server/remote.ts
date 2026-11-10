@@ -1,24 +1,18 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { access, chmod, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import type { Server } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
 import path from 'node:path'
-import { userInfo } from 'node:os'
+import { networkInterfaces, userInfo } from 'node:os'
 import { connect } from 'node:net'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { z } from 'zod'
 import type { RemoteAccess } from '../shared/schema.ts'
-import type { CloudflaredInfo, FrpDeployStatus, RemoteAccessStatus, RemoteState } from '../shared/remote.ts'
+import type { FrpDeployStatus, RemoteAccessStatus, RemoteState } from '../shared/remote.ts'
 import { t } from '../shared/i18n.ts'
-import { DATA_DIR } from './store.ts'
 import { getSettings, saveSettings } from './settings.ts'
-import { EXTERNAL_ENV } from './hosts.ts'
+import { EXTERNAL_ENV, FORWARDED_ENV } from './hosts.ts'
 import {
   FRPC_CONFIG,
   deployFrps,
@@ -31,22 +25,24 @@ import {
   FRP_BIN_DIR,
   type FrpcEvent,
 } from './frp.ts'
-import { capture, childEnv } from './exec/process.ts'
-import { resolveCommand } from './cli-source.ts'
-import { netFetch } from './net.ts'
+import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
-import { refreshWinPath } from './win-path.ts'
+import { guardApi } from './guard/gate.ts'
+import { ensurePassword, hasPassword, sessions, syncLimits } from './guard/state.ts'
+import { frpTest } from './frp-test.ts'
+import { tailscaleInfo, tailscaleStart, tailscaleStop, tailscaleUrl } from './tailscale.ts'
+import type { TailscaleInfo } from '../shared/remote.ts'
 
-const execFileAsync = promisify(execFile)
-const isWin = process.platform === 'win32'
-const BIN = path.join(DATA_DIR, 'bin')
-const BIN_FILE = path.join(BIN, isWin ? 'cloudflared.exe' : 'cloudflared')
-const QUICK_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i
+/**
+ * 外部访问：开着时另起一个外网专用端口，从这个端口进来的请求一律要密码登录（guard/gate.ts，参考 dsh-web-guard）。
+ * 外网连过来的路：frp（一键配置的云服务器，本机没有公网 IP 时用），或用户自己的反向代理（Caddy、
+ * Nginx Proxy Manager、nginx）/ 直接监听局域网和公网。以前的 Cloudflare 隧道已经去掉
+ */
 
 type FetchHandler = (req: Request, env?: unknown) => Response | Promise<Response>
 let handler: FetchHandler | undefined
 /** 外网专用端口：开着外网访问时才监听，见 shared/schema.ts 的 RemoteAccess.localPort */
-let external: { server: Server; port: number } | null = null
+let external: { server: Server; port: number; https: boolean } | null = null
 let deploy: FrpDeployStatus | null = null
 /** 端口映射的状态（按映射 id），frpc 重启时清空 */
 let mappingStates: Record<string, { ok: boolean; error: string }> = {}
@@ -61,65 +57,74 @@ process.on('exit', () => {
   } catch {}
 })
 let output = ''
-let startTimer: NodeJS.Timeout | undefined
-let cache: { key: string; at: number; data: CloudflaredInfo } | null = null
+/** 面板开着的 tailscale serve / funnel：关外部访问、换方式时按它关掉 */
+let tsActive: { bin: string; cfg: RemoteAccess['tailscale'] } | null = null
+/** 正在跑的 tailscale serve / funnel（可能在等用户去后台开启）：换设置、关外部访问时停掉它 */
+let tsPending: AbortController | null = null
+/** tailscale 等用户去后台开启 Serve / Funnel 的链接，开好后清空 */
+let enableUrl = ''
+let tsCache: { key: string; at: number; data: TailscaleInfo } | null = null
 let download: { running: boolean; percent: number; error: string } | null = null
 
-/** 允许的外部主机名：只有开着外网访问、隧道已经连上（或填了固定地址）时才有 */
-let active = { enabled: false, hosts: new Set<string>() }
-
-const setActive = (enabled: boolean, hosts: string[]) =>
-  (active = { enabled, hosts: new Set(hosts.map((h) => h.trim().toLowerCase()).filter(Boolean)) })
-
-/** 外部请求只接受当前隧道/反代地址；本机地址由调用方另外判断 */
-export const isRemoteHostAllowed = (host: string) => active.enabled && active.hosts.has(host.toLowerCase())
-
 /**
- * 现在能从外面打开面板的地址：外网访问开着、已经连上才有，否则为空。
+ * 现在能从外面打开面板的地址：外网访问已经连上才有，否则为空（关掉、连接中、出错时 state 都不是 running）。
  * 通知里的直达链接用它（见 server/notify-channels.ts）；不带访问令牌：链接会发到第三方的群里，令牌不能跟着出去
  */
-export const remotePublicUrl = () => (active.enabled && state === 'running' ? url : '')
+export const remotePublicUrl = () => (state === 'running' ? url : '')
 
 /** 交给外网专用端口的请求处理函数（和主端口同一个，见 server/index.ts） */
 export function configureRemote(fetch: FetchHandler) {
   handler = fetch
 }
 
+/** 直接监听时的 HTTPS：证书和私钥都填了才启用，读不了直接报错（不悄悄退回明文） */
+async function tlsOptions(s: RemoteAccess) {
+  if (s.mode !== 'custom' || (!s.tlsCert && !s.tlsKey)) return null
+  if (!s.tlsCert || !s.tlsKey) throw new Error(t('HTTPS 证书和私钥要一起填'))
+  const read = (file: string) =>
+    readFile(file).catch((e: Error) => {
+      throw new Error(t('读不了文件 {file}：{msg}', { file, msg: e.message }))
+    })
+  return { cert: await read(s.tlsCert), key: await read(s.tlsKey) }
+}
+
 /**
- * 起外网专用端口（只监听 127.0.0.1）：隧道 / frpc / 反代转进来的请求在 env 上打标记，
- * tokenGuard 据此一律当外网处理。fixed 为 false 时端口被占用就换一个系统分配的
+ * 起外网专用端口：请求在 env 上打 EXTERNAL_ENV 标记，tokenGuard 据此交给登录门。
+ * frp 只监听 127.0.0.1（frpc 在本机），端口被占用就换系统分配的；自建反代按设置监听，端口是写死在反代里的，被占用直接报错
  */
-function startExternal(want: number, fixed: boolean): Promise<number> {
+async function startExternal(s: RemoteAccess): Promise<number> {
   const fetch = handler
-  if (!fetch) return Promise.reject(new Error(t('面板服务还没启动')))
+  if (!fetch) throw new Error(t('面板服务还没启动'))
+  const custom = s.mode === 'custom'
+  const hostname = custom ? s.listenHost : '127.0.0.1'
+  const tls = await tlsOptions(s)
   const listen = (p: number) =>
-    new Promise<{ server: Server; port: number }>((resolve, reject) => {
+    new Promise<NonNullable<typeof external>>((resolve, reject) => {
       const server = serve(
         {
-          fetch: (req: Request, env: Record<string, unknown>) => fetch(req, { ...env, [EXTERNAL_ENV]: true }),
+          fetch: (req: Request, env: Record<string, unknown>) =>
+            fetch(req, { ...env, [EXTERNAL_ENV]: true, [FORWARDED_ENV]: custom }),
           port: p,
-          hostname: '127.0.0.1',
+          hostname,
+          ...(tls ? { createServer: createHttpsServer as never, serverOptions: tls } : {}),
         },
-        (info) => resolve({ server: server as Server, port: info.port }),
+        (info) => resolve({ server: server as Server, port: info.port, https: !!tls }),
       ) as Server
       server.once('error', reject)
     })
-  return listen(want)
-    .catch((e: NodeJS.ErrnoException) => {
-      if (e.code !== 'EADDRINUSE' || fixed) {
-        throw new Error(
-          e.code === 'EADDRINUSE'
-            ? t('外网专用端口 {port} 已被占用，请在设置里换一个', { port: String(want) })
-            : e.message,
-        )
-      }
-      return listen(0)
-    })
-    .then((x) => {
-      external = x
-      log.info('remote', '外网专用端口已监听', { port: x.port })
-      return x.port
-    })
+  const x = await listen(s.localPort).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== 'EADDRINUSE' || custom) {
+      throw new Error(
+        e.code === 'EADDRINUSE'
+          ? t('外网专用端口 {port} 已被占用，请在设置里换一个', { port: String(s.localPort) })
+          : e.message,
+      )
+    }
+    return listen(0)
+  })
+  external = x
+  log.info('remote', '外网专用端口已监听', { host: hostname, port: x.port, https: x.https })
+  return x.port
 }
 
 function stopExternal() {
@@ -132,11 +137,6 @@ function stopExternal() {
     ;(x.server as Server & { closeAllConnections?: () => void }).closeAllConnections?.()
     setTimeout(resolve, 2000).unref()
   })
-}
-
-/** 从 cloudflared 的输出里找临时地址（重启后域名会变） */
-export function tunnelUrl(text: string): string {
-  return text.match(QUICK_URL)?.[0].toLowerCase() ?? ''
 }
 
 /** 外部地址补上协议，去掉路径；不合法时返回空 */
@@ -159,36 +159,10 @@ export function hostOfUrl(value: string): string {
   return u ? new URL(u).hostname.toLowerCase() : ''
 }
 
-/** 检测 cloudflared：设置里的命令、数据目录里下载的、PATH 里的 */
-async function probe(command: string, force = false): Promise<CloudflaredInfo> {
-  const key = `${command}|${BIN_FILE}`
-  if (!force && cache?.key === key && Date.now() - cache.at < 60_000) return cache.data
-  // 用 winget、安装包装好后新的 PATH 只在注册表里，补进当前进程再找
-  await refreshWinPath(force)
-  const candidates = [...new Set([command.trim(), BIN_FILE, 'cloudflared'].filter(Boolean))]
-  let reason = ''
-  let data: CloudflaredInfo = { installed: false, version: '', path: '', error: t('没有找到 cloudflared') }
-  for (const c of candidates) {
-    const r = await capture(c, ['--version'], process.cwd(), childEnv([]), 5000)
-    const out = (r.stdout || r.stderr).trim().split('\n')[0] ?? ''
-    if (!r.spawnError && !r.killed && r.code === 0) {
-      const version = out.match(/version\s+v?([\w.-]+)/i)?.[1] ?? out
-      data = { installed: true, version, path: resolveCommand(c, process.env) ?? c, error: '' }
-      break
-    }
-    reason = r.spawnError ?? (r.killed ? t('检测超时') : out)
-  }
-  if (!data.installed && reason) data.error = reason
-  cache = { key, at: Date.now(), data }
-  return data
-}
-
 const lastLines = (text: string) => text.trim().split('\n').slice(-4).join('\n').slice(-800)
 
 /** 停掉正在运行的隧道，等它退出（最多 3 秒） */
 async function stopChild() {
-  clearTimeout(startTimer)
-  startTimer = undefined
   const cp = child
   child = null
   if (!cp || cp.exitCode !== null) return
@@ -215,112 +189,98 @@ async function stopChild() {
 function fail(message: string) {
   state = 'error'
   error = message
-  setActive(false, [])
   log.warn('remote', '外部访问不可用', { error: message })
 }
 
+/** 本机的局域网 IPv4：直接监听时拼访问地址，反代跑在 Docker 里时当转发目标 */
+export function lanIps(): string[] {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((n) => !!n && n.family === 'IPv4' && !n.internal)
+    .map((n) => n!.address)
+}
+
 async function start(s: RemoteAccess) {
-  // 自建反代要指向固定端口；其它方式由面板自己接，端口被占用就换一个
-  const ext = await startExternal(s.localPort, s.mode === 'custom')
+  // 第一次打开外部访问：生成初始密码，设置页显示给用户
+  await ensurePassword()
+  const ext = await startExternal(s)
   if (s.mode === 'frp') return startFrpc(s, ext)
-  if (s.mode === 'custom') {
-    const target = normalizePublicUrl(s.publicUrl)
-    if (!target) return fail(t('请填写外部访问地址，例如 https://panel.example.com'))
-    url = target
-    state = 'running'
-    error = ''
-    setActive(true, [hostOfUrl(target)])
-    log.info('remote', '外部访问已启用（自建反向代理）', { url })
-    return
-  }
-
-  const info = await probe(s.command)
-  if (!info.installed) {
-    return fail(t('没有找到 cloudflared：请先在设置里下载，或安装后把路径填到「cloudflared 路径」。'))
-  }
-
-  let target = ''
-  if (s.mode === 'token') {
-    if (!s.tunnelToken) return fail(t('请填写 Cloudflare Tunnel 的 token'))
-    target = normalizePublicUrl(s.publicUrl)
-    if (!target) return fail(t('请填写隧道的域名，例如 https://panel.example.com'))
-    // 固定域名在设置里已经知道，隧道连上之前也可以先允许访问（连不上时请求会失败）
-    url = target
-    setActive(true, [hostOfUrl(target)])
-  }
-
-  // 默认的 QUIC（UDP 7844）在国内常被干扰，固定用 http2 走 TCP
-  const args =
-    s.mode === 'token'
-      ? ['tunnel', '--no-autoupdate', '--protocol', 'http2', 'run']
-      : ['tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', `http://127.0.0.1:${ext}`]
-  const env = childEnv([])
-  // token 走环境变量，不出现在进程列表的参数里
-  if (s.mode === 'token') env.TUNNEL_TOKEN = s.tunnelToken
-  state = 'starting'
+  if (s.mode === 'tailscale') return startTailscale(s, ext)
+  // 自建反代：填了访问地址就用它，没填按监听地址拼一个（直连局域网时能直接打开）
+  const scheme = external?.https ? 'https' : 'http'
+  const lan = s.listenHost === '0.0.0.0' ? lanIps()[0] : ''
+  url = normalizePublicUrl(s.publicUrl) || `${scheme}://${lan || '127.0.0.1'}:${ext}`
+  state = 'running'
   error = ''
-  output = ''
-  log.info('remote', '正在启动 cloudflared', { mode: s.mode })
-  let cp: ChildProcess
-  try {
-    cp = spawn(info.path, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env })
-  } catch (e) {
-    return fail((e as Error).message)
-  }
-  child = cp
+  log.info('remote', '外部访问已启用（自建反向代理）', { url })
+}
 
-  const onData = (b: Buffer) => {
-    if (child !== cp) return
-    output = (output + b.toString()).slice(-8000)
-    if (s.mode !== 'quick') return
-    const found = tunnelUrl(output)
-    if (!found || state === 'running') return
-    url = found
-    state = 'running'
-    error = ''
-    setActive(true, [hostOfUrl(found)])
-    clearTimeout(startTimer)
-    log.info('remote', '外部访问已启用', { url })
-  }
-  cp.stdout?.on('data', onData)
-  cp.stderr?.on('data', onData)
-  cp.on('error', (e) => {
-    if (child !== cp) return
-    fail(e.message)
-  })
-  cp.on('exit', (code) => {
-    if (child !== cp) return
-    child = null
-    state = 'error'
-    error = t('cloudflared 已退出（退出码 {code}）：{log}', { code: String(code), log: lastLines(output) })
-    setActive(false, [])
-    log.error('remote', 'cloudflared 已退出', { code, error })
-  })
+/** 检测 tailscale；设置页每 2 秒刷新状态，结果缓存 15 秒，点「重新检测」时强制重测 */
+async function probeTailscale(s: RemoteAccess, force = false) {
+  const key = s.tailscale.command
+  if (!force && tsCache?.key === key && Date.now() - tsCache.at < 15_000) return tsCache.data
+  const data = await tailscaleInfo(key)
+  tsCache = { key, at: Date.now(), data }
+  return data
+}
 
-  startTimer = setTimeout(
-    () => {
-      if (child !== cp) return
-      if (s.mode === 'quick' && state !== 'running') {
-        fail(
-          t(
-            'cloudflared 已经启动，但 30 秒内没有拿到外网地址。国内网络经常连不上 Cloudflare，建议改用「云服务器（frp）」。',
-          ),
-        )
-        void stopChild()
-        return
-      }
-      // token 模式没有地址可等，进程还活着就先当作已连接；连不上时 cloudflared 会自己退出
-      if (state === 'starting') state = 'running'
+/**
+ * Tailscale 方式：tailscale serve / funnel 把 https://<机器名>.ts.net 转到外网专用端口。
+ * tailnet 还没开启 Serve / Funnel 时 tailscale 打出开启链接后一直等：这里不陪着等（不然「重新连接」一直转圈、状态停在未启用），
+ * 先把链接交给设置页、状态记为正在连接，命令在后台接着等，用户开好后它自己配完，状态转为已连接
+ */
+async function startTailscale(s: RemoteAccess, ext: number) {
+  state = 'starting'
+  const info = await probeTailscale(s, true)
+  if (!info.installed || !info.running) return fail(info.error)
+  const ac = new AbortController()
+  tsPending = ac
+  tsActive = { bin: info.path, cfg: s.tailscale }
+  let needEnable!: () => void
+  const asked = new Promise<void>((resolve) => (needEnable = resolve))
+  const done = tailscaleStart(info.path, s.tailscale, ext, {
+    signal: ac.signal,
+    onNeedEnable: (link) => {
+      enableUrl = link
+      log.info('remote', 'Tailscale 等待在后台开启', { link, funnel: s.tailscale.funnel })
+      needEnable()
     },
-    s.mode === 'quick' ? 30_000 : 3000,
+  }).then(
+    () => {
+      if (tsPending !== ac) return
+      tsPending = null
+      enableUrl = ''
+      url = tailscaleUrl(info.dnsName, s.tailscale.httpsPort)
+      state = 'running'
+      error = ''
+      log.info('remote', '外部访问已启用（Tailscale）', { url, funnel: s.tailscale.funnel })
+    },
+    (e: Error) => {
+      if (tsPending !== ac) return
+      tsPending = null
+      enableUrl = ''
+      fail(e.message)
+    },
   )
+  await Promise.race([done, asked])
+}
+
+async function stopTailscale() {
+  tsPending?.abort()
+  tsPending = null
+  enableUrl = ''
+  const x = tsActive
+  tsActive = null
+  if (x) await tailscaleStop(x.bin, x.cfg)
 }
 
 /** 跑 frpc：把云服务器上的 remotePort 转到外网专用端口 */
 async function startFrpc(s: RemoteAccess, ext: number) {
   const f = s.frp
   if (!f.server || !f.token) return fail(t('还没配置云服务器：填好服务器信息后点「一键配置」'))
-  url = `http://${f.server.includes(':') ? `[${f.server}]` : f.server}:${f.remotePort}`
+  // 在云服务器上配了反向代理和域名时用域名，没有就是 IP:面板端口
+  url =
+    normalizePublicUrl(s.publicUrl) || `http://${f.server.includes(':') ? `[${f.server}]` : f.server}:${f.remotePort}`
   state = 'starting'
   error = ''
   output = ''
@@ -452,12 +412,13 @@ function frpHint(ev: FrpcEvent, bindPort: number, remotePort: number, line: stri
 
 async function doApply() {
   await stopChild()
+  await stopTailscale()
   await stopExternal()
   mappingStates = {}
   state = 'off'
   url = ''
   error = ''
-  setActive(false, [])
+  await syncLimits()
   const s = (await getSettings()).remoteAccess
   if (!s.enabled) return
   try {
@@ -468,7 +429,7 @@ async function doApply() {
 }
 
 let queue: Promise<unknown> = Promise.resolve()
-/** 按设置启停隧道；连续保存设置时排队执行，不会同时起两个 cloudflared */
+/** 按设置启停外网专用端口和 frpc；连续保存设置时排队执行，不会同时起两个 frpc */
 export function applyRemote() {
   const p = queue.then(doApply, doApply)
   queue = p.catch(() => {})
@@ -477,136 +438,27 @@ export function applyRemote() {
 
 export const stopRemote = async () => {
   await stopChild()
+  await stopTailscale()
   await stopExternal()
+  // 退出前把会话表写下去，重启后已登录的设备不用重新登录
+  await sessions.flush()
 }
 
-/** 下载 cloudflared：Windows / Linux 下直接放二进制，macOS 下载后解压 */
-function asset() {
-  const arch = process.arch === 'arm64' ? 'arm64' : 'amd64'
-  if (isWin) return { name: `cloudflared-windows-${arch}.exe`, tgz: false }
-  if (process.platform === 'linux') return { name: `cloudflared-linux-${arch}`, tgz: false }
-  if (process.platform === 'darwin') return { name: `cloudflared-darwin-${arch}.tgz`, tgz: true }
-  return undefined
-}
-
-async function downloadFile(from: string, to: string, onPercent: (n: number) => void, signal: AbortSignal) {
-  const res = await netFetch(from, { signal })
-  if (!res.ok || !res.body) throw new Error(t('下载失败（{status}）：{url}', { status: String(res.status), url: from }))
-  const total = Number(res.headers.get('content-length') ?? 0)
-  let got = 0
-  onPercent(-1)
-  const body = Readable.fromWeb(res.body as never)
-  body.on('data', (c: Buffer) => {
-    got += c.length
-    onPercent(total ? Math.min(100, Math.round((got / total) * 100)) : -1)
-  })
-  const part = `${to}.part`
-  await mkdir(path.dirname(to), { recursive: true })
-  await pipeline(body, createWriteStream(part), { signal })
-  await rename(part, to)
-}
-
-/** 小于这个大小的不可能是 cloudflared（正常 20–50 MB）：多半是被代理、门户页换成了一段 HTML */
-const MIN_BINARY_BYTES = 5 * 1024 * 1024
-
-/**
- * 文件头是不是这个系统能跑的可执行文件：Windows 是 PE（MZ），Linux 是 ELF，macOS 是 Mach-O（含通用二进制）。
- * 只看文件头，返回给用户看的原因，通过时返回空字符串
- */
-export function binaryProblem(head: Buffer, size: number, platform: NodeJS.Platform): string {
-  if (size < MIN_BINARY_BYTES) return t('下载的 cloudflared 只有 {n} 字节，不是完整的程序', { n: String(size) })
-  const magic = head.subarray(0, 4).toString('hex')
-  const ok =
-    platform === 'win32'
-      ? head.subarray(0, 2).toString('latin1') === 'MZ'
-      : platform === 'linux'
-        ? magic === '7f454c46'
-        : platform === 'darwin'
-          ? ['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe'].includes(magic)
-          : false
-  return ok ? '' : t('下载的 cloudflared 不是这个系统能运行的程序（文件头 {magic}）', { magic })
-}
-
-/**
- * 下载完的 cloudflared 先核对再用：cloudflared 的 GitHub Release 没有可以离线核对的校验文件，
- * 至少确认它是完整大小的、本系统格式的可执行文件，并把 sha256 记进日志，出了问题能对照官方发布页核对
- */
-async function verifyBinary(file: string) {
-  const fh = await open(file, 'r')
-  let head: Buffer
-  let size: number
-  try {
-    size = (await fh.stat()).size
-    head = Buffer.alloc(4)
-    await fh.read(head, 0, 4, 0)
-  } finally {
-    await fh.close()
-  }
-  const why = binaryProblem(head, size, process.platform)
-  if (why) throw new Error(why)
-  const h = createHash('sha256')
-  await pipeline(createReadStream(file), h)
-  log.info('remote', 'cloudflared 文件核对通过', { path: file, bytes: size, sha256: h.digest('hex') })
-}
-
-/** 下载 cloudflared 到数据目录；返回错误信息，成功时为空 */
-export async function installCloudflared(): Promise<string> {
-  if (download?.running) return t('正在下载 cloudflared，稍后再试')
-  const a = asset()
-  if (!a) {
-    download = { running: false, percent: -1, error: t('这个系统不支持自动下载，请手动安装 cloudflared。') }
-    return download.error
-  }
-  download = { running: true, percent: -1, error: '' }
-  // 不用解压的直接存成 cloudflared(.exe)：检测只认这个名字
-  const file = a.tgz ? path.join(BIN, a.name) : BIN_FILE
-  const url = `https://github.com/cloudflare/cloudflared/releases/latest/download/${a.name}`
-  try {
-    await mkdir(BIN, { recursive: true })
-    log.info('remote', '开始下载 cloudflared', { url })
-    await downloadFile(
-      url,
-      file,
-      (n) => {
-        if (download) download.percent = n
-      },
-      AbortSignal.timeout(10 * 60_000),
-    )
-    if (a.tgz) {
-      await execFileAsync('tar', ['-xzf', file, '-C', BIN])
-      await rm(file, { force: true })
-    }
-    // 核对不过就删掉：留着的话下次检测会把这个坏文件当成已装好
-    await verifyBinary(BIN_FILE).catch(async (e) => {
-      await rm(BIN_FILE, { force: true })
-      throw e
-    })
-    if (!isWin) await chmod(BIN_FILE, 0o755)
-    // 下载到的文件可能和设置里填的命令不是同一个；重新检测一次
-    cache = null
-    log.info('remote', 'cloudflared 已下载', { path: BIN_FILE })
-    await applyRemote()
-  } catch (e) {
-    download = { running: false, percent: -1, error: (e as Error).message }
-    log.error('remote', '下载 cloudflared 失败', e)
-    return download.error
-  }
-  download = { running: false, percent: 100, error: '' }
-  return ''
-}
-
-async function status(link: (url: string) => string): Promise<RemoteAccessStatus> {
+async function status(): Promise<RemoteAccessStatus> {
   const s = (await getSettings()).remoteAccess
   return {
     enabled: s.enabled,
     mode: s.mode,
     state,
     url,
-    link: url ? link(url) : '',
     error,
     localPort: external?.port ?? 0,
+    https: !!external?.https,
+    lanIps: lanIps(),
+    hasPassword: hasPassword(),
     localUser: localUser(),
-    cloudflared: await probe(s.command),
+    tailscale: s.mode === 'tailscale' ? await probeTailscale(s) : null,
+    enableUrl,
     download,
     deploy,
     mappings: s.mode === 'frp' && s.enabled ? await withLocalProbe(s) : mappingStates,
@@ -725,34 +577,38 @@ function localUser() {
   }
 }
 
-/** 设置页用的接口：状态、检测、下载 */
-export function remoteApi(deps: { link: (url: string) => string }) {
+/** 设置页用的接口：状态、重新连接、一键配置云服务器、连接测试；访问密码和登录的设备在 /guard 下 */
+export function remoteApi() {
   const routes = new Hono()
-  routes.get('/status', async (c) => c.json(await status(deps.link)))
-  routes.post('/check', async (c) => {
-    const s = (await getSettings()).remoteAccess
-    cache = null
-    const info = await probe(s.command, true)
-    return c.json({ ...(await status(deps.link)), cloudflared: info } satisfies RemoteAccessStatus)
-  })
-  // 「重新连接」：按当前设置重启隧道（frpc / cloudflared），不用把外部访问关掉再打开
+  routes.get('/status', async (c) => c.json(await status()))
+  // 「重新连接」：按当前设置重启外网端口和 frpc，不用把外部访问关掉再打开
   routes.post('/restart', async (c) => {
     await applyRemote()
-    return c.json(await status(deps.link))
-  })
-  routes.post('/install', async (c) => {
-    void installCloudflared()
-    return c.json(await status(deps.link))
+    return c.json(await status())
   })
   routes.post('/frp/deploy', async (c) => {
     const p = DeployBody.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return c.json({ error: t('服务器信息不完整：{msg}', { msg: z.prettifyError(p.error) }) }, 400)
     try {
       const remoteAccess = await deployCloud(p.data)
-      return c.json({ remoteAccess, status: await status(deps.link) })
+      return c.json({ remoteAccess, status: await status() })
     } catch (e) {
       return c.json({ error: (e as Error).message }, 400)
     }
   })
+  // 连接测试：从本机按顺序试 frp 的每一段，告诉用户断在哪
+  routes.post('/frp/test', async (c) => {
+    const s = (await getSettings()).remoteAccess
+    return c.json(await frpTest(s, { localPort: external?.port ?? 0, frpcRunning: !!child, state, error }))
+  })
+  // Tailscale 刚装好 / 刚登录：重新检测，连上了就顺手按设置开转发
+  routes.post('/tailscale/check', async (c) => {
+    const s = (await getSettings()).remoteAccess
+    await probeTailscale(s, true)
+    // 正在等用户去后台开启时不重来：开好后后台那条命令自己会连上，重来只会再打一遍链接
+    if (s.enabled && s.mode === 'tailscale' && state !== 'running' && !tsPending) await applyRemote()
+    return c.json(await status())
+  })
+  routes.route('/guard', guardApi())
   return routes
 }

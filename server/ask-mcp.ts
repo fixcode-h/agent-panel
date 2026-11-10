@@ -9,6 +9,7 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
+import { VIDEO_TOOL } from './video/agent-tool.ts'
 import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 import { log } from './log.ts'
@@ -39,7 +40,7 @@ export type Ask = (ev: AskEvent) => void
 /** 长等待（提问、等下一句）期间定期往流里写一行注释当心跳，免得 HTTP 客户端判定连接空闲 */
 const HEARTBEAT_MS = 20_000
 /** 会等很久的工具：走流式响应带心跳（wait_agents 一次可能等到子任务全部结束，见 orch-mcp.ts 的 WAIT_AGENTS_S） */
-const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents']
+const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents', 'video_frames']
 
 const sessions = new Map<
   string,
@@ -62,7 +63,7 @@ const sessions = new Map<
 const TOOL = {
   name: 'ask_user',
   description:
-    '向用户提问并等他在界面上回答。需要用户做选择、补充信息、确认方向时用它，不要把问题写成普通文字。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」；用户也能自己填写别的答案。' +
+    '向用户提问并等他在界面上回答。只用来让用户拿主意：做选择、补充他脑子里的信息、确认方向，不要把问题写成普通文字。要用户离开对话去做一件事（跑一次、复现、在设备上看效果、给只在他手里的文件或日志）用 request_user_action，不要把「你去做……再发回来」写成选项。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」；用户也能自己填写别的答案。' +
     '问题本身可以同时选好几项时（例如「现在修哪些」「要包含哪些」「要改哪几个文件」），必须把 multiSelect 设为 true：界面会变成方框、可以多选，标题后面也会标出「多选」。只有一个答案能选时才用单选（不写或 false）。',
   inputSchema: {
     type: 'object',
@@ -200,6 +201,8 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
     ...(s.wait ? [WAIT_TOOL] : []),
     ...orch,
     ...(s.app ? APP_TOOLS : []),
+    // 从视频截帧（收在 more_tools 里）：对话里才有，帧写进这个对话的目录
+    ...(s.app ? [VIDEO_TOOL] : []),
   ]
   // 不常用的工具不直接列出，收进 more_tools（见 shared/panel-tools.ts 的 DEFERRED_TOOLS）：
   // 工具说明每个会话都要整份带着，父对话一次二十多个、上万字，大多数一轮都用不到
@@ -209,6 +212,8 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
     if (name === NOTES_TOOL.name && s.notes) return callNotes(s)
     if (s.orch && orch.some((x) => x.name === name)) return callOrchTool(s.orch, name, args, signal)
     if (s.app && APP_TOOLS.some((x) => x.name === name)) return callAppTool(s.app, name, args)
+    if (s.app && name === VIDEO_TOOL.name)
+      return (await import('./video/agent-frames.ts')).callVideoTool(s.app.taskId, args, signal)
     if (name === WAIT_TOOL.name && s.wait) {
       const text = await s.wait()
       return { content: [{ type: 'text', text: text ?? '用户已经离开了这个对话，本轮到此结束。' }] }

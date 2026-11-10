@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base + '#/design/demo-design-menu')
   await check(p, 'UI设计', ['控件树', 'AI 对话', 'StartGroup'])
@@ -201,7 +201,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('UI设计：展开折叠后看不到思考过程'))
   await check(p, 'UI设计-生成中', ['正在生成图片'])
-  await check(p, 'UI设计-写入', ['replace_widget'])
+  // 设计工具按 shared/tool-names.ts 显示中文名（replace_widget → 替换控件）
+  await check(p, 'UI设计-写入', ['替换控件'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
   // 收起后过程不铺在屏幕上：思考块整个不渲染，不是一个还占着位置的隐藏块
   {
@@ -331,53 +332,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 分类行仍能单独收起展开
   await side().locator('[data-kind="game"]').click()
   await side().locator('[data-kind="game"]').click()
-  // 侧栏顶部的设计类型下拉：切到「模型设计」列的是 Agent 项目里的模型对话（演示数据里没有，显示说明和新建入口），
-  // 切回「UI 设计」项目列表还在
+  // 侧栏顶部的设计类型下拉：没有装插件时只有「UI 设计」；模型设计来自 Blender 插件（ADR 0059），演示里不装插件
   await side().getByRole('button', { name: '切换设计类型' }).click()
-  await p.getByRole('menuitemradio', { name: /模型设计/ }).click()
-  await side()
-    .getByText(/还没有模型设计对话/)
-    .waitFor()
-  assert.equal(await projFold().count(), 0, '模型设计下不列 UI 项目')
-  // 新建模型设计：选项目、写要建的模型；演示版没有 Blender，弹窗里要说清楚并给去设置的入口
-  await side().getByRole('button', { name: '新建模型设计' }).first().click()
-  await check(p, 'UI设计-新建模型设计', ['要建什么模型', '在线演示不能运行 Blender', '开始建模'])
-  // 项目可以选已有的，也可以指定一个本机文件夹新建项目（文件夹不存在就建出来，项目名默认取文件夹名）
-  {
-    const dlg = p.getByRole('dialog')
-    await dlg.getByRole('radio', { name: '新建项目 / 指定文件夹' }).click()
-    await dlg.getByLabel('文件夹').fill('~/models/treasure-chest')
-    await dlg
-      .getByLabel('项目名')
-      .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('新建模型设计：填了文件夹后没有项目名输入框'))
-    if (
-      (await dlg
-        .getByLabel('项目名')
-        .inputValue()
-        .catch(() => '')) !== 'treasure-chest'
-    )
-      errors.push('新建模型设计：项目名没有默认取文件夹名')
-    await check(p, 'UI设计-新建模型设计-指定文件夹', ['项目名'])
-    // 后面的用例按已有项目走：切回去
-    await dlg.getByRole('radio', { name: '已有项目' }).click()
-  }
-  // 建好跳进对话：右栏默认是「模型」页签，演示版给一只示例宝箱，列出场景里的物体（预览本身要 WebGL，这里只断言物体列表）
-  await p.getByLabel('要建什么模型').fill('低多边形宝箱')
-  await p.getByRole('button', { name: '开始建模' }).click()
-  await p
-    .getByText('Chest_Body', { exact: true })
-    .waitFor({ timeout: 8000 })
-    .catch(() => errors.push('模型设计：建好对话后右栏没有显示模型的物体列表'))
-  await check(p, 'UI设计-模型预览', ['第 1 版 · 5 个物体', 'Chest_Lid'])
-  // 模型对话属于设计模式：开在 #/model 下，Agent 模式的项目对话里不列它
-  if (!p.url().includes('#/model/')) errors.push(`模型设计：建好后应停在 #/model/<对话>，实际是 ${p.url()}`)
-  await p.goto(base + '#/')
-  await settle(p)
-  if (await p.locator('[data-sidebar]').getByText('低多边形宝箱', { exact: false }).count())
-    errors.push('模型设计对话不该出现在 Agent 模式的侧栏里')
-  await p.goto(base + '#/design')
-  await side().getByRole('button', { name: '切换设计类型' }).click()
+  if (await p.getByRole('menuitemradio', { name: /模型设计/ }).count())
+    errors.push('设计类型：没有装插件时不该有「模型设计」')
   await p.getByRole('menuitemradio', { name: /UI 设计/ }).click()
   await gameKind().waitFor()
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
@@ -385,7 +343,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'UI设计-画板数据', ['星辉宝石'])
   await p.waitForTimeout(300)
   assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 20, '背包按数据渲染 20 个格子')
-  assert.ok(await p.getByText('3', { exact: true }).first().isVisible(), '格子里显示物品数量')
+  // 只在格子里找：侧栏里设计的个数也可能是 3
+  assert.ok(
+    await p.locator('[data-an="WBP_ItemSlot/Count"]').filter({ hasText: /^3$/ }).first().isVisible(),
+    '格子里显示物品数量',
+  )
   // 第一个格子选中：高亮显示、锁定图标隐藏（隐藏的控件数就是锁定图标那一个）
   const hiddenInFirstSlot = () =>
     p.evaluate(() => {
@@ -609,6 +571,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   assert.ok(Math.abs(regionMoved.x - regionBefore.x) > 5 || Math.abs(regionMoved.y - regionBefore.y) > 5, '区块能拖动')
   await p.getByRole('button', { name: '确认区块，开始搭界面' }).click()
   await p.getByRole('button', { name: '对照模板' }).waitFor({ timeout: 15000 })
+  // 对照：点一下是左右拖的滑块（左边原画、右边还原的界面），再点是半透明叠加，再点关掉
+  await p.getByRole('button', { name: '对照模板' }).click()
+  await p.locator('[data-compare-slider]').waitFor()
+  await check(p, 'UI设计-滑块对照', ['滑块对照'])
+  await p.getByRole('button', { name: '滑块对照' }).click()
+  await p.getByRole('button', { name: '叠加对照' }).click()
+  await p.getByRole('button', { name: '对照模板' }).waitFor()
   await p.goto(base + '#/design/new')
   // 网页 UI：新建一个网页设计，让 AI 搭首页，看自动布局画出来的样子
   await p.getByRole('radio', { name: /网页 UI/ }).click()

@@ -24,10 +24,22 @@ export const PANEL_TOOL_NAMES = [
   'message_peer',
   'start_plan',
   'start_workflow',
+  'list_workflows',
+  'message_workflow',
+  'revise_workflow',
+  'answer_workflow',
+  'finish_workflow',
   'submit_diagnosis',
+  'request_logs',
+  // 随查随记的 Bug 档案草稿（ADR 0046）：只在 Bug 对话里挂，没登记时对话里露出 update_bug_case 原名
+  'update_bug_case',
   'remember',
   'set_plan',
   'finish_plan',
+  // Agent 用它交代这一轮怎么结束（做完 / 卡住），见 shared/end-turn.ts
+  'end_turn',
+  // 请用户离开对话去做一件事（等你操作），见 shared/user-action.ts
+  'request_user_action',
   'get_status',
   'begin_edit',
   'run_workflow',
@@ -42,6 +54,8 @@ export const PANEL_TOOL_NAMES = [
   'end_inline_edit',
   'project_lessons',
   'record_lesson',
+  'project_experience',
+  'record_experience',
   'read_state',
   'write_state',
   'ask_main',
@@ -59,9 +73,92 @@ export const PANEL_TOOL_NAMES = [
   // 操控软件的两个工具（见 docs/adr/0011）
   'app_actions',
   'app_do',
+  // 从视频截帧（server/video/agent-frames.ts）
+  'video_frames',
   // 不常用工具的入口（见下面的 DEFERRED_TOOLS）
   'more_tools',
 ] as const
+
+export type PanelToolName = (typeof PANEL_TOOL_NAMES)[number]
+
+/**
+ * 面板工具在一段回复里起什么作用，决定回复收尾后怎么折叠（web/src/lib/fold-roles.ts）：
+ * - work：干活（改东西、取信息、等结果回来）。总结是「最后一次干活之后说的话」
+ * - dispatch：派单，有一个自己往前走的对象（子对话、子任务、工作流运行、后台命令、就地改动）；
+ *   对象没办完时这一行不收进折叠
+ * - wrap：收尾 / 协调，只把结果交出去或做安排，不干活，不打断总结
+ * - ask：要人看的（提问、请用户去操作），一律不折
+ * 写成 Record：新登记的工具不选一类就过不了类型检查（设计稿：回复折叠与派单行重设计）
+ */
+export type ToolRole = 'work' | 'dispatch' | 'wrap' | 'ask'
+export const PANEL_TOOL_ROLE: Record<PanelToolName, ToolRole> = {
+  create_conversation: 'dispatch',
+  send_to_conversation: 'dispatch',
+  list_conversations: 'work',
+  stop_workflow: 'wrap',
+  spawn_agents: 'dispatch',
+  // 等子任务算干活：等回来之后写的那段才是总结，等之前那句「派出去了」只是进度说明
+  wait_agents: 'work',
+  stop_subtask: 'wrap',
+  run_background: 'dispatch',
+  check_background: 'work',
+  stop_background: 'wrap',
+  message_parent: 'wrap',
+  suggest_next_step: 'wrap',
+  submit_merge: 'wrap',
+  submit_build: 'wrap',
+  finish_child: 'wrap',
+  request_build: 'dispatch',
+  list_peers: 'work',
+  message_peer: 'wrap',
+  start_plan: 'dispatch',
+  start_workflow: 'dispatch',
+  list_workflows: 'work',
+  message_workflow: 'wrap',
+  revise_workflow: 'wrap',
+  answer_workflow: 'wrap',
+  finish_workflow: 'wrap',
+  submit_diagnosis: 'wrap',
+  request_logs: 'wrap',
+  update_bug_case: 'wrap',
+  remember: 'wrap',
+  set_plan: 'wrap',
+  finish_plan: 'wrap',
+  end_turn: 'wrap',
+  request_user_action: 'ask',
+  get_status: 'work',
+  begin_edit: 'work',
+  run_workflow: 'dispatch',
+  close_run: 'wrap',
+  claim_files: 'work',
+  release_files: 'wrap',
+  p4_split_changelists: 'work',
+  cherry_pick: 'work',
+  ask_push: 'ask',
+  use_capability: 'work',
+  begin_inline_edit: 'dispatch',
+  end_inline_edit: 'wrap',
+  project_lessons: 'work',
+  record_lesson: 'wrap',
+  project_experience: 'work',
+  record_experience: 'wrap',
+  read_state: 'work',
+  write_state: 'work',
+  ask_main: 'ask',
+  send_message: 'wrap',
+  read_messages: 'work',
+  submit_verdict: 'wrap',
+  submit_result: 'wrap',
+  dispatch: 'wrap',
+  ask_user: 'ask',
+  read_user_notes: 'work',
+  wait_user_message: 'ask',
+  app_actions: 'work',
+  app_do: 'work',
+  video_frames: 'work',
+  // more_tools 本身只是入口：调用方先解包（unwrapMoreTools）再分类；解不开（只查用法）时不算干活
+  more_tools: 'wrap',
+}
 
 /**
  * 从 CLI 报上来的工具名里认出面板工具，返回裸名字；认不出返回空。各家写法不一样：
@@ -116,6 +213,7 @@ export const MORE_TOOLS = 'more_tools'
  */
 export const DEFERRED_TOOLS: readonly string[] = [
   'record_lesson',
+  'record_experience',
   'begin_inline_edit',
   'end_inline_edit',
   'list_peers',
@@ -127,6 +225,7 @@ export const DEFERRED_TOOLS: readonly string[] = [
   'p4_split_changelists',
   'app_actions',
   'app_do',
+  'video_frames',
 ]
 
 interface McpTool {

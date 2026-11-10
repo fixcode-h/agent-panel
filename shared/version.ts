@@ -2,6 +2,9 @@
 
 export const REPO = 'fixcode-h/agent-panel'
 
+/** 设置「版本更新」里「最近的版本」列几个包；服务端和在线演示共用 */
+export const RECENT_RELEASES = 10
+
 export interface AppRelease {
   /** 例如 v0.11.22-dev */
   tag: string
@@ -83,6 +86,14 @@ export interface AppUpdateJob {
   error?: string
 }
 
+/** 收下并检查过的本地安装包：页面拿它请用户确认，再按 id 安装 */
+export interface LocalPackageInfo {
+  id: string
+  version: string
+  /** 包对应的系统（win / mac / linux）；早期不分平台的通用包为空 */
+  os: string
+}
+
 /**
  * 已经开始、还没结束的更新（在 /app/install 撞上 409 时一并返回）。
  * 光有一句「正在更新」看不出来卡在哪，页面拿到它就能直接显示进度和「强制更新」
@@ -144,4 +155,30 @@ export function pickUpdate(current: string, releases: AppRelease[]) {
   return releases
     .filter((r) => (cur.dev || !r.prerelease) && compareVersions(r.version, current) > 0)
     .sort((a, b) => compareVersions(b.version, a.version))[0]
+}
+
+/**
+ * 面板里显示的「这一版改了什么」：去掉 Release 说明开头的「## Agent 面板 vX 更新」和「### 下载」及之后的安装说明，
+ * 只留新功能 / 改进 / 修复这几节；整段都没有（老版本的说明格式不同）时原样返回
+ */
+export function releaseChanges(notes: string) {
+  let text = notes.replace(/\r\n/g, '\n')
+  const cut = text.search(/^###\s*下载\s*$/m)
+  if (cut >= 0) text = text.slice(0, cut)
+  text = text.replace(/^##\s+Agent 面板\s+v\S+.*\n/, '').trim()
+  return text || notes.trim()
+}
+
+/**
+ * 从当前版本升到 target 会经过哪些版本（不含当前、含 target），新的在前：
+ * 有新版本时把中间每一版的改动都列出来，跳过几版更新也不会漏看。正式版只算正式版，预览版全算
+ */
+export function releasesSince(releases: AppRelease[], current: string, target: AppRelease) {
+  const pre = !!parseVersion(current)?.dev
+  return releases.filter(
+    (r) =>
+      (pre || !r.prerelease) &&
+      compareVersions(r.version, current) > 0 &&
+      compareVersions(r.version, target.version) <= 0,
+  )
 }

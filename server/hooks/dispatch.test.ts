@@ -70,6 +70,14 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
     tool: { kind: 'shell', name: 'Bash', input: { command: 'git log' }, path: '', paths: [] },
   })
   assert.ok(!c.deny, '只读命令照常')
+  // 临时脚本放行：项目 .tmp/、系统临时目录里不在项目里的路径；项目本身在临时目录里时项目文件照样拦
+  assert.ok(!(await ro.onHook!('tool.before', edit(path.join(dir, '.tmp', 'probe.py')))).deny, '项目 .tmp/ 放行')
+  const scratch = path.join(tmpdir(), 'agent-panel-scratch-x', 'probe.mjs')
+  assert.ok(!(await ro.onHook!('tool.before', edit(scratch))).deny, '系统临时目录放行')
+  assert.equal((await ro.onHook!('tool.before', edit(path.join(dir, 'src', 'b.ts')))).deny, true, '临时目录里的项目')
+  const co = await hookOptions(ctx({ orch: { coordinator: true } }))
+  assert.ok(!(await co.onHook!('tool.before', edit(scratch))).deny, '父对话写临时脚本也放行')
+  assert.equal((await co.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, true, '父对话改项目文件照样拦')
   // 第四期起推送、危险命令这些守卫默认开着，普通角色也装工具前；它改项目里的文件照常放行
   const plain = await hookOptions(ctx())
   assert.ok(plain.hookEvents?.includes('tool.before'))

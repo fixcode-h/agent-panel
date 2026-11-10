@@ -1,5 +1,5 @@
 import { createContext, createElement, useContext, type ReactNode } from 'react'
-import type { ToolUse } from '@shared/schema'
+import type { Task, ToolUse } from '@shared/schema'
 import type { ChildSummary } from './child-line'
 import type { JobTarget } from './JobDialog'
 import type { Letter } from '@/lib/tasks'
@@ -29,6 +29,10 @@ export interface PaneNav {
   runTip?: string
   /** 后台命令行的标题点了：在任务页顶层打开这条命令的窗口（命令跑完那一行会消失，窗口不能跟着没） */
   job?: (job: JobTarget) => void
+  /** 打开诊断报告审阅弹窗：挂在任务页顶层，一轮输出完、子任务做完时行会重挂，弹窗不能跟着没（见 diagnosis-window.tsx） */
+  diagnosis?: (task: Pick<Task, 'id' | 'title' | 'diagnoses'>, auto?: boolean, version?: number) => void
+  /** 顶层的诊断报告弹窗这一刻开着：自动弹的等它关了再弹下一个 */
+  diagnosisShowing?: boolean
 }
 
 export const PaneNavCtx = createContext<PaneNav | null>(null)

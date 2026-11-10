@@ -236,7 +236,12 @@ test('lessonDraftsFromReport：新报告按存下的分项提炼，没解决的�
       link: '',
     },
   ]
-  const md = renderReport({ grain: 'day', from: '2026-10-29', to: '2026-10-29', items })
+  const md = renderReport({
+    grain: 'day',
+    from: '2026-10-29',
+    to: '2026-10-29',
+    items: items.map((x) => ({ ...x, code: [] })),
+  })
   const drafts = lessonDraftsFromReport({ id: 'r', day: '2026-10-29', md, items })
   assert.deepEqual(
     drafts.map((d) => d.title),

@@ -5,7 +5,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from './store.ts'
 import { getSettings } from './settings.ts'
-import { isAllowedHost, isExternalRequest, isLocalHost } from './hosts.ts'
+import { isExternalRequest, isLocalHost } from './hosts.ts'
+import { externalGate } from './guard/gate.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -70,11 +71,13 @@ export const viaProxy = (header: (name: string) => string | undefined) => PROXY_
 
 export const tokenGuard: MiddlewareHandler = async (c, next) => {
   const host = c.req.header('host') ?? ''
-  // 外网专用端口进来的一律当外网，Host 是什么都不信（隧道、frp、反代的地址各不相同）
-  const external = isExternalRequest(c.env)
-  const local = !external && isLocalHost(host) && !viaProxy((h) => c.req.header(h))
-  // 外网访问关着的时候只认本机地址；开着时也只认当前隧道 / 反代地址
-  if (!external && !local && !isAllowedHost(host)) return c.text(t('这个地址不能访问面板'), 403)
+  // 外网专用端口进来的一律当外网，Host 是什么都不信（反代、直连的地址各不相同），交给登录门：
+  // 外网只认密码登录的会话，不认访问令牌（见 guard/gate.ts）
+  if (isExternalRequest(c.env)) return externalGate(c, next)
+  // 主端口只给本机用：外网一律走外网专用端口
+  if (!isLocalHost(host)) return c.text(t('这个地址不能访问面板'), 403)
+  // Host 是本机、却带着转发头：有人把反代错接到了主端口，照外网来源处理，必须带令牌
+  const local = !viaProxy((h) => c.req.header(h))
   const q = c.req.query('token')
   // 带令牌的地址：发 Cookie，再跳到去掉令牌的地址，免得令牌留在地址栏和历史记录里
   if (q && tokenMatches(q) && c.req.method === 'GET' && !c.req.path.startsWith('/api/')) {
@@ -83,8 +86,8 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
     url.searchParams.delete('token')
     return c.redirect(url.pathname + url.search, 302)
   }
-  // 外网来源一律要求令牌：本机访问可以按设置决定，外部不行。
-  // 外网访问开着时本机也要：自建反代不加转发头、又把 Host 改成 127.0.0.1 时，外网请求和本机请求分不出来
+  // 经过反代的一律要求令牌：本机访问可以按设置决定，外部不行。
+  // 外网访问开着时本机也要：反代错接到主端口、不加转发头又把 Host 改成 127.0.0.1 时，外网请求和本机请求分不出来
   const settings = await getSettings()
   const requireToken = settings.requireToken || settings.remoteAccess.enabled || !local
   if (!requireToken || tokenMatches(getCookie(c, COOKIE))) return next()
@@ -93,8 +96,8 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   // 面板工具（提问、派子任务、新建子对话）同理：CLI 拿着这一轮的随机地址来调，没有 Cookie，
   // 拦下来 CLI 就一个面板工具都没有了；地址不对的由接口自己回 404
   if (c.req.path.startsWith('/api/mcp/ask/')) return next()
-  // Blender 建模工具同理：地址里是这一轮的随机令牌，接口自己核对（以前漏了，开令牌后 Blender 工具一律 401）
-  if (c.req.path.startsWith('/api/mcp/blender/')) return next()
+  // 插件给 Agent 的工具同理：地址里是这一轮的随机令牌，接口自己核对（以前 Blender 工具漏了，开令牌后一律 401）
+  if (c.req.path.startsWith('/api/plugins/mcp/')) return next()
   // 浏览器扩展拿不到面板的 Cookie：它带的是配对令牌（index.ts 里再核对来源、本机和令牌）
   if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
     return next()

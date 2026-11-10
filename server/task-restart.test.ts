@@ -172,24 +172,32 @@ test('重启后还有活要自己干：这一轮被打断、计划没做完的�
   )
 })
 
-test('强制更新的恢复名单：停在等下一句、计划没做完的父对话也要记下来', () => {
-  // 子对话在跑（working），父对话这一轮已经说完、计划 6/8：用户报的父子不一致就是这种
+test('强制更新的恢复名单只记本次真正被打断的：闲置但计划没做完的不算', () => {
+  // 子对话在跑（working），父对话这一轮已经说完、计划 6/8：父对话靠 parentTaskId 进名单，
+  // 子对话的结果要交回它，它不在名单里就没人接
   const child = { id: 'kid', parentTaskId: 'parent' }
   const parent = task('parent', { status: 'done', plans: [halfPlan()] })
   assert.deepEqual(interruptedTaskIds([parent, task('kid', { status: 'running', working: true })], [child]), [
     'kid',
     'parent',
   ])
-  // 没有任何任务在跑时，计划没做完的同样要进名单：它重启后也留在「已中断」，不会自己往前走
-  assert.deepEqual(interruptedTaskIds([parent]), ['parent'])
+  // 没有任何任务在跑时，计划没做完的闲置任务不进本次名单：它已经停在等下一句，
+  // 不是这次强制更新打断的（以前会把历史上所有计划没做完的任务都累计进来）
+  assert.deepEqual(interruptedTaskIds([parent]), [])
+  // 这一轮真的还在执行（在等子任务，working 为假、也不是等下一句）的仍要记
+  assert.deepEqual(interruptedTaskIds([task('mid-turn', { status: 'running' })]), ['mid-turn'])
   // 父对话计划做完了也要记：子对话的结果要交回它，它不在名单里就没人接
   assert.deepEqual(interruptedTaskIds([task('parent', { status: 'done' })], [child]), ['kid', 'parent'])
   // 用户手动暂停的不算：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   assert.equal(restartUnfinished(task('paused', { status: 'stopped', stopReason: 'user', plans: [halfPlan()] })), false)
-  // 面板重启打断的（stopReason: restart）算
+  // 面板重启打断的（stopReason: restart）算 restartUnfinished，但那是崩溃名单的口径；本次名单只收在跑的
   assert.equal(
     restartUnfinished(task('restarted', { status: 'stopped', stopReason: 'restart', plans: [halfPlan()] })),
     true,
+  )
+  assert.deepEqual(
+    interruptedTaskIds([task('restarted', { status: 'stopped', stopReason: 'restart', plans: [halfPlan()] })]),
+    [],
   )
   // 待收尾（已请求父对话合并）不算：重启后照样能收，不需要重启 CLI
   assert.equal(
@@ -233,16 +241,16 @@ test('重启时名下有子对话在跑的父对话：落成已停止，父子�
   assert.ok(ids.includes('kid-running'), '子对话也要进恢复名单')
 })
 
-test('恢复名单里的父对话说明它被打断时在做什么：写没做完的计划进度', async () => {
+test('强制更新名单里不再累计闲置的历史任务，doing 仍写没做完的计划进度', async () => {
   const t = task('parent', { status: 'done', plans: [halfPlan()] })
   await createTaskStore().create(t)
   const api = tasksApi({ agents: empty, workflows: empty, projects: empty, projectCategories: empty })
   await api.ready()
   const list = await api.interruptedTasks()
-  assert.deepEqual(
-    list.find((x) => x.id === 'parent'),
-    { id: 'parent', doing: '计划 6/8' },
-    '只写最后一条要求看不出还剩多少没做完',
+  assert.equal(
+    list.some((x) => x.id === 'parent'),
+    false,
+    '停在等下一句、计划没做完的历史任务不是这次打断的，不进名单',
   )
   assert.equal(
     list.some((x) => x.id === 'wrapup'),
@@ -259,10 +267,15 @@ test('重启恢复名单：已收口的不再拉起，只在等下一句的不�
   assert.deepEqual(interruptedTaskIds([resolved]), [])
   // 停在等下一句、计划做完了：留进程只是为了接用户下一句，重启后没有活要干
   assert.equal(restartUnfinished(task('idle-next', { status: 'running', awaitingUser: true })), false)
-  // 停在等下一句、计划没做完：还有活，照旧进名单（子对话等着被继续）
+  // 停在等下一句、计划没做完：还有活，restartUnfinished 照旧认（启动迁移的崩溃名单用它）
   assert.equal(
     restartUnfinished(task('idle-half', { status: 'running', awaitingUser: true, plans: [halfPlan()] })),
     true,
+  )
+  // 但本次强制更新名单只收还在执行的：停在等下一句的不是这次打断的
+  assert.deepEqual(
+    interruptedTaskIds([task('idle-half', { status: 'running', awaitingUser: true, plans: [halfPlan()] })]),
+    [],
   )
 })
 

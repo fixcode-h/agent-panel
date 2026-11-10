@@ -16,6 +16,7 @@ import { t } from '../shared/i18n.ts'
 import { SKILL_TARGET } from '../shared/deploy.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
+import { pluginEnabled } from '../shared/plugins/index.ts'
 
 /**
  * 面板自带的 Skill：仓库里的 skills/<分类>/<名字>/。
@@ -25,15 +26,26 @@ import { log } from './log.ts'
 declare const __BUNDLED_SKILLS__: Record<string, string> | undefined
 const EMBEDDED = typeof __BUNDLED_SKILLS__ === 'object' ? __BUNDLED_SKILLS__ : undefined
 const SOURCE = path.resolve(import.meta.dirname, '..', 'skills')
+/**
+ * 插件带的技能（ADR 0059）：装着的插件包里的 skills/<分类>/<名字>/，插件目录由 server/plugins 在加载插件时告诉这里。
+ * 只有开着的插件的技能算自带技能
+ */
+let pluginSources: { id: string; dir: string; stamp: string }[] = []
+export function setPluginSkillSources(list: { id: string; dir: string; stamp: string }[]) {
+  pluginSources = list
+}
 
 export interface Entry {
   name: string
   category: string
+  /** 插件带的技能：插件 id */
+  plugin?: string
   /** 相对技能目录的路径 → 内容 */
   files: Map<string, Buffer>
 }
 
 let cache: Promise<Entry[]> | null = null
+const pluginCache = new Map<string, Promise<Entry[]>>()
 
 async function readTree(dir: string, rel = ''): Promise<[string, Buffer][]> {
   const out: [string, Buffer][] = []
@@ -45,27 +57,53 @@ async function readTree(dir: string, rel = ''): Promise<[string, Buffer][]> {
   return out
 }
 
-/** 所有自带 Skill 的文件：出包后用写进来的，开发时直接读仓库目录（改了马上生效，所以不缓存） */
-export async function entries(): Promise<Entry[]> {
-  const load = async () => {
-    const all: [string, Buffer][] = EMBEDDED
-      ? Object.entries(EMBEDDED).map(([k, v]) => [k, Buffer.from(v, 'base64')])
-      : existsSync(SOURCE)
-        ? await readTree(SOURCE)
-        : []
-    const map = new Map<string, Entry>()
-    for (const [rel, buf] of all) {
-      const [category, name, ...rest] = rel.split('/')
-      if (!name || !rest.length) continue
-      const key = `${category}/${name}`
-      const e = map.get(key) ?? { name, category, files: new Map() }
-      e.files.set(rest.join('/'), buf)
-      map.set(key, e)
-    }
-    return [...map.values()].filter((e) => e.files.has('SKILL.md'))
+/** 「<分类>/<名字>/<文件>」平铺的文件表整理成一个个技能（没有 SKILL.md 的不算） */
+function group(all: [string, Buffer][], plugin?: string): Entry[] {
+  const map = new Map<string, Entry>()
+  for (const [rel, buf] of all) {
+    const [category, name, ...rest] = rel.split('/')
+    if (!name || !rest.length) continue
+    const key = `${category}/${name}`
+    const e = map.get(key) ?? { name, category, files: new Map(), ...(plugin && { plugin }) }
+    e.files.set(rest.join('/'), buf)
+    map.set(key, e)
   }
+  return [...map.values()].filter((e) => e.files.has('SKILL.md'))
+}
+
+/** 核心自带的 Skill（skills/）：出包后用写进来的，开发时直接读仓库目录（改了马上生效，所以不缓存） */
+async function coreEntries(): Promise<Entry[]> {
+  const load = async () =>
+    group(
+      EMBEDDED
+        ? Object.entries(EMBEDDED).map(([k, v]) => [k, Buffer.from(v, 'base64')])
+        : existsSync(SOURCE)
+          ? await readTree(SOURCE)
+          : [],
+    )
   if (!EMBEDDED) return load()
   return (cache ??= load())
+}
+
+/** 所有装着的插件（不论开没开）带的技能：关插件时要按它们认出本机装的副本。按安装时间缓存，重装、升级后重读 */
+export async function allPluginEntries(): Promise<Entry[]> {
+  const out: Entry[] = []
+  for (const p of pluginSources) {
+    const key = `${p.id}|${p.dir}|${p.stamp}`
+    let got = pluginCache.get(key)
+    if (!got) {
+      got = readTree(path.join(p.dir, 'skills')).then((files) => group(files, p.id))
+      pluginCache.set(key, got)
+    }
+    out.push(...(await got))
+  }
+  return out
+}
+
+/** 所有自带 Skill = 核心的 + 开着的插件带的 */
+export async function entries(): Promise<Entry[]> {
+  const plugins = (await allPluginEntries()).filter((e) => e.plugin && pluginEnabled(e.plugin))
+  return [...(await coreEntries()), ...plugins]
 }
 
 /** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
@@ -205,6 +243,7 @@ export async function listBundled(): Promise<BundledSkill[]> {
       files: tree.entries.filter((x) => x.type === 'file').length,
       tree,
       status: { shared: await statusIn(e, root) },
+      ...(e.plugin && { plugin: e.plugin }),
     })
   }
   return out.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
@@ -281,4 +320,28 @@ export async function ensureBundled(names: string[]) {
     log.warn('skills', `补齐自带 Skill 失败：${(err as Error).message}`)
     return []
   }
+}
+
+/**
+ * 关掉插件（或启动时插件关着）：清掉它的技能在用户目录里的副本，「自带 Skill」页装的和「部署」放的两处都清。
+ * 只删和插件里那份一模一样的（目录里每个文件都一致、没有多出来的文件）；用户改过的保留，返回保留的名字
+ */
+export async function removePluginSkills(pluginId: string) {
+  const removed: string[] = []
+  const kept: string[] = []
+  for (const e of (await allPluginEntries()).filter((x) => x.plugin === pluginId)) {
+    for (const root of [sharedRoot(), deployedRoot(e)]) {
+      const dir = path.join(root, e.name)
+      if (!existsSync(path.join(dir, 'SKILL.md'))) continue
+      const found = await readTree(dir)
+      const same = found.length === e.files.size && found.every(([rel, buf]) => e.files.get(rel)?.equals(buf))
+      if (!same) {
+        if (!kept.includes(e.name)) kept.push(e.name)
+        continue
+      }
+      await rm(dir, { recursive: true, force: true })
+      if (!removed.includes(e.name)) removed.push(e.name)
+    }
+  }
+  return { removed, kept }
 }

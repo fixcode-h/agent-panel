@@ -42,9 +42,32 @@ export interface BgJob {
   lines: string[]
   /** 跑的期间工作目录里的文件变了：结果可能已经不准 */
   changed: boolean
+  /**
+   * 被停止时也要把结果交回发起方：面板代子对话跑的父对话测试带它。
+   * 不带的命令（对话自己起的）被停下时不推回——对话自己停了，一条结果会把它重新拉起。
+   * 父对话测试没有这个就没人推进队列，等它的子对话永远停在「等父对话测试」（见 docs/modules/server/bugs/）
+   */
+  notifyOnStop?: boolean
+  /**
+   * 用户 / 对话明确停掉这一条（stopOne）：只有这种停法对 notifyOnStop 的命令回传结果。
+   * 面板退出、归档、删除这些生命周期停（stop(taskId)）不回调，父对话测试由重启后的 recoverParentTests 重排
+   */
+  stopRequested?: boolean
   /** 额外的环境变量（子对话的独立分支禁止推送） */
   env?: { key: string; value: string }[]
+  /**
+   * 常驻服务（开发服务器、监听）：一直跑到被停掉，不是「交出去等结果」。不提醒没输出 / 跑了很久，
+   * 不算对话在等它（awaitedJob），计划不挂等待；中途自己退出了照常把结果推回（多半是起不来或崩了）
+   */
+  service?: boolean
 }
+
+/**
+ * 对话在等它的结果：还在排队或在跑、且不是常驻服务。侧栏转圈、「完成未读」、计划推进、收尾门禁都按它算；
+ * 常驻服务一直跑到被停掉，算进去的话对话永远显示在等结果
+ */
+export const awaitedJob = (j: Pick<BgJob, 'state' | 'service'>) =>
+  (j.state === 'queued' || j.state === 'running') && !j.service
 
 /**
  * 发给界面的后台命令（只带还在跑的）：映射只写这一处，测试直接测它。
@@ -60,6 +83,7 @@ export function uiJobs(list: BgJob[]): TaskJob[] {
       command: j.command,
       state: j.state as 'queued' | 'running',
       startedAt: j.startedAt,
+      ...(j.service ? { service: true } : {}),
     }))
 }
 
@@ -247,6 +271,8 @@ export function createBackground(
    * 用一串 setTimeout 而不是 setInterval：假时钟只有 setTimeout
    */
   function watch(j: BgJob) {
+    // 常驻服务本来就一直跑、可以很久不输出：催它「可能卡住」「跑了很久」都是误报
+    if (j.service) return
     const every = Math.min(60_000, Math.max(50, Math.min(stallMs, checkFirstMs) / 4))
     const tick = () => {
       stallTimers.delete(j.id)
@@ -288,7 +314,7 @@ export function createBackground(
     const t = timers.setTimeout(() => {
       killTimers.delete(j.id)
       const note = `（进程未在 ${fmtDuration(killGraceMs)} 内退出：记录已置终态，但它可能还在跑）`
-      if (!finish(j, 'stopped', { note })) return
+      if (!settle(j, 'stopped', { note })) return
       log.warn('background', '后台命令的进程没在限期内退出，记录先置终态', {
         id: j.id,
         task: j.taskId,
@@ -302,10 +328,26 @@ export function createBackground(
     const head = headText(j)
     const warn = j.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
     const tail = j.lines.join('\n').slice(-(j.state === 'done' ? 1500 : 6000))
-    // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以要整体重写
+    // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以收尾时要整体重写。
+    // 但只能要求「结束这一轮时」再总结：以前写「处理完这个结果后，重新总结整段工作」，模型一收到结果就先写一段总结，
+    // 没有工具调用的回复会直接结束这一轮，计划还没做完就停（用户 2026-11-06 报结束前钩子反复拦住，一半紧跟在推回结果之后）
     const ask =
-      '\n处理完这个结果后，重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
+      '\n按这个结果接着做，不用先写总结；要结束这一轮时，最后那条回复再重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
     return `【面板】${head}${warn}\n命令：${j.command}${tail ? `\n输出结尾：\n\`\`\`\n${tail}\n\`\`\`` : ''}${ask}`
+  }
+
+  /**
+   * 置终态并把结果交给发起方：除了「被停止且不需要通知」的命令，其余都走这里收口。
+   * 被停止的命令默认不推回（对话自己停下、或用户停了一条不想要结果的命令）；
+   * 带 notifyOnStop 的命令（面板代子对话跑的父对话测试）被**用户明确停掉**时必须有结论，
+   * 否则等它的子对话永远停在「等父对话测试」。生命周期停（退出、归档、删除）不在这里回传：
+   * 那类停法由重启后的 recoverParentTests 把还在 testing 的批次重排，不能误判成「测试未通过」
+   */
+  function settle(j: BgJob, state: BgJob['state'], info: { code?: number | null; note?: string } = {}) {
+    if (!finish(j, state, info)) return false
+    if (state === 'stopped' && !(j.notifyOnStop && j.stopRequested)) return true
+    onDone(j, resultText(j))
+    return true
   }
 
   async function exec(j: BgJob, root: string) {
@@ -320,7 +362,7 @@ export function createBackground(
     // 算指纹的时候对话可能已经被删了：不再启动
     if (ac.signal.aborted) {
       aborts.delete(j.id)
-      finish(j, 'stopped')
+      settle(j, 'stopped')
       return
     }
     const r = await runShell(j.command, j.cwd, {
@@ -344,9 +386,8 @@ export function createBackground(
     if (r.killed === 'timeout') j.lines.push(`（跑满 ${fmtDuration(j.timeoutMs)} 的限时还没结束，面板已停止它）`)
     const state = r.killed === 'stopped' ? 'stopped' : r.code === 0 && !r.spawnError ? 'done' : 'failed'
     // 已经被停止兜底置过终态（close 来晚了）：不再改状态，也不重复推结果
-    if (!finish(j, state, { code: r.code })) return
-    // 被停止的是对话自己结束了（停止、归档、删除）：不再把结果推回去，不然会把刚停下的对话又拉起新的一轮
-    if (state !== 'stopped') onDone(j, resultText(j))
+    if (!settle(j, state, { code: r.code })) return
+    // 被停止之后：普通命令不再把结果推回去，否则会把刚停下的对话又拉起新的一轮；父对话测试要交回去（见 settle）
   }
 
   function run(j: BgJob, root: string) {
@@ -364,7 +405,7 @@ export function createBackground(
         // 不收口的话这条记录一直是「运行中」，结果永远不会推回，计划里等它的那一步也一直在等（用户报过对话卡在这里）
         aborts.delete(j.id)
         log.warn('background', '后台命令没能启动', { id: j.id, task: j.taskId, error: e.message })
-        if (finish(j, 'failed', { note: `（面板没能启动这条命令：${e.message}）` })) onDone(j, resultText(j))
+        settle(j, 'failed', { note: `（面板没能启动这条命令：${e.message}）` })
       })
       .finally(() => runs.delete(j.id))
     runs.set(j.id, p)
@@ -385,6 +426,10 @@ export function createBackground(
       env?: { key: string; value: string }[]
       /** 最多跑多少分钟：不写按默认两小时，最多八小时 */
       timeoutMinutes?: number
+      /** 被停止时也要把结果交回发起方（见 BgJob.notifyOnStop） */
+      notifyOnStop?: boolean
+      /** 常驻服务（见 BgJob.service） */
+      service?: boolean
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
@@ -406,8 +451,13 @@ export function createBackground(
         timeoutMs:
           input.timeoutMinutes && input.timeoutMinutes > 0
             ? Math.min(MAX_TIMEOUT_MS, Math.round(input.timeoutMinutes * 60_000))
-            : DEFAULT_TIMEOUT_MS,
+            : input.service
+              ? MAX_TIMEOUT_MS
+              : DEFAULT_TIMEOUT_MS,
+        ...(input.service ? { service: true } : {}),
         ...(input.env?.length ? { env: input.env } : {}),
+        // 没带就不写：普通后台命令被停下时结果照旧不推回
+        ...(input.notifyOnStop ? { notifyOnStop: true } : {}),
         state: 'queued',
         code: null,
         createdAt: iso(),
@@ -442,6 +492,13 @@ export function createBackground(
       } else void run(j, input.root)
       // 名额是异步拿的，这会儿还没算上刚排的这几条：直接数还没结束的记录
       const full = [...jobs.values()].filter((x) => x.id !== j.id && !x.endedAt).length >= maxRunning
+      // 常驻服务不用「已放到后台（编号…）」：界面按那句认「还在等结果」的行（bgJobIds），服务那一行该马上收口
+      if (j.service)
+        return {
+          ok: true,
+          id: j.id,
+          info: `已在后台启动常驻服务「${j.name}」（服务编号 ${j.id}）。它一直跑到对话停止或你用 stop_background 停掉，面板不会催；用 check_background 看输出确认它起来了（端口、地址、报错），中途退出了结果会推回给你。不用等它，接着做下一步。`,
+        }
       return {
         ok: true,
         id: j.id,
@@ -492,7 +549,9 @@ export function createBackground(
       const j = jobs.get(id)
       if (!j || j.taskId !== taskId) return { ok: false, info: `没有编号 ${id} 的后台命令` }
       if (j.endedAt) return { ok: false, info: `编号 ${id} 已经结束了（${STATE_TEXT[j.state]}）` }
-      if (j.state === 'queued') finish(j, 'stopped')
+      // 记下是「明确停这一条」：父对话测试靠它判断要不要把结论交回子对话（见 settle）
+      j.stopRequested = true
+      if (j.state === 'queued') settle(j, 'stopped')
       else {
         aborts.get(j.id)?.abort()
         armKillGrace(j)
@@ -532,7 +591,7 @@ export function createBackground(
         if (j.taskId !== taskId) continue
         if (note && !j.endedAt) j.lines.push(note)
         if (j.state === 'queued') {
-          finish(j, 'stopped')
+          settle(j, 'stopped')
           continue
         }
         if (j.state !== 'running') continue
@@ -557,6 +616,7 @@ export function createBackground(
       let n = 0
       for (const j of stale) {
         if (j.state !== 'queued' && j.state !== 'running') continue
+        // 不走 settle：对话此刻没在跑，结果推不进去；子对话那批由 recoverParentTests 重排，对话的续接说明里列了停掉的命令
         if (finish(j, 'failed', { note: '（面板上次退出时还没结束：记录已置终态，不会再等它）' })) n++
       }
       if (n) log.warn('background', '启动时清理上次遗留的后台命令记录', { count: n })

@@ -1,0 +1,168 @@
+/** 英文词典的一部分，键是中文原文：照原画还原的六步流程（新建入口、步骤条、元素框、决策卡、校验） */
+export const EN_RESTORE_FLOW: Record<string, string> = {
+  '{n} 个元素共用这张': 'Shared by {n} elements',
+  '{ok}/{all} 个元素对上': '{ok}/{all} elements match',
+  '上传一张画好的界面原画：按步骤拆出元素、从原画抠切图、搭成位置锁定的控件树，每一步你确认了才往下走。':
+    'Upload a finished UI concept: it is split into elements, assets are cut from the concept, and a widget tree with locked positions is built, one step at a time, each confirmed by you.',
+  '九宫格：拉伸时边框不变形': 'Nine-slice: borders keep their shape when stretched',
+  位置不对: 'Position off',
+  元素: 'Elements',
+  决策卡: 'Decision card',
+  切图不像: 'Asset differs',
+  删掉这个框: 'Delete this box',
+  '前面的步骤改过了，这一步要重新跑': 'An earlier step changed; run this step again',
+  加框: 'Add box',
+  '和 AI 对话设计': 'Design by chatting with AI',
+  '哪里不对？写下意见再重新跑这一步（可以不写）': 'Something off? Write a note and run this step again (optional)',
+  在图上拖一下框出漏掉的元素: 'Drag on the image to box a missed element',
+  在画布上对照原画: 'Compare with concept on canvas',
+  在画布里看: 'View on canvas',
+  对上: 'Match',
+  已确认: 'Confirmed',
+  干净背景: 'Clean background',
+  开始还原: 'Start restore',
+  意见: 'Note',
+  接受差异: 'Accept difference',
+  控件不见了: 'Widget missing',
+  '控件树已经按元素框搭好，位置锁住了。到画布里看层级、名字，和原画对照。':
+    'The widget tree is built from the element boxes with positions locked. Open the canvas to check the hierarchy and names against the concept.',
+  文字内容: 'Text content',
+  文字没内容: 'Text is empty',
+  未开始: 'Not started',
+  格子: 'Slot',
+  '正在{step}…': 'Running {step}…',
+  '比上一版：': 'Since last version: ',
+  '点框看它的类型和名字；拖动改位置，拖右下角改大小，Delete 删掉。':
+    'Click a box to see its type and name. Drag to move, drag the bottom-right corner to resize, press Delete to remove.',
+  照原画写上文字: 'Type the text from the concept',
+  照原画还原: 'Restore from concept',
+  相似度: 'Similarity',
+  确认交付: 'Confirm delivery',
+  确认要还原的原画: 'Confirm the concept to restore',
+  '确认，下一步': 'Confirm, next step',
+  背景: 'Background',
+  要更新: 'Needs update',
+  '读不出这张图：{error}': 'Could not read this image: {error}',
+  运行这一步: 'Run this step',
+  '还原做完了：之后就像平常的设计一样，在画布里继续改、让 AI 改，或者导出到 UE。':
+    'Restore finished. From here it is a normal design: keep editing on the canvas, ask AI to change it, or export to UE.',
+  '还没有切图：确认上一步后自动从原画里抠':
+    'No assets yet: they are cut from the concept after you confirm the previous step',
+  还没有原画: 'No concept yet',
+  '还没有校验：搭建确认后自动逐个核对': 'Not verified yet: each element is checked after you confirm Build',
+  这一步还没开始: 'This step has not started',
+  '这一版的意见：': 'Note for this version: ',
+  '选择原画（PNG、JPG、WebP 或 PSD）': 'Choose a concept (PNG, JPG, WebP or PSD)',
+  重复组: 'Repeat group',
+  重新跑这一步: 'Run this step again',
+  '{name} 拼回去和原画只有 {s} 像': '{name} only matches the concept at {s} when put back',
+  '{n} 个元素把握不大（黄框），看一眼对不对': '{n} elements are uncertain (yellow boxes); check them',
+  '{n} 段文字还没有内容，点开填上': '{n} text elements have no content yet; open them to fill in',
+  交付: 'Deliver',
+  共用: 'Shared',
+  '原画 {w}×{h}，设计稿 {X}×{Y}': 'Concept {w}×{h}, design {X}×{Y}',
+  '原画不是 PNG，读不出来': 'The concept is not a PNG and cannot be read',
+  '原画和设计稿的宽高比不一样，横竖会按各自的比例缩放':
+    'The concept and the design have different aspect ratios; width and height are scaled separately',
+  '原画要是 PNG（页面上传时会自动转成 PNG）': 'The concept must be a PNG (the page converts it when uploading)',
+  '图片太大（最多 40 MB）': 'Image too large (40 MB max)',
+  '在图上拖框改位置、改类型，多的删掉、漏的框出来；没问题就确认，下一步从原画抠切图':
+    'Drag boxes to fix positions, change types, delete extras and box anything missed. Confirm when it looks right; next, assets are cut from the concept',
+  '在画布上看看层级和名字；确认后逐个校验和原画差多少':
+    'Check the hierarchy and names on the canvas; after you confirm, each element is checked against the concept',
+  平均相似度: 'Avg similarity',
+  总分: 'Score',
+  '抠出 {n} 张切图，{s} 个元素共用同一张': 'Cut {n} assets; {s} elements share an image',
+  '拆出 {n} 个元素，{g} 组重复的': 'Found {n} elements, {g} repeat groups',
+  拆解: 'Elements',
+  '搭出 {n} 个控件，位置全部按元素框摆好并锁住': 'Built {n} widgets, all placed by the element boxes and locked',
+  搭建: 'Build',
+  '有 {n} 块地方没有框到元素，图上用红色标出来了': '{n} areas are not covered by any element; they are marked in red',
+  校验: 'Verify',
+  '校验通过，总分 {s}': 'Verified, score {s}',
+  '核对拆出来的元素：位置、类型、名字、文字': 'Check the elements: position, type, name, text',
+  '模型标注失败，先用算法的类型和名字：{error}':
+    'Model labeling failed, using the detected types and names for now: {error}',
+  '模型说漏了：{text}': 'Model says missing: {text}',
+  '点差异看是哪里不对：改元素重新跑，或者接受这处差异':
+    'Open a difference to see what is wrong: fix the elements and rerun, or accept it',
+  '看一眼切图和干净背景；有不像的可以在图片里精修。确认后搭控件树':
+    'Look over the assets and the clean background; refine any that differ in Images. Confirm to build the widget tree',
+  看切图和干净背景像不像原画: 'Check the assets and clean background against the concept',
+  看搭出来的控件树: 'Check the built widget tree',
+  '确认交付，进入画布继续改或导出': 'Confirm delivery, then keep editing on the canvas or export',
+  确认后交付: 'Confirm to deliver',
+  '确认后就可以像平常的设计一样导出 UE 或者继续让 AI 改':
+    'After confirming, export to UE or keep asking AI to change it like any design',
+  '确认这就是要还原的那张原画，下一步自动拆出所有元素':
+    'Confirm this is the concept to restore; next, all elements are detected',
+  覆盖率: 'Coverage',
+  '还原「{step}」这一步失败：{error}': 'Restore step "{step}" failed: {error}',
+  '还原完成（有没过门槛的差异已接受）': 'Restore finished (differences below the threshold were accepted)',
+  '还原完成：{n} 个元素，总分 {s}': 'Restore finished: {n} elements, score {s}',
+  '还有 {n} 处差异，总分 {s}': '{n} differences remain, score {s}',
+  逐个核对和原画差多少: 'Check each element against the concept',
+  '面板重启，这一步被打断了，请重新运行': 'The panel restarted and interrupted this step; run it again',
+  位置对上: 'Positions OK',
+  'PSD：按图层还原，位置和切图直接取自图层':
+    'PSD: restored layer by layer, positions and slices come straight from the layers',
+  '有图层样式（描边、投影、发光）：切图只有图层本身的像素，样式要在引擎里补或者先在 PS 里栅格化':
+    'Some layers have layer styles (stroke, shadow, glow): slices only hold the layer pixels, so add the styles in the engine or rasterize them in Photoshop first',
+  '有图层蒙版：切图没套蒙版，先在 PS 里应用蒙版再导入更准':
+    'Some layers have masks: slices ignore them, so apply the masks in Photoshop before importing for a closer match',
+  '有非「正常」的混合模式：叠出来的颜色可能和 PS 里不一样':
+    'Some layers use a blend mode other than Normal: the stacked colors may differ from Photoshop',
+  '有剪贴蒙版：被剪贴的图层按自己的像素切，没有裁到下面那层的形状':
+    'Some layers are clipping masks: clipped layers are sliced with their own pixels, not trimmed to the layer below',
+  '确认这就是要还原的 PSD，下一步按图层列出所有元素':
+    'Confirm this is the PSD to restore; next, every element is listed from its layers',
+  图层元素: 'Layer elements',
+  '从 PSD 图层读出 {n} 个元素，{g} 组重复的': 'Read {n} elements from the PSD layers, {g} repeated groups',
+  '位置和名字都照图层来；类型不对的点开改，没问题就确认，下一步直接用图层的像素当切图':
+    'Positions and names come from the layers; open any element with the wrong type to fix it, then confirm and the layer pixels become the slices',
+  来自图层: 'From layers',
+  'PSD 图层文件读不出来：{file}': 'Cannot read the PSD layer file: {file}',
+  'PSD 太大（最多 200 MB）': 'The PSD is too large (200 MB max)',
+  'PSD 读不出来：{error}': 'Cannot read the PSD: {error}',
+  '{ratio} 下 {w} 跑出了画面': '{w} goes off screen at {ratio}',
+  '{ratio} 下 {w} 和 {o} 叠在一起了': '{w} overlaps {o} at {ratio}',
+  '{n} 处问题': '{n} issues',
+  派生状态: 'Derived states',
+  '自动修正：{n} 个元素和子控件的模板位置差太多，挪出来单独摆':
+    'Auto-fix: {n} elements were too far from the sub-widget template and are placed on their own',
+  '自动修正：{n} 组格子大小、间距不齐，没抽成子控件':
+    'Auto-fix: {n} groups have uneven cell sizes or spacing and were not made into sub-widgets',
+  '搭出 {n} 个控件，{c} 组重复的抽成了子控件，位置全部按元素框摆好并锁住':
+    'Built {n} widgets with {c} repeated groups turned into sub-widgets; every position follows its element box and is locked',
+  按钮四态: 'Button states',
+  自动修正: 'Auto-fixed',
+  '自动修正：{n} 个容器按 flex 排会跑位，改成了绝对定位':
+    'Auto-fix: {n} containers drifted under flex layout and now use absolute positioning',
+  '{n} 个容器推断不出横排或竖排，用了绝对定位':
+    '{n} containers fit neither a row nor a column and use absolute positioning',
+  '搭出 {n} 个控件：{f} 个容器用 flex 排，{a} 个绝对定位':
+    'Built {n} widgets: {f} containers use flex, {a} use absolute positioning',
+  'flex 容器': 'Flex containers',
+  'CSS 画的底框': 'CSS-drawn boxes',
+  设计变量: 'Design tokens',
+  '颜色 {c} 档，字号 {s} 档': '{c} colors, {s} font sizes',
+  拆件图对上: 'Matched from parts sheet',
+  '拆件图没出来，这一版全部从原画抠：{error}':
+    'The parts sheet could not be generated, so this version cuts everything from the art: {error}',
+  '{n} 个元素在拆件图里没对上，从原画抠的：{names}':
+    '{n} elements did not match the parts sheet and were cut from the art: {names}',
+  '拆件图不是 PNG，读不出来': 'The parts sheet is not a PNG and cannot be read',
+  '图片 CLI 没有交回图片': 'The image CLI returned no image',
+  拆件图: 'Parts sheet',
+  '图片模型照原画把每个元素单独画在透明底上，切图从这里切':
+    'The image model redrew every element of the art separately on a transparent background; slices are cut from here',
+  '从拆件图切的，和原画对上的分数 {s}': 'Cut from the parts sheet; match score against the art {s}',
+  拆: 'Sheet',
+  先出拆件图: 'Generate a parts sheet first',
+  '切图前让图片模型照原画把每个元素单独画一遍，从拆件图里切':
+    'Before slicing, have the image model redraw every element of the art separately and cut slices from that sheet',
+  '直接从原画抠会夹带别的 UI；拆件图里每件都是干净的。对不上的元素仍从原画抠。用设置里的图片 CLI':
+    'Cutting straight from the art drags in neighboring UI; every piece on the parts sheet is clean. Elements that do not match are still cut from the art. Uses the image CLI from settings',
+  '拆件图没出来，这一轮的切图直接从原画模板抠：{error}':
+    'The parts sheet could not be generated, so this round cuts slices straight from the concept template: {error}',
+}

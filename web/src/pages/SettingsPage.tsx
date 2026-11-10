@@ -1,7 +1,8 @@
-import { Suspense, lazy, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { Suspense, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { toast } from '@/lib/toast'
 import {
   ArrowUpCircle,
+  SlidersHorizontal,
   Cpu,
   ImageIcon,
   FlaskConical,
@@ -22,13 +23,14 @@ import {
   ShieldCheck,
   Webhook,
   GraduationCap,
+  Lightbulb,
   Gauge,
   Keyboard,
   Brain,
   Mic,
   Volume2,
   Component,
-  Box,
+  Puzzle,
   Heading,
   BellRing,
 } from 'lucide-react'
@@ -36,7 +38,7 @@ import { CLIS, type CliDefinition } from '@shared/clis'
 import { cliApi } from '@shared/accounts'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
-import { LANGS, t } from '@shared/i18n'
+import { LANGS, autoLangLabel, t } from '@shared/i18n'
 import { WEBHOOK_MAX_ATTEMPTS } from '@shared/schedule'
 import { defaultCli, mergeCliEnv, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
@@ -57,6 +59,7 @@ import { Switch } from '@/components/ui/switch'
 import { Modal } from '@/components/ui/modal'
 import { Badge } from '@/components/ui/badge'
 import { NavRow } from '@/components/ui/sidebar'
+import * as pp from '@/plugins/PluginParamsNav'
 import { Kbd } from '@/components/ui/kbd'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { StylesSettings } from '@/components/settings/StylesSettings'
@@ -71,6 +74,7 @@ import { DialogCloseButton } from '@/components/ui/dialog-nav'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { Advanced, Group, NumberField, ReadValue, Row } from '@/components/settings/parts'
+import { RestoreSettings } from '@/components/settings/RestoreSettings'
 import { SectionToc, revealSetting, setSectionScroll } from '@/components/settings/section-nav'
 import { SettingsSearchBox, SettingsSearchResults, type SettingsHitGroup } from '@/components/settings/SettingsSearch'
 import { fillVars, searchSettings, searchTerms, type SettingsItem } from '@/lib/settings-search'
@@ -86,48 +90,25 @@ import {
   textToEnv,
   toDraft,
 } from '@/components/settings/CliSection'
-
-// 设置弹窗本身是第一次打开时才加载的，里面 25 个分页再按页加载：不常打开的几页（数据、用量、组件陈列、
-// 本地生图、Blender……）带着自己的大依赖，不该跟着「常规」一起下载
-const UpdateSection = lazy(() =>
-  import('@/components/settings/UpdateSection').then((m) => ({ default: m.UpdateSection })),
-)
-const DataSection = lazy(() => import('@/components/settings/DataSection').then((m) => ({ default: m.DataSection })))
-const UsageSection = lazy(() => import('@/components/usage/UsageSection').then((m) => ({ default: m.UsageSection })))
-const LocalImageSection = lazy(() =>
-  import('@/components/settings/LocalImageSection').then((m) => ({ default: m.LocalImageSection })),
-)
-const BlenderSection = lazy(() =>
-  import('@/components/settings/BlenderSection').then((m) => ({ default: m.BlenderSection })),
-)
-const RemoteSection = lazy(() =>
-  import('@/components/settings/RemoteSection').then((m) => ({ default: m.RemoteSection })),
-)
-const SpeechSection = lazy(() =>
-  import('@/components/settings/SpeechSection').then((m) => ({ default: m.SpeechSection })),
-)
-const ReadAloudSection = lazy(() =>
-  import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
-)
-const ChatMemorySection = lazy(() =>
-  import('@/components/settings/ChatMemorySection').then((m) => ({ default: m.ChatMemorySection })),
-)
-const NotifyChannelsSection = lazy(() =>
-  import('@/components/settings/NotifyChannelsSection').then((m) => ({ default: m.NotifyChannelsSection })),
-)
-const HooksSection = lazy(() => import('@/components/settings/HooksSection').then((m) => ({ default: m.HooksSection })))
-const IntegrationsSection = lazy(() =>
-  import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
-)
-const DeploySection = lazy(() =>
-  import('@/components/settings/DeploySection').then((m) => ({ default: m.DeploySection })),
-)
-const MarkdownSection = lazy(() =>
-  import('@/components/settings/MarkdownSection').then((m) => ({ default: m.MarkdownSection })),
-)
-const ComponentsSection = lazy(() =>
-  import('@/components/settings/ComponentsSection').then((m) => ({ default: m.ComponentsSection })),
-)
+import {
+  UpdateSection,
+  DataSection,
+  UsageSection,
+  LocalImageSection,
+  PluginsSection,
+  PluginParamsSection,
+  RemoteSection,
+  SpeechSection,
+  ReadAloudSection,
+  ExperienceSection,
+  ChatMemorySection,
+  NotifyChannelsSection,
+  HooksSection,
+  IntegrationsSection,
+  DeploySection,
+  MarkdownSection,
+  ComponentsSection,
+} from '@/components/settings/lazy-sections'
 
 interface Section {
   id: string
@@ -142,7 +123,7 @@ interface Section {
 const pickLabel = pickButtonLabel
 
 // 左栏按分组列出，组内顺序就是这里的顺序
-const sectionsFor = (clis: CliDefinition[]): Section[] => [
+const sectionsFor = (clis: CliDefinition[], plugins: Section[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'chat-memory', label: t('关于我与记忆'), icon: Brain, group: t('通用') },
@@ -154,6 +135,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
   { id: 'global-lessons', label: t('全局教训'), icon: GraduationCap, group: t('项目') },
+  { id: 'experience', label: t('经验'), icon: Lightbulb, group: t('项目') },
   { id: 'models', label: t('默认 Agent'), icon: Cpu, group: t('Agent 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
@@ -168,7 +150,10 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
-  { id: 'blender', label: 'Blender', icon: Box, group: t('建模') },
+  { id: 'plugins', label: t('插件'), icon: Puzzle, group: t('扩展') },
+  // 开着的插件各占一页，和 Agent 一样左栏一项、二级列表分开展示（PluginParamsNav.tsx）
+  { id: pp.PLUGIN_PARAMS, label: t('插件参数'), icon: SlidersHorizontal, group: t('扩展') },
+  ...plugins,
   { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
   { id: 'usage', label: t('用量统计'), icon: Gauge, group: t('系统') },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle, group: t('系统') },
@@ -187,7 +172,6 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
-  const [nudge, setNudge] = useState(String(initial.nudgeMax))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [childKeep, setChildKeep] = useState(String(initial.childDoneKeepMinutes))
   const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
@@ -243,7 +227,8 @@ function SettingsBody({
   // 已接入的排在前面；同一组里按拖动过的顺序，没拖过的按名字比较
   const ordered = orderClis(CLIS, cliOrder, (c) => isReady(c.id))
   // 在线演示没有服务端，外网访问和网络代理的开关不显示
-  const SECTIONS = sectionsFor(ordered).filter((s) => !(demo && (s.id === 'remote' || s.id === 'network')))
+  const pluginPages = pp.usePluginParamPages()
+  const SECTIONS = sectionsFor(ordered, pluginPages).filter((s) => !(demo && (s.id === 'remote' || s.id === 'network')))
   // 拖动只改同一组里的顺序，不能跨过启用和停用的分界
   const moveCli = (id: string, to: number) =>
     setCliOrder((o) => {
@@ -266,8 +251,8 @@ function SettingsBody({
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
   const [imageGen, setImageGen] = useState(initial.imageGen)
+  const [designRestore, setDesignRestore] = useState(initial.designRestore)
   const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
-  const [blender, setBlender] = useState(initial.blender)
   // 用量统计的计价模型（存在设置里，跟着自动保存）
   const [pricingModel, setPricingModel] = useState(initial.usagePricingModel)
   const catalogInfo = useModelCatalog()
@@ -339,8 +324,6 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const childAskMin = Number(childAsk)
   const childAskValid = childAsk !== '' && Number.isInteger(childAskMin) && childAskMin >= 0 && childAskMin <= 1440
-  const nudgeN = Number(nudge)
-  const nudgeValid = nudge !== '' && Number.isInteger(nudgeN) && nudgeN >= 0 && nudgeN <= 20
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const childKeepMin = Number(childKeep)
@@ -356,6 +339,7 @@ function SettingsBody({
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     defaultsVersion: initial.defaultsVersion,
+    plugins: initial.plugins,
     openBrowser,
     requireToken,
     remoteAccess,
@@ -377,7 +361,8 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
-    nudgeMax: nudgeValid ? nudgeN : initial.nudgeMax,
+    // 「面板提醒次数」去掉了（2026-11-05：提醒不限次数，靠 end_turn 和空转保护收住）：旧值原样留着，不再用
+    nudgeMax: initial.nudgeMax,
     // 计划 Webhook 已并入「钩子」（schedule.finished 上的 HTTP 钩子，ADR 0049 第三期）：旧字段原样留着，只用来迁移
     webhook: initial.webhook,
     speech,
@@ -391,6 +376,7 @@ function SettingsBody({
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
     memorySampleSeconds: initial.memorySampleSeconds,
+    experience: initial.experience, // 在设置 →「经验」里改（ExperienceSection 自己保存）
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
     defaultCli: defCli,
     clis: Object.fromEntries(
@@ -419,8 +405,8 @@ function SettingsBody({
     apis,
     assist: { ...assist, model: assist.model.trim() },
     imageGen: { ...imageGen, model: imageGen.model.trim() },
+    designRestore,
     modelCatalog,
-    blender: { path: blender.path.trim() },
     usagePricingModel: pricingModel,
   }
   const save = useAutosave(
@@ -465,6 +451,7 @@ function SettingsBody({
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
+  const inPlugin = pp.pluginParamsPage(cur.id)
   // 「部署」那份和这一版不同时，左栏的「Agent」和二级列表的「部署」都亮点（侧栏「设置」读同一份派生值）
   const deployDot = deployedUpdateHint(useSkillUpdates())
   // 提示挂在 aria-describedby 上：放进按钮里会被算进可访问名称，按名字找这一项就找不到了
@@ -488,7 +475,12 @@ function SettingsBody({
   const searchRef = useRef<HTMLInputElement>(null)
   const terms = searchTerms(query)
   const searching = terms.length > 0
-  const sectionPath = (s: Section) => (cliPage(s) && s.id !== 'models' ? `Agent › ${s.label}` : s.label)
+  const sectionPath = (s: Section) =>
+    cliPage(s) && s.id !== 'models'
+      ? `Agent › ${s.label}`
+      : pp.pluginParamsSub(s.id)
+        ? `${t('插件参数')} › ${s.label}`
+        : s.label
   const sectionIcon = (s: Section) =>
     s.cli ? (
       <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ background: cliColor(s.cli.id) }} />
@@ -540,7 +532,12 @@ function SettingsBody({
   const hitCount = (id: string) => hitGroups.find((g) => g.section === id)?.items.length ?? 0
   // 左栏每一项命中几条：Agent 那一项合计默认 Agent、部署、API 和各个 CLI 页
   const navHits = (s: Section) =>
-    (s.id === 'models' ? SECTIONS.filter(cliPage) : [s]).reduce((n, x) => n + hitCount(x.id), 0)
+    (s.id === 'models'
+      ? SECTIONS.filter(cliPage)
+      : s.id === pp.PLUGIN_PARAMS
+        ? SECTIONS.filter((x) => pp.pluginParamsPage(x.id))
+        : [s]
+    ).reduce((n, x) => n + hitCount(x.id), 0)
   // 换了搜索词从第一项开始选
   useEffect(() => setHit(0), [query])
   const pick = (it: SettingsItem) => {
@@ -598,10 +595,11 @@ function SettingsBody({
           <SettingsSearchBox value={query} onChange={setQuery} onKeyDown={onSearchKey} inputRef={searchRef} />
         </div>
         <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto p-2 md:min-h-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:px-2.5 md:pt-0 md:pb-3">
-          {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s, i, list) => {
+          {SECTIONS.filter((s) => (!cliPage(s) || s.id === 'models') && !pp.pluginParamsSub(s.id)).map((s, i, list) => {
             // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
             // 搜索时内容区是结果列表，左栏不再标当前页
-            const on = !searching && (s.id === 'models' ? inCli : s.id === cur.id)
+            const on =
+              !searching && (s.id === 'models' ? inCli : s.id === pp.PLUGIN_PARAMS ? inPlugin : s.id === cur.id)
             const head = s.group && s.group !== list[i - 1]?.group
             return (
               <div key={s.id} className="contents">
@@ -620,7 +618,7 @@ function SettingsBody({
                 <NavRow
                   onClick={() => {
                     setQuery('')
-                    onSection(s.id)
+                    onSection(s.id === pp.PLUGIN_PARAMS ? pp.pluginParamsEntry(pluginPages) : s.id)
                   }}
                   on={on}
                   aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
@@ -773,6 +771,8 @@ function SettingsBody({
         </nav>
       )}
 
+      {inPlugin && !searching && <pp.PluginParamsNav pages={pluginPages} current={cur.id} onSection={onSection} />}
+
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-4 md:px-9 md:pt-6">
           <h2 className="min-w-0 flex-1 truncate font-serif text-title font-semibold tracking-tight">
@@ -856,7 +856,10 @@ function SettingsBody({
                           switchLang(v)
                         }}
                         options={[
-                          { value: 'auto', label: t('跟随浏览器 · Auto') },
+                          {
+                            value: 'auto',
+                            label: t('跟随浏览器 · {lang}', { lang: autoLangLabel(navigator.language) }),
+                          },
                           ...LANGS.map((l) => ({ value: l.id, label: l.label })),
                         ]}
                         className="w-48"
@@ -1023,23 +1026,6 @@ function SettingsBody({
                         invalid={!childAskValid}
                         error={t('填 0 到 1440 之间的整数，0 表示不问')}
                         label={t('子对话没有输出时自动询问（分钟）')}
-                      />
-                    </Row>
-                    <Row
-                      title={t('面板提醒次数')}
-                      desc={t('计划没做完却停下时最多推几次接着做')}
-                      hint={t(
-                        '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，最多做 2 次收尾自检，且不超过这个上限。0 表示不自动推，停下来等你；子对话卡住时仍会告诉父对话。Chat 页一问一答固定只推 1 次。',
-                      )}
-                    >
-                      <NumberField
-                        value={nudge}
-                        onChange={setNudge}
-                        unit={t('次')}
-                        empty={t('不推')}
-                        invalid={!nudgeValid}
-                        error={t('填 0 到 20 之间的整数，0 表示不推')}
-                        label={t('面板提醒次数')}
                       />
                     </Row>
                     <Row
@@ -1265,7 +1251,9 @@ function SettingsBody({
                                 ? ` · ${t('未安装')}`
                                 : !st.enabled
                                   ? ` · ${t('已停用')}`
-                                  : ''
+                                  : drafts[c.id]?.authMode === 'api' && c.auth?.api?.noImages
+                                    ? ` · ${t('API 方式不能生图')}`
+                                    : ''
                             return { value: c.id, label: c.name + note }
                           })}
                       />
@@ -1351,7 +1339,9 @@ function SettingsBody({
                                 ? ` · ${t('未安装')}`
                                 : !st.enabled
                                   ? ` · ${t('已停用')}`
-                                  : ''
+                                  : drafts[c.id]?.authMode === 'api' && c.auth?.api?.noImages
+                                    ? ` · ${t('API 方式不能生图')}`
+                                    : ''
                             return { value: c.id, label: c.name + note }
                           })}
                       />
@@ -1387,6 +1377,7 @@ function SettingsBody({
                       />
                     </Row>
                   </Group>
+                  <RestoreSettings value={designRestore} onChange={setDesignRestore} />
                   <CustomClis demo={demo} />
                 </>
               )}
@@ -1410,14 +1401,14 @@ function SettingsBody({
               {cur.id === 'local-image' && (
                 <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
               )}
-              {cur.id === 'blender' && (
-                <BlenderSection path={blender.path} onPath={(path) => setBlender({ ...blender, path })} />
-              )}
+              {cur.id === 'plugins' && <PluginsSection />}
+              {inPlugin && <PluginParamsSection section={cur.id} />}
               {cur.id === 'data' && <DataSection />}
               {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
               {cur.id === 'deploy' && <DeploySection />}
               {cur.id === 'tags' && <TagsSection />}
               {cur.id === 'global-lessons' && <GlobalLessonsSection />}
+              {cur.id === 'experience' && <ExperienceSection clis={ordered} drafts={drafts} isReady={isReady} />}
               {cur.id === 'update' && (
                 <UpdateSection autoCheck={autoCheckUpdates} onAutoCheckChange={setAutoCheckUpdates} />
               )}

@@ -101,6 +101,8 @@ export interface TasksScope {
         value: string
       }[]
       timeoutMinutes?: number
+      /** 被停止时也要把结果交回发起方（父对话测试用，见 background.ts 的 BgJob.notifyOnStop） */
+      notifyOnStop?: boolean
     }):
       | {
           ok: boolean
@@ -752,6 +754,8 @@ export interface TasksScope {
   ) => Promise<boolean>
   withJobs: (task: Task) => Task
   withLive: (task: Task) => Promise<Task>
+  /** 顶层对话一轮结束后排一次经验学习（server/experience-learn.ts） */
+  learnExperience: (taskId: string) => Promise<void>
   workflowCatalog: (
     project: Project,
     all: Workflow[],
@@ -764,4 +768,6 @@ export interface TasksScope {
   }[]
   worktreeHome: (tk: Task, project: Project) => Promise<string>
   worktreeStatusOf: typeof worktreeStatus
+  /** 工作流运行（server/tasks/flow-runs.ts）：父对话的运行工具、运行回信、随父对话暂停 / 继续 */
+  flowRuns: ReturnType<typeof import('./flow-runs.ts').createFlowRuns>
 }

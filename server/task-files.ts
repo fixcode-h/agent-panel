@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { ATTACH_DIR } from './attachments.ts'
 import { log } from './log.ts'
+import { PATH_RULES } from '../shared/prompt-paths.ts'
 import { TASK_FILE_KINDS, TASK_FILES_DIR } from './store.ts'
 
 /**
@@ -22,11 +23,14 @@ function taskFilesRule(dir: string) {
 不要在项目目录里、系统临时目录或别的地方另建 temp、tmp、screenshots 这类文件夹，也不要把这些东西留在项目里。项目自己规定的测试、截图位置（例如项目的测试目录、项目文档要求的截图目录）照项目的规定；要交付给用户的文件按用户说的位置放。`
 }
 
-/** 这一轮开工前把对话目录和几个子目录建好，返回目录（交给 CLI 放行）和写进系统提示词的那段规则 */
+/**
+ * 这一轮开工前把对话目录和几个子目录建好，返回目录（交给 CLI 放行）和写进系统提示词的那段规则。
+ * 「提到文件写完整路径」也搭这段规则的车：它和对话目录的规则一样每个对话都要有，进系统提示词、或接在新会话第一轮
+ */
 export async function taskFiles(taskId: string) {
   const dir = path.join(TASK_FILES_DIR, taskId)
   await Promise.all(TASK_FILE_KINDS.map((k) => mkdir(path.join(dir, k), { recursive: true }))).catch((e) =>
     log.warn('agent', '建对话目录失败', { task: taskId, error: (e as Error).message }),
   )
-  return { dir, rule: taskFilesRule(dir) }
+  return { dir, rule: `${taskFilesRule(dir)}\n\n${PATH_RULES}` }
 }

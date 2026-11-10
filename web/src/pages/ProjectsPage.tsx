@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useData, useNav, useTasks } from '@/lib/data'
+import { ownedDesign, ownedPage, ownedPageRoute, useDesignModes, usePluginPages } from '@/plugins/registry'
 import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
 
 /**
@@ -11,12 +12,19 @@ export function ProjectsPage() {
   const { tasks } = useTasks()
   const { route, go, openProject } = useNav()
   const selected = projects.find((p) => p.id === route.id)
+  const modes = useDesignModes()
+  const subTask = route.sub ? tasks.find((x) => x.id === route.sub) : undefined
+  const pages = usePluginPages()
+  const design = subTask && ownedDesign(subTask, modes)
+  const page = subTask && !design ? ownedPage(subTask, pages) : undefined
 
   useEffect(() => {
     if (loading) return
     if (!selected) go({ page: 'home' })
-    // 模型设计对话（命令面板、通知、旧链接都按项目对话的地址来）：转到设计模式的模型页，不在 Agent 模式里打开
-    else if (route.sub && tasks.find((x) => x.id === route.sub)?.modelDesign) go({ page: 'model', id: route.sub })
+    // 插件设计模式的对话（命令面板、通知、旧链接都按项目对话的地址来）：转到设计模式，不在 Agent 模式里打开
+    else if (design && subTask) go({ page: 'pdesign', id: design.id, sub: subTask.id })
+    // 插件整页管的对话（模型设计的旧对话还挂在项目下）：转到插件页里打开
+    else if (page && subTask) go(ownedPageRoute(page, subTask.id))
     // 旧链接 #/projects/<id>/settings：改成打开设置弹窗
     else if (route.sub === 'settings') {
       go({ page: 'projects', id: selected.id })
@@ -24,9 +32,9 @@ export function ProjectsPage() {
     }
     // 导航函数每次渲染都是新的
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, selected, route.sub, tasks])
+  }, [loading, selected, route.sub, tasks, design, page])
 
   if (!selected || route.sub === 'settings') return null
-  if (route.sub && tasks.find((x) => x.id === route.sub)?.modelDesign) return null
+  if (design || page) return null
   return <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} />
 }

@@ -86,7 +86,11 @@ import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
 import { designLayoutItems, type MossLayoutItem } from '../shared/moss.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/retry-policy.ts'
-import { encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
+import { decodePng, encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
+import { cropTemplateFile, pickRefined, templatePartCrops } from './design-crop.ts'
+import { cliGenerate } from './design-cli-image.ts'
+import { restoreRoutes } from './design-restore.ts'
+import { restoreRunning, unstick } from '../shared/restore/schema.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -127,6 +131,10 @@ type Job = DesignJob & {
   control?: CliControl
   /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
   sheets?: Map<string, string>
+  /** 点了「精修」的图：有模板也照着抠出来的那块重新画，不再直接抠 */
+  refine?: Set<string>
+  /** 这一轮从拆件图里切好的图：图片 id → PNG 和对上的分数；没对上的照旧从模板抠 */
+  partCrops?: Map<string, { png: Buffer; score: number }>
 }
 
 const now = () => new Date().toISOString()
@@ -189,6 +197,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             images: resetStuckImages(d.images),
           }),
         )
+        unstick(d.restore, t('面板重启，这一步被打断了，请重新运行'))
       } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
     }
     loaded = true
@@ -313,12 +322,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     // 存图失败的原因：取到了图却存不下时，报给用户的是这个，不是笼统的「没有取到图片」
     let saveError = ''
     const kind = source.kind === 'browser' || source.kind === 'local' ? source.kind : ('cli' as const)
-    const add = (buf: Buffer, exact = false) => {
+    const add = (buf: Buffer, exact = false, meta: { source?: 'crop'; score?: number } = {}) => {
       chain = chain
         .then(async () => {
           const want = cur() ?? img
           const s = await storeImage(cache.get(d.id)!, exact ? buf : normalizeGenerated(buf, want))
-          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
+          const variants = [
+            ...(cur()?.variants ?? []),
+            { ...s, source: meta.source ?? kind, at: now(), score: meta.score },
+          ]
           if (first < 0) first = variants.length - 1
           set({ variants, selected: first })
           item.got++
@@ -329,6 +341,53 @@ export function designsApi(deps: { projects: Lister<Project> }) {
         })
     }
     return { set, add, done: () => chain, error: () => saveError }
+  }
+
+  /** 精修完打分：没有一版过门槛时选回原画抠的那版，并在对话里说明 */
+  async function scoreRefined(id: string, img: DesignImage, from: Buffer) {
+    const dd = cache.get(id)
+    const cur = dd?.images.find((i) => i.id === img.id)
+    if (!dd || !cur) return
+    const min = (await getSettings()).designRestore.assetSim
+    const r = await pickRefined(imagesDir(id), cur, from, min)
+    dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, variants: r.variants, selected: r.selected } : i))
+    await save(dd)
+    if (r.low !== undefined)
+      systemNote(
+        id,
+        t('{name} 精修出来的和原画只有 {score} 像（门槛 {min}），仍用原画里抠的那版；想用精修版在图片里手动选', {
+          name: img.name,
+          score: r.low.toFixed(2),
+          min,
+        }),
+        false,
+      )
+  }
+
+  /** 模板模式：要从模板抠的图先试拆件图（design-crop.ts 的 templatePartCrops），出不了照旧从模板抠，原因写进对话 */
+  async function preparePartCrops(d: Design, list: DesignImage[], source: ImageSource, job: Job) {
+    const cur = cache.get(d.id) ?? d
+    const c = conceptOf(cur)
+    const tpl = c.images.find((i) => i.id === c.approved)
+    const want = list.filter((i) => i.ref && !job.refine?.has(i.id))
+    if (!tpl || !want.length || source.kind !== 'cli' || !(await getSettings()).designRestore.parts) return
+    job.partCrops = await templatePartCrops({
+      tplFile: conceptFile(cur, tpl.id)!,
+      // 拆件图跟着模板走：按模板 id 存一张，换了模板才重出
+      sheetFile: path.join(imagesDir(d.id), `parts-${tpl.id}.png`),
+      design: cur,
+      want,
+      generate: async (prompt, ref) => {
+        let out: Buffer | undefined
+        await cliGenerate(prompt, 1, job, (b) => (out ??= b), [ref])
+        if (!out) throw new Error(t('图片 CLI 没有交回图片'))
+        return out
+      },
+    }).catch((e) => {
+      if (job.abort.signal.aborted) throw e
+      systemNote(d.id, t('拆件图没出来，这一轮的切图直接从原画模板抠：{error}', { error: (e as Error).message }))
+      return undefined
+    })
   }
 
   /** 生成一张图 */
@@ -354,6 +413,20 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const approvedFile = tplId ? conceptFile(cache.get(d.id) ?? d, tplId) : undefined
     const crop =
       img.ref && approvedFile ? await templateCrop(approvedFile, cache.get(d.id)!.designSize, img.ref) : undefined
+    // 有模板、写了 ref：默认直接从模板里抠（和原画一模一样），点了「精修」才往下重新画
+    const fromParts = job.partCrops?.get(img.id)
+    const exact =
+      fromParts?.png ??
+      (img.ref && approvedFile ? await cropTemplateFile(approvedFile, cache.get(d.id)!.designSize, img) : undefined)
+    if (exact && !job.refine?.has(img.id)) {
+      sink.add(exact, true, { source: 'crop', score: fromParts?.score ?? 1 })
+      await sink.done()
+      if (!item.got) throw new Error(sink.error() || t('没有取到图片'))
+      sink.set({ status: 'idle' })
+      item.status = 'done'
+      return
+    }
+    const refineFrom = exact && decodePng(exact) ? exact : undefined
     const cropFile = crop && source.kind === 'cli' ? path.join(tmpdir(), `agent-panel-ref-${randomUUID()}.png`) : ''
     if (cropFile) await writeFile(cropFile, crop!)
     const local = source.kind === 'local' ? source : undefined
@@ -364,6 +437,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           ? await templateImg2Img(
               {
                 crop,
+                denoise: refineFrom ? 0.3 : undefined,
                 prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
                 negative: img.negative,
                 width: img.width,
@@ -439,6 +513,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       await sink.done()
       if (!item.got) throw new Error(sink.error() || t('没有取到图片'))
       sink.set({ status: 'idle' })
+      if (refineFrom) await scoreRefined(d.id, img, refineFrom)
       item.status = 'done'
       item.text = undefined
     } catch (e) {
@@ -583,92 +658,6 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     return []
   }
 
-  /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
-  async function cliGenerate(
-    prompt: string,
-    count: number,
-    job: Job,
-    onImage: (b: Buffer) => void,
-    /** 一起交给模型的参考图（原画模板、要在它基础上改的原画） */
-    refs: string[] = [],
-  ): Promise<Buffer[]> {
-    const settings = await getSettings()
-    const cliId = settings.imageGen.cli || 'codex'
-    const def = getCli(cliId)
-    if (!def?.images)
-      throw new Error(t('{cli} 不能生成图片，请在设置的「默认 Agent」里换成 Codex', { cli: def?.name ?? cliId }))
-    const cs = cliSettings(settings, cliId)
-    if (!cs.enabled) throw new Error(t('{cli} 在设置里被停用了', { cli: def.name }))
-    const run = agentRun(
-      { cli: cliId, model: settings.imageGen.model || '@high', effort: settings.imageGen.effort },
-      settings,
-    )
-    const cwd = path.join(tmpdir(), 'agent-panel-images')
-    await mkdir(cwd, { recursive: true })
-    let got = 0
-    // 模型有时会多画几张：最多收 count 张，多的不要，不然进度会出现「4/3」
-    // 图片文件可能还没写完，读到了再交出去；最后等所有读取结束
-    const reads: Promise<void>[] = []
-    const errors: string[] = []
-    let result: { ok: boolean; error?: string } | undefined
-    const asks = askSession(job.scope, () => job.abort.abort())
-    const r = await invokeCli({
-      askUser: asks.askUser,
-      onAsk: asks.onAsk,
-      cliId,
-      command: cs.command,
-      build: {
-        model: run.model,
-        effort: run.effort,
-        // 审批按设置里的权限：CLI 要确认时弹出卡片等用户
-        permission: cs.permission,
-        extraArgs: cs.extraArgs,
-      },
-      cwd,
-      env: childEnv(cs.env),
-      input: `请用内置的 image_gen 工具生成 ${count} 张图片（每张单独调用一次 image_gen，内容一样、细节可以不同；正好 ${count} 张，不要多画）。不要写代码、不要运行命令、不要另存文件，生成完直接结束，不用解释。${refs.length ? '\n附上的图片是参考图，按下面的要求参考它。' : ''}
-
-图片要求：
-${prompt}`,
-      images: refs.length ? refs : undefined,
-      signal: job.abort.signal,
-      // 不限时长，用户随时可以停止
-      timeoutMs: 0,
-      onEvent: (ev) => {
-        if (ev.type === 'image') {
-          if (ev.failed) errors.push(ev.failed)
-          else if (ev.path || ev.data) {
-            const b64 = ev.data ? Buffer.from(ev.data, 'base64') : null
-            const read = ev.path ? readFile(ev.path).catch(() => b64) : Promise.resolve(b64)
-            reads.push(
-              read.then((b) => {
-                if (!b?.length || got >= count) return
-                got++
-                onImage(b)
-              }),
-            )
-          }
-        } else if (ev.type === 'error') errors.push(ev.message)
-        else if (ev.type === 'result') result = ev
-        else if (ev.type === 'text_delta' || ev.type === 'text') job.outChars += ev.text.length
-      },
-    }).finally(asks.done)
-    await Promise.all(reads)
-    if (r.killed === 'stopped') throw new Error(t('已停止'))
-    if (r.spawnError) throw new Error(t('{error}。请确认已安装 {cli}', { error: r.spawnError, cli: def.name }))
-    if (!got)
-      throw new Error(
-        [
-          t('{cli} 没有生成图片', { cli: def.name }),
-          result?.error,
-          ...errors,
-          r.stderr.trim().split('\n').slice(-3).join('\n'),
-        ]
-          .filter(Boolean)
-          .join('：'),
-      )
-    return []
-  }
   async function generateImages(
     d: Design,
     ids: string[],
@@ -694,6 +683,7 @@ ${prompt}`,
       (source.kind === 'browser' && !browserParallel()) || source.kind === 'local' ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
+    await preparePartCrops(d, list, source, job)
     // 同一个 sheet（至少 2 个、透明度一样）的图标一起生成，其余一张张来
     type Task = { imgs: DesignImage[]; items: ImageJobItem[]; revision: string }
     const queue: Task[] = []
@@ -702,7 +692,9 @@ ${prompt}`,
       const sheet = job.sheets?.get(img.id)
       // 图集只放尺寸统一的小图标：大图、尺寸不同的分开（大图一张张生成）
       // 本机的扩散模型画不准等间距的格子：图标一张张生成
+      // 有模板、写了 ref 的从模板里抠，不进图集
       if (!sheet || source.kind === 'local' || Math.max(img.width, img.height) > SHEET_MAX_SIDE) return
+      if (img.ref && conceptOf(d).approved && !job.refine?.has(img.id)) return
       const key = `${sheet}:${img.transparent}:${img.width}x${img.height}`
       groups.set(key, [...(groups.get(key) ?? []), k])
     })
@@ -1759,7 +1751,9 @@ ${prompt}`,
       // - 页面编辑时基于的版本（baseRev）比服务端旧：AI 已经改过了，页面这份是旧的。
       // 不收时其余的（标题、图片、标注）照常存，响应里带上服务端的设计，页面据此换成新的、把自己的改动放进撤销栈
       const job = jobs.get(d.id)
-      const aiEditing = starting.has(d.id) || (job?.status === 'running' && job.phase === 'design')
+      // 还原的某一步在跑（会整棵换掉控件树、加切图）也按「AI 正在改」处理
+      const aiEditing =
+        starting.has(d.id) || (job?.status === 'running' && job.phase === 'design') || restoreRunning(d.restore)
       const baseRev = typeof body?.baseRev === 'number' ? body.baseRev : undefined
       const stale = baseRev !== undefined && baseRev < d.rev
       const keepStructure = aiEditing || stale
@@ -1790,7 +1784,9 @@ ${prompt}`,
         }
       })
       // 后台正在生成、页面还不知道的新图片不能被页面的旧列表删掉
-      for (const old of d.images) if (old.status !== 'idle' && !images.some((i) => i.id === old.id)) images.push(old)
+      for (const old of d.images)
+        if ((old.status !== 'idle' || restoreRunning(d.restore)) && !images.some((i) => i.id === old.id))
+          images.push(old)
       Object.assign(d, {
         title: doc.title,
         images,
@@ -1918,12 +1914,14 @@ ${prompt}`,
         img.status = 'pending'
         img.error = undefined
         await save(d)
+        if (p.data.refine) (running.refine ??= new Set()).add(img.id)
         running.enqueue(img, p.data.revision)
         return c.json({ ...d, job: view(running) })
       }
       img.status = 'pending'
       await save(d)
       startJob(d, async (job) => {
+        if (p.data.refine) job.refine = new Set([img.id])
         const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job, {
           [img.id]: p.data.revision ?? '',
         })
@@ -2347,6 +2345,29 @@ ${prompt}`,
       await writeFile(path.join(dir, EXPORT_MARK), JSON.stringify({ designId: d.id, title: d.title }, null, 2))
       return c.json({ dir })
     })
+
+  // 照原画还原的几个接口，见 design-restore.ts
+  routes.route(
+    '/',
+    restoreRoutes({
+      get,
+      save: (d) => save(d),
+      storeImage,
+      imagesDir,
+      askJson,
+      systemNote,
+      busy: (id) => jobs.get(id)?.status === 'running',
+      reply: (c, d) => c.json({ ...d, job: view(jobs.get(d.id)) }),
+      now,
+      // 拆件图走设置里的图片 CLI：它能带参考图（原画），本机生图是文生图 / 图生图，摆不出拆开的件
+      generateWithRef: async (d, prompt, ref, abort) => {
+        let out: Buffer | undefined
+        await cliGenerate(prompt, 1, { abort, scope: `design:${d.id}`, outChars: 0 }, (b) => (out ??= b), [ref])
+        if (!out) throw new Error(t('图片 CLI 没有交回图片'))
+        return out
+      },
+    }),
+  )
 
   return {
     routes,

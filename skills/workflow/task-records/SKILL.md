@@ -34,7 +34,7 @@ user-invocable: true
 
 ## 记录与恢复
 
-普通长任务位于 `DOC_ROOT/worklog/<task-id>/`；已有 OpenSpec change 或 P4 台账时复用原位置。
+普通长任务位于 `DOC_ROOT/worklog/<task-id>/`（P4 / SVN 各分支共用 `DOC_ROOT` 时是 `DOC_ROOT/branches/<分支>/worklog/<task-id>/`，见提示里的「文档根」一段）；已有 OpenSpec change 或 P4 台账时复用原位置。
 
 - **tasks.md 是唯一勾选清单**；勾选 `[x]` 必须能在 acceptance.md 中找到对应的验收证据，没有证据不勾选。
 - design.md 记录目标、范围与决策。

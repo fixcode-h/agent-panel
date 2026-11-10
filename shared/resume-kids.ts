@@ -83,7 +83,7 @@ export function kidsSkipNote(userStopped: ResumeKid[], skipped: ResumeKid[]): st
  * resumed：面板这次连带拉起来的子对话标题；failed：没能拉起来的（父对话据此另建子对话接手，ADR 0032）
  */
 export function resumeNote(
-  task: Pick<Task, 'stopReason' | 'steps' | 'runs' | 'flow'> & {
+  task: Pick<Task, 'stopReason' | 'steps' | 'runs' | 'flowRun'> & {
     plans?: Task['plans']
     stoppedJobs?: Task['stoppedJobs']
   },
@@ -109,8 +109,8 @@ export function resumeNote(
     lines.push(
       `- 中断时没跑完的子任务已经由面板在原来的会话里接着跑：${helpers.map((s) => `「${s.title}」（id ${s.id}）`).join('、')}。不要重新派，结果会照常交回给你；不需要了就用 stop_subtask 终止。`,
     )
-  // 工作流子对话的流程图由面板接着跑（ADR 0044），走不到这里；剩下的是升级前在对话里 start_plan 起的老运行
-  const runs = task.flow ? [] : (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
+  // 工作流运行由面板自己接着跑，走不到这里；剩下的是升级前在对话里 start_plan 起的老运行
+  const runs = task.flowRun ? [] : (task.runs ?? []).filter((r) => r.status === 'stopped' || r.status === 'running')
   if (runs.length)
     lines.push(
       `- 中断时没跑完的工作流（升级前在这个对话里启动的）：${runs.map((r) => `「${r.workflowName || r.workflowId}」`).join('、')}。它不会接着跑：计划里绑着它的那一步已退回进行中，没做完的部分在对话里接着做；要按工作流从头再跑，交给父对话决定。`,

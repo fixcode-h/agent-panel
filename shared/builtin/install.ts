@@ -10,7 +10,8 @@ import {
   type Workflow,
 } from '../schema.ts'
 import { contentHash } from '../hash.ts'
-import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } from './agents.ts'
+import { COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } from './agents.ts'
+import { builtinAgents, builtinWorkflows } from './catalog.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
 import {
   CORE_AGENTS,
@@ -33,7 +34,6 @@ import {
   type MergedAgent,
 } from './legacy.ts'
 import {
-  BUILTIN_WORKFLOWS,
   buildFlow,
   buildWorkflow,
   builtinAgentKeys,
@@ -87,13 +87,13 @@ function withIncludes(start: string[]): BuiltinAgent[] {
   for (let changed = true; changed;) {
     changed = false
     for (const k of [...keys])
-      for (const inc of depsOf(BUILTIN_AGENTS.find((a) => a.key === k) ?? { includes: [], mounts: [] }))
+      for (const inc of depsOf(builtinAgents().find((a) => a.key === k) ?? { includes: [], mounts: [] }))
         if (!keys.has(inc)) {
           keys.add(inc)
           changed = true
         }
   }
-  return BUILTIN_AGENTS.filter((a) => keys.has(a.key))
+  return builtinAgents().filter((a) => keys.has(a.key))
 }
 
 /** 这个内置工作流要新建哪些 Agent（本机已经有的会复用） */
@@ -265,7 +265,7 @@ function isLegacyGeneral(w: Workflow, agents: Agent[]) {
  * 节点语义、连线和说明都一致（忽略坐标），并且这个名字对应的流程在两边都有。
  * 只比较旧定义里出现过的流程 id，用户新增的流程不影响判断。
  */
-function matchesLegacy(cur: Workflow, legacy: LegacyWorkflow, agentId: (key: string) => string) {
+export function matchesLegacy(cur: Workflow, legacy: LegacyWorkflow, agentId: (key: string) => string) {
   if (cur.document.trim() !== legacy.document.trim()) return false
   const expected = legacy.flows.map((f) => buildFlow(f, agentId))
   for (const exp of expected) {
@@ -370,7 +370,7 @@ export function redirectMergedProjects(projects: Project[], agents: Agent[]) {
 }
 
 /** 这个 Agent 是否还被用着：工作流（主 Agent、成员、节点、步骤）、项目的默认对话角色、其他 Agent 的引入 */
-function agentInUse(id: string, state: BuiltinState, projects: Pick<Project, 'defaultAgentId'>[]) {
+export function agentInUse(id: string, state: BuiltinState, projects: Pick<Project, 'defaultAgentId'>[]) {
   return (
     state.workflows.some(
       (w) =>
@@ -455,7 +455,7 @@ export async function redirectMergedWorkflows(state: BuiltinState, api: BuiltinO
 export async function upgradeBuiltinWorkflows(state: BuiltinState, api: BuiltinOps): Promise<Workflow[]> {
   if (!api.updateWorkflow) return []
   const out: Workflow[] = []
-  for (const w of BUILTIN_WORKFLOWS) {
+  for (const w of builtinWorkflows()) {
     const cur = state.workflows.find((x) => x.origin === originOf(w.key))
     if (!cur) continue
     const agentId = (key: string) => findBuiltin(state.agents, key)?.id ?? ''
@@ -586,7 +586,7 @@ export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) 
  * 返回装完后的数据和新的 seeded，调用方据此更新集合。
  */
 export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps, seeded: string[] = []) {
-  const rest = BUILTIN_WORKFLOWS.filter(
+  const rest = builtinWorkflows().filter(
     (w) =>
       (ALWAYS_SEEDED.has(w.key) || !seeded.includes(w.key)) &&
       !state.workflows.some((x) => x.origin === originOf(w.key) || x.name === w.name),
@@ -598,9 +598,15 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps,
     cur = seeded
     created = seeded.workflows.filter((w) => !state.workflows.some((x) => x.id === w.id))
   }
-  // 本机还有已合并的旧副本、却没有合并目标时（例如只装过「Bug 修复」，没有「开发」）先把目标建出来，下面才能重定向
+  // 本机还有已合并的旧副本、却没有合并目标时（例如只装过「Bug 修复」，没有「开发」）先把目标建出来，下面才能重定向。
+  // 合并目标是插件带的（例如 Blender 建模，ADR 0059）而插件没开时不建：旧副本由插件的清理规则处理
   const targets = Object.entries(MERGED_AGENTS)
-    .filter(([key, m]) => findBuiltin(cur.agents, key) && !findBuiltin(cur.agents, m.into))
+    .filter(
+      ([key, m]) =>
+        findBuiltin(cur.agents, key) &&
+        !findBuiltin(cur.agents, m.into) &&
+        builtinAgents().some((b) => b.key === m.into),
+    )
     .map(([, m]) => m.into)
   if (targets.length) {
     const r = await addBuiltinAgents(targets, cur, api)
@@ -623,7 +629,7 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps,
   const redirected = await redirectMergedWorkflows(cur, api)
   if (redirected.length)
     cur = { ...cur, workflows: cur.workflows.map((w) => redirected.find((x) => x.id === w.id) ?? w) }
-  const nextSeeded = [...new Set([...seeded, ...BUILTIN_WORKFLOWS.map((w) => w.key)])]
+  const nextSeeded = [...new Set([...seeded, ...builtinWorkflows().map((w) => w.key)])]
   return { state: cur, created, updated, seeded: nextSeeded, upgradedAgents, replaced }
 }
 
@@ -706,7 +712,7 @@ export async function upgradeBuiltinAgents(
   if (!api.updateAgent) return []
   const out: Agent[] = []
   const agents = [...state.agents]
-  for (const b of BUILTIN_AGENTS) {
+  for (const b of builtinAgents()) {
     const cur = findBuiltin(agents, b.key)
     if (!cur) continue
     const includes = b.includes.map((k) => findBuiltin(agents, k)?.id ?? '').filter(Boolean)
@@ -771,7 +777,7 @@ export async function migrateProjectsToGeneral(
 /**
  * 一次装上多个内置工作流（默认全部；已有同名工作流的跳过），返回装完后的数据
  */
-export async function seedBuiltins(state: BuiltinState, api: BuiltinOps, list = BUILTIN_WORKFLOWS) {
+export async function seedBuiltins(state: BuiltinState, api: BuiltinOps, list = builtinWorkflows()) {
   const cur = {
     agents: [...state.agents],
     categories: [...state.categories],

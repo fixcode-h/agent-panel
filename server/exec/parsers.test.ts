@@ -240,6 +240,28 @@ test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开�
  * deepseek 中转网关（真实抓到的顺序）：推理 delta 记在回复条目的 id 下，推理条目完成时 id 不同；
  * 同一条回复发两次 item/started。思考和正文都只出一次，不多出一段空回复
  */
+test('Claude Code：重试用完就结束（result 前没等到模型回应）时补一条 retry_failed', () => {
+  const parse = claudeParser(CWD)
+  parse({ type: 'system', subtype: 'api_retry', attempt: 10, max_retries: 10, error_status: 529, error: 'overloaded' })
+  const end = parse({
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    result: 'API Error: 529 overloaded',
+  })
+  const failed = end.find((e) => e.type === 'notice')
+  assert.deepEqual(failed, {
+    type: 'notice',
+    text: '自动重试 10 次后仍然失败：API Error: 529 overloaded',
+    failed: true,
+    kind: 'retry_failed',
+    attempt: 10,
+    error: 'API Error: 529 overloaded',
+  })
+  // 没在重试时结束一轮不补
+  assert.ok(!parse({ type: 'result', subtype: 'success', result: 'ok' }).some((e) => e.type === 'notice'))
+})
+
 test('Claude Code：网关出错时自己重试（api_retry）画成「正在重试」，模型回应开始后收成已恢复', () => {
   const parse = claudeParser(CWD)
   // Claude Code 2.1.316 对着返回 529 的网关实测输出的行（去掉了 session_id / uuid）
@@ -282,6 +304,31 @@ test('Claude Code：网关出错时自己重试（api_retry）画成「正在重
     waited_ms: 60_012,
   })
   assert.equal((ttfb[0] as { error: string }).error, 'unknown 等了 60 秒没收到响应头（首字节超时）')
+  // 2.1.318 把等待时间挪进了 no_response（实测输出）：同样认出来，并带上 waitedMs 让面板不再另算安静了多久
+  const nested = claudeParser(CWD)({
+    type: 'system',
+    subtype: 'api_retry',
+    attempt: 1,
+    max_retries: 10,
+    error_status: null,
+    error: 'unknown',
+    no_response: { waited_ms: 45_100, retry_wait_ms: 500 },
+  })
+  assert.equal((nested[0] as { error: string }).error, 'unknown 等了 45 秒没收到响应头（首字节超时）')
+  assert.equal((nested[0] as { waitedMs: number }).waitedMs, 45_100)
+  // 输出到一半断流：message_stop 带 abandoned_blocks、不发 api_retry（2.1.318 对真实网关实测），同样画成「正在重试」
+  const cut = claudeParser(CWD)
+  const dropped = cut({
+    type: 'stream_event',
+    event: { type: 'message_stop' },
+    abandoned_blocks: { api_message_id: 'resp_1', from_block_index: 0 },
+  })
+  assert.deepEqual(
+    dropped.map((e) => e.type === 'notice' && e.kind),
+    ['retry'],
+  )
+  const again = cut({ type: 'assistant', message: { id: 'resp_2', content: [{ type: 'text', text: '好' }] } })
+  assert.equal(again[0].type, 'retry_ok')
 })
 
 test('Codex app-server：网关把推理 delta 挂在回复条目上时思考不重复、正文不丢', async () => {
@@ -941,4 +988,21 @@ test('Pi 的重试事件：带上次数和原因，重试成功后算恢复而�
   assert.deepEqual(parse({ type: 'auto_retry_end', success: true, attempt: 1 }), [
     { type: 'retry_ok', attempt: 1, text: '第 1 次重试成功了，接着做。' },
   ])
+})
+
+test('Claude Code：CLI 定义里登记了类别的工具名都按类别解析，不落到 other（Windows 的 PowerShell 是跑命令）', () => {
+  // 用户 2026-11-05 报：Windows 上 PowerShell 工具被记成 other，收尾自检数不到动作、放它停在「我再确认一下」
+  const names = getCli('claude')!.hooks!.toolNames
+  const kinds: Record<string, string[]> = { shell: ['run'], edit: ['edit'], read: ['read', 'search'] }
+  for (const [cat, list] of Object.entries(names))
+    for (const name of list) {
+      const ev = claudeParser(CWD)({
+        type: 'assistant',
+        message: { id: `m-${name}`, content: [{ type: 'tool_use', id: name, name, input: { command: 'git status' } }] },
+      })
+      const tool = ev.find((e) => e.type === 'tool')
+      assert.ok(tool && tool.type === 'tool', name)
+      assert.ok(kinds[cat]?.includes(tool.tool.kind), `${name} 解析成了 ${tool.tool.kind}`)
+    }
+  assert.ok(names.shell.includes('PowerShell'))
 })

@@ -28,6 +28,9 @@ import { BUILTIN_STYLES, isBuiltinStyle } from '@shared/styles'
 import { parseDesignAnalysis } from '@shared/design-analysis'
 import type { ToolUse } from '@shared/schema'
 import { demoMs } from './demo-speed'
+import { demoRestoreArt } from './demo-restore-art'
+import { setSource } from '@shared/restore/steps'
+import { restoreRunning } from '@shared/restore/schema'
 
 type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
@@ -1161,6 +1164,28 @@ function seed() {
     job: null,
   }
   designs.set(invD.id, invD)
+  // 照原画还原：放好一张示例原画，第一步等确认
+  const rd: Full = {
+    ...invD,
+    id: 'demo-design-restore',
+    title: '背包（照原画还原）',
+    root: emptyRoot('game'),
+    images: [],
+    messages: [],
+    annotations: [],
+    concept: undefined,
+    layout: undefined,
+    rev: 0,
+  }
+  const art = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(demoRestoreArt())}`
+  setSource(rd, { kind: 'image', file: art, name: 'inventory.png', width: 1600, height: 900 }, invAt)
+  designs.set(rd.id, rd)
+}
+
+/** 还原接口要直接改设计（演示里没有服务端） */
+export function demoDesignOf(id: string) {
+  seed()
+  return designs.get(id) ?? fail('设计不存在')
 }
 
 async function runChat(
@@ -1630,6 +1655,10 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     }
     // 保存：图片的生成结果以「服务端」为准
     const byId = new Map(d.images.map((i) => [i.id, i]))
+    // 和服务端一样：还原在跑、或页面这份基于旧版本时，只收标题、图片、标注，结构不收
+    const keep = restoreRunning(d.restore) || (typeof body.baseRev === 'number' && body.baseRev < d.rev)
+    const known = new Set((body.images as typeof d.images).map((i) => i.id))
+    const extra = restoreRunning(d.restore) ? d.images.filter((i) => !known.has(i.id)) : []
     d.images = (body.images as typeof d.images).map((i) => {
       const old = byId.get(i.id)
       return old
@@ -1645,9 +1674,14 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
           }
         : i
     })
+    d.images.push(...extra)
+    d.annotations = body.annotations ?? []
+    d.title = body.title
+    if (keep) {
+      d.updatedAt = now()
+      return { ...d, rejected: restoreRunning(d.restore) ? 'ai' : 'stale' }
+    }
     Object.assign(d, {
-      annotations: body.annotations ?? [],
-      title: body.title,
       designSize: body.designSize,
       style: body.style,
       data: body.data ? DesignData.parse(body.data) : (d.data ?? { sets: [] }),

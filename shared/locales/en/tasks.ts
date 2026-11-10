@@ -127,7 +127,6 @@ export const EN_TASKS: Record<string, string> = {
   点文件在中间查看: 'Click a file to view it in the center',
 
   // 附件
-  '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
   选择文件的窗口一直没有响应: 'The file picker did not respond',
   '打不开选择文件的窗口：{error}': 'Could not open the file picker: {error}',
   截图: 'Screenshot',
@@ -526,6 +525,9 @@ export const EN_TASKS: Record<string, string> = {
     'This file had uncommitted changes before the task started, and reverting would discard them too. Please handle it in your editor.',
   撤销: 'Revert',
   '查看「{path}」的改动': 'View changes to "{path}"',
+  项目改动: 'Project changes',
+  项目外改动: 'Changes outside the project',
+  '打开「{path}」': 'Open "{path}"',
   // 执行中发消息、打断
   '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
     'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
@@ -663,9 +665,6 @@ export const EN_TASKS: Record<string, string> = {
   '结束这个流程？': 'End this flow?',
   '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。':
     "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main role.",
-  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
-    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main role to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
-  '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
   '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。':
     "This run is over; unfinished nodes won't execute. Tell the main role what you need next and it will run the flow again when needed.",
   '任务正在执行，请先停止': 'The task is running; stop it first',
@@ -807,8 +806,8 @@ export const EN_TASKS: Record<string, string> = {
     "Based on this project's current scripts and config, generate test steps for type checking, unit tests, end-to-end tests and the build",
   '这个工作流没有需要配置的参数。': 'This workflow has no parameters to configure.',
   新建对话默认开独立分支: 'Use a separate branch for new chats by default',
-  '新建对话时输入框里的「独立分支」默认打开：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里关掉。':
-    'The input box\'s "Separate branch" switch starts on for new chats: each chat edits in its own git branch and folder, so chats running at the same time don\'t overwrite each other. Merge or discard it when done. You can still turn it off for any new chat.',
+  '打开后新建对话时输入框里的「独立分支」默认勾上：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里改。':
+    'When on, the input box\'s "Separate branch" switch starts checked for new chats: each chat edits in its own git branch and folder, so chats running at the same time don\'t overwrite each other. Merge or discard it when done. You can still change it for any new chat.',
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',
@@ -1336,7 +1335,7 @@ export const EN_TASKS: Record<string, string> = {
   什么时候: 'When',
   为什么: 'Why',
   原本拦住的是: 'What it blocked',
-  // 分诊卡（RouteCard）
+  // 派单行（DispatchRow，原来的分诊卡）
   新开子对话: 'New child conversation',
   交回子对话: 'Back to child conversation',
   派子任务: 'Subtask',
@@ -1344,12 +1343,18 @@ export const EN_TASKS: Record<string, string> = {
   改为就地处理: 'Handle in place',
   改为子任务: 'Make it a subtask',
   改为子对话: 'Give to a child conversation',
-  分诊: 'Triage',
   已改派: 'Rerouted',
+  改派: 'Reroute',
+  展开分诊说明: 'Show triage notes',
+  收起分诊说明: 'Hide triage notes',
+  交接内容: 'Handoff',
+  '新开 {n} 个子对话': 'Opened {n} child conversations',
+  '交回子对话 {n} 次': 'Sent back to child conversations {n} times',
   理解: 'Understood as',
   理由: 'Why',
   假设: 'Assumed',
   跳到某一轮: 'Jump to a turn',
+  文档目录: 'Contents',
   '第 {n} 轮：{text}': 'Turn {n}: {text}',
   // AI 分析窗口：排查的结构化结论（DiagnosisReport）
   排查结论: 'Diagnosis',
@@ -1433,17 +1438,6 @@ export const EN_TASKS: Record<string, string> = {
   会话栏: 'Session bar',
   分析对象: 'Analyzing',
   面板自动附上: 'attached by the panel',
-  '加载模型失败：{error}': 'Could not load the model: {error}',
-  '第 {n} 版 · {count} 个物体': 'Version {n} \u00b7 {count} objects',
-  对准模型: 'Fit model',
-  '下载 glb': 'Download glb',
-  模型预览: 'Model preview',
-  '还没有模型。Agent 用 Blender 建模后，这里会实时显示，可以拖动旋转、滚轮缩放。':
-    'No model yet. Once the agent models in Blender it shows here live; drag to rotate, scroll to zoom.',
-  '浏览器不支持 WebGL，没法预览模型；可以下载 glb 用别的软件看。':
-    "This browser doesn't support WebGL, so the model can't be previewed; download the glb to view it elsewhere.",
-  场景里的物体: 'Objects in the scene',
-  '{n} 面': '{n} faces',
   // 排查结论：一键应用修复、证据标签
   '应用这 {n} 处修改': 'Apply {n} changes',
   '把每处改前的原文在项目里原样换成改后的内容；原文找不到或不止一处的不改，并写明原因':
@@ -1694,15 +1688,25 @@ export const EN_TASKS: Record<string, string> = {
   '这一轮说完了，在等子对话：{list}': 'The turn is done, waiting for sub-chats: {list}',
   '子对话 {list} 已经请父对话收尾 {m} 分钟了，父对话没有合回也没有退回':
     'Sub-chats {list} asked the parent to wrap up {m} minutes ago; the parent has neither merged nor sent them back',
-  '面板已提醒 {n}/{max} 次': 'The panel has reminded it {n}/{max} times',
+  '面板已提醒 {n} 次': 'The panel has reminded it {n} times',
   '面板重启时子任务{list}还在执行，已中断。要接着做就发消息，AI 会用 spawn_agents 的 resume 在原来的会话里续上。':
     'Sub-tasks {list} were still running when the panel restarted and were interrupted. Send a message to continue; the AI will resume them in their original sessions with spawn_agents.',
   '有 {n} 条消息排着等「这一轮结束后处理」，可这一轮已经结束了，没人接':
     '{n} messages are queued for "after this turn", but the turn has ended and nothing will pick them up',
   '已经不在执行，排队等 API 的标记却还留着': 'No longer running, but the "queued for API" marker is still there',
   '对话已经收口，它名下的 CLI 进程却还活着': 'The conversation has settled, but its CLI process is still alive',
-  '计划才做了 {done}/{total}，面板按这个进度推满了 {n} 次，停在这里':
-    'The plan is only {done}/{total} done; the panel nudged it {n} times at this progress and it stopped here',
+  '计划才做了 {done}/{total}，面板按这个进度提醒了 {n} 次，停在这里':
+    'The plan is only {done}/{total} done; the panel reminded it {n} times at this progress and it stopped here',
+  '卡住了：{need}': 'Stuck: {need}',
+  '面板连着提醒了 {n} 次，它都没动手，也没说做完或卡住：停在这里等你看一下':
+    'The panel reminded it {n} times in a row and it neither did anything nor said it was done or stuck. Stopped here for you to take a look',
+  结束前拦住: 'Held before ending',
+  一轮结束后提醒: 'Reminded after the turn',
+  它说卡住了: 'Said it is stuck',
+  它说做完了: 'Said it is done',
+  '之后调了 {n} 次工具': 'then made {n} tool calls',
+  之后没动手: 'then did nothing',
+  收尾那句已隐藏: 'closing line hidden',
   '计划才做了 {done}/{total}，这一轮已经停下，也不在等任何结果':
     'The plan is only {done}/{total} done; this turn has stopped and is not waiting for anything',
   '上一轮因为 {why} 停下，这一轮没有调用工具：可能是输出被截断':
@@ -1738,6 +1742,7 @@ export const EN_TASKS: Record<string, string> = {
   '模型请求 #{n}': 'Request #{n}',
   '{d} 后开始输出': 'Output after {d}',
   跳到最新: 'Jump to latest',
+  双击回到完整日志并定位到这一行: 'Double-click to show the full log and jump to this line',
   '开着时每 2 秒刷新': 'Refreshes every 2 seconds while open',
   '实时 · {time}': 'Live · {time}',
   '把选中这一项的结论、异常、计数和日志交给 AI，判断卡在哪、怎么处理':
@@ -1757,11 +1762,9 @@ export const EN_TASKS: Record<string, string> = {
   '交结果：卡住': 'Result: stuck',
   '交结果：没做完': 'Result: unfinished',
   '在等你处理：确认操作或回答提问': 'Waiting for you: confirm an action or answer a question',
-  工作流子对话: 'Workflow sub-conversation',
   运行的视图: 'Run view',
   看这次运行的完整输出: "See this run's full output",
-  '工作流 · {name} {done}/{total}': 'Workflow · {name} {done}/{total}',
-  '工作流 · {name}': 'Workflow · {name}',
+  工作流运行: 'Workflow run',
   '这个项目的默认角色不能启动工作流，会直接在对话里做':
     "This project's default role can't start workflows, so it will do the work in the conversation",
   // Bug 诊断报告（ADR 0045）
@@ -1779,31 +1782,19 @@ export const EN_TASKS: Record<string, string> = {
   补充信息: 'Extra info',
   '你知道的事实，例如什么时候开始坏的': 'Facts you know, e.g. when it started breaking',
   等你确认: 'Awaiting your approval',
-  '你提了意见，它在再查': "You raised points; it's checking again",
-  '已确认，按这版方案修': 'Approved; fixing per this version',
-  '已作废，有更新的一版': 'Superseded by a newer version',
+  已被后面交的报告取代: 'Replaced by a later report',
   '你取消了，这次不修': 'You cancelled; no fix this time',
   取消修复: 'Cancel fix',
   '取消这次修复？': 'Cancel this fix?',
-  '不再等你确认方案，这一轮就此结束，计划标记为完成，不会改任何文件。之后在这个对话里发话，它会照你的新话做。':
-    'It stops waiting for your approval, this turn ends, the plan is marked done, and no files are changed. Anything you send in this conversation afterwards, it works on that.',
   不修了: "Don't fix",
   '第 {n} 版': 'Version {n}',
   '诊断报告 · {title}': 'Diagnosis report · {title}',
   '确认方案，开始修': 'Approve plan and fix',
-  '有疑问，再查': 'Question it, check again',
-  '方案没问题就确认，它才会开始改；有疑问先选中文字标注':
-    'Approve if the plan looks right; it only starts changing code after that. Select text to annotate questions',
-  '「有疑问，再查」把标注按编号交回，它逐条查清后交新一版':
-    '"Question it" sends your numbered notes back; it answers each and submits a new version',
-  '方案已经记下，但没能交给子对话：{error}': "Decision saved, but couldn't deliver it to the sub-conversation: {error}",
   '标注 {n} 的种类': 'Type of note {n}',
   '这一版已经处理过了，只能查看': 'This version has been handled; view only',
   '这是旧的一版，只能查看；切回最新一版再标注': 'This is an older version, view only; switch to the latest to annotate',
   交诊断报告: 'Submit diagnosis',
-  回答上一版的意见: "Answers to the previous version's points",
   现象: 'Symptom',
-  位置和调用栈: 'Location and call stack',
   证据链: 'Evidence chain',
   '根因（已证实）': 'Root cause (confirmed)',
   '根因（假设，还没证实）': 'Root cause (hypothesis, not yet confirmed)',
@@ -1811,14 +1802,11 @@ export const EN_TASKS: Record<string, string> = {
   修复方案: 'Fix plan',
   要改的文件: 'Files to change',
   影响和风险: 'Impact and risk',
-  验证计划: 'Verification plan',
   交报告前已改动的文件: 'Files already changed before the report',
+  '这些文件不在你同意过的范围里：': 'These files are outside what you have approved:',
   这一版诊断报告已经处理过了: 'This version of the diagnosis report has already been handled',
   '退回要写清哪里有疑问：先标注，或者写整体意见':
     "To send it back, say what's in question: annotate first, or write an overall comment",
-  '你确认了诊断报告第 {n} 版的方案': 'You approved the plan in diagnosis report v{n}',
-  '你对诊断报告第 {n} 版提了 {k} 条意见，要它再查':
-    'You raised {k} points on diagnosis report v{n} and asked it to check again',
   '你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成':
     'You cancelled diagnosis report v{n}; no fix this time, and the plan is marked done',
   '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",
@@ -1866,7 +1854,6 @@ export const EN_TASKS: Record<string, string> = {
   选定: 'chosen',
   '为什么选方案 {id}': 'Why option {id}',
   为什么不选别的: 'Why not the others',
-  级别: 'Level',
   时间线: 'Timeline',
   引入点: 'Introduced by',
   根因怎么解释每一条现象: 'How the root cause explains each symptom',
@@ -1919,6 +1906,7 @@ export const EN_TASKS: Record<string, string> = {
   '文件 {file}': 'the file {file}',
   '工具 {name}': 'the tool {name}',
   '…（还有 {n} 行没显示）': '… ({n} more lines not shown)',
+  '权限是「{mode}」，自动允许：{title}': 'Permission is "{mode}", allowed automatically: {title}',
   '按这个对话的放行规则自动允许（{rule}）：{title}':
     "Allowed automatically by this conversation's rule ({rule}): {title}",
   '你允许了：{title}，这个对话里之后的{rule}都自动允许':
@@ -1933,4 +1921,36 @@ export const EN_TASKS: Record<string, string> = {
   '导出成一份 Markdown，方便贴进文档或笔记': 'Export as Markdown, handy for pasting into docs or notes',
   '导出 Markdown': 'Export Markdown',
   '整理好的记录读不到了，请再试一次': "Couldn't read the prepared record. Please try again",
+  '已暂停 · {node}': 'Paused · {node}',
+  '「{node}」等你确认': '"{node}" is waiting for your confirmation',
+  '「{node}」失败，等父对话决定': '"{node}" failed; waiting for the parent conversation to decide',
+  '收尾 · 评审（第 {n} 轮）': 'Wrap-up · review (round {n})',
+  '收尾 · 测试（第 {n} 轮）': 'Wrap-up · tests (round {n})',
+  '收尾 · 修复（第 {n} 轮）': 'Wrap-up · fixes (round {n})',
+  '做完了，等父对话合回': 'Done; waiting for the parent conversation to merge it',
+  '在跑「{node}」': 'Running "{node}"',
+  '已改 {n} 轮': 'Revised {n} times',
+  追问: 'Ask',
+  '确认卡片留着，请父对话替你决定': 'Keep the confirmation open and let the parent conversation decide for you',
+  交给父对话: 'Hand to parent',
+  从失败的节点重新跑: 'Rerun from the failed node',
+  从停下的地方接着跑: 'Continue from where it stopped',
+  '想先问清楚什么？（只回答，不改结果）': 'What do you want to ask first? (answer only, the result stays unchanged)',
+  在右栏查看: 'Open in the side panel',
+  // 状态诊断：推进卡、搜日志
+  '在等 {n} 步': '{n} waiting',
+  '还剩 {n} 步': '{n} left',
+  没有计划: 'No plan',
+  正在跑的工具: 'Running tool',
+  面板推进: 'Panel nudges',
+  '同一进度推了 {n} 次': 'Nudged {n} times at this progress',
+  上次结束: 'Last turn end',
+  做完: 'Done',
+  卡住: 'Blocked',
+  推进: 'Progress',
+  在等的子对话: 'Waiting on subconversations',
+  请你收尾: 'Asked you to wrap up',
+  搜日志: 'Search log',
+  '没有搜到「{q}」': 'No matches for "{q}"',
+  '这一轮说完了，在等：{what}': 'This turn is done; waiting on: {what}',
 }

@@ -5,6 +5,7 @@
 import type { Orchestra } from '../shared/engine.ts'
 
 const text = (desc: string) => ({ type: 'string', description: desc })
+const GRADE = { type: 'string', enum: ['good', 'cost', 'bad'] }
 
 /** 档案的结构化字段（ADR 0046）：update_bug_case 和 submit_diagnosis 共用 */
 const CASE_PROPS = {
@@ -57,7 +58,7 @@ const CASE_PROPS = {
           '责任类别：current 本次改动、recent 近期变更、legacy 历史遗留、external 外部依赖、environment 环境配置、data 数据、user 用户操作、unknown 未确定',
       },
       change: text('提交号 / CL / rev'),
-      author: text('作者（照版本记录原文）'),
+      author: text('提交人（照版本记录原文；Git 仓库里面板会按提交号再取一次核对）'),
       date: text('日期'),
       title: text('那次改动的标题'),
       how: {
@@ -70,6 +71,28 @@ const CASE_PROPS = {
     },
     required: ['category', 'how'],
   },
+  rating: {
+    type: 'object',
+    description:
+      '根因评级（根因证实后必填，报告最上面醒目显示）：tier 是这个错在哪个层次，percent 是你对根因的把握（0–100 的整数）',
+    properties: {
+      tier: {
+        type: 'string',
+        enum: ['low', 'mid', 'high'],
+        description:
+          'low 低级：粗心疏漏（写错名字、漏判空、漏改一处、复制粘贴没改全）；mid 中级：逻辑和边界（条件、顺序、状态没想全）；high 高级：设计、并发时序、跨模块契约',
+      },
+      percent: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 100,
+        description:
+          '把握：证据链三环都有原文、复现用例改前失败的写 90 以上；有一环靠推断的 60–85；还有解释不了的现象不超过 60',
+      },
+      why: text('一句话：为什么是这个等级、把握为什么是这个数（缺哪条证据）'),
+    },
+    required: ['tier', 'percent'],
+  },
   consistency: {
     type: 'array',
     description: '根因怎么解释现象卡的每一条（为什么偶发、为什么只在这个环境、为什么以前没出）',
@@ -81,10 +104,11 @@ const CASE_PROPS = {
   },
   hypotheses: {
     type: 'array',
-    description: '假设表',
+    description: '假设表：论证时列全候选假设（沿调用栈每个能让结果走偏的分叉），不只眼前这一层',
     items: {
       type: 'object',
       properties: {
+        id: text('编号，例如 H1；日志计划的 hypothesis 按它对上'),
         text: text('假设'),
         status: { type: 'string', enum: ['confirmed', 'excluded', 'open'] },
         basis: text('依据'),
@@ -121,6 +145,23 @@ const CASE_PROPS = {
         risk: text('风险：可能引入的新问题和怎么防'),
         fit: text('契合：合不合现有架构和约定'),
         verifiable: text('可验证：怎么证明修好了'),
+        grades: {
+          type: 'object',
+          description: '上面六项各自的判定：good 好、cost 有代价、bad 不满足（比较表里画成 ✓ ⚠ ✗）',
+          properties: {
+            covers: GRADE,
+            misses: GRADE,
+            surface: GRADE,
+            risk: GRADE,
+            fit: GRADE,
+            verifiable: GRADE,
+          },
+        },
+        touches: {
+          type: 'array',
+          items: { type: 'string', enum: ['data', 'api', 'config'] },
+          description: '会动到的契约：data 数据格式、api 接口、config 配置项（报告最上面会提醒用户）',
+        },
       },
       required: ['id', 'title', 'change'],
     },
@@ -135,7 +176,187 @@ const CASE_PROPS = {
     },
     required: ['id', 'why'],
   },
-  next: text('根因还没证实时：下一步要加哪些日志、要用户提供什么'),
+  chain: {
+    type: 'array',
+    description:
+      '证据链三环，按顺序各一项：trigger 触发（什么操作、什么输入）→ fault 出错点（哪段代码在什么条件下做错了什么）→ symptom 现象（用户看到什么）；每环 proof 写证据（日志原文、测试输出、path:line）',
+    items: {
+      type: 'object',
+      properties: {
+        step: { type: 'string', enum: ['trigger', 'fault', 'symptom'] },
+        text: text('这一环：一句话'),
+        proof: text('证据的一句说明（原文不要抄在这里，写进 quotes / codeRefs，用 refs 引用编号）'),
+        refs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '这一环引用的原文编号：quotes 的 Q1、codeRefs 的 C1。出错点引用一段代码加一条日志或命令输出',
+        },
+      },
+      required: ['step', 'text', 'proof'],
+    },
+  },
+  codeRefs: {
+    type: 'array',
+    description:
+      '关键代码（优先写这个，代替 codeRef）：一段一项，出错点、触发条件、调用方分开写。只写位置和标记，代码原文由面板交报告时读出来存档；marks.text 面板逐字核对，对不上拒收',
+    items: {
+      type: 'object',
+      properties: {
+        id: text('编号：C1、C2…（证据链 refs 引用）'),
+        role: {
+          type: 'string',
+          enum: ['fault', 'trigger', 'caller', 'expected'],
+          description: 'fault 出错点、trigger 触发条件、caller 调用方、expected 对照的正确写法',
+        },
+        file: text('文件（相对项目根）'),
+        start: { type: 'number', description: '起始行（按现在的文件，加了临时日志的按加了之后的行号）' },
+        end: { type: 'number', description: '结束行（一段最多 30 行，一般 5~15 行）' },
+        marks: {
+          type: 'array',
+          description: '要高亮的地方，一处一项',
+          items: {
+            type: 'object',
+            properties: {
+              line: { type: 'number', description: '哪一行' },
+              text: text('那一行里真正出错的那几个字（照文件原样，例如 left === 0），不写整行'),
+              note: text('行尾说明，20 字以内，例如「提前返回，派发走不到」'),
+              level: {
+                type: 'string',
+                enum: ['fault', 'related', 'skipped'],
+                description: 'fault 出错（红）、related 相关的条件和变量（默认，琥珀）、skipped 没执行到（灰）',
+              },
+            },
+            required: ['line'],
+          },
+        },
+      },
+      required: ['id', 'file', 'start', 'end'],
+    },
+  },
+  quotes: {
+    type: 'array',
+    description:
+      '日志和命令输出的原文引用，一条一项，正文和证据链用编号引用。不要转述：log 写行号由面板取原文，run 原样复制；只是描述就写 kind: note（报告上标成「描述」）。原文对不上来源拒收',
+    items: {
+      type: 'object',
+      properties: {
+        id: text('编号：Q1、Q2…'),
+        kind: {
+          type: 'string',
+          enum: ['log', 'run', 'note'],
+          description: 'log 用户贴的日志、run 这个对话里跑过的命令输出、note 描述（截图、用户说的）',
+        },
+        from: { type: 'number', description: 'log：用户在第几份报告（报告 #n）上贴的日志；不写取最近一次' },
+        start: { type: 'number', description: 'log：日志的第几行（报告里「你贴的日志」的行号）' },
+        end: { type: 'number', description: 'log：到第几行（一条最多 30 行）' },
+        text: text('run：原样复制的输出；log：可以不写，写了要和那几行逐字对上；note：描述'),
+        highlight: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '原文里的关键值（例如 left=0），要在原文里逐字出现，报告上高亮',
+        },
+      },
+      required: ['id', 'kind'],
+    },
+  },
+  expectVsActual: {
+    type: 'array',
+    description: '期望和实际：一个值一项（根因、验证用）',
+    items: {
+      type: 'object',
+      properties: {
+        what: text('什么值、什么行为'),
+        expected: text('应该是'),
+        actual: text('实际是'),
+        ref: text('证明实际值的原文编号，例如 Q1'),
+      },
+      required: ['what', 'expected', 'actual'],
+    },
+  },
+  reproKind: {
+    type: 'string',
+    enum: ['user', 'constructed', 'test'],
+    description:
+      '复现用的是什么：user 用户的数据 / 环境、constructed 自己构造的数据（只算推演，不能当排除假设的依据）、test 测试用例',
+  },
+  codeRef: {
+    type: 'object',
+    description: '旧写法，一段关键代码；优先写 codeRefs',
+    properties: {
+      file: text('文件（相对项目根）'),
+      start: { type: 'number', description: '起始行' },
+      end: { type: 'number', description: '结束行' },
+      mark: { type: 'number', description: '出错的那一行（高亮）' },
+    },
+    required: ['file', 'start', 'end'],
+  },
+  changes: {
+    type: 'array',
+    description:
+      '选定方案的具体改动：一个文件一项，写这个文件要改什么（一两句，一件事）；files 没写时按它补。交 fix 时改写成实际改了的每个文件（含测试）：what 写改了什么，why 写为什么这么改，面板和实际 diff 对上给用户看，改了却没写的会退回',
+    items: {
+      type: 'object',
+      properties: {
+        file: text('文件（相对项目根）'),
+        what: text('改什么'),
+        why: text('为什么这么改（交 fix 时必写：这处改动怎么解决根因、为什么这样写）'),
+        isNew: { type: 'boolean', description: '新建的文件' },
+      },
+      required: ['file', 'what'],
+    },
+  },
+  next: text('补充说明：下一步还打算查什么'),
+  logPlan: {
+    type: 'array',
+    description:
+      '论证阶段：这一轮要加的临时日志（前缀 [排查-<主题>]），一次加够让用户复现一次就能定论：每个待验证的假设至少一处能判真假的，调用栈每一跳一处路标；每处写加在哪、打什么、对应哪个假设',
+    items: {
+      type: 'object',
+      properties: {
+        id: text('编号：L1、L2…（打出来的日志带上这个编号）'),
+        file: text('文件（相对项目根）'),
+        line: { type: 'number' },
+        fn: text('函数'),
+        print: text(
+          "要加的那一行语句原文，以 [排查-<主题>] L<n> 开头，例如 console.log('[排查-金额] L1 shipping=', o.shipping, typeof o.shipping)；不写描述",
+        ),
+        hypothesis: text('对应的假设编号（H1），或「路标」（标出走到了调用栈哪一跳）'),
+      },
+      required: ['file', 'print'],
+    },
+  },
+  collect: {
+    type: 'object',
+    description: '论证 / 验证阶段：用户怎么复现、日志在哪、过滤条件、每种结果说明什么（验证阶段写看到什么算修好了）',
+    properties: {
+      steps: { type: 'array', items: { type: 'string' }, description: '复现步骤，一步一项' },
+      where: text('日志在哪：日志文件路径、控制台、浏览器开发者工具'),
+      filter: text('过滤条件，例如 [排查-拖线]'),
+      expect: text('论证：判定表，每个假设看到什么算证实或排除、都对不上时看路标停在哪一跳；验证：看到什么算修好了'),
+      outcomes: {
+        type: 'array',
+        description: 'expect 的结构化写法（优先写这个）：一种结果一项，see 看到什么、means 说明什么',
+        items: {
+          type: 'object',
+          properties: {
+            see: text('看到什么'),
+            means: text('说明什么'),
+            match: {
+              type: 'object',
+              description: '可核对的写法：日志计划的某处出现了 / 没出现（面板拿到日志后自己判断对上了哪一项）',
+              properties: {
+                point: text('日志计划编号，例如 L2'),
+                seen: { type: 'boolean', description: 'true 出现了、false 没出现' },
+              },
+              required: ['point', 'seen'],
+            },
+          },
+          required: ['see', 'means'],
+        },
+      },
+    },
+    required: ['steps', 'expect'],
+  },
 }
 
 /** 原来的几段文字字段 */
@@ -206,25 +427,58 @@ export const DIAGNOSIS_TOOL = {
   name: 'submit_diagnosis',
   title: '交诊断报告',
   description:
-    '用户报的 Bug：前五个阶段做完、修之前交诊断报告，用户在弹窗里确认方案或标出疑问。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按级别检查缺什么，缺了会退回说清。交完结束这一轮，确认之前不要改任何文件；结果会作为新消息交给你。查不出根因也交：rootCause 写「未找到」、confirmed 写 false，next 写下一步要加的日志和要用户提供什么。用户提了意见后再交新一版，answers 按编号逐条回答。',
+    '用户报的 Bug：每到一个关口交一份报告，用户在弹窗里同意、标疑问或贴日志，结果作为新消息交给你。按阶段走：evidence 论证（根因还没证实：写 logPlan 要加的日志、collect 怎么复现和每种结果说明什么，用户同意后加日志、复现，拿到日志再分析，可以多轮）→ cause 根因（证据链齐了、confirmed: true，用户同意才往下）→ plan 修复方案（候选修法比较、files，用户确认才改代码）→ fix 修复（修完交，changes 每个改了的文件写 what 改了什么、why 为什么这么改，面板取实际 diff 给用户看；用户对代码标了疑问就逐条判断：对的改代码、stance: adopted，不对的用事实反驳、stance: disagree，再交 fix；用户确认修复才验证）→ verify 验证（用 update_bug_case 记下 result 后交，collect 写用户怎么验证、看到什么算修好了）。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按阶段和级别检查缺什么，缺了会退回说清。交完结束这一轮，用户回复之前不要改任何文件。用户提了意见后改好再交，answers 按编号逐条回答。版本号由面板定：按意见修改、阶段往下走还是同一版，回到更早的阶段或换掉确认过的方案才升一版；跟用户说第几版照返回里的写。',
   inputSchema: {
     type: 'object',
     properties: {
+      phase: {
+        type: 'string',
+        enum: ['evidence', 'cause', 'plan', 'fix', 'verify'],
+        description:
+          '这一份的阶段：evidence 论证、cause 根因、plan 修复方案、fix 修复（修完给用户看代码）、verify 验证',
+      },
       ...TEXT_PROPS,
       ...CASE_PROPS,
+      whatChanged: text('第 2 份起：相比上一份改了什么，一两句（写在报告最上面）'),
       answers: {
         type: 'array',
-        description: '第 2 版起：按编号回答上一版用户的意见',
+        description: '用户提了意见后再交时：按编号回答用户上一轮的意见',
         items: {
           type: 'object',
           properties: {
             id: { type: 'number' },
             answer: text('查了什么、结论、补了什么证据或改了哪一节'),
+            stance: {
+              type: 'string',
+              enum: ['adopted', 'explained', 'disagree'],
+              description: 'adopted 采纳并改了、explained 解释清楚不用改、disagree 不同意（写理由）',
+            },
           },
           required: ['id', 'answer'],
         },
       },
     },
+    required: ['phase'],
+  },
+}
+
+/** request_logs：同意加日志后，加好了日志、自己复现不了，请用户复现贴日志 */
+export const REQUEST_LOGS_TOOL = {
+  name: 'request_logs',
+  title: '请用户复现',
+  description:
+    '用户报的 Bug：用户同意了论证那一版的日志计划、你按计划加好临时日志，自己又复现不了时调用：写这次实际加的位置和复现步骤，面板请用户复现、贴日志。调用后结束这一轮，日志会作为新消息交给你。自己能复现（跑测试、跑命令）就不用调，分析后直接交下一版。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      added: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '这次实际加的日志位置，例如「L1 src/a.ts:212」',
+      },
+      collect: CASE_PROPS.collect,
+    },
+    required: ['added'],
   },
 }
 
@@ -236,6 +490,17 @@ export function callDiagnosis(o: Orchestra, a: Record<string, unknown> | undefin
         ok: false,
         info: '这里不用交诊断报告：只有用户报的 Bug 子对话要交。按派给你的事直接做。',
       }
+  return {
+    content: [{ type: 'text', text: r.info }],
+    ...(!r.ok && { isError: true }),
+  }
+}
+
+/** 执行一次 request_logs */
+export function callRequestLogs(o: Orchestra, a: Record<string, unknown> | undefined) {
+  const r = o.requestLogs
+    ? o.requestLogs(a ?? {})
+    : { ok: false, info: '这里不用请用户复现：只有用户报的 Bug 子对话要。' }
   return {
     content: [{ type: 'text', text: r.info }],
     ...(!r.ok && { isError: true }),

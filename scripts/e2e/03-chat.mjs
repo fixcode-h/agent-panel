@@ -169,7 +169,7 @@ await runShard('对话与续接', async (api) => {
   )
   const empChecks = emp.messages.filter((m) => m.panel === 'nudge')
   assert.equal(empChecks.length, 1, '只自检一次')
-  assert.match(empChecks[0].text, /收尾自检[\s\S]*不用列计划/)
+  assert.match(empChecks[0].text, /收尾自检[\s\S]*end_turn/)
   const empAgent = emp.messages.filter((m) => m.role === 'agent')
   assert.equal(empAgent.length, 2, '模型那一轮加自检那一轮')
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)
@@ -486,6 +486,40 @@ await runShard('对话与续接', async (api) => {
     sk = await waitDone(sk.id, 20000)
     assert.equal(sk.status, 'failed', '没有被处理的一句不能记成完成')
     assert.ok(!after().some((m) => m.role === 'agent' && m.text.trim()), '没有自动重发这一句')
+  }
+
+  // 一轮结束就排经验学习，不等进程退出：页面开着时 CLI 保活停在等下一句，run 一直不返回，
+  // 以前排学习的那一步在 run 收尾处，要等闲置回收才学（用户 2026-11-05 报「对话完成了不学」）。
+  // 这一轮绕路不多过不了闸门，也会把「学到哪了」记进 experience-state.json，据此确认学习在保活期间跑过了
+  step('保活的对话一轮结束就学经验，不等进程退出')
+  {
+    let kp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: def.id,
+      cli: 'claude',
+      askUser: false,
+      prompt: '看看代码结构',
+    })
+    await call('POST', `/tasks/${kp.id}/seen`, {})
+    await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-learn-keep', active: true })
+    kp = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${kp.id}`)
+        return x.awaitingUser && !x.working ? x : null
+      },
+      { timeout: 15000, label: '第一轮回复完停在等下一句' },
+    )
+    const expState = path.join(dataDir, 'experience-state.json')
+    const learned = () => existsSync(expState) && !!JSON.parse(readFileSync(expState, 'utf8')).learned?.[kp.id]
+    await waitFor(learned, {
+      timeout: 15000,
+      label: '保活期间跑过经验学习',
+      describe: () => (existsSync(expState) ? readFileSync(expState, 'utf8') : '没有 experience-state.json'),
+    })
+    assert.ok((await call('GET', `/tasks/${kp.id}`)).awaitingUser, '学习跑的时候进程还保活着，不是等它退出才学')
+    await call('POST', `/tasks/${kp.id}/presence`, { viewerId: 'e2e-learn-keep', active: false })
+    await waitDone(kp.id, 30000)
   }
 
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
@@ -1028,7 +1062,7 @@ ${prompt}
       updatedAt: _pu,
       ...projectBody
     } = (await call('GET', '/projects')).find((x) => x.id === project.id)
-    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateNew: false })
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateByDefault: false })
     let f = await chatWith({ cli: 'claude' }, '第一问')
     f = await waitDone(f.id)
     await call('POST', `/tasks/${f.id}/messages`, { text: '第二问' })
@@ -1092,9 +1126,9 @@ ${prompt}
       '对话分叉、撤回：Claude Code 用 --resume-session-at，Codex 用 thread/fork，Command Code 截不了时带上之前的对话',
     )
 
-    // 默认开独立分支（isolateNew）时，分叉出来的对话自己开一个分支，不和原对话改同一个目录；
+    // 项目设置打开默认独立分支（isolateByDefault）时，分叉出来的对话自己开一个分支，不和原对话改同一个目录；
     // 换了目录 Codex 的会话接不上，就开新会话把留下的对话带过去
-    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateNew: true })
+    await call('PUT', `/projects/${project.id}`, { ...projectBody, isolateByDefault: true })
     const iso = await call('POST', `/tasks/${g.id}/fork`, { messageId: gu.id })
     assert.equal(iso.worktree?.state, 'active', '分叉出来的顶层对话开了自己的独立分支')
     assert.notEqual(iso.worktree.path, project.path)

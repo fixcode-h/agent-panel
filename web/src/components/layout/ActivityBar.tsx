@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { HomeIcon, PanelIcon, type NavIcon } from './rail-icons'
+import { usePluginPages } from '@/plugins/registry'
+import type { PluginPage } from '@/plugins/sdk'
 import {
   DESIGN_NAV,
   ModeSwitch,
@@ -82,6 +84,7 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
   const skillUpd = useSkillUpdates()
+  const pages = usePluginPages()
   return (
     <nav
       aria-label={t('功能栏')}
@@ -110,6 +113,11 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
           onClick={() => go({ page: n.id })}
         />
       ))}
+      {/* 插件的整页（插件接口 2）：和通用功能页隔开另起一组，插件关掉或删掉后这一组就没了 */}
+      {pages.length > 0 && <span aria-hidden className="activity-sep my-1 h-px w-5 shrink-0" />}
+      {pages.map((p) => (
+        <PluginItem key={`${p.plugin}/${p.id}`} page={p} />
+      ))}
       {/* 设计模式自己的功能页（ComfyUI 工作流）：只在设计模式下出现，和上面的通用功能页隔开 */}
       {isDesignPage(route.page) && (
         <>
@@ -134,5 +142,20 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
         onClick={() => openSettings(update ? 'update' : undefined)}
       />
     </nav>
+  )
+}
+
+/** 插件整页的一格：小点由插件自己的 hook 给（例如 UE 插件的「本次日志有错误」） */
+function PluginItem({ page }: { page: PluginPage & { plugin: string } }) {
+  const { route, go } = useNav()
+  const dot = page.useDot?.()
+  return (
+    <Item
+      icon={page.icon}
+      label={page.label}
+      on={route.page === 'plugin' && route.id === page.plugin && route.sub === page.id}
+      dot={dot || undefined}
+      onClick={() => go({ page: 'plugin', id: page.plugin, sub: page.id })}
+    />
   )
 }

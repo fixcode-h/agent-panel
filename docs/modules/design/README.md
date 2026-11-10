@@ -2,10 +2,10 @@
 
 - 状态：documented
 - 职责：UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出
-- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/designs.ts`, `server/design-versions.ts`, `server/design-mcp.ts`, `server/design-capture.ts`, `server/asks.ts`, `shared/design.ts`, `web/src/components/design/`, `web/src/pages/DesignPage.tsx`, `web/src/lib/demo-design.ts`, `server/design-crop.ts`, `shared/restore/`, `server/design-restore.ts`, `server/design-psd.ts`, `server/design-cli-image.ts`, `web/src/components/design/CompareOverlay.tsx`
 - 入口：`server/designs.ts`
 - 关键词：UI 设计、原画、生图、导出、ComfyUI、设计工具
-- 更新：2026-10-24
+- 更新：2026-11-07
 
 ## 职责
 
@@ -52,6 +52,73 @@
 | `web/src/pages/DesignPage.tsx`             | 页面、`send()`、生成参数、导出                                                                |
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
+
+## 原画还原 P0：切图从原画抠、滑块对照（2026-11-07）
+
+设计稿：项目文件 `designs/UI设计-原画还原重设计-设计稿.md`（6 步还原管线，分期做，这是第一期）。
+
+- 切图从模板抠（`server/design-crop.ts`）：确认了原画模板、切图写了 `ref` 时，`generateOne` 一开始就按 `ref` 从模板**原分辨率**裁下来（`cropTemplate`：ref 是设计稿像素，按模板实际宽高换算；透明且不是九宫格的去平底；直接缩到图片的显示尺寸，不留白、不按 96% 缩进去，框就是控件的位置），存成一版 `source: 'crop'`、`score: 1`。不再走图集、不调用图片模型。
+- 精修：`GenerateImageInput.refine`（只有单张生成接口收），记在 `Job.refine` 里；精修的图才往下走原来的生成链路（本机图生图降噪从 0.55 降到 0.3），出完 `pickRefined` 按 `shared/restore/similarity.ts` 给每版打分，选分最高且过门槛（设置 `designRestore.assetSim`，默认 0.92）的；都没过就选回抠的那版并在对话里写一条说明（不是错误）。
+- 提示词：模板模式第 3 条改成「每张切图都写 ref、从模板里抠」，有 ref 的不写 sheet。
+- 对照（`CompareOverlay.tsx`）：「对照模板」按钮循环 关 → 滑块（左原画右界面，拖竖线或左右方向键）→ 半透明叠加。
+- 门槛设置：`Settings.designRestore`（`shared/restore/thresholds.ts`：`posPx` 2、`posRatio` 0.95、`assetSim` 0.92），设置页「图片生成」下面的「原画还原」组。
+- 像素操作（`blank`、`resize`、`crop`、`paste`、`contentBox`、`hasAlpha`、`chromaKey`、`removeFlatBackground`）挪到 `shared/raster.ts`，`server/image.ts` 重新导出；浏览器里的演示版和后面的检测算法共用。
+- 回归：`shared/restore/similarity.test.ts`、`server/design-crop.test.ts`、`scripts/ui/04-design.mjs`（滑块对照）。
+
+## 原画还原 P5：拆件图（2026-11-07）
+
+用户反馈：直接从原画抠会夹带别的 UI（面板里的图标、按钮上的字、格子后面的光）。改成先让图片模型照原画出一张「拆件图」，切图从拆件图切。
+
+- 拆件图（`shared/restore/parts.ts`）：`partsPrompt` 让模型把每个元素单独画一遍——容器画成空的、图标不带后面的格子、重复的只画一次，**透明底**（部件之间的空白透明，每个部件保留自己的底色）；模型给不了透明才退回纯绿底。`splitParts` 切件：透明底直接切，不透明的先去色键（`chromaKey`），不是绿底再去平底；外扩 3 像素找连通块，碎块（光晕、断开的描边）并成一件。
+- 对上（`matchParts` / `partScore`）：原画里每个元素（文字、背景不切）和宽高比差不多的件比——一致率（件里不透明的像素和原画差不到 40 的占比）×0.6 + 贴回原画后的相似度 ×0.4，不透明不到一成的不算；容器拿「挖掉子元素补成底色」的样子比（`holesOf`，和切图同一套挖洞规则），否则会选中把子元素一起画进去的那件。门槛 0.6，一件可以给好几个元素用。
+- 照原画还原：切图那一步（`runAssets` → `partsOf`）没有拆件图就用设置里的图片 CLI 出一张（原画当参考图，`server/design-cli-image.ts` 的 `cliGenerate`，从 designs.ts 拆出来），存进 `RestoreState.parts`；重跑这一步写了意见才重出，意见带进提示词。对上的元素 `assetFrom: 'parts'`、记 `partScore`，不再和原画比逐像素相似度（拆件是模型重画的），校验也不按相似度判它；没对上的从原画抠、卡上列出来；出图失败写在卡上，这一版全部从原画抠。PSD 不出拆件图。
+- 对话设计的模板模式：生成切图前（`preparePartCrops` → `design-crop.ts` 的 `templatePartCrops`）确认的模板还没有拆件图就出一张（按模板 id 存成 images/ 下的 `parts-<模板 id>.png`，换了模板才重出），写了 ref 的切图先从拆件图对上，对不上的照旧从模板抠；只在生图方式是图片 CLI 时出，失败的原因写进对话。
+- 设置：「原画还原」组的「先出拆件图」（`designRestore.parts`，默认开）。界面：切图页把拆件图放在干净背景后面，从拆件图切的标「拆 分数」。
+- 演示版没有图片模型：`demo-restore.ts` 的 `fakePartsSheet` 按元素框现拼一张透明底拆件图。
+- ComfyUI 抠图和补底（原 P5 计划）降为以后的兜底，还没接。
+- 回归：`shared/restore/parts.test.ts`（切件、对上、切图那一步出图成功和失败）、`server/design-crop.test.ts`（模板模式出拆件图再切、已有的直接读）、`scripts/ui/04b-restore.mjs`（切图页有拆件图、标「拆」的切图）。
+
+## 原画还原 P4：网页还原（2026-11-07）
+
+新建网页设计也能选「照原画还原」，六步和游戏一样，搭建那一步换成网页的编法。
+
+- 编译（`shared/restore/compile-web.ts` 的 `compileWeb`）：元素表 → Frame 树，参照 Figma 自动布局 → CSS flex。每个有子元素的容器用 `inferFlex` 试横排、竖排：间距一样（差 1px 以内）、交叉轴顶齐 / 居中 / 底齐，就写 `Direction` + `Gap` + `Padding` + `AlignItems`，子控件宽高写死像素；排不成的才 `Position: absolute` + `Pin: top-left`（相对内边距框，有描边时减掉边宽）。文字是 `Text`（字号 = 笔画高 / 0.85，行高按框高），其余是 `Picture`（`Fit: fill`）。没有子元素的容器不记排法。
+- CSS 化（`shared/restore/css.ts` 的 `flatStyle`）：切图那一步给网页的容器量一下，中间八成九成七以上是同一个颜色的，量出底色、描边宽和颜色、圆角写进元素的 `css`，搭建时写成 `Background` / `BorderWidth` / `BorderColor` / `Radius`，不用切图；按钮的悬停用底色调亮。有渐变、纹理的照常用切图（悬停用派生的那张）。
+- 自动修正（`shared/restore/build-web.ts` 的 `buildWeb`）：编完用 `webLayoutTree` 按元素框核对（网页的位置门槛至少 3px），跑位的元素所在容器改成绝对定位重编，最多三轮。网页不抽子控件，上次游戏还原留下的 `rs-` 子控件和 `rs_` 数据集清掉。
+- 卡上：控件数、flex 容器占比、CSS 画的底框数、设计变量（颜色差 12 以内一档、字号差 1px 一档，`clusterColors` / `clusterSizes`）。交付不做宽高比检查（断点在画布里切）。
+- 界面：还原工作区盖着画布时不显示网页的预览宽度切换；编辑器合并服务端已有的图片时，页面没改动就不算改动（以前会拿旧版本号白存一次，还原改了版本号后报「修改没有存上」）。
+- 回归：`shared/restore/web.test.ts`（`inferFlex`、`flatStyle`、网页六步跑完校验全过、有 flex 容器、纯色框写成 CSS）、`scripts/ui/04b-restore.mjs`（演示里按网页还原一份 PSD 走完六步，打开画布）。
+
+## 原画还原 P2：结构、状态、自动修正、多分辨率（2026-11-07）
+
+- 重复组抽子控件（`shared/restore/structure.ts` 的 `planGrids`，`compileRestore` 传 `structure` 时启用）：拆解量出的组（同一个父元素下、每格落在不同行列）编成 `UniformGridPanel`（`EntryWidgetClass` + `NumColumns` + `SlotPadding` = 间距的一半 + `DataSet`），子控件 `WBP_<名字>`（`Root.id` 以 `rs-` 开头，重新搭建时换掉，用户自己的子控件留着），数据集 id `rs_<组 id>`。每格最大的非文字元素当 `Icon`、第一段字当 `Count`，模板位置取各格中位数；底图只有一格不一样的是原画里的选中态（`Highlight` + `selected` 状态），好几格不一样的每格底图写进数据（`bg` 字段）。收进网格的元素在 `RestoreElement.grid` 记下它在网格里的框，校验按「网格位置 + 这一块」算。
+- 自动修正（`runBuild`）：抽完按元素框核对位置，和模板差太多的元素挪出来单独摆（detached），格子本身对不上的整组不抽（flat），最多三轮；卡上写修了几处。示例背包原画里各格图标大小不一，图标都挪出来单独摆了，底图和数量收进了子控件。
+- 锚点：挂在根上的控件按中心落在左 / 中 / 右三分之一（上 / 中 / 下）定锚点，宽或高接近整屏的锚 0，设计尺寸下位置不变（`anchorSlot`）。
+- 按钮四态（`states.ts`）：PSD 有就用，没有按规则从常态切图派生（悬停亮度 ×1.12、按下 ×0.9、禁用去色 70% 不透明度 60%），存成 `rs_<id>_<态>`，编译时按钮 `WidgetStyle` 用它们。
+- 多分辨率（`adapt.ts`）：交付那一步高度不变、宽度换成 21:9 / 16:10 / 4:3 各排一遍，根上的控件跑出画面、新叠在一起的列在卡上。
+- 还没做：横排 / 竖排推断（等距一排换成 HorizontalBox）、模型对结构提建议、无头浏览器截图比整屏 SSIM。
+
+## 原画还原 P3：PSD 导入（2026-11-07）
+
+照原画还原的原画可以是 PSD：图层就是元素、图层像素就是切图，位置不用猜。
+
+- 解析：`ag-psd`（MIT，锁 31.0.3）。`shared/restore/psd.ts` 的 `importPsd(psd)` 只认解析好的对象（服务端 `server/design-psd.ts` 的 `readPsdLayers` 在 Node 里用 `initializeCanvas` 换成字节数组读；演示版在浏览器里按需 `import('ag-psd')`）。
+- 命名约定（参照 psd2fgui、PSD → UMG 插件）：前缀定类型（`Btn_` `Panel_` `Slot_` `Icon_` `Txt_` `Bar_` `Input_` `Deco_` `Bg_`）；按钮组里 `@normal` `@hover` `@pressed` `@disabled` 是四态（存进元素的 `states`，切图存成 `rs_<id>_<态>`，搭建时按钮这几态用画好的，不再压暗派生）；容器组里叫 `bg` / `背景` / `底` 或最底下铺满整组的图层是容器底图；没约定的组只当文件夹；文字图层读内容、字号（×变换缩放，记成 0.85 倍的笔画高）、颜色、对齐、粗体，不拿像素当切图；隐藏、不透明度 0 的跳过；中文名留空、按类型编号。
+- 流程：上传时服务端存合成图（PSD 里没存就按图层叠）当原画、每个图层存一张 PNG，元素的 `layer` / `states` 换成文件名，`setSource(..., { elements, warnings })`。拆解那一步直接用这些元素（`psdElements`：不检测、不问模型，格子照样排组）；切图那一步 `extractAssets(art, elements, given)` 用图层像素，其余（背景等没图层的）照常从合成图抠。读不全的（图层样式、蒙版、混合模式、剪贴蒙版）在原画那一步的卡上提醒。
+- 回归：`server/design-psd.test.ts`（命名约定、文字图层、写一个 PSD 再读、走完六步校验全过）、`scripts/ui/04b-restore.mjs`（演示里上传 PSD 走完六步，悬停态有切图）。
+
+## 原画还原 P1：照原画还原的六步管线（2026-11-07）
+
+新建设计时选「照原画还原」并上传原画，设计带上 `restore`（`shared/restore/schema.ts` 的 `RestoreState`），标题行换成六步：原画 → 拆解 → 切图 → 搭建 → 校验 → 交付。原则：**坐标全由算法量，模型只标类型、名字、文字**；每一步出一版和一张决策卡，确认了才跑下一步，改了前面的步骤后面做过的标成「要更新」。
+
+- 拆解（`detect.ts`、`grid.ts`、`pixels.ts`）：找矩形（边框线段配对，侧边取最近的竖线段；拼出来的假框、两排拼一框、借别的元素边的都筛掉；`snap` 取描边最外面那道跳变），再找块（文字行、图标；贴在容器角上、颜色和底色一样的是容器自己的底；贴在格子角上的数量单独当文字）；同列同行一样大的排成格子组。然后把编号框画在原画上（`overlay.ts`）让模型按编号标（`label.ts`：只收类型 / 名字 / 文字 / 删掉，用户改过的不动）。标注失败只在卡上写一条提醒，元素框照用。
+- 切图（`assets.ts`）：容器擦掉子元素后补底（`fillHoles`，四向最近像素），九宫格自动判断；其余去平底，但抠透明的地方露出的父容器和原画差得多（格子里的光晕）时整块原样留；一样的切图共用一张（dHash + 相似度 + 变化像素）。把所有切图拼回去和原画比，每个元素记 `sim`。存成 `rs_<元素 id>` 的图片（`source: 'crop'`）。
+- 搭建（`compile.ts`）：元素按包含关系成树（≥90% 在里面的最小容器），容器是 CanvasPanel + 铺满的 `_Bg` 图，按钮四态共用切图，文字是 TextBlock；位置全部锁住（`Locked`）。
+- 校验（`verify.ts`）：按 `layoutTree` 算每个控件的实际位置和元素框比（门槛 `posPx`），加上切图相似度、文字有没有内容；总分 0.5 位置 + 0.35 相似度 + 0.15 文字。没过的可以「接受差异」。
+- 服务端 `server/design-restore.ts`：`POST /designs/:id/restore/source|run|confirm|accept|stop`、`PUT .../elements`，步骤在后台跑（`status: 'running'`，页面轮询），失败写进步骤并在对话里留一条错误。**还原有一步在跑时，页面保存设计只收标题、图片、标注**（`restoreRunning`），不然页面那份旧的控件树会盖掉搭好的树、旧图片列表会删掉刚抠的切图；演示版的保存也照服务端一样按 `baseRev` 拒收旧结构。
+- 界面：`NewDesign.tsx`（两种模式）、`components/design/restore/`（工作区、决策卡、元素框编辑器、切图墙、校验表）；`DesignPage` 的 `view` 多了 `restore`。
+- 演示：`demo-restore.ts` 在浏览器里跑同一套算法，标注用按位置猜的假标注（示例原画的字照抄）；示例设计「背包（照原画还原）」。
+- 回归：`shared/restore/restore.test.ts`（合成背包图：检测、切图、编译 + 校验、标注、六步流程）、`scripts/ui/04b-restore.mjs`（演示里走完六步，校验全对上）。
 
 ## 网页设计的位置计算（2026-11-01）
 
@@ -204,6 +271,6 @@
 - 照设计稿 `Design.dc.html`：打开的设计是三块圆角面板并排（`App.tsx` 的 `splitPage` 把 `page: 'design'` 且 `id` 不是 `new` / `home` 的路由算进去）——左边 AI 对话（默认 320，拖动条在右缘）、中间画板、右边检查器（默认 280）。
 - 设计名和保存状态在对话栏标题行，收起对话栏后回到画板标题行；收起按钮在对话栏标题行，打开按钮在画板标题行。
 - 画板标题行夹在两栏中间，只放阶段条（`StageSteps`：原画 → 界面，就是原来的「原画 / 界面」切换，确认模板后原画打勾）、尺寸、风格、版本、撤销重做、「更多」（动画面板开关 + 本机 ComfyUI）和导出；用 `@container` 在窄的时候收起风格文字和阶段圆点，放不下时横向滚动兜底。
-- 侧栏 `SidebarDesigns.tsx` 顶部是「UI 设计 / 模型设计」下拉（选择记在本机 `agent-panel:design-mode`）。模型设计列的是带 `Task.modelDesign` 的顶层对话（ADR 0025），按所在项目分组，点进设计模式的模型页 `#/model/<对话>`（`web/src/pages/ModelPage.tsx`，`isDesignPage` 算它）；这些对话不进 Agent 模式（Agent 侧栏、项目首页都排除 `modelDesign`，按项目对话地址打开的由 `ProjectsPage` 转到 `#/model`），点项目名只是收起展开。打开着模型对话时侧栏下拉固定在「模型设计」，在下拉里换类型会跟着换到那一类的页面；「项目」标题行的 + 和空状态里的按钮打开 `web/src/components/design/NewModelDesignDialog.tsx`：项目可以选已有的，也可以切到「新建项目 / 指定文件夹」用 `DirPicker` 指定本机文件夹（2026-10-31 用户要求）——文件夹已经是某个项目就直接用它，不存在就先 `api.makeDir` 在上一级里建出来，再用 `{ name, path }` 新建项目（项目名默认取文件夹名，可改）；没有项目时默认停在这一页。写好要建的模型后，走 `POST /tasks`（`mode: 'chat'`、`modelDesign: true`）后跳到 `#/model/<对话>`；没选模型时执行端按 `agentRun` 的默认（API 模式取第一个 API 模型，见 `docs/modules/shared/bugs/api-empty-model-no-model-flag.md`）；打开时查一次 `api.blenderStatus()`，找不到 Blender 照样能建，但在弹窗底部写明原因并给「去设置」（设置的 `blender` 小节）。
-- 3D 预览（ADR 0025 决策 4）：模型设计对话的右栏多一个默认选中的「模型」页签（`web/src/components/tasks/TaskFiles.tsx` 按 `task.modelDesign` 加，`ModelPreview.tsx` 用 `lazy` 单独分块，three.js 只在这里加载）。`api.blenderModel` 轮询 `GET /api/blender/models/:taskId`（执行中 2 秒、空闲 8 秒），版本号变了才用 `api.blenderGlb` 取 `scene.glb` 重新加载；只有第一次加载自动对准（`fit` 按横竖两个视角里窄的那个算距离），之后保持用户的视角；换模型时释放旧的几何体、材质和贴图。按需渲染（转动、换模型、改尺寸时才画一帧）；没有 WebGL 时写明并留下载入口。会话栏和右栏放不下时，模型对话让会话栏让开（`TaskView` 的 `sessionShown`）。演示版没有 Blender：`api.blenderGlb` 换成 `web/src/lib/demo-model.ts` 现场拼的宝箱，`demo-backend` 对 `modelDesign` 对话返回版本 1 和五个物体；正式包里这段被 `VITE_DEMO` 判断整段去掉（`npm run build` 后 dist 里没有 `Chest_Body`）。
-- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后切到「模型设计」、打开新建模型设计弹窗（演示版提示没有 Blender）、建一个模型对话看右栏「模型」页签的物体列表，再切回。
+- 侧栏 `SidebarDesigns.tsx` 顶部是设计类型下拉（选择记在本机 `agent-panel:design-mode`）：固定有「UI 设计」，其余每一项是开着的插件登记的设计模式（ADR 0059，例如 Blender 插件的「模型设计」，`web/src/plugins/registry.ts` 的 `useDesignModes`）。设计模式列的是 `taskPlugin(task)` 等于模式 id 的顶层对话（旧数据的 `modelDesign` 读成 `blender.model`），按所在项目分组，点进 `#/pdesign/<模式>/<对话>`（`web/src/plugins/DesignPage.tsx`，`isDesignPage` 算它）；这些对话不进 Agent 模式（Agent 侧栏、项目首页按 `ownedDesign` 排除，按项目对话地址打开的由 `ProjectsPage` 转过去），插件关掉或删掉后它们照常当普通对话列出。新建用插件给的 `NewDialog`，建好后调 `onCreated` 跳进对话。
+- 对话右栏的插件页签：插件的 `taskTabs`（`when(task)` 决定哪些对话有，`home` 的默认选中并让会话栏在放不下时让开，见 `TaskView` 的 `pluginHome`）由 `TaskFiles.tsx` 按 `useTaskTabs` 加上。模型设计的 3D 预览就是 Blender 插件的一个页签，代码在插件仓库 fixcode-h/agent-plugins 的 `blender/web/`。
+- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后打开设计类型下拉：演示版不装插件，只有「UI 设计」。

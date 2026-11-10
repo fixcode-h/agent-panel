@@ -1,19 +1,23 @@
+import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
-import { diagnosisPending } from '@shared/task'
-import { flowProgress } from '@shared/flow-child'
-import { bugStage, decideDiagnosis } from '@shared/bug-diagnosis'
+import { seedChatRail } from './demo-chat-rail'
+import { demoOwnedRun } from './demo-flow-run'
+import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
-import { descendantNeeds, pendingRequest } from '@shared/child-needs'
-import { ModelObject } from '@shared/blender'
+import { demoFlowRun } from './demo-flow-run'
+import { descendantNeeds } from '@shared/child-needs'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
+import { demoSettleAction, demoUserAction } from './demo-user-action'
+import { settleAction } from '@shared/user-action'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
+import { demoExperience, demoLearnedNote } from './demo-experience'
 import { demoChatMemory } from './demo-chat-memory'
 import { demoCliPackages } from './demo-packages'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -111,6 +115,7 @@ import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import {
   REPO,
+  RECENT_RELEASES,
   minutesUntil,
   pickUpdate,
   rateLimitUntil,
@@ -147,23 +152,16 @@ import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
-  childActivity,
-  childLastActivity,
-  childStartedAt,
-  childWait,
   childFacts,
   closeFlow,
   convActive,
   convState,
   dropEndNotes,
   endRun,
-  helpersWorking,
   messagePage,
   taskMessageRev,
   newTask,
   questionAnswers,
-  runRunning,
-  taskGone,
   taskSummary,
   trackWait,
   trashLeftDays,
@@ -171,7 +169,7 @@ import {
   type TrashRow,
 } from '@shared/task'
 import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
-import { openPlan, settlePlan } from '@shared/plan'
+import { settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import {
@@ -204,9 +202,12 @@ import {
   demoStyles,
   demoExtractStyle,
   demoVersions,
+  demoDesignOf,
 } from './demo-design'
+import { demoRestore } from './demo-restore'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
+import { DEMO_FILES, DEMO_README } from './demo-project-files'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -601,7 +602,7 @@ function seed(): Db {
     createdAt,
     agentParams: {},
     childIsolation: 'worktree',
-    isolateNew: true,
+    isolateByDefault: false,
     scaledVerify: true,
     workflowIds: [],
     defaultAgentId: '',
@@ -1251,31 +1252,9 @@ function demoResolve(paths: string[]): (Attachment & { from: string })[] {
   })
 }
 
-/** 演示项目里的文件，输入 @ 时从这里找 */
-const DEMO_FILES = [
-  'package.json',
-  'README.md',
-  'vite.config.ts',
-  'src/main.tsx',
-  'src/App.tsx',
-  'src/api/cart.ts',
-  'src/api/orders.ts',
-  'src/api/products.ts',
-  'src/components/CartBadge.tsx',
-  'src/components/ProductCard.tsx',
-  'src/components/RestockButton.tsx',
-  'src/pages/Login.tsx',
-  'src/pages/OrderList.tsx',
-  'src/pages/ProductDetail.tsx',
-  'src/store/cart.ts',
-  'src/utils/date.ts',
-  'src/utils/format.ts',
-  'tests/cart.test.ts',
-]
-
 /** 演示里几个文件有内容，其余只显示路径 */
 const DEMO_CONTENTS: Record<string, string> = {
-  'README.md': '# 示例商店\n\n演示用的前端项目，故意留了几处没改完的地方。\n',
+  'README.md': DEMO_README,
   'src/App.tsx':
     "import { Routes, Route } from 'react-router-dom'\nimport { Login } from './pages/Login'\nimport { ProductDetail } from './pages/ProductDetail'\nimport { OrderList } from './pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
   'src/api/cart.ts':
@@ -2102,22 +2081,12 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
+  if (res === 'video') fail('在线演示不能读本机视频，截帧要在本机运行面板')
   if (res === 'tts') return demoTts(method, seg)
-  // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
-  if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
-  // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」
-  if (res === 'blender' && id === 'models') {
-    // 模型设计对话给一只示例宝箱（demo-model.ts 现场拼的），其余对话还没有模型
-    const task = (d.tasks ?? []).find((x) => x.id === sub)
-    if (!task?.modelDesign) return { version: 0, updatedAt: '', objects: [], exportError: '' }
-    const { DEMO_MODEL_OBJECTS } = await import('./demo-model')
-    return {
-      version: 1,
-      updatedAt: task.createdAt,
-      objects: DEMO_MODEL_OBJECTS.map((o) => ModelObject.parse(o)),
-      exportError: '',
-    }
-  }
+  // 在线演示不装插件：插件页显示空列表，插件市场要连 GitHub，演示里不能装
+  if (res === 'plugins' && !id && method === 'GET')
+    return { plugins: [], broken: [], market: 'fixcode-h/agent-plugins' }
+  if (res === 'plugins') fail('在线演示不能安装插件，要在本机运行面板')
   if (res === 'project-trust') return { pi: ['.pi/skills'] }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {
@@ -2127,6 +2096,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'hooks') return demoHooks(method, seg, body ?? {})
+  if (res === 'projects' && id && sub === 'experience') return demoExperience(id, method, seg, body)
   if (res === 'chat-memory') return demoChatMemory(method, seg, (body ?? {}) as Record<string, unknown>)
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
   if (res === 'project-skills') return demoProjectSkillsApi(method, seg, query, (body ?? {}) as Record<string, unknown>)
@@ -2326,6 +2296,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'project-docs') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     if (sub === 'optimize') return startDemoDocJob(body)
+    if (sub === 'doc-group') return null // 演示里没有本机的 P4 / SVN 分支目录，界面按下拉算出的位置显示
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
@@ -2618,6 +2589,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
   if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
   if (res === 'designs' && sub === 'components') return demoImportComponent(id, body ?? {})
+  if (res === 'designs' && sub === 'restore') return demoRestore(demoDesignOf(id), seg[3], body ?? {})
   if (res === 'designs' && sub === 'versions') return demoVersions(method, id, seg[3], seg[4], body ?? {})
   if (res === 'designs')
     // 演示里没有失败的图，重试和生成一样
@@ -2787,6 +2759,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
         : [],
     ),
     simulated: true,
+    ...(workflow && { flowRun: demoFlowRun(input, workflow) }),
     // 演示里按 Windows 展示测试步骤的环境说明（WSL 步骤怎么跑）
     testSteps: workflow ? (project?.testSteps ?? []) : [],
     platform: workflow ? 'win32' : '',
@@ -3183,13 +3156,20 @@ function tasksRoute(
   const d = load()
   const tasks = (d.tasks ??= [])
   if (!id) {
+    // 和正式版一样：父对话名下的工作流运行按 owner 查；运行不进对话列表（演示数据没有运行，这里通常是空的）
+    const owner = query.get('owner')
+    if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
       // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
       // 「继续执行」按钮也按它让位（演示版少了这个字段，这些界面分支永远走不到）
       const kids = new Map<string, number>()
+      // 和正式版一样：名下 CLI 还开着的子对话数，侧栏不点开父对话也能看出里面还开着 CLI
+      const kidsCli = new Map<string, number>()
       for (const k of tasks) {
-        if (!k.parentTaskId || !demoChildActive(k)) continue
+        if (!k.parentTaskId) continue
+        if (demoCliAlive(k)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
+        if (!demoChildActive(k)) continue
         kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
       }
       // 和正式版一样：子对话在等你确认时父对话也是「等你处理」（见 shared/child-needs.ts）
@@ -3197,13 +3177,14 @@ function tasksRoute(
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
-          .filter((t) => !t.parentTaskId && !t.deletedAt)
+          .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
           .map((t) =>
             taskSummary({
               ...t,
               cliAlive: demoCliAlive(t),
               childrenWorking: kids.get(t.id) ?? 0,
+              childrenCli: kidsCli.get(t.id) ?? 0,
               childrenNeeds: needs.get(t.id) ?? 0,
             }),
           )
@@ -3405,61 +3386,10 @@ function tasksRoute(
     const bundle = exportTaskTree(task, tasks, d.agents ?? [], query.get('app') ?? '')
     return { bundle, bytes: checkExportSize(bundle) }
   }
-  if (sub === 'children' && method === 'GET')
-    return tasks
-      .filter((x) => x.parentTaskId === task.id)
-      .map((x) => {
-        const doing = childActivity(x)
-        const open = openPlan(x)
-        // 还在跑 / 排队的后台命令：和正式版一样，CLI 在等命令结果时也算还没做完
-        const background = (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length
-        return {
-          id: x.id,
-          title: x.title,
-          status: x.status,
-          summary: x.summary,
-          working: x.working,
-          updatedAt: x.updatedAt,
-          // 进程还活着：正在跑的一定活着（演示里没有真的进程，就按 working 认）
-          cliAlive: demoCliAlive(x),
-          startedAt: childStartedAt(x),
-          // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
-          requests: (x.requests ?? []).length,
-          request: pendingRequest(x),
-          asking: x.parentAsks?.length ?? 0,
-          // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成；带上正在做的那一步
-          plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
-          // 和正式版一致：父对话的子对话栏靠这两项显示在做什么、多久没新输出
-          activity: doing,
-          lastActivityAt: childLastActivity(x),
-          // 和正式后端对齐：面板自动问过状态、还没回复时行上显示「已自动询问」
-          autoAsk: x.autoAsk,
-          // 和正式后端对齐：做完没看过 → 子对话行上画未读点（见 shared/task.ts 的 childDoneDot）
-          turnDoneAt: x.turnDoneAt ?? '',
-          turnSeenAt: x.turnSeenAt ?? '',
-          // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
-          background,
-          workflow: runRunning(x),
-          flow: flowProgress(x),
-          diagnosis: diagnosisPending(x),
-          bug: bugStage(x) || undefined,
-          helpers: helpersWorking(x),
-          unmerged: x.worktree?.state === 'active',
-          // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）
-          dirty: x.worktree?.state === 'active' ? 1 : 0,
-          // 和正式后端对齐：这两项是不是已经用 git 核对过（演示版没有真的 git，给了值就算核对过）
-          worktreeChecked: true,
-          dir: x.worktree?.path ?? '',
-          wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
-          branch: x.worktree?.branch ?? '',
-          stopReason: x.stopReason ?? '',
-          waiting: childWait(x, { background, cliAlive: demoCliAlive(x) }),
-          resolved: x.resolved === true,
-          analysis: x.analysis,
-          // 和正式后端对齐：归档 / 独立分支被删掉的条目不再算在跑（见 shared/task.ts 的 taskGone）
-          gone: taskGone(x),
-        }
-      })
+  // 工作流运行的确认交给父对话（和正式版一样只是写信，演示版没有父对话的 CLI，直接回成功）
+  if (sub === 'delegate' && method === 'POST') return { ok: true, info: '已交给父对话决定' }
+  // 和正式后端的 /children 一样的字段（行怎么拼见 demo-children.ts）
+  if (sub === 'children' && method === 'GET') return demoChildRows(task, tasks, demoCliAlive)
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
   if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }
   // 终止一个子任务：和正式版一样走 stopHelper，排队的马上按「已终止」交回，在跑的这一步跑完后按终止交回
@@ -3471,6 +3401,7 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
+    if (f.userAction) settleAction(task, f.userAction, 'returned', { text: f.text })
     const cur = live.get(task.id)
     // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
     if (cur && !f.interrupt) {
@@ -3525,6 +3456,14 @@ function tasksRoute(
     return task
   }
   // 诊断报告的确认（ADR 0045）：和正式后端一样只记决定、返回交给子对话的话，页面再作为消息发过去
+  if (sub === 'user-action' && rid && method === 'POST') {
+    demoSettleAction(task, rid, body)
+    persist()
+    return task
+  }
+  // 演示里没有真的代码目录：取消修复时查不到临时日志，直接按「没有日志」关闭
+  if (sub === 'diagnosis-cleanup')
+    return method === 'POST' ? { task, message: '' } : { found: [], created: [], isolated: false }
   if (sub === 'diagnosis' && rid && method === 'POST') {
     const r = decideDiagnosis(
       task,
@@ -3668,6 +3607,30 @@ function tasksRoute(
     }
     return { dir, branch: p?.path ? 'main' : null, isGit: !!p?.path }
   }
+  // 回复里的文件标记：演示的示例工程里有内容的算存在，完整路径按演示项目的目录拼
+  if (sub === 'paths' && method === 'POST') {
+    const root = (d.projects.find((x) => x.id === task.projectId)?.path ?? '').replace(/[\\/]+$/, '')
+    const paths = ((body as { paths?: string[] })?.paths ?? []).map(String)
+    return {
+      items: paths.map((raw) => {
+        const rel = raw.replace(/\\/g, '/').replace(/^\.\//, '')
+        const exists = DEMO_FILES.includes(rel) || rel.startsWith('ui-shots/')
+        const text = DEMO_CONTENTS[rel]
+        return {
+          path: raw,
+          abs: root ? `${root}/${rel}` : rel,
+          rel,
+          inTask: true,
+          exists,
+          dir: false,
+          text: text !== undefined,
+          size: text?.length,
+          mtime: exists ? new Date().toISOString() : undefined,
+        }
+      }),
+    }
+  }
+  if (sub === 'open-path') fail('在线演示不能用本机的程序打开文件')
   // 演示里没有本机的文件管理器：和「打开数据目录」一样明说打不开，不假装成功
   if (sub === 'reveal') fail('在线演示不能打开本机目录')
   // 会话栏：演示里没有本机目录，按演示项目给一份像样的环境、说明文件和 Skill
@@ -3784,7 +3747,16 @@ function tasksRoute(
   const withLive = { ...task, cliAlive: demoCliAlive(task) }
   const full = task.parentTaskId
     ? withLive
-    : { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+    : (() => {
+        // 和正式后端的单任务一样带上三项计数（server/tasks/children.ts）：子对话刷新信号靠它们
+        const kids = tasks.filter((x) => x.parentTaskId === task.id)
+        return {
+          ...withLive,
+          childrenWorking: kids.filter(demoChildActive).length,
+          childrenCli: kids.filter(demoCliAlive).length,
+          childrenNeeds: descendantNeeds(tasks).get(task.id) ?? 0,
+        }
+      })()
   // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
   const limit = Number(query.get('limit') ?? '')
   if (!Number.isInteger(limit) || limit <= 0) return full
@@ -4031,6 +4003,25 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     .filter((i) => i >= 0)
     .at(-1)
   task.messages.splice(last ?? task.messages.length, 0, spawned, ...own)
+  // 这次派单的分诊卡：插在回复里派出子任务的那一处（route-anchor 按 spawned 对上），折叠后也留在原位
+  const ask = task.messages
+    .slice(0, task.messages.indexOf(spawned))
+    .reverse()
+    .find((m) => m.role === 'user' && !m.peer)
+  task.routes = [
+    ...(task.routes ?? []),
+    {
+      id: 'demo-route-helper',
+      target: 'subtask',
+      refs: [id],
+      label: title,
+      understanding: '加购后角标数字不变，要先弄清角标什么时候读购物车数据',
+      reason: '只读代码就能查清，交给子任务并行查，这里接着排查加购流程',
+      assumptions: '',
+      messageId: ask?.id ?? '',
+      at,
+    },
+  ]
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
@@ -4236,6 +4227,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     worktree: { branch: 'agent-panel/git-worktree', at: 10 },
   })
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
+  // 等你操作：子对话要用户跑一次 PIE 抓日志，父对话的子对话行上有「去操作」（demo-user-action.ts）
+  ;(await make('排查路牌偏移')).userActions = [demoUserAction()]
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
   // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——
@@ -4544,6 +4537,7 @@ async function seedTasks(d: Db) {
     }
     demoHelper(task, fe)
     await demoChildren(d, task, fe)
+    d.tasks?.push(demoOwnedRun(task, 'demo-flow-run'))
     // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看
     task.changes = [
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
@@ -4561,6 +4555,20 @@ async function seedTasks(d: Db) {
           { path: 'tests/cart.test.ts', add: 0, del: 62 },
         ],
       }
+    // 对话完成后学到经验：总结和改动卡片后面挂一张按条展示的经验卡片（LearnedCard.tsx）
+    if (summary) {
+      const learned = demoLearnedNote()
+      task.messages.splice(task.messages.indexOf(summary) + 1, 0, {
+        id: 'demo-learned',
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: `学到经验：${learned.items.map((x) => x.snapshot.title).join('；')}`,
+        tools: [],
+        at: summary.at,
+        learned,
+      })
+    }
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
     // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
     // 上下文浮层里的「上一次压缩」：和真实执行一样是回复里的一次工具调用，
@@ -4626,8 +4634,8 @@ async function seedTasks(d: Db) {
       },
       true,
     )
+    // 工作流运行跑完就结束了（补充要求从父对话交），不再追加一轮
     await done
-    await followUp(d, task, '按钮文案改成「到货通知我」，已经登记过的用户显示「已登记」并置灰。', true)
     back(task, 25)
   }
   // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的
@@ -4692,87 +4700,8 @@ async function seedTasks(d: Db) {
         task.awaitingUser = true
       }
     }
-    await seedChatRail(d, fe.id, back)
+    await seedChatRail((input) => createTask(d, input, true), fe.id, back, DEMO_CHAT_SHOT)
   }
-}
-
-/**
- * Chat 页右栏的演示（Chat.dc.html）：一条带截图的提问，回复里有联网搜索、打开网页和两段代码，
- * 右栏的「代码 / 来源 / 附件」三个页签都有内容；另一条置顶的聊天演示侧栏最上面的「置顶」组
- */
-async function seedChatRail(d: Db, agentId: string, back: (t: Task, minutes: number) => void) {
-  const make = async (prompt: string) => {
-    const { task, done } = createTask(
-      d,
-      {
-        projectId: '',
-        mode: 'chat',
-        workflowId: '',
-        agentId,
-        prompt,
-        attachments: [],
-        cli: '',
-        model: '',
-        effort: '',
-        isolate: false,
-        askUser: false,
-        params: {},
-      },
-      true,
-    )
-    await done
-    return task
-  }
-  const pinned = await make('周报写作助手')
-  pinned.pinned = true
-  back(pinned, 60 * 24 * 3)
-  const task = await make('这个报错是因为 use() 用错了吗？顺便讲讲它和 useEffect 取数有什么区别。')
-  task.title = 'React 19 的 use() 怎么用'
-  const user = task.messages.find((m) => m.role === 'user')
-  if (user) user.attachments = [{ name: '报错截图.png', path: DEMO_CHAT_SHOT, size: 48_213, mime: 'image/png' }]
-  const reply = task.messages.find((m) => m.role === 'agent')
-  if (reply) {
-    reply.tools = [
-      {
-        kind: 'web',
-        name: '网页搜索',
-        label: 'react.dev use() 文档',
-        detail: '',
-        output:
-          '1. use – React\nhttps://react.dev/reference/react/use\n2. Suspense – React\nhttps://react.dev/reference/react/Suspense\n3. facebook/react issue: use() re-suspends\nhttps://github.com/facebook/react/issues/27877',
-        ms: 1800,
-      },
-      { kind: 'web', name: '打开网页', label: 'https://react.dev/reference/react/use', detail: '', ms: 900 },
-    ]
-    reply.text = [
-      '是的。截图里的 Promise 写在组件里，**每次渲染都会新建一个**，use() 每次都拿到新的 Promise，于是一直挂起、反复重渲染。',
-      '',
-      '把 Promise 提到组件外面（或者交给父组件 / 缓存）就好：',
-      '',
-      '```tsx',
-      "import { use, Suspense } from 'react'",
-      '',
-      '// 在组件外创建，渲染之间是同一个 Promise',
-      "const userPromise = fetchUser('42')",
-      '',
-      'export function Profile() {',
-      '  const user = use(userPromise)',
-      '  return <h1>{user.name}</h1>',
-      '}',
-      '```',
-      '',
-      '用 useEffect 取数的老写法对照一下：',
-      '',
-      '```tsx',
-      'function ProfileOld() {',
-      '  const [user, setUser] = useState<User | null>(null)',
-      "  useEffect(() => void fetchUser('42').then(setUser), [])",
-      '  return user ? <h1>{user.name}</h1> : <Spinner />',
-      '}',
-      '```',
-    ].join('\n')
-  }
-  back(task, 20)
 }
 
 /** 对话里的报错和警告长什么样：一条已恢复的网络断开、一条 CLI 没有响应、一条额度用完（见 shared/alerts.ts） */
@@ -4831,6 +4760,18 @@ async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
   // 当前版本只读上次读到的发布缓存：这个接口不该为了显示版本号再去请求 GitHub
   if (url.startsWith('/app/version')) return { current: demoReleasesCache()[0]?.version ?? '', packaged: false }
+  // 只读上次的结果：和正式后端的 cached=1 一样不联网
+  if (url.includes('cached=1')) {
+    const cached = demoReleasesCache()
+    const current = cached[0]?.version ?? ''
+    return {
+      current,
+      packaged: false,
+      source: 'api',
+      releases: cached.slice(0, RECENT_RELEASES),
+      update: pickUpdate(current, cached),
+    } satisfies AppReleases
+  }
   let list: AppRelease[] = []
   let limitedUntil: string | undefined
   let res: Response | null = null
@@ -4893,7 +4834,7 @@ async function demoApp(url: string): Promise<unknown> {
     limitedUntil,
     // 演示版直接从浏览器读 GitHub API，没有 Atom feed 兜底，结果都按 API / 它的缓存算
     source: 'api',
-    releases: list.slice(0, 5),
+    releases: list.slice(0, RECENT_RELEASES),
     update: pickUpdate(current, list),
   } satisfies AppReleases
 }

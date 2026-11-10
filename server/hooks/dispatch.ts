@@ -90,11 +90,25 @@ function identity(c: HookCallCtx): 'read-only' | 'coordinator' | '' {
   return ''
 }
 
+/**
+ * 临时文件位置：项目根的 .tmp/（AGENTS.md 约定的临时目录，已在 .gitignore），或系统临时目录里、又不在项目里的路径。
+ * 项目本身放在系统临时目录里时（测试、临时克隆），项目里的文件照样算改项目
+ */
+function scratchPath(c: HookCallCtx, f: string): boolean {
+  const p = path.resolve(c.cwd, f)
+  const roots = [c.cwd, c.project?.path].filter((x): x is string => !!x)
+  if (roots.some((r) => inside(path.join(r, '.tmp'), p))) return true
+  return inside(tmpdir(), p) && !roots.some((r) => inside(r, p))
+}
+
 /** 只读身份守卫：要改文件（和只读角色的写命令）时拒绝；父对话开了就地微改动时，改它登记的那几个文件放行 */
 function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: string[] = []): string {
   const tool = facts.tool
   if (!tool) return ''
   if (tool.kind === 'edit') {
+    const all = (tool.paths.length ? tool.paths : [tool.path]).filter(Boolean)
+    // 一次性的临时脚本、草稿（项目的 .tmp/、系统临时目录）不算改项目：以前一律拦，模型只好改用 stdin 喂脚本
+    if (all.length && all.every((p) => scratchPath(c, p))) return ''
     if (who === 'coordinator') {
       // 补丁一次能改好几个文件：每个都登记过才放行
       const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
@@ -444,7 +458,32 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return {}
   }
 
-  return { ...(beforeEnd ? { beforeEnd } : {}), ...(events.length ? { hookEvents: events, hookTools, onHook } : {}) }
+  /**
+   * 交给面板后台命令（run_background）的命令也过工具前的守卫和用户钩子：以前它们只管 CLI 自己的命令工具，
+   * 只读角色、推送授权、危险命令、凭据、测试归属这些规则换成后台命令就全绕过去了。长命令守卫不问（它本来就是让命令来这里），
+   * 不看 CLI 支不支持钩子、设置里有没有按 CLI 关掉工具前事件：这是面板自己执行的命令
+   */
+  const commandGuard = async (command: string): Promise<string> => {
+    const facts: HookFacts = {
+      tool: { kind: 'shell', name: 'run_background', input: { command }, path: '', paths: [] },
+    }
+    for (const [id, fn] of guards) {
+      if (id === 'long-command-guard') continue
+      const deny = fn(guard(id), facts)
+      if (!deny) continue
+      taskLog(c.task.id, '后台命令被守卫拒绝', { guard: id, command: command.slice(0, 200) })
+      noteBuiltin(id, 'tool.before', 'deny', deny)
+      return deny
+    }
+    return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
+  }
+
+  // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
+  c.call.orch.guardCommand = commandGuard
+  return {
+    ...(beforeEnd ? { beforeEnd } : {}),
+    ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),
+  }
 }
 
 /** 只看范围（项目、角色、CLI），不看工具匹配：装不装 tool.* 只要范围对得上就装，具体匹不匹配到触发时再看 */

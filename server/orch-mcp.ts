@@ -1,4 +1,5 @@
 import { callSubmitTool, submitTools } from './submit-tools.ts'
+import { EXPERIENCE_KINDS, EXPERIENCE_SCOPE } from '../shared/experience.ts'
 import { docsFirstArgs, docsFirstFields } from './docs-first-tool.ts'
 import {
   agentField,
@@ -8,44 +9,47 @@ import {
   batchField,
   SPAWN_TOP_FIELDS,
   paramsField,
+  reviewField,
   routeField,
   routeOf,
   tasksField,
   stepField,
   planItem,
 } from './orch-fields.ts'
-import { shellNote } from '../shared/shells.ts'
-import { lastShell } from './shells.ts'
+import { backgroundTools, callBackgroundTool } from './background-tools.ts'
 import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
+import { childKindArgs, childKindFields, upgradeBugArg, upgradeBugFields } from './child-kind-fields.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 import { ASK_PUSH_TOOL, callAskPush } from './ask-push.ts'
-import { callStartWorkflow } from './start-workflow-tool.ts'
-import { BUG_CASE_TOOL, callBugCase, callDiagnosis, DIAGNOSIS_TOOL } from './diagnosis-tool.ts'
+import { END_TURN_DEF, callEndTurn } from './end-turn-tool.ts'
+import { USER_ACTION_DEF, USER_ACTION_TOOL, callUserAction } from './user-action-tool.ts'
+import { callWorkflowTool, workflowTools } from './workflow-tools.ts'
+import {
+  BUG_CASE_TOOL,
+  callBugCase,
+  callDiagnosis,
+  callRequestLogs,
+  DIAGNOSIS_TOOL,
+  REQUEST_LOGS_TOOL,
+} from './diagnosis-tool.ts'
 import { callMemory, MEMORY_TOOL } from './memory-tool.ts'
 // 用法说明搬到了单独的文件（这个文件到了行数上限），调用方照旧从这里取
 export { orchHint } from './orch-hint.ts'
 
 /**
  * 编排工具：工作流节点和对话每次调用 CLI 时，绑定在调用它的节点上（执行引擎的 Orchestra）。
- * 节点用它派子 Agent 并行处理、取回结果、查各 Agent 的状态、向主 Agent 提问、给别的 Agent 传话；
+ * 节点用它派子 Agent 并行处理、取回结果、查各 Agent 的状态、给别的 Agent 传话；
  * 项目对话用它分派子对话，子对话用它和父对话通讯、认领文件。
  * 它和提问、等下一句这些工具挂在同一个面板 MCP（ask-mcp.ts 的 panel）上：一次调用只连一个面板服务。
  * 工具调用不能等太久（Codex 老版本默认 60 秒超时），等待都有上限；wait_agents 例外，见 WAIT_AGENTS_S
  */
 
-const DEFAULT_WAIT_S = 40
 // wait_agents 等到子任务全部结束或有人传话才回（每回一次 CLI 就带整份上下文再请求一次），这是兜底上限：
 // 要短于 CLI 一次工具调用的超时（Codex 的 tool_timeout_sec 在定义里放宽到 1 小时），等待期间写 SSE 心跳（ask-mcp.ts）
 export const WAIT_AGENTS_S = 1500
-
-/** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
-const shellHint = () => {
-  const sh = lastShell()
-  return sh ? shellNote(sh) : ''
-}
 
 /** 按能力给工具（ADR 0038）：team 管查状态和传话，canSpawn 管派子任务，其余按各自的能力和宿主的客观条件 */
 export function orchTools(o: Orchestra) {
@@ -73,53 +77,7 @@ export function orchTools(o: Orchestra) {
           },
         ]
       : []),
-    ...(o.canBackground
-      ? [
-          {
-            name: 'run_background',
-            title: '后台命令',
-            description:
-              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。' +
-              // 子任务的结果推回的是派它的对话（它自己已结束），要让模型知道这件事，不要以为能在这里等结果
-              (o.helper
-                ? '你是子任务：结果推回派你的对话，并标注是哪个子任务起的，你启动后接着做别的事或结束这一轮。'
-                : '') +
-              shellHint(),
-            inputSchema: {
-              type: 'object',
-              properties: {
-                command: { type: 'string', description: '要执行的命令原文' },
-                name: { type: 'string', description: '给这条命令起个短名字，例如「端到端测试」' },
-                cwd: { type: 'string', description: '相对当前目录的工作目录，不写就是当前目录' },
-                exclusive: {
-                  type: 'boolean',
-                  description: '编译、打包这类会抢文件锁的命令设为 true：按项目排队，同一时间只跑一个',
-                },
-                timeout_minutes: {
-                  type: 'number',
-                  description:
-                    '最多跑多少分钟，到点面板停掉它并把结果推回；按命令正常要多久写宽一些，不写默认 120，最多 480',
-                },
-                ...(o.plans ? { step: stepField('这条命令') } : {}),
-              },
-              required: ['command'],
-            },
-          },
-          {
-            name: 'check_background',
-            title: '查看后台命令',
-            description:
-              '查后台命令的状态、已经跑了多久、多久没输出和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
-            inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
-          },
-          {
-            name: 'stop_background',
-            title: '停止后台命令',
-            description: '停掉这个对话的一条后台命令：确认它卡住了（长时间没输出、跑偏了）才用，停掉后查清原因再重跑。',
-            inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-          },
-        ]
-      : []),
+    ...backgroundTools(o),
     ...(o.plans
       ? [
           {
@@ -173,63 +131,7 @@ export function orchTools(o: Orchestra) {
           },
         ]
       : []),
-    ...(o.planning
-      ? [
-          {
-            name: 'start_workflow',
-            title: '启动工作流',
-            description:
-              '在你下面开一个工作流子对话，按工作流的流程图把这件事做完（异步执行，马上返回子对话 id）。流程图跑完由它的执行角色评审、测试、合回，你按等子对话的方式等它。只用于步骤和门禁事先定好的事，判定规则见提示里的「可用工作流」；问答、排查、Bug 定位、小改动不要起工作流。',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                workflow: {
-                  type: 'string',
-                  description: '工作流 id 或名字（见提示里的「可用工作流」）；不写用项目默认工作流',
-                },
-                input: { type: 'string', description: '这次要做什么：目标、范围、验收标准，工作流的节点只看得到这些' },
-                title: { type: 'string', description: '子对话的短标题（10–20 字），不写用工作流名字加要做的事' },
-                files: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: '这个工作流负责的文件或目录（相对项目根），和 create_conversation 的 files 一样',
-                },
-                again: {
-                  type: 'string',
-                  description: '已有工作流子对话的 id：在它的分支上把同一个工作流再跑一次（方案被否、要从头再来时用）',
-                },
-                route: routeField(),
-                ...(o.plans ? { step: stepField('这个工作流') } : {}),
-              },
-              required: ['input'],
-            },
-          },
-        ]
-      : []),
-    ...(o.planner && !o.planning
-      ? [
-          {
-            name: 'run_workflow',
-            title: '启动工作流',
-            description:
-              '起一次新的工作流运行：节点全部新建，从开始节点按流程图顺序执行一遍（同一层没有依赖的节点同时执行）。这次运行走完就停下，不会自己再跑。你的会话保留，前面几轮的结论还在。',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                input: { type: 'string', description: '这次运行要做什么：目标、范围、和上一轮的区别' },
-              },
-              required: ['input'],
-            },
-          },
-          {
-            name: 'close_run',
-            title: '结束这次运行',
-            description:
-              '结束这次运行：还没执行的节点不再执行，之后的要求由你直接处理。用户说不用再走了、或者走不下去时用。',
-            inputSchema: { type: 'object', properties: {} },
-          },
-        ]
-      : []),
+    ...workflowTools(o),
     ...(o.coordinator
       ? [
           {
@@ -265,19 +167,7 @@ export function orchTools(o: Orchestra) {
                   type: 'string',
                   description: '子对话用哪个高级角色（名字）：不写用「执行」；项目里有更合适的（例如 UE 专用的）时写它',
                 },
-                // 必填、二选一：以前只有写了 "bug" 才算，父对话常常漏写，派出去的 Bug 子对话没有交诊断报告的工具，
-                // 用户也就看不到审阅弹窗（用户报过）。服务端没写时仍按 task 处理，老的调用照常能用
-                kind: {
-                  type: 'string',
-                  enum: ['task', 'bug'],
-                  description:
-                    '这个子对话是什么：用户报的 Bug（程序哪里坏了、行为不对要修）写 "bug"，子对话修之前先交诊断报告，用户确认了方案才改；其余（新功能、改进、评审或测试里发现的问题）写 "task"',
-                },
-                edits: {
-                  type: 'boolean',
-                  description:
-                    '这个子对话一定要改代码（实现、修改、修 Bug）时写 true：面板先开好独立分支再让它开工，省掉它中途换目录重开、重读文件。只调研、评审、回答问题的不写',
-                },
+                ...childKindFields,
                 route: routeField(),
                 ...docsFirstFields,
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
@@ -295,24 +185,11 @@ export function orchTools(o: Orchestra) {
               properties: {
                 id: { type: 'string', description: '子对话 id' },
                 message: { type: 'string', description: '要交给它的消息，写清楚和原任务的关系' },
+                ...upgradeBugFields,
                 route: routeField(),
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
               required: ['id', 'message'],
-            },
-          },
-          {
-            name: 'stop_workflow',
-            title: '终止工作流',
-            description:
-              '终止工作流子对话正在跑的流程图：方向错了、已经不需要、卡住不动时用。没跑的节点不再跑，子对话按失败交回，结果里写着这次运行改了哪些文件；之后要清理还是接着做，用 send_to_conversation 交给它。',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: { type: 'string', description: '工作流子对话的 id' },
-                reason: { type: 'string', description: '为什么终止，一句话' },
-              },
-              required: ['id', 'reason'],
             },
           },
         ]
@@ -677,7 +554,9 @@ export function orchTools(o: Orchestra) {
         ]
       : []),
     ...(o.askPush ? [ASK_PUSH_TOOL] : []),
-    ...(o.diagnose ? [DIAGNOSIS_TOOL, BUG_CASE_TOOL] : []),
+    ...(o.endTurn ? [END_TURN_DEF] : []),
+    ...(o.requestUserAction ? [USER_ACTION_DEF] : []),
+    ...(o.diagnose ? [DIAGNOSIS_TOOL, BUG_CASE_TOOL, REQUEST_LOGS_TOOL] : []),
     ...(o.remember ? [MEMORY_TOOL] : []),
     ...(o.lessons
       ? [
@@ -745,6 +624,53 @@ export function orchTools(o: Orchestra) {
             : []),
         ]
       : []),
+    ...(o.experience
+      ? [
+          {
+            name: 'project_experience',
+            title: '查项目经验',
+            description:
+              '查这个项目以前的对话学到的经验：某类东西在哪个目录、用户的说法在代码里叫什么、编译测试用什么命令、怎么验证。要在全项目搜索、或要试命令之前先按关键词查（用户的说法和代码里的叫法都可以），命中了直接去对应位置；对不上时照常找。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: '关键词，空格分开，例如「表格 掉落」「编译 游戏模块」' },
+                files: { type: 'array', items: { type: 'string' }, description: '可选：要看或要改的文件、目录' },
+              },
+            },
+          },
+          // 子任务只查不记（makeOrchestra 给子任务的 experience 没有 record）
+          ...(o.experience.record
+            ? [
+                {
+                  name: 'record_experience',
+                  title: '记下项目经验',
+                  description: `记一条项目经验（用户用 /learn 让你学一件事时用），或带 id 更新已有的一条。\n\n${EXPERIENCE_SCOPE}`,
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      kind: { type: 'string', enum: [...EXPERIENCE_KINDS], description: '种类' },
+                      title: { type: 'string', description: '一句话：要做的事 + 去哪 / 用什么' },
+                      body: { type: 'string', description: '一两句补充：路径之间的关系、命令参数、别走的弯路' },
+                      keywords: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: '检索用：用户的说法和代码里的叫法都写上',
+                      },
+                      paths: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: '相对项目根的目录或 glob（必须存在）；命令类写命令本身',
+                      },
+                      id: { type: 'string', description: '更新已有的那条时填它的 id（project_experience 查到的）' },
+                    },
+                    required: ['kind', 'title', 'keywords'],
+                  },
+                },
+              ]
+            : []),
+        ]
+      : []),
     // 共享状态只存在于工作流运行的 task.runs 里，对话模式没有：注册了模型每次调都是「没有共享状态」
     ...(o.sharedState
       ? [
@@ -790,6 +716,7 @@ export function orchTools(o: Orchestra) {
                 tier: batchField(tierField()),
                 resume: resumeField(true),
                 params: batchField(paramsField()),
+                review: batchField(reviewField()),
                 // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
                 // 计划里这一步标完成；失败或被终止退回进行中并写清原因
                 ...(o.plans ? { step: stepField('这批子任务') } : {}),
@@ -834,21 +761,6 @@ export function orchTools(o: Orchestra) {
                 },
               ]),
         ]),
-    ...(o.hasMain && !main
-      ? [
-          {
-            name: 'ask_main',
-            title: '向主角色提问',
-            description:
-              '向主 Agent 提问：需求有歧义、几种做法拿不准、和别的节点有冲突时用它，不要自己猜。主 Agent 忙时先返回，回答之后用 read_messages 取。',
-            inputSchema: {
-              type: 'object',
-              properties: { question: { type: 'string', description: '问题，写清楚背景和可选的做法' } },
-              required: ['question'],
-            },
-          },
-        ]
-      : []),
     ...(o.team ? teamTools(o, main) : []),
     ...submitTools(o),
   ]
@@ -868,7 +780,7 @@ function teamTools(o: Orchestra, main: boolean) {
         properties: {
           to: {
             type: 'string',
-            description: o.hasMain ? '节点 id 或标题；main 表示主 Agent' : '节点 id 或标题',
+            description: '节点 id 或标题',
           },
           text: { type: 'string' },
         },
@@ -894,6 +806,8 @@ function reportText(r: HelperReport) {
 
 /** 执行一个工具调用 */
 export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: AbortSignal) {
+  const wf = await callWorkflowTool(o, name, a)
+  if (wf) return wf
   switch (name) {
     case 'get_status':
       return text(o.status())
@@ -906,8 +820,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       return callMemory(o, a)
     case 'update_bug_case':
       return callBugCase(o, a)
-    case 'start_workflow':
-      return callStartWorkflow(o, a, routeOf(a?.route))
+    case 'request_logs':
+      return callRequestLogs(o, a)
     case 'set_plan': {
       const r = await o.setPlan({
         title: str(a?.title),
@@ -928,6 +842,25 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const files = Array.isArray(a?.files) ? a.files.map(String) : []
       const tags = Array.isArray(a?.tags) ? a.tags.map(String) : []
       return text(await o.lessons.find(files, { query: str(a?.query), tags }))
+    }
+    case 'project_experience': {
+      if (!o.experience) return text('这个对话没有项目经验（不在项目里，或设置里关了经验）', true)
+      const files = Array.isArray(a?.files) ? a.files.map(String) : []
+      return text(await o.experience.find(str(a?.query), files))
+    }
+    case 'record_experience': {
+      if (!o.experience) return text('这个对话没有项目经验（不在项目里，或设置里关了经验）', true)
+      if (!o.experience.record) return text('子任务不记经验：值得记的写进交回的结果，由派你的对话决定', true)
+      const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter((x: string) => x.trim()) : [])
+      const r = await o.experience.record({
+        id: str(a?.id).trim() || undefined,
+        kind: str(a?.kind).trim(),
+        title: str(a?.title),
+        body: str(a?.body),
+        keywords: list(a?.keywords),
+        paths: list(a?.paths),
+      })
+      return text(r.info, !r.ok)
     }
     case 'record_lesson': {
       if (!o.lessons) return text('这个对话不在项目里，记不了项目教训', true)
@@ -964,8 +897,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const r = await o.createConversation(str(a?.title).trim(), message, files, str(a?.step).trim(), {
         role: str(a?.role).trim() || undefined,
         route: routeOf(a?.route),
-        bug: str(a?.kind) === 'bug',
-        ...(a?.edits === true && { edits: true }),
+        ...childKindArgs(a),
         ...docsFirstArgs(a),
       })
       return text(r.id ? `${r.info}（id: ${r.id}）` : r.info, !r.ok)
@@ -974,35 +906,13 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const id = str(a?.id).trim()
       const message = str(a?.message).trim()
       if (!id || !message) return text('id 和 message 都要写', true)
-      const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route))
+      const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route), upgradeBugArg(a))
       return text(r.info, !r.ok)
     }
-    case 'stop_workflow': {
-      const id = str(a?.id).trim()
-      if (!id) return text('id 要写：子对话的 id', true)
-      const r = o.stopConversationWorkflow(id, str(a?.reason).trim() || '父对话决定终止这次运行')
-      return text(r.info, !r.ok)
-    }
-    case 'run_background': {
-      const command = str(a?.command).trim()
-      if (!command) return text('command 是空的：写要执行的命令', true)
-      const r = await o.runBackground({
-        command,
-        // 没给名字时用命令第一行：名字会写进推回结果的标题（界面按第一行显示），带换行会把「成功 / 失败」截掉
-        name: str(a?.name).trim() || command.split('\n')[0].trim().slice(0, 40),
-        cwd: str(a?.cwd).trim(),
-        exclusive: a?.exclusive === true,
-        ...(Number(a?.timeout_minutes) > 0 && { timeoutMinutes: Number(a?.timeout_minutes) }),
-        step: str(a?.step).trim(),
-      })
-      return text(r.info, !r.ok)
-    }
+    case 'run_background':
     case 'check_background':
-      return text(o.checkBackground(str(a?.id)))
-    case 'stop_background': {
-      const r = o.stopBackground(str(a?.id))
-      return text(r.info, !r.ok)
-    }
+    case 'stop_background':
+      return (await callBackgroundTool(o, name, a))!
     case 'begin_edit': {
       const r = await o.beginEdit()
       return text(r.info, !r.ok)
@@ -1098,6 +1008,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const r = await o.cherryPick({ commits, changelist: str(a?.changelist) || undefined })
       return text(r.info, !r.ok)
     }
+    case 'end_turn':
+      return callEndTurn(o, a)
+    case USER_ACTION_TOOL:
+      return callUserAction(o, a)
     case 'ask_push':
       return callAskPush(o, a)
     case 'claim_files': {
@@ -1110,22 +1024,12 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
       const r = o.release(paths)
       return text(r.info, !r.ok)
     }
-    case 'run_workflow': {
-      const input = str(a?.input).trim()
-      if (!input) return text('input 是空的：写清楚这次运行要做什么', true)
-      const r = o.run(input)
-      return text(r.info, !r.ok)
-    }
-    case 'close_run': {
-      const r = o.closeRun()
-      return text(r.info, !r.ok)
-    }
     case 'spawn_agents': {
       // 顶层写了不认得的字段就报错，不静默丢掉：调用方以为生效了，实际没派成想派的那样
       const unknown = Object.keys(a && typeof a === 'object' ? a : {}).filter((k) => !SPAWN_TOP_FIELDS.includes(k))
       if (unknown.length)
         return text(
-          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier 可以直接写在顶层，只派一个任务时 resume 也可以`,
+          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier、params、review 可以直接写在顶层，只派一个任务时 resume 也可以`,
           true,
         )
       const tasks: any[] = (Array.isArray(a?.tasks) ? a.tasks : []).filter((x: unknown) => x && typeof x === 'object')
@@ -1154,7 +1058,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
         tier: str(x.tier) || batch.tier,
         resume: str(x.resume) || batch.resume,
         params: x.params ?? a?.params ?? undefined,
-        review: briefOf(x.review),
+        // 顶层 review 是整批共用的交接单：模型常照着顶层 agent、tier 的写法把它也写在顶层，拒掉只会白费一轮
+        review: briefOf(x.review) ?? briefOf(a?.review),
       }))
       // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）
       const stepId = str(a?.step).trim()
@@ -1197,14 +1102,6 @@ export async function callOrchTool(o: Orchestra, name: string, a: any, signal?: 
     case 'submit_result':
     case 'dispatch':
       return callSubmitTool(o, name, a)
-    case 'ask_main': {
-      const q = str(a?.question).trim()
-      if (!q) return text('question 是空的', true)
-      const r = await o.ask(q, DEFAULT_WAIT_S * 1000)
-      if (r.error) return text(r.error, true)
-      if (r.pending) return text('主 Agent 还在处理别的事，回答到了会放进你的消息里，过一会儿用 read_messages 看。')
-      return text(`主 Agent 的回答：\n${r.answer || '（没有回答内容）'}`)
-    }
     case 'send_message': {
       const to = str(a?.to).trim()
       const body = str(a?.text).trim()

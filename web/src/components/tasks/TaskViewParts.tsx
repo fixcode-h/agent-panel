@@ -27,7 +27,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { IconButton } from '@/components/ui/icon-button'
-import { ChatReply, PendingAuthor } from './Messages'
+import { PendingAuthor } from './Messages'
+import { ChatReply } from './FoldedRun'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { WorktreeMark, needsMerge, useWorktreeActions, useWorktrees, worktreeKey, worktreeSummary } from './Worktrees'
@@ -120,9 +121,9 @@ export function RunChecklist({ task, run, onOpen }: { task: Task; run: number; o
 /** 导入的任务在输入框的位置显示来源，只能查看；可以交给 AI 分析 */
 /** 用户消息下面的小按钮（分叉、撤回） */
 
-/** 输入框上面一行的提示条（没走完的流程）：本身有实质内容，保留虚线圆角的框 */
+/** 输入框上方浮着的提示条（没走完的流程）：浮在消息上面，底不透明、带阴影，虚线圆角的框保留 */
 export const barRow =
-  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-body'
+  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card px-3 py-2 text-body shadow-pop'
 
 /** 工作流没走完（失败、暂停、停在某个节点的结论上）：可以继续流程，或者结束它不再继续 */
 export function FlowBar({
@@ -150,7 +151,7 @@ export function FlowBar({
         ? t('流程没有完成，还有 {n} 个节点没执行', { n: left })
         : t('流程没有完成，主角色还没整理结果')
   return (
-    <div className="mx-auto mb-2 max-w-(--content-w)">
+    <div className="mx-auto mb-2 w-full max-w-(--content-w)">
       <div className={barRow}>
         <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-warning" />
         <span className="min-w-0 flex-1 truncate" title={what}>

@@ -190,6 +190,8 @@ export interface BundledSkill {
   tree?: LibraryTree
   /** 在用户共享目录里的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
   status: Record<string, 'missing' | 'same' | 'changed'>
+  /** 插件带的技能：插件 id（界面上标「来自插件」，ADR 0059） */
+  plugin?: string
 }
 
 export const BUNDLED_CATEGORIES: { id: string; label: string }[] = [

@@ -150,6 +150,8 @@ function RunTag({ children, className }: { children: ReactNode; className?: stri
  */
 export function TaskRowStatus({
   needs,
+  needsText,
+  acting,
   kids = 0,
   running,
   failed,
@@ -158,6 +160,10 @@ export function TaskRowStatus({
 }: {
   /** 有没回答的提问、待确认的请求 */
   needs?: boolean
+  /** 等的是什么（「子对话等你处理」）：和标题栏用同一句，不传就是「等你回复」 */
+  needsText?: string
+  /** 自己挂着「等你操作」（request_user_action） */
+  acting?: boolean
   /** 名下正在执行的子对话数 */
   kids?: number
   /** 自己在执行或在等会推回来的结果 */
@@ -167,10 +173,17 @@ export function TaskRowStatus({
   left?: { done: number; total: number; stuck: boolean }
   unread?: boolean
 }) {
+  // 等你操作：它在等你离开对话去做一件事，和「等你回复」分开写，一眼知道是要去动手
+  if (acting)
+    return (
+      <StatusPill tone="wait" spin className={SMALL_PILL}>
+        {t('等你操作')}
+      </StatusPill>
+    )
   if (needs)
     return (
       <StatusPill tone="wait" className={SMALL_PILL}>
-        {t('等你回复')}
+        {needsText || t('等你回复')}
       </StatusPill>
     )
   if (kids > 0) return <RunTag>{t('{n} 子对话', { n: kids })}</RunTag>

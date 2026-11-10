@@ -2,10 +2,11 @@ import { readFile } from 'node:fs/promises'
 import type { Task, TaskStep } from '../../shared/schema.ts'
 import { activePlan, openWork, planProgress } from '../../shared/plan.ts'
 import { planProgressKey, shortKey } from '../../shared/drive.ts'
-import { nudgeMax } from '../../shared/conv-mode.ts'
+import { panelTrail } from '../../shared/end-turn.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { taskState, wrapUpPending } from '../../shared/task.ts'
 import {
+  countDone,
   countEvents,
   lastExit,
   parseLogLine,
@@ -27,6 +28,7 @@ import { getSettings } from '../settings.ts'
 import { taskLogPath } from '../task-log.ts'
 import { currentVersion } from '../update.ts'
 import type { TasksScope } from './scope.ts'
+import { awaitedJob } from '../background.ts'
 
 /*
  * 状态诊断的事实收集：一棵对话树（对话、子对话、子任务、工作流节点）每个节点的现场快照、落盘状态、
@@ -121,7 +123,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
   const order = [...tasks.keys()].sort(
     (a, b) => depth(a) - depth(b) || (tasks.get(a)!.createdAt || '').localeCompare(tasks.get(b)!.createdAt || ''),
   )
-  // 所有节点用同一份设置：推进次数上限要写到 nudge 事实里，和面板实际用的对齐
+  // 诊断文件里带上和进程存活有关的几项设置
   const st = await getSettings()
   for (const id of order) {
     const tk = tasks.get(id)!
@@ -159,12 +161,12 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       cliAlive: taskCliAlive(id),
       runningTool: runningTool(tk),
       helpers: helpers.length,
-      jobs: sc.background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length,
+      jobs: sc.background.list(id).filter(awaitedJob).length,
       waitsOn,
       trace: cliTrace(id),
       exit: lastExit(parsed),
       ...(plan && { plan: planFacts(tk, plan) }),
-      ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n, max: nudgeMax(tk, st.nudgeMax) } }),
+      ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n } }),
       ...stalledFacts(id),
     }
     const agent = tk.usage.agents[tk.agentId]
@@ -181,7 +183,9 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       facts,
       verdict: verdictOf(facts, now),
       processes: procOf(id),
-      counts: countEvents(parsed),
+      counts: countDone(countEvents(parsed), tk.turnEnds),
+      // 和 end_turn 记录的上限（50 条）对齐，点「它说做完了」筛出来的条数才对得上计数
+      trail: panelTrail(tk, 80),
       log: lines,
     })
     // 子任务、工作流节点：挂在派它的那一步（或对话本身）下面

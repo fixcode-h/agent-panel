@@ -672,3 +672,26 @@ test('API 方式：模型后缀按协议自动切换', () => {
   assert.equal(agentRun({ cli: 'commandcode', model: 'm-responses' }, s).model, 'p/m-anthropic')
   assert.equal(agentRun({ cli: 'commandcode', model: 'm-anthropic' }, s).model, 'p/m-anthropic')
 })
+
+test('读取模型：DeepSeek 的 Anthropic 协议走厂家的 /models（Bearer），不打会回 404 的 /anthropic/v1/models', async () => {
+  const real = globalThis.fetch
+  const calls: { url: string; headers: Record<string, string> }[] = []
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, headers: init.headers as Record<string, string> })
+    return new Response(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }, { id: 'deepseek-flash' }] }))
+  }) as typeof fetch
+  try {
+    const models = await fetchApiModels({
+      name: 'DeepSeek',
+      protocol: 'anthropic',
+      baseUrl: '',
+      apiKey: 'sk-xxxx',
+      authHeader: 'x-api-key',
+    })
+    assert.deepEqual(models, ['deepseek-flash', 'deepseek-v4-pro'])
+    assert.equal(calls[0].url, 'https://api.deepseek.com/models')
+    assert.equal(calls[0].headers.authorization, 'Bearer sk-xxxx')
+  } finally {
+    globalThis.fetch = real
+  }
+})

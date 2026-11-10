@@ -338,6 +338,21 @@ export async function spansFileDiff(cwd: string, spans: TreeSpan[], file: string
   return out.length > MAX_DIFF ? `${out.slice(0, MAX_DIFF)}\n${t('…（差异太长，只显示前面一部分）')}` : out
 }
 
+/**
+ * 几段改动的完整差异（工作总结取关键代码用，见 server/summary-diff.ts）：一段失败就报错，由调用方决定跳过；
+ * 不截断，字数由调用方按自己的上限截
+ */
+export async function spansDiff(cwd: string, spans: TreeSpan[]) {
+  const parts: string[] = []
+  for (const s of spans) {
+    if (!s.from || !s.to || s.from === s.to) continue
+    const r = await git(cwd, 'diff', '--no-color', '--no-renames', '-U3', s.from, s.to)
+    if (r.code !== 0) throw new Error(r.stderr.trim() || t('读不出改动'))
+    if (r.stdout.trim()) parts.push(r.stdout)
+  }
+  return parts.join('\n')
+}
+
 /** 二进制安全地跑一次 git：cat-file、merge-file 的输出不能按行拆 */
 function gitRaw(cwd: string, args: string[]) {
   return new Promise<{ code: number; stdout: Buffer; stderr: string }>((resolve) => {

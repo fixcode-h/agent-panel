@@ -1,4 +1,4 @@
-import { Bell, Bot, GitMerge, Info, RotateCw, Terminal, Workflow } from 'lucide-react'
+import { Bell, Bot, GitMerge, Hand, Info, RotateCw, Terminal, Waypoints, Workflow } from 'lucide-react'
 import { t } from '@shared/i18n'
 
 // 从 Messages.tsx 拆出来：那个文件到了行数上限。面板行（PanelRow）按 panel 字段取图标和动词
@@ -15,9 +15,13 @@ export const PANEL_KIND = {
   helpers: { icon: Bot, verb: () => t('子任务结果') },
   child: { icon: Workflow, verb: () => t('子对话状态') },
   wrapup: { icon: GitMerge, verb: () => t('子对话请求') },
+  // 名下工作流运行的回信（等决定、待合回、完成、终止）：运行不是子对话，图标和子对话状态分开
+  workflow: { icon: Waypoints, verb: () => t('工作流运行') },
   note: { icon: Info, verb: () => t('设置') },
   // 结束前钩子拦住它、在同一轮里接着做（ADR 0049）：普通过程行，不用提醒的强调色，点开看交给它的说明
   hook: { icon: RotateCw, verb: () => t('面板让它接着做') },
+  // 等你操作结束（完成了 / 做不了 / 跳过）推回去的那一句：手的图标和「等你操作」面板一致
+  action: { icon: Hand, verb: () => t('你的操作') },
 } as const
 
 /** 正文开头的【面板】【子对话状态】这类标签是说给 AI 的，界面上第一行不重复它 */

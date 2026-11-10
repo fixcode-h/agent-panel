@@ -11,6 +11,7 @@ const paddings = {
 
 /**
  * 卡片：卡片底 + 大圆角 + 很淡的投影（浅色下）；不描边，和页面靠底色分开。
+ * 「Claude Code」配色下卡片底和弹窗、面板底同色，--shadow-card 换成一道分隔线色的细线来分开（index.css）。
  * interactive：整张可点（列表里的角色、工作流卡片），悬停底色加深一点，键盘聚焦有焦点圈；
  * 要真正可点还得调用方给 onClick，并在 as="button" 或 role / tabIndex 里选一种
  */

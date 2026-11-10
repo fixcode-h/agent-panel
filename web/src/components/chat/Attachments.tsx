@@ -17,12 +17,14 @@ import {
   Paperclip,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
+import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
 import {
   blocksSend,
   itemStatus,
+  needFrames,
   routeOf,
   sendAttachments,
+  withVideoFrames,
   type ItemLike,
   type ItemState,
 } from '@shared/attachment-view'
@@ -40,6 +42,7 @@ import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
 import { attachChip, chipMarker, type ChipKind } from '@shared/composer'
 import { quoteName } from '@/lib/quote'
+import { isVideoFile } from '@shared/video'
 import { t } from '@shared/i18n'
 
 /** 附件加进来、上传失败时通知输入框：照着在光标处放一张卡片 */
@@ -102,7 +105,7 @@ export async function attachmentUrl(a: Attachment, opts: { thumb?: boolean } = {
   return `/api/uploads/raw?path=${encodeURIComponent(a.path)}${w}`
 }
 
-const readBase64 = (f: Blob) =>
+export const readBase64 = (f: Blob) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader()
     r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
@@ -121,6 +124,8 @@ interface DraftItem {
   done: Attachment
   source?: string
   state?: ItemState
+  video?: boolean
+  frames?: Attachment[]
 }
 
 /** 上次没发出去的附件；只记拷好 / 传好的，路径还在找、还在拷的切回来也续不上 */
@@ -141,6 +146,8 @@ function readAttachments(key: string): Item[] {
         source: x.source,
         // 老草稿没有状态：已经存下来的都是能发送的
         state: x.state ?? (x.done.ref ? 'ref' : 'ready'),
+        video: x.video,
+        frames: x.frames,
       }))
   } catch {
     return []
@@ -170,8 +177,6 @@ export function presetAttachments(key: string, list: Attachment[]) {
  */
 export function useAttachments(draftKey?: string) {
   const [items, setItems] = useState<Item[]>(() => (draftKey ? readAttachments(draftKey) : []))
-  const count = useRef(0)
-  count.current = items.length
   // 同一次事件里连着加（粘贴好几个路径）时还没重新渲染，按这份最新的算
   const itemsRef = useRef(items)
   itemsRef.current = items
@@ -184,6 +189,12 @@ export function useAttachments(draftKey?: string) {
   settingsRef.current = settings
   const names = useRef(new Set<string>())
   names.current = new Set(items.map((x) => x.name))
+  /**
+   * 输入框挂了截帧弹窗时（见 components/video/useVideoIntake.tsx）：视频作为卡片放进输入框、只引用原路径，
+   * 点卡片打开截帧弹窗，发送时换成选好的帧图片（Agent 收不了视频）。没挂时照旧当文件
+   */
+  const videoHost = useRef<((key: string) => void) | null>(null)
+  const asVideo = (name: string, mime: string) => !!videoHost.current && isVideoFile(name, mime)
   // 同一个输入框换了对话：换成那个对话的附件
   const shown = useRef(draftKey)
   if (shown.current !== draftKey) {
@@ -208,6 +219,8 @@ export function useAttachments(draftKey?: string) {
           done: x.done,
           source: x.source,
           state: x.state,
+          video: x.video,
+          frames: x.frames,
         }))
       if (done.length) localStorage.setItem(ATTACH + draftKey, JSON.stringify(done))
       else localStorage.removeItem(ATTACH + draftKey)
@@ -313,21 +326,21 @@ export function useAttachments(draftKey?: string) {
    */
   const pickLarge = useCallback(
     async (hooks?: AttachHooks) => {
-      const room = MAX_ATTACHMENTS - count.current
       try {
         const { files } = await api.pickFiles()
         if (!files.length) return
-        if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
         const limit = largeBytes(settingsRef.current)
         const taken = new Set(names.current)
         const fresh: Item[] = []
-        for (const a of files.slice(0, Math.max(room, 0))) {
+        for (const a of files) {
           // 同一个文件已经附上（或者正在处理）：不重复加
           if (claimed.current.has(a.path) || [...itemsRef.current, ...fresh].some((x) => x.source === a.path)) continue
           claimed.current.add(a.path)
           const name = uniqueName(a.name, taken)
           taken.add(name)
-          const ref = routeOf(a.size, limit) === 'ref'
+          // 视频只引用原路径：不拷、不上传，发送时换成选好的帧
+          const video = asVideo(a.name, a.mime)
+          const ref = video || routeOf(a.size, limit) === 'ref'
           fresh.push({
             key: crypto.randomUUID(),
             name,
@@ -336,6 +349,7 @@ export function useAttachments(draftKey?: string) {
             source: a.path,
             done: ref ? { ...a, name, ref: true } : undefined,
             state: ref ? 'ref' : 'copying',
+            video: video || undefined,
           })
         }
         if (!fresh.length) return
@@ -406,23 +420,18 @@ export function useAttachments(draftKey?: string) {
   )
 
   /**
-   * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字），
-   * 超过上限的不加
+   * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字）。
+   * 附件不限个数（用户 2026-11-05 定的）
    */
   const addRefs = useCallback((list: Attachment[]) => {
     const names = new Map<string, { name: string; kind: ChipKind }>()
     const taken = new Set(itemsRef.current.map((x) => x.name))
     const fresh: Item[] = []
-    let full = false
     for (const a of list) {
       if (names.has(a.path)) continue
       const had = itemsRef.current.find((x) => x.done?.path === a.path || x.source === a.path)
       if (had) {
         names.set(a.path, { name: had.name, kind: itemKind(had) })
-        continue
-      }
-      if (itemsRef.current.length + fresh.length >= MAX_ATTACHMENTS) {
-        full = true
         continue
       }
       const name = a.quote !== undefined ? a.name : uniqueName(a.name, taken)
@@ -435,10 +444,10 @@ export function useAttachments(draftKey?: string) {
         done: { ...a, name },
         source: a.path,
         state: 'ref',
+        video: (a.quote === undefined && asVideo(a.name, a.mime)) || undefined,
       })
       names.set(a.path, { name, kind: attachChip(a) })
     }
-    if (full) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     if (fresh.length) {
       itemsRef.current = [...itemsRef.current, ...fresh]
       setItems((xs) => [...xs, ...fresh])
@@ -454,11 +463,11 @@ export function useAttachments(draftKey?: string) {
    * added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：这张卡片不加了
    */
   const add = useCallback(
-    async (files: File[], hooks?: AttachHooks, opts: { clipboard?: boolean } = {}) => {
-      const room = MAX_ATTACHMENTS - count.current
-      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+    async (input: File[], hooks?: AttachHooks, opts: { clipboard?: boolean } = {}) => {
+      const files = input
+      if (!files.length) return
       const taken = new Set(names.current)
-      const fresh = files.slice(0, Math.max(room, 0)).map((f) => {
+      const fresh = files.map((f) => {
         // 粘贴的截图没有像样的文件名
         const base =
           f.name && f.name !== 'image.png'
@@ -472,6 +481,7 @@ export function useAttachments(draftKey?: string) {
           name,
           mime: f.type,
           preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
+          video: asVideo(f.name, f.type),
         }
       })
       if (!fresh.length) return
@@ -483,6 +493,7 @@ export function useAttachments(draftKey?: string) {
         size: x.file.size,
         preview: x.preview,
         state: 'locating',
+        video: x.video || undefined,
       }))
       itemsRef.current = [...itemsRef.current, ...shown]
       setItems((xs) => [...xs, ...shown])
@@ -506,15 +517,18 @@ export function useAttachments(draftKey?: string) {
         if (cancelled.current.has(x.key)) continue
         const hit = found.get(index)
         if (!hit) {
-          // 找不回原路径：不太大的照旧上传一份；太大的让用户自己选文件来引用
-          if (x.file.size <= MAX_ATTACHMENT_BYTES) uploadOrRef(x, hooks)
+          // 找不回原路径：不太大的照旧上传一份；太大的、视频（截帧要读原文件）让用户自己选文件来引用
+          if (x.file.size <= MAX_ATTACHMENT_BYTES && !x.video) uploadOrRef(x, hooks)
           else {
             cancelled.current.add(x.key)
             setItems((xs) => xs.filter((i) => i.key !== x.key))
             hooks?.failed?.(x.name)
-            toast.error(t('没找到「{name}」在本机的位置，可以手动选择这个文件来引用它', { name: x.name }), {
-              action: { label: t('选择文件'), onClick: () => void pickLarge(hooks) },
-            })
+            toast.error(
+              x.video
+                ? t('没找到视频「{name}」在本机的位置，可以手动选择这个视频', { name: x.name })
+                : t('没找到「{name}」在本机的位置，可以手动选择这个文件来引用它', { name: x.name }),
+              { action: { label: x.video ? t('选择视频') : t('选择文件'), onClick: () => void pickLarge(hooks) } },
+            )
           }
           continue
         }
@@ -526,7 +540,7 @@ export function useAttachments(draftKey?: string) {
           continue
         }
         claimed.current.add(hit.path)
-        const ref = routeOf(hit.size, limit) === 'ref'
+        const ref = x.video || routeOf(hit.size, limit) === 'ref'
         setItems((xs) =>
           xs.map((i) =>
             i.key === x.key
@@ -546,7 +560,6 @@ export function useAttachments(draftKey?: string) {
   )
   /** 已经在服务端生成好的附件（引入的会话记录） */
   const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
-    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     setItems((xs) => [
       ...xs,
       {
@@ -566,7 +579,6 @@ export function useAttachments(draftKey?: string) {
    * 卡片马上放进输入框，不用等上传
    */
   const addQuote = useCallback((text: string, hooks?: AttachHooks) => {
-    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     const { id, name } = quoteName(text)
     const key = crypto.randomUUID()
     const size = new Blob([text]).size
@@ -608,6 +620,10 @@ export function useAttachments(draftKey?: string) {
     if (item && inFlight(item)) cancelled.current.add(key)
     setItems((xs) => xs.filter((x) => x.key !== key))
   }
+  /** 截帧弹窗里选好的帧：记在视频卡片上，发送时换上去 */
+  const setFrames = useCallback((key: string, frames: Attachment[]) => {
+    setItems((xs) => xs.map((x) => (x.key === key ? { ...x, frames } : x)))
+  }, [])
   /** 卡片从文字里没了（退格删掉、整段剪掉）：这些名字的附件不再发送 */
   const removeNames = useCallback((gone: Set<string>) => {
     if (!gone.size) return
@@ -642,6 +658,22 @@ export function useAttachments(draftKey?: string) {
     remove,
     removeNames,
     clear,
+    videoHost,
+    setFrames,
+    /** 还没选帧的视频（发送前要先选帧）；没有时 undefined */
+    needFrames: items.find(needFrames),
+    /**
+     * 发送前的文字：视频卡片换成选好的帧图片卡片。有还没选帧的视频时打开截帧弹窗、返回 null，调用方停下不发
+     */
+    prepare: (text: string): string | null => {
+      const need = items.find(needFrames)
+      if (need && videoHost.current) {
+        toast.info(t('先选好视频「{name}」里要发的帧', { name: need.name }))
+        videoHost.current(need.key)
+        return null
+      }
+      return withVideoFrames(text, items)
+    },
     /** 还没拿到路径、会拦住发送的那个附件的状态文案（没有时为空）：查找中 / 上传中 */
     waiting: (() => {
       const x = items.find(blocksSend)

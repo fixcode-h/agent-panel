@@ -1,17 +1,13 @@
 import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
-import {
-  NewTaskInput,
-  Task,
-  type Agent,
-  type Attachment,
-  type Project,
-  type DeliveryHow,
-  type TaskMessage,
-} from '../../shared/schema.ts'
+import { afterTurnCleanup } from './bug-cleanup.ts'
+
+import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
+import { loadProjectExperience } from '../project-experience.ts'
+import { recordExperience } from '../experience-learn.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import {
   beginRun,
@@ -26,8 +22,6 @@ import {
   dropEndNotes,
   endRun,
   trackWait,
-  newTask,
-  runRunning,
   taskDeleted,
   withAttachments,
   withTaskModel,
@@ -36,7 +30,7 @@ import { isChatMode, settledTodos, turnRole } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { expandSlash } from '../slash.ts'
-import { childAskInitial } from '../../shared/child-ask.ts'
+
 import { getSettings } from '../settings.ts'
 import { detectClis } from '../detect.ts'
 import { gitHead, gitNumstat } from '../exec/git.ts'
@@ -57,26 +51,19 @@ import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
-import { flowLine } from '../../shared/flow-child.ts'
 import { statSync } from 'node:fs'
 import path from 'node:path'
-import {
-  childFilesInfo,
-  hitList,
-  holdTurn,
-  holderState,
-  normClaimPath,
-  ownP4Files,
-  releaseUnchanged,
-  scopeOverlaps,
-} from '../claims.ts'
+import { holderState, ownP4Files, releaseUnchanged } from '../claims.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../doc-root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
 import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { upgradeChildToBug } from './bug-upgrade.ts'
 import { pauseHelper, pauseUnit } from '../../shared/run-stops.ts'
+import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
+import { createSpawnChild } from './spawn-child.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
@@ -89,174 +76,7 @@ const freshChance = (m: { panel?: unknown; child?: unknown; peer?: { rel: string
   !m.panel && !m.child && (!m.peer || (m.peer.rel === 'parent' && m.peer.kind === 'task'))
 
 export function createRun(sc: TasksScope) {
-  /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
-  const collided = new Map<string, Set<string>>()
-  /**
-   * 子对话一轮结束：认领不放（共用目录里改动要等父对话验收才算交出去），这一轮真改过的文件记到它名下（见 claims.ts 的 holdTurn）。
-   * 已经归别的还没交出去的兄弟的就是撞了：子对话里留一行给用户看，给父对话写信并叫醒（过 holdWake）——能拍板的是父对话。
-   * 不叫醒子对话：它这一轮刚结束，开新一轮会清掉它可能刚交的收尾请求，还会在父对话没决定时自己去「修」别人的文件。
-   * 走独立分支的子对话各改各的，撞了是合并时的事，不提醒也不汇报父对话
-   */
-  async function checkCollisions(child: Task) {
-    // changes 是累计的：同一处撞车下一轮结束还会再查出来，只报新的，别每轮都叫醒父对话
-    const told = collided.get(child.id) ?? collided.set(child.id, new Set()).get(child.id)!
-    const hit = holdTurn(sc.claims, child).filter((h) => !told.has(`${h.path}\n${h.byId}`))
-    hit.forEach((h) => told.add(`${h.path}\n${h.byId}`))
-    if (!hit.length) return
-    const list = hitList(hit)
-    child.messages.push({
-      id: randomUUID(),
-      role: 'system',
-      agentId: '',
-      step: '',
-      text: t(
-        '这些文件已经归别的子对话、它的改动还没被父对话验收，你这一轮也改了：{list}。同一个目录里后写的会覆盖先写的，已经交给父对话安排先后。',
-        { list },
-      ),
-      tools: [],
-      at: new Date().toISOString(),
-    })
-    await sc.noteParent(
-      child.parentTaskId,
-      child,
-      `【文件撞了】子对话「${child.title}」（id ${child.id}）这一轮改了已经归别的子对话、改动还没被你验收的文件：${list}。` +
-        `它们和你共用一个目录，后写的会覆盖先写的（P4 里一个文件也分不进两个 changelist）。验收前先定谁的版本算数：` +
-        `用 send_to_conversation 让一方撤回，或等另一方被你验收后再改，必要时自己核对文件内容；不要同时收下两边。`,
-      undefined,
-      undefined,
-      undefined,
-      await sc.peerOf(child, 'child', 'report', '和兄弟子对话改了同一批文件'),
-      undefined,
-      true,
-    )
-  }
-
-  /**
-   * 给父对话新建一个子对话并在后台开始执行：父对话的 create_conversation 和面板替卡住的子对话找人接手
-   * （server/tasks/stuck-child.ts）都走这里。agentId 不写用「执行」角色
-   */
-  async function spawnChild(
-    parent: Task,
-    project: Project,
-    agents: Agent[],
-    {
-      title,
-      message,
-      files,
-      agentId,
-      flow,
-      bug,
-      edits,
-    }: {
-      title: string
-      message: string
-      files?: string[]
-      agentId?: string
-      flow?: Task['flow']
-      bug?: boolean
-      /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
-      edits?: boolean
-    },
-  ) {
-    const worker = agents.find((a) => a.origin === 'builtin:worker')
-    const subId = randomUUID()
-    const at = new Date().toISOString()
-    const input = NewTaskInput.parse({
-      projectId: parent.projectId,
-      mode: 'chat',
-      parentTaskId: parent.id,
-      rootTaskId: parent.rootTaskId || parent.id,
-      agentId: agentId || worker?.id || project.defaultAgentId,
-      prompt: message,
-      // 父对话的「子对话也提问」决定这条新子对话开不开提问
-      askUser: childAskInitial(parent),
-    })
-    // 工作流子对话（ADR 0044）：第一轮由引擎按流程图跑，跑完交给执行角色收尾，所以角色固定用「执行」
-    // 父对话派来的 Bug（ADR 0045）：修之前要交诊断报告给用户确认
-    const draft = {
-      ...newTask(input, undefined, at, subId, [], {}),
-      id: subId,
-      ...(flow && { flow }),
-      ...(bug && { bug }),
-      ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
-    }
-    // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
-    // 只有直接调接口没给时才退回用户消息开头
-    if (title.trim()) draft.title = title.trim().slice(0, 80)
-    // 第一条要求是父对话交代的：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
-    if (draft.messages[0]) draft.messages[0].peer = await sc.peerOf(parent, 'parent', 'task', message)
-    // 共用目录模式：父对话划好的范围先替它认领，别的子对话改这些文件要等它做完
-    // 独立分支模式不认领：两个子对话可以同时改同一个文件，各在自己的 worktree 里改互不影响
-    const sharedDir = project.childIsolation !== 'worktree'
-    const got =
-      sharedDir && files?.length
-        ? sc.claims.claim(parent.id, { taskId: subId, title: draft.title }, files)
-        : { granted: [], held: [] }
-    let both: { path: string; with: string }[] = []
-    const round = (files ?? []).map(normClaimPath).filter(Boolean)
-    if (round.length && !sharedDir) {
-      const mine = sc.scopes.get(parent.id) ?? sc.scopes.set(parent.id, new Map()).get(parent.id)!
-      const others: { title: string; files: string[] }[] = []
-      for (const [otherId, s] of mine) {
-        const other = sc.live.get(otherId)?.task
-        if (!other || !isolated(other)) {
-          mine.delete(otherId)
-          continue
-        }
-        others.push({ title: s.title, files: s.files })
-        // 兄弟没声明范围、但已经改了这些文件：同样算重叠
-        others.push({ title: other.title, files: other.changes.map((c) => c.path) })
-      }
-      both = scopeOverlaps(round, others)
-      mine.set(subId, { title: draft.title, files: round })
-    }
-    const sub = await sc.store.create({ ...draft, id: subId })
-    void sc.startChild(sub, message, agents)
-    return {
-      ok: true,
-      id: sub.id,
-      title: sub.title,
-      info: [
-        `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
-        ...childFilesInfo({
-          isolation: sharedDir ? 'claim' : 'worktree',
-          granted: got.granted,
-          held: got.held,
-          both,
-        }),
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    }
-  }
-
-  /**
-   * 工作流子对话把同一个工作流再跑一次（start_workflow 带 again，ADR 0044）：流程图状态改回「起一次新的运行」，
-   * 之后照常把消息交给它，它的下一轮从头跑流程图。还在跑的不改，先等它停下或终止；返回空串是改好了
-   */
-  async function rerunChildFlow(parentId: string, id: string, input: string) {
-    const cur = sc.live.get(id.trim())?.task ?? (await sc.store.get(id.trim()))
-    if (!cur || cur.parentTaskId !== parentId) return `找不到你名下的子对话 ${id}`
-    if (!cur.flow) return `子对话「${cur.title}」不是工作流子对话：要它接着做用 send_to_conversation`
-    if (cur.working || runRunning(cur))
-      return `工作流子对话「${cur.title}」还在跑：等它停下，或者先用 stop_workflow 终止再重跑`
-    const flow = { ...cur.flow, input, run: 0, handed: false, cancelled: undefined }
-    cur.flow = flow
-    if (!sc.live.has(cur.id)) await sc.store.update(cur.id, { ...cur, flow })
-    return ''
-  }
-
-  /** 面板自己替父对话新建子对话（不经父对话的那一轮）：按父对话所在项目和现在的角色列表来 */
-  async function spawnChildOf(parentId: string, input: { title: string; message: string; agentId?: string }) {
-    const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
-    if (!parent || taskDeleted(parent)) return { ok: false, info: '找不到父对话' }
-    const project = parent.projectId ? await sc.deps.projects.get(parent.projectId) : null
-    if (!project) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-    const agents = withProjectParams(await sc.deps.agents.list(), project)
-    // 点名的角色停用、删掉了：退回「执行」
-    const agentId = agents.some((a) => a.id === input.agentId && a.enabled) ? input.agentId : undefined
-    return spawnChild(parent, project, agents, { ...input, agentId })
-  }
+  const { checkCollisions, spawnChild, spawnChildOf } = createSpawnChild(sc)
 
   async function start(
     entry: Live,
@@ -444,8 +264,16 @@ export function createRun(sc: TasksScope) {
           ? (turn) => {
               sc.settleChildTurn(entry.task, turn)
               void sc.checkBudget(entry.task)
+              // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug-cleanup.ts）
+              void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
+                log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
+              )
             }
           : (turn) => {
+              // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，
+              // 只在 run 收尾处排的话要等闲置回收才学，用户看到的就是「对话完成了却不学」。
+              // 面板接着推它做（nudgePlan / nudgeWrapUp）会在几秒内让它跑起来，learn 到点见它没完成就不学，等下一轮结束再排
+              if (entry.task.projectId) void sc.learnExperience(task.id)
               void sc.checkBudget(entry.task).then((over) => {
                 if (over || task.mode !== 'chat') return
                 // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
@@ -533,6 +361,9 @@ export function createRun(sc: TasksScope) {
               : undefined,
         // 顶层项目对话收尾名下的子对话：子对话 submit_merge 请求后由它合回、标完成、删分支（ADR 0005）
         finishChild: !task.parentTaskId && task.projectId ? (id) => sc.finishChild(entry.task, id) : undefined,
+        // 名下的工作流运行（不是子对话）：起、补充、退回、代答、终止、合回（server/tasks/flow-runs.ts）
+        runs:
+          !task.parentTaskId && !task.flowRun && found?.id ? sc.flowRuns.hostFor(() => entry.task, found) : undefined,
         // 父对话之间：看同一项目里的其他父对话、给它们传话（编译占位时的协调就靠它）
         peers: coordinatorRole
           ? async () =>
@@ -611,6 +442,7 @@ export function createRun(sc: TasksScope) {
                   }
                 return sc.background.start({
                   ...input,
+                  // 交来的 service 原样带上（BgJob.service）：常驻服务不催、不算在等结果
                   taskId: task.id,
                   root: dir,
                   env: noPushEnv(entry.task, project?.gitPolicy),
@@ -643,12 +475,27 @@ export function createRun(sc: TasksScope) {
                   : { ok: false, info: '这里记不了项目教训' },
             }
           : undefined,
+        // 项目经验：设置里关了总开关就整个不给（工具、开头那一行都没有）；每次查都现读，刚学到的也能查到
+        experience:
+          task.projectId && settings.experience.enabled
+            ? {
+                list: async () => {
+                  const p = await sc.deps.projects.get(task.projectId)
+                  return p ? (await loadProjectExperience(p, agents)).items : []
+                },
+                record: async (input) => {
+                  const p = await sc.deps.projects.get(task.projectId)
+                  if (!p?.path) return { ok: false, info: '这个项目没有目录，存不了经验' }
+                  return recordExperience(p, agents, input, task.parentTaskId || task.id)
+                },
+              }
+            : undefined,
         releaseFiles:
           task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
             : undefined,
         listConversations: async () => {
-          const kids = (await sc.store.list()).filter((x) => x.parentTaskId === entry.task.id)
+          const kids = await sc.store.childrenOf(entry.task.id)
           // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
           return kids.map((k) => {
             const cur = sc.live.get(k.id)?.task ?? k
@@ -674,7 +521,6 @@ export function createRun(sc: TasksScope) {
                 childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) }),
               ),
               lastActivityAt: childLastActivity(cur),
-              flow: flowLine(cur) || undefined,
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
               createdAt: cur.createdAt,
@@ -682,18 +528,21 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, flow, bug, edits }) => {
+        createConversation: async ({ title, message, files, agentId, bug, edits, ignoreDirty, level }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          return spawnChild(entry.task, project, agents, { title, message, files, agentId, flow, bug, edits })
+          // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
+          const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
+          if (dirty && edits) return { ok: false, info: dirty }
+          const r = await spawnChild(entry.task, project, agents, { title, message, files, agentId, bug, edits, level })
+          return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },
-        sendToConversation: async (id, message, opts) => {
-          // 同一个工作流再跑一次（start_workflow 带 again）：先把子对话的流程图状态改回「起一次新的运行」
-          if (opts?.rerun) {
-            const bad = await rerunChildFlow(entry.task.id, id, message)
-            if (bad) return { ok: false, info: bad }
-          }
+        sendToConversation: async (id, message, bug) => {
+          // 写了 kind: "bug"：先把子对话标成用户报的 Bug，交过去的话前面带上说明（bug-upgrade.ts）
+          const up = bug && (await upgradeChildToBug(sc, entry.task.id, id, message, bug.level))
+          if (up && !up.ok) return up
           // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
-          const r = await sc.sendToChild(entry.task.id, id, message, undefined, 'task')
+          const r = await sc.sendToChild(entry.task.id, id, up ? up.message : message, undefined, 'task')
+          if (up && r.ok) r.info = `${r.info}\n${up.note}`
           // 交给子对话就算回答了它的提问：父对话里的提问卡片收起
           if (r.ok && sc.settleAsks(entry.task, id, message, 'parent')) entry.rev++
           return r
@@ -790,8 +639,16 @@ export function createRun(sc: TasksScope) {
         } else await flush(keepTime, true)
         // 只删自己的执行位：这一轮收尾时如果已经有新的一轮占住了，不能把它删掉
         sc.release(entry)
+        // 工作流运行这一轮收完：等决定、待合回、完成时给父对话写信（放执行位之后：父对话收信马上合回、退回时不会撞上）
+        if (!prewarm && entry.task.flowRun)
+          void sc.flowRuns
+            .afterTurn(entry.task)
+            .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
         // 整轮结束了，没被节点取走的补充不会再有人取
         forgetNotes(task.id)
+        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）。
+        // 保活的 CLI 在 onTurnEnd 里已经排过；这里接住不保活的 CLI 和工作流（工作流整轮跑完才到这里），重复排只会重置计时
+        if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
         const endedOk = entry.task.status === 'done' || (entry.stop && entry.stopReason === 'finish')

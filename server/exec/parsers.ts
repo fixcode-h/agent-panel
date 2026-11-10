@@ -3,6 +3,7 @@ import type { CliLimits, ToolUse } from '../../shared/schema.ts'
 import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
 import { t } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
+import { toolKindOf } from '../../shared/hooks.ts'
 import type { OutputSpec } from '../../shared/cli-spec.ts'
 import { isToolLookup, panelToolName, toolLookupLabel } from '../../shared/panel-tools.ts'
 import { clip } from '../../shared/text.ts'
@@ -57,7 +58,7 @@ export type CliEvent =
       detail?: string
     }
   /** 模型在生成、但不显示的输出（Pi 流式给出的工具参数）：只算进实时速度，不然写大文件时速度会被校准得偏高 */
-  | { type: 'gen'; text: string }
+  | { type: 'gen'; text: string; /** 开始写的是哪个工具的调用（Claude Code 的 content_block_start） */ tool?: string }
   /**
    * 用量。context 是当前上下文占用；add* 是这次新增的 token：输入都按「含缓存」计，缓存命中、缓存写入是输入里的一部分
    */
@@ -93,6 +94,8 @@ export type CliEvent =
       attempt?: number
       maxAttempts?: number
       error?: string
+      /** CLI 自己报了这次请求等了多久没回应（首字节超时）：面板就不再另算「之前多久没有输出」 */
+      waitedMs?: number
     }
   /** CLI 自动重试成功了：只用来把前面那张「正在重试」收成已恢复，不再多提示一行 */
   | { type: 'retry_ok'; text: string; attempt?: number }
@@ -143,6 +146,8 @@ export type AskReply = {
   advice?: string
   /** 允许并且这个对话里一直允许这类 */
   always?: boolean
+  /** 工作流节点确认时只是追问：回答问题、不改结果（见 engine.ts 的确认循环） */
+  ask?: boolean
 }
 
 export type Parser = (obj: any) => CliEvent[]
@@ -232,6 +237,8 @@ function rel(cwd: string, p: unknown) {
 
 // ---- Claude Code：--output-format stream-json --verbose --include-partial-messages ----
 function claudeTool(name: string, input: any, cwd: string): CliEvent {
+  // 跑命令的工具按 CLI 定义的 toolNames.shell 认（Bash，Windows 上还有 PowerShell），不在这里写死名字
+  if (toolKindOf(getCli('claude')?.hooks, name) === 'shell') return claudeShell(input)
   const file = rel(cwd, input?.file_path ?? input?.notebook_path ?? input?.path)
   const tool = (t: Omit<ToolUse, 'detail'> & { detail?: string }): Extract<CliEvent, { type: 'tool' }> => ({
     type: 'tool',
@@ -255,16 +262,13 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       const del = edits.reduce((n, e) => n + lines(e?.old_string), 0)
       return { ...tool({ kind: 'edit', label: file, detail: `+${add} -${del}` }), file: { path: file, add, del } }
     }
-    case 'Bash':
-      // Claude Code 拿不到命令的中间输出，所以这里不标 running、也不发 tool_delta，只能跑完一次性显示：
-      // stream-json 的 --include-partial-messages 只流文字、思考和工具入参（input_json_delta），不流工具结果；
-      // 它内部确实有 bash_progress，但只在 CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID 下才转成 tool_progress，
-      // 而且只带 elapsed_time_seconds 和 task_id，没有输出正文。不要在这里补心跳行假装实时
-      return tool({ kind: 'run', label: oneLine(String(input?.command ?? '')) })
     case 'Grep':
       return tool({ kind: 'search', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'Glob':
       return tool({ kind: 'search', name: t('查找文件'), label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
+    case 'LS':
+      // 老版本 Claude Code 的列目录工具：CLI 定义里登记在 read 类，以前这里没认，落到 other
+      return tool({ kind: 'search', name: t('查找文件'), label: rel(cwd, input?.path) })
     case 'ToolSearch':
       return tool(toolLookup(input))
     case 'WebSearch':
@@ -305,6 +309,16 @@ const toolLookup = (input: any) => ({
 const searchLabel = (pattern: unknown, where: string) => `${pattern ?? ''}${where ? ` · ${where}` : ''}`
 
 /** 没有专门处理的工具：MCP 工具拆出服务名，其他的用工具名，后面跟第一个参数，和 Claude Code 的「工具名(参数)」一样 */
+/**
+ * Claude Code 跑命令的工具（Bash、PowerShell）。拿不到命令的中间输出，所以这里不标 running、也不发 tool_delta，只能跑完一次性显示：
+ * stream-json 的 --include-partial-messages 只流文字、思考和工具入参（input_json_delta），不流工具结果；
+ * 它内部确实有 bash_progress，但只在 CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID 下才转成 tool_progress，
+ * 而且只带 elapsed_time_seconds 和 task_id，没有输出正文。不要在这里补心跳行假装实时
+ */
+function claudeShell(input: any): CliEvent {
+  return { type: 'tool', tool: { kind: 'run', label: oneLine(String(input?.command ?? '')), detail: '' } }
+}
+
 function otherTool(name: string, input: any): CliEvent {
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
   const first = Object.values(input ?? {}).find((v) => typeof v === 'string' && v.trim()) as string | undefined
@@ -343,8 +357,9 @@ export function claudeParser(cwd: string): Parser {
     if (o.type === 'system' && o.subtype === 'api_retry') {
       retrying = Number(o.attempt) || retrying + 1
       // 首字节超时（网关在 CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS 内连响应头都没回）时 error 只有 unknown，
-      // 等了多久在 waited_ms 里：带上才看得出是「网关没回」，不是模型报错（用户 2026-11-03 报子任务一启动就重试）
-      const waited = Number(o.waited_ms) || 0
+      // 等了多久在 waited_ms 里：带上才看得出是「网关没回」，不是模型报错（用户 2026-11-03 报子任务一启动就重试）。
+      // 2.1.318 起挪进了 no_response.waited_ms，老版本在顶层，两处都认
+      const waited = Number(o.no_response?.waited_ms ?? o.waited_ms) || 0
       const err = oneLine(
         [
           o.error_status,
@@ -367,6 +382,21 @@ export function claudeParser(cwd: string): Parser {
         attempt: retrying,
         ...(typeof o.max_retries === 'number' ? { maxAttempts: o.max_retries } : {}),
         ...(err ? { error: err } : {}),
+        ...(waited ? { waitedMs: waited } : {}),
+      })
+      return out
+    }
+    // 输出到一半断流（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS 到点）：Claude Code 在 message_stop 上带 abandoned_blocks
+    // 丢掉没写完的这段，只有思考时直接重新请求，不发 api_retry（2.1.318 对真实网关实测）。不接的话界面上
+    // 思考突然断掉又从头来，看不出发生了什么；已经写了正文的，接着会以 Stream idle timeout 结束这一轮
+    if (o.type === 'stream_event' && o.event?.type === 'message_stop' && o.abandoned_blocks) {
+      retrying += 1
+      out.push({
+        type: 'notice',
+        text: t('模型输出中途断了，Claude Code 丢掉没写完的这段、重新请求'),
+        kind: 'retry',
+        attempt: retrying,
+        error: 'stream idle timeout',
       })
       return out
     }
@@ -438,6 +468,9 @@ export function claudeParser(cwd: string): Parser {
           live.output += add
           if (add) out.push({ type: 'usage', addOutput: add })
         }
+      } else if (e.type === 'content_block_start' && e.content_block?.type === 'tool_use') {
+        // 开始写一个工具调用：入参要整段写完才会报调用，界面先显示「正在写…」（runner 的 drafting）
+        out.push({ type: 'gen', text: '', tool: String(e.content_block.name ?? '') })
       } else if (e.type === 'content_block_start' && e.content_block?.type === 'text' && textInMsg) {
         out.push({ type: 'text_delta', text: '\n\n' })
       } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta') {
@@ -500,6 +533,20 @@ export function claudeParser(cwd: string): Parser {
             patch,
           })
     } else if (o.type === 'result' || (o.total_cost_usd !== undefined && o.usage)) {
+      // 重试之后一直没等到模型回应就结束了：Claude Code 把重试用完了。补一条 retry_failed，
+      // runner 据此把前面那张「正在重试」收掉，不然它一直挂成「还在重试」，和下面的失败原因并存
+      if (retrying && o.type === 'result') {
+        const err = oneLine(String(o.result ?? o.subtype ?? ''), 300)
+        out.push({
+          type: 'notice',
+          text: t('自动重试 {n} 次后仍然失败：{error}', { n: retrying, error: err || t('原因未知') }),
+          failed: true,
+          kind: 'retry_failed',
+          attempt: retrying,
+          ...(err ? { error: err } : {}),
+        })
+        retrying = 0
+      }
       const c = claudeInput(o.usage ?? {})
       const gap = (total: number, seen: number) => Math.max(0, total - seen)
       // 费用是会话累计：这一轮只记比上次多了多少（第一次就是总数）；没报这个字段时按不变算
@@ -857,8 +904,9 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         }
         case 'usage': {
           // 各家 CLI 对 inputTokens 的口径不同：有的已含缓存（AI SDK），有的只算未命中的部分。
-          // 定义里写明 inputExcludesCache（Pi 的 usage.input 只算未命中的）时总是加上缓存；没写时按大小猜：
-          // 比缓存还小说明是不含缓存的口径。只靠猜不行：某一次未命中的比命中的多时会少算缓存那部分
+          // 定义里写明 inputExcludesCache（Pi 的 usage.input 只算未命中的）时照写的办；没写时才按大小猜：
+          // 比缓存还小说明是不含缓存的口径。只靠猜不行：未命中量正好等于缓存量时会少算一半，
+          // 所以内置定义报了缓存就必须写明（shared/cli-spec.test.ts 拦），猜只留给用户自己加的定义
           const rawIn = num(g('addInput'))
           const read = num(g('addCacheRead'))
           const write = num(g('addCacheWrite'))
@@ -868,7 +916,11 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
             window: num(g('window')),
             model: str(g('model')) || undefined,
             addInput:
-              rawIn === undefined ? undefined : e.inputExcludesCache === true || rawIn < cache ? rawIn + cache : rawIn,
+              rawIn === undefined
+                ? undefined
+                : (typeof e.inputExcludesCache === 'boolean' ? e.inputExcludesCache : rawIn < cache)
+                  ? rawIn + cache
+                  : rawIn,
             addOutput: num(g('addOutput')),
             addCacheRead: read,
             addCacheWrite: write,

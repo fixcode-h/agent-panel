@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { MessageCircleQuestion } from 'lucide-react'
 import type { TaskRequest } from '@shared/schema'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { askUserDefault } from '@/lib/askUserDefault'
 import { useData } from '@/lib/data'
-import { RequestCard } from '@/components/tasks/RequestCard'
+import { RequestCard, asksQuestion } from '@/components/tasks/RequestCard'
+import { FloatAbove } from './FloatAbove'
 import { Button } from '@/components/ui/button'
 import { ToggleIconButton } from '@/components/ui/icon-button'
 import { Modal } from '@/components/ui/modal'
@@ -182,24 +184,22 @@ export function useNewAskUser() {
  */
 export function useScopeRequests(scope: string, active: boolean) {
   const [list, setList] = useState<TaskRequest[]>([])
+  const scopeRef = useRef(scope)
+  useLayoutEffect(() => {
+    scopeRef.current = scope
+  }, [scope])
   useEffect(() => {
-    if (!active) {
-      setList([])
-      return
-    }
-    let stop = false
-    const load = () =>
-      api
-        .asks(scope)
-        .then((l) => !stop && setList(l))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, 1200)
-    return () => {
-      stop = true
-      clearInterval(timer)
-    }
-  }, [scope, active])
+    if (!active) setList([])
+  }, [active])
+  // 换了范围立即重查；返回前又换了范围的那次结果不要（按发出时的范围核对）
+  usePolling(
+    () => {
+      const at = scope
+      return api.asks(at).then((l) => at === scopeRef.current && setList(l))
+    },
+    active ? 1200 : null,
+    scope,
+  )
   const answer = async (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => {
     await api.answerAsk(id, r)
     setList((l) => l.filter((x) => x.id !== id))
@@ -214,8 +214,31 @@ export function useScopeRequests(scope: string, active: boolean) {
   return { list, answer, close }
 }
 
-/** 等你处理的审批和提问，贴在输入框上方 */
-export function ScopeRequests({ scope, active, className }: { scope: string; active: boolean; className?: string }) {
+/**
+ * 等你处理的审批和提问，贴在输入框上方。
+ * float：要你点头的请求（运行命令、改文件、调用工具）浮在上面的消息上，不把输入框往下顶；提问照旧原地显示。
+ * 没有输入框可靠的地方（设置弹窗、侧栏里的一个按钮下面）不传，照旧排在原地
+ */
+export function ScopeRequests({
+  scope,
+  active,
+  className,
+  float,
+  onFloatHeight,
+}: {
+  scope: string
+  active: boolean
+  className?: string
+  float?: boolean
+  /** 浮层的高度：调用方按它给消息区底部多留一段 */
+  onFloatHeight?: (h: number) => void
+}) {
   const { list, answer, close } = useScopeRequests(scope, active)
+  if (float && !asksQuestion(list))
+    return (
+      <FloatAbove onHeight={onFloatHeight}>
+        <RequestCard requests={list} className={cn('w-full shadow-pop', className)} onAnswer={answer} />
+      </FloatAbove>
+    )
   return <RequestCard requests={list} className={className} onAnswer={answer} onClose={close} />
 }

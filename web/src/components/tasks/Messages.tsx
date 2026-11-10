@@ -1,38 +1,24 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
-import { BugReportLine } from './DiagnosisDialog'
-import type { AnalysisScope } from '@shared/analysis-home'
-import { ChevronRight, Brain, CircleAlert, Clock, Info, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
+import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'
 import { Button } from '@/components/ui/button'
-import type { Alert, Task, TaskMessage, ToolUse } from '@shared/schema'
-import { makeAlert } from '@shared/alerts'
+import { helperResultCount } from '@/lib/helper-results'
+import type { Task, TaskMessage, ToolUse } from '@shared/schema'
 import { toast } from '@/lib/toast'
 import { api } from '@/lib/api'
-import { AlertRow } from './AlertRow'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRows } from './ToolRow'
-import { useAiLook } from '@/lib/ai-look'
 import { fmtDuration } from '@/lib/tasks'
-import {
-  addFoldCut,
-  foldCuts,
-  foldStats,
-  keptOut,
-  replyText,
-  segOpenOf,
-  splitFolds,
-  toggleSegOpen,
-  unfoldedText,
-} from '@/lib/fold'
-import { dedupePeerReports } from '@/lib/peer-dedupe'
+import { replyText } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
+import { DispatchSlot, InlineRoutes, useRouteAnchors } from './route-context'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
 import { useChildOpen, useChildList, useRunViewOpen, useRunViewTip } from './child-open'
 import { runRow, type WorkflowRun } from '@/lib/run-row'
-import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
+import { NoteMessage } from './SystemNote'
 import { stripNext } from '@shared/builtin/default'
 import { convStateText, deliveryStatus, isPlanNudge } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
@@ -46,99 +32,17 @@ import { ReplyHeader } from '@/components/ui/reply-header'
 import { FrostBarBg } from '@/components/ui/frost'
 import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
-import { RunningNow, runningRows, runningTools } from './RunningNow'
-import { ConvChangesCard } from './TurnChanges'
+import { RunningNow, runningRows } from './RunningNow'
 import { useAgentView } from '@/lib/agent-view'
-import { conversationAround } from '@shared/fix'
 import { useNow } from '@/lib/useNow'
 import { t } from '@shared/i18n'
+import { useOwnedRuns } from '@/lib/owned-runs'
+import { liveRuns, OwnedRunCards } from './OwnedRunCards'
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
-function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
+export function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
   for (let i = list.length - 1; i >= 0; i--) if (ok(list[i])) return i
   return -1
-}
-
-export function SystemNote({
-  text,
-  error,
-  alert,
-  className,
-  conversation,
-  cwd,
-  home,
-}: {
-  text: string
-  error?: boolean
-  /** 报错、警告的分类和原始信息；旧数据只有 error 时按正文归类 */
-  alert?: Alert
-  className?: string
-  /** 报错前后的对话：交给 AI 时一起带上，它才知道出错时在做什么 */
-  conversation?: string
-  /** 报错所在的项目目录 */
-  cwd?: string
-  /** 报错属于哪个对话：「AI 处理」按它定分析对话开在哪 */
-  home?: AnalysisScope
-}) {
-  // 报错和警告都画成带底色的一行，点开看这是什么、怎么办和原始信息（见 shared/alerts.ts）。
-  // className 是给居中的说明用的，不传给它：点开的说明要左对齐
-  if (alert || error)
-    return (
-      <AlertRow
-        alert={alert ?? makeAlert('error', text)}
-        text={text}
-        conversation={conversation}
-        cwd={cwd}
-        home={home}
-      />
-    )
-  return (
-    <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
-      <span className="flex h-[1.625em] shrink-0 items-center">
-        <Info className="h-3.5 w-3.5" />
-      </span>
-      <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
-    </div>
-  )
-}
-
-/**
- * 对话里的系统消息：用户对提问的回答像用户消息一样显示在正文里，其他的是一行说明。
- * 报错的「AI 处理」带上这条所在的对话（前后几条）和项目路径，AI 才看得出出错时在做什么
- */
-export function NoteMessage({
-  m,
-  msgs,
-  task,
-  className,
-}: {
-  m: TaskMessage
-  /** 整个对话：出错时把这条前后的几条一起交给 AI */
-  msgs?: TaskMessage[]
-  /** 任务：出错时带上项目路径（独立分支里执行时是分支目录） */
-  task?: Task
-  className?: string
-}) {
-  const { projects } = useData()
-  if (m.planStart) return null // 计划启动的那条提示只是把计划输入又抄了一遍，不画出来（按标记判断，不看文案）
-  if (m.bugReport) return <BugReportLine text={m.text} />
-  if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
-  const around = msgs && (m.error || m.alert) ? conversationAround(msgs, msgs.indexOf(m)) : ''
-  const cwd =
-    task?.worktree?.state === 'active'
-      ? task.worktree.path
-      : (projects.find((p) => p.id === task?.projectId)?.path ?? '')
-  return (
-    <SystemNote
-      text={m.text}
-      error={m.error}
-      alert={m.alert}
-      className={className}
-      conversation={around}
-      cwd={cwd}
-      home={task ? { kind: 'task', task } : undefined}
-    />
-  )
 }
 
 /**
@@ -320,7 +224,7 @@ const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
 
 /** 工具行只用到任务的这几样；后台命令、诊断报告（ADR 0045）的状态变了，那一行才重画（停转 / 开始转） */
 type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
-  Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses'>>
+  Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses' | 'projectId'>>
 const jobsSig = (k?: ToolTask) => `${k?.jobs?.map((j) => `${j.id}:${j.state}`)}|${k?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {
@@ -356,7 +260,7 @@ const sig = (m: TaskMessage) =>
  * 吸住时照 Claude Code 网页版顶栏做成毛玻璃通栏（用户 2026-10-31 要求）：底色铺满整个滚动区的宽度，
  * 下面滚过去的内容半透明地模糊透出来，吸住时底边一道细线；文字仍和回复对齐（见 index.css 的 frost-bar）
  */
-function StickyAuthor({ author }: { author: Author }) {
+export function StickyAuthor({ author }: { author: Author }) {
   const { cliName } = useAgentView()
   const cli = cliName({ cli: author.cli })
   return (
@@ -444,7 +348,7 @@ const MessageBody = memo(
         {!hideProcess && m.tools.length > 0 && (
           // 同一轮连续的过程行合成一组：每行默认浅底，行间留一点间距、不画分隔线（见 index.css 的 proc-list）
           <div className="proc-list flex flex-col">
-            <ToolRows tools={m.tools} task={task} />
+            <ToolRows tools={m.tools} task={task} msgId={m.id} />
           </div>
         )}
         {m.text && (
@@ -500,7 +404,7 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
   // 子对话状态放「标题 · 状态」（新数据带 child，旧数据按第一行）
   const head =
     m.panel === 'helpers'
-      ? t('{n} 个子任务交回了结果', { n: Math.max(1, (body.match(/^### /gm) ?? []).length) })
+      ? t('{n} 个子任务交回了结果', { n: helperResultCount(m, body) })
       : m.child && m.panel === 'child'
         ? [m.child.title, convStateText(m.child.state)].filter(Boolean).join(' · ')
         : body
@@ -583,10 +487,15 @@ function ResumeChild({ id }: { id: string }) {
  * 夹在 AI 回复里、不是谁说的话的几种消息：面板推回的结果、子对话的提问。
  * 和工具调用一样缩进在头像后面；不是这几种返回 null
  */
-function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
+export function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
   // 派出的子任务在输入框上方的「子任务」栏里看：消息流里不再画卡片，
   // 这条消息只用来记派出了哪几个，已完成的那一轮折叠行上仍写着「派出 n 个子任务」
-  if (m.spawned?.length) return <Fragment key={m.id} />
+  if (m.spawned?.length)
+    return (
+      <div key={m.id} data-proc="" className="min-w-0">
+        <DispatchSlot msgId={m.id} tool={-1} />
+      </div>
+    )
   const body =
     m.panel === 'ask' && m.ask ? (
       <ChildAskCard m={m} task={task} teamNames={teamNames} />
@@ -660,6 +569,30 @@ export function Msgs({
   // 滚过去就跟着滚出视口了（按 CLI 显示的对话 StickyAuthor 在整轮外面，所以不受影响）
   const firstMsg = firstAgent >= 0 ? msgs[firstAgent] : undefined
   const sticky = !author && stickyAuthor && !compactFirst && firstMsg && agents.find((x) => x.id === firstMsg.agentId)
+  const routes = useRouteAnchors()
+  const msgNode = (m: TaskMessage, k: number) => {
+    const inline = inlineEntry(m, task, teamNames)
+    if (inline) return inline
+    if (m.role === 'system') return <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
+    // 前面隔着子任务、面板结果时仍算同一段回复：不再重复名字
+    let j = k - 1
+    while (j >= 0 && transparent(msgs[j])) j--
+    return (
+      <AgentMessage
+        key={m.id}
+        m={m}
+        task={task}
+        teamNames={teamNames}
+        live={live && k === lastAgent}
+        slot={k === firstAgent ? slot : undefined}
+        slotKey={k === firstAgent ? slotKey : undefined}
+        author={author}
+        command={command}
+        hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
+        compact={j < 0 ? !!compactFirst : msgs[j].role === 'agent' && msgs[j].agentId === m.agentId}
+      />
+    )
+  }
   return (
     <>
       {sticky && (
@@ -675,29 +608,13 @@ export function Msgs({
         />
       )}
       {lead && <div className="min-w-0">{lead}</div>}
-      {msgs.map((m, k) => {
-        const inline = inlineEntry(m, task, teamNames)
-        if (inline) return inline
-        if (m.role === 'system') return <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
-        // 前面隔着子任务、面板结果时仍算同一段回复：不再重复名字
-        let j = k - 1
-        while (j >= 0 && transparent(msgs[j])) j--
-        return (
-          <AgentMessage
-            key={m.id}
-            m={m}
-            task={task}
-            teamNames={teamNames}
-            live={live && k === lastAgent}
-            slot={k === firstAgent ? slot : undefined}
-            slotKey={k === firstAgent ? slotKey : undefined}
-            author={author}
-            command={command}
-            hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
-            compact={j < 0 ? !!compactFirst : msgs[j].role === 'agent' && msgs[j].agentId === m.agentId}
-          />
-        )
-      })}
+      {msgs.map((m, k) => (
+        // 这条消息发起的分诊紧接在它后面；总包一层 Fragment，分诊出现时正在输出的消息不会被重新挂载
+        <Fragment key={m.id}>
+          {msgNode(m, k)}
+          {routes.has(m.id) && <InlineRoutes msgId={m.id} />}
+        </Fragment>
+      ))}
       {tail}
     </>
   )
@@ -803,6 +720,10 @@ export function RunningFooter({
   isTail?: boolean
 }) {
   const children = useChildList()
+  const openChild = useChildOpen()
+  // 父对话名下的工作流运行（不是子对话）：只在最新一轮、项目里的顶层对话下面列，排在子对话那几行后面
+  const ownerId = (last || latest) && isTail && task?.projectId && !task.parentTaskId && !task.flowRun ? task.id : ''
+  const owned = liveRuns(useOwnedRuns(ownerId))
   // 列什么只算一次，判空和渲染读同一个值：以前判空用 tools、渲染传 live ? [] : tools，
   // 两个表达式能分叉（live 且 tools 非空时判空说「有内容」、RunningNow 却返回 null），
   // 总结下面就会出现一条没有内容的横线
@@ -815,354 +736,23 @@ export function RunningFooter({
   // 工作流那一行画什么、画不画都在这一个值里（runRow 同时管运行状态和「最新的一轮」）
   const run = isTail ? runRow(task, msgs, newest) : undefined
   // 没东西就整个不画：分割线和内容同一个判断，不会在总结下面留一条孤零零的横线
-  if (rows.empty && !run) return null
+  if (rows.empty && !run && !owned.length) return null
   const box = (
     // 和总结之间用一条细线分开（低对比度，和面板里其他分割线一致）：
     // 之前运行区插在总结上面，看不出哪段是总结、哪段是还在跑的东西
     <div className="proc-list flex flex-col border-t border-line/60 pt-1.5" role="group" aria-label={t('运行区')}>
-      <RunningNow task={task} tools={shownTools} jobs={jobs} kids={kids} />
+      {/* 子对话、后台命令那部分照原来的条件才挂（只有工作流卡片时不挂）：它在挂上那一刻读子对话列表、
+          自动弹诊断报告，提前挂上会和子对话列表的加载抢先后 */}
+      {(!rows.empty || run) && <RunningNow task={task} tools={shownTools} jobs={jobs} kids={kids} />}
       {run && <RunRow info={run} />}
+      {owned.length > 0 && (
+        // 和子对话、后台命令那几行之间加一条分割线：上面是对话派出去的，下面是名下的工作流运行
+        <div className={cn(!rows.empty || run ? 'mt-1.5 border-t border-line/60 pt-2' : 'pt-0.5', 'pb-1')}>
+          <OwnedRunCards ownerId={ownerId} runs={owned} onOpen={openChild ?? undefined} />
+        </div>
+      )}
     </div>
   )
   // 回复头、过程行、正文都从同一条左边缘开始，运行区不用再缩进
   return box
-}
-
-/**
- * 一段完成的输出（一个节点、一轮对话）：思考、工具调用、中间的说明、派出的子任务和面板推回的结果都收进一个折叠，
- * 折叠行上写这段过程做了什么，下面只留最后的回复，和 Claude Code 一样；执行中的那段照常流式显示，
- * 回复一完成就自动收起。报错和子对话的提问不收：报错要让人看到，提问要人回答
- */
-export function FoldedRun({
-  msgs,
-  task,
-  teamNames,
-  live,
-  author,
-  command,
-  hideAuthor,
-  stickyAuthor,
-  running,
-  foldId,
-}: {
-  msgs: TaskMessage[]
-  task?: Task
-  teamNames: Set<string>
-  live?: boolean
-  author?: Author
-  /** 启动这些回复的命令 */
-  command?: string[]
-  /** 名字和模型由外面统一显示（对话一轮的吸顶署名） */
-  hideAuthor?: boolean
-  /** 展开时名字行吸顶（按 Agent 显示的对话） */
-  stickyAuthor?: boolean
-  /** 还在运行的工具、后台命令和子对话：放在这一段最后的消息（总结）下面，不收进折叠 */
-  running?: React.ReactNode
-  /** 这一段在一轮里的标识（`轮 key#第几段`）：展开 / 收起的状态按它记，重新挂载、来新内容都不会被打回收起 */
-  foldId?: string
-}) {
-  // AI 分析窗口里过程默认展开（设计稿把读取、搜索、运行一行行列出来，看得到它查了什么）；用户点过的照记下的来
-  const ai = useAiLook()
-  const [open, setOpen] = useState(() => (foldId ? segOpenOf(foldId, ai) : ai))
-  // 折叠段的 id 列表：按内容签名缓存（见下面 toggle 的说明）
-  const foldIds = useRef({ key: '', value: '' })
-  const { agents } = useData()
-  const { modelOf } = useAgentView()
-  const effortOf = useEffortOf()
-  const all = (
-    <Msgs
-      msgs={msgs}
-      task={task}
-      teamNames={teamNames}
-      live={live}
-      author={author}
-      command={command}
-      hideAuthor={hideAuthor}
-      stickyAuthor={stickyAuthor}
-    />
-  )
-  // 折叠行只统计这一段里的操作：一段收尾后又来了新内容时，前面几段各自折一行，不会重复计数
-  const { last, first, parts, failed } = foldStats(msgs)
-  // 没有可折的过程：还在运行的东西接在回复后面（和工具调用一样缩进在头像后面）
-  if (live || last < 0 || !parts.length)
-    return (
-      <>
-        {all}
-        {running}
-      </>
-    )
-  const before = msgs.slice(0, first)
-  // 总结里收尾动作之后的那几段话（见 summaryStart）：只显示文字，接在总结第一段下面，不再重复名字
-  const more = msgs.slice(first + 1, last + 1).filter((m) => m.role === 'agent' && replyText(m).trim())
-  // 搜索跳转要知道「目标在哪一段」（见 message-anchor）：把这一段的 id 挂在开关上。
-  // 直接每次渲染都 join 会在长对话里每 200ms 拼一次上千个 id（实测会拖慢渲染），所以按内容签名缓存：
-  // 流式输出时末尾消息还是同一条，签名不变就沿用上次的字符串（引用也不变，React 比属性时直接命中）
-  const idsKey = `${msgs.length}|${msgs[0]?.id ?? ''}|${msgs[msgs.length - 1]?.id ?? ''}`
-  if (foldIds.current.key !== idsKey) foldIds.current = { key: idsKey, value: msgs.map((m) => m.id).join(' ') }
-  // 折叠开关只跟自己：它放在第一条回复的名字下面，不跟运行区一起挪（运行区已经到总结下面了）
-  const toggle = (
-    <button
-      data-fold-msgs={foldIds.current.value}
-      onClick={() => setOpen(foldId ? toggleSegOpen(foldId, ai) : !open)}
-      aria-expanded={open}
-      title={open ? t('收起过程') : t('展开过程')}
-      className="flex w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-xs text-subtle hover:text-muted"
-    >
-      <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
-      <span className="truncate">{parts.join(' · ')}</span>
-      {failed > 0 && <span className="shrink-0 text-danger">{t('{n} 次失败', { n: failed })}</span>}
-    </button>
-  )
-  // 折叠开关每次都是新画的元素：给内容算个签名，内容没变时整段回复不重画
-  // （运行区已经不在 slot 里了，它挂在 Msgs 的 tail，不影响这条消息的重渲染判断）
-  const toggleKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}`
-  if (open)
-    return (
-      // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方；
-      // 回复是从子任务、面板结果开始的，开关放在最前面，不夹在过程中间；
-      // 运行区挂在所有消息后面（总结下面），用 tail 插进去，不跟开关挤在一起
-      <Msgs
-        msgs={msgs}
-        task={task}
-        teamNames={teamNames}
-        slot={msgs[0].role === 'agent' ? toggle : undefined}
-        slotKey={toggleKey}
-        lead={msgs[0].role === 'agent' ? undefined : toggle}
-        tail={running}
-        author={author}
-        command={command}
-        hideAuthor={hideAuthor}
-        stickyAuthor={stickyAuthor}
-      />
-    )
-  // 收起时：报错和提问照常显示，其余的过程收起来，最后一条回复带上名字和折叠行显示
-  const tail = msgs.slice(last + 1)
-  // 名字行要吸顶时和展开时一样放在整段外面（理由见 Msgs）
-  const sticky = !author && stickyAuthor && agents.find((x) => x.id === msgs[first].agentId)
-  return (
-    <>
-      {sticky && (
-        <StickyAuthor
-          author={{
-            name: sticky.name,
-            cli: sticky.cli,
-            icon: sticky.icon,
-            model: modelOf(sticky),
-            effort: effortOf(sticky),
-            command,
-          }}
-        />
-      )}
-      {before
-        .filter(keptOut)
-        .map(
-          (m) =>
-            inlineEntry(m, task, teamNames) ??
-            (m.role === 'system' && <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />),
-        )}
-      <AgentMessage
-        m={msgs[first]}
-        task={task}
-        teamNames={teamNames}
-        hideProcess
-        hideAuthor={hideAuthor || !!sticky}
-        slot={toggle}
-        slotKey={toggleKey}
-        author={author}
-        command={command}
-      />
-      {more.map((m) => (
-        <AgentMessage
-          key={m.id}
-          m={m}
-          task={task}
-          teamNames={teamNames}
-          hideProcess
-          compact
-          author={author}
-          command={command}
-        />
-      ))}
-      <Msgs
-        msgs={tail}
-        task={task}
-        teamNames={teamNames}
-        author={author}
-        command={command}
-        hideAuthor={hideAuthor || !!sticky}
-        compactFirst={tail[0]?.role === 'agent' && tail[0].agentId === msgs[last].agentId}
-        tail={running}
-      />
-    </>
-  )
-}
-
-/**
- * 通用对话里的一轮回复（工作流以外的 AI 对话都用它）：思考、工具调用和说明按发生的顺序流式显示，
- * 传了 fold 时回复完成后收进一个折叠（项目对话、UI 设计的 AI 对话都传）；完成后下面是时间、复制和各个对话自己的操作
- */
-export function ChatReply({
-  msgs,
-  task,
-  teamNames,
-  live,
-  author,
-  command,
-  hoistSticky,
-  actions,
-  last,
-  latest,
-  fold,
-  children,
-}: {
-  msgs: TaskMessage[]
-  task?: Task
-  teamNames: Set<string>
-  live?: boolean
-  /**
-   * 回复完成后思考、工具调用和中间的说明收进一个折叠，和 Claude Code 一样（项目对话、UI 设计的 AI 对话都用）。
-   * 不传时整轮过程一路平铺，只给不想折叠的调用方用
-   */
-  fold?: boolean
-  author?: Author
-  /** 启动这一轮的命令：按 Agent 显示的对话没有 author，用这个显示在名字那行最右边 */
-  command?: string[]
-  /**
-   * 吸顶署名交给外层（消息列表）渲染到回复体外面：放在 reply-body 里时粘性包含块只有这一段回复的高度，
-   * 滚过回复后面的用户消息就断开了；TaskView 会把一轮回复和后面的用户消息放进同一个容器
-   */
-  hoistSticky?: boolean
-  actions?: React.ReactNode
-  /** 最后一轮：操作一直显示 */
-  last?: boolean
-  /**
-   * 对话里的最新一轮（和父对话自己在不在跑无关）：
-   * 运行区的子对话按它列。以前直接用 last，而 last 含「父对话没在跑」，
-   * 于是父对话自己在跑时运行区整段不渲染，子对话一条也列不出来。
-   */
-  latest?: boolean
-  /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
-  children?: React.ReactNode
-}) {
-  // 外层负责吸顶署名时，这里算好是谁：和 Msgs 里那套判定一致（这一段里第一条回复的 Agent）
-  const { agents } = useData()
-  const { modelOf } = useAgentView()
-  const effortOf = useEffortOf()
-  // 旧数据里同一个子对话的同一份汇报被写了两遍：这一轮显示前先收成一条（见 peer-dedupe）
-  const list = dedupePeerReports(msgs)
-  // 这一轮收尾时折到第几条消息：之后子对话的回报、后台命令结果又进来、CLI 被重新拉起来时，
-  // 前面那段保持折叠，新过程接在它的最后一条回复后面继续显示，不把整轮重新铺开
-  const key = list[0]?.id ?? ''
-  const [cuts, setCuts] = useState<number[]>(() => foldCuts(key))
-  useEffect(() => {
-    // 不是执行中就记下收尾位置：第一次画出来就已经收尾（刷新、切回页签、被下面的计划卡片挤成非最后一段）
-    // 也要记，否则之后子对话回报把它重新拉起来接着输出时，前面这段会被当成执行中整段铺开。
-    // 记录不会重复：位置没往前走时 addFoldCut 返回原来的数组
-    if (live) return
-    setCuts(addFoldCut(key, list.length))
-  }, [key, live, list.length])
-
-  // 一段已经收尾、又有新内容进来时分成几段：前面的段始终折叠，只有最后一段跟着 live 走
-  const parts = fold ? splitFolds(list, cuts) : [list]
-  // 运行区（子对话、子任务、后台命令、工作流运行）挂在最新一段的总结下面；
-  // 结果推回来开了新的一段，就跟着挂到新的总结下面
-  const lastPart = lastIndex(parts, (p) => p.length > 0)
-  // 吸顶头放在回复体外面时由 ChatReply 渲染，名字还是要和 Msgs 里一样取这一段第一条回复的 Agent
-  const firstAgent = hoistSticky ? parts[0]?.find((m) => m.role === 'agent') : undefined
-  const firstAgentDef = firstAgent ? agents.find((x) => x.id === firstAgent.agentId) : undefined
-  const hoistedAuthor: Author | undefined = hoistSticky
-    ? (author ??
-      (firstAgentDef
-        ? {
-            name: firstAgentDef.name,
-            cli: firstAgentDef.cli,
-            icon: firstAgentDef.icon,
-            model: modelOf(firstAgentDef),
-            effort: effortOf(firstAgentDef),
-            command,
-          }
-        : undefined))
-    : undefined
-  const body = (
-    <>
-      {author && !hoistSticky && <StickyAuthor author={author} />}
-      {/* 回复完成后思考、工具调用和中间的说明自动收进一个折叠，折叠行写这段做了什么 */}
-      {parts.map((part, i) => {
-        if (!part.length) return null
-        const tail = i === parts.length - 1
-        // 名字只在第一段显示一次，后面几段接着上面那段接着写；
-        // 按 Agent 显示的对话没有外面的署名栏，名字行自己吸顶，和按 CLI 显示的一样
-        // 吸顶头由外层渲染时，这一段的正文不再自己画名字行
-        const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || hoistSticky || i > 0 }
-        if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author && !hoistSticky} />
-        const isLive = !!live && tail
-        const isTail = i === lastPart
-        // 子对话和后台命令只在最新的一轮上列。两者都跟 latest 走：latest 已经跳过尾部刚发出的
-        // 用户消息（见 latest-turn），发送的一瞬间它们不会整块消失；以前后台命令在对话停着时
-        // 看 last（「最后一段」），尾部多了用户消息就会和子对话分叉，两行一起闪一下
-        const kids = !!latest && isTail
-        const jobs = kids
-        // 运行区放在这一段的总结下面（它自己判空：没东西时连分割线也不画）。
-        // 不是最新的一段也可能有没收尾的工具（子对话回报把它顶下去了），那些工具仍归它自己列；
-        // 子对话、后台命令、工作流运行只在最新的一段列，旧段不重复
-        const footer = (
-          <RunningFooter
-            task={task}
-            msgs={msgs}
-            live={isLive}
-            tools={runningTools(part)}
-            jobs={jobs}
-            kids={kids}
-            last={last}
-            latest={latest}
-            isTail={isTail}
-          />
-        )
-        // 整个对话改了哪些文件：只在对话停下来以后、挂在最后一轮的最后一段下面（用户要的是整个对话的，
-        // 不是每一轮总结下面各一张）；对话还在跑时不出，跑完才出
-        const convCard = task && !isLive && last && isTail && !task.working
-        return (
-          <FoldedRun
-            key={i}
-            {...same}
-            live={isLive}
-            foldId={`${key}#${i}`}
-            stickyAuthor={!author && !hoistSticky && i === 0}
-            running={
-              convCard ? (
-                <>
-                  <ConvChangesCard task={task!} />
-                  {footer}
-                </>
-              ) : (
-                footer
-              )
-            }
-          />
-        )
-      })}
-      {children}
-    </>
-  )
-  // 正文比回复头缩进一格（reply-body）：图标在最左，名字、正文、下面的复制按钮在同一条竖线上
-  // 吸顶头要跨过后面的用户消息时放在回复体外面（hoistSticky），由 TaskView 的分组容器当粘性包含块
-  if (live)
-    return (
-      <>
-        {hoistedAuthor && <StickyAuthor author={hoistedAuthor} />}
-        <div className="reply-body flex flex-col gap-2">{body}</div>
-      </>
-    )
-  const replies = list.map(replyText).filter((x, i) => list[i].role === 'agent' && x.trim())
-  const text = replies.map((x) => x.trim()).join('\n\n')
-  // 朗读只念没折叠的部分：每一段收尾后留在外面的总结；不折叠的对话整轮都在外面，念全部
-  const spoken = fold ? parts.map(unfoldedText).filter(Boolean).join('\n\n') : text
-  return (
-    <>
-      {hoistedAuthor && <StickyAuthor author={hoistedAuthor} />}
-      <ReplyFrame text={text} at={list.at(-1)?.at} actions={actions} always={last} speak={{ id: key, text: spoken }}>
-        <div className="reply-body flex flex-col gap-2">{body}</div>
-      </ReplyFrame>
-    </>
-  )
 }

@@ -219,7 +219,7 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(BUG_FULL_TEXT, /模块文档 → 模块代码 → 调用栈 → 日志（不能跳）/)
   assert.match(BUG_FULL_TEXT, /先拿它的原文在代码里搜到打印它的位置/)
   assert.match(BUG_FULL_TEXT, /现象 ← 日志原文.*← 代码 path:line/)
-  assert.match(BUG_FULL_TEXT, /然后停下等用户（计划里这一步标等待中）/)
+  assert.match(BUG_FULL_TEXT, /先写成日志计划交给用户.*用户同意后再加、请用户复现/)
   assert.match(BUG_FULL_TEXT, /交给「文档」写进 `modules\/<模块>\/README\.md`/)
   const analyzer = role('analyzer')
   assert.match(analyzer, /## 排查报错和日志：先代码后日志/)
@@ -233,6 +233,11 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(orch, /不要为同一个 Bug 开几个子对话同时找/)
   assert.match(orch, /原文整段附进 message/)
   assert.match(orch, /调用栈、证据链（日志原文或测试输出 \+ path:line）、验证结果。缺了就交回让它补/)
+  // 子对话要用户复现、给日志时由子对话自己发：统筹替它发 request_user_action，「等你操作」卡挂在父对话里、
+  // 交回的结果也回不到子对话（用户 2026-11-10 报「这个弹窗怎么跑到父对话中来了」）
+  assert.ok(!orch.includes('原样转给用户'))
+  assert.match(orch, /不由你转给用户、你也不自己发 request_user_action/)
+  assert.match(orch, /不替它发 request_user_action，交回时告诉它自己发/)
 
   // ADR 0046：平时的角色设定只带简易版，完整流程只在用户报的 Bug 里由面板注入，不让每个对话都背着它
   const worker = role('worker')

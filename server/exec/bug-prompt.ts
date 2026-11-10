@@ -15,7 +15,10 @@ export function bugSlash(prompt: string, task: Pick<Task, 'parentTaskId'>, coord
   return bugCommandPrompt(where, text.replace(BUG_CMD, ''))
 }
 
-/** 新会话第一轮要追加的完整流程：用户报的 Bug 才有；这一轮本身是 /bug 时展开里已经带了，不重复 */
-export function bugMethodPrompt(task: Pick<Task, 'bug'>, prompt: string, firstTurn: boolean) {
-  return firstTurn && task.bug && !BUG_CMD.test(prompt.trim()) ? BUG_FULL_TEXT : ''
+/**
+ * 要追加的完整流程：用户报的 Bug 才有。新会话第一轮带；父对话刚把它升级成 Bug（bugMethodPending，ADR 0057）时
+ * 续接的会话里也补带一次。这一轮本身是 /bug 时展开里已经带了，不重复
+ */
+export function bugMethodPrompt(task: Pick<Task, 'bug' | 'bugMethodPending'>, prompt: string, firstTurn: boolean) {
+  return (firstTurn || task.bugMethodPending) && task.bug && !BUG_CMD.test(prompt.trim()) ? BUG_FULL_TEXT : ''
 }

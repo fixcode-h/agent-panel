@@ -1,6 +1,6 @@
 # ADR 0043：工作报告写成人写的日报——条目能挂单子链接，报告能再次生成、旧的原样留着
 
-状态：已接受 · 2026-11-03
+状态：部分被替代（决策第 3 条的一段话模板和第 4 条的不写代码由 [ADR 0056](./0056-work-report-points-and-code.md) 取代） · 2026-11-03
 
 - 影响范围：`shared/summary.ts`（分项、拼报告、提示词）、`shared/builtin/agents.ts`（「每日工作总结」角色的写法）、`shared/lesson-draft.ts`、`server/summary.ts`、`web/src/pages/SummaryPage.tsx`、`web/src/components/summary/`、`web/src/lib/summary-page.ts`、`web/src/lib/demo-summary.ts`
 - 取代：无。沿用工作总结「先提炼分项、逐项采纳、按固定格式拼报告」的两步流程

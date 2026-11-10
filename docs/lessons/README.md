@@ -70,6 +70,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [attachments.md](./attachments.md)               | 附件                             |
 | [background.md](./background.md)                 | 后台命令                         |
 | [builtin.md](./builtin.md)                       | 内置角色、工作流和 Skill         |
+| [card-surface.md](./card-surface.md)             | 卡片的边界                       |
 | [child-idle-ask.md](./child-idle-ask.md)         | 子对话没有输出时自动询问         |
 | [child-merge-fail.md](./child-merge-fail.md)     | 子对话合回失败退回给谁           |
 | [child-wrapup.md](./child-wrapup.md)             | 子对话收尾和独立分支             |
@@ -84,6 +85,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [list-pane.md](./list-pane.md)                   | 中间列表栏                       |
 | [local-image.md](./local-image.md)               | 本机生图（ComfyUI 安装、启动）   |
 | [memory.md](./memory.md)                         | 对话数据的内存和落盘             |
+| [fold.md](./fold.md)                             | 回复的折叠和派单行               |
 | [messages.md](./messages.md)                     | 对话里的消息和条目               |
 | [plan.md](./plan.md)                             | 执行计划                         |
 | [process.md](./process.md)                       | CLI 进程：停止、保活和回收       |
@@ -102,6 +104,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [testing.md](./testing.md)                       | 测试：增删、降级和断言           |
 | [tooling.md](./tooling.md)                       | 面板工具通道（MCP）和 AI 的用法  |
 | [triage.md](./triage.md)                         | 父对话分诊和就地微改动           |
+| [ui-check-demo-data.md](./ui-check-demo-data.md) | 界面检查：改演示数据             |
 | [ui-check-transient.md](./ui-check-transient.md) | 界面检查：会自己消失的元素       |
 | [ui-check.md](./ui-check.md)                     | 界面检查（scripts/ui-check.mjs） |
 | [ui.md](./ui.md)                                 | 界面通用：文案、命名和状态判定   |

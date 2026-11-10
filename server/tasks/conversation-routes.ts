@@ -1,5 +1,6 @@
 import { sourceHeader } from '../../shared/peer-message.ts'
 import { randomUUID } from 'node:crypto'
+import { FlowRun } from '../../shared/task-flow-schema.ts'
 import { z } from 'zod'
 import {
   FollowUpInput,
@@ -42,6 +43,7 @@ import { t } from '../../shared/i18n.ts'
 import { killTree } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import type { TasksScope } from './scope.ts'
+import { returnUserAction } from './user-actions.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
 import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
@@ -115,6 +117,12 @@ export function registerConversationRoutes(s: TasksScope) {
       id: randomUUID(),
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
+      // 直接经接口建的工作流任务（端到端测试、脚本）：一次没有父对话的独立运行，在项目目录里跑完直接完成。
+      // 界面上的工作流都由父对话 start_workflow 起（见 server/tasks/flow-runs.ts）
+      ...(workflow &&
+        input.mode === 'workflow' && {
+          flowRun: FlowRun.parse({ owner: '', workflowName: workflow.name, kind: 'readonly', input: input.prompt }),
+        }),
     }
     // 这里是顶层对话选的独立分支（子对话由项目设置决定）：只看输入框的「独立分支」按钮，不看角色。
     // 勾了就在创建时建好（用户要求），父对话也一样，它的子对话从这个分支开出、合回这里
@@ -156,7 +164,7 @@ export function registerConversationRoutes(s: TasksScope) {
     const id = c.req.param('id')
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
-    const { text, attachments, interrupt, messageId, from } = p.data
+    const { text, attachments, interrupt, messageId, from, userAction } = p.data
     const cur = await s.current(id)
     // 别的对话替它发的：按「同项目的其他对话」记来源；发件对话找不到（被删了）就当用户消息，不丢这条
     const sender = from && from !== id ? await s.current(from) : undefined
@@ -213,12 +221,15 @@ export function registerConversationRoutes(s: TasksScope) {
         log.warn('task', '用户直接发给子对话的要求没能登记到父对话', { task: id, error: (e as Error).message })
         s.alertOn(id, 'delivery', t('这条消息没能登记到父对话的计划里，做完后父对话可能收不到状态'))(e)
       })
+    // 交回「等你操作」：先收口那件事，交给 CLI 的内容前面加一句说明，对话里显示的还是用户的原文
+    const handBack = userAction && !peer ? await returnUserAction(s, id, userAction, text, attachments) : ''
     let prev = s.runningConv(id)
     if (prev?.task.status === 'running') {
       // 执行中：先试能实时送到 CLI 的办法（等下一句、插话、read_user_notes），
       // 都收不下就把消息记进对话，这一轮结束后马上开始新一轮接着处理
       if (!interrupt) {
-        const expanded = await s.expandForWorkflow(prev.task, text)
+        const wf = await s.expandForWorkflow(prev.task, text)
+        const expanded = handBack ? `${handBack}\n\n${wf || text}` : wf
         // 附件先拷进任务的执行目录，交给 CLI 的是那一份
         const placed = await s.placeInTask(prev.task, attachments)
         const msg: TaskMessage = {
@@ -254,7 +265,10 @@ export function registerConversationRoutes(s: TasksScope) {
       return s.bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     }
     try {
-      return c.json(replied('new-turn', await s.followUp(id, { text, attachments, messageId, ...(peer && { peer }) })))
+      const prompt = handBack ? { prompt: `${handBack}\n\n${text}` } : {}
+      return c.json(
+        replied('new-turn', await s.followUp(id, { text, attachments, messageId, ...prompt, ...(peer && { peer }) })),
+      )
     } catch (e) {
       taskLog(id, '发消息失败', { messageId, error: e as Error })
       // 检查执行位和真正占到之间另一条请求先占了：按「正在执行」返回，不能冒成 500
@@ -525,6 +539,8 @@ export function registerConversationRoutes(s: TasksScope) {
       // 子对话被用户直接继续时也一样：它名下连带停下的孙对话一起拉起，它在父计划里的等待恢复成等待中（ADR 0042）
       const kids = task.mode === 'chat' ? await resumeKids(entry.task) : undefined
       if (task.mode === 'chat' && task.parentTaskId) await rearmInParent(task.parentTaskId, id)
+      // 名下随它停的工作流运行接着跑（design.md D4）；运行不是子对话，不在 resumeKids 里
+      if (task.mode === 'chat' && !task.parentTaskId) await s.flowRuns.resumeRunsOf(id)
       // 这次继续拉起了谁、没拉起谁、哪些子任务由面板接着跑：写进对话日志，「状态」诊断里看得到（ADR 0042）
       if (task.mode === 'chat')
         taskLog(id, '继续计划', {

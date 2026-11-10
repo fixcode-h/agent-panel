@@ -1,4 +1,5 @@
 import { CliSkills } from '@/components/settings/CliSkills'
+import { ProjectExperience } from './ProjectExperience'
 import { ProjectMcpSection } from './ProjectMcpSection'
 import { ProjectCliTrust } from './ProjectCliTrust'
 import { ProjectPackages } from './ProjectPackages'
@@ -11,6 +12,7 @@ import {
   FileText,
   FlaskConical,
   GraduationCap,
+  Lightbulb,
   Library,
   Loader2,
   Plug,
@@ -47,6 +49,7 @@ import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { IconButton } from '@/components/ui/icon-button'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { EmptyPanel } from '@/components/ui/empty-panel'
@@ -67,7 +70,8 @@ import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
-import { exposesForVcs, paramsForVcs, resolveDocRoot } from '@shared/doc-root'
+import { exposesForVcs, paramsForVcs } from '@shared/doc-root'
+import { DocRootHint } from './DocRootHint'
 import { cliSettings, orderClis } from '@shared/settings'
 import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
@@ -130,7 +134,7 @@ const blank: ProjectInput = {
   workflowParams: {},
   agentParams: {},
   childIsolation: 'worktree',
-  isolateNew: true,
+  isolateByDefault: false,
   testSteps: [],
   scaledVerify: true,
   lessons: [],
@@ -749,6 +753,12 @@ function Body({
             <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             {t('项目教训')}
           </NavItem>
+          {project?.path && (
+            <NavItem on={section === 'experience'} onClick={() => setSection('experience')}>
+              <Lightbulb className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+              {t('项目经验')}
+            </NavItem>
+          )}
           <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
             <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             Skill
@@ -967,7 +977,13 @@ function Body({
                       <p className="text-xs text-subtle">{t('这个角色没有可调的参数。')}</p>
                     )}
                     {coreKey(a) === 'docsync' && (
-                      <DocRootHint path={draft.path} vcs={vcs} agent={a} values={draft.agentParams[a.id] ?? {}} />
+                      <DocRootHint
+                        projectId={project?.id ?? ''}
+                        path={draft.path}
+                        vcs={vcs}
+                        agent={a}
+                        values={draft.agentParams[a.id] ?? {}}
+                      />
                     )}
                   </Collapsible>
                 ))}
@@ -1092,6 +1108,16 @@ function Body({
                   project={project}
                   initialOpen={item}
                 />
+              </div>
+            ) : section === 'experience' && project ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('项目经验')}
+                  desc={t(
+                    '做某类事最快的路：在哪个目录找、你的说法在代码里叫什么、用什么命令、怎么验证。整个对话完成后面板自动学，学到就加；对话里发「/learn 要学的」也能让角色专门学一条。Agent 需要时按关键词查，不会整份塞进提示词。这里的改动直接保存。',
+                  )}
+                />
+                <ProjectExperience projectId={project.id} initialOpen={item} />
               </div>
             ) : section === 'tests' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -1251,11 +1277,11 @@ function Body({
                 {gitRepo && (
                   <FormSection title={t('独立分支')}>
                     <Checkbox
-                      checked={draft.isolateNew}
-                      onChange={(v) => set('isolateNew', v)}
+                      checked={draft.isolateByDefault}
+                      onChange={(v) => set('isolateByDefault', v)}
                       label={t('新建对话默认开独立分支')}
                       tip={t(
-                        '新建对话时输入框里的「独立分支」默认打开：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里关掉。',
+                        '打开后新建对话时输入框里的「独立分支」默认勾上：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里改。',
                       )}
                     />
                   </FormSection>
@@ -1414,7 +1440,7 @@ function Collapsible({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="rounded-xl bg-card shadow-card">
+    <Card as="section">
       <div className="flex items-center gap-3 px-3.5 py-2.5">
         <button
           type="button"
@@ -1440,7 +1466,7 @@ function Collapsible({
         {actions}
       </div>
       {open && children && <div className="border-t px-3.5 py-3.5">{children}</div>}
-    </section>
+    </Card>
   )
 }
 
@@ -1981,17 +2007,5 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
         </span>
       </div>
     </ParamRow>
-  )
-}
-
-/** P4 项目按文档角色现在选的文档根算出完整路径：改下拉时马上看到会写到哪 */
-function DocRootHint({ path, vcs, agent, values }: { path: string; vcs: string; agent: Agent; values: ParamValues }) {
-  const d = resolveDocRoot(path, vcs, resolveParams(agent.params, values).values)
-  if (!d) return null
-  return (
-    <p className="mt-2 text-xs text-subtle">
-      {t('这个项目的文档根：{dir}', { dir: d.root })}
-      {d.outside ? t('（在项目外，写进去的文档不做 P4 / SVN 操作）') : t('（在项目里，随项目纳入版本管理）')}
-    </p>
   )
 }

@@ -415,7 +415,10 @@
   --warning: #794c02;
   --danger: #a42528;
   --scrim: rgb(0 0 0 / 0.4);
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  /* 卡片和弹窗、面板同是白底，靠投影分不开：照 Claude Code 卡片描一道细线（分隔线色），不做投影。
+     带边框又挂 shadow-card 的浮条用 --shadow-raised，见下面 utilities 层 */
+  --shadow: 0 0 0 1px var(--line);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.05);
   --panel-shadow: none;
   --panel-edge: var(--line);
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
@@ -456,7 +459,9 @@
   --warning: #e49c06;
   --danger: #f17778;
   --scrim: rgb(0 0 0 / 0.5);
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  /* 卡片底（#1f1f1f）和弹窗、面板底一样，原来的黑投影只在卡片下沿留一道脏边：同浅色，改成一道细线 */
+  --shadow: 0 0 0 1px var(--line);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.3);
   --panel-shadow: none;
   --panel-edge: var(--line);
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.32), 0 2px 6px rgb(0 0 0 / 0.2), 0 0 0 1px #303030;
@@ -691,6 +696,17 @@ body,
     animation-timeline: scroll(self);
   }
 }
+/* 页签条放不下时（ui/tab-bar.tsx）：还能往哪边滚，哪边的页签就渐隐 24px，提示后面还有。
+   用遮罩而不是盖一层渐变：页签条在不同底色上都有（设置弹窗、对话页、右栏），遮罩不用知道底色 */
+.tab-scroll[data-fade-start] {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+.tab-scroll[data-fade-end] {
+  mask-image: linear-gradient(to left, transparent, #000 24px);
+}
+.tab-scroll[data-fade-start][data-fade-end] {
+  mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
 /* 展开收起（ui/collapse.tsx）：高度 200ms，内容晚 40ms 淡入；收起时内容先 60ms 淡出 */
 .collapse-grid {
   display: grid;
@@ -868,6 +884,12 @@ body,
   [data-palette='code'].dark .composer-shell:focus-within {
     border-color: #4f4f4f;
   }
+  /* 挂着「交回给」标签（等你操作）：边框换成提问面板的琥珀描边，一眼知道这次发送是交回结果。
+     放在两套配色规则后面、多一级 :has，聚焦时也不被盖掉 */
+  .composer-shell:has([data-hand-back]),
+  [data-palette='code'] .composer-shell:has([data-hand-back]) {
+    border-color: var(--ask-line);
+  }
 }
 /*
  * 「Claude Code」配色下的只有图标的按钮（IconButton，页签条右端那排、行尾操作）：照参考图，
@@ -892,6 +914,11 @@ body,
   [data-palette='code'] .hint-surface {
     color: var(--fg);
     padding: 0.375rem 0.625rem;
+  }
+  /* 自己带边框的浮条（提问条、批量操作条、选中的列表行；输入框另有自己的投影，不归这里管）：卡片的细线描边会贴在边框外面画成两道线，
+     这里还用原来的淡投影 */
+  [data-palette='code'] .shadow-card.border:not(.composer-shell) {
+    box-shadow: var(--shadow-raised);
   }
 }
 /* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
@@ -1023,6 +1050,20 @@ body,
 [data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb:hover,
 [data-palette='code'] ::-webkit-scrollbar-thumb:hover {
   background-color: var(--scroll-thumb-hover);
+}
+/*
+ * 对话正文和会话栏共用右边一条滚动槽（web/src/components/ui/rail-scrollbar.tsx）：鼠标在会话栏那块时，
+ * 槽里画会话栏的滑块，消息区自己的原生滑块藏掉，同一时间只显示一根（用户要求）。只管消息区这一个滚动区，
+ * 正文和会话栏里嵌套的滚动区照常显示。写在各配色的滑块规则后面，同优先级时靠后的生效
+ */
+[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb,
+[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb:hover {
+  background-color: transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+  [data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll] {
+    scrollbar-color: transparent transparent;
+  }
 }
 /*
  * 过程行一组：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）每行一块默认浅底的圆角块，
@@ -1583,17 +1624,132 @@ body,
   border: var(--md-code-border) solid color-mix(in srgb, var(--md-code-color) 18%, var(--line));
   border-radius: var(--md-code-radius);
 }
-/* 能点开的文件路径：和普通行内代码分开，透明底 + 描边，移上去像链接（前面不加图标） */
-.chat-md code.md-path {
-  @apply cursor-pointer transition-colors;
+/*
+ * 文件标记：对话里提到的文件（回复里的行内代码路径、指向本机文件的链接）。
+ * 图标 + 文件名 + 灰色扩展名 + 行号，目录放到悬停卡片上（web/src/lib/file-ref.ts）。
+ * HTML 是字符串拼出来的，图标用 mask 按 data-kind 画，颜色跟着主题 token 走
+ */
+.file-ref {
+  display: inline-flex;
+  /* 图标对齐第一行（用户 2026-11-07：两行时图标居中像是挂在两行中间）；现在名字不折行，一行时和居中一样 */
+  align-items: flex-start;
+  max-width: 100%;
+  padding: 0 0.4em 0 0.3em;
+  vertical-align: -0.2em;
+  line-height: 1.5;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--md-code-radius, 5px);
   color: var(--fg);
-  background: transparent;
-  border-color: var(--line-strong);
+  cursor: pointer;
+  font-size: 0.92em;
+  white-space: nowrap;
+  transition:
+    border-color 0.12s,
+    background-color 0.12s;
 }
-.chat-md code.md-path:hover {
-  @apply underline underline-offset-2;
-  color: var(--md-link-color);
-  border-color: var(--md-link-color);
+.file-ref::before {
+  content: '';
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+  /* 行高 1.5em，图标 1.05em：上边留 (1.5 - 1.05) / 2，落在第一行正中 */
+  margin-top: 0.225em;
+  margin-right: 0.25em;
+  background: currentColor;
+  -webkit-mask: var(--fr-icon) center / contain no-repeat;
+  mask: var(--fr-icon) center / contain no-repeat;
+}
+.file-ref:hover,
+.file-ref[data-menu] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.file-ref:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/*
+ * 一行放下：空间不够时名字（和重名时补的目录）末尾省略成「lt_Common_Comp…」，扩展名和行号始终露出来
+ * （用户 2026-11-07：窄处折成「名字 / .lua」两行不好看，要缩略不换行）。完整路径在悬停卡片上
+ */
+.file-ref .fr-text {
+  display: inline-flex;
+  /* 名字、扩展名、行号按基线对齐：行号是小一号的等宽字，默认的顶端对齐会让它比文件名高出一截（用户 2026-11-07 截图） */
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+}
+.file-ref .fr-name,
+.file-ref .fr-dim {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 名字至少留几个字，不被目录挤成只剩省略号；目录先让 */
+.file-ref .fr-name {
+  flex: 0 1 auto;
+  min-width: min(3em, 100%);
+}
+.file-ref .fr-dim {
+  flex: 0 100 auto;
+}
+.file-ref .fr-ext,
+.file-ref .fr-line {
+  flex: none;
+}
+.file-ref .fr-ext,
+.file-ref .fr-line,
+.file-ref .fr-dim {
+  color: var(--subtle);
+}
+.file-ref .fr-line {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+/* 找不到的文件：只用虚线框和淡色提示，不划掉名字（删除线读起来像「已删除」，用户要求去掉）；右键仍能复制路径 */
+.file-ref[data-missing] {
+  border-style: dashed;
+  color: var(--subtle);
+}
+.file-ref[data-kind='file']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E");
+  color: var(--subtle);
+}
+.file-ref[data-kind='code']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='m10 12.5-2 2 2 2'/%3E%3Cpath d='m14 16.5 2-2-2-2'/%3E%3C/svg%3E");
+  color: var(--md-blue);
+}
+.file-ref[data-kind='data']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1'/%3E%3Cpath d='M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1'/%3E%3C/svg%3E");
+  color: var(--warning);
+}
+.file-ref[data-kind='text']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3Cpath d='M10 9H8'/%3E%3C/svg%3E");
+  color: var(--subtle);
+}
+.file-ref[data-kind='image']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Ccircle cx='10' cy='12' r='2'/%3E%3Cpath d='m20 17-1.3-1.3a2.4 2.4 0 0 0-3.4 0L9 22'/%3E%3C/svg%3E");
+  color: color-mix(in srgb, var(--md-blue) 45%, var(--danger));
+}
+.file-ref[data-kind='sheet']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M8 13h2'/%3E%3Cpath d='M14 13h2'/%3E%3Cpath d='M8 17h2'/%3E%3Cpath d='M14 17h2'/%3E%3C/svg%3E");
+  color: var(--success);
+}
+.file-ref[data-kind='doc']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M8 13h8'/%3E%3Cpath d='M8 17h5'/%3E%3C/svg%3E");
+  color: var(--danger);
+}
+.file-ref[data-kind='media']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='m10 11 5 3-5 3v-6Z'/%3E%3C/svg%3E");
+  color: var(--accent-text);
+}
+.file-ref[data-kind='archive']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9h1'/%3E%3Cpath d='M10 12h1'/%3E%3Cpath d='M10 15h1'/%3E%3Cpath d='M10 18h1'/%3E%3C/svg%3E");
+  color: var(--warning);
+}
+.file-ref[data-kind='folder']::before {
+  --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+  color: var(--warning);
 }
 /* 代码块：一张卡片，顶部语言名、行数、折行和复制按钮 */
 .chat-md .md-code,
@@ -1667,6 +1823,43 @@ body,
 .chat-md .md-ln:hover {
   background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
+/* 诊断报告关键代码里出错的那一行（信息串 mark=N）：和 diff 删除行同一个色相，行号也染上 */
+.chat-md .md-ln.md-mark {
+  background: color-mix(in srgb, var(--md-coral) 14%, transparent);
+}
+.chat-md .md-ln.md-mark::before {
+  color: var(--md-coral);
+}
+/* 诊断报告原文里的标记（workflow-doc.ts 的 applyMarks）：相关的行琥珀淡底、没执行到的行变灰、临时日志行淡下去 */
+.chat-md .md-ln.md-rel {
+  background: color-mix(in srgb, var(--md-gold) 12%, transparent);
+}
+.chat-md .md-ln.md-skip,
+.chat-md .md-ln.md-dim {
+  opacity: 0.5;
+}
+/* 行内真正出错的那几个字：出错的红色波浪下划线 + 淡红底，相关的值琥珀淡底 */
+.chat-md mark.md-hit {
+  color: inherit;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--md-gold) 26%, transparent);
+}
+.chat-md mark.md-hit-fault {
+  background: color-mix(in srgb, var(--md-coral) 22%, transparent);
+  text-decoration: underline wavy var(--md-coral);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+/* 行尾说明：灰色小字跟在行尾，选中复制代码时不带上 */
+.chat-md .md-note {
+  @apply ml-4 text-caption select-none;
+  font-family: var(--font-sans, inherit);
+  color: var(--subtle);
+}
+.chat-md .md-ln.md-dim .md-note {
+  @apply rounded-full px-1.5;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
 /* diff：增删的行整行着色，只用底色（docs/lessons/visual.md） */
 .chat-md .md-ln.md-add {
   background: color-mix(in srgb, var(--md-teal) 11%, transparent);
@@ -1679,6 +1872,81 @@ body,
 }
 .chat-md .md-ln.md-del::before {
   color: var(--md-coral);
+}
+
+/*
+ * 所有 diff 的统一画法（照 Claude Code，web/src/lib/diff-html.ts 出 HTML）：一列行号、一列 +/− 记号、代码；
+ * 加的行绿底、删的行红底，行号槽再深一层；段与段之间一条浅底窄行「⋯ 第 n 行」。行号和记号选不中，复制、标注只带代码。
+ * 默认不折行、整块横向滚动；外层带 data-wrap 时折行（界面组件默认折行，Markdown 代码块点「折行」切换）
+ */
+.cdiff {
+  @apply overflow-x-auto font-mono text-footnote leading-[1.65];
+}
+.chat-md .cdiff {
+  font-size: calc(var(--md-pre-size) * var(--md-base));
+}
+.cdiff-in {
+  @apply inline-block min-w-full py-1;
+}
+.cdiff[data-wrap] .cdiff-in,
+.md-code[data-wrap] .cdiff-in {
+  @apply block;
+}
+.cdiff-row {
+  @apply flex whitespace-pre;
+}
+.cdiff[data-wrap] .cdiff-row,
+.md-code[data-wrap] .cdiff-row {
+  @apply whitespace-pre-wrap [overflow-wrap:anywhere];
+}
+.cdiff-n {
+  @apply w-11 shrink-0 bg-field/60 pr-2 text-right text-subtle/70 tabular-nums select-none;
+}
+.cdiff-s {
+  @apply w-5 shrink-0 text-center select-none;
+}
+.cdiff-c {
+  @apply min-w-0 flex-1 pr-4;
+}
+.cdiff-ctx .cdiff-c {
+  color: color-mix(in srgb, var(--fg) 88%, transparent);
+}
+.cdiff-add {
+  @apply bg-success/10;
+}
+.cdiff-add .cdiff-n {
+  @apply bg-success/20 text-success;
+}
+.cdiff-add .cdiff-s {
+  @apply text-success;
+}
+.cdiff-del {
+  @apply bg-danger/10;
+}
+.cdiff-del .cdiff-n {
+  @apply bg-danger/20 text-danger;
+}
+.cdiff-del .cdiff-s {
+  @apply text-danger;
+}
+.cdiff-hunk {
+  @apply bg-field/70 px-3 py-0.5 font-sans text-caption text-subtle select-none;
+}
+.cdiff-hunk .cdiff-ctx {
+  @apply ml-2 font-mono opacity-80;
+}
+.cdiff-note {
+  @apply px-3 text-subtle/70 italic;
+}
+/* 顶栏的增删数：+n 绿、−n 红 */
+.cdiff-stat {
+  @apply mr-1 font-mono tabular-nums;
+}
+.cdiff-stat-add {
+  @apply text-success;
+}
+.cdiff-stat-del {
+  @apply text-danger;
 }
 
 /*
@@ -2908,7 +3176,8 @@ html [data-sonner-toast][data-styled='true'] {
   right: -100vw;
   z-index: -1;
   pointer-events: none;
-  background-color: color-mix(in oklab, var(--bg) 72%, transparent);
+  /* 默认按页面底色；放在弹窗里时在吸顶元素上设 --frost-bg 换成弹窗底色，不然通栏比弹窗正文深一截 */
+  background-color: color-mix(in oklab, var(--frost-bg, var(--bg)) 72%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
   backdrop-filter: blur(16px) saturate(1.6);
   border-bottom: 1px solid transparent;
@@ -2994,5 +3263,15 @@ html [data-sonner-toast][data-styled='true'] {
   .animate-spin {
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;
+  }
+}
+
+/* 不知道进度时的进度条：一小段来回走（截帧弹窗的 WorkBar） */
+@keyframes work-slide {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
   }
 }

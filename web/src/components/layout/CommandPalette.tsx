@@ -268,7 +268,13 @@ const typing = (el: Element | null) =>
 function siblingTasks(tasks: Task[], route: Route) {
   const inProject = route.page === 'projects' && !!route.id
   return tasks
-    .filter((x) => !taskDeleted(x) && !x.parentTaskId && (inProject ? x.projectId === route.id : !x.projectId))
+    .filter(
+      (x) =>
+        !taskDeleted(x) &&
+        !x.parentTaskId &&
+        !x.flowRun?.owner &&
+        (inProject ? x.projectId === route.id : !x.projectId),
+    )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight,
   Bot,
@@ -23,17 +23,22 @@ import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
 import { api } from '@/lib/api'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
+import { useFileRef, type FileRefTarget } from '@/components/files/FileRefLayer'
 import { DiffDialog } from './DiffDialog'
-import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
+import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
-import { DiagnosisDialog } from './DiagnosisDialog'
+import { useDiagnosisWindow } from './diagnosis-window'
 import { firstShow } from './ChildReport'
-import { Button } from '@/components/ui/button'
 import { PeerLine } from './PeerMessage'
 import { AlertRow } from './AlertRow'
 import { makeAlert } from '@shared/alerts'
 import { Collapse } from '@/components/ui/collapse'
+import { toolRole } from '@/lib/fold-roles'
+import { DispatchSlot } from './route-context'
+import { LearnedCard } from './LearnedCard'
+import { useProjectExperience } from '@/lib/experience-store'
+import type { ProjectExperience } from '@shared/experience'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -80,86 +85,9 @@ export const toolTone: Record<keyof typeof toolIcon, string> = {
   other: 'text-subtle',
 }
 
-interface DiffLine {
-  kind: 'add' | 'del' | 'ctx' | 'hunk'
-  text: string
-  old?: number
-  new?: number
-}
-
-/** 解析 unified diff（也接受没有行号的 @@ @@ 段头）：每行带上改前、改后的行号 */
-export function parseDiff(diff: string): DiffLine[] {
-  const out: DiffLine[] = []
-  let o = 0
-  let n = 0
-  let numbered = false
-  for (const raw of diff.replace(/\n$/, '').split('\n')) {
-    if (raw.startsWith('+++') || raw.startsWith('---') || raw.startsWith('diff ') || raw.startsWith('index ')) continue
-    const h = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/)
-    if (h) {
-      o = Number(h[1])
-      n = Number(h[2])
-      numbered = true
-      out.push({ kind: 'hunk', text: h[3].trim() })
-      continue
-    }
-    if (raw.startsWith('@@')) {
-      numbered = false
-      if (out.length) out.push({ kind: 'hunk', text: '' })
-      continue
-    }
-    const c = raw[0]
-    const text = raw.slice(1)
-    if (c === '+') out.push({ kind: 'add', text, new: numbered ? n++ : undefined })
-    else if (c === '-') out.push({ kind: 'del', text, old: numbered ? o++ : undefined })
-    else
-      out.push({
-        kind: 'ctx',
-        text: c === ' ' ? text : raw,
-        old: numbered ? o++ : undefined,
-        new: numbered ? n++ : undefined,
-      })
-  }
-  return out
-}
-
-/** 文件改动：和 Claude Code 一样按行显示，左边改前 / 改后的行号，新增绿色、删除红色 */
-export function DiffView({ diff }: { diff: string }) {
-  const rows = useMemo(() => parseDiff(diff), [diff])
-  const numbered = rows.some((r) => r.old !== undefined || r.new !== undefined)
-  return (
-    <div className="max-h-[420px] overflow-auto font-mono text-footnote leading-[1.6]">
-      <table className="w-full border-collapse">
-        <tbody>
-          {rows.map((r, i) => {
-            if (r.kind === 'hunk')
-              return (
-                <tr key={i}>
-                  <td colSpan={numbered ? 4 : 2} className={DIFF_HUNK}>
-                    {r.text || '⋯'}
-                  </td>
-                </tr>
-              )
-            const tone = DIFF_TONE[r.kind]
-            return (
-              <tr key={i} className={tone.row}>
-                {numbered && (
-                  <>
-                    <td className={cn(DIFF_GUTTER, 'align-top', tone.gutter)}>{r.old ?? ''}</td>
-                    <td className={cn(DIFF_GUTTER, 'align-top', tone.gutter)}>{r.new ?? ''}</td>
-                  </>
-                )}
-                <td className={cn('w-5 pl-2 align-top select-none', tone.sign)}>
-                  {r.kind === 'add' ? '+' : r.kind === 'del' ? '-' : ' '}
-                </td>
-                <td className="pr-3 whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">{r.text || ' '}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
+/** 文件改动：和差异弹窗、报告里的 diff 一个画法（components/ui/UnifiedDiff.tsx，照 Claude Code）；file 用来按语言着色 */
+function DiffView({ diff, file }: { diff: string; file?: string }) {
+  return <UnifiedDiff diff={diff} file={file} className="max-h-[420px] overflow-y-auto" />
 }
 
 /**
@@ -264,7 +192,10 @@ export function RowShell({
    */
   container,
   boxed,
+  fileRef,
 }: {
+  /** 标题是一个文件（读取、编辑的文件）：悬停看完整路径，右键弹文件菜单（FileRefLayer） */
+  fileRef?: FileRefTarget
   glyph: React.ReactNode
   verb?: React.ReactNode
   /** 动作名后面淡色的小标签（MCP 的服务名） */
@@ -299,6 +230,20 @@ export function RowShell({
   children?: React.ReactNode
 }) {
   const toggle = onToggle
+  const refs = useFileRef()
+  // 文件标题：悬停卡片代替浏览器自带的 title（两个一起出来会叠在一起）
+  const refProps =
+    fileRef && refs
+      ? {
+          'data-file-ref': '',
+          onContextMenu: (e: React.MouseEvent<HTMLElement>) => {
+            e.stopPropagation()
+            refs.menu(e, fileRef, e.currentTarget)
+          },
+          onMouseEnter: (e: React.MouseEvent<HTMLElement>) => refs.hover(e.currentTarget, fileRef),
+          onMouseLeave: refs.leave,
+        }
+      : null
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
@@ -369,7 +314,8 @@ export function RowShell({
                   e.stopPropagation()
                   onOpen()
                 }}
-                title={titleTip || openTip}
+                title={refProps ? undefined : titleTip || openTip}
+                {...refProps}
                 // 只有整行打开的子对话行才用 openTip 当读屏名：别的行（接收消息、工具）标题本身就是名字，
                 // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
                 aria-label={rowOpen ? openTip : undefined}
@@ -381,7 +327,11 @@ export function RowShell({
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate font-mono text-footnote', titleClass)} title={titleTip}>
+              <span
+                className={cn('min-w-0 truncate font-mono text-footnote', titleClass)}
+                title={refProps ? undefined : titleTip}
+                {...refProps}
+              >
                 {title}
               </span>
             )
@@ -468,6 +418,14 @@ export function ToolRow({
         at={raw.startedAt ? new Date(raw.startedAt).toISOString() : undefined}
       />
     )
+  // /learn 让 Agent 记下的经验：工具行下面画同一张经验卡片（标「手动」），能当场看、改、删
+  if (view.learned && task?.projectId)
+    return (
+      <>
+        <ToolLine view={view} task={task} />
+        <LearnedTool id={view.learned} projectId={task.projectId} />
+      </>
+    )
   return <ToolLine view={view} task={task} />
 }
 
@@ -475,13 +433,42 @@ export function ToolRow({
  * 一条消息里的一串工具调用：相邻几次把同一段话交给不同子对话的合成一行「发送消息」（见 groupTools），
  * 展开列出每个收件人
  */
-export function ToolRows({ tools, task }: { tools: ToolUse[]; task?: ToolTask }) {
+export function ToolRows({ tools, task, msgId }: { tools: ToolUse[]; task?: ToolTask; msgId?: string }) {
+  let at = 0
   return (
     <>
-      {groupTools(tools).map((g, i) =>
-        g.length === 1 ? <ToolRow key={i} tool={g[0]} task={task} /> : <SendGroupRow key={i} tools={g} task={task} />,
-      )}
+      {groupTools(tools).map((g, i) => {
+        const k = at
+        at += g.length
+        if (g.length > 1) return <SendGroupRow key={i} tools={g} task={task} />
+        const row = <ToolRow key={i} tool={g[0]} task={task} />
+        // 派单（新开 / 交回子对话、就地微改动、派子任务失败）画成派单行，分诊说明并在里面；
+        // 不在对话页（没有派单的数据）时照旧是工具行
+        return msgId && toolRole(g[0]) === 'dispatch' ? (
+          <DispatchSlot key={i} msgId={msgId} tool={k} fallback={row} />
+        ) : (
+          row
+        )
+      })}
     </>
+  )
+}
+
+/** record_experience 那一行下面的卡片：经验库里现在的这条（还没拉到时不画，拉到了却没有就是被删了） */
+function LearnedTool({ id, projectId }: { id: string; projectId: string }) {
+  const { items } = useProjectExperience(projectId)
+  // 在卡片上删掉后库里没有了：按最后见过的样子接着画（标「已删除」、能撤销），不让卡片一下消失
+  const seen = useRef<ProjectExperience>(undefined)
+  const item = items?.find((x) => x.id === id)
+  if (item) seen.current = item
+  const snap = item ?? seen.current
+  if (!snap) return null
+  return (
+    <LearnedCard
+      projectId={projectId}
+      manual
+      note={{ reason: '', items: [{ id, op: 'add', snapshot: snap }], dropped: [] }}
+    />
   )
 }
 
@@ -536,18 +523,25 @@ function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean)
 }
 
 /** 工具行要的任务字段：诊断报告那一行还要标题和各版报告（ADR 0045） */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> & Partial<Pick<Task, 'title' | 'diagnoses'>>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
+  Partial<Pick<Task, 'title' | 'diagnoses' | 'projectId'>>
 
 function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
-  // 交诊断报告那一行（ADR 0045）：那一版还在等用户确认时一直转圈，「查看报告」只放在这一行上
-  const [diagOpen, setDiagOpen] = useState(false)
+  // 交诊断报告那一行（ADR 0045）：那一版还在等用户确认时一直转圈。「查看报告」不放在这一行，
+  // 报告入口只在运行区的报告卡片上（BugReportCard.tsx，用户 2026-11-07 定），这里只管交上来时自动弹一次
+  // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完这一行会收进折叠、卸载，弹窗不能跟着关
+  const diagTask = task && { id: task.id, title: task.title ?? '', diagnoses: task.diagnoses }
+  const { open: showDiag, dialog: diagDialog } = useDiagnosisWindow(diagTask)
   const report = view.diagnosis ? task?.diagnoses?.find((d) => d.version === view.diagnosis) : undefined
   const waitReport = report?.status === 'pending'
   // 报告交上来时自动弹一次（每一版只弹一次，和父对话页共用记号，见 ChildReport.tsx）
   useEffect(() => {
-    if (waitReport && task?.id && report && firstShow(task.id, report.version)) setDiagOpen(true)
+    if (waitReport && diagTask && report && firstShow(diagTask.id, report.version, report.awaiting ? 'logs' : ''))
+      showDiag(diagTask, true)
+    // 只在这一版变成等你时弹：diagTask 每次渲染都是新对象，不进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [waitReport, task?.id, report])
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
@@ -578,6 +572,15 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
+  // 读取、编辑的文件：标题悬停看完整路径、右键文件菜单；编辑行单击仍是看差异
+  const refs = useFileRef()
+  const fileRef = useMemo<FileRefTarget | undefined>(
+    () =>
+      (tool.kind === 'read' || tool.kind === 'edit') && openFile && isFilePath(tool.label)
+        ? { path: tool.label.trim() }
+        : undefined,
+    [tool.kind, tool.label, openFile],
+  )
 
   const glyph =
     tool.running || bg || waitReport ? (
@@ -623,7 +626,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         tip: t('打开命令行窗口'),
       }
     : file
-      ? { open: () => openFile?.(file), tip: t('查看文件') }
+      ? { open: () => (refs ? void refs.open({ path: file }) : openFile?.(file)), tip: t('查看文件') }
       : view.child && openChild
         ? { open: () => openChild(view.child!), tip: t('在右栏打开子对话') }
         : view.startsRun && task?.id
@@ -654,6 +657,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         verb={verb}
         badge={view.server}
         title={tool.label}
+        fileRef={fileRef}
         detail={detail}
         ms={bg ? (jobStart ? now - jobStart : undefined) : pending ? now - tool.startedAt! : tool.ms}
         open={open}
@@ -662,27 +666,12 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         openTip={target?.tip}
         titleTip={titleTip}
         failed={tool.failed}
-        action={
-          report && (
-            <Button
-              size="sm"
-              variant={waitReport ? 'primary' : 'secondary'}
-              className="h-6 shrink-0 px-2 text-xs"
-              onClick={(e) => {
-                e.stopPropagation()
-                setDiagOpen(true)
-              }}
-            >
-              {t('查看报告')}
-            </Button>
-          )
-        }
       >
         {
           <div className="divide-y divide-pop-edge">
             {isDiff ? (
               <div className="relative">
-                <DiffView diff={input} />
+                <DiffView diff={input} file={tool.label} />
                 <button
                   onClick={() => setWin('edit')}
                   className="absolute top-1.5 right-2 cursor-pointer rounded-md bg-card/90 px-2 py-1 font-sans text-caption text-muted hover:text-fg"
@@ -780,13 +769,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
       {win === 'plan' && task?.id && (
         <RunDialog taskId={task.id} tool={tool} open onOpenChange={(o) => !o && setWin('')} />
       )}
-      {report && task && diagOpen && (
-        <DiagnosisDialog
-          task={{ id: task.id, title: task.title ?? '', diagnoses: task.diagnoses }}
-          open
-          onOpenChange={setDiagOpen}
-        />
-      )}
+      {diagDialog}
       {win === 'out' && (
         <OutputDialog
           title={tool.kind === 'search' ? t('搜索结果') : tool.kind === 'web' ? t('网页') : tool.name || tool.label}

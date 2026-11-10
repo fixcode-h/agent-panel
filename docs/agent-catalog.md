@@ -86,7 +86,6 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `i18n`         | 本地化           | 界面文案翻译与漏翻                                  |      | —（执行默认挂成自动判断）                                            | `mode`（补翻译 / 查漏翻 / 整体校对）`langs`                                                      |
 | `deps`         | 依赖与安全       | 依赖体检与升级                                      |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                                   |
 | `vcs`          | 版本控制（必备） | 版本控制与交付收尾                                  | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                                    |
-| `blender`      | Blender 建模     | 建模、动画与质检                                    |      | blender                                                              | `stage`（含「质检」）                                                                            |
 | `worklog`      | 每日工作总结     | 按天 / 按周提炼需求和 Bug（只读），工作总结页也用它 |      | general                                                              | `material` `day` `projects`                                                                      |
 
 `worklog`（每日工作总结）是唯一只输出报告的角色：`docsync` 负责写文档、`explorer` 只读调研代码、`orchestrator` 负责调度，
@@ -153,20 +152,20 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
    旧对话、旧快照里的引用读出来时按它改写（`setAgentAliases`）。
 3. 用户改过的、还被用着的保留，简介后面补一句合并说明。
 
-| 旧 key         | 合并到      | 参数换算                                          | 原因                                         |
-| -------------- | ----------- | ------------------------------------------------- | -------------------------------------------- |
-| `verifier`     | `tester`    | —                                                 | 「跑验证 + 给验收结论」和测试 Agent 完全重合 |
-| `projecttest`  | `tester`    | —                                                 | 只是换了个名字的测试 Agent                   |
-| `ueintegrator` | `tester`    | —                                                 | 编译只是项目测试步骤里的一条                 |
-| `docs`         | `docsync`   | —                                                 | 和 `docsync` 逐字重复，只差一个用途          |
-| `deliver`      | `vcs`       | —                                                 | 和 `vcs` 逐字重复，推送授权说明已并入        |
-| `researcher`   | `explorer`  | `target=外部资料`                                 | 只读查资料和只读查代码是同一个能力块         |
-| `impact`       | `explorer`  | `target=影响面`                                   | 影响面分析就是带范围的只读调研               |
-| `uescout`      | `explorer`  | `target=影响面` `stack=ue`（`focus` 原样保留）    | UE 侦察只是技术栈不同                        |
-| `second`       | `reviewer`  | `target=方案或结论`                               | 复核结论和评审改动都是「独立找错」           |
-| `architect`    | `analyst`   | `scale=architectural`（`stack` 原样保留）         | 架构方案是方案设计的一个规模档               |
-| `debugger`     | `developer` | `focus=性能问题` → `task=性能问题`，否则 `修 Bug` | 修 Bug、查性能和实现都是写代码               |
-| `blenderqa`    | `blender`   | `stage=质检`                                      | 质检是建模流程里的一个阶段                   |
+| 旧 key         | 合并到      | 参数换算                                          | 原因                                                             |
+| -------------- | ----------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `verifier`     | `tester`    | —                                                 | 「跑验证 + 给验收结论」和测试 Agent 完全重合                     |
+| `projecttest`  | `tester`    | —                                                 | 只是换了个名字的测试 Agent                                       |
+| `ueintegrator` | `tester`    | —                                                 | 编译只是项目测试步骤里的一条                                     |
+| `docs`         | `docsync`   | —                                                 | 和 `docsync` 逐字重复，只差一个用途                              |
+| `deliver`      | `vcs`       | —                                                 | 和 `vcs` 逐字重复，推送授权说明已并入                            |
+| `researcher`   | `explorer`  | `target=外部资料`                                 | 只读查资料和只读查代码是同一个能力块                             |
+| `impact`       | `explorer`  | `target=影响面`                                   | 影响面分析就是带范围的只读调研                                   |
+| `uescout`      | `explorer`  | `target=影响面` `stack=ue`（`focus` 原样保留）    | UE 侦察只是技术栈不同                                            |
+| `second`       | `reviewer`  | `target=方案或结论`                               | 复核结论和评审改动都是「独立找错」                               |
+| `architect`    | `analyst`   | `scale=architectural`（`stack` 原样保留）         | 架构方案是方案设计的一个规模档                                   |
+| `debugger`     | `developer` | `focus=性能问题` → `task=性能问题`，否则 `修 Bug` | 修 Bug、查性能和实现都是写代码                                   |
+| `blenderqa`    | `blender`   | `stage=质检`                                      | 质检是建模流程里的一个阶段（Blender 插件打开时才合并，ADR 0059） |
 
 ## 工作流清单
 
@@ -176,23 +175,22 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 
 ### 改代码的工作流只做到「实现 + 快速检查 + 文档同步」
 
-工作流只由父对话启动（[ADR 0044](adr/0044-workflow-started-by-parent.md)）：协调器用 `start_workflow` 在自己下面开一个工作流子对话，
-面板按流程图把节点跑完，流程图就是那个子对话计划里的一个主步骤。收尾前评审（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）、
-评审后的完整测试和编译、`submit_merge` 合回父对话分支都由那个子对话的执行角色在流程图跑完后做，所以工作流里**不放**：
+工作流只由父对话启动（[ADR 0053](adr/0053-workflow-runs.md)，替代 0044 的工作流子对话）：协调器用 `start_workflow` 起一次工作流运行，
+面板按流程图把节点跑完；改代码的运行在自己的独立分支里跑，流程图末尾由面板接一个固定的「收尾」节点（`shared/flow-run-wrap.ts`）：
+执行角色补齐并提交，验收流程是「评审 → 测试」，不通过把意见交回修，最多 3 轮；都过了停在待合回，由父对话 `finish_workflow` 合回。所以工作流里**不放**：
 
-- 评审节点：评审要带交接单、只看 diff，由执行角色派，计划里单列一步；
-- 完整验收（`review: 'check'` 挂测试验收）：那会把完整测试跑在评审前面，评审改完还得再跑一次；
-- 提交 / 交付节点（`vcs`）：独立分支里收尾就是 `submit_merge`，没有它时执行角色自己派「版本控制」；
-- UE 编译：编译归父对话（[ADR 0004](adr/0004-ue-build-by-parent.md)），子对话评审后申请。
+- 评审节点、完整验收（`review: 'check'` 挂测试验收）：收尾节点已经按「评审 → 测试」的顺序做，放进流程图会重复跑；
+- 提交 / 交付节点（`vcs`）：收尾节点提交，合回由父对话 `finish_workflow` 做；
+- UE 编译：编译归父对话（[ADR 0004](adr/0004-ue-build-by-parent.md)），合回后父对话按申请编译。
 
 实现节点改完只跑项目测试步骤里标「快速」的检查；最后一个节点是「文档」同步，Bug 记录只记用户报的 Bug。
 测试步骤照样注入这些工作流的说明：带 `project-testing` 技能的角色（开发、执行、依赖）也算要跑测试（`withTestSteps`）。
 
 父对话挑工作流看每个工作流的 `when`（什么时候用）、`notFor`（不用）、`kind`（`change` 改代码、跑完合回；`readonly` 一个文件都不写），
-判定规则只写在 `shared/flow-child.ts` 的 `WORKFLOW_PICK_RULES`：用户点名 → 命中适用场景 → 问答 / 排查 / Bug / 小改动一律不起 → 拿不准交子对话。
+判定规则只写在 `shared/flow-run.ts` 的 `WORKFLOW_PICK_RULES`：用户点名 → 命中适用场景 → 问答 / 排查 / Bug / 小改动一律不起 → 拿不准交子对话。
 新增内置工作流必须写这三项，写不出「什么时候用」的说明它不是固定剧本，不该做成工作流。
 
-| key               | 名称                 | 适用场景                               | 主 Agent       | 节点                                                                                   |
+| key               | 名称                 | 适用场景                               | 默认执行角色   | 节点                                                                                   |
 | ----------------- | -------------------- | -------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
 | `project-general` | 通用项目             | 项目默认、边界清楚的功能和改动         | `orchestrator` | analyst（识别现场与方案，确认）→ developer → docsync                                   |
 | `project-ue`      | UE 项目              | UE 的 C++ / Lua 改动                   | `orchestrator` | explorer（ue 侦察）→ analyst（确认）→ developer（不编译）→ docsync                     |
@@ -202,7 +200,6 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                   |
 | `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                             |
 | `release`         | 发布与回滚           | 出包前的范围、产物验证和回滚预案       | `vcs`          | vcs（发布范围）→ tester（产物验证）→ docsync（发布说明 + 回滚）；发布由父对话做        |
-| `blender`         | Blender 建模与动画   | 可拆分模型、动画、导出 UE              | `blender`      | blender 按阶段：规格 → 建模 → 装配到减面 → 质检 → 导出                                 |
 
 ### 已合并的工作流
 

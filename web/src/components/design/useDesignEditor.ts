@@ -89,7 +89,12 @@ export function useDesignEditor(id: string) {
           return next
         }
         const images = mergeImages(cur.images, d.images, deleted.current)
-        return JSON.stringify(images) === JSON.stringify(cur.images) ? cur : { ...cur, images }
+        if (JSON.stringify(images) === JSON.stringify(cur.images)) return cur
+        const next = { ...cur, images }
+        // 合进来的是服务端已有的图（还原切图、生成结果）：页面本来没改动时不算改动，
+        // 否则会拿旧版本号白存一次，服务端版本一更新就报「修改没有存上」
+        if (JSON.stringify(cur) === saved.current) saved.current = JSON.stringify(next)
+        return next
       })
     },
     [setDesigns],
@@ -108,8 +113,11 @@ export function useDesignEditor(id: string) {
       .catch((e) => setError((e as Error).message))
   }, [id, absorb])
 
-  // 有 AI 对话或生成图片在进行时轮询
-  const running = server?.job?.status === 'running' || !!server?.images.some((i) => i.status === 'generating')
+  // 有 AI 对话、生成图片或者还原的某一步在进行时轮询
+  const running =
+    server?.job?.status === 'running' ||
+    !!server?.images.some((i) => i.status === 'generating') ||
+    Object.values(server?.restore?.steps ?? {}).some((st) => st?.status === 'running')
   useEffect(() => {
     if (!running) return
     // 轮询失败不能一直默默转圈：连续失败 3 次提示一次「连不上」，连上后再提示一次

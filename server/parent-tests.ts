@@ -34,6 +34,8 @@ export interface ParentTestDone {
   durationMs: number
   /** 输出结尾：失败时回传给子对话 */
   output: string
+  /** 命令是被停掉的（用户 / 面板主动停），不是自己跑完的：说明里要写清，不能拿它当测试真的跑过 */
+  stopped?: boolean
 }
 
 /** 一步失败时告诉调用方失败在哪一步，由它拼「来自哪个子对话」的说法 */
@@ -44,6 +46,8 @@ export interface ParentTestFail {
   /** 这步的真实耗时，失败时收尾总结里也照实写 */
   durationMs: number
   output: string
+  /** 见 ParentTestDone.stopped */
+  stopped?: boolean
 }
 
 export interface ParentTestsDeps {
@@ -83,6 +87,12 @@ export interface ParentTests {
    * 之后那条命令的结果会被吞掉（不推进、不回传）。
    */
   cancel: (childId: string) => string | undefined
+  /**
+   * 父对话被停止 / 归档 / 删除（不是面板退出）：面板代它跑的测试命令跟着停了，结果不会再回来。
+   * 把正在跑的那批按未通过退回子对话（分支保留、可以重新 submit_merge），别让它永远停在「等父对话测试」。
+   * 面板退出时不要调：重启后 recoverParentTests 把还在 testing 的批次重排
+   */
+  abortByParent: (parentId: string, output: string) => Promise<boolean>
   /** 等手上的事都做完（测试用；调用方也可以不 await） */
   idle: () => Promise<void>
 }
@@ -93,13 +103,17 @@ export const parentTestJobName = (childTitle: string, stepName: string) =>
 
 /** 失败消息里的一步：第几步、步骤名、用时、输出结尾，交给调用方拼「来自哪个子对话」 */
 export function parentTestFailText(failed: ParentTestFail) {
-  const head = t('第 {n} 步「{name}」失败，用时 {time}', {
-    n: failed.index + 1,
-    name: failed.step.name,
-    time: fmtDuration(failed.durationMs),
-  })
+  // 被停掉的命令没跑完：没有真实耗时（可能是排队中被停），写「用时 0s」会误导
+  const head = failed.stopped
+    ? t('第 {n} 步「{name}」被停止了，没有跑完', { n: failed.index + 1, name: failed.step.name })
+    : t('第 {n} 步「{name}」失败，用时 {time}', {
+        n: failed.index + 1,
+        name: failed.step.name,
+        time: fmtDuration(failed.durationMs),
+      })
+  const why = failed.stopped ? t('这条命令被停止了（不是自己跑完的），结论按未通过处理。') : ''
   const tail = failed.output.trim()
-  return tail ? `${head}\n${tail}` : head
+  return [head, why, tail].filter(Boolean).join('\n')
 }
 
 export function createParentTests(deps: ParentTestsDeps): ParentTests {
@@ -148,7 +162,13 @@ export function createParentTests(deps: ParentTestsDeps): ParentTests {
     if (result.ok) await deps.pass(run).catch((error) => deps.onError?.('pass', error as Error))
     else
       await deps
-        .fail(run, { step: result.step, index: result.index, durationMs: result.durationMs, output: result.output })
+        .fail(run, {
+          step: result.step,
+          index: result.index,
+          durationMs: result.durationMs,
+          output: result.output,
+          ...(result.stopped ? { stopped: true } : {}),
+        })
         .catch((error) => deps.onError?.('fail', error as Error))
     await advance()
   }
@@ -159,6 +179,15 @@ export function createParentTests(deps: ParentTestsDeps): ParentTests {
     if (!run) return
     current = run
     await startStep(run)
+  }
+
+  /** 没起命令的批次按未通过退回（父对话被停止 / 归档时用）：一步都没跑，不记耗时 */
+  async function stopRun(run: ParentTestRun, output: string) {
+    const step = run.steps[run.index]
+    if (!step) return
+    await deps
+      .fail(run, { step, index: run.index, durationMs: 0, output, stopped: true })
+      .catch((error) => deps.onError?.('fail', error as Error))
   }
 
   return {
@@ -195,6 +224,7 @@ export function createParentTests(deps: ParentTestsDeps): ParentTests {
             index: run.index,
             durationMs: done.durationMs,
             output: done.output,
+            ...(done.stopped ? { stopped: true } : {}),
           })
           return
         }
@@ -226,6 +256,43 @@ export function createParentTests(deps: ParentTestsDeps): ParentTests {
       void schedule(advance)
       // 没拿到编号（还没起命令 / 命令已经结束）时返回 undefined：调用方据此判断不用停
       return jobId || undefined
+    },
+    /**
+     * 父对话被停止 / 归档 / 删除（不是面板退出）：面板代它跑的测试命令跟着停了，结果不会再回来。
+     * 跑着的那批和队里排着的一起按未通过退回子对话（分支保留、可以重新 submit_merge）。
+     * 只退跑着的那批不够：finish 结尾的 advance 会把队里同父对话的下一批起成新命令，
+     * 紧接着被生命周期停静默停掉，那个子对话又会永远停在「等父对话测试」（复看 R3）。
+     * 面板退出时不要调：重启后 recoverParentTests 把还在 testing 的批次重排
+     */
+    async abortByParent(parentId, output) {
+      // 先把队里同父对话的批次摘出来：摘完 advance 就不会把她们起成新命令
+      const pending = queue.filter((r) => r.parentId === parentId)
+      for (const r of pending) {
+        const at = queue.indexOf(r)
+        if (at >= 0) queue.splice(at, 1)
+      }
+      const run = current
+      const running = !!run && run.parentId === parentId
+      // 正在跑那条已经（或马上）被调用方停掉了：先摘编号，别让它被当成还在跑
+      if (run && running && run.jobId) {
+        canceled.add(run.jobId)
+        jobs.delete(run.jobId)
+        run.jobId = ''
+      }
+      if (!pending.length && !running) return false
+      await schedule(async () => {
+        for (const r of pending) await stopRun(r, output)
+        if (!run || !running || current !== run) return
+        const step = run.steps[run.index]
+        // 兜底：正常不会走到（current 只从 startStep 进来，index 必定有步骤）。也不判通过
+        if (!step) {
+          current = null
+          await advance()
+          return
+        }
+        await finish(run, { ok: false, step, index: run.index, durationMs: 0, output, stopped: true })
+      })
+      return true
     },
     idle: () => chain,
   }

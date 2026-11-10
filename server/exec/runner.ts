@@ -34,6 +34,7 @@ import {
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
+import { trackFileWrite, trackOutside } from './outside-changes.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { handoffDirOf } from '../store.ts'
 import { taskFiles } from '../task-files.ts'
@@ -117,9 +118,9 @@ import { autoAllowed, requestOf } from './ask-request.ts'
 
 import { orchHint } from '../orch-mcp.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
-import { openBlenderSession } from '../blender-mcp.ts'
-import { MODEL_HINT } from '../../shared/blender.ts'
+import { pluginRunTools } from './plugin-run.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
+import { experiencePrompt } from '../../shared/experience.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
@@ -150,7 +151,15 @@ import { pluginArgs } from '../../shared/role-plugins.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
 import { NO_RESPONSE_MS, createStallWatch } from './stall-watch.ts'
+import { noticeRow } from './notice-row.ts'
+import { SUMMARY_PROMPT, reviewPrompt } from './op-prompts.ts'
+import { warnSlowMcp } from './mcp-probe.ts'
 import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
+import { createFileEvents } from './file-events.ts'
+import { NOT_RESPONSE, PREWARM_QUIET, continuesOutput } from './event-kinds.ts'
+import { createDrafting } from './drafting.ts'
+// 测试从这里取（以前定义在这个文件里）
+export { continuesOutput }
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -159,26 +168,8 @@ function markTurnDone(task: Task) {
   if (seenWhileWatched(task.id)) task.turnSeenAt = now
 }
 
-/** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
-const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed', 'context', 'sent', 'wait'])
 /** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
 export { stalledTurn } from './stall-watch.ts'
-
-/** 插话收下后还算「同一段输出」的事件：不产生新内容（见 runAgent 的 cutAfter） */
-const CONTINUES = new Set(['session', 'turn', 'limits', 'usage', 'gen', 'context', 'files_changed', 'sent', 'wait'])
-/**
- * 这个事件还属于正在输出的那一段（cur）：同一段正文、思考的增量，和不产生内容的用量、会话这些事件。
- * 换成工具、新一次模型回应、正文之后又开始思考，这一段就说完了
- */
-export const continuesOutput = (ev: CliEvent, cur: TaskMessage | undefined) => {
-  if (CONTINUES.has(ev.type)) return true
-  if (ev.type === 'text_delta') return !!cur?.text.trim()
-  if (ev.type === 'thinking') return !!cur?.thinking && !cur.text.trim() && !cur.tools.length
-  return false
-}
-
-/** 预热时不记进对话的事件：正文、思考、工具和待办 */
-const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
 /**
  * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
@@ -196,28 +187,6 @@ const REDIRECT_NOTE =
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
-
-/** 审查改动时给不支持审查模式的 CLI 的要求 */
-function reviewPrompt(target: Extract<NonNullable<BuildOptions['op']>, { kind: 'review' }>['target']) {
-  const what =
-    target.type === 'base'
-      ? `当前分支相对 ${target.branch} 的改动（git diff ${target.branch}...HEAD）`
-      : target.type === 'custom'
-        ? target.instructions
-        : '工作区里还没提交的改动（git diff HEAD，包括新建的文件）'
-  return [
-    `请审查${what}。`,
-    '只审查，不要修改任何文件。',
-    '按严重程度从高到低列出发现的问题：每条写明文件和行号、问题是什么、为什么是问题、建议怎么改。',
-    '重点看会导致错误行为的问题（逻辑错误、边界情况、并发、安全、资源泄漏），其次是可维护性；不要列纯粹的格式问题。',
-    '没有发现问题就直接说没有问题。',
-  ].join('\n')
-}
-
-/** Command Code 不能压缩会话：请它把对话整理成摘要，下一轮开新会话时带上 */
-const SUMMARY_PROMPT =
-  '请把我们到目前为止的对话整理成一份摘要，用于在新的会话里继续工作：包括要做的事、已经做了什么（改了哪些文件、关键的决定和原因）、' +
-  '还没做完的、需要注意的问题。只输出摘要本身，不要做别的事，也不要修改文件。'
 
 /**
  * 按 API 的并发上限执行一次调用（对话这一轮、子任务、工作流节点都从这里进）：
@@ -501,12 +470,17 @@ async function runAgent(
   // 用户报的 Bug：新会话第一轮带上完整查找流程（ADR 0046）
   const bugMethod = !op && bugMethodPrompt(task, ctx.prompt, !resume)
   if (bugMethod) input = `${input}\n\n${bugMethod}`
+  // 升级成 Bug 后补带的完整流程只带一次（这一轮是 /bug 时展开里已经带了，一样算带过）
+  if (!op && task.bugMethodPending) task.bugMethodPending = undefined
   // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取；
   // 子任务只查不记，不带记教训的说明
   if (!resume && !op && task.projectId) {
     const globals = await readGlobalLessons()
     const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, globals, !!orch?.lessons?.record)
-    if (lessons) input = `${input}\n\n${lessons}`
+    // 项目经验只放一行「有几条、怎么查」，按需求原文本地匹配到的最多附两条（shared/experience.ts）
+    const exp =
+      orch?.experience && experiencePrompt(await orch.experience.list(), ctx.prompt, settings.experience.preHint)
+    for (const part of [lessons, exp]) if (part) input = `${input}\n\n${part}`
   }
   // 没有系统提示词参数的 CLI：对话目录的规则接在新会话的任务描述后面（有参数的已经放进系统提示词）
   if (!resume && !op && !def.systemPromptFlag) input = `${input}\n\n${taskDir.rule}`
@@ -677,6 +651,13 @@ async function runAgent(
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
+  const fileEvents = createFileEvents(cwd, (file) => {
+    touched.add(file.path.replaceAll('\\', '/'))
+    // 非 git 项目没有 git 差异可统计：项目内的并进 changes，项目外的记进 outsideChanges
+    if (!ctx.isGit) trackFileWrite(task, owner, cwd, file)
+    refreshChanges()
+  })
   /**
    * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
    * 按 id 先攒着，等 tool 事件建好行时补上，不然开头这段输出会丢
@@ -688,6 +669,7 @@ async function runAgent(
   const endTool = (x: ToolUse) => {
     // 被打断、CLI 没报结果的调用也要收掉运行中标记，不然这一行会一直转圈
     delete x.running
+    fileEvents.settle(x)
     const t0 = toolStart.get(x)
     if (t0 === undefined) return
     toolStart.delete(x)
@@ -716,8 +698,10 @@ async function runAgent(
       gitBusy = true
       const changes = await taskChanges(cwd, task, touched).catch(() => null)
       gitBusy = false
-      if (changes && !finished) {
-        task.changes = changes
+      // 项目外的写文件不在 git 差异里：和项目内的一起边跑边更新
+      const outside = finished ? 0 : trackOutside(task, cwd, touched)
+      if (!finished && (changes || outside)) {
+        if (changes) task.changes = changes
         ctx.changed()
       }
     }, 1500)
@@ -788,9 +772,13 @@ async function runAgent(
     kill: () => stallAc.abort('stalled'),
   })
   const { arm, heard } = watch
+  let quietBefore = 0 // 重试提示前安静了多久：heard() 清零前记下
+  const drafting = createDrafting(task, () => ctx.changed())
   const apply = (ev: CliEvent) => {
     // 有了真正的输出：不算卡住。工具结果交回去、开始一次模型请求后，重新开始等模型的回应
+    if (ev.type === 'notice') quietBefore = watch.quietMs()
     if (!NOT_RESPONSE.has(ev.type)) heard()
+    drafting.see(ev)
     if (ev.type === 'tool_result' || ev.type === 'request_start') arm()
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
@@ -877,12 +865,7 @@ async function runAgent(
           // 补充还排着时又开始跑命令：同样要等它跑完才取，一起计时
           if (steerPending && !redirectTimer) checkRedirect()
         }
-        if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
-        if (ev.file) refreshChanges()
-        if (ev.file && !ctx.isGit) {
-          mergeChanges(task.changes, [ev.file])
-          if (owner) mergeChanges((owner.changes ??= []), [ev.file])
-        }
+        fileEvents.track(ev.tool, ev.file, toolStart.has(ev.tool))
         break
       }
       case 'usage': {
@@ -995,30 +978,11 @@ async function runAgent(
         errors.push(ev.message)
         break
       case 'notice': {
-        // 重试、失败、面板工具没接上都要写进日志：界面上只留一行，事后统计「总是失败」要能查到是哪一类、第几次、恢复没有
-        const sec = {
-          task: task.id,
-          step,
-          cli: def.name,
-          kind: ev.kind,
-          attempt: ev.attempt,
-          maxAttempts: ev.maxAttempts,
-          error: ev.error,
-        }
-        if (ev.failed) log.warn('agent', ev.text, sec)
-        else if (ev.kind) log.info('agent', ev.text, sec)
-        // 放进回复里当一行状态，不打断回复：例如「模型请求失败，2 秒后第 1 次重试」
+        // 重试、失败、面板工具没接上：写进日志，放进回复里当一行状态，不打断回复（见 notice-row.ts）
+        // 重试用完了：前面那张「正在重试」收掉，失败原因看这一行
+        if (ev.kind === 'retry_failed') settleRetryNotes(task.messages, t('重试用完了，没有恢复'), turnStart)
         const m = !cur || cur.text.trim() ? newMsg() : cur
-        // CLI 自己报的重试、失败：画成警告行，点开看是哪一类、怎么办
-        const kind = !ev.failed && (ev.kind === 'retry' || /重试|retry/i.test(ev.text)) ? 'retry' : undefined
-        m.tools.push({
-          kind: 'other',
-          name: t('提示'),
-          label: ev.text,
-          detail: '',
-          ...(ev.failed ? { failed: true } : {}),
-          ...(ev.failed || kind ? { alert: makeAlert(ev.failed ? 'error' : 'warn', ev.text, kind) } : {}),
-        })
+        m.tools.push(noticeRow(ev, { task: task.id, step, cli: def.name }, quietBefore))
         break
       }
       case 'retry_ok': {
@@ -1061,8 +1025,9 @@ async function runAgent(
         // 子对话开着「提问」：交给父对话，不在子对话里弹给用户（见 askViaParent）
         if (ev.kind === 'question' && task.parentTaskId && ctx.messageParent) return askViaParent(ev, ctx.messageParent)
         const id = ctx.newId()
-        // 审批卡上点过「一直允许」的同类请求：直接允许，留一行说明（shared/allow-rules.ts）
-        if (autoAllowed(task, ev, { id, step, agentId })) return ctx.changed(true)
+        // 审批卡上点过「一直允许」的同类请求、权限是「跳过所有确认」这类一档：直接允许，留一行说明（ask-request.ts）
+        const perm = def.permissions.find((p) => p.id === build.permission)
+        if (autoAllowed(task, ev, { id, step, agentId }, perm?.autoAllow ? perm.label : '')) return ctx.changed(true)
         asked.push(id)
         replies.set(id, ev.reply)
         task.requests.push(requestOf(ev, { id, step, agentId }))
@@ -1363,6 +1328,8 @@ async function runAgent(
         if (!hasViewer(task.id)) return null
         // 这一轮什么都没收到：不保活，直接让它返回，交给收尾处报错
         if (emptyTurn()) return null
+        // 连接断了（含 Claude Code 的输出中断判定，触发后它不自己重试）：不保活，交给收尾处报错并续接会话
+        if (result && !result.ok && isNetError(result.error ?? '')) return null
         fromUser = false
         const text = await waitNext(false)
         // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关
@@ -1377,9 +1344,10 @@ async function runAgent(
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
-  // 模型对话（ADR 0025）：挂上 Blender 工具，新会话的提示词里说明怎么用；令牌只在这一轮有效
-  const blender = task.modelDesign && def.mcp && !op ? openBlenderSession(task.id) : undefined
-  if (blender && !resume) input = `${input}\n\n${MODEL_HINT}`
+  // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂，新会话的提示词里说明怎么用；令牌只在这一轮有效
+  const plugins =
+    def.mcp && !op ? await pluginRunTools(ctx, { agent, resume: !!resume, cwd, step, agentId }) : undefined
+  if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {
       cli: def.name,
@@ -1387,6 +1355,19 @@ async function runAgent(
       resume: resume ? true : undefined,
       prewarm: prewarmMode || undefined,
       keepAlive: !!keepAlive,
+    })
+  // 新会话：和 CLI 同时探测项目里的远程 MCP，卡住的写一行警告（CLI 第一轮可能在等它握手）
+  if (chat && !resume && !op && !prewarmMode)
+    warnSlowMcp({
+      task,
+      cli: def.name,
+      probe: def.mcpProbe,
+      cwd,
+      env,
+      agentId,
+      step,
+      newId: ctx.newId,
+      changed: () => ctx.changed(true),
     })
   // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
   if (op?.kind === 'compact' && !prewarmMode) {
@@ -1410,7 +1391,7 @@ async function runAgent(
     },
   })
   const r = await invokeCli({
-    mcp: blender ? [{ name: 'blender', url: blender.url }] : undefined,
+    mcp: plugins?.servers.length ? plugins.servers : undefined,
     cliId,
     command: cs.command,
     build,
@@ -1488,8 +1469,9 @@ async function runAgent(
     ...hooks,
   }).finally(() => {
     finished = true
+    drafting.clear()
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
-    blender?.close()
+    plugins?.close()
     watch.stop()
     clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)
@@ -1551,6 +1533,8 @@ async function runAgent(
       task.changes = changes
     }
   }
+  // 项目外写过的文件：任何模式都要记，界面上单独一组列出（没有 git 快照，只能查看）
+  trackOutside(task, cwd, touched)
   ctx.changed(true)
 
   // 进程结束的情况都记一笔：退出码、为什么被停、最后的错误输出，排查问题时对得上页面上的报错

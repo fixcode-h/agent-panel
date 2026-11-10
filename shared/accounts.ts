@@ -552,10 +552,15 @@ export const CliAuth = z.object({
        */
       baseUrl: z.record(z.string(), z.string()).default({}),
       /**
-       * 这一轮要思考（带了思考强度、不是 off）时加的参数。Codex 对自己不认识的模型（第三方接口的模型）
-       * 不发 reasoning 参数：思考强度不生效，也收不到思考摘要，要用 model_supports_reasoning_summaries 打开
+       * 这一轮要思考（带了思考强度、不是 off）时加的参数。Codex 对第三方接口的模型默认不要思考摘要，
+       * 用 model_reasoning_summary 打开（旧的 model_supports_reasoning_summaries 新版已不认，会报「ignored」警告）
        */
       thinkArgs: z.array(z.string()).default([]),
+      /**
+       * API 方式下 CLI 不提供内置的生图工具（Codex 的 image_gen 只在 ChatGPT 账号登录时才交给模型）：
+       * 生图前直接说明原因，不白跑一轮再报「没有生成图片」
+       */
+      noImages: z.boolean().default(false),
       /**
        * CLI 只认配置里模型条目自己声明的思考强度时（例如 Command Code 的 providers.json），
        * 把模型目录里的强度写回这个位置；不写表示不处理。

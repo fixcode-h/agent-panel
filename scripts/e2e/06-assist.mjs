@@ -687,6 +687,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     // 用户确认区块（页面保存），下一轮照区块搭界面
     d = await call('PUT', `/designs/${sketch.id}`, { ...d, layout: { ...d.layout, confirmed: true }, baseRev: d.rev })
     assert.equal(d.layout.confirmed, true)
+    const tplCallsBefore = calls().length
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `照着模板做 FAKE_MCP:${JSON.stringify([
         // 模板模式里 AI 顺手出了一张原画：只进候选，不能把模板作废（同轮的切图还要拿模板当参考）
@@ -731,13 +732,27 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     assert.match(tplInput.stdin ?? tplInput.input, new RegExp(`已确认的效果图模板[\\s\\S]*concept:${tpl}`))
     assert.match(tplInput.stdin ?? tplInput.input, /骨架照用户确认过的区块搭[\s\S]*TopBar：x=0 y=0 宽=1920 高=120/)
     assert.equal(d.images.find((i) => i.id === 'gem').negative, 'frame')
-    const gemGen = calls()
-      .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
-      .at(-1)
-    assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '切图带着模板作为参考')
-    assert.deepEqual(d.images.find((i) => i.id === 'gem').ref, { x: 100, y: 100, w: 64, h: 64 }, '位置存进设计')
+    // 有模板、写了位置的切图默认直接从模板里抠，不调生图
+    const gem = d.images.find((i) => i.id === 'gem')
+    assert.equal(gem.variants.at(-1)?.source, 'crop', '切图默认从模板里抠')
+    assert.ok(
+      !calls()
+        .slice(tplCallsBefore)
+        .some((c) => /a red gem/.test(c.stdin ?? c.input ?? '') && /Negative prompt/.test(c.stdin ?? c.input ?? '')),
+      '抠图不调生图',
+    )
+    assert.deepEqual(gem.ref, { x: 100, y: 100, w: 64, h: 64 }, '位置存进设计')
     assert.equal(d.concept.approved, tpl, '模板模式里出的原画不把模板作废')
     assert.equal(d.concept.images.length, 3, '新出的原画进了候选')
+    // 点「精修」才重新画：带着模板作为参考
+    await call('POST', `/designs/${sketch.id}/images/gem/generate`, { source: { kind: 'cli' }, count: 1, refine: true })
+    d = await waitJob(sketch.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const gemGen = calls()
+      .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? '') && /Negative prompt/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.ok(gemGen, '精修调了生图')
+    assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '精修带着模板作为参考')
     assert.match(gemGen.stdin ?? gemGen.input, /Negative prompt.*frame/)
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
     assert.deepEqual([d.concept.images.length, d.concept.approved], [2, ''], '删掉模板就回到挑图')

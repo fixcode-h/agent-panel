@@ -7,6 +7,7 @@
  */
 import { t } from './i18n.ts'
 import { activePlan, needsFix, openPlan, openWork, planProgress } from './plan.ts'
+import { pendingAction, waitedText } from './user-action.ts'
 import type { Task, TaskMessage } from './schema.ts'
 import {
   childActivity,
@@ -26,6 +27,7 @@ import {
   timeAgo,
   type ChildEntry,
   type ConvState,
+  taskWaitText,
 } from './task.ts'
 
 export type DiagTone = 'accent' | 'warning' | 'danger' | 'subtle' | 'success'
@@ -66,7 +68,14 @@ type DiagTask = Pick<
   | 'apiWait'
   | 'cliAlive'
   | 'awaitingUser'
-> & { runs?: Task['runs']; jobs?: Task['jobs']; childrenWorking?: number; archived?: boolean; deletedAt?: string }
+> & {
+  runs?: Task['runs']
+  jobs?: Task['jobs']
+  childrenWorking?: number
+  archived?: boolean
+  deletedAt?: string
+  userActions?: Task['userActions']
+}
 
 /** 面板推它接着做计划的那条消息（见 server/tasks/children.ts 的 nudgePlan）：开头固定 */
 const NUDGE_HEAD = '【面板】你的计划才做了'
@@ -93,7 +102,7 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   // 独立分支没合回只对子对话算
   const state = convState({
     ...childFacts(task, {
-      background: task.jobs?.length ?? 0,
+      background: task.jobs?.filter((j) => !j.service).length ?? 0,
       unmerged: !!task.parentTaskId && task.worktree?.state === 'active',
     }),
     children: busyKids.length || (task.childrenWorking ?? 0),
@@ -105,6 +114,15 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   if (asking) items.push({ kind: 'ask', text: t('{n} 个提问等你回答', { n: asking }), tone: 'warning' })
   if (task.requests.length)
     items.push({ kind: 'ask', text: t('{n} 项操作等你确认', { n: task.requests.length }), tone: 'warning' })
+  // 等你操作：写清在等什么、等了多久，下一行是跳过时它会怎么做（用户才敢点跳过）
+  const act = pendingAction(task)
+  if (act)
+    items.push({
+      kind: 'ask',
+      text: t('在等你操作：{title}，已等 {took}', { title: act.title, took: waitedText(act, now) }),
+      detail: act.fallback ? t('跳过的话：{fallback}', { fallback: act.fallback }) : '',
+      tone: 'warning',
+    })
 
   if (task.apiWait)
     items.push({
@@ -190,10 +208,17 @@ function headlineOf(task: DiagTask, state: ConvState): { headline: string; tone:
       const doing = childActivityText(childActivity(task))
       return { headline: doing ? t('正在执行：{doing}', { doing }) : t('正在执行'), tone: 'accent' }
     }
-    case 'waiting':
-      return { headline: t('这一轮说完了，在等结果推回来'), tone: 'accent' }
+    // 等的是什么和标题栏、侧栏用同一句（taskWaitText）：以前这里只写「在等结果推回来」，
+    // 其实是子对话在等用户，几处说法对不上（用户 2026-11-10 定的分析稿 U2）
+    case 'waiting': {
+      const what = taskWaitText(task)
+      return {
+        headline: what ? t('这一轮说完了，在等：{what}', { what }) : t('这一轮说完了，在等结果推回来'),
+        tone: what === t('子对话等你处理') ? 'warning' : 'accent',
+      }
+    }
     case 'needs':
-      return { headline: t('在等你处理'), tone: 'warning' }
+      return { headline: taskWaitText(task) || t('在等你处理'), tone: 'warning' }
     case 'failed': {
       const why = lastFailureNote(task.messages)
       return { headline: why ? t('这一轮失败了：{why}', { why }) : t('这一轮失败了'), tone: 'danger' }

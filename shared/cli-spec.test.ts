@@ -142,7 +142,7 @@ test('插件来源去掉版本号再比：装的是带版本的、带 ref 的，
   assert.equal(packageIdentity('../local-pkg'), '../local-pkg')
 })
 
-test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里的文案都有英文', () => {
+test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里的文案、默认环境变量的中文名都有英文', () => {
   const pi = getCli('pi')!
   assert.equal(pi.packages?.recommended[0]?.source, 'npm:pi-web-access', '面板不自己做联网搜索，Pi 靠插件联网')
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'clis')
@@ -153,5 +153,39 @@ test('推荐的插件：Pi 第一项是联网搜索插件；每个 CLI 推荐里
       assert.match(r.source, /^(npm|git):/, `${f}：推荐的 ${r.source} 要写 npm: 或 git: 来源`)
       for (const text of [r.name, r.desc, r.note].filter(Boolean)) assert.ok(en[text], `${f}：「${text}」没有英文`)
     }
+    // 设置页「默认环境变量」只显示中文名，变量名放问号里：env 里每个键都要有一条
+    for (const key of Object.keys(spec.env)) {
+      const note = spec.envNotes[key]
+      assert.ok(note?.label, `${f}：env.${key} 要在 envNotes 里写中文名和说明`)
+      for (const text of [note.label, note.hint].filter(Boolean)) assert.ok(en[text], `${f}：「${text}」没有英文`)
+    }
   }
+})
+
+test('Codex 的 API 方式：思考摘要用新版认的 model_reasoning_summary，生图工具标成没有', () => {
+  // 0.167 起 model_supports_reasoning_summaries 不认了，每轮都报「session-flags ... is ignored」
+  const api = getCli('codex')!.auth!.api!
+  assert.deepEqual(api.thinkArgs, ['-c', 'model_reasoning_summary=auto'])
+  // API Key、第三方接口下 Codex 不把 image_gen 交给模型，生图前要直接说明
+  assert.equal(api.noImages, true)
+})
+
+test('CLI 定义：用量事件报了缓存的，必须写明 addInput 含不含缓存（inputExcludesCache），不让解析器去猜', () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'clis')
+  const missing: string[] = []
+  const walk = (node: unknown, file: string) => {
+    if (Array.isArray(node)) return node.forEach((x) => walk(x, file))
+    if (!node || typeof node !== 'object') return
+    const o = node as Record<string, unknown>
+    if (
+      o.type === 'usage' &&
+      ('addCacheRead' in o || 'addCacheWrite' in o) &&
+      typeof o.inputExcludesCache !== 'boolean'
+    )
+      missing.push(`${file}: ${JSON.stringify(o).slice(0, 80)}`)
+    Object.values(o).forEach((x) => walk(x, file))
+  }
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')))
+    walk(JSON.parse(readFileSync(path.join(dir, f), 'utf8')), f)
+  assert.deepEqual(missing, [])
 })

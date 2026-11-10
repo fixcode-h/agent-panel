@@ -14,13 +14,11 @@ import {
   FileArchive,
   FileCode2,
   FolderDown,
-  Gamepad2,
   Globe,
   MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
   Palette as PaletteIcon,
-  Plus,
   Puzzle,
   Loader2,
   Monitor,
@@ -111,11 +109,16 @@ import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ConceptBoard } from '@/components/design/ConceptBoard'
+import type { CompareMode } from '@/components/design/CompareOverlay'
 import { CanvasCapture } from '@/components/design/CanvasCapture'
 import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
+import { NewDesign, SIZES } from '@/components/design/NewDesign'
+import { RestoreWorkspace } from '@/components/design/restore/RestoreWorkspace'
+import { activeStep, restoreStages } from '@/lib/restore-stages'
+import { stepOf } from '@shared/restore/schema'
 import { DesignProjectHome } from '@/components/design/DesignProjectHome'
 import { DESIGN_HOME } from '@/lib/design-projects'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
@@ -133,157 +136,6 @@ export function DesignPage() {
     <Designer key={route.id} id={route.id} />
   ) : (
     <NewDesign projectId={route.sub} />
-  )
-}
-
-// ---- 新建设计 ----
-
-const SIZES = [
-  { v: '1920x1080', label: '1920 × 1080（16:9）' },
-  { v: '2560x1440', label: '2560 × 1440（16:9）' },
-  { v: '1280x720', label: '1280 × 720（16:9）' },
-  { v: '2340x1080', label: `2340 × 1080（${t('手机横屏')}）` },
-  { v: '1080x1920', label: `1080 × 1920（${t('竖屏')}）` },
-]
-/** 网页的常用尺寸：桌面、笔记本、平板、手机 */
-const WEB_SIZES = [
-  { v: '1440x900', label: `1440 × 900（${t('桌面')}）` },
-  { v: '1280x800', label: `1280 × 800（${t('笔记本')}）` },
-  { v: '1920x1080', label: `1920 × 1080（${t('大屏')}）` },
-  { v: '768x1024', label: `768 × 1024（${t('平板')}）` },
-  { v: '390x844', label: `390 × 844（${t('手机')}）` },
-]
-
-function NewDesign({ projectId }: { projectId?: string }) {
-  const { designProjects: projects, setDesigns } = useData()
-  const { go } = useNav()
-  const [creatingProject, setCreatingProject] = useState(false)
-  const [pid, setPid] = useState(projectId || projects[0]?.id || '')
-  const [title, setTitle] = useState('')
-  const [kind, setKind] = useState<'game' | 'web'>('game')
-  const [size, setSize] = useState('1920x1080')
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    if (!pid && projects[0]) setPid(projects[0].id)
-  }, [pid, projects])
-  useEffect(() => {
-    if (projectId) setPid(projectId)
-  }, [projectId])
-
-  const create = async () => {
-    const [X, Y] = size.split('x').map(Number)
-    setBusy(true)
-    try {
-      const d = await api.createDesign({
-        projectId: pid,
-        kind,
-        title: title.trim() || t('未命名界面'),
-        designSize: { X, Y },
-      })
-      setDesigns((list) => [
-        ...list,
-        {
-          id: d.id,
-          projectId: d.projectId,
-          kind: d.kind,
-          title: d.title,
-          createdAt: d.createdAt,
-          updatedAt: d.updatedAt,
-        },
-      ])
-      go({ page: 'design', id: d.id })
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-12 md:py-20">
-      <div className="w-full max-w-[560px]">
-        <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent-text">
-          <PaletteIcon className="h-5 w-5" />
-        </span>
-        <h1 className="font-serif text-display font-semibold tracking-tight">{t('UI 设计')}</h1>
-        <p className="mt-2 text-body leading-relaxed text-muted">
-          {kind === 'web'
-            ? t(
-                '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
-              )
-            : t(
-                '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
-              )}
-        </p>
-        <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
-        {!projects.length ? (
-          <div className="mt-8 rounded-xl bg-panel p-5 text-body text-muted">
-            {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
-            <Button className="mt-3" onClick={() => setCreatingProject(true)}>
-              <Plus className="h-4 w-4" />
-              {t('新建 UI 项目')}
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-8 flex flex-col gap-5 rounded-2xl bg-card p-6 shadow-card">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-body font-medium">{t('名称')}</span>
-              <Input
-                autoFocus
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !busy && pid && void create()}
-                placeholder={kind === 'web' ? t('例如：首页、登录页、商品详情') : t('例如：主菜单、背包、战斗 HUD')}
-              />
-            </label>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-body font-medium">{t('类型')}</span>
-              <Segmented
-                label={t('类型')}
-                value={kind}
-                onChange={(k) => {
-                  setKind(k)
-                  setSize(k === 'web' ? WEB_SIZES[0].v : SIZES[0].v)
-                }}
-                options={[
-                  { id: 'game', label: t('游戏 UI（UE5 UMG）') },
-                  { id: 'web', label: t('网页 UI（HTML / CSS）') },
-                ]}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-body font-medium">{t('项目')}</span>
-                <Select
-                  aria-label={t('项目')}
-                  value={pid}
-                  onChange={(e) => (e.target.value === '+new' ? setCreatingProject(true) : setPid(e.target.value))}
-                  options={[
-                    ...projects.map((p) => ({ value: p.id, label: p.name })),
-                    { value: '+new', label: t('新建 UI 项目…') },
-                  ]}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-body font-medium">{t('设计尺寸')}</span>
-                <Select
-                  aria-label={t('设计尺寸')}
-                  value={size}
-                  onChange={(e) => setSize(e.target.value)}
-                  options={(kind === 'web' ? WEB_SIZES : SIZES).map((s) => ({ value: s.v, label: s.label }))}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <Button onClick={() => void create()} disabled={busy || !pid}>
-                {kind === 'web' ? <Globe className="h-4 w-4" /> : <Gamepad2 className="h-4 w-4" />}
-                {t('开始设计')}
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
 
@@ -353,10 +205,10 @@ function Designer({ id }: { id: string }) {
   const [count, setCount] = useScopedSetting(COUNT_KEY, id, (v) => Math.max(1, Math.min(4, Number(v) || 1)), String)
   const [promptsOpen, setPromptsOpen] = useState(false)
   /** 左边显示原画还是界面；对照模板：把确认的原画半透明盖在界面上 */
-  const [view, setView] = useState<'ui' | 'concept'>('ui')
+  const [view, setView] = useState<'ui' | 'concept' | 'restore'>('ui')
   /** 主区域显示画板还是数据面板：数据面板改的是画板用的运行时假数据 */
   const [board, setBoard] = useState<'canvas' | 'data'>('canvas')
-  const [overlay, setOverlay] = useState(false)
+  const [overlay, setOverlay] = useState<false | CompareMode>(false)
   /**
    * 左上角「画板 / 数据」切换（和「对照模板」）浮在画布上：量出它的宽度，写成 --board-switch-w 给画布、原画、
    * 对比、大图这几层的顶栏让位，免得画布窄时把标注工具栏左边几个工具、原画标题盖住
@@ -500,6 +352,23 @@ function Designer({ id }: { id: string }) {
   useEffect(() => {
     if (concept.approved) setView(layoutDone ? 'ui' : 'concept')
   }, [concept.approved, layoutDone])
+  // 照原画还原：没交付前打开就是还原工作区，看的是还没确认的第一步；那一步变了（确认了上一步）就跟过去
+  const restore = server?.restore
+  const nextRestore = activeStep(restore)
+  const [restoreStep, setRestoreStep] = useState(nextRestore)
+  useEffect(() => {
+    if (!restore) return
+    setRestoreStep(nextRestore)
+    if (stepOf(restore, 'deliver').status !== 'done') setView('restore')
+    // 只在该处理的那一步变化时跟过去，用户自己点了别的步骤不打扰
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!restore, nextRestore])
+  // 还原还没交付时先收起对话栏，原画和元素框要大一点才好核对；用户再打开就不管了
+  useEffect(() => {
+    if (restore && stepOf(restore, 'deliver').status !== 'done') setChatOpen(false)
+    // 只在打开设计（有没有还原状态变了）时收一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!restore])
   // 原画上的蒙版被清掉了（发出去了、涂完了又撤销）：「只重绘蒙版」就失效，不能留着
   const conceptMaskReady = !!doc?.annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
   useEffect(() => {
@@ -922,25 +791,23 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  const generate = async (img: DesignImage) => {
+  const generate = async (img: DesignImage, refine = false) => {
     if (source.kind === 'none') return toast.error(t('先在对话框下面选生成图片的方式'))
     const marks = doc.annotations.filter((a) => a.target === imgTarget(img.id))
-    const ok = await regenerate(img, '', marks, {
-      ...doc,
-      annotations: doc.annotations.filter((a) => !marks.includes(a)),
-    })
+    const next = { ...doc, annotations: doc.annotations.filter((a) => !marks.includes(a)) }
+    const ok = await regenerate(img, '', marks, next, refine)
     if (ok && marks.length)
       ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !marks.includes(a)) }), 'ann:sent')
   }
 
   /** 按修改意见（对话框里写的）和图上的标记重新生成一张图；next 是先保存上去的设计 */
-  const regenerate = async (img: DesignImage, feedback: string, marks: Annotation[], next = doc) => {
+  const regenerate = async (img: DesignImage, feedback: string, marks: Annotation[], next = doc, refine = false) => {
     const v = img.variants[img.selected] ?? img.variants.at(-1)
     const revision = imageRevisionText(feedback, marks, { X: v?.width || img.width, Y: v?.height || img.height })
     try {
       // 先保存当前的描述和尺寸，服务端按保存的生成
       ed.absorb(await api.saveDesign(id, next))
-      ed.absorb(await api.generateDesignImage(id, img.id, { source, count, revision: revision || undefined }))
+      ed.absorb(await api.generateDesignImage(id, img.id, { source, count, revision: revision || undefined, refine }))
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -1086,6 +953,10 @@ function Designer({ id }: { id: string }) {
   // ---- 原画 ----
   const conceptUrl = (c: ConceptImage) => designFileUrl(id, c.file)
   const approvedConcept = concept.images.find((i) => i.id === concept.approved)
+  // 画布上「对照」用的原画：确认的模板，或者还原模式里上传的原画
+  const compareUrl = approvedConcept
+    ? conceptUrl(approvedConcept)
+    : restore?.source && designFileUrl(id, restore.source.file)
   const conceptAction = async (action: 'select' | 'approve' | 'remove', cid: string) => {
     try {
       ed.absorb(await api.designConcept(id, action, cid))
@@ -1261,32 +1132,42 @@ function Designer({ id }: { id: string }) {
               {titleField}
             </div>
           )}
-          <StageSteps
-            stages={designStages({
-              style: doc.style,
-              concepts: conceptCount,
-              approved: !!approvedConcept,
-              hasTree: !!(doc.root.Children?.length || doc.components.length),
-              images: doc.images.map((i) => ({ status: i.status, variants: i.variants.length })),
-              running: conceptsRunning
-                ? 'concepts'
-                : ed.aiEditing
-                  ? 'design'
-                  : server.job?.status === 'running' && server.job.phase === 'images'
-                    ? 'images'
-                    : undefined,
-            })}
-            onPick={(id) => {
-              if (id === 'concept' || id === 'template') {
-                if (conceptCount || conceptsRunning) setView('concept')
-                else setChatOpen(true)
-              } else if (id === 'ui' || id === 'export') setView('ui')
-              else if (id === 'slices') {
-                setView('ui')
-                setTab('images')
-              } else if (id === 'style') setChatOpen(true)
-            }}
-          />
+          {restore ? (
+            <StageSteps
+              stages={restoreStages(restore)}
+              onPick={(s) => {
+                setRestoreStep(s)
+                setView('restore')
+              }}
+            />
+          ) : (
+            <StageSteps
+              stages={designStages({
+                style: doc.style,
+                concepts: conceptCount,
+                approved: !!approvedConcept,
+                hasTree: !!(doc.root.Children?.length || doc.components.length),
+                images: doc.images.map((i) => ({ status: i.status, variants: i.variants.length })),
+                running: conceptsRunning
+                  ? 'concepts'
+                  : ed.aiEditing
+                    ? 'design'
+                    : server.job?.status === 'running' && server.job.phase === 'images'
+                      ? 'images'
+                      : undefined,
+              })}
+              onPick={(id) => {
+                if (id === 'concept' || id === 'template') {
+                  if (conceptCount || conceptsRunning) setView('concept')
+                  else setChatOpen(true)
+                } else if (id === 'ui' || id === 'export') setView('ui')
+                else if (id === 'slices') {
+                  setView('ui')
+                  setTab('images')
+                } else if (id === 'style') setChatOpen(true)
+              }}
+            />
+          )}
           {chatOpen && <span className="flex-1" />}
           <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
           <StyleButton
@@ -1423,7 +1304,21 @@ function Designer({ id }: { id: string }) {
           </Menu>
         </header>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* 还原工作区盖住画布和动画面板：每一步的产物和决策卡 */}
+          {view === 'restore' && restore && (
+            <div className="absolute inset-0 z-20 flex bg-card">
+              <RestoreWorkspace
+                design={server}
+                step={restoreStep}
+                onAbsorb={ed.absorb}
+                onOpenCanvas={(compare) => {
+                  setView('ui')
+                  if (compare) setOverlay('slider')
+                }}
+              />
+            </div>
+          )}
           <div
             className="relative flex min-h-0 min-w-0 flex-1"
             // 12px 是切换按钮离左边的距离（left-3），再留 8px 空隙
@@ -1481,7 +1376,8 @@ function Designer({ id }: { id: string }) {
               }
               images={renderImages}
               data={(shownDoc ?? doc).data ?? emptyData()}
-              overlay={overlay && approvedConcept && !target ? conceptUrl(approvedConcept) : undefined}
+              overlay={overlay && compareUrl && !target ? compareUrl : undefined}
+              overlayMode={overlay || undefined}
               components={shownDoc?.components ?? doc.components}
               selected={selected}
               onSelect={(wid) => {
@@ -1555,7 +1451,10 @@ function Designer({ id }: { id: string }) {
                 }
               />
             )}
-            <div ref={setBoardSwitch} className="absolute top-3 left-3 z-50 flex items-center gap-2">
+            <div
+              ref={setBoardSwitch}
+              className={cn('absolute top-3 left-3 z-50 flex items-center gap-2', view === 'restore' && 'hidden')}
+            >
               <Segmented
                 // 切到「数据」时下面是普通页面，跟着主题走；画板上才用深色画布的样子
                 tone={board === 'canvas' ? 'canvas' : 'default'}
@@ -1570,17 +1469,18 @@ function Designer({ id }: { id: string }) {
                 // 段内留白收窄一点：画布窄时它和居中的标注工具栏挨得很近
                 className={cn('[&>button]:px-2', board === 'canvas' && 'shadow-pop')}
               />
-              {board === 'canvas' && view === 'ui' && approvedConcept && !target && (
+              {board === 'canvas' && view === 'ui' && compareUrl && !target && (
                 <Button
                   variant="on-canvas"
                   size="sm"
-                  onClick={() => setOverlay(!overlay)}
-                  aria-pressed={overlay}
-                  title={t('把确认的原画模板半透明盖在界面上，对照着调')}
+                  // 关 → 滑块（左原画右还原）→ 半透明叠加 → 关
+                  onClick={() => setOverlay(overlay === 'slider' ? 'blend' : overlay ? false : 'slider')}
+                  aria-pressed={!!overlay}
+                  title={t('和确认的原画对照：点一下左右拖着比，再点一下半透明叠加，再点关掉')}
                   className={cn('bg-canvas-bar shadow-pop', overlay && 'text-accent-text hover:text-accent-text')}
                 >
                   <Layers className="h-3.5 w-3.5" />
-                  {t('对照模板')}
+                  {overlay === 'blend' ? t('叠加对照') : overlay ? t('滑块对照') : t('对照模板')}
                 </Button>
               )}
             </div>
@@ -1657,7 +1557,8 @@ function Designer({ id }: { id: string }) {
                 onClose={() => setCompare(undefined)}
               />
             )}
-            {server.kind === 'web' && (
+            {/* 还原工作区盖着画布时不显示预览宽度：它的层级比工作区高，会浮在切图上 */}
+            {server.kind === 'web' && view !== 'restore' && (
               <Segmented
                 tone="canvas"
                 size="sm"
@@ -1736,7 +1637,8 @@ function Designer({ id }: { id: string }) {
       <aside
         aria-label={t('检查器')}
         style={{ width: treePane.width }}
-        className="panel relative flex shrink-0 flex-col bg-card"
+        // 还原工作区自带右边的决策卡，检查器先收起来
+        className={cn('panel relative flex shrink-0 flex-col bg-card', view === 'restore' && 'hidden')}
       >
         <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
         {/* 和对话页、右栏同一套页签条（照 Proma）：选中只画底部指示条 */}
@@ -1876,6 +1778,7 @@ function Designer({ id }: { id: string }) {
               url={fileUrl}
               onChange={setImage}
               onGenerate={() => void generate(selImage)}
+              onRefine={approvedConcept && selImage.ref ? () => void generate(selImage, true) : undefined}
               onUpload={(f) => void upload([f], selImage.id)}
               onDelete={() => {
                 ed.change((d) => ({ ...d, images: d.images.filter((i) => i.id !== selImage.id) }))

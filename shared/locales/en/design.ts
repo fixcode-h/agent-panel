@@ -300,6 +300,8 @@ export const EN_DESIGN: Record<string, string> = {
     '{cli} can’t generate images. Switch to Codex under “Default agent” in settings',
   '{error}。请确认已安装 {cli}': '{error}. Make sure {cli} is installed',
   '{cli} 没有生成图片': '{cli} didn’t generate any image',
+  '{cli} 用 API 方式时没有生图工具，请在设置里把 {cli} 换成账号登录（ChatGPT）后再生成图片':
+    '{cli} has no image tool when it uses an API key. Switch {cli} to account sign-in (ChatGPT) in Settings, then generate images again',
   '检查还有这些问题：': 'The check still found these issues:',
   '改好了。': 'Done.',
   设计不存在: 'Design not found',
@@ -321,8 +323,6 @@ export const EN_DESIGN: Record<string, string> = {
     'Optional. “Export to project folder” writes into a UI folder here; usually pick your UE project folder.',
   // 设计侧栏顶部的设计类型下拉（UI 设计 / 模型设计）
   '界面 · 原画 · 切图': 'Screens · concepts · slices',
-  模型设计: 'Model design',
-  'Blender 建模 · 按项目对话': 'Blender modeling · per-project chats',
   切换设计类型: 'Switch design type',
   设计类型: 'Design type',
   '这个 UI 项目已经不在了。': 'This UI project no longer exists.',
@@ -654,7 +654,6 @@ export const EN_DESIGN: Record<string, string> = {
   '正在出原画 {i}/{n}': 'Drawing concepts {i}/{n}',
   '按确认的原画模板搭界面，并生成切图': 'Build the UI from the approved concept template and generate the assets',
   界面: 'UI',
-  '把确认的原画模板半透明盖在界面上，对照着调': 'Overlay the approved concept template on the UI to line things up',
   对照模板: 'Compare with template',
 
   // 动画
@@ -916,31 +915,6 @@ export const EN_DESIGN: Record<string, string> = {
   数字: 'Number',
   开关: 'Toggle',
   图片: 'Image',
-  新建模型设计: 'New model design',
-  '没找到 Blender：{why}': 'Blender not found: {why}',
-  还没设置路径: 'no path set',
   去设置: 'Open settings',
-  开始建模: 'Start modeling',
-  模型放在哪个项目里: 'Project for the model',
-  要建什么模型: 'What to model',
-  '例如：低多边形风格的宝箱，带开合的盖子，导出 GLB':
-    'e.g. a low-poly treasure chest with an opening lid, exported as GLB',
-  '模型设计在选定的项目目录里开一个对话（不列进 Agent 模式），后台启动 Blender，Agent 用它建模并在对话里汇报进度。':
-    'Model design opens a conversation in the chosen project folder (kept out of Agent mode), starts Blender in the background, and the agent models with it and reports progress in the conversation.',
-  '还没有模型设计对话。模型设计用 Blender 建模，对话会按项目列在这里。':
-    'No model design conversations yet. Model design uses Blender; conversations are listed here by project.',
-  找不到这个模型设计对话: 'This model design conversation was not found',
-  '模型设计在后台启动 Blender，Agent 用它建模，右栏实时预览。左侧按项目列出已有的模型对话。':
-    'Model design starts Blender in the background; the agent models with it and the right panel previews it live. Existing model conversations are listed on the left by project.',
   // 新建模型设计：新建项目或指定文件夹（2026-10-31）
-  模型放在哪里: 'Where the model goes',
-  已有项目: 'Existing project',
-  '新建项目 / 指定文件夹': 'New project / pick a folder',
-  文件夹: 'Folder',
-  '选一个本机文件夹当项目；填一个还不存在的路径，开始建模时会新建这个文件夹。':
-    'Pick a local folder to use as the project. If you enter a path that doesn’t exist yet, the folder is created when modeling starts.',
-  '这个文件夹已经是项目「{name}」，直接用它。':
-    'This folder is already the project “{name}”, so that project will be used.',
-  项目名: 'Project name',
-  开始建模时会新建这个文件夹: 'This folder will be created when modeling starts',
 }

@@ -45,8 +45,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 清空要等设置保存、重新渲染；CI 的机器慢，立刻读会读到旧值
   for (let i = 0; i < 30 && (await ctx.inputValue()) !== ''; i++) await p.waitForTimeout(100)
   if ((await ctx.inputValue()) !== '') errors.push('设置-CLI-三档上下文：恢复自动后没有清空')
-  // CLI 定义自带的默认环境变量：在「常用」里逐项列出，改值后出现恢复默认，点一下回到定义值
-  const toolSearch = p.getByRole('dialog').getByLabel('ENABLE_TOOL_SEARCH 的值')
+  // CLI 定义自带的默认环境变量：在「常用」里逐项列出（只显示中文名，变量名在问号里），改值后出现恢复默认，点一下回到定义值
+  const toolSearch = p.getByRole('dialog').getByLabel('MCP 工具按需搜索 的值')
   await toolSearch.scrollIntoViewIfNeeded()
   if ((await toolSearch.inputValue()) !== 'false')
     errors.push(`设置-CLI-默认环境变量：定义里的值显示成了「${await toolSearch.inputValue()}」`)
@@ -80,8 +80,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     errors.push(`设置-CLI-默认环境变量：再次恢复默认后没有回到定义值（${await toolSearch.inputValue()}）`)
   await check(p, '设置-CLI-默认环境变量', [
     '默认环境变量',
-    'ENABLE_TOOL_SEARCH',
-    'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS',
+    'MCP 工具按需搜索',
+    '关闭自带的后台命令',
+    '输出中断判定（毫秒）',
+    '查找和搜索文件超时（秒）',
   ])
   await p.getByRole('dialog').getByText('Codex', { exact: true }).first().click()
   await p.getByText('没有设置最大输出的参数').first().scrollIntoViewIfNeeded()
@@ -250,7 +252,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     '最近触发',
   ])
   // 第四期：内置钩子的参数（一行一项）
-  await p.getByRole('button', { name: '参数' }).nth(1).click()
+  await p.getByRole('button', { name: '参数', exact: true }).nth(1).click()
   await check(p, '设置-钩子-参数', ['「危险命令守卫」的参数', '另外拦下的命令'])
   await p.getByRole('dialog').getByRole('button', { name: '取消' }).click()
   const mine = p.locator('[data-setting-group="我的钩子"]')

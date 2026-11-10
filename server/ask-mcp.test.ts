@@ -158,12 +158,12 @@ test('握手告诉桥接扩展这一轮有没有编排工具：压缩轮、审�
   const ask = openAskBridge({ ask: () => {} })
   assert.equal((await hello(ask)).result.capabilities.experimental.orchestration.enabled, false)
   ask.close()
-  const orch = openAskBridge({ orch: { self: 'a', hasMain: false, common: [], team: true } as unknown as Orchestra })
+  const orch = openAskBridge({ orch: { self: 'a', common: [], team: true } as unknown as Orchestra })
   assert.equal((await hello(orch)).result.capabilities.experimental.orchestration.enabled, true)
   orch.close()
   // Chat 模式（ADR 0038）只挂后台命令，没有 get_status 这些核心工具：声明成有的话 Pi 报「工具清单不完整」（186443c 回归）
   const chat = openAskBridge({
-    orch: { self: '@chat', hasMain: false, common: [], canBackground: true } as unknown as Orchestra,
+    orch: { self: '@chat', common: [], canBackground: true } as unknown as Orchestra,
   })
   assert.equal((await hello(chat)).result.capabilities.experimental.orchestration.enabled, false)
   chat.close()

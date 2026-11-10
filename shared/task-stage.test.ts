@@ -738,7 +738,7 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起 / �
   assert.equal(resumeNote({ stopReason: 'user', steps: [], runs: [] }).split('\n').length, 1)
 })
 
-test('Chat 页和 Agent 模式分开：Chat 页只推一次，Agent 模式的次数跟设置走，进度变了重新数', () => {
+test('Chat 页和 Agent 模式分开：Chat 页只推一次，Agent 模式不限次数，进度变了重新数', () => {
   const plain = { mode: 'chat' as const, projectId: '', parentTaskId: '' }
   const agentConv = { mode: 'chat' as const, projectId: 'p1', parentTaskId: '' }
   const child = { mode: 'chat' as const, projectId: 'p1', parentTaskId: 'parent' }
@@ -746,12 +746,9 @@ test('Chat 页和 Agent 模式分开：Chat 页只推一次，Agent 模式的次
   assert.equal(isChatMode(agentConv), false)
   assert.equal(isChatMode(child), false)
   assert.equal(isChatMode({ ...plain, mode: 'workflow' }), false)
-  assert.equal(nudgeMax(plain, 6), 1)
-  assert.equal(nudgeMax(plain, 0), 1, 'Chat 页一问一答不受设置影响，仍只推 1 次')
-  assert.equal(nudgeMax(child, 6), 6, '子对话和顶层对话一样自驱，推满才报父对话（ADR 0041）')
-  assert.equal(nudgeMax(agentConv, 6), 6, '默认按设置里的 6 次')
-  assert.equal(nudgeMax(agentConv, 2), 2, '上限换成设置里的值')
-  assert.equal(nudgeMax(agentConv, 0), 0, '0 表示不自动推')
+  assert.equal(nudgeMax(plain), 1, 'Chat 页一问一答仍只推 1 次')
+  assert.equal(nudgeMax(child), Infinity, '子对话和顶层对话一样不限次数，靠 end_turn 和空转保护收住')
+  assert.equal(nudgeMax(agentConv), Infinity, 'Agent 模式不限次数（用户 2026-11-05 定）')
   // 同一进度：第 1–6 次能推，第 7 次推满；进度变了从 1 重新数
   let r = nextNudge(undefined, 'plan:1', 6)
   assert.deepEqual(r, { key: 'plan:1', n: 1 })

@@ -9,7 +9,8 @@
  */
 
 import { chipAlignProblems, runShard, tabAlignProblems } from './harness.mjs'
-import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
+import { scrollPairProblems } from './scroll-pair.mjs'
+import { closeChildTab, openCartTask, patchDemoOnce, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
   const { base, check, errors, settle, shotOf } = api
@@ -96,13 +97,17 @@ await runShard(import.meta.filename, async (api) => {
   // （用户报「这个运行时间有问题」：等到子对话 / 后台命令时时间就消失了）
   {
     const header = p.locator('header').filter({ has: p.locator('[role="tablist"][aria-label="对话页签"]') })
-    const pill = header.locator('[title*="子对话执行中"]').first()
+    // 购物车对话名下有在等你操作的子对话：演示版补上 childrenNeeds 后和正式版一样，在等什么写成「子对话等你处理」
+    const pill = header.locator('[title*="子对话等你处理"]').first()
     if (!(await pill.count())) errors.push('状态胶囊：等子对话时悬停提示里没有说明在等什么')
     else {
+      // 等你处理时胶囊直接写出来（要你去点），执行时长放进悬停提示（head-status.test.ts 覆盖「子对话等你处理 · 3:00」）
       const text = (await pill.locator('[data-head-clock]').innerText()).trim()
-      if (!/^\d+:\d{2}(:\d{2})?$/.test(text)) errors.push(`状态胶囊：等子对话时应只显示执行时长，实际「${text}」`)
+      if (text !== '子对话等你处理') errors.push(`状态胶囊：子对话等你处理时应写出来，实际「${text}」`)
+      const title = (await pill.getAttribute('title')) ?? ''
+      if (!/\d+:\d{2}/.test(title)) errors.push(`状态胶囊：悬停提示里要留执行时长（实际「${title}」）`)
       const screen = ((await pill.locator('.sr-only').textContent()) ?? '').trim()
-      if (!screen.includes('子对话执行中')) errors.push(`状态胶囊：读屏说明里没有说明在等什么（实际「${screen}」）`)
+      if (!screen.includes('子对话等你处理')) errors.push(`状态胶囊：读屏说明里没有说明在等什么（实际「${screen}」）`)
       if (!(await shotOf(p, pill, '任务-状态胶囊-等子对话'))) errors.push('状态胶囊：截图失败')
     }
   }
@@ -135,6 +140,7 @@ await runShard(import.meta.filename, async (api) => {
     )
       errors.push('会话栏：「状态」没有一句说明')
     await rail.screenshot({ path: 'ui-shots/02-会话栏-状态.png' }).catch(() => {})
+    await scrollPairProblems(p, rail, errors)
     // 右栏不再列子对话（ADR 0034）：「协作」卡去掉，状态卡里也不逐个列子对话，它们只在输入框上方的子对话面板里
     {
       const cards = await p.evaluate(() =>
@@ -199,11 +205,12 @@ await runShard(import.meta.filename, async (api) => {
   await check(p, '输入框-等子对话')
   {
     const ph = (await p.locator('#follow-up').first().getAttribute('aria-placeholder')) || ''
-    if (!ph.includes('子对话执行中'))
+    // 名下有子对话等你处理（演示版和正式版一样带 childrenNeeds）：占位文字先说这件事
+    if (!ph.includes('子对话等你处理'))
       errors.push(`输入框：名下还有子对话在跑时，占位文字要说明在等什么（实际「${ph}」）`)
     if (!ph.includes('可以直接输入要求')) errors.push('输入框：等子对话时要说明还能直接输入要求')
   }
-  // 运行区的子对话：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），都要列出来（见 shared/task.ts 的 visibleChildren）。
+  // 运行区的子对话：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），加一个在等你操作的，都要列出来（见 listedChildren）。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」。输入框上方不再有子对话栏，只看运行区
   {
     {
@@ -245,7 +252,9 @@ await runShard(import.meta.filename, async (api) => {
             const sepBox = tag.closest('.border-l')
             // 耗时是行尾那个等宽数字（tabular-nums），它要贴住行右边
             const ms = [...row.querySelectorAll('span')].find((s) => (s.className || '').includes('tabular-nums'))
-            const rowRight = row.getBoundingClientRect().right
+            // 行尾有按钮（去操作、查看报告）时耗时贴着按钮，量到按钮左边
+            const after = ms?.nextElementSibling
+            const rowRight = after ? after.getBoundingClientRect().left : row.getBoundingClientRect().right
             return {
               gap: Math.round(tag.getBoundingClientRect().left - title.getBoundingClientRect().right),
               // 分隔线不只看类名：类还在但样式被覆盖时也要能发现
@@ -259,9 +268,16 @@ await runShard(import.meta.filename, async (api) => {
             }
           })
           .filter(Boolean)
-        return { runs, align }
+        const act = [...document.querySelectorAll('[aria-label="运行中"] button[aria-label="去操作"]')].length > 0
+        return { runs, align, act }
       })
-      if (boxes.runs.length !== 5) errors.push(`运行区：应该列出 5 个在跑的子对话，实际 ${boxes.runs.length} 个`)
+      // 另两行在等你处理：「排查路牌偏移」等你操作（request_user_action，行尾给「去操作」）、「购物车缓存方案」在提问，
+      // 也要列（用户 2026-11-07 报：子对话等用户操作时父对话的子对话列表里没有它，见 child-line.ts 的 childNeedsYou）
+      if (boxes.runs.length !== 7)
+        errors.push(`运行区：应该列出 7 个子对话（5 个在跑、2 个等你处理），实际 ${boxes.runs.length} 个`)
+      if (!boxes.runs.some((x) => x.includes('排查路牌偏移') && /等.{1,6}操作/.test(x)))
+        errors.push('运行区：等你操作的子对话没有列出来，或者行上没有「等…操作」状态')
+      if (!boxes.act) errors.push('运行区：等你操作的子对话行尾没有「去操作」按钮')
       // 状态标签：计划没做完的写「计划 1/2」、在等后台命令的写「等结果」+ 在等什么、
       // 已标记解决但还在跑的仍然是「执行中」（完成标记不能盖住还在跑）
       for (const tag of ['计划 1/2', '等结果', '等 1 个后台命令', '执行中']) {
@@ -700,6 +716,16 @@ await runShard(import.meta.filename, async (api) => {
       await closed()
     }
   }
+  // 总结之后的协调动作（交回子对话、传话、办完的后台命令）收在协调小行里（回复折叠重设计 §3.3）：
+  // 要看那几行工具先把它点开。展开状态不跨刷新，刷新后要重新点
+  const openCoord = async () => {
+    const line = p.locator('[data-fold="coord"][aria-expanded="false"]').last()
+    if (await line.count()) {
+      await line.scrollIntoViewIfNeeded()
+      await line.click()
+      await settle(p)
+    }
+  }
   // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON），
   // 折叠行要靠它兜底显示命令，不能只剩「后台命令」和耗时
   {
@@ -788,6 +814,7 @@ await runShard(import.meta.filename, async (api) => {
       // 事后再想回看这条命令：运行区那一行跑完就没了，只能靠对话里那条 run_background 工具行——
       // 它的标题也要能打开同一个后台命令窗口（输出、退出码都在里面）
       await patchJobs(null)
+      await openCoord()
       // 运行区那一行没了之后，只剩对话里那条 run_background 工具行的标题
       const pick = p.locator('button[title*="npm ci > /tmp/npmci.log"]').last()
       if (!(await pick.count())) errors.push('后台命令工具行：找不到那条 run_background 的标题')
@@ -829,6 +856,7 @@ await runShard(import.meta.filename, async (api) => {
     await patchJobs(null)
   }
   // 发出去的信也是工具行：父对话里画成「→ 收件方 · 传话」，不把正文铺成居中的系统块
+  await openCoord()
   {
     const row = p.locator('[aria-label^="发给 "]').first()
     if (!(await row.count())) errors.push('父对话里没有发出的信：send_message 又被铺成居中的说明块')
@@ -913,9 +941,16 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('对话菜单「状态」：弹窗里没有结论')
       else if ((await p.locator('[data-lifecycle] aside[aria-label="对话树"] li').count()) < 2)
         errors.push('对话菜单「状态」：对话树里没有子对话或子任务')
-      // 五类事件的计数块、标题栏右上角的「AI 分析」和「复制诊断文件」
-      if ((await p.locator('[data-life-counts] button').count()) !== 6)
-        errors.push('对话菜单「状态」：事件计数不是六块（模型请求、面板提醒、重试、出错、停止、进程退出）')
+      // 事件的计数块（对话多一块「它说做完了」）、标题栏右上角的「AI 分析」和「复制诊断文件」
+      if ((await p.locator('[data-life-counts] button').count()) !== 7)
+        errors.push('对话菜单「状态」：事件计数不是七块（模型请求、面板提醒、它说做完了、重试、出错、停止、进程退出）')
+      if (!(await p.locator('[data-life-progress]').count())) errors.push('对话菜单「状态」：没有「推进」卡')
+      // 搜日志：搜不到时给提示，清空后回到完整日志
+      const search = p.getByRole('textbox', { name: '搜日志' })
+      await search.fill('没有这句话的日志')
+      if (!(await p.locator('[data-life-log]').getByText('没有搜到').count()))
+        errors.push('对话菜单「状态」：搜日志搜不到时没有提示')
+      await search.fill('')
       // 面板推了几次「接着做」：演示日志里推过一次
       const nudges = p.locator('[data-life-counts] button').nth(1)
       if (!/面板提醒\s*1/.test((await nudges.innerText().catch(() => '')).replace(/\n/g, ' ')))
@@ -930,6 +965,24 @@ await runShard(import.meta.filename, async (api) => {
       if ((await p.locator('[data-life-counts] button[aria-pressed="true"]').count()) !== 1)
         errors.push('对话菜单「状态」：点计数块没有切到只看这一类日志')
       await p.locator('[data-life-counts] button').first().click()
+      // 筛选下双击某条：取消筛选回到完整日志，定位并高亮到那一条（用户 2026-11-05 要的）
+      await nudges.click()
+      await p.locator('[data-life-log] [data-at]').first().dblclick()
+      if ((await p.locator('[data-life-counts] button[aria-pressed="true"]').count()) !== 0)
+        errors.push('对话菜单「状态」：筛选下双击日志没有取消筛选')
+      else if (!(await p.locator('[data-life-log] [data-life-flash]').count()))
+        errors.push('对话菜单「状态」：筛选下双击日志后完整日志里没有高亮那一条')
+      else if (
+        !(await p.evaluate(() => {
+          const row = document.querySelector('[data-life-log] [data-life-flash]')
+          const box = row?.parentElement
+          if (!row || !box) return false
+          const a = row.getBoundingClientRect()
+          const b = box.getBoundingClientRect()
+          return a.top >= b.top && a.bottom <= b.bottom
+        }))
+      )
+        errors.push('对话菜单「状态」：筛选下双击日志后没有滚到那一条')
       await check(p, '状态诊断')
       await p.keyboard.press('Escape')
       await closed()
@@ -1155,12 +1208,10 @@ await runShard(import.meta.filename, async (api) => {
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k))
-      const task = db.tasks.find((x) => x.title.includes('购物车'))
-      task.status = 'running'
-      localStorage.setItem(k, JSON.stringify(db))
-    }, key)
+    // 在下一次导航、页面脚本运行之前改（patchDemoOnce）：直接改 localStorage 可能被当前页写回的内存数据盖掉
+    await patchDemoOnce(p, 'trace-running', (db) => {
+      db.tasks.find((x) => x.title.includes('购物车')).status = 'running'
+    })
     // 整页导航：只改 hash 会被内存里的演示数据盖回去（见 docs/lessons/ui-check.md）
     await p.goto(base)
     const conv = p.getByText('购物车右上角', { exact: false }).first()
@@ -1217,13 +1268,10 @@ await runShard(import.meta.filename, async (api) => {
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k))
+    await patchDemoOnce(p, 'trace-no-dev', (db) => {
       db.settings = { ...db.settings, developerMode: false }
-      const task = db.tasks.find((x) => x.title.includes('购物车'))
-      task.status = 'running'
-      localStorage.setItem(k, JSON.stringify(db))
-    }, key)
+      db.tasks.find((x) => x.title.includes('购物车')).status = 'running'
+    })
     await p.goto(base)
     const conv = p.getByText('购物车右上角', { exact: false }).first()
     if (
@@ -1627,7 +1675,7 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
-  // 发送消息的一瞬间运行区不能闪没：刚发出的用户消息会自己成一段（见 TaskView 的 toBlocks），
+  // 发送消息的一瞬间运行区不能闪没：刚发出的用户消息会自己成一段（见 task-blocks.ts 的 toBlocks），
   // 以前「最新的一轮」按最后一段算，那一轮回复就不再是最新，运行区（子对话行、后台命令行）整块消失，
   // 等 AI 开口又回来。这里用 MutationObserver 记录整个发送过程里运行区最少的子对话行数，
   // 不靠等待时序赌那一帧（等待条件用「消息出现在消息区里」这个可观测状态）。

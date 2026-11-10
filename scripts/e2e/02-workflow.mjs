@@ -180,9 +180,12 @@ await runShard('工作流任务', async (api) => {
   assert.match(c1.input, /流程「主流程」的节点：分析/)
   assert.match(c1.input, /## 本节点要做的事\n先分析。/)
   // 末尾再提醒一次语言（长提示词里中间的规则容易被忽略）：面板工具那行说明插在它前面
-  // 设置是默认的「自动」：提醒跟随用户消息的语言，不写死界面语言
-  assert.match(c1.input, /回复正文和思考过程用用户这条消息所用的语言；代码、命令、日志和报错原文不翻译。$/)
-  assert.match(c1.input, /（面板工具）[\s\S]*回复正文和思考过程用用户这条消息所用的语言/)
+  // 设置是默认的「自动」：按识别出的语言（e2e 里是简体中文）提醒，不再写「跟随用户消息」
+  assert.match(
+    c1.input,
+    /回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。提到文件时写完整的绝对路径（可加 :行号），不要只写文件名或相对路径。$/,
+  )
+  assert.match(c1.input, /（面板工具）[\s\S]*回复正文和思考过程继续用中文/)
   assert.doesNotMatch(c1.input, /同时进行的节点/)
   // 节点都用默认 CLI：乙（固定 Codex）、丙（固定 Command Code）的节点也交给 Claude Code
   const c2 = [cp1, cp2].find((x) => x.input.includes('节点：实现'))
@@ -283,17 +286,11 @@ await runShard('工作流任务', async (api) => {
   assert.ok(!existsSync(path.dirname(handoff)), '永久删除时删掉交接文件')
   step('节点交接：上游结果太长时完整内容存成文件，下游按路径去读')
 
-  // ---- 追加要求：主 Agent 续接会话 ----
+  // ---- 运行结束后再发要求：不再跑节点（没有主 Agent 接着处理，要再做一次由父对话起） ----
+  const nAfter = calls().length
   await call('POST', `/tasks/${t.id}/messages`, { text: '按钮改成红色' })
   t = await waitDone(t.id)
   assert.equal(t.status, 'done')
-  c = calls().at(-1)
-  assert.equal(c.kind, 'claude')
-  assert.ok(
-    c.args.includes('--resume') && c.args.includes(t.sessions.n4),
-    '追加要求应该续接主 Agent 最后执行的节点的会话',
-  )
-  assert.equal(t.sessions[A.id], t.sessions.n4)
-  assert.match(c.input, /按钮改成红色/)
-  step('追加要求：由主 Agent 续接会话处理')
+  assert.equal(calls().length, nAfter, '跑完的运行不再调用 CLI')
+  step('运行结束后再发要求：不再跑节点')
 })

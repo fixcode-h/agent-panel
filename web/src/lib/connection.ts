@@ -15,7 +15,6 @@ function set(v: boolean) {
 
 export const markOnline = () => set(false)
 export const markOffline = () => set(true)
-export const isOffline = () => offline
 
 /** fetch 的包装：只负责记连接状态，响应和错误原样交回调用方 */
 export async function trackedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

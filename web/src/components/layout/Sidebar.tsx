@@ -91,6 +91,8 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
+import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
+import type { PluginPage } from '@/plugins/sdk'
 
 /** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
 export function Logo({ className }: { className?: string }) {
@@ -301,6 +303,27 @@ function Row({
   )
 }
 
+/** 手机抽屉菜单里插件的整页（插件接口 2）：和功能页一样一行一个，宽屏时它们在图标栏里 */
+function PluginNavRows({ narrow }: { narrow: boolean }) {
+  const pages = usePluginPages()
+  return pages.map((p) => <PluginNavRow key={`${p.plugin}/${p.id}`} page={p} narrow={narrow} />)
+}
+
+function PluginNavRow({ page, narrow }: { page: PluginPage & { plugin: string }; narrow: boolean }) {
+  const { route, go } = useNav()
+  const dot = page.useDot?.()
+  return (
+    <Row
+      icon={page.icon}
+      label={page.label}
+      collapsed={narrow}
+      on={route.page === 'plugin' && route.id === page.plugin && route.sub === page.id}
+      onClick={() => go({ page: 'plugin', id: page.plugin, sub: page.id })}
+      dot={typeof dot === 'string' ? dot : dot ? page.label : undefined}
+    />
+  )
+}
+
 /** 切到各模式时回到上次在那个模式里看的页面 */
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
@@ -312,9 +335,10 @@ let lastDesignHome: Route = { page: 'design' }
 export const homeRoute = (from?: PageId) =>
   from && DESIGN_NAV.some((n) => n.id === from) ? lastDesignHome : lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
-export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page)
+export const isToolPage = (page: PageId) =>
+  NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page) || page === 'plugin'
 /** 设计模式：设计页和它的 ComfyUI 工作流页 */
-export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'model'
+export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'pdesign'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
@@ -437,8 +461,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 免得同一次输入发两份请求或者为看不见的结果白扫一遍对话
   const content = useTaskSearch(chatMode || designMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
-  // 模型设计对话属于设计模式（#/model），不列进 Agent 模式的项目对话
-  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.modelDesign)
+  // 插件管的对话（设计模式 #/pdesign、插件整页 #/plugin，例如模型设计）在插件那边看，不列进 Agent 模式的项目对话；
+  // 插件不在时照常列
+  const owned = useOwnedByPlugin()
+  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !owned(t))
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
   const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))
@@ -609,6 +635,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   dot={n.id === 'library' ? skillDot : undefined}
                 />
               ))}
+            {mobile && <PluginNavRows narrow={narrow} />}
           </>
         )}
       </nav>

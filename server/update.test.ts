@@ -103,13 +103,11 @@ test('强制更新：停任务之前记下被打断的任务，重启后据此�
   assert.equal(saved.acknowledged, false)
 })
 
-test('强制更新：没有正在执行的任务时不留记录，也不把上次没处理的冲掉', async () => {
+test('强制更新：没有正在执行的任务时写空名单，把上次没处理的记录冲掉', async () => {
   await stopForUpdate({ phase: '' }, { interrupted: () => [], stopAll: async () => {} })
   const saved = JSON.parse(readFileSync(path.join(dir, 'cache/interrupted-by-update.json'), 'utf8'))
-  assert.deepEqual(
-    saved.tasks.map((x: { id: string }) => x.id),
-    ['task-a', 'task-b'],
-  )
+  assert.deepEqual(saved.tasks, [])
+  assert.equal(saved.acknowledged, false)
 })
 
 test('没有可下载的包时返回空地址，不会把别的平台的包装上', () => {
@@ -351,6 +349,22 @@ test('检查更新被限流时：没有缓存就报错，有缓存就回退并�
     const retried: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
     const until = Date.parse(retried.limitedUntil)
     assert.ok(until >= before + 110_000 && until <= before + 130_000, '大约 2 分钟后恢复')
+  } finally {
+    await gh.close()
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})
+
+test('cached=1 只回上次存下的列表，不访问 GitHub，最多列 10 个', async () => {
+  const list = Array.from({ length: 12 }, (_, i) => cachedRelease(`9.9.${i}`))
+  writeReleasesCache({ at: Date.now() - 7 * 3600_000, list })
+  const gh = await stubGithub(() => ({ status: 500 }))
+  try {
+    const body: any = await (await makeUpdateApi().api.request('/releases?cached=1')).json()
+    assert.equal(gh.hits.length, 0, '只读缓存，过了 6 小时也不去问 GitHub')
+    assert.equal(body.error, undefined)
+    assert.equal(body.releases.length, 10)
+    assert.equal(body.releases[0].tag, 'v9.9.11', '按版本号从新到旧')
   } finally {
     await gh.close()
     delete process.env.AGENT_PANEL_RELEASES_URL

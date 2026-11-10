@@ -14,12 +14,13 @@ import {
   type Margin,
   type Widget,
 } from './umg.ts'
-import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
+import { Attachment, type ToolUse } from './schema.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
 import { DesignAnalysis } from './design-analysis.ts'
 import { DesignData, checkData, dataBrief, normalizeData } from './design-data.ts'
+import { RestoreState } from './restore/schema.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -32,7 +33,10 @@ const MarginSchema = z.object({ Left: z.number(), Top: z.number(), Right: z.numb
 export const ImageVariant = z.object({
   /** 设计目录 images/ 下的文件名 */
   file: z.string(),
-  source: z.enum(['cli', 'browser', 'local', 'upload']),
+  /** crop：从确认的模板里按 ref 抠出来的（默认）；其余是生成的或上传的 */
+  source: z.enum(['cli', 'browser', 'local', 'upload', 'crop']),
+  /** 和模板里那一块的相似度（0~1）：抠的、精修的都打分，低于设置里的门槛不选用 */
+  score: z.number().optional(),
   /** 实际尺寸（像素） */
   width: z.number().default(0),
   height: z.number().default(0),
@@ -318,6 +322,8 @@ export const Design = DesignDoc.extend({
   rev: z.number().int().default(0),
   /** 原画：候选图和确认的模板 */
   concept: ConceptState.default(emptyConcept),
+  /** 照原画一比一还原（有它就是还原模式）：见 shared/restore/schema.ts */
+  restore: RestoreState.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -328,6 +334,7 @@ export type Design = DesignDoc & {
   messages: DesignMessage[]
   rev: number
   concept?: ConceptState
+  restore?: RestoreState
   createdAt: string
   updatedAt: string
 }
@@ -548,7 +555,7 @@ export const DesignChatInput = z.object({
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
   /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  attachments: z.array(Attachment).default([]),
   /** 这次一起发的控件引用（右键「引用到 AI 对话」） */
   refs: z.array(WidgetCitation).max(30).default([]),
   /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */
@@ -589,6 +596,8 @@ export const GenerateImageInput = z.object({
   prompt: z.string().max(4000).optional(),
   /** 这一次的修改意见（用户写的和在图上标的，见 imageRevisionText），只用在这一次生成 */
   revision: z.string().max(8000).optional(),
+  /** 精修：有模板时切图默认从模板里抠，精修才照着抠出来的那块重新画（和它的相似度低于门槛不选用） */
+  refine: z.boolean().optional(),
 })
 
 /** AI 回复里的一段：先思考，再调工具，再说明；后面又有思考或工具调用时开始新的一段 */
@@ -1013,7 +1022,7 @@ ${regionLines ? `\n之前拆过、用户还没确认的区块（用户说了要�
 照着它搭界面、出切图，界面要和模板一致：
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。${regionLines ? `\n   骨架照用户确认过的区块搭：每个区块一个容器（控件名就用区块名），位置、大小照抄下面的设计稿坐标，不要自己再量一遍挪动：\n${regionLines.replace(/^/gm, '   ')}` : ''}
-3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。每张切图写 ref（它在模板里的位置，设计稿像素 {"x","y","w","h"}，用 inspect_image / view_image 量准）：生成时面板从模板裁下这一块做参考（图片 CLI 当参考图，本机 ComfyUI 从这一块图生图），形状、材质、配色和模板一致；没写 ref 的只带整张模板参考。
+3. 切图**从模板里抠，不重新画**：每个底框、按钮、高亮框、图标、装饰单独一张，**每张都写 ref**（它在模板里的位置，设计稿像素 {"x","y","w","h"}，用 inspect_image / view_image 量准、框紧，不带旁边的东西），面板按 ref 从模板原样裁下来（透明的去掉平底），所以 Icon 和模板一模一样；width、height 写它在界面上的显示尺寸，和 ref 的宽高一致。prompt 仍用英文写清楚形状、材质、颜色（用户点「精修」时照着抠出来的那块重画），需要拉伸的框给 nineSlice。没写 ref 的才按描述生成（模板里没有的东西）；有 ref 的不要写 sheet。
 4. 每搭完一个区域就调 compare_template（region 写这个区域的设计稿坐标）和模板逐像素对比：按它给的偏移和差异热力图改位置、大小，再对比一次确认；全部搭完再整体对比一次（不写 region），最后 screenshot 截全图。位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 

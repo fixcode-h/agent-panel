@@ -17,7 +17,7 @@ import { rememberAskUserDefault } from './askUserDefault'
 import { applySavedAppearance } from './appearance'
 import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
-import { t } from '@shared/i18n'
+import { getLang, isLangAuto, t } from '@shared/i18n'
 import { helpersWorking, taskSummary } from '@shared/task'
 import { keepLiveFields } from './live-fields'
 
@@ -150,7 +150,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [askDefault])
   // 设置里的语言和浏览器记的不一样（例如在别的浏览器里改过）：以设置为准
   useEffect(() => {
-    if (settings) switchLang(settings.language)
+    if (!settings) return
+    switchLang(settings.language)
+    // 「自动」：把这个浏览器识别出的语言告诉服务端，交给 Agent 的回复语言、服务端文案都按它走；
+    // 不报的话服务端只能按系统 locale 猜（和浏览器可能不一样），以前干脆让 Agent 「跟随用户消息」，思考常是英文
+    if (settings.language === 'auto' && isLangAuto() && settings.browserLang !== getLang())
+      void api
+        .saveSettings({ ...settings, browserLang: getLang() })
+        .then(setSettings)
+        .catch(() => {})
     // 只在语言设置变化时切换
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.language])
@@ -378,7 +386,8 @@ export type PageId =
   | 'chat'
   | 'design'
   | 'comfy'
-  | 'model'
+  | 'pdesign'
+  | 'plugin'
   | 'library'
   | 'mcp'
   | 'summary'

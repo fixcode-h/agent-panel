@@ -67,7 +67,7 @@ const agents: Agent[] = BUILTIN_AGENTS.map((b) => ({
 }))
 
 test('自带 Skill：名字和文件夹一致、不重名、写了说明', () => {
-  assert.ok(skillDirs.length >= 15)
+  assert.ok(skillDirs.length >= 12)
   const names = skillDirs.map((s) => s.name)
   assert.equal(new Set(names).size, names.length, '不同分类里有同名的 Skill')
   for (const s of skillDirs) {
@@ -129,24 +129,29 @@ test('「每日工作总结」：只出报告不改代码，需求 / 问题分�
   // 分类：需求和问题两类；问题只收用户自己报的
   assert.match(role, /\*\*需求\*\*/)
   assert.match(role, /只收用户自己报的问题/)
-  // 写法（ADR 0043）：像人写的日报——需求说怎么做的，问题说怎么回事、怎么解决的，没解决留空；去掉 AI 腔
+  // 写法（ADR 0056 取代 ADR 0043 的一段话写法）：有几项就分几点；问题分原因和修复，没解决不写修复；
+  // 修好的问题附带注释的关键代码，只抄真实改动；去掉 AI 腔
   assert.match(role, /像自己写给组长的日报/)
-  assert.match(role, /一两句说是怎么做的/)
-  assert.match(role, /还没解决就留空/)
+  assert.match(role, /有几项的内容就分几点写/)
+  assert.match(role, /还没解决就不写修复/)
+  assert.match(role, /关键代码（code）：只给已经解决的问题/)
+  assert.match(role, /不改写、不补全、不编/)
   assert.match(role, /「实现了」「优化了」/, '列出不许用的 AI 说法')
   // 版本管理操作不写（用户嫌报告里全是提交、合并这些）；测试过没过这类也不写
-  assert.match(role, /版本管理操作一律不写/)
+  assert.match(role, /版本管理操作：/)
   assert.match(role, /cherry-pick/)
   assert.match(role, /测试过没过/)
-  // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名
-  assert.match(role, /不写文件名/)
+  // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名；代码只放在关键代码里
+  assert.match(role, /不写文件名、函数名、命令/)
   assert.match(role, /不编造/)
-  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，输出 Markdown 两节，不加粗、不写标签
+  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，关键代码从 git 只读取；输出 Markdown 两节，条目是三级标题、内容分点
   assert.match(role, /tasks\/projects\//)
   assert.match(role, /读取预算/)
   assert.match(role, /## 需求/)
   assert.match(role, /## 问题/)
-  assert.match(role, /不加粗、不写「内容：\/原因：\/修复：」这类标签/)
+  assert.match(role, /git diff <from> <to>/)
+  assert.match(role, /### 1\. <标题>/)
+  assert.match(role, /\*\*原因\*\*/)
   assert.match(role, /只输出报告本身/)
   // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
   const panel = composeRole(
@@ -322,8 +327,8 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
     const list = await listBundled()
     assert.equal(list.length, skillDirs.length)
     assert.ok(list.every((s) => s.status.shared === 'missing'))
-    const one = list.find((s) => s.name === 'blender')!
-    assert.ok(one.files > 5, '带上了脚本和参考资料')
+    const one = list.find((s) => s.name === 'task-records')!
+    assert.ok(one.files >= 4, '带上了模板')
     // 详情页要能列出它带哪些文件：树里不含 SKILL.md，目录排在文件前，files 和树里的文件数一致
     assert.ok(one.tree, '自带 Skill 要带文件树')
     assert.equal(
@@ -331,29 +336,29 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
       false,
     )
     assert.equal(one.tree.entries.filter((x) => x.type === 'file').length, one.files)
-    assert.ok(one.tree.entries.some((x) => x.path === 'scripts' && x.type === 'dir'))
+    assert.ok(one.tree.entries.some((x) => x.path === 'templates' && x.type === 'dir'))
     // 父目录一定排在子项前面（前端的 toTree 依赖这个顺序）
     const at = (p: string) => one.tree!.entries.findIndex((x) => x.path === p)
-    assert.ok(at('scripts') < at('scripts/inspect_scene.py'))
+    assert.ok(at('templates') < at('templates/design.md'))
 
-    const r = await installBundled(['blender'], [], false)
-    assert.deepEqual(r.done, ['blender'])
-    const dir = path.join(home, '.agents/skills/blender')
+    const r = await installBundled(['task-records'], [], false)
+    assert.deepEqual(r.done, ['task-records'])
+    const dir = path.join(home, '.agents/skills/task-records')
     assert.ok(existsSync(path.join(dir, 'SKILL.md')))
-    assert.ok(existsSync(path.join(dir, 'scripts/inspect_scene.py')))
-    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.shared, 'same')
+    assert.ok(existsSync(path.join(dir, 'templates/design.md')))
+    assert.equal((await listBundled()).find((s) => s.name === 'task-records')!.status.shared, 'same')
 
     // 用户改过的：不覆盖，状态是「不同」；明确覆盖时换回自带的
     writeFileSync(path.join(dir, 'SKILL.md'), '改过')
-    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.shared, 'changed')
-    assert.deepEqual((await installBundled(['blender'], [], false)).skipped, ['blender'])
+    assert.equal((await listBundled()).find((s) => s.name === 'task-records')!.status.shared, 'changed')
+    assert.deepEqual((await installBundled(['task-records'], [], false)).skipped, ['task-records'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
-    await installBundled(['blender'], [], true)
+    await installBundled(['task-records'], [], true)
     assert.notEqual(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
 
     // 执行前补齐：只装缺的、只装自带的，用户的同名 Skill 不动
     writeFileSync(path.join(dir, 'SKILL.md'), '用户的')
-    const added = await ensureBundled(['blender', 'grilling', '不存在的'])
+    const added = await ensureBundled(['task-records', 'grilling', '不存在的'])
     assert.deepEqual(added, ['grilling'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {

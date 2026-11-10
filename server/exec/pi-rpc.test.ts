@@ -733,7 +733,6 @@ test('Pi 桥接扩展：两轮并发启动都拿到整批面板工具，不是�
   // 真实的子对话工具清单：从 orchTools 取。手写会漏项，也挡不住「整批被裁成一两个」的回归
   const expected = orchTools({
     self: '@chat',
-    hasMain: false,
     child: true,
     canSpawn: true,
     team: true,

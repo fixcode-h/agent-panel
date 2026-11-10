@@ -43,7 +43,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 ## 版本更新（GitHub Releases）
 
-`server/update.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`）。
+`server/update.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`、`/local-package`）。
 
 - 检查结果缓存在数据目录的 `cache/updates/releases.json`：`{ at, list, etag?, limitedUntil?, feed? }`。`at` 是上次成功读到 API 列表的时间；自动检查最多每 `CHECK_EVERY`（6 小时）用一次缓存，点「检查更新」带 `refresh=1` 时马上请求。
 - 减少请求：缓存里的 `etag` 下次作为 `If-None-Match` 带上，GitHub 回 304 时直接沿用缓存（conditional request 不计入配额），只把 `at` 挪到现在。环境变量 `GITHUB_TOKEN` 存在时带 `Authorization: Bearer`，配额从 60 次/小时提到 5000 次/小时；token 只从环境变量读，不落盘。
@@ -54,7 +54,8 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - 托盘 `checkAndInstall` 走同一个 `releases(true)`：feed 兜底版本也带拼出来的安装包地址，照常下载安装；拿不到本平台安装包地址的版本只提示有新版本、让用户去 GitHub Releases 手动下载，`POST /install` 对这种 tag 返回 502。
 - 自动检查由设置里的 `autoCheckUpdates` 控制（默认关）：关着时页面打开和定时都不请求 `/releases`；打开设置页的「版本更新」只调本地的 `GET /app/version`（当前版本、是否发布包、上一个版本，不访问 GitHub），版本列表仍要点「检查更新」。打开后前端 `web/src/lib/app-update.ts` 的 `autoCheck` 在页面打开时检查一次、之后每小时问一次服务端（服务端仍按 6 小时缓存合并请求）。
 - 在线演示（`web/src/lib/demo-backend.ts`）没有服务端缓存，用浏览器 localStorage 记上次的列表，403 / 429 时同样回退并带 `limitedUntil`；它的 `GET /app/version` 只读这份缓存，不解析 Atom feed。
-- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`，以及 Atom feed 解析（更新说明转 Markdown、按平台拼安装包和校验文件地址）、403 / 5xx 时 feed 兜底、冷却期内只读 feed、feed 失败回退缓存；`web/src/lib/app-update.test.ts` 覆盖自动检查开关关着不发请求、打开只启动一次。
+- **本地安装包**（2026-11-05）：「版本更新」里的「用本地安装包更新」（`web/src/components/settings/LocalPackageButton.tsx`）给连不上 GitHub、已经手动下好包的用户用。两步：`POST /app/local-package` 的请求体就是安装包本身（`application/octet-stream`，`server/http-guards.ts` 的 `rawUploadAllowed` 只对这个路径放行非 JSON 写请求，请求体上限 1 GB），服务端存进 `cache/updates/local-*`、解压，用 `server/update-local.ts` 的 `inspectPackage` 检查：文件头是 zip / gzip、有 `server.mjs` 和 `dist/index.html`、`package.json` 的 `name` 是 `agent-panel` 且版本号合法、包对应的系统（顶层目录 `-mac` / `-linux` 后缀、`.app`、只有托盘程序没有 `install-service.sh` 算 Windows；都认不出的早期通用包放行）和本机一致，不一致时报出该换哪个包。通过后回 `{ id, version, os }`，页面请用户确认，再 `POST /app/local-package/:id/install` 进 `startJob`，和在线更新共用 `replaceWith`：有任务时先等（可强制更新）、备份当前版本、替换、`--self-check`、失败退回、重启，data 不动。一次只留一个待装的包，选新包或取消（`DELETE`）时删掉。Linux 的 GNU tar 解不了 zip，`extractPackage` 失败后对 zip 改用 `unzip`。在线更新的解压也挪到等任务之前，包有问题时不用等任务结束就能报出来。没有 SHA256SUMS 可对，完整性靠结构检查和 `--self-check` 兜底。
+- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`，以及 Atom feed 解析（更新说明转 Markdown、按平台拼安装包和校验文件地址）、403 / 5xx 时 feed 兜底、冷却期内只读 feed、feed 失败回退缓存；`web/src/lib/app-update.test.ts` 覆盖自动检查开关关着不发请求、打开只启动一次；`server/update-local.test.ts` 覆盖本地安装包的平台识别、格式 / 包名 / 平台不对时拒绝，以及上传后等任务结束、替换并保留 data。
 
 ## 账号与登录
 
@@ -70,18 +71,26 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - 真正的失败照旧报失败：退出码非 0，或退出码 0 但读不到凭据（后者是 `登录没有完成：没有找到登录凭据`）。
 - 输出：stdout / stderr 经 `onLine` / `onStderr` 进 `take`，`take` 先调 `shared/ansi.ts` 的 `stripAnsi` 再拼进 `job.output`（留最后 4000 字符），并从中找登录网址。存进 `job.output` 之前就清 ANSI，界面 `<pre>`、失败文案的尾部 3 行、「AI 处理」拿到的才是同一份干净文本——CLI 发现标准输出接终端就上色，浏览器不认识 ESC 只会吞掉，留下 `[32m` 这种残码。`stripAnsi` 只清 CSI / OSC / 两字符转义和 `\r`，普通方括号文本（没有 ESC 的 `[32m`、Markdown 链接 `[文字](...)`）原样保留。
 
-## 外部访问（server/remote.ts、server/frp.ts，2026-11-01）
+## 外部访问（server/remote.ts、server/guard/、server/frp.ts，2026-11-07 改版，ADR 0058）
 
-- 四种方式（`RemoteAccess.mode`，结构在 `shared/remote-schema.ts`，`shared/schema.ts` 转出）：`quick` Cloudflare 临时地址、`token` Cloudflare Tunnel、`custom` 自建反代、`frp` 一键配置的云服务器。
-- **外网专用端口**：开着外网访问时 `applyRemote` 额外起一个只监听 127.0.0.1 的端口（`localPort`，默认 8788；quick / frp 被占用时换系统分配的，custom 要固定端口所以直接报错），请求在 env 上带 `EXTERNAL_ENV` 标记（`server/hosts.ts`）。`tokenGuard` 和 `/api` 的来源检查见到标记就一律当外网：不看 Host、必须带令牌，Origin 必须和 Host 同源。quick 的 cloudflared 和 frpc 都转到这个端口。原因：反代（nginx 默认 `proxy_set_header Host $proxy_host`）把 Host 改成 127.0.0.1 时，只按 Host 判断会把外网请求当成本机、绕过令牌。
-- 主端口仍兼容老的 custom / token 配置（按访问地址的主机名放行），但带 `X-Forwarded-For`、`X-Real-IP`、`Forwarded`、`X-Forwarded-Host`、`CF-Connecting-IP` 的请求不算本机（`isForwarded`）。
-- cloudflared 固定 `--protocol http2`：默认的 QUIC（UDP 7844）在国内常被干扰。
-- **frp**：`POST /api/remote/frp/deploy` 收服务器 IP、SSH 端口 / 用户 / 密码和端口，用 `ssh2` 登录（密码只用这一次，不写盘不写日志），按 `uname -m` 在本机下载对应的 frps（`FRP_VERSION` 固定版本，GitHub 下载走 `downloadFile` 的代理回退，服务器不用访问 GitHub），SFTP 上传后用 `deployScript` 装成 systemd 服务 `agent-panel-frps`（名字和用户自己的 frps 分开），放行 firewalld / ufw；阿里云安全组只能用户在控制台放行，界面和报错都写明端口。frps 的 `allowPorts` 只放面板端口和端口映射范围。部署成功后服务端直接保存设置（frp 令牌只存本机，导出时和隧道 token 一样去掉），页面用返回值替换自己那份，免得自动保存用旧值盖回去。
+- 三种方式（`RemoteAccess.mode`，结构在 `shared/remote-schema.ts`，`shared/schema.ts` 转出）：`frp` 一键配置的云服务器、`tailscale`、`custom` 自建反向代理 / 直连。老设置的 `quick` / `token`（Cloudflare）读进来按 `frp`。cloudflared 只剩「授权外部工具」用的下载（`server/cloudflared.ts`）。
+- **外网专用端口**：开着外部访问时 `applyRemote` 另起一个端口（`localPort`，默认 8788），请求在 env 上带 `EXTERNAL_ENV` 标记（`server/hosts.ts`）。frp / tailscale 只听 127.0.0.1（被占用时换系统分配的）；custom 按 `listenHost` 听 127.0.0.1 或 0.0.0.0，端口固定、被占直接报错，填了 `tlsCert` + `tlsKey` 就用 HTTPS。主端口只认本机 Host，外网只能从这个端口进。
+- **密码登录门**（`server/guard/`，参考 dsh-web-guard）：带标记的请求一律进 `externalGate`，不认访问令牌。没会话时接口回 401 `{ login: '/login' }`（前端 `api.ts` 的 `failure` 据此跳转），页面 302 到 `/login?next=`；`next` 只收站内相对路径。登录页和退出页是服务端直接出的 HTML（`pages.ts`）。
+  - 密码 scrypt 哈希存数据目录 `guard.json`（0600）；第一次打开外部访问时生成初始密码，明文也存在这里，只给本机打开的设置页看，改过密码就清掉。
+  - 会话令牌服务端只存 SHA-256，落盘 `guard-sessions.json`，按 `sessionDays` 滑动过期，Cookie `agent_panel_session`（HttpOnly、SameSite=Lax，HTTPS 时加 Secure）。
+  - 输错按来源 IP 锁定（`maxAttempts` 次、`lockMinutes` 分钟），另有全局上限 `maxAttempts × 10`：经 frp / tailscale 进来时来源都是 127.0.0.1。转发头只在**自建反代（custom）方式**且直连方是回环或内网地址时才认（`server/hosts.ts` 的 `FORWARDED_ENV`）：取 `X-Forwarded-For` 的最后一跳（nginx 的 `$proxy_add_x_forwarded_for` 是追加，第一个是访问者自己能写的），没有时看 `X-Real-IP`，不认 `CF-Connecting-IP`。frp 是 TCP 直通，进来的请求头全由访问者自己写，一律不认，否则换着假 IP 就能绕开按来源的锁定。
+  - 外网的 POST 等要过来源检查（`gate.ts` 的 `originOk` / `sameSite`）：Origin 的主机名要和 Host、`X-Forwarded-Host` 或访问地址一致。本机请求照旧走 `originAllowed`。
+  - 设置页「访问密码」（`GuardGroup.tsx`，接口 `/api/remote/guard/*`）：改密码（外网改要填当前密码，改完踢掉其他设备）、登录的设备列表、踢掉单个、全部退出。
+- **Tailscale**（`server/tailscale.ts`）：`tailscale serve|funnel --bg --https=<端口> http://127.0.0.1:<外网端口>`，关的时候只 `--https=<端口> off`，不 `reset` 用户自己的配置；机器名取 `tailscale status --json` 的 `Self.DNSName`。Funnel 只允许 443 / 8443 / 10000。
+  - tailnet 还没开启 Serve / Funnel 时，tailscale 打出开启链接（`login.tailscale.com/f/serve?node=…`）后**不退出、一直等**到用户在后台开好。面板见到链接（`enableUrlOf`）就不再陪着等：链接放进状态的 `enableUrl`，设置页显示「去 Tailscale 开启」按钮，那条命令在后台接着等，开好后自己配完、状态转为已连接；没打出链接的 15 秒没结束才算卡住。换设置、关外部访问时 `stopTailscale` 停掉等着的命令。等开启期间「重新检测」不重启它。
+- **反向代理配置**（`shared/remote.ts` 的 `proxySnippet`，界面 `ProxyGuide.tsx`）：按访问地址拼 Caddy、NPM、nginx 的配置，转发 Host 和 X-Forwarded-*、关缓冲（SSE）、放大上传上限。custom 方式转到外网专用端口（监听所有网卡时给局域网 IP，照顾 Docker 里的 NPM）；frp 方式给装在云服务器上的配置，转到 frps 开出的面板端口。
+- **frp 连接测试**（`POST /api/remote/frp/test`，`server/frp-test.ts`）：按配置 → 本机外网端口 → 云服务器 frp 端口（TCP）→ frpc 状态 → 经云服务器请求 `/api/remote/guard/session` 逐段试，断在哪段停在哪段；连不上按错误码分提示（`serverHint`），最后一段回的不是面板就说明端口被别的程序占着。
+- **frp**：`POST /api/remote/frp/deploy` 收服务器 IP、SSH 端口 / 用户 / 密码和端口，用 `ssh2` 登录（密码只用这一次，不写盘不写日志），按 `uname -m` 在本机下载对应的 frps（`FRP_VERSION` 固定版本，GitHub 下载走 `downloadFile` 的代理回退，服务器不用访问 GitHub），SFTP 上传后用 `deployScript` 装成 systemd 服务 `agent-panel-frps`（名字和用户自己的 frps 分开），放行 firewalld / ufw；阿里云安全组只能用户在控制台放行，界面和报错都写明端口。frps 的 `allowPorts` 只放面板端口和端口映射范围。部署成功后服务端直接保存设置（frp 令牌只存本机，导出时去掉），页面用返回值替换自己那份，免得自动保存用旧值盖回去。
 - frpc 在本机由 `startFrpc` 运行（没有就下载到数据目录 `bin/`），配置每次按设置重写到 `frp/frpc.toml`；`loginFailExit = false` 一直重试，`frpcEvent` / `frpcProxyOf` 解析日志：面板代理 `agent-panel` 决定连接状态，端口映射 `agent-panel-m-<id>` 各自记进 `status.mappings`，开不出来不影响面板本身。
 - 端口映射（SSH、远程桌面、VNC、自定义 TCP/UDP）：服务器端口必须在一键配置时放行的范围内（`frpMappingError`，前后端共用），增删只改本机 frpc，不用再登录服务器。
 - 映射类型（`FrpMapping.type`）：`tcp` / `udp` 占服务器端口；`xtcp` 是 P2P 直连，不占服务器端口，frpc 同时注册一条同密钥的 `stcp`，访问端配置（`shared/remote.ts` 的 `frpVisitorConfig`，设置页一键复制）先打洞、1 秒打不通就退回 stcp 经服务器中转；`files` 用 frp 的 `static_file` 插件把一个目录做成只读的网页文件共享，必须有用户名和密码（新建时生成），`~` 开头的目录在写配置时展开。P2P 密钥和共享密码只存本机，导出时去掉、导入时按映射 id 沿用。
 - 排障提示（`frpcEvent` 归类，见 lessons/server.md「按原因分」）：`connect to server error` 按后面的原因分成超时（安全组）、拒绝连接（frps 没运行）、连上后被断开 `session shutdown`（端口被别的程序占着）；`connect to local service` 只记在那条映射上。设置页每次刷新状态时还会主动探一下每条 TCP / P2P 映射的本机端口（`withLocalProbe`），本机没开服务（最常见是 Windows 没装 OpenSSH 服务器）直接标红，不用等外面连不上再查。
 - frp 包下载后按写死的官方 SHA256（`FRP_SHA256`，升级 `FRP_VERSION` 时一起换）校验；frpc 启动报 ENOENT / EPERM、程序文件不见了或一声不吭就退出，按「被安全软件隔离」提示，并给出要加进信任区的目录。一键部署脚本先用 `ss` 查 frp 端口和面板端口有没有被别的程序占着，占着就直接报出程序名。
-- 「连接状态」里的「重新连接」（`POST /remote/restart`）按当前设置重启隧道，不用把外部访问关掉再打开。
 - 设置页给每条映射拼好可复制的连接方式（`FrpMappingsGroup.tsx` 的 `mappingUsage`）：SSH 用状态接口里的本机登录用户名（`status.localUser`）拼 `ssh -p <端口> <用户>@<服务器>`，P2P 的是访问端电脑上的 `127.0.0.1:<访问端端口>`。
-- 回归：`server/remote.test.ts`（frps / frpc 配置、映射校验、日志解析）、`server/remote-external.test.ts`（主端口带转发头要令牌、外网专用端口一律要令牌、停用后端口关闭）。
+- 「连接状态」里的「重新连接」（`POST /remote/restart`）按当前设置重启外网端口和 frpc / tailscale。
+- 回归：`server/remote.test.ts`（frps / frpc 配置、映射校验、日志解析、老设置迁移、反代配置、`serverHint`）、`server/remote-external.test.ts`（外网端口没登录回 401 / 302、令牌无效、登录与退出、`next` 防外跳、按 IP 锁定、停用后端口关闭）。

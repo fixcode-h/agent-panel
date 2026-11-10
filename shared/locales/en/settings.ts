@@ -4,6 +4,7 @@ export const EN_SETTINGS: Record<string, string> = {
   测试步骤: 'Test steps',
   停用: 'Disabled',
   '，已停用': ', disabled',
+  'API 方式不能生图': 'no images with an API key',
   '，合并时编译': ', builds on merge',
   'AI 生成步骤': 'AI generate steps',
   'AI 生成测试步骤': 'AI generate test steps',
@@ -107,7 +108,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '单个步骤最长运行时间（分钟）': 'Max run time per step (minutes)',
   '填 0 到 1440 之间的整数，0 表示不限制': 'Enter a whole number from 0 to 1440; 0 means no limit',
   语言: 'Language',
-  '跟随浏览器 · Auto': 'Follow browser · Auto',
+  '跟随浏览器 · {lang}': 'Follow browser · {lang}',
   内容宽度: 'Content width',
   '项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。':
     'Used by the input box and task list on the project home, and by the conversation and workflow nodes on the task page. Shrinks automatically in narrow windows.',
@@ -311,6 +312,8 @@ export const EN_SETTINGS: Record<string, string> = {
   正式版: 'Stable',
   '没有更新说明。': 'No release notes.',
   查看更新说明: 'View release notes',
+  本版更新内容: "What's new in this version",
+  新版本更新内容: "What's new",
   当前: 'Current',
   '下载 zip 包（约 {size}）': 'Download zip (about {size})',
   '下载 zip 包': 'Download zip',
@@ -346,8 +349,21 @@ export const EN_SETTINGS: Record<string, string> = {
   '上次检查 {time}': 'Last checked {time}',
   '在线演示不能安装，可以下载包到本机运行。':
     "The online demo can't install updates. Download a package to run locally.",
-  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。':
-    'Updating downloads the package from GitHub, replaces the app files and restarts automatically. Data in the data folder is kept. If tasks are running, the download starts right away and the files are replaced after all tasks finish.',
+  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。连不上 GitHub 时，可以先下载好安装包，再用「用本地安装包更新」。':
+    'Updating downloads the package from GitHub, replaces the app files and restarts automatically. Data in the data folder is kept. If tasks are running, the download starts right away and the files are replaced after all tasks finish. If GitHub can\'t be reached, download a package first and use "Update from local package".',
+  '这个安装包不能用：{error}': "This package can't be used: {error}",
+  '选择已经下载到本机的安装包来更新，连不上 GitHub 时也能用':
+    "Pick a package already downloaded to this computer to update. Works even when GitHub can't be reached",
+  '正在检查安装包…': 'Checking package…',
+  用本地安装包更新: 'Update from local package',
+  '更新到 v{version}？': 'Update to v{version}?',
+  '切换到较旧的 v{version}？': 'Switch to older v{version}?',
+  '重新安装 v{version}？': 'Reinstall v{version}?',
+  '会用这个较旧的包替换当前程序，然后自动重启。旧版本可能读不懂新版本写的部分数据，建议先备份 data 目录。':
+    'This older package will replace the current app, then it restarts automatically. An older version may not understand some data written by the newer one, so back up the data folder first.',
+  '会用这个包替换当前程序，然后自动重启，data 目录里的数据会保留。有任务在执行时，会等所有任务结束后再替换。':
+    'This package will replace the current app, then it restarts automatically. Data in the data folder is kept. If tasks are running, the files are replaced after all tasks finish.',
+  重新安装: 'Reinstall',
   '从源码运行时请用 git 拉取更新；这里可以查看和下载发布的包。':
     'When running from source, pull updates with git. You can still view and download released packages here.',
   '当前是预览版，会提示所有更新的包；正式版只提示正式版。':
@@ -846,23 +862,10 @@ export const EN_SETTINGS: Record<string, string> = {
   // 外部访问
   外部访问: 'Remote access',
   允许外部访问: 'Allow remote access',
-  '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道、frp 或反向代理把外网的请求转到一个专用端口；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。':
-    'Off by default. When on, the server still listens only on 127.0.0.1 and a tunnel, frp or reverse proxy forwards outside requests to a dedicated port. This computer and other computers open the same panel, with data, task progress and conversations syncing in real time. Remote requests always require the access token.',
   访问方式: 'Connection method',
   方式: 'Method',
-  临时地址: 'Temporary address',
-  固定域名: 'Fixed domain',
   自建反向代理: 'Own reverse proxy',
-  'Tunnel Token': 'Tunnel token',
-  'Cloudflare 后台创建 Tunnel 时给出的 token，只保存在本机数据目录里。':
-    'The token shown when creating a Tunnel in the Cloudflare dashboard. It is stored only in the local data directory.',
   外部访问地址: 'Public address',
-  环境检测: 'Environment check',
-  '已安装 {version}': 'Installed {version}',
-  '正在下载 {n}%': 'Downloading {n}%',
-  '正在下载…': 'Downloading…',
-  '下载 cloudflared': 'Download cloudflared',
-  'cloudflared 路径': 'cloudflared path',
   连接状态: 'Connection status',
   外网地址: 'Public address',
   复制地址: 'Copy address',
@@ -1231,6 +1234,16 @@ export const EN_SETTINGS: Record<string, string> = {
   初始化完成: 'Initialization finished',
   '文档根：{dir}': 'Docs root: {dir}',
   '这个项目的文档根：{dir}': 'Docs root for this project: {dir}',
+  '已改共用文档根，原来的文档已合并过去': 'Shared docs root changed; the existing docs were merged into it',
+  '各分支共用的文档根：{dir}': 'Docs root shared by all branches: {dir}',
+  '当前分支：{name}': 'Current branch: {name}',
+  '；共用的其他分支：{list}': '; also shared by: {list}',
+  '。分支按项目文件夹区分：同名项目文件夹、分支目录在同一上级下的项目共用文档。':
+    '. Branches are told apart by project folder: projects with the same folder name whose branch folders sit under the same parent share docs.',
+  '合并各分支的旧文档时有 {n} 个文件内容不同，已另存成 .from-<分支>，项目对话会派「文档」合并。':
+    '{n} files differed when the branches’ old docs were merged; they were saved as .from-<branch> and the project chat will have Docs reconcile them.',
+  '合并旧文档出错：{error}': 'Merging old docs failed: {error}',
+  文档根的完整路径: 'Full path of the docs root',
   '（在项目外，写进去的文档不做 P4 / SVN 操作）':
     ' (outside the project: docs written here get no P4 / SVN operations)',
   '（在项目里，随项目纳入版本管理）': ' (inside the project: versioned with the project)',
@@ -1527,11 +1540,8 @@ export const EN_SETTINGS: Record<string, string> = {
   等你回复: 'Waiting for you',
   计划中: 'Planned',
   关闭页签: 'Close tab',
-  '模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。':
-    'In model conversations the Agent builds in Blender and the page previews it live on the right. The panel runs Blender in the background without a window.',
-  'Blender 路径': 'Blender path',
-  检测结果: 'Detection',
-  建模: 'Modeling',
+  向左滚动: 'Scroll left',
+  向右滚动: 'Scroll right',
   读到的模型: 'Models found',
   编辑或预览: 'Edit or preview',
   进度: 'Progress',
@@ -1544,8 +1554,6 @@ export const EN_SETTINGS: Record<string, string> = {
   整页: 'Page',
   小节: 'Section',
   // 设置页改版（2026-10-31）：精简后的名字、一行说明和问号里的详细说明
-  留空时自动查找: 'Searched automatically when left empty',
-  '在 PATH 和常见安装位置里找。': 'Looks in PATH and common install locations.',
   '浏览器登录的账号，可存几个随时切换': 'Signed-in browser account; save several and switch anytime',
   '用「API 配置」里的接口地址和密钥': 'Uses the URL and key from API settings',
   '支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取。':
@@ -1623,26 +1631,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '检查更新、下载更新和安装 Agent 时走这个代理':
     'Use this proxy to check for and download updates, and to install agents',
   '只支持 http 代理': 'HTTP proxies only',
-  让其他电脑也能打开这个面板: 'Let other computers open this panel',
-  '不用账号，重启后地址会变': 'No account needed; the URL changes on restart',
-  'Cloudflare Tunnel，地址固定': 'Cloudflare Tunnel with a fixed URL',
-  '已用 frp、nginx 等转到外网': 'Already forwarded with frp, nginx, etc.',
-  '用 cloudflared 生成一个临时地址，适合临时给别的电脑看；国内网络经常连不上 Cloudflare。':
-    'Uses cloudflared to create a temporary URL, good for a quick look from another computer. Networks in mainland China often cannot reach Cloudflare.',
-  '在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来。':
-    'Create a Tunnel in the Cloudflare dashboard and enter its token and domain.',
-  '把反向代理转到下面的「外网专用端口」，从这个端口进来的请求一律要求访问令牌。':
-    'Point your reverse proxy at the "Remote-only port" below; every request on that port requires the access token.',
-  只存在本机: 'Stored only on this computer',
   访问地址: 'Public URL',
-  'Tunnel 对外的域名': "The Tunnel's public domain",
-  反向代理后的完整地址: 'Full URL behind the reverse proxy',
-  '建立隧道用，不用在路由器上开端口': 'Builds the tunnel; no router ports to open',
-  '没有安装时可以直接下载到面板的数据目录；自己装好了（例如用 Homebrew、winget）就点重新检测。':
-    "If it isn't installed you can download it into the panel's data folder; if you installed it yourself (e.g. with Homebrew or winget), click Re-check.",
   自动找到的不用填: 'Leave empty if it was found automatically',
-  '装在别处时填可执行文件的完整路径。': 'Enter the full path to the executable if it lives elsewhere.',
-  '在其他电脑打开，链接里已带令牌': 'Open it on another computer; the link carries the token',
   正在登录服务器: 'Signing in to the server',
   '正在下载 frps': 'Downloading frps',
   正在上传到服务器: 'Uploading to the server',
@@ -1669,9 +1659,6 @@ export const EN_SETTINGS: Record<string, string> = {
     'The browser-to-server leg is plain HTTP, so the token travels unencrypted; use "Fixed domain" with HTTPS when security matters. The system firewall (firewalld, ufw) is opened automatically; the Alibaba Cloud security group must be opened in the console.',
   '配置中…': 'Setting up…',
   重新配置: 'Set up again',
-  '一键配置阿里云服务器，国内访问稳定': 'One-click Alibaba Cloud server setup, stable in mainland China',
-  '填云服务器的 IP、SSH 用户和密码，面板自动在服务器上装好 frps，本机运行 frpc。':
-    "Enter the cloud server's IP, SSH user and password; the panel installs frps on the server and runs frpc here.",
   '云服务器（frp）': 'Cloud server (frp)',
   '先在阿里云控制台「安全组 → 入方向」放行 TCP {ssh}、{bind}、{remote}，用端口映射时再放行 {range}':
     'First allow inbound TCP {ssh}, {bind} and {remote} in the Alibaba Cloud console (Security group → Inbound); also allow {range} if you use port mappings',
@@ -1727,9 +1714,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '正在重新连接…': 'Reconnecting…',
   重新连接: 'Reconnect',
   外网专用端口: 'Remote-only port',
-  '反向代理转到 127.0.0.1 的这个端口': 'Point the reverse proxy at this port on 127.0.0.1',
-  '只监听本机。以前转到 8787 的请求仍按访问地址校验，改转到这里更安全：Host 被反代改写也不会被当成本机请求。':
-    'Listens on this computer only. Requests forwarded to 8787 are still checked against the public URL, but this port is safer: a rewritten Host header is never mistaken for a local request.',
   '正在下载 frpc {n}%': 'Downloading frpc {n}%',
   '正在下载 frpc…': 'Downloading frpc…',
   '命令行 Shell': 'Command shell',
@@ -1785,13 +1769,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '替父对话问进展，不回就重启或换人接手': 'Asks for progress as the parent; restarts or hands over if no reply',
   '子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住，收到回复就重新计时。问过之后再过这么久还没回复（正在跑命令时多等几倍），就停掉它、接回原会话重启；重启也没恢复，就在对话里记一条警告，新开一个子对话带上原任务和已有进展接手。':
     'When a sub-chat prints nothing for this long, the panel asks it, as the parent, what it is doing and whether it is stuck; a reply resets the timer. If there is still no reply after another such period (several times longer while a command runs), the panel stops it and restarts it on its original session. If that does not help, it adds a warning and starts a new sub-chat that takes over with the original task and progress so far.',
-  面板提醒次数: 'Follow-up nudges',
-  计划没做完却停下时最多推几次接着做: 'How many times to nudge when the plan is unfinished',
-  '计划没做完却停下时，面板最多推这么多次让它接着做；推满还停着就留一条提醒等你处理。没有计划、拿不准做没做完时，最多做 2 次收尾自检，且不超过这个上限。0 表示不自动推，停下来等你；子对话卡住时仍会告诉父对话。Chat 页一问一答固定只推 1 次。':
-    'When a turn ends before its plan is done, the panel nudges the chat to keep going up to this many times; if it still stops, a reminder is left for you. For chats without a plan that may have unfinished work, the wrap-up self-check runs at most twice and never more than this limit. 0 disables automatic nudges and waits for you; a stuck sub-chat is still reported to its parent. Chat page Q&A always nudges once.',
   次: 'times',
-  不推: 'Never',
-  '填 0 到 20 之间的整数，0 表示不推': 'Enter a whole number from 0 to 20; 0 disables nudges',
   后台命令并发: 'Background commands at once',
   '测试、编译最多同时跑几条': 'How many tests or builds run at the same time',
   '所有对话交给面板在后台跑的命令（完整测试、编译）超出这个数就排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':

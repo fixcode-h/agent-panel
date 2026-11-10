@@ -54,7 +54,10 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     id: 'read-only-guard',
     event: 'tool.before',
     name: () => t('只读身份守卫'),
-    description: () => t('调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因'),
+    description: () =>
+      t(
+        '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因；项目 .tmp/ 和系统临时目录里的临时文件放行',
+      ),
     defaultOn: true,
     params: [extraCommands(() => t('只读角色另外不许跑的命令前缀，一行一个，例如 make deploy'))],
   },
@@ -93,7 +96,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     name: () => t('长命令转后台'),
     description: () =>
       t(
-        '完整测试、端到端、界面检查、开发服务器这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完',
+        '完整测试、端到端、界面检查、开发服务器、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完',
       ),
     defaultOn: true,
     params: [

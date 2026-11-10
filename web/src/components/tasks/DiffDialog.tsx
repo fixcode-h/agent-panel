@@ -32,7 +32,9 @@ import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
-import { diffStats, inlineDiff, numbered, sideBySide, type InlinePart, type NumberedLine, type Row } from './diff-rows'
+import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
+import { hunkLabel } from '@/lib/diff-html'
+import { diffStats, inlineDiff, numbered, sideBySide, type InlinePart, type Row } from './diff-rows'
 
 type Diff = Awaited<ReturnType<typeof api.taskDiff>>
 
@@ -247,7 +249,7 @@ export function DiffShell({
           mode === 'split' ? (
             <SplitView rows={rows} wrap={wrap} shown={shown} />
           ) : (
-            <UnifiedView rows={plain} wrap={wrap} shown={shown} />
+            <UnifiedView diff={diff} file={path} wrap={wrap} shown={shown} />
           )
         ) : (
           empty
@@ -309,7 +311,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
           if (r.kind === 'hunk')
             return (
               <div key={i} className={cn('col-span-2', DIFF_HUNK, wrap ? WRAP : 'whitespace-pre')}>
-                {r.l}
+                {hunkLabel(r.l)}
               </div>
             )
           if (r.kind === 'note')
@@ -359,40 +361,9 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
   )
 }
 
-/** 上下对照：旧行号、新行号、符号各一列，像 git diff 一样逐行看，窄窗口下横向更省地方 */
-function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolean; shown: number }) {
-  return (
-    <div className={cn('font-mono text-footnote leading-[1.65]', !wrap && 'min-w-max')}>
-      {rows.slice(0, shown).map((r, i) => {
-        if (r.l.startsWith('@@'))
-          return (
-            <div key={i} className={cn(DIFF_HUNK, wrap ? WRAP : 'whitespace-pre')}>
-              {r.l}
-            </div>
-          )
-        if (r.l.startsWith('\\'))
-          return (
-            <div
-              key={i}
-              className={cn('px-3 py-0.5 text-footnote text-subtle/70 italic', wrap ? WRAP : 'whitespace-pre')}
-            >
-              {r.l}
-            </div>
-          )
-        const tone = r.l.startsWith('+') ? DIFF_TONE.add : r.l.startsWith('-') ? DIFF_TONE.del : DIFF_TONE.ctx
-        return (
-          <div key={i} className={cn('flex', wrap ? WRAP : 'whitespace-pre', tone.row)}>
-            <span className={cn(DIFF_GUTTER, tone.gutter)}>{r.a ?? ''}</span>
-            <span className={cn(DIFF_GUTTER, tone.gutter)}>{r.b ?? ''}</span>
-            <span className={cn('w-5 shrink-0 select-none text-center', tone.sign)}>
-              {tone === DIFF_TONE.add ? '+' : tone === DIFF_TONE.del ? '-' : ' '}
-            </span>
-            <span className={cn('min-w-0 flex-1 pr-4', wrap && WRAP)}>{r.l.slice(1) || ' '}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
+/** 上下对照：和对话里、报告里的 diff 一个画法（components/ui/UnifiedDiff.tsx，照 Claude Code），按文件语言着色 */
+function UnifiedView({ diff, file, wrap, shown }: { diff: string; file: string; wrap: boolean; shown: number }) {
+  return <UnifiedDiff diff={diff} file={file} wrap={wrap} max={shown} className="overflow-visible" />
 }
 
 /**
@@ -404,17 +375,21 @@ function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolea
 export function DialogScroll({
   box,
   children,
+  aside,
 }: {
   /** 需要滚动定位时（比如跳到某一行）要拿到的滚动容器 */
   box?: React.RefObject<HTMLDivElement | null>
   children: React.ReactNode
+  /** 浮在滚动区上、不跟着滚的东西（Markdown 的标题目录） */
+  aside?: React.ReactNode
 }) {
   return (
     // 代码区不另铺 --code-bg：深色下比弹窗底色暗一截，和标题栏一深一浅显得发黑，直接沿用弹窗底色
-    <div className="flex min-h-0 flex-1 flex-col pb-4">
+    <div className="relative flex min-h-0 flex-1 flex-col pb-4">
       <div ref={box} className="min-h-0 flex-1 overflow-auto">
         {children}
       </div>
+      {aside}
     </div>
   )
 }

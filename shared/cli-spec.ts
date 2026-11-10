@@ -67,6 +67,23 @@ export const McpSpec = z.object({
 export type McpSpec = z.infer<typeof McpSpec>
 
 /**
+ * 启动新会话前探测项目里配的远程 MCP（见 server/exec/mcp-probe.ts）：有的 CLI 第一轮前要等所有 MCP 握手，
+ * 一个卡住的服务（例如编辑器主线程忙着的 Unreal 插件）能让首字晚几十秒。探测和启动同时进行、不拖慢启动，
+ * 只是连不上或不响应时在对话里写一行警告，告诉用户第一轮为什么慢、为什么少了它的工具
+ */
+export const McpProbe = z.object({
+  /** CLI 自己读的项目 MCP 配置（相对项目根的 JSON 文件） */
+  files: z.array(z.string()).default([]),
+  /** 文件里放工具表的键 */
+  key: z.string().default('mcpServers'),
+  /** CLI 第一轮最多等 MCP 多少毫秒的环境变量（默认值写在定义的 env 里）：警告里按实际值说等了几秒 */
+  waitEnv: z.string().optional(),
+  /** 多久没响应算卡住 */
+  timeoutMs: z.number().int().positive().default(2000),
+})
+export type McpProbe = z.infer<typeof McpProbe>
+
+/**
  * 用户自己装的 MCP 工具存在 CLI 的哪个配置文件里、怎么写：面板的「MCP 工具」页按这个读写。
  * 不写表示这个 CLI 的 MCP 配置不归面板管
  */
@@ -417,7 +434,17 @@ export const CliSpec = z.object({
   /** 会话不支持中途换思考强度：换了强度也开新会话 */
   effortBoundSession: z.boolean().default(false),
   tiers: z.object({ high: Tier, medium: Tier, low: Tier }).optional(),
-  permissions: z.array(z.object({ id: z.string(), label: z.string(), hint: z.string().default('') })).min(1),
+  permissions: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        hint: z.string().default(''),
+        /** 选了这一档时 CLI 仍然发来的确认请求由面板直接允许（见 PermissionOption.autoAllow） */
+        autoAllow: z.boolean().optional(),
+      }),
+    )
+    .min(1),
   defaultPermission: z.string().optional(),
   /** 从哪里读可用模型：内置读取方式的名字（commandcode、pi）；不写时只用 models 里列的 */
   modelsFrom: z.string().default(''),
@@ -506,9 +533,13 @@ export const CliSpec = z.object({
       /**
        * 长上下文要靠模型名后缀开（Claude Code 的 [1m]）：这一轮用的上下文窗口（手动设的，或按映射 / 模型目录自动算的）
        * 不小于 min 时，交给 CLI 的模型名后面加上 suffix。Claude Code 认得出是自家模型时不看 limitEnv 的窗口，
-       * 只按模型名决定窗口，不加后缀就一直按 200K 算、提前压缩。CLI 报回来的模型名会去掉后缀再用
+       * 只按模型名决定窗口，不加后缀就一直按 200K 算、提前压缩。CLI 报回来的模型名会去掉后缀再用。
+       * models 是 CLI 认得出的自家模型名（正则，不分大小写）：只给它们加后缀。别家的模型（网关里的 deepseek 这类）
+       * 按 limitEnv 的窗口走，加了后缀 CLI 反而每次报 unrecognized_model（2026-11-05 实测）；不写表示都加
        */
-      longContext: z.object({ suffix: z.string().min(1), min: z.number().int().positive() }).optional(),
+      longContext: z
+        .object({ suffix: z.string().min(1), min: z.number().int().positive(), models: z.string().optional() })
+        .optional(),
       /**
        * 或者写进 CLI 的配置文件（账号方式下用，API 方式由 auth.api.modelLimits 写）：只在这一轮里加上，结束后还原。
        * at 是模型条目的位置，{provider}、{model} 是模型 ID「provider/model」的两段，例如 Pi 的
@@ -570,6 +601,8 @@ export const CliSpec = z.object({
         .object({
           id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
           label: z.string(),
+          /** 标题下一行的短说明（20 字左右）；写了它，hint 只放问号里（变量名、参数名写在 hint 里，不直接露出来） */
+          desc: z.string().default(''),
           hint: z.string().default(''),
           default: z.union([z.boolean(), z.string()]).default(false),
           env: z.record(z.string(), z.string()).default({}),
@@ -585,6 +618,11 @@ export const CliSpec = z.object({
     .default([]),
   /** 每次运行都加的环境变量（用户在设置里写的同名变量优先）：例如让无界面运行信任工作目录 */
   env: z.record(z.string(), z.string()).default({}),
+  /**
+   * env 里每个变量在设置页「默认环境变量」显示的中文名和说明：标题只放中文名，变量名和说明放问号里，
+   * 用户看不懂一串大写的变量名（用户 2026-11-06 定）。env 里的键都要有一条（cli-spec.test.ts 核对）
+   */
+  envNotes: z.record(z.string(), z.object({ label: z.string(), hint: z.string().default('') })).default({}),
   /**
    * CLI 每次（或经常）往 stderr 打、和失败无关的提示行：pattern 是按行匹配的正则，why 写它是什么。
    * 进程中途退出时，失败原因里的「stderr 最后几行」去掉这些行，免得把常驻提示当成原因
@@ -635,6 +673,8 @@ export const CliSpec = z.object({
   hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),
+  /** 启动新会话前探测项目里的远程 MCP，卡住时在对话里提示；不写表示不探测 */
+  mcpProbe: McpProbe.optional(),
   packages: CliPackages.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
   auth: CliAuth.optional(),
@@ -766,7 +806,12 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     effortsFromModel: spec.effortsFromModel,
     effortBoundSession: spec.effortBoundSession,
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
-    permissions: spec.permissions.map((p) => ({ id: p.id, label: tr(p.label), hint: tr(p.hint) })),
+    permissions: spec.permissions.map((p) => ({
+      id: p.id,
+      label: tr(p.label),
+      hint: tr(p.hint),
+      ...(p.autoAllow ? { autoAllow: true } : {}),
+    })),
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,
     systemPromptFlag: !!spec.systemPromptFlag,
     systemPromptFileFlag: spec.systemPromptFileFlag,
@@ -823,11 +868,15 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     modelsRead: spec.modelsRead || undefined,
     envExample: spec.envExample,
     env: spec.env,
+    envNotes: Object.fromEntries(
+      Object.entries(spec.envNotes).map(([k, v]) => [k, { label: tr(v.label), hint: tr(v.hint) }]),
+    ),
     stderrNoise: spec.stderrNoise.map((x) => new RegExp(x.pattern)),
     compactThrash: spec.compactThrash && new RegExp(spec.compactThrash.pattern, 'i'),
     options: spec.options.map((x) => ({
       ...x,
       label: tr(x.label),
+      desc: tr(x.desc),
       hint: tr(x.hint),
       choices: x.choices.map((c) => ({ ...c, label: tr(c.label) })),
     })),
@@ -842,6 +891,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     hooks: spec.hooks,
     trust: spec.trust,
     mcpStore: spec.mcpStore,
+    mcpProbe: spec.mcpProbe,
     packages: spec.packages && {
       ...spec.packages,
       placeholder: tr(spec.packages.placeholder),

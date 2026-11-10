@@ -1,5 +1,6 @@
 import type { Task } from '@shared/schema'
 import {
+  countDone,
   countEvents,
   parseLogLine,
   verdictOf,
@@ -78,7 +79,29 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
           ]
         : [],
       log,
-      counts: countEvents(log.map(parseLogLine).filter((x): x is LogLine => !!x)),
+      counts: countDone(
+        countEvents(log.map(parseLogLine).filter((x): x is LogLine => !!x)),
+        alive ? [] : [{ at: new Date(Date.parse(at(1_000).replace(' ', 'T'))).toISOString(), outcome: 'done' }],
+      ),
+      // 面板提醒和结束交代：日志按本地时间写，这里按同样的读法换回时间点，和日志里那行「计划推进」对得上
+      trail: [
+        {
+          at: new Date(Date.parse(at(100_000).replace(' ', 'T'))).toISOString(),
+          kind: 'nudge' as const,
+          text: '计划还有 3 步没做完，接着做下一步。',
+          tools: 4,
+        },
+        ...(alive
+          ? []
+          : [
+              {
+                at: new Date(Date.parse(at(1_000).replace(' ', 'T'))).toISOString(),
+                kind: 'end' as const,
+                outcome: 'done' as const,
+                hidden: '角标改成订阅购物车 store 的变化，刷新问题已修好，单测也补上了。',
+              },
+            ]),
+      ],
     })
     for (const s of tk.steps.filter((x) => x.slot === 'sub')) {
       const sf: LifeFacts = {

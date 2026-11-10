@@ -93,8 +93,6 @@ export function createRegistry(list: AppAction[]) {
   }
 }
 
-export type ActionRegistry = ReturnType<typeof createRegistry>
-
 /** 参数说明：从 zod 生成 JSON Schema，只留模型要看的属性、类型、说明和必填 */
 export function paramsOf(a: AppAction) {
   const s = z.toJSONSchema(a.input, { io: 'input', unrepresentable: 'any' }) as {

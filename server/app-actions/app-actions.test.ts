@@ -119,9 +119,13 @@ test('设置是白名单：新加的字段、密钥、可执行路径、网络�
   const cur = Settings.parse({})
   fakeHost({ 'GET /settings': cur, 'PUT /settings': cur })
   const seen = (await runAppAction('settings.get', {}, child)) as { ok: true; result: Record<string, unknown> }
-  for (const k of ['blender', 'shell', 'proxy', 'webhook', 'imageGen', 'apis', 'clis', 'remoteAccess'])
+  for (const k of ['plugins', 'shell', 'proxy', 'webhook', 'imageGen', 'apis', 'clis', 'remoteAccess'])
     assert.ok(!(k in seen.result), `${k} 不该给 AI 看`)
-  for (const patch of [{ blender: { path: '/tmp/x' } }, { imageGen: { key: 'k' } }, { proxy: 'http://evil' }]) {
+  for (const patch of [
+    { plugins: { blender: { enabled: true, config: { blenderPath: '/tmp/x' } } } },
+    { imageGen: { key: 'k' } },
+    { proxy: 'http://evil' },
+  ]) {
     const r = await runAppAction('settings.set', { patch }, child)
     assert.match((r as { error: string }).error, /不能由 AI 改/)
   }

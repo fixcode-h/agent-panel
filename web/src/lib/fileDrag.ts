@@ -68,6 +68,25 @@ export function registerFileDrop(el: HTMLElement, drop: (item: FileRef) => void)
   }
 }
 
+/**
+ * 不拖动、直接把引用交给一个输入框（对话里文件标记的右键「引用到输入框」）：
+ * 从 near 往外一层层找，先包住某个看得见的输入框的那层就用它（同一对话页里的优先），一个都没有就返回 false
+ */
+export function referToComposer(item: FileRef, near?: HTMLElement | null) {
+  const shown = targets.filter((x) => x.el.isConnected && x.el.getClientRects().length > 0)
+  if (!shown.length) return false
+  let pick = shown[shown.length - 1]
+  for (let up = near?.parentElement; up; up = up.parentElement) {
+    const hit = shown.find((x) => up.contains(x.el))
+    if (hit) {
+      pick = hit
+      break
+    }
+  }
+  pick.drop(item)
+  return true
+}
+
 /** 拖到输入框上的内容：和输入 @ 一样是「@相对路径 」，Agent 在项目目录里看到路径就能自己读 */
 export function insertFileRef(
   editor: { text(): string; caret(): number; insert(text: string): void; focus(): void },

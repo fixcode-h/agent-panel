@@ -52,8 +52,7 @@ import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
-import { blenderMcpApi } from './blender-mcp.ts'
-import { blenderApi } from './blender.ts'
+import { cleanupDisabledPlugins, initPlugins, pluginsApi } from './plugins/index.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import {
   askExtensionReload,
@@ -133,13 +132,15 @@ import {
   redirectWorkflowRefs,
   retiredWorkflows,
   seedProjectWorkflows,
+  type BuiltinOps,
 } from '../shared/builtin/install.ts'
 import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject, detectVcs } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
 import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
-import { isAllowedHost, isExternalRequest, isLocalHost, originAllowed } from './hosts.ts'
+import { isExternalRequest, isLocalHost } from './hosts.ts'
+import { originOk } from './guard/gate.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel-mcp-files.ts'
@@ -150,7 +151,7 @@ import { loadProjectLessons, projectWithLessons } from './project-lessons.ts'
 import { projectLessonRoutes } from './project-lesson-routes.ts'
 import { staleProjectWrite } from './project-lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
-import { installHttpGuards } from './http-guards.ts'
+import { installHttpGuards, rawUploadAllowed } from './http-guards.ts'
 import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -228,26 +229,33 @@ for (const w of await workflows.list()) {
  * 自带工作流启动时默认全部加入（装过一次、后来被删掉的不再装回来，「通用项目」「UE 项目」缺了就补），
  * 旧项目没指定工作流的指向「通用项目」，之后改项目设置也不影响已经开始的对话（任务里存了快照）。
  */
+const builtinState = async () => ({
+  agents: await agents.list(),
+  categories: await categories.list(),
+  tags: await tags.list(),
+  workflows: await workflows.list(),
+})
+const builtinOps: BuiltinOps = {
+  createAgent: (input) => agents.create(input),
+  createCategory: (name, scope) => categories.create({ name, scope }),
+  createTag: (input) => tags.create(input),
+  createWorkflow: (input) => workflows.create(input),
+  updateWorkflow: (id, input) => workflows.update(id, input),
+  updateAgent: (id, input) => agents.update(id, input),
+}
 async function ensureProjectWorkflows() {
+  // 插件（ADR 0059）先读进来：开着的插件带的角色和工作流算进内置列表，下面一起安装、升级
+  await initPlugins({
+    state: builtinState,
+    projects: () => projects.list(),
+    categories: () => projectCategories.list(),
+    ops: builtinOps,
+    deleteAgent: (id) => agents.remove(id),
+    deleteWorkflow: (id) => workflows.remove(id),
+  })
   await removeLegacyDefaultAgent()
   const before = await loadSeededWorkflows()
-  const seeded = await seedProjectWorkflows(
-    {
-      agents: await agents.list(),
-      categories: await categories.list(),
-      tags: await tags.list(),
-      workflows: await workflows.list(),
-    },
-    {
-      createAgent: (input) => agents.create(input),
-      createCategory: (name, scope) => categories.create({ name, scope }),
-      createTag: (input) => tags.create(input),
-      createWorkflow: (input) => workflows.create(input),
-      updateWorkflow: (id, input) => workflows.update(id, input),
-      updateAgent: (id, input) => agents.update(id, input),
-    },
-    before,
-  )
+  const seeded = await seedProjectWorkflows(await builtinState(), builtinOps, before)
   if (seeded.seeded.join() !== before.join()) await saveSeededWorkflows(seeded.seeded)
   if (seeded.created.length) log.info('workflow', '已安装自带工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
@@ -259,23 +267,9 @@ async function ensureProjectWorkflows() {
   }
   await retireWorkflows()
   await pruneMerged()
+  await cleanupDisabledPlugins()
   // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
-  const projectAgents = await ensureProjectAgents(
-    {
-      agents: await agents.list(),
-      categories: await categories.list(),
-      tags: await tags.list(),
-      workflows: await workflows.list(),
-    },
-    {
-      createAgent: (input) => agents.create(input),
-      createCategory: (name, scope) => categories.create({ name, scope }),
-      createTag: (input) => tags.create(input),
-      createWorkflow: (input) => workflows.create(input),
-      updateWorkflow: (id, input) => workflows.update(id, input),
-      updateAgent: (id, input) => agents.update(id, input),
-    },
-  )
+  const projectAgents = await ensureProjectAgents(await builtinState(), builtinOps)
   if (projectAgents.created.length)
     log.info('agent', '已安装必备角色', { list: projectAgents.created.map((a) => a.name) })
   if (projectAgents.synced.length)
@@ -368,8 +362,8 @@ const app = new Hono().basePath('/api')
 app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
   const external = isExternalRequest(c.env)
-  // 本机地址、当前外网访问地址，或外网专用端口（Host 不限，令牌由 tokenGuard 强制，Origin 要和 Host 同源，见 remote.ts）
-  if (!external && !isAllowedHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
+  // 主端口只认本机地址；外网专用端口 Host 不限（登录会话由 tokenGuard 强制，Origin 按访问地址比，见 guard/gate.ts）
+  if (!external && !isLocalHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
   // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
   if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
@@ -387,12 +381,13 @@ app.use('*', async (c, next) => {
     return next()
   }
   if (origin !== undefined) {
-    if (!originAllowed(origin, host, external)) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    if (!(await originOk(origin, c))) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   }
   if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   if (
     !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
-    !/application\/json/i.test(c.req.header('content-type') ?? '')
+    !/application\/json/i.test(c.req.header('content-type') ?? '') &&
+    !rawUploadAllowed(c.req.path, c.req.header('content-type'))
   )
     return c.json({ error: t('请求必须是 JSON') }, 415)
   await next()
@@ -458,6 +453,8 @@ app.put('/settings', async (c) => {
   // 打开外网访问后本机也要令牌（见 auth.ts），同样先给这个浏览器发上
   if (p.data.requireToken || p.data.remoteAccess.enabled) grantCookie(c)
   const prev = await getSettings()
+  // 插件的开关和参数走插件接口（要装、清内容），设置页整份保存时不改它们
+  p.data.plugins = prev.plugins
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
   // 对话页切走后 CLI 还等多久、没人看的会话留几个：保存后立即生效，不用重启服务
@@ -854,7 +851,7 @@ app.put('/projects/:id/init-result', async (c) => {
 
 // 记一条项目教训（对话里「记成项目教训」）和应用一条 AI 评审建议：路由在单独模块里
 const lessons = projectLessons(projects, { agents })
-projectLessonRoutes(app, lessons)
+projectLessonRoutes(app, lessons, { projects, agents })
 
 // 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具
 app.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))
@@ -1016,10 +1013,9 @@ app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
-app.route('/mcp', blenderMcpApi())
-app.route('/blender', blenderApi())
+app.route('/plugins', pluginsApi())
 app.route('/mcp', askMcpApi())
-const docs = docsApi({ projects })
+const docs = docsApi({ projects, agents })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
 app.route('/ai-fix', fixApi())
@@ -1159,7 +1155,7 @@ app.route(
     projectName: async (id) => (await projects.get(id))?.name ?? '',
   }),
 )
-app.route('/remote', remoteApi({ link: withToken }))
+app.route('/remote', remoteApi())
 // 设置里开了「重启后自动继续」：迁移做完后把上次被重启打断的对话逐个继续（和首页「全部继续」同一个名单、同一个接口）
 void tasks
   .ready()
@@ -1202,7 +1198,7 @@ const restarted = !!process.env.AGENT_PANEL_RESTARTED
 const tray = !!process.env.AGENT_PANEL_TRAY
 delete process.env.AGENT_PANEL_RESTARTED
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网。
-// 要从外网访问时，由 cloudflared（或用户自己的反向代理）把请求转到 127.0.0.1，见 remote.ts
+// 要从外网访问时另起外网专用端口（带密码登录），由 Caddy / NPM 等反向代理转进来或直接监听，见 remote.ts
 configureRemote(root.fetch)
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
   // 把实际端口打出来（一行给工具解析）：PORT=0 时端口由系统分配，端到端测试照着它连，
@@ -1219,7 +1215,6 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   console.log(`Agent 面板服务已启动: ${url}`)
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
-  // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
   // 内存曲线：30 秒采一点（面板 server + 各对话的 CLI 进程树），落盘后重启接着用
   stopMemorySampler = startMemorySampler()
   // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule.ts）

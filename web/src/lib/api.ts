@@ -2,12 +2,15 @@ import type { ShellReport } from '@shared/shells'
 import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
+import { designApi } from './api-design'
+import { pathsApi } from './api-paths'
+import { messagesApi } from './api-messages'
+import { remoteApi } from './api-remote'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
-import type { ModelMeta } from '@shared/blender'
 import type { SpeechStatus } from '@shared/speech'
 import type { TtsStatus } from '@shared/tts'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
@@ -76,7 +79,6 @@ import type {
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ApiBalance } from '@shared/api-balance'
 import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
-import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
@@ -93,28 +95,9 @@ import type {
 } from '@shared/library'
 import type { ProjectSkillsView } from '@shared/project-skills'
 import type { ProjectProposal } from '@shared/project-init'
-import type {
-  Annotation,
-  BrowserStatus,
-  Design,
-  DesignChatInput,
-  DesignDoc,
-  DesignJob,
-  DesignMeta,
-  DesignProject,
-  DesignProjectInput,
-  DesignVersion,
-  DesignVersionMeta,
-  ImageSource,
-  NewDesignInput,
-  SavedStyle,
-  SavedStyleInput,
-  ProjectComponents,
-  ProjectPrompt,
-  PromptAiInput,
-  CaptureRequest,
-} from '@shared/design'
+import type { Design, DesignJob } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
+import type { DocGroupView } from '@shared/doc-root'
 import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'
 import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
@@ -153,6 +136,9 @@ export const lifecycleDownloadUrl = (id: string) => `/api/tasks/${id}/lifecycle/
 /** 非 2xx 的响应转成错误：响应体挂到错误上，有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息 */
 async function failure(res: Response): Promise<never> {
   const body = await res.json().catch(() => ({}))
+  // 外网打开的面板登录失效了（改了密码、被踢下线、过期）：服务端回 401 并带 login，去登录页，登完回到这一页
+  if (res.status === 401 && body?.login === '/login')
+    location.href = `/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`
   const err = new Error(body.error ?? t('请求失败（{status}）', { status: res.status })) as Error & {
     status?: number
     body?: unknown
@@ -267,26 +253,6 @@ export const api = {
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
   shells: (fresh = false) => request<ShellReport>(`/shells${fresh ? '?fresh=1' : ''}`),
 
-  remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
-  remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
-  remoteInstall: () => request<RemoteAccessStatus>('/remote/install', { method: 'POST' }),
-  remoteRestart: () => request<RemoteAccessStatus>('/remote/restart', { method: 'POST' }),
-  /** 一键配置云服务器（frp）：密码只随这次请求发给本机服务，不保存 */
-  remoteDeploy: (body: {
-    server: string
-    sshPort: number
-    sshUser: string
-    password: string
-    bindPort: number
-    remotePort: number
-    rangeStart: number
-    rangeEnd: number
-  }) =>
-    request<{ remoteAccess: Settings['remoteAccess']; status: RemoteAccessStatus }>(
-      '/remote/frp/deploy',
-      json('POST', body),
-    ),
-
   /** 外部 CLI 的授权：检测、浏览器授权、token 授权、退出 */
   integrations: (refresh = false) => request<IntegrationView[]>(`/integrations${refresh ? '?refresh=1' : ''}`),
   integrationLogin: (id: string) => request<IntegrationLoginJob>(`/integrations/${id}/login`, json('POST', {})),
@@ -299,20 +265,6 @@ export const api = {
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
-  /** 模型设计用的 Blender 找到没有（ADR 0025） */
-  blenderStatus: () => request<{ path: string; version: string; error: string }>('/blender/status'),
-  /** 模型对话的预览状态：版本号每次执行加一，变了就重新加载 glb（ADR 0025） */
-  blenderModel: (taskId: string) => request<ModelMeta>(`/blender/models/${encodeURIComponent(taskId)}`),
-  /** 预览用的 glb：版本号放在地址里，同一版浏览器可以缓存 */
-  blenderGlbUrl: (taskId: string, version: number) =>
-    `/api/blender/models/${encodeURIComponent(taskId)}/scene.glb?v=${version}`,
-  /** 预览加载的 glb 内容；演示版没有 Blender，换成现场拼的示例模型 */
-  blenderGlb: async (taskId: string, version: number): Promise<ArrayBuffer> => {
-    if (import.meta.env.VITE_DEMO) return (await import('./demo-model')).demoModelGlb()
-    const res = await fetch(api.blenderGlbUrl(taskId, version))
-    if (!res.ok) await failure(res)
-    return res.arrayBuffer()
-  },
   localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
@@ -568,7 +520,9 @@ export const api = {
     request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
-  appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
+  /** refresh：马上问 GitHub；cached：只读上次检查存下的列表，不联网 */
+  appReleases: (mode?: 'refresh' | 'cached') =>
+    request<AppReleases>(`/app/releases${mode === 'refresh' ? '?refresh=1' : mode === 'cached' ? '?cached=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
   /** 正在跑的那次更新；没有时是 null */
@@ -776,15 +730,6 @@ export const api = {
   /** 导出任务连同它分出的子对话：服务端整理成一个包，超过体积上限时直接报错 */
   taskExport: (id: string, app = '') =>
     request<{ bundle: TaskExport; bytes: number }>(`/tasks/${id}/export?app=${encodeURIComponent(app)}`),
-  /**
-   * 发一条消息。messageId：页面已经按这个 id 在本地插进对话了（待认领），服务端沿用它，
-   * 推送和响应到达时按 id 换成真实的一份，不会出现两条
-   */
-  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, messageId = '') =>
-    request<Task>(
-      `/tasks/${id}/messages`,
-      json('POST', { text, attachments, interrupt, ...(messageId ? { messageId } : {}) }),
-    ),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
@@ -823,14 +768,7 @@ export const api = {
   discardPaths: (paths: string[]) => request<{ ok: boolean }>('/uploads/discard', json('POST', { paths })),
   /** 附件、粘贴引用的本机文件：读文字内容，点文件卡片时看 */
   localFile: (path: string) =>
-    request<{
-      path: string
-      dir: string
-      exists: boolean
-      binary?: boolean
-      content: string
-      truncated: boolean
-    }>(`/uploads/raw/file?path=${encodeURIComponent(path)}`),
+    request<FileContent & { dir: string }>(`/uploads/raw/file?path=${encodeURIComponent(path)}`),
   /** 引入会话：把任务或设计的对话整理成一份附件 */
   taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
@@ -857,8 +795,11 @@ export const api = {
   projectFile: (projectId: string, path: string) =>
     request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
   /** 保存文件内容：编码和换行按项目设置，原文件是 CRLF 时按原样回写 */
-  writeProjectFile: (projectId: string, path: string, content: string) =>
-    request<{ path: string; size: number }>(`/project-files/${projectId}/content`, json('PUT', { path, content })),
+  writeProjectFile: (projectId: string, path: string, content: string, mtime?: string) =>
+    request<{ path: string; size: number }>(
+      `/project-files/${projectId}/content`,
+      json('PUT', { path, content, mtime }),
+    ),
   /** 在目录里新建文件；同名时后端拒绝，不会覆盖 */
   createProjectFile: (projectId: string, dir: string, name: string, content = '') =>
     request<{ path: string; size: number }>(`/project-files/${projectId}/new`, json('POST', { dir, name, content })),
@@ -927,14 +868,19 @@ export const api = {
       json('POST', { msg }),
     ),
   taskFile: (id: string, path: string) =>
-    request<{
-      path: string
-      dir: string
-      exists: boolean
-      binary?: boolean
-      content: string
-      truncated: boolean
-    }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+    request<
+      FileContent & {
+        dir: string
+        /** 任务目录里的文件能在弹窗里改；附件、项目外的文件只读 */
+        editable?: boolean
+      }
+    >(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 文件弹窗里保存：只能写任务目录里已有的文件，编码和换行按项目设置 */
+  writeTaskFile: (id: string, path: string, content: string, mtime?: string) =>
+    request<{ path: string; size: number }>(`/tasks/${id}/file`, json('PUT', { path, content, mtime })),
+  /** 文件弹窗的「查看改动」：任务目录里的文件和 git 的 HEAD 比 */
+  taskFileDiff: (id: string, path: string) =>
+    request<FileDiff>(`/tasks/${id}/file/diff?path=${encodeURIComponent(path)}`),
   /** 排查结论的「应用这 N 处修改」：在被分析对话的目录里逐条按原文替换，每条给出结果 */
   applyFixes: (id: string, fixes: FixApplyItem[]) =>
     request<{ dir: string; results: FixApplyResult[] }>(`/tasks/${id}/apply-fixes`, json('POST', { fixes })),
@@ -968,11 +914,22 @@ export const api = {
     // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）
     body: DiagnosisDecision,
   ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
+  /** 点「取消修复」前：面板只读地查出代码里的临时日志、这个对话新建的文件（确认框里列出来） */
+  cleanupPreview: (id: string) =>
+    request<{ found: { file: string; line: number; text: string }[]; created: string[]; isolated: boolean }>(
+      `/tasks/${id}/diagnosis-cleanup`,
+    ),
+  /** 临时日志没删干净：retry 让它再删一次（返回交给它的话），finish 不再删、直接关闭报告 */
+  cleanupAction: (id: string, action: 'retry' | 'finish') =>
+    request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-cleanup`, json('POST', { action })),
   answerRequest: (
     id: string,
     rid: string,
-    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean },
+    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean },
   ) => request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  /** 父对话名下的工作流运行（不进对话列表）；delegateRun：节点确认交给父对话决定 */
+  flowRuns: (ownerId: string) => request<Task[]>(`/tasks?owner=${encodeURIComponent(ownerId)}`),
+  delegateRun: (id: string) => request<{ ok: boolean; info: string }>(`/tasks/${id}/delegate`, json('POST', {})),
   /**
    * 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定。
    * nudge 说明父对话叫起来了没有：没叫起来时卡片上要把原因显示给用户，不能只当成功处理
@@ -1058,6 +1015,10 @@ export const api = {
   projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
   saveProjectDoc: (projectId: string, path: DocFile, content: string) =>
     request<ProjectDoc>(`/project-docs/${projectId}`, json('PUT', { path, content })),
+  /** P4 / SVN 各分支共用的文档根（文档放在项目外时才有，别的项目是 null） */
+  docGroup: (projectId: string) => request<DocGroupView | null>(`/project-docs/${projectId}/doc-group`),
+  setDocGroupRoot: (projectId: string, root: string) =>
+    request<DocGroupView>(`/project-docs/${projectId}/doc-group`, json('PUT', { root })),
   optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
     request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
   deployState: () => request<DeployState>('/deploy'),
@@ -1102,86 +1063,13 @@ export const api = {
   /** 设置里的用量统计：按天 / 周 / 月聚合各轮执行的 token（也可以按项目 / 对话分组；聚合在服务端做） */
   tokenUsage: (q: { grain: UsageGrain; count: number; groupBy?: UsageGroup }) =>
     request<UsageReport>(`/usage?grain=${q.grain}&count=${q.count}${q.groupBy ? `&groupBy=${q.groupBy}` : ''}`),
-  designs: () => request<DesignMeta[]>('/designs'),
-  designProjects: () => request<DesignProject[]>('/designs/projects'),
-  createDesignProject: (input: DesignProjectInput) => request<DesignProject>('/designs/projects', json('POST', input)),
-  updateDesignProject: (id: string, input: Partial<DesignProjectInput>) =>
-    request<DesignProject>(`/designs/projects/${id}`, json('PUT', input)),
-  deleteDesignProject: (id: string) => request<void>(`/designs/projects/${id}`, { method: 'DELETE' }),
-  design: (id: string) => request<DesignFull>(`/designs/${id}`),
-  createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
-  /** baseRev：页面这份编辑基于服务端的哪个版本；比服务端旧时结构不收（AI 已经改过了） */
-  saveDesign: (id: string, doc: DesignDoc, baseRev?: number) =>
-    request<DesignFull & { rejected?: 'ai' | 'stale' }>(`/designs/${id}`, json('PUT', { ...doc, baseRev })),
-  copyDesign: (id: string, projectId?: string) => request<Design>(`/designs/${id}/copy`, json('POST', { projectId })),
-  moveDesign: (id: string, projectId: string) =>
-    request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),
-  deleteDesign: (id: string) => request<void>(`/designs/${id}`, { method: 'DELETE' }),
-  designChat: (id: string, input: DesignChatInput) => request<DesignFull>(`/designs/${id}/chat`, json('POST', input)),
-  designConcept: (id: string, action: 'select' | 'approve' | 'remove', conceptId: string) =>
-    request<DesignFull>(`/designs/${id}/concept`, json('POST', { action, id: conceptId })),
-  uploadConcept: (id: string, data: string) =>
-    request<DesignFull>(`/designs/${id}/concept/upload`, json('POST', { data })),
-  /** 只重绘原画上蒙版涂过的区域；只有本机 ComfyUI 支持，别的来源服务端会拒绝 */
-  inpaintConcept: (id: string, body: { id: string; mask: Annotation; text?: string; source: ImageSource }) =>
-    request<DesignFull>(`/designs/${id}/concept/inpaint`, json('POST', body)),
-  designCapture: (
-    id: string,
-    captureId: string,
-    body: {
-      data?: string
-      rects?: { name: string; type: string; x: number; y: number; w: number; h: number }[]
-      error?: string
-    },
-  ) => request<{ ok: boolean }>(`/designs/${id}/capture/${captureId}`, json('POST', body)),
-  /** 长轮询等 AI 要的截图请求：没有请求时服务端挂起（最长 25 秒），后台标签页也能及时收到 */
-  designCaptureWait: (id: string, signal: AbortSignal) =>
-    request<{ capture: CaptureRequest | null }>(`/designs/${id}/capture/wait`, { signal }),
-  /** AI 正在跑时发消息：整条消息补充给这一轮，收不下就在这一轮结束后自动接着处理 */
-  steerDesign: (id: string, input: DesignChatInput) =>
-    request<DesignFull & { steered: boolean; queued: boolean }>(`/designs/${id}/steer`, json('POST', input)),
-  stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
-  uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
-    request<DesignFull>(`/designs/${id}/images`, json('POST', body)),
-  generateDesignImage: (
-    id: string,
-    imageId: string,
-    body: { source: ImageSource; count: number; prompt?: string; revision?: string },
-  ) => request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
-  projectComponents: (projectId: string) => request<ProjectComponents[]>(`/designs/projects/${projectId}/components`),
-  importComponent: (id: string, body: { from: string; name: string }) =>
-    request<DesignFull>(`/designs/${id}/components/import`, json('POST', body)),
-  generateDesignImages: (id: string, body: { ids: string[]; source: ImageSource; count: number }) =>
-    request<DesignFull>(`/designs/${id}/images/generate`, json('POST', body)),
-  designVersions: (id: string) => request<DesignVersionMeta[]>(`/designs/${id}/versions`),
-  designVersion: (id: string, vid: string) => request<DesignVersion>(`/designs/${id}/versions/${vid}`),
-  saveDesignVersion: (id: string, name: string) =>
-    request<DesignVersionMeta>(`/designs/${id}/versions`, json('POST', { name })),
-  restoreDesignVersion: (id: string, vid: string) =>
-    request<DesignFull>(`/designs/${id}/versions/${vid}/restore`, json('POST', {})),
-  deleteDesignVersion: (id: string, vid: string) =>
-    request<void>(`/designs/${id}/versions/${vid}`, { method: 'DELETE' }),
-  retryDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number }) =>
-    request<DesignFull>(`/designs/${id}/images/${imageId}/retry`, json('POST', body)),
-  exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
-  browserStatus: () => request<BrowserStatus>('/designs/browser'),
-  promptAi: (input: Partial<PromptAiInput>) =>
-    request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
-  styles: () => request<SavedStyle[]>('/designs/styles'),
-  createStyle: (input: SavedStyleInput) => request<SavedStyle>('/designs/styles', json('POST', input)),
-  updateStyle: (id: string, patch: Partial<SavedStyleInput>) =>
-    request<SavedStyle>(`/designs/styles/${id}`, json('PUT', patch)),
-  deleteStyle: (id: string) => request<void>(`/designs/styles/${id}`, { method: 'DELETE' }),
-  /** 让 CLI 总结设计的整体风格（还没存） */
-  extractStyle: (designId: string, scope: string) =>
-    request<Omit<SavedStyleInput, 'kind'>>(`/designs/${designId}/extract-style`, json('POST', { scope })),
-  installExtension: (browser: string) =>
-    request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
-  reloadExtension: (browser: string) =>
-    request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
-  revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
+  // UI 设计、风格库、浏览器扩展（api-design.ts）
+  ...designApi,
   revealProject: (projectId: string) =>
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
   // 工作总结、候选教训草稿（api-summary.ts）
   ...summaryApi,
+  ...pathsApi,
+  ...messagesApi,
+  ...remoteApi,
 }

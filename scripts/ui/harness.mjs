@@ -410,9 +410,17 @@ export async function nestedEdgeProblems(p, label) {
 }
 
 /**
- * 行内小标签的垂直对齐：行内代码、状态胶囊、带底色的角标，胶囊中心不能比同一行文字的视觉中线偏太多。
- * 量的是「胶囊矩形中心」和「同一行相邻汉字的字形墨迹中心」（canvas 量字形，不用 baseline 探针插 DOM），
- * 偏超过 TOLERANCE_PX 就报。新增 chip 忘了用 index.css 的 chip-lift（或改了补偿值）会被这一条拦住。
+ * 行内小标签的垂直对齐：只量排版盒，不量字形墨迹。
+ *
+ * 原来参照的是「同一行文字的字形墨迹中心」（canvas 的 actualBoundingBox*），而墨迹的上下沿完全由这个环境
+ * 解析到的字体决定：同一个 13px「件」，Windows 的雅黑 UI 墨迹 ascent 是 11px、CI（Ubuntu 的文泉驿）是 12px，
+ * 同一条断言就从 1.05px 漂到 1.55px，CI 的 ui (a) 因此误报 5 条。单字符 Range 矩形是行内盒，
+ * 它的位置只由排版决定，两端实测完全相同（含探针基线、标签盒、参照盒三类量）。
+ *
+ * 容差 1.5px 的依据（11px 标签 + 13px 正文，Windows 与 WSL 两端实测，见 docs/lessons/ui-check.md）：
+ * - 补偿默认（--chip-lift 0.08em）：标签 1.05，两端一致
+ * - 补偿置 0：两端都是 1.92（报 5 条：汇报 ×3、传话、交代任务）
+ * 1.5 落在 1.05 和 1.92 之间，两边各留 0.4px 余量；再放大就区分不出「加了补偿」和「忘了加」。
  */
 const CHIP_ALIGN_TOLERANCE_PX = 1.5
 export async function chipAlignProblems(p, label) {
@@ -420,15 +428,6 @@ export async function chipAlignProblems(p, label) {
   return bad.map((b) => `${label}：${b.what} 比同一行文字偏 ${b.dev}px（要 ≤ ${CHIP_ALIGN_TOLERANCE_PX}px）`)
 }
 const CHIP_ALIGN_SCAN = (max) => {
-  const ctx = document.createElement('canvas').getContext('2d')
-  // 参照字符：汉字统一用「中」（墨迹高度一致），其他字符用自己 —— 大写字高和 x-height 差 1.4px
-  const CHIP_REF = (c) => (/[一-鿿]/.test(c) ? '中' : c)
-  // 字形的墨迹中心（相对 baseline，向上为负）：汉字取「中」，英文取「x」
-  const inkCenter = (font, ch) => {
-    ctx.font = font
-    const m = ctx.measureText(ch)
-    return -((m.actualBoundingBoxAscent || 0) - (m.actualBoundingBoxDescent || 0)) / 2
-  }
   /** 同一行里离 el 最近的、垂直重叠的字符（不看 el 自己的文字） */
   const nearest = (el, box) => {
     const parent = el.parentElement
@@ -455,7 +454,7 @@ const CHIP_ALIGN_SCAN = (max) => {
         if (Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top) < Math.min(rect.height, box.height) * 0.5)
           continue
         const dx = rect.left >= box.right ? rect.left - box.right : rect.right <= box.left ? box.left - rect.right : 0
-        // 参照优先用汉字（字形墨迹高度一致），其次字母数字；标点不当参照（句号的墨迹只有 0.1em，会把中点拉到 baseline）
+        // 参照优先用汉字，其次字母数字：标点不当参照（它的行内盒同样被字体撑满，但它常常贴着标签边缘，不代表同行正文）
         const rank = /[一-鿿]/.test(node.nodeValue[i]) ? 2 : /[A-Za-z0-9]/.test(node.nodeValue[i]) ? 1 : 0
         if (rank === 0) continue
         if (!best || rank > best.rank || (rank === best.rank && dx < best.dx))
@@ -477,18 +476,8 @@ const CHIP_ALIGN_SCAN = (max) => {
     if (box.width < 6 || box.height < 6) continue
     const near = nearest(el, box)
     if (!near) continue
-    const ns = getComputedStyle(near.node.parentElement)
-    const font = `${ns.fontStyle} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`
-    ctx.font = font
-    // 用实际选中的那个字符量墨迹：拿「x」的 x-height 代表大写的「G」会差 1.4px（正好等于容差）
-    const ch = CHIP_REF(near.char)
-    const m = ctx.measureText(ch)
-    // 单字符 Range 的矩形是行内盒（高度 = 字体 em 框），leading 上下均分：
-    // baseline 在 em 框顶下方 fontBoundingBoxAscent 处。拿 fontSize 当 em 高会差 1~2px（和探针法实测对不上）。
-    const emH = (m.fontBoundingBoxAscent || 0) + (m.fontBoundingBoxDescent || 0)
-    const baseline = near.rect.top + (near.rect.height - emH) / 2 + (m.fontBoundingBoxAscent || 0)
-    const textCenter = baseline + inkCenter(font, ch)
-    const dev = +(box.top + box.height / 2 - textCenter).toFixed(2)
+    // 和同一行文字的**行内盒**中心比：盒子的位置由排版决定，换字体不会改（见上面的实测数据）
+    const dev = +(box.top + box.height / 2 - (near.rect.top + near.rect.height / 2)).toFixed(2)
     if (Math.abs(dev) > max)
       out.push({
         what: `${el.tagName.toLowerCase()}「${(el.textContent || '').trim().slice(0, 14)}」`,
@@ -499,7 +488,11 @@ const CHIP_ALIGN_SCAN = (max) => {
 }
 /**
  * 页签这类「文字在固定高度条里居中」：带 text-optical-center 的元素，文字中心要和所在页签条的中心对齐。
- * 和 chipAlignProblems 分开：那条比的是「同一行的文字」，这条比的是「条的中心」。
+ * 和 chipAlignProblems 分开：那条比的是「同一行的文字」，这条比的是「条的中心」，口径也不能照搬：
+ * 页签调的是「字形的视觉中线」，换成盒中心后默认值 0.97、补偿置 0 变成 −0.58，两端都落在 1.5 容差内，
+ * 就区分不出补偿有没有生效了，所以保留墨迹口径。
+ * 已知缺口：这条在 Linux 字体下本来就漏——补偿置 0 时 Windows 量 −1.58（报出），WSL/CI 的文泉驿只量
+ * −1.08（不报）。把它当 Windows 侧的防线，别指望它在 CI 上拦住补偿失效。
  */
 export async function tabAlignProblems(p, label) {
   const bad = await p.evaluate(TAB_ALIGN_SCAN, CHIP_ALIGN_TOLERANCE_PX)

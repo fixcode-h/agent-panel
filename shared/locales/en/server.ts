@@ -181,7 +181,12 @@ export const EN_SERVER: Record<string, string> = {
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
   '教训文件读取失败：{error}': 'Couldn’t read the lessons file: {error}',
-  '教训文件格式不对，没有覆盖：{error}': 'The lessons file is malformed, so it was left untouched: {error}',
+  '这些教训文件格式不对，没有改动：{error}': 'These lesson files are malformed and were left untouched: {error}',
+  请填写文档根的完整路径: 'Enter the full path of the docs root',
+  文档根要写完整路径: 'The docs root must be a full path',
+  '只有文档放在项目外的 P4 / SVN 项目能改共用文档根':
+    'Only P4 / SVN projects that keep docs outside the project can change the shared docs root',
+  '改文档根失败：{error}': 'Failed to change the docs root: {error}',
   '教训文件写入失败：{error}': 'Couldn’t write the lessons file: {error}',
   项目教训写入失败: 'Couldn’t save project lessons',
   教训文件的维护说明没有结束标记: 'The lessons file header is missing its end marker',
@@ -395,6 +400,7 @@ export const EN_SERVER: Record<string, string> = {
   运行它并按提示登录: 'run it and follow the login prompt',
   '你确认了「{title}」的结果，接着往下执行': 'You approved the result of "{title}"; continuing',
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
+  '你追问了「{title}」：{answer}': 'You asked about "{title}": {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
   推送到远端并合并主干: 'Push to remote and merge into the main branch',
   '分支：{branch}': 'Branch: {branch}',
@@ -560,13 +566,6 @@ export const EN_SERVER: Record<string, string> = {
   出原画要先在对话框下面选生成图片的方式: 'To draw concepts, first pick an image source below the chat box',
   // 外部访问
   这个地址不能访问面板: "This address can't access the panel",
-  '没有找到 cloudflared': 'cloudflared not found',
-  '请填写外部访问地址，例如 https://panel.example.com': 'Enter the public address, e.g. https://panel.example.com',
-  '没有找到 cloudflared：请先在设置里下载，或安装后把路径填到「cloudflared 路径」。':
-    'cloudflared not found. Download it in settings, or install it and set its path.',
-  '请填写 Cloudflare Tunnel 的 token': 'Enter the Cloudflare Tunnel token',
-  '请填写隧道的域名，例如 https://panel.example.com': 'Enter the tunnel domain, e.g. https://panel.example.com',
-  'cloudflared 已退出（退出码 {code}）：{log}': 'cloudflared exited (code {code}): {log}',
   '不支持这个系统：{os} {arch}': 'Unsupported system: {os} {arch}',
   'frp 安装包里没有 {name}': '{name} is missing from the frp package',
   'SSH 登录失败：用户名或密码不对（{msg}）': 'SSH sign-in failed: wrong user name or password ({msg})',
@@ -608,8 +607,6 @@ export const EN_SERVER: Record<string, string> = {
   '正在配置，请稍候': 'Setup is in progress, please wait',
   'frp 端口和面板端口不能相同': 'The frp port and the panel port must differ',
   '服务器信息不完整：{msg}': 'Server details are incomplete: {msg}',
-  'cloudflared 已经启动，但 30 秒内没有拿到外网地址。国内网络经常连不上 Cloudflare，建议改用「云服务器（frp）」。':
-    'cloudflared started but no public address arrived within 30 seconds. Networks in mainland China often cannot reach Cloudflare; consider "Cloud server (frp)" instead.',
   '这个系统不支持自动下载，请手动安装 cloudflared。':
     'Automatic download is not supported on this system. Install cloudflared manually.',
   下载到数据目录: 'Download to the data folder',
@@ -626,6 +623,7 @@ export const EN_SERVER: Record<string, string> = {
     "Couldn't attach the panel's tools ({error}), so this turn can't ask you questions or receive notes you add while it runs",
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
+  '重试用完了，没有恢复': 'Retries used up, not recovered',
   '第 {n} 次重试成功了，接着做。': 'Retry {n} succeeded, carrying on.',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
   '面板的工具没接上（{error}）：缺的那些这一轮用不了，只能直接改文件、用普通命令跑；要这些工具就重开一轮':
@@ -652,16 +650,13 @@ export const EN_SERVER: Record<string, string> = {
   恢复的对话: 'Recovered conversation',
   '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
   '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
+  '第 {n} 步「{name}」被停止了，没有跑完': 'step {n} "{name}" was stopped before it finished',
+  '这条命令被停止了（不是自己跑完的），结论按未通过处理。':
+    "The command was stopped (it didn't finish on its own), so it counts as failed.",
+  '父对话被停止或归档，这批测试没有跑完，结论按未通过处理。':
+    'The parent conversation was stopped or archived before these tests finished, so they count as failed.',
   找不到这次工具调用: 'This tool call was not found',
   // 模型设计（Blender）
-  '没有找到 Blender。请先安装 Blender 4.2 或更新的版本，或在设置里填它的位置。':
-    "Blender wasn't found. Install Blender 4.2 or later, or set its location in Settings.",
-  '这个程序不像是 Blender': "This program doesn't look like Blender",
-  '启动 Blender 失败：{error}': "Couldn't start Blender: {error}",
-  'Blender 启动超时：{tail}': 'Blender took too long to start: {tail}',
-  'Blender 没能启动（退出码 {code}）：{tail}': "Blender didn't start (exit code {code}): {tail}",
-  'Blender 执行这段代码时卡住或退出了，已重启，场景回到上一次保存的样子：{error}':
-    'Blender hung or quit while running this code. It was restarted and the scene is back to the last save: {error}',
   还没有模型: 'No model yet',
   这次工作流运行已经结束了: 'This workflow run has already ended',
   读不出改动: "Couldn't read the changes",
@@ -686,4 +681,30 @@ export const EN_SERVER: Record<string, string> = {
   '模型配置里没有 {model}': '{model} is not in the model catalog',
   'Agent 规划好了，按这个方案开始改？': 'The agent finished planning. Start making changes with this plan?',
   '「关于我」最多 {n} 字': '"About me" can be at most {n} characters',
+  '这是旧版的工作流任务，已经不能继续执行；要再做一次，请在父对话里启动工作流':
+    'This is an old-style workflow task and can no longer run. To do it again, start the workflow from the parent conversation',
+  '这次运行已经结束了，要再做一次请从父对话发起':
+    'This run has already ended. To do it again, start it from the parent conversation',
+  '找不到这次运行用的工作流，可能已被删除': 'The workflow for this run was not found; it may have been deleted',
+  '这些节点改了超过 {n} 轮：{nodes}。下次可以先在父对话里把需求聊清楚再起工作流':
+    'These nodes were revised more than {n} times: {nodes}. Next time, clarify the requirements in the parent conversation before starting the workflow',
+  执行这次工作流运行时出错: 'Error while running this workflow run',
+  '开不了独立分支（{error}），这次运行直接在父对话的目录里改':
+    "Could not open a separate branch ({error}); this run edits the parent conversation's directory directly",
+  '父对话补充：{text}': 'Parent conversation added: {text}',
+  '父对话把运行退回到「{node}」：{text}': 'Parent conversation sent the run back to "{node}": {text}',
+  '父对话终止了这次运行：{why}': 'Parent conversation cancelled this run: {why}',
+  父对话把这次运行的改动合回了: "Parent conversation merged this run's changes",
+  父对话放弃了这次运行的改动: "Parent conversation discarded this run's changes",
+  这次运行现在不在等确认: 'This run is not waiting for confirmation',
+  '这不是 Agent 面板的安装包：只支持发布页上的 .zip 和 .tar.gz 包':
+    'This is not an Agent Panel package. Only the .zip and .tar.gz packages from the releases page are supported',
+  '包里没有可读的 package.json，不是 Agent 面板的安装包':
+    'The package has no readable package.json, so it is not an Agent Panel package',
+  '这不是 Agent 面板的安装包（包名是 {name}）': 'This is not an Agent Panel package (package name is {name})',
+  '安装包里的版本号不对：{version}': 'Invalid version in the package: {version}',
+  '这是 {pkg} 的安装包，当前系统是 {os}，请改选 {name}':
+    'This package is for {pkg}, but this computer runs {os}. Pick {name} instead',
+  没有收到安装包: 'No package was received',
+  '这个安装包已经失效，请重新选择': 'This package is no longer available. Please pick it again',
 }

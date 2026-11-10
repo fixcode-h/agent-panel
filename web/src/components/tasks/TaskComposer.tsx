@@ -5,7 +5,7 @@ import { type ParamValues, type Project, type Task } from '@shared/schema'
 import { forSend, takeWorkflow } from '@shared/composer'
 import { resolveParams } from '@shared/agent-role'
 import { relatedTasks } from '@shared/related'
-import { canStartFlow, withWorkflow } from '@shared/flow-child'
+import { canStartFlow, withWorkflow } from '@shared/flow-run'
 import { api } from '@/lib/api'
 import { useData, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -45,12 +45,18 @@ export function TaskComposer({
   onCreated,
   autoFocus,
   standalone,
+  plugin,
 }: {
   project?: Project
   onCreated: (t: Task) => void
   autoFocus?: boolean
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
+  /**
+   * 新对话归哪个插件（task.plugin，插件整页里的新建输入框，例如模型设计；ADR 0059）：和 standalone 一起用，
+   * 不选 Chat 角色（插件自己给工具和说明），草稿单独记
+   */
+  plugin?: string
 }) {
   const { workflows, agents, projects, loading } = useData()
   const { tasks } = useTasks()
@@ -69,7 +75,7 @@ export function TaskComposer({
   // 有自建的 Chat 角色时可以换成它们；只列 Chat 角色，项目里只用 Agent 角色（ADR 0038）
   const [chatRole, setChatRole] = useState('')
   const chatRoles = agents.filter(pickableChatRole)
-  const wanted = standalone ? chatRole : useAgent ? (project?.defaultAgentId ?? '') : ''
+  const wanted = standalone ? (plugin ? '' : chatRole) : useAgent ? (project?.defaultAgentId ?? '') : ''
   const agent = agents.find((a) => a.id === wanted && a.enabled && scopeOf(a) === (standalone ? 'chat' : 'agent'))
   const agentId = agent ? wanted : ''
   const byCli = !agentId
@@ -96,14 +102,19 @@ export function TaskComposer({
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
   // 没发出去的内容按模式各自记住：切到别的模式再回来还在
-  const draftKey = standalone ? 'new:chat' : fixed ? `new:project:${fixed.id}` : 'new:agent'
+  const draftKey = plugin
+    ? `new:plugin:${plugin}`
+    : standalone
+      ? 'new:chat'
+      : fixed
+        ? `new:project:${fixed.id}`
+        : 'new:agent'
   const [prompt, setPrompt] = useDraft(draftKey)
   // 「+」里引入工作流：只有项目里、用的角色能启动工作流时才有这一项；选中的插成输入框里的一张工作流卡片
   const canFlow = !standalone && !!project && canStartFlow(agents, agentId)
   const [busy, setBusy] = useState(false)
-  // 「独立分支」默认按项目设置（isolateNew，默认开：几个顶层对话同时改一个目录会互相覆盖，用户 2026-11-04 定），
-  // 换了项目回到那个项目的默认
-  const isolateDefault = project?.isolateNew ?? true
+  // 「独立分支」默认按项目设置（isolateByDefault，默认不勾，用户 2026-11-05 定），换了项目回到那个项目的默认
+  const isolateDefault = project?.isolateByDefault ?? false
   const [isolate, setIsolate] = useState(isolateDefault)
   const [isolateFor, setIsolateFor] = useState(project?.id)
   if (isolateFor !== project?.id) {
@@ -133,7 +144,8 @@ export function TaskComposer({
 
   const canStart =
     (standalone || !!project) &&
-    (!!prompt.trim() || files.attachments.length > 0) &&
+    // 只放了还没选帧的视频也能点发送：发送时打开截帧弹窗选帧
+    (!!prompt.trim() || files.attachments.length > 0 || !!files.needFrames) &&
     (byCli ? !!chatRun.cli : !!agent) &&
     // 要问用户的参数没选好时不能开始：服务端也会拒绝，这里先挡住并让「参数」按钮显示警告
     !missing.length &&
@@ -149,21 +161,22 @@ export function TaskComposer({
       fixed && !named
         ? relatedTasks(
             asked,
-            tasks.filter((x) => x.projectId === fixed.id && !x.parentTaskId && !x.archived && !x.imported),
+            tasks.filter(
+              (x) => x.projectId === fixed.id && !x.parentTaskId && !x.flowRun?.owner && !x.archived && !x.imported,
+            ),
           )
         : [],
     [asked, tasks, fixed, named],
   )
   const sendTo = async (id: string) => {
-    if ((!prompt.trim() && !files.attachments.length) || busy || files.uploading) return
+    if ((!prompt.trim() && !files.attachments.length && !files.needFrames) || busy || files.uploading) return
+    // 视频卡片换成选好的帧；还有没选帧的视频时先打开截帧弹窗
+    const text = files.prepare(prompt)
+    if (text === null) return
     setBusy(true)
     try {
       onCreated(
-        await api.sendMessage(
-          id,
-          forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
-          files.attachments,
-        ),
+        await api.sendMessage(id, forSend(text, files.attachments.length ? ATTACHMENT_PROMPT : ''), files.attachments),
       )
       setPrompt('')
       files.clear()
@@ -176,13 +189,16 @@ export function TaskComposer({
 
   const start = async () => {
     if (!canStart) return
+    // 视频卡片换成选好的帧；还有没选帧的视频时先打开截帧弹窗
+    const text = files.prepare(prompt)
+    if (text === null) return
     setBusy(true)
     try {
       try {
         if (project) localStorage.setItem('last-project', project.id)
       } catch {}
       // 引入了工作流（行内的工作流卡片）：第一条要求点名它，由这个父对话启动（ADR 0044）
-      const said = withWorkflow(prompt, workflows)
+      const said = withWorkflow(text, workflows)
       onCreated(
         await api.createTask({
           projectId: project?.id ?? '',
@@ -199,6 +215,7 @@ export function TaskComposer({
           // 只有打开了「独立分支」才传；子对话一律不建独立分支
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
+          plugin,
         }),
       )
       setPrompt('')
@@ -334,7 +351,7 @@ export function TaskComposer({
                 <Bot className="h-4 w-4 shrink-0" />
               </button>
             )}
-            {standalone && chatRoles.length > 0 && (
+            {standalone && !plugin && chatRoles.length > 0 && (
               <AgentPicker
                 scope="chat"
                 // 默认的「助手」在「无」那一项、只供引入的「聊天约束」不能当角色：都不列

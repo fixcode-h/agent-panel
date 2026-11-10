@@ -42,7 +42,7 @@ test('导出去掉全部密钥，导入时沿用本机的值', () => {
   const s = Settings.parse({
     apis: [{ id: 'a1', name: 'x', apiKey: 'sk-xxxx' }],
     clis: { claude: { env: [{ key: 'TOKEN', value: 'your-api-key' }] } },
-    remoteAccess: { tunnelToken: 'tok' },
+    remoteAccess: { frp: { server: '203.0.113.9', token: 'tok' } },
   })
   const b64 = withoutSecrets(Buffer.from(JSON.stringify(s)).toString('base64'))
   assert.ok(b64)
@@ -50,11 +50,11 @@ test('导出去掉全部密钥，导入时沿用本机的值', () => {
   assert.equal(out.apis[0].apiKey, '')
   assert.equal(out.clis.claude.env[0].value, '')
   assert.equal(out.clis.claude.env[0].key, 'TOKEN', '变量名保留，值清空')
-  assert.equal(out.remoteAccess.tunnelToken, '')
+  assert.equal(out.remoteAccess.frp.token, '')
   const back = withLocalSecrets(out, s)
   assert.equal(back.apis[0].apiKey, 'sk-xxxx')
   assert.equal(back.clis.claude.env[0].value, 'your-api-key')
-  assert.equal(back.remoteAccess.tunnelToken, 'tok')
+  assert.equal(back.remoteAccess.frp.token, 'tok')
 })
 
 test('老设置里还留着已去掉的联网搜索密钥：导出时整段丢掉，不跟着备份带出去', () => {

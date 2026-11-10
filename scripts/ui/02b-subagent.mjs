@@ -16,6 +16,25 @@ await runShard(import.meta.filename, async (api) => {
   const p = await openCartTask(api)
   const { backToTask } = taskPageHelpers(p, api)
 
+  // 分诊并进派单行（设计稿：回复折叠与派单行重设计 §4）：不再有单独的分诊卡片；
+  // 子任务做完了派单行也留在原位不折（用户 2026-11-09 要求），第二行带着分诊的「理解」
+  {
+    if (await p.locator('[data-route-card]').count()) errors.push('派单行：还画着旧的分诊卡片')
+    if (await p.getByRole('button', { name: /派出 \d+ 个子任务/ }).count())
+      errors.push('派单行：做完的子任务又被收进了折叠（折叠行里写着「派出 n 个子任务」）')
+    const row = p.locator('.reply-body [data-dispatch="subtask"]').filter({ hasText: '核对角标的订阅时机' })
+    if (!(await row.count())) errors.push('派单行：做完的子任务没有留在原位')
+    else {
+      if ((await row.first().getAttribute('data-dispatch-status')) !== 'done')
+        errors.push('派单行：做完的子任务行尾没有写「已完成」')
+      if (!(await row.first().getByText('加购后角标数字不变').count())) errors.push('派单行：第二行没有分诊的「理解」')
+      if (await row.first().getByRole('button', { name: '改为就地处理' }).count())
+        errors.push('派单行：改派按钮还常驻在行上，应该收进 ⋯ 菜单')
+      await row.first().scrollIntoViewIfNeeded()
+      await check(p, '派单行-做完不折', ['派子任务', '加购后角标数字不变'])
+    }
+  }
+
   // 父对话里子对话结果的卡片：标题链到子对话，点了在右栏打开它并滚到它的详细总结；
   // 子对话里的总结照普通 Markdown 显示（标题、分段），不画成卡片
   {
@@ -345,7 +364,9 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate((k) => {
       const db = JSON.parse(localStorage.getItem(k))
       const parent = db.tasks.find((x) => x.title.includes('购物车'))
-      const wf = db.tasks.find((x) => x.mode === 'workflow' && x.runs?.length && x.projectId === parent.projectId)
+      const wf = db.tasks.find(
+        (x) => x.mode === 'workflow' && !x.flowRun?.owner && x.runs?.length && x.projectId === parent.projectId,
+      )
       if (!wf) return
       db.tasks = db.tasks.filter((x) => x.id !== 'demo-child-run')
       const child = structuredClone(wf)
@@ -355,6 +376,8 @@ await runShard(import.meta.filename, async (api) => {
         rootTaskId: parent.id,
         title: '子对话：到货提醒',
       })
+      // 照的是工作流运行，造的是子对话：去掉运行的归属，不然按运行画、没有对话里那行「启动工作流」
+      delete child.flowRun
       child.messages.splice(1, 0, {
         id: 'demo-child-tool',
         role: 'agent',
@@ -828,9 +851,12 @@ await runShard(import.meta.filename, async (api) => {
           // 前提：至少两个在跑，才测得出「运行区把在跑的全列出来，不只第一个」
           if (running.count < 2)
             errors.push(`父对话在跑时：演示数据只有 ${running.count} 个执行中的子对话，用例前提不成立`)
-          if (runTitles.join('\n') !== running.titles.join('\n'))
+          // 运行区还列在等你处理的（提问、等你操作，见 child-line.ts 的 childNeedsYou）：对照「需要你处理」+「执行中」两组
+          const needs = groups.find((g) => g.label === '需要你处理')?.titles ?? []
+          const expect = [...needs, ...running.titles]
+          if (runTitles.join('\n') !== expect.join('\n'))
             errors.push(
-              `父对话在跑时运行区列的子对话（${runTitles.length} 个：${runTitles.join('、')}）和弹层「执行中 · ${running.count}」（${running.titles.join('、')}）对不上`,
+              `父对话在跑时运行区列的子对话（${runTitles.length} 个：${runTitles.join('、')}）和弹层「需要你处理」+「执行中 · ${running.count}」（${expect.join('、')}）对不上`,
             )
         }
       }
@@ -890,6 +916,7 @@ await runShard(import.meta.filename, async (api) => {
           confidence: 'high',
           note: 'blame 指到这次提交，前一版跑复现用例通过',
         },
+        rating: { tier: 'mid', percent: 92, why: '重构时没想到 left=0 这个边界；证据链三环都有原文' },
         consistency: [{ observation: '只在删最后一件时出现', explanation: '只有 left=0 时提前 return' }],
         impact: [{ area: '购物车角标', effect: '删除后刷新', verify: 'store.test.ts' }],
         options: [
@@ -910,6 +937,20 @@ await runShard(import.meta.filename, async (api) => {
           },
         ],
         chosen: { id: 'A', why: '修在源头', whyNotOthers: 'B 只是绕过，别的订阅者照样收不到' },
+        // 2026-11-07 的报告字段：证据链三环、具体改动（一个文件一行）；方案比较带判定
+        chain: [
+          { step: 'trigger', text: '删除购物车最后一件商品', proof: '复现步骤第 2 步，必现' },
+          {
+            step: 'fault',
+            text: 'remove 在 left=0 时提前 return',
+            proof: '日志 [cart] remove id=3 left=0 之后没有 change',
+          },
+          { step: 'symptom', text: '角标停在 1', proof: '刷新后才归零' },
+        ],
+        changes: [
+          { file: 'web/src/cart/store.ts', what: 'remove 去掉 left === 0 时的提前 return，总是派发 change' },
+          { file: 'web/src/cart/store.test.ts', what: '删最后一件后断言角标归零', isNew: true },
+        ],
       }
       kid.bug = true
       kid.diagnoses = [
@@ -979,25 +1020,41 @@ await runShard(import.meta.filename, async (api) => {
     // 父对话页上也有入口：不用先进子对话找交报告那一行
     if (!(await p.locator('.proc-list').getByRole('button', { name: '查看报告' }).count()))
       errors.push('诊断报告：父对话页「正在运行」里那个子对话的行上没有「查看报告」')
-    const open = childView(p).getByRole('button', { name: '查看报告' })
+    // 「查看报告」只在运行区的报告卡片上（用户 2026-11-07 定），交报告那一行工具调用不再放
+    const open = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
     await open
       .first()
       .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('诊断报告：子对话里交报告的那一行工具调用上没有「查看报告」'))
+      .catch(() => errors.push('诊断报告：子对话运行区的报告卡片上没有「查看报告」'))
     await check(p, '诊断报告-子对话里的工具行')
-    if (!(await childView(p).getByText('等你查看报告').count()))
-      errors.push('诊断报告：交报告那一行没有写「等你查看报告」')
+    // 交报告是收尾动作（回复折叠重设计 §3.1）：总结之后只剩收尾调用时不出协调小行，等你看的入口只在运行区的报告卡片上
     if (await open.count()) {
-      await open.first().click()
+      // 卡片旧的在上、新的在下：点最下面那张，看的是在等确认的最新一份
+      await open.last().click()
       const dlg = p.getByRole('dialog')
       await dlg
         .getByRole('button', { name: '确认方案，开始修' })
         .waitFor({ timeout: 10000 })
         .catch(() => errors.push('诊断报告：弹窗里没有「确认方案，开始修」'))
-      if (!(await dlg.getByRole('radiogroup', { name: '版本' }).count())) errors.push('诊断报告：有两版却没有版本切换')
+      // 决策卡在最上面（用户 2026-11-07 确认的设计稿）：一句话结论、要你做的；背景收在「依据和背景」里
+      if (!(await dlg.locator('[data-diagnosis-card]').getByText('选方案 A：去掉提前 return').count()))
+        errors.push('诊断报告：最上面没有决策卡的一句话结论')
+      // 根因等级、把握百分比、提交人在决策卡上醒目显示（用户 2026-11-10）
+      const strip = dlg.locator('[data-cause-strip]')
+      for (const want of ['中级', '92', '李四', 'c0ffee1'])
+        if (!(await strip.getByText(want, { exact: false }).count()))
+          errors.push(`诊断报告：决策卡上没有显示「${want}」（根因等级 / 把握 / 提交人）`)
+      if (!(await dlg.getByRole('button', { name: /依据和背景/ }).count()))
+        errors.push('诊断报告：没有收起的「依据和背景」')
+      if (!(await dlg.getByText('具体改动').count())) errors.push('诊断报告：方案页没有「具体改动」')
+      await check(p, '诊断报告-决策卡')
+      // 版本在标题栏的下拉里选（用户 2026-11-05：不要把所有版本排在正文上面）
+      const verPick = dlg.getByRole('combobox', { name: '版本' })
+      if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')
+      if (await dlg.getByRole('radiogroup', { name: '版本' }).count()) errors.push('诊断报告：版本还排在正文上面')
       if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
         errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
-      // 选中根因那段文字标注：标注能选种类，「有疑问，再查」随之可点
+      // 选中根因那段文字标注：标注能选种类，「有疑问，让它修改」随之可点
       // 和阶段确认那一步（02d）一样用真实的鼠标拖选：程序化选区不会触发弹窗里的 mouseup
       await settle(p)
       // 报告加了时间线、引入点、候选方案后变长了：根因那段可能在可视区外，先滚进来再拖
@@ -1022,11 +1079,18 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：标注上没有「疑问 / 改方案 / 补充信息」的选择')
         await dlg.getByRole('radio', { name: '改方案' }).first().click()
         await dlg.getByLabel('标注 1 的意见').fill('顺便看看结算页的角标')
-        if (await dlg.getByRole('button', { name: '有疑问，再查' }).isDisabled())
-          errors.push('诊断报告：标注了还不能点「有疑问，再查」')
+        if (await dlg.getByRole('button', { name: '有疑问，让它修改' }).isDisabled())
+          errors.push('诊断报告：标注了还不能点「有疑问，让它修改」')
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
-      for (const text of ['引入于', '购物车删除重构', '方案 B：角标自己轮询数量'])
+      // 候选方案并排成一张比较表：方案 B 是表头一列，做法写在「做法」那一行
+      // 方案页里引入点收在「依据和背景」里：展开再看
+      await dlg
+        .getByRole('button', { name: /依据和背景/ })
+        .first()
+        .click()
+      await settle(p)
+      for (const text of ['引入于', '购物车删除重构', '角标自己轮询数量'])
         if (!(await dlg.getByText(text, { exact: false }).count())) errors.push(`诊断报告：没有显示「${text}」`)
       const useB = dlg.getByRole('button', { name: '改用方案 B' })
       if (!(await useB.count())) errors.push('诊断报告：没有「改用方案 B」')
@@ -1036,8 +1100,15 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：点「改用方案 B」后标注里没有这一条')
       }
       await check(p, '诊断报告-审阅弹窗', ['诊断报告', '候选方案'])
+      // 整体意见框就是对话输入框（用户 2026-11-05 要的）：能粘贴、拖进、从「+」引入日志文件和图片
+      const overallBox = dlg.getByRole('textbox', { name: '整体意见' })
+      if ((await overallBox.getAttribute('contenteditable').catch(() => null)) !== 'true')
+        errors.push('诊断报告：整体意见框不是对话输入框')
+      if (!(await dlg.getByRole('button', { name: '添加文件、图片或引用' }).count()))
+        errors.push('诊断报告：整体意见框没有引入文件、图片的「+」')
       // 切到第 1 版：只读，按钮收起
-      await dlg.getByRole('radio', { name: '第 1 版' }).click()
+      await verPick.click()
+      await p.getByRole('option', { name: /^第 1 版/ }).click()
       await settle(p)
       if (
         await dlg
@@ -1048,7 +1119,8 @@ await runShard(import.meta.filename, async (api) => {
         errors.push('诊断报告：切到旧的一版还能确认')
       await check(p, '诊断报告-旧版只读')
       // 取消修复：先确认，确认后弹窗关掉，对话里记一行「你取消了…」，不再等确认
-      await dlg.getByRole('radio', { name: '第 2 版' }).click()
+      await verPick.click()
+      await p.getByRole('option', { name: /^第 2 版/ }).click()
       await settle(p)
       const cancel = dlg.getByRole('button', { name: '取消修复' })
       if (!(await cancel.count())) errors.push('诊断报告：最新一版没有「取消修复」')
@@ -1066,11 +1138,52 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：取消后审阅弹窗还开着')
         if (await childView(p).getByText('等你查看报告').count())
           errors.push('诊断报告：取消后交报告那一行还写着「等你查看报告」')
+        // 报告入口只在消息流里（用户 2026-11-07 定）：输入框上方不再有诊断报告那一行；
+        // 消息流里同一个 Bug 只有一张报告卡片（最新一份），不修了的那份描红边，状态写「不修了」
+        if (await childView(p).locator('[data-status-row="bug-report"]').count())
+          errors.push('诊断报告：输入框上方的状态栏里还有诊断报告那一行')
+        const cards = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
+        await cards
+          .first()
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('诊断报告：不再等确认后，消息流里没有报告卡片'))
+        if ((await cards.count()) > 1) errors.push('诊断报告：同一个 Bug 在消息流里列了不止一张报告卡片')
+        if (!(await childView(p).locator('.proc-list .border-danger\\/60').getByText('不修了').count()))
+          errors.push('诊断报告：不修了的那份卡片没有红色边框')
+        await check(p, '诊断报告-消息流卡片')
       }
       await p.keyboard.press('Escape')
     }
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await p.reload()
     await backToTask()
+  }
+
+  // 名下的工作流运行（不是子对话）：运行区里子对话那几行下面、隔一条分割线，一次运行一张卡片；
+  // 节点等确认时确认就在卡片上做（查看结果、追问、交给父对话）
+  {
+    const row = p.locator('[role="group"][aria-label="工作流运行"] [data-run-card]').first()
+    await row.scrollIntoViewIfNeeded().catch(() => {})
+    await row.waitFor({ timeout: 8000 }).catch(() => errors.push('工作流栏：运行区里没有名下工作流运行的卡片'))
+    if (await row.count()) {
+      for (const label of ['查看结果', '追问', '交给父对话'])
+        if (!(await row.locator('button', { hasText: label }).count()))
+          errors.push(`工作流栏：等确认的运行没有「${label}」`)
+      await check(p, '工作流栏-等确认', ['角标订阅购物车数据', '「方案」等你确认'])
+      await row.locator('button', { hasText: '追问' }).click()
+      await p
+        .getByPlaceholder('想先问清楚什么？（只回答，不改结果）')
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('工作流栏：点「追问」没有弹出输入框'))
+      await check(p, '工作流栏-追问')
+      await p.keyboard.press('Escape')
+      await row.locator('button', { hasText: '查看结果' }).click()
+      await p
+        .getByRole('button', { name: '确认', exact: true })
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('工作流栏：点「查看结果」没有打开审阅弹窗'))
+      await check(p, '工作流栏-查看结果', ['方案：购物车角标改成订阅购物车数据'])
+      await p.keyboard.press('Escape')
+    }
   }
 })

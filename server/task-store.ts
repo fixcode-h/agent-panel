@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { messageStamp, taskTitle } from '../shared/task.ts'
+import { log } from './log.ts'
 import { removeTaskLog, setTaskLogPath } from './task-log.ts'
 import {
   CACHE_DIR,
@@ -135,6 +136,17 @@ export function createStampTracker(verifyMs = 10_000) {
  * 窗口内只留最后一次，到点写最新的；任务本身的小文件（不带对话）照旧每次写，崩溃最多丢窗口内这点对话。
  */
 const MSG_GAP = 400
+/** 写一次越慢、窗口越宽：写盘时间最多占窗口的五分之一，长对话流式输出时不至于一直在序列化几 MB 的 JSON */
+const MSG_GAP_FACTOR = 5
+/** 窗口最宽这么久：被强杀时最多丢这么久的流式输出；关键节点（结束、提问、停止）照旧立即写 */
+const MSG_GAP_MAX = 2000
+/** 写一次对话文件超过这么久就记一笔日志：分得清「面板卡」是不是卡在写盘上 */
+const SLOW_WRITE_MS = 300
+
+/** 下一次合并写至少隔多久：按这个对话上一次写盘实际花的时间放宽 */
+export function messageGap(lastWriteMs: number) {
+  return Math.min(MSG_GAP_MAX, Math.max(MSG_GAP, Math.round(lastWriteMs * MSG_GAP_FACTOR)))
+}
 
 /**
  * 任务记录：任务本身全部读进内存，对话消息按需读。写入按任务串行化、原子写；
@@ -172,9 +184,18 @@ export function createTaskStore() {
   const writing = new Map<string, Promise<void>>()
   /** 消息文件上次写入的时间、窗口内等着写的最新一份和定时器 */
   const msgAt = new Map<string, number>()
+  /** 每个对话上一次写对话文件花了多久（毫秒）：合并窗口按它放宽，见 messageGap */
+  const msgCost = new Map<string, number>()
   const msgPending = new Map<string, Task>()
   const msgTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * 父对话 → 子对话 id 的索引：找子对话不再每次把全部对话过一遍（每轮结束、停止、合并都要找）。
+   * 只存 id、取的时候从 metas 拿最新的那份；父子关系变了（新建、删除、改了 parentTaskId）就整份作废，下次用到时重建
+   */
+  let kidsIndex: { src: Map<string, Task>; map: Map<string, Set<string>> } | null = null
+  const dropKidsIndex = () => (kidsIndex = null)
   onReset(() => {
+    dropKidsIndex()
     metas = null
     loading = null
     full.clear()
@@ -205,7 +226,12 @@ export function createTaskStore() {
   async function writeMessages(t: Task) {
     const stamp = stamps.stamp(t.id, t.messages)
     if (written.get(t.id) === stamp) return
+    const began = performance.now()
     await writeJsonAtomic(msgFileOf(t), t.messages, true)
+    const spent = performance.now() - began
+    msgCost.set(t.id, spent)
+    if (spent >= SLOW_WRITE_MS)
+      log.warn('task', '写对话文件慢', { task: t.id, ms: Math.round(spent), messages: t.messages.length })
     // 写成功才记指纹：写失败（磁盘满、杀毒软件占着文件）时下一次还要重试，不然这段对话就再也不落盘了
     written.set(t.id, stamp)
     // 窗口按「真的写了盘」的时间算：窗口里合并写的那一次也要算，不然下一次会提前破窗口
@@ -227,7 +253,7 @@ export function createTaskStore() {
    */
   function persistMessages(t: Task, window = true): Promise<void> | undefined {
     const id = t.id
-    const wait = (msgAt.get(id) ?? 0) + MSG_GAP - Date.now()
+    const wait = (msgAt.get(id) ?? 0) + messageGap(msgCost.get(id) ?? 0) - Date.now()
     if (window && wait > 0) {
       msgPending.set(id, t)
       if (!msgTimers.has(id)) {
@@ -525,6 +551,7 @@ export function createTaskStore() {
       if (!msgTimers.has(old)) {
         written.delete(old)
         msgAt.delete(old)
+        msgCost.delete(old)
       }
     }
   }
@@ -578,6 +605,29 @@ export function createTaskStore() {
     },
     get: getFull,
     /**
+     * 直接挂在这个对话下面的子对话（和 list 一样只带用户消息，含进了回收站的）：
+     * 等价于 `(await list()).filter((x) => x.parentTaskId === id)`，但走索引，不扫全部对话
+     */
+    async childrenOf(parentId: string): Promise<Task[]> {
+      const map = await all()
+      if (!kidsIndex || kidsIndex.src !== map) {
+        const idx = new Map<string, Set<string>>()
+        for (const t of map.values())
+          if (t.parentTaskId) {
+            let set = idx.get(t.parentTaskId)
+            if (!set) idx.set(t.parentTaskId, (set = new Set()))
+            set.add(t.id)
+          }
+        kidsIndex = { src: map, map: idx }
+      }
+      const out: Task[] = []
+      for (const id of kidsIndex.map.get(parentId) ?? []) {
+        const t = map.get(id)
+        if (t) out.push(t)
+      }
+      return out
+    },
+    /**
      * 只读对话消息，不进 full 缓存：对话搜索一次要扫几十个对话，
      * 走 get 会把用户正在看的那份挤出缓存（下次打开又要重读几 MB）
      */
@@ -613,6 +663,7 @@ export function createTaskStore() {
       const now = new Date().toISOString()
       const item = { ...input, id: input.id ?? randomUUID(), createdAt: now, updatedAt: now } as Task
       ;(await all()).set(item.id, head(item))
+      if (item.parentTaskId) dropKidsIndex()
       remember(item)
       await persist(item)
       return item
@@ -647,6 +698,7 @@ export function createTaskStore() {
       const updatedAt = opts?.keepUpdatedAt ? (input.updatedAt ?? old.updatedAt) : new Date().toISOString()
       const item = { ...old, ...input, id, projectId: old.projectId, updatedAt } as Task
       ;(await all()).set(id, head(item))
+      if (item.parentTaskId !== old.parentTaskId) dropKidsIndex()
       remember(item)
       await persist(item, opts)
       changed(old, item)
@@ -670,6 +722,7 @@ export function createTaskStore() {
       const updatedAt = opts?.keepUpdatedAt ? (patch.updatedAt ?? old.updatedAt) : new Date().toISOString()
       const item = { ...old, ...patch, id, projectId: old.projectId, updatedAt } as Task
       map.set(id, head(item))
+      if (item.parentTaskId !== old.parentTaskId) dropKidsIndex()
       // 内存里还留着这份对话（刚读过、正在执行）时一起改：不然下一次落盘或推送会把旧值带回去
       const hit = full.get(id)
       if (hit) Object.assign(hit, patch, { updatedAt })
@@ -682,6 +735,7 @@ export function createTaskStore() {
       const meta = map.get(id)
       if (!meta) return false
       map.delete(id)
+      dropKidsIndex()
       drop(id)
       written.delete(id)
       stamps.forget(id)
@@ -691,6 +745,7 @@ export function createTaskStore() {
       msgTimers.delete(id)
       msgPending.delete(id)
       msgAt.delete(id)
+      msgCost.delete(id)
       await (writing.get(id) ?? Promise.resolve()).catch(() => {})
       await unlink(fileOf(meta)).catch(() => {})
       await unlink(msgFileOf(meta)).catch(() => {})

@@ -1,6 +1,6 @@
 import { Task, type Project } from '../../shared/schema.ts'
 import { diagnosisPending } from '../../shared/task.ts'
-import { flowProgress } from '../../shared/flow-child.ts'
+import { pendingAction } from '../../shared/user-action.ts'
 import { bugStage } from '../../shared/bug-diagnosis.ts'
 import {
   childActivity,
@@ -140,9 +140,9 @@ export function registerChildrenRoutes(s: TasksScope) {
           // 工作流运行还没跑完：流程图跑着时这一轮的 CLI 可能早就结束了，不能凭它当结束
           workflow: runRunning(liveTask),
           // 工作流子对话（ADR 0044）：行上标出是哪个工作流、跑到哪个节点
-          flow: flowProgress(liveTask),
           // 等用户确认诊断报告（ADR 0045）：算执行中，行上的说明来自 waiting
           diagnosis: diagnosisPending(liveTask),
+          action: !!pendingAction(liveTask),
           // 用户报的 Bug（ADR 0046）：查到哪个阶段了
           bug: bugStage(liveTask) || undefined,
           // 它派出去的子任务还在跑：结果交回来它还要接着做，也不能算做完了
@@ -197,7 +197,7 @@ export function registerChildrenRoutes(s: TasksScope) {
   s.routes.post('/:id/children/stop', async (c) => {
     const parent = await s.current(c.req.param('id'))
     if (!parent) return s.bad(c, t('任务不存在'), 404)
-    const kids = (await s.store.list()).filter((x) => x.parentTaskId === parent.id)
+    const kids = await s.store.childrenOf(parent.id)
     const before = kids.filter((x) => s.live.has(x.id)).length
     await s.closeChildren(parent.id)
     await Promise.all(kids.map((k) => s.endBackground(k.id)))

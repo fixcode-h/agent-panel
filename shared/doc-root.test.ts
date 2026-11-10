@@ -4,6 +4,8 @@ import {
   plainDocRootText,
   DOC_PLACE_INSIDE,
   DOC_PLACE_SIBLING,
+  branchNameOf,
+  docGroupKey,
   docRootText,
   exposesForVcs,
   isInside,
@@ -81,4 +83,15 @@ test('Git 项目也写明文档根在项目里，「文档根」参数只对 P4 
   assert.match(text, /模块文档是 `\/p\/docs\/modules\/<模块>\/README\.md`/)
   assert.match(text, /不写到项目目录外/)
   assert.equal(plainDocRootText(undefined), '')
+})
+
+test('分支按项目文件夹区分：同名项目文件夹、分支目录在同一上级下的项目同组，分支名是上一级目录名', () => {
+  assert.equal(docGroupKey('D:\\P4\\Main\\Game', 'p4'), docGroupKey('d:/p4/Dev/Game/', 'p4'))
+  assert.notEqual(docGroupKey('/w/Main/Game', 'p4'), docGroupKey('/w/Main/Tools', 'p4'))
+  assert.notEqual(docGroupKey('/w/Main/Game', 'p4'), docGroupKey('/x/Main/Game', 'p4'))
+  assert.notEqual(docGroupKey('/w/Main/Game', 'p4'), docGroupKey('/w/Main/Game', 'svn'))
+  assert.equal(branchNameOf('D:\\P4\\Dev\\Game'), 'Dev')
+  assert.equal(branchNameOf('/w/Main/Game/'), 'Main')
+  // 没有分支信息时（老的提示词）不写分支那一段
+  assert.doesNotMatch(docRootText(resolveDocRoot('/w/game', 'p4', {})), /当前分支/)
 })

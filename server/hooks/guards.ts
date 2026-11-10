@@ -3,11 +3,15 @@ import { homedir, tmpdir } from 'node:os'
 import type { Project, Task } from '../../shared/schema.ts'
 import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
-import { commandSegments, globMatch } from '../../shared/hook-defs.ts'
+import { globMatch } from '../../shared/hook-defs.ts'
+import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
+import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
+import { cleaning, editScope, revOf } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
+import { scratchPath } from '../exec/file-events.ts'
 
 /**
  * 内置的工具前守卫（ADR 0049 第四期）：把只写在提示词里、或者要等收尾才查的规则，在工具执行前就拦下来。
@@ -30,8 +34,9 @@ const inside = (dir: string, p: string) => {
   const r = path.relative(path.resolve(dir), path.resolve(p))
   return r === '' || (!r.startsWith('..') && !path.isAbsolute(r))
 }
+// heredoc / here-string 的正文是要写进文件的内容，不是命令：去掉再拆段（command-scope.ts）
 const segs = (facts: HookFacts) =>
-  facts.tool?.kind === 'shell' ? commandSegments(String(facts.tool.input.command ?? '')) : []
+  facts.tool?.kind === 'shell' ? runSegments(String(facts.tool.input.command ?? '')) : []
 const editPaths = (facts: HookFacts) =>
   facts.tool?.kind === 'edit' ? (facts.tool.paths.length ? facts.tool.paths : [facts.tool.path]).filter(Boolean) : []
 /** 子对话在自己的独立分支（worktree）里 */
@@ -65,21 +70,29 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.task.bug) return ''
-  const files = editPaths(facts).map((p) => rel(c.cwd, p) || p)
+  // 取消修复后删临时日志：要一处一处删，不整文件还原（实跑时它用 git checkout -- 文件 还原，
+  // 共用目录里会把文件里别的改动一起冲掉，用户 2026-11-10 定由 Agent 删、连空行一起删）
+  if (cleaning(latestDiagnosis(c.task)) && segs(facts).some(wholeFileRevert))
+    return '【面板】这一步要用改文件工具一处一处删临时日志（连加日志时带进来的空行），不整文件还原：文件里可能还有别的改动。'
+  // 面板给的临时目录、数据目录里的文件（编译脚本、日志副本）不是项目代码，不按方案拦（file-events.ts 也不记成改动）
+  const files = editPaths(facts)
+    .filter((p) => !scratchPath(path.resolve(c.cwd, p), c.cwd))
+    .map((p) => rel(c.cwd, p) || p)
   if (!files.length) return ''
-  const d = latestDiagnosis(c.task)
-  if (!d) return '【面板】这是父对话派来的 Bug：修之前先用 submit_diagnosis 交诊断报告，用户确认方案后再改文件。'
-  if (d.status === 'pending')
-    return `【面板】诊断报告第 ${d.version} 版还在等用户确认：确认之前不改文件，先等用户的回复。`
-  if (d.status === 'questioned')
-    return `【面板】用户对诊断报告第 ${d.version} 版提了意见：先逐条处理、用 submit_diagnosis 交新一版，确认后再改文件。`
-  if (d.status === 'cancelled')
-    return `【面板】用户取消了诊断报告第 ${d.version} 版，这次不修：不改文件。用户要你接着修时，先用 submit_diagnosis 交新一版，确认后再改。`
-  const extra = outOfPlan(files, d.files)
-  if (extra.length)
-    return `【面板】${extra.join('、')} 不在用户确认的方案（第 ${d.version} 版）里：确实要改，先交新一版诊断报告写明为什么，等用户确认。`
+  // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
+  const scope = editScope(c.task.diagnoses ?? [])
+  if ('deny' in scope) return `【面板】${scope.deny}`
+  const extra = outOfPlan(files, scope.files)
+  if (extra.length) {
+    const d = latestDiagnosis(c.task)
+    return `【面板】${extra.join('、')} 不在用户同意的范围（第 ${d ? revOf(d) : ''} 版）里：确实要改，先重新交报告写明为什么，等用户确认。`
+  }
   return ''
 }
+
+/** 整文件还原的命令：git checkout -- 文件、git restore 文件、p4 revert、svn revert */
+const wholeFileRevert = (seg: string) =>
+  (gitSub(seg, 'checkout') && /\s--\s/.test(seg)) || gitSub(seg, 'restore') || /^(p4|svn)\s+revert\b/.test(seg)
 
 const rel = (cwd: string, p: string) => {
   const r = path.relative(cwd, path.resolve(cwd, p))
@@ -142,29 +155,38 @@ function dangerOf(c: GuardCtx, s: string): string {
   return ''
 }
 
-/** 不会自己结束的命令（开发服务器、监听）：放在前台会一直挡着对话 */
-const ENDLESS = [
-  /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch)\b/,
-  /^(?:npx\s+)?vite(?:\s+(?!build\b|preview\b)\S|$)/,
-  /^(?:npx\s+)?(?:nodemon|http-server|live-server)\b/,
-  /\s--watch\b/,
-  /^(?:npx\s+)?tsc\b.*\s-w\b/,
-]
-
 /**
  * 长命令转后台：完整测试、端到端、界面检查、开发服务器放在前台跑，用户执行中发来的消息要等它跑完才处理，
- * 对话看起来就是卡住（用户 2026-10-27 纠正过，docs/lessons/tooling.md）。这一轮有 run_background 时拒绝并说明用它
+ * 对话看起来就是卡住（用户 2026-10-27 纠正过，docs/lessons/tooling.md）。这一轮有 run_background 时拒绝并说明用它。
+ * 以前按段里的字样匹配，写文件的 heredoc 正文、commit 说明、grep 的参数里有 e2e 也被拦下、让它改用后台命令，
+ * 结果写文件、查文件都跑去了后台（用户 2026-11-05 报）：现在只看段开头真正运行的程序
  */
 export function longDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.canBackground) return ''
   const extra = c.list('extra').filter(Boolean)
   for (const s of segs(facts)) {
-    if (ENDLESS.some((re) => re.test(s)))
-      return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑，需要访问时看它的输出。`
+    // 只看真正在跑的程序：cat、grep、git commit 这类快命令的参数里出现 e2e、--watch 不算（command-scope.ts）
+    if (quickSegment(s)) continue
+    if (endlessSegment(s))
+      return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑（service 设为 true），用 check_background 看它的输出确认起来了。`
     if (FULL_SUITE_COMMAND.test(s) || extra.some((x) => s.startsWith(x)))
       return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   }
-  return ''
+  return wideSearchDeny(c, facts)
+}
+
+/**
+ * 全项目全文搜索转后台：grep -r、findstr /s 这类从项目根起的递归搜索不跳过编译产物和缓存目录，大项目要扫几分钟
+ * （用户 2026-11-07 报前台 grep -rl 整个 UE 项目跑了 2 分钟，shared/wide-search.ts）。起点是项目根或更上层时拒绝，
+ * 让它放后台、或换成已经配好排除目录的 rg 并限定子目录；起点是子目录的照常放行
+ */
+function wideSearchDeny(c: GuardCtx, facts: HookFacts): string {
+  if (facts.tool?.kind !== 'shell') return ''
+  const cmd = String(facts.tool.input.command ?? '')
+  const roots = [c.cwd, c.project?.path].filter((x): x is string => !!x)
+  const wide = fullScanStarts(cmd).some((s) => roots.some((r) => inside(path.resolve(c.cwd, s), r)))
+  if (!wide) return ''
+  return `【面板】${cmd.trim().split('\n')[0].slice(0, 80)} 会把整个项目（连编译产物、缓存目录）逐个文件读一遍，大项目要跑几分钟，放在前台会一直挡着对话：确实要扫全项目就用面板工具 run_background 放后台跑（跑完结果推回来，交出去后做不依赖它的事）；只是找个东西就改用 rg（它跳过 .gitignore 和项目设置里的排除目录）并限定到具体子目录，几秒就完。`
 }
 
 /**

@@ -4,6 +4,8 @@ export const EN_SUMMARY: Record<string, string> = {
   需求: 'Requirement',
   Bug: 'Bug',
   原因: 'Cause',
+  关键代码: 'Key code',
+  未解决: 'Unresolved',
   '取消采纳「{title}」': 'Un-adopt “{title}”',
   '采纳「{title}」': 'Adopt “{title}”',
   已采纳: 'Adopted',

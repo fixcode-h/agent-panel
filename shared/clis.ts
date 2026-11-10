@@ -24,6 +24,11 @@ export interface PermissionOption {
   id: string
   label: string
   hint: string
+  /**
+   * 选了这一档时，CLI 仍然发来的确认请求由面板直接允许（问题照常弹出）：
+   * 例如 Claude Code 跳过确认后，删除工作目录、Windows 路径这类自带安全检查仍会要确认
+   */
+  autoAllow?: boolean
 }
 
 export interface BuildOptions {
@@ -82,6 +87,8 @@ export type ReviewTarget =
 export interface CliOption {
   id: string
   label: string
+  /** 标题下一行的短说明；有它时 hint 只放问号里 */
+  desc: string
   hint: string
   default: boolean | string
   env: Record<string, string>
@@ -205,7 +212,7 @@ export interface CliDefinition {
   /** 手动设的上下文窗口、最大输出用哪个环境变量告诉 CLI；没有的项 CLI 不接受，只用于面板估算 */
   limitEnv?: { context?: string; maxOutput?: string }
   /** 长上下文靠模型名后缀开（见 cli-spec 的 longContext） */
-  longContext?: { suffix: string; min: number }
+  longContext?: { suffix: string; min: number; models?: string }
   /** buildArgs 里会把这几项写成参数（BuildOptions 的 contextWindow、maxOutput） */
   limitArgs?: ('context' | 'maxOutput')[]
   /** 手动设的上下文窗口、最大输出写进 CLI 配置文件的哪里（这一轮里临时加上），见 cli-spec.ts 的 features.limitFile */
@@ -230,6 +237,8 @@ export interface CliDefinition {
   envExample: string
   /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
   env?: Record<string, string>
+  /** env 里每个变量在设置页显示的中文名和说明（变量名放问号里，见 cli-spec.ts 的 envNotes） */
+  envNotes?: Record<string, { label: string; hint: string }>
   /** stderr 里和失败无关的提示行（见 cli-spec.ts 的 stderrNoise）：失败原因里的 stderr 尾巴去掉这些行 */
   stderrNoise?: RegExp[]
   /** 自动压缩抖动的报错（见 cli-spec.ts 的 compactThrash）：认出来时在原会话里续一轮，再失败才报失败 */
@@ -252,6 +261,8 @@ export interface CliDefinition {
   trust?: import('./cli-trust.ts').CliTrust
   /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */
   mcpStore?: import('./cli-spec.ts').McpStore
+  /** 启动新会话前探测项目里的远程 MCP（见 server/exec/mcp-probe.ts）；没有时不探测 */
+  mcpProbe?: import('./cli-spec.ts').McpProbe
   packages?: import('./cli-spec.ts').CliPackages
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean

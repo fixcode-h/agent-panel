@@ -2,6 +2,7 @@ import { AgentInput, type Agent, type AgentParam, type ParamValue, type ParamVal
 import { coerceValue, isEmptyValue } from '../agent-role.ts'
 import { t } from '../i18n.ts'
 import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
+import { builtinAgents } from './catalog.ts'
 import type { AgentMount } from '../schema.ts'
 
 /**
@@ -82,12 +83,12 @@ export const listableAgents = <A extends Pick<Agent, 'origin'>>(agents: A[]): A[
  */
 export function builtinKey(a: Pick<Agent, 'origin'> | undefined): string | undefined {
   const k = a?.origin.startsWith('builtin:') ? a.origin.slice(8) : ''
-  return k && BUILTIN_AGENTS.some((b) => b.key === k) ? k : undefined
+  return k && builtinAgents().some((b) => b.key === k) ? k : undefined
 }
 
 export const isBuiltinAgent = (a: Pick<Agent, 'origin'> | undefined) => !!builtinKey(a)
 
-export const builtinDefinition = (key: string) => BUILTIN_AGENTS.find((b) => b.key === key)
+export const builtinDefinition = (key: string) => builtinAgents().find((b) => b.key === key)
 
 export const coreDefinition = (key: CoreKey) => BUILTIN_AGENTS.find((b) => b.key === key)!
 

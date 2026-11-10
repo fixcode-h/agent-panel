@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
+import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { chatModePart } from '../shared/chat-prompt.ts'
@@ -199,9 +200,7 @@ test('spawn_agents 带 step：结果已经被 wait_agents 取走，这一步照�
 })
 
 test('spawn_agents 的 step 只在有执行计划的对话里出现', () => {
-  const base = { self: 'n1', common: [], hasMain: false, canSpawn: true, team: true } as unknown as Parameters<
-    typeof orchTools
-  >[0]
+  const base = { self: 'n1', common: [], canSpawn: true, team: true } as unknown as Parameters<typeof orchTools>[0]
   const props = (o: Parameters<typeof orchTools>[0]) =>
     (orchTools(o).find((x) => x.name === 'spawn_agents')!.inputSchema as { properties: Record<string, unknown> })
       .properties
@@ -213,7 +212,6 @@ test('spawn_agents / create_conversation 的字段描述带上派单纪律', () 
   // 描述就是模型看到的用法说明：只写「不写跟你一样」「不写取 instructions 第一行」会导向低档派单和同标题
   const o = {
     self: 'a',
-    hasMain: false,
     common: [],
     coordinator: true,
     plans: false,
@@ -246,6 +244,7 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   const w = workflow()
   const task = {
     ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't1'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
     id: 't1',
   } as Task
   const log: AgentCall[] = []
@@ -266,7 +265,6 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   assert.equal(by('a/sub/h2').agentId, 'q', '按名字交给指定的 Agent')
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
-  assert.equal(log.filter((c) => c.dispatching).length, 0, '没有主 Agent 调度轮')
   // 工作流节点仍然拿得到共享状态：这个能力不能因为对话模式不注册就被一起砍掉
   // （工具表另有一处 deepEqual 断言含 read_state / write_state；节点内 read_state 能读出 a 写的值）
   const withState = task.runs[0]?.state.interface
@@ -276,7 +274,11 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
 
 test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失效', async () => {
   const w = workflow()
-  const task = { ...newTask({ projectId: 'p', mode: 'workflow', prompt: 'x' } as never, w, '', 't2'), id: 't2' } as Task
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'workflow', prompt: 'x' } as never, w, '', 't2'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
+    id: 't2',
+  } as Task
   const log: AgentCall[] = []
   let orch: AgentCall['orch']
   const h = host(task, log)
@@ -316,7 +318,6 @@ test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失
 test('编排工具：通用 Agent 列在 spawn_agents 和用法说明里', async () => {
   const o = {
     self: 'a',
-    hasMain: false,
     canSpawn: true,
     team: true,
     common: [{ name: '代码侦察', description: '只读定位代码' }],
@@ -409,6 +410,8 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   const back = task.messages.find((m) => m.panel === 'helpers')
   assert.equal(back?.role, 'system')
   assert.match(back!.text, /### 页面/)
+  // 交回的是哪几个子任务记在消息上：界面按它数个数，不数正文里的标题
+  assert.equal(back!.results?.length, 1)
   assert.equal(task.status, 'done')
 })
 
@@ -416,7 +419,6 @@ test('收尾建议：走提问链路交给用户选，没给选项时用默认�
   const calls: { text: string; question: boolean; options?: string[]; kind?: string }[] = []
   const o = {
     self: 'a',
-    hasMain: false,
     child: true,
     team: true,
     common: [],
@@ -430,7 +432,7 @@ test('收尾建议：走提问链路交给用户选，没给选项时用默认�
   assert.ok(names.includes('suggest_next_step'), '子对话能用 suggest_next_step')
   assert.match(orchHint(o), /suggest_next_step/)
   assert.ok(
-    !(orchTools({ self: 'a', hasMain: false, common: [] } as unknown as Orchestra) as { name: string }[]).some(
+    !(orchTools({ self: 'a', common: [] } as unknown as Orchestra) as { name: string }[]).some(
       (x) => x.name === 'suggest_next_step',
     ),
   )
@@ -460,7 +462,6 @@ test('收尾建议：推送 / PR / submit / 合并主干这类建议被挡下来
   const calls: { text: string }[] = []
   const o = {
     self: 'a',
-    hasMain: false,
     child: true,
     common: [],
     toParent: async (text: string) => {
@@ -508,6 +509,40 @@ test('后台命令没给名字时取命令第一行：推回结果的标题不�
   assert.equal(names[1], '装依赖')
 })
 
+test('后台命令只收长命令：写文件、快命令拒收；命令先过守卫；开发服务器按常驻服务跑', async () => {
+  const got: { command: string; service?: boolean }[] = []
+  const guarded: string[] = []
+  const o = {
+    runBackground: async (input: { command: string; service?: boolean }) => {
+      got.push(input)
+      return { ok: true, id: 'abc12345', info: '已放到后台（编号 abc12345）。' }
+    },
+    guardCommand: async (command: string) => {
+      guarded.push(command)
+      return /git push/.test(command) ? '【面板】还没拿到推送授权' : ''
+    },
+  } as unknown as Orchestra
+  // 用户 2026-11-05 报：写文件的命令也交给了后台
+  const write = await callOrchTool(o, 'run_background', { command: "cat > a.md <<'EOF'\nnpm run test:e2e\nEOF" })
+  assert.match(text(write), /不用来写文件/)
+  assert.match(text(await callOrchTool(o, 'run_background', { command: 'git status' })), /几秒就能跑完/)
+  assert.equal(got.length, 0, '拒收的不交给面板')
+  // 守卫：和 CLI 命令工具同一套，不能借后台命令绕过推送授权
+  const push = await callOrchTool(o, 'run_background', { command: 'npm run build && git push' })
+  assert.match(text(push), /推送授权/)
+  assert.equal(got.length, 0)
+  await callOrchTool(o, 'run_background', { command: 'npm run test:e2e' })
+  await callOrchTool(o, 'run_background', { command: 'npm run dev' })
+  assert.deepEqual(
+    got.map((x) => [x.command, !!x.service]),
+    [
+      ['npm run test:e2e', false],
+      ['npm run dev', true],
+    ],
+  )
+  assert.ok(guarded.includes('npm run test:e2e'))
+})
+
 /**
  * spawn_agents 的顶层 agent / tier / resume：整批的默认值。
  * 以前只读 tasks[i]，模型把 resume 写在顶层时被静默丢掉，复看的评审退回默认「子任务」角色 + 新会话，
@@ -517,7 +552,6 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
   const lists: HelperSpec[][] = []
   const o = {
     self: 'a',
-    hasMain: false,
     common: [],
     spawn: (list: HelperSpec[], _step?: string) => {
       lists.push(list)
@@ -553,6 +587,18 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
     lists[2].map((s) => s.params),
     [{ task: '清理用例' }, { task: '设计用例' }],
   )
+  // review 同理：顶层交接单给没写自己那份的任务
+  await callOrchTool(o, 'spawn_agents', {
+    review: { goal: '修好', checks: '单测通过' },
+    tasks: [
+      { title: '甲', instructions: 'x' },
+      { title: '乙', instructions: 'y', review: { goal: '另一件' } },
+    ],
+  })
+  assert.deepEqual(
+    lists[3].map((s) => s.review?.goal),
+    ['修好', '另一件'],
+  )
   const strParams = await callOrchTool(o, 'spawn_agents', { tasks: [{ instructions: 'x', params: '{"task":1}' }] })
   assert.match(text(strParams), /params 要写对象/)
   // 顶层 resume 只配一个任务：一个会话只能接着跑一轮，一批多个时说不清谁接它
@@ -575,7 +621,7 @@ test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写
     tasks: [{ title: '复看', instructions: '确认', resume: ['a/sub/h1'] }],
   })
   assert.match(text(wrongType), /tasks\[0\]\.resume 要写字符串/)
-  assert.equal(lists.length, 3, '被拒的调用不派子任务')
+  assert.equal(lists.length, 4, '被拒的调用不派子任务')
 })
 
 /**
@@ -612,7 +658,10 @@ test('resume：不写 agent 沿用原任务的角色，写了用写的，非 res
       const brief = { goal: '修好复看角色', checks: 'npm run test:unit 通过' }
       if (round === 1) {
         const r = await callOrchTool(call.orch!, 'spawn_agents', {
-          tasks: [{ title: '评审改动', instructions: '看代码', agent: '评审', review: brief }],
+          // 交接单写在顶层（模型照着顶层 agent 的写法常这样写）：当整批默认值，不拒
+          agent: '评审',
+          review: brief,
+          tasks: [{ title: '评审改动', instructions: '看代码' }],
         })
         assert.match(text(r), /@chat\/sub\/h1/)
       }
@@ -632,9 +681,9 @@ test('resume：不写 agent 沿用原任务的角色，写了用写的，非 res
         assert.match(text(r), /@chat\/sub\/h3/)
       }
       if (round === 4) {
-        // 复看：显式写「评审」，和没写时一致
+        // 复看：显式写「评审」，和没写时一致；id 丢了开头的「@」也认得（用户截图里模型就这样写）
         const r = await callOrchTool(call.orch!, 'spawn_agents', {
-          resume: '@chat/sub/h1',
+          resume: 'chat/sub/h1',
           agent: '评审',
           tasks: [{ title: '再复看', instructions: '确认增量' }],
         })
@@ -758,7 +807,6 @@ test('点名的角色不存在：报错，不落到默认「子任务」', async
 const okCb = async () => ({ ok: true, info: '' })
 const OFF = {
   self: '@chat',
-  hasMain: false,
   planner: false,
   common: [],
   helper: false,
@@ -790,13 +838,34 @@ const LESSONS = { find: async () => '', record: okCb }
 const READ_LESSONS = { find: async () => '' }
 const toolNames = (o: object) => orchTools({ ...OFF, ...o } as unknown as Orchestra).map((x) => x.name)
 // 项目里的对话（顶层、子对话）共有的：chat=true、不是子任务、在项目里（能派子任务、有并行的子任务可查可传话）
-const CONV = { canSpawn: true, team: true, autoReturn: true, plans: true, canBackground: true, lessons: LESSONS }
+// endTurn：对话（Agent 模式）交代这一轮怎么结束（shared/end-turn.ts），Chat 页、子任务、工作流节点没有；
+// requestUserAction（等你操作，shared/user-action.ts）和它同样只给对话
+const CONV = {
+  canSpawn: true,
+  team: true,
+  autoReturn: true,
+  plans: true,
+  canBackground: true,
+  lessons: LESSONS,
+  endTurn: okCb,
+  requestUserAction: okCb,
+}
 const TOP = { ...CONV, parentOf: true }
 const CHILD = { ...CONV, child: true, canSubmit: true }
 const BG = ['run_background', 'check_background', 'stop_background']
 const LESSON_TOOLS = ['project_lessons', 'record_lesson']
 const TAIL = ['spawn_agents', 'stop_subtask', 'send_message', 'read_messages']
-const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation', 'stop_workflow']
+const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation']
+// 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/workflow-tools.ts）
+const WF = [
+  'start_workflow',
+  'list_workflows',
+  'message_workflow',
+  'revise_workflow',
+  'answer_workflow',
+  'stop_workflow',
+  'finish_workflow',
+]
 const CHILD_TOOLS = ['message_parent', 'suggest_next_step', 'submit_merge']
 
 const IDENTITIES: [string, object, string[]][] = [
@@ -814,6 +883,8 @@ const IDENTITIES: [string, object, string[]][] = [
       'list_peers',
       'message_peer',
       'finish_child',
+      'end_turn',
+      'request_user_action',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -837,7 +908,7 @@ const IDENTITIES: [string, object, string[]][] = [
       ...BG,
       'set_plan',
       'finish_plan',
-      'start_workflow',
+      ...WF,
       ...COORD,
       'begin_inline_edit',
       'end_inline_edit',
@@ -849,13 +920,29 @@ const IDENTITIES: [string, object, string[]][] = [
       'p4_split_changelists',
       'cherry_pick',
       'ask_push',
+      'end_turn',
+      'request_user_action',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
   ],
-  ['项目顶层·非统筹', TOP, ['get_status', ...BG, 'set_plan', 'finish_plan', 'finish_child', ...LESSON_TOOLS, ...TAIL]],
   [
-    // 不能分派子对话的顶层对话没有 start_workflow（工作流子对话要能分派，ADR 0044）：makeOrchestra 给的 planning 是 false
+    '项目顶层·非统筹',
+    TOP,
+    [
+      'get_status',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      'finish_child',
+      'end_turn',
+      'request_user_action',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
+  ],
+  [
+    // 不能分派子对话的顶层对话没有 start_workflow（只给协调器，ADR 0044）：makeOrchestra 给的 planning 是 false
     '项目顶层·非统筹 全开（按需开分支 + 挂能力 + P4 + cherry-pick + 推送问一次）',
     { ...TOP, canBeginEdit: true, capabilities: true, p4Split: okCb, cherryPick: okCb, askPush: okCb },
     [
@@ -869,6 +956,8 @@ const IDENTITIES: [string, object, string[]][] = [
       'p4_split_changelists',
       'cherry_pick',
       'ask_push',
+      'end_turn',
+      'request_user_action',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -885,6 +974,8 @@ const IDENTITIES: [string, object, string[]][] = [
       ...CHILD_TOOLS,
       'claim_files',
       'release_files',
+      'end_turn',
+      'request_user_action',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -892,12 +983,33 @@ const IDENTITIES: [string, object, string[]][] = [
   [
     '子对话·独立分支',
     { ...CHILD, isolated: true },
-    ['get_status', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
+    [
+      'get_status',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      ...CHILD_TOOLS,
+      'end_turn',
+      'request_user_action',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
   ],
   [
     '子对话·要改时才开分支（还没开）',
     { ...CHILD, canBeginEdit: true },
-    ['get_status', 'begin_edit', ...BG, 'set_plan', 'finish_plan', ...CHILD_TOOLS, ...LESSON_TOOLS, ...TAIL],
+    [
+      'get_status',
+      'begin_edit',
+      ...BG,
+      'set_plan',
+      'finish_plan',
+      ...CHILD_TOOLS,
+      'end_turn',
+      'request_user_action',
+      ...LESSON_TOOLS,
+      ...TAIL,
+    ],
   ],
   [
     // 子对话不启动工作流（ADR 0044）：角色开了 canPlan 也没有 start_workflow
@@ -914,6 +1026,8 @@ const IDENTITIES: [string, object, string[]][] = [
       'claim_files',
       'release_files',
       'p4_split_changelists',
+      'end_turn',
+      'request_user_action',
       ...LESSON_TOOLS,
       ...TAIL,
     ],
@@ -1047,6 +1161,8 @@ function identityHost(op: {
     // Chat 模式的对话不选角色（agentId 为空）：运行时按内置「助手」跑（chatRoleFor），这条路径一并测到
     agentId: (mode === 'chat' && !op.chat) || op.legacy ? 'exec' : '',
     parentTaskId: op.parent ? 'P' : undefined,
+    // 工作流节点只在工作流运行里跑（父对话 start_workflow 起的）
+    ...(flow && { flowRun: FlowRun.parse({ owner: 'P' }) }),
   } as unknown as Task
   const coordinatorRole = !op.parent && !!op.delegate && !!projectId
   const host = {
@@ -1111,11 +1227,8 @@ test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrc
   assert.deepEqual(flow('node'), want.get('工作流节点（工作流任务里）'))
   assert.deepEqual(flow('node-helper'), want.get('子任务·工作流节点派的（工作流任务里）'))
   // 新工具要登记进名字总表，不然对话里显示成 mcp__panel-xxxx__ 这串原始名字（docs/lessons/messages.md）。
-  // 已停用的 @main（主 Agent）和有主 Agent 的节点也一起查：run_workflow、close_run、ask_main 现在没有身份拿得到
-  const dead = [
-    { self: '@main', planner: true, sharedState: true },
-    { self: 'a', hasMain: true },
-  ]
+  // 老任务里的 @main（主 Agent）也一起查：run_workflow、close_run、ask_main 已经删了，没有身份拿得到
+  const dead = [{ self: '@main', planner: true, sharedState: true }]
   const all = new Set([...IDENTITIES.map(([, o]) => o), ...dead].flatMap(toolNames))
   for (const n of all) assert.ok((PANEL_TOOL_NAMES as readonly string[]).includes(n), `${n} 没登记进 PANEL_TOOL_NAMES`)
 })
@@ -1123,7 +1236,7 @@ test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrc
 test('Chat 模式：只有后台命令，没有 get_status / spawn_agents 和面板计划；说明只讲后台命令，都没有时为空', () => {
   const namesOf = (o: object) => (orchTools(o as unknown as Orchestra) as { name: string }[]).map((x) => x.name)
   // 用户要求 Chat 模式不派子任务、不开子对话（ADR 0038）；计划用 CLI 自带的待办，面板计划只在 Agent 模式
-  const chat = { self: '@chat', hasMain: false, autoReturn: true, canBackground: true, common: [] }
+  const chat = { self: '@chat', autoReturn: true, canBackground: true, common: [] }
   assert.deepEqual(namesOf(chat).sort(), ['check_background', 'run_background', 'stop_background'])
   const hint = orchHint(chat as unknown as Orchestra)
   assert.match(hint, /run_background/)
@@ -1215,7 +1328,11 @@ const nap = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 test('wait_agents：一直等到做完；有人传话时提前返回且只列 id；CLI 断开时不算取走；取过的不再交', async () => {
   const w = wakeWf()
-  const task = { ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做' } as never, w, '', 'tw'), id: 'tw' } as any
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做' } as never, w, '', 'tw'),
+    flowRun: FlowRun.parse({ owner: 'p' }),
+    id: 'tw',
+  } as any
   let n = 0
   const log: string[] = []
   await runEngineTurn({
@@ -1279,7 +1396,6 @@ test('create_conversation 的 edits：说明要改代码时交给面板，开工
   assert.equal((got[1] as { edits?: boolean }).edits, undefined, '只调研的不开')
   const tools = orchTools({
     self: 'a',
-    hasMain: false,
     coordinator: true,
     plans: false,
     canSpawn: true,

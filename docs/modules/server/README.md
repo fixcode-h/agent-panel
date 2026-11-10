@@ -14,7 +14,7 @@
 - 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载，CLI 自己的插件（Pi 的扩展包，装删更新跑 CLI 的命令）和插件市场、CLI 自己配置文件里的设置项、项目信任的标记文件检测（ADR 0050）（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/cli-gallery.ts`、`server/cli-config-settings.ts`、`server/cli-trust-api.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
-- 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训（存在项目文档目录的 `lessons.md`，见 [features.md](features.md) 和 [ADR 0039](../../adr/0039-project-lessons-in-docs.md)）、导出、版本更新。
+- 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训（存在项目文档目录的 `lessons/<id>.md`，一条一个文件，见 [features.md](features.md)、[ADR 0039](../../adr/0039-project-lessons-in-docs.md)、[ADR 0052](../../adr/0052-p4-shared-docs.md)）、P4 / SVN 各分支共用文档根（`server/doc-group.ts`）、导出、版本更新。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见 [library.md](library.md)「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见 [network.md](network.md)「GitHub 出网与代理回退」。
 
@@ -28,7 +28,7 @@
 | [数据落盘、对话日志与附件](storage.md)           | 原子写入与损坏恢复、对话专属日志、附件落盘                                                                   |
 | [状态回收与强制更新后的恢复](lifecycle.md)       | 面板重启和页面宽限到期后的状态回收、强制更新和面板重启后的恢复名单                                           |
 | [技能库的多文件管理](library.md)                 | `server/library.ts` 的多文件接口、路径安全、软链接、大小和树上限                                             |
-| [出网、外部访问、版本更新与账号登录](network.md) | GitHub 出网与代理回退、外部访问（隧道 / frp / 外网专用端口）、版本更新、账号与登录                           |
+| [出网、外部访问、版本更新与账号登录](network.md) | GitHub 出网与代理回退、外部访问（frp / Tailscale / 反向代理、密码登录门）、版本更新、账号与登录              |
 | [每轮改动卡片与撤销](turn-changes.md)            | 对话每轮的改动记录和撤销                                                                                     |
 | [bugs.md](bugs.md)                               | 本模块用户报过的 Bug 索引（生成物，详情在 `bugs/`）                                                          |
 

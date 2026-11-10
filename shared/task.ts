@@ -1,5 +1,4 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
-import type { FlowProgress } from './flow-child.ts'
 import {
   type AskKind,
   type Attachment,
@@ -12,7 +11,6 @@ import {
   type TaskData,
   type TaskMessage,
   type TaskRequest,
-  type TaskStep,
   type TaskTurn,
   type ToolUse,
   type TurnEnd,
@@ -24,10 +22,12 @@ import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
+import { pendingAction } from './user-action.ts'
+import { byStartedDesc, helperRunning, helpersWorking } from './task-helpers.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文。
-  // 点名工作流的那句（shared/flow-child.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
+  // 点名工作流的那句（shared/flow-run.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
   const raw = prompt
     .replace(/^用工作流「[^」\n]+」(?:（id [^）\n]*）)?做：\n/, '')
     .trim()
@@ -120,7 +120,7 @@ export function newTask(
     childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: input.analysis }),
     ...(input.analysisOf && { analysisOf: input.analysisOf }),
-    ...(input.modelDesign && { modelDesign: true }),
+    ...(input.plugin && { plugin: input.plugin }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
@@ -144,6 +144,7 @@ export function newTask(
       },
     ],
     changes: [],
+    outsideChanges: [],
     simulated: false,
     sessions: {},
     sessionDirs: {},
@@ -520,10 +521,21 @@ export interface ConvFacts {
   gone?: boolean
   /** 交了 Bug 诊断报告、等用户确认方案（ADR 0045）：算执行中——它停在这一步上，确认了接着改，不是做完了 */
   diagnosis?: boolean
+  /** 有一件在等用户去做（request_user_action，见 shared/user-action.ts）：和提问一样是「等你处理」 */
+  action?: boolean
 }
 
 /** 最新一版 Bug 诊断报告还在等用户确认（ADR 0045）：状态、等待原因、完成判定都读它 */
 export const diagnosisPending = (t: { diagnoses?: Task['diagnoses'] }) => t.diagnoses?.at(-1)?.status === 'pending'
+
+/**
+ * 这个对话停在等用户：待确认的请求、子对话请用户回答的提问、等确认的诊断报告、等用户去做的事。
+ * 面板的提醒（计划推进、收尾提醒、结束前钩子）碰到它都不推：这时停下是对的，用户处理完会推回来
+ */
+export const userWaiting = (
+  tk: Pick<Task, 'requests'> & Partial<Pick<Task, 'parentAsks' | 'diagnoses' | 'userActions'>>,
+  asks = true,
+) => !!(tk.requests.length || (asks && tk.parentAsks?.length) || diagnosisPending(tk) || pendingAction(tk))
 
 /** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks.ts 的 cleanupTrash） */
 export const TRASH_RETENTION_DAYS = 7
@@ -570,7 +582,7 @@ export function convState(x: ConvFacts): ConvState {
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
   if (x.gone && !x.working && !diag && !pending) return 'done'
-  if (x.requests || x.asking || x.childNeeds) return 'needs'
+  if (x.requests || x.asking || x.childNeeds || x.action) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
@@ -622,6 +634,7 @@ export function childFacts(
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
   x: { background?: number; unmerged?: boolean; childNeeds?: number } = {},
 ): ConvFacts {
@@ -629,6 +642,7 @@ export function childFacts(
     status: task.status,
     working: task.working,
     diagnosis: diagnosisPending(task),
+    action: !!pendingAction(task),
     resolved: task.resolved === true,
     requests: task.requests.length,
     asking: task.parentAsks?.length ?? 0,
@@ -698,7 +712,7 @@ export const stopEnds = (reason: StopReason | undefined) => !!reason && STOP_END
  * more：这一轮结束后还要接着处理排队的消息（面板交过来的、执行中收到的），也算还在执行
  */
 export function childReport(
-  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[] },
+  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[]; diagnoses?: Task['diagnoses'] },
   x: { background?: string[]; more?: boolean; unmerged?: boolean; childNeeds?: number } = {},
 ): ChildReport {
   const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged, childNeeds: x.childNeeds })
@@ -746,8 +760,15 @@ export function childReport(
           : task.wrapRequest?.state === 'test-failed'
             ? t('已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）')
             : t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
-      case 'done':
+      case 'done': {
+        // 用户在诊断报告上点了「不修了」：不是交付完了，父对话别当成修好了往下走（实跑 2026-11-10）
+        const d = task.diagnoses?.at(-1)
+        if (d?.status === 'cancelled')
+          return d.cleanup?.state === 'done'
+            ? t('用户取消了修复，临时日志已删干净，诊断报告已关闭（没有改代码）')
+            : t('用户取消了修复，诊断报告已关闭（没有改代码）')
         return t('交付完了：计划、后台命令、提问都收口了')
+      }
     }
   })()
   return {
@@ -912,6 +933,7 @@ export function childFlowOf(
     runs?: Task['runs']
     resolved?: boolean
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
   x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},
 ): ChildFlowState {
@@ -923,7 +945,7 @@ export function childFlowOf(
     plan: openPlan(task),
     asking: task.parentAsks?.length ?? 0,
     // 诊断报告等确认（ADR 0045）和等确认的请求一样拦着完成
-    requests: task.requests.length + (diagnosisPending(task) ? 1 : 0),
+    requests: task.requests.length + (diagnosisPending(task) ? 1 : 0) + (pendingAction(task) ? 1 : 0),
     unmerged: x.merged === false,
     parentTest: x.parentTest,
     completed: task.resolved === true,
@@ -1135,10 +1157,10 @@ export interface ChildEntry {
   waiting?: ChildWait
   /** 交了 Bug 诊断报告、等用户确认（ADR 0045）：算执行中，行上写「等你查看诊断报告」 */
   diagnosis?: boolean
+  /** 挂着等你操作（request_user_action）：算「等你处理」，行上给「去操作」 */
+  action?: boolean
   /** 用户报的 Bug（ADR 0046）：查到哪个阶段了（见 bug-diagnosis.ts 的 bugStage），行上写「Bug · 阶段」 */
   bug?: string
-  /** 工作流子对话（ADR 0044）：哪个工作流、跑到第几个节点（见 flow-child.ts 的 flowProgress） */
-  flow?: FlowProgress
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */
@@ -1168,7 +1190,8 @@ export type ChildWait =
   | { kind: 'background'; n: number }
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
-  | { kind: 'diagnosis'; version: number }
+  | { kind: 'diagnosis'; version: number; rev: number }
+  | { kind: 'action'; title: string }
   | { kind: 'next' }
 
 /** 等待原因的一句话：子对话栏、list_conversations、计划面板都用它 */
@@ -1186,7 +1209,9 @@ export function childWaitText(w: ChildWait | undefined): string {
     case 'workflow':
       return t('等工作流跑完')
     case 'diagnosis':
-      return t('等你查看诊断报告第 {n} 版', { n: w.version })
+      return t('等你查看诊断报告第 {n} 版', { n: w.rev })
+    case 'action':
+      return t('等你操作：{title}', { title: w.title })
     case 'next':
       return t('等下一句')
     default:
@@ -1203,6 +1228,7 @@ export function childWait(
   tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & {
     runs?: Task['runs']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
   x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
 ): ChildWait | undefined {
@@ -1210,7 +1236,12 @@ export function childWait(
   if (asking) return { kind: 'answer', n: asking }
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)
-  if (diagnosisPending(tk)) return { kind: 'diagnosis', version: tk.diagnoses!.at(-1)!.version }
+  if (diagnosisPending(tk)) {
+    const d = tk.diagnoses!.at(-1)!
+    return { kind: 'diagnosis', version: d.version, rev: d.rev ?? d.version }
+  }
+  const act = pendingAction(tk)
+  if (act) return { kind: 'action', title: act.title }
   if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
   if (x.background) return { kind: 'background', n: x.background }
   const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
@@ -1584,9 +1615,11 @@ export function restartInterrupted(
  * 面板重启 / 强制更新把 CLI 停掉之后，这条任务还有「要它自己接着干」的活没干完。
  *
  * 和 restartInterrupted 分开：那个回答「界面还会不会画成在跑」（含独立分支还没合回，见 childIcon），
- * 这个回答「重启后该不该把它列进继续名单」（强制更新记录被打断的任务、新版本启动后问用户要不要继续）。
+ * 这个回答「重启后还有没有活要自己接着干」（启动迁移时据此判上次是不是没退出）。
  * 记录只按「进程还在跑」（working）挑，会把停在等下一句、计划却只做了 12/17 的父对话漏掉：
  * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+ * 所以这里也把「这一轮说完了但计划没做完」算成还有活；强制更新的恢复名单只取其中
+ * 「这一轮还在执行」的（见 interruptedTaskIds），不会把历史闲置任务累计进去。
  *
  * 不算的四种：
  * - 用户手动暂停（`stopReason: 'user'`）：那是明确的「先别动」，不是一个被强制的更新打断，重启后不能默认接着跑；
@@ -1601,12 +1634,15 @@ export function restartUnfinished(
   task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
     runs?: Task['runs']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   },
 ): boolean {
   // 已经收口（resolved）的绝不回名单：它做完了、分支也合了，重启后再拉起就是白跑一轮（也会留下没人要的进程）
   if (task.resolved === true) return false
   // 诊断报告在等用户确认：重启后仍停在等确认，不拉起 CLI（ADR 0045，见 task-settle.ts 的 diagnosisWaiting）
   if (diagnosisPending(task)) return false
+  // 在等用户去做一件事：结果由用户交回时推回来，重启后不用把它拉起来
+  if (pendingAction(task)) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
@@ -1622,12 +1658,15 @@ export function restartUnfinished(
 }
 
 /**
- * 强制更新停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
+ * 强制更新、面板退出停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
  * - 现在真在跑的（working）；
  * - 名下还有在跑的子对话的父对话：子对话的结果要交回它，它不在名单里就没人接；
- * - 被打断后还有活要自己干的（restartUnfinished：这一轮被打断、计划没做完）。
- * 只按 working 挑会把停在等下一句、计划 12/17 的父对话漏掉：子对话进了恢复名单被继续，
- * 父对话却停在「已中断」等用户手动点（用户报的现象）。
+ * - 这一轮真的还在执行、CLI 被停掉结果回不来的（`status === 'running'` 且不是停在等下一句，
+ *   包括在等子任务的那种）。
+ *
+ * 只记本次真正被打断的：不要直接拿 restartUnfinished 判全部任务，它还包括「这一轮已经说完、
+ * 停在等下一句、计划没做完」的历史闲置任务，每次强制更新都会把这些旧任务累计进名单（用户报的现象）。
+ * restartUnfinished 保留原样，启动迁移的崩溃名单还要用它（见 server/tasks/startup.ts）。
  */
 export function interruptedTaskIds(
   tasks: (Pick<
@@ -1652,7 +1691,11 @@ export function interruptedTaskIds(
     ids.add(w.id)
     if (w.parentTaskId) ids.add(w.parentTaskId)
   }
-  for (const tk of tasks) if (!tk.imported && !tk.archived && restartUnfinished(tk)) ids.add(tk.id)
+  // 再走一遍 restartUnfinished 是复用它那几条排除（已收口、等诊断确认、用户暂停、待收尾）：
+  // 不能放宽成只看 status，否则暂停过的任务也会被强制更新重新拉起来
+  for (const tk of tasks)
+    if (!tk.imported && !tk.archived && tk.status === 'running' && !tk.awaitingUser && restartUnfinished(tk))
+      ids.add(tk.id)
   return [...ids]
 }
 
@@ -1735,24 +1778,6 @@ export function childCounts<T extends ChildEntry>(list: T[]) {
 /** 转圈的那一批：状态栏计数、悬浮层默认列表、输入框上方的卡片都用它，不要各处再 filter 一遍 */
 export function spinningChildren<T extends ChildEntry>(list: T[]): T[] {
   return list.filter(childSpinning)
-}
-
-/** 按开始时间倒序：越晚开始的越靠上。旧记录没有开始时间时算最早，交给调用方用 id 兜底 */
-function byStartedDesc(a: { startedAt?: string }, b: { startedAt?: string }) {
-  return (b.startedAt || '').localeCompare(a.startedAt || '')
-}
-
-/**
- * 列表里「新的在前」：按开始时间倒序，越晚开始的越靠上；时间一样、或者旧记录 / 演示数据没有开始时间时，
- * 用 id 的序号兜底（`@chat/sub/h10` 比 `h2` 新），保证每次渲染顺序一致不抖动。
- * 兜底依赖编号随派出递增（engine 的 spawn 用「现存子任务数 + 1」，见 shared/engine.ts 的 n = have + i + 1），
- * 而删除都是整批的（dropRerun 删父亲下全部 sub、dropNodeSteps 删整棵子树），不会出现「删了 h1、留着 h3」
- * 再派回一个重复编号，所以这个方向成立。
- * 子任务列表（sortHelpers）和运行区的子任务行用它；子对话栏（sortChildren）的时间倒序也走 byStartedDesc，
- * 只是它同一时间按 id 升序兜底（改它会动到子对话列表的既有顺序），别再各处写一遍时间倒序。
- */
-export function newestFirst(a: { id: string; startedAt?: string }, b: { id: string; startedAt?: string }) {
-  return byStartedDesc(a, b) || b.id.localeCompare(a.id, undefined, { numeric: true })
 }
 
 /**
@@ -1852,54 +1877,18 @@ function dayLabel(d: Date, now: Date, loc: string) {
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
 /**
- * 子任务这会儿在跑：输入框上方的计数、弹层「执行中」分组、子对话的「等子任务」都读它。
- * 以前这几处各写一份 `slot === 'sub' && status === 'running'`，口径一变就会有的是 2、有的是 3。
+ * 子任务的运行状态和排序在 shared/task-helpers.ts（判定只写那一处）；
+ * 这里只转出，调用方仍按原路径从 @shared/task 引用。
  */
-export function helperRunning(s: Pick<TaskStep, 'status' | 'slot'>) {
-  return s.slot === 'sub' && s.status === 'running'
-}
-
-/**
- * 子任务在列表里的档位：正在跑的、排队的、没做完的、做完的、终止的。
- * 组与组的顺序由它决定（分组见 HelperCards 的 helperGroups），组内再按 newestFirst 让最新的排在前面。
- */
-export function helperRank(s: Pick<TaskStep, 'status' | 'slot'>) {
-  return helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
-}
-
-/**
- * 子任务列表的顺序：先按档位分（执行中 → 排队中 → 未完成 → 已完成 → 已终止），
- * 同一档里最新的在最上面（见 newestFirst）：用户最后派出的那个就在最上面，不用往下翻。
- * 输入框上方的「子任务」列表和消息流里运行区的子任务行都读这一个函数，别各处再写一份排序。
- */
-export function sortHelpers<T extends Pick<TaskStep, 'id' | 'status' | 'slot' | 'startedAt'>>(list: T[]): T[] {
-  return list.slice().sort((a, b) => helperRank(a) - helperRank(b) || newestFirst(a, b))
-}
-
-/**
- * 子任务还没结束（在跑或在排队）：对话页运行区按这个列子任务行、终止按钮也只在这时出现。
- * 和子对话的 convActive 一个意思——没做完就算在运行，不因为没选中、在后台就不列
- */
-export function helperActive(s: Pick<TaskStep, 'status' | 'slot'>) {
-  return s.slot === 'sub' && (s.status === 'running' || s.status === 'pending')
-}
-
-/**
- * 运行区要不要列这个子任务：在跑的列；还没开始的（排队等启动、被打断后等重新开始，都是 pending）
- * 只在对话在执行时才会开始，对话停着时不算在跑、不列
- * （以前停了父对话，子对话名下被打断的子任务还一排在运行区转圈，用户报过）
- */
-export function helperShown(task: Pick<Task, 'status'>, s: Pick<TaskStep, 'status' | 'slot'>) {
-  return helperRunning(s) || (helperActive(s) && task.status === 'running')
-}
-
-/**
- * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
- * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
- */
-export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
-  return t.status === 'running' && t.steps.some(helperRunning)
-}
+export {
+  helperActive,
+  helperRank,
+  helperRunning,
+  helperShown,
+  helpersWorking,
+  newestFirst,
+  sortHelpers,
+} from './task-helpers.ts'
 
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
@@ -1910,6 +1899,7 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
     archived?: Task['archived']
     worktree?: Task['worktree']
     diagnoses?: Task['diagnoses']
+    userActions?: Task['userActions']
   }
 
 /**
@@ -1921,10 +1911,12 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     status: x.status,
     working: x.working,
     diagnosis: diagnosisPending(x),
+    action: !!pendingAction(x),
     resolved: x.resolved === true,
     requests: x.requests?.length ?? 0,
     asking: x.parentAsks?.length ?? 0,
-    background: x.jobs?.length ?? 0,
+    // 常驻服务（开发服务器、监听）一直跑到被停掉，不算「还在等后台结果」
+    background: x.jobs?.filter((j) => !j.service).length ?? 0,
     workflow: runRunning(x),
     helpers: helpersWorking(x),
     children: x.childrenWorking ?? 0,
@@ -1966,7 +1958,7 @@ export const taskTurnUnread = (x: {
   jobs?: Task['jobs']
   /** 后台命令数：/children 的摘要里只有数量（不读整份任务），有它一样算「还在等结果」 */
   background?: number
-}) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length && !x.background
+}) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.some((j) => !j.service) && !x.background
 
 /**
  * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
@@ -2175,6 +2167,8 @@ export function taskSummary(t: Task): Task {
     // brief 是父对话给的要求原文（可能上千字），列表和侧栏都读不到，跟着 output / command 一起清掉
     steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], brief: '', changes: [] })),
     todos: [],
+    // 等你操作只留还在等的那件：侧栏「等你操作」和 convState 要它，做完的记录在完整对话里看
+    userActions: (t.userActions ?? []).filter((a) => a.status === 'waiting'),
     // 只留没做完的那份计划、去掉备注和等待项：侧栏的「未完成 x/y」和 convState 的 unfinished 要它（见 taskFacts）
     plans: plan ? [{ ...plan, steps: plan.steps.map((x) => ({ ...x, note: '', waits: [], children: [] })) }] : [],
     baseline: {},
@@ -2391,3 +2385,7 @@ export function closeFlow(task: Task, id: string, now = new Date().toISOString()
   })
   task.updatedAt = now
 }
+
+/** 对话归哪个插件的设计模式：旧版的模型设计对话（modelDesign）算 Blender 插件的 blender.model（ADR 0059） */
+export const taskPlugin = (task: { plugin?: string; modelDesign?: boolean }) =>
+  task.plugin || (task.modelDesign ? 'blender.model' : undefined)

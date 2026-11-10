@@ -74,6 +74,24 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/ChatPage.tsx',
   ],
   // 运行区里的工作流行：从 02b 拆出来的一块（单步就 30 秒，要多次整页重载）
+  // 诊断报告的「修复」这一步：改了哪些代码、为什么，确认了才验证
+  '02f-bug-fix': [
+    'web/src/components/tasks/DiagnosisDialog.tsx',
+    'web/src/components/tasks/DiagnosisStages.tsx',
+    'web/src/components/tasks/DiagnosisCard.tsx',
+    'web/src/components/tasks/ReviewDialog.tsx',
+    'shared/bug-fix-md.ts',
+    'shared/bug-md.ts',
+    'web/src/lib/diff-html.ts',
+    'web/src/components/ui/UnifiedDiff.tsx',
+  ],
+  // 对话里「学到经验」的卡片（演示数据在 demo-experience.ts）
+  '02e-learned': [
+    'web/src/components/tasks/LearnedCard.tsx',
+    'web/src/components/tasks/SystemNote.tsx',
+    'web/src/lib/experience-store.ts',
+    'web/src/lib/demo-experience.ts',
+  ],
   '02d-workflow': [
     'web/src/components/tasks/RunningNow.tsx',
     'web/src/components/tasks/RunView.tsx',
@@ -98,6 +116,16 @@ export const UI_SHARD_COVERS = {
     'web/src/components/ai-window/',
     'web/src/pages/DesignPage.tsx',
     'web/src/pages/ComfyPage.tsx',
+  ],
+  '04b-restore': [
+    'web/src/components/design/restore/',
+    'web/src/components/design/NewDesign.tsx',
+    'web/src/lib/api-restore.ts',
+    'web/src/lib/demo-restore.ts',
+    'web/src/lib/demo-restore-art.ts',
+    'web/src/lib/restore-stages.ts',
+    'web/src/pages/DesignPage.tsx',
+    'shared/restore/',
   ],
   '05-settings': ['web/src/components/settings/', 'web/src/components/usage/', 'web/src/pages/SettingsPage.tsx'],
   '06-settings-agent': [

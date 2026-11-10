@@ -26,6 +26,8 @@ export function TestRunsChip({ task }: { task: Task }) {
         ) : (
           <ListChecks className="h-3.5 w-3.5" />
         )}
+        {/* 数字前写明是什么：只有「1/2」看不出是测试还是别的（用户 2026-11-10 定的分析稿 U3） */}
+        <span>{t('测试')}</span>
         <span className="font-mono tabular-nums">
           {summary.passed}/{summary.rows.length}
         </span>

@@ -1,6 +1,5 @@
-import { Suspense, lazy, useContext, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
-  Box,
   Diff,
   FileText,
   GitBranch,
@@ -13,7 +12,7 @@ import {
   Search,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
-import { type Task, type TaskStep } from '@shared/schema'
+import { type OutsideChange, type Task, type TaskStep } from '@shared/schema'
 import { mergeChanges, taskSummary } from '@shared/task'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -34,8 +33,8 @@ import { PaneNavCtx, PaneToolbarCtx, useChildList } from './child-open'
 import { InlineRename } from '@/components/ui/inline-rename'
 
 /** 3D 预览要 three.js（几百 KB），只有模型设计对话用到：单独分块，按需加载 */
-const ModelPreview = lazy(() => import('./ModelPreview').then((m) => ({ default: m.ModelPreview })))
 import { DiffDialog } from './DiffDialog'
+import { useTaskTabs } from '@/plugins/registry'
 import { FileDialog } from './FileDialog'
 
 /**
@@ -110,12 +109,15 @@ export function TaskFiles({
     onClose: () => void
     /** 父对话里点结果卡片要看这个子对话的总结：已经开着但切到了别的页签时也切回来 */
     focus?: number
+    /** 打开的不是子对话（名下的工作流运行）时页签上的叫法 */
+    label?: string
   }
 }) {
   const { upsertTask } = useData()
-  // 模型设计对话（ADR 0025）默认看「模型」页签：建模时要盯的是模型，不是文件
-  const home = task.modelDesign ? 'model' : 'files'
-  const [tab, setTab] = useState<'files' | 'changes' | 'child' | 'model'>(child ? 'child' : home)
+  // 插件给的页签（ADR 0059，例如模型设计的「模型」）：标了 home 的默认停在它上面，建模时要盯的是模型，不是文件
+  const pluginTabs = useTaskTabs(task)
+  const home = pluginTabs.find((x) => x.home)?.id ?? 'files'
+  const [tab, setTab] = useState<string>(child ? 'child' : home)
   // 新开（或换了）子对话就切到它的页签；关掉后回默认页签
   const childId = child?.id ?? ''
   const childFocus = child?.focus
@@ -125,10 +127,11 @@ export function TaskFiles({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [childId, childFocus])
   const onChild = tab === 'child' && !!child
-  const onModel = tab === 'model' && !!task.modelDesign
+  const onPlugin = pluginTabs.find((x) => x.id === tab)
+  const onModel = !!onPlugin
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
-  const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
+  const [target, setTarget] = useState<{ path: string; line?: number; local?: boolean } | null>(null)
   /** 右栏只放文件树：查找收进信息行的图标按钮，点开才出搜索栏 */
   const [searchOpen, setSearchOpen] = useState(false)
   /** 改动的显示方式：默认按设计稿平铺（标记 + 路径 + 增删行数），也能切回按目录分组 */
@@ -166,6 +169,9 @@ export function TaskFiles({
         return out
       })()
     : task.changes
+  // 项目根之外写过的文件：没有 git 快照，只列出来看；看单个节点时只认项目内的改动
+  const outside: OutsideChange[] = node ? [] : (task.outsideChanges ?? [])
+  const total = changes.length + outside.length
   const stamp = changes.map((c) => `${c.path}:${c.add}:${c.del}`).join('|')
   // 执行中文件一直在改，把接连的改动合并成一次重读；任务结束/出错时立刻重读，保证最终状态及时
   const ended = task.status !== 'running'
@@ -207,7 +213,7 @@ export function TaskFiles({
                     className={cn(searchOpen && 'bg-sel text-fg')}
                   />
                 ) : (
-                  changes.length > 0 && (
+                  total > 0 && (
                     <IconButton
                       icon={mode === 'tree' ? List : ListTree}
                       label={mode === 'tree' ? t('平铺显示每个文件') : t('按目录分组显示')}
@@ -225,15 +231,16 @@ export function TaskFiles({
           </>
         }
       >
-        {task.modelDesign && (
+        {pluginTabs.map((x) => (
           <TabItem
-            active={onModel}
-            onSelect={() => setTab('model')}
-            icon={<Box className="h-[0.8125rem] w-[0.8125rem]" />}
+            key={x.id}
+            active={tab === x.id}
+            onSelect={() => setTab(x.id)}
+            icon={<x.icon className="h-[0.8125rem] w-[0.8125rem]" />}
           >
-            {t('模型')}
+            {x.label}
           </TabItem>
-        )}
+        ))}
         <TabItem
           active={tab === 'files'}
           onSelect={() => setTab('files')}
@@ -247,8 +254,8 @@ export function TaskFiles({
           active={tab === 'changes'}
           onSelect={() => setTab('changes')}
           icon={<Diff className="h-[0.8125rem] w-[0.8125rem]" />}
-          tag={changes.length > 0 ? changes.length : undefined}
-          title={changes.length > 0 ? `${t('本对话改动')} +${add} -${del}` : t('本对话改动')}
+          tag={total > 0 ? total : undefined}
+          title={total > 0 ? `${t('本对话改动')} +${add} -${del}` : t('本对话改动')}
         >
           <span className={cn(tab !== 'changes' && '@max-[440px]:sr-only')}>{t('本对话改动')}</span>
         </TabItem>
@@ -282,7 +289,7 @@ export function TaskFiles({
               }
               onClose={child.onClose}
               closeLabel={t('关闭子对话')}
-              title={[t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
+              title={[child.label ?? t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
               icon={
                 child.task ? (
                   <TaskStatusIcon status={child.task.status} icon={childIcon(child.task)} className="h-3.5 w-3.5" />
@@ -293,7 +300,7 @@ export function TaskFiles({
               className="max-w-[14rem] min-w-[5rem] shrink"
             >
               {/* 界面检查按 data-child-tab 读右栏打开的是哪个子对话 */}
-              <span data-child-tab>{child.task?.title ?? t('子对话')}</span>
+              <span data-child-tab>{child.task?.title ?? child.label ?? t('子对话')}</span>
             </TabItem>
           )
         )}
@@ -308,9 +315,9 @@ export function TaskFiles({
           <PaneToolbarCtx.Provider value={childSlot}>{child.view}</PaneToolbarCtx.Provider>
         </section>
       )}
-      {onModel && (
+      {onPlugin && (
         <Suspense fallback={<p className="p-4 text-body text-subtle">{t('读取中…')}</p>}>
-          <ModelPreview taskId={task.id} running={task.working} />
+          <onPlugin.Panel task={task} />
         </Suspense>
       )}
       {!onChild && !onModel && (
@@ -322,7 +329,7 @@ export function TaskFiles({
               {files.info?.branch ?? t('没有分支')}
             </span>
             <span aria-hidden>·</span>
-            <span className="shrink-0">{t('{n} 个改动', { n: changes.length })}</span>
+            <span className="shrink-0">{t('{n} 个改动', { n: total })}</span>
           </div>
           {tab === 'files' ? (
             <>
@@ -341,6 +348,7 @@ export function TaskFiles({
           ) : (
             <ChangesList
               changes={changes}
+              outside={outside}
               mode={mode}
               mark={(path) => changeMark(files, path)}
               picked={picked}
@@ -348,6 +356,7 @@ export function TaskFiles({
                 setPicked(path)
                 setDiffPath(path)
               }}
+              onOpenOutside={(path) => setTarget({ path, local: true })}
               scoped={!!node}
               canReview={
                 !node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0
@@ -367,14 +376,15 @@ export function TaskFiles({
           )}
         </>
       )}
-      {task.projectId ? (
+      {task.projectId && !target?.local && (
         <ProjectFileDialog
           projectId={task.projectId}
           dir={files.info?.dir ?? dir ?? ''}
           target={target}
           onOpenChange={(open) => !open && setTarget(null)}
         />
-      ) : (
+      )}
+      {(!task.projectId || target?.local) && (
         <FileDialog taskId={task.id} target={target} onOpenChange={(open) => !open && setTarget(null)} />
       )}
       <DiffDialog
@@ -395,25 +405,31 @@ export function TaskFiles({
 
 /**
  * 「改动」Tab 的内容：只列改过的文件（标记 + 路径 + 增删行数），点开在中间的差异窗口里看；
+ * 项目根之外写过的文件单独一组，只列路径、点开看内容（没有 git 快照，不做差异和撤销）。
  * 底部可以让 CLI 审查还没提交的改动
  */
 function ChangesList({
   changes,
+  outside,
   mode,
   mark,
   picked,
   onDiff,
+  onOpenOutside,
   scoped,
   canReview,
   reviewing,
   onReview,
 }: {
   changes: Task['changes']
+  /** 项目根之外写过的文件：只有路径，点开查看内容 */
+  outside: OutsideChange[]
   mode: 'tree' | 'list'
   mark: (path: string) => Mark
   /** 最近点开的文件，行上标底色 */
   picked: string | null
   onDiff: (path: string) => void
+  onOpenOutside: (path: string) => void
   /** 看的是流程图里选中的节点，不是整个任务 */
   scoped: boolean
   canReview: boolean
@@ -428,45 +444,88 @@ function ChangesList({
       if (!next.delete(path)) next.add(path)
       return next
     })
+  // 有项目外的文件才分组显示小标题；没有时保持原来的单列表
+  const grouped = outside.length > 0
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-2">
-        {mode === 'tree' ? (
-          <ChangesTree changes={changes} onDiff={onDiff} scoped={scoped} collapsed={collapsed} onToggle={toggleDir} />
-        ) : changes.length ? (
-          <div className="flex flex-col gap-0.5">
-            {changes.map((c) => {
-              const m = mark(c.path)
-              return (
-                <button
-                  key={c.path}
-                  type="button"
-                  onClick={() => onDiff(c.path)}
-                  title={t('查看「{path}」的改动', { path: c.path })}
-                  className={cn(
-                    'flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-sel/60',
-                    picked === c.path && 'bg-sel hover:bg-sel',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'grid h-[1.125rem] w-[1.125rem] shrink-0 place-items-center rounded-sm bg-field font-mono text-caption font-bold',
-                      MARK_TONE[m],
-                    )}
-                  >
-                    {m}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-footnote">{c.path}</span>
-                  {c.add > 0 && <span className="shrink-0 font-mono text-caption text-success">+{c.add}</span>}
-                  {c.del > 0 && <span className="shrink-0 font-mono text-caption text-danger">−{c.del}</span>}
-                </button>
-              )
-            })}
-          </div>
-        ) : (
+        {!changes.length && !outside.length ? (
           <p className="mx-2 my-3 rounded-xl border border-dashed border-line-strong p-6 text-center text-body text-subtle">
             {scoped ? t('这个节点没有改动文件。') : t('还没有改动文件。')}
           </p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {changes.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                {grouped && <ChangeGroupHeader label={t('项目改动')} n={changes.length} />}
+                {mode === 'tree' ? (
+                  <ChangesTree
+                    changes={changes}
+                    onDiff={onDiff}
+                    scoped={scoped}
+                    collapsed={collapsed}
+                    onToggle={toggleDir}
+                  />
+                ) : (
+                  changes.map((c) => {
+                    const m = mark(c.path)
+                    return (
+                      <button
+                        key={c.path}
+                        type="button"
+                        onClick={() => onDiff(c.path)}
+                        title={t('查看「{path}」的改动', { path: c.path })}
+                        className={cn(
+                          'flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-sel/60',
+                          picked === c.path && 'bg-sel hover:bg-sel',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'grid h-[1.125rem] w-[1.125rem] shrink-0 place-items-center rounded-sm bg-field font-mono text-caption font-bold',
+                            MARK_TONE[m],
+                          )}
+                        >
+                          {m}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-mono text-footnote">{c.path}</span>
+                        {c.add > 0 && <span className="shrink-0 font-mono text-caption text-success">+{c.add}</span>}
+                        {c.del > 0 && <span className="shrink-0 font-mono text-caption text-danger">−{c.del}</span>}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            )}
+            {outside.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                {grouped && <ChangeGroupHeader label={t('项目外改动')} n={outside.length} />}
+                {mode === 'tree' ? (
+                  <ChangesTree
+                    changes={outside.map((c) => ({ path: c.path, add: 0, del: 0 }))}
+                    onDiff={onOpenOutside}
+                    plain
+                    scoped={scoped}
+                    collapsed={collapsed}
+                    onToggle={toggleDir}
+                  />
+                ) : (
+                  outside.map((c) => (
+                    <button
+                      key={c.path}
+                      type="button"
+                      onClick={() => onOpenOutside(c.path)}
+                      title={t('打开「{path}」', { path: c.path })}
+                      className="flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-sel/60"
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      <span className="min-w-0 flex-1 truncate font-mono text-footnote">{c.path}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
       {canReview && (
@@ -483,6 +542,16 @@ function ChangesList({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** 「本对话改动」按项目内 / 项目外分组时的小标题，带这一组的数量 */
+function ChangeGroupHeader({ label, n }: { label: string; n: number }) {
+  return (
+    <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-caption font-medium text-subtle first:pt-0">
+      <span>{label}</span>
+      <span className="font-mono tabular-nums">{n}</span>
     </div>
   )
 }

@@ -82,7 +82,8 @@
     {
       "id": "danger-full-access",
       "label": "完全访问",
-      "hint": "不使用沙箱、不确认，只在信任的项目里用"
+      "hint": "不使用沙箱、不确认，只在信任的项目里用",
+      "autoAllow": true
     }
   ],
   "defaultPermission": "workspace-write",
@@ -245,7 +246,8 @@
         "openai-responses": "responses"
       },
       "baseUrl": {},
-      "thinkArgs": ["-c", "model_supports_reasoning_summaries=true"]
+      "thinkArgs": ["-c", "model_reasoning_summary=auto"],
+      "noImages": true
     },
     "apiSources": [
       {
@@ -320,12 +322,14 @@
     {
       "id": "fast",
       "label": "Fast 模式",
+      "desc": "回复更快，用量消耗也更快",
       "hint": "用更快的优先通道回复，消耗用量更快；只有支持的账号和模型生效（service_tier）",
       "default": false
     },
     {
       "id": "reasoningSummary",
       "label": "思考摘要",
+      "desc": "思考过程在对话里怎么显示",
       "hint": "思考过程在对话里显示成什么样；关闭只是不显示摘要，模型照样思考（model_reasoning_summary）",
       "default": "auto",
       "choices": [
@@ -338,6 +342,8 @@
   ],
   "i18n": {
     "en": {
+      "思考过程在对话里怎么显示": "How reasoning shows in the conversation",
+      "回复更快，用量消耗也更快": "Faster replies that use up limits faster",
       "关闭": "Off",
       "思考摘要": "Reasoning summary",
       "Fast 模式": "Fast mode",

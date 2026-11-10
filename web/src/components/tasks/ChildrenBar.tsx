@@ -1,14 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import {
-  ChevronRight,
-  CircleAlert,
-  GitFork,
-  Loader2,
-  MessageCircleQuestion,
-  RotateCw,
-  Workflow as WorkflowIcon,
-  X,
-} from 'lucide-react'
+import { ChevronRight, CircleAlert, GitFork, Hand, Loader2, MessageCircleQuestion, RotateCw, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { childCounts, sortChildren } from '@shared/task'
@@ -18,6 +9,7 @@ import { useEscape } from '@/lib/useEscape'
 import { useUserName } from '@/lib/user-name'
 import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
+import { Button } from '@/components/ui/button'
 import { ComposerPopover } from '@/components/ui/composer-popover'
 import { AnalysisMark } from './AnalysisMark'
 import { ChildRowContent, childGroups } from './ChildSwitcher'
@@ -28,6 +20,7 @@ import {
   childClosedHint,
   childDirty,
   childNote,
+  childNeedsYou,
   listedChildren,
   stageConfirm,
   staleLine,
@@ -95,7 +88,8 @@ export function ChildrenBar({
   const asking = kids.filter((c) => c.asking && !c.resolved && !c.gone)
   // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 listedChildren）；
   // 等你确认工作流阶段结果、等诊断报告又提了问的也一直留着，不只在输入框上方另起一条
-  const busy = listedChildren(kids)
+  // 只在提问的子对话左边已经有「「X」请你选择」那个按钮，这一行的小块里不再重复放它
+  const busy = listedChildren(kids).filter((c) => !asking.includes(c) || c.diagnosis || stageConfirm(c))
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
   const { running: working, total } = childCounts(kids)
   // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 listedChildren）
@@ -225,17 +219,15 @@ export function ChildrenBar({
                       )}
                     >
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
+                      {/* 等你处理（等你操作、等你确认）的也转圈，用提醒色：和阶段待确认、报告待确认一样 */}
                       <Loader2
                         className={cn(
                           'h-3 w-3 shrink-0 animate-spin',
-                          stale?.cls ?? (c.diagnosis || stageConfirm(c) ? 'text-warning' : 'text-accent-text'),
+                          stale?.cls ??
+                            (c.diagnosis || stageConfirm(c) || childNeedsYou(c) ? 'text-warning' : 'text-accent-text'),
                         )}
                       />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}
-                      {/* 工作流子对话（ADR 0044）：标题前一个流程图标，和普通子对话分开 */}
-                      {c.flow && (
-                        <WorkflowIcon aria-label={t('工作流子对话')} className="h-3 w-3 shrink-0 text-muted" />
-                      )}
                       <span
                         className={cn(
                           'max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg',
@@ -353,6 +345,20 @@ export function ChildrenBar({
                           <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
                             <span className="min-w-0 truncate text-caption text-warning">{t('诊断报告等你确认')}</span>
                             <ChildReportButton childId={c.id} className="ml-auto h-6 shrink-0 px-2 text-xs" />
+                          </div>
+                        )}
+                        {c.waiting?.kind === 'action' && (
+                          // 在等你操作（request_user_action）：不在父对话里另出卡片，给「去操作」在右栏打开它，
+                          // 步骤和交回都在子对话自己的输入框上面（用户 2026-11-05 在设计稿上批注定的）
+                          <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
+                            <Button
+                              size="sm"
+                              className="ml-auto h-6 shrink-0 px-2 text-xs"
+                              onClick={() => onOpen(c.id)}
+                            >
+                              <Hand className="h-3 w-3" />
+                              {t('去操作')}
+                            </Button>
                           </div>
                         )}
                         {stageConfirm(c) && (

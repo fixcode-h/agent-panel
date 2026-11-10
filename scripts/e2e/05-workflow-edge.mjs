@@ -294,7 +294,7 @@ await runShard('工作流条件与失败', async (api) => {
   assert.ok(br.messages.some((m) => /你退回了「测试」：多跑一遍集成测试 BRANCHNO/.test(m.text)))
   assert.ok(br.messages.some((m) => /你确认了「测试」的结果/.test(m.text)))
 
-  // 流程停在门禁上（结论不通过、只有「通过」的线）：追加要求交给主 Agent 处理，处理完从门禁重新检查、接着走流程
+  // 流程停在门禁上（结论不通过、只有「通过」的线）：运行停在等决定，继续时从门禁重新检查
   {
     const wfGate = await call('POST', '/workflows', {
       name: '门禁',
@@ -329,49 +329,20 @@ await runShard('工作流条件与失败', async (api) => {
     )
     assert.equal(gateOf(gt, 'g').branch, 'fail')
     assert.equal(gateOf(gt, 'go').status, 'skipped')
+    // 工作流运行停在门禁上（没有能走的线）：不算做完，等决定
+    assert.equal(gt.status, 'failed')
+    assert.equal(gt.flowRun.phase, 'failed')
     assert.ok(
       gt.messages.some((m) => /流程停在「前置检查」/.test(m.text)),
-      '停在门禁时说明怎么继续',
+      '停在门禁时说明停在哪',
     )
-    const nGate = calls().length
-    gt = await call('POST', `/tasks/${gt.id}/messages`, { text: 'GATEFIXED 帮我修好门禁' })
-    gt = await waitDone(gt.id)
-    const fixCall = calls()[nGate]
-    assert.match(fixCall.input, /工作流停在了节点「前置检查」/, '追加要求先交给主 Agent 处理停住的问题')
-    assert.equal(gateOf(gt, 'g').branch, 'pass', '处理完从门禁重新检查')
-    assert.equal(gateOf(gt, 'go').status, 'done', '门禁通过后接着走后面的流程')
-    assert.equal(gt.status, 'done')
-
-    // 「继续流程」：不加新要求，从门禁重新检查；「结束流程」：没完成的节点不再执行
-    let g2 = await waitDone(
-      (
-        await call('POST', '/tasks', {
-          projectId: project.id,
-          mode: 'workflow',
-          workflowId: wfGate.id,
-          prompt: 'BRANCHNO 再来',
-        })
-      ).id,
-    )
+    // 继续：从门禁重新检查
     const nResume = calls().length
-    g2 = await waitDone((await call('POST', `/tasks/${g2.id}/resume`)).id)
-    assert.ok(calls().length > nResume, '继续流程时重新执行门禁')
-    assert.equal(gateOf(g2, 'g').branch, 'fail')
-    g2 = await call('POST', `/tasks/${g2.id}/end-flow`)
-    assert.equal(g2.flowClosed, true)
-    assert.equal(gateOf(g2, 'go').status, 'skipped')
-    // 409：和「子对话已经不在停下了」同一个判定（界面靠这个状态码给「它已经不在停下了」的提示）
-    await assert.rejects(call('POST', `/tasks/${g2.id}/resume`), /409/, '结束的流程不能再继续')
-    // 工作流的输入框也能用「/命令」：按默认 CLI 展开成普通的要求，对话里显示原文
-    const nInit = calls().length
-    g2 = await waitDone((await call('POST', `/tasks/${g2.id}/messages`, { text: '/init' })).id)
-    const um = g2.messages.filter((m) => m.role === 'user').at(-1)
-    assert.equal(um.text, '/init')
-    assert.match(um.prompt, /AGENTS\.md/)
-    assert.match(calls()[nInit].input, /用户已经结束了工作流/)
-    assert.match(calls()[nInit].input, /请分析这个项目/)
-    assert.equal(gateOf(g2, 'g').branch, 'fail', '结束流程后追加要求不再重跑门禁')
-    step('流程停在门禁：追加要求处理完自动接着走；可以继续流程、结束流程；工作流支持「/命令」')
+    gt = await waitDone((await call('POST', `/tasks/${gt.id}/resume`)).id)
+    assert.ok(calls().length > nResume, '继续时重新执行门禁')
+    assert.equal(gateOf(gt, 'g').branch, 'fail')
+    assert.equal(gt.flowRun.phase, 'failed')
+    step('流程停在门禁：算等决定，继续时从门禁重新检查')
   }
 
   // 预算：第一个节点用掉的 token 超过上限，第二个节点开始前暂停；继续执行再给一份额度
@@ -476,15 +447,14 @@ await runShard('工作流条件与失败', async (api) => {
       '节点都接上编排工具',
     )
     assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子任务/)
-    // 追加要求交给工作流的默认执行 Agent（不再有 @main 会话）
+    // 跑完的运行不再接要求（没有主 Agent，也不交给默认执行 Agent）：要再做一次由父对话起
     const n1 = calls().length
     await call('POST', `/tasks/${dm.id}/messages`, { text: '再改一下' })
     dm = await waitDone(dm.id)
-    const follow = calls()[n1]
-    assert.match(follow.input, /再改一下/)
+    assert.equal(calls().length, n1, '跑完的运行不再调用 CLI')
     await call('DELETE', `/workflows/${wfMain.id}`)
   }
-  step('工作流没有再常驻编排器：节点直接执行、自己的结论决定分支，追加要求交给默认执行 Agent')
+  step('工作流没有常驻编排器：节点直接执行、自己的结论决定分支，跑完不再接要求')
 
   // ---- 节点之间传话（send_message）：记成一次工具调用，不把整段正文铺成居中的系统块 ----
   {
@@ -865,8 +835,8 @@ await runShard('工作流条件与失败', async (api) => {
   assert.ok(kf.args.includes('--mod'), 'Command Code 用 --mod 追加回复语言规则')
   const modFile = kf.args[kf.args.indexOf('--mod') + 1]
   assert.match(readFileSync(modFile, 'utf8'), /## 回复语言/)
-  // 提醒在提示词后半段（invoke 还会在这之后追加 read_user_notes / wait_user_message 的用法）
-  const remindAt = kf.input.indexOf('回复正文和思考过程用用户这条消息所用的语言；代码、命令、日志和报错原文不翻译。')
+  // 语言「自动」时按识别出的语言（e2e 里是简体中文）提醒；提醒在提示词后半段（invoke 还会在这之后追加 read_user_notes / wait_user_message 的用法）
+  const remindAt = kf.input.indexOf('回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。')
   assert.ok(remindAt > kf.input.lastIndexOf('## 执行方式'), '提示词后半段带语言提醒')
   // 已有对话不跟着默认 CLI 换：t3 开始时默认是 Codex，默认改成 Command Code 后接着发消息仍用 Codex，不插换 CLI 的提示
   await call('POST', `/tasks/${t3.id}/messages`, { text: '接着' })
@@ -1277,6 +1247,43 @@ await runShard('工作流条件与失败', async (api) => {
     '# 项目外\n',
     '项目外的绝对路径也能看',
   )
+  // 文件弹窗里改完保存：任务目录里的文件能写（绝对路径也换成相对的），项目外的只读、写入被拒
+  assert.equal(rd.editable, true, '任务目录里的文件能编辑')
+  assert.equal(
+    (await call('GET', `/tasks/${tCommit.id}/file?path=${encodeURIComponent(outsideFile)}`)).editable,
+    false,
+    '项目外的文件只读',
+  )
+  const taskDir = rd.dir
+  await call('PUT', `/tasks/${tCommit.id}/file`, { path: path.join(taskDir, 'README.md'), content: '# demo\n改过\n' })
+  assert.equal(readFileSync(path.join(taskDir, 'README.md'), 'utf8'), '# demo\n改过\n', '保存写进任务目录')
+  await call('PUT', `/tasks/${tCommit.id}/file`, { path: 'README.md', content: '# demo\n' })
+  // 保存时带上打开时的修改时间：期间被别人（Agent）改过就回 409，不悄悄盖掉；不带时照常写
+  const opened = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
+  writeFileSync(path.join(taskDir, 'README.md'), '# demo\nAgent 改的\n')
+  const stale = await fetch(`${base}/tasks/${tCommit.id}/file`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: 'README.md', content: '# 我的\n', mtime: opened.mtime }),
+  })
+  assert.equal(stale.status, 409, '打开后被改过：保存回 409')
+  assert.equal(readFileSync(path.join(taskDir, 'README.md'), 'utf8'), '# demo\nAgent 改的\n', '冲突时不写')
+  const fresh = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
+  await call('PUT', `/tasks/${tCommit.id}/file`, { path: 'README.md', content: '# demo\n', mtime: fresh.mtime })
+  // 查看改动：任务目录里的文件和 HEAD 比，项目外的不给看
+  assert.equal((await call('GET', `/tasks/${tCommit.id}/file/diff?path=README.md`)).path, 'README.md')
+  assert.equal(
+    (await fetch(`${base}/tasks/${tCommit.id}/file/diff?path=${encodeURIComponent(outsideFile)}`)).status,
+    400,
+    '项目外的文件不能看改动',
+  )
+  const putOut = await fetch(`${base}/tasks/${tCommit.id}/file`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: outsideFile, content: 'x' }),
+  })
+  assert.equal(putOut.status, 400, '项目外的文件不能写')
+  assert.equal(readFileSync(outsideFile, 'utf8'), '# 项目外\n')
   // 读到的文件是图片时按原图查看
   writeFileSync(path.join(projectDir, 'shot.png'), PNG_1PX)
   const img = await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=shot.png`)

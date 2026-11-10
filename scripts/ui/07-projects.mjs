@@ -171,12 +171,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
     }
-    // 点开 Markdown 文件：标题栏的「预览 / 源码」切换要排成一行、和 24px 的标题栏按钮一样高，
-    // 不能被挤成一个字一行（「预 / 览」竖着叠、撑出标题栏）
+    // 点开 Markdown 文件：标题栏的「阅读 / 编辑」切换要排成一行、和 24px 的标题栏按钮一样高，
+    // 不能被挤成一个字一行（「阅 / 读」竖着叠、撑出标题栏）；阅读时按 Markdown 渲染，切到编辑是源码
     {
       await row('README.md').click()
-      const seg = p.getByRole('dialog').getByRole('radiogroup', { name: '预览或源码' })
-      await seg.waitFor({ timeout: 8000 }).catch(() => errors.push('文件窗口：Markdown 文件没有「预览 / 源码」切换'))
+      const seg = p.getByRole('dialog').getByRole('radiogroup', { name: '阅读或编辑' })
+      await seg.waitFor({ timeout: 8000 }).catch(() => errors.push('文件窗口：Markdown 文件没有「阅读 / 编辑」切换'))
       const m = await seg
         .evaluate((el) => {
           const btn = el.closest('[role="dialog"]')?.querySelector('button[aria-label="复制路径"]')
@@ -198,11 +198,81 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => null)
       if (m) {
         if (Math.abs(m.h - m.btnH) > 1)
-          errors.push(`文件窗口：「预览 / 源码」切换高 ${m.h}px，和标题栏按钮（${m.btnH}px）不一样高`)
+          errors.push(`文件窗口：「阅读 / 编辑」切换高 ${m.h}px，和标题栏按钮（${m.btnH}px）不一样高`)
         for (const it of m.items)
           if (it.textH > it.lineH * 1.5) errors.push(`文件窗口：「${it.text}」折成了多行（文字高 ${it.textH}px）`)
       }
-      await check(p, '文件窗口-Markdown标题栏', ['预览', '源码'])
+      await check(p, '文件窗口-Markdown标题栏', ['阅读', '编辑'])
+      // 标题目录（DocOutline）：阅读时右边是一列刻度，移上去展开成目录卡片，点标题跳过去
+      {
+        const dlg = p.getByRole('dialog')
+        const rail = dlg.getByRole('button', { name: '文档目录' })
+        await rail.waitFor({ timeout: 5000 }).catch(() => errors.push('标题目录：Markdown 阅读时右边没有标题刻度'))
+        await check(p, '文件窗口-标题目录-收起')
+        await rail.hover().catch(() => {})
+        const nav = dlg.getByRole('navigation', { name: '文档目录' })
+        await nav.waitFor({ timeout: 3000 }).catch(() => errors.push('标题目录：鼠标移上刻度没有展开目录'))
+        const items = await nav
+          .getByRole('button')
+          .allInnerTexts()
+          .catch(() => [])
+        for (const h of ['示例商店', '快速开始', '页面', '发布'])
+          if (!items.some((x) => x.trim() === h)) errors.push(`标题目录：目录里没有「${h}」`)
+        await check(p, '文件窗口-标题目录-展开', ['快速开始', '已知问题'])
+        await nav
+          .getByRole('button', { name: '发布', exact: true })
+          .click()
+          .catch(() => {})
+        await dlg
+          .getByRole('heading', { name: '发布' })
+          .evaluate(
+            (h) =>
+              new Promise((ok) => {
+                // 平滑滚动：等标题停到视口里再量
+                const t0 = performance.now()
+                const tick = () => {
+                  const r = h.getBoundingClientRect()
+                  if ((r.top >= 0 && r.bottom <= innerHeight) || performance.now() - t0 > 2000) ok(null)
+                  else requestAnimationFrame(tick)
+                }
+                tick()
+              }),
+          )
+          .catch(() => {})
+        const shown = await dlg
+          .getByRole('heading', { name: '发布' })
+          .evaluate((h) => {
+            const r = h.getBoundingClientRect()
+            return r.top >= 0 && r.bottom <= innerHeight
+          })
+          .catch(() => false)
+        if (!shown) errors.push('标题目录：点「发布」没有跳到那一节')
+        await p.mouse.move(5, 5)
+      }
+      // 弹窗自己的搜索（代码是虚拟渲染的，浏览器自带的查找搜不到屏幕外的行）：Ctrl+F 打开搜索框，
+      // Markdown 阅读时在渲染好的文档里找；Esc 先关搜索框，弹窗还在
+      {
+        await p.keyboard.press('Control+f')
+        const bar = p.getByRole('dialog').getByRole('search')
+        await bar.waitFor({ timeout: 3000 }).catch(() => errors.push('文件搜索：Ctrl+F 没有打开搜索框'))
+        await p.keyboard.type('已知问题')
+        await bar
+          .getByText('1 / 1')
+          .waitFor({ timeout: 3000 })
+          .catch(() => errors.push('文件搜索：Markdown 里没找到「已知问题」'))
+        await check(p, '文件窗口-搜索', ['已知问题'])
+        await p.keyboard.press('Escape')
+        await bar
+          .waitFor({ state: 'detached', timeout: 3000 })
+          .catch(() => errors.push('文件搜索：按 Esc 没有关掉搜索框'))
+        if (!(await p.getByRole('dialog').count())) errors.push('文件搜索：按 Esc 把弹窗也关了，应该只关搜索框')
+      }
+      await seg.getByRole('radio', { name: '编辑' }).click()
+      await p
+        .getByRole('dialog')
+        .getByRole('textbox', { name: '文件内容' })
+        .waitFor({ timeout: 3000 })
+        .catch(() => errors.push('文件窗口：切到「编辑」没有出现源码编辑区'))
       await p.keyboard.press('Escape')
       await p
         .getByRole('dialog')

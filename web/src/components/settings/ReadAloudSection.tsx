@@ -4,6 +4,7 @@ import { TTS_MODELS, TTS_VOICES, ttsVoiceGroupLabel, type TtsEngine, type TtsMod
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { browserVoices, readAloud, readAloudSupported, stopReading, useReadAloud } from '@/lib/read-aloud'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -20,20 +21,7 @@ type ReadAloudSettings = Settings['readAloud']
 function useTtsStatus() {
   const [st, setSt] = useState<TtsStatus>()
   const running = st?.job?.status === 'running'
-  useEffect(() => {
-    let alive = true
-    const load = () =>
-      api
-        .tts()
-        .then((s) => alive && setSt(s))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, running ? 1000 : 6000)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [running])
+  usePolling(() => api.tts().then(setSt), running ? 1000 : 6000)
   return [st, setSt] as const
 }
 

@@ -15,6 +15,7 @@ import { answerRequest, dropRequests } from '../exec/requests.ts'
 import { cancelWait, forgetNotes } from '../exec/steering.ts'
 import { convChanges } from '../../shared/conv-changes.ts'
 import { taskLog } from '../task-log.ts'
+import { cancelUserActions } from './user-actions.ts'
 import { log } from '../log.ts'
 import { settleBefore } from './helpers.ts'
 import { taskChanges } from '../own-changes.ts'
@@ -424,13 +425,13 @@ export function registerActionRoutes(s: TasksScope) {
   /**
    * 分叉出来的顶层对话在哪个目录做：以前一律回到项目目录，和原对话（或同项目别的对话）改同一个目录会互相覆盖。
    * 原对话在独立分支里：从它的分支再开一个（看得到它已经提交的改动，合回原对话合回的那个分支；没提交的改动不带）；
-   * 没开的按项目设置的默认（isolateNew）决定开不开。开不了（不是 git 仓库、没有提交）就照旧在项目目录里做
+   * 没开的按项目设置的默认（isolateByDefault）决定开不开。开不了（不是 git 仓库、没有提交）就照旧在项目目录里做
    */
   async function forkWorktree(task: Task, id: string, title: string) {
     if (!task.projectId || task.parentTaskId) return null
     const project = await s.deps.projects.get(task.projectId)
     const from = task.worktree?.state === 'active' ? task.worktree : null
-    if (!project || (!from && !project.isolateNew)) return null
+    if (!project || (!from && !project.isolateByDefault)) return null
     try {
       const wt = await createWorktree(from?.path ?? project.path, id, title)
       return from ? { ...wt, baseBranch: from.baseBranch } : wt
@@ -568,7 +569,7 @@ export function registerActionRoutes(s: TasksScope) {
       .catch((e) => log.warn('task', '停止整棵对话树失败', { task: id, error: (e as Error).message }))
     // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉。
     // 停止是停掉这个对话附属的一切：名下子对话的提问、确认、请用户决定的选择也一起作废
-    const kids = (await s.store.list()).filter((x) => x.parentTaskId === id)
+    const kids = await s.store.childrenOf(id)
     for (const tid of [id, ...kids.map((k) => k.id)]) {
       const e = s.live.get(tid)
       const tk = e?.task ?? (await s.store.get(tid))
@@ -595,6 +596,7 @@ export function registerActionRoutes(s: TasksScope) {
     // 进程已经结束，一般几十毫秒；收不完的最迟由 watchStop 收口（settleBefore 有上限）
     await settleBefore(s.live.get(id))
     await parkDiagnoses(id)
+    await cancelUserActions(s, id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {

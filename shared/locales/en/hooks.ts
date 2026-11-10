@@ -8,8 +8,8 @@ export const EN_HOOKS: Record<string, string> = {
   '压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪':
     'After the context is compacted, give the model the current plan and progress, the task goal, and what it is waiting on, so it does not lose its place',
   只读身份守卫: 'Read-only guard',
-  '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因':
-    'Refuse file edits from read-only roles (research, review, root-cause analysis) and from parent conversations that only coordinate, and say why',
+  '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因；项目 .tmp/ 和系统临时目录里的临时文件放行':
+    'Refuse file edits from read-only roles (research, review, root-cause analysis) and from parent conversations that only coordinate, and say why. Temp files in the project .tmp/ folder or the system temp folder are allowed',
   临时文件位置守卫: 'Temp file location guard',
   '往盘符根目录、面板的数据目录里写文件时拒绝，说明临时文件该放到项目的 .tmp/ 或系统临时目录':
     "Refuse writes to a drive's root folder or the panel's data folder, and point temp files to the project's .tmp/ or the system temp folder",
@@ -165,8 +165,8 @@ export const EN_HOOKS: Record<string, string> = {
   '另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune':
     'Extra command prefixes to block as dangerous, one per line, e.g. docker system prune',
   长命令转后台: 'Long commands to background',
-  '完整测试、端到端、界面检查、开发服务器这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完':
-    "Denies full test suites, end-to-end and UI checks, and dev servers in the foreground and has them run as the panel's background commands, so messages sent meanwhile don't wait",
+  '完整测试、端到端、界面检查、开发服务器、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完':
+    "Denies full test suites, end-to-end and UI checks, dev servers, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands, so messages sent meanwhile don't wait",
   另外算长命令的命令前缀: 'Extra long-command prefixes',
   '一行一个，例如 npm run build、cargo test': 'One per line, e.g. npm run build, cargo test',
   测试步骤归属守卫: 'Test step ownership guard',

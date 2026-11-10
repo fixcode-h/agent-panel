@@ -132,8 +132,11 @@ export const EN_ALERTS: Record<string, string> = {
   '已自动重试，继续做完了': 'Retried automatically and it finished',
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
   '等了 {s} 秒没收到响应头（首字节超时）': 'no response headers after {s}s (first-byte timeout)',
-  '{cli} {s} 秒没有新的输出。再过 {s} 秒还是没有，面板会停掉它、接回会话重试。':
-    '{cli} has produced no new output for {s}s. If there is still none in another {s}s, the panel will stop it and retry in the same session.',
+  '（之前 {s} 秒没有新的输出）': ' (no new output for {s}s before this)',
+  '模型输出中途断了，Claude Code 丢掉没写完的这段、重新请求':
+    'The model output broke off partway; Claude Code dropped the unfinished part and is requesting again',
+  '{cli} {s} 秒没有新的输出。再过 {k} 秒还是没有，面板会停掉它、接回会话重试。':
+    '{cli} has produced no new output for {s}s. If there is still none in another {k}s, the panel will stop it and retry in the same session.',
   '{cli} 连续 {s} 秒没有任何输出，面板停掉了这次调用':
     '{cli} produced no output for {s}s, so the panel stopped this call',
   '{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':
@@ -188,4 +191,15 @@ export const EN_ALERTS: Record<string, string> = {
     "After Ask was turned off, a turn couldn't be started to answer the subconversation's question",
   '提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错':
     'Starting the agent ahead of time failed. It will start again when you send a message, and any failure will show here',
+  // 项目里的 MCP 没有响应（AlertKind 的 mcp_slow，server/exec/mcp-probe.ts）
+  'MCP 服务没有响应': 'MCP server not responding',
+  '项目里配的 MCP 服务连不上或在限定时间内没有回应。有的 Agent 第一轮前会先等所有 MCP 握手，等到超时才开始，所以首字会慢；它连上之前这个对话用不了它的工具。':
+    'An MCP server configured in this project could not be reached or did not answer in time. Some agents wait for every MCP handshake before the first turn and only start after it times out, so the first reply is slow; its tools are unavailable in this chat until it connects.',
+  '确认这个 MCP 服务在运行、没被别的工作占住（例如编辑器正在做耗时操作）；用不上它时可以从项目的 MCP 配置里去掉。Claude Code 第一轮最多等多久由设置里的环境变量 CLAUDE_CODE_MCP_STARTUP_WAIT_MS（毫秒）决定。':
+    'Make sure the MCP server is running and not busy with other work (for example an editor in the middle of a long operation); remove it from the project MCP config if you do not need it. How long Claude Code waits before the first turn is set by the environment variable CLAUDE_CODE_MCP_STARTUP_WAIT_MS (milliseconds) in settings.',
+  '{s} 秒内没有回应': 'no answer within {s} s',
+  '项目里的 MCP「{names}」没有响应：{cli} 可能要等它超时才开始这一轮，连上之前用不了它的工具。':
+    'Project MCP "{names}" is not responding: {cli} may wait for it to time out before starting this turn, and its tools are unavailable until it connects.',
+  '项目里的 MCP「{names}」没有响应：{cli} 第一轮最多等它 {s} 秒就先开始，连上之前用不了它的工具。':
+    'Project MCP "{names}" is not responding: {cli} waits at most {s} s for it before starting the first turn, and its tools are unavailable until it connects.',
 }

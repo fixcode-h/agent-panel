@@ -1,5 +1,5 @@
 ---
-paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/ToolRow.tsx, web/src/components/tasks/PeerMessage.tsx, web/src/components/tasks/RunningNow.tsx, web/src/lib/tasks.ts, web/src/lib/file-path.ts, web/src/lib/useStickToBottom.ts, server/orch-mcp.ts
+paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Messages.tsx, web/src/components/tasks/SystemNote.tsx, web/src/components/tasks/TaskView.tsx, web/src/components/tasks/ToolRow.tsx, web/src/components/tasks/PeerMessage.tsx, web/src/components/tasks/RunningNow.tsx, web/src/lib/tasks.ts, web/src/lib/file-path.ts, web/src/lib/useStickToBottom.ts, server/orch-mcp.ts
 ---
 
 # 对话里的消息和条目
@@ -18,6 +18,7 @@ paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Message
 
 ## 行内代码里的文件路径按段校验，字符集用 Unicode 属性
 
+- 规则：行内代码要带目录（`src/a.ts`、`./a.ts`、盘符路径）才画成文件标记，单独的文件名和函数名、字段一样按行内代码显示（`linkPaths` 的 `hasDir`）；面板自己拼给用户看的 Markdown（诊断报告的位置、要改的文件）写全路径，显示时标记只露文件名。Agent 没加反引号的报告文字由 `shared/bug-terms.ts` 补上。
 - 规则：认行内代码是不是文件路径用 `web/src/lib/file-path.ts` 的 `parsePath` / `linkPaths`，别另写正则；字符集用 `\p{L}\p{N}`（带 `u`），不用 `\w`（只认 ASCII）；扩展名白名单带图片格式；不误判靠「按段校验 + 白名单 + 拒绝 URL 和命令参数」，不收紧字符集。
 - 起因：`ui-shots/107-对话-图片气泡.png` 这类中文路径点不开。
 - 防线：`web/src/lib/file-path.test.ts`、`scripts/ui/01-composer.mjs` 的「对话-路径可点」。
@@ -27,12 +28,6 @@ paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Message
 - 规则：`useStickToBottom` 贴底时只有 `scrollTop` 变小（用户往上滚）才松开（`stillPinned`）。内容变高后浏览器补发的 scroll 事件里 `scrollTop` 没变、离底部却变远了，按距离判断会误以为用户滚走。
 - 起因：用户 2026-10-23 反馈对话进行中偶发不回到底部。
 - 防线：`web/src/lib/useStickToBottom.test.ts` 的 `stillPinned` 用例。
-
-## 回复的总结一律留在折叠外面
-
-- 规则：一轮回复收尾折叠时，总结整段留在外面，父对话、子对话都一样。AI 写完总结常再调收尾动作（`suggest_next_step`、`submit_merge`、`set_plan` 这类）再补一句「已提交」，`summaryStart`（`web/src/lib/fold.ts`）把中间只隔着这些动作的几段话都算作总结；新的收尾类面板工具要加进 `WRAP_TOOLS`。
-- 起因：用户 2026-10-30 要求「对话的总结不要折叠，父对话、子对话都要记住」；之前只留最后一条带正文的消息，真正的总结被算成「n 段说明」收了进去。
-- 防线：`web/src/lib/fold.test.ts` 的 summaryStart 用例。
 
 ## 消息下面的时间和操作一直显示，不做悬停才出现
 
@@ -49,3 +44,9 @@ paths: web/src/components/chat/ChatMessage.tsx, web/src/components/tasks/Message
 
 - 规则：工具 / 过程行（`RowShell`）每行一块默认浅底的圆角块（`bg-fg/[0.035]`），悬停再深一点；相邻行靠 4px 间距分开，不画分隔线（`index.css` 的 `proc-list`）。
 - 起因：dc23450 照设计稿改成「无底、行间细线、悬停才出底」，用户要求「工具不加分割线，背景默认显示」。
+
+## 挂在回复体外面的块要缩进到正文竖线上
+
+- 规则：对话流里不在 `.reply-body` 里的块（报错 / 警告卡片、工作流卡片、收到的消息）用 `reply-indent` 缩进到和回复正文同一条竖线，左右都不超出正文；报错卡片用 `NoteMessage` / `SystemNote` 的 `indent`。只有居中的一行说明、用户气泡不缩进。
+- 起因：用户 2026-11-07 报「没做完就停下了」卡片比正文往左多伸出一截（对话页、设计页的报错卡片都是）。
+- 防线：`scripts/ui/01-composer.mjs` 的「Chat 报错卡片」对齐断言。

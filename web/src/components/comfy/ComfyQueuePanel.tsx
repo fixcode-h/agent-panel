@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ChevronRight, Clock, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { ComfyQueueEntry } from '@shared/local-image'
 import { api } from '@/lib/api'
+import { usePolling } from '@/lib/polling'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -14,20 +15,7 @@ const NO_CHANGE = () => {}
 /** 队列每 2 秒取一次：ComfyUI 的进度只在执行时变，太快没必要 */
 function useComfyQueue() {
   const [q, setQ] = useState<Awaited<ReturnType<typeof api.localImageQueue>>>()
-  useEffect(() => {
-    let alive = true
-    const load = () =>
-      api
-        .localImageQueue()
-        .then((s) => alive && setQ(s))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, 2000)
-    return () => {
-      alive = false
-      clearInterval(timer)
-    }
-  }, [])
+  usePolling(() => api.localImageQueue().then(setQ), 2000)
   return q
 }
 
