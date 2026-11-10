@@ -1795,7 +1795,14 @@ export function TaskView({
       <div role="status" aria-live="polite" className="sr-only">
         {announce}
       </div>
-      <TaskViewCtx taskId={task.id} openFile={openFile} aiLook={aiLook} handleNeeds={needs} cards={!task.parentTaskId}>
+      <TaskViewCtx
+        taskId={task.id}
+        projectId={task.projectId}
+        openFile={openFile}
+        aiLook={aiLook}
+        handleNeeds={needs}
+        cards={!task.parentTaskId}
+      >
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
           value={
@@ -2268,6 +2275,7 @@ export function TaskView({
  */
 function TaskViewCtx({
   taskId,
+  projectId,
   openFile,
   aiLook,
   handleNeeds,
@@ -2275,6 +2283,7 @@ function TaskViewCtx({
   children,
 }: {
   taskId: string
+  projectId?: string
   openFile: (path: string, line?: number) => void
   aiLook: boolean
   handleNeeds: ((text: string) => Promise<void>) | null
@@ -2284,7 +2293,7 @@ function TaskViewCtx({
 }) {
   return (
     <FileOpenCtx.Provider value={openFile}>
-      <FileRefLayer taskId={taskId} preview={openFile}>
+      <FileRefLayer taskId={taskId} projectId={projectId} preview={openFile}>
         <AiLookCtx.Provider value={aiLook}>
           <HandleNeedsCtx.Provider value={handleNeeds}>
             <SummaryCardsCtx.Provider value={cards}>{children}</SummaryCardsCtx.Provider>

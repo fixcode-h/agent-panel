@@ -6,9 +6,10 @@ import { Segmented } from '@/components/ui/segmented'
 
 /**
  * 文件弹窗的「阅读 / 编辑」：任务页点开的文件和文件浏览页共用同一套切换和保存逻辑（FileViewDialog），
- * 两处的手感一致。阅读时 Markdown 按对话里的样式渲染、代码带行号；编辑时直接改源码。
+ * 两处的手感一致。阅读时 Markdown 按对话里的样式渲染、CSV 按表格、代码带行号；编辑时直接改源码。
+ * JSON 多一个「树形」：阅读还是带行号的源码（从引用跳到某一行要对得上），树形里一层层折叠着看。
  */
-export type FileMode = 'read' | 'edit'
+export type FileMode = 'read' | 'tree' | 'edit'
 
 /** Markdown 文件：阅读模式渲染成文档，编辑模式改源码 */
 export const isMarkdownPath = (path: string) => /\.(md|mdx|markdown)$/i.test(path)
@@ -92,7 +93,25 @@ export function useFileEditing({
 export type FileEditing = ReturnType<typeof useFileEditing>
 
 /** 标题栏右侧：阅读 / 编辑切换；有没保存的修改时跟着放弃和保存 */
-export function FileModeBar({ ed }: { ed: FileEditing }) {
+export function FileModeBar({
+  ed,
+  canEdit,
+  tree,
+  readLabel,
+}: {
+  ed: FileEditing
+  /** 只读的文件（附件、截断的）没有「编辑」 */
+  canEdit: boolean
+  /** JSON：多一个「树形」 */
+  tree?: boolean
+  /** 「阅读」那一段的名字：CSV 阅读时是表格，写「表格」 */
+  readLabel?: string
+}) {
+  const options: { id: FileMode; label: string }[] = [{ id: 'read', label: readLabel ?? t('阅读') }]
+  if (tree) options.push({ id: 'tree', label: t('树形') })
+  if (canEdit) options.push({ id: 'edit', label: t('编辑') })
+  // 只有「阅读」一种看法时不用切换
+  if (options.length < 2) return null
   return (
     <>
       <Segmented
@@ -102,10 +121,7 @@ export function FileModeBar({ ed }: { ed: FileEditing }) {
         label={t('阅读或编辑')}
         value={ed.mode}
         onChange={ed.setMode}
-        options={[
-          { id: 'read', label: t('阅读') },
-          { id: 'edit', label: t('编辑') },
-        ]}
+        options={options}
       />
       {ed.dirty && (
         <>

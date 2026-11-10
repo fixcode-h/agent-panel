@@ -12,6 +12,7 @@ import { resolvePath } from './fs.ts'
 import { openWithSystem, revealItem } from './open.ts'
 import { locateFiles } from './locate-file.ts'
 import { thumbnail } from './thumbnail.ts'
+import { sheetsOf } from './xlsx.ts'
 import { t } from '../shared/i18n.ts'
 import { clip } from '../shared/text.ts'
 
@@ -314,7 +315,17 @@ export function uploadsRawApi() {
     if (!s?.isFile()) return c.json({ path: file, dir, exists: false, content: '', truncated: false })
     const buf = await readFile(file)
     const head = buf.subarray(0, MAX_VIEW)
-    if (head.includes(0)) return c.json({ path: file, dir, exists: true, binary: true, content: '', truncated: false })
+    if (head.includes(0))
+      return c.json({
+        path: file,
+        dir,
+        exists: true,
+        binary: true,
+        // 表格附件解析成各张表，弹窗里直接当表格看
+        sheets: sheetsOf(file, buf),
+        content: '',
+        truncated: false,
+      })
     return c.json({ path: file, dir, exists: true, content: head.toString('utf8'), truncated: buf.length > MAX_VIEW })
   })
   return routes

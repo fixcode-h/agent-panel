@@ -18,6 +18,16 @@ export const EN_FILE_REF: Record<string, string> = {
   // 文件弹窗的阅读 / 编辑
   阅读或编辑: 'Read or edit',
   阅读: 'Read',
+  // 文件弹窗的表格（CSV / xlsx）和 JSON 树形
+  树形: 'Tree',
+  工作表: 'Sheets',
+  '这张表是空的。': 'This sheet is empty.',
+  '表格太大，只显示了前面一部分。完整内容请用表格软件打开。':
+    'This spreadsheet is too large, so only the first part is shown. Open it in a spreadsheet app to see everything.',
+  '还有 {n} 项，继续显示': '{n} more items, show more',
+  '文件太大只读了前面一部分，没法按树形显示。可以切到「阅读」看已读到的内容。':
+    'The file is too large and only the first part was read, so it cannot be shown as a tree. Switch to Read to see what was loaded.',
+  '这不是合法的 JSON，没法按树形显示：{error}': 'This is not valid JSON, so it cannot be shown as a tree: {error}',
   放弃修改: 'Discard changes',
   附件不能在这里修改: 'Attachments cannot be edited here',
   只能修改任务目录里的文件: 'Only files in the task folder can be edited',

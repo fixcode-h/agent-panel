@@ -89,4 +89,5 @@ export const EN_PLUGINS: Record<string, string> = {
   '这个插件没有可配置的参数。': 'This plugin has no settings.',
   运行状态: 'Status',
   '配置插件 {name} 的参数': 'Configure {name}',
+  能看这个文件的插件已经关掉了: 'The plugin that can view this file has been turned off',
 }

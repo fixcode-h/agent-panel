@@ -3,11 +3,14 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { clickAction, fileKind, nameParts, parentName, sizeText } from '@/lib/file-ref'
 
-test('clickAction：图片看大图，md、cpp 这类文字在面板里看，xlsx、docx、pdf 交给系统，目录在文件夹里打开', () => {
+test('clickAction：图片看大图，md、cpp 这类文字和 xlsx 表格在面板里看，docx、pdf 交给系统，目录在文件夹里打开', () => {
   assert.equal(clickAction('a/截图.png'), 'image')
   for (const p of ['README.md', 'src/a.cpp', 'x.h', 'cfg.json', 'a.ts', 'logs/run.log'])
     assert.equal(clickAction(p), 'text', p)
-  for (const p of ['C_FunctionalNPCInfo.xlsx', '需求.docx', 'a.pdf', 'b.zip', 'Map.umap', 'noext'])
+  // 面板能解析成表格、树形的也在面板里看
+  for (const p of ['C_FunctionalNPCInfo.xlsx', 'a.xlsm', 'data.csv', 'session.jsonl', 'Game.uproject'])
+    assert.equal(clickAction(p), 'text', p)
+  for (const p of ['旧表.xls', '需求.docx', 'a.pdf', 'b.zip', 'Map.umap', 'noext'])
     assert.equal(clickAction(p), 'system', p)
   assert.equal(clickAction('src/a.ts', true), 'system')
 })

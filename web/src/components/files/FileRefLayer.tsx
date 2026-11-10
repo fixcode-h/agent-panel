@@ -3,6 +3,7 @@
  * 回复正文（HTML 字符串，事件委托）、工具行、用户消息的附件卡片都走这一层，行为只写一份。
  * 单击的规则（用户 2026-11-05 定的）：面板能看的（图片、文字）在面板里看，别的交给系统默认程序，
  * 会被当脚本执行的类型只在文件夹里选中（服务端 open.ts 的白名单）。
+ * 开着的插件认领了的扩展名（UE 插件的 .uasset）也在面板里看：弹插件的查看器（PluginFileDialog）。
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -16,6 +17,8 @@ import { baseName, clickAction, sizeText } from '@/lib/file-ref'
 import { toast } from '@/lib/toast'
 import { MenuItem, MenuSeparator, PointMenu, popoverPanel } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
+import { PluginFileDialog, type PluginFileTarget } from '@/plugins/PluginFileDialog'
+import { fileViewerFor, usePlugins } from '@/plugins/registry'
 
 /** 一个文件标记指向的东西 */
 export interface FileRefTarget {
@@ -62,10 +65,13 @@ const HOVER_DELAY = 400
 
 export function FileRefLayer({
   taskId,
+  projectId,
   preview,
   children,
 }: {
   taskId: string
+  /** 对话所在的项目：交给插件的文件查看器（它按项目找自己的数据） */
+  projectId?: string
   /** 在面板里看文件（任务页的文件弹窗） */
   preview: (path: string, line?: number) => void
   children: React.ReactNode
@@ -128,14 +134,20 @@ export function FileRefLayer({
     },
     [taskId],
   )
+  // 插件来看的文件：弹窗挂在这一层（任务页顶层），不跟着回复里的行重挂
+  const plugins = usePlugins()
+  const [pluginFile, setPluginFile] = useState<PluginFileTarget | null>(null)
   const previewOf = useCallback(
     async (target: FileRefTarget) => {
-      if (target.local) return target.preview?.()
+      const byPlugin = !!fileViewerFor(target.path, plugins)
+      if (target.local) return byPlugin ? setPluginFile({ path: target.path, projectId, taskId }) : target.preview?.()
       // 在上级目录（工作区根）里找到的文件，面板预览要按完整路径读
       const info = await resolve(target.path)
+      // 插件的查看器不经过面板读文件，要完整路径；解析不出来（导入的对话没有本机目录）时原样给它
+      if (byPlugin) return setPluginFile({ path: info?.abs || target.path, projectId, taskId })
       preview(info?.exists && !info.inTask ? info.abs : target.path, target.line)
     },
-    [preview, resolve],
+    [preview, resolve, plugins, projectId, taskId],
   )
   const open = useCallback(
     async (target: FileRefTarget) => {
@@ -143,10 +155,11 @@ export function FileRefLayer({
       setCard(null)
       // 目录看扩展名看不出来：按解析结果（回复渲染完已经解析过，一般直接命中缓存）
       const dir = !target.local && !!(await resolve(target.path))?.dir
-      if (dir || clickAction(target.path) === 'system') return openSystem(target)
+      if (dir || (clickAction(target.path) === 'system' && !fileViewerFor(target.path, plugins)))
+        return openSystem(target)
       void previewOf(target)
     },
-    [openSystem, previewOf, resolve],
+    [openSystem, previewOf, resolve, plugins],
   )
 
   const api_ = useMemo<FileRefApi>(
@@ -215,13 +228,21 @@ export function FileRefLayer({
   return (
     <FileRefCtx.Provider value={api_}>
       {children}
-      {card && <HoverCard el={card.el} target={card.target} info={card.info} />}
+      {card && (
+        <HoverCard
+          el={card.el}
+          target={card.target}
+          info={card.info}
+          plugin={!!fileViewerFor(card.target.path, plugins)}
+        />
+      )}
       {named && <NameCard el={named.el} name={named.name} paths={named.paths} more={named.more} />}
       {menu && (
         <PointMenu at={menu.at} open onOpenChange={(v) => !v && closeMenu()}>
           <RefMenu
             target={menu.target}
             info={menu.info}
+            plugin={!!fileViewerFor(menu.target.path, plugins)}
             onPreview={() => void previewOf(menu.target)}
             onSystem={(reveal) => openSystem(menu.target, reveal)}
             onRefer={() => {
@@ -232,20 +253,33 @@ export function FileRefLayer({
           />
         </PointMenu>
       )}
+      <PluginFileDialog target={pluginFile} onOpenChange={(o) => !o && setPluginFile(null)} />
     </FileRefCtx.Provider>
   )
 }
 
 /** 单击会做什么：写在悬停卡片底部，点之前就知道 */
-function clickHint(target: FileRefTarget, info?: PathInfo | null) {
+function clickHint(target: FileRefTarget, info?: PathInfo | null, plugin = false) {
   if (info?.dir) return t('单击 在文件夹中打开')
+  if (plugin) return t('单击 在面板中查看')
   const how = clickAction(target.path)
   if (how === 'image') return t('单击 查看图片')
   if (how === 'text') return t('单击 在面板中查看')
   return t('单击 用默认程序打开')
 }
 
-function HoverCard({ el, target, info }: { el: HTMLElement; target: FileRefTarget; info?: PathInfo | null }) {
+function HoverCard({
+  el,
+  target,
+  info,
+  plugin,
+}: {
+  el: HTMLElement
+  target: FileRefTarget
+  info?: PathInfo | null
+  /** 开着的插件能看这个文件 */
+  plugin?: boolean
+}) {
   const r = el.getBoundingClientRect()
   const width = Math.min(440, window.innerWidth - 16)
   // 默认在标记下面，贴近底边时翻到上面；左右不出视口
@@ -274,7 +308,7 @@ function HoverCard({ el, target, info }: { el: HTMLElement; target: FileRefTarge
       {info?.exists && info.mtime && row(t('修改时间'), new Date(info.mtime).toLocaleString())}
       {info && !info.exists && <p className="text-danger">{t('找不到这个文件，可能已删除或路径写错')}</p>}
       <div className="mt-1.5 flex flex-wrap gap-x-4 border-t border-line pt-1.5 text-caption text-subtle">
-        <span>{clickHint(target, info)}</span>
+        <span>{clickHint(target, info, plugin)}</span>
         <span>{t('右键 更多')}</span>
       </div>
     </div>,
@@ -325,12 +359,15 @@ function NameCard({ el, name, paths, more }: { el: HTMLElement; name: string; pa
 function RefMenu({
   target,
   info,
+  plugin,
   onPreview,
   onSystem,
   onRefer,
 }: {
   target: FileRefTarget
   info?: PathInfo | null
+  /** 开着的插件能看这个文件：菜单里多「在面板中查看」 */
+  plugin?: boolean
   onPreview: () => void
   onSystem: (reveal: boolean) => void
   onRefer: () => void
@@ -340,7 +377,7 @@ function RefMenu({
   const abs = target.local ? target.path : (info?.abs ?? '')
   const line = target.line ? `:${target.line}` : ''
   const copy = (text: string) => void copyText(text, { done: t('已复制') })
-  const canPreview = how !== 'system' && (!target.local || !!target.preview)
+  const canPreview = !info?.dir && (plugin || (how !== 'system' && (!target.local || !!target.preview)))
   return (
     <>
       {canPreview && (

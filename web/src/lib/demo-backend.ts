@@ -174,7 +174,7 @@ import {
 import { demoRestore } from './demo-restore'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
-import { DEMO_FILES, DEMO_README } from './demo-project-files'
+import { DEMO_CSV, DEMO_FILES, DEMO_README, DEMO_SHEETS } from './demo-project-files'
 // 拆出去的演示接口：报错和校验、在跑的一轮、本机生图、进程面板、任务里的样例
 import { fail, parse } from './demo-http'
 import { live } from './demo-live'
@@ -1219,6 +1219,7 @@ function demoResolve(paths: string[]): (Attachment & { from: string })[] {
 /** 演示里几个文件有内容，其余只显示路径 */
 const DEMO_CONTENTS: Record<string, string> = {
   'README.md': DEMO_README,
+  'data/products.csv': DEMO_CSV,
   'src/App.tsx':
     "import { Routes, Route } from 'react-router-dom'\nimport { Login } from './pages/Login'\nimport { ProductDetail } from './pages/ProductDetail'\nimport { OrderList } from './pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
   'src/api/cart.ts':
@@ -1396,6 +1397,7 @@ function demoProjectFiles(
     return {
       path: want,
       exists,
+      ...(DEMO_SHEETS[want] ? { binary: true, sheets: DEMO_SHEETS[want] } : {}),
       content: text ?? '',
       truncated: false,
       ...(exists ? { size: demoSize(text ?? ''), eol: (text ?? '').includes('\r\n') ? 'crlf' : 'lf' } : {}),
@@ -2997,6 +2999,8 @@ function tasksRoute(
   if (sub === 'file') {
     const want = (query.get('path') ?? '').replace(/^\.\//, '')
     const content = DEMO_CONTENTS[want]
+    const sheets = DEMO_SHEETS[want]
+    if (sheets) return { path: want, dir: '', exists: true, binary: true, sheets, content: '', truncated: false }
     return { path: want, dir: '', exists: content !== undefined, content: content ?? '', truncated: false }
   }
   // 任务右栏的文件：根信息、按层读取、搜索，和正式版一致；改过的文件带上状态

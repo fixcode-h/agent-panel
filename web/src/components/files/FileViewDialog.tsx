@@ -7,6 +7,8 @@ import { editorUrl } from '@/lib/editor-url'
 import { fmtClock } from '@/lib/tasks'
 import { sizeText, useHighlightedLines, useHljs } from '@/lib/file-highlight'
 import { findHits, hitsByLine, lineOf, lineStarts } from '@/lib/file-search'
+import { isJsonPath } from '@/lib/json-tree'
+import { findCells, isCsvPath, parseCsv } from '@/lib/sheet'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
@@ -18,6 +20,8 @@ import { FileModeBar, isMarkdownPath, useFileEditing } from './file-edit'
 import { CodeLines } from './CodeLines'
 import { FileSearchBar, useFileSearch } from './FileSearch'
 import { useDomSearch } from './dom-search'
+import { JsonTree } from './JsonTree'
+import { SheetTable, SheetTabs } from './SheetTable'
 import './file-view.css'
 
 // 编辑器（CodeMirror）只在切到编辑时才加载：只看文件的人不用下载它
@@ -59,7 +63,8 @@ const NO_TEAM = new Set<string>()
 
 /**
  * 点开一个文件：显示内容（带语法高亮和行号），跳到指定的行；能切到编辑直接改完保存，
- * Markdown 阅读时按对话里的样式渲染、编辑时改源码；能看这个文件相对 git 改了什么、在编辑器里打开。图片用看图的浮层看原图。
+ * Markdown 阅读时按对话里的样式渲染、编辑时改源码；CSV / TSV 阅读时是表格，xlsx 由后端解析成各张表、只读；
+ * JSON 可以切到树形。能看这个文件相对 git 改了什么、在编辑器里打开。图片用看图的浮层看原图。
  */
 export function FileViewDialog({
   source,
@@ -81,6 +86,10 @@ export function FileViewDialog({
   const path = target?.path ?? ''
   const raw = target ? source.image(target.path) : ''
   const isMd = isMarkdownPath(path)
+  const isCsv = isCsvPath(path)
+  const isJson = isJsonPath(path)
+  /** xlsx 当前看的是第几张表 */
+  const [sheetIndex, setSheetIndex] = useState(0)
   const load = (p: string) =>
     source
       .read(p)
@@ -90,6 +99,7 @@ export function FileViewDialog({
     if (!target) return
     setFile(null)
     setError('')
+    setSheetIndex(0)
     if (raw) return
     void load(target.path)
     // source 每次渲染都是新对象，换了文件（target）才重新读
@@ -110,21 +120,36 @@ export function FileViewDialog({
     reload: () => target && void load(target.path),
     resetKey: target,
     // Markdown 阅读是渲染后的文档，对不上行号：带行号打开（从引用跳过来）时直接进编辑看那一行
-    startEdit: isMd && !!target?.line,
+    // 表格也一样：行号指的是源码的行
+    startEdit: (isMd || isCsv) && !!target?.line,
   })
   const editing = canEdit && ed.mode === 'edit'
+  const isText = !!file?.exists && !file.binary
+  /** xlsx 解析出来的各张表（是二进制文件，但有东西可看） */
+  const sheets = file?.exists && file.sheets?.length ? file.sheets : undefined
+  const sheet = sheets?.[Math.min(sheetIndex, sheets.length - 1)]
+  /** 有内容可看、可搜：文字文件和解析出表格的 xlsx */
+  const viewable = isText || !!sheets
   // 去掉结尾的换行再分列，最后一行不会是个空行；高亮用同一份内容，行数才对得上。
   // 阅读时看的是草稿：改了 Markdown 切回阅读就能看渲染效果
   const shown = canEdit ? ed.text : (file?.content ?? '')
   const body = shown ? shown.replace(/\n$/, '') : ''
-  const mdPreview = isMd && !!file?.exists && !file.binary
+  const mdPreview = isMd && isText
+  const treeShown = isJson && isText && ed.mode === 'tree'
+  // 表格：CSV 阅读时现拆，xlsx 用后端解析好的那张表
+  const csvShown = isCsv && isText && !editing
+  const csvRows = useMemo(
+    () => (csvShown ? parseCsv(body, /\.tsv$/i.test(path) ? '\t' : undefined) : null),
+    [csvShown, body, path],
+  )
+  const tableRows = sheet ? sheet.rows : csvRows
   // 只有阅读代码时才拆行、高亮：编辑时每敲一个字 body 都会变，在这里整份重新高亮，大文件打一个字就卡一下
-  const codeShown = !editing && !mdPreview
+  const codeShown = isText && !editing && !mdPreview && !treeShown && !csvShown
   const lines = useMemo(() => (codeShown && body ? body.split('\n') : []), [codeShown, body])
   // 整份高亮在后台线程算，算好之前先按纯文本显示；截断的文件、二进制都不用高亮：不是完整内容，或者根本不是代码
-  const highlighted = useHighlightedLines(body, path, codeShown && !!file?.exists && !file.binary && !file.truncated)
+  const highlighted = useHighlightedLines(body, path, codeShown && !file?.truncated)
 
-  // 弹窗自己的搜索：阅读代码和编辑在文字里找，Markdown 阅读在渲染好的文档里找
+  // 弹窗自己的搜索：阅读代码和编辑在文字里找，Markdown 阅读和 JSON 树形在画出来的字里找，表格按格子找
   const search = useFileSearch()
   const textSearch = search.open && !!search.query && (codeShown || editing)
   const hits = useMemo(
@@ -143,15 +168,20 @@ export function FileViewDialog({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
     [hitIndex, search.seq, !!marks],
   )
+  const domShown = (mdPreview && !editing) || treeShown
   const domTotal = useDomSearch(
     box,
     search.query,
     search.caseSensitive,
     search.index,
     search.seq,
-    search.open && mdPreview && !editing,
+    search.open && domShown,
   )
-  const total = mdPreview && !editing ? domTotal : hits.length
+  const cellHits = useMemo(
+    () => (search.open && tableRows ? findCells(tableRows, search.query, search.caseSensitive) : []),
+    [search.open, tableRows, search.query, search.caseSensitive],
+  )
+  const total = tableRows ? cellHits.length : domShown ? domTotal : hits.length
   const size = typeof file?.size === 'number' ? sizeText(file.size) : ''
   const mtime = file?.mtime ? fmtClock(file.mtime) : ''
   const canDiff = !!source.diff && !!file?.exists && !file.binary && file.editable !== false
@@ -160,7 +190,7 @@ export function FileViewDialog({
 
   // Ctrl/Cmd+F 打开弹窗自己的搜索（代码是虚拟渲染的，浏览器自带的查找搜不到屏幕外的行）；F3 / Shift+F3 上一个下一个
   useEffect(() => {
-    if (!textOpen || !file?.exists || file.binary) return
+    if (!textOpen || !viewable) return
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
@@ -219,7 +249,7 @@ export function FileViewDialog({
         }}
         className={cn(
           // 只有一句说明（找不到、二进制、出错）时弹窗按内容高度，不撑满
-          editing || !file || body ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
+          editing || !file || body || sheets ? 'h-[min(760px,calc(100dvh-3.75rem))] max-w-[1000px]' : 'max-w-[560px]',
         )}
       >
         <ModalHeader
@@ -242,14 +272,14 @@ export function FileViewDialog({
                   {mtime && <span title={t('最后修改')}>{mtime}</span>}
                 </span>
               )}
-              {canEdit && <FileModeBar ed={ed} />}
+              {isText && (
+                <FileModeBar ed={ed} canEdit={canEdit} tree={isJson} readLabel={isCsv ? t('表格') : undefined} />
+              )}
             </>
           }
           actions={
             <>
-              {file?.exists && !file.binary && (
-                <ModalButton icon={Search} label={t('在文件中查找')} onClick={() => search.show()} />
-              )}
+              {viewable && <ModalButton icon={Search} label={t('在文件中查找')} onClick={() => search.show()} />}
               <ModalButton
                 icon={Copy}
                 label={t('复制路径')}
@@ -270,7 +300,10 @@ export function FileViewDialog({
         {ed.saveError && (
           <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{ed.saveError}</p>
         )}
-        {file?.exists && !file.binary && <FileSearchBar search={search} total={total} onClose={search.close} />}
+        {viewable && <FileSearchBar search={search} total={total} onClose={search.close} />}
+        {sheets && sheets.length > 1 && (
+          <SheetTabs sheets={sheets} index={Math.min(sheetIndex, sheets.length - 1)} onChange={setSheetIndex} />
+        )}
         {/* Markdown 阅读时右边是标题目录，编辑源码时不要 */}
         <DialogScroll box={box} aside={mdPreview && !editing && <DocOutline scrollEl={box} className="bottom-7" />}>
           {error ? (
@@ -281,6 +314,8 @@ export function FileViewDialog({
             </div>
           ) : !file.exists ? (
             <p className="p-6 text-body text-subtle">{source.missingText}</p>
+          ) : sheet ? (
+            <SheetTable rows={sheet.rows} scrollEl={box} hits={cellHits} current={search.index} seq={search.seq} />
           ) : file.binary ? (
             <p className="p-6 text-body text-subtle">{source.binaryText}</p>
           ) : editing ? (
@@ -306,6 +341,16 @@ export function FileViewDialog({
             <div className={cn('mx-auto max-w-[860px] px-8 py-6', shown.length > MD_LAZY && 'file-md-lazy')}>
               <Markdown text={shown} teamNames={NO_TEAM} />
             </div>
+          ) : csvRows ? (
+            <SheetTable rows={csvRows} scrollEl={box} hits={cellHits} current={search.index} seq={search.seq} />
+          ) : treeShown ? (
+            <JsonTree
+              text={shown}
+              path={path}
+              truncated={file.truncated}
+              query={search.open ? search.query : ''}
+              caseSensitive={search.caseSensitive}
+            />
           ) : (
             <CodeLines
               lines={lines}
@@ -317,6 +362,11 @@ export function FileViewDialog({
             />
           )}
         </DialogScroll>
+        {sheet?.truncated && (
+          <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
+            {t('表格太大，只显示了前面一部分。完整内容请用表格软件打开。')}
+          </p>
+        )}
         {file?.truncated && (
           <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
             {t('文件太大，只显示了前面一部分。完整内容请在编辑器里查看。')}
