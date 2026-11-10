@@ -7,6 +7,7 @@ import { defaultSettings, migrateRemovedClis, migrateSettingsDefaults } from '..
 import { BROKEN_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 import { applyServerLang } from './lang.ts'
 import { setApiLimits } from './api-slots.ts'
+import { setEnabledPlugins } from '../shared/plugins/index.ts'
 
 const FILE = dataPath('settings.json')
 let cache: Settings | null = null
@@ -36,6 +37,7 @@ export async function getSettings(): Promise<Settings> {
     }
     cache = s
     setApiLimits(s.apis)
+    setEnabledPlugins(s.plugins)
     return cache
   }
   // JSON 没坏但字段不合法（手动改错、旧版本留下的值）：不能让每个依赖设置的接口都一直 500。
@@ -71,6 +73,7 @@ export async function saveSettings(s: Settings) {
   // 设置页保存时不带浏览器识别出的语言（那是页面另外回报的），沿用已有的，免得「自动」又退回系统语言
   s.browserLang ??= cache?.browserLang
   cache = s
+  setEnabledPlugins(s.plugins)
   applyServerLang(s.language, s.browserLang)
   // 并发上限调大或改成不限制：排着的对话和子任务马上放进去，不用等别人释放
   setApiLimits(s.apis)

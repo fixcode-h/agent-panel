@@ -93,7 +93,7 @@ export function activeHelpers(task: Task) {
 
 /**
  * 模型正在写一个工具调用（入参整段写完才会报调用）：转圈、写明在写哪个工具、写了多久。
- * 面板工具按对话里那一行的叫法（交修复方案、记 Bug 档案），设计、Blender 工具按 shared/tool-names.ts 的中文名，别家的工具照原名
+ * 面板工具按对话里那一行的叫法（交修复方案、记 Bug 档案），设计、插件的工具按 shared/tool-names.ts 的中文名，别家的工具照原名
  */
 function DraftRow({ tool, since, now }: { tool: string; since: string; now: number }) {
   const view = toolView({ kind: 'other', name: tool, label: '', detail: '' })

@@ -96,8 +96,8 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   // 面板工具（提问、派子任务、新建子对话）同理：CLI 拿着这一轮的随机地址来调，没有 Cookie，
   // 拦下来 CLI 就一个面板工具都没有了；地址不对的由接口自己回 404
   if (c.req.path.startsWith('/api/mcp/ask/')) return next()
-  // Blender 建模工具同理：地址里是这一轮的随机令牌，接口自己核对（以前漏了，开令牌后 Blender 工具一律 401）
-  if (c.req.path.startsWith('/api/mcp/blender/')) return next()
+  // 插件给 Agent 的工具同理：地址里是这一轮的随机令牌，接口自己核对（以前 Blender 工具漏了，开令牌后一律 401）
+  if (c.req.path.startsWith('/api/plugins/mcp/')) return next()
   // 浏览器扩展拿不到面板的 Cookie：它带的是配对令牌（index.ts 里再核对来源、本机和令牌）
   if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
     return next()

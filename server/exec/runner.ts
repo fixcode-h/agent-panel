@@ -28,6 +28,7 @@ import {
   sessionMoved,
   stepUsage,
   withAttachments,
+  taskPlugin,
   withTaskModel,
 } from '../../shared/task.ts'
 
@@ -118,8 +119,7 @@ import { autoAllowed, requestOf } from './ask-request.ts'
 
 import { orchHint } from '../orch-mcp.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
-import { openBlenderSession } from '../blender-mcp.ts'
-import { MODEL_HINT } from '../../shared/blender.ts'
+import { pluginToolsForRun } from '../plugins/index.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
 import { experiencePrompt } from '../../shared/experience.ts'
 import { readGlobalLessons } from '../lessons.ts'
@@ -1345,9 +1345,19 @@ async function runAgent(
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
-  // 模型对话（ADR 0025）：挂上 Blender 工具，新会话的提示词里说明怎么用；令牌只在这一轮有效
-  const blender = task.modelDesign && def.mcp && !op ? openBlenderSession(task.id) : undefined
-  if (blender && !resume) input = `${input}\n\n${MODEL_HINT}`
+  // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂，新会话的提示词里说明怎么用；令牌只在这一轮有效
+  const plugins =
+    def.mcp && !op
+      ? await pluginToolsForRun({
+          taskId: task.id,
+          parentTaskId: task.parentTaskId,
+          pluginTask: taskPlugin(task),
+          agentName: agent.name,
+          skills: [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
+          resume: !!resume,
+        })
+      : undefined
+  if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {
       cli: def.name,
@@ -1391,7 +1401,7 @@ async function runAgent(
     },
   })
   const r = await invokeCli({
-    mcp: blender ? [{ name: 'blender', url: blender.url }] : undefined,
+    mcp: plugins?.servers.length ? plugins.servers : undefined,
     cliId,
     command: cs.command,
     build,
@@ -1471,7 +1481,7 @@ async function runAgent(
     finished = true
     drafting.clear()
     if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
-    blender?.close()
+    plugins?.close()
     watch.stop()
     clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)

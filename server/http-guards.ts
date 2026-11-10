@@ -4,13 +4,15 @@ import { t } from '../shared/i18n.ts'
 
 /** 本地安装包上传：请求体就是安装包本身，不是 JSON */
 const LOCAL_PACKAGE = '/api/app/local-package'
+/** 插件 zip 上传（ADR 0059）：请求体也是文件本身 */
+const PLUGIN_ZIP = '/api/plugins/install/zip'
 
 /**
- * 写操作一般必须是 JSON（防跨站的简单请求，见 index.ts）。安装包上传例外，用 application/octet-stream：
+ * 写操作一般必须是 JSON（防跨站的简单请求，见 index.ts）。安装包、插件包上传例外，用 application/octet-stream：
  * 它不在 CORS 允许的简单请求类型里，跨站发送一样要先预检，面板不回允许头，照样发不过来
  */
 export const rawUploadAllowed = (p: string, type = '') =>
-  p === LOCAL_PACKAGE && /^application\/octet-stream\b/i.test(type)
+  (p === LOCAL_PACKAGE || p === PLUGIN_ZIP) && /^application\/octet-stream\b/i.test(type)
 
 /** 所有响应都要有的防护：防嵌套、请求体上限。从 index.ts 拆出来，那边只留路由装配 */
 export function installHttpGuards(app: Hono) {

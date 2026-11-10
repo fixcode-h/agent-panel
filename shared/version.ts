@@ -156,3 +156,29 @@ export function pickUpdate(current: string, releases: AppRelease[]) {
     .filter((r) => (cur.dev || !r.prerelease) && compareVersions(r.version, current) > 0)
     .sort((a, b) => compareVersions(b.version, a.version))[0]
 }
+
+/**
+ * 面板里显示的「这一版改了什么」：去掉 Release 说明开头的「## Agent 面板 vX 更新」和「### 下载」及之后的安装说明，
+ * 只留新功能 / 改进 / 修复这几节；整段都没有（老版本的说明格式不同）时原样返回
+ */
+export function releaseChanges(notes: string) {
+  let text = notes.replace(/\r\n/g, '\n')
+  const cut = text.search(/^###\s*下载\s*$/m)
+  if (cut >= 0) text = text.slice(0, cut)
+  text = text.replace(/^##\s+Agent 面板\s+v\S+.*\n/, '').trim()
+  return text || notes.trim()
+}
+
+/**
+ * 从当前版本升到 target 会经过哪些版本（不含当前、含 target），新的在前：
+ * 有新版本时把中间每一版的改动都列出来，跳过几版更新也不会漏看。正式版只算正式版，预览版全算
+ */
+export function releasesSince(releases: AppRelease[], current: string, target: AppRelease) {
+  const pre = !!parseVersion(current)?.dev
+  return releases.filter(
+    (r) =>
+      (pre || !r.prerelease) &&
+      compareVersions(r.version, current) > 0 &&
+      compareVersions(r.version, target.version) <= 0,
+  )
+}

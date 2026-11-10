@@ -28,7 +28,7 @@ export interface BuiltinAgent {
 export type BuiltinMount = Omit<AgentMount, 'agentId' | 'preload' | 'rule' | 'params'> &
   Partial<Pick<AgentMount, 'preload' | 'rule' | 'params'>> & { key: string }
 
-const p = (o: Partial<AgentParam> & Pick<AgentParam, 'key' | 'label'>): AgentParam => ({
+export const p = (o: Partial<AgentParam> & Pick<AgentParam, 'key' | 'label'>): AgentParam => ({
   type: 'select',
   options: [],
   ask: false,
@@ -125,14 +125,14 @@ export const DESIGN_BRIEF_TEXT = `### 方案摘要（按这几节写，缺的写
 8. 待确认：要用户拍板的问题，每个给推荐答案和理由。`
 
 /** 交结论只认 submit_verdict 工具调用（ADR 0041 第 16 节）：面板不按回复里写了什么判定通过与否 */
-const VERDICT_TOOL_TEXT = `最后调用面板工具 submit_verdict 交结论：通过写 verdict: "pass"；不通过写 "fail"，并在 blockers 里逐条列出失败项（id 写 F1、F2…，text 写失败的是什么、证据和该怎么改，must 写 true）。面板只认这次工具调用，不读回复里的文字：没交会被追问一次，还没交就按出错停下。`
+export const VERDICT_TOOL_TEXT = `最后调用面板工具 submit_verdict 交结论：通过写 verdict: "pass"；不通过写 "fail"，并在 blockers 里逐条列出失败项（id 写 F1、F2…，text 写失败的是什么、证据和该怎么改，must 写 true）。面板只认这次工具调用，不读回复里的文字：没交会被追问一次，还没交就按出错停下。`
 
 const MODULE_DOC_LOOKUP = `先读文档根的 \`MODULE-MAP.md\`（本项目即 \`docs/MODULE-MAP.md\`）定位目标属于哪个模块，拿到它的路径、职责、入口和模块文档链接；再看文档根下的 \`modules/<模块>/README.md\`（本项目即 \`docs/modules/<模块>/README.md\`）在不在，在就先读（职责、入口、关键文件、数据流、已知问题）把它当起点，只补它没写的、纠正它写错的，不重复它写清的内容。地图里没有这个模块（还没写文档）时看一、二级目录和构建文件定位入口，不做无目标的全局搜索；文档和实现不一致时以代码为准，在结果或评审意见里指出哪条文档过期、正确内容是什么。`
 
 /** 只读的角色读明白了一个模块：要点交回，由「文档」写（模块文档只有一个出口，ADR 0048） */
 const MODULE_DOC_HANDBACK = `读明白了一个还没有模块文档的模块、或者发现模块文档过期时，不要自己写文档：在结果里单列一节「建议补模块文档」，写模块名、职责一句话、源码路径、入口、关键文件和这次的关键词，派你的一方会交给「文档」照着写。`
 
-const base = (
+export const base = (
   key: string,
   category: string,
   {
@@ -1515,41 +1515,6 @@ ${VCS_TEXT}
 {{/if}}`,
   }),
 
-  // ── 美术 ──
-  base('blender', '美术', {
-    name: 'Blender 建模',
-    description: '无头 Blender 分件建模、装配、动画、减面和导出 UE；「质检」阶段只做体检和多视角对照，不改模型',
-    icon: 'wand',
-    model: '@high',
-    skills: ['blender-model-animation-workflow', 'blender'],
-    params: [
-      p({
-        key: 'stage',
-        label: '阶段',
-        options: ['解析与规格', '分件建模', '装配到减面', '装配与材质', '动画', '减面', '质检', '导出 UE'],
-        default: '分件建模',
-      }),
-    ],
-    instructions: `你按 blender-model-animation-workflow 的阶段和 blender 技能的脚本、门禁工作，以参考图的实际内容为准。
-
-当前阶段：{{stage}}。
-{{#if stage=解析与规格}}用 reference_frames.py 解析参考，确定交付用途、尺寸锚点（米）、可见和需要补全的部分，写出部件清单、GRP_* 根 Empty、局部原点和轴、命名规则。{{/if}}
-{{#if stage=分件建模}}每个部件走「单件脚本 → 单件预览 / 体检 → 精修」，和参考裁切并排对照。{{/if}}
-{{#if stage=装配与材质|装配到减面}}按模块契约装配，处理材质和 UV，确认每个 GRP_* 能整体平移和恢复。{{/if}}
-{{#if stage=动画|装配到减面}}用控制器驱动动画，Action 命名 A_*，30fps。{{/if}}
-{{#if stage=减面|装配到减面}}保留基线，在相同条件下对照，质量退化就恢复。{{/if}}
-{{#if stage=质检}}
-这一阶段只做质检，不修改模型：
-1. 运行 inspect_scene.py 体检，FAIL 项必须列出。
-2. 相交诊断并分类（预期的贴合 / 需要修的穿插）。
-3. capture_views 出至少 6 个视角，并和参考图并排对照；有动画时加 --frames 多帧检查。
-4. 重新打开 .blend，平移再恢复每个 GRP_*，证明可以拆分。
-逐条给出结果和截图路径。有 FAIL 或明显偏离参考时按不通过交，否则按通过交。${VERDICT_TOOL_TEXT}
-{{/if}}
-{{#if stage=导出 UE}}用 export_ue.py 导出 FBX：模型到 Asset/Mesh/，动画到 Asset/Anim/，并更新 <型号>/制作进度.md。{{/if}}
-
-每步都要有截图或体检结果作为证据，不能只凭单个视角下结论。`,
-  }),
   // Chat 类（只在 Chat 页用）的「聊天约束」和必备的「助手」：正文在 ./chat-agents.ts（ADR 0038）
   ...CHAT_AGENTS,
 ]

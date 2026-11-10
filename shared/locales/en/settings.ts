@@ -312,6 +312,8 @@ export const EN_SETTINGS: Record<string, string> = {
   正式版: 'Stable',
   '没有更新说明。': 'No release notes.',
   查看更新说明: 'View release notes',
+  本版更新内容: "What's new in this version",
+  新版本更新内容: "What's new",
   当前: 'Current',
   '下载 zip 包（约 {size}）': 'Download zip (about {size})',
   '下载 zip 包': 'Download zip',
@@ -1540,11 +1542,6 @@ export const EN_SETTINGS: Record<string, string> = {
   关闭页签: 'Close tab',
   向左滚动: 'Scroll left',
   向右滚动: 'Scroll right',
-  '模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。':
-    'In model conversations the Agent builds in Blender and the page previews it live on the right. The panel runs Blender in the background without a window.',
-  'Blender 路径': 'Blender path',
-  检测结果: 'Detection',
-  建模: 'Modeling',
   读到的模型: 'Models found',
   编辑或预览: 'Edit or preview',
   进度: 'Progress',
@@ -1557,8 +1554,6 @@ export const EN_SETTINGS: Record<string, string> = {
   整页: 'Page',
   小节: 'Section',
   // 设置页改版（2026-10-31）：精简后的名字、一行说明和问号里的详细说明
-  留空时自动查找: 'Searched automatically when left empty',
-  '在 PATH 和常见安装位置里找。': 'Looks in PATH and common install locations.',
   '浏览器登录的账号，可存几个随时切换': 'Signed-in browser account; save several and switch anytime',
   '用「API 配置」里的接口地址和密钥': 'Uses the URL and key from API settings',
   '支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取。':

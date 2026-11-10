@@ -1,5 +1,5 @@
 # 出包：只在推送到 main（收尾合并主干时）时运行，dev 分支不会触发。
-# 先跑和 dev 一样的检查（ci.yml），通过后出包并发布正式版（Latest），标签 v<主>.<次>.<提交数>。
+# 先跑和 dev 一样的检查（ci.yml），通过后出包并发布正式版（Latest），标签 v<主>.<次>.<修订号>，修订号在同一主、次版本下逐个 +1（scripts/next-version.mjs）。
 # 包里是正式版前端 + 打成单文件的服务端，不含在线演示的模拟后端。
 name: 出包
 
@@ -42,10 +42,8 @@ jobs:
         run: node scripts/test-budget.mjs --report --since auto | tee -a "$GITHUB_STEP_SUMMARY"
       - name: 计算版本号
         id: ver
-        run: |
-          base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
-          count=$(git rev-list --count HEAD)
-          echo "version=${base}.${count}" >> "$GITHUB_OUTPUT"
+        # 上一个正式版标签的修订号 + 1（要靠上面 fetch-depth: 0 带下来的标签）；以前用提交数，两版之间一跳好几个号
+        run: echo "version=$(node scripts/next-version.mjs)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tray

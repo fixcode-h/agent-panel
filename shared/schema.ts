@@ -1120,8 +1120,8 @@ export const NewTaskInput = z.object({
   analysis: AnalysisKind.optional(),
   /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」把修复建议发回它）；和对话无关的分析不填 */
   analysisOf: z.string().max(100).optional(),
-  /** 模型设计对话：挂上 Blender 工具，右栏多一个 3D 预览（见 docs/adr/0025-model-design-blender.md） */
-  modelDesign: z.boolean().optional(),
+  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填 */
+  plugin: z.string().max(80).optional(),
   /**
    * 执行上限（定时计划带的）：token 上限和时长上限（分钟）。
    * 0 表示不限；计划里的值在创建对话时落进任务，之后改计划不影响已经启动的对话
@@ -1894,7 +1894,9 @@ export const TaskData = z.object({
   analysis: AnalysisKind.optional(),
   /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」发回它）；旧数据、和对话无关的分析没有 */
   analysisOf: z.string().optional(),
-  /** 模型设计对话：后台有一个 Blender，Agent 用 blender_python 工具建模，网页右栏实时预览（ADR 0025） */
+  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填，读法见 taskPlugin */
+  plugin: z.string().optional(),
+  /** 旧版的模型设计对话（ADR 0025，现在是 Blender 插件的 blender.model），只读不写 */
   modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
@@ -2534,8 +2536,23 @@ export const Settings = z.object({
     }),
   /** UI 设计照原画还原的门槛：位置差几像素算对上、对上的要占多少、切图相似度至少多少 */
   designRestore: RestoreThresholds.prefault({}),
-  /** 模型设计用的 Blender（见 docs/adr/0025-model-design-blender.md）：可执行文件；空时按 PATH 和常见安装位置找 */
-  blender: z.object({ path: z.string().trim().default('') }).prefault({}),
+  /**
+   * 插件（ADR 0059）：插件 id → 开没开、参数。没有记录 = 关。参数按插件清单里的声明取默认值和校验（shared/plugins）。
+   * 老设置里的 blender.path 在解析前搬进 plugins.blender.config.blenderPath（shared/settings.ts）
+   */
+  plugins: z
+    .record(
+      z.string(),
+      z.object({
+        enabled: z.boolean().default(false),
+        config: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .catch({})
+          .default({}),
+      }),
+    )
+    .catch({})
+    .default({}),
   /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */
   modelCatalog: z
     .object({

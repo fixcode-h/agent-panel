@@ -1,0 +1,71 @@
+/** 英文词典的一部分，键是中文原文：插件系统（设置 →「插件」、插件的设计模式页，ADR 0059） */
+export const EN_PLUGINS: Record<string, string> = {
+  扩展: 'Extensions',
+  插件没有打开: 'Plugin is not enabled',
+  找不到这个对话: 'Conversation not found',
+  '这类设计来自插件，插件关掉或删除后就没有了。到设置 →「插件」里打开。':
+    'This kind of design comes from a plugin and goes away when the plugin is turned off or removed. Turn it on in Settings → Plugins.',
+  '压缩包 · {name}': 'Zip · {name}',
+  '本机目录 · {dir}': 'Local folder · {dir}',
+  插件参数已保存: 'Plugin settings saved',
+  '对应环境变量 {env}': 'Environment variable {env}',
+  保存参数: 'Save settings',
+  '插件启动失败：{error}': 'Plugin failed to start: {error}',
+  '已删除插件 {name}，保留了 {n} 个改过或在用的副本': 'Removed plugin {name}; kept {n} edited or in-use copies',
+  '已删除插件 {name}': 'Removed plugin {name}',
+  '正在统计会清掉的内容…': 'Checking what will be cleaned up…',
+  '会删掉没改过、没人用的副本（先备份）：{list}': 'Unedited, unused copies will be deleted (backed up first): {list}',
+  '本机没有要清掉的角色和工作流副本。': 'No role or workflow copies to clean up.',
+  '下面这些会保留：': 'These will be kept:',
+  含代码: 'Runs code',
+  已开启: 'On',
+  '上游 {name} {version}（{license}）': 'Upstream {name} {version} ({license})',
+  '关掉插件 {name}': 'Turn off plugin {name}',
+  '打开插件 {name}': 'Turn on plugin {name}',
+  '删除插件 {name}': 'Remove plugin {name}',
+  '关掉后保留了这些副本：': 'Kept these copies after turning it off:',
+  '关掉插件「{name}」？': 'Turn off plugin “{name}”?',
+  关掉: 'Turn off',
+  '会停掉它的后台和工具，对话里不再挂它的工具，它装的没改过的技能也一起删掉。':
+    'Its background service and tools stop, conversations no longer get its tools, and the unedited skills it installed are removed.',
+  '删除插件「{name}」？': 'Remove plugin “{name}”?',
+  '插件目录、插件自己的数据和它的参数都会删掉，以后可以从插件市场或压缩包重新安装。面板的其他功能不受影响。':
+    'The plugin folder, its own data and its settings are deleted. You can reinstall it later from the marketplace or a zip. Nothing else in the panel is affected.',
+  '插件给面板加上一组能力（工具、技能、角色、工作流、页面），装在数据目录里，可以随时关掉或删除，删掉后面板其他功能不受影响。':
+    'Plugins add a set of capabilities (tools, skills, roles, workflows, pages). They live in the data folder and can be turned off or removed at any time without affecting the rest of the panel.',
+  '还没有安装插件。从下面的插件市场挑一个，或者上传插件压缩包。':
+    'No plugins installed yet. Pick one from the marketplace below or upload a plugin zip.',
+  插件仓库: 'Plugin repository',
+  'GitHub 仓库（owner/repo）。仓库根上的 plugins.json 列出里面的插件；没有的话整个仓库当作一个插件。':
+    'A GitHub repository (owner/repo). plugins.json at its root lists the plugins in it; without one, the whole repository is treated as a single plugin.',
+  '这个仓库没有插件目录，可以直接把整个仓库当作插件安装。':
+    'This repository has no plugin list; you can install the whole repository as one plugin.',
+  '更新到 {v}': 'Update to {v}',
+  '这个仓库的插件目录是空的。': 'This repository’s plugin list is empty.',
+  其他安装方式: 'Other ways to install',
+  安装方式: 'Install from',
+  上传压缩包: 'Upload zip',
+  '本机目录（开发）': 'Local folder (development)',
+  '选择 .zip': 'Choose .zip',
+  '包的根目录（或唯一的子目录）里要有 plugin.json': 'The zip root (or its only subfolder) must contain plugin.json',
+  插件目录: 'Plugin folder',
+  '链接本机的插件构建目录，不复制：重新构建后关掉再打开插件就生效。':
+    'Links a local plugin build folder without copying it: after rebuilding, turn the plugin off and on again.',
+  '已更新插件 {name}': 'Updated plugin {name}',
+  '已安装插件 {name}，打开开关后生效': 'Installed plugin {name}; turn it on to use it',
+  更新插件: 'Update plugin',
+  安装插件: 'Install plugin',
+  '作者：{name}': 'Author: {name}',
+  '已经装着 v{v}：会换成这个版本，参数保留。':
+    'v{v} is installed: it will be replaced with this version and its settings kept.',
+  '这个插件带代码，打开后会在本机以面板的权限运行（读写文件、启动程序、联网）。只安装你信任的来源。':
+    'This plugin contains code. Once turned on it runs on this computer with the panel’s permissions (reading and writing files, starting programs, network access). Only install plugins from sources you trust.',
+  '角色：{list}': 'Roles: {list}',
+  '工作流：{list}': 'Workflows: {list}',
+  '技能：{list}': 'Skills: {list}',
+  '给 Agent 的工具服务：{list}': 'Tool servers for agents: {list}',
+  '在线演示不能安装插件，要在本机运行面板': 'Plugins can’t be installed in the online demo; run the panel locally',
+  '在用：{list}': 'In use: {list}',
+  改过: 'Edited',
+  在用: 'In use',
+}

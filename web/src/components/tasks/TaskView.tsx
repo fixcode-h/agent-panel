@@ -150,6 +150,7 @@ import {
 } from '@/lib/ai-window'
 
 import { RunChecklist, FlowBar, WorktreeBar, ChatTurn, PendingReply, ChatWaitLine, RunPhase } from './TaskViewParts'
+import { useTaskTabs } from '@/plugins/registry'
 import { blockMsgIds, toBlocks, type Block } from './task-blocks'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
@@ -1166,6 +1167,8 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task])
 
+  // 插件给这个对话的右栏页签（ADR 0059）：放在提前返回之前，hook 每次渲染都要调到
+  const pluginTabs = useTaskTabs(task ?? undefined)
   if (!task)
     return (
       <main className={cn('flex flex-1 items-center justify-center text-subtle', !pane && !embed && 'panel')}>
@@ -1198,16 +1201,17 @@ export function TaskView({
   const chatRailW = Math.min(420, rowW * 0.4)
   const sideW = reportOn ? reportPane.width : chatRailWanted ? chatRailW : taskPanel.width
   const sideWanted = reportOn || childOn || (!filesFolded && !noFiles) || chatRailWanted
+  const pluginHome = pluginTabs.some((x) => x.home)
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =
     sessionAllowed &&
     sessionOpen &&
     sessionFits &&
-    // 模型设计对话：右栏是 3D 预览（「模型」页签），放不下时会话栏让开，不让预览被挤掉
+    // 插件右栏页签标了 home 的对话（例如模型设计的 3D 预览）：放不下时会话栏让开，不让预览被挤掉
     (bothFit ||
       !sideWanted ||
-      (lastRail !== 'files' && !reportOn && !task.modelDesign && !(chatRailWanted && lastRail === 'auto')))
+      (lastRail !== 'files' && !reportOn && !pluginHome && !(chatRailWanted && lastRail === 'auto')))
   const filesYield = !reportOn && !childOn && !filesFolded && sessionShown && !bothFit
   // 放不下时 Chat 右栏和文件栏一样给会话栏让开（后打开的那个留着）
   const chatRailShown = chatRailWanted && !(sessionShown && !bothFit)

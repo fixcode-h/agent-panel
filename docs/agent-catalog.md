@@ -86,7 +86,6 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `i18n`         | 本地化           | 界面文案翻译与漏翻                                  |      | —（执行默认挂成自动判断）                                            | `mode`（补翻译 / 查漏翻 / 整体校对）`langs`                                                      |
 | `deps`         | 依赖与安全       | 依赖体检与升级                                      |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                                   |
 | `vcs`          | 版本控制（必备） | 版本控制与交付收尾                                  | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                                    |
-| `blender`      | Blender 建模     | 建模、动画与质检                                    |      | blender                                                              | `stage`（含「质检」）                                                                            |
 | `worklog`      | 每日工作总结     | 按天 / 按周提炼需求和 Bug（只读），工作总结页也用它 |      | general                                                              | `material` `day` `projects`                                                                      |
 
 `worklog`（每日工作总结）是唯一只输出报告的角色：`docsync` 负责写文档、`explorer` 只读调研代码、`orchestrator` 负责调度，
@@ -153,20 +152,20 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
    旧对话、旧快照里的引用读出来时按它改写（`setAgentAliases`）。
 3. 用户改过的、还被用着的保留，简介后面补一句合并说明。
 
-| 旧 key         | 合并到      | 参数换算                                          | 原因                                         |
-| -------------- | ----------- | ------------------------------------------------- | -------------------------------------------- |
-| `verifier`     | `tester`    | —                                                 | 「跑验证 + 给验收结论」和测试 Agent 完全重合 |
-| `projecttest`  | `tester`    | —                                                 | 只是换了个名字的测试 Agent                   |
-| `ueintegrator` | `tester`    | —                                                 | 编译只是项目测试步骤里的一条                 |
-| `docs`         | `docsync`   | —                                                 | 和 `docsync` 逐字重复，只差一个用途          |
-| `deliver`      | `vcs`       | —                                                 | 和 `vcs` 逐字重复，推送授权说明已并入        |
-| `researcher`   | `explorer`  | `target=外部资料`                                 | 只读查资料和只读查代码是同一个能力块         |
-| `impact`       | `explorer`  | `target=影响面`                                   | 影响面分析就是带范围的只读调研               |
-| `uescout`      | `explorer`  | `target=影响面` `stack=ue`（`focus` 原样保留）    | UE 侦察只是技术栈不同                        |
-| `second`       | `reviewer`  | `target=方案或结论`                               | 复核结论和评审改动都是「独立找错」           |
-| `architect`    | `analyst`   | `scale=architectural`（`stack` 原样保留）         | 架构方案是方案设计的一个规模档               |
-| `debugger`     | `developer` | `focus=性能问题` → `task=性能问题`，否则 `修 Bug` | 修 Bug、查性能和实现都是写代码               |
-| `blenderqa`    | `blender`   | `stage=质检`                                      | 质检是建模流程里的一个阶段                   |
+| 旧 key         | 合并到      | 参数换算                                          | 原因                                                             |
+| -------------- | ----------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `verifier`     | `tester`    | —                                                 | 「跑验证 + 给验收结论」和测试 Agent 完全重合                     |
+| `projecttest`  | `tester`    | —                                                 | 只是换了个名字的测试 Agent                                       |
+| `ueintegrator` | `tester`    | —                                                 | 编译只是项目测试步骤里的一条                                     |
+| `docs`         | `docsync`   | —                                                 | 和 `docsync` 逐字重复，只差一个用途                              |
+| `deliver`      | `vcs`       | —                                                 | 和 `vcs` 逐字重复，推送授权说明已并入                            |
+| `researcher`   | `explorer`  | `target=外部资料`                                 | 只读查资料和只读查代码是同一个能力块                             |
+| `impact`       | `explorer`  | `target=影响面`                                   | 影响面分析就是带范围的只读调研                                   |
+| `uescout`      | `explorer`  | `target=影响面` `stack=ue`（`focus` 原样保留）    | UE 侦察只是技术栈不同                                            |
+| `second`       | `reviewer`  | `target=方案或结论`                               | 复核结论和评审改动都是「独立找错」                               |
+| `architect`    | `analyst`   | `scale=architectural`（`stack` 原样保留）         | 架构方案是方案设计的一个规模档                                   |
+| `debugger`     | `developer` | `focus=性能问题` → `task=性能问题`，否则 `修 Bug` | 修 Bug、查性能和实现都是写代码                                   |
+| `blenderqa`    | `blender`   | `stage=质检`                                      | 质检是建模流程里的一个阶段（Blender 插件打开时才合并，ADR 0059） |
 
 ## 工作流清单
 
@@ -201,7 +200,6 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                   |
 | `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                             |
 | `release`         | 发布与回滚           | 出包前的范围、产物验证和回滚预案       | `vcs`          | vcs（发布范围）→ tester（产物验证）→ docsync（发布说明 + 回滚）；发布由父对话做        |
-| `blender`         | Blender 建模与动画   | 可拆分模型、动画、导出 UE              | `blender`      | blender 按阶段：规格 → 建模 → 装配到减面 → 质检 → 导出                                 |
 
 ### 已合并的工作流
 

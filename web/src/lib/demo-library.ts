@@ -187,7 +187,7 @@ const bundledOf = (name: string) => {
 const installedBundled = new Map<string, BundledSkill['status'][string]>([
   // 预置两条和自带不一样的，演示版里才看得到「更新全部」的效果
   ['brainstorming', 'changed'],
-  ['blender', 'changed'],
+  ['systematic-debugging', 'changed'],
 ])
 function bundledList(): BundledSkill[] {
   return Object.entries(BUNDLED)

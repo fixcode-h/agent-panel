@@ -52,8 +52,7 @@ import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
-import { blenderMcpApi } from './blender-mcp.ts'
-import { blenderApi } from './blender.ts'
+import { cleanupDisabledPlugins, initPlugins, pluginsApi } from './plugins/index.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import {
   askExtensionReload,
@@ -133,6 +132,7 @@ import {
   redirectWorkflowRefs,
   retiredWorkflows,
   seedProjectWorkflows,
+  type BuiltinOps,
 } from '../shared/builtin/install.ts'
 import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
@@ -229,26 +229,33 @@ for (const w of await workflows.list()) {
  * 自带工作流启动时默认全部加入（装过一次、后来被删掉的不再装回来，「通用项目」「UE 项目」缺了就补），
  * 旧项目没指定工作流的指向「通用项目」，之后改项目设置也不影响已经开始的对话（任务里存了快照）。
  */
+const builtinState = async () => ({
+  agents: await agents.list(),
+  categories: await categories.list(),
+  tags: await tags.list(),
+  workflows: await workflows.list(),
+})
+const builtinOps: BuiltinOps = {
+  createAgent: (input) => agents.create(input),
+  createCategory: (name, scope) => categories.create({ name, scope }),
+  createTag: (input) => tags.create(input),
+  createWorkflow: (input) => workflows.create(input),
+  updateWorkflow: (id, input) => workflows.update(id, input),
+  updateAgent: (id, input) => agents.update(id, input),
+}
 async function ensureProjectWorkflows() {
+  // 插件（ADR 0059）先读进来：开着的插件带的角色和工作流算进内置列表，下面一起安装、升级
+  await initPlugins({
+    state: builtinState,
+    projects: () => projects.list(),
+    categories: () => projectCategories.list(),
+    ops: builtinOps,
+    deleteAgent: (id) => agents.remove(id),
+    deleteWorkflow: (id) => workflows.remove(id),
+  })
   await removeLegacyDefaultAgent()
   const before = await loadSeededWorkflows()
-  const seeded = await seedProjectWorkflows(
-    {
-      agents: await agents.list(),
-      categories: await categories.list(),
-      tags: await tags.list(),
-      workflows: await workflows.list(),
-    },
-    {
-      createAgent: (input) => agents.create(input),
-      createCategory: (name, scope) => categories.create({ name, scope }),
-      createTag: (input) => tags.create(input),
-      createWorkflow: (input) => workflows.create(input),
-      updateWorkflow: (id, input) => workflows.update(id, input),
-      updateAgent: (id, input) => agents.update(id, input),
-    },
-    before,
-  )
+  const seeded = await seedProjectWorkflows(await builtinState(), builtinOps, before)
   if (seeded.seeded.join() !== before.join()) await saveSeededWorkflows(seeded.seeded)
   if (seeded.created.length) log.info('workflow', '已安装自带工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
@@ -260,23 +267,9 @@ async function ensureProjectWorkflows() {
   }
   await retireWorkflows()
   await pruneMerged()
+  await cleanupDisabledPlugins()
   // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
-  const projectAgents = await ensureProjectAgents(
-    {
-      agents: await agents.list(),
-      categories: await categories.list(),
-      tags: await tags.list(),
-      workflows: await workflows.list(),
-    },
-    {
-      createAgent: (input) => agents.create(input),
-      createCategory: (name, scope) => categories.create({ name, scope }),
-      createTag: (input) => tags.create(input),
-      createWorkflow: (input) => workflows.create(input),
-      updateWorkflow: (id, input) => workflows.update(id, input),
-      updateAgent: (id, input) => agents.update(id, input),
-    },
-  )
+  const projectAgents = await ensureProjectAgents(await builtinState(), builtinOps)
   if (projectAgents.created.length)
     log.info('agent', '已安装必备角色', { list: projectAgents.created.map((a) => a.name) })
   if (projectAgents.synced.length)
@@ -460,6 +453,8 @@ app.put('/settings', async (c) => {
   // 打开外网访问后本机也要令牌（见 auth.ts），同样先给这个浏览器发上
   if (p.data.requireToken || p.data.remoteAccess.enabled) grantCookie(c)
   const prev = await getSettings()
+  // 插件的开关和参数走插件接口（要装、清内容），设置页整份保存时不改它们
+  p.data.plugins = prev.plugins
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
   // 对话页切走后 CLI 还等多久、没人看的会话留几个：保存后立即生效，不用重启服务
@@ -1018,8 +1013,7 @@ app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
-app.route('/mcp', blenderMcpApi())
-app.route('/blender', blenderApi())
+app.route('/plugins', pluginsApi())
 app.route('/mcp', askMcpApi())
 const docs = docsApi({ projects, agents })
 app.route('/project-docs', docs.routes)

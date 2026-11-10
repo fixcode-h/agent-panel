@@ -95,8 +95,10 @@ test('不是压缩包、不是 Agent 面板的包、缺程序文件的都不装'
   await assert.rejects(inspectPackage(bad, stage(), 'linux'), /包里缺少 server\.mjs 或 dist/)
 })
 
-test('安装包上传只放行这一个接口的 octet-stream，别的写操作照样必须是 JSON', () => {
+test('安装包、插件包上传只放行这两个接口的 octet-stream，别的写操作照样必须是 JSON', () => {
   assert.equal(rawUploadAllowed('/api/app/local-package', 'application/octet-stream'), true)
+  assert.equal(rawUploadAllowed('/api/plugins/install/zip', 'application/octet-stream'), true)
+  assert.equal(rawUploadAllowed('/api/plugins/install/zip', 'application/zip'), false)
   assert.equal(rawUploadAllowed('/api/app/local-package', 'text/plain'), false)
   assert.equal(rawUploadAllowed('/api/app/install', 'application/octet-stream'), false)
 })

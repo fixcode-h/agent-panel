@@ -67,7 +67,24 @@ export function migrateRemovedClis(raw: unknown): boolean {
       }
     }
   }
-  return dirty
+  return migrateBlenderPath(raw) || dirty
+}
+
+/**
+ * 「设置 → 建模 → Blender」的路径搬进 Blender 插件的参数（ADR 0059）：只搬值，不替用户打开插件。
+ * 和上面的清理一样在解析前改原始对象（Settings 已经没有 blender 这一项，解析会把它丢掉）。幂等
+ */
+function migrateBlenderPath(raw: unknown): boolean {
+  const s = raw as { blender?: { path?: unknown }; plugins?: Record<string, { config?: Record<string, unknown> }> }
+  if (!s || typeof s !== 'object' || !s.blender || typeof s.blender !== 'object') return false
+  const old = typeof s.blender.path === 'string' ? s.blender.path.trim() : ''
+  delete s.blender
+  if (!old) return true
+  const plugins = (s.plugins ??= {})
+  const entry = (plugins.blender ??= {})
+  const config = (entry.config ??= {})
+  if (!config.blenderPath) config.blenderPath = old
+  return true
 }
 
 /**

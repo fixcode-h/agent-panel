@@ -7,8 +7,8 @@ import { ActionError, defineAction } from './registry.ts'
 /**
  * AI 能读能改的设置：白名单。只放外观、超时、上限这类改错了也只影响体验的字段。
  * 不放的：密钥（apis、clis 的环境变量、imageGen）、访问控制（remoteAccess、requireToken）、
- * 面板会执行的路径（blender.path、shell）、请求发去哪里（proxy、webhook、modelCatalog）。
- * 用黑名单时新加的密钥字段默认就漏给了 AI（以前的联网搜索密钥、blender.path 都这样漏过），所以新字段默认不可见
+ * 面板会执行的路径（插件参数 plugins 里的可执行文件路径、shell）、请求发去哪里（proxy、webhook、modelCatalog）。
+ * 用黑名单时新加的密钥字段默认就漏给了 AI（以前的联网搜索密钥、Blender 路径都这样漏过），所以新字段默认不可见
  */
 export const VISIBLE_SETTINGS = [
   'stepTimeoutMinutes',

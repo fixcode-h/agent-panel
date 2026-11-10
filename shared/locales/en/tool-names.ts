@@ -39,6 +39,4 @@ export const EN_TOOL_NAMES: Record<string, string> = {
   和模板对比: 'Compare with template',
   检查设计: 'Check design',
   // Blender 工具
-  '执行 Blender 脚本': 'Run Blender script',
-  查看场景: 'View scene',
 }
