@@ -29,6 +29,7 @@
    - `McpCallContext.confirm`：插件工具请用户确认，对话里出「允许 / 拒绝」卡片（复用面板请求卡片），停止对话或这一轮结束按拒绝返回。
    - 放弃：给插件整页单开一个模式（和 Agent / Chat / 设计并列）。插件页是工具页，不属于哪个模式，和角色、工作流页同级。
    - 网页 `host.hooks.useToChat`（2026-11-10 补，只加不改，不升接口版本）：把一段文字接进某个对话（或项目新建对话）的输入框草稿再打开它，不直接发送。插件按有没有这个钩子决定显不显示「发给对话」，旧面板上不显示。
+   - 整页管对话 `PluginPage.taskPlugin` 和 `host.ui.TaskComposer`（2026-11-10 补，只加不改，不升接口版本）：Blender 的模型设计从设计模式挪到图标栏的整页，新建不再选项目（对话 `projectId` 为空、`plugin = blender.model`，场景本来就在插件数据目录里）。`task.plugin` 等于某个整页 `taskPlugin` 的对话由那一页列出，Agent 项目和 Chat 列表都不列（`useOwnedByPlugin`）；按项目或聊天地址打开时转到 `#/plugin/<插件>/<页面>/<对话>`。整页里用面板的新建输入框（`TaskComposer standalone plugin`），旧面板没有时插件退回自己的文本框。
 
 ## 影响与风险
 

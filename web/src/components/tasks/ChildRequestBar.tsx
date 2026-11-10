@@ -27,7 +27,7 @@ function rowText(c: ChildSummary) {
 }
 
 /**
- * 子对话在等你确认：贴在输入框上方子对话栏的最前面，一个子对话一行（实测报告问题 1）。
+ * 子对话在等你确认：浮在输入框上方（对话页的 FloatAbove 里），一个子对话一行（实测报告问题 1）。
  * 卡在权限确认上的子对话不转圈，运行区和子对话小块都不列它，以前只有点进子对话才看得到「需要你确认」。
  * 只是允许 / 拒绝一个操作（命令、改文件、工具）的，行上直接给两个按钮，不用点进子对话；
  * 提问、孙对话在等的要看完整内容，点「去处理」在右栏打开它
@@ -58,57 +58,63 @@ export function ChildRequestBar({
     }
   }
   return (
-    <div data-status-row="child-requests" aria-label={t('子对话等你确认')} className="mb-1 flex flex-col gap-1">
+    <div
+      data-status-row="child-requests"
+      aria-label={t('子对话等你确认')}
+      className="mx-auto mb-2 flex w-full max-w-(--content-w) flex-col gap-1"
+    >
       {shown.map((c, i) => {
         const req = c.request
         const more = (c.requests ?? 0) - 1
         const spin = (allow: boolean) =>
           req && busy === `${req.id}:${allow}` ? <Loader2 className="h-3 w-3 animate-spin" /> : null
         return (
-          <div
-            key={c.id}
-            data-child-request={c.id}
-            className="flex h-8 min-w-0 items-center gap-2 rounded-lg bg-warning/10 pr-1 pl-2.5 text-xs"
-          >
-            <CircleAlert className="h-3.5 w-3.5 shrink-0 text-warning" strokeWidth={2.4} />
-            <button
-              type="button"
-              onClick={() => onOpen(c.id)}
-              // 命令可能很长：行上截断，悬停看完整的标题和说明
-              title={[req?.title, req?.detail].filter(Boolean).join('\n') || c.title}
-              className={cn(
-                'min-w-0 flex-1 cursor-pointer truncate text-left font-medium text-warning hover:underline',
-                req?.kind === 'command' && 'font-mono',
-              )}
+          // 浮在消息上面：外层给不透明的底和阴影，里层才是淡琥珀色，不然消息的字会透上来
+          <div key={c.id} className="rounded-lg bg-card shadow-pop">
+            <div
+              data-child-request={c.id}
+              className="flex h-8 min-w-0 items-center gap-2 rounded-lg bg-warning/10 pr-1 pl-2.5 text-xs"
             >
-              {rowText(c)}
-            </button>
-            {more > 0 && <span className="shrink-0 text-subtle">{t('还有 {n} 个', { n: more })}</span>}
-            {i === shown.length - 1 && rest > 0 && (
-              <span className="shrink-0 text-subtle">{t('另有 {n} 个子对话在等', { n: rest })}</span>
-            )}
-            {req?.quick && onAnswer ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!!busy}
-                  onClick={() => void send(c, false)}
-                  className="h-6 px-2 text-xs"
-                >
-                  {spin(false)}
-                  {t('拒绝')}
+              <CircleAlert className="h-3.5 w-3.5 shrink-0 text-warning" strokeWidth={2.4} />
+              <button
+                type="button"
+                onClick={() => onOpen(c.id)}
+                // 命令可能很长：行上截断，悬停看完整的标题和说明
+                title={[req?.title, req?.detail].filter(Boolean).join('\n') || c.title}
+                className={cn(
+                  'min-w-0 flex-1 cursor-pointer truncate text-left font-medium text-warning hover:underline',
+                  req?.kind === 'command' && 'font-mono',
+                )}
+              >
+                {rowText(c)}
+              </button>
+              {more > 0 && <span className="shrink-0 text-subtle">{t('还有 {n} 个', { n: more })}</span>}
+              {i === shown.length - 1 && rest > 0 && (
+                <span className="shrink-0 text-subtle">{t('另有 {n} 个子对话在等', { n: rest })}</span>
+              )}
+              {req?.quick && onAnswer ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!!busy}
+                    onClick={() => void send(c, false)}
+                    className="h-6 px-2 text-xs"
+                  >
+                    {spin(false)}
+                    {t('拒绝')}
+                  </Button>
+                  <Button size="sm" disabled={!!busy} onClick={() => void send(c, true)} className="h-6 px-2 text-xs">
+                    {spin(true)}
+                    {t('允许')}
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" variant="secondary" onClick={() => onOpen(c.id)} className="h-6 px-2 text-xs">
+                  {t('去处理')}
                 </Button>
-                <Button size="sm" disabled={!!busy} onClick={() => void send(c, true)} className="h-6 px-2 text-xs">
-                  {spin(true)}
-                  {t('允许')}
-                </Button>
-              </>
-            ) : (
-              <Button size="sm" variant="secondary" onClick={() => onOpen(c.id)} className="h-6 px-2 text-xs">
-                {t('去处理')}
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         )
       })}

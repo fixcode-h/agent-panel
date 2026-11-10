@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { useData, useNav, useTasks } from '@/lib/data'
+import { useOwnedByPlugin } from '@/plugins/registry'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { AnalysisMark } from '@/components/tasks/AnalysisMark'
@@ -428,8 +429,12 @@ export function ChatList() {
   const [folded, toggleDay] = useFoldedDays()
   // 正文命中：和项目列表那份是同一个接口、同一个 hook，标题命中仍在前
   const content = useTaskSearch(query)
-  // 子对话不进 Chat 列表（导入带子对话的聊天时它们也没有项目），在父对话里看
-  const chats = tasks.filter((x) => !x.projectId && !x.parentTaskId && matchTask(x, query, filter)).sort(byAskedAt)
+  // 子对话不进 Chat 列表（导入带子对话的聊天时它们也没有项目），在父对话里看；
+  // 插件整页管的对话（例如模型设计，不属于项目）在插件页里列，不混进聊天
+  const owned = useOwnedByPlugin()
+  const chats = tasks
+    .filter((x) => !x.projectId && !x.parentTaskId && !owned(x) && matchTask(x, query, filter))
+    .sort(byAskedAt)
   const filtering = !!query.trim() || filter !== 'all'
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = chatBuckets(chats)

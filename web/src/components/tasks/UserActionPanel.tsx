@@ -98,7 +98,7 @@ export function HandBackTag({ task }: { task: Pick<Task, 'userActions'> }) {
   )
 }
 
-/** 输入框正上方的「等你操作」面板：展开看步骤，收起是一行转圈 */
+/** 输入框上方浮着的「等你操作」面板（对话页的 FloatAbove 里）：展开看步骤，收起是一行转圈 */
 export function UserActionPanel({ task, onChanged }: { task: Task; onChanged: (t: Task) => void }) {
   useStoreVersion()
   const a = pendingAction(task)
@@ -113,8 +113,9 @@ export function UserActionPanel({ task, onChanged }: { task: Task; onChanged: (t
 
 type Props = { a: UserAction; task: Task; onChanged: (t: Task) => void }
 
+// 浮在消息上面：深色主题的提问底色是半透明的，下面垫一层不透明的卡片底，消息的字才不会透上来
 const box =
-  'relative mx-auto mb-2 flex max-w-(--content-w) flex-col rounded-xl bg-ask shadow-[0_0_0_1px_var(--ask-line),0_6px_18px_-12px_rgb(0_0_0/0.25)] animate-[pop-in_160ms_ease-out]'
+  'relative mx-auto mb-2 flex w-full max-w-(--content-w) flex-col rounded-xl bg-card bg-[linear-gradient(var(--ask-bg),var(--ask-bg))] shadow-[0_0_0_1px_var(--ask-line),var(--shadow-pop)] animate-[pop-in_160ms_ease-out]'
 
 function useSettle({ a, task, onChanged }: Props) {
   const [busy, setBusy] = useState<'' | 'done' | 'cannot' | 'skipped'>('')

@@ -91,7 +91,7 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
-import { ownedDesign, useDesignModes, usePluginPages } from '@/plugins/registry'
+import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
 
 /** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
@@ -461,11 +461,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 免得同一次输入发两份请求或者为看不见的结果白扫一遍对话
   const content = useTaskSearch(chatMode || designMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
-  // 插件设计模式的对话（例如模型设计，#/pdesign）属于设计模式，不列进 Agent 模式的项目对话；插件不在时照常列
-  const modes = useDesignModes()
-  const projectTasks = tasks.filter(
-    (t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !ownedDesign(t, modes),
-  )
+  // 插件管的对话（设计模式 #/pdesign、插件整页 #/plugin，例如模型设计）在插件那边看，不列进 Agent 模式的项目对话；
+  // 插件不在时照常列
+  const owned = useOwnedByPlugin()
+  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !owned(t))
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
   const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))

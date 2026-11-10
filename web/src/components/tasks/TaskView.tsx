@@ -95,6 +95,8 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Badge } from '@/components/ui/badge'
 import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
+import { FloatAbove } from '@/components/chat/FloatAbove'
+import { ChildRequestBar } from './ChildRequestBar'
 import { AgentMessage, DeliveryLine } from './Messages'
 import { NoteMessage } from './SystemNote'
 import { ReceivedRow } from './PeerMessage'
@@ -566,6 +568,8 @@ export function TaskView({
   // 消息区的贴底：打开就在最新内容，流式输出、工具卡片展开、Markdown 变高都跟着走；
   // 用户往上翻时不打扰，回到底部附近再接着跟。切到流程图视图时这个容器不放对话，停止跟随
   const scroller = useConversationScroll(taskId, view === 'chat')
+  // 输入框上方悬浮层的高度：消息流底部按它多留一段（见 FloatAbove）
+  const [floatPad, setFloatPad] = useState(0)
   const { el: scrollerEl, pin: stickToBottom, unpin: stayPut } = scroller
   // 父对话点了结果卡片：滚到最后一份总结的标题（见 summary-jump.ts）
   useSummaryJump(scroller, jumpSummary, task?.id, task?.messages.length)
@@ -1176,8 +1180,10 @@ export function TaskView({
       </main>
     )
 
-  // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
-  const noFiles = !task.projectId
+  const pluginHome = pluginTabs.some((x) => x.home)
+  // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示。
+  // 插件页签标了 home 的对话（例如模型设计的 3D 预览，不属于项目）照样要右栏放那个页签
+  const noFiles = !task.projectId && !pluginHome
   // Chat 页的聊天换成自己的标题栏和右栏（Chat.dc.html）；项目里的对话照旧用页签条。
   // 聊天派出了子对话或开着运行页签时也退回页签条，那些页签要有地方放
   const chatPage = noFiles && !pane && !embed && task.mode === 'chat' && !children.length && !openRun
@@ -1201,7 +1207,6 @@ export function TaskView({
   const chatRailW = Math.min(420, rowW * 0.4)
   const sideW = reportOn ? reportPane.width : chatRailWanted ? chatRailW : taskPanel.width
   const sideWanted = reportOn || childOn || (!filesFolded && !noFiles) || chatRailWanted
-  const pluginHome = pluginTabs.some((x) => x.home)
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =
@@ -1673,6 +1678,19 @@ export function TaskView({
   // 固定三行（见 ChildrenBar）：计划在上、子任务中间、子对话在下，每行各自不换行，三行都和输入框左对齐
   const conversationDock = (
     <>
+      {/* 等你确认、等你操作、流程没走完这些提醒浮在停靠区上方（用户 2026-11-10）：盖在消息上面，
+          不把输入框往下顶、也不挤掉消息区，也不挡下面的计划和子对话那几行。从上到下越来越要紧，
+          自己这个对话要你点头的请求离输入框最近 */}
+      <FloatAbove className="px-3 md:px-6" onHeight={setFloatPad}>
+        {!pane && !task.parentTaskId && <ChildRequestBar kids={children} onOpen={openChildIn} onAnswer={answerChild} />}
+        {flowLeft && !task.imported && (
+          <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
+        )}
+        {composer && <UserActionPanel task={task} onChanged={apply} />}
+        {!asksQuestion(task.requests) && (
+          <TaskRequestCard task={task} onAnswered={apply} className="w-full shadow-pop" />
+        )}
+      </FloatAbove>
       {/* 面板收起后还在跑的后台步骤（实时更新、子对话列表）：留一个小胶囊，失败时写错误原文 */}
       {traceHidden && <LoadTracePill steps={trace.steps} />}
       {task.plans?.length > 0 && (
@@ -1715,28 +1733,14 @@ export function TaskView({
             onOpen={openChildIn}
             onClose={() => openChildIn('')}
             onResume={(id) => void resumeChild(id)}
-            onAnswer={answerChild}
           />
         )
       })()}
       <div className="relative shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-        {asksQuestion(task.requests) ? (
-          <TaskRequestCard task={task} onAnswered={apply} />
-        ) : (
-          // 命令、改文件、工具、节点确认这些请求做成输入框上方的悬浮卡（用户 2026-11-10）：浮在消息上面，
-          // 不把输入框往下顶、也不挤掉消息区；提问照旧换掉输入框，所以不浮
-          !!task.requests?.length && (
-            <div className="pointer-events-none absolute inset-x-3 bottom-full z-30 md:inset-x-6">
-              <TaskRequestCard task={task} onAnswered={apply} className="pointer-events-auto shadow-pop" />
-            </div>
-          )
-        )}
+        {/* 提问照旧换掉输入框，不浮；其余等你确认 / 操作的提醒都在上面的 conversationFloat 里 */}
+        {asksQuestion(task.requests) && <TaskRequestCard task={task} onAnswered={apply} />}
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
-        {composer && <UserActionPanel task={task} onChanged={apply} />}
         <WorktreeBar task={task} />
-        {flowLeft && !task.imported && (
-          <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
-        )}
         {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
         {closedChild && <ResolvedBar taskId={task.id} onTask={apply} />}
         {/* 点开运行面板、子对话里就地打开运行时输入框挪进去，这里先空着，避免出现两个输入框 */}
@@ -2258,6 +2262,7 @@ export function TaskView({
                   <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                     <ConversationShell
                       scroller={scroller}
+                      floatPad={floatPad}
                       overlay={
                         <>
                           {progressOpen && (
