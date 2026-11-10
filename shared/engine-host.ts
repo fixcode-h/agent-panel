@@ -6,6 +6,7 @@
 
 import type { BugLevel } from './bug-diagnosis-schema.ts'
 import type { DiagnosisInput } from './bug-diagnosis.ts'
+import type { BugSource } from './bug-quotes.ts'
 import type { ReviewTarget } from './clis.ts'
 import type { DocRootInfo } from './doc-root.ts'
 import type { DocsFirstInput, ModuleDocsLookup } from './docs-first.ts'
@@ -415,6 +416,8 @@ export interface EngineHost {
   prewarmTurnDoneAt?: string
   changed: (flush?: boolean) => void
   newId: () => string
+  /** Bug 诊断报告交上来时取原文：读项目文件、取引入改动的 diff（shared/bug-quotes.ts）；没有就不取快照 */
+  bugSource?: BugSource
   runAgent: (call: AgentCall) => Promise<AgentResult>
   /**
    * 调用停在工具里等别人（wait_agents 等子任务、ask_main 等主 Agent）：宿主让出这次调用的 API 并发名额，

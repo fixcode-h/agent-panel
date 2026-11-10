@@ -1,6 +1,7 @@
 import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
+import { afterTurnCleanup } from './bug-cleanup.ts'
 
 import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
 import { readGlobalLessons } from '../lessons.ts'
@@ -263,6 +264,10 @@ export function createRun(sc: TasksScope) {
           ? (turn) => {
               sc.settleChildTurn(entry.task, turn)
               void sc.checkBudget(entry.task)
+              // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug-cleanup.ts）
+              void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
+                log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
+              )
             }
           : (turn) => {
               // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，

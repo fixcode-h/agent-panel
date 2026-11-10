@@ -13,6 +13,18 @@ import { causeInPlan, KIND_TEXT, logFilesOf, phaseOf } from './bug-phase.ts'
 import { prose } from './bug-prose.ts'
 import { codeTerms, marked } from './bug-terms.ts'
 import { t } from './i18n.ts'
+import {
+  attributionDiffMd,
+  codeRefsMd,
+  expectMd,
+  fixDiffsMd,
+  hitsMd,
+  logBlockMd,
+  outcomesMd,
+  quotesMd,
+  refsMd,
+  reproKindMd,
+} from './bug-quotes-md.ts'
 
 /** 责任类别在界面上的说法 */
 export const blameLabel = (b: BugBlame) =>
@@ -76,16 +88,11 @@ function stepsOf(c: BugCollect | undefined): string {
     .join('\n\n')
 }
 
-/** 结果怎么判：「看到 → 说明」的表；只写了一段文字的旧档案照原样显示 */
-const outcomesOf = (c: BugCollect | undefined) =>
-  !c
-    ? ''
-    : c.outcomes.length
-      ? table(
-          [t('看到'), t('说明')],
-          c.outcomes.map((o) => [o.see, o.means]),
-        )
-      : px(c.expect)
+/**
+ * 结果怎么判：「看到 → 说明」的表，用户贴了日志时面板对上的打 ✓（bug-quotes-md.ts）；只写了一段文字的旧档案照原样显示
+ */
+const outcomesOf = (c: BugCollect | undefined, d?: Diagnosis) =>
+  !c ? '' : c.outcomes.length ? outcomesMd(c, d) : px(c.expect)
 
 /** 用户贴的日志：只贴了一个文件路径的写成日志文件，不当成日志正文摆成代码块 */
 function userLogsOf(d: Diagnosis): string {
@@ -95,7 +102,9 @@ function userLogsOf(d: Diagnosis): string {
   const rest = path ? path[2].trim() : text
   return [
     files.length ? `${t('日志文件')}：${files.map((x) => `\`${x}\``).join('、')}` : '',
-    rest && (path ? rest : `\`\`\`\n${rest}\n\`\`\``),
+    // 日志带行号，命中日志计划的行标出编号；下面是每处出现了几次的命中表（设计稿 2026-11-10 第 3.2 节）
+    rest && (path ? rest : logBlockMd(rest, d.logPlan)),
+    hitsMd(d) && `**${t('日志计划命中')}**\n\n${hitsMd(d)}`,
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -148,7 +157,7 @@ function chainOf(d: Diagnosis): string {
     d.chain
       .map(
         (x) =>
-          `- **${name[x.step]}**：${codeTerms(x.text)}${x.proof.trim() ? `\n  - ${t('证据')}：${codeTerms(x.proof)}` : ''}`,
+          `- **${name[x.step]}**：${codeTerms(x.text)}${x.proof.trim() ? `\n  - ${t('证据')}：${codeTerms(x.proof)}` : ''}${x.refs.length ? `\n  - ${refsMd(x.refs)}` : ''}`,
       )
       .join('\n'),
     lack.length && alert('caution', t('证据链缺了：{steps}', { steps: lack.map((s) => name[s]).join('、') })),
@@ -159,6 +168,8 @@ function chainOf(d: Diagnosis): string {
 
 /** 关键代码：面板从工作区读出来的那几行（snippet），行号从真实行开始，出错那行标出来 */
 function codeOf(d: Diagnosis, snippet?: string): string {
+  // 新写法：多段代码，交报告时取的快照（bug-quotes.ts），行内高亮
+  if (d.codeRefs.length) return codeRefsMd(d)
   const r = d.codeRef
   if (!r?.file) return ''
   const loc = `${t('出错位置')}：${at(r.file, r.mark ?? r.start)}`
@@ -246,6 +257,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
           conf: `**${{ high: t('高'), medium: t('中'), low: t('低') }[a.confidence]}**`,
         }),
         px(a.note),
+        attributionDiffMd(a.diff),
       ]
         .filter(Boolean)
         .join('\n\n')
@@ -337,6 +349,9 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
   // 拿到上一轮的日志后又交的论证：next 写的是「上一轮日志看到了什么、为什么没能定论」（交报告时面板核对过），放在最前面
   const again = phase === 'evidence' && !!prev && phaseOf(prev) === 'evidence' && prev.status === 'answered'
   const head = [sec(t('你贴的日志'), userLogsOf(d)), sec(t('回答你的意见'), answers)]
+  // 原文引用：日志、命令输出、描述，正文和证据链按编号引用
+  const quotes = quotesMd(d)
+  const repro = [reproKindMd(d), px(d.repro)].filter(Boolean).join('\n\n')
   const bg = (title: string, body: string) => sec(title, body, 3)
   const temp = logFilesOf(opts.list ?? [d])
 
@@ -347,7 +362,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       ...head,
       sec(t('怎么复现'), stepsOf(d.awaiting.collect ?? d.collect)),
       sec(t('加好的日志'), d.awaiting.added.map((x) => `- ${codeTerms(x)}`).join('\n')),
-      sec(t('结果怎么判'), outcomesOf(d.awaiting.collect?.outcomes.length ? d.awaiting.collect : d.collect)),
+      sec(t('结果怎么判'), outcomesOf(d.awaiting.collect?.outcomes.length ? d.awaiting.collect : d.collect, d)),
     ]
     back = [
       bg(t('假设'), hypotheses),
@@ -362,13 +377,14 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       sec(t('假设'), hypotheses),
       sec(t('日志计划'), logPlan),
       sec(t('怎么复现'), stepsOf(d.collect)),
-      sec(t('结果怎么判'), outcomesOf(d.collect)),
+      sec(t('结果怎么判'), outcomesOf(d.collect, d)),
+      sec(t('原文'), quotes),
       earlySec,
     ]
     back = [
       again ? '' : bg(t('下一步'), px(d.next)),
       bg(t('现象'), px(d.symptom)),
-      bg(t('复现'), px(d.repro)),
+      bg(t('复现'), repro),
       bg(t('位置和调用路径'), location),
       bg(t('时间线'), timeline),
       bg(t('证据链'), chainOf(d)),
@@ -379,7 +395,9 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(rootTitle, root),
+      sec(t('期望和实际'), expectMd(d)),
       sec(t('证据链'), chainOf(d)),
+      sec(t('原文'), quotes),
       sec(t('根因怎么解释每一条现象'), consistency),
       sec(t('引入点'), attribution),
       ...(withCause
@@ -396,7 +414,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     ]
     back = [
       bg(t('现象'), px(d.symptom)),
-      bg(t('复现'), px(d.repro)),
+      bg(t('复现'), repro),
       bg(t('时间线'), timeline),
       bg(t('位置和调用路径'), location),
       bg(t('假设'), hypotheses),
@@ -415,6 +433,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     back = [
       bg(rootTitle, root),
       bg(t('证据链'), chainOf(d)),
+      bg(t('原文'), quotes),
       bg(t('位置和调用路径'), stack),
       bg(t('引入点'), attribution),
     ]
@@ -422,6 +441,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(t('自测结果'), result),
+      sec(t('出错点修前修后'), fixDiffsMd(d)),
       sec(t('你来验证'), stepsOf(d.collect)),
       sec(t('看到什么算修好了'), outcomesOf(d.collect)),
       sec(t('改动的文件'), d.files.map((f) => `- \`${f}\``).join('\n')),
@@ -435,7 +455,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       ),
       earlySec,
     ]
-    back = [bg(rootTitle, root), bg(t('引入点'), attribution)]
+    back = [bg(rootTitle, root), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
   }
   return {
     card,

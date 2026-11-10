@@ -5,6 +5,7 @@ import { mathExtensions } from './md-math'
 marked.use({ extensions: mathExtensions })
 import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
+import type { LineMark } from '@shared/bug-quotes-md'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -121,6 +122,89 @@ export function lineSpans(html: string, diff = false) {
   return { html: out.join('\n'), count: out.length }
 }
 
+/** 代码块信息串里的 marks=（URL 编码的 JSON）；写坏了就当没有 */
+function lineMarks(info: string): LineMark[] {
+  const raw = /(?:^|\s)marks=(\S+)/.exec(info)?.[1]
+  if (!raw) return []
+  try {
+    const v = JSON.parse(decodeURIComponent(raw)) as unknown
+    return Array.isArray(v) ? (v as LineMark[]).filter((m) => m && Number.isFinite(m.l)) : []
+  } catch {
+    return []
+  }
+}
+
+const LINE_CLASS: Record<NonNullable<LineMark['v']>, string> = {
+  fault: 'md-mark',
+  related: 'md-rel',
+  skipped: 'md-skip',
+  dim: 'md-dim',
+}
+
+/** 每行按标记加样式：整行的级别、行内那几个字（md-hit）、行尾说明（md-note，选中复制时不带） */
+function applyMarks(html: string, start: number, marks: LineMark[]): string {
+  return html
+    .split('\n')
+    .map((l, i) => {
+      const mine = marks.filter((m) => m.l === start + i)
+      if (!mine.length) return l
+      const strong = mine.find((m) => m.v === 'fault') ?? mine.find((m) => m.v && m.v !== 'related') ?? mine[0]
+      // 有行内高亮的相关行只高亮那几个字，不再整行着色
+      const whole = strong.v && (strong.v !== 'related' || !mine.some((m) => m.t)) ? LINE_CLASS[strong.v] : ''
+      let out = whole ? l.replace('class="md-ln', `class="md-ln ${whole}`) : l
+      for (const m of mine) if (m.t) out = wrapText(out, m.t, m.v === 'fault' ? 'md-hit md-hit-fault' : 'md-hit')
+      const notes = mine.filter((m) => m.n).map((m) => `<span class="md-note">${escape(`← ${m.n}`)}</span>`)
+      return notes.length ? out.replace(/<\/span>$/, `${notes.join('')}</span>`) : out
+    })
+    .join('\n')
+}
+
+/**
+ * 在一行高亮好的 HTML 里给一段原文套上 <mark>：按去掉标签、解开实体后的文字找位置，
+ * 跨过语法高亮的 <span> 时先关上再打开，标签不会交错
+ */
+function wrapText(html: string, text: string, cls: string): string {
+  const parts = html.match(/<[^>]*>|&[#\w]+;|[^<&]/g) ?? []
+  const plain = parts.map((p) => (p.startsWith('<') ? '' : p.startsWith('&') && p.length > 1 ? decodeEntity(p) : p))
+  const joined = plain.join('')
+  const from = joined.indexOf(text)
+  if (from < 0) return html
+  const to = from + text.length
+  let pos = 0
+  let open = false
+  let out = ''
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]
+    const len = plain[i].length
+    if (!len) {
+      out += open ? `</mark>${p}<mark class="${cls}">` : p
+      continue
+    }
+    if (!open && pos >= from && pos < to) {
+      out += `<mark class="${cls}">`
+      open = true
+    }
+    out += p
+    pos += len
+    if (open && pos >= to) {
+      out += '</mark>'
+      open = false
+    }
+  }
+  return out.replace(new RegExp(`<mark class="${cls}"></mark>`, 'g'), '')
+}
+
+const ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&#x27;': "'",
+}
+const decodeEntity = (e: string) =>
+  ENTITIES[e] ?? (/^&#(\d+);$/.test(e) ? String.fromCodePoint(Number(e.slice(2, -1))) : e)
+
 /** 代码块顶栏：语言名 + 行数，右边折行和复制 */
 export function codeBar(name: string, count: number, extra = '') {
   const n = count > 1 ? ` <small>· ${escape(t('{n} 行', { n: count }))}</small>` : ''
@@ -145,16 +229,13 @@ renderer.code = ({ text, lang }) => {
     // 高亮失败就显示原文
   }
   const lines = lineSpans(body, name === 'diff' || name === 'patch')
-  // 信息串里的 start=48 mark=52（诊断报告的关键代码，shared/bug-diagnosis-md.ts）：行号从文件里的真实行开始，出错那行标出来
+  // 信息串里的 start=48 mark=52 marks=…（诊断报告的关键代码和原文，shared/bug-diagnosis-md.ts、bug-quotes-md.ts）：
+  // 行号从文件里的真实行开始，出错那行、行内那几个字、行尾说明、临时日志行标出来
   const start = Number(/(?:^|\s)start=(\d+)/.exec(lang ?? '')?.[1] ?? 1)
   const mark = Number(/(?:^|\s)mark=(\d+)/.exec(lang ?? '')?.[1] ?? 0)
-  const html =
-    mark >= start
-      ? lines.html
-          .split('\n')
-          .map((l, i) => (i === mark - start ? l.replace('class="md-ln', 'class="md-ln md-mark') : l))
-          .join('\n')
-      : lines.html
+  const marks = lineMarks(lang ?? '')
+  if (mark >= start) marks.push({ l: mark, v: 'fault' })
+  const html = marks.length ? applyMarks(lines.html, start, marks) : lines.html
   const reset = start > 1 ? ` style="counter-reset: md-ln ${start - 1}"` : ''
   return `<div class="md-code" data-lines="${lines.count}">${codeBar(name || 'text', lines.count)}<pre><code class="hljs"${reset}>${html}</code></pre></div>`
 }

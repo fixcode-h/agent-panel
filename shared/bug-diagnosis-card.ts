@@ -35,6 +35,15 @@ export interface DiagnosisCard {
  */
 export function fillDiagnosis(d: Diagnosis): Diagnosis {
   d.chain ??= []
+  for (const x of d.chain) x.refs ??= []
+  // 原文定位（设计稿 2026-11-10）以前的报告没有这几块
+  d.codeRefs ??= []
+  for (const r of d.codeRefs) r.marks ??= []
+  d.quotes ??= []
+  for (const q of d.quotes) q.highlight ??= []
+  d.expectVsActual ??= []
+  d.fixDiffs ??= []
+  d.logPlan ??= []
   d.changes ??= []
   d.whatChanged ??= ''
   d.options ??= []
@@ -61,7 +70,12 @@ export function earlyFiles(d: Diagnosis, list: Diagnosis[] | undefined): string[
 /** 这一版在哪一步、要用户做什么 */
 export function nextStep(d: Diagnosis, withCause = false): string {
   const phase = phaseOf(d)
-  if (d.status === 'cancelled') return t('你取消了这次修复')
+  if (d.status === 'cancelled')
+    return d.cleanup?.state === 'running'
+      ? t('你取消了这次修复：它在删临时日志，删干净后关闭报告')
+      : d.cleanup?.state === 'failed'
+        ? t('你取消了这次修复，临时日志没删干净：选让它再删一次，或者自己处理')
+        : t('你取消了这次修复')
   if (d.status === 'superseded') return t('这份报告已被后面交的取代，看最新的')
   if (d.status === 'questioned') return t('你提了意见，它在接着分析')
   if (d.status === 'answered') return phase === 'verify' ? t('你给了验证结果，它在分析') : t('你给了日志，它在分析')
@@ -89,7 +103,12 @@ function statusOf(d: Diagnosis): DiagnosisCard['status'] {
       tone: 'warning',
     }
   if (d.status === 'approved') return { text: t('你已同意'), tone: 'success' }
-  if (d.status === 'cancelled') return { text: t('已取消'), tone: 'neutral' }
+  if (d.status === 'cancelled')
+    return d.cleanup?.state === 'running'
+      ? { text: t('在删临时日志'), tone: 'accent' }
+      : d.cleanup?.state === 'failed'
+        ? { text: t('日志没删干净'), tone: 'warning' }
+        : { text: t('已取消'), tone: 'neutral' }
   if (d.status === 'superseded') return { text: t('已被取代'), tone: 'neutral' }
   return { text: t('它在分析'), tone: 'accent' }
 }

@@ -10,10 +10,19 @@
  * 交给 Agent 的话是提示词，不翻译；报告的小节名、对话里的提示、请求标题是界面文案，走 t()。
  */
 import type { Task, TaskMessage } from './schema.ts'
-import { BugCase, BugCollect, type BugLevel, type Diagnosis, type DiagnosisNote } from './bug-diagnosis-schema.ts'
+import {
+  BugCase,
+  BugCollect,
+  type BugLevel,
+  type CleanupState,
+  type Diagnosis,
+  type DiagnosisNote,
+} from './bug-diagnosis-schema.ts'
+import { cleanupPrompt, TEMP_LOG } from './bug-cleanup.ts'
+import { fixDiffs, resolveSources, type BugSource } from './bug-quotes.ts'
 import {
   causeAgreed,
-  closedInfo,
+  closedOrCleaning,
   causeInPlan,
   evidenceFiles,
   inputPhase,
@@ -129,6 +138,12 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
   else {
     if (c.logPlan.some((l) => !l.file.trim() || !l.print.trim() || !l.hypothesis.trim()))
       lack.push('logPlan 每一处都要写 file（加在哪）、print（打什么）和 hypothesis（对应的假设编号，或「路标」）')
+    // 实跑 F9：print 写成了描述，打出来的日志和计划对不上，命中表也算不出来
+    const loose = c.logPlan.filter((l) => l.print.trim() && !l.print.includes(TEMP_LOG)).map((l) => l.id || l.file)
+    if (loose.length)
+      lack.push(
+        `logPlan 的 print 写要加的那一行语句原文，以 [排查-<主题>] L<n> 开头（${loose.join('、')} 没有）：面板按前缀和编号在用户贴的日志里数出现了几次`,
+      )
     const bare = uncovered(c)
     if (bare.length)
       lack.push(
@@ -138,8 +153,9 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
   if (againAfterLogs(list) && (!c.next.trim() || c.next.trim() === list.at(-1)!.next.trim()))
     lack.push('next（又一轮论证：上一轮的日志看到了什么、为什么没能定论、新假设从哪来）')
   if (input.collect === undefined || !c.collect?.steps.length) lack.push('collect.steps（怎么复现）')
-  if (!c.collect?.expect.trim() && !c.collect?.outcomes.length)
-    lack.push('collect.outcomes（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个）')
+  // 实跑 F10：outcomes 空着、expect 写「见 outcomes」也放过了，用户复现完不知道怎么对
+  if ((c.collect?.outcomes.length ?? 0) < 2)
+    lack.push('collect.outcomes 至少两项（每种结果说明什么：看到 A 是哪个假设、看到 B 是哪个；能核对的写 match）')
   return lack.length
     ? `论证这一版还缺：${lack.join('；')}。还没定论就按这个交，用户同意后加日志、复现；根因已经证实就交 phase: cause。`
     : ''
@@ -332,6 +348,7 @@ export function submitDiagnosis(
   input: DiagnosisInput,
   newId: () => string,
   now = new Date().toISOString(),
+  src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
   if (!task.bug)
     return {
@@ -341,12 +358,15 @@ export function submitDiagnosis(
   const list = task.diagnoses ?? []
   const prev = list.at(-1)
   // 用户点过「不修了」：这份报告就此关闭，之后的对话不能再拉起它（用户 2026-11-07 定）
-  if (prev?.status === 'cancelled') return { ok: false, info: closedInfo(revOf(prev)) }
+  if (prev?.status === 'cancelled') return { ok: false, info: closedOrCleaning(prev, revOf(prev)) }
   const c = mergeCase(task, input)
   const answers = answersOf(input)
   const bad = diagnosisProblem(c, list, answers, input)
   if (bad) return { ok: false, info: bad }
   const phase = inputPhase(input, c, list)
+  // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
+  const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
+  if (sources.error) return { ok: false, info: sources.error }
   // 用户的决定（取消、同意、贴了日志）留着：那是用户做过的事，不是被新一版顶掉的
   if (prev && (prev.status === 'pending' || prev.status === 'questioned')) prev.status = 'superseded'
   const version = (prev?.version ?? 0) + 1
@@ -377,6 +397,7 @@ export function submitDiagnosis(
     logFiles: [],
     result: phase === 'verify' ? result : undefined,
     before: (task.changes ?? []).map((x) => normPath(x.path)).filter(Boolean),
+    fixDiffs: phase === 'verify' && src ? fixDiffs(list, src) : [],
   }
   ;(task.diagnoses ??= []).push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写
@@ -401,7 +422,7 @@ export function submitDiagnosis(
   return {
     ok: true,
     version,
-    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。`,
+    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。${sources.notes.length ? `\n\n面板提醒：\n${sources.notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
   }
 }
 
@@ -452,6 +473,10 @@ const diagnosisMessage = (id: string, version: number, text: string, at: string)
 export type DiagnosisDecision = {
   approve: boolean
   cancel?: boolean
+  /** 取消时用户勾了要一起删的、为排查新建的文件 */
+  drop?: string[]
+  /** 取消时用户要求修复也撤掉（共用目录、已修完时） */
+  revertFix?: boolean
   supply?: boolean
   logs?: string
   logFiles?: string[]
@@ -491,12 +516,11 @@ export function decideDiagnosis(
   decision: DiagnosisDecision,
   newId: () => string,
   now = new Date().toISOString(),
+  /** 取消时面板查到的临时日志（服务端查，不信页面传的）：有就先叫它删，见 cancelDiagnosis */
+  cleanup?: Pick<CleanupState, 'found' | 'drop' | 'revertFix' | 'pre'>,
 ): { ok: true; message: string } | { ok: false; error: string } {
-  // 取消：不用交话给子对话（message 为空），见 cancelDiagnosis
-  if (decision.cancel) {
-    const r = cancelDiagnosis(task, version, decision.overall, newId, now)
-    return r.ok ? { ok: true, message: '' } : r
-  }
+  // 取消：没有临时日志时不用交话给子对话（message 为空），见 cancelDiagnosis
+  if (decision.cancel) return cancelDiagnosis(task, version, decision.overall, newId, now, cleanup)
   const d = pendingDiagnosis(task)
   if (!d || d.version !== version) return { ok: false, error: t('这一版诊断报告已经处理过了') }
   const notes = decision.notes
@@ -524,9 +548,12 @@ export function decideDiagnosis(
 }
 
 /**
- * 用户在审阅弹窗里点「取消」：这次不修了。不再等确认、也不发话叫醒子对话——这一轮在交报告时已经结束，
- * 计划里没做完的步骤（含收尾那一步）收口成完成（settlePlan，和用户点「解决」同一套），对话停着等用户的下一句。
- * 之后用户要它接着修，改文件仍会被拦（bugDeny），要先交新一版报告再确认
+ * 用户在审阅弹窗里点「取消」：这次不修了。
+ * - 代码里没有临时日志（cleanup 不传或什么都没查到）：不再等确认、也不发话叫醒子对话——这一轮在交报告时已经结束，
+ *   计划里没做完的步骤（含收尾那一步）收口成完成（settlePlan，和用户点「解决」同一套），对话停着等用户的下一句。
+ * - 有临时日志（用户 2026-11-10 定）：报告标「已取消」，但先叫 Agent 把日志删掉（返回给它的话），
+ *   这一轮结束时面板核对（server/tasks/bug-cleanup.ts），通过了才关闭报告、收口计划（settleCleanup）。
+ * 之后用户要它接着修，改文件仍会被拦（bugDeny），要在父对话重新报这个 Bug
  */
 export function cancelDiagnosis(
   task: DiagTask & Pick<Task, 'plans' | 'steps'>,
@@ -534,23 +561,78 @@ export function cancelDiagnosis(
   overall: string,
   newId: () => string,
   now = new Date().toISOString(),
-): { ok: true } | { ok: false; error: string } {
+  cleanup?: Pick<CleanupState, 'found' | 'drop' | 'revertFix' | 'pre'>,
+): { ok: true; message: string } | { ok: false; error: string } {
   const d = pendingDiagnosis(task)
   if (!d || d.version !== version) return { ok: false, error: t('这一版诊断报告已经处理过了') }
   d.status = 'cancelled'
   d.notes = []
   d.overall = overall.trim()
   d.decidedAt = now
+  const n = revOf(d)
+  if (cleanup && (cleanup.found.length || cleanup.drop.length)) {
+    d.cleanup = { ...cleanup, state: 'running', failed: [], kept: [], at: now }
+    task.messages.push(
+      diagnosisMessage(
+        newId(),
+        version,
+        t('你取消了诊断报告第 {n} 版，这次不修了：它先删掉 {k} 处临时日志，面板核对干净后关闭报告', {
+          n,
+          k: cleanup.found.length,
+        }),
+        now,
+      ),
+    )
+    return { ok: true, message: cleanupPrompt({ rev: n, ...cleanup }) }
+  }
   settlePlan(task, now)
   task.messages.push(
-    diagnosisMessage(
-      newId(),
-      version,
-      t('你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成', { n: revOf(d) }),
-      now,
-    ),
+    diagnosisMessage(newId(), version, t('你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成', { n }), now),
   )
-  return { ok: true }
+  return { ok: true, message: '' }
+}
+
+/**
+ * 删临时日志的结果：done 面板核对通过；skipped 用户在核对没过后选了「我自己删」或「保留」。
+ * 这时才关闭报告：收口计划，对话里记一行。failed 只记下核对结果，等用户决定（不悄悄重试）
+ */
+export function settleCleanup(
+  task: DiagTask & Pick<Task, 'plans' | 'steps'>,
+  result: { state: 'done' | 'failed' | 'skipped'; failed?: CleanupState['failed']; kept?: string[] },
+  newId: () => string,
+  now = new Date().toISOString(),
+): boolean {
+  const d = task.diagnoses?.at(-1)
+  if (!d?.cleanup || d.status !== 'cancelled') return false
+  const c = d.cleanup
+  c.state = result.state
+  c.failed = result.failed ?? []
+  c.kept = result.kept ?? []
+  c.checkedAt = now
+  const n = revOf(d)
+  const k = c.found.length
+  const line = {
+    done: t('临时日志已删干净（{k} 处），诊断报告第 {n} 版已关闭', { k, n }),
+    failed: t('临时日志没删干净：{text}', { text: failedSummary(c) }),
+    skipped: t('你选了不让它再删，诊断报告第 {n} 版已关闭', { n }),
+  }[result.state]
+  if (result.state !== 'failed') settlePlan(task, now)
+  task.messages.push(diagnosisMessage(newId(), d.version, line, now))
+  return true
+}
+
+/** 核对没过的概要：还剩几处日志、多了几个空行、删多了几行（对话里那一行和报告上用） */
+export function failedSummary(c: Pick<CleanupState, 'failed' | 'kept'>): string {
+  const sum = (k: 'left' | 'blank' | 'extra' | 'removed') => c.failed.reduce((a, f) => a + f[k].length, 0)
+  return [
+    sum('left') && t('还剩 {k} 处临时日志', { k: sum('left') }),
+    sum('blank') && t('多了 {k} 个空行', { k: sum('blank') }),
+    sum('extra') && t('多了 {k} 行别的改动', { k: sum('extra') }),
+    sum('removed') && t('删多了 {k} 行', { k: sum('removed') }),
+    c.kept.length && t('要删的文件还在：{files}', { files: c.kept.join('、') }),
+  ]
+    .filter(Boolean)
+    .join('，')
 }
 
 /** 用户的决定交给子对话的话：按阶段写（bug-phase.ts） */
@@ -571,7 +653,7 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
       ? `没有请求收尾：第 ${v} 版在等用户复现贴日志。`
       : `没有请求收尾：第 ${v} 版还在等用户，用户回复之前不能收尾。`
   if (d.status === 'questioned') return `没有请求收尾：用户对第 ${v} 版提了意见，先逐条处理、改好再交，等用户确认。`
-  if (d.status === 'cancelled') return `没有请求收尾：${closedInfo(v)}`
+  if (d.status === 'cancelled') return `没有请求收尾：${closedOrCleaning(d, v)}`
   const phase = phaseOf(d)
   if (phase === 'evidence' || phase === 'cause')
     return '没有请求收尾：还没有用户确认的修复方案。按流程交根因（phase: cause）、修复方案（phase: plan），确认后再修。'

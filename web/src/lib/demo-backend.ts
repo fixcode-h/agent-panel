@@ -3461,6 +3461,9 @@ function tasksRoute(
     persist()
     return task
   }
+  // 演示里没有真的代码目录：取消修复时查不到临时日志，直接按「没有日志」关闭
+  if (sub === 'diagnosis-cleanup')
+    return method === 'POST' ? { task, message: '' } : { found: [], created: [], isolated: false }
   if (sub === 'diagnosis' && rid && method === 'POST') {
     const r = decideDiagnosis(
       task,

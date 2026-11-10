@@ -1830,6 +1830,36 @@ body,
 .chat-md .md-ln.md-mark::before {
   color: var(--md-coral);
 }
+/* 诊断报告原文里的标记（workflow-doc.ts 的 applyMarks）：相关的行琥珀淡底、没执行到的行变灰、临时日志行淡下去 */
+.chat-md .md-ln.md-rel {
+  background: color-mix(in srgb, var(--md-gold) 12%, transparent);
+}
+.chat-md .md-ln.md-skip,
+.chat-md .md-ln.md-dim {
+  opacity: 0.5;
+}
+/* 行内真正出错的那几个字：出错的红色波浪下划线 + 淡红底，相关的值琥珀淡底 */
+.chat-md mark.md-hit {
+  color: inherit;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--md-gold) 26%, transparent);
+}
+.chat-md mark.md-hit-fault {
+  background: color-mix(in srgb, var(--md-coral) 22%, transparent);
+  text-decoration: underline wavy var(--md-coral);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+/* 行尾说明：灰色小字跟在行尾，选中复制代码时不带上 */
+.chat-md .md-note {
+  @apply ml-4 text-caption select-none;
+  font-family: var(--font-sans, inherit);
+  color: var(--subtle);
+}
+.chat-md .md-ln.md-dim .md-note {
+  @apply rounded-full px-1.5;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
 /* diff：增删的行整行着色，只用底色（docs/lessons/visual.md） */
 .chat-md .md-ln.md-add {
   background: color-mix(in srgb, var(--md-teal) 11%, transparent);

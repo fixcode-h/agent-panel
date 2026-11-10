@@ -50,8 +50,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
     'Paste the logs from verification here, or paste / drop log files',
   '你的决定已经记下，但没能交给子对话：{error}':
     "Decision saved, but couldn't deliver it to the sub-conversation: {error}",
-  '不再等你确认，这份诊断报告就此关闭：计划标记为完成，之后不会再改文件，这个对话也不能再交新的报告（真要修就在父对话里重新报这个 Bug）。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。':
-    'Stop waiting for your confirmation and close this diagnosis report: the plan is marked done, no more files will be changed, and this conversation cannot submit a new report (to fix it later, report the bug again from the parent conversation). [排查-…] temporary logs already added to the code are not removed automatically; ask it in this conversation if you want them removed.',
   // 阶段条
   '论证 · 第 {n} 轮 · 等你复现': 'Evidence · round {n} · waiting for you to reproduce',
   '论证 · 第 {n} 轮': 'Evidence · round {n}',

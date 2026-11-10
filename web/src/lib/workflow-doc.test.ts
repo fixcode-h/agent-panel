@@ -86,3 +86,28 @@ test('代码块信息串里的 start、mark：行号从真实行开始，出错�
   // 没写 start 的照旧从 1 数
   assert.doesNotMatch(renderDoc('```text\na\nb\n```', NONE), /counter-reset|md-mark/)
 })
+
+test('诊断报告的代码标记：出错行、行内那几个字（跨过语法高亮）、行尾说明、临时日志行变淡', () => {
+  const marks = [
+    { l: 11, t: 'left === 0', n: '提前返回', v: 'fault' },
+    { l: 10, v: 'dim', n: '临时日志' },
+  ]
+  const doc = `\`\`\`ts start=10 marks=${encodeURIComponent(JSON.stringify(marks))}\nconsole.log('[排查-x] L1')\nif (left === 0) return\n\`\`\``
+  const html = renderDoc(doc, new Set())
+  assert.match(html, /class="md-ln md-dim"/)
+  assert.match(html, /class="md-ln md-mark"/)
+  assert.match(html, /<mark class="md-hit md-hit-fault">/)
+  const hit = /<mark class="md-hit md-hit-fault">([\s\S]*?)<\/mark>(?![\s\S]*md-hit-fault">[^<]*===)/.exec(html)
+  assert.ok(hit, '行内高亮')
+  const text = html
+    .split('md-ln md-mark')[1]
+    .replace(/<span class="md-note">[^<]*<\/span>/, '')
+    .replace(/<[^>]*>/g, '')
+  assert.match(text, /if \(left === 0\) return/, '高亮后原文不变')
+  assert.match(html, /<span class="md-note">← 提前返回<\/span>/)
+})
+
+test('代码块的 marks 写坏了就当没有', () => {
+  const html = renderDoc('```ts start=3 marks=%7Bbad\nconst a = 1\n```', new Set())
+  assert.doesNotMatch(html, /md-hit|md-note/)
+})

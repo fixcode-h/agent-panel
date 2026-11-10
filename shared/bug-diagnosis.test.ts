@@ -11,6 +11,7 @@ import {
   outOfPlan,
   pendingDiagnosis,
   requestLogs,
+  settleCleanup,
   submitDiagnosis,
   updateBugCase,
   type DiagnosisInput,
@@ -89,10 +90,30 @@ const evidenceInput = (over: Partial<DiagnosisInput> = {}) =>
       { id: 'H2', text: '后端超时', status: 'excluded', basis: '日志里请求 200ms 就回来了' },
     ],
     logPlan: [
-      { id: 'L1', file: 'web/src/lib/login.ts:44', fn: 'retry', print: 'retries、max', hypothesis: 'H1：单位混用' },
-      { id: 'L2', file: 'web/src/lib/login.ts:30', fn: 'login', print: '进入、请求 ID', hypothesis: '路标' },
+      {
+        id: 'L1',
+        file: 'web/src/lib/login.ts:44',
+        fn: 'retry',
+        print: "console.log('[排查-登录] L1', retries, max)",
+        hypothesis: 'H1：单位混用',
+      },
+      {
+        id: 'L2',
+        file: 'web/src/lib/login.ts:30',
+        fn: 'login',
+        print: "console.log('[排查-登录] L2 进入', reqId)",
+        hypothesis: '路标',
+      },
     ],
-    collect: { steps: ['打开登录页', '断网后点登录'], filter: '[排查-登录]', expect: 'max 大于 10 说明是秒' },
+    collect: {
+      steps: ['打开登录页', '断网后点登录'],
+      filter: '[排查-登录]',
+      expect: 'max 大于 10 说明是秒',
+      outcomes: [
+        { see: 'L1 的 max 大于 10', means: 'H1 成立：max 是秒' },
+        { see: 'L1 的 max 小于等于 10', means: 'H1 排除，看路标 L2 停在哪' },
+      ],
+    },
     files: [],
     ...over,
   })
@@ -157,7 +178,7 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
   const d = tk.diagnoses![0]
   assert.deepEqual(d.files, ['web/src/lib/login.ts'], '日志计划里的位置去掉行号算进放行范围')
   assert.match(diagnosisMarkdown(d), /## 日志计划\n\| 编号 \| 位置/)
-  assert.match(diagnosisMarkdown(d), /## 结果怎么判\nmax 大于 10 说明是秒/)
+  assert.match(diagnosisMarkdown(d), /## 结果怎么判\n\| 看到 \| 说明 \|[^]*L1 的 max 大于 10 \| H1 成立/)
   assert.ok('deny' in editScope(tk.diagnoses!), '等用户同意时不改文件')
   assert.equal(requestLogs(tk, { added: ['L1'] }).ok, false, '还没同意加日志不能请复现')
   const r = decideDiagnosis(tk, 1, yes, id)
@@ -335,7 +356,11 @@ test('验证：用户可以直接点结束跳过验证；论证时加过日志�
   ok(
     submitDiagnosis(
       tk,
-      evidenceInput({ logPlan: [{ id: 'L1', file: 'web/src/lib/api.ts', print: 'status', hypothesis: 'H1' }] }),
+      evidenceInput({
+        logPlan: [
+          { id: 'L1', file: 'web/src/lib/api.ts', print: "console.log('[排查-登录] L1', status)", hypothesis: 'H1' },
+        ],
+      }),
       id,
     ),
   )
@@ -524,6 +549,61 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   assert.equal(tk.diagnoses![0].status, 'cancelled')
 })
 
+test('取消时代码里有临时日志：先叫它删，核对通过才关闭报告、收口计划；没过等用户决定', () => {
+  const tk = bugTask({ plans: [], steps: [] })
+  applyPlan(tk, {
+    steps: [
+      { title: '查根因', status: 'done' },
+      { title: '交诊断报告', status: 'running' },
+    ],
+  })
+  submitDiagnosis(tk, input(), id)
+  const found = [{ file: 'src/a.ts', line: 3, text: "console.log('[排查-x] L1')" }]
+  const r = decideDiagnosis(tk, 1, { approve: false, cancel: true, notes: [], overall: '' }, id, undefined, {
+    found,
+    drop: [],
+    revertFix: false,
+    pre: {},
+  })
+  assert.ok(r.ok && r.message.includes('src/a.ts:3'), '交给子对话删日志的话')
+  const d = tk.diagnoses![0]
+  assert.equal(d.cleanup?.state, 'running')
+  assert.ok(openPlan(tk), '删干净之前计划不收口')
+  assert.deepEqual(editScope(tk.diagnoses!), { files: ['src/a.ts'] }, '只能改有日志的文件')
+  const left = [{ file: 'src/a.ts', left: found, blank: [], extra: [], removed: [] }]
+  assert.ok(settleCleanup(tk, { state: 'failed', failed: left }, id))
+  assert.ok(openPlan(tk), '没删干净：计划不收口')
+  assert.match(tk.messages.at(-1)!.text, /还剩 1 处临时日志/)
+  d.cleanup!.state = 'running'
+  assert.ok(settleCleanup(tk, { state: 'done' }, id))
+  assert.equal(openPlan(tk), undefined)
+  assert.match(tk.messages.at(-1)!.text, /临时日志已删干净（1 处）/)
+  assert.ok('deny' in editScope(tk.diagnoses!), '关闭后不再改文件')
+})
+
+test('交报告时取代码快照、核对原文：对不上拒收、什么都不改；校准了行号写进回执', () => {
+  const tk = bugTask()
+  const src = {
+    read: (f: string) => (f === 'web/src/lib/login.ts' ? 'a\n// [排查-登录] L1\nif (n > max) retry()\nb' : undefined),
+  }
+  const ref = (text: string) => ({
+    codeRefs: [
+      { id: 'C1', file: 'web/src/lib/login.ts', start: 1, end: 3, marks: [{ line: 2, text, level: 'fault' }] },
+    ],
+  })
+  const bad = submitDiagnosis(tk, input(ref('n >= max')), id, undefined, src)
+  assert.equal(bad.ok, false)
+  assert.match(bad.info, /login\.ts:2 里没有「n >= max」/)
+  assert.equal(tk.diagnoses?.length ?? 0, 0)
+  const good = submitDiagnosis(tk, input(ref('n > max')), id, undefined, src)
+  ok(good)
+  assert.match(good.info, /面板提醒：\n- web\/src\/lib\/login\.ts:2 里没有「n > max」，第 3 行有/)
+  const d = tk.diagnoses![0]
+  assert.equal(d.codeRefs[0].marks[0].line, 3)
+  assert.match(d.codeRefs[0].snapshot!.text, /if \(n > max\) retry\(\)/)
+  assert.match(diagnosisMarkdown(d), /```ts start=2 marks=/, '整段跟着挪了一行')
+})
+
 test('快速级别：根因和修复方案合成一版交，用户确认一次就开始修；弹窗里根因那几节也在', () => {
   // 实测（2026-11-05）：一行就能修的 Bug 也要确认根因、方案、验证三道
   const tk = bugTask()
@@ -631,8 +711,13 @@ test('论证的日志一次加够（用户 2026-11-06 定）：至少两个假�
       evidenceInput({
         hypotheses: two,
         logPlan: [
-          { id: 'L1', file: 'web/src/lib/login.ts', print: 'retries、max', hypothesis: 'h1、H2' },
-          { id: 'L2', file: 'web/src/lib/api.ts', print: '进入', hypothesis: '路标' },
+          {
+            id: 'L1',
+            file: 'web/src/lib/login.ts',
+            print: "console.log('[排查-登录] L1', retries, max)",
+            hypothesis: 'h1、H2',
+          },
+          { id: 'L2', file: 'web/src/lib/api.ts', print: "console.log('[排查-登录] L2 进入')", hypothesis: '路标' },
         ],
       }),
       id,

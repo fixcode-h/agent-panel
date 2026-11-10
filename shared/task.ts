@@ -712,7 +712,7 @@ export const stopEnds = (reason: StopReason | undefined) => !!reason && STOP_END
  * more：这一轮结束后还要接着处理排队的消息（面板交过来的、执行中收到的），也算还在执行
  */
 export function childReport(
-  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[] },
+  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[]; diagnoses?: Task['diagnoses'] },
   x: { background?: string[]; more?: boolean; unmerged?: boolean; childNeeds?: number } = {},
 ): ChildReport {
   const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged, childNeeds: x.childNeeds })
@@ -760,8 +760,15 @@ export function childReport(
           : task.wrapRequest?.state === 'test-failed'
             ? t('已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）')
             : t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
-      case 'done':
+      case 'done': {
+        // 用户在诊断报告上点了「不修了」：不是交付完了，父对话别当成修好了往下走（实跑 2026-11-10）
+        const d = task.diagnoses?.at(-1)
+        if (d?.status === 'cancelled')
+          return d.cleanup?.state === 'done'
+            ? t('用户取消了修复，临时日志已删干净，诊断报告已关闭（没有改代码）')
+            : t('用户取消了修复，诊断报告已关闭（没有改代码）')
         return t('交付完了：计划、后台命令、提问都收口了')
+      }
     }
   })()
   return {

@@ -7,7 +7,7 @@ import { globMatch } from '../../shared/hook-defs.ts'
 import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
-import { editScope, revOf } from '../../shared/bug-phase.ts'
+import { cleaning, editScope, revOf } from '../../shared/bug-phase.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
@@ -70,6 +70,10 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.task.bug) return ''
+  // 取消修复后删临时日志：要一处一处删，不整文件还原（实跑时它用 git checkout -- 文件 还原，
+  // 共用目录里会把文件里别的改动一起冲掉，用户 2026-11-10 定由 Agent 删、连空行一起删）
+  if (cleaning(latestDiagnosis(c.task)) && segs(facts).some(wholeFileRevert))
+    return '【面板】这一步要用改文件工具一处一处删临时日志（连加日志时带进来的空行），不整文件还原：文件里可能还有别的改动。'
   // 面板给的临时目录、数据目录里的文件（编译脚本、日志副本）不是项目代码，不按方案拦（file-events.ts 也不记成改动）
   const files = editPaths(facts)
     .filter((p) => !scratchPath(path.resolve(c.cwd, p), c.cwd))
@@ -85,6 +89,10 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   }
   return ''
 }
+
+/** 整文件还原的命令：git checkout -- 文件、git restore 文件、p4 revert、svn revert */
+const wholeFileRevert = (seg: string) =>
+  (gitSub(seg, 'checkout') && /\s--\s/.test(seg)) || gitSub(seg, 'restore') || /^(p4|svn)\s+revert\b/.test(seg)
 
 const rel = (cwd: string, p: string) => {
   const r = path.relative(cwd, path.resolve(cwd, p))

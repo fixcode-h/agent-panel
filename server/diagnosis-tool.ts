@@ -163,14 +163,103 @@ const CASE_PROPS = {
       properties: {
         step: { type: 'string', enum: ['trigger', 'fault', 'symptom'] },
         text: text('这一环：一句话'),
-        proof: text('证据：日志原文、测试输出或 path:line'),
+        proof: text('证据的一句说明（原文不要抄在这里，写进 quotes / codeRefs，用 refs 引用编号）'),
+        refs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '这一环引用的原文编号：quotes 的 Q1、codeRefs 的 C1。出错点引用一段代码加一条日志或命令输出',
+        },
       },
       required: ['step', 'text', 'proof'],
     },
   },
+  codeRefs: {
+    type: 'array',
+    description:
+      '关键代码（优先写这个，代替 codeRef）：一段一项，出错点、触发条件、调用方分开写。只写位置和标记，代码原文由面板交报告时读出来存档；marks.text 面板逐字核对，对不上拒收',
+    items: {
+      type: 'object',
+      properties: {
+        id: text('编号：C1、C2…（证据链 refs 引用）'),
+        role: {
+          type: 'string',
+          enum: ['fault', 'trigger', 'caller', 'expected'],
+          description: 'fault 出错点、trigger 触发条件、caller 调用方、expected 对照的正确写法',
+        },
+        file: text('文件（相对项目根）'),
+        start: { type: 'number', description: '起始行（按现在的文件，加了临时日志的按加了之后的行号）' },
+        end: { type: 'number', description: '结束行（一段最多 30 行，一般 5~15 行）' },
+        marks: {
+          type: 'array',
+          description: '要高亮的地方，一处一项',
+          items: {
+            type: 'object',
+            properties: {
+              line: { type: 'number', description: '哪一行' },
+              text: text('那一行里真正出错的那几个字（照文件原样，例如 left === 0），不写整行'),
+              note: text('行尾说明，20 字以内，例如「提前返回，派发走不到」'),
+              level: {
+                type: 'string',
+                enum: ['fault', 'related', 'skipped'],
+                description: 'fault 出错（红）、related 相关的条件和变量（默认，琥珀）、skipped 没执行到（灰）',
+              },
+            },
+            required: ['line'],
+          },
+        },
+      },
+      required: ['id', 'file', 'start', 'end'],
+    },
+  },
+  quotes: {
+    type: 'array',
+    description:
+      '日志和命令输出的原文引用，一条一项，正文和证据链用编号引用。不要转述：log 写行号由面板取原文，run 原样复制；只是描述就写 kind: note（报告上标成「描述」）。原文对不上来源拒收',
+    items: {
+      type: 'object',
+      properties: {
+        id: text('编号：Q1、Q2…'),
+        kind: {
+          type: 'string',
+          enum: ['log', 'run', 'note'],
+          description: 'log 用户贴的日志、run 这个对话里跑过的命令输出、note 描述（截图、用户说的）',
+        },
+        from: { type: 'number', description: 'log：用户在第几份报告（报告 #n）上贴的日志；不写取最近一次' },
+        start: { type: 'number', description: 'log：日志的第几行（报告里「你贴的日志」的行号）' },
+        end: { type: 'number', description: 'log：到第几行（一条最多 30 行）' },
+        text: text('run：原样复制的输出；log：可以不写，写了要和那几行逐字对上；note：描述'),
+        highlight: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '原文里的关键值（例如 left=0），要在原文里逐字出现，报告上高亮',
+        },
+      },
+      required: ['id', 'kind'],
+    },
+  },
+  expectVsActual: {
+    type: 'array',
+    description: '期望和实际：一个值一项（根因、验证用）',
+    items: {
+      type: 'object',
+      properties: {
+        what: text('什么值、什么行为'),
+        expected: text('应该是'),
+        actual: text('实际是'),
+        ref: text('证明实际值的原文编号，例如 Q1'),
+      },
+      required: ['what', 'expected', 'actual'],
+    },
+  },
+  reproKind: {
+    type: 'string',
+    enum: ['user', 'constructed', 'test'],
+    description:
+      '复现用的是什么：user 用户的数据 / 环境、constructed 自己构造的数据（只算推演，不能当排除假设的依据）、test 测试用例',
+  },
   codeRef: {
     type: 'object',
-    description: '关键代码：出错的那几行（5~15 行）。面板从工作区读出来显示给用户，不要把代码抄进报告',
+    description: '旧写法，一段关键代码；优先写 codeRefs',
     properties: {
       file: text('文件（相对项目根）'),
       start: { type: 'number', description: '起始行' },
@@ -200,11 +289,13 @@ const CASE_PROPS = {
     items: {
       type: 'object',
       properties: {
-        id: text('编号，例如 L1'),
+        id: text('编号：L1、L2…（打出来的日志带上这个编号）'),
         file: text('文件（相对项目根）'),
         line: { type: 'number' },
         fn: text('函数'),
-        print: text('打什么：分支条件、关键变量、旧值 → 新值'),
+        print: text(
+          "要加的那一行语句原文，以 [排查-<主题>] L<n> 开头，例如 console.log('[排查-金额] L1 shipping=', o.shipping, typeof o.shipping)；不写描述",
+        ),
         hypothesis: text('对应的假设编号（H1），或「路标」（标出走到了调用栈哪一跳）'),
       },
       required: ['file', 'print'],
@@ -223,7 +314,19 @@ const CASE_PROPS = {
         description: 'expect 的结构化写法（优先写这个）：一种结果一项，see 看到什么、means 说明什么',
         items: {
           type: 'object',
-          properties: { see: text('看到什么'), means: text('说明什么') },
+          properties: {
+            see: text('看到什么'),
+            means: text('说明什么'),
+            match: {
+              type: 'object',
+              description: '可核对的写法：日志计划的某处出现了 / 没出现（面板拿到日志后自己判断对上了哪一项）',
+              properties: {
+                point: text('日志计划编号，例如 L2'),
+                seen: { type: 'boolean', description: 'true 出现了、false 没出现' },
+              },
+              required: ['point', 'seen'],
+            },
+          },
           required: ['see', 'means'],
         },
       },
