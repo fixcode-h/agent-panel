@@ -24,8 +24,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .count()
   )
     errors.push('侧栏：还留着「文件」这个入口')
+  // 输入框占位写明模式（分析稿 U10）：项目里是交给它做完，Chat 页是一问一答
+  const hint = () => p.locator('#task-prompt').getAttribute('aria-placeholder')
+  if ((await hint()) !== '要做什么？交给它一路做完') errors.push(`首页：输入框占位没写明 Agent 模式（${await hint()}）`)
   // 对话方式下输入「/」：内置命令、CLI 自己的命令和 Skill
   await p.goto(base + '#/chat')
+  await p.locator('#task-prompt').waitFor({ timeout: 5000 })
+  if ((await hint()) !== '想问什么？这里问一句答一句')
+    errors.push(`Chat 页：输入框占位没写明一问一答（${await hint()}）`)
   await p.locator('#task-prompt').fill('/')
   await p.locator('#task-prompt').press('End')
   await check(p, '斜杠命令', ['/init', '/commit', 'frontend-design'])

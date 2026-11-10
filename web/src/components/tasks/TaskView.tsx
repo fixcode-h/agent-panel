@@ -35,6 +35,7 @@ import {
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { useDiagDialogs } from './diag-dialogs'
 import { useDiagnosisHost } from './diagnosis-window'
+import { continueHint } from './composer-hint'
 import { ParentBar } from './ChildMail'
 import { ChildrenBar, plainRow } from './ChildrenBar'
 import { useOwnedRuns } from '@/lib/owned-runs'
@@ -558,7 +559,8 @@ export function TaskView({
   const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
   const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
   // 诊断报告的审阅弹窗同理：一轮输出完、子任务做完时打开它的那一行会重挂，弹窗只由用户关
-  const bug = useDiagnosisHost(task)
+  // 顶层对话页有并排的右栏：报告能停靠进去（分析稿 U7），右栏里的子对话、AI 窗口里嵌的只弹窗
+  const bug = useDiagnosisHost(task, !pane && !embed)
   // 盖着文件面板时 Esc 先收面板，不弹停止确认
   useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
@@ -1196,7 +1198,7 @@ export function TaskView({
   // 子对话在右栏开一个页签（和项目文件、本对话改动并排），开着时右栏一定显示
   const childOn = !pane && !!openChild
   // 功能面板占右栏（宽屏）：和文件面板同一栏，同一时间只显示一个；开着子对话时先让给子对话
-  const reportOn = !!report && !pane && !reportFolded && !childOn
+  const reportOn = !!report && !pane && !reportFolded && !childOn && !bug.rail
   // 中间正显示运行页签（父对话藏起来）
   const showOther = !pane && !onParent && openRun > 0
   // 会话栏放不放得下：先保中间对话的最小宽度；再加上右侧那一栏（文件或功能面板）也放得下就并排，
@@ -1207,7 +1209,7 @@ export function TaskView({
   const chatRailWanted = chatPage && chatRailOn && !chatRail.empty && !reportOn && !reportCover
   const chatRailW = Math.min(420, rowW * 0.4)
   const sideW = reportOn ? reportPane.width : chatRailWanted ? chatRailW : taskPanel.width
-  const sideWanted = reportOn || childOn || (!filesFolded && !noFiles) || chatRailWanted
+  const sideWanted = reportOn || childOn || !!bug.rail || (!filesFolded && !noFiles) || chatRailWanted
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =
@@ -1218,10 +1220,10 @@ export function TaskView({
     (bothFit ||
       !sideWanted ||
       (lastRail !== 'files' && !reportOn && !pluginHome && !(chatRailWanted && lastRail === 'auto')))
-  const filesYield = !reportOn && !childOn && !filesFolded && sessionShown && !bothFit
+  const filesYield = !reportOn && !childOn && !bug.rail && !filesFolded && sessionShown && !bothFit
   // 放不下时 Chat 右栏和文件栏一样给会话栏让开（后打开的那个留着）
   const chatRailShown = chatRailWanted && !(sessionShown && !bothFit)
-  const filesHidden = (filesFolded && !childOn) || filesYield
+  const filesHidden = (filesFolded && !childOn && !bug.rail) || filesYield
   const closeReport = () => {
     if (reportCover) return setReportCover(false)
     setReportFolded(true)
@@ -1671,7 +1673,7 @@ export function TaskView({
           : !working
             ? waitText
               ? t('{what}，可以直接输入要求', { what: waitText })
-              : t('继续输入要求')
+              : continueHint(task)
             : canSteer
               ? t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
               : t('执行中也可以输入，这一轮结束后接着处理')
@@ -2482,8 +2484,9 @@ export function TaskView({
                     'relative shrink-0 flex-col',
                     embed ? 'border-l bg-rail' : 'panel',
                     // 窄屏右栏是抽屉：点了文件按钮、盖着功能面板、或开着子对话（子对话在右栏的页签里）时拉出来
+                    // 手机宽度下子对话抽屉占满整屏：拖过的栏宽在手机上只剩两百多像素，输入框和行都挤成一团（U9）
                     panel || reportCover || childOn
-                      ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop'
+                      ? cn('fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop', childOn && 'max-md:w-full!')
                       : 'hidden',
                     // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
                     'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
@@ -2520,6 +2523,7 @@ export function TaskView({
                       dir={project?.path}
                       node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
                       onTask={apply}
+                      report={bug.rail}
                       child={
                         childOn
                           ? {

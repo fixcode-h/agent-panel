@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { FileSearch } from 'lucide-react'
 import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
@@ -235,6 +235,7 @@ export function DiagnosisDialog({
   onOpenChange,
   onDone,
   version,
+  dock,
 }: {
   task: Pick<Task, 'id' | 'title' | 'diagnoses'> & Partial<Pick<Task, 'changes'>>
   /** 打开时先看哪一份（交报告的顺序号）；不传看最新那份 */
@@ -242,6 +243,8 @@ export function DiagnosisDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone?: (task: Task) => void
+  /** 停靠到右栏（分析稿 U7，见 diagnosis-window.tsx）：只管放在哪，审阅本身不变 */
+  dock?: ComponentProps<typeof ReviewDialog>['dock']
 }) {
   const { settings, agents } = useData()
   const author = settings?.bugAuthor !== false
@@ -308,6 +311,7 @@ export function DiagnosisDialog({
         watchWhere ? (fill) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} onFill={fill} /> : undefined
       }
       initialVersion={version ? String(version) : undefined}
+      dock={dock}
       presets={presets}
       readOnly={last.status !== 'pending'}
       // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边

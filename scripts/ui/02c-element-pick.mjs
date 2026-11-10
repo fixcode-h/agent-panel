@@ -15,7 +15,7 @@ import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-
 await runShard(import.meta.filename, async (api) => {
   const { base, page, check, errors } = api
   const p = await openCartTask(api)
-  const { waitToastsGone, backToTask, closed } = taskPageHelpers(p, api)
+  const { waitToastsGone, backToTask, closed, pinHeader } = taskPageHelpers(p, api)
 
   // 抓取元素：从哪个输入框的按钮进入，抓到的引用就填回哪个输入框（父对话 + 右栏子对话同时在场时也不能插错）。
   // 以前按焦点 / 最近聚焦猜，两个输入框都在时容易把引用插到另一个对话。
@@ -837,6 +837,7 @@ await runShard(import.meta.filename, async (api) => {
   // 进程面板只算当前对话及其附属：购物车这个对话有在跑的子对话，面板里要同时出现
   // 「本对话」和「子对话」两组，而且子对话的标题就在面板里（不是页面上别处的同名文字）
   {
+    await pinHeader('对话进程')
     const btn = p.getByRole('button', { name: '对话进程' }).first()
     await btn.click()
     const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
@@ -977,6 +978,7 @@ await runShard(import.meta.filename, async (api) => {
     .catch(() => {})
   // 关窗口会弹「AI 排查继续在后台进行」：提示在右上角，正盖着「任务进度」，等它退场再点
   await waitToastsGone()
+  await pinHeader('任务进度')
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p

@@ -1,5 +1,6 @@
 import { Suspense, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
+  ClipboardCheck,
   Diff,
   FileText,
   GitBranch,
@@ -31,6 +32,7 @@ import { TaskStatusIcon } from './TaskStatusIcon'
 import { ChildSwitcher } from './ChildSwitcher'
 import { PaneNavCtx, PaneToolbarCtx, useChildList } from './child-open'
 import { InlineRename } from '@/components/ui/inline-rename'
+import type { DiagnosisRail } from './diagnosis-window'
 
 /** 3D 预览要 three.js（几百 KB），只有模型设计对话用到：单独分块，按需加载 */
 import { DiffDialog } from './DiffDialog'
@@ -93,6 +95,7 @@ export function TaskFiles({
   node,
   onTask,
   child,
+  report,
 }: {
   task: Task
   /** 项目目录：分支还没读出来时先用它做说明 */
@@ -112,6 +115,8 @@ export function TaskFiles({
     /** 打开的不是子对话（名下的工作流运行）时页签上的叫法 */
     label?: string
   }
+  /** 停靠到右栏的诊断报告（分析稿 U7）：多一个可关的页签，报告由任务页顶层用 Portal 画进来 */
+  report?: DiagnosisRail | null
 }) {
   const { upsertTask } = useData()
   // 插件给的页签（ADR 0059，例如模型设计的「模型」）：标了 home 的默认停在它上面，建模时要盯的是模型，不是文件
@@ -126,6 +131,14 @@ export function TaskFiles({
     // home 只跟着对话变，不用单独跟
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [childId, childFocus])
+  // 停靠了诊断报告（或换了一份）就切到它的页签；关掉后回到子对话或默认页签
+  const reportKey = report?.key ?? ''
+  useEffect(() => {
+    setTab((cur) => (reportKey ? 'report' : cur === 'report' ? (childId ? 'child' : home) : cur))
+    // 只跟着报告换；home、childId 变了由上面那个 effect 管
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportKey])
+  const onReport = tab === 'report' && !!report
   const onChild = tab === 'child' && !!child
   const onPlugin = pluginTabs.find((x) => x.id === tab)
   const onModel = !!onPlugin
@@ -200,7 +213,7 @@ export function TaskFiles({
         trailing={
           <>
             {child && <div ref={setChildSlot} className={cn('flex items-center gap-0.5', !onChild && 'hidden')} />}
-            {!onChild && !onModel && (
+            {!onChild && !onModel && !onReport && (
               <>
                 {tab === 'files' ? (
                   <IconButton
@@ -304,7 +317,22 @@ export function TaskFiles({
             </TabItem>
           )
         )}
+        {report && (
+          <TabItem
+            active={onReport}
+            onSelect={() => setTab('report')}
+            onClose={report.onClose}
+            closeLabel={t('关闭诊断报告')}
+            title={t('诊断报告 · {title}', { title: report.title })}
+            icon={<ClipboardCheck className="h-[0.8125rem] w-[0.8125rem] text-warning" />}
+            className="max-w-[12rem] min-w-[5rem] shrink"
+          >
+            <span data-report-tab>{t('诊断报告')}</span>
+          </TabItem>
+        )}
       </TabBar>
+      {/* 停靠的诊断报告：报告组件挂在任务页顶层，用 Portal 画进这块；切到别的页签只是藏起来 */}
+      {report && <div ref={report.setSlot} className={cn('flex min-h-0 flex-1 flex-col', !onReport && 'hidden')} />}
       {/* 子对话页签：切到文件、改动时只是藏起来，不卸载 */}
       {child && (
         <section
@@ -320,7 +348,7 @@ export function TaskFiles({
           <onPlugin.Panel task={task} />
         </Suspense>
       )}
-      {!onChild && !onModel && (
+      {!onChild && !onModel && !onReport && (
         <>
           {/* 项目信息行：分支 · 改动数，只放信息；这一页的工具在页签条右端（ADR 0047） */}
           <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b px-4 text-footnote text-subtle">

@@ -35,6 +35,7 @@ import { t } from '@shared/i18n'
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
+import { newTaskHint } from './composer-hint'
 /**
  * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以引入工作流。
  * 一律新建对话；引入了工作流时第一条要求点名它，由这个父对话启动（ADR 0044，不再新建老的工作流任务）。
@@ -309,7 +310,7 @@ export function TaskComposer({
           actions={chips.chipActions}
           copyOf={chips.copyOfChip}
           info={chips.chipInfo}
-          placeholder={t('想问什么，或者让它做什么')}
+          placeholder={newTaskHint({ standalone, plugin })}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-heading leading-relaxed"
         />
@@ -369,7 +370,8 @@ export function TaskComposer({
             )}
             {isolateSwitch}
             {byCli ? (
-              <ChatModelPicker value={chat} onChange={setChat} />
+              // 拆进工具条这一行一起折行：手机宽度下整个选择器换到下一行，不截断（分析稿 U9）
+              <ChatModelPicker value={chat} onChange={setChat} className="contents" />
             ) : (
               agentParams.length > 0 && <ParamsChip params={agentParams} values={params} onChange={setParams} />
             )}

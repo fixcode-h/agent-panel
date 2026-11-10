@@ -19,6 +19,7 @@ import {
   type ChildEntry,
 } from '@shared/task'
 import type { ChildRequest } from '@shared/child-needs'
+import type { LastTool } from '@shared/child-doing'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -32,15 +33,39 @@ export interface ChildSummary extends ChildEntry {
   activity?: ChildActivity
   /** 第一条待确认的请求：父对话页直接写出确认什么、给「允许 / 拒绝」（见 ChildRequestBar） */
   request?: ChildRequest
+  /** 最后一次工具调用（shared/child-doing.ts）：行上写「计划这一步 · 改 store.ts」（分析稿 U5） */
+  lastTool?: LastTool
+  /** Bug 走到五步里的第几步（0–4，5 是都走完了）：行上画五个小点（分析稿 U8） */
+  bugStep?: number
 }
 
-/** 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果 */
+/**
+ * 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果。
+ * 执行中按「计划这一步 · 在做的事」写（分析稿 U5）：在做的事优先是跑着的工作流节点、在等的子任务，
+ * 其次是正在调用或最后一次的工具调用（改 store.ts、运行命令 npm test）；回复开头截的一段没信息量，
+ * 只在既没有计划也没有工具调用时才回退到它（以前的样子）
+ */
 export function childNote(c: ChildSummary, running: boolean) {
-  const doing = activityText(c.activity)
   const plan = c.plan?.step || c.plan?.child
-  // 在等后台命令 / 子任务 / 工作流时 activity 是空的：补上在等什么，不然那一行只剩个状态标签
-  if (running) return [doing, childWaitText(c.waiting), plan].filter(Boolean).join(' · ')
-  return childWaitText(c.waiting) || c.summary
+  const wait = childWaitText(c.waiting)
+  if (running) {
+    const a = c.activity
+    const busy = a?.steps?.length || a?.helpers?.length ? activityText(a) : toolLine(a?.tool ?? c.lastTool)
+    const doing = busy || (a?.thinking && plan ? t('正在思考…') : '')
+    if (plan || busy) return [plan, doing, wait].filter(Boolean).join(' · ')
+    // 在等后台命令 / 子任务 / 工作流时 activity 是空的：补上在等什么，不然那一行只剩个状态标签
+    return [activityText(a), wait].filter(Boolean).join(' · ')
+  }
+  return wait || c.summary
+}
+
+/** 一次工具调用的短说法：动作 + 对象，文件只写文件名（行很窄，整条路径会把文件名挤没） */
+function toolLine(tool: LastTool | undefined) {
+  if (!tool) return ''
+  // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
+  const v = toolView({ ...tool, detail: '' })?.tool ?? { ...tool, detail: '' }
+  const label = v.kind === 'edit' || v.kind === 'read' ? (v.label.split(/[\\/]/).pop() ?? v.label) : v.label
+  return `${toolVerb(v)} ${label}`.trim()
 }
 
 /**
@@ -64,11 +89,7 @@ export function staleLine(c: ChildSummary) {
 export function activityText(a: ChildActivity | undefined) {
   if (!a) return ''
   if (a.steps?.length) return a.steps.join(t('、'))
-  if (a.tool) {
-    // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
-    const v = toolView({ ...a.tool, detail: '' })?.tool ?? { ...a.tool, detail: '' }
-    return `${toolVerb(v)} ${v.label}`.trim()
-  }
+  if (a.tool) return toolLine(a.tool)
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
   // 只有服务端说「还没有输出、在想」（thinking，只在 working 时给）才写正在思考。
@@ -97,6 +118,8 @@ export interface ChildLabel {
   tone: ChildLabelTone
   /** 已解决带一个对勾（和图标、分组同一处判定） */
   icon?: 'check'
+  /** Bug 的标签后面画五个小点（分析稿 U8，见 BugStepDots）：值是走到第几步 */
+  dots?: number
 }
 
 /**
@@ -154,6 +177,7 @@ export function childLabels(c: ChildSummary, who = t('用户')): ChildLabel[] {
     out.push({
       text: c.diagnosis || icon === 'done' ? t('Bug') : t('Bug · {stage}', { stage: c.bug }),
       tone: 'plain',
+      dots: c.bugStep,
     })
   // 进程回收了的「未完成」画成静止（见 childIcon），计划进度和「未完成」照样写，只是不再用执行中的颜色
   const parked = icon === 'idle' && state === 'unfinished'
