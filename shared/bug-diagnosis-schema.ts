@@ -211,6 +211,40 @@ export const BugCaseFields = {
   collect: BugCollect.optional().catch(undefined),
 }
 
+const FileLineSchema = z.object({ file: z.string(), line: z.number().int(), text: z.string() })
+
+/**
+ * 取消修复后的清理（用户 2026-11-10 定）：running 叫 Agent 删了、等这一轮结束核对；done 核对通过、报告关闭；
+ * failed 没删干净、等用户选再删一次还是自己处理；skipped 用户选了不删 / 自己删，直接关闭。
+ * found 是点取消时面板查到的临时日志；pre 是点取消那一刻各文件内容的哈希（核对「删多了」用，内容在对话目录）
+ */
+export const CleanupState = z.object({
+  state: z.enum(['running', 'done', 'failed', 'skipped']),
+  found: z.array(FileLineSchema).default([]),
+  /** 用户勾了要一起删的、为排查新建的文件 */
+  drop: z.array(z.string()).default([]),
+  /** 用户要求修复也撤掉（共用目录、已修完时） */
+  revertFix: z.boolean().default(false),
+  /** 核对没过的地方 */
+  failed: z
+    .array(
+      z.object({
+        file: z.string(),
+        left: z.array(FileLineSchema).default([]),
+        blank: z.array(FileLineSchema).default([]),
+        extra: z.array(FileLineSchema).default([]),
+        removed: z.array(FileLineSchema).default([]),
+      }),
+    )
+    .default([]),
+  /** 用户勾的要删的新文件里核对时还在的 */
+  kept: z.array(z.string()).default([]),
+  pre: z.record(z.string(), z.string()).default({}),
+  at: z.string(),
+  checkedAt: z.string().optional(),
+})
+export type CleanupState = z.infer<typeof CleanupState>
+
 export const Diagnosis = z.object({
   ...BugCaseFields,
   /** 旧数据没有：按 confirmed 推（phaseOf） */
@@ -268,6 +302,8 @@ export const Diagnosis = z.object({
   decidedAt: z.string().optional(),
   /** 交报告时工作区已经改了的文件：确认之前就动了手的，审阅时摆出来 */
   before: z.array(z.string()).default([]),
+  /** 用户取消修复后删临时日志的进度（shared/bug-cleanup.ts）：Agent 删、面板核对，通过了才关闭报告 */
+  cleanup: CleanupState.optional().catch(undefined),
 })
 export type Diagnosis = z.infer<typeof Diagnosis>
 

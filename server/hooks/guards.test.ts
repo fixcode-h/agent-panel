@@ -177,3 +177,30 @@ test('独立分支越界：子对话改分支目录以外的文件拒绝；自�
   assert.equal(worktreeDeny(wt, edit(path.join(tmpdir(), 'x.txt'))), '')
   assert.equal(worktreeDeny(ctx(), edit(path.join(proj, 'src/a.ts'))), '')
 })
+
+test('取消后删临时日志：不许整文件还原，一处一处删', () => {
+  const task = {
+    bug: true,
+    diagnoses: [
+      {
+        version: 1,
+        phase: 'evidence',
+        status: 'cancelled',
+        cleanup: {
+          state: 'running',
+          found: [{ file: 'src/a.ts', line: 1, text: '[排查-x]' }],
+          drop: [],
+          revertFix: false,
+          failed: [],
+          kept: [],
+          pre: {},
+          at: '',
+        },
+      },
+    ],
+  } as unknown as Partial<Ctx['task']>
+  assert.match(bugDeny(ctx({ task }), sh('git checkout -- src/a.ts')), /一处一处删/)
+  assert.match(bugDeny(ctx({ task }), sh('git restore src/a.ts')), /一处一处删/)
+  assert.match(bugDeny(ctx({ task }), sh('p4 revert src/a.ts')), /一处一处删/)
+  assert.doesNotMatch(bugDeny(ctx({ task }), sh('git status')), /一处一处删/)
+})

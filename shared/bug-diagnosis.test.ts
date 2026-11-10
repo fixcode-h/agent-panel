@@ -11,6 +11,7 @@ import {
   outOfPlan,
   pendingDiagnosis,
   requestLogs,
+  settleCleanup,
   submitDiagnosis,
   updateBugCase,
   type DiagnosisInput,
@@ -522,6 +523,38 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   assert.match(v2.info, /不修了.*不能再交新一版/)
   assert.equal(tk.diagnoses!.length, 1)
   assert.equal(tk.diagnoses![0].status, 'cancelled')
+})
+
+test('取消时代码里有临时日志：先叫它删，核对通过才关闭报告、收口计划；没过等用户决定', () => {
+  const tk = bugTask({ plans: [], steps: [] })
+  applyPlan(tk, {
+    steps: [
+      { title: '查根因', status: 'done' },
+      { title: '交诊断报告', status: 'running' },
+    ],
+  })
+  submitDiagnosis(tk, input(), id)
+  const found = [{ file: 'src/a.ts', line: 3, text: "console.log('[排查-x] L1')" }]
+  const r = decideDiagnosis(tk, 1, { approve: false, cancel: true, notes: [], overall: '' }, id, undefined, {
+    found,
+    drop: [],
+    revertFix: false,
+    pre: {},
+  })
+  assert.ok(r.ok && r.message.includes('src/a.ts:3'), '交给子对话删日志的话')
+  const d = tk.diagnoses![0]
+  assert.equal(d.cleanup?.state, 'running')
+  assert.ok(openPlan(tk), '删干净之前计划不收口')
+  assert.deepEqual(editScope(tk.diagnoses!), { files: ['src/a.ts'] }, '只能改有日志的文件')
+  const left = [{ file: 'src/a.ts', left: found, blank: [], extra: [], removed: [] }]
+  assert.ok(settleCleanup(tk, { state: 'failed', failed: left }, id))
+  assert.ok(openPlan(tk), '没删干净：计划不收口')
+  assert.match(tk.messages.at(-1)!.text, /还剩 1 处临时日志/)
+  d.cleanup!.state = 'running'
+  assert.ok(settleCleanup(tk, { state: 'done' }, id))
+  assert.equal(openPlan(tk), undefined)
+  assert.match(tk.messages.at(-1)!.text, /临时日志已删干净（1 处）/)
+  assert.ok('deny' in editScope(tk.diagnoses!), '关闭后不再改文件')
 })
 
 test('快速级别：根因和修复方案合成一版交，用户确认一次就开始修；弹窗里根因那几节也在', () => {

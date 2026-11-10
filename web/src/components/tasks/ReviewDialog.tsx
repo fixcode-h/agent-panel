@@ -109,8 +109,13 @@ export function ReviewDialog({
   cancel?: {
     label: string
     title: string
-    description: string
+    /** 确认框正文：诊断报告列出面板查到的临时日志（要在打开时现查，见 onAsk） */
+    description: ReactNode
+    /** 正文下面的勾选项（要一起删的新文件、修复要不要撤掉） */
+    extra?: ReactNode
     confirm: string
+    /** 确认框打开时调用：现查要列出来的东西 */
+    onAsk?: () => void
     onCancel: (overall: string) => Promise<void>
   }
   /**
@@ -498,7 +503,15 @@ export function ReviewDialog({
         </span>
         <div className={cn('ml-auto flex shrink-0 gap-2', locked && 'hidden')}>
           {cancel && (
-            <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setCancelAsk(true)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!!busy}
+              onClick={() => {
+                cancel.onAsk?.()
+                setCancelAsk(true)
+              }}
+            >
               {cancel.label}
             </Button>
           )}
@@ -556,6 +569,7 @@ export function ReviewDialog({
           onOpenChange={setCancelAsk}
           title={cancel.title}
           description={cancel.description}
+          extra={cancel.extra}
           confirmText={cancel.confirm}
           onConfirm={async () => {
             try {

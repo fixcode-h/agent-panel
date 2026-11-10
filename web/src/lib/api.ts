@@ -914,6 +914,14 @@ export const api = {
     // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）
     body: DiagnosisDecision,
   ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
+  /** 点「取消修复」前：面板只读地查出代码里的临时日志、这个对话新建的文件（确认框里列出来） */
+  cleanupPreview: (id: string) =>
+    request<{ found: { file: string; line: number; text: string }[]; created: string[]; isolated: boolean }>(
+      `/tasks/${id}/diagnosis-cleanup`,
+    ),
+  /** 临时日志没删干净：retry 让它再删一次（返回交给它的话），finish 不再删、直接关闭报告 */
+  cleanupAction: (id: string, action: 'retry' | 'finish') =>
+    request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-cleanup`, json('POST', { action })),
   answerRequest: (
     id: string,
     rid: string,

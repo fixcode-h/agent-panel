@@ -120,6 +120,26 @@ export const closedInfo = (v: number) =>
   `用户在第 ${v} 版点了「不修了」，这份诊断报告已经关闭：不能再交新一版，也不改文件。用户之后又要修，告诉用户在父对话里重新报这个 Bug（会开新的子对话），不要在这里接着修。`
 
 /**
+ * 不修了、但临时日志还没删完（shared/bug-cleanup.ts）：这时要它删日志，不能说「不改文件」
+ * （实跑时它刚删完日志又收到「不改文件」，接着去请父对话收尾）
+ */
+export const cleaningInfo = (v: number) =>
+  `用户在第 ${v} 版点了「不修了」，现在只删临时日志：用改文件工具把 [排查-] 日志一处一处删掉（连加日志时带进来的空行），不改别的，删完结束这一轮，面板会核对；不交报告，也不请父对话收尾。`
+
+/** 取消后还在删临时日志（Agent 删着，或核对没过等用户决定） */
+export const cleaning = (d: Pick<Diagnosis, 'status' | 'cleanup'> | undefined) =>
+  d?.status === 'cancelled' && (d.cleanup?.state === 'running' || d.cleanup?.state === 'failed')
+
+/** 取消后要删的文件：查到临时日志的文件，加上用户勾了一起删的新文件 */
+export const cleanupFiles = (d: Pick<Diagnosis, 'cleanup'>) => [
+  ...new Set([...(d.cleanup?.found ?? []).map((x) => x.file), ...(d.cleanup?.drop ?? [])]),
+]
+
+/** 报告关闭时的说法：清理中和已关闭分开（交报告、改文件、收尾三处共用） */
+export const closedOrCleaning = (d: Pick<Diagnosis, 'status' | 'cleanup'>, v: number) =>
+  cleaning(d) ? cleaningInfo(v) : closedInfo(v)
+
+/**
  * 能改哪些文件：files 是放行的范围（还要排除 FREE_FILE 由调用方处理），deny 是不能改时给 Agent 的话。
  * 同意加日志后只放行日志计划里的文件；确认方案后放行方案里的文件，加上论证时加过日志的文件（要删临时日志）
  */
@@ -136,7 +156,8 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
     }
   if (d.status === 'questioned')
     return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 改好再交，用户同意后再改文件。` }
-  if (d.status === 'cancelled') return { deny: closedInfo(v) }
+  // 取消后删临时日志：只放行查到日志的文件（和用户勾了要删的新文件），其余照旧不改
+  if (d.status === 'cancelled') return cleaning(d) ? { files: cleanupFiles(d) } : { deny: closedInfo(v) }
   if (phase === 'evidence') {
     if (d.status === 'approved') return { files: d.files }
     return {

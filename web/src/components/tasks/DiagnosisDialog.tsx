@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { FileSearch } from 'lucide-react'
 import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
@@ -13,6 +13,7 @@ import { readBase64 } from '@/components/chat/Attachments'
 import { ReviewDialog, type NoteKind, type ReviewRaw } from './ReviewDialog'
 import { DiagnosisStages } from './DiagnosisStages'
 import { DiagnosisCard, ReportFold } from './DiagnosisCard'
+import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -42,6 +43,8 @@ const STATUS: Record<Diagnosis['status'], () => string> = {
 /** 一版的状态：验证阶段的「给了结果」「点了结束」和别的阶段说法不同 */
 const statusOf = (d: Diagnosis) => {
   if (d.status === 'pending' && d.awaiting) return t('日志已加好，等你复现')
+  if (d.status === 'cancelled' && d.cleanup?.state === 'running') return t('已取消，在删临时日志')
+  if (d.status === 'cancelled' && d.cleanup?.state === 'failed') return t('已取消，日志没删干净')
   if (phaseOf(d) === 'verify' && d.status === 'answered') return t('你给了验证结果，它在分析')
   if (phaseOf(d) === 'verify' && d.status === 'approved') return t('你结束了验证')
   return STATUS[d.status]()
@@ -92,6 +95,7 @@ function versionsOf(
   snippets: Record<string, string>,
   changed: string[] | undefined,
   teamNames: Set<string>,
+  status?: (d: Diagnosis) => ReactNode,
 ) {
   return list.map((d, i) => {
     const n = revOf(d)
@@ -103,7 +107,7 @@ function versionsOf(
       // 下拉按阶段分组（用户 2026-11-06 要求），组名已是阶段，列表里只写第几版、第几轮
       group: phase,
       short: k > 1 ? t('第 {n} 版 · 第 {k} 轮', { n, k }) : t('第 {n} 版', { n }),
-      ...viewOf(d, list[i - 1], { author, list, snippet: snippets[refKey(d)], changed }, teamNames),
+      ...viewOf(d, list[i - 1], { author, list, snippet: snippets[refKey(d)], changed }, teamNames, status?.(d)),
       status: statusOf(d),
     }
   })
@@ -114,11 +118,18 @@ function viewOf(
   prev: Diagnosis | undefined,
   opts: Parameters<typeof diagnosisView>[2],
   teamNames: Set<string>,
+  /** 卡片上面的一条（取消修复后删临时日志的进度） */
+  status?: ReactNode,
 ) {
   const v = diagnosisView(d, prev, opts)
   return {
     detail: v.main,
-    lead: <DiagnosisCard card={v.card} teamNames={teamNames} />,
+    lead: (
+      <>
+        {status}
+        <DiagnosisCard card={v.card} teamNames={teamNames} />
+      </>
+    ),
     after: v.background ? <ReportFold text={v.background} teamNames={teamNames} /> : undefined,
   }
 }
@@ -226,6 +237,7 @@ export function DiagnosisDialog({
   // 和 ReviewDialog 一样稳定下来：Markdown 按引用比较，变了会重新解析、冲掉标注的位置
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const changed = task.changes?.map((c) => c.path)
+  const cleanup = useCancelCleanup(task.id, !!last && phaseOf(last) === 'verify')
   if (!last) return null
   const req: Pick<TaskRequest, 'id' | 'title' | 'detail'> = {
     // 等你复现是同一版回到等你：换一个 id，标注和输入从头开始
@@ -266,7 +278,9 @@ export function DiagnosisDialog({
       open={open}
       onOpenChange={onOpenChange}
       kinds={KINDS()}
-      versions={versionsOf(list, author, snippets, changed, teamNames)}
+      versions={versionsOf(list, author, snippets, changed, teamNames, (d) => (
+        <CleanupStatus task={task} d={d} onDone={onDone} />
+      ))}
       initialVersion={version ? String(version) : undefined}
       presets={presets}
       readOnly={last.status !== 'pending'}
@@ -309,19 +323,23 @@ export function DiagnosisDialog({
       cancel={{
         label: t('取消修复'),
         title: t('取消这次修复？'),
-        description: t(
-          '不再等你确认，这份诊断报告就此关闭：计划标记为完成，之后不会再改文件，这个对话也不能再交新的报告（真要修就在父对话里重新报这个 Bug）。已经加进代码的 [排查-…] 临时日志不会自动删，要删就在这个对话里跟它说。',
-        ),
+        description: cleanup.description,
+        extra: cleanup.extra,
+        onAsk: cleanup.ask,
         confirm: t('不修了'),
-        // 不发话给子对话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
+        // 代码里有临时日志：服务端返回叫它删日志的话，交给子对话（删完面板核对干净才关闭报告，用户 2026-11-10 定）；
+        // 没有日志就不发话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
         onCancel: async (overall) => {
           const r = await api.decideDiagnosis(task.id, last.version, {
             approve: false,
             cancel: true,
+            drop: cleanup.drop,
+            revertFix: cleanup.revertFix,
             notes: [],
             overall,
           })
-          onDone?.(r.task)
+          if (r.message) await hand(r.message, [], r.task)
+          else onDone?.(r.task)
         },
       }}
       onAnswer={async (allow, _text, raw) => {
