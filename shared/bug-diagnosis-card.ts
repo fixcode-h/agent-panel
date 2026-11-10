@@ -4,7 +4,7 @@
  * 「要注意」由面板按档案字段算，不靠 Agent 自己写（所以不会漏），最多三条，红的排在前面。
  * 审阅弹窗画成卡片（web/src/components/tasks/DiagnosisCard.tsx），别处（测试、整份 Markdown）用 cardMarkdown
  */
-import type { Diagnosis } from './bug-diagnosis-schema.ts'
+import type { BugBlame, Diagnosis } from './bug-diagnosis-schema.ts'
 import { causeInPlan, logFilesOf, normPath, outOfPlan, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
@@ -20,6 +20,12 @@ export interface DiagnosisCard {
   quote: string
   /** 一句话结论（Markdown 行内） */
   headline: string
+  /**
+   * 根因评级和引入的人（用户 2026-11-10 定：等级、百分比、提交人要醒目）：论证那一步没有。
+   * rating 没写时只有 origin；origin 是版本记录里的引入点，author 关了作者显示时是空的
+   */
+  rating?: { tier: 'low' | 'mid' | 'high'; label: string; hint: string; percent: number; why: string }
+  origin?: { change: string; title: string; author: string; date: string; category: string; verified: boolean }
   /** 要你做的 */
   todo: string
   /** 要注意：最多三条 */
@@ -196,7 +202,49 @@ function attentionOf(d: Diagnosis, list: Diagnosis[] | undefined, changed?: stri
   return [...out.filter((x) => x.tone === 'danger'), ...out.filter((x) => x.tone === 'warning')].slice(0, 3)
 }
 
-export function diagnosisCard(d: Diagnosis, opts: { list?: Diagnosis[]; changed?: string[] } = {}): DiagnosisCard {
+/** 根因等级的说法：低级是粗心疏漏，中级是逻辑和边界，高级是设计、并发、跨模块 */
+export const RATING_TEXT = (): Record<'low' | 'mid' | 'high', { label: string; hint: string }> => ({
+  low: { label: t('低级'), hint: t('粗心疏漏') },
+  mid: { label: t('中级'), hint: t('逻辑和边界') },
+  high: { label: t('高级'), hint: t('设计、并发或跨模块') },
+})
+
+/** 责任类别在界面上的说法（引入点一节和决策卡共用） */
+export const blameLabel = (c: BugBlame) =>
+  ({
+    current: t('本次改动'),
+    recent: t('近期变更'),
+    legacy: t('历史遗留'),
+    external: t('外部依赖'),
+    environment: t('环境配置'),
+    data: t('数据'),
+    user: t('用户操作'),
+    unknown: t('未确定'),
+  })[c]
+
+function ratingOf(d: Diagnosis): DiagnosisCard['rating'] {
+  if (phaseOf(d) === 'evidence' || !d.rating) return undefined
+  const { tier, percent, why } = d.rating
+  return { tier, ...RATING_TEXT()[tier], percent, why: codeTerms(why.trim()) }
+}
+
+function originOf(d: Diagnosis, author: boolean): DiagnosisCard['origin'] {
+  const a = d.attribution
+  if (phaseOf(d) === 'evidence' || !a || !(a.change || a.title || a.author)) return undefined
+  return {
+    change: a.change,
+    title: a.title,
+    author: author ? a.author : '',
+    date: a.date,
+    category: blameLabel(a.category),
+    verified: !!a.verified,
+  }
+}
+
+export function diagnosisCard(
+  d: Diagnosis,
+  opts: { list?: Diagnosis[]; changed?: string[]; author?: boolean } = {},
+): DiagnosisCard {
   fillDiagnosis(d)
   opts.list?.forEach(fillDiagnosis)
   const phase = phaseOf(d)
@@ -208,6 +256,8 @@ export function diagnosisCard(d: Diagnosis, opts: { list?: Diagnosis[]; changed?
     quote:
       (phase === 'plan' && !withCause) || phase === 'fix' || phase === 'verify' ? codeTerms(first(d.rootCause)) : '',
     headline: headlineOf(d, withCause),
+    rating: ratingOf(d),
+    origin: originOf(d, opts.author !== false),
     todo: nextStep(d, withCause),
     attention: attentionOf(d, opts.list, opts.changed),
     changed: codeTerms(d.whatChanged.trim()),
@@ -220,6 +270,20 @@ export function cardMarkdown(c: DiagnosisCard, phaseLabel: string): string {
     `**${phaseLabel}** · ${c.status.text} · ${c.tags.map((x) => x.text).join(' · ')}`,
     c.quote && `${t('根因')}：${c.quote}`,
     `**${c.headline.replace(/\n\n/g, '**\n\n**')}**`,
+    c.rating &&
+      t('根因等级：**{label}**（{hint}）· 把握 **{n}%**', {
+        label: c.rating.label,
+        hint: c.rating.hint,
+        n: c.rating.percent,
+      }) + (c.rating.why ? `：${c.rating.why}` : ''),
+    c.origin &&
+      t('引入：{who}{change}{title}{date} · {category}', {
+        who: c.origin.author ? `**${c.origin.author}** · ` : '',
+        change: c.origin.change ? `\`${c.origin.change}\`` : '',
+        title: c.origin.title ? `《${c.origin.title}》` : '',
+        date: c.origin.date ? ` · ${c.origin.date}` : '',
+        category: c.origin.category,
+      }),
     `${t('要你做的')}：${c.todo}`,
   ].filter(Boolean)
   const body = head.join('\n\n')

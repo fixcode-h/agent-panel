@@ -133,3 +133,32 @@ test('回答带态度，相比上一份写在结论里', () => {
   assert.match(md, /- 回答（\*\*已解释\*\*）：上周重构挪了派发/)
   assert.match(md, /相比上一份：补了引入点/)
 })
+
+test('决策卡：根因等级、把握百分比和提交人（用户 2026-11-10）；论证那一步没有，关了作者显示不带名字', () => {
+  const over = {
+    phase: 'cause',
+    rating: { tier: 'low', percent: 95, why: '写错了常量名' },
+    attribution: {
+      category: 'recent',
+      change: 'a1b2c3',
+      author: '张三',
+      date: '2026-10-30',
+      title: '重试',
+      how: 'blame',
+    },
+  }
+  const d = diag(over)
+  const c = diagnosisCard(d, { list: [d] })
+  assert.deepEqual(
+    [c.rating?.label, c.rating?.hint, c.rating?.percent, c.origin?.author, c.origin?.category],
+    ['低级', '粗心疏漏', 95, '张三', '近期变更'],
+  )
+  assert.equal(diagnosisCard(d, { list: [d], author: false }).origin?.author, '', '设置里关了作者')
+  const md = diagnosisMarkdown(d, undefined, { list: [d] })
+  assert.match(md, /根因等级：\*\*低级\*\*（粗心疏漏）· 把握 \*\*95%\*\*/)
+  assert.match(md, /引入：\*\*张三\*\* · `a1b2c3`《重试》/)
+  const e = diag({ ...over, phase: 'evidence', confirmed: false })
+  const ce = diagnosisCard(e, { list: [e] })
+  assert.equal(ce.rating, undefined)
+  assert.equal(ce.origin, undefined)
+})

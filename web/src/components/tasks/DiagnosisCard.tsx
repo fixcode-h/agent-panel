@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, CircleAlert, TriangleAlert } from 'lucide-react'
+import { BadgeCheck, ChevronRight, CircleAlert, TriangleAlert, UserRound } from 'lucide-react'
 import type { DiagnosisCard as Card } from '@shared/bug-diagnosis-card'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -40,6 +40,7 @@ export function DiagnosisCard({ card, teamNames }: { card: Card; teamNames: Set<
         teamNames={teamNames}
         className={cn(INLINE, 'mt-2 text-heading font-semibold text-fg [&_p+p]:mt-1')}
       />
+      <CauseStrip card={card} teamNames={teamNames} />
       <p className="mt-1.5 text-body text-muted">
         <span className="font-medium text-fg">{t('要你做的：')}</span>
         {card.todo}
@@ -70,6 +71,90 @@ export function DiagnosisCard({ card, teamNames }: { card: Card; teamNames: Set<
         </div>
       )}
     </section>
+  )
+}
+
+/** 等级的颜色：低级是最不该出的错，用红；中级琥珀；高级是难题，用主题色 */
+const TIER_TONE = {
+  low: { chip: 'bg-danger/12 text-danger', bar: 'bg-danger' },
+  mid: { chip: 'bg-warning/15 text-warning', bar: 'bg-warning' },
+  high: { chip: 'bg-accent/12 text-accent', bar: 'bg-accent' },
+} as const
+
+/**
+ * 根因等级、把握百分比和引入的人（用户 2026-11-10 定：要醒目）：紧跟在一句话结论下面，
+ * 左边是等级和把握（大字的百分比加一条进度），右边是提交人和那次提交。两块都没有时不画
+ */
+function CauseStrip({ card, teamNames }: { card: Card; teamNames: Set<string> }) {
+  const { rating, origin } = card
+  if (!rating && !origin) return null
+  const tone = rating && TIER_TONE[rating.tier]
+  return (
+    <div
+      data-cause-strip
+      className="mt-2.5 grid gap-x-5 gap-y-2.5 rounded-lg border border-line bg-bg px-3.5 py-2.5 sm:grid-cols-2"
+    >
+      {rating && tone && (
+        <div className="min-w-0">
+          <div className="text-caption text-subtle">{t('根因等级')}</div>
+          <div className="mt-1 flex items-center gap-2.5">
+            <span className={cn('shrink-0 rounded-md px-2 py-0.5 text-heading font-semibold', tone.chip)}>
+              {rating.label}
+            </span>
+            <span className="min-w-0 truncate text-footnote text-muted">{rating.hint}</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2.5">
+            <span className="shrink-0 text-caption text-subtle">{t('把握')}</span>
+            <span
+              role="meter"
+              aria-label={t('把握')}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={rating.percent}
+              className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-sel"
+            >
+              <span className={cn('block h-full rounded-full', tone.bar)} style={{ width: `${rating.percent}%` }} />
+            </span>
+            <span className="shrink-0 text-title leading-none font-semibold text-fg tabular-nums">
+              {rating.percent}
+              <span className="text-footnote font-medium text-muted">%</span>
+            </span>
+          </div>
+          {rating.why && (
+            <Markdown
+              text={rating.why}
+              teamNames={teamNames}
+              className={cn(INLINE, 'mt-1.5 text-footnote text-muted')}
+            />
+          )}
+        </div>
+      )}
+      {origin && (
+        <div className="min-w-0">
+          <div className="text-caption text-subtle">{origin.author ? t('提交人') : t('引入点')}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {origin.author && (
+              <span className="inline-flex min-w-0 items-center gap-1.5 text-heading font-semibold text-fg">
+                <UserRound className="h-4 w-4 shrink-0 text-muted" />
+                <span className="truncate">{origin.author}</span>
+              </span>
+            )}
+            <Badge tone="neutral">{origin.category}</Badge>
+            {origin.verified && (
+              <span className="inline-flex items-center gap-1 text-caption text-success">
+                <BadgeCheck className="h-3.5 w-3.5" />
+                {t('已按版本记录核对')}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 text-footnote leading-relaxed text-muted">
+            {origin.change && <code className="mr-1.5 font-mono text-fg">{origin.change}</code>}
+            {origin.title && <span>{`《${origin.title}》`}</span>}
+            {origin.date && <span className="ml-1.5 text-subtle">{origin.date}</span>}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

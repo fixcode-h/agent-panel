@@ -231,4 +231,15 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '这一版没有取到实际的代码改动，只能看上面每个文件写的改了什么。':
     "This version couldn't capture the actual code changes; see what each file says it changed above.",
   方案里写的改动: 'Changes in the plan',
+  低级: 'Basic',
+  中级: 'Intermediate',
+  高级: 'Advanced',
+  粗心疏漏: 'careless slip',
+  逻辑和边界: 'logic or edge case',
+  '设计、并发或跨模块': 'design, concurrency or cross-module',
+  根因等级: 'Root cause level',
+  提交人: 'Committed by',
+  已按版本记录核对: 'Checked against version history',
+  '根因等级：**{label}**（{hint}）· 把握 **{n}%**': 'Root cause level: **{label}** ({hint}) · confidence **{n}%**',
+  '引入：{who}{change}{title}{date} · {category}': 'Introduced by: {who}{change}{title}{date} · {category}',
 }
