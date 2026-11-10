@@ -154,3 +154,19 @@ export function redirectWait(commands: RunningCommand[], now: number, limits: Re
   )
   return deadline - now
 }
+
+/**
+ * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
+ * 会改文件、装依赖、跑测试的命令按这个阈值打断；只读命令（ls、rg、git log、git worktree list）
+ * 跑完这批工具就会被取走，等它自然结束，真卡住了才按 REDIRECT_READONLY_AFTER_MS 兜底（见 redirectWait）
+ */
+// 测试用环境变量缩短，免得端到端测试真的等
+const REDIRECT_AFTER_MS = Number(process.env.AGENT_PANEL_REDIRECT_MS) || 8000
+/** 只读命令卡住时的兜底：比普通命令宽得多，让读代码、看历史的命令先跑完 */
+const REDIRECT_READONLY_AFTER_MS =
+  Number(process.env.AGENT_PANEL_REDIRECT_READONLY_MS) || Math.max(REDIRECT_AFTER_MS * 5, 40_000)
+/** runner 用的两个阈值（以前写在 runner.ts 里） */
+export const REDIRECT_LIMITS: RedirectLimits = { command: REDIRECT_AFTER_MS, readOnly: REDIRECT_READONLY_AFTER_MS }
+/** 停下命令后跟补充一起交给模型的说明 */
+export const REDIRECT_NOTE =
+  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断：这条命令已经取消，它的输出不完整，不要当成结果使用。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'

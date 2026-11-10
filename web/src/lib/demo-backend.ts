@@ -60,15 +60,9 @@ import {
   Settings,
   type PlanStatus,
   Task,
-  type TaskMessage,
-  type TaskProcess,
-  type TaskProcesses,
   type TaskJob,
   type TaskJobView,
-  type TaskMemoryHistory,
-  type TaskMemoryAnalysis,
   type TaskStep,
-  type TaskTurn,
   type CliInstallJob,
   type CliModels,
   type CliUpdate,
@@ -102,16 +96,8 @@ import {
   workdayTemplate,
 } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
-import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
+import { runTree, runUsage } from '@shared/run-usage'
 import { demoLifecycle } from './demo-lifecycle'
-import {
-  TASK_MEMORY_ASK,
-  clipReport,
-  ownersOf,
-  taskMemoryReport,
-  taskMemoryTrend,
-  taskTrendText,
-} from '@shared/memory-analysis'
 import { descendantTotals } from '@shared/task-export'
 import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
@@ -130,36 +116,13 @@ import {
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import { childAskEffect } from '@shared/child-ask'
-import {
-  BUILTIN_WORKFLOWS,
-  ComfyWorkflow,
-  comfyImportFile,
-  LOCAL_FILES,
-  LOCAL_MODELS,
-  localModel,
-  localFile,
-  localWorkflow,
-  modelReady,
-  type LocalJob,
-  type LocalStatus,
-} from '@shared/local-image'
-import { ComfyChain } from '@shared/comfy-chain'
-import {
-  builtinTemplates,
-  builtinTemplateMeta,
-  type ComfyTemplateMeta,
-  type TemplateAsset,
-} from '@shared/comfy-templates'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
-  childFacts,
   closeFlow,
-  convActive,
-  convState,
   dropEndNotes,
   endRun,
   messagePage,
@@ -212,6 +175,21 @@ import { demoRestore } from './demo-restore'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
 import { DEMO_FILES, DEMO_README } from './demo-project-files'
+// 拆出去的演示接口：报错和校验、在跑的一轮、本机生图、进程面板、任务里的样例
+import { fail, parse } from './demo-http'
+import { live } from './demo-live'
+import { demoLocal } from './demo-comfy'
+import {
+  demoChildActive,
+  demoClean,
+  demoCliAlive,
+  demoKill,
+  demoMemory,
+  demoMemoryAnalysis,
+  demoProcesses,
+  demoSuggest,
+} from './demo-processes'
+import { demoAlerts, demoPlans, seedDemoUsage } from './demo-task-samples'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -250,19 +228,6 @@ const DEMO_GLOBAL_LESSONS: GlobalLesson[] = [
     updatedAt: '',
   },
 ]
-
-class HttpError extends Error {
-  constructor(
-    message: string,
-    /** 状态码：正式后端用 409 表示「现在不能做」，界面按它区分提示（见 api.ts 的 err.status） */
-    readonly status = 400,
-  ) {
-    super(message)
-  }
-}
-const fail = (msg: string, status = 400): never => {
-  throw new HttpError(msg, status)
-}
 
 // ---- 模拟的本机目录 ----
 const HOME = '/home/demo'
@@ -1097,11 +1062,6 @@ function remove(coll: Coll, id: string, notFound: string) {
   ;(d[coll] as { id: string }[]) = list.filter((x) => x.id !== id)
   persist()
 }
-function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
-  const p = schema.safeParse(body)
-  if (!p.success) fail(z.prettifyError(p.error))
-  return p.data as z.infer<S>
-}
 
 const VERSIONS: Record<string, string> = {
   claude: '2.1.300 (Claude Code)',
@@ -1502,317 +1462,6 @@ const DEMO_COMMANDS: Record<string, SlashCommand[]> = {
     },
   ],
   codex: [{ name: 'prompts:explain', description: '解释一段代码的作用', kind: 'command', source: '~/.codex/prompts' }],
-}
-
-/** 本机生图的演示：模拟安装、下载的进度，演示里没有真的 ComfyUI */
-const local: LocalStatus = {
-  dir: '~/agent-panel/comfyui',
-  installed: false,
-  running: false,
-  external: false,
-  url: 'http://127.0.0.1:8188',
-  pythons: [
-    {
-      command: 'py -3.12',
-      path: 'C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-      version: '3.12.10',
-      usable: true,
-    },
-  ],
-  gpu: 'cuda',
-  gpuName: 'NVIDIA GeForce RTX 4090',
-  vram: 24,
-  files: [],
-}
-/** 模板商店的演示：内置模板照实给，官方模板给几条示例（不联网），详情用一张 SDXL 节点图 */
-const DEMO_GRAPH = localWorkflow(localModel('sdxl')!, {
-  prompt: '{{prompt}}',
-  negative: '{{negative}}',
-  width: '{{width}}',
-  height: '{{height}}',
-  count: '{{count}}',
-  seed: '{{seed}}',
-})
-const DEMO_ASSETS: Record<string, TemplateAsset[]> = {
-  'z-image-turbo': [
-    {
-      dir: 'diffusion_models',
-      file: 'z_image_turbo_bf16.safetensors',
-      url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors',
-      gb: 11.46,
-    },
-    {
-      dir: 'text_encoders',
-      file: 'qwen_3_4b.safetensors',
-      url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors',
-      gb: 7.49,
-    },
-    {
-      dir: 'vae',
-      file: 'ae.safetensors',
-      url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors',
-      gb: 0.31,
-    },
-  ],
-  image_sdxl_simple: [
-    {
-      dir: 'checkpoints',
-      file: 'sd_xl_base_1.0.safetensors',
-      url: 'https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors',
-      gb: 6.46,
-    },
-  ],
-}
-const DEMO_OFFICIAL: ComfyTemplateMeta[] = [
-  {
-    name: 'image_sdxl_simple',
-    title: 'SDXL1.0: Text to Image (Simple)',
-    description: 'Generate high-quality images from text prompts using the SDXL 1.0 model.',
-    category: 'Image',
-    tags: ['Image', 'Text to Image'],
-    models: ['SDXL'],
-    size: 6979321856,
-    date: '2024-02-22',
-    username: 'ComfyUI',
-    usage: 412,
-    openSource: true,
-    source: 'comfy',
-    output: 'image',
-    available: true,
-  },
-  {
-    name: 'z-image-turbo',
-    title: 'Z-Image-Turbo: Text to Image',
-    description: 'An efficient image generation model that supports English and Chinese prompts.',
-    category: 'Image',
-    tags: ['Image', 'Text to Image'],
-    models: ['Z-Image-Turbo'],
-    size: 20830591386,
-    date: '2025-11-27',
-    username: 'ComfyUI',
-    usage: 15150,
-    openSource: true,
-    source: 'comfy',
-    output: 'image',
-    available: true,
-  },
-  {
-    name: 'image_qwen_image_2_1_image_edit',
-    title: 'Qwen Image 2.1: Image Edit',
-    description: 'Edit images by feeding reference images through one checkpoint.',
-    category: 'Character & Fashion',
-    tags: ['Image Edit'],
-    models: ['Qwen Image 2.1'],
-    size: 26736171418,
-    date: '2026-09-20',
-    username: 'ComfyUI',
-    usage: 17538,
-    openSource: true,
-    source: 'comfy',
-    output: 'image',
-    needsInput: true,
-    available: true,
-  },
-  {
-    name: 'video_wan2_2_i2v',
-    title: 'Wan 2.2 14B Image to Video',
-    description: 'Turn a still image into a short video clip.',
-    category: 'Video',
-    tags: ['Video'],
-    models: ['Wan 2.2'],
-    size: 28000000000,
-    date: '2025-07-28',
-    username: 'ComfyUI',
-    usage: 9000,
-    openSource: true,
-    source: 'comfy',
-    output: 'video',
-    needsInput: true,
-    available: true,
-  },
-]
-const demoBuiltin = () => builtinTemplates(LOCAL_MODELS)
-const demoBuiltinMeta = (): ComfyTemplateMeta[] =>
-  demoBuiltin().map((tpl) => {
-    const meta = builtinTemplateMeta([tpl])[0]
-    const model = tpl.name.startsWith('builtin:') ? tpl.name.slice('builtin:'.length) : ''
-    return { ...meta, ready: model ? modelReady(localModel(model)!, local) : false }
-  })
-const demoAssetHave = (file: string) => {
-  const f = LOCAL_FILES.find((x) => x.file === file)
-  return !!f && local.files.includes(f.id)
-}
-const demoAssetsOf = (name: string) =>
-  (DEMO_ASSETS[name] ?? demoBuiltin().find((x) => x.name === `builtin:${name}`)?.assets ?? []).map((a) => ({
-    ...a,
-    have: demoAssetHave(a.file),
-  }))
-const demoCatalog = () => ({
-  templates: [
-    ...demoBuiltinMeta(),
-    ...DEMO_OFFICIAL.map((m) => ({ ...m, ready: demoAssetsOf(m.name).every((a) => a.have) })),
-  ],
-  updatedAt: '',
-  cached: false,
-})
-
-let demoWorkflows: ComfyWorkflow[] = []
-/** 演示里存下来的工作流链 */
-let demoChains: ComfyChain[] = []
-function demoLocal(method: string, seg: string[], body: unknown): unknown {
-  const [, action, id, sub] = seg
-  // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
-  if (action === 'queue') return { up: local.running, url: local.url, running: [], pending: [] }
-  if (action === 'workflows') {
-    if (method === 'POST' && sub === 'import' && id) {
-      const wf = [...BUILTIN_WORKFLOWS, ...demoWorkflows].find((w) => w.id === id)
-      if (!wf) return fail('找不到工作流')
-      return { name: wf.name, filename: comfyImportFile(wf), url: local.url }
-    }
-    if (id === 'assist') {
-      // 演示没有 AI：在参考的工作流上做一点改动，说明一下
-      const b = body as { kind: 'game' | 'web'; instruction: string; base?: ComfyWorkflow }
-      const base = b.base ?? BUILTIN_WORKFLOWS.find((w) => w.kind === b.kind)!
-      return {
-        workflow: {
-          ...base,
-          id: b.base && !b.base.builtin ? b.base.id : `wf_${Date.now().toString(36)}`,
-          name: b.base ? `${base.name}（优化）` : b.instruction.slice(0, 20),
-          builtin: undefined,
-          extra: [base.extra, 'high detail, crisp clean edges'].filter(Boolean).join(' '),
-        },
-        note: '演示：在参考工作流的基础上加强了清晰度要求（真实环境里由 AI 按你的要求改写节点和参数）。',
-      }
-    }
-    if (method === 'PUT' && id) {
-      const wf = { ...parse(ComfyWorkflow, { ...(body as object), id }), builtin: undefined }
-      demoWorkflows = demoWorkflows.some((w) => w.id === id)
-        ? demoWorkflows.map((w) => (w.id === id ? wf : w))
-        : [...demoWorkflows, wf]
-      return wf
-    }
-    if (method === 'DELETE' && id) {
-      demoWorkflows = demoWorkflows.filter((w) => w.id !== id)
-      return { ok: true }
-    }
-    const list = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
-    const ready = list.filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
-    return { list, ready: ready.map((w) => w.id) }
-  }
-  // 工作流链：演示里存得住，但试跑不真的出图（没有 ComfyUI），返回一条说清楚的错误
-  if (action === 'chains') {
-    const workflows = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
-    const ready = workflows
-      .filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
-      .map((w) => w.id)
-    if (method === 'PUT' && id) {
-      const chain = parse(ComfyChain, { ...(body as object), id })
-      demoChains = demoChains.some((c) => c.id === id)
-        ? demoChains.map((c) => (c.id === id ? chain : c))
-        : [...demoChains, chain]
-      return { chain, list: demoChains }
-    }
-    if (method === 'DELETE' && id) {
-      demoChains = demoChains.filter((c) => c.id !== id)
-      return { list: demoChains }
-    }
-    if (method === 'POST' && sub === 'run') return fail('演示版没有真的 ComfyUI，安装后才能在本地跑工作流链')
-    return { list: demoChains, workflows, ready }
-  }
-  const tick = (steps: string[], done: () => void, total = 0) => {
-    const j: LocalJob = (local.job = {
-      id: String(Date.now()),
-      kind: total ? 'download' : 'install',
-      status: 'running',
-      step: steps[0],
-      log: '',
-      progress: total ? { done: 0, total } : undefined,
-    })
-    let i = 0
-    const timer = setInterval(() => {
-      i++
-      if (j.progress) j.progress.done = Math.min(total, (total * i) / 8)
-      const step = steps[Math.min(steps.length - 1, Math.floor((i * steps.length) / 8))]
-      if (step !== j.step) j.log += `${j.step}\n`
-      j.step = step
-      if (i < 8) return
-      clearInterval(timer)
-      j.status = 'done'
-      done()
-    }, demoMs(400))
-  }
-  if (action === 'templates') {
-    if (!id || id === 'refresh') return demoCatalog()
-    const builtin = demoBuiltin().find((x) => x.name === id)
-    const found = demoBuiltinMeta().find((x) => x.name === id) ?? DEMO_OFFICIAL.find((x) => x.name === id)
-    if (!found) return fail('找不到模板')
-    const meta = found
-    const assets = demoAssetsOf(builtin ? builtin.name.slice('builtin:'.length) : id)
-    if (sub === 'add') {
-      const kind = (body as { kind?: string } | undefined)?.kind === 'web' ? 'web' : 'game'
-      const wf: ComfyWorkflow = {
-        id: `wf_${Date.now().toString(36)}`,
-        name: `${meta.title}（副本）`,
-        kind,
-        use: 'any',
-        description: meta.description,
-        model: builtin ? builtin.name.slice('builtin:'.length) : '',
-        assets: assets.map((a) => `${a.dir}/${a.file}`),
-        extra: '',
-        graph: builtin?.graph ?? DEMO_GRAPH,
-        origin: 'template',
-        updatedAt: '',
-      }
-      demoWorkflows.push(wf)
-      return wf
-    }
-    if (sub === 'download') {
-      const files = assets.filter((a) => !a.have)
-      tick(
-        files.map((a) => `下载 ${a.file}`),
-        () => {
-          for (const a of files) {
-            const f = LOCAL_FILES.find((x) => x.file === a.file)
-            if (f && !local.files.includes(f.id)) local.files.push(f.id)
-          }
-        },
-        files.reduce((n, a) => n + a.gb * 1024 ** 3, 0),
-      )
-      return { job: local.job, files, skipped: 0 }
-    }
-    return {
-      template: { ...meta, ready: assets.every((a) => a.have) },
-      ...(builtin ? { graph: builtin.graph } : { preview: DEMO_GRAPH }),
-      assets,
-    }
-  }
-  if (action === 'install' && method === 'POST')
-    tick(
-      ['检查 Python', '下载 ComfyUI', '创建 Python 虚拟环境', '安装 PyTorch', '安装 ComfyUI 的依赖', '安装完成'],
-      () => {
-        local.installed = true
-        local.venv = {
-          command: '~/agent-panel/comfyui/venv/Scripts/python.exe',
-          path: '~/agent-panel/comfyui/venv/Scripts/python.exe',
-          version: '3.12.10',
-          usable: true,
-        }
-      },
-    )
-  if (action === 'start') local.running = local.installed
-  if (action === 'stop') local.running = false
-  if (action === 'cancel' && local.job) local.job.status = 'failed'
-  if (action === 'models' && id) {
-    const m = localModel(id)
-    if (m && sub === 'download')
-      tick(
-        m.files.map((f) => `下载 ${localFile(f)!.file}`),
-        () => (local.files = [...new Set([...local.files, ...m.files])]),
-        m.files.reduce((n, f) => n + localFile(f)!.gb * 1024 ** 3, 0),
-      )
-    if (m && method === 'DELETE') local.files = local.files.filter((f) => !m.files.includes(f))
-  }
-  return structuredClone(local)
 }
 
 /** 演示的项目技能：改了只存在浏览器内存里，刷新页面回到初始内容 */
@@ -2674,11 +2323,6 @@ export async function handle(method: string, url: string, body: unknown) {
 export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project, Schedule }
 
 // ---- 任务 ----
-/** held：执行中收下、这一轮结束后接着处理的消息（消息已经记进对话） */
-const live = new Map<
-  string,
-  { stop: boolean; done?: Promise<unknown>; held?: { text: string; attachments: Attachment[] }[] }
->()
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, demoMs(ms)))
 
 function projectWorkflow(d: Db, p: Project) {
@@ -2814,21 +2458,6 @@ function followUp(
 const demoMerged = new Set<string>()
 
 // ---- 进程与内存（演示） ----
-/** 字符串散成稳定的数字：同一个对话每次打开看到同样的 pid，截图和验证都对得上 */
-function hashNum(text: string) {
-  let h = 2166136261
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return Math.abs(h)
-}
-
-/** 演示里「关掉了」的进程：只留在内存里，刷新页面重新出现 */
-const demoGone = new Map<string, Set<number>>()
-
-const MB = 1024 * 1024
-
 /**
  * 演示里见过的后台命令：真实后端的 job 记录一直留到对话被删或超出 KEEP_JOBS，
  * 所以命令结束后仍然读得到最终输出（只是 uiJobs 不再把它放进 task.jobs，运行区那一行随之消失）。
@@ -2877,222 +2506,6 @@ function demoJobView(task: Task, jobId: string): TaskJobView {
     endedAt: ended ? new Date().toISOString() : '',
     // 和 startedAt 同源：每轮都变的话界面算「多久没动静」会恒为 0
     lastOutputAt: job.startedAt || new Date().toISOString(),
-  }
-}
-
-function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
-  const now = Date.now()
-  // 和正式后端一个口径：当前对话 + 它的附属，父对话和兄弟不出现
-  const ids = subtreeTaskIds(tasks, task.id)
-  const rootId = task.rootTaskId || task.id
-  // 关掉的进程按整棵树记：pid 是按根任务生成的，父对话和子对话的面板看到的是同一个进程
-  const gone = demoGone.get(rootId) ?? new Set<number>()
-  const base = (hashNum(rootId) % 20000) + 30000
-  const started = (x: Task) => {
-    const at = Date.parse(x.runStartedAt || x.updatedAt || '')
-    return Number.isFinite(at) ? at : now - 12 * 60_000
-  }
-  const rows: TaskProcess[] = []
-  const push = (pid: number, o: Omit<TaskProcess, 'pid'>) => {
-    if (!gone.has(pid)) rows.push({ pid, ...o })
-  }
-  const active = demoLive(task) ? 'running' : 'idle'
-  const cliTitle = task.title
-  push(base, {
-    parentPid: null,
-    command: `pi --print --mcp-config {"mcpServers":{"panel":{}}} 对话：${task.title}`,
-    ownerTaskId: task.id,
-    ownerTitle: cliTitle,
-    startedAt: started(task),
-    durationMs: now - started(task),
-    rss: 168 * MB,
-    status: active,
-    kind: 'cli',
-  })
-  // CLI 自己起的子进程（MCP 桥接、shell）：正式后端也把它们算进这个对话
-  push(base + 1, {
-    parentPid: base,
-    command: 'node /home/u/.agent-panel/cache/cli-run/demo/ask-mcp.mjs',
-    ownerTaskId: task.id,
-    ownerTitle: cliTitle,
-    startedAt: started(task) + 1200,
-    durationMs: now - started(task) - 1200,
-    rss: 46 * MB,
-    status: active,
-    kind: 'child',
-  })
-  // 在干的附属任务（子对话、子对话的子对话）
-  for (const kid of tasks.filter((x) => x.id !== task.id && ids.has(x.id) && demoLive(x)).slice(0, 3)) {
-    const at = started(kid)
-    push(base + 10 + tasks.indexOf(kid), {
-      parentPid: null,
-      command: `codex app-server 子对话：${kid.title}`,
-      ownerTaskId: kid.id,
-      ownerTitle: kid.title,
-      startedAt: at,
-      durationMs: now - at,
-      rss: 92 * MB,
-      status: 'running',
-      kind: 'cli',
-    })
-  }
-  // 任务已经结束、进程还留着的残留：演示「清理无效进程」用
-  const orphanAt = now - 46 * 60_000
-  push(base + 99, {
-    parentPid: null,
-    command: 'claude --mcp-config {"mcpServers":{"panel":{}}} 已结束的子任务',
-    ownerTaskId: task.id,
-    ownerTitle: '已结束的子任务',
-    startedAt: orphanAt,
-    durationMs: now - orphanAt,
-    rss: 24 * MB,
-    status: 'orphan',
-    kind: 'cli',
-  })
-  const cliMemory = rows.reduce((sum, p) => sum + (p.rss ?? 0), 0)
-  const serverMemory = (268 + Math.round(Math.sin(now / 240_000) * 6)) * MB
-  return {
-    sampledAt: now,
-    processes: rows,
-    cliMemory,
-    serverMemory,
-    // 面板自己的内存不计入对话合计
-    totalMemory: cliMemory,
-    unavailable: '',
-  }
-}
-
-/** 演示任务算不算「还在跑」 */
-function demoLive(task: Task) {
-  return task.working === true || live.has(task.id)
-}
-
-/**
- * 演示里这个对话的 CLI 进程算不算活着（对正式后端 `taskCliAlive` 的替代）。
- * 演示里没有真的进程：除了 `live` 登记，还得把「停在等下一句 / 这一轮还在跑」也算上——
- * 这两件事本身就意味着进程活着。`live` 只在本次页面加载里有效，刷新后就空了，
- * 只按它算会让存盘里明明 `awaitingUser: true` 的对话在刷新后变成「进程已经回收」，`childWait` 也就算不出 `next`
- */
-const demoCliAlive = (task: Task) => live.has(task.id) || task.working === true || task.awaitingUser === true
-
-/**
- * 子对话还在运行（和正式后端的 activeChildren / childActive 一个口径）：在跑、等结果、等回答都算，不只看 working。
- * 演示里没有 startQueue 和收件箱，后台命令数按演示数据里的 jobs 算
- */
-const demoChildActive = (x: Task) =>
-  convActive(
-    convState(
-      childFacts(x, {
-        background: (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length,
-      }),
-    ),
-  )
-
-function demoKill(task: Task, pid: number) {
-  const rootId = task.rootTaskId || task.id
-  const set = demoGone.get(rootId) ?? new Set<number>()
-  set.add(pid)
-  demoGone.set(rootId, set)
-  return { ok: true, pid, error: '' }
-}
-
-function demoClean(task: Task, body: unknown) {
-  const panel = demoProcesses(task, load().tasks ?? [])
-  const want = (body as { pids?: unknown } | undefined)?.pids
-  const asked = Array.isArray(want) ? want.filter((x): x is number => Number.isInteger(x)) : []
-  const orphans = panel.processes.filter((p) => p.status === 'orphan' && p.kind === 'cli')
-  const targets = asked.length ? orphans.filter((p) => asked.includes(p.pid)) : orphans
-  const rootId = task.rootTaskId || task.id
-  const set = demoGone.get(rootId) ?? new Set<number>()
-  for (const p of targets) set.add(p.pid)
-  demoGone.set(rootId, set)
-  return { killed: targets.map((p) => p.pid), skipped: [], gone: [] }
-}
-
-function demoSuggest(task: Task, tasks: Task[]) {
-  const orphans = demoProcesses(task, tasks).processes.filter((p) => p.status === 'orphan')
-  return {
-    suggestions: orphans.map((p) => ({ pid: p.pid, reason: `所属任务已经结束，进程还留着（${p.ownerTitle}）` })),
-    text: '',
-    error: '',
-  }
-}
-
-function demoMemory(task: Task, query: URLSearchParams): TaskMemoryHistory {
-  const intervalMs = 30_000
-  const capacity = 2000
-  const now = Date.now()
-  const base = hashNum(task.rootTaskId || task.id)
-  const from = Number(query.get('from') ?? '')
-  const to = Number(query.get('to') ?? '')
-  const points: TaskMemoryHistory['points'] = []
-  // 两小时、30 秒一点，够看清趋势也能验证左右拖动
-  for (let i = 239; i >= 0; i--) {
-    const t = Math.floor(now / intervalMs) * intervalMs - i * intervalMs
-    if (Number.isFinite(from) && from > 0 && t < from) continue
-    if (Number.isFinite(to) && to > 0 && t > to) continue
-    const wave = Math.sin(t / 900_000 + (base % 7)) * 28 + Math.sin(t / 240_000) * 8
-    const cli = Math.round((132 + wave) * MB)
-    const server = Math.round((268 + Math.sin(t / 300_000 + 1) * 6) * MB)
-    // 合计只算这个对话的 CLI；面板自己的内存单独给出，不混进来
-    points.push({ t, server, cli, total: cli })
-  }
-  return { sampledAt: now, intervalMs, capacity, points }
-}
-
-/** 演示版的内存分析：和正式后端同一套口径（shared/memory-analysis.ts），数字来自演示数据 */
-function demoMemoryAnalysis(task: Task, tasks: Task[], projects: Project[]): TaskMemoryAnalysis {
-  const history = demoMemory(task, new URLSearchParams())
-  const points = history.points
-  const panel = demoProcesses(task, tasks)
-  const owners = ownersOf(panel.processes, task.id)
-  const tree = runTree(task, tasks)
-  const contexts = tree
-    .map((x) => {
-      let best = { context: 0, window: 0 }
-      for (const u of Object.values(x.usage?.agents ?? {})) {
-        if ((u.context ?? 0) > best.context) best = { context: u.context ?? 0, window: u.window ?? 0 }
-      }
-      return { id: x.id, title: x.title, ...best, self: x.id === task.id }
-    })
-    .filter((x) => x.context > 0)
-  const project = projects.find((p) => p.id === task.projectId) ?? null
-  const trend = taskMemoryTrend(points)
-  const report = taskMemoryReport({
-    task: { title: task.title, mode: task.mode, status: task.status },
-    project: project ? { name: project.name, path: project.path } : null,
-    points,
-    intervalMs: history.intervalMs,
-    panel: { cliMemory: panel.cliMemory, serverMemory: panel.serverMemory, unavailable: panel.unavailable },
-    owners,
-    tree: {
-      tasks: tree.length,
-      children: tree.length - 1,
-      running: tree.filter((x) => x.status === 'running').length,
-    },
-    contexts,
-  })
-  return {
-    sampledAt: Date.now(),
-    intervalMs: history.intervalMs,
-    report: clipReport(report),
-    ask: TASK_MEMORY_ASK,
-    cwd: project?.path ?? '',
-    trend: trend?.trend ?? null,
-    trendText: taskTrendText(trend),
-    owners: owners.map(({ taskId, title, self, rss, count, counted }) => ({
-      taskId,
-      title,
-      self,
-      rss,
-      count,
-      counted,
-    })),
-    tree: {
-      tasks: tree.length,
-      children: tree.length - 1,
-      running: tree.filter((x) => x.status === 'running').length,
-    },
   }
 }
 
@@ -3356,7 +2769,7 @@ function tasksRoute(
   // 进程面板：演示版给一份稳定的假进程和内存历史，字段和正式后端一致
   if (sub === 'processes') {
     if (method === 'GET' && !rid) return demoProcesses(task, tasks)
-    if (method === 'POST' && rid === 'clean') return demoClean(task, body)
+    if (method === 'POST' && rid === 'clean') return demoClean(task, body, load().tasks ?? [])
     if (method === 'POST' && rid === 'suggest') return demoSuggest(task, tasks)
     if (method === 'POST' && rid) return demoKill(task, Number(rid))
   }
@@ -4354,114 +3767,6 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   })
 }
 
-function demoPlans(task: Task) {
-  const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
-  const item = (id: string, title: string, status: PlanStatus, start = 0, end = 0) => ({
-    id,
-    title,
-    status,
-    note: '',
-    waits: [],
-    startedAt: start ? at(start) : '',
-    endedAt: end ? at(end) : '',
-    // 这项最后一次变化：演示里「进行中」的那一步 12 分钟没动了，界面上的滞后标记和「N 分钟前更新」才验得到
-    updatedAt: end ? at(end) : start ? at(start) : '',
-  })
-  task.plans = [
-    {
-      id: 'p1',
-      title: '定位角标不刷新的原因',
-      createdAt: at(40),
-      doneAt: at(30),
-      summary:
-        '角标读的是首次渲染时的购物车快照，加购后没有订阅 `cart:changed` 事件。已确认问题在 `CartBadge.tsx`，修复放到下一份计划里做。',
-      autoSummary: false,
-      steps: [
-        { ...item('1', '复现：连续加购三次看角标', 'done', 40, 37), children: [] },
-        { ...item('2', '找出角标的数据来源', 'done', 37, 30), children: [] },
-      ],
-    },
-    {
-      id: 'p2',
-      title: '修复购物车角标',
-      createdAt: at(28),
-      // 计划最后变化在第 3 步开始的时候，之后 12 分钟没动过：折叠头的「N 分钟前更新」应该是警示色
-      updatedAt: at(12),
-      doneAt: '',
-      summary: '',
-      autoSummary: false,
-      steps: [
-        { ...item('1', '角标订阅购物车变化', 'done', 28, 20), children: [] },
-        {
-          ...item('2', '跑端到端测试', 'waiting', 20),
-          waits: [{ kind: 'background', ref: 'e2e01', label: '端到端测试', state: 'waiting' }],
-          children: [],
-        },
-        {
-          ...item('3', '补上加购后的单元测试', 'running', 18),
-          children: [
-            item('3.1', '覆盖连续加购', 'done', 18, 12),
-            item('3.2', '覆盖删除商品后角标归零', 'running', 12),
-            item('3.3', '覆盖未登录的本地购物车', 'pending'),
-          ],
-        },
-        // 等的结果没成功：没有「失败」，仍是进行中，备注红字写「需要修复：原因」，对话去查问题修好重做
-        { ...item('4', '整理改动和总结', 'running'), note: '需要修复：等的结果没成功：npm run build', children: [] },
-      ],
-    },
-  ]
-}
-
-/**
- * 演示任务的用量：几轮分散在最近十几天（故意空出两天），日历上能看到有数据的日子，
- * 按周、按月也有数。演示里本来没有 turns，不补的话用量统计永远是空的。
- * 金额按美元记在 usage 上，只当 CLI 上报的费用作对照；表格里的费用按计价模型实时折算。
- */
-function seedDemoUsage(task: Task, minutes: number) {
-  if (task.turns?.length) return
-  // 任务的「最近一天」：createdAt 已经按 back() 的偏移移过，不会再被重复改
-  const last = new Date(new Date(task.createdAt).getTime() + minutes * 60_000)
-  const turns: TaskTurn[] = []
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }
-  for (let i = 0; i < 12; i++) {
-    // 隔几天空一天：日历上的点不必连成一片
-    if (i === 5 || i === 9) continue
-    const day = new Date(last.getFullYear(), last.getMonth(), last.getDate() - i)
-    const startedAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10 + (i % 7), 12 + i)
-    const input = 320_000 + i * 41_000
-    const output = 26_000 + i * 3_100
-    const cacheRead = Math.round(input * 0.62)
-    const cacheWrite = Math.round(input * 0.08)
-    usage.inputTokens += input
-    usage.outputTokens += output
-    usage.cacheReadTokens += cacheRead
-    usage.cacheWriteTokens += cacheWrite
-    usage.costUsd += 0.42 + i * 0.03
-    turns.push({
-      id: `demo-turn-${task.id.slice(-8)}-${i}`,
-      title: '',
-      agentId: '',
-      status: 'done',
-      startedAt: startedAt.toISOString(),
-      endedAt: new Date(startedAt.getTime() + 90_000).toISOString(),
-      from: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 },
-      inputTokens: input,
-      outputTokens: output,
-      cacheReadTokens: cacheRead,
-      waitMs: 0,
-    })
-  }
-  task.turns = turns
-  // 会话栏「模型响应」：给对话自己的 Agent 一份首包记录（有快有慢，看得出最近平均和最长）
-  const agents = { ...(task.usage?.agents ?? {}) }
-  const key = task.agentId || Object.keys(agents)[0] || ''
-  const recent = [1420, 2310, 1860, 2950, 1730, 2080, 6400, 2210, 1690, 2470]
-  const firstToken = { n: 37, sumMs: 37 * 2300, maxMs: 9800, recent }
-  const blank = { context: 0, window: 0, model: '', tps: 0, lastTps: 0, outputTokens: 0, genMs: 0 }
-  agents[key] = { ...((agents[key] as typeof blank | undefined) ?? blank), firstToken }
-  task.usage = { ...(task.usage ?? {}), ...usage, agents }
-}
-
 async function seedTasks(d: Db) {
   const [shop, admin] = d.projects
   const fe = d.agents.find((a) => a.name === '前端开发')
@@ -4717,40 +4022,6 @@ async function seedTasks(d: Db) {
     }
     await seedChatRail((input) => createTask(d, input, true), fe.id, back, DEMO_CHAT_SHOT)
   }
-}
-
-/** 对话里的报错和警告长什么样：一条已恢复的网络断开、一条 CLI 没有响应、一条额度用完（见 shared/alerts.ts） */
-function demoAlerts(task: Task) {
-  const at = new Date().toISOString()
-  const note = (text: string, alert: TaskMessage['alert']): TaskMessage => ({
-    id: `demo-${crypto.randomUUID()}`,
-    role: 'system',
-    agentId: '',
-    step: '',
-    text,
-    tools: [],
-    alert,
-    at,
-  })
-  task.messages.push(
-    note('Claude Code 执行失败：\n· 和模型服务的连接中途断开了。\n\n正在自动续接会话重试（第 1/2 次）…', {
-      kind: 'network',
-      level: 'warn',
-      detail: 'API Error: Stream connection failed mid-response: terminated',
-      resolved: '已自动续接，从中断的地方继续了',
-    }),
-    note('Claude Code 收到消息 90 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
-      kind: 'no_response',
-      level: 'warn',
-      detail:
-        'Claude Code 在 90 秒里没有任何输出（没有思考、正文或工具调用）。\n交给它的最后一条内容：\n后台命令「等待 CI」跑完了：成功',
-    }),
-    note('Claude Code 执行失败（退出码 1）：', {
-      kind: 'quota',
-      level: 'error',
-      detail: 'API Error: 402 {"type":"error","error":{"type":"billing_error","message":"Insufficient balance"}}',
-    }),
-  )
 }
 
 /** 演示版把上次读到的发布列表记在浏览器里：没有服务端的缓存文件，限流时靠它回退 */

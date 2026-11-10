@@ -25,6 +25,12 @@ export const UI_SHARD_COVERS = {
   // 提示跑全量的界面检查，宁可多跑，也不会因为少登记一条而漏跑一个会坏的页面。
   '02-task': [
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/components/tasks/LoadTrace.tsx',
     'web/src/components/tasks/PeerMessage.tsx',
     'web/src/components/tasks/HelperCards.tsx',
@@ -51,6 +57,12 @@ export const UI_SHARD_COVERS = {
   ],
   '02b-subagent': [
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     // 诊断报告：Bug 行的五个点（U8）、停靠到右栏、标注栏收起、方案表选定列（U7）
     'web/src/components/tasks/BugStepDots.tsx',
     'web/src/components/tasks/diagnosis-window.tsx',
@@ -71,6 +83,12 @@ export const UI_SHARD_COVERS = {
   ],
   '02c-element-pick': [
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/components/tasks/TaskMeta.tsx',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/Worktrees.tsx',
@@ -134,6 +152,12 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/RunView.tsx',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/components/tasks/TaskMeta.tsx',
     'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
@@ -210,6 +234,12 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/ReviewDialog.tsx',
     'web/src/components/tasks/DiagnosisDialog.tsx',
     'web/src/components/tasks/TaskView.tsx',
+    // 从 TaskView.tsx 拆出去的栏宽、子对话列表、已读在场、摘要节流、导出：跟着 TaskView 跑同样的分片
+    'web/src/components/tasks/task-view-pane.ts',
+    'web/src/components/tasks/task-view-children.ts',
+    'web/src/components/tasks/task-view-presence.ts',
+    'web/src/components/tasks/task-view-summary.ts',
+    'web/src/components/tasks/task-view-actions.ts',
     'web/src/pages/OverviewPage.tsx',
     'web/src/components/overview/',
   ],

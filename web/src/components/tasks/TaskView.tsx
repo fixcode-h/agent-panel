@@ -1,15 +1,4 @@
-import {
-  Fragment,
-  Suspense,
-  lazy,
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { Fragment, Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { t } from '@shared/i18n'
 import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anchor'
@@ -44,24 +33,14 @@ import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
 import { taskHeaderItems } from './header-items'
 import { TurnRail } from './TurnRail'
 import { chatHelperIds } from './HelperCards'
-import { keepLiveFields, windowedForSummary } from '@/lib/live-fields'
+import { keepLiveFields } from '@/lib/live-fields'
 import { latestTurnIndex } from '@/lib/latest-turn'
 import { cliAliveHint, cliTreeAlive } from './CliAlive'
-import {
-  type Attachment,
-  type Project,
-  type StopReason,
-  type Task,
-  type TaskMessage,
-  type ToolUse,
-  type TaskSeenResult,
-} from '@shared/schema'
+import { type Attachment, type Project, type TaskMessage, type ToolUse, type TaskSeenResult } from '@shared/schema'
 import { ChatModelPicker, RoleModelBadge, type ChatRun } from './ChatModelPicker'
 import { RetryModelMenu } from './RetryModelMenu'
 import { blockedStep, flowUnfinished, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
-  childSeenLocally,
-  childSpinning,
   childWait,
   diagnosisPending,
   taskActive,
@@ -82,9 +61,8 @@ import { useLoadTrace } from '@/lib/useLoadTrace'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { childLetters, deliveredToCli, messageRecorded, startedRun, withTurnSeenAt } from '@/lib/tasks'
-import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav, useTasks } from '@/lib/data'
-import { downloadTask, downloadTaskHtml, downloadTaskMarkdown, startAnalysis } from '@/lib/task-transfer'
+import { startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -92,7 +70,7 @@ import { RegenerateButton, RewindDialog } from './RewindDialog'
 import { HandoffButton } from './HandoffButton'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import { ResizeHandle } from '@/components/ui/resize'
 import { InlineRename } from '@/components/ui/inline-rename'
 import { IconButton } from '@/components/ui/icon-button'
 import { Badge } from '@/components/ui/badge'
@@ -127,7 +105,6 @@ import { HandleNeedsCtx, SummaryCardsCtx } from './Markdown'
 import { AiLookCtx } from '@/lib/ai-look'
 import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, ChildMailProvider, PaneNavCtx, PaneToolbarCtx, type PeerMail } from './child-open'
-import { type ChildSummary } from './child-line'
 import { ChildSwitcher } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
@@ -139,170 +116,55 @@ import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '
 import { canStartFlow, RUN_NO, withWorkflow } from '@shared/flow-run'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
-import { dropChip, forSend, pathText } from '@shared/composer'
+import { dropChip, forSend } from '@shared/composer'
 import { ImportedBar, ResolvedBar } from './InputBars'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { UserMessageMenu } from './UserMessageMenu'
 import { FileRefLayer } from '@/components/files/FileRefLayer'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
-import {
-  OPEN_CHILD_EVENT,
-  SHOW_PARENT_EVENT,
-  paneChildKey,
-  paneFilesKey,
-  paneReportKey,
-  paneRunKey,
-} from '@/lib/ai-window'
+import { OPEN_CHILD_EVENT, SHOW_PARENT_EVENT } from '@/lib/ai-window'
 
 import { RunChecklist, FlowBar, WorktreeBar, ChatTurn, PendingReply, ChatWaitLine, RunPhase } from './TaskViewParts'
 import { useTaskTabs } from '@/plugins/registry'
 import { blockMsgIds, toBlocks, type Block } from './task-blocks'
+// 栏宽和本地记忆、子对话列表、已读和在场、摘要节流、导出：按功能拆在这几个文件，这里只调用
+import {
+  BLOCK_LIMIT,
+  CHAT_RAIL_KEY,
+  CONVERSATION_MIN,
+  EMBED_FILES_PANE_CAP,
+  FILES_PANE_CAP,
+  NO_MESSAGES,
+  OPEN_MESSAGE_LIMIT,
+  PANE_MIN,
+  RAIL_GUTTER,
+  REPORT_COVER_WIDTH,
+  REPORT_PANE_MIN,
+  SESSION_BAR_KEY,
+  SESSION_BAR_W,
+  paneMax,
+  readFilesFolded,
+  readPaneChild,
+  readPaneRun,
+  readReportFolded,
+  readStored,
+  useHalfPane,
+  writeFilesFolded,
+  writePaneChild,
+  writePaneRun,
+  writeReportFolded,
+  writeStored,
+} from './task-view-pane'
+import { sameJson, useChildList, useChildPolling, withLocalSeen } from './task-view-children'
+import { useTaskPresence } from './task-view-presence'
+import { useSummaryPush } from './task-view-summary'
+import { taskExportActions } from './task-view-actions'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
 
-/**
- * 子对话列表的刷新间隔：有子对话在跑（转圈）时看勤一点，都静止时只是等它再动，没必要每 4 秒问一遍。
- * 没有子对话时根本不轮询（见下文）
- */
-const CHILD_POLL_ACTIVE_MS = 4000
-const CHILD_POLL_IDLE_MS = 15_000
-
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
 /** project 为空时是 Chat 模式的聊天，不属于任何项目 */
-/** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
-const BLOCK_LIMIT = 30
-/**
- * 打开对话时先取最近多少条消息：整份对话可能几 MB，首屏只要最后这一段，
- * 更早的点和翻页一样往前取（见 loadEarlier）
- */
-const OPEN_MESSAGE_LIMIT = 50
-
-/** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
-const PANE_MIN = 280
-/** 文件面板默认最宽多少：右栏是辅助，默认不和对话平分 */
-const FILES_PANE_CAP = 440
-/**
- * AI 分析窗口里文件面板默认最宽多少：弹窗本身比页面窄（最宽 1300），440 会占去三分之一，
- * 分析对话才是主体，文件栏只是顺手翻文件（用户 2026-10-30 要求文件栏别太宽、比例合适）
- */
-const EMBED_FILES_PANE_CAP = 320
-/** 会话栏的宽度，和中间对话至少要留的宽度：放不下时会话栏和右侧文件栏只显示后打开的那个 */
-const SESSION_BAR_W = 320
-/** 会话栏和面板右边缘之间留给消息区滚动条的宽度（和 index.css 的 thin-scroll 一样宽） */
-const RAIL_GUTTER = 12
-const CONVERSATION_MIN = 640
-/** 右栏拖动时中间至少留下的宽度 */
-const PANE_GAP = 320
-/** 功能面板盖在对话上时（窄屏抽屉、pane 里）的宽度：覆盖态没有并排可拖，按原来的定宽铺开 */
-const REPORT_COVER_WIDTH = 440
-/** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
-const REPORT_PANE_MIN = 320
-
-/**
- * 右栏的可拖上限：从右栏所在容器的宽度里扣掉中间至少要留的部分，不写死像素。
- * 容器要按自己那一栏量：AI 分析窗口是 Portal 挂在 body 末尾的，背景对话页的右栏同样还挂着，
- * 从 document 里取第一个会量到背景那一页，上限就按错的宽度算（拖动条挂到 max 时才发现拖不动）。
- */
-function paneMax(box: HTMLElement | null, min: number) {
-  const row = box?.parentElement?.clientWidth ?? window.innerWidth
-  return Math.max(min, row - PANE_GAP)
-}
-
-/**
- * 对半的栏宽：这台机器上拖过就用拖过的宽度（usePaneWidth 记的），没拖过就是本栏容器的一半
- * （用户 2026-11 要求有功能面板时默认功能面板和对话面板各占一半）。
- *
- * 一半按本栏自己的容器量，不按窗口：AI 分析窗口是弹窗、比窗口窄，侧栏收起时还会更宽。
- * 容器要等任务加载完、右栏真的挂上才有尺寸（见 TaskView 的 setRail），拿到之前先按窗口减掉左栏估算。
- * `rowWidth` 每次现量、不缓存：双击拖动条恢复默认时 usePaneWidth 会重新调一次初值函数，
- * 那时窗口可能已经改过大小，按缓存会回到旧的一半。
- */
-function useHalfPane(
-  key: string,
-  min: number,
-  max: () => number,
-  rowWidth: () => number,
-  rowMounted: boolean,
-  /** 默认宽度的上限：文件面板（项目文件 / 本对话改动）不用占一半，给对话留出主体宽度 */
-  cap = Infinity,
-) {
-  const half = () =>
-    typeof window === 'undefined'
-      ? PANE_DEFAULT_SSR
-      : Math.min(cap, paneHalfWidth(rowWidth() || rowWidthFromWindow(window.innerWidth), min))
-  const pane = usePaneWidth(key, half, min, max)
-  useLayoutEffect(() => {
-    // 拖过的宽度原样用：用户的选择优先，量到容器也不会改回去
-    if (!pane.stored && rowMounted) pane.fit(half())
-    // 右栏挂上、能量出真实容器了才对半一次；窗口 resize 后不自动跟（和文件面板一样，栏宽算用户自己的布局）
-    // pane 每次渲染都是新对象，放进依赖会一直重跑
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowMounted])
-  return pane
-}
-
-/**
- * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
- * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
- */
-function sameJson<T>(cur: T, next: T): T {
-  return JSON.stringify(cur) === JSON.stringify(next) ? cur : next
-}
-
-/**
- * 本地刚点开过的子对话按已读算：子对话页自己会发 /seen，但 4 秒一次的轮询可能抢在它前面，
- * 把刚消失的未读点又画回来。只覆盖「点开那一刻的那一轮」：服务端换了新的完成时间（它又跑完一轮）时不按已读算，
- * 那一轮归子对话页自己的 /seen 管，不然会和侧栏的橙点对不上
- */
-function withLocalSeen(c: ChildSummary, viewed: Map<string, string>): ChildSummary {
-  const seenAt = viewed.get(c.id)
-  return seenAt && childSeenLocally(c, seenAt) ? { ...c, turnSeenAt: seenAt } : c
-}
-
-/** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
-
-function readStored(key: string) {
-  try {
-    return localStorage.getItem(key) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-function writeStored(key: string, value: string) {
-  try {
-    if (value) localStorage.setItem(key, value)
-    else localStorage.removeItem(key)
-  } catch {
-    // 隐私模式禁用本地存储时只是不记住，不影响使用
-  }
-}
-
-/** Chat 页右栏（代码 / 来源 / 附件）收起过就记一笔：所有聊天共用一个开关，默认开着 */
-const CHAT_RAIL_KEY = 'chat-rail'
-const NO_MESSAGES: TaskMessage[] = []
-
-const readPaneChild = (taskId: string) => readStored(paneChildKey(taskId))
-const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) || 0
-/** 文件面板收没收起按对话记在本地：右栏「项目文件 / 本对话改动」默认开着，用户收起过才记一笔 */
-const readFilesFolded = (taskId: string) => readStored(paneFilesKey(taskId)) === 'closed'
-const writeFilesFolded = (taskId: string, folded: boolean) => writeStored(paneFilesKey(taskId), folded ? 'closed' : '')
-/** 会话栏（中间对话右边那一列，照 Claude Code）：所有对话共用一个开关，默认开着，收起过才记一笔 */
-const SESSION_BAR_KEY = 'task-session-bar'
-/** 分析对话的功能面板默认开着：用户收起过才记一笔 */
-const readReportFolded = (taskId: string) => readStored(paneReportKey(taskId)) === 'closed'
-const writeReportFolded = (taskId: string, folded: boolean) =>
-  writeStored(paneReportKey(taskId), folded ? 'closed' : '')
-function writePaneChild(taskId: string, childId: string) {
-  writeStored(paneChildKey(taskId), childId)
-  // 子对话和运行面板互斥：右栏同一时间只显示一个
-  if (childId) writeStored(paneRunKey(taskId), '')
-}
-function writePaneRun(taskId: string, run: number) {
-  writeStored(paneRunKey(taskId), run ? String(run) : '')
-  if (run) writeStored(paneChildKey(taskId), '')
-}
 
 export function TaskView({
   taskId,
@@ -400,48 +262,11 @@ export function TaskView({
   // 首包就只补发增量；null 表示这一轮还没拿到第一份（GET 还没回来 / 刚换对话）
   const [streamBoot, setStreamBoot] = useState<{ rev: string; task: TaskPage | null } | null>(null)
   const [panel, setPanel] = useState(false)
+  // 子对话列表的状态和拉取（task-view-children.ts）
   // 父对话里的子对话：点开在右栏看，右栏同一时间只显示一个。
   // 右栏开着哪个按父任务 id 记在本地：切走窗口再回来、页面重新加载后还是原来那个
-  const [children, setChildren] = useState<ChildSummary[]>([])
-  // 子对话列表的重新拉取：首拉、轮询和推送信号都走它（见下面子对话列表的 effect）
-  const childrenReload = useRef<(tracked?: boolean) => Promise<void>>(async () => {})
-  // 子对话的停下原因只有完整任务上有（/children 给的是摘要）：停下的各取一次，行上才能写清是谁结束的
-  // （见 stopReasonText）。停下后原因不会变，取到的记在 ref 里，4 秒一次的轮询不再重复问
-  const childStopReasons = useRef(new Map<string, StopReason>())
-  /** 在右栏点开过的子对话：点开时那一轮的 turnDoneAt（见 withLocalSeen） */
-  const viewedChildren = useRef(new Map<string, string>())
-  /**
-   * children 的最新一份：openChildRow 用 useCallback 固定了首次渲染的 openChildIn（消息行不跟着重画），
-   * 那里直接读 state 会永远是空数组，点开时就记不到这一轮
-   */
-  const childrenRef = useRef<ChildSummary[]>([])
-  childrenRef.current = children
-  const loadChildren = useCallback(async (id: string) => {
-    const raw = await api.taskChildren(id)
-    const finish = (list: ChildSummary[]) => list.map((c) => withLocalSeen(c, viewedChildren.current))
-    // 服务端已经给了原因（空字符串是没记）：不用再为每个停下的子对话取一遍完整任务，几十个子对话就是几十份几 MB 的对话
-    if (raw.every((c) => c.stopReason !== undefined))
-      return finish(raw.map((c): ChildSummary => ({ ...c, stopReason: c.stopReason || undefined })))
-    const list = raw.map((c): ChildSummary => ({ ...c, stopReason: undefined }))
-    // 又跑起来了就清掉旧原因：下次停下可能是另一个来源
-    for (const c of list) if (c.status !== 'stopped') childStopReasons.current.delete(c.id)
-    await Promise.all(
-      list
-        .filter((c) => c.status === 'stopped' && !childStopReasons.current.has(c.id))
-        .map((c) =>
-          api
-            .task(c.id)
-            .then((t) => {
-              if (t.stopReason) childStopReasons.current.set(c.id, t.stopReason)
-            })
-            // 没取到就下次轮询再试：先按「已暂停」显示，不在这里编个原因
-            .catch(() => {}),
-        ),
-    )
-    return finish(
-      list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c)),
-    )
-  }, [])
+  const childList = useChildList()
+  const { children, setChildren, viewedChildren, childrenRef, loadChildren } = childList
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
   // 中间显示父对话还是另一个页签（子对话 / 运行）：页签开着时点父对话页签切回来，页签本身不关。
   // 打开对话时先显示父对话（地址指的就是它），上次开着的子对话 / 运行页签留在页签条上，点了才切过去
@@ -597,59 +422,8 @@ export function TaskView({
   // 「记成项目教训」弹窗：存的是那条用户消息的原文
   const [lessonOf, setLessonOf] = useState('')
 
-  // 流式输出每 200ms 推一次：任务本身马上换（对话要实时显示），全局列表的摘要最多 1 秒写一次。
-  // 状态、标题、等待确认这些侧栏马上要反映的变化仍然立即写
-  const lastTask = useRef<Task | null>(null)
-  // 手上这份是不是只有最近一段（见 OPEN_MESSAGE_LIMIT）：从截断恢复到整份时摘要要立刻写
-  const truncated = useRef(false)
-  const summaryAt = useRef(0)
-  const summaryTimer = useRef<number | undefined>(undefined)
-  // 列表里的摘要只放第一条用户消息（侧栏预览、搜索都读它）：手上只有最近一段时，消息这一项
-  // 沿用列表里已有的那份，别把预览换成尾部那一条；其余字段（未读清掉、状态、子对话计数）照常写，
-  // 侧栏马上要反映的变化不能等整份到齐
-  const summaryOf = (next: TaskPage): Task =>
-    next.messageHasMore
-      ? taskSummary(
-          windowedForSummary(
-            next,
-            tasks.find((x) => x.id === next.id),
-          ),
-        )
-      : taskSummary(next)
-  const pushSummary = (next: TaskPage, force = false) => {
-    const prev = lastTask.current
-    lastTask.current = next
-    const important =
-      force ||
-      !prev ||
-      prev.id !== next.id ||
-      prev.title !== next.title ||
-      prev.status !== next.status ||
-      prev.working !== next.working ||
-      prev.turnDoneAt !== next.turnDoneAt ||
-      // 未读清掉（打开对话时）也是侧栏马上要反映的变化，不能等 1 秒节流
-      prev.turnSeenAt !== next.turnSeenAt ||
-      prev.childrenWorking !== next.childrenWorking ||
-      (prev.jobs?.length ?? 0) !== (next.jobs?.length ?? 0) ||
-      (prev.requests?.length ?? 0) !== (next.requests?.length ?? 0)
-    const now = Date.now()
-    if (important || now - summaryAt.current >= 1000) {
-      summaryAt.current = now
-      if (summaryTimer.current) {
-        clearTimeout(summaryTimer.current)
-        summaryTimer.current = undefined
-      }
-      // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
-      upsertTask(summaryOf(next))
-      return
-    }
-    if (summaryTimer.current) return
-    summaryTimer.current = window.setTimeout(() => {
-      summaryTimer.current = undefined
-      summaryAt.current = Date.now()
-      if (lastTask.current) upsertTask(summaryOf(lastTask.current))
-    }, 1000)
-  }
+  // 全局列表的摘要节流（task-view-summary.ts）：lastTask 是手上最新的一份，truncated 记着是不是只有最近一段
+  const { lastTask, truncated, summaryTimer, pushSummary } = useSummaryPush(tasks, upsertTask)
   // 总结卡「要你处理」的「处理」按钮：交给当前对话新的一轮（见 Markdown 的 HandleNeedsCtx）。
   // 给出去的函数保持不变，免得每次刷新都让所有回复重画；真正发送的那份在下面任务加载后更新
   const needsRef = useRef<(text: string) => Promise<void>>(async () => {})
@@ -737,7 +511,8 @@ export function TaskView({
     () => () => {
       if (summaryTimer.current) clearTimeout(summaryTimer.current)
     },
-    [],
+    // summaryTimer 是 useSummaryPush 里的 ref，对象不会变：仍然只在卸载时清一次
+    [summaryTimer],
   )
 
   // 服务端已经把这条记进对话了（推送或响应到达）：本地那条待认领的退场，显示服务端那一份
@@ -873,85 +648,8 @@ export function TaskView({
   // 子对话面板里点「启动工作流」这一行：认回它启动的是第几次运行，就地打开那次运行的视图
   const openPaneRun = (tool: ToolUse) => setPaneRun({ run: task ? (startedRun(task, tool) ?? 0) : 0, tool })
 
-  // 子对话列表：父对话页开着时定时刷新状态和摘要；子对话自己不显示子对话。
-  // 这里只是只读查询，不给子对话发 presence、也不预热它们的 CLI
-  useEffect(() => {
-    // 任务还没拿到时不动：这一步是「还没轮到」，不是「没有子对话」
-    if (!task?.id) return
-    if (task.parentTaskId) {
-      setChildren([])
-      // 子对话自己没有子对话列表：这步按「不适用」处理，日志才能走完
-      trace.skip('children', t('这个对话没有子对话'))
-      return
-    }
-    let alive = true
-    // 只有第一次拉取记进加载日志：后面的轮询和「打开对话」无关
-    const load = (tracked = false) => {
-      if (tracked) trace.start('children')
-      return loadChildren(task.id)
-        .then((list) => {
-          if (alive) setChildren((cur) => sameJson(cur, list))
-        })
-        .catch((e) => {
-          if (tracked) trace.fail('children', (e as Error).message)
-        })
-        .finally(() => {
-          if (tracked) trace.finish('children')
-        })
-    }
-    // 轮询和推送信号都走同一个函数（下面的 effect 拿不到这个闭包）
-    childrenReload.current = load
-    void load(true)
-    return () => {
-      alive = false
-      childrenReload.current = async () => {}
-    }
-    // 任务 id 变了才重新订阅；子对话的变化靠下面的轮询和推送信号
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.id, task?.parentTaskId])
-  // 子对话列表的轮询间隔：没有子对话就一次也不发（子对话产生时由推送的统计数和上报信号拉回来，见下）。
-  // 有子对话时按有没有在跑分两档：都在跑 4 秒，都静止 15 秒——静态的子对话只是等它再动，
-  // 每 4 秒问一遍服务端（每个子对话还要跑一次 git）就是纯空转
-  const childrenWorking = children.some(childSpinning)
-  useEffect(() => {
-    if (!task?.id || task.parentTaskId || !children.length) return
-    const timer = setInterval(
-      () => void childrenReload.current(),
-      childrenWorking ? CHILD_POLL_ACTIVE_MS : CHILD_POLL_IDLE_MS,
-    )
-    return () => clearInterval(timer)
-  }, [task?.id, task?.parentTaskId, children.length, childrenWorking])
-  // 子对话那边变了就重取子对话列表：待选择的提问变了（在子对话里选完、交给父对话决定），
-  // 或者收到子对话的上报（panel === 'child'，含「子对话已完成」）。
-  // 名下子对话的计数（childrenWorking / childrenCli）变了也要重取：子对话刚开、刚跑完的时候
-  // 任务本身不一定会推新消息，靠这两个数把列表拉回来
-  // 列表只读子对话自己的状态、本地不改写：子对话先置完成并上报，这里才跟着变，不抢在它前面
-  const childSignal = task?.parentTaskId
-    ? ''
-    : [
-        (task?.messages ?? []).filter((m) => m.panel === 'child').at(-1)?.id ?? '',
-        ...(task?.messages ?? [])
-          .filter((m) => m.panel === 'ask' && m.ask?.answer === undefined && !m.ask?.delegated)
-          .map((m) => m.id),
-      ].join(',')
-  // 后代在等你确认的个数也算：子对话弹出权限确认时它不一定推新消息，靠这个数把列表（和确认行）拉回来
-  const childScan = `${task?.childrenWorking ?? 0}|${task?.childrenCli ?? 0}|${task?.childrenNeeds ?? 0}`
-  const childSignalSeen = useRef({ taskId: '', key: '' })
-  useEffect(() => {
-    if (!task?.id || task.parentTaskId) return
-    const key = `${childSignal}|${childScan}`
-    const seen = childSignalSeen.current
-    // 换到另一条对话（或第一次）：只记下当前的信号，首拉已经在上面那次 effect 里做了
-    if (seen.taskId !== task.id) {
-      childSignalSeen.current = { taskId: task.id, key }
-      return
-    }
-    if (seen.key === key) return
-    childSignalSeen.current = { taskId: task.id, key }
-    void childrenReload.current()
-    // 只在子对话那边的状态有变化（上报、提问状态、子对话计数）时刷新
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [childSignal, childScan, task?.id, task?.parentTaskId])
+  // 子对话列表：首拉、轮询、推送信号（task-view-children.ts）
+  useChildPolling(task, trace, childList)
 
   // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
   // 名下工作流运行也在右栏打开（和运行区的工作流卡片共用一份列表）：它们不在子对话列表里，不能当成被删掉
@@ -964,70 +662,8 @@ export function TaskView({
     writePaneChild(taskId, '')
   }, [children, openChild, taskId, ownedKey])
 
-  // 打开了这个对话：告诉服务端这一轮已经看过（侧栏的橙点消失），
-  // 之后离开时 CLI 才能按宽限期回收；没看过就一直留着，回来能直接接着说
-  const marked = useRef('')
-  useEffect(() => {
-    if (marked.current === taskId) return
-    marked.current = taskId
-    trace.start('seen')
-    api
-      .markTaskSeen(taskId)
-      .then((seen) => {
-        trace.finish('seen')
-        applySeen(seen)
-      })
-      // 标记已读失败不影响看对话：只在日志里标红并显示原文，不弹提示
-      .catch((e) => trace.fail('seen', (e as Error).message))
-    // 只在换到新的对话时报一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId])
-
-  // 这一轮完成时页面正开着：直接记为看过，不亮橙点。
-  // 不能只靠服务端的在场记录：那是内存里的，面板重启过就没了，用户明明开着却还是标成未读
-  useEffect(() => {
-    const done = task?.turnDoneAt ?? ''
-    if (!done || done === task?.turnSeenAt) return
-    const mark = () => {
-      // 切到后台时不算看过，等用户切回来再记
-      if (document.hidden) return
-      api
-        .markTaskSeen(taskId)
-        .then(applySeen)
-        .catch(() => {})
-    }
-    mark()
-    document.addEventListener('visibilitychange', mark)
-    return () => document.removeEventListener('visibilitychange', mark)
-    // apply 每次渲染都是新的，只按这一轮完成和看过的时间重跑
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.turnDoneAt, task?.turnSeenAt, taskId])
-
-  // 告诉服务端这个对话页还开着：CLI 回复完会停在等下一句的工具上；宽限期内切回来还能接着说（时长在设置里改）
-  useEffect(() => {
-    const viewer = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
-    const send = (active: boolean) => {
-      void api.setPresence(taskId, viewer, active).catch(() => {})
-    }
-    send(true)
-    const visibility = () => send(!document.hidden)
-    const hide = () => {
-      // 在线演示没有后端，不用发
-      if (import.meta.env.VITE_DEMO) return
-      const body = JSON.stringify({ viewerId: viewer, active: false })
-      navigator.sendBeacon?.(
-        `/api/tasks/${encodeURIComponent(taskId)}/presence`,
-        new Blob([body], { type: 'application/json' }),
-      )
-    }
-    document.addEventListener('visibilitychange', visibility)
-    window.addEventListener('pagehide', hide)
-    return () => {
-      document.removeEventListener('visibilitychange', visibility)
-      window.removeEventListener('pagehide', hide)
-      send(false)
-    }
-  }, [taskId])
+  // 记已读、在场心跳（task-view-presence.ts）
+  useTaskPresence(taskId, task, trace, applySeen)
 
   // 打开对话页不启动 CLI：只有真正发消息时才按当前选择启动，免得只是看一眼就起一堆进程
   const running = task?.status === 'running'
@@ -1516,37 +1152,8 @@ export function TaskView({
   // 让它说清到底在等什么
   const waitText = !working ? taskWaitText(task) : ''
 
-  const exportIt = () =>
-    downloadTask(task.id).then(
-      ({ children }) =>
-        toast.success(
-          children ? t('已导出任务和 {n} 个子对话，导入后父子结构能还原', { n: children }) : t('已导出任务'),
-        ),
-      (e: Error) => toast.error(e.message),
-    )
-  /**
-   * 导出成单文件 HTML：接收方没装面板也能看，样式内联、不执行脚本（见 shared/task-export.ts 的 taskHtml）。
-   * 和 JSON 包分开两项：一个是给别人看的报告，一个是导回面板的数据
-   */
-  const exportHtml = () =>
-    downloadTaskHtml(task.id).then(
-      () => toast.success(t('已导出 HTML 报告，用浏览器直接打开就能看')),
-      (e: Error) => toast.error(e.message),
-    )
-  const exportMd = () => downloadTaskMarkdown(task.id).catch((e: Error) => toast.error(e.message))
-  /**
-   * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
-   * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
-   */
-  const copyIt = () => {
-    void api
-      .taskTranscript(task.id)
-      .then((a) => navigator.clipboard.writeText(pathText(a.path)))
-      .then(
-        () => toast.success(t('对话已复制，粘贴到输入框会变成一张会话卡片')),
-        (e: Error) => toast.error(t('复制对话失败：{msg}', { msg: e.message })),
-      )
-  }
+  // 导出、复制对话（task-view-actions.ts）
+  const { exportIt, exportHtml, exportMd, copyIt } = taskExportActions(task)
 
   // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
   // 子对话请用户选择：和 Agent 的提问一样换掉输入框（Agent 自己的提问优先）
