@@ -1952,4 +1952,5 @@ export const EN_TASKS: Record<string, string> = {
   请你收尾: 'Asked you to wrap up',
   搜日志: 'Search log',
   '没有搜到「{q}」': 'No matches for "{q}"',
+  '这一轮说完了，在等：{what}': 'This turn is done; waiting on: {what}',
 }

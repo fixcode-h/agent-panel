@@ -27,6 +27,7 @@ import {
   timeAgo,
   type ChildEntry,
   type ConvState,
+  taskWaitText,
 } from './task.ts'
 
 export type DiagTone = 'accent' | 'warning' | 'danger' | 'subtle' | 'success'
@@ -207,10 +208,17 @@ function headlineOf(task: DiagTask, state: ConvState): { headline: string; tone:
       const doing = childActivityText(childActivity(task))
       return { headline: doing ? t('正在执行：{doing}', { doing }) : t('正在执行'), tone: 'accent' }
     }
-    case 'waiting':
-      return { headline: t('这一轮说完了，在等结果推回来'), tone: 'accent' }
+    // 等的是什么和标题栏、侧栏用同一句（taskWaitText）：以前这里只写「在等结果推回来」，
+    // 其实是子对话在等用户，几处说法对不上（用户 2026-11-10 定的分析稿 U2）
+    case 'waiting': {
+      const what = taskWaitText(task)
+      return {
+        headline: what ? t('这一轮说完了，在等：{what}', { what }) : t('这一轮说完了，在等结果推回来'),
+        tone: what === t('子对话等你处理') ? 'warning' : 'accent',
+      }
+    }
     case 'needs':
-      return { headline: t('在等你处理'), tone: 'warning' }
+      return { headline: taskWaitText(task) || t('在等你处理'), tone: 'warning' }
     case 'failed': {
       const why = lastFailureNote(task.messages)
       return { headline: why ? t('这一轮失败了：{why}', { why }) : t('这一轮失败了'), tone: 'danger' }
