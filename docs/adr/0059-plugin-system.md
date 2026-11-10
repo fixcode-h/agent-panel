@@ -23,6 +23,12 @@
 5. **完全删除不影响面板**：插件的接口、工具、页面都在包里；对话上的 `task.plugin` 在插件不在时当普通对话显示；以前内置、现在挪进插件的模板（`MOVED_TO_PLUGINS`）在插件没装或关着时按第 4 条清理；旧的 `Settings.blender.path` 迁成 `plugins.blender.config.blenderPath`，旧的 `Task.modelDesign` 读成 `blender.model`。
 6. **Blender 整体挪进插件仓库**：dsh-blender-plugin 的副本（运行时、宿主层、Blender 扩展、blender-modeling 技能）、面板原有的两个技能、角色和工作流、模型设计（后台 Blender、`blender_python` / `blender_scene`、3D 预览）都在 agent-plugins 的 `blender/` 里，构建成一个插件包发到 Release。
 
+7. **插件接口 2（2026-11-10，为 UE 插件）**：只加不改，接口 1 的插件照常加载。
+   - 网页 `WebPlugin.pages`：插件自己的整页，宽屏在图标栏通用功能下面另起一组，手机在抽屉菜单里，地址 `#/plugin/<插件>/<页面>/<path>`（`host.hooks.usePluginRoute` 读写 path）。
+   - 服务端 `PluginRun.projectId / cwd / mode`：按项目挂工具的插件据此决定挂不挂、连哪个项目。
+   - `McpCallContext.confirm`：插件工具请用户确认，对话里出「允许 / 拒绝」卡片（复用面板请求卡片），停止对话或这一轮结束按拒绝返回。
+   - 放弃：给插件整页单开一个模式（和 Agent / Chat / 设计并列）。插件页是工具页，不属于哪个模式，和角色、工作流页同级。
+
 ## 影响与风险
 
 - 带代码的插件在面板进程里以用户权限运行，和 Agent 执行命令同级的信任；安装确认里写明，只建议装信任的来源。

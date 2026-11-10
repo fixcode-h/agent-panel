@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, ExternalLink, Loader2, Puzzle, Trash2, type LucideIcon } from 'lucide-react'
+import { Box, ExternalLink, Gamepad2, Loader2, Puzzle, Trash2, type LucideIcon } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PluginConfig, PluginSetting } from '@shared/plugins/types'
 import { AGENT_ICONS } from '@/lib/agent-icons'
@@ -17,7 +17,7 @@ import { pluginApi, type KeptItem, type RemovalPreview } from './api'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
 
 /** 清单里的 icon：角色图标之外再认几个插件常用的；不认识的用拼图 */
-const EXTRA_ICONS: Record<string, LucideIcon> = { box: Box, puzzle: Puzzle }
+const EXTRA_ICONS: Record<string, LucideIcon> = { box: Box, gamepad: Gamepad2, puzzle: Puzzle }
 export const pluginIcon = (name: string) => EXTRA_ICONS[name] ?? AGENT_ICONS.find((i) => i.id === name)?.icon ?? Puzzle
 
 /** 来源的一行说明：GitHub 仓库、上传的文件、本机目录 */

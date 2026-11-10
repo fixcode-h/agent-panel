@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import type { PluginConfig } from '@shared/plugins/types'
 import type { Task } from '@shared/schema'
 import type { host } from './host'
@@ -39,8 +39,23 @@ export interface TaskTab {
   Panel: ComponentType<{ task: Task }>
 }
 
+/**
+ * 插件自己的整页（插件接口 2）：宽屏在图标栏通用功能下面另起一组，手机在抽屉菜单里；地址 #/plugin/<插件>/<页面>/<path>。
+ * path 是插件自己的子位置（一段字符串，插件自己编码），用 host.hooks.usePluginRoute 读写
+ */
+export interface PluginPage {
+  id: string
+  label: string
+  /** 函数组件（lucide 图标或自己画的 svg）：图标栏按 24px、线宽 1.75 画 */
+  icon: (p: { className?: string; strokeWidth?: number }) => ReactNode
+  /** 图标右上角的小点（有新内容、出错），给文字时也写进悬停提示 */
+  useDot?: () => string | boolean | undefined
+  Page: ComponentType<{ path: string }>
+}
+
 export interface WebPlugin {
   designModes?: DesignMode[]
+  pages?: PluginPage[]
   taskTabs?: TaskTab[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>

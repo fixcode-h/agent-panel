@@ -20,6 +20,17 @@ import { TaskView } from '@/components/tasks/TaskView'
  * 交给插件网页部分的宿主（ADR 0059，类型见 sdk.ts 的 WebHost）：面板的数据、导航、界面组件和插件自己的接口。
  * 只开放这里列出来的东西，插件不 import 面板的源码；面板内部重构时只要这里的形状不变，插件就不用跟着改。
  */
+/** 插件整页的子位置（#/plugin/<插件>/<页面>/<path>）：读当前的，跳到别的 */
+function usePluginRoute(id: string) {
+  const { route, go } = useNav()
+  const here = route.page === 'plugin' && route.id === id
+  return {
+    page: here ? (route.sub ?? '') : '',
+    path: here ? (route.msg ?? '') : '',
+    go: (page: string, path?: string) => go({ page: 'plugin', id, sub: page, msg: path || undefined }),
+  }
+}
+
 export function host(id: string, config: () => PluginConfig) {
   const base = `/plugins/${encodeURIComponent(id)}/api`
   return {
@@ -44,7 +55,7 @@ export function host(id: string, config: () => PluginConfig) {
       createProject: api.createProject,
       makeDir: api.makeDir,
     },
-    hooks: { useData, useTasks, useNav, useDirInfo, useNewAskUser },
+    hooks: { useData, useTasks, useNav, useDirInfo, useNewAskUser, usePluginRoute: () => usePluginRoute(id) },
     ui: { Button, IconButton, EmptyPanel, Field, Input, Select, Textarea, Modal, Segmented, DirPicker, TaskView },
     toast,
     cn,

@@ -8,7 +8,7 @@ import type { PluginConfig, PluginInfo } from '@shared/plugins/types'
 import { taskPlugin } from '@shared/task'
 import type { Task } from '@shared/schema'
 import { request } from '@/lib/api'
-import type { ActivateWeb, DesignMode, TaskTab, WebPlugin } from './sdk'
+import type { ActivateWeb, DesignMode, PluginPage, TaskTab, WebPlugin } from './sdk'
 
 /**
  * 网页里的插件（ADR 0059）：启动时读 /api/plugins，把清单交给共享层（内置列表、工具名按它算），
@@ -115,6 +115,12 @@ export const useDesignModes = () => designModes(usePlugins())
 export const ownedDesign = (task: Pick<Task, 'plugin' | 'modelDesign'>, modes: DesignMode[] = designModes()) => {
   const id = taskPlugin(task)
   return id ? modes.find((m) => m.id === id) : undefined
+}
+
+/** 开着的插件登记的整页（图标栏里的格子）：带上插件 id，地址 #/plugin/<插件>/<页面> */
+export const usePluginPages = (): (PluginPage & { plugin: string })[] => {
+  const s = usePlugins()
+  return [...s.web.entries()].flatMap(([plugin, p]) => (p.pages ?? []).map((x) => ({ ...x, plugin })))
 }
 
 /** 这个对话右栏多出来的页签 */

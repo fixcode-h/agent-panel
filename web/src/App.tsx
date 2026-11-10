@@ -37,6 +37,7 @@ const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.M
 const OverviewPage = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
+const PluginPageView = lazy(() => import('@/plugins/PluginPage').then((m) => ({ default: m.PluginPageView })))
 const PluginDesignPage = lazy(() => import('@/plugins/DesignPage').then((m) => ({ default: m.PluginDesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
@@ -57,6 +58,7 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   design: () => <DesignPage />,
   comfy: () => <ComfyPage />,
   pdesign: () => <PluginDesignPage />,
+  plugin: () => <PluginPageView />,
   library: () => <LibraryPage />,
   mcp: () => <McpPage />,
   summary: () => <SummaryPage />,
