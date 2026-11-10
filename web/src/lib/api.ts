@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import type { SharedDirInfo } from '@shared/shared-dir'
 import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
@@ -901,6 +902,10 @@ export const api = {
   revealTaskFile: (id: string, path = '') =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
+  /** 同一个目录里正在改文件的别的对话（输入框上方的提醒，见 shared/shared-dir.ts） */
+  sharedDir: (id: string) => request<SharedDirInfo>(`/tasks/${id}/shared-dir`),
+  /** 这个对话开独立分支：下一句起在分支的目录里做 */
+  isolateTask: (id: string) => request<Task>(`/tasks/${id}/isolate`, json('POST', {})),
   /** 这个对话和它名下子对话的独立分支，带上是否已经合回原分支 */
   taskWorktrees: (id: string) => request<{ items: WorktreeItem[] }>(`/tasks/${id}/worktrees`),
   /** 把独立分支合回原分支；分支和目录保留。冲突时错误的 body 带 conflict */

@@ -69,6 +69,7 @@ import { registerLifecycleRoutes } from './tasks/lifecycle-routes.ts'
 import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
 import { registerUserActionRoutes } from './tasks/user-actions.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
+import { registerSharedDirRoutes } from './tasks/shared-dir-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
 import { createTaskLearner } from './tasks/experience.ts'
@@ -710,6 +711,7 @@ export function tasksApi(deps: {
   const { readableDir } = registerFileRoutes(scope)
   registerPathRoutes(scope)
   registerActionRoutes(scope)
+  registerSharedDirRoutes(scope)
   const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉

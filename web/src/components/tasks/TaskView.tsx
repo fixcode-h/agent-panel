@@ -96,6 +96,7 @@ import { Badge } from '@/components/ui/badge'
 import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { FloatAbove } from '@/components/chat/FloatAbove'
+import { SharedDirNotice } from './SharedDirNotice'
 import { AgentMessage, DeliveryLine } from './Messages'
 import { NoteMessage } from './SystemNote'
 import { ReceivedRow } from './PeerMessage'
@@ -1728,6 +1729,7 @@ export function TaskView({
             也不挤掉消息区；盖住上面的计划、子对话那几行没关系，不要浮到消息区里去。越往下越要紧，
             自己这个对话要你点头的请求离输入框最近。子对话的请求不在这里弹，留在子对话栏那一行 */}
         <FloatAbove onHeight={setFloatPad}>
+          {composer && <SharedDirNotice task={task} onChange={apply} />}
           {flowLeft && !task.imported && (
             <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
           )}

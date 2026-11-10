@@ -125,6 +125,7 @@ import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
+import { noteEdit } from '../turn-owners.ts'
 import { addWaiter, removeWaiter, userWaitSlot, type Waiter } from './waiters.ts'
 import {
   EFFORT_REJECTED,
@@ -652,12 +653,17 @@ async function runAgent(
   }
   const toolsById = new Map<string, ToolUse>()
   // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
-  const fileEvents = createFileEvents(cwd, (file) => {
-    touched.add(file.path.replaceAll('\\', '/'))
-    // 非 git 项目没有 git 差异可统计：项目内的并进 changes，项目外的记进 outsideChanges
-    if (!ctx.isGit) trackFileWrite(task, owner, cwd, file)
-    refreshChanges()
-  })
+  const fileEvents = createFileEvents(
+    cwd,
+    (file) => {
+      touched.add(file.path.replaceAll('\\', '/'))
+      // 非 git 项目没有 git 差异可统计：项目内的并进 changes，项目外的记进 outsideChanges
+      if (!ctx.isGit) trackFileWrite(task, owner, cwd, file)
+      refreshChanges()
+    },
+    // 同目录别的对话算每轮改动时要知道这个文件是谁改的（server/turn-owners.ts）
+    (file) => noteEdit(task.id, cwd, file, task.parentTaskId || undefined),
+  )
   /**
    * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
    * 按 id 先攒着，等 tool 事件建好行时补上，不然开头这段输出会丢
