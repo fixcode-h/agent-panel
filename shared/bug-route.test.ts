@@ -15,9 +15,9 @@ test('「提问」开着：只描述了 Bug 时先问用户选完整流程还是
   assert.ok(!s.includes('默认直接修'))
 })
 
-test('「提问」关着：默认直接修（kind: "task"），不问用户，也不自己改判成完整流程', () => {
+test('「提问」关着：默认直接修（kind: "fix"），不问用户，也不自己改判成完整流程', () => {
   const s = bugRoutePart(host(false), true)
-  assert.match(s, /默认直接修：create_conversation 写 kind: "task"，不问用户/)
+  assert.match(s, /默认直接修：create_conversation 写 kind: "fix"，不问用户/)
   assert.ok(!s.includes('先用提问工具'))
   // 开关改了段落内容跟着变：续接时会重发这一段
   assert.notEqual(s, bugRoutePart(host(true), true))
@@ -27,7 +27,8 @@ test('/bug、/fix 不看开关；已有子对话升级用 send_to_conversation �
   for (const on of [true, false]) {
     const s = bugRoutePart(host(on), true)
     assert.match(s, /用户发了 \/bug：走完整 Bug 流程/)
-    assert.match(s, /用户发了 \/fix.*kind 写 "task"/)
+    // 直接修也留简版报告（分析稿 B2 第 ③ 条）：kind 写 "fix"
+    assert.match(s, /用户发了 \/fix.*kind 写 "fix".*简版报告/)
     assert.match(s, /send_to_conversation 交给那个子对话，写 kind: "bug"/)
     assert.match(s, /不要为此另开一个子对话/)
   }

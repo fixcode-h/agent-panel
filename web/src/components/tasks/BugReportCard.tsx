@@ -40,7 +40,12 @@ function statusChip(d: Diagnosis): { text: string; cls: string } {
     }
   if (d.status === 'cancelled')
     return { text: t('不修了'), cls: 'shrink-0 rounded-full bg-danger/12 px-1.5 text-caption text-danger' }
-  if (d.status === 'approved') return { text: verify ? t('已结束验证') : t('已同意'), cls: childLabelClass.success }
+  if (d.status === 'approved')
+    return {
+      // 面板按「没有要注意的就自动通过」替你同意的（分析稿 B2）
+      text: verify ? t('已结束验证') : d.auto ? t('自动通过') : t('已同意'),
+      cls: childLabelClass.success,
+    }
   if (d.status === 'questioned') return { text: t('提了意见'), cls: childLabelClass.plain }
   if (d.status === 'answered') return { text: verify ? t('给了验证结果') : t('给了日志'), cls: childLabelClass.plain }
   return { text: t('已被取代'), cls: childLabelClass.plain }

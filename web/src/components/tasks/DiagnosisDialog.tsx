@@ -5,6 +5,9 @@ import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug-diagnosis-schema'
 import { diagnosisMarkdown, diagnosisView } from '@shared/bug-diagnosis'
 import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug-phase'
+import { autoOn } from '@shared/bug-auto'
+import { recheckVerdict } from '@shared/bug-recheck'
+import { Checkbox } from '@/components/ui/checkbox'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -49,6 +52,8 @@ const statusOf = (d: Diagnosis) => {
   if (d.status === 'cancelled' && d.cleanup?.state === 'failed') return t('已取消，日志没删干净')
   if (phaseOf(d) === 'verify' && d.status === 'answered') return t('你给了验证结果，它在分析')
   if (phaseOf(d) === 'verify' && d.status === 'approved') return t('你结束了验证')
+  // 面板按「没有要注意的就自动通过」替你同意的（分析稿 B2）：和你亲手点的分开写
+  if (d.status === 'approved' && d.auto) return t('面板自动通过（没有要注意的）')
   return STATUS[d.status]()
 }
 
@@ -203,6 +208,16 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
       },
     }
   // 修复（用户 2026-11-10 定）：看改了哪些代码、为什么，确认了才验证；在代码上标疑问，它逐条判断，对的改、不对的用事实反驳
+  // 面板复核过回归测试改前失败、改后通过（分析稿 B9）：确认修复就同时算验证通过，少一次确认（B2 第 ① 条）
+  if (phase === 'fix' && recheckVerdict(d.recheck) === 'pass')
+    return {
+      texts: {
+        approve: t('确认修复，验证也算通过'),
+        revise: t('有疑问，让它分析'),
+        hintApprove: t('面板自己跑过回归测试：改前失败、改后通过。确认后它跑完影响面验证就收尾，不再单独请你验证'),
+        hintRevise: t('「有疑问」把标注交回：它逐条判断，你说得对就改代码，不对会用代码、测试结果说明理由，再交给你看'),
+      },
+    }
   if (phase === 'fix')
     return {
       texts: {
@@ -256,6 +271,8 @@ export function DiagnosisDialog({
   // 排查补丁（分析稿 B1）：等你复现 / 验证时能把独立分支里的日志或修复放到你的工作区；打开时查一次状态
   const patchKind = patchKindOf(last)
   const patch = usePatch(task.id, open && !!last)
+  // 「后面几步没有要注意的就自动通过」（分析稿 B2）：默认沿用你上一次同意时的选择
+  const [autoNext, setAutoNext] = useState(() => autoOn(list))
   if (!last) return null
   // 面板自己取日志（分析稿 B3）：等你复现、等你验证时，报告里写了日志文件就出「开始复现 / 取日志」
   const watchWhere = patchKind ? (last.awaiting?.collect ?? last.collect)?.where : undefined
@@ -378,11 +395,25 @@ export function DiagnosisDialog({
           else onDone?.(r.task)
         },
       }}
+      approveExtra={
+        // 验证那一步的「确认」是结束验证，等你复现的那一版没有确认：都不放
+        last.status === 'pending' && !last.awaiting && phaseOf(last) !== 'verify' ? (
+          <Checkbox
+            checked={autoNext}
+            onChange={setAutoNext}
+            label={<span className="text-xs text-muted">{t('后面几步没有要注意的就自动通过')}</span>}
+            tip={t(
+              '之后交上来的根因、修复方案、修复，决策卡上没有「要注意」的由面板直接通过，报告随时能打开回看；有「要注意」的、要你复现验证的照常停下等你',
+            )}
+          />
+        ) : undefined
+      }
       onAnswer={async (allow, _text, raw) => {
         const r = await api.decideDiagnosis(task.id, last.version, {
           approve: allow,
           notes: notesOf(raw),
           overall: raw?.overall ?? '',
+          ...(allow && { autoNext }),
         })
         await hand(r.message, raw?.files ?? [], r.task)
       }}

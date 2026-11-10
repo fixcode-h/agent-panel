@@ -87,6 +87,7 @@ export function ReviewDialog({
   overallPlaceholder,
   initialVersion,
   overallTools,
+  approveExtra,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -140,6 +141,8 @@ export function ReviewDialog({
   initialVersion?: string
   /** 整体意见框上面多放的（诊断报告「面板自己取日志」）：fill 把取到的文字整个填进整体意见框 */
   overallTools?: (fill: (text: string) => void) => ReactNode
+  /** 「确认」按钮旁边多放的（诊断报告「后面几步没有要注意的就自动通过」）：能审、有确认按钮时才画 */
+  approveExtra?: ReactNode
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -542,6 +545,7 @@ export function ReviewDialog({
             {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {texts?.revise ?? t('修改')}
           </Button>
+          {!noApprove && approveExtra && <div className="flex items-center">{approveExtra}</div>}
           {!noApprove && (
             <Button
               size="sm"

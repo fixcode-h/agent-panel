@@ -250,6 +250,8 @@ export interface Orchestra {
       role?: string
       route?: RouteInput
       bug?: boolean
+      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
+      fix?: boolean
       /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
       edits?: boolean
       /** 父对话确认子对话不需要它目录里没提交的改动（独立分支看不到它们） */
@@ -509,6 +511,8 @@ export interface EngineHost {
     files?: string[]
     /** 父对话派来的 Bug（ADR 0045）：子对话修之前要交诊断报告给用户确认 */
     bug?: boolean
+    /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
+    fix?: boolean
     /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
     edits?: boolean
     /** 不拦父对话目录里没提交的改动（server/tasks/dirty-parent.ts） */

@@ -30,7 +30,7 @@ import type { ProjectProposal } from './project-init.ts'
 import { AskQuestion, TaskRequest, UserAction } from './task-request.ts'
 import { FlowRun, WorkflowKind } from './task-flow-schema.ts'
 import { StopReason } from './stop-reason.ts'
-import { BugCase, Diagnosis } from './bug-diagnosis-schema.ts'
+import { BugCase, Diagnosis, FixBrief } from './bug-diagnosis-schema.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
@@ -2168,6 +2168,8 @@ export const TaskData = z.object({
   logBase: z.record(z.string(), z.string()).optional(),
   userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts
   bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
+  bugFix: z.boolean().optional(), // 直接修的用户 Bug（kind: "fix"，分析稿 B2）：收尾时留简版报告 fixBrief，不交诊断报告
+  fixBrief: FixBrief.optional(), // 直接修的 Bug 的简版报告（根因一句、改了什么、怎么验证的）：只读，见 shared/bug-fix-brief.ts
   bugMethodPending: z.boolean().optional(), // 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z

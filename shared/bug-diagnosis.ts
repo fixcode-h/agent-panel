@@ -44,6 +44,8 @@ import {
 } from './bug-phase.ts'
 import { t } from './i18n.ts'
 import { settlePlan } from './plan.ts'
+import { autoApprove, autoBlock, autoOn } from './bug-auto.ts'
+import { ranInConversation, recheckCommands, recheckVerdict } from './bug-recheck.ts'
 
 export { blameLabel, diagnosisMarkdown, diagnosisView } from './bug-diagnosis-md.ts'
 export { outOfPlan, phaseOf, revOf } from './bug-phase.ts'
@@ -317,7 +319,7 @@ export function bugStage(task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>): str
     }
     if (phase === 'cause') return d.status === 'approved' ? (noFixOf(d) ? t('收尾') : t('修复设计')) : t('根因')
     if (phase === 'plan') return d.status === 'approved' ? t('修复') : t('修复设计')
-    if (phase === 'fix') return d.status === 'approved' ? t('验证') : t('修复')
+    if (phase === 'fix') return d.status === 'approved' ? (d.merged ? t('收尾') : t('验证')) : t('修复')
     return d.status === 'questioned' ? t('验证') : t('收尾')
   }
   const c = task.bugCase
@@ -414,6 +416,21 @@ export function submitDiagnosis(
   }
 }
 
+/** 回归测试命令的提醒（分析稿 B9）：面板这一轮结束后复核；对话里没跑过的命令面板不替它跑 */
+function recheckNotes(d: Diagnosis, messages: TaskMessage[]): string[] {
+  const cmds = recheckCommands(d)
+  if (!cmds.length) return []
+  const bare = cmds.filter((c) => !ranInConversation(c, messages))
+  return [
+    `这一轮结束后面板会在改前的代码（对话开始时的提交加上现在的测试文件）和现在的代码上各跑一次 result.commands，结果放进报告给用户看。`,
+    ...(bare.length
+      ? [
+          `这几条命令没在这个对话里跑过，面板不替你跑，会标「面板没有复核」：${bare.join('、')}。要复核就先自己跑一次，再按原样写进 commands。`,
+        ]
+      : []),
+  ]
+}
+
 function submitOnce(
   task: DiagTask,
   input: DiagnosisInput,
@@ -486,7 +503,8 @@ function submitOnce(
     overall: '',
     logs: '',
     logFiles: [],
-    result: phase === 'verify' ? result : undefined,
+    // 修复这一版也带上：有回归测试命令的，面板交完就复核（分析稿 B9），确认修复时可以把验证合在一起（B2）
+    result: phase === 'verify' || phase === 'fix' ? result : undefined,
     before: (task.changes ?? []).map((x) => normPath(x.path)).filter(Boolean),
     fixDiffs: (phase === 'fix' || phase === 'verify') && src ? fixDiffs(list, src) : [],
     fixFiles,
@@ -511,6 +529,29 @@ function submitOnce(
               ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
               : '等用户确认修复方案，确认了才改代码'
   const round = roundOf(d, task.diagnoses)
+  const notes = [...sources.notes, ...recheckNotes(d, task.messages)]
+  // 用户设了「后面几步没有要注意的就自动通过」（分析稿 B2）：这一版没有要注意的就当场通过，交给它的话和用户点同意时一样
+  const auto = autoOn(task.diagnoses)
+    ? autoBlock(
+        d,
+        task.diagnoses,
+        (task.changes ?? []).map((x) => x.path),
+      )
+    : undefined
+  if (auto?.ok) {
+    const a = autoApprove(d, now)
+    task.messages.push(diagnosisMessage(newId(), version, a.line, now))
+    return {
+      ok: true,
+      version,
+      info: `已交第 ${rev} 版的${PHASE_TEXT[phase]}（报告 #${version}）。${a.feedback}${notes.length ? `\n\n面板提醒：\n${notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
+    }
+  }
+  // 自动通过开着、这一版因为要注意的停下：对话里写一行为什么停（复核还没跑完的等复核完再判，见 server/tasks/bug-recheck.ts）
+  if (auto && !auto.ok && auto.why)
+    task.messages.push(
+      diagnosisMessage(newId(), version, t('第 {n} 版没有自动通过：{why}', { n: rev, why: auto.why }), now),
+    )
   const which = overturned
     ? `已交第 ${rev} 版（${PHASE_TEXT[phase]}）：回到了更早的阶段或换掉了确认过的方案，第 ${rev - 1} 版的结论作废`
     : `已交第 ${rev} 版的${PHASE_TEXT[phase]}${round > 1 ? `（这一版的第 ${round} 轮，按意见修改不升版本号）` : ''}`
@@ -518,7 +559,7 @@ function submitOnce(
   return {
     ok: true,
     version,
-    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。${sources.notes.length ? `\n\n面板提醒：\n${sources.notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
+    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。${notes.length ? `\n\n面板提醒：\n${notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
   }
 }
 
@@ -578,6 +619,8 @@ export type DiagnosisDecision = {
   logFiles?: string[]
   notes: Omit<DiagnosisNote, 'id'>[]
   overall: string
+  /** 同意时勾了「后面几步没有要注意的就自动通过」（分析稿 B2，bug-auto.ts） */
+  autoNext?: boolean
 }
 
 /** 交给 AI 的日志文字最多留这么多：再长的请用户附文件 */
@@ -600,7 +643,9 @@ function decisionLine(d: Diagnosis, k: number): string {
     evidence: t('你同意了第 {n} 版的日志计划', { n }),
     cause: t('你同意了第 {n} 版的根因', { n }),
     plan: t('你确认了第 {n} 版的修复方案', { n }),
-    fix: t('你确认了第 {n} 版的修复', { n }),
+    fix: d.merged
+      ? t('你确认了第 {n} 版的修复，面板复核过回归测试，验证一起通过', { n })
+      : t('你确认了第 {n} 版的修复', { n }),
     verify: t('你结束了第 {n} 版的验证', { n }),
   }[phaseOf(d)]
 }
@@ -638,6 +683,11 @@ export function decideDiagnosis(
     if (!decision.approve && !notes.length && !decision.overall.trim())
       return { ok: false, error: t('退回要写清哪里有疑问：先标注，或者写整体意见') }
     d.status = decision.approve ? 'approved' : 'questioned'
+    if (decision.approve) {
+      d.autoNext = !!decision.autoNext
+      // 面板复核过「改前失败、改后通过」：确认修复就同时算验证通过（分析稿 B2 第 ① 条）
+      if (phase === 'fix' && recheckVerdict(d.recheck) === 'pass') d.merged = true
+    }
   }
   d.notes = notes
   d.overall = decision.overall.trim()
@@ -765,7 +815,7 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
     return '没有请求收尾：还没有用户确认的修复方案。按流程交根因（phase: cause）、修复方案（phase: plan），确认后再修。'
   if (phase === 'plan')
     return '没有请求收尾：修完先交 phase: fix 请用户看改了哪些代码，用户确认修复后验证、交 phase: verify；用户给了验证结果或点了结束才能收尾。'
-  if (phase === 'fix')
+  if (phase === 'fix' && !(d.status === 'approved' && d.merged))
     return '没有请求收尾：用户确认了修复，还要验证：用 update_bug_case 记下 result，交 phase: verify；用户给了验证结果或点了结束才能收尾。'
   const plan = lastPlan(list)
   const extra = outOfPlan(changed, [...(plan?.files ?? []), ...logFilesOf(list)])
