@@ -42,8 +42,14 @@ test('推进账本：只在真推出去时记；同一进度推满就停，进�
 })
 
 test('推进次数存进对话（A10）：面板重启后（新的账本）接着存着的次数数，用户发消息清零也写回', () => {
-  const saved = new Map<string, import('./task-runtime-schema.ts').DriveCount | undefined>()
-  const store = { load: (id: string) => saved.get(id), save: (id: string, c: never) => saved.set(id, c) }
+  type Count = import('./task-runtime-schema.ts').DriveCount | undefined
+  const saved = new Map<string, Count>()
+  const store = {
+    load: (id: string) => saved.get(id),
+    save: (id: string, c: Count) => {
+      saved.set(id, c)
+    },
+  }
   const before = new DriveBudget(2, store)
   assert.equal(before.take('c', 'k1', 2, 'u1'), 1)
   assert.deepEqual(saved.get('c'), { key: 'k1', n: 1, input: 'u1', total: 1 })
