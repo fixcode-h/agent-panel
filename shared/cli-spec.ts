@@ -521,6 +521,11 @@ export const CliSpec = z.object({
       review: z.enum(['native', 'prompt']).default('prompt'),
       /** 账号额度：query 能主动查（rpc.limitsQuery），push 执行时才报告，none 没有 */
       limits: z.enum(['query', 'push', 'none']).default('none'),
+      /**
+       * CLI 自己报这一轮花了多少钱（Claude Code 的 total_cost_usd、Pi 的 usage.cost）。不报的按模型目录里填的单价折算，
+       * 没填单价就算不了费用：新建对话设费用上限时界面据此写明「只有 token 上限生效」（分析稿 A6）
+       */
+      cost: z.boolean().default(false),
       /** 参数规则里会写成参数的手动上限（{contextWindow}、{maxOutput}），面板据此知道这两项能交给 CLI */
       limitArgs: z.array(z.enum(['context', 'maxOutput'])).default([]),
       autoCompactEnv: z.string().default(''),
@@ -568,6 +573,7 @@ export const CliSpec = z.object({
       modelSwitch: false,
       resumeAnyDir: false,
       review: 'prompt',
+      cost: false,
       limits: 'none',
       limitArgs: [],
     }),
@@ -854,6 +860,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     modelSwitch: f.modelSwitch,
     resumeAnyDir: f.resumeAnyDir,
     limits: f.limits,
+    cost: f.cost,
     docs: spec.docs,
     docsNote: tr(spec.docsNote),
     globalDoc: spec.globalDoc || undefined,

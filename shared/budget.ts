@@ -2,7 +2,7 @@
  * 父对话的用量上限：一个顶层对话加上它名下全部子对话（多层）合起来的 token 和费用。
  *
  * 父对话一放开跑，子对话、子任务、面板推它接着做都在花钱，单看某一个对话的用量看不出整件事花了多少；
- * 上限按项目设（Project.budget），对项目里每个顶层对话各算一份。到 80% 在父对话里提醒一次，
+ * 上限按项目设（Project.budget），对项目里每个顶层对话各算一份；新建对话时也能单独设（Task.convBudget，见 budgetFor）。到 80% 在父对话里提醒一次，
  * 到 100% 停下整棵对话树并写明原因（见 server/tasks/budget.ts）。两项都是 0 表示不限（默认）。
  */
 import { t } from './i18n.ts'
@@ -66,7 +66,8 @@ export function budgetLevel(use: BudgetUse, budget: Budget | undefined): BudgetL
   return r >= 1 ? 'over' : r >= BUDGET_WARN ? 'warn' : 'ok'
 }
 
-const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`)
+export const fmtTokens = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`
 
 /** 「已用 / 上限」的说法：只列设了的那几项，例如「1.2M / 1.5M token，$3.10 / $5.00」 */
 export function budgetSpent(use: BudgetUse, budget: Budget): string {
@@ -78,9 +79,34 @@ export function budgetSpent(use: BudgetUse, budget: Budget): string {
   return parts.join(' · ')
 }
 
-/** 父对话里那一条提醒：过了提醒线 / 到了上限 */
-export function budgetNote(level: 'warn' | 'over', use: BudgetUse, budget: Budget): string {
+/** 上限设了没有：两项里有一项大于 0 */
+export const hasBudget = (b: Budget | undefined): b is Budget => !!b && (b.tokens > 0 || b.costUsd > 0)
+
+/**
+ * 这棵对话树按哪个上限算（分析稿 A6）：顶层对话新建时单独设了（Task.convBudget）就用它，不再看项目的；
+ * 没设用项目的。own 为 true 时提醒里说「这个对话设的上限」，用户才知道去哪调
+ */
+export function budgetFor(
+  root: { convBudget?: Budget },
+  project: { budget?: Budget } | null | undefined,
+): { budget: Budget | undefined; own: boolean } {
+  if (hasBudget(root.convBudget)) return { budget: root.convBudget, own: true }
+  return { budget: project?.budget, own: false }
+}
+
+/** 父对话里那一条提醒：过了提醒线 / 到了上限。own：上限是这个对话自己设的（不是项目的） */
+export function budgetNote(level: 'warn' | 'over', use: BudgetUse, budget: Budget, own = false): string {
   const spent = budgetSpent(use, budget)
+  if (own)
+    return level === 'warn'
+      ? t(
+          '【用量提醒】这个对话和名下子对话合起来已经用到这个对话设的上限的 {pct}%（{spent}）。到上限时面板会停下整个对话。',
+          { pct: Math.floor(budgetRatio(use, budget) * 100), spent },
+        )
+      : t(
+          '【用量上限】这个对话和名下子对话合起来已经用到这个对话设的上限（{spent}），面板停下了整个对话。你再发消息时会接着跑一轮，跑完又会停下。',
+          { spent },
+        )
   return level === 'warn'
     ? t(
         '【用量提醒】这个对话和名下子对话合起来已经用到项目设的上限的 {pct}%（{spent}）。到上限时面板会停下整个对话。',

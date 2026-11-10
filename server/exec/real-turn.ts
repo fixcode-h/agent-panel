@@ -99,6 +99,8 @@ export async function runRealTurn(ctx: RealContext) {
     searchInGit: ctx.isGit,
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
+    // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦
+    verifyGate: ctx.project?.requireVerify ? { steps: ctx.project.testSteps } : undefined,
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,

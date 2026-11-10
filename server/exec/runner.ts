@@ -592,7 +592,14 @@ async function runAgent(
   const openChanges = (carry: boolean) => {
     if (!trackChanges) return
     changesOpen = true
-    void beginTurnChanges(task.id, cwd, placedFiles(task), carry)
+    // 起点存进任务（A10）：面板重启后进行中的那一轮接着这个起点算
+    void beginTurnChanges(task.id, cwd, placedFiles(task), carry, {
+      saved: task.turnTrack,
+      save: (rec) => {
+        task.turnTrack = rec
+        ctx.changed()
+      },
+    })
   }
   const closeChanges = () => {
     if (!changesOpen) return

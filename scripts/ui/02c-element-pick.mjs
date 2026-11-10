@@ -267,6 +267,19 @@ await runShard(import.meta.filename, async (api) => {
     /** 一轮改动卡片里的文件行：按完整路径找，不和右栏文件树的同名文件混在一起 */
     const card = p.locator('.turn-changes')
     const file = (path) => card.getByTitle(path, { exact: true })
+    // 完成依据（分析稿 A3）：和改动卡片挂在一起，列文件和验证命令的退出码（通过绿、失败红）
+    {
+      const ev = p.locator('[data-done-evidence]')
+      if (!(await ev.count())) errors.push('完成依据：对话停下后没有「完成依据」卡片')
+      else {
+        const text = (await ev.first().textContent()) ?? ''
+        for (const want of ['完成依据', 'npm run typecheck', '退出码 0', '退出码 1'])
+          if (!text.includes(want)) errors.push(`完成依据：卡片里没有「${want}」`)
+        if (await ev.locator('[data-unverified]').count()) errors.push('完成依据：跑过验证命令的不该标「没验证」')
+        await ev.first().scrollIntoViewIfNeeded()
+        await check(p, '完成依据', ['完成依据', '退出码 0'])
+      }
+    }
 
     // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动
     await card.getByRole('button', { name: /^查看全部/ }).click()

@@ -90,6 +90,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务'])
+  // 新建对话时单独设用量上限（分析稿 A6）：输入框工具条上的图标，点开填 token 和费用；
+  // 演示里默认的 CLI 自己报费用，不出「算不了费用」那句
+  {
+    await p.getByText('商城前台', { exact: true }).first().click()
+    const chip = p.getByRole('button', { name: '这个对话的用量上限', exact: true })
+    await chip.waitFor({ timeout: 10000 })
+    await chip.click()
+    const pop = p.locator('[data-conv-budget]')
+    await pop.waitFor({ timeout: 5000 })
+    await pop.getByLabel('token 上限（百万）').fill('2')
+    await check(p, '新建对话-用量上限', ['这个对话的用量上限', 'token 上限（百万）', '费用上限（美元）'])
+    if (await pop.locator('[data-no-cost]').count())
+      errors.push('新建对话-用量上限：自己报费用的 CLI 不该写「算不了费用」')
+    await p.keyboard.press('Escape')
+    if (!/2M/.test((await chip.textContent()) ?? '')) errors.push('新建对话-用量上限：设了以后图标旁边没显示上限')
+  }
   errors.push(...(await segmentedContrastProblems(p, '侧栏-浅色')))
   // 浅色主题下再看一眼 Token 用量（会话栏开着时在会话栏里）：分隔线、速度的颜色都要跟着主题
   {
@@ -465,6 +481,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       'WSL 发行版',
       '小改动也跑',
       '按改动大小决定验证范围',
+      // 完成依据的拦截开关（分析稿 A3）：默认关，开了 end_turn 前要跑过测试步骤
+      '改了代码要跑过测试步骤才能结束',
       '每条可以写「适用改动」',
       // 范围三档（ADR 0020）：每条的选择器、头部那段说明（子对话只跑增量的那部分）都要显示出来。
       // 断言用页面上看得见的文字，悬停提示（title）不算

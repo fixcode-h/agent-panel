@@ -65,6 +65,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/TaskMenu.tsx',
     'web/src/components/tasks/DiffDialog.tsx',
     'web/src/components/tasks/TurnChanges.tsx',
+    'web/src/components/tasks/DoneEvidenceCard.tsx',
+    'web/src/lib/demo-done-evidence.ts',
     'web/src/components/tasks/ChangesTree.tsx',
     'web/src/components/tasks/MemoryChart.tsx',
     'web/src/components/tasks/RequestCard.tsx',
@@ -146,6 +148,8 @@ export const UI_SHARD_COVERS = {
   ],
   '07-projects': [
     'web/src/components/projects/',
+    // 新建输入框上的「这个对话的用量上限」（分析稿 A6）
+    'web/src/components/tasks/ConvBudgetChip.tsx',
     'web/src/components/layout/',
     'web/src/components/tags/',
     'web/src/pages/ProjectsPage.tsx',

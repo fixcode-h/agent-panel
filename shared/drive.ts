@@ -1,4 +1,5 @@
 import type { TaskPlan } from './schema.ts'
+import type { DriveCount } from './task-runtime-schema.ts'
 
 /**
  * 对话自驱（ADR 0041）的共用规则。这一版先放「进度指纹」：面板推对话接着做的次数按它算，
@@ -31,14 +32,33 @@ export const DRIVE_TOTAL_MAX = 10
  * - 同一个进度（key）最多推 max 次：推了还原地不动就停下；
  * - 同一条输入之后一共最多推 DRIVE_TOTAL_MAX 次：模型把一步在进行中和待做之间来回改，指纹一直在变，靠它兜住。
  * 只在真推出去时记（take）；刚结束那一下只看（can），复查没过不记。用户亲自发消息清零（reset）。
- * 存在内存里：面板重启后从头数，重启前没做完的由「重启后继续」名单接手（restartUnfinished）
+ * 传了 store 时次数存进对话（Task.driveCount，分析稿 A10）：面板重启后接着数，不从 1 重新数
  */
 export class DriveBudget {
   private readonly per = new Map<string, { key: string; n: number }>()
   private readonly total = new Map<string, { input: string; n: number }>()
-  constructor(private readonly totalMax = DRIVE_TOTAL_MAX) {}
+  /** 已经从 store 读过的对话：每个对话只读一次，之后以内存为准 */
+  private readonly loaded = new Set<string>()
+  constructor(
+    private readonly totalMax = DRIVE_TOTAL_MAX,
+    private readonly store?: {
+      load: (id: string) => DriveCount | undefined
+      save: (id: string, c: DriveCount | undefined) => void
+    },
+  ) {}
+
+  /** 内存里还没有这个对话时，从对话上存着的次数接上（面板重启后） */
+  private hydrate(id: string) {
+    if (!this.store || this.loaded.has(id)) return
+    this.loaded.add(id)
+    const c = this.store.load(id)
+    if (!c) return
+    if (c.key && c.n > 0 && !this.per.has(id)) this.per.set(id, { key: c.key, n: c.n })
+    if (c.total > 0 && !this.total.has(id)) this.total.set(id, { input: c.input, n: c.total })
+  }
 
   private nextOf(id: string, key: string, max: number) {
+    this.hydrate(id)
     const prev = this.per.get(id)
     const n = prev?.key === key ? prev.n + 1 : 1
     return n > max ? null : { key, n }
@@ -46,6 +66,7 @@ export class DriveBudget {
 
   /** 这条输入之后的总次数还没满 */
   totalLeft(id: string, input: string) {
+    this.hydrate(id)
     const r = this.total.get(id)
     return !r || r.input !== input || r.n < this.totalMax
   }
@@ -62,17 +83,23 @@ export class DriveBudget {
     const next = this.nextOf(id, key, max)!
     this.per.set(id, next)
     const r = this.total.get(id)
-    this.total.set(id, { input, n: r?.input === input ? r.n + 1 : 1 })
+    const total = { input, n: r?.input === input ? r.n + 1 : 1 }
+    this.total.set(id, total)
+    this.store?.save(id, { key: next.key, n: next.n, input, total: total.n })
     return next.n
   }
 
   /** 诊断用：最后一个进度和推了几次 */
   state(id: string) {
+    this.hydrate(id)
     return this.per.get(id)
   }
 
   reset(id: string) {
+    this.loaded.add(id)
+    const had = this.per.has(id) || this.total.has(id)
     this.per.delete(id)
     this.total.delete(id)
+    if (had || this.store?.load(id)) this.store?.save(id, undefined)
   }
 }

@@ -1983,7 +1983,7 @@ function makeOrchestra(
     ...(ctx.chat && !helper && !isChatMode(task)
       ? {
           endTurn(outcome: string, need: string) {
-            const r = endTurnCheck(task, outcome, need)
+            const r = endTurnCheck(task, outcome, need, host.verifyGate)
             if (r.end) pushTurnEnd(task, r.end)
             if (r.end) host.changed(true)
             return { ok: r.ok, info: r.info }
