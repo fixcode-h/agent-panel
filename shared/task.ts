@@ -2006,16 +2006,8 @@ export function taskBusy(x: TaskFactsInput) {
   return s === 'running' || s === 'waiting'
 }
 
-/** 「等结果」时在等什么：项目首页、标题栏悬停写这一句，和 convState 用同一份事实 */
-export function taskWaitText(x: TaskFactsInput): string {
-  const f = taskFacts(x)
-  if (f.childNeeds && !f.requests && !f.asking) return t('子对话等你处理')
-  if (f.children) return t('子对话执行中')
-  if (f.helpers) return t('子任务执行中')
-  if (f.background) return t('后台命令执行中')
-  if (f.workflow) return t('工作流执行中')
-  return ''
-}
+// 「等结果」时在等什么、各处的状态短词都在 shared/task-word.ts（分析稿 A8）：这里只转出，调用方仍可从 @shared/task 引用
+export { taskWaitText } from './task-word.ts'
 
 /**
  * 列表里「执行中」的条数：侧栏项目名的「N 个执行中」、标签页标题的 (n) 都读这个，

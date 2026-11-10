@@ -5,9 +5,9 @@
  * 不按「最后一条用户消息」算——那样长会话每发一句就从头计时，用户看到的是 0:23 而不是实际跑了多久。
  */
 import { pad2 } from '@shared/datetime'
-import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
-import { taskDuration, taskState, taskWaitText, type TaskFactsInput } from '@shared/task'
+import { taskDuration, type TaskFactsInput } from '@shared/task'
+import { taskWord } from '@shared/task-word'
 
 /** 胶囊要读的任务字段：状态判定用 TaskFactsInput，计时用 taskDuration 需要的几个时间字段 */
 export type HeadStatusTask = TaskFactsInput & Pick<Task, 'runMs' | 'runStartedAt' | 'createdAt' | 'updatedAt'>
@@ -33,23 +33,14 @@ export function clock(ms: number) {
 /**
  * 页签条右端的状态胶囊：运行中 / 等结果只显示累计执行时长；
  * 有提问、请求等你时保留琥珀色的一句话（这一页没有确认卡，用户要知道该去哪儿），时长放进提示。
- * 状态只从 taskState 派生，不另判。
+ * 状态只从 taskWord（经 taskState 那份事实）派生，不另判。
  */
 export function headStatus(task: HeadStatusTask, now = Date.now()): HeadStatusView | null {
-  const state = taskState(task)
+  // 状态和短词都从 taskWord 取（分析稿 A8）：侧栏、输入框占位、会话栏写的是同一个词
+  const { state, word } = taskWord(task)
   const elapsed = clock(taskDuration(task, now))
-  if (state === 'running' || state === 'waiting') {
-    const wait = state === 'waiting' ? taskWaitText(task) : ''
-    return {
-      text: elapsed,
-      tone: 'run',
-      spin: true,
-      hint: `${wait || t('运行中')} · ${elapsed}`,
-    }
-  }
-  if (state === 'needs') {
-    const text = taskWaitText(task) || t('等你回复')
-    return { text, tone: 'wait', spin: false, hint: `${text} · ${elapsed}` }
-  }
+  if (state === 'running' || state === 'waiting')
+    return { text: elapsed, tone: 'run', spin: true, hint: `${word} · ${elapsed}` }
+  if (state === 'needs') return { text: word, tone: 'wait', spin: false, hint: `${word} · ${elapsed}` }
   return null
 }

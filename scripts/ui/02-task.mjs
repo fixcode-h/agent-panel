@@ -958,7 +958,22 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await p.locator('[data-life-ai]').count()) || !(await p.locator('[data-life-copy]').count()))
         errors.push('对话菜单「状态」：标题栏没有「AI 分析」或「复制诊断文件」')
       // 点计数块只看那一类日志，再点一次取消
-      // 对话节点：在执行给「停止」，停了给「重启」（父对话已说完，两个都不该同时出现）
+      // 最上面一句写在等谁、等了多久，后面跟下一步按钮（分析稿 U11）：购物车对话名下有子对话在等你，
+      // 这句和标题栏胶囊写同一个词（分析稿 A8），按钮带你回去处理
+      {
+        const next = p.locator('[data-life-next]').first()
+        const text = await next.innerText().catch(() => '')
+        if (!text.includes('子对话等你处理'))
+          errors.push(`对话菜单「状态」：最上面那句应写「子对话等你处理」和等了多久，实际「${text}」`)
+        else if (!/已等 /.test(text)) errors.push(`对话菜单「状态」：最上面那句没写等了多久（「${text}」）`)
+        if (!(await next.locator('[data-life-next-action="go"]').count()))
+          errors.push('对话菜单「状态」：最上面那句后面没有「去处理」按钮')
+        // 状态胶囊和树上的状态也是同一个短词，不再写「已完成」
+        const pill = await p.locator('[data-lifecycle] section header').first().innerText()
+        if (!pill.includes('子对话等你处理'))
+          errors.push(`对话菜单「状态」：详情的状态胶囊不是同一个短词（「${pill}」）`)
+      }
+      // 对话节点：在执行给「停止」；继续 / 重试并进了最上面那一句，详情标题旁不再有第二个
       if ((await p.locator('[data-life-stop]').count()) + (await p.locator('[data-life-resume]').count()) > 1)
         errors.push('对话菜单「状态」：停止和重启按钮同时出现')
       await p.locator('[data-life-counts] button').first().click()

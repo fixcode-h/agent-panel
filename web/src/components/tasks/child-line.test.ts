@@ -44,7 +44,7 @@ test('派出的子任务 / 工作流还没完时同样不显示「已关闭」',
   for (const over of [
     { background: 0, helpers: true, waiting: { kind: 'helpers' as const, list: ['核对设置页'] } },
     { background: 0, workflow: true, waiting: { kind: 'workflow' as const } },
-    // 进程没了、这一轮在等用户回答：那是「等你选择」的事，不是「已关闭」
+    // 进程没了、这一轮在等用户回答：那是「等你回答」的事，不是「已关闭」
     { background: 0, waiting: { kind: 'answer' as const, n: 1 }, asking: 1 },
   ]) {
     const line = texts(closedWaiting(over))
@@ -179,7 +179,7 @@ test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态�
   assert.ok(!labels.includes('执行中'))
 })
 
-test('等诊断报告确认时又提了问：运行区仍列这一行，标签同时写「等你选择」和「报告待确认」', () => {
+test('等诊断报告确认时又提了问：运行区仍列这一行，标签同时写「等你回答」和「报告待确认」', () => {
   const base = {
     cliAlive: true,
     background: 0,
@@ -195,8 +195,8 @@ test('等诊断报告确认时又提了问：运行区仍列这一行，标签�
   assert.equal(childIcon(asking), 'waiting')
   const ids = listedChildren([running, asking, confirming]).map((c) => c.id)
   assert.deepEqual([...ids].sort(), ['ask', 'req', 'run'])
-  const labels = childLabels(asking, '你').map((l) => l.text)
-  assert.ok(labels.includes('等你选择'))
+  const labels = childLabels(asking).map((l) => l.text)
+  assert.ok(labels.includes('等你回答'))
   assert.ok(labels.includes('报告待确认'))
   // 停下的、已收起的：照旧不列（没人再处理它的提问）
   const stopped = closedWaiting({ ...base, id: 's', asking: 1, status: 'stopped', stopReason: 'user' })
@@ -222,7 +222,7 @@ test('子对话在提问 / 等你操作：父对话运行区也列这一行（�
       .sort(),
     ['act', 'ask', 'req'],
   )
-  assert.ok(childLabels(action, '你').some((l) => l.text === '等你操作'))
+  assert.ok(childLabels(action).some((l) => l.text === '等你操作'))
   // 停下的、已收起的、已解决的：不再算在等你
   const stopped = closedWaiting({ ...base, id: 's', action: true, status: 'stopped', stopReason: 'user' })
   const gone = closedWaiting({ ...base, id: 'g', asking: 1, gone: true })

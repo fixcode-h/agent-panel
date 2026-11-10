@@ -17,6 +17,7 @@ import {
   type LifeReport,
   type LogLine,
 } from '../../shared/lifecycle.ts'
+import { lifeWordFacts } from '../../shared/life-next.ts'
 import { cliTrace } from '../exec/cli-trace.ts'
 import { stalledTurn } from '../exec/stall-watch.ts'
 import { heldCount } from '../exec/delivery.ts'
@@ -147,11 +148,14 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       })
     const helpers = tk.steps.filter((s) => s.slot === 'sub' && (s.status === 'running' || s.status === 'pending'))
     const nudged = sc.nudgeState(id)
+    // 状态和短词按界面拿到的那一份算（补上后台命令、名下子对话在跑 / 在等你的数）：
+    // 不补的话父对话在这里是「已完成」，标题栏、侧栏却写「子对话等你处理」（分析稿 A8）
+    const shown = await sc.withLive(tk)
     const facts: LifeFacts = {
       kind: 'conversation',
       status: tk.status,
       stopReason: tk.stopReason,
-      state: taskState(tk),
+      state: taskState(shown),
       working: !!tk.working,
       awaitingUser: !!tk.awaitingUser,
       resolved: tk.resolved === true,
@@ -168,6 +172,8 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       ...(plan && { plan: planFacts(tk, plan) }),
       ...(nudged && { nudge: { key: shortKey(nudged.key), n: nudged.n } }),
       ...stalledFacts(id),
+      // 「状态」窗口最上面那一句（在等谁、等了多久）要的短词和起始时间
+      ...lifeWordFacts(shown),
     }
     const agent = tk.usage.agents[tk.agentId]
     nodes.push({

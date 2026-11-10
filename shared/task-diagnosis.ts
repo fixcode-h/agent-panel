@@ -27,8 +27,8 @@ import {
   timeAgo,
   type ChildEntry,
   type ConvState,
-  taskWaitText,
 } from './task.ts'
+import { stateWord, type StateWord } from './task-word.ts'
 
 export type DiagTone = 'accent' | 'warning' | 'danger' | 'subtle' | 'success'
 
@@ -72,6 +72,7 @@ type DiagTask = Pick<
   runs?: Task['runs']
   jobs?: Task['jobs']
   childrenWorking?: number
+  childrenNeeds?: number
   archived?: boolean
   deletedAt?: string
   userActions?: Task['userActions']
@@ -100,13 +101,18 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   const busyKids = children.filter((c) => convActive(childState(c)))
   // 顶层对话的列表状态（taskState）不看计划；这里要说清「计划没做完就停了」，所以按子对话那套事实算（childFacts），
   // 独立分支没合回只对子对话算
-  const state = convState({
+  // 名下子对话在等你（childNeeds）也要算进来：以前漏了它，标题栏写「子对话等你处理」、这里却写「这一轮说完了」（分析稿 U2）
+  const facts = {
     ...childFacts(task, {
       background: task.jobs?.filter((j) => !j.service).length ?? 0,
       unmerged: !!task.parentTaskId && task.worktree?.state === 'active',
+      childNeeds: task.childrenNeeds ?? 0,
     }),
     children: busyKids.length || (task.childrenWorking ?? 0),
-  })
+  }
+  const state = convState(facts)
+  // 短词按同一份事实取（shared/task-word.ts）：标题和状态不会各说各的
+  const word = stateWord({ ...facts, request: task.requests[0]?.kind })
   const items: DiagItem[] = []
 
   // 等你处理的排最前：不处理它就不会往下走
@@ -195,30 +201,29 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   if (task.parentTaskId && task.worktree?.state === 'active' && !task.wrapRequest && state === 'unfinished')
     items.push({ kind: 'branch', text: t('独立分支里的改动还没合回父对话'), tone: 'warning' })
 
-  const { headline, tone } = headlineOf(task, state)
+  const { headline, tone } = headlineOf(task, state, word)
   // 停住了、用户能做什么：一句提示，放最后
   const hint = hintOf(task, state)
   if (hint) items.push({ kind: 'hint', text: hint, tone: 'subtle' })
   return { state, headline, tone, items } satisfies Diagnosis
 }
 
-function headlineOf(task: DiagTask, state: ConvState): { headline: string; tone: DiagTone } {
+function headlineOf(
+  task: DiagTask,
+  state: ConvState,
+  { word, report }: StateWord,
+): { headline: string; tone: DiagTone } {
+  // 执行中、等结果、等你处理的开头是和标题栏、侧栏、输入框占位同一个短词（shared/task-word.ts，分析稿 A8、U2）：
+  // 以前这里写「这一轮说完了，在等结果推回来」，标题栏写「子对话等你处理」，同一件事两种说法
   switch (state) {
     case 'running': {
-      const doing = childActivityText(childActivity(task))
-      return { headline: doing ? t('正在执行：{doing}', { doing }) : t('正在执行'), tone: 'accent' }
+      const doing = report ? '' : childActivityText(childActivity(task))
+      return { headline: doing ? t('{word}：{doing}', { word, doing }) : word, tone: report ? 'warning' : 'accent' }
     }
-    // 等的是什么和标题栏、侧栏用同一句（taskWaitText）：以前这里只写「在等结果推回来」，
-    // 其实是子对话在等用户，几处说法对不上（用户 2026-11-10 定的分析稿 U2）
-    case 'waiting': {
-      const what = taskWaitText(task)
-      return {
-        headline: what ? t('这一轮说完了，在等：{what}', { what }) : t('这一轮说完了，在等结果推回来'),
-        tone: what === t('子对话等你处理') ? 'warning' : 'accent',
-      }
-    }
+    case 'waiting':
+      return { headline: word, tone: 'accent' }
     case 'needs':
-      return { headline: taskWaitText(task) || t('在等你处理'), tone: 'warning' }
+      return { headline: word, tone: 'warning' }
     case 'failed': {
       const why = lastFailureNote(task.messages)
       return { headline: why ? t('这一轮失败了：{why}', { why }) : t('这一轮失败了'), tone: 'danger' }
