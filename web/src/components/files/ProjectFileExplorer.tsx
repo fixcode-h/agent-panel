@@ -4,6 +4,8 @@ import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@s
 import { api } from '@/lib/api'
 import { type FileBrowser, type FileTreeOps, type LevelState, FileExplorer } from './FileTree'
 import { ProjectFileDialog } from './ProjectFileDialog'
+import { PluginFileDialog, type PluginFileTarget } from '@/plugins/PluginFileDialog'
+import { fileViewerFor, usePlugins } from '@/plugins/registry'
 
 /** 搜索输入停顿这么久再发请求，打字过程中不发 */
 const SEARCH_DELAY = 250
@@ -391,12 +393,20 @@ export function ProjectFileExplorer({
   const [target, setTarget] = useState<{ path: string; line?: number; hitLines?: number[] } | null>(null)
   // 弹窗里保存后重读树，否则改完的文件内容还对不上。
   // onSaved 是弹窗那边的可选回调，写这里时它还没合进来；用展开语法传，两边都能编译，合入后不用改
+  const plugins = usePlugins()
+  const [pluginFile, setPluginFile] = useState<PluginFileTarget | null>(null)
   const saved = { onSaved: files.refresh } as Partial<ComponentProps<typeof ProjectFileDialog>>
   return (
     <>
       <FileExplorer
         browser={files}
-        onOpen={(path, line, hitLines) => setTarget({ path, line, hitLines })}
+        onOpen={(path, line, hitLines) => {
+          // 开着的插件认领的格式（.uasset）交给插件的查看器，它不经过面板读文件，要完整路径
+          const root = files.info?.dir ?? dir ?? ''
+          if (root && fileViewerFor(path, plugins))
+            return setPluginFile({ path: `${root.replace(/[\\/]+$/, '')}/${path}`, projectId })
+          setTarget({ path, line, hitLines })
+        }}
         compact={compact}
         className={className}
       />
@@ -407,6 +417,7 @@ export function ProjectFileExplorer({
         onOpenChange={(open) => !open && setTarget(null)}
         {...saved}
       />
+      <PluginFileDialog target={pluginFile} onOpenChange={(open) => !open && setPluginFile(null)} />
     </>
   )
 }
