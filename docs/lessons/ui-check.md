@@ -44,3 +44,9 @@ paths: scripts/ui/**, scripts/ui-check.mjs
 - 规则：用例里那一下点击只是为了触发后面要测的东西（弹提示、开菜单）、本身不是被测对象时，用 `locator.dispatchEvent('contextmenu' / 'click')` 直接派发，不用 `click()`：提示叠满会展开盖住右侧的行和弹出的菜单，鼠标点被挡住后一直重试到超时。要测「点不点得到」的用例照样用真点击。
 - 起因：`10-toast` 右键工作区那一行弹提示，叠到第 4 条时提示盖住那一行右半边，在 CI 上多次偶发超时（PR #166、#171 的 `ui (a)`）；本次提交修掉。
 - 防线：`node scripts/ui-check.mjs 10`。
+
+## 按名字找按钮时写 `exact: true`，别让新加的导航项挤进匹配
+
+- 规则：`getByRole('button', { name: '参数' })` 默认按子串匹配，配 `.nth(n)` 时只要页面上多出一个名字里带这几个字的按钮（左栏新加的「插件参数」），序号就整体错位。短名字的按钮一律加 `exact: true`，能限定在所在区域里找的就先 `locator(...)` 收窄范围。
+- 起因：9aaf2e4 设置左栏加了「插件参数」，`06-settings-agent` 的「设置-钩子-参数」点到了别的按钮，dev 上界面检查失败。
+- 防线：`node scripts/ui-check.mjs 06-settings-agent`。
