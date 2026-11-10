@@ -137,7 +137,7 @@ function viewOf(
 }
 
 const phaseLabel = (d: Diagnosis) =>
-  ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') })[phaseOf(d)]
+  ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), fix: t('修复'), verify: t('验证') })[phaseOf(d)]
 
 /**
  * 每个阶段的按钮和提示（用户 2026-11-05 定的流程）：
@@ -200,6 +200,16 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
         hintRevise: t('「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）'),
       },
     }
+  // 修复（用户 2026-11-10 定）：看改了哪些代码、为什么，确认了才验证；在代码上标疑问，它逐条判断，对的改、不对的用事实反驳
+  if (phase === 'fix')
+    return {
+      texts: {
+        approve: t('确认修复，开始验证'),
+        revise: t('有疑问，让它分析'),
+        hintApprove: t('看过改动的代码和原因没问题就确认，它才开始验证；对哪几行有疑问，选中代码标注'),
+        hintRevise: t('「有疑问」把标注交回：它逐条判断，你说得对就改代码，不对会用代码、测试结果说明理由，再交给你看'),
+      },
+    }
   return {
     texts: {
       approve: t('结束，跳过验证'),
@@ -239,7 +249,8 @@ export function DiagnosisDialog({
   // 和 ReviewDialog 一样稳定下来：Markdown 按引用比较，变了会重新解析、冲掉标注的位置
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const changed = task.changes?.map((c) => c.path)
-  const cleanup = useCancelCleanup(task.id, !!last && phaseOf(last) === 'verify')
+  // 修复、验证这两步代码已经改了：取消时可以选连修复一起撤掉
+  const cleanup = useCancelCleanup(task.id, !!last && (phaseOf(last) === 'fix' || phaseOf(last) === 'verify'))
   if (!last) return null
   const req: Pick<TaskRequest, 'id' | 'title' | 'detail'> = {
     // 等你复现是同一版回到等你：换一个 id，标注和输入从头开始

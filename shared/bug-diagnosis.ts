@@ -19,6 +19,7 @@ import {
   type DiagnosisNote,
 } from './bug-diagnosis-schema.ts'
 import { cleanupPrompt, TEMP_LOG } from './bug-cleanup.ts'
+import { fixFilesOf } from './bug-fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './bug-quotes.ts'
 import {
   causeAgreed,
@@ -26,6 +27,7 @@ import {
   causeInPlan,
   evidenceFiles,
   inputPhase,
+  lastFix,
   lastPlan,
   logFilesOf,
   nextRev,
@@ -34,6 +36,7 @@ import {
   PHASE_TEXT,
   phaseFeedback,
   phaseOf,
+  fixApproved,
   planApproved,
   revOf,
   roundOf,
@@ -219,9 +222,26 @@ function planProblem(c: BugCase, list: Diagnosis[]): string {
     : ''
 }
 
-/** 验证：先有确认过的方案并且修完；写清用户怎么验证；修完的结果要先记进档案 */
+/** 修复：先有确认过的方案；changes 一个文件一项，写改了什么、为什么（实际改了哪些文件交报告时按 diff 核对） */
+function fixProblem(c: BugCase, list: Diagnosis[]): string {
+  if (!planApproved(list)) return '还没有用户确认的修复方案：先交 phase: plan，用户确认之后再改代码、交修复。'
+  if (!c.changes.length)
+    return 'changes 要写这次实际改了的每个文件（含测试）：what 改了什么，why 为什么这么改，用户对着代码看。'
+  const bad = c.changes
+    .filter((x) => !x.file.trim() || !x.what.trim() || !x.why.trim())
+    .map((x) => x.file || '（没写 file）')
+  if (bad.length)
+    return `changes 里这几项缺 file、what 或 why：${bad.join('、')}。每个改了的文件都写清改了什么、为什么这么改。`
+  return ''
+}
+
+/** 验证：先有用户确认过的修复；写清用户怎么验证；修完的结果要先记进档案 */
 function verifyProblem(c: BugCase, list: Diagnosis[], input: DiagnosisInput): string {
   if (!planApproved(list)) return '还没有用户确认的修复方案：先交 phase: plan，用户确认、修完之后再交验证。'
+  if (!fixApproved(list))
+    return lastFix(list)?.status === 'pending'
+      ? `第 ${revOf(lastFix(list)!)} 版的修复还在等用户确认，不要交验证：结束这一轮，等用户看完代码。`
+      : '修完要先交 phase: fix 请用户看改了哪些代码、为什么这么改，用户确认修复之后再交验证。'
   const lack: string[] = []
   if (input.collect === undefined || !c.collect?.steps.length) lack.push('collect.steps（用户怎么复现验证）')
   if (!c.collect?.expect.trim() && !c.collect?.outcomes.length) lack.push('collect.outcomes（看到什么算修好了）')
@@ -254,7 +274,9 @@ export function diagnosisProblem(
         ? causeProblem(c)
         : phase === 'plan'
           ? planProblem(c, list)
-          : verifyProblem(c, list, input)
+          : phase === 'fix'
+            ? fixProblem(c, list)
+            : verifyProblem(c, list, input)
   if (bad) return bad
   if (prev?.status === 'questioned') {
     const answered = new Set(answers.map((a) => a.id))
@@ -283,6 +305,7 @@ export function bugStage(task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>): str
     }
     if (phase === 'cause') return d.status === 'approved' ? t('修复设计') : t('根因')
     if (phase === 'plan') return d.status === 'approved' ? t('修复') : t('修复设计')
+    if (phase === 'fix') return d.status === 'approved' ? t('验证') : t('修复')
     return d.status === 'questioned' ? t('验证') : t('收尾')
   }
   const c = task.bugCase
@@ -367,6 +390,26 @@ export function submitDiagnosis(
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
   if (sources.error) return { ok: false, info: sources.error }
+  // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
+  // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主、不是 git）时不核对
+  const fixFiles =
+    (phase === 'fix' || phase === 'verify') && src
+      ? fixFilesOf(
+          (task.changes ?? []).map((x) => x.path),
+          src,
+        )
+      : []
+  if (phase === 'fix' && src?.diff) {
+    if (!fixFiles.length)
+      return { ok: false, info: '还没有改任何代码（临时日志不算）：按确认的方案改完再交 phase: fix。' }
+    const said = new Set(c.changes.map((x) => normPath(x.file)))
+    const left = fixFiles.map((f) => f.file).filter((f) => !said.has(f))
+    if (left.length)
+      return {
+        ok: false,
+        info: `这些文件改了，changes 里没写：${left.join('、')}。每个改了的文件写一项 what（改了什么）和 why（为什么这么改）；不该改的先改回去。`,
+      }
+  }
   // 用户的决定（取消、同意、贴了日志）留着：那是用户做过的事，不是被新一版顶掉的
   if (prev && (prev.status === 'pending' || prev.status === 'questioned')) prev.status = 'superseded'
   const version = (prev?.version ?? 0) + 1
@@ -375,7 +418,7 @@ export function submitDiagnosis(
   const files =
     phase === 'evidence'
       ? evidenceFiles(c)
-      : phase === 'verify'
+      : phase === 'verify' || phase === 'fix'
         ? (lastPlan(list)?.files ?? [])
         : c.files.map(normPath).filter(Boolean)
   const d: Diagnosis = {
@@ -397,7 +440,8 @@ export function submitDiagnosis(
     logFiles: [],
     result: phase === 'verify' ? result : undefined,
     before: (task.changes ?? []).map((x) => normPath(x.path)).filter(Boolean),
-    fixDiffs: phase === 'verify' && src ? fixDiffs(list, src) : [],
+    fixDiffs: (phase === 'fix' || phase === 'verify') && src ? fixDiffs(list, src) : [],
+    fixFiles,
   }
   ;(task.diagnoses ??= []).push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写
@@ -407,13 +451,15 @@ export function submitDiagnosis(
   const wait =
     phase === 'verify'
       ? '等用户复现验证、贴日志（或点结束跳过验证）'
-      : phase === 'evidence'
-        ? '等用户同意加日志（用户也可能直接贴日志）'
-        : phase === 'cause'
-          ? `这一版只请用户确认根因，修复方案要等用户同意根因后另交 phase: plan 再确认${d.options.length || d.fix.trim() ? '（你写的修法在弹窗里标成草案，这一版不确认它）' : ''}；回复用户时不要说在等他确认方案`
-          : causeInPlan(d, task.diagnoses)
-            ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
-            : '等用户确认修复方案，确认了才改代码'
+      : phase === 'fix'
+        ? '等用户看改了哪些代码、为什么这么改：确认了才做验证；用户对代码标了疑问会交回给你逐条判断'
+        : phase === 'evidence'
+          ? '等用户同意加日志（用户也可能直接贴日志）'
+          : phase === 'cause'
+            ? `这一版只请用户确认根因，修复方案要等用户同意根因后另交 phase: plan 再确认${d.options.length || d.fix.trim() ? '（你写的修法在弹窗里标成草案，这一版不确认它）' : ''}；回复用户时不要说在等他确认方案`
+            : causeInPlan(d, task.diagnoses)
+              ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
+              : '等用户确认修复方案，确认了才改代码'
   const round = roundOf(d, task.diagnoses)
   const which = overturned
     ? `已交第 ${rev} 版（${PHASE_TEXT[phase]}）：回到了更早的阶段或换掉了确认过的方案，第 ${rev - 1} 版的结论作废`
@@ -495,13 +541,16 @@ function decisionLine(d: Diagnosis, k: number): string {
       ? t('你给了第 {n} 版的验证结果，交给它分析', { n })
       : t('你给了第 {n} 版要的日志，交给它分析', { n })
   if (d.status === 'questioned') {
-    const phase = { evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') }[phaseOf(d)]
+    const phase = { evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), fix: t('修复'), verify: t('验证') }[
+      phaseOf(d)
+    ]
     return t('你对第 {n} 版的{phase}提了 {k} 条意见，要它接着分析', { n, k: k || 1, phase })
   }
   return {
     evidence: t('你同意了第 {n} 版的日志计划', { n }),
     cause: t('你同意了第 {n} 版的根因', { n }),
     plan: t('你确认了第 {n} 版的修复方案', { n }),
+    fix: t('你确认了第 {n} 版的修复', { n }),
     verify: t('你结束了第 {n} 版的验证', { n }),
   }[phaseOf(d)]
 }
@@ -658,7 +707,9 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
   if (phase === 'evidence' || phase === 'cause')
     return '没有请求收尾：还没有用户确认的修复方案。按流程交根因（phase: cause）、修复方案（phase: plan），确认后再修。'
   if (phase === 'plan')
-    return '没有请求收尾：修完先用 update_bug_case 记下 result，再交 phase: verify 请用户验证；用户给了验证结果或点了结束才能收尾。'
+    return '没有请求收尾：修完先交 phase: fix 请用户看改了哪些代码，用户确认修复后验证、交 phase: verify；用户给了验证结果或点了结束才能收尾。'
+  if (phase === 'fix')
+    return '没有请求收尾：用户确认了修复，还要验证：用 update_bug_case 记下 result，交 phase: verify；用户给了验证结果或点了结束才能收尾。'
   const plan = lastPlan(list)
   const extra = outOfPlan(changed, [...(plan?.files ?? []), ...logFilesOf(list)])
   if (extra.length)

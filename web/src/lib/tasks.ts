@@ -410,7 +410,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 交诊断报告（ADR 0045）：报告本身在对话里有可点开的一行，这里只写根因
     case 'submit_diagnosis':
       return as(
-        { evidence: t('交论证'), cause: t('交根因'), plan: t('交修复方案'), verify: t('请你验证') }[
+        { evidence: t('交论证'), cause: t('交根因'), plan: t('交修复方案'), fix: t('交修复'), verify: t('请你验证') }[
           a.phase as 'evidence'
         ] ?? t('交诊断报告'),
         firstLine(a.rootCause) || firstLine(a.symptom),

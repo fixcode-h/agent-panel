@@ -15,12 +15,13 @@ const fileOf = (p: string) => normPath(p).replace(/:\d+(:\d+)?$/, '')
 export const phaseOf = (d: Pick<Diagnosis, 'phase' | 'confirmed'>): BugPhase =>
   d.phase ?? (d.confirmed ? 'plan' : 'evidence')
 
-const PHASES: BugPhase[] = ['evidence', 'cause', 'plan', 'verify']
+const PHASES: BugPhase[] = ['evidence', 'cause', 'plan', 'fix', 'verify']
 
 export const PHASE_TEXT: Record<BugPhase, string> = {
   evidence: '论证',
   cause: '根因',
   plan: '修复方案',
+  fix: '修复',
   verify: '验证',
 }
 
@@ -31,7 +32,7 @@ export const revOf = (d: Pick<Diagnosis, 'rev' | 'version'>) => d.rev ?? d.versi
  * 新交的这一份是第几版（用户 2026-11-06 定：版本号只在方案被推翻时往上加）。
  * - 回到更早的阶段（根因被否决回到论证、验证没过回到论证或重出方案）：之前的结论不成立了，+1。
  * - 用户确认过的修复方案换成新方案（修的时候发现要改别的文件）：+1。
- * - 按用户的意见修改、论证多轮、阶段往下走（论证 → 根因 → 方案 → 验证）：还是同一版。
+ * - 按用户的意见修改、论证多轮、阶段往下走（论证 → 根因 → 方案 → 修复 → 验证）：还是同一版。
  * 只看阶段和用户的决定，不看回复的文字
  */
 export function nextRev(list: Diagnosis[], phase: BugPhase): { rev: number; overturned: boolean } {
@@ -86,6 +87,19 @@ export function lastPlan(list: Diagnosis[]): Diagnosis | undefined {
 /** 交验证要先有用户确认、已经修完的方案 */
 export const planApproved = (list: Diagnosis[]) => lastPlan(list)?.status === 'approved'
 
+/** 最后一版方案之后交的修复（用户 2026-11-10 定：修完先交修复，用户看过代码确认了才验证）；中间隔着验证也算 */
+export function lastFix(list: Diagnosis[]): Diagnosis | undefined {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const p = phaseOf(list[i])
+    if (p === 'fix') return list[i]
+    if (p !== 'verify') return undefined
+  }
+  return undefined
+}
+
+/** 交验证要先有用户确认过的修复 */
+export const fixApproved = (list: Diagnosis[]) => planApproved(list) && lastFix(list)?.status === 'approved'
+
 /** 论证阶段加过临时日志的文件：修完要删，删的时候不算超出方案 */
 export const logFilesOf = (list: Diagnosis[]) => [
   ...new Set(
@@ -108,7 +122,8 @@ export function inputPhase(input: Record<string, unknown>, c: BugCase, list: Dia
   const p = input.phase
   if (typeof p === 'string' && (PHASES as string[]).includes(p)) return p as BugPhase
   if (!c.confirmed) return 'evidence'
-  if (planApproved(list)) return 'verify'
+  if (fixApproved(list)) return 'verify'
+  if (planApproved(list)) return 'fix'
   return causeAgreed(list) ? 'plan' : 'cause'
 }
 
@@ -154,7 +169,8 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
         ? `第 ${v} 版的日志已经加好，在等用户复现贴日志：先不改文件，等用户的回复。`
         : `第 ${v} 版报告还在等用户确认：确认之前不改文件，先等用户的回复。`,
     }
-  if (d.status === 'questioned')
+  // 修复这一步的疑问是对代码提的：用户说得对就要改代码，方案里的文件照样放行（下面按方案算）
+  if (d.status === 'questioned' && phase !== 'fix')
     return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 改好再交，用户同意后再改文件。` }
   // 取消后删临时日志：只放行查到日志的文件（和用户勾了要删的新文件），其余照旧不改
   if (d.status === 'cancelled') return cleaning(d) ? { files: cleanupFiles(d) } : { deny: closedInfo(v) }
@@ -198,6 +214,15 @@ export function phaseFeedback(d: Diagnosis): string {
   const files = d.logFiles.length
     ? `\n\n用户给的日志文件（本机路径，用工具读，大文件按需分段读）：${d.logFiles.join('、')}`
     : ''
+  if (d.status === 'questioned' && phase === 'fix')
+    return `用户看了第 ${v} 版修复改的代码，提了这些意见：
+${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
+
+逐条判断用户说得对不对，查清楚再动手（读代码、跑测试、看日志），不要因为用户提了就照改：
+- 说得对、改了更合理：按意见改代码（只改方案里的文件；要改别的文件先重新交 phase: plan 写明为什么，面板记成第 ${v + 1} 版），answers 写 stance: adopted 和改了什么。
+- 说得不对：代码不改，answers 写 stance: disagree，用事实反驳：引用代码行、测试输出、日志原文或文档，说清为什么现在这样是对的，不只说「没问题」。
+- 只是没看明白：answers 写 stance: explained 解释清楚。
+处理完重新交 phase: fix（还是第 ${v} 版）：changes 按现在的代码写每个改了的文件改了什么、为什么，面板会重新取 diff。用户确认修复之前不做验证、不收尾。`
   if (d.status === 'questioned') {
     const back =
       phase === 'cause'
@@ -231,8 +256,13 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}$
     return `用户确认了第 ${v} 版的修复方案，按它修：
 - 先写改前失败的测试（没法自动化的写成可重复的手工步骤），再按方案改。
 - 只改方案里的文件：${d.files.map((f) => `\`${f}\``).join('、') || '（见方案）'}（补测试、回写文档、翻译不算）。要改别的文件，先重新交 phase: plan 写明为什么（换掉确认过的方案，面板记成第 ${v + 1} 版），等用户确认。
-- 修完用 update_bug_case 的 result 记下回归测试和影响面逐条的验证，然后交 phase: verify：collect 写用户怎么复现验证、日志在哪、看到什么算修好了，等用户给结果。
-- 改完验证不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证重新交报告。${notes}${overall}`
+- 修完交 phase: fix 请用户看代码：changes 一个文件一项（含测试），what 写改了什么、why 写为什么这么改（这处改动怎么解决根因、为什么这样写），面板会取实际 diff 和它对上给用户看。用户确认修复之后才做验证。
+- 改完自测不过：不要在这次修法上接着改，把修法和失败证据写进「已排除」，回到论证重新交报告。${notes}${overall}`
+  if (phase === 'fix')
+    return `用户确认了第 ${v} 版的修复，现在验证：
+- 跑回归测试（确认改前失败、改后通过）和方案里影响面逐条的验证，用 update_bug_case 的 result 记下（regressionTests、impactChecks、reproBefore / reproAfter）。
+- 然后交 phase: verify：collect 写用户怎么复现验证、日志在哪、看到什么算修好了，等用户给结果。
+- 验证时发现还要改代码：改好后重新交 phase: fix 请用户再看一次，不直接交验证；验证不过、修法本身不对：把修法和失败证据写进「已排除」，回到论证或重新出方案（面板记成第 ${v + 1} 版）。${notes}${overall}`
   return `用户在第 ${v} 版点了结束，跳过验证。${CLEANUP}然后请父对话收尾（submit_merge）。${notes}${overall}`
 }
 

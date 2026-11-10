@@ -56,8 +56,10 @@ export const EN_BUG_FLOW: Record<string, string> = {
   排查阶段: 'Investigation stage',
   查看这一步的报告: "View this step's report",
   '没有单独的论证报告，证据写在这份报告里': 'No separate evidence report; the evidence is in this report',
-  '修复这一步没有单独的报告，改了什么写在验证报告里':
-    'The fix step has no report of its own; the changes are in the verification report',
+  '这次修复没有单独的报告，改了什么写在验证报告里':
+    'This fix has no report of its own; the changes are in the verification report',
+  '它在改代码，改完交上来给你看改了哪些代码、为什么这么改':
+    "It's changing the code; when done it will show you what changed and why",
   拖动调整标注栏宽度: 'Drag to resize the notes column',
   // 引入日志文件
   日志文件: 'Log files',
@@ -197,4 +199,36 @@ export const EN_BUG_FLOW: Record<string, string> = {
   收尾时会做什么: 'What happens on wrap-up',
   '删掉加在这些文件里的 `[排查-` 临时日志：{files}；修改里必要的正式日志保留。':
     'Remove the temporary `[排查-` logs added in these files: {files}; necessary permanent logs in the changes are kept.',
+  '确认修复，开始验证': 'Approve fix, start verifying',
+  '有疑问，让它分析': 'Question it',
+  '看过改动的代码和原因没问题就确认，它才开始验证；对哪几行有疑问，选中代码标注':
+    'If the changed code and reasons look right, approve and it starts verifying; select lines you question to annotate them',
+  '「有疑问」把标注交回：它逐条判断，你说得对就改代码，不对会用代码、测试结果说明理由，再交给你看':
+    '"Question it" sends your notes back: it weighs each one, changes the code if you\'re right, or explains with code and test results if not, then shows you again',
+  交修复: 'Submit fix',
+  '你对代码提了意见，它在逐条判断': "You questioned the code; it's weighing each note",
+  '你确认了修复，它在验证': "You approved the fix; it's verifying",
+  '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据':
+    'Review what code changed and why below: approve if it looks right and it starts verifying; select lines you question, and it weighs each note and either changes the code or backs its choice with evidence',
+  '改了哪些代码、为什么这么改，点上面阶段条的「修复」查看。':
+    'To see what code changed and why, click "Fix" in the stage bar above.',
+  '你确认了第 {n} 版的修复': 'You approved the fix in version {n}',
+  '{n} 个文件没写为什么这么改': "{n} files don't say why they changed",
+  '按方案 {id} 改完了：{title}': 'Fixed with option {id}: {title}',
+  按确认的方案改完了: 'Fixed per the approved plan',
+  '改了 {n} 个文件': '{n} files changed',
+  选的方案: 'Chosen option',
+  为什么选它: 'Why this one',
+  没写为什么: 'No reason given',
+  '改了什么、为什么': 'What changed and why',
+  超出方案: 'Outside plan',
+  为什么这么改: 'Why it changed this way',
+  改了哪些文件: 'Files changed',
+  '这些文件不在你确认的方案里：': "These files aren't in the plan you approved:",
+  改动的代码: 'Code changes',
+  '和对话开始时比，`[排查-` 临时日志不算在里面。对哪几行有疑问，选中代码标注。':
+    'Compared with the start of the conversation; temporary `[排查-` logs are left out. Select any lines you question to annotate them.',
+  '这一版没有取到实际的代码改动，只能看上面每个文件写的改了什么。':
+    "This version couldn't capture the actual code changes; see what each file says it changed above.",
+  方案里写的改动: 'Changes in the plan',
 }

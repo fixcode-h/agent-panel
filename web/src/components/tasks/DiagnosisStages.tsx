@@ -4,8 +4,8 @@ import { causeInPlan, phaseOf } from '@shared/bug-phase'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 
-/** 一份报告落在阶段条的第几步：快速级别根因和方案合成一版，算在方案那一步；修复这一步没有单独的报告 */
-const STEP = { evidence: 0, cause: 1, plan: 2, verify: 4 } as const
+/** 一份报告落在阶段条的第几步：快速级别根因和方案合成一版，算在方案那一步 */
+const STEP = { evidence: 0, cause: 1, plan: 2, fix: 3, verify: 4 } as const
 
 /**
  * 诊断报告弹窗正文上方吸顶的阶段条（用户 2026-11-05 定的流程）：论证 → 根因 → 修复方案 → 修复 → 验证，
@@ -28,7 +28,7 @@ export function DiagnosisStages({
   const phase = phaseOf(d)
   const rounds = list.filter((x) => phaseOf(x) === 'evidence').length
   const ok = d.status === 'approved' || d.status === 'answered'
-  // 现在在第几步：根因同意了就到方案，方案确认了就到修复；验证给了结果它还在分析，点了结束才算都完成
+  // 现在在第几步：根因同意了就到方案，方案确认了就到修复，修复确认了就到验证；验证给了结果它还在分析，点了结束才算都完成
   const at =
     phase === 'evidence'
       ? 0
@@ -40,9 +40,13 @@ export function DiagnosisStages({
           ? ok
             ? 3
             : 2
-          : d.status === 'approved'
-            ? 5
-            : 4
+          : phase === 'fix'
+            ? ok
+              ? 4
+              : 3
+            : d.status === 'approved'
+              ? 5
+              : 4
   const evidence =
     phase === 'evidence' && d.status === 'pending' && d.awaiting
       ? t('论证 · 第 {n} 轮 · 等你复现', { n: rounds })
@@ -80,8 +84,11 @@ export function DiagnosisStages({
                   ? i === 0 && borrowed
                     ? t('没有单独的论证报告，证据写在这份报告里')
                     : t('查看这一步的报告')
-                  : i === 3 && i < at
-                    ? t('修复这一步没有单独的报告，改了什么写在验证报告里')
+                  : i === 3 && i <= at
+                    ? // 修完交的修复报告才能点；以前没有这一步的报告，改了什么写在验证报告里
+                      i < at
+                      ? t('这次修复没有单独的报告，改了什么写在验证报告里')
+                      : t('它在改代码，改完交上来给你看改了哪些代码、为什么这么改')
                     : undefined
               }
               onClick={() => key && key !== shown && onShow(key)}

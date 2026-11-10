@@ -115,10 +115,11 @@ export const BugResult = z.object({
 export type BugResult = z.infer<typeof BugResult>
 
 /**
- * 报告的阶段：evidence 论证（还没定论，要加日志复现）、cause 根因（等用户同意）、plan 修复方案、verify 验证（修完等用户复现给日志）。
+ * 报告的阶段：evidence 论证（还没定论，要加日志复现）、cause 根因（等用户同意）、plan 修复方案、
+ * fix 修复（修完给用户看改了哪些代码、为什么，用户确认了才验证；用户 2026-11-10 定）、verify 验证（等用户复现给日志）。
  * 按顺序走，论证可以来回多轮；用户否决根因、AI 认可证据不够时回到论证
  */
-export const BugPhase = z.enum(['evidence', 'cause', 'plan', 'verify'])
+export const BugPhase = z.enum(['evidence', 'cause', 'plan', 'fix', 'verify'])
 export type BugPhase = z.infer<typeof BugPhase>
 
 /** 日志计划的一处：加在哪、打什么、用来区分哪个假设 */
@@ -271,9 +272,19 @@ export const BugCaseFields = {
     .default([]),
   /** 复现用的是什么：user 用户的数据 / 环境，constructed 构造的数据（只算推演），test 测试用例 */
   reproKind: z.enum(['user', 'constructed', 'test']).optional().catch(undefined),
-  /** 具体改动：一个文件一行写要改什么（方案页的「具体改动」表；files 没写时由它补） */
+  /**
+   * 具体改动：一个文件一行写要改什么（方案页的「具体改动」表；files 没写时由它补）。
+   * 修完交修复（phase: fix）时改写成实际改了什么，why 写为什么这么改（「修复」那一步按文件和实际 diff 对上显示）
+   */
   changes: z
-    .array(z.object({ file: str(500), what: str(2000), isNew: z.boolean().catch(false).default(false) }))
+    .array(
+      z.object({
+        file: str(500),
+        what: str(2000),
+        why: str(1500),
+        isNew: z.boolean().catch(false).default(false),
+      }),
+    )
     .catch([])
     .default([]),
   /** 论证阶段：要加的临时日志 */
@@ -281,6 +292,16 @@ export const BugCaseFields = {
   /** 论证 / 验证阶段：复现步骤、日志在哪、过滤条件、每种结果说明什么 */
   collect: BugCollect.optional().catch(undefined),
 }
+
+/** 修复改了的一个文件：增删行数不算临时日志；diff 只留 @@ 开头的几段，太长截断 */
+export const FixFile = z.object({
+  file: z.string(),
+  add: z.number().int(),
+  del: z.number().int(),
+  diff: z.string().max(20000),
+  isNew: z.boolean().default(false),
+})
+export type FixFile = z.infer<typeof FixFile>
 
 const FileLineSchema = z.object({ file: z.string(), line: z.number().int(), text: z.string() })
 
@@ -375,6 +396,11 @@ export const Diagnosis = z.object({
   before: z.array(z.string()).default([]),
   /** 验证这一版：出错点那几段代码修前（根因版的快照）和现在的对照，面板交验证时算出来 */
   fixDiffs: z.array(z.object({ id: z.string(), file: z.string(), diff: z.string().max(8000) })).default([]),
+  /**
+   * 修复、验证这一版：交报告时每个改了的文件和对话开始时比的 diff（临时日志的行去掉了），「修复」那一步按它显示改了哪些代码。
+   * 面板交报告时取（shared/bug-fix.ts），不让 Agent 抄
+   */
+  fixFiles: z.array(FixFile).default([]),
   /** 用户取消修复后删临时日志的进度（shared/bug-cleanup.ts）：Agent 删、面板核对，通过了才关闭报告 */
   cleanup: CleanupState.optional().catch(undefined),
 })

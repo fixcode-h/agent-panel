@@ -152,7 +152,7 @@ export function reproKindMd(d: Pick<Diagnosis, 'reproKind'>): string {
 }
 
 /** diff 原文摆成 diff 代码块（增删行着色） */
-const diffBlock = (diff: string) => `${fenceOf(diff)}diff\n${diff.replace(/\n$/, '')}\n${fenceOf(diff)}`
+export const diffBlock = (diff: string) => `${fenceOf(diff)}diff\n${diff.replace(/\n$/, '')}\n${fenceOf(diff)}`
 
 export const attributionDiffMd = (diff: string | undefined) =>
   diff?.trim() ? `**${t('引入的那段改动')}**\n\n${diffBlock(diff)}` : ''

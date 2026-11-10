@@ -78,6 +78,20 @@ const approvePlan = (tk: Task, plan: Partial<DiagnosisInput> = {}, cause: Partia
   ok(submitDiagnosis(tk, input({ phase: 'plan', ...plan }), id))
   ok(decideDiagnosis(tk, pendingDiagnosis(tk)!.version, yes, id))
 }
+/** 修完交修复（用户 2026-11-10 定）：changes 每个文件写改了什么、为什么 */
+const fixInput = (over: Partial<DiagnosisInput> = {}) =>
+  input({
+    phase: 'fix',
+    changes: [
+      { file: 'web/src/lib/login.ts', what: 'max 换成次数上限常量', why: 'retries 按次数累加，上限也要按次数' },
+    ],
+    ...over,
+  })
+/** 交修复、用户看过代码确认：后面就能交验证 */
+const approveFix = (tk: Task) => {
+  ok(submitDiagnosis(tk, fixInput(), id))
+  ok(decideDiagnosis(tk, pendingDiagnosis(tk)!.version, yes, id))
+}
 const verifyInput = (over: Partial<DiagnosisInput> = {}) =>
   input({ phase: 'verify', collect: { steps: ['登录一次，等超时'], expect: '超时后提示重试，不再转圈' }, ...over })
 const evidenceInput = (over: Partial<DiagnosisInput> = {}) =>
@@ -328,17 +342,20 @@ test('收尾核对：要有确认过的方案、交过验证且用户给了结�
   assert.ok(ok2.ok)
   assert.match(ok2.message, /只改方案里的文件：`web\/src\/lib\/login\.ts`/)
   assert.match(ok2.message, /整体意见：先别动 UI/)
-  assert.match(ok2.message, /交 phase: verify/)
+  assert.match(ok2.message, /交 phase: fix/)
   assert.deepEqual(editScope(tk.diagnoses!), { files: ['web/src/lib/login.ts'] })
-  assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /交 phase: verify/, '修完要先请用户验证')
+  assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /交 phase: fix/, '修完要先请用户看代码')
+  assert.match(submitDiagnosis(tk, verifyInput(), id).info, /先交 phase: fix/, '没确认修复不能交验证')
+  approveFix(tk)
+  assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /交 phase: verify/, '确认修复后要验证')
   assert.match(submitDiagnosis(tk, verifyInput(), id).info, /result 记下修完的结果/, '交验证前要记结果')
   ok(done(tk))
   ok(submitDiagnosis(tk, verifyInput(), id))
   assert.equal(bugStage(tk), '等你验证')
-  assert.match(diagnosisMarkdown(tk.diagnoses![2]), /## 你来验证\n1\. 登录一次，等超时/)
-  assert.match(diagnosisMarkdown(tk.diagnoses![2]), /## 自测结果/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![3]), /## 你来验证\n1\. 登录一次，等超时/)
+  assert.match(diagnosisMarkdown(tk.diagnoses![3]), /## 自测结果/)
   assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /还在等用户/)
-  const r = decideDiagnosis(tk, 3, { approve: false, supply: true, logs: '提示重试', notes: [], overall: '' }, id)
+  const r = decideDiagnosis(tk, 4, { approve: false, supply: true, logs: '提示重试', notes: [], overall: '' }, id)
   assert.ok(r.ok)
   assert.match(r.message, /没问题.*\[排查-.*正式日志.*submit_merge/s)
   assert.equal(bugStage(tk), '收尾')
@@ -367,9 +384,10 @@ test('验证：用户可以直接点结束跳过验证；论证时加过日志�
   ok(decideDiagnosis(tk, 1, yes, id))
   approvePlan(tk)
   assert.deepEqual(editScope(tk.diagnoses!), { files: ['web/src/lib/login.ts', 'web/src/lib/api.ts'] })
+  approveFix(tk)
   ok(done(tk))
   ok(submitDiagnosis(tk, verifyInput(), id))
-  const r = decideDiagnosis(tk, 4, yes, id)
+  const r = decideDiagnosis(tk, 5, yes, id)
   assert.ok(r.ok)
   assert.match(r.message, /点了结束，跳过验证.*\[排查-.*正式日志.*submit_merge/s)
   assert.match(tk.messages.at(-1)!.text, /你结束了第 1 版的验证/)
@@ -489,9 +507,11 @@ test('收尾：影响面每一条都要有验证记录，回归测试要记下',
   ok(submitDiagnosis(tk, standard(), id))
   ok(decideDiagnosis(tk, 2, yes, id))
   assert.equal(bugStage(tk), '修复')
+  approveFix(tk)
+  assert.equal(bugStage(tk), '验证')
   done(tk, ['登录重试'])
   ok(submitDiagnosis(tk, verifyInput(), id))
-  ok(decideDiagnosis(tk, 3, yes, id))
+  ok(decideDiagnosis(tk, 4, yes, id))
   assert.equal(bugStage(tk), '收尾')
   assert.match(diagnosisGate(tk, ['web/src/lib/login.ts']), /这些影响面还没有验证记录：接口重试/)
   done(tk, ['登录重试', ' 接口 重试 '])
@@ -669,6 +689,8 @@ test('第几版（用户 2026-11-06 定）：按意见修改、阶段往下走�
   ok(submitDiagnosis(tk, input({ phase: 'plan', files: ['web/src/lib/login.ts', 'web/src/lib/api.ts'] }), id))
   assert.equal(last().rev, 3)
   ok(decideDiagnosis(tk, last().version, yes, id))
+  approveFix(tk)
+  assert.equal(last().rev, 3, '交修复还是第 3 版')
   ok(done(tk))
   ok(submitDiagnosis(tk, verifyInput(), id))
   assert.equal(last().rev, 3, '交验证还是第 3 版')

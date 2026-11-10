@@ -19,6 +19,8 @@ export interface BugSource {
   read(file: string): string | undefined
   /** 版本管理里某次改动对这个文件的 diff（git show）；取不到返回 undefined */
   show?(rev: string, file: string): string | undefined
+  /** 这个文件现在和对话开始时比的 diff（unified diff，新文件和空文件比）；取不到返回 undefined */
+  diff?(file: string): string | undefined
 }
 
 /** 一段代码最多引用这么多行：出错的那几行，调用方另起一段 */
@@ -273,7 +275,7 @@ export function resolveSources(
 ): Resolved {
   const notes: string[] = []
   const src = ctx.src
-  if (ctx.phase === 'verify') {
+  if (ctx.phase === 'fix' || ctx.phase === 'verify') {
     // 已经修完：出错点那几行变了，代码沿用根因那一版的快照（marks.text 在现在的文件里多半找不到了）
     const cause = causeRefs(ctx.list)
     c.codeRefs = cause ? structuredClone(cause.codeRefs) : c.codeRefs.map((r) => ({ ...r, snapshot: undefined }))

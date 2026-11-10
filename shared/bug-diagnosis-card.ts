@@ -43,8 +43,10 @@ export function fillDiagnosis(d: Diagnosis): Diagnosis {
   for (const q of d.quotes) q.highlight ??= []
   d.expectVsActual ??= []
   d.fixDiffs ??= []
+  d.fixFiles ??= []
   d.logPlan ??= []
   d.changes ??= []
+  for (const c of d.changes) c.why ??= ''
   d.whatChanged ??= ''
   d.options ??= []
   for (const o of d.options) {
@@ -77,13 +79,15 @@ export function nextStep(d: Diagnosis, withCause = false): string {
         ? t('你取消了这次修复，临时日志没删干净：选让它再删一次，或者自己处理')
         : t('你取消了这次修复')
   if (d.status === 'superseded') return t('这份报告已被后面交的取代，看最新的')
-  if (d.status === 'questioned') return t('你提了意见，它在接着分析')
+  if (d.status === 'questioned')
+    return phase === 'fix' ? t('你对代码提了意见，它在逐条判断') : t('你提了意见，它在接着分析')
   if (d.status === 'answered') return phase === 'verify' ? t('你给了验证结果，它在分析') : t('你给了日志，它在分析')
   if (d.status === 'approved')
     return {
       evidence: t('你同意了，它在加日志'),
       cause: t('你同意了根因，它在设计修复方案'),
       plan: withCause ? t('你同意了根因和方案，它在修') : t('你确认了方案，它在修'),
+      fix: t('你确认了修复，它在验证'),
       verify: t('你结束了验证，它在收尾'),
     }[phase]
   if (d.awaiting) return t('按下面的步骤复现一次，把日志贴在右边，点「交日志，继续分析」')
@@ -91,6 +95,9 @@ export function nextStep(d: Diagnosis, withCause = false): string {
     evidence: t('同意加日志，它只在日志计划里的文件加临时日志、不改逻辑；手上已有日志可以直接贴在右边'),
     cause: t('同意根因，它开始设计修复方案；不同意就选中文字标出疑问，点「否决」'),
     plan: withCause ? t('根因和修复方案一起确认，确认了它才开始改代码') : t('确认方案，它才开始改代码'),
+    fix: t(
+      '看下面改了哪些代码、为什么这么改：没问题就确认，它开始验证；对哪几行有疑问就选中标注，它逐条判断后改代码或给出依据',
+    ),
     verify: t('按下面的步骤复现一次，贴日志确认；不想验证可以直接结束'),
   }[phase]
 }
@@ -156,7 +163,7 @@ function tagsOf(d: Diagnosis, files: number): DiagnosisCard['tags'] {
 function attentionOf(d: Diagnosis, list: Diagnosis[] | undefined, changed?: string[]): DiagnosisCard['attention'] {
   const phase = phaseOf(d)
   const out: DiagnosisCard['attention'] = []
-  if ((phase === 'plan' || phase === 'verify') && !d.confirmed)
+  if ((phase === 'plan' || phase === 'fix' || phase === 'verify') && !d.confirmed)
     out.push({ text: t('根因还没用日志或测试证实'), tone: 'danger' })
   const fails = d.result?.impactChecks.filter((x) => !x.output.trim()).length ?? 0
   if (phase === 'verify' && fails) out.push({ text: t('{n} 项影响面还没有验证结果', { n: fails }), tone: 'danger' })
@@ -198,7 +205,8 @@ export function diagnosisCard(d: Diagnosis, opts: { list?: Diagnosis[]; changed?
   return {
     status: statusOf(d),
     tags: tagsOf(d, files),
-    quote: (phase === 'plan' && !withCause) || phase === 'verify' ? codeTerms(first(d.rootCause)) : '',
+    quote:
+      (phase === 'plan' && !withCause) || phase === 'fix' || phase === 'verify' ? codeTerms(first(d.rootCause)) : '',
     headline: headlineOf(d, withCause),
     todo: nextStep(d, withCause),
     attention: attentionOf(d, opts.list, opts.changed),
