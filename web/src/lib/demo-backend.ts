@@ -18,6 +18,7 @@ import { settleAction } from '@shared/user-action'
 import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
+import { demoIsolate, demoSharedDir } from './demo-shared-dir'
 import { demoExperience, demoLearnedNote } from './demo-experience'
 import { demoChatMemory } from './demo-chat-memory'
 import { demoCliPackages } from './demo-packages'
@@ -3503,6 +3504,13 @@ function tasksRoute(
       at: new Date().toISOString(),
       ...(answers ? { answers } : {}),
     })
+    persist()
+    return task
+  }
+  // 共用目录的提醒和「这个对话开独立分支」（demo-shared-dir.ts）
+  if (sub === 'shared-dir') return demoSharedDir(task, tasks)
+  if (sub === 'isolate' && method === 'POST') {
+    demoIsolate(task)
     persist()
     return task
   }

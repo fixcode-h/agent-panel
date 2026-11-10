@@ -10,6 +10,7 @@ import {
   type TreeSpan,
 } from './exec/git.ts'
 import { log } from './log.ts'
+import { closeTurn, namedSince, openTurn, splitOwned } from './turn-owners.ts'
 
 /**
  * 每轮对话改了哪些文件（总结下面那张「已更改 N 个文件」卡片的数据）。
@@ -24,6 +25,8 @@ import { log } from './log.ts'
  * - 子对话合回这个目录的那一下单独切掉（见 aroundMerge）：父对话的卡片不含子对话的改动
  * - 这一轮里拉代码、合并别的分支、切分支带进来的文件不算（见 dropSynced）：Agent 按规则 fetch + merge 同步，
  *   上游改的几百个文件不是这个对话改的
+ * - 同一个目录里别的对话这段时间改的文件不算（见 server/turn-owners.ts）：按改文件的工具调用认是谁的，
+ *   别的对话点名过、这个对话没点名的剔除，剔除了哪些记在 others 上给卡片说明
  *
  * 只记在内存里：面板重启时进行中的那一轮就没有卡片了，不影响已经记在消息上的。
  */
@@ -66,6 +69,8 @@ const snap = (dir: string, ignore: string[]) =>
  */
 export function beginTurnChanges(taskId: string, dir: string, ignore: PlacedFiles, carry: boolean) {
   const list = [...ignore]
+  // 归属的起点当场登记，不排队：排着的快照还没拍完时别的对话报的改文件也要算进这一轮
+  openTurn(taskId, dir, carry)
   // 不用等它拍完再交给 CLI：模型开始改文件至少要几秒，快照早就拍好了。返回的 Promise 给测试等
   return queued(taskId, async () => {
     const had = tracks.get(taskId)
@@ -83,6 +88,8 @@ export function beginTurnChanges(taskId: string, dir: string, ignore: PlacedFile
  * 终点留作下一段的起点（接着做的那一轮用）。没改文件时不调 put
  */
 export function endTurnChanges(taskId: string, put: (changes: TurnChanges) => void) {
+  // 这一轮的归属凭据当场取：等快照的时候下一轮可能已经开始，起点会被换掉
+  const owner = closeTurn(taskId)
   return queued(taskId, async () => {
     const tr = tracks.get(taskId)
     if (!tr) return
@@ -102,10 +109,14 @@ export function endTurnChanges(taskId: string, put: (changes: TurnChanges) => vo
       log.warn('task', '读这一轮的改动失败', { task: taskId, error: (e as Error).message })
       return []
     })
-    const files = await dropSynced(tr.dir, all, { head, endHead, from: first, to, since }).catch(() => all)
-    if (files.length < all.length)
-      log.info('task', '这一轮拉代码带进来的文件不算改动', { task: taskId, dropped: all.length - files.length })
-    if (files.length) put({ spans, files })
+    const own = await dropSynced(tr.dir, all, { head, endHead, from: first, to, since }).catch(() => all)
+    if (own.length < all.length)
+      log.info('task', '这一轮拉代码带进来的文件不算改动', { task: taskId, dropped: all.length - own.length })
+    // 终点拍完了再看谁点名过：别的对话在这一轮收尾时报的改动也已经登记上
+    const { kept: files, dropped } = owner ? splitOwned(own, namedSince(owner)) : { kept: own, dropped: [] }
+    if (dropped.length)
+      log.info('task', '同目录别的对话改的文件不算这一轮的改动', { task: taskId, dropped: dropped.length })
+    if (files.length) put({ spans, files, ...(dropped.length ? { others: dropped.map((f) => f.path) } : {}) })
   })
 }
 

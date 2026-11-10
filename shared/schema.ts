@@ -1382,6 +1382,8 @@ export type OutsideChange = z.infer<typeof OutsideChange>
 export const TurnChanges = z.object({
   spans: z.array(z.object({ from: z.string(), to: z.string() })),
   files: z.array(FileChange),
+  /** 剔除掉的同目录别的对话改的文件（server/turn-owners.ts）：卡片上说明一句，免得用户以为漏记了 */
+  others: z.array(z.string()).optional(),
   revertedAt: z.string().optional(),
 })
 export type TurnChanges = z.infer<typeof TurnChanges>
