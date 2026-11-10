@@ -96,7 +96,6 @@ import { Badge } from '@/components/ui/badge'
 import { StatusPill } from '@/components/ui/status-pill'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { FloatAbove } from '@/components/chat/FloatAbove'
-import { ChildRequestBar } from './ChildRequestBar'
 import { AgentMessage, DeliveryLine } from './Messages'
 import { NoteMessage } from './SystemNote'
 import { ReceivedRow } from './PeerMessage'
@@ -1678,19 +1677,6 @@ export function TaskView({
   // 固定三行（见 ChildrenBar）：计划在上、子任务中间、子对话在下，每行各自不换行，三行都和输入框左对齐
   const conversationDock = (
     <>
-      {/* 等你确认、等你操作、流程没走完这些提醒浮在停靠区上方（用户 2026-11-10）：盖在消息上面，
-          不把输入框往下顶、也不挤掉消息区，也不挡下面的计划和子对话那几行。从上到下越来越要紧，
-          自己这个对话要你点头的请求离输入框最近 */}
-      <FloatAbove className="px-3 md:px-6" onHeight={setFloatPad}>
-        {!pane && !task.parentTaskId && <ChildRequestBar kids={children} onOpen={openChildIn} onAnswer={answerChild} />}
-        {flowLeft && !task.imported && (
-          <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
-        )}
-        {composer && <UserActionPanel task={task} onChanged={apply} />}
-        {!asksQuestion(task.requests) && (
-          <TaskRequestCard task={task} onAnswered={apply} className="w-full shadow-pop" />
-        )}
-      </FloatAbove>
       {/* 面板收起后还在跑的后台步骤（实时更新、子对话列表）：留一个小胶囊，失败时写错误原文 */}
       {traceHidden && <LoadTracePill steps={trace.steps} />}
       {task.plans?.length > 0 && (
@@ -1733,11 +1719,24 @@ export function TaskView({
             onOpen={openChildIn}
             onClose={() => openChildIn('')}
             onResume={(id) => void resumeChild(id)}
+            onAnswer={answerChild}
           />
         )
       })()}
       <div className="relative shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-        {/* 提问照旧换掉输入框，不浮；其余等你确认 / 操作的提醒都在上面的 conversationFloat 里 */}
+        {/* 等你确认、等你操作、流程没走完这些提醒紧贴着输入框上方悬浮（用户 2026-11-10）：不把输入框往下顶、
+            也不挤掉消息区；盖住上面的计划、子对话那几行没关系，不要浮到消息区里去。越往下越要紧，
+            自己这个对话要你点头的请求离输入框最近。子对话的请求不在这里弹，留在子对话栏那一行 */}
+        <FloatAbove onHeight={setFloatPad}>
+          {flowLeft && !task.imported && (
+            <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
+          )}
+          {composer && <UserActionPanel task={task} onChanged={apply} />}
+          {!asksQuestion(task.requests) && (
+            <TaskRequestCard task={task} onAnswered={apply} className="w-full shadow-pop" />
+          )}
+        </FloatAbove>
+        {/* 提问照旧换掉输入框，不浮 */}
         {asksQuestion(task.requests) && <TaskRequestCard task={task} onAnswered={apply} />}
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
         <WorktreeBar task={task} />

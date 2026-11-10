@@ -289,6 +289,15 @@ await runShard(import.meta.filename, async (api) => {
       // 等你确认的卡浮在输入框上方（FloatAbove），不排在停靠区里把输入框往下顶（用户 2026-11-10）
       if (!(await p.locator('[data-float-above]').getByRole('alertdialog', { name: 'Agent 请求确认' }).count()))
         errors.push('改文件审批卡：没有浮在输入框上方（应该在 FloatAbove 里）')
+      // 紧贴输入框，不浮到消息区里：悬浮层的底边在计划、子对话那几行的下面（盖住它们没关系）
+      const gap = await p.evaluate(() => {
+        const f = document.querySelector('[data-float-above]')?.getBoundingClientRect()
+        const rows = [...document.querySelectorAll('[data-status-row]')].map((r) => r.getBoundingClientRect().bottom)
+        return f && rows.length ? f.bottom - Math.max(...rows) : 0
+      })
+      if (gap < 0) errors.push('改文件审批卡：悬浮层浮到了计划、子对话那几行的上面，应该紧贴输入框')
+      if (await p.locator('[data-float-above] [data-child-request]').count())
+        errors.push('悬浮层里不该有子对话等你确认的条：它留在子对话栏那一行')
       // diff 统一画法（web/src/lib/diff-html.ts）：删除的行整行红底（.cdiff-del），记号和代码分开，不带开头的 -
       if (!(await card.locator('.cdiff-del').filter({ hasText: 'const count = items.length' }).count()))
         errors.push('改文件审批卡：删除行没有标红')
