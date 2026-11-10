@@ -14,11 +14,23 @@ export interface McpResult {
   isError?: boolean
 }
 
+/** 插件工具请用户确认的内容（插件接口 2）：对话里出一张「允许 / 拒绝」卡片 */
+export interface PluginConfirm {
+  title: string
+  /** 卡片正文：改了什么、影响什么（纯文本，换行保留） */
+  detail?: string
+}
+
 export interface McpCallContext {
   /** 这一轮对话的 id */
   taskId: string
   /** 这次调用的 JSON-RPC id，插件按它区分并发的调用 */
   callId: string
+  /**
+   * 请用户确认（插件接口 2）：对话里出「允许 / 拒绝」卡片，等用户点了才返回；停止对话、这一轮结束时按拒绝返回。
+   * 不在对话里的调用（没有对话可出卡片）没有这个函数，插件按拒绝处理
+   */
+  confirm?: (req: PluginConfirm) => Promise<{ allow: boolean; message: string }>
 }
 
 /** 给 Agent 的一个 MCP 工具：面板负责协议、会话和令牌，插件只给定义和执行函数 */
@@ -36,6 +48,11 @@ export interface PluginRun {
   parentTaskId?: string
   /** 对话归哪个插件的设计模式（新建时写的 task.plugin，例如 'blender.model'），普通对话为空 */
   pluginTask?: string
+  /** 对话所在的项目和工作目录（插件接口 2）：按项目挂工具的插件据此决定挂不挂、连哪个项目 */
+  projectId?: string
+  cwd?: string
+  /** 对话的模式：agent（项目里执行）、chat、workflow…（插件接口 2） */
+  mode?: string
   /** 角色名、角色（含引入的角色）用到的技能 */
   agentName: string
   skills: string[]

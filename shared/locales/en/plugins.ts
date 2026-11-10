@@ -3,6 +3,8 @@ export const EN_PLUGINS: Record<string, string> = {
   扩展: 'Extensions',
   插件没有打开: 'Plugin is not enabled',
   找不到这个对话: 'Conversation not found',
+  '这一页来自插件，插件关掉或删除后就没有了。到设置 →「插件」里打开。':
+    'This page comes from a plugin and goes away when the plugin is turned off or removed. Turn it on in Settings → Plugins.',
   '这类设计来自插件，插件关掉或删除后就没有了。到设置 →「插件」里打开。':
     'This kind of design comes from a plugin and goes away when the plugin is turned off or removed. Turn it on in Settings → Plugins.',
   '压缩包 · {name}': 'Zip · {name}',

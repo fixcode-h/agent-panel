@@ -387,6 +387,7 @@ export type PageId =
   | 'design'
   | 'comfy'
   | 'pdesign'
+  | 'plugin'
   | 'library'
   | 'mcp'
   | 'summary'

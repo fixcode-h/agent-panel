@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
-import type { McpResult, McpTool } from './sdk.ts'
+import type { McpCallContext, McpResult, McpTool } from './sdk.ts'
 import { log } from '../log.ts'
 
 /**
@@ -21,6 +21,7 @@ interface Session {
   server: string
   taskId: string
   tools: () => McpTool[] | Promise<McpTool[]>
+  confirm?: McpCallContext['confirm']
 }
 
 const sessions = new Map<string, Session>()
@@ -31,9 +32,10 @@ export function openPluginMcp(
   server: string,
   taskId: string,
   tools: () => McpTool[] | Promise<McpTool[]>,
+  confirm?: McpCallContext['confirm'],
 ) {
   const token = randomUUID()
-  sessions.set(token, { pluginId, server, taskId, tools })
+  sessions.set(token, { pluginId, server, taskId, tools, confirm })
   const port = Number(process.env.PORT ?? 8787)
   return {
     name: server,
@@ -70,7 +72,7 @@ async function handle(s: Session, msg: any) {
       if (!tool) return reply(mcpText(`没有这个工具：${name}`, true))
       try {
         const args = msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}
-        return reply(await tool.call(args, { taskId: s.taskId, callId: String(msg.id) }))
+        return reply(await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm }))
       } catch (e) {
         // 插件工具出错原样交给 Agent（不悄悄重试），日志里也记一笔方便排查
         log.warn('plugin', `插件工具出错：${s.pluginId}/${name}`, { error: (e as Error).message })

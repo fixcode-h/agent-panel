@@ -28,7 +28,6 @@ import {
   sessionMoved,
   stepUsage,
   withAttachments,
-  taskPlugin,
   withTaskModel,
 } from '../../shared/task.ts'
 
@@ -119,7 +118,7 @@ import { autoAllowed, requestOf } from './ask-request.ts'
 
 import { orchHint } from '../orch-mcp.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
-import { pluginToolsForRun } from '../plugins/index.ts'
+import { pluginRunTools } from './plugin-run.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
 import { experiencePrompt } from '../../shared/experience.ts'
 import { readGlobalLessons } from '../lessons.ts'
@@ -1347,16 +1346,7 @@ async function runAgent(
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
   // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂，新会话的提示词里说明怎么用；令牌只在这一轮有效
   const plugins =
-    def.mcp && !op
-      ? await pluginToolsForRun({
-          taskId: task.id,
-          parentTaskId: task.parentTaskId,
-          pluginTask: taskPlugin(task),
-          agentName: agent.name,
-          skills: [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
-          resume: !!resume,
-        })
-      : undefined
+    def.mcp && !op ? await pluginRunTools(ctx, { agent, resume: !!resume, cwd, step, agentId }) : undefined
   if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {

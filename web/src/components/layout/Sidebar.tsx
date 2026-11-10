@@ -91,7 +91,8 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
-import { ownedDesign, useDesignModes } from '@/plugins/registry'
+import { ownedDesign, useDesignModes, usePluginPages } from '@/plugins/registry'
+import type { PluginPage } from '@/plugins/sdk'
 
 /** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
 export function Logo({ className }: { className?: string }) {
@@ -302,6 +303,27 @@ function Row({
   )
 }
 
+/** 手机抽屉菜单里插件的整页（插件接口 2）：和功能页一样一行一个，宽屏时它们在图标栏里 */
+function PluginNavRows({ narrow }: { narrow: boolean }) {
+  const pages = usePluginPages()
+  return pages.map((p) => <PluginNavRow key={`${p.plugin}/${p.id}`} page={p} narrow={narrow} />)
+}
+
+function PluginNavRow({ page, narrow }: { page: PluginPage & { plugin: string }; narrow: boolean }) {
+  const { route, go } = useNav()
+  const dot = page.useDot?.()
+  return (
+    <Row
+      icon={page.icon}
+      label={page.label}
+      collapsed={narrow}
+      on={route.page === 'plugin' && route.id === page.plugin && route.sub === page.id}
+      onClick={() => go({ page: 'plugin', id: page.plugin, sub: page.id })}
+      dot={typeof dot === 'string' ? dot : dot ? page.label : undefined}
+    />
+  )
+}
+
 /** 切到各模式时回到上次在那个模式里看的页面 */
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
@@ -313,7 +335,8 @@ let lastDesignHome: Route = { page: 'design' }
 export const homeRoute = (from?: PageId) =>
   from && DESIGN_NAV.some((n) => n.id === from) ? lastDesignHome : lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
-export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page)
+export const isToolPage = (page: PageId) =>
+  NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page) || page === 'plugin'
 /** 设计模式：设计页和它的 ComfyUI 工作流页 */
 export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'pdesign'
 
@@ -613,6 +636,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   dot={n.id === 'library' ? skillDot : undefined}
                 />
               ))}
+            {mobile && <PluginNavRows narrow={narrow} />}
           </>
         )}
       </nav>
