@@ -648,6 +648,8 @@ export function AssistDialog({
   const [turns, setTurns] = useState<Turn[]>([])
   const [askUser, setAskUser] = useNewAskUser()
   const [text, setText] = useState('')
+  // 输入框上方悬浮层的高度：消息区底部按它多留一段（见 FloatAbove）
+  const [floatPad, setFloatPad] = useState(0)
   const [job, setJob] = useState<AssistJob | null>(null)
   const [applying, setApplying] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
@@ -1057,7 +1059,10 @@ export function AssistDialog({
             </div>
             <div
               ref={scroller}
+              data-float-bound=""
               className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-4 py-4"
+              // 浮层盖住的最后几行还能滚出来看
+              style={floatPad ? { paddingBottom: `calc(1rem + ${floatPad}px)` } : undefined}
             >
               {turns.length === 0 && !running && (
                 <div className="flex flex-col gap-2">
@@ -1119,7 +1124,8 @@ export function AssistDialog({
               )}
             </div>
             <div className="p-3">
-              {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
+              {/* 要你点头的请求浮在消息上面，不把输入框往下顶；提问照旧原地显示 */}
+              {job && <ScopeRequests scope={`assist:${job.id}`} active={running} float onFloatHeight={setFloatPad} />}
               {queue.length > 0 && (
                 <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-footnote text-muted">
                   {t('排队中，这一轮结束后发送：{text}', { text: queue.join(' / ') })}

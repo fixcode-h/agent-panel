@@ -41,3 +41,15 @@ test('整个对话的改动：都撤销过时没有文件、只记轮数', () =>
   assert.deepEqual(ch.files, [])
   assert.equal(ch.reverted, 1)
 })
+
+test('整个对话的改动：剔除掉的别的对话的文件合起来说明，自己别的轮里改过的不算', () => {
+  const m1 = { ...turn('m1', [{ path: 'a.ts', add: 1, del: 0 }]) }
+  const m2 = { ...turn('m2', [{ path: 'b.ts', add: 1, del: 0 }]) }
+  const m3 = { ...turn('m3', [{ path: 'c.ts', add: 1, del: 0 }], '2026-01-01T00:00:00Z') }
+  Object.assign(m1.turnChanges, { others: ['x.ts', 'b.ts'] })
+  Object.assign(m2.turnChanges, { others: ['x.ts', 'y.ts'] })
+  // 撤销过的那一轮不算
+  Object.assign(m3.turnChanges, { others: ['z.ts'] })
+  assert.deepEqual(convChanges([m1, m2, m3] as never).others, ['x.ts', 'y.ts'])
+  assert.deepEqual(convChanges([turn('m1', [{ path: 'a.ts', add: 1, del: 0 }])] as never).others, [])
+})

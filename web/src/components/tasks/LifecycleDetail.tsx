@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Copy, Loader2, RotateCw, Search, Square, X } from 'lucide-react'
+import { ArrowDown, Copy, Loader2, Search, Square, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
   EVENT_KINDS,
@@ -11,7 +11,7 @@ import {
   type LogLine,
 } from '@shared/lifecycle'
 import type { TrailItem } from '@shared/end-turn'
-import { convStateText, resumable, stopReasonText, type ConvState } from '@shared/task'
+import { convStateText, stopReasonText, type ConvState } from '@shared/task'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
@@ -25,6 +25,7 @@ import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
 import { TrailLine } from './ReminderTrail'
 import { LifeProgressCard } from './LifeProgressCard'
+import { LifeNextBar } from './LifeNextBar'
 import { buildRows, searchRows, type LogFilter, type Parsed, type Row } from './life-log-rows'
 
 /**
@@ -87,56 +88,52 @@ export function nodeState(node: LifeNode): ConvState {
 }
 
 /**
- * 对话的停止 / 重启：在执行就给「停止」（和任务页的停止同一个接口，按对话树自上而下停），
- * 停了或失败了给「重启」（就是任务页的「继续执行」，接着原来的会话跑）。点完不等结果，弹窗每 2 秒刷新会跟上
+ * 对话的停止：在执行就给「停止」（和任务页的停止同一个接口，按对话树自上而下停）。
+ * 停了或失败了的「继续 / 重试」在最上面那一句后面（LifeNextBar），这里不再放第二个。点完不等结果，弹窗每 2 秒刷新会跟上
  */
 function RunControl({ node }: { node: LifeNode }) {
   const [busy, setBusy] = useState(false)
   const f = node.facts
-  const run = async (fn: () => Promise<unknown>) => {
+  if (f.status !== 'running') return null
+  const stopping = !!f.live?.stop
+  const stop = async () => {
     setBusy(true)
     try {
-      await fn()
+      await api.stopTask(node.taskId)
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
       setBusy(false)
     }
   }
-  if (f.status === 'running') {
-    const stopping = !!f.live?.stop
-    return (
-      <Button
-        size="sm"
-        variant="danger-outline"
-        className="h-7"
-        disabled={busy || stopping}
-        onClick={() => void run(() => api.stopTask(node.taskId))}
-        data-life-stop
-      >
-        {busy || stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3 w-3" />}
-        {stopping ? t('正在停止') : t('停止')}
-      </Button>
-    )
-  }
-  if (!resumable(f.status)) return null
   return (
     <Button
       size="sm"
-      variant="secondary"
+      variant="danger-outline"
       className="h-7"
-      disabled={busy}
-      title={t('接着原来的会话继续执行')}
-      onClick={() => void run(() => api.resumeTask(node.taskId))}
-      data-life-resume
+      disabled={busy || stopping}
+      onClick={() => void stop()}
+      data-life-stop
     >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
-      {t('重启')}
+      {busy || stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3 w-3" />}
+      {stopping ? t('正在停止') : t('停止')}
     </Button>
   )
 }
 
-export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode }) {
+export function LifeDetail({
+  node,
+  parent,
+  onGo,
+  onPick,
+}: {
+  node: LifeNode
+  parent?: LifeNode
+  /** 最上面那句的「去回答 / 去回复」：回到这个对话 */
+  onGo?: (node: LifeNode) => void
+  /** 「查看」它在等的子对话：在树上选中 */
+  onPick?: (id: string) => void
+}) {
   const now = useNow(true)
   const [filter, setFilter] = useState<LogFilter>('')
   const f = node.facts
@@ -160,12 +157,15 @@ export function LifeDetail({ node, parent }: { node: LifeNode; parent?: LifeNode
           <h3 className="min-w-0 truncate text-heading font-medium text-fg">{node.title || node.id}</h3>
           {state && (
             <StatusPill tone={STATE_TONE[state]} spin={f.working}>
-              {convStateText(state)}
+              {/* 和标题栏、侧栏同一个短词（服务端按 taskWord 填的）；旧的诊断文件没有，退回状态名 */}
+              {f.word || convStateText(state)}
             </StatusPill>
           )}
           <span className="flex-1" />
           {node.kind === 'conversation' && <RunControl node={node} />}
         </div>
+        {/* 第一眼要看到的：在等谁、等了多久、下一步点什么（分析稿 U11）；下面一行是更细的现场 */}
+        <LifeNextBar node={node} now={now} onGo={onGo} onPick={onPick} />
         <p
           data-life-headline
           className={cn(

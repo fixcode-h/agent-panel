@@ -30,21 +30,31 @@ export function scratchPath(p: string, cwd: string): boolean {
 export const projectChanges = <T extends Pick<FileChange, 'path'>>(list: T[], cwd: string) =>
   list.filter((c) => !scratchPath(c.path, cwd))
 
-export function createFileEvents(cwd: string, apply: (file: FileChange) => void) {
+/**
+ * named：这次调用点名了哪个文件（每轮改动按文件归属用，见 server/turn-owners.ts）。调用一发出就报、成功时再报一次：
+ * 归属要保守，写入可能在结果回来之前就落盘了，别的对话的快照拍到它时得已经认得出是谁的
+ */
+export function createFileEvents(cwd: string, apply: (file: FileChange) => void, named?: (path: string) => void) {
   const pending = new Map<ToolUse, FileChange>()
+  const done = (file: FileChange) => {
+    named?.(file.path)
+    apply(file)
+  }
   return {
     /** 工具调用带着文件改动：还在等结果的先挂着（waiting 为真），否则按调用本身成没成功马上记 */
     track(tool: ToolUse, file: FileChange | undefined, waiting: boolean) {
       if (!file || scratchPath(file.path, cwd)) return
-      if (waiting) pending.set(tool, file)
-      else if (!tool.failed) apply(file)
+      if (waiting) {
+        named?.(file.path)
+        pending.set(tool, file)
+      } else if (!tool.failed) done(file)
     },
     /** 这次调用有了结果（或这一轮结束还没等到结果）：没失败就记上 */
     settle(tool: ToolUse) {
       const file = pending.get(tool)
       if (!file) return
       pending.delete(tool)
-      if (!tool.failed) apply(file)
+      if (!tool.failed) done(file)
     },
   }
 }

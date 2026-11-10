@@ -1,6 +1,7 @@
 /**
  * 先建模块文档再开子对话（ADR 0048）：协调器 create_conversation 时写 modules（这次涉及的模块名，还没文档的写目录名）。
- * 有模块还没有模块文档时面板拦下，告诉它先并行派「文档·模块分析」，结果推回来后再用同样的参数建子对话；
+ * 有模块还没有模块文档时面板拦下，告诉它先并行派「文档·模块分析」，结果推回来后再用同样的参数建子对话
+ * （用户报的 Bug 例外：照建，同时派文档，见 docsFirst）；
  * 都有文档时把文档路径附进派单，子对话不用自己再找。
  * 为什么不由面板自己等文档建完再开：模块分析要几分钟，CLI 的一次工具调用一分钟就超时；
  * 拦下并说清下一步，分析结果会自动推回这一轮，协调器接着建，不用跨轮记住。
@@ -14,6 +15,8 @@ export type ModuleDocsLookup = (
 
 export interface DocsFirstInput {
   modules?: string[]
+  /** 用户报的 Bug（kind: "bug"）：不拦，文档和 Bug 子对话并行（分析稿 B11） */
+  bug?: boolean
   /** 不先建文档的理由（分析失败、一次性的小改动）：写了就放行，记进派单 */
   skipDocs?: string
 }
@@ -34,14 +37,15 @@ const clean = (xs: string[]) => [
 ]
 
 /**
- * 建子对话之前的检查。返回 block 时不建，把 info 原样交给协调器；返回 note 时把它接在派单后面。
+ * 建子对话之前的检查。返回 block 时不建，把它原样交给协调器；返回 note 时把它接在派单后面；
+ * info 接在建好后给协调器的返回里（Bug 并行派文档的说明）。
  * 没有查文档的宿主（演示、测试）、没写 modules、角色关了「先建文档」时什么都不做
  */
 export async function docsFirst(
   input: DocsFirstInput,
   lookup: ModuleDocsLookup | undefined,
   enabled: boolean,
-): Promise<{ block?: string; note?: string }> {
+): Promise<{ block?: string; note?: string; info?: string }> {
   const modules = clean(input.modules ?? [])
   if (!lookup) return {}
   // 没写 modules 门禁就被绕过了（2026-11-03 真实 API 实测：设定里写了要写，模型照样不写）：开着「先建文档」时拦下要它写上
@@ -63,6 +67,13 @@ export async function docsFirst(
   if (!enabled || skip)
     return {
       note: `${docs}\n\n## 还没有模块文档的模块\n${r.missing.map((m) => `- ${m}`).join('\n')}${skip ? `\n（没先建文档：${skip}）` : ''}\n读明白的要点写进交接摘要的「建议补模块文档」，由父对话交「文档」写。`,
+    }
+  // 用户报的 Bug 不等文档（分析稿 B11）：实跑时小项目先等「文档·模块分析」做完才派 Bug，多等了约 3 分钟。
+  // Bug 子对话第一步是立案和复现，用不着模块文档；两件事并行，文档写好后由父对话转给它
+  if (input.bug)
+    return {
+      note: `${docs}\n\n## 还没有模块文档的模块\n${r.missing.map((m) => `- ${m}`).join('\n')}\n父对话在同时派「文档」分析这些模块，写好后会把文档路径转给你；在那之前先立案、复现，按模块地图和目录结构定位，不用等它。`,
+      info: `这些模块还没有模块文档：${r.missing.join('、')}（文档根 ${r.root}）。Bug 子对话已经开始查，不用等文档：现在就用 spawn_agents 给每个模块派一个「文档」子任务（params 写 {"task": "模块分析"}，instructions 写模块名或目录、关键词和用户原话，带上这次的 step），和 Bug 子对话并行；文档结果回来后用 send_to_conversation 把文档路径转给这个 Bug 子对话。`,
     }
   return {
     block: `没有建子对话：这些模块还没有模块文档：${r.missing.join('、')}（文档根 ${r.root}）。先建文档再派单，子对话从文档读起就不用从头摸索：

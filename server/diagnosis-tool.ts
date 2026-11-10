@@ -58,7 +58,7 @@ const CASE_PROPS = {
           '责任类别：current 本次改动、recent 近期变更、legacy 历史遗留、external 外部依赖、environment 环境配置、data 数据、user 用户操作、unknown 未确定',
       },
       change: text('提交号 / CL / rev'),
-      author: text('作者（照版本记录原文）'),
+      author: text('提交人（照版本记录原文；Git 仓库里面板会按提交号再取一次核对）'),
       date: text('日期'),
       title: text('那次改动的标题'),
       how: {
@@ -70,6 +70,41 @@ const CASE_PROPS = {
       note: text('依据；unknown 时写试过什么、还缺什么'),
     },
     required: ['category', 'how'],
+  },
+  noFix: {
+    type: 'object',
+    description:
+      '查下来不用改代码时写（只在 phase: cause 用）：问题出在配置、数据、本来就这么设计、用法不对或外部依赖。用户同意后不再交修复方案，按 how 告诉用户怎么处理就收尾。之前写过、后来发现要改代码时传 {} 去掉',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['config', 'data', 'design', 'usage', 'external'],
+        description: 'config 改配置、data 处理数据、design 本来就是这么设计的、usage 用法不对、external 外部依赖的问题',
+      },
+      how: text('用户怎么处理：改哪项配置、怎么处理数据、正确的用法是什么，一步一行'),
+    },
+  },
+  rating: {
+    type: 'object',
+    description:
+      '根因评级（根因证实后必填，报告最上面醒目显示）：tier 是这个错在哪个层次，percent 是你对根因的把握（0–100 的整数）',
+    properties: {
+      tier: {
+        type: 'string',
+        enum: ['low', 'mid', 'high'],
+        description:
+          'low 低级：粗心疏漏（写错名字、漏判空、漏改一处、复制粘贴没改全）；mid 中级：逻辑和边界（条件、顺序、状态没想全）；high 高级：设计、并发时序、跨模块契约',
+      },
+      percent: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 100,
+        description:
+          '把握：证据链三环都有原文、复现用例改前失败的写 90 以上；有一环靠推断的 60–85；还有解释不了的现象不超过 60',
+      },
+      why: text('一句话：为什么是这个等级、把握为什么是这个数（缺哪条证据）'),
+    },
+    required: ['tier', 'percent'],
   },
   consistency: {
     type: 'array',
@@ -393,6 +428,12 @@ export const BUG_CASE_TOOL = {
             type: 'array',
             items: { type: 'string' },
             description: '回归测试：测试文件或用例名；没法自动化的写手工步骤',
+          },
+          commands: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              '能在项目根直接跑的回归测试命令原文（最多 5 条，你在这个对话里跑过、改前失败改后通过的那几条，例如 npx vitest run src/a.test.ts）。面板会在改前的代码和现在的代码上各跑一次，真实输出给用户看；交 fix 前写好的，复核通过时用户确认修复就同时算验证通过',
           },
           runs: text('偶发问题：跑了几次、坏了几次'),
         },

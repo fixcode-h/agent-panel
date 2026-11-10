@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DoneEvidence } from './done-evidence.ts'
 
 /**
  * Agent 用 end_turn 交代的「这一轮怎么结束」（设计稿 docs/openspec/changes/end-check-signal/design-v2.md）：
@@ -9,5 +10,7 @@ export const EndTurnRecord = z.object({
   at: z.string(),
   outcome: z.enum(['done', 'blocked']),
   need: z.string().optional(),
+  /** done 时面板从这一轮的工具调用记录里整理的完成依据（shared/done-evidence.ts）；旧记录没有 */
+  evidence: DoneEvidence.optional(),
 })
 export type EndTurnRecord = z.infer<typeof EndTurnRecord>

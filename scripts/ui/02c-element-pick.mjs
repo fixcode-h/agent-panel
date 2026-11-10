@@ -15,7 +15,7 @@ import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-
 await runShard(import.meta.filename, async (api) => {
   const { base, page, check, errors } = api
   const p = await openCartTask(api)
-  const { waitToastsGone, backToTask, closed } = taskPageHelpers(p, api)
+  const { waitToastsGone, backToTask, closed, pinHeader } = taskPageHelpers(p, api)
 
   // 抓取元素：从哪个输入框的按钮进入，抓到的引用就填回哪个输入框（父对话 + 右栏子对话同时在场时也不能插错）。
   // 以前按焦点 / 最近聚焦猜，两个输入框都在时容易把引用插到另一个对话。
@@ -267,6 +267,19 @@ await runShard(import.meta.filename, async (api) => {
     /** 一轮改动卡片里的文件行：按完整路径找，不和右栏文件树的同名文件混在一起 */
     const card = p.locator('.turn-changes')
     const file = (path) => card.getByTitle(path, { exact: true })
+    // 完成依据（分析稿 A3）：和改动卡片挂在一起，列文件和验证命令的退出码（通过绿、失败红）
+    {
+      const ev = p.locator('[data-done-evidence]')
+      if (!(await ev.count())) errors.push('完成依据：对话停下后没有「完成依据」卡片')
+      else {
+        const text = (await ev.first().textContent()) ?? ''
+        for (const want of ['完成依据', 'npm run typecheck', '退出码 0', '退出码 1'])
+          if (!text.includes(want)) errors.push(`完成依据：卡片里没有「${want}」`)
+        if (await ev.locator('[data-unverified]').count()) errors.push('完成依据：跑过验证命令的不该标「没验证」')
+        await ev.first().scrollIntoViewIfNeeded()
+        await check(p, '完成依据', ['完成依据', '退出码 0'])
+      }
+    }
 
     // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动
     await card.getByRole('button', { name: /^查看全部/ }).click()
@@ -837,6 +850,7 @@ await runShard(import.meta.filename, async (api) => {
   // 进程面板只算当前对话及其附属：购物车这个对话有在跑的子对话，面板里要同时出现
   // 「本对话」和「子对话」两组，而且子对话的标题就在面板里（不是页面上别处的同名文字）
   {
+    await pinHeader('对话进程')
     const btn = p.getByRole('button', { name: '对话进程' }).first()
     await btn.click()
     const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
@@ -977,6 +991,7 @@ await runShard(import.meta.filename, async (api) => {
     .catch(() => {})
   // 关窗口会弹「AI 排查继续在后台进行」：提示在右上角，正盖着「任务进度」，等它退场再点
   await waitToastsGone()
+  await pinHeader('任务进度')
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p

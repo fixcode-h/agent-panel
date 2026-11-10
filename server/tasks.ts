@@ -67,14 +67,17 @@ import { registerChildrenRoutes } from './tasks/children-routes.ts'
 import { registerProcessRoutes } from './tasks/process-routes.ts'
 import { registerLifecycleRoutes } from './tasks/lifecycle-routes.ts'
 import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
+import { registerEvidenceRoutes } from './tasks/evidence-routes.ts'
 import { registerUserActionRoutes } from './tasks/user-actions.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
+import { registerSharedDirRoutes } from './tasks/shared-dir-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
 import { createTaskLearner } from './tasks/experience.ts'
 import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
+import { createAwaySweep } from './tasks/away-sweep.ts'
 import { createPeer } from './tasks/peer.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
@@ -659,6 +662,7 @@ export function tasksApi(deps: {
   const { attachOrchestra, forwardSpawn, messageParent, remindParentFix } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
+  createAwaySweep(scope)
   const { deliver, expandForWorkflow, followUp, spawnChildOf, start } = createRun(scope)
   // 工作流运行（不是子对话）：父对话的 start_workflow 等工具落到这里
   const flowRuns = createFlowRuns(scope)
@@ -703,6 +707,7 @@ export function tasksApi(deps: {
   registerProcessRoutes(scope)
   registerLifecycleRoutes(scope)
   registerDiagnosisRoutes(scope)
+  registerEvidenceRoutes(scope)
   registerUserActionRoutes(scope)
   registerReadRoutes(scope)
   const { prewarmChat, createTask } = registerConversationRoutes(scope)
@@ -710,6 +715,7 @@ export function tasksApi(deps: {
   const { readableDir } = registerFileRoutes(scope)
   registerPathRoutes(scope)
   registerActionRoutes(scope)
+  registerSharedDirRoutes(scope)
   const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉

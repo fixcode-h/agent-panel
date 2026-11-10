@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { taskBusy, taskState, taskWaitText } from '@shared/task'
+import { taskBusy, taskState } from '@shared/task'
+import { taskWord } from '@shared/task-word'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
@@ -87,7 +88,7 @@ export function ConversationTabs({
               working={busy}
               spin={busy}
               waiting={taskState(task) === 'needs'}
-              label={taskWaitText(task) || undefined}
+              label={taskWord(task).word}
               className="h-3.5 w-3.5"
             />
           }

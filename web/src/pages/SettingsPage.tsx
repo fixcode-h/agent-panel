@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { Suspense, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { toast } from '@/lib/toast'
 import {
   ArrowUpCircle,
@@ -32,6 +32,7 @@ import {
   Component,
   Puzzle,
   Heading,
+  BellRing,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { cliApi } from '@shared/accounts'
@@ -89,49 +90,25 @@ import {
   textToEnv,
   toDraft,
 } from '@/components/settings/CliSection'
-
-// 设置弹窗本身是第一次打开时才加载的，里面 25 个分页再按页加载：不常打开的几页（数据、用量、组件陈列、
-// 本地生图、插件……）带着自己的大依赖，不该跟着「常规」一起下载
-const UpdateSection = lazy(() =>
-  import('@/components/settings/UpdateSection').then((m) => ({ default: m.UpdateSection })),
-)
-const DataSection = lazy(() => import('@/components/settings/DataSection').then((m) => ({ default: m.DataSection })))
-const UsageSection = lazy(() => import('@/components/usage/UsageSection').then((m) => ({ default: m.UsageSection })))
-const LocalImageSection = lazy(() =>
-  import('@/components/settings/LocalImageSection').then((m) => ({ default: m.LocalImageSection })),
-)
-const PluginsSection = lazy(() => import('@/plugins/PluginsSection').then((m) => ({ default: m.PluginsSection })))
-const PluginParamsSection = lazy(() =>
-  import('@/plugins/PluginParams').then((m) => ({ default: m.PluginParamsSection })),
-)
-const RemoteSection = lazy(() =>
-  import('@/components/settings/RemoteSection').then((m) => ({ default: m.RemoteSection })),
-)
-const SpeechSection = lazy(() =>
-  import('@/components/settings/SpeechSection').then((m) => ({ default: m.SpeechSection })),
-)
-const ReadAloudSection = lazy(() =>
-  import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
-)
-const ExperienceSection = lazy(() =>
-  import('@/components/settings/ExperienceSection').then((m) => ({ default: m.ExperienceSection })),
-)
-const ChatMemorySection = lazy(() =>
-  import('@/components/settings/ChatMemorySection').then((m) => ({ default: m.ChatMemorySection })),
-)
-const HooksSection = lazy(() => import('@/components/settings/HooksSection').then((m) => ({ default: m.HooksSection })))
-const IntegrationsSection = lazy(() =>
-  import('@/components/settings/IntegrationsSection').then((m) => ({ default: m.IntegrationsSection })),
-)
-const DeploySection = lazy(() =>
-  import('@/components/settings/DeploySection').then((m) => ({ default: m.DeploySection })),
-)
-const MarkdownSection = lazy(() =>
-  import('@/components/settings/MarkdownSection').then((m) => ({ default: m.MarkdownSection })),
-)
-const ComponentsSection = lazy(() =>
-  import('@/components/settings/ComponentsSection').then((m) => ({ default: m.ComponentsSection })),
-)
+import {
+  UpdateSection,
+  DataSection,
+  UsageSection,
+  LocalImageSection,
+  PluginsSection,
+  PluginParamsSection,
+  RemoteSection,
+  SpeechSection,
+  ReadAloudSection,
+  ExperienceSection,
+  ChatMemorySection,
+  NotifyChannelsSection,
+  HooksSection,
+  IntegrationsSection,
+  DeploySection,
+  MarkdownSection,
+  ComponentsSection,
+} from '@/components/settings/lazy-sections'
 
 interface Section {
   id: string
@@ -169,6 +146,7 @@ const sectionsFor = (clis: CliDefinition[], plugins: Section[]): Section[] => [
   // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
+  { id: 'notify-channels', label: t('通知渠道'), icon: BellRing, group: t('连接') },
   { id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
@@ -206,6 +184,7 @@ function SettingsBody({
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
+  const [notifyChannels, setNotifyChannels] = useState(initial.notifyChannels)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [bugAuthor, setBugAuthor] = useState(initial.bugAuthor)
   const [userName, setUserName] = useState(initial.userName)
@@ -364,6 +343,7 @@ function SettingsBody({
     openBrowser,
     requireToken,
     remoteAccess,
+    notifyChannels,
     askUserDefault,
     bugAuthor,
     userName: userName.trim(),
@@ -832,6 +812,9 @@ function SettingsBody({
               {cur.id === 'components' && <ComponentsSection value={appearance} onChange={setAppearance} />}
               {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
               {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
+              {cur.id === 'notify-channels' && (
+                <NotifyChannelsSection value={notifyChannels} onChange={setNotifyChannels} />
+              )}
               {cur.id === 'network' && (
                 <NetworkSection
                   enabled={proxyOn}

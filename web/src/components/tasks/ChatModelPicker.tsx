@@ -128,8 +128,20 @@ export function useRunAuthor(run: ChatRun | undefined) {
   }
 }
 
-/** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
-export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
+/**
+ * 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值。
+ * className 换掉外面那层的排法：新建对话的输入框传 contents，三个选择器直接排进工具条那一行，
+ * 手机宽度下放不下就整个换到下一行，不被挤成「Claude C…」「med…」（分析稿 U9）
+ */
+export function ChatModelPicker({
+  value,
+  onChange,
+  className,
+}: {
+  value: ChatRun
+  onChange: (v: ChatRun) => void
+  className?: string
+}) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
   const modelName = useModelName()
   if (!usable.length) return <span className="px-2 text-footnote text-subtle">{t('没有可用的 Agent')}</span>
@@ -143,7 +155,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
   // 只列这个模型支持的强度；一个都不支持（模型不能思考）时不显示这一项
   const efforts = def ? defaultEffortOptions(def, defEffort, modelEfforts(def, run.model)) : []
   return (
-    <div className="flex min-w-0 items-center">
+    <div className={className ?? 'flex min-w-0 items-center'}>
       <ChipSelect
         title={t('对话用的 Agent')}
         value={cli}

@@ -32,7 +32,9 @@ declare class URL {
   readonly username: string
   readonly password: string
   readonly hostname: string
+  readonly host: string
   readonly pathname: string
+  readonly search: string
 }
 
 declare class TextEncoder {

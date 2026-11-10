@@ -2,7 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { format, resolveConfig } from 'prettier'
-import { BUG_ANALYSIS_TEXT, BUG_FULL_TEXT, BUG_REPORT_TEXT, BUG_SIMPLE_TEXT, debugSkillMd } from './bug-method.ts'
+import {
+  BUG_ANALYSIS_TEXT,
+  BUG_FULL_TEXT,
+  BUG_REPORT_TEXT,
+  BUG_SIMPLE_TEXT,
+  debugSkillMd,
+  HYPOTHESIS_KINDS_TEXT,
+  LOG_SCOPE_TEXT,
+} from './bug-method.ts'
 
 /** 找 Bug 的方法只写一处（ADR 0046）：用户报的走完整流程，自己发现的走简易版 */
 
@@ -61,4 +69,15 @@ test('systematic-debugging 技能由方法生成，和方法一致（改了方�
   const config = await resolveConfig(file, { config: 'config/.prettierrc.json' })
   const want = await format(debugSkillMd(), { ...config, filepath: file })
   assert.equal(readFileSync(file, 'utf8'), want)
+})
+
+test('假设表按现象类型各给一份提醒：数据、状态、界面、环境、偶发（分析稿 B12）', () => {
+  for (const kind of ['数据类', '状态类', '界面类', '环境类', '偶发类'])
+    assert.ok(HYPOTHESIS_KINDS_TEXT.includes(kind), `缺 ${kind}`)
+  for (const x of ['竞态', '重入', '订阅时机', '缓存', '编码', '权限', '时序', '外部依赖', '缺字段'])
+    assert.ok(HYPOTHESIS_KINDS_TEXT.includes(x), `缺 ${x}`)
+  // 完整流程的论证一步带着整张表，分析角色至少列出几类
+  assert.ok(LOG_SCOPE_TEXT.includes(HYPOTHESIS_KINDS_TEXT))
+  assert.ok(BUG_FULL_TEXT.includes(HYPOTHESIS_KINDS_TEXT))
+  assert.match(BUG_ANALYSIS_TEXT, /状态类的竞态、顺序、重入/)
 })

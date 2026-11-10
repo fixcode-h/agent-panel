@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { ArrowUp, Bot, Check, ChevronDown, CornerDownRight, FolderGit2, GitBranch, MessageSquare } from 'lucide-react'
 import { type ParamValues, type Project, type Task } from '@shared/schema'
@@ -31,10 +31,13 @@ import { ParamsChip } from '@/components/agents/ParamFields'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { pickableChatRole, scopeOf } from '@shared/conv-mode'
 import { t } from '@shared/i18n'
+import { agentRun, defaultSettings } from '@shared/settings'
+import { ConvBudgetChip } from './ConvBudgetChip'
 
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-body text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
+import { newTaskHint } from './composer-hint'
 /**
  * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以引入工作流。
  * 一律新建对话；引入了工作流时第一条要求点名它，由这个父对话启动（ADR 0044，不再新建老的工作流任务）。
@@ -45,14 +48,23 @@ export function TaskComposer({
   onCreated,
   autoFocus,
   standalone,
+  plugin,
+  fill,
 }: {
   project?: Project
   onCreated: (t: Task) => void
   autoFocus?: boolean
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
+  /**
+   * 新对话归哪个插件（task.plugin，插件整页里的新建输入框，例如模型设计；ADR 0059）：和 standalone 一起用，
+   * 不选 Chat 角色（插件自己给工具和说明），草稿单独记
+   */
+  plugin?: string
+  /** 从外面填进输入框的话（首页的示例任务）：n 每次点都变，同一句点两次也重新填 */
+  fill?: { text: string; n: number }
 }) {
-  const { workflows, agents, projects, loading } = useData()
+  const { workflows, agents, projects, loading, settings } = useData()
   const { tasks } = useTasks()
   const [projectId, setProjectId] = useState(() => {
     try {
@@ -69,7 +81,7 @@ export function TaskComposer({
   // 有自建的 Chat 角色时可以换成它们；只列 Chat 角色，项目里只用 Agent 角色（ADR 0038）
   const [chatRole, setChatRole] = useState('')
   const chatRoles = agents.filter(pickableChatRole)
-  const wanted = standalone ? chatRole : useAgent ? (project?.defaultAgentId ?? '') : ''
+  const wanted = standalone ? (plugin ? '' : chatRole) : useAgent ? (project?.defaultAgentId ?? '') : ''
   const agent = agents.find((a) => a.id === wanted && a.enabled && scopeOf(a) === (standalone ? 'chat' : 'agent'))
   const agentId = agent ? wanted : ''
   const byCli = !agentId
@@ -96,7 +108,13 @@ export function TaskComposer({
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
   // 没发出去的内容按模式各自记住：切到别的模式再回来还在
-  const draftKey = standalone ? 'new:chat' : fixed ? `new:project:${fixed.id}` : 'new:agent'
+  const draftKey = plugin
+    ? `new:plugin:${plugin}`
+    : standalone
+      ? 'new:chat'
+      : fixed
+        ? `new:project:${fixed.id}`
+        : 'new:agent'
   const [prompt, setPrompt] = useDraft(draftKey)
   // 「+」里引入工作流：只有项目里、用的角色能启动工作流时才有这一项；选中的插成输入框里的一张工作流卡片
   const canFlow = !standalone && !!project && canStartFlow(agents, agentId)
@@ -110,8 +128,25 @@ export function TaskComposer({
     setIsolate(isolateDefault)
   }
   const [askUser, setAskUser] = useNewAskUser()
+  // 这个对话单独设的用量上限（A6 ①）：换了项目清掉，上限是按项目里的这件事设的
+  const [convBudget, setConvBudget] = useState({ tokens: 0, costUsd: 0 })
+  const [budgetFor, setBudgetFor] = useState(project?.id)
+  if (budgetFor !== project?.id) {
+    setBudgetFor(project?.id)
+    setConvBudget({ tokens: 0, costUsd: 0 })
+  }
+  // 费用算不算得出来看这一轮实际用的 CLI 和模型：用角色时按角色的
+  const costRun = byCli ? chatRun : agent ? agentRun(agent, settings ?? defaultSettings()) : chatRun
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
+  // 首页点了示例：换掉输入框里的内容并把光标放进去，用户改两句就能发
+  useEffect(() => {
+    if (!fill) return
+    setPrompt(fill.text)
+    editor.current?.focus()
+    // 只跟着这次点击（n）走；setPrompt 换草稿键时会变，不该因此再填一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill?.n])
   // Chat 页的新建输入框没有项目：@ 在所有项目里一起搜
   const mention = useFileMention(project, editor, files, standalone ? projects : [])
   const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
@@ -203,6 +238,8 @@ export function TaskComposer({
           // 只有打开了「独立分支」才传；子对话一律不建独立分支
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
+          plugin,
+          ...(project && (convBudget.tokens || convBudget.costUsd) ? { convBudget } : {}),
         }),
       )
       setPrompt('')
@@ -296,7 +333,7 @@ export function TaskComposer({
           actions={chips.chipActions}
           copyOf={chips.copyOfChip}
           info={chips.chipInfo}
-          placeholder={t('想问什么，或者让它做什么')}
+          placeholder={newTaskHint({ standalone, plugin })}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-heading leading-relaxed"
         />
@@ -338,7 +375,7 @@ export function TaskComposer({
                 <Bot className="h-4 w-4 shrink-0" />
               </button>
             )}
-            {standalone && chatRoles.length > 0 && (
+            {standalone && !plugin && chatRoles.length > 0 && (
               <AgentPicker
                 scope="chat"
                 // 默认的「助手」在「无」那一项、只供引入的「聊天约束」不能当角色：都不列
@@ -355,8 +392,19 @@ export function TaskComposer({
               </AgentPicker>
             )}
             {isolateSwitch}
+            {!standalone && project && (
+              <ConvBudgetChip
+                value={convBudget}
+                onChange={setConvBudget}
+                cli={costRun.cli}
+                model={costRun.model}
+                projectBudget={project.budget}
+                chip={chip}
+              />
+            )}
             {byCli ? (
-              <ChatModelPicker value={chat} onChange={setChat} />
+              // 拆进工具条这一行一起折行：手机宽度下整个选择器换到下一行，不截断（分析稿 U9）
+              <ChatModelPicker value={chat} onChange={setChat} className="contents" />
             ) : (
               agentParams.length > 0 && <ParamsChip params={agentParams} values={params} onChange={setParams} />
             )}

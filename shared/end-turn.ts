@@ -1,7 +1,8 @@
-import type { Task, TaskMessage, ToolUse } from './schema.ts'
+import type { Task, TaskMessage, TestStep, ToolUse } from './schema.ts'
 import type { EndTurnRecord } from './turn-end.ts'
 import { PANEL_TOOL_RE, panelToolName } from './panel-tools.ts'
 import { activePlan, openWork, panelWrap } from './plan.ts'
+import { doneEvidence, verifyGateError } from './done-evidence.ts'
 
 /**
  * 一轮怎么结束（设计稿 docs/openspec/changes/end-check-signal/design-v2.md）：
@@ -139,9 +140,12 @@ export function mergeOwedOf(
  * 只看计划和改动清单。返回给 Agent 的文字不翻译
  */
 export function endTurnCheck(
-  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'>,
+  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'> &
+    Partial<Pick<Task, 'messages'>>,
   outcome: string,
   need: string,
+  /** 项目打开了「改了代码要跑过测试步骤才能结束」时传项目的测试步骤（见 shared/done-evidence.ts） */
+  gate?: { steps: Pick<TestStep, 'name' | 'command'>[] },
 ): { ok: boolean; info: string; end?: Omit<EndTurnRecord, 'at'> } {
   if (outcome !== 'done' && outcome !== 'blocked')
     return { ok: false, info: `${END_REJECTED}outcome 只能是 done（做完了）或 blocked（做不下去）` }
@@ -169,7 +173,12 @@ export function endTurnCheck(
       ok: false,
       info: `${END_REJECTED}你还没请父对话收尾：按「验证」跑通后调用 submit_merge，它就是这个子对话的结束，不用再调用 end_turn。`,
     }
-  return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome } }
+  // 完成依据只看这一轮（这条输入之后）的工具调用；拦不拦看项目设置，不开只记下、卡片上标出来
+  const msgs = tk.messages ?? []
+  const evidence = doneEvidence(msgs.slice(inputIndex(msgs) + 1), gate?.steps)
+  const gateErr = gate ? verifyGateError(evidence, gate.steps) : ''
+  if (gateErr) return { ok: false, info: `${END_REJECTED}${gateErr}` }
+  return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome, evidence } }
 }
 
 /** 记一次结束：最近的在最后，只留最近 50 条 */

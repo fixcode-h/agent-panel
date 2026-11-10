@@ -14,7 +14,7 @@ import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-
 await runShard(import.meta.filename, async (api) => {
   const { base, page, check, errors, settle } = api
   const p = await openCartTask(api)
-  const { backToTask } = taskPageHelpers(p, api)
+  const { backToTask, pinHeader } = taskPageHelpers(p, api)
 
   // 分诊并进派单行（设计稿：回复折叠与派单行重设计 §4）：不再有单独的分诊卡片；
   // 子任务做完了派单行也留在原位不折（用户 2026-11-09 要求），第二行带着分诊的「理解」
@@ -570,6 +570,7 @@ await runShard(import.meta.filename, async (api) => {
     }
     // 子对话的进程面板只算它自己：父对话和兄弟的进程都不能出现
     {
+      await pinHeader('对话进程')
       const btn = p.getByRole('button', { name: '对话进程' }).last()
       await btn.click()
       const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
@@ -916,6 +917,7 @@ await runShard(import.meta.filename, async (api) => {
           confidence: 'high',
           note: 'blame 指到这次提交，前一版跑复现用例通过',
         },
+        rating: { tier: 'mid', percent: 92, why: '重构时没想到 left=0 这个边界；证据链三环都有原文' },
         consistency: [{ observation: '只在删最后一件时出现', explanation: '只有 left=0 时提前 return' }],
         impact: [{ area: '购物车角标', effect: '删除后刷新', verify: 'store.test.ts' }],
         options: [
@@ -1019,6 +1021,13 @@ await runShard(import.meta.filename, async (api) => {
     // 父对话页上也有入口：不用先进子对话找交报告那一行
     if (!(await p.locator('.proc-list').getByRole('button', { name: '查看报告' }).count()))
       errors.push('诊断报告：父对话页「正在运行」里那个子对话的行上没有「查看报告」')
+    // Bug 子对话那一行直接画五步进度（分析稿 U8）：论证 / 根因 / 修复方案 / 修复 / 验证，走过的打勾、正在的实心点
+    {
+      const dots = p.locator('.proc-list [data-bug-steps]').first()
+      const label = (await dots.getAttribute('aria-label', { timeout: 5000 }).catch(() => null)) ?? ''
+      if (!/论证 ✓.*根因.*修复方案.*修复.*验证 ○/.test(label))
+        errors.push(`诊断报告：父对话里 Bug 那一行没有画五步进度（${label || '没有'}）`)
+    }
     // 「查看报告」只在运行区的报告卡片上（用户 2026-11-07 定），交报告那一行工具调用不再放
     const open = childView(p).locator('.proc-list').getByRole('button', { name: '查看报告' })
     await open
@@ -1038,10 +1047,49 @@ await runShard(import.meta.filename, async (api) => {
       // 决策卡在最上面（用户 2026-11-07 确认的设计稿）：一句话结论、要你做的；背景收在「依据和背景」里
       if (!(await dlg.locator('[data-diagnosis-card]').getByText('选方案 A：去掉提前 return').count()))
         errors.push('诊断报告：最上面没有决策卡的一句话结论')
+      // 根因等级、把握百分比、提交人在决策卡上醒目显示（用户 2026-11-10）
+      const strip = dlg.locator('[data-cause-strip]')
+      for (const want of ['中级', '92', '李四', 'c0ffee1'])
+        if (!(await strip.getByText(want, { exact: false }).count()))
+          errors.push(`诊断报告：决策卡上没有显示「${want}」（根因等级 / 把握 / 提交人）`)
       if (!(await dlg.getByRole('button', { name: /依据和背景/ }).count()))
         errors.push('诊断报告：没有收起的「依据和背景」')
       if (!(await dlg.getByText('具体改动').count())) errors.push('诊断报告：方案页没有「具体改动」')
+      // 候选方案表撑满、选定那一列整列上色（分析稿 U7）；还没有标注时标注栏收成一条，「改用方案 B」挪到底栏
+      const chosenHead = dlg.locator('table[data-chosen-table] th[data-chosen]')
+      if (
+        !/方案 A/.test(
+          (await chosenHead
+            .first()
+            .textContent()
+            .catch(() => '')) ?? '',
+        )
+      )
+        errors.push('诊断报告：候选方案表没有标出选定的那一列')
+      else {
+        const [table, doc] = await Promise.all([
+          dlg.locator('table[data-chosen-table]').first().boundingBox(),
+          dlg.locator('[data-review-doc]').first().boundingBox(),
+        ])
+        if (!table || !doc || table.width < doc.width - 2) errors.push('诊断报告：候选方案表没有撑满正文宽度')
+      }
+      if (!(await dlg.locator('[data-notes-folded]').count())) errors.push('诊断报告：没有标注时标注栏应收成一条')
       await check(p, '诊断报告-决策卡')
+      // 停靠到右栏（分析稿 U7）：报告挪进右栏的页签，对话还能看、能点；转回弹窗也行
+      await dlg.getByRole('button', { name: '停靠到右栏', exact: true }).click()
+      const docked = p.locator('[data-task-panel] [data-review-docked]')
+      await docked
+        .getByRole('button', { name: '确认方案，开始修' })
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('诊断报告：点「停靠到右栏」后右栏里没有报告'))
+      if (await p.getByRole('dialog').count()) errors.push('诊断报告：停靠到右栏后弹窗还盖着页面')
+      await check(p, '诊断报告-停靠到右栏')
+      await docked.getByRole('button', { name: '转成弹窗', exact: true }).click()
+      await dlg
+        .getByRole('button', { name: '确认方案，开始修' })
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('诊断报告：从右栏「转成弹窗」后没有回到弹窗'))
+      if (await docked.count()) errors.push('诊断报告：转成弹窗后右栏里还留着报告')
       // 版本在标题栏的下拉里选（用户 2026-11-05：不要把所有版本排在正文上面）
       const verPick = dlg.getByRole('combobox', { name: '版本' })
       if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')

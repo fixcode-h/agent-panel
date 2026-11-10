@@ -22,6 +22,7 @@ export function ConversationShell({
   overlay,
   dock,
   rail = 0,
+  floatPad = 0,
 }: {
   /** `useConversationScroll` 的返回值：滚动容器、贴底状态和「回到底部」 */
   scroller: Scroller
@@ -44,11 +45,17 @@ export function ConversationShell({
    * 滚动条贴在中间页面的最右边，不夹在消息和会话栏中间；会话栏由调用方绝对定位盖在这块空白上，不跟着滚
    */
   rail?: number
+  /**
+   * 输入框上方悬浮层（FloatAbove）的高度：消息流底部多留这么多，被浮层盖住的最后几行还能滚出来看；
+   * 「回到底部」也跟着抬到浮层上面
+   */
+  floatPad?: number
 }) {
   return (
     <>
       {/* 定位容器只包消息区：回到底部相对消息区底部浮着，不会落到底下的输入框和信息条上 */}
-      <div className={cn('relative flex min-h-0 flex-1 flex-col', className)}>
+      {/* data-float-bound：输入框上方的悬浮层（FloatAbove）最高只到这一块的上沿 */}
+      <div data-float-bound="" className={cn('relative flex min-h-0 flex-1 flex-col', className)}>
         {overlay}
         <div
           ref={scroller.ref}
@@ -70,6 +77,7 @@ export function ConversationShell({
           {fill ?? (
             <div
               className={cn('mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6', contentClassName)}
+              style={floatPad ? { paddingBottom: `calc(2rem + ${floatPad}px)` } : undefined}
             >
               {children}
             </div>
@@ -82,7 +90,11 @@ export function ConversationShell({
             aria-label={t('回到底部')}
             title={t('回到底部')}
             // 有会话栏时按消息区（让出会话栏之后那块）居中
-            style={rail ? { left: `calc((100% - ${rail}px) / 2)` } : undefined}
+            style={{
+              ...(rail ? { left: `calc((100% - ${rail}px) / 2)` } : null),
+              // 浮层快占满消息区时不顶出上沿
+              ...(floatPad ? { bottom: `min(calc(0.75rem + ${floatPad}px), calc(100% - 3rem))` } : null),
+            }}
             className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong frost-card text-muted shadow-pop transition-colors hover:text-fg"
           >
             <ArrowDown className="h-4 w-4" />

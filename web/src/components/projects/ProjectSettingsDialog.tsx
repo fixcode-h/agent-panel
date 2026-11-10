@@ -1135,6 +1135,14 @@ function Body({
                     '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都按「适用改动」跑完整的步骤（不适用的一样跳过）。工作流里的测试验收不受影响。',
                   )}
                 />
+                <Checkbox
+                  checked={!!draft.requireVerify}
+                  onChange={(v) => set('requireVerify', v)}
+                  label={t('改了代码要跑过测试步骤才能结束')}
+                  tip={t(
+                    '对话用 end_turn 说做完了时，面板看这一轮的工具调用：改了代码却没跑过这里的测试步骤（没配步骤时看有没有跑测试、类型检查或编译），就不让它结束，并告诉它去跑。关着时不拦，只在「完成依据」卡片上标出来。',
+                  )}
+                />
                 <TestStepsEditor
                   steps={draft.testSteps}
                   distro={draft.wslDistro}

@@ -14,12 +14,18 @@ export interface ConvChanges {
   turns: string[]
   /** 改过、但都已经撤销的轮数：卡片上写「已撤销」 */
   reverted: number
+  /**
+   * 没算进来的文件：同目录别的对话那段时间改的（server/turn-owners.ts 剔除的），卡片上说明一句。
+   * 别的轮里这个对话自己也改过的不列：它已经在 files 里了
+   */
+  others: string[]
 }
 
 export function convChanges(messages: Pick<TaskMessage, 'id' | 'turnChanges'>[]): ConvChanges {
   const spans: TurnChanges['spans'] = []
   const files = new Map<string, FileChange>()
   const turns: string[] = []
+  const others = new Set<string>()
   let reverted = 0
   for (const m of messages) {
     const ch = m.turnChanges
@@ -30,11 +36,12 @@ export function convChanges(messages: Pick<TaskMessage, 'id' | 'turnChanges'>[])
     }
     turns.push(m.id)
     spans.push(...ch.spans)
+    for (const p of ch.others ?? []) others.add(p)
     for (const f of ch.files) {
       const had = files.get(f.path)
       if (had) files.set(f.path, { ...had, add: had.add + f.add, del: had.del + f.del })
       else files.set(f.path, { ...f })
     }
   }
-  return { spans, files: [...files.values()], turns, reverted }
+  return { spans, files: [...files.values()], turns, reverted, others: [...others].filter((p) => !files.has(p)) }
 }

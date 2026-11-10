@@ -749,6 +749,7 @@
     ]
   },
   "features": {
+    "cost": true,
     "steer": true,
     "keepAlive": true,
     "fork": "before",

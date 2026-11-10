@@ -44,7 +44,7 @@ test('派出的子任务 / 工作流还没完时同样不显示「已关闭」',
   for (const over of [
     { background: 0, helpers: true, waiting: { kind: 'helpers' as const, list: ['核对设置页'] } },
     { background: 0, workflow: true, waiting: { kind: 'workflow' as const } },
-    // 进程没了、这一轮在等用户回答：那是「等你选择」的事，不是「已关闭」
+    // 进程没了、这一轮在等用户回答：那是「等你回答」的事，不是「已关闭」
     { background: 0, waiting: { kind: 'answer' as const, n: 1 }, asking: 1 },
   ]) {
     const line = texts(closedWaiting(over))
@@ -159,9 +159,28 @@ test('一轮结束、停在等下一句的子对话不写「正在思考…」�
   })
   const line = childNote(idle, true)
   assert.ok(!line.includes(t('正在思考…')), line)
-  assert.equal(line, [t('等下一句'), '合回'].join(' · '))
+  assert.equal(line, ['合回', t('等下一句')].join(' · '))
   const thinking = closedWaiting({ working: true, waiting: undefined, activity: { thinking: true } })
   assert.ok(childNote(thinking, true).startsWith(t('正在思考…')))
+})
+
+test('执行中的说明写「计划这一步 · 最后一次工具调用」，不写回复开头那一段（分析稿 U5）', () => {
+  const base = closedWaiting({ working: true, cliAlive: true, background: 0, waiting: undefined })
+  // 已经开口说话：activity 只剩那句话，最后一次工具调用单独给（lastTool）
+  const talking = {
+    ...base,
+    activity: { text: '我先看了相关代码。真实执行时会…', plan: { title: '改角标', done: 1, total: 4 } },
+    plan: { done: 1, total: 4, step: '改角标' },
+    lastTool: { kind: 'edit' as const, label: 'web/src/lib/store.ts' },
+  }
+  assert.equal(childNote(talking, true), ['改角标', `${t('编辑')} store.ts`].join(' · '))
+  // 正在调用的工具比上一次的新：用正在调用的
+  const running = { ...talking, activity: { tool: { kind: 'run' as const, label: 'npm test' } } }
+  assert.equal(childNote(running, true), ['改角标', `${t('运行命令')} npm test`].join(' · '))
+  // 没有计划也有工具调用：只写工具调用
+  assert.equal(childNote({ ...talking, plan: undefined }, true), `${t('编辑')} store.ts`)
+  // 计划和工具调用都没有：回退到原来的样子（那句话）
+  assert.equal(childNote({ ...talking, plan: undefined, lastTool: undefined }, true), '我先看了相关代码。真实执行时会…')
 })
 
 test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态写「报告待确认」，不写「执行中」', () => {
@@ -179,7 +198,7 @@ test('交了 Bug 诊断报告等你确认（ADR 0045）：还在转圈，状态�
   assert.ok(!labels.includes('执行中'))
 })
 
-test('等诊断报告确认时又提了问：运行区仍列这一行，标签同时写「等你选择」和「报告待确认」', () => {
+test('等诊断报告确认时又提了问：运行区仍列这一行，标签同时写「等你回答」和「报告待确认」', () => {
   const base = {
     cliAlive: true,
     background: 0,
@@ -195,8 +214,8 @@ test('等诊断报告确认时又提了问：运行区仍列这一行，标签�
   assert.equal(childIcon(asking), 'waiting')
   const ids = listedChildren([running, asking, confirming]).map((c) => c.id)
   assert.deepEqual([...ids].sort(), ['ask', 'req', 'run'])
-  const labels = childLabels(asking, '你').map((l) => l.text)
-  assert.ok(labels.includes('等你选择'))
+  const labels = childLabels(asking).map((l) => l.text)
+  assert.ok(labels.includes('等你回答'))
   assert.ok(labels.includes('报告待确认'))
   // 停下的、已收起的：照旧不列（没人再处理它的提问）
   const stopped = closedWaiting({ ...base, id: 's', asking: 1, status: 'stopped', stopReason: 'user' })
@@ -222,7 +241,7 @@ test('子对话在提问 / 等你操作：父对话运行区也列这一行（�
       .sort(),
     ['act', 'ask', 'req'],
   )
-  assert.ok(childLabels(action, '你').some((l) => l.text === '等你操作'))
+  assert.ok(childLabels(action).some((l) => l.text === '等你操作'))
   // 停下的、已收起的、已解决的：不再算在等你
   const stopped = closedWaiting({ ...base, id: 's', action: true, status: 'stopped', stopReason: 'user' })
   const gone = closedWaiting({ ...base, id: 'g', asking: 1, gone: true })

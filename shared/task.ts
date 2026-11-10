@@ -12,18 +12,24 @@ import {
   type TaskMessage,
   type TaskRequest,
   type TaskTurn,
-  type ToolUse,
   type TurnEnd,
   type Workflow,
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
-import { t, uiLocale } from './i18n.ts'
+import { t } from './i18n.ts'
 import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
-import { confirmWait, confirmWaitText, needsReason } from './child-needs.ts'
+import { needsReason } from './child-needs.ts'
 import { pendingAction } from './user-action.ts'
-import { byStartedDesc, helperRunning, helpersWorking } from './task-helpers.ts'
+import { byStartedDesc, helpersWorking } from './task-helpers.ts'
+import { childFlowOf } from './child-flow.ts'
+import { type ChildWait } from './child-activity.ts'
+
+/** 子对话完成的流转、子对话在做什么 / 等什么、按天分组拆在下面三个文件：从这里原样转出，调用方不用改 */
+export * from './child-flow.ts'
+export * from './child-activity.ts'
+export * from './day-groups.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文。
@@ -121,6 +127,7 @@ export function newTask(
     ...(input.analysis && { analysis: input.analysis }),
     ...(input.analysisOf && { analysisOf: input.analysisOf }),
     ...(input.plugin && { plugin: input.plugin }),
+    ...(input.convBudget && (input.convBudget.tokens || input.convBudget.costUsd) && { convBudget: input.convBudget }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
@@ -897,181 +904,6 @@ export function childHoldsOf(
 }
 
 /**
- * 子对话完成是一条单向的状态流转，必须按这个先后走，谁都不能跳步（见 advanceChild）：
- * wrapup 这一轮收尾 → plan 计划全做完 → pending 后台命令 / 工作流 / 派出的子任务 / 提问 / 请求都收口
- * → complete 子对话自己置完成 → report 上报父对话 → list 父对话列表按上报的状态刷新。
- *
- * 「父对话点标记完成」「合并成功」都只是发起这一趟流转（见 server/tasks.ts 的 advanceChildTo），
- * 判定和置完成仍然在子对话这一侧，父对话不直接改最终状态。
- */
-export type ChildFlowStep = 'wrapup' | 'plan' | 'pending' | 'complete' | 'report' | 'list'
-
-/** 流转的先后：只能从前往后走，中间不能跳过任何一步 */
-export const childFlowSteps = [
-  'wrapup',
-  'plan',
-  'pending',
-  'complete',
-  'report',
-  'list',
-] as const satisfies readonly ChildFlowStep[]
-
-/** 流转要看的子对话现状：条件和 childHolds 一致，多两个「走到哪一步」的标记 */
-export type ChildFlowState = Parameters<typeof childHolds>[0] & {
-  /** 子对话这一侧已经把自己置为完成（resolved）：只有它能写这一步 */
-  completed?: boolean
-  /** 父对话已经收到「子对话已完成」的上报 */
-  reported?: boolean
-}
-
-/**
- * 子对话的任务状态换成流转要看的现状：服务端判定、置完成和界面显示都从这里取，不要各写一套。
- * merged 传 false 表示独立分支还没合回去；reported 表示父对话已经收到过这次完成的上报。
- */
-export function childFlowOf(
-  task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & {
-    runs?: Task['runs']
-    resolved?: boolean
-    diagnoses?: Task['diagnoses']
-    userActions?: Task['userActions']
-  },
-  x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},
-): ChildFlowState {
-  return {
-    working: task.working,
-    background: x.background,
-    workflow: runRunning(task),
-    helpers: helpersWorking(task),
-    plan: openPlan(task),
-    asking: task.parentAsks?.length ?? 0,
-    // 诊断报告等确认（ADR 0045）和等确认的请求一样拦着完成
-    requests: task.requests.length + (diagnosisPending(task) ? 1 : 0) + (pendingAction(task) ? 1 : 0),
-    unmerged: x.merged === false,
-    parentTest: x.parentTest,
-    completed: task.resolved === true,
-    reported: x.reported,
-  }
-}
-
-/** 某一步自己还差什么（前一步过没过由 stepPassed 管）：空数组表示这一步的条件已经满足 */
-export function childStepHolds(x: ChildFlowState, step: ChildFlowStep): ChildHold[] {
-  if (step === 'wrapup') return childHolds({ working: x.working })
-  if (step === 'plan') return childHolds({ plan: x.plan })
-  if (step === 'pending')
-    return childHolds({
-      background: x.background,
-      workflow: x.workflow,
-      helpers: x.helpers,
-      asking: x.asking,
-      requests: x.requests,
-      unmerged: x.unmerged,
-      // 合回了但父对话的测试还没跑完：不能标完成、不能删分支（ADR 0018）。
-      // 只加在 ChildFlowState 上而不传进来，这个 hold 永远不会生效（评审 R1）
-      parentTest: x.parentTest,
-    })
-  // 后三步没有额外条件：走到没走到由 completed / reported 记着，不看别的
-  return []
-}
-
-/** 这一步走完了没有：前一步没走完，这一步不管自己的条件满不满足都算没到 */
-function stepPassed(x: ChildFlowState, step: ChildFlowStep): boolean {
-  const i = childFlowSteps.indexOf(step)
-  if (i > 0 && !stepPassed(x, childFlowSteps[i - 1])) return false
-  if (step === 'complete') return !!x.completed
-  if (step === 'report') return !!x.reported
-  // 父对话的列表是按上报的状态派生出来的：上报了这一步就算过了，列表不会早于上报
-  if (step === 'list') return !!x.reported
-  return childStepHolds(x, step).length === 0
-}
-
-/** 现在卡在哪一步：返回前面几步都走完、自己还没走完的第一步；全部走完返回 null */
-export function childFlowAt(x: ChildFlowState): ChildFlowStep | null {
-  return childFlowSteps.find((s) => !stepPassed(x, s)) ?? null
-}
-
-/** 推进时某一步交回「还不该走」的原因（如独立分支回收失败）：交回后就停在这一步，不往下走 */
-export interface ChildFlowStop {
-  holds: ChildHold[]
-  /** 给用户看的原因；不写就用 childHoldText(holds) */
-  info?: string
-}
-
-/** 流转要做的三件事：子对话置完成、上报父对话、让父对话列表重取 */
-export interface ChildFlowHost {
-  /** 第 4 步：子对话这一侧把自己置为完成（回收独立分支也在这里）；交回还差什么就停在这一步 */
-  complete(): void | ChildFlowStop | Promise<void | ChildFlowStop>
-  /** 第 5 步：把「子对话已完成」上报给父对话 */
-  report(): void | Promise<void>
-  /** 第 6 步：需要额外通知页面重新取列表时提供；列表本身不在这里改写（只读子对话的状态） */
-  list?(): void | Promise<void>
-}
-
-export interface ChildFlowRun {
-  /** 这次真正做了的步骤，按先后顺序 */
-  steps: ChildFlowStep[]
-  /** 还没走完的步骤，第一项就是卡住的那一步；空数组表示整条链走完了 */
-  left: ChildFlowStep[]
-  /** 卡住的原因（见 childHoldText），空数组表示这一侧能做的都做了 */
-  holds: ChildHold[]
-  /** 卡住的说明，没卡住是空字符串 */
-  info: string
-}
-
-/**
- * 按 wrapup → plan → pending → complete → report → list 依次推进，前一步没走完就停在原地。
- * 幂等：已经置过完成的不再置一次、已经上报过的不再报一次，重复调用只会从卡住的那一步接着走。
- * 父对话侧的动作（标记完成、合并成功、一轮结束收口）只调用它，不直接写子对话的最终状态。
- */
-export async function advanceChild(x: ChildFlowState, host: ChildFlowHost): Promise<ChildFlowRun> {
-  const state: ChildFlowState = { ...x }
-  const steps: ChildFlowStep[] = []
-  const stop = (at: number, holds: ChildHold[], info = ''): ChildFlowRun => ({
-    steps,
-    left: [...childFlowSteps.slice(at)],
-    holds,
-    info,
-  })
-  let i = childFlowSteps.findIndex((s) => !stepPassed(state, s))
-  // 全部走完了：重复调用什么都不做
-  if (i < 0) return { steps, left: [], holds: [], info: '' }
-  for (; i < childFlowSteps.length; i++) {
-    const step = childFlowSteps[i]
-    // 前三步是「等条件」：不满足就停在原地，把还差什么交回去
-    if (step === 'wrapup' || step === 'plan' || step === 'pending') {
-      const holds = childStepHolds(state, step)
-      if (holds.length) return stop(i, holds, childHoldText(holds))
-      continue
-    }
-    if (step === 'complete') {
-      const refused = await host.complete()
-      if (refused && refused.holds.length) return stop(i, refused.holds, refused.info ?? childHoldText(refused.holds))
-      state.completed = true
-    } else if (step === 'report') {
-      await host.report()
-      state.reported = true
-    } else await host.list?.()
-    steps.push(step)
-  }
-  return { steps, left: [], holds: [], info: '' }
-}
-
-/** 还差什么才算做完：给用户看的一句话（分支状态行、标记完成的提示共用） */
-export function childHoldText(holds: ChildHold[]) {
-  const what: Record<ChildHold, string> = {
-    working: t('这一轮还在执行'),
-    background: t('后台命令还没跑完'),
-    workflow: t('工作流还没跑完'),
-    helpers: t('派出的子任务还没跑完'),
-    plan: t('计划还没做完'),
-    asking: t('还有等你回答的提问'),
-    requests: t('还有等你确认的请求'),
-    unmerged: t('独立分支还没合回原分支'),
-    parentTest: t('父对话的测试还没通过'),
-  }
-  return holds.map((h) => what[h]).join(t('、'))
-}
-
-/**
  * 一个任务属于哪个阶段：就是 convState 归成的组（见 stageOf）。
  * 「已停止」只认真的中断：对话交付完一轮后 status 仍是 running，只是 working 变回 false、CLI 在等下一句，
  * 它已经做完了，不能算停止；彻底完成后面板结束进程（stopReason 为 finish）也不算。
@@ -1161,174 +993,6 @@ export interface ChildEntry {
   action?: boolean
   /** 用户报的 Bug（ADR 0046）：查到哪个阶段了（见 bug-diagnosis.ts 的 bugStage），行上写「Bug · 阶段」 */
   bug?: string
-}
-
-/** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */
-export interface ChildActivity {
-  /** 正在跑的工作流节点 */
-  steps?: string[]
-  /** 在等的子任务 */
-  helpers?: string[]
-  /** 正在调用（或刚调用完）的工具 */
-  tool?: Pick<ToolUse, 'kind' | 'name' | 'label'>
-  /** 正在说的最后一句 */
-  text?: string
-  /** 还没有输出，在想 */
-  thinking?: boolean
-  /** 正在做的计划步骤（和上面几项可以同时有值）：父对话不用翻计划窗口也知道做到第几步 */
-  plan?: { title: string; child?: string; done: number; total: number }
-}
-
-/**
- * 子对话在等什么：不是在跑，但也不是卡住。父对话问「是不是卡住了」时靠它回答，
- * 列表里超时没新输出也先看这一项，能解释的等待不标红
- */
-export type ChildWait =
-  | { kind: 'answer'; n: number }
-  | { kind: 'confirm'; n: number; title?: string; question?: boolean }
-  | { kind: 'children'; n: number }
-  | { kind: 'background'; n: number }
-  | { kind: 'helpers'; list: string[] }
-  | { kind: 'workflow' }
-  | { kind: 'diagnosis'; version: number; rev: number }
-  | { kind: 'action'; title: string }
-  | { kind: 'next' }
-
-/** 等待原因的一句话：子对话栏、list_conversations、计划面板都用它 */
-export function childWaitText(w: ChildWait | undefined): string {
-  switch (w?.kind) {
-    case 'answer':
-      return t('等用户回答 {n} 个提问', { n: w.n })
-    case 'confirm':
-    case 'children':
-      return confirmWaitText(w)
-    case 'background':
-      return t('等 {n} 个后台命令', { n: w.n })
-    case 'helpers':
-      return t('等子任务：{list}', { list: w.list.join(t('、')) })
-    case 'workflow':
-      return t('等工作流跑完')
-    case 'diagnosis':
-      return t('等你查看诊断报告第 {n} 版', { n: w.rev })
-    case 'action':
-      return t('等你操作：{title}', { title: w.title })
-    case 'next':
-      return t('等下一句')
-    default:
-      return ''
-  }
-}
-
-/**
- * 子对话在等什么，按「越需要用户处理越靠前」排：等用户回答、等确认、等后台命令、
- * 等派出的子任务、等工作流运行，最后是这一轮结束后等下一句（进程还活着，cliAlive）。
- * background 由服务端给（后台命令在服务端跑，任务里只有编号），cliAlive 同理
- */
-export function childWait(
-  tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & {
-    runs?: Task['runs']
-    diagnoses?: Task['diagnoses']
-    userActions?: Task['userActions']
-  },
-  x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
-): ChildWait | undefined {
-  const asking = tk.parentAsks?.length ?? 0
-  if (asking) return { kind: 'answer', n: asking }
-  const requests = tk.requests?.length ?? 0
-  if (requests) return confirmWait(tk.requests)
-  if (diagnosisPending(tk)) {
-    const d = tk.diagnoses!.at(-1)!
-    return { kind: 'diagnosis', version: d.version, rev: d.rev ?? d.version }
-  }
-  const act = pendingAction(tk)
-  if (act) return { kind: 'action', title: act.title }
-  if (x.childNeeds) return { kind: 'children', n: x.childNeeds }
-  if (x.background) return { kind: 'background', n: x.background }
-  const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
-  if (helpers.length) return { kind: 'helpers', list: helpers }
-  if (runRunning(tk)) return { kind: 'workflow' }
-  if (!tk.working && x.cliAlive) return { kind: 'next' }
-  return undefined
-}
-
-/**
- * 子对话这会儿在做什么：在跑的工作流节点、在等的子任务、正在调用的工具，或者正在说的最后一句；
- * 计划没做完时附上正在做的那一步。没在执行时没有
- */
-export function childActivity(tk: Pick<Task, 'working' | 'steps' | 'messages' | 'plans'>): ChildActivity | undefined {
-  const plan = activePlan(tk)
-  const p = plan ? planProgress(tk, plan) : undefined
-  const doing = p?.current
-    ? { title: p.current.step.title, child: p.current.child?.title, done: p.done, total: p.total }
-    : undefined
-  if (!tk.working) return doing ? { plan: doing } : undefined
-  const running = tk.steps.filter((s) => s.status === 'running' && s.kind !== 'main')
-  const nodes = running.filter((s) => !s.parentId).map((s) => s.title)
-  if (nodes.length) return { steps: nodes, plan: doing }
-  const helpers = running.filter(helperRunning).map((s) => s.title)
-  const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && !m.step)
-  const tool =
-    [...(last?.tools ?? [])].reverse().find((x) => x.running) ?? (last?.text.trim() ? undefined : last?.tools.at(-1))
-  if (tool) return { tool: { kind: tool.kind, name: tool.name, label: tool.label.slice(0, 200) }, plan: doing }
-  if (helpers.length) return { helpers, plan: doing }
-  const line = (last?.text ?? '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .at(-1)
-  if (line) return { text: line.slice(0, 200), plan: doing }
-  return { thinking: true, plan: doing }
-}
-
-/**
- * 在做什么的一句话：父对话的 list_conversations、计划面板的等待行用它；
- * 界面的子对话栏用自己的富文本（工具名按对话里的说法显示）
- */
-export function childActivityText(a: ChildActivity | undefined): string {
-  if (!a) return ''
-  const doing = a.steps?.length
-    ? a.steps.join(t('、'))
-    : a.tool
-      ? a.tool.label
-      : a.helpers?.length
-        ? t('等子任务：{list}', { list: a.helpers.join(t('、')) })
-        : (a.text ?? (a.thinking ? t('正在思考…') : ''))
-  const plan = a.plan
-    ? t('计划 {done}/{total} · {step}', {
-        done: a.plan.done,
-        total: a.plan.total,
-        step: a.plan.child || a.plan.title,
-      })
-    : ''
-  return [doing, plan].filter(Boolean).join(' · ')
-}
-
-/**
- * 子对话最后有动静的时间：最后一条消息的时间、节点开始/结束时间，和任务更新时间里最晚的那个。
- * 一直在跑但几分钟没有任何新输出的，用这个标出来，父对话不用拿分支时间戳猜
- */
-export function childLastActivity(t: Pick<Task, 'messages' | 'steps' | 'updatedAt'>): string {
-  let at = t.updatedAt || ''
-  const msg = t.messages.at(-1)?.at
-  if (msg && msg > at) at = msg
-  for (const s of t.steps) {
-    if (s.startedAt && s.startedAt > at) at = s.startedAt
-    if (s.endedAt && s.endedAt > at) at = s.endedAt
-  }
-  return at
-}
-
-/** 「3 分钟前」这类相对时间：子对话列表、计划面板、给父对话的对话清单都用它 */
-export function timeAgo(iso: string, now = Date.now()) {
-  if (!iso) return ''
-  const at = new Date(iso).getTime()
-  if (!Number.isFinite(at)) return ''
-  const s = Math.max(0, (now - at) / 1000)
-  if (s < 60) return t('刚刚')
-  if (s < 3600) return t('{n} 分钟前', { n: Math.floor(s / 60) })
-  if (s < 86400) return t('{n} 小时前', { n: Math.floor(s / 3600) })
-  if (s < 86400 * 30) return t('{n} 天前', { n: Math.floor(s / 86400) })
-  return new Date(iso).toLocaleDateString(uiLocale())
 }
 
 /** 多久没有任何新输出算慢（黄）、算可能卡住（红）：模型一步就要几十秒，阈值留足 */
@@ -1838,41 +1502,6 @@ export function splitStepJobs<S extends { id: string; slot?: string }, J extends
 }
 
 /**
- * 任务列表按自然日分组：同一天的归到一组，组内保持传进来的顺序（列表本来就按时间倒序）。
- * 今天、昨天用相对说法，更早的写日期；不是今年的带上年份。
- * now 只有测试会传，正常用当前时间。
- */
-export function groupByDay<T>(list: T[], at: (x: T) => string, now = new Date()) {
-  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const today = dayStart(now)
-  const yesterday = dayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
-  const loc = uiLocale()
-  const groups = new Map<string, { key: string; label: string; items: T[] }>()
-  for (const x of list) {
-    const d = new Date(at(x))
-    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-    let g = groups.get(key)
-    if (!g) {
-      const day = dayStart(d)
-      g = {
-        key,
-        label: day === today ? t('今天') : day === yesterday ? t('昨天') : dayLabel(d, now, loc),
-        items: [],
-      }
-      groups.set(key, g)
-    }
-    g.items.push(x)
-  }
-  return [...groups.values()]
-}
-
-/** 更早那天的写法：今年的不写年份，别的年份写上 */
-function dayLabel(d: Date, now: Date, loc: string) {
-  const sameYear = d.getFullYear() === now.getFullYear()
-  return d.toLocaleDateString(loc, { ...(sameYear ? {} : { year: 'numeric' as const }), month: 'long', day: 'numeric' })
-}
-
-/**
  * 列表用的任务摘要：侧栏、项目首页只要标题、状态、进度和用量。去掉消息内容、节点输出这些大块数据，
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
@@ -2006,16 +1635,8 @@ export function taskBusy(x: TaskFactsInput) {
   return s === 'running' || s === 'waiting'
 }
 
-/** 「等结果」时在等什么：项目首页、标题栏悬停写这一句，和 convState 用同一份事实 */
-export function taskWaitText(x: TaskFactsInput): string {
-  const f = taskFacts(x)
-  if (f.childNeeds && !f.requests && !f.asking) return t('子对话等你处理')
-  if (f.children) return t('子对话执行中')
-  if (f.helpers) return t('子任务执行中')
-  if (f.background) return t('后台命令执行中')
-  if (f.workflow) return t('工作流执行中')
-  return ''
-}
+// 「等结果」时在等什么、各处的状态短词都在 shared/task-word.ts（分析稿 A8）：这里只转出，调用方仍可从 @shared/task 引用
+export { taskWaitText } from './task-word.ts'
 
 /**
  * 列表里「执行中」的条数：侧栏项目名的「N 个执行中」、标签页标题的 (n) 都读这个，
