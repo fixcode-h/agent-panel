@@ -47,6 +47,7 @@ import { returnUserAction } from './user-actions.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
 import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
+import { bugInPlace, inPlaceBugClosed } from '../../shared/bug-in-place.ts'
 import { pausedHelpers } from '../../shared/run-stops.ts'
 
 /**
@@ -145,6 +146,8 @@ export function registerConversationRoutes(s: TasksScope) {
     // 附件：图片拷进这个对话的对话目录（tasks/files/<id>/attachments/），交给 Agent 的是那里的绝对路径；
     // 其它文件原样用绝对路径。对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await s.placeInTask(draft, input.attachments ?? [])
+    // 第一句就是 /bug 的普通对话：建好就是用户报的 Bug，第一轮就有 submit_diagnosis（分析稿 B10）
+    if (!parent && !sender && BUG_CMD.test(input.prompt.trim()) && bugInPlace(draft, agents)) draft.bug = true
     const task = await s.store.create(draft)
     return {
       task: await s.start(s.reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
@@ -199,9 +202,20 @@ export function registerConversationRoutes(s: TasksScope) {
     }
     // 用户在子对话里发 /bug：标成用户报的 Bug（ADR 0046），它才有 submit_diagnosis、按完整流程查。
     // 正在回复的这一轮里没法换工具，先拦住；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）
-    if (BUG_CMD.test(text.trim()) && cur?.parentTaskId && !cur.bug && !peer) {
+    // 有项目的普通对话也一样就地标（分析稿 B10，shared/bug-in-place.ts）；父对话的 /bug 是派子对话，不标
+    const bugCmd = BUG_CMD.test(text.trim()) && !!cur && !peer
+    if (bugCmd && cur && !cur.parentTaskId && cur.bug && inPlaceBugClosed(cur))
+      return s.bad(c, t('这个对话里的 Bug 已经结束，新的 Bug 请新开一个对话发 /bug'), 409)
+    if (bugCmd && cur && !cur.bug && bugInPlace(cur, await s.deps.agents.list())) {
       const live = s.live.get(id)
-      if (live?.task.working) return s.bad(c, t('子对话正在回复，等这一轮结束或先停止，再发 /bug'), 409)
+      if (live?.task.working)
+        return s.bad(
+          c,
+          cur.parentTaskId
+            ? t('子对话正在回复，等这一轮结束或先停止，再发 /bug')
+            : t('对话正在回复，等这一轮结束或先停止，再发 /bug'),
+          409,
+        )
       // 在跑的以内存里那份为准（s.current 拿到的就是它），落盘也落它，不拿旧的盖新的
       cur.bug = true
       if (live && live.task !== cur) live.task.bug = true

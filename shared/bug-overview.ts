@@ -7,6 +7,7 @@
 import type { BugLevel, BugPhase } from './bug-diagnosis-schema.ts'
 import { phaseOf } from './bug-phase.ts'
 import { BUG_PHASES, bugOutcome, bugRating, type BugDiag, type BugLike } from './bug-stats.ts'
+import { observation } from './bug-observe.ts'
 import { t } from './i18n.ts'
 import type { Task } from './schema.ts'
 import { taskDeleted, taskState, type ConvState } from './task.ts'
@@ -30,6 +31,10 @@ export interface BugBrief extends BugLike {
   archived: boolean
   level: BugLevel
   diagnoses: BugDiag[]
+  /** 偶发的 Bug 修好后的观察期到哪天（分析稿 B13，shared/bug-observe.ts）；不是偶发、还没修好的没有 */
+  observeUntil?: string
+  /** 观察期里又报了几次同类问题（面板按关键词自动关联的） */
+  relapses?: number
 }
 
 const briefDiag = (d: NonNullable<Task['diagnoses']>[number]): BugDiag => ({
@@ -84,6 +89,8 @@ export function bugBriefs(tasks: Task[]): BugBrief[] {
       archived: !!tk.archived || !!root.archived,
       level: list.at(-1)?.level ?? tk.bugCase?.level ?? 'standard',
       diagnoses: list.map(briefDiag),
+      observeUntil: observation(tk)?.until,
+      relapses: tk.bugCase?.relapses?.length || undefined,
     })
   }
   return out
@@ -97,10 +104,21 @@ export const BUG_GROUPS: BugGroup[] = ['you', 'active', 'ended']
 /**
  * 现在等谁：confirm 等你确认这一版；repro 日志加好了等你复现；verify 等你验证；reply 它问了问题等你回复；
  * failed 执行失败了；analyzing 它在分析；cleaning 不修了、它在删临时日志；idle 没在执行（没人在等、也没人在做）；
- * fixed 已修好；cancelled 已取消
+ * fixed 已修好；cancelled 已取消；observing 偶发的修好了、在观察期里；relapsed 观察期里又报了同类问题，等你决定要不要重开
  */
 export type BugWho =
-  'confirm' | 'repro' | 'verify' | 'reply' | 'failed' | 'analyzing' | 'cleaning' | 'idle' | 'fixed' | 'cancelled'
+  | 'confirm'
+  | 'repro'
+  | 'verify'
+  | 'reply'
+  | 'failed'
+  | 'analyzing'
+  | 'cleaning'
+  | 'idle'
+  | 'fixed'
+  | 'cancelled'
+  | 'observing'
+  | 'relapsed'
 
 const WHO_GROUP: Record<BugWho, BugGroup> = {
   confirm: 'you',
@@ -108,7 +126,9 @@ const WHO_GROUP: Record<BugWho, BugGroup> = {
   verify: 'you',
   reply: 'you',
   failed: 'you',
+  relapsed: 'you',
   analyzing: 'active',
+  observing: 'active',
   cleaning: 'active',
   idle: 'active',
   fixed: 'ended',
@@ -128,6 +148,8 @@ export const bugWhoText = (who: BugWho): string =>
     idle: t('没在执行'),
     fixed: t('已修好'),
     cancelled: t('已取消'),
+    observing: t('观察中'),
+    relapsed: t('又出现了'),
   })[who]
 
 export const bugLevelText = (level: BugLevel): string =>
@@ -137,13 +159,16 @@ export const bugLevelText = (level: BugLevel): string =>
 export const bugPhaseText = (p: BugPhase): string =>
   ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), fix: t('修复'), verify: t('验证') })[p]
 
-export function bugWho(b: BugBrief): BugWho {
+export function bugWho(b: BugBrief, now = new Date().toISOString()): BugWho {
   const d = b.diagnoses.at(-1)
   if (d?.status === 'cancelled') {
     // 不修了但临时日志还没删完：它在删，或者核对没过在等你决定怎么办
     if (d.cleanup?.state === 'running') return 'cleaning'
     return d.cleanup?.state === 'failed' ? 'confirm' : 'cancelled'
   }
+  // 偶发的修好了还在观察期里：没到「已结束」，观察期里又报了同类的提到「等你处理」，提示重开
+  const fixed = b.resolved || bugOutcome(b) === 'fixed'
+  if (fixed && b.observeUntil && b.observeUntil > now) return b.relapses ? 'relapsed' : 'observing'
   if (b.resolved) return 'fixed'
   if (d?.status === 'pending') return d.awaiting ? 'repro' : phaseOf(d) === 'verify' ? 'verify' : 'confirm'
   if (bugOutcome(b) === 'fixed') return 'fixed'
@@ -184,11 +209,11 @@ export interface BugRow {
 }
 
 /** 分好组的行：等你处理的在最上面，然后进行中，然后已结束；组内等得最久的在前（已结束的最近结束的在前）。归档的不列 */
-export function bugRows(briefs: BugBrief[]): BugRow[] {
+export function bugRows(briefs: BugBrief[], now = new Date().toISOString()): BugRow[] {
   const rows = briefs
     .filter((b) => !b.archived)
     .map((b): BugRow => {
-      const who = bugWho(b)
+      const who = bugWho(b, now)
       return {
         bug: b,
         group: WHO_GROUP[who],

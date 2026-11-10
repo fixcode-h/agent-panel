@@ -2090,7 +2090,7 @@ function makeOrchestra(
         r.ok && extra?.bug && !extra.level
           ? '没写 level：子对话按「标准」级别查。下次派 Bug 按「Bug 怎么交」的级别初判写上 level，快速级别根因和方案合成一次确认。'
           : ''
-      return { ok: r.ok, id: r.id, info: [r.info, wait, level].filter(Boolean).join('\n') }
+      return { ok: r.ok, id: r.id, info: [r.info, r.ok && docs.info, wait, level].filter(Boolean).join('\n') }
     },
     async sendToConversation(id, message, step, route, bug) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
@@ -2289,8 +2289,9 @@ function makeOrchestra(
     p4Split: host.p4Split,
     cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
     askPush: orchAskPush(host, !!ctx.chat, helper),
+    // 有项目的普通对话发 /bug 也就地标成 Bug（shared/bug-in-place.ts），同样有这几个工具
     ...(task.bug &&
-      task.parentTaskId &&
+      (task.parentTaskId || task.projectId) &&
       ctx.chat &&
       !helper && {
         diagnose: (x) => diagnoseTask(host, x),

@@ -27,8 +27,8 @@ const GROUP_LABEL: Record<BugGroup, string> = {
 
 /** 每组一句话说明它为什么在这一组，规则和 shared/bug-overview.ts 的 bugWho 一致 */
 const GROUP_HINT: Record<BugGroup, string> = {
-  you: t('报告等你确认、等你复现或验证，或者它问了问题'),
-  active: t('它在分析或在修，暂时不用你管'),
+  you: t('报告等你确认、等你复现或验证，它问了问题，或者观察期里又出现了'),
+  active: t('它在分析或在修，偶发的修好后在这里观察几天，暂时不用你管'),
   ended: t('已经修好，或者你点了不修了'),
 }
 
@@ -43,6 +43,12 @@ const TIER_CHIP: Record<BugTier, string> = {
 }
 
 const TIERS: BugTier[] = ['low', 'mid', 'high']
+
+/** 观察期到哪天：只写月-日，行上放得下 */
+const dayText = (iso: string) => {
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 /** 时长写成一个单位的整数：这里只要量级（等了几分钟还是几天），不用 4m 3.6s 那种精度 */
 export function stayText(ms: number): string {
@@ -276,6 +282,8 @@ const WHO_TONE: Record<BugRow['who'], StatusTone> = {
   idle: 'idle',
   fixed: 'ok',
   cancelled: 'idle',
+  observing: 'run',
+  relapsed: 'err',
 }
 
 function Row({ r, now, project, onOpen }: { r: BugRow; now: number; project: string; onOpen: () => void }) {
@@ -283,12 +291,17 @@ function Row({ r, now, project, onOpen }: { r: BugRow; now: number; project: str
   const tiers = RATING_TEXT()
   const stay = stayText(now - new Date(r.since).getTime())
   // 已结束的写什么时候结束的；还开着的写在这一步停了多久，等你的那几种直接写「等了」
+  // 观察中的写观察到哪天（分析稿 B13）；又出现了的写又报了几次
   const since =
-    r.group === 'ended'
-      ? timeAgo(r.since, now)
-      : r.group === 'you'
-        ? t('等了 {time}', { time: stay })
-        : t('这一步 {time}', { time: stay })
+    who === 'observing' && bug.observeUntil
+      ? t('观察到 {date}', { date: dayText(bug.observeUntil) })
+      : who === 'relapsed'
+        ? t('又报了 {n} 次', { n: bug.relapses ?? 1 })
+        : r.group === 'ended'
+          ? timeAgo(r.since, now)
+          : r.group === 'you'
+            ? t('等了 {time}', { time: stay })
+            : t('这一步 {time}', { time: stay })
   return (
     <li data-bug-row={bug.id} data-bug-who={who}>
       {/* 整行一个按钮：这里没有勾选，点哪都是打开那个对话 */}

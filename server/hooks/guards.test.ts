@@ -52,7 +52,13 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
   assert.match(bugDeny(ctx({ task: { bug: true } }), edit(path.join(proj, 'src/a.ts'))), /submit_diagnosis/)
   assert.match(bugDeny(ctx(diag('pending')), edit(path.join(proj, 'src/a.ts'))), /等用户确认/)
   assert.match(bugDeny(ctx(diag('questioned')), edit(path.join(proj, 'src/a.ts'))), /提了意见/)
-  assert.match(bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))), /第 1 版点了「不修了」.*不改文件/)
+  // 子对话就是为这个 Bug 开的：不修了以后也不改文件
+  const kidCancelled = {
+    task: { parentTaskId: 'par', bug: true, diagnoses: [{ version: 1, status: 'cancelled', files: [] }] },
+  } as never
+  assert.match(bugDeny(ctx(kidCancelled), edit(path.join(proj, 'src/a.ts'))), /第 1 版点了「不修了」.*不改文件/)
+  // 普通对话里就地查的 Bug（分析稿 B10）：不修了、日志也删完了，对话照常用，不再拦
+  assert.equal(bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))), '')
   assert.equal(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/a.ts'))), '')
   assert.match(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/b.ts'))), /不在用户同意的范围/)
   assert.equal(

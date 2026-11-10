@@ -28,3 +28,16 @@ test('先建模块文档：写了理由、角色关了开关、宿主查不了�
   assert.deepEqual(await docsFirst({}, lookup([]), false), {})
   assert.deepEqual(await docsFirst({ modules: ['calc'] }, undefined, true), {})
 })
+
+test('用户报的 Bug 不等文档：照建子对话，派单写明文档在并行建，返回里叫协调器同时派「文档」（分析稿 B11）', async () => {
+  const r = await docsFirst({ modules: ['calc', 'web'], bug: true }, lookup(['web']), true)
+  assert.equal(r.block, undefined)
+  assert.match(r.note!, /- web：docs\/modules\/web\/README\.md/)
+  assert.match(r.note!, /- calc/)
+  assert.match(r.note!, /不用等它/)
+  assert.match(r.info!, /还没有模块文档：calc/)
+  assert.match(r.info!, /现在就用 spawn_agents/)
+  assert.match(r.info!, /\{"task": "模块分析"\}/)
+  // 没写 modules 照样要它写上（拦一下不用等，只是补参数）
+  assert.match((await docsFirst({ bug: true }, lookup([]), true)).block!, /要写 modules/)
+})

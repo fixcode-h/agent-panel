@@ -488,6 +488,16 @@ export const BugCase = z.object({
     .object({ n: z.number().int().catch(0), total: z.number().int().catch(0), since: z.string().catch('') })
     .optional()
     .catch(undefined),
+  /**
+   * 观察期里又报了同类问题（分析稿 B13，shared/bug-observe.ts）：面板派新 Bug 时按关键词对上观察中的旧 Bug，
+   * 新的记 relapseOf（原来那个的 id），原来的记 relapses（又报的那几个）。Agent 不写，面板写
+   */
+  relapseOf: z.string().max(100).optional().catch(undefined),
+  relapses: z
+    .array(z.object({ id: str(100), title: str(200), at: str(40) }))
+    .max(20)
+    .optional()
+    .catch(undefined),
   updatedAt: z.string().optional(),
 })
 export type BugCase = z.infer<typeof BugCase>

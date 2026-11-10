@@ -6,9 +6,10 @@ export const EN_BUG_OVERVIEW: Record<string, string> = {
   '{n} 个 Bug 等你处理': '{n} bug(s) waiting on you',
 
   // 分组
-  '报告等你确认、等你复现或验证，或者它问了问题':
-    'A report needs your confirmation, reproduction or verification, or it asked a question',
-  '它在分析或在修，暂时不用你管': 'It is analysing or fixing; nothing for you to do yet',
+  '报告等你确认、等你复现或验证，它问了问题，或者观察期里又出现了':
+    'A report needs your confirmation, reproduction or verification, it asked a question, or it came back while under observation',
+  '它在分析或在修，偶发的修好后在这里观察几天，暂时不用你管':
+    'It is analysing or fixing, or an intermittent bug is under observation for a few days after the fix; nothing for you to do yet',
   '已经修好，或者你点了不修了': 'Fixed, or you chose not to fix it',
   '没有符合的 Bug': 'No matching bugs',
   '还没有用户报的 Bug。在对话里发 /bug 描述问题，它会按流程排查，进度列在这里。':
