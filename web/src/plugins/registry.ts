@@ -8,6 +8,7 @@ import type { PluginConfig, PluginInfo } from '@shared/plugins/types'
 import { taskPlugin } from '@shared/task'
 import type { Task } from '@shared/schema'
 import { request } from '@/lib/api'
+import { pruneUpdates } from './updates'
 import type { ActivateWeb, DesignMode, PluginPage, TaskTab, WebPlugin } from './sdk'
 
 /**
@@ -105,6 +106,7 @@ export async function loadPlugins() {
     }
   }
   emit({ rows: r.plugins, broken: r.broken, market: r.market, web, webErrors, loaded: true })
+  pruneUpdates(r.plugins)
 }
 
 /** 所有开着的插件登记的设计模式 */

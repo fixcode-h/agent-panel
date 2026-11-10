@@ -42,7 +42,6 @@ export const EN_PLUGINS: Record<string, string> = {
     'A GitHub repository (owner/repo). plugins.json at its root lists the plugins in it; without one, the whole repository is treated as a single plugin.',
   '这个仓库没有插件目录，可以直接把整个仓库当作插件安装。':
     'This repository has no plugin list; you can install the whole repository as one plugin.',
-  '更新到 {v}': 'Update to {v}',
   '这个仓库的插件目录是空的。': 'This repository’s plugin list is empty.',
   其他安装方式: 'Other ways to install',
   安装方式: 'Install from',
@@ -70,4 +69,24 @@ export const EN_PLUGINS: Record<string, string> = {
   '在用：{list}': 'In use: {list}',
   改过: 'Edited',
   在用: 'In use',
+  // 检查更新、升级
+  '{n} 个插件有新版本': '{n} plugin(s) have a new version',
+  都是最新版本: 'All up to date',
+  '上次检查 {time}': 'Last checked {time}',
+  '检查 {repo} 失败：{error}': 'Couldn’t check {repo}: {error}',
+  '现在是 v{v}': 'currently v{v}',
+  '升级到 v{v}': 'Upgrade to v{v}',
+  可升级: 'Update available',
+  '（装着 v{v}）': ' (installed v{v})',
+  插件参数: 'Plugin settings',
+  已开启的插件: 'Enabled plugins',
+  加载出错: 'Failed to load',
+  还没有开启的插件: 'No plugins enabled',
+  '还没有开启的插件。先在「插件」页安装并打开插件，这里就会列出它的参数。':
+    'No plugins are enabled. Install and turn on a plugin on the Plugins page, and its settings will appear here.',
+  去插件页: 'Go to Plugins',
+  参数设置: 'Settings',
+  '这个插件没有可配置的参数。': 'This plugin has no settings.',
+  运行状态: 'Status',
+  '配置插件 {name} 的参数': 'Configure {name}',
 }

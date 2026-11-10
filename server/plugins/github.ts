@@ -58,6 +58,20 @@ export async function readMarket(repo: string, ref = 'HEAD') {
   return p.data.plugins
 }
 
+/** 单个插件的仓库：读 ref 上（子目录里）plugin.json 的版本号；没有这个文件返回 undefined */
+export async function readRepoVersion(repo: string, ref = 'HEAD', sub = '') {
+  const dir = sub.replace(/^\/+|\/+$/g, '')
+  const file = `${dir ? `${dir}/` : ''}plugin.json`
+  const res = await get(
+    `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(ref)}/${file.split('/').map(encodeURIComponent).join('/')}`,
+    '读插件清单',
+  )
+  if (res.status === 404) return undefined
+  if (!res.ok) throw new Error(`读插件清单失败：HTTP ${res.status}`)
+  const raw = (await res.json().catch(() => null)) as { version?: unknown } | null
+  return typeof raw?.version === 'string' ? raw.version : undefined
+}
+
 async function download(url: string, what: string) {
   const res = await get(url, what)
   if (!res.ok) throw new Error(`${what}失败：HTTP ${res.status}（${url}）`)

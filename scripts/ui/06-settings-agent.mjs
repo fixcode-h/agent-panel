@@ -252,7 +252,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     '最近触发',
   ])
   // 第四期：内置钩子的参数（一行一项）
-  await p.getByRole('button', { name: '参数' }).nth(1).click()
+  await p.getByRole('button', { name: '参数', exact: true }).nth(1).click()
   await check(p, '设置-钩子-参数', ['「危险命令守卫」的参数', '另外拦下的命令'])
   await p.getByRole('dialog').getByRole('button', { name: '取消' }).click()
   const mine = p.locator('[data-setting-group="我的钩子"]')

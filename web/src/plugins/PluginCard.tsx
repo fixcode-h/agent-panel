@@ -1,24 +1,21 @@
-import { useEffect, useState } from 'react'
-import { Box, ExternalLink, Gamepad2, Loader2, Puzzle, Trash2, type LucideIcon } from 'lucide-react'
+import { useState } from 'react'
+import { ExternalLink, Loader2, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import type { PluginConfig, PluginSetting } from '@shared/plugins/types'
-import { AGENT_ICONS } from '@/lib/agent-icons'
+import { useNav } from '@/lib/data'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { IconButton } from '@/components/ui/icon-button'
-import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Row } from '@/components/settings/parts'
-import { pluginApi, type KeptItem, type RemovalPreview } from './api'
+import { pluginApi, type InstallPreview, type KeptItem, type RemovalPreview } from './api'
+import { UpdateNotice } from './PluginUpdates'
+import { pluginIcon } from './icon'
+import { pluginParamsId } from './PluginParamsNav'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
 
-/** 清单里的 icon：角色图标之外再认几个插件常用的；不认识的用拼图 */
-const EXTRA_ICONS: Record<string, LucideIcon> = { box: Box, gamepad: Gamepad2, puzzle: Puzzle }
-export const pluginIcon = (name: string) => EXTRA_ICONS[name] ?? AGENT_ICONS.find((i) => i.id === name)?.icon ?? Puzzle
+export { pluginIcon }
 
 /** 来源的一行说明：GitHub 仓库、上传的文件、本机目录 */
 export function sourceLabel(row: Pick<PluginRow, 'source'>) {
@@ -42,131 +39,9 @@ function KeptList({ kept }: { kept: KeptItem[] }) {
   )
 }
 
-/** 按清单声明画参数表单：改了先存在草稿里，点「保存」才写进设置（插件可能要重启后台） */
-function ParamForm({ row }: { row: PluginRow }) {
-  const [draft, setDraft] = useState<PluginConfig>(row.config)
-  const [saving, setSaving] = useState(false)
-  useEffect(() => setDraft(row.config), [row.config])
-  const dirty = JSON.stringify(draft) !== JSON.stringify(row.config)
-  const set = (k: string, v: string | number | boolean) => setDraft((d) => ({ ...d, [k]: v }))
-  const save = async () => {
-    setSaving(true)
-    try {
-      await pluginApi.update(row.manifest.id, { config: draft })
-      await loadPlugins()
-      toast.success(t('插件参数已保存'))
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setSaving(false)
-    }
-  }
-  const field = (s: PluginSetting) => {
-    const v = draft[s.key] ?? s.default
-    if (s.type === 'boolean')
-      return <Switch checked={!!v} onCheckedChange={(c) => set(s.key, c)} aria-label={t(s.label)} />
-    if (s.type === 'select')
-      return (
-        <Select
-          aria-label={t(s.label)}
-          value={String(v)}
-          onChange={(e) => set(s.key, e.target.value)}
-          options={(s.options ?? []).map((o) => ({ value: o.value, label: t(o.label) }))}
-        />
-      )
-    if (s.type === 'number')
-      return (
-        <div className="flex items-center gap-2">
-          <Input
-            aria-label={t(s.label)}
-            type="number"
-            min={s.min}
-            max={s.max}
-            value={String(v)}
-            onChange={(e) => set(s.key, e.target.value === '' ? s.default : Number(e.target.value))}
-          />
-          {s.unit && <span className="shrink-0 text-body text-subtle">{t(s.unit)}</span>}
-        </div>
-      )
-    return (
-      <Input
-        aria-label={t(s.label)}
-        value={String(v)}
-        placeholder={s.placeholder ? t(s.placeholder) : undefined}
-        className={cn(s.type === 'path' && 'font-mono')}
-        onChange={(e) => set(s.key, e.target.value)}
-      />
-    )
-  }
-  const groups = [...new Set(row.manifest.settings.map((s) => s.group ?? ''))]
-  if (!row.manifest.settings.length) return null
-  return (
-    <div className="flex flex-col">
-      {groups.map((g) => (
-        <section key={g} className="flex flex-col">
-          {g && <h4 className="mt-3 text-xs font-medium text-subtle">{t(g)}</h4>}
-          <div className="divide-y divide-line">
-            {row.manifest.settings
-              .filter((s) => (s.group ?? '') === g)
-              .map((s) => (
-                <Row
-                  key={s.key}
-                  title={t(s.label)}
-                  desc={s.desc ? t(s.desc) : undefined}
-                  hint={s.env ? t('对应环境变量 {env}', { env: s.env }) : undefined}
-                  stack={s.type === 'path' || s.type === 'text'}
-                >
-                  {field(s)}
-                </Row>
-              ))}
-          </div>
-        </section>
-      ))}
-      <div className="mt-2 flex justify-end gap-2">
-        {dirty && (
-          <Button size="sm" variant="ghost" onClick={() => setDraft(row.config)} disabled={saving}>
-            {t('还原')}
-          </Button>
-        )}
-        <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}>
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {t('保存参数')}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-/** 运行状态：插件网页部分给了状态面板就用它，否则把服务端给的键值列出来 */
-function StatusPanel({ row }: { row: PluginRow }) {
-  const { web } = usePlugins()
-  const [status, setStatus] = useState<Record<string, unknown>>()
-  const reload = () =>
-    void pluginApi
-      .status(row.manifest.id)
-      .then(setStatus)
-      .catch((e: Error) => setStatus({ error: e.message }))
-  // 只在换插件、开关变化时读一次，之后由面板上的刷新按钮触发 reload
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(reload, [row.manifest.id, row.enabled])
-  const Custom = web.get(row.manifest.id)?.Status
-  if (Custom) return <Custom status={status} config={row.config} reload={reload} />
-  const entries = Object.entries(status ?? {})
-  if (!entries.length) return null
-  return (
-    <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
-      {entries.map(([k, v]) => (
-        <div key={k} className="contents">
-          <dt className="text-subtle">{k}</dt>
-          <dd className="break-all text-muted">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
-export function PluginCard({ row }: { row: PluginRow }) {
+export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p: InstallPreview) => void }) {
   const { webErrors } = usePlugins()
+  const { openSettings } = useNav()
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState<'off' | 'delete'>()
   const [preview, setPreview] = useState<RemovalPreview>()
@@ -273,6 +148,15 @@ export function PluginCard({ row }: { row: PluginRow }) {
             aria-label={row.enabled ? t('关掉插件 {name}', { name: m.name }) : t('打开插件 {name}', { name: m.name })}
             onCheckedChange={(on) => (on ? void toggle(true) : ask('off'))}
           />
+          {/* 参数和运行状态在设置 →「插件参数」里按插件分页配置，卡片上只留入口 */}
+          {row.enabled && (
+            <IconButton
+              icon={SlidersHorizontal}
+              label={t('配置插件 {name} 的参数', { name: m.name })}
+              size="sm"
+              onClick={() => openSettings(pluginParamsId(m.id))}
+            />
+          )}
           <IconButton
             icon={Trash2}
             label={t('删除插件 {name}', { name: m.name })}
@@ -281,17 +165,12 @@ export function PluginCard({ row }: { row: PluginRow }) {
           />
         </div>
       </div>
+      <UpdateNotice row={row} onPreview={onPreview} />
       {error && <p className="text-xs break-all text-danger">{error}</p>}
       {!!kept.length && (
         <div className="text-xs text-subtle">
           {t('关掉后保留了这些副本：')}
           <KeptList kept={kept} />
-        </div>
-      )}
-      {row.enabled && (
-        <div className="border-t border-line pt-1">
-          <ParamForm row={row} />
-          <StatusPanel row={row} />
         </div>
       )}
       <ConfirmDialog

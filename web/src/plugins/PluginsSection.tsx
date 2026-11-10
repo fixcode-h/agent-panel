@@ -11,8 +11,10 @@ import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Group } from '@/components/settings/parts'
+import { isNewerPlugin } from '@shared/plugins/version'
 import { pluginApi, type InstallPreview, type MarketEntry } from './api'
 import { PluginCard, pluginIcon } from './PluginCard'
+import { UpdateBar } from './PluginUpdates'
 import { loadPlugins, usePlugins } from './registry'
 
 /**
@@ -35,11 +37,14 @@ export function PluginsSection() {
         {!loaded ? (
           <p className="text-body text-subtle">{t('读取中…')}</p>
         ) : rows.length ? (
-          <div className="flex flex-col gap-3">
-            {rows.map((r) => (
-              <PluginCard key={r.manifest.id} row={r} />
-            ))}
-          </div>
+          <>
+            <UpdateBar rows={rows} />
+            <div className="flex flex-col gap-3">
+              {rows.map((r) => (
+                <PluginCard key={r.manifest.id} row={r} onPreview={setPreview} />
+              ))}
+            </div>
+          </>
         ) : (
           <EmptyPanel as="div" size="md" className="text-body text-subtle">
             {t('还没有安装插件。从下面的插件市场挑一个，或者上传插件压缩包。')}
@@ -154,11 +159,9 @@ function Market({ defaultRepo, onPreview }: { defaultRepo: string; onPreview: (p
           {list.map((e) => {
             const have = rows.find((r) => r.manifest.id === e.id)
             const Icon = pluginIcon(e.icon)
-            const label = !have
-              ? t('安装')
-              : have.manifest.version === e.version
-                ? t('重新安装')
-                : t('更新到 {v}', { v: e.version })
+            // 只有市场版本更新才算「升级」：装着的更新（开发版、预发布）时只能重新安装
+            const newer = !!have && isNewerPlugin(e.version, have.manifest.version)
+            const label = !have ? t('安装') : newer ? t('升级到 v{v}', { v: e.version }) : t('重新安装')
             return (
               <Card key={e.id} padding="sm" className="flex flex-col gap-2" data-market-plugin={e.id}>
                 <div className="flex items-center gap-2.5">
@@ -167,14 +170,23 @@ function Market({ defaultRepo, onPreview }: { defaultRepo: string; onPreview: (p
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-body font-semibold">{e.name}</p>
-                    <p className="text-xs text-subtle">v{e.version}</p>
+                    <p className="text-xs text-subtle">
+                      v{e.version}
+                      {have && have.manifest.version !== e.version && (
+                        <span>{t('（装着 v{v}）', { v: have.manifest.version })}</span>
+                      )}
+                    </p>
                   </div>
-                  {have && <Badge tone="success">{t('已安装')}</Badge>}
+                  {newer ? (
+                    <Badge tone="accent">{t('可升级')}</Badge>
+                  ) : (
+                    have && <Badge tone="success">{t('已安装')}</Badge>
+                  )}
                 </div>
                 {e.description && <p className="line-clamp-3 text-xs leading-relaxed text-muted">{t(e.description)}</p>}
                 <Button
                   size="sm"
-                  variant={have ? 'secondary' : 'primary'}
+                  variant={have && !newer ? 'secondary' : 'primary'}
                   className="self-start"
                   onClick={() => void install(e.id)}
                   disabled={!!busy}
