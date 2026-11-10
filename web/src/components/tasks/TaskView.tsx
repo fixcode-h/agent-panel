@@ -1719,8 +1719,18 @@ export function TaskView({
           />
         )
       })()}
-      <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-        <TaskRequestCard task={task} onAnswered={apply} />
+      <div className="relative shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
+        {asksQuestion(task.requests) ? (
+          <TaskRequestCard task={task} onAnswered={apply} />
+        ) : (
+          // 命令、改文件、工具、节点确认这些请求做成输入框上方的悬浮卡（用户 2026-11-10）：浮在消息上面，
+          // 不把输入框往下顶、也不挤掉消息区；提问照旧换掉输入框，所以不浮
+          !!task.requests?.length && (
+            <div className="pointer-events-none absolute inset-x-3 bottom-full z-30 md:inset-x-6">
+              <TaskRequestCard task={task} onAnswered={apply} className="pointer-events-auto shadow-pop" />
+            </div>
+          )
+        )}
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
         {composer && <UserActionPanel task={task} onChanged={apply} />}
         <WorktreeBar task={task} />

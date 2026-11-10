@@ -42,7 +42,15 @@ const ICONS = {
 }
 
 /** 任务页：请求存在任务里，回答后换成新的任务 */
-export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: Task) => void }) {
+export function TaskRequestCard({
+  task,
+  onAnswered,
+  className,
+}: {
+  task: Task
+  onAnswered: (t: Task) => void
+  className?: string
+}) {
   const { agents } = useData()
   const req = task.requests?.[0]
   const a = req && agents.find((x) => x.id === req.agentId)
@@ -55,6 +63,7 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
       actionHint={!isChatMode(task)}
       // 关掉提问：这个问题不回答，终止对话；之后发消息或继续执行时 AI 再接着做
       onClose={async () => onAnswered(await api.stopTask(task.id))}
+      className={className}
     />
   )
 }
