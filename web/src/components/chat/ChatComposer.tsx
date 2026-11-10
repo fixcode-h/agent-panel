@@ -25,6 +25,14 @@ export function presetDraft(key: string, text: string) {
   } catch {}
 }
 
+/** 在某个输入框的草稿后面接一段（插件「发给对话」）：已有内容时空一行再接；存不了时什么都不做 */
+export function appendDraft(key: string, text: string) {
+  try {
+    const old = localStorage.getItem(DRAFT + key) ?? ''
+    localStorage.setItem(DRAFT + key, old.trim() ? `${old.replace(/\s+$/, '')}\n\n${text}` : text)
+  } catch {}
+}
+
 export function useDraft(key: string) {
   const read = (k: string) => {
     if (!k) return ''

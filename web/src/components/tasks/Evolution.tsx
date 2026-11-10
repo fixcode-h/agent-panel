@@ -34,33 +34,19 @@ import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
+import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { IconButton } from '@/components/ui/icon-button'
 import { Textarea } from '@/components/ui/input'
 
-/** 一条建议改前改后的对比：按行标出删掉和加上的 */
+/** 一条建议改前改后的对比：按行标出删掉和加上的，和别处的 diff 一个画法（UnifiedDiff） */
 function DiffView({ before, after }: { before: string; after: string }) {
-  const rows = useMemo(() => lineDiff(before, after), [before, after])
-  return (
-    <pre className="max-h-80 overflow-auto rounded-lg border bg-field py-1.5 font-mono text-footnote leading-[1.6]">
-      {rows.map((r, i) => (
-        <div
-          key={i}
-          className={cn(
-            'px-3 whitespace-pre-wrap break-words',
-            r.kind === 'add' && 'bg-success/12 text-success',
-            r.kind === 'del' && 'bg-danger/10 text-danger line-through decoration-danger/40',
-          )}
-        >
-          <span className="mr-2 inline-block w-3 text-subtle select-none">
-            {r.kind === 'add' ? '+' : r.kind === 'del' ? '-' : ' '}
-          </span>
-          {r.text || ' '}
-        </div>
-      ))}
-    </pre>
+  const rows = useMemo(
+    () => lineDiff(before, after).map((r) => ({ kind: r.kind === 'same' ? ('ctx' as const) : r.kind, text: r.text })),
+    [before, after],
   )
+  return <UnifiedDiff rows={rows} className="max-h-80 overflow-y-auto rounded-lg border bg-field" />
 }
 
 /** 建议改的是哪类对象：工作流、节点还是角色 */

@@ -10,9 +10,10 @@
 import type { BugBlame, BugCollect, Diagnosis, Grade } from './bug-diagnosis-schema.ts'
 import { cardMarkdown, diagnosisCard, earlyFiles, fillDiagnosis, type DiagnosisCard } from './bug-diagnosis-card.ts'
 import { causeInPlan, KIND_TEXT, logFilesOf, phaseOf } from './bug-phase.ts'
-import { prose } from './bug-prose.ts'
-import { codeTerms, marked } from './bug-terms.ts'
+import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
+import { alert, at, px, sec, table } from './bug-md.ts'
+import { fixCardParts, fixSections } from './bug-fix-md.ts'
 import {
   attributionDiffMd,
   codeRefsMd,
@@ -39,42 +40,13 @@ export const blameLabel = (b: BugBlame) =>
     unknown: t('未确定'),
   })[b]
 
-/** 表格单元格：文件名、函数名补上反引号（bug-terms.ts）；竖线和换行会打断表格，换行换成 <br> 保住分行 */
-const cell = (v: string) =>
-  codeTerms(v)
-    .replace(/\|/g, '\\|')
-    .trim()
-    .replace(/\s*\n\s*/g, '<br>') || '—'
-const table = (head: string[], rows: string[][]) =>
-  rows.length
-    ? [
-        `| ${head.join(' | ')} |`,
-        `| ${head.map(() => '---').join(' | ')} |`,
-        ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`),
-      ].join('\n')
-    : ''
-
-/** 一节：这一步要审的用 ##，收起的背景里用 ###（目录里缩在「依据和背景」下面） */
-const sec = (title: string, body: string, level = 2) =>
-  body.trim() ? `${'#'.repeat(level)} ${title}\n${body.trim()}` : ''
-/** 提示块（> [!WARNING] 这类，渲染成带色条的框）：风险、没经同意就改了的文件，不能和普通正文一个颜色 */
-const alert = (kind: 'important' | 'warning' | 'caution', body: string) =>
-  body.trim()
-    ? [
-        `> [!${kind.toUpperCase()}]`,
-        ...body
-          .trim()
-          .split('\n')
-          .map((l) => `> ${l}`.trimEnd()),
-      ].join('\n')
-    : ''
-/** 位置写全路径加行号：渲染时画成文件标记，只显示「文件名:行」，目录在悬停卡片上，点了打开到那一行 */
-const at = (file: string, line?: number) => `\`${file}${line ? `:${line}` : ''}\``
-
-/** Agent 写的一段文字：拆行（prose）、补代码标记、标出要注意的行（bug-terms.ts） */
-const px = (text: string | undefined) => marked(prose(text))
-
-const PHASE_LABEL = () => ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') })
+const PHASE_LABEL = () => ({
+  evidence: t('论证'),
+  cause: t('根因'),
+  plan: t('修复方案'),
+  fix: t('修复'),
+  verify: t('验证'),
+})
 
 /** 复现步骤一步一行，日志在哪、过滤条件跟在步骤后面 */
 function stepsOf(c: BugCollect | undefined): string {
@@ -215,7 +187,10 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
   const phase = phaseOf(d)
   // 快速级别根因和方案合成的一版：根因那几节也是这一版要审的
   const withCause = !!opts.list && causeInPlan(d, opts.list)
-  const card = diagnosisCard(d, opts)
+  const base = diagnosisCard(d, opts)
+  // 修复这一步：一句话写按哪个方案改的，胶囊和要注意按实际改动算（bug-fix-md.ts）
+  const fixed = phase === 'fix' ? fixCardParts(d, opts.list ?? [d]) : undefined
+  const card = fixed ? { ...base, ...fixed, attention: [...base.attention, ...fixed.attention].slice(0, 3) } : base
   const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意') }
   const answers = prev
     ? d.answers
@@ -437,6 +412,10 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       bg(t('位置和调用路径'), stack),
       bg(t('引入点'), attribution),
     ]
+  } else if (phase === 'fix') {
+    const fix = fixSections(d, opts.list ?? [d])
+    main = [...head, ...fix.main, earlySec]
+    back = [...fix.background, bg(t('原文'), quotes)]
   } else {
     main = [
       ...head,
@@ -444,7 +423,10 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       sec(t('出错点修前修后'), fixDiffsMd(d)),
       sec(t('你来验证'), stepsOf(d.collect)),
       sec(t('看到什么算修好了'), outcomesOf(d.collect)),
-      sec(t('改动的文件'), d.files.map((f) => `- \`${f}\``).join('\n')),
+      // 改了哪些代码、为什么这么改在「修复」那一步（同一件事只写在一处）；旧报告没有修复这一步的照旧列文件
+      opts.list?.some((x) => phaseOf(x) === 'fix')
+        ? sec(t('改动的文件'), t('改了哪些代码、为什么这么改，点上面阶段条的「修复」查看。'))
+        : sec(t('改动的文件'), d.files.map((f) => `- \`${f}\``).join('\n')),
       sec(
         t('收尾时会做什么'),
         temp.length

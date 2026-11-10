@@ -22,7 +22,13 @@ export const MAX_REPORT_CARDS = 1
 export const reportCards = (task?: Pick<Task, 'bug' | 'diagnoses'>): Diagnosis[] =>
   task?.bug ? (task.diagnoses ?? []).slice(-MAX_REPORT_CARDS) : []
 
-const PHASE = () => ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), verify: t('验证') })
+const PHASE = () => ({
+  evidence: t('论证'),
+  cause: t('根因'),
+  plan: t('修复方案'),
+  fix: t('修复'),
+  verify: t('验证'),
+})
 
 /** 卡片上的状态标签：等你的用提醒色，不修了用红色，别的淡色 */
 function statusChip(d: Diagnosis): { text: string; cls: string } {

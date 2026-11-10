@@ -286,9 +286,9 @@ await runShard(import.meta.filename, async (api) => {
     else {
       await settle(p)
       await check(p, '审批卡-改文件带差异', ['CartBadge.tsx', 'items.reduce', '这个对话里一直允许'])
-      const del = card.getByText('-  const count = items.length', { exact: true })
-      const cls = (await del.count()) ? await del.getAttribute('class') : ''
-      if (!cls?.includes('text-danger')) errors.push('改文件审批卡：删除行没有标红')
+      // diff 统一画法（web/src/lib/diff-html.ts）：删除的行整行红底（.cdiff-del），记号和代码分开，不带开头的 -
+      if (!(await card.locator('.cdiff-del').filter({ hasText: 'const count = items.length' }).count()))
+        errors.push('改文件审批卡：删除行没有标红')
       const always = card.getByRole('button', { name: '这个对话里一直允许', exact: true })
       if (!(await always.getAttribute('title'))?.includes('目录 src/components/ 里的文件'))
         errors.push('改文件审批卡：「一直允许」的说明没写清放行的范围')

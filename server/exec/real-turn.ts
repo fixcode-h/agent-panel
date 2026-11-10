@@ -85,7 +85,7 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug-quotes.ts）
-    bugSource: ctx.task.bug ? bugSource(workDirOf(ctx.task, ctx.project)) : undefined,
+    bugSource: ctx.task.bug ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef) : undefined,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
