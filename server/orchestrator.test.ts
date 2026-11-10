@@ -812,6 +812,7 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
     const r = call.orch!.diagnose!({
       level: 'quick',
       attribution: { category: 'recent', change: 'a1b2', how: 'blame' },
+      rating: { tier: 'low', percent: 90 },
       symptom: '超时后一直转圈',
       repro: '',
       location: 'login.ts:40',

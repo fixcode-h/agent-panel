@@ -48,6 +48,7 @@ const input = (over: Partial<DiagnosisInput> = {}): DiagnosisInput => ({
     title: '重试改成按秒',
     how: 'blame',
   },
+  rating: { tier: 'low', percent: 95, why: '写错了常量名' },
   ...over,
 })
 let n = 0
@@ -448,6 +449,12 @@ test('按级别检查（ADR 0046）：标准级别的根因要变更时间线、
     submitDiagnosis(tk, input({ attribution: undefined }), id).info,
     /attribution 要写版本归因/,
     '找到根因就要写引入点；查不到写 unknown 加说明',
+  )
+  // 根因评级、提交人（用户 2026-11-10）：等级和把握必填；责任在某次代码改动上的要给出提交或提交人
+  assert.match(submitDiagnosis(tk, standard({ rating: undefined }), id).info, /rating 要写根因评级/)
+  assert.match(
+    submitDiagnosis(tk, standard({ attribution: { category: 'recent', how: 'blame' } }), id).info,
+    /要写引入的那次提交.*提交人/,
   )
   ok(submitDiagnosis(tk, standard({ attribution: { category: 'unknown', how: 'none', note: '仓库没有历史' } }), id))
   ok(decideDiagnosis(tk, 1, yes, id))

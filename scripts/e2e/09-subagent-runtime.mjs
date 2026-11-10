@@ -1026,6 +1026,7 @@ await runShard('子对话运行与监管', async (api) => {
         title: '角标改成读快照',
         how: 'blame',
       },
+      rating: { tier: 'mid', percent: 90, why: '并发更新没用函数式写法' },
     }
     await call('POST', `/tasks/${kid.id}/messages`, {
       text: `SUBMIT_DIAGNOSIS:${JSON.stringify(diag)}`,

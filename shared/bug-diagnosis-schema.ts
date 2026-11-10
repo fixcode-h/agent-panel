@@ -57,10 +57,24 @@ export const BugAttribution = z.object({
   how: z.enum(['blame', 'bisect', 'diff', 'log', 'none']).catch('none').default('none'),
   confidence: z.enum(['high', 'medium', 'low']).catch('low').default('low'),
   note: str(2000),
+  /** 作者、日期、标题是面板从版本记录里取的（不是 Agent 写的）：报告上标「已核对」 */
+  verified: z.boolean().optional().catch(undefined),
   /** 引入那次改动里出错点那几行的 diff 原文：面板交报告时用版本管理取（git show），Agent 不用写 */
   diff: z.string().max(8000).optional().catch(undefined),
 })
 export type BugAttribution = z.infer<typeof BugAttribution>
+
+/**
+ * 根因评级（用户 2026-11-10 定）：tier 是这个错在哪个层次——low 低级（粗心疏漏：写错名字、漏判空、漏改一处）、
+ * mid 中级（逻辑和边界：条件、顺序、状态没想全）、high 高级（设计、并发时序、跨模块契约）；
+ * percent 是对根因的把握（0–100）。决策卡上醒目显示，和引入这个问题的提交人放在一起
+ */
+export const BugRating = z.object({
+  tier: z.enum(['low', 'mid', 'high']).catch('mid').default('mid'),
+  percent: z.coerce.number().int().min(0).max(100).catch(0).default(0),
+  why: str(500),
+})
+export type BugRating = z.infer<typeof BugRating>
 
 /** 方案比较一项的判定 */
 export const Grade = z.enum(['good', 'cost', 'bad'])
@@ -208,6 +222,7 @@ export const BugCaseFields = {
   stack: z.array(BugHop).catch([]).default([]),
   timeline: z.array(BugTimelineItem).catch([]).default([]),
   attribution: BugAttribution.optional().catch(undefined),
+  rating: BugRating.optional().catch(undefined),
   consistency: z
     .array(z.object({ observation: str(1000), explanation: str(2000) }))
     .catch([])

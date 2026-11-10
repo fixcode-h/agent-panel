@@ -58,7 +58,7 @@ const CASE_PROPS = {
           '责任类别：current 本次改动、recent 近期变更、legacy 历史遗留、external 外部依赖、environment 环境配置、data 数据、user 用户操作、unknown 未确定',
       },
       change: text('提交号 / CL / rev'),
-      author: text('作者（照版本记录原文）'),
+      author: text('提交人（照版本记录原文；Git 仓库里面板会按提交号再取一次核对）'),
       date: text('日期'),
       title: text('那次改动的标题'),
       how: {
@@ -70,6 +70,28 @@ const CASE_PROPS = {
       note: text('依据；unknown 时写试过什么、还缺什么'),
     },
     required: ['category', 'how'],
+  },
+  rating: {
+    type: 'object',
+    description:
+      '根因评级（根因证实后必填，报告最上面醒目显示）：tier 是这个错在哪个层次，percent 是你对根因的把握（0–100 的整数）',
+    properties: {
+      tier: {
+        type: 'string',
+        enum: ['low', 'mid', 'high'],
+        description:
+          'low 低级：粗心疏漏（写错名字、漏判空、漏改一处、复制粘贴没改全）；mid 中级：逻辑和边界（条件、顺序、状态没想全）；high 高级：设计、并发时序、跨模块契约',
+      },
+      percent: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 100,
+        description:
+          '把握：证据链三环都有原文、复现用例改前失败的写 90 以上；有一环靠推断的 60–85；还有解释不了的现象不超过 60',
+      },
+      why: text('一句话：为什么是这个等级、把握为什么是这个数（缺哪条证据）'),
+    },
+    required: ['tier', 'percent'],
   },
   consistency: {
     type: 'array',

@@ -916,6 +916,7 @@ await runShard(import.meta.filename, async (api) => {
           confidence: 'high',
           note: 'blame 指到这次提交，前一版跑复现用例通过',
         },
+        rating: { tier: 'mid', percent: 92, why: '重构时没想到 left=0 这个边界；证据链三环都有原文' },
         consistency: [{ observation: '只在删最后一件时出现', explanation: '只有 left=0 时提前 return' }],
         impact: [{ area: '购物车角标', effect: '删除后刷新', verify: 'store.test.ts' }],
         options: [
@@ -1038,6 +1039,11 @@ await runShard(import.meta.filename, async (api) => {
       // 决策卡在最上面（用户 2026-11-07 确认的设计稿）：一句话结论、要你做的；背景收在「依据和背景」里
       if (!(await dlg.locator('[data-diagnosis-card]').getByText('选方案 A：去掉提前 return').count()))
         errors.push('诊断报告：最上面没有决策卡的一句话结论')
+      // 根因等级、把握百分比、提交人在决策卡上醒目显示（用户 2026-11-10）
+      const strip = dlg.locator('[data-cause-strip]')
+      for (const want of ['中级', '92', '李四', 'c0ffee1'])
+        if (!(await strip.getByText(want, { exact: false }).count()))
+          errors.push(`诊断报告：决策卡上没有显示「${want}」（根因等级 / 把握 / 提交人）`)
       if (!(await dlg.getByRole('button', { name: /依据和背景/ }).count()))
         errors.push('诊断报告：没有收起的「依据和背景」')
       if (!(await dlg.getByText('具体改动').count())) errors.push('诊断报告：方案页没有「具体改动」')

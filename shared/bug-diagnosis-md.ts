@@ -7,8 +7,15 @@
  * 能成表的用表格，一段里写了 ①②③、1) 2)、← 链的拆成一行一条（prose），文件名、函数名补代码标记（bug-terms.ts）。
  * 小节名是界面文案，走 t()
  */
-import type { BugBlame, BugCollect, Diagnosis, Grade } from './bug-diagnosis-schema.ts'
-import { cardMarkdown, diagnosisCard, earlyFiles, fillDiagnosis, type DiagnosisCard } from './bug-diagnosis-card.ts'
+import type { BugCollect, Diagnosis, Grade } from './bug-diagnosis-schema.ts'
+import {
+  blameLabel,
+  cardMarkdown,
+  diagnosisCard,
+  earlyFiles,
+  fillDiagnosis,
+  type DiagnosisCard,
+} from './bug-diagnosis-card.ts'
 import { causeInPlan, KIND_TEXT, logFilesOf, phaseOf } from './bug-phase.ts'
 import { codeTerms } from './bug-terms.ts'
 import { t } from './i18n.ts'
@@ -27,18 +34,8 @@ import {
   reproKindMd,
 } from './bug-quotes-md.ts'
 
-/** 责任类别在界面上的说法 */
-export const blameLabel = (b: BugBlame) =>
-  ({
-    current: t('本次改动'),
-    recent: t('近期变更'),
-    legacy: t('历史遗留'),
-    external: t('外部依赖'),
-    environment: t('环境配置'),
-    data: t('数据'),
-    user: t('用户操作'),
-    unknown: t('未确定'),
-  })[b]
+/** 责任类别在界面上的说法：定义在决策卡那边（卡片也要用），这里照旧导出 */
+export { blameLabel }
 
 const PHASE_LABEL = () => ({
   evidence: t('论证'),

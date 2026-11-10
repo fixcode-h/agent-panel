@@ -148,6 +148,20 @@ test('引入点：取引入那次改动里碰到出错点的那一段 diff', () 
   assert.doesNotMatch(c.attribution!.diff!, /\+y/, '别的段落不带')
 })
 
+test('引入点：提交人以版本记录为准，取到就覆盖 Agent 写的并标已核对；取不到保留原样（用户 2026-11-10）', () => {
+  const attribution = { category: 'recent', change: 'abc1234', author: '写错的名字', how: 'blame' }
+  const c = base({ attribution })
+  const commit = () => ({ author: '王五', date: '2026-11-01', title: '运费改成可空' })
+  assert.equal(resolveSources(c, ctx({ src: { ...src, commit } })).error, '')
+  assert.deepEqual(
+    [c.attribution!.author, c.attribution!.date, c.attribution!.title, c.attribution!.verified],
+    ['王五', '2026-11-01', '运费改成可空', true],
+  )
+  const c2 = base({ attribution })
+  assert.equal(resolveSources(c2, ctx({ src: { ...src, commit: () => undefined } })).error, '')
+  assert.deepEqual([c2.attribution!.author, c2.attribution!.verified], ['写错的名字', undefined])
+})
+
 test('日志命中表：按 [排查-…] L<n> 数，L1 不算进 L12；没出现的加粗；结果怎么判自动对上', () => {
   const plan = [
     { id: 'L1', file: 'src/load.js', line: 15, fn: '', print: "console.log('[排查-金额] L1')", hypothesis: 'H1' },
