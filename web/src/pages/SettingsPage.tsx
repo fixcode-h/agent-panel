@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useId, useMemo, useRef, useState, type Keybo
 import { toast } from '@/lib/toast'
 import {
   ArrowUpCircle,
+  SlidersHorizontal,
   Cpu,
   ImageIcon,
   FlaskConical,
@@ -57,6 +58,7 @@ import { Switch } from '@/components/ui/switch'
 import { Modal } from '@/components/ui/modal'
 import { Badge } from '@/components/ui/badge'
 import { NavRow } from '@/components/ui/sidebar'
+import * as pp from '@/plugins/PluginParamsNav'
 import { Kbd } from '@/components/ui/kbd'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { StylesSettings } from '@/components/settings/StylesSettings'
@@ -99,6 +101,9 @@ const LocalImageSection = lazy(() =>
   import('@/components/settings/LocalImageSection').then((m) => ({ default: m.LocalImageSection })),
 )
 const PluginsSection = lazy(() => import('@/plugins/PluginsSection').then((m) => ({ default: m.PluginsSection })))
+const PluginParamsSection = lazy(() =>
+  import('@/plugins/PluginParams').then((m) => ({ default: m.PluginParamsSection })),
+)
 const RemoteSection = lazy(() =>
   import('@/components/settings/RemoteSection').then((m) => ({ default: m.RemoteSection })),
 )
@@ -141,7 +146,7 @@ interface Section {
 const pickLabel = pickButtonLabel
 
 // 左栏按分组列出，组内顺序就是这里的顺序
-const sectionsFor = (clis: CliDefinition[]): Section[] => [
+const sectionsFor = (clis: CliDefinition[], plugins: Section[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'chat-memory', label: t('关于我与记忆'), icon: Brain, group: t('通用') },
@@ -168,6 +173,9 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
   { id: 'plugins', label: t('插件'), icon: Puzzle, group: t('扩展') },
+  // 开着的插件各占一页，和 Agent 一样左栏一项、二级列表分开展示（PluginParamsNav.tsx）
+  { id: pp.PLUGIN_PARAMS, label: t('插件参数'), icon: SlidersHorizontal, group: t('扩展') },
+  ...plugins,
   { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
   { id: 'usage', label: t('用量统计'), icon: Gauge, group: t('系统') },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle, group: t('系统') },
@@ -240,7 +248,8 @@ function SettingsBody({
   // 已接入的排在前面；同一组里按拖动过的顺序，没拖过的按名字比较
   const ordered = orderClis(CLIS, cliOrder, (c) => isReady(c.id))
   // 在线演示没有服务端，外网访问和网络代理的开关不显示
-  const SECTIONS = sectionsFor(ordered).filter((s) => !(demo && (s.id === 'remote' || s.id === 'network')))
+  const pluginPages = pp.usePluginParamPages()
+  const SECTIONS = sectionsFor(ordered, pluginPages).filter((s) => !(demo && (s.id === 'remote' || s.id === 'network')))
   // 拖动只改同一组里的顺序，不能跨过启用和停用的分界
   const moveCli = (id: string, to: number) =>
     setCliOrder((o) => {
@@ -462,6 +471,7 @@ function SettingsBody({
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
+  const inPlugin = pp.pluginParamsPage(cur.id)
   // 「部署」那份和这一版不同时，左栏的「Agent」和二级列表的「部署」都亮点（侧栏「设置」读同一份派生值）
   const deployDot = deployedUpdateHint(useSkillUpdates())
   // 提示挂在 aria-describedby 上：放进按钮里会被算进可访问名称，按名字找这一项就找不到了
@@ -485,7 +495,12 @@ function SettingsBody({
   const searchRef = useRef<HTMLInputElement>(null)
   const terms = searchTerms(query)
   const searching = terms.length > 0
-  const sectionPath = (s: Section) => (cliPage(s) && s.id !== 'models' ? `Agent › ${s.label}` : s.label)
+  const sectionPath = (s: Section) =>
+    cliPage(s) && s.id !== 'models'
+      ? `Agent › ${s.label}`
+      : pp.pluginParamsSub(s.id)
+        ? `${t('插件参数')} › ${s.label}`
+        : s.label
   const sectionIcon = (s: Section) =>
     s.cli ? (
       <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ background: cliColor(s.cli.id) }} />
@@ -537,7 +552,12 @@ function SettingsBody({
   const hitCount = (id: string) => hitGroups.find((g) => g.section === id)?.items.length ?? 0
   // 左栏每一项命中几条：Agent 那一项合计默认 Agent、部署、API 和各个 CLI 页
   const navHits = (s: Section) =>
-    (s.id === 'models' ? SECTIONS.filter(cliPage) : [s]).reduce((n, x) => n + hitCount(x.id), 0)
+    (s.id === 'models'
+      ? SECTIONS.filter(cliPage)
+      : s.id === pp.PLUGIN_PARAMS
+        ? SECTIONS.filter((x) => pp.pluginParamsPage(x.id))
+        : [s]
+    ).reduce((n, x) => n + hitCount(x.id), 0)
   // 换了搜索词从第一项开始选
   useEffect(() => setHit(0), [query])
   const pick = (it: SettingsItem) => {
@@ -595,10 +615,11 @@ function SettingsBody({
           <SettingsSearchBox value={query} onChange={setQuery} onKeyDown={onSearchKey} inputRef={searchRef} />
         </div>
         <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto p-2 md:min-h-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:px-2.5 md:pt-0 md:pb-3">
-          {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s, i, list) => {
+          {SECTIONS.filter((s) => (!cliPage(s) || s.id === 'models') && !pp.pluginParamsSub(s.id)).map((s, i, list) => {
             // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
             // 搜索时内容区是结果列表，左栏不再标当前页
-            const on = !searching && (s.id === 'models' ? inCli : s.id === cur.id)
+            const on =
+              !searching && (s.id === 'models' ? inCli : s.id === pp.PLUGIN_PARAMS ? inPlugin : s.id === cur.id)
             const head = s.group && s.group !== list[i - 1]?.group
             return (
               <div key={s.id} className="contents">
@@ -617,7 +638,7 @@ function SettingsBody({
                 <NavRow
                   onClick={() => {
                     setQuery('')
-                    onSection(s.id)
+                    onSection(s.id === pp.PLUGIN_PARAMS ? pp.pluginParamsEntry(pluginPages) : s.id)
                   }}
                   on={on}
                   aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
@@ -769,6 +790,8 @@ function SettingsBody({
           })}
         </nav>
       )}
+
+      {inPlugin && !searching && <pp.PluginParamsNav pages={pluginPages} current={cur.id} onSection={onSection} />}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-4 md:px-9 md:pt-6">
@@ -1396,6 +1419,7 @@ function SettingsBody({
                 <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
               )}
               {cur.id === 'plugins' && <PluginsSection />}
+              {inPlugin && <PluginParamsSection section={cur.id} />}
               {cur.id === 'data' && <DataSection />}
               {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
               {cur.id === 'deploy' && <DeploySection />}

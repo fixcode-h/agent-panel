@@ -78,4 +78,15 @@ export const EN_PLUGINS: Record<string, string> = {
   '升级到 v{v}': 'Upgrade to v{v}',
   可升级: 'Update available',
   '（装着 v{v}）': ' (installed v{v})',
+  插件参数: 'Plugin settings',
+  已开启的插件: 'Enabled plugins',
+  加载出错: 'Failed to load',
+  还没有开启的插件: 'No plugins enabled',
+  '还没有开启的插件。先在「插件」页安装并打开插件，这里就会列出它的参数。':
+    'No plugins are enabled. Install and turn on a plugin on the Plugins page, and its settings will appear here.',
+  去插件页: 'Go to Plugins',
+  参数设置: 'Settings',
+  '这个插件没有可配置的参数。': 'This plugin has no settings.',
+  运行状态: 'Status',
+  '配置插件 {name} 的参数': 'Configure {name}',
 }
