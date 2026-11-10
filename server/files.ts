@@ -42,6 +42,7 @@ import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
 import { revealItem } from './open.ts'
 import { IMAGE_TYPES } from './uploads.ts'
+import { sheetsOf } from './xlsx.ts'
 import { t } from '../shared/i18n.ts'
 import { fixApplicable, replaceFix, type FixApplyItem, type FixApplyResult } from '../shared/diagnosis.ts'
 
@@ -449,8 +450,11 @@ export async function readInDir(dir: string, want: string): Promise<FileContent>
   const head = buf.subarray(0, MAX_CONTENT)
   const size = info.size
   const mtime = info.mtime.toISOString()
-  if (head.includes(0))
-    return { path: norm(want), exists: true, binary: true, content: '', truncated: false, size, mtime }
+  if (head.includes(0)) {
+    // 表格文件解析成各张表给弹窗当表格看；别的二进制文件不给内容
+    const sheets = sheetsOf(full, buf)
+    return { path: norm(want), exists: true, binary: true, sheets, content: '', truncated: false, size, mtime }
+  }
   const text = head.toString('utf8')
   return {
     path: norm(want),

@@ -11,7 +11,7 @@ const KINDS: [FileKind, RegExp][] = [
   ['image', /^(png|jpe?g|gif|webp|svg|bmp|ico|tiff?|heic|avif|psd)$/],
   ['sheet', /^(xlsx?|xlsm|ods|csv|tsv|numbers)$/],
   ['doc', /^(docx?|pdf|pptx?|odt|odp|rtf|key|pages)$/],
-  ['data', /^(json|jsonc|ya?ml|toml|ini|xml|lock|env|cfg|conf|proto|graphql)$/],
+  ['data', /^(json|jsonc|jsonl|ndjson|uproject|uplugin|ya?ml|toml|ini|xml|lock|env|cfg|conf|proto|graphql)$/],
   ['text', /^(md|mdx|txt|rst|log|markdown)$/],
   ['media', /^(mp3|wav|ogg|flac|m4a|aac|mp4|mov|m4v|webm|mkv|avi)$/],
   ['archive', /^(zip|7z|rar|tar|gz|tgz|bz2|xz)$/],
@@ -51,14 +51,16 @@ export function fileKind(path: string, dir = false): FileKind {
 }
 
 /**
- * 面板自己能预览的文字类型：单击在面板里看（用户 2026-11-05 定的：md、cpp 这类面板能看的就在面板里打开），
- * 其余（xlsx、docx、pdf……）交给系统默认程序。只按扩展名判断，点之前就知道去哪，不用先请求一次
+ * 面板自己能预览的类型：单击在面板里看（用户 2026-11-05 定的：md、cpp 这类面板能看的就在面板里打开），
+ * 其余（docx、pdf、老的 xls……）交给系统默认程序。只按扩展名判断，点之前就知道去哪，不用先请求一次。
+ * xlsx / xlsm 不是文字，但后端会解析成表格（server/xlsx.ts），也在面板里看
  */
 const TEXT = new Set(
   (
     'ts tsx js jsx mjs cjs vue svelte py go rs java kt kts swift c h cc cpp cxx hpp hh inl cs rb php lua sh bash zsh ' +
     'ps1 psm1 bat cmd html htm css scss less sql dart gradle cmake proto graphql ' +
-    'json jsonc json5 yaml yml toml ini cfg conf env xml plist csv tsv lock ' +
+    'json jsonc json5 jsonl ndjson uproject uplugin yaml yml toml ini cfg conf env xml plist csv tsv lock ' +
+    'xlsx xlsm ' +
     'md mdx markdown txt rst log diff patch gitignore editorconfig'
   ).split(' '),
 )

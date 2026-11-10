@@ -279,6 +279,46 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
     }
+    // 表格和树形：CSV 阅读时是表格，xlsx 是解析好的各张表（能切表），JSON 能切到树形
+    {
+      const dlg = p.getByRole('dialog')
+      const closeDlg = async () => {
+        await p.keyboard.press('Escape')
+        await dlg.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      }
+      await row('data').click()
+      await row('data/products.csv').click()
+      await dlg
+        .getByRole('cell', { name: '机械键盘' })
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('文件窗口：CSV 没有按表格显示'))
+      await check(p, '文件窗口-CSV表格', ['机械键盘', '表格'])
+      await closeDlg()
+      await row('data/stock.xlsx').click()
+      await dlg
+        .getByRole('tab', { name: /补货记录/ })
+        .click({ timeout: 8000 })
+        .catch(() => errors.push('文件窗口：xlsx 没有列出各张表'))
+      await dlg
+        .getByRole('cell', { name: '小林' })
+        .waitFor({ timeout: 3000 })
+        .catch(() => errors.push('文件窗口：xlsx 切到第二张表没有显示它的内容'))
+      await check(p, '文件窗口-xlsx表格', ['补货记录', '小林'])
+      await closeDlg()
+      await row('package.json').click()
+      await dlg
+        .getByRole('radio', { name: '树形' })
+        .click({ timeout: 8000 })
+        .catch(() => errors.push('文件窗口：JSON 文件没有「树形」'))
+      await dlg
+        .getByRole('button', { name: '收起' })
+        .first()
+        .waitFor({ timeout: 3000 })
+        .catch(() => errors.push('文件窗口：JSON 切到树形没有出现可折叠的节点'))
+      await check(p, '文件窗口-JSON树形', ['devDependencies'])
+      await closeDlg()
+      await row('data').click()
+    }
     // 文件行右键：出现菜单项，但文件没有被打开（没有弹出文件窗口）
     await row('package.json').click({ button: 'right' })
     await menu()

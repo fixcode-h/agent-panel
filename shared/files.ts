@@ -64,10 +64,20 @@ export interface ContentSearch {
   truncated: boolean
 }
 
+/** 表格文件里的一张表：每行是各列的文字，行尾的空列不补齐 */
+export interface SheetData {
+  name: string
+  rows: string[][]
+  /** 表太大，只给了前面一部分 */
+  truncated?: boolean
+}
+
 export interface FileContent {
   path: string
   exists: boolean
   binary?: boolean
+  /** 表格文件（xlsx）解析出来的各张表：有它时虽然是二进制文件，文件弹窗按表格显示 */
+  sheets?: SheetData[]
   content: string
   truncated: boolean
   /** 文件大小（字节）；文件不存在时没有 */
