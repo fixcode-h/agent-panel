@@ -8,6 +8,7 @@ import type { PluginConfig, PluginInfo } from '@shared/plugins/types'
 import { taskPlugin } from '@shared/task'
 import type { Task } from '@shared/schema'
 import { request } from '@/lib/api'
+import { pickFileViewer } from './file-viewers'
 import { pruneUpdates } from './updates'
 import type { ActivateWeb, DesignMode, PluginPage, TaskTab, WebPlugin } from './sdk'
 
@@ -130,3 +131,6 @@ export const useTaskTabs = (task: Task | undefined): TaskTab[] => {
   const s = usePlugins()
   return task ? [...s.web.values()].flatMap((p) => p.taskTabs ?? []).filter((x) => x.when(task)) : []
 }
+
+/** 开着的插件里能看这个文件的查看器（按扩展名）；没有就照面板原来的规则打开 */
+export const fileViewerFor = (path: string, s: State = state) => pickFileViewer(s.web.entries(), path)

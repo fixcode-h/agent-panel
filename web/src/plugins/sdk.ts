@@ -53,10 +53,36 @@ export interface PluginPage {
   Page: ComponentType<{ path: string }>
 }
 
+/**
+ * 插件能看的一类文件（2026-11-10 加的，旧面板没有这一项时照旧交给系统默认程序）：对话里的文件标记、文件浏览页点到这些
+ * 扩展名的文件时，面板弹出和文件预览同一个外壳的弹窗（标题栏是路径），内容交给 Viewer 画。
+ * 面板自己读不了的二进制格式（.uasset 这类）由懂它的插件来读。
+ */
+export interface FileViewer {
+  id: string
+  /** 认领的扩展名：小写、不带点（uasset） */
+  exts: string[]
+  /** 弹窗标题栏的图标，不给用文件图标 */
+  icon?: ComponentType<{ className?: string }>
+  Viewer: ComponentType<FileViewerProps>
+}
+
+export interface FileViewerProps {
+  /** 本机上的完整路径 */
+  path: string
+  /** 文件所在的面板项目；聊天对话、项目外的附件没有 */
+  projectId?: string
+  /** 从哪个对话点开的；文件浏览页没有 */
+  taskId?: string
+  /** 关掉弹窗（查看器里跳去别的页面之前调） */
+  close: () => void
+}
+
 export interface WebPlugin {
   designModes?: DesignMode[]
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
+  fileViewers?: FileViewer[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>
 }
