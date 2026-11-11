@@ -281,10 +281,10 @@ export function buildProjectInitPrompt(opts: {
     `## 第二步：写文档
 有 project-documentation 技能时按它的「初始化」一节和 templates.md 的骨架做；没有时按下面的要求：
 1. **确定文档根 DOC_ROOT**：项目里已有 docs/、doc/ 就用它；没有用 <项目>/docs；P4 / SVN 项目（目录或上层有 .p4config / .p4ignore / .svn）按项目设置里「文档」角色的文档根：默认放到项目外、同一工程各分支共用的文档根（面板在提示里给出路径，最早是项目上一级目录下的 ProjectDoc/docs），那里的文档不做 P4 / SVN 操作；选了项目内 docs 时用 <项目>/docs。提示里有「文档根」一段时以它为准。
-2. **AGENTS.md**（项目根）：不存在就新建，包含一句话项目说明、技术栈和目录速览、硬规则（从现有约定和检查配置里读出来的）、常用命令（只写项目里真实存在的命令）、文档地图（指向 DOC_ROOT 的 README 和 MODULE-MAP）、提交前要过的检查。已存在就保留原有内容和结构，只补缺的段落、修正和项目实际不符的命令和路径。整份控制在 150 行以内。
+2. **AGENTS.md**（项目根）：不存在就新建，包含一句话项目说明、技术栈和目录速览、硬规则（从现有约定和检查配置里读出来的）、常用命令（只写项目里真实存在的命令）、文档地图（指向 DOC_ROOT 的 README）、提交前要过的检查。已存在就保留原有内容和结构，只补缺的段落、修正和项目实际不符的命令和路径。整份控制在 150 行以内。
 3. **CLAUDE.md**：不存在时新建，只写一行 \`@AGENTS.md\`；已存在但没引用 AGENTS.md 时在末尾加一行 \`@AGENTS.md\`，原有内容不删。
-4. **DOC_ROOT/README.md**：项目是什么、快速开始、文档索引。**DOC_ROOT/MODULE-MAP.md**：模块表（模块、路径、职责、入口、文档链接、状态）。已有的人工文档不覆盖，只补缺的。
-5. **模块文档**：按职责选出 3–15 个模块（代码都在 src/ 下就往下一层；monorepo 按包；UE 按 Source/<模块> 和 Plugins/<插件>），各建 DOC_ROOT/modules/<模块>/README.md，开头写状态行（status: inferred、source_paths、entry、analyzed_at），正文写职责、入口、依赖、回归验证和待确认项。小项目（不到 3 个职责块）不拆模块。不建 bugs.md。
+4. **DOC_ROOT/README.md**：项目是什么、快速开始、文档索引。已有的人工文档不覆盖，只补缺的。
+5. **不写模块文档**：不建 DOC_ROOT/modules/、MODULE-MAP.md 和 bugs.md，也不为了写它们去读各模块的源码；模块第一次要改时由执行的 Agent 按需补。已有的不动。
 6. 没有内容依据的目录和文件（adr/、tech/、runbooks/、openspec/、CONTEXT.md）不建空的。推断的内容标「（待确认）」。
 **只许写上面这些文档文件。不许改源码和配置、不许安装依赖、不许提交或推送、不许执行有副作用的命令。**`,
     `## 第三步：评估工作流和设置
