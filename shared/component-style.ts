@@ -41,6 +41,21 @@ export const BG: Record<string, string> = {
 const tint = (pct: number, base = 'var(--fg)') => `color-mix(in oklab, ${base} ${pct}%, transparent)`
 
 const WEIGHT = { '400': '400', '500': '500', '600': '600' }
+/**
+ * 表格表头行的颜色：取主题里的几种色相，和页面底色混成不透明的浅底（浓度另调），
+ * 表头钉在顶上时下面滚过去的格子不会透出来；换配色、切深浅色都跟着变
+ */
+const HUE: Record<string, string> = {
+  violet: 'var(--peer)',
+  teal: 'var(--run)',
+  amber: 'var(--warning)',
+  blue: 'var(--ctx-messages)',
+  green: 'var(--success)',
+  red: 'var(--danger)',
+  orange: 'var(--accent)',
+  gray: 'var(--fg)',
+}
+const hue = (def: string) => color(def, HUE)
 const BORDER = bool(true, '1px', '0px')
 
 /**
@@ -92,6 +107,21 @@ export const COMP_SPEC = {
   modal: { radius: px(14, 0, 28), bg: color('window', { window: 'var(--window)', ...BG }), border: BORDER },
   sheet: { radius: px(14, 0, 24), bg: color('bg') },
   popover: { radius: px(10, 0, 24), bg: color('pop') },
+  /** 数据表格（文件弹窗里的 xlsx / CSV，web/src/components/files/SheetTable.tsx）：表头每种行一个颜色 */
+  grid: {
+    rowH: px(26, 20, 40),
+    font: pick('mono', { mono: 'var(--app-mono)', sans: 'var(--app-sans)' }),
+    lines: pick('all', { all: '1px', rows: '0px' }),
+    tint: pick('mid', { low: '8%', mid: '14%', high: '22%' }),
+    modifier: hue('violet'),
+    side: hue('teal'),
+    type: hue('amber'),
+    name: hue('blue'),
+    comment: hue('gray'),
+    other: hue('gray'),
+    nameBold: bool(true, '600', '500'),
+    divider: bool(true, '2px', '1px'),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

@@ -151,6 +151,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (await p.evaluate(() => document.getElementById('md-style')?.textContent))
       errors.push('设置-组件：恢复本组后 #md-style 应该是空的')
   }
+  // 数据表格：样例自动认出 5 行表头；微调里改修饰行的颜色立刻写进 #md-style
+  {
+    const spec = p.getByText('SheetTable · SheetHeaderBar', { exact: true }).locator('xpath=../..')
+    await spec.scrollIntoViewIfNeeded()
+    await spec
+      .getByText(/表头 5 行/)
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('设置-组件：数据表格样例没有认出 5 行表头'))
+    await spec.getByRole('button', { name: '微调', exact: true }).click()
+    await spec.getByRole('combobox', { name: '修饰行' }).click()
+    await p.getByRole('option', { name: '红' }).click()
+    if (
+      !(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes(
+        '--c-grid-modifier:var(--danger)',
+      )
+    )
+      errors.push('设置-组件：修饰行改成红色后 #md-style 里应该有 --c-grid-modifier')
+    await check(p, '设置-组件-数据表格', ['修饰行', '字段名行', '表头底色浓度'])
+    await spec.getByRole('button', { name: '恢复本组' }).click()
+  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新

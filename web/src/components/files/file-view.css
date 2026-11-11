@@ -28,12 +28,3 @@ mark.file-hit-current,
 .file-md-lazy > .chat-md > :is(pre, .md-code, table, .md-mermaid) {
   contain-intrinsic-size: auto none auto 12em;
 }
-
-/* 表格里搜索命中的格子：和代码里的命中同一套黄底，当前那一格深一档带描边 */
-.sheet-hit {
-  background: color-mix(in srgb, var(--warning) 28%, transparent);
-}
-.sheet-hit-current {
-  background: color-mix(in srgb, var(--warning) 60%, transparent);
-  box-shadow: inset 0 0 0 1px var(--warning);
-}

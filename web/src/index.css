@@ -1133,6 +1133,18 @@ body,
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
+  --c-grid-rowH: 26px;
+  --c-grid-font: var(--app-mono);
+  --c-grid-lines: 1px;
+  --c-grid-tint: 14%;
+  --c-grid-modifier: var(--peer);
+  --c-grid-side: var(--run);
+  --c-grid-type: var(--warning);
+  --c-grid-name: var(--ctx-messages);
+  --c-grid-comment: var(--fg);
+  --c-grid-other: var(--fg);
+  --c-grid-nameBold: 600;
+  --c-grid-divider: 2px;
 }
 
 /*
