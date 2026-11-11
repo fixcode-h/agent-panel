@@ -1,3 +1,4 @@
+import { waitingAfter } from '../../shared/child-after.ts'
 import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
@@ -520,9 +521,9 @@ export function createRun(sc: TasksScope) {
                   : cur.summary || sc.lastReply(cur),
               at: cur.updatedAt,
               doing: childActivityText(doing),
-              waiting: childWaitText(
-                childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) }),
-              ),
+              waiting: waitingAfter(cur)
+                ? `排在 ${cur.waitAfter!.map((id) => `「${kids.find((x) => x.id === id)?.title ?? id}」`).join('、')} 之后，它们合回后面板自动启动`
+                : childWaitText(childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) })),
               lastActivityAt: childLastActivity(cur),
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
@@ -531,7 +532,7 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level }) => {
+        createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level, after }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
           // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
           const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
@@ -545,6 +546,7 @@ export function createRun(sc: TasksScope) {
             fix,
             edits,
             level,
+            after,
           })
           return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },

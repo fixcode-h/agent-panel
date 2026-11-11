@@ -127,6 +127,10 @@ export const EN_ALERTS: Record<string, string> = {
   // 面板写进对话的警告
   'Agent 没有响应，面板重启了它': 'The agent stopped responding, so the panel restarted it',
   '卡住了，已由新的子对话接手': 'Got stuck; a new sub-conversation took over',
+  等前置子对话合回后自动开始: 'Starts automatically once the sub-conversations it waits for are merged back',
+  '排在{list}之后：它们合回后面板自动开始，要改文件时从合回后的提交开独立分支。':
+    'Queued after {list}: the panel starts it once they are merged back, and any separate branch is opened from the merged commit.',
+  启动排在后面的子对话时出错: 'Couldn’t start the sub-conversation queued after the others',
   '已自动续接，从中断的地方继续了': 'Resumed automatically from where it stopped',
   '续接不上，已开新会话重新执行': 'Couldn’t resume; reran in a new session',
   '已自动重试，继续做完了': 'Retried automatically and it finished',
