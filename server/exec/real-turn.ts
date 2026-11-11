@@ -27,6 +27,7 @@ import { steers, waitChat } from './steering.ts'
 import { t } from '../../shared/i18n.ts'
 import { ownFiles, taskChanges } from '../own-changes.ts'
 import { p4ReviewDiff } from '../p4-review-diff.ts'
+import { gitSemantic, p4Semantic, reviewTableSchema } from './review-semantic.ts'
 import { yieldApiSlot } from './api-gate.ts'
 import { turnExtra } from './turn-extra.ts'
 
@@ -61,13 +62,17 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
 }
 
 /** 评审差异太长时把完整差异存进交接目录，提示词里只给文件列表和路径 */
-async function keepLongDiff(taskId: string, d: { snapshot: string; stat: string; diff: string; full: string }) {
-  if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
+async function keepLongDiff(
+  taskId: string,
+  d: { snapshot: string; stat: string; diff: string; full: string },
+  semantic = '',
+) {
+  if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff, semantic }
   const dir = path.join(HANDOFF_DIR, taskId)
   await mkdir(dir, { recursive: true })
   const file = path.join(dir, `review-${d.snapshot.slice(0, 12) || Date.now()}.diff`)
   await writeFile(file, d.full)
-  return { snapshot: d.snapshot, stat: d.stat, diff: '', file }
+  return { snapshot: d.snapshot, stat: d.stat, diff: '', file, semantic }
 }
 
 /** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
@@ -213,14 +218,31 @@ export async function runRealTurn(ctx: RealContext) {
             files ??
             (since ? undefined : (await taskChanges(ctx.project.path, ctx.task).catch(() => null))?.map((c) => c.path))
           const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own, placedFiles(ctx.task))
-          return d && keepLongDiff(ctx.task.id, d)
+          if (!d) return null
+          // 二进制文件（表格、插件认领的扩展名）换成语义差异；整理出错只少这一节，不拦评审
+          const semantic =
+            d.stat && d.snapshot
+              ? await gitSemantic(
+                  ctx.project.path,
+                  d.from,
+                  d.snapshot,
+                  own,
+                  await reviewTableSchema(ctx.project),
+                ).catch((e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`)
+              : ''
+          return keepLongDiff(ctx.task.id, d, semantic)
         }
       : vcs === 'p4'
-        ? async (_since, files) =>
-            keepLongDiff(
-              ctx.task.id,
-              await p4ReviewDiff(ctx.project.path, files ?? [...ownFiles(ctx.task, ctx.project.path)]),
-            )
+        ? async (_since, files) => {
+            const own = files ?? [...ownFiles(ctx.task, ctx.project.path)]
+            const d = await p4ReviewDiff(ctx.project.path, own)
+            const semantic = d.stat
+              ? await p4Semantic(ctx.project.path, own, await reviewTableSchema(ctx.project)).catch(
+                  (e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`,
+                )
+              : ''
+            return keepLongDiff(ctx.task.id, d, semantic)
+          }
         : undefined,
     saveHandoff: (step, text) => saveHandoffFile(ctx.task.id, step, text),
   }).finally(() => dropOwnRequests(ctx.task, ownAsks))

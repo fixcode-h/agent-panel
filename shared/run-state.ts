@@ -9,6 +9,15 @@ import { clip } from './text.ts'
 
 const now = () => new Date().toISOString()
 
+/** 共享状态的值、节点之间的消息的长度上限（ADR 0041 开放问题）：超了拒绝写入并告诉调用方，不悄悄截断 */
+export const RUN_TEXT_MAX = 20000
+
+/** 超长时给调用方的说明；没超返回空串。让它把全文放进文件、这里只留路径和要点，和「截断必须留指针」一致 */
+export function runTextTooLong(text: string, what: string) {
+  if (text.length <= RUN_TEXT_MAX) return ''
+  return `${what}有 ${text.length} 字，超过 ${RUN_TEXT_MAX} 字的上限，没有写入：把全文写进文件，${what}里只放文件路径和要点`
+}
+
 /** 这次运行的工作流运行记录（新架构按运行隔离共享状态和消息）；旧任务没有 */
 export function runRecord(task: Task): TaskRun | undefined {
   const run = currentRun(task)
@@ -61,9 +70,11 @@ export function writeRunState(host: EngineHost, by: string, key: string, value: 
   if (!rec) return { ok: false, info: '这次运行没有共享状态（可能是旧版对话），直接写在结果里交给下游节点' }
   const k = key.trim().slice(0, 80)
   if (!k) return { ok: false, info: 'key 不能为空' }
+  const over = runTextTooLong(value, '共享状态的值')
+  if (over) return { ok: false, info: over }
   const old = rec.state[k]
   const version = (old?.version ?? 0) + 1
-  rec.state[k] = { value: clip(value, 20000), version, by, at: now() }
+  rec.state[k] = { value, version, by, at: now() }
   host.changed(true)
   return { ok: true, version, info: `已写入「${k}」v${version}` }
 }
@@ -82,7 +93,7 @@ export function runMail(host: EngineHost, id: string) {
 export function sendRunMessage(host: EngineHost, from: string, to: string, text: string) {
   const rec = runRecord(host.task)
   if (!rec) return false
-  const msg: RunMessage = { id: host.newId(), from, to, text: clip(text, 20000), read: false, at: now() }
+  const msg: RunMessage = { id: host.newId(), from, to, text, read: false, at: now() }
   rec.messages.push(msg)
   host.changed(true)
   return true

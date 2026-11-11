@@ -112,6 +112,15 @@ export async function pluginConfigChanged(p: Installed, next: PluginConfig, conf
 
 export const runningPlugin = (id: string) => active.get(id)?.plugin
 
+/** 开着的插件里认领了这个扩展名（小写、不带点）的文本化接口；按插件启动先后取第一个 */
+export function textifierFor(ext: string) {
+  for (const [id, a] of active) {
+    const tx = a.plugin.textify
+    if (tx?.exts.some((e) => e.toLowerCase() === ext)) return { id, text: tx.text }
+  }
+  return undefined
+}
+
 /** 插件页上的运行状态 */
 export async function pluginStatus(id: string) {
   const p = active.get(id)?.plugin

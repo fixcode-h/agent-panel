@@ -53,6 +53,7 @@
 - 工具的作用（接口 3）：插件工具在解析层一律是「其他」，面板的守卫、完成依据、改动归属都按工具类别判断，所以工具要自己声明 `effect`。`edit` 的工具执行前由 `mcp.ts` 交 `targets(args)` 算出的路径给工具前守卫（`dispatch.ts` 的 `editGuard`：只读身份、Bug 先诊断、独立分支越界、凭据、用户钩子），结果里的 `changed` 记成这一轮的改动（`file-events` 同一条路，进改动卡片和归属）；`verify` 的结果 `verified` 进完成依据，通过的文件不再要求走项目的测试步骤，失败时验证门禁拒绝 end_turn。`changed` / `verified` 不交给 Agent。记录只在内存里，面板重启后进行中那一轮的插件改动不再补进完成依据。
 - 钩子、测试步骤、命令（接口 3）：`hooks/dispatch.ts` 把 `activePluginHooks` 和用户钩子并在一起按范围、匹配跑；`currentTestSteps` 现取开着的插件的步骤；`slash.ts` 把 `pluginCommands` 排在「所有 Agent」的命令后面。开关插件时 `manager.ts` 清掉「/」菜单的缓存，其余两处每次现取。
 - 文件：对话里的文件标记、文件浏览页点到开着的插件认领了扩展名的文件（UE 插件的 `.uasset`）时，`fileViewerFor` 找到查看器，`PluginFileDialog` 把完整路径、项目和对话 id 交给它；没有插件认领时照旧（面板能看的在面板里看，别的交给系统默认程序）。
+- 评审：评审拿到的改动里，开着的插件用 `ServerPlugin.textify` 认领了扩展名的二进制文件（UE 插件的 `.uasset`），面板把改动前后两版内容交给它转成文本，逐行比较后放进评审提示词（`server/plugins/runtime.ts` 的 `textifierFor`，取内容和拼文字见 `server/exec/review-semantic.ts`）。旧版本只在版本控制里，所以给插件的是内容不是路径。插件仓库里的 `sdk.ts` 副本要同步加上 `Textifier`。
 - 网页：`App` 启动时 `loadPlugins`；开着的插件 import 包里的 web 入口（地址带安装时间），登记设计模式、整页和右栏页签；关掉、删除后从登记里撤下。整页声明了 `taskPlugin` 时，它管的对话不进 Agent 项目和 Chat 列表，从别的地址打开时转到那一页（`registry.ts` 的 `useOwnedByPlugin`、`ownedPage`）。
 
 ## 已知限制

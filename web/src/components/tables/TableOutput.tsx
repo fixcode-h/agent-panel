@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Copy, Square, Terminal, X } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { exportName, type ExportEvent, type TableExport } from '@shared/table-export'
+import { exportName, outputLocs, type ExportEvent, type OutputLoc, type TableExport } from '@shared/table-export'
 import { tablesApi } from '@/lib/tables-api'
 import { copyText } from '@/lib/copy-text'
 import { useStickToBottom } from '@/lib/useStickToBottom'
@@ -55,8 +55,14 @@ export function TableOutputPanel({
   open,
   onOpen,
   onClose,
+  files,
+  onLoc,
 }: {
   projectId: string
+  /** 项目里的表格文件：输出里的「文件:行」按它认 */
+  files: string[]
+  /** 点了输出里的位置：打开那张表、跳到那一格 */
+  onLoc: (loc: OutputLoc) => void
   runs: ExportRunInfo[]
   current: number
   onCurrent: (id: number) => void
@@ -110,6 +116,8 @@ export function TableOutputPanel({
           key={r.id}
           projectId={projectId}
           run={r}
+          files={files}
+          onLoc={onLoc}
           hidden={!open || r.id !== cur?.id}
           onPhase={(ph) => setPhases((m) => (m[r.id] === ph ? m : { ...m, [r.id]: ph }))}
         />
@@ -124,7 +132,11 @@ function ExportRun({
   run,
   hidden,
   onPhase,
+  files,
+  onLoc,
 }: {
+  files: string[]
+  onLoc: (loc: OutputLoc) => void
   projectId: string
   run: ExportRunInfo
   hidden: boolean
@@ -275,7 +287,16 @@ function ExportRun({
                     {s.dropped > 0 && (
                       <span className="text-subtle">{t('…前面还有 {n} 行', { n: s.dropped }) + '\n'}</span>
                     )}
-                    {s.out.join('\n')}
+                    {s.ended ? (
+                      <OutLines
+                        lines={s.out}
+                        files={files}
+                        only={paths.length === 1 ? paths[0] : undefined}
+                        onLoc={onLoc}
+                      />
+                    ) : (
+                      s.out.join('\n')
+                    )}
                     {s.ended && (
                       <span className={cn('block font-sans text-caption', bad ? 'text-danger' : 'text-subtle')}>
                         {s.error
@@ -298,4 +319,41 @@ function ExportRun({
       </div>
     </div>
   )
+}
+
+/**
+ * 一条命令跑完后的输出：「文件:行:列」「Sheet!A1」这类位置变成能点的链接，点了跳到那张表那一格。
+ * 跑的时候不认（几千行一帧帧涌进来时每次都扫一遍太费），跑完认一次
+ */
+function OutLines({
+  lines,
+  files,
+  only,
+  onLoc,
+}: {
+  lines: string[]
+  files: string[]
+  only?: string
+  onLoc: (loc: OutputLoc) => void
+}) {
+  const segs = useMemo(() => lines.map((l) => outputLocs(l, files, only)), [lines, files, only])
+  return segs.map((line, i) => (
+    <Fragment key={i}>
+      {line.map((x, k) =>
+        x.loc ? (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onLoc(x.loc!)}
+            className="cursor-pointer text-accent-text underline decoration-dotted underline-offset-2 hover:decoration-solid"
+          >
+            {x.text}
+          </button>
+        ) : (
+          x.text
+        ),
+      )}
+      {i < segs.length - 1 && '\n'}
+    </Fragment>
+  ))
 }

@@ -2,6 +2,8 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChipGroup } from '@/components/ui/chip-group'
+import { sortByIdle } from '@shared/knowledge-hits'
+import { HitMeta, KnowledgeSortChips, useKnowledgeHits, type KnowledgeSort } from './KnowledgeHits'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/lib/toast'
 import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
@@ -82,6 +84,9 @@ export function LessonsEditor({
   const [open, setOpen] = useState<string>(initialOpen ?? '')
   const [extracting, setExtracting] = useState(false)
   const [reviewing, setReviewing] = useState(false)
+  // 命中记录只有保存过的项目才有（按项目 id 存在面板数据目录）
+  const hits = useKnowledgeHits(project?.id)
+  const [sort, setSort] = useState<KnowledgeSort>('default')
   const patch = (id: string, p: Partial<ProjectLesson>) =>
     onChange(lessons.map((l) => (l.id === id ? { ...l, ...p } : l)))
   // 搜索按延后的值算：输入框先跟手，过滤和重画排在后面
@@ -104,7 +109,11 @@ export function LessonsEditor({
   const tabs = useMemo(() => lessonTabs(matched, tags), [matched, tags])
   // 选中的标签被删光了（改了标签、删了条目）就回到「默认」，保证总有一个页签选中
   const current = tab === DEFAULT_TAB || tags.some(([x]) => x === tab) ? tab : DEFAULT_TAB
-  const filtered = useMemo(() => matched.filter((l) => inTab(l, current)), [matched, current])
+  const filtered = useMemo(() => {
+    const inCur = matched.filter((l) => inTab(l, current))
+    // 清理时按「很久没用上」排：最久没命中的、从没命中的在前（shared/knowledge-hits.ts）
+    return sort === 'idle' && hits ? sortByIdle(inCur, hits.lessons) : inCur
+  }, [matched, current, sort, hits])
   // 正在展开的那条（项目首页点进来的、刚加的、刚改了标签的）不在这一页或这个页签里也要画出来，免得改着改着不见了
   const shown = useMemo(() => {
     const page = filtered.slice(0, limit)
@@ -181,14 +190,17 @@ export function LessonsEditor({
         </Button>
       </div>
       {lessons.length > 0 && (
-        // 单选：再点一次选中的那块不取消，总要有一个标签页选中
-        <ChipGroup
-          label={t('按标签分页')}
-          size="sm"
-          value={current}
-          onChange={setTab}
-          options={tabs.map(([x, n]) => ({ id: x, label: x === DEFAULT_TAB ? t('默认') : x, trailing: n }))}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* 单选：再点一次选中的那块不取消，总要有一个标签页选中 */}
+          <ChipGroup
+            label={t('按标签分页')}
+            size="sm"
+            value={current}
+            onChange={setTab}
+            options={tabs.map(([x, n]) => ({ id: x, label: x === DEFAULT_TAB ? t('默认') : x, trailing: n }))}
+          />
+          {hits && <KnowledgeSortChips value={sort} onChange={setSort} />}
+        </div>
       )}
       {lessons.length === 0 && (
         <EmptyPanel size="sm" className="text-xs leading-relaxed">
@@ -229,6 +241,7 @@ export function LessonsEditor({
                       {l.tags.length > 0 && (
                         <span className="shrink-0 truncate">{l.tags.map((x) => `#${x}`).join(' ')}</span>
                       )}
+                      {hits && <HitMeta hit={hits.lessons[l.id]} stale={hits.stale.lessons[l.id]} />}
                     </span>
                   </span>
                   {l.history.length > 0 && (

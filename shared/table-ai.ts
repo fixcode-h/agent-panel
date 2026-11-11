@@ -20,6 +20,19 @@ export function addRowsPrompt(path: string, sheet: string, count: number, desc: 
   ].join('\n\n')
 }
 
+/** 改选中的一片：行号、字段写清楚，AI 只动这些格子 */
+export function editRegionPrompt(path: string, sheet: string, rows: number[], fields: string[], desc: string) {
+  const r0 = Math.min(...rows) + 1
+  const r1 = Math.max(...rows) + 1
+  const span = rows.length === r1 - r0 + 1 ? `第 ${r0}–${r1} 行` : `第 ${rows.map((r) => r + 1).join('、')} 行`
+  return [
+    `改${where(path, sheet)}里选中的一片：${span}，列 ${fields.join('、')}。`,
+    `要求：${desc.trim()}`,
+    '只改这些格子，别的行和列不要动；枚举只用已有的值，引用别的表时确认被引用的行存在；改不了的在 note 和回复里说明。',
+    PROPOSE,
+  ].join('\n\n')
+}
+
 export function explainColumnPrompt(path: string, sheet: string, field: string) {
   return [
     `解释${where(path, sheet)}里的「${field}」这一列：`,

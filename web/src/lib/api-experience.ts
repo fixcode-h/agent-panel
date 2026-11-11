@@ -1,4 +1,5 @@
 import type { ExperienceEdit, ExperienceListView, ExperienceReviewView, ProjectExperience } from '@shared/experience'
+import type { KnowledgeHitsView } from '@shared/knowledge-hits'
 import { json, request } from './api'
 
 /**
@@ -18,4 +19,6 @@ export const experienceApi = {
   restore: (id: string, item: ProjectExperience, expect?: string) =>
     request<Items>(`/projects/${id}/experience/restore`, json('POST', { item, expect })),
   review: (id: string) => request<ExperienceReviewView>(`/projects/${id}/experience/review`, json('POST', {})),
+  /** 经验和教训的命中记录、路径失效的条目（设置页按「很久没用上」排序、标过期） */
+  hits: (id: string) => request<KnowledgeHitsView>(`/projects/${id}/knowledge-hits`),
 }
