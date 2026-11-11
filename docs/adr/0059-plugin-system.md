@@ -30,6 +30,12 @@
    - 放弃：给插件整页单开一个模式（和 Agent / Chat / 设计并列）。插件页是工具页，不属于哪个模式，和角色、工作流页同级。
    - 网页 `host.hooks.useToChat`（2026-11-10 补，只加不改，不升接口版本）：把一段文字接进某个对话（或项目新建对话）的输入框草稿再打开它，不直接发送。插件按有没有这个钩子决定显不显示「发给对话」，旧面板上不显示。
    - 整页管对话 `PluginPage.taskPlugin` 和 `host.ui.TaskComposer`（2026-11-10 补，只加不改，不升接口版本）：Blender 的模型设计从设计模式挪到图标栏的整页，新建不再选项目（对话 `projectId` 为空、`plugin = blender.model`，场景本来就在插件数据目录里）。`task.plugin` 等于某个整页 `taskPlugin` 的对话由那一页列出，Agent 项目和 Chat 列表都不列（`useOwnedByPlugin`）；按项目或聊天地址打开时转到 `#/plugin/<插件>/<页面>/<对话>`。整页里用面板的新建输入框（`TaskComposer standalone plugin`），旧面板没有时插件退回自己的文本框。
+8. **插件接口 3（2026-11-11，为把 UI 设计拆成插件）**：只加不改，接口 1、2 的插件照常加载。设计稿：项目文件 `designs/设计模式拆成插件-设计稿.md`。
+   - **开放模块**：插件可以直接 import 面板开放的一组模块，清单在 `shared/plugins/host-modules.json`（网页、服务端各一张），键是面板源码路径（不带扩展名）。面板加载插件前把这些模块挂到 `globalThis.__agentPanel.modules`（网页，`web/src/plugins/host-modules.ts`，按需 `import()`）和 `globalThis.__agentPanelServer.modules`（服务端，`server/plugins/host-modules.ts`）；插件仓库的构建脚本按清单把对应的 import 接到全局上，插件拿到的是面板正在用的同一份（数据、导航、提问、跑 CLI 的状态一致）。`server/plugins/host-modules.test.ts` 核对两张表和清单一致、文件都在。
+   - 为什么改第 2 条的取舍：UI 设计约 3 万行，用到面板的对话壳、消息、输入框、附件、提问面板、跑 CLI、出图、提问会话等几十个模块，逐个包进 `host` 要重写一遍接口、插件代码也要大改。开放模块只开清单里的，清单就是契约：面板改名、挪走、改了导出的形状要同步清单和插件（不兼容时 `PLUGIN_API` 加一），不在清单里的照旧不给。
+   - `DesignMode.Sidebar` / `Page` / `split`：设计模式自带侧栏和整页（`#/pdesign/<模式>/<id>/<sub>`），数据不是面板对话的设计（UI 设计自己的项目和界面）用它；`NewDialog` 变成可选。
+   - `WebPlugin.barePages`：不带面板外壳的独立页 `#/pbare/<插件>/<页面>/<path>`，给无头浏览器截图用（`web/src/plugins/BareHost.tsx`）。
+   - 放弃：把面板源码整份打进插件包。状态是两份（数据上下文、提示、提问会话各一套），插件的对话和面板的对不上。
 
 ## 影响与风险
 

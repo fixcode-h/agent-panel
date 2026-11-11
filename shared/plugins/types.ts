@@ -89,8 +89,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
 /**
  * 面板的插件接口版本：SDK 有新增或不兼容的改动时加一（插件清单的 api 不能大于它）。
  * 2：插件页面进图标栏（WebPlugin.pages）、对话的项目和目录（PluginRun.projectId / cwd / mode）、工具里请用户确认（McpCallContext.confirm）
+ * 3：插件直接 import 面板开放的模块（shared/plugins/host-modules.json）、设计模式自带侧栏和整页（DesignMode.Sidebar / Page）、
+ *    不带面板外壳的独立页（WebPlugin.barePages，无头浏览器截图用）
  */
-export const PLUGIN_API = 2
+export const PLUGIN_API = 3
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

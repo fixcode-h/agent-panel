@@ -26,7 +26,8 @@ import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { loadPlugins } from '@/plugins/registry'
+import { loadPlugins, useDesignModes } from '@/plugins/registry'
+import type { DesignMode } from '@/plugins/sdk'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -71,12 +72,17 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
  * 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块）、
  * 打开的设计（对话 / 画板 / 检查器三块，照设计稿 Design.dc.html）。
  * 设计的 'new'（新建）和 'home'（项目主页，见 lib/design-projects 的 DESIGN_HOME）还是一整块；
- * 这里写字面量不导入常量，免得把设计模块拉进首屏的包
+ * 这里写字面量不导入常量，免得把设计模块拉进首屏的包。插件自带整页的设计模式由插件说（DesignMode.split），
+ * 没说时和打开对话一样：有位置就算
  */
-const splitPage = (r: Route) =>
+const pluginSplit = (r: Route, modes: DesignMode[]) => {
+  const m = modes.find((x) => x.id === r.id)
+  return m?.Page && m.split ? m.split(r.sub, r.msg) : !!r.sub
+}
+const splitPage = (r: Route, modes: DesignMode[]) =>
   r.page === 'projects' ||
   (r.page === 'chat' && !!r.id) ||
-  (r.page === 'pdesign' && !!r.sub) ||
+  (r.page === 'pdesign' && pluginSplit(r, modes)) ||
   r.page === 'schedules' ||
   (r.page === 'design' && !!r.id && r.id !== 'new' && r.id !== 'home')
 
@@ -219,6 +225,8 @@ function ProjectDialog({
 
 export function App() {
   const [route, setRoute] = useHashRoute()
+  // 插件的设计模式加载完要重算页面是不是分块的（splitPage）
+  const designModes = useDesignModes()
   // 表格页打开过就记下：之后一直挂着（见下面的渲染），切走只藏起来
   const [tablesKept, setTablesKept] = useState(route.page === 'tables')
   if (route.page === 'tables' && !tablesKept) setTablesKept(true)
@@ -274,7 +282,7 @@ export function App() {
               <div
                 className={cn(
                   'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden',
-                  !splitPage(route) && 'panel',
+                  !splitPage(route, designModes) && 'panel',
                 )}
               >
                 {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}

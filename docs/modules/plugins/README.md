@@ -5,7 +5,7 @@
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
 - 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、设计模式
-- 更新：2026-11-10
+- 更新：2026-11-11
 
 ## 职责
 
@@ -36,6 +36,8 @@
 | `web/src/plugins/DesignPage.tsx`                          | 插件设计模式页 `#/pdesign/<模式>/<对话>`                                                                                                                                           |
 | `web/src/plugins/file-viewers.ts`、`PluginFileDialog.tsx` | 插件的文件查看器（`WebPlugin.fileViewers`）：按扩展名认领文件，弹窗外壳和文件预览一样，内容交给插件画；入口在对话的文件标记（`FileRefLayer`）和文件浏览页（`ProjectFileExplorer`） |
 | `web/src/plugins/PluginPage.tsx`                          | 插件整页 `#/plugin/<插件>/<页面>/<path>`（接口 2）；图标栏、手机抽屉里的入口在 `ActivityBar.tsx`、`Sidebar.tsx`                                                                    |
+| `shared/plugins/host-modules.json`                        | 开放给插件直接 import 的面板模块清单（接口 3）；面板侧的表在 `web/src/plugins/host-modules.ts`、`server/plugins/host-modules.ts`，插件仓库 `sdk/` 有副本                           |
+| `web/src/plugins/BareHost.tsx`                            | 插件不带外壳的独立页 `#/pbare/<插件>/<页面>/<path>`（接口 3，无头截图用）                                                                                                          |
 | `server/exec/plugin-run.ts`                               | 每轮对话问插件要工具（带项目、目录、模式），插件工具的确认卡片（`confirm`）                                                                                                        |
 
 ## 数据流

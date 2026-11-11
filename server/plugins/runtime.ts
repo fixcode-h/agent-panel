@@ -31,6 +31,8 @@ async function start(p: Installed, config: () => PluginConfig) {
   const entry = path.join(p.dir, p.manifest.server)
   const dataDir = pluginDataDir(id)
   await mkdir(dataDir, { recursive: true })
+  // 开放给插件的面板模块（插件接口 3）：插件入口里的 import 在模块加载时就要取到，所以先挂上
+  ;(await import('./host-modules.ts')).exposeHostModules()
   const mod = (await import(
     `${pathToFileURL(entry).href}?v=${encodeURIComponent(p.installedAt || p.manifest.version)}`
   )) as {

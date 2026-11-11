@@ -47,16 +47,19 @@ export const usePlugins = () => useSyncExternalStore(subscribe, () => state)
 /** 已经 import 过的入口（同一个地址不重复加载，地址里带安装时间，升级后是新地址） */
 const loadedUrls = new Map<string, WebPlugin>()
 
-function exposeReact() {
-  // 插件构建时把 react 系的 import 换成从这里取，和面板共用一份 React
-  ;(globalThis as { __agentPanel?: unknown }).__agentPanel ??= { React, ReactDOM, jsxRuntime }
+async function exposeHost() {
+  // 插件构建时把 react 系的 import 换成从这里取，和面板共用一份 React；
+  // 开放给插件的面板模块（插件接口 3，host-modules.ts）同样挂在这，插件的 import 在入口执行时就要取到
+  const g = globalThis as { __agentPanel?: Record<string, unknown> & { modules?: Record<string, object> } }
+  const p = (g.__agentPanel ??= { React, ReactDOM, jsxRuntime })
+  p.modules ??= await (await import('./host-modules')).loadHostModules()
 }
 
 async function activate(row: PluginRow): Promise<WebPlugin | undefined> {
   if (!row.webUrl) return undefined
   const hit = loadedUrls.get(row.webUrl)
   if (hit) return hit
-  exposeReact()
+  await exposeHost()
   if (row.cssUrl && !document.querySelector(`link[data-plugin="${row.manifest.id}"][href="${row.cssUrl}"]`)) {
     document.querySelectorAll(`link[data-plugin="${row.manifest.id}"]`).forEach((l) => l.remove())
     const link = document.createElement('link')
