@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Lock, Plus, Redo2, Save, Undo2 } from 'lucide-react'
+import { BookA, ListChecks, Lock, Plus, Redo2, Save, Undo2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { schemaHeader, type TableDoc, type TableSchema } from '@shared/tables'
 import type { CellSet, RowOp, SheetEdit } from '@shared/table-edit'
 import type { SheetHeader } from '@shared/sheet-header'
 import { colCount, type CellHit } from '@/lib/sheet'
+import { cn } from '@/lib/utils'
 import { SheetTable, SheetTabs } from '@/components/files/SheetTable'
 import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
 import { useSheetView, type SheetHeaderStore } from '@/components/files/use-sheet-view'
@@ -18,6 +19,12 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { CellEditor } from './CellEditor'
+import { ColumnSetup } from './ColumnSetup'
+import { EnumPicker } from './EnumPicker'
+import { EnumsDialog } from './EnumsDialog'
+import { ListEditor } from './ListEditor'
+import { ProblemsBar } from './ProblemsBar'
+import { useTableStruct } from './use-table-struct'
 import { TableSaveDialog } from './TableSaveDialog'
 import { dirtyCells, pendingOf, redoIn, rowOpIn, rowsOf, setCellsIn, undoIn, type Edits } from './table-edits'
 import { useGridEdit } from './use-grid-edit'
@@ -45,7 +52,13 @@ export function TableView({
   edits,
   onEdits,
   onSave,
+  loadDoc,
+  files,
 }: {
+  /** 读别的表格文件（枚举表、被引用的表） */
+  loadDoc: (path: string) => Promise<TableDoc | undefined>
+  /** 项目里的表格文件（列结构里选引用用） */
+  files: string[]
   doc: TableDoc
   schema: TableSchema
   onSchema: (s: TableSchema) => void
@@ -79,6 +92,22 @@ export function TableView({
   const dirty = useMemo(() => (sheet ? dirtyCells(edits, sheet) : new Set<string>()), [edits, sheet])
   const pending = useMemo(() => pendingOf(edits, doc.sheets), [edits, doc.sheets])
   const [saving, setSaving] = useState(false)
+  const [enumsOpen, setEnumsOpen] = useState<string | null>(null)
+  const [checkOpen, setCheckOpen] = useState(false)
+  const struct = useTableStruct({
+    schema,
+    doc,
+    sheet,
+    rows,
+    header: view?.header,
+    from: view?.from ?? 0,
+    loadDoc,
+  })
+  /** 新增枚举值：记进结构文件 */
+  const addEnumValue = (name: string, value: string) => {
+    const e = schema.enums[name] ?? { values: [] }
+    onSchema({ ...schema, enums: { ...schema.enums, [name]: { ...e, values: [...e.values, { name: value }] } } })
+  }
 
   const setCells = (cells: CellSet[]) => sheet && onEdits((e) => setCellsIn(e, sheet, cells))
   const rowOp = (op: RowOp) => sheet && onEdits((e) => rowOpIn(e, sheet, op))
@@ -92,8 +121,34 @@ export function TableView({
     onUndo: () => onEdits(undoIn),
     onRedo: () => onEdits(redoIn),
     onSave: () => pending.length && setSaving(true),
-    editor: (_p, init, done) => <CellEditor init={init} onDone={done} />,
-    mark: (r, c) => (dirty.has(`${r}:${c}`) ? 'sheet-dirty' : undefined),
+    editor: (p, init, done) => {
+      const info = p.row >= (view?.from ?? 0) ? struct.infos[p.col] : undefined
+      const opts = info?.enumName
+        ? struct.enumOpts.get(info.enumName)
+        : info?.ref
+          ? struct.refOpts.get(info.ref)
+          : undefined
+      const title = info?.enumName ?? info?.ref ?? info?.field ?? ''
+      if (info?.list)
+        return <ListEditor init={init} sep={schema.style.listSep || ';'} options={opts} title={title} onDone={done} />
+      if (info && opts)
+        return (
+          <EnumPicker
+            init={init}
+            options={opts}
+            title={title}
+            onDone={done}
+            onAdd={info.enumName ? (v) => addEnumValue(info.enumName!, v) : undefined}
+          />
+        )
+      return <CellEditor init={init} onDone={done} />
+    },
+    mark: (r, c) => {
+      const k = `${r}:${c}`
+      const cls = [dirty.has(k) && 'sheet-dirty', struct.problemAt.has(k) && 'sheet-bad'].filter(Boolean).join(' ')
+      return cls || undefined
+    },
+    tip: (r, c) => struct.problemAt.get(`${r}:${c}`),
     rowMenu: readOnly
       ? undefined
       : (r, trigger) => (
@@ -143,6 +198,27 @@ export function TableView({
         rows={rows}
         where={t('记在项目的表格结构文件里（项目设置 → 表格），表格文件一个字节都不改。')}
       >
+        <ColumnSetup
+          info={grid.focus ? struct.infos[grid.focus.col] : undefined}
+          file={doc.path}
+          schema={schema}
+          files={files}
+          onSchema={onSchema}
+        />
+        <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
+          <BookA className="h-3.5 w-3.5" />
+          {t('枚举')}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className={cn('h-7', struct.problems.length > 0 && 'text-danger')}
+          aria-pressed={checkOpen}
+          onClick={() => setCheckOpen((o) => !o)}
+        >
+          <ListChecks className="h-3.5 w-3.5" />
+          {struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
+        </Button>
         {!readOnly && (
           <span className="flex shrink-0 items-center gap-0.5">
             <IconButton icon={Undo2} label={t('撤销（Ctrl+Z）')} disabled={!canUndo} onClick={() => onEdits(undoIn)} />
@@ -190,6 +266,23 @@ export function TableView({
           edit={grid.edit}
         />
       </div>
+      {checkOpen && (
+        <ProblemsBar
+          problems={struct.problems}
+          infos={struct.infos}
+          onPick={(p) => grid.go({ row: p.r, col: p.c })}
+          onClose={() => setCheckOpen(false)}
+        />
+      )}
+      {enumsOpen !== null && (
+        <EnumsDialog
+          open
+          schema={schema}
+          initial={enumsOpen || (grid.focus ? struct.infos[grid.focus.col]?.enumName : undefined)}
+          onOpenChange={(o) => !o && setEnumsOpen(null)}
+          onSave={(enums) => onSchema({ ...schema, enums })}
+        />
+      )}
       {saving && (
         <TableSaveDialog
           open

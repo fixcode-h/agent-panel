@@ -92,6 +92,7 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('这是 UE 项目，补上编译和 Lua 语法检查的步骤'),
   ],
   hook: hookExamples(),
+  tables: [t('分析这个项目的表格风格：表头几行、主键、列表分隔符、枚举和引用')],
 }
 
 /** Skill、命令的预览：优化时和当前内容对比，标出改没改 */
@@ -1211,6 +1212,9 @@ export function AssistDialog({
                     before={target as Agent | undefined}
                     newCategory={latest.newCategory}
                   />
+                ) : latest.kind === 'tables' ? (
+                  // 表格风格只在项目设置的「表格」页逐项勾选，不走这个弹窗
+                  <pre className="text-footnote whitespace-pre-wrap">{latest.draft.summary}</pre>
                 ) : (
                   <WorkflowPreview p={latest} />
                 )

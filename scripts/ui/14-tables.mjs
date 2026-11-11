@@ -4,7 +4,8 @@
  * 演示项目「商城前台」在项目设置里把 data 设成了表格目录，所以图标栏里有「表格」：
  * - 文件树列出 data 下的表格，打开配置表后自动认出 5 行表头、按角色上色
  * - 内容搜索跨文件找到格子，点一处打开那个文件并滚到那一格
- * - 项目设置里的「表格」页（目录、包含 / 排除、结构信息存放位置）
+ * - 结构化：检查标红、枚举下拉、repeated 列表编辑、列结构；左栏「检查」查整个项目
+ * - 项目设置里的「表格」页（目录、包含 / 排除、结构信息存放位置）和 AI 分析表格风格
  * 只走用户能走的路（点图标栏、点文件树、在搜索框里打字）。
  */
 import { runShard } from './harness.mjs'
@@ -77,6 +78,59 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await cell(5, 4).getAttribute('class'))?.includes('sheet-dirty')) errors.push('表格页：保存后格子还标着改过')
   if ((await cell(5, 4).textContent()) !== '曲线穿衣镜（改）') errors.push('表格页：保存后内容不对')
 
+  // 结构化：InteractionTriggerState 设了 0–1（-1 也允许），值是 2 的格子标红，「检查」列出来
+  await p.getByRole('button', { name: /处不合规/ }).click()
+  const bar = p.getByRole('region', { name: '不合规的格子' })
+  await bar
+    .getByText(/不能大于 1/)
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('结构化：取值范围外的格子没有列进检查结果'))
+  await check(p, '表格页-检查结果', ['InteractionTriggerState'])
+  // 枚举列：下拉列出结构文件里的值；打一个不在里面的字，最后一项是「新增枚举值」
+  await cell(6, 3).dblclick()
+  const opts = p.getByRole('listbox')
+  await opts
+    .getByRole('option', { name: /TabletopDecor/ })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('结构化：枚举列没有下拉'))
+  await p.getByRole('combobox', { name: '选择值' }).fill('CeilingLamp')
+  await opts
+    .getByRole('option', { name: /新增枚举值「CeilingLamp」/ })
+    .waitFor({ timeout: 3000 })
+    .catch(() => errors.push('结构化：打了新的字没有「新增枚举值」'))
+  await check(p, '表格页-枚举下拉', ['新增枚举值'])
+  await p.keyboard.press('Escape')
+  // 从枚举表取值的枚举：XL 只在枚举表里有
+  await cell(5, 2).dblclick()
+  await opts
+    .getByRole('option', { name: /XL/ })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('结构化：从枚举表取值的枚举没有列出表里的值'))
+  await p.keyboard.press('Escape')
+  // repeated + 引用：列表编辑，下面能点角色表里的 ID
+  await cell(8, 5).dblclick()
+  await p
+    .getByRole('listitem')
+    .filter({ hasText: '1003' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('结构化：repeated 列没有拆成一项一项'))
+  await check(p, '表格页-列表编辑', ['艾琳'])
+  await p.keyboard.press('Escape')
+  await cell(8, 5).click()
+  await p.getByRole('button', { name: '列结构' }).click()
+  await check(p, '表格页-列结构', ['InteractionAllowCharacterIDs'])
+  await p.keyboard.press('Escape')
+
+  // 左栏「检查」：整个项目按结构查一遍，点一处跳到那一格
+  await p.getByRole('radio', { name: '检查' }).click()
+  await p.getByPlaceholder('按文件名、字段名筛').fill('')
+  await p
+    .getByText(/个表格查完/)
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('表格页：「检查」没有出结果'))
+  await check(p, '表格页-全项目检查', ['InteractionTriggerState'])
+
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()
   const dlg = p.getByRole('dialog')
@@ -84,5 +138,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText('表格目录', { exact: true })
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：「表格设置」没有打开项目设置的表格页'))
-  await check(p, '项目设置-表格', ['结构信息', '找到 3 个表格文件'])
+  await check(p, '项目设置-表格', ['结构信息', '找到 5 个表格文件'])
+
+  // AI 分析表格风格：演示里按示例给结果，回到这里逐项勾选
+  await dlg.getByRole('button', { name: 'AI 分析' }).click()
+  const review = p.getByRole('region', { name: 'AI 分析结果' })
+  // 分析做完后关掉 AI 窗口回到设置（窗口开着时设置弹窗对读屏是隐藏的），结果逐项列着
+  await p
+    .getByText(/分析完成/)
+    .waitFor({ timeout: 30000 })
+    .catch(() => errors.push('项目设置-表格：AI 分析没有做完'))
+  await p.keyboard.press('Escape')
+  await review.waitFor({ timeout: 10000 }).catch(() => errors.push('项目设置-表格：AI 分析的结果没有交回来'))
+  await review.scrollIntoViewIfNeeded().catch(() => {})
+  await check(p, '项目设置-AI分析表格', ['枚举：HomeDecorationSizeType', '例外：data/enum/*.xlsx'])
+  await review.getByRole('button', { name: /写进结构文件/ }).click()
+  await p
+    .getByText(/上次分析：/)
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('项目设置-表格：AI 分析的结果没有写进结构文件'))
 })

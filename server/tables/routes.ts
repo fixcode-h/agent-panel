@@ -15,6 +15,8 @@ import { saveTable } from './write.ts'
 import { TableSave } from '../../shared/table-edit.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { p4Runner } from '../p4-split.ts'
+import { tableSample } from './sample.ts'
+import { checkTables } from './check.ts'
 
 export interface TablesDeps {
   projects: { get(id: string): Promise<Project | null> }
@@ -86,6 +88,27 @@ export function tablesApi(deps: TablesDeps) {
               },
             }),
           )
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // AI 分析表格风格用的样本（几张表的开头几行、类型名出现过的值）
+      .get('/:id/sample', async (c) => {
+        try {
+          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          if (!tablesOn(cfg)) throw new HttpError(t('先在项目设置里设好表格目录'))
+          return c.json(await tableSample(dir, (await listTables(dir, cfg)).files))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 全项目检查：每个文件按结构查一遍
+      .get('/:id/check', async (c) => {
+        try {
+          const { dir, cfg, schemaAt } = await projectOf(deps, c.req.param('id'))
+          if (!tablesOn(cfg)) return c.json({ files: 0, sheets: [], failed: [] })
+          const { files } = await listTables(dir, cfg)
+          return c.json(await checkTables(dir, files, await readSchema(schemaAt)))
         } catch (e) {
           return fail(c, e)
         }

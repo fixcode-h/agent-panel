@@ -11,6 +11,8 @@ export const DEMO_FILES = [
   'data/products.csv',
   'data/stock.xlsx',
   'data/C_HomeDecorationConfig.xlsx',
+  'data/enum/E_HomeDecoration.xlsx',
+  'data/character/C_Character.xlsx',
   'src/main.tsx',
   'src/App.tsx',
   'src/api/cart.ts',
@@ -101,6 +103,40 @@ export const DEMO_SHEETS: Record<string, SheetData[]> = {
           i % 7 === 3 ? '1001;1003' : '',
           i % 11 === 4 ? '2' : '-1',
         ]),
+      ],
+    },
+  ],
+  // 枚举表：几个枚举放在一张表里，按 EnumName 列分（表格页的「从枚举表里取值」演示它）
+  'data/enum/E_HomeDecoration.xlsx': [
+    {
+      name: 'E_HomeDecoration',
+      rows: [
+        ['string', 'string', 'int32', 'string'],
+        ['EnumName', 'Name', 'Value', 'Desc'],
+        ['枚举名', '名字', '值', '说明'],
+        ['HomeDecorationSizeType', 'XS', '0', '特小'],
+        ['HomeDecorationSizeType', 'S', '1', '小'],
+        ['HomeDecorationSizeType', 'M', '2', '中'],
+        ['HomeDecorationSizeType', 'L', '3', '大'],
+        ['HomeDecorationSizeType', 'XL', '4', '特大'],
+        ['HomeDecorationMountType', 'FloorMirror', '1', '落地'],
+        ['HomeDecorationMountType', 'WallMirror', '2', '挂墙'],
+        ['HomeDecorationMountType', 'TabletopDecor', '3', '桌面'],
+      ],
+    },
+  ],
+  // 角色表：家装配置表的「交互白名单角色」引用它的 ID
+  'data/character/C_Character.xlsx': [
+    {
+      name: 'C_Character',
+      rows: [
+        ['uint32', 'bytes', 'uint32'],
+        ['ID', 'Name', 'Level'],
+        ['角色ID', '名字', '等级'],
+        ['1001', '艾琳', '10'],
+        ['1002', '洛克', '12'],
+        ['1003', '米娅', '8'],
+        ['1004', '卡尔', '15'],
       ],
     },
   ],

@@ -4,6 +4,7 @@
  */
 import { parseCsv } from '@shared/csv'
 import { applyRowOps, setCells, type TableSave } from '@shared/table-edit'
+import { checkWorkbook } from '@shared/table-struct'
 import type { Project } from '@shared/schema'
 import {
   TableSchema,
@@ -22,7 +23,34 @@ import { fail } from './demo-http'
 const MTIME = '2026-11-10T08:00:00.000Z'
 /** 每个文件的内容和修改时间（保存后更新） */
 const books = new Map<string, { sheets: SheetData[]; mtime: string }>()
-let schema = TableSchema.parse({})
+/** 演示的结构文件：一个手写的枚举、一个从枚举表取值的枚举、一列引用角色表、一列有取值范围 */
+const DEMO_SCHEMA = {
+  style: { key: 'ID', listSep: ';', primitives: ['uint32', 'int32', 'bytes', 'string'] },
+  enums: {
+    HomeDecorationMountType: {
+      values: [
+        { name: 'FloorMirror', value: '1', desc: '落地' },
+        { name: 'WallMirror', value: '2', desc: '挂墙' },
+        { name: 'TabletopDecor', value: '3', desc: '桌面' },
+      ],
+    },
+    HomeDecorationSizeType: {
+      values: [],
+      source: {
+        file: 'data/enum/E_HomeDecoration.xlsx',
+        match: { col: 'EnumName', value: 'HomeDecorationSizeType' },
+        nameCol: 'Name',
+        valueCol: 'Value',
+        descCol: 'Desc',
+      },
+    },
+  },
+  columns: {
+    'data/C_HomeDecorationConfig.xlsx#*#InteractionAllowCharacterIDs': { ref: 'data/character/C_Character.xlsx#ID' },
+    'data/C_HomeDecorationConfig.xlsx#*#InteractionTriggerState': { min: 0, max: 1, allow: ['-1'] },
+  },
+}
+let schema = TableSchema.parse(DEMO_SCHEMA)
 
 function bookOf(path: string) {
   let b = books.get(path)
@@ -101,6 +129,32 @@ export function demoTables(method: string, seg: string[], query: URLSearchParams
     })
     b.mtime = new Date().toISOString()
     return demoTables('GET', [seg[0], seg[1], 'file'], new URLSearchParams({ path: save.path }), null, p)
+  }
+  if (kind === 'sample' && method === 'GET') {
+    const files = filesOf(p).filter((f) => f.kind !== 'xls')
+    const text = files
+      .map((f) =>
+        bookOf(f.path)
+          .sheets.map(
+            (s) =>
+              `### ${f.path}\n${s.rows
+                .slice(0, 10)
+                .map((r, i) => `${i + 1}\t${r.join('\t')}`)
+                .join('\n')}`,
+          )
+          .join('\n\n'),
+      )
+      .join('\n\n')
+    return { text, files: files.length }
+  }
+  if (kind === 'check' && method === 'GET') {
+    const files = filesOf(p).filter((f) => f.kind !== 'xls')
+    const sheetsOf = (f: string) => (DEMO_FILES.includes(f) ? bookOf(f).sheets : undefined)
+    return {
+      files: files.length,
+      failed: [],
+      sheets: files.flatMap((f) => checkWorkbook(schema, f.path, bookOf(f.path).sheets, sheetsOf)),
+    }
   }
   if (kind === 'schema' && method === 'GET') return schema
   if (kind === 'schema' && method === 'PUT') return demoSchema.set(body as TableSchema)

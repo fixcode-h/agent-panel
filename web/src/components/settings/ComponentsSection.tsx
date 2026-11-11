@@ -69,6 +69,7 @@ import {
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
+import { TableEditorsSpecimen } from '@/components/settings/TableEditorsSpecimen'
 import { Markdown } from '@/components/tasks/Markdown'
 import { TuneProvider, TuneToggle, useTune } from '@/components/settings/ComponentTune'
 import type { CompName, ComponentStyle } from '@shared/component-style'
@@ -595,6 +596,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('表格')}>
         <Specimen name="SheetTable · SheetHeaderBar" tune={['grid']}>
           <SheetSpecimen />
+        </Specimen>
+        <Specimen name="EnumPicker · ListEditor · ProblemsBar" tune={['input', 'menu']}>
+          <TableEditorsSpecimen />
         </Specimen>
       </Group>
       <Group title={t('空状态')}>
