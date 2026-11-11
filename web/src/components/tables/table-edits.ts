@@ -68,6 +68,12 @@ export function rowOpWithCells(e: Edits, s: SheetData, op: RowOp, cells: CellSet
   return commit(e, s.name, { rows, ops: [...cur.ops, op] })
 }
 
+/** 整张表换成算好的样子（冲突合并的结果）：rows 是做完 ops 之后的样子，一次撤销退掉 */
+export function replaceIn(e: Edits, s: SheetData, rows: string[][], ops: RowOp[]): Edits {
+  const cur = e.sheets[s.name] ?? { rows: s.rows, ops: [] }
+  return commit(e, s.name, { rows, ops: [...cur.ops, ...ops] })
+}
+
 export function undoIn(e: Edits): Edits {
   const last = e.undo[e.undo.length - 1]
   if (!last) return e

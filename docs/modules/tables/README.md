@@ -4,7 +4,7 @@
 - 职责：按项目设置的表格目录浏览、搜索、查看、在线修改 xlsx / CSV 表格；表头、枚举等结构信息存在表格之外
 - 源码：`server/tables/`、`shared/tables.ts`、`shared/csv.ts`、`web/src/pages/TablesPage.tsx`、`web/src/components/tables/`
 - 入口：`server/tables/routes.ts`、`web/src/pages/TablesPage.tsx`
-- 关键词：表格、配置表、表格目录、绝对路径、目录选择器、xlsx、CSV、表头、枚举、引用、结构文件、内容搜索、原地保存、检查、AI 分析表格风格、版本差异、跨项目对比、table.edit
+- 关键词：表格、配置表、表格目录、绝对路径、目录选择器、xlsx、CSV、表头、枚举、引用、结构文件、内容搜索、原地保存、检查、AI 分析表格风格、版本差异、一格的历史、提交、冲突合并、跨项目对比、table.edit
 - 更新：2026-11-11
 
 设计稿在项目共享目录 `designs/表格管理与在线编辑-设计稿.md`。硬约束：**表格文件只在用户保存改动时原地改单元格，结构信息一律不写进表格**。
@@ -74,6 +74,10 @@
 - `diffSheet`：列按字段名对齐（没字段名按位置）；行有唯一主键（`style.key`）时按主键对齐，否则按整行内容做 LCS（太大时退成贪心），同一段里删了又加的配成「改」。表头行另外比（`headerChanged`）。
 - 版本差异「本地改动」= 基准版（git `HEAD` / p4 `#have` / svn `BASE`）↔ 页面上现在的内容（含没保存的），改过的行能还原成旧值（一次普通编辑）；点一个提交 = 它的上一版 ↔ 它。那一版里还没有这个文件时当空表。
 - 切换到某一版（`server/tables/checkout.ts`，`POST /checkout`）：`rawAt` 取那一版的原始字节（git show / p4 print / svn cat），整个替换本地文件。不动版本控制状态（不 checkout、不 p4 sync），切完就是一处本地改动；替换前和保存一样查只读、Excel / WPS 占用、备份、P4 只读先 `p4 edit`。页面上没保存的改动作废。
+- 任意两版对比：版本弹窗里「和哪一版比」可以选最近一次提交、上一版或列表里任意一版。
+- 一格的历史（`shared/table-blame.ts` + `server/tables/cell-history.ts`，`GET /cell-history`）：服务端沿版本记录取每一版（并发 3），按主键（没设用第一列有字段名的）找同一行、按字段名找同一列，值和更早一版不同的提交列出来。不把几十版整表传给页面。
+- 提交（`server/tables/vcs-ops.ts`，`POST /vcs-submit`）：只提交这一个文件。git `commit -- <文件>`（只到本地仓库，不推送，暂存区别的文件不动）；p4 没打开的先 `reconcile -e -a` 再 `submit -d`；svn 新文件先 `add` 再 `commit`。有冲突、没改动、项目只读都拒绝。
+- 冲突三方合并（`shared/table-merge.ts`，`POST /merge-start`、`/vcs-resolve`）：base / theirs 从 git 暂存区 `:1` `:3`、p4 `fstat -Or` 的 resolveBase/From、svn `info --xml` 的 prev-base-file / cur-base-file 取；ours 是工作区文件——CSV 冲突时 git/svn 往里写了冲突标记，先备份再换成干净的 ours（git `:2`、svn `.mine`），页面重新载入。合并在页面上算：按主键对齐行、按字段名对齐列，一边改的自动合、两边改成不同才让用户挑；结果作为一次改动（`replaceIn`，行操作 + 格子）放进表格，用户看过走正常保存，再「标记已解决」（git add / p4 resolve -ay / svn resolve --accept working）。不直接写盘，保存那条路的读回校验照样生效。对方新加的工作表合不了，只提示。
 - 跨项目对比：差异方向是 右(旧) → 左(新)。拷行只往右拷：`copyRows` 生成右边文件的行操作 + 格子，先按**右边项目**的结构 `checkTouched`，有问题列出来让用户决定，再走右边项目的原地保存。
 
 ## 编辑效率

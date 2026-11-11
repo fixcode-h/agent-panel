@@ -179,6 +179,39 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .click({ button: 'right' })
   await p.getByRole('menuitem', { name: '取消冻结' }).click()
 
+  // 一格的历史：右键看哪几次提交改过这一格（按主键找同一行）
+  await cell(8, 5).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '这一格的历史' }).click()
+  await p
+    .getByRole('list', { name: '改过这一格的提交' })
+    .getByText('5e1c09a2')
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('一格的历史：没有列出改过这一格的提交'))
+  await check(p, '表格页-一格的历史', ['按 ID = '])
+  await p.keyboard.press('Escape')
+
+  // 版本冲突：角色表演示有冲突，三方合并只列两边都改了的格子，放进表格当一次改动
+  await p.getByRole('tab', { name: 'C_Character.xlsx' }).click()
+  await p.getByRole('button', { name: '合并冲突' }).click({ timeout: 8000 })
+  const merge = p.getByRole('dialog', { name: '合并冲突' })
+  await merge
+    .getByText('C_Character · 1001 · Level')
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('合并冲突：没有列出两边都改了的格子'))
+  await check(p, '表格页-合并冲突', ['自动合进来对方的', '用对方的'])
+  await merge
+    .getByRole('button', { name: /用对方的/ })
+    .first()
+    .click()
+  await merge.getByRole('button', { name: '放进表格' }).click()
+  await p
+    .getByText('诺拉')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('合并冲突：放进表格后没有对方新加的行'))
+  await check(p, '表格页-合并结果', ['合并结果已放进表格', '米娅·星'])
+  await p.getByRole('button', { name: '撤销（Ctrl+Z）' }).click()
+  await p.getByRole('tab', { name: 'C_HomeDecorationConfig.xlsx' }).click()
+
   // 左栏「检查」：整个项目按结构查一遍，点一处跳到那一格
   await p.getByRole('radio', { name: '检查' }).click()
   await p.getByPlaceholder('按文件名、字段名筛').fill('')

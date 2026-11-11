@@ -20,9 +20,10 @@ import {
 import type { SheetData } from '@shared/files'
 import { DEMO_CSV, DEMO_FILES, DEMO_SHEETS } from './demo-project-files'
 import { fail } from './demo-http'
-import { DEMO_REVS, demoAt, demoRelease } from './demo-table-versions'
+import { DEMO_CONFLICT, DEMO_REVS, demoAt, demoConflict, demoRelease } from './demo-table-versions'
 import { exportLines, type ExportEvent } from '@shared/table-export'
 import { enumRenameCells, type EnumRename } from '@shared/table-enum-rename'
+import { cellChanges, cellIn, type CellAt } from '@shared/table-blame'
 
 function demoExport(p: Project, b: { script: number; paths: string[] }): ExportEvent[] {
   const script = p.tables?.exports[b.script]
@@ -80,6 +81,10 @@ const DEMO_SCHEMA = {
 let schema = TableSchema.parse(DEMO_SCHEMA)
 
 /** 示例表原样（版本记录里的 HEAD） */
+/** 演示的版本状态：提交时文件的修改时间、标记过冲突解决的项目 */
+const demoCommitted = new Map<string, string>()
+const demoResolved = new Set<string>()
+
 function pristine(path: string) {
   const sheets = DEMO_SHEETS[path] ?? (path.endsWith('.csv') ? [{ name: 'products', rows: parseCsv(DEMO_CSV) }] : null)
   if (!sheets) fail(`文件不存在，可能已删除或路径写错：${path}`)
@@ -229,6 +234,43 @@ export function demoTables(
   if (kind === 'at' && method === 'GET') {
     const path = query.get('path') ?? ''
     return { sheets: demoAt(path, query.get('rev') ?? '', pristine(path)) }
+  }
+  if (kind === 'cell-history' && method === 'GET') {
+    const path = query.get('path') ?? ''
+    const at: CellAt = {
+      sheet: query.get('sheet') ?? '',
+      field: query.get('field') ?? '',
+      keyField: query.get('keyField') || undefined,
+      key: query.get('key') || undefined,
+      row: Number(query.get('row')) || 0,
+    }
+    const values = DEMO_REVS.map((r) => cellIn(schema, path, demoAt(path, r.id, pristine(path)), at))
+    return { vcs: 'git', changes: cellChanges(DEMO_REVS, values), scanned: values.length }
+  }
+  // 版本状态：改过（修改时间变了）算有改动；角色表演示冲突，标记解决后才能提交
+  if (kind === 'vcs-status' && method === 'GET') {
+    const path = query.get('path') ?? ''
+    const conflict = path === DEMO_CONFLICT && !demoResolved.has(p.id)
+    return {
+      vcs: 'git',
+      changed: conflict || bookOf(path, p).mtime !== (demoCommitted.get(`${p.id}:${path}`) ?? MTIME),
+      conflict,
+    }
+  }
+  if (kind === 'vcs-submit' && method === 'POST') {
+    const b = body as { path: string; message: string }
+    if (!b.message.trim()) fail('写一句提交说明')
+    demoCommitted.set(`${p.id}:${b.path}`, bookOf(b.path, p).mtime)
+    return { vcs: 'git', out: '' }
+  }
+  if (kind === 'merge-start' && method === 'POST') {
+    const b = body as { path: string }
+    if (b.path !== DEMO_CONFLICT || demoResolved.has(p.id)) fail('这个文件没有冲突')
+    return { vcs: 'git', ...demoConflict(pristine(b.path)), theirsLabel: 'a7c31e0f', replaced: false }
+  }
+  if (kind === 'vcs-resolve' && method === 'POST') {
+    demoResolved.add(p.id)
+    return { vcs: 'git', changed: true, conflict: false }
   }
   // 切换到某一版：演示里直接把内容换成那一版
   if (kind === 'checkout' && method === 'POST') {

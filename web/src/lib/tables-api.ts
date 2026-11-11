@@ -8,6 +8,7 @@ import type { SheetProblems } from '@shared/table-struct'
 import type { SheetData } from '@shared/files'
 import type { ExportEvent } from '@shared/table-export'
 import type { EnumRename } from '@shared/table-enum-rename'
+import type { CellAt, CellChange } from '@shared/table-blame'
 import { failure, json, request } from './api'
 import { trackedFetch } from './connection'
 
@@ -37,6 +38,12 @@ export const tablesApi = {
   /** 某一版的内容 */
   at: (projectId: string, path: string, rev: string) =>
     request<{ sheets: SheetData[] }>(`/tables/${projectId}/at?path=${q(path)}&rev=${q(rev)}`),
+  /** 一格的历史：哪几次提交改过它 */
+  cellHistory: (projectId: string, path: string, at: CellAt) =>
+    request<CellHistory>(
+      `/tables/${projectId}/cell-history?path=${q(path)}&` +
+        new URLSearchParams(Object.entries(at).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]]))),
+    ),
   /** 跨项目对比：按相对路径配对 */
   compare: (projectId: string, other: string) =>
     request<{ pairs: TablePair[]; truncated?: boolean }>(`/tables/${projectId}/compare?other=${q(other)}`),
@@ -46,9 +53,42 @@ export const tablesApi = {
   checkout: (projectId: string, path: string, rev: string) =>
     request<TableDoc>(`/tables/${projectId}/checkout`, json('POST', { path, rev })),
   runExport,
+  /** 这个文件在版本管理里的状态 */
+  vcsStatus: (projectId: string, path: string) => request<VcsStatus>(`/tables/${projectId}/vcs-status?path=${q(path)}`),
+  /** 只提交这一个文件 */
+  vcsSubmit: (projectId: string, path: string, message: string) =>
+    request<{ vcs: string; out: string }>(`/tables/${projectId}/vcs-submit`, json('POST', { path, message })),
+  /** 开始合并冲突：共同祖先、对方的内容；replaced 时工作区文件换成了干净的我这边，要重新载入 */
+  mergeStart: (projectId: string, path: string) =>
+    request<MergeSources>(`/tables/${projectId}/merge-start`, json('POST', { path })),
+  /** 合并保存后标记冲突已解决 */
+  vcsResolve: (projectId: string, path: string) =>
+    request<VcsStatus>(`/tables/${projectId}/vcs-resolve`, json('POST', { path })),
   /** 枚举值改名后替换所有表里的旧值；apply=false 只预览 */
   enumRename: (projectId: string, renames: EnumRename[], apply: boolean) =>
     request<EnumRenameResult>(`/tables/${projectId}/enum-rename`, json('POST', { renames, apply })),
+}
+
+export interface VcsStatus {
+  vcs: 'git' | 'p4' | 'svn' | 'none'
+  changed: boolean
+  conflict: boolean
+  error?: string
+}
+
+export interface MergeSources {
+  vcs: string
+  base: SheetData[]
+  theirs: SheetData[]
+  theirsLabel: string
+  replaced: boolean
+}
+
+export interface CellHistory {
+  vcs: string
+  changes: CellChange<TableRev>[]
+  scanned: number
+  error?: string
 }
 
 export interface EnumRenameResult {

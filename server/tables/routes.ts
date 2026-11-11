@@ -13,7 +13,7 @@ import { resolvePath } from '../fs.ts'
 import { absPath, listTables, openTable, safeRel, searchTables } from './files.ts'
 import { readSchema, schemaDir, writeSchema } from './schema-store.ts'
 import { HttpError } from './http-error.ts'
-import { saveTable } from './write.ts'
+import { backup, saveTable } from './write.ts'
 import { TableSave } from '../../shared/table-edit.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { p4Runner } from '../p4-split.ts'
@@ -24,6 +24,8 @@ import { compareProjects } from './compare.ts'
 import { checkoutTable } from './checkout.ts'
 import { runExport } from './export.ts'
 import { enumRename } from './enum-rename.ts'
+import { cellHistory } from './cell-history.ts'
+import { markResolved, mergeSources, submitTable, vcsStatus } from './vcs-ops.ts'
 import type { EnumRename } from '../../shared/table-enum-rename.ts'
 import { stream } from 'hono/streaming'
 import type { ExportEvent } from '../../shared/table-export.ts'
@@ -169,6 +171,73 @@ export function tablesApi(deps: TablesDeps) {
           const { dir, cfg } = await projectOf(deps, c.req.param('id'))
           const { cwd, rel } = vcsPath(dir, safeRel(dir, c.req.query('path') ?? '', cfg))
           return c.json(await tableHistory(cwd, rel))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 这个文件在版本管理里的状态：改没改、有没有冲突
+      .get('/:id/vcs-status', async (c) => {
+        try {
+          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const { cwd, rel } = vcsPath(dir, safeRel(dir, c.req.query('path') ?? '', cfg))
+          return c.json(await vcsStatus(cwd, rel))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 只提交这一个文件
+      .post('/:id/vcs-submit', async (c) => {
+        try {
+          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const b = (await c.req.json()) as { path?: string; message?: string }
+          if (cfg.readOnly) throw new HttpError(t('项目设置里把表格设成了只读'), 409)
+          const { cwd, rel } = vcsPath(dir, safeRel(dir, String(b.path ?? ''), cfg))
+          return c.json(await submitTable(cwd, rel, String(b.message ?? '').slice(0, 2000)))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 开始合并冲突：取共同祖先和对方的内容，工作区里的文件换成干净的「我这边」（换之前备份）
+      .post('/:id/merge-start', async (c) => {
+        try {
+          const { project, dir, cfg } = await projectOf(deps, c.req.param('id'))
+          if (cfg.readOnly) throw new HttpError(t('项目设置里把表格设成了只读'), 409)
+          const b = (await c.req.json()) as { path?: string }
+          const p = safeRel(dir, String(b.path ?? ''), cfg)
+          const { cwd, rel } = vcsPath(dir, p)
+          return c.json(await mergeSources(cwd, rel, () => backup(project.id, p.rel, p.full)))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 合并保存后标记冲突已解决
+      .post('/:id/vcs-resolve', async (c) => {
+        try {
+          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const b = (await c.req.json()) as { path?: string }
+          if (cfg.readOnly) throw new HttpError(t('项目设置里把表格设成了只读'), 409)
+          const { cwd, rel } = vcsPath(dir, safeRel(dir, String(b.path ?? ''), cfg))
+          return c.json(await markResolved(cwd, rel))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 一格的历史：哪几次提交改过它（按主键找同一行、按字段名找同一列）
+      .get('/:id/cell-history', async (c) => {
+        try {
+          const { dir, cfg, schemaAt } = await projectOf(deps, c.req.param('id'))
+          const q = c.req.query()
+          const p = safeRel(dir, q.path ?? '', cfg)
+          const { cwd, rel } = vcsPath(dir, p)
+          const at = {
+            sheet: q.sheet ?? '',
+            field: q.field ?? '',
+            keyField: q.keyField || undefined,
+            key: q.key || undefined,
+            row: Number(q.row) || 0,
+          }
+          if (!at.field) throw new HttpError(t('这一列没有字段名，看不了历史'))
+          return c.json(await cellHistory(cwd, rel, await readSchema(schemaAt), p.rel, at, c.req.raw.signal))
         } catch (e) {
           return fail(c, e)
         }

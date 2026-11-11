@@ -47,6 +47,7 @@ import {
   pendingOf,
   redoIn,
   rowOpIn,
+  replaceIn,
   rowOpWithCells,
   rowsOf,
   setCellsIn,
@@ -59,6 +60,9 @@ import { ExportMenu } from './ExportMenu'
 import { useColLayout } from './use-col-layout'
 import { FindReplaceDialog } from './FindReplaceDialog'
 import { BackRefsDialog, CellMenu } from './CellMenu'
+import { CellHistoryDialog } from './CellHistoryDialog'
+import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
+import type { CellAt } from '@shared/table-blame'
 import { findBackRefs, refsTo } from '@shared/table-refs'
 
 /** 从内容搜索跳过来：切到这张表、滚到这一格 */
@@ -124,8 +128,8 @@ export function TableView({
   onOpenHit: (h: TableHit) => void
   /** 文件在外面被改过、页面上又有没保存的改动 */
   stale?: boolean
-  /** 重新载入；keep 时把改过的格子写回新内容上 */
-  onReload: (keep: boolean) => void
+  /** 重新载入；keep 时把改过的格子写回新内容上。返回载入后的文件（失败为 undefined） */
+  onReload: (keep: boolean) => Promise<TableDoc | undefined>
   /** 不管外面的改动，接着改（保存时只写改过的格子） */
   onKeepMine: () => void
   /** 别的操作（枚举改名替换）改了这些文件：重新载入 */
@@ -171,6 +175,8 @@ export function TableView({
       .then((hits) => setBackRefs((b) => b && { ...b, hits }))
       .catch((e) => setBackRefs((b) => b && { ...b, error: (e as Error).message }))
   }
+  const [vcs, setVcs, refreshVcs] = useVcsStatus(projectId, doc)
+  const [cellHist, setCellHist] = useState<{ at: CellAt; title: string } | null>(null)
   const [finding, setFinding] = useState<{ sel: { rows: number[]; cols: number[] } | null } | null>(null)
   const struct = useTableStruct({
     schema,
@@ -317,6 +323,24 @@ export function TableView({
           {doc.readOnly ?? t('文件正在 Excel / WPS 里打开：可以先改，保存前要在那边关掉')}
         </p>
       )}
+      <ConflictBar
+        projectId={projectId}
+        doc={doc}
+        schema={schema}
+        status={vcs}
+        dirty={pending.length > 0}
+        readOnly={readOnly}
+        onReload={() => onReload(false)}
+        onStatus={setVcs}
+        onMerged={(r) =>
+          onEdits((e) =>
+            r.sheets.reduce((acc, m) => {
+              const s = doc.sheets.find((x) => x.name === m.name)
+              return s ? replaceIn(acc, s, m.rows, m.ops) : acc
+            }, e),
+          )
+        }
+      />
       {stale && (
         <div
           role="alert"
@@ -380,6 +404,9 @@ export function TableView({
             {t('替换')}
           </Button>
         )}
+        {!readOnly && (
+          <SubmitButton projectId={projectId} doc={doc} status={vcs} dirty={pending.length > 0} onDone={refreshVcs} />
+        )}
         <ExportMenu exports={exports} onRun={onExport} />
         <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
           <BookA className="h-3.5 w-3.5" />
@@ -427,11 +454,23 @@ export function TableView({
           return {
             ref: info?.ref ? { ref: info.ref, values } : undefined,
             backRefs: hasBackRefs && r >= view.from,
+            history: !!info?.field,
             readOnly,
           }
         }}
         onJump={onRefJump}
         onBackRefs={showBackRefs}
+        onHistory={({ r, c }) => {
+          if (!sheet) return
+          // 按主键找同一行：没设主键时用第一列有字段名的（配置表的习惯）
+          const kc = keyCol >= 0 ? keyCol : struct.infos.findIndex((i) => !!i.field)
+          const key = kc >= 0 ? (rows[r]?.[kc] ?? '').trim() : ''
+          const field = struct.infos[c].field
+          setCellHist({
+            at: { sheet: sheet.name, field, row: r, ...(key ? { keyField: struct.infos[kc].field, key } : {}) },
+            title: t('{field} 这一格的历史', { field: key ? `${field} · ${key}` : field }),
+          })
+        }}
         onFill={grid.fill}
         onFind={() => setFinding({ sel: grid.selection() })}
       >
@@ -461,6 +500,9 @@ export function TableView({
           />
         </div>
       </CellMenu>
+      {cellHist && (
+        <CellHistoryDialog projectId={projectId} path={doc.path} {...cellHist} onClose={() => setCellHist(null)} />
+      )}
       {backRefs && (
         <BackRefsDialog
           {...backRefs}

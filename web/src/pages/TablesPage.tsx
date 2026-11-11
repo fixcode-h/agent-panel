@@ -208,7 +208,7 @@ function Workbench({
   const reloadDoc = (path: string, keep: boolean) => {
     const old = docs[path]
     const pending = old && 'sheets' in old ? pendingOf(edits[path], old.sheets) : []
-    tablesApi
+    return tablesApi
       .open(projectId, path)
       .then((d) => {
         setDocs((m) => ({ ...m, [path]: d }))
@@ -224,8 +224,12 @@ function Workbench({
           return { ...m, [path]: e }
         })
         setCheckSeq((n) => n + 1)
+        return d
       })
-      .catch(toastError)
+      .catch((e) => {
+        toastError(e)
+        return undefined
+      })
   }
   const saveDoc = async (doc: TableDoc, pending: SheetEdit[], force: boolean) => {
     busy.current = true

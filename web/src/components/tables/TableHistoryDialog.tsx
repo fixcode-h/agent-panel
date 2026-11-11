@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
+import { Select } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
 import { DiffSummary, SheetDiffView } from './SheetDiffView'
 
@@ -73,12 +74,16 @@ export function TableHistoryDialog({
       .then(setHist)
       .catch((e) => setError((e as Error).message))
   }, [projectId, path])
-  // 取两版内容：本地改动只取基准版
+  // 和哪一版比：默认是上一版（本地改动的上一版是基准版），也能选任意一版
+  const [against, setAgainst] = useState('')
+  // 取两版内容：本地改动只取左边那一版
+  const prevOf = (p: Pick) => (!hist ? '' : p === 'local' ? hist.base : (hist.revs[p + 1]?.id ?? ''))
+  const left = against || prevOf(pick)
   const want = !hist
     ? null
     : pick === 'local'
-      ? { key: 'local', a: hist.base, b: '' }
-      : { key: String(pick), a: hist.revs[pick + 1]?.id ?? '', b: hist.revs[pick]?.id ?? '' }
+      ? { key: 'local', a: left, b: '' }
+      : { key: String(pick), a: left, b: hist.revs[pick]?.id ?? '' }
   const wantKey = want ? `${want.key}:${want.a}:${want.b}` : ''
   useEffect(() => {
     if (!want || (hist?.vcs === 'none' && pick === 'local')) return
@@ -126,10 +131,12 @@ export function TableHistoryDialog({
     )
   }
   const revs = hist?.revs ?? []
+  const labelOf = (id: string) =>
+    id === hist?.base ? (revs[0]?.label ?? t('最近一次提交')) : (revs.find((r) => r.id === id)?.label ?? t('（新建）'))
   const title =
     pick === 'local'
-      ? t('{base} → 本地', { base: revs[0]?.label ?? t('最近一次提交') })
-      : t('{from} → {to}', { from: revs[pick + 1]?.label ?? t('（新建）'), to: revs[pick]?.label ?? '' })
+      ? t('{base} → 本地', { base: labelOf(left) })
+      : t('{from} → {to}', { from: left ? labelOf(left) : t('（新建）'), to: revs[pick]?.label ?? '' })
   return (
     <Modal
       open={open}
@@ -186,6 +193,20 @@ export function TableHistoryDialog({
             <span className="font-mono text-body">{title}</span>
             {diff && <DiffSummary diff={diff} />}
             <span className="flex-1" />
+            {hist && hist.vcs !== 'none' && (
+              <Select
+                size="sm"
+                aria-label={t('和哪一版比')}
+                value={against}
+                onChange={(e) => setAgainst(e.target.value)}
+                options={[
+                  { value: '', label: pick === 'local' ? t('和最近一次提交比') : t('和上一版比') },
+                  ...revs
+                    .filter((_, i) => pick === 'local' || i !== pick)
+                    .map((r) => ({ value: r.id, label: t('和 {rev} 比', { rev: r.label }) })),
+                ]}
+              />
+            )}
             {onCheckout && hist && hist.vcs !== 'none' && (pick === 'local' ? hist.base : revs[pick]) && (
               <Button
                 size="sm"

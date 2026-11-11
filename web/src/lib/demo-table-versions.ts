@@ -56,3 +56,22 @@ export function demoRelease(path: string, sheets: SheetData[]): SheetData[] {
     }),
   )
 }
+
+/** 演示的版本冲突：角色表当作刚合并了别人的分支、有冲突（祖先和对方从示例数据改出来） */
+export const DEMO_CONFLICT = 'data/character/C_Character.xlsx'
+
+export function demoConflict(head: SheetData[]) {
+  const set = (rows: string[][], id: string, c: number, v: string) => {
+    const r = rows.find((x) => x[0] === id)
+    if (r) r[c] = v
+    return rows
+  }
+  // 祖先：1001 的等级还是 9（我这边改成了 10）
+  const base = edit(head, (rows) => set(rows, '1001', 2, '9'))
+  // 对方：1001 改成 11（和我冲突）、1002 升到 13、1003 改了名字、加了 1005
+  const theirs = edit(base, (rows) => [
+    ...set(set(set(rows, '1001', 2, '11'), '1002', 2, '13'), '1003', 1, '米娅·星'),
+    ['1005', '诺拉', '5'],
+  ])
+  return { base, theirs }
+}

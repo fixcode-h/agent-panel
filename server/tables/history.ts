@@ -36,7 +36,7 @@ const MAX_REVS = 40
 /** 旧版本的文件最大读这么多（和打开文件的上限一致） */
 const MAX_BYTES = 64 * 1024 * 1024
 
-function run(cmd: string, args: string[], cwd: string) {
+export function vcsRun(cmd: string, args: string[], cwd: string) {
   return new Promise<Buffer>((resolve, reject) =>
     execFile(
       cmd,
@@ -71,7 +71,11 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
   try {
     if (vcs === 'git') {
       const out = text(
-        await run('git', ['log', `-n${MAX_REVS}`, '--follow', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--', rel], dir),
+        await vcsRun(
+          'git',
+          ['log', `-n${MAX_REVS}`, '--follow', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--', rel],
+          dir,
+        ),
       )
       const revs = out
         .split('\x1e')
@@ -84,7 +88,7 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
       return { vcs, base: 'HEAD', revs }
     }
     if (vcs === 'p4') {
-      const out = text(await run('p4', ['-ztag', 'filelog', '-m', String(MAX_REVS), '-l', path.join(dir, rel)], dir))
+      const out = text(await vcsRun('p4', ['-ztag', 'filelog', '-m', String(MAX_REVS), '-l', path.join(dir, rel)], dir))
       const rec = parseZtag(out)[0] ?? {}
       const revs: TableRev[] = []
       for (let i = 0; rec[`rev${i}`] !== undefined; i++)
@@ -97,7 +101,7 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
         })
       return { vcs, base: '#have', revs }
     }
-    const xml = text(await run('svn', ['log', '--xml', '-l', String(MAX_REVS), `./${rel}`], dir))
+    const xml = text(await vcsRun('svn', ['log', '--xml', '-l', String(MAX_REVS), `./${rel}`], dir))
     const revs = [...xml.matchAll(/<logentry\s+revision="(\d+)">([\s\S]*?)<\/logentry>/g)].map((m) => {
       const tag = (n: string) => unxml(new RegExp(`<${n}>([\\s\\S]*?)</${n}>`).exec(m[2])?.[1] ?? '')
       return { id: m[1], label: `r${m[1]}`, author: tag('author'), time: tag('date'), message: tag('msg').trim() }
@@ -144,9 +148,9 @@ export async function rawAt(dir: string, rel: string, rev: string): Promise<Buff
   if (!/^[\w#^~@][\w#.^~:@/-]{0,79}$/.test(rev)) throw new HttpError(t('版本号格式不对'))
   const { vcs } = await detectVcs(dir)
   try {
-    if (vcs === 'git') return await run('git', ['show', `${rev}:./${rel}`], dir)
-    if (vcs === 'p4') return await run('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
-    if (vcs === 'svn') return await run('svn', ['cat', '-r', rev, `./${rel}`], dir)
+    if (vcs === 'git') return await vcsRun('git', ['show', `${rev}:./${rel}`], dir)
+    if (vcs === 'p4') return await vcsRun('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
+    if (vcs === 'svn') return await vcsRun('svn', ['cat', '-r', rev, `./${rel}`], dir)
     throw new HttpError(t('这个项目没有版本控制'))
   } catch (e) {
     if (e instanceof HttpError) throw e

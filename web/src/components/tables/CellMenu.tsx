@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowUpRight, Link2, Loader2 } from 'lucide-react'
+import { ArrowUpRight, History, Link2, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableHit } from '@shared/tables'
 import { cellRef } from '@shared/table-edit'
@@ -29,6 +29,8 @@ export interface CellMenuOpts {
   ref?: { ref: string; values: string[] }
   /** 有别的表引用这张表：可以查谁引用了这一行 */
   backRefs?: boolean
+  /** 数据格子、这一列有字段名：可以看这一格的历史 */
+  history?: boolean
   readOnly: boolean
 }
 
@@ -42,6 +44,7 @@ export function CellMenu({
   opts,
   onJump,
   onBackRefs,
+  onHistory,
   onFill,
   onFind,
 }: {
@@ -51,6 +54,7 @@ export function CellMenu({
   opts: (cell: { r: number; c: number }) => CellMenuOpts
   onJump: (ref: string, value: string) => void
   onBackRefs: (r: number) => void
+  onHistory: (cell: { r: number; c: number }) => void
   onFill: (series: boolean) => void
   onFind: () => void
 }) {
@@ -76,14 +80,18 @@ export function CellMenu({
             </>
           )}
           {o.backRefs && (
-            <>
-              <ContextMenuItem onSelect={() => onBackRefs(cell.r)}>
-                <Link2 className="h-3.5 w-3.5 text-subtle" />
-                {t('谁引用了这一行')}
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
+            <ContextMenuItem onSelect={() => onBackRefs(cell.r)}>
+              <Link2 className="h-3.5 w-3.5 text-subtle" />
+              {t('谁引用了这一行')}
+            </ContextMenuItem>
           )}
+          {o.history && (
+            <ContextMenuItem onSelect={() => onHistory(cell)}>
+              <History className="h-3.5 w-3.5 text-subtle" />
+              {t('这一格的历史')}
+            </ContextMenuItem>
+          )}
+          {(o.backRefs || o.history) && !o.readOnly && <ContextMenuSeparator />}
           {!o.readOnly && (
             <>
               <ContextMenuItem onSelect={() => onFill(false)}>
