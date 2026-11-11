@@ -64,8 +64,3 @@ e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check
 
 - 规则：`finally` 里删掉多出来的键再 `Object.assign(process.env, old)`，不写 `process.env = old`：换成普通对象后再设 `HOME`，`os.homedir()` 读不到，后面的用例会写进前一条用例的临时目录（`server/deploy.test.ts` 加第二条用例时挂了）。
 - 防线：`scripts/rules-check.mjs` 第 17 条。
-
-## 测试里的子进程脚本要断言输出时，用 exitCode 不用 process.exit
-
-- 规则：用例起的 node 子进程脚本（`nodeScript` 这类）输出很多行、用例又要断言最后几行时，结尾写 `process.exitCode = N`，不写 `process.exit(N)`：stdout 接管道时 Node 是异步写的，`process.exit` 会丢掉还没写出去的输出，断言偶发对不上，CI 的抖动报告会让检查失败。
-- 起因：274f1b7 的 `server/background.test.ts`「推回的只是提炼后的日志」用 `process.exit(2)` 收尾，CI 上偶发只读到前 140 来行，「linking step 499」对不上。
