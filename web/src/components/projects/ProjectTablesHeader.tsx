@@ -7,7 +7,7 @@ import { TYPE_NAMES, type TableSchema } from '@shared/tables'
 import { tablesApi } from '@/lib/tables-api'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
-import { Select } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { roleShort } from '@/components/files/sheet-roles'
 import '@/components/files/sheet-table.css'
@@ -25,6 +25,8 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
   const [schema, setSchema] = useState<TableSchema | null>(null)
   const [draft, setDraft] = useState<SheetHeader | null>(null)
   const [roleEnums, setRoleEnums] = useState<TableSchema['style']['roleEnums']>({})
+  const [marks, setMarks] = useState('')
+  const [sep, setSep] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -34,20 +36,31 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
         setSchema(s)
         setDraft(s.style.header ?? null)
         setRoleEnums(s.style.roleEnums ?? {})
+        setMarks((s.style.arrayMarks ?? []).join(', '))
+        setSep(s.style.listSep ?? ';')
       })
       .catch((e) => setError((e as Error).message))
   }, [projectId])
   if (error) return <p className="text-footnote text-danger">{error}</p>
   if (!schema) return null
   const saved = schema.style.header ?? null
+  const markList = marks
+    .split(/[,，\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
   const changed =
     JSON.stringify(saved) !== JSON.stringify(draft) ||
+    JSON.stringify(schema.style.arrayMarks ?? []) !== JSON.stringify(markList) ||
+    (schema.style.listSep ?? ';') !== (sep || ';') ||
     JSON.stringify(schema.style.roleEnums ?? {}) !== JSON.stringify(roleEnums)
   const enumNames = Object.keys(schema.enums).sort()
   const save = async () => {
     setBusy(true)
     try {
-      const next = { ...schema, style: { ...schema.style, header: draft ?? undefined, roleEnums } }
+      const next = {
+        ...schema,
+        style: { ...schema.style, header: draft ?? undefined, roleEnums, arrayMarks: markList, listSep: sep || ';' },
+      }
       setSchema(await tablesApi.saveSchema(projectId, next))
       toast.success(t('表头设置已保存'))
     } catch (e) {
@@ -69,7 +82,33 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
           ]}
         />
       </div>
-      {draft && <HeaderRuleEditor value={draft} onChange={setDraft} />}
+      {draft && <HeaderRuleEditor value={draft} onChange={setDraft} withLabels />}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-footnote text-muted">
+        <label className="flex items-center gap-2">
+          {t('修饰行里表示数组的值')}
+          <Input
+            size="sm"
+            value={marks}
+            placeholder="repeated"
+            onChange={(e) => setMarks(e.target.value)}
+            className="w-44 font-mono"
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          {t('数组默认分隔符')}
+          <Input
+            size="sm"
+            value={sep}
+            maxLength={4}
+            placeholder=";"
+            onChange={(e) => setSep(e.target.value)}
+            className="w-14 text-center font-mono"
+          />
+        </label>
+        <span className="text-caption text-subtle">
+          {t('类型写成 int[]、list<int> 也算数组；单独的列在「列结构」里改')}
+        </span>
+      </div>
       <div>
         <div className="mb-1.5 text-caption text-subtle">
           {t('每种表头行能填什么：选一个通用枚举，表头格子改的时候是下拉，填错标红；没字段名的备注列不查')}

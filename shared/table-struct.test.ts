@@ -170,3 +170,32 @@ test('按行缓存检查结果：没改的行直接用上次的，改了的行�
   )
   assert.ok(cache.has(rows[2]))
 })
+
+test('数组：类型写 int[] / list<T>、修饰行的数组标记、列结构里的分隔符；没字段名的备注列不查', () => {
+  const schema = TableSchema.parse({
+    style: { arrayMarks: ['array'] },
+    columns: { 'a.csv#*#Tags': { sep: '|' } },
+  })
+  const rows = [
+    ['optional', 'array', 'optional', ''],
+    ['int[]', 'string', 'list<uint32>', ''],
+    ['IDs', 'Tags', 'Nums', ''],
+    ['1;x', 'a|b', '1;-2', '随便写'],
+  ]
+  const infos = columnInfos(schema, rows, { start: 0, roles: ['modifier', 'type', 'name'] }, 'a.csv', 'a', 4)
+  assert.deepEqual(
+    infos.map((i) => [i.list, i.type, i.sep, i.remark]),
+    [
+      [true, 'int', ';', false],
+      [true, 'string', '|', false],
+      [true, 'uint32', ';', false],
+      [false, '', ';', true],
+    ],
+  )
+  const { ctx } = columnOptions(schema, infos, () => undefined)
+  const bad = checkSheet(rows, 3, infos, '', ctx)
+  assert.deepEqual(
+    bad.map((p) => p.c),
+    [0, 2],
+  )
+})

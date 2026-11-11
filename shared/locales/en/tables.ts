@@ -130,7 +130,6 @@ export const EN_TABLES: Record<string, string> = {
   也允许的值: 'Also allowed',
   '不在范围、枚举里也算对的特殊值，逗号分隔，例如 -1 表示未配置':
     'Special values that are valid even outside the range or enum, comma-separated, e.g. -1 for not configured',
-  '一格多个值（repeated，用「{sep}」分隔）': 'Multiple values per cell (repeated, separated by "{sep}")',
   '按字段名记在项目的表格结构文件里（这个文件的每张表通用），表格文件不改。':
     "Saved by field name in the project's table structure files (shared by every sheet in this file); the table file is untouched.",
   选择值: 'Choose value',
@@ -318,4 +317,62 @@ export const EN_TABLES: Record<string, string> = {
   基础类型和通用枚举名: 'Basic types and shared enum names',
   '枚举 {e}': 'Enum {e}',
   '「{v}」不是基础类型，也不是通用枚举': '“{v}” is neither a basic type nor a shared enum',
+  '第 {n} 行的名字': 'Name of row {n}',
+  修饰行里表示数组的值: 'Modifier values meaning “array”',
+  数组默认分隔符: 'Default array separator',
+  '类型写成 int[]、list<int> 也算数组；单独的列在「列结构」里改':
+    'Types like int[] or list<int> also count as arrays; change single columns in “Column setup”',
+  '数组（一格多个值）': 'Array (several values per cell)',
+  分隔符: 'Separator',
+  数组分隔符: 'Array separator',
+  '{n} 张表': '{n} tables',
+  '…前面还有 {n} 行': '…{n} earlier lines',
+  '不是文件：{path}': 'Not a file: {path}',
+  '不是表格文件：{path}': 'Not a table file: {path}',
+  删除这个导表脚本: 'Delete this export script',
+  '启动失败：{err}': 'Failed to start: {err}',
+  导表: 'Export',
+  导表脚本: 'Export scripts',
+  '导表脚本的执行目录不存在：{dir}': "The export script's working folder does not exist: {dir}",
+  '导表（这个文件夹里 {n} 张表）': 'Export ({n} tables in this folder)',
+  已复制路径: 'Path copied',
+  '已把 {name} 切换到所选版本': 'Switched {name} to the selected version',
+  '执行时：': 'Runs as:',
+  执行目录: 'Working folder',
+  '找不到这个导表脚本，可能刚在项目设置里删了':
+    'Export script not found; it may have just been deleted in project settings',
+  '把本地的 {name} 切换到 {rev}？': 'Switch the local {name} to {rev}?',
+  '插入占位：': 'Insert placeholder:',
+  '整个文件换成这一版的内容（所有工作表），原文件先备份到数据目录。版本控制里会显示成一处本地改动，要留就提交，不要再切回最新的版本。':
+    'The whole file (every sheet) is replaced with this version; the current file is backed up to the data folder first. Version control will show it as a local change: submit it to keep it, or switch back to the latest version.',
+  '文件名，不带扩展名': 'File name without extension',
+  '文件正在 Excel / WPS 里打开，先在那边关掉再切换（不然那边保存时会把切换的内容盖掉）':
+    'The file is open in Excel / WPS. Close it there before switching (otherwise saving there would overwrite the switched content)',
+  '最长（分钟）': 'Time limit (minutes)',
+  '有 {n} 张表还有没保存的改动：导表读的是磁盘上的文件，这些改动没有带上。':
+    '{n} tables have unsaved changes: the export reads the files on disk, so those changes are not included.',
+  本地文件切换到这一版: 'Switch local file to this version',
+  本地文件换回最近一次提交: 'Restore local file to the latest commit',
+  '比如：导出 JSON': 'e.g. Export JSON',
+  没有选中表格: 'No tables selected',
+  添加导表脚本: 'Add export script',
+  '用设置里选的命令行环境执行。占位在执行时换成真实路径，自动加引号。':
+    'Runs in the shell chosen in settings. Placeholders become real paths at run time and are quoted automatically.',
+  '相对项目目录或绝对路径，空着就是项目目录':
+    'Relative to the project folder or absolute; empty means the project folder',
+  表格在表格页里的路径: "The table's path as shown on the Tables page",
+  表格所在的文件夹: "The table's folder",
+  表格的完整路径: 'Full path of the table',
+  '表格页的「导表」按钮和文件树右键里执行。命令里写占位，执行时才换成表格的真实路径。':
+    "Run from the Export button on the Tables page or the file tree's right-click menu. Write placeholders in the command; they become the tables' real paths only at run time.",
+  '超过 {n} 分钟，已停止': 'Stopped after {n} minutes',
+  超过这么久还没跑完就停掉: 'Stop it if it is still running after this long',
+  '还没有导表脚本：在项目设置 → 表格 →「导表脚本」里添加，命令里用 {file} 代表表格路径。':
+    'No export scripts yet: add one in Project settings → Tables → Export scripts, using {file} for the table path.',
+  这个导表脚本还没填命令: 'This export script has no command yet',
+  '选中的所有表格，空格分隔；写了它就只执行一次':
+    'All selected tables, space-separated; with it the command runs only once',
+  那一版里还没有这个文件: 'The file does not exist in that version',
+  '页面上还没保存的改动会丢掉。': 'Unsaved changes on the page will be lost.',
+  项目目录: 'Project folder',
 }

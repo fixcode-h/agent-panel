@@ -1,7 +1,7 @@
 /**
  * 表格的版本记录：Git log / P4 filelog / SVN log 列出这个文件的历次提交，
  * 取某一版的文件内容（git show / p4 print / svn cat）按同一套解析器读成工作表，交给页面做格子级差异。
- * 只读：不签出、不改工作区。
+ * 这里只读；把本地文件换成某一版的内容见 checkout.ts。
  */
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -123,7 +123,6 @@ const MOVING = /^(HEAD|#have|BASE)$/
 
 /** 某一版的内容：不在那一版里（新加的文件）时返回空表 */
 export async function tableAt(dir: string, rel: string, rev: string): Promise<SheetData[]> {
-  if (!/^[\w#^~@][\w#.^~:@/-]{0,79}$/.test(rev)) throw new HttpError(t('版本号格式不对'))
   const key = `${dir}\n${rel}\n${rev}`
   const hit = atCache.get(key)
   if (hit) return hit
@@ -136,13 +135,19 @@ export async function tableAt(dir: string, rel: string, rev: string): Promise<Sh
 }
 
 async function readAt(dir: string, rel: string, rev: string): Promise<SheetData[]> {
+  const buf = await rawAt(dir, rel, rev)
+  return buf ? (await parseTableBuffer(rel, buf)).sheets : []
+}
+
+/** 某一版文件的原始字节（git show / p4 print / svn cat）；那一版里还没有这个文件时返回 null */
+export async function rawAt(dir: string, rel: string, rev: string): Promise<Buffer | null> {
+  if (!/^[\w#^~@][\w#.^~:@/-]{0,79}$/.test(rev)) throw new HttpError(t('版本号格式不对'))
   const { vcs } = await detectVcs(dir)
-  let buf: Buffer
   try {
-    if (vcs === 'git') buf = await run('git', ['show', `${rev}:./${rel}`], dir)
-    else if (vcs === 'p4') buf = await run('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
-    else if (vcs === 'svn') buf = await run('svn', ['cat', '-r', rev, `./${rel}`], dir)
-    else throw new HttpError(t('这个项目没有版本控制'))
+    if (vcs === 'git') return await run('git', ['show', `${rev}:./${rel}`], dir)
+    if (vcs === 'p4') return await run('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
+    if (vcs === 'svn') return await run('svn', ['cat', '-r', rev, `./${rel}`], dir)
+    throw new HttpError(t('这个项目没有版本控制'))
   } catch (e) {
     if (e instanceof HttpError) throw e
     const msg = (e as Error).message
@@ -152,8 +157,7 @@ async function readAt(dir: string, rel: string, rev: string): Promise<SheetData[
         msg,
       )
     )
-      return []
+      return null
     throw new HttpError(msg)
   }
-  return (await parseTableBuffer(rel, buf)).sheets
 }

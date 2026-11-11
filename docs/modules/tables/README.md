@@ -65,7 +65,13 @@
 
 - `diffSheet`：列按字段名对齐（没字段名按位置）；行有唯一主键（`style.key`）时按主键对齐，否则按整行内容做 LCS（太大时退成贪心），同一段里删了又加的配成「改」。表头行另外比（`headerChanged`）。
 - 版本差异「本地改动」= 基准版（git `HEAD` / p4 `#have` / svn `BASE`）↔ 页面上现在的内容（含没保存的），改过的行能还原成旧值（一次普通编辑）；点一个提交 = 它的上一版 ↔ 它。那一版里还没有这个文件时当空表。
+- 切换到某一版（`server/tables/checkout.ts`，`POST /checkout`）：`rawAt` 取那一版的原始字节（git show / p4 print / svn cat），整个替换本地文件。不动版本控制状态（不 checkout、不 p4 sync），切完就是一处本地改动；替换前和保存一样查只读、Excel / WPS 占用、备份、P4 只读先 `p4 edit`。页面上没保存的改动作废。
 - 跨项目对比：差异方向是 右(旧) → 左(新)。拷行只往右拷：`copyRows` 生成右边文件的行操作 + 格子，先按**右边项目**的结构 `checkTouched`，有问题列出来让用户决定，再走右边项目的原地保存。
+
+## 导表脚本
+
+项目设置 → 表格「导表脚本」写进 `TablesConfig.exports`（`shared/table-export.ts`）：名字、命令、执行目录、最长分钟数。命令里的占位 `{file}` `{files}` `{rel}` `{name}` `{folder}` `{project}` 执行时才换成真实路径（`fillCommand`）：按设置里选的命令行环境加引号（sh / cmd / PowerShell），已经写在引号里的只转义会打断引号的字符；WSL 下盘符路径换成 `/mnt/<盘>/`。有 `{files}` 时所有表一次传进去，没有时每张表执行一次，一条失败后面的不跑。
+入口：表格页工具栏「导表」（当前这张表）和文件树右键（文件或整个文件夹）。`POST /export` 用 NDJSON 一行一个 `ExportEvent` 边跑边推（`Cache-Control: no-transform` 避开压缩攒包），页面断开就停掉命令；窗口里按帧批量刷新，每条命令只留最后 3000 行。导表读磁盘上的文件，有没保存的改动时窗口顶上提醒。
 
 ## Agent 改表格
 

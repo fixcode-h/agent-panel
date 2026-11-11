@@ -433,7 +433,9 @@ export function SheetTable({
                 )}
                 style={{ width: numW, ...lineH }}
               >
-                <span className="font-sans">{roleShort(role)}</span>
+                <span className="truncate font-sans">
+                  {(r >= header.start && header.labels?.[r - header.start]) || roleShort(role)}
+                </span>
                 <span>{r + 1}</span>
               </span>
               {cells(r)}

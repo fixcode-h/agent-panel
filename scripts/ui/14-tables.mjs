@@ -5,7 +5,8 @@
  * - 文件树列出 data 下的表格，打开配置表后自动认出 5 行表头、按角色上色
  * - 内容搜索跨文件找到格子，点一处打开那个文件并滚到那一格
  * - 结构化：检查标红、枚举下拉、repeated 列表编辑、列结构；左栏「检查」查整个项目
- * - 项目设置里的「表格」页（目录、包含 / 排除、结构信息存放位置）和 AI 分析表格风格
+ * - 导表脚本（占位换成真实路径、看输出）、本地文件切换到某一版
+ * - 项目设置里的「表格」页（目录、包含 / 排除、导表脚本、结构信息存放位置）和 AI 分析表格风格
  * 只走用户能走的路（点图标栏、点文件树、在搜索框里打字）。
  */
 import { runShard } from './harness.mjs'
@@ -165,6 +166,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('表格页：跨项目对比拷行没有成功'))
   await p.keyboard.press('Escape')
 
+  // 导表：工具栏「导表」选一个脚本，窗口里看到占位换成真实路径后的命令和输出
+  await p.getByRole('button', { name: '导表', exact: true }).click()
+  await p.getByRole('menuitem', { name: /导出 JSON/ }).click()
+  const run = p.getByRole('dialog')
+  await run
+    .getByText(/导出 C_HomeDecorationConfig\.json/)
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('导表：没有跑出输出'))
+  if (
+    !(await run.getByText(/export_json\.py \/home\/demo\/code\/web-shop\/data\/C_HomeDecorationConfig\.xlsx/).count())
+  )
+    errors.push('导表：命令里的 {file} 没有换成表格的真实路径')
+  await check(p, '表格页-导表', ['完成', '退出码 0'])
+  await p.keyboard.press('Escape')
+
+  // 本地文件切换到某一版：选一个旧提交，确认后整个文件换成那一版
+  await p.getByRole('button', { name: '版本', exact: true }).click()
+  await hist.getByRole('button', { name: /9b7d3f10/ }).click()
+  await hist.getByRole('button', { name: '本地文件切换到这一版' }).click()
+  await check(p, '表格页-切换版本确认', ['整个文件换成这一版的内容'])
+  await p.getByRole('button', { name: '切换', exact: true }).click()
+  await p
+    .getByText(/已把 C_HomeDecorationConfig\.xlsx 切换到所选版本/)
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('表格页：切换到旧版本没有成功'))
+
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()
   const dlg = p.getByRole('dialog')
@@ -172,7 +199,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText('表格目录', { exact: true })
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：「表格设置」没有打开项目设置的表格页'))
-  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件'])
+  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件', '导表脚本', '执行时：'])
+
+  await dlg.getByRole('button', { name: '添加导表脚本' }).scrollIntoViewIfNeeded()
+  await check(p, '项目设置-导表脚本', ['插入占位：', '执行时：'])
 
   // 表格目录一行一个：「添加表格目录」弹出目录选择器，选项目里的 tests 多一行（里面没有表格），再删掉
   await dlg.getByRole('button', { name: '添加表格目录' }).click()

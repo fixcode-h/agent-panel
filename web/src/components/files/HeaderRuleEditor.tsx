@@ -2,7 +2,7 @@ import { t } from '@shared/i18n'
 import { SHEET_ROLES, type SheetHeader, type SheetRole } from '@shared/sheet-header'
 import { cn } from '@/lib/utils'
 import { Input, Select } from '@/components/ui/input'
-import { roleLabel } from './sheet-roles'
+import { roleLabel, roleShort } from './sheet-roles'
 import './sheet-table.css'
 
 /** 表头最多设这么多行 */
@@ -17,7 +17,10 @@ export function HeaderRuleEditor({
   onChange,
   last = 1000,
   preview,
+  withLabels,
 }: {
+  /** 能给每行起名字（项目设置里用：「导出标记」「默认值」这类自己的行） */
+  withLabels?: boolean
   value: SheetHeader
   onChange: (h: SheetHeader) => void
   /** 最多能从第几行开始（表的行数） */
@@ -30,7 +33,7 @@ export function HeaderRuleEditor({
     const n = Math.min(Math.max(0, v || 0), MAX_HEADER_ROWS)
     const roles = value.roles.slice(0, n)
     while (roles.length < n) roles.push('other')
-    onChange({ ...value, roles })
+    onChange({ ...value, roles, ...(value.labels ? { labels: value.labels.slice(0, n) } : {}) })
   }
   const setRole = (i: number, r: SheetRole) =>
     onChange({ ...value, roles: value.roles.map((x, j) => (j === i ? r : x)) })
@@ -71,6 +74,20 @@ export function HeaderRuleEditor({
                   {value.start + i + 1}
                 </span>
                 <span className={cn('h-4 w-4 shrink-0 rounded-sm sheet-role', `sheet-role-${r}`)} />
+                {withLabels && (
+                  <Input
+                    size="sm"
+                    aria-label={t('第 {n} 行的名字', { n: value.start + i + 1 })}
+                    placeholder={roleShort(r)}
+                    maxLength={20}
+                    value={value.labels?.[i] ?? ''}
+                    onChange={(e) => {
+                      const labels = value.roles.map((_, j) => (j === i ? e.target.value : (value.labels?.[j] ?? '')))
+                      onChange({ ...value, labels: labels.some(Boolean) ? labels : undefined })
+                    }}
+                    className="w-28 shrink-0"
+                  />
+                )}
                 <div className="min-w-0 flex-1">
                   <Select
                     size="sm"

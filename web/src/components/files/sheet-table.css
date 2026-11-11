@@ -113,3 +113,8 @@
 .sheet-pad {
   pointer-events: none;
 }
+
+/* 备注列（没有字段名的列）：灰字 */
+.sheet-remark {
+  color: var(--subtle);
+}

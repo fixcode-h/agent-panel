@@ -138,7 +138,7 @@ export const designExportUrl = (id: string, format: 'zip' | 'json' | 'react') =>
 export const lifecycleDownloadUrl = (id: string) => `/api/tasks/${id}/lifecycle/download`
 
 /** 非 2xx 的响应转成错误：响应体挂到错误上，有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息 */
-async function failure(res: Response): Promise<never> {
+export async function failure(res: Response): Promise<never> {
   const body = await res.json().catch(() => ({}))
   // 外网打开的面板登录失效了（改了密码、被踢下线、过期）：服务端回 401 并带 login，去登录页，登完回到这一页
   if (res.status === 401 && body?.login === '/login')

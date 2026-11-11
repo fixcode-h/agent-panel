@@ -602,7 +602,23 @@ function seed(): Db {
           description: '面向用户的商城网站',
           path: '/home/demo/code/web-shop',
           // 表格管理：data 目录里的 xlsx / CSV 在表格页里看（左侧图标栏多一个「表格」）
-          tables: { dirs: ['data'], include: TABLE_INCLUDE, exclude: TABLE_EXCLUDE, store: 'project', readOnly: false },
+          tables: {
+            dirs: ['data'],
+            include: TABLE_INCLUDE,
+            exclude: TABLE_EXCLUDE,
+            store: 'project',
+            readOnly: false,
+            // 导表脚本：{file} 执行时才换成表格的真实路径
+            exports: [
+              {
+                name: '导出 JSON',
+                command: 'python tools/export_json.py {file} -o {project}/out',
+                cwd: '',
+                timeoutMin: 30,
+              },
+              { name: '全部导成 Lua', command: 'node tools/xlsx2lua.mjs {files}', cwd: '', timeoutMin: 30 },
+            ],
+          },
           categoryId: web.id,
           workflowId: '',
           // 上次 AI 初始化保存的推荐：重开设置时卡片上能直接「应用推荐」
@@ -757,7 +773,14 @@ function seed(): Db {
           description: '',
           path: '/home/demo/code/game-client',
           // 同一个游戏的 Release 工作区：表格页的「跨项目对比」拿它和商城前台的 data 目录比
-          tables: { dirs: ['data'], include: TABLE_INCLUDE, exclude: TABLE_EXCLUDE, store: 'project', readOnly: false },
+          tables: {
+            dirs: ['data'],
+            include: TABLE_INCLUDE,
+            exclude: TABLE_EXCLUDE,
+            store: 'project',
+            readOnly: false,
+            exports: [],
+          },
           categoryId: game.id,
           workflowId: '',
         },

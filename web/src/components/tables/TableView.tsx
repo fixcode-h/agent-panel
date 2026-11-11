@@ -4,6 +4,7 @@ import { t } from '@shared/i18n'
 import { TYPE_NAMES, schemaHeader, type TableDoc, type TableSchema } from '@shared/tables'
 import type { CellSet, RowOp, SheetEdit } from '@shared/table-edit'
 import type { SheetHeader } from '@shared/sheet-header'
+import type { TableExport } from '@shared/table-export'
 import { colCount, type CellHit } from '@/lib/sheet'
 import { cn } from '@/lib/utils'
 import { SheetTable, SheetTabs } from '@/components/files/SheetTable'
@@ -29,6 +30,7 @@ import { TableSaveDialog } from './TableSaveDialog'
 import { TableHistoryDialog } from './TableHistoryDialog'
 import { dirtyCells, pendingOf, redoIn, rowOpIn, rowsOf, setCellsIn, undoIn, type Edits } from './table-edits'
 import { useGridEdit } from './use-grid-edit'
+import { ExportMenu } from './ExportMenu'
 
 /** 从内容搜索跳过来：切到这张表、滚到这一格 */
 export interface TableJump {
@@ -53,6 +55,9 @@ export function TableView({
   edits,
   onEdits,
   onSave,
+  onCheckout,
+  exports,
+  onExport,
   loadDoc,
   files,
   projectId,
@@ -72,6 +77,12 @@ export function TableView({
   onEdits: (f: (e: Edits) => Edits) => void
   /** 保存：成功返回 null，失败返回原因 */
   onSave: (pending: SheetEdit[], force: boolean) => Promise<string | null>
+  /** 把本地文件切换到某一版；失败时抛出原因 */
+  onCheckout: (rev: string) => Promise<void>
+  /** 项目设置里的导表脚本 */
+  exports: TableExport[]
+  /** 对这张表执行第几个导表脚本 */
+  onExport: (index: number) => void
 }) {
   const index = Math.min(sheetIndex, Math.max(0, doc.sheets.length - 1))
   const sheet = doc.sheets[index]
@@ -149,8 +160,7 @@ export function TableView({
           ? struct.refOpts.get(info.ref)
           : undefined
       const title = info?.enumName ?? info?.ref ?? info?.field ?? ''
-      if (info?.list)
-        return <ListEditor init={init} sep={schema.style.listSep || ';'} options={opts} title={title} onDone={done} />
+      if (info?.list) return <ListEditor init={init} sep={info.sep} options={opts} title={title} onDone={done} />
       if (info && opts)
         return (
           <EnumPicker
@@ -165,7 +175,14 @@ export function TableView({
     },
     mark: (r, c) => {
       const k = `${r}:${c}`
-      const cls = [dirty.has(k) && 'sheet-dirty', struct.problemAt.has(k) && 'sheet-bad'].filter(Boolean).join(' ')
+      const cls = [
+        dirty.has(k) && 'sheet-dirty',
+        struct.problemAt.has(k) && 'sheet-bad',
+        // 没字段名的备注列：灰字，不检查
+        r >= (view?.from ?? 0) && struct.infos[c]?.remark && 'sheet-remark',
+      ]
+        .filter(Boolean)
+        .join(' ')
       return cls || undefined
     },
     tip: (r, c) => struct.problemAt.get(`${r}:${c}`),
@@ -229,6 +246,7 @@ export function TableView({
           <History className="h-3.5 w-3.5" />
           {t('版本')}
         </Button>
+        <ExportMenu exports={exports} onRun={onExport} />
         <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
           <BookA className="h-3.5 w-3.5" />
           {t('枚举')}
@@ -319,6 +337,8 @@ export function TableView({
           rows={rows}
           schema={schema}
           onRestore={readOnly ? undefined : setCells}
+          onCheckout={readOnly ? undefined : onCheckout}
+          dirty={pending.length > 0}
         />
       )}
       {saving && (

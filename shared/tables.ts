@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { SHEET_ROLES, type SheetHeader } from './sheet-header.ts'
 import type { SheetData } from './files.ts'
+import { TableExport } from './table-export.ts'
 
 /** 默认认作表格的文件 */
 export const TABLE_INCLUDE = '*.xlsx, *.xlsm, *.xls, *.csv, *.tsv'
@@ -20,6 +21,8 @@ export const TablesConfig = z.object({
   store: z.enum(['project', 'data']).default('project'),
   /** 只读：表格页只能看、搜、对比，不能改 */
   readOnly: z.boolean().default(false),
+  /** 导表脚本：表格页对表格执行的命令，路径用占位（见 table-export.ts） */
+  exports: z.array(TableExport).max(20).default([]),
 })
 export type TablesConfig = z.infer<typeof TablesConfig>
 
@@ -135,6 +138,7 @@ export interface TableSearch {
 const HeaderRule = z.object({
   start: z.number().int().min(0).max(1000),
   roles: z.array(z.enum(SHEET_ROLES)).max(20),
+  labels: z.array(z.string().trim().max(20)).max(20).optional(),
 })
 
 /** 一个枚举值 */
@@ -167,6 +171,8 @@ export type TableEnum = z.infer<typeof TableEnum>
 
 /** 一列的结构：枚举、引用别的表的主键、列表（repeated）、取值范围 */
 export const TableColumn = z.object({
+  /** 这一列数组的分隔符（不写就用项目的 listSep） */
+  sep: z.string().min(1).max(4).optional(),
   /** 参数类型：表头类型行写错、没写时按这个处理（uint32、float、string……），表格不改 */
   type: z.string().trim().max(100).optional(),
   enum: z.string().max(200).optional(),
@@ -191,6 +197,8 @@ export const TableStyle = z.object({
   key: z.string().trim().max(100).default('ID'),
   /** repeated 列表的分隔符 */
   listSep: z.string().max(4).default(';'),
+  /** 修饰行里哪些值表示「这一列是数组」（不分大小写） */
+  arrayMarks: z.array(z.string().trim().max(40)).max(20).default(['repeated']),
   /** 类型行里算基础类型的名字（其余的大驼峰名字当枚举 / 结构） */
   primitives: z.array(z.string().max(40)).max(80).default([]),
   /**

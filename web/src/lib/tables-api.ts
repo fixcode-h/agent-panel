@@ -6,7 +6,9 @@ import type { TableDoc, TableRoot, TableSchema, TableSearch, TablesConfig, Table
 import type { TableSave } from '@shared/table-edit'
 import type { SheetProblems } from '@shared/table-struct'
 import type { SheetData } from '@shared/files'
-import { json, request } from './api'
+import type { ExportEvent } from '@shared/table-export'
+import { failure, json, request } from './api'
+import { trackedFetch } from './connection'
 
 const q = encodeURIComponent
 
@@ -36,6 +38,50 @@ export const tablesApi = {
     request<{ pairs: TablePair[]; truncated?: boolean }>(`/tables/${projectId}/compare?other=${q(other)}`),
   /** 全项目检查 */
   check: (projectId: string) => request<TablesCheck>(`/tables/${projectId}/check`),
+  /** 把本地文件切换到某一版：返回切换后的文件 */
+  checkout: (projectId: string, path: string, rev: string) =>
+    request<TableDoc>(`/tables/${projectId}/checkout`, json('POST', { path, rev })),
+  runExport,
+}
+
+/** 执行导表脚本：服务端一行一个 JSON 边跑边推，每收到一条回调一次；signal 停止（服务端跟着停掉命令） */
+async function runExport(
+  projectId: string,
+  script: number,
+  paths: string[],
+  onEvent: (e: ExportEvent) => void,
+  signal?: AbortSignal,
+) {
+  const url = `/tables/${projectId}/export`
+  // 演示版没有后端：模拟出整串消息，隔一会儿放一条
+  if (import.meta.env.VITE_DEMO) {
+    const events = await request<ExportEvent[]>(url, json('POST', { script, paths }))
+    for (const e of events) {
+      if (signal?.aborted) return
+      await new Promise((r) => setTimeout(r, 120))
+      onEvent(e)
+    }
+    return
+  }
+  const res = await trackedFetch(`/api${url}`, {
+    ...json('POST', { script, paths }),
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+  })
+  if (!res.ok) await failure(res)
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+  let buf = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += value
+    let i: number
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim()
+      buf = buf.slice(i + 1)
+      if (line) onEvent(JSON.parse(line) as ExportEvent)
+    }
+  }
 }
 
 export interface TableRev {

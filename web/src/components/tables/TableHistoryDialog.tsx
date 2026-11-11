@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { History, Loader2, Undo2 } from 'lucide-react'
+import { ArchiveRestore, History, Loader2, Undo2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { SheetData } from '@shared/files'
 import type { TableSchema } from '@shared/tables'
@@ -9,6 +9,9 @@ import { useSheetDiff } from '@/lib/sheet-diff-async'
 import { headerOf } from '@shared/table-struct'
 import { fieldNames } from '@shared/table-agent'
 import { tablesApi, type TableHistory } from '@/lib/tables-api'
+import { toast } from '@/lib/toast'
+import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
@@ -38,6 +41,8 @@ export function TableHistoryDialog({
   rows,
   schema,
   onRestore,
+  onCheckout,
+  dirty,
 }: {
   open: boolean
   onClose: () => void
@@ -50,7 +55,12 @@ export function TableHistoryDialog({
   schema: TableSchema
   /** 还原：把这些格子改回旧值；只读时不传 */
   onRestore?: (cells: CellSet[]) => void
+  /** 把本地文件整个切换到这一版（只读时不传）；失败时抛出原因 */
+  onCheckout?: (rev: string) => Promise<void>
+  /** 页面上还有没保存的改动：切换前提醒会丢 */
+  dirty?: boolean
 }) {
+  const [switching, setSwitching] = useState<{ id: string; label: string } | null>(null)
   const [hist, setHist] = useState<TableHistory | null>(null)
   const [error, setError] = useState('')
   const [pick, setPick] = useState<Pick>('local')
@@ -176,6 +186,23 @@ export function TableHistoryDialog({
             <span className="font-mono text-body">{title}</span>
             {diff && <DiffSummary diff={diff} />}
             <span className="flex-1" />
+            {onCheckout && hist && hist.vcs !== 'none' && (pick === 'local' ? hist.base : revs[pick]) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={() =>
+                  setSwitching(
+                    pick === 'local'
+                      ? { id: hist.base, label: revs[0]?.label ?? t('最近一次提交') }
+                      : { id: revs[pick].id, label: revs[pick].label },
+                  )
+                }
+              >
+                <ArchiveRestore className="h-3.5 w-3.5" />
+                {pick === 'local' ? t('本地文件换回最近一次提交') : t('本地文件切换到这一版')}
+              </Button>
+            )}
             <Segmented
               label={t('显示')}
               size="sm"
@@ -216,6 +243,33 @@ export function TableHistoryDialog({
           </div>
         </section>
       </div>
+      <ConfirmDialog
+        open={!!switching}
+        title={t('把本地的 {name} 切换到 {rev}？', {
+          name: path.slice(path.lastIndexOf('/') + 1),
+          rev: switching?.label ?? '',
+        })}
+        description={
+          <>
+            {t(
+              '整个文件换成这一版的内容（所有工作表），原文件先备份到数据目录。版本控制里会显示成一处本地改动，要留就提交，不要再切回最新的版本。',
+            )}
+            {dirty && <span className="mt-2 block text-warning">{t('页面上还没保存的改动会丢掉。')}</span>}
+          </>
+        }
+        confirmText={t('切换')}
+        onConfirm={async () => {
+          if (!switching || !onCheckout) return
+          try {
+            await onCheckout(switching.id)
+            setSwitching(null)
+            onClose()
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+        onOpenChange={(o) => !o && setSwitching(null)}
+      />
     </Modal>
   )
 }

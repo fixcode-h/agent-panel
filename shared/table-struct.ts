@@ -20,6 +20,10 @@ export interface ColInfo {
   head: { role: SheetRole; text: string }[]
   kind: ColKind
   list: boolean
+  /** 数组的分隔符（列结构里设的 > 项目的） */
+  sep: string
+  /** 没有字段名的列：备注列，灰字显示、不检查 */
+  remark: boolean
   enumName?: string
   ref?: string
   min?: number
@@ -58,7 +62,12 @@ export function columnInfos(
   for (let c = 0; c < cols; c++) {
     const field = (names[c] ?? '').trim()
     const own = field ? schemaColumn(schema, file, sheet, field) : undefined
-    const type = own?.type || (types[c] ?? '').trim()
+    const rawType = own?.type || (types[c] ?? '').trim()
+    // 类型里写了数组：int[]、list<int>、array<ItemId>、TArray<…>、vector<…>；按元素类型检查
+    const arr = /^(.+?)\s*\[\]$/.exec(rawType) ?? /^(?:list|array|vector|tarray|set)\s*<\s*(.+?)\s*>$/i.exec(rawType)
+    const type = arr ? arr[1].trim() : rawType
+    const mod = (mods[c] ?? '').trim().toLowerCase()
+    const marks = (schema.style.arrayMarks ?? ['repeated']).map((m) => m.toLowerCase())
     const enumName = own?.enum ?? (schema.enums[type] ? type : undefined)
     const kind: ColKind = enumName
       ? 'enum'
@@ -79,7 +88,9 @@ export function columnInfos(
       type,
       head: header.roles.map((role, i) => ({ role, text: (rows[header.start + i]?.[c] ?? '').trim() })),
       kind,
-      list: own?.list ?? /^repeated$/i.test((mods[c] ?? '').trim()),
+      list: own?.list ?? (!!arr || (!!mod && marks.includes(mod))),
+      sep: own?.sep || schema.style.listSep || ';',
+      remark: !field && names.length > 0,
       enumName,
       ref: own?.ref,
       min: own?.min,
@@ -150,9 +161,9 @@ function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
 
 /** 一格对不对；空格子不查（可以不填） */
 export function checkCell(info: ColInfo | undefined, value: string, ctx: CheckCtx): string | undefined {
-  if (!info || !value) return undefined
+  if (!info || !value || info.remark) return undefined
   if (info.list) {
-    for (const item of value.split(ctx.listSep).map((x) => x.trim())) {
+    for (const item of value.split(info.sep || ctx.listSep).map((x) => x.trim())) {
       if (!item) continue
       const bad = checkOne(info, item, ctx)
       if (bad) return bad

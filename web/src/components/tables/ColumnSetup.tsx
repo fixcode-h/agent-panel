@@ -217,11 +217,27 @@ export function ColumnSetup({
                     className="font-mono"
                   />
                 </Field>
-                <Checkbox
-                  checked={d.list ?? info.list}
-                  onChange={(v) => setD({ ...d, list: v })}
-                  label={t('一格多个值（repeated，用「{sep}」分隔）', { sep: schema.style.listSep })}
-                />
+                <div className="flex flex-wrap items-center gap-3">
+                  <Checkbox
+                    checked={d.list ?? info.list}
+                    onChange={(v) => setD({ ...d, list: v })}
+                    label={t('数组（一格多个值）')}
+                  />
+                  {(d.list ?? info.list) && (
+                    <label className="flex items-center gap-1.5 text-footnote text-muted">
+                      {t('分隔符')}
+                      <Input
+                        size="sm"
+                        aria-label={t('数组分隔符')}
+                        placeholder={schema.style.listSep || ';'}
+                        value={d.sep ?? ''}
+                        maxLength={4}
+                        onChange={(e) => setD({ ...d, sep: e.target.value || undefined })}
+                        className="w-14 text-center font-mono"
+                      />
+                    </label>
+                  )}
+                </div>
                 <Field label={t('说明')}>
                   <Input size="sm" value={d.note ?? ''} onChange={(e) => setD({ ...d, note: e.target.value })} />
                 </Field>

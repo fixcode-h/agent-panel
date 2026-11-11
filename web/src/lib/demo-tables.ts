@@ -21,6 +21,30 @@ import type { SheetData } from '@shared/files'
 import { DEMO_CSV, DEMO_FILES, DEMO_SHEETS } from './demo-project-files'
 import { fail } from './demo-http'
 import { DEMO_REVS, demoAt, demoRelease } from './demo-table-versions'
+import { exportLines, type ExportEvent } from '@shared/table-export'
+
+function demoExport(p: Project, b: { script: number; paths: string[] }): ExportEvent[] {
+  const script = p.tables?.exports[b.script]
+  if (!script) fail('找不到这个导表脚本，可能刚在项目设置里删了')
+  const lines = exportLines(
+    script!.command,
+    b.paths.map((x) => ({ file: `${p.path}/${x}`, rel: x })),
+    p.path,
+    'sh',
+  )
+  return [
+    ...lines.flatMap((line, index): ExportEvent[] => {
+      const name = b.paths[index] ?? b.paths.join(' ')
+      return [
+        { type: 'start', line, index, total: lines.length },
+        { type: 'out', text: `读取 ${name}` },
+        { type: 'out', text: `导出 ${name.replace(/.*\//, '').replace(/\.[^.]+$/, '')}.json，共 ${12 + index * 7} 行` },
+        { type: 'end', index, code: 0 },
+      ]
+    }),
+    { type: 'done', ok: true },
+  ]
+}
 
 const MTIME = '2026-11-10T08:00:00.000Z'
 /** 每个文件的内容和修改时间（保存后更新） */
@@ -202,6 +226,17 @@ export function demoTables(
     const path = query.get('path') ?? ''
     return { sheets: demoAt(path, query.get('rev') ?? '', pristine(path)) }
   }
+  // 切换到某一版：演示里直接把内容换成那一版
+  if (kind === 'checkout' && method === 'POST') {
+    const b = body as { path: string; rev: string }
+    if (p.tables?.readOnly) fail('项目设置里把表格设成了只读')
+    const book = bookOf(b.path, p)
+    book.sheets = structuredClone(demoAt(b.path, b.rev, pristine(b.path)))
+    book.mtime = new Date().toISOString()
+    return demoTables('GET', [seg[0], seg[1], 'file'], new URLSearchParams({ path: b.path }), null, p, others)
+  }
+  // 导表：演示不真的执行，按配好的命令拼出要跑的几行，给出一段像样的输出（页面会一条一条放出来）
+  if (kind === 'export' && method === 'POST') return demoExport(p, body as { script: number; paths: string[] })
   // 跨项目对比：按相对路径配对，比格子
   if (kind === 'compare' && method === 'GET') {
     const other = others(query.get('other') ?? '')

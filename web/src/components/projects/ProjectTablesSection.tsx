@@ -12,6 +12,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { TablesAnalyze } from '@/components/tables/TablesAnalyze'
 import { DirList } from './DirList'
 import { ProjectTablesEnums, ProjectTablesHeader } from './ProjectTablesHeader'
+import { ProjectTablesExports } from './ProjectTablesExports'
 
 /** 常见的表格目录写法：点一下加一行 */
 const COMMON_DIRS = ['Config', 'Designer/Excel', 'Design/Tables', 'Content/DataTables']
@@ -139,6 +140,20 @@ export function ProjectTablesSection({
             {t('整个项目所有表格共用：列的类型写了同名类型，或在「列结构」里选了它，改格子时就是下拉，填错会标红。')}
           </p>
           <ProjectTablesEnums projectId={project.id} />
+        </FormSection>
+      )}
+
+      {tablesOn(cfg) && (
+        <FormSection title={t('导表脚本')}>
+          <p className="text-footnote leading-relaxed text-subtle">
+            {t('表格页的「导表」按钮和文件树右键里执行。命令里写占位，执行时才换成表格的真实路径。')}
+          </p>
+          <ProjectTablesExports
+            value={cfg.exports}
+            onChange={(exports) => patch({ exports })}
+            sample={(typeof probe === 'object' && probe?.sample[0]) || 'Config/Item.xlsx'}
+            base={base}
+          />
         </FormSection>
       )}
 

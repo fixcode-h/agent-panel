@@ -2,7 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight, FileSpreadsheet, FileText, Folder } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableFile } from '@shared/tables'
+import { exportName, type TableExport } from '@shared/table-export'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/menu'
 import { buildTableTree, type TableNode } from './table-tree'
 
 /** 每层缩进 */
@@ -19,8 +29,13 @@ export function TableTree({
   active,
   dirty,
   onOpen,
+  exports = [],
+  onExport,
 }: {
   files: TableFile[]
+  /** 项目设置里的导表脚本：右键文件 / 文件夹可以对它们执行 */
+  exports?: TableExport[]
+  onExport?: (index: number, paths: string[]) => void
   /** 名字搜索 */
   query: string
   active?: string
@@ -29,6 +44,8 @@ export function TableTree({
   onOpen: (path: string) => void
 }) {
   const tree = useMemo(() => buildTableTree(files, query), [files, query])
+  // 右键的是哪一行：整棵树只挂一个右键菜单（几千行每行一个菜单太重）
+  const [menuAt, setMenuAt] = useState<TableNode | null>(null)
   // 展开了的文件夹：默认全折叠；只有一个顶层目录时展开它
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
   const single = tree.length === 1 && !tree[0].file ? tree[0].path : ''
@@ -70,17 +87,50 @@ export function TableTree({
           active={n.path === active}
           dirty={!!dirty?.has(n.path)}
           onClick={() => (n.file ? onOpen(n.path) : toggle(n.path))}
+          onMenu={() => setMenuAt(n)}
         />,
       )
       if (!n.file && open) walk(n.children, depth + 1)
     }
   }
   walk(tree, 0)
+  const under = menuAt ? filesUnder(menuAt) : []
   return (
-    <div role="tree" aria-label={t('表格文件')} className="flex flex-col gap-px">
-      {rows}
-    </div>
+    <ContextMenu onOpenChange={(o) => !o && setMenuAt(null)}>
+      <ContextMenuTrigger asChild>
+        <div role="tree" aria-label={t('表格文件')} className="flex flex-col gap-px">
+          {rows}
+        </div>
+      </ContextMenuTrigger>
+      {menuAt && (
+        <ContextMenuContent>
+          {menuAt.file && <ContextMenuItem onSelect={() => onOpen(menuAt.path)}>{t('打开')}</ContextMenuItem>}
+          <ContextMenuItem onSelect={() => void copyText(menuAt.path, { done: t('已复制路径') })}>
+            {t('复制路径')}
+          </ContextMenuItem>
+          {onExport && exports.length > 0 && under.length > 0 && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuLabel>
+                {menuAt.file ? t('导表') : t('导表（这个文件夹里 {n} 张表）', { n: under.length })}
+              </ContextMenuLabel>
+              {exports.map((x, i) => (
+                <ContextMenuItem key={i} onSelect={() => onExport(i, under)}>
+                  {exportName(x, i)}
+                </ContextMenuItem>
+              ))}
+            </>
+          )}
+        </ContextMenuContent>
+      )}
+    </ContextMenu>
   )
+}
+
+/** 一个节点下的所有表格（老 .xls 不能导也照样传，脚本自己决定） */
+function filesUnder(n: TableNode): string[] {
+  if (n.file) return [n.path]
+  return n.children.flatMap(filesUnder)
 }
 
 function TreeRow({
@@ -90,6 +140,7 @@ function TreeRow({
   active,
   dirty,
   onClick,
+  onMenu,
 }: {
   node: TableNode
   depth: number
@@ -97,6 +148,7 @@ function TreeRow({
   active: boolean
   dirty: boolean
   onClick: () => void
+  onMenu: () => void
 }) {
   const f = node.file
   const Icon = !f ? Folder : f.kind === 'csv' ? FileText : FileSpreadsheet
@@ -109,6 +161,7 @@ function TreeRow({
       aria-selected={active}
       title={node.path}
       onClick={onClick}
+      onContextMenu={onMenu}
       style={{ paddingLeft: `${6 + depth * INDENT}px` }}
       className={cn(
         'flex h-7 w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-(--c-row-radius) pr-2 text-left text-body transition-colors hover:bg-sel/60',

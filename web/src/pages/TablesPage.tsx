@@ -20,7 +20,9 @@ import { TableTabs } from '@/components/tables/TableTabs'
 import { TableView, type TableJump } from '@/components/tables/TableView'
 import { noEdits, pendingOf, type Edits } from '@/components/tables/table-edits'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { TableExportDialog } from '@/components/tables/TableExportDialog'
 import type { SheetEdit } from '@shared/table-edit'
+import type { TableExport } from '@shared/table-export'
 
 type Mode = 'name' | 'content' | 'check'
 
@@ -55,6 +57,7 @@ export function TablesPage() {
       key={projectId}
       projectId={projectId}
       projects={projects.map((p) => ({ value: p.id, label: p.name }))}
+      exports={projects.find((p) => p.id === projectId)?.tables?.exports ?? []}
       onProject={(id) => go({ page: 'tables', id })}
       onSettings={() => openProject(projectId, 'tables')}
     />
@@ -67,9 +70,12 @@ function Workbench({
   projects,
   onProject,
   onSettings,
+  exports,
 }: {
   projectId: string
   projects: { value: string; label: string }[]
+  /** 项目设置里的导表脚本 */
+  exports: TableExport[]
   onProject: (id: string) => void
   onSettings: () => void
 }) {
@@ -196,6 +202,18 @@ function Workbench({
       return (e as Error).message
     }
   }
+  // 切换到某一版：整个文件换掉，页面上的改动作废
+  const checkoutDoc = async (doc: TableDoc, rev: string) => {
+    const next = await tablesApi.checkout(projectId, doc.path, rev)
+    setDocs((m) => ({ ...m, [doc.path]: next }))
+    extDocs.current.delete(doc.path)
+    setEdits(({ [doc.path]: _, ...m }) => m)
+    setCheckSeq((n) => n + 1)
+    toast.success(t('已把 {name} 切换到所选版本', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
+  }
+  // 正在执行的导表：第几个脚本、哪些表
+  const [exporting, setExporting] = useState<{ index: number; paths: string[]; seq: number } | null>(null)
+  const runExport = (index: number, paths: string[]) => setExporting((x) => ({ index, paths, seq: (x?.seq ?? 0) + 1 }))
   const saveSchema = useCallback(
     (s: TableSchema) => {
       setSchema(s)
@@ -275,7 +293,15 @@ function Workbench({
             <Loader2 className="h-4 w-4 animate-spin" />
           </div>
         ) : mode === 'name' ? (
-          <TableTree files={files} query={query} active={active} dirty={dirtyPaths} onOpen={open} />
+          <TableTree
+            files={files}
+            query={query}
+            active={active}
+            dirty={dirtyPaths}
+            onOpen={open}
+            exports={exports}
+            onExport={runExport}
+          />
         ) : mode === 'check' ? (
           <TableCheckList projectId={projectId} query={query} seq={checkSeq} onOpen={openHit} />
         ) : (
@@ -323,6 +349,9 @@ function Workbench({
             edits={edits[doc.path]}
             onEdits={(f) => setEdits((m) => ({ ...m, [doc.path]: f(m[doc.path] ?? noEdits()) }))}
             onSave={(pending, force) => saveDoc(doc, pending, force)}
+            onCheckout={(rev) => checkoutDoc(doc, rev)}
+            exports={exports}
+            onExport={(i) => runExport(i, [doc.path])}
             loadDoc={loadDoc}
             files={files.map((f) => f.path)}
           />
@@ -334,6 +363,17 @@ function Workbench({
           onClose={() => setComparing(false)}
           left={{ id: projectId, name: projects.find((p) => p.value === projectId)?.label ?? '' }}
           projects={others}
+        />
+      )}
+      {exporting && exports[exporting.index] && (
+        <TableExportDialog
+          key={exporting.seq}
+          projectId={projectId}
+          index={exporting.index}
+          script={exports[exporting.index]}
+          paths={exporting.paths}
+          dirty={exporting.paths.filter((p) => dirtyPaths.has(p)).length}
+          onClose={() => setExporting(null)}
         />
       )}
       <ConfirmDialog
