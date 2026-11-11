@@ -9,6 +9,7 @@ import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
 import type { TrustChoice } from '../shared/cli-trust.ts'
 import { queryCliCommands } from './cli-commands.ts'
+import { pluginCommands } from './plugins/contrib.ts'
 
 /**
  * 输入框里的「/」命令：列出 CLI 自己带的命令和 Skill、「所有 Agent」共用的命令，发出去之前按 CLI 展开。
@@ -123,9 +124,11 @@ async function all(cli: string, cwd: string, trust?: TrustChoice): Promise<Found
     const queried = await queryCliCommands(cli, cwd, trust).catch(() => [])
     const seen = new Set(cmds.map((c) => c.name))
     // 共用的命令排在 CLI 自己的后面：同名时以 CLI 自己的为准
-    const panel = (await scanCommands(panelCommandDir(), t('所有 Agent'), 'md')).filter(
-      (c) => !seen.has(c.name) && seen.add(c.name),
-    )
+    const panel = [
+      ...(await scanCommands(panelCommandDir(), t('所有 Agent'), 'md')),
+      // 开着的插件带的命令（插件接口 3）：和共用命令一样由面板展开，排在共用命令后面，同名让给前面的
+      ...pluginCommands(),
+    ].filter((c) => !seen.has(c.name) && seen.add(c.name))
     return [
       ...cmds,
       ...panel.map((c) => ({ ...c, panel: true })),

@@ -24,6 +24,7 @@ import { DATA_DIR } from '../store.ts'
 import { loadProjectLessons } from '../project-lessons.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
+import { activePluginHooks, isPluginHook, runPluginHook } from '../plugins/contrib.ts'
 import { taskLog } from '../task-log.ts'
 import {
   bugDeny,
@@ -211,8 +212,10 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     agent: { id: c.agent.id, name: c.agent.name },
     cli: c.cliId,
   }
+  // 用户钩子加上开着的插件带的钩子（插件关掉就不在这里，见 server/plugins/contrib.ts）
+  const all: HookDef[] = [...data.hooks, ...activePluginHooks(data)]
   // 这次调用范围对得上的用户钩子：装不装这个事件看它，工具类别、路径这些到触发时再看
-  const mine = (event: HookEventName) => data.hooks.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
+  const mine = (event: HookEventName) => all.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
   const lessons =
     on('push-lessons') && c.project.id
       ? (await loadProjectLessons(c.project, c.agents).catch(() => ({ lessons: [] }))).lessons.filter(
@@ -291,8 +294,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     }
     const r = rel(c.cwd, facts.tool?.path ?? '')
     const out: { deny?: string; block?: string; context: string[] } = { context: [] }
-    for (const h of data.hooks.filter((x) => hookApplies(x, input, r))) {
-      const res = await runHook(h, input, c.cwd)
+    for (const h of all.filter((x) => hookApplies(x, input, r))) {
+      const res = isPluginHook(h) ? await runPluginHook(h, input, c.cwd) : await runHook(h, input, c.cwd)
       const failed = res.error ? (h.onError === 'deny' && event === 'tool.before' ? 'deny' : 'allow') : ''
       noteTrigger({
         at: new Date().toISOString(),

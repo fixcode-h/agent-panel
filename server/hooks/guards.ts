@@ -4,6 +4,7 @@ import type { Project, Task } from '../../shared/schema.ts'
 import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
+import { pluginTestSteps } from '../../shared/plugins/contrib.ts'
 import { endlessSegment, heavySegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
@@ -21,7 +22,7 @@ import { scratchPath } from '../exec/file-events.ts'
  */
 export interface GuardCtx {
   task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'diagnoses' | 'remotePush' | 'worktree' | 'testSteps'>
-  project: Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> | null
+  project: (Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> & Partial<Pick<Project, 'pluginStepsOff'>>) | null
   cwd: string
   /** 子任务、工作流节点这类辅助调用（不是对话本身） */
   helper: boolean
@@ -199,7 +200,8 @@ function wideSearchDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function testScopeDeny(c: GuardCtx, facts: HookFacts): string {
   if (!inWorktree(c)) return ''
-  const steps = (c.project?.testSteps.length ? c.project.testSteps : c.task.testSteps).filter(
+  const own = c.project?.testSteps.length ? c.project.testSteps : c.task.testSteps
+  const steps = [...own, ...(c.project ? pluginTestSteps(c.project) : [])].filter(
     (x) => x.enabled && x.scope === 'parent' && x.command.trim(),
   )
   const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
