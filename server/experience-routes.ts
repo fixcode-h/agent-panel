@@ -1,5 +1,3 @@
-import { stat } from 'node:fs/promises'
-import path from 'node:path'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 import {
@@ -7,13 +5,14 @@ import {
   ExperienceSettings,
   ProjectExperience,
   experienceProblems,
-  globBase,
   newExperienceId,
 } from '../shared/experience.ts'
 import { t } from '../shared/i18n.ts'
 import type { Agent, Project } from '../shared/schema.ts'
 import { askOnce, experienceRun, parseReview, reviewPrompt } from './experience-ai.ts'
+import { knowledgeHitsView, missingPaths } from './knowledge-hits.ts'
 import { loadProjectExperience, mutateProjectExperience } from './project-experience.ts'
+import { loadProjectLessons } from './project-lessons.ts'
 import { getSettings } from './settings.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -43,6 +42,16 @@ export function experienceRoutes(app: Hono, deps: { projects: Lister<Project>; a
     const p = await projectOf(c.req.param('id'))
     if (!p) return c.json(noProject, 404)
     return c.json(await loadProjectExperience(p, await deps.agents.list()))
+  })
+
+  /** 经验、教训的命中记录和路径失效的条目：设置页按「很久没用上」排序、标过期（shared/knowledge-hits.ts） */
+  app.get('/projects/:id/knowledge-hits', async (c) => {
+    const p = await deps.projects.get(c.req.param('id'))
+    if (!p) return c.json(noProject, 404)
+    const agents = await deps.agents.list()
+    const exp = p.path ? (await loadProjectExperience(p, agents)).items : []
+    const lessons = (await loadProjectLessons(p, agents)).lessons
+    return c.json(await knowledgeHitsView(p.id, p.path ?? '', exp, lessons))
   })
 
   const save = async (projectId: string, id: string, body: unknown) => {
@@ -133,16 +142,7 @@ export function experienceRoutes(app: Hono, deps: { projects: Lister<Project>; a
     if (!p) return c.json(noProject, 404)
     const { items } = await loadProjectExperience(p, await deps.agents.list())
     if (!items.length) return c.json({ verdicts: [] })
-    const missing = new Map<string, string[]>()
-    for (const e of items) {
-      if (e.kind === 'command') continue
-      const gone: string[] = []
-      for (const x of e.paths) {
-        const base = globBase(x)
-        if (base && !(await stat(path.join(p.path, base)).catch(() => null))) gone.push(x)
-      }
-      if (gone.length) missing.set(e.id, gone)
-    }
+    const missing = new Map(Object.entries(await missingPaths(p.path, items)))
     const settings = await getSettings()
     const exp = ExperienceSettings.parse(settings.experience ?? {})
     const run = experienceRun(exp, settings)

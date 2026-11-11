@@ -138,6 +138,8 @@ export function findLessons(
   files: string[],
   globals: GlobalLesson[] = [],
   opts: LessonQuery = {},
+  /** 交出全文的项目教训算命中（全局教训不算，它不归项目管），给面板记「用没用上」（shared/knowledge-hits.ts） */
+  onHit?: (ids: string[]) => void,
 ) {
   const on = lessons.filter((l) => l.enabled)
   const gs = globals.filter((l) => l.enabled)
@@ -175,6 +177,7 @@ export function findLessons(
     return list.length && !q && !tags.length ? '这些文件没有相关的教训。' : '没有符合条件的教训。'
   const full = pick(hit, FIND_BUDGET, true)
   const gfull = pick(ghit, FIND_GLOBAL_BUDGET, false)
+  if (full.length) onHit?.(full.map((l) => l.id))
   const more = (n: number) => `另有 ${n} 条相关的，只列标题（要看全文时把 id 或关键词传给 query）：`
   return [
     full.map((l) => lessonText(l, true)).join('\n\n'),

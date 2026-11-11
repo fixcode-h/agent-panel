@@ -1335,4 +1335,36 @@ ${prompt}
     assert.equal(r.messages.filter((m) => m.role === 'user').at(-1).text, '马上改做这个')
   }
   step('执行中发消息：立刻进对话并实时交给 CLI，不再有排队；也可以打断马上处理')
+
+  // ---- 额度用完：按备用顺序换模型自动接着做（Agent 模式扩展 1） ----
+  {
+    const cur = await call('GET', '/settings')
+    await call('PUT', '/settings', {
+      ...cur,
+      quotaResume: { waitReset: false, fallback: true, order: [{ cli: 'claude', model: 'quota-backup' }] },
+    })
+    const q0 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'claude',
+      prompt: 'QUOTA_OUT 额度用完',
+    })
+    const q = await waitFor(
+      async () => {
+        const now = await call('GET', `/tasks/${q0.id}`)
+        return now.status === 'done' ? now : undefined
+      },
+      { timeout: 20000, label: '换备用模型后接着做完' },
+    )
+    assert.ok(
+      q.messages.some((m) => m.role === 'system' && /按备用顺序换成/.test(m.text)),
+      '对话里写明换成了什么',
+    )
+    const last = calls().at(-1)
+    assert.equal(last.args[last.args.indexOf('--model') + 1], 'quota-backup', '接着做的那一轮用备用模型')
+    assert.equal(q.quotaResume?.n, 1)
+    await call('PUT', '/settings', cur)
+  }
+  step('额度用完：按备用顺序换模型自动接着做，对话里留一行')
 })

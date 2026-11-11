@@ -1154,6 +1154,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('用到了项目设的用量上限')
     case 'replaced':
       return t('卡住了，已由新的子对话接手')
+    case 'after':
+      return t('等前置子对话合回后自动开始')
     default:
       return t('已暂停')
   }
@@ -1309,6 +1311,8 @@ export function restartUnfinished(
   if (pendingAction(task)) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
+  // 还没开始、在等前置子对话合回：由面板在前置合回时启动，重启不拉
+  if (task.stopReason === 'after') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
   // failed（没合进去）和 test-failed（合回了、父对话测试没过）都要它自己动手修，照常进恢复名单
   const wrap = task.wrapRequest?.state

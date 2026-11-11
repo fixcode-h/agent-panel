@@ -97,6 +97,8 @@ export interface ReviewDiff {
   stat: string
   diff: string
   file?: string
+  /** 二进制文件（表格、插件认领的扩展名）的语义差异，已拼成提示词里的一节；没有就不带（server/exec/review-semantic.ts） */
+  semantic?: string
 }
 
 /** 分诊记录的输入：派单工具的 route 参数（协调器写的理解、理由、假设） */
@@ -258,6 +260,8 @@ export interface Orchestra {
       ignoreDirty?: boolean
       /** Bug 的级别初判：子对话的档案从它开始（快速级别根因和方案合成一次确认） */
       level?: BugLevel
+      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/child-after.ts） */
+      after?: string[]
     } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
   sendToConversation(
@@ -524,6 +528,8 @@ export interface EngineHost {
     ignoreDirty?: boolean
     /** Bug 的级别初判（Task.bugCase.level 的初值） */
     level?: BugLevel
+    /** 排在哪些子对话之后（Task.waitAfter）：它们都合回后才启动 */
+    after?: string[]
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (
@@ -685,11 +691,15 @@ export interface EngineHost {
     /** 全局教训：只读，Agent 改不了 */
     globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
+    /** 查到并交出全文的那几条：记一次命中（shared/knowledge-hits.ts），不等写完 */
+    hit?: (ids: string[]) => void
   }
   /** 项目经验：每次查都现读（刚学到的也能查到）；设置里关了经验时宿主不给 */
   experience?: {
     list: () => Promise<ProjectExperience[]>
     record: (input: ExperienceInput) => Promise<{ ok: boolean; info: string }>
+    /** 同 lessons.hit */
+    hit?: (ids: string[]) => void
   }
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
