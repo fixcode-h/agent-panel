@@ -774,7 +774,6 @@ export const EN_SETTINGS: Record<string, string> = {
   'AI 处理': 'Handle with AI',
   'AI 修复': 'Fix with AI',
   'API 连接失败：{name}': 'API connection failed: {name}',
-  '生成图片失败：{name}': 'Image generation failed: {name}',
   '{cli} 登录没有完成': '{cli} sign-in did not complete',
   '本机生图：{step}': 'Local image generation: {step}',
   检查面板更新失败: 'Checking for panel updates failed',
@@ -1286,7 +1285,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '选好本地目录后，先 AI 初始化项目才能保存。':
     'Choose a local folder, then initialize the project with AI before saving.',
   '先完成「AI 初始化项目」才能保存': 'Run "AI initialize project" before saving',
-  '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
   // 开发者模式：抓取界面元素
   开发者模式: 'Developer mode',
   抓取界面元素: 'Pick UI element',

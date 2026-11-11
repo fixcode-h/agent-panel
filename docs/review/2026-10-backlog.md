@@ -25,13 +25,13 @@
 
 ## 二、可提取成共用
 
-- [x] **统一文本截断 `clip`** — 同一个 `s.length > n ? s.slice(0,n)+'…' : s` 写了 8 份、约 72 个调用点 — 证据：`shared/engine.ts:718`、`shared/handoff.ts:30`、`shared/dispatch.ts:84`、`shared/design-analysis.ts:69`、`server/exec/runner.ts:473`、`web/src/lib/element-ref.ts:67`、`shared/summary.ts:164`、`shared/task-export.ts:903` — 建议：提取到 `text.ts`（放 shared）的 `clip(s, n, opts?)`，`clipDetail`/`clipTranscript`/`clipReport` 并进去 — P1
+- [x] **统一文本截断 `clip`** — 同一个 `s.length > n ? s.slice(0,n)+'…' : s` 写了 8 份、约 72 个调用点 — 证据：`shared/engine.ts:718`、`shared/handoff.ts:30`、`shared/dispatch.ts:84`、`ui-design/shared/design-analysis.ts:69`、`server/exec/runner.ts:473`、`web/src/lib/element-ref.ts:67`、`shared/summary.ts:164`、`shared/task-export.ts:903` — 建议：提取到 `text.ts`（放 shared）的 `clip(s, n, opts?)`，`clipDetail`/`clipTranscript`/`clipReport` 并进去 — P1
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `shared/text.ts`）
 - [x] **统一剪贴板复制 `copyText`** — `navigator.clipboard` 共 23 处，其中 4 份独立函数、其余内联「writeText + toast」— 证据：`web/src/components/files/FileTree.tsx:88`（最完整，带 execCommand 兜底）、`web/src/components/tasks/Evolution.tsx:124`、`Worktrees.tsx:192`、`ToolDialog.tsx:25`，以及 12+ 处内联 — 建议：提取到 `copy-text.ts`（放 `web/src/lib/`，剪贴板 → textarea + execCommand 兜底 → 失败 toast）— P1
       （2026-10-27 已完成 · 提交 `99fb4a6d`）
 - [x] **让服务端都走 `readJson`** — `store.ts` 已有带「损坏文件归档」的读法，但 20 处仍自己 `JSON.parse(await readFile(...))` — 证据：`server/store.ts:218`、`server/store.ts:242` 是已有实现；未复用的如 `server/models.ts:281`、`server/cli-config.ts:31`、`server/lang.ts:18`、`server/exec/orphans.ts:49`、`server/update.ts:42`、`server/accounts.ts:105` 等 — 建议：只把调用换成 `await readJson(file)`，让损坏文件也能归档到 `cache/broken` — P1
       （2026-10-27 已完成 · 提交 `99fb4a6d`）
-- [x] **日期/时刻拼串 helper** — `padStart(2,'0')` 自定义 6 次，`YYYY-MM-DD` / `HH:mm` 手拼 8 处 — 证据：`shared/schedule.ts:159`、`shared/schedule.ts:219`、`shared/usage.ts:134`、`shared/task-export.ts:900`、`web/src/components/settings/UpdateSection.tsx:35`、`DataSection.tsx:123`、`CliLimits.tsx:84`、`web/src/components/design/Versions.tsx:17`、`fields.tsx:205`、`shared/memory.ts:25`、`shared/memory-analysis.ts:197` — 建议：提取到 `datetime.ts`（放 shared）的 `pad2` / `ymd` / `hhmm`，`shared/summary.ts:142` 的 `dayKey` 并入同一口径 — P2
+- [x] **日期/时刻拼串 helper** — `padStart(2,'0')` 自定义 6 次，`YYYY-MM-DD` / `HH:mm` 手拼 8 处 — 证据：`shared/schedule.ts:159`、`shared/schedule.ts:219`、`shared/usage.ts:134`、`shared/task-export.ts:900`、`web/src/components/settings/UpdateSection.tsx:35`、`DataSection.tsx:123`、`CliLimits.tsx:84`、`ui-design/web/src/components/design/Versions.tsx:17`、`fields.tsx:205`、`shared/memory.ts:25`、`shared/memory-analysis.ts:197` — 建议：提取到 `datetime.ts`（放 shared）的 `pad2` / `ymd` / `hhmm`，`shared/summary.ts:142` 的 `dayKey` 并入同一口径 — P2
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `shared/datetime.ts`）
 - [x] **空态片区 `<EmptyPanel>`** — 同一串空态 class 出现在 11 处 — 证据：`web/src/components/library/BundledDetail.tsx:198`、`SkillFiles.tsx:298`、`web/src/components/projects/ProjectMcpSection.tsx:162`、`ProjectCategoryList.tsx:39`、`web/src/components/projects/Lessons.tsx:653` 等 — 建议：提取一个空态组件（内容 + 可选操作按钮）— P2
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `web/src/components/ui/empty-panel.tsx`）

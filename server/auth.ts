@@ -91,9 +91,7 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   const settings = await getSettings()
   const requireToken = settings.requireToken || settings.remoteAccess.enabled || !local
   if (!requireToken || tokenMatches(getCookie(c, COOKIE))) return next()
-  // AI 改设计用的工具由 CLI 调，没有 Cookie；地址里的随机令牌只在那一轮设计里有效，由接口自己核对
-  if (c.req.path.startsWith('/api/mcp/design/')) return next()
-  // 面板工具（提问、派子任务、新建子对话）同理：CLI 拿着这一轮的随机地址来调，没有 Cookie，
+  // 面板工具（提问、派子任务、新建子对话）由 CLI 拿着这一轮的随机地址来调，没有 Cookie，
   // 拦下来 CLI 就一个面板工具都没有了；地址不对的由接口自己回 404
   if (c.req.path.startsWith('/api/mcp/ask/')) return next()
   // 插件给 Agent 的工具同理：地址里是这一轮的随机令牌，接口自己核对（以前 Blender 工具漏了，开令牌后一律 401）

@@ -37,7 +37,6 @@ const SchedulesPage = lazy(() => import('@/pages/SchedulesPage').then((m) => ({ 
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
 const OverviewPage = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
-const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const PluginPageView = lazy(() => import('@/plugins/PluginPage').then((m) => ({ default: m.PluginPageView })))
 const PluginDesignPage = lazy(() => import('@/plugins/DesignPage').then((m) => ({ default: m.PluginDesignPage })))
 const TablesPage = lazy(() => import('@/pages/TablesPage').then((m) => ({ default: m.TablesPage })))
@@ -57,7 +56,6 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   agents: () => <AgentsPage />,
   workflows: () => <WorkflowsPage />,
   chat: () => <ChatPage />,
-  design: () => <DesignPage />,
   comfy: () => <ComfyPage />,
   pdesign: () => <PluginDesignPage />,
   plugin: () => <PluginPageView />,
@@ -69,11 +67,8 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
 }
 
 /**
- * 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块）、
- * 打开的设计（对话 / 画板 / 检查器三块，照设计稿 Design.dc.html）。
- * 设计的 'new'（新建）和 'home'（项目主页，见 lib/design-projects 的 DESIGN_HOME）还是一整块；
- * 这里写字面量不导入常量，免得把设计模块拉进首屏的包。插件自带整页的设计模式由插件说（DesignMode.split），
- * 没说时和打开对话一样：有位置就算
+ * 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块）。
+ * 插件的设计模式（UI 设计、模型设计）自带整页的由插件说（DesignMode.split），没说时和打开对话一样：有位置就算
  */
 const pluginSplit = (r: Route, modes: DesignMode[]) => {
   const m = modes.find((x) => x.id === r.id)
@@ -83,8 +78,7 @@ const splitPage = (r: Route, modes: DesignMode[]) =>
   r.page === 'projects' ||
   (r.page === 'chat' && !!r.id) ||
   (r.page === 'pdesign' && pluginSplit(r, modes)) ||
-  r.page === 'schedules' ||
-  (r.page === 'design' && !!r.id && r.id !== 'new' && r.id !== 'home')
+  r.page === 'schedules'
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
@@ -102,6 +96,13 @@ function useTheme() {
 /** 地址栏用 hash 记录位置（#/projects/<id>/<sub>/<msg>），刷新、前进后退、复制链接都能回到同一页 */
 function parseHash(): Route {
   const [page, id, sub, msg] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
+  // 旧版面板自带的 UI 设计（#/design/<设计稿>/<子页>）：现在是 UI 设计插件的设计模式 ui，收藏的链接照样能打开
+  if (page === 'design') {
+    const r: Route = { page: 'pdesign', id: 'ui', sub: id || undefined, msg: sub || undefined }
+    // 地址栏也换成新地址：再复制出去的就是新的
+    history.replaceState(history.state, '', toHash(r))
+    return r
+  }
   return page && page in PAGES
     ? { page: page as Route['page'], id: id || undefined, sub: sub || undefined, msg: msg || undefined }
     : { page: 'home' }

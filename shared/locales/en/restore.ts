@@ -1,20 +1,5 @@
 /** 英文词典的一部分，键是中文原文：UI 设计照原画还原（从原画抠切图、对照、步骤、门槛设置） */
 export const EN_RESTORE: Record<string, string> = {
-  // 切图从原画抠、精修
-  从原画抠的: 'Cut from the concept',
-  '和原画相似度 {n}': 'Similarity to concept {n}',
-  '这张从确认的原画里按位置抠出来，和原画一模一样。精修会照着它重画得更干净，和原画不够像（低于设置里的门槛）时不选用。':
-    'Cut from the approved concept at its position, identical to the concept. Refine redraws it cleaner; results not similar enough (below the threshold in Settings) are not used.',
-  精修: 'Refine',
-  从原画抠: 'Cut from concept',
-  '{name} 精修出来的和原画只有 {score} 像（门槛 {min}），仍用原画里抠的那版；想用精修版在图片里手动选':
-    '{name}: the refined image is only {score} similar to the concept (threshold {min}), so the cut from the concept is kept. Pick the refined one in Images if you want it.',
-  // 对照
-  拖动对照原画和还原: 'Drag to compare concept and rebuild',
-  '和确认的原画对照：点一下左右拖着比，再点一下半透明叠加，再点关掉':
-    'Compare with the approved concept: click for a slider, again for a translucent overlay, again to turn off',
-  叠加对照: 'Overlay',
-  滑块对照: 'Slider',
   // 设置
   原画还原: 'Concept restore',
   位置误差: 'Position tolerance',

@@ -42,6 +42,7 @@
    - `DesignMode.Sidebar` / `Page` / `split`：设计模式自带侧栏和整页（`#/pdesign/<模式>/<id>/<sub>`），数据不是面板对话的设计（UI 设计自己的项目和界面）用它；`NewDialog` 变成可选。
    - `WebPlugin.barePages`：不带面板外壳的独立页 `#/pbare/<插件>/<页面>/<path>`，给无头浏览器截图用（`web/src/plugins/BareHost.tsx`）。
    - 放弃：把面板源码整份打进插件包。状态是两份（数据上下文、提示、提问会话各一套），插件的对话和面板的对不上。
+   - 落地（2026-11-11）：UI 设计搬进插件仓库的 `ui-design`（插件 id `ui-design`，设计模式 id `ui`），面板删掉自带的设计代码；旧地址 `#/design/…` 转到 `#/pdesign/ui/…`，设计稿数据由插件第一次启用时从 `designs/` 搬到 `plugin-data/ui-design/designs/`。插件仓库里类型检查和单测从仓库根的 `.panel`（面板源码）取面板模块。
 
 ## 影响与风险
 

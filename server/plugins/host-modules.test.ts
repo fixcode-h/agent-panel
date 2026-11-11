@@ -6,15 +6,22 @@ import { existsSync, readFileSync } from 'node:fs'
  * 开放给插件的面板模块（插件接口 4）：清单 shared/plugins/host-modules.json 是插件构建时的依据，
  * 面板这边网页、服务端两张表必须和它一字不差，不然插件构建能过、在面板里取不到模块。只读源码文本，不加载这些模块。
  */
-const list = JSON.parse(readFileSync('shared/plugins/host-modules.json', 'utf8')) as { web: string[]; server: string[] }
-const keys = (file: string) => [...readFileSync(file, 'utf8').matchAll(/^ {2}'([\w/.-]+)': /gm)].map((m) => m[1]).sort()
+const list = JSON.parse(readFileSync('shared/plugins/host-modules.json', 'utf8')) as {
+  web: string[]
+  server: string[]
+  /** 第三方包（zod 这类要和面板共用一份实例的） */
+  webPackages: string[]
+  serverPackages: string[]
+}
+const keys = (file: string) =>
+  [...readFileSync(file, 'utf8').matchAll(/^ {2}'?([\w/.@-]+)'?[:,]/gm)].map((m) => m[1]).sort()
 
 test('网页的开放模块表和清单一致', () => {
-  assert.deepEqual(keys('web/src/plugins/host-modules.ts'), [...list.web].sort())
+  assert.deepEqual(keys('web/src/plugins/host-modules.ts'), [...list.web, ...list.webPackages].sort())
 })
 
 test('服务端的开放模块表和清单一致', () => {
-  assert.deepEqual(keys('server/plugins/host-modules.ts'), [...list.server].sort())
+  assert.deepEqual(keys('server/plugins/host-modules.ts'), [...list.server, ...list.serverPackages].sort())
 })
 
 test('清单里的模块都在', () => {

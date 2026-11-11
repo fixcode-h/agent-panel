@@ -179,7 +179,7 @@ docs/     专题文档（见下面「文档」）；docs/lessons/ 是开发时�
 - [docs/agent-catalog.md](docs/agent-catalog.md)：增删合并内置角色或工作流的判定标准
 - [docs/agent-test-steps.md](docs/agent-test-steps.md)：测试步骤、角色参数、子对话隔离和合并编译
 - [skills/README.md](skills/README.md)：自带 Skill 的分类、写法和运行依赖
-- [docs/umg-export.md](docs/umg-export.md)：UI 设计的导出格式（给 UE 生成 Widget Blueprint 的数据）
+- [UI 设计的导出格式](https://github.com/fixcode-h/agent-plugins/blob/dev/ui-design/docs/umg-export.md)：给 UE 生成 Widget Blueprint 的数据（UI 设计插件的仓库里）
 - [docs/adr/README.md](docs/adr/README.md)：架构决策记录（ADR），什么时候写、各节怎么写
 - [docs/lessons/README.md](docs/lessons/README.md)：踩过的坑怎么记、怎么取用
 - [AGENTS.md](AGENTS.md)：在这个仓库里工作的约定（分支、命令、提交说明、硬规则），给人和 AI 看

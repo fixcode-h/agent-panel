@@ -13,7 +13,7 @@ export const APP_TOOLS = [
       '用户让你操作软件时先用它查有哪些动作，再用 app_do 执行。不写 group 列出全部。',
     inputSchema: {
       type: 'object',
-      properties: { group: { type: 'string', description: '只列这一组：task、project、settings、ui、design、table' } },
+      properties: { group: { type: 'string', description: '只列这一组：task、project、settings、ui、table' } },
     },
   },
   {

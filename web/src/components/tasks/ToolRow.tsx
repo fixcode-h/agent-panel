@@ -526,6 +526,9 @@ function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean)
 type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
   Partial<Pick<Task, 'title' | 'diagnoses' | 'projectId'>>
 
+/** 不在任务里的工具行（AI 创建 / 分析）打开差异窗口时的占位：没有 id，窗口里就不给按任务找文件的操作 */
+const NO_TASK: Pick<Task, 'id' | 'status' | 'changes'> = { id: '', status: 'done', changes: [] }
+
 function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
@@ -757,9 +760,10 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
           onOpenChange={(o) => !o && setWin('')}
         />
       )}
-      {win === 'edit' && task && (
+      {/* AI 创建 / 分析的回复里没有任务，也要能打开：差异直接用这一行的，不依赖任务 */}
+      {win === 'edit' && (
         <DiffDialog
-          task={task}
+          task={task ?? NO_TASK}
           diff={input}
           title={tool.label}
           onOpenChange={(o) => !o && setWin('')}

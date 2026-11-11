@@ -22,7 +22,7 @@ import {
   type ComfyWorkflow,
 } from '../shared/local-image.ts'
 import { t } from '../shared/i18n.ts'
-import { localPrompts } from '../shared/design.ts'
+import { localPrompts } from '../shared/local-prompts.ts'
 import { blank, hasAlpha, removeFlatBackground } from './image.ts'
 
 test('内置工作流都能通过检查，占位符换成实际的值', () => {

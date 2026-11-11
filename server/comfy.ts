@@ -45,7 +45,7 @@ import {
 } from '../shared/local-image.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
-import { localPrompts } from '../shared/design.ts'
+import { localPrompts } from '../shared/local-prompts.ts'
 import { mossLayoutJson, type MossLayoutItem, type MossLayoutSize } from '../shared/moss.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'

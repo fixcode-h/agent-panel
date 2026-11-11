@@ -102,7 +102,9 @@ test('初始化结果：文件已经写好，步骤格式不对只丢掉步骤�
 test('初始化提示词：要求写 AGENTS.md 和文档框架，列出已有工作流和默认工作流的暴露项', () => {
   const p = buildAssistPrompt('project', ctx, [{ role: 'user', text: '初始化这个项目' }], [])
   assert.match(p, /AGENTS\.md/)
-  assert.match(p, /MODULE-MAP\.md/)
+  // 初始化不写模块文档：逐个模块读源码写 README 是它跑二十分钟的主要原因
+  assert.match(p, /不写模块文档/)
+  assert.doesNotMatch(p, /各建 DOC_ROOT\/modules/)
   assert.match(p, /「通用项目」（可作默认）/)
   assert.match(p, /docRoot（文档根/)
   assert.doesNotMatch(p, /「Bug 修复」（可作默认）/)

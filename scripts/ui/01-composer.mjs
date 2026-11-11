@@ -188,7 +188,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 「+」里引入会话
   await p.getByRole('button', { name: '添加文件、图片或引用' }).click()
   await p.getByRole('button', { name: '引入会话' }).click()
-  await check(p, '引入会话', ['主菜单', '购物车右上角'])
+  await check(p, '引入会话', ['购物车右上角'])
   await p.keyboard.press('Escape')
 
   // 发出去的图片消息：气泡里直接显示图片，点开浮层能看大图；取不到图时回落成图标，不显示破图

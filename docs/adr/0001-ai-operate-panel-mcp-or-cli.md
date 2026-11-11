@@ -2,7 +2,7 @@
 
 状态：被替代（被 [0011](./0011-app-actions-for-agents.md) 替代：选 MCP 的结论保留；「一个操作一个 `panel_*` 工具」改成动作注册表 + 两个固定工具） · 2026-10-23
 
-- 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks.ts`（组装数据并注入）；`server/orch-mcp.ts`、`server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
+- 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks.ts`（组装数据并注入）；`server/orch-mcp.ts`、`ui-design/server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
 - 相关文档：`docs/cli-config.md`（`mcp` 能力、面板工具的接入方式）、`AGENTS.md`（硬规则与安全边界）、`docs/lessons/server.md`
 
 ## 背景
@@ -50,7 +50,7 @@
 | 审批        | 可以让工具调用先弹面板确认再执行                                      | 需要在终端里交互，面板管不到                       |
 | 依赖        | 只要 CLI 能连 127.0.0.1                                               | 要有 Node / 脚本入口，还要处理用户环境             |
 
-`server/design-mcp.ts` 的文件头已经为「为什么不用命令行」写过一次结论（Codex 沙箱默认不能联网、Windows 引号容易错、每条命令都可能要审批、MCP 四个 CLI 都能直接放行）。这次是同一个判断，理由一致，不再重复论证。
+`ui-design/server/design-mcp.ts` 的文件头已经为「为什么不用命令行」写过一次结论（Codex 沙箱默认不能联网、Windows 引号容易错、每条命令都可能要审批、MCP 四个 CLI 都能直接放行）。这次是同一个判断，理由一致，不再重复论证。
 
 **CLI 仍然更合适的场景**（所以保留为可选的薄壳，而不是不做）：
 
@@ -87,11 +87,11 @@
 
 面板进程里已经有两套进程内 MCP，加上用户自己配的第三方 MCP，关系定成这样：
 
-| MCP                              | 地址                              | 生命周期                                      | 带什么工具                                                                   | 这份 ADR 怎么处理           |
-| -------------------------------- | --------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------- |
-| 设计工具 `server/design-mcp.ts`  | `/api/mcp/design/<token>`         | 一轮设计对话                                  | 控件树、属性、截图、生图                                                     | 不动，也不合并              |
-| 提问与编排 `server/ask-mcp.ts`   | `/api/mcp/ask/<token>`            | 一次 CLI 调用（`openAskBridge` 到 `close()`） | `ask_user`、`read_user_notes`、`wait_user_message`、`orch-mcp.ts` 的编排工具 | 加第三组 `panel_*`          |
-| 用户自定义 `server/mcp-store.ts` | 面板不代理，写进各 CLI 自己的配置 | 由 CLI 自己管                                 | 用户自己配的工具                                                             | 不动；`panel_` 前缀避开重名 |
+| MCP                                       | 地址                              | 生命周期                                      | 带什么工具                                                                   | 这份 ADR 怎么处理           |
+| ----------------------------------------- | --------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------- |
+| 设计工具 `ui-design/server/design-mcp.ts` | `/api/mcp/design/<token>`         | 一轮设计对话                                  | 控件树、属性、截图、生图                                                     | 不动，也不合并              |
+| 提问与编排 `server/ask-mcp.ts`            | `/api/mcp/ask/<token>`            | 一次 CLI 调用（`openAskBridge` 到 `close()`） | `ask_user`、`read_user_notes`、`wait_user_message`、`orch-mcp.ts` 的编排工具 | 加第三组 `panel_*`          |
+| 用户自定义 `server/mcp-store.ts`          | 面板不代理，写进各 CLI 自己的配置 | 由 CLI 自己管                                 | 用户自己配的工具                                                             | 不动；`panel_` 前缀避开重名 |
 
 - **路由**：设计、提问两套都挂在 `/mcp` 前缀下（`server/index.ts` 里那两处 `app.route('/mcp', …)`），`tokenGuard` 已经放行 `/api/mcp/ask/` 和 `/api/mcp/design/`（在 `server/auth.ts` 里）。面板组复用现成通道，不加白名单、不新增路由。
 - **文件型配置的 CLI**（Command Code、Gemini CLI、Pi）：由 `applyConfigFiles`（`server/ask-mcp.ts:296`）在项目目录里合并配置，项名是 `panel` 或 `panel-` 加 url 后 6 位（`server/exec/invoke.ts:185`，同一目录几轮同时跑时靠它区分）。新增工具组不改这一段，仍然只多一项配置。
