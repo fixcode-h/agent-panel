@@ -12,6 +12,7 @@ import type { Task } from './schema.ts'
 import { pendingAction } from './user-action.ts'
 import { stopReasonText } from './task.ts'
 import { taskWord } from './task-word.ts'
+import { untilText } from './quota-resume.ts'
 import type { LifeFacts } from './lifecycle.ts'
 
 /** 下一步按钮做什么：go 回到那个对话（去回答、去确认、去操作、去回复）；resume 继续 / 重试；pick 在树上选中另一个节点 */
@@ -47,8 +48,8 @@ export function waitedFor(ms: number): string {
 export function lifeWordFacts(
   tk: Parameters<typeof taskWord>[0] &
     Pick<Task, 'mode' | 'turnDoneAt' | 'updatedAt'> &
-    Partial<Pick<Task, 'waitStartedAt' | 'userActions'>>,
-): Pick<LifeFacts, 'word' | 'need' | 'report' | 'since' | 'mode'> {
+    Partial<Pick<Task, 'waitStartedAt' | 'userActions' | 'quotaResume'>>,
+): Pick<LifeFacts, 'word' | 'need' | 'report' | 'since' | 'mode' | 'quotaUntil'> {
   const w = taskWord(tk)
   const ms = (iso?: string) => (iso ? Date.parse(iso) : NaN)
   let since = NaN
@@ -66,6 +67,7 @@ export function lifeWordFacts(
     ...(w.report && { report: true }),
     ...(Number.isFinite(since) && { since }),
     mode: tk.mode,
+    ...(w.state === 'failed' && tk.quotaResume?.until && { quotaUntil: Date.parse(tk.quotaResume.until) }),
   }
 }
 
@@ -115,6 +117,14 @@ export function lifeNext(f: LifeFacts, now = Date.now()): LifeNext | undefined {
       }
     }
     case 'failed':
+      // 额度用完在等到点自动继续：写出几点继续，按钮是「现在继续」（不想等就自己点）
+      if (f.quotaUntil)
+        return {
+          text: t('等额度恢复 · {time} 自动继续', { time: untilText(f.quotaUntil, now) }),
+          tone: 'warning',
+          action: { kind: 'resume', label: t('现在继续') },
+          retryModel: f.mode === 'chat',
+        }
       return {
         text: join(t('这一轮失败了'), waited && t('{d}前', { d: waited })),
         tone: 'danger',

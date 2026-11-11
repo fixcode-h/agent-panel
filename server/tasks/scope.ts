@@ -756,6 +756,8 @@ export interface TasksScope {
   withLive: (task: Task) => Promise<Task>
   /** 顶层对话一轮结束后排一次经验学习（server/experience-learn.ts） */
   learnExperience: (taskId: string) => Promise<void>
+  /** 对话这一轮失败收尾后：额度用完 / 被限流时按设置换备用模型或等到点继续（server/tasks/quota-resume.ts） */
+  quotaAfterFail: (taskId: string) => Promise<void>
   workflowCatalog: (
     project: Project,
     all: Workflow[],

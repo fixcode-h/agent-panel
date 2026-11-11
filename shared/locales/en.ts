@@ -32,6 +32,7 @@ import { EN_BUG_INPLACE } from './en/bug-inplace.ts'
 import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
 import { EN_AWAY } from './en/away.ts'
+import { EN_QUOTA_RESUME } from './en/quota-resume.ts'
 import { EN_VIDEO } from './en/video.ts'
 import { EN_STATE_WORD } from './en/state-word.ts'
 import { EN_RESTORE } from './en/restore.ts'
@@ -65,6 +66,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_AUTO,
   ...EN_USER_ACTION,
   ...EN_AWAY,
+  ...EN_QUOTA_RESUME,
   ...EN_DESIGN,
   ...EN_RESTORE,
   ...EN_RESTORE_FLOW,
