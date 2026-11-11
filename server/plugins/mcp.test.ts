@@ -102,3 +102,24 @@ test('CLI 发 notifications/cancelled：对应的那次调用被取消', async (
   assert.equal(seen.aborted, true)
   m.close()
 })
+
+test('插件工具报进度：交给这一轮的 progress，带服务名和工具名', async () => {
+  const seen: string[] = []
+  const tool: McpTool = {
+    name: 'compile',
+    description: '',
+    inputSchema: {},
+    call: async (_a, ctx) => {
+      ctx.progress?.('编译 1/2')
+      ctx.progress?.('编译 2/2')
+      return { content: [{ type: 'text', text: '好了' }] }
+    },
+  }
+  const m = openPluginMcp('ue', 'ue', 'task5', () => [tool], undefined, {
+    cwd,
+    progress: (server, name, text) => seen.push(`${server}/${name}/${text}`),
+  })
+  await call(m.url, 'compile')
+  assert.deepEqual(seen, ['ue/compile/编译 1/2', 'ue/compile/编译 2/2'])
+  m.close()
+})

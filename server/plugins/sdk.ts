@@ -57,6 +57,11 @@ export interface McpCallContext {
    * 跑得久的工具（编译、导出、渲染）要监听它停掉自己起的进程和请求；取消后返回什么都不会再交给 Agent
    */
   signal?: AbortSignal
+  /**
+   * 报进度（插件框架改进 G2）：一行文字，显示在对话里这次工具调用那一行的输出里（最近的几十行），
+   * 工具结束后换成真正的结果。编译、导出这类要跑一阵的工具用它让用户知道到哪了。不在对话里的调用没有这个函数
+   */
+  progress?: (text: string) => void
 }
 
 /** 给 Agent 的一个 MCP 工具：面板负责协议、会话和令牌，插件只给定义和执行函数 */
@@ -100,6 +105,11 @@ export interface PluginRunTools {
   servers: { name: string; tools: () => McpTool[] | Promise<McpTool[]> }[]
   /** 新会话时接在用户消息后面的说明（怎么用这些工具） */
   hint?: string
+  /**
+   * 新会话开始时在对话里显示给用户的提示（插件框架改进 C1），每条一行：例如「项目里的 UE 桥接可以更新到 1.9.0」。
+   * 只给用户看，不交给 Agent；续接的会话不再显示，免得每一轮都重复
+   */
+  notices?: string[]
 }
 
 export interface PluginServerContext {

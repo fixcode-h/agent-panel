@@ -27,6 +27,8 @@ export interface PluginRunHooks {
   cwd: string
   guardEdit?: (tool: string, paths: string[], input: Record<string, unknown>) => Promise<string>
   changed?: (files: string[]) => void
+  /** 工具报进度（ctx.progress）：写进对话里这次调用那一行（插件框架改进 G2） */
+  progress?: (server: string, tool: string, text: string) => void
 }
 
 interface Session {
@@ -109,7 +111,18 @@ async function callTool(s: Session, tool: McpTool, args: Record<string, unknown>
         )
     })
     return await Promise.race([
-      tool.call(args, { taskId: s.taskId, callId, confirm: s.confirm, signal: ctl.signal }),
+      tool.call(args, {
+        taskId: s.taskId,
+        callId,
+        confirm: s.confirm,
+        signal: ctl.signal,
+        ...(s.hooks?.progress && {
+          progress: (text: string) => {
+            // 取消之后的进度不再写：那一行已经结束了
+            if (!ctl.signal.aborted) s.hooks?.progress?.(s.server, tool.name, String(text))
+          },
+        }),
+      }),
       stopped,
     ])
   } finally {

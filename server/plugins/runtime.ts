@@ -158,6 +158,7 @@ export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext
   const hints: string[] = []
   const closers: (() => void)[] = []
   const errors: PluginToolError[] = []
+  const notices: { name: string; text: string }[] = []
   const asked = [...active].filter(([, a]) => a.plugin.tools)
   const answers = await Promise.allSettled(asked.map(([, a]) => withPluginLimit('tools', () => a.plugin.tools!(run))))
   for (const [i, [id, a]] of asked.entries()) {
@@ -177,10 +178,11 @@ export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext
         closers.push(m.close)
       }
       if (r.hint) hints.push(r.hint)
+      for (const text of r.notices ?? []) if (String(text).trim()) notices.push({ name: a.name, text: String(text) })
     } catch (e) {
       errors.push({ id, name: a.name, error: (e as Error).message })
       log.warn('plugin', `插件给对话挂工具时出错：${id}`, { error: (e as Error).message })
     }
   }
-  return { servers, hint: hints.join('\n\n'), errors, close: () => closers.forEach((c) => c()) }
+  return { servers, hint: hints.join('\n\n'), errors, notices, close: () => closers.forEach((c) => c()) }
 }

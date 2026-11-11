@@ -114,4 +114,6 @@ export const EN_PLUGINS: Record<string, string> = {
   退回: 'Roll back',
   '会从 v{current} 换回升级前的 v{version} 并重新启动插件，参数和插件数据不动。之后想回到 v{current} 可以再点一次退回。':
     'Switches from v{current} back to v{version}, the version before the upgrade, and restarts the plugin. Settings and plugin data are kept. To return to v{current}, roll back again.',
+  // 插件在新会话开头的提示（server/exec/plugin-run.ts）
+  '插件「{name}」：{text}': 'Plugin "{name}": {text}',
 }
