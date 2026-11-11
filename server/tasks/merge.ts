@@ -559,8 +559,15 @@ ${
     // 写 undefined 不用 delete：store.update 是把传入的字段盖到旧记录上，删掉的键盖不掉旧值
     tk.wrapRequest = undefined
     tk.updatedAt = new Date().toISOString()
+    // 排在它后面的子对话按这个时间判断能不能开始（shared/child-after.ts）
+    tk.mergedAt = tk.updatedAt
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)
+    // 父对话的分支现在已经带着它的提交：排在它后面的子对话可以开始了，独立分支从这里开
+    if (tk.parentTaskId)
+      void sc
+        .releaseAfter(tk.parentTaskId)
+        .catch((e) => log.warn('task', '启动排在后面的子对话失败', { task: tk.id, error: (e as Error).message }))
     if (entry?.task.working) return undefined
     return sc.advanceChildTo(childId, opts)
   }

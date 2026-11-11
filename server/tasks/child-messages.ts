@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { waitingAfter } from '../../shared/child-after.ts'
 import { Task, type PeerFrom, type PeerKind, type TaskMessage } from '../../shared/schema.ts'
 import { type ConvState, taskDeleted } from '../../shared/task.ts'
 import { steerTask } from '../exec/steering.ts'
@@ -242,6 +243,11 @@ export function createChildMessages(sc: TasksScope) {
     const child = sc.live.get(id)?.task ?? (await sc.store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: sc.READONLY }
+    // 还在等前置子对话合回、没开始过的：父对话交了消息就是要它现在开始（shared/child-after.ts）
+    if (kind === 'task' && waitingAfter(child)) {
+      const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+      if (parent) return sc.startAfterNow(parent, child, message)
+    }
     // 要开新的一轮时先过 holdWake（shared/wake.ts）：整棵树已经超限就不开，免得「父对话被叫醒→交回子对话→子对话超限停下→
     // 上报又叫醒父对话」一直转下去。子对话自己的停下原因不挡（交回被停下的子对话就是重试的做法）。
     // 用户在父对话里回答子对话的提问（answer）是用户自己的操作，不挡

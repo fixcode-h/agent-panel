@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { BugCase, type BugLevel } from '../../shared/bug-diagnosis-schema.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
+import { afterDecision, checkAfter } from '../../shared/child-after.ts'
 import { t } from '../../shared/i18n.ts'
 import { NewTaskInput, type Agent, type Project, type Task } from '../../shared/schema.ts'
 import { newTask, taskDeleted } from '../../shared/task.ts'
@@ -74,6 +75,7 @@ export function createSpawnChild(sc: TasksScope) {
       fix,
       edits,
       level,
+      after,
     }: {
       title: string
       message: string
@@ -86,8 +88,21 @@ export function createSpawnChild(sc: TasksScope) {
       level?: BugLevel
       /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
       edits?: boolean
+      /** 排在哪些兄弟子对话之后（shared/child-after.ts）：它们都合回后才启动 */
+      after?: string[]
     },
   ) {
+    // 先后依赖：前置都已经合回的照常马上开始；还没的先建好、停在 after，由 after-deps.ts 在前置合回时启动
+    let wait: ReturnType<typeof afterDecision> | undefined
+    let waitIds: string[] = []
+    if (after?.length) {
+      const kids = (await sc.store.childrenOf(parent.id)).map((k) => sc.live.get(k.id)?.task ?? k)
+      const ok = checkAfter(after, kids, parent.id)
+      if (!ok.ok) return { ok: false, info: ok.info }
+      waitIds = ok.ids
+      wait = afterDecision(waitIds, (id) => kids.find((k) => k.id === id))
+    }
+    const waiting = !!wait && !wait.start
     const worker = agents.find((a) => a.origin === 'builtin:worker')
     const subId = randomUUID()
     const at = new Date().toISOString()
@@ -120,6 +135,7 @@ export function createSpawnChild(sc: TasksScope) {
           }),
         }),
       ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
+      ...(waiting && { status: 'stopped' as const, stopReason: 'after' as const, waitAfter: waitIds }),
     }
     // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
     // 只有直接调接口没给时才退回用户消息开头
@@ -151,8 +167,20 @@ export function createSpawnChild(sc: TasksScope) {
       both = scopeOverlaps(round, others)
       mine.set(subId, { title: draft.title, files: round })
     }
+    if (waiting && wait && !wait.start)
+      draft.messages.push({
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: t('排在{list}之后：它们合回后面板自动开始，要改文件时从合回后的提交开独立分支。', {
+          list: afterNames(waitIds, wait),
+        }),
+        tools: [],
+        at,
+      })
     const sub = await sc.store.create({ ...draft, id: subId })
-    void sc.startChild(sub, message, agents)
+    if (!waiting) void sc.startChild(sub, message, agents)
     return {
       ok: true,
       id: sub.id,
@@ -166,6 +194,8 @@ export function createSpawnChild(sc: TasksScope) {
           both,
         }),
         relapse?.info,
+        waiting && wait && !wait.start ? afterInfo(wait) : '',
+        wait?.start ? '它排在后面的子对话都已经合回，直接开始了。' : '',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -185,4 +215,22 @@ export function createSpawnChild(sc: TasksScope) {
   }
 
   return { checkCollisions, spawnChild, spawnChildOf }
+}
+
+/** 前置子对话的标题，写进等待中的子对话里给用户看 */
+function afterNames(ids: string[], wait: Extract<ReturnType<typeof afterDecision>, { start: false }>) {
+  const titles = [...wait.pending, ...wait.bad.map((b) => b.title)]
+  return titles.length ? titles.map((x) => t('「{name}」', { name: x })).join(t('、')) : ids.join(t('、'))
+}
+
+/** 新建时就等不到的前置（失败、没了）：当场告诉父对话，不等下一次上报 */
+function afterInfo(wait: Extract<ReturnType<typeof afterDecision>, { start: false }>) {
+  const lines = [
+    `它排在 ${[...wait.pending, ...wait.bad.map((b) => b.title)].map((x) => `「${x}」`).join('、')} 之后，先不启动：前置都合回你的分支后面板自动启动它（要开独立分支时从合回后的提交开），不用你再派；前置失败或没了会告诉你。`,
+  ]
+  if (wait.bad.length)
+    lines.push(
+      `注意：${wait.bad.map((b) => `「${b.title}」（id ${b.id}）${b.why}`).join('；')}。它修好合回前这个子对话不会开始；不想等了就用 send_to_conversation 交给它，它马上开始。`,
+    )
+  return lines.join('\n')
 }
