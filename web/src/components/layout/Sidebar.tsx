@@ -139,13 +139,7 @@ export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
   { id: 'workflows', label: t('工作流'), icon: WorkflowIcon },
   { id: 'library', label: t('Skills'), icon: SkillIcon },
   { id: 'mcp', label: t('MCP 工具'), icon: McpIcon },
-]
-
-/**
- * 只属于设计模式的功能页：宽屏时也在图标栏里，但只在设计模式（设计页、ComfyUI 页）下出现；
- * 打开时和其它功能页一样让开会话侧栏（ComfyUI 页自己有工作流列表）
- */
-export const DESIGN_NAV: { id: PageId; label: string; icon: NavIcon }[] = [
+  // ComfyUI 工作流原来只在设计模式下出现；视频画质增强也用它，设计模式又要拆成插件（可能整个没有），挪到通用功能
   { id: 'comfy', label: t('ComfyUI 工作流'), icon: ComfyIcon },
 ]
 
@@ -348,15 +342,11 @@ let lastAgentRoute: Route = { page: 'home' }
 let lastDesignRoute: Route = { page: 'design' }
 /** 最近一次看的会话页（任务、项目、聊天、设计）：功能页上「回到主页」回到这里 */
 let lastWorkRoute: Route = { page: 'home' }
-/** 最近看的设计页（不含 ComfyUI 页）：ComfyUI 页上「回到主页」回到设计里，不跳回 Agent 模式 */
-let lastDesignHome: Route = { page: 'design' }
-export const homeRoute = (from?: PageId) =>
-  from && DESIGN_NAV.some((n) => n.id === from) ? lastDesignHome : lastWorkRoute
+export const homeRoute = () => lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
-export const isToolPage = (page: PageId) =>
-  NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page) || page === 'plugin' || page === 'tables'
-/** 设计模式：设计页和它的 ComfyUI 工作流页 */
-export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'pdesign'
+export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || page === 'plugin' || page === 'tables'
+/** 设计模式：UI 设计页和插件登记的设计模式页 */
+export const isDesignPage = (page: PageId) => page === 'design' || page === 'pdesign'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
@@ -367,7 +357,6 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
   const tool = isToolPage(route.page)
   const chat = route.page === 'chat'
-  // ComfyUI 工作流管理属于 UI 设计
   const design = isDesignPage(route.page)
   const modes = [
     {
@@ -460,13 +449,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
   const designMode = isDesignPage(route.page)
-  // ComfyUI 工作流管理也算 UI 设计：不能记成 Agent 模式的页面，否则点 Agent 又回到 ComfyUI，切不过去
   // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页
   if (designMode) lastDesignRoute = route
   else if (chatMode) lastChatRoute = route
   else if (!isToolPage(route.page)) lastAgentRoute = route
   if (!isToolPage(route.page)) lastWorkRoute = route
-  if (route.page === 'design') lastDesignHome = route
 
   // 按项目分组：项目分组只按添加时间（或拖拽后的顺序）排，不受任务时间、执行状态影响；组内任务仍按最近发言排
   const [folded, toggleFolded, setFolded] = useFolded()
@@ -600,27 +587,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2.5', narrow && 'items-center px-2')}>
         {narrow && <ModeSwitch narrow />}
         {designMode ? (
-          <>
-            <Row
-              icon={Plus}
-              label={t('新建设计')}
-              collapsed={narrow}
-              on={route.page === 'design' && (!route.id || route.id === 'new')}
-              onClick={() => go({ page: 'design' })}
-            />
-            {/* 宽屏时 ComfyUI 入口在图标栏里，手机抽屉里照旧列在这 */}
-            {mobile &&
-              DESIGN_NAV.map((n) => (
-                <Row
-                  key={n.id}
-                  icon={n.icon}
-                  label={n.label}
-                  collapsed={narrow}
-                  on={route.page === n.id}
-                  onClick={() => go({ page: n.id })}
-                />
-              ))}
-          </>
+          <Row
+            icon={Plus}
+            label={t('新建设计')}
+            collapsed={narrow}
+            on={route.page === 'design' && (!route.id || route.id === 'new')}
+            onClick={() => go({ page: 'design' })}
+          />
         ) : chatMode ? (
           <Row
             icon={Plus}
