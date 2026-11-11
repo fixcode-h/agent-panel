@@ -4,7 +4,11 @@ import {
   BookA,
   EyeOff,
   History,
+  Keyboard,
+  PanelTop,
   Replace,
+  Search,
+  Tags,
   ListChecks,
   Lock,
   Plus,
@@ -50,6 +54,7 @@ import {
   rowOpIn,
   replaceIn,
   rowOpWithCells,
+  rowOpsIn,
   rowsOf,
   setCellsIn,
   undoIn,
@@ -63,14 +68,19 @@ import { FindReplaceDialog } from './FindReplaceDialog'
 import { BackRefsDialog, CellMenu } from './CellMenu'
 import { CellHistoryDialog } from './CellHistoryDialog'
 import { ImportDialog } from './ImportDialog'
-import { AiMenu, ProposalBar, useProposal } from './TableAi'
+import { AiMenu, ProposalBar, aiFixProblems, useProposal } from './TableAi'
 import { importEdit, sheetCsv, sheetJson } from '@shared/table-io'
 import { saveText } from '@/lib/save-file'
 import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
 import type { CellAt } from '@shared/table-blame'
 import { findBackRefs, refsTo } from '@shared/table-refs'
 import { selectionStats, TableStatusBar } from './TableStatusBar'
-import { colHeadOf, useHeadCollapsed } from './col-head'
+import { colHeadOf, ruleText, useHeadCollapsed, useLocalFlag } from './col-head'
+import { TableFindBar, type FindMode } from './TableFindBar'
+import { TableEditBar } from './TableEditBar'
+import { TableQuickFilter, useSavedViews, type QuickFilter } from './TableQuickFilter'
+import { ScrollMarks } from './ScrollMarks'
+import { ShortcutsHelp } from '@/components/layout/ShortcutsHelp'
 
 /** 从内容搜索跳过来：切到这张表、滚到这一格 */
 export interface TableJump {
@@ -199,6 +209,48 @@ export function TableView({
   // 两行列头：字段名 + 类型标签，按列结构算（只在列结构变时重算）
   const colHeads = useMemo(() => struct.infos.map(colHeadOf), [struct.infos])
   const [headCollapsed, setHeadCollapsed] = useHeadCollapsed()
+  const [editBar, setEditBar] = useLocalFlag('table-edit-bar')
+  const [refNames, setRefNames] = useLocalFlag('table-ref-names')
+  const [findMode, setFindMode] = useState<FindMode | null>(null)
+  const [findHits, setFindHits] = useState<CellHit[]>([])
+  const [helpOpen, setHelpOpen] = useState(false)
+  // 快速筛选跟着表走：换一张表就清掉；存下的视图按表记在本机
+  const [quick, setQuick] = useState<QuickFilter[]>([])
+  useEffect(() => setQuick([]), [fileKey])
+  const [views, setViews] = useSavedViews(`${projectId}:${fileKey}`)
+  const from = view?.from ?? 0
+  // 快速筛选要用的几组行：不合规、改过、引用缺失、空着的必填
+  const quickRows = useMemo(() => {
+    const bad = new Set<number>()
+    const ref = new Set<number>()
+    const need = new Set<number>()
+    for (const p of struct.problems) {
+      if (p.r < from) continue
+      bad.add(p.r)
+      if (p.rule === 'ref') ref.add(p.r)
+      if (p.rule === 'required' || p.rule === 'requiredWhen') need.add(p.r)
+    }
+    const dirtyRows = new Set<number>()
+    for (const k of dirty) {
+      const r = Number(k.slice(0, k.indexOf(':')))
+      if (r >= from) dirtyRows.add(r)
+    }
+    return { bad, dirty: dirtyRows, ref, need } satisfies Record<QuickFilter, Set<number>>
+  }, [struct.problems, dirty, from])
+  const baseOrder = view?.order
+  const order = useMemo(
+    () =>
+      !baseOrder || !quick.length ? (baseOrder ?? []) : baseOrder.filter((r) => quick.some((q) => quickRows[q].has(r))),
+    [baseOrder, quick, quickRows],
+  )
+  // 引用列「ID · 名称」：按被引用表里的名字列查
+  const refNameOf = useMemo(() => {
+    if (!refNames) return null
+    const m = new Map<string, Map<string, string>>()
+    for (const [ref, opts] of struct.refOpts)
+      m.set(ref, new Map(opts.flatMap((o) => (o.desc ? [[o.name, o.desc]] : []))))
+    return m
+  }, [refNames, struct.refOpts])
   /** 新增枚举值：记进结构文件 */
   const addEnumValue = (name: string, value: string) => {
     const e = schema.enums[name] ?? { values: [] }
@@ -230,7 +282,7 @@ export function TableView({
     rows: rows ?? [],
     cols: Math.max(1, rows ? colCount(rows) : 1),
     from: view?.from ?? 0,
-    order: view?.order ?? [],
+    order,
     readOnly,
     onCells: setCells,
     onUndo: () => onEdits(undoIn),
@@ -295,6 +347,32 @@ export function TableView({
     tip: (r, c) => struct.problemAt.get(`${r}:${c}`),
     hiddenCol: (c) => hiddenSet.has(c),
     onFind: () => setFinding({ sel: grid.selection() }),
+    onFindBar: () => setFindMode('find'),
+    onGoto: () => setFindMode('goto'),
+    onHelp: () => setHelpOpen(true),
+    onInsertAbove: (r) => insertRow(Math.max(r, view?.from ?? 0)),
+    onDeleteRows: (rs) =>
+      sheet &&
+      rs.length &&
+      onEdits((e) =>
+        rowOpsIn(
+          e,
+          sheet,
+          rs.map((r) => ({ at: r, n: -1 })),
+        ),
+      ),
+    display: refNameOf
+      ? (r, c, text) => {
+          const info = r >= (view?.from ?? 0) ? struct.infos[c] : undefined
+          const names = info?.ref ? refNameOf.get(info.ref) : undefined
+          if (!names?.size) return text
+          const one = (v: string) => {
+            const n = names.get(v.trim())
+            return n ? `${v.trim()} · ${n}` : v
+          }
+          return info!.list ? text.split(info!.sep).map(one).join(`${info!.sep} `) : one(text)
+        }
+      : undefined,
     rowMenu: readOnly
       ? undefined
       : (r, trigger) => (
@@ -335,6 +413,11 @@ export function TableView({
   const canRedo = !!edits?.redo.length
   const pendingCount = pending.reduce((n, p) => n + p.cells.length + p.rows.length, 0)
   const sel = grid.selection()
+  const scrollLayers = [
+    { rows: quickRows.dirty, color: '--c-grid-edited' },
+    { rows: findHits.map((h) => h.row), color: '--warning' },
+    { rows: quickRows.bad, color: '--danger' },
+  ]
   const focusInfo = grid.focus ? struct.infos[grid.focus.col] : undefined
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -419,6 +502,23 @@ export function TableView({
               {t('隐藏了 {n} 列 · 全部显示', { n: layout.hidden.length })}
             </Button>
           )}
+          <IconButton
+            icon={PanelTop}
+            label={t('编辑栏：看全、修改长文本')}
+            aria-pressed={editBar}
+            className={cn(editBar && 'bg-active text-fg')}
+            onClick={() => setEditBar(!editBar)}
+          />
+          {struct.refOpts.size > 0 && (
+            <IconButton
+              icon={Tags}
+              label={t('引用列显示「ID · 名称」（文件里存的还是 ID）')}
+              aria-pressed={refNames}
+              className={cn(refNames && 'bg-active text-fg')}
+              onClick={() => setRefNames(!refNames)}
+            />
+          )}
+          <IconButton icon={Keyboard} label={t('快捷键（F1）')} onClick={() => setHelpOpen(true)} />
           <ColumnSetup
             info={grid.focus ? struct.infos[grid.focus.col] : undefined}
             file={doc.path}
@@ -450,6 +550,7 @@ export function TableView({
             <BookA className="h-3.5 w-3.5" />
             {t('枚举')}
           </Button>
+          <IconButton icon={Search} label={t('查找（Ctrl+F）')} onClick={() => setFindMode('find')} />
           {!readOnly && (
             <Button
               size="sm"
@@ -526,6 +627,61 @@ export function TableView({
           </ToolGroup>
         )}
       </SheetHeaderBar>
+      {findMode && (
+        <TableFindBar
+          mode={findMode}
+          onMode={setFindMode}
+          rows={rows}
+          from={view.from}
+          order={order}
+          cols={colCount(rows)}
+          hidden={hiddenSet}
+          focusCol={grid.focus?.col}
+          colName={(c) => struct.infos[c]?.field || colLetter(c)}
+          keyName={keyCol >= 0 ? struct.infos[keyCol].field : undefined}
+          findKey={(k) => {
+            for (let r = view.from; r < rows.length; r++) if ((rows[r]?.[keyCol] ?? '').trim() === k) return r
+            return -1
+          }}
+          onGo={(row, col) => grid.go({ row, col })}
+          onHits={setFindHits}
+          onClose={() => {
+            setFindMode(null)
+            grid.box.current?.focus({ preventScroll: true })
+          }}
+        />
+      )}
+      {editBar && (
+        <TableEditBar
+          at={
+            grid.focus
+              ? `${colLetter(grid.focus.col)}${grid.focus.row + 1}${focusInfo?.field ? ` · ${focusInfo.field}` : ''}`
+              : ''
+          }
+          value={grid.focus ? (rows[grid.focus.row]?.[grid.focus.col] ?? '') : ''}
+          rule={grid.focus && grid.focus.row >= view.from ? ruleText(focusInfo) : ''}
+          readOnly={readOnly}
+          onCommit={(v) => grid.focus && setCells([{ r: grid.focus.row, c: grid.focus.col, v }])}
+          onDone={() => grid.box.current?.focus({ preventScroll: true })}
+        />
+      )}
+      <TableQuickFilter
+        value={quick}
+        onChange={setQuick}
+        counts={{
+          bad: quickRows.bad.size,
+          dirty: quickRows.dirty.size,
+          ref: quickRows.ref.size,
+          need: quickRows.need.size,
+        }}
+        views={views}
+        onViews={setViews}
+        current={{ filters: view.filters, sort: view.sort, quick }}
+        onApply={(v) => {
+          view.setAll(v.filters, v.sort)
+          setQuick(v.quick)
+        }}
+      />
       <CellMenu
         at={(e) => {
           const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
@@ -559,45 +715,52 @@ export function TableView({
         onFill={grid.fill}
         onFind={() => setFinding({ sel: grid.selection() })}
       >
-        <div
-          ref={grid.box}
-          tabIndex={0}
-          aria-label={t('表格内容')}
-          onKeyDown={grid.onKeyDown}
-          onPaste={grid.onPaste}
-          onMouseDownCapture={(e) => {
-            // Ctrl / ⌘ + 点击引用格：跳到被引用的那一行（不改选中）
-            if (!(e.ctrlKey || e.metaKey)) return
-            const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
-            if (!el) return
-            const r = Number(el.dataset.r)
-            const info = r >= view.from ? struct.infos[Number(el.dataset.c)] : undefined
-            const v = (rows[r]?.[Number(el.dataset.c)] ?? '').trim()
-            if (!info?.ref || !v) return
-            e.preventDefault()
-            e.stopPropagation()
-            onRefJump(info.ref, info.list ? (v.split(info.sep)[0] ?? '').trim() : v)
-          }}
-          className="thin-scroll min-h-0 flex-1 overflow-auto outline-none"
-        >
-          <SheetTable
-            colHead={(c) => colHeads[c]}
-            headCollapsed={headCollapsed}
-            onHeadCollapse={setHeadCollapsed}
-            rows={rows}
-            scrollEl={grid.box}
-            hits={hit}
-            header={view.header}
-            order={view.order}
-            filters={view.filters}
-            sort={view.sort}
-            onFilter={view.setFilter}
-            onSort={view.setSort}
-            edit={grid.edit}
-            fill
-            widthKey={`${projectId}:${fileKey}`}
-            layout={layout}
-            onLayout={setLayout}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={grid.box}
+            tabIndex={0}
+            aria-label={t('表格内容')}
+            onKeyDown={grid.onKeyDown}
+            onPaste={grid.onPaste}
+            onMouseDownCapture={(e) => {
+              // Ctrl / ⌘ + 点击引用格：跳到被引用的那一行（不改选中）
+              if (!(e.ctrlKey || e.metaKey)) return
+              const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
+              if (!el) return
+              const r = Number(el.dataset.r)
+              const info = r >= view.from ? struct.infos[Number(el.dataset.c)] : undefined
+              const v = (rows[r]?.[Number(el.dataset.c)] ?? '').trim()
+              if (!info?.ref || !v) return
+              e.preventDefault()
+              e.stopPropagation()
+              onRefJump(info.ref, info.list ? (v.split(info.sep)[0] ?? '').trim() : v)
+            }}
+            className="thin-scroll h-full overflow-auto outline-none"
+          >
+            <SheetTable
+              colHead={(c) => colHeads[c]}
+              headCollapsed={headCollapsed}
+              onHeadCollapse={setHeadCollapsed}
+              rows={rows}
+              scrollEl={grid.box}
+              hits={findHits.length ? findHits : hit}
+              header={view.header}
+              order={order}
+              filters={view.filters}
+              sort={view.sort}
+              onFilter={view.setFilter}
+              onSort={view.setSort}
+              edit={grid.edit}
+              fill
+              widthKey={`${projectId}:${fileKey}`}
+              layout={layout}
+              onLayout={setLayout}
+            />
+          </div>
+          <ScrollMarks
+            order={order}
+            layers={scrollLayers}
+            onJump={(row) => grid.go({ row, col: grid.focus?.col ?? Math.max(0, keyCol) })}
           />
         </div>
       </CellMenu>
@@ -644,6 +807,20 @@ export function TableView({
         <ProblemsBar
           problems={struct.problems}
           infos={struct.infos}
+          rows={rows}
+          onFix={readOnly ? undefined : setCells}
+          onAi={
+            readOnly
+              ? undefined
+              : (ps) =>
+                  aiFixProblems(
+                    projectId,
+                    doc,
+                    sheet.name,
+                    ps.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' })),
+                    refreshProposal,
+                  )
+          }
           onPick={(p) => grid.go({ row: p.r, col: p.c })}
           onClose={() => setCheckOpen(false)}
         />
@@ -656,7 +833,7 @@ export function TableView({
         }
         header={headerSummary(view)}
         stats={selectionStats(rows, sel)}
-        shown={view.order.length}
+        shown={order.length}
         total={Math.max(0, rows.length - view.from)}
         problems={struct.problems.length}
         onProblems={() => setCheckOpen(true)}
@@ -664,6 +841,7 @@ export function TableView({
         kind={doc.kind}
         readOnly={readOnly}
       />
+      {helpOpen && <ShortcutsHelp open onOpenChange={setHelpOpen} first="tables" />}
       {enumsOpen !== null && (
         <EnumsDialog
           open

@@ -137,6 +137,79 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, '表格页-列结构', ['InteractionAllowCharacterIDs', '格式（正则）', '必填'])
   await p.keyboard.press('Escape')
 
+  // 检查结果按「字段 + 规则」分组，每组能批量修：先预览，取消不改
+  const tsGroup = bar.getByRole('button', { name: /InteractionTriggerState.*不能大于 1/ })
+  await tsGroup.waitFor({ timeout: 5000 }).catch(() => errors.push('检查分组：没有按「字段 + 规则」分组'))
+  await tsGroup.locator('xpath=..').getByRole('button', { name: '批量修' }).click()
+  await p.getByRole('menuitem', { name: '全部改成 1' }).click()
+  const fix = p.getByRole('dialog')
+  await fix
+    .getByRole('button', { name: /放进表格/ })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('批量修：没有预览改动'))
+  await check(p, '表格页-批量修预览', ['全部改成 1'])
+  await fix.getByRole('button', { name: '取消' }).click()
+
+  // 快速筛选：只看不合规，状态栏显示筛出几行
+  await p
+    .getByRole('group', { name: '快速筛选' })
+    .getByRole('button', { name: /只看不合规/ })
+    .click()
+  await p
+    .getByRole('status', { name: '表格状态' })
+    .getByText(/显示 \d+ \/ \d+ 行/)
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('快速筛选：只看不合规后行数没变'))
+  await check(p, '表格页-快速筛选', ['只看不合规'])
+  await p
+    .getByRole('group', { name: '快速筛选' })
+    .getByRole('button', { name: /只看不合规/ })
+    .click()
+  if (!(await p.getByRole('img', { name: '滚动条标记' }).count())) errors.push('滚动条标记：有不合规的格子却没有标记')
+
+  // 快捷键：Ctrl+F 查找条、Ctrl+G 跳到行、F1 快捷键一览
+  await cell(6, 1).click()
+  await p.keyboard.press('Control+f')
+  const find = p.getByRole('search', { name: '在表格里查找' })
+  await find.getByRole('textbox', { name: '查找' }).fill('穿衣镜')
+  await find
+    .getByText(/^1 \/ \d+$/)
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('查找条：Ctrl+F 打字后没有命中'))
+  await p.keyboard.press('Enter')
+  await check(p, '表格页-查找条', ['只查'])
+  await p.keyboard.press('Escape')
+  await p.keyboard.press('Control+g')
+  // 先按主键找：ID 9 在第 14 行
+  await p.getByRole('textbox', { name: '跳到行' }).fill('9')
+  await p.keyboard.press('Enter')
+  if (!(await p.locator('[role=cell][data-r="13"].sheet-focus').count()))
+    errors.push('跳到行：Ctrl+G 填主键后没有跳过去')
+  await p.keyboard.press('F1')
+  await p
+    .getByRole('dialog', { name: '快捷键' })
+    .getByText('跳到这一段数据的边缘')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('快捷键一览：F1 没有打开表格的快捷键'))
+  await check(p, '表格页-快捷键', ['表格'])
+  await p.keyboard.press('Escape')
+
+  // 编辑栏：看全当前格的内容和这一列的规则
+  await p.getByRole('button', { name: '编辑栏：看全、修改长文本' }).click()
+  await cell(6, 3).click()
+  await p
+    .getByRole('textbox', { name: '编辑栏' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('编辑栏：打开后没有出现'))
+  await check(p, '表格页-编辑栏', ['枚举'])
+  await p.getByRole('button', { name: '编辑栏：看全、修改长文本' }).click()
+
+  // 引用列显示「ID · 名称」：文件里存的还是 ID
+  await p.getByRole('button', { name: /引用列显示「ID · 名称」/ }).click()
+  if (!(await cell(8, 5).textContent())?.includes('·')) errors.push('ID → 名称：引用列没有显示名称')
+  await check(p, '表格页-引用显示名称', ['艾琳'])
+  await p.getByRole('button', { name: /引用列显示「ID · 名称」/ }).click()
+
   // 引用跳转：引用列的格子右键，跳到被引用表的那一行
   await cell(8, 5).click({ button: 'right' })
   await p

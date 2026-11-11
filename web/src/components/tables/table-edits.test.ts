@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SheetData } from '@shared/files'
-import { dirtyCells, noEdits, pendingOf, redoIn, rowOpIn, rowsOf, setCellsIn, undoIn } from './table-edits'
+import { dirtyCells, noEdits, pendingOf, redoIn, rowOpIn, rowOpsIn, rowsOf, setCellsIn, undoIn } from './table-edits'
 
 const S: SheetData = {
   name: 'S',
@@ -47,4 +47,14 @@ test('改了又改回去：不算要保存的改动', () => {
   e = setCellsIn(e, S, [{ r: 1, c: 1, v: 'a' }])
   assert.deepEqual(pendingOf(e, [S]), [])
   assert.equal(e.undo.length, 2)
+})
+
+test('一次删几行（从下往上）：一步撤销全回来', () => {
+  const T: SheetData = { name: 'T', rows: [['ID'], ['1'], ['2'], ['3'], ['4']] }
+  const e = rowOpsIn(noEdits(), T, [
+    { at: 3, n: -1 },
+    { at: 1, n: -1 },
+  ])
+  assert.deepEqual(rowsOf(e, T), [['ID'], ['2'], ['4']])
+  assert.equal(rowsOf(undoIn(e), T), T.rows)
 })

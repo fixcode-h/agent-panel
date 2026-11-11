@@ -284,6 +284,8 @@ export function useShortcuts(openPalette: () => void, openHelp?: () => void) {
   const { tasks } = useTasks()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 页面里已经处理过的键（表格里打 ? 是往格子里填字）不再当全局快捷键
+      if (e.defaultPrevented) return
       if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && openHelp && !typing(document.activeElement)) {
         e.preventDefault()
         openHelp()

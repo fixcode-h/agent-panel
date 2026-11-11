@@ -106,6 +106,12 @@ AI 分析的结果（`TablesDraft`）也是几套表头，外加数组标记、�
 - 查找替换（Ctrl+H、工具栏「替换」）：范围是选中区域 / 当前列 / 整张表，只算筛选后看得见的数据行，跳过表头和隐藏的列；实时预览，「全部替换」一次撤销。
 - 列名右键冻结到某列、隐藏列（`use-col-layout.ts`，按「项目:文件#工作表」记在 localStorage，表格文件不动）。冻结列在列虚拟化之外一直画，`sticky` 钉在行号列右边，底色换成不透明色（`sheet-frozen`）。
 - 格子右键（整个表格只挂一个菜单，`CellMenu`）：引用列跳到被引用表的那一行（`findRefTarget`），被引用的表可以查「谁引用了这一行」（`findBackRefs`：结构文件里 ref 指向这张表的列，数组列按分隔符拆开整项比）。
+- 快捷键（`use-grid-edit.tsx`）：Ctrl+方向键跳到这一段数据的边缘、Ctrl+Home / End、Shift+空格 / Ctrl+空格选整行整列、Ctrl+Shift+= 在上方插行、Ctrl+- 删选中的行（`rowOpsIn` 一次撤销）。F1 / Ctrl+/ 打开共用的快捷键一览（`ShortcutsHelp` 的「表格」组；全局的 `?` 在格子里是打字，`useShortcuts` 跳过已经 `preventDefault` 的键）。
+- 查找条（Ctrl+F，`TableFindBar`）：只查筛选后显示的行和没隐藏的列，打字防抖 120ms，最多 5000 处；可以只查当前列。Ctrl+G 跳转：先按主键找，找不到再当行号。
+- 编辑栏（工具栏「查看」里开关，`TableEditBar`，localStorage `table-edit-bar`）：看全、修改长文本，右边是这一列的规则（`ruleText`）。
+- 快速筛选（`TableQuickFilter`）：只看不合规 / 改过的 / 引用缺失 / 空着的必填，几个一起是「或」，只过滤行号数组；当前的筛选、排序、快速筛选能存成视图（localStorage `table-views:<项目>:<文件#工作表>`）。
+- 引用列「ID · 名称」（localStorage `table-ref-names`）：只改显示（`SheetEditing.display`），名称取被引用表同一行里像名字的列（`refOptions` 的 desc）。
+- 检查结果（`ProblemsBar`）按「列 + 种类」分组（`shared/table-problems.ts`；种类是 `Problem.rule`，同一列「引用的表里没有 X / Y」算一组）。每组批量修：超出范围改成边界值、改成「也允许」的值、清空（必填 / 主键不给），先预览再一次放进表格；或让 AI 修这一组。滚动条右边一条 canvas 标出不合规、改过、查找命中的位置（`ScrollMarks`，按像素合并，点一下跳到最近的一处）。
 - 外部改动：当前打开的文件每 4 秒（页面在前台时）看一次修改时间（`/stat`），变了且没有没保存的改动就直接重新载入；有改动时表格上方提示，可以载入新内容并把改过的格子按位置写回（只改格子、没插删行时）、丢掉改动、或先不管（保存时仍有修改时间检查）。
 
 ## 导表脚本

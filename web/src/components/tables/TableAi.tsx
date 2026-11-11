@@ -26,6 +26,18 @@ function startAi(projectId: string, title: string, prompt: string, onDone?: () =
   })
 }
 
+/** 让 AI 修一组不合规（检查结果里按组修）：结束后 onDone 去取提的改动 */
+export function aiFixProblems(
+  projectId: string,
+  doc: TableDoc,
+  sheet: string,
+  problems: (Problem & { field: string })[],
+  onDone: () => void,
+) {
+  const name = doc.path.replace(/^.*\//, '')
+  startAi(projectId, t('AI 修 {file} 的不合规', { file: name }), fixProblemsPrompt(doc.path, sheet, problems), onDone)
+}
+
 /** 这张表上 AI 提的改动：打开时取一次，AI 对话结束后再取 */
 export function useProposal(projectId: string, doc: TableDoc) {
   const [p, setP] = useState<TableProposal | null>(null)

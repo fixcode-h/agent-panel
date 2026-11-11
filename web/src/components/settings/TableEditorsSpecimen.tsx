@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { t } from '@shared/i18n'
-import type { EnumOption, ColInfo } from '@shared/table-struct'
+import type { EnumOption, ColInfo, Problem } from '@shared/table-struct'
 import { Button } from '@/components/ui/button'
 import { EnumPicker } from '@/components/tables/EnumPicker'
 import { ListEditor } from '@/components/tables/ListEditor'
@@ -19,14 +19,19 @@ const ROLES: EnumOption[] = [
 ]
 const INFOS = [
   { col: 0, field: 'ID' },
-  { col: 1, field: 'MountType' },
-  { col: 2, field: 'TriggerState' },
+  { col: 1, field: 'MountType', enumName: 'HomeDecorationMountType' },
+  { col: 2, field: 'TriggerState', min: 0, max: 1, allow: ['-1'] },
 ] as ColInfo[]
-const PROBLEMS = [
-  { r: 7, c: 1, msg: '「CeilingLamp」不是 HomeDecorationMountType 里的值' },
-  { r: 9, c: 2, msg: '不能大于 1' },
-  { r: 12, c: 0, msg: '主键重复：第 6 行也是「1」' },
+const PROBLEMS: Problem[] = [
+  { r: 7, c: 1, msg: '「CeilingLamp」不是 HomeDecorationMountType 里的值', rule: 'enum' },
+  { r: 9, c: 2, msg: '不能大于 1', rule: 'max' },
+  { r: 11, c: 2, msg: '不能大于 1', rule: 'max' },
+  { r: 12, c: 0, msg: '主键重复：第 6 行也是「1」', rule: 'key' },
 ]
+/** 检查结果里显示原值用 */
+const ROWS: string[][] = Array.from({ length: 13 }, (_, r) =>
+  r === 7 ? ['7', 'CeilingLamp', '0'] : r === 9 || r === 11 ? [String(r), 'Floor', '3'] : [String(r), 'Floor', '0'],
+)
 
 /**
  * 设置 → 组件里表格页的格子编辑器：枚举 / 引用下拉、repeated 列表编辑、检查结果。
@@ -87,7 +92,14 @@ export function TableEditorsSpecimen() {
       </div>
       {/* 表格页里它在表格底下、最多占三分之一高；这里外框不定高，整条都露出来 */}
       <div className="flex flex-col overflow-hidden rounded-lg border">
-        <ProblemsBar problems={PROBLEMS} infos={INFOS} onPick={() => {}} onClose={() => {}} />
+        <ProblemsBar
+          problems={PROBLEMS}
+          infos={INFOS}
+          rows={ROWS}
+          onPick={() => {}}
+          onClose={() => {}}
+          onFix={() => {}}
+        />
       </div>
     </div>
   )

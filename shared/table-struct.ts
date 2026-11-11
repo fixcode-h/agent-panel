@@ -157,37 +157,51 @@ export function patternRe(p: string): RegExp | null {
   return re
 }
 
-/** 一个值对不对：对就返回 undefined，不对返回原因 */
-function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
+/**
+ * 不合规的种类：检查结果按「字段 + 种类」分组（同一列「引用的表里没有 X」「……没有 Y」算一组），
+ * 也决定能给哪些批量修法（超出范围改成边界值……）
+ */
+export type ProblemRule =
+  'type' | 'min' | 'max' | 'pattern' | 'enum' | 'ref' | 'required' | 'requiredWhen' | 'key' | 'unique' | 'header'
+
+/** 一格不合规：原因 + 种类 */
+export interface CellBad {
+  rule: ProblemRule
+  msg: string
+}
+
+/** 一个值对不对：对就返回 undefined，不对返回原因和种类 */
+function checkOne(info: ColInfo, v: string, ctx: CheckCtx): CellBad | undefined {
   if (info.allow?.includes(v)) return undefined
-  if (info.kind === 'int' && !isInt(v)) return t('应为整数')
-  if (info.kind === 'uint' && !/^\+?\d+$/.test(v)) return t('应为不小于 0 的整数')
-  if (info.kind === 'float' && !Number.isFinite(Number(v))) return t('应为数字')
-  if (info.kind === 'bool' && !/^(true|false|0|1)$/i.test(v)) return t('应为 TRUE / FALSE')
+  if (info.kind === 'int' && !isInt(v)) return { rule: 'type', msg: t('应为整数') }
+  if (info.kind === 'uint' && !/^\+?\d+$/.test(v)) return { rule: 'type', msg: t('应为不小于 0 的整数') }
+  if (info.kind === 'float' && !Number.isFinite(Number(v))) return { rule: 'type', msg: t('应为数字') }
+  if (info.kind === 'bool' && !/^(true|false|0|1)$/i.test(v)) return { rule: 'type', msg: t('应为 TRUE / FALSE') }
   if (info.min !== undefined || info.max !== undefined) {
     const n = Number(v)
     if (Number.isFinite(n)) {
-      if (info.min !== undefined && n < info.min) return t('不能小于 {n}', { n: info.min })
-      if (info.max !== undefined && n > info.max) return t('不能大于 {n}', { n: info.max })
+      if (info.min !== undefined && n < info.min) return { rule: 'min', msg: t('不能小于 {n}', { n: info.min }) }
+      if (info.max !== undefined && n > info.max) return { rule: 'max', msg: t('不能大于 {n}', { n: info.max }) }
     }
   }
   if (info.pattern) {
     const re = patternRe(info.pattern)
-    if (re && !re.test(v)) return t('不符合格式 {p}', { p: info.pattern })
+    if (re && !re.test(v)) return { rule: 'pattern', msg: t('不符合格式 {p}', { p: info.pattern }) }
   }
   if (info.enumName) {
     const set = ctx.enums.get(info.enumName)
-    if (set && set.size && !set.has(v)) return t('「{v}」不是 {e} 里的值', { v, e: info.enumName })
+    if (set && set.size && !set.has(v))
+      return { rule: 'enum', msg: t('「{v}」不是 {e} 里的值', { v, e: info.enumName }) }
   }
   if (info.ref) {
     const set = ctx.refs.get(info.ref)
-    if (set && !set.has(v)) return t('引用的表里没有「{v}」', { v })
+    if (set && !set.has(v)) return { rule: 'ref', msg: t('引用的表里没有「{v}」', { v }) }
   }
   return undefined
 }
 
-/** 一格对不对；空格子不查（可以不填） */
-export function checkCell(info: ColInfo | undefined, value: string, ctx: CheckCtx): string | undefined {
+/** 一格对不对（带种类）；空格子不查（可以不填） */
+export function cellBad(info: ColInfo | undefined, value: string, ctx: CheckCtx): CellBad | undefined {
   if (!info || !value || info.remark) return undefined
   if (info.list) {
     for (const item of value.split(info.sep || ctx.listSep).map((x) => x.trim())) {
@@ -200,14 +214,21 @@ export function checkCell(info: ColInfo | undefined, value: string, ctx: CheckCt
   return checkOne(info, value.trim(), ctx)
 }
 
+/** 一格对不对；空格子不查（可以不填） */
+export function checkCell(info: ColInfo | undefined, value: string, ctx: CheckCtx): string | undefined {
+  return cellBad(info, value, ctx)?.msg
+}
+
 export interface Problem {
   r: number
   c: number
   msg: string
+  /** 种类（分组、批量修用）；老数据没有 */
+  rule?: ProblemRule
 }
 
-/** 一行里不合规的格子（列号 + 原因） */
-export type RowProblems = { c: number; msg: string }[]
+/** 一行里不合规的格子（列号 + 原因 + 种类） */
+export type RowProblems = { c: number; msg: string; rule: ProblemRule }[]
 
 /**
  * 整张表：每格按列的结构查，主键列查重复。
@@ -241,28 +262,33 @@ export function checkSheet(
     if (!own) {
       own = []
       for (const info of infos) {
-        const bad = checkCell(info, row[info.col] ?? '', ctx)
-        if (bad) own.push({ c: info.col, msg: bad })
+        const bad = cellBad(info, row[info.col] ?? '', ctx)
+        if (bad) own.push({ c: info.col, ...bad })
       }
       // 必填、条件必填：只看这一行，和上面一起按行缓存
       for (const info of needs) {
         if ((row[info.col] ?? '').trim()) continue
-        if (info.required) own.push({ c: info.col, msg: t('必填') })
+        if (info.required) own.push({ c: info.col, msg: t('必填'), rule: 'required' })
         else if (info.requiredWhen) {
           const at = colOf.get(info.requiredWhen.field)
           const v = at === undefined ? '' : (row[at] ?? '').trim()
           if (v && info.requiredWhen.values.includes(v))
-            own.push({ c: info.col, msg: t('{field} 是「{v}」时必填', { field: info.requiredWhen.field, v }) })
+            own.push({
+              c: info.col,
+              msg: t('{field} 是「{v}」时必填', { field: info.requiredWhen.field, v }),
+              rule: 'requiredWhen',
+            })
         }
       }
       if (cache && rows[r]) cache.set(rows[r], own)
     }
-    for (const p of own) out.push({ r, c: p.c, msg: p.msg })
+    for (const p of own) out.push({ r, ...p })
     if (keyCol >= 0) {
       const k = (row[keyCol] ?? '').trim()
       if (!k) continue
       const dup = seen.get(k)
-      if (dup !== undefined) out.push({ r, c: keyCol, msg: t('主键重复：第 {n} 行也是「{k}」', { n: dup + 1, k }) })
+      if (dup !== undefined)
+        out.push({ r, c: keyCol, msg: t('主键重复：第 {n} 行也是「{k}」', { n: dup + 1, k }), rule: 'key' })
       else seen.set(k, r)
     }
     for (const g of groups) {
@@ -276,6 +302,7 @@ export function checkSheet(
           r,
           c: g.cols[0],
           msg: t('{fields} 组合重复：和第 {n} 行一样', { fields: g.fields.join(' + '), n: dup + 1 }),
+          rule: 'unique',
         })
       else g.seen.set(k, r)
     }
@@ -316,6 +343,7 @@ export function checkHeader(
             name === TYPE_NAMES
               ? t('「{v}」不是基础类型，也不是通用枚举', { v })
               : t('「{v}」不是 {e} 里的值', { v, e: name }),
+          rule: 'header',
         })
     }
   })

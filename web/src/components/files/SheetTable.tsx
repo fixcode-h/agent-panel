@@ -166,6 +166,8 @@ export interface SheetEditing {
   onDouble: (r: number, c: number) => void
   /** 行号格的右键菜单（插入、删除行） */
   rowMenu?: (r: number, trigger: React.ReactElement) => React.ReactNode
+  /** 格子里显示的字（引用列显示成「1001 · 小明」）；存的还是原值，不给就照原样显示 */
+  display?: (r: number, c: number, text: string) => string
 }
 
 /**
@@ -425,7 +427,7 @@ export function SheetTable({
           )}
           style={{ width: w, ...pinned(c, pin) }}
         >
-          {text}
+          {edit?.display && text ? edit.display(r, c, text) : text}
         </span>
       )
     }),

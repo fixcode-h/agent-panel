@@ -3,6 +3,8 @@
  * 直接打字或双击 / F2 改、Enter / Tab 确认并移动、Esc 取消、Delete 清空、
  * Ctrl+C / X / V 复制剪切粘贴（和 Excel / WPS 互通的 TSV）、Ctrl+Z / Y 撤销重做、Ctrl+S 保存、
  * Ctrl+D 向下填充（Ctrl+Shift+D 按序列递增）、改格子时 Ctrl+Enter 把值填进选中的每一格。
+ * 还有：Ctrl+方向键跳到这一段数据的边缘、Ctrl+Home / End、Shift+空格选整行、Ctrl+空格选整列、
+ * Ctrl+Shift+= 在上方插行、Ctrl+- 删选中的行、Ctrl+F 表内查找、Ctrl+G 跳到行或主键、F1 / Ctrl+/ 快捷键表。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parseClip, toClip, type CellSet } from '@shared/table-edit'
@@ -38,6 +40,18 @@ export interface GridEditOpts {
   onFind?: () => void
   /** 隐藏的列：左右移动时跳过 */
   hiddenCol?: (c: number) => boolean
+  /** Ctrl+F：表格顶部的查找条 */
+  onFindBar?: () => void
+  /** Ctrl+G：跳到某行或某个主键 */
+  onGoto?: () => void
+  /** Ctrl+Shift+=：在这一行上方插一行 */
+  onInsertAbove?: (row: number) => void
+  /** Ctrl+-：删掉这些行（行号从大到小） */
+  onDeleteRows?: (rows: number[]) => void
+  /** F1 / Ctrl+/：快捷键表 */
+  onHelp?: () => void
+  /** 格子里显示的字（引用列「ID · 名称」） */
+  display?: (r: number, c: number, text: string) => string
 }
 
 export function useGridEdit(o: GridEditOpts) {
@@ -76,6 +90,38 @@ export function useGridEdit(o: GridEditOpts) {
       while (o.hiddenCol(col) && col - dir >= 0 && col - dir <= last) col -= dir
     }
     go({ row, col }, extend)
+  }
+
+  /**
+   * Ctrl+方向键：像 Excel 一样跳到这一段数据的边缘——当前格和下一格都有字就走到连续一段的最后一格，
+   * 否则跳过空格子停在下一个有字的格子（没有就到头）
+   */
+  const edge = (dr: number, dc: number, extend: boolean) => {
+    if (!focus) return
+    const filled = (i: number, c: number) => !!(o.rows[line[i]]?.[c] ?? '').trim()
+    let i = posOf.get(focus.row) ?? 0
+    let c = focus.col
+    const last = Math.max(0, o.cols - 1)
+    const step = () => {
+      let ni = i + dr
+      let nc = c + dc
+      while (dc && o.hiddenCol?.(nc) && nc + dc >= 0 && nc + dc <= last) nc += dc
+      if (ni < 0 || ni >= line.length || nc < 0 || nc > last) return false
+      i = ni
+      c = nc
+      return true
+    }
+    const next = () => {
+      const ni = i + dr
+      const nc = c + dc
+      return ni >= 0 && ni < line.length && nc >= 0 && nc <= last && filled(ni, nc)
+    }
+    if (filled(i, c) && next()) {
+      while (next() && step());
+    } else {
+      while (step() && !filled(i, c));
+    }
+    go({ row: line[i], col: c }, extend)
   }
 
   const range = useMemo(() => {
@@ -176,6 +222,9 @@ export function useGridEdit(o: GridEditOpts) {
     if (mod && k.toLowerCase() === 'h' && o.onFind) return void (e.preventDefault(), o.onFind())
     // Ctrl+D 向下填充（复制选中区第一行）；Ctrl+Shift+D 按序列递增
     if (mod && k.toLowerCase() === 'd') return void (e.preventDefault(), fill(e.shiftKey))
+    if (mod && k.toLowerCase() === 'f' && o.onFindBar) return void (e.preventDefault(), o.onFindBar())
+    if (mod && k.toLowerCase() === 'g' && o.onGoto) return void (e.preventDefault(), o.onGoto())
+    if ((k === 'F1' || (mod && k === '/')) && o.onHelp) return void (e.preventDefault(), o.onHelp())
     if (mod && k.toLowerCase() === 'a') {
       e.preventDefault()
       setAnchor({ row: line[0], col: 0 })
@@ -183,6 +232,31 @@ export function useGridEdit(o: GridEditOpts) {
       return
     }
     if (!focus) return
+    if (mod && k === 'Home') return void (e.preventDefault(), go({ row: line[0], col: 0 }, e.shiftKey))
+    if (mod && k === 'End')
+      return void (e.preventDefault(), go({ row: line[line.length - 1], col: Math.max(0, o.cols - 1) }, e.shiftKey))
+    // Shift+空格选整行、Ctrl+空格选整列
+    if (k === ' ' && e.shiftKey && !mod) {
+      e.preventDefault()
+      setAnchor({ row: focus.row, col: 0 })
+      setFocus({ row: focus.row, col: Math.max(0, o.cols - 1) })
+      return
+    }
+    if (k === ' ' && mod) {
+      e.preventDefault()
+      setAnchor({ row: line[0], col: focus.col })
+      setFocus({ row: line[line.length - 1], col: focus.col })
+      return
+    }
+    if (mod && e.shiftKey && (k === '+' || k === '=') && !o.readOnly && o.onInsertAbove)
+      return void (e.preventDefault(), o.onInsertAbove(focus.row))
+    if (mod && k === '-' && !o.readOnly && o.onDeleteRows) {
+      e.preventDefault()
+      const rows = range ? [...new Set(line.slice(range.i0, range.i1 + 1))] : [focus.row]
+      // 表头行不删
+      o.onDeleteRows(rows.filter((r) => r >= o.from).sort((a, b) => b - a))
+      return
+    }
     const arrows: Record<string, [number, number]> = {
       ArrowUp: [-1, 0],
       ArrowDown: [1, 0],
@@ -192,8 +266,7 @@ export function useGridEdit(o: GridEditOpts) {
     if (arrows[k]) {
       e.preventDefault()
       const [dr, dc] = arrows[k]
-      const far = mod ? 1e9 : 1
-      return move(dr * far, dc * far, e.shiftKey)
+      return mod ? edge(dr, dc, e.shiftKey) : move(dr, dc, e.shiftKey)
     }
     if (k === 'Tab') return void (e.preventDefault(), move(0, e.shiftKey ? -1 : 1))
     if (k === 'PageDown' || k === 'PageUp') {
@@ -224,6 +297,7 @@ export function useGridEdit(o: GridEditOpts) {
     mark: o.mark,
     tip: o.tip,
     rowMenu: o.rowMenu,
+    display: o.display,
     onDown: (r, c, e) => {
       if (e.button !== 0) return
       e.preventDefault()
