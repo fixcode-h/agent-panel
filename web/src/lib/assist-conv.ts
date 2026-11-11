@@ -1,5 +1,6 @@
 import { toast } from '@/lib/toast'
 import type { AssistKind, Proposal } from '@shared/assist'
+import type { AnalysisKind } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from './api'
 import { createAnalysisTask, openAiWindow } from './ai-window'
@@ -17,6 +18,8 @@ export function runAssistInProject(opts: {
   /** 用户这次的要求（第一句话） */
   start: string
   subject: Record<string, string>
+  /** 对话记成哪种分析：默认 init（右侧画项目设置的应用面板）；结果在别处应用的给 run，不出那个面板 */
+  analysis?: AnalysisKind
   onProposal: (p: Proposal) => void
 }) {
   const base = {
@@ -34,7 +37,7 @@ export function runAssistInProject(opts: {
       const { prompt } = await api.assistPrompt(base)
       return createAnalysisTask({
         scope: { kind: 'project', projectId: opts.projectId },
-        kind: 'init',
+        kind: opts.analysis ?? 'init',
         title: opts.title,
         prompt,
       })

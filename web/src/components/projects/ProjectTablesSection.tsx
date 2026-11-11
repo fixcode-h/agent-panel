@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
+import { TablesAnalyze } from '@/components/tables/TablesAnalyze'
 
 /**
  * 项目设置的「表格」：表格目录、包含 / 排除、结构信息存在哪、只读。
@@ -106,7 +107,9 @@ export function ProjectTablesSection({
       </FormSection>
 
       <FormSection title={t('AI 分析表格风格')}>
-        {saved ? null : (
+        {saved && project ? (
+          <TablesAnalyze projectId={project.id} projectName={project.name} />
+        ) : (
           <p className="text-footnote leading-relaxed text-subtle">
             {t('设好表格目录并点「确认」保存后，可以让 AI 读几张表，总结表头有几行、每行是什么、哪些列是枚举或引用。')}
           </p>

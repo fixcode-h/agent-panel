@@ -405,6 +405,48 @@ function hookDraft(text: string) {
   }
 }
 
+/** 表格风格：按演示项目里那几张表写一份分析（和真实 CLI 交回的形状一样） */
+function tablesDraft() {
+  return {
+    draft: {
+      summary: '表头 5 行：修饰 / 导出端 / 类型 / 字段名 / 注释；枚举表是 3 行表头，按 EnumName 分组',
+      style: {
+        header: { start: 0, roles: ['modifier', 'side', 'type', 'name', 'comment'] },
+        key: 'ID',
+        listSep: ';',
+        primitives: ['uint32', 'int32', 'bytes', 'string'],
+        exceptions: [
+          {
+            glob: 'data/enum/*.xlsx',
+            header: { start: 0, roles: ['type', 'name', 'comment'] },
+            why: '枚举表没有修饰和导出端',
+          },
+          {
+            glob: 'data/character/*.xlsx',
+            header: { start: 0, roles: ['type', 'name', 'comment'] },
+            why: '角色表只有 3 行表头',
+          },
+        ],
+      },
+      enums: {
+        HomeDecorationSizeType: {
+          values: [
+            { name: 'XS', value: '0', desc: '特小' },
+            { name: 'S', value: '1', desc: '小' },
+            { name: 'M', value: '2', desc: '中' },
+            { name: 'L', value: '3', desc: '大' },
+            { name: 'XL', value: '4', desc: '特大' },
+          ],
+        },
+      },
+      columns: {
+        'data/C_HomeDecorationConfig.xlsx#*#EntryID': { min: 781713000, max: 781713999, note: '交互物 ID 段' },
+      },
+    },
+    note: '看了 3 张表：配置表是 5 行表头，枚举表和角色表是 3 行。HomeDecorationSizeType 的取值在枚举表里能找到，EntryID 都在 7817130xx 段。',
+  }
+}
+
 /** 按关键词生成的示例：后台生成和「在项目对话里做」共用 */
 function draftFor(input: AssistInput, ctx: AssistContext, text: string) {
   return input.kind === 'agent'
@@ -421,7 +463,9 @@ function draftFor(input: AssistInput, ctx: AssistContext, text: string) {
               ? projectInitDraft(text, ctx)
               : input.kind === 'hook'
                 ? hookDraft(text)
-                : workflowDraft(text, ctx)
+                : input.kind === 'tables'
+                  ? tablesDraft()
+                  : workflowDraft(text, ctx)
 }
 
 /** 在项目对话里做完后解析结果：演示没有真的回复，直接给示例的 JSON */

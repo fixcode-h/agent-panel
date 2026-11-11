@@ -139,21 +139,30 @@ export async function parseTable(full: string): Promise<{ sheets: SheetData[]; c
     cache.set(full, hit)
     return hit
   }
-  const kind = tableKind(full)
-  let sheets: SheetData[]
-  let csv: TableDoc['csv']
-  if (kind === 'xlsx') {
-    if (info.size > MAX_XLSX_BYTES) throw new Error(t('表格太大（超过 30 MB），请用表格软件打开'))
-    sheets = readXlsx(await readFile(full))
-  } else if (kind === 'csv') {
-    const text = (await readFile(full)).toString('utf8')
-    const f = csvFormat(text, /\.tsv$/i.test(full))
-    csv = f
-    sheets = [{ name: path.basename(full).replace(/\.[^.]+$/, ''), rows: parseCsv(text, f.delimiter) }]
-  } else throw new Error(t('老的 .xls / .et 格式只能用表格软件打开，另存为 .xlsx 后能在这里看和改'))
+  if (tableKind(full) === 'xlsx' && info.size > MAX_XLSX_BYTES)
+    throw new Error(t('表格太大（超过 30 MB），请用表格软件打开'))
+  const { sheets, csv } = await parseTableBuffer(full, await readFile(full))
   const c: Cached = { key, sheets, cells: countCells(sheets), csv }
   remember(full, c)
   return c
+}
+
+/** 按文件名认格式解析一份内容（磁盘上的文件、版本控制里取出的旧版本都用它），不缓存 */
+export async function parseTableBuffer(
+  name: string,
+  buf: Buffer,
+): Promise<{ sheets: SheetData[]; csv?: TableDoc['csv'] }> {
+  const kind = tableKind(name)
+  if (kind === 'xlsx') {
+    if (buf.length > MAX_XLSX_BYTES) throw new Error(t('表格太大（超过 30 MB），请用表格软件打开'))
+    return { sheets: readXlsx(buf) }
+  }
+  if (kind === 'csv') {
+    const text = buf.toString('utf8')
+    const csv = csvFormat(text, /\.tsv$/i.test(name))
+    return { csv, sheets: [{ name: path.basename(name).replace(/\.[^.]+$/, ''), rows: parseCsv(text, csv.delimiter) }] }
+  }
+  throw new Error(t('老的 .xls / .et 格式只能用表格软件打开，另存为 .xlsx 后能在这里看和改'))
 }
 
 /** 同目录有 Office / WPS 的锁文件（~$ 开头）：文件正被打开 */

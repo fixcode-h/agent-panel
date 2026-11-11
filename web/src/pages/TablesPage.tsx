@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Settings2 } from 'lucide-react'
+import { GitCompareArrows, Loader2, RefreshCw, Settings2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableDoc, TableHit, TableSchema, TableSearch, TablesIndex } from '@shared/tables'
 import { useNav } from '@/lib/data'
@@ -14,13 +14,15 @@ import { Segmented } from '@/components/ui/segmented'
 import { Button } from '@/components/ui/button'
 import { TableTree } from '@/components/tables/TableTree'
 import { TableHits } from '@/components/tables/TableHits'
+import { TableCheckList } from '@/components/tables/TableCheckList'
+import { TablesCompareDialog } from '@/components/tables/TablesCompareDialog'
 import { TableTabs } from '@/components/tables/TableTabs'
 import { TableView, type TableJump } from '@/components/tables/TableView'
 import { noEdits, pendingOf, type Edits } from '@/components/tables/table-edits'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import type { SheetEdit } from '@shared/table-edit'
 
-type Mode = 'name' | 'content'
+type Mode = 'name' | 'content' | 'check'
 
 /**
  * 表格页（项目设置 → 表格设了目录才有入口）：左边文件树和搜索（名字 / 内容），右边打开的表格。
@@ -75,6 +77,10 @@ function Workbench({
   const [indexError, setIndexError] = useState('')
   const [schema, setSchema] = useState<TableSchema | null>(null)
   const [mode, setMode] = useState<Mode>('name')
+  /** 存了表格或结构文件后加一：「检查」重新查 */
+  const [checkSeq, setCheckSeq] = useState(0)
+  const [comparing, setComparing] = useState(false)
+  const others = projects.filter((p) => p.value !== projectId)
   const [query, setQuery] = useState('')
   const [tabs, setTabs] = useState<string[]>([])
   const [active, setActive] = useState('')
@@ -159,11 +165,28 @@ function Workbench({
   }, [docs])
 
   const search = useContentSearch(projectId, mode === 'content' ? query : '')
+  // 别的表格文件（枚举表、被引用的表）：打开过的直接用，没打开的读一次记下
+  const extDocs = useRef(new Map<string, Promise<TableDoc | undefined>>())
+  const loadDoc = useCallback(
+    (path: string) => {
+      const open = docs[path]
+      if (open && 'sheets' in open) return Promise.resolve(open)
+      let p = extDocs.current.get(path)
+      if (!p) {
+        p = tablesApi.open(projectId, path).catch(() => undefined)
+        extDocs.current.set(path, p)
+      }
+      return p
+    },
+    [projectId, docs],
+  )
   const saveDoc = async (doc: TableDoc, pending: SheetEdit[], force: boolean) => {
     try {
       const next = await tablesApi.save(projectId, { path: doc.path, mtime: doc.mtime, sheets: pending, force })
       setDocs((m) => ({ ...m, [doc.path]: next }))
+      extDocs.current.delete(doc.path)
       setEdits(({ [doc.path]: _, ...m }) => m)
+      setCheckSeq((n) => n + 1)
       toast.success(t('已保存 {name}', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
       return null
     } catch (e) {
@@ -173,7 +196,10 @@ function Workbench({
   const saveSchema = useCallback(
     (s: TableSchema) => {
       setSchema(s)
-      tablesApi.saveSchema(projectId, s).catch((e) => toast.error((e as Error).message))
+      tablesApi
+        .saveSchema(projectId, s)
+        .then(() => setCheckSeq((n) => n + 1))
+        .catch((e) => toast.error((e as Error).message))
     },
     [projectId],
   )
@@ -190,10 +216,18 @@ function Workbench({
         compact
         query={query}
         onQuery={setQuery}
-        placeholder={mode === 'name' ? t('按文件名找') : t('在所有表格的格子里找')}
+        placeholder={
+          mode === 'name' ? t('按文件名找') : mode === 'content' ? t('在所有表格的格子里找') : t('按文件名、字段名筛')
+        }
         extra={
           <>
             <IconButton icon={RefreshCw} label={t('重新读取表格目录')} onClick={reload} />
+            <IconButton
+              icon={GitCompareArrows}
+              label={others.length ? t('跨项目对比') : t('跨项目对比：还要另一个设了表格目录的项目')}
+              disabled={!others.length}
+              onClick={() => setComparing(true)}
+            />
             <IconButton icon={Settings2} label={t('表格设置')} onClick={onSettings} />
           </>
         }
@@ -208,6 +242,7 @@ function Workbench({
               options={[
                 { id: 'name', label: t('文件名') },
                 { id: 'content', label: t('内容') },
+                { id: 'check', label: t('检查') },
               ]}
             />
             {projects.length > 1 && (
@@ -238,6 +273,8 @@ function Workbench({
           </div>
         ) : mode === 'name' ? (
           <TableTree files={files} query={query} active={active} dirty={dirtyPaths} onOpen={open} />
+        ) : mode === 'check' ? (
+          <TableCheckList projectId={projectId} query={query} seq={checkSeq} onOpen={openHit} />
         ) : (
           <TableHits
             result={search.result}
@@ -272,6 +309,7 @@ function Workbench({
           </div>
         ) : (
           <TableView
+            projectId={projectId}
             key={doc.path}
             doc={doc}
             schema={schema}
@@ -282,9 +320,19 @@ function Workbench({
             edits={edits[doc.path]}
             onEdits={(f) => setEdits((m) => ({ ...m, [doc.path]: f(m[doc.path] ?? noEdits()) }))}
             onSave={(pending, force) => saveDoc(doc, pending, force)}
+            loadDoc={loadDoc}
+            files={files.map((f) => f.path)}
           />
         )}
       </main>
+      {comparing && (
+        <TablesCompareDialog
+          open
+          onClose={() => setComparing(false)}
+          left={{ id: projectId, name: projects.find((p) => p.value === projectId)?.label ?? '' }}
+          projects={others}
+        />
+      )}
       <ConfirmDialog
         open={!!closing}
         title={t('关掉 {name}？', { name: closing.slice(closing.lastIndexOf('/') + 1) })}
