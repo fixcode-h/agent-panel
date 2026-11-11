@@ -204,6 +204,12 @@ export const Settings = z.object({
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
   /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
   reclaimIdleCli: z.boolean().catch(true).default(true),
+  /**
+   * 系统可用内存低于这个百分比时，放掉没开着页面的空闲 Agent（下次发消息时续接原会话）；0 表示不管。
+   * 保活没有数量上限，空闲进程攒多了会把整台机器的内存吃满，这是兜底（见 server/tasks/idle-release.ts）。
+   * macOS 报的空闲内存不含可回收缓存，按它判会一直误判，所以只在 Windows / Linux 上生效
+   */
+  lowMemoryReleasePercent: z.number().int().min(0).max(50).catch(10).default(10),
   resumeAfterRestart: z.boolean().catch(false).default(false), // 重启后自动继续被打断的对话；默认关，见 ADR 0042
   /**
    * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。

@@ -16,6 +16,7 @@ export const VISIBLE_SETTINGS = [
   'childIdleAskMinutes',
   'presenceGraceMinutes',
   'reclaimIdleCli',
+  'lowMemoryReleasePercent',
   'childDoneKeepMinutes',
   'autoArchiveDays',
   'backgroundLimit',

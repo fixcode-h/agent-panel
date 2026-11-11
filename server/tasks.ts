@@ -625,6 +625,7 @@ export function tasksApi(deps: {
     remindParent: (tk) => remindParentFix(tk),
   })
   let sweepTimer: ReturnType<typeof setInterval> | undefined
+  let stopMemoryGuard = () => {}
   void ready.then(() => {
     if (shuttingDown) return
     sweepTimer = setInterval(() => {
@@ -632,6 +633,8 @@ export function tasksApi(deps: {
       void stateSweep.sweep().catch((e) => log.warn('task', '定时核对失败', { error: (e as Error).message }))
     }, STATE_SWEEP_MS)
     sweepTimer.unref()
+    // 系统内存紧张时放掉没开着页面的空闲会话（设置「内存不足时释放空闲 Agent」，见 tasks/idle-release.ts）
+    stopMemoryGuard = startMemoryGuard()
   })
   const {
     activeChildren,
@@ -700,7 +703,7 @@ export function tasksApi(deps: {
     }
     await next()
   })
-  registerListRoutes(scope)
+  const { startMemoryGuard } = registerListRoutes(scope)
   registerFlowRunRoutes(scope)
   const { childUnmerged, gitGate } = registerChildrenRoutes(scope)
   registerCollabRoutes(scope)
@@ -803,6 +806,7 @@ export function tasksApi(deps: {
       shuttingDown = true
       disarmIdleAsk()
       clearInterval(sweepTimer)
+      stopMemoryGuard()
       for (const id of live.keys()) stopTask(id, 'restart')
       // 后台命令的记录只在内存里：退出前停掉，并把发起它们的那一行收口成「被停止」，
       // 不然重启后那一行永远停在「已放到后台」，对话和用户都不知道它没跑完
