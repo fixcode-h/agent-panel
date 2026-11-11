@@ -549,6 +549,8 @@ export interface TasksScope {
     }[]
   >
   release: (entry: Live) => void
+  /** 扫父对话名下排在别的子对话之后的：前置都合回就启动，等不到的告诉父对话（见 tasks/after-deps.ts） */
+  releaseAfter: (parentId: string) => Promise<void>
   reportKey: (tk: Task, state: import('../../shared/task.ts').ConvState) => string
   reportToParent: (task: Task) => Promise<void>
   reportedDone: Set<string>
@@ -624,6 +626,8 @@ export interface TasksScope {
     prewarm?: boolean,
   ) => Promise<Task>
   startChild: (sub: Task, message: string, agents: Agent[]) => Promise<void>
+  /** 父对话给还在等前置的子对话交消息：现在就启动它（见 tasks/after-deps.ts） */
+  startAfterNow: (parent: Task, child: Task, text: string) => Promise<{ ok: boolean; info: string }>
   startParentTests: (tk: Task, steps: import('../../shared/schema.ts').TestStep[]) => Promise<void>
   startQueue: Set<string>
   stopTask: (id: string, reason: import('../../shared/schema.ts').StopReason) => void

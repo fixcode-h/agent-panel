@@ -82,6 +82,7 @@ import { createQuotaResume } from './tasks/quota-resume.ts'
 import { createPeer } from './tasks/peer.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
+import { createAfterDeps } from './tasks/after-deps.ts'
 import { createTestRuns } from './tasks/test-runs.ts'
 import { createJobs } from './tasks/jobs.ts'
 import { createEditWorktree } from './tasks/edit-worktree.ts'
@@ -195,6 +196,7 @@ export function tasksApi(deps: {
     recoverParentTests: () => recoverParentTests,
     refreshAgents: () => refreshAgents,
     release: () => release,
+    releaseAfter: () => releaseAfter,
     reportKey: () => reportKey,
     reportToParent: () => reportToParent,
     reportedDone: () => reportedDone,
@@ -214,6 +216,7 @@ export function tasksApi(deps: {
     spawnChildOf: () => spawnChildOf,
     start: () => start,
     startChild: () => startChild,
+    startAfterNow: () => startAfterNow,
     startParentTests: () => startParentTests,
     startQueue: () => startQueue,
     stopTask: () => stopTask,
@@ -584,6 +587,7 @@ export function tasksApi(deps: {
   }
   const { beginEdit, ensureChildWorktree, mergeLock, recordWorktreeError, restoreWorktree } = createEditWorktree(scope)
   const { noteParent, notePlanInput, sendToChild, trackUserToChild } = createChildMessages(scope)
+  const { releaseAfter, startAfterNow } = createAfterDeps(scope)
   const { background, endBackground, withJobs, settling } = createJobs(scope)
   const { parentTestStepsOf, parentTesting, parentTests, startParentTests, recordSelfTestRun, recoverParentTests } =
     createTestRuns(scope)
