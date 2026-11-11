@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { SheetTabs } from '@/components/files/SheetTable'
-import { DiffSummary, SheetDiffView } from './SheetDiffView'
+import { DiffSummary, SheetDiffView, type DiffOnly } from './SheetDiffView'
 import { BatchSyncDialog } from './BatchSyncDialog'
 import { diffReport, pairsReport } from './compare-report'
 import { saveText } from '@/lib/save-file'
@@ -232,6 +232,8 @@ function PairView({
   const [error, setError] = useState('')
   const [sheetIndex, setSheetIndex] = useState(0)
   const [only, setOnly] = useState(true)
+  // 摘要里点了「改 / 加 / 删」：只看那一种行
+  const [diffOnly, setDiffOnly] = useState<DiffOnly | null>(null)
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [confirm, setConfirm] = useState<{ problems: string[]; dropped: string[]; run: () => Promise<void> } | null>(
     null,
@@ -319,7 +321,7 @@ function PairView({
         <span className="truncate font-mono text-body" title={path}>
           {path.slice(path.lastIndexOf('/') + 1)}
         </span>
-        <DiffSummary diff={view.diff} />
+        <DiffSummary diff={view.diff} only={diffOnly} onOnly={setDiffOnly} />
         <span className="text-caption text-subtle">
           {t('绿色是只在左边（{l}）的，红色是只在右边（{r}）的', { l: left.name, r: right.name })}
         </span>
@@ -370,6 +372,7 @@ function PairView({
           diff={view.diff}
           names={view.l.names.length ? view.l.names : view.r.names}
           onlyChanges={only}
+          only={diffOnly}
           pick={{
             can: pickable,
             picked,

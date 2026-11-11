@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { TablesConfig } from '../../shared/tables.ts'
+import { TableSchema, TablesConfig } from '../../shared/tables.ts'
 import { listTables, lockedByOffice, openTable, safeRel, searchTables } from './files.ts'
 
 function project() {
@@ -89,6 +89,14 @@ test('内容搜索：不分大小写，跨文件给出工作表、行列和那�
   )
   assert.equal(r.files, 2)
   assert.deepEqual((await searchTables(dir, files, '  ')).hits, [])
+  // 给了结构文件：数据行的命中带上字段名（按表头的字段名行），表头里的命中不带
+  const schema = TableSchema.parse({ style: { header: { start: 0, roles: ['name'] } } })
+  const named = await searchTables(dir, files, 'name', undefined, schema)
+  assert.equal(named.hits[0].field, undefined)
+  assert.deepEqual(
+    (await searchTables(dir, files, '剑', undefined, schema)).hits.map((h) => h.field),
+    ['Name', 'Name'],
+  )
 })
 
 test('表格目录可以是绝对路径：项目目录里的换成相对路径，项目目录外的按绝对路径列，多层子目录都找', async () => {

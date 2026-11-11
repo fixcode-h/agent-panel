@@ -4,7 +4,7 @@
  */
 import { parseCsv } from '@shared/csv'
 import { applyRowOps, setCells, type TableSave } from '@shared/table-edit'
-import { checkWorkbook } from '@shared/table-struct'
+import { checkWorkbook, sheetFieldNames } from '@shared/table-struct'
 import type { Project } from '@shared/schema'
 import {
   TableSchema,
@@ -196,13 +196,16 @@ export function demoTables(
     const files = filesOf(p)
     if (needle)
       for (const f of files)
-        for (const s of bookOf(f.path, p).sheets)
+        for (const s of bookOf(f.path, p).sheets) {
+          const names = sheetFieldNames(schema, f.path, s)
           s.rows.forEach((row, r) =>
             row.forEach((v, c) => {
+              const field = r >= names.from ? names.names[c] : undefined
               if (v && v.toLowerCase().includes(needle) && hits.length < 500)
-                hits.push({ path: f.path, sheet: s.name, row: r, col: c, text: v })
+                hits.push({ path: f.path, sheet: s.name, row: r, col: c, text: v, ...(field ? { field } : {}) })
             }),
           )
+        }
     return { hits, files: files.length }
   }
   if (kind === 'save' && method === 'POST') {

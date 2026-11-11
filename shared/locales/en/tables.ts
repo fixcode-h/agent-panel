@@ -38,8 +38,6 @@ export const EN_TABLES: Record<string, string> = {
   这个文件里没有工作表: 'This file has no sheets',
   '记在项目的表格结构文件里（项目设置 → 表格），表格文件一个字节都不改。':
     "Saved in the project's table structure files (Project settings → Tables); the table file itself is untouched.",
-  '还没有项目设置表格目录。在项目设置 → 表格里填上配置表所在的目录，这里就会列出来。':
-    'No project has table folders yet. Set the config table folders in Project settings → Tables and they will be listed here.',
   按文件名找: 'Find by file name',
   在所有表格的格子里找: 'Search cells of all tables',
   重新读取表格目录: 'Reload table folders',
@@ -293,7 +291,6 @@ export const EN_TABLES: Record<string, string> = {
   '一共 {n} 个表格文件': '{n} table files in total',
   只能查看项目目录和表格目录里的文件: 'Only files in the project folder or the table folders can be opened',
   '拖动调整 {col} 列宽度': 'Drag to resize column {col}',
-  '拖动调整列宽，双击恢复': 'Drag to resize the column, double-click to reset',
   表头设置已保存: 'Header settings saved',
   每张表自动识别: 'Detect per table',
   按设定的表头: 'Use these headers',
@@ -716,4 +713,31 @@ export const EN_TABLES: Record<string, string> = {
   '全部改成 {v}': 'Change all to {v}',
   '全部改成允许的值 {v}': 'Change all to the allowed value {v}',
   全部清空: 'Clear all',
+  '拖动调整列宽，双击按内容自适应': 'Drag to resize; double-click to fit content',
+  有新的分析结果: 'New analysis result',
+  '这一页跟着项目设置下面的「确认」一起保存。': 'This page is saved with the project settings Confirm button.',
+  '这一页写进表格结构文件，改了就单独保存，不用点「确认」。':
+    'This page is written to the table schema file and saved on change; no need to click Confirm.',
+  '先在「目录」里设好表格目录，并点「确认」保存。':
+    'First set the table directories under Directories and click Confirm.',
+  '旧：{was}\n新：{now}': 'Old: {was}\nNew: {now}',
+  看全部: 'Show all',
+  只看这一种: 'Show only this kind',
+  正在打开表格: 'Opening table',
+  设置表格目录: 'Set up table directories',
+  管理游戏配置表: 'Manage game config tables',
+  '按目录浏览、搜索、检查和在线改 xlsx / csv 配置表':
+    'Browse, search, check and edit xlsx / csv config tables by directory',
+  '在项目设置 →「表格」里选配置表所在的目录':
+    'In Project settings → Tables, pick the directories with your config tables',
+  '设置页里会显示找到了几个表格，可以按包含 / 排除筛':
+    'The settings page shows how many tables were found; filter with include / exclude',
+  '回到这里，左边就是表格文件树': 'Come back here to see the table file tree on the left',
+  '打开项目设置 → 表格': 'Open Project settings → Tables',
+  先去建一个项目: 'Create a project first',
+  第几次执行: 'Run',
+  '关闭输出（停掉还在跑的）': 'Close output (stops running exports)',
+  '紧凑（22px）': 'Compact (22px)',
+  '标准（跟着设置）': 'Standard (from settings)',
+  '宽松（32px）': 'Relaxed (32px)',
 }

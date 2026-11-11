@@ -9,11 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
-import { TablesAnalyze } from '@/components/tables/TablesAnalyze'
+import { TablesAnalyze, useTablesAnalysisPending } from '@/components/tables/TablesAnalyze'
+import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { DirList } from './DirList'
 import { ProjectTablesEnums, ProjectTablesHeader } from './ProjectTablesHeader'
 import { ProjectTablesExports } from './ProjectTablesExports'
 import { ProjectTablesRules } from './ProjectTablesRules'
+
+/** 「表格」设置的子页：一页太长，按要做的事分开 */
+type Sub = 'dirs' | 'header' | 'enums' | 'rules' | 'exports' | 'ai'
 
 /** 常见的表格目录写法：点一下加一行 */
 const COMMON_DIRS = ['Config', 'Designer/Excel', 'Design/Tables', 'Content/DataTables']
@@ -69,73 +73,106 @@ export function ProjectTablesSection({
     return typeof probe === 'object' && probe ? probe.roots.find((r) => r.dir === key) : undefined
   }
   const unused = COMMON_DIRS.filter((d) => !rows.some((r) => r.trim() === d))
+  const [sub, setSub] = useState<Sub>('dirs')
+  const aiDot = useTablesAnalysisPending(project?.id)
+  const subs: { id: Sub; label: string }[] = [
+    { id: 'dirs', label: t('目录') },
+    { id: 'header', label: t('表头') },
+    { id: 'enums', label: t('枚举') },
+    { id: 'rules', label: t('校验') },
+    { id: 'exports', label: t('导表') },
+    { id: 'ai', label: t('AI 分析') },
+  ]
+  /** 目录、导表在项目设置里，跟着「确认」；表头、枚举、校验、AI 分析写结构文件，改了就存 */
+  const viaConfirm = sub === 'dirs' || sub === 'exports'
   return (
     <>
-      <FormSection title={t('表格目录')}>
-        <Field
-          label={t('目录')}
-          tip={t(
-            '这些目录里（含多层子目录）的表格会列在表格页左侧。可以写相对项目目录的路径，也可以选项目目录外的文件夹（比如策划的表格仓库）。',
+      <TabBar label={t('表格设置')} variant="underline" className="-mt-1">
+        {subs.map((s) => (
+          <TabItem
+            key={s.id}
+            active={sub === s.id}
+            onSelect={() => setSub(s.id)}
+            tag={
+              s.id === 'ai' && aiDot ? (
+                <span aria-label={t('有新的分析结果')} className="h-1.5 w-1.5 rounded-full bg-danger" />
+              ) : undefined
+            }
+          >
+            {s.label}
+          </TabItem>
+        ))}
+      </TabBar>
+      {sub === 'dirs' && (
+        <FormSection title={t('表格目录')}>
+          <Field
+            label={t('目录')}
+            tip={t(
+              '这些目录里（含多层子目录）的表格会列在表格页左侧。可以写相对项目目录的路径，也可以选项目目录外的文件夹（比如策划的表格仓库）。',
+            )}
+          >
+            <DirList
+              value={rows}
+              onChange={setDirs}
+              base={base}
+              placeholder={t('相对项目目录，或绝对路径')}
+              addLabel={t('添加表格目录')}
+              browseTitle={t('选择表格目录')}
+              status={(d) => (d.trim() ? <RootStatus root={rootOf(d)} pending={probe === null} /> : null)}
+            />
+          </Field>
+          {unused.length > 0 && rows.every((r) => !r.trim()) && (
+            <div className="flex flex-wrap items-center gap-1.5 text-footnote text-subtle">
+              {t('常见写法：')}
+              {unused.map((d) => (
+                <Button
+                  key={d}
+                  size="sm"
+                  variant="ghost"
+                  className="font-mono"
+                  onClick={() => setDirs([...rows.filter((r) => r.trim()), d])}
+                >
+                  {d}
+                </Button>
+              ))}
+            </div>
           )}
-        >
-          <DirList
-            value={rows}
-            onChange={setDirs}
-            base={base}
-            placeholder={t('相对项目目录，或绝对路径')}
-            addLabel={t('添加表格目录')}
-            browseTitle={t('选择表格目录')}
-            status={(d) => (d.trim() ? <RootStatus root={rootOf(d)} pending={probe === null} /> : null)}
-          />
-        </Field>
-        {unused.length > 0 && rows.every((r) => !r.trim()) && (
-          <div className="flex flex-wrap items-center gap-1.5 text-footnote text-subtle">
-            {t('常见写法：')}
-            {unused.map((d) => (
-              <Button
-                key={d}
-                size="sm"
-                variant="ghost"
-                className="font-mono"
-                onClick={() => setDirs([...rows.filter((r) => r.trim()), d])}
-              >
-                {d}
-              </Button>
-            ))}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label={t('包含')} tip={t('逗号分隔的通配，比如 *.xlsx, *.csv；带 / 的按相对路径比')}>
+              <Input
+                value={cfg.include}
+                placeholder={TABLE_INCLUDE}
+                onChange={(e) => patch({ include: e.target.value })}
+                className="font-mono text-footnote"
+              />
+            </Field>
+            <Field label={t('排除')} tip={t('默认跳过 Excel / WPS 打开文件时留下的 ~$ 锁文件')}>
+              <Input
+                value={cfg.exclude}
+                placeholder={TABLE_EXCLUDE}
+                onChange={(e) => patch({ exclude: e.target.value })}
+                className="font-mono text-footnote"
+              />
+            </Field>
           </div>
-        )}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label={t('包含')} tip={t('逗号分隔的通配，比如 *.xlsx, *.csv；带 / 的按相对路径比')}>
-            <Input
-              value={cfg.include}
-              placeholder={TABLE_INCLUDE}
-              onChange={(e) => patch({ include: e.target.value })}
-              className="font-mono text-footnote"
-            />
-          </Field>
-          <Field label={t('排除')} tip={t('默认跳过 Excel / WPS 打开文件时留下的 ~$ 锁文件')}>
-            <Input
-              value={cfg.exclude}
-              placeholder={TABLE_EXCLUDE}
-              onChange={(e) => patch({ exclude: e.target.value })}
-              className="font-mono text-footnote"
-            />
-          </Field>
-        </div>
-        {project && tablesOn(cfg) && <ProbeSummary project={project} probe={probe} saved={!!saved} />}
-      </FormSection>
+          {project && tablesOn(cfg) && <ProbeSummary project={project} probe={probe} saved={!!saved} />}
+        </FormSection>
+      )}
 
-      <FormSection title={t('表头')}>
-        {saved && project ? (
-          <ProjectTablesHeader projectId={project.id} />
-        ) : (
-          <p className="text-footnote leading-relaxed text-subtle">
-            {t('设好表格目录并点「确认」保存后，可以设整个项目的表头从第几行开始、共几行、每行是什么。')}
-          </p>
-        )}
-      </FormSection>
+      {sub === 'header' && (
+        <FormSection title={t('表头')}>
+          {saved && project ? (
+            <ProjectTablesHeader projectId={project.id} />
+          ) : (
+            <p className="text-footnote leading-relaxed text-subtle">
+              {t('设好表格目录并点「确认」保存后，可以设整个项目的表头从第几行开始、共几行、每行是什么。')}
+            </p>
+          )}
+        </FormSection>
+      )}
 
-      {saved && project && (
+      {sub === 'enums' && !(saved && project) && <NeedSave />}
+      {sub === 'enums' && saved && project && (
         <FormSection title={t('通用枚举')}>
           <p className="text-footnote leading-relaxed text-subtle">
             {t('整个项目所有表格共用：列的类型写了同名类型，或在「列结构」里选了它，改格子时就是下拉，填错会标红。')}
@@ -144,13 +181,15 @@ export function ProjectTablesSection({
         </FormSection>
       )}
 
-      {saved && project && (
+      {sub === 'rules' && !(saved && project) && <NeedSave />}
+      {sub === 'rules' && saved && project && (
         <FormSection title={t('校验')}>
           <ProjectTablesRules projectId={project.id} />
         </FormSection>
       )}
 
-      {tablesOn(cfg) && (
+      {sub === 'exports' && !tablesOn(cfg) && <NeedSave />}
+      {sub === 'exports' && tablesOn(cfg) && (
         <FormSection title={t('导表脚本')}>
           <p className="text-footnote leading-relaxed text-subtle">
             {t('表格页的「导表」按钮和文件树右键里执行。命令里写占位，执行时才换成表格的真实路径。')}
@@ -164,43 +203,67 @@ export function ProjectTablesSection({
         </FormSection>
       )}
 
-      <FormSection title={t('结构信息')}>
-        <Field
-          label={t('存放位置')}
-          tip={t(
-            '表头规则、枚举、列的引用和取值范围这些结构信息永远不写进表格。存在项目目录里可以跟着版本控制给团队共用；只存本机就不会出现在项目目录里。',
-          )}
-        >
-          <div>
-            <Segmented
-              label={t('存放位置')}
-              value={cfg.store}
-              onChange={(v) => patch({ store: v as TablesConfig['store'] })}
-              options={[
-                { id: 'project', label: t('项目目录 .agentpanel/tables（推荐）') },
-                { id: 'data', label: t('只存本机') },
-              ]}
-            />
-          </div>
-        </Field>
-        <Checkbox
-          checked={cfg.readOnly}
-          onChange={(v) => patch({ readOnly: v })}
-          label={t('只读')}
-          tip={t('表格页只能看、搜索、筛选和对比，不能改单元格。')}
-        />
-      </FormSection>
+      {sub === 'dirs' && (
+        <FormSection title={t('结构信息')}>
+          <Field
+            label={t('存放位置')}
+            tip={t(
+              '表头规则、枚举、列的引用和取值范围这些结构信息永远不写进表格。存在项目目录里可以跟着版本控制给团队共用；只存本机就不会出现在项目目录里。',
+            )}
+          >
+            <div>
+              <Segmented
+                label={t('存放位置')}
+                value={cfg.store}
+                onChange={(v) => patch({ store: v as TablesConfig['store'] })}
+                options={[
+                  { id: 'project', label: t('项目目录 .agentpanel/tables（推荐）') },
+                  { id: 'data', label: t('只存本机') },
+                ]}
+              />
+            </div>
+          </Field>
+          <Checkbox
+            checked={cfg.readOnly}
+            onChange={(v) => patch({ readOnly: v })}
+            label={t('只读')}
+            tip={t('表格页只能看、搜索、筛选和对比，不能改单元格。')}
+          />
+        </FormSection>
+      )}
 
-      <FormSection title={t('AI 分析表格风格')}>
-        {saved && project ? (
-          <TablesAnalyze projectId={project.id} projectName={project.name} />
+      {sub === 'ai' && (
+        <FormSection title={t('AI 分析表格风格')}>
+          {saved && project ? (
+            <TablesAnalyze projectId={project.id} projectName={project.name} />
+          ) : (
+            <p className="text-footnote leading-relaxed text-subtle">
+              {t(
+                '设好表格目录并点「确认」保存后，可以让 AI 读几张表，总结表头有几行、每行是什么、哪些列是枚举或引用。',
+              )}
+            </p>
+          )}
+        </FormSection>
+      )}
+
+      <p className="flex items-center gap-1.5 border-t pt-3 text-caption text-subtle">
+        {viaConfirm ? (
+          t('这一页跟着项目设置下面的「确认」一起保存。')
         ) : (
-          <p className="text-footnote leading-relaxed text-subtle">
-            {t('设好表格目录并点「确认」保存后，可以让 AI 读几张表，总结表头有几行、每行是什么、哪些列是枚举或引用。')}
-          </p>
+          <>
+            <CheckCircle2 className="h-3 w-3 text-success" />
+            {t('这一页写进表格结构文件，改了就单独保存，不用点「确认」。')}
+          </>
         )}
-      </FormSection>
+      </p>
     </>
+  )
+}
+
+/** 结构文件那几页：表格目录还没保存时先说明 */
+function NeedSave() {
+  return (
+    <p className="text-footnote leading-relaxed text-subtle">{t('先在「目录」里设好表格目录，并点「确认」保存。')}</p>
   )
 }
 
