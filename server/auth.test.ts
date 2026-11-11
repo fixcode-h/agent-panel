@@ -21,7 +21,8 @@ test('打开访问令牌后，CLI 调的面板工具地址照样能用，其他�
     app.request(`http://127.0.0.1:8787${p}`, { method: 'POST', headers: { host: '127.0.0.1:8787' } })
   // CLI 拿着这一轮的随机地址来调，没有 Cookie：拦下来 CLI 就一个面板工具都没有（Pi 的面板工具全丢就是这样）
   assert.equal((await call('/api/mcp/ask/some-token')).status, 200)
-  assert.equal((await call('/api/mcp/design/some-token')).status, 200)
+  // UI 设计的工具搬进了插件，走 /api/plugins/mcp/，旧地址不再放行
+  assert.equal((await call('/api/mcp/design/some-token')).status, 401)
   assert.equal((await call('/api/plugins/mcp/some-token')).status, 200, '插件给 Agent 的工具也是 CLI 拿随机地址调')
   assert.equal((await call('/api/tasks')).status, 401)
 })

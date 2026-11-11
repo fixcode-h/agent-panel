@@ -11,16 +11,21 @@ import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
  * 风格库（从 server/designs.ts 拆出）：设置 →「风格」里增删改，UI 设计里存进来、套用，对话输入框里选。
  * UI 设计拆成插件后风格库留在面板：插件经开放模块（shared/plugins/host-modules.json）读它。
  * 以前存在 designs/_styles.json（设计目录下），设计数据搬去插件的目录后它没了归处，挪到数据目录根下的 styles.json；
- * 新文件还没有时读一次旧的，下次保存写到新位置。
+ * 新文件还没有时读一次旧的，下次保存写到新位置。UI 设计插件第一次启用时会把整个 designs/ 搬进
+ * plugin-data/ui-design/designs/，旧文件跟着过去，所以两处都找。
  */
 const FILE = path.join(DATA_DIR, 'styles.json')
-const LEGACY = path.join(DATA_DIR, 'designs', '_styles.json')
+const LEGACY = [
+  path.join(DATA_DIR, 'designs', '_styles.json'),
+  path.join(DATA_DIR, 'plugin-data', 'ui-design', 'designs', '_styles.json'),
+]
 
 let styles: SavedStyle[] | undefined
 /** 用户自己存的风格（不含内置的） */
 export async function loadStyles() {
   if (styles) return styles
-  const raw = (await readJson(FILE)) ?? (await readJson(LEGACY))
+  let raw = await readJson(FILE)
+  for (const f of LEGACY) raw ??= await readJson(f)
   styles = Array.isArray(raw) ? raw.flatMap((x) => SavedStyle.safeParse(x).data ?? []) : []
   return styles
 }

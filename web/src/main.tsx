@@ -8,7 +8,6 @@ import { getLang } from '@shared/i18n'
 import { primeCjkFont } from './lib/appearance'
 import { installCaretAutoScroll } from './lib/caret'
 
-const CaptureHost = lazy(() => import('./components/design/CaptureHost').then((m) => ({ default: m.CaptureHost })))
 const PluginBareHost = lazy(() => import('./plugins/BareHost').then((m) => ({ default: m.PluginBareHost })))
 
 document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
@@ -44,18 +43,12 @@ if (!import.meta.env.VITE_DEMO) {
   document.head.appendChild(link)
 }
 
-// 无头浏览器打开的截图页（server/headless.ts）：只挂截图组件，不加载面板的其他部分
-const captureId = /^#\/capture\/([^/?#]+)/.exec(location.hash)?.[1]
 // 插件不带面板外壳的独立页（插件接口 4）：#/pbare/<插件>/<页面>/<path>
 const bare = /^#\/pbare\/([^/?#]+)\/([^/?#]+)\/?(.*)$/.exec(location.hash)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {captureId ? (
-      <Suspense fallback={null}>
-        <CaptureHost id={decodeURIComponent(captureId)} />
-      </Suspense>
-    ) : bare ? (
+    {bare ? (
       <Suspense fallback={null}>
         <PluginBareHost
           plugin={decodeURIComponent(bare[1])}

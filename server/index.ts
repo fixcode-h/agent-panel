@@ -49,9 +49,7 @@ import { taskMemoryApi } from './task-memory.ts'
 import { usageApi } from './usage.ts'
 import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
-import { designsApi } from './designs.ts'
 import { stylesApi } from './styles.ts'
-import { designMcpApi } from './design-mcp.ts'
 import { cleanupDisabledPlugins, initPlugins, pluginsApi } from './plugins/index.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import { bridgeApi, bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
@@ -964,16 +962,12 @@ app.route(
 // 设置页的用量统计：按天 / 周 / 月聚合各任务每轮执行的 token
 app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))
-// ---- UI 设计和连接浏览器的扩展 ----
-const designs = designsApi({ projects })
+// ---- 风格库和连接浏览器的扩展（UI 设计本身在 UI 设计插件里，fixcode-h/agent-plugins 的 ui-design）----
 app.route('/styles', stylesApi())
 // 浏览器扩展（扩展是面板的，借网页版图片模型出图；以前挂在设计接口下，地址不变）
 app.route('/designs/browser', browserExtApi())
-app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())
-// AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
-app.route('/mcp', designMcpApi())
 app.route('/plugins', pluginsApi())
 app.route('/mcp', askMcpApi())
 const docs = docsApi({ projects, agents })
@@ -1072,7 +1066,7 @@ app.post('/fs/mkdir', async (c) => {
 
 // 内存采样：面板自身的进程 + 它拉起的 CLI 子进程，定时记一次留在内存里，数据页的内存曲线和 AI 分析读它
 const memory = memorySampler({
-  running: () => tasks.running() + designs.running(),
+  running: () => tasks.running(),
   scale: async () => {
     const all = await tasks.list()
     return {
@@ -1084,12 +1078,12 @@ const memory = memorySampler({
 })
 memory.start()
 
-app.route('/data', dataApi({ running: () => tasks.running() + designs.running(), memory }))
+app.route('/data', dataApi({ running: () => tasks.running(), memory }))
 // 逐个目录 stat / 跑 git 的清理入口单独一块（/data/cleanup*），不和上面那套按分类扫路径的混在一起
 app.route('/data/cleanup', cleanupApi({ tasks, projects }))
 
 const updater = updateApi({
-  running: () => tasks.running() + designs.running(),
+  running: () => tasks.running(),
   // server 在下面才创建，重启时一定已经有了
   restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   // 强制更新：先让任务里的 CLI 收尾；设计、文档、模型补全这些不在任务里的也一起结束
@@ -1169,7 +1163,7 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   const addr = server.address()
   const actualPort = typeof addr === 'object' && addr ? addr.port : port
   console.log(`AGENT_PANEL_PORT ${actualPort}`)
-  // 其它模块按 PORT 环境变量拼面板地址（ask-mcp、design-mcp）：模块加载时读到的是 0，
+  // 其它模块按 PORT 环境变量拼面板地址（ask-mcp、插件的 MCP）：模块加载时读到的是 0，
   // 这里把实际端口写回去，否则交给 CLI 的面板 MCP 地址是 127.0.0.1:0，CLI 连不上就直接退出了
   process.env.PORT = String(actualPort)
   // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问

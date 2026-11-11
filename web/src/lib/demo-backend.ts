@@ -162,17 +162,7 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
-import {
-  demoDesigns,
-  demoGenerate,
-  demoImportComponent,
-  demoProjectComponents,
-  demoStyles,
-  demoExtractStyle,
-  demoVersions,
-  demoDesignOf,
-} from './demo-design'
-import { demoRestore } from './demo-restore'
+import { demoStyles } from './demo-styles'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
 import { DEMO_CSV, DEMO_FILES, DEMO_README, DEMO_SHEETS } from './demo-project-files'
@@ -2263,11 +2253,8 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
 
   // 引入会话：演示里只给一份假的附件（没有本机磁盘）
-  if ((res === 'tasks' || res === 'designs') && sub === 'transcript' && method === 'POST') {
-    const title =
-      res === 'tasks'
-        ? ((d.tasks ?? []).find((x) => x.id === id)?.title ?? fail('任务不存在'))
-        : ((demoDesigns('GET', id, undefined, null) as { title: string }).title ?? fail('设计不存在'))
+  if (res === 'tasks' && sub === 'transcript' && method === 'POST') {
+    const title = (d.tasks ?? []).find((x) => x.id === id)?.title ?? fail('任务不存在')
     const name = `会话-${title.slice(0, 40)}.md`
     const path = `/demo/uploads/${crypto.randomUUID()}/${name}`
     // 和真实服务端一样把转录内容存下来：粘贴回剪贴板里的路径时能认回附件、点开能看到内容
@@ -2278,16 +2265,6 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     return { name, path, size: 4096, mime: 'text/markdown' }
   }
   if (res === 'styles') return demoStyles(method, id, body ?? {})
-  if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
-  if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
-  if (res === 'designs' && sub === 'components') return demoImportComponent(id, body ?? {})
-  if (res === 'designs' && sub === 'restore') return demoRestore(demoDesignOf(id), seg[3], body ?? {})
-  if (res === 'designs' && sub === 'versions') return demoVersions(method, id, seg[3], seg[4], body ?? {})
-  if (res === 'designs')
-    // 演示里没有失败的图，重试和生成一样
-    return seg[2] === 'images' && (seg[4] === 'generate' || seg[4] === 'retry')
-      ? demoGenerate(id, seg[3], body ?? {})
-      : demoDesigns(method, id, sub, body ?? {})
   if (res === 'schedules') return demoSchedules(method, seg, body)
   if (res === 'tasks' && id === 'disk')
     return (d.tasks ?? []).map((tk) => ({

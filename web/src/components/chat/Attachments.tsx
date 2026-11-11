@@ -1074,29 +1074,19 @@ function SessionPicker({
   onBack: () => void
   onPick: (a: Attachment) => void
 }) {
-  const { designs, projects } = useData()
+  const { projects } = useData()
   const { tasks } = useTasks()
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState('')
   const kw = q.trim().toLowerCase()
-  const items = [
-    ...tasks.map((x) => ({
+  const items = tasks
+    .map((x) => ({
       id: x.id,
-      kind: 'task' as const,
       title: x.title,
       at: x.updatedAt,
       icon: x.projectId ? FolderGit2 : MessageSquare,
       where: x.projectId ? (projects.find((p) => p.id === x.projectId)?.name ?? '') : t('Chat'),
-    })),
-    ...designs.map((x) => ({
-      id: x.id,
-      kind: 'design' as const,
-      title: x.title,
-      at: x.updatedAt,
-      icon: x.kind === 'web' ? Globe : Gamepad2,
-      where: t('UI 设计'),
-    })),
-  ]
+    }))
     .filter((x) => x.id !== self && (!kw || `${x.title} ${x.where}`.toLowerCase().includes(kw)))
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 60)
@@ -1104,7 +1094,7 @@ function SessionPicker({
     if (busy) return
     setBusy(x.id)
     try {
-      onPick(await (x.kind === 'task' ? api.taskTranscript(x.id) : api.designTranscript(x.id)))
+      onPick(await api.taskTranscript(x.id))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

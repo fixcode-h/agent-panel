@@ -774,7 +774,6 @@ export const EN_SETTINGS: Record<string, string> = {
   'AI 处理': 'Handle with AI',
   'AI 修复': 'Fix with AI',
   'API 连接失败：{name}': 'API connection failed: {name}',
-  '生成图片失败：{name}': 'Image generation failed: {name}',
   '{cli} 登录没有完成': '{cli} sign-in did not complete',
   '本机生图：{step}': 'Local image generation: {step}',
   检查面板更新失败: 'Checking for panel updates failed',

@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { PROMPT_CATEGORIES, SavedStyle } from '../shared/design.ts'
+import { PROMPT_CATEGORIES, SavedStyle } from '../shared/style-types.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 
 test('内置风格都符合风格库的格式，id 和名字不重复', () => {

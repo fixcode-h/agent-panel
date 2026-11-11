@@ -7,11 +7,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   'ComfyUI 还没有启动。启动后可以在这里直接看节点图、调参数和手动出图。':
     "ComfyUI isn't running. Start it to view node graphs, tweak parameters and generate by hand right here.",
   '启动 ComfyUI': 'Start ComfyUI',
-  '本机 ComfyUI': 'Local ComfyUI',
-  '本机 · 按图片用途自动选工作流': 'Local · pick workflow by image use',
-  '本机 · {name}': 'Local · {name}',
-  '管理本机模型…': 'Manage local models…',
-  '配置本机生图（ComfyUI）…': 'Set up local images (ComfyUI)…',
   本机模型: 'Local model',
   'ComfyUI 工作流': 'ComfyUI workflows',
   '用 ComfyUI 在本机跑开源图片模型，不花额度、不用联网生成，适合大批量的图标和素材。安装在软件目录下的 comfyui 文件夹里，需要 Python {range}；有独立显卡（NVIDIA 8GB 显存以上）或苹果芯片的电脑才实用。':
@@ -75,7 +70,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   导入: 'Import',
   'AI 生成': 'Generate with AI',
   '在面板里打开 ComfyUI 的网页': 'Open the ComfyUI web UI inside the panel',
-  本机生图设置: 'Local image settings',
   我的: 'Mine',
   '还没有，可以导入或让 AI 生成': 'None yet. Import one or let AI generate it.',
   '模型已下载，可以用': 'Model downloaded, ready',
@@ -119,9 +113,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '从 ComfyUI 导入工作流': 'Import a workflow from ComfyUI',
   '在 ComfyUI 里打开工作流，菜单「工作流 → 导出（API）」，把得到的 JSON 贴在下面。描述、尺寸、种子会自动换成占位符。':
     'Open the workflow in ComfyUI, choose Workflow → Export (API), and paste the JSON below. Prompt, size and seed are replaced with placeholders automatically.',
-  网页工作流管理: 'Web workflows',
-  游戏工作流管理: 'Game workflows',
-  '打开 ComfyUI 网页': 'Open ComfyUI web UI',
   本机生图: 'Local images',
   '主力推荐：图标、按钮、面板、插画、整屏原画都好用，8 步出图，听得懂中文描述':
     'Top pick: great for icons, buttons, panels, illustrations and full-screen concepts; 8 steps and understands Chinese prompts',

@@ -138,21 +138,8 @@ test('界面操作：推给页面；没有页面开着时说清楚', async () =>
   assert.equal((await runAppAction('ui.open_settings', { section: 'models' }, child)).ok, true)
   assert.deepEqual(ui[0], { action: 'open_settings', args: { section: 'models' } })
   fakeHost({}, 0)
-  const r = await runAppAction('ui.navigate', { page: 'design' }, child)
+  const r = await runAppAction('ui.navigate', { page: 'pdesign' }, child)
   assert.match((r as { error: string }).error, /面板页面没有打开/)
-})
-
-test('建 UI 设计并让 AI 生成背包页面：新建、打开设计页、发要求', async () => {
-  const { calls, ui } = fakeHost({ 'POST /designs': { id: 'd1', title: '背包' } })
-  const made = await runAppAction('design.create', { projectId: 'dp', title: '背包' }, child)
-  assert.deepEqual(made.ok && made.result, { id: 'd1', title: '背包', opened: true })
-  assert.deepEqual(ui[0], { action: 'navigate', args: { page: 'design', id: 'd1' } })
-  assert.equal((await runAppAction('design.chat', { id: 'd1', text: '生成一个背包页面' }, child)).ok, true)
-  assert.deepEqual(calls.at(-1), {
-    method: 'POST',
-    path: '/designs/d1/chat',
-    body: { text: '生成一个背包页面', source: { kind: 'cli' } },
-  })
 })
 
 test('初始化项目：找到项目后打开项目设置并开始 AI 初始化', async () => {

@@ -4,7 +4,7 @@ import { mcpPlugin, pluginById, pluginToolNames } from './plugins/index.ts'
 /**
  * 面板自带的 MCP 工具在对话里的中文叫法，只在这一处维护：对话里的工具行、「正在写」那一行、子对话活动、
  * 查询 MCP 工具那一行的副标题都从这里取。没登记的工具会在工具行里露出英文原名（例如 update_bug_case 带个 panel 标签），
- * 所以新加面板工具（server/orch-mcp.ts、workflow-tools.ts、diagnosis-tool.ts、design-mcp.ts）时同时登记这里；插件的工具登记在插件清单的 toolNames（shared/plugins），
+ * 所以新加面板工具（server/orch-mcp.ts、workflow-tools.ts、diagnosis-tool.ts）时同时登记这里；插件的工具登记在插件清单的 toolNames（shared/plugins），
  * web/src/lib/tool-names.test.ts 会核对面板工具总表（PANEL_TOOL_NAMES）都有中文名。
  * 写成函数：t() 要在切换界面语言之后再取，模块加载时取会定死成加载那一刻的语言
  */
@@ -75,48 +75,16 @@ const PANEL_TOOLS = (): Record<string, string> => ({
   more_tools: t('查看工具用法'),
 })
 
-/** UI 设计对话的 design 工具（server/design-mcp.ts） */
-const DESIGN_TOOLS = (): Record<string, string> => ({
-  get_tree: t('查看控件树'),
-  get_design: t('查看设计概况'),
-  add_widgets: t('添加控件'),
-  update_widgets: t('修改控件'),
-  remove_widgets: t('删除控件'),
-  move_widgets: t('移动控件'),
-  rename_widgets: t('重命名控件'),
-  replace_widget: t('替换控件'),
-  duplicate_widgets: t('复制控件'),
-  wrap_widget: t('套一层面板'),
-  find_widgets: t('查找控件'),
-  undo: t('撤回修改'),
-  create_components: t('新建子控件'),
-  resize_components: t('修改子控件尺寸'),
-  delete_components: t('删除子控件'),
-  add_images: t('列出要生成的图片'),
-  add_animations: t('添加动画'),
-  remove_animations: t('删除动画'),
-  set_data: t('设置预览数据'),
-  set_design: t('修改设计设置'),
-  ask_user: t('向用户提问'),
-  generate_concepts: t('生成效果图'),
-  screenshot: t('截取画布'),
-  get_layout: t('计算控件位置'),
-  inspect_image: t('测量图片'),
-  view_image: t('查看图片'),
-  propose_layout: t('拆分布局区块'),
-  compare_template: t('和模板对比'),
-  check: t('检查设计'),
-})
-
 /** 装着的插件带的工具（清单里的 toolNames），不论插件开没开：旧对话里的工具行照样要显示中文名 */
 const PLUGIN_TOOLS = (): Record<string, string> => pluginToolNames()
 const ownPlugin = (own: string) => (own.startsWith('plugin:') ? pluginById(own.slice(7)) : undefined)
 
 /** 面板自己的 MCP 服务：工具行旁边那个淡色标签的叫法，也决定工具名查哪张表；插件的服务写成 plugin:<id> */
-type Own = 'panel' | 'design' | `plugin:${string}`
+type Own = 'panel' | `plugin:${string}`
 function ownServer(server: string): Own | '' {
   const s = server.trim().toLowerCase()
-  if (s === 'design' || s === 'agent-panel-design') return 'design'
+  // 旧版面板自带 UI 设计时的服务名：现在归 UI 设计插件（ui-design），插件没装就当别家服务原样显示
+  if (s === 'design' || s === 'agent-panel-design') return 'plugin:ui-design'
   const plugin = mcpPlugin(s)
   if (plugin) return `plugin:${plugin.id}`
   // 面板调度服务的几种写法：panel、panel-xxxx、agent-panel、agent-panel-xxxx、老版本的 orch（见 server/panel-mcp-files.ts）
@@ -130,7 +98,7 @@ export const panelToolTitle = (name: string): string => PANEL_TOOLS()[name] ?? '
 export function serverTitle(server: string): string {
   const own = ownServer(server)
   if (own.startsWith('plugin:')) return ownPlugin(own)?.name ?? server
-  return own === 'panel' ? t('面板') : own === 'design' ? t('设计') : server
+  return own === 'panel' ? t('面板') : server
 }
 
 /**
@@ -146,11 +114,9 @@ export function toolTitle(name: string, server?: string): string {
   if (srv !== undefined && !own) return tool
   const tables = own.startsWith('plugin:')
     ? [ownPlugin(own) ? pluginToolNames(ownPlugin(own)) : {}]
-    : own === 'design'
-      ? [DESIGN_TOOLS()]
-      : own === 'panel'
-        ? [PANEL_TOOLS()]
-        : [PANEL_TOOLS(), DESIGN_TOOLS(), PLUGIN_TOOLS()]
+    : own === 'panel'
+      ? [PANEL_TOOLS()]
+      : [PANEL_TOOLS(), PLUGIN_TOOLS()]
   for (const m of tables) if (m[tool]) return m[tool]
   return tool
 }
