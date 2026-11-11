@@ -28,8 +28,8 @@ export const EN_PLUGINS: Record<string, string> = {
   '关掉后保留了这些副本：': 'Kept these copies after turning it off:',
   '关掉插件「{name}」？': 'Turn off plugin “{name}”?',
   关掉: 'Turn off',
-  '会停掉它的后台和工具，对话里不再挂它的工具，它装的没改过的技能也一起删掉。':
-    'Its background service and tools stop, conversations no longer get its tools, and the unedited skills it installed are removed.',
+  '会停掉它的后台和工具，对话里不再挂它的工具，它带的钩子、测试步骤和「/」命令一起撤掉，它装的没改过的技能也一起删掉。':
+    'Its background service and tools stop, conversations no longer get its tools, its hooks, test steps and / commands are withdrawn, and the unedited skills it installed are removed.',
   '删除插件「{name}」？': 'Remove plugin “{name}”?',
   '插件目录、插件自己的数据和它的参数都会删掉，以后可以从插件市场或压缩包重新安装。面板的其他功能不受影响。':
     'The plugin folder, its own data and its settings are deleted. You can reinstall it later from the marketplace or a zip. Nothing else in the panel is affected.',
@@ -90,4 +90,19 @@ export const EN_PLUGINS: Record<string, string> = {
   运行状态: 'Status',
   '配置插件 {name} 的参数': 'Configure {name}',
   能看这个文件的插件已经关掉了: 'The plugin that can view this file has been turned off',
+  // 插件接口 3：插件带的钩子、测试步骤、「/」命令
+  插件带的钩子: 'Hooks from plugins',
+  '带来：': 'Adds:',
+  '插件带的测试步骤：接在上面的步骤后面，同样按适用改动筛。关掉插件后自动撤掉；只想在这个项目不用就关掉开关。':
+    'Test steps from plugins run after the steps above and are filtered by changed files the same way. They go away when the plugin is turned off; turn a switch off to skip one in this project only.',
+  '适用改动：{globs}': 'Applies to: {globs}',
+  '只在项目根有 {files} 时生效': 'Only when the project root has {files}',
+  '在这个项目用「{name}」': 'Use “{name}” in this project',
+  '没有这个插件钩子，插件可能关掉了': 'No such plugin hook. The plugin may have been turned off',
+  脚本不在插件包里: 'The script is not inside the plugin package',
+  '插件没在运行，或者服务端入口没有 hook()': 'The plugin is not running, or its server entry has no hook()',
+  '插件 · {name}': 'Plugin · {name}',
+  '钩子：{list}': 'Hooks: {list}',
+  '测试步骤：{list}': 'Test steps: {list}',
+  '「/」命令：{list}': '/ commands: {list}',
 }

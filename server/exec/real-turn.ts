@@ -22,6 +22,7 @@ import { projectFormat } from '../file-format.ts'
 import { gitHasRemote, reviewDiff } from './git.ts'
 import { saveHandoffFile } from './handoff-file.ts'
 import { searchExcludeOf } from '../../shared/search-exclude.ts'
+import { currentTestSteps } from '../../shared/test-steps.ts'
 import { steers, waitChat } from './steering.ts'
 import { t } from '../../shared/i18n.ts'
 import { ownFiles, taskChanges } from '../own-changes.ts'
@@ -114,7 +115,7 @@ export async function runRealTurn(ctx: RealContext) {
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦
-    verifyGate: ctx.project?.requireVerify ? { steps: ctx.project.testSteps } : undefined,
+    verifyGate: ctx.project?.requireVerify ? { steps: currentTestSteps([], ctx.project) } : undefined,
     // 工具调用之外的完成依据：插件工具报的改动和验证；开了门禁时再补命令改的文件（快照差）
     turnExtra: () => turnExtra(ctx.task, workDirOf(ctx.task, ctx.project), !!ctx.project?.requireVerify),
     listConversations: ctx.listConversations,

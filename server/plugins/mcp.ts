@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { McpCallContext, McpResult, McpTool } from './sdk.ts'
 import { log } from '../log.ts'
 import { notePluginEffect } from './effects.ts'
+import { clipPluginResult, saveToHandoff } from './mcp-clip.ts'
 
 /**
  * 插件给 Agent 的 MCP 工具（Streamable HTTP，ADR 0059）。和设计工具、原来的 Blender 工具一样：
@@ -117,8 +118,9 @@ async function handle(s: Session, msg: any) {
         }
         const r = await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm })
         settle(s, tool, r)
-        const { changed: _c, verified: _v, ...out } = r
-        return reply(out)
+        const { changed: _c, verified: _v, ...res } = r
+        // 结果太长的存文件、只回头尾和路径（mcp-clip.ts）：插件结果进了会话就一直占着上下文
+        return reply(await clipPluginResult(res, `plugin-${s.server}-${name}-${Date.now()}`, saveToHandoff(s.taskId)))
       } catch (e) {
         // 插件工具出错原样交给 Agent（不悄悄重试），日志里也记一笔方便排查；验证类工具出错按没通过记
         log.warn('plugin', `插件工具出错：${s.pluginId}/${name}`, { error: (e as Error).message })

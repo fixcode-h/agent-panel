@@ -46,6 +46,7 @@ import {
   type DerivedParam,
 } from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId, parseGlobs } from '@shared/test-steps'
+import { PluginTestSteps } from '@/plugins/PluginTestSteps'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -1180,6 +1181,7 @@ function Body({
                     })
                   }
                 />
+                <PluginTestSteps off={draft.pluginStepsOff ?? []} onChange={(v) => set('pluginStepsOff', v)} />
               </div>
             ) : (
               <div className="flex min-w-0 flex-1 flex-col gap-7">

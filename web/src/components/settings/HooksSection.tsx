@@ -29,6 +29,7 @@ import { Group, Row } from './parts'
 import { HookEditor } from './HookEditor'
 import { BuiltinParams } from './BuiltinParams'
 import { HookCliEvents } from './HookCliEvents'
+import { PluginHooksGroup } from './PluginHooksGroup'
 import { Select } from '@/components/ui/input'
 import { eventLabel } from './hook-labels'
 
@@ -168,6 +169,12 @@ export function HooksSection() {
           </Row>
         ))}
       </Group>
+      <PluginHooksGroup
+        hooks={view.plugins ?? []}
+        busy={busy}
+        supportText={supportText}
+        onToggle={(h, on) => void act(`p:${h.id}`, () => hooksApi.setPlugin(h.id, on))}
+      />
       <HookCliEvents
         view={view}
         busy={busy === 'cli-off'}

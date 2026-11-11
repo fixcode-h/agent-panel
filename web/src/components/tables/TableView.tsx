@@ -6,6 +6,7 @@ import {
   History,
   Keyboard,
   PanelTop,
+  Rows3,
   Replace,
   Search,
   Tags,
@@ -35,6 +36,11 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
 } from '@/components/ui/menu'
 import { CellEditor } from './CellEditor'
 import { ColumnSetup } from './ColumnSetup'
@@ -75,7 +81,15 @@ import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
 import type { CellAt } from '@shared/table-blame'
 import { findBackRefs, refsTo } from '@shared/table-refs'
 import { selectionStats, TableStatusBar } from './TableStatusBar'
-import { colHeadOf, ruleText, useHeadCollapsed, useLocalFlag } from './col-head'
+import {
+  DENSITY_ROW_H,
+  colHeadOf,
+  ruleText,
+  useDensity,
+  useHeadCollapsed,
+  useLocalFlag,
+  type Density,
+} from './col-head'
 import { TableFindBar, type FindMode } from './TableFindBar'
 import { TableEditBar } from './TableEditBar'
 import { TableQuickFilter, useSavedViews, type QuickFilter } from './TableQuickFilter'
@@ -210,6 +224,7 @@ export function TableView({
   const colHeads = useMemo(() => struct.infos.map(colHeadOf), [struct.infos])
   const [headCollapsed, setHeadCollapsed] = useHeadCollapsed()
   const [editBar, setEditBar] = useLocalFlag('table-edit-bar')
+  const [density, setDensity] = useDensity()
   const [refNames, setRefNames] = useLocalFlag('table-ref-names')
   const [findMode, setFindMode] = useState<FindMode | null>(null)
   const [findHits, setFindHits] = useState<CellHit[]>([])
@@ -518,6 +533,18 @@ export function TableView({
               onClick={() => setRefNames(!refNames)}
             />
           )}
+          <Menu>
+            <MenuTrigger asChild>
+              <IconButton icon={Rows3} label={t('行高')} />
+            </MenuTrigger>
+            <MenuContent>
+              <MenuRadioGroup value={density} onValueChange={(v) => setDensity(v as Density)}>
+                <MenuRadioItem value="compact">{t('紧凑（22px）')}</MenuRadioItem>
+                <MenuRadioItem value="normal">{t('标准（跟着设置）')}</MenuRadioItem>
+                <MenuRadioItem value="loose">{t('宽松（32px）')}</MenuRadioItem>
+              </MenuRadioGroup>
+            </MenuContent>
+          </Menu>
           <IconButton icon={Keyboard} label={t('快捷键（F1）')} onClick={() => setHelpOpen(true)} />
           <ColumnSetup
             info={grid.focus ? struct.infos[grid.focus.col] : undefined}
@@ -740,6 +767,7 @@ export function TableView({
             <SheetTable
               colHead={(c) => colHeads[c]}
               headCollapsed={headCollapsed}
+              rowHeight={DENSITY_ROW_H[density]}
               onHeadCollapse={setHeadCollapsed}
               rows={rows}
               scrollEl={grid.box}

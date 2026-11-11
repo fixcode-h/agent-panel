@@ -70,6 +70,7 @@ function rig(repo: string, tasks: TaskT[]) {
   const toChild: { id: string; text: string }[] = []
   const advanced: string[] = []
   const integrated: string[] = []
+  const released: string[] = []
   const claims = createClaims()
   const s = {
     live: new Map(),
@@ -111,6 +112,7 @@ function rig(repo: string, tasks: TaskT[]) {
       return { holds: [], info: '' }
     },
     mergeLock: async (_id: string, fn: () => Promise<unknown>) => fn(),
+    releaseAfter: async (id: string) => void released.push(id),
     integrate: async (tk: TaskT) => {
       integrated.push(tk.id)
       return integrateBranch(repo, tk.worktree!, tk.title)
@@ -121,7 +123,7 @@ function rig(repo: string, tasks: TaskT[]) {
     childUnmerged: async () => false,
     taskDir: async () => repo,
   } as unknown as TasksScope
-  return { m: createMerge(s), s, map, jobs, woke, toChild, advanced, integrated, claims }
+  return { m: createMerge(s), s, map, jobs, woke, toChild, advanced, integrated, released, claims }
 }
 
 /** 一个在独立分支里干活的子对话和它的父对话；分支开在真实的临时仓库上 */
@@ -271,6 +273,9 @@ test('finish_child：合回成功时改动进了原目录，收尾步骤标完�
     assert.deepEqual(x.advanced, [x.kid.id])
     assert.ok(existsSync(x.wt.path))
     assert.equal(x.m.merging.size, 0)
+    // 合回就记下时间，并扫一遍父对话名下排在它后面的子对话（create_conversation 的 after）
+    assert.ok(kid.mergedAt)
+    assert.deepEqual(x.released, ['root'])
   } finally {
     await x.cleanup()
   }
