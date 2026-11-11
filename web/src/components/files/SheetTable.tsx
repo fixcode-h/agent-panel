@@ -73,7 +73,7 @@ function useColWidths(key: string | undefined) {
   return [w, set] as const
 }
 
-/** 列名格右边线：按住左右拖改列宽，双击恢复自动宽度 */
+/** 列名格右边线：按住左右拖改列宽，双击按内容自适应 */
 function ResizeHandle({
   col,
   width,
@@ -88,7 +88,7 @@ function ResizeHandle({
       role="separator"
       aria-orientation="vertical"
       aria-label={t('拖动调整 {col} 列宽度', { col: colName(col) })}
-      title={t('拖动调整列宽，双击恢复')}
+      title={t('拖动调整列宽，双击按内容自适应')}
       onDoubleClick={() => onResize(undefined)}
       onMouseDown={(e) => {
         e.preventDefault()
@@ -197,7 +197,10 @@ export function SheetTable({
   colHead,
   headCollapsed,
   onHeadCollapse,
+  rowHeight,
 }: {
+  /** 行高：表格页的密度（紧凑 / 宽松）；不传按设置 → 组件 → 数据表格 */
+  rowHeight?: number
   /** 传了列头就是两行：字段名 + 类型标签（表格页用，按列结构算） */
   colHead?: (c: number) => SheetColHead | undefined
   /** 表头行折起来：只看两行列头和数据，省出表头那几行的高度 */
@@ -233,7 +236,8 @@ export function SheetTable({
   onFilter?: (col: number, f: ColFilter | undefined) => void
   onSort?: (s: SheetSort | null) => void
 }) {
-  const rowH = useRowH()
+  const settingRowH = useRowH()
+  const rowH = rowHeight ?? settingRowH
   const from = dataStart(header)
   const numW = header.roles.length ? NUM_W_ROLE : NUM_W
   const cols = useMemo(() => colCount(rows), [rows])
@@ -270,6 +274,18 @@ export function SheetTable({
   const headH = colHead ? Math.round(rowH * 1.75) : rowH
   const frozenH = headH + rowH * frozen
   const [win, setWin] = useState({ from: 0, to: 60 })
+  /**
+   * 双击列边线：按看得见的这一段（最多 200 行）加表头量这一列的宽度，不扫整列（几万行的表也不顿）。
+   * 两行列头的字段名、类型标签也算进去
+   */
+  const fitWidth = (c: number) => {
+    const sample: string[][] = []
+    header.roles.forEach((r, i) => r !== 'comment' && sample.push([rows[header.start + i]?.[c] ?? '']))
+    for (const r of body.slice(win.from, win.from + 200)) sample.push([rows[r]?.[c] ?? ''])
+    const head = colHead?.(c)
+    if (head) sample.push([head.field], [head.tags.map((g) => g.text).join('  ')])
+    return colWidths(sample, 1)[0]
+  }
   // 横向也只画看得见的列（宽表上百列时，每行只画屏幕上那十几列）
   const [cwin, setCwin] = useState({ from: 0, to: 40 })
   const leftsRef = useRef(lefts)
@@ -480,7 +496,7 @@ export function SheetTable({
               pin={pin ? { style: pinned(c, pin), cls: pinCls(c, pin) || '' } : undefined}
               layout={layout}
               onLayout={onLayout}
-              onResize={widthKey ? (v) => setDragged(c, v) : undefined}
+              onResize={widthKey ? (v) => setDragged(c, v ?? fitWidth(c)) : undefined}
               lineH={lineH}
               rows={rows}
               header={header}
@@ -612,7 +628,7 @@ function ColumnHead({
   pin?: { style: React.CSSProperties; cls: string }
   layout?: ColLayout
   onLayout?: (l: ColLayout) => void
-  /** 拖右边线改列宽；双击右边线恢复自动宽度（传 undefined） */
+  /** 拖右边线改列宽；双击右边线按内容自适应（传 undefined） */
   onResize?: (w: number | undefined) => void
   lineH: React.CSSProperties
   rows: string[][]

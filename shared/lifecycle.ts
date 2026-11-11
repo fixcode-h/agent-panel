@@ -211,6 +211,8 @@ export interface LifeFacts {
   /** 这个状态从什么时候开始（毫秒）：等你处理是请求发出的时间，其余是这一轮结束的时间 */
   since?: number
   mode?: TaskMode
+  /** 额度用完 / 被限流后在等到点自动继续：到这个时刻（毫秒），见 shared/quota-resume.ts */
+  quotaUntil?: number
 }
 
 export type AnomalyLevel = 'danger' | 'warning' | 'info'

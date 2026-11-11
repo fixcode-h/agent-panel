@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { t, uiLocale } from './i18n.ts'
 import { hhmm, pad2, ymd } from './datetime.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
+import { everyLabel, isEventSchedule, ScheduleTrigger, TriggerState } from './schedule-trigger.ts'
 
 /** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
 /** 日历的时间刻度（分钟）：周视图半小时一格，拖动、拉伸、右键新建都对齐到它 */
@@ -71,6 +72,11 @@ export const ScheduleInput = z.object({
     .max(24 * 60)
     .catch(60)
     .default(60),
+  /**
+   * 触发方式：按时间（默认，旧数据没有这个字段）或按事件（目录文件变了、远端新提交、命令退出码变了，
+   * 见 shared/schedule-trigger.ts）。按事件的计划不看 at / repeat，按 trigger.everyMin 定期检查
+   */
+  trigger: ScheduleTrigger.prefault({}),
 })
 export type ScheduleInput = z.infer<typeof ScheduleInput>
 
@@ -208,6 +214,8 @@ export const Schedule = ScheduleInput.extend({
     .regex(/^\d{2}:\d{2}$/)
     .optional()
     .catch(undefined),
+  /** 按事件的计划：上次检查到的现状、时间和出错原因（见 shared/schedule-trigger.ts）；按时间的计划不用 */
+  triggerState: TriggerState.prefault({}),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -414,11 +422,15 @@ export function weekStartOf(ms: number): number {
  * 重复计划跑完一次 at 会往后挪（见 afterRun），所以这里只画「还会跑的」，已经跑过的看运行记录
  */
 export function weekOccurrences(
-  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays' | 'enabled'> & { endDate?: string },
+  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays' | 'enabled'> & {
+    endDate?: string
+    trigger?: Pick<ScheduleTrigger, 'kind'>
+  },
   weekStart: number,
 ): number[] {
   const at = new Date(s.at)
-  if (!s.enabled || !Number.isFinite(at.getTime())) return []
+  // 按事件的计划没有固定的时刻，日历上不画（在列表里看）
+  if (!s.enabled || isEventSchedule(s) || !Number.isFinite(at.getTime())) return []
   const weekEnd = new Date(weekStart)
   weekEnd.setDate(weekEnd.getDate() + 7)
   // 一周的末尾和结束日期取早的：过了结束日期的日子不画
@@ -458,6 +470,8 @@ export function pickDue(list: Schedule[], now: number): ScheduleDue {
   for (const s of list) {
     // 过了结束日期的不再触发，也不记错过：是用户定好的到此为止
     if (!s.enabled || s.status !== 'pending' || scheduleEnded(s)) continue
+    // 按事件的计划不按 at 到点，由 triggerCheckDue 定期检查（server/schedules.ts）
+    if (isEventSchedule(s)) continue
     const at = Date.parse(s.at)
     if (!Number.isFinite(at) || at > now) continue
     if (now - at > SCHEDULE_MISS_MS) missed.push(s)
@@ -466,10 +480,19 @@ export function pickDue(list: Schedule[], now: number): ScheduleDue {
   return { run, missed }
 }
 
+/**
+ * 跑过一次（不管成没成）之后排期怎么走：按事件的计划不动 at、一直待执行（下次条件成立再跑）；
+ * 单次的换成 onceStatus；其余按重复规则推到下一次
+ */
+function advance(s: Schedule, now: number, onceStatus: ScheduleStatus): Partial<Schedule> {
+  if (isEventSchedule(s)) return { status: 'pending' }
+  return s.repeat === 'once' ? { status: onceStatus } : { at: nextRunAt(s, now), status: 'pending' }
+}
+
 /** 启动成功之后：单次标成已执行，其余按重复规则把时间推到下一次，并记下这次启动的对话 */
 export function afterRun(s: Schedule, now: number, taskId: string): Partial<Schedule> {
   return {
-    ...(s.repeat === 'once' ? { status: 'done' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
+    ...advance(s, now, 'done'),
     lastRunAt: new Date(now).toISOString(),
     lastTaskId: taskId,
     lastError: '',
@@ -486,8 +509,9 @@ export function afterRun(s: Schedule, now: number, taskId: string): Partial<Sche
  */
 export function afterBlocked(s: Schedule, now: number, reason: string): Partial<Schedule> {
   return {
-    ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
-    blockedAt: s.at,
+    ...advance(s, now, 'skipped'),
+    // 按事件的计划没有「到点时间」，记条件成立的那一刻
+    blockedAt: isEventSchedule(s) ? new Date(now).toISOString() : s.at,
     blockedReason: reason,
   }
 }
@@ -498,7 +522,7 @@ export function afterBlocked(s: Schedule, now: number, reason: string): Partial<
  */
 export function afterMiss(s: Schedule, now: number): Partial<Schedule> {
   return {
-    ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
+    ...advance(s, now, 'skipped'),
     missedAt: s.at,
   }
 }
@@ -509,7 +533,7 @@ export function afterMiss(s: Schedule, now: number): Partial<Schedule> {
  */
 export function afterFail(s: Schedule, now: number, error: string): Partial<Schedule> {
   return {
-    ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
+    ...advance(s, now, 'skipped'),
     lastError: error,
   }
 }
@@ -726,7 +750,8 @@ export function nextToRun(list: Schedule[]): Schedule | undefined {
   let best: Schedule | undefined
   let bestAt = Infinity
   for (const s of list) {
-    if (!willRunAgain(s)) continue
+    // 按事件的计划没有确定的下一次时间，不当「下一次执行」
+    if (!willRunAgain(s) || isEventSchedule(s)) continue
     const at = Date.parse(s.at)
     if (!Number.isFinite(at) || at >= bestAt) continue
     best = s
@@ -742,6 +767,8 @@ export function groupOf(s: Schedule): ScheduleGroup {
   if (!s.enabled) return 'disabled'
   const outcome = outcomeOf(s)
   if (outcome === 'error' || outcome === 'missed' || outcome === 'blocked') return 'problem'
+  // 按事件的计划检查出错（目录没了、远端连不上）：条件永远等不到，要提醒用户去修
+  if (isEventSchedule(s) && s.triggerState?.error) return 'problem'
   return willRunAgain(s) ? 'upcoming' : 'finished'
 }
 
@@ -801,6 +828,7 @@ export function relativeFuture(iso: string, now = Date.now()): string {
 /** 下次执行时间：「今晚 19:00（3 小时后）」；不会再次执行时返回空字符串，界面自己写「不会再次执行」 */
 export function nextRunLabel(s: Schedule, now = Date.now()): string {
   if (!willRunAgain(s)) return ''
+  if (isEventSchedule(s)) return t('{every}检查一次，条件成立时执行', { every: everyLabel(s.trigger.everyMin) })
   const at = Date.parse(s.at)
   if (!Number.isFinite(at)) return ''
   const when = whenLabel(s.at, now)
@@ -819,6 +847,9 @@ function activityAt(s: Schedule): number {
   return at
 }
 
+/** 「即将执行」组的排序键：按时间的按下次执行时间；按事件的没有确定时间，排在后面 */
+const upcomingKey = (s: Schedule) => (isEventSchedule(s) ? Number.MAX_SAFE_INTEGER : Date.parse(s.at) || 0)
+
 export interface ScheduleBucket {
   group: ScheduleGroup
   items: Schedule[]
@@ -834,9 +865,7 @@ export function groupSchedules(list: Schedule[]): ScheduleBucket[] {
   return SCHEDULE_GROUPS.flatMap((group) => {
     const items = [...(buckets.get(group) ?? [])]
     items.sort(
-      group === 'upcoming'
-        ? (a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0)
-        : (a, b) => activityAt(b) - activityAt(a),
+      group === 'upcoming' ? (a, b) => upcomingKey(a) - upcomingKey(b) : (a, b) => activityAt(b) - activityAt(a),
     )
     return items.length ? [{ group, items }] : []
   })

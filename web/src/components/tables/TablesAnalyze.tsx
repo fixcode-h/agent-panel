@@ -43,6 +43,10 @@ const subscribe = (f: () => void) => {
   return () => subs.delete(f)
 }
 
+/** 这个项目有没有还没处理的 AI 分析结果（项目设置「AI 分析」子页签上的小红点） */
+export const useTablesAnalysisPending = (projectId: string | undefined) =>
+  useSyncExternalStore(subscribe, () => !!projectId && pending.has(projectId))
+
 /** 收到结果时调（设置开着关着都行） */
 function deliverTables(projectId: string, p: Proposal) {
   if (p.kind !== 'tables') return

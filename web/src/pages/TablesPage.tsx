@@ -14,7 +14,6 @@ import { EmptyPanel } from '@/components/ui/empty-panel'
 import { IconButton } from '@/components/ui/icon-button'
 import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
-import { Button } from '@/components/ui/button'
 import { TableTree } from '@/components/tables/TableTree'
 import { TableQuick } from '@/components/tables/TableQuick'
 import { useTableMarks } from '@/components/tables/use-table-marks'
@@ -26,7 +25,8 @@ import { TableView, type TableJump } from '@/components/tables/TableView'
 import { noEdits, pendingOf, setCellsIn, type Edits } from '@/components/tables/table-edits'
 import { useExternalChange } from '@/components/tables/use-external-change'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { TableExportDialog } from '@/components/tables/TableExportDialog'
+import { KEEP_RUNS, TableOutputPanel, type ExportRunInfo } from '@/components/tables/TableOutput'
+import { TableSkeleton, TablesSetupCard } from '@/components/tables/TableEmpty'
 import type { SheetEdit } from '@shared/table-edit'
 import type { TableExport } from '@shared/table-export'
 
@@ -53,19 +53,7 @@ export function TablesPage() {
     if (projectId) rememberTablesProject(projectId)
   }, [projectId])
 
-  if (!projectId)
-    return (
-      <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-        <EmptyPanel as="div" className="flex max-w-md flex-col items-center gap-3">
-          {t('还没有项目设置表格目录。在项目设置 → 表格里填上配置表所在的目录，这里就会列出来。')}
-          {projects.length === 0 && (
-            <Button size="sm" variant="secondary" onClick={() => go({ page: 'home' })}>
-              {t('回到主页')}
-            </Button>
-          )}
-        </EmptyPanel>
-      </main>
-    )
+  if (!projectId) return <TablesSetupCard />
   return (
     <Workbench
       key={projectId}
@@ -314,9 +302,20 @@ function Workbench({
       })
       .catch(toastError)
   }
-  // 正在执行的导表：第几个脚本、哪些表
-  const [exporting, setExporting] = useState<{ index: number; paths: string[]; seq: number } | null>(null)
-  const runExport = (index: number, paths: string[]) => setExporting((x) => ({ index, paths, seq: (x?.seq ?? 0) + 1 }))
+  // 导表：每次执行进底部「输出」面板，留最近 20 次；新的一次自动展开面板并切过去
+  const [runs, setRuns] = useState<ExportRunInfo[]>([])
+  const [curRun, setCurRun] = useState(0)
+  const [outOpen, setOutOpen] = useState(true)
+  const runSeq = useRef(0)
+  const runExport = (index: number, paths: string[]) => {
+    const script = exports[index]
+    if (!script) return
+    const id = ++runSeq.current
+    const dirty = paths.filter((p) => dirtyPaths.has(p)).length
+    setRuns((rs) => [...rs, { id, index, script, paths, dirty, at: Date.now() }].slice(-KEEP_RUNS))
+    setCurRun(id)
+    setOutOpen(true)
+  }
   const saveSchema = useCallback(
     (s: TableSchema) => {
       putTableSchema(projectId, s)
@@ -470,9 +469,7 @@ function Workbench({
         )}
         {!doc ? (
           active ? (
-            <div className="flex flex-1 items-center justify-center text-subtle">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
+            <TableSkeleton />
           ) : (
             <div className="flex flex-1 items-center justify-center p-6">
               <EmptyPanel size="md" className="max-w-sm">
@@ -483,9 +480,7 @@ function Workbench({
         ) : 'error' in doc ? (
           <p className="p-6 text-body text-danger">{doc.error}</p>
         ) : !schema ? (
-          <div className="flex flex-1 items-center justify-center text-subtle">
-            <Loader2 className="h-5 w-5 animate-spin" />
-          </div>
+          <TableSkeleton />
         ) : (
           <TableView
             projectId={projectId}
@@ -522,6 +517,17 @@ function Workbench({
             files={files.map((f) => f.path)}
           />
         )}
+        {runs.length > 0 && (
+          <TableOutputPanel
+            projectId={projectId}
+            runs={runs}
+            current={curRun}
+            onCurrent={setCurRun}
+            open={outOpen}
+            onOpen={setOutOpen}
+            onClose={() => setRuns([])}
+          />
+        )}
       </main>
       {comparing && (
         <TablesCompareDialog
@@ -529,17 +535,6 @@ function Workbench({
           onClose={() => setComparing(false)}
           left={{ id: projectId, name: projects.find((p) => p.value === projectId)?.label ?? '' }}
           projects={others}
-        />
-      )}
-      {exporting && exports[exporting.index] && (
-        <TableExportDialog
-          key={exporting.seq}
-          projectId={projectId}
-          index={exporting.index}
-          script={exports[exporting.index]}
-          paths={exporting.paths}
-          dirty={exporting.paths.filter((p) => dirtyPaths.has(p)).length}
-          onClose={() => setExporting(null)}
         />
       )}
       <ConfirmDialog

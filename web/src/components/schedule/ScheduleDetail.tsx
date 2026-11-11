@@ -20,7 +20,10 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
+import { isEventSchedule, triggerKindOptions, triggerStateLabel, triggerSummary } from '@shared/schedule-trigger'
+import { whenLabel } from '@shared/schedule'
 import { EndChoice } from './EndChoice'
+import { TriggerFields } from './TriggerFields'
 import { dayTimeLabel, scheduleDot, upcomingRuns } from './occurrences'
 import { durationOptions, REPEAT_OPTIONS, schedulePickable, useScheduleForm } from './use-schedule-form'
 
@@ -85,17 +88,21 @@ export function ScheduleDetail({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { projects, agents } = useData()
-  const { form, set, setProject, setRepeat, setAtLocal, toggleWeekday, dirty, saving, save } = useScheduleForm({
-    schedule: s,
-    schedules,
-    onSaved,
-    inline: true,
-  })
+  const { form, set, setProject, setRepeat, setAtLocal, setTrigger, toggleWeekday, dirty, saving, save } =
+    useScheduleForm({
+      schedule: s,
+      schedules,
+      onSaved,
+      inline: true,
+    })
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange])
   // 面板没了（计划被删、切到列表）就不再有没保存的改动，别让页面一直以为还有
   useEffect(() => () => onDirtyChange(false), [onDirtyChange])
 
   const next = upcomingRuns(s)
+  /** 表单里选的是按事件（改到一半也跟着切字段）；saved 是已保存的那份，「接下来」按它写 */
+  const event = isEventSchedule(form)
+  const savedEvent = isEventSchedule(s)
   const ended = scheduleEnded(s)
   const outcome = outcomeOf(s)
   const date = form.atLocal.slice(0, 10)
@@ -212,69 +219,84 @@ export function ScheduleDetail({
             onChange={(e) => setProject(e.target.value, agents)}
           />
         </Field>
-        <div className="grid grid-cols-2 gap-2.5">
-          <Field label={t('开始日期')} id="schedule-detail-date">
-            <Input
-              id="schedule-detail-date"
-              type="date"
-              className="h-8 text-body tabular-nums dark:[color-scheme:dark]"
-              value={date}
-              onChange={(e) => e.target.value && setAtLocal(`${e.target.value}T${time || '09:00'}`)}
-            />
-          </Field>
-          <Field label={t('时间')} id="schedule-detail-time">
-            <Input
-              id="schedule-detail-time"
-              type="time"
-              className="h-8 font-mono text-body tabular-nums dark:[color-scheme:dark]"
-              value={time}
-              onChange={(e) => e.target.value && date && setAtLocal(`${date}T${e.target.value}`)}
-            />
-          </Field>
-        </div>
-        {/* 日历上占多长：周视图里拖底边也能改 */}
-        <Field label={t('时长')}>
-          <Select
-            size="sm"
-            aria-label={t('时长')}
-            value={String(form.durationMin)}
-            options={durationOptions(form.durationMin)}
-            onChange={(e) => set('durationMin', Number(e.target.value))}
+        <Field label={t('触发方式')}>
+          <Segmented
+            fill
+            label={t('触发方式')}
+            value={form.trigger.kind}
+            onChange={(kind) => setTrigger({ kind })}
+            options={triggerKindOptions()}
           />
         </Field>
-        <Field label={t('重复')}>
-          <Segmented fill label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
-        </Field>
-        {form.repeat === 'weekly' && (
-          <Field label={t('每周哪几天')}>
-            <div role="group" aria-label={t('每周哪几天')} className="flex flex-wrap gap-1.5">
-              {SCHEDULE_WEEKDAYS.map((d) => {
-                const on = form.weekdays.includes(d.id)
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    aria-pressed={on}
-                    aria-label={d.label}
-                    title={d.label}
-                    onClick={() => toggleWeekday(d.id)}
-                    className={cn(
-                      'grid h-8 w-8 cursor-pointer place-items-center rounded-full text-footnote transition-colors',
-                      on ? 'bg-fg font-semibold text-bg' : 'bg-sel text-muted hover:text-fg',
-                    )}
-                  >
-                    {/* 圆里只放一个字（一、二…），完整的星期名在 aria-label 里 */}
-                    {d.label.slice(-1)}
-                  </button>
-                )
-              })}
+        {event ? (
+          <TriggerFields compact trigger={form.trigger} projectId={form.projectId} onChange={setTrigger} />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Field label={t('开始日期')} id="schedule-detail-date">
+                <Input
+                  id="schedule-detail-date"
+                  type="date"
+                  className="h-8 text-body tabular-nums dark:[color-scheme:dark]"
+                  value={date}
+                  onChange={(e) => e.target.value && setAtLocal(`${e.target.value}T${time || '09:00'}`)}
+                />
+              </Field>
+              <Field label={t('时间')} id="schedule-detail-time">
+                <Input
+                  id="schedule-detail-time"
+                  type="time"
+                  className="h-8 font-mono text-body tabular-nums dark:[color-scheme:dark]"
+                  value={time}
+                  onChange={(e) => e.target.value && date && setAtLocal(`${date}T${e.target.value}`)}
+                />
+              </Field>
             </div>
-          </Field>
-        )}
-        {form.repeat !== 'once' && (
-          <Field label={t('结束')}>
-            <EndChoice compact value={form.endDate} onChange={(v) => set('endDate', v)} />
-          </Field>
+            {/* 日历上占多长：周视图里拖底边也能改 */}
+            <Field label={t('时长')}>
+              <Select
+                size="sm"
+                aria-label={t('时长')}
+                value={String(form.durationMin)}
+                options={durationOptions(form.durationMin)}
+                onChange={(e) => set('durationMin', Number(e.target.value))}
+              />
+            </Field>
+            <Field label={t('重复')}>
+              <Segmented fill label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
+            </Field>
+            {form.repeat === 'weekly' && (
+              <Field label={t('每周哪几天')}>
+                <div role="group" aria-label={t('每周哪几天')} className="flex flex-wrap gap-1.5">
+                  {SCHEDULE_WEEKDAYS.map((d) => {
+                    const on = form.weekdays.includes(d.id)
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        aria-pressed={on}
+                        aria-label={d.label}
+                        title={d.label}
+                        onClick={() => toggleWeekday(d.id)}
+                        className={cn(
+                          'grid h-8 w-8 cursor-pointer place-items-center rounded-full text-footnote transition-colors',
+                          on ? 'bg-fg font-semibold text-bg' : 'bg-sel text-muted hover:text-fg',
+                        )}
+                      >
+                        {/* 圆里只放一个字（一、二…），完整的星期名在 aria-label 里 */}
+                        {d.label.slice(-1)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </Field>
+            )}
+            {form.repeat !== 'once' && (
+              <Field label={t('结束')}>
+                <EndChoice compact value={form.endDate} onChange={(v) => set('endDate', v)} />
+              </Field>
+            )}
+          </>
         )}
         {!!upstreams.length && (
           <Field label={t('上游')}>
@@ -292,7 +314,14 @@ export function ScheduleDetail({
         {/* 接下来几次：按已保存的排期推出来（和服务端同一套规则）；过了结束日期写「已结束」 */}
         <section className="flex flex-col gap-1.5 rounded-xl bg-panel p-3">
           <span className="text-caption font-semibold tracking-wide text-subtle">{t('接下来')}</span>
-          {next.length ? (
+          {savedEvent ? (
+            <>
+              <span className="text-footnote">{triggerSummary(s.trigger)}</span>
+              <span className={cn('text-caption break-words', s.triggerState.error ? 'text-warning' : 'text-subtle')}>
+                {s.enabled ? triggerStateLabel(s.triggerState, (iso) => whenLabel(iso, now)) : t('已停用，不会检查')}
+              </span>
+            </>
+          ) : next.length ? (
             next.map((ms) => (
               <div key={ms} className="flex items-center gap-2 text-footnote">
                 <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />

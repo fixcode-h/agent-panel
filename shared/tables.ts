@@ -125,6 +125,8 @@ export interface TableHit {
   row: number
   col: number
   text: string
+  /** 数据行的格子：这一列的字段名 */
+  field?: string
 }
 export interface TableSearch {
   hits: TableHit[]

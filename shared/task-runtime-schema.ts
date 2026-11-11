@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { QuotaResumeState } from './quota-resume.ts'
 
 /**
  * 对话上的几样运行记录和「对话自己的用量上限」（分析稿 A6、A10）。
@@ -54,4 +55,6 @@ export const TaskRuntimeFields = {
   rateNoticeAt: z.string().optional(),
   turnTrack: TurnTrack.optional(),
   driveCount: DriveCount.optional(),
+  /** 额度用完、被限流后自动接的记录：接了几次、换过哪些模型、在等到什么时候（shared/quota-resume.ts） */
+  quotaResume: QuotaResumeState.optional(),
 }

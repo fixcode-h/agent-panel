@@ -121,10 +121,11 @@ export function tablesApi(deps: TablesDeps) {
       })
       .get('/:id/search', async (c) => {
         try {
-          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const { dir, cfg, schemaAt } = await projectOf(deps, c.req.param('id'))
           if (!tablesOn(cfg)) return c.json({ hits: [], files: 0 })
           const { files } = await listTables(dir, cfg)
-          return c.json(await searchTables(dir, files, c.req.query('q') ?? '', c.req.raw.signal))
+          const schema = await readSchema(schemaAt).catch(() => undefined)
+          return c.json(await searchTables(dir, files, c.req.query('q') ?? '', c.req.raw.signal, schema))
         } catch (e) {
           return fail(c, e)
         }

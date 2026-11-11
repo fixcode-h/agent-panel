@@ -85,8 +85,13 @@ export const HooksSpec = z.object({
       output: z.array(z.string()).default([]),
       /** 工具后：这些字段有值（非空、为真）就是执行失败；没有这一项的 CLI 报不出失败 */
       failed: z.array(z.string()).default([]),
+      /**
+       * 读文件工具「只读一段」的参数（offset、limit 这类）：带了任何一个就不算整份读，读大文件守卫放行。
+       * 没写的 CLI 不知道它的读文件怎么分段，守卫不管它的读文件工具（只管 shell 里的 cat）
+       */
+      range: z.array(z.string()).default([]),
     })
-    .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'], output: [], failed: [] }),
+    .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'], output: [], failed: [], range: [] }),
   /**
    * 命令类钩子能直接 POST 到面板（不用每次起一个 node 跑转发脚本）：本机版本不低于 minVersion 时，
    * 配置里引用 {hookScript} 的那一项换成 entry（{url} 换成这个事件的地址，原生输入直接交给面板，回的就是 CLI 要的输出）。
@@ -125,8 +130,10 @@ export interface HookFacts {
     paths: string[]
     /** 面板自己的工具（submit_merge 这些）去掉前缀后的名字；不是面板工具为空 */
     panel?: string
-    /** 工具后才有：执行结果（截短）和是不是失败了；CLI 报不出失败时 failed 为 undefined */
-    result?: { output: string; failed?: boolean }
+    /** 工具后才有：执行结果（截短）、截短前的字数和是不是失败了；CLI 报不出失败时 failed 为 undefined */
+    result?: { output: string; size?: number; failed?: boolean }
+    /** 读文件工具带了「只读一段」的参数（CLI 定义的 toolFields.range）；定义里没写分段参数时不带 */
+    ranged?: boolean
   }
   /** 上下文恢复的来由：compact（压缩之后）、resume（续接）、startup（新开） */
   source?: string
@@ -385,8 +392,21 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
   const panel = panelToolName(name)
   if (panel) kind = 'panel'
   const result = toolResult(spec, o)
+  // 定义里没写分段参数的 CLI：ranged 留空（不知道），读大文件守卫不管它的读文件工具
+  const ranged = spec.toolFields.range.length
+    ? spec.toolFields.range.some((k) => input[k] !== undefined && input[k] !== null)
+    : undefined
   return {
-    tool: { kind, name, input, path: paths[0] ?? '', paths, panel, ...(result ? { result } : {}) },
+    tool: {
+      kind,
+      name,
+      input,
+      path: paths[0] ?? '',
+      paths,
+      panel,
+      ...(result ? { result } : {}),
+      ...(ranged !== undefined ? { ranged } : {}),
+    },
     ...(source ? { source } : {}),
   }
 }
@@ -395,7 +415,10 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
 const RESULT_MAX = 2000
 
 /** 工具后的执行结果：按定义里的字段取，对象转成文字；没有结果字段（工具前）返回 undefined */
-function toolResult(spec: HooksSpec, o: Record<string, unknown>): { output: string; failed?: boolean } | undefined {
+function toolResult(
+  spec: HooksSpec,
+  o: Record<string, unknown>,
+): { output: string; size: number; failed?: boolean } | undefined {
   const f = spec.toolFields
   const raw = f.output.map((k) => o[k]).find((v) => v !== undefined && v !== null)
   const failedKnown = f.failed.length > 0
@@ -405,7 +428,7 @@ function toolResult(spec: HooksSpec, o: Record<string, unknown>): { output: stri
   })
   if (raw === undefined && !failed) return undefined
   const text = typeof raw === 'string' ? raw : raw === undefined ? '' : JSON.stringify(raw)
-  return { output: text.slice(0, RESULT_MAX), ...(failedKnown ? { failed } : {}) }
+  return { output: text.slice(0, RESULT_MAX), size: text.length, ...(failedKnown ? { failed } : {}) }
 }
 
 /**

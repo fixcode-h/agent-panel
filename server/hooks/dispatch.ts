@@ -36,6 +36,7 @@ import {
   worktreeDeny,
   type GuardCtx,
 } from './guards.ts'
+import { bigOutputHint, bigReadDeny } from './guards-context.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -239,6 +240,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['danger-guard', dangerDeny],
     ['test-scope-guard', testScopeDeny],
     ['long-command-guard', longDeny],
+    ['big-read-guard', (_g, f) => bigReadDeny(c.cwd, c.task.id, builtinNumber(data, 'big-read-guard', 'kb'), f)],
     ['secret-guard', secretDeny],
     ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
   ]
@@ -249,16 +251,23 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   if (guards.length || mine('tool.before').length) events.push('tool.before')
   // 计划没跟上提醒：只给有执行计划的对话（项目里的对话，不含子任务、Chat 页）
   const pace = on('plan-pace') && !!c.call.orch.plans
-  if (lessons.length || on('loop-hint') || pace || mine('tool.after').length) events.push('tool.after')
+  const bigOut = on('big-output-hint') && builtinNumber(data, 'big-output-hint', 'chars') > 0
+  if (lessons.length || on('loop-hint') || pace || bigOut || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
   // 各事件关心哪几类工具：内置的守卫、提醒只看改文件和跑命令（guards.ts、plan-pace 的 WORK、loopHint、教训），
   // 用户钩子按自己的匹配范围（任意工具就是全部）。读文件、搜索没人管时，能过滤的 CLI 就不再为它们跑钩子
   const userKinds = (event: HookEventName) => mine(event).map((h) => h.match.tool)
   const hookTools: HookToolScope = {
-    'tool.before': [...(guards.length ? (['edit', 'shell'] as const) : []), ...userKinds('tool.before')],
+    'tool.before': [
+      ...(guards.length ? (['edit', 'shell'] as const) : []),
+      // 读大文件守卫要看读文件工具
+      ...(guards.some(([id]) => id === 'big-read-guard') ? (['read'] as const) : []),
+      ...userKinds('tool.before'),
+    ],
     'tool.after': [
       ...(lessons.length ? (['edit'] as const) : []),
+      ...(bigOut ? (['shell', 'read'] as const) : []),
       ...(on('loop-hint') ? (['shell'] as const) : []),
       ...(pace ? (['edit', 'shell'] as const) : []),
       ...userKinds('tool.after'),
@@ -397,6 +406,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return text
   }
 
+  let bigHints = 0
   const onHook = async (event: HookEventName, facts: HookFacts): Promise<HookAnswer> => {
     if (event === 'tool.before') {
       for (const [id, fn] of guards) {
@@ -426,6 +436,17 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       const loop = on('loop-hint') ? loopHint(facts) : ''
       if (loop) ctx.push(loop)
+      // 大输出提醒：每次调用最多两次，提醒多了就成了噪音
+      const big =
+        bigOut && bigHints < 2
+          ? bigOutputHint(facts, builtinNumber(data, 'big-output-hint', 'chars'), !!c.call.orch?.canBackground)
+          : ''
+      if (big) {
+        bigHints++
+        noteBuiltin('big-output-hint', event, 'context', big)
+        taskLog(c.task.id, '大输出提醒', { tool: facts.tool?.name, size: facts.tool?.result?.size })
+        ctx.push(big)
+      }
       if (pace && facts.tool) {
         const st = paces.get(c.task.id) ?? newPace()
         paces.set(c.task.id, st)

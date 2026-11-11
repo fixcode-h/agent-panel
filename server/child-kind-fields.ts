@@ -24,6 +24,13 @@ export const childKindFields = {
     description:
       '这个子对话一定要改代码（实现、修改、修 Bug）时写 true：面板先开好独立分支再让它开工，省掉它中途换目录重开、重读文件。只调研、评审、回答问题的不写',
   },
+  // 扩展 2（子对话先后依赖，shared/child-after.ts）：父对话一次排好整批活，不用每次接力都自己醒来再派
+  after: {
+    type: 'array',
+    items: { type: 'string' },
+    description:
+      '要等哪些子对话做完才开始（list_conversations 里的 id）：这个子对话先建好不启动，它们都合回你的分支（只读的算完成）后面板自动启动它，要开独立分支时从合回后的提交开；前置失败或没了时不启动并告诉你。B 要用到 A 的改动时，派 B 写 after: [A 的 id]，不用等 A 做完再派。没有先后关系的不写',
+  },
   ignore_uncommitted: {
     type: 'boolean',
     description:
@@ -43,6 +50,7 @@ export function childKindArgs(a: Record<string, unknown> | undefined) {
     ...(level && { level }),
     ...(a?.edits === true && { edits: true }),
     ...(a?.ignore_uncommitted === true && { ignoreDirty: true }),
+    ...(Array.isArray(a?.after) && a.after.length && { after: a.after.map(String) }),
   }
 }
 

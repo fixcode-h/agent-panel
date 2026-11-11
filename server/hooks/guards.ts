@@ -167,6 +167,9 @@ function dangerOf(c: GuardCtx, s: string): string {
 export function longDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.canBackground) return ''
   const extra = c.list('extra').filter(Boolean)
+  const slow = slowStep(c, facts)
+  if (slow)
+    return `【面板】${slow.command.slice(0, 80)} 是项目测试步骤「${slow.name}」（要编译、跑得久），放在前台会撞上命令的超时、整段输出也会进上下文：用面板工具 run_background 交给后台跑（带上计划步骤），跑完只推回错误、警告和结尾，完整日志存文件；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   for (const s of segs(facts)) {
     // 只看真正在跑的程序：cat、grep、git commit 这类快命令的参数里出现 e2e、--watch 不算（command-scope.ts）
     if (quickSegment(s)) continue
@@ -178,6 +181,21 @@ export function longDeny(c: GuardCtx, facts: HookFacts): string {
       return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   }
   return wideSearchDeny(c, facts)
+}
+
+/**
+ * 项目测试步骤里慢的那些（工作包 I：编译命令默认进长命令守卫）：标了「合并时编译」或超时设到 3 分钟以上、
+ * 又没标「小改动也跑」的步骤，是项目自己说了要编译、跑得久的命令。命令原文出现在这次命令里就算
+ */
+function slowStep(c: GuardCtx, facts: HookFacts) {
+  if (facts.tool?.kind !== 'shell') return undefined
+  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+  const cmd = norm(String(facts.tool.input.command ?? ''))
+  const steps = c.project?.testSteps.length ? c.project.testSteps : c.task.testSteps
+  return steps.find(
+    (x) =>
+      x.enabled && !x.quick && (x.merge || x.timeoutSec >= 180) && x.command.trim() && cmd.includes(norm(x.command)),
+  )
 }
 
 /**

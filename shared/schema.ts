@@ -1956,6 +1956,13 @@ export const TaskData = z.object({
   /** 父对话派单时说了要改代码（create_conversation 的 edits）：第一次执行前就开好独立分支，不中途换目录重开 */
   editFirst: z.boolean().optional(),
   /**
+   * 排在哪些兄弟子对话之后（create_conversation 的 after，见 shared/child-after.ts）：建好后停在 stopReason 'after'，
+   * 这些子对话都合回或完成后面板自动启动它，启动时清掉
+   */
+  waitAfter: z.array(z.string()).optional(),
+  /** 改动合回父对话所在的分支（共用目录是父对话验收）的时间：排在它后面的子对话按它判断能不能开始 */
+  mergedAt: z.string().optional(),
+  /**
    * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
    * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话
    */
