@@ -10,7 +10,7 @@ import type { Task } from '@shared/schema'
 import { request } from '@/lib/api'
 import { pickFileViewer } from './file-viewers'
 import { pruneUpdates } from './updates'
-import type { ActivateWeb, DesignMode, PluginPage, TaskTab, WebPlugin } from './sdk'
+import type { ActivateWeb, PluginPage, TaskTab, WebPlugin } from './sdk'
 
 /**
  * 网页里的插件（ADR 0059）：启动时读 /api/plugins，把清单交给共享层（内置列表、工具名按它算），
@@ -113,16 +113,6 @@ export async function loadPlugins() {
   pruneUpdates(r.plugins)
 }
 
-/** 所有开着的插件登记的设计模式 */
-export const designModes = (s: State = state): DesignMode[] => [...s.web.values()].flatMap((p) => p.designModes ?? [])
-export const useDesignModes = () => designModes(usePlugins())
-
-/** 对话归开着的插件的设计模式（侧栏的项目对话、项目首页不列它，打开时进设计模式）；插件不在时当普通对话 */
-export const ownedDesign = (task: Pick<Task, 'plugin' | 'modelDesign'>, modes: DesignMode[] = designModes()) => {
-  const id = taskPlugin(task)
-  return id ? modes.find((m) => m.id === id) : undefined
-}
-
 /** 开着的插件登记的整页（图标栏里的格子）：带上插件 id，地址 #/plugin/<插件>/<页面> */
 type OwnedPage = PluginPage & { plugin: string }
 const pluginPages = (s: State = state): OwnedPage[] =>
@@ -144,14 +134,12 @@ export const ownedPageRoute = (page: OwnedPage, taskId: string) => ({
 })
 
 /**
- * 对话归插件管（设计模式或插件整页）：Agent 项目的对话列表、Chat 列表都不列它，在插件那边看。
+ * 对话归插件的整页管：Agent 项目的对话列表、Chat 列表都不列它，在插件那边看。
  * 返回判断函数，列表筛选时逐个调
  */
 export const useOwnedByPlugin = () => {
-  const s = usePlugins()
-  const modes = designModes(s)
-  const pages = pluginPages(s)
-  return (task: Pick<Task, 'plugin' | 'modelDesign'>) => !!ownedDesign(task, modes) || !!ownedPage(task, pages)
+  const pages = pluginPages(usePlugins())
+  return (task: Pick<Task, 'plugin' | 'modelDesign'>) => !!ownedPage(task, pages)
 }
 
 /** 这个对话右栏多出来的页签 */

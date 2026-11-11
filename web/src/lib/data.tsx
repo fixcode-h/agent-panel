@@ -317,7 +317,6 @@ export type PageId =
   | 'projects'
   | 'chat'
   | 'comfy'
-  | 'pdesign'
   | 'plugin'
   | 'library'
   | 'mcp'

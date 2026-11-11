@@ -4,7 +4,7 @@
 - 职责：插件包的安装、删除、开关、参数，插件服务端和网页部分的加载，插件给 Agent 的 MCP 工具
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
-- 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、设计模式、开放模块、插件钩子、插件测试步骤、插件命令
+- 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、开放模块、插件钩子、插件测试步骤、插件命令
 - 更新：2026-11-11
 
 ## 职责
@@ -30,10 +30,9 @@
 | `server/plugins/api.ts`                                          | `/api/plugins`：列表、市场、安装预览和确认、开关参数、删除、包里的静态文件、插件自己的接口                                                                                         |
 | `server/plugins/sdk.ts`                                          | 服务端 SDK 类型（插件仓库有副本）                                                                                                                                                  |
 | `web/src/plugins/sdk.ts`、`host.ts`                              | 网页 SDK 类型和交给插件的宿主（组件、数据钩子、接口）                                                                                                                              |
-| `web/src/plugins/registry.ts`                                    | 读插件列表、加载网页入口、设计模式和右栏页签的登记                                                                                                                                 |
+| `web/src/plugins/registry.ts`                                    | 读插件列表、加载网页入口、整页和右栏页签的登记                                                                                                                                     |
 | `web/src/plugins/PluginsSection.tsx`、`PluginCard.tsx`           | 设置 →「插件」：已安装、插件市场、其他安装方式、安装确认、关掉 / 删除确认                                                                                                          |
 | `web/src/plugins/PluginParamsNav.tsx`、`PluginParams.tsx`        | 设置 →「插件参数」：开着的插件各占一页（二级列表，页 id `pparam:<插件>`），按清单 settings 生成参数表单，带运行状态                                                                |
-| `web/src/plugins/DesignPage.tsx`                                 | 插件设计模式页 `#/pdesign/<模式>/<对话>`                                                                                                                                           |
 | `web/src/plugins/file-viewers.ts`、`PluginFileDialog.tsx`        | 插件的文件查看器（`WebPlugin.fileViewers`）：按扩展名认领文件，弹窗外壳和文件预览一样，内容交给插件画；入口在对话的文件标记（`FileRefLayer`）和文件浏览页（`ProjectFileExplorer`） |
 | `web/src/plugins/PluginPage.tsx`                                 | 插件整页 `#/plugin/<插件>/<页面>/<path>`（接口 2）；图标栏、手机抽屉里的入口在 `ActivityBar.tsx`、`Sidebar.tsx`                                                                    |
 | `shared/plugins/contrib-schema.ts`、`contrib.ts`                 | 接口 3 的清单三段（钩子、测试步骤、「/」命令）的格式；开着的插件给项目带来的测试步骤（`pluginTestSteps`，`currentTestSteps` 接在项目步骤后面）                                     |
@@ -56,7 +55,7 @@
 - 钩子、测试步骤、命令（接口 3）：`hooks/dispatch.ts` 把 `activePluginHooks` 和用户钩子并在一起按范围、匹配跑；`currentTestSteps` 现取开着的插件的步骤；`slash.ts` 把 `pluginCommands` 排在「所有 Agent」的命令后面。开关插件时 `manager.ts` 清掉「/」菜单的缓存，其余两处每次现取。
 - 文件：对话里的文件标记、文件浏览页点到开着的插件认领了扩展名的文件（UE 插件的 `.uasset`）时，`fileViewerFor` 找到查看器，`PluginFileDialog` 把完整路径、项目和对话 id 交给它；没有插件认领时照旧（面板能看的在面板里看，别的交给系统默认程序）。
 - 评审：评审拿到的改动里，开着的插件用 `ServerPlugin.textify` 认领了扩展名的二进制文件（UE 插件的 `.uasset`），面板把改动前后两版内容交给它转成文本，逐行比较后放进评审提示词（`server/plugins/runtime.ts` 的 `textifierFor`，取内容和拼文字见 `server/exec/review-semantic.ts`）。旧版本只在版本控制里，所以给插件的是内容不是路径。插件仓库里的 `sdk.ts` 副本要同步加上 `Textifier`。
-- 网页：`App` 启动时 `loadPlugins`；开着的插件 import 包里的 web 入口（地址带安装时间），登记设计模式、整页和右栏页签；关掉、删除后从登记里撤下。整页声明了 `taskPlugin` 时，它管的对话不进 Agent 项目和 Chat 列表，从别的地址打开时转到那一页（`registry.ts` 的 `useOwnedByPlugin`、`ownedPage`）。
+- 网页：`App` 启动时 `loadPlugins`；开着的插件 import 包里的 web 入口（地址带安装时间），登记整页和右栏页签；关掉、删除后从登记里撤下。整页声明了 `taskPlugin` 时，它管的对话不进 Agent 项目和 Chat 列表，从别的地址打开时转到那一页（`registry.ts` 的 `useOwnedByPlugin`、`ownedPage`）。
 
 ## 已知限制
 

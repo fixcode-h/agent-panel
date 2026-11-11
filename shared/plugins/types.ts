@@ -100,8 +100,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 3：清单的 hooks / testSteps / commands 三段，服务端入口的 hook(id, input)；工具声明对项目做什么（McpTool.effect / targets），结果里报改了哪些文件、验证通过没有（McpResult.changed / verified）
  * 4：插件直接 import 面板开放的模块（shared/plugins/host-modules.json）、设计模式自带侧栏和整页（DesignMode.Sidebar / Page）、
  *    不带面板外壳的独立页（WebPlugin.barePages，无头浏览器截图用）
+ * 5：去掉设计模式（WebPlugin.designModes、#/pdesign），设计类插件改用图标栏里的整页；整页可以自己分块（PluginPage.split），
+ *    子位置可以带 /（#/plugin/<插件>/<页面>/<a>/<b>）
  */
-export const PLUGIN_API = 4
+export const PLUGIN_API = 5
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

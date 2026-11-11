@@ -14,14 +14,14 @@ export function pushUi(ctx: ActionCtx, action: string, args: Record<string, unkn
 }
 
 /** 页面名和 web/src/lib/data.tsx 的 PageId 一致 */
-export const PAGES = ['home', 'projects', 'chat', 'agents', 'workflows', 'pdesign', 'comfy', 'library', 'mcp'] as const
+export const PAGES = ['home', 'projects', 'chat', 'agents', 'workflows', 'plugin', 'comfy', 'library', 'mcp'] as const
 
 export const uiActions = [
   defineAction({
     name: 'ui.navigate',
     title: '切到某一页',
     description:
-      '让面板页面切到某一页：projects（id=项目 id，sub=对话 id）、chat、agents、workflows、pdesign（设计模式：id=设计类型，UI 设计插件是 ui、模型设计是插件给的 id；sub=设计 id 或对话 id）、comfy、library、mcp、home。',
+      '让面板页面切到某一页：projects（id=项目 id，sub=对话 id）、chat、agents、workflows、plugin（插件的整页：id=插件 id，sub=页面 id，例如 UI 设计是 ui-design / ui、模型设计是 blender / model）、comfy、library、mcp、home。',
     level: 'write',
     input: z.object({
       page: z.enum(PAGES),

@@ -1,6 +1,5 @@
 /** 英文词典的一部分：原来是 UI 设计的（设计搬进 UI 设计插件后，这里只剩面板别处还在用的：风格库、浏览器扩展、通用按钮），键是中文原文 */
 export const EN_DESIGN: Record<string, string> = {
-  新建设计: 'New design',
   类型: 'Type',
   返回: 'Back',
   '撤销（Ctrl+Z）': 'Undo (Ctrl+Z)',
@@ -42,8 +41,6 @@ export const EN_DESIGN: Record<string, string> = {
   生成失败: 'Generation failed',
   生成图片: 'Generate image',
   没有找到扩展目录: 'Extension folder not found',
-  切换设计类型: 'Switch design type',
-  设计类型: 'Design type',
   替换为: 'Replace with',
   新增: 'Add',
   箭头: 'Arrow',

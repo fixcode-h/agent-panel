@@ -16,7 +16,7 @@
 
 1. **插件是自包含的包，装在数据目录 `plugins/<id>/`**。包里有 `plugin.json`（清单：名字、版本、参数声明、技能说明、角色、工作流、MCP 服务名、工具显示名、入口），可选的 `server/`（服务端入口）、`web/`（网页入口和样式）、`skills/`、`locales/en.json` 和其他资源。插件自己的数据在 `plugin-data/<id>/`，开关和参数在设置的 `plugins[id]`。
    - 放弃：插件代码编进面板，只做开关。用户要能删掉、能从别处装，编进去的代码删不掉。
-2. **核心只认插件 SDK，不按插件 id 写分支**。服务端 SDK（`server/plugins/sdk.ts`）：`activate(ctx)` 返回 `fetch`（挂在 `/api/plugins/<id>/api/`）、`tools(run)`（按这一轮对话决定挂哪些 MCP 工具，面板统一处理协议和令牌）、`onConfig`、`status`、`stop`。网页 SDK（`web/src/plugins/sdk.ts`）：`activate(host)` 返回设计模式（侧栏下拉里的一类设计，对话按 `task.plugin` 归它）、对话右栏页签、插件页上的状态面板。`host` 只开放登记过的面板组件和数据钩子；React 用面板那一份（插件构建时把 react 系的 import 换成 `globalThis.__agentPanel`）。
+2. **核心只认插件 SDK，不按插件 id 写分支**。服务端 SDK（`server/plugins/sdk.ts`）：`activate(ctx)` 返回 `fetch`（挂在 `/api/plugins/<id>/api/`）、`tools(run)`（按这一轮对话决定挂哪些 MCP 工具，面板统一处理协议和令牌）、`onConfig`、`status`、`stop`。网页 SDK（`web/src/plugins/sdk.ts`）：`activate(host)` 返回图标栏里的整页、对话右栏页签、插件页上的状态面板（设计模式在接口 5 去掉了，见第 10 条）。`host` 只开放登记过的面板组件和数据钩子；React 用面板那一份（插件构建时把 react 系的 import 换成 `globalThis.__agentPanel`）。
    - 放弃：插件直接 import 面板源码。面板内部一重构插件就坏，第三方插件也拿不到源码。
 3. **插件从仓库安装，默认市场是 fixcode-h/agent-plugins**。仓库根的 `plugins.json` 列出插件和下载方式（Release 附件或仓库子目录）；没有它的仓库当作一个插件。另外可以上传 zip、链接本机目录（开发用）。安装先预览：服务端下载、校验清单（格式、接口版本、和内置模板的 key 撞没撞），弹窗写明来源、版本、会不会在本机运行代码，用户确认后才写盘。
 4. **开、关、删的内容规则**沿用内置模板的来源 `builtin:<key>`：打开时按「添加内置工作流」建出角色和工作流；关掉、删除时没改过、没人用的副本删掉（先备份到 `backup/removed-plugin-content-*.json`），改过的、项目或分类在用的留下并告诉用户；技能删掉和自带一致的副本。删除再删包目录、插件数据和设置里的参数。
@@ -43,6 +43,7 @@
    - `WebPlugin.barePages`：不带面板外壳的独立页 `#/pbare/<插件>/<页面>/<path>`，给无头浏览器截图用（`web/src/plugins/BareHost.tsx`）。
    - 放弃：把面板源码整份打进插件包。状态是两份（数据上下文、提示、提问会话各一套），插件的对话和面板的对不上。
    - 落地（2026-11-11）：UI 设计搬进插件仓库的 `ui-design`（插件 id `ui-design`，设计模式 id `ui`），面板删掉自带的设计代码；旧地址 `#/design/…` 转到 `#/pdesign/ui/…`，设计稿数据由插件第一次启用时从 `designs/` 搬到 `plugin-data/ui-design/designs/`。插件仓库里类型检查和单测从仓库根的 `.panel`（面板源码）取面板模块。
+10. **插件接口 5（2026-11-11，去掉设计模式）**：用户要侧栏顶上的模式切换只留 Agent、Chat，UI 设计像模型设计那样做成图标栏的入口。设计模式只剩 UI 设计一家在用，留着它就要多维护一套侧栏下拉和 `#/pdesign` 路由，所以整个去掉：`WebPlugin.designModes`、`DesignMode`、`#/pdesign` 都没了，设计类插件一律用整页（`PluginPage`）。为此整页加两样：`split(path)`（这个位置自己分块，面板不套卡片，插件自己画左边的列表）和带 `/` 的子位置（`#/plugin/<插件>/<页面>/<a>/<b>`，`parseHash` 把第三段以后整个交给插件）。`designModes` 不再读，只用它的旧插件（ui-design 1.0.0）在新面板上看不到入口，所以升了接口版本，ui-design 1.1.0 声明 `api: 5`，旧面板装它会提示先升级面板。旧地址 `#/design/…`、`#/pdesign/ui/…` 都转到 `#/plugin/ui-design/ui/…`。
 
 ## 影响与风险
 

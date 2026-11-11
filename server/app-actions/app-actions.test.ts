@@ -138,7 +138,7 @@ test('界面操作：推给页面；没有页面开着时说清楚', async () =>
   assert.equal((await runAppAction('ui.open_settings', { section: 'models' }, child)).ok, true)
   assert.deepEqual(ui[0], { action: 'open_settings', args: { section: 'models' } })
   fakeHost({}, 0)
-  const r = await runAppAction('ui.navigate', { page: 'pdesign' }, child)
+  const r = await runAppAction('ui.navigate', { page: 'plugin' }, child)
   assert.match((r as { error: string }).error, /面板页面没有打开/)
 })
 
