@@ -209,7 +209,7 @@ export const Settings = z.object({
    * 保活没有数量上限，空闲进程攒多了会把整台机器的内存吃满，这是兜底（见 server/tasks/idle-release.ts）。
    * macOS 报的空闲内存不含可回收缓存，按它判会一直误判，所以只在 Windows / Linux 上生效
    */
-  lowMemoryReleasePercent: z.number().int().min(0).max(50).catch(10).default(10),
+  lowMemoryReleasePercent: z.number().int().min(0).max(50).catch(5).default(5),
   resumeAfterRestart: z.boolean().catch(false).default(false), // 重启后自动继续被打断的对话；默认关，见 ADR 0042
   /**
    * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。

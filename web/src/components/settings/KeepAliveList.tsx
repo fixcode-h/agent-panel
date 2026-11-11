@@ -133,7 +133,7 @@ export function KeepAliveList() {
         <Select
           className="ml-auto h-7 w-[148px] text-xs"
           aria-label={t('内存不足时自动释放')}
-          value={String(settings?.lowMemoryReleasePercent ?? 10)}
+          value={String(settings?.lowMemoryReleasePercent ?? 5)}
           onChange={(e) => void saveLowMemory(Number(e.target.value))}
           options={[
             { value: '0', label: t('不自动释放') },
