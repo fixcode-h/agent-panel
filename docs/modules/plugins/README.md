@@ -51,6 +51,7 @@
 - 对话：`runner` 在 `def.mcp` 的 CLI 上调 `pluginRunTools`（`server/exec/plugin-run.ts` → `pluginToolsForRun`），插件按项目、模式返回 MCP 服务和提示，面板开令牌地址传给 CLI，这一轮结束关掉；插件工具调 `confirm` 时出请求卡片，这一轮结束还没回答的作废。
 - 钩子、测试步骤、命令（接口 3）：`hooks/dispatch.ts` 把 `activePluginHooks` 和用户钩子并在一起按范围、匹配跑；`currentTestSteps` 现取开着的插件的步骤；`slash.ts` 把 `pluginCommands` 排在「所有 Agent」的命令后面。开关插件时 `manager.ts` 清掉「/」菜单的缓存，其余两处每次现取。
 - 文件：对话里的文件标记、文件浏览页点到开着的插件认领了扩展名的文件（UE 插件的 `.uasset`）时，`fileViewerFor` 找到查看器，`PluginFileDialog` 把完整路径、项目和对话 id 交给它；没有插件认领时照旧（面板能看的在面板里看，别的交给系统默认程序）。
+- 评审：评审拿到的改动里，开着的插件用 `ServerPlugin.textify` 认领了扩展名的二进制文件（UE 插件的 `.uasset`），面板把改动前后两版内容交给它转成文本，逐行比较后放进评审提示词（`server/plugins/runtime.ts` 的 `textifierFor`，取内容和拼文字见 `server/exec/review-semantic.ts`）。旧版本只在版本控制里，所以给插件的是内容不是路径。插件仓库里的 `sdk.ts` 副本要同步加上 `Textifier`。
 - 网页：`App` 启动时 `loadPlugins`；开着的插件 import 包里的 web 入口（地址带安装时间），登记设计模式、整页和右栏页签；关掉、删除后从登记里撤下。整页声明了 `taskPlugin` 时，它管的对话不进 Agent 项目和 Chat 列表，从别的地址打开时转到那一页（`registry.ts` 的 `useOwnedByPlugin`、`ownedPage`）。
 
 ## 已知限制
