@@ -92,3 +92,22 @@
 决策：长命令守卫再认一种——从项目根（或更上层）起的全文递归搜索（`grep -r`、`findstr /s`、`find … | xargs grep`、`gci -Recurse | sls`，判断在 `shared/wide-search.ts`），放前台时拒绝，让它放后台或改用 rg 限定子目录；起点是子目录、自己带了 `--exclude-dir` / `-prune` 的、rg、git grep 照常放行。面板工具说明和聊天约束把这类搜索列进 `run_background` 的用途。
 
 没选：把 grep 整个移出快命令清单。查单个文件、子目录的 grep 几秒就完，一律拦会把正常查找也推到后台，回到 11-05 的老问题。
+
+## 补充（2026-11-11）：重新划定哪些命令必须放后台，大项目搜索改走 rg
+
+用户反馈大项目里搜索会扫整个项目、超时也没结果，并要求重新规划哪些命令走后台。核对 Claude Code 2.1.322（原生安装）：它已经没有单独的 Grep / Glob 工具，搜索都在命令工具里跑，`rg` 是它自带的 ripgrep（读 `RIPGREP_CONFIG_PATH`），`grep` 换成自带的 ugrep（只认 .gitignore），`find` 换成 bfs（都不读面板的排除配置）。命令工具默认两分钟超时，rg 输出接到管道时整块缓冲，被杀掉时已经搜到的命中一起丢掉，这就是「超时也没结果」。
+
+决策：
+
+- 面板交给 CLI 的 ripgrep 配置（`shared/search-exclude.ts` 的 `rgConfigLines`）在排除目录之外再跳过 .uasset、图片、模型、压缩包这类二进制文件（命令行显式 `-g` 时后写的优先，照样能搜），并加 `--line-buffered`，超时前搜到的照样留下。提示词让 Agent 搜内容用 rg、按名字找资源用 find，扫整个大项目时放后台。
+- 长命令守卫按程序认「一定要跑几分钟」的一类（`shared/command-scope.ts` 的 `heavySegment`）：UE 的 Build.bat / RunUAT / UBT / 命令行编辑器、msbuild / devenv、`cmake --build`、Docker 构建、不带包名的整份装依赖（`npm ci`、`pnpm i`、`yarn`、`pip install -r`）、Gradle / Maven 打包。放前台时拒绝，让它交给 `run_background`。
+
+分三档：
+
+| 档                     | 例子                                                                                    | 怎么处理                                   |
+| ---------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 必须后台（守卫拦）     | 完整测试、e2e、界面检查、开发服务器、上面的编译打包和整份装依赖、从项目根起的 `grep -r` | 前台跑时拒绝，交给 `run_background`        |
+| 看项目（提示词说明）   | `npm run build`、`tsc`、`cargo build`、加一个包的 `npm install`、扫大目录的 rg          | Agent 自己判断，慢的项目在守卫参数里补前缀 |
+| 前台直接跑（后台拒收） | 读写文件、列目录、限定目录的搜索、git 本地操作                                          | 后台命令拒收，直接用命令工具               |
+
+没选：给 Claude Code 的 Grep 工具改写参数补排除项。新版已经没有这个工具（只有显式开启时才有），做了也只对老版本有用。

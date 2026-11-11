@@ -4,7 +4,7 @@ import type { Project, Task } from '../../shared/schema.ts'
 import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
-import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
+import { endlessSegment, heavySegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
 import { cleaning, editScope, revOf } from '../../shared/bug-phase.ts'
@@ -158,7 +158,7 @@ function dangerOf(c: GuardCtx, s: string): string {
 }
 
 /**
- * 长命令转后台：完整测试、端到端、界面检查、开发服务器放在前台跑，用户执行中发来的消息要等它跑完才处理，
+ * 长命令转后台：完整测试、端到端、界面检查、开发服务器、UE 编译打包和整份装依赖（command-scope.ts 的 heavySegment）放在前台跑，用户执行中发来的消息要等它跑完才处理，
  * 对话看起来就是卡住（用户 2026-10-27 纠正过，docs/lessons/tooling.md）。这一轮有 run_background 时拒绝并说明用它。
  * 以前按段里的字样匹配，写文件的 heredoc 正文、commit 说明、grep 的参数里有 e2e 也被拦下、让它改用后台命令，
  * 结果写文件、查文件都跑去了后台（用户 2026-11-05 报）：现在只看段开头真正运行的程序
@@ -171,6 +171,8 @@ export function longDeny(c: GuardCtx, facts: HookFacts): string {
     if (quickSegment(s)) continue
     if (endlessSegment(s))
       return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑（service 设为 true），用 check_background 看它的输出确认起来了。`
+    if (heavySegment(s))
+      return `【面板】${s.slice(0, 80)} 是要跑几分钟的编译、打包或装依赖，放在前台会撞上命令的超时被杀掉、也挡着对话：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
     if (FULL_SUITE_COMMAND.test(s) || extra.some((x) => s.startsWith(x)))
       return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   }

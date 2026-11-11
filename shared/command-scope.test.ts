@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   backgroundMisuse,
   endlessCommand,
+  heavySegment,
   quickSegment,
   runSegments,
   segHead,
@@ -65,4 +66,35 @@ test('不会自己结束的命令：开发服务器、监听算，grep 参数里
   for (const c of ['npm run dev', 'cd web && npx vite', 'tsc -p . -w', 'node --watch server.ts'])
     assert.ok(endlessCommand(c), c)
   for (const c of ['npx vite build', 'grep -- --watch README.md', 'npm run build']) assert.ok(!endlessCommand(c), c)
+})
+
+test('一定要跑几分钟的：UE 编译打包、VS / CMake 整体编译、Docker 构建、整份装依赖算；加一个包、普通 build 脚本不算（用户 2026-11-11 要求重新规划后台命令）', () => {
+  for (const c of [
+    '"C:/Program Files/Epic Games/UE_5.4/Engine/Build/BatchFiles/Build.bat" MyGameEditor Win64 Development -Project="G:/P/My.uproject"',
+    '& "G:\\UE\\Engine\\Build\\BatchFiles\\RunUAT.bat" BuildCookRun -project=G:/P/My.uproject',
+    'UnrealEditor-Cmd.exe G:/P/My.uproject -run=ResavePackages',
+    'msbuild My.sln /p:Configuration=Release',
+    'cmake --build build --config Release',
+    'docker compose build',
+    'npm ci',
+    'npm install',
+    'pnpm i --frozen-lockfile',
+    'yarn',
+    'pip install -r requirements.txt',
+    './gradlew assembleRelease',
+    'mvn -q package',
+  ])
+    assert.ok(heavySegment(c), c)
+  for (const c of [
+    'npm install lodash',
+    'yarn add react',
+    './build.sh',
+    'build',
+    'npm run build',
+    'cmake -S . -B build',
+    'docker ps',
+    'pip install requests',
+    'cat Engine/Build/BatchFiles/Build.bat',
+  ])
+    assert.ok(!heavySegment(c), c)
 })

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { Loader2, RefreshCw } from 'lucide-react'
 import type { Settings } from '@shared/schema'
-import { pickShell, recommendedShell, SHELL_LABEL, type ShellReport } from '@shared/shells'
+import { pickShell, recommendedShell, shellLabel, type ShellReport } from '@shared/shells'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { Row } from './parts'
 
 /**
  * 设置「常规」里的命令行环境：只在 Windows 上显示。
- * 不单独列「自动」：预选推荐的那个并标「（默认）」，选回它时不单独记，以后装了 Git Bash / WSL 会跟着换
+ * 不单独列「自动」：预选推荐的那个并标「（默认）」，选回它时不单独记，以后装了 PowerShell 7 会跟着换
  */
 export function ShellSetting({
   value,
@@ -44,7 +44,7 @@ export function ShellSetting({
       title={t('命令行 Shell')}
       desc={t('后台命令和测试步骤用的 shell')}
       hint={t(
-        '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 Git Bash（Windows 路径可以直接用），没有 Git Bash 时用 WSL，再没有用 cmd。',
+        '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 PowerShell（装了 PowerShell 7 时用 7），没有时依次用 Git Bash、WSL、cmd。',
       )}
     >
       {/* 发行版放在第二行：两个下拉框并排时右栏放不下，会把发行版名字截断 */}
@@ -59,7 +59,7 @@ export function ShellSetting({
             className="w-48"
             options={report.shells.map((s) => ({
               value: s.id,
-              label: `${SHELL_LABEL[s.id]}${s.id === rec.id ? t('（默认）') : ''}`,
+              label: `${shellLabel(s)}${s.id === rec.id ? t('（默认）') : ''}`,
             }))}
           />
           <Button
