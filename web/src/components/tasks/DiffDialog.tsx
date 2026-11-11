@@ -524,12 +524,14 @@ export function DiffDialog({
   const menu: MenuAction[] = []
   if (shown) {
     menu.push({ label: t('复制路径'), icon: <Copy className="h-4 w-4" />, onSelect: copyPath })
-    // 路径后面直接给一个「打开所在文件夹」：找文件时不用先去编辑器里定位
-    menu.push({
-      label: t('打开所在文件夹'),
-      icon: <FolderOpen className="h-4 w-4" />,
-      onSelect: () => api.revealTaskFile(task.id, shown).catch((e) => toast.error((e as Error).message)),
-    })
+    // 路径后面直接给一个「打开所在文件夹」：找文件时不用先去编辑器里定位。
+    // 没有任务（AI 创建 / 分析里的编辑行）就找不到目录，不给
+    if (task.id)
+      menu.push({
+        label: t('打开所在文件夹'),
+        icon: <FolderOpen className="h-4 w-4" />,
+        onSelect: () => api.revealTaskFile(task.id, shown).catch((e) => toast.error((e as Error).message)),
+      })
   }
   if (!own && data?.dir && path)
     menu.push({

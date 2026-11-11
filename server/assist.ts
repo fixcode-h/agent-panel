@@ -52,9 +52,6 @@ export function safeArgs(args: string[]) {
   }
   return out
 }
-const TIMEOUT = 5 * 60_000
-/** 初始化项目要读项目、写好几份文档，给足时间 */
-const INIT_TIMEOUT = 20 * 60_000
 
 /** 「项目」分类里的工作流：项目的默认工作流只从这里选（和项目设置页一致）；没有这个分类时不限 */
 async function projectWorkflowIds(categories: Lister<Category>, workflows: Workflow[]) {
@@ -174,7 +171,8 @@ export function assistApi(deps: {
         env: childEnv(cs.env),
         input: buildAssistPrompt(input.kind, ctx, messages, installed),
         signal: job.abort.signal,
-        timeoutMs: input.kind === 'project' ? INIT_TIMEOUT : TIMEOUT,
+        // 不限时：大项目的分析、初始化跑多久都正常，原来的 5 / 20 分钟上限会把快做完的活掐掉；要停由用户点停止
+        timeoutMs: 0,
         onEvent: (ev) => {
           if (ev.type === 'thinking') {
             const m = !cur || cur.raw.trim() || cur.tools.length ? newMsg() : cur
@@ -223,11 +221,6 @@ export function assistApi(deps: {
         for (const x of toolsById.values()) if (x.running || x.startedAt) endTool(x)
       })
       if (r.killed === 'stopped') return fail(job, t('已停止'))
-      if (r.killed === 'timeout')
-        return fail(
-          job,
-          input.kind === 'project' ? t('超过 20 分钟没有完成，已停止') : t('超过 5 分钟没有完成，已停止'),
-        )
       if (r.spawnError)
         return fail(
           job,
