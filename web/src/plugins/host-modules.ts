@@ -7,6 +7,7 @@
  */
 export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'shared/assist': () => import('@shared/assist'),
+  'shared/browser-ext': () => import('@shared/browser-ext'),
   'shared/clis': () => import('@shared/clis'),
   'shared/comfy-chain': () => import('@shared/comfy-chain'),
   'shared/comfy-layout': () => import('@shared/comfy-layout'),
@@ -17,10 +18,14 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'shared/fix': () => import('@shared/fix'),
   'shared/i18n': () => import('@shared/i18n'),
   'shared/local-image': () => import('@shared/local-image'),
+  'shared/local-prompts': () => import('@shared/local-prompts'),
+  'shared/moss': () => import('@shared/moss'),
   'shared/prompt-lang': () => import('@shared/prompt-lang'),
   'shared/raster': () => import('@shared/raster'),
+  'shared/restore/thresholds': () => import('@shared/restore/thresholds'),
   'shared/schema': () => import('@shared/schema'),
   'shared/settings': () => import('@shared/settings'),
+  'shared/style-types': () => import('@shared/style-types'),
   'shared/styles': () => import('@shared/styles'),
   'shared/task': () => import('@shared/task'),
   'shared/text': () => import('@shared/text'),
@@ -34,6 +39,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/chat/RichInput': () => import('@/components/chat/RichInput'),
   'web/src/components/chat/SlashMenu': () => import('@/components/chat/SlashMenu'),
   'web/src/components/comfy/ComfyQueuePanel': () => import('@/components/comfy/ComfyQueuePanel'),
+  'web/src/components/comfy/ComfyWeb': () => import('@/components/comfy/ComfyWeb'),
   'web/src/components/layout/Detail': () => import('@/components/layout/Detail'),
   'web/src/components/layout/SidebarTasks': () => import('@/components/layout/SidebarTasks'),
   'web/src/components/projects/DirPicker': () => import('@/components/projects/DirPicker'),
@@ -76,6 +82,8 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/lib/useScopedSetting': () => import('@/lib/useScopedSetting'),
   'web/src/lib/utils': () => import('@/lib/utils'),
   'web/src/plugins/registry': () => import('@/plugins/registry'),
+  '@radix-ui/react-dialog': () => import('@radix-ui/react-dialog'),
+  zod: () => import('zod'),
 }
 
 let loaded: Promise<Record<string, object>> | undefined
