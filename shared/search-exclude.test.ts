@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_SEARCH_EXCLUDE,
   UE_SEARCH_EXCLUDE,
+  rgConfigLines,
   searchExcludeFindPrune,
   searchExcludeGlobs,
   searchExcludeOf,
@@ -75,4 +76,15 @@ test('rg 配置：只排除目录；Git 仓库里只给项目自己填的', () =
   assert.ok(all.includes('--glob=!node_modules/'))
   assert.deepEqual(searchExcludeRgConfig(p, { onlyProject: true }), ['--glob=!Saved/', '--glob=!Intermediate/'])
   assert.deepEqual(searchExcludeRgConfig({}, { onlyProject: true }), [])
+})
+
+test('rg 配置：排除目录之外再跳过二进制资源、按行输出（用户 2026-11-11 报大项目搜索超时也没结果）', () => {
+  const ue = rgConfigLines({ searchExclude: ['Saved'] })
+  assert.ok(ue.includes('--glob=!Saved/') && ue.includes('--glob=!node_modules/'))
+  assert.ok(ue.includes('--glob=!*.uasset') && ue.includes('--glob=!*.png'))
+  assert.equal(ue.at(-1), '--line-buffered', '超时被杀前搜到的命中要已经写出来')
+  // Git 仓库里没填项目排除：目录交给 .gitignore，二进制和按行输出照样要
+  const git = rgConfigLines({}, { onlyProject: true })
+  assert.ok(!git.some((l) => l.endsWith('/')))
+  assert.ok(git.includes('--glob=!*.uasset') && git.includes('--line-buffered'))
 })

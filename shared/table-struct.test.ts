@@ -16,6 +16,7 @@ import {
   workbookNeeds,
   type RowProblems,
 } from './table-struct.ts'
+import { groupFixes, groupProblems } from './table-problems.ts'
 
 const CONFIG = 'data/Config.xlsx'
 const ENUMS = 'data/enum/E.xlsx'
@@ -223,4 +224,28 @@ test('校验：正则、必填、条件必填、组合唯一', () => {
   )
   assert.deepEqual(got, ['2:1', '2:2', '2:4', '3:5'])
   assert.deepEqual(uniquesFor(schema, 'other.csv'), [])
+})
+
+test('检查结果按「列 + 种类」分组：原因里的值不同也是一组；超出范围给边界值和允许值的批量修法', () => {
+  const h = headerOf(schema, CONFIG, config)
+  const infos = columnInfos(schema, config.rows, h, CONFIG, 'Config', 6)
+  const { ctx } = columnOptions(schema, infos, (f) => files[f])
+  const problems = checkSheet(config.rows, 5, infos, 'ID', ctx)
+  const groups = groupProblems(problems, infos)
+  const key = groups.find((g) => g.rule === 'key')
+  assert.equal(key?.items.length, 1)
+  assert.equal(key?.field, 'ID')
+  // 每处问题都在且只在一组里
+  assert.equal(
+    groups.reduce((n, g) => n + g.items.length, 0),
+    problems.length,
+  )
+  const state = groups.find((g) => g.c === 4 && g.rule === 'max')
+  assert.ok(state)
+  assert.deepEqual(
+    groupFixes(state, infos[4]).map((f) => f.value),
+    [String(infos[4].max), ...(infos[4].allow ?? []).slice(0, 3), ''],
+  )
+  // 主键重复不能一键清空
+  assert.deepEqual(groupFixes(key!, infos[0]), [])
 })

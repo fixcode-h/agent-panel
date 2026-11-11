@@ -31,8 +31,11 @@ export const EN_SHEET: Record<string, string> = {
   表头设置: 'Header settings',
   从第: 'From row',
   表头从第几行开始: 'Header start row',
-  '行开始，共': ', rows in total:',
-  表头共几行: 'Header row count',
+  '行开始，共 {n} 行': ', {n} rows in total',
+  '删掉第 {n} 行': 'Remove row {n}',
+  加一行表头: 'Add a header row',
+  '套用项目的表头：': 'Use a project header:',
+  '第 {n} 套（{rows} 行）': 'Layout {n} ({rows} rows)',
   行: 'rows',
   '每行是什么（决定底色）': 'What each row is (sets its color)',
   '只记在这台电脑上，表格文件一个字节都不改。':

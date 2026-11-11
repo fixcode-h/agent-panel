@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
-import { ListTree } from 'lucide-react'
+import { useState } from 'react'
+import { ListTree, Plus, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import { SHEET_ROLES, type SheetHeader } from '@shared/sheet-header'
-import { TYPE_NAMES, type TableSchema } from '@shared/tables'
-import { tablesApi } from '@/lib/tables-api'
+import { styleHeaders, TYPE_NAMES, type TableSchema } from '@shared/tables'
+import { saveTableSchema, useSchemaDraft, useTableSchema } from '@/lib/table-schema'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Segmented } from '@/components/ui/segmented'
 import { Input, Select } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -19,51 +20,63 @@ import { findEnumRenames, type EnumRename } from '@shared/table-enum-rename'
 /** 没设过时给的起点：常见的游戏配置表 5 行表头 */
 const START: SheetHeader = { start: 0, roles: ['modifier', 'side', 'type', 'name', 'comment'] }
 
+type Style = TableSchema['style']
+interface Draft {
+  /** 几套表头；空 = 每张表自动识别 */
+  headers: SheetHeader[]
+  roleEnums: Style['roleEnums']
+  /** 编辑中的原文（逗号分隔） */
+  marks: string
+  sep: string
+  /** 按文件指定的表头（通配） */
+  exceptions: Style['exceptions']
+}
+const toDraft = (s: TableSchema): Draft => ({
+  headers: styleHeaders(s.style),
+  roleEnums: s.style.roleEnums ?? {},
+  marks: (s.style.arrayMarks ?? []).join(', '),
+  sep: s.style.listSep ?? ';',
+  exceptions: s.style.exceptions ?? [],
+})
+
 /**
- * 项目设置 → 表格的「表头」：整个项目的表头从第几行开始、共几行、每行是什么，每种表头行能填什么（选通用枚举）。
- * 存在表格结构文件（style.header），不在项目设置里，所以有自己的「保存」；单张表在表格页「调整表头」覆盖
+ * 项目设置 → 表格的「表头」：整个项目的几套表头（各表行数不一样时设多套，每张表按内容自动挑最合的一套），
+ * 每种表头行能填什么（选通用枚举）。存在表格结构文件（style.headers），不在项目设置里，所以有自己的「保存」；
+ * 单张表在表格页「调整表头」覆盖。AI 分析写进结构文件后这里跟着更新
  */
 export function ProjectTablesHeader({ projectId }: { projectId: string }) {
-  const [schema, setSchema] = useState<TableSchema | null>(null)
-  const [draft, setDraft] = useState<SheetHeader | null>(null)
-  const [roleEnums, setRoleEnums] = useState<TableSchema['style']['roleEnums']>({})
-  const [marks, setMarks] = useState('')
-  const [sep, setSep] = useState('')
-  const [error, setError] = useState('')
+  const { schema, error } = useTableSchema(projectId)
+  const { draft: d, changed, setDraft, reset } = useSchemaDraft(schema, toDraft)
   const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    tablesApi
-      .schema(projectId)
-      .then((s) => {
-        setSchema(s)
-        setDraft(s.style.header ?? null)
-        setRoleEnums(s.style.roleEnums ?? {})
-        setMarks((s.style.arrayMarks ?? []).join(', '))
-        setSep(s.style.listSep ?? ';')
-      })
-      .catch((e) => setError((e as Error).message))
-  }, [projectId])
   if (error) return <p className="text-footnote text-danger">{error}</p>
-  if (!schema) return null
-  const saved = schema.style.header ?? null
-  const markList = marks
+  if (!schema || !d) return null
+  const set = (p: Partial<Draft>) => setDraft((x) => ({ ...x, ...p }))
+  const setHeader = (i: number, h: SheetHeader) => set({ headers: d.headers.map((x, j) => (j === i ? h : x)) })
+  const markList = d.marks
     .split(/[,，\s]+/)
     .map((x) => x.trim())
     .filter(Boolean)
-  const changed =
-    JSON.stringify(saved) !== JSON.stringify(draft) ||
-    JSON.stringify(schema.style.arrayMarks ?? []) !== JSON.stringify(markList) ||
-    (schema.style.listSep ?? ';') !== (sep || ';') ||
-    JSON.stringify(schema.style.roleEnums ?? {}) !== JSON.stringify(roleEnums)
   const enumNames = Object.keys(schema.enums).sort()
   const save = async () => {
     setBusy(true)
     try {
-      const next = {
-        ...schema,
-        style: { ...schema.style, header: draft ?? undefined, roleEnums, arrayMarks: markList, listSep: sep || ';' },
-      }
-      setSchema(await tablesApi.saveSchema(projectId, next))
+      // 空表头（0 行）的那套没意义，保存时去掉；旧字段 header 写第一套，旧版本的面板也认得
+      const headers = d.headers.filter((h) => h.roles.length)
+      const saved = await saveTableSchema(projectId, (cur) => ({
+        ...cur,
+        style: {
+          ...cur.style,
+          headers,
+          header: headers[0],
+          roleEnums: d.roleEnums,
+          arrayMarks: markList,
+          listSep: d.sep || ';',
+          exceptions: d.exceptions
+            .map((e) => ({ ...e, glob: e.glob.trim() }))
+            .filter((e) => e.glob && e.header.roles.length),
+        },
+      }))
+      reset(saved)
       toast.success(t('表头设置已保存'))
     } catch (e) {
       toast.error((e as Error).message)
@@ -76,23 +89,68 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
       <div>
         <Segmented
           label={t('表头')}
-          value={draft ? 'fixed' : 'auto'}
-          onChange={(v) => setDraft(v === 'auto' ? null : (saved ?? START))}
+          value={d.headers.length ? 'fixed' : 'auto'}
+          onChange={(v) =>
+            set({
+              headers: v === 'auto' ? [] : styleHeaders(schema.style).length ? styleHeaders(schema.style) : [START],
+            })
+          }
           options={[
             { id: 'auto', label: t('每张表自动识别') },
-            { id: 'fixed', label: t('全部按固定行数') },
+            { id: 'fixed', label: t('按设定的表头') },
           ]}
         />
       </div>
-      {draft && <HeaderRuleEditor value={draft} onChange={setDraft} withLabels />}
+      {d.headers.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {d.headers.length > 1 && (
+            <p className="text-caption text-subtle">
+              {t('设了 {n} 套：每张表按内容自动挑最合的一套，一样合时用排在前面的。', { n: d.headers.length })}
+            </p>
+          )}
+          {d.headers.map((h, i) => (
+            <div key={i} className="rounded-(--c-card-radius) border px-3 py-2.5">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-footnote font-medium">{t('第 {n} 套表头', { n: i + 1 })}</span>
+                <span className="flex-1" />
+                {d.headers.length > 1 && (
+                  <IconButton
+                    icon={Trash2}
+                    size="xs"
+                    tone="danger"
+                    label={t('删掉第 {n} 套表头', { n: i + 1 })}
+                    onClick={() => set({ headers: d.headers.filter((_, j) => j !== i) })}
+                  />
+                )}
+              </div>
+              <HeaderRuleEditor value={h} onChange={(x) => setHeader(i, x)} withLabels />
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={d.headers.length >= 20}
+              onClick={() => set({ headers: [...d.headers, { start: 0, roles: ['type', 'name', 'comment'] }] })}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t('加一套表头')}
+            </Button>
+            <span className="text-caption text-subtle">
+              {t('各表的表头行数不一样（比如配置表 5 行、枚举表 3 行）时加几套，不用按文件一张张设。')}
+            </span>
+          </div>
+        </div>
+      )}
+      <ExceptionList value={d.exceptions} onChange={(exceptions) => set({ exceptions })} />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-footnote text-muted">
         <label className="flex items-center gap-2">
           {t('修饰行里表示数组的值')}
           <Input
             size="sm"
-            value={marks}
+            value={d.marks}
             placeholder="repeated"
-            onChange={(e) => setMarks(e.target.value)}
+            onChange={(e) => set({ marks: e.target.value })}
             className="w-44 font-mono"
           />
         </label>
@@ -100,10 +158,10 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
           {t('数组默认分隔符')}
           <Input
             size="sm"
-            value={sep}
+            value={d.sep}
             maxLength={4}
             placeholder=";"
-            onChange={(e) => setSep(e.target.value)}
+            onChange={(e) => set({ sep: e.target.value })}
             className="w-14 text-center font-mono"
           />
         </label>
@@ -124,15 +182,13 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
                 <Select
                   size="sm"
                   aria-label={t('{role}行能填什么', { role: roleShort(role) })}
-                  value={roleEnums[role] ?? ''}
+                  value={d.roleEnums[role] ?? ''}
                   onChange={(e) => {
                     const v = e.target.value
-                    setRoleEnums((m) => {
-                      const next = { ...m }
-                      if (v) next[role] = v
-                      else delete next[role]
-                      return next
-                    })
+                    const next = { ...d.roleEnums }
+                    if (v) next[role] = v
+                    else delete next[role]
+                    set({ roleEnums: next })
                   }}
                   options={[
                     { value: '', label: t('不限') },
@@ -158,20 +214,69 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
 }
 
 /**
+ * 按文件指定表头：内容上分不出来、必须按目录 / 文件名指定的（AI 分析也会写到这里）。
+ * 优先于上面的几套表头；单张表在表格页「调整表头」设的又优先于这里
+ */
+function ExceptionList({
+  value,
+  onChange,
+}: {
+  value: TableSchema['style']['exceptions']
+  onChange: (v: TableSchema['style']['exceptions']) => void
+}) {
+  const put = (i: number, e: TableSchema['style']['exceptions'][number]) =>
+    onChange(value.map((x, j) => (j === i ? e : x)))
+  return (
+    <div className="flex flex-col gap-2">
+      {value.map((e, i) => (
+        <div key={i} className="rounded-(--c-card-radius) border px-3 py-2.5">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="shrink-0 text-footnote font-medium">{t('这些文件')}</span>
+            <Input
+              size="sm"
+              aria-label={t('第 {n} 条按文件指定的通配', { n: i + 1 })}
+              value={e.glob}
+              placeholder="Config/Enum/*.xlsx"
+              onChange={(ev) => put(i, { ...e, glob: ev.target.value })}
+              className="min-w-0 flex-1 font-mono"
+            />
+            <IconButton
+              icon={Trash2}
+              size="xs"
+              tone="danger"
+              label={t('删掉第 {n} 条按文件指定', { n: i + 1 })}
+              onClick={() => onChange(value.filter((_, j) => j !== i))}
+            />
+          </div>
+          <HeaderRuleEditor value={e.header} onChange={(header) => put(i, { ...e, header })} withLabels />
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={value.length >= 100}
+          onClick={() => onChange([...value, { glob: '', header: { start: 0, roles: ['type', 'name', 'comment'] } }])}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {t('按文件指定表头')}
+        </Button>
+        <span className="text-caption text-subtle">
+          {t('内容上分不出来的（比如某个目录的表都是另一种表头）按通配指定，优先于上面的几套。')}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
  * 项目设置 → 表格的「通用枚举」：整个项目所有表格共用的枚举库（结构文件 enums.json）。
  * 任何一张表的列在「列结构」里选它，或类型行写了同名类型，就按它下拉、检查
  */
 export function ProjectTablesEnums({ projectId }: { projectId: string }) {
-  const [schema, setSchema] = useState<TableSchema | null>(null)
+  const { schema, error } = useTableSchema(projectId)
   const [open, setOpen] = useState(false)
   const [renames, setRenames] = useState<EnumRename[] | null>(null)
-  const [error, setError] = useState('')
-  useEffect(() => {
-    tablesApi
-      .schema(projectId)
-      .then(setSchema)
-      .catch((e) => setError((e as Error).message))
-  }, [projectId])
   if (error) return <p className="text-footnote text-danger">{error}</p>
   if (!schema) return null
   const names = Object.keys(schema.enums).sort()
@@ -206,7 +311,7 @@ export function ProjectTablesEnums({ projectId }: { projectId: string }) {
           onOpenChange={setOpen}
           onSave={async (enums) => {
             try {
-              setSchema(await tablesApi.saveSchema(projectId, { ...schema, enums }))
+              await saveTableSchema(projectId, (cur) => ({ ...cur, enums }))
               toast.success(t('通用枚举已保存'))
               const r = findEnumRenames(schema.enums, enums)
               if (r.length) setRenames(r)

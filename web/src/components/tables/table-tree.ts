@@ -75,3 +75,14 @@ function compactAbs(n: TableNode): TableNode {
   }
   return { ...at, name: name || '/' }
 }
+
+/** 文件名太长时截中间：保留开头和扩展名（C_HomeDeco…Config.xlsx） */
+export function middleEllipsis(name: string, max = 28) {
+  if (name.length <= max) return name
+  const dot = name.lastIndexOf('.')
+  const ext = dot > 0 ? name.slice(dot) : ''
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const keep = max - ext.length - 1
+  const head = Math.ceil(keep * 0.6)
+  return `${stem.slice(0, head)}…${stem.slice(stem.length - (keep - head))}${ext}`
+}

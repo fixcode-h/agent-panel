@@ -4,7 +4,8 @@ import type { Project, Task } from '../../shared/schema.ts'
 import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
-import { endlessSegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
+import { pluginTestSteps } from '../../shared/plugins/contrib.ts'
+import { endlessSegment, heavySegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
 import { cleaning, editScope, revOf } from '../../shared/bug-phase.ts'
@@ -21,7 +22,7 @@ import { scratchPath } from '../exec/file-events.ts'
  */
 export interface GuardCtx {
   task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'diagnoses' | 'remotePush' | 'worktree' | 'testSteps'>
-  project: Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> | null
+  project: (Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> & Partial<Pick<Project, 'pluginStepsOff'>>) | null
   cwd: string
   /** 子任务、工作流节点这类辅助调用（不是对话本身） */
   helper: boolean
@@ -77,13 +78,15 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   if (cleaning(latestDiagnosis(c.task)) && segs(facts).some(wholeFileRevert))
     return '【面板】这一步要用改文件工具一处一处删临时日志（连加日志时带进来的空行），不整文件还原：文件里可能还有别的改动。'
   // 面板给的临时目录、数据目录里的文件（编译脚本、日志副本）不是项目代码，不按方案拦（file-events.ts 也不记成改动）
-  const files = editPaths(facts)
-    .filter((p) => !scratchPath(path.resolve(c.cwd, p), c.cwd))
-    .map((p) => rel(c.cwd, p) || p)
-  if (!files.length) return ''
+  const raw = editPaths(facts)
+  const files = raw.filter((p) => !scratchPath(path.resolve(c.cwd, p), c.cwd)).map((p) => rel(c.cwd, p) || p)
+  // 插件的改文件类工具算不出要改哪些文件时没有路径：方案没确认前照样不许改，确认后没法按文件核对，放行
+  const unknown = facts.tool?.kind === 'edit' && !raw.length
+  if (!files.length && !unknown) return ''
   // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
   const scope = editScope(c.task.diagnoses ?? [])
   if ('deny' in scope) return `【面板】${scope.deny}`
+  if (unknown) return ''
   const extra = outOfPlan(files, scope.files)
   if (extra.length) {
     const d = latestDiagnosis(c.task)
@@ -158,7 +161,7 @@ function dangerOf(c: GuardCtx, s: string): string {
 }
 
 /**
- * 长命令转后台：完整测试、端到端、界面检查、开发服务器放在前台跑，用户执行中发来的消息要等它跑完才处理，
+ * 长命令转后台：完整测试、端到端、界面检查、开发服务器、UE 编译打包和整份装依赖（command-scope.ts 的 heavySegment）放在前台跑，用户执行中发来的消息要等它跑完才处理，
  * 对话看起来就是卡住（用户 2026-10-27 纠正过，docs/lessons/tooling.md）。这一轮有 run_background 时拒绝并说明用它。
  * 以前按段里的字样匹配，写文件的 heredoc 正文、commit 说明、grep 的参数里有 e2e 也被拦下、让它改用后台命令，
  * 结果写文件、查文件都跑去了后台（用户 2026-11-05 报）：现在只看段开头真正运行的程序
@@ -166,15 +169,35 @@ function dangerOf(c: GuardCtx, s: string): string {
 export function longDeny(c: GuardCtx, facts: HookFacts): string {
   if (!c.canBackground) return ''
   const extra = c.list('extra').filter(Boolean)
+  const slow = slowStep(c, facts)
+  if (slow)
+    return `【面板】${slow.command.slice(0, 80)} 是项目测试步骤「${slow.name}」（要编译、跑得久），放在前台会撞上命令的超时、整段输出也会进上下文：用面板工具 run_background 交给后台跑（带上计划步骤），跑完只推回错误、警告和结尾，完整日志存文件；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   for (const s of segs(facts)) {
     // 只看真正在跑的程序：cat、grep、git commit 这类快命令的参数里出现 e2e、--watch 不算（command-scope.ts）
     if (quickSegment(s)) continue
     if (endlessSegment(s))
       return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑（service 设为 true），用 check_background 看它的输出确认起来了。`
+    if (heavySegment(s))
+      return `【面板】${s.slice(0, 80)} 是要跑几分钟的编译、打包或装依赖，放在前台会撞上命令的超时被杀掉、也挡着对话：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
     if (FULL_SUITE_COMMAND.test(s) || extra.some((x) => s.startsWith(x)))
       return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   }
   return wideSearchDeny(c, facts)
+}
+
+/**
+ * 项目测试步骤里慢的那些（工作包 I：编译命令默认进长命令守卫）：标了「合并时编译」或超时设到 3 分钟以上、
+ * 又没标「小改动也跑」的步骤，是项目自己说了要编译、跑得久的命令。命令原文出现在这次命令里就算
+ */
+function slowStep(c: GuardCtx, facts: HookFacts) {
+  if (facts.tool?.kind !== 'shell') return undefined
+  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+  const cmd = norm(String(facts.tool.input.command ?? ''))
+  const steps = c.project?.testSteps.length ? c.project.testSteps : c.task.testSteps
+  return steps.find(
+    (x) =>
+      x.enabled && !x.quick && (x.merge || x.timeoutSec >= 180) && x.command.trim() && cmd.includes(norm(x.command)),
+  )
 }
 
 /**
@@ -197,7 +220,8 @@ function wideSearchDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function testScopeDeny(c: GuardCtx, facts: HookFacts): string {
   if (!inWorktree(c)) return ''
-  const steps = (c.project?.testSteps.length ? c.project.testSteps : c.task.testSteps).filter(
+  const own = c.project?.testSteps.length ? c.project.testSteps : c.task.testSteps
+  const steps = [...own, ...(c.project ? pluginTestSteps(c.project) : [])].filter(
     (x) => x.enabled && x.scope === 'parent' && x.command.trim(),
   )
   const norm = (x: string) => x.replace(/\s+/g, ' ').trim()

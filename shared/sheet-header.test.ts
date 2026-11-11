@@ -3,7 +3,16 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dataStart, detectSheetHeader, rowRole, titleRowOf, validHeader } from './sheet-header.ts'
+import {
+  dataStart,
+  detectSheetHeader,
+  headerFit,
+  pickHeader,
+  rowRole,
+  titleRowOf,
+  validHeader,
+  type SheetRole,
+} from './sheet-header.ts'
 
 const GAME = [
   ['optional', 'optional', 'optional', 'optional', 'optional', 'repeated', 'repeated', 'optional'],
@@ -100,4 +109,21 @@ test('手动设置的表头要在范围内', () => {
   assert.ok(!validHeader({ start: 10, roles: ['name'] }, 10))
   assert.ok(!validHeader({ start: 0, roles: ['what'] }, 10))
   assert.ok(!validHeader(null, 10))
+})
+
+test('多套表头按内容挑最合的：5 行表头的表挑 5 行那套，3 行的挑 3 行那套', () => {
+  const five = { start: 0, roles: ['modifier', 'side', 'type', 'name', 'comment'] as SheetRole[] }
+  const three = { start: 0, roles: ['type', 'name', 'comment'] as SheetRole[] }
+  const enumRows = [
+    ['string', 'uint32', 'string'],
+    ['Name', 'Value', 'Desc'],
+    ['名字', '值', '说明'],
+    ['XS', '0', '特小'],
+  ]
+  assert.equal(pickHeader([five, three], GAME), five)
+  assert.equal(pickHeader([five, three], enumRows), three)
+  assert.equal(pickHeader([three, five], GAME), five)
+  // 一样合时取前面的；只有一套就直接用
+  assert.equal(pickHeader([three], GAME), three)
+  assert.ok(headerFit(five, GAME) > headerFit(three, GAME))
 })

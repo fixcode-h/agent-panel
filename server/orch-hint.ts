@@ -11,7 +11,7 @@ export function orchHint(o: Orchestra) {
     const s =
       (o.plans ? 'set_plan / finish_plan 列执行计划、更新进度；' : '') +
       (o.canBackground
-        ? 'run_background 只把要跑很久的命令（编译、测试、安装、下载、从项目根起的全项目 grep -r 这类全文搜索）和开发服务器、监听（service）放到后台（跑完结果自动推回），写文件、几秒的命令不交给它，check_background / stop_background 查看、停止它们；'
+        ? 'run_background 只把要跑很久的命令（UE / C++ 编译打包、完整测试、整份装依赖、下载、扫整个项目的全文搜索）和开发服务器、监听（service）放到后台（跑完结果自动推回），写文件、几秒的命令不交给它，check_background / stop_background 查看、停止它们；'
         : '')
     return s ? `（你有面板工具 panel：${s}不要用 CLI 自带的后台命令。）` : ''
   }
@@ -33,7 +33,7 @@ export function orchHint(o: Orchestra) {
       : '') +
     (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
     (o.canBackground
-      ? 'run_background 只把要跑很久的命令（编译、测试、安装、下载、从项目根起的全项目 grep -r 这类全文搜索）和开发服务器、监听（service）放到后台（跑完结果自动推回），写文件、几秒的命令不交给它；'
+      ? 'run_background 只把要跑很久的命令（UE / C++ 编译打包、完整测试、整份装依赖、下载、扫整个项目的全文搜索）和开发服务器、监听（service）放到后台（跑完结果自动推回），写文件、几秒的命令不交给它；'
       : '')
   const child =
     bg +

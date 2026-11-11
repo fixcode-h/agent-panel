@@ -54,6 +54,13 @@ export function rowOpIn(e: Edits, s: SheetData, op: RowOp): Edits {
   return commit(e, s.name, { rows: applyRowOps(cur.rows, [op]), ops: [...cur.ops, op] })
 }
 
+/** 一次做几步插删行（删选中的几行）：一次撤销退掉 */
+export function rowOpsIn(e: Edits, s: SheetData, ops: RowOp[]): Edits {
+  if (!ops.length) return e
+  const cur = e.sheets[s.name] ?? { rows: s.rows, ops: [] }
+  return commit(e, s.name, { rows: applyRowOps(cur.rows, ops), ops: [...cur.ops, ...ops] })
+}
+
 /** 插一行并填上几格（自动编号、复制行）：一次撤销退掉 */
 export function rowOpWithCells(e: Edits, s: SheetData, op: RowOp, cells: CellSet[]): Edits {
   const cur = e.sheets[s.name] ?? { rows: s.rows, ops: [] }

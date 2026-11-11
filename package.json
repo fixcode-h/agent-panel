@@ -29,6 +29,7 @@
     "bench:tables": "node node_modules/tsx/dist/cli.mjs scripts/bench-tables.ts",
     "test:failed": "node scripts/unit-tests.mjs --failed",
     "test:affected": "node scripts/changed-tests.mjs --run",
+    "eval:real": "node --import tsx scripts/real-cli/eval.mjs",
     "test:coverage": "tsx --test --experimental-test-coverage \"server/**/*.test.ts\" \"shared/**/*.test.ts\" \"web/src/**/*.test.ts\"",
     "package": "node scripts/package.mjs"
   },

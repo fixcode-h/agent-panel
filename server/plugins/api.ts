@@ -48,7 +48,7 @@ function stash(p: Omit<Pending, 'at'>) {
   return {
     token,
     manifest: p.manifest,
-    hasCode: !!(p.manifest.server || p.manifest.web),
+    hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
     installed: cur ? { version: cur.manifest.version, source: cur.source } : null,
   }
 }
@@ -73,7 +73,7 @@ const info = (p: Installed): PluginInfo => {
     webUrl: url(p.manifest.web),
     cssUrl: url(p.manifest.css),
     error: pluginError(p.manifest.id),
-    hasCode: !!(p.manifest.server || p.manifest.web),
+    hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
   }
 }
 

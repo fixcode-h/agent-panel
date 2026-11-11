@@ -1468,6 +1468,8 @@ export const EN_TASKS: Record<string, string> = {
   '追问，或让它换个方向查…': 'Ask a follow-up, or point it in another direction…',
   '距自动压缩还剩 {n}': '{n} until auto-compact',
   '上下文还剩 {n}': '{n} of context left',
+  最大的工具结果: 'Largest tool results',
+  '{label}\n{n} 字，压缩之前每轮都带着它': '{label}\n{n} characters, sent with every turn until compacted',
   'Agent 正在回复，这一轮结束后才能压缩': 'The agent is replying; you can compact after this turn ends',
   压缩会话: 'Compact session',
   '{n} 个提问等你回答': '{n} question(s) waiting for your answer',

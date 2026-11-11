@@ -141,7 +141,17 @@ test('命令行环境：WSL、Git Bash、PowerShell 按各自的方式起，选�
   const git = shellCommand(line, 'win32', { id: 'gitbash', path: 'C:\\Git\\bin\\bash.exe' })
   assert.equal(git.command, 'C:\\Git\\bin\\bash.exe')
   assert.equal(git.env.CHERE_INVOKING, '1')
-  assert.equal(shellCommand(line, 'win32', { id: 'powershell', path: 'powershell.exe' }).command, 'powershell.exe')
+  const ps5 = shellCommand('npm run a && npm run b', 'win32', { id: 'powershell', path: 'powershell.exe' })
+  assert.equal(ps5.command, 'powershell.exe')
+  assert.match(
+    ps5.args.at(-1)!,
+    /^\$OutputEncoding=\[Text\.Encoding\]::UTF8;.*npm run a; \$__agentPanelOk = \$\?/,
+    '5.1：先设 UTF-8 再换掉 &&',
+  )
+  const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+  const ps7 = shellCommand('npm run a && npm run b', 'win32', { id: 'powershell', path: pwsh })
+  assert.equal(ps7.command, pwsh, '装了 PowerShell 7 用它')
+  assert.equal(ps7.args.at(-1), 'npm run a && npm run b', '7 认 &&，原样交')
   assert.equal(shellCommand(line, 'linux', { id: 'wsl', path: 'wsl.exe' }).command, 'sh', '非 Windows 一律 sh')
   const report = {
     platform: 'win32',
@@ -150,7 +160,7 @@ test('命令行环境：WSL、Git Bash、PowerShell 按各自的方式起，选�
       { id: 'cmd' as const, path: 'cmd.exe' },
     ],
   }
-  assert.equal(pickShell(report, { kind: '', wslDistro: '' }).id, 'gitbash', '没有 WSL 时默认 Git Bash')
+  assert.equal(pickShell(report, { kind: '', wslDistro: '' }).id, 'gitbash', '没有 PowerShell 时 Git Bash')
   assert.equal(pickShell(report, { kind: 'wsl', wslDistro: '' }).id, 'gitbash', '选的 WSL 没装：回到推荐的')
   assert.equal(pickShell(report, { kind: 'cmd', wslDistro: '' }).id, 'cmd')
   const withWsl = {

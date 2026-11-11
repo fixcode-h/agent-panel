@@ -3,6 +3,7 @@ import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
 import { descendantNeeds } from '../../shared/child-needs.ts'
 import { bugBriefs } from '../../shared/bug-overview.ts'
+import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
 import { messageChars } from '../task-store.ts'
 import {
   SEARCH_CHAR_BUDGET,
@@ -52,6 +53,15 @@ export function registerListRoutes(s: TasksScope) {
   s.routes.get('/bugs', async (c) => {
     const all = (await s.store.list()).map((t) => s.withJobs(s.idle(s.live.get(t.id)?.task ?? t)))
     return c.json(bugBriefs(all))
+  })
+
+  /**
+   * 总览页的「流程」视图（扩展 4）：所有 Agent 模式对话（含子对话）被推了几次、评审退回、合回失败、等你多久，
+   * 只给精简行（shared/agent-flow-briefs.ts），汇总由页面按搜索词筛过再算。状态按内存里正在跑的那份算
+   */
+  s.routes.get('/flow', async (c) => {
+    const all = (await s.store.list()).map((t) => s.live.get(t.id)?.task ?? t)
+    return c.json(agentFlowBriefs(all))
   })
 
   s.routes.get('/keepalive', async (c) => c.json(await keepAliveList()))

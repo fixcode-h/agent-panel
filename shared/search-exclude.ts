@@ -100,3 +100,57 @@ export function searchExcludeFindPrune(project: { searchExclude?: string[] } | u
   const names = searchExcludeOf(project).map((d) => `-name '${d}'`)
   return names.length ? `\\( -type d \\( ${names.join(' -o ')} \\) \\) -prune -o` : ''
 }
+
+/**
+ * rg 额外跳过的文件：图片、模型、音视频、压缩包、编译产物和 UE 的资源包。它们是二进制，搜不出文字，
+ * 可 rg 照样要逐个打开、读到第一个空字节才知道——UE 项目 Content 下动辄十几万个 .uasset，光这一步就能把搜索拖到超时
+ * （用户 2026-11-11 报大项目搜索超时没结果）。命令行里显式写 `-g '*.uasset'` 时后写的优先，照样能搜到；
+ * 按名字找这些文件用 find（不读 rg 的配置）
+ */
+export const SEARCH_SKIP_FILES = [
+  '*.uasset',
+  '*.umap',
+  '*.ubulk',
+  '*.uexp',
+  '*.upk',
+  '*.pak',
+  '*.utoc',
+  '*.ucas',
+  '*.dll',
+  '*.exe',
+  '*.pdb',
+  '*.lib',
+  '*.obj',
+  '*.so',
+  '*.dylib',
+  '*.png',
+  '*.jpg',
+  '*.jpeg',
+  '*.tga',
+  '*.dds',
+  '*.psd',
+  '*.bmp',
+  '*.exr',
+  '*.hdr',
+  '*.fbx',
+  '*.wav',
+  '*.ogg',
+  '*.mp3',
+  '*.mp4',
+  '*.mov',
+  '*.zip',
+  '*.7z',
+  '*.rar',
+]
+
+/**
+ * 面板交给 CLI 的整份 ripgrep 配置：排除目录（searchExcludeRgConfig）、二进制资源，再加 --line-buffered。
+ * 最后这项是「超时也有结果」：输出接到管道时 rg 攒满一块才写，命令超时被杀时攒着的命中全丢，
+ * 搜个少见的关键字跑满两分钟就是一行结果都没有；按行写出后，杀掉前已经搜到的都在
+ */
+export function rgConfigLines(
+  project: { searchExclude?: string[] } | undefined,
+  opts: { onlyProject?: boolean } = {},
+): string[] {
+  return [...searchExcludeRgConfig(project, opts), ...SEARCH_SKIP_FILES.map((f) => `--glob=!${f}`), '--line-buffered']
+}

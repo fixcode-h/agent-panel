@@ -72,6 +72,13 @@ function host(task: Task, log: AgentCall[]): EngineHost {
         assert.match(text(r), /a\/sub\/h1、a\/sub\/h2/)
         assert.match(text(await callOrchTool(o, 'write_state', { key: 'interface', value: '接口改名了' })), /v1/)
         assert.match(text(await callOrchTool(o, 'read_state', {})), /interface（v1/)
+        // 超长的值和消息拒绝写入并说明，不悄悄截断（ADR 0041 开放问题）
+        const huge = 'x'.repeat(20001)
+        const big = await callOrchTool(o, 'write_state', { key: 'interface', value: huge })
+        assert.equal(big.isError, true)
+        assert.match(text(big), /20001 字.*没有写入/)
+        assert.match(text(await callOrchTool(o, 'read_state', {})), /interface（v1/)
+        assert.match(text(await callOrchTool(o, 'send_message', { to: '测试', text: huge })), /没有写入/)
         assert.match(text(await callOrchTool(o, 'send_message', { to: '测试', text: '接口改名了' })), /测试/)
         const got = text(await callOrchTool(o, 'wait_agents', { seconds: 5 }))
         assert.match(got, /做完 2 个/)

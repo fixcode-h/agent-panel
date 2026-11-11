@@ -409,9 +409,13 @@ function hookDraft(text: string) {
 function tablesDraft() {
   return {
     draft: {
-      summary: '表头 5 行：修饰 / 导出端 / 类型 / 字段名 / 注释；枚举表是 3 行表头，按 EnumName 分组',
+      summary: '两套表头：配置表 5 行（修饰 / 导出端 / 类型 / 字段名 / 注释），枚举表 3 行，按 EnumName 分组',
       style: {
-        header: { start: 0, roles: ['modifier', 'side', 'type', 'name', 'comment'] },
+        headers: [
+          { start: 0, roles: ['modifier', 'side', 'type', 'name', 'comment'] },
+          { start: 0, roles: ['type', 'name', 'comment'] },
+        ],
+        arrayMarks: ['repeated'],
         key: 'ID',
         listSep: ';',
         primitives: ['uint32', 'int32', 'bytes', 'string'],

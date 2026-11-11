@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { ContextBreakdown, ContextKey } from '@shared/context-breakdown'
 import { t } from '@shared/i18n'
 import { fmtTokens } from '@/lib/tasks'
@@ -146,8 +147,8 @@ function ContextLegendRow({
   )
 }
 
-/** 细分：按窗口画的各块，按需取用的工具另起一组，最后是可展开的 MCP 工具、记忆文件、自定义 Agent 和 Skill 列表 */
-export function ContextLegend({ data }: { data: ContextBreakdown }) {
+/** 细分：按窗口画的各块，按需取用的工具另起一组，最后是可展开的列表（extra 放在最前，比如最大的工具结果）、MCP 工具、记忆文件、自定义 Agent 和 Skill */
+export function ContextLegend({ data, extra }: { data: ContextBreakdown; extra?: ReactNode }) {
   return (
     <div className="flex flex-col gap-2.5">
       <ul className="flex flex-col">
@@ -163,6 +164,7 @@ export function ContextLegend({ data }: { data: ContextBreakdown }) {
         </ul>
       )}
       <div className="flex flex-col">
+        {extra}
         <SessionDisclosure label={t('MCP 工具')} count={data.tools.length + data.deferredTools.length}>
           {[...data.tools, ...data.deferredTools].map((x) => (
             <SessionDisclosureItem

@@ -1,3 +1,4 @@
+import { isEventSchedule } from '@shared/schedule-trigger'
 import {
   isoWeekday,
   nextRunAt,
@@ -58,7 +59,8 @@ export function occurrencesIn(list: Schedule[], from: number, days: number): Occ
  * 不会再跑时为空，过了结束日期的不列
  */
 export function upcomingRuns(s: Schedule, count = 4): number[] {
-  if (!willRunAgain(s)) return []
+  // 按事件的计划没有排好的时间，详情里写触发条件和上次检查，不列时刻
+  if (!willRunAgain(s) || isEventSchedule(s)) return []
   const first = Date.parse(s.at)
   if (!Number.isFinite(first)) return []
   const out = [first]

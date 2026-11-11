@@ -12,7 +12,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '设置' }).first().click()
   // 默认项断言当前真正默认的那一个（不写成「或」，默认再变时要红）：演示后端固定返回 win32 和
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
-  await check(p, '设置', ['常规', '内容宽度', '命令行 Shell', 'Git Bash（默认）', '子对话卡住时追问'])
+  await check(p, '设置', ['常规', '内容宽度', '命令行 Shell', 'PowerShell（默认）', '子对话卡住时追问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
   // 关于我与记忆（设计报告 Chat P1-4）：「关于我」能改、记忆能看能删能加（演示里有两条示例）
   await p.getByRole('button', { name: '关于我与记忆', exact: true }).click()
@@ -49,6 +49,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.setViewportSize({ width: 1440, height: 560 })
   errors.push(...(await stickyLeakProblems(p, '设置-矮窗口')))
   await p.setViewportSize({ width: 1440, height: 900 })
+  // 额度用完或限流（Agent 模式扩展 1）：两项默认关；开了「换备用模型」才出现备用顺序，能加一项
+  {
+    const sw = p.getByRole('switch', { name: '额度用完或限流后换备用模型' })
+    await sw.scrollIntoViewIfNeeded()
+    if ((await sw.getAttribute('aria-checked')) !== 'false') errors.push('设置：「换备用模型」默认应该是关')
+    await sw.click()
+    const row = p.locator('[data-setting="备用顺序"]')
+    await row.getByRole('button', { name: '加入' }).click()
+    await row
+      .getByRole('button', { name: '删除' })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('设置：备用顺序加不进去'))
+    await check(p, '设置-额度用完或限流', ['到点自动继续', '换备用模型', '备用顺序'])
+    await sw.click()
+  }
   // 「子对话默认也提问」这一项去掉了（用户 2026-10-31）：新父对话的「子对话也提问」固定默认开着
   if (await p.getByRole('switch', { name: '子对话默认也提问' }).count())
     errors.push('设置：「子对话默认也提问」已经去掉，不该再出现')

@@ -133,3 +133,38 @@ export function validHeader(h: unknown, rowCount: number): h is SheetHeader {
     roles.every((r) => (SHEET_ROLES as readonly string[]).includes(r))
   )
 }
+
+/**
+ * 一套表头和这张表有多合：表头每行认出的角色和设定的一样 +2；认不出（像数据）的扣分，
+ * 「其它 / 注释」这种本来就认不太出的行不扣；表头完了下一行还像表头，说明这套短了，再扣一分
+ */
+export function headerFit(h: SheetHeader, rows: string[][]): number {
+  let score = 0
+  h.roles.forEach((role, i) => {
+    const got = rowRole(rows[h.start + i])
+    if (got === role) score += 2
+    else if (role === 'other' || role === 'comment') score += 0
+    else score -= got ? 1 : 2
+  })
+  if (h.roles.length && rowRole(rows[dataStart(h)])) score -= 1
+  return score
+}
+
+/**
+ * 项目里设了好几套表头（各表行数不一样）时，按内容挑最合的一套；一样合时取排在前面的。
+ * 只有一套就直接用，不看内容（和以前「固定行数」一样）
+ */
+export function pickHeader<T extends SheetHeader>(cands: T[], rows: string[][] | undefined): T | undefined {
+  if (cands.length <= 1 || !rows) return cands[0]
+  let best = cands[0]
+  let top = -Infinity
+  for (const h of cands) {
+    if (!validHeader(h, rows.length)) continue
+    const s = headerFit(h, rows)
+    if (s > top) {
+      top = s
+      best = h
+    }
+  }
+  return best
+}

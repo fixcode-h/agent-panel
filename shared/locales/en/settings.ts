@@ -1084,8 +1084,8 @@ export const EN_SETTINGS: Record<string, string> = {
   修改全局教训需要你确认: 'Changing global lessons needs your confirmation',
   // 命令行环境
   命令行环境: 'Command shell',
-  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 Git Bash（Windows 路径可以直接用），没有 Git Bash 时用 WSL，再没有用 cmd。':
-    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to Git Bash (Windows paths work directly), then WSL when Git Bash is missing, then cmd.',
+  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 PowerShell（装了 PowerShell 7 时用 7），没有时依次用 Git Bash、WSL、cmd。':
+    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to PowerShell (PowerShell 7 when installed), then Git Bash, WSL and cmd if it is missing.',
   '重新检测（刚装了 WSL 或 Git 时用）': 'Detect again (after installing WSL or Git)',
   // 设置里的用量统计：shared/usage.ts 的粒度标签和 components/usage/UsageSection.tsx 的表格
   按天: 'Daily',

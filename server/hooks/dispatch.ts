@@ -22,8 +22,10 @@ import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan-pace.ts'
 import { DATA_DIR } from '../store.ts'
 import { loadProjectLessons } from '../project-lessons.ts'
+import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
+import { activePluginHooks, isPluginHook, runPluginHook } from '../plugins/contrib.ts'
 import { taskLog } from '../task-log.ts'
 import {
   bugDeny,
@@ -35,6 +37,7 @@ import {
   worktreeDeny,
   type GuardCtx,
 } from './guards.ts'
+import { bigOutputHint, bigReadDeny } from './guards-context.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -112,7 +115,8 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: stri
     if (who === 'coordinator') {
       // 补丁一次能改好几个文件：每个都登记过才放行
       const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
-      if (files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
+      // 插件工具算不出要改哪些文件时 paths 是空的：说不清改什么就不算登记过
+      if (files.length && files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
       return '【面板】你是只统筹不动手的父对话，不直接改文件：改动交给子对话（create_conversation）；确实是几行以内的微小改动，先调用 begin_inline_edit 登记要改的文件。'
     }
     return '【面板】你是只读的角色，不改项目里的文件：把发现写进结果交回，要改的由派你的对话安排。'
@@ -211,8 +215,10 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     agent: { id: c.agent.id, name: c.agent.name },
     cli: c.cliId,
   }
+  // 用户钩子加上开着的插件带的钩子（插件关掉就不在这里，见 server/plugins/contrib.ts）
+  const all: HookDef[] = [...data.hooks, ...activePluginHooks(data)]
   // 这次调用范围对得上的用户钩子：装不装这个事件看它，工具类别、路径这些到触发时再看
-  const mine = (event: HookEventName) => data.hooks.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
+  const mine = (event: HookEventName) => all.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
   const lessons =
     on('push-lessons') && c.project.id
       ? (await loadProjectLessons(c.project, c.agents).catch(() => ({ lessons: [] }))).lessons.filter(
@@ -236,6 +242,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['danger-guard', dangerDeny],
     ['test-scope-guard', testScopeDeny],
     ['long-command-guard', longDeny],
+    ['big-read-guard', (_g, f) => bigReadDeny(c.cwd, c.task.id, builtinNumber(data, 'big-read-guard', 'kb'), f)],
     ['secret-guard', secretDeny],
     ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
   ]
@@ -246,16 +253,23 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   if (guards.length || mine('tool.before').length) events.push('tool.before')
   // 计划没跟上提醒：只给有执行计划的对话（项目里的对话，不含子任务、Chat 页）
   const pace = on('plan-pace') && !!c.call.orch.plans
-  if (lessons.length || on('loop-hint') || pace || mine('tool.after').length) events.push('tool.after')
+  const bigOut = on('big-output-hint') && builtinNumber(data, 'big-output-hint', 'chars') > 0
+  if (lessons.length || on('loop-hint') || pace || bigOut || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
   // 各事件关心哪几类工具：内置的守卫、提醒只看改文件和跑命令（guards.ts、plan-pace 的 WORK、loopHint、教训），
   // 用户钩子按自己的匹配范围（任意工具就是全部）。读文件、搜索没人管时，能过滤的 CLI 就不再为它们跑钩子
   const userKinds = (event: HookEventName) => mine(event).map((h) => h.match.tool)
   const hookTools: HookToolScope = {
-    'tool.before': [...(guards.length ? (['edit', 'shell'] as const) : []), ...userKinds('tool.before')],
+    'tool.before': [
+      ...(guards.length ? (['edit', 'shell'] as const) : []),
+      // 读大文件守卫要看读文件工具
+      ...(guards.some(([id]) => id === 'big-read-guard') ? (['read'] as const) : []),
+      ...userKinds('tool.before'),
+    ],
     'tool.after': [
       ...(lessons.length ? (['edit'] as const) : []),
+      ...(bigOut ? (['shell', 'read'] as const) : []),
       ...(on('loop-hint') ? (['shell'] as const) : []),
       ...(pace ? (['edit', 'shell'] as const) : []),
       ...userKinds('tool.after'),
@@ -291,8 +305,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     }
     const r = rel(c.cwd, facts.tool?.path ?? '')
     const out: { deny?: string; block?: string; context: string[] } = { context: [] }
-    for (const h of data.hooks.filter((x) => hookApplies(x, input, r))) {
-      const res = await runHook(h, input, c.cwd)
+    for (const h of all.filter((x) => hookApplies(x, input, r))) {
+      const res = isPluginHook(h) ? await runPluginHook(h, input, c.cwd) : await runHook(h, input, c.cwd)
       const failed = res.error ? (h.onError === 'deny' && event === 'tool.before' ? 'deny' : 'allow') : ''
       noteTrigger({
         at: new Date().toISOString(),
@@ -394,6 +408,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return text
   }
 
+  let bigHints = 0
   const onHook = async (event: HookEventName, facts: HookFacts): Promise<HookAnswer> => {
     if (event === 'tool.before') {
       for (const [id, fn] of guards) {
@@ -415,6 +430,14 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         pushed.set(c.task.id, seen)
         const hit = lessons.filter((l) => !seen.has(l.id) && l.paths.some((g) => globMatch(g, r)))
         for (const l of hit) seen.add(l.id)
+        // 推给模型的教训也算命中（shared/knowledge-hits.ts）
+        if (hit.length)
+          void recordKnowledgeHits(
+            c.project.id,
+            'lessons',
+            hit.map((l) => l.id),
+            c.task.parentTaskId || c.task.id,
+          )
         if (hit.length) noteBuiltin('push-lessons', event, 'context', `${r}：${hit.map((l) => l.title).join('、')}`)
         if (hit.length)
           ctx.push(
@@ -423,6 +446,17 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       const loop = on('loop-hint') ? loopHint(facts) : ''
       if (loop) ctx.push(loop)
+      // 大输出提醒：每次调用最多两次，提醒多了就成了噪音
+      const big =
+        bigOut && bigHints < 2
+          ? bigOutputHint(facts, builtinNumber(data, 'big-output-hint', 'chars'), !!c.call.orch?.canBackground)
+          : ''
+      if (big) {
+        bigHints++
+        noteBuiltin('big-output-hint', event, 'context', big)
+        taskLog(c.task.id, '大输出提醒', { tool: facts.tool?.name, size: facts.tool?.result?.size })
+        ctx.push(big)
+      }
       if (pace && facts.tool) {
         const st = paces.get(c.task.id) ?? newPace()
         paces.set(c.task.id, st)
@@ -478,8 +512,26 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
+  /**
+   * 插件的改文件类工具（插件接口 3，McpTool.effect = 'edit'）也过工具前的守卫和用户钩子：MCP 调用在 CLI 那边不算改文件，
+   * 以前写资产、改蓝图能绕过只读身份、Bug 先诊断和独立分支越界。按「改文件」的事实交给同一套守卫（路径是插件按参数算的 targets）
+   */
+  const editGuard = async (tool: string, paths: string[], input: Record<string, unknown>): Promise<string> => {
+    const facts: HookFacts = { tool: { kind: 'edit', name: tool, input, path: paths[0] ?? '', paths } }
+    for (const [id, fn] of guards) {
+      const deny = fn(guard(id), facts)
+      if (!deny) continue
+      taskLog(c.task.id, '插件工具被守卫拒绝', { guard: id, tool, paths: paths.slice(0, 5) })
+      noteBuiltin(id, 'tool.before', 'deny', deny)
+      return deny
+    }
+    return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
+  }
+
   // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
   c.call.orch.guardCommand = commandGuard
+  // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
+  c.call.orch.guardEdit = editGuard
   return {
     ...(beforeEnd ? { beforeEnd } : {}),
     ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),

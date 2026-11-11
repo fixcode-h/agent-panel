@@ -54,6 +54,8 @@ export interface SheetView {
   setFilter: (col: number, f: ColFilter | undefined) => void
   setSort: (s: SheetSort | null) => void
   clearFilters: () => void
+  /** 一次换成一整套筛选和排序（套用存下的视图） */
+  setAll: (filters: ColFilters, sort: SheetSort | null) => void
 }
 
 /** key：文件路径 + 工作表名，换了表就是另一份设置 */
@@ -109,6 +111,10 @@ export function useSheetView(key: string, rows: string[][] | null, store?: Sheet
     clearFilters: () => {
       setFilters({})
       setSort(null)
+    },
+    setAll: (f, s) => {
+      setFilters(f)
+      setSort(s)
     },
   }
 }

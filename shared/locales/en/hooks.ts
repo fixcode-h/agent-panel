@@ -165,8 +165,8 @@ export const EN_HOOKS: Record<string, string> = {
   '另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune':
     'Extra command prefixes to block as dangerous, one per line, e.g. docker system prune',
   长命令转后台: 'Long commands to background',
-  '完整测试、端到端、界面检查、开发服务器、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完':
-    "Denies full test suites, end-to-end and UI checks, dev servers, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands, so messages sent meanwhile don't wait",
+  '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件':
+    "Denies full test suites, end-to-end and UI checks, dev servers, UE builds and packaging, full dependency installs, project test steps marked build-on-merge or with a timeout of 3 minutes or more, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands: messages sent meanwhile don't wait, and only errors, warnings and the end come back while the full log is saved to a file",
   另外算长命令的命令前缀: 'Extra long-command prefixes',
   '一行一个，例如 npm run build、cargo test': 'One per line, e.g. npm run build, cargo test',
   测试步骤归属守卫: 'Test step ownership guard',
@@ -192,6 +192,16 @@ export const EN_HOOKS: Record<string, string> = {
   '这个 CLI 没有能装的钩子事件，只有一轮结束后的提醒兜底':
     'This CLI has no hook events to install; only the end-of-turn reminder applies',
   '版本太老，这些事件不装：{list}': 'Version too old, these events are not installed: {list}',
+  读大文件前拦一下: 'Large file read guard',
+  '整份读超过大小的文本文件（读文件工具不带分段参数，或单独一条 cat / Get-Content）时拒绝一次，让它先搜再按行读、只读结尾，或派子任务去读；同一个文件再读一次就放行':
+    'Refuses once when a whole text file over the size is read (a file read without range parameters, or a lone cat / Get-Content), asking to search first and read by lines, read only the end, or send a subtask to read it; reading the same file again is allowed',
+  '超过多少 KB 算大文件': 'Large file threshold (KB)',
+  '默认 64；0 表示不拦': 'Default 64; 0 turns it off',
+  大输出提醒: 'Large output hint',
+  '一次命令输出、读文件的结果超过字数时补一句：下次先重定向到文件再搜，长命令放后台，大日志派子任务去读（结果已经进了上下文，这句只管下一次；每次调用最多提醒两次）':
+    'When one command output or file read is over the length, adds a note: next time redirect to a file and search it, run long commands in the background, and send a subtask to read big logs (the result is already in context, so this only helps next time; at most twice per run)',
+  超过多少字提醒: 'Characters before the hint',
+  '默认 20000；0 表示不提醒': 'Default 20000; 0 turns it off',
   原地打转提醒: 'Going-in-circles hint',
   '同一条命令连续失败几次时，补一句让它换个思路或者说明卡在哪（要 CLI 报得出失败：Claude Code、Pi、Command Code）':
     'When the same command fails several times in a row, adds a note to try another approach or say where it is stuck (needs a CLI that reports failures: Claude Code, Pi, Command Code)',

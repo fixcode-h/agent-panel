@@ -111,7 +111,7 @@ export function DesignList() {
   return (
     <div className="mt-2 flex min-h-0 flex-1 flex-col">
       <DesignModeSwitch value={mode} onChange={pick} plugins={plugins} />
-      {plugin ? <PluginDesignList mode={plugin} /> : <UiDesignList />}
+      {plugin?.Sidebar ? <plugin.Sidebar /> : plugin ? <PluginDesignList mode={plugin} /> : <UiDesignList />}
     </div>
   )
 }
@@ -196,6 +196,8 @@ function PluginDesignList({ mode }: { mode: PluginDesignMode }) {
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const unread = useUnreadTasks()
   const [creating, setCreating] = useState(false)
+  // 没给新建弹窗的模式（新建由它的整页管）：直接去它的空页面
+  const create = () => (mode.NewDialog ? setCreating(true) : go({ page: 'pdesign', id: mode.id }))
   const models = tasks.filter((x: Task) => taskPlugin(x) === mode.id && x.projectId && !x.parentTaskId && !x.archived)
   const groups = projects
     .map((p) => ({ p, ts: models.filter((x) => x.projectId === p.id).sort(byAskedAt) }))
@@ -204,23 +206,25 @@ function PluginDesignList({ mode }: { mode: PluginDesignMode }) {
     <div className="scroll-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
         <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
-        <IconButton icon={Plus} label={mode.newLabel} size="sm" onClick={() => setCreating(true)} />
+        <IconButton icon={Plus} label={mode.newLabel} size="sm" onClick={create} />
       </div>
       {!groups.length && (
         <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
           <mode.icon className="h-5 w-5 text-subtle" strokeWidth={2} />
           <p className="text-xs leading-relaxed text-subtle">{mode.empty}</p>
-          <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
+          <Button size="sm" variant="secondary" onClick={create}>
             <Plus className="h-3.5 w-3.5" />
             {mode.newLabel}
           </Button>
         </EmptyPanel>
       )}
-      <mode.NewDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(task) => go({ page: 'pdesign', id: mode.id, sub: task.id })}
-      />
+      {mode.NewDialog ? (
+        <mode.NewDialog
+          open={creating}
+          onOpenChange={setCreating}
+          onCreated={(task) => go({ page: 'pdesign', id: mode.id, sub: task.id })}
+        />
+      ) : null}
       {groups.map(({ p, ts }) => {
         const open = !folded.has(p.id)
         return (

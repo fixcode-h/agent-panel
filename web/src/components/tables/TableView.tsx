@@ -4,7 +4,12 @@ import {
   BookA,
   EyeOff,
   History,
+  Keyboard,
+  PanelTop,
+  Rows3,
   Replace,
+  Search,
+  Tags,
   ListChecks,
   Lock,
   Plus,
@@ -13,23 +18,29 @@ import {
   Undo2,
 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { TYPE_NAMES, schemaHeader, type TableDoc, type TableHit, type TableSchema } from '@shared/tables'
+import { TYPE_NAMES, schemaHeader, styleHeaders, type TableDoc, type TableHit, type TableSchema } from '@shared/tables'
 import type { CellSet, RowOp, SheetEdit } from '@shared/table-edit'
 import type { SheetHeader } from '@shared/sheet-header'
 import type { TableExport } from '@shared/table-export'
 import { colCount, colName as colLetter, type CellHit } from '@/lib/sheet'
 import { cn } from '@/lib/utils'
 import { SheetTable, SheetTabs } from '@/components/files/SheetTable'
-import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
+import { headerSummary, SheetHeaderBar } from '@/components/files/SheetHeaderBar'
 import { useSheetView, type SheetHeaderStore } from '@/components/files/use-sheet-view'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import { ToolGroup } from '@/components/ui/tool-group'
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
 } from '@/components/ui/menu'
 import { CellEditor } from './CellEditor'
 import { ColumnSetup } from './ColumnSetup'
@@ -49,6 +60,7 @@ import {
   rowOpIn,
   replaceIn,
   rowOpWithCells,
+  rowOpsIn,
   rowsOf,
   setCellsIn,
   undoIn,
@@ -62,12 +74,29 @@ import { FindReplaceDialog } from './FindReplaceDialog'
 import { BackRefsDialog, CellMenu } from './CellMenu'
 import { CellHistoryDialog } from './CellHistoryDialog'
 import { ImportDialog } from './ImportDialog'
-import { AiMenu, ProposalBar, useProposal } from './TableAi'
+import { AiMenu, AiRegionDialog, ProposalBar, aiFixProblems, useProposal } from './TableAi'
+import { ColumnStatsDialog } from './ColumnStatsDialog'
+import { BatchEditDialog } from './BatchEditDialog'
 import { importEdit, sheetCsv, sheetJson } from '@shared/table-io'
 import { saveText } from '@/lib/save-file'
 import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
 import type { CellAt } from '@shared/table-blame'
 import { findBackRefs, refsTo } from '@shared/table-refs'
+import { selectionStats, TableStatusBar } from './TableStatusBar'
+import {
+  DENSITY_ROW_H,
+  colHeadOf,
+  ruleText,
+  useDensity,
+  useHeadCollapsed,
+  useLocalFlag,
+  type Density,
+} from './col-head'
+import { TableFindBar, type FindMode } from './TableFindBar'
+import { TableEditBar } from './TableEditBar'
+import { TableQuickFilter, useSavedViews, type QuickFilter } from './TableQuickFilter'
+import { ScrollMarks } from './ScrollMarks'
+import { ShortcutsHelp } from '@/components/layout/ShortcutsHelp'
 
 /** 从内容搜索跳过来：切到这张表、滚到这一格 */
 export interface TableJump {
@@ -146,10 +175,10 @@ export function TableView({
   const store = useMemo<SheetHeaderStore>(
     () => ({
       own: schema.files[fileKey],
-      style: sheet ? schemaHeader({ ...schema, files: {} }, doc.path, sheet.name) : undefined,
+      style: sheet ? schemaHeader({ ...schema, files: {} }, doc.path, sheet.name, sheet.rows) : undefined,
       save: (h: SheetHeader | null) => {
         const files = { ...schema.files }
-        if (h) files[fileKey] = { start: h.start, roles: h.roles }
+        if (h) files[fileKey] = { start: h.start, roles: h.roles, ...(h.labels ? { labels: h.labels } : {}) }
         else delete files[fileKey]
         onSchema({ ...schema, files })
       },
@@ -193,6 +222,63 @@ export function TableView({
     from: view?.from ?? 0,
     loadDoc,
   })
+  // 两行列头：字段名 + 类型标签，按列结构算（只在列结构变时重算）
+  const colHeads = useMemo(() => struct.infos.map(colHeadOf), [struct.infos])
+  const [headCollapsed, setHeadCollapsed] = useHeadCollapsed()
+  const [editBar, setEditBar] = useLocalFlag('table-edit-bar')
+  const [density, setDensity] = useDensity()
+  const [refNames, setRefNames] = useLocalFlag('table-ref-names')
+  const [findMode, setFindMode] = useState<FindMode | null>(null)
+  const [findHits, setFindHits] = useState<CellHit[]>([])
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [statsCol, setStatsCol] = useState<number | null>(null)
+  /** 批量修改、让 AI 改：打开时记下选中的格子（数据行、没隐藏的列） */
+  const [batch, setBatch] = useState<{ r: number; c: number }[] | null>(null)
+  const [aiRegion, setAiRegion] = useState<{ rows: number[]; cols: number[] } | null>(null)
+  const dataSel = () => {
+    const s = grid.selection()
+    if (!s) return null
+    const rs = s.rows.filter((r) => r >= (view?.from ?? 0))
+    const cs = s.cols.filter((c) => !hiddenSet.has(c))
+    return rs.length && cs.length ? { rows: rs, cols: cs } : null
+  }
+  // 快速筛选跟着表走：换一张表就清掉；存下的视图按表记在本机
+  const [quick, setQuick] = useState<QuickFilter[]>([])
+  useEffect(() => setQuick([]), [fileKey])
+  const [views, setViews] = useSavedViews(`${projectId}:${fileKey}`)
+  const from = view?.from ?? 0
+  // 快速筛选要用的几组行：不合规、改过、引用缺失、空着的必填
+  const quickRows = useMemo(() => {
+    const bad = new Set<number>()
+    const ref = new Set<number>()
+    const need = new Set<number>()
+    for (const p of struct.problems) {
+      if (p.r < from) continue
+      bad.add(p.r)
+      if (p.rule === 'ref') ref.add(p.r)
+      if (p.rule === 'required' || p.rule === 'requiredWhen') need.add(p.r)
+    }
+    const dirtyRows = new Set<number>()
+    for (const k of dirty) {
+      const r = Number(k.slice(0, k.indexOf(':')))
+      if (r >= from) dirtyRows.add(r)
+    }
+    return { bad, dirty: dirtyRows, ref, need } satisfies Record<QuickFilter, Set<number>>
+  }, [struct.problems, dirty, from])
+  const baseOrder = view?.order
+  const order = useMemo(
+    () =>
+      !baseOrder || !quick.length ? (baseOrder ?? []) : baseOrder.filter((r) => quick.some((q) => quickRows[q].has(r))),
+    [baseOrder, quick, quickRows],
+  )
+  // 引用列「ID · 名称」：按被引用表里的名字列查
+  const refNameOf = useMemo(() => {
+    if (!refNames) return null
+    const m = new Map<string, Map<string, string>>()
+    for (const [ref, opts] of struct.refOpts)
+      m.set(ref, new Map(opts.flatMap((o) => (o.desc ? [[o.name, o.desc]] : []))))
+    return m
+  }, [refNames, struct.refOpts])
   /** 新增枚举值：记进结构文件 */
   const addEnumValue = (name: string, value: string) => {
     const e = schema.enums[name] ?? { values: [] }
@@ -224,7 +310,7 @@ export function TableView({
     rows: rows ?? [],
     cols: Math.max(1, rows ? colCount(rows) : 1),
     from: view?.from ?? 0,
-    order: view?.order ?? [],
+    order,
     readOnly,
     onCells: setCells,
     onUndo: () => onEdits(undoIn),
@@ -269,11 +355,18 @@ export function TableView({
     },
     mark: (r, c) => {
       const k = `${r}:${c}`
+      const data = r >= (view?.from ?? 0)
+      const info = data ? struct.infos[c] : undefined
+      const v = info ? (rows?.[r]?.[c] ?? '') : ''
       const cls = [
         dirty.has(k) && 'sheet-dirty',
         struct.problemAt.has(k) && 'sheet-bad',
         // 没字段名的备注列：灰字，不检查
-        r >= (view?.from ?? 0) && struct.infos[c]?.remark && 'sheet-remark',
+        info?.remark && 'sheet-remark',
+        // 引用：虚下划线（Ctrl+点击跳过去）；枚举：悬停出下拉箭头；必填空着：斜线底纹
+        info?.ref && v && 'sheet-ref',
+        info?.enumName && !readOnly && 'sheet-enum',
+        info?.required && !v.trim() && 'sheet-need',
       ]
         .filter(Boolean)
         .join(' ')
@@ -282,6 +375,32 @@ export function TableView({
     tip: (r, c) => struct.problemAt.get(`${r}:${c}`),
     hiddenCol: (c) => hiddenSet.has(c),
     onFind: () => setFinding({ sel: grid.selection() }),
+    onFindBar: () => setFindMode('find'),
+    onGoto: () => setFindMode('goto'),
+    onHelp: () => setHelpOpen(true),
+    onInsertAbove: (r) => insertRow(Math.max(r, view?.from ?? 0)),
+    onDeleteRows: (rs) =>
+      sheet &&
+      rs.length &&
+      onEdits((e) =>
+        rowOpsIn(
+          e,
+          sheet,
+          rs.map((r) => ({ at: r, n: -1 })),
+        ),
+      ),
+    display: refNameOf
+      ? (r, c, text) => {
+          const info = r >= (view?.from ?? 0) ? struct.infos[c] : undefined
+          const names = info?.ref ? refNameOf.get(info.ref) : undefined
+          if (!names?.size) return text
+          const one = (v: string) => {
+            const n = names.get(v.trim())
+            return n ? `${v.trim()} · ${n}` : v
+          }
+          return info!.list ? text.split(info!.sep).map(one).join(`${info!.sep} `) : one(text)
+        }
+      : undefined,
     rowMenu: readOnly
       ? undefined
       : (r, trigger) => (
@@ -306,7 +425,8 @@ export function TableView({
   const [hit, setHit] = useState<CellHit[]>([])
   const { go } = grid
   useEffect(() => {
-    if (!jump || jump.sheet !== sheet?.name) return
+    // sheet 空着（导表输出里只写了「文件:行」）就是当前这张表
+    if (!jump || (jump.sheet && jump.sheet !== sheet?.name)) return
     setHit([{ row: jump.row, col: jump.col }])
     go({ row: jump.row, col: jump.col })
   }, [jump, sheet?.name, go])
@@ -320,6 +440,14 @@ export function TableView({
   if (!sheet || !rows || !view) return <p className="p-6 text-body text-subtle">{t('这个文件里没有工作表')}</p>
   const canUndo = !!edits?.undo.length
   const canRedo = !!edits?.redo.length
+  const pendingCount = pending.reduce((n, p) => n + p.cells.length + p.rows.length, 0)
+  const sel = grid.selection()
+  const scrollLayers = [
+    { rows: quickRows.dirty, color: '--c-grid-edited' },
+    { rows: findHits.map((h) => h.row), color: '--warning' },
+    { rows: quickRows.bad, color: '--danger' },
+  ]
+  const focusInfo = grid.focus ? struct.infos[grid.focus.col] : undefined
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {doc.sheets.length > 1 && <SheetTabs sheets={doc.sheets} index={index} onChange={onSheet} />}
@@ -386,110 +514,233 @@ export function TableView({
       <SheetHeaderBar
         view={view}
         rows={rows}
+        presets={styleHeaders(schema.style)}
+        compact
         where={t('记在项目的表格结构文件里（项目设置 → 表格），表格文件一个字节都不改。')}
       >
-        {layout.hidden.length > 0 && (
+        <ToolGroup label={t('查看')} first>
+          {layout.hidden.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-accent-text"
+              title={t('列名上右键可以隐藏列、冻结列')}
+              onClick={() => setLayout({ ...layout, hidden: [] })}
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+              {t('隐藏了 {n} 列 · 全部显示', { n: layout.hidden.length })}
+            </Button>
+          )}
+          <IconButton
+            icon={PanelTop}
+            label={t('编辑栏：看全、修改长文本')}
+            aria-pressed={editBar}
+            className={cn(editBar && 'bg-active text-fg')}
+            onClick={() => setEditBar(!editBar)}
+          />
+          {struct.refOpts.size > 0 && (
+            <IconButton
+              icon={Tags}
+              label={t('引用列显示「ID · 名称」（文件里存的还是 ID）')}
+              aria-pressed={refNames}
+              className={cn(refNames && 'bg-active text-fg')}
+              onClick={() => setRefNames(!refNames)}
+            />
+          )}
+          <Menu>
+            <MenuTrigger asChild>
+              <IconButton icon={Rows3} label={t('行高')} />
+            </MenuTrigger>
+            <MenuContent>
+              <MenuRadioGroup value={density} onValueChange={(v) => setDensity(v as Density)}>
+                <MenuRadioItem value="compact">{t('紧凑（22px）')}</MenuRadioItem>
+                <MenuRadioItem value="normal">{t('标准（跟着设置）')}</MenuRadioItem>
+                <MenuRadioItem value="loose">{t('宽松（32px）')}</MenuRadioItem>
+              </MenuRadioGroup>
+            </MenuContent>
+          </Menu>
+          <IconButton icon={Keyboard} label={t('快捷键（F1）')} onClick={() => setHelpOpen(true)} />
+          <ColumnSetup
+            info={grid.focus ? struct.infos[grid.focus.col] : undefined}
+            file={doc.path}
+            schema={schema}
+            files={files}
+            fields={struct.infos.map((i) => i.field)}
+            onSchema={onSchema}
+          />
+        </ToolGroup>
+        <ToolGroup label={t('数据')}>
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-accent-text"
-            title={t('列名上右键可以隐藏列、冻结列')}
-            onClick={() => setLayout({ ...layout, hidden: [] })}
+            className={cn('sheet-tool h-7', struct.problems.length > 0 && 'text-danger')}
+            title={struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
+            aria-pressed={checkOpen}
+            onClick={() => setCheckOpen((o) => !o)}
           >
-            <EyeOff className="h-3.5 w-3.5" />
-            {t('隐藏了 {n} 列 · 全部显示', { n: layout.hidden.length })}
+            <ListChecks className="h-3.5 w-3.5" />
+            {struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
           </Button>
-        )}
-        <ColumnSetup
-          info={grid.focus ? struct.infos[grid.focus.col] : undefined}
-          file={doc.path}
-          schema={schema}
-          files={files}
-          fields={struct.infos.map((i) => i.field)}
-          onSchema={onSchema}
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="sheet-tool h-7"
-          title={t('版本')}
-          onClick={() => setHistOpen(true)}
-        >
-          <History className="h-3.5 w-3.5" />
-          {t('版本')}
-        </Button>
-        {!readOnly && (
           <Button
             size="sm"
             variant="ghost"
             className="sheet-tool h-7"
-            title={t('查找替换（Ctrl+H）')}
-            onClick={() => setFinding({ sel: grid.selection() })}
+            title={t('枚举')}
+            onClick={() => setEnumsOpen('')}
           >
-            <Replace className="h-3.5 w-3.5" />
-            {t('替换')}
+            <BookA className="h-3.5 w-3.5" />
+            {t('枚举')}
           </Button>
-        )}
+          <IconButton icon={Search} label={t('查找（Ctrl+F）')} onClick={() => setFindMode('find')} />
+          {!readOnly && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="sheet-tool h-7"
+              title={t('查找替换（Ctrl+H）')}
+              onClick={() => setFinding({ sel: grid.selection() })}
+            >
+              <Replace className="h-3.5 w-3.5" />
+              {t('替换')}
+            </Button>
+          )}
+        </ToolGroup>
+        <ToolGroup label={t('版本')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="sheet-tool h-7"
+            title={t('版本')}
+            onClick={() => setHistOpen(true)}
+          >
+            <History className="h-3.5 w-3.5" />
+            {t('版本')}
+          </Button>
+          {!readOnly && (
+            <SubmitButton
+              projectId={projectId}
+              doc={doc}
+              schema={schema}
+              problems={struct.problems.length}
+              status={vcs}
+              dirty={pending.length > 0}
+              onDone={refreshVcs}
+            />
+          )}
+          <ExportMenu
+            exports={exports}
+            onRun={onExport}
+            onSave={(kind) => {
+              const base = `${doc.path.replace(/^.*\//, '').replace(/\.[^.]+$/, '')}${doc.sheets.length > 1 ? `-${sheet.name}` : ''}`
+              if (kind === 'csv') saveText(`${base}.csv`, sheetCsv(rows), 'text/csv;charset=utf-8')
+              else saveText(`${base}.json`, sheetJson(rows, view.from, struct.infos), 'application/json')
+            }}
+            onImport={readOnly ? undefined : () => setImporting(true)}
+          />
+        </ToolGroup>
+        <ToolGroup label="AI">
+          <AiMenu
+            projectId={projectId}
+            doc={doc}
+            sheet={sheet.name}
+            field={grid.focus && grid.focus.row >= view.from ? (struct.infos[grid.focus.col]?.field ?? '') : ''}
+            problems={struct.problems.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' }))}
+            readOnly={readOnly}
+            onProposal={refreshProposal}
+          />
+        </ToolGroup>
         {!readOnly && (
-          <SubmitButton projectId={projectId} doc={doc} status={vcs} dirty={pending.length > 0} onDone={refreshVcs} />
-        )}
-        <ExportMenu
-          exports={exports}
-          onRun={onExport}
-          onSave={(kind) => {
-            const base = `${doc.path.replace(/^.*\//, '').replace(/\.[^.]+$/, '')}${doc.sheets.length > 1 ? `-${sheet.name}` : ''}`
-            if (kind === 'csv') saveText(`${base}.csv`, sheetCsv(rows), 'text/csv;charset=utf-8')
-            else saveText(`${base}.json`, sheetJson(rows, view.from, struct.infos), 'application/json')
-          }}
-          onImport={readOnly ? undefined : () => setImporting(true)}
-        />
-        <AiMenu
-          projectId={projectId}
-          doc={doc}
-          sheet={sheet.name}
-          field={grid.focus && grid.focus.row >= view.from ? (struct.infos[grid.focus.col]?.field ?? '') : ''}
-          problems={struct.problems.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' }))}
-          readOnly={readOnly}
-          onProposal={refreshProposal}
-        />
-        <Button size="sm" variant="ghost" className="sheet-tool h-7" title={t('枚举')} onClick={() => setEnumsOpen('')}>
-          <BookA className="h-3.5 w-3.5" />
-          {t('枚举')}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className={cn('sheet-tool h-7', struct.problems.length > 0 && 'text-danger')}
-          title={struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
-          aria-pressed={checkOpen}
-          onClick={() => setCheckOpen((o) => !o)}
-        >
-          <ListChecks className="h-3.5 w-3.5" />
-          {struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
-        </Button>
-        {!readOnly && (
-          <span className="flex shrink-0 items-center gap-0.5">
+          <ToolGroup label={t('编辑')}>
             <IconButton icon={Undo2} label={t('撤销（Ctrl+Z）')} disabled={!canUndo} onClick={() => onEdits(undoIn)} />
             <IconButton icon={Redo2} label={t('重做（Ctrl+Y）')} disabled={!canRedo} onClick={() => onEdits(redoIn)} />
             <IconButton icon={Plus} label={t('在末尾加一行')} onClick={() => insertRow(rows.length)} />
             <Button
               size="sm"
-              className="ml-1 h-7"
-              variant={pending.length ? 'primary' : 'ghost'}
-              disabled={!pending.length}
+              className="relative ml-1 h-7"
+              variant={pendingCount ? 'primary' : 'ghost'}
+              disabled={!pendingCount}
               onClick={() => setSaving(true)}
+              aria-label={t('保存')}
               title={t('保存（Ctrl+S）')}
             >
               <Save className="h-3.5 w-3.5" />
               {t('保存')}
+              {pendingCount > 0 && <span className="tabular-nums opacity-80">{pendingCount}</span>}
+              {pendingCount > 0 && struct.problems.length > 0 && (
+                <span
+                  aria-label={t('有不合规的格子')}
+                  className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-danger ring-2 ring-(--c-modal-bg)"
+                />
+              )}
             </Button>
-          </span>
+          </ToolGroup>
         )}
       </SheetHeaderBar>
+      {findMode && (
+        <TableFindBar
+          mode={findMode}
+          onMode={setFindMode}
+          rows={rows}
+          from={view.from}
+          order={order}
+          cols={colCount(rows)}
+          hidden={hiddenSet}
+          focusCol={grid.focus?.col}
+          colName={(c) => struct.infos[c]?.field || colLetter(c)}
+          keyName={keyCol >= 0 ? struct.infos[keyCol].field : undefined}
+          findKey={(k) => {
+            for (let r = view.from; r < rows.length; r++) if ((rows[r]?.[keyCol] ?? '').trim() === k) return r
+            return -1
+          }}
+          onGo={(row, col) => grid.go({ row, col })}
+          onHits={setFindHits}
+          onClose={() => {
+            setFindMode(null)
+            grid.box.current?.focus({ preventScroll: true })
+          }}
+        />
+      )}
+      {editBar && (
+        <TableEditBar
+          at={
+            grid.focus
+              ? `${colLetter(grid.focus.col)}${grid.focus.row + 1}${focusInfo?.field ? ` · ${focusInfo.field}` : ''}`
+              : ''
+          }
+          value={grid.focus ? (rows[grid.focus.row]?.[grid.focus.col] ?? '') : ''}
+          rule={grid.focus && grid.focus.row >= view.from ? ruleText(focusInfo) : ''}
+          readOnly={readOnly}
+          onCommit={(v) => grid.focus && setCells([{ r: grid.focus.row, c: grid.focus.col, v }])}
+          onDone={() => grid.box.current?.focus({ preventScroll: true })}
+        />
+      )}
+      <TableQuickFilter
+        value={quick}
+        onChange={setQuick}
+        counts={{
+          bad: quickRows.bad.size,
+          dirty: quickRows.dirty.size,
+          ref: quickRows.ref.size,
+          need: quickRows.need.size,
+        }}
+        views={views}
+        onViews={setViews}
+        current={{ filters: view.filters, sort: view.sort, quick }}
+        onApply={(v) => {
+          view.setAll(v.filters, v.sort)
+          setQuick(v.quick)
+        }}
+      />
       <CellMenu
         at={(e) => {
           const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
-          return el ? { r: Number(el.dataset.r), c: Number(el.dataset.c) } : null
+          if (!el) return null
+          const r = Number(el.dataset.r)
+          const c = Number(el.dataset.c)
+          // 右键选区外的格子先选中它（和 Excel 一样），批量修改、让 AI 改才按眼前这一格算
+          const s = grid.selection()
+          if (!s || !s.rows.includes(r) || !s.cols.includes(c)) grid.go({ row: r, col: c })
+          return { r, c }
         }}
         opts={({ r, c }) => {
           const info = r >= view.from ? struct.infos[c] : undefined
@@ -518,30 +769,60 @@ export function TableView({
         }}
         onFill={grid.fill}
         onFind={() => setFinding({ sel: grid.selection() })}
+        onStats={({ c }) => setStatsCol(c)}
+        onBatch={() => {
+          const s = dataSel()
+          if (s) setBatch(s.rows.flatMap((r) => s.cols.map((c) => ({ r, c }))))
+        }}
+        onAiRegion={() => setAiRegion(dataSel())}
       >
-        <div
-          ref={grid.box}
-          tabIndex={0}
-          aria-label={t('表格内容')}
-          onKeyDown={grid.onKeyDown}
-          onPaste={grid.onPaste}
-          className="thin-scroll min-h-0 flex-1 overflow-auto outline-none"
-        >
-          <SheetTable
-            rows={rows}
-            scrollEl={grid.box}
-            hits={hit}
-            header={view.header}
-            order={view.order}
-            filters={view.filters}
-            sort={view.sort}
-            onFilter={view.setFilter}
-            onSort={view.setSort}
-            edit={grid.edit}
-            fill
-            widthKey={`${projectId}:${fileKey}`}
-            layout={layout}
-            onLayout={setLayout}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={grid.box}
+            tabIndex={0}
+            aria-label={t('表格内容')}
+            onKeyDown={grid.onKeyDown}
+            onPaste={grid.onPaste}
+            onMouseDownCapture={(e) => {
+              // Ctrl / ⌘ + 点击引用格：跳到被引用的那一行（不改选中）
+              if (!(e.ctrlKey || e.metaKey)) return
+              const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
+              if (!el) return
+              const r = Number(el.dataset.r)
+              const info = r >= view.from ? struct.infos[Number(el.dataset.c)] : undefined
+              const v = (rows[r]?.[Number(el.dataset.c)] ?? '').trim()
+              if (!info?.ref || !v) return
+              e.preventDefault()
+              e.stopPropagation()
+              onRefJump(info.ref, info.list ? (v.split(info.sep)[0] ?? '').trim() : v)
+            }}
+            className="thin-scroll h-full overflow-auto outline-none"
+          >
+            <SheetTable
+              colHead={(c) => colHeads[c]}
+              headCollapsed={headCollapsed}
+              rowHeight={DENSITY_ROW_H[density]}
+              onHeadCollapse={setHeadCollapsed}
+              rows={rows}
+              scrollEl={grid.box}
+              hits={findHits.length ? findHits : hit}
+              header={view.header}
+              order={order}
+              filters={view.filters}
+              sort={view.sort}
+              onFilter={view.setFilter}
+              onSort={view.setSort}
+              edit={grid.edit}
+              fill
+              widthKey={`${projectId}:${fileKey}`}
+              layout={layout}
+              onLayout={setLayout}
+            />
+          </div>
+          <ScrollMarks
+            order={order}
+            layers={scrollLayers}
+            onJump={(row) => grid.go({ row, col: grid.focus?.col ?? Math.max(0, keyCol) })}
           />
         </div>
       </CellMenu>
@@ -588,8 +869,62 @@ export function TableView({
         <ProblemsBar
           problems={struct.problems}
           infos={struct.infos}
+          rows={rows}
+          onFix={readOnly ? undefined : setCells}
+          onAi={
+            readOnly
+              ? undefined
+              : (ps) =>
+                  aiFixProblems(
+                    projectId,
+                    doc,
+                    sheet.name,
+                    ps.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' })),
+                    refreshProposal,
+                  )
+          }
           onPick={(p) => grid.go({ row: p.r, col: p.c })}
           onClose={() => setCheckOpen(false)}
+        />
+      )}
+      <TableStatusBar
+        cell={
+          grid.focus
+            ? `${colLetter(grid.focus.col)}${grid.focus.row + 1}${focusInfo?.field ? ` · ${focusInfo.field}` : ''}`
+            : ''
+        }
+        header={headerSummary(view)}
+        stats={selectionStats(rows, sel)}
+        shown={order.length}
+        total={Math.max(0, rows.length - view.from)}
+        problems={struct.problems.length}
+        onProblems={() => setCheckOpen(true)}
+        pending={pendingCount}
+        kind={doc.kind}
+        readOnly={readOnly}
+      />
+      {helpOpen && <ShortcutsHelp open onOpenChange={setHelpOpen} first="tables" />}
+      {statsCol !== null && struct.infos[statsCol] && (
+        <ColumnStatsDialog
+          rows={rows}
+          from={view.from}
+          info={struct.infos[statsCol]}
+          file={doc.path}
+          schema={schema}
+          onSchema={onSchema}
+          onClose={() => setStatsCol(null)}
+        />
+      )}
+      {batch && <BatchEditDialog rows={rows} cells={batch} onApply={setCells} onClose={() => setBatch(null)} />}
+      {aiRegion && (
+        <AiRegionDialog
+          projectId={projectId}
+          doc={doc}
+          sheet={sheet.name}
+          rows={aiRegion.rows}
+          fields={aiRegion.cols.map((c) => struct.infos[c]?.field || colLetter(c))}
+          onProposal={refreshProposal}
+          onClose={() => setAiRegion(null)}
         />
       )}
       {enumsOpen !== null && (

@@ -26,6 +26,8 @@ import { ChipGroup } from '@/components/ui/chip-group'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { IconButton } from '@/components/ui/icon-button'
 import { Field, Input, Select, Textarea } from '@/components/ui/input'
+import { sortByIdle } from '@shared/knowledge-hits'
+import { HitMeta, KnowledgeSortChips, useKnowledgeHits, type KnowledgeSort } from './KnowledgeHits'
 
 /** 输入框里的列表：逗号、顿号、换行都能分隔（路径里可能有空格，不按空格拆） */
 const splitList = (s: string) =>
@@ -61,6 +63,8 @@ export function ProjectExperience({
   const [adding, setAdding] = useState(false)
   const [review, setReview] = useState<ExperienceReviewView>()
   const [reviewing, setReviewing] = useState(false)
+  const hits = useKnowledgeHits(projectId)
+  const [sort, setSort] = useState<KnowledgeSort>('default')
   useEffect(() => {
     experienceApi
       .list(projectId)
@@ -76,7 +80,9 @@ export function ProjectExperience({
     () => (query ? items.filter((e) => query.split(/\s+/).every((w) => experienceHaystack(e).includes(w))) : items),
     [items, query],
   )
-  const shown = kind === 'all' ? matched : matched.filter((e) => e.kind === kind)
+  const byKind = kind === 'all' ? matched : matched.filter((e) => e.kind === kind)
+  // 清理时按「很久没用上」排：最久没命中的、从没命中的在前（命中记录见 shared/knowledge-hits.ts）
+  const shown = sort === 'idle' && hits ? sortByIdle(byKind, hits.experience) : byKind
   // 对话里的经验卡片读同一份缓存：这里改了，卡片跟着变
   const setItems = (next: Experience[]) => {
     setData((d) => (d ? { ...d, items: next } : d))
@@ -185,20 +191,23 @@ export function ProjectExperience({
         </div>
       )}
       {items.length > 0 && (
-        <ChipGroup
-          label={t('按种类筛选')}
-          size="sm"
-          value={kind}
-          onChange={setKind}
-          options={[
-            { id: 'all' as KindTab, label: t('全部'), trailing: matched.length },
-            ...EXPERIENCE_KINDS.map((k) => ({
-              id: k as KindTab,
-              label: kindLabel(k),
-              trailing: matched.filter((e) => e.kind === k).length,
-            })),
-          ]}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <ChipGroup
+            label={t('按种类筛选')}
+            size="sm"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { id: 'all' as KindTab, label: t('全部'), trailing: matched.length },
+              ...EXPERIENCE_KINDS.map((k) => ({
+                id: k as KindTab,
+                label: kindLabel(k),
+                trailing: matched.filter((e) => e.kind === k).length,
+              })),
+            ]}
+          />
+          {hits && <KnowledgeSortChips value={sort} onChange={setSort} />}
+        </div>
       )}
       {items.length === 0 && !adding && (
         <EmptyPanel size="sm" className="text-xs leading-relaxed">
@@ -235,6 +244,7 @@ export function ProjectExperience({
                       {e.keywords.length > 0 && (
                         <span className="shrink-0 truncate">{e.keywords.map((x) => `#${x}`).join(' ')}</span>
                       )}
+                      {hits && <HitMeta hit={hits.experience[e.id]} stale={hits.stale.experience[e.id]} />}
                     </span>
                   </span>
                   <Badge className="shrink-0 text-caption">{kindLabel(e.kind)}</Badge>

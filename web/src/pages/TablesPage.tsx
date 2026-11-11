@@ -4,6 +4,7 @@ import { t } from '@shared/i18n'
 import type { TableDoc, TableHit, TableSchema, TableSearch, TablesIndex } from '@shared/tables'
 import { useNav } from '@/lib/data'
 import { tablesApi } from '@/lib/tables-api'
+import { putTableSchema, useTableSchema } from '@/lib/table-schema'
 import { rememberTablesProject, useTablesEntry, useTablesProjects } from '@/lib/tables-nav'
 import { toast, toastError } from '@/lib/toast'
 import { parseRef } from '@shared/table-struct'
@@ -13,7 +14,6 @@ import { EmptyPanel } from '@/components/ui/empty-panel'
 import { IconButton } from '@/components/ui/icon-button'
 import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
-import { Button } from '@/components/ui/button'
 import { TableTree } from '@/components/tables/TableTree'
 import { TableQuick } from '@/components/tables/TableQuick'
 import { useTableMarks } from '@/components/tables/use-table-marks'
@@ -25,11 +25,15 @@ import { TableView, type TableJump } from '@/components/tables/TableView'
 import { noEdits, pendingOf, setCellsIn, type Edits } from '@/components/tables/table-edits'
 import { useExternalChange } from '@/components/tables/use-external-change'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { TableExportDialog } from '@/components/tables/TableExportDialog'
+import { KEEP_RUNS, TableOutputPanel, type ExportRunInfo } from '@/components/tables/TableOutput'
+import { TableSkeleton, TablesSetupCard } from '@/components/tables/TableEmpty'
 import type { SheetEdit } from '@shared/table-edit'
 import type { TableExport } from '@shared/table-export'
 
 type Mode = 'name' | 'content' | 'check'
+
+/** 切回表格页时，文件列表超过这么久没读就在后台再读一次 */
+const STALE_MS = 60_000
 
 /**
  * 表格页（项目设置 → 表格设了目录才有入口）：左边文件树和搜索（名字 / 内容），右边打开的表格。
@@ -39,27 +43,21 @@ export function TablesPage() {
   const { route, go, openProject } = useNav()
   const projects = useTablesProjects()
   const fallback = useTablesEntry()
-  const projectId = projects.some((p) => p.id === route.id) ? route.id! : fallback
+  // 切到别的页面时表格页不卸载（App 里留着、只是藏起来），这时的 route 是别的页面的：项目照旧用上次的，不跟着变
+  const shown = route.page === 'tables'
+  const last = useRef('')
+  const picked = projects.some((p) => p.id === route.id) ? route.id! : fallback
+  const projectId = shown || !last.current ? picked : last.current
+  if (shown) last.current = projectId
   useEffect(() => {
     if (projectId) rememberTablesProject(projectId)
   }, [projectId])
 
-  if (!projectId)
-    return (
-      <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-        <EmptyPanel as="div" className="flex max-w-md flex-col items-center gap-3">
-          {t('还没有项目设置表格目录。在项目设置 → 表格里填上配置表所在的目录，这里就会列出来。')}
-          {projects.length === 0 && (
-            <Button size="sm" variant="secondary" onClick={() => go({ page: 'home' })}>
-              {t('回到主页')}
-            </Button>
-          )}
-        </EmptyPanel>
-      </main>
-    )
+  if (!projectId) return <TablesSetupCard />
   return (
     <Workbench
       key={projectId}
+      shown={shown}
       projectId={projectId}
       projects={projects.map((p) => ({ value: p.id, label: p.name }))}
       exports={projects.find((p) => p.id === projectId)?.tables?.exports ?? []}
@@ -71,12 +69,15 @@ export function TablesPage() {
 
 /** 一个项目的表格工作台；换项目时整个重建（key），打开的文件、搜索都清掉 */
 function Workbench({
+  shown,
   projectId,
   projects,
   onProject,
   onSettings,
   exports,
 }: {
+  /** 表格页正在显示；切到别的页面时藏起来但不卸载，回来时不重新加载 */
+  shown: boolean
   projectId: string
   projects: { value: string; label: string }[]
   /** 项目设置里的导表脚本 */
@@ -86,7 +87,11 @@ function Workbench({
 }) {
   const [index, setIndex] = useState<TablesIndex | null>(null)
   const [indexError, setIndexError] = useState('')
-  const [schema, setSchema] = useState<TableSchema | null>(null)
+  // 结构文件和项目设置共用一份：在设置里改了表头、应用了 AI 分析，表格页马上按新的显示
+  const { schema, error: schemaError } = useTableSchema(projectId)
+  useEffect(() => {
+    if (schemaError) toast.error(schemaError)
+  }, [schemaError])
   const [mode, setMode] = useState<Mode>('name')
   /** 存了表格或结构文件后加一：「检查」重新查 */
   const [checkSeq, setCheckSeq] = useState(0)
@@ -104,9 +109,12 @@ function Workbench({
   // 搜索跳转时文件还没读到：记下要切的表，读到后再切
   const pendingSheet = useRef<{ path: string; sheet: string } | null>(null)
 
+  /** 上次读表格目录的时间：切回来时太久没读才在后台悄悄再读一次（懒刷新） */
+  const loadedAt = useRef(0)
   const reload = useCallback(
     (fresh = false) => {
       setIndexError('')
+      loadedAt.current = Date.now()
       tablesApi
         .list(projectId, fresh)
         .then(setIndex)
@@ -114,12 +122,14 @@ function Workbench({
     },
     [projectId],
   )
+  // 从别的页面切回来：页面状态都还在，不重新加载；离上次读目录超过 STALE_MS 才在后台悄悄更新文件列表（不清空、不转圈）
+  const wasShown = useRef(shown)
+  useEffect(() => {
+    if (shown && !wasShown.current && Date.now() - loadedAt.current > STALE_MS) reload(true)
+    wasShown.current = shown
+  }, [shown, reload])
   useEffect(() => {
     reload()
-    tablesApi
-      .schema(projectId)
-      .then(setSchema)
-      .catch((e) => toast.error((e as Error).message))
   }, [projectId, reload])
 
   const load = useCallback(
@@ -161,6 +171,23 @@ function Workbench({
     if (active === path) setActive(rest[Math.min(i, rest.length - 1)] ?? '')
     setDocs(({ [path]: _, ...m }) => m)
   }
+  /** 一次关几个：有没保存改动的留着（要一个个确认），其它的关掉 */
+  const closeMany = (ps: string[]) => {
+    const go = ps.filter((p) => !dirtyPaths.has(p))
+    if (go.length < ps.length) toast(t('有没保存改动的页签留着了'))
+    if (!go.length) return
+    const drop = new Set(go)
+    setEdits((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !drop.has(k))))
+    setDocs((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !drop.has(k))))
+    const rest = tabs.filter((p) => !drop.has(p))
+    setTabs(rest)
+    if (drop.has(active)) setActive(rest[rest.length - 1] ?? '')
+  }
+  const readOnlyPaths = new Set(
+    Object.entries(docs).flatMap(([p, d]) => (d && 'sheets' in d && (d.readOnly || d.kind === 'xls') ? [p] : [])),
+  )
+  // 上次全项目检查的结果：文件树上每个文件标不合规数
+  const [problemCounts, setProblemCounts] = useState<Map<string, number>>(() => new Map())
   const openHit = (h: TableHit) => {
     open(h.path)
     const doc = docs[h.path]
@@ -200,7 +227,8 @@ function Workbench({
   // 被外面改过、页面上又有没保存改动的文件：表格上方提示，用户决定怎么办
   const [stale, setStale] = useState<Record<string, true>>({})
   const activeDoc = active ? docs[active] : undefined
-  useExternalChange(projectId, activeDoc && 'sheets' in activeDoc ? activeDoc : undefined, busy, (path) => {
+  // 藏起来（切到别的页面）时不看外部改动，切回来再接着看
+  useExternalChange(projectId, shown && activeDoc && 'sheets' in activeDoc ? activeDoc : undefined, busy, (path) => {
     const d = docs[path]
     if (d && 'sheets' in d && pendingOf(edits[path], d.sheets).length) return setStale((m) => ({ ...m, [path]: true }))
     // 没有没保存的改动：直接载入新内容
@@ -244,6 +272,8 @@ function Workbench({
       setCheckSeq((n) => n + 1)
       setStale(({ [doc.path]: _, ...m }) => m)
       toast.success(t('已保存 {name}', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
+      // 导表脚本勾了「保存后自动导」：对这张表跑一次（刚存完，没有没保存的改动）
+      exports.forEach((x, i) => x.onSave && runExport(i, [doc.path], 0))
       return null
     } catch (e) {
       return (e as Error).message
@@ -274,12 +304,23 @@ function Workbench({
       })
       .catch(toastError)
   }
-  // 正在执行的导表：第几个脚本、哪些表
-  const [exporting, setExporting] = useState<{ index: number; paths: string[]; seq: number } | null>(null)
-  const runExport = (index: number, paths: string[]) => setExporting((x) => ({ index, paths, seq: (x?.seq ?? 0) + 1 }))
+  // 导表：每次执行进底部「输出」面板，留最近 20 次；新的一次自动展开面板并切过去
+  const [runs, setRuns] = useState<ExportRunInfo[]>([])
+  const [curRun, setCurRun] = useState(0)
+  const [outOpen, setOutOpen] = useState(true)
+  const runSeq = useRef(0)
+  const runExport = (index: number, paths: string[], dirtyNow?: number) => {
+    const script = exports[index]
+    if (!script) return
+    const id = ++runSeq.current
+    const dirty = dirtyNow ?? paths.filter((p) => dirtyPaths.has(p)).length
+    setRuns((rs) => [...rs, { id, index, script, paths, dirty, at: Date.now() }].slice(-KEEP_RUNS))
+    setCurRun(id)
+    setOutOpen(true)
+  }
   const saveSchema = useCallback(
     (s: TableSchema) => {
-      setSchema(s)
+      putTableSchema(projectId, s)
       tablesApi
         .saveSchema(projectId, s)
         .then(() => setCheckSeq((n) => n + 1))
@@ -366,6 +407,8 @@ function Workbench({
               query={query}
               active={active}
               dirty={dirtyPaths}
+              problems={problemCounts}
+              readOnly={readOnlyPaths}
               onOpen={open}
               exports={exports}
               onExport={runExport}
@@ -375,7 +418,17 @@ function Workbench({
             />
           </>
         ) : mode === 'check' ? (
-          <TableCheckList projectId={projectId} query={query} seq={checkSeq} onOpen={openHit} />
+          <TableCheckList
+            projectId={projectId}
+            query={query}
+            seq={checkSeq}
+            onOpen={openHit}
+            onResult={(r) => {
+              const m = new Map<string, number>()
+              for (const g of r.sheets) m.set(g.path, (m.get(g.path) ?? 0) + g.count)
+              setProblemCounts(m)
+            }}
+          />
         ) : (
           <TableHits
             result={search.result}
@@ -388,13 +441,37 @@ function Workbench({
       </ListPane>
       <main className="flex min-h-[60vh] min-w-0 flex-1 flex-col md:h-full md:min-h-0">
         {tabs.length > 0 && (
-          <TableTabs paths={tabs} active={active} dirty={dirtyPaths} onPick={setActive} onClose={(p) => close(p)} />
+          <TableTabs
+            paths={tabs}
+            active={active}
+            dirty={dirtyPaths}
+            readOnly={readOnlyPaths}
+            onPick={setActive}
+            onClose={(p) => close(p)}
+            onCloseMany={closeMany}
+            onReorder={setTabs}
+            onLocate={(p) => {
+              setMode('name')
+              setQuery('')
+              setActive(p)
+            }}
+          >
+            <IconButton
+              icon={RefreshCw}
+              label={t('刷新：重新读文件列表和当前表格')}
+              onClick={() => {
+                reload(true)
+                if (!active) return
+                if (dirtyPaths.has(active))
+                  return toast.info(t('当前表格有没保存的改动，只刷新了文件列表；保存或撤销后再刷新'))
+                void reloadDoc(active, false).then(() => toast.success(t('已刷新')))
+              }}
+            />
+          </TableTabs>
         )}
         {!doc ? (
           active ? (
-            <div className="flex flex-1 items-center justify-center text-subtle">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
+            <TableSkeleton />
           ) : (
             <div className="flex flex-1 items-center justify-center p-6">
               <EmptyPanel size="md" className="max-w-sm">
@@ -405,9 +482,7 @@ function Workbench({
         ) : 'error' in doc ? (
           <p className="p-6 text-body text-danger">{doc.error}</p>
         ) : !schema ? (
-          <div className="flex flex-1 items-center justify-center text-subtle">
-            <Loader2 className="h-5 w-5 animate-spin" />
-          </div>
+          <TableSkeleton />
         ) : (
           <TableView
             projectId={projectId}
@@ -444,6 +519,19 @@ function Workbench({
             files={files.map((f) => f.path)}
           />
         )}
+        {runs.length > 0 && (
+          <TableOutputPanel
+            projectId={projectId}
+            runs={runs}
+            current={curRun}
+            onCurrent={setCurRun}
+            open={outOpen}
+            onOpen={setOutOpen}
+            onClose={() => setRuns([])}
+            files={files.map((f) => f.path)}
+            onLoc={(l) => openHit({ path: l.path, sheet: l.sheet ?? '', row: l.row ?? 0, col: l.col ?? 0, text: '' })}
+          />
+        )}
       </main>
       {comparing && (
         <TablesCompareDialog
@@ -451,17 +539,6 @@ function Workbench({
           onClose={() => setComparing(false)}
           left={{ id: projectId, name: projects.find((p) => p.value === projectId)?.label ?? '' }}
           projects={others}
-        />
-      )}
-      {exporting && exports[exporting.index] && (
-        <TableExportDialog
-          key={exporting.seq}
-          projectId={projectId}
-          index={exporting.index}
-          script={exports[exporting.index]}
-          paths={exporting.paths}
-          dirty={exporting.paths.filter((p) => dirtyPaths.has(p)).length}
-          onClose={() => setExporting(null)}
         />
       )}
       <ConfirmDialog

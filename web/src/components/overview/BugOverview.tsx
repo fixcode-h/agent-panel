@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Bug, Check, Gauge, ListChecks, MessagesSquare, Target, type LucideIcon } from 'lucide-react'
+import { Bug, Check, Gauge, ListChecks, MessagesSquare, Target } from 'lucide-react'
 import { RATING_TEXT } from '@shared/bug-diagnosis-card'
 import {
   BUG_GROUPS,
@@ -17,6 +17,7 @@ import { timeAgo } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { EmptyPanel } from '@/components/ui/empty-panel'
+import { StatTile } from '@/components/ui/stat-tile'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 
 const GROUP_LABEL: Record<BugGroup, string> = {
@@ -138,7 +139,7 @@ export function BugOverview({
   )
 }
 
-/** 顶上的流程数据：样式和对话视图的四张统计卡片一样（图标块 + 名字 + 大号数字），但只是数字，不能点 */
+/** 顶上的流程数据：统计卡片（StatTile）和对话视图的四张分组卡片样式一样，但只是数字，不能点 */
 function BugStatCards({ s }: { s: BugSummary }) {
   const tiers = RATING_TEXT()
   const stays = BUG_PHASES.flatMap((p) =>
@@ -148,8 +149,8 @@ function BugStatCards({ s }: { s: BugSummary }) {
     <div className="flex flex-col gap-2" data-bug-stats>
       {/* 最后一张要并排放三个等级，比前四张宽一点 */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,1.3fr)]">
-        <Stat
-          id="total"
+        <StatTile
+          data-bug-stat="total"
           icon={Bug}
           tile="bg-accent-soft text-accent-text"
           label={t('Bug 总数')}
@@ -162,8 +163,8 @@ function BugStatCards({ s }: { s: BugSummary }) {
           })}
           short={t('在查 {open} · 修好 {fixed}', { open: s.open, fixed: s.fixed })}
         />
-        <Stat
-          id="first-try"
+        <StatTile
+          data-bug-stat="first-try"
           icon={Target}
           tile="bg-success/12 text-success"
           label={t('一次修好')}
@@ -176,8 +177,8 @@ function BugStatCards({ s }: { s: BugSummary }) {
           }
           short={s.fixed ? undefined : t('还没有修好的')}
         />
-        <Stat
-          id="decisions"
+        <StatTile
+          data-bug-stat="decisions"
           icon={ListChecks}
           tile="bg-warning/12 text-warning"
           label={t('平均确认次数')}
@@ -186,8 +187,8 @@ function BugStatCards({ s }: { s: BugSummary }) {
           note={t('每个 Bug 要你经手几次')}
           short={t('每个 Bug 经手几次')}
         />
-        <Stat
-          id="rounds"
+        <StatTile
+          data-bug-stat="rounds"
           icon={MessagesSquare}
           tile="bg-run-soft text-run"
           label={t('平均论证轮数')}
@@ -230,44 +231,6 @@ function BugStatCards({ s }: { s: BugSummary }) {
         </p>
       )}
     </div>
-  )
-}
-
-function Stat({
-  id,
-  icon: Icon,
-  tile,
-  label,
-  value,
-  note,
-  short,
-  dim,
-}: {
-  id: string
-  icon: LucideIcon
-  tile: string
-  label: string
-  value: string
-  /** 这个数是怎么来的：悬停时显示全文 */
-  note: string
-  /** 数字下面的一行小字放不下全文时写短的；不传就用 note */
-  short?: string
-  /** 没有样本：数字画淡 */
-  dim: boolean
-}) {
-  return (
-    <Card className="flex items-center gap-3 px-4 py-3" data-bug-stat={id} title={note}>
-      <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-lg', tile)}>
-        <Icon className="h-[18px] w-[18px]" />
-      </span>
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-xs text-muted">{label}</span>
-        <span className={cn('text-xl leading-tight font-semibold tabular-nums', dim ? 'text-subtle' : 'text-fg')}>
-          {value}
-        </span>
-        <span className="truncate text-caption text-subtle">{short ?? note}</span>
-      </span>
-    </Card>
   )
 }
 

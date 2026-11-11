@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, FileSpreadsheet, FileText, Folder } from 'lucide-react'
+import { ChevronRight, FileSpreadsheet, FileText, Folder, Lock } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableFile } from '@shared/tables'
 import { exportName, type TableExport } from '@shared/table-export'
@@ -13,7 +13,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/menu'
-import { buildTableTree, type TableNode } from './table-tree'
+import { buildTableTree, middleEllipsis, type TableNode } from './table-tree'
 
 /** 每层缩进 */
 const INDENT = 14
@@ -28,6 +28,8 @@ export function TableTree({
   query,
   active,
   dirty,
+  problems,
+  readOnly,
   onOpen,
   exports = [],
   onExport,
@@ -49,6 +51,10 @@ export function TableTree({
   active?: string
   /** 有没保存改动的文件：名字后面一个点 */
   dirty?: Set<string>
+  /** 上次全项目检查的不合规数：红色小数字 */
+  problems?: Map<string, number>
+  /** 打开过、知道是只读的文件：带锁 */
+  readOnly?: Set<string>
   onOpen: (path: string) => void
 }) {
   const tree = useMemo(() => buildTableTree(files, query), [files, query])
@@ -94,6 +100,8 @@ export function TableTree({
           open={open}
           active={n.path === active}
           dirty={!!dirty?.has(n.path)}
+          problems={problems?.get(n.path) ?? 0}
+          locked={!!readOnly?.has(n.path)}
           onClick={() => (n.file ? onOpen(n.path) : toggle(n.path))}
           onMenu={() => setMenuAt(n)}
         />,
@@ -155,6 +163,8 @@ function TreeRow({
   open,
   active,
   dirty,
+  problems,
+  locked,
   onClick,
   onMenu,
 }: {
@@ -163,6 +173,8 @@ function TreeRow({
   open: boolean
   active: boolean
   dirty: boolean
+  problems: number
+  locked: boolean
   onClick: () => void
   onMenu: () => void
 }) {
@@ -189,9 +201,18 @@ function TreeRow({
         className={cn('h-3 w-3 shrink-0 text-subtle transition-transform', f && 'invisible', open && 'rotate-90')}
       />
       <Icon className={cn('h-3.5 w-3.5 shrink-0', f ? 'text-muted' : 'text-subtle')} />
-      <span className="min-w-0 flex-1 truncate">{node.name}</span>
+      <span className="min-w-0 flex-1 truncate">{f ? middleEllipsis(node.name, 34) : node.name}</span>
+      {problems > 0 && (
+        <span className="shrink-0 text-caption text-danger tabular-nums" title={t('{n} 处不合规', { n: problems })}>
+          {problems}
+        </span>
+      )}
       {dirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有未保存的改动')} />}
-      {f?.kind === 'xls' && <span className="shrink-0 text-caption text-subtle">{t('只读')}</span>}
+      {f?.kind === 'xls' ? (
+        <span className="shrink-0 text-caption text-subtle">{t('只读')}</span>
+      ) : (
+        locked && <Lock aria-label={t('只读')} className="h-3 w-3 shrink-0 text-subtle" />
+      )}
       {!f && <span className="shrink-0 text-caption text-subtle tabular-nums">{node.count}</span>}
     </button>
   )

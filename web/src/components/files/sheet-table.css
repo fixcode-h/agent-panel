@@ -57,16 +57,62 @@
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 .sheet-dirty {
-  background: color-mix(in oklab, var(--c-grid-edited) var(--c-grid-tint), transparent);
+  background: color-mix(in oklab, var(--c-grid-edited) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--c-grid-edited);
 }
+/* 不合规：红色细框 + 右上角一个红色小三角（悬停看原因）；字也标红 */
 .sheet-bad {
-  box-shadow: inset 0 -2px 0 var(--c-grid-invalid);
+  position: relative;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-grid-invalid) 70%, transparent);
   color: var(--c-grid-invalid);
 }
-.sheet-focus.sheet-bad {
+.sheet-bad::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 6px 6px 0;
+  border-color: transparent var(--c-grid-invalid) transparent transparent;
+  pointer-events: none;
+}
+.sheet-dirty.sheet-bad {
   box-shadow:
-    inset 0 0 0 2px var(--accent),
-    inset 0 -3px 0 var(--c-grid-invalid);
+    inset 2px 0 0 var(--c-grid-edited),
+    inset 0 0 0 1px color-mix(in srgb, var(--c-grid-invalid) 70%, transparent);
+}
+.sheet-focus.sheet-bad {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+/* 引用：虚下划线，Ctrl+点击跳到被引用的那一行 */
+.sheet-ref {
+  text-decoration: underline dashed color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+/* 枚举：悬停时右边出一个下拉小箭头（双击、回车改的时候是下拉） */
+.sheet-enum {
+  position: relative;
+}
+.sheet-enum:hover::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  margin-top: -5px;
+  border-right: 1.5px solid var(--subtle);
+  border-bottom: 1.5px solid var(--subtle);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+/* 必填却空着：浅色斜线底纹 */
+.sheet-need {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--c-grid-invalid) 14%, transparent) 0 2px,
+    transparent 2px 7px
+  );
 }
 .sheet-editing {
   box-shadow: inset 0 0 0 2px var(--accent);
@@ -133,7 +179,7 @@
   background: color-mix(in oklab, var(--fg) var(--c-grid-stripe), var(--sheet-bg));
 }
 .sheet-frozen.sheet-dirty {
-  background: color-mix(in oklab, var(--c-grid-edited) var(--c-grid-tint), var(--sheet-bg));
+  background: color-mix(in oklab, var(--c-grid-edited) 10%, var(--sheet-bg));
 }
 .sheet-frozen.sheet-hit {
   background: color-mix(in srgb, var(--warning) 28%, var(--sheet-bg));
@@ -141,9 +187,12 @@
 .sheet-frozen.sheet-sel {
   background: color-mix(in srgb, var(--accent) 12%, var(--sheet-bg));
 }
-/* 冻结区和滚动区之间：一条粗一点的竖线 */
+/* 冻结区和滚动区之间：一条粗一点的竖线，右边一道浅阴影，滚动时看得出哪几列钉住了 */
 .sheet-grid .sheet-frozen-last {
   border-right: 2px solid var(--line-strong);
+}
+.sheet-grid .sheet-frozen-last:not(.sheet-focus):not(.sheet-bad):not(.sheet-dirty) {
+  box-shadow: 4px 0 6px -3px color-mix(in srgb, var(--fg) 16%, transparent);
 }
 
 /*
@@ -153,10 +202,46 @@
 .sheet-bar {
   container-type: inline-size;
 }
-@container (max-width: 1180px) {
+@container (max-width: 860px) {
   .sheet-bar .sheet-tool {
     font-size: 0;
     gap: 0;
     padding-inline: 0.4375rem;
   }
+}
+
+/*
+ * 两行列头（表格页）：上面字段名，下面类型标签。标签颜色跟着表头每种行的颜色走（设置 → 组件 → 数据表格），
+ * 类型 = 类型行色、枚举 = 修饰行色、引用 = 字段名行色、数组 = 导出端行色、必填 = 不合规色
+ */
+.sheet-colhead {
+  font-family: var(--c-grid-font);
+}
+.sheet-tag {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: color-mix(in oklab, var(--tag-hue) 75%, var(--fg));
+  background: color-mix(in oklab, var(--tag-hue) 14%, transparent);
+}
+.sheet-tag-type {
+  --tag-hue: var(--c-grid-type);
+}
+.sheet-tag-enum {
+  --tag-hue: var(--c-grid-modifier);
+}
+.sheet-tag-ref {
+  --tag-hue: var(--c-grid-name);
+}
+.sheet-tag-list {
+  --tag-hue: var(--c-grid-side);
+}
+.sheet-tag-req {
+  --tag-hue: var(--c-grid-invalid);
 }

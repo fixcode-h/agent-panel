@@ -1,4 +1,4 @@
-import type { ShellInfo } from '../shared/shells.ts'
+import { isWindowsPowerShell, psChain, type ShellInfo } from '../shared/shells.ts'
 import { runProcess } from './exec/process.ts'
 
 /**
@@ -27,12 +27,19 @@ export function shellCommand(
     // 登录 shell 才有 Git 的 PATH；CHERE_INVOKING 让它留在当前目录，不跳回 HOME
     case 'gitbash':
       return plain(shell.path, ['-lc', line], { CHERE_INVOKING: '1' })
+    // 7（pwsh）原样跑；系统自带的 5.1 先把输出编码设成 UTF-8（不然中文按 GBK 写出来，面板按 UTF-8 读成乱码），
+    // 再把 && / || 换成它认的写法（psChain）
     case 'powershell':
-      return plain('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', line])
+      return isWindowsPowerShell(shell)
+        ? plain('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `${PS_UTF8}; ${psChain(line)}`])
+        : plain(shell.path, ['-NoProfile', '-NonInteractive', '-Command', line])
     default:
       return { command: 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], windowsVerbatimArguments: true, env: {} }
   }
 }
+
+/** PowerShell 5.1 的输出和交给原生命令的管道都按 UTF-8（和 server/exec/proc-stats.ts 同一句） */
+const PS_UTF8 = '$OutputEncoding=[Text.Encoding]::UTF8;[Console]::OutputEncoding=[Text.Encoding]::UTF8'
 
 export function runShell(
   line: string,

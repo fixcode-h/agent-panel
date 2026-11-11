@@ -11,16 +11,7 @@ import { useTablesEntry } from '@/lib/tables-nav'
 import { toggleActivityBar, useActivityBarWide } from './rail-expanded'
 import { usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
-import {
-  DESIGN_NAV,
-  ModeSwitch,
-  NAV,
-  homeRoute,
-  isDesignPage,
-  isToolPage,
-  toggleSidebar,
-  useSidebarCollapsed,
-} from './Sidebar'
+import { ModeSwitch, NAV, homeRoute, isToolPage, toggleSidebar, useSidebarCollapsed } from './Sidebar'
 
 /**
  * 图标栏里的一格：收起时只有图标，名字在悬停提示和读屏名里；展开（分析稿 U4）时图标右边写名字。
@@ -84,8 +75,8 @@ function Item({
 }
 
 /**
- * 最左边的图标栏（照 Proma）：工作总结、计划、角色、工作流、Skills、MCP 这些功能页一格一个，底下是主题和设置；
- * 设计模式下再多一组只属于设计的（ComfyUI 工作流）。
+ * 最左边的图标栏（照 Proma）：工作总结、计划、角色、工作流、Skills、MCP、ComfyUI 这些功能页一格一个，
+ * 底下是主题和设置。
  * 最上面一格看在哪：会话页（任务、项目、聊天、设计）是收起 / 展开会话侧栏；
  * 功能页上会话侧栏让开了，这一格换成「回到主页」，回到最近看的那个会话页。
  * 只在宽屏显示，手机上这些入口在抽屉菜单里
@@ -112,7 +103,7 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
       )}
     >
       {tool ? (
-        <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute(route.page))} />
+        <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute())} />
       ) : (
         <Item icon={PanelIcon} label={collapsed ? t('展开侧栏') : t('收起侧栏')} onClick={toggleSidebar} />
       )}
@@ -140,21 +131,6 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
       {pages.map((p) => (
         <PluginItem key={`${p.plugin}/${p.id}`} page={p} />
       ))}
-      {/* 设计模式自己的功能页（ComfyUI 工作流）：只在设计模式下出现，和上面的通用功能页隔开 */}
-      {isDesignPage(route.page) && (
-        <>
-          <span aria-hidden className={sep} />
-          {DESIGN_NAV.map((n) => (
-            <Item
-              key={n.id}
-              icon={n.icon}
-              label={n.label}
-              on={route.page === n.id}
-              onClick={() => go({ page: n.id })}
-            />
-          ))}
-        </>
-      )}
       <span className="flex-1" />
       <Item
         icon={wide ? ChevronsLeft : ChevronsRight}

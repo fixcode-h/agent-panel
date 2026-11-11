@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowUpRight, History, Link2, Loader2 } from 'lucide-react'
+import { ArrowUpRight, BarChart3, History, Link2, Loader2, Sparkles, Wand2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableHit } from '@shared/tables'
 import { cellRef } from '@shared/table-edit'
@@ -29,7 +29,7 @@ export interface CellMenuOpts {
   ref?: { ref: string; values: string[] }
   /** 有别的表引用这张表：可以查谁引用了这一行 */
   backRefs?: boolean
-  /** 数据格子、这一列有字段名：可以看这一格的历史 */
+  /** 数据格子、这一列有字段名：可以看这一格的历史、统计这一列 */
   history?: boolean
   readOnly: boolean
 }
@@ -47,7 +47,16 @@ export function CellMenu({
   onHistory,
   onFill,
   onFind,
+  onStats,
+  onBatch,
+  onAiRegion,
 }: {
+  /** 统计这一列、推断规则 */
+  onStats?: (cell: { r: number; c: number }) => void
+  /** 批量修改选中的格子 */
+  onBatch?: () => void
+  /** 让 AI 改选中的一片 */
+  onAiRegion?: () => void
   children: React.ReactElement
   /** 右键的地方是哪一格（不在格子上返回 null） */
   at: (e: React.MouseEvent) => { r: number; c: number } | null
@@ -91,6 +100,12 @@ export function CellMenu({
               {t('这一格的历史')}
             </ContextMenuItem>
           )}
+          {o.history && onStats && (
+            <ContextMenuItem onSelect={() => onStats(cell)}>
+              <BarChart3 className="h-3.5 w-3.5 text-subtle" />
+              {t('统计这一列')}
+            </ContextMenuItem>
+          )}
           {(o.backRefs || o.history) && !o.readOnly && <ContextMenuSeparator />}
           {!o.readOnly && (
             <>
@@ -106,6 +121,18 @@ export function CellMenu({
                 {t('查找替换')}
                 <MenuShortcut>Ctrl+H</MenuShortcut>
               </ContextMenuItem>
+              {onBatch && (
+                <ContextMenuItem onSelect={onBatch}>
+                  <Wand2 className="h-3.5 w-3.5 text-subtle" />
+                  {t('批量修改…')}
+                </ContextMenuItem>
+              )}
+              {onAiRegion && (
+                <ContextMenuItem onSelect={onAiRegion}>
+                  <Sparkles className="h-3.5 w-3.5 text-subtle" />
+                  {t('让 AI 改这一片…')}
+                </ContextMenuItem>
+              )}
             </>
           )}
         </ContextMenuContent>

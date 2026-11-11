@@ -57,7 +57,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：内容搜索没有结果'))
   await check(p, '表格页-内容搜索', ['穿衣镜'])
-  await p.getByRole('group', { name: 'data/C_HomeDecorationConfig.xlsx' }).getByRole('button').first().click()
+  // 每条结果带字段名：「E6 · DisplayName · 曲线穿衣镜」
+  const hitRow = p
+    .getByRole('group', { name: 'data/C_HomeDecorationConfig.xlsx' })
+    .getByRole('button', { name: /^E6\D/ })
+  if (!(await hitRow.textContent())?.includes('DisplayName')) errors.push('内容搜索：结果里没有字段名')
+  await hitRow.click()
   if ((await p.getByRole('tab', { name: 'C_HomeDecorationConfig.xlsx' }).getAttribute('aria-selected')) !== 'true')
     errors.push('表格页：点搜索结果没有切到那个文件')
 
@@ -91,7 +96,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await cell(5, 4).textContent()) !== '曲线穿衣镜（改）') errors.push('表格页：保存后内容不对')
 
   // 结构化：InteractionTriggerState 设了 0–1（-1 也允许），值是 2 的格子标红，「检查」列出来
-  await p.getByRole('button', { name: /处不合规/ }).click()
+  await p
+    .getByRole('group', { name: '数据' })
+    .getByRole('button', { name: /处不合规/ })
+    .click()
   const bar = p.getByRole('region', { name: '不合规的格子' })
   await bar
     .getByText(/不能大于 1/)
@@ -133,6 +141,79 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '列结构' }).click()
   await check(p, '表格页-列结构', ['InteractionAllowCharacterIDs', '格式（正则）', '必填'])
   await p.keyboard.press('Escape')
+
+  // 检查结果按「字段 + 规则」分组，每组能批量修：先预览，取消不改
+  const tsGroup = bar.getByRole('button', { name: /InteractionTriggerState.*不能大于 1/ })
+  await tsGroup.waitFor({ timeout: 5000 }).catch(() => errors.push('检查分组：没有按「字段 + 规则」分组'))
+  await tsGroup.locator('xpath=..').getByRole('button', { name: '批量修' }).click()
+  await p.getByRole('menuitem', { name: '全部改成 1' }).click()
+  const fix = p.getByRole('dialog')
+  await fix
+    .getByRole('button', { name: /放进表格/ })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('批量修：没有预览改动'))
+  await check(p, '表格页-批量修预览', ['全部改成 1'])
+  await fix.getByRole('button', { name: '取消' }).click()
+
+  // 快速筛选：只看不合规，状态栏显示筛出几行
+  await p
+    .getByRole('group', { name: '快速筛选' })
+    .getByRole('button', { name: /只看不合规/ })
+    .click()
+  await p
+    .getByRole('status', { name: '表格状态' })
+    .getByText(/显示 \d+ \/ \d+ 行/)
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('快速筛选：只看不合规后行数没变'))
+  await check(p, '表格页-快速筛选', ['只看不合规'])
+  await p
+    .getByRole('group', { name: '快速筛选' })
+    .getByRole('button', { name: /只看不合规/ })
+    .click()
+  if (!(await p.getByRole('img', { name: '滚动条标记' }).count())) errors.push('滚动条标记：有不合规的格子却没有标记')
+
+  // 快捷键：Ctrl+F 查找条、Ctrl+G 跳到行、F1 快捷键一览
+  await cell(6, 1).click()
+  await p.keyboard.press('Control+f')
+  const find = p.getByRole('search', { name: '在表格里查找' })
+  await find.getByRole('textbox', { name: '查找' }).fill('穿衣镜')
+  await find
+    .getByText(/^1 \/ \d+$/)
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('查找条：Ctrl+F 打字后没有命中'))
+  await p.keyboard.press('Enter')
+  await check(p, '表格页-查找条', ['只查'])
+  await p.keyboard.press('Escape')
+  await p.keyboard.press('Control+g')
+  // 先按主键找：ID 9 在第 14 行
+  await p.getByRole('textbox', { name: '跳到行' }).fill('9')
+  await p.keyboard.press('Enter')
+  if (!(await p.locator('[role=cell][data-r="13"].sheet-focus').count()))
+    errors.push('跳到行：Ctrl+G 填主键后没有跳过去')
+  await p.keyboard.press('F1')
+  await p
+    .getByRole('dialog', { name: '快捷键' })
+    .getByText('跳到这一段数据的边缘')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('快捷键一览：F1 没有打开表格的快捷键'))
+  await check(p, '表格页-快捷键', ['表格'])
+  await p.keyboard.press('Escape')
+
+  // 编辑栏：看全当前格的内容和这一列的规则
+  await p.getByRole('button', { name: '编辑栏：看全、修改长文本' }).click()
+  await cell(6, 3).click()
+  await p
+    .getByRole('textbox', { name: '编辑栏' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('编辑栏：打开后没有出现'))
+  await check(p, '表格页-编辑栏', ['枚举'])
+  await p.getByRole('button', { name: '编辑栏：看全、修改长文本' }).click()
+
+  // 引用列显示「ID · 名称」：文件里存的还是 ID
+  await p.getByRole('button', { name: /引用列显示「ID · 名称」/ }).click()
+  if (!(await cell(8, 5).textContent())?.includes('·')) errors.push('ID → 名称：引用列没有显示名称')
+  await check(p, '表格页-引用显示名称', ['艾琳'])
+  await p.getByRole('button', { name: /引用列显示「ID · 名称」/ }).click()
 
   // 引用跳转：引用列的格子右键，跳到被引用表的那一行
   await cell(8, 5).click({ button: 'right' })
@@ -200,6 +281,30 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('一格的历史：没有列出改过这一格的提交'))
   await check(p, '表格页-一格的历史', ['按 ID = '])
   await p.keyboard.press('Escape')
+
+  // 统计这一列：唯一值、出现最多的值，按数据给规则建议
+  await cell(8, 5).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '统计这一列' }).click()
+  await p
+    .getByRole('list', { name: '出现最多的值' })
+    .getByRole('listitem')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('统计这一列：没有列出出现最多的值'))
+  await check(p, '表格页-统计这一列', ['按数据推断的规则'])
+  await p.keyboard.press('Escape')
+
+  // 批量修改：加减乘除实时预览每格改成什么，取消不改（G 列是整数）
+  await cell(8, 6).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '批量修改…' }).click()
+  await p
+    .getByLabel('批量修改预览')
+    .getByText('→')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('批量修改：没有预览'))
+  await check(p, '表格页-批量修改', ['加减乘除'])
+  await p.getByRole('button', { name: '取消' }).click()
 
   // 版本冲突：角色表演示有冲突，三方合并只列两边都改了的格子，放进表格当一次改动
   await p.getByRole('tab', { name: 'C_Character.xlsx' }).click()
@@ -300,10 +405,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await sync.getByRole('button', { name: '取消' }).click()
   await p.keyboard.press('Escape')
 
-  // 导表：工具栏「导表」选一个脚本，窗口里看到占位换成真实路径后的命令和输出
+  // 导表：工具栏「导表」选一个脚本，底部「输出」面板里看到占位换成真实路径后的命令和输出
   await p.getByRole('button', { name: '导表', exact: true }).click()
   await p.getByRole('menuitem', { name: /导出 JSON/ }).click()
-  const run = p.getByRole('dialog')
+  const run = p.getByRole('region', { name: '输出' })
   await run
     .getByText(/导出 C_HomeDecorationConfig\.json/)
     .waitFor({ timeout: 8000 })
@@ -313,7 +418,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   )
     errors.push('导表：命令里的 {file} 没有换成表格的真实路径')
   await check(p, '表格页-导表', ['完成', '退出码 0'])
-  await p.keyboard.press('Escape')
+  // 再导一次：面板里留着两次，能切回第一次看
+  await p.getByRole('button', { name: '导表', exact: true }).click()
+  await p.getByRole('menuitem', { name: /导出 JSON/ }).click()
+  await run
+    .getByRole('combobox', { name: '第几次执行' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('导表输出：导了两次，面板里没有切换历史的下拉'))
+  await run.getByRole('button', { name: '收起' }).click()
   // 从 CSV 粘贴导入：第一行是字段名就按名字对列，预览追加的行
   await p.getByRole('button', { name: '导表', exact: true }).click()
   await p.getByRole('menuitem', { name: '从 CSV 粘贴导入…' }).click()
@@ -338,6 +450,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：切换到旧版本没有成功'))
 
+  // 切到别的页面再切回来：表格页不重新加载，打开的页签都还在
+  const openTabs = p.getByRole('tablist', { name: '打开的表格' }).getByRole('tab')
+  const tabCount = await openTabs.count()
+  await p.evaluate(() => (location.hash = '#/home'))
+  await p.waitForTimeout(400)
+  await p.evaluate(() => history.back())
+  await p
+    .getByRole('tablist', { name: '打开的表格' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => {})
+  if ((await openTabs.count()) !== tabCount) errors.push('表格页：切到别的页面再回来，打开的表格页签没了（重新加载了）')
+  await p.getByRole('button', { name: '刷新：重新读文件列表和当前表格' }).click()
+
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()
   const dlg = p.getByRole('dialog')
@@ -345,10 +470,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText('表格目录', { exact: true })
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：「表格设置」没有打开项目设置的表格页'))
-  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件', '导表脚本', '执行时：', '组合唯一'])
+  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件', '目录', '表头', '枚举', '校验', '导表'])
 
+  // 子页：校验、导表各一页，底下写着这一页怎么保存
+  const subTab = (name) => dlg.getByRole('tablist', { name: '表格设置' }).getByRole('tab', { name })
+  await subTab('校验').click()
+  await dlg
+    .getByText('组合唯一')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('项目设置-表格：「校验」子页没有组合唯一'))
+  await subTab('导表').click()
   await dlg.getByRole('button', { name: '添加导表脚本' }).scrollIntoViewIfNeeded()
-  await check(p, '项目设置-导表脚本', ['插入占位：', '执行时：'])
+  await check(p, '项目设置-导表脚本', ['插入占位：', '执行时：', '跟着项目设置下面的「确认」一起保存'])
+  await subTab('目录').click()
 
   // 表格目录一行一个：「添加表格目录」弹出目录选择器，选项目里的 tests 多一行（里面没有表格），再删掉
   await dlg.getByRole('button', { name: '添加表格目录' }).click()
@@ -370,6 +505,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await added.waitFor({ state: 'detached', timeout: 3000 }).catch(() => errors.push('项目设置-表格：删不掉目录'))
 
   // AI 分析表格风格：演示里按示例给结果，回到这里逐项勾选
+  await subTab(/^AI 分析/).click()
   await dlg.getByRole('button', { name: 'AI 分析' }).click()
   const review = p.getByRole('region', { name: 'AI 分析结果' })
   // 分析做完后关掉 AI 窗口回到设置（窗口开着时设置弹窗对读屏是隐藏的），结果逐项列着
@@ -380,10 +516,25 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.keyboard.press('Escape')
   await review.waitFor({ timeout: 10000 }).catch(() => errors.push('项目设置-表格：AI 分析的结果没有交回来'))
   await review.scrollIntoViewIfNeeded().catch(() => {})
-  await check(p, '项目设置-AI分析表格', ['枚举：HomeDecorationSizeType', '例外：data/enum/*.xlsx'])
-  await review.getByRole('button', { name: /写进结构文件/ }).click()
+  await check(p, '项目设置-AI分析表格', [
+    '表头（2 套，按内容自动挑）',
+    '枚举：HomeDecorationSizeType',
+    '例外：data/enum/*.xlsx',
+  ])
+  await review.getByRole('button', { name: /应用到表格设置/ }).click()
   await p
     .getByText(/上次分析：/)
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('项目设置-表格：AI 分析的结果没有写进结构文件'))
+  // 应用后「表头」子页跟着变成分析出的两套，不用关掉设置重开
+  await subTab('表头').click()
+  await dlg
+    .getByText('第 2 套表头')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('项目设置-表格：应用 AI 分析后「表头」没有跟着更新'))
+  await dlg
+    .getByText('第 1 套表头')
+    .scrollIntoViewIfNeeded()
+    .catch(() => {})
+  await check(p, '项目设置-表格多套表头', ['第 1 套表头', '第 2 套表头', '加一行表头', '加一套表头'])
 })

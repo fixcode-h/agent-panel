@@ -48,8 +48,13 @@
 
 ## 表头从哪来
 
-`schemaHeader`：单文件覆盖（`files.json` 的「路径#工作表」）> 例外规则（`style.exceptions` 按通配）> 项目风格（`style.header`）> 自动识别（`shared/sheet-header.ts`）。
-表格页里「调整表头」写的是单文件覆盖；文件弹窗（不在表格页）仍记在浏览器 localStorage。
+`schemaHeader`：单文件覆盖（`files.json` 的「路径#工作表」）> 例外规则（`style.exceptions` 按通配）> 项目风格 > 自动识别（`shared/sheet-header.ts`）。
+项目风格是**几套表头**（`style.headers` 数组，各表表头行数不一样时设多套）：每张表用 `pickHeader` 按内容打分（`headerFit`：每行认出的角色和设定的一样加分、像数据扣分）挑最合的一套，一样合取前面的；只有一套时不看内容直接用。
+旧版只有单套 `style.header`，读的时候当第一套（`styleHeaders`）；保存时 `header` 仍写第一套，旧版本面板也认得。
+表格页里「调整表头」写的是单文件覆盖（项目有多套时弹层里能一键套用其中一套）；文件弹窗（不在表格页）仍记在浏览器 localStorage。
+
+结构文件在页面里只留一份（`web/src/lib/table-schema.ts`）：项目设置的「表头」「通用枚举」「校验」「AI 分析」和表格页共用，谁保存都先重读最新的再改（`saveTableSchema`），其它地方跟着更新；设置表单用 `useSchemaDraft`，没改过的跟着新内容走，改了一半的留着。
+AI 分析的结果（`TablesDraft`）也是几套表头，外加数组标记、表头行能填什么；不认识的角色改成「其它」并把原词留作行名，不整份作废。还没应用的结果存在浏览器 localStorage，刷新后还能接着应用。
 
 ## 结构化（枚举、引用、检查）
 
@@ -101,6 +106,23 @@
 - 查找替换（Ctrl+H、工具栏「替换」）：范围是选中区域 / 当前列 / 整张表，只算筛选后看得见的数据行，跳过表头和隐藏的列；实时预览，「全部替换」一次撤销。
 - 列名右键冻结到某列、隐藏列（`use-col-layout.ts`，按「项目:文件#工作表」记在 localStorage，表格文件不动）。冻结列在列虚拟化之外一直画，`sticky` 钉在行号列右边，底色换成不透明色（`sheet-frozen`）。
 - 格子右键（整个表格只挂一个菜单，`CellMenu`）：引用列跳到被引用表的那一行（`findRefTarget`），被引用的表可以查「谁引用了这一行」（`findBackRefs`：结构文件里 ref 指向这张表的列，数组列按分隔符拆开整项比）。
+- 快捷键（`use-grid-edit.tsx`）：Ctrl+方向键跳到这一段数据的边缘、Ctrl+Home / End、Shift+空格 / Ctrl+空格选整行整列、Ctrl+Shift+= 在上方插行、Ctrl+- 删选中的行（`rowOpsIn` 一次撤销）。F1 / Ctrl+/ 打开共用的快捷键一览（`ShortcutsHelp` 的「表格」组；全局的 `?` 在格子里是打字，`useShortcuts` 跳过已经 `preventDefault` 的键）。
+- 查找条（Ctrl+F，`TableFindBar`）：只查筛选后显示的行和没隐藏的列，打字防抖 120ms，最多 5000 处；可以只查当前列。Ctrl+G 跳转：先按主键找，找不到再当行号。
+- 编辑栏（工具栏「查看」里开关，`TableEditBar`，localStorage `table-edit-bar`）：看全、修改长文本，右边是这一列的规则（`ruleText`）。
+- 快速筛选（`TableQuickFilter`）：只看不合规 / 改过的 / 引用缺失 / 空着的必填，几个一起是「或」，只过滤行号数组；当前的筛选、排序、快速筛选能存成视图（localStorage `table-views:<项目>:<文件#工作表>`）。
+- 引用列「ID · 名称」（localStorage `table-ref-names`）：只改显示（`SheetEditing.display`），名称取被引用表同一行里像名字的列（`refOptions` 的 desc）。
+- 检查结果（`ProblemsBar`）按「列 + 种类」分组（`shared/table-problems.ts`；种类是 `Problem.rule`，同一列「引用的表里没有 X / Y」算一组）。每组批量修：超出范围改成边界值、改成「也允许」的值、清空（必填 / 主键不给），先预览再一次放进表格；或让 AI 修这一组。滚动条右边一条 canvas 标出不合规、改过、查找命中的位置（`ScrollMarks`，按像素合并，点一下跳到最近的一处）。
+- 内容搜索结果（`TableHits`）每条带字段名（服务端 `searchTables` 按结构文件的表头算，`sheetFieldNames`，只在这张表有命中时算一次），按文件分组、组头吸顶能折叠，上下键在结果里走、表格跟着跳。
+- 行高三档（工具栏「查看」→ 行高，localStorage `table-density`）：紧凑 22、标准跟着设置、宽松 32，通过 `SheetTable` 的 `rowHeight` 传。双击列边线按看得见的 200 行 + 表头量宽（`fitWidth`），不扫整列。
+- 导表输出在表格页底部的「输出」面板（`TableOutput.tsx`），不再是弹窗：每次执行一个 `ExportRun` 一直挂着（切去看别的一次只是藏起来，不会停），留最近 20 次；关面板才停掉在跑的。
+- 版本差异、跨项目对比：改过的格子只显示新值，悬停看旧 / 新；摘要里「改 / 加 / 删」能点，只看那一种行（`DiffOnly`）。
+- 打开表格还在读时画骨架（`TableSkeleton`）；没有项目设表格目录时是引导卡（`TablesSetupCard`），一键打开项目设置 → 表格。
+- 项目设置 →「表格」分子页：目录 · 表头 · 枚举 · 校验 · 导表 · AI 分析；底下写这一页跟着「确认」还是单独存。有没处理的 AI 分析结果时「AI 分析」上有红点（`useTablesAnalysisPending`）。
+- 格子右键「统计这一列」（`ColumnStatsDialog`，`shared/table-stats.ts`）：空值、唯一值、出现最多的 10 个值、最小最大，超过 5 万行只看前面的标「抽样」；按数据建议范围 / int32 / 枚举 / 必填，点「设上」写进结构文件，设过的不再建议。不用 AI。
+- 「批量修改…」（`BatchEditDialog`，`shared/table-batch.ts`）：对选中的格子加减乘除、前后缀、正则替换、按序列重新编号，实时预览每格改成什么，一次撤销。右键选区外的格子会先选中它。
+- 「让 AI 改这一片…」（`AiRegionDialog`，提示词 `editRegionPrompt`）：只把选中的行列交给 AI，结果仍走 `table.propose` 先看差异。
+- 提交时「按改动生成说明」（`diff-side.ts` 的 `submitSummary` → `shared/table-summary.ts`）：和上一次提交比，写成「C_Item：改 3 格（Name ×2、Level ×1），加 1 行」。还有不合规时按「保存前检查」提醒或拦下提交。
+- 导表脚本可勾「保存后自动导这张表」（`TableExport.onSave`）：表格页保存后对这张表跑一次，输出进底部面板。输出里的 `文件:行:列`、`Sheet!A1` 能点，跳到对应的表和格子（`outputLocs`）。
 - 外部改动：当前打开的文件每 4 秒（页面在前台时）看一次修改时间（`/stat`），变了且没有没保存的改动就直接重新载入；有改动时表格上方提示，可以载入新内容并把改过的格子按位置写回（只改格子、没插删行时）、丢掉改动、或先不管（保存时仍有修改时间检查）。
 
 ## 导表脚本

@@ -76,6 +76,7 @@ import { deployedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { Advanced, Group, NumberField, ReadValue, Row } from '@/components/settings/parts'
 import { RestoreSettings } from '@/components/settings/RestoreSettings'
 import { SectionToc, revealSetting, setSectionScroll } from '@/components/settings/section-nav'
+import { QuotaResumeGroup } from '@/components/settings/QuotaResumeGroup'
 import { SettingsSearchBox, SettingsSearchResults, type SettingsHitGroup } from '@/components/settings/SettingsSearch'
 import { fillVars, searchSettings, searchTerms, type SettingsItem } from '@/lib/settings-search'
 import settingsIndex from 'virtual:settings-index'
@@ -168,7 +169,7 @@ function SettingsBody({
   section: string
   onSection: (s: string) => void
 }) {
-  const { setSettings, clis, refreshClis } = useData()
+  const { settings: liveSettings, setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
@@ -374,6 +375,7 @@ function SettingsBody({
     // 在设置 →「数据」的保活列表里改，这里沿用原来的值
     lowMemoryReleasePercent: initial.lowMemoryReleasePercent,
     resumeAfterRestart: resumeRestart,
+    quotaResume: liveSettings?.quotaResume ?? initial.quotaResume, // QuotaResumeGroup 自己保存：带上最新的，别把旧值写回去
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
@@ -1158,6 +1160,7 @@ function SettingsBody({
                       />
                     </Row>
                   </Group>
+                  <QuotaResumeGroup />
                   <Group title={t('通知与安全')}>
                     <Row
                       title={t('任务完成通知')}

@@ -1084,7 +1084,8 @@
       "input": "tool_input",
       "path": ["path", "file_path"],
       "output": ["tool_output"],
-      "failed": ["is_error"]
+      "failed": ["is_error"],
+      "range": ["offset", "limit"]
     }
   },
   "trust": {

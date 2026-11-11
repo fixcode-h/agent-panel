@@ -9,6 +9,7 @@ import { EN_LOCAL_IMAGE } from './en/local-image.ts'
 import { EN_MCP } from './en/mcp.ts'
 import { EN_PROJECT_SKILLS } from './en/project-skills.ts'
 import { EN_SCHEDULE } from './en/schedule.ts'
+import { EN_SCHEDULE_TRIGGER } from './en/schedule-trigger.ts'
 import { EN_SERVER } from './en/server.ts'
 import { EN_SETTINGS } from './en/settings.ts'
 import { EN_MARKDOWN_STYLE } from './en/markdown-style.ts'
@@ -27,11 +28,13 @@ import { EN_TABLES } from './en/tables.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
+import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
 import { EN_BUG_INPLACE } from './en/bug-inplace.ts'
 import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
 import { EN_AWAY } from './en/away.ts'
+import { EN_QUOTA_RESUME } from './en/quota-resume.ts'
 import { EN_VIDEO } from './en/video.ts'
 import { EN_STATE_WORD } from './en/state-word.ts'
 import { EN_RESTORE } from './en/restore.ts'
@@ -60,11 +63,13 @@ export const EN: Record<string, string> = {
   ...EN_BUG_FLOW,
   ...EN_BUG_LOCATE,
   ...EN_BUG_OVERVIEW,
+  ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,
   ...EN_BUG_INPLACE,
   ...EN_BUG_AUTO,
   ...EN_USER_ACTION,
   ...EN_AWAY,
+  ...EN_QUOTA_RESUME,
   ...EN_DESIGN,
   ...EN_RESTORE,
   ...EN_RESTORE_FLOW,
@@ -74,6 +79,7 @@ export const EN: Record<string, string> = {
   ...EN_MCP,
   ...EN_PROJECT_SKILLS,
   ...EN_SCHEDULE,
+  ...EN_SCHEDULE_TRIGGER,
   ...EN_ALERTS,
   ...EN_SPEECH,
   ...EN_HOOKS,

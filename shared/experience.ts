@@ -198,8 +198,16 @@ export function experienceText(e: ProjectExperience) {
 const FIND_MAX = 3
 const FIND_BUDGET = 1500
 
-/** project_experience 的结果：最相关的几条全文，其余列标题；什么都没给时列出全部标题 */
-export function findExperience(list: ProjectExperience[], query: string, files: string[] = []) {
+/**
+ * project_experience 的结果：最相关的几条全文，其余列标题；什么都没给时列出全部标题。
+ * onHit：交出全文的那几条算命中（只列标题的不算，Agent 没看到内容），给面板记「用没用上」（shared/knowledge-hits.ts）
+ */
+export function findExperience(
+  list: ProjectExperience[],
+  query: string,
+  files: string[] = [],
+  onHit?: (ids: string[]) => void,
+) {
   const on = list.filter((e) => e.enabled)
   if (!on.length) return '这个项目还没有经验。'
   if (!query.trim() && !files.length)
@@ -217,6 +225,7 @@ export function findExperience(list: ProjectExperience[], query: string, files: 
     full.push(e)
     used += n
   }
+  if (full.length) onHit?.(full.map((e) => e.id))
   const more = hit.slice(full.length, full.length + 10)
   return [
     full.map(experienceText).join('\n\n'),

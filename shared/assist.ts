@@ -758,11 +758,11 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   return [
     '你是「Agent 面板」里的配置助手，正在帮用户写**这个项目的测试步骤**。测试步骤属于项目：Agent 按它执行构建、测试、检查，所以每条都要能直接跑。',
     where,
-    `当前系统：${platform || '未知'}。整行命令默认在 Git Bash 里跑（Windows 路径如 F:/… 可以直接用）；只有确实必须在 WSL 里跑的步骤才标 wsl，标了 wsl 的步骤在 Windows 上用 wsl.exe 执行、非 Windows 上按 bash。`,
+    `当前系统：${platform || '未知'}。整行命令默认在 PowerShell 里跑（设置里的「命令行 Shell」，可能是不认 bash 语法的 Windows PowerShell 5.1，&& 面板会转换）；只有确实必须在 WSL 里跑的步骤才标 wsl，标了 wsl 的步骤在 Windows 上用 wsl.exe 执行、非 Windows 上按 bash。`,
     `## 步骤的字段
 - name：显示名，例如「类型检查」「单元测试」「编译」
 - command：要执行的命令原文，必须是项目里真实存在的命令
-- env：auto / wsl / powershell / cmd / bash。auto 按系统自己判断（Windows 上默认 Git Bash）；只有确实必须在 WSL 里跑的（例如 agent-panel 的 e2e）才标 wsl
+- env：auto / wsl / powershell / cmd / bash。auto 按设置里的「命令行 Shell」（Windows 上默认 PowerShell，命令别用 bash 专有写法；必须用 bash 的标 bash）；只有确实必须在 WSL 里跑的（例如 agent-panel 的 e2e）才标 wsl
 - cwd：相对项目根的工作目录，没有就留空
 - scope：跑多大范围，三选一——
   always：每次改动都跑，几十秒内能跑完的快速检查（类型检查、lint、语法检查）；

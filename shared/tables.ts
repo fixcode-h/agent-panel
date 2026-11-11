@@ -3,7 +3,7 @@
  * 硬约束：表格文件本身只在用户保存改动时原地改写单元格，结构信息一律存在表格之外（见设计稿 designs/表格管理与在线编辑-设计稿.md）。
  */
 import { z } from 'zod'
-import { SHEET_ROLES, type SheetHeader } from './sheet-header.ts'
+import { SHEET_ROLES, pickHeader, type SheetHeader } from './sheet-header.ts'
 import type { SheetData } from './files.ts'
 import { TableExport } from './table-export.ts'
 
@@ -125,6 +125,8 @@ export interface TableHit {
   row: number
   col: number
   text: string
+  /** 数据行的格子：这一列的字段名 */
+  field?: string
 }
 export interface TableSearch {
   hits: TableHit[]
@@ -198,7 +200,13 @@ export const TYPE_NAMES = '@types'
 
 /** 项目的表格风格 */
 export const TableStyle = z.object({
+  /** 旧版只能设一套表头；读的时候当 headers 的第一套（见 styleHeaders），保存时仍写上第一套，旧版本也认得 */
   header: HeaderRule.optional(),
+  /**
+   * 项目的几套表头：各表表头行数不一样时设多套，每张表按内容挑最合的一套（pickHeader）；
+   * 空数组 = 每张表自动识别
+   */
+  headers: z.array(HeaderRule).max(20).default([]),
   /** 主键列的字段名 */
   key: z.string().trim().max(100).default('ID'),
   /** repeated 列表的分隔符 */
@@ -243,12 +251,21 @@ export type TableSchema = z.infer<typeof TableSchema>
 
 export const emptySchema = (): TableSchema => TableSchema.parse({})
 
-/** 一张表的表头：单文件覆盖 > 例外规则 > 项目风格 > undefined（交给自动识别） */
-export function schemaHeader(s: TableSchema, file: string, sheet: string): SheetHeader | undefined {
+/** 项目风格里的几套表头：新的 headers 优先，没有就用旧版的单套 header */
+export function styleHeaders(style: Pick<TableStyle, 'header' | 'headers'>): SheetHeader[] {
+  if (style.headers?.length) return style.headers
+  return style.header ? [style.header] : []
+}
+
+/**
+ * 一张表的表头：单文件覆盖 > 例外规则 > 项目风格（多套时按 rows 的内容挑最合的）> undefined（交给自动识别）。
+ * 不传 rows 时多套里取第一套
+ */
+export function schemaHeader(s: TableSchema, file: string, sheet: string, rows?: string[][]): SheetHeader | undefined {
   const own = s.files[`${file}#${sheet}`]
   if (own) return own
   const ex = s.style.exceptions.find((e) => globHit(file, [e.glob]))
-  return ex?.header ?? s.style.header
+  return ex?.header ?? pickHeader(styleHeaders(s.style), rows)
 }
 
 /** 一列的结构：先找本工作表的，再找「每张表」的 */

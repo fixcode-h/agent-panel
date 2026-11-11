@@ -23,8 +23,29 @@ export interface DesignMode {
   /** 侧栏空列表的说明和新建按钮的文字 */
   empty: string
   newLabel: string
-  /** 新建这类设计的弹窗：建好后调 onCreated(对话) 打开它 */
-  NewDialog: ComponentType<{ open: boolean; onOpenChange: (o: boolean) => void; onCreated: (task: Task) => void }>
+  /** 新建这类设计的弹窗：建好后调 onCreated(对话) 打开它（给了 Page 的模式可以不给，新建由 Page 自己管） */
+  NewDialog?: ComponentType<{ open: boolean; onOpenChange: (o: boolean) => void; onCreated: (task: Task) => void }>
+  /**
+   * 自己的侧栏（插件接口 4）：给了就在设计模式的下拉下面画它，代替按项目列对话的默认列表。
+   * 数据不是面板对话的设计（例如 UI 设计自己的项目和界面）用它
+   */
+  Sidebar?: ComponentType
+  /**
+   * 自己的整页（插件接口 4）：给了就在 #/pdesign/<模式>/<id>/<sub> 画它，代替打开对话；id、sub 是插件自己的位置
+   * （例如设计 id、'new'），用 useNav().go({ page: 'pdesign', id: <模式>, sub: id, msg: sub }) 跳转
+   */
+  Page?: ComponentType<{ id?: string; sub?: string }>
+  /** 给了 Page 时：这个位置是不是自己分成几块面板的页面（面板不再套一层卡片底），不给时有 id 就算 */
+  split?: (id?: string, sub?: string) => boolean
+}
+
+/**
+ * 不带面板外壳的独立页（插件接口 4）：地址 #/pbare/<插件>/<页面>/<path>，只挂这个组件，不加载侧栏、数据和导航。
+ * 给无头浏览器截图这类场景用（例如 UI 设计让本机 Edge / Chrome 打开设计稿截图）
+ */
+export interface BarePage {
+  id: string
+  Page: ComponentType<{ path: string }>
 }
 
 /** 对话右栏多一个页签 */
@@ -88,6 +109,7 @@ export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
   fileViewers?: FileViewer[]
+  barePages?: BarePage[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>
 }

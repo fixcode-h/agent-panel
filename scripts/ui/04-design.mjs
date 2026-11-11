@@ -616,7 +616,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.mouse.click(row.x - 14, row.y + row.height / 2)
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   // ComfyUI 工作流（照设计稿 ComfyUI 画板）：列表按游戏 / 网页 / 图片处理分组，内置的只读；
-  // 入口在图标栏里，只在设计模式下出现
+  // 入口在图标栏的通用功能里（视频画质增强也用它，设计模式会拆成插件），哪个模式下都有
   await p.goto(base + '#/comfy/game')
   await check(p, 'ComfyUI-工作流', [
     '游戏图标 · 道具与技能',
@@ -689,8 +689,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p
     .waitForURL((u) => !u.hash.startsWith('#/comfy'), { timeout: 5000 })
     .catch(() => errors.push('在 ComfyUI 页点 Agent 模式没有切过去'))
-  if (await p.locator('[data-activity-bar]').getByRole('button', { name: 'ComfyUI 工作流' }).count())
-    errors.push('Agent 模式下图标栏里不该有 ComfyUI 工作流的入口')
+  if (!(await p.locator('[data-activity-bar]').getByRole('button', { name: 'ComfyUI 工作流' }).count()))
+    errors.push('Agent 模式下图标栏里也要有 ComfyUI 工作流的入口')
   await p.goto(base + '#/comfy/game')
   await p
     .getByRole('button', { name: /网页插画/ })
