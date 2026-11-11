@@ -71,13 +71,13 @@ export function ResizeHandle({
 }: {
   pane: ReturnType<typeof usePaneWidth>
   label?: string
-  /** 拖动条在哪一侧：right 用于左边的侧栏，bottom 用于上下分栏的上半 */
-  side?: 'left' | 'right' | 'bottom'
+  /** 拖动条在哪一侧：right 用于左边的侧栏，bottom 用于上下分栏的上半，top 用于贴底的面板（往上拖变高） */
+  side?: 'left' | 'right' | 'bottom' | 'top'
   className?: string
 }) {
   const start = useRef<{ x: number; w: number } | null>(null)
-  const rows = side === 'bottom'
-  const dir = side === 'left' ? -1 : 1
+  const rows = side === 'bottom' || side === 'top'
+  const dir = side === 'left' || side === 'top' ? -1 : 1
   const pos = (e: { clientX: number; clientY: number }) => (rows ? e.clientY : e.clientX)
   const cursor = rows ? 'cursor-row-resize' : 'cursor-col-resize'
   return (
@@ -119,7 +119,11 @@ export function ResizeHandle({
       className={cn(
         'group absolute z-20 outline-none',
         cursor,
-        rows ? 'inset-x-0 -bottom-[3px] h-[6px]' : 'inset-y-0 w-[6px]',
+        rows
+          ? side === 'top'
+            ? 'inset-x-0 -top-[3px] h-[6px]'
+            : 'inset-x-0 -bottom-[3px] h-[6px]'
+          : 'inset-y-0 w-[6px]',
         side === 'right' ? '-right-[3px]' : side === 'left' && '-left-[3px]',
         className,
       )}
@@ -127,7 +131,7 @@ export function ResizeHandle({
       <span
         className={cn(
           'absolute transition-colors',
-          rows ? 'inset-x-0 bottom-[2px] h-[2px]' : 'inset-y-0 w-[2px]',
+          rows ? cn('inset-x-0 h-[2px]', side === 'top' ? 'top-[2px]' : 'bottom-[2px]') : 'inset-y-0 w-[2px]',
           side === 'right' ? 'right-[2px]' : side === 'left' && 'left-[2px]',
           pane.dragging ? 'bg-accent' : 'group-hover:bg-accent/60 group-focus-visible:bg-accent/60',
         )}

@@ -60,3 +60,29 @@ test('改：枚举值不对时不写；对了按主键写进去，文件其它�
     'uint32,string,Quality\nID,Name,Q\n1,木剑,Rare\n2,铁剑,Rare\n3,木盾,Common\n',
   )
 })
+
+test('提议：不写文件，存成表格页能取的提议；结构不对同样拦下', async () => {
+  const before = readFileSync(file, 'utf8')
+  const bad = await runAppAction('table.propose', { path: 'Config/Item.csv', add: [{ ID: '9', Q: 'Epic' }] }, caller)
+  assert.equal(bad.ok, false)
+  const ok = await runAppAction(
+    'table.propose',
+    { path: 'Config/Item.csv', add: [{ ID: '9', Name: '铜剑', Q: 'Common' }], note: '加一把铜剑' },
+    caller,
+  )
+  assert.ok(ok.ok, JSON.stringify(ok))
+  assert.equal(readFileSync(file, 'utf8'), before)
+  const got = (await (await app.fetch(new Request('http://x/api/tables/p1/proposal?path=Config/Item.csv'))).json()) as {
+    proposal: { note: string; added: number; edit: { rows: unknown[]; cells: unknown[] } }
+  }
+  assert.equal(got.proposal.note, '加一把铜剑')
+  assert.equal(got.proposal.added, 1)
+  assert.equal(got.proposal.edit.rows.length, 1)
+  await app.fetch(new Request('http://x/api/tables/p1/proposal?path=Config/Item.csv', { method: 'DELETE' }))
+  const gone = (await (
+    await app.fetch(new Request('http://x/api/tables/p1/proposal?path=Config/Item.csv'))
+  ).json()) as {
+    proposal: unknown
+  }
+  assert.equal(gone.proposal, null)
+})

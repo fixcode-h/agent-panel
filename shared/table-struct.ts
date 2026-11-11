@@ -4,8 +4,8 @@
  * 页面（改格子时的下拉、标红）和服务端（全表检查）用同一份。
  */
 import { t } from './i18n.ts'
-import { detectSheetHeader, validHeader, type SheetHeader } from './sheet-header.ts'
-import { schemaColumn, schemaHeader, type TableEnum, type TableSchema } from './tables.ts'
+import { detectSheetHeader, validHeader, type SheetHeader, type SheetRole } from './sheet-header.ts'
+import { TYPE_NAMES, globHit, schemaColumn, schemaHeader, type TableEnum, type TableSchema } from './tables.ts'
 import type { SheetData } from './files.ts'
 
 export type ColKind = 'int' | 'uint' | 'float' | 'bool' | 'string' | 'enum' | 'other'
@@ -14,15 +14,25 @@ export interface ColInfo {
   col: number
   /** 字段名（字段名行的字）；没有表头时是空 */
   field: string
-  /** 类型行的字 */
+  /** 类型：结构文件里改过的优先，否则是类型行的字 */
   type: string
+  /** 表头里这一列的每一行（修饰、导出端、类型、字段名、注释……），列结构里照着显示 */
+  head: { role: SheetRole; text: string }[]
   kind: ColKind
   list: boolean
+  /** 数组的分隔符（列结构里设的 > 项目的） */
+  sep: string
+  /** 没有字段名的列：备注列，灰字显示、不检查 */
+  remark: boolean
   enumName?: string
   ref?: string
   min?: number
   max?: number
   allow?: string[]
+  /** 正则（整格匹配） */
+  pattern?: string
+  required?: boolean
+  requiredWhen?: { field: string; values: string[] }
   note?: string
   /** 这一列在结构文件里单独设过 */
   custom: boolean
@@ -55,8 +65,13 @@ export function columnInfos(
   const out: ColInfo[] = []
   for (let c = 0; c < cols; c++) {
     const field = (names[c] ?? '').trim()
-    const type = (types[c] ?? '').trim()
     const own = field ? schemaColumn(schema, file, sheet, field) : undefined
+    const rawType = own?.type || (types[c] ?? '').trim()
+    // 类型里写了数组：int[]、list<int>、array<ItemId>、TArray<…>、vector<…>；按元素类型检查
+    const arr = /^(.+?)\s*\[\]$/.exec(rawType) ?? /^(?:list|array|vector|tarray|set)\s*<\s*(.+?)\s*>$/i.exec(rawType)
+    const type = arr ? arr[1].trim() : rawType
+    const mod = (mods[c] ?? '').trim().toLowerCase()
+    const marks = (schema.style.arrayMarks ?? ['repeated']).map((m) => m.toLowerCase())
     const enumName = own?.enum ?? (schema.enums[type] ? type : undefined)
     const kind: ColKind = enumName
       ? 'enum'
@@ -75,13 +90,19 @@ export function columnInfos(
       col: c,
       field,
       type,
+      head: header.roles.map((role, i) => ({ role, text: (rows[header.start + i]?.[c] ?? '').trim() })),
       kind,
-      list: own?.list ?? /^repeated$/i.test((mods[c] ?? '').trim()),
+      list: own?.list ?? (!!arr || (!!mod && marks.includes(mod))),
+      sep: own?.sep || schema.style.listSep || ';',
+      remark: !field && names.length > 0,
       enumName,
       ref: own?.ref,
       min: own?.min,
       max: own?.max,
       allow: own?.allow,
+      pattern: own?.pattern || undefined,
+      required: own?.required,
+      requiredWhen: own?.requiredWhen?.field ? own.requiredWhen : undefined,
       note: own?.note,
       custom: !!own,
     })
@@ -120,6 +141,22 @@ export interface CheckCtx {
 
 const isInt = (v: string) => /^[-+]?\d+$/.test(v)
 
+/** 编好的正则：同一个写法只编一次；写错的记成 null（不查，列结构里会提示写错了） */
+const RE_CACHE = new Map<string, RegExp | null>()
+export function patternRe(p: string): RegExp | null {
+  let re = RE_CACHE.get(p)
+  if (re === undefined) {
+    try {
+      re = new RegExp(`^(?:${p})$`, 'u')
+    } catch {
+      re = null
+    }
+    if (RE_CACHE.size > 500) RE_CACHE.clear()
+    RE_CACHE.set(p, re)
+  }
+  return re
+}
+
 /** 一个值对不对：对就返回 undefined，不对返回原因 */
 function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
   if (info.allow?.includes(v)) return undefined
@@ -134,6 +171,10 @@ function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
       if (info.max !== undefined && n > info.max) return t('不能大于 {n}', { n: info.max })
     }
   }
+  if (info.pattern) {
+    const re = patternRe(info.pattern)
+    if (re && !re.test(v)) return t('不符合格式 {p}', { p: info.pattern })
+  }
   if (info.enumName) {
     const set = ctx.enums.get(info.enumName)
     if (set && set.size && !set.has(v)) return t('「{v}」不是 {e} 里的值', { v, e: info.enumName })
@@ -147,9 +188,9 @@ function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
 
 /** 一格对不对；空格子不查（可以不填） */
 export function checkCell(info: ColInfo | undefined, value: string, ctx: CheckCtx): string | undefined {
-  if (!info || !value) return undefined
+  if (!info || !value || info.remark) return undefined
   if (info.list) {
-    for (const item of value.split(ctx.listSep).map((x) => x.trim())) {
+    for (const item of value.split(info.sep || ctx.listSep).map((x) => x.trim())) {
       if (!item) continue
       const bad = checkOne(info, item, ctx)
       if (bad) return bad
@@ -165,17 +206,58 @@ export interface Problem {
   msg: string
 }
 
-/** 整张表：每格按列的结构查，主键列查重复 */
-export function checkSheet(rows: string[][], from: number, infos: ColInfo[], key: string, ctx: CheckCtx, limit = 2000) {
+/** 一行里不合规的格子（列号 + 原因） */
+export type RowProblems = { c: number; msg: string }[]
+
+/**
+ * 整张表：每格按列的结构查，主键列查重复。
+ * cache 按「行数组」记每行查出来的问题：表格页改格子时只复制改到的行，没改的行还是同一个数组，
+ * 直接用上次的结果，一万行的表改一格只重查那一行（主键重复每次全表数一遍，只是查表很快）。
+ * 列的结构、枚举变了时调用方换一个新的 cache
+ */
+export function checkSheet(
+  rows: string[][],
+  from: number,
+  infos: ColInfo[],
+  key: string,
+  ctx: CheckCtx,
+  limit = 2000,
+  cache?: WeakMap<string[], RowProblems>,
+  /** 组合唯一：每组几个字段名（uniquesFor 取） */
+  uniques: string[][] = [],
+) {
   const out: Problem[] = []
   const keyCol = infos.find((i) => i.field && i.field === key)?.col ?? -1
   const seen = new Map<string, number>()
+  const colOf = new Map(infos.filter((i) => i.field).map((i) => [i.field, i.col]))
+  // 组合唯一：字段都找得到的组才查；重复记在这组的第一列上
+  const groups = uniques
+    .map((fields) => ({ fields, cols: fields.map((f) => colOf.get(f) ?? -1), seen: new Map<string, number>() }))
+    .filter((g) => g.cols.every((c) => c >= 0))
+  const needs = infos.filter((i) => !i.remark && (i.required || i.requiredWhen))
   for (let r = from; r < rows.length && out.length < limit; r++) {
     const row = rows[r] ?? []
-    for (const info of infos) {
-      const bad = checkCell(info, row[info.col] ?? '', ctx)
-      if (bad) out.push({ r, c: info.col, msg: bad })
+    let own = cache?.get(row)
+    if (!own) {
+      own = []
+      for (const info of infos) {
+        const bad = checkCell(info, row[info.col] ?? '', ctx)
+        if (bad) own.push({ c: info.col, msg: bad })
+      }
+      // 必填、条件必填：只看这一行，和上面一起按行缓存
+      for (const info of needs) {
+        if ((row[info.col] ?? '').trim()) continue
+        if (info.required) own.push({ c: info.col, msg: t('必填') })
+        else if (info.requiredWhen) {
+          const at = colOf.get(info.requiredWhen.field)
+          const v = at === undefined ? '' : (row[at] ?? '').trim()
+          if (v && info.requiredWhen.values.includes(v))
+            own.push({ c: info.col, msg: t('{field} 是「{v}」时必填', { field: info.requiredWhen.field, v }) })
+        }
+      }
+      if (cache && rows[r]) cache.set(rows[r], own)
     }
+    for (const p of own) out.push({ r, c: p.c, msg: p.msg })
     if (keyCol >= 0) {
       const k = (row[keyCol] ?? '').trim()
       if (!k) continue
@@ -183,7 +265,60 @@ export function checkSheet(rows: string[][], from: number, infos: ColInfo[], key
       if (dup !== undefined) out.push({ r, c: keyCol, msg: t('主键重复：第 {n} 行也是「{k}」', { n: dup + 1, k }) })
       else seen.set(k, r)
     }
+    for (const g of groups) {
+      const vals = g.cols.map((c) => (row[c] ?? '').trim())
+      // 全空的行不算（还没填）
+      if (vals.every((v) => !v)) continue
+      const k = vals.join('\u0000')
+      const dup = g.seen.get(k)
+      if (dup !== undefined)
+        out.push({
+          r,
+          c: g.cols[0],
+          msg: t('{fields} 组合重复：和第 {n} 行一样', { fields: g.fields.join(' + '), n: dup + 1 }),
+        })
+      else g.seen.set(k, r)
+    }
   }
+  return out
+}
+
+/** 这个文件要查的组合唯一（结构文件 style.uniques 按通配匹配） */
+export const uniquesFor = (schema: TableSchema, file: string) =>
+  (schema.style.uniques ?? []).filter((u) => globHit(file, [u.glob])).map((u) => u.fields)
+
+/**
+ * 表头行按设置里定的取值查（修饰行只能 optional / repeated 这类）：只查有字段名的列，
+ * 没字段名的是备注列，随便写
+ */
+export function checkHeader(
+  rows: string[][],
+  header: SheetHeader,
+  infos: ColInfo[],
+  schema: TableSchema,
+  ctx: CheckCtx,
+): Problem[] {
+  const out: Problem[] = []
+  const roleEnums = schema.style.roleEnums ?? {}
+  header.roles.forEach((role, i) => {
+    const name = roleEnums[role]
+    const set = name ? ctx.enums.get(name) : undefined
+    if (!name || !set?.size) return
+    const r = header.start + i
+    for (const info of infos) {
+      if (!info.field) continue
+      const v = (rows[r]?.[info.col] ?? '').trim()
+      if (v && !set.has(v))
+        out.push({
+          r,
+          c: info.col,
+          msg:
+            name === TYPE_NAMES
+              ? t('「{v}」不是基础类型，也不是通用枚举', { v })
+              : t('「{v}」不是 {e} 里的值', { v, e: name }),
+        })
+    }
+  })
   return out
 }
 
@@ -272,6 +407,19 @@ export function columnOptions(
   const enumOpts = new Map<string, EnumOption[]>()
   const refOpts = new Map<string, EnumOption[]>()
   const ctx: CheckCtx = { listSep: schema.style.listSep || ';', enums: new Map(), refs: new Map() }
+  // 表头行的取值（设置里给每种表头行选的通用枚举）也一起准备好
+  for (const name of Object.values(schema.style.roleEnums ?? {})) {
+    if (!name || enumOpts.has(name)) continue
+    const opts: EnumOption[] =
+      name === TYPE_NAMES
+        ? [
+            ...schema.style.primitives.map((p) => ({ name: p })),
+            ...Object.keys(schema.enums).map((e) => ({ name: e, desc: t('枚举') })),
+          ]
+        : enumOptions(schema.enums[name])
+    enumOpts.set(name, opts)
+    ctx.enums.set(name, new Set(opts.flatMap((o) => (o.value ? [o.name, o.value] : [o.name]))))
+  }
   for (const i of infos) {
     if (i.enumName && !enumOpts.has(i.enumName)) {
       const e = schema.enums[i.enumName]
@@ -317,7 +465,19 @@ export function checkWorkbook(
     const { header, infos } = sheetInfos(schema, file, sheet)
     if (!infos.some((i) => i.field)) return
     const { ctx } = columnOptions(schema, infos, (f) => (f === file ? sheets : sheetsOf(f)))
-    const problems = checkSheet(sheet.rows, header.start + header.roles.length, infos, schema.style.key, ctx)
+    const problems = [
+      ...checkHeader(sheet.rows, header, infos, schema, ctx),
+      ...checkSheet(
+        sheet.rows,
+        header.start + header.roles.length,
+        infos,
+        schema.style.key,
+        ctx,
+        2000,
+        undefined,
+        uniquesFor(schema, file),
+      ),
+    ]
     if (problems.length)
       out.push({
         path: file,
@@ -361,7 +521,16 @@ export function checkTouched(
   const keyCol = infos.find((i) => i.field && i.field === key)?.col ?? -1
   const cells = new Set(touched.map((x) => `${x.r}:${x.c}`))
   const rows = new Set(touched.map((x) => x.r))
-  return checkSheet(sheet.rows, header.start + header.roles.length, infos, key, ctx, 100_000)
+  return checkSheet(
+    sheet.rows,
+    header.start + header.roles.length,
+    infos,
+    key,
+    ctx,
+    100_000,
+    undefined,
+    uniquesFor(schema, file),
+  )
     .filter((p) => cells.has(`${p.r}:${p.c}`) || (p.c === keyCol && rows.has(p.r)))
     .map((p) => ({ ...p, field: infos[p.c]?.field ?? '' }))
 }

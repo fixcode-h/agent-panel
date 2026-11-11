@@ -1,63 +1,109 @@
 import { useEffect, useState } from 'react'
-import { ArrowUpRight, FileSpreadsheet } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, CheckCircle2, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { TABLE_EXCLUDE, TABLE_INCLUDE, TablesConfig, tablesOn } from '@shared/tables'
+import { TABLE_EXCLUDE, TABLE_INCLUDE, TablesConfig, tablesOn, type TableRoot } from '@shared/tables'
 import type { Project } from '@shared/schema'
-import { tablesApi } from '@/lib/tables-api'
+import { tablesApi, type TablesProbe } from '@/lib/tables-api'
 import { useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
+import { Field, FormSection, Input } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { TablesAnalyze } from '@/components/tables/TablesAnalyze'
+import { DirList } from './DirList'
+import { ProjectTablesEnums, ProjectTablesHeader } from './ProjectTablesHeader'
+import { ProjectTablesExports } from './ProjectTablesExports'
+import { ProjectTablesRules } from './ProjectTablesRules'
+
+/** 常见的表格目录写法：点一下加一行 */
+const COMMON_DIRS = ['Config', 'Designer/Excel', 'Design/Tables', 'Content/DataTables']
 
 /**
- * 项目设置的「表格」：表格目录、包含 / 排除、结构信息存在哪、只读。
- * 和其它设置一样点「确认」才保存；设了目录后侧栏多一个「表格」入口。
+ * 项目设置的「表格」：表格目录（一个目录一行，可以用目录选择器选，项目目录外的也行）、包含 / 排除、结构信息存在哪、只读。
+ * 和其它设置一样点「确认」才保存；改目录时马上按还没保存的配置找一遍，每行下面显示找到几个表格。
  * 下面的「AI 分析表格风格」直接读写结构文件，不走「确认」（结构文件不在项目设置里）
  */
 export function ProjectTablesSection({
   value,
   onChange,
   project,
+  base,
+  path,
 }: {
   value: TablesConfig | undefined
   onChange: (v: TablesConfig | undefined) => void
   project?: Project
+  /** 项目目录展开后的绝对路径：选到项目目录里的文件夹时写成相对路径 */
+  base: string
+  /** 设置里现在填的项目目录（可能还没保存） */
+  path: string
 }) {
   const cfg = TablesConfig.parse(value ?? {})
-  const [dirsText, setDirsText] = useState(cfg.dirs.join('\n'))
+  // 列表里的行（含正在输入、还空着的）；保存进配置的是去掉空行的
+  const [rows, setRows] = useState<string[]>(() => (cfg.dirs.length ? cfg.dirs : ['']))
   const patch = (p: Partial<TablesConfig>) => {
     const next = { ...cfg, ...p }
     // 一个目录都没有时整项去掉：项目文件里不留空壳
     onChange(next.dirs.length ? next : undefined)
   }
+  const setDirs = (list: string[]) => {
+    setRows(list)
+    patch({
+      dirs: list
+        .map((s) =>
+          s
+            .trim()
+            .replace(/\\/g, '/')
+            .replace(/(.)\/+$/, '$1'),
+        )
+        .filter(Boolean),
+    })
+  }
+  const probe = useProbe(project?.id, path, value)
   const saved = project && tablesOn(project.tables) && JSON.stringify(project.tables) === JSON.stringify(value)
+  const rootOf = (d: string) => {
+    const key = d
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/(.)\/+$/, '$1')
+    return typeof probe === 'object' && probe ? probe.roots.find((r) => r.dir === key) : undefined
+  }
+  const unused = COMMON_DIRS.filter((d) => !rows.some((r) => r.trim() === d))
   return (
     <>
       <FormSection title={t('表格目录')}>
         <Field
-          label={t('目录（一行一个，相对项目目录）')}
+          label={t('目录')}
           tip={t(
-            '这些目录里（含子目录）的表格会列在表格页左侧。常见的写法：Config、Design/Tables、Content/DataTables。',
+            '这些目录里（含多层子目录）的表格会列在表格页左侧。可以写相对项目目录的路径，也可以选项目目录外的文件夹（比如策划的表格仓库）。',
           )}
         >
-          <Textarea
-            rows={3}
-            value={dirsText}
-            placeholder={'Config\nDesign/Tables'}
-            onChange={(e) => {
-              setDirsText(e.target.value)
-              patch({
-                dirs: e.target.value
-                  .split('\n')
-                  .map((s) => s.trim().replace(/\\/g, '/').replace(/\/+$/, ''))
-                  .filter(Boolean),
-              })
-            }}
-            className="font-mono text-footnote"
+          <DirList
+            value={rows}
+            onChange={setDirs}
+            base={base}
+            placeholder={t('相对项目目录，或绝对路径')}
+            addLabel={t('添加表格目录')}
+            browseTitle={t('选择表格目录')}
+            status={(d) => (d.trim() ? <RootStatus root={rootOf(d)} pending={probe === null} /> : null)}
           />
         </Field>
+        {unused.length > 0 && rows.every((r) => !r.trim()) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-footnote text-subtle">
+            {t('常见写法：')}
+            {unused.map((d) => (
+              <Button
+                key={d}
+                size="sm"
+                variant="ghost"
+                className="font-mono"
+                onClick={() => setDirs([...rows.filter((r) => r.trim()), d])}
+              >
+                {d}
+              </Button>
+            ))}
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label={t('包含')} tip={t('逗号分隔的通配，比如 *.xlsx, *.csv；带 / 的按相对路径比')}>
             <Input
@@ -76,8 +122,47 @@ export function ProjectTablesSection({
             />
           </Field>
         </div>
-        {project && <TablesProbe project={project} saved={!!saved} />}
+        {project && tablesOn(cfg) && <ProbeSummary project={project} probe={probe} saved={!!saved} />}
       </FormSection>
+
+      <FormSection title={t('表头')}>
+        {saved && project ? (
+          <ProjectTablesHeader projectId={project.id} />
+        ) : (
+          <p className="text-footnote leading-relaxed text-subtle">
+            {t('设好表格目录并点「确认」保存后，可以设整个项目的表头从第几行开始、共几行、每行是什么。')}
+          </p>
+        )}
+      </FormSection>
+
+      {saved && project && (
+        <FormSection title={t('通用枚举')}>
+          <p className="text-footnote leading-relaxed text-subtle">
+            {t('整个项目所有表格共用：列的类型写了同名类型，或在「列结构」里选了它，改格子时就是下拉，填错会标红。')}
+          </p>
+          <ProjectTablesEnums projectId={project.id} />
+        </FormSection>
+      )}
+
+      {saved && project && (
+        <FormSection title={t('校验')}>
+          <ProjectTablesRules projectId={project.id} />
+        </FormSection>
+      )}
+
+      {tablesOn(cfg) && (
+        <FormSection title={t('导表脚本')}>
+          <p className="text-footnote leading-relaxed text-subtle">
+            {t('表格页的「导表」按钮和文件树右键里执行。命令里写占位，执行时才换成表格的真实路径。')}
+          </p>
+          <ProjectTablesExports
+            value={cfg.exports}
+            onChange={(exports) => patch({ exports })}
+            sample={(typeof probe === 'object' && probe?.sample[0]) || 'Config/Item.xlsx'}
+            base={base}
+          />
+        </FormSection>
+      )}
 
       <FormSection title={t('结构信息')}>
         <Field
@@ -119,42 +204,104 @@ export function ProjectTablesSection({
   )
 }
 
-/** 保存过的配置找到了多少个表格；没保存的改动提示先确认 */
-function TablesProbe({ project, saved }: { project: Project; saved: boolean }) {
-  const { go } = useNav()
-  const [found, setFound] = useState<{ n: number; missing: string[]; truncated?: boolean } | string | null>(null)
+/**
+ * 按还没保存的配置找一遍表格（停手 400ms 后找）：null = 正在找，字符串 = 出错，没项目 id（新建项目）时不找。
+ * 项目目录也用设置里现在填的，改了项目目录不用先保存
+ */
+function useProbe(projectId: string | undefined, path: string, value: TablesConfig | undefined) {
+  const [probe, setProbe] = useState<TablesProbe | string | null | undefined>(undefined)
+  const key = JSON.stringify([projectId, path, value])
   useEffect(() => {
-    if (!saved) return
+    if (!projectId || !value || !tablesOn(value)) return setProbe(undefined)
     let live = true
-    tablesApi
-      .list(project.id)
-      .then((r) => live && setFound({ n: r.files.length, missing: r.missing, truncated: r.truncated }))
-      .catch((e) => live && setFound((e as Error).message))
+    setProbe(null)
+    const timer = setTimeout(() => {
+      tablesApi
+        .probe(projectId, path, value)
+        .then((r) => live && setProbe(r))
+        .catch((e) => live && setProbe((e as Error).message))
+    }, 400)
     return () => {
       live = false
+      clearTimeout(timer)
     }
-  }, [project.id, saved])
-  if (!saved) return <p className="text-footnote text-subtle">{t('点「确认」保存后，侧栏会多一个「表格」入口。')}</p>
+    // 按配置内容变化重找（value 每次渲染都是新对象）
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return probe
+}
+
+/** 一个目录下面的一行：找到几个表格 / 找不到（给出实际找的位置，路径写错一眼能看出来） */
+function RootStatus({ root, pending }: { root: TableRoot | undefined; pending: boolean }) {
+  if (pending || !root)
+    return pending ? (
+      <span className="flex items-center gap-1.5 text-caption text-subtle">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {t('正在查找表格…')}
+      </span>
+    ) : null
+  if (!root.found)
+    return (
+      <span className="flex min-w-0 items-center gap-1.5 text-caption text-warning">
+        <AlertTriangle className="h-3 w-3 shrink-0" />
+        <span className="truncate" title={root.full}>
+          {root.full ? t('找不到这个目录：{full}', { full: root.full }) : t('路径不能带 ..，项目目录外的请写绝对路径')}
+        </span>
+      </span>
+    )
   return (
-    <div className="flex flex-wrap items-center gap-2 text-footnote text-muted">
+    <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted">
+      <CheckCircle2 className={root.files ? 'h-3 w-3 shrink-0 text-success' : 'h-3 w-3 shrink-0 text-warning'} />
+      <span className="shrink-0">
+        {root.files ? t('{n} 个表格', { n: root.files }) : t('目录在，但里面没有符合「包含」的表格')}
+      </span>
+      <span className="truncate text-subtle" title={root.full}>
+        · {root.full}
+      </span>
+    </span>
+  )
+}
+
+/** 合计：一共找到多少个表格、前几个是什么；保存后能直接去表格页 */
+function ProbeSummary({
+  project,
+  probe,
+  saved,
+}: {
+  project: Project
+  probe: TablesProbe | string | null | undefined
+  saved: boolean
+}) {
+  const { go } = useNav()
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-(--c-row-radius) bg-sel/60 px-3 py-2 text-footnote text-muted">
       <FileSpreadsheet className="h-4 w-4 text-subtle" />
-      {found === null ? (
+      {probe === null || probe === undefined ? (
         t('正在查找表格…')
-      ) : typeof found === 'string' ? (
-        <span className="text-danger">{found}</span>
+      ) : typeof probe === 'string' ? (
+        <span className="text-danger">{probe}</span>
       ) : (
         <>
-          {t('找到 {n} 个表格文件', { n: found.n })}
-          {found.truncated && t('（太多了，只列出前一部分）')}
-          {found.missing.length > 0 && (
-            <span className="text-warning">{t('找不到目录：{dirs}', { dirs: found.missing.join('、') })}</span>
+          <span>
+            {t('一共 {n} 个表格文件', { n: probe.files })}
+            {probe.truncated && t('（太多了，只列出前一部分）')}
+          </span>
+          {probe.sample.length > 0 && (
+            <span className="min-w-0 truncate font-mono text-caption text-subtle" title={probe.sample.join('\n')}>
+              {probe.sample.map((p) => p.slice(p.lastIndexOf('/') + 1)).join('、')}
+              {probe.files > probe.sample.length && ' …'}
+            </span>
           )}
         </>
       )}
-      <Button size="sm" variant="ghost" className="ml-auto" onClick={() => go({ page: 'tables', id: project.id })}>
-        {t('打开表格页')}
-        <ArrowUpRight className="h-3.5 w-3.5" />
-      </Button>
+      {saved ? (
+        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => go({ page: 'tables', id: project.id })}>
+          {t('打开表格页')}
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </Button>
+      ) : (
+        <span className="ml-auto text-caption text-subtle">{t('点「确认」保存后，侧栏会多一个「表格」入口。')}</span>
+      )}
     </div>
   )
 }

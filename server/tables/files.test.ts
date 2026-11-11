@@ -90,3 +90,32 @@ test('内容搜索：不分大小写，跨文件给出工作表、行列和那�
   assert.equal(r.files, 2)
   assert.deepEqual((await searchTables(dir, files, '  ')).hits, [])
 })
+
+test('表格目录可以是绝对路径：项目目录里的换成相对路径，项目目录外的按绝对路径列，多层子目录都找', async () => {
+  const dir = project()
+  const outside = mkdtempSync(path.join(tmpdir(), 'agent-panel-designer-'))
+  mkdirSync(path.join(outside, 'Excel', 'A', 'B'), { recursive: true })
+  writeFileSync(path.join(outside, 'Excel', 'A', 'B', 'Deep.csv'), 'ID\n1\n')
+  const r = await listTables(
+    dir,
+    TablesConfig.parse({ dirs: [path.join(dir, 'Config'), path.join(outside, 'Excel'), 'Nope'] }),
+  )
+  const abs = `${path.join(outside, 'Excel').replace(/\\/g, '/')}`
+  assert.deepEqual(r.dirs, ['Config', abs])
+  assert.ok(r.files.some((f) => f.path === `${abs}/A/B/Deep.csv`))
+  assert.deepEqual(
+    r.roots?.map((x) => [x.found, x.files]),
+    [
+      [true, 3],
+      [true, 1],
+      [false, 0],
+    ],
+  )
+  assert.equal(r.roots?.[2].full, path.join(dir, 'Nope'))
+  // 项目目录外的文件：只有落在设置的表格目录里才能打开
+  const c = TablesConfig.parse({ dirs: [path.join(outside, 'Excel')] })
+  const doc = await openTable(dir, `${abs}/A/B/Deep.csv`, c)
+  assert.deepEqual(doc.sheets[0].rows, [['ID'], ['1']])
+  assert.throws(() => safeRel(dir, path.join(outside, 'x.csv'), c))
+  assert.throws(() => safeRel(dir, `${abs}/A/B/Deep.csv`))
+})

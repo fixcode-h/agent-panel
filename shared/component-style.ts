@@ -112,13 +112,16 @@ export const COMP_SPEC = {
     rowH: px(26, 20, 40),
     font: pick('mono', { mono: 'var(--app-mono)', sans: 'var(--app-sans)' }),
     lines: pick('all', { all: '1px', rows: '0px' }),
-    tint: pick('mid', { low: '8%', mid: '14%', high: '22%' }),
+    tint: pick('high', { low: '8%', mid: '14%', high: '22%', vivid: '32%' }),
+    /** 表头每种行一个颜色，互相不重 */
     modifier: hue('violet'),
     side: hue('teal'),
     type: hue('amber'),
     name: hue('blue'),
-    comment: hue('gray'),
-    other: hue('gray'),
+    comment: hue('green'),
+    other: hue('orange'),
+    /** 数据区斑马纹：隔一行的底色浓度 */
+    stripe: pick('low', { none: '0%', low: '4.5%', mid: '8%' }),
     nameBold: bool(true, '600', '500'),
     divider: bool(true, '2px', '1px'),
     /** 表格页：改过还没保存的格子、不合规的格子 */

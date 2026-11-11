@@ -12,7 +12,9 @@ import {
   enumOptions,
   headerOf,
   parseRef,
+  uniquesFor,
   workbookNeeds,
+  type RowProblems,
 } from './table-struct.ts'
 
 const CONFIG = 'data/Config.xlsx'
@@ -145,4 +147,80 @@ test('引用写法', () => {
   assert.deepEqual(parseRef('a.xlsx#S#ID'), { file: 'a.xlsx', sheet: 'S', field: 'ID' })
   assert.deepEqual(parseRef('a.xlsx##ID'), { file: 'a.xlsx', sheet: undefined, field: 'ID' })
   assert.equal(parseRef('a.xlsx'), null)
+})
+
+test('按行缓存检查结果：没改的行直接用上次的，改了的行重查', () => {
+  const schema = TableSchema.parse({})
+  const rows = [['uint32'], ['ID'], ['1'], ['x'], ['3']]
+  const infos = columnInfos(schema, rows, { start: 0, roles: ['type', 'name'] }, 'a.csv', 'a', 1)
+  const ctx = columnOptions(schema, infos, () => undefined).ctx
+  const cache = new WeakMap<string[], RowProblems>()
+  const first = checkSheet(rows, 2, infos, 'ID', ctx, 2000, cache)
+  assert.deepEqual(
+    first.map((p) => p.r),
+    [3],
+  )
+  // 改第 4 行：只复制这一行（和表格页一样），其余行还是原来的数组
+  const next = [...rows]
+  next[3] = ['2']
+  next[4] = ['2']
+  const again = checkSheet(next, 2, infos, 'ID', ctx, 2000, cache)
+  assert.deepEqual(
+    again.map((p) => [p.r, p.msg.startsWith('主键重复')]),
+    [[4, true]],
+  )
+  assert.ok(cache.has(rows[2]))
+})
+
+test('数组：类型写 int[] / list<T>、修饰行的数组标记、列结构里的分隔符；没字段名的备注列不查', () => {
+  const schema = TableSchema.parse({
+    style: { arrayMarks: ['array'] },
+    columns: { 'a.csv#*#Tags': { sep: '|' } },
+  })
+  const rows = [
+    ['optional', 'array', 'optional', ''],
+    ['int[]', 'string', 'list<uint32>', ''],
+    ['IDs', 'Tags', 'Nums', ''],
+    ['1;x', 'a|b', '1;-2', '随便写'],
+  ]
+  const infos = columnInfos(schema, rows, { start: 0, roles: ['modifier', 'type', 'name'] }, 'a.csv', 'a', 4)
+  assert.deepEqual(
+    infos.map((i) => [i.list, i.type, i.sep, i.remark]),
+    [
+      [true, 'int', ';', false],
+      [true, 'string', '|', false],
+      [true, 'uint32', ';', false],
+      [false, '', ';', true],
+    ],
+  )
+  const { ctx } = columnOptions(schema, infos, () => undefined)
+  const bad = checkSheet(rows, 3, infos, '', ctx)
+  assert.deepEqual(
+    bad.map((p) => p.c),
+    [0, 2],
+  )
+})
+
+test('校验：正则、必填、条件必填、组合唯一', () => {
+  const schema = TableSchema.parse({
+    style: { key: 'ID', uniques: [{ glob: 'q.csv', fields: ['Role', 'Lv'] }] },
+    columns: {
+      'q.csv#*#Code': { pattern: '[A-Z]{2}\\d+' },
+      'q.csv#*#Name': { required: true },
+      'q.csv#*#Item': { requiredWhen: { field: 'Type', values: ['give'] } },
+    },
+  })
+  const rows = [
+    ['ID', 'Code', 'Name', 'Type', 'Item', 'Role', 'Lv'],
+    ['1', 'AB1', 'a', 'give', '9', 'r', '1'],
+    ['2', 'ab1', '', 'give', '', 'r', '2'],
+    ['3', 'CD22', 'c', 'take', '', 'r', '1'],
+  ]
+  const infos = columnInfos(schema, rows, { start: 0, roles: ['name'] }, 'q.csv', 'q', 7)
+  const { ctx } = columnOptions(schema, infos, () => undefined)
+  const got = checkSheet(rows, 1, infos, 'ID', ctx, 2000, undefined, uniquesFor(schema, 'q.csv')).map(
+    (p) => `${p.r}:${p.c}`,
+  )
+  assert.deepEqual(got, ['2:1', '2:2', '2:4', '3:5'])
+  assert.deepEqual(uniquesFor(schema, 'other.csv'), [])
 })

@@ -1,7 +1,7 @@
 /**
  * 表格的版本记录：Git log / P4 filelog / SVN log 列出这个文件的历次提交，
  * 取某一版的文件内容（git show / p4 print / svn cat）按同一套解析器读成工作表，交给页面做格子级差异。
- * 只读：不签出、不改工作区。
+ * 这里只读；把本地文件换成某一版的内容见 checkout.ts。
  */
 import { execFile } from 'node:child_process'
 import path from 'node:path'
@@ -36,7 +36,7 @@ const MAX_REVS = 40
 /** 旧版本的文件最大读这么多（和打开文件的上限一致） */
 const MAX_BYTES = 64 * 1024 * 1024
 
-function run(cmd: string, args: string[], cwd: string) {
+export function vcsRun(cmd: string, args: string[], cwd: string) {
   return new Promise<Buffer>((resolve, reject) =>
     execFile(
       cmd,
@@ -71,7 +71,11 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
   try {
     if (vcs === 'git') {
       const out = text(
-        await run('git', ['log', `-n${MAX_REVS}`, '--follow', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--', rel], dir),
+        await vcsRun(
+          'git',
+          ['log', `-n${MAX_REVS}`, '--follow', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--', rel],
+          dir,
+        ),
       )
       const revs = out
         .split('\x1e')
@@ -84,7 +88,7 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
       return { vcs, base: 'HEAD', revs }
     }
     if (vcs === 'p4') {
-      const out = text(await run('p4', ['-ztag', 'filelog', '-m', String(MAX_REVS), '-l', path.join(dir, rel)], dir))
+      const out = text(await vcsRun('p4', ['-ztag', 'filelog', '-m', String(MAX_REVS), '-l', path.join(dir, rel)], dir))
       const rec = parseZtag(out)[0] ?? {}
       const revs: TableRev[] = []
       for (let i = 0; rec[`rev${i}`] !== undefined; i++)
@@ -97,7 +101,7 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
         })
       return { vcs, base: '#have', revs }
     }
-    const xml = text(await run('svn', ['log', '--xml', '-l', String(MAX_REVS), `./${rel}`], dir))
+    const xml = text(await vcsRun('svn', ['log', '--xml', '-l', String(MAX_REVS), `./${rel}`], dir))
     const revs = [...xml.matchAll(/<logentry\s+revision="(\d+)">([\s\S]*?)<\/logentry>/g)].map((m) => {
       const tag = (n: string) => unxml(new RegExp(`<${n}>([\\s\\S]*?)</${n}>`).exec(m[2])?.[1] ?? '')
       return { id: m[1], label: `r${m[1]}`, author: tag('author'), time: tag('date'), message: tag('msg').trim() }
@@ -116,16 +120,38 @@ const unxml = (s: string) =>
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
 
+/** 取过的旧版本内容：提交过的版本不会再变，按「目录 + 路径 + 版本」留着（HEAD / #have / BASE 会变，不留） */
+const atCache = new Map<string, SheetData[]>()
+const AT_CACHE = 24
+const MOVING = /^(HEAD|#have|BASE)$/
+
 /** 某一版的内容：不在那一版里（新加的文件）时返回空表 */
 export async function tableAt(dir: string, rel: string, rev: string): Promise<SheetData[]> {
+  const key = `${dir}\n${rel}\n${rev}`
+  const hit = atCache.get(key)
+  if (hit) return hit
+  const sheets = await readAt(dir, rel, rev)
+  if (!MOVING.test(rev)) {
+    atCache.set(key, sheets)
+    if (atCache.size > AT_CACHE) atCache.delete(atCache.keys().next().value!)
+  }
+  return sheets
+}
+
+async function readAt(dir: string, rel: string, rev: string): Promise<SheetData[]> {
+  const buf = await rawAt(dir, rel, rev)
+  return buf ? (await parseTableBuffer(rel, buf)).sheets : []
+}
+
+/** 某一版文件的原始字节（git show / p4 print / svn cat）；那一版里还没有这个文件时返回 null */
+export async function rawAt(dir: string, rel: string, rev: string): Promise<Buffer | null> {
   if (!/^[\w#^~@][\w#.^~:@/-]{0,79}$/.test(rev)) throw new HttpError(t('版本号格式不对'))
   const { vcs } = await detectVcs(dir)
-  let buf: Buffer
   try {
-    if (vcs === 'git') buf = await run('git', ['show', `${rev}:./${rel}`], dir)
-    else if (vcs === 'p4') buf = await run('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
-    else if (vcs === 'svn') buf = await run('svn', ['cat', '-r', rev, `./${rel}`], dir)
-    else throw new HttpError(t('这个项目没有版本控制'))
+    if (vcs === 'git') return await vcsRun('git', ['show', `${rev}:./${rel}`], dir)
+    if (vcs === 'p4') return await vcsRun('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
+    if (vcs === 'svn') return await vcsRun('svn', ['cat', '-r', rev, `./${rel}`], dir)
+    throw new HttpError(t('这个项目没有版本控制'))
   } catch (e) {
     if (e instanceof HttpError) throw e
     const msg = (e as Error).message
@@ -135,8 +161,7 @@ export async function tableAt(dir: string, rel: string, rev: string): Promise<Sh
         msg,
       )
     )
-      return []
+      return null
     throw new HttpError(msg)
   }
-  return (await parseTableBuffer(rel, buf)).sheets
 }

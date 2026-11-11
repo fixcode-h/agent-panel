@@ -1,5 +1,6 @@
 /** 表格页文件树的数据：把相对路径列表拼成目录树，名字搜索时只留命中的文件 */
 import type { TableFile } from '@shared/tables'
+import { pinyinInitials } from '@shared/pinyin'
 
 export interface TableNode {
   name: string
@@ -11,11 +12,23 @@ export interface TableNode {
   count: number
 }
 
-/** 名字搜索：空格分开的几个词都要出现在路径里（不分大小写） */
+/** 路径的拼音首字母：几千个文件每输一个字都要比一遍，算过的留着 */
+const initials = new Map<string, string>()
+function initialsOf(path: string) {
+  let v = initials.get(path)
+  if (v === undefined) {
+    v = pinyinInitials(path)
+    if (initials.size > 50_000) initials.clear()
+    initials.set(path, v)
+  }
+  return v
+}
+
+/** 名字搜索：空格分开的几个词都要出现在路径里（不分大小写）；字母词也认拼音首字母（jsb 找「角色表」） */
 export function nameHit(path: string, query: string) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   const p = path.toLowerCase()
-  return words.every((w) => p.includes(w))
+  return words.every((w) => p.includes(w) || (/^[a-z]+$/.test(w) && initialsOf(path).includes(w)))
 }
 
 export function buildTableTree(files: TableFile[], query = ''): TableNode[] {
@@ -45,5 +58,20 @@ export function buildTableTree(files: TableFile[], query = ''): TableNode[] {
     n.children.forEach(sort)
   }
   sort(root)
-  return root.children
+  return root.children.map(compactAbs)
+}
+
+/**
+ * 顶层开头一串只有一个子目录的目录并成一个节点（Project/Designer/Excel、F:/Game/Designer/Excel、/data/excel），
+ * 不然树最上面要一层层点开
+ */
+function compactAbs(n: TableNode): TableNode {
+  if (n.file) return n
+  let at = n
+  let name = n.name
+  while (at.children.length === 1 && !at.children[0].file) {
+    at = at.children[0]
+    name = `${name}/${at.name}`
+  }
+  return { ...at, name: name || '/' }
 }

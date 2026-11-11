@@ -13,6 +13,8 @@ export type SheetRole = (typeof SHEET_ROLES)[number]
 export interface SheetHeader {
   start: number
   roles: SheetRole[]
+  /** 每行自己的名字（「导出标记」「默认值」……），不写就用角色名；只影响显示 */
+  labels?: string[]
 }
 
 export interface DetectedHeader extends SheetHeader {

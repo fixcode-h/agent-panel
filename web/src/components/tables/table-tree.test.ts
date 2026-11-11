@@ -23,10 +23,32 @@ test('按目录分层，目录在前，文件名里的数字按大小排；目�
 test('名字搜索：几个词都要出现，不分大小写', () => {
   assert.ok(nameHit('Config/Item10.xlsx', 'config item'))
   assert.ok(!nameHit('Config/Item10.xlsx', 'item enum'))
+  // 拼音首字母
+  assert.ok(nameHit('配置/角色表.xlsx', 'jsb'))
+  assert.ok(nameHit('配置/角色表.xlsx', 'pz jsb'))
+  assert.ok(!nameHit('配置/角色表.xlsx', 'zb'))
   const tree = buildTableTree(FILES, 'e.xlsx')
   assert.deepEqual(
     tree.map((n) => n.name),
-    ['Config'],
+    ['Config/Enum'],
   )
-  assert.equal(tree[0].children[0].children[0].path, 'Config/Enum/E.xlsx')
+  assert.equal(tree[0].children[0].path, 'Config/Enum/E.xlsx')
+})
+
+test('项目目录外的表格目录：开头一串单个子目录并成一个节点', () => {
+  const f = (path: string) => ({ path, kind: 'xlsx' as const, size: 1, mtime: '' })
+  const tree = buildTableTree([
+    f('F:/Game/Designer/Excel/a.xlsx'),
+    f('F:/Game/Designer/Excel/sub/b.xlsx'),
+    f('Config/c.csv'),
+  ])
+  assert.deepEqual(
+    tree.map((n) => [n.name, n.path, n.count]),
+    [
+      ['Config', 'Config', 1],
+      ['F:/Game/Designer/Excel', 'F:/Game/Designer/Excel', 2],
+    ],
+  )
+  const posix = buildTableTree([f('/data/excel/a.xlsx'), f('/data/excel/b.xlsx')])
+  assert.equal(posix[0].name, '/data/excel')
 })

@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { History, Loader2, Undo2 } from 'lucide-react'
+import { ArchiveRestore, History, Loader2, Undo2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { SheetData } from '@shared/files'
 import type { TableSchema } from '@shared/tables'
 import type { CellSet } from '@shared/table-edit'
-import { diffSheet, type DiffRow } from '@shared/sheet-diff'
+import type { DiffRow } from '@shared/sheet-diff'
+import { useSheetDiff } from '@/lib/sheet-diff-async'
 import { headerOf } from '@shared/table-struct'
 import { fieldNames } from '@shared/table-agent'
 import { tablesApi, type TableHistory } from '@/lib/tables-api'
+import { toast } from '@/lib/toast'
+import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
+import { Select } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
 import { DiffSummary, SheetDiffView } from './SheetDiffView'
 
@@ -37,6 +42,8 @@ export function TableHistoryDialog({
   rows,
   schema,
   onRestore,
+  onCheckout,
+  dirty,
 }: {
   open: boolean
   onClose: () => void
@@ -49,7 +56,12 @@ export function TableHistoryDialog({
   schema: TableSchema
   /** 还原：把这些格子改回旧值；只读时不传 */
   onRestore?: (cells: CellSet[]) => void
+  /** 把本地文件整个切换到这一版（只读时不传）；失败时抛出原因 */
+  onCheckout?: (rev: string) => Promise<void>
+  /** 页面上还有没保存的改动：切换前提醒会丢 */
+  dirty?: boolean
 }) {
+  const [switching, setSwitching] = useState<{ id: string; label: string } | null>(null)
   const [hist, setHist] = useState<TableHistory | null>(null)
   const [error, setError] = useState('')
   const [pick, setPick] = useState<Pick>('local')
@@ -62,12 +74,16 @@ export function TableHistoryDialog({
       .then(setHist)
       .catch((e) => setError((e as Error).message))
   }, [projectId, path])
-  // 取两版内容：本地改动只取基准版
+  // 和哪一版比：默认是上一版（本地改动的上一版是基准版），也能选任意一版
+  const [against, setAgainst] = useState('')
+  // 取两版内容：本地改动只取左边那一版
+  const prevOf = (p: Pick) => (!hist ? '' : p === 'local' ? hist.base : (hist.revs[p + 1]?.id ?? ''))
+  const left = against || prevOf(pick)
   const want = !hist
     ? null
     : pick === 'local'
-      ? { key: 'local', a: hist.base, b: '' }
-      : { key: String(pick), a: hist.revs[pick + 1]?.id ?? '', b: hist.revs[pick]?.id ?? '' }
+      ? { key: 'local', a: left, b: '' }
+      : { key: String(pick), a: left, b: hist.revs[pick]?.id ?? '' }
   const wantKey = want ? `${want.key}:${want.a}:${want.b}` : ''
   useEffect(() => {
     if (!want || (hist?.vcs === 'none' && pick === 'local')) return
@@ -98,12 +114,14 @@ export function TableHistoryDialog({
       ? (ready.b.find((s) => s.name === sheet) ?? (ready.b.length === 1 ? ready.b[0] : undefined))
       : { name: sheet, rows }
     const b = sideOf(schema, path, bSheet)
-    return { a, b, diff: diffSheet(a, b, schema.style.key) }
+    return { a, b }
   }, [ready, schema, path, sheet, rows])
+  // 差异在后台线程算：大表没有主键时要做 LCS，放主线程上算页面会卡
+  const { diff, error: diffError } = useSheetDiff(sides, schema.style.key)
 
   const restore = (row: DiffRow) => {
-    if (!sides || row.kind !== 'mod' || row.a === undefined || row.b === undefined) return
-    const { a, diff } = sides
+    if (!sides || !diff || row.kind !== 'mod' || row.a === undefined || row.b === undefined) return
+    const { a } = sides
     onRestore?.(
       (row.cols ?? []).map((c) => ({
         r: row.b!,
@@ -113,10 +131,12 @@ export function TableHistoryDialog({
     )
   }
   const revs = hist?.revs ?? []
+  const labelOf = (id: string) =>
+    id === hist?.base ? (revs[0]?.label ?? t('最近一次提交')) : (revs.find((r) => r.id === id)?.label ?? t('（新建）'))
   const title =
     pick === 'local'
-      ? t('{base} → 本地', { base: revs[0]?.label ?? t('最近一次提交') })
-      : t('{from} → {to}', { from: revs[pick + 1]?.label ?? t('（新建）'), to: revs[pick]?.label ?? '' })
+      ? t('{base} → 本地', { base: labelOf(left) })
+      : t('{from} → {to}', { from: left ? labelOf(left) : t('（新建）'), to: revs[pick]?.label ?? '' })
   return (
     <Modal
       open={open}
@@ -171,8 +191,39 @@ export function TableHistoryDialog({
         <section aria-label={t('差异')} className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-3 py-2">
             <span className="font-mono text-body">{title}</span>
-            {sides && <DiffSummary diff={sides.diff} />}
+            {diff && <DiffSummary diff={diff} />}
             <span className="flex-1" />
+            {hist && hist.vcs !== 'none' && (
+              <Select
+                size="sm"
+                aria-label={t('和哪一版比')}
+                value={against}
+                onChange={(e) => setAgainst(e.target.value)}
+                options={[
+                  { value: '', label: pick === 'local' ? t('和最近一次提交比') : t('和上一版比') },
+                  ...revs
+                    .filter((_, i) => pick === 'local' || i !== pick)
+                    .map((r) => ({ value: r.id, label: t('和 {rev} 比', { rev: r.label }) })),
+                ]}
+              />
+            )}
+            {onCheckout && hist && hist.vcs !== 'none' && (pick === 'local' ? hist.base : revs[pick]) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={() =>
+                  setSwitching(
+                    pick === 'local'
+                      ? { id: hist.base, label: revs[0]?.label ?? t('最近一次提交') }
+                      : { id: revs[pick].id, label: revs[pick].label },
+                  )
+                }
+              >
+                <ArchiveRestore className="h-3.5 w-3.5" />
+                {pick === 'local' ? t('本地文件换回最近一次提交') : t('本地文件切换到这一版')}
+              </Button>
+            )}
             <Segmented
               label={t('显示')}
               size="sm"
@@ -184,10 +235,10 @@ export function TableHistoryDialog({
               ]}
             />
           </header>
-          <div className="thin-scroll min-h-0 flex-1 overflow-auto">
-            {error ? (
-              <p className="p-4 text-body text-danger">{error}</p>
-            ) : loading || !sides ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {error || diffError ? (
+              <p className="p-4 text-body text-danger">{error || diffError}</p>
+            ) : loading || !sides || !diff ? (
               hist?.vcs === 'none' ? null : (
                 <div className="flex justify-center p-8 text-subtle">
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -197,7 +248,7 @@ export function TableHistoryDialog({
               <SheetDiffView
                 a={sides.a.rows}
                 b={sides.b.rows}
-                diff={sides.diff}
+                diff={diff}
                 names={sides.b.names}
                 onlyChanges={only}
                 rowAction={
@@ -213,6 +264,33 @@ export function TableHistoryDialog({
           </div>
         </section>
       </div>
+      <ConfirmDialog
+        open={!!switching}
+        title={t('把本地的 {name} 切换到 {rev}？', {
+          name: path.slice(path.lastIndexOf('/') + 1),
+          rev: switching?.label ?? '',
+        })}
+        description={
+          <>
+            {t(
+              '整个文件换成这一版的内容（所有工作表），原文件先备份到数据目录。版本控制里会显示成一处本地改动，要留就提交，不要再切回最新的版本。',
+            )}
+            {dirty && <span className="mt-2 block text-warning">{t('页面上还没保存的改动会丢掉。')}</span>}
+          </>
+        }
+        confirmText={t('切换')}
+        onConfirm={async () => {
+          if (!switching || !onCheckout) return
+          try {
+            await onCheckout(switching.id)
+            setSwitching(null)
+            onClose()
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+        onOpenChange={(o) => !o && setSwitching(null)}
+      />
     </Modal>
   )
 }

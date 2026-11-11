@@ -1,13 +1,16 @@
 /**
  * 表格页的选中和编辑：像表格软件一样点格子选中、拖动选一块、方向键移动（跳过筛掉的行）、
  * 直接打字或双击 / F2 改、Enter / Tab 确认并移动、Esc 取消、Delete 清空、
- * Ctrl+C / X / V 复制剪切粘贴（和 Excel / WPS 互通的 TSV）、Ctrl+Z / Y 撤销重做、Ctrl+S 保存。
+ * Ctrl+C / X / V 复制剪切粘贴（和 Excel / WPS 互通的 TSV）、Ctrl+Z / Y 撤销重做、Ctrl+S 保存、
+ * Ctrl+D 向下填充（Ctrl+Shift+D 按序列递增）、改格子时 Ctrl+Enter 把值填进选中的每一格。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parseClip, toClip, type CellSet } from '@shared/table-edit'
 import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import type { SheetEditing } from '@/components/files/SheetTable'
+import { fillDown } from '@shared/table-tools'
+import type { CellMove } from './CellEditor'
 
 export interface Pos {
   row: number
@@ -27,14 +30,14 @@ export interface GridEditOpts {
   onRedo: () => void
   onSave: () => void
   /** 正在改的格子用什么编辑框：枚举列是下拉，其余是文字框 */
-  editor: (
-    p: Pos,
-    init: string,
-    done: (v: string | null, move?: 'down' | 'right' | 'left' | 'up') => void,
-  ) => React.ReactNode
+  editor: (p: Pos, init: string, done: (v: string | null, move?: CellMove) => void) => React.ReactNode
   mark?: SheetEditing['mark']
   tip?: SheetEditing['tip']
   rowMenu?: SheetEditing['rowMenu']
+  /** Ctrl+H：打开查找替换 */
+  onFind?: () => void
+  /** 隐藏的列：左右移动时跳过 */
+  hiddenCol?: (c: number) => boolean
 }
 
 export function useGridEdit(o: GridEditOpts) {
@@ -64,7 +67,15 @@ export function useGridEdit(o: GridEditOpts) {
     if (!focus) return
     const i = posOf.get(focus.row) ?? 0
     const row = line[Math.min(Math.max(0, i + dr), line.length - 1)] ?? focus.row
-    go({ row, col: Math.min(Math.max(0, focus.col + dc), Math.max(0, o.cols - 1)) }, extend)
+    const last = Math.max(0, o.cols - 1)
+    let col = Math.min(Math.max(0, focus.col + dc), last)
+    // 落在隐藏的列上：接着往同一个方向走；走到头还是隐藏的就往回找
+    if (dc && o.hiddenCol) {
+      const dir = Math.sign(dc)
+      while (o.hiddenCol(col) && col + dir >= 0 && col + dir <= last) col += dir
+      while (o.hiddenCol(col) && col - dir >= 0 && col - dir <= last) col -= dir
+    }
+    go({ row, col }, extend)
   }
 
   const range = useMemo(() => {
@@ -93,11 +104,18 @@ export function useGridEdit(o: GridEditOpts) {
     if (o.readOnly) return toast.error(t('这张表现在不能改'))
     setEditing({ p: focus, init: init ?? o.rows[focus.row]?.[focus.col] ?? '' })
   }
-  const done = (v: string | null, dir?: 'down' | 'right' | 'left' | 'up') => {
+  const done = (v: string | null, dir?: CellMove) => {
     const cur = editing
     setEditing(null)
+    // Ctrl+Enter：选中的每一格都改成这个值（批量设值，一次撤销）
+    if (cur && v !== null && dir === 'all') {
+      const all = picked().filter((p) => !o.hiddenCol?.(p.col))
+      o.onCells(all.length ? all.map((p) => ({ r: p.row, c: p.col, v })) : [{ r: cur.p.row, c: cur.p.col, v }])
+      box.current?.focus({ preventScroll: true })
+      return
+    }
     if (cur && v !== null) o.onCells([{ r: cur.p.row, c: cur.p.col, v }])
-    if (dir) {
+    if (dir && dir !== 'all') {
       const [dr, dc] = { down: [1, 0], up: [-1, 0], right: [0, 1], left: [0, -1] }[dir]
       move(dr, dc)
     }
@@ -135,6 +153,17 @@ export function useGridEdit(o: GridEditOpts) {
     if (!one) go({ row: cells[cells.length - 1].r, col: cells[cells.length - 1].c }, true)
   }
 
+  /** 向下填充选中的一块：series 时数字按步长递增 */
+  const fill = (series: boolean) => {
+    if (o.readOnly || !range) return
+    const rowsSel = line.slice(range.i0, range.i1 + 1).filter((r) => r >= o.from)
+    const colsSel: number[] = []
+    for (let c = range.c0; c <= range.c1; c++) if (!o.hiddenCol?.(c)) colsSel.push(c)
+    const cells = fillDown(o.rows, rowsSel, colsSel, series)
+    if (cells.length) o.onCells(cells)
+    else toast.info(t('先选中要填充的几行（第一行是要往下填的值）'))
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (editing) return
     const mod = e.ctrlKey || e.metaKey
@@ -144,6 +173,9 @@ export function useGridEdit(o: GridEditOpts) {
     if (mod && k.toLowerCase() === 's') return void (e.preventDefault(), o.onSave())
     if (mod && k.toLowerCase() === 'c') return void (e.preventDefault(), copy(false))
     if (mod && k.toLowerCase() === 'x') return void (e.preventDefault(), copy(true))
+    if (mod && k.toLowerCase() === 'h' && o.onFind) return void (e.preventDefault(), o.onFind())
+    // Ctrl+D 向下填充（复制选中区第一行）；Ctrl+Shift+D 按序列递增
+    if (mod && k.toLowerCase() === 'd') return void (e.preventDefault(), fill(e.shiftKey))
     if (mod && k.toLowerCase() === 'a') {
       e.preventDefault()
       setAnchor({ row: line[0], col: 0 })
@@ -215,6 +247,15 @@ export function useGridEdit(o: GridEditOpts) {
     focus,
     go,
     picked,
+    fill,
+    /** 选中的一块：按显示顺序的行、列（只有一格时也算） */
+    selection: () =>
+      range
+        ? {
+            rows: line.slice(range.i0, range.i1 + 1),
+            cols: Array.from({ length: range.c1 - range.c0 + 1 }, (_, i) => range.c0 + i),
+          }
+        : null,
     editing: !!editing,
     onKeyDown,
     onPaste: (e: React.ClipboardEvent) => {

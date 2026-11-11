@@ -5,13 +5,14 @@
 import { z } from 'zod'
 import { SHEET_ROLES, type SheetHeader } from './sheet-header.ts'
 import type { SheetData } from './files.ts'
+import { TableExport } from './table-export.ts'
 
 /** 默认认作表格的文件 */
 export const TABLE_INCLUDE = '*.xlsx, *.xlsm, *.xls, *.csv, *.tsv'
 /** 默认跳过：Office / WPS 打开文件时留下的锁文件 */
 export const TABLE_EXCLUDE = '~$*, .~*'
 
-/** 项目设置里的「表格」：表格目录（相对项目目录）、包含 / 排除、结构信息存哪 */
+/** 项目设置里的「表格」：表格目录（相对项目目录，或项目目录外的绝对路径）、包含 / 排除、结构信息存哪 */
 export const TablesConfig = z.object({
   dirs: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
   include: z.string().trim().max(300).default(TABLE_INCLUDE),
@@ -20,6 +21,8 @@ export const TablesConfig = z.object({
   store: z.enum(['project', 'data']).default('project'),
   /** 只读：表格页只能看、搜、对比，不能改 */
   readOnly: z.boolean().default(false),
+  /** 导表脚本：表格页对表格执行的命令，路径用占位（见 table-export.ts） */
+  exports: z.array(TableExport).max(20).default([]),
 })
 export type TablesConfig = z.infer<typeof TablesConfig>
 
@@ -36,7 +39,17 @@ export function tableKind(file: string): TableKind | null {
 }
 
 /** 一个通配写法（* 任意字符、? 一个字符）转成正则；不带 / 的只比文件名，带 / 的比相对路径 */
+const GLOB_CACHE = new Map<string, RegExp>()
 function globRe(glob: string) {
+  // 列几万个文件时每个文件都要比一遍：编译好的正则留着复用
+  const hit = GLOB_CACHE.get(glob)
+  if (hit) return hit
+  const re = compileGlob(glob)
+  if (GLOB_CACHE.size > 500) GLOB_CACHE.clear()
+  GLOB_CACHE.set(glob, re)
+  return re
+}
+function compileGlob(glob: string) {
   const esc = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
   // ** 跨目录：先拆开，各段里的 * 和 ? 不跨 /，再用 .* 接起来
   const body = esc
@@ -68,11 +81,23 @@ export interface TableFile {
   mtime: string
 }
 
+/** 设置里的一个表格目录：实际找的位置、找到几个表格 */
+export interface TableRoot {
+  /** 设置里写的 */
+  dir: string
+  /** 实际找的磁盘路径（路径写法不对时为空） */
+  full: string
+  found: boolean
+  files: number
+}
+
 export interface TablesIndex {
   /** 实际存在的表格目录（相对项目目录） */
   dirs: string[]
   /** 设置了但找不到的目录 */
   missing: string[]
+  /** 设置里每个目录各自的情况（项目设置里逐条显示） */
+  roots?: TableRoot[]
   files: TableFile[]
   /** 文件太多只列了前面一部分 */
   truncated?: boolean
@@ -113,6 +138,7 @@ export interface TableSearch {
 const HeaderRule = z.object({
   start: z.number().int().min(0).max(1000),
   roles: z.array(z.enum(SHEET_ROLES)).max(20),
+  labels: z.array(z.string().trim().max(20)).max(20).optional(),
 })
 
 /** 一个枚举值 */
@@ -145,6 +171,10 @@ export type TableEnum = z.infer<typeof TableEnum>
 
 /** 一列的结构：枚举、引用别的表的主键、列表（repeated）、取值范围 */
 export const TableColumn = z.object({
+  /** 这一列数组的分隔符（不写就用项目的 listSep） */
+  sep: z.string().min(1).max(4).optional(),
+  /** 参数类型：表头类型行写错、没写时按这个处理（uint32、float、string……），表格不改 */
+  type: z.string().trim().max(100).optional(),
   enum: z.string().max(200).optional(),
   /** 引用：「相对路径#字段名」或「相对路径#工作表#字段名」 */
   ref: z.string().max(500).optional(),
@@ -153,9 +183,18 @@ export const TableColumn = z.object({
   max: z.number().optional(),
   /** 除范围、枚举之外还允许的值（比如 -1 表示未配置） */
   allow: z.array(z.string().max(100)).max(50).optional(),
+  /** 正则：整格要符合（数组列按每一项比） */
+  pattern: z.string().max(300).optional(),
+  /** 必填：不能空着 */
+  required: z.boolean().optional(),
+  /** 条件必填：同一行 field 那一列是 values 里的某个值时，这一列必填 */
+  requiredWhen: z.object({ field: z.string().max(100), values: z.array(z.string().max(100)).max(50) }).optional(),
   note: z.string().max(500).optional(),
 })
 export type TableColumn = z.infer<typeof TableColumn>
+
+/** 表头行的取值写这个：基础类型（style.primitives）+ 所有通用枚举的名字 */
+export const TYPE_NAMES = '@types'
 
 /** 项目的表格风格 */
 export const TableStyle = z.object({
@@ -164,8 +203,22 @@ export const TableStyle = z.object({
   key: z.string().trim().max(100).default('ID'),
   /** repeated 列表的分隔符 */
   listSep: z.string().max(4).default(';'),
+  /** 修饰行里哪些值表示「这一列是数组」（不分大小写） */
+  arrayMarks: z.array(z.string().trim().max(40)).max(20).default(['repeated']),
   /** 类型行里算基础类型的名字（其余的大驼峰名字当枚举 / 结构） */
   primitives: z.array(z.string().max(40)).max(80).default([]),
+  /**
+   * 表头每种行能填什么：值是通用枚举名，或 TYPE_NAMES（基础类型 + 通用枚举名，给类型行用）。
+   * 例如修饰行 = 枚举 Modifier（optional / repeated），导出端行 = 枚举 Side（Public / Server / Client / Editor）
+   */
+  roleEnums: z.partialRecord(z.enum(SHEET_ROLES), z.string().max(200)).default({}),
+  /** 组合唯一：这些文件（通配）里几列合起来不能重复（比如 RoleID + Level） */
+  uniques: z
+    .array(z.object({ glob: z.string().max(300), fields: z.array(z.string().max(100)).min(2).max(8) }))
+    .max(100)
+    .default([]),
+  /** 保存前检查：off 不查；warn 有不合规的格子时提醒但能保存；block 有不合规时不让保存 */
+  saveCheck: z.enum(['off', 'warn', 'block']).default('warn'),
   /** 例外：这些文件（通配）用另一套表头 */
   exceptions: z
     .array(z.object({ glob: z.string().max(300), header: HeaderRule }))

@@ -26,6 +26,7 @@
     "test:e2e": "node scripts/e2e.mjs",
     "test:e2e:wsl": "wsl -e bash -lc \"npm run test:e2e\"",
     "test:unit": "node scripts/unit-tests.mjs",
+    "bench:tables": "node node_modules/tsx/dist/cli.mjs scripts/bench-tables.ts",
     "test:failed": "node scripts/unit-tests.mjs --failed",
     "test:affected": "node scripts/changed-tests.mjs --run",
     "test:coverage": "tsx --test --experimental-test-coverage \"server/**/*.test.ts\" \"shared/**/*.test.ts\" \"web/src/**/*.test.ts\"",

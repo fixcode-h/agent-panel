@@ -1,18 +1,22 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { foldSame, type DiffRow, type SheetDiff } from '@shared/sheet-diff'
 import { colName } from '@/lib/sheet'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useRowH } from '@/components/files/SheetTable'
 import '@/components/files/sheet-table.css'
 
-/** 一次最多画这么多行：再多的提示用「只看变化」 */
-const MAX_LINES = 3000
+/** 看得见的行上下再多画几行 */
+const OVER = 20
+/** 每列宽度（固定列宽：只画看得见的行，列宽不能跟着内容跳） */
+const COL_W = 150
 
 /**
  * 两版表格的格子级差异（版本差异、跨项目对比共用）：改过的格子旧值划掉、新值绿色，新增的行整行绿底、
  * 删掉的行整行红底划掉；「只看变化」时没变的连续几行折成一行，点开能看。
- * 列标题用新表的字段名；颜色、行高、字体跟着设置 → 组件 → 表格的微调
+ * 列标题用新表的字段名；颜色、行高、字体跟着设置 → 组件 → 表格的微调。
+ * 自己带滚动区，只画看得见的行（几千行也不卡）
  */
 export function SheetDiffView({
   a,
@@ -51,30 +55,69 @@ export function SheetDiffView({
     )
   }, [diff, onlyChanges, opened])
   const cols = diff.colMap.length
+  const box = useRef<HTMLDivElement>(null)
+  const rowH = useRowH()
+  const [win, setWin] = useState({ from: 0, to: 80 })
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    let frame = 0
+    const read = () => {
+      frame = 0
+      const a = Math.max(0, Math.floor(el.scrollTop / rowH) - OVER)
+      const b = Math.ceil((el.scrollTop + el.clientHeight) / rowH) + OVER
+      setWin((w) => (w.from === a && w.to === b ? w : { from: a, to: b }))
+    }
+    const later = () => {
+      if (!frame) frame = requestAnimationFrame(read)
+    }
+    read()
+    el.addEventListener('scroll', later, { passive: true })
+    const ro = new ResizeObserver(later)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', later)
+      ro.disconnect()
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [rowH])
+  const shown = lines.slice(win.from, win.to)
   const old = (r: number, c: number) => (diff.colMap[c] < 0 ? '' : (a[r]?.[diff.colMap[c]] ?? ''))
   const span = cols + 1 + (pick ? 1 : 0) + (rowAction ? 1 : 0)
   return (
-    <>
-      <table className="sheet-diff min-w-full text-footnote">
+    <div ref={box} className="thin-scroll min-h-0 flex-1 overflow-auto">
+      <table
+        className="sheet-diff table-fixed text-footnote"
+        style={{ width: (pick ? 32 : 0) + 56 + cols * COL_W + (rowAction ? 64 : 0) }}
+      >
+        <colgroup>
+          {pick && <col style={{ width: 32 }} />}
+          <col style={{ width: 56 }} />
+          {Array.from({ length: cols }, (_, c) => (
+            <col key={c} style={{ width: COL_W }} />
+          ))}
+          {rowAction && <col style={{ width: 64 }} />}
+        </colgroup>
         <thead className="sticky top-0 z-[1] bg-panel">
           <tr>
-            {pick && <th className="w-8" />}
-            <th className="w-12 px-2 text-right font-normal text-subtle">#</th>
+            {pick && <th />}
+            <th className="px-2 text-right font-normal text-subtle">#</th>
             {Array.from({ length: cols }, (_, c) => (
               <th
                 key={c}
-                className="max-w-60 min-w-20 truncate px-2 text-left font-[var(--c-grid-nameBold)]"
+                className="truncate px-2 text-left font-[var(--c-grid-nameBold)]"
                 title={names[c] || colName(c)}
               >
                 {names[c] || colName(c)}
                 {diff.colMap[c] < 0 && <span className="ml-1.5 text-caption text-(--c-grid-added)">{t('新列')}</span>}
               </th>
             ))}
-            {rowAction && <th className="w-16" />}
+            {rowAction && <th />}
           </tr>
         </thead>
         <tbody>
-          {lines.slice(0, MAX_LINES).map((l) => {
+          {win.from > 0 && <tr aria-hidden style={{ height: win.from * rowH }} />}
+          {shown.map((l) => {
             if ('fold' in l)
               return (
                 <tr key={`f${l.k}`}>
@@ -117,13 +160,13 @@ export function SheetDiffView({
                   const v = src ? (src[c] ?? '') : old(row.a!, c)
                   if (!changed.has(c))
                     return (
-                      <td key={c} className="max-w-60 truncate px-2" title={v}>
+                      <td key={c} className="truncate px-2" title={v}>
                         {v}
                       </td>
                     )
                   const was = old(row.a!, c)
                   return (
-                    <td key={c} className="sheet-diff-cell max-w-60 truncate px-2" title={`${was} → ${v}`}>
+                    <td key={c} className="sheet-diff-cell truncate px-2" title={`${was} → ${v}`}>
                       {was && (
                         <Fragment>
                           <del className="sheet-diff-old">{was}</del>{' '}
@@ -137,17 +180,13 @@ export function SheetDiffView({
               </tr>
             )
           })}
+          {lines.length > win.to && <tr aria-hidden style={{ height: (lines.length - win.to) * rowH }} />}
         </tbody>
       </table>
-      {lines.length > MAX_LINES && (
-        <p className="px-3 py-2 text-caption text-subtle">
-          {t('只画了前 {n} 行，打开「只看变化」看全部改动', { n: MAX_LINES })}
-        </p>
-      )}
       {diff.rows.length === 0 && (
         <p className="px-3 py-6 text-center text-footnote text-subtle">{t('两边都没有数据行')}</p>
       )}
-    </>
+    </div>
   )
 }
 

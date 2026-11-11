@@ -1108,7 +1108,13 @@ function Body({
                     '游戏配置表这类表格的目录。设好后侧栏多一个「表格」入口：按目录浏览、搜索、筛选、在线改单元格、看版本差异、跨项目对比。保存改动只改单元格的值，文件仍是原来的 Excel / WPS 格式。',
                   )}
                 />
-                <ProjectTablesSection value={draft.tables} onChange={(v) => set('tables', v)} project={project} />
+                <ProjectTablesSection
+                  value={draft.tables}
+                  onChange={(v) => set('tables', v)}
+                  project={project}
+                  base={dir?.exists && dir.isDir ? dir.path : draft.path.trim()}
+                  path={draft.path}
+                />
               </div>
             ) : section === 'lessons' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">

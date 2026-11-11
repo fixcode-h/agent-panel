@@ -94,6 +94,7 @@ const gridPropLabel = (prop: string): string | undefined =>
     invalid: t('不合规的格子'),
     added: t('新增的行和新值'),
     removed: t('删掉的行和旧值'),
+    stripe: t('隔行底色'),
   })[prop]
 
 const optionLabel = (v: string) =>
@@ -123,6 +124,7 @@ const optionLabel = (v: string) =>
     low: t('淡'),
     mid: t('中'),
     high: t('浓'),
+    vivid: t('鲜艳'),
     violet: t('紫'),
     teal: t('青'),
     amber: t('琥珀'),

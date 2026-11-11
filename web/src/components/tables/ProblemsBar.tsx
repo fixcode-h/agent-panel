@@ -2,6 +2,7 @@ import { CircleCheck, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cellRef } from '@shared/table-edit'
 import type { ColInfo, Problem } from '@shared/table-struct'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 
 /** 列表最多列这么多处 */
 const SHOW = 300
@@ -21,8 +22,15 @@ export function ProblemsBar({
   onPick: (p: Problem) => void
   onClose: () => void
 }) {
+  // 高度可以拖上边缘调，记在本机；最高到窗口的七成
+  const pane = usePaneWidth('tables-problems', 220, 96, () => Math.round(window.innerHeight * 0.7))
   return (
-    <section aria-label={t('不合规的格子')} className="flex max-h-[34%] shrink-0 flex-col border-t bg-panel">
+    <section
+      aria-label={t('不合规的格子')}
+      style={{ height: problems.length ? pane.width : undefined }}
+      className="relative flex shrink-0 flex-col border-t bg-panel"
+    >
+      {problems.length > 0 && <ResizeHandle pane={pane} side="top" />}
       <header className="flex h-8 shrink-0 items-center gap-2 px-3 text-footnote">
         <span className="font-medium">{t('检查结果')}</span>
         <span className="text-subtle">

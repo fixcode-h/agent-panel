@@ -12,7 +12,7 @@ import { applyRowOps, cellRef, gridDiff, setCells, type TableSave } from '../../
 import { tableKind, type TableDoc, type TablesConfig } from '../../shared/tables.ts'
 import { DATA_DIR } from '../store.ts'
 import { readXlsx } from '../xlsx.ts'
-import { forgetTable, lockedByOffice, openTable, safeRel } from './files.ts'
+import { forgetLists, forgetTable, lockedByOffice, openTable, safeRel } from './files.ts'
 import { editXlsx } from './xlsx-write.ts'
 import { HttpError } from './http-error.ts'
 
@@ -25,8 +25,13 @@ export interface SaveDeps {
 }
 
 /** 备份到数据目录 tables-backup/<项目 id>/，按文件名 + 时间；只留最近的几份 */
-async function backup(projectId: string, rel: string, full: string) {
-  const dir = path.join(DATA_DIR, 'tables-backup', projectId, path.dirname(rel))
+export async function backup(projectId: string, rel: string, full: string) {
+  // 项目目录外的表格（绝对路径）：盘符的冒号去掉，Windows 上目录名不能带冒号
+  const sub = path
+    .dirname(rel)
+    .replace(/^([a-zA-Z]):/, '$1')
+    .replace(/^\/+/, '')
+  const dir = path.join(DATA_DIR, 'tables-backup', projectId, sub)
   await mkdir(dir, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const name = path.basename(rel)
@@ -54,7 +59,7 @@ export async function saveTable(
   deps: SaveDeps = {},
 ): Promise<TableDoc> {
   if (cfg.readOnly) throw new HttpError(t('项目设置里把表格设成了只读'), 409)
-  const { rel, full } = safeRel(dir, body.path)
+  const { rel, full } = safeRel(dir, body.path, cfg)
   const kind = tableKind(rel)
   if (kind !== 'xlsx' && kind !== 'csv')
     throw new HttpError(t('老的 .xls / .et 格式只能用表格软件打开，另存为 .xlsx 后能在这里看和改'))
@@ -131,5 +136,7 @@ export async function saveTable(
     throw new HttpError(t('写入失败：{err}', { err: (e as Error).message }), 409)
   }
   forgetTable(full)
+  // 列表里的大小、修改时间也变了
+  forgetLists()
   return openTable(dir, rel, cfg)
 }

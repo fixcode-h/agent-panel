@@ -23,17 +23,21 @@ function bestRoot(roots: { path: string }[], p: string) {
   return best
 }
 
-/** 在服务端（也就是本机）浏览目录并选中一个 */
-function DirBrowser({
+/** 在服务端（也就是本机）浏览目录并选中一个；项目设置的表格目录也用它 */
+export function DirBrowser({
   open,
   start,
   onOpenChange,
   onPick,
+  title = t('选择项目目录'),
+  description = t('浏览本机目录，选中项目所在的文件夹'),
 }: {
   open: boolean
   start: string
   onOpenChange: (o: boolean) => void
   onPick: (path: string) => void
+  title?: string
+  description?: string
 }) {
   const [listing, setListing] = useState<DirListing | null>(null)
   const [jump, setJump] = useState('')
@@ -102,8 +106,8 @@ function DirBrowser({
       }}
       className="max-h-[80vh] max-w-[560px]"
     >
-      <ModalHeader icon={FolderOpen} title={t('选择项目目录')}>
-        <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
+      <ModalHeader icon={FolderOpen} title={title}>
+        <D.Description className="sr-only">{description}</D.Description>
       </ModalHeader>
       <form
         className="flex gap-2 border-b px-5 py-3"
