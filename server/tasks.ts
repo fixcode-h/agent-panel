@@ -78,6 +78,7 @@ import { createKeepAlive } from './tasks/keepalive.ts'
 import { createRun } from './tasks/run.ts'
 import { createAsks } from './tasks/asks.ts'
 import { createAwaySweep } from './tasks/away-sweep.ts'
+import { createQuotaResume } from './tasks/quota-resume.ts'
 import { createPeer } from './tasks/peer.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
@@ -232,6 +233,7 @@ export function tasksApi(deps: {
     withJobs: () => withJobs,
     withLive: () => withLive,
     learnExperience: () => learnExperience,
+    quotaAfterFail: () => quotaAfterFail,
     workflowCatalog: () => workflowCatalog,
     worktreeHome: () => worktreeHome,
     worktreeStatusOf: () => worktreeStatusOf,
@@ -676,6 +678,7 @@ export function tasksApi(deps: {
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget, holdWake } = createBudget(scope)
   const { learnExperience } = createTaskLearner(scope)
+  const { quotaAfterFail, armQuota, disarmQuota } = createQuotaResume(scope)
   const {
     allowedPids,
     processPanel,
@@ -727,6 +730,8 @@ export function tasksApi(deps: {
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉
   void ready.then(() => armIdleAsk()).catch(() => {})
+  // 额度用完在等到点继续的对话：面板重启前排的计时器没了，启动后重新排上
+  void ready.then(() => armQuota()).catch((e) => log.warn('task', '重新排上等额度恢复的对话失败', e))
 
   return {
     routes,
@@ -809,6 +814,7 @@ export function tasksApi(deps: {
       )
       shuttingDown = true
       disarmIdleAsk()
+      disarmQuota()
       clearInterval(sweepTimer)
       stopMemoryGuard()
       for (const id of live.keys()) stopTask(id, 'restart')

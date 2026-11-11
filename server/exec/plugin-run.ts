@@ -8,12 +8,15 @@ import { includedAgents } from '../../shared/agent-role.ts'
 import { taskPlugin } from '../../shared/task.ts'
 import { pluginToolsForRun } from '../plugins/index.ts'
 import type { PluginConfirm } from '../plugins/sdk.ts'
+import type { PluginRunHooks } from '../plugins/mcp.ts'
 import { dropOwnRequests, panelRequest } from './panel-requests.ts'
 import type { RealContext } from './real-context.ts'
 
 export async function pluginRunTools(
   ctx: RealContext,
   run: { agent: Agent; resume: boolean; cwd: string; step: string; agentId: string },
+  /** 插件改文件类工具的守卫和改动记录（插件接口 3，见 server/plugins/mcp.ts 的 PluginRunHooks） */
+  hooks?: Omit<PluginRunHooks, 'cwd'>,
 ) {
   const { task } = ctx
   const own = new Set<string>()
@@ -41,6 +44,7 @@ export async function pluginRunTools(
       resume: run.resume,
     },
     confirm,
+    { cwd: run.cwd, ...hooks },
   )
   return {
     ...r,

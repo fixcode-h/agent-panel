@@ -894,6 +894,8 @@ const ProjectFields = z.object({
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
   testSteps: z.array(TestStep).max(40).default([]),
+  /** 在这个项目里关掉的插件测试步骤（plugin:<插件>:<步骤>）：插件带的步骤默认生效，见 shared/plugins/contrib.ts */
+  pluginStepsOff: z.array(z.string().max(100)).max(100).optional(),
   /**
    * 按改动大小决定验证范围：小改动只跑快速检查就收尾，大改动跑完整的测试步骤。
    * 关掉时每次改动都跑完整步骤。旧项目也默认打开：小改动在没有标「小改动也跑」的合并步骤时仍跑全部合并步骤，不会少编译

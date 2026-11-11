@@ -71,4 +71,7 @@ await runShard(import.meta.filename, async (api) => {
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('学到经验卡片：点「全部经验」没有打开项目设置的经验页'))
   await check(p, '学到经验-全部经验')
+  // 命中记录：每条写用上几次、最近一次；切到「很久没用上的在前」后从没用上的排最前
+  await p.getByRole('radio', { name: '很久没用上的在前' }).click()
+  await check(p, '项目经验-很久没用上', ['用上 7 次', '还没用上'])
 })

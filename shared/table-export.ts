@@ -12,6 +12,8 @@ export const TableExport = z.object({
   cwd: z.string().trim().max(300).default(''),
   /** 最多跑多久（分钟），到点停掉 */
   timeoutMin: z.number().int().min(1).max(240).default(30),
+  /** 在表格页保存一张表后，自动对这张表执行一次 */
+  onSave: z.boolean().optional(),
 })
 export type TableExport = z.infer<typeof TableExport>
 
@@ -123,3 +125,63 @@ export type ExportEvent =
   | { type: 'out'; text: string }
   | { type: 'end'; index: number; code: number | null; killed?: string; error?: string }
   | { type: 'done'; ok: boolean }
+
+/** 输出里一处能点的位置：哪张表、哪一格（行列从 0 数；只给了文件时是 undefined） */
+export interface OutputLoc {
+  path: string
+  sheet?: string
+  row?: number
+  col?: number
+}
+
+const FILE_RE = /([^\s"'()[\]<>]+\.(?:xlsx|xlsm|csv|tsv))(?::(\d+)(?::(\d+))?)?/gi
+const CELL_RE = /([\p{L}\p{N}_]+)!([A-Z]{1,3})(\d+)/gu
+
+const colOf = (letters: string) => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1
+
+/**
+ * 导表输出的一行切成几段，认出来的位置带上 loc（点了跳过去）：
+ * 「路径.xlsx:行:列」「路径.xlsx」按项目里的表格文件对（绝对路径、反斜杠都行，按结尾对）；
+ * 「Sheet!A1」只有一张表在导时算这张表的
+ */
+export function outputLocs(line: string, files: string[], only?: string): { text: string; loc?: OutputLoc }[] {
+  const found: { at: number; end: number; loc: OutputLoc }[] = []
+  const fileOf = (p: string) => {
+    const n = p.replace(/\\/g, '/')
+    return files.find((f) => n === f || n.endsWith(`/${f}`))
+  }
+  for (const m of line.matchAll(FILE_RE)) {
+    const path = fileOf(m[1])
+    if (!path) continue
+    found.push({
+      at: m.index,
+      end: m.index + m[0].length,
+      loc: {
+        path,
+        ...(m[2] ? { row: Number(m[2]) - 1 } : {}),
+        ...(m[3] ? { col: Number(m[3]) - 1 } : {}),
+      },
+    })
+  }
+  if (only)
+    for (const m of line.matchAll(CELL_RE)) {
+      if (found.some((f) => m.index < f.end && m.index + m[0].length > f.at)) continue
+      found.push({
+        at: m.index,
+        end: m.index + m[0].length,
+        loc: { path: only, sheet: m[1], row: Number(m[3]) - 1, col: colOf(m[2]) },
+      })
+    }
+  if (!found.length) return [{ text: line }]
+  found.sort((a, b) => a.at - b.at)
+  const out: { text: string; loc?: OutputLoc }[] = []
+  let i = 0
+  for (const f of found) {
+    if (f.at < i) continue
+    if (f.at > i) out.push({ text: line.slice(i, f.at) })
+    out.push({ text: line.slice(f.at, f.end), loc: f.loc })
+    i = f.end
+  }
+  if (i < line.length) out.push({ text: line.slice(i) })
+  return out
+}

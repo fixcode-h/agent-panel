@@ -14,6 +14,7 @@ import { RemoteAccess } from './remote-schema.ts'
 import { NotifyChannels, ScheduleWebhook } from './notify-channels.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
+import { QuotaResumeSettings } from './quota-resume.ts'
 import {
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_VOICE,
@@ -211,6 +212,7 @@ export const Settings = z.object({
    */
   lowMemoryReleasePercent: z.number().int().min(0).max(50).catch(5).default(5),
   resumeAfterRestart: z.boolean().catch(false).default(false), // 重启后自动继续被打断的对话；默认关，见 ADR 0042
+  quotaResume: QuotaResumeSettings, // 额度用完、被限流后到点自动继续、按备用顺序换模型；默认都关（shared/quota-resume.ts）
   /**
    * 子对话彻底完成后，CLI 还停在等下一句上多久（分钟）再结束；0 表示完成就结束。
    * 这段时间里父对话或用户接着交代，消息直接交给同一个进程，不用冷启动。

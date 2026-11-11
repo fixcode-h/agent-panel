@@ -11,6 +11,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Switch } from '@/components/ui/switch'
 import { pluginApi, type InstallPreview, type KeptItem, type RemovalPreview } from './api'
 import { UpdateNotice } from './PluginUpdates'
+import { PluginContributions } from './PluginContributions'
 import { pluginIcon } from './icon'
 import { pluginParamsId } from './PluginParamsNav'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
@@ -165,6 +166,7 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
           />
         </div>
       </div>
+      <PluginContributions manifest={m} />
       <UpdateNotice row={row} onPreview={onPreview} />
       {error && <p className="text-xs break-all text-danger">{error}</p>}
       {!!kept.length && (
@@ -180,7 +182,11 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
         confirmText={t('关掉')}
         description={
           <div className="flex flex-col gap-2">
-            <span>{t('会停掉它的后台和工具，对话里不再挂它的工具，它装的没改过的技能也一起删掉。')}</span>
+            <span>
+              {t(
+                '会停掉它的后台和工具，对话里不再挂它的工具，它带的钩子、测试步骤和「/」命令一起撤掉，它装的没改过的技能也一起删掉。',
+              )}
+            </span>
             {removalText(preview)}
           </div>
         }

@@ -59,6 +59,9 @@ export function parseManifest(raw: unknown): Manifest {
   const wfHit = m.workflows.find((w) => BUILTIN_WORKFLOWS.some((b) => b.key === w.key))
   if (wfHit) throw new Error(`插件的工作流 key「${wfHit.key}」和面板内置工作流重名`)
   for (const f of [m.server, m.web, m.css]) if (f && !safeRel(f)) throw new Error(`入口路径不对：${f}`)
+  // 钩子脚本、命令文件也只能在包里（插件接口 3）
+  for (const f of [...m.hooks.map((h) => h.script), ...m.commands.map((c) => c.file)])
+    if (f && !safeRel(f)) throw new Error(`包里的文件路径不对：${f}`)
   return m
 }
 

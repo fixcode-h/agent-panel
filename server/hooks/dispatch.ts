@@ -22,8 +22,10 @@ import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan-pace.ts'
 import { DATA_DIR } from '../store.ts'
 import { loadProjectLessons } from '../project-lessons.ts'
+import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
+import { activePluginHooks, isPluginHook, runPluginHook } from '../plugins/contrib.ts'
 import { taskLog } from '../task-log.ts'
 import {
   bugDeny,
@@ -113,7 +115,8 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: stri
     if (who === 'coordinator') {
       // 补丁一次能改好几个文件：每个都登记过才放行
       const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
-      if (files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
+      // 插件工具算不出要改哪些文件时 paths 是空的：说不清改什么就不算登记过
+      if (files.length && files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
       return '【面板】你是只统筹不动手的父对话，不直接改文件：改动交给子对话（create_conversation）；确实是几行以内的微小改动，先调用 begin_inline_edit 登记要改的文件。'
     }
     return '【面板】你是只读的角色，不改项目里的文件：把发现写进结果交回，要改的由派你的对话安排。'
@@ -212,8 +215,10 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     agent: { id: c.agent.id, name: c.agent.name },
     cli: c.cliId,
   }
+  // 用户钩子加上开着的插件带的钩子（插件关掉就不在这里，见 server/plugins/contrib.ts）
+  const all: HookDef[] = [...data.hooks, ...activePluginHooks(data)]
   // 这次调用范围对得上的用户钩子：装不装这个事件看它，工具类别、路径这些到触发时再看
-  const mine = (event: HookEventName) => data.hooks.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
+  const mine = (event: HookEventName) => all.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
   const lessons =
     on('push-lessons') && c.project.id
       ? (await loadProjectLessons(c.project, c.agents).catch(() => ({ lessons: [] }))).lessons.filter(
@@ -300,8 +305,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     }
     const r = rel(c.cwd, facts.tool?.path ?? '')
     const out: { deny?: string; block?: string; context: string[] } = { context: [] }
-    for (const h of data.hooks.filter((x) => hookApplies(x, input, r))) {
-      const res = await runHook(h, input, c.cwd)
+    for (const h of all.filter((x) => hookApplies(x, input, r))) {
+      const res = isPluginHook(h) ? await runPluginHook(h, input, c.cwd) : await runHook(h, input, c.cwd)
       const failed = res.error ? (h.onError === 'deny' && event === 'tool.before' ? 'deny' : 'allow') : ''
       noteTrigger({
         at: new Date().toISOString(),
@@ -425,6 +430,14 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         pushed.set(c.task.id, seen)
         const hit = lessons.filter((l) => !seen.has(l.id) && l.paths.some((g) => globMatch(g, r)))
         for (const l of hit) seen.add(l.id)
+        // 推给模型的教训也算命中（shared/knowledge-hits.ts）
+        if (hit.length)
+          void recordKnowledgeHits(
+            c.project.id,
+            'lessons',
+            hit.map((l) => l.id),
+            c.task.parentTaskId || c.task.id,
+          )
         if (hit.length) noteBuiltin('push-lessons', event, 'context', `${r}：${hit.map((l) => l.title).join('、')}`)
         if (hit.length)
           ctx.push(
@@ -499,8 +512,26 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
+  /**
+   * 插件的改文件类工具（插件接口 3，McpTool.effect = 'edit'）也过工具前的守卫和用户钩子：MCP 调用在 CLI 那边不算改文件，
+   * 以前写资产、改蓝图能绕过只读身份、Bug 先诊断和独立分支越界。按「改文件」的事实交给同一套守卫（路径是插件按参数算的 targets）
+   */
+  const editGuard = async (tool: string, paths: string[], input: Record<string, unknown>): Promise<string> => {
+    const facts: HookFacts = { tool: { kind: 'edit', name: tool, input, path: paths[0] ?? '', paths } }
+    for (const [id, fn] of guards) {
+      const deny = fn(guard(id), facts)
+      if (!deny) continue
+      taskLog(c.task.id, '插件工具被守卫拒绝', { guard: id, tool, paths: paths.slice(0, 5) })
+      noteBuiltin(id, 'tool.before', 'deny', deny)
+      return deny
+    }
+    return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
+  }
+
   // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
   c.call.orch.guardCommand = commandGuard
+  // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
+  c.call.orch.guardEdit = editGuard
   return {
     ...(beforeEnd ? { beforeEnd } : {}),
     ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),

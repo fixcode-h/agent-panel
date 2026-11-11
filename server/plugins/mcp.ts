@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import type { McpCallContext, McpResult, McpTool } from './sdk.ts'
 import { log } from '../log.ts'
+import { notePluginEffect } from './effects.ts'
 import { clipPluginResult, saveToHandoff } from './mcp-clip.ts'
 
 /**
@@ -17,12 +18,24 @@ export const mcpText = (text: string, isError = false): McpResult => ({
   ...(isError ? { isError } : {}),
 })
 
+/**
+ * 这一轮对话交给插件会话的钩子（插件接口 3，见 sdk.ts 的 McpToolEffect）：runner 装上
+ * - guardEdit：改文件类工具执行前过工具前守卫，拒绝时返回原因；
+ * - changed：改文件类工具成功改了这些文件（本机绝对路径），记成这一轮的改动
+ */
+export interface PluginRunHooks {
+  cwd: string
+  guardEdit?: (tool: string, paths: string[], input: Record<string, unknown>) => Promise<string>
+  changed?: (files: string[]) => void
+}
+
 interface Session {
   pluginId: string
   server: string
   taskId: string
   tools: () => McpTool[] | Promise<McpTool[]>
   confirm?: McpCallContext['confirm']
+  hooks?: PluginRunHooks
 }
 
 const sessions = new Map<string, Session>()
@@ -34,9 +47,10 @@ export function openPluginMcp(
   taskId: string,
   tools: () => McpTool[] | Promise<McpTool[]>,
   confirm?: McpCallContext['confirm'],
+  hooks?: PluginRunHooks,
 ) {
   const token = randomUUID()
-  sessions.set(token, { pluginId, server, taskId, tools, confirm })
+  sessions.set(token, { pluginId, server, taskId, tools, confirm, hooks })
   const port = Number(process.env.PORT ?? 8787)
   return {
     name: server,
@@ -48,6 +62,22 @@ export function openPluginMcp(
 /** 插件关掉时：它开着的会话全部作废（下一次调用回「这一轮已经结束了」） */
 export function closePluginMcp(pluginId: string) {
   for (const [token, s] of sessions) if (s.pluginId === pluginId) sessions.delete(token)
+}
+
+/** 插件算要改哪些文件时出错不拦调用：按算不出（空数组）交给守卫 */
+function safeTargets(tool: McpTool, args: Record<string, unknown>) {
+  try {
+    return (tool.targets?.(args) ?? []).filter((x) => typeof x === 'string' && x.trim())
+  } catch {
+    return []
+  }
+}
+
+/** 调用结束：按声明记下改了什么、验证得怎么样（effects.ts），改了的文件交给 runner 记成这一轮的改动 */
+function settle(s: Session, tool: McpTool, r: Pick<McpResult, 'isError' | 'changed' | 'verified'>) {
+  if (!tool.effect || tool.effect === 'read' || !s.hooks) return
+  const files = notePluginEffect(s.taskId, s.hooks.cwd, s.server, tool, r)
+  if (files.length) s.hooks.changed?.(files)
 }
 
 /** 一条 JSON-RPC 请求；通知（没有 id）返回 undefined */
@@ -65,20 +95,36 @@ async function handle(s: Session, msg: any) {
       return reply({})
     case 'tools/list': {
       const tools = await s.tools()
-      return reply({ tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) })
+      return reply({
+        tools: tools.map(({ name, description, inputSchema, effect }) => ({
+          name,
+          description,
+          inputSchema,
+          // 声明了作用的按 MCP 的工具注解告诉 CLI：只读的不改环境，改文件的会改
+          ...(effect && { annotations: { readOnlyHint: effect !== 'edit' } }),
+        })),
+      })
     }
     case 'tools/call': {
       const name = String(msg.params?.name ?? '')
       const tool = (await s.tools()).find((x) => x.name === name)
       if (!tool) return reply(mcpText(`没有这个工具：${name}`, true))
+      const args = msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}
       try {
-        const args = msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}
-        const res = await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm })
+        // 改文件类工具先过工具前守卫（只读身份、Bug 先诊断、独立分支越界、凭据……），和 CLI 自己的改文件工具同一套
+        if (tool.effect === 'edit' && s.hooks?.guardEdit) {
+          const deny = await s.hooks.guardEdit(`${s.server} · ${name}`, safeTargets(tool, args), args)
+          if (deny) return reply(mcpText(deny, true))
+        }
+        const r = await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm })
+        settle(s, tool, r)
+        const { changed: _c, verified: _v, ...res } = r
         // 结果太长的存文件、只回头尾和路径（mcp-clip.ts）：插件结果进了会话就一直占着上下文
         return reply(await clipPluginResult(res, `plugin-${s.server}-${name}-${Date.now()}`, saveToHandoff(s.taskId)))
       } catch (e) {
-        // 插件工具出错原样交给 Agent（不悄悄重试），日志里也记一笔方便排查
+        // 插件工具出错原样交给 Agent（不悄悄重试），日志里也记一笔方便排查；验证类工具出错按没通过记
         log.warn('plugin', `插件工具出错：${s.pluginId}/${name}`, { error: (e as Error).message })
+        settle(s, tool, { isError: true })
         return reply(mcpText((e as Error).message, true))
       }
     }

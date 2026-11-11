@@ -5,7 +5,7 @@ import { t } from '../../shared/i18n.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
 import type { ActivateServer, McpCallContext, PluginRun, ServerPlugin } from './sdk.ts'
 import { log } from '../log.ts'
-import { closePluginMcp, openPluginMcp } from './mcp.ts'
+import { closePluginMcp, openPluginMcp, type PluginRunHooks } from './mcp.ts'
 import { pluginDataDir, type Installed } from './store.ts'
 
 /**
@@ -112,6 +112,15 @@ export async function pluginConfigChanged(p: Installed, next: PluginConfig, conf
 
 export const runningPlugin = (id: string) => active.get(id)?.plugin
 
+/** 开着的插件里认领了这个扩展名（小写、不带点）的文本化接口；按插件启动先后取第一个 */
+export function textifierFor(ext: string) {
+  for (const [id, a] of active) {
+    const tx = a.plugin.textify
+    if (tx?.exts.some((e) => e.toLowerCase() === ext)) return { id, text: tx.text }
+  }
+  return undefined
+}
+
 /** 插件页上的运行状态 */
 export async function pluginStatus(id: string) {
   const p = active.get(id)?.plugin
@@ -127,7 +136,7 @@ export async function pluginStatus(id: string) {
  * 一轮对话开始：问每个开着的插件要不要挂工具，要的开 MCP 会话（令牌只在这一轮有效）。
  * 插件出错不拦对话：记日志、这一轮不挂它的工具
  */
-export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext['confirm']) {
+export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext['confirm'], hooks?: PluginRunHooks) {
   const servers: { name: string; url: string }[] = []
   const hints: string[] = []
   const closers: (() => void)[] = []
@@ -137,7 +146,7 @@ export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext
       const r = await a.plugin.tools(run)
       if (!r) continue
       for (const s of r.servers) {
-        const m = openPluginMcp(id, s.name, run.taskId, s.tools, confirm)
+        const m = openPluginMcp(id, s.name, run.taskId, s.tools, confirm, hooks)
         servers.push({ name: m.name, url: m.url })
         closers.push(m.close)
       }

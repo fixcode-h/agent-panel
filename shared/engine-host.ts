@@ -9,6 +9,7 @@ import type { DiagnosisInput } from './bug-diagnosis.ts'
 import type { BugSource } from './bug-quotes.ts'
 import type { ReviewTarget } from './clis.ts'
 import type { DocRootInfo } from './doc-root.ts'
+import type { GateStep, TurnExtra } from './done-evidence.ts'
 import type { DocsFirstInput, ModuleDocsLookup } from './docs-first.ts'
 import type { ExperienceInput, ProjectExperience } from './experience.ts'
 import type { FlowRunHost, RunTools } from './flow-run-orch.ts'
@@ -97,6 +98,8 @@ export interface ReviewDiff {
   stat: string
   diff: string
   file?: string
+  /** 二进制文件（表格、插件认领的扩展名）的语义差异，已拼成提示词里的一节；没有就不带（server/exec/review-semantic.ts） */
+  semantic?: string
 }
 
 /** 分诊记录的输入：派单工具的 route 参数（协调器写的理解、理由、假设） */
@@ -231,7 +234,7 @@ export interface Orchestra {
   }): Promise<{ ok: boolean; info: string }>
   finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 对话（Agent 模式）交代这一轮怎么结束：done / blocked（shared/end-turn.ts）；其余身份没有这个工具 */
-  endTurn?: (outcome: string, need: string) => { ok: boolean; info: string }
+  endTurn?: (outcome: string, need: string) => Promise<{ ok: boolean; info: string }>
   /** 等你操作：请用户离开对话去做一件事（shared/user-action.ts）；和 endTurn 同样只给对话 */
   requestUserAction?: (input: Record<string, unknown> | undefined) => { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
@@ -297,6 +300,11 @@ export interface Orchestra {
   }>
   /** 后台命令的命令过工具前守卫（runner 装上，见 server/hooks/dispatch.ts 的 commandGuard）：拒绝时返回原因 */
   guardCommand?: (command: string) => Promise<string>
+  /**
+   * 插件的改文件类工具（McpTool.effect = 'edit'）执行前过工具前守卫（runner 装上，见 server/hooks/dispatch.ts 的 editGuard）：
+   * 只读身份、Bug 先诊断、独立分支越界、凭据这些规则以前只认 CLI 自己的改文件工具。拒绝时返回原因
+   */
+  guardEdit?: (tool: string, paths: string[], input: Record<string, unknown>) => Promise<string>
   checkBackground(id: string): string
   stopBackground(id: string): { ok: boolean; info: string }
   /** 子对话请父对话收尾：独立分支里由父对话合回原分支，共用目录、P4、没有版本管理时由父对话验收（结果推回来） */
@@ -485,7 +493,12 @@ export interface EngineHost {
    * 项目打开了「改了代码要跑过测试步骤才能结束」（Project.requireVerify）：end_turn 记成做完前按这些步骤核对（shared/done-evidence.ts）。
    * 没开时不传，只记完成依据、卡片上标出来
    */
-  verifyGate?: { steps: { name: string; command: string }[] }
+  verifyGate?: { steps: GateStep[] }
+  /**
+   * 这一轮工具调用之外的完成依据（shared/done-evidence.ts 的 TurnExtra）：插件工具报的改动和验证；
+   * 打开了 verifyGate 时还有命令改的文件（工作区快照差）。end_turn(done) 时现取，见 server/exec/turn-extra.ts
+   */
+  turnExtra?: () => Promise<TurnExtra>
   /** 子对话列表：协调 Agent 判断这条消息该交给哪个子对话 */
   listConversations?: () => Promise<
     {
@@ -689,11 +702,15 @@ export interface EngineHost {
     /** 全局教训：只读，Agent 改不了 */
     globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
+    /** 查到并交出全文的那几条：记一次命中（shared/knowledge-hits.ts），不等写完 */
+    hit?: (ids: string[]) => void
   }
   /** 项目经验：每次查都现读（刚学到的也能查到）；设置里关了经验时宿主不给 */
   experience?: {
     list: () => Promise<ProjectExperience[]>
     record: (input: ExperienceInput) => Promise<{ ok: boolean; info: string }>
+    /** 同 lessons.hit */
+    hit?: (ids: string[]) => void
   }
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>

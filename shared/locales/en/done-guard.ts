@@ -11,8 +11,8 @@ export const EN_DONE_GUARD: Record<string, string> = {
   查看全部: 'View all',
   // 项目设置 · 测试步骤
   改了代码要跑过测试步骤才能结束: 'Require test steps after code changes before finishing',
-  '对话用 end_turn 说做完了时，面板看这一轮的工具调用：改了代码却没跑过这里的测试步骤（没配步骤时看有没有跑测试、类型检查或编译），就不让它结束，并告诉它去跑。关着时不拦，只在「完成依据」卡片上标出来。':
-    'When a conversation says it is done with end_turn, the panel checks this turn\'s tool calls: if code changed but none of these test steps ran (with no steps configured, any test, type check or build), it is not allowed to finish and is told to run them. When off, nothing is blocked; it is only flagged on the "Completion evidence" card.',
+  '对话用 end_turn 说做完了时，面板看这一轮改了什么、跑了什么：改了代码，适用这次改动的测试步骤却一条都没跑过、或者最后一次没通过（没配步骤时看测试、类型检查或编译），就不让它结束，并告诉它去跑或修。用命令、插件工具改的文件也算；插件自己验证通过的资产不再要求跑这里的步骤。关着时不拦，只在「完成依据」卡片上标出来。':
+    'When a conversation says it is done with end_turn, the panel checks what changed and what ran this turn: if code changed but none of the test steps that apply to the change ran, or the last run failed (with no steps configured, any test, type check or build), it is not allowed to finish and is told to run or fix them. Files changed by commands or plugin tools count too; assets a plugin has verified no longer need these steps. When off, nothing is blocked; it is only flagged on the "Completion evidence" card.',
   // 新建对话的用量上限（web/src/components/tasks/ConvBudgetChip.tsx）
   这个对话的用量上限: 'Usage limit for this conversation',
   '这个对话的用量上限：{v}（连同名下子对话）':
