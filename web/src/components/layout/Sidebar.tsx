@@ -84,9 +84,11 @@ import {
   ScheduleIcon,
   SkillIcon,
   SummaryIcon,
+  TableIcon,
   WorkflowIcon,
   type NavIcon,
 } from './rail-icons'
+import { useTablesEntry } from '@/lib/tables-nav'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
@@ -324,6 +326,22 @@ function PluginNavRow({ page, narrow }: { page: PluginPage & { plugin: string };
   )
 }
 
+/** 有项目设了表格目录才出现的「表格」入口：手机抽屉里一行（宽屏在图标栏，见 ActivityBar） */
+function TablesNavRow({ narrow }: { narrow: boolean }) {
+  const { route, go } = useNav()
+  const target = useTablesEntry()
+  if (!target) return null
+  return (
+    <Row
+      icon={TableIcon}
+      label={t('表格')}
+      collapsed={narrow}
+      on={route.page === 'tables'}
+      onClick={() => go({ page: 'tables', id: target })}
+    />
+  )
+}
+
 /** 切到各模式时回到上次在那个模式里看的页面 */
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
@@ -336,7 +354,7 @@ export const homeRoute = (from?: PageId) =>
   from && DESIGN_NAV.some((n) => n.id === from) ? lastDesignHome : lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
 export const isToolPage = (page: PageId) =>
-  NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page) || page === 'plugin'
+  NAV.some((n) => n.id === page) || DESIGN_NAV.some((n) => n.id === page) || page === 'plugin' || page === 'tables'
 /** 设计模式：设计页和它的 ComfyUI 工作流页 */
 export const isDesignPage = (page: PageId) => page === 'design' || page === 'comfy' || page === 'pdesign'
 
@@ -635,6 +653,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   dot={n.id === 'library' ? skillDot : undefined}
                 />
               ))}
+            {mobile && <TablesNavRow narrow={narrow} />}
             {mobile && <PluginNavRows narrow={narrow} />}
           </>
         )}

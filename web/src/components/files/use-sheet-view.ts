@@ -1,7 +1,7 @@
 /**
  * 表格的查看状态：表头（自动识别或手动设置）、列筛选、排序，算出要显示的数据行。
- * 手动设置的表头记在本机浏览器里（按文件路径 + 工作表名），表格文件一个字节都不动；
- * 以后有了项目的表格结构文件，再从那里读（见 designs/表格管理与在线编辑-设计稿.md）。
+ * 手动设置的表头：文件弹窗里记在本机浏览器（按文件路径 + 工作表名）；表格页传 store，记进项目的表格结构文件。
+ * 两种都不碰表格文件本身（见 designs/表格管理与在线编辑-设计稿.md）。
  */
 import { useEffect, useMemo, useState } from 'react'
 import { dataStart, detectSheetHeader, validHeader, type SheetHeader } from '@shared/sheet-header'
@@ -28,10 +28,19 @@ function writeSaved(key: string, h: SheetHeader | null) {
   }
 }
 
+/** 表格页的表头来源：这张表自己设过的（own）、项目风格里统一的（style），改了写回结构文件 */
+export interface SheetHeaderStore {
+  own?: SheetHeader
+  style?: SheetHeader
+  save: (h: SheetHeader | null) => void
+}
+
 export interface SheetView {
   header: SheetHeader
   /** 是自动识别的（不是手动设置的） */
   auto: boolean
+  /** 用的是项目风格里统一的表头 */
+  fromStyle: boolean
   /** 自动识别有没有把握 */
   sure: boolean
   /** 数据从第几行开始（从 0 数） */
@@ -48,7 +57,7 @@ export interface SheetView {
 }
 
 /** key：文件路径 + 工作表名，换了表就是另一份设置 */
-export function useSheetView(key: string, rows: string[][] | null): SheetView | null {
+export function useSheetView(key: string, rows: string[][] | null, store?: SheetHeaderStore): SheetView | null {
   const detected = useMemo(() => (rows ? detectSheetHeader(rows) : null), [rows])
   const [saved, setSaved] = useState<SheetHeader | null>(null)
   const [filters, setFilters] = useState<ColFilters>({})
@@ -62,23 +71,29 @@ export function useSheetView(key: string, rows: string[][] | null): SheetView | 
     setSort(null)
   }, [key, count])
 
-  const header = saved ?? detected ?? { start: 0, roles: [] }
+  const own = store ? (validHeader(store.own, count) ? store.own : null) : saved
+  const style = store && !own && validHeader(store.style, count) ? store.style : null
+  const header = own ?? style ?? detected ?? { start: 0, roles: [] }
   const from = dataStart(header)
   const order = useMemo(() => (rows ? visibleRows(rows, from, filters, sort) : []), [rows, from, filters, sort])
   const shown = useMemo(() => new Set(order), [order])
   if (!rows) return null
   return {
     header,
-    auto: !saved,
-    sure: !!saved || !!detected?.sure,
+    auto: !own && !style,
+    fromStyle: !!style,
+    sure: !!own || !!style || !!detected?.sure,
     from,
     order,
     shown,
     filters,
     sort,
     setHeader: (h) => {
-      writeSaved(key, h)
-      setSaved(h)
+      if (store) store.save(h)
+      else {
+        writeSaved(key, h)
+        setSaved(h)
+      }
       // 表头变了，数据行跟着变：原来的筛选可能筛的是表头行，清掉
       setFilters({})
       setSort(null)

@@ -1,3 +1,4 @@
+import { TablesConfig } from './tables.ts'
 import { LearnedNote } from './experience.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
@@ -938,6 +939,8 @@ const ProjectFields = z.object({
    * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）
    */
   cherryPick: z.string().trim().max(500).optional(),
+  /** 表格管理：表格目录等（shared/tables.ts）；没设时没有表格页入口 */
+  tables: TablesConfig.optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**

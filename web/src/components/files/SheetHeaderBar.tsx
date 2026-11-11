@@ -18,14 +18,28 @@ const MAX_ROWS = 12
  * 表格上方的一行：认出的表头（第几行到第几行、每行什么颜色）、筛选了多少行，右边「调整表头」。
  * 自动识别没把握时用警告色提示，让用户去改
  */
-export function SheetHeaderBar({ view, rows }: { view: SheetView; rows: string[][] }) {
+export function SheetHeaderBar({
+  view,
+  rows,
+  where,
+  children,
+}: {
+  view: SheetView
+  rows: string[][]
+  /** 手动设置的表头记在哪（弹层底下的一句话）；不传就是本机浏览器 */
+  where?: string
+  /** 「调整表头」左边的额外按钮（表格页的保存、撤销……） */
+  children?: React.ReactNode
+}) {
   const { header, auto, sure, from, order } = view
   const n = header.roles.length
   const dataCount = Math.max(0, rows.length - from)
   const filtered = order.length !== dataCount || !!view.sort
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 text-body">
-      <Badge tone={auto ? (sure ? 'accent' : 'warning') : undefined}>{auto ? t('自动识别') : t('手动设置')}</Badge>
+      <Badge tone={auto ? (sure ? 'accent' : 'warning') : undefined}>
+        {auto ? t('自动识别') : view.fromStyle ? t('项目风格') : t('手动设置')}
+      </Badge>
       <span className="min-w-0 truncate text-muted">
         {n
           ? t('表头 {n} 行（第 {a}–{b} 行），数据从第 {c} 行开始', {
@@ -58,13 +72,14 @@ export function SheetHeaderBar({ view, rows }: { view: SheetView; rows: string[]
           </button>
         </span>
       )}
-      <HeaderSetup view={view} rows={rows} />
+      {children}
+      <HeaderSetup view={view} rows={rows} where={where} />
     </div>
   )
 }
 
 /** 调整表头：从第几行开始、共几行、每行是什么；只记在本机，表格文件不动 */
-function HeaderSetup({ view, rows }: { view: SheetView; rows: string[][] }) {
+function HeaderSetup({ view, rows, where }: { view: SheetView; rows: string[][]; where?: string }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<SheetHeader>(view.header)
   const last = Math.max(1, rows.length)
@@ -152,7 +167,7 @@ function HeaderSetup({ view, rows }: { view: SheetView; rows: string[][] }) {
           </>
         )}
         <p className="mt-3 rounded-lg bg-sel px-2.5 py-2 text-caption leading-relaxed text-subtle">
-          {t('只记在这台电脑上，表格文件一个字节都不改。')}
+          {where ?? t('只记在这台电脑上，表格文件一个字节都不改。')}
         </p>
         <div className="mt-3 flex items-center justify-between gap-2">
           <Button

@@ -245,6 +245,14 @@ export const UI_SHARD_COVERS = {
   ],
   // 弹窗调整大小：只登记专门承载这套逻辑的两个文件；modal.tsx / dialog.tsx 是所有页面都用的
   // 公共外壳，不登记在这里（changed-tests 映射不到会提示跑全量界面检查，宁可多跑）
+  '14-tables': [
+    'web/src/pages/TablesPage.tsx',
+    'web/src/components/tables/',
+    'web/src/components/projects/ProjectTablesSection.tsx',
+    'web/src/lib/tables-api.ts',
+    'web/src/lib/tables-nav.ts',
+    'web/src/lib/demo-tables.ts',
+  ],
   '12-modal-resize': ['web/src/lib/modal-size.ts', 'web/src/components/ui/modal-resize.tsx'],
   // 画布排版对照：算出来的控件位置和画布组件画出来的逐个比对
   '11-umg-layout': [
