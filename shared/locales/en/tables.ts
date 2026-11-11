@@ -173,8 +173,8 @@ export const EN_TABLES: Record<string, string> = {
   '引用的表里没有「{v}」': '"{v}" is not in the referenced table',
   '主键重复：第 {n} 行也是「{k}」': 'Duplicate key: row {n} is also "{k}"',
   没有匹配的值: 'No matching values',
-  '分析这个项目的表格风格：表头几行、主键、列表分隔符、枚举和引用':
-    "Analyze this project's table style: header rows, primary key, list separator, enums and references",
+  '分析这个项目的表格风格：有几套表头、每套几行、主键、列表分隔符、枚举和引用':
+    "Analyze this project's table style: header layouts and their rows, primary key, list separator, enums and references",
   '{files} 个表格查完，{n} 处不合规': 'Checked {files} tables, {n} problems',
   '{files} 个表格查完，没有发现问题': 'Checked {files} tables, no problems found',
   '还有 {n} 处，打开文件后点「检查」看全部': '{n} more. Open the file and click "Check" to see all',
@@ -183,10 +183,13 @@ export const EN_TABLES: Record<string, string> = {
   'AI 分析表格风格：{name}': 'AI table style analysis: {name}',
   '上次分析：{time}。表格加了新类型、换了表头写法时可以再分析一次。':
     'Last analyzed: {time}. Run it again when tables get new types or a different header layout.',
-  '让 AI 读几张表的开头几行，总结表头有几行、每行是什么、主键、列表分隔符、哪些类型是枚举、哪些列引用别的表。':
-    'Let AI read the first rows of a few tables and summarize the header rows, primary key, list separator, which types are enums and which columns reference other tables.',
-  '已写进表格结构文件，表格页重新打开文件就按新的结构显示':
-    'Written to the structure files. Reopen a file on the Tables page to see the new structure',
+  '让 AI 读几张表的开头几行，总结有几套表头、每套几行每行是什么、主键、列表分隔符、哪些类型是枚举、哪些列引用别的表。':
+    'Let AI read the first rows of a few tables and summarize the header layouts (how many rows each and what each row is), primary key, list separator, which types are enums and which columns reference other tables.',
+  '已应用到表格设置：上面的表头、通用枚举已经更新，表格页按新的结构显示':
+    'Applied to the table settings. The header and shared enums above are updated, and the Tables page uses the new structure',
+  '表头（{n} 套，按内容自动挑）': 'Header ({n} layouts, picked by content)',
+  表示数组的修饰: 'Modifiers that mean array',
+  表头行能填什么: 'Allowed values per header row',
   '从第 {n} 行开始：{roles}': 'From row {n}: {roles}',
   主键: 'Primary key',
   列表分隔符: 'List separator',
@@ -200,7 +203,7 @@ export const EN_TABLES: Record<string, string> = {
   '也允许 {v}': 'Also allows {v}',
   这次分析没有给出可以写进结构文件的内容: 'This analysis found nothing to write to the structure files',
   不要了: 'Discard',
-  '写进结构文件（{n} 项）': 'Write to structure files ({n})',
+  '应用到表格设置（{n} 项）': 'Apply to table settings ({n})',
   '按文件名、字段名筛': 'Filter by file or field name',
   先在项目设置里设好表格目录: 'Set the table folders in project settings first',
   打开下拉: 'Open dropdown',
@@ -293,7 +296,20 @@ export const EN_TABLES: Record<string, string> = {
   '拖动调整列宽，双击恢复': 'Drag to resize the column, double-click to reset',
   表头设置已保存: 'Header settings saved',
   每张表自动识别: 'Detect per table',
-  全部按固定行数: 'Same rows for all tables',
+  按设定的表头: 'Use these headers',
+  '设了 {n} 套：每张表按内容自动挑最合的一套，一样合时用排在前面的。':
+    '{n} layouts: each table uses the one that fits its content best, and the earlier one wins a tie.',
+  '第 {n} 套表头': 'Header layout {n}',
+  '删掉第 {n} 套表头': 'Remove header layout {n}',
+  加一套表头: 'Add a header layout',
+  这些文件: 'Files',
+  '第 {n} 条按文件指定的通配': 'Pattern of file rule {n}',
+  '删掉第 {n} 条按文件指定': 'Remove file rule {n}',
+  按文件指定表头: 'Set header by file',
+  '内容上分不出来的（比如某个目录的表都是另一种表头）按通配指定，优先于上面的几套。':
+    'For tables that cannot be told apart by content (say a folder that uses another header), match them by pattern. These win over the layouts above.',
+  '各表的表头行数不一样（比如配置表 5 行、枚举表 3 行）时加几套，不用按文件一张张设。':
+    'Add layouts when tables have different header rows (say 5 for config tables, 3 for enum tables), instead of setting files one by one.',
   保存表头: 'Save header',
   '存在表格结构文件里，表格文件不动；个别表不一样时在表格页「调整表头」单独改。':
     'Saved in the table structure files; table files are not touched. For tables that differ, use “Adjust header” on the Tables page.',

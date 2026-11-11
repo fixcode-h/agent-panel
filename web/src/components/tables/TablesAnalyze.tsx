@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Proposal } from '@shared/assist'
-import { applyTablesDraft, draftItemIds, type TablesDraft } from '@shared/tables-assist'
-import type { TableSchema } from '@shared/tables'
+import { applyTablesDraft, draftHeaders, draftItemIds, TablesDraft } from '@shared/tables-assist'
+import { TYPE_NAMES } from '@shared/tables'
 import { runAssistInProject } from '@/lib/assist-conv'
 import { tablesApi } from '@/lib/tables-api'
+import { saveTableSchema, useTableSchema } from '@/lib/table-schema'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,11 +14,30 @@ import { roleShort } from '@/components/files/sheet-roles'
 
 /**
  * AI 分析表格的结果：对话可能跑几分钟，设置关了也要留着，所以记在模块里（按项目），
- * 回到项目设置的「表格」页再勾选应用。刷新页面就没了（结果在项目对话里还能看到）
+ * 回到项目设置的「表格」页再勾选应用。也存一份在本机浏览器里：刷新页面、重开面板后还能接着应用
  */
-const pending = new Map<string, TablesDraft>()
+const STORE_KEY = 'agent-panel:tables-analysis'
+const pending = new Map<string, TablesDraft>(loadPending())
 const subs = new Set<() => void>()
-const emit = () => subs.forEach((f) => f())
+const emit = () => {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(Object.fromEntries(pending)))
+  } catch {
+    // 存不了（隐私模式、存满）就只记在内存里
+  }
+  subs.forEach((f) => f())
+}
+function loadPending(): [string, TablesDraft][] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}') as Record<string, unknown>
+    return Object.entries(raw).flatMap(([id, d]) => {
+      const p = TablesDraft.safeParse(d)
+      return p.success ? [[id, p.data] as [string, TablesDraft]] : []
+    })
+  } catch {
+    return []
+  }
+}
 const subscribe = (f: () => void) => {
   subs.add(f)
   return () => subs.delete(f)
@@ -36,18 +56,8 @@ function deliverTables(projectId: string, p: Proposal) {
  */
 export function TablesAnalyze({ projectId, projectName }: { projectId: string; projectName: string }) {
   const draft = useSyncExternalStore(subscribe, () => pending.get(projectId))
-  const [schema, setSchema] = useState<TableSchema | null>(null)
+  const { schema } = useTableSchema(projectId)
   const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    let live = true
-    tablesApi
-      .schema(projectId)
-      .then((s) => live && setSchema(s))
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [projectId])
 
   const start = async () => {
     setBusy(true)
@@ -58,7 +68,7 @@ export function TablesAnalyze({ projectId, projectName }: { projectId: string; p
         kind: 'tables',
         projectId,
         title: t('AI 分析表格风格：{name}', { name: projectName }),
-        start: t('分析这个项目的表格风格：表头几行、主键、列表分隔符、枚举和引用'),
+        start: t('分析这个项目的表格风格：有几套表头、每套几行、主键、列表分隔符、枚举和引用'),
         subject: { sample: sample.text },
         // 结果回到项目设置的「表格」页勾选，对话右侧不出项目设置的应用面板
         analysis: 'run',
@@ -80,7 +90,7 @@ export function TablesAnalyze({ projectId, projectName }: { projectId: string; p
                 time: new Date(schema.analyzedAt).toLocaleString(),
               })
             : t(
-                '让 AI 读几张表的开头几行，总结表头有几行、每行是什么、主键、列表分隔符、哪些类型是枚举、哪些列引用别的表。',
+                '让 AI 读几张表的开头几行，总结有几套表头、每套几行每行是什么、主键、列表分隔符、哪些类型是枚举、哪些列引用别的表。',
               )}
         </p>
         <Button size="sm" onClick={() => void start()} disabled={busy}>
@@ -97,11 +107,11 @@ export function TablesAnalyze({ projectId, projectName }: { projectId: string; p
           }}
           onApply={async (picked) => {
             try {
-              const next = applyTablesDraft(schema, draft, picked, new Date().toISOString())
-              setSchema(await tablesApi.saveSchema(projectId, next))
+              // 在最新的结构文件上并：设置页别的地方刚存的不会被盖掉；存好后上面的「表头」「通用枚举」跟着更新
+              await saveTableSchema(projectId, (cur) => applyTablesDraft(cur, draft, picked, new Date().toISOString()))
               pending.delete(projectId)
               emit()
-              toast.success(t('已写进表格结构文件，表格页重新打开文件就按新的结构显示'))
+              toast.success(t('已应用到表格设置：上面的表头、通用枚举已经更新，表格页按新的结构显示'))
             } catch (e) {
               toast.error((e as Error).message)
             }
@@ -126,10 +136,32 @@ function DraftReview({
   const [picked, setPicked] = useState(() => new Set(ids))
   const [saving, setSaving] = useState(false)
   const s = draft.style
-  const header = (h: { start: number; roles: Parameters<typeof roleShort>[0][] }) =>
-    t('从第 {n} 行开始：{roles}', { n: h.start + 1, roles: h.roles.map(roleShort).join(' / ') })
+  const header = (h: { start: number; roles: Parameters<typeof roleShort>[0][]; labels?: string[] }) =>
+    t('从第 {n} 行开始：{roles}', {
+      n: h.start + 1,
+      roles: h.roles.map((r, i) => h.labels?.[i] || roleShort(r)).join(' / '),
+    })
   const items: { id: string; label: string; detail: string }[] = ids.map((id) => {
-    if (id === 'header') return { id, label: t('表头'), detail: header(s.header!) }
+    if (id === 'headers') {
+      const hs = draftHeaders(s)
+      return {
+        id,
+        label: hs.length > 1 ? t('表头（{n} 套，按内容自动挑）', { n: hs.length }) : t('表头'),
+        detail: hs.map((h) => t('{n} 行', { n: h.roles.length }) + ' · ' + header(h)).join('；'),
+      }
+    }
+    if (id === 'arrayMarks') return { id, label: t('表示数组的修饰'), detail: s.arrayMarks!.join(', ') }
+    if (id === 'roleEnums')
+      return {
+        id,
+        label: t('表头行能填什么'),
+        detail: Object.entries(s.roleEnums!)
+          .map(
+            ([r, e]) =>
+              `${roleShort(r as Parameters<typeof roleShort>[0])} = ${e === TYPE_NAMES ? t('基础类型和通用枚举名') : e}`,
+          )
+          .join(' · '),
+      }
     if (id === 'key') return { id, label: t('主键'), detail: s.key! }
     if (id === 'listSep') return { id, label: t('列表分隔符'), detail: s.listSep! }
     if (id === 'primitives') return { id, label: t('基础类型'), detail: s.primitives!.join(', ') }
@@ -213,7 +245,7 @@ function DraftReview({
             setSaving(false)
           }}
         >
-          {t('写进结构文件（{n} 项）', { n: picked.size })}
+          {t('应用到表格设置（{n} 项）', { n: picked.size })}
         </Button>
       </footer>
     </section>

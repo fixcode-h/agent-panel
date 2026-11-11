@@ -48,8 +48,13 @@
 
 ## 表头从哪来
 
-`schemaHeader`：单文件覆盖（`files.json` 的「路径#工作表」）> 例外规则（`style.exceptions` 按通配）> 项目风格（`style.header`）> 自动识别（`shared/sheet-header.ts`）。
-表格页里「调整表头」写的是单文件覆盖；文件弹窗（不在表格页）仍记在浏览器 localStorage。
+`schemaHeader`：单文件覆盖（`files.json` 的「路径#工作表」）> 例外规则（`style.exceptions` 按通配）> 项目风格 > 自动识别（`shared/sheet-header.ts`）。
+项目风格是**几套表头**（`style.headers` 数组，各表表头行数不一样时设多套）：每张表用 `pickHeader` 按内容打分（`headerFit`：每行认出的角色和设定的一样加分、像数据扣分）挑最合的一套，一样合取前面的；只有一套时不看内容直接用。
+旧版只有单套 `style.header`，读的时候当第一套（`styleHeaders`）；保存时 `header` 仍写第一套，旧版本面板也认得。
+表格页里「调整表头」写的是单文件覆盖（项目有多套时弹层里能一键套用其中一套）；文件弹窗（不在表格页）仍记在浏览器 localStorage。
+
+结构文件在页面里只留一份（`web/src/lib/table-schema.ts`）：项目设置的「表头」「通用枚举」「校验」「AI 分析」和表格页共用，谁保存都先重读最新的再改（`saveTableSchema`），其它地方跟着更新；设置表单用 `useSchemaDraft`，没改过的跟着新内容走，改了一半的留着。
+AI 分析的结果（`TablesDraft`）也是几套表头，外加数组标记、表头行能填什么；不认识的角色改成「其它」并把原词留作行名，不整份作废。还没应用的结果存在浏览器 localStorage，刷新后还能接着应用。
 
 ## 结构化（枚举、引用、检查）
 

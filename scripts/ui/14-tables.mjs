@@ -380,10 +380,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.keyboard.press('Escape')
   await review.waitFor({ timeout: 10000 }).catch(() => errors.push('项目设置-表格：AI 分析的结果没有交回来'))
   await review.scrollIntoViewIfNeeded().catch(() => {})
-  await check(p, '项目设置-AI分析表格', ['枚举：HomeDecorationSizeType', '例外：data/enum/*.xlsx'])
-  await review.getByRole('button', { name: /写进结构文件/ }).click()
+  await check(p, '项目设置-AI分析表格', [
+    '表头（2 套，按内容自动挑）',
+    '枚举：HomeDecorationSizeType',
+    '例外：data/enum/*.xlsx',
+  ])
+  await review.getByRole('button', { name: /应用到表格设置/ }).click()
   await p
     .getByText(/上次分析：/)
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('项目设置-表格：AI 分析的结果没有写进结构文件'))
+  // 应用后上面的「表头」跟着变成分析出的两套，不用关掉设置重开
+  await dlg
+    .getByText('第 2 套表头')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('项目设置-表格：应用 AI 分析后「表头」没有跟着更新'))
+  await dlg
+    .getByText('第 1 套表头')
+    .scrollIntoViewIfNeeded()
+    .catch(() => {})
+  await check(p, '项目设置-表格多套表头', ['第 1 套表头', '第 2 套表头', '加一行表头', '加一套表头'])
 })

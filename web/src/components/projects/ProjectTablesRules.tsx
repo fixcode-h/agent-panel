@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableSchema } from '@shared/tables'
-import { tablesApi } from '@/lib/tables-api'
+import { saveTableSchema, useSchemaDraft, useTableSchema } from '@/lib/table-schema'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
@@ -16,7 +16,7 @@ interface Draft {
   uniques: { glob: string; fields: string }[]
 }
 
-const toDraft = (s: Style): Draft => ({
+const toDraft = ({ style: s }: { style: Style }): Draft => ({
   saveCheck: s.saveCheck ?? 'warn',
   uniques: (s.uniques ?? []).map((u) => ({ glob: u.glob, fields: u.fields.join(', ') })),
 })
@@ -31,36 +31,25 @@ const splitFields = (s: string) =>
  * 存在表格结构文件（style），有自己的「保存」：保存前重新读一遍结构文件，只改这两项，不盖掉别处刚改的
  */
 export function ProjectTablesRules({ projectId }: { projectId: string }) {
-  const [saved, setSaved] = useState<Draft | null>(null)
-  const [d, setD] = useState<Draft | null>(null)
-  const [error, setError] = useState('')
+  const { schema, error } = useTableSchema(projectId)
+  const { draft: d, saved, changed, setDraft, reset } = useSchemaDraft(schema, toDraft)
+  const setD = (x: Draft) => setDraft(() => x)
   const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    tablesApi
-      .schema(projectId)
-      .then((s) => {
-        setSaved(toDraft(s.style))
-        setD(toDraft(s.style))
-      })
-      .catch((e) => setError((e as Error).message))
-  }, [projectId])
   if (error) return <p className="text-footnote text-danger">{error}</p>
-  if (!d || !saved) return null
+  if (!d) return null
   const uniques = d.uniques
     .map((u) => ({ glob: u.glob.trim(), fields: splitFields(u.fields) }))
     .filter((u) => u.glob && u.fields.length >= 2)
   const bad = d.uniques.some((u) => (u.glob.trim() || u.fields.trim()) && splitFields(u.fields).length < 2)
-  const changed = JSON.stringify(saved) !== JSON.stringify(d)
   const save = async () => {
     setBusy(true)
     try {
-      const cur = await tablesApi.schema(projectId)
-      const next = await tablesApi.saveSchema(projectId, {
-        ...cur,
-        style: { ...cur.style, saveCheck: d.saveCheck, uniques },
-      })
-      setSaved(toDraft(next.style))
-      setD(toDraft(next.style))
+      reset(
+        await saveTableSchema(projectId, (cur) => ({
+          ...cur,
+          style: { ...cur.style, saveCheck: d.saveCheck, uniques },
+        })),
+      )
       toast.success(t('已保存校验规则'))
     } catch (e) {
       toast.error((e as Error).message)
@@ -134,7 +123,7 @@ export function ProjectTablesRules({ projectId }: { projectId: string }) {
         {changed && (
           <span className="mr-auto text-caption text-subtle">{t('校验规则存在表格结构文件里，单独保存')}</span>
         )}
-        <Button size="sm" variant="secondary" disabled={!changed || busy} onClick={() => setD(saved)}>
+        <Button size="sm" variant="secondary" disabled={!changed || busy} onClick={() => saved && setD(saved)}>
           {t('还原')}
         </Button>
         <Button size="sm" disabled={!changed || busy} onClick={() => void save()}>

@@ -1,6 +1,9 @@
+import { Plus, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { SHEET_ROLES, type SheetHeader, type SheetRole } from '@shared/sheet-header'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Input, Select } from '@/components/ui/input'
 import { roleLabel, roleShort } from './sheet-roles'
 import './sheet-table.css'
@@ -9,7 +12,7 @@ import './sheet-table.css'
 export const MAX_HEADER_ROWS = 12
 
 /**
- * 表头规则的编辑：从第几行开始、共几行、每行是什么（决定底色）。
+ * 表头规则的编辑：从第几行开始，下面一行一项（每行是什么，决定底色），行数不固定：加一行、删哪行都行。
  * 表格上方「调整表头」（单张表）和项目设置 → 表格的「表头」（整个项目的默认）共用
  */
 export function HeaderRuleEditor({
@@ -29,11 +32,20 @@ export function HeaderRuleEditor({
   preview?: (r: number) => string
 }) {
   const setStart = (v: number) => onChange({ ...value, start: Math.min(Math.max(1, v || 1), last) - 1 })
-  const setCount = (v: number) => {
-    const n = Math.min(Math.max(0, v || 0), MAX_HEADER_ROWS)
-    const roles = value.roles.slice(0, n)
-    while (roles.length < n) roles.push('other')
-    onChange({ ...value, roles, ...(value.labels ? { labels: value.labels.slice(0, n) } : {}) })
+  // 新加的一行默认「其它」：多出来的行大多是默认值、分组标题这种
+  const addRow = () =>
+    onChange({
+      ...value,
+      roles: [...value.roles, 'other'],
+      ...(value.labels ? { labels: [...value.labels, ''] } : {}),
+    })
+  const removeRow = (i: number) => {
+    const labels = value.labels?.filter((_, j) => j !== i)
+    onChange({
+      ...value,
+      roles: value.roles.filter((_, j) => j !== i),
+      labels: labels?.some(Boolean) ? labels : undefined,
+    })
   }
   const setRole = (i: number, r: SheetRole) =>
     onChange({ ...value, roles: value.roles.map((x, j) => (j === i ? r : x)) })
@@ -51,18 +63,7 @@ export function HeaderRuleEditor({
           onChange={(e) => setStart(Number(e.target.value))}
           className="w-16 font-mono"
         />
-        {t('行开始，共')}
-        <Input
-          size="sm"
-          type="number"
-          min={0}
-          max={MAX_HEADER_ROWS}
-          aria-label={t('表头共几行')}
-          value={value.roles.length}
-          onChange={(e) => setCount(Number(e.target.value))}
-          className="w-16 font-mono"
-        />
-        {t('行')}
+        {t('行开始，共 {n} 行', { n: value.roles.length })}
       </div>
       {value.roles.length > 0 && (
         <>
@@ -98,10 +99,22 @@ export function HeaderRuleEditor({
                     options={SHEET_ROLES.map((x) => ({ value: x, label: roleLabel(x) }))}
                   />
                 </div>
+                <IconButton
+                  icon={X}
+                  size="xs"
+                  label={t('删掉第 {n} 行', { n: value.start + i + 1 })}
+                  onClick={() => removeRow(i)}
+                />
               </div>
             ))}
           </div>
         </>
+      )}
+      {value.roles.length < MAX_HEADER_ROWS && (
+        <Button size="sm" variant="ghost" className="mt-1.5" onClick={addRow}>
+          <Plus className="h-3.5 w-3.5" />
+          {t('加一行表头')}
+        </Button>
       )}
     </div>
   )

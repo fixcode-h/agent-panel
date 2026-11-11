@@ -324,7 +324,7 @@ export function checkHeader(
 
 /** 一张表用哪套表头：结构文件里的（单文件 > 例外 > 项目风格），没有就自动识别 */
 export function headerOf(schema: TableSchema, file: string, sheet: SheetData): SheetHeader {
-  const own = schemaHeader(schema, file, sheet.name)
+  const own = schemaHeader(schema, file, sheet.name, sheet.rows)
   if (own && validHeader(own, sheet.rows.length)) return own
   const d = detectSheetHeader(sheet.rows)
   return { start: d.start, roles: d.roles }

@@ -4,6 +4,7 @@ import { t } from '@shared/i18n'
 import type { TableDoc, TableHit, TableSchema, TableSearch, TablesIndex } from '@shared/tables'
 import { useNav } from '@/lib/data'
 import { tablesApi } from '@/lib/tables-api'
+import { putTableSchema, useTableSchema } from '@/lib/table-schema'
 import { rememberTablesProject, useTablesEntry, useTablesProjects } from '@/lib/tables-nav'
 import { toast, toastError } from '@/lib/toast'
 import { parseRef } from '@shared/table-struct'
@@ -86,7 +87,11 @@ function Workbench({
 }) {
   const [index, setIndex] = useState<TablesIndex | null>(null)
   const [indexError, setIndexError] = useState('')
-  const [schema, setSchema] = useState<TableSchema | null>(null)
+  // 结构文件和项目设置共用一份：在设置里改了表头、应用了 AI 分析，表格页马上按新的显示
+  const { schema, error: schemaError } = useTableSchema(projectId)
+  useEffect(() => {
+    if (schemaError) toast.error(schemaError)
+  }, [schemaError])
   const [mode, setMode] = useState<Mode>('name')
   /** 存了表格或结构文件后加一：「检查」重新查 */
   const [checkSeq, setCheckSeq] = useState(0)
@@ -116,10 +121,6 @@ function Workbench({
   )
   useEffect(() => {
     reload()
-    tablesApi
-      .schema(projectId)
-      .then(setSchema)
-      .catch((e) => toast.error((e as Error).message))
   }, [projectId, reload])
 
   const load = useCallback(
@@ -279,7 +280,7 @@ function Workbench({
   const runExport = (index: number, paths: string[]) => setExporting((x) => ({ index, paths, seq: (x?.seq ?? 0) + 1 }))
   const saveSchema = useCallback(
     (s: TableSchema) => {
-      setSchema(s)
+      putTableSchema(projectId, s)
       tablesApi
         .saveSchema(projectId, s)
         .then(() => setCheckSeq((n) => n + 1))

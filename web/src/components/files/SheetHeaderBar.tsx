@@ -19,10 +19,13 @@ export function SheetHeaderBar({
   view,
   rows,
   where,
+  presets,
   children,
 }: {
   view: SheetView
   rows: string[][]
+  /** 项目里设好的几套表头：「调整表头」里点一下就套用 */
+  presets?: SheetHeader[]
   /** 手动设置的表头记在哪（弹层底下的一句话）；不传就是本机浏览器 */
   where?: string
   /** 「调整表头」左边的额外按钮（表格页的保存、撤销……） */
@@ -70,13 +73,23 @@ export function SheetHeaderBar({
         </span>
       )}
       {children}
-      <HeaderSetup view={view} rows={rows} where={where} />
+      <HeaderSetup view={view} rows={rows} where={where} presets={presets} />
     </div>
   )
 }
 
 /** 调整表头：从第几行开始、共几行、每行是什么；只记在本机，表格文件不动 */
-function HeaderSetup({ view, rows, where }: { view: SheetView; rows: string[][]; where?: string }) {
+function HeaderSetup({
+  view,
+  rows,
+  where,
+  presets,
+}: {
+  view: SheetView
+  rows: string[][]
+  where?: string
+  presets?: SheetHeader[]
+}) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<SheetHeader>(view.header)
   const last = Math.max(1, rows.length)
@@ -103,6 +116,26 @@ function HeaderSetup({ view, rows, where }: { view: SheetView; rows: string[][];
       </PopoverTrigger>
       <PopoverContent className="w-[360px] p-3" align="end">
         <div className="mb-3 text-body font-medium text-fg">{t('表头设置')}</div>
+        {presets && presets.length > 1 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 text-caption text-subtle">
+            {t('套用项目的表头：')}
+            {presets.map((h, i) => (
+              <Button
+                key={i}
+                size="sm"
+                variant={
+                  JSON.stringify(h.roles) === JSON.stringify(draft.roles) && h.start === draft.start
+                    ? 'secondary'
+                    : 'ghost'
+                }
+                title={h.roles.map((r, j) => h.labels?.[j] || roleLabel(r)).join(' / ')}
+                onClick={() => setDraft({ start: h.start, roles: h.roles, ...(h.labels ? { labels: h.labels } : {}) })}
+              >
+                {t('第 {n} 套（{rows} 行）', { n: i + 1, rows: h.roles.length })}
+              </Button>
+            ))}
+          </div>
+        )}
         <HeaderRuleEditor value={draft} onChange={setDraft} last={last} preview={preview} />
         <p className="mt-3 rounded-lg bg-sel px-2.5 py-2 text-caption leading-relaxed text-subtle">
           {where ?? t('只记在这台电脑上，表格文件一个字节都不改。')}

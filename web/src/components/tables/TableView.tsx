@@ -13,7 +13,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { TYPE_NAMES, schemaHeader, type TableDoc, type TableHit, type TableSchema } from '@shared/tables'
+import { TYPE_NAMES, schemaHeader, styleHeaders, type TableDoc, type TableHit, type TableSchema } from '@shared/tables'
 import type { CellSet, RowOp, SheetEdit } from '@shared/table-edit'
 import type { SheetHeader } from '@shared/sheet-header'
 import type { TableExport } from '@shared/table-export'
@@ -146,10 +146,10 @@ export function TableView({
   const store = useMemo<SheetHeaderStore>(
     () => ({
       own: schema.files[fileKey],
-      style: sheet ? schemaHeader({ ...schema, files: {} }, doc.path, sheet.name) : undefined,
+      style: sheet ? schemaHeader({ ...schema, files: {} }, doc.path, sheet.name, sheet.rows) : undefined,
       save: (h: SheetHeader | null) => {
         const files = { ...schema.files }
-        if (h) files[fileKey] = { start: h.start, roles: h.roles }
+        if (h) files[fileKey] = { start: h.start, roles: h.roles, ...(h.labels ? { labels: h.labels } : {}) }
         else delete files[fileKey]
         onSchema({ ...schema, files })
       },
@@ -386,6 +386,7 @@ export function TableView({
       <SheetHeaderBar
         view={view}
         rows={rows}
+        presets={styleHeaders(schema.style)}
         where={t('记在项目的表格结构文件里（项目设置 → 表格），表格文件一个字节都不改。')}
       >
         {layout.hidden.length > 0 && (

@@ -23,9 +23,11 @@ test('提示词带上样本和对话', () => {
   assert.match(p, /```json/)
 })
 
-test('JSON 校验：角色名不对时报错，缺的部分给默认', () => {
-  const bad = resolveTablesProposal({ style: { header: { start: 0, roles: ['nope'] } } })
-  assert.ok(bad.error?.includes('style.header.roles'))
+test('JSON 校验：不认识的角色改成「其它」并留作行名，格式错才报错，缺的部分给默认', () => {
+  const odd = resolveTablesProposal({ style: { header: { start: 0, roles: ['name', 'default'] } } })
+  assert.deepEqual(odd.proposal?.draft.style.headers, [{ start: 0, roles: ['name', 'other'], labels: ['', 'default'] }])
+  const bad = resolveTablesProposal({ style: { headers: [{ start: -1, roles: ['name'] }] } })
+  assert.ok(bad.error?.includes('style.headers.0.start'))
   const ok = resolveTablesProposal({})
   assert.deepEqual(ok.proposal?.draft.enums, {})
   assert.equal(ok.proposal?.kind, 'tables')
@@ -33,15 +35,19 @@ test('JSON 校验：角色名不对时报错，缺的部分给默认', () => {
 
 test('只并勾上的项：例外按 glob 换，枚举保留原来的取值来源，记下分析时间', () => {
   const d = resolveTablesProposal(draft).proposal!.draft
-  assert.deepEqual(draftItemIds(d), ['header', 'key', 'listSep', 'ex:0', 'enum:Size', 'col:a.xlsx#*#Role'])
+  assert.deepEqual(draftItemIds(d), ['headers', 'key', 'listSep', 'ex:0', 'enum:Size', 'col:a.xlsx#*#Role'])
   const schema = TableSchema.parse({
     style: { key: 'ID', exceptions: [{ glob: 'Enum/*.xlsx', header: { start: 1, roles: ['name'] } }] },
     enums: { Size: { values: [], source: { file: 'e.xlsx', nameCol: 'Name' } } },
   })
-  const next = applyTablesDraft(schema, d, new Set(['header', 'ex:0', 'enum:Size']), '2026-11-11T00:00:00Z')
+  const next = applyTablesDraft(schema, d, new Set(['headers', 'ex:0', 'enum:Size']), '2026-11-11T00:00:00Z')
   assert.equal(next.style.key, 'ID')
   assert.equal(next.style.listSep, ';')
   assert.deepEqual(next.style.header?.roles, ['modifier', 'side', 'type', 'name', 'comment'])
+  assert.deepEqual(
+    next.style.headers.map((h) => h.roles.length),
+    [5],
+  )
   assert.deepEqual(next.style.exceptions, [{ glob: 'Enum/*.xlsx', header: { start: 0, roles: ['type', 'name'] } }])
   assert.equal(next.enums.Size.source?.file, 'e.xlsx')
   assert.deepEqual(
@@ -51,4 +57,25 @@ test('只并勾上的项：例外按 glob 换，枚举保留原来的取值来�
   assert.deepEqual(next.columns, {})
   assert.equal(next.analyzedAt, '2026-11-11T00:00:00Z')
   assert.ok(TableSchema.safeParse(next).success)
+})
+
+test('几套表头：旧的单套和新的数组合并去重，数组标记、表头行枚举一起写进去', () => {
+  const d = resolveTablesProposal({
+    style: {
+      header: { start: 0, roles: ['type', 'name'] },
+      headers: [
+        { start: 0, roles: ['type', 'name'] },
+        { start: 1, roles: ['modifier', 'type', 'name', 'comment'] },
+      ],
+      arrayMarks: ['repeated', 'list'],
+      roleEnums: { modifier: 'Modifier' },
+    },
+  }).proposal!.draft
+  assert.equal(d.style.headers?.length, 2)
+  assert.deepEqual(draftItemIds(d), ['headers', 'arrayMarks', 'roleEnums'])
+  const next = applyTablesDraft(TableSchema.parse({}), d, new Set(draftItemIds(d)), 'x')
+  assert.equal(next.style.headers.length, 2)
+  assert.deepEqual(next.style.header, next.style.headers[0])
+  assert.deepEqual(next.style.arrayMarks, ['repeated', 'list'])
+  assert.deepEqual(next.style.roleEnums, { modifier: 'Modifier' })
 })
