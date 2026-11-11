@@ -272,6 +272,8 @@ function Workbench({
       setCheckSeq((n) => n + 1)
       setStale(({ [doc.path]: _, ...m }) => m)
       toast.success(t('已保存 {name}', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
+      // 导表脚本勾了「保存后自动导」：对这张表跑一次（刚存完，没有没保存的改动）
+      exports.forEach((x, i) => x.onSave && runExport(i, [doc.path], 0))
       return null
     } catch (e) {
       return (e as Error).message
@@ -307,11 +309,11 @@ function Workbench({
   const [curRun, setCurRun] = useState(0)
   const [outOpen, setOutOpen] = useState(true)
   const runSeq = useRef(0)
-  const runExport = (index: number, paths: string[]) => {
+  const runExport = (index: number, paths: string[], dirtyNow?: number) => {
     const script = exports[index]
     if (!script) return
     const id = ++runSeq.current
-    const dirty = paths.filter((p) => dirtyPaths.has(p)).length
+    const dirty = dirtyNow ?? paths.filter((p) => dirtyPaths.has(p)).length
     setRuns((rs) => [...rs, { id, index, script, paths, dirty, at: Date.now() }].slice(-KEEP_RUNS))
     setCurRun(id)
     setOutOpen(true)
@@ -526,6 +528,8 @@ function Workbench({
             open={outOpen}
             onOpen={setOutOpen}
             onClose={() => setRuns([])}
+            files={files.map((f) => f.path)}
+            onLoc={(l) => openHit({ path: l.path, sheet: l.sheet ?? '', row: l.row ?? 0, col: l.col ?? 0, text: '' })}
           />
         )}
       </main>

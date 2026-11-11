@@ -282,6 +282,30 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, '表格页-一格的历史', ['按 ID = '])
   await p.keyboard.press('Escape')
 
+  // 统计这一列：唯一值、出现最多的值，按数据给规则建议
+  await cell(8, 5).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '统计这一列' }).click()
+  await p
+    .getByRole('list', { name: '出现最多的值' })
+    .getByRole('listitem')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('统计这一列：没有列出出现最多的值'))
+  await check(p, '表格页-统计这一列', ['按数据推断的规则'])
+  await p.keyboard.press('Escape')
+
+  // 批量修改：加减乘除实时预览每格改成什么，取消不改（G 列是整数）
+  await cell(8, 6).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '批量修改…' }).click()
+  await p
+    .getByLabel('批量修改预览')
+    .getByText('→')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('批量修改：没有预览'))
+  await check(p, '表格页-批量修改', ['加减乘除'])
+  await p.getByRole('button', { name: '取消' }).click()
+
   // 版本冲突：角色表演示有冲突，三方合并只列两边都改了的格子，放进表格当一次改动
   await p.getByRole('tab', { name: 'C_Character.xlsx' }).click()
   await p.getByRole('button', { name: '合并冲突' }).click({ timeout: 8000 })

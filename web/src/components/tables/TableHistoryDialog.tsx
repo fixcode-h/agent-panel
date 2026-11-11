@@ -6,8 +6,7 @@ import type { TableSchema } from '@shared/tables'
 import type { CellSet } from '@shared/table-edit'
 import type { DiffRow } from '@shared/sheet-diff'
 import { useSheetDiff } from '@/lib/sheet-diff-async'
-import { headerOf } from '@shared/table-struct'
-import { fieldNames } from '@shared/table-agent'
+import { sideOf } from './diff-side'
 import { tablesApi, type TableHistory } from '@/lib/tables-api'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -21,12 +20,6 @@ import { DiffSummary, SheetDiffView, type DiffOnly } from './SheetDiffView'
 
 /** 选中的是「本地改动」还是第几个提交 */
 type Pick = 'local' | number
-
-const sideOf = (schema: TableSchema, path: string, sheet: SheetData | undefined) => {
-  if (!sheet) return { rows: [] as string[][], from: 0, names: [] as string[] }
-  const h = headerOf(schema, path, sheet)
-  return { rows: sheet.rows, from: h.start + h.roles.length, names: fieldNames(sheet.rows, h) }
-}
 
 /**
  * 版本差异：左边是这个文件的版本记录（Git / P4 / SVN），右边是格子级差异。

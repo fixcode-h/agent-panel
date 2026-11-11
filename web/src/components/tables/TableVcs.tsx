@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { GitCommitHorizontal, GitMerge, Loader2 } from 'lucide-react'
+import { AlertTriangle, GitCommitHorizontal, GitMerge, Loader2, Wand2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableDoc, TableSchema } from '@shared/tables'
 import type { MergeResult } from '@shared/table-merge'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Field, Textarea } from '@/components/ui/input'
 import { MergeDialog } from './MergeDialog'
 import { cn } from '@/lib/utils'
+import { submitSummary } from './diff-side'
 
 const NAME: Record<string, string> = { git: 'Git', p4: 'P4', svn: 'SVN' }
 
@@ -34,12 +35,17 @@ export function useVcsStatus(projectId: string, doc: TableDoc) {
 export function SubmitButton({
   projectId,
   doc,
+  schema,
+  problems,
   status,
   dirty,
   onDone,
 }: {
   projectId: string
   doc: TableDoc
+  schema: TableSchema
+  /** 这张表现在有几处不合规：提交前按「保存前检查」的档位提醒或拦下 */
+  problems: number
   status: VcsStatus | null
   dirty: boolean
   onDone: () => void
@@ -48,6 +54,23 @@ export function SubmitButton({
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [summing, setSumming] = useState(false)
+  const mode = schema.style.saveCheck
+  const blocked = mode === 'block' && problems > 0
+  /** 按改动拼一句提交说明（不用 AI），已经写了的接在后面 */
+  const summarize = async () => {
+    setSumming(true)
+    setError('')
+    try {
+      const s = await submitSummary(projectId, doc.path, schema, doc.sheets)
+      if (!s) setError(t('和上一版比没有数据改动（可能只改了格式）'))
+      else setMsg((m) => (m.trim() ? `${s}\n\n${m}` : s))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSumming(false)
+    }
+  }
   if (!status || status.vcs === 'none' || !status.changed || status.conflict) return null
   const submit = async () => {
     setBusy(true)
@@ -87,7 +110,7 @@ export function SubmitButton({
               <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>
                 {t('取消')}
               </Button>
-              <Button disabled={busy || !msg.trim()} onClick={() => void submit()}>
+              <Button disabled={busy || !msg.trim() || blocked} onClick={() => void submit()}>
                 {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {t('提交')}
               </Button>
@@ -107,6 +130,24 @@ export function SubmitButton({
             >
               <Textarea autoFocus rows={3} value={msg} onChange={(e) => setMsg(e.target.value)} />
             </Field>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="self-start"
+              disabled={summing}
+              onClick={() => void summarize()}
+            >
+              {summing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              {t('按改动生成说明')}
+            </Button>
+            {mode !== 'off' && problems > 0 && (
+              <p className={cn('flex items-center gap-1.5 text-footnote', blocked ? 'text-danger' : 'text-warning')}>
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {blocked
+                  ? t('这张表还有 {n} 处不合规，项目设置里「保存前检查」是拦下：改好再提交', { n: problems })
+                  : t('这张表还有 {n} 处不合规，确定要提交吗', { n: problems })}
+              </p>
+            )}
             {error && <p className="text-footnote text-danger">{error}</p>}
           </div>
         </Modal>

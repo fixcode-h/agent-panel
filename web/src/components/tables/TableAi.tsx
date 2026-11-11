@@ -6,7 +6,13 @@ import { headerOf } from '@shared/table-struct'
 import { fieldNames } from '@shared/table-agent'
 import type { Problem } from '@shared/table-struct'
 import { applyRowOps, setCells } from '@shared/table-edit'
-import { addRowsPrompt, explainColumnPrompt, explainTablePrompt, fixProblemsPrompt } from '@shared/table-ai'
+import {
+  addRowsPrompt,
+  editRegionPrompt,
+  explainColumnPrompt,
+  explainTablePrompt,
+  fixProblemsPrompt,
+} from '@shared/table-ai'
 import { createAnalysisTask, openAiWindow } from '@/lib/ai-window'
 import { tablesApi, type TableProposal } from '@/lib/tables-api'
 import { useSheetDiff } from '@/lib/sheet-diff-async'
@@ -36,6 +42,68 @@ export function aiFixProblems(
 ) {
   const name = doc.path.replace(/^.*\//, '')
   startAi(projectId, t('AI 修 {file} 的不合规', { file: name }), fixProblemsPrompt(doc.path, sheet, problems), onDone)
+}
+
+/** 让 AI 改选中的一片（右键「让 AI 改这一片」）：描述要怎么改，结束后去取提的改动 */
+export function AiRegionDialog({
+  projectId,
+  doc,
+  sheet,
+  rows,
+  fields,
+  onProposal,
+  onClose,
+}: {
+  projectId: string
+  doc: TableDoc
+  sheet: string
+  rows: number[]
+  fields: string[]
+  onProposal: () => void
+  onClose: () => void
+}) {
+  const [desc, setDesc] = useState('')
+  const name = doc.path.replace(/^.*\//, '')
+  return (
+    <Modal
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={t('让 AI 改这一片（{r} 行 × {c} 列）', { r: rows.length, c: fields.length })}
+      footer={
+        <>
+          <span className="mr-auto" />
+          <Button variant="secondary" onClick={onClose}>
+            {t('取消')}
+          </Button>
+          <Button
+            disabled={!desc.trim()}
+            onClick={() => {
+              onClose()
+              startAi(
+                projectId,
+                t('AI 改 {file} 的一片', { file: name }),
+                editRegionPrompt(doc.path, sheet, rows, fields, desc),
+                onProposal,
+              )
+            }}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('让 AI 改')}
+          </Button>
+        </>
+      }
+    >
+      <Field label={t('要怎么改')} tip={t('AI 只改选中的这些格子；改完先给你看差异，确认后才放进表格')}>
+        <Textarea
+          autoFocus
+          rows={4}
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          placeholder={t('比如：价格都按品质重新定，蓝色 100、紫色 300；名字统一加上「（限定）」')}
+        />
+      </Field>
+    </Modal>
+  )
 }
 
 /** 这张表上 AI 提的改动：打开时取一次，AI 对话结束后再取 */
