@@ -3,6 +3,9 @@ import { mathExtensions } from './md-math'
 
 // 数学公式：先出带原文的占位，渲染组件再懒加载 KaTeX 换成公式（md-math.ts）
 marked.use({ extensions: mathExtensions })
+// 删除线只认双波浪号 ~~：marked 的 GFM 默认单个 ~ 也算删除线，模型常用 ~ 写范围（「X 0~512、Y 0~256」），
+// 两个 ~ 之间的文字就被划掉了。单个 ~ 开头时返回 undefined（不是 false，false 会退回默认规则），按普通文字显示
+marked.use({ tokenizer: { del: (src) => (src.startsWith('~~') ? false : undefined) } })
 import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
 import type { LineMark } from '@shared/bug-quotes-md'
