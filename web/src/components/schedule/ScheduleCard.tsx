@@ -14,6 +14,7 @@ import {
   type ScheduleGroup,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
+import { isEventSchedule, triggerLabel, triggerStateLabel, triggerSummary } from '@shared/schedule-trigger'
 import { timeAgo } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -90,6 +91,8 @@ export function ScheduleCard({
   const [runsOpen, setRunsOpen] = useState(false)
   const outcome = outcomeOf(s)
   const next = nextRunLabel(s, now)
+  /** 按事件触发：徽标写触发方式，「下次执行」换成在看什么和上次检查的结果 */
+  const event = isEventSchedule(s)
   const budget = budgetLabel(s)
   // 实际渲染的文本（错过 / 成功时带「上次启动失败：」前缀）：阈值按它算，
   // 否则前缀会把一行挤满却不出现「展开全文」，触屏上没有 title 可看
@@ -107,8 +110,10 @@ export function ScheduleCard({
               <h3 className={cn('min-w-0 truncate text-heading font-semibold', !s.enabled && 'text-muted')}>
                 {s.name}
               </h3>
-              <Badge>{repeatLabel(s.repeat)}</Badge>
-              {!!s.endDate && s.repeat !== 'once' && <Badge>{t('到 {date} 结束', { date: s.endDate })}</Badge>}
+              <Badge>{event ? triggerLabel(s.trigger) : repeatLabel(s.repeat)}</Badge>
+              {!event && !!s.endDate && s.repeat !== 'once' && (
+                <Badge>{t('到 {date} 结束', { date: s.endDate })}</Badge>
+              )}
             </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>{projectName || t('聊天')}</span>
@@ -161,21 +166,30 @@ export function ScheduleCard({
         </div>
 
         {/* 下次执行：相对时间 + 绝对时间都在这一行；停用 / 单次跑完后只写不会再有下一次，不再加「下次执行」标签 */}
-        <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          {next ? (
-            <>
-              <span className="text-xs text-subtle">{t('下次执行')}</span>
-              <span className={cn('text-base font-medium tabular-nums', s.enabled ? 'text-fg' : 'text-subtle')}>
-                {next}
+        {event && s.enabled ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-body font-medium">{triggerSummary(s.trigger)}</p>
+            <p className={cn('text-xs break-words', s.triggerState.error ? 'text-warning' : 'text-subtle')}>
+              {triggerStateLabel(s.triggerState, (iso) => whenLabel(iso, now))}
+            </p>
+          </div>
+        ) : (
+          <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            {next ? (
+              <>
+                <span className="text-xs text-subtle">{t('下次执行')}</span>
+                <span className={cn('text-base font-medium tabular-nums', s.enabled ? 'text-fg' : 'text-subtle')}>
+                  {next}
+                </span>
+              </>
+            ) : (
+              <span className="text-heading font-medium text-subtle">
+                {/* 过了结束日期是用户定好的到此为止，和单次跑完、停用分开说 */}
+                {s.enabled && scheduleEnded(s) ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
               </span>
-            </>
-          ) : (
-            <span className="text-heading font-medium text-subtle">
-              {/* 过了结束日期是用户定好的到此为止，和单次跑完、停用分开说 */}
-              {s.enabled && scheduleEnded(s) ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
-            </span>
-          )}
-        </p>
+            )}
+          </p>
+        )}
 
         {/* 最近一次结果：成功 / 错过 / 未启动 / 启动失败各说清发生了什么，原因不吞 */}
         <div className="flex flex-col gap-1.5 border-t pt-2.5 text-xs">

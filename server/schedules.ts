@@ -36,6 +36,16 @@ import {
 import { NewTaskInput, type Agent, type Task } from '../shared/schema.ts'
 import { scopeError } from '../shared/conv-mode.ts'
 import type { ScheduleDelivery, ScheduleEvent } from '../shared/schedule.ts'
+import {
+  EMPTY_TRIGGER_STATE,
+  isEventSchedule,
+  sameTriggerConfig,
+  triggerCheckDue,
+  triggerConfigError,
+  triggerFires,
+  triggerPrompt,
+} from '../shared/schedule-trigger.ts'
+import { probeTrigger, type TriggerProbe } from './schedule-triggers.ts'
 import { t } from '../shared/i18n.ts'
 import { createCollection } from './store.ts'
 import { webhookPayload } from './webhook.ts'
@@ -76,6 +86,7 @@ const EMPTY_STATE = {
   // create 不经过 schema 解析：这里显式给一份，读出来的新计划和旧计划字段一致
   lastDelivery: null,
   runs: [] as ScheduleRun[],
+  triggerState: EMPTY_TRIGGER_STATE,
 }
 
 export function schedulesApi(deps: {
@@ -92,13 +103,19 @@ export function schedulesApi(deps: {
   peekTask?: (id: string) => Promise<RunTaskState | null>
   /** 本机的角色：保存时校验角色的类别（项目里用 Agent 角色、聊天用 Chat 角色，ADR 0038）；不传就不校验 */
   agents?: () => Promise<Agent[]>
+  /** 项目目录：按事件的计划在这里看文件、问远端、跑命令；不传时只认绝对路径 */
+  projectPath?: (id: string) => Promise<string>
+  /** 检查触发条件：默认真的去读目录、问远端、跑命令（server/schedule-triggers.ts），单测注入假的 */
+  probe?: typeof probeTrigger
 }) {
   const store = createCollection('schedules.json', Schedule)
   const routes = new Hono()
   /** 上一轮轮询还没做完时不重入：启动一条计划可能慢，重叠起来会把同一条计划启动两次 */
   let ticking = false
-  /** 在途的 Webhook 投递：不阻塞计划，但停止 / 单测时要能等它们落地 */
+  /** 在途的 Webhook 投递和触发条件检查：不阻塞计划，但停止 / 单测时要能等它们落地 */
   const pending = new Set<Promise<void>>()
+  /** 正在检查触发条件的计划：检查命令可能跑好几分钟，同一条不重叠，也不占住定时计划的轮询 */
+  const checking = new Set<string>()
 
   /**
    * 计划跑到终态时投递 Webhook，结果记进计划给用户看。
@@ -177,26 +194,30 @@ export function schedulesApi(deps: {
     return out
   }
 
-  /** 把计划转成新建对话的输入：执行上限也跟着走，之后改计划不影响已经启动的对话 */
-  function startInput(s: Schedule) {
+  /** 把计划转成新建对话的输入：执行上限也跟着走，之后改计划不影响已经启动的对话；detail 是触发条件成立的说明 */
+  function startInput(s: Schedule, detail = '') {
     return NewTaskInput.parse({
       projectId: s.projectId,
       mode: 'chat',
       agentId: s.agentId,
-      prompt: s.prompt,
+      prompt: triggerPrompt(s.prompt, detail),
       budgetTokens: s.budget.tokens,
       budgetMinutes: s.budget.minutes,
     })
   }
 
-  /** 到点启动对话；失败的原因记进计划，用户下次打开列表就能看到 */
-  async function launch(s: Schedule, now: number) {
+  /**
+   * 到点（或触发条件成立）启动对话；失败的原因记进计划，用户下次打开列表就能看到。
+   * 按事件的计划没有「排期到点的时间」，运行记录的 at 留空（日历也不按它画）
+   */
+  async function launch(s: Schedule, now: number, detail = '') {
     const happenedAt = new Date(now).toISOString()
+    const runAt = isEventSchedule(s) ? '' : s.at
     try {
-      const task = await deps.startChat(startInput(s))
+      const task = await deps.startChat(startInput(s, detail))
       const saved =
         (await writeBack(s.id, s.at, afterRun(s, now, task.id), {
-          at: s.at,
+          at: runAt,
           happenedAt,
           event: 'run',
           manual: false,
@@ -211,7 +232,7 @@ export function schedulesApi(deps: {
       // 启动失败也要把时间往后推，否则每次轮询都会重试、一直刷同一条错误
       const saved =
         (await writeBack(s.id, s.at, afterFail(s, now, error), {
-          at: s.at,
+          at: runAt,
           happenedAt,
           event: 'fail',
           manual: false,
@@ -221,6 +242,71 @@ export function schedulesApi(deps: {
       log.warn('schedule', '计划启动对话失败', { schedule: s.id, name: s.name, error })
       notify('fail', saved, s.at)
       return { schedule: saved, taskId: '' }
+    }
+  }
+
+  /**
+   * 检查一条按事件的计划：拿现在的值和上一次比，变了（并且满足「只在失败时」）就新建对话。
+   * 检查结果先写回（不管有没有触发），写之前重新读一次：检查期间用户改了条件或停用了，这次结果作废。
+   * 检查出错原样记进 triggerState.error 显示给用户，baseline 不动，不当成「没变化」悄悄吞掉
+   */
+  async function checkTrigger(s: Schedule) {
+    const now = Date.now()
+    const checkedAt = new Date(now).toISOString()
+    let probe: TriggerProbe | null = null
+    let error = ''
+    try {
+      const dir = s.projectId ? ((await deps.projectPath?.(s.projectId)) ?? '') : ''
+      if (s.projectId && !dir) throw new Error(t('计划所在的项目已经不存在'))
+      probe = await (deps.probe ?? probeTrigger)(s.trigger, dir, s.triggerState)
+    } catch (e) {
+      error = (e as Error).message || String(e)
+    }
+    const latest = await store.get(s.id)
+    if (!latest || !latest.enabled || !sameTriggerConfig(latest.trigger, s.trigger)) return
+    if (!probe) {
+      await store.update(s.id, { triggerState: { ...latest.triggerState, checkedAt, error } })
+      log.warn('schedule', '触发条件检查出错', { schedule: s.id, name: s.name, error })
+      return
+    }
+    const fires = triggerFires(s.trigger, latest.triggerState.baseline, probe.value)
+    const saved = await store.update(s.id, {
+      triggerState: {
+        baseline: probe.value,
+        checkedAt,
+        error: '',
+        firedAt: fires ? checkedAt : latest.triggerState.firedAt,
+      },
+    })
+    if (!fires || !saved) return
+    log.info('schedule', '触发条件成立', { schedule: s.id, name: s.name })
+    // 上游没成功就不启动，和到点的计划同一个判定；原因记进计划
+    const reason = dependencyBlocker(saved, await store.list(), now)
+    if (reason) {
+      const blocked = await writeBack(s.id, saved.at, afterBlocked(saved, now, reason), {
+        at: '',
+        happenedAt: checkedAt,
+        event: 'blocked',
+        manual: false,
+        taskId: '',
+        error: reason,
+      })
+      if (blocked) notify('blocked', blocked, checkedAt)
+      return
+    }
+    await launch(saved, now, probe.detail)
+  }
+
+  /** 到了检查时间的按事件计划各自在后台检查：不等它们（检查命令可能跑好几分钟），同一条不重叠 */
+  function checkTriggers(list: Schedule[], now: number) {
+    for (const s of list) {
+      if (checking.has(s.id) || !triggerCheckDue(s, now)) continue
+      checking.add(s.id)
+      const run = checkTrigger(s)
+        .catch((e) => log.warn('schedule', '检查触发条件出错', { schedule: s.id, error: (e as Error).message }))
+        .finally(() => checking.delete(s.id))
+      pending.add(run)
+      void run.finally(() => pending.delete(run))
     }
   }
 
@@ -301,6 +387,8 @@ export function schedulesApi(deps: {
         // 换成写回后的记录：同一批里排在下游的计划要读到上游最新的结果
         if (res) replaceSnapshot(res.schedule)
       }
+      // 按事件的计划：到了检查间隔的放到后台去查，不占住这一轮
+      checkTriggers(all, now)
     } finally {
       ticking = false
     }
@@ -353,7 +441,7 @@ export function schedulesApi(deps: {
     // 新建的计划还没有 id，别的计划依赖不了它，不会成环，只校验上游是否存在
     const depError = await checkDependencies('', dependsOn)
     if (depError) return bad(c, depError)
-    const timing = scheduleTimingError(p.data) || (await scopeOfSchedule(p.data))
+    const timing = scheduleTimingError(p.data) || triggerConfigError(p.data) || (await scopeOfSchedule(p.data))
     if (timing) return bad(c, timing)
     const now = new Date().toISOString()
     // 每周 / 工作日的首次执行也要落在选中的星期：保存前对齐，到点判定（pickDue）和徽标才一致
@@ -379,9 +467,11 @@ export function schedulesApi(deps: {
     const dependsOn = [...new Set(p.data.dependsOn)]
     const depError = await checkDependencies(id, dependsOn)
     if (depError) return bad(c, depError)
-    const timing = scheduleTimingError(p.data) || (await scopeOfSchedule(p.data))
+    const timing = scheduleTimingError(p.data) || triggerConfigError(p.data) || (await scopeOfSchedule(p.data))
     if (timing) return bad(c, timing)
     const input = { ...p.data, dependsOn, at: alignScheduleAt(p.data) }
+    // 触发条件改了、或者从停用重新打开：从头记现状，不拿旧的（或停用期间的）变化当成这次触发
+    const freshTrigger = !sameTriggerConfig(old.trigger, input.trigger) || (!old.enabled && input.enabled)
     // 已经结束的计划把结束日期往后改（或改成永不）：存着的 at 是结束后那一次、早就过了，
     // 不推到现在之后的话下一轮会先记一次「错过」。推过去之后按重新排期处理
     const now = Date.now()
@@ -405,6 +495,9 @@ export function schedulesApi(deps: {
           }),
       lastRunAt: old.lastRunAt,
       lastTaskId: old.lastTaskId,
+      triggerState: freshTrigger ? EMPTY_TRIGGER_STATE : old.triggerState,
+      // 按事件的计划一直待执行（单次计划跑完是 done，改成按事件后要重新开始检查）
+      ...(isEventSchedule(input) ? { status: 'pending' as const } : {}),
     })
     return c.json(item)
   })

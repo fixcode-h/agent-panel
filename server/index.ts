@@ -951,6 +951,8 @@ const schedules = schedulesApi({
   startChat: (input) => tasks.startChat(input),
   // Webhook 载荷里带项目名：接的一方不用再去查项目 id
   projectName: async (id) => (await projects.get(id))?.name ?? '',
+  // 按事件触发的计划在项目目录里看文件、问远端、跑命令
+  projectPath: async (id) => (await projects.get(id))?.path ?? '',
   // 启动出来的对话跑完没有：只读任务元数据，运行记录据此补耗时
   peekTask: (id) => tasks.peek(id),
   agents: () => agents.list(),

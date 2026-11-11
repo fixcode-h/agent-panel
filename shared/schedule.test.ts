@@ -68,6 +68,8 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   budget: { tokens: 0, minutes: 0 },
   endDate: '',
   durationMin: 60,
+  trigger: { kind: 'time', path: '', remote: 'origin', branch: '', command: '', onlyFailure: false, everyMin: 5 },
+  triggerState: { baseline: '', checkedAt: '', error: '', firedAt: '' },
   status: 'pending',
   lastRunAt: '',
   lastTaskId: '',
