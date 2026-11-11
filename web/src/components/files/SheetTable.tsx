@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, ListFilter } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ListFilter } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { SheetData } from '@shared/files'
 import { dataStart, type SheetHeader } from '@shared/sheet-header'
@@ -135,6 +135,19 @@ export function useRowH() {
   return h
 }
 
+/** 两行列头的一个小标签：类型、枚举、引用、数组、必填，颜色跟着表头行的颜色（设置里调） */
+export interface SheetColTag {
+  text: string
+  tone: 'type' | 'enum' | 'ref' | 'list' | 'req'
+  /** 悬停说明（引用的完整目标、枚举名…） */
+  title?: string
+}
+/** 两行列头：上面字段名，下面类型标签；字母 A、B、C 降成右上角的灰色小字 */
+export interface SheetColHead {
+  field: string
+  tags: SheetColTag[]
+}
+
 /** 表格页编辑用：选中的一块、当前格、正在改的格子、格子的额外标记（改过、不合规） */
 export interface SheetEditing {
   /** 这一格在不在选中的一块里（筛选排序后选中的行不一定连着，交给调用方判断） */
@@ -179,7 +192,16 @@ export function SheetTable({
   widthKey,
   layout,
   onLayout,
+  colHead,
+  headCollapsed,
+  onHeadCollapse,
 }: {
+  /** 传了列头就是两行：字段名 + 类型标签（表格页用，按列结构算） */
+  colHead?: (c: number) => SheetColHead | undefined
+  /** 表头行折起来：只看两行列头和数据，省出表头那几行的高度 */
+  headCollapsed?: boolean
+  /** 传了左上角就有折叠表头的按钮 */
+  onHeadCollapse?: (v: boolean) => void
   /** 冻结前几列、隐藏的列（表格页按文件记在本机） */
   layout?: ColLayout
   /** 传了才能在列名上右键冻结、隐藏 */
@@ -240,9 +262,11 @@ export function SheetTable({
     return out
   }, [colW, numW])
   const dataW = lefts[lefts.length - 1]
-  /** 钉在顶上的行：列名行 + 表头（连同表头上面的标题行） */
-  const frozen = from
-  const frozenH = rowH * (frozen + 1)
+  /** 钉在顶上的行：列名行 + 表头（连同表头上面的标题行）；表头折起来时只剩列名行 */
+  const frozen = headCollapsed && colHead ? 0 : from
+  // 两行列头高一些：字段名一行、标签一行
+  const headH = colHead ? Math.round(rowH * 1.75) : rowH
+  const frozenH = headH + rowH * frozen
   const [win, setWin] = useState({ from: 0, to: 60 })
   // 横向也只画看得见的列（宽表上百列时，每行只画屏幕上那十几列）
   const [cwin, setCwin] = useState({ from: 0, to: 40 })
@@ -424,13 +448,33 @@ export function SheetTable({
       style={{ width: total, height: frozenH + rowH * (body.length + padRows) }}
     >
       <div className="sticky top-0 z-2" style={{ width: total }}>
-        <div role="row" className={cn(STICKY, 'flex')} style={{ height: rowH }}>
-          <span className={cn(STICKY, CELL, 'left-0 z-2')} style={{ width: numW, ...lineH }} />
+        <div role="row" className={cn(STICKY, 'flex')} style={{ height: headH }}>
+          <span
+            className={cn(STICKY, CELL, 'left-0 z-2 flex items-center justify-center')}
+            style={{ width: numW, height: headH }}
+          >
+            {onHeadCollapse && from > 0 && (
+              <button
+                type="button"
+                aria-pressed={!headCollapsed}
+                aria-label={headCollapsed ? t('展开表头 {n} 行', { n: from }) : t('折起表头 {n} 行', { n: from })}
+                title={headCollapsed ? t('展开表头 {n} 行', { n: from }) : t('折起表头 {n} 行', { n: from })}
+                onClick={() => onHeadCollapse(!headCollapsed)}
+                className="flex h-5 cursor-pointer items-center gap-0.5 rounded-sm px-1 text-caption text-subtle hover:bg-hover hover:text-fg"
+              >
+                {headCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                {t('表头')}
+              </button>
+            )}
+          </span>
           {span((w, c, pin) => (
             <ColumnHead
               key={c}
               col={c}
               width={w}
+              height={headH}
+              info={colHead?.(c)}
+              twoLine={!!colHead}
               pin={pin ? { style: pinned(c, pin), cls: pinCls(c, pin) || '' } : undefined}
               layout={layout}
               onLayout={onLayout}
@@ -450,7 +494,7 @@ export function SheetTable({
               key={`h${k}`}
               aria-hidden
               className={cn(CELL, 'text-center font-mono text-caption text-subtle')}
-              style={{ width: PAD_W, ...lineH }}
+              style={{ width: PAD_W, height: headH, lineHeight: `${headH - 1}px` }}
             >
               {colName(colW.length + k)}
             </span>
@@ -541,6 +585,9 @@ export function SheetTable({
 function ColumnHead({
   col,
   width,
+  height,
+  info,
+  twoLine,
   lineH,
   rows,
   header,
@@ -555,6 +602,10 @@ function ColumnHead({
 }: {
   col: number
   width: number
+  height: number
+  info?: SheetColHead
+  /** 两行列头（表格页）：没有字段名的列也是这个高度，只写字母 */
+  twoLine: boolean
   /** 冻结的列：钉在左边 */
   pin?: { style: React.CSSProperties; cls: string }
   layout?: ColLayout
@@ -575,10 +626,36 @@ function ColumnHead({
   const head = (
     <span
       role="columnheader"
-      className={cn(CELL, 'group relative text-center font-mono text-caption', pin?.cls)}
-      style={{ width, ...lineH, ...pin?.style }}
+      aria-label={info?.field ? `${colName(col)} ${info.field}` : undefined}
+      className={cn(
+        CELL,
+        'group relative font-mono text-caption',
+        twoLine ? 'sheet-colhead flex flex-col justify-center gap-0.5' : 'text-center',
+        pin?.cls,
+      )}
+      style={twoLine ? { width, height, ...pin?.style } : { width, ...lineH, ...pin?.style }}
     >
-      {colName(col)}
+      {twoLine ? (
+        <>
+          <span className="flex min-w-0 items-baseline gap-1 leading-tight">
+            <span className={cn('min-w-0 flex-1 truncate', info?.field ? 'font-semibold text-fg' : 'text-center')}>
+              {info?.field || colName(col)}
+            </span>
+            {info?.field && <span className="shrink-0 text-subtle">{colName(col)}</span>}
+          </span>
+          {!!info?.tags.length && (
+            <span className="flex min-w-0 gap-1 overflow-hidden leading-tight">
+              {info.tags.map((g, i) => (
+                <span key={i} title={g.title ?? g.text} className={cn('sheet-tag', `sheet-tag-${g.tone}`)}>
+                  {g.text}
+                </span>
+              ))}
+            </span>
+          )}
+        </>
+      ) : (
+        colName(col)
+      )}
       {onResize && <ResizeHandle col={col} width={width} onResize={onResize} />}
       {onFilter && onSort && (
         <Popover open={open} onOpenChange={setOpen}>
@@ -588,7 +665,8 @@ function ColumnHead({
               aria-label={t('筛选和排序 {col} 列', { col: colName(col) })}
               title={t('筛选和排序')}
               className={cn(
-                'absolute top-1/2 right-0.5 flex h-5 -translate-y-1/2 cursor-pointer items-center gap-0.5 rounded-sm px-1',
+                'absolute right-0.5 flex h-5 cursor-pointer items-center gap-0.5 rounded-sm bg-(--sheet-bg) px-1',
+                twoLine ? 'bottom-1' : 'top-1/2 -translate-y-1/2',
                 'transition-opacity duration-(--dur-fast) hover:bg-hover',
                 on ? 'text-accent' : 'text-subtle opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
                 open && 'bg-active opacity-100',

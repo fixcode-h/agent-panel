@@ -11,6 +11,24 @@ import { roleLabel } from './sheet-roles'
 import { HeaderRuleEditor } from './HeaderRuleEditor'
 import './sheet-table.css'
 
+/** 表头说明：标签（自动识别 / 项目风格 / 手动设置）和一句话，表头栏和表格页的状态栏共用 */
+export function headerSummary(view: SheetView) {
+  const { header, auto, sure, from } = view
+  const n = header.roles.length
+  return {
+    badge: auto ? t('自动识别') : view.fromStyle ? t('项目风格') : t('手动设置'),
+    tone: auto ? (sure ? ('accent' as const) : ('warning' as const)) : undefined,
+    text: n
+      ? t('表头 {n} 行（第 {a}–{b} 行），数据从第 {c} 行开始', {
+          n,
+          a: header.start + 1,
+          b: header.start + n,
+          c: from + 1,
+        })
+      : t('没认出表头，全部按数据显示'),
+  }
+}
+
 /**
  * 表格上方的一行：认出的表头（第几行到第几行、每行什么颜色）、筛选了多少行，右边「调整表头」。
  * 自动识别没把握时用警告色提示，让用户去改
@@ -20,8 +38,11 @@ export function SheetHeaderBar({
   rows,
   where,
   presets,
+  compact,
   children,
 }: {
+  /** 表格页：表头说明挪到底部状态栏，这一行只留工具栏 */
+  compact?: boolean
   view: SheetView
   rows: string[][]
   /** 项目里设好的几套表头：「调整表头」里点一下就套用 */
@@ -31,26 +52,16 @@ export function SheetHeaderBar({
   /** 「调整表头」左边的额外按钮（表格页的保存、撤销……） */
   children?: React.ReactNode
 }) {
-  const { header, auto, sure, from, order } = view
+  const { header, from, order } = view
   const n = header.roles.length
   const dataCount = Math.max(0, rows.length - from)
   const filtered = order.length !== dataCount || !!view.sort
+  const sum = headerSummary(view)
   return (
     <div className="sheet-bar flex h-9 shrink-0 items-center gap-2 border-b px-3 text-body">
-      <Badge tone={auto ? (sure ? 'accent' : 'warning') : undefined}>
-        {auto ? t('自动识别') : view.fromStyle ? t('项目风格') : t('手动设置')}
-      </Badge>
-      <span className="min-w-0 truncate text-muted">
-        {n
-          ? t('表头 {n} 行（第 {a}–{b} 行），数据从第 {c} 行开始', {
-              n,
-              a: header.start + 1,
-              b: header.start + n,
-              c: from + 1,
-            })
-          : t('没认出表头，全部按数据显示')}
-      </span>
-      {n > 0 && (
+      {!compact && <Badge tone={sum.tone}>{sum.badge}</Badge>}
+      {!compact && <span className="min-w-0 truncate text-muted">{sum.text}</span>}
+      {!compact && n > 0 && (
         <span className="flex shrink-0 gap-1" aria-hidden>
           {header.roles.map((r, i) => (
             <span key={i} title={roleLabel(r)} className={cn('h-3 w-3 rounded-[3px] sheet-role', `sheet-role-${r}`)} />

@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
-import { SheetTable, type SheetEditing } from '@/components/files/SheetTable'
+import { SheetTable, type SheetColHead, type SheetEditing } from '@/components/files/SheetTable'
 import { useSheetView } from '@/components/files/use-sheet-view'
 
 /** 样例：一张游戏配置表（修饰 / 导出端 / 类型 / 字段名 / 注释 + 数据），演示数据不翻译 */
@@ -20,18 +20,53 @@ const ROWS = [
   ['8', '781713008', 'WallMirror', '复古椭圆挂镜', '', '2'],
 ]
 
-/** 表格页里的样子：一格改过没保存、一格不合规、当前格描边（只看，不能真改） */
+/**
+ * 表格页里的样子（只看，不能真改）：一格改过没保存、一格不合规、当前格描边，
+ * 枚举列悬停出下拉箭头、引用列虚下划线、必填空着的斜线底纹
+ */
 const SAMPLE_EDIT: SheetEditing = {
   picked: () => false,
   focus: { row: 8, col: 2 },
   focusSeq: 0,
   editing: null,
-  mark: (r, c) => (r === 6 && c === 3 ? 'sheet-dirty' : r === 12 && c === 5 ? 'sheet-bad' : undefined),
+  mark: (r, c) =>
+    [
+      r === 6 && c === 3 && 'sheet-dirty',
+      r === 12 && c === 5 && 'sheet-bad',
+      r >= 5 && c === 2 && 'sheet-enum',
+      r >= 5 && c === 4 && ROWS[r][4] && 'sheet-ref',
+      r === 9 && c === 4 && 'sheet-need',
+    ]
+      .filter(Boolean)
+      .join(' ') || undefined,
   tip: (r, c) => (r === 12 && c === 5 ? 'TriggerState 只能是 -1 到 1' : undefined),
   onDown: () => {},
   onEnter: () => {},
   onDouble: () => {},
 }
+
+/** 表格页的两行列头：字段名 + 类型标签（颜色跟着表头每种行的颜色） */
+const HEADS: (SheetColHead | undefined)[] = [
+  {
+    field: 'ID',
+    tags: [
+      { text: 'uint32', tone: 'type' },
+      { text: '*', tone: 'req' },
+    ],
+  },
+  { field: 'EntryID', tags: [{ text: 'uint32', tone: 'type' }] },
+  { field: 'MountType', tags: [{ text: 'HomeDecorationMountType', tone: 'enum' }] },
+  { field: 'DisplayName', tags: [{ text: 'bytes', tone: 'type' }] },
+  {
+    field: 'AllowCharacterIDs',
+    tags: [
+      { text: 'uint32', tone: 'type' },
+      { text: '→ C_Character', tone: 'ref' },
+      { text: '[ ]', tone: 'list' },
+    ],
+  },
+  { field: 'TriggerState', tags: [{ text: 'int32', tone: 'type' }] },
+]
 
 /**
  * 设置 → 组件里的数据表格样例：和文件弹窗里看 xlsx / CSV 是同一个表格和表头栏，
@@ -55,6 +90,7 @@ export function SheetSpecimen() {
           onFilter={view.setFilter}
           onSort={view.setSort}
           edit={SAMPLE_EDIT}
+          colHead={(c) => HEADS[c]}
         />
       </div>
     </div>

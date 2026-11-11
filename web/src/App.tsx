@@ -219,6 +219,9 @@ function ProjectDialog({
 
 export function App() {
   const [route, setRoute] = useHashRoute()
+  // 表格页打开过就记下：之后一直挂着（见下面的渲染），切走只藏起来
+  const [tablesKept, setTablesKept] = useState(route.page === 'tables')
+  if (route.page === 'tables' && !tablesKept) setTablesKept(true)
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
   const aiJob = useAiWindowValue((s) => !!s.job)
   const [project, setProject] = useState<{ open: boolean; id?: string; section?: string; item?: string }>({
@@ -275,9 +278,25 @@ export function App() {
                 )}
               >
                 {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
-                <ErrorBoundary resetKey={toHash(route)}>
-                  <Suspense fallback={null}>{PAGES[route.page]()}</Suspense>
-                </ErrorBoundary>
+                {route.page !== 'tables' && (
+                  <ErrorBoundary resetKey={toHash(route)}>
+                    <Suspense fallback={null}>{PAGES[route.page]()}</Suspense>
+                  </ErrorBoundary>
+                )}
+                {/* 表格页打开过一次就一直挂着、切走时只藏起来：打开的表、没保存的改动、滚动位置都留着，切回来不重新加载 */}
+                {tablesKept && (
+                  <div
+                    className={cn(
+                      route.page === 'tables'
+                        ? 'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden'
+                        : 'hidden',
+                    )}
+                  >
+                    <ErrorBoundary resetKey="tables">
+                      <Suspense fallback={null}>{PAGES.tables()}</Suspense>
+                    </ErrorBoundary>
+                  </div>
+                )}
               </div>
             </div>
           </div>

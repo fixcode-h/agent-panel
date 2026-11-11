@@ -91,7 +91,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await cell(5, 4).textContent()) !== '曲线穿衣镜（改）') errors.push('表格页：保存后内容不对')
 
   // 结构化：InteractionTriggerState 设了 0–1（-1 也允许），值是 2 的格子标红，「检查」列出来
-  await p.getByRole('button', { name: /处不合规/ }).click()
+  await p
+    .getByRole('group', { name: '数据' })
+    .getByRole('button', { name: /处不合规/ })
+    .click()
   const bar = p.getByRole('region', { name: '不合规的格子' })
   await bar
     .getByText(/不能大于 1/)
@@ -337,6 +340,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText(/已把 C_HomeDecorationConfig\.xlsx 切换到所选版本/)
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：切换到旧版本没有成功'))
+
+  // 切到别的页面再切回来：表格页不重新加载，打开的页签都还在
+  const openTabs = p.getByRole('tablist', { name: '打开的表格' }).getByRole('tab')
+  const tabCount = await openTabs.count()
+  await p.evaluate(() => (location.hash = '#/home'))
+  await p.waitForTimeout(400)
+  await p.evaluate(() => history.back())
+  await p
+    .getByRole('tablist', { name: '打开的表格' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => {})
+  if ((await openTabs.count()) !== tabCount) errors.push('表格页：切到别的页面再回来，打开的表格页签没了（重新加载了）')
+  await p.getByRole('button', { name: '刷新：重新读文件列表和当前表格' }).click()
 
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()

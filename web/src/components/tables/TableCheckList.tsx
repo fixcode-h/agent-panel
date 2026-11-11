@@ -19,7 +19,10 @@ export function TableCheckList({
   query,
   seq,
   onOpen,
+  onResult,
 }: {
+  /** 查完了：文件树上标每个文件的不合规数 */
+  onResult?: (r: TablesCheck) => void
   projectId: string
   query: string
   /** 结构文件或表格保存后加一：重新查 */
@@ -59,12 +62,18 @@ export function TableCheckList({
     setError('')
     tablesApi
       .check(projectId)
-      .then((r) => live && setResult(r))
+      .then((r) => {
+        if (!live) return
+        setResult(r)
+        onResult?.(r)
+      })
       .catch((e) => live && setError((e as Error).message))
       .finally(() => live && setLoading(false))
     return () => {
       live = false
     }
+    // onResult 每次渲染都是新函数，只按项目和重查的信号重查
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, seq, again])
 
   if (error) return <p className="px-3 py-4 text-footnote text-danger">{error}</p>

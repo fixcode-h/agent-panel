@@ -628,4 +628,24 @@ export const EN_TABLES: Record<string, string> = {
   最近打开: 'Recently opened',
   取消收藏: 'Remove from favorites',
   在文件管理器中显示: 'Show in file manager',
+  // 第 1 批界面
+  '展开表头 {n} 行': 'Expand the {n} header rows',
+  '折起表头 {n} 行': 'Collapse the {n} header rows',
+  '选中 {n} 格': '{n} cells selected',
+  '选中 {n} 格 · 数字 {k} 个 · 求和 {sum} · 平均 {avg} · 最小 {min} · 最大 {max}':
+    '{n} cells · {k} numbers · Sum {sum} · Avg {avg} · Min {min} · Max {max}',
+  表格状态: 'Table status',
+  全部合规: 'All valid',
+  '{n} 处没保存': '{n} unsaved',
+  有不合规的格子: 'Has invalid cells',
+  '数组，分隔符 {sep}': 'Array, separated by {sep}',
+  关闭其它: 'Close others',
+  关闭右侧: 'Close to the right',
+  在文件树中定位: 'Reveal in file tree',
+  '全部页签（{n} 个）': 'All tabs ({n})',
+  有没保存改动的页签留着了: 'Tabs with unsaved changes were kept open',
+  '刷新：重新读文件列表和当前表格': 'Refresh: reload the file list and the current table',
+  '当前表格有没保存的改动，只刷新了文件列表；保存或撤销后再刷新':
+    'The current table has unsaved changes, so only the file list was refreshed. Save or undo, then refresh again',
+  已刷新: 'Refreshed',
 }

@@ -124,8 +124,8 @@ export const COMP_SPEC = {
     stripe: pick('low', { none: '0%', low: '4.5%', mid: '8%' }),
     nameBold: bool(true, '600', '500'),
     divider: bool(true, '2px', '1px'),
-    /** 表格页：改过还没保存的格子、不合规的格子 */
-    edited: hue('amber'),
+    /** 表格页：改过还没保存的格子（左边一条蓝色竖线 + 淡底，不和琥珀色的类型行、橙色的选中撞色）、不合规的格子 */
+    edited: hue('blue'),
     invalid: hue('red'),
     /** 版本差异、跨项目对比：新增的行 / 新值、删掉的行 / 旧值（改过的格子底色用 edited） */
     added: hue('green'),
