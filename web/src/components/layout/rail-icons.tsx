@@ -141,3 +141,12 @@ export const ComfyIcon = icon(
     <path d="M6 10v1.5a2.5 2.5 0 0 0 2.5 2.5M18 10v1.5a2.5 2.5 0 0 1-2.5 2.5" />
   </>,
 )
+
+/** 表格：表头一行实心，下面三列格子 */
+export const TableIcon = icon(
+  <path d="M7 4.5h10A3.5 3.5 0 0 1 20.5 8v1.5h-17V8A3.5 3.5 0 0 1 7 4.5z" />,
+  <>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" />
+    <path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M14.5 9.5v10" />
+  </>,
+)

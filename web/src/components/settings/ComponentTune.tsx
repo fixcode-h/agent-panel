@@ -46,6 +46,7 @@ export const compLabel = (c: CompName) =>
     sheet: t('侧边抽屉'),
     popover: t('输入框弹层'),
     empty: t('空状态'),
+    grid: t('数据表格'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -56,6 +57,7 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'segmented' && prop === 'itemRadius') return t('选中块圆角')
   if (c === 'switch' && prop === 'on') return t('打开时颜色')
   if (c === 'empty' && prop === 'border') return t('边框线型')
+  if (c === 'grid') return gridPropLabel(prop) ?? prop
   return (
     {
       radius: t('圆角'),
@@ -72,6 +74,25 @@ const propLabel = (c: CompName, prop: string) => {
     } as Record<string, string>
   )[prop]
 }
+
+/** 数据表格的项：表头每种行一个颜色 */
+const gridPropLabel = (prop: string): string | undefined =>
+  ({
+    rowH: t('行高'),
+    font: t('字体'),
+    lines: t('竖线'),
+    tint: t('表头底色浓度'),
+    modifier: t('修饰行'),
+    side: t('导出端行'),
+    type: t('类型行'),
+    name: t('字段名行'),
+    comment: t('注释行'),
+    other: t('其他表头行'),
+    nameBold: t('字段名加粗'),
+    divider: t('表头下粗线'),
+    edited: t('改过未保存的格子'),
+    invalid: t('不合规的格子'),
+  })[prop]
 
 const optionLabel = (v: string) =>
   ({
@@ -93,6 +114,21 @@ const optionLabel = (v: string) =>
     '500': t('中等'),
     '600': t('半粗'),
     custom: t('自定义'),
+    mono: t('等宽'),
+    sans: t('界面字体'),
+    all: t('画'),
+    rows: t('不画'),
+    low: t('淡'),
+    mid: t('中'),
+    high: t('浓'),
+    violet: t('紫'),
+    teal: t('青'),
+    amber: t('琥珀'),
+    blue: t('蓝'),
+    green: t('绿'),
+    red: t('红'),
+    orange: t('橙'),
+    gray: t('灰'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */

@@ -352,6 +352,43 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => errors.push('文件窗口：xlsx 切到第二张表没有显示它的内容'))
       await check(p, '文件窗口-xlsx表格', ['补货记录', '小林'])
       await closeDlg()
+      // 游戏配置表：自动认出 5 行表头、每行按角色上色并钉在顶上；列筛选只显示筛出来的行
+      await row('data/C_HomeDecorationConfig.xlsx').click()
+      await dlg
+        .getByText(/表头 5 行（第 1–5 行），数据从第 6 行开始/)
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('文件窗口：游戏配置表没有认出 5 行表头'))
+      const roles = await dlg.evaluate((d) =>
+        ['modifier', 'side', 'type', 'name', 'comment'].map(
+          (r) => d.querySelectorAll(`[role=row].sheet-role-${r}`).length,
+        ),
+      )
+      if (roles.join() !== '1,1,1,1,1') errors.push(`文件窗口：表头各行的角色不对：${roles.join()}`)
+      // 往下滚一大段，表头还在视野里（钉在顶上）
+      await dlg.evaluate((d) => {
+        const box = d.querySelector('.sheet-grid')?.parentElement
+        if (box) box.scrollTop = 2000
+      })
+      await p.waitForTimeout(150)
+      const pinned = await dlg.evaluate((d) => {
+        const head = d.querySelector('[role=row].sheet-role-name')?.getBoundingClientRect()
+        const box = d.querySelector('.sheet-grid')?.parentElement?.getBoundingClientRect()
+        return !!head && !!box && head.top >= box.top && head.bottom <= box.bottom
+      })
+      if (!pinned) errors.push('文件窗口：往下滚后表头没有钉在顶上')
+      await dlg.locator('[role=columnheader]', { hasText: /^C$/ }).hover()
+      await dlg.getByRole('button', { name: '筛选和排序 C 列' }).click()
+      const pop = p.getByRole('dialog').last()
+      await pop.getByRole('checkbox', { name: '全选' }).click()
+      await pop.getByRole('checkbox', { name: 'XS' }).click()
+      await check(p, '文件窗口-表格列筛选', ['按值', 'XS'])
+      await pop.getByRole('button', { name: '应用' }).click()
+      await dlg
+        .getByText('显示 30 / 120 行')
+        .waitFor({ timeout: 3000 })
+        .catch(() => errors.push('文件窗口：按值筛选后行数不对'))
+      await check(p, '文件窗口-游戏配置表', ['表头 5 行', '显示 30 / 120 行'])
+      await closeDlg()
       await row('package.json').click()
       await dlg
         .getByRole('radio', { name: '树形' })

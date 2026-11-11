@@ -22,6 +22,8 @@ import { FileSearchBar, useFileSearch } from './FileSearch'
 import { useDomSearch } from './dom-search'
 import { JsonTree } from './JsonTree'
 import { SheetTable, SheetTabs } from './SheetTable'
+import { SheetHeaderBar } from './SheetHeaderBar'
+import { useSheetView } from './use-sheet-view'
 import './file-view.css'
 
 // 编辑器（CodeMirror）只在切到编辑时才加载：只看文件的人不用下载它
@@ -143,6 +145,8 @@ export function FileViewDialog({
     [csvShown, body, path],
   )
   const tableRows = sheet ? sheet.rows : csvRows
+  // 表格的表头（自动识别 / 手动设置）、筛选和排序；手动设的表头按「路径 + 工作表」记在本机
+  const sheetView = useSheetView(`${path}#${sheet?.name ?? ''}`, tableRows)
   // 只有阅读代码时才拆行、高亮：编辑时每敲一个字 body 都会变，在这里整份重新高亮，大文件打一个字就卡一下
   const codeShown = isText && !editing && !mdPreview && !treeShown && !csvShown
   const lines = useMemo(() => (codeShown && body ? body.split('\n') : []), [codeShown, body])
@@ -177,10 +181,14 @@ export function FileViewDialog({
     search.seq,
     search.open && domShown,
   )
-  const cellHits = useMemo(
-    () => (search.open && tableRows ? findCells(tableRows, search.query, search.caseSensitive) : []),
-    [search.open, tableRows, search.query, search.caseSensitive],
-  )
+  const viewFrom = sheetView?.from ?? 0
+  const viewShown = sheetView?.shown
+  const cellHits = useMemo(() => {
+    if (!search.open || !tableRows) return []
+    const all = findCells(tableRows, search.query, search.caseSensitive)
+    // 筛掉的行不显示，命中也不算；表头一直显示
+    return viewShown ? all.filter((h) => h.row < viewFrom || viewShown.has(h.row)) : all
+  }, [search.open, tableRows, search.query, search.caseSensitive, viewFrom, viewShown])
   const total = tableRows ? cellHits.length : domShown ? domTotal : hits.length
   const size = typeof file?.size === 'number' ? sizeText(file.size) : ''
   const mtime = file?.mtime ? fmtClock(file.mtime) : ''
@@ -304,6 +312,7 @@ export function FileViewDialog({
         {sheets && sheets.length > 1 && (
           <SheetTabs sheets={sheets} index={Math.min(sheetIndex, sheets.length - 1)} onChange={setSheetIndex} />
         )}
+        {sheetView && tableRows && (sheet || csvRows) && <SheetHeaderBar view={sheetView} rows={tableRows} />}
         {/* Markdown 阅读时右边是标题目录，编辑源码时不要 */}
         <DialogScroll box={box} aside={mdPreview && !editing && <DocOutline scrollEl={box} className="bottom-7" />}>
           {error ? (
@@ -315,7 +324,19 @@ export function FileViewDialog({
           ) : !file.exists ? (
             <p className="p-6 text-body text-subtle">{source.missingText}</p>
           ) : sheet ? (
-            <SheetTable rows={sheet.rows} scrollEl={box} hits={cellHits} current={search.index} seq={search.seq} />
+            <SheetTable
+              rows={sheet.rows}
+              scrollEl={box}
+              hits={cellHits}
+              current={search.index}
+              seq={search.seq}
+              header={sheetView?.header}
+              order={sheetView?.order}
+              filters={sheetView?.filters}
+              sort={sheetView?.sort}
+              onFilter={sheetView?.setFilter}
+              onSort={sheetView?.setSort}
+            />
           ) : file.binary ? (
             <p className="p-6 text-body text-subtle">{source.binaryText}</p>
           ) : editing ? (
@@ -342,7 +363,19 @@ export function FileViewDialog({
               <Markdown text={shown} teamNames={NO_TEAM} />
             </div>
           ) : csvRows ? (
-            <SheetTable rows={csvRows} scrollEl={box} hits={cellHits} current={search.index} seq={search.seq} />
+            <SheetTable
+              rows={csvRows}
+              scrollEl={box}
+              hits={cellHits}
+              current={search.index}
+              seq={search.seq}
+              header={sheetView?.header}
+              order={sheetView?.order}
+              filters={sheetView?.filters}
+              sort={sheetView?.sort}
+              onFilter={sheetView?.setFilter}
+              onSort={sheetView?.setSort}
+            />
           ) : treeShown ? (
             <JsonTree
               text={shown}

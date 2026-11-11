@@ -8,7 +8,7 @@ import {
   submitDiagnosis,
   type DiagnosisInput,
 } from './bug-diagnosis.ts'
-import { cleanDiff } from './bug-fix.ts'
+import { cleanDiff, editPatch } from './bug-fix.ts'
 import { editScope } from './bug-phase.ts'
 import type { BugSource } from './bug-quotes.ts'
 import type { Task } from './schema.ts'
@@ -64,7 +64,7 @@ let n = 0
 const id = () => `id${++n}`
 const yes = { approve: true, notes: [], overall: '' }
 const ok = (r: { ok: boolean; info?: string; error?: string }) => assert.ok(r.ok, r.info ?? r.error ?? '')
-const src = (diffs: Record<string, string>): BugSource => ({ read: () => undefined, diff: (f) => diffs[f] })
+const src = (diffs: Record<string, string>): BugSource => ({ read: () => undefined, diff: (f) => diffs[f] ?? '' })
 const bugTask = () =>
   ({
     bug: true,
@@ -159,4 +159,41 @@ test('对修复的代码提疑问：放行方案里的文件，它逐条判断�
   assert.equal(d.phase, 'fix')
   assert.equal(d.rev, 1)
   assert.match(diagnosisMarkdown(d, tk.diagnoses!.at(-2), { list: tk.diagnoses }), /（\*\*不同意\*\*）：配置/)
+})
+
+// 用户 2026-11-11 报：P4 工程（不是 git）修复页把改过的 C++、Lua 整个文件都画成新增。
+// 不是 git 时 diff 取不到，改用 Agent 改文件时记下的改动，不和空文件比
+const edit = (label: string, input: string, failed = false) => ({ kind: 'edit', label, detail: '', input, failed })
+test('不是 git 的工程：修复页的 diff 拼 Agent 改文件时记下的改动，不把整个文件画成新增', () => {
+  const msgs = [
+    {
+      tools: [
+        edit('Source/Reset.cpp', '@@ -440,3 +440,4 @@\n   if (a)\n-    Old();\n+    New();\n+    More();'),
+        edit('Source/Reset.cpp', '{\n  "file_path": "Source/Reset.cpp"\n}'),
+        edit('Source/Reset.cpp', '@@ -1 +1 @@\n-x\n+y', true),
+        edit('Script/new.lua', '+local M = {}\n+return M'),
+      ],
+    },
+  ] as unknown as Task['messages']
+  assert.equal(
+    editPatch(msgs, 'Source/Reset.cpp'),
+    '@@ -440,3 +440,4 @@\n   if (a)\n-    Old();\n+    New();\n+    More();',
+  )
+  assert.equal(editPatch(msgs, 'Script/new.lua'), '@@ @@\n+local M = {}\n+return M')
+  assert.equal(editPatch(msgs, 'Other.cpp'), undefined)
+
+  const tk = bugTask()
+  tk.changes = [{ path: 'Source/Reset.cpp', add: 2, del: 1 }]
+  tk.messages.push(...msgs)
+  const p4: BugSource = { read: () => undefined, diff: () => undefined }
+  ok(submitDiagnosis(tk, input({ phase: 'plan', files: ['Source/Reset.cpp'] }), id))
+  ok(decideDiagnosis(tk, 1, yes, id))
+  const why = [{ file: 'Source/Reset.cpp', what: '换成 New', why: '旧的会重复触发' }]
+  ok(submitDiagnosis(tk, input({ phase: 'fix', files: ['Source/Reset.cpp'], changes: why }), id, undefined, p4))
+  const d = pendingDiagnosis(tk)!
+  assert.deepEqual(
+    d.fixFiles.map((f) => [f.file, f.add, f.del, f.isNew]),
+    [['Source/Reset.cpp', 2, 1, false]],
+  )
+  assert.match(d.fixFiles[0].diff, /^@@ -440,3 \+440,4 @@\n {3}if \(a\)\n- {4}Old\(\);/)
 })

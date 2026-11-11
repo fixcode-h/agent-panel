@@ -19,7 +19,7 @@ import {
   type DiagnosisNote,
 } from './bug-diagnosis-schema.ts'
 import { cleanupPrompt, TEMP_LOG } from './bug-cleanup.ts'
-import { fixFilesOf } from './bug-fix.ts'
+import { editPatch, fixFilesOf } from './bug-fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './bug-quotes.ts'
 import {
   causeAgreed,
@@ -456,16 +456,18 @@ function submitOnce(
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
   if (sources.error) return { ok: false, info: sources.error }
   // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
-  // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主、不是 git）时不核对
-  const fixFiles =
+  // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主）时不核对；
+  // 不是 git 的工程拼 Agent 改文件时记下的改动，拼不出来的文件不算「没改」
+  const { files: fixFiles, blind } =
     (phase === 'fix' || phase === 'verify') && src
       ? fixFilesOf(
           (task.changes ?? []).map((x) => x.path),
           src,
+          (file) => editPatch(task.messages, file),
         )
-      : []
+      : { files: [], blind: 0 }
   if (phase === 'fix' && src?.diff) {
-    if (!fixFiles.length)
+    if (!fixFiles.length && !blind)
       return { ok: false, info: '还没有改任何代码（临时日志不算）：按确认的方案改完再交 phase: fix。' }
     const said = new Set(c.changes.map((x) => normPath(x.file)))
     const left = fixFiles.map((f) => f.file).filter((f) => !said.has(f))

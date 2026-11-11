@@ -1,0 +1,74 @@
+/*
+ * 数据表格（SheetTable）：字体、行高、竖线、表头每种行的颜色都读设置 → 组件 → 数据表格的 --c-grid-*。
+ * 表头底色是主题色和底色混出来的不透明色：表头钉在顶上，下面滚过去的格子不能透出来。
+ * 放在别的底色上（设置页的卡片）时，外面设 --sheet-base 换底色。
+ */
+.sheet-grid {
+  --sheet-bg: var(--sheet-base, var(--c-modal-bg));
+  font-family: var(--c-grid-font);
+}
+.sheet-grid .sheet-cell {
+  border-right-width: var(--c-grid-lines);
+}
+.sheet-role {
+  background: color-mix(in oklab, var(--sheet-hue) var(--c-grid-tint), var(--sheet-bg));
+}
+.sheet-role-modifier {
+  --sheet-hue: var(--c-grid-modifier);
+}
+.sheet-role-side {
+  --sheet-hue: var(--c-grid-side);
+}
+.sheet-role-type {
+  --sheet-hue: var(--c-grid-type);
+}
+.sheet-role-name {
+  --sheet-hue: var(--c-grid-name);
+  font-weight: var(--c-grid-nameBold);
+}
+.sheet-role-comment {
+  --sheet-hue: var(--c-grid-comment);
+}
+.sheet-role-other {
+  --sheet-hue: var(--c-grid-other);
+}
+/* 表头最后一行和数据之间：粗一点的分界线 */
+.sheet-head-last > .sheet-cell {
+  border-bottom: var(--c-grid-divider) solid var(--line-strong);
+}
+
+/* 表格里搜索命中的格子：和代码里的命中同一套黄底，当前那一格深一档带描边 */
+.sheet-hit {
+  background: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+.sheet-hit-current {
+  background: color-mix(in srgb, var(--warning) 60%, transparent);
+  box-shadow: inset 0 0 0 1px var(--warning);
+}
+
+/* 表格页编辑：选中的一块浅底，当前格描边；改过没保存的格子、不合规的格子各一种颜色（设置里调） */
+.sheet-grid .sheet-cell {
+  cursor: default;
+}
+.sheet-sel {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.sheet-focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.sheet-dirty {
+  background: color-mix(in oklab, var(--c-grid-edited) var(--c-grid-tint), transparent);
+}
+.sheet-bad {
+  box-shadow: inset 0 -2px 0 var(--c-grid-invalid);
+  color: var(--c-grid-invalid);
+}
+.sheet-focus.sheet-bad {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 -3px 0 var(--c-grid-invalid);
+}
+.sheet-editing {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  z-index: 1;
+}

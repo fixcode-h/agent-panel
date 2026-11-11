@@ -22,6 +22,8 @@ import { EN_CLI_MORE } from './en/cli-more.ts'
 import { EN_NOTIFY_CHANNELS } from './en/notify-channels.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
 import { EN_FILE_REF } from './en/file-ref.ts'
+import { EN_SHEET } from './en/sheet.ts'
+import { EN_TABLES } from './en/tables.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
@@ -79,6 +81,8 @@ export const EN: Record<string, string> = {
   ...EN_NOTIFY_CHANNELS,
   ...EN_EXPERIENCE,
   ...EN_FILE_REF,
+  ...EN_SHEET,
+  ...EN_TABLES,
   ...EN_PLUGINS,
   ...EN_SHARED_DIR,
   ...EN_STATE_WORD,

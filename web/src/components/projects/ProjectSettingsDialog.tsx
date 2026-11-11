@@ -1,6 +1,7 @@
 import { CliSkills } from '@/components/settings/CliSkills'
 import { ProjectExperience } from './ProjectExperience'
 import { ProjectMcpSection } from './ProjectMcpSection'
+import { ProjectTablesSection } from './ProjectTablesSection'
 import { ProjectCliTrust } from './ProjectCliTrust'
 import { ProjectPackages } from './ProjectPackages'
 import { useEffect, useRef, useState } from 'react'
@@ -18,6 +19,7 @@ import {
   Plug,
   Plus,
   Settings2,
+  Sheet,
   Sparkles,
   Trash2,
   Users,
@@ -759,6 +761,10 @@ function Body({
               {t('项目经验')}
             </NavItem>
           )}
+          <NavItem on={section === 'tables'} onClick={() => setSection('tables')} hint={draft.tables?.dirs[0]}>
+            <Sheet className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+            {t('表格')}
+          </NavItem>
           <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
             <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
             Skill
@@ -1093,6 +1099,16 @@ function Body({
                     }
                   />
                 ))}
+              </div>
+            ) : section === 'tables' ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('表格')}
+                  desc={t(
+                    '游戏配置表这类表格的目录。设好后侧栏多一个「表格」入口：按目录浏览、搜索、筛选、在线改单元格、看版本差异、跨项目对比。保存改动只改单元格的值，文件仍是原来的 Excel / WPS 格式。',
+                  )}
+                />
+                <ProjectTablesSection value={draft.tables} onChange={(v) => set('tables', v)} project={project} />
               </div>
             ) : section === 'lessons' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">

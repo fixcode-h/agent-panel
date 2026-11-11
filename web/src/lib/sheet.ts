@@ -7,76 +7,8 @@ import { HIT_MAX } from './file-search'
 /** 阅读时按表格显示的文字文件 */
 export const isCsvPath = (path: string) => /\.(csv|tsv)$/i.test(path)
 
-/** 猜分隔符：看第一行里逗号、分号、制表符哪个多（引号里的不算）；欧洲区的 Excel 导出的 CSV 用分号 */
-export function sniffDelimiter(text: string) {
-  const count: Record<string, number> = { ',': 0, ';': 0, '\t': 0 }
-  let quoted = false
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]
-    if (ch === '"') quoted = !quoted
-    else if (!quoted && (ch === '\n' || ch === '\r')) break
-    else if (!quoted && ch in count) count[ch]++
-  }
-  return count['\t'] > count[','] && count['\t'] >= count[';'] ? '\t' : count[';'] > count[','] ? ';' : ','
-}
-
-/**
- * 拆 CSV：引号里可以有分隔符和换行，两个引号是一个引号；\r\n、\n、\r 都算换行。
- * 一遍扫完（文件弹窗里处理整份内容必须是线性的，见 docs/lessons/file-view.md），结尾的空行不要。
- */
-export function parseCsv(text: string, delimiter = sniffDelimiter(text)): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let i = text.charCodeAt(0) === 0xfeff ? 1 : 0
-  const n = text.length
-  while (i < n) {
-    let cell = ''
-    if (text[i] === '"') {
-      i++
-      let from = i
-      for (;;) {
-        const q = text.indexOf('"', i)
-        if (q < 0) {
-          // 引号没闭合：剩下的都算这一格
-          cell += text.slice(from)
-          i = n
-          break
-        }
-        if (text[q + 1] === '"') {
-          cell += text.slice(from, q + 1)
-          i = from = q + 2
-          continue
-        }
-        cell += text.slice(from, q)
-        i = q + 1
-        break
-      }
-      // 闭合引号后面到分隔符之间的字（不规范的写法）照样接上
-      from = i
-      while (i < n && text[i] !== delimiter && text[i] !== '\n' && text[i] !== '\r') i++
-      cell += text.slice(from, i)
-    } else {
-      const from = i
-      while (i < n && text[i] !== delimiter && text[i] !== '\n' && text[i] !== '\r') i++
-      cell = text.slice(from, i)
-    }
-    row.push(cell)
-    if (i >= n) break
-    if (text[i] === delimiter) {
-      i++
-      // 分隔符后面就结束了：最后还有一个空格子
-      if (i >= n) row.push('')
-      continue
-    }
-    if (text[i] === '\r' && text[i + 1] === '\n') i++
-    i++
-    rows.push(row)
-    row = []
-  }
-  if (row.length) rows.push(row)
-  while (rows.length && rows[rows.length - 1].every((c) => !c)) rows.pop()
-  return rows
-}
+// 拆 CSV 的纯函数在 shared/csv.ts（服务端的表格页、写回也用）
+export { parseCsv, sniffDelimiter } from '@shared/csv'
 
 /** 第几列 → Excel 的列名（0 → A，26 → AA） */
 export function colName(index: number) {

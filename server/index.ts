@@ -107,6 +107,7 @@ import { startMemorySampler } from './exec/proc-stats.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { filesApi } from './files.ts'
+import { tablesApi } from './tables/routes.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
@@ -1034,6 +1035,7 @@ app.route(
 )
 // 文件浏览页：项目里的文件树、内容搜索、看单个文件
 app.route('/project-files', filesApi({ projects }))
+app.route('/tables', tablesApi({ projects }))
 app.get('/projects/:id/files', async (c) => {
   const p = await projects.get(c.req.param('id'))
   if (!p?.path) return bad(c, t('这个项目还没有选择目录'))

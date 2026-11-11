@@ -10,6 +10,7 @@ export const DEMO_FILES = [
   'vite.config.ts',
   'data/products.csv',
   'data/stock.xlsx',
+  'data/C_HomeDecorationConfig.xlsx',
   'src/main.tsx',
   'src/App.tsx',
   'src/api/cart.ts',
@@ -61,6 +62,45 @@ export const DEMO_SHEETS: Record<string, SheetData[]> = {
         ['日期', '商品', '补了多少', '经办人'],
         ['2026-01-12', 'p-1004', '200', '小林'],
         ['2026-01-20', 'p-1003', '80', '小周'],
+      ],
+    },
+  ],
+  // 游戏配置表：前 5 行是表头（修饰 / 导出端 / 类型 / 字段名 / 注释），文件窗口自动识别、分色、钉在顶上
+  'data/C_HomeDecorationConfig.xlsx': [
+    {
+      name: 'C_HomeDecorationConfig',
+      rows: [
+        ['optional', 'optional', 'optional', 'optional', 'optional', 'repeated', 'optional'],
+        ['Client', 'Client', 'Client', 'Client', 'Editor', 'Client', 'Client'],
+        ['uint32', 'uint32', 'HomeDecorationSizeType', 'HomeDecorationMountType', 'bytes', 'uint32', 'int32'],
+        [
+          'ID',
+          'EntryID',
+          'SizeType',
+          'MountType',
+          'DisplayName',
+          'InteractionAllowCharacterIDs',
+          'InteractionTriggerState',
+        ],
+        [
+          '全局唯一软装配置ID',
+          '交互物Entry ID',
+          '家具尺寸',
+          '家装挂载类型',
+          '软装显示名',
+          '交互白名单角色基础ID列表，为空表示不限制',
+          '触发交互状态，默认-1表示未配置',
+        ],
+        ...Array.from({ length: 120 }, (_, i) => [
+          String(i + 1),
+          String(781713001 + i),
+          ['S', 'XS', 'M', 'L'][i % 4],
+          ['FloorMirror', 'WallMirror', 'TabletopDecor'][i % 3],
+          ['曲线穿衣镜', '镀金画框挂镜', '桌上圆镜', '落地拱形镜', '藤编圆挂镜'][i % 5] +
+            (i >= 5 ? ` ${Math.floor(i / 5) + 1}` : ''),
+          i % 7 === 3 ? '1001;1003' : '',
+          i % 11 === 4 ? '2' : '-1',
+        ]),
       ],
     },
   ],
