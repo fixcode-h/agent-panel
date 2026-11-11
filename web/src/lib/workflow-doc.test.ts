@@ -111,3 +111,12 @@ test('代码块的 marks 写坏了就当没有', () => {
   const html = renderDoc('```ts start=3 marks=%7Bbad\nconst a = 1\n```', new Set())
   assert.doesNotMatch(html, /md-hit|md-note/)
 })
+
+test('单个波浪号表示范围，不渲染成删除线；双波浪号才是删除线', () => {
+  clearDocCache()
+  const range = renderDoc('X 102400~153600、Y 0~51200', NONE)
+  assert.ok(!range.includes('<del>'), range)
+  assert.ok(range.includes('102400~153600、Y 0~51200'), range)
+  assert.ok(!renderDoc('~单个~', NONE).includes('<del>'))
+  assert.match(renderDoc('这是~~旧的~~新的', NONE), /<del>旧的<\/del>/)
+})

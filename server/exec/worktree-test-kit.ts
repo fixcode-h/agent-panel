@@ -47,6 +47,7 @@ export const {
   refillSpareDeps,
   releaseWorktree,
   removeWorktree,
+  spareFilling,
   sweepWorktrees,
   worktreeStatus,
   WORKTREES_DIR,
@@ -80,8 +81,15 @@ export const tid = () => `test-${Math.random().toString(36).slice(2, 10)}`
 export const branchAlive = (repo: string, branch: string) =>
   git(repo, 'branch', '--list', branch).toString().trim() !== ''
 
-/** 独立目录都在 `<数据目录>/worktrees/` 下；测试的数据目录是临时目录，整个根可以直接清 */
-export const resetWorktrees = () => rmSync(WORKTREES_DIR, { recursive: true, force: true })
+/**
+ * 独立目录都在 `<数据目录>/worktrees/` 下；测试的数据目录是临时目录，整个根可以直接清。
+ * 先等上一个用例在后台补的备用依赖副本收完：它不被 await，边往 node_modules.spare 里复制边删整个根，
+ * rmSync 会 ENOTEMPTY（CI 上 worktree-merge.test.ts 偶发失败的原因）
+ */
+export const resetWorktrees = async () => {
+  await Promise.all([...spareFilling.values()])
+  rmSync(WORKTREES_DIR, { recursive: true, force: true })
+}
 
 /**
  * 模板仓库：init + add + commit 只在模块加载时做一次，每个用例 cpSync 一份（连 .git 和历史一起）。
