@@ -52,6 +52,9 @@ export const tablesApi = {
     projectId: string,
     body: { other: string; items: SyncItem[]; mode: 'file' | 'column'; field?: string; apply: boolean },
   ) => request<{ results: SyncResult[] }>(`/tables/${projectId}/sync`, json('POST', body)),
+  /** 在系统的文件管理器里显示 */
+  reveal: (projectId: string, path: string) =>
+    request<{ ok: true }>(`/tables/${projectId}/reveal`, json('POST', { path })),
   /** AI 提的改动（还没写进文件） */
   proposal: (projectId: string, path: string) =>
     request<{ proposal: TableProposal | null }>(`/tables/${projectId}/proposal?path=${q(path)}`),

@@ -10,6 +10,7 @@ import { t } from '../../shared/i18n.ts'
 import { TableSchema, TablesConfig, tablesOn } from '../../shared/tables.ts'
 import type { Project } from '../../shared/schema.ts'
 import { resolvePath } from '../fs.ts'
+import { revealItem } from '../open.ts'
 import { absPath, listTables, openTable, safeRel, searchTables } from './files.ts'
 import { readSchema, schemaDir, writeSchema } from './schema-store.ts'
 import { HttpError } from './http-error.ts'
@@ -338,6 +339,20 @@ export function tablesApi(deps: TablesDeps) {
           const right = await projectOf(deps, c.req.query('other') ?? '')
           if (!tablesOn(left.cfg) || !tablesOn(right.cfg)) throw new HttpError(t('两个项目都要先设好表格目录'))
           return c.json(await compareProjects(left, right))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 在系统的文件管理器里显示（面板只监听本机，服务端的机器就是用户的电脑）
+      .post('/:id/reveal', async (c) => {
+        try {
+          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const b = (await c.req.json()) as { path?: string }
+          const p = safeRel(dir, String(b.path ?? ''), cfg)
+          const info = await stat(p.full).catch(() => null)
+          if (!info) throw new HttpError(t('文件不存在，可能已删除或路径写错：{path}', { path: p.rel }), 404)
+          await revealItem(p.full)
+          return c.json({ ok: true })
         } catch (e) {
           return fail(c, e)
         }

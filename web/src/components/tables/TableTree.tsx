@@ -31,7 +31,15 @@ export function TableTree({
   onOpen,
   exports = [],
   onExport,
+  isFav,
+  onFav,
+  onReveal,
 }: {
+  /** 收藏：右键文件「收藏 / 取消收藏」 */
+  isFav?: (path: string) => boolean
+  onFav?: (path: string) => void
+  /** 在系统的文件管理器里显示 */
+  onReveal?: (path: string) => void
   files: TableFile[]
   /** 项目设置里的导表脚本：右键文件 / 文件夹可以对它们执行 */
   exports?: TableExport[]
@@ -105,9 +113,17 @@ export function TableTree({
       {menuAt && (
         <ContextMenuContent>
           {menuAt.file && <ContextMenuItem onSelect={() => onOpen(menuAt.path)}>{t('打开')}</ContextMenuItem>}
+          {menuAt.file && onFav && (
+            <ContextMenuItem onSelect={() => onFav(menuAt.path)}>
+              {isFav?.(menuAt.path) ? t('取消收藏') : t('收藏')}
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onSelect={() => void copyText(menuAt.path, { done: t('已复制路径') })}>
             {t('复制路径')}
           </ContextMenuItem>
+          {onReveal && (
+            <ContextMenuItem onSelect={() => onReveal(menuAt.path)}>{t('在文件管理器中显示')}</ContextMenuItem>
+          )}
           {onExport && exports.length > 0 && under.length > 0 && (
             <>
               <ContextMenuSeparator />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GitCompareArrows, Loader2, RefreshCw, Settings2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableDoc, TableHit, TableSchema, TableSearch, TablesIndex } from '@shared/tables'
@@ -15,6 +15,8 @@ import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Button } from '@/components/ui/button'
 import { TableTree } from '@/components/tables/TableTree'
+import { TableQuick } from '@/components/tables/TableQuick'
+import { useTableMarks } from '@/components/tables/use-table-marks'
 import { TableHits } from '@/components/tables/TableHits'
 import { TableCheckList } from '@/components/tables/TableCheckList'
 import { TablesCompareDialog } from '@/components/tables/TablesCompareDialog'
@@ -130,6 +132,7 @@ function Workbench({
     },
     [projectId, docs],
   )
+  const marks = useTableMarks(projectId, active)
   const open = (path: string) => {
     setTabs((ts) => (ts.includes(path) ? ts : [...ts, path]))
     setActive(path)
@@ -287,6 +290,8 @@ function Workbench({
 
   const doc = active ? docs[active] : undefined
   const files = index?.files ?? []
+  const fileSet = useMemo(() => new Set((index?.files ?? []).map((f) => f.path)), [index])
+  const quick = marks.prune((p) => fileSet.has(p))
   return (
     <>
       <ListPane
@@ -295,6 +300,7 @@ function Workbench({
         onNew={() => {}}
         hideNew
         compact
+        resizeKey="tables-list"
         query={query}
         onQuery={setQuery}
         placeholder={
@@ -353,15 +359,21 @@ function Workbench({
             <Loader2 className="h-4 w-4 animate-spin" />
           </div>
         ) : mode === 'name' ? (
-          <TableTree
-            files={files}
-            query={query}
-            active={active}
-            dirty={dirtyPaths}
-            onOpen={open}
-            exports={exports}
-            onExport={runExport}
-          />
+          <>
+            {!query.trim() && <TableQuick {...quick} active={active} onOpen={open} onUnfav={marks.toggleFav} />}
+            <TableTree
+              files={files}
+              query={query}
+              active={active}
+              dirty={dirtyPaths}
+              onOpen={open}
+              exports={exports}
+              onExport={runExport}
+              isFav={marks.isFav}
+              onFav={marks.toggleFav}
+              onReveal={(p) => void tablesApi.reveal(projectId, p).catch(toastError)}
+            />
+          </>
         ) : mode === 'check' ? (
           <TableCheckList projectId={projectId} query={query} seq={checkSeq} onOpen={openHit} />
         ) : (

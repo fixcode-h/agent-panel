@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
 
 /** 「＋」菜单里的一项：新建、AI 创建、从内置添加、导入这类「往列表里加东西」的入口 */
@@ -43,7 +44,10 @@ export function ListPane({
   compactNew,
   compact,
   newMenu,
+  resizeKey,
 }: {
+  /** 传了就能拖右边缘调宽度，记在本机（表格页：表名长、目录深） */
+  resizeKey?: string
   /**
    * 传了就把「新建」换成一个「＋」菜单：头部只留一个按钮，新建、AI 创建、从内置添加、导入都收进去
    * （角色页原来四个图标按钮看不出各是什么）。传了它就不用再传 onNew 对应的按钮和 extra 里的图标
@@ -76,10 +80,7 @@ export function ListPane({
   tabs?: React.ReactNode
 }) {
   return (
-    <section
-      aria-label={t('{title}列表', { title })}
-      className="flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]"
-    >
+    <ResizablePane resizeKey={resizeKey} title={title}>
       <div className={cn('flex flex-col px-4', compact ? 'gap-2.5 pt-4 pb-2.5' : 'gap-3 pt-5 pb-3')}>
         <div className="flex items-center gap-2">
           {/* 标题可以被压缩：不放 min-w-0 + truncate 时它按内容宽度撑着，后面的按钮会被顶出左栏 */}
@@ -144,7 +145,7 @@ export function ListPane({
         {children}
       </div>
       {footer && <div className={cn('border-t px-4', compact ? 'pt-2.5 pb-3' : 'pt-3 pb-4')}>{footer}</div>}
-    </section>
+    </ResizablePane>
   )
 }
 
@@ -297,4 +298,45 @@ export function ListItem({
 
 export function ListEmpty({ children }: { children: React.ReactNode }) {
   return <div className="px-2 py-8 text-center text-body text-subtle">{children}</div>
+}
+
+/** 左栏外壳：没有 resizeKey 时固定 300 / 320px；有时宽度可拖、记在本机（窄屏上始终占满一行） */
+function ResizablePane({
+  resizeKey,
+  title,
+  children,
+}: {
+  resizeKey?: string
+  title: string
+  children: React.ReactNode
+}) {
+  const label = t('{title}列表', { title })
+  if (!resizeKey)
+    return (
+      <section
+        aria-label={label}
+        className="flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]"
+      >
+        {children}
+      </section>
+    )
+  return (
+    <Resizable resizeKey={resizeKey} label={label}>
+      {children}
+    </Resizable>
+  )
+}
+
+function Resizable({ resizeKey, label, children }: { resizeKey: string; label: string; children: React.ReactNode }) {
+  const pane = usePaneWidth(resizeKey, 320, 240, () => Math.max(240, Math.round(window.innerWidth * 0.5)))
+  return (
+    <section
+      aria-label={label}
+      style={{ '--pane-w': `${pane.width}px` } as React.CSSProperties}
+      className="relative flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-(--pane-w) md:border-r md:border-b-0"
+    >
+      {children}
+      <ResizeHandle pane={pane} side="right" className="hidden md:block" />
+    </section>
+  )
 }

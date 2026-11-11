@@ -27,6 +27,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：配置表没有认出 5 行表头'))
   await check(p, '表格页-打开配置表', ['C_HomeDecorationConfig.xlsx', '自动识别'])
+  // 收藏：文件树右键收藏，树上面出现「收藏」「最近打开」；左栏右边缘能拖宽
+  await tree.getByRole('treeitem', { name: /C_HomeDecorationConfig\.xlsx/ }).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '收藏', exact: true }).click()
+  await p
+    .getByRole('region', { name: '收藏' })
+    .getByText('C_HomeDecorationConfig.xlsx')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('收藏：右键收藏后树上面没有「收藏」'))
+  if (!(await p.getByRole('region', { name: '最近打开' }).count())) errors.push('最近打开：打开过的表没有记下来')
+  if (!(await p.getByRole('separator', { name: '拖动调整宽度' }).count())) errors.push('左栏：没有拖动调宽的把手')
+  await check(p, '表格页-收藏和最近', ['收藏', '最近打开'])
 
   // 再开一张：页签里两个文件都在，可以来回切
   await tree.getByRole('treeitem', { name: /stock\.xlsx/ }).click()

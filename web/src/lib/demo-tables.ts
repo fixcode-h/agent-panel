@@ -337,6 +337,7 @@ export function demoTables(
     })
     return { pairs }
   }
+  if (kind === 'reveal' && method === 'POST') fail('在线演示不能打开本机的文件管理器')
   // AI 提的改动：演示里 stock.xlsx 的补货记录带一份（丢掉或放进表格后就没了）
   if (kind === 'proposal' && method === 'GET') {
     const path = query.get('path') ?? ''

@@ -23,6 +23,10 @@ test('按目录分层，目录在前，文件名里的数字按大小排；目�
 test('名字搜索：几个词都要出现，不分大小写', () => {
   assert.ok(nameHit('Config/Item10.xlsx', 'config item'))
   assert.ok(!nameHit('Config/Item10.xlsx', 'item enum'))
+  // 拼音首字母
+  assert.ok(nameHit('配置/角色表.xlsx', 'jsb'))
+  assert.ok(nameHit('配置/角色表.xlsx', 'pz jsb'))
+  assert.ok(!nameHit('配置/角色表.xlsx', 'zb'))
   const tree = buildTableTree(FILES, 'e.xlsx')
   assert.deepEqual(
     tree.map((n) => n.name),

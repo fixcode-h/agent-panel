@@ -83,6 +83,12 @@
 - 跨项目批量同步（`server/tables/sync.ts` + `shared/table-sync.ts`，`POST /sync`）：对比窗口「批量同步…」勾文件，整文件（字节原样拷，右边没有就新建，走 `replace.ts` 和切换版本同一套：占用检查、P4 edit、备份、临时文件改名）或只同步一列（右边结构的主键对行，只改已有行，走 `saveTable`）。先 `apply:false` 预览每个文件（差几格 / 改几格 / 右边少几行），再写；每个文件单独成败、原因列出来。右边项目只读拒绝。
 - 对比报告：对比窗口「导出清单」（文件和状态）、一对文件的「导出差异」（工作表、变化、主键、字段、右边旧值、左边新值），都是带 BOM 的 CSV（`compare-report.ts`）。
 
+## 左栏
+
+- 收藏、最近打开（`use-table-marks.ts`）：按项目记在本机存储（个人习惯，不进项目），文件没了就不列。文件树右键「收藏 / 取消收藏」「复制路径」「在文件管理器中显示」（`POST /reveal` → `server/open.ts` 的 `revealItem`）。
+- 名字搜索认拼音首字母（`shared/pinyin.ts`）：不带字库，用 `Intl.Collator('zh-Hans-CN-u-co-pinyin')` 按声母分界字定字母；环境没有中文排序数据时自动退回只按原文匹配。每个路径的首字母算一次缓存。
+- 左栏宽度（`ListPane` 的 `resizeKey`）、底部检查结果高度（`ResizeHandle side="top"`）可拖，记在本机，双击恢复默认。
+
 ## 导入导出
 
 - 「导表」菜单下面：这张工作表存成 CSV（含表头原样）、数据行存成 JSON（键是字段名，数字 / 布尔按列类型转，数组列拆成数组，备注列不要）。纯前端，`shared/table-io.ts`。

@@ -608,4 +608,8 @@ export const EN_TABLES: Record<string, string> = {
   丢掉: 'Discard',
   'AI 提的改动': "AI's proposed changes",
   '这个文件里已经没有工作表「{sheet}」': 'This file no longer has a sheet named "{sheet}"',
+  收藏: 'Favorite',
+  最近打开: 'Recently opened',
+  取消收藏: 'Remove from favorites',
+  在文件管理器中显示: 'Show in file manager',
 }
