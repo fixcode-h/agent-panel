@@ -91,7 +91,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await cell(5, 4).textContent()) !== '曲线穿衣镜（改）') errors.push('表格页：保存后内容不对')
 
   // 结构化：InteractionTriggerState 设了 0–1（-1 也允许），值是 2 的格子标红，「检查」列出来
-  await p.getByRole('button', { name: /处不合规/ }).click()
+  await p
+    .getByRole('group', { name: '数据' })
+    .getByRole('button', { name: /处不合规/ })
+    .click()
   const bar = p.getByRole('region', { name: '不合规的格子' })
   await bar
     .getByText(/不能大于 1/)

@@ -162,6 +162,23 @@ function Workbench({
     if (active === path) setActive(rest[Math.min(i, rest.length - 1)] ?? '')
     setDocs(({ [path]: _, ...m }) => m)
   }
+  /** 一次关几个：有没保存改动的留着（要一个个确认），其它的关掉 */
+  const closeMany = (ps: string[]) => {
+    const go = ps.filter((p) => !dirtyPaths.has(p))
+    if (go.length < ps.length) toast(t('有没保存改动的页签留着了'))
+    if (!go.length) return
+    const drop = new Set(go)
+    setEdits((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !drop.has(k))))
+    setDocs((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !drop.has(k))))
+    const rest = tabs.filter((p) => !drop.has(p))
+    setTabs(rest)
+    if (drop.has(active)) setActive(rest[rest.length - 1] ?? '')
+  }
+  const readOnlyPaths = new Set(
+    Object.entries(docs).flatMap(([p, d]) => (d && 'sheets' in d && (d.readOnly || d.kind === 'xls') ? [p] : [])),
+  )
+  // 上次全项目检查的结果：文件树上每个文件标不合规数
+  const [problemCounts, setProblemCounts] = useState<Map<string, number>>(() => new Map())
   const openHit = (h: TableHit) => {
     open(h.path)
     const doc = docs[h.path]
@@ -367,6 +384,8 @@ function Workbench({
               query={query}
               active={active}
               dirty={dirtyPaths}
+              problems={problemCounts}
+              readOnly={readOnlyPaths}
               onOpen={open}
               exports={exports}
               onExport={runExport}
@@ -376,7 +395,17 @@ function Workbench({
             />
           </>
         ) : mode === 'check' ? (
-          <TableCheckList projectId={projectId} query={query} seq={checkSeq} onOpen={openHit} />
+          <TableCheckList
+            projectId={projectId}
+            query={query}
+            seq={checkSeq}
+            onOpen={openHit}
+            onResult={(r) => {
+              const m = new Map<string, number>()
+              for (const g of r.sheets) m.set(g.path, (m.get(g.path) ?? 0) + g.count)
+              setProblemCounts(m)
+            }}
+          />
         ) : (
           <TableHits
             result={search.result}
@@ -389,7 +418,21 @@ function Workbench({
       </ListPane>
       <main className="flex min-h-[60vh] min-w-0 flex-1 flex-col md:h-full md:min-h-0">
         {tabs.length > 0 && (
-          <TableTabs paths={tabs} active={active} dirty={dirtyPaths} onPick={setActive} onClose={(p) => close(p)} />
+          <TableTabs
+            paths={tabs}
+            active={active}
+            dirty={dirtyPaths}
+            readOnly={readOnlyPaths}
+            onPick={setActive}
+            onClose={(p) => close(p)}
+            onCloseMany={closeMany}
+            onReorder={setTabs}
+            onLocate={(p) => {
+              setMode('name')
+              setQuery('')
+              setActive(p)
+            }}
+          />
         )}
         {!doc ? (
           active ? (

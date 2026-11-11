@@ -20,10 +20,11 @@ import type { TableExport } from '@shared/table-export'
 import { colCount, colName as colLetter, type CellHit } from '@/lib/sheet'
 import { cn } from '@/lib/utils'
 import { SheetTable, SheetTabs } from '@/components/files/SheetTable'
-import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
+import { headerSummary, SheetHeaderBar } from '@/components/files/SheetHeaderBar'
 import { useSheetView, type SheetHeaderStore } from '@/components/files/use-sheet-view'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import { ToolGroup } from '@/components/ui/tool-group'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -68,6 +69,8 @@ import { saveText } from '@/lib/save-file'
 import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
 import type { CellAt } from '@shared/table-blame'
 import { findBackRefs, refsTo } from '@shared/table-refs'
+import { selectionStats, TableStatusBar } from './TableStatusBar'
+import { colHeadOf, useHeadCollapsed } from './col-head'
 
 /** 从内容搜索跳过来：切到这张表、滚到这一格 */
 export interface TableJump {
@@ -193,6 +196,9 @@ export function TableView({
     from: view?.from ?? 0,
     loadDoc,
   })
+  // 两行列头：字段名 + 类型标签，按列结构算（只在列结构变时重算）
+  const colHeads = useMemo(() => struct.infos.map(colHeadOf), [struct.infos])
+  const [headCollapsed, setHeadCollapsed] = useHeadCollapsed()
   /** 新增枚举值：记进结构文件 */
   const addEnumValue = (name: string, value: string) => {
     const e = schema.enums[name] ?? { values: [] }
@@ -269,11 +275,18 @@ export function TableView({
     },
     mark: (r, c) => {
       const k = `${r}:${c}`
+      const data = r >= (view?.from ?? 0)
+      const info = data ? struct.infos[c] : undefined
+      const v = info ? (rows?.[r]?.[c] ?? '') : ''
       const cls = [
         dirty.has(k) && 'sheet-dirty',
         struct.problemAt.has(k) && 'sheet-bad',
         // 没字段名的备注列：灰字，不检查
-        r >= (view?.from ?? 0) && struct.infos[c]?.remark && 'sheet-remark',
+        info?.remark && 'sheet-remark',
+        // 引用：虚下划线（Ctrl+点击跳过去）；枚举：悬停出下拉箭头；必填空着：斜线底纹
+        info?.ref && v && 'sheet-ref',
+        info?.enumName && !readOnly && 'sheet-enum',
+        info?.required && !v.trim() && 'sheet-need',
       ]
         .filter(Boolean)
         .join(' ')
@@ -320,6 +333,9 @@ export function TableView({
   if (!sheet || !rows || !view) return <p className="p-6 text-body text-subtle">{t('这个文件里没有工作表')}</p>
   const canUndo = !!edits?.undo.length
   const canRedo = !!edits?.redo.length
+  const pendingCount = pending.reduce((n, p) => n + p.cells.length + p.rows.length, 0)
+  const sel = grid.selection()
+  const focusInfo = grid.focus ? struct.infos[grid.focus.col] : undefined
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {doc.sheets.length > 1 && <SheetTabs sheets={doc.sheets} index={index} onChange={onSheet} />}
@@ -387,104 +403,127 @@ export function TableView({
         view={view}
         rows={rows}
         presets={styleHeaders(schema.style)}
+        compact
         where={t('记在项目的表格结构文件里（项目设置 → 表格），表格文件一个字节都不改。')}
       >
-        {layout.hidden.length > 0 && (
+        <ToolGroup label={t('查看')} first>
+          {layout.hidden.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-accent-text"
+              title={t('列名上右键可以隐藏列、冻结列')}
+              onClick={() => setLayout({ ...layout, hidden: [] })}
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+              {t('隐藏了 {n} 列 · 全部显示', { n: layout.hidden.length })}
+            </Button>
+          )}
+          <ColumnSetup
+            info={grid.focus ? struct.infos[grid.focus.col] : undefined}
+            file={doc.path}
+            schema={schema}
+            files={files}
+            fields={struct.infos.map((i) => i.field)}
+            onSchema={onSchema}
+          />
+        </ToolGroup>
+        <ToolGroup label={t('数据')}>
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-accent-text"
-            title={t('列名上右键可以隐藏列、冻结列')}
-            onClick={() => setLayout({ ...layout, hidden: [] })}
+            className={cn('sheet-tool h-7', struct.problems.length > 0 && 'text-danger')}
+            title={struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
+            aria-pressed={checkOpen}
+            onClick={() => setCheckOpen((o) => !o)}
           >
-            <EyeOff className="h-3.5 w-3.5" />
-            {t('隐藏了 {n} 列 · 全部显示', { n: layout.hidden.length })}
+            <ListChecks className="h-3.5 w-3.5" />
+            {struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
           </Button>
-        )}
-        <ColumnSetup
-          info={grid.focus ? struct.infos[grid.focus.col] : undefined}
-          file={doc.path}
-          schema={schema}
-          files={files}
-          fields={struct.infos.map((i) => i.field)}
-          onSchema={onSchema}
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="sheet-tool h-7"
-          title={t('版本')}
-          onClick={() => setHistOpen(true)}
-        >
-          <History className="h-3.5 w-3.5" />
-          {t('版本')}
-        </Button>
-        {!readOnly && (
           <Button
             size="sm"
             variant="ghost"
             className="sheet-tool h-7"
-            title={t('查找替换（Ctrl+H）')}
-            onClick={() => setFinding({ sel: grid.selection() })}
+            title={t('枚举')}
+            onClick={() => setEnumsOpen('')}
           >
-            <Replace className="h-3.5 w-3.5" />
-            {t('替换')}
+            <BookA className="h-3.5 w-3.5" />
+            {t('枚举')}
           </Button>
-        )}
+          {!readOnly && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="sheet-tool h-7"
+              title={t('查找替换（Ctrl+H）')}
+              onClick={() => setFinding({ sel: grid.selection() })}
+            >
+              <Replace className="h-3.5 w-3.5" />
+              {t('替换')}
+            </Button>
+          )}
+        </ToolGroup>
+        <ToolGroup label={t('版本')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="sheet-tool h-7"
+            title={t('版本')}
+            onClick={() => setHistOpen(true)}
+          >
+            <History className="h-3.5 w-3.5" />
+            {t('版本')}
+          </Button>
+          {!readOnly && (
+            <SubmitButton projectId={projectId} doc={doc} status={vcs} dirty={pending.length > 0} onDone={refreshVcs} />
+          )}
+          <ExportMenu
+            exports={exports}
+            onRun={onExport}
+            onSave={(kind) => {
+              const base = `${doc.path.replace(/^.*\//, '').replace(/\.[^.]+$/, '')}${doc.sheets.length > 1 ? `-${sheet.name}` : ''}`
+              if (kind === 'csv') saveText(`${base}.csv`, sheetCsv(rows), 'text/csv;charset=utf-8')
+              else saveText(`${base}.json`, sheetJson(rows, view.from, struct.infos), 'application/json')
+            }}
+            onImport={readOnly ? undefined : () => setImporting(true)}
+          />
+        </ToolGroup>
+        <ToolGroup label="AI">
+          <AiMenu
+            projectId={projectId}
+            doc={doc}
+            sheet={sheet.name}
+            field={grid.focus && grid.focus.row >= view.from ? (struct.infos[grid.focus.col]?.field ?? '') : ''}
+            problems={struct.problems.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' }))}
+            readOnly={readOnly}
+            onProposal={refreshProposal}
+          />
+        </ToolGroup>
         {!readOnly && (
-          <SubmitButton projectId={projectId} doc={doc} status={vcs} dirty={pending.length > 0} onDone={refreshVcs} />
-        )}
-        <ExportMenu
-          exports={exports}
-          onRun={onExport}
-          onSave={(kind) => {
-            const base = `${doc.path.replace(/^.*\//, '').replace(/\.[^.]+$/, '')}${doc.sheets.length > 1 ? `-${sheet.name}` : ''}`
-            if (kind === 'csv') saveText(`${base}.csv`, sheetCsv(rows), 'text/csv;charset=utf-8')
-            else saveText(`${base}.json`, sheetJson(rows, view.from, struct.infos), 'application/json')
-          }}
-          onImport={readOnly ? undefined : () => setImporting(true)}
-        />
-        <AiMenu
-          projectId={projectId}
-          doc={doc}
-          sheet={sheet.name}
-          field={grid.focus && grid.focus.row >= view.from ? (struct.infos[grid.focus.col]?.field ?? '') : ''}
-          problems={struct.problems.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' }))}
-          readOnly={readOnly}
-          onProposal={refreshProposal}
-        />
-        <Button size="sm" variant="ghost" className="sheet-tool h-7" title={t('枚举')} onClick={() => setEnumsOpen('')}>
-          <BookA className="h-3.5 w-3.5" />
-          {t('枚举')}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className={cn('sheet-tool h-7', struct.problems.length > 0 && 'text-danger')}
-          title={struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
-          aria-pressed={checkOpen}
-          onClick={() => setCheckOpen((o) => !o)}
-        >
-          <ListChecks className="h-3.5 w-3.5" />
-          {struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
-        </Button>
-        {!readOnly && (
-          <span className="flex shrink-0 items-center gap-0.5">
+          <ToolGroup label={t('编辑')}>
             <IconButton icon={Undo2} label={t('撤销（Ctrl+Z）')} disabled={!canUndo} onClick={() => onEdits(undoIn)} />
             <IconButton icon={Redo2} label={t('重做（Ctrl+Y）')} disabled={!canRedo} onClick={() => onEdits(redoIn)} />
             <IconButton icon={Plus} label={t('在末尾加一行')} onClick={() => insertRow(rows.length)} />
             <Button
               size="sm"
-              className="ml-1 h-7"
-              variant={pending.length ? 'primary' : 'ghost'}
-              disabled={!pending.length}
+              className="relative ml-1 h-7"
+              variant={pendingCount ? 'primary' : 'ghost'}
+              disabled={!pendingCount}
               onClick={() => setSaving(true)}
+              aria-label={t('保存')}
               title={t('保存（Ctrl+S）')}
             >
               <Save className="h-3.5 w-3.5" />
               {t('保存')}
+              {pendingCount > 0 && <span className="tabular-nums opacity-80">{pendingCount}</span>}
+              {pendingCount > 0 && struct.problems.length > 0 && (
+                <span
+                  aria-label={t('有不合规的格子')}
+                  className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-danger ring-2 ring-(--c-modal-bg)"
+                />
+              )}
             </Button>
-          </span>
+          </ToolGroup>
         )}
       </SheetHeaderBar>
       <CellMenu
@@ -526,9 +565,25 @@ export function TableView({
           aria-label={t('表格内容')}
           onKeyDown={grid.onKeyDown}
           onPaste={grid.onPaste}
+          onMouseDownCapture={(e) => {
+            // Ctrl / ⌘ + 点击引用格：跳到被引用的那一行（不改选中）
+            if (!(e.ctrlKey || e.metaKey)) return
+            const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
+            if (!el) return
+            const r = Number(el.dataset.r)
+            const info = r >= view.from ? struct.infos[Number(el.dataset.c)] : undefined
+            const v = (rows[r]?.[Number(el.dataset.c)] ?? '').trim()
+            if (!info?.ref || !v) return
+            e.preventDefault()
+            e.stopPropagation()
+            onRefJump(info.ref, info.list ? (v.split(info.sep)[0] ?? '').trim() : v)
+          }}
           className="thin-scroll min-h-0 flex-1 overflow-auto outline-none"
         >
           <SheetTable
+            colHead={(c) => colHeads[c]}
+            headCollapsed={headCollapsed}
+            onHeadCollapse={setHeadCollapsed}
             rows={rows}
             scrollEl={grid.box}
             hits={hit}
@@ -593,6 +648,22 @@ export function TableView({
           onClose={() => setCheckOpen(false)}
         />
       )}
+      <TableStatusBar
+        cell={
+          grid.focus
+            ? `${colLetter(grid.focus.col)}${grid.focus.row + 1}${focusInfo?.field ? ` · ${focusInfo.field}` : ''}`
+            : ''
+        }
+        header={headerSummary(view)}
+        stats={selectionStats(rows, sel)}
+        shown={view.order.length}
+        total={Math.max(0, rows.length - view.from)}
+        problems={struct.problems.length}
+        onProblems={() => setCheckOpen(true)}
+        pending={pendingCount}
+        kind={doc.kind}
+        readOnly={readOnly}
+      />
       {enumsOpen !== null && (
         <EnumsDialog
           open

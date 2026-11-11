@@ -1146,7 +1146,7 @@ body,
   --c-grid-stripe: 4.5%;
   --c-grid-nameBold: 600;
   --c-grid-divider: 2px;
-  --c-grid-edited: var(--warning);
+  --c-grid-edited: var(--ctx-messages);
   --c-grid-invalid: var(--danger);
   --c-grid-added: var(--success);
   --c-grid-removed: var(--danger);
