@@ -123,6 +123,62 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, '表格页-列结构', ['InteractionAllowCharacterIDs'])
   await p.keyboard.press('Escape')
 
+  // 引用跳转：引用列的格子右键，跳到被引用表的那一行
+  await cell(8, 5).click({ button: 'right' })
+  await p
+    .getByRole('menuitem', { name: /C_Character\.xlsx · ID = 1003/ })
+    .click({ timeout: 5000 })
+    .catch(() => errors.push('引用跳转：引用列右键没有「跳到被引用的行」'))
+  await p
+    .getByRole('tab', { name: 'C_Character.xlsx' })
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('引用跳转：没有打开被引用的表'))
+  await check(p, '表格页-引用跳转', ['C_Character.xlsx'])
+  // 反向：被引用的这一行右键「谁引用了这一行」
+  await p.locator('[role=cell][aria-selected=true]').first().click({ button: 'right' })
+  await p
+    .getByRole('menuitem', { name: '谁引用了这一行' })
+    .click({ timeout: 5000 })
+    .catch(() => errors.push('反向引用：被引用表的行右键没有「谁引用了这一行」'))
+  await p
+    .getByRole('list', { name: '引用这一行的格子' })
+    .getByRole('listitem')
+    .first()
+    .click({ timeout: 8000 })
+    .catch(() => errors.push('反向引用：没有列出引用这一行的格子'))
+  if ((await p.getByRole('tab', { name: 'C_HomeDecorationConfig.xlsx' }).getAttribute('aria-selected')) !== 'true')
+    errors.push('反向引用：点结果没有回到引用它的表')
+
+  // 查找替换：预览每处改成什么，取消不改
+  await p.getByRole('button', { name: '替换', exact: true }).click()
+  const fr = p.getByRole('dialog', { name: '查找替换' })
+  await fr.getByRole('radio', { name: '整张表' }).click()
+  await fr.getByRole('textbox', { name: '查找' }).fill('穿衣镜')
+  await fr.getByRole('textbox', { name: '替换为' }).fill('立镜')
+  await fr
+    .getByRole('list', { name: '替换预览' })
+    .getByText(/立镜/)
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('查找替换：没有预览'))
+  await check(p, '表格页-查找替换', ['全部替换'])
+  await fr.getByRole('button', { name: '取消' }).click()
+
+  // 冻结列：列名右键冻结到 B 列，左右滚动时钉在左边
+  await p
+    .getByRole('columnheader', { name: /^B( |$)/ })
+    .first()
+    .click({ button: 'right' })
+  await p.getByRole('menuitem', { name: /冻结到 B 列/ }).click()
+  if (!(await p.locator('.sheet-frozen-last').count())) errors.push('冻结列：冻结后没有钉住的列')
+  await p.locator('[aria-label=表格内容]').evaluate((el) => (el.scrollLeft = 600))
+  await check(p, '表格页-冻结列', ['ID'])
+  await p
+    .getByRole('columnheader', { name: /^B( |$)/ })
+    .first()
+    .click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '取消冻结' }).click()
+
   // 左栏「检查」：整个项目按结构查一遍，点一处跳到那一格
   await p.getByRole('radio', { name: '检查' }).click()
   await p.getByPlaceholder('按文件名、字段名筛').fill('')

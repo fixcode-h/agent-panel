@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 
-export type CellMove = 'down' | 'right' | 'left' | 'up'
+/** all：Ctrl+Enter，把这个值填进选中的每一格 */
+export type CellMove = 'down' | 'right' | 'left' | 'up' | 'all'
 
 /**
  * 格子里的文字编辑框：盖在格子上，比格子宽时往右长；Enter 确认往下、Tab 往右、Shift 反向，
- * Alt+Enter 换行，Esc 放弃，点到别处算确认（和表格软件一样）
+ * Alt+Enter 换行，Ctrl+Enter 填进选中的每一格，Esc 放弃，点到别处算确认（和表格软件一样）
  */
 export function CellEditor({ init, onDone }: { init: string; onDone: (v: string | null, move?: CellMove) => void }) {
   const [v, setV] = useState(init)
@@ -45,6 +46,7 @@ export function CellEditor({ init, onDone }: { init: string; onDone: (v: string 
           requestAnimationFrame(() => el.setSelectionRange(at + 1, at + 1))
           return
         }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) return void (e.preventDefault(), end(v, 'all'))
         if (e.key === 'Enter') return void (e.preventDefault(), end(v, e.shiftKey ? 'up' : 'down'))
         if (e.key === 'Tab') return void (e.preventDefault(), end(v, e.shiftKey ? 'left' : 'right'))
       }}

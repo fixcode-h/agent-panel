@@ -101,6 +101,17 @@ export function tablesApi(deps: TablesDeps) {
           return fail(c, e)
         }
       })
+      // 打开着的文件现在的修改时间：页面几秒看一次，被 Excel 或别人改了就提示重新载入
+      .get('/:id/stat', async (c) => {
+        try {
+          const { dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const { full } = safeRel(dir, c.req.query('path') ?? '', cfg)
+          const st = await stat(full).catch(() => null)
+          return c.json(st ? { mtime: st.mtime.toISOString(), size: st.size } : { missing: true })
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
       .get('/:id/search', async (c) => {
         try {
           const { dir, cfg } = await projectOf(deps, c.req.param('id'))

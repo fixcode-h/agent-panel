@@ -54,6 +54,20 @@ export function rowOpIn(e: Edits, s: SheetData, op: RowOp): Edits {
   return commit(e, s.name, { rows: applyRowOps(cur.rows, [op]), ops: [...cur.ops, op] })
 }
 
+/** 插一行并填上几格（自动编号、复制行）：一次撤销退掉 */
+export function rowOpWithCells(e: Edits, s: SheetData, op: RowOp, cells: CellSet[]): Edits {
+  const cur = e.sheets[s.name] ?? { rows: s.rows, ops: [] }
+  const rows = applyRowOps(cur.rows, [op])
+  for (const { r, c, v } of cells) {
+    while (rows.length <= r) rows.push([])
+    const row = [...rows[r]]
+    while (row.length <= c) row.push('')
+    row[c] = v
+    rows[r] = row
+  }
+  return commit(e, s.name, { rows, ops: [...cur.ops, op] })
+}
+
 export function undoIn(e: Edits): Edits {
   const last = e.undo[e.undo.length - 1]
   if (!last) return e

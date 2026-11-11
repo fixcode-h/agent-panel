@@ -161,6 +161,7 @@ export function demoTables(
     }
     return doc
   }
+  if (kind === 'stat') return { mtime: bookOf(query.get('path') ?? '', p).mtime, size: 24_000 }
   if (kind === 'search') {
     const needle = (query.get('q') ?? '').trim().toLowerCase()
     const hits: TableHit[] = []

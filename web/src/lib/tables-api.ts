@@ -19,6 +19,9 @@ export const tablesApi = {
   probe: (projectId: string, path: string, tables: TablesConfig) =>
     request<TablesProbe>(`/tables/${projectId}/probe`, json('POST', { path, tables })),
   open: (projectId: string, path: string) => request<TableDoc>(`/tables/${projectId}/file?path=${q(path)}`),
+  /** 文件现在的修改时间（外部改动检测） */
+  stat: (projectId: string, path: string) =>
+    request<{ mtime?: string; size?: number; missing?: boolean }>(`/tables/${projectId}/stat?path=${q(path)}`),
   search: (projectId: string, query: string, signal?: AbortSignal) =>
     request<TableSearch>(`/tables/${projectId}/search?q=${q(query)}`, { signal }),
   schema: (projectId: string) => request<TableSchema>(`/tables/${projectId}/schema`),

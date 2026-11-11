@@ -118,3 +118,30 @@
 .sheet-remark {
   color: var(--subtle);
 }
+
+/*
+ * 冻结的列：钉在行号列右边，底色要不透明（下面滚过去的格子不能透出来）。
+ * 表头行跟着那一行的颜色；斑马纹、选中、改过、命中都换成和底色混出来的不透明色
+ */
+.sheet-frozen {
+  background: var(--sheet-bg);
+}
+.sheet-role > .sheet-frozen {
+  background: inherit;
+}
+.sheet-stripe > .sheet-frozen {
+  background: color-mix(in oklab, var(--fg) var(--c-grid-stripe), var(--sheet-bg));
+}
+.sheet-frozen.sheet-dirty {
+  background: color-mix(in oklab, var(--c-grid-edited) var(--c-grid-tint), var(--sheet-bg));
+}
+.sheet-frozen.sheet-hit {
+  background: color-mix(in srgb, var(--warning) 28%, var(--sheet-bg));
+}
+.sheet-frozen.sheet-sel {
+  background: color-mix(in srgb, var(--accent) 12%, var(--sheet-bg));
+}
+/* 冻结区和滚动区之间：一条粗一点的竖线 */
+.sheet-grid .sheet-frozen-last {
+  border-right: 2px solid var(--line-strong);
+}

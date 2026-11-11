@@ -6,7 +6,15 @@ import { dataStart, type SheetHeader } from '@shared/sheet-header'
 import { colCount, colName, colWidths, type CellHit } from '@/lib/sheet'
 import { filterActive, type ColFilter, type ColFilters, type SheetSort } from '@/lib/sheet-filter'
 import { cn } from '@/lib/utils'
-import { Popover, PopoverTrigger } from '@/components/ui/menu'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+  Popover,
+  PopoverTrigger,
+} from '@/components/ui/menu'
 import { SheetColumnFilter } from './SheetColumnFilter'
 import { roleShort } from './sheet-roles'
 import './sheet-table.css'
@@ -31,6 +39,12 @@ const PAD_W = 96
 /** 拖列宽的范围 */
 const MIN_COL_W = 36
 const MAX_COL_W = 800
+
+/** 表格页的列布局：冻结前几列、隐藏哪些列（按文件记在本机，表格文件不动） */
+export interface ColLayout {
+  freeze: number
+  hidden: number[]
+}
 
 /** 拖过的列宽：按 key 记在本机，表格文件不动 */
 function useColWidths(key: string | undefined) {
@@ -163,7 +177,13 @@ export function SheetTable({
   edit,
   fill,
   widthKey,
+  layout,
+  onLayout,
 }: {
+  /** 冻结前几列、隐藏的列（表格页按文件记在本机） */
+  layout?: ColLayout
+  /** 传了才能在列名上右键冻结、隐藏 */
+  onLayout?: (l: ColLayout) => void
   /** 表格页传：能选中、改格子 */
   edit?: SheetEditing
   /** 数据画不满滚动区时，右边和下面接着画空格子（像 Excel）；滚动区高度要固定，不能跟着内容长 */
@@ -201,7 +221,14 @@ export function SheetTable({
     return colWidths([...head, ...rows.slice(from)], cols)
   }, [rows, from, header, cols])
   const [dragged, setDragged] = useColWidths(widthKey)
-  const colW = useMemo(() => widths.map((w, c) => dragged[c] ?? w), [widths, dragged])
+  const hiddenSet = useMemo(() => new Set(layout?.hidden ?? []), [layout?.hidden])
+  // 隐藏的列宽度当 0：位置照算，画的时候跳过
+  const colW = useMemo(
+    () => widths.map((w, c) => (hiddenSet.has(c) ? 0 : (dragged[c] ?? w))),
+    [widths, dragged, hiddenSet],
+  )
+  /** 冻结的前几列：一直画、钉在左边 */
+  const fz = Math.min(layout?.freeze ?? 0, colW.length)
   const lefts = useMemo(() => {
     const out: number[] = []
     let x = numW
@@ -299,8 +326,10 @@ export function SheetTable({
     }
     const x = lefts[cur.col]
     const w = colW[cur.col]
-    if (x < box.scrollLeft + numW || x + w > box.scrollLeft + box.clientWidth)
-      box.scrollLeft = Math.max(0, x - numW - 24)
+    // 冻结的列本来就看得见；其它列被冻结区挡住也算没看见
+    const pinW = lefts[fz] - numW
+    if (cur.col >= fz && (x < box.scrollLeft + numW + pinW || x + w > box.scrollLeft + box.clientWidth))
+      box.scrollLeft = Math.max(0, x - numW - pinW - 24)
     // lefts、widths、at 跟着 rows 变，换了当前命中才滚
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [cur?.row, cur?.col, seq, edit?.focusSeq, scrollEl])
@@ -308,21 +337,31 @@ export function SheetTable({
   if (!rows.length) return <p className="p-6 text-body text-subtle">{t('这张表是空的。')}</p>
 
   const lineH = { height: rowH, lineHeight: `${rowH - 1}px` }
-  const c0 = Math.min(cwin.from, colW.length)
+  const c0 = Math.max(fz, Math.min(cwin.from, colW.length))
   const c1 = Math.min(Math.max(cwin.to, c0), colW.length)
-  const gapL = lefts[c0] - numW
+  const gapL = lefts[c0] - lefts[fz]
   const gapR = dataW - lefts[c1]
   /** 没画的列用一块空白占住宽度 */
   const gap = (key: string, w: number) =>
     w > 0 ? <span key={key} aria-hidden className="shrink-0" style={{ width: w }} /> : null
-  const span = <T,>(f: (w: number, c: number) => T) => colW.slice(c0, c1).map((w, i) => f(w, c0 + i))
+  /** 要画的列：冻结的前几列 + 看得见的那段；隐藏的跳过 */
+  const span = (f: (w: number, c: number, pin: boolean) => React.ReactNode) => {
+    const out: React.ReactNode[] = []
+    for (let c = 0; c < fz; c++) if (colW[c] > 0) out.push(f(colW[c], c, true))
+    // 左边没画的列：冻结列后面用一块空白占住
+    out.push(gap('gl', gapL))
+    for (let c = c0; c < c1; c++) if (colW[c] > 0) out.push(f(colW[c], c, false))
+    return out
+  }
+  /** 冻结列的格子钉在行号列右边 */
+  const pinned = (c: number, pin: boolean) => (pin ? { position: 'sticky' as const, left: lefts[c], zIndex: 1 } : {})
+  const pinCls = (c: number, pin: boolean) => pin && cn('sheet-frozen', c === fz - 1 && 'sheet-frozen-last')
   const pad = (key: string) =>
     Array.from({ length: padCols }, (_, k) => (
       <span key={`${key}${k}`} aria-hidden className={cn(CELL, 'sheet-pad')} style={{ width: PAD_W }} />
     ))
   const cells = (r: number) => [
-    gap('gl', gapL),
-    ...span((w, c) => {
+    ...span((w, c, pin) => {
       const text = rows[r]?.[c] ?? ''
       const hit = marked.has(r * cols + c)
       const on = !edit && hit && cur?.row === r && cur.col === c
@@ -331,8 +370,8 @@ export function SheetTable({
           <span
             key={c}
             role="cell"
-            className={cn(CELL, 'sheet-editing relative overflow-visible p-0')}
-            style={{ width: w }}
+            className={cn(CELL, 'sheet-editing relative overflow-visible p-0', pinCls(c, pin))}
+            style={{ width: w, ...pinned(c, pin), ...(pin ? { zIndex: 3 } : {}) }}
           >
             {edit.editing.node}
           </span>
@@ -358,8 +397,9 @@ export function SheetTable({
             edit?.mark?.(r, c),
             picked && 'sheet-sel',
             focused && 'sheet-focus',
+            pinCls(c, pin),
           )}
-          style={{ width: w }}
+          style={{ width: w, ...pinned(c, pin) }}
         >
           {text}
         </span>
@@ -385,13 +425,15 @@ export function SheetTable({
     >
       <div className="sticky top-0 z-2" style={{ width: total }}>
         <div role="row" className={cn(STICKY, 'flex')} style={{ height: rowH }}>
-          <span className={cn(STICKY, CELL, 'left-0 z-1')} style={{ width: numW, ...lineH }} />
-          {gap('gl', gapL)}
-          {span((w, c) => (
+          <span className={cn(STICKY, CELL, 'left-0 z-2')} style={{ width: numW, ...lineH }} />
+          {span((w, c, pin) => (
             <ColumnHead
               key={c}
               col={c}
               width={w}
+              pin={pin ? { style: pinned(c, pin), cls: pinCls(c, pin) || '' } : undefined}
+              layout={layout}
+              onLayout={onLayout}
               onResize={widthKey ? (v) => setDragged(c, v) : undefined}
               lineH={lineH}
               rows={rows}
@@ -479,9 +521,8 @@ export function SheetTable({
           >
             {rows.length + k + 1}
           </span>
-          {gap('gl', gapL)}
-          {span((w, c) => (
-            <span key={c} className={cn(CELL, 'sheet-pad')} style={{ width: w }} />
+          {span((w, c, pin) => (
+            <span key={c} className={cn(CELL, 'sheet-pad', pinCls(c, pin))} style={{ width: w, ...pinned(c, pin) }} />
           ))}
           {gap('gr', gapR)}
           {pad('q')}
@@ -508,9 +549,16 @@ function ColumnHead({
   onFilter,
   onSort,
   onResize,
+  pin,
+  layout,
+  onLayout,
 }: {
   col: number
   width: number
+  /** 冻结的列：钉在左边 */
+  pin?: { style: React.CSSProperties; cls: string }
+  layout?: ColLayout
+  onLayout?: (l: ColLayout) => void
   /** 拖右边线改列宽；双击右边线恢复自动宽度（传 undefined） */
   onResize?: (w: number | undefined) => void
   lineH: React.CSSProperties
@@ -524,11 +572,11 @@ function ColumnHead({
   const [open, setOpen] = useState(false)
   const on = filterActive(filter) || !!sort
   const SortIcon = sort ? (sort.desc ? ArrowDown : ArrowUp) : null
-  return (
+  const head = (
     <span
       role="columnheader"
-      className={cn(CELL, 'group relative text-center font-mono text-caption')}
-      style={{ width, ...lineH }}
+      className={cn(CELL, 'group relative text-center font-mono text-caption', pin?.cls)}
+      style={{ width, ...lineH, ...pin?.style }}
     >
       {colName(col)}
       {onResize && <ResizeHandle col={col} width={width} onResize={onResize} />}
@@ -568,6 +616,34 @@ function ColumnHead({
         </Popover>
       )}
     </span>
+  )
+  if (!onLayout) return head
+  const l = layout ?? { freeze: 0, hidden: [] }
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{head}</ContextMenuTrigger>
+      <ContextMenuContent>
+        {l.freeze === col + 1 ? (
+          <ContextMenuItem onSelect={() => onLayout({ ...l, freeze: 0 })}>{t('取消冻结')}</ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={() => onLayout({ ...l, freeze: col + 1 })}>
+            {t('冻结到 {col} 列（滚动时钉在左边）', { col: colName(col) })}
+          </ContextMenuItem>
+        )}
+        {l.freeze > 0 && l.freeze !== col + 1 && (
+          <ContextMenuItem onSelect={() => onLayout({ ...l, freeze: 0 })}>{t('取消冻结')}</ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => onLayout({ ...l, hidden: [...l.hidden, col] })}>
+          {t('隐藏 {col} 列', { col: colName(col) })}
+        </ContextMenuItem>
+        {l.hidden.length > 0 && (
+          <ContextMenuItem onSelect={() => onLayout({ ...l, hidden: [] })}>
+            {t('显示全部隐藏的列（{n} 列）', { n: l.hidden.length })}
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 

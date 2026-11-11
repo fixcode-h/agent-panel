@@ -5,7 +5,9 @@ import type { TableDoc, TableHit, TableSchema, TableSearch, TablesIndex } from '
 import { useNav } from '@/lib/data'
 import { tablesApi } from '@/lib/tables-api'
 import { rememberTablesProject, useTablesEntry, useTablesProjects } from '@/lib/tables-nav'
-import { toast } from '@/lib/toast'
+import { toast, toastError } from '@/lib/toast'
+import { parseRef } from '@shared/table-struct'
+import { findRefTarget } from '@shared/table-refs'
 import { ListPane } from '@/components/layout/ListPane'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { IconButton } from '@/components/ui/icon-button'
@@ -18,7 +20,8 @@ import { TableCheckList } from '@/components/tables/TableCheckList'
 import { TablesCompareDialog } from '@/components/tables/TablesCompareDialog'
 import { TableTabs } from '@/components/tables/TableTabs'
 import { TableView, type TableJump } from '@/components/tables/TableView'
-import { noEdits, pendingOf, type Edits } from '@/components/tables/table-edits'
+import { noEdits, pendingOf, setCellsIn, type Edits } from '@/components/tables/table-edits'
+import { useExternalChange } from '@/components/tables/use-external-change'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { TableExportDialog } from '@/components/tables/TableExportDialog'
 import type { SheetEdit } from '@shared/table-edit'
@@ -189,27 +192,80 @@ function Workbench({
     },
     [projectId, docs],
   )
+  // 正在保存、切换版本：这期间文件的修改时间会变，外部改动检测先别看
+  const busy = useRef(false)
+  // 被外面改过、页面上又有没保存改动的文件：表格上方提示，用户决定怎么办
+  const [stale, setStale] = useState<Record<string, true>>({})
+  const activeDoc = active ? docs[active] : undefined
+  useExternalChange(projectId, activeDoc && 'sheets' in activeDoc ? activeDoc : undefined, busy, (path) => {
+    const d = docs[path]
+    if (d && 'sheets' in d && pendingOf(edits[path], d.sheets).length) return setStale((m) => ({ ...m, [path]: true }))
+    // 没有没保存的改动：直接载入新内容
+    reloadDoc(path, false)
+    toast.info(t('{name} 在外面被改过，已载入最新内容', { name: path.slice(path.lastIndexOf('/') + 1) }))
+  })
+  /** 重新载入：keep 时把页面上改过的格子按位置写回新内容上（只改格子、没插删行时才行） */
+  const reloadDoc = (path: string, keep: boolean) => {
+    const old = docs[path]
+    const pending = old && 'sheets' in old ? pendingOf(edits[path], old.sheets) : []
+    tablesApi
+      .open(projectId, path)
+      .then((d) => {
+        setDocs((m) => ({ ...m, [path]: d }))
+        extDocs.current.delete(path)
+        setStale(({ [path]: _, ...m }) => m)
+        setEdits(({ [path]: _, ...m }) => {
+          if (!keep || !pending.length) return m
+          let e = noEdits()
+          for (const p of pending) {
+            const s = d.sheets.find((x) => x.name === p.name) ?? (d.sheets.length === 1 ? d.sheets[0] : undefined)
+            if (s) e = setCellsIn(e, s, p.cells)
+          }
+          return { ...m, [path]: e }
+        })
+        setCheckSeq((n) => n + 1)
+      })
+      .catch(toastError)
+  }
   const saveDoc = async (doc: TableDoc, pending: SheetEdit[], force: boolean) => {
+    busy.current = true
     try {
       const next = await tablesApi.save(projectId, { path: doc.path, mtime: doc.mtime, sheets: pending, force })
       setDocs((m) => ({ ...m, [doc.path]: next }))
       extDocs.current.delete(doc.path)
       setEdits(({ [doc.path]: _, ...m }) => m)
       setCheckSeq((n) => n + 1)
+      setStale(({ [doc.path]: _, ...m }) => m)
       toast.success(t('已保存 {name}', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
       return null
     } catch (e) {
       return (e as Error).message
+    } finally {
+      busy.current = false
     }
   }
   // 切换到某一版：整个文件换掉，页面上的改动作废
   const checkoutDoc = async (doc: TableDoc, rev: string) => {
-    const next = await tablesApi.checkout(projectId, doc.path, rev)
+    busy.current = true
+    const next = await tablesApi.checkout(projectId, doc.path, rev).finally(() => (busy.current = false))
+    setStale(({ [doc.path]: _, ...m }) => m)
     setDocs((m) => ({ ...m, [doc.path]: next }))
     extDocs.current.delete(doc.path)
     setEdits(({ [doc.path]: _, ...m }) => m)
     setCheckSeq((n) => n + 1)
     toast.success(t('已把 {name} 切换到所选版本', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
+  }
+  // 引用跳转：读被引用的表，找到值相等的那一行，打开并跳过去
+  const jumpRef = (ref: string, value: string) => {
+    const p = parseRef(ref)
+    if (!p || !schema) return
+    loadDoc(p.file)
+      .then((d) => {
+        const at = d && findRefTarget(schema, ref, value, d.sheets)
+        if (!at) return toast.error(t('{file} 里没有 {field} = {value} 的行', { file: p.file, field: p.field, value }))
+        openHit({ path: p.file, sheet: at.sheet, row: at.row, col: at.col, text: value })
+      })
+      .catch(toastError)
   }
   // 正在执行的导表：第几个脚本、哪些表
   const [exporting, setExporting] = useState<{ index: number; paths: string[]; seq: number } | null>(null)
@@ -352,6 +408,11 @@ function Workbench({
             onCheckout={(rev) => checkoutDoc(doc, rev)}
             exports={exports}
             onExport={(i) => runExport(i, [doc.path])}
+            onRefJump={jumpRef}
+            stale={!!stale[doc.path]}
+            onReload={(keep) => reloadDoc(doc.path, keep)}
+            onKeepMine={() => setStale(({ [doc.path]: _, ...m }) => m)}
+            onOpenHit={openHit}
             loadDoc={loadDoc}
             files={files.map((f) => f.path)}
           />
