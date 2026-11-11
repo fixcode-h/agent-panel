@@ -97,6 +97,8 @@ export interface ReviewDiff {
   stat: string
   diff: string
   file?: string
+  /** 二进制文件（表格、插件认领的扩展名）的语义差异，已拼成提示词里的一节；没有就不带（server/exec/review-semantic.ts） */
+  semantic?: string
 }
 
 /** 分诊记录的输入：派单工具的 route 参数（协调器写的理解、理由、假设） */
