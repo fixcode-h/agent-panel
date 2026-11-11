@@ -1,3 +1,4 @@
+import type { HookInput, HookOutput } from '../../shared/hook-defs.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
 
 /**
@@ -104,6 +105,12 @@ export interface ServerPlugin {
   fetch?: (req: Request) => Response | Promise<Response>
   /** 每轮对话开始时问一次：返回 undefined 表示这轮不挂工具 */
   tools?: (run: PluginRun) => PluginRunTools | undefined | Promise<PluginRunTools | undefined>
+  /**
+   * 清单 hooks 里没写 script 的钩子触发时调用（插件接口 3）：id 是清单里钩子的 id，输入输出和用户钩子同一套格式
+   * （工具后补 context、工具前 deny、结束前 block，都要写 reason）。返回 undefined 表示不表态；
+   * 抛错、超时按清单里的 onError 处理。例：写入资产后编译，有错误时用 context 把错误交给模型
+   */
+  hook?: (id: string, input: HookInput) => HookOutput | undefined | Promise<HookOutput | undefined>
   /** 参数改了：返回 true 表示要重启（面板调 stop 再 activate） */
   onConfig?: (next: PluginConfig, prev: PluginConfig) => boolean | void | Promise<boolean | void>
   /** 插件页上的运行状态（自由的键值，界面原样列出；插件网页部分可以自己画） */

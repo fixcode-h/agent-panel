@@ -49,6 +49,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.setViewportSize({ width: 1440, height: 560 })
   errors.push(...(await stickyLeakProblems(p, '设置-矮窗口')))
   await p.setViewportSize({ width: 1440, height: 900 })
+  // 额度用完或限流（Agent 模式扩展 1）：两项默认关；开了「换备用模型」才出现备用顺序，能加一项
+  {
+    const sw = p.getByRole('switch', { name: '额度用完或限流后换备用模型' })
+    await sw.scrollIntoViewIfNeeded()
+    if ((await sw.getAttribute('aria-checked')) !== 'false') errors.push('设置：「换备用模型」默认应该是关')
+    await sw.click()
+    const row = p.locator('[data-setting="备用顺序"]')
+    await row.getByRole('button', { name: '加入' }).click()
+    await row
+      .getByRole('button', { name: '删除' })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('设置：备用顺序加不进去'))
+    await check(p, '设置-额度用完或限流', ['到点自动继续', '换备用模型', '备用顺序'])
+    await sw.click()
+  }
   // 「子对话默认也提问」这一项去掉了（用户 2026-10-31）：新父对话的「子对话也提问」固定默认开着
   if (await p.getByRole('switch', { name: '子对话默认也提问' }).count())
     errors.push('设置：「子对话默认也提问」已经去掉，不该再出现')

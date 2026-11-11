@@ -124,6 +124,11 @@
       "why": "Codex 只有上下文窗口的配置（model_context_window），没有最大输出的"
     },
     {
+      "if": ["opt.toolOutputTokens", "opt.toolOutputTokens!=auto"],
+      "args": ["-c", "tool_output_token_limit={opt.toolOutputTokens}"],
+      "why": "一次工具结果存进会话历史的上限（tool_output_token_limit）；选「CLI 默认」时不传，按模型自己的截断策略"
+    },
+    {
       "if": "permission",
       "args": ["-c", "sandbox_mode=\"{permission}\""]
     },
@@ -338,11 +343,28 @@
         { "id": "detailed", "label": "详细" },
         { "id": "none", "label": "关闭" }
       ]
+    },
+    {
+      "id": "toolOutputTokens",
+      "label": "工具结果上限",
+      "desc": "一次命令输出、读文件结果最多留多少进上下文",
+      "hint": "一次工具结果存进会话历史的上限，超过的截掉；调小省上下文，模型要看的内容被截掉时得再读一次（tool_output_token_limit）。CLI 默认按模型的截断策略，常见是 1 万 token 左右",
+      "default": "auto",
+      "choices": [
+        { "id": "auto", "label": "CLI 默认" },
+        { "id": "5000", "label": "5000 token" },
+        { "id": "10000", "label": "10000 token" },
+        { "id": "20000", "label": "20000 token" }
+      ]
     }
   ],
   "i18n": {
     "en": {
       "思考过程在对话里怎么显示": "How reasoning shows in the conversation",
+      "工具结果上限": "Tool result limit",
+      "一次命令输出、读文件结果最多留多少进上下文": "How much of one command output or file read stays in context",
+      "一次工具结果存进会话历史的上限，超过的截掉；调小省上下文，模型要看的内容被截掉时得再读一次（tool_output_token_limit）。CLI 默认按模型的截断策略，常见是 1 万 token 左右": "The most of one tool result kept in the session history; the rest is cut. Lower saves context, but the model has to read again when what it needs was cut (tool_output_token_limit). The CLI default follows the model's truncation policy, usually around 10,000 tokens",
+      "CLI 默认": "CLI default",
       "回复更快，用量消耗也更快": "Faster replies that use up limits faster",
       "关闭": "Off",
       "思考摘要": "Reasoning summary",

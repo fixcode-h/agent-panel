@@ -260,6 +260,8 @@ export interface Orchestra {
       ignoreDirty?: boolean
       /** Bug 的级别初判：子对话的档案从它开始（快速级别根因和方案合成一次确认） */
       level?: BugLevel
+      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/child-after.ts） */
+      after?: string[]
     } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
   sendToConversation(
@@ -526,6 +528,8 @@ export interface EngineHost {
     ignoreDirty?: boolean
     /** Bug 的级别初判（Task.bugCase.level 的初值） */
     level?: BugLevel
+    /** 排在哪些子对话之后（Task.waitAfter）：它们都合回后才启动 */
+    after?: string[]
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (

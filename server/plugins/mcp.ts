@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import type { McpCallContext, McpResult, McpTool } from './sdk.ts'
 import { log } from '../log.ts'
+import { clipPluginResult, saveToHandoff } from './mcp-clip.ts'
 
 /**
  * 插件给 Agent 的 MCP 工具（Streamable HTTP，ADR 0059）。和设计工具、原来的 Blender 工具一样：
@@ -72,7 +73,9 @@ async function handle(s: Session, msg: any) {
       if (!tool) return reply(mcpText(`没有这个工具：${name}`, true))
       try {
         const args = msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}
-        return reply(await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm }))
+        const res = await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm })
+        // 结果太长的存文件、只回头尾和路径（mcp-clip.ts）：插件结果进了会话就一直占着上下文
+        return reply(await clipPluginResult(res, `plugin-${s.server}-${name}-${Date.now()}`, saveToHandoff(s.taskId)))
       } catch (e) {
         // 插件工具出错原样交给 Agent（不悄悄重试），日志里也记一笔方便排查
         log.warn('plugin', `插件工具出错：${s.pluginId}/${name}`, { error: (e as Error).message })

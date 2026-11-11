@@ -15,11 +15,13 @@ import {
   type TableFile,
   type TableHit,
   type TableRoot,
+  type TableSchema,
   type TableSearch,
   type TablesConfig,
   type TablesIndex,
 } from '../../shared/tables.ts'
 import type { SheetData } from '../../shared/files.ts'
+import { sheetFieldNames } from '../../shared/table-struct.ts'
 import { MAX_XLSX_BYTES, readXlsx } from '../xlsx.ts'
 import { resolvePath } from '../fs.ts'
 
@@ -285,6 +287,7 @@ export async function searchTables(
   files: TableFile[],
   q: string,
   signal?: AbortSignal,
+  schema?: TableSchema,
 ): Promise<TableSearch> {
   const needle = q.trim().toLowerCase()
   const hits: TableHit[] = []
@@ -302,16 +305,28 @@ export async function searchTables(
       continue
     }
     searched++
-    for (const s of sheets)
+    for (const s of sheets) {
+      // 字段名按表头算，只在这张表有命中时才算一次
+      let names: { from: number; names: string[] } | undefined
       for (let r = 0; r < s.rows.length; r++) {
         const row = s.rows[r]
         for (let c = 0; c < row.length; c++) {
           const v = row[c]
           if (!v || !v.toLowerCase().includes(needle)) continue
-          hits.push({ path: f.path, sheet: s.name, row: r, col: c, text: v.length > 200 ? `${v.slice(0, 200)}…` : v })
+          names ??= sheetFieldNames(schema, f.path, s)
+          const field = r >= names.from ? names.names[c] : undefined
+          hits.push({
+            path: f.path,
+            sheet: s.name,
+            row: r,
+            col: c,
+            text: v.length > 200 ? `${v.slice(0, 200)}…` : v,
+            ...(field ? { field } : {}),
+          })
           if (hits.length >= MAX_HITS) return { hits, files: searched, truncated: true }
         }
       }
+    }
   }
   return { hits, files: searched }
 }

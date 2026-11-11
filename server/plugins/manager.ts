@@ -17,6 +17,7 @@ import {
   setInstalledPlugins,
 } from '../../shared/plugins/index.ts'
 import { removePluginSkills, setPluginSkillSources } from '../bundled-skills.ts'
+import { clearSlashCache } from '../slash.ts'
 import { log } from '../log.ts'
 import { getSettings, saveSettings } from '../settings.ts'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
@@ -56,6 +57,8 @@ export async function reloadPlugins() {
   setPluginSkillSources(installed.map((p) => ({ id: p.manifest.id, dir: p.dir, stamp: p.installedAt })))
   const s = await getSettings()
   setEnabledPlugins(s.plugins)
+  // 插件带的「/」命令跟着装删换：菜单别用缓存里的旧列表
+  clearSlashCache()
   await syncRuntime(
     installed,
     (id) => pluginOn(s.plugins, id),
@@ -133,6 +136,7 @@ export async function cleanupDisabledPlugins() {
 /** 设置里插件的开关、参数变了（保存设置之后调用） */
 export async function applyPluginSettings(prev: Settings['plugins'], next: Settings['plugins']) {
   cachedPlugins = next
+  clearSlashCache()
   const result: Record<string, { kept: PluginRemoval['kept']; skillsKept: string[] }> = {}
   for (const p of installed) {
     const id = p.manifest.id

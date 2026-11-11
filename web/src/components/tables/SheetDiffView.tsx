@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { foldSame, type DiffRow, type SheetDiff } from '@shared/sheet-diff'
 import { colName } from '@/lib/sheet'
@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useRowH } from '@/components/files/SheetTable'
 import '@/components/files/sheet-table.css'
+
+/** 差异里只看哪一种：改了格子的行、新增的行、删掉的行 */
+export type DiffOnly = 'mod' | 'add' | 'del'
 
 /** 看得见的行上下再多画几行 */
 const OVER = 20
@@ -26,7 +29,10 @@ export function SheetDiffView({
   onlyChanges,
   pick,
   rowAction,
+  only,
 }: {
+  /** 摘要里点了某个标签：只列这一种行 */
+  only?: DiffOnly | null
   a: string[][]
   b: string[][]
   diff: SheetDiff
@@ -42,6 +48,9 @@ export function SheetDiffView({
   type Line = { row: DiffRow; i: number } | { fold: [number, number]; count: number; k: number }
   const lines = useMemo<Line[]>(() => {
     const index = new Map(diff.rows.map((r, i) => [r, i]))
+    // 换了一版后这一种可能一行都没有（标签也就不见了，没法取消）：那就照常全部显示
+    if (only && diff.rows.some((r) => r.kind === only))
+      return diff.rows.flatMap((row, i) => (row.kind === only ? [{ row, i }] : []))
     const list = onlyChanges ? foldSame(diff.rows) : diff.rows.map((row) => ({ row }))
     // 点开的折叠段换成里面的行
     return list.flatMap((l, k): Line[] =>
@@ -53,7 +62,7 @@ export function SheetDiffView({
           ? [{ ...l, k }]
           : [{ row: l.row, i: index.get(l.row)! }],
     )
-  }, [diff, onlyChanges, opened])
+  }, [diff, onlyChanges, opened, only])
   const cols = diff.colMap.length
   const box = useRef<HTMLDivElement>(null)
   const rowH = useRowH()
@@ -164,14 +173,14 @@ export function SheetDiffView({
                         {v}
                       </td>
                     )
+                  // 改过的格子默认只显示新值（底色标出来），悬停看「旧 / 新」
                   const was = old(row.a!, c)
                   return (
-                    <td key={c} className="sheet-diff-cell truncate px-2" title={`${was} → ${v}`}>
-                      {was && (
-                        <Fragment>
-                          <del className="sheet-diff-old">{was}</del>{' '}
-                        </Fragment>
-                      )}
+                    <td
+                      key={c}
+                      className="sheet-diff-cell truncate px-2"
+                      title={t('旧：{was}\n新：{now}', { was: was || t('（空）'), now: v || t('（空）') })}
+                    >
                       <ins className="sheet-diff-new">{v || t('（清空）')}</ins>
                     </td>
                   )
@@ -190,24 +199,44 @@ export function SheetDiffView({
   )
 }
 
-/** 差异摘要的几个小标签：按什么对齐、改了几格、加删几行、表头变化 */
-export function DiffSummary({ diff }: { diff: SheetDiff }) {
+/**
+ * 差异摘要的几个小标签：按什么对齐、改了几格、加删几行、表头变化。
+ * 传了 onOnly 时「改 / 加 / 删」能点：只看那一种行，再点一下取消
+ */
+export function DiffSummary({
+  diff,
+  only,
+  onOnly,
+}: {
+  diff: SheetDiff
+  only?: DiffOnly | null
+  onOnly?: (k: DiffOnly | null) => void
+}) {
   const s = diff.stats
   const chip = 'inline-flex h-6 items-center rounded-(--c-badge-radius) px-2 text-caption'
+  /** 能点的标签：按下时加一圈描边 */
+  const tag = (k: DiffOnly, cls: string, text: string) =>
+    onOnly ? (
+      <button
+        type="button"
+        aria-pressed={only === k}
+        title={only === k ? t('看全部') : t('只看这一种')}
+        onClick={() => onOnly(only === k ? null : k)}
+        className={cn(chip, cls, 'cursor-pointer hover:brightness-95', only === k && 'ring-1 ring-current')}
+      >
+        {text}
+      </button>
+    ) : (
+      <span className={cn(chip, cls)}>{text}</span>
+    )
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <span className={cn(chip, 'bg-sel text-muted')}>
         {diff.key ? t('按主键 {key} 对齐', { key: diff.key }) : t('按行内容对齐')}
       </span>
-      {s.cells > 0 && <span className={cn(chip, 'sheet-diff-cell text-fg')}>{t('改 {n} 格', { n: s.cells })}</span>}
-      {s.add > 0 && (
-        <span className={cn(chip, 'sheet-diff-new bg-(--c-grid-added)/12')}>+{t('{n} 行', { n: s.add })}</span>
-      )}
-      {s.del > 0 && (
-        <span className={cn(chip, 'bg-(--c-grid-removed)/12 text-(--c-grid-removed)')}>
-          −{t('{n} 行', { n: s.del })}
-        </span>
-      )}
+      {s.cells > 0 && tag('mod', 'sheet-diff-cell text-fg', t('改 {n} 格', { n: s.cells }))}
+      {s.add > 0 && tag('add', 'sheet-diff-new bg-(--c-grid-added)/12', `+${t('{n} 行', { n: s.add })}`)}
+      {s.del > 0 && tag('del', 'bg-(--c-grid-removed)/12 text-(--c-grid-removed)', `−${t('{n} 行', { n: s.del })}`)}
       {!s.cells && !s.add && !s.del && <span className={cn(chip, 'bg-sel text-subtle')}>{t('数据没变')}</span>}
       {(diff.addedCols.length > 0 || diff.removedCols.length > 0 || diff.headerChanged.length > 0) && (
         <span

@@ -71,6 +71,8 @@ export function refreshEnabledPlugins() {
 }
 
 export const pluginEnabled = (id: string) => enabled.has(id)
+/** 开着的插件现在的参数（按上次拿到的设置算）：插件测试步骤换 {config.xxx} 用 */
+export const activePluginConfig = (id: string) => pluginConfig(lastSetting, id)
 export const activePlugins = () => installed.filter((p) => enabled.has(p.id))
 
 /** 这个内置角色 / 工作流 key 是哪个插件带来的 */

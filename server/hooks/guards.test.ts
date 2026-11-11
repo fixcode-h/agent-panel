@@ -139,6 +139,34 @@ test('长命令转后台：只看真正运行的程序，写文件、查文件�
   assert.match(dangerDeny(ctx(), sh('git push --force origin dev')), /强制推送/)
 })
 
+test('长命令转后台：项目测试步骤里要编译、跑得久的（合并时编译、超时 3 分钟以上）算长命令，小改动也跑的不算', () => {
+  const step = (name: string, command: string, more: object = {}) => ({
+    name,
+    command,
+    enabled: true,
+    quick: false,
+    merge: false,
+    timeoutSec: 0,
+    scope: 'always',
+    ...more,
+  })
+  const c = ctx({
+    project: {
+      testSteps: [
+        step('编译', 'make -C build all', { merge: true }),
+        step('集成测试', 'npm run test:it', { timeoutSec: 600 }),
+        step('类型检查', 'npm run typecheck', { merge: true, quick: true }),
+        step('lint', 'npm run lint'),
+      ] as never,
+    },
+  })
+  assert.match(longDeny(c, sh('cd build && make -C build all')), /测试步骤「编译」/)
+  assert.match(longDeny(c, sh('npm run test:it')), /集成测试/)
+  assert.equal(longDeny(c, sh('npm run typecheck')), '', '小改动也跑的快检查放行')
+  assert.equal(longDeny(c, sh('npm run lint')), '', '没说要编译、跑得久的放行')
+  assert.equal(longDeny({ ...c, canBackground: false }, sh('npm run test:it')), '', '没有后台工具时不拦')
+})
+
 test('长命令转后台：UE 编译打包、整份装依赖放前台时拒绝，加一个包照常（用户 2026-11-11 要求重新规划后台命令）', () => {
   assert.match(
     longDeny(ctx(), sh('"G:/UE_5.4/Engine/Build/BatchFiles/Build.bat" MyGameEditor Win64 Development')),

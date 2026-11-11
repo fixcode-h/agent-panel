@@ -158,7 +158,7 @@ test('工具后带上执行结果：Claude Code 的失败事件带 error 算失�
     tool_input: { command: 'npm test' },
     error: 'Exit code 1',
   })
-  assert.deepEqual(c.tool?.result, { output: 'Exit code 1', failed: true })
+  assert.deepEqual(c.tool?.result, { output: 'Exit code 1', size: 11, failed: true })
   const ok = hookFacts(getCli('claude')!.hooks!, {
     tool_name: 'Bash',
     tool_input: { command: 'ls' },
@@ -178,6 +178,25 @@ test('工具后带上执行结果：Claude Code 的失败事件带 error 算失�
       hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: 't' },
     },
   )
+})
+
+test('读文件带没带分段参数按定义里的 range 认；没写 range 的 CLI 不带 ranged；结果记下截短前的字数', () => {
+  const claude = getCli('claude')!.hooks!
+  const whole = hookFacts(claude, { tool_name: 'Read', tool_input: { file_path: 'a.log' } })
+  assert.equal(whole.tool?.ranged, false)
+  assert.equal(
+    hookFacts(claude, { tool_name: 'Read', tool_input: { file_path: 'a.log', offset: 10 } }).tool?.ranged,
+    true,
+  )
+  assert.equal(
+    hookFacts(getCli('pi')!.hooks!, { tool_name: 'read', tool_input: { path: 'a', limit: 5 } }).tool?.ranged,
+    true,
+  )
+  const cc = hookFacts(getCli('commandcode')!.hooks!, { tool_name: 'read_file', tool_input: { file_path: 'a' } })
+  assert.equal(cc.tool?.ranged, undefined)
+  const big = hookFacts(claude, { tool_name: 'Bash', tool_input: {}, tool_response: 'x'.repeat(5000) })
+  assert.equal(big.tool?.result?.size, 5000)
+  assert.equal(big.tool?.result?.output.length, 2000)
 })
 
 test('面板自己的工具按去掉前缀的名字认成 panel 类', () => {
