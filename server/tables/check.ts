@@ -15,7 +15,12 @@ export interface TablesCheck {
   failed: { path: string; error: string }[]
 }
 
-export async function checkTables(dir: string, files: TableFile[], schema: TableSchema): Promise<TablesCheck> {
+export async function checkTables(
+  dir: string,
+  files: TableFile[],
+  schema: TableSchema,
+  signal?: AbortSignal,
+): Promise<TablesCheck> {
   const loaded = new Map<string, SheetData[] | null>()
   const load = async (rel: string) => {
     if (!loaded.has(rel))
@@ -29,8 +34,12 @@ export async function checkTables(dir: string, files: TableFile[], schema: Table
     return loaded.get(rel) ?? undefined
   }
   const out: TablesCheck = { files: 0, sheets: [], failed: [] }
+  let n = 0
   for (const f of files) {
     if (f.kind === 'xls') continue
+    // 页面关掉 / 重新检查时不再接着查；每查几个文件让一下，别的请求不用等
+    if (signal?.aborted) break
+    if (++n % 20 === 0) await new Promise((r) => setImmediate(r))
     let sheets: SheetData[]
     try {
       sheets = (await parseTable(tableFull(dir, f.path))).sheets

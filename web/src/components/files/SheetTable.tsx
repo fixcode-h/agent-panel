@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ListFilter } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { SheetData } from '@shared/files'
@@ -23,6 +23,9 @@ const NO_HEADER: SheetHeader = { start: 0, roles: [] }
 // 行号列、列名行钉在边上，底色用表格自己的底色（sheet-table.css 的 --sheet-bg）盖住滚过去的格子
 const STICKY = 'sticky bg-(--sheet-bg) text-subtle select-none'
 const CELL = 'sheet-cell shrink-0 truncate border-r border-b border-line px-2'
+/** 看得见的列左右再多画几列；按这个步长取整，滚一点点不用重画 */
+const COL_OVER = 3
+const COL_STEP = 4
 /** 铺满时空列的宽度 */
 const PAD_W = 96
 /** 拖列宽的范围 */
@@ -214,6 +217,10 @@ export function SheetTable({
   const frozen = from
   const frozenH = rowH * (frozen + 1)
   const [win, setWin] = useState({ from: 0, to: 60 })
+  // 横向也只画看得见的列（宽表上百列时，每行只画屏幕上那十几列）
+  const [cwin, setCwin] = useState({ from: 0, to: 40 })
+  const leftsRef = useRef(lefts)
+  leftsRef.current = lefts
   // 铺满：滚动区比数据大的部分接着画空列、空行
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 })
   const padCols = fill ? Math.max(0, Math.ceil((boxSize.w - dataW) / PAD_W)) : 0
@@ -232,6 +239,24 @@ export function SheetTable({
       setWin((w) => (w.from === a && w.to === b ? w : { from: a, to: b }))
       const size = { w: box.clientWidth, h: box.clientHeight }
       setBoxSize((o) => (o.w === size.w && o.h === size.h ? o : size))
+      const ls = leftsRef.current
+      const n = ls.length - 1
+      const x0 = box.scrollLeft
+      const x1 = box.scrollLeft + box.clientWidth
+      // 二分找第一列右边线过了 x0 的、第一列左边线过了 x1 的；左右各多画几列，按 COL_STEP 取整少重画
+      const find = (x: number) => {
+        let lo = 0
+        let hi = n
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1
+          if (ls[mid + 1] <= x) lo = mid + 1
+          else hi = mid
+        }
+        return lo
+      }
+      const ca = Math.max(0, Math.floor((find(x0) - COL_OVER) / COL_STEP) * COL_STEP)
+      const cb = Math.min(n, Math.ceil((find(x1) + 1 + COL_OVER) / COL_STEP) * COL_STEP)
+      setCwin((w) => (w.from === ca && w.to === cb ? w : { from: ca, to: cb }))
     }
     const later = () => {
       if (!frame) frame = requestAnimationFrame(read)
@@ -245,7 +270,8 @@ export function SheetTable({
       ro.disconnect()
       if (frame) cancelAnimationFrame(frame)
     }
-  }, [scrollEl, rowH])
+    // 列宽变了（拖列宽、换表）要重算看得见的列
+  }, [scrollEl, rowH, lefts])
 
   // 换了一张表：回到左上角
   useLayoutEffect(() => {
@@ -282,56 +308,66 @@ export function SheetTable({
   if (!rows.length) return <p className="p-6 text-body text-subtle">{t('这张表是空的。')}</p>
 
   const lineH = { height: rowH, lineHeight: `${rowH - 1}px` }
+  const c0 = Math.min(cwin.from, colW.length)
+  const c1 = Math.min(Math.max(cwin.to, c0), colW.length)
+  const gapL = lefts[c0] - numW
+  const gapR = dataW - lefts[c1]
+  /** 没画的列用一块空白占住宽度 */
+  const gap = (key: string, w: number) =>
+    w > 0 ? <span key={key} aria-hidden className="shrink-0" style={{ width: w }} /> : null
+  const span = <T,>(f: (w: number, c: number) => T) => colW.slice(c0, c1).map((w, i) => f(w, c0 + i))
   const pad = (key: string) =>
     Array.from({ length: padCols }, (_, k) => (
       <span key={`${key}${k}`} aria-hidden className={cn(CELL, 'sheet-pad')} style={{ width: PAD_W }} />
     ))
-  const cells = (r: number) =>
-    colW
-      .map((w, c) => {
-        const text = rows[r]?.[c] ?? ''
-        const hit = marked.has(r * cols + c)
-        const on = !edit && hit && cur?.row === r && cur.col === c
-        if (edit?.editing && edit.editing.r === r && edit.editing.c === c)
-          return (
-            <span
-              key={c}
-              role="cell"
-              className={cn(CELL, 'sheet-editing relative overflow-visible p-0')}
-              style={{ width: w }}
-            >
-              {edit.editing.node}
-            </span>
-          )
-        const picked = !!edit?.picked(r, c)
-        const focused = !!edit?.focus && edit.focus.row === r && edit.focus.col === c
+  const cells = (r: number) => [
+    gap('gl', gapL),
+    ...span((w, c) => {
+      const text = rows[r]?.[c] ?? ''
+      const hit = marked.has(r * cols + c)
+      const on = !edit && hit && cur?.row === r && cur.col === c
+      if (edit?.editing && edit.editing.r === r && edit.editing.c === c)
         return (
           <span
             key={c}
             role="cell"
-            // 截断了或者有换行的格子，悬停看完整内容；不合规的格子悬停看原因
-            title={edit?.tip?.(r, c) ?? (text.length > 12 ? text : undefined)}
-            data-current={on || undefined}
-            aria-selected={edit ? picked : undefined}
-            data-r={edit ? r : undefined}
-            data-c={edit ? c : undefined}
-            onMouseDown={edit && ((e) => edit.onDown(r, c, e))}
-            onMouseEnter={edit && ((e) => edit.onEnter(r, c, e))}
-            onDoubleClick={edit && (() => edit.onDouble(r, c))}
-            className={cn(
-              CELL,
-              on ? 'sheet-hit-current' : hit && 'sheet-hit',
-              edit?.mark?.(r, c),
-              picked && 'sheet-sel',
-              focused && 'sheet-focus',
-            )}
+            className={cn(CELL, 'sheet-editing relative overflow-visible p-0')}
             style={{ width: w }}
           >
-            {text}
+            {edit.editing.node}
           </span>
         )
-      })
-      .concat(pad('p'))
+      const picked = !!edit?.picked(r, c)
+      const focused = !!edit?.focus && edit.focus.row === r && edit.focus.col === c
+      return (
+        <span
+          key={c}
+          role="cell"
+          // 截断了或者有换行的格子，悬停看完整内容；不合规的格子悬停看原因
+          title={edit?.tip?.(r, c) ?? (text.length > 12 ? text : undefined)}
+          data-current={on || undefined}
+          aria-selected={edit ? picked : undefined}
+          data-r={edit ? r : undefined}
+          data-c={edit ? c : undefined}
+          onMouseDown={edit && ((e) => edit.onDown(r, c, e))}
+          onMouseEnter={edit && ((e) => edit.onEnter(r, c, e))}
+          onDoubleClick={edit && (() => edit.onDouble(r, c))}
+          className={cn(
+            CELL,
+            on ? 'sheet-hit-current' : hit && 'sheet-hit',
+            edit?.mark?.(r, c),
+            picked && 'sheet-sel',
+            focused && 'sheet-focus',
+          )}
+          style={{ width: w }}
+        >
+          {text}
+        </span>
+      )
+    }),
+    gap('gr', gapR),
+    ...pad('p'),
+  ]
   /** 行号格：表格页里右键能插删行 */
   const rowNum = (r: number, node: React.ReactElement) => (edit?.rowMenu ? edit.rowMenu(r, node) : node)
   const shown: number[] = []
@@ -350,7 +386,8 @@ export function SheetTable({
       <div className="sticky top-0 z-2" style={{ width: total }}>
         <div role="row" className={cn(STICKY, 'flex')} style={{ height: rowH }}>
           <span className={cn(STICKY, CELL, 'left-0 z-1')} style={{ width: numW, ...lineH }} />
-          {colW.map((w, c) => (
+          {gap('gl', gapL)}
+          {span((w, c) => (
             <ColumnHead
               key={c}
               col={c}
@@ -365,6 +402,7 @@ export function SheetTable({
               onSort={onSort}
             />
           ))}
+          {gap('gr', gapR)}
           {Array.from({ length: padCols }, (_, k) => (
             <span
               key={`h${k}`}
@@ -439,9 +477,11 @@ export function SheetTable({
           >
             {rows.length + k + 1}
           </span>
-          {colW.map((w, c) => (
+          {gap('gl', gapL)}
+          {span((w, c) => (
             <span key={c} className={cn(CELL, 'sheet-pad')} style={{ width: w }} />
           ))}
+          {gap('gr', gapR)}
           {pad('q')}
         </div>
       ))}

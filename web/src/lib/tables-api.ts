@@ -11,12 +11,14 @@ import { json, request } from './api'
 const q = encodeURIComponent
 
 export const tablesApi = {
-  list: (projectId: string) => request<TablesIndex>(`/tables/${projectId}`),
+  /** fresh：重走目录（刷新按钮），不用服务端几秒内的缓存 */
+  list: (projectId: string, fresh = false) => request<TablesIndex>(`/tables/${projectId}${fresh ? '?fresh=1' : ''}`),
   /** 按还没保存的配置找一遍（项目设置里逐个目录显示找到几个） */
   probe: (projectId: string, path: string, tables: TablesConfig) =>
     request<TablesProbe>(`/tables/${projectId}/probe`, json('POST', { path, tables })),
   open: (projectId: string, path: string) => request<TableDoc>(`/tables/${projectId}/file?path=${q(path)}`),
-  search: (projectId: string, query: string) => request<TableSearch>(`/tables/${projectId}/search?q=${q(query)}`),
+  search: (projectId: string, query: string, signal?: AbortSignal) =>
+    request<TableSearch>(`/tables/${projectId}/search?q=${q(query)}`, { signal }),
   schema: (projectId: string) => request<TableSchema>(`/tables/${projectId}/schema`),
   saveSchema: (projectId: string, s: TableSchema) =>
     request<TableSchema>(`/tables/${projectId}/schema`, json('PUT', s)),

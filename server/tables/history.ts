@@ -116,9 +116,26 @@ const unxml = (s: string) =>
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
 
+/** 取过的旧版本内容：提交过的版本不会再变，按「目录 + 路径 + 版本」留着（HEAD / #have / BASE 会变，不留） */
+const atCache = new Map<string, SheetData[]>()
+const AT_CACHE = 24
+const MOVING = /^(HEAD|#have|BASE)$/
+
 /** 某一版的内容：不在那一版里（新加的文件）时返回空表 */
 export async function tableAt(dir: string, rel: string, rev: string): Promise<SheetData[]> {
   if (!/^[\w#^~@][\w#.^~:@/-]{0,79}$/.test(rev)) throw new HttpError(t('版本号格式不对'))
+  const key = `${dir}\n${rel}\n${rev}`
+  const hit = atCache.get(key)
+  if (hit) return hit
+  const sheets = await readAt(dir, rel, rev)
+  if (!MOVING.test(rev)) {
+    atCache.set(key, sheets)
+    if (atCache.size > AT_CACHE) atCache.delete(atCache.keys().next().value!)
+  }
+  return sheets
+}
+
+async function readAt(dir: string, rel: string, rev: string): Promise<SheetData[]> {
   const { vcs } = await detectVcs(dir)
   let buf: Buffer
   try {

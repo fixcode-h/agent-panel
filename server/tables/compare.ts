@@ -3,6 +3,7 @@
  * 标出相同 / 有差异 / 只在一边。比的是解析出来的格子（同样的内容另存一次字节会变，不能比文件字节）。只读。
  */
 import path from 'node:path'
+import { readFile } from 'node:fs/promises'
 import type { TableFile, TablesConfig } from '../../shared/tables.ts'
 import { absPath, listTables, parseTable, tableFull } from './files.ts'
 
@@ -56,8 +57,19 @@ export async function compareProjects(
       pairs.push({ ...base, status: 'diff' })
       continue
     }
-    parsed++
     try {
+      // 字节一样的直接算相同，不用解析（两个工作区大部分表是一样的）
+      if (f.size === other.size && f.size > 0) {
+        const [ba, bb] = await Promise.all([
+          readFile(tableFull(left.dir, f.path)),
+          readFile(tableFull(right.dir, other.path)),
+        ])
+        if (ba.equals(bb)) {
+          pairs.push({ ...base, status: 'same' })
+          continue
+        }
+      }
+      parsed++
       const [a, b] = await Promise.all([
         parseTable(tableFull(left.dir, f.path)),
         parseTable(tableFull(right.dir, other.path)),

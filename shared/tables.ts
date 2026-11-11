@@ -36,7 +36,17 @@ export function tableKind(file: string): TableKind | null {
 }
 
 /** 一个通配写法（* 任意字符、? 一个字符）转成正则；不带 / 的只比文件名，带 / 的比相对路径 */
+const GLOB_CACHE = new Map<string, RegExp>()
 function globRe(glob: string) {
+  // 列几万个文件时每个文件都要比一遍：编译好的正则留着复用
+  const hit = GLOB_CACHE.get(glob)
+  if (hit) return hit
+  const re = compileGlob(glob)
+  if (GLOB_CACHE.size > 500) GLOB_CACHE.clear()
+  GLOB_CACHE.set(glob, re)
+  return re
+}
+function compileGlob(glob: string) {
   const esc = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
   // ** 跨目录：先拆开，各段里的 * 和 ? 不跨 /，再用 .* 接起来
   const body = esc

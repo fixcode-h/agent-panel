@@ -13,6 +13,7 @@ import {
   headerOf,
   parseRef,
   workbookNeeds,
+  type RowProblems,
 } from './table-struct.ts'
 
 const CONFIG = 'data/Config.xlsx'
@@ -145,4 +146,27 @@ test('引用写法', () => {
   assert.deepEqual(parseRef('a.xlsx#S#ID'), { file: 'a.xlsx', sheet: 'S', field: 'ID' })
   assert.deepEqual(parseRef('a.xlsx##ID'), { file: 'a.xlsx', sheet: undefined, field: 'ID' })
   assert.equal(parseRef('a.xlsx'), null)
+})
+
+test('按行缓存检查结果：没改的行直接用上次的，改了的行重查', () => {
+  const schema = TableSchema.parse({})
+  const rows = [['uint32'], ['ID'], ['1'], ['x'], ['3']]
+  const infos = columnInfos(schema, rows, { start: 0, roles: ['type', 'name'] }, 'a.csv', 'a', 1)
+  const ctx = columnOptions(schema, infos, () => undefined).ctx
+  const cache = new WeakMap<string[], RowProblems>()
+  const first = checkSheet(rows, 2, infos, 'ID', ctx, 2000, cache)
+  assert.deepEqual(
+    first.map((p) => p.r),
+    [3],
+  )
+  // 改第 4 行：只复制这一行（和表格页一样），其余行还是原来的数组
+  const next = [...rows]
+  next[3] = ['2']
+  next[4] = ['2']
+  const again = checkSheet(next, 2, infos, 'ID', ctx, 2000, cache)
+  assert.deepEqual(
+    again.map((p) => [p.r, p.msg.startsWith('主键重复')]),
+    [[4, true]],
+  )
+  assert.ok(cache.has(rows[2]))
 })

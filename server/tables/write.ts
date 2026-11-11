@@ -12,7 +12,7 @@ import { applyRowOps, cellRef, gridDiff, setCells, type TableSave } from '../../
 import { tableKind, type TableDoc, type TablesConfig } from '../../shared/tables.ts'
 import { DATA_DIR } from '../store.ts'
 import { readXlsx } from '../xlsx.ts'
-import { forgetTable, lockedByOffice, openTable, safeRel } from './files.ts'
+import { forgetLists, forgetTable, lockedByOffice, openTable, safeRel } from './files.ts'
 import { editXlsx } from './xlsx-write.ts'
 import { HttpError } from './http-error.ts'
 
@@ -136,5 +136,7 @@ export async function saveTable(
     throw new HttpError(t('写入失败：{err}', { err: (e as Error).message }), 409)
   }
   forgetTable(full)
+  // 列表里的大小、修改时间也变了
+  forgetLists()
   return openTable(dir, rel, cfg)
 }

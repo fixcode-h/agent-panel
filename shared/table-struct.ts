@@ -168,17 +168,39 @@ export interface Problem {
   msg: string
 }
 
-/** 整张表：每格按列的结构查，主键列查重复 */
-export function checkSheet(rows: string[][], from: number, infos: ColInfo[], key: string, ctx: CheckCtx, limit = 2000) {
+/** 一行里不合规的格子（列号 + 原因） */
+export type RowProblems = { c: number; msg: string }[]
+
+/**
+ * 整张表：每格按列的结构查，主键列查重复。
+ * cache 按「行数组」记每行查出来的问题：表格页改格子时只复制改到的行，没改的行还是同一个数组，
+ * 直接用上次的结果，一万行的表改一格只重查那一行（主键重复每次全表数一遍，只是查表很快）。
+ * 列的结构、枚举变了时调用方换一个新的 cache
+ */
+export function checkSheet(
+  rows: string[][],
+  from: number,
+  infos: ColInfo[],
+  key: string,
+  ctx: CheckCtx,
+  limit = 2000,
+  cache?: WeakMap<string[], RowProblems>,
+) {
   const out: Problem[] = []
   const keyCol = infos.find((i) => i.field && i.field === key)?.col ?? -1
   const seen = new Map<string, number>()
   for (let r = from; r < rows.length && out.length < limit; r++) {
     const row = rows[r] ?? []
-    for (const info of infos) {
-      const bad = checkCell(info, row[info.col] ?? '', ctx)
-      if (bad) out.push({ r, c: info.col, msg: bad })
+    let own = cache?.get(row)
+    if (!own) {
+      own = []
+      for (const info of infos) {
+        const bad = checkCell(info, row[info.col] ?? '', ctx)
+        if (bad) own.push({ c: info.col, msg: bad })
+      }
+      if (cache && rows[r]) cache.set(rows[r], own)
     }
+    for (const p of own) out.push({ r, c: p.c, msg: p.msg })
     if (keyCol >= 0) {
       const k = (row[keyCol] ?? '').trim()
       if (!k) continue

@@ -5,6 +5,7 @@
 import path from 'node:path'
 import { stat } from 'node:fs/promises'
 import { Hono, type Context } from 'hono'
+import { compress } from 'hono/compress'
 import { t } from '../../shared/i18n.ts'
 import { TableSchema, TablesConfig, tablesOn } from '../../shared/tables.ts'
 import type { Project } from '../../shared/schema.ts'
@@ -52,12 +53,14 @@ export const fail = (c: Context, e: unknown) =>
 export function tablesApi(deps: TablesDeps) {
   return (
     new Hono()
+      // 表格内容、列表都是大 JSON（一万行的表几 MB）：压缩后传，局域网 / 远程访问时快很多
+      .use(compress())
       // 表格目录里的文件（没开表格功能时是空列表）
       .get('/:id', async (c) => {
         try {
           const { dir, cfg } = await projectOf(deps, c.req.param('id'))
           if (!tablesOn(cfg)) return c.json({ dirs: [], missing: [], files: [] })
-          return c.json(await listTables(dir, cfg))
+          return c.json(await listTables(dir, cfg, c.req.query('fresh') === '1'))
         } catch (e) {
           return fail(c, e)
         }
@@ -92,7 +95,7 @@ export function tablesApi(deps: TablesDeps) {
           const { dir, cfg } = await projectOf(deps, c.req.param('id'))
           if (!tablesOn(cfg)) return c.json({ hits: [], files: 0 })
           const { files } = await listTables(dir, cfg)
-          return c.json(await searchTables(dir, files, c.req.query('q') ?? ''))
+          return c.json(await searchTables(dir, files, c.req.query('q') ?? '', c.req.raw.signal))
         } catch (e) {
           return fail(c, e)
         }
@@ -137,7 +140,7 @@ export function tablesApi(deps: TablesDeps) {
           const { dir, cfg, schemaAt } = await projectOf(deps, c.req.param('id'))
           if (!tablesOn(cfg)) return c.json({ files: 0, sheets: [], failed: [] })
           const { files } = await listTables(dir, cfg)
-          return c.json(await checkTables(dir, files, await readSchema(schemaAt)))
+          return c.json(await checkTables(dir, files, await readSchema(schemaAt), c.req.raw.signal))
         } catch (e) {
           return fail(c, e)
         }

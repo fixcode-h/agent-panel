@@ -93,13 +93,16 @@ function Workbench({
   // 搜索跳转时文件还没读到：记下要切的表，读到后再切
   const pendingSheet = useRef<{ path: string; sheet: string } | null>(null)
 
-  const reload = useCallback(() => {
-    setIndexError('')
-    tablesApi
-      .list(projectId)
-      .then(setIndex)
-      .catch((e) => setIndexError((e as Error).message))
-  }, [projectId])
+  const reload = useCallback(
+    (fresh = false) => {
+      setIndexError('')
+      tablesApi
+        .list(projectId, fresh)
+        .then(setIndex)
+        .catch((e) => setIndexError((e as Error).message))
+    },
+    [projectId],
+  )
   useEffect(() => {
     reload()
     tablesApi
@@ -221,7 +224,7 @@ function Workbench({
         }
         extra={
           <>
-            <IconButton icon={RefreshCw} label={t('重新读取表格目录')} onClick={reload} />
+            <IconButton icon={RefreshCw} label={t('重新读取表格目录')} onClick={() => reload(true)} />
             <IconButton
               icon={GitCompareArrows}
               label={others.length ? t('跨项目对比') : t('跨项目对比：还要另一个设了表格目录的项目')}
@@ -362,9 +365,11 @@ function useContentSearch(projectId: string, query: string) {
     }
     let live = true
     setLoading(true)
+    // 又输了字：取消上一次请求，服务端也就不再接着搜
+    const abort = new AbortController()
     const timer = setTimeout(() => {
       tablesApi
-        .search(projectId, q)
+        .search(projectId, q, abort.signal)
         .then((r) => live && (setResult(r), setError('')))
         .catch((e) => live && setError((e as Error).message))
         .finally(() => live && setLoading(false))
@@ -372,6 +377,7 @@ function useContentSearch(projectId: string, query: string) {
     return () => {
       live = false
       clearTimeout(timer)
+      abort.abort()
     }
   }, [projectId, query])
   return { result, loading, error }

@@ -78,8 +78,31 @@ export function safeRel(dir: string, rel: string, cfg?: Pick<TablesConfig, 'dirs
   return { rel: n, full: path.join(dir, n) }
 }
 
-/** 列出表格目录里的全部表格文件（按路径排序） */
-export async function listTables(dir: string, cfg: TablesConfig): Promise<TablesIndex> {
+/** 同时 stat 几个文件 */
+const STAT_BATCH = 64
+/** 列表缓存多久：表格页切来切去、搜索、检查都要列表，几秒内不重走目录 */
+const LIST_TTL = 5000
+const listCache = new Map<string, { at: number; index: Promise<TablesIndex> }>()
+
+/** 保存、刷新后让列表缓存失效 */
+export const forgetLists = () => listCache.clear()
+
+/**
+ * 列出表格目录里的全部表格文件（按路径排序）。几秒内同样的目录和设置直接用上次的结果；
+ * fresh 时（表格页的刷新按钮）重走目录
+ */
+export function listTables(dir: string, cfg: TablesConfig, fresh = false): Promise<TablesIndex> {
+  const key = JSON.stringify([dir, cfg.dirs, cfg.include, cfg.exclude])
+  const hit = listCache.get(key)
+  if (!fresh && hit && Date.now() - hit.at < LIST_TTL) return hit.index
+  const index = walkTables(dir, cfg)
+  listCache.set(key, { at: Date.now(), index })
+  index.catch(() => listCache.delete(key))
+  if (listCache.size > 50) listCache.delete(listCache.keys().next().value!)
+  return index
+}
+
+async function walkTables(dir: string, cfg: TablesConfig): Promise<TablesIndex> {
   const include = globList(cfg.include)
   const exclude = globList(cfg.exclude || TABLE_EXCLUDE)
   const files: TableFile[] = []
@@ -103,15 +126,26 @@ export async function listTables(dir: string, cfg: TablesConfig): Promise<Tables
       if (!e.isFile() || seen.has(child)) continue
       const kind = tableKind(e.name)
       if (!kind || !globHit(child, include) || globHit(child, exclude)) continue
-      const info = await stat(tableFull(dir, child)).catch(() => null)
-      if (!info) continue
       seen.add(child)
-      files.push({ path: child, kind, size: info.size, mtime: info.mtime.toISOString() })
+      files.push({ path: child, kind, size: 0, mtime: '' })
       if (files.length >= MAX_FILES) {
         truncated = true
         return
       }
     }
+  }
+  /** 大小和修改时间：一批批并发取（一个个等，几万个文件在 Windows 上要好几秒） */
+  async function stamp(from: number) {
+    for (let i = from; i < files.length; i += STAT_BATCH)
+      await Promise.all(
+        files.slice(i, i + STAT_BATCH).map(async (f) => {
+          const info = await stat(tableFull(dir, f.path)).catch(() => null)
+          if (info) {
+            f.size = info.size
+            f.mtime = info.mtime.toISOString()
+          }
+        }),
+      )
   }
   for (const d of cfg.dirs) {
     let root: { key: string; full: string }
@@ -133,6 +167,7 @@ export async function listTables(dir: string, cfg: TablesConfig): Promise<Tables
     const before = files.length
     dirs.push(root.key)
     await walk(root.key)
+    await stamp(before)
     roots.push({ dir: d, full: root.full, found: true, files: files.length - before })
   }
   files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }))
@@ -245,13 +280,21 @@ export async function openTable(dir: string, rel: string, cfg: TablesConfig): Pr
 }
 
 /** 在全部表格文件里按内容找（不区分大小写），命中按文件顺序 */
-export async function searchTables(dir: string, files: TableFile[], q: string): Promise<TableSearch> {
+export async function searchTables(
+  dir: string,
+  files: TableFile[],
+  q: string,
+  signal?: AbortSignal,
+): Promise<TableSearch> {
   const needle = q.trim().toLowerCase()
   const hits: TableHit[] = []
   let searched = 0
   if (!needle) return { hits, files: 0 }
   for (const f of files) {
     if (f.kind === 'xls') continue
+    // 页面上又输了新的字（这次请求被取消）就不搜了；每读几个文件让一下，别的请求不用等整轮搜完
+    if (signal?.aborted) break
+    if (searched % 20 === 19) await new Promise((r) => setImmediate(r))
     let sheets: SheetData[]
     try {
       sheets = (await parseTable(tableFull(dir, f.path))).sheets
