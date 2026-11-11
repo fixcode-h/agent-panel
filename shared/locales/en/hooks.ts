@@ -165,8 +165,8 @@ export const EN_HOOKS: Record<string, string> = {
   '另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune':
     'Extra command prefixes to block as dangerous, one per line, e.g. docker system prune',
   长命令转后台: 'Long commands to background',
-  '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令，执行中发来的消息不用等它跑完':
-    "Denies full test suites, end-to-end and UI checks, dev servers, UE builds and packaging, full dependency installs, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands, so messages sent meanwhile don't wait",
+  '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件':
+    "Denies full test suites, end-to-end and UI checks, dev servers, UE builds and packaging, full dependency installs, project test steps marked build-on-merge or with a timeout of 3 minutes or more, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands: messages sent meanwhile don't wait, and only errors, warnings and the end come back while the full log is saved to a file",
   另外算长命令的命令前缀: 'Extra long-command prefixes',
   '一行一个，例如 npm run build、cargo test': 'One per line, e.g. npm run build, cargo test',
   测试步骤归属守卫: 'Test step ownership guard',
