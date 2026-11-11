@@ -65,7 +65,7 @@ export function AiMenu({
     <>
       <Menu>
         <MenuTrigger asChild>
-          <Button size="sm" variant="ghost" className="h-7">
+          <Button size="sm" variant="ghost" className="sheet-tool h-7" title={t('AI')}>
             <Sparkles className="h-3.5 w-3.5" />
             {t('AI')}
           </Button>

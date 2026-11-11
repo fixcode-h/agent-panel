@@ -145,3 +145,18 @@
 .sheet-grid .sheet-frozen-last {
   border-right: 2px solid var(--line-strong);
 }
+
+/*
+ * 表格上方的工具栏：栏宽不够时（表格页左边开着文件树、按钮又多）按钮只留图标，
+ * 让「表头几行」的说明不被挤成省略号。文字还在（字号为 0），读屏和按名字找按钮照样用；悬停看 title
+ */
+.sheet-bar {
+  container-type: inline-size;
+}
+@container (max-width: 1180px) {
+  .sheet-bar .sheet-tool {
+    font-size: 0;
+    gap: 0;
+    padding-inline: 0.4375rem;
+  }
+}
