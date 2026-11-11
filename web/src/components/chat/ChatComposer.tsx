@@ -3,7 +3,7 @@
 // menus（「/」「@」弹出的列表）、above（输入框上面的标注等）、tools（左下角的开关和选项）、actions（换掉右下角的按钮）
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUp, ListPlus, Loader2, Square } from 'lucide-react'
-import type { DesignKind, SavedStyle } from '@shared/design'
+import type { DesignKind, SavedStyle } from '@shared/style-types'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { AttachMenu, DropHint, FileRefHint, type useAttachments } from './Attachments'

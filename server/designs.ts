@@ -33,8 +33,6 @@ import {
   DesignChatInput,
   DesignProject,
   DesignProjectInput,
-  SavedStyle,
-  SavedStyleInput,
   AiStyle,
   buildStyleExtractPrompt,
   DesignDoc,
@@ -80,10 +78,11 @@ import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { migrateGrids, normalizeTree, uniqueName } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
-import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
+import { browserGenerate, browserParallel } from './bridge.ts'
 import { localGenerate } from './comfy.ts'
 import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
-import { designLayoutItems, type MossLayoutItem } from '../shared/moss.ts'
+import type { MossLayoutItem } from '../shared/moss.ts'
+import { designLayoutItems } from '../shared/moss-design.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/retry-policy.ts'
 import { decodePng, encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
@@ -91,11 +90,12 @@ import { cropTemplateFile, pickRefined, templatePartCrops } from './design-crop.
 import { cliGenerate } from './design-cli-image.ts'
 import { restoreRoutes } from './design-restore.ts'
 import { restoreRunning, unstick } from '../shared/restore/schema.ts'
-import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
+import { BUILTIN_STYLES } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
+import { loadStyles } from './styles.ts'
 import { attachmentAddDirs } from './attachments.ts'
 import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
@@ -114,8 +114,6 @@ const imagesDir = (id: string) => path.join(DIR, id, 'images')
 const versionsFile = (id: string) => path.join(DIR, id, 'versions.json')
 // 下划线开头，和设计文件（<id>.json）区分开
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
-/** 风格库：设置里管理，所有 UI 项目共用 */
-const STYLES_FILE = path.join(DIR, '_styles.json')
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
 const isImageFile = (x: { mime: string; name: string }) =>
@@ -230,14 +228,6 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   }
   const saveProjects = () => writeJsonAtomic(PROJECTS_FILE, projects ?? [], true)
 
-  let styles: SavedStyle[] | undefined
-  async function loadStyles() {
-    if (styles) return styles
-    const raw = await readJson(STYLES_FILE)
-    styles = Array.isArray(raw) ? raw.flatMap((x) => SavedStyle.safeParse(x).data ?? []) : []
-    return styles
-  }
-  const saveStyles = () => writeJsonAtomic(STYLES_FILE, styles ?? [], true)
   async function removeDesign(d: Design) {
     jobs.get(d.id)?.abort.abort()
     jobs.delete(d.id)
@@ -1670,39 +1660,6 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       }
       await save(d, false)
       return c.json(d, 201)
-    })
-    .get('/browser', (c) => c.json(browserStatus()))
-    // 风格库：设置里增删改，设计里存进来、套用
-    // 自己存的在前，内置的（程序自带、只读）在后
-    .get('/styles', async (c) => c.json([...(await loadStyles()), ...BUILTIN_STYLES]))
-    .post('/styles', async (c) => {
-      const p = SavedStyleInput.safeParse(await c.req.json().catch(() => ({})))
-      if (!p.success) return bad(c, z.prettifyError(p.error))
-      const at = now()
-      const item: SavedStyle = { id: randomUUID(), ...p.data, createdAt: at, updatedAt: at }
-      ;(await loadStyles()).unshift(item)
-      await saveStyles()
-      return c.json(item, 201)
-    })
-    // 只改传了的字段
-    .put('/styles/:sid', async (c) => {
-      const body = await c.req.json().catch(() => ({}))
-      if (isBuiltinStyle(c.req.param('sid'))) return bad(c, t('内置风格不能修改，复制成自己的再改'))
-      const p = SavedStyleInput.partial().safeParse(body)
-      if (!p.success) return bad(c, z.prettifyError(p.error))
-      const list = await loadStyles()
-      const i = list.findIndex((x) => x.id === c.req.param('sid'))
-      if (i < 0) return bad(c, t('风格不存在'), 404)
-      const patch = Object.fromEntries(Object.entries(p.data).filter(([k]) => k in body))
-      list[i] = { ...list[i], ...patch, updatedAt: now() }
-      await saveStyles()
-      return c.json(list[i])
-    })
-    .delete('/styles/:sid', async (c) => {
-      if (isBuiltinStyle(c.req.param('sid'))) return bad(c, t('内置风格不能删除'))
-      styles = (await loadStyles()).filter((x) => x.id !== c.req.param('sid'))
-      await saveStyles()
-      return c.body(null, 204)
     })
     // 项目提示词：按用户的描述生成一组，或者把用户写的中文翻译成英文
     .post('/prompts/ai', async (c) => {

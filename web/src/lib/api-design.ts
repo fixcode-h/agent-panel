@@ -88,11 +88,11 @@ export const designApi = {
   browserStatus: () => request<BrowserStatus>('/designs/browser'),
   promptAi: (input: Partial<PromptAiInput>) =>
     request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
-  styles: () => request<SavedStyle[]>('/designs/styles'),
-  createStyle: (input: SavedStyleInput) => request<SavedStyle>('/designs/styles', json('POST', input)),
+  styles: () => request<SavedStyle[]>('/styles'),
+  createStyle: (input: SavedStyleInput) => request<SavedStyle>('/styles', json('POST', input)),
   updateStyle: (id: string, patch: Partial<SavedStyleInput>) =>
-    request<SavedStyle>(`/designs/styles/${id}`, json('PUT', patch)),
-  deleteStyle: (id: string) => request<void>(`/designs/styles/${id}`, { method: 'DELETE' }),
+    request<SavedStyle>(`/styles/${id}`, json('PUT', patch)),
+  deleteStyle: (id: string) => request<void>(`/styles/${id}`, { method: 'DELETE' }),
   /** 让 CLI 总结设计的整体风格（还没存） */
   extractStyle: (designId: string, scope: string) =>
     request<Omit<SavedStyleInput, 'kind'>>(`/designs/${designId}/extract-style`, json('POST', { scope })),

@@ -1,4 +1,4 @@
-import type { PromptCategory, SavedStyle } from './design.ts'
+import type { PromptCategory, SavedStyle } from './style-types.ts'
 
 /**
  * 内置风格库：游戏 UI 和网页 UI 各一批市面上常见、好用的整体美术风格，随程序一起打包。

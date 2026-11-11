@@ -21,6 +21,34 @@ import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from
 import { DesignAnalysis } from './design-analysis.ts'
 import { DesignData, checkData, dataBrief, normalizeData } from './design-data.ts'
 import { RestoreState } from './restore/schema.ts'
+import {
+  DESIGN_KINDS,
+  PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABEL,
+  SavedStyle,
+  SavedStyleInput,
+  StylePrompt,
+  type DesignKind,
+  type PromptCategory,
+} from './style-types.ts'
+import { GAME_NEGATIVE, WEB_NEGATIVE, localPrompts, negativeLine } from './local-prompts.ts'
+import { extensionSelfReload, type BrowserStatus, type BrowserTab } from './browser-ext.ts'
+
+// 风格库的结构、本机出图的正反提示词挪到了面板共用的文件（风格库和 ComfyUI 也用），这里照旧导出，设计代码不用改 import
+export {
+  DESIGN_KINDS,
+  PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABEL,
+  SavedStyle,
+  SavedStyleInput,
+  StylePrompt,
+  localPrompts,
+  extensionSelfReload,
+  type BrowserStatus,
+  type BrowserTab,
+  type DesignKind,
+  type PromptCategory,
+}
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -253,9 +281,6 @@ export const DesignMessage = z.object({
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
-export const DESIGN_KINDS = ['game', 'web'] as const
-export type DesignKind = (typeof DESIGN_KINDS)[number]
-
 export const ComponentSchema = z.object({ Name: z.string(), DesignSize: Vec2Schema, Root: z.any() })
 
 /**
@@ -349,16 +374,6 @@ export type DesignMeta = Pick<Design, 'id' | 'projectId' | 'kind' | 'title' | 'c
  * 项目提示词：按分类管理，界面上显示中文，发给生图 AI 时用英文（en）。
  * 关掉 enabled 的先不用，但留着方便再打开
  */
-export const PROMPT_CATEGORIES = ['style', 'color', 'material', 'light', 'layout', 'avoid'] as const
-export type PromptCategory = (typeof PROMPT_CATEGORIES)[number]
-export const PROMPT_CATEGORY_LABEL: Record<PromptCategory, string> = {
-  style: '画风',
-  color: '色彩',
-  material: '材质',
-  light: '光影',
-  layout: '构图',
-  avoid: '避免',
-}
 /** 发给生图 AI 时每个分类的英文开头 */
 const PROMPT_CATEGORY_EN: Record<PromptCategory, string> = {
   style: 'Art style',
@@ -419,32 +434,6 @@ export const PromptAiInput = z.object({
   scope: z.string().max(80).default(''),
 })
 export type PromptAiInput = z.infer<typeof PromptAiInput>
-
-/**
- * 风格库：从做好的设计里让 CLI 总结出来的整体风格，存在设置里，别的项目、别的设计可以直接套用。
- * summary 是给人看的中文说明，en 是发给设计 AI 和生图 AI 的英文；prompts 套用到 UI 项目的美术提示词
- */
-export const StylePrompt = z.object({
-  category: z.enum(PROMPT_CATEGORIES).catch('style'),
-  zh: z.string().trim().max(200),
-  en: z.string().trim().max(300),
-})
-export const SavedStyleInput = z.object({
-  name: z.string().trim().min(1).max(40),
-  kind: z.enum(DESIGN_KINDS).default('game'),
-  summary: z.string().trim().max(500).default(''),
-  en: z.string().trim().max(4000).default(''),
-  prompts: z.array(StylePrompt).max(30).default([]),
-})
-export type SavedStyleInput = z.input<typeof SavedStyleInput>
-export const SavedStyle = SavedStyleInput.extend({
-  id: z.string(),
-  /** 程序内置的风格（shared/styles.ts）：只读，可以复制成自己的再改 */
-  builtin: z.boolean().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-})
-export type SavedStyle = z.infer<typeof SavedStyle>
 
 /** 让 CLI 从一个设计里总结整体风格：看风格说明、项目提示词、图片描述和对话 */
 export function buildStyleExtractPrompt(d: Design, history: DesignMessage[], project: { prompts: ProjectPrompt[] }) {
@@ -707,32 +696,6 @@ export interface DesignJob {
   attempt: number
   error?: string
   startedAt: number
-}
-
-/** 浏览器扩展报上来的标签页 */
-export interface BrowserTab {
-  id: string
-  site: 'gemini' | 'chatgpt'
-  title: string
-  url: string
-}
-/** 浏览器扩展的连接状态 */
-export interface BrowserStatus {
-  connected: boolean
-  /** 浏览器里装的扩展版本 */
-  version: string
-  /** 面板自带的扩展版本 */
-  latestVersion: string
-  tabs: BrowserTab[]
-  extensionDir: string
-  /** 本机装了的浏览器，用来打开扩展页面 */
-  browsers: { id: string; name: string }[]
-}
-
-/** 1.3 起的扩展能按面板的要求自己重新加载（浏览器不会自己重新加载已解压的扩展），更早的只能去扩展页面点刷新 */
-export const extensionSelfReload = (version: string) => {
-  const [major, minor] = version.split('.').map(Number)
-  return major > 1 || (major === 1 && minor >= 3)
 }
 
 /** 新设计的根控件：游戏 UI 是 CanvasPanel，网页是占满整页的 Frame */
@@ -1312,45 +1275,8 @@ const GAME_QUALITY =
   'Production-ready game UI asset, as delivered by a senior game UI artist for direct use in the engine: crisp clean edges, precise readable silhouette, consistent soft top-left lighting, rich but controlled detail that stays readable at the target size, high resolution, sharp focus, clean flat-on front view.'
 const WEB_QUALITY =
   'Production-ready image for a shipped website: professional, polished, high resolution, sharp focus, clean composition with breathing room, consistent lighting and color grading.'
-const GAME_NEGATIVE =
-  'text, letters, numbers, words, watermark, signature, logo, UI mockup, screenshot, full screen layout, extra unrelated elements, cropped, cut off, out of frame, blurry, low resolution, pixelated, jpeg artifacts, noise, grain, chromatic aberration, depth of field, perspective tilt, photo background, messy sketch lines, unfinished, inconsistent lighting, deformed or warped shapes'
-const WEB_NEGATIVE =
-  'text, letters, watermark, signature, logo, browser window, device frame, screenshot, cropped, blurry, low resolution, pixelated, jpeg artifacts, noise, oversaturated, distorted, deformed, cluttered composition'
 const REFERENCE_NOTE =
   'The attached image is the approved concept art of the whole screen: match its art style, materials, colors, lighting and level of detail exactly, but draw only the single element described here, cleanly isolated (not cropped from the screenshot).'
-const negativeLine = (...lists: (string | undefined)[]) => {
-  const all = lists.flatMap((l) => (l ?? '').split(',')).map((x) => x.trim())
-  const uniq = [...new Set(all.filter(Boolean).map((x) => x.toLowerCase()))]
-  return uniq.length ? `Negative prompt (none of these may appear): ${uniq.join(', ')}.` : ''
-}
-
-/**
- * 本机模型（ComfyUI）的正反提示词：新一代模型（Z-Image、FLUX、Qwen-Image）读得懂完整的描述，
- * 只是把写在正文里的「不能出现」拿出来单独传；SDXL 的文本编码器只看前 77 个词，压成关键词短句
- */
-export function localPrompts(
-  full: string,
-  natural: boolean,
-  o: { subject: string; style: string; projectStyle?: string; kind?: DesignKind; chroma?: boolean; negative?: string },
-) {
-  const lines = full.split('\n')
-  const neg = lines.find((l) => l.startsWith('Negative prompt'))
-  const negative = neg
-    ? neg.replace(/^Negative prompt[^:]*:\s*/, '').replace(/\.$/, '')
-    : negativeLine(o.kind === 'web' ? WEB_NEGATIVE : GAME_NEGATIVE, o.negative).replace(/^[^:]*:\s*/, '')
-  if (natural) return { prompt: lines.filter((l) => l !== neg).join('\n'), negative }
-  const prompt = [
-    o.subject.trim(),
-    o.kind === 'web' ? 'web illustration' : 'game ui asset',
-    o.style.trim(),
-    (o.projectStyle ?? '').trim().split(/[.\n]/)[0],
-    'isolated, centered, clean sharp edges, high detail, masterpiece',
-    o.chroma ? 'on a flat pure green background' : '',
-  ]
-    .filter(Boolean)
-    .join(', ')
-  return { prompt, negative }
-}
 
 /**
  * 原画（整屏效果图）的生成描述：按设计稿的比例画出完整的界面，正面平视、没有设备边框；

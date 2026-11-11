@@ -30,7 +30,6 @@ import { migrateDocSteps } from '../shared/flow.ts'
 import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summary.ts'
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
-import { extensionSelfReload } from '../shared/design.ts'
 import {
   createCollection,
   DATA_DIR,
@@ -51,19 +50,12 @@ import { usageApi } from './usage.ts'
 import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
+import { stylesApi } from './styles.ts'
 import { designMcpApi } from './design-mcp.ts'
 import { cleanupDisabledPlugins, initPlugins, pluginsApi } from './plugins/index.ts'
 import { askMcpApi } from './ask-mcp.ts'
-import {
-  askExtensionReload,
-  bridgeApi,
-  bridgePaired,
-  browserStatus,
-  bundledExtensionVersion,
-  extensionDir,
-  openExtensionsPage,
-  PAIRING_HEADER,
-} from './bridge.ts'
+import { bridgeApi, bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
+import { browserExtApi } from './browser-ext-routes.ts'
 import { docsApi } from './docs.ts'
 import { summaryApi } from './summary.ts'
 import { lessonDraftsApi } from './lesson-drafts.ts'
@@ -82,7 +74,7 @@ import { envApi } from './env-api.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { projectMcpApi } from './project-mcp.ts'
-import { openBrowser, revealDir, revealItem } from './open.ts'
+import { openBrowser, revealDir } from './open.ts'
 import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, isSharedSkill, listSkills } from './cli-extras.ts'
@@ -974,43 +966,9 @@ app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))
 // ---- UI 设计和连接浏览器的扩展 ----
 const designs = designsApi({ projects })
-app.post('/designs/browser/reveal', async (c) => {
-  const dir = extensionDir()
-  if (!dir) return bad(c, t('没有找到扩展目录'))
-  try {
-    await revealDir(dir)
-  } catch (e) {
-    return bad(c, (e as Error).message)
-  }
-  return c.json({ ok: true, dir })
-})
-// 刷新扩展：1.3 起的扩展自己重新加载；更早的版本做不到，只能打开扩展页面让用户点刷新
-app.post('/designs/browser/reload', async (c) => {
-  const { browser } = (await c.req.json().catch(() => ({}))) as { browser?: string }
-  if (extensionSelfReload(browserStatus().version)) {
-    askExtensionReload()
-    return c.json({ auto: true })
-  }
-  try {
-    openExtensionsPage(String(browser ?? ''))
-  } catch (e) {
-    return bad(c, (e as Error).message)
-  }
-  return c.json({ auto: false })
-})
-// 安装扩展：打开浏览器的扩展页面和扩展所在的文件夹
-app.post('/designs/browser/install', async (c) => {
-  const { browser } = (await c.req.json().catch(() => ({}))) as { browser?: string }
-  const dir = extensionDir()
-  if (!dir) return bad(c, t('没有找到扩展目录'))
-  try {
-    openExtensionsPage(String(browser ?? ''))
-    await revealItem(dir)
-  } catch (e) {
-    return bad(c, (e as Error).message)
-  }
-  return c.json({ dir })
-})
+app.route('/styles', stylesApi())
+// 浏览器扩展（扩展是面板的，借网页版图片模型出图；以前挂在设计接口下，地址不变）
+app.route('/designs/browser', browserExtApi())
 app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())

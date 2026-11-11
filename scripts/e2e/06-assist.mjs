@@ -299,30 +299,26 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     step('UI 项目提示词：按分类保存，AI 生成和翻译')
 
     // 风格库：增删改；没定风格的设计，AI 的提示词里带上同类风格作为选项
-    const st = await call('POST', '/designs/styles', {
+    const st = await call('POST', '/styles', {
       name: '暗黑奇幻',
       kind: 'game',
       summary: '石刻金边',
       en: 'dark fantasy STYLELIB',
       prompts: [{ category: 'style', zh: '暗黑奇幻', en: 'dark fantasy' }],
     })
-    assert.equal(
-      (await call('PUT', `/designs/styles/${st.id}`, { name: '暗黑奇幻·改' })).summary,
-      '石刻金边',
-      '只改传了的',
-    )
-    assert.equal((await call('GET', '/designs/styles')).find((x) => x.id === st.id).name, '暗黑奇幻·改')
-    await call('DELETE', `/designs/styles/${st.id}`)
-    assert.ok(!(await call('GET', '/designs/styles')).some((x) => x.id === st.id))
+    assert.equal((await call('PUT', `/styles/${st.id}`, { name: '暗黑奇幻·改' })).summary, '石刻金边', '只改传了的')
+    assert.equal((await call('GET', '/styles')).find((x) => x.id === st.id).name, '暗黑奇幻·改')
+    await call('DELETE', `/styles/${st.id}`)
+    assert.ok(!(await call('GET', '/styles')).some((x) => x.id === st.id))
     // 内置风格：游戏和网页各一批，排在自己存的后面；只读，不能改也不能删
-    const all = await call('GET', '/designs/styles')
+    const all = await call('GET', '/styles')
     const builtin = all.filter((x) => x.builtin)
     assert.ok(
       builtin.filter((x) => x.kind === 'game').length >= 10 && builtin.filter((x) => x.kind === 'web').length >= 10,
     )
     assert.ok(all.findIndex((x) => x.builtin) > all.findLastIndex((x) => !x.builtin), '自己存的在前，内置的在后')
-    await assert.rejects(call('PUT', `/designs/styles/${builtin[0].id}`, { name: '改' }), /内置风格不能修改/)
-    await assert.rejects(call('DELETE', `/designs/styles/${builtin[0].id}`), /内置风格不能删除/)
+    await assert.rejects(call('PUT', `/styles/${builtin[0].id}`, { name: '改' }), /内置风格不能修改/)
+    await assert.rejects(call('DELETE', `/styles/${builtin[0].id}`), /内置风格不能删除/)
     step('风格库：存、改、删；内置风格只读')
     const design = await call('POST', '/designs', {
       projectId: uiProject.id,

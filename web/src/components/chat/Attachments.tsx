@@ -28,7 +28,7 @@ import {
   type ItemLike,
   type ItemState,
 } from '@shared/attachment-view'
-import type { DesignKind, SavedStyle } from '@shared/design'
+import type { DesignKind, SavedStyle } from '@shared/style-types'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'

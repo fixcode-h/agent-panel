@@ -2277,7 +2277,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     )
     return { name, path, size: 4096, mime: 'text/markdown' }
   }
-  if (res === 'designs' && id === 'styles') return demoStyles(method, sub, body ?? {})
+  if (res === 'styles') return demoStyles(method, id, body ?? {})
   if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
   if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
   if (res === 'designs' && sub === 'components') return demoImportComponent(id, body ?? {})

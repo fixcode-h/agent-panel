@@ -111,7 +111,7 @@ import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignCh
 import { ConceptBoard } from '@/components/design/ConceptBoard'
 import type { CompareMode } from '@/components/design/CompareOverlay'
 import { CanvasCapture } from '@/components/design/CanvasCapture'
-import { ComfyWebDialog } from '@/components/design/ComfyWeb'
+import { ComfyWebDialog } from '@/components/comfy/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
