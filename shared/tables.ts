@@ -183,6 +183,12 @@ export const TableColumn = z.object({
   max: z.number().optional(),
   /** 除范围、枚举之外还允许的值（比如 -1 表示未配置） */
   allow: z.array(z.string().max(100)).max(50).optional(),
+  /** 正则：整格要符合（数组列按每一项比） */
+  pattern: z.string().max(300).optional(),
+  /** 必填：不能空着 */
+  required: z.boolean().optional(),
+  /** 条件必填：同一行 field 那一列是 values 里的某个值时，这一列必填 */
+  requiredWhen: z.object({ field: z.string().max(100), values: z.array(z.string().max(100)).max(50) }).optional(),
   note: z.string().max(500).optional(),
 })
 export type TableColumn = z.infer<typeof TableColumn>
@@ -206,6 +212,13 @@ export const TableStyle = z.object({
    * 例如修饰行 = 枚举 Modifier（optional / repeated），导出端行 = 枚举 Side（Public / Server / Client / Editor）
    */
   roleEnums: z.partialRecord(z.enum(SHEET_ROLES), z.string().max(200)).default({}),
+  /** 组合唯一：这些文件（通配）里几列合起来不能重复（比如 RoleID + Level） */
+  uniques: z
+    .array(z.object({ glob: z.string().max(300), fields: z.array(z.string().max(100)).min(2).max(8) }))
+    .max(100)
+    .default([]),
+  /** 保存前检查：off 不查；warn 有不合规的格子时提醒但能保存；block 有不合规时不让保存 */
+  saveCheck: z.enum(['off', 'warn', 'block']).default('warn'),
   /** 例外：这些文件（通配）用另一套表头 */
   exceptions: z
     .array(z.object({ glob: z.string().max(300), header: HeaderRule }))

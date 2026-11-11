@@ -5,7 +5,7 @@
  */
 import { t } from './i18n.ts'
 import { detectSheetHeader, validHeader, type SheetHeader, type SheetRole } from './sheet-header.ts'
-import { TYPE_NAMES, schemaColumn, schemaHeader, type TableEnum, type TableSchema } from './tables.ts'
+import { TYPE_NAMES, globHit, schemaColumn, schemaHeader, type TableEnum, type TableSchema } from './tables.ts'
 import type { SheetData } from './files.ts'
 
 export type ColKind = 'int' | 'uint' | 'float' | 'bool' | 'string' | 'enum' | 'other'
@@ -29,6 +29,10 @@ export interface ColInfo {
   min?: number
   max?: number
   allow?: string[]
+  /** 正则（整格匹配） */
+  pattern?: string
+  required?: boolean
+  requiredWhen?: { field: string; values: string[] }
   note?: string
   /** 这一列在结构文件里单独设过 */
   custom: boolean
@@ -96,6 +100,9 @@ export function columnInfos(
       min: own?.min,
       max: own?.max,
       allow: own?.allow,
+      pattern: own?.pattern || undefined,
+      required: own?.required,
+      requiredWhen: own?.requiredWhen?.field ? own.requiredWhen : undefined,
       note: own?.note,
       custom: !!own,
     })
@@ -134,6 +141,22 @@ export interface CheckCtx {
 
 const isInt = (v: string) => /^[-+]?\d+$/.test(v)
 
+/** 编好的正则：同一个写法只编一次；写错的记成 null（不查，列结构里会提示写错了） */
+const RE_CACHE = new Map<string, RegExp | null>()
+export function patternRe(p: string): RegExp | null {
+  let re = RE_CACHE.get(p)
+  if (re === undefined) {
+    try {
+      re = new RegExp(`^(?:${p})$`, 'u')
+    } catch {
+      re = null
+    }
+    if (RE_CACHE.size > 500) RE_CACHE.clear()
+    RE_CACHE.set(p, re)
+  }
+  return re
+}
+
 /** 一个值对不对：对就返回 undefined，不对返回原因 */
 function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
   if (info.allow?.includes(v)) return undefined
@@ -147,6 +170,10 @@ function checkOne(info: ColInfo, v: string, ctx: CheckCtx): string | undefined {
       if (info.min !== undefined && n < info.min) return t('不能小于 {n}', { n: info.min })
       if (info.max !== undefined && n > info.max) return t('不能大于 {n}', { n: info.max })
     }
+  }
+  if (info.pattern) {
+    const re = patternRe(info.pattern)
+    if (re && !re.test(v)) return t('不符合格式 {p}', { p: info.pattern })
   }
   if (info.enumName) {
     const set = ctx.enums.get(info.enumName)
@@ -196,10 +223,18 @@ export function checkSheet(
   ctx: CheckCtx,
   limit = 2000,
   cache?: WeakMap<string[], RowProblems>,
+  /** 组合唯一：每组几个字段名（uniquesFor 取） */
+  uniques: string[][] = [],
 ) {
   const out: Problem[] = []
   const keyCol = infos.find((i) => i.field && i.field === key)?.col ?? -1
   const seen = new Map<string, number>()
+  const colOf = new Map(infos.filter((i) => i.field).map((i) => [i.field, i.col]))
+  // 组合唯一：字段都找得到的组才查；重复记在这组的第一列上
+  const groups = uniques
+    .map((fields) => ({ fields, cols: fields.map((f) => colOf.get(f) ?? -1), seen: new Map<string, number>() }))
+    .filter((g) => g.cols.every((c) => c >= 0))
+  const needs = infos.filter((i) => !i.remark && (i.required || i.requiredWhen))
   for (let r = from; r < rows.length && out.length < limit; r++) {
     const row = rows[r] ?? []
     let own = cache?.get(row)
@@ -208,6 +243,17 @@ export function checkSheet(
       for (const info of infos) {
         const bad = checkCell(info, row[info.col] ?? '', ctx)
         if (bad) own.push({ c: info.col, msg: bad })
+      }
+      // 必填、条件必填：只看这一行，和上面一起按行缓存
+      for (const info of needs) {
+        if ((row[info.col] ?? '').trim()) continue
+        if (info.required) own.push({ c: info.col, msg: t('必填') })
+        else if (info.requiredWhen) {
+          const at = colOf.get(info.requiredWhen.field)
+          const v = at === undefined ? '' : (row[at] ?? '').trim()
+          if (v && info.requiredWhen.values.includes(v))
+            own.push({ c: info.col, msg: t('{field} 是「{v}」时必填', { field: info.requiredWhen.field, v }) })
+        }
       }
       if (cache && rows[r]) cache.set(rows[r], own)
     }
@@ -219,9 +265,27 @@ export function checkSheet(
       if (dup !== undefined) out.push({ r, c: keyCol, msg: t('主键重复：第 {n} 行也是「{k}」', { n: dup + 1, k }) })
       else seen.set(k, r)
     }
+    for (const g of groups) {
+      const vals = g.cols.map((c) => (row[c] ?? '').trim())
+      // 全空的行不算（还没填）
+      if (vals.every((v) => !v)) continue
+      const k = vals.join('\u0000')
+      const dup = g.seen.get(k)
+      if (dup !== undefined)
+        out.push({
+          r,
+          c: g.cols[0],
+          msg: t('{fields} 组合重复：和第 {n} 行一样', { fields: g.fields.join(' + '), n: dup + 1 }),
+        })
+      else g.seen.set(k, r)
+    }
   }
   return out
 }
+
+/** 这个文件要查的组合唯一（结构文件 style.uniques 按通配匹配） */
+export const uniquesFor = (schema: TableSchema, file: string) =>
+  (schema.style.uniques ?? []).filter((u) => globHit(file, [u.glob])).map((u) => u.fields)
 
 /**
  * 表头行按设置里定的取值查（修饰行只能 optional / repeated 这类）：只查有字段名的列，
@@ -403,7 +467,16 @@ export function checkWorkbook(
     const { ctx } = columnOptions(schema, infos, (f) => (f === file ? sheets : sheetsOf(f)))
     const problems = [
       ...checkHeader(sheet.rows, header, infos, schema, ctx),
-      ...checkSheet(sheet.rows, header.start + header.roles.length, infos, schema.style.key, ctx),
+      ...checkSheet(
+        sheet.rows,
+        header.start + header.roles.length,
+        infos,
+        schema.style.key,
+        ctx,
+        2000,
+        undefined,
+        uniquesFor(schema, file),
+      ),
     ]
     if (problems.length)
       out.push({
@@ -448,7 +521,16 @@ export function checkTouched(
   const keyCol = infos.find((i) => i.field && i.field === key)?.col ?? -1
   const cells = new Set(touched.map((x) => `${x.r}:${x.c}`))
   const rows = new Set(touched.map((x) => x.r))
-  return checkSheet(sheet.rows, header.start + header.roles.length, infos, key, ctx, 100_000)
+  return checkSheet(
+    sheet.rows,
+    header.start + header.roles.length,
+    infos,
+    key,
+    ctx,
+    100_000,
+    undefined,
+    uniquesFor(schema, file),
+  )
     .filter((p) => cells.has(`${p.r}:${p.c}`) || (p.c === keyCol && rows.has(p.r)))
     .map((p) => ({ ...p, field: infos[p.c]?.field ?? '' }))
 }

@@ -120,7 +120,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.keyboard.press('Escape')
   await cell(8, 5).click()
   await p.getByRole('button', { name: '列结构' }).click()
-  await check(p, '表格页-列结构', ['InteractionAllowCharacterIDs'])
+  await check(p, '表格页-列结构', ['InteractionAllowCharacterIDs', '格式（正则）', '必填'])
   await p.keyboard.press('Escape')
 
   // 引用跳转：引用列的格子右键，跳到被引用表的那一行
@@ -255,7 +255,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText('表格目录', { exact: true })
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：「表格设置」没有打开项目设置的表格页'))
-  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件', '导表脚本', '执行时：'])
+  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件', '导表脚本', '执行时：', '组合唯一'])
 
   await dlg.getByRole('button', { name: '添加导表脚本' }).scrollIntoViewIfNeeded()
   await check(p, '项目设置-导表脚本', ['插入占位：', '执行时：'])

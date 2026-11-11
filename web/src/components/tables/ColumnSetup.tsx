@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, Input, Select } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
+import { ColumnRules } from './ColumnRules'
 
 export const kindLabel = (k: ColKind) =>
   ({
@@ -36,9 +37,12 @@ export function ColumnSetup({
   file,
   schema,
   files,
+  fields = [],
   onSchema,
 }: {
   info: ColInfo | undefined
+  /** 这张表的字段名（条件必填选列用） */
+  fields?: string[]
   file: string
   schema: TableSchema
   /** 引用时能选的表格文件 */
@@ -51,10 +55,12 @@ export function ColumnSetup({
   const [d, setD] = useState<TableColumn>({})
   const [newEnum, setNewEnum] = useState('')
   const [allow, setAllow] = useState('')
+  const [when, setWhen] = useState('')
   const reset = () => {
     setD(own ?? {})
     setNewEnum('')
     setAllow((own?.allow ?? []).join(', '))
+    setWhen((own?.requiredWhen?.values ?? []).join(', '))
   }
   const num = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v)) ? undefined : Number(v))
   const save = () => {
@@ -70,8 +76,20 @@ export function ColumnSetup({
         .map((x) => x.trim())
         .filter(Boolean),
       note: d.note?.trim() || undefined,
+      pattern: d.pattern?.trim() || undefined,
+      requiredWhen:
+        !d.required && d.requiredWhen?.field
+          ? {
+              field: d.requiredWhen.field,
+              values: when
+                .split(/[,，]/)
+                .map((x) => x.trim())
+                .filter(Boolean),
+            }
+          : undefined,
     })
     if (!col.allow?.length) delete col.allow
+    if (col.requiredWhen && !col.requiredWhen.values.length) delete col.requiredWhen
     const columns = { ...schema.columns }
     const empty = Object.values(col).every((v) => v === undefined || v === false)
     if (empty) delete columns[key]
@@ -94,7 +112,10 @@ export function ColumnSetup({
           {t('列结构')}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[360px] p-3" align="end">
+      <PopoverContent
+        className="thin-scroll max-h-[min(720px,calc(100dvh-120px))] w-[360px] overflow-y-auto p-3"
+        align="end"
+      >
         {!info ? null : (
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline gap-2">
@@ -238,6 +259,13 @@ export function ColumnSetup({
                     </label>
                   )}
                 </div>
+                <ColumnRules
+                  d={d}
+                  onChange={setD}
+                  fields={fields.filter((f) => f && f !== info.field)}
+                  when={when}
+                  onWhen={setWhen}
+                />
                 <Field label={t('说明')}>
                   <Input size="sm" value={d.note ?? ''} onChange={(e) => setD({ ...d, note: e.target.value })} />
                 </Field>

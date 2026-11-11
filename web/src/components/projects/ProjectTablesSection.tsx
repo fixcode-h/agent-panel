@@ -13,6 +13,7 @@ import { TablesAnalyze } from '@/components/tables/TablesAnalyze'
 import { DirList } from './DirList'
 import { ProjectTablesEnums, ProjectTablesHeader } from './ProjectTablesHeader'
 import { ProjectTablesExports } from './ProjectTablesExports'
+import { ProjectTablesRules } from './ProjectTablesRules'
 
 /** 常见的表格目录写法：点一下加一行 */
 const COMMON_DIRS = ['Config', 'Designer/Excel', 'Design/Tables', 'Content/DataTables']
@@ -140,6 +141,12 @@ export function ProjectTablesSection({
             {t('整个项目所有表格共用：列的类型写了同名类型，或在「列结构」里选了它，改格子时就是下拉，填错会标红。')}
           </p>
           <ProjectTablesEnums projectId={project.id} />
+        </FormSection>
+      )}
+
+      {saved && project && (
+        <FormSection title={t('校验')}>
+          <ProjectTablesRules projectId={project.id} />
         </FormSection>
       )}
 

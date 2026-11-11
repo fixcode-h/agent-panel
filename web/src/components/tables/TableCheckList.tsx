@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import { CircleCheck, FileSpreadsheet, Loader2, RefreshCw } from 'lucide-react'
+import { CircleCheck, Download, FileSpreadsheet, Loader2, RefreshCw } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableHit } from '@shared/tables'
 import { cellRef } from '@shared/table-edit'
 import { tablesApi, type TablesCheck } from '@/lib/tables-api'
 import { GroupHeader, ListGroup } from '@/components/layout/ListPane'
 import { Button } from '@/components/ui/button'
+import { saveText } from '@/lib/save-file'
+import { toast } from '@/lib/toast'
+import { writeCsv } from '@shared/csv'
 
 /**
  * 表格页左侧的「检查」：整个项目的表格按结构文件查一遍（类型、枚举、引用、范围、主键重复），
@@ -27,6 +30,29 @@ export function TableCheckList({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [again, setAgain] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  /** 导出全部检查结果：重新查一遍、每张表列全部，存成带 BOM 的 CSV（Excel 打开中文不乱码） */
+  const exportAll = async () => {
+    setExporting(true)
+    try {
+      const r = await tablesApi.check(projectId, true)
+      const rows = [
+        [t('文件'), t('工作表'), t('格子'), t('字段'), t('问题')],
+        ...r.sheets.flatMap((g) => g.first.map((p) => [g.path, g.sheet, cellRef(p.r, p.c), p.field, p.msg])),
+        ...r.failed.map((f) => [f.path, '', '', '', f.error]),
+      ]
+      const stamp = new Date().toISOString().slice(0, 10)
+      saveText(
+        `table-check-${stamp}.csv`,
+        writeCsv(rows, { delimiter: ',', eol: 'crlf', bom: true }),
+        'text/csv;charset=utf-8',
+      )
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setExporting(false)
+    }
+  }
   useEffect(() => {
     let live = true
     setLoading(true)
@@ -61,6 +87,19 @@ export function TableCheckList({
             ? t('{files} 个表格查完，{n} 处不合规', { files: result.files, n: total })
             : t('{files} 个表格查完，没有发现问题', { files: result.files })}
         </span>
+        {total > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5"
+            disabled={exporting}
+            title={t('把全部不合规的格子导出成 CSV（Excel / WPS 能直接打开）')}
+            onClick={() => void exportAll()}
+          >
+            {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+            {t('导出')}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={() => setAgain((n) => n + 1)}>
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           {t('重新检查')}

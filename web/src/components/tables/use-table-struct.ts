@@ -12,6 +12,7 @@ import {
   columnInfos,
   columnOptions,
   neededFiles,
+  uniquesFor,
   type Problem,
   type RowProblems,
 } from '@shared/table-struct'
@@ -71,10 +72,10 @@ export function useTableStruct({
       rows
         ? [
             ...(header ? checkHeader(rows, header, infos, schema, opts.ctx) : []),
-            ...checkSheet(rows, from, infos, schema.style.key, opts.ctx, 2000, rowCache),
+            ...checkSheet(rows, from, infos, schema.style.key, opts.ctx, 2000, rowCache, uniquesFor(schema, doc.path)),
           ]
         : [],
-    [rows, from, infos, schema, header, opts.ctx, rowCache],
+    [rows, from, infos, schema, header, opts.ctx, rowCache, doc.path],
   )
   const problemAt = useMemo(() => new Map(problems.map((p) => [`${p.r}:${p.c}`, p.msg])), [problems])
   return { infos, ...opts, problems, problemAt }

@@ -412,6 +412,17 @@ function Workbench({
             stale={!!stale[doc.path]}
             onReload={(keep) => reloadDoc(doc.path, keep)}
             onKeepMine={() => setStale(({ [doc.path]: _, ...m }) => m)}
+            onFilesChanged={(paths) => {
+              // 打开着的：没改动的直接重新载入，有改动的提示；别的只清掉缓存
+              for (const p of paths) {
+                extDocs.current.delete(p)
+                const d = docs[p]
+                if (!d || !('sheets' in d)) continue
+                if (pendingOf(edits[p], d.sheets).length) setStale((m) => ({ ...m, [p]: true }))
+                else reloadDoc(p, false)
+              }
+              setCheckSeq((n) => n + 1)
+            }}
             onOpenHit={openHit}
             loadDoc={loadDoc}
             files={files.map((f) => f.path)}

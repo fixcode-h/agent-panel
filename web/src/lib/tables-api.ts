@@ -7,6 +7,7 @@ import type { TableSave } from '@shared/table-edit'
 import type { SheetProblems } from '@shared/table-struct'
 import type { SheetData } from '@shared/files'
 import type { ExportEvent } from '@shared/table-export'
+import type { EnumRename } from '@shared/table-enum-rename'
 import { failure, json, request } from './api'
 import { trackedFetch } from './connection'
 
@@ -40,11 +41,20 @@ export const tablesApi = {
   compare: (projectId: string, other: string) =>
     request<{ pairs: TablePair[]; truncated?: boolean }>(`/tables/${projectId}/compare?other=${q(other)}`),
   /** 全项目检查 */
-  check: (projectId: string) => request<TablesCheck>(`/tables/${projectId}/check`),
+  check: (projectId: string, all = false) => request<TablesCheck>(`/tables/${projectId}/check${all ? '?all=1' : ''}`),
   /** 把本地文件切换到某一版：返回切换后的文件 */
   checkout: (projectId: string, path: string, rev: string) =>
     request<TableDoc>(`/tables/${projectId}/checkout`, json('POST', { path, rev })),
   runExport,
+  /** 枚举值改名后替换所有表里的旧值；apply=false 只预览 */
+  enumRename: (projectId: string, renames: EnumRename[], apply: boolean) =>
+    request<EnumRenameResult>(`/tables/${projectId}/enum-rename`, json('POST', { renames, apply })),
+}
+
+export interface EnumRenameResult {
+  files: { path: string; cells: number }[]
+  failed: { path: string; error: string }[]
+  applied: boolean
 }
 
 /** 执行导表脚本：服务端一行一个 JSON 边跑边推，每收到一条回调一次；signal 停止（服务端跟着停掉命令） */

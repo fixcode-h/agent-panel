@@ -23,6 +23,8 @@ import { tableAt, tableHistory } from './history.ts'
 import { compareProjects } from './compare.ts'
 import { checkoutTable } from './checkout.ts'
 import { runExport } from './export.ts'
+import { enumRename } from './enum-rename.ts'
+import type { EnumRename } from '../../shared/table-enum-rename.ts'
 import { stream } from 'hono/streaming'
 import type { ExportEvent } from '../../shared/table-export.ts'
 
@@ -154,7 +156,9 @@ export function tablesApi(deps: TablesDeps) {
           const { dir, cfg, schemaAt } = await projectOf(deps, c.req.param('id'))
           if (!tablesOn(cfg)) return c.json({ files: 0, sheets: [], failed: [] })
           const { files } = await listTables(dir, cfg)
-          return c.json(await checkTables(dir, files, await readSchema(schemaAt), c.req.raw.signal))
+          // all=1：导出检查结果，每张表列出全部（最多 10 万处）
+          const first = c.req.query('all') === '1' ? 100_000 : 20
+          return c.json(await checkTables(dir, files, await readSchema(schemaAt), c.req.raw.signal, first))
         } catch (e) {
           return fail(c, e)
         }
@@ -229,6 +233,32 @@ export function tablesApi(deps: TablesDeps) {
             await send({ type: 'done', ok: false })
           }
         })
+      })
+      // 枚举值改名后替换所有表里的旧值：apply=false 只预览
+      .post('/:id/enum-rename', async (c) => {
+        try {
+          const { project, dir, cfg, schemaAt } = await projectOf(deps, c.req.param('id'))
+          const body = (await c.req.json().catch(() => ({}))) as { renames?: unknown; apply?: unknown }
+          const renames = Array.isArray(body.renames)
+            ? body.renames.filter(
+                (x): x is EnumRename =>
+                  !!x && typeof x.enum === 'string' && typeof x.from === 'string' && typeof x.to === 'string',
+              )
+            : []
+          const { files } = await listTables(dir, cfg)
+          const schema = await readSchema(schemaAt)
+          return c.json(
+            await enumRename(
+              { dir, projectId: project.id, cfg, files, schema },
+              renames.slice(0, 200),
+              body.apply === true,
+              { p4Edit: p4Edit(dir) },
+              c.req.raw.signal,
+            ),
+          )
+        } catch (e) {
+          return fail(c, e)
+        }
       })
       // 跨项目对比：按相对路径配对两个项目的表格
       .get('/:id/compare', async (c) => {

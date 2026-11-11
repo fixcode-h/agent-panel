@@ -20,6 +20,8 @@ export async function checkTables(
   files: TableFile[],
   schema: TableSchema,
   signal?: AbortSignal,
+  /** 每张表列出前几处（导出全部时给很大的数） */
+  first = 20,
 ): Promise<TablesCheck> {
   const loaded = new Map<string, SheetData[] | null>()
   const load = async (rel: string) => {
@@ -49,7 +51,7 @@ export async function checkTables(
     }
     out.files++
     for (const need of workbookNeeds(schema, f.path, sheets)) await load(need)
-    out.sheets.push(...checkWorkbook(schema, f.path, sheets, (x) => loaded.get(x) ?? undefined))
+    out.sheets.push(...checkWorkbook(schema, f.path, sheets, (x) => loaded.get(x) ?? undefined, first))
   }
   return out
 }

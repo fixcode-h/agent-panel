@@ -13,6 +13,8 @@ import { roleShort } from '@/components/files/sheet-roles'
 import '@/components/files/sheet-table.css'
 import { HeaderRuleEditor } from '@/components/files/HeaderRuleEditor'
 import { EnumsDialog } from '@/components/tables/EnumsDialog'
+import { EnumRenameDialog } from '@/components/tables/EnumRenameDialog'
+import { findEnumRenames, type EnumRename } from '@shared/table-enum-rename'
 
 /** 没设过时给的起点：常见的游戏配置表 5 行表头 */
 const START: SheetHeader = { start: 0, roles: ['modifier', 'side', 'type', 'name', 'comment'] }
@@ -162,6 +164,7 @@ export function ProjectTablesHeader({ projectId }: { projectId: string }) {
 export function ProjectTablesEnums({ projectId }: { projectId: string }) {
   const [schema, setSchema] = useState<TableSchema | null>(null)
   const [open, setOpen] = useState(false)
+  const [renames, setRenames] = useState<EnumRename[] | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     tablesApi
@@ -205,12 +208,15 @@ export function ProjectTablesEnums({ projectId }: { projectId: string }) {
             try {
               setSchema(await tablesApi.saveSchema(projectId, { ...schema, enums }))
               toast.success(t('通用枚举已保存'))
+              const r = findEnumRenames(schema.enums, enums)
+              if (r.length) setRenames(r)
             } catch (e) {
               toast.error((e as Error).message)
             }
           }}
         />
       )}
+      {renames && <EnumRenameDialog projectId={projectId} renames={renames} onClose={() => setRenames(null)} />}
     </div>
   )
 }

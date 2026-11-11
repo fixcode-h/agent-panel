@@ -12,6 +12,7 @@ import {
   enumOptions,
   headerOf,
   parseRef,
+  uniquesFor,
   workbookNeeds,
   type RowProblems,
 } from './table-struct.ts'
@@ -198,4 +199,28 @@ test('数组：类型写 int[] / list<T>、修饰行的数组标记、列结构�
     bad.map((p) => p.c),
     [0, 2],
   )
+})
+
+test('校验：正则、必填、条件必填、组合唯一', () => {
+  const schema = TableSchema.parse({
+    style: { key: 'ID', uniques: [{ glob: 'q.csv', fields: ['Role', 'Lv'] }] },
+    columns: {
+      'q.csv#*#Code': { pattern: '[A-Z]{2}\\d+' },
+      'q.csv#*#Name': { required: true },
+      'q.csv#*#Item': { requiredWhen: { field: 'Type', values: ['give'] } },
+    },
+  })
+  const rows = [
+    ['ID', 'Code', 'Name', 'Type', 'Item', 'Role', 'Lv'],
+    ['1', 'AB1', 'a', 'give', '9', 'r', '1'],
+    ['2', 'ab1', '', 'give', '', 'r', '2'],
+    ['3', 'CD22', 'c', 'take', '', 'r', '1'],
+  ]
+  const infos = columnInfos(schema, rows, { start: 0, roles: ['name'] }, 'q.csv', 'q', 7)
+  const { ctx } = columnOptions(schema, infos, () => undefined)
+  const got = checkSheet(rows, 1, infos, 'ID', ctx, 2000, undefined, uniquesFor(schema, 'q.csv')).map(
+    (p) => `${p.r}:${p.c}`,
+  )
+  assert.deepEqual(got, ['2:1', '2:2', '2:4', '3:5'])
+  assert.deepEqual(uniquesFor(schema, 'other.csv'), [])
 })

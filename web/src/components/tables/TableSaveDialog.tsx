@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Loader2, ShieldCheck } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { applyRowOps, cellRef, type SheetEdit } from '@shared/table-edit'
 import type { SheetData } from '@shared/files'
@@ -7,6 +7,7 @@ import type { TableDoc } from '@shared/tables'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 /** 列表里最多列这么多处改动 */
 const SHOW = 200
@@ -21,9 +22,14 @@ export function TableSaveDialog({
   doc,
   sheets,
   pending,
+  problems = [],
+  mode = 'warn',
   onCancel,
   onSave,
 }: {
+  /** 改到的格子里不合规的（当前工作表），按项目设置的「保存前检查」提醒或拦下 */
+  problems?: { r: number; c: number; msg: string; field: string }[]
+  mode?: 'off' | 'warn' | 'block'
   open: boolean
   doc: TableDoc
   /** 现在页面上的各张表（取新值） */
@@ -36,6 +42,8 @@ export function TableSaveDialog({
   const [error, setError] = useState<{ text: string; canForce: boolean } | null>(null)
   const base = (name: string): SheetData | undefined => doc.sheets.find((s) => s.name === name)
   const cells = pending.reduce((n, s) => n + s.cells.length, 0)
+  const shown = mode === 'off' ? [] : problems
+  const blocked = mode === 'block' && shown.length > 0
   const save = async (force: boolean) => {
     setBusy(true)
     setError(null)
@@ -60,7 +68,7 @@ export function TableSaveDialog({
               {t('只写我改的格子')}
             </Button>
           )}
-          <Button onClick={() => void save(false)} disabled={busy}>
+          <Button onClick={() => void save(false)} disabled={busy || blocked}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('保存')}
           </Button>
@@ -76,6 +84,30 @@ export function TableSaveDialog({
                 '只改下面这些格子的值，样式、公式、其它工作表、图片都原样保留，文件仍是原来的 Excel / WPS 格式。保存前原文件会备份到数据目录。',
               )}
         </p>
+        {shown.length > 0 && (
+          <div
+            role="alert"
+            className={cn(
+              'flex flex-col gap-1 rounded-lg px-3 py-2.5 text-footnote',
+              blocked ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning',
+            )}
+          >
+            <p className="flex items-center gap-1.5 font-medium">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              {blocked
+                ? t('改到的格子里有 {n} 处不合规，项目设置里定了不合规就不让保存', { n: shown.length })
+                : t('改到的格子里有 {n} 处不合规，仍然可以保存', { n: shown.length })}
+            </p>
+            {shown.slice(0, 6).map((p) => (
+              <p key={`${p.r}:${p.c}:${p.msg}`} className="flex gap-2 font-mono text-caption">
+                <span className="w-12 shrink-0 opacity-70">{cellRef(p.r, p.c)}</span>
+                <span className="w-32 shrink-0 truncate opacity-80">{p.field}</span>
+                <span className="min-w-0 flex-1 truncate font-sans">{p.msg}</span>
+              </p>
+            ))}
+            {shown.length > 6 && <p className="text-caption opacity-80">{t('还有 {n} 处', { n: shown.length - 6 })}</p>}
+          </div>
+        )}
         {error && (
           <p className="rounded-lg bg-danger/10 px-3 py-2.5 text-body leading-relaxed text-danger">{error.text}</p>
         )}

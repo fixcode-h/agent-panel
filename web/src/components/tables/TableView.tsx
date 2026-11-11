@@ -35,6 +35,8 @@ import { CellEditor } from './CellEditor'
 import { ColumnSetup } from './ColumnSetup'
 import { EnumPicker } from './EnumPicker'
 import { EnumsDialog } from './EnumsDialog'
+import { EnumRenameDialog } from './EnumRenameDialog'
+import { findEnumRenames, type EnumRename } from '@shared/table-enum-rename'
 import { ListEditor } from './ListEditor'
 import { ProblemsBar } from './ProblemsBar'
 import { useTableStruct } from './use-table-struct'
@@ -90,6 +92,7 @@ export function TableView({
   stale,
   onReload,
   onKeepMine,
+  onFilesChanged,
   loadDoc,
   files,
   projectId,
@@ -125,6 +128,8 @@ export function TableView({
   onReload: (keep: boolean) => void
   /** 不管外面的改动，接着改（保存时只写改过的格子） */
   onKeepMine: () => void
+  /** 别的操作（枚举改名替换）改了这些文件：重新载入 */
+  onFilesChanged: (paths: string[]) => void
 }) {
   const index = Math.min(sheetIndex, Math.max(0, doc.sheets.length - 1))
   const sheet = doc.sheets[index]
@@ -151,6 +156,7 @@ export function TableView({
   const pending = useMemo(() => pendingOf(edits, doc.sheets), [edits, doc.sheets])
   const [saving, setSaving] = useState(false)
   const [enumsOpen, setEnumsOpen] = useState<string | null>(null)
+  const [renames, setRenames] = useState<EnumRename[] | null>(null)
   const [checkOpen, setCheckOpen] = useState(false)
   const [histOpen, setHistOpen] = useState(false)
   const [backRefs, setBackRefs] = useState<{ title: string; hits: TableHit[] | null; error: string } | null>(null)
@@ -181,6 +187,12 @@ export function TableView({
     onSchema({ ...schema, enums: { ...schema.enums, [name]: { ...e, values: [...e.values, { name: value }] } } })
   }
 
+  // 保存前检查：改到的行里不合规的格子（改了一格可能让同一行的必填、组合唯一出问题，所以按行算）
+  const touchedProblems = useMemo(() => {
+    if (!saving) return []
+    const touched = new Set([...dirty].map((k) => Number(k.slice(0, k.indexOf(':')))))
+    return struct.problems.filter((p) => touched.has(p.r)).map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' }))
+  }, [saving, dirty, struct.problems, struct.infos])
   const setCells = (cells: CellSet[]) => sheet && onEdits((e) => setCellsIn(e, sheet, cells))
   const rowOp = (op: RowOp) => sheet && onEdits((e) => rowOpIn(e, sheet, op))
   // 主键列：新增行自动编号（最大的整数 + 1），复制行时主键 +1
@@ -349,6 +361,7 @@ export function TableView({
           file={doc.path}
           schema={schema}
           files={files}
+          fields={struct.infos.map((i) => i.field)}
           onSchema={onSchema}
         />
         <Button size="sm" variant="ghost" className="h-7" onClick={() => setHistOpen(true)}>
@@ -485,7 +498,19 @@ export function TableView({
           schema={schema}
           initial={enumsOpen || (grid.focus ? struct.infos[grid.focus.col]?.enumName : undefined)}
           onOpenChange={(o) => !o && setEnumsOpen(null)}
-          onSave={(enums) => onSchema({ ...schema, enums })}
+          onSave={(enums) => {
+            onSchema({ ...schema, enums })
+            const r = findEnumRenames(schema.enums, enums)
+            if (r.length) setRenames(r)
+          }}
+        />
+      )}
+      {renames && (
+        <EnumRenameDialog
+          projectId={projectId}
+          renames={renames}
+          onClose={() => setRenames(null)}
+          onApplied={onFilesChanged}
         />
       )}
       {histOpen && (
@@ -508,6 +533,8 @@ export function TableView({
           doc={doc}
           sheets={Object.fromEntries(doc.sheets.map((s) => [s.name, rowsOf(edits, s)]))}
           pending={pending}
+          problems={touchedProblems}
+          mode={schema.style.saveCheck}
           onCancel={() => setSaving(false)}
           onSave={async (force) => {
             const err = await onSave(pending, force)

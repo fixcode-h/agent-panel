@@ -22,6 +22,7 @@ import { DEMO_CSV, DEMO_FILES, DEMO_SHEETS } from './demo-project-files'
 import { fail } from './demo-http'
 import { DEMO_REVS, demoAt, demoRelease } from './demo-table-versions'
 import { exportLines, type ExportEvent } from '@shared/table-export'
+import { enumRenameCells, type EnumRename } from '@shared/table-enum-rename'
 
 function demoExport(p: Project, b: { script: number; paths: string[] }): ExportEvent[] {
   const script = p.tables?.exports[b.script]
@@ -218,7 +219,9 @@ export function demoTables(
     return {
       files: files.length,
       failed: [],
-      sheets: files.flatMap((f) => checkWorkbook(schema, f.path, bookOf(f.path, p).sheets, sheetsOf)),
+      sheets: files.flatMap((f) =>
+        checkWorkbook(schema, f.path, bookOf(f.path, p).sheets, sheetsOf, query.get('all') === '1' ? 100_000 : 20),
+      ),
     }
   }
   // 版本记录：演示里当作 Git 管着，三个提交（见 demo-table-versions.ts）
@@ -238,6 +241,24 @@ export function demoTables(
   }
   // 导表：演示不真的执行，按配好的命令拼出要跑的几行，给出一段像样的输出（页面会一条一条放出来）
   if (kind === 'export' && method === 'POST') return demoExport(p, body as { script: number; paths: string[] })
+  // 枚举值改名：演示里直接改内存里的表
+  if (kind === 'enum-rename' && method === 'POST') {
+    const b = body as { renames: EnumRename[]; apply: boolean }
+    const files = filesOf(p)
+      .filter((f) => f.kind !== 'xls')
+      .flatMap((f) => {
+        const book = bookOf(f.path, p)
+        const per = book.sheets.map((s) => enumRenameCells(schema, f.path, s, b.renames))
+        const n = per.reduce((m, c) => m + c.length, 0)
+        if (!n) return []
+        if (b.apply) {
+          book.sheets = book.sheets.map((s, i) => (per[i].length ? { ...s, rows: setCells(s.rows, per[i]) } : s))
+          book.mtime = new Date().toISOString()
+        }
+        return [{ path: f.path, cells: n }]
+      })
+    return { files, failed: [], applied: b.apply }
+  }
   // 跨项目对比：按相对路径配对，比格子
   if (kind === 'compare' && method === 'GET') {
     const other = others(query.get('other') ?? '')
