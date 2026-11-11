@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button'
 import { useData } from '@/lib/data'
 import type { ContextBreakdown } from '@shared/context-breakdown'
 import { ContextHead, ContextLegend } from './ContextUsage'
+import { bigToolResults } from '@shared/context-big-results'
+import { SessionDisclosure, SessionDisclosureItem } from './SessionCard'
 
 /**
  * 这个对话现在是谁在答话、它的上下文用量：对话按最后一条回复的角色（和输入框下的上下文圆环同一口径），
@@ -78,7 +80,26 @@ export function useSessionContext(task: Task) {
         : null,
     [cur?.usage, def, info, settings, cli],
   )
-  return { cur, agent, cli, def, info, data }
+  // 最大的几条工具结果：细分里它们都算在「消息」里，单列出来用户才看得出是谁在占（见 shared/context-big-results.ts）
+  const big = useMemo(() => (cur ? bigToolResults(task.messages, cur.agentId) : []), [task.messages, cur?.agentId])
+  return { cur, agent, cli, def, info, data, big }
+}
+
+/** 「最大的工具结果」：可展开的列表，一项是动作和对象、估的 token；悬停看完整对象和字数 */
+function BigResults({ big }: { big: ReturnType<typeof useSessionContext>['big'] }) {
+  if (!big.length) return null
+  return (
+    <SessionDisclosure label={t('最大的工具结果')} count={big.length}>
+      {big.map((x) => (
+        <SessionDisclosureItem
+          key={`${x.msg}:${x.i}`}
+          name={[x.name, x.label].filter(Boolean).join(' ')}
+          value={`~${fmtTokens(x.tokens)}`}
+          title={t('{label}\n{n} 字，压缩之前每轮都带着它', { label: x.label, n: x.chars })}
+        />
+      ))}
+    </SessionDisclosure>
+  )
 }
 
 /**
@@ -148,7 +169,7 @@ export function SessionContextBody({
   return (
     <div className="flex flex-col gap-3">
       <ContextHead data={data} caption={cur?.usage.model && modelName(cur.usage.model, ctx.cli)} />
-      <ContextLegend data={data} />
+      <ContextLegend data={data} extra={<BigResults big={ctx.big} />} />
       <CompactFooter task={task} data={data} onTask={onTask} />
     </div>
   )

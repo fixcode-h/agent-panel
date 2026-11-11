@@ -51,6 +51,12 @@ export function closeTurn(taskId: string): TurnOwner | undefined {
   return { taskId, ...t }
 }
 
+/** 这一轮进行到现在的凭据（不收这一轮）：end_turn 时先看一眼这一轮的改动用（turn-changes.ts 的 peekTurnFiles） */
+export function peekTurn(taskId: string): TurnOwner | undefined {
+  const t = turns.get(taskId)
+  return t ? { taskId, ...t } : undefined
+}
+
 /**
  * 登记一次改文件的工具调用。调用发出时和结果成功时各登记一次：
  * 发出时登记，别的对话的终点快照赶在结果回来之前拍到这个文件时也认得出是谁的；

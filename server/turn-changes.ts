@@ -11,7 +11,7 @@ import {
   type TreeSpan,
 } from './exec/git.ts'
 import { log } from './log.ts'
-import { closeTurn, namedSince, openTurn, splitOwned } from './turn-owners.ts'
+import { closeTurn, namedSince, openTurn, peekTurn, splitOwned } from './turn-owners.ts'
 
 /**
  * 每轮对话改了哪些文件（总结下面那张「已更改 N 个文件」卡片的数据）。
@@ -168,6 +168,30 @@ export function endTurnChanges(taskId: string, put: (changes: TurnChanges) => vo
     if (dropped.length)
       log.info('task', '同目录别的对话改的文件不算这一轮的改动', { task: taskId, dropped: dropped.length })
     if (files.length) put({ spans, files, ...(dropped.length ? { others: dropped.map((f) => f.path) } : {}) })
+  })
+}
+
+/**
+ * 这一轮到现在改了哪些文件（相对工作目录），不收这一轮：end_turn 记成做完前补上命令改的文件（验证门禁用，见 server/exec/turn-extra.ts）。
+ * 和 endTurnChanges 同一个口径：去掉拉代码带进来的、同目录别的对话改的；起点、终点都不动。
+ * 只看当前这一段（接着做的一轮从上一轮的终点算起），更早几段的改动由那几段的工具调用记录兜着
+ */
+export function peekTurnFiles(taskId: string): Promise<string[]> {
+  const owner = peekTurn(taskId)
+  return queued(taskId, async () => {
+    const tr = tracks.get(taskId)
+    if (!tr) return []
+    const from = await tr.mark
+    const head = await tr.head
+    const to = await snap(tr.dir, tr.ignore)
+    const spans = [...tr.spans, { from, to }].filter((s) => s.from && s.to && s.from !== s.to)
+    if (!from || !to || !spans.length) return []
+    const all = await spansNumstat(tr.dir, spans).catch(() => [])
+    const endHead = await gitHead(tr.dir).catch(() => '')
+    const first = tr.spans[0]?.from || from
+    const own = await dropSynced(tr.dir, all, { head, endHead, from: first, to, since: tr.at }).catch(() => all)
+    const { kept } = owner ? splitOwned(own, namedSince(owner)) : { kept: own }
+    return kept.map((f) => f.path)
   })
 }
 

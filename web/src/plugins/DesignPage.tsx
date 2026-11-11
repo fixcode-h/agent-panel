@@ -19,7 +19,7 @@ export function PluginDesignPage() {
   const [creating, setCreating] = useState(false)
   const mode = modes.find((m) => m.id === route.id)
   const id = route.sub
-  // 自带整页的模式（插件接口 3）：位置交给插件自己解释，不当成对话 id
+  // 自带整页的模式（插件接口 4）：位置交给插件自己解释，不当成对话 id
   if (mode?.Page) return <mode.Page key={mode.id} id={id} sub={route.msg} />
   const task = id ? tasks.find((x) => x.id === id) : undefined
   // 对话本身和插件无关也打得开：插件关掉以后，原来的对话照样能看

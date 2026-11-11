@@ -30,7 +30,7 @@ import * as sharedTask from '../../shared/task.ts'
 import * as sharedText from '../../shared/text.ts'
 
 /**
- * 插件服务端能直接 import 的面板模块（插件接口 3，ADR 0059）。键是面板源码里的路径（不带扩展名），
+ * 插件服务端能直接 import 的面板模块（插件接口 4，ADR 0059）。键是面板源码里的路径（不带扩展名），
  * 清单在 shared/plugins/host-modules.json（插件仓库 sdk/ 里有副本，插件构建时按它把这些 import 接到
  * globalThis.__agentPanelServer.modules）。插件拿到的是面板进程里正在用的同一份：跑 CLI、提问、设置、出图的状态都和面板一致。
  * 整块搬出去的功能（UI 设计）靠它用面板跑 CLI、出图和提问的能力，不用另起一套。

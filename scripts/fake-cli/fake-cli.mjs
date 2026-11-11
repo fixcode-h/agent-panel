@@ -2100,6 +2100,19 @@ if (kind === 'claude') {
     })
     process.exit(1)
   }
+  // QUOTA_OUT：模拟额度用完（e2e「额度用完换备用模型」）；续接那一轮交的是续接说明、不带这个词，照常完成
+  if (input.includes('QUOTA_OUT')) {
+    out({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result: 'API Error: 429 insufficient_quota: You exceeded your current quota',
+      session_id: session,
+      usage: {},
+      total_cost_usd: 0,
+    })
+    process.exit(1)
+  }
   if (fail) {
     out({
       type: 'result',

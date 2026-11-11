@@ -1219,6 +1219,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         d('verify', 'approved', 2400),
       ])
       add('cancelled', '设置页保存按钮要点两次才生效', [d('cause', 'cancelled', 60 * 50)])
+      // 流程视图要的数：一个被推了 3 次、交代过一次卡住，一个被评审退回 2 次
+      const verify = db.tasks.find((x) => x.id === 'bug-verify')
+      verify.driveCount = { key: '', n: 0, input: '', total: 3 }
+      verify.turnEnds = [
+        { at: ago(70), outcome: 'blocked', need: '等用户' },
+        { at: ago(65), outcome: 'done' },
+      ]
+      const idle = db.tasks.find((x) => x.id === 'bug-idle')
+      idle.steps = [{ ...(idle.steps?.[0] ?? {}), id: 'review-s', title: '实现', kind: 'agent', reviews: 2 }]
     })
     await p.reload()
     await p
@@ -1324,6 +1333,34 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ state: 'attached', timeout: 8000 })
       .catch(() => errors.push('Bug 视图：点一行没有在父对话的右栏打开那个子对话'))
     if (!p.url().includes('#/projects/')) errors.push(`Bug 视图：点一行没有跳到项目对话（${p.url()}）`)
+
+    // 流程视图（扩展 4）：项目里所有对话的推进、退回、合回、等你，按角色分开，再列返工多的对话
+    await p.goto(base + '#/overview')
+    await p.locator('[data-seg-id="flow"]').click()
+    await p
+      .locator('[data-flow-stats]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('流程视图：没有画出顶上的数字'))
+    await check(p, '流程视图', ['平均推进次数', '评审退回', '一次合回', '平均等你', '按角色', '推得多、返工多的对话'])
+    const flow = await p.evaluate(() => ({
+      total: document.querySelector('[data-flow-stat="total"]')?.textContent ?? '',
+      rejects: document.querySelector('[data-flow-stat="rejects"]')?.textContent ?? '',
+      roles: document.querySelectorAll('[data-flow-role]').length,
+      hot: [...document.querySelectorAll('[data-flow-row]')].map((el) => el.getAttribute('data-flow-row')),
+    }))
+    if (!/\d/.test(flow.total) || /对话0/.test(flow.total)) errors.push(`流程视图：对话数不对（${flow.total}）`)
+    // 演示数据里本来就有被退回过的对话，种子又加了 2 次：至少 2
+    if (!(Number(/评审退回(\d+)/.exec(flow.rejects)?.[1]) >= 2))
+      errors.push(`流程视图：评审退回少于 2（${flow.rejects}）`)
+    if (!flow.roles) errors.push('流程视图：按角色一行都没有')
+    // 退回过的排在只是被推过的前面
+    const [idleAt, verifyAt] = [flow.hot.indexOf('bug-idle'), flow.hot.indexOf('bug-verify')]
+    if (idleAt < 0 || verifyAt < 0 || idleAt > verifyAt)
+      errors.push(`流程视图：返工多的对话应先列退回过的、再列被推过的（${flow.hot.join(' ')}）`)
+    await p.setViewportSize({ width: 375, height: 800 })
+    await settle(p).catch(() => {})
+    await check(p, '流程视图-手机宽度', ['平均推进次数', '按角色'])
+    await p.setViewportSize({ width: 1440, height: 900 })
   }
   // ---- 轮次导航 ----
   // 对话右上角每轮一根横杠：悬停弹出那一轮的要求和回复开头，点横杠跳过去并高亮那一根

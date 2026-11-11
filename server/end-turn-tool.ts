@@ -25,10 +25,10 @@ export const END_TURN_DEF = {
 }
 
 /** 执行一次 end_turn：没有这个工具（子任务、工作流节点、Chat 页）时报错 */
-export function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown } | undefined) {
+export async function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown } | undefined) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const r = o.endTurn
-    ? o.endTurn(str(a?.outcome).trim(), str(a?.need))
+    ? await o.endTurn(str(a?.outcome).trim(), str(a?.need))
     : { ok: false, info: '这里不用 end_turn：做完直接结束这一轮（子任务、工作流节点按各自的 submit_* 交结果）' }
   return { content: [{ type: 'text', text: r.info }], ...(!r.ok && { isError: true }) }
 }

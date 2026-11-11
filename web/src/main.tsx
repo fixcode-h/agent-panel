@@ -46,7 +46,7 @@ if (!import.meta.env.VITE_DEMO) {
 
 // 无头浏览器打开的截图页（server/headless.ts）：只挂截图组件，不加载面板的其他部分
 const captureId = /^#\/capture\/([^/?#]+)/.exec(location.hash)?.[1]
-// 插件不带面板外壳的独立页（插件接口 3）：#/pbare/<插件>/<页面>/<path>
+// 插件不带面板外壳的独立页（插件接口 4）：#/pbare/<插件>/<页面>/<path>
 const bare = /^#\/pbare\/([^/?#]+)\/([^/?#]+)\/?(.*)$/.exec(location.hash)
 
 createRoot(document.getElementById('root')!).render(

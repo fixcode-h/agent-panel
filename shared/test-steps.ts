@@ -1,6 +1,7 @@
 import { TEST_STEP_ENVS, type Project, type TaskTestRun, type TestStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { fmtDuration } from './duration.ts'
+import { pluginTestSteps } from './plugins/contrib.ts'
 
 /**
  * 项目级测试步骤：项目设置里维护，新建对话时快照进任务，测试 Agent 按它执行。
@@ -156,12 +157,13 @@ export function appliesToText(step: Pick<TestStep, 'appliesTo'> & { command?: st
  * ——下一轮提示词、下一次子对话合回——就按新配置走，不用等新建对话。
  * project 传 null / undefined 表示没读到项目（被删、读失败），这时才用快照；
  * 传进来是空数组表示项目现在确实没有步骤，不能让快照复活——用户删了步骤就该不跑。
+ * 开着的插件带的步骤（shared/plugins/contrib.ts）接在项目步骤后面，同样现取：关掉插件下一次判断就没有了
  */
 export function currentTestSteps(
   snapshot: TestStep[],
-  project: Pick<Project, 'testSteps'> | null | undefined,
+  project: (Pick<Project, 'testSteps'> & Partial<Pick<Project, 'path' | 'pluginStepsOff'>>) | null | undefined,
 ): TestStep[] {
-  return project ? project.testSteps : snapshot
+  return project ? [...project.testSteps, ...pluginTestSteps(project)] : snapshot
 }
 
 /**

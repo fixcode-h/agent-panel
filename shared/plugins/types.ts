@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { BuiltinAgent } from '../builtin/agents.ts'
 import type { BuiltinWorkflow } from '../builtin/workflows.ts'
+import { PluginCommand, PluginHook, PluginTestStep } from './contrib-schema.ts'
 
 /**
  * 插件清单（ADR 0059）：插件包根目录的 plugin.json。插件是自包含的包，装在数据目录 plugins/<id>/，
@@ -75,6 +76,13 @@ export const PluginManifest = z.object({
   /** 给 Agent 的 MCP 服务名（对话里那一行按它认出是这个插件的工具）和工具的显示名 */
   mcpServers: z.array(z.string()).default([]),
   toolNames: z.record(z.string(), z.string()).default({}),
+  /**
+   * 插件接口 3：钩子、测试步骤、「/」命令（格式见 contrib-schema.ts）。插件打开时装进面板已有的钩子、
+   * 测试步骤和命令菜单，关掉、删除时一起撤掉（三处都按开着的插件现取，见 contrib.ts）
+   */
+  hooks: z.array(PluginHook).max(20).default([]),
+  testSteps: z.array(PluginTestStep).max(20).default([]),
+  commands: z.array(PluginCommand).max(50).default([]),
   /** 服务端入口、网页入口（相对包根的 ESM 文件），没有就是纯内容插件 */
   server: z.string().optional(),
   web: z.string().optional(),
@@ -89,10 +97,11 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
 /**
  * 面板的插件接口版本：SDK 有新增或不兼容的改动时加一（插件清单的 api 不能大于它）。
  * 2：插件页面进图标栏（WebPlugin.pages）、对话的项目和目录（PluginRun.projectId / cwd / mode）、工具里请用户确认（McpCallContext.confirm）
- * 3：插件直接 import 面板开放的模块（shared/plugins/host-modules.json）、设计模式自带侧栏和整页（DesignMode.Sidebar / Page）、
+ * 3：清单的 hooks / testSteps / commands 三段，服务端入口的 hook(id, input)；工具声明对项目做什么（McpTool.effect / targets），结果里报改了哪些文件、验证通过没有（McpResult.changed / verified）
+ * 4：插件直接 import 面板开放的模块（shared/plugins/host-modules.json）、设计模式自带侧栏和整页（DesignMode.Sidebar / Page）、
  *    不带面板外壳的独立页（WebPlugin.barePages，无头浏览器截图用）
  */
-export const PLUGIN_API = 3
+export const PLUGIN_API = 4
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

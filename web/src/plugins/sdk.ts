@@ -26,12 +26,12 @@ export interface DesignMode {
   /** 新建这类设计的弹窗：建好后调 onCreated(对话) 打开它（给了 Page 的模式可以不给，新建由 Page 自己管） */
   NewDialog?: ComponentType<{ open: boolean; onOpenChange: (o: boolean) => void; onCreated: (task: Task) => void }>
   /**
-   * 自己的侧栏（插件接口 3）：给了就在设计模式的下拉下面画它，代替按项目列对话的默认列表。
+   * 自己的侧栏（插件接口 4）：给了就在设计模式的下拉下面画它，代替按项目列对话的默认列表。
    * 数据不是面板对话的设计（例如 UI 设计自己的项目和界面）用它
    */
   Sidebar?: ComponentType
   /**
-   * 自己的整页（插件接口 3）：给了就在 #/pdesign/<模式>/<id>/<sub> 画它，代替打开对话；id、sub 是插件自己的位置
+   * 自己的整页（插件接口 4）：给了就在 #/pdesign/<模式>/<id>/<sub> 画它，代替打开对话；id、sub 是插件自己的位置
    * （例如设计 id、'new'），用 useNav().go({ page: 'pdesign', id: <模式>, sub: id, msg: sub }) 跳转
    */
   Page?: ComponentType<{ id?: string; sub?: string }>
@@ -40,7 +40,7 @@ export interface DesignMode {
 }
 
 /**
- * 不带面板外壳的独立页（插件接口 3）：地址 #/pbare/<插件>/<页面>/<path>，只挂这个组件，不加载侧栏、数据和导航。
+ * 不带面板外壳的独立页（插件接口 4）：地址 #/pbare/<插件>/<页面>/<path>，只挂这个组件，不加载侧栏、数据和导航。
  * 给无头浏览器截图这类场景用（例如 UI 设计让本机 Edge / Chrome 打开设计稿截图）
  */
 export interface BarePage {

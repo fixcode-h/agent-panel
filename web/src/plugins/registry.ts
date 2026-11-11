@@ -49,7 +49,7 @@ const loadedUrls = new Map<string, WebPlugin>()
 
 async function exposeHost() {
   // 插件构建时把 react 系的 import 换成从这里取，和面板共用一份 React；
-  // 开放给插件的面板模块（插件接口 3，host-modules.ts）同样挂在这，插件的 import 在入口执行时就要取到
+  // 开放给插件的面板模块（插件接口 4，host-modules.ts）同样挂在这，插件的 import 在入口执行时就要取到
   const g = globalThis as { __agentPanel?: Record<string, unknown> & { modules?: Record<string, object> } }
   const p = (g.__agentPanel ??= { React, ReactDOM, jsxRuntime })
   p.modules ??= await (await import('./host-modules')).loadHostModules()

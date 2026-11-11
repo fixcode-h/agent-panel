@@ -46,7 +46,7 @@ import {
 } from './flow.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
-import { runRecord, runState, sendRunMessage, writeRunState } from './run-state.ts'
+import { runRecord, runState, runTextTooLong, sendRunMessage, writeRunState } from './run-state.ts'
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
 import { pickFlow, runsSection, workflowCatalogText } from './flow-run.ts'
 import { runFlowRunTurn } from './flow-run-turn.ts'
@@ -1380,8 +1380,10 @@ function makeOrchestra(
     // 只给对话（不含 Chat 页一问一答、子任务和工作流节点）：结束前钩子只认它交代的结束，不读回复文字
     ...(ctx.chat && !helper && !isChatMode(task)
       ? {
-          endTurn(outcome: string, need: string) {
-            const r = endTurnCheck(task, outcome, need, host.verifyGate)
+          async endTurn(outcome: string, need: string) {
+            // 命令改的文件、插件工具报的改动和验证：只在要记成做完时现取（拍快照有开销）
+            const extra = outcome === 'done' ? await host.turnExtra?.().catch(() => undefined) : undefined
+            const r = endTurnCheck(task, outcome, need, host.verifyGate, extra)
             if (r.end) pushTurnEnd(task, r.end)
             if (r.end) host.changed(true)
             return { ok: r.ok, info: r.info }
@@ -1675,13 +1677,20 @@ function makeOrchestra(
     lessons: host.lessons
       ? {
           find: async (files, opts) =>
-            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? [], opts),
+            findLessons(
+              await host.lessons!.list(),
+              files,
+              (await host.lessons!.globals?.()) ?? [],
+              opts,
+              host.lessons!.hit,
+            ),
           record: helper ? undefined : (input) => host.lessons!.record(input),
         }
       : undefined,
     experience: host.experience
       ? {
-          find: async (query, files) => findExperience(await host.experience!.list(), query, files),
+          find: async (query, files) =>
+            findExperience(await host.experience!.list(), query, files, host.experience!.hit),
           list: () => host.experience!.list(),
           record: helper ? undefined : (input) => host.experience!.record(input),
         }
@@ -2075,6 +2084,8 @@ function makeOrchestra(
       if (target.id === self.id) return { ok: false, info: '不能发给自己' }
       if (target.status === 'done' || target.status === 'failed' || target.status === 'skipped')
         return { ok: false, info: `「${target.title}」已经结束了，消息没有送到` }
+      const over = runTextTooLong(text.trim(), '消息')
+      if (over) return { ok: false, info: over }
       const body = `来自「${self.title || '对话'}」的消息：${text.trim()}`
       // 先记进这次运行，界面和重启后都能看到；交给正在跑的节点时再标成已读，避免它重复看到。
       // 不再另 push 一条 system 消息：发件方已经有「发送消息」工具行（正文可展开），再铺一条居中块会把整段正文摊在对话流里

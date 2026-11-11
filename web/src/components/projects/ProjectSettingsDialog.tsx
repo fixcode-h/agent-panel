@@ -46,6 +46,7 @@ import {
   type DerivedParam,
 } from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId, parseGlobs } from '@shared/test-steps'
+import { PluginTestSteps } from '@/plugins/PluginTestSteps'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -1162,7 +1163,7 @@ function Body({
                   onChange={(v) => set('requireVerify', v)}
                   label={t('改了代码要跑过测试步骤才能结束')}
                   tip={t(
-                    '对话用 end_turn 说做完了时，面板看这一轮的工具调用：改了代码却没跑过这里的测试步骤（没配步骤时看有没有跑测试、类型检查或编译），就不让它结束，并告诉它去跑。关着时不拦，只在「完成依据」卡片上标出来。',
+                    '对话用 end_turn 说做完了时，面板看这一轮改了什么、跑了什么：改了代码，适用这次改动的测试步骤却一条都没跑过、或者最后一次没通过（没配步骤时看测试、类型检查或编译），就不让它结束，并告诉它去跑或修。用命令、插件工具改的文件也算；插件自己验证通过的资产不再要求跑这里的步骤。关着时不拦，只在「完成依据」卡片上标出来。',
                   )}
                 />
                 <TestStepsEditor
@@ -1180,6 +1181,7 @@ function Body({
                     })
                   }
                 />
+                <PluginTestSteps off={draft.pluginStepsOff ?? []} onChange={(v) => set('pluginStepsOff', v)} />
               </div>
             ) : (
               <div className="flex min-w-0 flex-1 flex-col gap-7">

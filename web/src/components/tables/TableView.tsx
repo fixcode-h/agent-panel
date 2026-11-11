@@ -74,7 +74,9 @@ import { FindReplaceDialog } from './FindReplaceDialog'
 import { BackRefsDialog, CellMenu } from './CellMenu'
 import { CellHistoryDialog } from './CellHistoryDialog'
 import { ImportDialog } from './ImportDialog'
-import { AiMenu, ProposalBar, aiFixProblems, useProposal } from './TableAi'
+import { AiMenu, AiRegionDialog, ProposalBar, aiFixProblems, useProposal } from './TableAi'
+import { ColumnStatsDialog } from './ColumnStatsDialog'
+import { BatchEditDialog } from './BatchEditDialog'
 import { importEdit, sheetCsv, sheetJson } from '@shared/table-io'
 import { saveText } from '@/lib/save-file'
 import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
@@ -229,6 +231,17 @@ export function TableView({
   const [findMode, setFindMode] = useState<FindMode | null>(null)
   const [findHits, setFindHits] = useState<CellHit[]>([])
   const [helpOpen, setHelpOpen] = useState(false)
+  const [statsCol, setStatsCol] = useState<number | null>(null)
+  /** 批量修改、让 AI 改：打开时记下选中的格子（数据行、没隐藏的列） */
+  const [batch, setBatch] = useState<{ r: number; c: number }[] | null>(null)
+  const [aiRegion, setAiRegion] = useState<{ rows: number[]; cols: number[] } | null>(null)
+  const dataSel = () => {
+    const s = grid.selection()
+    if (!s) return null
+    const rs = s.rows.filter((r) => r >= (view?.from ?? 0))
+    const cs = s.cols.filter((c) => !hiddenSet.has(c))
+    return rs.length && cs.length ? { rows: rs, cols: cs } : null
+  }
   // 快速筛选跟着表走：换一张表就清掉；存下的视图按表记在本机
   const [quick, setQuick] = useState<QuickFilter[]>([])
   useEffect(() => setQuick([]), [fileKey])
@@ -412,7 +425,8 @@ export function TableView({
   const [hit, setHit] = useState<CellHit[]>([])
   const { go } = grid
   useEffect(() => {
-    if (!jump || jump.sheet !== sheet?.name) return
+    // sheet 空着（导表输出里只写了「文件:行」）就是当前这张表
+    if (!jump || (jump.sheet && jump.sheet !== sheet?.name)) return
     setHit([{ row: jump.row, col: jump.col }])
     go({ row: jump.row, col: jump.col })
   }, [jump, sheet?.name, go])
@@ -603,7 +617,15 @@ export function TableView({
             {t('版本')}
           </Button>
           {!readOnly && (
-            <SubmitButton projectId={projectId} doc={doc} status={vcs} dirty={pending.length > 0} onDone={refreshVcs} />
+            <SubmitButton
+              projectId={projectId}
+              doc={doc}
+              schema={schema}
+              problems={struct.problems.length}
+              status={vcs}
+              dirty={pending.length > 0}
+              onDone={refreshVcs}
+            />
           )}
           <ExportMenu
             exports={exports}
@@ -712,7 +734,13 @@ export function TableView({
       <CellMenu
         at={(e) => {
           const el = (e.target as HTMLElement).closest('[data-r]') as HTMLElement | null
-          return el ? { r: Number(el.dataset.r), c: Number(el.dataset.c) } : null
+          if (!el) return null
+          const r = Number(el.dataset.r)
+          const c = Number(el.dataset.c)
+          // 右键选区外的格子先选中它（和 Excel 一样），批量修改、让 AI 改才按眼前这一格算
+          const s = grid.selection()
+          if (!s || !s.rows.includes(r) || !s.cols.includes(c)) grid.go({ row: r, col: c })
+          return { r, c }
         }}
         opts={({ r, c }) => {
           const info = r >= view.from ? struct.infos[c] : undefined
@@ -741,6 +769,12 @@ export function TableView({
         }}
         onFill={grid.fill}
         onFind={() => setFinding({ sel: grid.selection() })}
+        onStats={({ c }) => setStatsCol(c)}
+        onBatch={() => {
+          const s = dataSel()
+          if (s) setBatch(s.rows.flatMap((r) => s.cols.map((c) => ({ r, c }))))
+        }}
+        onAiRegion={() => setAiRegion(dataSel())}
       >
         <div className="relative min-h-0 flex-1">
           <div
@@ -870,6 +904,29 @@ export function TableView({
         readOnly={readOnly}
       />
       {helpOpen && <ShortcutsHelp open onOpenChange={setHelpOpen} first="tables" />}
+      {statsCol !== null && struct.infos[statsCol] && (
+        <ColumnStatsDialog
+          rows={rows}
+          from={view.from}
+          info={struct.infos[statsCol]}
+          file={doc.path}
+          schema={schema}
+          onSchema={onSchema}
+          onClose={() => setStatsCol(null)}
+        />
+      )}
+      {batch && <BatchEditDialog rows={rows} cells={batch} onApply={setCells} onClose={() => setBatch(null)} />}
+      {aiRegion && (
+        <AiRegionDialog
+          projectId={projectId}
+          doc={doc}
+          sheet={sheet.name}
+          rows={aiRegion.rows}
+          fields={aiRegion.cols.map((c) => struct.infos[c]?.field || colLetter(c))}
+          onProposal={refreshProposal}
+          onClose={() => setAiRegion(null)}
+        />
+      )}
       {enumsOpen !== null && (
         <EnumsDialog
           open

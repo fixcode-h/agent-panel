@@ -8,7 +8,9 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Card } from '@/components/ui/card'
+import { isEventSchedule, triggerKindOptions } from '@shared/schedule-trigger'
 import { EndChoice } from './EndChoice'
+import { TriggerFields } from './TriggerFields'
 import {
   durationOptions,
   REPEAT_OPTIONS,
@@ -53,6 +55,7 @@ export function ScheduleDialog({
     setProject,
     setRepeat,
     setAtLocal,
+    setTrigger,
     toggleWeekday,
     toggleUpstream,
     applyTemplate,
@@ -74,6 +77,7 @@ export function ScheduleDialog({
     form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
 
   const previewProject = projects.find((p) => p.id === form.projectId)?.name || t('聊天')
+  const event = isEventSchedule(form)
 
   return (
     <Modal
@@ -107,64 +111,82 @@ export function ScheduleDialog({
       </div>
 
       <Section title={t('什么时候跑')}>
+        {/* 按时间到点跑，或者条件成立才跑（目录文件变了、远端新提交、命令结果变了） */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-body font-medium">{t('重复')}</span>
-          <Segmented label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
+          <span className="text-body font-medium">{t('触发方式')}</span>
+          <Segmented
+            label={t('触发方式')}
+            value={form.trigger.kind}
+            onChange={(kind) => setTrigger({ kind })}
+            options={triggerKindOptions()}
+          />
         </div>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-body font-medium">{t('执行时间')}</span>
-            <Input
-              type="datetime-local"
-              className="h-10 dark:[color-scheme:dark]"
-              value={form.atLocal}
-              onChange={(e) => setAtLocal(e.target.value)}
-            />
-          </label>
-          {/* 日历上占多长：只是排日程用，执行时长的上限在「更多设置」里 */}
-          <label className="flex flex-col gap-1.5">
-            <span className="text-body font-medium">{t('时长')}</span>
-            <Select
-              aria-label={t('时长')}
-              className="h-10 w-32"
-              value={String(form.durationMin)}
-              options={durationOptions(form.durationMin)}
-              onChange={(e) => set('durationMin', Number(e.target.value))}
-            />
-          </label>
-        </div>
-        {form.repeat === 'weekly' && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-body font-medium">{t('每周哪几天')}</span>
-            <ChipGroup
-              multiple
-              label={t('每周哪几天')}
-              options={SCHEDULE_WEEKDAYS.map((d) => ({ id: String(d.id), label: d.label }))}
-              value={form.weekdays.map(String)}
-              // 点一块只会多或少一天：找出变了的那天交给 toggleWeekday，排序和默认值都还按它的规则走
-              onChange={(next) => {
-                const d = SCHEDULE_WEEKDAYS.find((x) => next.includes(String(x.id)) !== form.weekdays.includes(x.id))
-                if (d) toggleWeekday(d.id)
-              }}
-            />
-          </div>
-        )}
-        {form.repeat !== 'once' && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-body font-medium">{t('结束')}</span>
-            <EndChoice value={form.endDate} onChange={(v) => set('endDate', v)} />
-          </div>
-        )}
-        {/* 保存后的效果：时间对齐、项目都按这次表单的值算，改动立刻能看到 */}
-        {!!previewAt && (
-          <p className="text-xs leading-relaxed text-muted" aria-live="polite">
-            {previewPast
-              ? t('这个时间已经过去，保存后会记为错过（这次不会新建对话）')
-              : t('保存后：{time} 会在「{target}」新建一个对话', {
-                  time: whenLabel(previewAt, Date.now()),
-                  target: previewProject,
-                })}
-          </p>
+        {event ? (
+          <TriggerFields trigger={form.trigger} projectId={form.projectId} onChange={setTrigger} />
+        ) : (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-body font-medium">{t('重复')}</span>
+              <Segmented label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-body font-medium">{t('执行时间')}</span>
+                <Input
+                  type="datetime-local"
+                  className="h-10 dark:[color-scheme:dark]"
+                  value={form.atLocal}
+                  onChange={(e) => setAtLocal(e.target.value)}
+                />
+              </label>
+              {/* 日历上占多长：只是排日程用，执行时长的上限在「更多设置」里 */}
+              <label className="flex flex-col gap-1.5">
+                <span className="text-body font-medium">{t('时长')}</span>
+                <Select
+                  aria-label={t('时长')}
+                  className="h-10 w-32"
+                  value={String(form.durationMin)}
+                  options={durationOptions(form.durationMin)}
+                  onChange={(e) => set('durationMin', Number(e.target.value))}
+                />
+              </label>
+            </div>
+            {form.repeat === 'weekly' && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-body font-medium">{t('每周哪几天')}</span>
+                <ChipGroup
+                  multiple
+                  label={t('每周哪几天')}
+                  options={SCHEDULE_WEEKDAYS.map((d) => ({ id: String(d.id), label: d.label }))}
+                  value={form.weekdays.map(String)}
+                  // 点一块只会多或少一天：找出变了的那天交给 toggleWeekday，排序和默认值都还按它的规则走
+                  onChange={(next) => {
+                    const d = SCHEDULE_WEEKDAYS.find(
+                      (x) => next.includes(String(x.id)) !== form.weekdays.includes(x.id),
+                    )
+                    if (d) toggleWeekday(d.id)
+                  }}
+                />
+              </div>
+            )}
+            {form.repeat !== 'once' && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-body font-medium">{t('结束')}</span>
+                <EndChoice value={form.endDate} onChange={(v) => set('endDate', v)} />
+              </div>
+            )}
+            {/* 保存后的效果：时间对齐、项目都按这次表单的值算，改动立刻能看到 */}
+            {!!previewAt && (
+              <p className="text-xs leading-relaxed text-muted" aria-live="polite">
+                {previewPast
+                  ? t('这个时间已经过去，保存后会记为错过（这次不会新建对话）')
+                  : t('保存后：{time} 会在「{target}」新建一个对话', {
+                      time: whenLabel(previewAt, Date.now()),
+                      target: previewProject,
+                    })}
+              </p>
+            )}
+          </>
         )}
       </Section>
 
@@ -179,7 +201,9 @@ export function ScheduleDialog({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-body font-medium">{t('到点后执行的对话内容')}</span>
+          <span className="text-body font-medium">
+            {event ? t('条件成立后执行的对话内容') : t('到点后执行的对话内容')}
+          </span>
           <Textarea
             rows={5}
             value={form.prompt}

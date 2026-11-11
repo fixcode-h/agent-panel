@@ -5,6 +5,7 @@ import { EXPORT_VARS, exportLines, type ExportVar, type TableExport } from '@sha
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { Field, Input, Textarea } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 
 /** 每个占位的说明（取值函数：t() 跟着当前语言） */
 const VAR_TIP: Record<ExportVar, () => string> = {
@@ -150,6 +151,12 @@ function ExportItem({
           />
         </Field>
       </div>
+      <Checkbox
+        checked={!!item.onSave}
+        onChange={(v) => onChange({ onSave: v || undefined })}
+        label={t('保存后自动导这张表')}
+        tip={t('在表格页保存一张表后，自动对它执行一次这个脚本，输出在表格页底部')}
+      />
     </div>
   )
 }

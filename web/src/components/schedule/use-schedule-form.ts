@@ -17,6 +17,7 @@ import {
   type ScheduleRepeat,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
+import { isEventSchedule, ScheduleTrigger, triggerConfigError } from '@shared/schedule-trigger'
 import { api } from '@/lib/api'
 import type { Agent } from '@shared/schema'
 import { listableAgents } from '@shared/builtin/core'
@@ -56,6 +57,8 @@ export interface ScheduleForm {
   budgetMinutes: string
   /** 日历上占多长（分钟）：周视图里拖底边改，表单里不单独编辑，原样带着保存 */
   durationMin: number
+  /** 触发方式和条件：按时间时其余字段不用；按事件时时间、重复、结束都不看 */
+  trigger: ScheduleTrigger
 }
 
 /** 在日历上右键 / 双击某一格新建：从那一格开始，默认占一小时 */
@@ -102,6 +105,7 @@ export const newScheduleForm = (blank: boolean, preset?: SchedulePreset): Schedu
     budgetTokens: '',
     budgetMinutes: '',
     durationMin: preset?.durationMin ?? 60,
+    trigger: ScheduleTrigger.parse({}),
   }
 }
 
@@ -120,6 +124,7 @@ export const scheduleFormOf = (s: Schedule): ScheduleForm => ({
   budgetTokens: s.budget.tokens ? String(s.budget.tokens) : '',
   budgetMinutes: s.budget.minutes ? String(s.budget.minutes) : '',
   durationMin: s.durationMin,
+  trigger: s.trigger,
 })
 
 /** 已有计划原样转成保存用的输入：列表卡片上只切开关时用，其余字段不动 */
@@ -136,6 +141,7 @@ export const scheduleInputOf = (s: Schedule): ScheduleInput => ({
   budget: s.budget,
   endDate: s.endDate,
   durationMin: s.durationMin,
+  trigger: s.trigger,
 })
 
 /** 每周没勾星期时按执行时间那天：保存、预览、对齐都用这一口径 */
@@ -235,6 +241,9 @@ export function useScheduleForm({
         ? f.weekdays.filter((x) => x !== day)
         : [...f.weekdays, day].sort((a, b) => a - b),
     }))
+  /** 改触发方式或条件（只改给出的那几项） */
+  const setTrigger = (patch: Partial<ScheduleTrigger>) =>
+    setForm((f) => ({ ...f, trigger: { ...f.trigger, ...patch } }))
   /** 勾选 / 取消一个上游（多选） */
   const toggleUpstream = (id: string) =>
     setForm((f) => ({
@@ -254,13 +263,15 @@ export function useScheduleForm({
     }))
   }
 
-  const at = fromLocalInput(form.atLocal)
+  const event = isEventSchedule(form)
+  // 按事件的计划不看时间：沿用原来存的（服务端校验要一个合法时间），新建的用现在
+  const at = event ? (origin?.at ?? new Date().toISOString()) : fromLocalInput(form.atLocal)
   const weekdays = effectiveWeekdays(form, at)
   /**
    * 保存后的效果预览：先把首次执行对齐到规则允许的星期（和服务端 alignScheduleAt 同一口径），
    * 用户改时间、切重复规则时立刻能看到「什么时候、在哪个项目新建对话」。
    */
-  const previewAt = at ? alignScheduleAt({ repeat: form.repeat, at, weekdays }) : ''
+  const previewAt = at && !event ? alignScheduleAt({ repeat: form.repeat, at, weekdays }) : ''
   // 和服务端到点判定同一个宽限（pickDue）：超过 SCHEDULE_MISS_MS 的过去时间只会记为错过，预览不能承诺会新建对话
   const previewPast = !!previewAt && Date.now() - Date.parse(previewAt) > SCHEDULE_MISS_MS
 
@@ -281,11 +292,12 @@ export function useScheduleForm({
       dependsOn: form.dependsOn,
       // 输入框只让填数字；空着按 0（不限）
       budget: { tokens: Number(form.budgetTokens) || 0, minutes: Number(form.budgetMinutes) || 0 },
-      endDate: form.repeat === 'once' ? '' : form.endDate,
+      endDate: form.repeat === 'once' || event ? '' : form.endDate,
       durationMin: form.durationMin,
+      trigger: form.trigger,
     }
     // 下面两项服务端也会拦（同一个函数），先在本机拦一下，提示比等接口报错快
-    const timing = scheduleTimingError(input)
+    const timing = scheduleTimingError(input) || triggerConfigError(input)
     if (timing) {
       toast.error(timing)
       return
@@ -332,6 +344,7 @@ export function useScheduleForm({
     setProject,
     setRepeat,
     setAtLocal,
+    setTrigger,
     toggleWeekday,
     toggleUpstream,
     applyTemplate,
