@@ -112,7 +112,8 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: stri
     if (who === 'coordinator') {
       // 补丁一次能改好几个文件：每个都登记过才放行
       const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
-      if (files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
+      // 插件工具算不出要改哪些文件时 paths 是空的：说不清改什么就不算登记过
+      if (files.length && files.every((r) => r && c.task.inlineEdit?.files.includes(r))) return ''
       return '【面板】你是只统筹不动手的父对话，不直接改文件：改动交给子对话（create_conversation）；确实是几行以内的微小改动，先调用 begin_inline_edit 登记要改的文件。'
     }
     return '【面板】你是只读的角色，不改项目里的文件：把发现写进结果交回，要改的由派你的对话安排。'
@@ -478,8 +479,26 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
+  /**
+   * 插件的改文件类工具（插件接口 3，McpTool.effect = 'edit'）也过工具前的守卫和用户钩子：MCP 调用在 CLI 那边不算改文件，
+   * 以前写资产、改蓝图能绕过只读身份、Bug 先诊断和独立分支越界。按「改文件」的事实交给同一套守卫（路径是插件按参数算的 targets）
+   */
+  const editGuard = async (tool: string, paths: string[], input: Record<string, unknown>): Promise<string> => {
+    const facts: HookFacts = { tool: { kind: 'edit', name: tool, input, path: paths[0] ?? '', paths } }
+    for (const [id, fn] of guards) {
+      const deny = fn(guard(id), facts)
+      if (!deny) continue
+      taskLog(c.task.id, '插件工具被守卫拒绝', { guard: id, tool, paths: paths.slice(0, 5) })
+      noteBuiltin(id, 'tool.before', 'deny', deny)
+      return deny
+    }
+    return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
+  }
+
   // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
   c.call.orch.guardCommand = commandGuard
+  // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
+  c.call.orch.guardEdit = editGuard
   return {
     ...(beforeEnd ? { beforeEnd } : {}),
     ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),

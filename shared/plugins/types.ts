@@ -89,8 +89,9 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
 /**
  * 面板的插件接口版本：SDK 有新增或不兼容的改动时加一（插件清单的 api 不能大于它）。
  * 2：插件页面进图标栏（WebPlugin.pages）、对话的项目和目录（PluginRun.projectId / cwd / mode）、工具里请用户确认（McpCallContext.confirm）
+ * 3：工具声明对项目做什么（McpTool.effect / targets），结果里报改了哪些文件、验证通过没有（McpResult.changed / verified）
  */
-export const PLUGIN_API = 2
+export const PLUGIN_API = 3
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

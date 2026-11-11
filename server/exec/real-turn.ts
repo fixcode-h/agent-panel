@@ -27,6 +27,7 @@ import { t } from '../../shared/i18n.ts'
 import { ownFiles, taskChanges } from '../own-changes.ts'
 import { p4ReviewDiff } from '../p4-review-diff.ts'
 import { yieldApiSlot } from './api-gate.ts'
+import { turnExtra } from './turn-extra.ts'
 
 /**
  * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
@@ -114,6 +115,8 @@ export async function runRealTurn(ctx: RealContext) {
     resolveWorkflow: ctx.resolveWorkflow,
     // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦
     verifyGate: ctx.project?.requireVerify ? { steps: ctx.project.testSteps } : undefined,
+    // 工具调用之外的完成依据：插件工具报的改动和验证；开了门禁时再补命令改的文件（快照差）
+    turnExtra: () => turnExtra(ctx.task, workDirOf(ctx.task, ctx.project), !!ctx.project?.requireVerify),
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,

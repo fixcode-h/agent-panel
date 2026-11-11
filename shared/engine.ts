@@ -1380,8 +1380,10 @@ function makeOrchestra(
     // 只给对话（不含 Chat 页一问一答、子任务和工作流节点）：结束前钩子只认它交代的结束，不读回复文字
     ...(ctx.chat && !helper && !isChatMode(task)
       ? {
-          endTurn(outcome: string, need: string) {
-            const r = endTurnCheck(task, outcome, need, host.verifyGate)
+          async endTurn(outcome: string, need: string) {
+            // 命令改的文件、插件工具报的改动和验证：只在要记成做完时现取（拍快照有开销）
+            const extra = outcome === 'done' ? await host.turnExtra?.().catch(() => undefined) : undefined
+            const r = endTurnCheck(task, outcome, need, host.verifyGate, extra)
             if (r.end) pushTurnEnd(task, r.end)
             if (r.end) host.changed(true)
             return { ok: r.ok, info: r.info }

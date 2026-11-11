@@ -12,7 +12,27 @@ export type McpContent = { type: 'text'; text: string } | { type: 'image'; data:
 export interface McpResult {
   content: McpContent[]
   isError?: boolean
+  /**
+   * 改文件类工具（effect: 'edit'）这次实际改了哪些文件（插件接口 3）：本机路径，绝对路径或相对对话工作目录。
+   * 面板据此把它们算进这一轮的改动、完成依据和改动归属；不交给 Agent
+   */
+  changed?: string[]
+  /**
+   * 验证类工具（effect: 'verify'）的结论（插件接口 3）：name 是验证的名字（例如「蓝图编译」），files 是验证覆盖的文件，
+   * 不写时算覆盖这一轮插件改过的全部文件。isError 为真时按没通过算。不交给 Agent
+   */
+  verified?: { passed: boolean; name?: string; files?: string[] }
 }
+
+/**
+ * 工具对项目做什么（插件接口 3）。面板的守卫、完成依据、改动归属都按工具类别判断，
+ * 插件工具在解析层一律是「其他」：不声明的话，写入资产绕过只读身份和 Bug 先诊断，改了资产也不算改动、编译通过也不算验证。
+ * - read：只读（默认）；
+ * - edit：会改项目里的文件。执行前过工具前守卫（targets 给出要改的文件），结果里用 changed 报实际改了哪些；
+ * - verify：验证（编译、检查），结果里用 verified 报通过没有。
+ * 和 confirm（用户同不同意）不重复：那是问用户，这是让面板的规则看得见
+ */
+export type McpToolEffect = 'read' | 'edit' | 'verify'
 
 /** 插件工具请用户确认的内容（插件接口 2）：对话里出一张「允许 / 拒绝」卡片 */
 export interface PluginConfirm {
@@ -39,6 +59,10 @@ export interface McpTool {
   description: string
   inputSchema: Record<string, unknown>
   call: (args: Record<string, unknown>, ctx: McpCallContext) => Promise<McpResult>
+  /** 对项目做什么（插件接口 3），不写按只读算 */
+  effect?: McpToolEffect
+  /** effect 为 edit 时：按参数算出这次要改的文件（本机路径），执行前交给工具前守卫判断；算不出返回空数组 */
+  targets?: (args: Record<string, unknown>) => string[]
 }
 
 /** 一轮对话的信息：插件据此决定给不给工具、给哪些 */

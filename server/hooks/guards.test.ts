@@ -67,6 +67,10 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
     '面板给的临时目录不按方案拦',
   )
   assert.equal(bugDeny(ctx(), edit(path.join(proj, 'src/b.ts'))), '', '不是 Bug 不管')
+  // 插件的改文件类工具算不出要改哪些文件（没有路径）：方案没确认前照样拦，确认后放行
+  const noPath = { tool: { kind: 'edit', name: 'ue · write_asset', input: {}, path: '', paths: [] } } as never
+  assert.match(bugDeny(ctx(diag('pending')), noPath), /等用户确认/)
+  assert.equal(bugDeny(ctx(diag('approved')), noPath), '')
   // 按阶段（用户 2026-11-05 定的）：同意了根因还不能改，确认了方案放行方案里的文件和论证时加过日志的文件
   const list = (...ds: object[]) => ({ task: { bug: true, diagnoses: ds } }) as never
   const ev = { version: 1, phase: 'evidence', status: 'answered', files: ['src/log.ts'], logPlan: [] }
