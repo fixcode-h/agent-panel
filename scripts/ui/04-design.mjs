@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：设计模式（设计都来自插件，演示里没装时的说明和旧地址跳转）、ComfyUI 工作流、命令面板
+ * 界面检查分片：模式切换只有 Agent / Chat、旧的 UI 设计地址转到插件整页、ComfyUI 工作流、命令面板
  * UI 设计本身搬进了 UI 设计插件（fixcode-h/agent-plugins 的 ui-design），它的界面在插件那边测
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
@@ -9,21 +9,22 @@ import { runShard } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const p = await page({ width: 1440, height: 900 })
-  // 设计模式：UI 设计、模型设计都来自插件（ADR 0059），演示里不装插件——侧栏和页面都说明设计来自插件，给去装插件的入口
-  await p.goto(base + '#/pdesign')
-  await p.getByRole('heading', { name: '还没有设计插件' }).waitFor()
-  await check(p, '设计模式-没有插件', ['还没有设计插件', '去装插件'])
-  await p.getByRole('main').getByRole('button', { name: '去装插件' }).click()
+  // 侧栏顶上的模式切换只有 Agent 和 Chat 两个：UI 设计、模型设计都是插件的整页，入口在图标栏（ADR 0059，插件接口 5）
+  await p.goto(base + '#/home')
+  const modes = await p.getByRole('radiogroup', { name: '模式' }).first().getByRole('radio').count()
+  if (modes !== 2) errors.push(`模式切换应该只有 Agent、Chat 两个，现在是 ${modes} 个`)
+  await check(p, '模式切换-两个', ['新建任务'])
+  // 旧的 UI 设计地址（面板自带时的 #/design/…、设计模式时的 #/pdesign/ui/…）收藏过的照样能打开：
+  // 转到 UI 设计插件的整页，子位置原样带过去；演示里没装插件，说明插件没有打开
+  await p.goto(base + '#/design/demo-design-menu/inspect')
   await p
-    .getByRole('dialog')
-    .waitFor({ timeout: 5000 })
-    .catch(() => errors.push('设计模式：「去装插件」没有打开设置'))
-  await check(p, '设计模式-去装插件', ['插件市场'])
-  await p.keyboard.press('Escape')
-  // 旧版面板自带的 UI 设计地址（#/design/…）收藏过的照样能打开：转到 UI 设计插件的位置，插件没装时说明情况
-  await p.goto(base + '#/design/demo-design-menu')
-  await p.waitForURL(/#\/pdesign\/ui\/demo-design-menu/, { timeout: 5000 })
-  await check(p, '设计模式-旧地址', ['插件没有打开'])
+    .waitForURL(/#\/plugin\/ui-design\/ui\/demo-design-menu\/inspect$/, { timeout: 5000 })
+    .catch(() => errors.push(`旧地址 #/design/… 没有转到 UI 设计插件页：${p.url()}`))
+  await check(p, '设计-旧地址', ['插件没有打开'])
+  await p.goto(base + '#/pdesign/ui/demo-design-menu')
+  await p
+    .waitForURL(/#\/plugin\/ui-design\/ui\/demo-design-menu$/, { timeout: 5000 })
+    .catch(() => errors.push(`旧地址 #/pdesign/ui/… 没有转到 UI 设计插件页：${p.url()}`))
   // ComfyUI 工作流（照设计稿 ComfyUI 画板）：列表按游戏 / 网页 / 图片处理分组，内置的只读；
   // 入口在图标栏的通用功能里（视频画质增强也用它），哪个模式下都有
   await p.goto(base + '#/comfy/game')

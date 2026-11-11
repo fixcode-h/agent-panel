@@ -17,7 +17,6 @@ import {
   Menu as MenuIcon,
   MoreHorizontal,
   Moon,
-  Palette,
   Plus,
   Settings,
   Sun,
@@ -75,7 +74,6 @@ import {
   matchTask,
   type TaskFilter,
 } from './SidebarTasks'
-import { DesignList, currentDesignMode } from './SidebarDesigns'
 import {
   ComfyIcon,
   McpIcon,
@@ -93,7 +91,7 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
-import { useDesignModes, useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
+import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
 
 /** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
@@ -339,32 +337,29 @@ function TablesNavRow({ narrow }: { narrow: boolean }) {
 /** 切到各模式时回到上次在那个模式里看的页面 */
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
-let lastDesignRoute: Route = { page: 'pdesign' }
-/** 最近一次看的会话页（任务、项目、聊天、设计）：功能页上「回到主页」回到这里 */
+/** 最近一次看的会话页（任务、项目、聊天）：功能页上「回到主页」回到这里 */
 let lastWorkRoute: Route = { page: 'home' }
 export const homeRoute = () => lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
 export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || page === 'plugin' || page === 'tables'
-/** 设计模式：插件登记的设计模式页（UI 设计、模型设计都是插件） */
-export const isDesignPage = (page: PageId) => page === 'pdesign'
 
 /**
- * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
+ * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天。
+ * UI 设计、模型设计都是插件，入口在图标栏（插件的整页），不占这里的位置。
  * 展开时是侧栏左上角一组小图标按钮（照 Claude 桌面版）；会话侧栏让开时（功能页、收起）竖着排在图标栏里。
- * 功能页不属于哪个模式：三个都不亮，点哪个都回到那个模式最近的页面
+ * 功能页不属于哪个模式：两个都不亮，点哪个都回到那个模式最近的页面
  */
 export function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
   const tool = isToolPage(route.page)
   const chat = route.page === 'chat'
-  const design = isDesignPage(route.page)
   const modes = [
     {
       id: 'agent',
       name: 'Agent',
       label: t('Agent 模式：在项目里执行任务和工作流'),
       icon: Code2,
-      on: !chat && !design && !tool,
+      on: !chat && !tool,
       to: lastAgentRoute,
     },
     {
@@ -374,14 +369,6 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
       icon: MessagesSquare,
       on: chat,
       to: lastChatRoute,
-    },
-    {
-      id: 'design',
-      name: t('设计'),
-      label: t('设计模式：用对话做游戏界面、网页和模型（来自 UI 设计、Blender 等插件）'),
-      icon: Palette,
-      on: design,
-      to: lastDesignRoute,
     },
   ]
   if (narrow) {
@@ -448,11 +435,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
-  const designMode = isDesignPage(route.page)
-  const designModes = useDesignModes()
   // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页
-  if (designMode) lastDesignRoute = route
-  else if (chatMode) lastChatRoute = route
+  if (chatMode) lastChatRoute = route
   else if (!isToolPage(route.page)) lastAgentRoute = route
   if (!isToolPage(route.page)) lastWorkRoute = route
 
@@ -463,11 +447,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [filter, setFilter] = useState<TaskFilter>('all')
   const filtering = !!query.trim() || filter !== 'all'
   // 正文搜索：标题命中在 found 里（本地筛），正文命中走服务端，排在标题命中后面。
-  // Chat 模式的侧栏是 ChatList、设计模式的侧栏是 DesignList，都不显示任务命中：这里传空串（= 不搜），
+  // Chat 模式的侧栏是 ChatList，不显示任务命中：这里传空串（= 不搜），
   // 免得同一次输入发两份请求或者为看不见的结果白扫一遍对话
-  const content = useTaskSearch(chatMode || designMode ? '' : query)
+  const content = useTaskSearch(chatMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
-  // 插件管的对话（设计模式 #/pdesign、插件整页 #/plugin，例如模型设计）在插件那边看，不列进 Agent 模式的项目对话；
+  // 插件管的对话（插件整页 #/plugin，例如模型设计）在插件那边看，不列进 Agent 模式的项目对话；
   // 插件不在时照常列
   const owned = useOwnedByPlugin()
   const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !owned(t))
@@ -587,16 +571,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
 
       <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2.5', narrow && 'items-center px-2')}>
         {narrow && <ModeSwitch narrow />}
-        {designMode ? (
-          <Row
-            icon={Plus}
-            label={t('新建设计')}
-            collapsed={narrow}
-            on={route.page === 'pdesign' && !route.sub}
-            // 新建交给当前那种设计：UI 设计是它的新建页，没有整页的模式是它的空页面（上面有新建按钮）
-            onClick={() => go({ page: 'pdesign', id: currentDesignMode(route.id, designModes) })}
-          />
-        ) : chatMode ? (
+        {chatMode ? (
           <Row
             icon={Plus}
             label={t('新建聊天')}
@@ -634,13 +609,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         )}
       </nav>
 
-      {designMode ? (
-        narrow ? (
-          <div className="flex-1" />
-        ) : (
-          <DesignList />
-        )
-      ) : chatMode ? (
+      {chatMode ? (
         narrow ? (
           <div className="flex-1" />
         ) : (

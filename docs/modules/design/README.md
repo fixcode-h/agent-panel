@@ -1,16 +1,16 @@
-# design：设计模式、ComfyUI 工作流与风格库
+# design：ComfyUI 工作流、风格库与 UI 设计插件的入口
 
 - 状态：documented
-- 职责：设计模式的外壳（侧栏的设计类型下拉、插件设计页）、ComfyUI 工作流页和工作流链、风格库、浏览器扩展；UI 设计本身在 UI 设计插件里
-- 源码：`web/src/components/layout/SidebarDesigns.tsx`, `web/src/plugins/DesignPage.tsx`, `web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/comfy.ts`, `server/styles.ts`, `server/browser-ext-routes.ts`, `shared/local-image.ts`, `shared/comfy-chain.ts`, `shared/moss.ts`, `shared/style-types.ts`
-- 入口：`web/src/components/layout/SidebarDesigns.tsx`
-- 关键词：设计模式、UI 设计插件、ComfyUI、工作流链、风格库、MOSS、浏览器扩展
+- 职责：ComfyUI 工作流页和工作流链、风格库、浏览器扩展、旧的 UI 设计地址跳转；UI 设计本身在 UI 设计插件里（图标栏里的插件整页）
+- 源码：`web/src/pages/ComfyPage.tsx`, `web/src/components/comfy/`, `server/comfy.ts`, `server/styles.ts`, `server/browser-ext-routes.ts`, `shared/local-image.ts`, `shared/comfy-chain.ts`, `shared/moss.ts`, `shared/style-types.ts`
+- 入口：`web/src/pages/ComfyPage.tsx`
+- 关键词：UI 设计插件、ComfyUI、工作流链、风格库、MOSS、浏览器扩展
 - 更新：2026-11-11
 
 ## 职责
 
-- 设计模式：图标栏的「设计」进 `#/pdesign/<模式>/…`。设计都来自插件（ADR 0059 的 `DesignMode`）：UI 设计插件（fixcode-h/agent-plugins 的 `ui-design`，2026-11-11 以前是面板自带的）、Blender 插件的模型设计。侧栏顶部是设计类型下拉（选择记在本机 `agent-panel:design-mode`，记的那种没了用第一种）；插件给了 `Sidebar` / `Page`（插件接口 4）就用插件的，没给的按 `taskPlugin(task)` 列对话、在 `TaskView` 里打开。一个设计插件都没开时，侧栏和页面都说明设计来自插件，按钮直接打开设置里的插件页。
-- 旧地址：`#/design/<设计稿>/<子页>`（面板自带 UI 设计时的地址）在 `App.tsx` 的 `parseHash` 里换成 `#/pdesign/ui/<设计稿>/<子页>`，地址栏同时改成新地址；对话里旧的 `design` 服务的工具名归 UI 设计插件显示（`shared/tool-names.ts`）。
+- 面板没有单独的「设计模式」（2026-11-11 用户要求，插件接口 5 去掉了 `designModes` 和 `#/pdesign`）：侧栏顶上的模式切换只有 Agent、Chat 两个。UI 设计插件（fixcode-h/agent-plugins 的 `ui-design`，2026-11-11 以前是面板自带的）和 Blender 插件的模型设计一样，是图标栏里的插件整页（`#/plugin/ui-design/ui/<设计>/<子页>`），左边的项目列表由插件自己画（`PluginPage.split`）。
+- 旧地址：`#/design/<设计稿>/<子页>`（面板自带 UI 设计时）和 `#/pdesign/ui/<设计稿>/<子页>`（设计模式时）在 `App.tsx` 的 `parseHash` 里换成 `#/plugin/ui-design/ui/<设计稿>/<子页>`，地址栏同时改成新地址；对话里旧的 `design` 服务的工具名归 UI 设计插件显示（`shared/tool-names.ts`）。
 - ComfyUI 工作流页：内置和自己的工作流、节点图、AI 优化、试生成、工作流链；入口在图标栏的通用功能里，哪个模式下都有。
 - 风格库：`/api/styles`（`server/styles.ts`，数据 `styles.json`，旧版的 `designs/_styles.json` 读得到就接着用），设置里管理，对话出图和 UI 设计插件都用。
 - 浏览器扩展：`/api/designs/browser`（`server/browser-ext-routes.ts`，地址沿用以前挂在设计接口下的，扩展和旧版本认它），借网页版图片模型出图。

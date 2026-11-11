@@ -26,8 +26,8 @@ import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { loadPlugins, useDesignModes } from '@/plugins/registry'
-import type { DesignMode } from '@/plugins/sdk'
+import { loadPlugins, usePluginPages } from '@/plugins/registry'
+import type { PluginPage } from '@/plugins/sdk'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -38,7 +38,6 @@ const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.M
 const OverviewPage = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const PluginPageView = lazy(() => import('@/plugins/PluginPage').then((m) => ({ default: m.PluginPageView })))
-const PluginDesignPage = lazy(() => import('@/plugins/DesignPage').then((m) => ({ default: m.PluginDesignPage })))
 const TablesPage = lazy(() => import('@/pages/TablesPage').then((m) => ({ default: m.TablesPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
@@ -57,7 +56,6 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   workflows: () => <WorkflowsPage />,
   chat: () => <ChatPage />,
   comfy: () => <ComfyPage />,
-  pdesign: () => <PluginDesignPage />,
   plugin: () => <PluginPageView />,
   library: () => <LibraryPage />,
   mcp: () => <McpPage />,
@@ -68,16 +66,16 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
 
 /**
  * 自己分成几块面板的页面：项目工作区（项目首页 / 任务）、打开的聊天、计划（日历 + 详情两块）。
- * 插件的设计模式（UI 设计、模型设计）自带整页的由插件说（DesignMode.split），没说时和打开对话一样：有位置就算
+ * 插件的整页由插件自己说（PluginPage.split，例如 UI 设计左边是自己的项目列表），没说时套一块卡片
  */
-const pluginSplit = (r: Route, modes: DesignMode[]) => {
-  const m = modes.find((x) => x.id === r.id)
-  return m?.Page && m.split ? m.split(r.sub, r.msg) : !!r.sub
+const pluginSplit = (r: Route, pages: (PluginPage & { plugin: string })[]) => {
+  const p = pages.find((x) => x.plugin === r.id && x.id === r.sub)
+  return !!p?.split?.(r.msg ?? '')
 }
-const splitPage = (r: Route, modes: DesignMode[]) =>
+const splitPage = (r: Route, pages: (PluginPage & { plugin: string })[]) =>
   r.page === 'projects' ||
   (r.page === 'chat' && !!r.id) ||
-  (r.page === 'pdesign' && pluginSplit(r, modes)) ||
+  (r.page === 'plugin' && pluginSplit(r, pages)) ||
   r.page === 'schedules'
 
 function useTheme() {
@@ -95,10 +93,19 @@ function useTheme() {
 
 /** 地址栏用 hash 记录位置（#/projects/<id>/<sub>/<msg>），刷新、前进后退、复制链接都能回到同一页 */
 function parseHash(): Route {
-  const [page, id, sub, msg] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
-  // 旧版面板自带的 UI 设计（#/design/<设计稿>/<子页>）：现在是 UI 设计插件的设计模式 ui，收藏的链接照样能打开
-  if (page === 'design') {
-    const r: Route = { page: 'pdesign', id: 'ui', sub: id || undefined, msg: sub || undefined }
+  const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
+  const [page, id, sub, msg] = parts
+  // 插件整页的子位置可以带 /（插件接口 5）：第三段以后整个交给插件
+  if (page === 'plugin') {
+    const rest = parts.slice(3).join('/')
+    return { page: 'plugin', id: id || undefined, sub: sub || undefined, msg: rest || undefined }
+  }
+  // 旧地址：面板自带的 UI 设计（#/design/<设计稿>/<子页>）和后来的设计模式（#/pdesign/ui/<设计稿>/<子页>）
+  // 现在都是 UI 设计插件的整页，收藏的链接照样能打开
+  const legacy = page === 'design' ? parts.slice(1) : page === 'pdesign' && id === 'ui' ? parts.slice(2) : undefined
+  if (legacy) {
+    const path = legacy.filter(Boolean).join('/')
+    const r: Route = { page: 'plugin', id: 'ui-design', sub: 'ui', msg: path || undefined }
     // 地址栏也换成新地址：再复制出去的就是新的
     history.replaceState(history.state, '', toHash(r))
     return r
@@ -110,8 +117,11 @@ function parseHash(): Route {
 const toHash = (r: Route) =>
   '#/' +
   [r.page, r.id, r.sub, r.msg]
+    // 插件整页的子位置按 / 分段编码，地址里还是一段段的（#/plugin/ui-design/ui/<设计>/<子页>）
+    .map((x, i) =>
+      !x ? '' : r.page === 'plugin' && i === 3 ? x.split('/').map(encodeURIComponent).join('/') : encodeURIComponent(x),
+    )
     .filter(Boolean)
-    .map((x) => encodeURIComponent(x!))
     .join('/')
 
 function useHashRoute() {
@@ -226,8 +236,8 @@ function ProjectDialog({
 
 export function App() {
   const [route, setRoute] = useHashRoute()
-  // 插件的设计模式加载完要重算页面是不是分块的（splitPage）
-  const designModes = useDesignModes()
+  // 插件的整页加载完要重算页面是不是分块的（splitPage）
+  const pluginPages = usePluginPages()
   // 表格页打开过就记下：之后一直挂着（见下面的渲染），切走只藏起来
   const [tablesKept, setTablesKept] = useState(route.page === 'tables')
   if (route.page === 'tables' && !tablesKept) setTablesKept(true)
@@ -283,7 +293,7 @@ export function App() {
               <div
                 className={cn(
                   'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden',
-                  !splitPage(route, designModes) && 'panel',
+                  !splitPage(route, pluginPages) && 'panel',
                 )}
               >
                 {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
