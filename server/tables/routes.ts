@@ -25,6 +25,7 @@ import { checkoutTable } from './checkout.ts'
 import { runExport } from './export.ts'
 import { enumRename } from './enum-rename.ts'
 import { cellHistory } from './cell-history.ts'
+import { MAX_SYNC, syncTables, type SyncBody } from './sync.ts'
 import { markResolved, mergeSources, submitTable, vcsStatus } from './vcs-ops.ts'
 import type { EnumRename } from '../../shared/table-enum-rename.ts'
 import { stream } from 'hono/streaming'
@@ -336,6 +337,32 @@ export function tablesApi(deps: TablesDeps) {
           const right = await projectOf(deps, c.req.query('other') ?? '')
           if (!tablesOn(left.cfg) || !tablesOn(right.cfg)) throw new HttpError(t('两个项目都要先设好表格目录'))
           return c.json(await compareProjects(left, right))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 跨项目批量同步：apply=false 只预览
+      .post('/:id/sync', async (c) => {
+        try {
+          const l = await projectOf(deps, c.req.param('id'))
+          const b = (await c.req.json()) as SyncBody & { other?: string }
+          const r = await projectOf(deps, String(b.other ?? ''))
+          if (!tablesOn(l.cfg) || !tablesOn(r.cfg)) throw new HttpError(t('两个项目都要先设好表格目录'))
+          const body: SyncBody = {
+            items: Array.isArray(b.items) ? b.items.slice(0, MAX_SYNC) : [],
+            mode: b.mode === 'column' ? 'column' : 'file',
+            field: typeof b.field === 'string' ? b.field.slice(0, 200) : undefined,
+            apply: b.apply === true,
+          }
+          const side = async (x: typeof l) => ({
+            projectId: x.project.id,
+            dir: x.dir,
+            cfg: x.cfg,
+            schema: await readSchema(x.schemaAt),
+          })
+          return c.json({
+            results: await syncTables(await side(l), await side(r), body, { p4Edit: p4Edit(r.dir) }),
+          })
         } catch (e) {
           return fail(c, e)
         }

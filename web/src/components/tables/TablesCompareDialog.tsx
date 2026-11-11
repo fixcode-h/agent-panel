@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, FileSpreadsheet, GitCompareArrows, Loader2 } from 'lucide-react'
+import { ArrowRight, Download, Files, FileSpreadsheet, GitCompareArrows, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableDoc, TableSchema } from '@shared/tables'
 import { copyRows, type DiffRow } from '@shared/sheet-diff'
@@ -14,9 +14,13 @@ import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { SheetTabs } from '@/components/files/SheetTable'
 import { DiffSummary, SheetDiffView } from './SheetDiffView'
+import { BatchSyncDialog } from './BatchSyncDialog'
+import { diffReport, pairsReport } from './compare-report'
+import { saveText } from '@/lib/save-file'
 
 type Filter = 'diff' | 'all'
 
@@ -52,6 +56,7 @@ export function TablesCompareDialog({
   const [filter, setFilter] = useState<Filter>('diff')
   const [path, setPath] = useState('')
   const [seq, setSeq] = useState(0)
+  const [syncing, setSyncing] = useState(false)
   useEffect(() => {
     if (!right) return
     let live = true
@@ -111,6 +116,28 @@ export function TablesCompareDialog({
                 ))}
               </p>
             )}
+            {pairs && right && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" className="flex-1" onClick={() => setSyncing(true)}>
+                  <Files className="h-3.5 w-3.5" />
+                  {t('批量同步…')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    saveText(
+                      t('对比清单-{l}-{r}.csv', { l: left.name, r: rightName }),
+                      pairsReport(pairs, (s) => STATUS[s].label(), left.name, rightName),
+                      'text/csv;charset=utf-8',
+                    )
+                  }
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {t('导出清单')}
+                </Button>
+              </div>
+            )}
             <Segmented
               label={t('列出')}
               size="sm"
@@ -168,6 +195,15 @@ export function TablesCompareDialog({
           )}
         </section>
       </div>
+      {syncing && pairs && (
+        <BatchSyncDialog
+          left={left}
+          right={{ id: right, name: rightName }}
+          pairs={pairs}
+          onDone={() => setSeq((n) => n + 1)}
+          onClose={() => setSyncing(false)}
+        />
+      )}
     </Modal>
   )
 }
@@ -297,6 +333,23 @@ function PairView({
             { id: 'only', label: t('只看变化') },
             { id: 'all', label: t('全部行') },
           ]}
+        />
+        <IconButton
+          icon={Download}
+          label={t('把这张工作表的差异导出成 CSV')}
+          onClick={() =>
+            saveText(
+              t('差异-{file}.csv', { file: path.slice(path.lastIndexOf('/') + 1) }),
+              diffReport(
+                sheet.name,
+                view.diff,
+                view.r.rows,
+                view.l.rows,
+                view.l.names.length ? view.l.names : view.r.names,
+              ),
+              'text/csv;charset=utf-8',
+            )
+          }
         />
         <Button size="sm" variant="primary" disabled={!picked.size || busy} onClick={() => void copy()}>
           {t('把选中行拷到右边')}

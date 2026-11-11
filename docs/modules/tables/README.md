@@ -80,6 +80,14 @@
 - 冲突三方合并（`shared/table-merge.ts`，`POST /merge-start`、`/vcs-resolve`）：base / theirs 从 git 暂存区 `:1` `:3`、p4 `fstat -Or` 的 resolveBase/From、svn `info --xml` 的 prev-base-file / cur-base-file 取；ours 是工作区文件——CSV 冲突时 git/svn 往里写了冲突标记，先备份再换成干净的 ours（git `:2`、svn `.mine`），页面重新载入。合并在页面上算：按主键对齐行、按字段名对齐列，一边改的自动合、两边改成不同才让用户挑；结果作为一次改动（`replaceIn`，行操作 + 格子）放进表格，用户看过走正常保存，再「标记已解决」（git add / p4 resolve -ay / svn resolve --accept working）。不直接写盘，保存那条路的读回校验照样生效。对方新加的工作表合不了，只提示。
 - 跨项目对比：差异方向是 右(旧) → 左(新)。拷行只往右拷：`copyRows` 生成右边文件的行操作 + 格子，先按**右边项目**的结构 `checkTouched`，有问题列出来让用户决定，再走右边项目的原地保存。
 
+- 跨项目批量同步（`server/tables/sync.ts` + `shared/table-sync.ts`，`POST /sync`）：对比窗口「批量同步…」勾文件，整文件（字节原样拷，右边没有就新建，走 `replace.ts` 和切换版本同一套：占用检查、P4 edit、备份、临时文件改名）或只同步一列（右边结构的主键对行，只改已有行，走 `saveTable`）。先 `apply:false` 预览每个文件（差几格 / 改几格 / 右边少几行），再写；每个文件单独成败、原因列出来。右边项目只读拒绝。
+- 对比报告：对比窗口「导出清单」（文件和状态）、一对文件的「导出差异」（工作表、变化、主键、字段、右边旧值、左边新值），都是带 BOM 的 CSV（`compare-report.ts`）。
+
+## 导入导出
+
+- 「导表」菜单下面：这张工作表存成 CSV（含表头原样）、数据行存成 JSON（键是字段名，数字 / 布尔按列类型转，数组列拆成数组，备注列不要）。纯前端，`shared/table-io.ts`。
+- 从 CSV 粘贴导入：第一行一半以上是字段名就按名字对列，否则按位置；有主键时可选「主键已有的更新」，新主键追加到末尾。结果是一次改动（插行 + 格子，一次撤销），看过再保存。
+
 ## 编辑效率
 
 - 新增行（行号右键插入、工具栏 +）主键列自动填「最大的整数 + 1」（`nextKey`，`shared/table-tools.ts`）；「复制这一行插到下方」同样重新编号。插行和填格子是一次撤销（`rowOpWithCells`）。

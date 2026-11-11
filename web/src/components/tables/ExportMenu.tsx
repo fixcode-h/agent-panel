@@ -2,10 +2,24 @@ import { FileOutput } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { exportName, type TableExport } from '@shared/table-export'
 import { Button } from '@/components/ui/button'
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu'
 
-/** 表格页工具栏的「导表」：列出项目设置里的导表脚本，点一个对当前这张表执行 */
-export function ExportMenu({ exports, onRun }: { exports: TableExport[]; onRun: (index: number) => void }) {
+/**
+ * 表格页工具栏的「导表」：列出项目设置里的导表脚本，点一个对当前这张表执行；
+ * 下面是不用脚本的导出（CSV、JSON）和从 CSV 粘贴导入
+ */
+export function ExportMenu({
+  exports,
+  onRun,
+  onSave,
+  onImport,
+}: {
+  exports: TableExport[]
+  onRun: (index: number) => void
+  onSave: (kind: 'csv' | 'json') => void
+  /** 只读时没有 */
+  onImport?: () => void
+}) {
   return (
     <Menu>
       <MenuTrigger asChild>
@@ -29,6 +43,10 @@ export function ExportMenu({ exports, onRun }: { exports: TableExport[]; onRun: 
             {t('还没有导表脚本：在项目设置 → 表格 →「导表脚本」里添加，命令里用 {file} 代表表格路径。')}
           </p>
         )}
+        <MenuSeparator />
+        <MenuItem onSelect={() => onSave('csv')}>{t('这张工作表存成 CSV')}</MenuItem>
+        <MenuItem onSelect={() => onSave('json')}>{t('数据行存成 JSON')}</MenuItem>
+        {onImport && <MenuItem onSelect={onImport}>{t('从 CSV 粘贴导入…')}</MenuItem>}
       </MenuContent>
     </Menu>
   )

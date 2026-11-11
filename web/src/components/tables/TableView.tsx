@@ -61,6 +61,9 @@ import { useColLayout } from './use-col-layout'
 import { FindReplaceDialog } from './FindReplaceDialog'
 import { BackRefsDialog, CellMenu } from './CellMenu'
 import { CellHistoryDialog } from './CellHistoryDialog'
+import { ImportDialog } from './ImportDialog'
+import { importEdit, sheetCsv, sheetJson } from '@shared/table-io'
+import { saveText } from '@/lib/save-file'
 import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
 import type { CellAt } from '@shared/table-blame'
 import { findBackRefs, refsTo } from '@shared/table-refs'
@@ -176,6 +179,7 @@ export function TableView({
       .catch((e) => setBackRefs((b) => b && { ...b, error: (e as Error).message }))
   }
   const [vcs, setVcs, refreshVcs] = useVcsStatus(projectId, doc)
+  const [importing, setImporting] = useState(false)
   const [cellHist, setCellHist] = useState<{ at: CellAt; title: string } | null>(null)
   const [finding, setFinding] = useState<{ sel: { rows: number[]; cols: number[] } | null } | null>(null)
   const struct = useTableStruct({
@@ -407,7 +411,16 @@ export function TableView({
         {!readOnly && (
           <SubmitButton projectId={projectId} doc={doc} status={vcs} dirty={pending.length > 0} onDone={refreshVcs} />
         )}
-        <ExportMenu exports={exports} onRun={onExport} />
+        <ExportMenu
+          exports={exports}
+          onRun={onExport}
+          onSave={(kind) => {
+            const base = `${doc.path.replace(/^.*\//, '').replace(/\.[^.]+$/, '')}${doc.sheets.length > 1 ? `-${sheet.name}` : ''}`
+            if (kind === 'csv') saveText(`${base}.csv`, sheetCsv(rows), 'text/csv;charset=utf-8')
+            else saveText(`${base}.json`, sheetJson(rows, view.from, struct.infos), 'application/json')
+          }}
+          onImport={readOnly ? undefined : () => setImporting(true)}
+        />
         <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
           <BookA className="h-3.5 w-3.5" />
           {t('枚举')}
@@ -500,6 +513,19 @@ export function TableView({
           />
         </div>
       </CellMenu>
+      {importing && (
+        <ImportDialog
+          rows={rows}
+          from={view.from}
+          infos={struct.infos}
+          keyCol={keyCol >= 0 ? keyCol : struct.infos.findIndex((i) => !!i.field)}
+          onApply={(plan) => {
+            const { op, cells } = importEdit(rows.length, plan)
+            onEdits((e) => (op ? rowOpWithCells(e, sheet, op, cells) : setCellsIn(e, sheet, cells)))
+          }}
+          onClose={() => setImporting(false)}
+        />
+      )}
       {cellHist && (
         <CellHistoryDialog projectId={projectId} path={doc.path} {...cellHist} onClose={() => setCellHist(null)} />
       )}

@@ -47,6 +47,11 @@ export const tablesApi = {
   /** 跨项目对比：按相对路径配对 */
   compare: (projectId: string, other: string) =>
     request<{ pairs: TablePair[]; truncated?: boolean }>(`/tables/${projectId}/compare?other=${q(other)}`),
+  /** 跨项目批量同步：apply=false 只预览 */
+  sync: (
+    projectId: string,
+    body: { other: string; items: SyncItem[]; mode: 'file' | 'column'; field?: string; apply: boolean },
+  ) => request<{ results: SyncResult[] }>(`/tables/${projectId}/sync`, json('POST', body)),
   /** 全项目检查 */
   check: (projectId: string, all = false) => request<TablesCheck>(`/tables/${projectId}/check${all ? '?all=1' : ''}`),
   /** 把本地文件切换到某一版：返回切换后的文件 */
@@ -67,6 +72,20 @@ export const tablesApi = {
   /** 枚举值改名后替换所有表里的旧值；apply=false 只预览 */
   enumRename: (projectId: string, renames: EnumRename[], apply: boolean) =>
     request<EnumRenameResult>(`/tables/${projectId}/enum-rename`, json('POST', { renames, apply })),
+}
+
+export interface SyncItem {
+  path: string
+  left?: string
+  right?: string
+}
+
+export interface SyncResult {
+  path: string
+  action: 'create' | 'replace' | 'cells' | 'same' | 'skip'
+  cells: number
+  missing?: number
+  error?: string
 }
 
 export interface VcsStatus {

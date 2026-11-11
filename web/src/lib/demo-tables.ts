@@ -24,6 +24,7 @@ import { DEMO_CONFLICT, DEMO_REVS, demoAt, demoConflict, demoRelease } from './d
 import { exportLines, type ExportEvent } from '@shared/table-export'
 import { enumRenameCells, type EnumRename } from '@shared/table-enum-rename'
 import { cellChanges, cellIn, type CellAt } from '@shared/table-blame'
+import { cellDiffCount, columnSync } from '@shared/table-sync'
 
 function demoExport(p: Project, b: { script: number; paths: string[] }): ExportEvent[] {
   const script = p.tables?.exports[b.script]
@@ -314,6 +315,59 @@ export function demoTables(
       return { path, status: same ? 'same' : 'diff' }
     })
     return { pairs }
+  }
+  // 跨项目批量同步：演示里改内存里右边项目的表
+  if (kind === 'sync' && method === 'POST') {
+    const b = body as {
+      other: string
+      items: { path: string }[]
+      mode: 'file' | 'column'
+      field?: string
+      apply: boolean
+    }
+    const other = others(b.other)
+    if (!other || !tablesOn(other.tables)) fail('两个项目都要先设好表格目录')
+    if (b.mode === 'column' && !b.field?.trim()) fail('写要同步的字段名')
+    const results = b.items.map((it) => {
+      const known = filesOf(other!).some((f) => f.path === it.path)
+      const lb = bookOf(it.path, p)
+      if (b.mode === 'file') {
+        const rb = known ? bookOf(it.path, other) : null
+        const cells = rb ? cellDiffCount(lb.sheets, rb.sheets) : 0
+        if (rb && !cells) return { path: it.path, action: 'same', cells: 0 }
+        if (b.apply && rb) {
+          rb.sheets = structuredClone(lb.sheets)
+          rb.mtime = new Date().toISOString()
+        }
+        return { path: it.path, action: rb ? 'replace' : 'create', cells }
+      }
+      if (!known) return { path: it.path, action: 'skip', cells: 0, error: '右边没有这个文件' }
+      const rb = bookOf(it.path, other)
+      const per = columnSync(
+        { schema, file: it.path, sheets: lb.sheets },
+        { schema, file: it.path, sheets: rb.sheets },
+        b.field!.trim(),
+      )
+      if (!per.length) return { path: it.path, action: 'skip', cells: 0, error: '两边没有都带这一列和主键列的工作表' }
+      const cells = per.reduce((n, x) => n + x.cells.length, 0)
+      if (b.apply && cells) {
+        rb.sheets = rb.sheets.map((s) => {
+          const x = per.find((y) => y.sheet === s.name)
+          return x?.cells.length
+            ? {
+                ...s,
+                rows: setCells(
+                  s.rows.map((r) => [...r]),
+                  x.cells,
+                ),
+              }
+            : s
+        })
+        rb.mtime = new Date().toISOString()
+      }
+      return { path: it.path, action: cells ? 'cells' : 'same', cells, missing: per.reduce((n, x) => n + x.missing, 0) }
+    })
+    return { results }
   }
   if (kind === 'schema' && method === 'GET') return schema
   if (kind === 'schema' && method === 'PUT') return demoSchema.set(body as TableSchema)

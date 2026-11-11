@@ -253,6 +253,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText(/已拷 1 行到/)
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：跨项目对比拷行没有成功'))
+  // 批量同步：勾文件、选整文件还是一列，先预览每个文件会怎样
+  await cmp.getByRole('button', { name: '批量同步…' }).click()
+  const sync = p.getByRole('dialog', { name: /批量同步到/ })
+  await sync.getByRole('list', { name: '要同步的文件' }).getByRole('checkbox').first().click()
+  await sync.getByRole('button', { name: '预览' }).click()
+  await sync
+    .getByRole('list', { name: '同步预览' })
+    .getByText(/整个替换|右边新建|已经一样/)
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('批量同步：没有出预览'))
+  await check(p, '表格页-批量同步预览', ['写之前都会备份'])
+  await sync.getByRole('button', { name: '返回修改' }).click()
+  await sync.getByRole('button', { name: '取消' }).click()
   await p.keyboard.press('Escape')
 
   // 导表：工具栏「导表」选一个脚本，窗口里看到占位换成真实路径后的命令和输出
@@ -269,6 +283,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     errors.push('导表：命令里的 {file} 没有换成表格的真实路径')
   await check(p, '表格页-导表', ['完成', '退出码 0'])
   await p.keyboard.press('Escape')
+  // 从 CSV 粘贴导入：第一行是字段名就按名字对列，预览追加的行
+  await p.getByRole('button', { name: '导表', exact: true }).click()
+  await p.getByRole('menuitem', { name: '从 CSV 粘贴导入…' }).click()
+  const imp = p.getByRole('dialog', { name: '从 CSV 粘贴导入' })
+  await imp.getByRole('textbox').fill('ID,DisplayName\n990001,新落地镜')
+  await imp
+    .getByRole('table', { name: '追加的行' })
+    .getByText('新落地镜')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('导入：没有预览追加的行'))
+  await check(p, '表格页-粘贴导入', ['按第一行的字段名对列', '追加 1 行'])
+  await imp.getByRole('button', { name: '取消' }).click()
 
   // 本地文件切换到某一版：选一个旧提交，确认后整个文件换成那一版
   await p.getByRole('button', { name: '版本', exact: true }).click()
