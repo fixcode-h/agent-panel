@@ -3,6 +3,7 @@
  * 改动、结构文件只存在这一页的内存里，刷新就回到示例数据。
  */
 import { parseCsv } from '@shared/csv'
+import { applyRowOps, setCells, type TableSave } from '@shared/table-edit'
 import type { Project } from '@shared/schema'
 import {
   TableSchema,
@@ -87,6 +88,19 @@ export function demoTables(method: string, seg: string[], query: URLSearchParams
             }),
           )
     return { hits, files: files.length }
+  }
+  if (kind === 'save' && method === 'POST') {
+    const save = body as TableSave
+    const b = bookOf(save.path)
+    if (p.tables?.readOnly) fail('项目设置里把表格设成了只读')
+    if (save.mtime !== b.mtime && !save.force)
+      fail('打开之后文件在外面被改过了：重新载入看看最新的内容，或者只把改了的格子写进去')
+    b.sheets = b.sheets.map((s) => {
+      const e = save.sheets.find((x) => x.name === s.name) ?? (save.path.endsWith('.csv') ? save.sheets[0] : undefined)
+      return e ? { ...s, rows: setCells(applyRowOps(s.rows, e.rows), e.cells) } : s
+    })
+    b.mtime = new Date().toISOString()
+    return demoTables('GET', [seg[0], seg[1], 'file'], new URLSearchParams({ path: save.path }), null, p)
   }
   if (kind === 'schema' && method === 'GET') return schema
   if (kind === 'schema' && method === 'PUT') return demoSchema.set(body as TableSchema)

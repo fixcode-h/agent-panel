@@ -48,6 +48,35 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await p.getByRole('tab', { name: 'C_HomeDecorationConfig.xlsx' }).getAttribute('aria-selected')) !== 'true')
     errors.push('表格页：点搜索结果没有切到那个文件')
 
+  // 改格子：双击进编辑框，回车确认；改过的格子标出来，撤销能退回去
+  const cell = (r, c) => p.locator(`[role=cell][data-r="${r}"][data-c="${c}"]`)
+  await cell(5, 4).dblclick()
+  const box = p.getByRole('textbox', { name: '编辑单元格' })
+  await box.fill('曲线穿衣镜（改）')
+  await box.press('Enter')
+  if (!(await cell(5, 4).getAttribute('class'))?.includes('sheet-dirty')) errors.push('表格页：改过的格子没有标出来')
+  // 选中下一格直接打字、再撤销
+  await p.keyboard.type('9')
+  await p.keyboard.press('Enter')
+  if ((await cell(6, 4).textContent()) !== '9') errors.push('表格页：直接打字没有改到当前格')
+  await p.keyboard.press('Control+z')
+  if ((await cell(6, 4).textContent()) === '9') errors.push('表格页：Ctrl+Z 没有撤销')
+  await check(p, '表格页-改格子', ['曲线穿衣镜（改）'])
+  await p.getByRole('button', { name: '保存', exact: true }).click()
+  const save = p.getByRole('dialog')
+  await save
+    .getByText('E6', { exact: true })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('保存确认：没有列出改了的格子'))
+  await check(p, '表格页-保存确认', ['只改下面这些格子的值'])
+  await save.getByRole('button', { name: '保存', exact: true }).click()
+  await p
+    .getByText('已保存 C_HomeDecorationConfig.xlsx')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('表格页：保存后没有提示'))
+  if ((await cell(5, 4).getAttribute('class'))?.includes('sheet-dirty')) errors.push('表格页：保存后格子还标着改过')
+  if ((await cell(5, 4).textContent()) !== '曲线穿衣镜（改）') errors.push('表格页：保存后内容不对')
+
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()
   const dlg = p.getByRole('dialog')

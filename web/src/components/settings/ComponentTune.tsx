@@ -90,6 +90,8 @@ const gridPropLabel = (prop: string): string | undefined =>
     other: t('其他表头行'),
     nameBold: t('字段名加粗'),
     divider: t('表头下粗线'),
+    edited: t('改过未保存的格子'),
+    invalid: t('不合规的格子'),
   })[prop]
 
 const optionLabel = (v: string) =>

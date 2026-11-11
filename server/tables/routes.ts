@@ -10,19 +10,17 @@ import type { Project } from '../../shared/schema.ts'
 import { resolvePath } from '../fs.ts'
 import { listTables, openTable, searchTables } from './files.ts'
 import { readSchema, schemaDir, writeSchema } from './schema-store.ts'
+import { HttpError } from './http-error.ts'
+import { saveTable } from './write.ts'
+import { TableSave } from '../../shared/table-edit.ts'
+import { detectVcs } from '../projects-analyze.ts'
+import { p4Runner } from '../p4-split.ts'
 
 export interface TablesDeps {
   projects: { get(id: string): Promise<Project | null> }
 }
 
-export class HttpError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 404 | 409 = 400,
-  ) {
-    super(message)
-  }
-}
+export { HttpError }
 
 /** 项目、项目目录、表格配置；没开表格功能也给（列表为空） */
 export async function projectOf(deps: TablesDeps, id: string) {
@@ -69,6 +67,25 @@ export function tablesApi(deps: TablesDeps) {
           if (!tablesOn(cfg)) return c.json({ hits: [], files: 0 })
           const { files } = await listTables(dir, cfg)
           return c.json(await searchTables(dir, files, c.req.query('q') ?? ''))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 保存改动：原地改单元格（见 write.ts）
+      .post('/:id/save', async (c) => {
+        try {
+          const { project, dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const body = TableSave.safeParse(await c.req.json().catch(() => null))
+          if (!body.success) throw new HttpError(t('要保存的改动格式不对'))
+          return c.json(
+            await saveTable(dir, project.id, cfg, body.data, {
+              p4Edit: async (full) => {
+                if ((await detectVcs(dir)).vcs !== 'p4') return false
+                const r = await p4Runner(dir)(['edit', full])
+                return { ok: r.ok, err: r.err || r.out }
+              },
+            }),
+          )
         } catch (e) {
           return fail(c, e)
         }

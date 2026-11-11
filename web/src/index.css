@@ -1145,6 +1145,8 @@ body,
   --c-grid-other: var(--fg);
   --c-grid-nameBold: 600;
   --c-grid-divider: 2px;
+  --c-grid-edited: var(--warning);
+  --c-grid-invalid: var(--danger);
 }
 
 /*

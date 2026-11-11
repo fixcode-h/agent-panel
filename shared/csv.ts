@@ -74,7 +74,8 @@ export function parseCsv(text: string, delimiter = sniffDelimiter(text)): string
 }
 
 /** 一格要不要加引号：有分隔符、引号、换行（开头结尾的空格读的时候原样留着，写回也不加引号，和 Excel 一样） */
-const needQuote = (cell: string, delimiter: string) => cell.includes(delimiter) || cell.includes('"') || /[\r\n]/.test(cell)
+const needQuote = (cell: string, delimiter: string) =>
+  cell.includes(delimiter) || cell.includes('"') || /[\r\n]/.test(cell)
 
 /** 写回 CSV：只在需要时加引号（和 Excel 存出来的一样），分隔符、换行符、BOM、结尾换行都按原文件 */
 export function writeCsv(

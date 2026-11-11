@@ -16,6 +16,9 @@ import { TableTree } from '@/components/tables/TableTree'
 import { TableHits } from '@/components/tables/TableHits'
 import { TableTabs } from '@/components/tables/TableTabs'
 import { TableView, type TableJump } from '@/components/tables/TableView'
+import { noEdits, pendingOf, type Edits } from '@/components/tables/table-edits'
+import { ConfirmDialog } from '@/components/ui/dialog'
+import type { SheetEdit } from '@shared/table-edit'
 
 type Mode = 'name' | 'content'
 
@@ -78,6 +81,9 @@ function Workbench({
   const [docs, setDocs] = useState<Record<string, TableDoc | { error: string }>>({})
   const [sheetOf, setSheetOf] = useState<Record<string, number>>({})
   const [jump, setJump] = useState<TableJump>()
+  // 每个打开的文件还没保存的改动；关页签、换项目前要确认
+  const [edits, setEdits] = useState<Record<string, Edits>>({})
+  const [closing, setClosing] = useState('')
   // 搜索跳转时文件还没读到：记下要切的表，读到后再切
   const pendingSheet = useRef<{ path: string; sheet: string } | null>(null)
 
@@ -111,7 +117,23 @@ function Workbench({
     setActive(path)
     load(path)
   }
-  const close = (path: string) => {
+  const dirtyPaths = new Set(
+    Object.keys(edits).filter((p) => {
+      const d = docs[p]
+      return d && 'sheets' in d && pendingOf(edits[p], d.sheets).length > 0
+    }),
+  )
+  // 有没保存的改动时关页面、刷新先提醒
+  const anyDirty = dirtyPaths.size > 0
+  useEffect(() => {
+    if (!anyDirty) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [anyDirty])
+  const close = (path: string, force = false) => {
+    if (!force && dirtyPaths.has(path)) return setClosing(path)
+    setEdits(({ [path]: _, ...m }) => m)
     const i = tabs.indexOf(path)
     const rest = tabs.filter((p) => p !== path)
     setTabs(rest)
@@ -137,6 +159,17 @@ function Workbench({
   }, [docs])
 
   const search = useContentSearch(projectId, mode === 'content' ? query : '')
+  const saveDoc = async (doc: TableDoc, pending: SheetEdit[], force: boolean) => {
+    try {
+      const next = await tablesApi.save(projectId, { path: doc.path, mtime: doc.mtime, sheets: pending, force })
+      setDocs((m) => ({ ...m, [doc.path]: next }))
+      setEdits(({ [doc.path]: _, ...m }) => m)
+      toast.success(t('已保存 {name}', { name: doc.path.slice(doc.path.lastIndexOf('/') + 1) }))
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  }
   const saveSchema = useCallback(
     (s: TableSchema) => {
       setSchema(s)
@@ -204,7 +237,7 @@ function Workbench({
             <Loader2 className="h-4 w-4 animate-spin" />
           </div>
         ) : mode === 'name' ? (
-          <TableTree files={files} query={query} active={active} onOpen={open} />
+          <TableTree files={files} query={query} active={active} dirty={dirtyPaths} onOpen={open} />
         ) : (
           <TableHits
             result={search.result}
@@ -216,7 +249,9 @@ function Workbench({
         )}
       </ListPane>
       <main className="flex min-h-[60vh] min-w-0 flex-1 flex-col md:h-full md:min-h-0">
-        {tabs.length > 0 && <TableTabs paths={tabs} active={active} onPick={setActive} onClose={close} />}
+        {tabs.length > 0 && (
+          <TableTabs paths={tabs} active={active} dirty={dirtyPaths} onPick={setActive} onClose={(p) => close(p)} />
+        )}
         {!doc ? (
           active ? (
             <div className="flex flex-1 items-center justify-center text-subtle">
@@ -244,9 +279,23 @@ function Workbench({
             jump={jump}
             sheetIndex={sheetOf[doc.path] ?? 0}
             onSheet={(i) => setSheetOf((m) => ({ ...m, [doc.path]: i }))}
+            edits={edits[doc.path]}
+            onEdits={(f) => setEdits((m) => ({ ...m, [doc.path]: f(m[doc.path] ?? noEdits()) }))}
+            onSave={(pending, force) => saveDoc(doc, pending, force)}
           />
         )}
       </main>
+      <ConfirmDialog
+        open={!!closing}
+        title={t('关掉 {name}？', { name: closing.slice(closing.lastIndexOf('/') + 1) })}
+        description={t('还有没保存的改动，关掉就丢了。')}
+        confirmText={t('不保存，关掉')}
+        onConfirm={() => {
+          close(closing, true)
+          setClosing('')
+        }}
+        onOpenChange={(o) => !o && setClosing('')}
+      />
     </>
   )
 }

@@ -45,3 +45,30 @@
   background: color-mix(in srgb, var(--warning) 60%, transparent);
   box-shadow: inset 0 0 0 1px var(--warning);
 }
+
+/* 表格页编辑：选中的一块浅底，当前格描边；改过没保存的格子、不合规的格子各一种颜色（设置里调） */
+.sheet-grid .sheet-cell {
+  cursor: default;
+}
+.sheet-sel {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.sheet-focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.sheet-dirty {
+  background: color-mix(in oklab, var(--c-grid-edited) var(--c-grid-tint), transparent);
+}
+.sheet-bad {
+  box-shadow: inset 0 -2px 0 var(--c-grid-invalid);
+  color: var(--c-grid-invalid);
+}
+.sheet-focus.sheet-bad {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 -3px 0 var(--c-grid-invalid);
+}
+.sheet-editing {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  z-index: 1;
+}

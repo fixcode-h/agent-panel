@@ -64,7 +64,7 @@ function zipRead(buf: Buffer, entry: ZipEntry | undefined): string {
 
 const ENTITY: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
 /** XML 里的字：实体还原；Excel 把控制字符写成 _x000D_ 这种，也还原 */
-function xmlText(s: string) {
+export function xmlText(s: string) {
   if (!s) return ''
   let out = s
   if (out.includes('&'))
@@ -80,7 +80,7 @@ function xmlText(s: string) {
 const noPrefix = (xml: string) =>
   /<\w+:(worksheet|sst|styleSheet|workbook)\b/.test(xml) ? xml.replace(/<(\/?)\w+:/g, '<$1') : xml
 
-const attr = (tag: string, name: string) => new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(tag)?.[1]
+export const attr = (tag: string, name: string) => new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(tag)?.[1]
 
 /** 一段富文本（<si> 或 <is>）里的字：几段 <t> 连起来，拼音注音（rPh）不算 */
 function richText(inner: string) {
@@ -100,7 +100,7 @@ function sharedStrings(xml: string) {
 const DATE_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58]) // prettier-ignore
 
 /** 每个单元格样式是不是日期：数字单元格是日期时存的是「距 1900 年多少天」，要换成日期才看得懂 */
-function dateStyles(xml: string): boolean[] {
+export function dateStyles(xml: string): boolean[] {
   const x = noPrefix(xml)
   const custom = new Map<number, boolean>()
   for (const m of x.matchAll(/<numFmt\b([^>]*)>/g)) {
@@ -137,7 +137,7 @@ function numberText(v: string) {
 }
 
 /** 列名 → 第几列（A → 0，AA → 26） */
-function colOf(ref: string) {
+export function colOf(ref: string) {
   let n = 0
   for (let i = 0; i < ref.length; i++) {
     const c = ref.charCodeAt(i)

@@ -39,6 +39,26 @@ function useRowH() {
   return h
 }
 
+/** 表格页编辑用：选中的一块、当前格、正在改的格子、格子的额外标记（改过、不合规） */
+export interface SheetEditing {
+  /** 这一格在不在选中的一块里（筛选排序后选中的行不一定连着，交给调用方判断） */
+  picked: (r: number, c: number) => boolean
+  focus: { row: number; col: number } | null
+  /** 每次移动当前格加一：把它滚进视野 */
+  focusSeq: number
+  /** 正在改的格子和编辑框 */
+  editing: { r: number; c: number; node: React.ReactNode } | null
+  /** 格子的额外样式类（改过、不合规） */
+  mark?: (r: number, c: number) => string | undefined
+  /** 格子的悬停说明（不合规的原因）；不给就是格子的内容 */
+  tip?: (r: number, c: number) => string | undefined
+  onDown: (r: number, c: number, e: React.MouseEvent) => void
+  onEnter: (r: number, c: number, e: React.MouseEvent) => void
+  onDouble: (r: number, c: number) => void
+  /** 行号格的右键菜单（插入、删除行） */
+  rowMenu?: (r: number, trigger: React.ReactElement) => React.ReactNode
+}
+
 /**
  * 数据表格：CSV / TSV 和 xlsx 的一张表（行 × 列的文字）。带 Excel 那样的列名（A、B、C）和行号，
  * 只画看得见的行（一万行的配置表打开也只有几百个格子）；每格一行、太长的截断，悬停看完整内容。
@@ -58,7 +78,10 @@ export function SheetTable({
   sort,
   onFilter,
   onSort,
+  edit,
 }: {
+  /** 表格页传：能选中、改格子 */
+  edit?: SheetEditing
   rows: string[][]
   /** 外面的滚动容器 */
   scrollEl: React.RefObject<HTMLDivElement | null>
@@ -141,7 +164,7 @@ export function SheetTable({
     for (const h of hits ?? []) set.add(h.row * cols + h.col)
     return set
   }, [hits, cols])
-  const cur = hits?.[current ?? 0]
+  const cur = edit?.focus ?? hits?.[current ?? 0]
   const at = useMemo(() => new Map(body.map((r, i) => [r, i])), [body])
 
   // 搜索换到下一处：把那一格滚进视野（被钉住的表头、行号列挡住的也算没看见；表头里的格子本来就看得见）
@@ -160,7 +183,7 @@ export function SheetTable({
       box.scrollLeft = Math.max(0, x - numW - 24)
     // lefts、widths、at 跟着 rows 变，换了当前命中才滚
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur?.row, cur?.col, seq, scrollEl])
+  }, [cur?.row, cur?.col, seq, edit?.focusSeq, scrollEl])
 
   if (!rows.length) return <p className="p-6 text-body text-subtle">{t('这张表是空的。')}</p>
 
@@ -169,21 +192,48 @@ export function SheetTable({
     widths.map((w, c) => {
       const text = rows[r]?.[c] ?? ''
       const hit = marked.has(r * cols + c)
-      const on = hit && cur?.row === r && cur.col === c
+      const on = !edit && hit && cur?.row === r && cur.col === c
+      if (edit?.editing && edit.editing.r === r && edit.editing.c === c)
+        return (
+          <span
+            key={c}
+            role="cell"
+            className={cn(CELL, 'sheet-editing relative overflow-visible p-0')}
+            style={{ width: w }}
+          >
+            {edit.editing.node}
+          </span>
+        )
+      const picked = !!edit?.picked(r, c)
+      const focused = !!edit?.focus && edit.focus.row === r && edit.focus.col === c
       return (
         <span
           key={c}
           role="cell"
-          // 截断了或者有换行的格子，悬停看完整内容
-          title={text.length > 12 ? text : undefined}
+          // 截断了或者有换行的格子，悬停看完整内容；不合规的格子悬停看原因
+          title={edit?.tip?.(r, c) ?? (text.length > 12 ? text : undefined)}
           data-current={on || undefined}
-          className={cn(CELL, on ? 'sheet-hit-current' : hit && 'sheet-hit')}
+          aria-selected={edit ? picked : undefined}
+          data-r={edit ? r : undefined}
+          data-c={edit ? c : undefined}
+          onMouseDown={edit && ((e) => edit.onDown(r, c, e))}
+          onMouseEnter={edit && ((e) => edit.onEnter(r, c, e))}
+          onDoubleClick={edit && (() => edit.onDouble(r, c))}
+          className={cn(
+            CELL,
+            on ? 'sheet-hit-current' : hit && 'sheet-hit',
+            edit?.mark?.(r, c),
+            picked && 'sheet-sel',
+            focused && 'sheet-focus',
+          )}
           style={{ width: w }}
         >
           {text}
         </span>
       )
     })
+  /** 行号格：表格页里右键能插删行 */
+  const rowNum = (r: number, node: React.ReactElement) => (edit?.rowMenu ? edit.rowMenu(r, node) : node)
   const shown: number[] = []
   for (let i = win.from; i < Math.min(win.to, body.length); i++) shown.push(i)
   const headRows: number[] = []
@@ -252,12 +302,15 @@ export function SheetTable({
             className="absolute left-0 flex hover:bg-fg/4"
             style={{ top: frozenH + rowH * i, height: rowH, width: total, lineHeight: `${rowH - 1}px` }}
           >
-            <span
-              className={cn(STICKY, CELL, 'left-0 z-1 text-right font-mono text-caption')}
-              style={{ width: numW, ...lineH }}
-            >
-              {r + 1}
-            </span>
+            {rowNum(
+              r,
+              <span
+                className={cn(STICKY, CELL, 'left-0 z-1 text-right font-mono text-caption')}
+                style={{ width: numW, ...lineH }}
+              >
+                {r + 1}
+              </span>,
+            )}
             {cells(r)}
           </div>
         )

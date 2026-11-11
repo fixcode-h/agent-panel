@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
-import { SheetTable } from '@/components/files/SheetTable'
+import { SheetTable, type SheetEditing } from '@/components/files/SheetTable'
 import { useSheetView } from '@/components/files/use-sheet-view'
 
 /** 样例：一张游戏配置表（修饰 / 导出端 / 类型 / 字段名 / 注释 + 数据），演示数据不翻译 */
@@ -19,6 +19,19 @@ const ROWS = [
   ['7', '781713007', 'TabletopDecor', '化妆台小镜', '', '-1'],
   ['8', '781713008', 'WallMirror', '复古椭圆挂镜', '', '2'],
 ]
+
+/** 表格页里的样子：一格改过没保存、一格不合规、当前格描边（只看，不能真改） */
+const SAMPLE_EDIT: SheetEditing = {
+  picked: () => false,
+  focus: { row: 8, col: 2 },
+  focusSeq: 0,
+  editing: null,
+  mark: (r, c) => (r === 6 && c === 3 ? 'sheet-dirty' : r === 12 && c === 5 ? 'sheet-bad' : undefined),
+  tip: (r, c) => (r === 12 && c === 5 ? 'TriggerState 只能是 -1 到 1' : undefined),
+  onDown: () => {},
+  onEnter: () => {},
+  onDouble: () => {},
+}
 
 /**
  * 设置 → 组件里的数据表格样例：和文件弹窗里看 xlsx / CSV 是同一个表格和表头栏，
@@ -41,6 +54,7 @@ export function SheetSpecimen() {
           sort={view.sort}
           onFilter={view.setFilter}
           onSort={view.setSort}
+          edit={SAMPLE_EDIT}
         />
       </div>
     </div>

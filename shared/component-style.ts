@@ -121,6 +121,9 @@ export const COMP_SPEC = {
     other: hue('gray'),
     nameBold: bool(true, '600', '500'),
     divider: bool(true, '2px', '1px'),
+    /** 表格页：改过还没保存的格子、不合规的格子 */
+    edited: hue('amber'),
+    invalid: hue('red'),
   },
   empty: {
     radius: px(10, 0, 24),
