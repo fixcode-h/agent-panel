@@ -33,6 +33,11 @@ function gitSync(dir: string, args: string[]) {
 export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): BugSource | undefined {
   if (!dir) return undefined
   let base: string | undefined
+  let inRepo: boolean | undefined
+  // 不是 git 工作区（P4、SVN 的工程）：没有对话开始时的版本可比，diff 返回 undefined，
+  // 由调用方改用 Agent 改文件时记下的改动（shared/bug-fix.ts 的 editPatch）。
+  // 不能退回「和空文件比」：那样整个文件都画成新增（用户 2026-11-11 报）
+  const repo = () => (inRepo ??= gitSync(dir, ['rev-parse', '--is-inside-work-tree'])?.out.trim() === 'true')
   const baseOf = () =>
     (base ??=
       baseRef && gitSync(dir, ['cat-file', '-e', `${baseRef}^{commit}`])?.code === 0
@@ -43,6 +48,7 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
   return {
     env,
     diff(file) {
+      if (!repo()) return undefined
       const b = baseOf()
       let out = b ? gitSync(dir, ['diff', '--no-color', b, '--', file])?.out : ''
       if (out === undefined) return undefined
