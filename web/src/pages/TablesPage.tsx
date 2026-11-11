@@ -32,6 +32,9 @@ import type { TableExport } from '@shared/table-export'
 
 type Mode = 'name' | 'content' | 'check'
 
+/** 切回表格页时，文件列表超过这么久没读就在后台再读一次 */
+const STALE_MS = 60_000
+
 /**
  * 表格页（项目设置 → 表格设了目录才有入口）：左边文件树和搜索（名字 / 内容），右边打开的表格。
  * 一次看一个项目的表格，项目在左栏顶上切；表头、枚举这些结构信息读写项目的表格结构文件，不碰表格本身
@@ -40,7 +43,12 @@ export function TablesPage() {
   const { route, go, openProject } = useNav()
   const projects = useTablesProjects()
   const fallback = useTablesEntry()
-  const projectId = projects.some((p) => p.id === route.id) ? route.id! : fallback
+  // 切到别的页面时表格页不卸载（App 里留着、只是藏起来），这时的 route 是别的页面的：项目照旧用上次的，不跟着变
+  const shown = route.page === 'tables'
+  const last = useRef('')
+  const picked = projects.some((p) => p.id === route.id) ? route.id! : fallback
+  const projectId = shown || !last.current ? picked : last.current
+  if (shown) last.current = projectId
   useEffect(() => {
     if (projectId) rememberTablesProject(projectId)
   }, [projectId])
@@ -61,6 +69,7 @@ export function TablesPage() {
   return (
     <Workbench
       key={projectId}
+      shown={shown}
       projectId={projectId}
       projects={projects.map((p) => ({ value: p.id, label: p.name }))}
       exports={projects.find((p) => p.id === projectId)?.tables?.exports ?? []}
@@ -72,12 +81,15 @@ export function TablesPage() {
 
 /** 一个项目的表格工作台；换项目时整个重建（key），打开的文件、搜索都清掉 */
 function Workbench({
+  shown,
   projectId,
   projects,
   onProject,
   onSettings,
   exports,
 }: {
+  /** 表格页正在显示；切到别的页面时藏起来但不卸载，回来时不重新加载 */
+  shown: boolean
   projectId: string
   projects: { value: string; label: string }[]
   /** 项目设置里的导表脚本 */
@@ -109,9 +121,12 @@ function Workbench({
   // 搜索跳转时文件还没读到：记下要切的表，读到后再切
   const pendingSheet = useRef<{ path: string; sheet: string } | null>(null)
 
+  /** 上次读表格目录的时间：切回来时太久没读才在后台悄悄再读一次（懒刷新） */
+  const loadedAt = useRef(0)
   const reload = useCallback(
     (fresh = false) => {
       setIndexError('')
+      loadedAt.current = Date.now()
       tablesApi
         .list(projectId, fresh)
         .then(setIndex)
@@ -119,6 +134,12 @@ function Workbench({
     },
     [projectId],
   )
+  // 从别的页面切回来：页面状态都还在，不重新加载；离上次读目录超过 STALE_MS 才在后台悄悄更新文件列表（不清空、不转圈）
+  const wasShown = useRef(shown)
+  useEffect(() => {
+    if (shown && !wasShown.current && Date.now() - loadedAt.current > STALE_MS) reload(true)
+    wasShown.current = shown
+  }, [shown, reload])
   useEffect(() => {
     reload()
   }, [projectId, reload])
@@ -218,7 +239,8 @@ function Workbench({
   // 被外面改过、页面上又有没保存改动的文件：表格上方提示，用户决定怎么办
   const [stale, setStale] = useState<Record<string, true>>({})
   const activeDoc = active ? docs[active] : undefined
-  useExternalChange(projectId, activeDoc && 'sheets' in activeDoc ? activeDoc : undefined, busy, (path) => {
+  // 藏起来（切到别的页面）时不看外部改动，切回来再接着看
+  useExternalChange(projectId, shown && activeDoc && 'sheets' in activeDoc ? activeDoc : undefined, busy, (path) => {
     const d = docs[path]
     if (d && 'sheets' in d && pendingOf(edits[path], d.sheets).length) return setStale((m) => ({ ...m, [path]: true }))
     // 没有没保存的改动：直接载入新内容
@@ -432,7 +454,19 @@ function Workbench({
               setQuery('')
               setActive(p)
             }}
-          />
+          >
+            <IconButton
+              icon={RefreshCw}
+              label={t('刷新：重新读文件列表和当前表格')}
+              onClick={() => {
+                reload(true)
+                if (!active) return
+                if (dirtyPaths.has(active))
+                  return toast.info(t('当前表格有没保存的改动，只刷新了文件列表；保存或撤销后再刷新'))
+                void reloadDoc(active, false).then(() => toast.success(t('已刷新')))
+              }}
+            />
+          </TableTabs>
         )}
         {!doc ? (
           active ? (

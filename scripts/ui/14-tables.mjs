@@ -341,6 +341,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：切换到旧版本没有成功'))
 
+  // 切到别的页面再切回来：表格页不重新加载，打开的页签都还在
+  const openTabs = p.getByRole('tablist', { name: '打开的表格' }).getByRole('tab')
+  const tabCount = await openTabs.count()
+  await p.evaluate(() => (location.hash = '#/home'))
+  await p.waitForTimeout(400)
+  await p.evaluate(() => history.back())
+  await p
+    .getByRole('tablist', { name: '打开的表格' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => {})
+  if ((await openTabs.count()) !== tabCount) errors.push('表格页：切到别的页面再回来，打开的表格页签没了（重新加载了）')
+  await p.getByRole('button', { name: '刷新：重新读文件列表和当前表格' }).click()
+
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()
   const dlg = p.getByRole('dialog')
