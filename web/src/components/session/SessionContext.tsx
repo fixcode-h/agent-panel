@@ -81,7 +81,11 @@ export function useSessionContext(task: Task) {
     [cur?.usage, def, info, settings, cli],
   )
   // 最大的几条工具结果：细分里它们都算在「消息」里，单列出来用户才看得出是谁在占（见 shared/context-big-results.ts）
-  const big = useMemo(() => (cur ? bigToolResults(task.messages, cur.agentId) : []), [task.messages, cur?.agentId])
+  const curAgent = cur?.agentId
+  const big = useMemo(
+    () => (curAgent !== undefined ? bigToolResults(task.messages, curAgent) : []),
+    [task.messages, curAgent],
+  )
   return { cur, agent, cli, def, info, data, big }
 }
 

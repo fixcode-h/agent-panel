@@ -117,11 +117,13 @@ test('推回的只是提炼后的日志：中间的报错行、结尾几十行�
   const dir = repo()
   const logDir = path.join(dir, '.logs')
   const { bg, got, all } = collect(1, { logDir })
-  // 报错在中间、后面跟着 500 行进度：以前只推结尾 6000 字，报错被挤掉
+  // 报错在中间、后面跟着 500 行进度：以前只推结尾 6000 字，报错被挤掉。
+  // 用 exitCode 而不是 process.exit(2)：stdout 接管道时 Node 是异步写的，process.exit 会把还没写出去的输出丢掉，
+  // 推回的结尾就停在中间某一行（CI 上偶发「linking step 499」对不上）
   const script = nodeScript(
     dir,
     'build.cjs',
-    "for (let i = 0; i < 50; i++) console.log('compiling ' + i)\nconsole.log('src/a.cpp(12): error C2065: foo undeclared')\nfor (let i = 0; i < 500; i++) console.log('linking step ' + i)\nprocess.exit(2)\n",
+    "for (let i = 0; i < 50; i++) console.log('compiling ' + i)\nconsole.log('src/a.cpp(12): error C2065: foo undeclared')\nfor (let i = 0; i < 500; i++) console.log('linking step ' + i)\nprocess.exitCode = 2\n",
   )
   bg.start({ taskId: 't-log', name: '编译', command: script, cwd: '', root: dir, exclusive: false })
   await all

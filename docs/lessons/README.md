@@ -103,6 +103,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [steering.md](./steering.md)                     | 插话和运行中发来的消息           |
 | [task-export.md](./task-export.md)               | 导出报告的口径                   |
 | [testing.md](./testing.md)                       | 测试：增删、降级和断言           |
+| [test-child-scripts.md](./test-child-scripts.md) | 测试里起的子进程脚本             |
 | [tooling.md](./tooling.md)                       | 面板工具通道（MCP）和 AI 的用法  |
 | [triage.md](./triage.md)                         | 父对话分诊和就地微改动           |
 | [ui-check-demo-data.md](./ui-check-demo-data.md) | 界面检查：改演示数据             |
