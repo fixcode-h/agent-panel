@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   Code2,
   Diff,
+  GitMerge,
   FileText,
   ImageIcon,
   Lock,
@@ -12,6 +13,7 @@ import {
   Palette,
   Pencil,
   Plus,
+  Repeat,
   Search,
   Smartphone,
   Sparkles,
@@ -36,6 +38,7 @@ import { MenuSearch } from '@/components/ui/menu-search'
 import { MODAL_SIZES, Modal, type ModalSize } from '@/components/ui/modal'
 import { PROGRESS_TONES, Progress } from '@/components/ui/progress'
 import { Sheet } from '@/components/ui/sheet'
+import { StatTile } from '@/components/ui/stat-tile'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextRing } from '@/components/ui/context-ring'
 import { EmptyPanel } from '@/components/ui/empty-panel'
@@ -858,6 +861,26 @@ function CardCanvasSpecimens() {
             <span className="font-medium">{t('整张可点')}</span>
             <span className="text-subtle">{t('点了 {n} 次', { n: clicks })}</span>
           </Card>
+        </Specimen>
+        {/* 总览页 Bug 视图、流程视图顶上那排只读的数字 */}
+        <Specimen name="StatTile" tune={['card']}>
+          <StatTile
+            className="w-56"
+            icon={Repeat}
+            tile="bg-run-soft text-run"
+            label={t('平均推进次数')}
+            value="1.4"
+            note={t('一共 {n} 次', { n: 12 })}
+          />
+          <StatTile
+            className="w-56"
+            icon={GitMerge}
+            tile="bg-success/12 text-success"
+            label={t('一次合回')}
+            value="—"
+            dim
+            note={t('还没有合回的子对话')}
+          />
         </Specimen>
       </Group>
       <Group title={t('深色画布')}>

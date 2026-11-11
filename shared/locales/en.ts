@@ -27,6 +27,7 @@ import { EN_TABLES } from './en/tables.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
+import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
 import { EN_BUG_INPLACE } from './en/bug-inplace.ts'
 import { EN_BUG_AUTO } from './en/bug-auto.ts'
@@ -60,6 +61,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_FLOW,
   ...EN_BUG_LOCATE,
   ...EN_BUG_OVERVIEW,
+  ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,
   ...EN_BUG_INPLACE,
   ...EN_BUG_AUTO,

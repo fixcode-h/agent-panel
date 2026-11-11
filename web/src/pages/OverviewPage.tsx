@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { bugRows, type BugBrief } from '@shared/bug-overview'
+import type { FlowBrief } from '@shared/agent-stats'
 import { t } from '@shared/i18n'
 import { OVERVIEW_GROUPS, overviewRows, type OverviewGroup, type OverviewRow } from '@shared/overview'
 import { taskWaitText, timeAgo } from '@shared/task'
@@ -32,6 +33,7 @@ import { StatusPill } from '@/components/ui/status-pill'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Segmented } from '@/components/ui/segmented'
 import { BugOverview } from '@/components/overview/BugOverview'
+import { FlowOverview } from '@/components/overview/FlowOverview'
 import { AwayCard } from '@/components/overview/AwayCard'
 import { PageFrame } from '@/components/library/parts'
 
@@ -70,7 +72,8 @@ const BUGS_POLL_MS = 15_000
 /**
  * 对话总览：所有项目的顶层对话按「要不要你管」分组（分组规则见 shared/overview.ts），
  * 顶部四张统计卡片兼做筛选；每组一张卡片，勾选后底部浮出批量停止 / 归档。点一行打开那个对话。
- * 页头可以切到「Bug」视图：所有用户报的 Bug（含子对话）走到哪一步、在等谁，顶上是流程数据（BugOverview）
+ * 页头可以切到「Bug」视图：所有用户报的 Bug（含子对话）走到哪一步、在等谁，顶上是流程数据（BugOverview）；
+ * 「流程」视图：所有 Agent 模式对话被推了几次、评审退回、合回失败、等你多久（FlowOverview，扩展 4）
  */
 export function OverviewPage() {
   const { projects, upsertTask } = useData()
@@ -80,7 +83,8 @@ export function OverviewPage() {
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [view, setView] = useState<'tasks' | 'bugs'>('tasks')
+  const [view, setView] = useState<'tasks' | 'bugs' | 'flow'>('tasks')
+  const [flow, setFlow] = useState<FlowBrief[]>()
   const [bugs, setBugs] = useState<BugBrief[]>()
   const [now, setNow] = useState(() => Date.now())
 
@@ -115,6 +119,18 @@ export function OverviewPage() {
     }, BUGS_POLL_MS)
     return () => clearInterval(timer)
   }, [view])
+  // 流程数据只在切到「流程」视图时取：要读所有对话（含子对话），平时不用。顶层列表一变就重新取一次
+  useEffect(() => {
+    if (view !== 'flow') return
+    let alive = true
+    api
+      .taskFlow()
+      .then((list) => alive && setFlow(list))
+      .catch((e) => alive && toast.error((e as Error).message))
+    return () => {
+      alive = false
+    }
+  }, [view, tasks])
   const bugsWaiting = useMemo(() => bugRows(bugs ?? []).filter((r) => r.group === 'you').length, [bugs])
 
   const rows = useMemo(() => overviewRows(tasks), [tasks])
@@ -133,8 +149,8 @@ export function OverviewPage() {
       ? go({ page: 'projects', id: r.task.projectId, sub: r.task.id })
       : go({ page: 'chat', id: r.task.id })
 
-  /** 打开 Bug 所在的对话：子对话要打开它的顶层对话，再让右栏切到它（和「去对话里看」同一套，见 ai-window.ts） */
-  const openBug = (b: BugBrief) => {
+  /** 打开 Bug（或流程视图里那个对话）所在的对话：子对话要打开它的顶层对话，再让右栏切到它（和「去对话里看」同一套，见 ai-window.ts） */
+  const openBug = (b: Pick<BugBrief, 'id' | 'rootId' | 'paneId' | 'projectId'>) => {
     const top = b.rootId || b.id
     if (b.rootId) showChildInPane(b.rootId, b.paneId)
     go(b.projectId ? { page: 'projects', id: b.projectId, sub: top } : { page: 'chat', id: top })
@@ -188,7 +204,9 @@ export function OverviewPage() {
       intro={
         view === 'bugs'
           ? t('所有用户报的 Bug 一页看：走到五步里的哪一步、现在等谁、停了多久。点一行打开那个对话。')
-          : t('所有项目的对话一页看，按要不要你管分组。点卡片只看那一组，勾选后可以一起停止或归档。')
+          : view === 'flow'
+            ? t('项目里所有对话（含子对话）的流程数据：面板推了几次、评审退回、合回失败、等你多久，按角色分开看。')
+            : t('所有项目的对话一页看，按要不要你管分组。点卡片只看那一组，勾选后可以一起停止或归档。')
       }
       align="left"
       actions={
@@ -211,6 +229,7 @@ export function OverviewPage() {
                 label: 'Bug',
                 dot: bugsWaiting ? t('{n} 个 Bug 等你处理', { n: bugsWaiting }) : undefined,
               },
+              { id: 'flow', label: t('流程') },
             ]}
           />
           <div className="relative w-56 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1">
@@ -230,6 +249,7 @@ export function OverviewPage() {
       {view === 'bugs' && (
         <BugOverview briefs={bugs} query={query} now={now} projectName={projectName} onOpen={openBug} />
       )}
+      {view === 'flow' && <FlowOverview briefs={flow} query={query} projectName={projectName} onOpen={openBug} />}
       {view === 'tasks' && (
         <>
           {/* 「我不在」开关和它替你选过的（分析稿 A4）：放在最上面，回来第一眼看到 */}
