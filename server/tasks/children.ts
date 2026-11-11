@@ -396,6 +396,10 @@ export function createChildren(sc: TasksScope) {
     if (sc.childRecovering(childId)) return
     const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
     if (!tk?.parentTaskId) return
+    // 它完成、失败、没了都可能影响排在它后面的子对话（shared/child-after.ts）：顺带扫一遍
+    void sc
+      .releaseAfter(tk.parentTaskId)
+      .catch((e) => log.warn('task', '检查排在后面的子对话失败', { task: tk.id, error: (e as Error).message }))
     // 父对话正在合并：合并结果出来时再报，这时报「待收尾」「未完成」会让父对话误判
     if (sc.merging.has(childId)) return
     const jobs = sc.background
@@ -425,6 +429,8 @@ export function createChildren(sc: TasksScope) {
     if (r.state === 'stopped' && tk.stopReason === 'restart') return
     // 已经换新的子对话接手：换人那封信说过了，不再报「已中断」
     if (r.state === 'stopped' && tk.stopReason === 'replaced') return
+    // 还没开始、在等前置子对话合回：父对话派它时就知道，不报「已中断」
+    if (r.state === 'stopped' && tk.stopReason === 'after') return
     // 只剩合回却没请收尾：每停一次都要让父对话知道（带第几次），不能按「状态没变」吞掉，见 nextMergeStall
     const mergeOnly = r.state === 'unfinished' && !openWork(tk).length
     let stall: MergeStall | undefined

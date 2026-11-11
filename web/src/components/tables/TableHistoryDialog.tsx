@@ -17,7 +17,7 @@ import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Select } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
-import { DiffSummary, SheetDiffView } from './SheetDiffView'
+import { DiffSummary, SheetDiffView, type DiffOnly } from './SheetDiffView'
 
 /** 选中的是「本地改动」还是第几个提交 */
 type Pick = 'local' | number
@@ -66,6 +66,8 @@ export function TableHistoryDialog({
   const [error, setError] = useState('')
   const [pick, setPick] = useState<Pick>('local')
   const [only, setOnly] = useState(true)
+  // 摘要里点了「改 / 加 / 删」：只看那一种行
+  const [diffOnly, setDiffOnly] = useState<DiffOnly | null>(null)
   const [pair, setPair] = useState<{ key: string; a: SheetData[]; b: SheetData[] | null } | null>(null)
   const [loading, setLoading] = useState(false)
   useEffect(() => {
@@ -191,7 +193,7 @@ export function TableHistoryDialog({
         <section aria-label={t('差异')} className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-3 py-2">
             <span className="font-mono text-body">{title}</span>
-            {diff && <DiffSummary diff={diff} />}
+            {diff && <DiffSummary diff={diff} only={diffOnly} onOnly={setDiffOnly} />}
             <span className="flex-1" />
             {hist && hist.vcs !== 'none' && (
               <Select
@@ -251,6 +253,7 @@ export function TableHistoryDialog({
                 diff={diff}
                 names={sides.b.names}
                 onlyChanges={only}
+                only={diffOnly}
                 rowAction={
                   pick === 'local' && onRestore
                     ? (row) =>

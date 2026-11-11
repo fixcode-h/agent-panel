@@ -82,8 +82,8 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
   const plain = await hookOptions(ctx())
   assert.ok(plain.hookEvents?.includes('tool.before'))
   assert.ok(!(await plain.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '普通角色改文件照常')
-  // 内置守卫只看改文件和跑命令：能按工具名过滤的 CLI 不再为读文件、搜索跑钩子（没有用户钩子时）
-  assert.deepEqual([...new Set(plain.hookTools?.['tool.before'])].sort(), ['edit', 'shell'])
+  // 内置守卫只看改文件、跑命令和读文件（读大文件守卫）：能按工具名过滤的 CLI 不再为搜索这类工具跑钩子（没有用户钩子时）
+  assert.deepEqual([...new Set(plain.hookTools?.['tool.before'])].sort(), ['edit', 'read', 'shell'])
 })
 
 test('只统筹的父对话改文件被拒绝；就地微改动登记过的文件放行', async () => {
@@ -277,6 +277,8 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   const { applyPlan } = await import('../../shared/plan.ts')
   const tk = task({ id: 'pace1' })
   applyPlan(tk, { steps: [{ title: '改界面', status: 'running' }, { title: '跑测试' }] })
+  // 大输出提醒默认也装工具后：这里只看计划提醒，先关掉它
+  await setBuiltin('big-output-hint', false, true)
   const none = await hookOptions(ctx({ task: tk }))
   assert.ok(!none.hookEvents?.includes('tool.after'), '没有执行计划（子任务、Chat 页）不装')
   await setBuiltinParam('plan-pace', 'calls', 2, false)
@@ -288,4 +290,26 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   assert.ok(!(await o.onHook!('tool.after', edit(file))).context, '同一步只提醒一次')
   assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:plan-pace' && x.result === 'context'))
   await setBuiltinParam('plan-pace', 'calls', 20, true)
+  await setBuiltin('big-output-hint', true, true)
+})
+
+test('大输出提醒：默认开，一次结果超过字数补一句，每次调用最多两次', async () => {
+  resetHooksCache()
+  const o = await hookOptions(ctx())
+  assert.ok(o.hookEvents?.includes('tool.after'))
+  assert.ok(o.hookTools?.['tool.after']?.includes('read'))
+  const big = (size: number) => ({
+    tool: {
+      kind: 'shell' as const,
+      name: 'Bash',
+      input: { command: 'cat x' },
+      path: '',
+      paths: [],
+      result: { output: 'x', size },
+    },
+  })
+  assert.ok(!(await o.onHook!('tool.after', big(100))).context)
+  assert.match((await o.onHook!('tool.after', big(50000))).context ?? '', /50000 字/)
+  assert.match((await o.onHook!('tool.after', big(50000))).context ?? '', /50000 字/)
+  assert.ok(!(await o.onHook!('tool.after', big(50000))).context, '第三次不再提醒')
 })

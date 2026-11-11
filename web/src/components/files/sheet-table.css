@@ -187,9 +187,12 @@
 .sheet-frozen.sheet-sel {
   background: color-mix(in srgb, var(--accent) 12%, var(--sheet-bg));
 }
-/* 冻结区和滚动区之间：一条粗一点的竖线 */
+/* 冻结区和滚动区之间：一条粗一点的竖线，右边一道浅阴影，滚动时看得出哪几列钉住了 */
 .sheet-grid .sheet-frozen-last {
   border-right: 2px solid var(--line-strong);
+}
+.sheet-grid .sheet-frozen-last:not(.sheet-focus):not(.sheet-bad):not(.sheet-dirty) {
+  box-shadow: 4px 0 6px -3px color-mix(in srgb, var(--fg) 16%, transparent);
 }
 
 /*

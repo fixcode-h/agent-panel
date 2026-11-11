@@ -71,3 +71,28 @@ export function useLocalFlag(key: string, init = false) {
 
 /** 表头行折没折起来 */
 export const useHeadCollapsed = () => useLocalFlag('table-head-collapsed')
+
+/** 表格页行高的三档：标准跟着设置 → 组件 → 数据表格的行高 */
+export type Density = 'compact' | 'normal' | 'loose'
+export const DENSITY_ROW_H: Record<Density, number | undefined> = { compact: 22, normal: undefined, loose: 32 }
+
+/** 表格页的行高档：整个表格页一个，记在本机 */
+export function useDensity() {
+  const [v, setV] = useState<Density>(() => {
+    try {
+      const s = localStorage.getItem('table-density')
+      return s === 'compact' || s === 'loose' ? s : 'normal'
+    } catch {
+      return 'normal'
+    }
+  })
+  const set = (x: Density) => {
+    setV(x)
+    try {
+      localStorage.setItem('table-density', x)
+    } catch {
+      // 存不了就只在这次打开里有效
+    }
+  }
+  return [v, set] as const
+}

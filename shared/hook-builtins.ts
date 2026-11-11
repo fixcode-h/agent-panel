@@ -110,6 +110,25 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     ],
   },
   {
+    id: 'big-read-guard',
+    event: 'tool.before',
+    name: () => t('读大文件前拦一下'),
+    description: () =>
+      t(
+        '整份读超过大小的文本文件（读文件工具不带分段参数，或单独一条 cat / Get-Content）时拒绝一次，让它先搜再按行读、只读结尾，或派子任务去读；同一个文件再读一次就放行',
+      ),
+    defaultOn: true,
+    params: [
+      {
+        key: 'kb',
+        kind: 'number',
+        label: () => t('超过多少 KB 算大文件'),
+        hint: () => t('默认 64；0 表示不拦'),
+        default: 64,
+      },
+    ],
+  },
+  {
     id: 'test-scope-guard',
     event: 'tool.before',
     name: () => t('测试步骤归属守卫'),
@@ -172,6 +191,25 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
         label: () => t('连续失败几次提醒'),
         hint: () => t('1 到 100，默认 3'),
         default: 3,
+      },
+    ],
+  },
+  {
+    id: 'big-output-hint',
+    event: 'tool.after',
+    name: () => t('大输出提醒'),
+    description: () =>
+      t(
+        '一次命令输出、读文件的结果超过字数时补一句：下次先重定向到文件再搜，长命令放后台，大日志派子任务去读（结果已经进了上下文，这句只管下一次；每次调用最多提醒两次）',
+      ),
+    defaultOn: true,
+    params: [
+      {
+        key: 'chars',
+        kind: 'number',
+        label: () => t('超过多少字提醒'),
+        hint: () => t('默认 20000；0 表示不提醒'),
+        default: 20000,
       },
     ],
   },
