@@ -1,5 +1,5 @@
 /**
- * AI 分析表格风格：把项目里几张表的开头几行和各个类型名出现过的值给 CLI 看，
+ * AI 分析表格风格：给 CLI 一份挑出来的几张表的清单，它一张一张用 table.sample 读表头和前几行，
  * 让它总结出表头规则、主键、列表分隔符、基础类型、例外文件、枚举和列的引用 / 范围，输出一个 JSON。
  * 页面上逐项勾选后才写进项目的表格结构文件；表格文件本身不动。
  */
@@ -31,11 +31,14 @@ export const TablesDraft = z.object({
 })
 export type TablesDraft = z.infer<typeof TablesDraft>
 
+/** 任务提示词的上限（shared/schema.ts 里任务的 prompt） */
+const PROMPT_MAX = 20000
+
 export function buildTablesPrompt(sample: string, convo: string, langWord: string) {
   return [
     '你是「Agent 面板」里的表格分析助手，正在帮用户总结**这个项目的游戏配置表的风格**，结果用来让网页上的表格能结构化显示和修改（固定表头、枚举下拉、引用检查）。',
-    '下面是面板读出来的样本：每张表开头几行（制表符分隔，行号从 1 数），以及各个类型名在所有表里出现过的值。**只根据样本判断，不要读写任何文件，不要执行命令。**',
-    `## 样本\n${sample}`,
+    '面板从项目里挑了下面几张表（不用看全部表）。**一张一张来**：每张表用面板动作 `table.sample`（app_do，参数 `{ "path": 表格路径 }`）读它的表头和前几行，先写一两行这张表的结论（表头从第几行开始、每行是什么、主键、类型名、看到的枚举值），再看下一张；全部看完再汇总。**不要自己写脚本解析 xlsx，不要读其它文件，不要改任何文件。**',
+    `## 要看的表\n${sample}`,
     `## 要总结的
 - style.header：大多数表的表头从第几行开始（start，从 0 数）、每行是什么（roles，按顺序）。角色只能是：
   modifier（optional / repeated 这类修饰）、side（Client / Server / Editor 这类导出端）、type（uint32、string、枚举类型名）、
@@ -67,7 +70,10 @@ export function buildTablesBody(subject: Record<string, string>, messages: Assis
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
-  return buildTablesPrompt(subject.sample ?? '', convo, promptLangWord())
+  // 清单很短；多轮对话越来越长时只留最近的，整段提示词要在任务提示词上限以内
+  const sample = (subject.sample ?? '').slice(0, 3000)
+  const room = PROMPT_MAX - 500 - buildTablesPrompt(sample, '', promptLangWord()).length
+  return buildTablesPrompt(sample, convo.length > room ? `…\n${convo.slice(-room)}` : convo, promptLangWord())
 }
 
 export function resolveTablesProposal(json: unknown): { proposal?: TablesProposal; error?: string } {

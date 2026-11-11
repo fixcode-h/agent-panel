@@ -4,8 +4,8 @@
  * 页面（改格子时的下拉、标红）和服务端（全表检查）用同一份。
  */
 import { t } from './i18n.ts'
-import { detectSheetHeader, validHeader, type SheetHeader } from './sheet-header.ts'
-import { schemaColumn, schemaHeader, type TableEnum, type TableSchema } from './tables.ts'
+import { detectSheetHeader, validHeader, type SheetHeader, type SheetRole } from './sheet-header.ts'
+import { TYPE_NAMES, schemaColumn, schemaHeader, type TableEnum, type TableSchema } from './tables.ts'
 import type { SheetData } from './files.ts'
 
 export type ColKind = 'int' | 'uint' | 'float' | 'bool' | 'string' | 'enum' | 'other'
@@ -14,8 +14,10 @@ export interface ColInfo {
   col: number
   /** 字段名（字段名行的字）；没有表头时是空 */
   field: string
-  /** 类型行的字 */
+  /** 类型：结构文件里改过的优先，否则是类型行的字 */
   type: string
+  /** 表头里这一列的每一行（修饰、导出端、类型、字段名、注释……），列结构里照着显示 */
+  head: { role: SheetRole; text: string }[]
   kind: ColKind
   list: boolean
   enumName?: string
@@ -55,8 +57,8 @@ export function columnInfos(
   const out: ColInfo[] = []
   for (let c = 0; c < cols; c++) {
     const field = (names[c] ?? '').trim()
-    const type = (types[c] ?? '').trim()
     const own = field ? schemaColumn(schema, file, sheet, field) : undefined
+    const type = own?.type || (types[c] ?? '').trim()
     const enumName = own?.enum ?? (schema.enums[type] ? type : undefined)
     const kind: ColKind = enumName
       ? 'enum'
@@ -75,6 +77,7 @@ export function columnInfos(
       col: c,
       field,
       type,
+      head: header.roles.map((role, i) => ({ role, text: (rows[header.start + i]?.[c] ?? '').trim() })),
       kind,
       list: own?.list ?? /^repeated$/i.test((mods[c] ?? '').trim()),
       enumName,
@@ -187,6 +190,41 @@ export function checkSheet(rows: string[][], from: number, infos: ColInfo[], key
   return out
 }
 
+/**
+ * 表头行按设置里定的取值查（修饰行只能 optional / repeated 这类）：只查有字段名的列，
+ * 没字段名的是备注列，随便写
+ */
+export function checkHeader(
+  rows: string[][],
+  header: SheetHeader,
+  infos: ColInfo[],
+  schema: TableSchema,
+  ctx: CheckCtx,
+): Problem[] {
+  const out: Problem[] = []
+  const roleEnums = schema.style.roleEnums ?? {}
+  header.roles.forEach((role, i) => {
+    const name = roleEnums[role]
+    const set = name ? ctx.enums.get(name) : undefined
+    if (!name || !set?.size) return
+    const r = header.start + i
+    for (const info of infos) {
+      if (!info.field) continue
+      const v = (rows[r]?.[info.col] ?? '').trim()
+      if (v && !set.has(v))
+        out.push({
+          r,
+          c: info.col,
+          msg:
+            name === TYPE_NAMES
+              ? t('「{v}」不是基础类型，也不是通用枚举', { v })
+              : t('「{v}」不是 {e} 里的值', { v, e: name }),
+        })
+    }
+  })
+  return out
+}
+
 /** 一张表用哪套表头：结构文件里的（单文件 > 例外 > 项目风格），没有就自动识别 */
 export function headerOf(schema: TableSchema, file: string, sheet: SheetData): SheetHeader {
   const own = schemaHeader(schema, file, sheet.name)
@@ -272,6 +310,19 @@ export function columnOptions(
   const enumOpts = new Map<string, EnumOption[]>()
   const refOpts = new Map<string, EnumOption[]>()
   const ctx: CheckCtx = { listSep: schema.style.listSep || ';', enums: new Map(), refs: new Map() }
+  // 表头行的取值（设置里给每种表头行选的通用枚举）也一起准备好
+  for (const name of Object.values(schema.style.roleEnums ?? {})) {
+    if (!name || enumOpts.has(name)) continue
+    const opts: EnumOption[] =
+      name === TYPE_NAMES
+        ? [
+            ...schema.style.primitives.map((p) => ({ name: p })),
+            ...Object.keys(schema.enums).map((e) => ({ name: e, desc: t('枚举') })),
+          ]
+        : enumOptions(schema.enums[name])
+    enumOpts.set(name, opts)
+    ctx.enums.set(name, new Set(opts.flatMap((o) => (o.value ? [o.name, o.value] : [o.name]))))
+  }
   for (const i of infos) {
     if (i.enumName && !enumOpts.has(i.enumName)) {
       const e = schema.enums[i.enumName]
@@ -317,7 +368,10 @@ export function checkWorkbook(
     const { header, infos } = sheetInfos(schema, file, sheet)
     if (!infos.some((i) => i.field)) return
     const { ctx } = columnOptions(schema, infos, (f) => (f === file ? sheets : sheetsOf(f)))
-    const problems = checkSheet(sheet.rows, header.start + header.roles.length, infos, schema.style.key, ctx)
+    const problems = [
+      ...checkHeader(sheet.rows, header, infos, schema, ctx),
+      ...checkSheet(sheet.rows, header.start + header.roles.length, infos, schema.style.key, ctx),
+    ]
     if (problems.length)
       out.push({
         path: file,

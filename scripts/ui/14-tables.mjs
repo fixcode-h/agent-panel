@@ -172,7 +172,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByText('表格目录', { exact: true })
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('表格页：「表格设置」没有打开项目设置的表格页'))
-  await check(p, '项目设置-表格', ['结构信息', '找到 5 个表格文件'])
+  await check(p, '项目设置-表格', ['结构信息', '5 个表格', '一共 5 个表格文件'])
+
+  // 表格目录一行一个：「添加表格目录」弹出目录选择器，选项目里的 tests 多一行（里面没有表格），再删掉
+  await dlg.getByRole('button', { name: '添加表格目录' }).click()
+  const picker = p.getByRole('dialog', { name: '选择表格目录' })
+  await picker
+    .getByRole('button', { name: 'tests', exact: true })
+    .dblclick({ timeout: 8000 })
+    .catch(() => errors.push('项目设置-表格：目录选择器里没有项目的 tests 目录'))
+  const added = p.getByRole('textbox', { name: '第 2 个目录' })
+  await added.waitFor({ timeout: 5000 }).catch(() => errors.push('项目设置-表格：选了目录没有多一行'))
+  if ((await added.inputValue().catch(() => '')) !== 'tests')
+    errors.push('项目设置-表格：选到项目目录里的文件夹应该写成相对路径 tests')
+  await p
+    .getByText(/没有符合「包含」的表格|找不到这个目录/)
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('项目设置-表格：新加的目录下面没有显示找到几个表格'))
+  await check(p, '项目设置-表格目录选择', ['tests'])
+  await p.getByRole('button', { name: '删掉这个目录' }).nth(1).click()
+  await added.waitFor({ state: 'detached', timeout: 3000 }).catch(() => errors.push('项目设置-表格：删不掉目录'))
 
   // AI 分析表格风格：演示里按示例给结果，回到这里逐项勾选
   await dlg.getByRole('button', { name: 'AI 分析' }).click()

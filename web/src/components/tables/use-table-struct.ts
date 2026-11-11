@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { SheetData } from '@shared/files'
 import type { SheetHeader } from '@shared/sheet-header'
 import type { TableDoc, TableSchema } from '@shared/tables'
-import { checkSheet, columnInfos, columnOptions, neededFiles, type Problem } from '@shared/table-struct'
+import { checkHeader, checkSheet, columnInfos, columnOptions, neededFiles, type Problem } from '@shared/table-struct'
 import { colCount } from '@/lib/sheet'
 
 export function useTableStruct({
@@ -53,8 +53,14 @@ export function useTableStruct({
     [schema, infos, doc, ext],
   )
   const problems = useMemo<Problem[]>(
-    () => (rows ? checkSheet(rows, from, infos, schema.style.key, opts.ctx) : []),
-    [rows, from, infos, schema.style.key, opts.ctx],
+    () =>
+      rows
+        ? [
+            ...(header ? checkHeader(rows, header, infos, schema, opts.ctx) : []),
+            ...checkSheet(rows, from, infos, schema.style.key, opts.ctx),
+          ]
+        : [],
+    [rows, from, infos, schema, header, opts.ctx],
   )
   const problemAt = useMemo(() => new Map(problems.map((p) => [`${p.r}:${p.c}`, p.msg])), [problems])
   return { infos, ...opts, problems, problemAt }

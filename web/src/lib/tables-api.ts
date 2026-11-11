@@ -2,7 +2,7 @@
  * 表格页的接口（server/tables/*）：列表、打开、内容搜索、结构文件；保存、版本、对比、AI 分析也从这里调。
  * 在线演示由 demo-tables.ts 模拟。
  */
-import type { TableDoc, TableSchema, TableSearch, TablesIndex } from '@shared/tables'
+import type { TableDoc, TableRoot, TableSchema, TableSearch, TablesConfig, TablesIndex } from '@shared/tables'
 import type { TableSave } from '@shared/table-edit'
 import type { SheetProblems } from '@shared/table-struct'
 import type { SheetData } from '@shared/files'
@@ -12,6 +12,9 @@ const q = encodeURIComponent
 
 export const tablesApi = {
   list: (projectId: string) => request<TablesIndex>(`/tables/${projectId}`),
+  /** 按还没保存的配置找一遍（项目设置里逐个目录显示找到几个） */
+  probe: (projectId: string, path: string, tables: TablesConfig) =>
+    request<TablesProbe>(`/tables/${projectId}/probe`, json('POST', { path, tables })),
   open: (projectId: string, path: string) => request<TableDoc>(`/tables/${projectId}/file?path=${q(path)}`),
   search: (projectId: string, query: string) => request<TableSearch>(`/tables/${projectId}/search?q=${q(query)}`),
   schema: (projectId: string) => request<TableSchema>(`/tables/${projectId}/schema`),
@@ -47,7 +50,11 @@ export interface TableHistory {
   error?: string
 }
 export interface TablePair {
+  /** 配对用的路径（项目目录外的表格目录是「目录名/里面的路径」） */
   path: string
+  /** 和 path 不一样时，两边各自的真实路径 */
+  left?: string
+  right?: string
   status: 'same' | 'diff' | 'left' | 'right' | 'error'
   error?: string
 }
@@ -56,4 +63,13 @@ export interface TablesCheck {
   files: number
   sheets: SheetProblems[]
   failed: { path: string; error: string }[]
+}
+
+/** 按还没保存的表格配置找一遍的结果 */
+export interface TablesProbe {
+  roots: TableRoot[]
+  files: number
+  /** 前几个文件的路径 */
+  sample: string[]
+  truncated?: boolean
 }

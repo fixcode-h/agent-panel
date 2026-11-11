@@ -70,6 +70,7 @@ import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { TableEditorsSpecimen } from '@/components/settings/TableEditorsSpecimen'
+import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { Markdown } from '@/components/tasks/Markdown'
 import { TuneProvider, TuneToggle, useTune } from '@/components/settings/ComponentTune'
 import type { CompName, ComponentStyle } from '@shared/component-style'
@@ -599,6 +600,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
         <Specimen name="EnumPicker · ListEditor · ProblemsBar" tune={['input', 'menu']}>
           <TableEditorsSpecimen />
+        </Specimen>
+        <Specimen name="DirList" tune={['input', 'button']}>
+          <DirListSpecimen />
         </Specimen>
       </Group>
       <Group title={t('空状态')}>

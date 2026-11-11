@@ -104,3 +104,12 @@
   color: var(--c-grid-added);
   text-decoration: none;
 }
+
+/* 斑马纹：数据区隔一行一层很淡的底色，浓度在设置 → 组件 → 数据表格里调 */
+.sheet-stripe {
+  background: color-mix(in oklab, var(--fg) var(--c-grid-stripe), transparent);
+}
+/* 铺满时数据外面的空格子 */
+.sheet-pad {
+  pointer-events: none;
+}

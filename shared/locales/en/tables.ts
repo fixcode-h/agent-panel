@@ -4,9 +4,6 @@ export const EN_TABLES: Record<string, string> = {
   '游戏配置表这类表格的目录。设好后侧栏多一个「表格」入口：按目录浏览、搜索、筛选、在线改单元格、看版本差异、跨项目对比。保存改动只改单元格的值，文件仍是原来的 Excel / WPS 格式。':
     'Folders with tables such as game config sheets. Once set, a "Tables" entry appears in the sidebar: browse by folder, search, filter, edit cells online, view version diffs and compare across projects. Saving only changes cell values; the file stays in its original Excel / WPS format.',
   表格目录: 'Table folders',
-  '目录（一行一个，相对项目目录）': 'Folders (one per line, relative to the project folder)',
-  '这些目录里（含子目录）的表格会列在表格页左侧。常见的写法：Config、Design/Tables、Content/DataTables。':
-    'Tables in these folders (including subfolders) are listed on the left of the Tables page. Common values: Config, Design/Tables, Content/DataTables.',
   '逗号分隔的通配，比如 *.xlsx, *.csv；带 / 的按相对路径比':
     'Comma-separated wildcards such as *.xlsx, *.csv; patterns with / match the relative path',
   排除: 'Exclude',
@@ -23,7 +20,6 @@ export const EN_TABLES: Record<string, string> = {
     'After setting table folders and clicking Confirm, AI can read a few tables and summarize how many header rows there are, what each row means, and which columns are enums or references.',
   '点「确认」保存后，侧栏会多一个「表格」入口。': 'After you click Confirm, a "Tables" entry appears in the sidebar.',
   '正在查找表格…': 'Looking for tables…',
-  '找到 {n} 个表格文件': 'Found {n} table files',
   '（太多了，只列出前一部分）': ' (too many, only the first part is listed)',
   '找不到目录：{dirs}': 'Folders not found: {dirs}',
   打开表格页: 'Open Tables page',
@@ -216,8 +212,6 @@ export const EN_TABLES: Record<string, string> = {
   新列: 'new',
   '… 第 {from}–{to} 行没变（{n} 行），点开看 …': '… rows {from}–{to} unchanged ({n} rows), click to show …',
   '选中第 {n} 行': 'Select row {n}',
-  '只画了前 {n} 行，打开「只看变化」看全部改动':
-    'Only the first {n} rows are shown. Turn on "Changes only" to see every change',
   两边都没有数据行: 'Neither side has data rows',
   '按主键 {key} 对齐': 'Aligned by key {key}',
   按行内容对齐: 'Aligned by row content',
@@ -277,4 +271,51 @@ export const EN_TABLES: Record<string, string> = {
   版本号格式不对: 'Invalid revision',
   这个项目没有版本控制: 'This project has no version control',
   两个项目都要先设好表格目录: 'Both projects need table folders set first',
+  添加目录: 'Add folder',
+  选择目录: 'Choose folder',
+  '第 {n} 个目录': 'Folder {n}',
+  删掉这个目录: 'Remove this folder',
+  '浏览本机目录，选中一个文件夹': 'Browse this computer and pick a folder',
+  目录: 'Folders',
+  '这些目录里（含多层子目录）的表格会列在表格页左侧。可以写相对项目目录的路径，也可以选项目目录外的文件夹（比如策划的表格仓库）。':
+    'Tables in these folders (including all subfolders) are listed on the Tables page. Use a path relative to the project folder, or pick a folder outside the project (such as a designers’ table repository).',
+  '相对项目目录，或绝对路径': 'Relative to the project folder, or an absolute path',
+  添加表格目录: 'Add table folder',
+  选择表格目录: 'Choose table folder',
+  '常见写法：': 'Common folders:',
+  '找不到这个目录：{full}': 'Folder not found: {full}',
+  '路径不能带 ..，项目目录外的请写绝对路径':
+    'Paths can’t contain .. — use an absolute path for folders outside the project',
+  '{n} 个表格': '{n} tables',
+  '目录在，但里面没有符合「包含」的表格': 'Folder exists, but has no tables matching “Include”',
+  '一共 {n} 个表格文件': '{n} table files in total',
+  只能查看项目目录和表格目录里的文件: 'Only files in the project folder or the table folders can be opened',
+  '拖动调整 {col} 列宽度': 'Drag to resize column {col}',
+  '拖动调整列宽，双击恢复': 'Drag to resize the column, double-click to reset',
+  表头设置已保存: 'Header settings saved',
+  每张表自动识别: 'Detect per table',
+  全部按固定行数: 'Same rows for all tables',
+  保存表头: 'Save header',
+  '存在表格结构文件里，表格文件不动；个别表不一样时在表格页「调整表头」单独改。':
+    'Saved in the table structure files; table files are not touched. For tables that differ, use “Adjust header” on the Tables page.',
+  '设好表格目录并点「确认」保存后，可以设整个项目的表头从第几行开始、共几行、每行是什么。':
+    'After setting table folders and clicking Confirm, you can set where the header starts, how many rows it has and what each row is, for the whole project.',
+  隔行底色: 'Row stripes',
+  鲜艳: 'Vivid',
+  还没有通用枚举: 'No shared enums yet',
+  '等 {n} 个': '{n} in total',
+  管理通用枚举: 'Manage shared enums',
+  通用枚举已保存: 'Shared enums saved',
+  通用枚举: 'Shared enums',
+  '整个项目所有表格共用：列的类型写了同名类型，或在「列结构」里选了它，改格子时就是下拉，填错会标红。':
+    'Shared by every table in the project: a column whose type has the same name, or that picks it in “Column setup”, gets a dropdown when editing, and wrong values are marked red.',
+  参数类型: 'Value type',
+  '表头类型行写错或没写时，按这里的类型检查和编辑；只记在结构文件里，表格不改':
+    'Used for checking and editing when the header’s type row is wrong or empty. Saved only in the structure files; the table is not changed.',
+  '每种表头行能填什么：选一个通用枚举，表头格子改的时候是下拉，填错标红；没字段名的备注列不查':
+    'What each header row may contain: pick a shared enum to get a dropdown when editing header cells and mark wrong values red. Columns without a field name are remarks and are not checked.',
+  '{role}行能填什么': 'Allowed values for the {role} row',
+  基础类型和通用枚举名: 'Basic types and shared enum names',
+  '枚举 {e}': 'Enum {e}',
+  '「{v}」不是基础类型，也不是通用枚举': '“{v}” is neither a basic type nor a shared enum',
 }

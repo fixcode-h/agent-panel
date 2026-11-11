@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BookA, History, ListChecks, Lock, Plus, Redo2, Save, Undo2 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { schemaHeader, type TableDoc, type TableSchema } from '@shared/tables'
+import { TYPE_NAMES, schemaHeader, type TableDoc, type TableSchema } from '@shared/tables'
 import type { CellSet, RowOp, SheetEdit } from '@shared/table-edit'
 import type { SheetHeader } from '@shared/sheet-header'
 import { colCount, type CellHit } from '@/lib/sheet'
@@ -127,6 +127,22 @@ export function TableView({
     onSave: () => pending.length && setSaving(true),
     editor: (p, init, done) => {
       const info = p.row >= (view?.from ?? 0) ? struct.infos[p.col] : undefined
+      // 表头格子：这一行在设置里选了取值（通用枚举 / 类型名）就下拉选
+      const head =
+        view && p.row >= view.header.start && p.row < view.from
+          ? view.header.roles[p.row - view.header.start]
+          : undefined
+      const headEnum = head ? schema.style.roleEnums?.[head] : undefined
+      const headOpts = headEnum ? struct.enumOpts.get(headEnum) : undefined
+      if (headEnum && headOpts?.length)
+        return (
+          <EnumPicker
+            init={init}
+            options={headOpts}
+            title={headEnum === TYPE_NAMES ? t('类型') : headEnum}
+            onDone={done}
+          />
+        )
       const opts = info?.enumName
         ? struct.enumOpts.get(info.enumName)
         : info?.ref
@@ -272,6 +288,8 @@ export function TableView({
           onFilter={view.setFilter}
           onSort={view.setSort}
           edit={grid.edit}
+          fill
+          widthKey={`${projectId}:${fileKey}`}
         />
       </div>
       {checkOpen && (

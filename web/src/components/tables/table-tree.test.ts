@@ -26,7 +26,25 @@ test('名字搜索：几个词都要出现，不分大小写', () => {
   const tree = buildTableTree(FILES, 'e.xlsx')
   assert.deepEqual(
     tree.map((n) => n.name),
-    ['Config'],
+    ['Config/Enum'],
   )
-  assert.equal(tree[0].children[0].children[0].path, 'Config/Enum/E.xlsx')
+  assert.equal(tree[0].children[0].path, 'Config/Enum/E.xlsx')
+})
+
+test('项目目录外的表格目录：开头一串单个子目录并成一个节点', () => {
+  const f = (path: string) => ({ path, kind: 'xlsx' as const, size: 1, mtime: '' })
+  const tree = buildTableTree([
+    f('F:/Game/Designer/Excel/a.xlsx'),
+    f('F:/Game/Designer/Excel/sub/b.xlsx'),
+    f('Config/c.csv'),
+  ])
+  assert.deepEqual(
+    tree.map((n) => [n.name, n.path, n.count]),
+    [
+      ['Config', 'Config', 1],
+      ['F:/Game/Designer/Excel', 'F:/Game/Designer/Excel', 2],
+    ],
+  )
+  const posix = buildTableTree([f('/data/excel/a.xlsx'), f('/data/excel/b.xlsx')])
+  assert.equal(posix[0].name, '/data/excel')
 })

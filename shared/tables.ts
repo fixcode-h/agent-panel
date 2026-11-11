@@ -11,7 +11,7 @@ export const TABLE_INCLUDE = '*.xlsx, *.xlsm, *.xls, *.csv, *.tsv'
 /** 默认跳过：Office / WPS 打开文件时留下的锁文件 */
 export const TABLE_EXCLUDE = '~$*, .~*'
 
-/** 项目设置里的「表格」：表格目录（相对项目目录）、包含 / 排除、结构信息存哪 */
+/** 项目设置里的「表格」：表格目录（相对项目目录，或项目目录外的绝对路径）、包含 / 排除、结构信息存哪 */
 export const TablesConfig = z.object({
   dirs: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
   include: z.string().trim().max(300).default(TABLE_INCLUDE),
@@ -68,11 +68,23 @@ export interface TableFile {
   mtime: string
 }
 
+/** 设置里的一个表格目录：实际找的位置、找到几个表格 */
+export interface TableRoot {
+  /** 设置里写的 */
+  dir: string
+  /** 实际找的磁盘路径（路径写法不对时为空） */
+  full: string
+  found: boolean
+  files: number
+}
+
 export interface TablesIndex {
   /** 实际存在的表格目录（相对项目目录） */
   dirs: string[]
   /** 设置了但找不到的目录 */
   missing: string[]
+  /** 设置里每个目录各自的情况（项目设置里逐条显示） */
+  roots?: TableRoot[]
   files: TableFile[]
   /** 文件太多只列了前面一部分 */
   truncated?: boolean
@@ -145,6 +157,8 @@ export type TableEnum = z.infer<typeof TableEnum>
 
 /** 一列的结构：枚举、引用别的表的主键、列表（repeated）、取值范围 */
 export const TableColumn = z.object({
+  /** 参数类型：表头类型行写错、没写时按这个处理（uint32、float、string……），表格不改 */
+  type: z.string().trim().max(100).optional(),
   enum: z.string().max(200).optional(),
   /** 引用：「相对路径#字段名」或「相对路径#工作表#字段名」 */
   ref: z.string().max(500).optional(),
@@ -157,6 +171,9 @@ export const TableColumn = z.object({
 })
 export type TableColumn = z.infer<typeof TableColumn>
 
+/** 表头行的取值写这个：基础类型（style.primitives）+ 所有通用枚举的名字 */
+export const TYPE_NAMES = '@types'
+
 /** 项目的表格风格 */
 export const TableStyle = z.object({
   header: HeaderRule.optional(),
@@ -166,6 +183,11 @@ export const TableStyle = z.object({
   listSep: z.string().max(4).default(';'),
   /** 类型行里算基础类型的名字（其余的大驼峰名字当枚举 / 结构） */
   primitives: z.array(z.string().max(40)).max(80).default([]),
+  /**
+   * 表头每种行能填什么：值是通用枚举名，或 TYPE_NAMES（基础类型 + 通用枚举名，给类型行用）。
+   * 例如修饰行 = 枚举 Modifier（optional / repeated），导出端行 = 枚举 Side（Public / Server / Client / Editor）
+   */
+  roleEnums: z.partialRecord(z.enum(SHEET_ROLES), z.string().max(200)).default({}),
   /** 例外：这些文件（通配）用另一套表头 */
   exceptions: z
     .array(z.object({ glob: z.string().max(300), header: HeaderRule }))

@@ -4,7 +4,8 @@ import { t } from '@shared/i18n'
 import type { SheetData } from '@shared/files'
 import type { TableSchema } from '@shared/tables'
 import type { CellSet } from '@shared/table-edit'
-import { diffSheet, type DiffRow } from '@shared/sheet-diff'
+import type { DiffRow } from '@shared/sheet-diff'
+import { useSheetDiff } from '@/lib/sheet-diff-async'
 import { headerOf } from '@shared/table-struct'
 import { fieldNames } from '@shared/table-agent'
 import { tablesApi, type TableHistory } from '@/lib/tables-api'
@@ -98,12 +99,14 @@ export function TableHistoryDialog({
       ? (ready.b.find((s) => s.name === sheet) ?? (ready.b.length === 1 ? ready.b[0] : undefined))
       : { name: sheet, rows }
     const b = sideOf(schema, path, bSheet)
-    return { a, b, diff: diffSheet(a, b, schema.style.key) }
+    return { a, b }
   }, [ready, schema, path, sheet, rows])
+  // 差异在后台线程算：大表没有主键时要做 LCS，放主线程上算页面会卡
+  const { diff, error: diffError } = useSheetDiff(sides, schema.style.key)
 
   const restore = (row: DiffRow) => {
-    if (!sides || row.kind !== 'mod' || row.a === undefined || row.b === undefined) return
-    const { a, diff } = sides
+    if (!sides || !diff || row.kind !== 'mod' || row.a === undefined || row.b === undefined) return
+    const { a } = sides
     onRestore?.(
       (row.cols ?? []).map((c) => ({
         r: row.b!,
@@ -171,7 +174,7 @@ export function TableHistoryDialog({
         <section aria-label={t('差异')} className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-3 py-2">
             <span className="font-mono text-body">{title}</span>
-            {sides && <DiffSummary diff={sides.diff} />}
+            {diff && <DiffSummary diff={diff} />}
             <span className="flex-1" />
             <Segmented
               label={t('显示')}
@@ -184,10 +187,10 @@ export function TableHistoryDialog({
               ]}
             />
           </header>
-          <div className="thin-scroll min-h-0 flex-1 overflow-auto">
-            {error ? (
-              <p className="p-4 text-body text-danger">{error}</p>
-            ) : loading || !sides ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {error || diffError ? (
+              <p className="p-4 text-body text-danger">{error || diffError}</p>
+            ) : loading || !sides || !diff ? (
               hist?.vcs === 'none' ? null : (
                 <div className="flex justify-center p-8 text-subtle">
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -197,7 +200,7 @@ export function TableHistoryDialog({
               <SheetDiffView
                 a={sides.a.rows}
                 b={sides.b.rows}
-                diff={sides.diff}
+                diff={diff}
                 names={sides.b.names}
                 onlyChanges={only}
                 rowAction={

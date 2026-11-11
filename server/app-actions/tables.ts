@@ -43,6 +43,18 @@ export const tableActions = [
     },
   }),
   defineAction({
+    name: 'table.sample',
+    title: '看一张表的表头',
+    description:
+      '读一张配置表的表头和前几行数据（制表符分隔，行号从 1 数），以及这张表里各个类型名出现过的值。AI 分析表格风格时一张一张用它看，不要自己写脚本解析 xlsx。',
+    level: 'read',
+    input: z.object({ projectId: PID, path: z.string().min(1).describe('表格的路径（table.list 列出来的）') }),
+    run: async (a, ctx) =>
+      (await ctx.api('GET', `/tables/${enc(pidOf(a.projectId, ctx))}/sample?path=${enc(a.path)}`)) as {
+        text: string
+      },
+  }),
+  defineAction({
     name: 'table.query',
     title: '查表格里的行',
     description:

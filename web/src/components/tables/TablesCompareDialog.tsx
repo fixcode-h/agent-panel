@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, FileSpreadsheet, GitCompareArrows, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableDoc, TableSchema } from '@shared/tables'
-import { copyRows, diffSheet, type DiffRow } from '@shared/sheet-diff'
+import { copyRows, type DiffRow } from '@shared/sheet-diff'
+import { useSheetDiff } from '@/lib/sheet-diff-async'
 import { applyRowOps, setCells } from '@shared/table-edit'
 import { checkTouched, headerOf, workbookNeeds } from '@shared/table-struct'
 import { fieldNames } from '@shared/table-agent'
@@ -159,7 +160,7 @@ export function TablesCompareDialog({
               left={left}
               right={{ id: right, name: rightName }}
               path={path}
-              status={pairs?.find((p) => p.path === path)?.status}
+              pair={pairs?.find((p) => p.path === path)}
               onCopied={() => setSeq((n) => n + 1)}
             />
           ) : (
@@ -176,15 +177,19 @@ function PairView({
   left,
   right,
   path,
-  status,
+  pair,
   onCopied,
 }: {
   left: { id: string; name: string }
   right: { id: string; name: string }
   path: string
-  status?: TablePair['status']
+  pair?: TablePair
   onCopied: () => void
 }) {
+  const status = pair?.status
+  // 两边各自的真实路径：项目目录外的表格目录两边不一样
+  const lpath = pair?.left ?? path
+  const rpath = pair?.right ?? path
   const [docs, setDocs] = useState<{ l?: TableDoc; r?: TableDoc; schema: TableSchema; rSchema: TableSchema } | null>(
     null,
   )
@@ -198,10 +203,10 @@ function PairView({
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     let live = true
-    const open = (pid: string, has: boolean) => (has ? tablesApi.open(pid, path) : Promise.resolve(undefined))
+    const open = (pid: string, p: string, has: boolean) => (has ? tablesApi.open(pid, p) : Promise.resolve(undefined))
     Promise.all([
-      open(left.id, status !== 'right'),
-      open(right.id, status !== 'left'),
+      open(left.id, lpath, status !== 'right'),
+      open(right.id, rpath, status !== 'left'),
       tablesApi.schema(left.id),
       tablesApi.schema(right.id),
     ])
@@ -210,25 +215,29 @@ function PairView({
     return () => {
       live = false
     }
-  }, [left.id, right.id, path, status])
+  }, [left.id, right.id, lpath, rpath, status])
 
   const sheets = docs?.l?.sheets ?? docs?.r?.sheets ?? []
   const sheet = sheets[Math.min(sheetIndex, Math.max(0, sheets.length - 1))]
-  const view = useMemo(() => {
+  const pairSides = useMemo(() => {
     if (!docs || !sheet) return null
-    const side = (doc: TableDoc | undefined, schema: TableSchema) => {
+    const side = (doc: TableDoc | undefined, schema: TableSchema, path: string) => {
       const s = doc?.sheets.find((x) => x.name === sheet.name) ?? (doc?.sheets.length === 1 ? doc.sheets[0] : undefined)
       if (!s) return { sheet: undefined, rows: [] as string[][], from: 0, names: [] as string[] }
       const h = headerOf(schema, path, s)
       return { sheet: s, rows: s.rows, from: h.start + h.roles.length, names: fieldNames(s.rows, h) }
     }
     // 差异是 右(旧) → 左(新)：「新增」= 只在左边，「删掉」= 只在右边
-    const r = side(docs.r, docs.rSchema)
-    const l = side(docs.l, docs.schema)
-    return { r, l, diff: diffSheet(r, l, docs.schema.style.key) }
-  }, [docs, sheet, path])
+    const r = side(docs.r, docs.rSchema, rpath)
+    const l = side(docs.l, docs.schema, lpath)
+    return { r, l }
+  }, [docs, sheet, lpath, rpath])
+  const sides = useMemo(() => (pairSides ? { a: pairSides.r, b: pairSides.l } : null), [pairSides])
+  // 差异在后台线程算（大表不卡页面）
+  const { diff, error: diffError } = useSheetDiff(sides, docs?.schema.style.key)
+  const view = pairSides && diff ? { ...pairSides, diff } : null
 
-  if (error) return <p className="p-4 text-body text-danger">{error}</p>
+  if (error || diffError) return <p className="p-4 text-body text-danger">{error || diffError}</p>
   if (!docs || !view)
     return (
       <div className="flex flex-1 items-center justify-center text-subtle">
@@ -246,15 +255,15 @@ function PairView({
     const after = { name: target.name, rows: setCells(applyRowOps(target.rows, plan.edit.rows), plan.edit.cells) }
     // 右边项目的表格结构：枚举、引用都按右边的查（引用的表从右边读）
     const ext: Record<string, TableDoc['sheets'] | undefined> = {}
-    for (const f of workbookNeeds(docs.rSchema, path, [after]))
+    for (const f of workbookNeeds(docs.rSchema, rpath, [after]))
       ext[f] = (await tablesApi.open(right.id, f).catch(() => undefined))?.sheets
-    const problems = checkTouched(docs.rSchema, path, after, plan.touched, (f) =>
-      f === path ? r.sheets.map((s) => (s.name === after.name ? after : s)) : ext[f],
+    const problems = checkTouched(docs.rSchema, rpath, after, plan.touched, (f) =>
+      f === rpath ? r.sheets.map((s) => (s.name === after.name ? after : s)) : ext[f],
     ).map((p) => t('第 {n} 行 {field}：{msg}', { n: p.r + 1, field: p.field, msg: p.msg }))
     const run = async () => {
       setBusy(true)
       try {
-        await tablesApi.save(right.id, { path, mtime: r.mtime, sheets: [plan.edit] })
+        await tablesApi.save(right.id, { path: rpath, mtime: r.mtime, sheets: [plan.edit] })
         toast.success(t('已拷 {n} 行到 {name}', { n: chosen.length, name: right.name }))
         setConfirm(null)
         onCopied()
@@ -301,7 +310,7 @@ function PairView({
             : (docs.r.readOnly ?? t('右边的文件不能改'))}
         </p>
       )}
-      <div className="thin-scroll min-h-0 flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
         <SheetDiffView
           a={view.r.rows}
           b={view.l.rows}

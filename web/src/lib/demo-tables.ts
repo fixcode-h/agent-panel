@@ -8,6 +8,7 @@ import { checkWorkbook } from '@shared/table-struct'
 import type { Project } from '@shared/schema'
 import {
   TableSchema,
+  TablesConfig,
   globHit,
   globList,
   tableKind,
@@ -88,11 +89,27 @@ function filesOf(p: Project): TableFile[] {
   const exclude = globList(cfg.exclude)
   return DEMO_FILES.filter(
     (f) =>
-      cfg.dirs.some((d) => f.startsWith(`${d.replace(/\/+$/, '')}/`)) &&
+      cfg.dirs.some((d) => f.startsWith(`${d.replace(/\/+$/, '').replace(`${p.path}/`, '')}/`)) &&
       tableKind(f) &&
       globHit(f, include) &&
       !globHit(f, exclude),
   ).map((f) => ({ path: f, kind: tableKind(f)!, size: 24_000, mtime: bookOf(f, p).mtime }))
+}
+
+/** 项目设置里按还没保存的配置找一遍：演示项目的文件都在项目目录里，绝对路径换成相对的再找 */
+function demoProbe(p: Project, body: unknown) {
+  const b = (body ?? {}) as { path?: string; tables?: unknown }
+  const base = (b.path?.trim() || p.path).replace(/\/+$/, '')
+  const cfg = TablesConfig.parse(b.tables ?? {})
+  const files = filesOf({ ...p, tables: cfg })
+  const rel = (d: string) => (d.startsWith('/') ? (d.startsWith(`${base}/`) ? d.slice(base.length + 1) : null) : d)
+  const roots = cfg.dirs.map((d) => {
+    const r = rel(d)
+    const full = d.startsWith('/') ? d : `${base}/${d}`
+    const n = r === null ? 0 : DEMO_FILES.filter((f) => f.startsWith(`${r}/`) && tableKind(f)).length
+    return { dir: d, full, found: r !== null && DEMO_FILES.some((f) => f.startsWith(`${r}/`)), files: n }
+  })
+  return { roots, files: files.length, sample: files.slice(0, 5).map((f) => f.path) }
 }
 
 export function demoTables(
@@ -104,6 +121,7 @@ export function demoTables(
   others: (id: string) => Project | undefined,
 ): unknown {
   const kind = seg[2]
+  if (kind === 'probe' && method === 'POST') return demoProbe(p, body)
   if (!kind && method === 'GET') return { dirs: p.tables?.dirs ?? [], missing: [], files: filesOf(p) }
   if (kind === 'file') {
     const path = query.get('path') ?? ''
@@ -147,21 +165,26 @@ export function demoTables(
     b.mtime = new Date().toISOString()
     return demoTables('GET', [seg[0], seg[1], 'file'], new URLSearchParams({ path: save.path }), null, p, others)
   }
+  // AI 分析：不带 path 是挑出来的表的清单，带 path 是一张表的表头 + 前几行（和正式版一样一张一张看）
   if (kind === 'sample' && method === 'GET') {
-    const files = filesOf(p).filter((f) => f.kind !== 'xls')
-    const text = files
-      .map((f) =>
-        bookOf(f.path, p)
+    const one = query.get('path')
+    if (one)
+      return {
+        files: 1,
+        text: bookOf(one, p)
           .sheets.map(
             (s) =>
-              `### ${f.path}\n${s.rows
-                .slice(0, 10)
+              `### ${one}\n${s.rows
+                .slice(0, 8)
                 .map((r, i) => `${i + 1}\t${r.join('\t')}`)
                 .join('\n')}`,
           )
           .join('\n\n'),
-      )
-      .join('\n\n')
+      }
+    const files = filesOf(p)
+      .filter((f) => f.kind !== 'xls')
+      .slice(0, 8)
+    const text = files.map((f) => `- ${f.path}（${bookOf(f.path, p).sheets.length} 张工作表）`).join('\n')
     return { text, files: files.length }
   }
   if (kind === 'check' && method === 'GET') {

@@ -45,5 +45,20 @@ export function buildTableTree(files: TableFile[], query = ''): TableNode[] {
     n.children.forEach(sort)
   }
   sort(root)
-  return root.children
+  return root.children.map(compactAbs)
+}
+
+/**
+ * 顶层开头一串只有一个子目录的目录并成一个节点（Project/Designer/Excel、F:/Game/Designer/Excel、/data/excel），
+ * 不然树最上面要一层层点开
+ */
+function compactAbs(n: TableNode): TableNode {
+  if (n.file) return n
+  let at = n
+  let name = n.name
+  while (at.children.length === 1 && !at.children[0].file) {
+    at = at.children[0]
+    name = `${name}/${at.name}`
+  }
+  return { ...at, name: name || '/' }
 }

@@ -26,7 +26,12 @@ export interface SaveDeps {
 
 /** 备份到数据目录 tables-backup/<项目 id>/，按文件名 + 时间；只留最近的几份 */
 async function backup(projectId: string, rel: string, full: string) {
-  const dir = path.join(DATA_DIR, 'tables-backup', projectId, path.dirname(rel))
+  // 项目目录外的表格（绝对路径）：盘符的冒号去掉，Windows 上目录名不能带冒号
+  const sub = path
+    .dirname(rel)
+    .replace(/^([a-zA-Z]):/, '$1')
+    .replace(/^\/+/, '')
+  const dir = path.join(DATA_DIR, 'tables-backup', projectId, sub)
   await mkdir(dir, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const name = path.basename(rel)
@@ -54,7 +59,7 @@ export async function saveTable(
   deps: SaveDeps = {},
 ): Promise<TableDoc> {
   if (cfg.readOnly) throw new HttpError(t('项目设置里把表格设成了只读'), 409)
-  const { rel, full } = safeRel(dir, body.path)
+  const { rel, full } = safeRel(dir, body.path, cfg)
   const kind = tableKind(rel)
   if (kind !== 'xlsx' && kind !== 'csv')
     throw new HttpError(t('老的 .xls / .et 格式只能用表格软件打开，另存为 .xlsx 后能在这里看和改'))

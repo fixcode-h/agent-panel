@@ -14,15 +14,17 @@ import {
   type TableDoc,
   type TableFile,
   type TableHit,
+  type TableRoot,
   type TableSearch,
   type TablesConfig,
   type TablesIndex,
 } from '../../shared/tables.ts'
 import type { SheetData } from '../../shared/files.ts'
 import { MAX_XLSX_BYTES, readXlsx } from '../xlsx.ts'
+import { resolvePath } from '../fs.ts'
 
 /** 一个项目最多列这么多个表格文件 */
-const MAX_FILES = 5000
+const MAX_FILES = 20000
 /** 内容搜索最多给这么多处命中 */
 const MAX_HITS = 500
 /** 解析缓存最多留这么多个单元格（所有文件合计）；超了丢掉最久没用的 */
@@ -32,11 +34,47 @@ const SKIP_DIRS = new Set(['.git', '.svn', '.p4', 'node_modules', '.agentpanel']
 
 const norm = (p: string) => p.replace(/\\/g, '/')
 
-/** 表格目录里的相对路径不能跑出项目目录 */
-export function safeRel(dir: string, rel: string) {
+/** 绝对路径（含 Windows 盘符、~ 开头）：表格目录可以在项目目录之外，比如策划仓库和客户端分开放 */
+export const absPath = (p: string) => path.isAbsolute(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^~([\\/]|$)/.test(p)
+
+/** 表格路径对应的磁盘路径：相对项目目录的拼上项目目录，绝对路径原样 */
+export const tableFull = (dir: string, p: string) => path.resolve(dir, p)
+
+/** child 在不在 parent 里（Windows 不分大小写） */
+function inside(parent: string, child: string) {
+  const r = path.relative(parent, child)
+  return r === '' || (!!r && !r.startsWith('..') && !path.isAbsolute(r))
+}
+
+/**
+ * 设置里的一个表格目录：相对项目目录的直接用；绝对路径落在项目目录里的也换成相对路径（和以前一样），
+ * 在项目目录外的用正斜杠的绝对路径当文件路径的前缀
+ */
+export function tableRoot(dir: string, d: string): { key: string; full: string } {
+  if (absPath(d)) {
+    const full = resolvePath(d)
+    return inside(dir, full) ? { key: norm(path.relative(dir, full)), full } : { key: norm(full), full }
+  }
+  const rel = /^\.[\\/]*$/.test(d.trim()) ? '' : safeRel(dir, d).rel.replace(/\/+$/, '')
+  return { key: rel, full: path.join(dir, rel) }
+}
+
+/**
+ * 表格页传来的文件路径不能跑出项目目录和设置的表格目录：
+ * 相对路径不能有 ..；绝对路径必须落在某个设置在项目目录外的表格目录里
+ */
+export function safeRel(dir: string, rel: string, cfg?: Pick<TablesConfig, 'dirs'>) {
   const n = norm(rel).replace(/^\.\/+/, '')
-  if (!n || path.isAbsolute(n) || /^[a-zA-Z]:/.test(n) || n.split('/').includes('..'))
-    throw new Error(t('只能查看项目目录里的文件'))
+  if (n && absPath(n) && cfg) {
+    const full = path.resolve(n)
+    const ok = cfg.dirs.some((d) => {
+      if (!absPath(d)) return false
+      const root = resolvePath(d)
+      return !inside(dir, root) && inside(root, full)
+    })
+    if (ok) return { rel: norm(full), full }
+  }
+  if (!n || absPath(n) || n.split('/').includes('..')) throw new Error(t('只能查看项目目录和表格目录里的文件'))
   return { rel: n, full: path.join(dir, n) }
 }
 
@@ -47,6 +85,7 @@ export async function listTables(dir: string, cfg: TablesConfig): Promise<Tables
   const files: TableFile[] = []
   const dirs: string[] = []
   const missing: string[] = []
+  const roots: TableRoot[] = []
   let truncated = false
   const seen = new Set<string>()
   async function walk(rel: string) {
@@ -54,7 +93,7 @@ export async function listTables(dir: string, cfg: TablesConfig): Promise<Tables
       truncated = true
       return
     }
-    const entries = await readdir(path.join(dir, rel), { withFileTypes: true }).catch(() => [])
+    const entries = await readdir(tableFull(dir, rel), { withFileTypes: true }).catch(() => [])
     for (const e of entries) {
       const child = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory()) {
@@ -64,7 +103,7 @@ export async function listTables(dir: string, cfg: TablesConfig): Promise<Tables
       if (!e.isFile() || seen.has(child)) continue
       const kind = tableKind(e.name)
       if (!kind || !globHit(child, include) || globHit(child, exclude)) continue
-      const info = await stat(path.join(dir, child)).catch(() => null)
+      const info = await stat(tableFull(dir, child)).catch(() => null)
       if (!info) continue
       seen.add(child)
       files.push({ path: child, kind, size: info.size, mtime: info.mtime.toISOString() })
@@ -75,25 +114,29 @@ export async function listTables(dir: string, cfg: TablesConfig): Promise<Tables
     }
   }
   for (const d of cfg.dirs) {
-    let rel: string
+    let root: { key: string; full: string }
     try {
-      rel = safeRel(dir, d).rel.replace(/\/+$/, '')
+      root = tableRoot(dir, d)
     } catch {
       missing.push(d)
+      roots.push({ dir: d, full: '', found: false, files: 0 })
       continue
     }
-    const ok = await stat(path.join(dir, rel))
+    const ok = await stat(root.full)
       .then((s) => s.isDirectory())
       .catch(() => false)
     if (!ok) {
       missing.push(d)
+      roots.push({ dir: d, full: root.full, found: false, files: 0 })
       continue
     }
-    dirs.push(rel)
-    await walk(rel)
+    const before = files.length
+    dirs.push(root.key)
+    await walk(root.key)
+    roots.push({ dir: d, full: root.full, found: true, files: files.length - before })
   }
   files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }))
-  return { dirs, missing, files, ...(truncated ? { truncated } : {}) }
+  return { dirs, missing, roots, files, ...(truncated ? { truncated } : {}) }
 }
 
 interface Cached {
@@ -183,7 +226,7 @@ export async function lockedByOffice(full: string) {
 
 /** 打开一个表格文件给表格页 */
 export async function openTable(dir: string, rel: string, cfg: TablesConfig): Promise<TableDoc> {
-  const { rel: r, full } = safeRel(dir, rel)
+  const { rel: r, full } = safeRel(dir, rel, cfg)
   const kind = tableKind(r)
   if (!kind) throw new Error(t('不是表格文件'))
   const info = await stat(full).catch(() => null)
@@ -211,7 +254,7 @@ export async function searchTables(dir: string, files: TableFile[], q: string): 
     if (f.kind === 'xls') continue
     let sheets: SheetData[]
     try {
-      sheets = (await parseTable(path.join(dir, f.path))).sheets
+      sheets = (await parseTable(tableFull(dir, f.path))).sheets
     } catch {
       continue
     }

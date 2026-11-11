@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Columns3 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { colKey, TableColumn, type TableSchema } from '@shared/tables'
 import type { ColInfo, ColKind } from '@shared/table-struct'
 import { colName } from '@/lib/sheet'
+import { cn } from '@/lib/utils'
+import { roleShort } from '@/components/files/sheet-roles'
+import '@/components/files/sheet-table.css'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, Input, Select } from '@/components/ui/input'
@@ -21,9 +24,11 @@ export const kindLabel = (k: ColKind) =>
   })[k]
 
 const NEW = '__new__'
+/** 参数类型的常用写法（下拉里的选项；也能手填别的） */
+const TYPES = ['int32', 'uint32', 'int64', 'float', 'double', 'bool', 'string']
 
 /**
- * 「列结构」：当前列是什么（按表头认出来的类型）、手动指定枚举、引用、repeated、取值范围。
+ * 「列结构」：当前列在表头里的每一行（修饰、导出端、类型、字段名、注释），手动改参数类型、指定枚举、引用、repeated、取值范围。
  * 按字段名记进项目的表格结构文件（每张表通用），表格文件不动
  */
 export function ColumnSetup({
@@ -57,6 +62,7 @@ export function ColumnSetup({
     const enumName = d.enum === NEW ? newEnum.trim() : d.enum
     const col = TableColumn.parse({
       ...d,
+      type: d.type?.trim() || undefined,
       enum: enumName || undefined,
       ref: d.ref?.trim() || undefined,
       allow: allow
@@ -92,7 +98,9 @@ export function ColumnSetup({
         {!info ? null : (
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline gap-2">
-              <span className="text-body font-medium">{t('{col} 列', { col: colName(info.col) })}</span>
+              <span className="shrink-0 text-body font-medium whitespace-nowrap">
+                {t('{col} 列', { col: colName(info.col) })}
+              </span>
               <span className="min-w-0 truncate font-mono text-footnote text-muted">
                 {info.field || t('（没有字段名）')}
               </span>
@@ -101,12 +109,45 @@ export function ColumnSetup({
                 {info.list ? ' · repeated' : ''}
               </span>
             </div>
+            {info.head.length > 0 && (
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg bg-sel px-2.5 py-2 text-caption">
+                {info.head.map((h, i) => (
+                  <Fragment key={i}>
+                    <dt className="flex items-center gap-1.5 text-subtle">
+                      <span className={cn('h-2.5 w-2.5 rounded-[3px] sheet-role', `sheet-role-${h.role}`)} />
+                      {roleShort(h.role)}
+                    </dt>
+                    <dd className="min-w-0 truncate font-mono text-fg" title={h.text}>
+                      {h.text || '—'}
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+            )}
             {!info.field ? (
               <p className="rounded-lg bg-sel px-2.5 py-2 text-caption leading-relaxed text-subtle">
                 {t('这张表没有认出字段名行：先在「调整表头」里把字段名那一行标出来，列结构按字段名记。')}
               </p>
             ) : (
               <>
+                <Field
+                  label={t('参数类型')}
+                  tip={t('表头类型行写错或没写时，按这里的类型检查和编辑；只记在结构文件里，表格不改')}
+                >
+                  <Input
+                    size="sm"
+                    list="table-col-types"
+                    placeholder={info.head.find((h) => h.role === 'type')?.text || 'uint32'}
+                    value={d.type ?? ''}
+                    onChange={(e) => setD({ ...d, type: e.target.value })}
+                    className="font-mono"
+                  />
+                  <datalist id="table-col-types">
+                    {[...TYPES, ...Object.keys(schema.enums)].map((x) => (
+                      <option key={x} value={x} />
+                    ))}
+                  </datalist>
+                </Field>
                 <Field label={t('枚举')} tip={t('选了枚举后，这一列改格子时是下拉选择，填了不在枚举里的值会标红')}>
                   <Select
                     size="sm"
