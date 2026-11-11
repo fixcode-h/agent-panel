@@ -22,6 +22,7 @@ import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan-pace.ts'
 import { DATA_DIR } from '../store.ts'
 import { loadProjectLessons } from '../project-lessons.ts'
+import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
 import { taskLog } from '../task-log.ts'
@@ -415,6 +416,14 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         pushed.set(c.task.id, seen)
         const hit = lessons.filter((l) => !seen.has(l.id) && l.paths.some((g) => globMatch(g, r)))
         for (const l of hit) seen.add(l.id)
+        // 推给模型的教训也算命中（shared/knowledge-hits.ts）
+        if (hit.length)
+          void recordKnowledgeHits(
+            c.project.id,
+            'lessons',
+            hit.map((l) => l.id),
+            c.task.parentTaskId || c.task.id,
+          )
         if (hit.length) noteBuiltin('push-lessons', event, 'context', `${r}：${hit.map((l) => l.title).join('、')}`)
         if (hit.length)
           ctx.push(

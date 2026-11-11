@@ -8,6 +8,7 @@ import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage }
 import { readGlobalLessons } from '../lessons.ts'
 import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
 import { loadProjectExperience } from '../project-experience.ts'
+import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { recordExperience } from '../experience-learn.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import {
@@ -476,6 +477,7 @@ export function createRun(sc: TasksScope) {
                 sc.deps.recordLesson
                   ? sc.deps.recordLesson(task.projectId, { ...input, source: 'agent', taskId: task.id })
                   : { ok: false, info: '这里记不了项目教训' },
+              hit: (ids) => void recordKnowledgeHits(task.projectId, 'lessons', ids, rootId),
             }
           : undefined,
         // 项目经验：设置里关了总开关就整个不给（工具、开头那一行都没有）；每次查都现读，刚学到的也能查到
@@ -491,6 +493,7 @@ export function createRun(sc: TasksScope) {
                   if (!p?.path) return { ok: false, info: '这个项目没有目录，存不了经验' }
                   return recordExperience(p, agents, input, task.parentTaskId || task.id)
                 },
+                hit: (ids) => void recordKnowledgeHits(task.projectId, 'experience', ids, rootId),
               }
             : undefined,
         releaseFiles:

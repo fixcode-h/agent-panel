@@ -685,11 +685,15 @@ export interface EngineHost {
     /** 全局教训：只读，Agent 改不了 */
     globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
+    /** 查到并交出全文的那几条：记一次命中（shared/knowledge-hits.ts），不等写完 */
+    hit?: (ids: string[]) => void
   }
   /** 项目经验：每次查都现读（刚学到的也能查到）；设置里关了经验时宿主不给 */
   experience?: {
     list: () => Promise<ProjectExperience[]>
     record: (input: ExperienceInput) => Promise<{ ok: boolean; info: string }>
+    /** 同 lessons.hit */
+    hit?: (ids: string[]) => void
   }
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
