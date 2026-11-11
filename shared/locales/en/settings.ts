@@ -1405,8 +1405,11 @@ export const EN_SETTINGS: Record<string, string> = {
   正在看: 'Open now',
   '{time} 回复完': 'Replied {time}',
   释放: 'Release',
-  '回复完、CLI 进程还留着等下一句的对话。释放后进程结束，下次发消息时重新启动并续接原来的会话（多等几秒，不会多花 Token）。「释放全部闲置」不动正开着的对话。':
-    'Conversations that have replied and whose CLI process is still waiting for the next message. Releasing ends the process; your next message starts it again and resumes the same session (a few seconds slower, no extra tokens). "Release all idle" leaves open conversations alone.',
+  '回复完、CLI 进程还留着等下一句的对话。释放后进程结束，下次发消息时重新启动并续接原来的会话（多等几秒，不会多花 Token）。「释放全部闲置」不动正开着的对话。系统可用内存低于设定比例时，面板也会自动释放没开着的闲置会话，免得进程攒多了把电脑内存吃满（macOS 上不自动释放）。':
+    'Conversations that have replied and whose CLI process is still waiting for the next message. Releasing ends the process; your next message starts it again and resumes the same session (a few seconds slower, no extra tokens). "Release all idle" leaves open conversations alone. When available system memory drops below the chosen level, the panel also releases idle sessions that are not open, so piled-up processes don\'t fill up your computer\'s memory (not on macOS).',
+  内存不足时自动释放: 'Auto-release when memory is low',
+  不自动释放: "Don't auto-release",
+  '可用内存低于 {n}%': 'Below {n}% free',
   '删除「{title}」失败：{msg}': 'Couldn\'t delete "{title}": {msg}',
   对话占用: 'Conversation storage',
   '{n} 个对话 · 共 {size}': '{n} conversations · {size} total',

@@ -371,6 +371,8 @@ function SettingsBody({
     childDoneKeepMinutes: childKeepValid ? childKeepMin : initial.childDoneKeepMinutes,
     autoArchiveDays: archiveValid ? archiveN : initial.autoArchiveDays,
     reclaimIdleCli: reclaim,
+    // 在设置 →「数据」的保活列表里改，这里沿用原来的值
+    lowMemoryReleasePercent: initial.lowMemoryReleasePercent,
     resumeAfterRestart: resumeRestart,
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,

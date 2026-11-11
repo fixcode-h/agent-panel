@@ -254,6 +254,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       childIdleAskMinutes: st.childIdleAskMinutes,
       presenceGraceMinutes: st.presenceGraceMinutes,
       reclaimIdleCli: st.reclaimIdleCli,
+      lowMemoryReleasePercent: st.lowMemoryReleasePercent,
       childDoneKeepMinutes: st.childDoneKeepMinutes,
       backgroundLimit: st.backgroundLimit,
     },

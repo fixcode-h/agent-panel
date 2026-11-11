@@ -7,6 +7,7 @@ import { api, type KeepAliveItem } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Select } from '@/components/ui/input'
 import { t } from '@shared/i18n'
 
 /** 刷新间隔：进程数量和内存变化不快，开着设置页时偶尔看一眼就够 */
@@ -17,7 +18,7 @@ const REFRESH_MS = 10_000
  * 用户可以逐个释放或一键释放所有没开着页面的；释放后下次发消息冷启动续接原会话，不会多花 Token
  */
 export function KeepAliveList() {
-  const { projects } = useData()
+  const { projects, settings, setSettings } = useData()
   const [items, setItems] = useState<KeepAliveItem[] | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
@@ -46,6 +47,16 @@ export function KeepAliveList() {
       toast.error((e as Error).message)
     } finally {
       setBusy('')
+    }
+  }
+
+  /** 内存不足时自动释放的阈值：存进设置，服务端下一次检查（30 秒内）就按新的来 */
+  const saveLowMemory = async (percent: number) => {
+    if (!settings || percent === settings.lowMemoryReleasePercent) return
+    try {
+      setSettings(await api.saveSettings({ ...settings, lowMemoryReleasePercent: percent }))
+    } catch (e) {
+      toast.error((e as Error).message)
     }
   }
 
@@ -117,9 +128,22 @@ export function KeepAliveList() {
           })}
         </Card>
       )}
+      <div className="flex items-center gap-2">
+        <span className="text-body">{t('内存不足时自动释放')}</span>
+        <Select
+          className="ml-auto h-7 w-[148px] text-xs"
+          aria-label={t('内存不足时自动释放')}
+          value={String(settings?.lowMemoryReleasePercent ?? 5)}
+          onChange={(e) => void saveLowMemory(Number(e.target.value))}
+          options={[
+            { value: '0', label: t('不自动释放') },
+            ...[5, 10, 15, 20].map((n) => ({ value: String(n), label: t('可用内存低于 {n}%', { n }) })),
+          ]}
+        />
+      </div>
       <p className="text-xs leading-relaxed text-subtle">
         {t(
-          '回复完、CLI 进程还留着等下一句的对话。释放后进程结束，下次发消息时重新启动并续接原来的会话（多等几秒，不会多花 Token）。「释放全部闲置」不动正开着的对话。',
+          '回复完、CLI 进程还留着等下一句的对话。释放后进程结束，下次发消息时重新启动并续接原来的会话（多等几秒，不会多花 Token）。「释放全部闲置」不动正开着的对话。系统可用内存低于设定比例时，面板也会自动释放没开着的闲置会话，免得进程攒多了把电脑内存吃满（macOS 上不自动释放）。',
         )}
       </p>
     </div>

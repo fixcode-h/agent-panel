@@ -3,7 +3,6 @@ import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
 import { descendantNeeds } from '../../shared/child-needs.ts'
 import { bugBriefs } from '../../shared/bug-overview.ts'
-import { isViewing } from '../presence.ts'
 import { messageChars } from '../task-store.ts'
 import {
   SEARCH_CHAR_BUDGET,
@@ -15,41 +14,17 @@ import {
 } from '../../shared/task-search.ts'
 import { log } from '../log.ts'
 import { taskCliAlive } from '../exec/process.ts'
-import { trackedClis } from '../exec/orphans.ts'
-import { processSnapshot, subtree, sumRss } from '../exec/proc-stats.ts'
 import { SEARCH_CACHE_TASKS, SEARCH_CACHE_CHARS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { createIdleRelease } from './idle-release.ts'
 
 /**
  * 对话列表类接口：列表（带 ETag）、磁盘占用、保活列表与释放、回收站列表、对话内容搜索（带消息缓存）。
  */
 export function registerListRoutes(s: TasksScope) {
-  /**
-   * 保活中的会话：回复完停在等下一句、CLI 进程还留着的对话，连同进程（含子进程）占的内存。
-   * 设置「数据」里列出来，用户可以一键释放；正开着的页面单独标出，释放全部时不动它们
-   */
-  async function keepAliveList() {
-    const map = await processSnapshot()
-    const tracked = trackedClis()
-    return [...s.live.values()]
-      .filter((e) => e.task.awaitingUser && !e.task.working)
-      .map((e) => {
-        const pids = new Set<number>()
-        for (const x of tracked.filter((x) => x.owner?.taskId === e.task.id))
-          for (const pid of map ? subtree(x.pid, map) : [x.pid]) pids.add(pid)
-        return {
-          id: e.task.id,
-          title: e.task.title,
-          projectId: e.task.projectId,
-          parentTaskId: e.task.parentTaskId,
-          cli: e.task.sessionCli || e.task.cli,
-          viewing: isViewing(e.task.id),
-          since: e.task.turnDoneAt || e.task.updatedAt,
-          rss: map && pids.size ? sumRss(pids, map) : null,
-        }
-      })
-      .sort((a, b) => a.since.localeCompare(b.since))
-  }
+  // 保活列表、手动释放、内存紧张时自动释放（见 idle-release.ts）
+  const idle = createIdleRelease(s)
+  const { keepAliveList } = idle
   /** 每个对话的磁盘占用（任务文件 + 对话文件），设置「数据」里按项目、父子对话列出来 */
   s.routes.get('/disk', async (c) => {
     const bytes = new Map((await s.store.diskSizes()).map((x) => [x.id, x.bytes]))
@@ -84,14 +59,7 @@ export function registerListRoutes(s: TasksScope) {
   s.routes.post('/keepalive/release', async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
     const only = Array.isArray(body.ids) ? new Set(body.ids.map(String)) : null
-    const released: string[] = []
-    for (const x of await keepAliveList()) {
-      if (only ? !only.has(x.id) : x.viewing) continue
-      // 名下有子对话在跑的父对话不动：结束它会把子对话一起停掉
-      if ([...s.live.values()].some((e) => e.task.parentTaskId === x.id && e.task.working)) continue
-      s.stopTask(x.id, 'idle')
-      released.push(x.id)
-    }
+    const released = (await idle.releaseIdle(only)).map((x) => x.id)
     if (released.length) log.info('task', '手动释放保活的会话', { tasks: released })
     return c.json({ released })
   })
@@ -268,4 +236,5 @@ export function registerListRoutes(s: TasksScope) {
     cacheMessages(tk.id, key, messages)
     return messages
   }
+  return { startMemoryGuard: idle.startMemoryGuard }
 }
