@@ -651,6 +651,11 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
   assert.match(prompts[0], /-g '!node_modules\/'/, '不是 Git 仓库时 rg 要带整份清单')
   assert.match(prompts[0], /find <目录> -maxdepth 4 \\\( -type d \\\( -name 'Saved'/, 'find 的剪枝也直接给出来')
   assert.match(prompts[0], /找 Bug 在这一层定位时也用同样的排除/, '找 Bug 那段用同一份清单')
+  assert.match(
+    prompts[0],
+    /搜文件内容用 rg[^\n]*跳过了 \.uasset/,
+    '告诉它 rg 跳过二进制、按名字找资源用 find（用户 2026-11-11 报搜索超时）',
+  )
   assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
 })
 

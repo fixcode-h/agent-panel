@@ -212,6 +212,61 @@ export function backgroundMisuse(cmd: string): string {
   return ''
 }
 
+/**
+ * 一定要跑几分钟的编译、打包、装依赖（用户 2026-11-11 要求重新规划哪些命令走后台）：放在前台会撞上命令工具的两分钟超时、
+ * 被杀掉还拿不到结果，执行中用户发的消息也要等它。只列「几乎总是很久」的：UE 的编译、打包、命令行编辑器，
+ * Visual Studio / CMake 的整体编译，Docker 构建，按锁文件整份安装依赖，Gradle / Maven 打包。
+ * npm run build、tsc、cargo build、加一个包的 npm install 这类时长看项目的不在这里（几秒就完的也推到后台只会多一轮），
+ * 项目里确实很慢的由用户在长命令守卫的「另外算长命令的命令前缀」里补
+ */
+const HEAVY_PROGRAMS = new Set([
+  // UE：RunUAT（打包、Cook）、UBT、命令行编辑器（Commandlet、自动化测试）；Engine/Build/BatchFiles/Build.bat 在下面单独认
+  'runuat',
+  'unrealbuildtool',
+  'ubt',
+  'unrealeditor-cmd',
+  'ue4editor-cmd',
+  // Visual Studio 的整体编译
+  'msbuild',
+  'devenv',
+])
+
+/** 同一程序里慢的那几种用法（看参数）：整份装依赖只认不带包名的 install / ci，npm install foo 只加一个包不算 */
+const WHOLE_INSTALL = /^(?:ci|i|install)(?:\s+-\S+)*\s*$/
+const HEAVY_ARGS: Record<string, RegExp> = {
+  cmake: /^--build\b/,
+  docker: /^(?:compose\s+)?(?:build|pull)\b/,
+  'docker-compose': /^(?:build|pull)\b/,
+  npm: WHOLE_INSTALL,
+  pnpm: WHOLE_INSTALL,
+  bun: WHOLE_INSTALL,
+  yarn: /^(?:install)?(?:\s+-\S+)*\s*$/,
+  pip: /^install\s+(?:.*\s)?-r\s/,
+  pip3: /^install\s+(?:.*\s)?-r\s/,
+  python: /^-m\s+pip\s+install\s+(?:.*\s)?-r\s/,
+  python3: /^-m\s+pip\s+install\s+(?:.*\s)?-r\s/,
+  poetry: /^install\b/,
+  bundle: /^install\b/,
+  gradle: /(?:^|\s)(?:build|assemble\w*|bundle\w*)\b/,
+  gradlew: /(?:^|\s)(?:build|assemble\w*|bundle\w*)\b/,
+  mvn: /(?:^|\s)(?:package|install|verify)\b/,
+  mvnw: /(?:^|\s)(?:package|install|verify)\b/,
+}
+
+/** 这一段是一定要跑几分钟的编译、打包、装依赖；按段开头真正运行的程序判断（PowerShell 的 & "路径" 调用先剥掉 &） */
+export function heavySegment(seg: string): boolean {
+  const s = seg.trim().replace(/^&\s*/, '')
+  // 拆段时带引号的路径可能只剩后半个引号（G:/…/Build.bat" 参数），先去掉再去后缀
+  const head = segHead(s)
+    .replace(/["']+$/, '')
+    .replace(/\.(?:exe|cmd|bat|ps1|sh|command|com)$/, '')
+  if (HEAVY_PROGRAMS.has(head)) return true
+  // UE 的 Build.bat 名字太普通：只认 Engine/Build/BatchFiles 下的那个
+  if (head === 'build' && /batchfiles[\\/]+build/i.test(s)) return true
+  const args = HEAVY_ARGS[head]
+  return !!args && args.test(segArgs(s))
+}
+
 /** 不会自己结束的命令（开发服务器、监听）：放在前台会一直挡着对话，交给后台时按常驻服务（service）跑 */
 const ENDLESS = [
   /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch)\b/,

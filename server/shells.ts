@@ -5,8 +5,8 @@ import { capture } from './exec/process.ts'
 
 /**
  * 检测本机能用的命令行环境（只在 Windows 上有意义），结果缓存；设置页可以要求重新检测。
- * 顺序就是推荐顺序：Git Bash > WSL > PowerShell > cmd。
- * Git Bash 在前：它直接用 Windows 路径，项目在 F: 这类盘上时不像 WSL 的 /mnt/f 那样慢
+ * 顺序就是推荐顺序：PowerShell > Git Bash > WSL > cmd（shared/shells.ts）。
+ * PowerShell 装了 7（pwsh）就用它（认 &&、默认 UTF-8），否则用系统自带的 5.1（powershell.exe）
  */
 let cache: Promise<ShellReport> | null = null
 /** 最近一次按设置选出的 shell：工具说明是同步拼的，用它告诉 Agent 命令在哪执行 */
@@ -19,12 +19,12 @@ export function detectShells(fresh = false) {
 
 async function detect(): Promise<ShellReport> {
   if (process.platform !== 'win32') return { platform: process.platform, shells: [{ id: 'sh', path: 'sh' }] }
-  const shells: ShellInfo[] = []
+  const shells: ShellInfo[] = [{ id: 'powershell', path: (await whereExe('pwsh'))[0] ?? 'powershell.exe' }]
   const bash = await gitBash()
   if (bash) shells.push({ id: 'gitbash', path: bash })
   const distros = await wslDistros()
   if (distros.length) shells.push({ id: 'wsl', path: 'wsl.exe', distros })
-  shells.push({ id: 'powershell', path: 'powershell.exe' }, { id: 'cmd', path: 'cmd.exe' })
+  shells.push({ id: 'cmd', path: 'cmd.exe' })
   return { platform: process.platform, shells }
 }
 
@@ -44,11 +44,7 @@ async function wslDistros() {
  * 不用 PATH 里的 bash.exe：System32 下的那个其实是 WSL 的入口
  */
 async function gitBash() {
-  const where = await capture('where.exe', ['git'], process.cwd(), process.env, 5000).catch(() => null)
-  const fromGit = (where?.code === 0 ? where.stdout.split(/\r?\n/) : [])
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((g) => path.join(path.dirname(path.dirname(g)), 'bin', 'bash.exe'))
+  const fromGit = (await whereExe('git')).map((g) => path.join(path.dirname(path.dirname(g)), 'bin', 'bash.exe'))
   const env = process.env
   const common = [
     env.ProgramFiles,
@@ -58,6 +54,12 @@ async function gitBash() {
     .filter((d): d is string => !!d)
     .map((d) => path.join(d, 'Git', 'bin', 'bash.exe'))
   return [...fromGit, ...common].find((p) => existsSync(p)) ?? ''
+}
+
+/** where.exe 找到的可执行文件（PATH 里的顺序），没找到为空 */
+async function whereExe(name: string) {
+  const where = await capture('where.exe', [name], process.cwd(), process.env, 5000).catch(() => null)
+  return (where?.code === 0 ? where.stdout.split(/\r?\n/) : []).map((l) => l.trim()).filter((l) => l && existsSync(l))
 }
 
 /** 按设置选出这次用的 shell；设置按需加载，免得只想读 lastShell 的模块（编排工具）连带加载设置和语言 */

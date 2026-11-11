@@ -1,5 +1,5 @@
 ---
-paths: server/background.ts, server/background-tools.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/orch-mcp.ts, server/hooks/guards.ts, shared/command-scope.ts
+paths: server/background.ts, server/background-tools.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/orch-mcp.ts, server/hooks/guards.ts, shared/command-scope.ts, shared/search-exclude.ts, server/exec/search-exclude-env.ts
 ---
 
 # 后台命令
@@ -39,3 +39,9 @@ paths: server/background.ts, server/background-tools.ts, server/exec/parsers.ts,
 - 规则：推回给 Agent 的结果、提醒里，要它写总结、汇报的话一律限定在「要结束这一轮时」，并先说「接着做」；不写「处理完这个结果后重新总结」这类会让模型先发一条纯文字回复的要求——没有工具调用的回复会直接结束这一轮（同 `shared/turn-rules.ts` 的说明）。
 - 起因：92c4bc0 加的推回结果尾句「处理完这个结果后，重新总结整段工作」；用户 2026-11-06 报结束前钩子反复拦住，13 次里 6 次紧跟在推回结果之后：模型一收到结果先写总结和「接着做 X」，随即停下。
 - 防线：`scripts/e2e/09-subagent-runtime.mjs`「后台命令：说完时还在跑的列在任务上」断言新句子。
+
+## 新版 Claude Code 的搜索走命令行，排除和缓冲都要落在 rg 的配置上
+
+- 规则：Claude Code 原生安装版没有 Grep / Glob 工具，搜索是命令工具里的 `rg`（自带，读 `RIPGREP_CONFIG_PATH`）、`grep`（ugrep，只认 .gitignore）、`find`（bfs，不读配置）。要它搜得快、超时也有结果，改面板交的 ripgrep 配置（`shared/search-exclude.ts` 的 `rgConfigLines`：排除目录、二进制资源、`--line-buffered`），并让提示词引导用 rg；别再按 Grep 工具的参数做文章。核对 CLI 有哪些工具时，用假接口实跑一轮看请求里的 `tools`，不要只读老版本 npm 包的源码。
+- 起因：用户 2026-11-11 报大项目搜索超时也没结果：rg 输出接管道时整块缓冲，两分钟超时被杀掉时命中全丢；二进制资源（UE 的 .uasset）逐个打开拖慢扫描。
+- 防线：`shared/search-exclude.test.ts`「rg 配置」、`server/engine-steps.test.ts` 搜索排除那段。

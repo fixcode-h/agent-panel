@@ -83,8 +83,10 @@ export function searchPart(host: EngineHost) {
   return [
     `## 搜索排除（这个项目）\n${line}。找 Bug 在这一层定位时也用同样的排除。`,
     `- 起点先限定到模块目录（CLI 自带的搜索工具也把路径参数设成模块目录），没命中再逐级扩大。`,
+    `- 搜文件内容用 rg：面板给它配好了上面的排除目录，还跳过了 .uasset、图片、模型、压缩包这类二进制文件，命中按行输出（超时被打断时已搜到的照样留下）。\`grep -r\`、\`Select-String\` 不认这份配置，不要拿它们扫大目录。`,
     `- ${rg}`,
-    `- \`find\` 不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
+    `- 按名字找文件（含 rg 跳过的 .uasset 这类资源）用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
+    `- 确实要扫整个大项目（几十秒以上）时，有面板的 run_background 就放后台跑，别在前台等到超时。`,
     `- 要看被排除目录里的内容（例如 Saved/Logs 下的日志）时，直接把那个目录当起点去读或搜，不要因此去掉整份排除。`,
   ].join('\n')
 }

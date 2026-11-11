@@ -139,6 +139,16 @@ test('长命令转后台：只看真正运行的程序，写文件、查文件�
   assert.match(dangerDeny(ctx(), sh('git push --force origin dev')), /强制推送/)
 })
 
+test('长命令转后台：UE 编译打包、整份装依赖放前台时拒绝，加一个包照常（用户 2026-11-11 要求重新规划后台命令）', () => {
+  assert.match(
+    longDeny(ctx(), sh('"G:/UE_5.4/Engine/Build/BatchFiles/Build.bat" MyGameEditor Win64 Development')),
+    /编译、打包或装依赖/,
+  )
+  assert.match(longDeny(ctx(), sh('cd web && npm ci')), /run_background/)
+  assert.equal(longDeny(ctx(), sh('npm install lodash')), '')
+  assert.equal(longDeny(ctx({ canBackground: false }), sh('npm ci')), '', '没有后台工具时不拦')
+})
+
 test('长命令转后台：从项目根起的全项目 grep -r 放前台时拒绝，子目录、rg 放行（用户 2026-11-07 报前台 grep 跑了 2 分钟）', () => {
   assert.match(longDeny(ctx(), sh(`grep -rl "Win-UE5" "${proj}" --include="*.ini"`)), /run_background/)
   assert.match(longDeny(ctx(), sh('grep -rn foo .')), /rg/)
