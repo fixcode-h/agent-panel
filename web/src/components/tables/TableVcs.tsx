@@ -69,7 +69,7 @@ export function SubmitButton({
       <Button
         size="sm"
         variant="ghost"
-        className="h-7"
+        className="sheet-tool h-7"
         disabled={dirty}
         title={dirty ? t('先保存再提交') : t('只提交这一个文件')}
         onClick={() => setOpen(true)}

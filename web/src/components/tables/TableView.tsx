@@ -408,7 +408,13 @@ export function TableView({
           fields={struct.infos.map((i) => i.field)}
           onSchema={onSchema}
         />
-        <Button size="sm" variant="ghost" className="h-7" onClick={() => setHistOpen(true)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="sheet-tool h-7"
+          title={t('版本')}
+          onClick={() => setHistOpen(true)}
+        >
           <History className="h-3.5 w-3.5" />
           {t('版本')}
         </Button>
@@ -416,7 +422,7 @@ export function TableView({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7"
+            className="sheet-tool h-7"
             title={t('查找替换（Ctrl+H）')}
             onClick={() => setFinding({ sel: grid.selection() })}
           >
@@ -446,14 +452,15 @@ export function TableView({
           readOnly={readOnly}
           onProposal={refreshProposal}
         />
-        <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
+        <Button size="sm" variant="ghost" className="sheet-tool h-7" title={t('枚举')} onClick={() => setEnumsOpen('')}>
           <BookA className="h-3.5 w-3.5" />
           {t('枚举')}
         </Button>
         <Button
           size="sm"
           variant="ghost"
-          className={cn('h-7', struct.problems.length > 0 && 'text-danger')}
+          className={cn('sheet-tool h-7', struct.problems.length > 0 && 'text-danger')}
+          title={struct.problems.length ? t('{n} 处不合规', { n: struct.problems.length }) : t('检查')}
           aria-pressed={checkOpen}
           onClick={() => setCheckOpen((o) => !o)}
         >

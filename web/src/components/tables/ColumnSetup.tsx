@@ -107,7 +107,7 @@ export function ColumnSetup({
       }}
     >
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-7" disabled={!info}>
+        <Button size="sm" variant="ghost" className="sheet-tool h-7" title={t('列结构')} disabled={!info}>
           <Columns3 className="h-3.5 w-3.5" />
           {t('列结构')}
         </Button>

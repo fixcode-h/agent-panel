@@ -33,7 +33,7 @@ export function SheetHeaderBar({
   const dataCount = Math.max(0, rows.length - from)
   const filtered = order.length !== dataCount || !!view.sort
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 text-body">
+    <div className="sheet-bar flex h-9 shrink-0 items-center gap-2 border-b px-3 text-body">
       <Badge tone={auto ? (sure ? 'accent' : 'warning') : undefined}>
         {auto ? t('自动识别') : view.fromStyle ? t('项目风格') : t('手动设置')}
       </Badge>
@@ -96,7 +96,7 @@ function HeaderSetup({ view, rows, where }: { view: SheetView; rows: string[][];
       }}
     >
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-7">
+        <Button size="sm" variant="ghost" className="sheet-tool h-7" title={t('调整表头')}>
           <SlidersHorizontal className="h-3.5 w-3.5" />
           {t('调整表头')}
         </Button>
