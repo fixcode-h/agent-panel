@@ -5,7 +5,7 @@ import type { SharedDirInfo } from '@shared/shared-dir'
 import type { SpeedRow } from '@shared/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
-import { designApi } from './api-design'
+import { stylesApi } from './api-styles'
 import { pathsApi } from './api-paths'
 import { messagesApi } from './api-messages'
 import { remoteApi } from './api-remote'
@@ -100,16 +100,12 @@ import type {
 } from '@shared/library'
 import type { ProjectSkillsView } from '@shared/project-skills'
 import type { ProjectProposal } from '@shared/project-init'
-import type { Design, DesignJob } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DocGroupView } from '@shared/doc-root'
 import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'
 import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
-
-/** 设计连同正在进行的 AI 对话 / 生成图片 */
-export type DesignFull = Design & { job: DesignJob | null }
 
 /**
  * 打开对话时只取最近一段消息（`?limit=` / 往前翻页 `?before=`）时多带的分页信息：
@@ -127,13 +123,6 @@ export type TaskPage = Task & {
 
 /** 交给父对话决定时，父对话到底叫起来没有 */
 export type ChildAskNudge = { ok: true; how: string } | { ok: false; error: string }
-
-/** 设计里图片文件的地址（在线演示里是内存里的 data URL） */
-export const designFileUrl = (id: string, file: string) =>
-  file.startsWith('data:') ? file : `/api/designs/${id}/files/${file}`
-/** 导出下载的地址；在线演示没有后端，由页面自己打包 */
-export const designExportUrl = (id: string, format: 'zip' | 'json' | 'react') =>
-  `/api/designs/${id}/export?format=${format}`
 
 /** 状态诊断文件的下载地址（完整日志、去掉密钥） */
 export const lifecycleDownloadUrl = (id: string) => `/api/tasks/${id}/lifecycle/download`
@@ -778,9 +767,8 @@ export const api = {
   /** 附件、粘贴引用的本机文件：读文字内容，点文件卡片时看 */
   localFile: (path: string) =>
     request<FileContent & { dir: string }>(`/uploads/raw/file?path=${encodeURIComponent(path)}`),
-  /** 引入会话：把任务或设计的对话整理成一份附件 */
+  /** 引入会话：把任务的对话整理成一份附件 */
   taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
-  designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   /** 文件浏览页：项目的目录、分支和是不是 git 仓库（文件按层读） */
@@ -1089,8 +1077,8 @@ export const api = {
   /** 设置里的用量统计：按天 / 周 / 月聚合各轮执行的 token（也可以按项目 / 对话分组；聚合在服务端做） */
   tokenUsage: (q: { grain: UsageGrain; count: number; groupBy?: UsageGroup }) =>
     request<UsageReport>(`/usage?grain=${q.grain}&count=${q.count}${q.groupBy ? `&groupBy=${q.groupBy}` : ''}`),
-  // UI 设计、风格库、浏览器扩展（api-design.ts）
-  ...designApi,
+  // 风格库、浏览器扩展（api-styles.ts）
+  ...stylesApi,
   revealProject: (projectId: string) =>
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
   // 工作总结、候选教训草稿（api-summary.ts）

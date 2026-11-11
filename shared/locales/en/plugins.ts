@@ -106,4 +106,10 @@ export const EN_PLUGINS: Record<string, string> = {
   '测试步骤：{list}': 'Test steps: {list}',
   '「/」命令：{list}': '/ commands: {list}',
   '插件没有打开，或没有这一页': 'The plugin is not enabled, or has no such page',
+  '设计模式：用对话做游戏界面、网页和模型（来自 UI 设计、Blender 等插件）':
+    'Design mode: build game UIs, web pages and models by chat (from plugins such as UI Design and Blender)',
+  '设计都来自插件：UI 设计插件做游戏界面和网页，Blender 插件做模型。到设置 →「插件」里安装或打开。':
+    'Designs come from plugins: the UI Design plugin makes game UIs and web pages, the Blender plugin makes models. Install or enable them in Settings → Plugins.',
+  去装插件: 'Get plugins',
+  还没有设计插件: 'No design plugins yet',
 }

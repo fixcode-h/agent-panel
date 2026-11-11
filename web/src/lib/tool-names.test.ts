@@ -27,7 +27,7 @@ test('没有专门写法的面板工具也显示中文名，不露出英文原�
   assert.equal(toolView(tool('mcp__panel__list_workflows', ''))?.tool.name, '查看工作流运行')
 })
 
-test('设计、插件服务的工具和服务名换成中文，别家的 MCP 照原样', () => {
+test('插件服务（含旧版的 design 服务）的工具和服务名换成中文，别家的 MCP 照原样', () => {
   // 装着的插件按清单里的 mcpServers、toolNames 认（ADR 0059）
   setInstalledPlugins([
     PluginManifest.parse({
@@ -37,9 +37,18 @@ test('设计、插件服务的工具和服务名换成中文，别家的 MCP 照
       mcpServers: ['blender'],
       toolNames: { blender_python: '执行 Blender 脚本' },
     }) as never,
+    // UI 设计插件：旧对话里的 design 服务归它
+    PluginManifest.parse({
+      id: 'ui-design',
+      name: 'UI 设计',
+      version: '1.0.0',
+      api: 4,
+      mcpServers: ['design'],
+      toolNames: { add_widgets: '添加控件', screenshot: '截取画布' },
+    }) as never,
   ])
   const add = toolView(tool('MCP', 'design · add_widgets', { input: '{"parent":"Root"}' }))
-  assert.deepEqual([add?.tool.name, add?.server], ['添加控件', '设计'])
+  assert.deepEqual([add?.tool.name, add?.server], ['添加控件', 'UI 设计'])
   const py = toolView(tool('MCP', 'blender · blender_python', {}))
   assert.deepEqual([py?.tool.name, py?.server], ['执行 Blender 脚本', 'Blender'])
   const other = toolView(tool('MCP', 'notion · search', {}))
@@ -47,7 +56,7 @@ test('设计、插件服务的工具和服务名换成中文，别家的 MCP 照
   // 别家服务里和面板同名的工具不按面板的叫法
   assert.equal(toolTitle('check', 'github'), 'check')
   assert.equal(serverTitle('agent-panel-3fa2c1'), '面板')
-  assert.equal(serverTitle('agent-panel-design'), '设计')
+  assert.equal(serverTitle('agent-panel-design'), 'UI 设计')
 })
 
 test('「正在写」那一行用的原始名字也能查到中文名', () => {

@@ -11,7 +11,6 @@ import type {
   Task,
   Workflow,
 } from '@shared/schema'
-import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
 import { rememberAskUserDefault } from './askUserDefault'
 import { applySavedAppearance } from './appearance'
@@ -48,15 +47,6 @@ interface Data {
   projects: Project[]
   projectCategories: ProjectCategory[]
   settings: Settings | null
-  /** UI 设计（和任务分开） */
-  designs: DesignMeta[]
-  setDesigns: React.Dispatch<React.SetStateAction<DesignMeta[]>>
-  /** UI 设计自己的项目，和 Agent 的项目分开 */
-  designProjects: DesignProject[]
-  /** 设计项目列表取回来没有：初值是空数组，没取回来时不能当成「项目不存在」 */
-  designProjectsLoaded: boolean
-  setDesignProjects: React.Dispatch<React.SetStateAction<DesignProject[]>>
-  reloadDesigns: () => Promise<void>
   upsertTask: (t: Task) => void
   removeTask: (id: string) => void
   reloadTasks: () => Promise<void>
@@ -164,54 +154,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [settings?.language])
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksLoaded, setTasksLoaded] = useState(false)
-  const [designs, setDesigns] = useState<DesignMeta[]>([])
-  const [designProjects, setDesignProjects] = useState<DesignProject[]>([])
-  const [designProjectsLoaded, setDesignProjectsLoaded] = useState(false)
-  const reloadDesigns = useCallback(async () => {
-    try {
-      const [ps, ds] = await Promise.all([api.designProjects(), api.designs()])
-      setDesignProjects(ps)
-      setDesigns(ds)
-    } catch {
-      // 连不上时保留现有列表
-    } finally {
-      // 取失败也算「问过了」：否则项目主页会一直停在加载中
-      setDesignProjectsLoaded(true)
-    }
-  }, [])
-  useEffect(() => {
-    void reloadDesigns()
-  }, [reloadDesigns])
-  // 有设计在跑 AI 对话或生成图片时定期刷新列表：切到别的设计后，侧栏里那个的转圈也能在完成时停下
-  const designRunning = designs.some((d) => d.running)
-  useEffect(() => {
-    if (!designRunning) return
-    const t = setInterval(
-      () =>
-        !document.hidden &&
-        void api
-          .designs()
-          .then((ds) =>
-            // 只更新状态，名字等以页面上的为准（正在改名时不被盖掉）。
-            // 转圈状态没变时不换数组，侧栏不用每 2.5 秒重渲染一次
-            setDesigns((cur) => {
-              let changed = false
-              const next = cur.map((x) => {
-                const d = ds.find((d) => d.id === x.id)
-                const running = !!d?.running
-                const asking = !!d?.asking
-                if (x.running === running && x.asking === asking) return x
-                changed = true
-                return { ...x, running, asking }
-              })
-              return changed ? next : cur
-            }),
-          )
-          .catch(() => {}),
-      2500,
-    )
-    return () => clearInterval(t)
-  }, [designRunning])
 
   const reloadTasks = useCallback(async () => {
     try {
@@ -309,12 +251,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       projects,
       projectCategories,
       settings,
-      designs,
-      setDesigns,
-      designProjects,
-      designProjectsLoaded,
-      setDesignProjects,
-      reloadDesigns,
       upsertTask,
       removeTask,
       reloadTasks,
@@ -337,10 +273,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       projects,
       projectCategories,
       settings,
-      designs,
-      designProjects,
-      designProjectsLoaded,
-      reloadDesigns,
       upsertTask,
       removeTask,
       reloadTasks,
@@ -384,7 +316,6 @@ export type PageId =
   | 'workflows'
   | 'projects'
   | 'chat'
-  | 'design'
   | 'comfy'
   | 'pdesign'
   | 'plugin'

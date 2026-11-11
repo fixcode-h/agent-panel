@@ -75,7 +75,7 @@ import {
   matchTask,
   type TaskFilter,
 } from './SidebarTasks'
-import { DesignList } from './SidebarDesigns'
+import { DesignList, currentDesignMode } from './SidebarDesigns'
 import {
   ComfyIcon,
   McpIcon,
@@ -93,7 +93,7 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
-import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
+import { useDesignModes, useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
 
 /** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
@@ -339,14 +339,14 @@ function TablesNavRow({ narrow }: { narrow: boolean }) {
 /** 切到各模式时回到上次在那个模式里看的页面 */
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
-let lastDesignRoute: Route = { page: 'design' }
+let lastDesignRoute: Route = { page: 'pdesign' }
 /** 最近一次看的会话页（任务、项目、聊天、设计）：功能页上「回到主页」回到这里 */
 let lastWorkRoute: Route = { page: 'home' }
 export const homeRoute = () => lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
 export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || page === 'plugin' || page === 'tables'
-/** 设计模式：UI 设计页和插件登记的设计模式页 */
-export const isDesignPage = (page: PageId) => page === 'design' || page === 'pdesign'
+/** 设计模式：插件登记的设计模式页（UI 设计、模型设计都是插件） */
+export const isDesignPage = (page: PageId) => page === 'pdesign'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
@@ -378,7 +378,7 @@ export function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'design',
       name: t('设计'),
-      label: t('UI 设计：用对话设计游戏界面，导出给 UE'),
+      label: t('设计模式：用对话做游戏界面、网页和模型（来自 UI 设计、Blender 等插件）'),
       icon: Palette,
       on: design,
       to: lastDesignRoute,
@@ -449,6 +449,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
   const designMode = isDesignPage(route.page)
+  const designModes = useDesignModes()
   // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页
   if (designMode) lastDesignRoute = route
   else if (chatMode) lastChatRoute = route
@@ -591,8 +592,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             icon={Plus}
             label={t('新建设计')}
             collapsed={narrow}
-            on={route.page === 'design' && (!route.id || route.id === 'new')}
-            onClick={() => go({ page: 'design' })}
+            on={route.page === 'pdesign' && !route.sub}
+            // 新建交给当前那种设计：UI 设计是它的新建页，没有整页的模式是它的空页面（上面有新建按钮）
+            onClick={() => go({ page: 'pdesign', id: currentDesignMode(route.id, designModes) })}
           />
         ) : chatMode ? (
           <Row

@@ -22,13 +22,13 @@ ADR 0001 已经选了 MCP，但一直停在「提议」，而且它的形态是�
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/ask-mcp.ts`（`openAskBridge`、`handle`）        | 一次 CLI 调用开一个只在这一轮有效的 MCP 服务（随机令牌），挂提问、补充、等下一句和 `orch-mcp.ts` 的编排工具；`tools/call` 按组派发                                           |
 | `server/exec/invoke.ts`                                 | `def.mcp && (own \|\| o.orch)` 时开 bridge，五个 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi）都按 `def.mcp` 接好了：命令行参数、配置文件、Pi 扩展三条路           |
-| `server/design-mcp.ts` 文件头                           | 已经写过「为什么不用命令行」：Codex 沙箱默认不能联网、Windows 上 JSON 引号容易错、每条命令都可能要审批                                                                       |
+| `ui-design/server/design-mcp.ts` 文件头                 | 已经写过「为什么不用命令行」：Codex 沙箱默认不能联网、Windows 上 JSON 引号容易错、每条命令都可能要审批                                                                       |
 | `server/index.ts`                                       | 业务接口都挂在 `app`（`basePath('/api')`）上，`tokenGuard` 挂在外层 `root`；`app.request()` 在进程内调接口，走同一份逻辑，不经过网络                                         |
 | `server/tasks.ts`                                       | `/:id/stop`（`userStop`：停掉对话附属的一切）、`/:id/children/stop`、`/:id/subtasks/stop`（只停一个）、`DELETE /:id`（连子对话一起删）；`endBackground` 只有内部函数没有接口 |
 | `server/page-events.ts`、`web/src/lib/page-signal.ts`   | 服务端已经有一条推给所有打开着的面板页面的 SSE（`/api/app/events`），托盘用它切标签页、打开设置                                                                              |
 | `web/src/App.tsx`（`NavCtx`）                           | 页面切换（`go`）、打开设置（`openSettings(section)`）、打开项目设置（`openProject(id, section, item)`）都是前端状态，服务端改不了                                            |
 | `web/src/components/projects/ProjectSettingsDialog.tsx` | 「AI 初始化项目」是项目设置弹窗里的一段前端流程（`startInit` 扫目录 → 开 AI 对话 → 用户应用推荐）                                                                            |
-| `server/designs.ts`                                     | 设计：`POST /designs` 新建、`POST /designs/:id/chat` 让 AI 改设计；前端 `#/design/<id>` 打开设计器                                                                           |
+| `ui-design/server/designs.ts`                           | 设计：`POST /designs` 新建、`POST /designs/:id/chat` 让 AI 改设计；前端 `#/design/<id>` 打开设计器                                                                           |
 
 ## 决策
 
@@ -127,6 +127,8 @@ defineAction({
 | `design.chat`           | write  | 给设计的 AI 发一条要求（例如「生成一个背包页面」），设计里的 AI 开始改         |
 
 「创建一个 UI 对话然后生成一个背包页面」= `design.create`（`open: true`）+ `design.chat`。
+
+2026-11-11 起 `design.*` 五个动作随 UI 设计搬进 UI 设计插件，面板的动作表里去掉了（插件接口还没有「插件加动作」的扩展点，要恢复得先加这个口子）；`ui.navigate` 的 `design` 页改成 `pdesign`（设计模式，`id` 是设计类型）。
 
 ## 运行时
 

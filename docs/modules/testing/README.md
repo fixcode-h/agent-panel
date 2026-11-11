@@ -28,7 +28,7 @@
 
 判据只有一处：`scripts/lib/test-layers.mjs` 的 `INTEGRATION_MARKERS` 与 `layerOf(file, sourceText)`。命中任一条集成特征即归集成层；
 同名 API 的同步与异步两种形态都算（`node:fs/promises` 的 `readFile` / `rm` 也算读写真实文件），但 `open(` / `link(` / `stat(` 这类短名不收——
-测试里常是业务函数（如 `server/design-mcp.test.ts` 的 `open()`）。
+测试里常是业务函数（如 `ui-design/server/design-mcp.test.ts` 的 `open()`）。
 e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs`），不重复计入单测的两层。判据按源码文本匹配，
 样例里写出 `spawn(` 一类调用的原文也会命中，所以分层判据自己的样例单独放在 `scripts/lib/test-layers.samples.mjs`。
 
