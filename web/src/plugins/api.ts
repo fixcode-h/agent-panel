@@ -74,6 +74,8 @@ export const pluginApi = {
     request<{ ok: true; kept: KeptItem[]; skillsKept: string[] }>(`/plugins/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
+  rollback: (id: string) =>
+    request<{ ok: true; error: string }>(`/plugins/${encodeURIComponent(id)}/rollback`, json('POST', {})),
   removal: (id: string) => request<RemovalPreview>(`/plugins/${encodeURIComponent(id)}/removal`),
   status: (id: string) => request<Record<string, unknown>>(`/plugins/${encodeURIComponent(id)}/status`),
 }

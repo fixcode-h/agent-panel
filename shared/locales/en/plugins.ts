@@ -103,4 +103,15 @@ export const EN_PLUGINS: Record<string, string> = {
   '测试步骤：{list}': 'Test steps: {list}',
   '「/」命令：{list}': '/ commands: {list}',
   '插件没有打开，或没有这一页': 'The plugin is not enabled, or has no such page',
+  // 插件用到的开放模块面板没有（shared/plugins/host-modules-check.ts）
+  '插件要用面板的模块 {list}{more}，这个版本的面板没有开放，请先升级面板':
+    'The plugin needs panel modules {list}{more}, which this panel version does not provide. Please upgrade the panel first',
+  ' 等 {n} 个': ' and {n} in total',
+  // 退回上一版（web/src/plugins/PluginCard.tsx）
+  '已退回 {name} {version}': 'Rolled {name} back to {version}',
+  '退回上一版 v{version}': 'Roll back to v{version}',
+  '退回插件「{name}」的上一版？': 'Roll back plugin "{name}"?',
+  退回: 'Roll back',
+  '会从 v{current} 换回升级前的 v{version} 并重新启动插件，参数和插件数据不动。之后想回到 v{current} 可以再点一次退回。':
+    'Switches from v{current} back to v{version}, the version before the upgrade, and restarts the plugin. Settings and plugin data are kept. To return to v{current}, roll back again.',
 }

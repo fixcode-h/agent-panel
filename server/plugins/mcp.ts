@@ -36,9 +36,18 @@ interface Session {
   tools: () => McpTool[] | Promise<McpTool[]>
   confirm?: McpCallContext['confirm']
   hooks?: PluginRunHooks
+  /** 正在跑的调用（JSON-RPC id → 取消用的控制器）：这一轮结束、插件关掉、CLI 发取消时 abort（插件框架改进 A3） */
+  running: Map<string, AbortController>
 }
 
 const sessions = new Map<string, Session>()
+
+/** 会话作废：正在跑的调用都取消，插件按 ctx.signal 停掉自己起的进程 */
+function endSession(token: string) {
+  const s = sessions.get(token)
+  sessions.delete(token)
+  for (const c of s?.running.values() ?? []) c.abort(new Error('这一轮已经结束了'))
+}
 
 /** 开一个会话：返回给 CLI 的服务名和地址；这一轮结束时 close */
 export function openPluginMcp(
@@ -50,18 +59,18 @@ export function openPluginMcp(
   hooks?: PluginRunHooks,
 ) {
   const token = randomUUID()
-  sessions.set(token, { pluginId, server, taskId, tools, confirm, hooks })
+  sessions.set(token, { pluginId, server, taskId, tools, confirm, hooks, running: new Map() })
   const port = Number(process.env.PORT ?? 8787)
   return {
     name: server,
     url: `http://127.0.0.1:${port}/api/plugins/mcp/${token}`,
-    close: () => sessions.delete(token),
+    close: () => endSession(token),
   }
 }
 
 /** 插件关掉时：它开着的会话全部作废（下一次调用回「这一轮已经结束了」） */
 export function closePluginMcp(pluginId: string) {
-  for (const [token, s] of sessions) if (s.pluginId === pluginId) sessions.delete(token)
+  for (const [token, s] of sessions) if (s.pluginId === pluginId) endSession(token)
 }
 
 /** 插件算要改哪些文件时出错不拦调用：按算不出（空数组）交给守卫 */
@@ -80,9 +89,43 @@ function settle(s: Session, tool: McpTool, r: Pick<McpResult, 'isError' | 'chang
   if (files.length) s.hooks.changed?.(files)
 }
 
+/**
+ * 调插件工具：带上取消信号；声明了 timeoutSec 的到时间按出错返回并取消。
+ * 被取消（这一轮结束、CLI 取消）时插件可能还没返回，这里不等它：按出错交回，反正 CLI 那边已经不收了
+ */
+async function callTool(s: Session, tool: McpTool, args: Record<string, unknown>, callId: string) {
+  const ctl = new AbortController()
+  s.running.set(callId, ctl)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const stopped = new Promise<never>((_, reject) => {
+      const fail = () => reject(ctl.signal.reason instanceof Error ? ctl.signal.reason : new Error('调用被取消'))
+      if (ctl.signal.aborted) fail()
+      else ctl.signal.addEventListener('abort', fail, { once: true })
+      if (tool.timeoutSec && tool.timeoutSec > 0)
+        timer = setTimeout(
+          () => ctl.abort(new Error(`工具 ${tool.name} 超过 ${tool.timeoutSec} 秒没有完成，已取消`)),
+          tool.timeoutSec * 1000,
+        )
+    })
+    return await Promise.race([
+      tool.call(args, { taskId: s.taskId, callId, confirm: s.confirm, signal: ctl.signal }),
+      stopped,
+    ])
+  } finally {
+    clearTimeout(timer)
+    s.running.delete(callId)
+  }
+}
+
 /** 一条 JSON-RPC 请求；通知（没有 id）返回 undefined */
 async function handle(s: Session, msg: any) {
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
+  // CLI 取消某次调用（MCP 的 notifications/cancelled，用户在 CLI 里打断时会发）：那次调用的 signal 触发
+  if (msg?.method === 'notifications/cancelled') {
+    s.running.get(String(msg.params?.requestId))?.abort(new Error(String(msg.params?.reason ?? '调用被取消')))
+    return undefined
+  }
   if (msg?.id === undefined || msg?.id === null) return undefined
   switch (msg.method) {
     case 'initialize':
@@ -116,7 +159,7 @@ async function handle(s: Session, msg: any) {
           const deny = await s.hooks.guardEdit(`${s.server} · ${name}`, safeTargets(tool, args), args)
           if (deny) return reply(mcpText(deny, true))
         }
-        const r = await tool.call(args, { taskId: s.taskId, callId: String(msg.id), confirm: s.confirm })
+        const r = await callTool(s, tool, args, String(msg.id))
         settle(s, tool, r)
         const { changed: _c, verified: _v, ...res } = r
         // 结果太长的存文件、只回头尾和路径（mcp-clip.ts）：插件结果进了会话就一直占着上下文

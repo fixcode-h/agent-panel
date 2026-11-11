@@ -47,6 +47,7 @@ async function start(p: Installed, config: () => PluginConfig) {
     activate({
       id,
       version: p.manifest.version,
+      previousVersion: p.previousVersion,
       dir: p.dir,
       dataDir,
       config,

@@ -83,6 +83,11 @@ export const PluginManifest = z.object({
   hooks: z.array(PluginHook).max(20).default([]),
   testSteps: z.array(PluginTestStep).max(20).default([]),
   commands: z.array(PluginCommand).max(50).default([]),
+  /**
+   * 插件构建时实际接到面板的开放模块（插件仓库的构建脚本自动写，键同 shared/plugins/host-modules.json）。
+   * 面板安装、启动时逐项核对：这个面板版本没开放的就拒绝，写明要先升级面板，而不是装上后运行到那里才报错
+   */
+  hostModules: z.object({ web: z.array(z.string()).optional(), server: z.array(z.string()).optional() }).optional(),
   /** 服务端入口、网页入口（相对包根的 ESM 文件），没有就是纯内容插件 */
   server: z.string().optional(),
   web: z.string().optional(),
@@ -130,4 +135,6 @@ export interface PluginInfo {
   error: string
   /** 带不带会在本机运行的代码 */
   hasCode: boolean
+  /** 能退回的上一版的版本号（升级时留着旧版），没有为空 */
+  rollback: string
 }

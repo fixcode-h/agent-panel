@@ -22,7 +22,7 @@ import { log } from '../log.ts'
 import { getSettings, saveSettings } from '../settings.ts'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { pluginConfigChanged, stopPlugin, syncRuntime } from './runtime.ts'
-import { listInstalled, removePackage, type Installed } from './store.ts'
+import { listInstalled, removePackage, rollbackPackage, type Installed } from './store.ts'
 
 /**
  * 插件的装、删、开、关（ADR 0059）。核心数据（角色、工作流、项目）的读写由 server/index.ts 在启动时交进来，
@@ -197,6 +197,14 @@ export async function afterInstall(id: string) {
   await reloadPlugins()
   const p = findInstalled(id)
   if (p && pluginEnabled(id)) await turnOn(p)
+}
+
+/** 退回上一版（插件框架改进 B4）：先停掉现在这版，换回上一版再按装完处理（开着的照常启动、补内容） */
+export async function rollbackPlugin(id: string) {
+  await stopPlugin(id)
+  await rollbackPackage(id)
+  await afterInstall(id)
+  log.info('plugin', `插件 ${id} 已退回上一版`, { version: findInstalled(id)?.manifest.version })
 }
 
 /** 插件页上「关着时会留下什么」：关着的插件按现在的数据算一遍要保留的副本（只算不删） */

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, Loader2, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ExternalLink, Loader2, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { useNav } from '@/lib/data'
 import { toast } from '@/lib/toast'
@@ -44,7 +44,7 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
   const { webErrors } = usePlugins()
   const { openSettings } = useNav()
   const [busy, setBusy] = useState(false)
-  const [asking, setAsking] = useState<'off' | 'delete'>()
+  const [asking, setAsking] = useState<'off' | 'delete' | 'rollback'>()
   const [preview, setPreview] = useState<RemovalPreview>()
   const [kept, setKept] = useState<KeptItem[]>([])
   const m = row.manifest
@@ -83,6 +83,20 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
       )
     } catch (e) {
       toast.error((e as Error).message)
+    }
+  }
+  // 退回上一版（升级后有问题时）：服务端换回旧包、重启插件，这里重读列表
+  const rollback = async () => {
+    setBusy(true)
+    try {
+      const r = await pluginApi.rollback(m.id)
+      await loadPlugins()
+      if (r.error) toast.error(t('插件启动失败：{error}', { error: r.error }))
+      else toast.success(t('已退回 {name} {version}', { name: m.name, version: row.rollback }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
   const removalText = (p?: RemovalPreview) =>
@@ -158,6 +172,15 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
               onClick={() => openSettings(pluginParamsId(m.id))}
             />
           )}
+          {row.rollback && (
+            <IconButton
+              icon={Undo2}
+              label={t('退回上一版 v{version}', { version: row.rollback })}
+              size="sm"
+              disabled={busy}
+              onClick={() => setAsking('rollback')}
+            />
+          )}
           <IconButton
             icon={Trash2}
             label={t('删除插件 {name}', { name: m.name })}
@@ -193,6 +216,20 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
         onConfirm={async () => {
           setAsking(undefined)
           await toggle(false)
+        }}
+      />
+      <ConfirmDialog
+        open={asking === 'rollback'}
+        onOpenChange={(o) => !o && setAsking(undefined)}
+        title={t('退回插件「{name}」的上一版？', { name: m.name })}
+        confirmText={t('退回')}
+        description={t(
+          '会从 v{current} 换回升级前的 v{version} 并重新启动插件，参数和插件数据不动。之后想回到 v{current} 可以再点一次退回。',
+          { current: m.version, version: row.rollback },
+        )}
+        onConfirm={async () => {
+          setAsking(undefined)
+          await rollback()
         }}
       />
       <ConfirmDialog

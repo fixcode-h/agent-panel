@@ -140,6 +140,40 @@ jobs:
 
   # 推送到 dev 时看这次改了哪些文件：Windows 托盘那一步最慢，只在托盘程序、服务端或出包相关的文件变了时才跑。
   # 主干出包（release.yml 调用本文件）、PR、手动运行时总是跑
+  # 插件仓库（fixcode-h/agent-plugins dev）用这一版面板构建和冒烟（插件框架改进 B2）：插件直接 import 面板开放的模块，
+  # 面板改了这些模块的导出形状，以前要到插件仓库下次构建、甚至用户那边运行时才发现。这里用当前面板代码跑插件的
+  # 类型检查、构建、冒烟和单测，坏了就在面板这边红。SDK 副本没同步只提醒：两个仓库总有一边先推，不拦。
+  plugins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 拉插件仓库 dev
+        run: git clone --depth 1 --branch dev https://github.com/fixcode-h/agent-plugins.git .tmp/agent-plugins
+      - name: 插件用这一版面板做类型检查、构建、冒烟和单测
+        working-directory: .tmp/agent-plugins
+        env:
+          AGENT_PANEL_DIR: ${{ github.workspace }}
+        run: |
+          npm ci --no-audit --no-fund
+          npm run panel
+          npm run typecheck
+          npm run build
+          node ue/scripts/smoke.mjs
+          node blender/scripts/smoke.mjs
+          npm test
+      - name: 插件仓库的 SDK 副本和这一版面板一致（只提醒）
+        continue-on-error: true
+        working-directory: .tmp/agent-plugins
+        run: node scripts/check-sdk.mjs
+
   changes:
     runs-on: ubuntu-latest
     outputs:
