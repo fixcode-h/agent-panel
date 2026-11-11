@@ -42,16 +42,17 @@
 | `shared/plugins/host-modules.json`                               | 开放给插件直接 import 的面板模块清单（接口 4）；面板侧的表在 `web/src/plugins/host-modules.ts`、`server/plugins/host-modules.ts`，插件仓库 `sdk/` 有副本                           |
 | `web/src/plugins/BareHost.tsx`                                   | 插件不带外壳的独立页 `#/pbare/<插件>/<页面>/<path>`（接口 4，无头截图用）                                                                                                          |
 | `server/exec/plugin-run.ts`                                      | 每轮对话问插件要工具（带项目、目录、模式），插件工具的确认卡片（`confirm`）                                                                                                        |
+| `server/plugins/limit.ts`                                        | 面板调插件代码的统一限时（activate 20 秒、tools 8 秒、status 5 秒、onConfig / stop 10 秒）：插件卡住时按出错处理，不拖住对话和开关插件                                             |
 | `server/plugins/effects.ts`                                      | 插件工具按声明（`McpTool.effect`，接口 3）记下改了哪些文件、验证通过没有，end_turn 时交给完成依据和验证门禁                                                                        |
 
 ## 数据流
 
 - 启动：`ensureProjectWorkflows` 先 `initPlugins`（读包 → `setInstalledPlugins` → 按设置 `setEnabledPlugins` → 启动开着的插件的服务端入口），再装内置模板（开着的插件带的角色和工作流算内置），最后 `cleanupDisabledPlugins`。
-- 安装：`POST /api/plugins/install/{github,zip,dir}` 下载、校验，返回预览和令牌；`POST /install/confirm` 写盘、重读，开着的插件补上新版本多出来的内容。
+- 安装：`POST /api/plugins/install/{github,zip,dir}` 下载、校验（Release 附件旁有 `<附件>.sha256` 时核对校验和，对不上不装；旧 Release 没有就不核对），返回预览和令牌；`POST /install/confirm` 写盘、重读，开着的插件补上新版本多出来的内容。
 - 更新：`GET /api/plugins/updates` 只读不装，返回有新版本的插件和去哪儿装（`install`）；点「升级」用它调 `/install/github` 拿预览，确认后同安装。装好后 `loadPlugins` 按装着的版本去掉过期的提示。
 - 开关、参数：`PUT /api/plugins/:id`。设置页整份保存（`PUT /settings`）不改 `plugins`，免得自动保存盖掉插件页的改动。
 - 开关、参数：`PUT /api/plugins/:id`（开关在「插件」页，参数在「插件参数」页）。设置页整份保存（`PUT /settings`）不改 `plugins`，免得自动保存盖掉插件页的改动。
-- 对话：`runner` 在 `def.mcp` 的 CLI 上调 `pluginRunTools`（`server/exec/plugin-run.ts` → `pluginToolsForRun`），插件按项目、模式返回 MCP 服务和提示，面板开令牌地址传给 CLI，这一轮结束关掉；插件工具调 `confirm` 时出请求卡片，这一轮结束还没回答的作废。
+- 对话：`runner` 在 `def.mcp` 的 CLI 上调 `pluginRunTools`（`server/exec/plugin-run.ts` → `pluginToolsForRun`），插件按项目、模式返回 MCP 服务和提示，面板开令牌地址传给 CLI，这一轮结束关掉；插件工具调 `confirm` 时出请求卡片，这一轮结束还没回答的作废。各插件的 `tools(run)` 同时问、各自限时（`limit.ts`）；出错或超时的插件这一轮不挂工具，对话里写一行警告（`AlertKind` 的 `plugin`），不只记日志。
 - 工具的作用（接口 3）：插件工具在解析层一律是「其他」，面板的守卫、完成依据、改动归属都按工具类别判断，所以工具要自己声明 `effect`。`edit` 的工具执行前由 `mcp.ts` 交 `targets(args)` 算出的路径给工具前守卫（`dispatch.ts` 的 `editGuard`：只读身份、Bug 先诊断、独立分支越界、凭据、用户钩子），结果里的 `changed` 记成这一轮的改动（`file-events` 同一条路，进改动卡片和归属）；`verify` 的结果 `verified` 进完成依据，通过的文件不再要求走项目的测试步骤，失败时验证门禁拒绝 end_turn。`changed` / `verified` 不交给 Agent。记录只在内存里，面板重启后进行中那一轮的插件改动不再补进完成依据。
 - 钩子、测试步骤、命令（接口 3）：`hooks/dispatch.ts` 把 `activePluginHooks` 和用户钩子并在一起按范围、匹配跑；`currentTestSteps` 现取开着的插件的步骤；`slash.ts` 把 `pluginCommands` 排在「所有 Agent」的命令后面。开关插件时 `manager.ts` 清掉「/」菜单的缓存，其余两处每次现取。
 - 文件：对话里的文件标记、文件浏览页点到开着的插件认领了扩展名的文件（UE 插件的 `.uasset`）时，`fileViewerFor` 找到查看器，`PluginFileDialog` 把完整路径、项目和对话 id 交给它；没有插件认领时照旧（面板能看的在面板里看，别的交给系统默认程序）。

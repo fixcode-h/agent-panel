@@ -5,6 +5,7 @@ import { t } from '../../shared/i18n.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
 import type { ActivateServer, McpCallContext, PluginRun, ServerPlugin } from './sdk.ts'
 import { log } from '../log.ts'
+import { withPluginLimit } from './limit.ts'
 import { closePluginMcp, openPluginMcp, type PluginRunHooks } from './mcp.ts'
 import { pluginDataDir, type Installed } from './store.ts'
 
@@ -14,6 +15,8 @@ import { pluginDataDir, type Installed } from './store.ts'
  */
 interface Active {
   key: string
+  /** 插件的显示名：对话里的警告行要写明是哪个插件 */
+  name: string
   plugin: ServerPlugin
   cfg: PluginConfig
 }
@@ -39,19 +42,22 @@ async function start(p: Installed, config: () => PluginConfig) {
     default?: ActivateServer
   }
   if (typeof mod.default !== 'function') throw new Error(`${p.manifest.server} 没有默认导出 activate`)
-  const plugin = await mod.default({
-    id,
-    version: p.manifest.version,
-    dir: p.dir,
-    dataDir,
-    config,
-    log: {
-      info: (msg, data) => log.info(`plugin:${id}`, msg, data),
-      warn: (msg, data) => log.warn(`plugin:${id}`, msg, data),
-    },
-    t,
-  })
-  active.set(id, { key: keyOf(p), plugin, cfg: config() })
+  const activate = mod.default
+  const plugin = await withPluginLimit('activate', () =>
+    activate({
+      id,
+      version: p.manifest.version,
+      dir: p.dir,
+      dataDir,
+      config,
+      log: {
+        info: (msg, data) => log.info(`plugin:${id}`, msg, data),
+        warn: (msg, data) => log.warn(`plugin:${id}`, msg, data),
+      },
+      t,
+    }),
+  )
+  active.set(id, { key: keyOf(p), name: p.manifest.name, plugin, cfg: config() })
   log.info('plugin', `已启动插件 ${p.manifest.name}`, { id, version: p.manifest.version })
 }
 
@@ -61,7 +67,7 @@ export async function stopPlugin(id: string) {
   closePluginMcp(id)
   if (!a) return
   try {
-    await a.plugin.stop?.()
+    if (a.plugin.stop) await withPluginLimit('stop', () => a.plugin.stop!())
   } catch (e) {
     log.warn('plugin', `插件停止时出错：${id}`, { error: (e as Error).message })
   }
@@ -99,7 +105,7 @@ export async function pluginConfigChanged(p: Installed, next: PluginConfig, conf
   a.cfg = next
   let restart = false
   try {
-    restart = !!(await a.plugin.onConfig?.(next, prev))
+    if (a.plugin.onConfig) restart = !!(await withPluginLimit('onConfig', () => a.plugin.onConfig!(next, prev)))
   } catch (e) {
     log.warn('plugin', `插件处理参数变化出错：${p.manifest.id}`, { error: (e as Error).message })
   }
@@ -128,24 +134,41 @@ export async function pluginStatus(id: string) {
   const p = active.get(id)?.plugin
   if (!p?.status) return undefined
   try {
-    return await p.status()
+    return await withPluginLimit('status', () => p.status!())
   } catch (e) {
     return { error: (e as Error).message }
   }
 }
 
+/** 一个插件这一轮没挂上工具：对话里要写一行警告（硬规则：错误显示给用户，不只写日志） */
+export interface PluginToolError {
+  id: string
+  name: string
+  error: string
+}
+
 /**
  * 一轮对话开始：问每个开着的插件要不要挂工具，要的开 MCP 会话（令牌只在这一轮有效）。
- * 插件出错不拦对话：记日志、这一轮不挂它的工具
+ * 插件出错、超时不拦对话：这一轮不挂它的工具，错误交回 runner 在对话里写警告行。
+ * 各插件同时问（限时见 limit.ts），一个插件慢不叠加到别的插件上
  */
 export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext['confirm'], hooks?: PluginRunHooks) {
   const servers: { name: string; url: string }[] = []
   const hints: string[] = []
   const closers: (() => void)[] = []
-  for (const [id, a] of active) {
-    if (!a.plugin.tools) continue
+  const errors: PluginToolError[] = []
+  const asked = [...active].filter(([, a]) => a.plugin.tools)
+  const answers = await Promise.allSettled(asked.map(([, a]) => withPluginLimit('tools', () => a.plugin.tools!(run))))
+  for (const [i, [id, a]] of asked.entries()) {
+    const ans = answers[i]!
+    if (ans.status === 'rejected') {
+      const error = (ans.reason as Error)?.message ?? String(ans.reason)
+      errors.push({ id, name: a.name, error })
+      log.warn('plugin', `插件给对话挂工具时出错：${id}`, { error })
+      continue
+    }
     try {
-      const r = await a.plugin.tools(run)
+      const r = ans.value
       if (!r) continue
       for (const s of r.servers) {
         const m = openPluginMcp(id, s.name, run.taskId, s.tools, confirm, hooks)
@@ -154,8 +177,9 @@ export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext
       }
       if (r.hint) hints.push(r.hint)
     } catch (e) {
+      errors.push({ id, name: a.name, error: (e as Error).message })
       log.warn('plugin', `插件给对话挂工具时出错：${id}`, { error: (e as Error).message })
     }
   }
-  return { servers, hint: hints.join('\n\n'), close: () => closers.forEach((c) => c()) }
+  return { servers, hint: hints.join('\n\n'), errors, close: () => closers.forEach((c) => c()) }
 }

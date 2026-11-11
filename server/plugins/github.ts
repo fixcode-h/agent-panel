@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { netError, netFetch } from '../net.ts'
 
@@ -82,15 +83,34 @@ async function download(url: string, what: string) {
 export const downloadSource = (repo: string, ref = 'HEAD') =>
   download(`https://codeload.github.com/${repo}/zip/${ref === 'HEAD' ? 'HEAD' : encodeURIComponent(ref)}`, '下载源码包')
 
-/** 插件目录里的一项：有 Release 附件下附件，否则下源码包取子目录 */
+/**
+ * Release 附件旁边的校验文件 <附件>.sha256（插件仓库发布时一起上传，内容是 sha256 的十六进制，后面可以跟文件名）。
+ * 旧的 Release 没有这个文件：返回空，不校验
+ */
+async function expectedSha(url: string) {
+  const res = await get(`${url}.sha256`, '下载插件包的校验文件')
+  if (res.status === 404) return ''
+  if (!res.ok) throw new Error(`下载插件包的校验文件失败：HTTP ${res.status}`)
+  const hex = (await res.text()).trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  if (!/^[0-9a-f]{64}$/.test(hex)) throw new Error('插件包的校验文件格式不对')
+  return hex
+}
+
+/** 下载的包和发布时的 sha256 对不上就不装：传输损坏、附件被换过都会在这里拦下 */
+export function verifySha(zip: Buffer, expected: string, name: string) {
+  if (!expected) return
+  const got = createHash('sha256').update(zip).digest('hex')
+  if (got !== expected)
+    throw new Error(`插件包 ${name} 的校验和对不上（应为 ${expected}，下载到的是 ${got}），没有安装`)
+}
+
+/** 插件目录里的一项：有 Release 附件下附件（有校验文件就核对），否则下源码包取子目录 */
 export async function downloadEntry(repo: string, e: MarketEntry, ref = 'HEAD') {
-  if (e.tag && e.asset)
-    return {
-      zip: await download(
-        `https://github.com/${repo}/releases/download/${encodeURIComponent(e.tag)}/${encodeURIComponent(e.asset)}`,
-        '下载插件包',
-      ),
-      path: '',
-    }
+  if (e.tag && e.asset) {
+    const url = `https://github.com/${repo}/releases/download/${encodeURIComponent(e.tag)}/${encodeURIComponent(e.asset)}`
+    const [zip, sha] = await Promise.all([download(url, '下载插件包'), expectedSha(url)])
+    verifySha(zip, sha, e.asset)
+    return { zip, path: '' }
+  }
   return { zip: await downloadSource(repo, ref), path: e.path ?? e.id }
 }
