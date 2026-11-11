@@ -24,7 +24,8 @@ import { saveHandoffFile } from './handoff-file.ts'
 import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { steers, waitChat } from './steering.ts'
 import { t } from '../../shared/i18n.ts'
-import { taskChanges } from '../own-changes.ts'
+import { ownFiles, taskChanges } from '../own-changes.ts'
+import { p4ReviewDiff } from '../p4-review-diff.ts'
 import { yieldApiSlot } from './api-gate.ts'
 
 /**
@@ -57,8 +58,20 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   }
 }
 
+/** 评审差异太长时把完整差异存进交接目录，提示词里只给文件列表和路径 */
+async function keepLongDiff(taskId: string, d: { snapshot: string; stat: string; diff: string; full: string }) {
+  if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
+  const dir = path.join(HANDOFF_DIR, taskId)
+  await mkdir(dir, { recursive: true })
+  const file = path.join(dir, `review-${d.snapshot.slice(0, 12) || Date.now()}.diff`)
+  await writeFile(file, d.full)
+  return { snapshot: d.snapshot, stat: d.stat, diff: '', file }
+}
+
 /** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
 export async function runRealTurn(ctx: RealContext) {
+  // P4 工作区由面板取 p4 diff 交给评审（Git 走快照差异，其余只列文件）
+  const vcs = ctx.isGit || !ctx.project.path ? undefined : (await detectVcs(ctx.project.path).catch(() => null))?.vcs
   ctx.task.simulated = false
   // ADR 0020：这一轮的计划提醒（滞后 / 新输入没跟着改）由 engine 的 planPart 写进提示词；
   // 服务端在这里留一条日志，方便事后确认「到底提醒过没有」。新输入的提醒只算一次：
@@ -196,16 +209,15 @@ export async function runRealTurn(ctx: RealContext) {
             files ??
             (since ? undefined : (await taskChanges(ctx.project.path, ctx.task).catch(() => null))?.map((c) => c.path))
           const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own, placedFiles(ctx.task))
-          if (!d) return null
-          if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
-          // 太长：完整差异存进交接目录，提示词里只给文件列表和路径
-          const dir = path.join(HANDOFF_DIR, ctx.task.id)
-          await mkdir(dir, { recursive: true })
-          const file = path.join(dir, `review-${d.snapshot.slice(0, 12)}.diff`)
-          await writeFile(file, d.full)
-          return { snapshot: d.snapshot, stat: d.stat, diff: '', file }
+          return d && keepLongDiff(ctx.task.id, d)
         }
-      : undefined,
+      : vcs === 'p4'
+        ? async (_since, files) =>
+            keepLongDiff(
+              ctx.task.id,
+              await p4ReviewDiff(ctx.project.path, files ?? [...ownFiles(ctx.task, ctx.project.path)]),
+            )
+        : undefined,
     saveHandoff: (step, text) => saveHandoffFile(ctx.task.id, step, text),
   }).finally(() => dropOwnRequests(ctx.task, ownAsks))
   if (noticedInput && plan) {
