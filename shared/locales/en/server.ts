@@ -3,7 +3,6 @@ export const EN_SERVER: Record<string, string> = {
   // 生成 Agent / 工作流
   '格式不对，已让 Agent 修正。': 'Output was malformed; asked the agent to fix it.',
   已停止: 'Stopped',
-  '超过 5 分钟没有完成，已停止': 'Stopped after not finishing within 5 minutes',
   '{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。':
     '{error}. Make sure {cli} is installed ({hint}), or set its path in Settings.',
   '{cli} 执行失败：{detail}': '{cli} failed: {detail}',

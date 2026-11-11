@@ -1,4 +1,5 @@
 import { askSession, setAskUser } from './asks.ts'
+import { assistSteer } from './assist-steer.ts'
 import { Hono, type Context } from 'hono'
 import { mkdir, stat } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -66,16 +67,18 @@ export function assistApi(deps: {
   workflows: Lister<Workflow>
   projects: Lister<Project>
 }) {
-  const jobs = new Map<string, AssistJob & { abort: AbortController; at: number }>()
+  /** steer：执行中插话（见 assist-steer.ts），返回插进去时已有几条消息，页面在这里把回复分段 */
+  type Job = AssistJob & { abort: AbortController; at: number; steer?: (text: string) => Promise<number | null> }
+  const jobs = new Map<string, Job>()
   const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
-  const view = ({ abort, at, ...j }: AssistJob & { abort: AbortController; at: number }): AssistJob => j
+  const view = ({ abort, at, steer, ...j }: Job): AssistJob => j
 
   // 一小时前的结果清掉
   setInterval(() => {
     for (const [id, j] of jobs) if (j.status !== 'running' && Date.now() - j.at > 3600_000) jobs.delete(id)
   }, 600_000).unref()
 
-  async function run(job: AssistJob & { abort: AbortController }, input: AssistInput, ctx: AssistContext) {
+  async function run(job: Job, input: AssistInput, ctx: AssistContext) {
     const settings = await getSettings()
     const def = getCli(input.cli)!
     const cs = cliSettings(settings, input.cli)
@@ -153,6 +156,13 @@ export function assistApi(deps: {
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
       const asks = askSession(`assist:${job.id}`, () => job.abort.abort())
+      const steering = assistSteer(def)
+      job.steer = async (note) => {
+        if (!(await steering.steer(note))) return null
+        // 插话之后的输出另起一条，排在用户这句话后面
+        cur = undefined
+        return msgs.length
+      }
       const r = await invokeCli({
         askUser: asks.askUser,
         onAsk: asks.onAsk,
@@ -171,6 +181,8 @@ export function assistApi(deps: {
         env: childEnv(cs.env),
         input: buildAssistPrompt(input.kind, ctx, messages, installed),
         signal: job.abort.signal,
+        onControl: steering.onControl,
+        readNotes: steering.readNotes,
         // 不限时：大项目的分析、初始化跑多久都正常，原来的 5 / 20 分钟上限会把快做完的活掐掉；要停由用户点停止
         timeoutMs: 0,
         onEvent: (ev) => {
@@ -217,6 +229,10 @@ export function assistApi(deps: {
         },
       }).finally(() => {
         asks.done()
+        job.steer = undefined
+        // 登记了却没被取走的插话交回页面，排到下一轮
+        const left = steering.unread()
+        if (left.length) job.unread = [...(job.unread ?? []), ...left]
         // 停止、超时或 CLI 退出时还没等到结果的调用不再算在跑
         for (const x of toolsById.values()) if (x.running || x.startedAt) endTool(x)
       })
@@ -371,6 +387,13 @@ export function assistApi(deps: {
       .get('/:id', (c) => {
         const j = jobs.get(c.req.param('id'))
         return j ? c.json(view(j)) : bad(c, t('找不到这次生成，可能已过期'), 404)
+      })
+      .post('/:id/steer', async (c) => {
+        const j = jobs.get(c.req.param('id'))
+        const p = z.object({ text: z.string().trim().min(1).max(20_000) }).safeParse(await c.req.json())
+        if (!j || !p.success) return bad(c, t('找不到这次生成'), 404)
+        const at = j.status === 'running' && j.steer ? await j.steer(p.data.text) : null
+        return c.json({ ok: at !== null, at: at ?? 0 })
       })
       .post('/:id/stop', (c) => {
         const j = jobs.get(c.req.param('id'))

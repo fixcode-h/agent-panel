@@ -206,4 +206,13 @@ export const EN_ALERTS: Record<string, string> = {
     'Project MCP "{names}" is not responding: {cli} may wait for it to time out before starting this turn, and its tools are unavailable until it connects.',
   '项目里的 MCP「{names}」没有响应：{cli} 第一轮最多等它 {s} 秒就先开始，连上之前用不了它的工具。':
     'Project MCP "{names}" is not responding: {cli} waits at most {s} s for it before starting the first turn, and its tools are unavailable until it connects.',
+  // 插件出错（AlertKind 的 plugin，server/exec/plugin-run.ts、server/plugins/limit.ts）
+  插件出错: 'Plugin error',
+  '开着的插件在这一轮出错或超时没有回应，它的工具这一轮没有挂上，对话照常进行但用不了这些工具。':
+    'An enabled plugin failed or timed out this turn, so its tools were not attached. The chat continues, but those tools are unavailable.',
+  '看下面的原始信息；到设置 →「插件」看插件的状态和报错，处理好后再发一条消息就会重新挂上。':
+    'Check the raw details below and the plugin status in Settings → Plugins. Once it is fixed, send another message and the tools will be attached again.',
+  '插件「{names}」这一轮没有挂上工具，这个对话暂时用不了它们。':
+    'Plugin "{names}" did not attach its tools this turn, so they are unavailable in this chat for now.',
+  '插件的 {what} 超过 {s} 秒没有返回': 'Plugin {what} did not return within {s} s',
 }

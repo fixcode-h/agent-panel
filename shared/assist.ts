@@ -256,6 +256,8 @@ export interface AssistJob {
   startedAt?: number
   /** 和任务页一样的消息流：思考、工具调用（可以点开看详情）、说明文字；JSON 部分不在里面 */
   messages?: TaskMessage[]
+  /** 执行中插话登记了、到结束都没被 CLI 取走的：页面放回队列，下一轮再发 */
+  unread?: string[]
 }
 
 export interface AssistContext {

@@ -13,6 +13,7 @@ import {
   findInstalled,
   installedList,
   keptPreview,
+  rollbackPlugin,
   uninstallPlugin,
   updatePlugin,
 } from './manager.ts'
@@ -74,6 +75,7 @@ const info = (p: Installed): PluginInfo => {
     cssUrl: url(p.manifest.css),
     error: pluginError(p.manifest.id),
     hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
+    rollback: p.rollback,
   }
 }
 
@@ -193,6 +195,18 @@ export function pluginsApi() {
         }
         const r = await updatePlugin(id, { enabled: body.enabled, config: body.config })
         return c.json({ ok: true, removed: r[id] ?? null, error: pluginError(id) })
+      })
+      // 退回上一版：升级后有问题时换回升级前那一版（只留一版，退回后可以再退回到刚才那版）
+      .post('/:id/rollback', async (c) => {
+        const id = c.req.param('id')
+        if (!findInstalled(id)) return c.json({ error: '没有装这个插件' }, 404)
+        try {
+          await rollbackPlugin(id)
+          const cur = findInstalled(id)
+          return c.json({ ok: true, plugin: cur ? info(cur) : null, error: pluginError(id) })
+        } catch (e) {
+          return c.json(fail(e), 400)
+        }
       })
       .delete('/:id', async (c) => c.json({ ok: true, ...(await uninstallPlugin(c.req.param('id'))) }))
       .get('/:id/status', async (c) => c.json((await pluginStatus(c.req.param('id'))) ?? {}))

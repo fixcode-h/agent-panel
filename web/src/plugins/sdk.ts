@@ -12,33 +12,6 @@ import type { host } from './host'
  * 插件里的 Tailwind 类名用面板的主题变量（bg-panel、text-muted…），样式表由插件自己构建、放在包里的 css。
  */
 
-/** 设计模式下多出来的一类设计（侧栏顶上的下拉里一项）：对话按 task.plugin = id 归它，打开时进 #/pdesign/<id>/<对话> */
-export interface DesignMode {
-  id: string
-  name: string
-  desc: string
-  icon: ComponentType<{ className?: string; strokeWidth?: number }>
-  /** 图标底色（主题里的状态色类名，例如 bg-peer） */
-  tone?: string
-  /** 侧栏空列表的说明和新建按钮的文字 */
-  empty: string
-  newLabel: string
-  /** 新建这类设计的弹窗：建好后调 onCreated(对话) 打开它（给了 Page 的模式可以不给，新建由 Page 自己管） */
-  NewDialog?: ComponentType<{ open: boolean; onOpenChange: (o: boolean) => void; onCreated: (task: Task) => void }>
-  /**
-   * 自己的侧栏（插件接口 4）：给了就在设计模式的下拉下面画它，代替按项目列对话的默认列表。
-   * 数据不是面板对话的设计（例如 UI 设计自己的项目和界面）用它
-   */
-  Sidebar?: ComponentType
-  /**
-   * 自己的整页（插件接口 4）：给了就在 #/pdesign/<模式>/<id>/<sub> 画它，代替打开对话；id、sub 是插件自己的位置
-   * （例如设计 id、'new'），用 useNav().go({ page: 'pdesign', id: <模式>, sub: id, msg: sub }) 跳转
-   */
-  Page?: ComponentType<{ id?: string; sub?: string }>
-  /** 给了 Page 时：这个位置是不是自己分成几块面板的页面（面板不再套一层卡片底），不给时有 id 就算 */
-  split?: (id?: string, sub?: string) => boolean
-}
-
 /**
  * 不带面板外壳的独立页（插件接口 4）：地址 #/pbare/<插件>/<页面>/<path>，只挂这个组件，不加载侧栏、数据和导航。
  * 给无头浏览器截图这类场景用（例如 UI 设计让本机 Edge / Chrome 打开设计稿截图）
@@ -62,7 +35,8 @@ export interface TaskTab {
 
 /**
  * 插件自己的整页（插件接口 2）：宽屏在图标栏通用功能下面另起一组，手机在抽屉菜单里；地址 #/plugin/<插件>/<页面>/<path>。
- * path 是插件自己的子位置（一段字符串，插件自己编码），用 host.hooks.usePluginRoute 读写
+ * path 是插件自己的子位置，用 host.hooks.usePluginRoute 读写；插件接口 5 起可以带 /（#/plugin/ui-design/ui/<设计>/<子页>）。
+ * 设计类插件（UI 设计、模型设计）都是这样一页：面板没有单独的「设计模式」（插件接口 5 去掉了 designModes）
  */
 export interface PluginPage {
   id: string
@@ -77,6 +51,11 @@ export interface PluginPage {
    */
   taskPlugin?: string
   Page: ComponentType<{ path: string }>
+  /**
+   * 这个位置是不是自己分成几块面板的页面（插件接口 5）：是的话面板不再套一层卡片底，插件自己画列表栏和各块面板
+   * （例如 UI 设计左边是自己的项目列表）。不给时整页放在一块卡片里
+   */
+  split?: (path: string) => boolean
 }
 
 /**
@@ -105,7 +84,6 @@ export interface FileViewerProps {
 }
 
 export interface WebPlugin {
-  designModes?: DesignMode[]
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
   fileViewers?: FileViewer[]

@@ -172,8 +172,7 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/McpPage.tsx',
   ],
   '04-design': [
-    'web/src/components/layout/SidebarDesigns.tsx',
-    'web/src/plugins/DesignPage.tsx',
+    'web/src/plugins/PluginPage.tsx',
     'web/src/components/comfy/',
     'web/src/components/ai-window/',
     'web/src/pages/ComfyPage.tsx',

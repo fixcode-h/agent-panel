@@ -1235,6 +1235,7 @@ export const AlertKind = z.enum([
   'budget', // 用户给这个计划 / 任务设的 token 或时长上限到了
   'unfinished', // 计划没做完就停下，面板推满了还这样
   'panel', // 面板自己出错
+  'plugin', // 插件出错、超时（挂工具、启动），这一轮用不了它的工具
 ])
 export type AlertKind = z.infer<typeof AlertKind>
 

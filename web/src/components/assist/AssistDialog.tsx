@@ -56,6 +56,7 @@ import { askUserDefault } from '@/lib/askUserDefault'
 import { t } from '@shared/i18n'
 import { fmtDuration } from '@shared/duration'
 import { HookPreview, hookAssistText, hookExamples } from './hook-assist'
+import { historyOf, splitAtCuts, turnsFromCuts, type SteerCut } from './assist-steer'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
 
@@ -785,16 +786,20 @@ export function AssistDialog({
           return
         }
         alive = false
+        const split = turnsFromCuts(j, cutsRef.current)
         setTurns((ts) => [
           ...ts,
+          ...split.before,
           {
             role: 'assistant',
             text: j.text + (j.raw ? `\n\n\`\`\`json\n${j.raw}\n\`\`\`` : ''),
             proposal: j.proposal,
             error: j.error,
-            msgs: j.messages,
+            msgs: split.last,
           },
         ])
+        setCuts([])
+        if (split.requeue.length) setQueue((q) => [...split.requeue, ...q])
         setJob(null)
       } catch (e) {
         if (!alive) return
@@ -875,7 +880,7 @@ export function AssistDialog({
           cli,
           model,
           effort,
-          messages: next.map(({ role, text }) => ({ role, text })),
+          messages: historyOf(next),
           askUser,
           projectId: projectId ?? '',
         }),
@@ -888,13 +893,26 @@ export function AssistDialog({
   const stop = async () => {
     if (job) await api.stopAssist(job.id).catch(toastError)
   }
-  // 生成中说的话：AI 创建一次生成完一份配置，不能中途补充，排队等这一轮结束再发
+  // 生成中说的话：和对话模式一样插进正在跑的这一轮（cuts 记插在哪，回复按它分段）；
+  // CLI 收不下（进程还没起来、这一轮在收尾）时才排队，等这一轮结束再发
   const [queue, setQueue] = useState<string[]>([])
+  const [cuts, setCuts] = useState<SteerCut[]>([])
+  // 轮询在这一轮开始时就建好了，结束时要读到最新的插话
+  const cutsRef = useRef(cuts)
+  cutsRef.current = cuts
   const files = useAttachments()
   const enqueue = () => {
     if (!text.trim()) return
     setQueue((q) => [...q, text.trim()])
     setText('')
+  }
+  const steer = async () => {
+    const msg = text.trim()
+    if (!msg || !job) return
+    setText('')
+    const r = await api.steerAssist(job.id, msg).catch(() => ({ ok: false, at: 0 }))
+    if (r.ok) setCuts((cs) => [...cs, { at: r.at, text: msg }])
+    else setQueue((q) => [...q, msg])
   }
   // 正在发出一条（还没拿到生成任务）：别接着发下一条
   const [starting, setStarting] = useState(false)
@@ -1115,9 +1133,17 @@ export function AssistDialog({
                   </div>
                 ),
               )}
+              {/* 执行中插的话：回复在插话处分段，用户这句排在前一段后面 */}
+              {job &&
+                cuts.map((c, i) => (
+                  <div key={`cut${i}`} className="flex flex-col gap-2">
+                    <ChatReply msgs={splitAtCuts(job.messages ?? [], cuts)[i]} teamNames={teamNames} author={author} />
+                    <UserMessage size="sm" text={c.text} />
+                  </div>
+                ))}
               {job && (
                 <JobProgress
-                  job={job}
+                  job={{ ...job, messages: splitAtCuts(job.messages ?? [], cuts).at(-1) }}
                   cliName={CLIS.find((c) => c.id === cli)?.name ?? cli}
                   author={author}
                   teamNames={teamNames}
@@ -1136,7 +1162,7 @@ export function AssistDialog({
                 size="sm"
                 value={text}
                 onChange={setText}
-                onSubmit={() => (running ? enqueue() : void send())}
+                onSubmit={() => void (running ? steer() : send())}
                 files={files}
                 attach={false}
                 running={running}

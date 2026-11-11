@@ -83,6 +83,11 @@ export const PluginManifest = z.object({
   hooks: z.array(PluginHook).max(20).default([]),
   testSteps: z.array(PluginTestStep).max(20).default([]),
   commands: z.array(PluginCommand).max(50).default([]),
+  /**
+   * 插件构建时实际接到面板的开放模块（插件仓库的构建脚本自动写，键同 shared/plugins/host-modules.json）。
+   * 面板安装、启动时逐项核对：这个面板版本没开放的就拒绝，写明要先升级面板，而不是装上后运行到那里才报错
+   */
+  hostModules: z.object({ web: z.array(z.string()).optional(), server: z.array(z.string()).optional() }).optional(),
   /** 服务端入口、网页入口（相对包根的 ESM 文件），没有就是纯内容插件 */
   server: z.string().optional(),
   web: z.string().optional(),
@@ -100,8 +105,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 3：清单的 hooks / testSteps / commands 三段，服务端入口的 hook(id, input)；工具声明对项目做什么（McpTool.effect / targets），结果里报改了哪些文件、验证通过没有（McpResult.changed / verified）
  * 4：插件直接 import 面板开放的模块（shared/plugins/host-modules.json）、设计模式自带侧栏和整页（DesignMode.Sidebar / Page）、
  *    不带面板外壳的独立页（WebPlugin.barePages，无头浏览器截图用）
+ * 5：去掉设计模式（WebPlugin.designModes、#/pdesign），设计类插件改用图标栏里的整页；整页可以自己分块（PluginPage.split），
+ *    子位置可以带 /（#/plugin/<插件>/<页面>/<a>/<b>）
  */
-export const PLUGIN_API = 4
+export const PLUGIN_API = 5
 
 /** 插件从哪来 */
 export const PluginSource = z.object({
@@ -128,4 +135,6 @@ export interface PluginInfo {
   error: string
   /** 带不带会在本机运行的代码 */
   hasCode: boolean
+  /** 能退回的上一版的版本号（升级时留着旧版），没有为空 */
+  rollback: string
 }

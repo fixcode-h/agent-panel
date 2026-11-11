@@ -52,6 +52,16 @@ export interface McpCallContext {
    * 不在对话里的调用（没有对话可出卡片）没有这个函数，插件按拒绝处理
    */
   confirm?: (req: PluginConfirm) => Promise<{ allow: boolean; message: string }>
+  /**
+   * 这次调用被取消（插件框架改进 A3）：用户停止对话、这一轮结束、CLI 发了取消、插件关掉、超过工具的 timeoutSec 时触发。
+   * 跑得久的工具（编译、导出、渲染）要监听它停掉自己起的进程和请求；取消后返回什么都不会再交给 Agent
+   */
+  signal?: AbortSignal
+  /**
+   * 报进度（插件框架改进 G2）：一行文字，显示在对话里这次工具调用那一行的输出里（最近的几十行），
+   * 工具结束后换成真正的结果。编译、导出这类要跑一阵的工具用它让用户知道到哪了。不在对话里的调用没有这个函数
+   */
+  progress?: (text: string) => void
 }
 
 /** 给 Agent 的一个 MCP 工具：面板负责协议、会话和令牌，插件只给定义和执行函数 */
@@ -64,6 +74,11 @@ export interface McpTool {
   effect?: McpToolEffect
   /** effect 为 edit 时：按参数算出这次要改的文件（本机路径），执行前交给工具前守卫判断；算不出返回空数组 */
   targets?: (args: Record<string, unknown>) => string[]
+  /**
+   * 这个工具最多跑多少秒（插件框架改进 A3）：到时间面板按出错回给 Agent，并触发 ctx.signal 让插件停下。
+   * 不写不限时（编译这类本来就慢的工具由插件自己判断），取消照样生效
+   */
+  timeoutSec?: number
 }
 
 /** 一轮对话的信息：插件据此决定给不给工具、给哪些 */
@@ -90,6 +105,11 @@ export interface PluginRunTools {
   servers: { name: string; tools: () => McpTool[] | Promise<McpTool[]> }[]
   /** 新会话时接在用户消息后面的说明（怎么用这些工具） */
   hint?: string
+  /**
+   * 新会话开始时在对话里显示给用户的提示（插件框架改进 C1），每条一行：例如「项目里的 UE 桥接可以更新到 1.9.0」。
+   * 只给用户看，不交给 Agent；续接的会话不再显示，免得每一轮都重复
+   */
+  notices?: string[]
 }
 
 export interface PluginServerContext {
@@ -99,6 +119,11 @@ export interface PluginServerContext {
   dir: string
   /** 插件自己的数据目录（数据目录 plugin-data/<id>/），删除插件时一起删 */
   dataDir: string
+  /**
+   * 这一版是从哪个版本升级来的（插件框架改进 B5）：覆盖安装、退回上一版时记下，新装和链接的目录为空。
+   * 每次启动都给同一个值，数据迁移做没做过由插件自己记（例如写在 dataDir 里）
+   */
+  previousVersion: string
   /** 当前参数（按清单声明补齐默认值） */
   config: () => PluginConfig
   log: {

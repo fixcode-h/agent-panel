@@ -128,7 +128,7 @@ defineAction({
 
 「创建一个 UI 对话然后生成一个背包页面」= `design.create`（`open: true`）+ `design.chat`。
 
-2026-11-11 起 `design.*` 五个动作随 UI 设计搬进 UI 设计插件，面板的动作表里去掉了（插件接口还没有「插件加动作」的扩展点，要恢复得先加这个口子）；`ui.navigate` 的 `design` 页改成 `pdesign`（设计模式，`id` 是设计类型）。
+2026-11-11 起 `design.*` 五个动作随 UI 设计搬进 UI 设计插件，面板的动作表里去掉了（插件接口还没有「插件加动作」的扩展点，要恢复得先加这个口子）；`ui.navigate` 的 `design` 页改成 `pdesign`（设计模式，`id` 是设计类型）；同日设计模式也去掉了（ADR 0059 第 10 条），再改成 `plugin`（`id` 插件、`sub` 页面）。
 
 ## 运行时
 

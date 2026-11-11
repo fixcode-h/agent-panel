@@ -129,6 +129,11 @@ const INFO: Record<AlertKind, (detail?: string) => AlertInfo> = {
     what: t('面板自己在处理这个对话时出了错。'),
     fix: t('点「继续执行」重试；反复出现请把原始信息复制给开发者，或者点「AI 处理」。'),
   }),
+  plugin: () => ({
+    title: t('插件出错'),
+    what: t('开着的插件在这一轮出错或超时没有回应，它的工具这一轮没有挂上，对话照常进行但用不了这些工具。'),
+    fix: t('看下面的原始信息；到设置 →「插件」看插件的状态和报错，处理好后再发一条消息就会重新挂上。'),
+  }),
 }
 
 export const alertInfo = (kind: AlertKind, detail = ''): AlertInfo => INFO[kind](detail)

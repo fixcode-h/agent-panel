@@ -2,11 +2,8 @@
 export const EN_PLUGINS: Record<string, string> = {
   扩展: 'Extensions',
   插件没有打开: 'Plugin is not enabled',
-  找不到这个对话: 'Conversation not found',
   '这一页来自插件，插件关掉或删除后就没有了。到设置 →「插件」里打开。':
     'This page comes from a plugin and goes away when the plugin is turned off or removed. Turn it on in Settings → Plugins.',
-  '这类设计来自插件，插件关掉或删除后就没有了。到设置 →「插件」里打开。':
-    'This kind of design comes from a plugin and goes away when the plugin is turned off or removed. Turn it on in Settings → Plugins.',
   '压缩包 · {name}': 'Zip · {name}',
   '本机目录 · {dir}': 'Local folder · {dir}',
   插件参数已保存: 'Plugin settings saved',
@@ -106,10 +103,17 @@ export const EN_PLUGINS: Record<string, string> = {
   '测试步骤：{list}': 'Test steps: {list}',
   '「/」命令：{list}': '/ commands: {list}',
   '插件没有打开，或没有这一页': 'The plugin is not enabled, or has no such page',
-  '设计模式：用对话做游戏界面、网页和模型（来自 UI 设计、Blender 等插件）':
-    'Design mode: build game UIs, web pages and models by chat (from plugins such as UI Design and Blender)',
-  '设计都来自插件：UI 设计插件做游戏界面和网页，Blender 插件做模型。到设置 →「插件」里安装或打开。':
-    'Designs come from plugins: the UI Design plugin makes game UIs and web pages, the Blender plugin makes models. Install or enable them in Settings → Plugins.',
-  去装插件: 'Get plugins',
-  还没有设计插件: 'No design plugins yet',
+  // 插件用到的开放模块面板没有（shared/plugins/host-modules-check.ts）
+  '插件要用面板的模块 {list}{more}，这个版本的面板没有开放，请先升级面板':
+    'The plugin needs panel modules {list}{more}, which this panel version does not provide. Please upgrade the panel first',
+  ' 等 {n} 个': ' and {n} in total',
+  // 退回上一版（web/src/plugins/PluginCard.tsx）
+  '已退回 {name} {version}': 'Rolled {name} back to {version}',
+  '退回上一版 v{version}': 'Roll back to v{version}',
+  '退回插件「{name}」的上一版？': 'Roll back plugin "{name}"?',
+  退回: 'Roll back',
+  '会从 v{current} 换回升级前的 v{version} 并重新启动插件，参数和插件数据不动。之后想回到 v{current} 可以再点一次退回。':
+    'Switches from v{current} back to v{version}, the version before the upgrade, and restarts the plugin. Settings and plugin data are kept. To return to v{current}, roll back again.',
+  // 插件在新会话开头的提示（server/exec/plugin-run.ts）
+  '插件「{name}」：{text}': 'Plugin "{name}": {text}',
 }
