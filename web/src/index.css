@@ -1147,6 +1147,8 @@ body,
   --c-grid-divider: 2px;
   --c-grid-edited: var(--warning);
   --c-grid-invalid: var(--danger);
+  --c-grid-added: var(--success);
+  --c-grid-removed: var(--danger);
 }
 
 /*

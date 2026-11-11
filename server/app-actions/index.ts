@@ -5,6 +5,7 @@ import { projectActions } from './projects.ts'
 import { settingsActions } from './settings.ts'
 import { uiActions } from './ui.ts'
 import { designActions } from './designs.ts'
+import { tableActions } from './tables.ts'
 
 /** 全部动作：新增一组时在这里加一行，组名就是文件名 */
 export const appActions = createRegistry([
@@ -13,6 +14,7 @@ export const appActions = createRegistry([
   ...settingsActions,
   ...uiActions,
   ...designActions,
+  ...tableActions,
 ])
 
 let host: ActionHost | undefined

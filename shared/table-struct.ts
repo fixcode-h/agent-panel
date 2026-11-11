@@ -343,3 +343,25 @@ function sheetInfos(schema: TableSchema, file: string, sheet: SheetData) {
   const cols = sheet.rows.reduce((m, r) => Math.max(m, r.length), 0)
   return { header, infos: columnInfos(schema, sheet.rows, header, file, sheet.name, cols) }
 }
+
+/**
+ * 只查改到的格子（Agent 改表格、跨项目拷行之前用）：整张表按结构查一遍，留下落在这些格子上的问题，
+ * 主键列的重复也算（新加的行可能和已有的撞）
+ */
+export function checkTouched(
+  schema: TableSchema,
+  file: string,
+  sheet: SheetData,
+  touched: { r: number; c: number }[],
+  sheetsOf: (file: string) => SheetData[] | undefined,
+): (Problem & { field: string })[] {
+  const { header, infos } = sheetInfos(schema, file, sheet)
+  const { ctx } = columnOptions(schema, infos, sheetsOf)
+  const key = schema.style.key
+  const keyCol = infos.find((i) => i.field && i.field === key)?.col ?? -1
+  const cells = new Set(touched.map((x) => `${x.r}:${x.c}`))
+  const rows = new Set(touched.map((x) => x.r))
+  return checkSheet(sheet.rows, header.start + header.roles.length, infos, key, ctx, 100_000)
+    .filter((p) => cells.has(`${p.r}:${p.c}`) || (p.c === keyCol && rows.has(p.r)))
+    .map((p) => ({ ...p, field: infos[p.c]?.field ?? '' }))
+}

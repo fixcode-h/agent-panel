@@ -754,6 +754,8 @@ function seed(): Db {
           name: '客户端主工程',
           description: '',
           path: '/home/demo/code/game-client',
+          // 同一个游戏的 Release 工作区：表格页的「跨项目对比」拿它和商城前台的 data 目录比
+          tables: { dirs: ['data'], include: TABLE_INCLUDE, exclude: TABLE_EXCLUDE, store: 'project', readOnly: false },
           categoryId: game.id,
           workflowId: '',
         },
@@ -1750,7 +1752,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'tables') {
     const p = load().projects.find((x) => x.id === id) ?? fail('项目不存在')
-    return demoTables(method, seg, query, body, p)
+    return demoTables(method, seg, query, body, p, (pid) => load().projects.find((x) => x.id === pid))
   }
   if (res === 'project-mcp') {
     const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))

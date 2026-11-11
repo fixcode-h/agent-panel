@@ -9,11 +9,11 @@ export const APP_TOOLS = [
   {
     name: 'app_actions',
     description:
-      '列出能用来操控 Agent 面板这个软件的动作（停止子对话 / 子任务 / 后台命令、删除对话、新建对话、改设置、打开页面、UI 设计……）和各自的参数。' +
+      '列出能用来操控 Agent 面板这个软件的动作（停止子对话 / 子任务 / 后台命令、删除对话、新建对话、改设置、打开页面、UI 设计、查和改游戏配置表……）和各自的参数。' +
       '用户让你操作软件时先用它查有哪些动作，再用 app_do 执行。不写 group 列出全部。',
     inputSchema: {
       type: 'object',
-      properties: { group: { type: 'string', description: '只列这一组：task、project、settings、ui、design' } },
+      properties: { group: { type: 'string', description: '只列这一组：task、project、settings、ui、design、table' } },
     },
   },
   {
@@ -48,4 +48,4 @@ export async function callAppTool(caller: ActionCaller, name: string, a: any) {
 
 /** 有这两个工具时附在输入后面的一行用法 */
 export const APP_HINT =
-  '（面板工具）用户让你操作 Agent 面板这个软件本身时（停掉子对话、子任务、后台命令，删除对话，改设置，打开页面，新建 UI 设计等），先用 app_actions 查动作，再用 app_do 执行；用户的明确指令优先，说了就做。'
+  '（面板工具）用户让你操作 Agent 面板这个软件本身时（停掉子对话、子任务、后台命令，删除对话，改设置，打开页面，新建 UI 设计，查或改项目里的 xlsx 配置表等），先用 app_actions 查动作，再用 app_do 执行；用户的明确指令优先，说了就做。'

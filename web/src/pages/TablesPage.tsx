@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Settings2 } from 'lucide-react'
+import { GitCompareArrows, Loader2, RefreshCw, Settings2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TableDoc, TableHit, TableSchema, TableSearch, TablesIndex } from '@shared/tables'
 import { useNav } from '@/lib/data'
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { TableTree } from '@/components/tables/TableTree'
 import { TableHits } from '@/components/tables/TableHits'
 import { TableCheckList } from '@/components/tables/TableCheckList'
+import { TablesCompareDialog } from '@/components/tables/TablesCompareDialog'
 import { TableTabs } from '@/components/tables/TableTabs'
 import { TableView, type TableJump } from '@/components/tables/TableView'
 import { noEdits, pendingOf, type Edits } from '@/components/tables/table-edits'
@@ -78,6 +79,8 @@ function Workbench({
   const [mode, setMode] = useState<Mode>('name')
   /** 存了表格或结构文件后加一：「检查」重新查 */
   const [checkSeq, setCheckSeq] = useState(0)
+  const [comparing, setComparing] = useState(false)
+  const others = projects.filter((p) => p.value !== projectId)
   const [query, setQuery] = useState('')
   const [tabs, setTabs] = useState<string[]>([])
   const [active, setActive] = useState('')
@@ -219,6 +222,12 @@ function Workbench({
         extra={
           <>
             <IconButton icon={RefreshCw} label={t('重新读取表格目录')} onClick={reload} />
+            <IconButton
+              icon={GitCompareArrows}
+              label={others.length ? t('跨项目对比') : t('跨项目对比：还要另一个设了表格目录的项目')}
+              disabled={!others.length}
+              onClick={() => setComparing(true)}
+            />
             <IconButton icon={Settings2} label={t('表格设置')} onClick={onSettings} />
           </>
         }
@@ -300,6 +309,7 @@ function Workbench({
           </div>
         ) : (
           <TableView
+            projectId={projectId}
             key={doc.path}
             doc={doc}
             schema={schema}
@@ -315,6 +325,14 @@ function Workbench({
           />
         )}
       </main>
+      {comparing && (
+        <TablesCompareDialog
+          open
+          onClose={() => setComparing(false)}
+          left={{ id: projectId, name: projects.find((p) => p.value === projectId)?.label ?? '' }}
+          projects={others}
+        />
+      )}
       <ConfirmDialog
         open={!!closing}
         title={t('关掉 {name}？', { name: closing.slice(closing.lastIndexOf('/') + 1) })}

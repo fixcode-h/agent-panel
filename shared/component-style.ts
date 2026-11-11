@@ -124,6 +124,9 @@ export const COMP_SPEC = {
     /** 表格页：改过还没保存的格子、不合规的格子 */
     edited: hue('amber'),
     invalid: hue('red'),
+    /** 版本差异、跨项目对比：新增的行 / 新值、删掉的行 / 旧值（改过的格子底色用 edited） */
+    added: hue('green'),
+    removed: hue('red'),
   },
   empty: {
     radius: px(10, 0, 24),

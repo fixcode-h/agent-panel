@@ -8,7 +8,7 @@ import { t } from '../../shared/i18n.ts'
 import { TableSchema, TablesConfig, tablesOn } from '../../shared/tables.ts'
 import type { Project } from '../../shared/schema.ts'
 import { resolvePath } from '../fs.ts'
-import { listTables, openTable, searchTables } from './files.ts'
+import { listTables, openTable, safeRel, searchTables } from './files.ts'
 import { readSchema, schemaDir, writeSchema } from './schema-store.ts'
 import { HttpError } from './http-error.ts'
 import { saveTable } from './write.ts'
@@ -17,6 +17,8 @@ import { detectVcs } from '../projects-analyze.ts'
 import { p4Runner } from '../p4-split.ts'
 import { tableSample } from './sample.ts'
 import { checkTables } from './check.ts'
+import { tableAt, tableHistory } from './history.ts'
+import { compareProjects } from './compare.ts'
 
 export interface TablesDeps {
   projects: { get(id: string): Promise<Project | null> }
@@ -109,6 +111,37 @@ export function tablesApi(deps: TablesDeps) {
           if (!tablesOn(cfg)) return c.json({ files: 0, sheets: [], failed: [] })
           const { files } = await listTables(dir, cfg)
           return c.json(await checkTables(dir, files, await readSchema(schemaAt)))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 版本记录：这个文件的历次提交
+      .get('/:id/history', async (c) => {
+        try {
+          const { dir } = await projectOf(deps, c.req.param('id'))
+          const { rel } = safeRel(dir, c.req.query('path') ?? '')
+          return c.json(await tableHistory(dir, rel))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 某一版的内容（解析好的工作表）
+      .get('/:id/at', async (c) => {
+        try {
+          const { dir } = await projectOf(deps, c.req.param('id'))
+          const { rel } = safeRel(dir, c.req.query('path') ?? '')
+          return c.json({ sheets: await tableAt(dir, rel, c.req.query('rev') ?? '') })
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // 跨项目对比：按相对路径配对两个项目的表格
+      .get('/:id/compare', async (c) => {
+        try {
+          const left = await projectOf(deps, c.req.param('id'))
+          const right = await projectOf(deps, c.req.query('other') ?? '')
+          if (!tablesOn(left.cfg) || !tablesOn(right.cfg)) throw new HttpError(t('两个项目都要先设好表格目录'))
+          return c.json(await compareProjects(left, right))
         } catch (e) {
           return fail(c, e)
         }

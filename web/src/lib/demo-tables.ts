@@ -19,6 +19,7 @@ import {
 import type { SheetData } from '@shared/files'
 import { DEMO_CSV, DEMO_FILES, DEMO_SHEETS } from './demo-project-files'
 import { fail } from './demo-http'
+import { DEMO_REVS, demoAt, demoRelease } from './demo-table-versions'
 
 const MTIME = '2026-11-10T08:00:00.000Z'
 /** 每个文件的内容和修改时间（保存后更新） */
@@ -52,20 +53,29 @@ const DEMO_SCHEMA = {
 }
 let schema = TableSchema.parse(DEMO_SCHEMA)
 
-function bookOf(path: string) {
-  let b = books.get(path)
+/** 示例表原样（版本记录里的 HEAD） */
+function pristine(path: string) {
+  const sheets = DEMO_SHEETS[path] ?? (path.endsWith('.csv') ? [{ name: 'products', rows: parseCsv(DEMO_CSV) }] : null)
+  if (!sheets) fail(`文件不存在，可能已删除或路径写错：${path}`)
+  return sheets!
+}
+
+/** 客户端主工程当作同一个游戏的 Release 工作区：同一批表，改动少一些（跨项目对比演示它） */
+const isRelease = (p?: Project) => !!p?.path.includes('game-client')
+
+function bookOf(path: string, p?: Project) {
+  const key = `${isRelease(p) ? 'release:' : ''}${path}`
+  let b = books.get(key)
   if (!b) {
-    const sheets =
-      DEMO_SHEETS[path] ?? (path.endsWith('.csv') ? [{ name: 'products', rows: parseCsv(DEMO_CSV) }] : null)
-    if (!sheets) fail(`文件不存在，可能已删除或路径写错：${path}`)
-    b = { sheets: structuredClone(sheets!), mtime: MTIME }
-    books.set(path, b)
+    const base = pristine(path)
+    b = { sheets: structuredClone(isRelease(p) ? demoRelease(path, base) : base), mtime: MTIME }
+    books.set(key, b)
   }
   return b
 }
 
 /** 演示的保存（三期）也从这里改内容 */
-export const demoBook = bookOf
+export const demoBook = (path: string) => bookOf(path)
 export const demoSchema = {
   get: () => schema,
   set: (s: TableSchema) => (schema = TableSchema.parse(s)),
@@ -82,15 +92,22 @@ function filesOf(p: Project): TableFile[] {
       tableKind(f) &&
       globHit(f, include) &&
       !globHit(f, exclude),
-  ).map((f) => ({ path: f, kind: tableKind(f)!, size: 24_000, mtime: books.get(f)?.mtime ?? MTIME }))
+  ).map((f) => ({ path: f, kind: tableKind(f)!, size: 24_000, mtime: bookOf(f, p).mtime }))
 }
 
-export function demoTables(method: string, seg: string[], query: URLSearchParams, body: unknown, p: Project): unknown {
+export function demoTables(
+  method: string,
+  seg: string[],
+  query: URLSearchParams,
+  body: unknown,
+  p: Project,
+  others: (id: string) => Project | undefined,
+): unknown {
   const kind = seg[2]
   if (!kind && method === 'GET') return { dirs: p.tables?.dirs ?? [], missing: [], files: filesOf(p) }
   if (kind === 'file') {
     const path = query.get('path') ?? ''
-    const b = bookOf(path)
+    const b = bookOf(path, p)
     const doc: TableDoc = {
       path,
       kind: tableKind(path) ?? 'xlsx',
@@ -108,7 +125,7 @@ export function demoTables(method: string, seg: string[], query: URLSearchParams
     const files = filesOf(p)
     if (needle)
       for (const f of files)
-        for (const s of bookOf(f.path).sheets)
+        for (const s of bookOf(f.path, p).sheets)
           s.rows.forEach((row, r) =>
             row.forEach((v, c) => {
               if (v && v.toLowerCase().includes(needle) && hits.length < 500)
@@ -119,7 +136,7 @@ export function demoTables(method: string, seg: string[], query: URLSearchParams
   }
   if (kind === 'save' && method === 'POST') {
     const save = body as TableSave
-    const b = bookOf(save.path)
+    const b = bookOf(save.path, p)
     if (p.tables?.readOnly) fail('项目设置里把表格设成了只读')
     if (save.mtime !== b.mtime && !save.force)
       fail('打开之后文件在外面被改过了：重新载入看看最新的内容，或者只把改了的格子写进去')
@@ -128,13 +145,13 @@ export function demoTables(method: string, seg: string[], query: URLSearchParams
       return e ? { ...s, rows: setCells(applyRowOps(s.rows, e.rows), e.cells) } : s
     })
     b.mtime = new Date().toISOString()
-    return demoTables('GET', [seg[0], seg[1], 'file'], new URLSearchParams({ path: save.path }), null, p)
+    return demoTables('GET', [seg[0], seg[1], 'file'], new URLSearchParams({ path: save.path }), null, p, others)
   }
   if (kind === 'sample' && method === 'GET') {
     const files = filesOf(p).filter((f) => f.kind !== 'xls')
     const text = files
       .map((f) =>
-        bookOf(f.path)
+        bookOf(f.path, p)
           .sheets.map(
             (s) =>
               `### ${f.path}\n${s.rows
@@ -149,12 +166,32 @@ export function demoTables(method: string, seg: string[], query: URLSearchParams
   }
   if (kind === 'check' && method === 'GET') {
     const files = filesOf(p).filter((f) => f.kind !== 'xls')
-    const sheetsOf = (f: string) => (DEMO_FILES.includes(f) ? bookOf(f).sheets : undefined)
+    const sheetsOf = (f: string) => (DEMO_FILES.includes(f) ? bookOf(f, p).sheets : undefined)
     return {
       files: files.length,
       failed: [],
-      sheets: files.flatMap((f) => checkWorkbook(schema, f.path, bookOf(f.path).sheets, sheetsOf)),
+      sheets: files.flatMap((f) => checkWorkbook(schema, f.path, bookOf(f.path, p).sheets, sheetsOf)),
     }
+  }
+  // 版本记录：演示里当作 Git 管着，三个提交（见 demo-table-versions.ts）
+  if (kind === 'history' && method === 'GET') return { vcs: 'git', base: 'HEAD', revs: DEMO_REVS }
+  if (kind === 'at' && method === 'GET') {
+    const path = query.get('path') ?? ''
+    return { sheets: demoAt(path, query.get('rev') ?? '', pristine(path)) }
+  }
+  // 跨项目对比：按相对路径配对，比格子
+  if (kind === 'compare' && method === 'GET') {
+    const other = others(query.get('other') ?? '')
+    if (!other || !tablesOn(other.tables)) fail('两个项目都要先设好表格目录')
+    const left = new Map(filesOf(p).map((f) => [f.path, f]))
+    const right = new Map(filesOf(other!).map((f) => [f.path, f]))
+    const pairs = [...new Set([...left.keys(), ...right.keys()])].sort().map((path) => {
+      if (!right.has(path)) return { path, status: 'left' }
+      if (!left.has(path)) return { path, status: 'right' }
+      const same = JSON.stringify(bookOf(path, p).sheets) === JSON.stringify(bookOf(path, other).sheets)
+      return { path, status: same ? 'same' : 'diff' }
+    })
+    return { pairs }
   }
   if (kind === 'schema' && method === 'GET') return schema
   if (kind === 'schema' && method === 'PUT') return demoSchema.set(body as TableSchema)

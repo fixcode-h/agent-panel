@@ -131,6 +131,40 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('表格页：「检查」没有出结果'))
   await check(p, '表格页-全项目检查', ['InteractionTriggerState'])
 
+  // 版本差异：本地改动（含刚才保存的）和某个提交改了什么，格子级、按主键对齐
+  await p.getByRole('radio', { name: '文件名' }).click()
+  await p.getByRole('button', { name: '版本', exact: true }).click()
+  const hist = p.getByRole('dialog')
+  await hist
+    .getByText('按主键 ID 对齐')
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('表格页：版本差异没有按主键对齐出结果'))
+  await check(p, '表格页-版本差异-本地', ['本地改动', '5e1c09a2'])
+  await hist.getByRole('button', { name: /9b7d3f10/ }).click()
+  await hist
+    .getByText(/\+10 行/)
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('表格页：选一个提交没有显示它加的 10 行'))
+  await check(p, '表格页-版本差异-提交', ['41aa0c6e → 9b7d3f10'])
+  await p.keyboard.press('Escape')
+
+  // 跨项目对比：客户端主工程当 Release 工作区，选中一行拷过去
+  await p.getByRole('button', { name: '跨项目对比' }).click()
+  const cmp = p.getByRole('dialog')
+  await cmp
+    .getByRole('button', { name: /把选中行拷到右边/ })
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('表格页：跨项目对比没有打开有差异的文件'))
+  await check(p, '表格页-跨项目对比', ['有差异', '客户端主工程'])
+  await cmp.getByRole('checkbox').first().click()
+  await cmp.getByRole('button', { name: /把选中行拷到右边/ }).click()
+  await p.getByRole('button', { name: /拷过去|照样拷/ }).click()
+  await p
+    .getByText(/已拷 1 行到/)
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('表格页：跨项目对比拷行没有成功'))
+  await p.keyboard.press('Escape')
+
   // 项目设置里的「表格」页
   await p.getByRole('button', { name: '表格设置' }).click()
   const dlg = p.getByRole('dialog')

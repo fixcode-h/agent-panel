@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookA, ListChecks, Lock, Plus, Redo2, Save, Undo2 } from 'lucide-react'
+import { BookA, History, ListChecks, Lock, Plus, Redo2, Save, Undo2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { schemaHeader, type TableDoc, type TableSchema } from '@shared/tables'
 import type { CellSet, RowOp, SheetEdit } from '@shared/table-edit'
@@ -26,6 +26,7 @@ import { ListEditor } from './ListEditor'
 import { ProblemsBar } from './ProblemsBar'
 import { useTableStruct } from './use-table-struct'
 import { TableSaveDialog } from './TableSaveDialog'
+import { TableHistoryDialog } from './TableHistoryDialog'
 import { dirtyCells, pendingOf, redoIn, rowOpIn, rowsOf, setCellsIn, undoIn, type Edits } from './table-edits'
 import { useGridEdit } from './use-grid-edit'
 
@@ -54,7 +55,9 @@ export function TableView({
   onSave,
   loadDoc,
   files,
+  projectId,
 }: {
+  projectId: string
   /** 读别的表格文件（枚举表、被引用的表） */
   loadDoc: (path: string) => Promise<TableDoc | undefined>
   /** 项目里的表格文件（列结构里选引用用） */
@@ -94,6 +97,7 @@ export function TableView({
   const [saving, setSaving] = useState(false)
   const [enumsOpen, setEnumsOpen] = useState<string | null>(null)
   const [checkOpen, setCheckOpen] = useState(false)
+  const [histOpen, setHistOpen] = useState(false)
   const struct = useTableStruct({
     schema,
     doc,
@@ -205,6 +209,10 @@ export function TableView({
           files={files}
           onSchema={onSchema}
         />
+        <Button size="sm" variant="ghost" className="h-7" onClick={() => setHistOpen(true)}>
+          <History className="h-3.5 w-3.5" />
+          {t('版本')}
+        </Button>
         <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
           <BookA className="h-3.5 w-3.5" />
           {t('枚举')}
@@ -281,6 +289,18 @@ export function TableView({
           initial={enumsOpen || (grid.focus ? struct.infos[grid.focus.col]?.enumName : undefined)}
           onOpenChange={(o) => !o && setEnumsOpen(null)}
           onSave={(enums) => onSchema({ ...schema, enums })}
+        />
+      )}
+      {histOpen && (
+        <TableHistoryDialog
+          open
+          onClose={() => setHistOpen(false)}
+          projectId={projectId}
+          path={doc.path}
+          sheet={sheet.name}
+          rows={rows}
+          schema={schema}
+          onRestore={readOnly ? undefined : setCells}
         />
       )}
       {saving && (
