@@ -1026,6 +1026,9 @@ export const api = {
   assistResolve: (input: Omit<AssistInput, 'cli' | 'model' | 'effort' | 'askUser' | 'targetId'> & { text: string }) =>
     request<{ proposal?: Proposal; error?: string }>('/assist/resolve', json('POST', input)),
   stopAssist: (id: string) => request<AssistJob>(`/assist/${id}/stop`, { method: 'POST' }),
+  /** 执行中插话：ok 为 false 时 CLI 收不下，页面排到下一轮；at 是插进去时已有几条消息 */
+  steerAssist: (id: string, text: string) =>
+    request<{ ok: boolean; at: number }>(`/assist/${id}/steer`, json('POST', { text })),
   projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
   saveProjectDoc: (projectId: string, path: DocFile, content: string) =>
     request<ProjectDoc>(`/project-docs/${projectId}`, json('PUT', { path, content })),
