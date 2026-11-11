@@ -1,3 +1,4 @@
+import { waitingAfter } from '../../shared/child-after.ts'
 import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
@@ -106,6 +107,9 @@ export function createRun(sc: TasksScope) {
     entry.task.working = !prewarm
     entry.task.awaitingUser = false
     entry.task.prewarming = prewarm
+    // 新的一轮开始（自动继续、用户重试或发消息）：在等额度恢复的那次等待作废
+    if (!prewarm && entry.task.quotaResume?.until)
+      entry.task.quotaResume = { ...entry.task.quotaResume, until: undefined }
     // 对话新的一轮从 0 开始显示速度，接口返回时页面不会还停在上一轮的数字上
     const active = entry.task.mode === 'chat' ? entry.task.usage.agents[entry.task.agentId] : undefined
     if (active) {
@@ -523,9 +527,9 @@ export function createRun(sc: TasksScope) {
                   : cur.summary || sc.lastReply(cur),
               at: cur.updatedAt,
               doing: childActivityText(doing),
-              waiting: childWaitText(
-                childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) }),
-              ),
+              waiting: waitingAfter(cur)
+                ? `排在 ${cur.waitAfter!.map((id) => `「${kids.find((x) => x.id === id)?.title ?? id}」`).join('、')} 之后，它们合回后面板自动启动`
+                : childWaitText(childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) })),
               lastActivityAt: childLastActivity(cur),
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
@@ -534,7 +538,7 @@ export function createRun(sc: TasksScope) {
             }
           })
         },
-        createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level }) => {
+        createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level, after }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
           // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
           const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
@@ -548,6 +552,7 @@ export function createRun(sc: TasksScope) {
             fix,
             edits,
             level,
+            after,
           })
           return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
         },
@@ -694,6 +699,9 @@ export function createRun(sc: TasksScope) {
               .catch((e) => log.warn('task', '标记没送出去的消息失败', { task: task.id, error: (e as Error).message }))
           }
         }
+        // 额度用完 / 被限流失败：按设置换备用模型或等到点继续（默认关；每一步都在对话里写一行）
+        if (!prewarm && entry.task.mode === 'chat' && entry.task.status === 'failed' && !sc.shuttingDown)
+          void sc.quotaAfterFail(task.id)
         // 没在等下一轮时按新的选择直接预热，下一条消息不会再交给旧 CLI；
         // PATCH 自己负责的重启不要在这里重复做
         if (switchedRun && !entry.restart && entry.task.status === 'done' && !hasHeld(task.id) && !sc.shuttingDown)

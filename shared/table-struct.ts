@@ -358,6 +358,13 @@ export function headerOf(schema: TableSchema, file: string, sheet: SheetData): S
   return { start: d.start, roles: d.roles }
 }
 
+/** 搜索结果里显示字段名：这张表数据从第几行开始、每列的字段名（没有结构文件时自动识别表头） */
+export function sheetFieldNames(schema: TableSchema | undefined, file: string, sheet: SheetData) {
+  const d = schema ? headerOf(schema, file, sheet) : detectSheetHeader(sheet.rows)
+  const h = { start: d.start, roles: d.roles }
+  return { from: h.start + h.roles.length, names: roleRow(sheet.rows, h, 'name').map((x) => x.trim()) }
+}
+
 /** 枚举表里的值：按「名字列 / 值列 / 说明列」取，多个枚举放在一张表里时按 match 筛 */
 export function enumSourceOptions(
   src: NonNullable<TableEnum['source']>,

@@ -894,6 +894,8 @@ const ProjectFields = z.object({
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
   testSteps: z.array(TestStep).max(40).default([]),
+  /** 在这个项目里关掉的插件测试步骤（plugin:<插件>:<步骤>）：插件带的步骤默认生效，见 shared/plugins/contrib.ts */
+  pluginStepsOff: z.array(z.string().max(100)).max(100).optional(),
   /**
    * 按改动大小决定验证范围：小改动只跑快速检查就收尾，大改动跑完整的测试步骤。
    * 关掉时每次改动都跑完整步骤。旧项目也默认打开：小改动在没有标「小改动也跑」的合并步骤时仍跑全部合并步骤，不会少编译
@@ -1953,6 +1955,13 @@ export const TaskData = z.object({
   wantsWorktree: z.boolean().default(false),
   /** 父对话派单时说了要改代码（create_conversation 的 edits）：第一次执行前就开好独立分支，不中途换目录重开 */
   editFirst: z.boolean().optional(),
+  /**
+   * 排在哪些兄弟子对话之后（create_conversation 的 after，见 shared/child-after.ts）：建好后停在 stopReason 'after'，
+   * 这些子对话都合回或完成后面板自动启动它，启动时清掉
+   */
+  waitAfter: z.array(z.string()).optional(),
+  /** 改动合回父对话所在的分支（共用目录是父对话验收）的时间：排在它后面的子对话按它判断能不能开始 */
+  mergedAt: z.string().optional(),
   /**
    * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
    * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话

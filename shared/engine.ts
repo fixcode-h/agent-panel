@@ -1476,6 +1476,7 @@ function makeOrchestra(
         ...(extra?.edits && { edits: true }),
         ...(extra?.ignoreDirty && { ignoreDirty: true }),
         ...(extra?.bug && extra.level && { level: extra.level }),
+        ...(extra?.after?.length && { after: extra.after }),
       })
       if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
@@ -2788,6 +2789,8 @@ export async function runEngineTurn(host: EngineHost) {
   task.status = 'running'
   // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
   task.stopReason = undefined
+  // 不管是前置合回后面板启动的、还是用户手动继续的，开始了就不再排在别人后面（shared/child-after.ts）
+  task.waitAfter = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算（时长也从这里开始）
   task.budgetFrom = {
     usd: task.usage.costUsd,
