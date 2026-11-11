@@ -77,7 +77,7 @@ test('不是 git 仓库或还没有提交时明确报错', async () => {
 })
 
 test('依赖各自一份：同时开多个子对话，每个都复制自己的完整一份', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const wts = await Promise.all([1, 2, 3].map((i) => createWorktree(repo, tid(), `并发${i}`)))
   try {
@@ -99,7 +99,7 @@ test('依赖各自一份：同时开多个子对话，每个都复制自己的�
 })
 
 test('依赖各自一份：项目没有 node_modules 时跳过复制，开目录照常成功', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   rmSync(path.join(repo, 'node_modules'), { recursive: true, force: true })
   const wt = await createWorktree(repo, tid(), '没装依赖')
@@ -112,7 +112,7 @@ test('依赖各自一份：项目没有 node_modules 时跳过复制，开目录
 })
 
 test('依赖各自一份：已经有一份且 lock 没变时不重复复制，缺了会补一份', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const wt = await createWorktree(repo, tid(), '准备两次')
   try {
@@ -149,7 +149,7 @@ const doneInfo = (over: Partial<{ done: boolean; working: boolean; projectPath: 
 })
 
 test('守护清理：旧的共用依赖目录不会被当成残留清掉', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const wt = await createWorktree(repo, tid(), '清扫共用')
   // 旧版本在项目分组目录下放过一份共用的 node_modules：新版本不再建，但也不能当残留删掉
@@ -163,7 +163,7 @@ test('守护清理：旧的共用依赖目录不会被当成残留清掉', async
 })
 
 test('守护清理：清掉已收口的目录时，它那份依赖一起删', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const id = tid()
   const wt = await createWorktree(repo, id, '清扫依赖')
@@ -179,7 +179,7 @@ test('守护清理：清掉已收口的目录时，它那份依赖一起删', as
 })
 
 test('守护清理：清一个目录时不动别的 worktree 的依赖', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const idA = tid()
   const idB = tid()

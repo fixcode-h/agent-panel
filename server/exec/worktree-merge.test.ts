@@ -479,7 +479,7 @@ test('子分支还有没合回父分支的提交：拦住，原因里不提推�
 })
 
 test('依赖各自一份：A 里改依赖不影响 B 和项目主目录', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const a = await createWorktree(repo, tid(), '甲')
   const b = await createWorktree(repo, tid(), '乙')
@@ -503,7 +503,7 @@ test('依赖各自一份：A 里改依赖不影响 B 和项目主目录', async 
 })
 
 test('依赖各自一份：项目 lock 变了，新建的 worktree 拿到新副本', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const first = await createWorktree(repo, tid(), '旧依赖')
   try {
@@ -525,7 +525,7 @@ test('依赖各自一份：项目 lock 变了，新建的 worktree 拿到新副�
 })
 
 test('依赖各自一份：不同项目的 worktree 各是各的', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repoA = project()
   const repoB = project()
   // 乙项目的依赖里多一个文件，用来确认两份副本互不影响
@@ -543,7 +543,7 @@ test('依赖各自一份：不同项目的 worktree 各是各的', async () => {
 })
 
 test('依赖各自一份：从父对话的独立目录里再开子对话，从项目根复制一份自己的', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const parent = await createWorktree(repo, tid(), '父对话')
   try {
@@ -567,7 +567,7 @@ test('依赖各自一份：从父对话的独立目录里再开子对话，从�
 })
 
 test('依赖各自一份：从父对话目录再开子对话，也按项目最新的 lock 刷新', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const parent = await createWorktree(repo, tid(), '父对话')
   try {
@@ -591,7 +591,7 @@ test('依赖各自一份：从父对话目录再开子对话，也按项目最�
 })
 
 test('依赖副本：项目没忽略 node_modules 时，独立目录里的依赖不会进提交', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   // 新建项目漏写 .gitignore 的情况：prepare 要自己写进独立目录的 exclude
   writeFileSync(path.join(repo, '.gitignore'), '.env*\n')
@@ -616,7 +616,7 @@ test('依赖副本：项目没忽略 node_modules 时，独立目录里的依赖
 })
 
 test('依赖副本：复制中断留下的临时目录过一会儿准备时清掉', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const wt = await createWorktree(repo, tid(), '残留临时目录')
   try {
@@ -640,7 +640,7 @@ test('依赖副本：复制中断留下的临时目录过一会儿准备时清�
 })
 
 test('依赖副本：旧布局的链接解开，真实的目录副本保留', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   const wt = await createWorktree(repo, tid(), '旧布局')
   try {
@@ -662,7 +662,7 @@ test('依赖副本：旧布局的链接解开，真实的目录副本保留', as
 })
 
 test('依赖副本：旧布局的任务目录保留自己那份依赖，不删成不能用', async () => {
-  resetWorktrees()
+  await resetWorktrees()
   const repo = project()
   // 升级前开出来的目录：worktrees/<任务 id>，它向上（worktrees/）没有共用的一份
   const legacy = path.join(WORKTREES_DIR, tid())
