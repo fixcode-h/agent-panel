@@ -21,6 +21,7 @@ import { getSettings } from '../settings.ts'
 import { log } from '../log.ts'
 import { recentTriggers, runHook } from './run.ts'
 import { checkHook, sampleInput } from './validate.ts'
+import { activePluginHooks } from '../plugins/contrib.ts'
 
 /**
  * 设置页「钩子」的接口（ADR 0049 第二期）：列表、内置钩子开关、用户钩子增删改排序、校验、试跑、最近触发。
@@ -66,6 +67,15 @@ export function hooksApi(deps?: {
           })),
         })),
         hooks: data.hooks,
+        // 开着的插件带的钩子（插件接口 3）：只能开关，定义跟着插件包走
+        plugins: activePluginHooks(data).map((h) => ({
+          id: h.id,
+          name: h.name,
+          description: h.description,
+          event: h.event,
+          plugin: h.plugin.name,
+          on: h.enabled,
+        })),
         // 每个 CLI 支持哪些事件：界面上把不支持的灰掉、写明原因
         // 只通知的面板事件由面板自己发，每个 CLI 都算支持
         support: CLIS.map((x) => ({
@@ -95,6 +105,14 @@ export function hooksApi(deps?: {
       if (typeof body.projectId === 'string' && body.projectId)
         await setProjectBuiltin(body.projectId, h.id, body.on === null ? null : body.on === true)
       else await setBuiltin(h.id, body.on === true, h.defaultOn)
+      return c.json({ ok: true })
+    })
+    .put('/plugins/:id', async (c) => {
+      // 插件钩子的开关：默认开，只记关掉的（和内置钩子同一份 builtins，键是 plugin:<插件>:<钩子>）
+      const h = activePluginHooks(await readHooks()).find((x) => x.id === c.req.param('id'))
+      if (!h) return c.json({ error: t('没有这个插件钩子，插件可能关掉了') }, 404)
+      const body = (await c.req.json().catch(() => ({}))) as { on?: unknown }
+      await setBuiltin(h.id, body.on === true, true)
       return c.json({ ok: true })
     })
     .put('/cli-off/:cli', async (c) => {

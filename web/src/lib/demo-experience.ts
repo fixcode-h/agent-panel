@@ -5,6 +5,7 @@ import {
   type ExperienceEdit,
   type LearnedNote,
 } from '@shared/experience'
+import type { KnowledgeHitsView } from '@shared/knowledge-hits'
 
 /**
  * 演示版的项目经验（对应 server/experience-routes.ts）：每个项目一份内存里的列表，带几条示例；
@@ -102,5 +103,21 @@ export function demoLearnedNote(): LearnedNote {
       { id: vocab.id, op: 'merge', snapshot: { ...vocab, updatedAt: now }, before },
     ],
     dropped: [{ title: '角标刷新逻辑在哪', why: '路径都不存在：src/badge/' }],
+  }
+}
+
+/**
+ * 演示版的命中记录（对应 GET /projects/:id/knowledge-hits）：两条经验、一条教训用上过，
+ * 一条教训的路径标成已不在，设置页的「很久没用上」排序和过期标记能看出效果
+ */
+export function demoKnowledgeHits(): KnowledgeHitsView {
+  const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
+  return {
+    experience: {
+      'e-demo-1': { count: 7, lastAt: ago(0.2), taskIds: [] },
+      'e-demo-2': { count: 2, lastAt: ago(12), taskIds: [] },
+    },
+    lessons: { 'demo-lesson-2': { count: 4, lastAt: ago(1), taskIds: [] } },
+    stale: { experience: {}, lessons: { 'demo-lesson-3': ['mock/**'] } },
   }
 }

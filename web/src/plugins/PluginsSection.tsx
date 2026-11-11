@@ -362,6 +362,13 @@ function InstallConfirm({ preview, onClose }: { preview?: InstallPreview; onClos
               <li>{t('技能：{list}', { list: Object.keys(m.skillGuide).join(t('、')) })}</li>
             )}
             {!!m.mcpServers.length && <li>{t('给 Agent 的工具服务：{list}', { list: m.mcpServers.join(t('、')) })}</li>}
+            {!!m.hooks?.length && <li>{t('钩子：{list}', { list: m.hooks.map((h) => t(h.name)).join(t('、')) })}</li>}
+            {!!m.testSteps?.length && (
+              <li>{t('测试步骤：{list}', { list: m.testSteps.map((s) => t(s.name)).join(t('、')) })}</li>
+            )}
+            {!!m.commands?.length && (
+              <li>{t('「/」命令：{list}', { list: m.commands.map((c) => `/${c.name}`).join(t('、')) })}</li>
+            )}
           </ul>
         </div>
       )}

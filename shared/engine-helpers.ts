@@ -175,7 +175,7 @@ export async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperS
       ? `差异太长，没有放进来：完整差异在文件 ${d.file}，先读它。`
       : '差异太长，没有放进来：按上面的文件列表自己取 diff。'
   const part = `## 要评审的改动\n面板已经取好了${what}，不用再自己取 diff。每处改动前后带几行没改的代码，只是帮你看懂改动接在哪里：**只评以 + / - 开头的行**，上下文里没改的代码不评。锁文件、压缩产物这类生成的文件只在列表里，不用评。\n\n改动文件：\n\`\`\`\n${d.stat}\n\`\`\`\n\n${body}`
-  return [brief, part].filter(Boolean).join('\n\n')
+  return [brief, part, d.semantic].filter(Boolean).join('\n\n')
 }
 
 /** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */

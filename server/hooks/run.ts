@@ -37,7 +37,8 @@ export function noteTrigger(t: HookTrigger) {
 /** 标准输出最多收这么多：钩子刷屏也不让面板内存涨上去 */
 const OUT_MAX = 64 * 1024
 
-function runCommand(
+/** 用面板的 Node 跑一个钩子脚本（插件钩子的包内脚本也走这里，见 server/plugins/contrib.ts） */
+export function runCommand(
   file: string,
   input: HookInput,
   cwd: string,

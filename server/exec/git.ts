@@ -372,7 +372,7 @@ function gitRaw(cwd: string, args: string[]) {
  * 树里一个文件的内容，按检出到工作区的样子给（换行符、过滤器都按仓库设置转换）：
  * Windows 上 autocrlf 时树里存的是 LF、工作区是 CRLF，直接比会每一行都对不上。没有这个文件返回 null
  */
-async function blobAt(cwd: string, tree: string, file: string): Promise<Buffer | null> {
+export async function blobAt(cwd: string, tree: string, file: string): Promise<Buffer | null> {
   const r = await gitRaw(cwd, ['cat-file', '--filters', `${tree}:${file}`])
   if (r.code === 0) return r.stdout
   // 树本身不在了（太久以前的快照被 git 清理了）和「这个文件不在树里」要分开：前者不能当成文件不存在

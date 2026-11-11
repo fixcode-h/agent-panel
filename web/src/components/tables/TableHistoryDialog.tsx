@@ -6,8 +6,7 @@ import type { TableSchema } from '@shared/tables'
 import type { CellSet } from '@shared/table-edit'
 import type { DiffRow } from '@shared/sheet-diff'
 import { useSheetDiff } from '@/lib/sheet-diff-async'
-import { headerOf } from '@shared/table-struct'
-import { fieldNames } from '@shared/table-agent'
+import { sideOf } from './diff-side'
 import { tablesApi, type TableHistory } from '@/lib/tables-api'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -17,16 +16,10 @@ import { Modal, ModalHeader } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Select } from '@/components/ui/input'
 import { IconButton } from '@/components/ui/icon-button'
-import { DiffSummary, SheetDiffView } from './SheetDiffView'
+import { DiffSummary, SheetDiffView, type DiffOnly } from './SheetDiffView'
 
 /** 选中的是「本地改动」还是第几个提交 */
 type Pick = 'local' | number
-
-const sideOf = (schema: TableSchema, path: string, sheet: SheetData | undefined) => {
-  if (!sheet) return { rows: [] as string[][], from: 0, names: [] as string[] }
-  const h = headerOf(schema, path, sheet)
-  return { rows: sheet.rows, from: h.start + h.roles.length, names: fieldNames(sheet.rows, h) }
-}
 
 /**
  * 版本差异：左边是这个文件的版本记录（Git / P4 / SVN），右边是格子级差异。
@@ -66,6 +59,8 @@ export function TableHistoryDialog({
   const [error, setError] = useState('')
   const [pick, setPick] = useState<Pick>('local')
   const [only, setOnly] = useState(true)
+  // 摘要里点了「改 / 加 / 删」：只看那一种行
+  const [diffOnly, setDiffOnly] = useState<DiffOnly | null>(null)
   const [pair, setPair] = useState<{ key: string; a: SheetData[]; b: SheetData[] | null } | null>(null)
   const [loading, setLoading] = useState(false)
   useEffect(() => {
@@ -191,7 +186,7 @@ export function TableHistoryDialog({
         <section aria-label={t('差异')} className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-3 py-2">
             <span className="font-mono text-body">{title}</span>
-            {diff && <DiffSummary diff={diff} />}
+            {diff && <DiffSummary diff={diff} only={diffOnly} onOnly={setDiffOnly} />}
             <span className="flex-1" />
             {hist && hist.vcs !== 'none' && (
               <Select
@@ -251,6 +246,7 @@ export function TableHistoryDialog({
                 diff={diff}
                 names={sides.b.names}
                 onlyChanges={only}
+                only={diffOnly}
                 rowAction={
                   pick === 'local' && onRestore
                     ? (row) =>

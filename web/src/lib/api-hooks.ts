@@ -18,9 +18,21 @@ export interface BuiltinHookView {
   projectOn: boolean | null
   params: { key: string; kind: 'list' | 'number'; label: string; hint: string; value: string[] | number }[]
 }
+/** 开着的插件带的钩子：只能开关 */
+export interface PluginHookView {
+  id: string
+  name: string
+  description: string
+  event: HookEventName
+  /** 插件名 */
+  plugin: string
+  on: boolean
+}
 export interface HooksView {
   builtins: BuiltinHookView[]
   hooks: HookDef[]
+  /** 老的服务端没有这个字段 */
+  plugins?: PluginHookView[]
   support: {
     id: string
     name: string
@@ -60,6 +72,8 @@ export const hooksApi = {
   /** projectId 给了是这个项目单独的开关；on 为 null 去掉单独的设置 */
   setBuiltin: (id: string, on: boolean | null, projectId = '') =>
     request<{ ok: true }>(`/hooks/builtins/${id}`, json('PUT', projectId ? { on, projectId } : { on })),
+  setPlugin: (id: string, on: boolean) =>
+    request<{ ok: true }>(`/hooks/plugins/${encodeURIComponent(id)}`, json('PUT', { on })),
   setCliOff: (cli: string, events: HookEventName[]) =>
     request<{ ok: true }>(`/hooks/cli-off/${cli}`, json('PUT', { events })),
   setParam: (id: string, key: string, value: string[] | number) =>

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { awaitedJob, createBackground, uiJobs, type BgJob, type BgTimers } from './background.ts'
@@ -111,6 +111,28 @@ test('后台命令马上返回，跑完把结果推回；跑的期间文件变�
   assert.match(bad.text, /结果可能已经不准/)
   assert.match(bg.check('t1', ''), /回显/)
   assert.match(bg.check('t2', ''), /没有后台命令/)
+})
+
+test('推回的只是提炼后的日志：中间的报错行、结尾几十行和完整日志路径；完整输出落盘', async () => {
+  const dir = repo()
+  const logDir = path.join(dir, '.logs')
+  const { bg, got, all } = collect(1, { logDir })
+  // 报错在中间、后面跟着 500 行进度：以前只推结尾 6000 字，报错被挤掉
+  const script = nodeScript(
+    dir,
+    'build.cjs',
+    "for (let i = 0; i < 50; i++) console.log('compiling ' + i)\nconsole.log('src/a.cpp(12): error C2065: foo undeclared')\nfor (let i = 0; i < 500; i++) console.log('linking step ' + i)\nprocess.exit(2)\n",
+  )
+  bg.start({ taskId: 't-log', name: '编译', command: script, cwd: '', root: dir, exclusive: false })
+  await all
+  const { job, text } = got[0]
+  assert.match(text, /错误（1 条）[\s\S]*error C2065/)
+  assert.match(text, /linking step 499/)
+  assert.doesNotMatch(text, /linking step 400\b/, '结尾只留几十行')
+  assert.ok(job.logFile && text.includes(job.logFile), '写明完整日志在哪')
+  const full = readFileSync(job.logFile!, 'utf8')
+  assert.match(full, /compiling 0\n/)
+  assert.match(full, /linking step 499/)
 })
 
 test('命令没能启动（跑命令之前就抛错）：照样置终态并把失败推回，不留一条永远「运行中」的记录', async () => {

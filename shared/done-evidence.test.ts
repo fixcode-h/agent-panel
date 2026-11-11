@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setLang } from './i18n.ts'
 import { doneEvidence, isVerifyCommand, verifyGateError } from './done-evidence.ts'
-import { END_REJECTED, endTurnCheck } from './end-turn.ts'
+import { END_REJECTED, endTurnCheck, gateApplies } from './end-turn.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 
 setLang('zh')
@@ -85,4 +85,87 @@ test('end_turn：记成做完时带上完成依据；打开拦截时没跑测试
   assert.equal(g.ok, false)
   assert.ok(g.info.startsWith(END_REJECTED))
   assert.equal(g.end, undefined)
+})
+
+test('验证门禁：适用的步骤最后一次跑失败不算过，修好重跑通过才放行', () => {
+  const steps = [{ name: '单测', command: 'npm run test:unit' }]
+  const red = doneEvidence(
+    [
+      agent(
+        tool({ kind: 'edit', label: 'a.ts' }),
+        tool({ kind: 'run', label: 'npm run test:unit', exitCode: 1, failed: true }),
+      ),
+    ],
+    steps,
+  )
+  assert.match(verifyGateError(red, steps), /「单测」最后一次没通过，退出码 1.*blocked/)
+  const fixed = doneEvidence(
+    [
+      agent(
+        tool({ kind: 'edit', label: 'a.ts' }),
+        tool({ kind: 'run', label: 'npm run test:unit', exitCode: 1, failed: true }),
+        tool({ kind: 'run', label: 'npm run test:unit -- a.test.ts', exitCode: 0 }),
+      ),
+    ],
+    steps,
+  )
+  assert.equal(verifyGateError(fixed, steps), '', '同一条步骤以最后一次为准')
+  // 没配步骤时看最后一次验证命令
+  const generic = doneEvidence([
+    agent(tool({ kind: 'edit', label: 'a.ts' }), tool({ kind: 'run', label: 'npx tsc', exitCode: 2 })),
+  ])
+  assert.match(verifyGateError(generic, []), /最后一次验证命令（npx tsc）没通过，退出码 2/)
+})
+
+test('验证门禁：只看适用的步骤，关掉的和改动不涉及的不逼它跑', () => {
+  const ue = {
+    name: '编译 UE',
+    command: 'Build.bat MyGameEditor Win64 Development',
+    appliesTo: ['**/*.cpp', '**/*.h'],
+    scope: 'changed' as const,
+  }
+  const off = { name: '单测', command: 'npm test', enabled: false }
+  const lua = doneEvidence([agent(tool({ kind: 'edit', label: 'Content/Script/ui.lua' }))])
+  assert.equal(
+    verifyGateError(lua, [ue, off], { applies: gateApplies }),
+    '',
+    '只改了 Lua：编译 C++ 不适用，关掉的单测也不算',
+  )
+  const cpp = doneEvidence([agent(tool({ kind: 'edit', label: 'Source/Game/A.cpp' }))])
+  assert.match(verifyGateError(cpp, [ue, off], { applies: gateApplies }), /还没跑过项目的测试步骤.*「编译 UE」/)
+  assert.doesNotMatch(verifyGateError(cpp, [ue, off], { applies: gateApplies }), /单测/)
+})
+
+test('验证门禁：命令改的文件（快照差）也算改了代码', () => {
+  const steps = [{ name: '单测', command: 'npm test' }]
+  const msgs = [agent(tool({ kind: 'run', label: "sed -i 's/a/b/' src/a.ts" }))]
+  const ev = doneEvidence(msgs, steps, { files: ['src/a.ts'] })
+  assert.deepEqual(ev.files, ['src/a.ts'])
+  assert.equal(ev.code, true)
+  assert.match(verifyGateError(ev, steps), /还没跑过项目的测试步骤/)
+  // 工具调用点名过的不重复列（一个写 ./ 开头）
+  assert.deepEqual(
+    doneEvidence([agent(tool({ kind: 'edit', label: './src/a.ts' }))], [], { files: ['src/a.ts'] }).files,
+    ['./src/a.ts'],
+  )
+})
+
+test('验证门禁：插件验证通过的资产不再要求项目步骤，插件验证失败拒绝', () => {
+  const steps = [
+    { name: '编译 UE', command: 'Build.bat', appliesTo: ['**/*.cpp'], scope: 'changed' as const },
+    { name: '类型检查', command: 'npm run typecheck' },
+  ]
+  const passed = { command: '蓝图编译', plugin: true }
+  const extra = { files: ['Content/BP_Hero.uasset'], commands: [passed], covered: ['Content/BP_Hero.uasset'] }
+  const ev = doneEvidence([], steps, extra)
+  assert.equal(ev.code, true)
+  assert.deepEqual(ev.commands, [passed])
+  assert.equal(
+    verifyGateError(ev, steps, { covered: extra.covered, applies: gateApplies }),
+    '',
+    '资产由插件验证过，类型检查这条「总是执行」的步骤不用为它跑',
+  )
+  assert.match(verifyGateError(ev, steps), /还没跑过项目的测试步骤.*类型检查/, '没验证过的资产照常要求')
+  const bad = doneEvidence([], steps, { ...extra, commands: [{ ...passed, failed: true }], covered: [] })
+  assert.match(verifyGateError(bad, steps), /插件的验证「蓝图编译」最后一次没通过/)
 })

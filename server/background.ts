@@ -9,6 +9,8 @@ import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/pan
 import { fmtDuration } from '../shared/duration.ts'
 import { failLostWaits } from '../shared/plan-lost.ts'
 import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
+import { createDigest, digestText, type LogDigest } from '../shared/log-digest.ts'
+import { openJobLog } from './bg-log.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -40,6 +42,10 @@ export interface BgJob {
   nextCheckMs?: number
   /** 最近的输出（只留结尾） */
   lines: string[]
+  /** 整段输出里认出来的错误和警告行（边跑边收，不受 lines 只留结尾的限制），见 shared/log-digest.ts */
+  digest?: LogDigest
+  /** 完整日志落盘的路径（面板给了日志目录时才有），推回结果里写明让模型去搜 */
+  logFile?: string
   /** 跑的期间工作目录里的文件变了：结果可能已经不准 */
   changed: boolean
   /**
@@ -133,6 +139,12 @@ function headText(j: BgJob) {
     : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${fmtDuration(jobMs(j))}）`
 }
 
+/** 推回给 Agent 的日志部分：错误和警告行、结尾、完整日志路径（shared/log-digest.ts）；没提炼过（老记录、没跑起来）按空的算 */
+export function jobDigestText(j: BgJob) {
+  const d = j.digest ?? { errors: [], warnings: [], errorCount: 0, warningCount: 0 }
+  return digestText(j.lines, d, j.state === 'done', j.logFile)
+}
+
 /** 对话里发起这条命令的那一行工具调用跑完后显示什么：结果和输出结尾 */
 export function jobOutput(j: BgJob) {
   const tail = j.lines.join('\n').slice(-6000)
@@ -199,6 +211,8 @@ export function createBackground(
     now?: () => number
     /** 同时跑的上限：每次排名额时重新取（设置里改了马上生效） */
     maxRunning?: number | (() => number | Promise<number>)
+    /** 完整日志落盘的目录（每个对话一个子目录，见 bg-log.ts）；不给就不落盘（测试） */
+    logDir?: string
   } = {},
 ) {
   const runShell = deps.run ?? runShellIn
@@ -327,13 +341,14 @@ export function createBackground(
   const resultText = (j: BgJob) => {
     const head = headText(j)
     const warn = j.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
-    const tail = j.lines.join('\n').slice(-(j.state === 'done' ? 1500 : 6000))
+    // 只给提炼后的日志（错误和警告行、结尾几十行、完整日志路径；成功只给最后几行），不再整段 6000 字进上下文
+    const body = jobDigestText(j)
     // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以收尾时要整体重写。
     // 但只能要求「结束这一轮时」再总结：以前写「处理完这个结果后，重新总结整段工作」，模型一收到结果就先写一段总结，
     // 没有工具调用的回复会直接结束这一轮，计划还没做完就停（用户 2026-11-06 报结束前钩子反复拦住，一半紧跟在推回结果之后）
     const ask =
       '\n按这个结果接着做，不用先写总结；要结束这一轮时，最后那条回复再重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
-    return `【面板】${head}${warn}\n命令：${j.command}${tail ? `\n输出结尾：\n\`\`\`\n${tail}\n\`\`\`` : ''}${ask}`
+    return `【面板】${head}${warn}\n命令：${j.command}${body ? `\n${body}` : ''}${ask}`
   }
 
   /**
@@ -365,6 +380,9 @@ export function createBackground(
       settle(j, 'stopped')
       return
     }
+    const digest = createDigest()
+    const file = deps.logDir ? openJobLog(deps.logDir, j.taskId, j.id, j.command) : null
+    if (file) j.logFile = file.file
     const r = await runShell(j.command, j.cwd, {
       shell: await currentShell(),
       timeoutMs: j.timeoutMs,
@@ -372,6 +390,8 @@ export function createBackground(
       env: j.env,
       onLine: (l) => {
         heard(j)
+        digest.add(l)
+        file?.write(l)
         j.lines.push(l)
         if (j.lines.length > KEEP_LINES) j.lines.splice(0, j.lines.length - KEEP_LINES)
       },
@@ -379,7 +399,17 @@ export function createBackground(
       onStderr: () => heard(j),
     })
     aborts.delete(j.id)
-    if (r.stderr.trim()) j.lines.push(...r.stderr.trim().split('\n').slice(-40))
+    if (r.stderr.trim()) {
+      // 错误常写在 stderr：完整的进日志和提炼，内存里照旧只留最后 40 行
+      const err = r.stderr.trim().split('\n')
+      for (const l of err) {
+        digest.add(l)
+        file?.write(l)
+      }
+      j.lines.push(...err.slice(-40))
+    }
+    file?.flush()
+    j.digest = digest.digest()
     const after = before ? await fingerprint(root).catch(() => '') : ''
     j.changed = !!before && !!after && before !== after
     if (r.spawnError) j.lines.push(r.spawnError)

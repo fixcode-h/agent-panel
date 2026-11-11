@@ -1,8 +1,9 @@
-import type { Task, TaskMessage, TestStep, ToolUse } from './schema.ts'
+import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { EndTurnRecord } from './turn-end.ts'
 import { PANEL_TOOL_RE, panelToolName } from './panel-tools.ts'
 import { activePlan, openWork, panelWrap } from './plan.ts'
-import { doneEvidence, verifyGateError } from './done-evidence.ts'
+import { stepApplies } from './test-steps.ts'
+import { doneEvidence, gateFiles, verifyGateError, type GateStep, type TurnExtra } from './done-evidence.ts'
 
 /**
  * 一轮怎么结束（设计稿 docs/openspec/changes/end-check-signal/design-v2.md）：
@@ -145,7 +146,9 @@ export function endTurnCheck(
   outcome: string,
   need: string,
   /** 项目打开了「改了代码要跑过测试步骤才能结束」时传项目的测试步骤（见 shared/done-evidence.ts） */
-  gate?: { steps: Pick<TestStep, 'name' | 'command'>[] },
+  gate?: { steps: GateStep[] },
+  /** 工具调用之外的材料：命令改的文件、插件工具报的改动和验证（服务端现取，见 server/exec/turn-extra.ts） */
+  extra?: TurnExtra,
 ): { ok: boolean; info: string; end?: Omit<EndTurnRecord, 'at'> } {
   if (outcome !== 'done' && outcome !== 'blocked')
     return { ok: false, info: `${END_REJECTED}outcome 只能是 done（做完了）或 blocked（做不下去）` }
@@ -175,11 +178,21 @@ export function endTurnCheck(
     }
   // 完成依据只看这一轮（这条输入之后）的工具调用；拦不拦看项目设置，不开只记下、卡片上标出来
   const msgs = tk.messages ?? []
-  const evidence = doneEvidence(msgs.slice(inputIndex(msgs) + 1), gate?.steps)
-  const gateErr = gate ? verifyGateError(evidence, gate.steps) : ''
+  const turn = msgs.slice(inputIndex(msgs) + 1)
+  const evidence = doneEvidence(turn, gate?.steps, extra)
+  const gateErr = gate
+    ? verifyGateError(evidence, gate.steps, {
+        ...gateFiles(turn, extra),
+        applies: gateApplies,
+      })
+    : ''
   if (gateErr) return { ok: false, info: `${END_REJECTED}${gateErr}` }
   return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome, evidence } }
 }
+
+/** 门禁的步骤对这批改动适不适用：老数据、单测只给名字和命令的按「总是执行」算（shared/test-steps.ts 的 stepApplies） */
+export const gateApplies = (s: GateStep, files: string[]) =>
+  stepApplies({ appliesTo: s.appliesTo ?? [], scope: s.scope ?? 'always', command: s.command }, files)
 
 /** 记一次结束：最近的在最后，只留最近 50 条 */
 export function pushTurnEnd(tk: Pick<Task, 'turnEnds'>, end: Omit<EndTurnRecord, 'at'>, at = new Date().toISOString()) {

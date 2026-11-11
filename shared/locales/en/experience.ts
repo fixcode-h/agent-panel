@@ -139,4 +139,14 @@ export const EN_EXPERIENCE: Record<string, string> = {
   '这个项目的经验已经有 {n} 条，先用 AI 评审清理一下再学。':
     'This project already has {n} experience items. Clean them up with AI review before learning more.',
   '这条经验之后又改过，撤回会丢掉那些改动': 'This item was edited later; undoing would discard those edits',
+  // 经验、教训的命中记录（shared/knowledge-hits.ts、web/src/components/projects/KnowledgeHits.tsx）
+  原顺序: 'Original order',
+  很久没用上的在前: 'Least recently used first',
+  'Agent 查到并拿到全文、或改文件时推给它的次数；只列出标题的不算':
+    'Times the agent got the full text from a lookup, or had it pushed when editing a file. Title-only listings do not count.',
+  '这些路径在项目里已经找不到了：{paths}': 'These paths no longer exist in the project: {paths}',
+  可能过期: 'Possibly stale',
+  还没用上: 'Not used yet',
+  '用上 {n} 次 · {ago}': 'Used {n}× · {ago}',
+  '用上 {n} 次': 'Used {n}×',
 }

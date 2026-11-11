@@ -620,12 +620,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await defaultTab.click()
     assert.equal(await defaultTab.getAttribute('aria-checked'), 'true', '再点一次选中的标签不能取消选中')
     await dlg.getByRole('radio', { name: /^支付/ }).click()
-    await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**'])
+    // 命中记录（shared/knowledge-hits.ts）：演示里这条用上过 4 次
+    await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**', '用上 4 次'])
     assert.equal(
       await dlg.getByText('购物车相关改动同时改 legacy-cart').count(),
       0,
       '「支付」页签里不该有不带标签的教训',
     )
+    // 路径已经不在的标「可能过期」，可以切成「很久没用上的在前」
+    await dlg.getByRole('radio', { name: /^接口/ }).click()
+    await dlg.getByRole('radio', { name: '很久没用上的在前' }).click()
+    await check(p, '项目设置-项目教训-很久没用上', ['改接口字段时同步改 mock', '可能过期', '还没用上'])
+    await dlg.getByRole('radio', { name: '原顺序' }).click()
+    await dlg.getByRole('radio', { name: /^支付/ }).click()
     await footSpace('项目教训')
     // 项目说明和各个 CLI 的说明文件共用同一个滚动区分支（section === 'doc' || cli:），单独确认一次
     await dlg.getByRole('button', { name: /^项目说明/ }).click()
