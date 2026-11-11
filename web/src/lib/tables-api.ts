@@ -3,7 +3,7 @@
  * 在线演示由 demo-tables.ts 模拟。
  */
 import type { TableDoc, TableRoot, TableSchema, TableSearch, TablesConfig, TablesIndex } from '@shared/tables'
-import type { TableSave } from '@shared/table-edit'
+import type { SheetEdit, TableSave } from '@shared/table-edit'
 import type { SheetProblems } from '@shared/table-struct'
 import type { SheetData } from '@shared/files'
 import type { ExportEvent } from '@shared/table-export'
@@ -52,6 +52,11 @@ export const tablesApi = {
     projectId: string,
     body: { other: string; items: SyncItem[]; mode: 'file' | 'column'; field?: string; apply: boolean },
   ) => request<{ results: SyncResult[] }>(`/tables/${projectId}/sync`, json('POST', body)),
+  /** AI 提的改动（还没写进文件） */
+  proposal: (projectId: string, path: string) =>
+    request<{ proposal: TableProposal | null }>(`/tables/${projectId}/proposal?path=${q(path)}`),
+  dropProposal: (projectId: string, path: string, id: string) =>
+    request<{ ok: true }>(`/tables/${projectId}/proposal?path=${q(path)}&pid=${q(id)}`, { method: 'DELETE' }),
   /** 全项目检查 */
   check: (projectId: string, all = false) => request<TablesCheck>(`/tables/${projectId}/check${all ? '?all=1' : ''}`),
   /** 把本地文件切换到某一版：返回切换后的文件 */
@@ -72,6 +77,19 @@ export const tablesApi = {
   /** 枚举值改名后替换所有表里的旧值；apply=false 只预览 */
   enumRename: (projectId: string, renames: EnumRename[], apply: boolean) =>
     request<EnumRenameResult>(`/tables/${projectId}/enum-rename`, json('POST', { renames, apply })),
+}
+
+export interface TableProposal {
+  id: string
+  path: string
+  sheet: string
+  mtime: string
+  edit: SheetEdit
+  note: string
+  cells: number
+  added: number
+  removed: number
+  at: string
 }
 
 export interface SyncItem {

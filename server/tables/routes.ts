@@ -14,7 +14,7 @@ import { absPath, listTables, openTable, safeRel, searchTables } from './files.t
 import { readSchema, schemaDir, writeSchema } from './schema-store.ts'
 import { HttpError } from './http-error.ts'
 import { backup, saveTable } from './write.ts'
-import { TableSave } from '../../shared/table-edit.ts'
+import { SheetEdit, TableSave } from '../../shared/table-edit.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { p4Runner } from '../p4-split.ts'
 import { sampleOne, tableSample } from './sample.ts'
@@ -26,6 +26,7 @@ import { runExport } from './export.ts'
 import { enumRename } from './enum-rename.ts'
 import { cellHistory } from './cell-history.ts'
 import { MAX_SYNC, syncTables, type SyncBody } from './sync.ts'
+import { dropProposal, getProposal, putProposal } from './proposals.ts'
 import { markResolved, mergeSources, submitTable, vcsStatus } from './vcs-ops.ts'
 import type { EnumRename } from '../../shared/table-enum-rename.ts'
 import { stream } from 'hono/streaming'
@@ -337,6 +338,49 @@ export function tablesApi(deps: TablesDeps) {
           const right = await projectOf(deps, c.req.query('other') ?? '')
           if (!tablesOn(left.cfg) || !tablesOn(right.cfg)) throw new HttpError(t('两个项目都要先设好表格目录'))
           return c.json(await compareProjects(left, right))
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      // AI 提的改动（table.propose 存进来，表格页取出来给用户看、放进表格后丢掉）
+      .get('/:id/proposal', async (c) => {
+        try {
+          const { project, dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const p = safeRel(dir, c.req.query('path') ?? '', cfg)
+          return c.json({ proposal: getProposal(project.id, p.rel) })
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      .post('/:id/proposal', async (c) => {
+        try {
+          const { project, dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const b = (await c.req.json()) as Record<string, unknown>
+          const p = safeRel(dir, String(b.path ?? ''), cfg)
+          const edit = SheetEdit.parse(b.edit)
+          const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
+          return c.json(
+            putProposal(project.id, {
+              path: p.rel,
+              sheet: edit.name,
+              mtime: String(b.mtime ?? ''),
+              edit,
+              note: String(b.note ?? '').slice(0, 2000),
+              cells: num(b.cells),
+              added: num(b.added),
+              removed: num(b.removed),
+            }),
+          )
+        } catch (e) {
+          return fail(c, e)
+        }
+      })
+      .delete('/:id/proposal', async (c) => {
+        try {
+          const { project, dir, cfg } = await projectOf(deps, c.req.param('id'))
+          const p = safeRel(dir, c.req.query('path') ?? '', cfg)
+          dropProposal(project.id, p.rel, c.req.query('pid') || undefined)
+          return c.json({ ok: true })
         } catch (e) {
           return fail(c, e)
         }

@@ -82,6 +82,27 @@ const DEMO_SCHEMA = {
 let schema = TableSchema.parse(DEMO_SCHEMA)
 
 /** 示例表原样（版本记录里的 HEAD） */
+/** 演示的 AI 提议：补货记录末尾加两行 */
+const DEMO_PROPOSAL = {
+  id: 'demo',
+  path: 'data/stock.xlsx',
+  sheet: '补货记录',
+  edit: {
+    name: '补货记录',
+    rows: [{ at: 3, n: 2 }],
+    cells: [
+      ...['2026-02-03', 'p-1001', '150', '小林'].map((v, c) => ({ r: 3, c, v })),
+      ...['2026-02-05', 'p-1005', '60', '小周'].map((v, c) => ({ r: 4, c, v })),
+    ],
+  },
+  note: '按 1 月的出库量给 p-1001、p-1005 各补一次货，经办人沿用最近负责这两个商品的人',
+  cells: 8,
+  added: 2,
+  removed: 0,
+  at: '2026-11-10T09:00:00.000Z',
+}
+const demoDropped = new Set<string>()
+
 /** 演示的版本状态：提交时文件的修改时间、标记过冲突解决的项目 */
 const demoCommitted = new Map<string, string>()
 const demoResolved = new Set<string>()
@@ -315,6 +336,16 @@ export function demoTables(
       return { path, status: same ? 'same' : 'diff' }
     })
     return { pairs }
+  }
+  // AI 提的改动：演示里 stock.xlsx 的补货记录带一份（丢掉或放进表格后就没了）
+  if (kind === 'proposal' && method === 'GET') {
+    const path = query.get('path') ?? ''
+    if (path !== DEMO_PROPOSAL.path || demoDropped.has(p.id)) return { proposal: null }
+    return { proposal: { ...DEMO_PROPOSAL, mtime: MTIME } }
+  }
+  if (kind === 'proposal' && method === 'DELETE') {
+    demoDropped.add(p.id)
+    return { ok: true }
   }
   // 跨项目批量同步：演示里改内存里右边项目的表
   if (kind === 'sync' && method === 'POST') {

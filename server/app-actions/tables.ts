@@ -29,6 +29,34 @@ async function openSheet(pid: string, path: string, sheet: string | undefined, c
   return { doc, sheet: s, schema, header: headerOf(schema, path, s) }
 }
 
+/** 写之前按表格结构查改到的格子，不合规就拦下、原因交给模型 */
+async function mustPass(
+  pid: string,
+  path: string,
+  doc: TableDoc,
+  name: string,
+  schema: TableSchema,
+  plan: ReturnType<typeof planEdit>,
+  ctx: ActionCtx,
+) {
+  const after = { name, rows: plan.after }
+  const need = workbookNeeds(schema, path, [after])
+  const ext: Record<string, TableDoc['sheets'] | undefined> = {}
+  for (const f of need)
+    ext[f] = ((await ctx.api('GET', `/tables/${enc(pid)}/file?path=${enc(f)}`).catch(() => null)) as TableDoc | null)
+      ?.sheets
+  const bad = checkTouched(schema, path, after, plan.touched, (f) =>
+    f === path ? doc.sheets.map((s) => (s.name === name ? after : s)) : ext[f],
+  )
+  if (bad.length)
+    throw new ActionError(
+      `没有写：${bad.length} 处不符合表格结构\n${bad
+        .slice(0, 30)
+        .map((p) => `- 第 ${p.r + 1} 行 ${p.field}：${p.msg}`)
+        .join('\n')}\n改对后再提交；用户明确要求照写时加 force: true`,
+    )
+}
+
 export const tableActions = [
   defineAction({
     name: 'table.list',
@@ -86,25 +114,7 @@ export const tableActions = [
       } catch (e) {
         throw new ActionError((e as Error).message)
       }
-      if (!a.force) {
-        const after = { name: sheet.name, rows: plan.after }
-        const need = workbookNeeds(schema, a.path, [after])
-        const ext: Record<string, TableDoc['sheets'] | undefined> = {}
-        for (const f of need)
-          ext[f] = (
-            (await ctx.api('GET', `/tables/${enc(pid)}/file?path=${enc(f)}`).catch(() => null)) as TableDoc | null
-          )?.sheets
-        const bad = checkTouched(schema, a.path, after, plan.touched, (f) =>
-          f === a.path ? doc.sheets.map((s) => (s.name === sheet.name ? after : s)) : ext[f],
-        )
-        if (bad.length)
-          throw new ActionError(
-            `没有写：${bad.length} 处不符合表格结构\n${bad
-              .slice(0, 30)
-              .map((p) => `- 第 ${p.r + 1} 行 ${p.field}：${p.msg}`)
-              .join('\n')}\n改对后再提交；用户明确要求照写时加 force: true`,
-          )
-      }
+      if (!a.force) await mustPass(pid, a.path, doc, sheet.name, schema, plan, ctx)
       await ctx.api('POST', `/tables/${enc(pid)}/save`, { path: a.path, mtime: doc.mtime, sheets: [plan.edit] })
       return {
         saved: a.path,
@@ -113,6 +123,47 @@ export const tableActions = [
         added: a.add.length,
         removed: plan.removed,
         note: '只改了这些格子，文件格式没变；改之前的文件备份在面板的数据目录（tables-backup）。',
+      }
+    },
+  }),
+  defineAction({
+    name: 'table.propose',
+    title: '提议改表格（给用户确认）',
+    description:
+      '和 table.edit 参数一样，但不写文件：按表格结构检查通过后，把改动交给用户在表格页里看差异、确认后再放进表格保存。' +
+      '用户从表格页让你「照着描述加几行」「修检查出的问题」时用它，不要用 table.edit。note 用一两句话说明改了什么、依据是什么。同一张表再提会替换上一份。',
+    level: 'read',
+    input: TableEditInput.extend({
+      projectId: PID,
+      note: z.string().max(2000).default('').describe('给用户看的说明：改了什么、为什么'),
+    }),
+    run: async (a, ctx) => {
+      const pid = pidOf(a.projectId, ctx)
+      const { doc, sheet, schema, header } = await openSheet(pid, a.path, a.sheet, ctx)
+      if (!a.set.length && !a.add.length && !a.remove.length) throw new ActionError('set、add、remove 至少写一项')
+      let plan
+      try {
+        plan = planEdit(sheet.rows, header, schema.style.key, sheet.name, a)
+      } catch (e) {
+        throw new ActionError((e as Error).message)
+      }
+      if (!a.force) await mustPass(pid, a.path, doc, sheet.name, schema, plan, ctx)
+      await ctx.api('POST', `/tables/${enc(pid)}/proposal`, {
+        path: a.path,
+        mtime: doc.mtime,
+        edit: plan.edit,
+        note: a.note,
+        cells: plan.touched.length,
+        added: a.add.length,
+        removed: plan.removed,
+      })
+      return {
+        proposed: a.path,
+        sheet: sheet.name,
+        cells: plan.touched.length,
+        added: a.add.length,
+        removed: plan.removed,
+        note: '还没写进文件：用户在表格页看过差异、确认后才会放进表格。告诉用户去表格页看「AI 提的改动」。',
       }
     },
   }),

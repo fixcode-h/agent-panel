@@ -584,4 +584,28 @@ export const EN_TABLES: Record<string, string> = {
   '右边没有对应的表格目录，不知道放到哪':
     "The right project has no matching table folder, so there's nowhere to put it",
   两边没有都带这一列和主键列的工作表: 'No sheet has both this column and the key column on both sides',
+  '照着描述加几行…': 'Add rows from a description…',
+  'AI 修 {file} 的不合规': 'AI fixes problems in {file}',
+  '让 AI 修这 {n} 处不合规': 'Let AI fix these {n} problems',
+  没有不合规的格子: 'No problem cells',
+  'AI 解释 {field}': 'AI explains {field}',
+  '解释「{field}」这一列': 'Explain the "{field}" column',
+  '解释一列（先选中那一列的格子）': 'Explain a column (select a cell in it first)',
+  'AI 解释 {file}': 'AI explains {file}',
+  解释这张表: 'Explain this table',
+  'AI 给 {file} 加 {n} 行': 'AI adds {n} rows to {file}',
+  照着描述加几行: 'Add rows from a description',
+  '让 AI 写': 'Let AI write them',
+  加几行: 'How many rows',
+  要什么样的行: 'What the rows should be',
+  'AI 会先读这张表和相关的表，照已有数据的写法来；写完先给你看差异，确认后才放进表格':
+    "AI reads this table and related ones first and follows the existing data. You'll see the diff before anything goes into the table.",
+  '比如：5 个蓝色品质的镜子类软装，尺寸从 S 到 L，交互白名单和 1003 一样':
+    'For example: 5 blue-quality mirror decorations, sizes S to L, same interaction whitelist as 1003',
+  'AI 提的改动：改 {c} 格、加 {a} 行、删 {d} 行':
+    "AI's proposed changes: {c} cells changed, {a} rows added, {d} rows deleted",
+  '提出之后文件改过了，让 AI 重新提一次': 'The file changed after this was proposed; ask AI again',
+  丢掉: 'Discard',
+  'AI 提的改动': "AI's proposed changes",
+  '这个文件里已经没有工作表「{sheet}」': 'This file no longer has a sheet named "{sheet}"',
 }

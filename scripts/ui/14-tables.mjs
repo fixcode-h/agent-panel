@@ -210,6 +210,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('合并冲突：放进表格后没有对方新加的行'))
   await check(p, '表格页-合并结果', ['合并结果已放进表格', '米娅·星'])
   await p.getByRole('button', { name: '撤销（Ctrl+Z）' }).click()
+
+  // AI 提的改动：演示里库存表带一份，看差异后放进表格（一次改动，撤销退掉）
+  await p.getByRole('tab', { name: 'stock.xlsx' }).click()
+  await p.getByRole('button', { name: '看差异' }).click({ timeout: 8000 })
+  const prop = p.getByRole('dialog', { name: 'AI 提的改动' })
+  await prop
+    .getByText('p-1005')
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('AI 提议：差异里没有 AI 加的行'))
+  await check(p, '表格页-AI提的改动', ['放进表格'])
+  await prop.getByRole('button', { name: '放进表格' }).click()
+  if ((await p.getByRole('tab', { name: '补货记录' }).getAttribute('aria-selected')) !== 'true')
+    errors.push('AI 提议：放进表格后没有切到那张工作表')
+  await p.getByRole('button', { name: '撤销（Ctrl+Z）' }).click()
+  // 工具栏「AI」：加行、修不合规、解释
+  await p.getByRole('button', { name: 'AI', exact: true }).click()
+  await p.getByRole('menuitem', { name: '照着描述加几行…' }).click()
+  await check(p, '表格页-AI加行', ['要什么样的行', '让 AI 写'])
+  await p.getByRole('dialog', { name: '照着描述加几行' }).getByRole('button', { name: '取消' }).click()
   await p.getByRole('tab', { name: 'C_HomeDecorationConfig.xlsx' }).click()
 
   // 左栏「检查」：整个项目按结构查一遍，点一处跳到那一格

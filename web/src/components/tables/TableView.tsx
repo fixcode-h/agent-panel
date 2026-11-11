@@ -62,6 +62,7 @@ import { FindReplaceDialog } from './FindReplaceDialog'
 import { BackRefsDialog, CellMenu } from './CellMenu'
 import { CellHistoryDialog } from './CellHistoryDialog'
 import { ImportDialog } from './ImportDialog'
+import { AiMenu, ProposalBar, useProposal } from './TableAi'
 import { importEdit, sheetCsv, sheetJson } from '@shared/table-io'
 import { saveText } from '@/lib/save-file'
 import { ConflictBar, SubmitButton, useVcsStatus } from './TableVcs'
@@ -180,6 +181,7 @@ export function TableView({
   }
   const [vcs, setVcs, refreshVcs] = useVcsStatus(projectId, doc)
   const [importing, setImporting] = useState(false)
+  const [proposal, setProposal, refreshProposal] = useProposal(projectId, doc)
   const [cellHist, setCellHist] = useState<{ at: CellAt; title: string } | null>(null)
   const [finding, setFinding] = useState<{ sel: { rows: number[]; cols: number[] } | null } | null>(null)
   const struct = useTableStruct({
@@ -345,6 +347,20 @@ export function TableView({
           )
         }
       />
+      <ProposalBar
+        projectId={projectId}
+        doc={doc}
+        proposal={readOnly ? null : proposal}
+        schema={schema}
+        dirty={pending.length > 0}
+        onDrop={() => setProposal(null)}
+        onApply={(name, after, ops) => {
+          const i = doc.sheets.findIndex((x) => x.name === name)
+          if (i < 0) return
+          onEdits((e) => replaceIn(e, doc.sheets[i], after, ops))
+          if (i !== index) onSheet(i)
+        }}
+      />
       {stale && (
         <div
           role="alert"
@@ -420,6 +436,15 @@ export function TableView({
             else saveText(`${base}.json`, sheetJson(rows, view.from, struct.infos), 'application/json')
           }}
           onImport={readOnly ? undefined : () => setImporting(true)}
+        />
+        <AiMenu
+          projectId={projectId}
+          doc={doc}
+          sheet={sheet.name}
+          field={grid.focus && grid.focus.row >= view.from ? (struct.infos[grid.focus.col]?.field ?? '') : ''}
+          problems={struct.problems.map((p) => ({ ...p, field: struct.infos[p.c]?.field ?? '' }))}
+          readOnly={readOnly}
+          onProposal={refreshProposal}
         />
         <Button size="sm" variant="ghost" className="h-7" onClick={() => setEnumsOpen('')}>
           <BookA className="h-3.5 w-3.5" />

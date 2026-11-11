@@ -106,6 +106,13 @@
 
 动作在 `server/app-actions/tables.ts`（ADR 0011：能力只加进动作表，不加新的 MCP 工具）。`table.edit` 按主键或 Excel 行号改格子、末尾加行、删行，换成和表格页一样的「行操作 + 格子」走 `/save`；写之前 `checkTouched`，不合规就不写并把原因交给模型（`force: true` 只在用户明确要求时用）。
 
+## AI（表格页工具栏「AI」）
+
+- 照着描述加几行、让 AI 修这张表的不合规：在项目里开一个分析对话（`createAnalysisTask` + AI 窗口），提示词在 `shared/table-ai.ts`，要求 Agent 用 `table.propose`。
+- `table.propose`（`server/app-actions/tables.ts`）：参数同 `table.edit`，同样 `planEdit` + `checkTouched`，不合规拦下交给模型；通过后不写文件，`POST /proposal` 存进内存（`server/tables/proposals.ts`，每个文件只留最新一份，重启就没）。
+- 表格页打开文件、AI 对话结束时取 `GET /proposal`：上方提示条「看差异」按表头和主键出差异，「放进表格」用 `replaceIn` 成为一次改动（还要用户保存），然后 `DELETE /proposal`。提出之后文件 mtime 变了或页面上有没保存的改动时不让放（行号对不上）。状态只看工具调用存下的提议，不读模型回复的文字。
+- 解释一列 / 这张表：只读提示词，结果就在 AI 窗口的对话里。
+
 ## 不支持的
 
 - 老的 `.xls` / `.et`：只列出、标「只读」，不解析（npm 上的 SheetJS 0.18.5 有已知漏洞，不引入）。
