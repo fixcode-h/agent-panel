@@ -1,28 +1,17 @@
 import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
-import { stat } from 'node:fs/promises'
-import { aliasAgent, type AgentUsage, type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
-import { getCli } from '../../shared/clis.ts'
+import { type AgentUsage, type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
 import { hookMarker } from '../../shared/hooks.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
 import { addNoteTaker, type NoteTaker } from './delivery.ts'
 
-import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
-import {
-  changesSince,
-  mergeChanges,
-  ownedChanges,
-  stepUsage,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
+import { changesSince, mergeChanges, ownedChanges, stepUsage, withAttachments } from '../../shared/task.ts'
 
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { trackFileWrite, trackOutside } from './outside-changes.ts'
-import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
@@ -52,23 +41,15 @@ import {
 } from './recovery.ts'
 export { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, type ContextNote, type NetNote }
 import { awaitingCompact, CompactTracker, settleCompactRow } from './compaction.ts'
-import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
-import { fillSkills } from '../../shared/expose.ts'
-
-import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
-import { withSkillDir } from '../../shared/skill-guide.ts'
 
 import { invokeCli, type CliControl } from './invoke.ts'
 
 import { REDIRECT_LIMITS, REDIRECT_NOTE, redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
 
-import { promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.ts'
-import { ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 
-import { turnRole } from '../../shared/conv-mode.ts'
 import { pluginRunTools } from './plugin-run.ts'
 import { seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
@@ -90,12 +71,11 @@ import { newRunState } from './run-state.ts'
 import { createApply } from './run-events.ts'
 import { createWaiting } from './run-wait.ts'
 import { afterProcess, finishTurn } from './run-finish.ts'
+import { prepareLaunch, resolveTarget } from './run-setup.ts'
 import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 // runAgent 里职责完整的几块拆在这些文件：模型和上限、选会话、拼输入、启动参数、进程没跑完一轮时交回什么
-import { resolveModelRun, windowLookup } from './model-run.ts'
+import { windowLookup } from './model-run.ts'
 import { pickSession } from './session-pick.ts'
-import { composeInput } from './compose-input.ts'
-import { launchOptions } from './launch-options.ts'
 import { exitResult, idleWarning } from './exit-result.ts'
 // 测试从这里取（以前定义在这个文件里）
 export { continuesOutput }
@@ -161,29 +141,10 @@ async function runAgent(
   const { task, settings, project } = ctx
   // 本轮开始的索引：重试成功时只收这一轮以后的卡（用户插话会往同一轮里再 push user，不能按 role 猜边界）
   const turnStart = task.messages.length
-  // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）；Chat 页选的角色被删了按内置助手跑（turnRole）
-  const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
-  const found = turnRole(ctx.task, ctx.agents, id)
-  if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
-  if (id && found.id !== id) log.info('agent', 'Chat 对话的角色已被删除，按内置助手跑', { task: task.id, agentId: id })
-  // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
-  const agent =
-    call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
-  const run = agentRun(agent, settings)
-  const cliId = run.cli
-  const def = getCli(cliId)
-  if (!def) return { ok: false, error: t('未知的 Agent：{cli}', { cli: cliId }) }
-  const cs = cliSettings(settings, cliId)
-  if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
-  if (!agent.enabled) return { ok: false, error: t('角色「{name}」已停用', { name: agent.name }) }
-  const cwd = project.path
-  const dir = await stat(cwd).catch(() => null)
-  if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
-
-  const model = run.model
-  // 思考强度（模型不认的换掉或去掉）和上下文上限在 model-run.ts 算
-  const { entries, requested, effort, manual, limits } = await resolveModelRun(cliId, run, cs)
+  // 用哪个角色、哪个 CLI、哪个模型和目录（不能跑就交回原因）在 run-setup.ts
+  const target = await resolveTarget(ctx, call)
+  if (target.error !== undefined) return { ok: false, error: target.error }
+  const { found, agent, cliId, def, cs, cwd, model, entries, requested, effort, manual, limits } = target
   const op = call.op
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
@@ -209,10 +170,6 @@ async function runAgent(
     retryCarry,
   })
   const windowFor = await windowLookup(cliId, model, limits, cs, entries)
-  const role = withSkillDir(
-    composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim(),
-    sharedRoot(),
-  )
   /** 上下文超长降级时留给旧对话的 token 预算：剩下的给角色设定、提示词和这一轮的要求 */
   const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
   /**
@@ -240,74 +197,10 @@ async function runAgent(
   // 会话是另一个 CLI 的（对话里换了、角色改了）：说一声旧会话不再续用。换了后空闲的对话马上预热，预热轮也要记，不然之后没机会说
   if (chat && task.sessions[sessionKey] && task.sessionCli && task.sessionCli !== cliId)
     recoveryNote(cliSwitchedText(task.sessionCli, cliId), true)
-  // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
-  // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
-  // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
-  const taskDir = await taskFiles(task.id) // 对话目录：截图和临时文件放这里，规则进系统提示词（见 task-files.ts）
-  const instructions = [
-    role,
-    def.systemPromptFlag ? promptLangRules() : '',
-    promptUserNameRules(settings.userName),
-    def.systemPromptFlag ? taskDir.rule : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
-  // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
-  const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
-  // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
-  await ensureBundled(
-    fillSkills(
-      [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
-      task.skillSlots,
-    ),
-  )
-  // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
-  const composed = await composeInput({
-    ctx,
-    call,
-    def,
-    cliId,
-    cwd,
-    chat,
-    step,
-    resume,
-    carry,
-    instructions,
-    taskDir,
-    found,
-  })
-  let input = composed.input
-  const orch = composed.orch
-  // 启动参数和环境变量（自动压缩、上下文上限、放行的目录这些）在 launch-options.ts
-  const { pct, build, env } = await launchOptions({
-    ctx,
-    def,
-    cs,
-    agent,
-    model,
-    effort,
-    limits,
-    resume,
-    fork,
-    op,
-    chat,
-    instructions,
-    systemPromptModPath,
-    taskDir,
-    cwd,
-    windowFor,
-  })
-
-  // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
-  const argv = [
-    cs.command,
-    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? t('<角色设定>') : a)),
-  ]
-  const owner = step ? task.steps.find((s) => s.id === step) : undefined
-  if (owner) owner.command = argv
-  else task.command = argv
-  log.info('agent', `启动 ${def.name}`, { task: task.id, step, agent: agent.name, cwd, command: argv.join(' ') })
-
+  // 角色设定、这一轮的输入、启动参数和启动命令在 run-setup.ts
+  const launch = await prepareLaunch(ctx, call, target, { step, chat, op, resume, fork, carry, windowFor })
+  const { instructions, orch, pct, build, env, owner } = launch
+  let input = launch.input
   // 节点开始前的改动统计，结束后相减得到这个节点改了什么
   const before = task.changes.map((c) => ({ ...c }))
   const touched = new Set<string>()
