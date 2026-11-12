@@ -1,13 +1,13 @@
 /**
- * 从完整任务裁出 Agent 流程数据的精简行（扩展 4，汇总见 shared/agent-stats.ts）。
+ * 从完整任务裁出 Agent 流程数据的精简行（扩展 4，汇总见 shared/agents/stats.ts）。
  * 接口 GET /tasks/flow 返回它的结果，评测脚本（scripts/real-cli/eval.mjs）也用同一个口径。
  * 列表接口给的任务只带用户消息：合回失败认的是父对话发来的那条消息（role 为 user、带 peer），照样数得到
  */
-import type { FlowBrief } from './agent-stats.ts'
-import { isChatMode } from './conv-mode.ts'
-import type { Task } from './schema.ts'
-import { reworkCounts } from './tasks/export.ts'
-import { taskDeleted, waitDuration } from './task.ts'
+import type { FlowBrief } from './stats.ts'
+import { isChatMode } from '../conv-mode.ts'
+import type { Task } from '../schema.ts'
+import { reworkCounts } from '../tasks/export.ts'
+import { taskDeleted, waitDuration } from '../task.ts'
 
 /** 往上找到顶层对话，以及它名下的那一层：对话页只能在顶层对话的右栏里打开它的直接子对话 */
 function rootPane(tk: Task, byId: Map<string, Task>) {

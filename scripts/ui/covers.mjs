@@ -215,8 +215,8 @@ export const UI_SHARD_COVERS = {
     'shared/bug/overview.ts',
     'shared/bug/stats.ts',
     // 流程视图的精简行和汇总
-    'shared/agent-stats.ts',
-    'shared/agent-flow-briefs.ts',
+    'shared/agents/stats.ts',
+    'shared/agents/flow-briefs.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
   // 手机宽度走一遍「首页 → 总览 → 点进去 → 看报告 → 确认」（分析稿 U9）

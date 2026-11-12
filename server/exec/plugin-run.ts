@@ -6,7 +6,7 @@
 import type { Agent } from '../../shared/schema.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
-import { includedAgents } from '../../shared/agent-role.ts'
+import { includedAgents } from '../../shared/agents/role.ts'
 import { taskPlugin } from '../../shared/task.ts'
 import { pluginToolsForRun } from '../plugins/index.ts'
 import type { PluginConfirm } from '../plugins/sdk.ts'

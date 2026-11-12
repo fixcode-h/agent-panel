@@ -18,7 +18,7 @@ import type {
   TestStep,
   Workflow,
 } from '@shared/schema'
-import type { DerivedParam } from '@shared/agent-params'
+import type { DerivedParam } from '@shared/agents/params'
 import type { GlobalLessonChange } from '@shared/lessons'
 import { ENV_LABEL } from '@shared/test-steps'
 import { api } from '@/lib/api'

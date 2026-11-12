@@ -4,9 +4,9 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { agentFlowBriefs } from './agent-flow-briefs.ts'
-import { agentStats, flowHotspots, type FlowBrief } from './agent-stats.ts'
-import { Task } from './schema.ts'
+import { agentFlowBriefs } from './flow-briefs.ts'
+import { agentStats, flowHotspots, type FlowBrief } from './stats.ts'
+import { Task } from '../schema.ts'
 
 const at = (min: number) => new Date(Date.UTC(2026, 10, 11, 8, 0) + min * 60_000).toISOString()
 const task = (id: string, extra: Record<string, unknown> = {}) =>

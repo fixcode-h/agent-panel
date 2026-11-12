@@ -148,7 +148,7 @@ export const AgentInput = z.object({
   /**
    * 角色的层：basic 基本角色（专注一个能力，派成子任务、当工作流节点、被高级角色挂载）；
    * advanced 高级角色（父对话、子对话的负责人：挂载若干基本角色，自己决定就地做还是派出）。
-   * 旧数据没有这个字段：按 roleKind（shared/agent-role.ts）从能力开关和挂载推导，不迁移
+   * 旧数据没有这个字段：按 roleKind（shared/agents/role.ts）从能力开关和挂载推导，不迁移
    */
   kind: z.enum(['basic', 'advanced']).optional().catch(undefined),
   /**

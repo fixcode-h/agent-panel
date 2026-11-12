@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Agent, Workflow } from '../shared/schema.ts'
+import { Agent, Workflow } from '../schema.ts'
 import {
   AGENT_LOCAL_FIELDS,
   copyName,
@@ -10,7 +10,7 @@ import {
   shareFileName,
   shareFingerprint,
   sharePackage,
-} from '../shared/agent-share.ts'
+} from './share.ts'
 
 const at = '2026-01-01T00:00:00.000Z'
 

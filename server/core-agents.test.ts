@@ -20,7 +20,7 @@ import {
   LOG_TIMELINE_TEXT,
 } from '../shared/builtin/bug-method.ts'
 import { TURN_PROGRESS_RULES } from '../shared/turn-rules.ts'
-import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
+import { renderTemplate, resolveParams } from '../shared/agents/role.ts'
 import { ensureProjectAgents, upgradeBuiltinAgents } from '../shared/builtin/install.ts'
 import {
   CORE_AGENTS,

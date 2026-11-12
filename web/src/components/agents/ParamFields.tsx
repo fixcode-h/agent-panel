@@ -9,7 +9,7 @@ import {
   resolveParams,
   shownParam,
   valueText,
-} from '@shared/agent-role'
+} from '@shared/agents/role'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { moveItem, useDragSort } from '@/lib/useDragSort'

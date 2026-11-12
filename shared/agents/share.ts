@@ -11,9 +11,9 @@
  *    只有工作流本身同名时才问「覆盖还是另存为副本」，角色从不静默覆盖。
  */
 import { z } from 'zod'
-import { AgentInput, WorkflowFields, type Agent, type Workflow } from './schema.ts'
-import { contentHash } from './hash.ts'
-import { t } from './i18n.ts'
+import { AgentInput, WorkflowFields, type Agent, type Workflow } from '../schema.ts'
+import { contentHash } from '../hash.ts'
+import { t } from '../i18n.ts'
 
 /** 包的类型标记：读文件时先看它，别的 JSON 直接拒 */
 export const SHARE_FORMAT = 'agent-panel/share'

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { resolveParams } from '../../shared/agent-role.ts'
+import { resolveParams } from '../../shared/agents/role.ts'
 import { findCore } from '../../shared/builtin/core.ts'
 import { DOC_PLACE_SIBLING, resolveDocRoot, type DocGroupView } from '../../shared/doc-root.ts'
 import { t } from '../../shared/i18n.ts'

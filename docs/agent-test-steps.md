@@ -376,7 +376,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 
 以前要在 `Workflow.expose` 里手工加 `target: agent` 的一条。现在改成**按项目当前工作流实际用到的 Agent 派生**：
 
-`shared/agent-params.ts` 的 `derivedParams(workflow, agents)`：
+`shared/agents/params.ts` 的 `derivedParams(workflow, agents)`：
 
 1. 收集主 Agent + 所有节点 / 步骤里的 Agent（去重）。
 2. 收集它们的 `AgentParam`。
@@ -396,7 +396,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 
 ### 参数联动
 
-`AgentParam` 可以按**排在前面**的参数决定自己（`shared/agent-role.ts` 的 `resolveParams` 从上往下算）：
+`AgentParam` 可以按**排在前面**的参数决定自己（`shared/agents/role.ts` 的 `resolveParams` 从上往下算）：
 
 - `when`：显示条件，`{ key, values, not }`。前面参数取 `values` 里任一值时成立，`values` 为空表示「有值」，开关写 `'true'` / `'false'`。
   不成立时这个参数**隐藏**：不问、不算缺、值按空处理（开关是关、单选是空），角色设定里 `{{#if key}}` 不成立，「本次的参数」里也不列。
@@ -454,7 +454,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 | `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                                                                            |
 | `shared/builtin/merged.ts`                              | 已合并的 Agent 说明和参数换算                                                                                                                           |
 | `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                                                                                 |
-| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
+| `shared/agents/params.ts`                               | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
 | `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`stepApplies` / `pickSteps` / `parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计（`testRunSummary` 给界面） |
 | `scripts/changed-tests.mjs`                             | 改动清单 → 影响面 → 要跑的单测文件和界面检查分片（CLI，含 mtime 缓存与 `--run`）                                                                        |
 | `scripts/lib/import-graph.mjs`                          | import 依赖图：解析别名 / 扩展名、建正反向边、反向依赖闭包，纯逻辑                                                                                      |

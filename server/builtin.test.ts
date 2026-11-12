@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { AgentInput, Project, ProjectCategory, Workflow, WorkflowInput, type Agent } from '../shared/schema.ts'
-import { composeRole, nodeMissingParams, resolveParams } from '../shared/agent-role.ts'
+import { composeRole, nodeMissingParams, resolveParams } from '../shared/agents/role.ts'
 import { findRefCycle, nodeSteps, topoOrder } from '../shared/flow.ts'
 import { frontField } from '../shared/library.ts'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow } from '../shared/builtin/default.ts'

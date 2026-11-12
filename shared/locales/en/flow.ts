@@ -220,7 +220,7 @@ export const EN_FLOW: Record<string, string> = {
     'A workflow organizes roles into a team: pick a main role to drive the work, add a few sub-roles, then arrange the execution order in the flowchart.',
   新建工作流: 'New workflow',
 
-  // 导入导出（分享包，见 shared/agent-share.ts）
+  // 导入导出（分享包，见 shared/agents/share.ts）
   '不是有效的 JSON 文件': 'Not a valid JSON file',
   '这不是角色或工作流的分享包：{error}': 'This isn’t a role or workflow share package: {error}',
   '旧版导出的工作流文件格式不对：{error}': 'The old-format workflow file is invalid: {error}',

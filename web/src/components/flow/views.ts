@@ -2,7 +2,7 @@ import type { Agent, Flow, FlowRef, Workflow, WorkflowInput } from '@shared/sche
 import { t } from '@shared/i18n'
 import { flowLabel, nodeAgent, nodeSteps, reachable, refLabel } from '@shared/flow'
 import { plainLine } from '@/lib/tasks'
-import { nodeAgentRun } from '@shared/agent-role'
+import { nodeAgentRun } from '@shared/agents/role'
 import type { HookSlot, NodeView } from './FlowCanvas'
 
 type W = Pick<WorkflowInput, 'flows' | 'entryFlowId' | 'mainAgentId'>

@@ -2,7 +2,7 @@
 
 状态：已接受（P1、P2 的子对话自驱已落地；其余见「分期」） · 2026-11-02
 
-- 影响范围：`shared/drive.ts`（新增）、`server/tasks/drive.ts`（新增，从 `children.ts` 拆出）、`shared/turn-rules.ts`（新增）、`server/tasks/inbox-file.ts`（新增）、`server/tasks/children.ts`、`server/tasks/merge.ts`、`server/tasks/run.ts`、`server/tasks/conversation-routes.ts`、`server/app-actions/tasks.ts`、`shared/conv-mode.ts`、`shared/peer-message.ts`、`shared/engine.ts`、`shared/helper-batch.ts`、`server/store.ts`、`server/exec/runner.ts`、`server/exec/cli-trace.ts`、`shared/lifecycle.ts`、`server/tasks/lifecycle.ts`、`shared/alerts.ts`、内置约束（`shared/builtin/agents.ts`、`chat-agents.ts`）、`shared/agent-role.ts`
+- 影响范围：`shared/drive.ts`（新增）、`server/tasks/drive.ts`（新增，从 `children.ts` 拆出）、`shared/turn-rules.ts`（新增）、`server/tasks/inbox-file.ts`（新增）、`server/tasks/children.ts`、`server/tasks/merge.ts`、`server/tasks/run.ts`、`server/tasks/conversation-routes.ts`、`server/app-actions/tasks.ts`、`shared/conv-mode.ts`、`shared/peer-message.ts`、`shared/engine.ts`、`shared/helper-batch.ts`、`server/store.ts`、`server/exec/runner.ts`、`server/exec/cli-trace.ts`、`shared/lifecycle.ts`、`server/tasks/lifecycle.ts`、`shared/alerts.ts`、内置约束（`shared/builtin/agents.ts`、`chat-agents.ts`）、`shared/agents/role.ts`
 - 修改：[ADR 0032](./0032-conversations-keep-going.md) 第一、二节（推进次数、子对话推一次就报父对话），[ADR 0037](./0037-chat-and-agent-modes.md) 的推进次数（子对话也是 3 次）
 
 > 2026-11-03：推进次数改成设置项 `nudgeMax`（默认 6，范围 0–20，0 表示不自动推），第 2 节「同一进度最多 3 次」按设置走；Chat 页仍固定 1 次。

@@ -3,7 +3,7 @@ import { toast } from '@/lib/toast'
 import type { Agent, Workflow } from '@shared/schema'
 import type { Proposal } from '@shared/assist'
 import type { ProjectProposal } from '@shared/projects/init'
-import { derivedParams, isDefaultValue } from '@shared/agent-params'
+import { derivedParams, isDefaultValue } from '@shared/agents/params'
 import { t } from '@shared/i18n'
 import type { AiSession, ApplyAi, SetDraft, SetField } from './project-draft'
 

@@ -1,7 +1,7 @@
 import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
 import type { BugBrief } from '@shared/bug/overview'
-import type { FlowBrief } from '@shared/agent-stats'
+import type { FlowBrief } from '@shared/agents/stats'
 import type { SharedDirInfo } from '@shared/shared-dir'
 import type { SpeedRow } from '@shared/cli/api-speed'
 import { trackedFetch } from './connection'
@@ -609,7 +609,7 @@ export const api = {
   taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
   /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug/overview.ts） */
   taskBugs: () => request<BugBrief[]>('/tasks/bugs'),
-  /** 总览页流程视图：所有 Agent 模式对话的流程数据（shared/agent-flow-briefs.ts） */
+  /** 总览页流程视图：所有 Agent 模式对话的流程数据（shared/agents/flow-briefs.ts） */
   taskFlow: () => request<FlowBrief[]>('/tasks/flow'),
   /** 每个对话的磁盘占用 */
   taskDisk: () => request<TaskDiskItem[]>('/tasks/disk'),

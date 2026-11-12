@@ -67,7 +67,7 @@ import {
   includeDepth,
   includeTree,
   wouldCycle,
-} from '@shared/agent-role'
+} from '@shared/agents/role'
 import { DocEditor } from '@/components/workflows/DocEditor'
 import {
   MenuItem,

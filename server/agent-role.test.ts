@@ -17,7 +17,7 @@ import {
   resolveParams,
   templateKeys,
   wouldCycle,
-} from '../shared/agent-role.ts'
+} from '../shared/agents/role.ts'
 
 const agent = (id: string, o: Partial<AgentInput> = {}): Agent => ({
   ...AgentInput.parse({ name: id, ...o }),

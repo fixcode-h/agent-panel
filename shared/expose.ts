@@ -1,5 +1,5 @@
 import type { Agent, FlowNode, ParamValues, Workflow, WorkflowExpose } from './schema.ts'
-import { projectAgentValues, workflowAgentIds } from './agent-params.ts'
+import { projectAgentValues, workflowAgentIds } from './agents/params.ts'
 import { resolveSkills } from './skill-guide.ts'
 
 /**
@@ -91,7 +91,7 @@ function documentPart(w: Pick<Workflow, 'expose'>, values: Record<string, string
  * 解析成任务里存的那份工作流：说明和节点参数按配置落好，技能槽留给角色拼装
  * （技能在 Agent 上，不在工作流里），expose 清空。
  *
- * 项目里填的 Agent 参数（按工作流实际用到的 Agent 派生，见 shared/agent-params.ts）先落到节点上，
+ * 项目里填的 Agent 参数（按工作流实际用到的 Agent 派生，见 shared/agents/params.ts）先落到节点上，
  * 再走 expose：expose 是最具体的配置源，同名时覆盖派生值。派生只作用于声明了这个参数的 Agent 的节点，
  * 节点上其他值不动。
  */

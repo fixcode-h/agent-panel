@@ -194,11 +194,6 @@
     ],
     "shared": [
       "accounts.ts",
-      "agent-flow-briefs.ts",
-      "agent-params.ts",
-      "agent-role.ts",
-      "agent-share.ts",
-      "agent-stats.ts",
       "alerts.ts",
       "allow-rules.ts",
       "analysis-home.ts",

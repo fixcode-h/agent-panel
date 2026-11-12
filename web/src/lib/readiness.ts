@@ -2,7 +2,7 @@ import { shortVersion } from './cli-style'
 import { type Agent, type CliStatus, type DirInfo, type Workflow } from '@shared/schema'
 import { entryFlow, findRefCycle, flowLabel, getFlow, nodeSteps, reachable, refsOf, topoOrder } from '@shared/flow'
 import { t } from '@shared/i18n'
-import { nodeMissingParams, paramLabel } from '@shared/agent-role'
+import { nodeMissingParams, paramLabel } from '@shared/agents/role'
 
 export interface Check {
   ok: boolean

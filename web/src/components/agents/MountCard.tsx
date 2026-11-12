@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react'
 import { type Agent, type AgentMount } from '@shared/schema'
-import { canInline, canSubtask, mountMode } from '@shared/agent-role'
+import { canInline, canSubtask, mountMode } from '@shared/agents/role'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'

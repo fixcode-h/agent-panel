@@ -1,6 +1,6 @@
 import { AgentInput, WorkflowInput, type Agent, type Workflow } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { includedAgents } from '@shared/agent-role'
+import { includedAgents } from '@shared/agents/role'
 import { isBuiltinAgent } from '@shared/builtin/core'
 import {
   copyName,
@@ -10,11 +10,11 @@ import {
   type ShareKind,
   type ShareMode,
   type SharePackage,
-} from '@shared/agent-share'
+} from '@shared/agents/share'
 import { api } from './api'
 
 /**
- * 角色 / 工作流的导出导入（分享包格式见 shared/agent-share.ts）。
+ * 角色 / 工作流的导出导入（分享包格式见 shared/agents/share.ts）。
  * 导出成文件、导入落库都在前端做：格式校验和指纹都走同一份共享逻辑，服务端只负责最后的 schema 校验。
  *
  * 导入的取舍：

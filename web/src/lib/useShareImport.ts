@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
-import type { ShareKind, ShareMode } from '@shared/agent-share'
+import type { ShareKind, ShareMode } from '@shared/agents/share'
 import { ImportConflict, importShare, type ImportResult } from '@/lib/transfer'
 
 /**

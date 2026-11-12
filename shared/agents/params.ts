@@ -1,6 +1,6 @@
-import type { Agent, AgentParam, ParamValue, ParamValues, Workflow } from './schema.ts'
-import { nodeSteps } from './flow.ts'
-import { coerceValue, isEmptyValue, paramLabel } from './agent-role.ts'
+import type { Agent, AgentParam, ParamValue, ParamValues, Workflow } from '../schema.ts'
+import { nodeSteps } from '../flow.ts'
+import { coerceValue, isEmptyValue, paramLabel } from './role.ts'
 
 /**
  * 工作流里实际用到的 Agent 参数：项目设置里派生出来给用户配，不再要工作流作者手工加 expose。

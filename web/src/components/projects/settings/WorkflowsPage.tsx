@@ -1,6 +1,6 @@
 import { Plus, Sparkles, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { ParamValue, ProjectInput, Workflow } from '@shared/schema'
-import { derivedParams, agentParamGroups } from '@shared/agent-params'
+import { derivedParams, agentParamGroups } from '@shared/agents/params'
 import { exposesForVcs } from '@shared/doc-root'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'

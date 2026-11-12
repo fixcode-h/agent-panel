@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { resolveParams } from '@shared/agent-role'
+import { resolveParams } from '@shared/agents/role'
 import { DOC_PLACE_SIBLING, resolveDocRoot, type DocGroupView } from '@shared/doc-root'
 import { t } from '@shared/i18n'
 import type { Agent, ParamValues } from '@shared/schema'

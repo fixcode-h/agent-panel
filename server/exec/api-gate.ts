@@ -5,7 +5,7 @@ import type { RealContext } from './real-context.ts'
 import { type TaskStep, aliasAgent } from '../../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { clearApiWait, markApiWait } from './api-wait.ts'
-import { nodeAgentRun } from '../../shared/agent-role.ts'
+import { nodeAgentRun } from '../../shared/agents/role.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
 import { withTaskModel } from '../../shared/tasks/run.ts'
 

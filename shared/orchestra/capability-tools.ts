@@ -1,5 +1,5 @@
 // Orchestra 的能力类工具（从 shared/engine.ts 的 makeOrchestra 拆出来）。
-import { loadCapability } from '../agent-role.ts'
+import { loadCapability } from '../agents/role.ts'
 import { normInlinePaths } from '../inline-edit.ts'
 import { findLessons } from '../lessons.ts'
 import { findExperience } from '../experience.ts'

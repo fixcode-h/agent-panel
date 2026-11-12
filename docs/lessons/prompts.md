@@ -1,5 +1,5 @@
 ---
-paths: shared/builtin/**, shared/engine.ts, server/tasks/run.ts, shared/assist.ts, shared/agent-*.ts, shared/test-steps.ts, server/agent-params*.ts, docs/agent-test-steps.md
+paths: shared/builtin/**, shared/engine.ts, server/tasks/run.ts, shared/assist.ts, shared/agents/*.ts, shared/test-steps.ts, server/agent-params*.ts, docs/agent-test-steps.md
 ---
 
 # 给 Agent 的提示词

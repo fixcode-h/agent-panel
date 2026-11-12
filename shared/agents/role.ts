@@ -6,12 +6,12 @@ import {
   type ParamCond,
   type ParamValue,
   type ParamValues,
-} from './schema.ts'
-import { t } from './i18n.ts'
-import { tierOf } from './settings.ts'
-import { fillSkills } from './expose.ts'
-import { skillLine } from './skill-guide.ts'
-import { TURN_PROGRESS_RULES } from './turn-rules.ts'
+} from '../schema.ts'
+import { t } from '../i18n.ts'
+import { tierOf } from '../settings.ts'
+import { fillSkills } from '../expose.ts'
+import { skillLine } from '../skill-guide.ts'
+import { TURN_PROGRESS_RULES } from '../turn-rules.ts'
 
 /**
  * Agent 的角色设定：引入其他 Agent、参数和条件分支、要用的 Skill，最后拼成交给 CLI 的一段说明。

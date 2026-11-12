@@ -1,5 +1,5 @@
 import { AgentInput, type Agent, type AgentParam, type ParamValue, type ParamValues, type Project } from '../schema.ts'
-import { coerceValue, isEmptyValue } from '../agent-role.ts'
+import { coerceValue, isEmptyValue } from '../agents/role.ts'
 import { t } from '../i18n.ts'
 import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
 import { builtinAgents } from './catalog.ts'

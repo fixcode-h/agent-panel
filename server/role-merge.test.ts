@@ -9,7 +9,7 @@ import {
   setAgentAliases,
   type Agent,
 } from '../shared/schema.ts'
-import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
+import { renderTemplate, resolveParams } from '../shared/agents/role.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { MERGED_AGENTS } from '../shared/builtin/merged.ts'
 import { MOVED_TO_PLUGINS } from '../shared/builtin/plugin-content.ts'

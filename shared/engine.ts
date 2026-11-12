@@ -14,7 +14,7 @@ import { conversationTools } from './orchestra/conversation-tools.ts'
 import { capabilityTools } from './orchestra/capability-tools.ts'
 import { recordRoute } from './orchestra/route.ts'
 
-import { commonAgents, includedAgents, mountedAgents, paramsProblem } from './agent-role.ts'
+import { commonAgents, includedAgents, mountedAgents, paramsProblem } from './agents/role.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from './inline-edit.ts'
 import {
   END,
@@ -1417,7 +1417,7 @@ function spawn(oc: OrchCtx, ...[tasks, step, opts]: Parameters<Orchestra['spawn'
         error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
       }
   }
-  // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agent-role.ts 的 mountMode）。
+  // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agents/role.ts 的 mountMode）。
   // 设成「就地用」的不派出：派出去是另一套冷启动的上下文，等于绕开了挂载的约定，也白花一次注入
   const mounts = selfAgent ? mountedAgents(selfAgent, host.agents) : []
   const mountOf = (want: string | undefined) =>

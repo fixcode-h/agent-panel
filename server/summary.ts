@@ -16,7 +16,7 @@ import { z } from 'zod'
 import { getCli } from '../shared/clis.ts'
 import type { Agent, Project, Task } from '../shared/schema.ts'
 import { taskDeleted } from '../shared/task.ts'
-import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
+import { renderTemplate, resolveParams } from '../shared/agents/role.ts'
 import {
   activeInRange,
   collectRangeProjects,
