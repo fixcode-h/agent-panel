@@ -30,7 +30,7 @@ const empty = { list: async () => [], get: async () => null }
 const api = () => tasksApi({ agents: empty, workflows: empty, projects: empty, projectCategories: empty } as never)
 const store = createTaskStore()
 const at = '2026-10-01T02:00:00.000Z'
-const msgFile = (id: string) => path.join(dir, 'tasks', 'chats', `${id}.messages.json`)
+const msgFile = (id: string) => path.join(dir, 'tasks', 'chats', `${id}.messages.jsonl`)
 /** 用过就清掉回收计时：不然测试文件要等它到点才能退出 */
 test.afterEach(() => {
   for (const id of ['seen-only', 'seen-keeps-messages', 'seen-twice', 'presence-lite']) forgetPresence(id)
@@ -114,7 +114,7 @@ test('updateMeta：内存里读过的完整对话跟着更新，不会把旧值�
   const again = (await read.get('meta-full-cache'))!
   assert.equal(again.turnSeenAt, at, '缓存里那份也跟着改了')
   assert.equal(again.messages.length, 2, '对话没有被任务文件里那几条用户消息顶掉')
-  // 再开一个 store 从磁盘读：meta 只写任务文件，对话仍然从 `.messages.json` 里补齐
+  // 再开一个 store 从磁盘读：meta 只写任务文件，对话仍然从对话文件里补齐
   const fresh = (await createTaskStore().get('meta-full-cache'))!
   assert.equal(fresh.turnSeenAt, at)
   assert.equal(fresh.messages.length, 2, '落盘后的对话还是完整的两条')

@@ -4,7 +4,7 @@ import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
-import { capture } from './exec/process.ts'
+import { gitRun } from './exec/git.ts'
 import { pickFiles } from './pick-file.ts'
 import { DATA_DIR } from './store.ts'
 import { relativeAttachName } from './attachments.ts'
@@ -417,13 +417,9 @@ const MAX_FILES = 20_000
 
 /** 项目里的文件（相对路径）：git 仓库用 ls-files，尊重 .gitignore；不是仓库时自己遍历，跳过常见的产物目录 */
 async function projectFiles(root: string): Promise<string[]> {
-  const r = await capture(
-    'git',
-    ['-c', 'core.quotepath=off', 'ls-files', '--cached', '--others', '--exclude-standard'],
-    root,
-    undefined,
-    15_000,
-  ).catch(() => null)
+  const r = await gitRun(root, ['ls-files', '--cached', '--others', '--exclude-standard'], {
+    timeoutMs: 15_000,
+  }).catch(() => null)
   if (r?.code === 0) return r.stdout.split('\n').filter(Boolean).slice(0, MAX_FILES)
   const out: string[] = []
   const walk = async (dir: string, rel: string) => {

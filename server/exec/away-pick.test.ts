@@ -65,9 +65,17 @@ test('开着：按推荐选掉，对话留一行、答案交回 CLI、记进数�
   assert.deepEqual(m.answers, [{ question: '先做哪一步？', answer: '先写测试' }])
   assert.equal(awayState().picks[0].taskId, 't1')
   assert.equal(awayState().picks[0].items[0].picked, '先写测试')
-  // 写文件是排队的：等它落盘再读
-  await new Promise((r) => setTimeout(r, 50))
-  const saved = JSON.parse(readFileSync(path.join(dir, 'config', 'away.json'), 'utf8'))
+  // 写文件是排队的：等到写进这一条再读。以前固定等 50ms，CI 并发跑时还没落盘，picks 为空（抖动）
+  const read = () => {
+    try {
+      return JSON.parse(readFileSync(path.join(dir, 'config', 'away.json'), 'utf8'))
+    } catch {
+      return {}
+    }
+  }
+  const end = Date.now() + 5000
+  while (!read().picks?.length && Date.now() < end) await new Promise((r) => setTimeout(r, 10))
+  const saved = read()
   assert.equal(saved.on, true)
   assert.equal(saved.picks[0].id, 'm1')
 })

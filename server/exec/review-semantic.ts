@@ -13,8 +13,7 @@ import { textifierFor } from '../plugins/runtime.ts'
 import { parseTableBuffer } from '../tables/files.ts'
 import { vcsRun } from '../tables/history.ts'
 import { readSchema, schemaDir } from '../tables/schema-store.ts'
-import { blobAt } from './git.ts'
-import { capture } from './process.ts'
+import { blobAt, gitRun } from './git.ts'
 
 /** 一次评审最多整理这么多个二进制文件：一次改几百张表时只看前面的，其余评审按文件列表自己看 */
 const MAX_FILES = 30
@@ -82,11 +81,7 @@ export async function gitSemantic(
   schema: TableSchema,
 ) {
   const scope = files ? ['--', ...files] : ['--', '.']
-  const r = await capture(
-    'git',
-    ['-c', 'core.quotepath=off', 'diff', '--name-only', '--no-renames', from, to, ...scope],
-    cwd,
-  )
+  const r = await gitRun(cwd, ['diff', '--name-only', '--no-renames', from, to, ...scope])
   const changed = r.stdout
     .split('\n')
     .map((l) => l.trim())

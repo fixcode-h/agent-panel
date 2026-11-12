@@ -3,11 +3,11 @@
  * 交验证时取每个改了的文件和对话开始时比的 diff（「修复」那一步显示，shared/bug-fix.ts）。
  * 交报告是工具调用，宿主同步回答：文件只读前 5 MB，git 命令限时 5 秒，取不到就返回 undefined（报告照常交，只是没有原文）
  */
-import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { BugSource } from '../../shared/bug-quotes.ts'
 import type { Project, Task } from '../../shared/schema.ts'
+import { gitSync as runGit } from './git.ts'
 
 const MAX = 5_000_000
 
@@ -16,15 +16,7 @@ export const workDirOf = (task: Pick<Task, 'worktree'>, project: Pick<Project, '
   task.worktree?.state === 'active' ? task.worktree.path : project.path
 
 /** 同步跑一条 git，退出码不为 0 也要输出（diff --no-index 有差异时返回 1）；跑不起来返回 undefined */
-function gitSync(dir: string, args: string[]) {
-  const r = spawnSync('git', ['-C', dir, ...args], {
-    encoding: 'utf8',
-    timeout: 5000,
-    maxBuffer: 4 << 20,
-    stdio: ['ignore', 'pipe', 'ignore'],
-  })
-  return r.error ? undefined : { code: r.status ?? 1, out: r.stdout ?? '' }
-}
+const gitSync = (dir: string, args: string[]) => runGit(dir, args, { timeoutMs: 5000 })
 
 /**
  * baseRef：对话开始时的提交（Task.baseRef），没有或找不到时和 HEAD 比；
@@ -75,16 +67,11 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
       return author ? { author, date, title } : undefined
     },
     show(rev, file) {
-      try {
-        return execFileSync('git', ['-C', dir, 'show', '--format=', '--no-color', rev, '--', file], {
-          encoding: 'utf8',
-          timeout: 5000,
-          maxBuffer: 1 << 20,
-          stdio: ['ignore', 'pipe', 'ignore'],
-        })
-      } catch {
-        return undefined
-      }
+      const r = runGit(dir, ['show', '--format=', '--no-color', rev, '--', file], {
+        timeoutMs: 5000,
+        maxBuffer: 1 << 20,
+      })
+      return r?.code === 0 ? r.out : undefined
     },
   }
 }

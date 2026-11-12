@@ -2,12 +2,12 @@
  * 诊断报告的环境采集（分析稿 B4，渲染和解析在 shared/bug-env.ts）：交第一份报告时同步取一次。
  * 交报告是工具调用、宿主同步回答，所以 git 命令同步跑、每条限时；取不到的项省略，报告照常交
  */
-import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { BugEnv } from '../../shared/bug-diagnosis-schema.ts'
 import { getCli } from '../../shared/clis.ts'
+import { gitSync } from './git.ts'
 import type { Agent, Task } from '../../shared/schema.ts'
 import { COMMIT_FORMAT, ENV_COMMITS, LOCK_FILES, parseCommits, parseDirty } from '../../shared/bug-env.ts'
 
@@ -15,14 +15,8 @@ import { COMMIT_FORMAT, ENV_COMMITS, LOCK_FILES, parseCommits, parseDirty } from
 const GIT_MS = 3000
 
 function git(dir: string, args: string[]): string | undefined {
-  const r = spawnSync('git', ['-c', 'core.quotepath=off', '-C', dir, ...args], {
-    encoding: 'utf8',
-    timeout: GIT_MS,
-    maxBuffer: 2 << 20,
-    stdio: ['ignore', 'pipe', 'ignore'],
-    windowsHide: true,
-  })
-  return r.error || r.status !== 0 ? undefined : (r.stdout ?? '')
+  const r = gitSync(dir, args, { timeoutMs: GIT_MS, maxBuffer: 2 << 20 })
+  return r?.code === 0 ? r.out : undefined
 }
 
 /** 操作系统一行：版本名取不到（少见的平台）就只写平台和内核版本 */

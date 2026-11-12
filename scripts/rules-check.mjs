@@ -23,6 +23,7 @@
 // 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
 // 19. 状态只认工具调用：判定逻辑不调用按回复文字识别结论 / 决定的函数（parseVerdict / leadVerdict / parseDispatch）
 // 20. 给 Agent 的规则每条只有一个出处：内置角色设定、面板提示词、方法类技能之间，同一句（30 字以上）不许出现在两个文件里（ADR 0048）
+// 21. 代码结构只许变好：函数长度、平铺目录、Task 字段、读时迁移、内联工具、大接口、git 包装、模块状态、界面拼状态、轮询（scripts/structure-check.mjs）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -566,6 +567,12 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
       errors.push(
         `同一条规则写在了 ${[...at].join('、')}：只留一个出处，别处写一行指针（ADR 0048）：${line.slice(0, 60)}…`,
       )
+}
+
+// 21. 代码结构只许变好（docs/lessons/structure.md）：基线在 scripts/structure-caps.json，变好了跑 --update 收紧
+{
+  const { checkStructure } = await import('./structure-check.mjs')
+  errors.push(...checkStructure(root))
 }
 
 if (errors.length) {
