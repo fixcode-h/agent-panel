@@ -95,6 +95,7 @@ const gridPropLabel = (prop: string): string | undefined =>
     added: t('新增的行和新值'),
     removed: t('删掉的行和旧值'),
     stripe: t('隔行底色'),
+    handle: t('填充柄大小'),
   })[prop]
 
 const optionLabel = (v: string) =>
