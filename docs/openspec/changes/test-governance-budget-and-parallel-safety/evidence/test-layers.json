@@ -276,7 +276,7 @@
       "lines": 1256
     },
     {
-      "file": "server/child-ask-link.test.ts",
+      "file": "server/children/ask-link.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -285,7 +285,7 @@
       "lines": 100
     },
     {
-      "file": "server/child-ask.test.ts",
+      "file": "server/children/ask.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"

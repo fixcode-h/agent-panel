@@ -89,7 +89,6 @@
       "bundled-skills.ts",
       "chat-memory.ts",
       "cherry-pick.ts",
-      "child-kind-fields.ts",
       "claims.ts",
       "cleanup.ts",
       "cloudflared.ts",

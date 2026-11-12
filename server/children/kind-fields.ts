@@ -1,4 +1,4 @@
-import type { BugLevel } from '../shared/bug/diagnosis-schema.ts'
+import type { BugLevel } from '../../shared/bug/diagnosis-schema.ts'
 
 /**
  * create_conversation 里说「这个子对话是什么、怎么开」的几个参数：kind、Bug 的级别初判、要不要先开独立分支、
