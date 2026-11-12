@@ -1,11 +1,13 @@
 /**
- * 读 xlsx / xlsm 给文件弹窗当表格看：只取每张表的单元格文字，不管样式、公式（公式取 Excel 存下来的结果）和图表。
+ * 读 xlsx / xlsm 给文件弹窗当表格看：取每张表的单元格文字，公式取 Excel 存下来的结果，不管图表。
+ * 合并单元格、批注、超链接、整行底色、隐藏的工作表这些看表要用的信息另外读（sheets/xlsx-look.ts），只读不改。
  * xlsx 就是一个 zip，里面是几份 XML；只为了看内容不值得引一个上兆的表格库，这里自己拆 zip、按正则取单元格。
  * 老的 .xls 是另一种二进制格式，这里不认，交给系统默认程序。
  */
 import path from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { SheetData } from '../shared/files.ts'
+import { fillStyles, rowFillCollector, sheetLook } from './sheets/xlsx-look.ts'
 
 /** 超过这么大的表格文件不解析：整份要读进内存再解压 */
 export const MAX_XLSX_BYTES = 30_000_000
@@ -159,20 +161,25 @@ function sheetRows(
   dates: boolean[],
   date1904: boolean,
   budget: number,
+  fills?: ReturnType<typeof rowFillCollector>,
 ): { rows: string[][]; truncated: boolean; cells: number } {
   const rows: string[][] = []
   let row = -1
   let col = -1
   let cells = 0
   let truncated = false
-  for (const m of noPrefix(xml).matchAll(/<row\b([^>]*)>|<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+  // 样式表里没有底色时不收，省掉每格查样式
+  const fill = fills?.active ? fills : undefined
+  for (const m of xml.matchAll(/<row\b([^>]*)>|<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
     if (m[1] !== undefined) {
       const r = Number(attr(m[1], 'r'))
       row = r > 0 ? r - 1 : row + 1
       col = -1
+      fill?.row(row, m[1])
       continue
     }
     const tag = m[2]
+    fill?.cell(tag)
     const ref = attr(tag, 'r')
     col = ref ? colOf(ref) : col + 1
     const inner = m[3]
@@ -206,6 +213,12 @@ function sheetRows(
   return { rows, truncated, cells }
 }
 
+/** 主题文件：workbook 的 rels 里 …/relationships/theme 那一项，没写就是默认位置 */
+function themeFile(rels: Map<string, string>) {
+  for (const target of rels.values()) if (/\/theme\/[^/]+\.xml$/.test(target)) return target
+  return 'xl/theme/theme1.xml'
+}
+
 /**
  * 解析 xlsx：每张表一份「行 × 列」的文字。不是 xlsx（加密的、改了扩展名的）时抛错。
  * 超过 limits 的表只读前面一部分并标 truncated（页面据此只读，免得把没读到的部分当空的写回去）
@@ -223,7 +236,10 @@ export function readXlsx(buf: Buffer, limits: XlsxLimits = XLSX_LIMITS): SheetDa
     rels.set(attr(m[1], 'Id') ?? '', target.startsWith('/') ? target.slice(1) : path.posix.join('xl', target))
   }
   const shared = sharedStrings(read('xl/sharedStrings.xml'))
-  const dates = dateStyles(read('xl/styles.xml'))
+  const stylesXml = read('xl/styles.xml')
+  const dates = dateStyles(stylesXml)
+  // 主题色在 theme1.xml（底色常写成「主题色 4 + 淡 40%」）
+  const fillOf = fillStyles(stylesXml, read(themeFile(rels)))
   const date1904 = /<workbookPr\b[^>]*\bdate1904="(1|true)"/.test(book)
   const out: SheetData[] = []
   let left = limits.bookCells
@@ -232,13 +248,24 @@ export function readXlsx(buf: Buffer, limits: XlsxLimits = XLSX_LIMITS): SheetDa
     const file = rels.get(attr(m[1], 'r:id') ?? attr(m[1], 'id') ?? '')
     // 图表页（chartsheet）没有单元格，不列
     if (!file || !file.includes('worksheets/')) continue
+    const state = attr(m[1], 'state')
+    const hidden = state === 'hidden' || state === 'veryHidden' ? { hidden: true } : {}
     if (left <= 0) {
-      out.push({ name, rows: [], truncated: true })
+      out.push({ name, rows: [], truncated: true, ...hidden })
       continue
     }
-    const got = sheetRows(read(file), shared, dates, date1904, Math.min(limits.sheetCells, left))
+    const xml = noPrefix(read(file))
+    const fills = rowFillCollector(fillOf)
+    const got = sheetRows(xml, shared, dates, date1904, Math.min(limits.sheetCells, left), fills)
     left -= got.cells
-    out.push({ name, rows: got.rows, ...(got.truncated ? { truncated: true } : {}) })
+    const look = sheetLook(xml, file, read, fills.done())
+    out.push({
+      name,
+      rows: got.rows,
+      ...(got.truncated ? { truncated: true } : {}),
+      ...hidden,
+      ...(look ? { look } : {}),
+    })
   }
   return out
 }
