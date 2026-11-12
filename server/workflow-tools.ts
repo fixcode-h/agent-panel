@@ -2,14 +2,12 @@
  * 父对话操作工作流运行的面板工具（docs/openspec/changes/workflow-runs/design.md 第 4 节）：
  * start_workflow 起一次运行，list_workflows 看名下的运行，message / revise / answer / stop / finish 下指令。
  * 工作流运行不是子对话：子对话那套（send_to_conversation、finish_child）不作用到它身上。
- * 定义和调用都拆在这里，orch-mcp.ts 到了行数上限；只有能启动工作流的父对话（Orchestra.planning）拿得到
+ * 定义和调用都在这里，作为面板工具注册表（server/panel-tools/registry.ts）的条目；只有能启动工作流的父对话（Orchestra.planning）拿得到
  */
 import type { Orchestra, RouteInput } from '../shared/engine.ts'
 import { clip } from '../shared/text.ts'
 import { stepField } from './orch-fields.ts'
-
-const str = (v: unknown) => (typeof v === 'string' ? v : '')
-const out = (s: string, isError = false) => ({ content: [{ type: 'text', text: s }], ...(isError && { isError }) })
+import { str, text as out, type PanelTool, type ToolDef } from './panel-tools/types.ts'
 const idField = { type: 'string', description: '工作流运行的 id（start_workflow 返回的，或 list_workflows 里的）' }
 
 export const WORKFLOW_TOOL_NAMES = [
@@ -22,8 +20,8 @@ export const WORKFLOW_TOOL_NAMES = [
   'finish_workflow',
 ] as const
 
-export function workflowTools(o: Orchestra) {
-  if (!o.planning) return []
+/** 七个工具的定义（顺序就是清单里的顺序） */
+function workflowDefs(o: Orchestra): ToolDef[] {
   return [
     {
       name: 'start_workflow',
@@ -131,42 +129,45 @@ export function workflowTools(o: Orchestra) {
   ]
 }
 
-/** 执行上面几个工具；name 不是它们时返回 null，交回 orch-mcp 接着认 */
-export async function callWorkflowTool(o: Orchestra, name: string, a: Record<string, unknown> | undefined) {
-  switch (name) {
-    case 'start_workflow':
-      return callStartWorkflow(o, a)
-    case 'list_workflows':
-      return out(await o.runs.listWorkflows())
-    case 'message_workflow': {
-      const to = str(a?.to).trim() || 'current'
-      const r = await o.runs.messageWorkflow(str(a?.id), str(a?.text), to)
-      return out(r.info, !r.ok)
-    }
-    case 'revise_workflow': {
-      const r = await o.runs.reviseWorkflow(str(a?.id), str(a?.node), str(a?.text))
-      return out(r.info, !r.ok)
-    }
-    case 'answer_workflow': {
-      const d = str(a?.decision)
-      if (d !== 'confirm' && d !== 'revise') return out('decision 写 confirm 或 revise', true)
-      const r = await o.runs.answerWorkflow(str(a?.id), d === 'confirm', str(a?.text))
-      return out(r.info, !r.ok)
-    }
-    case 'stop_workflow': {
-      if (!str(a?.id).trim()) return out('id 要写：工作流运行的 id', true)
-      const r = await o.runs.stopWorkflow(str(a?.id), str(a?.reason))
-      return out(r.info, !r.ok)
-    }
-    case 'finish_workflow': {
-      const act = str(a?.action)
-      if (act !== 'merge' && act !== 'discard') return out('action 写 merge 或 discard', true)
-      const r = await o.runs.finishWorkflow(str(a?.id), act)
-      return out(r.info, !r.ok)
-    }
-  }
-  return null
+/** 执行上面几个工具 */
+const CALLS: Record<(typeof WORKFLOW_TOOL_NAMES)[number], PanelTool['call']> = {
+  start_workflow: (o, a) => callStartWorkflow(o, a),
+  list_workflows: async (o) => out(await o.runs.listWorkflows()),
+  message_workflow: async (o, a) => {
+    const to = str(a?.to).trim() || 'current'
+    const r = await o.runs.messageWorkflow(str(a?.id), str(a?.text), to)
+    return out(r.info, !r.ok)
+  },
+  revise_workflow: async (o, a) => {
+    const r = await o.runs.reviseWorkflow(str(a?.id), str(a?.node), str(a?.text))
+    return out(r.info, !r.ok)
+  },
+  answer_workflow: async (o, a) => {
+    const d = str(a?.decision)
+    if (d !== 'confirm' && d !== 'revise') return out('decision 写 confirm 或 revise', true)
+    const r = await o.runs.answerWorkflow(str(a?.id), d === 'confirm', str(a?.text))
+    return out(r.info, !r.ok)
+  },
+  stop_workflow: async (o, a) => {
+    if (!str(a?.id).trim()) return out('id 要写：工作流运行的 id', true)
+    const r = await o.runs.stopWorkflow(str(a?.id), str(a?.reason))
+    return out(r.info, !r.ok)
+  },
+  finish_workflow: async (o, a) => {
+    const act = str(a?.action)
+    if (act !== 'merge' && act !== 'discard') return out('action 写 merge 或 discard', true)
+    const r = await o.runs.finishWorkflow(str(a?.id), act)
+    return out(r.info, !r.ok)
+  },
 }
+
+/** 面板工具注册表的条目：只有能启动工作流的父对话（Orchestra.planning）拿得到 */
+export const WORKFLOW_TOOLS: PanelTool[] = WORKFLOW_TOOL_NAMES.map((name) => ({
+  name,
+  when: (o) => o.planning,
+  def: (o) => workflowDefs(o).find((d) => d.name === name)!,
+  call: CALLS[name],
+}))
 
 /**
  * 执行一次 start_workflow：先按 id / 名字认出工作流（认不出就列出能用的），再起一次运行，

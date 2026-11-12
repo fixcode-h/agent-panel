@@ -1,11 +1,12 @@
 /**
- * 面板工具 ask_push（推送授权）：定义和调用拆在这里，orch-mcp.ts 到了行数上限。
+ * 面板工具 ask_push（推送授权）：定义和调用都在这里（面板工具注册表的条目）。
  * 判定和回给模型的话在 shared/push-auth.ts，卡片和回答的记录在 server/exec/panel-requests.ts
  */
 import type { Orchestra } from '../shared/engine.ts'
 import { ASK_PUSH } from '../shared/push-auth.ts'
+import type { PanelTool } from './panel-tools/types.ts'
 
-export const ASK_PUSH_TOOL = {
+const ASK_PUSH_TOOL = {
   name: ASK_PUSH,
   title: '请用户授权推送',
   description:
@@ -20,7 +21,7 @@ export const ASK_PUSH_TOOL = {
 }
 
 /** 执行一次 ask_push：没有这个工具（不是问一次的项目、不是顶层对话）时报错 */
-export async function callAskPush(o: Orchestra, a: { branch?: unknown; summary?: unknown } | undefined) {
+async function callAskPush(o: Orchestra, a: { branch?: unknown; summary?: unknown } | undefined) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const r = o.askPush
     ? await o.askPush({ branch: str(a?.branch), summary: str(a?.summary) })
@@ -29,4 +30,11 @@ export async function callAskPush(o: Orchestra, a: { branch?: unknown; summary?:
         info: '这个对话不需要问推送授权：按「授权情况」那段做（子对话不推送，项目设置允许或禁止推送时不用问）',
       }
   return { content: [{ type: 'text', text: r.info }], ...(!r.ok && { isError: true }) }
+}
+
+export const ASK_PUSH_ENTRY: PanelTool = {
+  name: ASK_PUSH,
+  when: (o) => !!o.askPush,
+  def: () => ASK_PUSH_TOOL,
+  call: (o, a) => callAskPush(o, a),
 }
