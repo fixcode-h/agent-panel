@@ -673,23 +673,7 @@
     "EngineHost": 67
   },
   "gitCalls": {
-    "server/background.ts": 2,
-    "server/cherry-pick.ts": 2,
-    "server/comfy.ts": 2,
-    "server/exec/bug-env.ts": 1,
-    "server/exec/bug-source.ts": 2,
-    "server/exec/review-semantic.ts": 1,
-    "server/exec/worktree.ts": 5,
-    "server/files.ts": 1,
-    "server/schedule-triggers.ts": 1,
-    "server/session-bar.ts": 1,
-    "server/tables/history.ts": 2,
-    "server/tables/vcs-ops.ts": 8,
-    "server/tasks/bug-cleanup.ts": 1,
-    "server/tasks/bug-patch.ts": 1,
-    "server/tasks/bug-recheck.ts": 1,
-    "server/tasks/dirty-parent.ts": 1,
-    "server/uploads.ts": 1
+    "server/comfy.ts": 1
   },
   "moduleState": {
     "server/accounts.ts": 1,

@@ -8,7 +8,7 @@ import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
 import type { SheetData } from '../../shared/files.ts'
 import { childEnv } from '../exec/process.ts'
-import { gitArgs } from '../exec/git.ts'
+import { gitRaw } from '../exec/git.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { parseZtag } from '../p4-split.ts'
 import { parseTableBuffer } from './files.ts'
@@ -37,12 +37,12 @@ const MAX_REVS = 40
 /** 旧版本的文件最大读这么多（和打开文件的上限一致） */
 const MAX_BYTES = 64 * 1024 * 1024
 
-/** 三种版本控制共用：git 的参数照 server/exec/git.ts 的 gitArgs 补上（中文路径不转义），其余原样 */
-export function vcsRun(cmd: 'git' | 'p4' | 'svn', args: string[], cwd: string) {
+/** p4 / svn 跑一条命令，失败时抛错（git 走下面的 gitVcs） */
+export function vcsRun(cmd: 'p4' | 'svn', args: string[], cwd: string) {
   return new Promise<Buffer>((resolve, reject) =>
     execFile(
       cmd,
-      cmd === 'git' ? gitArgs(args) : args,
+      args,
       {
         cwd,
         env: { ...childEnv([]), PWD: cwd },
@@ -65,6 +65,14 @@ export function vcsRun(cmd: 'git' | 'p4' | 'svn', args: string[], cwd: string) {
   )
 }
 
+/** git 跑一条命令，形状和 vcsRun 一样（原始字节、失败抛错带 git 的说明）；经 server/exec/git.ts 起，中文路径不转义 */
+export async function gitVcs(args: string[], cwd: string): Promise<Buffer> {
+  const r = await gitRaw(cwd, args, { env: { ...childEnv([]), PWD: cwd }, maxBuffer: MAX_BYTES, timeoutMs: 60_000 })
+  if (r.code !== 0)
+    throw new Error(`git ${args[0]}：${r.stderr.trim() || t('退出码 {code}', { code: String(r.code) })}`)
+  return r.stdout
+}
+
 const text = (b: Buffer) => b.toString('utf8')
 
 export async function tableHistory(dir: string, rel: string): Promise<TableHistory> {
@@ -73,11 +81,7 @@ export async function tableHistory(dir: string, rel: string): Promise<TableHisto
   try {
     if (vcs === 'git') {
       const out = text(
-        await vcsRun(
-          'git',
-          ['log', `-n${MAX_REVS}`, '--follow', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--', rel],
-          dir,
-        ),
+        await gitVcs(['log', `-n${MAX_REVS}`, '--follow', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--', rel], dir),
       )
       const revs = out
         .split('\x1e')
@@ -150,7 +154,7 @@ export async function rawAt(dir: string, rel: string, rev: string): Promise<Buff
   if (!/^[\w#^~@][\w#.^~:@/-]{0,79}$/.test(rev)) throw new HttpError(t('版本号格式不对'))
   const { vcs } = await detectVcs(dir)
   try {
-    if (vcs === 'git') return await vcsRun('git', ['show', `${rev}:./${rel}`], dir)
+    if (vcs === 'git') return await gitVcs(['show', `${rev}:./${rel}`], dir)
     if (vcs === 'p4') return await vcsRun('p4', ['print', '-q', `${path.join(dir, rel)}${rev}`], dir)
     if (vcs === 'svn') return await vcsRun('svn', ['cat', '-r', rev, `./${rel}`], dir)
     throw new HttpError(t('这个项目没有版本控制'))

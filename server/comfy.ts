@@ -274,7 +274,7 @@ export function installComfy() {
     if (!existsSync(path.join(codeDir(), 'main.py'))) {
       j.step = t('下载 ComfyUI')
       const git = await gitRun(dir, ['--version'])
-      // 克隆走 exec：输出要逐行写进安装日志、能被取消，gitRun 只收结果 git-run-ok
+      // 克隆走 exec 不走 gitRun：输出要逐行写进安装日志、能被取消（structure-caps 里留了这 1 处）
       if (git.code === 0) await exec('git', ['clone', '--depth', '1', `${REPO}.git`, codeDir()], dir)
       else {
         // 没有 git：下载源码压缩包，用 Python 自带的 zipfile 解开
