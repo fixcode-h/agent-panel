@@ -1364,14 +1364,14 @@ export const OutsideChange = z.object({ path: z.string() })
 export type OutsideChange = z.infer<typeof OutsideChange>
 
 /**
- * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn-changes.ts）：
+ * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn/changes.ts）：
  * spans 是 git 快照树的起止（中间被子对话合并隔开时有几段），撤销时只撤这几段自己的改动。
  * revertedAt 是撤销的时间：撤过的卡片只显示「已撤销」，不能再撤
  */
 export const TurnChanges = z.object({
   spans: z.array(z.object({ from: z.string(), to: z.string() })),
   files: z.array(FileChange),
-  /** 剔除掉的同目录别的对话改的文件（server/turn-owners.ts）：卡片上说明一句，免得用户以为漏记了 */
+  /** 剔除掉的同目录别的对话改的文件（server/turn/owners.ts）：卡片上说明一句，免得用户以为漏记了 */
   others: z.array(z.string()).optional(),
   revertedAt: z.string().optional(),
 })

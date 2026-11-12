@@ -29,8 +29,8 @@ import { taskLog } from '../tasks/log.ts'
 import { agentUsage, contextUsage, ownContext } from './usage-record.ts'
 import { seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../cli/api-slots.ts'
-import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
-import { noteEdit } from '../turn-owners.ts'
+import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn/changes.ts'
+import { noteEdit } from '../turn/owners.ts'
 import { canKeepAlive, envStallTimeout, forgetPromptSent, silentTurn } from './retry-policy.ts'
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { speedMeter } from './speed-meter.ts'
@@ -178,7 +178,7 @@ async function runAgent(
   const mine: TaskMessage[] = []
   const turnMsgs = () => mine.slice(st.turnMark.from)
   const turnTools = () => turnMsgs().reduce((n, m) => n + m.tools.length, 0)
-  // 这一轮改了哪些文件，记在这一轮的总结上（见 server/turn-changes.ts）：只有对话自己的轮次记，子任务、节点不记
+  // 这一轮改了哪些文件，记在这一轮的总结上（见 server/turn/changes.ts）：只有对话自己的轮次记，子任务、节点不记
   const trackChanges = chat && !op && ctx.isGit
   const openChanges = (carry: boolean) => {
     if (!trackChanges) return
@@ -241,7 +241,7 @@ async function runAgent(
       if (!ctx.isGit) trackFileWrite(task, owner, cwd, file)
       refreshChanges()
     },
-    // 同目录别的对话算每轮改动时要知道这个文件是谁改的（server/turn-owners.ts）
+    // 同目录别的对话算每轮改动时要知道这个文件是谁改的（server/turn/owners.ts）
     (file) => noteEdit(task.id, cwd, file, task.parentTaskId || undefined),
   )
   // 还没跑完的工具调用什么时候开始的：结果到了算耗时

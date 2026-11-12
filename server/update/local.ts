@@ -8,9 +8,9 @@ import { mkdir, open, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { parseVersion } from '../shared/version.ts'
-import { capture } from './exec/process.ts'
-import { t } from '../shared/i18n.ts'
+import { parseVersion } from '../../shared/version.ts'
+import { capture } from '../exec/process.ts'
+import { t } from '../../shared/i18n.ts'
 
 /** 安装包对应的系统：和 scripts/package.mjs 的 platforms 一致 */
 export type PackageOs = 'win' | 'mac' | 'linux'

@@ -31,7 +31,7 @@ export const projectChanges = <T extends Pick<FileChange, 'path'>>(list: T[], cw
   list.filter((c) => !scratchPath(c.path, cwd))
 
 /**
- * named：这次调用点名了哪个文件（每轮改动按文件归属用，见 server/turn-owners.ts）。调用一发出就报、成功时再报一次：
+ * named：这次调用点名了哪个文件（每轮改动按文件归属用，见 server/turn/owners.ts）。调用一发出就报、成功时再报一次：
  * 归属要保守，写入可能在结果回来之前就落盘了，别的对话的快照拍到它时得已经认得出是谁的
  */
 export function createFileEvents(cwd: string, apply: (file: FileChange) => void, named?: (path: string) => void) {

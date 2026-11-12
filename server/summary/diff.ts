@@ -5,9 +5,9 @@
  * 改动从每轮记下的 git 快照区间取（和对话里「已更改 N 个文件」同一份），测试、文档、锁文件不放；
  * 每个对话、全部对话各有字数上限，超出的写明截断了。取不到（快照被清理、目录没了）就不给，记日志，报告照常生成。
  */
-import { spansDiff } from './exec/git.ts'
-import { log } from './log.ts'
-import { SUMMARY_DIFF_TASK_CHARS, SUMMARY_DIFF_TOTAL_CHARS, type DayProject } from '../shared/summary.ts'
+import { spansDiff } from '../exec/git.ts'
+import { log } from '../log.ts'
+import { SUMMARY_DIFF_TASK_CHARS, SUMMARY_DIFF_TOTAL_CHARS, type DayProject } from '../../shared/summary.ts'
 
 /** 不放进材料的文件：测试、文档、锁文件、快照和样本，这些不是「修复的关键代码」 */
 const SKIP_FILE =

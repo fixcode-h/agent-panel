@@ -25,7 +25,7 @@ import { capture } from './exec/process.ts'
 import { recordInterrupted, type InterruptedEntry } from './interrupted.ts'
 import { netFetch } from './net.ts'
 import { downloadFile } from './download.ts'
-import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './update-local.ts'
+import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './update/local.ts'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 

@@ -4,7 +4,7 @@ import { QuotaResumeState } from '../quota-resume.ts'
 /**
  * 对话上的几样运行记录和「对话自己的用量上限」（分析稿 A6、A10）。
  * 从 schema.ts 拆出来：那个文件贴着行数上限，这里只放结构，规则在各自的文件里
- * （shared/budget.ts、shared/budget-rate.ts、server/turn-changes.ts、shared/drive.ts）
+ * （shared/budget.ts、shared/budget-rate.ts、server/turn/changes.ts、shared/drive.ts）
  */
 
 /** 用量上限：token（输入 + 输出）和费用（美元），0 表示这一项不限 */
@@ -15,7 +15,7 @@ export const ConvBudget = z.object({
 export type ConvBudget = z.infer<typeof ConvBudget>
 
 /**
- * 每轮改动的起点（server/turn-changes.ts）：原来只记在内存里，面板重启后进行中的那一轮就没有改动卡片了（A10）。
+ * 每轮改动的起点（server/turn/changes.ts）：原来只记在内存里，面板重启后进行中的那一轮就没有改动卡片了（A10）。
  * open 为 true 表示这一轮开了还没收（重启后接着这个起点算）；收了以后 mark 是终点，接着做的那一轮从它算起
  */
 export const TurnTrack = z.object({

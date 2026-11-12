@@ -4,16 +4,16 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { setLang } from '../shared/i18n.ts'
+import { setLang } from '../../shared/i18n.ts'
 
 // 解压、替换都在临时目录里做，不碰本机的数据目录和程序目录
 const root = mkdtempSync(path.join(tmpdir(), 'agent-panel-local-pkg-'))
 process.env.AGENT_PANEL_DATA = path.join(root, 'data')
 after(() => rmSync(root, { recursive: true, force: true }))
 
-const { inspectPackage, packageOs, osOf } = await import('./update-local.ts')
-const { updateApi } = await import('./update.ts')
-const { rawUploadAllowed } = await import('./http-guards.ts')
+const { inspectPackage, packageOs, osOf } = await import('./local.ts')
+const { updateApi } = await import('../update.ts')
+const { rawUploadAllowed } = await import('../http-guards.ts')
 // 断言的是中文原文；依赖链里的 lang.ts 会按系统语言重设，import 之后再固定
 setLang('zh')
 

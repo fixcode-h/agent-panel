@@ -9,7 +9,7 @@
  * - error：合并提交本身出错，由父对话看报错决定自己处理还是交回子对话。
  */
 import type { TaskWorktree } from '../../shared/schema.ts'
-import { aroundMerge } from '../turn-changes.ts'
+import { aroundMerge } from '../turn/changes.ts'
 import {
   abortMerge,
   commitMerge,

@@ -7,11 +7,11 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { setLang } from '../shared/i18n.ts'
-import type { TurnChanges } from '../shared/schema.ts'
-import { undoSpans } from './exec/git.ts'
-import { beginTurnChanges, endTurnChanges } from './turn-changes.ts'
-import { closeTurn, namedSince, noteEdit, openTurn, resetTurnOwners, splitOwned } from './turn-owners.ts'
+import { setLang } from '../../shared/i18n.ts'
+import type { TurnChanges } from '../../shared/schema.ts'
+import { undoSpans } from '../exec/git.ts'
+import { beginTurnChanges, endTurnChanges } from './changes.ts'
+import { closeTurn, namedSince, noteEdit, openTurn, resetTurnOwners, splitOwned } from './owners.ts'
 
 setLang('zh')
 delete process.env.GIT_DIR

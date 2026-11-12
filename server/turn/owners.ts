@@ -1,11 +1,11 @@
 import path from 'node:path'
-import { rel } from './own-changes.ts'
-import { taskMap } from './runtime/task-state.ts'
+import { rel } from '../own-changes.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 每轮改动按文件归属（分析稿 A1）：几个对话共用一个目录（都没开独立分支）时，一轮的改动卡片和撤销只算这个对话自己的文件。
  *
- * 每轮改动本身是「开始和结束各拍一张整目录快照求差」（server/turn-changes.ts），同目录里别的对话这段时间改的文件
+ * 每轮改动本身是「开始和结束各拍一张整目录快照求差」（server/turn/changes.ts），同目录里别的对话这段时间改的文件
  * 也在差里：卡片会把它们列成自己的，撤销会把别人的改动一起撤掉。
  *
  * 归属只看工具调用记录：CLI 报的改文件类调用带着路径（CliEvent 的 file，各 CLI 的解析层统一给出）。

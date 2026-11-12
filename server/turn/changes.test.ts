@@ -4,12 +4,12 @@ import { existsSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { setLang } from '../shared/i18n.ts'
-import type { TurnChanges } from '../shared/schema.ts'
-import type { TurnTrack } from '../shared/tasks/runtime-schema.ts'
-import { gitSnapshot, spansFileDiff, undoSpans } from './exec/git.ts'
-import { aroundMerge, beginTurnChanges, endTurnChanges } from './turn-changes.ts'
-import { taskChanges } from './own-changes.ts'
+import { setLang } from '../../shared/i18n.ts'
+import type { TurnChanges } from '../../shared/schema.ts'
+import type { TurnTrack } from '../../shared/tasks/runtime-schema.ts'
+import { gitSnapshot, spansFileDiff, undoSpans } from '../exec/git.ts'
+import { aroundMerge, beginTurnChanges, endTurnChanges } from './changes.ts'
+import { taskChanges } from '../own-changes.ts'
 
 setLang('zh')
 delete process.env.GIT_DIR

@@ -4,8 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { attachCode } from './summary-diff.ts'
-import type { DayProject, DayTask } from '../shared/summary.ts'
+import { attachCode } from './diff.ts'
+import type { DayProject, DayTask } from '../../shared/summary.ts'
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 

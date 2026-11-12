@@ -1,6 +1,6 @@
 import path from 'node:path'
-import type { TaskMessage, TurnChanges } from '../shared/schema.ts'
-import type { TurnTrack } from '../shared/tasks/runtime-schema.ts'
+import type { TaskMessage, TurnChanges } from '../../shared/schema.ts'
+import type { TurnTrack } from '../../shared/tasks/runtime-schema.ts'
 import {
   diffNames,
   gitHead,
@@ -9,10 +9,10 @@ import {
   syncedFiles,
   type PlacedFiles,
   type TreeSpan,
-} from './exec/git.ts'
-import { log } from './log.ts'
-import { closeTurn, namedSince, openTurn, peekTurn, splitOwned } from './turn-owners.ts'
-import { taskMap } from './runtime/task-state.ts'
+} from '../exec/git.ts'
+import { log } from '../log.ts'
+import { closeTurn, namedSince, openTurn, peekTurn, splitOwned } from './owners.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 每轮对话改了哪些文件（总结下面那张「已更改 N 个文件」卡片的数据）。
@@ -27,7 +27,7 @@ import { taskMap } from './runtime/task-state.ts'
  * - 子对话合回这个目录的那一下单独切掉（见 aroundMerge）：父对话的卡片不含子对话的改动
  * - 这一轮里拉代码、合并别的分支、切分支带进来的文件不算（见 dropSynced）：Agent 按规则 fetch + merge 同步，
  *   上游改的几百个文件不是这个对话改的
- * - 同一个目录里别的对话这段时间改的文件不算（见 server/turn-owners.ts）：按改文件的工具调用认是谁的，
+ * - 同一个目录里别的对话这段时间改的文件不算（见 server/turn/owners.ts）：按改文件的工具调用认是谁的，
  *   别的对话点名过、这个对话没点名的剔除，剔除了哪些记在 others 上给卡片说明
  *
  * 起点存进任务数据（Task.turnTrack，分析稿 A10）：每次起点、终点、切段变了都写回（见 TrackKeep）。面板重启后

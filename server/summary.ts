@@ -9,7 +9,7 @@
  * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary.ts。
  */
 import { askSession } from './asks.ts'
-import { attachCode } from './summary-diff.ts'
+import { attachCode } from './summary/diff.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'

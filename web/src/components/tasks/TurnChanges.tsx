@@ -22,7 +22,7 @@ const baseName = (p: string) => p.slice(p.lastIndexOf('/') + 1)
 const dirName = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
 
 /**
- * 整个对话改了哪些文件（数据见 shared/conv-changes.ts，每一轮的记录见 server/turn-changes.ts）：
+ * 整个对话改了哪些文件（数据见 shared/conv-changes.ts，每一轮的记录见 server/turn/changes.ts）：
  * 只在对话停下来以后、挂在对话最后面一张（以前每一轮总结下面各挂一张，用户要只看整个对话的）。
  * 只算这个对话自己的改动：子任务、工作流在对话里改的算，子对话合进来的、用户在两轮之间自己改的不算。
  * 点文件打开差异窗口（左边改动树、右边左右对照），「撤销」把每一轮的改动从后往前一起撤，之后又改过的地方保留，
@@ -135,7 +135,7 @@ export function ConvChangesCard({ task }: { task: Pick<Task, 'id' | 'working' | 
           </button>
         </div>
       )}
-      {/* 同目录别的对话那段时间改的文件已经剔除（server/turn-owners.ts）：说一句，免得用户以为少记了，悬停能看到是哪些 */}
+      {/* 同目录别的对话那段时间改的文件已经剔除（server/turn/owners.ts）：说一句，免得用户以为少记了，悬停能看到是哪些 */}
       {!reverted && ch.others.length > 0 && (
         <div className="turn-changes-others border-t px-3.5 py-1.5 text-xs text-subtle" title={ch.others.join('\n')}>
           {t('另有 {n} 个文件是同目录里别的对话改的，没有算进来，撤销时也不会动', { n: ch.others.length })}

@@ -22,7 +22,7 @@ import { t } from '../../shared/i18n.ts'
 import { DATA_DIR } from '../store.ts'
 import { gitRun } from './git.ts'
 import { log } from '../log.ts'
-import { aroundMerge } from '../turn-changes.ts'
+import { aroundMerge } from '../turn/changes.ts'
 
 /** 任务的独立工作目录放在数据目录里，不放进项目目录，免得被项目自己的 git 和工具扫到 */
 export const WORKTREES_DIR = path.join(DATA_DIR, 'worktrees')
@@ -766,7 +766,7 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
   // 冲突时把双方的提交记录一起交回：只给冲突文件的话，接手的人看不到对方为什么这么改
   const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
   const args = [...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch]
-  // 合并的那一下（连同冲突时的撤回）从正在这个目录里记改动的对话中切掉（见 server/turn-changes.ts）：
+  // 合并的那一下（连同冲突时的撤回）从正在这个目录里记改动的对话中切掉（见 server/turn/changes.ts）：
   // 总结下面的卡片不含子对话的改动
   const m = await aroundMerge(target, async () => {
     let r = await git(target, ...args)
