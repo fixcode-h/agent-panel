@@ -17,7 +17,8 @@ import { steerTask } from '../exec/steering.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { placedFiles } from '../attachments.ts'
 import { commitWorktree } from '../exec/worktree.ts'
-import { buildSkipText, buildSteps, buildStepsFor, currentTestSteps, stepCommand } from '../../shared/test-steps.ts'
+import { buildSkipText, buildSteps, buildStepsFor, currentTestSteps } from '../../shared/test-steps.ts'
+import { stepRun } from '../step-run.ts'
 import { buildGate, buildKids, buildSig, type BuildAsk } from '../../shared/build-ask.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
@@ -448,7 +449,8 @@ ${
       const r = sc.background.start({
         taskId: parent.id,
         name: `UE 编译：${st.name}`,
-        command: stepCommand(st, process.platform, project.wslDistro),
+        // 按步骤自己的环境直接起进程，不再包一层字符串交给设置里的 shell（server/step-run.ts）
+        ...(await stepRun(st, process.platform, project.wslDistro)),
         cwd: st.cwd,
         root: dir,
         exclusive: true,

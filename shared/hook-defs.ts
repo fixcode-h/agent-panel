@@ -216,8 +216,20 @@ export function globMatch(glob: string, file: string): boolean {
   return new RegExp(`^${re}$`).test(f)
 }
 
-/** 一段两头的引号（拆段时引号里的 && 也被切开，剩下半边引号）：比前缀前去掉 */
-const unquote = (s: string) => s.replace(/^["']+|["']+$/g, '').trim()
+/**
+ * 一段两头的引号（拆段时引号里的 && 也被切开，剩下半边引号）：比前缀前去掉。
+ * 引号成对时只去掉整段外面包的那一层：`"D:\Program Files\…\Build.bat" 参数` 开头的引号要留着，
+ * 去掉了程序名就成了 `D:\Program`，长命令守卫认不出这是编译（用户 2026-11-12 报前台 Build.bat 没被拦）
+ */
+const unquote = (s: string) => {
+  const t = s.trim()
+  const even = (q: string) => (t.split(q).length - 1) % 2 === 0
+  if (!even('"') || !even("'")) return t.replace(/^["']+|["']+$/g, '').trim()
+  const q = t[0]
+  if ((q === '"' || q === "'") && t.length > 1 && t.endsWith(q) && !t.slice(1, -1).includes(q))
+    return t.slice(1, -1).trim()
+  return t
+}
 
 /**
  * shell 命令拆成一段一段（按 &&、||、;、|、换行）：模型常写成 `cd 项目 && npm test`，按整条命令的开头比

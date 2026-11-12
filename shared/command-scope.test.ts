@@ -98,3 +98,13 @@ test('一定要跑几分钟的：UE 编译打包、VS / CMake 整体编译、Doc
   ])
     assert.ok(!heavySegment(c), c)
 })
+
+test('PowerShell 的 & "带空格的路径" 拆段后程序名不丢：前台的 UE 编译认得出来（用户 2026-11-12 报前台 Build.bat 没被拦）', () => {
+  const c =
+    '& "D:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat" TPSProjectEditor Win64 Development -Project="C:\\Users\\me\\P\\TPSProject.uproject" -WaitMutex 2>&1 | Select-Object -Last 120; \'===EXIT=\' + $LASTEXITCODE'
+  const segs = runSegments(c)
+  assert.equal(segHead(segs[0]), 'build')
+  assert.ok(heavySegment(segs[0]), segs[0])
+  // 拆段切开的半边引号照旧去掉
+  assert.deepEqual(runSegments('bash -lc "npm test && npm run e2e"'), ['npm test', 'npm run e2e'])
+})

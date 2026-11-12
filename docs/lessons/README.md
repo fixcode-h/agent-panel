@@ -63,51 +63,52 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 
 按名字排。拆分片、加分片时同步这张表。
 
-| 分片                                             | 管什么                           |
-| ------------------------------------------------ | -------------------------------- |
-| [alerts.md](./alerts.md)                         | 执行出错和没有响应               |
-| [asks.md](./asks.md)                             | 提问窗口                         |
-| [attachments.md](./attachments.md)               | 附件                             |
-| [background.md](./background.md)                 | 后台命令                         |
-| [builtin.md](./builtin.md)                       | 内置角色、工作流和 Skill         |
-| [card-surface.md](./card-surface.md)             | 卡片的边界                       |
-| [child-idle-ask.md](./child-idle-ask.md)         | 子对话没有输出时自动询问         |
-| [child-merge-fail.md](./child-merge-fail.md)     | 子对话合回失败退回给谁           |
-| [child-wrapup.md](./child-wrapup.md)             | 子对话收尾和独立分支             |
-| [cli-process.md](./cli-process.md)               | 启动 CLI 进程和解析输出          |
-| [cli.md](./cli.md)                               | CLI 定义、模型和思考强度         |
-| [composer.md](./composer.md)                     | 对话输入框                       |
-| [data.md](./data.md)                             | 数据结构、存储、升级兼容和出包   |
-| [e2e.md](./e2e.md)                               | 端到端测试和假 CLI               |
-| [execution.md](./execution.md)                   | 一轮执行怎么收尾                 |
-| [list-pane.md](./list-pane.md)                   | 中间列表栏                       |
-| [local-image.md](./local-image.md)               | 本机生图（ComfyUI 安装、启动）   |
-| [memory.md](./memory.md)                         | 对话数据的内存和落盘             |
-| [fold.md](./fold.md)                             | 回复的折叠和派单行               |
-| [messages.md](./messages.md)                     | 对话里的消息和条目               |
-| [plan.md](./plan.md)                             | 执行计划                         |
-| [process.md](./process.md)                       | CLI 进程：停止、保活和回收       |
-| [project-files.md](./project-files.md)           | 面板往用户项目里临时写的文件     |
-| [prompts.md](./prompts.md)                       | 给 Agent 的提示词                |
-| [prompt-delta.md](./prompt-delta.md)             | 续接只发增量的提示词             |
-| [retry.md](./retry.md)                           | 报错后的重试                     |
-| [review.md](./review.md)                         | 收尾评审                         |
-| [rpc-steer.md](./rpc-steer.md)                   | 常驻协议的插话                   |
-| [server.md](./server.md)                         | 服务端接口和访问控制             |
-| [settings.md](./settings.md)                     | 项目设置                         |
-| [state.md](./state.md)                           | 对话状态和父子对话之间的交付     |
-| [state-word.md](./state-word.md)                 | 对话状态的说法                   |
-| [status-bar.md](./status-bar.md)                 | 输入框上方的状态栏               |
-| [steering.md](./steering.md)                     | 插话和运行中发来的消息           |
-| [task-export.md](./task-export.md)               | 导出报告的口径                   |
-| [testing.md](./testing.md)                       | 测试：增删、降级和断言           |
-| [test-child-scripts.md](./test-child-scripts.md) | 测试里起的子进程脚本             |
-| [tooling.md](./tooling.md)                       | 面板工具通道（MCP）和 AI 的用法  |
-| [triage.md](./triage.md)                         | 父对话分诊和就地微改动           |
-| [ui-check-demo-data.md](./ui-check-demo-data.md) | 界面检查：改演示数据             |
-| [ui-check-transient.md](./ui-check-transient.md) | 界面检查：会自己消失的元素       |
-| [ui-check.md](./ui-check.md)                     | 界面检查（scripts/ui-check.mjs） |
-| [ui.md](./ui.md)                                 | 界面通用：文案、命名和状态判定   |
-| [usage.md](./usage.md)                           | 用量和速度的统计口径             |
-| [visual.md](./visual.md)                         | 视觉：部件、底色和字重           |
-| [worktree.md](./worktree.md)                     | 独立工作目录（worktree）         |
+| 分片                                             | 管什么                                  |
+| ------------------------------------------------ | --------------------------------------- |
+| [alerts.md](./alerts.md)                         | 执行出错和没有响应                      |
+| [asks.md](./asks.md)                             | 提问窗口                                |
+| [attachments.md](./attachments.md)               | 附件                                    |
+| [background.md](./background.md)                 | 后台命令                                |
+| [panel-run-commands.md](./panel-run-commands.md) | 面板替 Agent 跑的命令（编译、测试步骤） |
+| [builtin.md](./builtin.md)                       | 内置角色、工作流和 Skill                |
+| [card-surface.md](./card-surface.md)             | 卡片的边界                              |
+| [child-idle-ask.md](./child-idle-ask.md)         | 子对话没有输出时自动询问                |
+| [child-merge-fail.md](./child-merge-fail.md)     | 子对话合回失败退回给谁                  |
+| [child-wrapup.md](./child-wrapup.md)             | 子对话收尾和独立分支                    |
+| [cli-process.md](./cli-process.md)               | 启动 CLI 进程和解析输出                 |
+| [cli.md](./cli.md)                               | CLI 定义、模型和思考强度                |
+| [composer.md](./composer.md)                     | 对话输入框                              |
+| [data.md](./data.md)                             | 数据结构、存储、升级兼容和出包          |
+| [e2e.md](./e2e.md)                               | 端到端测试和假 CLI                      |
+| [execution.md](./execution.md)                   | 一轮执行怎么收尾                        |
+| [list-pane.md](./list-pane.md)                   | 中间列表栏                              |
+| [local-image.md](./local-image.md)               | 本机生图（ComfyUI 安装、启动）          |
+| [memory.md](./memory.md)                         | 对话数据的内存和落盘                    |
+| [fold.md](./fold.md)                             | 回复的折叠和派单行                      |
+| [messages.md](./messages.md)                     | 对话里的消息和条目                      |
+| [plan.md](./plan.md)                             | 执行计划                                |
+| [process.md](./process.md)                       | CLI 进程：停止、保活和回收              |
+| [project-files.md](./project-files.md)           | 面板往用户项目里临时写的文件            |
+| [prompts.md](./prompts.md)                       | 给 Agent 的提示词                       |
+| [prompt-delta.md](./prompt-delta.md)             | 续接只发增量的提示词                    |
+| [retry.md](./retry.md)                           | 报错后的重试                            |
+| [review.md](./review.md)                         | 收尾评审                                |
+| [rpc-steer.md](./rpc-steer.md)                   | 常驻协议的插话                          |
+| [server.md](./server.md)                         | 服务端接口和访问控制                    |
+| [settings.md](./settings.md)                     | 项目设置                                |
+| [state.md](./state.md)                           | 对话状态和父子对话之间的交付            |
+| [state-word.md](./state-word.md)                 | 对话状态的说法                          |
+| [status-bar.md](./status-bar.md)                 | 输入框上方的状态栏                      |
+| [steering.md](./steering.md)                     | 插话和运行中发来的消息                  |
+| [task-export.md](./task-export.md)               | 导出报告的口径                          |
+| [testing.md](./testing.md)                       | 测试：增删、降级和断言                  |
+| [test-child-scripts.md](./test-child-scripts.md) | 测试里起的子进程脚本                    |
+| [tooling.md](./tooling.md)                       | 面板工具通道（MCP）和 AI 的用法         |
+| [triage.md](./triage.md)                         | 父对话分诊和就地微改动                  |
+| [ui-check-demo-data.md](./ui-check-demo-data.md) | 界面检查：改演示数据                    |
+| [ui-check-transient.md](./ui-check-transient.md) | 界面检查：会自己消失的元素              |
+| [ui-check.md](./ui-check.md)                     | 界面检查（scripts/ui-check.mjs）        |
+| [ui.md](./ui.md)                                 | 界面通用：文案、命名和状态判定          |
+| [usage.md](./usage.md)                           | 用量和速度的统计口径                    |
+| [visual.md](./visual.md)                         | 视觉：部件、底色和字重                  |
+| [worktree.md](./worktree.md)                     | 独立工作目录（worktree）                |

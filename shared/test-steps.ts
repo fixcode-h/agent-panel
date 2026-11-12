@@ -400,6 +400,9 @@ export const isWindows = (platform: string) => /^win/i.test(platform)
 
 const DEFAULT_WSL = 'Ubuntu-24.04'
 
+/** 步骤在 WSL 里跑时用的发行版：项目没设就用默认的 */
+export const wslDistroOf = (wslDistro = '') => wslDistro.trim() || DEFAULT_WSL
+
 /**
  * 一条步骤实际要跑的命令行。
  * wsl 在非 Windows 上只能按 bash 跑（没有 WSL），这时写明降级，避免假装在 WSL 里跑过。
@@ -409,7 +412,7 @@ export function stepCommand(step: Pick<TestStep, 'command' | 'env'>, platform: s
   const cmd = step.command.trim()
   if (step.env === 'wsl') {
     if (!platformWin) return `bash -lc ${quote(cmd)}`
-    return `wsl.exe -d ${wslDistro.trim() || DEFAULT_WSL} -- bash -lc ${quote(cmd)}`
+    return `wsl.exe -d ${wslDistroOf(wslDistro)} -- bash -lc ${quote(cmd)}`
   }
   if (step.env === 'powershell')
     return platformWin ? `powershell -NoProfile -Command ${quote(cmd)}` : `pwsh -NoProfile -Command ${quote(cmd)}`
