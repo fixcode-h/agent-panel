@@ -1,11 +1,10 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
-import { Code2, Copy, GitCompareArrows, Loader2, FileText, Search, TableProperties } from 'lucide-react'
+import { Code2, Copy, GitCompareArrows, Loader2, FileText, Search } from 'lucide-react'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import type { FileContent, FileDiff } from '@shared/files'
 import { editorUrl } from '@/lib/editor-url'
 import { fmtClock } from '@/lib/tasks'
-import { useNav } from '@/lib/data'
 import { sizeText, useHighlightedLines, useHljs } from '@/lib/file-highlight'
 import { findHits, hitsByLine, lineOf, lineStarts } from '@/lib/file-search'
 import { isJsonPath } from '@/lib/json-tree'
@@ -26,6 +25,7 @@ import { SheetTable, SheetTabs } from './SheetTable'
 import { firstShownSheet, parseLoc } from './sheet-look'
 import { SheetHeaderBar } from './SheetHeaderBar'
 import { useClaimedSheetView } from './use-sheet-claim'
+import { SheetClaimButton } from './SheetClaimButton'
 import './file-view.css'
 
 // 编辑器（CodeMirror）只在切到编辑时才加载：只看文件的人不用下载它
@@ -151,7 +151,6 @@ export function FileViewDialog({
   )
   const tableRows = sheet ? sheet.rows : csvRows
   const sheetName = sheet?.name ?? ''
-  const { go } = useNav()
   // 表格的表头、筛选和排序；表格插件认领的文件（项目表格目录里的）表头按项目的表格设置，标题栏多「在表格页打开」
   const {
     claim,
@@ -306,16 +305,12 @@ export function FileViewDialog({
           actions={
             <>
               {viewable && <ModalButton icon={Search} label={t('在文件中查找')} onClick={() => search.show()} />}
-              {claim?.open && !editing && (
-                <ModalButton
-                  icon={TableProperties}
-                  label={claim.open.label}
-                  onClick={() => {
-                    // 改了 CSV 还没存：先问要不要放弃，不直接跳走
-                    if (ed.dirty) return setAskClose(true)
-                    close()
-                    go({ page: 'plugin', id: claim.plugin, sub: claim.open!.page, msg: claim.open!.path(sheetName) })
-                  }}
+              {!editing && (
+                <SheetClaimButton
+                  claim={claim}
+                  sheet={sheetName}
+                  // 改了 CSV 还没存：先问要不要放弃，不直接跳走
+                  leave={() => (ed.dirty ? (setAskClose(true), false) : (close(), true))}
                 />
               )}
               <ModalButton
