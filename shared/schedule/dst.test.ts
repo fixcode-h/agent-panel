@@ -8,7 +8,7 @@ import test from 'node:test'
 
 // 静态 import 会先于这行执行：schedule.ts 动态导入，保证在时区设好之后才加载
 process.env.TZ = 'America/New_York'
-const { nextRunAt, scheduleClock } = await import('./schedule.ts')
+const { nextRunAt, scheduleClock } = await import('../schedule.ts')
 
 // 2026-03-08 是美国开始夏令时的那天：02:00 直接跳到 03:00
 const local = (d: number, h: number, m: number) => new Date(2026, 2, d, h, m).getTime()

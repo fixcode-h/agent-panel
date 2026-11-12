@@ -1,4 +1,4 @@
-import { isEventSchedule } from '@shared/schedule-trigger'
+import { isEventSchedule } from '@shared/schedule/trigger'
 import {
   isoWeekday,
   nextRunAt,

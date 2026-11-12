@@ -17,7 +17,7 @@ import {
   type ScheduleRepeat,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
-import { isEventSchedule, ScheduleTrigger, triggerConfigError } from '@shared/schedule-trigger'
+import { isEventSchedule, ScheduleTrigger, triggerConfigError } from '@shared/schedule/trigger'
 import { api } from '@/lib/api'
 import type { Agent } from '@shared/schema'
 import { listableAgents } from '@shared/builtin/core'

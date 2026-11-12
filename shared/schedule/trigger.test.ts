@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupOf, nextToRun, pickDue, Schedule, weekOccurrences, weekStartOf } from './schedule.ts'
+import { groupOf, nextToRun, pickDue, Schedule, weekOccurrences, weekStartOf } from '../schedule.ts'
 import {
   everyLabel,
   isEventSchedule,
@@ -10,7 +10,7 @@ import {
   triggerConfigError,
   triggerFires,
   triggerPrompt,
-} from './schedule-trigger.ts'
+} from './trigger.ts'
 
 const MINUTE = 60_000
 const now = Date.parse('2026-06-01T10:00:00Z')

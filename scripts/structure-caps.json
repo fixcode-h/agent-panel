@@ -306,7 +306,6 @@
       "run-usage.ts",
       "runner.ts",
       "runtime.d.ts",
-      "schedule-trigger.ts",
       "schedule.ts",
       "schema.ts",
       "search-exclude.ts",

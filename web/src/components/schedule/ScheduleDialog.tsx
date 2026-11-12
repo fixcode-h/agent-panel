@@ -8,7 +8,7 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Card } from '@/components/ui/card'
-import { isEventSchedule, triggerKindOptions } from '@shared/schedule-trigger'
+import { isEventSchedule, triggerKindOptions } from '@shared/schedule/trigger'
 import { EndChoice } from './EndChoice'
 import { TriggerFields } from './TriggerFields'
 import {

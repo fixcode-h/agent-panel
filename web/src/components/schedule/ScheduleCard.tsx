@@ -14,7 +14,7 @@ import {
   type ScheduleGroup,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
-import { isEventSchedule, triggerLabel, triggerStateLabel, triggerSummary } from '@shared/schedule-trigger'
+import { isEventSchedule, triggerLabel, triggerStateLabel, triggerSummary } from '@shared/schedule/trigger'
 import { timeAgo } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'

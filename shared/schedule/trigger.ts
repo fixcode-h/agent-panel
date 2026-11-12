@@ -9,7 +9,7 @@
  * 不 import shared/schedule.ts：那边的 ScheduleInput 要引用这里的结构，反过来引用会成环
  */
 import { z } from 'zod'
-import { t } from './i18n.ts'
+import { t } from '../i18n.ts'
 
 /** 触发方式：按时间（原来的定时计划）/ 目录文件变了 / 远端分支有新提交 / 命令退出码变了 */
 export const TriggerKind = z.enum(['time', 'files', 'git', 'command'])
