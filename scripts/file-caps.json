@@ -31,7 +31,7 @@
     "server/assist.ts#assistApi": 370,
     "server/background.ts#createBackground": 540,
     "server/exec/rpc/codex.ts#codexAdapter": 560,
-    "server/exec/runner.ts#runAgent": 1610,
+    "server/exec/runner.ts#runAgent": 1380,
     "server/hooks/dispatch.ts#hookOptions": 370,
     "server/orch-mcp.ts#callOrchTool": 340,
     "server/orch-mcp.ts#orchTools": 740,
