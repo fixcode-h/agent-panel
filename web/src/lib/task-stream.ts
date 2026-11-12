@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from './api'
-import { takeLive } from './live-store'
+import { takeLive } from './live/store'
 
 type Patch = { meta: Omit<Task, 'messages'>; messages: TaskMessage[]; total: number }
 
@@ -106,7 +106,7 @@ export function useTaskStream(
       cb.current(t)
     }
     es.addEventListener('full', (e) => {
-      // live（运行时状态）放进 live-store，任务记录里不带它（见 web/src/lib/live-store.ts）
+      // live（运行时状态）放进 live/store.ts，任务记录里不带它（见 web/src/lib/live/store.ts）
       emit(takeLive(JSON.parse((e as MessageEvent).data) as Task))
     })
     es.addEventListener('patch', (e) => {

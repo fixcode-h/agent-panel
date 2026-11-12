@@ -48,7 +48,7 @@ function globToRegExp(glob: string) {
   return new RegExp(`^${re}${plain ? '(?:/.*)?' : ''}$`, 'i')
 }
 
-const GLOB_CACHE = new Map<string, RegExp | null>()
+const GLOB_CACHE = new Map<string, RegExp | null>() // 模块状态：缓存，丢了重算
 
 /** 一个改动文件是否匹配这条 glob（相对项目根，两侧都按 / 比） */
 export function matchesGlob(file: string, glob: string) {

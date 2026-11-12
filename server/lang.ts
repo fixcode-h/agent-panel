@@ -18,7 +18,7 @@ export function applyServerLang(setting?: string, browserLang?: string) {
 }
 
 const dir = process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel')
-let saved: { language?: string; browserLang?: string } = {}
+let saved: { language?: string; browserLang?: string } = {} // 模块状态：配置副本，重启时重读
 try {
   saved = JSON.parse(readFileSync(path.join(dir, 'settings.json'), 'utf8')) ?? {}
 } catch {}

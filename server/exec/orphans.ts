@@ -142,8 +142,8 @@ const isOurs = (x: TrackedCli) => x.panelPid === PANEL_PID
  * 都要同步读一遍文件，子对话一多、git 查询一频繁，事件循环上就全是同步读盘。
  * 别的实例那份也缓一次（foreign）：进程面板要列本机所有面板的 CLI，但不必每次刷新都同步读盘
  */
-let mem: TrackedCli[] | null = null
-let foreign: TrackedCli[] = []
+let mem: TrackedCli[] | null = null // 模块状态：会话，跟着进程或连接一起没
+let foreign: TrackedCli[] = [] // 模块状态：会话，跟着进程或连接一起没
 
 /** 重新读别的实例那份（不含自己） */
 function refreshForeign() {

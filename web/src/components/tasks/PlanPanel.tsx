@@ -15,8 +15,8 @@ import {
   unfinishedSteps,
 } from '@shared/plan'
 import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
-import { liveActive, type TaskLive } from '@shared/task-live'
-import { useLive } from '@/lib/live-store'
+import { liveActive, type TaskLive } from '@shared/live/task-live'
+import { useLive } from '@/lib/live/store'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'

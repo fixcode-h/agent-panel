@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import type { Task } from '../shared/schema.ts'
-import { capture } from './exec/process.ts'
+import { gitRun } from './exec/git.ts'
 import { DATA_DIR } from './store.ts'
 import { p4Runner, parseZtag, type P4Run } from './p4-split.ts'
 import { detectVcs } from './projects-analyze.ts'
@@ -31,8 +31,7 @@ export interface CherryPickArgs {
 
 type Result = { ok: boolean; info: string }
 
-const git = (cwd: string, ...args: string[]) =>
-  capture('git', ['-c', 'core.quotepath=off', ...args], cwd, process.env, 60_000)
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args, { timeoutMs: 60_000 })
 
 export { ownFiles }
 
@@ -309,11 +308,7 @@ export async function cherryPickP4(
     const merged: { rel: string; file: string; conflict: boolean }[] = []
     /** 三方合并到 theirs（目标文件的副本）：返回 clean / conflict，git merge-file 自己出错时返回空 */
     const merge3 = async (theirs: string, base: string, mine: string) => {
-      const m = await capture(
-        'git',
-        ['merge-file', '-L', 'target', '-L', 'before', '-L', 'mine', theirs, base, mine],
-        work,
-      )
+      const m = await gitRun(work, ['merge-file', '-L', 'target', '-L', 'before', '-L', 'mine', theirs, base, mine])
       // merge-file 的退出码是冲突数（最多 127），负数 / 大于 127 是它自己出错
       if (m.code === 0) return 'clean'
       if (m.code !== null && m.code > 0 && m.code < 128) return 'conflict'

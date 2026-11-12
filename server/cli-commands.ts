@@ -50,7 +50,7 @@ export function parseQueried(q: CommandsQuery, reply: unknown): QueriedCommand[]
 }
 
 // 问一次要起一个 CLI 进程（Pi 还要加载插件，几秒）：同一个目录、同样的信任选择 5 分钟内用上次的；装删插件后清掉
-const cache = new Map<string, { at: number; list: Promise<QueriedCommand[]> }>()
+const cache = new Map<string, { at: number; list: Promise<QueriedCommand[]> }>() // 模块状态：缓存，丢了重算
 const TTL = 5 * 60_000
 export const clearQueriedCommands = () => cache.clear()
 

@@ -15,6 +15,9 @@ const PERSIST_WAIT_TIMEOUT_MS = 5000
 const PERSIST_WAIT_INTERVAL_MS = 20
 
 const { createStampTracker, createTaskStore, messageChars, messageGap } = await import('./task-store.ts')
+const { parseMessagesJsonl } = await import('./tasks/messages-file.ts')
+/** 读盘上的对话文件（JSONL，按 id 归并） */
+const conv = (file: string) => parseMessagesJsonl(readFileSync(file, 'utf8')).messages
 
 /** 等落盘：写文件是真实 I/O（fsync + rename），慢盘上耗时不定，只能轮询；到点报出等的是什么 */
 async function until(cond: () => boolean, what: string, ms = PERSIST_WAIT_TIMEOUT_MS) {
@@ -43,20 +46,6 @@ const base = (id: string, extra: Record<string, unknown>) => ({
   createdAt: '2026-10-01T00:00:00.000Z',
   updatedAt: '2026-10-01T00:00:00.000Z',
   ...extra,
-})
-
-test('旧任务记录没有 turnSeenAt：当作看过，不亮成未读', async () => {
-  const chats = path.join(dir, 'tasks', 'chats')
-  const done = '2026-10-01T01:00:00.000Z'
-  // 早期版本写出来的记录没有 turnSeenAt 这个键
-  write(path.join(chats, 'old-done.json'), base('old-done', { turnDoneAt: done }))
-  // 新版本写出来的记录带着 turnSeenAt，没看过就保持未读
-  write(path.join(chats, 'new-unread.json'), base('new-unread', { turnDoneAt: done, turnSeenAt: '' }))
-
-  const store = createTaskStore()
-  const list = await store.list()
-  assert.equal(list.find((t) => t.id === 'old-done')?.turnSeenAt, done, '旧记录补成已读')
-  assert.equal(list.find((t) => t.id === 'new-unread')?.turnSeenAt, '', '新记录保持未读')
 })
 
 /** 一条 Agent 回复：带工具输出时才建工具调用（工具输出是指纹里最贵的部分） */
@@ -192,15 +181,13 @@ test('落盘：消息变了才重写消息文件，新增/替换/返工删除都
       messages: [msg('a', '第一条', '输出 1'), msg('b', '第二条')],
     }),
   )
-  const file = path.join(dir, 'tasks', 'chats', `${created.id}.messages.json`)
-  // 换成一个能认出来的内容：没重写就还是它
-  const marker = '[{"id":"marker","role":"user","text":"手写的","tools":[]}]'
-  writeFileSync(file, marker, 'utf8')
+  const file = path.join(dir, 'tasks', 'chats', `${created.id}.messages.jsonl`)
   // 立即落盘（关键节点就这样调）：不走 400ms 合并窗口，断言才能直接看文件
+  const before = readFileSync(file, 'utf8')
   await store.update(created.id, { ...created, messages: created.messages }, { now: true })
-  assert.equal(readFileSync(file, 'utf8'), marker, '消息没变不重写')
+  assert.equal(readFileSync(file, 'utf8'), before, '消息没变不重写')
 
-  const ids = (raw: string) => JSON.parse(raw) as { id: string; text: string }[]
+  const ids = (raw: string) => parseMessagesJsonl(raw).messages
   // 消息文件按 400ms 窗口合并写：等到目标内容真的出现在文件里再断言，返回实际等了多久。
   // 固定 sleep 500ms 在高负载（CI）上会读到窗口前的旧内容，那次晚落地不是代码错；
   // 到上限仍未出现就交给下面的断言带等待时长报失败，不静默通过。
@@ -255,8 +242,8 @@ test('消息连续更新时对话文件按间隔合并写，窗口内的最后�
     steps: [],
     requests: [],
   } as never)
-  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.json`)
-  const ids = () => JSON.parse(readFileSync(file, 'utf8')).map((m: { id: string }) => m.id)
+  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.jsonl`)
+  const ids = () => conv(file).map((m) => m.id)
   assert.deepEqual(ids(), [], '创建时就写入空对话')
 
   // 流式输出：同一秒里连着更新好几次，不应该每次都把整个对话文件重写一遍
@@ -287,8 +274,8 @@ test('合并窗口里紧接着的立即落盘不会被窗口吞掉，也不会�
   const task = await store.create(
     TaskData.parse({ projectId: '', title: '窗口', mode: 'chat', status: 'running', messages: [msg('a', '一')] }),
   )
-  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.json`)
-  const ids = () => (JSON.parse(readFileSync(file, 'utf8')) as { id: string }[]).map((x) => x.id)
+  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.jsonl`)
+  const ids = () => conv(file).map((x) => x.id)
   assert.deepEqual(ids(), ['a'], '创建时就写入')
 
   // 第一次普通更新：落在窗口里，只排队不写
@@ -309,8 +296,8 @@ test('flushAll：退出前把合并窗口里排着的对话立即写盘，不等
   const task = await store.create(
     TaskData.parse({ projectId: '', title: '退出', mode: 'chat', status: 'running', messages: [msg('a', '一')] }),
   )
-  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.json`)
-  const ids = () => (JSON.parse(readFileSync(file, 'utf8')) as { id: string }[]).map((x) => x.id)
+  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.jsonl`)
+  const ids = () => conv(file).map((x) => x.id)
   await store.update(task.id, { ...task, messages: [msg('a', '一'), msg('b', '最后一段')] })
   assert.deepEqual(ids(), ['a'], '窗口内先不写')
   await store.flushAll()

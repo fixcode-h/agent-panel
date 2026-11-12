@@ -593,7 +593,7 @@ function demoNext(document: string, task: Task) {
 }
 
 /** 在线演示里用户对「完成后等我确认」的回答：请求 id → 决定（演示后端回答请求时写进来） */
-export const simAnswers = new Map<string, { allow: boolean; answer?: string }>()
+export const simAnswers = new Map<string, { allow: boolean; answer?: string }>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 执行一轮（模拟） */
 export async function runTurn(ctx: RunContext) {

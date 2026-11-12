@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { TaskLive } from '@shared/task-live'
-import { putLive } from './live-store'
+import type { TaskLive } from '@shared/live/task-live'
+import { putLive } from './store'
 import { openPageStream } from './page-stream'
 
 /** 事件流连不上多久之后改用轮询兜底：EventSource 自己会重连，短暂断开不用急着轮询 */
@@ -8,7 +8,7 @@ const FALLBACK_AFTER_MS = 5000
 
 /**
  * 全局事件流（服务端 server/tasks/page-feed.ts）：和托盘信号共用页面事件流 /api/app/events 那一条连接（page-stream.ts）。
- * - `live`：顶层对话的运行时状态变了，直接放进 live-store，侧栏、标题、项目首页跟着变；
+ * - `live`：顶层对话的运行时状态变了，直接放进 live/store.ts，侧栏、标题、项目首页跟着变；
  * - `tasks`：任务列表变了，调 onTasks 重新拉一次列表（带 ETag，没变就是 304）。
  * 重连上之后也拉一次：断开期间错过的变化补回来。
  *

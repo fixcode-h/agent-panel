@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang, t } from '@shared/i18n'
 import { TaskData } from '@shared/schema'
-import { taskLiveOf, type LiveRuntime } from '@shared/task-live'
+import { taskLiveOf, type LiveRuntime } from '@shared/live/task-live'
 import {
   countBusy,
   initialTitleState,
@@ -141,7 +141,7 @@ test('打开页面时已经有任务在跑，标题直接带数量', () => {
 })
 
 test('标题计数和侧栏、行首转圈读同一个判定：两个在跑就是 2', () => {
-  // 状态由服务端算好放在 live 里（shared/task-live.ts）：这里按同一个 taskLiveOf 算
+  // 状态由服务端算好放在 live 里（shared/live/task-live.ts）：这里按同一个 taskLiveOf 算
   const live = (over: Record<string, unknown> = {}, rt: Partial<LiveRuntime> = {}) =>
     taskLiveOf(
       { ...TaskData.parse({ projectId: 'p', title: 't', mode: 'chat', status: 'running' }), ...over },

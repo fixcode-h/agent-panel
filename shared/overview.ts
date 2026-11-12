@@ -1,13 +1,13 @@
 /**
  * 跨项目的对话总览（左侧图标栏「对话总览」）：所有项目的顶层对话按「要不要你管」分组。
  * 侧栏是「项目 → 对话」树、每个项目只露几条，项目一多就看不出哪些在等你、哪些停住了；
- * 这里只做分组和排序，状态全部读服务端给的 live（shared/task-live.ts，调用方传 liveOf）和 openPlan。
+ * 这里只做分组和排序，状态全部读服务端给的 live（shared/live/task-live.ts，调用方传 liveOf）和 openPlan。
  */
 import { treeUsage } from './budget.ts'
 import { openPlan } from './plan.ts'
 import type { Task } from './schema.ts'
 import { askedAt, taskDeleted, type ConvState } from './task.ts'
-import { liveDoneDot, type TaskLive } from './task-live.ts'
+import { liveDoneDot, type TaskLive } from './live/task-live.ts'
 
 /** you：等你处理（提问、失败、做完没看）；stalled：停住了（计划没做完、也没在跑）；running：执行中或在等结果 */
 export type OverviewGroup = 'you' | 'stalled' | 'running' | 'rest'

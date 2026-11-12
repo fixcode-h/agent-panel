@@ -1,4 +1,4 @@
-import { useLiveById } from '@/lib/live-store'
+import { useLiveById } from '@/lib/live/store'
 import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react'
 import { toast } from '@/lib/toast'
 import type { Task, TaskRoute } from '@shared/schema'
@@ -67,7 +67,7 @@ export function RouteProvider({
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
-  // 后台命令只在服务端给的 live 里（web/src/lib/live-store.ts）
+  // 后台命令只在服务端给的 live 里（web/src/lib/live/store.ts）
   const jobs = useLiveById(task.id)?.jobs
   const live = useMemo<DispatchLive>(() => {
     const world = {

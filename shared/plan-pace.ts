@@ -29,7 +29,7 @@ export const PACE_CALLS = 20
 export const PACE_TIMES = 1
 
 /** 算「动手」的工具：改文件、跑命令。读文件、搜代码是摸情况，面板自己的工具（set_plan 这些）不算 */
-const WORK = new Set(['edit', 'shell'])
+const WORK = new Set(['edit', 'shell']) // 模块状态：常量，加载后不改
 
 export function planPaceHint(
   task: Pick<Task, 'plans' | 'steps'>,

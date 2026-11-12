@@ -1542,7 +1542,7 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
   Partial<Pick<Task, 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
     /**
      * 运行时的几项（名下在跑的子对话数、后代在等你的数、后台命令）：不在任务记录里，
-     * 由服务端算 TaskLive 时补进来（shared/task-live.ts 的 taskLiveOf），或者服务端内部判定时自己传
+     * 由服务端算 TaskLive 时补进来（shared/live/task-live.ts 的 taskLiveOf），或者服务端内部判定时自己传
      */
     childrenWorking?: number
     childrenNeeds?: number

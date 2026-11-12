@@ -1,14 +1,14 @@
 ---
-paths: shared/task-live.ts, server/tasks/live.ts, server/tasks/page-feed.ts, web/src/lib/live-store.ts, web/src/lib/events.ts, web/src/lib/page-stream.ts, server/page-events.ts
+paths: shared/live/task-live.ts, server/tasks/live.ts, server/tasks/page-feed.ts, web/src/lib/live/store.ts, web/src/lib/live/events.ts, web/src/lib/live/page-stream.ts, server/page-events.ts
 ---
 
 # 对话的运行时状态（TaskLive）和全局事件流
 
 ## 运行时事实只进 TaskLive，页面不自己推状态
 
-- 规则：进程、后台命令、子对话计数这类服务端才知道的事实加进 `shared/task-live.ts` 的 `TaskLive` 和 `taskLiveOf`，只在 `server/tasks/live.ts` 算；不往 `Task` 上叠字段，也不写盘（`NOT_STORED_FIELDS`）。页面只读 `live`，不调 `taskState` 一类。
+- 规则：进程、后台命令、子对话计数这类服务端才知道的事实加进 `shared/live/task-live.ts` 的 `TaskLive` 和 `taskLiveOf`，只在 `server/tasks/live.ts` 算；不往 `Task` 上叠字段，也不写盘（`NOT_STORED_FIELDS`）。页面只读 `live`，不调 `taskState` 一类。
 - 起因：重构前各路由各叠一份运行时字段，漏叠的接口在页面上算出另一个状态（侧栏转圈和首页、浮条对不上）；`jobs` 还被顺手写回磁盘。
-- 防线：`scripts/rules-check.mjs` 第 21 条；`shared/task-live.test.ts`、`server/task-store.test.ts`。
+- 防线：`scripts/rules-check.mjs` 第 22 条；`shared/live/task-live.test.ts`、`server/task-store.test.ts`。
 
 ## 页面的常驻连接只开一条
 

@@ -3,7 +3,7 @@
  * 只列进程还活着的、父对话的「有子对话在跑」和 CLI 生命周期约定。
  * 运行：npm run test:unit
  */
-import { taskLiveOf } from '../shared/task-live.ts'
+import { taskLiveOf } from '../shared/live/task-live.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../shared/i18n.ts'
@@ -224,7 +224,7 @@ test('父对话的「执行中」：自己有子对话在跑时也算，但不�
     working: false,
   }
   const parsed = Task.parse(base)
-  // 名下子对话在跑：服务端给的 live 是「等结果」，侧栏据此转圈（shared/task-live.ts）
+  // 名下子对话在跑：服务端给的 live 是「等结果」，侧栏据此转圈（shared/live/task-live.ts）
   const rt = { cliAlive: false, jobs: [], childrenWorking: 2, childrenCli: 0, childrenNeeds: 0 }
   assert.equal(taskLiveOf(parsed, rt).state, 'waiting')
   const summary = taskSummary(parsed)

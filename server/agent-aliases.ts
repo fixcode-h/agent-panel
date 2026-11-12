@@ -10,7 +10,7 @@ import { dataPath, writeJsonAtomic } from './store.ts'
  */
 const FILE = dataPath('config/agent-aliases.json')
 
-let current: Record<string, string> = {}
+let current: Record<string, string> = {} // 模块状态：配置副本，重启时重读
 
 export function loadAgentAliases() {
   try {

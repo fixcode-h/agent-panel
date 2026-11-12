@@ -12,7 +12,7 @@
  * 这里只有纯计算，定时器在 notify.ts 的 useRunningTitle 里；单测用模拟时钟回放抖动序列。
  */
 import { t } from '@shared/i18n'
-import { liveBusy, type TaskLive } from '@shared/task-live'
+import { liveBusy, type TaskLive } from '@shared/live/task-live'
 
 /** 数量增加（不是从 0 起来）时稳这么久才改标题 */
 export const TITLE_SETTLE_UP = 400
@@ -30,7 +30,7 @@ export interface TitleState {
 
 const clean = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0)
 
-/** 还在执行的任务数：和侧栏、行首转圈同一个判定（shared/task-live.ts 的 liveBusy） */
+/** 还在执行的任务数：和侧栏、行首转圈同一个判定（shared/live/task-live.ts 的 liveBusy） */
 export const countBusy = (lives: Pick<TaskLive, 'state'>[]) => lives.filter(liveBusy).length
 
 /** 标题本体；托盘标记由 page-signal.ts 接在后面 */

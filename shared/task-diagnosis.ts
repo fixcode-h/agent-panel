@@ -69,7 +69,7 @@ type DiagTask = Pick<
   | 'awaitingUser'
 > & {
   runs?: Task['runs']
-  /** 运行时的几项（CLI 存活、后台命令、名下子对话计数）：页面从服务端给的 live 补进来（shared/task-live.ts） */
+  /** 运行时的几项（CLI 存活、后台命令、名下子对话计数）：页面从服务端给的 live 补进来（shared/live/task-live.ts） */
   cliAlive?: boolean
   jobs?: TaskJob[]
   childrenWorking?: number

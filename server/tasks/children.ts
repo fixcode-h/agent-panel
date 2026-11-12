@@ -6,10 +6,7 @@ import {
   childFlowOf,
   childHolds,
   childHoldText,
-  childFacts,
   childReport,
-  convActive,
-  convState,
   type ConvState,
   helperRunning,
   helpersWorking,
@@ -30,7 +27,7 @@ import { releaseWorktree, worktreeStatus } from '../exec/worktree.ts'
 import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrate.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { descendantNeeds } from '../../shared/child-needs.ts'
+import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
 import { activePlan, holdWait, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
@@ -54,9 +51,7 @@ export function createChildren(sc: TasksScope) {
    * 父对话的「子对话在跑」计数、标题和侧栏的转圈、能不能回收都读它
    */
   const childActive = (tk: Task) =>
-    sc.startQueue.has(tk.id) ||
-    hasHeld(tk.id) ||
-    convActive(convState(childFacts(tk, { background: sc.pendingJobs(tk.id) })))
+    sc.startQueue.has(tk.id) || hasHeld(tk.id) || childRecordActive(tk, sc.pendingJobs(tk.id))
 
   /**
    * 名下有还在运行的子对话（见 childActive）几个：父对话的计数、保活回收都读它，不在各处再拼一遍。
@@ -73,30 +68,20 @@ export function createChildren(sc: TasksScope) {
    * 不缓存的话父对话开得越多，每秒扫整份任务列表的次数越多（每个父对话 2 次）
    */
   const CHILD_COUNT_TTL = 1000
-  let childScan: {
-    at: number
-    byParent: Map<string, { working: number; cli: number }>
-    needs: Map<string, number>
-  } | null = null
+  let childScan: { at: number; counts: (parentId: string) => ChildCounts } | null = null
   async function childCountsOf(parentId: string) {
     const now = Date.now()
     if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
-      const byParent = new Map<string, { working: number; cli: number }>()
       // 执行中的对话以内存里那份为准：请求刚弹出来还没落盘时，父对话也要马上变成「等你处理」
       const all = (await sc.store.list()).map((k) => sc.live.get(k.id)?.task ?? k)
-      for (const k of all) {
-        if (!k.parentTaskId) continue
-        const c = byParent.get(k.parentTaskId) ?? { working: 0, cli: 0 }
-        if (taskCliAlive(k.id)) c.cli++
-        if (childActive(k)) c.working++
-        byParent.set(k.parentTaskId, c)
+      // 和任务列表、演示后端同一份扫法（shared/children/row.ts）
+      childScan = {
+        at: now,
+        counts: childCountsScan(all, { active: childActive, cliAlive: (k) => taskCliAlive(k.id) }),
       }
-      childScan = { at: now, byParent, needs: descendantNeeds(all) }
     }
-    return {
-      ...(childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }),
-      needs: childScan.needs.get(parentId) ?? 0,
-    }
+    const c = childScan.counts(parentId)
+    return { working: c.childrenWorking, cli: c.childrenCli, needs: c.childrenNeeds }
   }
 
   /** 名下还在运行的子对话数（见 childActive） */

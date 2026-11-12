@@ -1,4 +1,4 @@
-import { liveFor, useLive } from '@/lib/live-store'
+import { liveFor, useLive } from '@/lib/live/store'
 import { useState } from 'react'
 import { Archive, ArchiveRestore, Pause, PencilLine, Pin, PinOff, Play, Power, PowerOff, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'

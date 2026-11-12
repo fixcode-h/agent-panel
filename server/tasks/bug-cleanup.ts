@@ -6,20 +6,17 @@
  * 面板只查不删：不做一键删除，也不拿快照还原文件
  */
 import { createHash } from 'node:crypto'
-import { execFile } from 'node:child_process'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import type { Task } from '../../shared/schema.ts'
 import type { CleanupState, Diagnosis } from '../../shared/bug-diagnosis-schema.ts'
 import { checkFile, fileClean, tempLogLines, type FileLine } from '../../shared/bug-cleanup.ts'
 import { cleanupFiles, cleaning, evidenceFiles, logFilesOf, phaseOf, planApproved } from '../../shared/bug-phase.ts'
 import { settleCleanup } from '../../shared/bug-diagnosis.ts'
 import { projectChanges } from '../exec/file-events.ts'
+import { gitExec } from '../exec/git.ts'
 import { TASK_FILES_DIR } from '../store.ts'
 import type { TasksScope } from './scope.ts'
-
-const run = promisify(execFile)
 
 /** 快照里「加日志之前这个文件还不存在」的记号 */
 const ABSENT = 'absent'
@@ -71,7 +68,7 @@ export type CleanupPreview = { found: FileLine[]; created: string[]; isolated: b
 /** 这个对话改过的项目文件里，哪些是新建的（版本库里没有）：只认 git，查不了就不列 */
 async function createdFiles(dir: string, files: string[]): Promise<string[]> {
   if (!files.length) return []
-  const tracked = await run('git', ['-C', dir, 'ls-files', '--', ...files], { maxBuffer: 1 << 20 })
+  const tracked = await gitExec(dir, ['ls-files', '--', ...files], { maxBuffer: 1 << 20 })
     .then((r) => new Set(r.stdout.split('\n').map((x) => x.trim().replace(/\\/g, '/'))))
     .catch(() => undefined)
   if (!tracked) return []

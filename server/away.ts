@@ -13,8 +13,8 @@ import { log } from './log.ts'
 
 const FILE = () => dataPath('config/away.json')
 
-let state: AwayState = AwayState.parse({})
-let loaded: Promise<void> | undefined
+let state: AwayState = AwayState.parse({}) // 模块状态：配置副本，重启时重读
+let loaded: Promise<void> | undefined // 模块状态：配置副本，重启时重读
 onReset(() => {
   state = AwayState.parse({})
   loaded = undefined
@@ -38,7 +38,7 @@ export const awayOn = () => state.on
 
 export const awayState = () => state
 
-let writing: Promise<void> = Promise.resolve()
+let writing: Promise<void> = Promise.resolve() // 模块状态：排队，丢了没事
 function save(next: AwayState) {
   state = next
   const p = writing.catch(() => {}).then(() => writeJsonAtomic(FILE(), next))
@@ -54,7 +54,7 @@ export function recordAwayPick(p: AwayPick) {
 }
 
 /** 刚打开时：已经挂着、能自动选的提问一起处理掉（由任务模块登记，见 server/tasks/away-sweep.ts） */
-let sweeper: (() => Promise<void>) | undefined
+let sweeper: (() => Promise<void>) | undefined // 模块状态：接线，启动时登记
 export const onAwaySweep = (fn: () => Promise<void>) => (sweeper = fn)
 
 export function awayApi() {

@@ -171,7 +171,7 @@ export { retryBase } from './child-lookup.ts'
  * 每个父对话交给子对话的话 → 交给了哪个子对话、当时是哪条用户消息（见 sendToConversation：
  * 用户的一条消息只交给一个子对话）。范围和 sentToOther 一致（见 shared/peer-message.ts 的 handedToOther）
  */
-const handedOff = new WeakMap<object, HandOffs>()
+const handedOff = new WeakMap<object, HandOffs>() // 模块状态：运行时，消息交给了哪个子对话，重启后可能再交一次
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'

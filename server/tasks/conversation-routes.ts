@@ -1,9 +1,9 @@
+import { tasksContract } from '../../shared/api-contract/tasks.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'
 import { randomUUID } from 'node:crypto'
 import { FlowRun } from '../../shared/task-flow-schema.ts'
 import { z } from 'zod'
 import {
-  FollowUpInput,
   PresenceInput,
   NewTaskInput,
   Task,
@@ -156,7 +156,7 @@ export function registerConversationRoutes(s: TasksScope) {
 
   s.routes.post('/', async (c) => {
     const body = await c.req.json().catch(() => null)
-    const p = NewTaskInput.safeParse(body)
+    const p = tasksContract.create.body.safeParse(body)
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
     const res = await createTask(p.data, body)
     if ('error' in res) return s.bad(c, res.error, res.status)
@@ -165,7 +165,8 @@ export function registerConversationRoutes(s: TasksScope) {
 
   s.routes.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
-    const p = FollowUpInput.safeParse(await c.req.json())
+    // 入参按前后端共用的契约校验（shared/api-contract/tasks.ts）
+    const p = tasksContract.send.body.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
     const { text, attachments, interrupt, messageId, from, userAction } = p.data
     const cur = await s.current(id)

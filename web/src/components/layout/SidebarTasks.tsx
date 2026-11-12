@@ -31,8 +31,8 @@ import {
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import { askedAt, byAskedAt, planLeft } from '@shared/task'
-import { liveBusy, liveDot, liveWord, type TaskLive } from '@shared/task-live'
-import { useLive, useLiveOf } from '@/lib/live-store'
+import { liveBusy, liveDot, liveWord, type TaskLive } from '@shared/live/task-live'
+import { useLive, useLiveOf } from '@/lib/live/store'
 import { pendingAction } from '@shared/user-action'
 import {
   SIDEBAR_GROUP_LABEL,
@@ -111,7 +111,7 @@ export function TaskRow({
   // 刚建好的对话（不到 3 秒）插进列表时播一次入场（index.css 的 row-enter），一眼看出是哪一行新加的；
   // 只在挂载时判定一次，首次加载、切换项目时列出来的老对话不播
   const [fresh] = useState(() => Date.now() - Date.parse(task.createdAt) < FRESH_MS)
-  // 状态只读服务端给的 live（和标题栏、项目首页同一份，见 web/src/lib/live-store.ts）：自己在执行、
+  // 状态只读服务端给的 live（和标题栏、项目首页同一份，见 web/src/lib/live/store.ts）：自己在执行、
   // 在等子对话 / 子任务 / 后台命令 / 工作流都转圈；有没回复的提问、请求是「需要你处理」
   const live = useLive(task)
   if (menu.renaming)

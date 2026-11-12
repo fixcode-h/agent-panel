@@ -35,8 +35,7 @@ import type {
   NameSearch,
   SearchMode,
 } from '../shared/files.ts'
-import { capture } from './exec/process.ts'
-import { gitFileDiff } from './exec/git.ts'
+import { gitFileDiff, gitRun } from './exec/git.ts'
 import { projectFormat, writeTextFile } from './file-format.ts'
 import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
@@ -63,6 +62,7 @@ const GIT_TIMEOUT = 5_000
 const GIT_CACHE_MS = 4_000
 
 /** 不是 git 仓库时列目录跳过这些（和以前遍历时一致，避免点进去全是产物） */
+// 模块状态：常量，加载后不改
 const SKIP = new Set([
   'node_modules',
   '.git',
@@ -85,8 +85,7 @@ const SKIP = new Set([
 const BINARY =
   /\.(png|jpe?g|gif|webp|bmp|ico|icns|pdf|zip|gz|tgz|7z|rar|jar|war|exe|dll|so|dylib|bin|o|a|lib|class|pyc|woff2?|ttf|otf|eot|mp[34]|wav|ogg|webm|mov|avi|psd|uasset|umap|uexp|ubulk)$/i
 
-const git = (cwd: string, ...args: string[]) =>
-  capture('git', ['-c', 'core.quotepath=off', ...args], cwd, undefined, GIT_TIMEOUT)
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args, { timeoutMs: GIT_TIMEOUT })
 
 const norm = (p: string) => p.replace(/\\/g, '/')
 
@@ -116,7 +115,7 @@ async function gitPrefix(dir: string): Promise<string> {
  * 目录的仓库信息缓存：每展开一层都要知道是不是 git 仓库、在仓库里的前缀。
  * 不缓存的话每层都要多跑两次 git 进程；几十秒内仓库结构不会变，缓存这么久够了。
  */
-const repoCache = new Map<string, { at: number; isGit: boolean; prefix: string }>()
+const repoCache = new Map<string, { at: number; isGit: boolean; prefix: string }>() // 模块状态：缓存，丢了重算
 
 async function repoInfo(dir: string, refresh: boolean) {
   const hit = repoCache.get(dir)
@@ -175,7 +174,7 @@ async function statusIn(
 }
 
 /** 每个目录的 git 状态缓存：展开几个兄弟目录时只跑一次 git status */
-const statusCache = new Map<string, { at: number; value: Awaited<ReturnType<typeof statusIn>> }>()
+const statusCache = new Map<string, { at: number; value: Awaited<ReturnType<typeof statusIn>> }>() // 模块状态：缓存，丢了重算
 
 async function statusCached(dir: string, rel: string, prefix: string, refresh: boolean) {
   const key = `${dir}\0${rel}`

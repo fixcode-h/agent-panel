@@ -18,9 +18,9 @@ import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
 import { getLang, isLangAuto, t } from '@shared/i18n'
 import { helpersWorking, taskSummary } from '@shared/task'
-import { dropLive, useLiveOf } from './live-store'
-import { useServerEvents } from './events'
-import { liveActive } from '@shared/task-live'
+import { dropLive, useLiveOf } from './live/store'
+import { useServerEvents } from './live/events'
+import { liveActive } from '@shared/live/task-live'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {

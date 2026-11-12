@@ -1,4 +1,4 @@
-import { useLiveById } from '@/lib/live-store'
+import { useLiveById } from '@/lib/live/store'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight,
@@ -557,7 +557,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const pending = tool.ms === undefined && !!tool.startedAt && task?.status === 'running'
   // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
   const ids = view.job ? [view.job] : (view.jobs ?? [])
-  // 对话上还在跑的后台命令只在服务端给的 live 里（web/src/lib/live-store.ts）
+  // 对话上还在跑的后台命令只在服务端给的 live 里（web/src/lib/live/store.ts）
   const liveJobs = useLiveById(task?.id)?.jobs
   const mine = ids.length ? (liveJobs ?? []).filter((j) => ids.includes(j.id)) : []
   // 有结果之前一直转圈：任务上的后台命令列表还没推到（刚交出去、页面刚打开）也一样，不能先显示成完成

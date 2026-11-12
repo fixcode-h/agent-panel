@@ -78,9 +78,9 @@ function revive(keep: TrackKeep | undefined, dir: string, carry: boolean, ignore
   }
 }
 
-const tracks = new Map<string, Track>()
+const tracks = new Map<string, Track>() // 模块状态：运行时，每轮改动的快照，重启时那一轮的改动卡片可能不全
 /** 每个对话的操作排队做：结束一轮还在拍快照时下一轮就开始了，起点要等上一轮的终点 */
-const queues = new Map<string, Promise<unknown>>()
+const queues = new Map<string, Promise<unknown>>() // 模块状态：排队，丢了没事
 
 function queued<T>(taskId: string, run: () => Promise<T>): Promise<T> {
   const prev = queues.get(taskId) ?? Promise.resolve()

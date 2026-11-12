@@ -1,5 +1,5 @@
 import type { Task } from '../../shared/schema.ts'
-import { taskLiveOf, type TaskLive } from '../../shared/task-live.ts'
+import { taskLiveOf, type TaskLive } from '../../shared/live/task-live.ts'
 import { reapLostJobs, uiJobs } from '../background.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { log } from '../log.ts'
@@ -13,7 +13,7 @@ type ChildCounts = (parentId: string) => Promise<{ working: number; cli: number;
 
 /**
  * 对话的运行时状态只在这里算（重构文档第 1 条）：进程登记、后台命令、名下子对话的计数，
- * 再经 shared/task-live.ts 的 taskLiveOf 得出 state。列表、详情、实时推送、全局事件流都调这一处，
+ * 再经 shared/live/task-live.ts 的 taskLiveOf 得出 state。列表、详情、实时推送、全局事件流都调这一处，
  * 不在各个路由里各往 Task 上叠字段。
  */
 export function createLive(sc: TasksScope, childCounts: ChildCounts) {
@@ -31,7 +31,7 @@ export function createLive(sc: TasksScope, childCounts: ChildCounts) {
     })
   }
 
-  /** 交给界面的任务带上 live：运行时字段只在 live 里，任务记录本身不带（见 shared/task-live.ts） */
+  /** 交给界面的任务带上 live：运行时字段只在 live 里，任务记录本身不带（见 shared/live/task-live.ts） */
   async function withLive(task: Task): Promise<TaskWithLive> {
     // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
     if (reapLostJobs(task, sc.background.known, sc.background.lostNote)) {

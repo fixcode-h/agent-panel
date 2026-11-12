@@ -1,4 +1,4 @@
-import { useLiveById } from '@/lib/live-store'
+import { useLiveById } from '@/lib/live/store'
 import { useMemo, useState } from 'react'
 import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
@@ -51,7 +51,7 @@ export function runningRows<C extends ChildEntry>({
   task?: Task
   tools: ToolUse[]
   jobs: boolean
-  /** 对话上还在跑、排队的后台命令：服务端给的 live.jobs（web/src/lib/live-store.ts） */
+  /** 对话上还在跑、排队的后台命令：服务端给的 live.jobs（web/src/lib/live/store.ts） */
   taskJobs: TaskJob[]
   kids: boolean
   /** 子对话摘要：RunningNow 从 ChildListCtx 拿，调用处也拿得到同一份，传进来免得两处判断不一致 */

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { capture } from './exec/process.ts'
+import { gitRun } from './exec/git.ts'
 import { runShell as runShellIn } from './merge-build.ts'
 import { currentShell } from './shells.ts'
 import type { ShellInfo } from '../shared/shells.ts'
@@ -187,15 +187,11 @@ const realTimers: BgTimers = {
  */
 async function fingerprint(dir: string) {
   // --no-optional-locks：status 默认会顺手刷新索引并加锁，这里禁止它写
-  const status = await capture(
-    'git',
-    ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'],
-    dir,
-    process.env,
-    30_000,
-  )
+  const status = await gitRun(dir, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'], {
+    timeoutMs: 30_000,
+  })
   if (status.code !== 0) return ''
-  const head = await capture('git', ['rev-parse', 'HEAD'], dir, process.env, 10_000)
+  const head = await gitRun(dir, ['rev-parse', 'HEAD'], { timeoutMs: 10_000 })
   return createHash('sha1').update(`${head.stdout.trim()}\n${status.stdout}`).digest('hex')
 }
 

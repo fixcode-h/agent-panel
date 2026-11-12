@@ -1,4 +1,4 @@
-import { demoJobs } from './demo-jobs'
+import { demoJobs } from './demo/demo-jobs'
 import type { Task } from '@shared/schema'
 import {
   countDone,

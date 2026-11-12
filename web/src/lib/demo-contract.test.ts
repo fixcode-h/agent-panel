@@ -1,6 +1,9 @@
 /**
- * 演示后端和正式后端的接口契约（A9）：最常用的四个接口（任务列表、任务详情、子对话、发消息）
- * 用 shared/task-api-contract.ts 的同一份 schema 校验；正式后端那一侧见 server/task-api-contract.test.ts。
+ * 演示后端和正式后端的接口契约（重构文档第 9 条，ADR 0062）：
+ * - 最常用的四个接口（任务列表、任务详情、子对话、发消息）用 shared/api-contract/tasks.ts 的同一份 schema 校验；
+ *   正式后端那一侧见 server/task-api-contract.test.ts。
+ * - 契约探查（shared/api-contract/probe.ts）把设置、角色、工作流、分类、标签、项目、定时计划、任务走一遍；
+ *   正式后端跑的是同一份（scripts/e2e/17-contracts.mjs）。
  * 演示版少了字段时，界面在演示和界面检查里走的分支就和真机不一样，以前只能靠截图碰巧看出来。
  */
 import assert from 'node:assert/strict'
@@ -12,7 +15,8 @@ import {
   SendMessageContract,
   TaskListContract,
   TaskPageContract,
-} from '../../../shared/task-api-contract.ts'
+} from '../../../shared/api-contract/tasks.ts'
+import { probeContracts } from '../../../shared/api-contract/probe.ts'
 
 // 演示后端存在 localStorage 里：node 里没有，换成内存的一份；模拟等待按 100 倍缩短（见 demo-speed.ts）
 const store = new Map<string, string>([['agent-panel-demo-speed', '100']])
@@ -80,4 +84,10 @@ test('演示后端的任务列表、详情、子对话、发消息：返回形�
     sent.messages.some((m) => m.id === MSG_ID),
     '发出的消息按页面给的 id 记进对话',
   )
+})
+
+test('演示后端走一遍契约探查：设置、角色、工作流、分类、标签、项目、定时计划、任务都和契约对得上', async () => {
+  const report = await probeContracts((method, url, body) => handle(method, url, body))
+  assert.deepEqual(report.problems, [], report.problems.join('\n'))
+  assert.ok(report.checked.length >= 20, `探查走过的接口太少：${report.checked.join('、')}`)
 })

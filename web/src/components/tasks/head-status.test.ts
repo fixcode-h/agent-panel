@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang } from '@shared/i18n'
-import { taskLiveOf, type LiveRuntime } from '@shared/task-live'
+import { taskLiveOf, type LiveRuntime } from '@shared/live/task-live'
 import { clock, headStatus as headView, type HeadStatusTask } from './head-status'
 
 // 断言的是中文文案：固定语言，不跟着 CI 的 LANG 变（见 docs/lessons 的测试教训）

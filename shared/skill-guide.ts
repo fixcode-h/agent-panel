@@ -38,7 +38,7 @@ export const RETIRED_SKILL_MAP: Record<string, string> = {
   // 太宽泛；编码时真正用得上的扩展点、配置化规则在 coding-standards 里
   'software-architecture-design': 'coding-standards',
 }
-export const RETIRED_SKILLS = new Set(Object.keys(RETIRED_SKILL_MAP))
+export const RETIRED_SKILLS = new Set(Object.keys(RETIRED_SKILL_MAP)) // 模块状态：常量，加载后不改
 
 /**
  * 特化技能 → 它扩展的通用技能：特化的只补差异，用到它时通用的那份必须一起给，

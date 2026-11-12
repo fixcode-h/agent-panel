@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { useNav, useTasks } from '@/lib/data'
 import { closeMiniTask, dockStateOf, miniTaskState, shownInPage, subscribeMiniTask, taskRoute } from '@/lib/mini-task'
-import { useLive } from '@/lib/live-store'
+import { useLive } from '@/lib/live/store'
 import { MinimizedChat } from '@/components/ui/minimized-chat'
 
 /** 浮条上的标题：太长本来就会被浮条截断，这里只挡住异常长的 */

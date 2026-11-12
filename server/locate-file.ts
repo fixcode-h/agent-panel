@@ -158,7 +158,7 @@ function commonDirs() {
   return [...bases.flatMap((b) => names.map((n) => path.join(b, n))), home]
 }
 
-const SKIP = new Set(['node_modules', '.git', 'Library', 'AppData', 'Intermediate', 'DerivedDataCache', 'Saved'])
+const SKIP = new Set(['node_modules', '.git', 'Library', 'AppData', 'Intermediate', 'DerivedDataCache', 'Saved']) // 模块状态：常量，加载后不改
 
 /** 修改时间差多少以内算同一个文件：有的文件系统只记到秒 */
 const SAME_TIME_MS = 2000

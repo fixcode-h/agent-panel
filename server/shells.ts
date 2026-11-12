@@ -8,9 +8,9 @@ import { capture } from './exec/process.ts'
  * 顺序就是推荐顺序：PowerShell > Git Bash > WSL > cmd（shared/shells.ts）。
  * PowerShell 装了 7（pwsh）就用它（认 &&、默认 UTF-8），否则用系统自带的 5.1（powershell.exe）
  */
-let cache: Promise<ShellReport> | null = null
+let cache: Promise<ShellReport> | null = null // 模块状态：缓存，丢了重算
 /** 最近一次按设置选出的 shell：工具说明是同步拼的，用它告诉 Agent 命令在哪执行 */
-let last: (ShellInfo & { distro: string }) | null = null
+let last: (ShellInfo & { distro: string }) | null = null // 模块状态：配置副本，重启时重读
 
 export function detectShells(fresh = false) {
   if (!cache || fresh) cache = detect().catch(() => ({ platform: process.platform, shells: [] }))

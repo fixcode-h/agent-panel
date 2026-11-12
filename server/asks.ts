@@ -19,8 +19,8 @@ export const AUTO_ANSWER: AskReply = {
   message: '用户现在不回答问题：请按你的判断选最合适的方案直接继续，不要再提问，最后在说明里写一句你选了什么。',
 }
 
-const pending = new Map<string, { scope: string; req: TaskRequest; reply: (r: AskReply) => void; stop: () => void }>()
-const askUser = new Map<string, boolean>()
+const pending = new Map<string, { scope: string; req: TaskRequest; reply: (r: AskReply) => void; stop: () => void }>() // 模块状态：会话，跟着进程或连接一起没
+const askUser = new Map<string, boolean>() // 模块状态：运行时，提问交不交给用户，重启后回到默认
 
 /** 这个会话的问题要不要交给用户；没设置过时不交（CLI 自己选） */
 export const wantsAnswers = (scope: string) => askUser.get(scope) ?? false

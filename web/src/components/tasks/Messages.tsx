@@ -1,4 +1,4 @@
-import { useLiveById } from '@/lib/live-store'
+import { useLiveById } from '@/lib/live/store'
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'

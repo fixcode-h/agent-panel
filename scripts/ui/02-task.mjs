@@ -750,7 +750,7 @@ await runShard(import.meta.filename, async (api) => {
         ([k, list]) => {
           const db = JSON.parse(localStorage.getItem(k))
           const parent = db.tasks.find((x) => x.title.includes('购物车'))
-          // 后台命令不属于任务记录：演示库单独一张表（web/src/lib/demo-jobs.ts）
+          // 后台命令不属于任务记录：演示库单独一张表（web/src/lib/demo/demo-jobs.ts）
           db.taskJobs = { ...db.taskJobs, [parent.id]: list ?? [] }
           localStorage.setItem(k, JSON.stringify(db))
         },
@@ -1024,7 +1024,7 @@ await runShard(import.meta.filename, async (api) => {
         sub.status = 'running'
         sub.endedAt = ''
         // 子任务起了一条还在跑的后台命令：运行区要按「子任务 + 命令名」列出来。
-        // 后台命令不属于任务记录：演示库单独一张表（web/src/lib/demo-jobs.ts）
+        // 后台命令不属于任务记录：演示库单独一张表（web/src/lib/demo/demo-jobs.ts）
         db.taskJobs = {
           ...db.taskJobs,
           [parent.id]: [

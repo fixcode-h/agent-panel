@@ -10,11 +10,11 @@
 
 ## 决策
 
-1. **运行时状态是单独的 `TaskLive`**（`shared/task-live.ts`）：`state`、`need` / `wait` / `report`（文字分类）、`next`（CLI 还活着、等下一句）、`cliAlive`、`jobs`、子对话的三项计数。算法只有 `taskLiveOf(task, runtime)` 一个，服务端只在 `server/tasks/live.ts` 调它；演示后端扮演服务端，调同一个函数。
+1. **运行时状态是单独的 `TaskLive`**（`shared/live/task-live.ts`）：`state`、`need` / `wait` / `report`（文字分类）、`next`（CLI 还活着、等下一句）、`cliAlive`、`jobs`、子对话的三项计数。算法只有 `taskLiveOf(task, runtime)` 一个，服务端只在 `server/tasks/live.ts` 调它；演示后端扮演服务端，调同一个函数。
 2. **交给页面的任务都带 `live`**：列表、详情、实时推送、全局事件流都经 `liveOf` / `withLive`；`server/tasks.ts` 的中间件给漏带的 JSON 响应补上。运行时字段从 `TaskData` 里去掉，`NOT_STORED_FIELDS` 写盘前剥掉，旧文件里存过的由数据迁移清掉。
-3. **页面只读 live**：`web/src/lib/api.ts` 和 `task-stream.ts` 拿到响应就把 `live` 取下放进 `web/src/lib/live-store.ts`，组件经 `useLive` / `useLiveOf` / `useLiveById` 读，判断用 `liveWord` / `liveBusy` / `liveActive` / `liveDot` 等。web/src 里（演示后端除外）不再调 `taskState` 一类，`scripts/rules-check.mjs` 第 21 条拦。
+3. **页面只读 live**：`web/src/lib/api.ts` 和 `task-stream.ts` 拿到响应就把 `live` 取下放进 `web/src/lib/live/store.ts`，组件经 `useLive` / `useLiveOf` / `useLiveById` 读，判断用 `liveWord` / `liveBusy` / `liveActive` / `liveDot` 等。web/src 里（演示后端除外）不再调 `taskState` 一类，`scripts/rules-check.mjs` 第 22 条拦。
 4. **全局事件流**：服务端每秒比一次顶层对话的列表指纹和 live（`server/tasks/page-feed.ts`，有页面连着才比），列表变了推 `tasks`（页面带 ETag 重新拉一次列表），live 变了只推变了的那几个。页面连不上 5 秒以上才退回旧的 2.5 秒轮询。
-   - 挂在已有的页面事件流 `/api/app/events` 上（`server/page-events.ts` 的 `addPageFeed`），页面只开这一条（`web/src/lib/page-stream.ts` 按引用计数共用）。
+   - 挂在已有的页面事件流 `/api/app/events` 上（`server/page-events.ts` 的 `addPageFeed`），页面只开这一条（`web/src/lib/live/page-stream.ts` 按引用计数共用）。
    - 放弃：单开 `/api/events`。浏览器对同一地址最多 6 条 HTTP/1.1 连接，每个页面已经有托盘信号和打开对话的实时推送两条常驻连接，再多一条，开到第二个标签页就占满，普通请求排队卡住。
 
 ## 后果

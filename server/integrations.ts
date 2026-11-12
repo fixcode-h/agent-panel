@@ -31,7 +31,7 @@ const platform: 'win32' | 'darwin' | 'linux' =
 
 /** 检测结果缓存几秒：设置页轮询时不用每次都起进程 */
 const CACHE_MS = 5_000
-const cache = new Map<string, { at: number; view: IntegrationView }>()
+const cache = new Map<string, { at: number; view: IntegrationView }>() // 模块状态：缓存，丢了重算
 const invalidate = (id?: string) => (id ? cache.delete(id) : cache.clear())
 
 /** 输出里出现的 token 一律打码：gh 自己会遮，但别的工具不一定 */
@@ -167,7 +167,7 @@ interface Login extends IntegrationLoginJob {
   write?: (s: string) => void
   cancel: () => void
 }
-const logins = new Map<string, Login>()
+const logins = new Map<string, Login>() // 模块状态：会话，跟着进程或连接一起没
 const view = ({ abort, write, cancel, ...rest }: Login): IntegrationLoginJob => rest
 
 const URL_RE = /https?:\/\/[^\s"'<>]+/g
@@ -344,7 +344,7 @@ async function logout(id: string): Promise<IntegrationView> {
 
 // ---- 一键安装 ----
 
-const installs = new Map<string, IntegrationInstallJob>()
+const installs = new Map<string, IntegrationInstallJob>() // 模块状态：会话，跟着进程或连接一起没
 const INSTALL_TIMEOUT = 15 * 60_000
 
 /** 安装方式的文字：给用户看正在跑什么 */

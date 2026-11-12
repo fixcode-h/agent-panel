@@ -1,27 +1,13 @@
 import { Task, type Project } from '../../shared/schema.ts'
-import { diagnosisPending } from '../../shared/task.ts'
-import { pendingAction } from '../../shared/user-action.ts'
-import { bugStage } from '../../shared/bug-diagnosis.ts'
-import { childBugStep, lastToolCall } from '../../shared/child-doing.ts'
-import {
-  childActivity,
-  childLastActivity,
-  childStartedAt,
-  childWait,
-  childHoldsOf,
-  helpersWorking,
-  runRunning,
-  taskDeleted,
-  taskGone,
-} from '../../shared/task.ts'
+import { childHoldsOf, taskDeleted } from '../../shared/task.ts'
+import { childRow } from '../../shared/children/row.ts'
 import { log } from '../log.ts'
 import { createWorktreeCache, type WorktreeRead } from '../worktree-cache.ts'
 import { t } from '../../shared/i18n.ts'
-import { openPlan } from '../../shared/plan.ts'
 import { createGate } from '../slots.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
-import { descendantNeeds, pendingRequest } from '../../shared/child-needs.ts'
+import { descendantNeeds } from '../../shared/child-needs.ts'
 
 /**
  * 子对话列表：独立分支状态的缓存（git 慢时不挡列表）、/children、停止全部子对话。
@@ -109,86 +95,21 @@ export function registerChildrenRoutes(s: TasksScope) {
     const items = await Promise.all(
       kids.map(async (t) => {
         const liveTask = t
-        const childNeeds = needs.get(liveTask.id) ?? 0
-        // 子对话栏、超时判定、计划面板都读这两份：同一处算出「在做什么」和「在等什么」
-        // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
-        const doing = s.live.has(liveTask.id) ? childActivity(liveTask) : undefined
-        const pending = s.pendingJobs(liveTask.id)
-        const open = openPlan(liveTask)
         // 独立分支的实际情况只问一次 git：既要说「没合回去」，也要说「还有几个文件没提交」。
         // 这里不等它（不让首屏跟着 git 一起慢），没核对过的先按「还不知道」回，界面不当成已合回
         const wt = await childWorktree(liveTask, project, { wait: false })
         if (!wt.checked) checking++
-        return {
-          id: liveTask.id,
-          title: liveTask.title,
-          status: liveTask.status,
-          summary: liveTask.summary || s.lastReply(liveTask),
-          working: liveTask.working,
-          updatedAt: liveTask.updatedAt,
-          // 进程还活着（预热、等下一句、正在执行）：列表默认只列这些，不用 status === 'running' 猜。
-          // 按真实进程登记算（taskCliAlive），CLI 关了就是 false
+        // 一行的字段和演示后端同一份（shared/children/row.ts），这里只给真进程、真 git 这些只有正式版有的
+        return childRow(liveTask, {
           cliAlive: taskCliAlive(liveTask.id),
-          // 排序按本次开启的时间：做完或停下后又接到新任务会开新的一轮，重新排到最前面
-          startedAt: childStartedAt(liveTask),
-          // 总览分组用：等用户确认的请求数、还在跑的后台命令数、独立 worktree 的分支
-          requests: liveTask.requests.length,
-          // 第一条待确认的请求：父对话页的子对话行上直接写出确认什么、给「允许 / 拒绝」，不用点进子对话
-          request: pendingRequest(liveTask),
-          childNeeds,
-          // 后台命令跑在服务端，CLI 只是在等结果：有这个就还当执行中，不能显示成已完成
-          background: pending,
-          // 工作流运行还没跑完：流程图跑着时这一轮的 CLI 可能早就结束了，不能凭它当结束
-          workflow: runRunning(liveTask),
-          // 工作流子对话（ADR 0044）：行上标出是哪个工作流、跑到哪个节点
-          // 等用户确认诊断报告（ADR 0045）：算执行中，行上的说明来自 waiting
-          diagnosis: diagnosisPending(liveTask),
-          action: !!pendingAction(liveTask),
-          // 用户报的 Bug（ADR 0046）：查到哪个阶段了
-          bug: bugStage(liveTask) || undefined,
-          // Bug 走到五步里的第几步：行上画五个小点（分析稿 U8）
-          bugStep: childBugStep(liveTask),
-          // 它派出去的子任务还在跑：结果交回来它还要接着做，也不能算做完了
-          helpers: helpersWorking(liveTask),
-          // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步
-          plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
-          // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childWorktree）。
-          // 没有核对结果时两个字段都不给（不是 0 / false）：界面不能把「不知道」显示成「干净」或「已合回」
-          unmerged: wt.checked ? !!wt.value && !wt.value.merged : undefined,
-          // 分支目录里还有几个文件没提交：停下时行上直接写出来，并且给「继续」接着做
-          dirty: wt.checked ? (wt.value?.dirty ?? 0) : undefined,
-          // 上面两项是不是已经用 git 核对过：false 表示这次先回占位值、后台正在查（或刚查失败）
-          worktreeChecked: wt.checked,
-          // 已经请父对话收尾、还没出结果：行上是「待收尾」
-          wrapup: !!liveTask.wrapRequest && liveTask.wrapRequest.state !== 'failed',
-          // 这一轮做完的时间、用户看过的最近一轮完成时间：两处不同就是「做完了还没看」，
-          // 子对话行的未读点读它（见 shared/task.ts 的 taskTurnUnread / childDoneDot）。
-          // 只多两个时间戳，不为它读整份 .messages.json（/children 是热点，见之前那次性能优化）
-          turnDoneAt: liveTask.turnDoneAt,
-          turnSeenAt: liveTask.turnSeenAt,
-          // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
-          asking: liveTask.parentAsks?.length ?? 0,
-          branch: liveTask.worktree?.branch ?? '',
-          // 独立分支目录：停下时告诉用户改动在哪个目录里
-          dir: liveTask.worktree?.path ?? '',
-          activity: doing,
-          // 最后一次工具调用：行上写「计划这一步 · 改 store.ts」（分析稿 U5）。和 doing 一样只有内存里的才算得出
-          lastTool: s.live.has(liveTask.id) ? lastToolCall(liveTask) : undefined,
-          // 最后有动静的时间：几分钟没有新输出、又不能用等待解释时，界面上标黄 / 标红
-          lastActivityAt: childLastActivity(liveTask),
-          // 面板以父对话的名义自动问过它状态：之后还没有新输出时行上写「已自动询问，等回复」
-          autoAsk: liveTask.autoAsk,
-          // 在等什么（等用户回答、等后台命令、等子任务、等工作流、等下一句）：不是在跑也不是卡住
-          waiting: childWait(liveTask, { background: pending, cliAlive: taskCliAlive(liveTask.id), childNeeds }),
-          // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
-          resolved: liveTask.resolved === true,
-          // AI 分析开出的子对话：列表里标题单独标出来
-          analysis: liveTask.analysis,
-          // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
-          stopReason: s.idle(liveTask).stopReason ?? '',
-          // 已收起（归档 / 独立分支被用户删掉）：运行区、子对话栏、执行中计数都读这一处把它排掉（见 taskGone）
-          gone: taskGone(liveTask),
-        }
+          background: s.pendingJobs(liveTask.id),
+          childNeeds: needs.get(liveTask.id) ?? 0,
+          worktree: wt,
+          // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
+          full: s.live.has(liveTask.id),
+          lastReply: s.lastReply(liveTask),
+          stopReason: s.idle(liveTask).stopReason,
+        })
       }),
     )
     // 子对话栏是热点（打开父对话时每 4~15 秒刷一次）：慢过一截就记一笔，下次排查不必再从头量

@@ -12,7 +12,7 @@ import { pauseStep } from './task.ts'
  * 正在跑、在排队的子任务：任务 id + 子任务 id → 终止它用的开关。
  * 界面上的终止按钮（服务端的路由）和对话的 stop_subtask 工具都走 stopHelper，只停这一个，不动对话本身
  */
-export const helperStops = new Map<string, AbortController>()
+export const helperStops = new Map<string, AbortController>() // 模块状态：会话，跟着进程或连接一起没
 export const helperKey = (taskId: string, stepId: string) => `${taskId}\n${stepId}`
 
 /** 终止一个子任务：还在跑就结束它的 CLI，还在排队就不再开始。why 写进交回给对话的结果；没找到返回 false */
@@ -28,7 +28,7 @@ export function stopHelper(taskId: string, stepId: string, why: string) {
  * 只停这次运行，不停对话：界面上工作流卡片的「终止」、父对话的 stop_workflow 都走 stopPlan，
  * 停下后运行的结果按「被终止」交回对话，这次运行改了哪些文件一起交回，由对话决定保留还是清理
  */
-export const planStops = new Map<string, { ac: AbortController; host: EngineHost }>()
+export const planStops = new Map<string, { ac: AbortController; host: EngineHost }>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 终止这个对话正在跑的工作流；没有在跑的返回 false */
 export function stopPlan(taskId: string, why: string) {

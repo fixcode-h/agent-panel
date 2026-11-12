@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { overviewRows } from './overview.ts'
 import { Task } from './schema.ts'
-import { taskLiveOf } from './task-live.ts'
+import { taskLiveOf } from './live/task-live.ts'
 
 /** 状态读 live：这里用同一个 taskLiveOf 从任务事实算（没有进程、后台命令、子对话计数） */
 const liveOf = (t: Task) =>

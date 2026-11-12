@@ -89,8 +89,8 @@ import {
 import { useTablesEntry } from '@/lib/tables-nav'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt } from '@shared/task'
-import { liveBusy } from '@shared/task-live'
-import { useLiveOf } from '@/lib/live-store'
+import { liveBusy } from '@shared/live/task-live'
+import { useLiveOf } from '@/lib/live/store'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
@@ -456,7 +456,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 插件管的对话（插件整页 #/plugin，例如模型设计）在插件那边看，不列进 Agent 模式的项目对话；
   // 插件不在时照常列
   const owned = useOwnedByPlugin()
-  // 状态只读服务端给的 live（web/src/lib/live-store.ts）：筛选、「N 个执行中」、项目行的「等你处理」都是同一份
+  // 状态只读服务端给的 live（web/src/lib/live/store.ts）：筛选、「N 个执行中」、项目行的「等你处理」都是同一份
   const liveOf = useLiveOf()
   const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !owned(t))
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter, liveOf(t))).sort(byAskedAt) : []

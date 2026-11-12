@@ -8,7 +8,7 @@
  * 收起和展开都不动对话本身：这里不停止、不关闭对话，只是换个地方显示。
  */
 import type { Task } from '@shared/schema'
-import { liveBusy, type TaskLive } from '@shared/task-live'
+import { liveBusy, type TaskLive } from '@shared/live/task-live'
 import type { ChatDockState } from './chat-dock'
 
 export interface MiniTask {

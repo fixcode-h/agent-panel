@@ -9,9 +9,9 @@
  * - 运行时字段只在 TaskLive 里，不进任务记录，也就落不了盘（见 server/tasks/live.ts）。
  */
 import { z } from 'zod'
-import { TaskJob, type Task } from './schema.ts'
-import { convActive, taskFacts, taskTurnUnread, type TaskFactsInput } from './task.ts'
-import { kindWord, stateKind, type StateKind } from './task-word.ts'
+import { TaskJob, type Task } from '../schema.ts'
+import { convActive, taskFacts, taskTurnUnread, type TaskFactsInput } from '../task.ts'
+import { kindWord, stateKind, type StateKind } from '../task-word.ts'
 
 export const ConvStateSchema = z.enum([
   'running',
@@ -69,6 +69,18 @@ export function taskLiveOf(task: LiveFactsInput, rt: LiveRuntime): TaskLive {
   const next = rt.cliAlive && task.status === 'running' && !task.working
   return { ...liveKind(facts), next, ...rt }
 }
+
+/**
+ * 按事实判定的函数（diagnoseTask、taskWord 一类）要的那份输入：任务记录加上 live 里的运行时事实。
+ * 页面拿到的任务记录不带这几项，直接传任务会把「在等后台命令 / 子对话」算丢
+ */
+export const withLiveFacts = <T extends object>(task: T, live: LiveRuntime) => ({
+  ...task,
+  cliAlive: live.cliAlive,
+  jobs: live.jobs,
+  childrenWorking: live.childrenWorking,
+  childrenNeeds: live.childrenNeeds,
+})
 
 /** 状态分类：和 taskWord 同一份事实（shared/task-word.ts），只是不带文字 */
 function liveKind(x: TaskFactsInput): StateKind {

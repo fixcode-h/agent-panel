@@ -49,6 +49,7 @@ import { localPrompts } from '../shared/local-prompts.ts'
 import { mossLayoutJson, type MossLayoutItem, type MossLayoutSize } from '../shared/moss.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'
+import { gitRun } from './exec/git.ts'
 import { capture, childEnv, killTreeSync, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { downloadFile, removeDownload } from './download.ts'
@@ -81,12 +82,12 @@ const filePath = (id: string) => {
 }
 
 type Job = LocalJob & { abort: AbortController }
-let job: Job | undefined
+let job: Job | undefined // 模块状态：会话，跟着进程或连接一起没
 let server: { child: ChildProcess; port: number; log: string } | undefined
-let starting: Promise<string> | undefined
+let starting: Promise<string> | undefined // 模块状态：会话，跟着进程或连接一起没
 let gpuInfo: { gpu: LocalGpu; name?: string; vram?: number } | undefined
 /** 探到的 Python：本机有哪些、虚拟环境里的是哪个；点「重新检测」或开始安装时清掉 */
-let pythonCache: { pythons?: FoundPython[]; venv?: LocalPython | null } = {}
+let pythonCache: { pythons?: FoundPython[]; venv?: LocalPython | null } = {} // 模块状态：缓存，丢了重算
 /** 探 Python 用的小脚本：第一行版本，第二行解释器路径 */
 const PROBE = 'import sys;print("%d.%d.%d" % sys.version_info[:3]);print(sys.executable)'
 type FoundPython = LocalPython & { cmd: string; args: string[] }
@@ -272,7 +273,8 @@ export function installComfy() {
 
     if (!existsSync(path.join(codeDir(), 'main.py'))) {
       j.step = t('下载 ComfyUI')
-      const git = await capture('git', ['--version'], dir)
+      const git = await gitRun(dir, ['--version'])
+      // 克隆走 exec 不走 gitRun：输出要逐行写进安装日志、能被取消（structure-caps 里留了这 1 处）
       if (git.code === 0) await exec('git', ['clone', '--depth', '1', `${REPO}.git`, codeDir()], dir)
       else {
         // 没有 git：下载源码压缩包，用 Python 自带的 zipfile 解开
@@ -506,7 +508,7 @@ export const allWorkflows = async () => [...BUILTIN_WORKFLOWS, ...(await userWor
 export const comfyUsable = async () => !!(await getSettings()).imageGen.local.url || existsSync(marker())
 /** 模型文件（LOCAL_FILES 的 id）下载好了没有 */
 export const fileDownloaded = (id: string) => existsSync(filePath(id))
-let writing = Promise.resolve()
+let writing = Promise.resolve() // 模块状态：排队，丢了没事
 async function saveWorkflows(fn: (list: ComfyWorkflow[]) => ComfyWorkflow[]) {
   const next = writing.then(async () => writeJsonAtomic(WORKFLOWS_FILE(), fn(await userWorkflows())))
   writing = next.catch(() => {})
@@ -523,7 +525,7 @@ export async function userChains(): Promise<ComfyChain[]> {
     return p.success ? [p.data] : []
   })
 }
-let chainWriting: Promise<unknown> = Promise.resolve()
+let chainWriting: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 async function saveChains(fn: (list: ComfyChain[]) => ComfyChain[]): Promise<ComfyChain[]> {
   const next = chainWriting.then(async () => {
     const list = fn(await userChains())
@@ -738,12 +740,12 @@ function fillChainPrompts(graph: ComfyWorkflow['graph'], steps: { step: ComfyCha
 }
 
 /** 进度事件：prompt_id → 最近一次进的步数；只有面板的 WebSocket 连着时才有 */
-const progress = new Map<string, { value: number; max: number; node?: string; at: number }>()
+const progress = new Map<string, { value: number; max: number; node?: string; at: number }>() // 模块状态：会话，跟着进程或连接一起没
 let socket: WebSocket | undefined
-let socketUrl = ''
-let retryTimer: ReturnType<typeof setTimeout> | undefined
+let socketUrl = '' // 模块状态：会话，跟着进程或连接一起没
+let retryTimer: ReturnType<typeof setTimeout> | undefined // 模块状态：会话，跟着进程或连接一起没
 /** 最后一次有人来问队列的时间：没人看的时候不用一直保持 WebSocket */
-let lastPoll = 0
+let lastPoll = 0 // 模块状态：会话，跟着进程或连接一起没
 
 /**
  * 连上 ComfyUI 的 WebSocket 收执行进度。ComfyUI 只在执行时推进度事件，所以面板一边轮询队列，

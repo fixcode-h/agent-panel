@@ -33,8 +33,8 @@ import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
 import { taskHeaderItems } from './header-items'
 import { TurnRail } from './TurnRail'
 import { chatHelperIds } from './HelperCards'
-import { useLive } from '@/lib/live-store'
-import { liveActive, liveBusy, liveWaitText } from '@shared/task-live'
+import { useLive } from '@/lib/live/store'
+import { liveActive, liveBusy, liveWaitText } from '@shared/live/task-live'
 import { latestTurnIndex } from '@/lib/latest-turn'
 import { cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Attachment, type Project, type TaskMessage, type ToolUse, type TaskSeenResult } from '@shared/schema'
@@ -430,7 +430,7 @@ export function TaskView({
     // 两条路都会经过这里（GET 与 SSE 首包谁先到都可能），所以起始点记在这，不记在某一条请求的 then 里；
     // 已经记过完成的不再改（startStep 对非 waiting 的步骤原样返回）
     trace.start('render')
-    // 运行时状态（live）在 api 层、实时推送里已经取下放进 live-store，这里只换任务记录（见 web/src/lib/live-store.ts）。
+    // 运行时状态（live）在 api 层、实时推送里已经取下放进 live/store.ts，这里只换任务记录（见 web/src/lib/live/store.ts）。
     // 分页信息（messageTotal / messageHasMore）跟着这次那份：转截断了就该能翻页，SSE 整份到了就该收起来
     const next = raw
     setTask(next)
@@ -662,7 +662,7 @@ export function TaskView({
   // 记已读、在场心跳（task-view-presence.ts）
   useTaskPresence(taskId, task, trace, applySeen)
 
-  // 运行时状态（状态、等什么、后台命令、CLI 存活）只读服务端给的 live（web/src/lib/live-store.ts）
+  // 运行时状态（状态、等什么、后台命令、CLI 存活）只读服务端给的 live（web/src/lib/live/store.ts）
   const live = useLive(task)
   // 打开对话页不启动 CLI：只有真正发消息时才按当前选择启动，免得只是看一眼就起一堆进程
   const running = task?.status === 'running'

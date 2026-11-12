@@ -27,7 +27,7 @@ import { t } from '../shared/i18n.ts'
  */
 
 const TTL = 10 * 60_000
-const cache = new Map<string, { at: number; data: CliModels }>()
+const cache = new Map<string, { at: number; data: CliModels }>() // 模块状态：缓存，丢了重算
 
 const builtin = (def: CliDefinition): CliModel[] =>
   def.models.map((m) => ({ id: m.id, label: m.label, isDefault: m.isDefault }))
@@ -594,7 +594,7 @@ function cacheKey(id: string, api: ApiConfig | undefined) {
 }
 
 /** 用已保存的设置算出来的缓存项：执行任务时查上下文窗口用 */
-const live = new Map<string, string>()
+const live = new Map<string, string>() // 模块状态：缓存，丢了重算
 
 export async function cliModels(id: string, refresh = false, mode?: ModelsMode): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
@@ -696,7 +696,7 @@ async function knownCatalog(id: string): Promise<Map<string, CatalogInfo>> {
 }
 
 /** CLI 明确说过不能调整思考强度的模型：进程内记住，之后不再传 */
-const noEffort = new Set<string>()
+const noEffort = new Set<string>() // 模块状态：缓存，丢了重算
 const noEffortKey = (cli: string, model: string) => `${cli}\n${model}`
 export const markNoEffort = (cli: string, model: string) => noEffort.add(noEffortKey(cli, model))
 /** 这个模型是不是被 markNoEffort 记过：执行时据此在对话里说明「选的思考强度这次没传」，不让它悄悄失效 */

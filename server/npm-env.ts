@@ -19,7 +19,7 @@ import { t } from '../shared/i18n.ts'
 export const NPMJS = 'https://registry.npmjs.org/'
 
 /** npm config get registry 的结果缓存 5 分钟：每次安装都起一个 npm 进程只为读配置不值得 */
-let registryCache: { at: number; url: string } | undefined
+let registryCache: { at: number; url: string } | undefined // 模块状态：缓存，丢了重算
 const REGISTRY_TTL = 5 * 60_000
 
 async function npmRegistry() {

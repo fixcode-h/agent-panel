@@ -25,9 +25,9 @@ const IGNORE_MAX = 2000
 /** 一个目录最多扫多少个文件、多深：Skill 一般十几个文件；node_modules 这类不进 */
 const DIR_FILES_MAX = 300
 const DIR_DEPTH_MAX = 6
-const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', 'dist', 'build'])
+const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', 'dist', 'build']) // 模块状态：常量，加载后不改
 
-let ignored: Set<string> | undefined
+let ignored: Set<string> | undefined // 模块状态：配置副本，重启时重读
 
 async function readIgnored(): Promise<Set<string>> {
   if (ignored) return ignored
@@ -55,7 +55,7 @@ export async function visibleFindings(list: ConfigFinding[], scope: string) {
 }
 
 /** 按「路径 + 修改时间 + 大小」缓存每个文件的结果：列表页每次打开都扫，没变的不重读 */
-const cache = new Map<string, { sig: string; found: ConfigFinding[] }>()
+const cache = new Map<string, { sig: string; found: ConfigFinding[] }>() // 模块状态：缓存，丢了重算
 const CACHE_MAX = 5000
 
 async function scanOne(abs: string, rel: string): Promise<ConfigFinding[]> {

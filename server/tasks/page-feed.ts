@@ -1,6 +1,6 @@
 import type { Task } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'
-import type { TaskLive } from '../../shared/task-live.ts'
+import type { TaskLive } from '../../shared/live/task-live.ts'
 import { log } from '../log.ts'
 import type { PageFeed } from '../page-events.ts'
 import type { TasksScope } from './scope.ts'
@@ -24,7 +24,7 @@ interface Snapshot {
  * 以前列表靠有任务在跑时每 2.5 秒轮询一次，进程退出、后台命令结束这类不改任务本身的变化要等下一次轮询。
  *
  * 比较只在一个定时器里做（不管开了几个页面）：有页面连着时每秒比一次，都断开了就停掉。
- * 断线时 EventSource 会自己重连，重连上的第一包带全部 live，页面再重新拉一次列表兜底（见 web/src/lib/events.ts）
+ * 断线时 EventSource 会自己重连，重连上的第一包带全部 live，页面再重新拉一次列表兜底（见 web/src/lib/live/events.ts）
  */
 export function createTaskFeed(s: TasksScope): PageFeed {
   type Send = Parameters<PageFeed>[0]

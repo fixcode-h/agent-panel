@@ -17,6 +17,7 @@ function grams(text: string) {
 }
 
 /** 常见的口头用语：几乎每条要求都有，不算关联 */
+// 模块状态：常量，加载后不改
 const COMMON = new Set([
   '一下',
   '帮我',

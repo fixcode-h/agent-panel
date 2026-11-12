@@ -16,13 +16,9 @@ import {
   builtinAgentKeys,
   GENERAL,
   GENERAL_ORIGIN,
-  RETIRED_WORKFLOWS,
 } from '../shared/builtin/workflows.ts'
-import { BEFORE_TIDY, GENERAL_LEGACY } from '../shared/builtin/legacy-workflows.ts'
-import { BEFORE_0044 } from '../shared/builtin/legacy-workflows-0044.ts'
 import {
   annotateMergedAgents,
-  migrateGeneralWorkflow,
   migrateProjectsToGeneral,
   redirectWorkflowRefs,
   retiredWorkflows,
@@ -33,18 +29,6 @@ import {
   workflowFingerprint,
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
-import {
-  ANALYST_BEFORE_SKILL_SPLIT,
-  DEVELOPER_BEFORE_SKILL_SPLIT,
-  EXPLORER_BEFORE_PROGRESS,
-  LEGACY_AGENT_FIELDS,
-  LEGACY_AGENT_FIELDS_MORE,
-  LEGACY_SCENE_TEXT,
-  LEGACY_SCENE_TEXT_SEARCH_SCOPE,
-  LEGACY_WORKFLOWS,
-  RULES_BEFORE_SEARCH_SCOPE,
-  RULES_BEFORE_TURN,
-} from '../shared/builtin/legacy.ts'
 import { coreDefinition, keepParamValues, upgradeParamDefaults } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled, retireBundled } from './bundled-skills.ts'
@@ -250,74 +234,6 @@ test('内置工作流：结构合法，节点的 Agent、验收流程和参数�
   }
 })
 
-test('旧「通用项目」副本：语义没改时升级成合并后的主流程，保留坐标，重复启动不再改', async () => {
-  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
-  const legacy = WorkflowInput.parse({
-    ...buildWorkflow(GENERAL_LEGACY, (k) => k),
-    name: '通用项目',
-    categoryId: 'cat',
-    tags: ['tag'],
-    origin: GENERAL_ORIGIN,
-  })
-  const mainOld = legacy.flows.find((f) => f.id === 'main')!
-  mainOld.nodes.find((n) => n.id === 'discover')!.x = 111
-  mainOld.nodes.find((n) => n.id === 'design')!.x = 222
-  mainOld.nodes.find((n) => n.id === 'docs')!.x = 333
-  mainOld.startPos = { x: -5, y: 6 }
-  const w: Workflow = { ...legacy, id: 'w1', createdAt: '', updatedAt: '' }
-
-  let saved: Workflow | null = null
-  const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })
-  const ops: BuiltinOps = {
-    createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
-    createCategory: async (name, scope) => ({ ...CategoryInput.parse({ name, scope }), ...meta() }),
-    createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
-    createWorkflow: async (x) => ({ ...WorkflowInput.parse(x), ...meta() }),
-    updateWorkflow: async (id, input) => {
-      saved = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
-      return saved
-    },
-  }
-  const state = { agents: mine, categories: [], tags: [], workflows: [w] }
-  const r = await seedProjectWorkflows(state, ops)
-  assert.ok(saved, '旧副本被升级')
-  const next = r.state.workflows.find((x) => x.id === 'w1')!
-  const main = next.flows.find((f) => f.id === 'main')!
-  // 整理后的主流程：识别现场与方案 → 实现 → 文档同步，不再有评审、验收和交付节点
-  assert.deepEqual(
-    main.nodes.map((n) => n.id),
-    ['design', 'impl', 'docs'],
-  )
-  assert.deepEqual(
-    next.flows.map((f) => f.id),
-    ['main'],
-  )
-  // 坐标和工作流级字段都保留
-  assert.equal(main.nodes.find((n) => n.id === 'design')!.x, 222)
-  assert.deepEqual(main.startPos, { x: -5, y: 6 })
-  assert.equal(next.name, '通用项目')
-  assert.equal(next.categoryId, 'cat')
-  assert.deepEqual(next.tags, ['tag'])
-  assert.equal(next.origin, GENERAL_ORIGIN)
-  // 再启动一次：结构已经不匹配，不再更新
-  let again = 0
-  const r2 = await seedProjectWorkflows(r.state, {
-    ...ops,
-    updateWorkflow: async () => {
-      again++
-      return null
-    },
-  })
-  assert.equal(again, 0)
-  assert.equal(r2.updated.length, 0)
-  // 用户改过的副本不动
-  const edited = structuredClone(r.state)
-  const em = edited.workflows.find((x) => x.id === 'w1')!.flows.find((f) => f.id === 'main')!
-  em.nodes.find((n) => n.id === 'design')!.title = '我改过的'
-  assert.equal(await migrateGeneralWorkflow(edited, ops), null)
-  assert.ok(!GENERAL.flows.find((f) => f.id === 'main')!.nodes.some((n) => n.agent === 'vcs'))
-})
-
 test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行前自动补齐缺的', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'bundled-'))
   const old = { ...process.env }
@@ -444,166 +360,6 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   assert.equal(again.agents.length, r.agents.length)
 })
 
-test('没改过的旧「测试运行」升级成「测试验收」，改过的不动；重复启动不再改', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  const oldTester = {
-    ...agents.find((a) => a.id === 'tester')!,
-    ...LEGACY_AGENT_FIELDS.tester,
-    id: 'local-tester',
-    origin: 'builtin:tester',
-    params: [],
-    skills: [],
-  }
-  const state = { agents: [oldTester], categories: [], tags: [], workflows: [] }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 1)
-  const next = updated[0]
-  assert.equal(next.name, '测试验收')
-  assert.ok(next.params.some((p) => p.key === 'scope'))
-  assert.equal(next.enabled, oldTester.enabled)
-  // 再启动：名字已经不是旧指纹，不再改
-  saved.length = 0
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
-
-  // 用户改过的也换成新版（用户 2026-10-25 定的一律覆盖），覆盖前的交给调用方备份
-  const edited = { ...oldTester, id: 'my-tester', description: '我自己改过的说明' }
-  const replaced: Agent[] = []
-  const again = await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops, (a) => replaced.push(a))
-  assert.equal(again[0]?.name, '测试验收')
-  assert.deepEqual(replaced, [], '必备角色的设定本来就不能改（保存时也会纠正），不用备份')
-})
-
-test('没改过的旧「通用约束」「任务 Agent」（现在的「执行」）跟着升级到新规则；改过的不动', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  const old = (key: 'rules' | 'worker', id: string) => ({
-    ...agents.find((a) => a.id === key)!,
-    ...LEGACY_AGENT_FIELDS[key],
-    id,
-    origin: `builtin:${key}`,
-    params: [],
-    skills: [],
-  })
-  const state = {
-    agents: [old('rules', 'local-rules'), old('worker', 'local-worker')],
-    categories: [],
-    tags: [],
-    workflows: [],
-  }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 2, '两个旧副本都升级')
-  const rules = updated.find((a) => a.name === '通用约束')!
-  assert.match(rules.instructions, /共用工作区/, '补上共用工作区规则')
-  assert.match(rules.instructions, /怎么等，什么时候算阻塞/, '补上等待与阻塞判定')
-  assert.doesNotMatch(rules.instructions, /单次不超过 60 秒/, '旧的 60 秒轮询规则已经换成新的等待规则')
-  const worker = updated.find((a) => a.name === '执行')!
-  assert.match(worker.instructions, /你不启动工作流/, '子对话不启动工作流（ADR 0044）')
-  // 再启动：已经不是旧指纹，不再改
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
-
-  // 用户改过的也换成新版，覆盖前的交给调用方备份；没改过的旧版本不用备份
-  const edited = { ...old('rules', 'mine'), instructions: `${LEGACY_AGENT_FIELDS.rules.instructions}\n我自己加的一条` }
-  const replaced: Agent[] = []
-  const again = await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops, (a) => replaced.push(a))
-  assert.match(again[0]?.instructions ?? '', /共用工作区/)
-  assert.deepEqual(
-    replaced.map((a) => a.id),
-    ['mine'],
-  )
-})
-
-test('停在上一版的「通用约束」「代码侦察」也能升级（「代码侦察」现在是「调研」）：补回合推进和派工失败的交付底线', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  // 上一版已经发布过的副本：上一版=现在线上用户手里那份（用具体常量，不用下标：新指纹插在数组前面，[0] 已经不是那一版）
-  const prev = (key: 'rules' | 'explorer', id: string) => ({
-    ...agents.find((a) => a.id === key)!,
-    ...(key === 'rules'
-      ? {
-          name: '通用约束',
-          description: '所有内置 Agent 都引入的常驻规则：语言、编码、提问、执行纪律和安全边界',
-          instructions: RULES_BEFORE_TURN,
-        }
-      : LEGACY_AGENT_FIELDS_MORE.explorer.at(-1)!),
-    id,
-    origin: `builtin:${key}`,
-    params: [],
-    skills: [],
-  })
-  const state = {
-    agents: [prev('rules', 'local-rules'), prev('explorer', 'local-explorer')],
-    categories: [],
-    tags: [],
-    workflows: [],
-  }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 2, '两个上一版副本都升级')
-  const rules = updated.find((a) => a.name === '通用约束')!
-  assert.match(rules.instructions, /## 回合怎么推进/, '补上一句就停、报错不交结果的规则')
-  assert.match(rules.instructions, /我先读取/, '点名只说一句「我先读取…」就结束回合的写法')
-  assert.match(rules.instructions, /共用工作区/, '更早一版的规则不能被覆盖掉')
-  const explorer = updated.find((a) => a.name === '调研')!
-  assert.match(explorer.instructions, /不要空手结束/, '派工失败也要交出已确认的部分')
-  assert.match(explorer.instructions, /不要重复读/, '不重复读父对话已经查过的资料')
-
-  // 再启动：已经不是任何旧指纹，不再改
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
-  // 已经是最新定义的副本同样不动
-  const current = {
-    ...prev('explorer', 'now'),
-    ...BUILTIN_AGENTS.find((b) => b.key === 'explorer')!.agent,
-    // 引入关系也按定义同步：本机没有「通用约束」时引入是空的
-    includes: [],
-  }
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [current] }, ops)).length, 0)
-})
-
-test('通用约束：上一版副本升级后补上「已授权的操作照做」，再启动不再改', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  const last = LEGACY_AGENT_FIELDS_MORE.rules.at(-1)!
-  const state = {
-    agents: [
-      {
-        ...agents.find((a) => a.id === 'rules')!,
-        ...last,
-        id: 'local-rules',
-        origin: 'builtin:rules',
-        params: [],
-        skills: [],
-      },
-    ],
-    categories: [],
-    tags: [],
-    workflows: [],
-  }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 1, '上一版副本升级')
-  assert.match(updated[0].instructions, /用户已经明确授权的操作照授权的做/)
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
-})
-
 test('已合并的内置 Agent 在本机还有时补一句说明，重复启动不重复加', async () => {
   const saved: Agent[] = []
   const ops = {
@@ -670,92 +426,6 @@ test('旧项目迁移：指向内置「默认」工作流的也改用「通用�
   )
 })
 
-test('没改过的「开发」升级成新版（修 Bug 走简易版，ADR 0046），再启动不再改；「Bug 修复」工作流下线', async () => {
-  const saved: Agent[] = []
-  const agentOps = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  const prev = {
-    ...agents.find((a) => a.id === 'developer')!,
-    ...LEGACY_AGENT_FIELDS_MORE.developer.at(-1)!,
-    id: 'local-dev',
-    origin: 'builtin:developer',
-  }
-  const st = { agents: [prev], categories: [], tags: [], workflows: [] }
-  const up = await upgradeBuiltinAgents(st, agentOps)
-  assert.equal(up.length, 1, '上一版「开发」升级')
-  assert.match(up[0].instructions, /修自己发现的问题（简易版）/)
-  assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, agentOps)).length, 0, '再启动不再改')
-
-  // 「Bug 修复」工作流 ADR 0044 下线：没改过的副本（含最后一版）删掉，项目引用改指「通用项目」
-  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
-  const general = {
-    ...WorkflowInput.parse({ ...buildWorkflow(GENERAL, (k) => k), origin: GENERAL_ORIGIN }),
-    id: 'g',
-    createdAt: '',
-    updatedAt: '',
-  }
-  const bug = (def: (typeof BEFORE_0044)[string], id: string): Workflow => ({
-    ...WorkflowInput.parse({
-      ...buildWorkflow({ ...GENERAL, document: def.document, flows: def.flows }, (k) => k),
-      origin: 'builtin:bugfix',
-    }),
-    id,
-    createdAt: '',
-    updatedAt: '',
-  })
-  const last = BEFORE_0044.bugfix
-  const edited = { ...bug(last, 'b2'), document: '我改过的 Bug 流程' }
-  const gone = retiredWorkflows({ agents: mine, workflows: [general, bug(last, 'b1'), edited] })
-  assert.deepEqual(
-    gone.map((r) => [r.workflow.id, r.into]),
-    [['b1', 'g']],
-    '没改过的删掉，改过的保留',
-  )
-  assert.ok(!BUILTIN_WORKFLOWS.some((w) => w.key === 'bugfix'), '不再装「Bug 修复」')
-})
-
-test('上一版的「通用约束」「执行」「版本控制」副本升级：推送归父对话、搜索范围、文档职责收敛', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  // 上一版=现在线上用户手里那份：旧指纹最后一项就是改前的文本
-  const prev = (key: 'rules' | 'worker' | 'vcs') => ({
-    ...agents.find((a) => a.id === key)!,
-    ...LEGACY_AGENT_FIELDS_MORE[key].at(-1)!,
-    id: `local-${key}`,
-    origin: `builtin:${key}`,
-  })
-  const state = { agents: [prev('rules'), prev('worker'), prev('vcs')], categories: [], tags: [], workflows: [] }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 3, '三个上一版副本都升级')
-  const rules = updated.find((a) => a.name === '通用约束')!
-  assert.match(rules.instructions, /## 搜索范围/, '补上大工程的搜索纪律')
-  assert.match(rules.instructions, /只由父对话（项目对话）决定/, '对外操作归父对话')
-  assert.match(
-    rules.instructions,
-    /授权推送时默认还包括推送成功后用 GitHub CLI 建 PR 并普通合并到主干/,
-    '允许推送时默认收尾包含合并主干，失败就停',
-  )
-  const worker = updated.find((a) => a.name === '执行')!
-  assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干按提示词里的「授权情况」/)
-  const vcs = updated.find((a) => a.name === '版本控制')!
-  assert.match(vcs.instructions, /不改文档/)
-  assert.equal(
-    vcs.params.some((p) => p.key === 'docs' || p.key === 'bug'),
-    false,
-    '版本控制角色不再有「同步文档」「写 Bug 记录」两个开关',
-  )
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
-})
-
 test('版本控制角色：合并前弄清双方意图、判重、判新旧，合并后补齐并验证；严格度可切', () => {
   const vcs = agents.find((a) => a.id === 'vcs')!
   const review = vcs.params.find((p) => p.key === 'mergeReview')!
@@ -782,47 +452,6 @@ test('版本控制角色：合并前弄清双方意图、判重、判新旧，�
   assert.match(strict, /合并前后各跑一次项目快速检查/, '严格模式合并前后各跑一次检查')
   const submitOnly = composeRole(vcs, agents, { merge: '只提交不合并' })
   assert.doesNotMatch(submitOnly, /合并审查（严格度/, '只提交不合并时不要求合并审查')
-})
-
-test('上一版的「通用项目」「UE 项目」副本升级：工作流说明和交付节点的推送措辞跟着改', async () => {
-  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
-  const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })
-  const make = async (key: string) => {
-    const def = BUILTIN_WORKFLOWS.find((w) => w.key === key)!
-    const old = LEGACY_WORKFLOWS[key].at(-1)!
-    assert.ok(old.document, `${key} 有旧指纹`)
-    return WorkflowInput.parse({
-      ...buildWorkflow(
-        { ...def, document: old.document, flows: [...old.flows, ...def.flows.filter((f) => f.id !== 'main')] },
-        (k) => k,
-      ),
-      categoryId: 'cat',
-      tags: [],
-      origin: `builtin:${key}`,
-    })
-  }
-  for (const key of ['project-general', 'project-ue']) {
-    let wf: Workflow | null = null
-    const ops: BuiltinOps = {
-      createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
-      createCategory: async (name) => ({ ...CategoryInput.parse({ name }), ...meta() }),
-      createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
-      createWorkflow: async (x) => ({ ...WorkflowInput.parse(x), ...meta() }),
-      updateWorkflow: async (id, input) => {
-        wf = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
-        return wf
-      },
-    }
-    const legacy: Workflow = { ...(await make(key)), id: `old-${key}`, createdAt: '', updatedAt: '' }
-    await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [legacy] }, ops)
-    assert.ok(wf, `${key} 的旧副本被升级`)
-    const next = wf! as Workflow
-    assert.match(next.document, /由父对话决定/, `${key} 的工作流说明改成「推送归父对话」`)
-    assert.equal((next.document as string).includes('要得到授权'), false)
-    wf = null
-    await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [next] }, ops)
-    assert.equal(wf, null, `${key} 再启动不再改`)
-  }
 })
 
 test('调研、子任务、评审三个角色：先读模块地图和模块文档再读代码', () => {
@@ -861,226 +490,6 @@ test('调研、子任务、评审三个角色：先读模块地图和模块文�
   // 评审代码改动（ADR 0013）：材料只有交接单和面板附的差异，不读模块文档和 bugs.md；评审方案或结论时才按上面的顺序定位
   assert.match(text('reviewer'), /不读 `MODULE-MAP\.md`、模块文档、`bugs\.md`/, '评审代码不读模块文档')
   assert.match(text('worker'), /docs\/MODULE-MAP\.md/, '执行角色调研模块前先看模块地图和模块文档')
-})
-
-test('停在上一版的「调研」也能升级：先查模块地图和模块文档，要点交回不自己写', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  // 上一版指纹放在 MORE 数组末尾（见 shared/builtin/legacy.ts）
-  const oldExplorer = {
-    ...agents.find((a) => a.id === 'explorer')!,
-    ...LEGACY_AGENT_FIELDS_MORE.explorer.at(-1)!,
-    id: 'local-explorer',
-    origin: 'builtin:explorer',
-    params: [],
-    skills: [],
-  }
-  const state = { agents: [oldExplorer], categories: [], tags: [], workflows: [] }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 1, '上一版的「调研」副本升级')
-  const explorer = updated[0]
-  assert.match(explorer.instructions, /先读文档根的/, '调研先查模块地图定位模块')
-  assert.match(explorer.instructions, /建议补模块文档/, '调研读明白的模块要点交回')
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
-})
-
-test('停在 2026-10-21 那一版（缺「搜索范围」等四段）的四个副本也能升级', async () => {
-  const saved: Agent[] = []
-  const ops = {
-    async updateAgent(id: string, input: AgentInput) {
-      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
-      return saved.at(-1)!
-    },
-  }
-  // 本机一直停在 2026-10-21，指纹表里没有这一版，所以永远不升级：这里逐字复现当时的副本。
-  // name / description 也写当时的值：升级判定是三项全等（见 install.ts 的 upgradeBuiltinAgents）
-  const snapshots: [string, string, string, string][] = [
-    [
-      'rules',
-      '通用约束',
-      '所有内置 Agent 都引入的常驻规则：语言、编码、提问、执行纪律和安全边界',
-      RULES_BEFORE_SEARCH_SCOPE,
-    ],
-    [
-      'explorer',
-      '调研',
-      '只读调研：定位代码、分析改动影响面、侦察 UE 项目、查官方资料，交回带出处的结论',
-      EXPLORER_BEFORE_PROGRESS,
-    ],
-    [
-      'analyst',
-      '方案设计',
-      '收敛需求、压测方案，出可以确认的设计摘要；影响架构时给出候选方案和带验证方式的架构契约',
-      ANALYST_BEFORE_SKILL_SPLIT,
-    ],
-    [
-      'developer',
-      '开发',
-      '写代码的能力块：按已确认的设计实现，或先找到根因再修 Bug、查性能问题，边改边验证',
-      DEVELOPER_BEFORE_SKILL_SPLIT,
-    ],
-  ]
-  const state = {
-    agents: snapshots.map(([key, name, description, instructions]) => ({
-      ...agents.find((a) => a.id === key)!,
-      name,
-      description,
-      instructions,
-      id: `local-${key}`,
-      origin: `builtin:${key}`,
-      params: [],
-      skills: [],
-    })),
-    categories: [],
-    tags: [],
-    workflows: [],
-  }
-  const updated = await upgradeBuiltinAgents(state, ops)
-  assert.equal(updated.length, 4, '四个卡住的副本都升级')
-  const get = (name: string) => updated.find((a) => a.name === name)!
-  assert.match(get('通用约束').instructions, /## 搜索范围/, '补上搜索范围')
-  assert.match(get('通用约束').instructions, /## 回合怎么推进/, '补上回合推进')
-  assert.match(get('调研').instructions, /## 怎么推进（不要空转）/, '补上不要空转')
-  assert.match(get('方案设计').instructions, /ue-project-structure/, '技术栈分支改到新的技能')
-  assert.match(get('开发').instructions, /coding-standards/, '补上编码规范技能')
-  // 再启动：已经换成新定义，不再改
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
-  // 用户改过的也覆盖（加一行就不再和任何指纹一致），覆盖前的交给调用方备份；没改过的四个不用备份
-  const edited = {
-    ...state,
-    agents: [{ ...state.agents[0], instructions: `${RULES_BEFORE_SEARCH_SCOPE}\n我自己加的一条` }],
-  }
-  const replaced: Agent[] = []
-  assert.equal((await upgradeBuiltinAgents(edited, ops, (a) => replaced.push(a))).length, 1, '改过的也升级')
-  assert.deepEqual(
-    replaced.map((a) => a.id),
-    ['local-rules'],
-  )
-})
-
-/**
- * 历史指纹里的「识别现场」必须是冻结的正文，不能引用会继续变的 SCENE_TEXT。
- * 引用活的话，SCENE_TEXT 一改，所有指纹会一起变成最新版：原本能匹配上的旧副本永久匹配不上
- * （内置角色卡在旧版升不上来），本来该有区别的几个历史版本也会被抹平成同一份内容。
- * 所以这里断言指纹里的正文是**某一份具体的历史正文**，而不是当前 SCENE_TEXT。
- */
-test('历史指纹的「识别现场」是冻结正文，不跟着 SCENE_TEXT 变', () => {
-  const all = [...Object.values(LEGACY_AGENT_FIELDS), ...Object.values(LEGACY_AGENT_FIELDS_MORE).flat()].filter(Boolean)
-  const withScene = all.filter((f) => f.instructions.includes('识别现场（不改文件）'))
-  assert.ok(withScene.length > 0, '指纹表里应该有带「识别现场」的历史角色')
-  // 两份冻结正文：10-23 之前那一版，和 10-23 加上「搜索范围」那句之后的那版
-  const frozen = [LEGACY_SCENE_TEXT, LEGACY_SCENE_TEXT_SEARCH_SCOPE]
-  for (const f of withScene) {
-    assert.ok(
-      frozen.some((s) => f.instructions.includes(s)),
-      `「${f.name}」的指纹里的「识别现场」必须是冻结正文，不能引用 SCENE_TEXT`,
-    )
-  }
-  // 关键：当前 SCENE_TEXT 换了内容时，指纹里那份旧正文不能跟着变。
-  // 旧版结尾是「再限定范围搜索。」，新版是「…再限定范围搜（按「搜索范围」的规则带排除，不扫全仓）。」
-  assert.ok(
-    !LEGACY_SCENE_TEXT.includes('不扫全仓'),
-    '10-23 之前那一版不该有「搜索范围」那句；有的话说明它被换成了当前 SCENE_TEXT',
-  )
-  assert.ok(LEGACY_SCENE_TEXT_SEARCH_SCOPE.includes('不扫全仓'), '10-23 起那一版要带「搜索范围」那句')
-  // 两版必须真的不同，否则「按日期选对应的一份」没有意义
-  assert.notEqual(LEGACY_SCENE_TEXT, LEGACY_SCENE_TEXT_SEARCH_SCOPE, '两版冻结正文不能是同一份')
-  // 逐条绑定：每条指纹该用哪一份「识别现场」。只判断「属于两份之一」拦不住「两份互换」——
-  // 把 10-24 写下的 EXPLORER_BEFORE_MODULE_DOC 改回 10-23 之前那一版，集合判断照样通过，
-  // 但那条指纹就再也匹配不上 10-24 的旧副本，正是这次要修的那类缺陷。
-  const sceneOf = (f: { instructions: string }) =>
-    f.instructions.includes(LEGACY_SCENE_TEXT_SEARCH_SCOPE) ? 'search-scope' : 'before-search-scope'
-  // explorer 的「调研」有两条、开头逐字相同（只差「识别现场」段），没法靠开头区分，所以单独按条数断言：
-  // 10-24 写下的那条必须是 search-scope，另一条必须是 before-search-scope。
-  const explorerScene = [LEGACY_AGENT_FIELDS.explorer, ...(LEGACY_AGENT_FIELDS_MORE.explorer ?? [])]
-    .filter(Boolean)
-    .filter((f) => f.instructions.includes('识别现场（不改文件）'))
-  assert.equal(
-    explorerScene.filter((f) => sceneOf(f) === 'search-scope').length,
-    1,
-    'explorer：10-24 那条该用带「搜索范围」那一版',
-  )
-  assert.equal(
-    explorerScene.filter((f) => sceneOf(f) === 'before-search-scope').length,
-    1,
-    'explorer：10-21 那条该用 10-23 之前那一版',
-  )
-  // 其余 key：全部是 10-21~10-22 写下的，必须全用 10-23 之前那一版（先确认找到了那条指纹，再断言版本）
-  const expectScene: [string, string][] = [
-    ['analyst', '你负责把需求收敛成可以确认的设计'],
-    ['developer', '{{#if task=实现}}你负责按已确认的设计'],
-    ['architect', '你负责架构设计和评审。'],
-    ['debugger', '你负责定位并修复问题。没找到根因不修。排查方向'],
-    ['uescout', '你负责 Unreal Engine 项目的只读侦察'],
-  ]
-  for (const [key, head] of expectScene) {
-    const hits = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])]
-      .filter(Boolean)
-      .filter((f) => f.instructions.replace(/\$\{[A-Z_]+\}/g, '').startsWith(head))
-    assert.ok(hits.length, `${key} 的指纹里应该有以这段开头的「识别现场」角色（找不到说明指纹被改过）`)
-    for (const f of hits)
-      assert.equal(
-        sceneOf(f),
-        'before-search-scope',
-        `${key}「${f.name}」该用 10-23 之前那一版，配错版本会匹配不上当时的旧副本`,
-      )
-  }
-  // 上面都是比对内容，挡不住「某条指纹引用了活的 SCENE_TEXT」：只要当前正文恰好等于某份冻结正文，
-  // 内容比对照样通过，等 SCENE_TEXT 下次一改，那条指纹就静默变成最新版了。所以直接看源码。
-  const src = readFileSync(path.resolve(import.meta.dirname, '..', 'shared', 'builtin', 'legacy.ts'), 'utf8')
-  assert.ok(
-    !/\$\{SCENE_TEXT\}/.test(src),
-    'legacy.ts 里不能引用活的 SCENE_TEXT：历史指纹要冻结，引用活的话 SCENE_TEXT 一改指纹就跟着变',
-  )
-})
-
-/**
- * 和上面同一类问题：工作区段（VCS_TEXT）也在 10-23 加过 SVN 分支，历史指纹里引用的必须是当时那一版。
- * 两版各一份冻结副本，不许引用 agents.ts 里会继续变的 VCS_TEXT。
- */
-test('历史指纹的工作区段按指纹写下时的版本冻结，不引用活的 VCS_TEXT', () => {
-  const all = [...Object.values(LEGACY_AGENT_FIELDS), ...Object.values(LEGACY_AGENT_FIELDS_MORE).flat()].filter(Boolean)
-  const withVcs = all.filter((f) => f.instructions.includes('这是 Git 工作区'))
-  assert.ok(withVcs.length > 0, '指纹表里应该有带工作区段的角色')
-  // 带 SVN 分支的和不带 SVN 分支的各占一部分：早于 10-23 的副本没有 SVN，之后的有
-  const withSvn = withVcs.filter((f) => f.instructions.includes('这是 SVN 工作区'))
-  const withoutSvn = withVcs.filter((f) => !f.instructions.includes('这是 SVN 工作区'))
-  assert.ok(withSvn.length > 0, '10-23 之后写下的指纹应该带 SVN 分支')
-  assert.ok(withoutSvn.length > 0, '10-23 之前写下的指纹不该带 SVN 分支')
-  // 只看「两种都存在」拦不住「两份互换」：把「评审员」的 VCS_TEXT_BEFORE_SVN 换成带 SVN 的那份，
-  // 计数不变、测试照样绿，但那条指纹就再也匹配不上 10-21 的旧副本。所以逐条绑定。
-  const vcsOf = (f: { instructions: string }) =>
-    f.instructions.includes('这是 SVN 工作区') ? 'with-svn' : 'without-svn'
-  const expectVcs: [string, string, string][] = [
-    // 10-23 之后写下的：当时已经有 SVN 分支
-    ['worker', '你是项目里一个子对话的执行者', 'with-svn'],
-    ['vcs', '你负责版本控制与交付收尾', 'with-svn'],
-    // 10-22 及更早写下的：当时还没有 SVN 分支
-    ['developer', '你负责按已确认的设计（或 tasks.md）实现', 'without-svn'],
-    // 10-22 写下的「开发」（带「找 Bug 按模块逐层定位」那版）
-    ['developer', '{{#if task=实现}}你负责按已确认的设计', 'without-svn'],
-    ['reviewer', '你负责代码评审，不修改文件。', 'without-svn'],
-    ['debugger', '你负责定位并修复问题。没找到根因不修。排查方向', 'without-svn'],
-    ['vcs', '你负责任务的收尾：', 'without-svn'],
-    ['debugger', '你负责定位并修复 Bug。没找到根因不修。', 'without-svn'],
-    ['worker', '你是项目里一个子对话的执行者，只负责当前这个任务。', 'with-svn'],
-  ]
-  for (const [key, head, want] of expectVcs) {
-    const hits = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])]
-      .filter(Boolean)
-      .filter((f) => f.instructions.replace(/\$\{[A-Z_]+\}/g, '').startsWith(head))
-    assert.ok(hits.length, `${key} 的指纹里应该有以这段开头的角色（找不到说明指纹被改过）`)
-    for (const f of hits)
-      assert.equal(vcsOf(f), want, `${key}「${f.name}」该用 ${want} 那一版工作区段，配错版本会匹配不上当时的旧副本`)
-  }
-  // 源码层面挡住「改回引用活的 VCS_TEXT」：那种写法会把当前版本拼进所有历史指纹
-  const src = readFileSync(path.resolve(import.meta.dirname, '..', 'shared', 'builtin', 'legacy.ts'), 'utf8')
-  assert.ok(!/\$\{VCS_TEXT\}/.test(src), 'legacy.ts 里不能引用活的 VCS_TEXT：历史指纹的工作区段要按写下时的版本冻结')
 })
 
 /** 测试用的内存 ops：新建的东西按顺序编 id，更新的记下来 */
@@ -1136,79 +545,88 @@ test('自带工作流默认全部加入：装过一次的删掉后不再装回�
   )
 })
 
-test('整理改过的工作流：停在整理前那一版、没改过的副本升级，再启动不再改；没改的不登记旧版', async () => {
-  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
-  for (const def of BUILTIN_WORKFLOWS) {
-    const legacy = LEGACY_WORKFLOWS[def.key] ?? []
-    if (!legacy.length) continue
-    // 登记的旧版不能和现在的定义一样，否则每次启动都会重写一遍
-    assert.notDeepEqual(legacy.at(-1), { document: def.document, flows: def.flows }, `${def.key} 登记的旧版没变`)
+test('内置工作流：定义更新了就覆盖本机副本（改过的也覆盖），定义没变时用户改的留着，拖动坐标不算改', async () => {
+  const w = BUILTIN_WORKFLOWS[0]
+  const agentId = (key: string) => `id-${key}`
+  const state = {
+    agents: BUILTIN_AGENTS.map((b) => ({
+      ...agents.find((a) => a.id === b.key)!,
+      id: `id-${b.key}`,
+      origin: `builtin:${b.key}`,
+    })),
+    categories: [],
+    tags: [],
+    workflows: [] as Workflow[],
   }
-  for (const key of ['project-general', 'project-ue', 'openspec', 'migration', 'review', 'deps', 'release']) {
-    const def = BUILTIN_WORKFLOWS.find((w) => w.key === key)!
-    const old = BEFORE_TIDY[key]
-    const w: Workflow = {
-      ...WorkflowInput.parse({
-        ...buildWorkflow({ ...def, document: old.document, flows: old.flows }, (k) => k),
-        origin: `builtin:${key}`,
-      }),
-      id: `old-${key}`,
-      createdAt: '',
-      updatedAt: '',
-    }
-    const { ops, updated } = memoryOps()
-    const r = await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [w] }, ops, [
-      ...BUILTIN_WORKFLOWS.map((x) => x.key),
-    ])
-    assert.equal(updated.length, 1, `${key} 的旧副本升级`)
-    const next = r.state.workflows.find((x) => x.id === w.id)!
-    // 改代码的工作流不再带评审、验收和提交节点
-    for (const f of next.flows)
-      for (const nd of f.nodes)
-        for (const s of nodeSteps(nd)) {
-          assert.ok(!s.review || key === 'openspec', `${key}/${nd.title} 还挂着验收流程`)
-          if (key !== 'release') assert.notEqual(s.agentId, 'vcs', `${key}/${nd.title} 还有提交节点`)
-        }
-    const again = memoryOps()
-    await seedProjectWorkflows(
-      { ...r.state, workflows: [next] },
-      again.ops,
-      BUILTIN_WORKFLOWS.map((x) => x.key),
-    )
-    assert.equal(again.updated.length, 0, `${key} 再启动不再改`)
+  const ops = {
+    updateWorkflow: async (id: string, input: WorkflowInput) =>
+      ({ ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }) as Workflow,
+  } as unknown as BuiltinOps
+  // 上一版定义写出来的副本（文档多一段），之后用户又改过一处：定义更新了，照样覆盖成新版（用户 2026-11-12 定的）
+  const built = buildWorkflow(w, agentId)
+  const oldInput = {
+    ...built,
+    name: w.name,
+    origin: `builtin:${w.key}`,
+    categoryId: '',
+    tags: [],
+    document: `${built.document}\n旧版多出来的一段`,
   }
+  const old = {
+    ...WorkflowInput.parse({ ...oldInput, builtinHash: workflowFingerprint(oldInput) }),
+    id: 'wf',
+    createdAt: '',
+    updatedAt: '',
+  } as Workflow
+  old.flows[0].nodes[0] = { ...old.flows[0].nodes[0], x: 999, y: 999 }
+  const edited = { ...old, document: `${old.document}\n我自己加的` }
+  const up = await upgradeBuiltinWorkflows({ ...state, workflows: [edited] }, ops)
+  assert.equal(up.length, 1, '改过的也覆盖')
+  assert.equal(up[0].document.trim(), built.document.trim())
+  assert.equal(up[0].flows[0].nodes[0].x, 999, '坐标沿用本机的')
+  assert.equal(up[0].builtinHash, workflowFingerprint(up[0]), '指纹记成新版')
+  assert.equal((await upgradeBuiltinWorkflows({ ...state, workflows: up }, ops)).length, 0, '再启动不再写')
+
+  // 定义没变：用户在新版上改的留着
+  const mine = { ...up[0], document: `${up[0].document}\n升级后我又改的` }
+  assert.equal((await upgradeBuiltinWorkflows({ ...state, workflows: [mine] }, ops)).length, 0)
+
+  // 没记过指纹的老副本：认不出是哪一版，覆盖成新版并记上指纹
+  const { builtinHash: _h, ...noMark } = edited
+  const marked = await upgradeBuiltinWorkflows({ ...state, workflows: [noMark as Workflow] }, ops)
+  assert.equal(marked.length, 1)
+  assert.equal(marked[0].builtinHash, workflowFingerprint(marked[0]))
 })
 
-test('合并掉的工作流：没改过的副本删掉、项目引用改指到接替的，改过的保留', () => {
+test('合并掉的工作流：记过指纹且没改过的删掉、项目引用改指到接替的；改过的和没指纹的老副本保留', () => {
   const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
-  const make = (key: string, id: string, def = BEFORE_TIDY[key]): Workflow => ({
-    ...WorkflowInput.parse({
+  const make = (key: string, id: string, document = `${key} 的说明`): Workflow => {
+    const input = WorkflowInput.parse({
       name: key,
       mainAgentId: 'developer',
       entryFlowId: 'main',
-      document: def.document,
-      flows: buildWorkflow({ ...GENERAL, document: def.document, flows: def.flows }, (k) => k).flows,
+      document,
+      flows: buildWorkflow(GENERAL, (k) => k).flows,
       origin: `builtin:${key}`,
-    }),
-    id,
-    createdAt: '',
-    updatedAt: '',
-  })
-  const general = make('project-general', 'g', { document: GENERAL.document, flows: GENERAL.flows })
-  const ue = make('project-ue', 'u', BEFORE_TIDY['project-ue'])
+    })
+    return { ...input, builtinHash: workflowFingerprint(input), id, createdAt: '', updatedAt: '' }
+  }
+  const general = make('project-general', 'g')
+  const ue = make('project-ue', 'u')
   const daily = make('daily-dev', 'd')
   const ueDev = make('ue-dev', 'ud')
   const boot = { ...make('bootstrap', 'b'), document: '我改过的说明' }
-  const list = retiredWorkflows({ agents: mine, workflows: [general, ue, daily, ueDev, boot] })
+  const { builtinHash: _h, ...bugOld } = make('bugfix', 'bf')
+  const list = retiredWorkflows({ agents: mine, workflows: [general, ue, daily, ueDev, boot, bugOld as Workflow] })
   assert.deepEqual(
     list.map((r) => [r.workflow.id, r.into]),
     [
       ['d', 'g'],
       ['ud', 'u'],
     ],
-    '没改过的删掉，改过的「项目初始化」保留',
+    '没改过的删掉；改过的「项目初始化」、没指纹的「Bug 修复」保留',
   )
-  for (const k of Object.keys(RETIRED_WORKFLOWS)) assert.ok(BEFORE_TIDY[k], `${k} 留了整理前的定义`)
+  assert.ok(!BUILTIN_WORKFLOWS.some((w) => w.key === 'bugfix'), '不再装「Bug 修复」')
 
   const project = Project.parse({
     id: 'p',
@@ -1232,61 +650,24 @@ test('合并掉的工作流：没改过的副本删掉、项目引用改指到�
   )
 })
 
-test('内置工作流按副本上记的指纹判断改没改过：停在没登记的旧版本也能升级，改过的不动，拖动坐标不算改', async () => {
-  const w = BUILTIN_WORKFLOWS.find((x) => x.key === 'bugfix') ?? BUILTIN_WORKFLOWS[0]
-  const agentId = (key: string) => `id-${key}`
-  const state = {
-    agents: BUILTIN_AGENTS.map((b) => ({
-      ...agents.find((a) => a.id === b.key)!,
-      id: `id-${b.key}`,
-      origin: `builtin:${b.key}`,
-    })),
-    categories: [],
-    tags: [],
-    workflows: [] as Workflow[],
-  }
-  const saved: Workflow[] = []
+test('内置角色：本机改过的设定按当前定义直接覆盖，参数取值留着，再启动不再改', async () => {
+  const saved: Agent[] = []
   const ops = {
-    updateWorkflow: async (id: string, input: WorkflowInput) => {
-      const x = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' } as Workflow
-      saved.push(x)
-      return x
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
     },
-  } as unknown as BuiltinOps
-  // 一个没登记进 LEGACY_WORKFLOWS 的旧版本：文档少一段。面板写它的时候记了指纹
-  const built = buildWorkflow(w, agentId)
-  const oldInput = {
-    ...built,
-    name: w.name,
-    origin: `builtin:${w.key}`,
-    categoryId: '',
-    tags: [],
-    document: `${built.document}\n旧版多出来的一段`,
   }
-  const old = {
-    ...WorkflowInput.parse({ ...oldInput, builtinHash: workflowFingerprint(oldInput) }),
-    id: 'wf',
-    createdAt: '',
-    updatedAt: '',
-  } as Workflow
-  // 用户拖过节点：坐标不算改动
-  old.flows[0].nodes[0] = { ...old.flows[0].nodes[0], x: 999, y: 999 }
-  const up = await upgradeBuiltinWorkflows({ ...state, workflows: [old] }, ops)
-  assert.equal(up.length, 1, '没改过的旧版本升级')
-  assert.equal(up[0].document.trim(), built.document.trim())
-  assert.equal(up[0].flows[0].nodes[0].x, 999, '坐标沿用本机的')
-  assert.equal(up[0].builtinHash, workflowFingerprint(up[0]), '升级后指纹跟着更新')
-  // 再启动：已经是当前版本，不再写
-  assert.equal((await upgradeBuiltinWorkflows({ ...state, workflows: up }, ops)).length, 0)
-
-  // 用户改过（指纹对不上）：不动
-  const edited = { ...old, document: `${old.document}\n我自己加的` }
-  assert.equal((await upgradeBuiltinWorkflows({ ...state, workflows: [edited] }, ops)).length, 0)
-
-  // 以前装的、没记过指纹、内容已经是当前版本：补记一次指纹，内容不变
-  const { builtinHash: _h, ...noMark } = up[0]
-  const marked = await upgradeBuiltinWorkflows({ ...state, workflows: [noMark as Workflow] }, ops)
-  assert.equal(marked.length, 1)
-  assert.equal(marked[0].builtinHash, workflowFingerprint(up[0]))
-  assert.equal(marked[0].document, up[0].document)
+  const def = agents.find((a) => a.id === 'developer')!
+  const edited = {
+    ...def,
+    id: 'local-dev',
+    origin: 'builtin:developer',
+    instructions: `${def.instructions}\n我自己加的一条`,
+  }
+  const st = { agents: [edited], categories: [], tags: [], workflows: [] }
+  const up = await upgradeBuiltinAgents(st, ops)
+  assert.equal(up.length, 1, '改过的也覆盖')
+  assert.equal(up[0].instructions.trim(), def.instructions.trim())
+  assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, ops)).length, 0, '再启动不再改')
 })

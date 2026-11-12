@@ -64,3 +64,8 @@ e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check
 
 - 规则：`finally` 里删掉多出来的键再 `Object.assign(process.env, old)`，不写 `process.env = old`：换成普通对象后再设 `HOME`，`os.homedir()` 读不到，后面的用例会写进前一条用例的临时目录（`server/deploy.test.ts` 加第二条用例时挂了）。
 - 防线：`scripts/rules-check.mjs` 第 17 条。
+
+## 带随机编号的结果按编号对照，不排序后和固定顺序比
+
+- 规则：编号是随机生成的（`randomUUID`），断言写成 `Object.fromEntries` 按编号对照，不写 `.sort()` 后和手写顺序的数组比。
+- 起因：1a703f0 的 `server/bg-persist.test.ts` 约一半概率失败（另一个线程本地单测报）。

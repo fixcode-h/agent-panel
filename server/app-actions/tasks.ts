@@ -1,4 +1,4 @@
-import type { TaskLive } from '../../shared/task-live.ts'
+import type { TaskLive } from '../../shared/live/task-live.ts'
 import { z } from 'zod'
 import type { Task } from '../../shared/schema.ts'
 import { ActionError, defineAction, type ActionCtx } from './registry.ts'
@@ -25,7 +25,7 @@ function notSelf(id: string, ctx: ActionCtx, what: string) {
 
 const enc = encodeURIComponent
 
-/** 接口回来的任务带着 live（运行时状态，shared/task-live.ts） */
+/** 接口回来的任务带着 live（运行时状态，shared/live/task-live.ts） */
 type Shown = Task & { live?: TaskLive }
 
 /** 列表、详情里给模型看的几项：对话内容不带，太长 */

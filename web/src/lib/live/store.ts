@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { Task } from '@shared/schema'
-import { taskLiveOf, type TaskLive } from '@shared/task-live'
+import { taskLiveOf, type TaskLive } from '@shared/live/task-live'
 
 /**
  * 对话的运行时状态（TaskLive）在页面上的那一份：和任务记录分开存（重构文档第 1、2 条）。

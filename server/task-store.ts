@@ -1,50 +1,42 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rmdir, stat, unlink } from 'node:fs/promises'
+import { readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { messageStamp, taskTitle } from '../shared/task.ts'
-import { NOT_STORED_FIELDS } from '../shared/task-live.ts'
+import { NOT_STORED_FIELDS } from '../shared/live/task-live.ts'
 import { log } from './log.ts'
 import { removeTaskLog, setTaskLogPath } from './task-log.ts'
-import {
-  CACHE_DIR,
-  DATA_DIR,
-  archiveBrokenFile,
-  onReset,
-  readJson,
-  readJsonDetailed,
-  writeJsonAtomic,
-} from './store.ts'
+import { DATA_DIR, archiveBrokenFile, onReset, readJsonDetailed, writeJsonAtomic } from './store.ts'
+import { type MessagesFileState, stateFromRead, writeMessagesFile } from './tasks/messages-write.ts'
+import { MSG_JSONL, MSG_LEGACY, readMessagesFile, statMessagesFile } from './tasks/messages-file.ts'
 
 /**
  * 任务按项目分目录存，每个任务两个文件：
  *
  *   tasks/projects/<项目 id>/<任务 id>.json            任务本身（节点、用量、改动…），只带用户发的消息
- *   tasks/projects/<项目 id>/<任务 id>.messages.json   全部对话消息
+ *   tasks/projects/<项目 id>/<任务 id>.messages.jsonl  全部对话消息，追加写（格式见 tasks/messages-file.ts）
  *   tasks/chats/…                                      Chat 模式的聊天（不属于任何项目）
  *
  * 启动时只读第一种（小），列表、侧栏都够用；对话消息在打开任务时才读，读过的留一些在内存里。
+ * 更早的存储布局（tasks.json、items/、整份重写的 .messages.json）由 server/migrations 一次性转换，这里不再管。
  */
 export const TASKS_ROOT = path.join(DATA_DIR, 'tasks')
-/** 上一版：每个任务一个完整文件，不分项目 */
-const ITEMS_DIR = path.join(TASKS_ROOT, 'items')
-/** 更早的版本把所有任务放在一个文件里 */
-const LEGACY = path.join(TASKS_ROOT, 'tasks.json')
 
-const safeId = (id: string) => /^[\w-]+$/.test(id)
-const dirOf = (projectId: string) =>
+export const safeTaskId = (id: string) => /^[\w-]+$/.test(id)
+const safeId = safeTaskId
+export const taskDirOf = (projectId: string) =>
   projectId && safeId(projectId) ? path.join(TASKS_ROOT, 'projects', projectId) : path.join(TASKS_ROOT, 'chats')
-const MSG = '.messages.json'
+const dirOf = taskDirOf
 /** 一次启动里最多自动留档重建几条过不了 schema 的任务记录（见 load 里的说明） */
 const BAD_META_LIMIT = 5
 
 /** 任务文件里只放用户消息：摘要要第一条要求，清理附件要知道哪些附件还在用 */
-const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
+export const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
 
 /**
- * 写盘的那份：去掉运行时字段（shared/task-live.ts 的 NOT_STORED_FIELDS）和交给界面时带的 live。
+ * 写盘的那份：去掉运行时字段（shared/live/task-live.ts 的 NOT_STORED_FIELDS）和交给界面时带的 live。
  * 这些是服务端按进程、后台命令当场算的，存下来重启后就是过期的假象（旧文件里存过的由数据迁移清掉）
  */
 function stored(t: Task): Task {
@@ -129,6 +121,10 @@ export function createStampTracker(verifyMs = 10_000) {
       cache.set(id, next)
       return `${msgs.length}:${next.ids.map((x, i) => x + next.stamps[i]).join(';')}`
     },
+    /** 上一次 stamp 算出的逐条 id 和指纹：决定追加哪几行（拿到的是缓存本身，不要改它） */
+    detail(id: string): { ids: string[]; stamps: string[] } | undefined {
+      return cache.get(id)
+    },
     forget(id: string) {
       cache.delete(id)
     },
@@ -168,7 +164,7 @@ export function messageGap(lastWriteMs: number) {
  * 只给不改数据的旁观者用：回调同步调用、不等它，回调里出错也不影响落盘
  */
 type TaskChange = (old: Task | null, next: Task) => void
-const changeListeners = new Set<TaskChange>()
+const changeListeners = new Set<TaskChange>() // 模块状态：会话，跟着进程或连接一起没
 export function onTaskChange(cb: TaskChange) {
   changeListeners.add(cb)
   return () => changeListeners.delete(cb)
@@ -188,8 +184,13 @@ export function createTaskStore() {
   /** full 里每个任务的对话字符数（messageChars）和合计 */
   const sizes = new Map<string, number>()
   let fullChars = 0
-  /** 每个任务上次写入的消息指纹，没变就不重写消息文件 */
-  const written = new Map<string, string>()
+  /**
+   * 每个任务的对话文件现在在盘上是什么样：整体指纹（没变就不写）、逐条 id 和指纹（决定追加哪几行）、
+   * 文件字节数和其中覆盖记录的字节数（决定什么时候压实）、是不是以换行结尾。
+   * 没有这一项（刚启动、被挤出内存、读到坏行）时下一次整份重写：不知道盘上什么样就不往后追加
+   */
+  const written = new Map<string, MessagesFileState>()
+
   /** 消息指纹的增量缓存，按任务一份 */
   const stamps = createStampTracker()
   const writing = new Map<string, Promise<void>>()
@@ -221,7 +222,9 @@ export function createTaskStore() {
   })
 
   const fileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.json`)
-  const msgFileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}${MSG}`)
+  /** 对话文件去掉后缀的路径：JSONL 和旧格式共用（见 tasks/messages-file.ts） */
+  const msgBaseOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), t.id)
+  const msgFileOf = (t: { id: string; projectId: string }) => msgBaseOf(t) + MSG_JSONL
   // 对话专属日志和对话文件放在一起（见 task-log.ts）：按 id 找它属于哪个项目目录，内存里没有的不写
   const logFileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.log`)
   setTaskLogPath((id) => {
@@ -233,18 +236,36 @@ export function createTaskStore() {
     await writeJsonAtomic(fileOf(t), stored(head(t)))
   }
 
-  /** 写对话消息：指纹没变就跳过（增量算，不每次扫全部工具输出） */
-  async function writeMessages(t: Task) {
-    const stamp = stamps.stamp(t.id, t.messages)
-    if (written.get(t.id) === stamp) return
+  /**
+   * 写对话消息：指纹没变就跳过（增量算，不每次扫全部工具输出）。
+   * 盘上的是这次的前缀（只多了消息、或有几条原地改过）就只追加变了的那几行；
+   * 删过、换过顺序（返工、回退）或者覆盖记录攒多了，就整份原子重写（压实）。
+   */
+  async function writeMessages(t: Task, atKey = false) {
+    const key = stamps.stamp(t.id, t.messages)
+    const prev = written.get(t.id)
+    if (prev?.key === key) return
     const began = performance.now()
-    await writeJsonAtomic(msgFileOf(t), t.messages, true)
+    let next: MessagesFileState
+    try {
+      next = await writeMessagesFile({
+        base: msgBaseOf(t),
+        msgs: t.messages,
+        key,
+        cur: stamps.detail(t.id)!,
+        prev,
+        atKey,
+      })
+    } catch (e) {
+      if ((e as { appendFailed?: boolean }).appendFailed) written.delete(t.id)
+      throw e
+    }
     const spent = performance.now() - began
     msgCost.set(t.id, spent)
     if (spent >= SLOW_WRITE_MS)
       log.warn('task', '写对话文件慢', { task: t.id, ms: Math.round(spent), messages: t.messages.length })
-    // 写成功才记指纹：写失败（磁盘满、杀毒软件占着文件）时下一次还要重试，不然这段对话就再也不落盘了
-    written.set(t.id, stamp)
+    // 写成功才记状态：写失败（磁盘满、杀毒软件占着文件）时下一次还要重试，不然这段对话就再也不落盘了
+    written.set(t.id, next)
     // 窗口按「真的写了盘」的时间算：窗口里合并写的那一次也要算，不然下一次会提前破窗口
     msgAt.set(t.id, Date.now())
   }
@@ -274,7 +295,7 @@ export function createTaskStore() {
             msgTimers.delete(id)
             const last = msgPending.get(id)
             msgPending.delete(id)
-            if (last) void queueWrite(last, writeMessages)
+            if (last) void queueWrite(last, (x) => writeMessages(x))
           }, wait),
         )
       }
@@ -285,58 +306,23 @@ export function createTaskStore() {
     if (timer) clearTimeout(timer)
     msgTimers.delete(id)
     msgPending.delete(id)
-    return queueWrite(t, writeMessages)
+    return queueWrite(t, (x) => writeMessages(x, true))
   }
 
   /**
-   * 早期版本没有 turnSeenAt：那时的已完成对话都算看过，
-   * 否则升级后旧会话会全部亮成未读，还会一直留着 CLI 进程
+   * 读任务记录。旧版本格式的转换（没有 turnSeenAt、旧的运行时字段）在 server/migrations 里一次做完，这里只管当前格式
    */
   function parseTask(raw: unknown): Task | undefined {
     const p = Task.safeParse(raw)
     if (!p.success) return undefined
     const t = p.data
-    if (raw && typeof raw === 'object' && !Object.prototype.hasOwnProperty.call(raw, 'turnSeenAt'))
-      t.turnSeenAt = t.turnDoneAt
     // 「在排队等名额」是内存里的临时状态（此刻真的在排队才该有），进程重启后不可能还在排。
-    // 旧版本可能在让出名额 / 保活等下一句时漏清它，快照里就带着一条陈旧标记（页面上显示成在排队）；
-    // 这里丢掉，免得重启后凭空显示排队。以后每轮跑起来写回快照时再按当时情况重新写
+    // 让出名额 / 保活等下一句时可能漏清它，快照里就带着一条陈旧标记（页面上显示成在排队）；
+    // 这里丢掉，免得重启后凭空显示排队。以后每轮跑起来写回快照时再按当时情况重新写。
+    // 这不是旧格式迁移：任何版本重启后都可能遇到，所以每次读都要做
     delete t.apiWait
     for (const s of t.steps) delete s.apiWait
     return t
-  }
-
-  /** 旧格式：一个文件里是完整任务，拆成新的两个文件 */
-  async function migrate(map: Map<string, Task>) {
-    const olds: Task[] = []
-    if (existsSync(LEGACY)) {
-      const raw = await readJson(LEGACY)
-      for (const r of Array.isArray(raw) ? raw : []) {
-        const t = parseTask(r)
-        if (t && safeId(t.id)) olds.push(t)
-      }
-      const backup = path.join(CACHE_DIR, 'migrated', `tasks-${Date.now()}.json`)
-      await mkdir(path.dirname(backup), { recursive: true })
-      await rename(LEGACY, backup).catch(() => unlink(LEGACY).catch(() => {}))
-    }
-    if (existsSync(ITEMS_DIR)) {
-      for (const f of await readdir(ITEMS_DIR)) {
-        if (!f.endsWith('.json')) continue
-        const t = parseTask(await readJson(path.join(ITEMS_DIR, f)))
-        if (t && safeId(t.id)) olds.push(t)
-      }
-    }
-    for (const t of olds) {
-      await mkdir(dirOf(t.projectId), { recursive: true })
-      await writeFull(t)
-      // 拆文件时对话一起写到新的消息文件里，不能只留任务本身
-      await writeMessages(t)
-      map.set(t.id, head(t))
-    }
-    if (existsSync(ITEMS_DIR)) {
-      for (const t of olds) await unlink(path.join(ITEMS_DIR, `${t.id}.json`)).catch(() => {})
-      await rmdir(ITEMS_DIR).catch(() => {})
-    }
   }
 
   async function load() {
@@ -359,11 +345,11 @@ export function createTaskStore() {
       if (!existsSync(dir)) continue
       const names = await readdir(dir)
       for (const f of names) {
-        if (!f.endsWith('.json') || f.endsWith(MSG)) continue
+        if (!f.endsWith('.json') || f.endsWith(MSG_LEGACY)) continue
         const file = path.join(dir, f)
         const raw = await readJsonDetailed(file)
         // 坏了的那份已经被 readJsonDetailed 挪进留档目录并打了日志：这里当「这个任务的记录读不出来」处理，
-        // 下面会用同目录的 `.messages.json` 把它重建回来，不能让整个对话从列表里消失
+        // 下面会用同目录的对话文件把它重建回来，不能让整个对话从列表里消失
         const task = raw.state === 'ok' ? parseTask(raw.value) : undefined
         if (task) map.set(task.id, task)
         else if (raw.state === 'ok') {
@@ -371,12 +357,15 @@ export function createTaskStore() {
           if (invalid > BAD_META_LIMIT || !(await archiveBadMeta(file, f))) kept.add(f.slice(0, -'.json'.length))
         }
       }
-      // 只有 `.messages.json`、没有（或丢了、坏了）任务记录：从对话反推一个最小的任务记录，
+      // 只有对话文件、没有（或丢了、坏了）任务记录：从对话反推一个最小的任务记录，
       // 让这个对话重新出现在列表里、内容能打开。同一个 load 里做，不另起一次扫描
+      const seen = new Set<string>()
       for (const f of names) {
-        if (!f.endsWith(MSG)) continue
-        const id = f.slice(0, -MSG.length)
-        if (map.has(id)) continue
+        const suffix = f.endsWith(MSG_JSONL) ? MSG_JSONL : f.endsWith(MSG_LEGACY) ? MSG_LEGACY : ''
+        if (!suffix) continue
+        const id = f.slice(0, -suffix.length)
+        if (map.has(id) || seen.has(id)) continue
+        seen.add(id)
         if (!safeId(id)) {
           console.error(`任务对话文件名不是合法 id，已跳过：${f}`)
           continue
@@ -390,7 +379,6 @@ export function createTaskStore() {
         `有 ${invalid} 条任务记录这个版本读不懂，超过 ${BAD_META_LIMIT} 条，只留档重建了前 ${BAD_META_LIMIT} 条，其余原文件原地保留没动。` +
           '多半是升级后的数据迁移有问题：请先别手动改这些文件，升级到修复版本后会重新读到',
       )
-    await migrate(map)
     return map
   }
 
@@ -411,7 +399,7 @@ export function createTaskStore() {
   }
 
   /**
-   * 从 `.messages.json` 反推缺失的任务记录（meta），写盘后放进 map。
+   * 从对话文件反推缺失的任务记录（meta），写盘后放进 map。
    * 返回是否真的重建了。
    *
    * 宁可不重建也不写半截：对话文件本身坏了 / 不是一个消息数组时，把它当作坏文件留档、打日志，
@@ -428,10 +416,10 @@ export function createTaskStore() {
     map: Map<string, Task>,
     keepExisting = false,
   ): Promise<boolean> {
-    const file = path.join(dir, `${id}${MSG}`)
-    let res: Awaited<ReturnType<typeof readJsonDetailed>>
+    const base = path.join(dir, id)
+    let res: Awaited<ReturnType<typeof readMessagesFile>>
     try {
-      res = await readJsonDetailed(file)
+      res = await readMessagesFile(base)
     } catch (err) {
       // 文件被杀软 / 索引服务占着（EBUSY / EPERM）或权限不对：这一个任务跳过，不能让整个任务列表崩掉
       console.error(`任务 ${id} 的对话文件读不出来，这次跳过（下次启动会再试）：${String(err)}`)
@@ -440,26 +428,17 @@ export function createTaskStore() {
     // 名字是 readdir 时看到的，这中间被别的流程挪走了：没什么可重建的
     if (res.state === 'missing') return false
     if (res.state === 'broken') {
-      console.error(
-        res.broken.archived
-          ? `任务 ${id} 的任务记录已丢失，对话文件也损坏（${res.broken.size} 字节），无法恢复：已留档为 ${res.broken.backup}`
-          : `任务 ${id} 的任务记录已丢失，对话文件也损坏（${res.broken.size} 字节），无法恢复（也没能挪进缓存目录）`,
-      )
-      return false
-    }
-    const parsed = TaskMessage.array().safeParse(res.value)
-    if (!parsed.success) {
-      // 能读成 JSON，但内容不是对话（比如被写成了插件配置）：同样留档，免得到点又重读一遍
-      const size = (await stat(file).catch(() => null))?.size ?? 0
-      const broken = await archiveBrokenFile(file, '对话内容不是一个消息数组', size)
+      // 坏文件留档：宁可不重建也不伪造内容；挪走后下次启动不会再在目录里看到它，不会反复重试
+      const file = base + (res.legacy ? MSG_LEGACY : MSG_JSONL)
+      const broken = await archiveBrokenFile(file, res.reason, res.bytes)
       console.error(
         broken.archived
-          ? `任务 ${id} 的任务记录已丢失，对话文件内容不是消息列表，无法恢复：已留档为 ${broken.backup}`
-          : `任务 ${id} 的任务记录已丢失，对话文件内容不是消息列表，无法恢复（也没能挪进缓存目录）`,
+          ? `任务 ${id} 的任务记录已丢失，对话文件也损坏（${res.bytes} 字节），无法恢复：已留档为 ${broken.backup}`
+          : `任务 ${id} 的任务记录已丢失，对话文件也损坏（${res.bytes} 字节），无法恢复（也没能挪进留档目录）`,
       )
       return false
     }
-    const messages = parsed.data
+    const messages = res.messages
     // 空对话没有可恢复的内容：不造一个 0 条消息的空任务（断电后正好可能留下「meta 全 0 + messages 为 []」）
     if (!messages.length) {
       console.error(`任务 ${id} 的任务记录已丢失，对话文件是空的，没有可恢复的内容`)
@@ -531,11 +510,24 @@ export function createTaskStore() {
     }
     const meta = (await all()).get(id)
     if (!meta) return null
-    const raw = await readJson(msgFileOf(meta))
-    const p = TaskMessage.array().safeParse(raw)
+    const r = await readMessagesFile(msgBaseOf(meta)).catch((e) => {
+      log.warn('task', '对话文件读不出来', { task: id, error: String(e) })
+      return null
+    })
+    // 坏了的对话文件先留档：之后的整份重写会把它盖掉
+    if (r?.state === 'broken') {
+      const file = msgBaseOf(meta) + (r.legacy ? MSG_LEGACY : MSG_JSONL)
+      const b = await archiveBrokenFile(file, r.reason, r.bytes)
+      log.warn('task', '对话文件损坏，按任务文件里的用户消息打开', { task: id, backup: b.archived ? b.backup : '' })
+    }
     // 消息文件丢了或坏了：至少还有用户发的那些
-    const task = { ...meta, messages: p.success ? p.data : meta.messages }
-    if (p.success) written.set(id, stamps.stamp(id, task.messages))
+    const ok = r?.state === 'ok'
+    const task = { ...meta, messages: ok ? r.messages : meta.messages }
+    if (ok) {
+      const st = stateFromRead(stamps.stamp(id, task.messages), stamps.detail(id)!, task.messages.length, r)
+      if (st) written.set(id, st)
+      else written.delete(id)
+    }
     remember(task)
     return task
   }
@@ -579,11 +571,11 @@ export function createTaskStore() {
     const out: { id: string; bytes: number }[] = []
     for (const meta of (await all()).values()) {
       let bytes = 0
-      for (const f of [fileOf(meta), msgFileOf(meta)])
-        bytes += await stat(f).then(
-          (x) => x.size,
-          () => 0,
-        )
+      bytes += await stat(fileOf(meta)).then(
+        (x) => x.size,
+        () => 0,
+      )
+      bytes += (await statMessagesFile(msgBaseOf(meta)))?.size ?? 0
       out.push({ id: meta.id, bytes })
     }
     return out
@@ -599,7 +591,7 @@ export function createTaskStore() {
       msgTimers.delete(id)
       const last = msgPending.get(id)
       msgPending.delete(id)
-      if (last) void queueWrite(last, writeMessages)
+      if (last) void queueWrite(last, (x) => writeMessages(x))
     }
     // 写失败照样要让调用方知道：逐个收集，不吞掉
     const res = await Promise.allSettled([...writing.values()])
@@ -650,18 +642,17 @@ export function createTaskStore() {
     async messagesStamp(id: string): Promise<string> {
       const meta = (await all()).get(id)
       if (!meta) return ''
-      const st = await stat(msgFileOf(meta)).catch(() => null)
+      const st = await statMessagesFile(msgBaseOf(meta))
       return st ? `${st.mtimeMs}:${st.size}` : ''
     },
     async readMessages(id: string): Promise<TaskMessage[] | null> {
       const meta = (await all()).get(id)
       if (!meta) return null
-      const raw = await readJson(msgFileOf(meta))
-      const p = TaskMessage.array().safeParse(raw)
-      return p.success ? p.data : null
+      const r = await readMessagesFile(msgBaseOf(meta)).catch(() => null)
+      return r?.state === 'ok' ? r.messages : null
     },
     /**
-     * 任务本身（用量、节点、状态、标题…），不读 `.messages.json`：
+     * 任务本身（用量、节点、状态、标题…），不读对话文件：
      * 返回的 messages 只有任务文件里的那几条用户消息。
      * 每秒都在刷的用量统计用它——用 getFull 会把整棵树每个任务的对话都读进内存，还会把打开过的任务挤出 full 缓存
      */
@@ -716,7 +707,7 @@ export function createTaskStore() {
       return item
     },
     /**
-     * 只改任务本身的几个字段，不读也不写 `.messages.json`。
+     * 只改任务本身的几个字段，不读也不写对话文件。
      *
      * 打开对话页（`/seen`）这类请求每次都要改一个小字段：走 `update` 要么把几 MB 的对话读一遍再校验
      * （实测 2MB / 611 条要 91–133ms），要么调用方传一份不完整的 messages 进来、把对话文件覆盖掉。
@@ -760,6 +751,7 @@ export function createTaskStore() {
       await (writing.get(id) ?? Promise.resolve()).catch(() => {})
       await unlink(fileOf(meta)).catch(() => {})
       await unlink(msgFileOf(meta)).catch(() => {})
+      await unlink(msgBaseOf(meta) + MSG_LEGACY).catch(() => {})
       removeTaskLog(logFileOf(meta))
       return true
     },

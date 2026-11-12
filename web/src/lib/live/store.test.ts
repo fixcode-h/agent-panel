@@ -6,9 +6,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TaskData, type Task } from '@shared/schema'
 import { askedAt, taskSummary } from '@shared/task'
-import { liveBusy, taskLiveOf, type TaskLive } from '@shared/task-live'
-import { dropLive, liveFor, putLive, takeLive } from './live-store'
-import { windowedForSummary } from './summary-window'
+import { liveBusy, taskLiveOf, type TaskLive } from '@shared/live/task-live'
+import { dropLive, liveFor, putLive, takeLive } from './store'
+import { windowedForSummary } from '../../components/tasks/summary-window'
 
 const task = (over: Record<string, unknown> = {}) =>
   ({ ...TaskData.parse({ projectId: 'p', title: 't', mode: 'chat', status: 'done', ...over }), id: 'a' }) as Task

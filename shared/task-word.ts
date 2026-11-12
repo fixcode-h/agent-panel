@@ -38,7 +38,7 @@ export interface StateWord {
 /** 判定说法要看的事实：convState 的那一份，加上第一条待确认请求是哪种（提问、节点确认还是权限） */
 export type WordFacts = ConvFacts & { request?: Task['requests'][number]['kind'] }
 
-/** 状态和「等什么」的分类，不带文字：服务端算好放进 TaskLive（shared/task-live.ts），页面按 kindWord 换成短词 */
+/** 状态和「等什么」的分类，不带文字：服务端算好放进 TaskLive（shared/live/task-live.ts），页面按 kindWord 换成短词 */
 export type StateKind = Omit<StateWord, 'word'>
 
 /**

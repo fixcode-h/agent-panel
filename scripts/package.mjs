@@ -100,8 +100,8 @@ mkdirSync(stage, { recursive: true })
 // 各平台包先从同一个暂存目录复制，最后再删掉暂存目录
 const out = stage
 
-/** 演示内容的源码位置：web/src/lib/demo-*.ts（模拟后端、模拟执行、示例数据） */
-const DEMO_SOURCE = /(^|\/)web\/src\/lib\/demo-[^/]*$/
+/** 演示内容的源码位置：web/src/lib/demo-*.ts 和 web/src/lib/demo/ 下的 demo-*.ts（模拟后端、模拟执行、示例数据） */
+const DEMO_SOURCE = /(^|\/)web\/src\/lib\/(demo\/)?demo-[^/]*$/
 /** 模块 id 统一成正斜杠、去掉 ?query 和 \0 前缀（插件生成的虚拟模块），再和 DEMO_SOURCE 比 */
 const modulePath = (id) => id.replace(/^\0/, '').replace(/\?.*$/, '').split(path.sep).join('/')
 /**

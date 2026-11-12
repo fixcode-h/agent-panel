@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import { Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { liveBusy, liveWord } from '@shared/task-live'
-import { useLive } from '@/lib/live-store'
+import { liveBusy, liveWord } from '@shared/live/task-live'
+import { useLive } from '@/lib/live/store'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
@@ -52,7 +52,7 @@ export function ConversationTabs({
   leading?: ReactNode
   trailing: ReactNode
 }) {
-  // 状态只读服务端给的 live（web/src/lib/live-store.ts），和侧栏、项目首页同一份
+  // 状态只读服务端给的 live（web/src/lib/live/store.ts），和侧栏、项目首页同一份
   const live = useLive(task)
   const busy = liveBusy(live)
   return (

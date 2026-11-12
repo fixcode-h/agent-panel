@@ -1,4 +1,4 @@
-import { useLive } from '@/lib/live-store'
+import { useLive } from '@/lib/live/store'
 import { useEffect, useMemo, useState } from 'react'
 import {
   BellRing,
@@ -19,6 +19,7 @@ import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import type { ChildEntry } from '@shared/task'
 import { diagnoseTask, type DiagItem, type DiagTone } from '@shared/task-diagnosis'
+import { withLiveFacts } from '@shared/live/task-live'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { SessionCard, SessionRow } from './SessionCard'
@@ -58,21 +59,7 @@ export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry
   }, [])
   // 运行时的几项（CLI 存活、后台命令、名下子对话计数）只从服务端给的 live 来
   const live = useLive(task)
-  const d = useMemo(
-    () =>
-      diagnoseTask(
-        {
-          ...task,
-          cliAlive: live.cliAlive,
-          jobs: live.jobs,
-          childrenWorking: live.childrenWorking,
-          childrenNeeds: live.childrenNeeds,
-        },
-        kids,
-        now,
-      ),
-    [task, live, kids, now],
-  )
+  const d = useMemo(() => diagnoseTask(withLiveFacts(task, live), kids, now), [task, live, kids, now])
   const items = d.items.filter((x) => x.kind !== 'child')
   return (
     <SessionCard id="status" title={t('状态')}>

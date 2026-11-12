@@ -1,4 +1,4 @@
-import { useLive } from '@/lib/live-store'
+import { useLive } from '@/lib/live/store'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import {

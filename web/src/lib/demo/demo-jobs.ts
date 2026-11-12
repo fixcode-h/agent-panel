@@ -2,7 +2,7 @@ import type { Task, TaskJob } from '@shared/schema'
 
 /**
  * 演示里对话上还在跑、排队的后台命令（正式版在服务端的后台命令管理里，经 live.jobs 交给页面）。
- * 后台命令不属于任务记录（shared/task-live.ts）：演示数据单独存一份，跟着演示库一起存进浏览器
+ * 后台命令不属于任务记录（shared/live/task-live.ts）：演示数据单独存一份，跟着演示库一起存进浏览器
  * （demo-backend.ts 的 load 把库里的那份挂到这里，改它就是改库）
  */
 export const demoJobStore: { map: Record<string, TaskJob[]> } = { map: {} }

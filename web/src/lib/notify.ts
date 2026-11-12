@@ -4,8 +4,8 @@ import { stopReasonText } from '@shared/task'
 import { pendingAction } from '@shared/user-action'
 import { t } from '@shared/i18n'
 import { setBaseTitle } from './page-signal'
-import { useLiveOf } from './live-store'
-import type { TaskLive } from '@shared/task-live'
+import { useLiveOf } from './live/store'
+import type { TaskLive } from '@shared/live/task-live'
 import { countBusy, initialTitleState, nextTitleState, titleFor, titleWait, type TitleState } from './title-count'
 
 const KEY = 'notify-task-done'
@@ -82,7 +82,7 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
   const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
-  // 运行时状态（后代在等你的个数、在跑的数量）读服务端给的 live（web/src/lib/live-store.ts）
+  // 运行时状态（后代在等你的个数、在跑的数量）读服务端给的 live（web/src/lib/live/store.ts）
   const liveOf = useLiveOf()
   useRunningTitle(tasks, liveOf)
   useEffect(() => {

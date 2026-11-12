@@ -1,4 +1,4 @@
-import { takeLive, takeLives } from './live-store'
+import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
 import type { BugBrief } from '@shared/bug-overview'
 import type { FlowBrief } from '@shared/agent-stats'
@@ -33,17 +33,14 @@ import type {
   ProviderAuthCheck,
   CliModels,
   CliUpdate,
-  Agent,
   AgentInput,
   Category,
-  Tag,
   TagInput,
   CliStatus,
   DirBranches,
   DirInfo,
   DirListing,
   Project,
-  ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
   GlobalLesson,
@@ -53,7 +50,6 @@ import type {
   Task,
   TaskPatch,
   TaskSeenResult,
-  Workflow,
   WorkflowInput,
   CleanProcessesResult,
   KillProcessResult,
@@ -63,7 +59,7 @@ import type {
   TaskProcesses,
   TaskJobView,
 } from '@shared/schema'
-import type { ChildActivity, ChildHold, ChildWait, TrashRow } from '@shared/task'
+import type { ChildHold, TrashRow } from '@shared/task'
 import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
@@ -107,20 +103,12 @@ import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup }
 import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
+import { catalogContract } from '@shared/api-contract/catalog'
+import { tasksContract } from '@shared/api-contract/tasks'
+import { call } from './api/call'
 
-/**
- * 打开对话时只取最近一段消息（`?limit=` / 往前翻页 `?before=`）时多带的分页信息：
- * messageTotal 是完整条数，比 messages 多就说明还有更早的要往前翻；不传 limit 时没有这两个字段。
- * messageRev 只在整份对话都在这一份里时给（见 server/tasks.ts 的 GET /:id）：前端建 SSE 时带上它，
- * 首包就只补发增量；截断的那段不是整份的前缀，不能当版本用
- */
-export type TaskPage = Task & {
-  messageTotal?: number
-  messageHasMore?: boolean
-  messageRev?: string
-  /** 翻页的锚点（`before`）那条已经被删了：要重新取最后一页，不能拼一段不连续的历史 */
-  messageAnchorMissing?: boolean
-}
+/** 对话页打开时的那一份（带分页信息），定义在契约里 */
+export type { TaskPage } from '@shared/api-contract/tasks'
 
 /** 交给父对话决定时，父对话到底叫起来没有 */
 export type ChildAskNudge = { ok: true; how: string } | { ok: false; error: string }
@@ -144,8 +132,8 @@ export async function failure(res: Response): Promise<never> {
 }
 
 /**
- * 回来的任务（单个或列表）带着 live（运行时状态）：取下来放进 live-store，记录本身照常交给调用方。
- * 任务记录和运行时状态分开存，组件读状态只经 useLive（见 web/src/lib/live-store.ts）
+ * 回来的任务（单个或列表）带着 live（运行时状态）：取下来放进 live/store.ts，记录本身照常交给调用方。
+ * 任务记录和运行时状态分开存，组件读状态只经 useLive（见 web/src/lib/live/store.ts）
  */
 function withoutLive<T>(x: T): T {
   if (Array.isArray(x)) return (x.length && isTaskLike(x[0]) ? takeLives(x) : x) as T
@@ -256,8 +244,8 @@ export interface UserClis {
 }
 
 export const api = {
-  settings: () => request<Settings>('/settings'),
-  saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
+  settings: () => call(catalogContract.settings),
+  saveSettings: (s: Settings) => call(catalogContract.saveSettings, { body: s }),
   shells: (fresh = false) => request<ShellReport>(`/shells${fresh ? '?fresh=1' : ''}`),
 
   /** 外部 CLI 的授权：检测、浏览器授权、token 授权、退出 */
@@ -544,38 +532,40 @@ export const api = {
   appRestartInterrupted: () => request<InterruptedTasks>('/app/restart-interrupted'),
   appRestartInterruptedAck: () => request<InterruptedTasks>('/app/restart-interrupted/ack', json('POST', {})),
 
-  categories: () => request<Category[]>('/categories'),
+  // 下面这批按契约调（shared/api-contract/catalog.ts）：地址、方法和返回类型都从契约来
+  categories: () => call(catalogContract.categories),
   createCategory: (name: string, scope: Category['scope'] = 'agent') =>
-    request<Category>('/categories', json('POST', { name, scope })),
-  renameCategory: (id: string, name: string) => request<Category>(`/categories/${id}`, json('PUT', { name })),
-  deleteCategory: (id: string) => request<void>(`/categories/${id}`, { method: 'DELETE' }),
+    call(catalogContract.createCategory, { body: { name, scope } }),
+  renameCategory: (id: string, name: string) =>
+    call(catalogContract.renameCategory, { params: { id }, body: { name } }),
+  deleteCategory: (id: string) => call(catalogContract.deleteCategory, { params: { id } }),
 
-  tags: () => request<Tag[]>('/tags'),
-  createTag: (input: TagInput) => request<Tag>('/tags', json('POST', input)),
-  updateTag: (id: string, input: TagInput) => request<Tag>(`/tags/${id}`, json('PUT', input)),
-  deleteTag: (id: string) => request<void>(`/tags/${id}`, { method: 'DELETE' }),
+  tags: () => call(catalogContract.tags),
+  createTag: (input: TagInput) => call(catalogContract.createTag, { body: input }),
+  updateTag: (id: string, input: TagInput) => call(catalogContract.updateTag, { params: { id }, body: input }),
+  deleteTag: (id: string) => call(catalogContract.deleteTag, { params: { id } }),
 
-  agents: () => request<Agent[]>('/agents'),
-  createAgent: (input: AgentInput) => request<Agent>('/agents', json('POST', input)),
-  updateAgent: (id: string, input: AgentInput) => request<Agent>(`/agents/${id}`, json('PUT', input)),
-  deleteAgent: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
+  agents: () => call(catalogContract.agents),
+  createAgent: (input: AgentInput) => call(catalogContract.createAgent, { body: input }),
+  updateAgent: (id: string, input: AgentInput) => call(catalogContract.updateAgent, { params: { id }, body: input }),
+  deleteAgent: (id: string) => call(catalogContract.deleteAgent, { params: { id } }),
 
-  workflows: () => request<Workflow[]>('/workflows'),
-  createWorkflow: (input: WorkflowInput) => request<Workflow>('/workflows', json('POST', input)),
-  updateWorkflow: (id: string, input: WorkflowInput) => request<Workflow>(`/workflows/${id}`, json('PUT', input)),
-  deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
+  workflows: () => call(catalogContract.workflows),
+  createWorkflow: (input: WorkflowInput) => call(catalogContract.createWorkflow, { body: input }),
+  updateWorkflow: (id: string, input: WorkflowInput) =>
+    call(catalogContract.updateWorkflow, { params: { id }, body: input }),
+  deleteWorkflow: (id: string) => call(catalogContract.deleteWorkflow, { params: { id } }),
 
-  projectCategories: () => request<ProjectCategory[]>('/project-categories'),
-  createProjectCategory: (input: ProjectCategoryInput) =>
-    request<ProjectCategory>('/project-categories', json('POST', input)),
+  projectCategories: () => call(catalogContract.projectCategories),
+  createProjectCategory: (input: ProjectCategoryInput) => call(catalogContract.createProjectCategory, { body: input }),
   updateProjectCategory: (id: string, input: ProjectCategoryInput) =>
-    request<ProjectCategory>(`/project-categories/${id}`, json('PUT', input)),
-  deleteProjectCategory: (id: string) => request<void>(`/project-categories/${id}`, { method: 'DELETE' }),
+    call(catalogContract.updateProjectCategory, { params: { id }, body: input }),
+  deleteProjectCategory: (id: string) => call(catalogContract.deleteProjectCategory, { params: { id } }),
 
-  projects: () => request<Project[]>('/projects'),
+  projects: () => call(catalogContract.projects),
   /** 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单 */
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
-  createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
+  createProject: (input: ProjectInput) => call(catalogContract.createProject, { body: input }),
   updateProject: (id: string, input: ProjectInput, expectedUpdatedAt?: string) =>
     request<Project>(
       `/projects/${id}`,
@@ -598,21 +588,16 @@ export const api = {
   saveGlobalLessons: (lessons: GlobalLesson[]) =>
     request<GlobalLesson[]>('/global-lessons', json('PUT', { lessons, confirmed: true })),
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
-  orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
+  orderProjects: (ids: string[]) => call(catalogContract.orderProjects, { body: ids }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
   /** 项目是不是 agent-panel 自己的源代码（AI 分析结果里多一个「补充进源代码」） */
   panelSource: (id: string) => request<{ panelSource: boolean }>(`/projects/${id}/panel-source`),
 
   allTasks,
-  tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
-  task: (id: string, opts?: { limit?: number; before?: string }) => {
-    // 只拼真正给了的参数：传空对象时不能拼出一个结尾的「?」
-    const q = new URLSearchParams({
-      ...(opts?.limit ? { limit: String(opts.limit) } : {}),
-      ...(opts?.before ? { before: opts.before } : {}),
-    }).toString()
-    return request<TaskPage>(`/tasks/${id}${q ? `?${q}` : ''}`)
-  },
+  tasks: (projectId: string) => call(tasksContract.list, { query: { projectId } }),
+  // 只拼真正给了的参数（urlOf 不带空值）：传空对象时不能拼出一个结尾的「?」
+  task: (id: string, opts?: { limit?: number; before?: string }) =>
+    call(tasksContract.page, { params: { id }, query: { limit: opts?.limit || undefined, before: opts?.before } }),
   /**
    * 一条后台命令的当前输出：界面上点命令行那一行标题打开的终端窗口按它轮询。
    * 命令结束后也读得到最终输出（用户可能过一阵才点开）
@@ -674,64 +659,20 @@ export const api = {
   },
   /** 会话内存的 AI 分析报告：点「AI 分析」时现算，交给本机 CLI 体检 */
   taskMemoryAnalysis: (id: string) => request<TaskMemoryAnalysis>(`/tasks/${id}/memory-analysis`),
-  taskChildren: (id: string) =>
-    request<
-      {
-        id: string
-        title: string
-        status: Task['status']
-        summary: string
-        working: boolean
-        updatedAt: string
-        /** 进程还活着（预热、等下一句、正在执行） */
-        cliAlive: boolean
-        /** 本次开启的时间（最近一轮开始执行），列表按它排序 */
-        startedAt: string
-        /** 正在等用户确认的请求数 */
-        requests?: number
-        /** 请用户选择、还没人回答的提问数（也是「停在等你」的一种） */
-        asking?: number
-        /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」；正在做的那一步也带上 */
-        plan?: { done: number; total: number; step?: string; child?: string }
-        /** 独立分支还没合回父分支：也不算彻底完成，列表归「未完成」、行首转圈 */
-        unmerged?: boolean
-        /** 独立分支目录里还有几个文件没提交：停下时行上直接写出来 */
-        dirty?: number
-        /** 上面两项是不是已经用 git 核对过：false 是首帧的占位值，git 结果在后台补 */
-        worktreeChecked?: boolean
-        /** 独立分支目录：和上面的脏改动一起说明改动在哪 */
-        dir?: string
-        /** 在独立 worktree 里改时的分支 */
-        branch?: string
-        /** 正在执行时这会儿在做什么 */
-        activity?: ChildActivity
-        /** 最后有动静的时间：几分钟没新输出、又不能用等待解释时，行上标黄 / 标红 */
-        lastActivityAt?: string
-        /** 这会儿在等什么：等用户回答、等后台命令、等子任务、等工作流、等下一句 */
-        waiting?: ChildWait
-        /** 用户标记了「解决」：列表归到「已完成」并带标记 */
-        resolved?: boolean
-        /** 已收起（归档 / 独立分支被删掉）：不再算在跑、不进运行区（见 shared/task.ts 的 taskGone） */
-        gone?: boolean
-        /** 停下的原因（空字符串表示没记）：行上写清是谁结束的 */
-        stopReason?: Task['stopReason'] | ''
-        /** 这一轮做完的时间：和 turnSeenAt 不同就是「做完了还没看」（见 taskTurnUnread） */
-        turnDoneAt: string
-        /** 用户看过的最近一轮完成时间 */
-        turnSeenAt: string
-      }[]
-    >(`/tasks/${id}/children`),
-  stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
+  /** 子对话栏：一行的字段由正式后端和演示后端共用的 shared/children/row.ts 拼 */
+  taskChildren: (id: string) => call(tasksContract.children, { params: { id } }),
+  stopChildren: (id: string) => call(tasksContract.stopChildren, { params: { id }, body: {} }),
   /** 终止对话派出的一个子任务：还在跑的结束，排队的不再开始，按「已终止」交回给对话 */
   stopSubtask: (id: string, step: string) => request<Task>(`/tasks/${id}/subtasks/stop`, json('POST', { step })),
   /** 终止对话里 start_plan 正在跑的工作流：只停这次运行，对话收到结果后自己决定改动留不留 */
   stopRun: (id: string) => request<Task>(`/tasks/${id}/runs/stop`, json('POST', {})),
-  createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
+  createTask: (input: NewTaskInput) => call(tasksContract.create, { body: input }),
   /** 定时计划：到点由面板自己新建对话，存到数据目录的 config/schedules.json */
-  schedules: () => request<Schedule[]>('/schedules'),
-  createSchedule: (input: ScheduleInput) => request<Schedule>('/schedules', json('POST', input)),
-  updateSchedule: (id: string, input: ScheduleInput) => request<Schedule>(`/schedules/${id}`, json('PUT', input)),
-  deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: 'DELETE' }),
+  schedules: () => call(catalogContract.schedules),
+  createSchedule: (input: ScheduleInput) => call(catalogContract.createSchedule, { body: input }),
+  updateSchedule: (id: string, input: ScheduleInput) =>
+    call(catalogContract.updateSchedule, { params: { id }, body: input }),
+  deleteSchedule: (id: string) => call(catalogContract.deleteSchedule, { params: { id } }),
   /** 立即执行一条计划（不改排期）：返回更新后的计划和启动的对话 */
   runSchedule: (id: string) =>
     request<{ schedule: Schedule; taskId: string }>(`/schedules/${id}/run`, { method: 'POST' }),

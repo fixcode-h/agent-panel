@@ -1,4 +1,4 @@
-import type { TaskLive } from '@shared/task-live'
+import type { TaskLive } from '@shared/live/task-live'
 import { t } from '@shared/i18n'
 
 // CLI 存活的提示：只认服务端按真实进程算的 cliAlive / childrenCli（在 live 里），CLI 关了就绝不显示

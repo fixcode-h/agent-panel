@@ -44,7 +44,9 @@ function detect(): { lang: Lang; auto: boolean } {
 }
 
 const detected = detect()
+// 模块状态：配置副本，重启时重读
 let lang: Lang = detected.lang
+// 模块状态：配置副本，重启时重读
 let auto = detected.auto
 export const getLang = () => lang
 /**

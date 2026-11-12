@@ -96,7 +96,7 @@ export function migrateDataDir() {
 }
 
 /** 导入数据后让所有集合重新从文件读 */
-const resets = new Set<() => void>()
+const resets = new Set<() => void>() // 模块状态：接线，启动时登记
 export const onReset = (fn: () => void) => resets.add(fn)
 export const resetCaches = () => resets.forEach((fn) => fn())
 
@@ -130,10 +130,14 @@ async function fsyncDir(dir: string) {
  * - 写性能上，消息文件有 task-store 的 400ms 合并窗口挡在前面，每秒最多几次，fsync 的代价被摊掉了。
  */
 export async function writeJsonAtomic(file: string, data: unknown, compact = false, mode?: number) {
+  // compact：大文件不缩进，写得快、占地方小
+  await writeTextAtomic(file, compact ? JSON.stringify(data) : JSON.stringify(data, null, 2), mode)
+}
+
+/** 原子写一段文本（做法同 writeJsonAtomic）：对话的 JSONL 整份压实时用 */
+export async function writeTextAtomic(file: string, text: string, mode?: number) {
   await mkdir(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
-  // compact：大文件（任务的对话）不缩进，写得快、占地方小
-  const text = compact ? JSON.stringify(data) : JSON.stringify(data, null, 2)
   // 同一个句柄写完直接 sync：数据落盘之后再 rename。rename 是原子的，但它只保证「名字换代」，
   // 不保证数据已经在盘上。刷不下去就抛出去（不 rename）：留着旧文件比换成一个可能全 0 的新文件安全
   const fh = await open(tmp, 'w', mode)

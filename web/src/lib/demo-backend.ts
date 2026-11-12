@@ -1,5 +1,5 @@
-import { demoJobStore, demoJobs, setDemoJobs } from './demo-jobs'
-import { demoWithLive } from './demo-task-live'
+import { demoJobStore, demoJobs, setDemoJobs } from './demo/demo-jobs'
+import { demoChildCounts, demoWithLive } from './demo/demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
 import { demoChildRows } from './demo-children'
 /**
@@ -13,7 +13,6 @@ import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
-import { descendantNeeds } from '@shared/child-needs'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
@@ -206,7 +205,7 @@ interface Db {
   globalLessons?: GlobalLesson[]
   /** 演示里见过的后台命令（含已经结束的）：和任务一起存，刷新页面后仍然回看得到，见 demoJobView */
   seenJobs?: Record<string, TaskJob>
-  /** 对话上还在跑的后台命令（不属于任务记录，见 demo-jobs.ts） */
+  /** 对话上还在跑的后台命令（不属于任务记录，见 demo/demo-jobs.ts） */
   taskJobs?: Record<string, TaskJob[]>
 }
 
@@ -824,7 +823,7 @@ function load(): Db {
   // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
   // 真实后端走 Task.safeParse，演示版得自己补。注意不能写成 `(db.tasks ?? [])`：还没 seed 过的库里不能凭空造一个
   // 空数组（空数组是真值，下面 handle() 里 `if (!d.tasks)` 就再也不会建示例任务了）
-  // 后台命令不属于任务记录（shared/task-live.ts）：单独一张表，旧演示数据挂在任务上的那份搬过去
+  // 后台命令不属于任务记录（shared/live/task-live.ts）：单独一张表，旧演示数据挂在任务上的那份搬过去
   db.taskJobs ??= {}
   for (const t of db.tasks ?? []) {
     const legacy = (t as Task & { jobs?: TaskJob[] }).jobs
@@ -2612,13 +2611,13 @@ function tasksRoute(
     if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
-      // 运行时状态（live：state、CLI 存活、名下子对话计数）和正式版一样只在一处算（demo-live.ts）：
-      // 侧栏、输入框靠它说清在等什么，「继续执行」按钮也按它让位
-      const needs = descendantNeeds(tasks)
+      // 运行时状态（live：state、CLI 存活、名下子对话计数）和正式版一样只在一处算（demo/demo-task-live.ts），
+      // 子对话计数和正式版同一份扫法（shared/children/row.ts）。侧栏、输入框靠它说清在等什么，「继续执行」按钮也按它让位
+      const counts = demoChildCounts(tasks)
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
         .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
-        .map((t) => taskSummary(demoWithLive(tasks, t, needs)))
+        .map((t) => taskSummary(demoWithLive(tasks, t, counts)))
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
@@ -3186,7 +3185,7 @@ function tasksRoute(
     persist()
     return task
   }
-  // 和正式后端的 withLive 一样：完整任务带上 live（状态、CLI 存活、名下子对话计数），旧的几个字段这一版照样叠上
+  // 和正式后端的 withLive 一样：完整任务带上 live（状态、CLI 存活、名下子对话计数）
   const full = demoWithLive(tasks, task)
   // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
   const limit = Number(query.get('limit') ?? '')

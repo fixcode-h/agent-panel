@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { openPageStream } from './page-stream'
+import { openPageStream } from './live/page-stream'
 import { runUiAction } from './ui-actions'
 
 /**

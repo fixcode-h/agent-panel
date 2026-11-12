@@ -39,7 +39,7 @@ interface Pending {
   dir?: string
   at: number
 }
-const pending = new Map<string, Pending>()
+const pending = new Map<string, Pending>() // 模块状态：会话，跟着进程或连接一起没
 const PENDING_MS = 10 * 60_000
 
 /**

@@ -3,7 +3,7 @@ import { useRef } from 'react'
 import type { Task } from '@shared/schema'
 import { taskSummary } from '@shared/task'
 import type { TaskPage } from '@/lib/api'
-import { windowedForSummary } from '@/lib/summary-window'
+import { windowedForSummary } from '@/components/tasks/summary-window'
 
 export function useSummaryPush(tasks: Task[], upsertTask: (t: Task) => void) {
   // 流式输出每 200ms 推一次：任务本身马上换（对话要实时显示），全局列表的摘要最多 1 秒写一次。

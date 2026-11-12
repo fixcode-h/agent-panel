@@ -12,7 +12,7 @@ import { lifeWordFacts } from '@shared/life-next'
 import { Task, type TaskRequest } from '@shared/schema'
 import { diagnoseTask } from '@shared/task-diagnosis'
 import { taskWaitText, taskWord, childWord } from '@shared/task-word'
-import { liveWord, taskLiveOf } from '@shared/task-live'
+import { liveWord, taskLiveOf } from '@shared/live/task-live'
 import { childLabels, type ChildSummary } from './child-line'
 import { headStatus } from './head-status'
 
@@ -121,7 +121,7 @@ test('枚举各种事实组合：标题栏、会话栏、输入框占位、侧�
     const { state, word } = taskWord(task)
     assert.ok(word, `${label}：短词不能是空的`)
 
-    // 服务端给页面的 live（shared/task-live.ts）：状态和短词跟 taskWord 是同一个
+    // 服务端给页面的 live（shared/live/task-live.ts）：状态和短词跟 taskWord 是同一个
     const live = taskLiveOf(task, {
       cliAlive: false,
       jobs: task.jobs ?? [],
