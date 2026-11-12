@@ -5,7 +5,7 @@
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
 - 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、开放模块、插件钩子、插件测试步骤、插件命令
-- 更新：2026-11-11
+- 更新：2026-11-12
 
 ## 职责
 
@@ -47,7 +47,7 @@
 ## 数据流
 
 - 启动：`ensureProjectWorkflows` 先 `initPlugins`（读包 → `setInstalledPlugins` → 按设置 `setEnabledPlugins` → 启动开着的插件的服务端入口），再装内置模板（开着的插件带的角色和工作流算内置），最后 `cleanupDisabledPlugins`。
-- 安装：`POST /api/plugins/install/{github,zip,dir}` 下载、校验（Release 附件旁有 `<附件>.sha256` 时核对校验和，对不上不装；旧 Release 没有就不核对），返回预览和令牌；`POST /install/confirm` 写盘、重读，开着的插件补上新版本多出来的内容。
+- 安装：`POST /api/plugins/install/{github,zip,dir}` 下载、校验（Release 附件旁有 `<附件>.sha256` 时核对校验和，对不上不装；旧 Release 没有就不核对），返回预览和令牌；预览里带配置安全扫描的发现（`scan`，规则在 `shared/config-scan/`，读文件和忽略记录在 `server/config-scan.ts`），弹窗有高级发现时要勾「我看过了，仍然安装」才能点安装；`POST /install/confirm` 写盘、重读，开着的插件补上新版本多出来的内容。
 - 升级与退回：覆盖安装时旧版挪到 `plugins/.prev/<id>/`（只留一版），新版的 `.install.json` 记 `previousVersion` 交给插件的 `ctx.previousVersion`；`POST /api/plugins/:id/rollback` 把两版对换并重启插件，卡片上的「退回上一版」按钮调它。删除插件时上一版一起删。
 - 开放模块核对：插件仓库构建时把用到的开放模块写进清单 `hostModules`，`parseManifest` 用 `shared/plugins/host-modules-check.ts` 对照 `host-modules.json`，缺了就拒装、拒启动并写明要升级面板。面板 CI 的 `plugins` job 拉插件仓库 dev 用当前面板构建、冒烟、单测（SDK 副本不一致只提醒）。
 - 更新：`GET /api/plugins/updates` 只读不装，返回有新版本的插件和去哪儿装（`install`）；点「升级」用它调 `/install/github` 拿预览，确认后同安装。装好后 `loadPlugins` 按装着的版本去掉过期的提示。

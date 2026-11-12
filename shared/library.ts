@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
+import type { ConfigFinding, ScanSummary } from './config-scan/index.ts'
 
 /** 库里的一项：某个 CLI 用户目录下的一个 Skill 或自定义命令 */
 export interface LibraryItem {
@@ -9,6 +10,8 @@ export interface LibraryItem {
   name: string
   description: string
   path: string
+  /** 配置安全扫描中级以上的条数（没有就不带），列表上画小盾牌 */
+  scan?: ScanSummary
 }
 
 export interface LibraryCli {
@@ -36,6 +39,9 @@ export interface LibraryTree {
 }
 
 export interface LibraryFile {
+  /** 配置安全扫描的发现（老的服务端没有）；scanScope 是点「这条没问题」时记的范围 */
+  scan?: ConfigFinding[]
+  scanScope?: string
   /** 主文件（SKILL.md / 命令文件）的内容 */
   content: string
   /** 主文件以外的文件（相对路径，扁平列表；等于 entries 里 type 为 file 的 path） */

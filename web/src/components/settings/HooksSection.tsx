@@ -30,6 +30,7 @@ import { HookEditor } from './HookEditor'
 import { BuiltinParams } from './BuiltinParams'
 import { HookCliEvents } from './HookCliEvents'
 import { PluginHooksGroup } from './PluginHooksGroup'
+import { HookTierRow } from './HookTierRow'
 import { Select } from '@/components/ui/input'
 import { eventLabel } from './hook-labels'
 
@@ -140,6 +141,12 @@ export function HooksSection() {
         {scope && <span className="text-xs text-subtle">{t('这个项目单独设的开关优先，没设的跟着全局')}</span>}
       </div>
       <Group title={t('内置钩子')}>
+        <HookTierRow
+          view={view}
+          scope={scope}
+          busy={busy === 'tier'}
+          onPick={(tier) => void act('tier', () => hooksApi.setTier(tier, scope))}
+        />
         {view.builtins.map((b) => (
           <Row key={b.id} title={b.name} desc={b.description} hint={`${eventLabel(b.event)} · ${supportText(b.event)}`}>
             <div className="flex shrink-0 items-center gap-1.5">

@@ -15,14 +15,30 @@ export interface BuiltinParam {
   default: string[] | number
 }
 
+/**
+ * 档位（借鉴 ECC 的钩子档位，设计稿 designs/ECC借鉴-配置安全扫描与钩子档位-设计稿.md §2）：
+ * 每个内置钩子写「从哪一档开始开」，选档位就是一次把所有内置钩子摆成那一档的样子。
+ * 精简只留关掉会出错、会闯祸的；标准再加省 token、提节奏的提醒（就是原来的默认值）；严格全开，适合弱模型、重要项目
+ */
+export const HOOK_TIERS = ['minimal', 'standard', 'strict'] as const
+export type HookTier = (typeof HOOK_TIERS)[number]
+export const DEFAULT_TIER: HookTier = 'standard'
+
 export interface BuiltinHook {
   id: string
   event: HookEventName
   name: () => string
   description: () => string
+  /** 从哪一档开始开 */
+  tier: HookTier
+  /** 标准档下开不开（由 tier 推出来，和档位是同一个事实源） */
   defaultOn: boolean
   params?: BuiltinParam[]
 }
+
+/** 这一档开不开这个钩子 */
+export const tierOn = (tier: HookTier, h: Pick<BuiltinHook, 'tier'>) =>
+  HOOK_TIERS.indexOf(h.tier) <= HOOK_TIERS.indexOf(tier)
 
 const extraCommands = (hint: () => string): BuiltinParam => ({
   key: 'extra',
@@ -32,7 +48,7 @@ const extraCommands = (hint: () => string): BuiltinParam => ({
   default: [],
 })
 
-export const BUILTIN_HOOKS: BuiltinHook[] = [
+const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
   {
     id: 'keep-going',
     event: 'turn.beforeEnd',
@@ -41,14 +57,14 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '计划没做完、子对话请求收尾还没处理、子对话做完了却没请父对话收尾、没列计划却做了一半就要结束时，在同一轮里拦住让它接着做（Chat 页一问一答不拦）',
       ),
-    defaultOn: true,
+    tier: 'minimal',
   },
   {
     id: 'restore-plan',
     event: 'context.restored',
     name: () => t('压缩后补回计划'),
     description: () => t('压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪'),
-    defaultOn: true,
+    tier: 'minimal',
   },
   {
     id: 'read-only-guard',
@@ -58,7 +74,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '调研、评审、排查分析这类只读的角色，以及只统筹不动手的父对话，要改文件时直接拒绝并说明原因；项目 .tmp/ 和系统临时目录里的临时文件放行',
       ),
-    defaultOn: true,
+    tier: 'minimal',
     params: [extraCommands(() => t('只读角色另外不许跑的命令前缀，一行一个，例如 make deploy'))],
   },
   {
@@ -69,7 +85,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '按项目的「推送到远端」设置和这个对话的授权拦 git push、合并 PR：没授权先让它调 ask_push，用户拒绝过、项目不推送、子对话和子任务都直接拒绝并说明原因',
       ),
-    defaultOn: true,
+    tier: 'minimal',
   },
   {
     id: 'bug-diagnosis-guard',
@@ -77,7 +93,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     name: () => t('Bug 先诊断守卫'),
     description: () =>
       t('父对话派来的 Bug：诊断报告还没被用户确认就改文件、或者改到确认方案以外的文件时拒绝，免得改完收尾时才被打回'),
-    defaultOn: true,
+    tier: 'minimal',
   },
   {
     id: 'danger-guard',
@@ -87,7 +103,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '拦下不可挽回的命令：递归删除根目录、家目录、项目、面板数据目录，原分支上 reset --hard / clean / 撤销整个工作区，强推，删主干分支',
       ),
-    defaultOn: true,
+    tier: 'minimal',
     params: [extraCommands(() => t('另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune'))],
   },
   {
@@ -98,7 +114,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件',
       ),
-    defaultOn: true,
+    tier: 'standard',
     params: [
       {
         key: 'extra',
@@ -117,7 +133,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '整份读超过大小的文本文件（读文件工具不带分段参数，或单独一条 cat / Get-Content）时拒绝一次，让它先搜再按行读、只读结尾，或派子任务去读；同一个文件再读一次就放行',
       ),
-    defaultOn: true,
+    tier: 'standard',
     params: [
       {
         key: 'kb',
@@ -133,7 +149,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     event: 'tool.before',
     name: () => t('测试步骤归属守卫'),
     description: () => t('项目里设成「合回后由父对话跑」的测试步骤，子对话在独立分支里跑时拒绝'),
-    defaultOn: true,
+    tier: 'minimal',
   },
   {
     id: 'secret-guard',
@@ -141,7 +157,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     name: () => t('凭据守卫'),
     description: () =>
       t('往项目文件里写像是真实密钥、令牌、私钥的内容时拒绝，让它改成从环境变量读；本机的 .env 这类文件放行'),
-    defaultOn: true,
+    tier: 'minimal',
     params: [
       {
         key: 'allow',
@@ -157,20 +173,49 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     event: 'tool.before',
     name: () => t('独立分支越界守卫'),
     description: () => t('子对话在自己的独立分支里，要改分支目录以外的文件（比如原仓库里的）时拒绝'),
-    defaultOn: true,
+    tier: 'minimal',
   },
   {
     id: 'temp-file-guard',
     event: 'tool.before',
     name: () => t('临时文件位置守卫'),
     description: () => t('往盘符根目录、面板的数据目录里写文件时拒绝，说明临时文件该放到项目的 .tmp/ 或系统临时目录'),
-    defaultOn: false,
+    tier: 'strict',
     params: [
       {
         key: 'allow',
         kind: 'list',
         label: () => t('另外允许写的目录'),
         hint: () => t('绝对路径，一行一个'),
+        default: [],
+      },
+    ],
+  },
+  {
+    id: 'read-before-edit',
+    event: 'tool.before',
+    name: () => t('改之前先看过'),
+    description: () =>
+      t(
+        '要改一个已有的文件，这个对话（压缩之后算起）却没读过、没搜到过它时拦一次，让它先看要改的位置；同一个文件再改一次就放行。改文件工具和 sed -i 都算',
+      ),
+    tier: 'strict',
+  },
+  {
+    id: 'check-config-guard',
+    event: 'tool.before',
+    name: () => t('不许改检查配置'),
+    description: () =>
+      t(
+        '要改 lint、格式化、tsconfig、测试框架这类检查配置时拦一次，让它先改代码、别为了通过去放宽检查；确实要改的说明原因后再改一次就放行',
+      ),
+    tier: 'strict',
+    params: [
+      {
+        key: 'extra',
+        kind: 'list',
+        label: () => t('另外算检查配置的文件'),
+        hint: () => t('相对项目根的路径通配，一行一个，例如 scripts/file-caps.json；不带目录的按文件名匹配'),
         default: [],
       },
     ],
@@ -183,7 +228,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '同一条命令连续失败几次时，补一句让它换个思路或者说明卡在哪（要 CLI 报得出失败：Claude Code、Pi、Command Code）',
       ),
-    defaultOn: false,
+    tier: 'strict',
     params: [
       {
         key: 'times',
@@ -202,7 +247,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '一次命令输出、读文件的结果超过字数时补一句：下次先重定向到文件再搜，长命令放后台，大日志派子任务去读（结果已经进了上下文，这句只管下一次；每次调用最多提醒两次）',
       ),
-    defaultOn: true,
+    tier: 'standard',
     params: [
       {
         key: 'chars',
@@ -221,7 +266,7 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
       t(
         '项目里的对话改文件、跑命令时，计划没有进行中的步骤，或者进行中的那一步动手多次还没更新，补一句让它先用 set_plan 标完成、标下一步（同一步提醒几次可以设置）',
       ),
-    defaultOn: true,
+    tier: 'standard',
     params: [
       {
         key: 'calls',
@@ -245,20 +290,48 @@ export const BUILTIN_HOOKS: BuiltinHook[] = [
     name: () => t('改完没验证'),
     description: () =>
       t('这条消息以来改过文件，之后却一条命令都没跑就要结束时，拦一次让它跑一下检查（或说明为什么不用跑）'),
-    defaultOn: false,
+    tier: 'strict',
   },
   {
     id: 'push-lessons',
     event: 'tool.after',
     name: () => t('改文件后推送教训'),
     description: () => t('第一次改到某个文件时，把项目教训里管这个文件的几条补给模型'),
-    defaultOn: false,
+    tier: 'strict',
   },
 ]
 
-/** 开关：这个项目单独设过的优先，其次全局（只记改过默认值的），都没有用默认值 */
-export const builtinOn = (data: Pick<HooksData, 'builtins' | 'projects'>, h: BuiltinHook, projectId = '') =>
-  (projectId ? data.projects[projectId]?.[h.id] : undefined) ?? data.builtins[h.id] ?? h.defaultOn
+export const BUILTIN_HOOKS: BuiltinHook[] = DEFS.map((h) => ({ ...h, defaultOn: tierOn(DEFAULT_TIER, h) }))
+
+type OnData = Pick<HooksData, 'builtins' | 'projects'> & Partial<Pick<HooksData, 'tier' | 'projectTiers'>>
+
+/**
+ * 开关，按这个顺序取：这个项目单独设的 → 这个项目选的档位 → 全局单独设的 → 全局档位。
+ * 项目选了档位就是「这个项目按这一档」，全局逐个改过的不再带进来
+ */
+export function builtinOn(data: OnData, h: BuiltinHook, projectId = '') {
+  const mine = projectId ? data.projects[projectId]?.[h.id] : undefined
+  if (mine !== undefined) return mine
+  const pt = projectId ? data.projectTiers?.[projectId] : undefined
+  if (pt) return tierOn(pt, h)
+  return data.builtins[h.id] ?? tierOn(data.tier ?? DEFAULT_TIER, h)
+}
+
+/** 不看逐个改过的开关时，这一层按档位该是什么：项目层看项目档位，没选跟全局 */
+export function tierDefault(data: OnData, h: BuiltinHook, projectId = '') {
+  const pt = projectId ? data.projectTiers?.[projectId] : undefined
+  if (pt) return tierOn(pt, h)
+  return projectId ? builtinOn(data, h) : tierOn(data.tier ?? DEFAULT_TIER, h)
+}
+
+/** 这一层逐个改过、和档位不一样的内置钩子有几个（界面上写「标准（改过 2 个）」） */
+export function tierChanged(data: OnData, projectId = '') {
+  return BUILTIN_HOOKS.filter((h) => {
+    const set = projectId ? data.projects[projectId]?.[h.id] : data.builtins[h.id]
+    if (set === undefined) return false
+    return set !== (projectId ? tierDefault(data, h, projectId) : tierOn(data.tier ?? DEFAULT_TIER, h))
+  }).length
+}
 
 /** 参数：设置里改过的，没改过用默认值 */
 export function builtinParam(data: Pick<HooksData, 'params'>, h: BuiltinHook, key: string): string[] | number {

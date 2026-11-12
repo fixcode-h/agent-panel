@@ -38,6 +38,7 @@ import {
   type GuardCtx,
 } from './guards.ts'
 import { bigOutputHint, bigReadDeny } from './guards-context.ts'
+import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -245,6 +246,9 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['big-read-guard', (_g, f) => bigReadDeny(c.cwd, c.task.id, builtinNumber(data, 'big-read-guard', 'kb'), f)],
     ['secret-guard', secretDeny],
     ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
+    // 借鉴 ECC 的两个（严格档）：放在最后，前面的守卫说了不许改的不必再提醒先读
+    ['check-config-guard', (g, f) => checkConfigDeny(c.cwd, c.task.id, g.list('extra'), f)],
+    ['read-before-edit', (_g, f) => readBeforeEditDeny(c.cwd, c.task, f)],
   ]
   const guards = GUARDS.filter(([id]) => on(id) && (id !== 'read-only-guard' || who))
   // 设置里按 CLI 关掉的事件（比如中转站上 Codex 的工具后）：内置的、自己的钩子都不装

@@ -1,4 +1,5 @@
 import type { McpEntry, McpServer } from './library.ts'
+import type { ConfigFinding } from './config-scan/index.ts'
 
 /**
  * 项目里的 MCP 配置：只读扫描项目目录下各 CLI / 编辑器认的配置文件，列出来给用户看，可以导入成面板管理的配置
@@ -23,6 +24,9 @@ export interface ProjectMcpDetected {
   raw: string
   /** 名字合不合面板的规则（项目里的名字可能带空格、点），不合的导入前要改名 */
   nameOk: boolean
+  /** 配置安全扫描的发现（没固定版本的 npx、自动批准、监听 0.0.0.0、明文密钥）；没有就不带 */
+  scan?: ConfigFinding[]
+  scanScope?: string
 }
 
 export interface ProjectMcpOverview {

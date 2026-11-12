@@ -1777,6 +1777,8 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'hooks') return demoHooks(method, seg, body ?? {})
+  // 配置安全扫描的「这条没问题」：演示里不记，界面上那一条照样拿掉
+  if (res === 'config-scan') return { ok: true }
   if (res === 'projects' && id && sub === 'experience') return demoExperience(id, method, seg, body)
   if (res === 'projects' && id && sub === 'knowledge-hits') return demoKnowledgeHits()
   if (res === 'chat-memory') return demoChatMemory(method, seg, (body ?? {}) as Record<string, unknown>)

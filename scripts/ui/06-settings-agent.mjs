@@ -251,6 +251,34 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     '锁文件不要手改',
     '最近触发',
   ])
+  // 档位（借鉴 ECC）：选「严格」后两个新守卫跟着打开，回到「标准」又关上，不留逐个改过的开关
+  {
+    const tiers = p.getByRole('radiogroup', { name: '档位' })
+    const guard = p.getByRole('switch', { name: '不许改检查配置' })
+    if ((await guard.getAttribute('aria-checked')) !== 'false')
+      errors.push('设置-钩子-档位：标准档下「不许改检查配置」应关着')
+    await tiers.getByRole('radio', { name: '严格' }).click()
+    await p
+      .waitForFunction(
+        () =>
+          document.querySelector('[role="switch"][aria-label="不许改检查配置"]')?.getAttribute('aria-checked') ===
+          'true',
+        null,
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('设置-钩子-档位：选了严格，「不许改检查配置」没打开'))
+    await check(p, '设置-钩子-档位', ['档位', '精简', '标准', '严格', '改之前先看过', '不许改检查配置'])
+    await tiers.getByRole('radio', { name: '标准' }).click()
+    await p
+      .waitForFunction(
+        () =>
+          document.querySelector('[role="switch"][aria-label="不许改检查配置"]')?.getAttribute('aria-checked') ===
+          'false',
+        null,
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('设置-钩子-档位：回到标准，「不许改检查配置」没关上'))
+  }
   // 第四期：内置钩子的参数（一行一项）
   await p.getByRole('button', { name: '参数', exact: true }).nth(1).click()
   await check(p, '设置-钩子-参数', ['「危险命令守卫」的参数', '另外拦下的命令'])

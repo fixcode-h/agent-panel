@@ -14,7 +14,7 @@ process.env.AGENT_PANEL_DATA = dir
 const { setLang } = await import('../../shared/i18n.ts')
 const { Task, ProjectInput } = await import('../../shared/schema.ts')
 const { hookOptions, unverifiedEdit } = await import('./dispatch.ts')
-const { putHook, setBuiltin, resetHooksCache, setBuiltinParam, setCliOff, setProjectBuiltin } =
+const { putHook, readHooks, setBuiltin, resetHooksCache, setBuiltinParam, setCliOff, setProjectBuiltin, setTier } =
   await import('./store.ts')
 const { checkHook } = await import('./validate.ts')
 const { recentTriggers } = await import('./run.ts')
@@ -256,7 +256,7 @@ test('改完没验证：改了文件、之后没跑命令才算；跑过命令�
 test('按 CLI 关掉的事件不装；内置钩子按项目单独的开关覆盖全局', async () => {
   resetHooksCache()
   // 前面用例留下的用户钩子（有一个故意出错、按设置拒绝）会干扰这里，先清掉
-  const { deleteHook, readHooks } = await import('./store.ts')
+  const { deleteHook } = await import('./store.ts')
   for (const h of (await readHooks()).hooks) await deleteHook(h.id)
   await setCliOff('claude', ['tool.before'])
   assert.ok(!(await hookOptions(ctx({ origin: 'builtin:explorer' }))).hookEvents?.includes('tool.before'))
@@ -312,4 +312,16 @@ test('大输出提醒：默认开，一次结果超过字数补一句，每次�
   assert.match((await o.onHook!('tool.after', big(50000))).context ?? '', /50000 字/)
   assert.match((await o.onHook!('tool.after', big(50000))).context ?? '', /50000 字/)
   assert.ok(!(await o.onHook!('tool.after', big(50000))).context, '第三次不再提醒')
+})
+
+test('档位：严格档装上「不许改检查配置」，回到标准就不拦；选档位清掉逐个改过的开关', async () => {
+  resetHooksCache()
+  await setBuiltin('loop-hint', true)
+  await setTier('strict')
+  assert.equal((await readHooks()).builtins['loop-hint'], undefined, '选档位清掉逐个改的')
+  const strict = await hookOptions(ctx())
+  assert.match((await strict.onHook!('tool.before', edit('tsconfig.json'))).reason ?? '', /检查配置/)
+  await setTier('standard')
+  const std = await hookOptions(ctx({ task: task({ id: 'tier-std' }) }))
+  assert.ok(!(await std.onHook!('tool.before', edit('tsconfig.json'))).deny)
 })

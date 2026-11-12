@@ -20,6 +20,8 @@ import {
 } from '../shared/project-skills.ts'
 import { frontField, type LibraryFile } from '../shared/library.ts'
 import { extraFiles } from './library.ts'
+import { scanPath } from './config-scan.ts'
+import { summarize } from '../shared/config-scan/index.ts'
 import { clearSlashCache } from './slash.ts'
 
 /** 技能列表：能放技能的目录（现在存不存在）+ 各目录下的技能 */
@@ -50,7 +52,10 @@ async function scanRepo(root: string, repo: { dir: string; clis: string[] }): Pr
     const file = path.join(base, e.name, 'SKILL.md')
     const text = (await readFile(file, 'utf8').catch(() => '')).replace(/^\ufeff/, '')
     if (!text) continue
+    // 配置安全扫描：项目里的 Skill 跟着仓库来，别人提交的打开项目就生效，列表上标出中级以上的条数
+    const scan = summarize(await scanPath(path.join(base, e.name), `skill:${path.resolve(base, e.name)}`))
     out.push({
+      ...(scan.high || scan.medium ? { scan } : {}),
       name: e.name,
       description: frontField(text, 'description'),
       path: file,
@@ -78,8 +83,15 @@ export async function readProjectSkill(root: string, repo: string, name: string)
   if (!existsSync(p.file)) throw new Error(t('没有这一项'))
   const content = (await readFile(p.file, 'utf8')).replace(/^\ufeff/, '')
   const tree = await extraFiles(p.dir)
+  const scanScope = `skill:${path.resolve(p.dir)}`
   // files 是旧字段（扁平的文本路径），tree 是完整的目录结构，两者由同一棵树得来
-  return { content, files: tree.entries.filter((e) => e.type === 'file').map((e) => e.path), tree }
+  return {
+    content,
+    files: tree.entries.filter((e) => e.type === 'file').map((e) => e.path),
+    tree,
+    scan: await scanPath(p.dir, scanScope),
+    scanScope,
+  }
 }
 
 export async function writeProjectSkill(root: string, repo: string, name: string, content: string, create: boolean) {

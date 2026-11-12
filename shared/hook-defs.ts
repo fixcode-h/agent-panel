@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
+import { DEFAULT_TIER, HOOK_TIERS } from './hook-builtins.ts'
 import { unwrapShell } from './shell-command.ts'
 
 /**
@@ -97,6 +98,12 @@ export type HookDefInput = z.input<typeof HookDef>
 // 内置钩子的清单、参数和开关的取法在 hook-builtins.ts（这里转出去，老的引用不用改）
 export {
   BUILTIN_HOOKS,
+  HOOK_TIERS,
+  DEFAULT_TIER,
+  tierOn,
+  tierDefault,
+  tierChanged,
+  type HookTier,
   builtinOn,
   builtinParam,
   builtinList,
@@ -108,6 +115,10 @@ export {
 /** 数据目录里 hooks.json 的形状：内置钩子的开关（只记改过默认值的）和用户的钩子 */
 export const HooksData = z.object({
   builtins: z.record(z.string(), z.boolean()).default({}),
+  /** 全局档位：没逐个改过的内置钩子按它开关（旧数据没有这个字段，按标准，行为和以前一样） */
+  tier: z.enum(HOOK_TIERS).default(DEFAULT_TIER),
+  /** 按项目选的档位（项目 id → 档位）：选了就不再跟全局，项目里逐个改的仍然优先 */
+  projectTiers: z.record(z.string(), z.enum(HOOK_TIERS)).default({}),
   /** 按项目单独设的内置钩子开关（项目 id → 钩子 id → 开 / 关），覆盖全局；没设的跟着全局 */
   projects: z.record(z.string(), z.record(z.string(), z.boolean())).default({}),
   /**

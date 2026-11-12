@@ -22,6 +22,7 @@ import { pluginError, pluginStatus, runningPlugin } from './runtime.ts'
 import { linkPackage, packageRoot, parseManifest, writePackage, type Installed } from './store.ts'
 import { checkPluginUpdates } from './updates.ts'
 import { readZip, type ZipEntry } from './zip.ts'
+import { scanBuffers, scanPath, visibleFindings } from '../config-scan.ts'
 
 /**
  * 插件接口（ADR 0059），挂在 /api/plugins 下：列表、市场、安装（先预览再确认）、开关和参数、删除，
@@ -41,16 +42,33 @@ interface Pending {
 const pending = new Map<string, Pending>()
 const PENDING_MS = 10 * 60_000
 
-function stash(p: Omit<Pending, 'at'>) {
+/**
+ * 记下等确认的安装，返回给弹窗的预览。顺便做配置安全扫描（借鉴 ECC 的 AgentShield）：包里的技能、钩子脚本、
+ * 服务端代码有没有提示注入、外传、危险命令、密钥；弹窗里列出来，有高级的要用户勾选「我看过了」才能装
+ */
+async function stash(p: Omit<Pending, 'at'>) {
   for (const [k, v] of pending) if (Date.now() - v.at > PENDING_MS) pending.delete(k)
   const token = randomUUID()
   pending.set(token, { ...p, at: Date.now() })
   const cur = findInstalled(p.manifest.id)
+  const scope = `plugin:${p.manifest.id}`
+  const scan = p.dir
+    ? await scanPath(p.dir, scope)
+    : await visibleFindings(
+        scanBuffers(
+          (p.files ?? [])
+            .filter((f) => f.name.startsWith(p.root ?? '') && !f.name.endsWith('/'))
+            .map((f) => ({ rel: f.name.slice((p.root ?? '').length), data: f.data })),
+        ),
+        scope,
+      )
   return {
     token,
     manifest: p.manifest,
     hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
     installed: cur ? { version: cur.manifest.version, source: cur.source } : null,
+    scan,
+    scanScope: scope,
   }
 }
 
@@ -139,11 +157,15 @@ export function pluginsApi() {
             if (!entry) return c.json({ error: `插件目录里没有 ${body.id}` }, 404)
             const got = await downloadEntry(parsed.repo, entry, ref)
             return c.json(
-              fromZip(got.zip, { kind: 'github', ref: parsed.repo, tag: entry.tag ?? ref, path: got.path }, got.path),
+              await fromZip(
+                got.zip,
+                { kind: 'github', ref: parsed.repo, tag: entry.tag ?? ref, path: got.path },
+                got.path,
+              ),
             )
           }
           const zip = await downloadSource(parsed.repo, ref)
-          return c.json(fromZip(zip, { kind: 'github', ref: parsed.repo, tag: ref, path: sub }, sub))
+          return c.json(await fromZip(zip, { kind: 'github', ref: parsed.repo, tag: ref, path: sub }, sub))
         } catch (e) {
           return c.json(fail(e), 400)
         }
@@ -153,7 +175,7 @@ export function pluginsApi() {
         try {
           const buf = Buffer.from(await c.req.arrayBuffer())
           if (!buf.length) return c.json({ error: '没有收到文件' }, 400)
-          return c.json(fromZip(buf, { kind: 'zip', ref: c.req.query('name') || 'plugin.zip' }))
+          return c.json(await fromZip(buf, { kind: 'zip', ref: c.req.query('name') || 'plugin.zip' }))
         } catch (e) {
           return c.json(fail(e), 400)
         }
@@ -166,7 +188,7 @@ export function pluginsApi() {
           if (!body.dir || !existsSync(path.join(dir, 'plugin.json')))
             return c.json({ error: '这个目录里没有 plugin.json' }, 400)
           const manifest = parseManifest(JSON.parse(await readFile(path.join(dir, 'plugin.json'), 'utf8')))
-          return c.json(stash({ manifest, source: { kind: 'dir', ref: dir }, dir }))
+          return c.json(await stash({ manifest, source: { kind: 'dir', ref: dir }, dir }))
         } catch (e) {
           return c.json(fail(e), 400)
         }

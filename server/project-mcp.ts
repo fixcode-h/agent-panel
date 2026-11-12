@@ -12,6 +12,8 @@ import {
   type ProjectMcpOverview,
 } from '../shared/project-mcp.ts'
 import { mcpOverview, readServerTable, readToml, removeMcpFrom, testMcp, writeMcpTo } from './mcp-store.ts'
+import { scanMcpServer } from '../shared/config-scan/index.ts'
+import { visibleFindings } from './config-scan.ts'
 
 /**
  * 项目设置里的「MCP」：列出这个项目的目录里各工具认的 MCP 配置，可以一键导入成面板管理的配置。
@@ -124,6 +126,10 @@ async function overview(dir: string): Promise<ProjectMcpOverview> {
   for (const d of detected) {
     const cur = by.get(d.name)
     d.status = !cur ? 'new' : sameServer(d.server, cur) ? 'same' : 'different'
+    // 配置安全扫描：导入就会写进各 CLI 的全局配置，之后所有项目都会启动它，导入前把风险标出来
+    const scope = `mcp:${path.resolve(dir)}`
+    const found = await visibleFindings(scanMcpServer(`${d.file}#${d.name}`, d.server, d.raw), scope)
+    if (found.length) Object.assign(d, { scan: found, scanScope: scope })
   }
   return { path: dir, clis: global.clis, servers: global.servers, detected, errors }
 }

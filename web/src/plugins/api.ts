@@ -1,3 +1,4 @@
+import type { ConfigFinding } from '@shared/config-scan'
 import type { PluginManifest, PluginSource } from '@shared/plugins/types'
 import type { PluginUpdate } from '@shared/plugins/version'
 import { t } from '@shared/i18n'
@@ -24,6 +25,9 @@ export interface InstallPreview {
   manifest: PluginManifest
   hasCode: boolean
   installed: { version: string; source: PluginSource } | null
+  /** 配置安全扫描的发现（老的服务端没有）；scanScope 是点「这条没问题」时记的范围 */
+  scan?: ConfigFinding[]
+  scanScope?: string
 }
 
 export interface KeptItem {

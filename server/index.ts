@@ -66,6 +66,7 @@ import { accountsApi, syncCliAuths } from './accounts.ts'
 import { apiSpeedApi } from './api-speed.ts'
 import { integrationsApi } from './integrations.ts'
 import { hooksApi } from './hooks/api.ts'
+import { configScanApi } from './config-scan.ts'
 import { migrateVerdictText } from './verdict-migrate.ts'
 import { installApi } from './install.ts'
 import { envApi } from './env-api.ts'
@@ -480,6 +481,7 @@ app.route('/accounts', accountsApi())
 app.route('/accounts', apiSpeedApi())
 app.route('/integrations', integrationsApi())
 app.route('/hooks', hooksApi({ projects, agents }))
+app.route('/config-scan', configScanApi())
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 // 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取

@@ -3,6 +3,8 @@ import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, unlink
 import path from 'node:path'
 import { Hono } from 'hono'
 import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
+import { summarize, type ConfigFinding, type ScanSummary } from '../shared/config-scan/index.ts'
+import { scanPath } from './config-scan.ts'
 import {
   LIBRARY_DIR_MAX_DELETE_ENTRIES,
   LIBRARY_FILE_MAX_BYTES,
@@ -97,6 +99,14 @@ function target(cli: string, kind: Kind, name: string) {
   return { d, root, path: p, file: kind === 'skill' ? path.join(p, 'SKILL.md') : p }
 }
 
+/** 忽略记录的范围：按 Skill 目录（命令按文件）区分，同名文件不串 */
+const scanScope = (p: string) => `skill:${path.resolve(p)}`
+/** 列表只带中级以上的条数：徽标用，低级不打扰 */
+function withScan(found: ConfigFinding[]): { scan?: ScanSummary } {
+  const s = summarize(found)
+  return s.high || s.medium ? { scan: s } : {}
+}
+
 export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
   const out: LibraryItem[] = []
   for (const d of await homes()) {
@@ -114,11 +124,15 @@ export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
             .match(/^description:\s*(.*)$/m)?.[1]
             ?.trim()
             .replace(/^["']|["']$/g, '') ?? ''
-        out.push({ cli: d.id, kind, name: e.name, description: desc, path: file })
+        const dir = path.join(root, e.name)
+        const found = await scanPath(dir, scanScope(dir))
+        out.push({ cli: d.id, kind, name: e.name, description: desc, path: file, ...withScan(found) })
       }
     } else {
-      for (const c of await scanCommands(root, root, d.format))
-        out.push({ cli: d.id, kind, name: c.name, description: c.description, path: c.path })
+      for (const c of await scanCommands(root, root, d.format)) {
+        const found = await scanPath(c.path, scanScope(c.path))
+        out.push({ cli: d.id, kind, name: c.name, description: c.description, path: c.path, ...withScan(found) })
+      }
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name) || a.cli.localeCompare(b.cli))
@@ -173,7 +187,11 @@ export async function readLibrary(cli: string, kind: Kind, name: string): Promis
   const p = target(cli, kind, name)
   if (!existsSync(p.file)) throw new Error(t('没有这一项'))
   const tree = kind === 'skill' ? await extraFiles(p.path) : undefined
+  const where = kind === 'skill' ? p.path : p.file
   return {
+    // 配置安全扫描（借鉴 ECC 的 AgentShield）：详情页顶部列出来，能点「这条没问题」
+    scan: await scanPath(where, scanScope(where)),
+    scanScope: scanScope(where),
     content: await readFile(p.file, 'utf8'),
     // files 保持旧语义：树里所有文件的路径（扁平），命令没有附带文件
     files: (tree?.entries ?? []).filter((e) => e.type === 'file').map((e) => e.path),

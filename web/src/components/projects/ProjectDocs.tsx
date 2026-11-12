@@ -13,6 +13,8 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Markdown } from '@/components/tasks/Markdown'
 import { ScopeRequests } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
+import { scanText } from '@shared/config-scan'
+import { ScanFindings } from '@/components/ui/scan-findings'
 
 const size = (n: number) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`)
 const NO_TEAM = new Set<string>()
@@ -52,6 +54,12 @@ export function DocPage({
   const doc = docOf(active)
   const value = drafts[active] ?? doc?.content ?? ''
   const dirty = drafts[active] !== undefined && drafts[active] !== (doc?.content ?? '')
+  // 配置安全扫描（借鉴 ECC 的 AgentShield）：说明文件每次都进提示词，藏着的指令（零宽字符、「忽略之前的指令」）
+  // 在这里标出来；跟着编辑实时算，只列中级以上，改掉就消失（自己的文件，不提供「这条没问题」）
+  const scan = useMemo(
+    () => (doc?.tooLarge ? [] : scanText({ path: active, text: value }).filter((f) => f.level !== 'low')),
+    [active, value, doc?.tooLarge],
+  )
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -60,6 +68,7 @@ export function DocPage({
         <p className="mt-1 text-body leading-relaxed text-subtle">{desc}</p>
       </div>
       {note}
+      <ScanFindings findings={scan} />
 
       {files.length > 1 && (
         <div role="tablist" className="flex flex-wrap gap-1.5">

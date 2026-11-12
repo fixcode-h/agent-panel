@@ -620,6 +620,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, 'Skills-不溢出')
     }
   }
+  // 配置安全扫描（借鉴 ECC）：从网上拷来的 Skill 在列表上有小盾牌，详情顶部逐条列出，点「这条没问题」拿掉那一条
+  {
+    const row = p.locator('section[aria-label="Skills列表"]').getByRole('button', { name: /deploy-helper/ })
+    if (!(await row.getByLabel(/^安全扫描/).count())) errors.push('Skills-安全扫描：有风险的 Skill 在列表上没有小盾牌')
+    await row.first().click()
+    await check(p, 'Skills-安全扫描', ['安全扫描发现', '把网上下载的脚本直接交给 shell 执行', '这条没问题'])
+    const before = await p.getByRole('button', { name: '这条没问题' }).count()
+    await p.getByRole('button', { name: '这条没问题' }).first().click()
+    await p
+      .waitForFunction(
+        (n) =>
+          document.querySelectorAll('button').length &&
+          [...document.querySelectorAll('button')].filter((b) => b.textContent === '这条没问题').length < n,
+        before,
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('Skills-安全扫描：点了「这条没问题」那一条没拿掉'))
+  }
   // 地址跟着选中项走：刷新、复制链接能回到同一项
   await p
     .getByRole('button', { name: /commit-message/ })
