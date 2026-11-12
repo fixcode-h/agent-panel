@@ -23,6 +23,7 @@ import { FileSearchBar, useFileSearch } from './FileSearch'
 import { useDomSearch } from './dom-search'
 import { JsonTree } from './JsonTree'
 import { SheetTable, SheetTabs } from './SheetTable'
+import { firstShownSheet, parseLoc } from './sheet-look'
 import { SheetHeaderBar } from './SheetHeaderBar'
 import { useClaimedSheetView } from './use-sheet-claim'
 import './file-view.css'
@@ -93,8 +94,8 @@ export function FileViewDialog({
   const isMd = isMarkdownPath(path)
   const isCsv = isCsvPath(path)
   const isJson = isJsonPath(path)
-  /** xlsx 当前看的是第几张表 */
-  const [sheetIndex, setSheetIndex] = useState(0)
+  /** xlsx 当前看的是第几张表；-1 是刚打开，停在第一张没隐藏的表 */
+  const [pickedSheet, setSheetIndex] = useState(-1)
   const load = (p: string) =>
     source
       .read(p)
@@ -104,7 +105,7 @@ export function FileViewDialog({
     if (!target) return
     setFile(null)
     setError('')
-    setSheetIndex(0)
+    setSheetIndex(-1)
     if (raw) return
     void load(target.path)
     // source 每次渲染都是新对象，换了文件（target）才重新读
@@ -132,7 +133,8 @@ export function FileViewDialog({
   const isText = !!file?.exists && !file.binary
   /** xlsx 解析出来的各张表（是二进制文件，但有东西可看） */
   const sheets = file?.exists && file.sheets?.length ? file.sheets : undefined
-  const sheet = sheets?.[Math.min(sheetIndex, sheets.length - 1)]
+  const sheetIndex = sheets ? Math.min(pickedSheet < 0 ? firstShownSheet(sheets) : pickedSheet, sheets.length - 1) : 0
+  const sheet = sheets?.[sheetIndex]
   /** 有内容可看、可搜：文字文件和解析出表格的 xlsx */
   const viewable = isText || !!sheets
   // 去掉结尾的换行再分列，最后一行不会是个空行；高亮用同一份内容，行数才对得上。
@@ -337,9 +339,7 @@ export function FileViewDialog({
           <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-body text-danger">{ed.saveError}</p>
         )}
         {viewable && <FileSearchBar search={search} total={total} onClose={search.close} />}
-        {sheets && sheets.length > 1 && (
-          <SheetTabs sheets={sheets} index={Math.min(sheetIndex, sheets.length - 1)} onChange={setSheetIndex} />
-        )}
+        {sheets && sheets.length > 1 && <SheetTabs sheets={sheets} index={sheetIndex} onChange={setSheetIndex} />}
         {sheetView && tableRows && (sheet || csvRows) && <SheetHeaderBar view={sheetView} rows={tableRows} />}
         {/* Markdown 阅读时右边是标题目录，编辑源码时不要 */}
         <DialogScroll box={box} aside={mdPreview && !editing && <DocOutline scrollEl={box} className="bottom-7" />}>
@@ -354,6 +354,13 @@ export function FileViewDialog({
           ) : sheet ? (
             <SheetTable
               rows={sheet.rows}
+              look={sheet.look}
+              // 表内链接（Sheet2!A1）：切到那张表
+              onLocate={(loc) => {
+                const at = parseLoc(loc)
+                const i = at?.sheet ? sheets!.findIndex((x) => x.name === at.sheet) : -1
+                if (i >= 0) setSheetIndex(i)
+              }}
               scrollEl={box}
               hits={cellHits}
               current={search.index}

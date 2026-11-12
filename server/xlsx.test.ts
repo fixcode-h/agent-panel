@@ -96,3 +96,20 @@ test('sheetsOf：不是 xlsx 的扩展名、解析不了的内容都不给表格
   assert.equal(sheetsOf('a.xlsx', Buffer.from('这不是 zip，是加密或者改了扩展名的文件')), undefined)
   assert.equal(sheetsOf('a.XLSX', zip(BOOK))?.length, 2)
 })
+
+test('readXlsx：超过上限只读前面一部分并标 truncated；调大上限能读全', () => {
+  const cells = Array.from({ length: 30 }, (_, r) => `<row r="${r + 1}"><c r="A${r + 1}"><v>${r}</v></c><c r="B${r + 1}" t="str"><v>x${r}</v></c></row>`).join('') // prettier-ignore
+  const buf = zip({
+    'xl/workbook.xml': '<workbook><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    'xl/_rels/workbook.xml.rels':
+      '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+    'xl/worksheets/sheet1.xml': `<worksheet><sheetData>${cells}</sheetData></worksheet>`,
+  })
+  const small = readXlsx(buf, { sheetCells: 10, bookCells: 100 })
+  assert.equal(small[0].truncated, true)
+  assert.equal(small[0].rows.flat().filter(Boolean).length, 10)
+  const full = readXlsx(buf, { sheetCells: 1000, bookCells: 1000 })
+  assert.equal(full[0].truncated, undefined)
+  assert.equal(full[0].rows.length, 30)
+  assert.deepEqual(full[0].rows[29], ['29', 'x29'])
+})

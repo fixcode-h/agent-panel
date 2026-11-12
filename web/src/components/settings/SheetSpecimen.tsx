@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import type { SheetLook } from '@shared/files'
 import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
 import { SheetTable, type SheetColHead, type SheetEditing } from '@/components/files/SheetTable'
 import { useSheetView } from '@/components/files/use-sheet-view'
@@ -21,11 +22,12 @@ const ROWS = [
 ]
 
 /**
- * 表格页里的样子（只看，不能真改）：一格改过没保存、一格不合规、当前格描边，
- * 枚举列悬停出下拉箭头、引用列虚下划线、必填空着的斜线底纹
+ * 表格页里的样子（只看，不能真改）：一格改过没保存、一格不合规、选中的一块和当前格描边、
+ * 选区右下角的填充柄，枚举列悬停出下拉箭头、引用列虚下划线、必填空着的斜线底纹
  */
 const SAMPLE_EDIT: SheetEditing = {
-  picked: () => false,
+  picked: (r, c) => r >= 7 && r <= 8 && c >= 2 && c <= 3,
+  handle: { r: 8, c: 3, onDown: () => {} },
   focus: { row: 8, col: 2 },
   focusSeq: 0,
   editing: null,
@@ -43,6 +45,20 @@ const SAMPLE_EDIT: SheetEditing = {
   onDown: () => {},
   onEnter: () => {},
   onDouble: () => {},
+}
+
+/**
+ * 从 xlsx 里还原的显示：批注角标、超链接、整行底色色条（演示数据不翻译）。
+ * 合并单元格在第 1 行（修饰行）的后两格，表头展开时看得到
+ */
+const SAMPLE_LOOK: SheetLook = {
+  merges: [{ r: 0, c: 4, rows: 1, cols: 2 }],
+  notes: [{ r: 7, c: 3, text: '只在桌面上出现，地面摆不下', author: '策划' }],
+  links: [{ r: 10, c: 3, url: 'https://example.com/wiki/mirror', tip: '原画参考' }],
+  fills: [
+    { r: 11, color: '#f5c542' },
+    { r: 12, color: '#e5534b' },
+  ],
 }
 
 /** 表格页的两行列头：字段名 + 类型标签（颜色跟着表头每种行的颜色） */
@@ -79,9 +95,11 @@ export function SheetSpecimen() {
   return (
     <div data-surface="" className="flex w-full flex-col overflow-hidden rounded-lg border bg-(--c-modal-bg)">
       <SheetHeaderBar view={view} rows={ROWS} />
-      <div ref={box} className="h-64 overflow-auto">
+      {/* 带编辑样子的表格是一组行（rowgroup），外面要有 grid */}
+      <div ref={box} role="grid" aria-readonly aria-rowcount={ROWS.length} className="h-64 overflow-auto">
         <SheetTable
           rows={ROWS}
+          look={SAMPLE_LOOK}
           scrollEl={box}
           header={view.header}
           order={view.order}
