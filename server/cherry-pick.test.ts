@@ -375,3 +375,58 @@ test('cherry-pick（P4）：和目标撞在一起时不撤回，冲突标记写�
     rmSync(target, { recursive: true, force: true })
   }
 })
+
+test('cherry-pick（P4）：.uasset 这类二进制不按行合：目标没动过就直接换成这次的，目标也改过就跳过并说明，全程不调 git', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ap-pick-src-'))
+  const target = mkdtempSync(path.join(tmpdir(), 'ap-pick-dst-'))
+  const base = Buffer.from([0x9e, 0x2a, 0x83, 0xc1, 0, 0, 1, 2])
+  const mine = Buffer.from([0x9e, 0x2a, 0x83, 0xc1, 0, 0, 7, 7])
+  // 没有 git 也要能搬：P4 项目的 cherry-pick 不该跑 git
+  const savedPath = process.env.PATH
+  try {
+    mkdirSync(path.join(root, 'Content'))
+    mkdirSync(path.join(target, 'Content'))
+    writeFileSync(path.join(root, 'Content/A.uasset'), mine)
+    writeFileSync(path.join(root, 'Content/B.uasset'), mine)
+    writeFileSync(path.join(target, 'Content/A.uasset'), base)
+    writeFileSync(path.join(target, 'Content/B.uasset'), Buffer.from([0x9e, 0x2a, 0, 5]))
+    const calls: string[][] = []
+    const p4 =
+      (cwd: string): P4Run =>
+      async (args) => {
+        calls.push([cwd === target ? 'dst' : 'src', ...args])
+        const [cmd] = args.filter((x) => x !== '-ztag')
+        if (cmd === 'opened')
+          return {
+            ok: true,
+            out: '... depotFile //d/Content/A.uasset\n... action edit\n\n... depotFile //d/Content/B.uasset\n... action edit',
+            err: '',
+          }
+        if (cmd === 'where')
+          return { ok: true, out: `... path ${path.join(root, args.at(-1)!.replace('//d/', ''))}`, err: '' }
+        if (cmd === 'print') {
+          writeFileSync(args[args.indexOf('-o') + 1], base)
+          return { ok: true, out: '', err: '' }
+        }
+        if (cmd === 'change') return { ok: true, out: 'Change 44 created.', err: '' }
+        return { ok: true, out: '', err: '' }
+      }
+    process.env.PATH = ''
+    const r = await cherryPickP4(root, target, taskOf([]), '8', p4)
+    process.env.PATH = savedPath
+    assert.equal(r.ok, true, r.info)
+    assert.ok(readFileSync(path.join(target, 'Content/A.uasset')).equals(mine), '目标没动过：直接是这次的版本')
+    assert.match(r.info, /A\.uasset（编辑）/)
+    assert.match(r.info, /B\.uasset：是二进制文件，目标里的这个文件也改过，没法合并/)
+    assert.doesNotMatch(r.info, /git merge-file/)
+    assert.ok(
+      readFileSync(path.join(target, 'Content/B.uasset')).equals(Buffer.from([0x9e, 0x2a, 0, 5])),
+      '两边都改过的不动',
+    )
+    assert.ok(!calls.some((c) => c[0] === 'dst' && c[1] === 'edit' && c.at(-1)!.endsWith('B.uasset')))
+  } finally {
+    process.env.PATH = savedPath
+    rmSync(root, { recursive: true, force: true })
+    rmSync(target, { recursive: true, force: true })
+  }
+})
