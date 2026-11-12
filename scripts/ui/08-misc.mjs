@@ -1411,19 +1411,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const p = await page({ width: 1440, height: 900 })
     await p.goto(base + '#/')
     await settle(p)
+    // 这里只读出要改哪两条；改动交给 patchDemoOnce 在重新加载、页面脚本运行前写进去。
+    // 以前在页面里改完 localStorage 就 reload，当前页的演示后端偶尔抢先把内存里的旧数据写回去，提示就不出现（出包 #456）
     const made = await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
-      const list = db.tasks ?? []
+      const list = JSON.parse(localStorage.getItem(k) ?? '{}').tasks ?? []
       const top = list.find((x) => !x.parentTaskId && x.mode === 'chat' && !x.archived && !x.deletedAt)
       const kid = list.find((x) => x.parentTaskId)
-      if (!top) return null
-      for (const x of [top, kid].filter(Boolean))
-        Object.assign(x, { status: 'stopped', stopReason: 'restart', resolved: false })
-      localStorage.setItem(k, JSON.stringify(db))
-      return { title: top.title, kid: kid?.title ?? '' }
+      return top ? { title: top.title, kid: kid?.title ?? '' } : null
     }, KEY)
     if (!made) errors.push('重启后继续：演示数据里找不到顶层对话')
     else {
+      // 和上面同样的挑法（patch 在浏览器里跑，引用不了外面的变量）
+      await patchDemoOnce(p, 'restart-resume', (db) => {
+        const list = db.tasks ?? []
+        const top = list.find((x) => !x.parentTaskId && x.mode === 'chat' && !x.archived && !x.deletedAt)
+        const kid = list.find((x) => x.parentTaskId)
+        for (const x of [top, kid].filter(Boolean))
+          Object.assign(x, { status: 'stopped', stopReason: 'restart', resolved: false })
+      })
       await p.reload()
       const bar = p.getByRole('region', { name: '被面板重启打断的对话' })
       // 名单是页面加载后另取的（演示后端还带固定延迟），机器忙时会超过 check 默认等的 5 秒
