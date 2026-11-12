@@ -61,7 +61,7 @@ import type {
 import type { ChildHold } from '@shared/task'
 import type { SearchHit } from '@shared/tasks/search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
-import type { RunUsage } from '@shared/run-usage'
+import type { RunUsage } from '@shared/run/usage'
 import type { DiagnosisDecision } from '@shared/bug/diagnosis'
 import type { PatchResult, PatchStatus } from '@shared/bug/patch'
 import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'

@@ -1,4 +1,4 @@
-import type { StepUsage, Task, TaskStep } from './schema.ts'
+import type { StepUsage, Task, TaskStep } from '../schema.ts'
 
 /**
  * 「整个运行」的用量：一个父对话 + 它分出的所有子对话（含多层）+ 它派出的子任务（spawn_agents 的节点）。

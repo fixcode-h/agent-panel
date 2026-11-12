@@ -29,7 +29,7 @@
 | 节点之间的判断 | 流程图里的「主 Agent」：常驻在 `@main` 步骤上的一个 CLI 会话，每个子节点做完都要评估一次，还负责选路和最后整理结果                   | `shared/engine.ts` 的 `openMain` / `mainEvaluates` / `mainTurn`                      |
 | 收尾           | 流程图跑完后，同一个子对话的执行角色接手：评审 → 完整测试 → `submit_merge`                                                           | `flowHandoffPrompt`                                                                  |
 | 方案确认       | 节点设了「完成后等用户确认」时，在工作流子对话里挂一条 `kind: 'confirm'` 的请求；父对话只在子对话那一行行尾放一个「查看结果」按钮    | `server/exec/real-turn.ts` 的 `confirm`；`web/src/components/tasks/ChildConfirm.tsx` |
-| 停止和继续     | 跟着子对话走 0042 那套：暂停、递归拉起、`resumeKids`                                                                                 | `shared/resume-kids.ts`、`shared/run-stops.ts`                                       |
+| 停止和继续     | 跟着子对话走 0042 那套：暂停、递归拉起、`resumeKids`                                                                                 | `shared/resume-kids.ts`、`shared/run/stops.ts`                                       |
 | 显示           | 子对话栏里和普通子对话排在一起，标一个流程图标和「工作流 · 名字 n/m」；右栏打开后有「输出 / 流程图」切换，下面接着执行角色的收尾对话 | `web/src/components/tasks/ChildrenBar.tsx`、`child-line.ts`、`RunCard.tsx`           |
 
 这些事实决定了下面的判断：
@@ -106,7 +106,7 @@
 | 流程图推进（节点、连线、子流程、验收轮次、确认）     | `shared/engine.ts` 的 `runFlow` 一带                   | 原样用，去掉对 `host.task` 是对话的假设（3.5） |
 | 独立分支、依赖副本、合回                             | `server/exec/worktree.ts`、`worktree-integrate.ts`     | 原样用，分支挂在运行上                         |
 | 预算、用量、首包                                     | `shared/budget.ts`、`AgentUsage`                       | 按运行记                                       |
-| 暂停、终止的原语                                     | `shared/run-stops.ts`                                  | 原样用                                         |
+| 暂停、终止的原语                                     | `shared/run/stops.ts`                                  | 原样用                                         |
 | 生命周期诊断                                         | `shared/lifecycle.ts`                                  | 加一类「运行」节点                             |
 
 ### 3.3 运行的状态机

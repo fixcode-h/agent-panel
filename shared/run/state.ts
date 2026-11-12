@@ -2,10 +2,10 @@
  * 一次工作流运行的记录和它的共享状态、节点之间的消息（从 shared/engine.ts 拆出来：那个文件到了行数上限，
  * 这块是自成一体的读写，不依赖执行流程）。read_state / write_state / send_message / read_messages 的底层
  */
-import { currentRun } from './flow.ts'
-import type { RunMessage, RunStateEntry, Task, TaskRun, Workflow } from './schema.ts'
-import type { EngineHost } from './engine/host.ts'
-import { clip } from './text.ts'
+import { currentRun } from '../flow.ts'
+import type { RunMessage, RunStateEntry, Task, TaskRun, Workflow } from '../schema.ts'
+import type { EngineHost } from '../engine/host.ts'
+import { clip } from '../text.ts'
 
 const now = () => new Date().toISOString()
 

@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/conversation-routes.ts, server/exec/parsers.ts, shared/task.ts, shared/engine.ts, shared/run-stops.ts, web/src/components/tasks/**
+paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/conversation-routes.ts, server/exec/parsers.ts, shared/task.ts, shared/engine.ts, shared/run/stops.ts, web/src/components/tasks/**
 ---
 
 # 对话停止、续接和「在跑」的显示
@@ -22,6 +22,6 @@ paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/c
 
 ## 停下就是暂停：子任务只用 pauseUnit / cancelUnit 收，暂停的子对话不结算父计划的等待
 
-- 规则：子任务、工作流节点停下只走 `shared/run-stops.ts` 的 `pauseUnit`（会接着做）或 `cancelUnit`（明确不做了），不在别处手写 `status` / `interrupted` / `apiWait`。子对话停下时父计划等它的那一步只有 `stopEnds`（归档、删除、被接手、`lost`）才收成失败；拉起子对话后用 `rearmKidWait` 恢复等待。继续执行时被打断的子任务由引擎 `resumePausedHelpers` 在原记录续跑。
+- 规则：子任务、工作流节点停下只走 `shared/run/stops.ts` 的 `pauseUnit`（会接着做）或 `cancelUnit`（明确不做了），不在别处手写 `status` / `interrupted` / `apiWait`。子对话停下时父计划等它的那一步只有 `stopEnds`（归档、删除、被接手、`lost`）才收成失败；拉起子对话后用 `rearmKidWait` 恢复等待。继续执行时被打断的子任务由引擎 `resumePausedHelpers` 在原记录续跑。
 - 起因：用户 2026-11-03 要求「停了再启动不新开，子对话、父对话复用」，梳理出随父对话停下的子对话被收成失败、拉起后做完叫不醒父对话（ADR 0042）。
 - 防线：`shared/pause-unit.test.ts`、`shared/resume-kids.test.ts`；`scripts/e2e/09-subagent-runtime.mjs` 的「停下就是暂停」「被打断的子任务由面板接着跑」。

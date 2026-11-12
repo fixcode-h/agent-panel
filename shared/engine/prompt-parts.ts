@@ -5,7 +5,7 @@
 import type { Task, Workflow } from '../schema.ts'
 import { clip } from '../text.ts'
 import { withAttachments } from '../task.ts'
-import { statePart } from '../run-state.ts'
+import { statePart } from '../run/state.ts'
 import { pushPolicyText } from '../push-auth.ts'
 import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
 import { promptLangRules, promptLangWord } from '../prompt-lang.ts'

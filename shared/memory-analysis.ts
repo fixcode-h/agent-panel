@@ -298,7 +298,7 @@ export function taskMemoryBrief() {
     '这次是主动的会话内存体检，不是报错排查：面板本身没有出错，用户想知道这个会话的内存占用有没有问题、怎么优化。',
     '面板是怎么跑的：一个本机 Node 服务进程（server/，Hono，只监听 127.0.0.1）调度本机的编码 CLI（Claude Code、Codex、Pi 等）。每个对话由面板启动一个 CLI 子进程，CLI 还会起 MCP 服务等子进程。面板自己的内存不属于任何一个对话，只单独给出、不计入会话合计；会话合计只算这个对话及它的附属任务（子对话、子任务）起的 CLI 进程树。',
     '上面的数字从哪来（需要时可以按这些路径去看代码和日志）：',
-    '- server/tasks.ts 的 processPanel：按「当前任务 + 它的全部后代」（shared/run-usage.ts 的 subtreeTaskIds）汇总这个对话及附属任务的进程，每个进程带 ownerTaskId / ownerTitle（归属哪个对话）。',
+    '- server/tasks.ts 的 processPanel：按「当前任务 + 它的全部后代」（shared/run/usage.ts 的 subtreeTaskIds）汇总这个对话及附属任务的进程，每个进程带 ownerTaskId / ownerTitle（归属哪个对话）。',
     '- server/exec/proc-stats.ts：系统进程表快照、进程树、按任务汇总（aggregateByTask）、30 秒一次的内存历史（summarize 接受一组任务 id，只加这些任务的 CLI）。',
     '- web/src/components/tasks/MemoryChart.tsx（会话内存曲线）、ProcessPanel.tsx（进程面板）：界面上的趋势和归属口径。',
     '- 子对话是独立的 Task（shared/schema.ts），各自起 CLI 进程；子对话多、上下文长时，CLI 那一路的内存会明显上涨。',

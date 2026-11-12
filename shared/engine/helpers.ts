@@ -5,7 +5,7 @@
 import type { Agent, ParamValues, TaskStep } from '../schema.ts'
 import { isMainStep } from '../flow.ts'
 import { clip } from '../text.ts'
-import { runMail, sendRunMessage } from '../run-state.ts'
+import { runMail, sendRunMessage } from '../run/state.ts'
 import { layeredBatch } from '../helper-batch.ts'
 import { approvedBrief, requestLogs, submitDiagnosis, updateBugCase, type DiagnosisInput } from '../bug/diagnosis.ts'
 import { resultLine, resultOf } from '../helper-summary.ts'

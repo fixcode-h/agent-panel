@@ -40,7 +40,7 @@ import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers
 import { scopeError } from '../../shared/conv-mode.ts'
 import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
 import { bugInPlace, inPlaceBugClosed } from '../../shared/bug/in-place.ts'
-import { pausedHelpers } from '../../shared/run-stops.ts'
+import { pausedHelpers } from '../../shared/run/stops.ts'
 
 /**
  * 新建对话、发消息、预热、激活与关闭 Agent、在看 / 已读、结束流程、继续执行（连带拉起一起被打断的子对话）。

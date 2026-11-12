@@ -9,7 +9,7 @@ import type { EngineHost, Fail } from '../engine/host.ts'
 import { blockedStep, planTask, taskFlow } from '../flow.ts'
 import { decisionsText, overLimit, RUN_ENDED, RUN_NO } from './run.ts'
 import { t } from '../i18n.ts'
-import { ensureTaskRun } from '../run-state.ts'
+import { ensureTaskRun } from '../run/state.ts'
 import { clip } from '../text.ts'
 
 export interface FlowRunDeps {

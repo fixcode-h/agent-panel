@@ -1,7 +1,7 @@
-import type { EngineHost, Orchestra } from './engine/host.ts'
-import type { Task, TaskStep } from './schema.ts'
-import { clip } from './text.ts'
-import { pauseStep } from './task.ts'
+import type { EngineHost, Orchestra } from '../engine/host.ts'
+import type { Task, TaskStep } from '../schema.ts'
+import { clip } from '../text.ts'
+import { pauseStep } from '../task.ts'
 
 /*
  * 只停对话的一部分（一个子任务、一次工作流运行）用的开关：对话本身不停。
