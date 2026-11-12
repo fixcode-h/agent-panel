@@ -32,6 +32,7 @@ export function ProjectFileDialog({
     missingText: t('项目目录里找不到这个文件，可能已经被移动或删除。'),
     binaryText: t('这是二进制文件，不显示内容。'),
     onSaved,
+    projectId,
   }
   return <FileViewDialog source={source} target={target} onOpenChange={onOpenChange} />
 }

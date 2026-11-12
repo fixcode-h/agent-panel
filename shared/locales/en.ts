@@ -18,6 +18,7 @@ import { EN_SUMMARY } from './en/summary.ts'
 import { EN_TASKS } from './en/tasks.ts'
 import { EN_TOOL_NAMES } from './en/tool-names.ts'
 import { EN_SHEETS } from './en/sheets.ts'
+import { EN_SHEET_LOOK } from './en/sheet-look.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CONFIG_SCAN } from './en/config-scan.ts'
@@ -25,6 +26,7 @@ import { EN_CLI_MORE } from './en/cli-more.ts'
 import { EN_NOTIFY_CHANNELS } from './en/notify-channels.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
 import { EN_FILE_REF } from './en/file-ref.ts'
+import { EN_MD_TABLE } from './en/md-table.ts'
 import { EN_SHEET } from './en/sheet.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
@@ -87,6 +89,7 @@ export const EN: Record<string, string> = {
   ...EN_NOTIFY_CHANNELS,
   ...EN_EXPERIENCE,
   ...EN_FILE_REF,
+  ...EN_MD_TABLE,
   ...EN_SHEET,
   ...EN_PLUGINS,
   ...EN_SHARED_DIR,
@@ -94,4 +97,5 @@ export const EN: Record<string, string> = {
   ...EN_DONE_GUARD,
   ...EN_UI_POLISH,
   ...EN_SHEETS,
+  ...EN_SHEET_LOOK,
 }

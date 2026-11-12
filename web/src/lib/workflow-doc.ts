@@ -10,6 +10,7 @@ import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
 import type { LineMark } from '@shared/bug/quotes-md'
 import { markdownDiff } from './diff-html'
+import { tableHtml } from './markdown/table'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -76,6 +77,12 @@ renderer.image = ({ href, text }) => {
   if (!ok) return escape(text)
   const img = `<img src="${escape(href)}" alt="${escape(text)}">`
   return text.trim() ? `<span class="md-fig">${img}<span class="md-cap">${escape(text)}</span></span>` : img
+}
+
+// 表格包一层：悬停工具条（复制、全屏）、点表头排序（web/src/lib/markdown/table.ts）
+const tableDefault = renderer.table
+renderer.table = function (token) {
+  return tableHtml(tableDefault.call(this, token), token.raw, token.rows.length)
 }
 
 /** > [!NOTE] 这类提示块（GitHub 的写法）：五种类型，标题按界面语言显示 */

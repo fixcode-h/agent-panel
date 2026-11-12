@@ -158,6 +158,24 @@ export interface PluginServerContext {
   }
   /** 界面文案（中文原文当键，英文查包里的 locales/en.json） */
   t: (zh: string, vars?: Record<string, string | number>) => string
+  /**
+   * 推给打开着的面板页面（插件接口 7）：网页部分用 host.events 订阅。要实时数据的界面（外面改了打开着的文件、
+   * 后台任务进度）用它，不让网页定时拉接口。插件关掉时登记的 onClose 自动撤掉
+   */
+  pages: PluginPages
+}
+
+/** 插件的推送通道（PluginServerContext.pages） */
+export interface PluginPages {
+  /**
+   * 发一个事件给页面，返回发给了几个页面。to 是页面的连接 id（网页 host.events.conn / onConnect 给的），
+   * 不给发给所有打开着的页面；只有自己的网页部分收得到，别的插件收不到
+   */
+  push: (event: string, data: unknown, to?: string | Iterable<string>) => number
+  /** 这个页面连接还在不在 */
+  open: (conn: string) => boolean
+  /** 页面连接断开时回调（关了标签页、断线；断线重连的页面会拿新 id 重新登记）：清掉这个页面的订阅。返回撤掉回调的函数 */
+  onClose: (fn: (conn: string) => void) => () => void
 }
 
 /**

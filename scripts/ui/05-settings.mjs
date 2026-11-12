@@ -124,6 +124,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
     errors.push('设置-Markdown样式：打开斑马纹后 #md-style 里应该有 --md-table-zebra')
   await check(p, '设置-Markdown样式-斑马纹')
+  // 回复里的表格（分析稿第 28、29 条）：悬停浮出复制 / 全屏，点表头排序，全屏用表格部件打开
+  const mdTable = p.locator('.chat-md .md-table').filter({ visible: true }).first()
+  // 设置页顶上有一条钉住的预览栏：先把表格滚到中间，免得表头躲在它下面点不到
+  await mdTable.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await mdTable.locator('table').hover()
+  await check(p, '设置-Markdown样式-表格工具条')
+  if ((await mdTable.locator('.md-table-tools').evaluate((el) => getComputedStyle(el).opacity)) !== '1')
+    errors.push('设置-Markdown样式：鼠标移到表格上时右上角的工具条应该浮出来')
+  const firstCells = () => mdTable.locator('tbody tr td:nth-child(2)').allInnerTexts()
+  await mdTable.locator('th', { hasText: '改动' }).click()
+  const asc = await firstCells()
+  await mdTable.locator('th', { hasText: '改动' }).click()
+  const desc = await firstCells()
+  if (asc.join() !== '+3,+8,+120' || desc.join() !== '+120,+8,+3')
+    errors.push(`设置-Markdown样式：点「改动」表头应该按数字升序再降序，实际 ${asc.join()} / ${desc.join()}`)
+  await check(p, '设置-Markdown样式-表格降序')
+  await mdTable.locator('th', { hasText: '改动' }).click()
+  await mdTable.locator('table').hover()
+  await mdTable.locator('[data-table="copy"]').click()
+  await check(p, '设置-Markdown样式-表格复制菜单', ['复制成 TSV', '复制成 Markdown'])
+  await p.keyboard.press('Escape')
+  await mdTable.locator('table').hover()
+  await mdTable.locator('[data-table="full"]').click()
+  await check(p, '设置-Markdown样式-表格全屏', ['3 行 · 3 列', 'Markdown.tsx'])
+  await p.keyboard.press('Escape')
+  // 长表限高：限到 2 行时表格在自己里面滚，表头钉在顶上
+  await p.getByRole('slider', { name: '长表限高行数' }).fill('2')
+  await p
+    .waitForFunction(() => document.getElementById('md-style')?.textContent?.includes('--md-table-rows'), null, {
+      timeout: 5000,
+    })
+    .catch(() => errors.push('设置-Markdown样式：改了长表限高后 #md-style 里应该有 --md-table-rows'))
+  await mdTable.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await mdTable.locator('table').evaluate((el) => (el.scrollTop = 40))
+  await check(p, '设置-Markdown样式-长表限高')
+  const stuck = await mdTable.evaluate((el) => {
+    const t = el.querySelector('table').getBoundingClientRect().top
+    return Math.abs(el.querySelector('th').getBoundingClientRect().top - t) < 3
+  })
+  if (!stuck) errors.push('设置-Markdown样式：长表限高后往下滚，表头应该钉在表格顶上')
+  const limited = await mdTable.locator('table').evaluate((el) => el.scrollHeight > el.clientHeight + 10)
+  if (!limited) errors.push('设置-Markdown样式：长表限高 2 行后表格应该限高、在表格里滚动')
   await p.getByRole('button', { name: '全部恢复默认' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '恢复默认', exact: true }).click()
   if (await p.evaluate(() => document.getElementById('md-style')?.textContent))

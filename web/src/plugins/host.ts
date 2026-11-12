@@ -17,6 +17,7 @@ import { appendDraft } from '@/components/chat/ChatComposer'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { TaskView } from '@/components/tasks/TaskView'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
+import { pluginEvents } from './events'
 
 /**
  * 交给插件网页部分的宿主（ADR 0059，类型见 sdk.ts 的 WebHost）：面板的数据、导航、界面组件和插件自己的接口。
@@ -64,6 +65,11 @@ export function host(id: string, config: () => PluginConfig) {
       post: <T>(path: string, body?: unknown) =>
         request<T>(`${base}${path}`, { method: 'POST', body: JSON.stringify(body ?? {}) }),
     },
+    /**
+     * 服务端推来的事件（插件接口 7，服务端 ctx.pages.push）：要跟着服务端变的界面用它，不定时拉接口。
+     * on / useEvent 订阅，onConnect 在每次连上时向服务端登记这个页面要什么（连接 id 填进 push 的 to）
+     */
+    events: pluginEvents(id),
     /** 插件包里的文件地址 */
     fileUrl: (rel: string) => `/api/plugins/${encodeURIComponent(id)}/files/${rel}`,
     /** 面板接口里插件常用的几个 */

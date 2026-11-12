@@ -35,10 +35,13 @@ function demoImg() {
  */
 export function FileDialog({
   taskId,
+  projectId,
   target,
   onOpenChange,
 }: {
   taskId: string
+  /** 对话所在的项目：表格文件交给插件认领（在表格页打开、用项目的表头设置） */
+  projectId?: string
   target: { path: string; line?: number; local?: boolean } | null
   onOpenChange: (open: boolean) => void
 }) {
@@ -79,6 +82,8 @@ export function FileDialog({
         </>
       ),
     editorOk: (file) => !(local && file.binary),
+    // 附件是拷进数据目录的副本，不是项目里的表格
+    projectId: local ? undefined : projectId,
   }
   return <FileViewDialog source={source} target={target} onOpenChange={onOpenChange} />
 }
