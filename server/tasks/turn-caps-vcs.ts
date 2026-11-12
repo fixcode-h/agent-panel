@@ -7,7 +7,7 @@ import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../docs/root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
 import { currentBranch } from '../exec/worktree.ts'
-import { isolated, isP4 } from './helpers.ts'
+import { isGit, isolated, isP4 } from './helpers.ts'
 
 import type { TurnCapsCtx } from './turn-caps-conv.ts'
 
@@ -44,7 +44,9 @@ export async function vcsCaps(c: TurnCapsCtx) {
     isolated: !!task.parentTaskId && isolated(entry.task),
     // 父对话（协调器）就地微改动：角色开了才有，护栏在 beginInlineEdit / endInlineEdit（shared/inline-edit.ts）
     inlineEdit:
-      coordinatorRole && startAgent?.inlineEdit === 'tiny' && dir
+      // 就地改动按 Git 的提交核对改了什么（server/tasks/merge.ts 的 begin/endInlineEdit）：P4 / SVN 项目里不给，
+      // 以前照样给，Agent 调用后才被「不是 git 仓库」拒掉
+      coordinatorRole && startAgent?.inlineEdit === 'tiny' && dir && (await isGit(dir))
         ? {
             begin: (files, reason) => sc.beginInlineEdit(entry.task, dir, files, reason),
             end: () => sc.endInlineEdit(entry.task, dir),

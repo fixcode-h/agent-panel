@@ -229,6 +229,8 @@ export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHo
     tools: string[]
     /** 项目设置的 cherry-pick 目标（见 Project.cherryPick）：vcs 是项目目录的版本管理，按它说清怎么搬 */
     cherryPick?: { vcs: 'git' | 'p4'; target: string }
+    /** 项目目录现在用的版本管理：提示词里的命令按它写（P4 项目里不教 git add，见 shared/engine/vcs-text.ts） */
+    vcs?: 'git' | 'p4' | 'svn' | 'none'
     docs?: DocRootInfo
   }
   /** 这一轮是「继续流程」，不是新的要求：停在某个节点结论上的流程从那个节点重新检查后接着走 */

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import type { Task } from '../shared/schema.ts'
 import { gitRun } from './exec/git.ts'
+import { merge3 } from './exec/merge3.ts'
 import { DATA_DIR } from './store.ts'
 import { p4Runner, parseZtag, type P4Run } from './p4-split.ts'
 import { detectVcs } from './projects-analyze.ts'
@@ -304,14 +305,21 @@ export async function cherryPickP4(
     // 合不上的不撤回（用户 2026-11-03 定的）：冲突标记写进目标文件照样搬过去，留给用户解决；
     // 只有根本搬不了的（目标里没有这个文件、读不出版本）才跳过并写明
     const merged: { rel: string; file: string; conflict: boolean }[] = []
-    /** 三方合并到 theirs（目标文件的副本）：返回 clean / conflict，git merge-file 自己出错时返回空 */
-    const merge3 = async (theirs: string, base: string, mine: string) => {
-      const m = await gitRun(work, ['merge-file', '-L', 'target', '-L', 'before', '-L', 'mine', theirs, base, mine])
-      // merge-file 的退出码是冲突数（最多 127），负数 / 大于 127 是它自己出错
-      if (m.code === 0) return 'clean'
-      if (m.code !== null && m.code > 0 && m.code < 128) return 'conflict'
-      return ''
+    /**
+     * 三方合并进 theirs（目标文件的副本）：面板自己合（server/exec/merge3.ts），不借 git——P4 项目里不该跑 git，
+     * 二进制文件（.uasset 等）也没法按行合。二进制只在一边改过时直接取改过的那边，两边都改过返回 binary 由这里说明
+     */
+    const merge = async (theirs: string, base: string, mine: string) => {
+      const r = merge3(await readFile(theirs), await readFile(base), await readFile(mine))
+      if (r.kind === 'binary') return 'binary'
+      await writeFile(theirs, r.out)
+      return r.kind
     }
+    /** 二进制文件两边都改过：不写冲突标记（会把文件写坏），跳过并写清楚 */
+    /** 目标里已经和这次改完一样的文件：不打开、不算搬过 */
+    const already: string[] = []
+    const sameAs = async (a: string, b: string) => (await readFile(a)).equals(await readFile(b))
+    const binaryWhy = '是二进制文件，目标里的这个文件也改过，没法合并，跳过（需要用户在编辑器里自己对比处理）'
     for (const [i, f] of files.filter((x) => x.action === 'edit').entries()) {
       const there = path.join(target, f.rel)
       if (!existsSync(there)) {
@@ -322,8 +330,10 @@ export async function cherryPickP4(
       if ((await readFile(f.base)).equals(await readFile(f.mine))) continue
       const theirs = path.join(work, `${i}.target`)
       await copyFile(there, theirs)
-      const r = await merge3(theirs, f.base, f.mine)
-      if (!r) fail.push(`${f.rel}：git merge-file 出错，跳过`)
+      const r = await merge(theirs, f.base, f.mine)
+      if (r === 'binary') fail.push(`${f.rel}：${binaryWhy}`)
+      // 合完和目标一模一样：目标里已经有这次的改动，不用打开
+      else if (await sameAs(theirs, there)) already.push(f.rel)
       // 结果写回在临时副本里：按字节读回来，换行符、结尾换行都和合并结果一致
       else merged.push({ rel: f.rel, file: theirs, conflict: r === 'conflict' })
     }
@@ -339,14 +349,19 @@ export async function cherryPickP4(
       const empty = path.join(work, `${i}.empty`)
       await copyFile(there, theirs)
       await writeFile(empty, '')
-      const r = await merge3(theirs, empty, f.mine)
-      if (!r) fail.push(`${f.rel}：这次是新增，目标里已经有同名文件，git merge-file 出错，跳过`)
+      const r = await merge(theirs, empty, f.mine)
+      if (r === 'binary') fail.push(`${f.rel}：这次是新增，目标里已经有内容不同的同名二进制文件，没法合并，跳过`)
+      else if (await sameAs(theirs, there)) already.push(f.rel)
       else adds.push({ rel: f.rel, file: theirs, conflict: r === 'conflict', exists: true })
     }
     if (!merged.length && !adds.length && !files.some((x) => x.action === 'delete'))
       return {
-        ok: false,
-        info: `没有 cherry-pick，目标没动：\n${fail.map((x) => `- ${x}`).join('\n')}\n把情况告诉用户，由用户决定怎么处理，不要改用整文件覆盖或按目录差异同步。`,
+        ok: !fail.length,
+        info: !fail.length
+          ? !already.length
+            ? `changelist ${cl} 里的文件都没有实际改动，没有要搬的，目标没动。`
+            : `目标里已经有这次的改动，没有要搬的，目标没动：\n${already.map((x) => `- ${x}`).join('\n')}`
+          : `没有 cherry-pick，目标没动：\n${[...fail, ...already.map((x) => `${x}：目标里已经是这样`)].map((x) => `- ${x}`).join('\n')}\n把情况告诉用户，由用户决定怎么处理，不要改用整文件覆盖或按目录差异同步。`,
       }
     const dst = p4(target)
     // 新 changelist 沿用来源的描述（按 P4 的规则只建 pending、不 submit），末尾注明从哪个 changelist 搬来。
@@ -401,6 +416,7 @@ export async function cherryPickP4(
         conflicts.length
           ? `其中 ${conflicts.length} 个有冲突，冲突标记（<<<<<<< target / >>>>>>> mine）已经写在目标文件里，留给用户解决：\n${lines(conflicts.map((c) => path.join(target, c)))}`
           : '',
+        already.length ? `${already.length} 个目标里已经是这样，不用搬：\n${lines(already)}` : '',
         fail.length ? `跳过 ${fail.length} 个：\n${lines(fail)}` : '',
         errs.length ? `有 ${errs.length} 个没搬成：\n${lines(errs)}` : '',
         conflicts.length

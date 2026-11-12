@@ -74,6 +74,7 @@ import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSe
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './children/ask.ts'
 import { topPush } from './sub-policy.ts'
+import { vcsOwnOnly, vcsReadCmds } from './engine/vcs-text.ts'
 import { overBudget } from './engine/budget.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
@@ -2040,10 +2041,10 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
           ? `## 你的定位：父对话先分析再分派，只就地做微小改动
 你是项目的父对话，负责理解用户的意思、需要时向用户问清楚、决定怎么处理、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
 - 唯一能自己改文件的情况是「就地微改动」：改什么、改成什么已经清楚、不用排查，最多 ${INLINE_EDIT_MAX_FILES} 个文件、${INLINE_EDIT_MAX_LINES} 行以内（文案、配置值、一两行文档）。先调用 begin_inline_edit 声明文件和理由，面板放行后再改；改完跑项目测试步骤里标「快速」的检查，本地提交这几个文件，再调用 end_inline_edit。Bug、要排查的、改公共接口或数据格式的、超出上限的，一律交给子对话。
-- 除此之外不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。`
+- 除此之外不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化）。看代码、搜索、跑只读命令（${vcsReadCmds(host)}这类）可以。`
           : `## 你的定位：父对话只统筹，不动手
 你是项目的父对话，负责理解用户的意思、收集上下文、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
-- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。`
+- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（${vcsReadCmds(host)}这类）可以。`
       }
 ${
   wt
@@ -2114,7 +2115,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
 你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
 - 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent（question 设为 true）请父对话协调。没改过的部分可以用 release_files 提前让出；改过的文件留到父对话验收你的改动后由面板释放（一轮结束、停下都不释放）。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
-- 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
+- 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；${vcsOwnOnly(host)}
 - 需要父对话决定或协调时用 message_parent 并把 question 设为 true（options 列出可选的做法）；阶段进展不用单独发，一轮结束面板会把你的汇报和状态合成一封交给父对话。你不能直接联系其他子对话。`
           : `## 和父对话的协作
 你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
