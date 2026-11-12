@@ -49,7 +49,7 @@ test('写 CLI 配置：覆盖已有的 644 文件后收到 600', async () => {
 // 防回退：写 CLI 自己配置文件的地方都要走上面两个函数，直接 writeFile / writeJsonAtomic 会写成 644
 test('写 CLI 配置：accounts / mcp-store 不直接写 CLI 的配置文件', () => {
   for (const f of ['accounts.ts', 'mcp-store.ts']) {
-    const src = readFileSync(path.join(import.meta.dirname, f), 'utf8')
+    const src = readFileSync(path.join(import.meta.dirname, '..', f), 'utf8')
     assert.doesNotMatch(src, /writeJsonAtomic\(file,|writeFile\(file, (next|writeToml)/, f)
   }
 })
