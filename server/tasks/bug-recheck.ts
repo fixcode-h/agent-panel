@@ -29,6 +29,7 @@ import { noPushEnv } from '../exec/no-push.ts'
 import { gitExec } from '../exec/git.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import { taskSet } from '../runtime/task-state.ts'
 
 const git = (dir: string, args: string[]) => gitExec(dir, args).then((r) => r.stdout)
 
@@ -39,7 +40,7 @@ const DEP_DIRS = ['node_modules', '.venv', 'venv']
 const timeoutMs = () => Number(process.env.AGENT_PANEL_RECHECK_TIMEOUT_MS) || RECHECK_TIMEOUT_MS
 
 /** 正在复核的对话：面板重启后记成 running 的那份没人在跑，下一轮结束时重新跑 */
-const running = new Set<string>() // 模块状态：运行时，正在复核的对话，重启后下一轮结束时重跑
+const running = taskSet('tasks.bug-recheck 正在复核') // 运行时（task-state 登记，对话删掉时跟着清）：正在复核的对话，重启后下一轮结束时重跑
 
 const exists = (p: string) =>
   stat(p).then(

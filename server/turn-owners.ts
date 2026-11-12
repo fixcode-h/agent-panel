@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { rel } from './own-changes.ts'
+import { taskMap } from './runtime/task-state.ts'
 
 /**
  * 每轮改动按文件归属（分析稿 A1）：几个对话共用一个目录（都没开独立分支）时，一轮的改动卡片和撤销只算这个对话自己的文件。
@@ -28,11 +29,12 @@ export interface TurnOwner extends Turn {
 }
 
 let seq = 0 // 模块状态：运行时，改动归属，重启时那一轮的归属丢失
-const turns = new Map<string, Turn>()
+// 运行时（task-state 登记，对话删掉时跟着清）：每个对话这一轮的起点，重启时那一轮的归属丢失
+const turns = taskMap<Turn>('turn-owners 这一轮的起点')
 /** 目录 → 对话 → 文件（相对目录、正斜杠）→ 最近一次点名的序号。只留最近一次：判断「这一轮里点没点过」够用，也不会越记越多 */
 const edits = new Map<string, Map<string, Map<string, number>>>() // 模块状态：运行时，改动归属，重启时那一轮的归属丢失
 /** 对话 → 父对话：子对话的改动算不算父对话的要沿着它往上找 */
-const parents = new Map<string, string>() // 模块状态：运行时，改动归属，重启时那一轮的归属丢失
+const parents = taskMap<string>('turn-owners 父对话') // 运行时（task-state 登记，对话删掉时跟着清）：改动归属，重启时那一轮的归属丢失
 
 const key = (dir: string) => path.resolve(dir)
 

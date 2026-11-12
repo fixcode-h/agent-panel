@@ -2,6 +2,7 @@ import path from 'node:path'
 import { statSync } from 'node:fs'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { runSegments, segHead } from '../../shared/command-scope.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 少占上下文的守卫和提醒（工作包 I，「Agent 模式可优化与扩展点」优化 4）：工具结果进了 CLI 的会话就一直跟着，
@@ -17,7 +18,7 @@ const DUMP_HEADS = new Set(['cat', 'type', 'get-content', 'gc']) // 模块状态
 const DUMP_RANGE = /\s-(tail|totalcount|head|first|last)\b/i
 
 /** 同一个对话里拦过一次的文件：再要整份读就放行（它确实要通读时不至于卡死），记在内存里，重启清空 */
-const warned = new Map<string, Set<string>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const warned = taskMap<Set<string>>('hooks.guards-context 拦过的整份读取') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 
 const sizeOf = (p: string) => {
   try {

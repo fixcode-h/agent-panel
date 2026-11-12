@@ -2,7 +2,7 @@ import { Task, type StopReason } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'
 import { forgetClaims } from '../claims.ts'
 import { forgetNotes } from '../exec/steering.ts'
-import { forgetPresence } from '../presence.ts'
+import { forgetTask } from '../runtime/task-state.ts'
 import type { TasksScope } from './scope.ts'
 import { CHATS_DIR, HANDOFF_DIR, TASK_FILES_DIR } from '../store.ts'
 import { rm } from 'node:fs/promises'
@@ -24,7 +24,8 @@ export function createTrash(s: TasksScope) {
     // 上报去重的记录只增不减：对话都删了不会再上报，跟着丢掉（还在的对话不能丢，丢了会把同一状态再报一遍）
     s.reportedState.delete(tk.id)
     s.reportedDone.delete(tk.id)
-    forgetPresence(tk.id)
+    // 按对话记的运行时状态（钩子提醒记录、排队的消息、在场心跳……）一次清掉，见 server/runtime/task-state.ts
+    forgetTask(tk.id)
     s.background.forget(tk.id)
     await s.dropWorktree(tk)
     await rm(path.join(HANDOFF_DIR, tk.id), { recursive: true, force: true }).catch(() => {})

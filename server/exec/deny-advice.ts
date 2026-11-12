@@ -10,12 +10,13 @@
 import type { Task, TaskRequest } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
 import type { AskReply } from './parsers.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /** 同一个操作被拒到这一次就要它停下来问用户 */
 export const STOP_AFTER_DENIALS = 2
 
 /** 对话 id → 操作 → 拒绝次数。只在内存里：服务重启后 CLI 进程也换了，从头数没关系 */
-const denied = new Map<string, Map<string, number>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const denied = taskMap<Map<string, number>>('exec.deny-advice 拒绝次数') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 
 /** 认「同一个操作」：卡片标题里就是命令原文 / 文件路径 / 工具名；详情里有 CLI 写的理由，每次措辞可能不同，不算进去 */
 const keyOf = (req: Pick<TaskRequest, 'kind' | 'title'>) => `${req.kind}\n${req.title.replace(/\s+/g, ' ').trim()}`

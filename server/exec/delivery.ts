@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { Attachment, Task, TaskMessage } from '../../shared/schema.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 交给 CLI 的附件路径：按任务上记的落盘映射换成那一份（图片在对话目录里的绝对路径），
@@ -56,7 +57,7 @@ export interface HeldMessage {
   letter?: boolean
 }
 
-const held = new Map<string, HeldMessage[]>() // 模块状态：运行时，排队待交给 CLI 的消息，重启后只剩消息上的交付状态
+const held = taskMap<HeldMessage[]>('exec.delivery 排队待交的消息') // 运行时（task-state 登记，对话删掉时跟着清）：排队待交给 CLI 的消息，重启后只剩消息上的交付状态
 
 /** 父对话交代任务的信（不是回答、收尾结果、面板消息） */
 const isLetter = (msg: TaskMessage) => msg.peer?.rel === 'parent' && msg.peer.kind === 'task'

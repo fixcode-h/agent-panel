@@ -12,7 +12,6 @@ import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
-import type { TrashRow } from '@shared/api-contract/trash'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
@@ -132,13 +131,14 @@ import {
   messagePage,
   taskMessageRev,
   newTask,
-  questionAnswers,
   taskSummary,
   trackWait,
-  trashLeftDays,
   withAttachments,
 } from '@shared/task'
-import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
+import { searchTasks } from '@shared/task-search'
+import { applyAnswer } from '@shared/requests/answer'
+import { forkedTask, rewoundTask, userMessageIndex } from '@shared/restore/rewind'
+import { trashRows } from '@shared/trash/rows'
 import { settlePlan } from '@shared/plan'
 import { autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
@@ -2546,55 +2546,6 @@ function demoJobView(task: Task, jobId: string): TaskJobView {
  * 演示里的正文搜索：和正式版同一份片段口径（shared/task-search.ts），数据都在内存里，直接扫就行。
  * 已删除（回收站里）的对话同样不参与
  */
-function demoTasksSearch(tasks: Task[], query: URLSearchParams): { hits: SearchHit[]; scanned: number; more: boolean } {
-  const q = (query.get('q') ?? '').trim()
-  if (!q) return { hits: [], scanned: 0, more: false }
-  const list = tasks.filter((t) => !t.deletedAt).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
-  const hits: SearchHit[] = []
-  for (const tk of list) {
-    let taken = 0
-    for (const m of tk.messages) {
-      if (taken >= SEARCH_HITS_PER_TASK || hits.length >= SEARCH_HIT_LIMIT) break
-      const hit = messageHit(m.text, q)
-      if (!hit) continue
-      hits.push({
-        taskId: tk.id,
-        title: tk.title,
-        messageId: m.id,
-        role: m.role,
-        at: m.at,
-        count: hit.count,
-        snippet: hit.snippet,
-        index: hit.index,
-        length: q.length,
-      })
-      taken++
-    }
-    if (hits.length >= SEARCH_HIT_LIMIT) break
-  }
-  return { hits, scanned: list.length, more: false }
-}
-
-/** 回收站列表：字段和正式后端一致（见 server/tasks.ts 的 GET /tasks/trash） */
-function demoTrash(tasks: Task[]): TrashRow[] {
-  const now = Date.now()
-  const deleted = tasks.filter((t) => t.deletedAt)
-  const parents = new Set(deleted.filter((t) => !t.parentTaskId).map((t) => t.id))
-  return deleted
-    .filter((t) => !t.parentTaskId || !parents.has(t.parentTaskId))
-    .map((t) => ({
-      id: t.id,
-      title: t.title,
-      projectId: t.projectId,
-      parentTaskId: t.parentTaskId ?? '',
-      deletedAt: t.deletedAt!,
-      leftDays: trashLeftDays(t.deletedAt!, now),
-      children: deleted.filter((k) => k.parentTaskId === t.id).length,
-      worktree: t.worktree?.state ?? '',
-    }))
-    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
-}
-
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2622,8 +2573,10 @@ function tasksRoute(
     return createTask(d, parse(NewTaskInput, body)).task
   }
   // 正文搜索 / 回收站列表：路径里带的 id 是 'search'、'trash'，要在按 id 找任务之前接住
-  if (id === 'search' && method === 'GET') return demoTasksSearch(tasks, query)
-  if (id === 'trash' && method === 'GET') return demoTrash(tasks)
+  // 搜索和回收站列表：和正式后端同一份逻辑（shared/task-search.ts、shared/trash/rows.ts），演示只给内存里的消息
+  if (id === 'search' && method === 'GET')
+    return searchTasks(tasks, query.get('q') ?? '', async (tk) => tk.messages, Number(query.get('limit')))
+  if (id === 'trash' && method === 'GET') return trashRows(tasks)
   // 总览页的 Bug 视图：和正式版同一个裁剪函数
   if (id === 'bugs' && method === 'GET') return bugBriefs(tasks)
   // 总览页的流程视图：同样用正式版的裁剪函数
@@ -2709,28 +2662,19 @@ function tasksRoute(
     if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
     if (task.mode !== 'chat') fail('只有对话任务可以这样做')
     const { messageId } = (body ?? {}) as { messageId?: string }
-    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    const i = userMessageIndex(task, messageId)
     if (i < 0) fail('找不到这条消息')
+    // 对话怎么截、分叉带哪些字段：和正式后端同一份（shared/restore/rewind.ts）；演示没有文件可撤、没有独立分支
     if (sub === 'rewind') {
       const removed = task.messages[i]
-      task.plans = task.plans.filter((p) => p.createdAt < removed.at) // 和正式版一样：撤掉那几轮建的计划作废
-      task.messages = task.messages.slice(0, i)
-      task.status = 'done'
+      Object.assign(task, rewoundTask(task, i))
       persist()
       return { ok: true, task, text: removed.text, attachments: removed.attachments ?? [] }
     }
-    const next = task.messages.findIndex((m, k) => k > i && m.role === 'user' && !m.step)
     const now = new Date().toISOString()
     const forked: Task = {
-      ...JSON.parse(JSON.stringify(task)),
+      ...JSON.parse(JSON.stringify(forkedTask(task, i, () => `demo-${crypto.randomUUID()}`))),
       id: `demo-${crypto.randomUUID()}`,
-      title: `${task.title}（分叉）`.slice(0, 80),
-      messages: task.messages
-        .slice(0, next < 0 ? task.messages.length : next)
-        .map((m) => ({ ...m, id: `demo-${crypto.randomUUID()}` })),
-      status: 'done',
-      requests: [],
-      todos: [],
       worktree: null,
       createdAt: now,
       updatedAt: now,
@@ -2912,28 +2856,11 @@ function tasksRoute(
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
-    const a = body as { allow: boolean; answer?: string; answers?: string[] }
+    const a = body as { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean }
     simAnswers.set(rid, a)
-    task.requests = task.requests.filter((r) => r.id !== rid)
+    // 对话上怎么记、等待怎么结算：和正式后端同一份（shared/requests/answer.ts）
+    applyAnswer(task, req, a, { newId: () => `demo-${crypto.randomUUID()}` })
     trackWait(task)
-    const answers = req.kind === 'question' ? questionAnswers(req, a) : undefined
-    task.messages.push({
-      id: `demo-${crypto.randomUUID()}`,
-      role: 'system',
-      agentId: req.agentId,
-      step: req.step,
-      text:
-        req.kind === 'confirm'
-          ? a.allow
-            ? `你确认了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」的结果，接着往下执行`
-            : `你退回了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」：${a.answer ?? ''}`
-          : req.kind === 'question'
-            ? `你回答了「${req.title}」：${(a.answers ?? [a.answer ?? '']).join('；')}`
-            : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
-      tools: [],
-      at: new Date().toISOString(),
-      ...(answers ? { answers } : {}),
-    })
     persist()
     return task
   }

@@ -5,6 +5,7 @@ import type { Task } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
 import { runSegments, segHead } from '../../shared/command-scope.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 改文件前的两个守卫（借鉴 ECC 的 GateGuard 和 config-protection，设计稿
@@ -43,7 +44,7 @@ export const CHECK_CONFIG_GLOBS = [
 ]
 
 /** 每个对话里拦过一次的文件（守卫 id + 绝对路径）：再来一次就放行。记在内存里，重启清空 */
-const warned = new Map<string, Set<string>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const warned = taskMap<Set<string>>('hooks.guards-edit 拦过的文件') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 function firstTime(taskId: string, key: string) {
   const seen = warned.get(taskId) ?? new Set<string>()
   if (seen.has(key)) return false

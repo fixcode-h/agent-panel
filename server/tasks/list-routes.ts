@@ -1,17 +1,10 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
-import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
+import { taskDeleted, taskSummary } from '../../shared/task.ts'
 import { bugBriefs } from '../../shared/bug-overview.ts'
 import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
-import { messageChars } from '../task-store.ts'
-import {
-  SEARCH_CHAR_BUDGET,
-  SEARCH_HIT_LIMIT,
-  SEARCH_HITS_PER_TASK,
-  SEARCH_TASK_BUDGET,
-  messageHit,
-  type SearchHit,
-} from '../../shared/task-search.ts'
+import { messageChars, searchTasks } from '../../shared/task-search.ts'
+import { trashRows } from '../../shared/trash/rows.ts'
 import { childCountsScan } from '../../shared/children/row.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { log } from '../log.ts'
@@ -111,24 +104,8 @@ export function registerListRoutes(s: TasksScope) {
    * 返回的字段是界面要显示的那几项：标题、删除时间、还剩几天，不在前端再算一遍保留期
    */
   s.routes.get('/trash', async (c) => {
-    const now = Date.now()
-    const deleted = (await s.store.list()).filter((t) => taskDeleted(t))
-    const parents = new Set(deleted.filter((t) => !t.parentTaskId).map((t) => t.id))
-    const rows = deleted
-      .filter((t) => !t.parentTaskId || !parents.has(t.parentTaskId))
-      .map((t) => ({
-        id: t.id,
-        title: t.title,
-        projectId: t.projectId,
-        parentTaskId: t.parentTaskId ?? '',
-        deletedAt: t.deletedAt,
-        leftDays: trashLeftDays(t.deletedAt!, now),
-        children: deleted.filter((k) => k.parentTaskId === t.id).length,
-        worktree: t.worktree?.state ?? '',
-      }))
-      // 最近删掉的排在前面：要恢复的往往是刚删错的那条
-      .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''))
-    return c.json(rows)
+    // 字段和过滤在 shared/trash/rows.ts（演示后端调同一份）
+    return c.json(trashRows(await s.store.list()))
   })
 
   /**
@@ -137,59 +114,14 @@ export function registerListRoutes(s: TasksScope) {
    * （口径在 shared/task-search.ts）。进了回收站的对话不参与：删了就不该还能被搜出来
    */
   s.routes.get('/search', async (c) => {
-    const q = (c.req.query('q') ?? '').trim()
-    if (!q) return c.json({ hits: [], scanned: 0, more: false })
-    const asked = Number(c.req.query('limit'))
-    const limit = Number.isFinite(asked) && asked > 0 ? Math.min(SEARCH_HIT_LIMIT, asked) : SEARCH_HIT_LIMIT
-    // 最近活动过的先扫：用户要找的多半是刚聊过的那几条
-    const all = (await s.store.list())
-      .filter((t) => !taskDeleted(t))
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
-    const tasks = all.slice(0, SEARCH_TASK_BUDGET)
-    const hits: SearchHit[] = []
-    let more = all.length > tasks.length
-    let searchChars = 0
-    for (const tk of tasks) {
-      // 结果格子满了就不再读文件：边输边搜，首屏要快
-      if (hits.length >= limit) {
-        more = true
-        break
-      }
-      const messages = await cachedMessages(tk)
-      if (!messages.length) continue
-      const chars = messageChars(messages)
-      if (searchChars + chars > SEARCH_CHAR_BUDGET) {
-        more = true
-        break
-      }
-      searchChars += chars
-      let taken = 0
-      for (const m of messages) {
-        if (taken >= SEARCH_HITS_PER_TASK) {
-          more = true
-          break
-        }
-        const hit = messageHit(m.text, q)
-        if (!hit) continue
-        if (hits.length >= limit) {
-          more = true
-          break
-        }
-        hits.push({
-          taskId: tk.id,
-          title: tk.title,
-          messageId: m.id,
-          role: m.role,
-          at: m.at,
-          count: hit.count,
-          snippet: hit.snippet,
-          index: hit.index,
-          length: q.length,
-        })
-        taken++
-      }
-    }
-    return c.json({ hits, scanned: tasks.length, more })
+    // 预算和扫描顺序在 shared/task-search.ts 的 searchTasks（演示后端调同一份）；这里只管从文件读消息（带缓存）
+    const report = await searchTasks(
+      await s.store.list(),
+      c.req.query('q') ?? '',
+      (tk) => cachedMessages(tk),
+      Number(c.req.query('limit')),
+    )
+    return c.json(report)
   })
 
   /**

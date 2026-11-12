@@ -9,7 +9,6 @@ import { settleStopped } from '../../shared/task-settle.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { childAskEffect } from '../../shared/child-ask.ts'
-import { NO_PUSH_ANSWER, pushAnswerCut } from '../../shared/push-auth.ts'
 import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { createWorktree } from '../exec/worktree.ts'
@@ -27,6 +26,7 @@ import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 import { forgetClaims } from '../claims.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
+import { forkedTask, rewoundTask, userMessageIndex } from '../../shared/restore/rewind.ts'
 
 /**
  * 对话上的操作：应用排查结论的修复、撤销改动、回答子对话提问和权限确认、改对话设置、倒回、分叉、压缩、评审、停止。
@@ -344,16 +344,6 @@ export function registerActionRoutes(s: TasksScope) {
     return task
   }
 
-  /** 第 i 条用户消息之前（不含）最近一条用户消息的那一轮，没有时为 null；latest：那一轮是会话的最后一轮 */
-  function turnBefore(task: Task, i: number) {
-    const prev = [...task.messages.slice(0, i)].reverse().find((m) => m.role === 'user' && !m.step)
-    if (!prev?.turn) return { through: null, session: '', latest: false }
-    const th = prev.turn
-    const at = task.messages.indexOf(prev)
-    const latest = !task.messages.slice(at + 1).some((m) => m.turn?.session === th.session)
-    return { through: th, session: th.session, latest }
-  }
-
   /**
    * 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊；返回被撤回的那条，方便改了再发。
    * files：连同被撤掉那几轮改的文件一起撤（每一轮记下的 turnChanges，和「撤销整个对话」同一套 undoSpans）——
@@ -366,7 +356,7 @@ export function registerActionRoutes(s: TasksScope) {
     const task = await idleTask(c)
     if (task instanceof Response) return task
     const body = (await c.req.json().catch(() => ({}))) as { messageId?: string; files?: boolean }
-    const i = task.messages.findIndex((m) => m.id === body.messageId && m.role === 'user' && !m.step)
+    const i = userMessageIndex(task, body.messageId)
     if (i < 0) return s.bad(c, t('找不到这条消息'))
     const removed = task.messages[i]
     const cut = convChanges(task.messages.slice(i))
@@ -388,19 +378,9 @@ export function registerActionRoutes(s: TasksScope) {
       reverted = r.files
     }
     const kids = await dropLaterChildren(task.id, removed.at)
-    const kept = task.messages.slice(0, i)
     const dir = reverted.length ? await s.taskDir(task) : ''
-    const base = {
-      ...task,
-      messages: kept,
-      // 第一条也能撤：前面没有用户消息时 turnBefore 一轮都不留（through 为空），下一轮开新会话
-      rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
-      status: 'done' as const,
-      todos: [],
-      plans: task.plans.filter((p) => p.createdAt < removed.at),
-      // 推送授权是在被撤掉的那段对话里点的：跟着撤掉，下一轮需要推送时重新问
-      ...(pushAnswerCut(task, removed.at) ? NO_PUSH_ANSWER : {}),
-    }
+    // 对话怎么截、计划和推送授权怎么撤：和演示后端同一份（shared/restore/rewind.ts）
+    const base = rewoundTask(task, i)
     const changes = dir ? ((await taskChanges(dir, base).catch(() => null)) ?? base.changes) : base.changes
     const updated = await s.store.update(task.id, { ...base, changes })
     taskLog(task.id, '撤回到一条消息', {
@@ -448,38 +428,12 @@ export function registerActionRoutes(s: TasksScope) {
     const task = await idleTask(c)
     if (task instanceof Response) return task
     const { messageId } = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    const i = userMessageIndex(task, messageId)
     if (i < 0) return s.bad(c, t('找不到这条消息'))
-    // 留到下一条用户消息之前：这条消息和它的回复都带上
-    const next = task.messages.findIndex((m, k) => k > i && m.role === 'user' && !m.step)
-    const kept = task.messages.slice(0, next < 0 ? task.messages.length : next)
-    const { through, session, latest } = turnBefore(task, next < 0 ? task.messages.length : next)
-    const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = task
-    const agents = Object.fromEntries(
-      Object.entries(task.usage.agents).map(([k, v]) => [k, { ...v, tps: 0, lastTps: 0, outputTokens: 0, genMs: 0 }]),
-    )
-    const title = t('{title}（分叉）', { title: task.title }).slice(0, 80)
+    // 新对话带哪些字段：和演示后端同一份（shared/restore/rewind.ts）；独立分支在这里按项目设置开
+    const fork = forkedTask(task, i, randomUUID)
     const id = randomUUID()
-    const forked = await s.store.create({
-      ...rest,
-      id,
-      title,
-      autoTitle: false,
-      // 消息 id 换新的，免得两个任务里的消息 id 相同
-      messages: kept.map((m) => ({ ...m, id: randomUUID() })),
-      // 下一条用户消息那一轮是丢掉的第一轮：只能分叉到某一轮之前的 CLI 按它截
-      rewind: { through, session, latest, cut: next < 0 ? null : (task.messages[next].turn ?? null) },
-      status: 'done',
-      runMs: 0,
-      runStartedAt: '',
-      requests: [],
-      todos: [],
-      worktree: await forkWorktree(task, id, title),
-      archived: undefined,
-      // 推送授权只对点它的那个对话有效：分叉出来的是新对话，需要推送时重新问一次
-      ...NO_PUSH_ANSWER,
-      usage: { agents, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
-    })
+    const forked = await s.store.create({ ...fork, id, worktree: await forkWorktree(task, id, fork.title) })
     return c.json(forked, 201)
   })
 

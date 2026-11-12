@@ -4,11 +4,7 @@ import type { AskReply } from './parsers.ts'
 import type { Task } from '../../shared/schema.ts'
 import { denyAdvice } from './deny-advice.ts'
 import { noteAnswer, replies } from './panel-requests.ts'
-import { questionAnswers, resumeRun } from '../../shared/task.ts'
-import { t } from '../../shared/i18n.ts'
-import { ruleText } from '../../shared/allow-rules.ts'
-
-const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
+import { applyAnswer } from '../../shared/requests/answer.ts'
 
 /** 「提问」开关关掉了：还在等回答的问题让 CLI 自己选 */
 export function autoAnswerQuestions(task: Task) {
@@ -44,46 +40,10 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   const req = task.requests.find((x) => x.id === id)
   if (!fn || !req) return false
   replies.delete(id)
-  task.requests = task.requests.filter((x) => x.id !== id)
   const deny = denyAdvice(task, req, r)
-  const what =
-    req.kind === 'confirm'
-      ? r.allow
-        ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })
-        : r.ask
-          ? t('你追问了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
-          : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
-      : req.kind === 'question'
-        ? req.questions && req.questions.length > 1 && r.answers?.length
-          ? t('你回答了：{answers}', {
-              answers: req.questions.map((q, i) => `${q.question} → ${r.answers?.[i] ?? ''}`).join('；'),
-            })
-          : !r.allow
-            ? t('你没有回答「{title}」', { title: req.title })
-            : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
-        : r.allow
-          ? r.always && req.rule
-            ? t('你允许了：{title}，这个对话里之后的{rule}都自动允许', { title: req.title, rule: ruleText(req.rule) })
-            : t('你允许了：{title}', { title: req.title })
-          : (deny.what ?? t('你拒绝了：{title}', { title: req.title }))
-  // 回答了问题：问题和答案在对话正文里显示，不再是一行灰色的说明
-  const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
-  // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
-  if (!task.requests.length) resumeRun(task)
+  // 对话上怎么记、等待怎么结算：和演示后端同一份（shared/requests/answer.ts）
+  applyAnswer(task, req, r, { newId, denied: deny.what })
   noteAnswer(task, req, r)
-  // 「一直允许这类」：记下规则，这个对话里之后的同类请求自动允许（server/exec/ask-request.ts）
-  if (r.allow && r.always && req.rule && !task.allowRules.includes(req.rule))
-    task.allowRules = [...task.allowRules, req.rule]
-  task.messages.push({
-    id: newId(),
-    role: 'system',
-    agentId: req.agentId,
-    step: req.step,
-    text: what,
-    tools: [],
-    at: new Date().toISOString(),
-    ...(answers ? { answers } : {}),
-  })
   fn(deny.reply)
   return true
 }
