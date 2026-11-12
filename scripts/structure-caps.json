@@ -40,7 +40,6 @@
     "web/src/components/library/LibraryDetail.tsx::LibraryDetail": 340,
     "web/src/components/library/SkillFiles.tsx::SkillFiles": 420,
     "web/src/components/projects/ProjectMcpSection.tsx::ProjectMcpSection": 370,
-    "web/src/components/projects/ProjectSettingsDialog.tsx::Body": 1190,
     "web/src/components/projects/ProjectSkillsSection.tsx::ProjectSkillsSection": 360,
     "web/src/components/schedule/ScheduleDetail.tsx::ScheduleDetail": 400,
     "web/src/components/schedule/ScheduleWeek.tsx::ScheduleWeek": 390,
@@ -71,7 +70,6 @@
     "web/src/pages/AgentsPage.tsx::AgentsPage": 430,
     "web/src/pages/ComfyPage.tsx::ComfyPage": 840,
     "web/src/pages/SchedulesPage.tsx::SchedulesPage": 400,
-    "web/src/pages/SettingsPage.tsx::SettingsBody": 1350,
     "web/src/pages/SummaryPage.tsx::SummaryPage": 380,
     "web/src/pages/TablesPage.tsx::Workbench": 510
   },

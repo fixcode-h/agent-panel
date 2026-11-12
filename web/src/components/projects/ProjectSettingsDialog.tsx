@@ -1,154 +1,44 @@
-import { CliSkills } from '@/components/settings/CliSkills'
-import { ProjectExperience } from './ProjectExperience'
-import { ProjectMcpSection } from './ProjectMcpSection'
-import { ProjectTablesSection } from './ProjectTablesSection'
-import { ProjectCliTrust } from './ProjectCliTrust'
-import { ProjectPackages } from './ProjectPackages'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import {
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  FileText,
-  FlaskConical,
-  GraduationCap,
-  Lightbulb,
-  Library,
-  Loader2,
-  Plug,
-  Plus,
-  Settings2,
-  Sheet,
-  Sparkles,
-  Trash2,
-  Users,
-  Workflow as WorkflowIcon,
-  X,
-  FolderCog,
-} from 'lucide-react'
-import type {
-  Agent,
-  ParamValue,
-  ParamValues,
-  Project,
-  ProjectInput,
-  TestStep,
-  Workflow,
-  WorkflowExpose,
-} from '@shared/schema'
+import { FolderCog } from 'lucide-react'
+import type { Project, ProjectInput } from '@shared/schema'
 import { DEFAULT_FILE_FORMAT } from '@shared/schema'
-import {
-  derivedParams,
-  agentParamGroups,
-  isDefaultValue,
-  type AgentParamGroup,
-  type DerivedParam,
-} from '@shared/agent-params'
-import { ENV_LABEL, newTestStepId, parseGlobs } from '@shared/test-steps'
-import { PluginTestSteps } from '@/plugins/PluginTestSteps'
+import { derivedParams } from '@shared/agent-params'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { IconButton } from '@/components/ui/icon-button'
 import { Modal, ModalHeader } from '@/components/ui/modal'
-import { EmptyPanel } from '@/components/ui/empty-panel'
-import { CategoryPicker } from '@/components/ui/category-picker'
-import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FormSection, Input, Select } from '@/components/ui/input'
-import { BudgetField } from './BudgetField'
-import { Switch } from '@/components/ui/switch'
-import { HelpTip } from '@/components/ui/help-tip'
+import { dialogScrollClass } from '@/components/ui/dialog'
 import type { Proposal } from '@shared/assist'
-import type { ProjectProposal } from '@shared/project-init'
-import { readProjectProposal } from '@shared/project-init'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
-import { DirPicker, useDirInfo } from './DirPicker'
-import { CherryPickTarget } from './CherryPickTarget'
+import { useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
-import { resolveParams } from '@shared/agent-role'
-import { CLIS } from '@shared/clis'
-import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
-import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
-import { exposesForVcs, paramsForVcs } from '@shared/doc-root'
-import { DocRootHint } from './DocRootHint'
-import { cliSettings, orderClis } from '@shared/settings'
-import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
-import { cliColor } from '@/lib/cli-style'
+import { GENERAL_NAME } from '@shared/builtin/workflows'
 import { cn } from '@/lib/utils'
-import { NavItem } from '@/components/ui/dialog-nav'
-import { TRASH_RETENTION_DAYS } from '@shared/task'
-import { DocPage } from './ProjectDocs'
-import { ProjectSkillsSection } from './ProjectSkillsSection'
-import { runAssistInProject } from '@/lib/assist-conv'
 import { ProjectInitPanel } from './ProjectInitPanel'
-import { LessonsEditor } from './Lessons'
-import { Segmented } from '@/components/ui/segmented'
-import { CORE_AGENTS, coreKey, coreUse, findCore, isHelperAgent } from '@shared/builtin/core'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { ParamControl, ParamRow, ParamsForm } from '@/components/agents/ParamFields'
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
-
-/** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
-const PROJECT_WF_CATEGORY = '项目'
-
-/**
- * 一次 AI 优化会话。参数在打开时快照下来：关掉项目设置后 Body 卸载了，
- * 对话还要接着跑，不能依赖表单里的草稿。
- */
-type AiSession = {
-  kind: 'params' | 'teststeps' | 'project'
-  workflowId?: string
-  agentId?: string
-  title: string
-  /** 打开就直接发给 CLI 的要求：点「AI 配置」不用再自己写一遍 */
-  start?: string
-  /** AI 初始化要的目录和扫描线索（Body 关掉后草稿就没了，先存下来） */
-  subject?: Record<string, string>
-  /** 在新建项目里开的会话，会话没结束项目就先保存了：结果要应用到这个项目，不能再按新建项目打开 */
-  projectId?: string
-}
-
-/** 把 AI 结果填进表单：Body 挂载时注册，设置关着时先排队，重新打开后再应用 */
-type ApplyAi = (p: Proposal) => void
-
-const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => ({
-  ...rest,
-  // 数据文件是用户可改的：保存的推荐读不出来时当作没有推荐
-  initResult: readProjectProposal(rest.initResult),
-})
-const folderName = (p: string) =>
-  p
-    .replace(/[\\/]+$/, '')
-    .split(/[\\/]/)
-    .pop() ?? ''
-const blank: ProjectInput = {
-  name: '',
-  description: '',
-  path: '',
-  categoryId: '',
-  workflowId: '',
-  workflowIds: [],
-  defaultAgentId: '',
-  agentSet: true,
-  workflowParams: {},
-  agentParams: {},
-  childIsolation: 'worktree',
-  isolateByDefault: false,
-  testSteps: [],
-  scaledVerify: true,
-  lessons: [],
-  wslDistro: '',
-  fileFormat: undefined,
-  searchExclude: [],
-  gitPolicy: 'ask',
-  initializedAt: '',
-  initResult: undefined,
-}
+import {
+  blank,
+  folderName,
+  toInput,
+  type AiSession,
+  type ApplyAi,
+  type SetDraft,
+  type Vcs,
+} from './settings/project-draft'
+import { useDirInit, useDirVcs, useDraftStash, useFreshLessons } from './settings/use-project-draft'
+import { useProjectDocs } from './settings/use-project-docs'
+import { useProjectInit } from './settings/use-project-init'
+import { useProjectSave } from './settings/use-project-save'
+import { useApplyAi } from './settings/use-apply-ai'
+import { ProjectSettingsNav } from './settings/ProjectSettingsNav'
+import { ProjectSettingsFooter } from './settings/ProjectSettingsFooter'
+import { GeneralPage } from './settings/GeneralPage'
+import { RolesPage } from './settings/RolesPage'
+import { WorkflowsPage } from './settings/WorkflowsPage'
+import { TestsPage } from './settings/TestsPage'
+import { ExperiencePage, LessonsPage, TablesPage } from './settings/RecordPages'
+import { DocsPane, McpPane, SkillsPane } from './settings/DocsPages'
 
 const projectDialogTitle = (project?: Project) =>
   project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')
@@ -298,8 +188,7 @@ function Body({
   stash: { current: ProjectInput | null }
   onClose: () => void
 }) {
-  const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
-  const { go, route } = useNav()
+  const { projectCategories, setProjects, workflows, agents, clis, settings } = useData()
   const [draft, setDraft] = useState<ProjectInput>(() =>
     project
       ? toInput(project)
@@ -307,68 +196,12 @@ function Body({
           // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
           { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' }),
   )
-  // 「禁止子对话执行」只对 Git 项目生效（ADR 0018）：路径变了重新判断，判断不出来按不是 Git 处理（置灰）。
-  // 输入路径时每敲一个字都会变，等 300ms 再问，避免连续请求
-  // cherry-pick 目标也按这个判断：Git 下拉选分支，P4 填目标路径
-  const [vcs, setVcs] = useState<'git' | 'p4' | 'svn' | 'none'>('none')
-  const gitRepo = vcs === 'git'
-  useEffect(() => {
-    const p = draft.path.trim()
-    if (!p) {
-      setVcs('none')
-      return
-    }
-    const timer = setTimeout(() => {
-      api
-        .dirVcs(p)
-        .then((r) => setVcs(r.vcs))
-        .catch(() => setVcs('none'))
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [draft.path])
+  // 「禁止子对话执行」、cherry-pick 目标和「文档根」都按目录的版本控制判断（见 useDirVcs）
+  const vcs = useDirVcs(draft.path)
   // 新建项目时 AI 会话还在跑就关掉了：草稿留给下次打开
-  const draftNow = useRef(draft)
-  draftNow.current = draft
-  const created = useRef(false)
-  const keep = useRef(false)
-  keep.current = !project && !!ai && !created.current
-  useEffect(
-    () => () => {
-      if (keep.current) stash.current = draftNow.current
-    },
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  )
-  // 页面上的项目列表是启动时读的：对话里的角色后来用 record_lesson 记的教训不在里面。
-  // 打开时重新读一次，把新记的教训补进草稿，教训页才看得到，保存时也不会把它们盖掉
-  useEffect(() => {
-    if (!project) return
-    let alive = true
-    api
-      .projects()
-      .then((list) => {
-        const fresh = list.find((p) => p.id === project.id)
-        if (!alive || !fresh) return
-        setProjects(list)
-        setDraft((d) => {
-          // 用 Set 查：条目多时两层 some 是平方级，上万条要卡近一秒
-          const have = new Set(d.lessons.map((x) => x.id))
-          return { ...d, lessons: [...d.lessons, ...fresh.lessons.filter((l) => !have.has(l.id))] }
-        })
-      })
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-    // 只在打开（换项目）时读一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id])
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [signals, setSignals] = useState<string[]>([])
-  // 这次打开弹窗里 AI 初始化的结果：推荐项在「AI 初始化」页逐项或整体应用
-  const [init, setInit] = useState<ProjectProposal | null>(null)
+  const { created, keep } = useDraftStash({ project, ai, stash, draft })
+  // 打开时把角色在对话里新记的教训补进草稿（见 useFreshLessons）
+  useFreshLessons(project, setProjects, setDraft)
   const set = <K extends keyof ProjectInput>(k: K, v: ProjectInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
   // 名称没填，或者名称就是原来的文件夹名时，换目录后名称跟着变成新的文件夹名；手动改过的名称不动
   const pickDir = (path: string) =>
@@ -378,21 +211,7 @@ function Body({
       return { ...d, path, name: follow && folderName(path) ? folderName(path) : d.name }
     })
   const dir = useDirInfo(draft.path)
-  // 目录里已有初始化写好的 AGENTS.md 和文档（比如上次初始化完没保存、删了项目再建）：直接算初始化过，不用再跑一遍。
-  // 只记是不是这样认出来的：目录再换成没初始化过的，要撤回
-  const [dirInit, setDirInit] = useState(false)
-  useEffect(() => {
-    if (dir === undefined) return
-    if (dir?.initialized && !draft.initializedAt) {
-      setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
-      setDirInit(true)
-    } else if (!dir?.initialized && dirInit) {
-      setDraft((d) => ({ ...d, initializedAt: '' }))
-      setDirInit(false)
-    }
-    // 只跟着目录检测结果走
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [dir])
+  const [dirInit, setDirInit] = useDirInit(dir, draft.initializedAt, setDraft)
   const category = projectCategories.find((c) => c.id === draft.categoryId)
   const inherited = workflows.find((w) => w.id === category?.workflowId)
   const own = workflows.find((w) => w.id === draft.workflowId)
@@ -403,521 +222,72 @@ function Body({
   // 没单独选工作流时跟随分类的默认工作流；分类也没有就用「通用项目」，保存时写进去（服务端要求有默认工作流）。
   // 初始化推荐的默认工作流和这个回退一致时「全部应用」没东西可点，不能因此一直存不了
   const valid = !!draft.name.trim() && !!active
-  // 每个工作流一份配置：默认工作流和每个可选工作流各自保存
-  const paramsOf = (id: string) => draft.workflowParams[id] ?? {}
-  const setParam = (id: string, key: string, value: ParamValue) =>
-    setDraft((d) => ({
-      ...d,
-      workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), [key]: value } },
-    }))
-  const optionalWorkflows = draft.workflowIds
-    .map((id) => workflows.find((w) => w.id === id))
-    .filter((w): w is (typeof workflows)[number] => !!w)
-  // 工作流 expose 里 target=agent 的 key 由 expose 表单管，这里不重复渲染（同一个参数只有一处配置源）
-  const paramsFor = (w: (typeof workflows)[number]) => {
-    const derived = derivedParams(w, agents)
-    const exposed = new Set(w.expose.filter((e) => e.target === 'agent').map((e) => e.targetId))
-    return { derived, exposed, groups: agentParamGroups(w, agents) }
-  }
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
-  const { settings, categories } = useData()
-  // 「子任务」不作为可选角色展示，也没有参数：跳去角色页的那个按钮只会跳开，不在这个列表里列；Chat 页的「助手」不是项目里的角色
-  const coreAgents = CORE_AGENTS.map((c) => findCore(agents, c.key)).filter(
-    (a): a is Agent => !!a && !isHelperAgent(a) && a.scope !== 'chat',
-  )
-  // 默认工作流只从「项目」分类里选：项目常驻流程按子对话的需要设计，别的流程放进可选工作流
-  const projectCat = categories.find((c) => c.scope === 'workflow' && c.name === PROJECT_WF_CATEGORY)
-  const inProjectCat = workflows.filter((w) => projectCat && w.categoryId === projectCat.id)
-  const defaultChoices = (inProjectCat.length ? inProjectCat : workflows).filter((w, i, list) => list.indexOf(w) === i)
-  if (own && !defaultChoices.includes(own)) defaultChoices.unshift(own)
-  const addable = workflows.filter((w) => w.id !== active?.id && !draft.workflowIds.includes(w.id))
-  const hasAgentParams = (w: (typeof workflows)[number]) => {
-    const { derived, groups } = paramsFor(w)
-    return groups.some((g) => derived.some((d) => d.agents.some((a) => a.id === g.agentId)))
-  }
-  const aiParams = (w: (typeof workflows)[number], agentId?: string, name?: string) =>
-    onAssist({
-      kind: 'params',
-      workflowId: w.id,
-      agentId,
-      title: name ? t('AI 配置「{name}」', { name }) : t('AI 配置「{name}」的参数', { name: w.name }),
-      start: t('读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填', {
-        name: name ?? w.name,
-      }),
-    })
-  // 一个工作流的配置：暴露项 + 它用到的角色的参数（按角色分组）
-  const workflowParamsBody = (w: (typeof workflows)[number]) => {
-    const { derived, exposed, groups } = paramsFor(w)
-    // 「文档根」只在 P4 项目里显示（见 shared/doc-root.ts 的 exposesForVcs）
-    const shown = exposesForVcs(w.expose, vcs)
-    if (!shown.length && !hasAgentParams(w)) return null
-    return (
-      <div className="flex flex-col gap-3">
-        {shown.map((e) => (
-          <ExposeField
-            key={e.key}
-            e={e}
-            value={paramsOf(w.id)[e.key] as ParamValue | undefined}
-            onChange={(v) => setParam(w.id, e.key, v)}
-          />
-        ))}
-        {groups.map((g) => (
-          <AgentParamsEditor
-            key={g.agentId}
-            group={g}
-            agents={derived}
-            hidden={exposed}
-            values={paramsOf(w.id)}
-            onChange={(k, v) => setParam(w.id, k, v)}
-            aiRunning={false}
-            onAi={() => aiParams(w, g.agentId, g.agentName)}
-          />
-        ))}
-      </div>
-    )
-  }
-  // 项目没单独设置时跟随全局的格式，下拉框里直接显示实际生效的那个
+  // 项目没单独设置时跟随全局的格式
   const globalFormat = settings?.fileFormat ?? DEFAULT_FILE_FORMAT
-  const format = draft.fileFormat ?? globalFormat
-  // AI 配置：一次只开一个，结果只填草稿；用户取消不会改数据
-  // （会话本身由外壳拿着，见 AiSession：关掉设置时这里会卸载，对话不跟着停）
-
-  // 「AI 初始化项目」：先快速扫一遍目录（几毫秒，拿技术栈、版本控制这类能直接读出的线索），
-  // 再打开 AI 对话，让本机 Agent 在项目目录里写 AGENTS.md 和文档框架、评估工作流和设置。
-  // 推荐项回到「AI 初始化」页应用；收下结果才算初始化过，之后才能确认保存
-  const [scan, setScan] = useState<Awaited<ReturnType<typeof api.analyzeProject>> | null>(null)
-  const startInit = async () => {
-    if (!draft.path.trim() || analyzing) return
-    setAnalyzing(true)
-    try {
-      const r = await api.analyzeProject(draft.path)
-      setScan(r)
-      setSignals(r.signals)
-      const start = t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置')
-      const subject = { path: draft.path.trim(), scan: scanText(r) }
-      // 已经建好的项目：在这个项目里开一个对话来做，过程和结果留在项目的对话列表里（AI 分析统一归属）
-      if (project?.id) {
-        runAssistInProject({
-          kind: 'project',
-          projectId: project.id,
-          title: t('AI 初始化项目：{name}', { name: project.name }),
-          start,
-          subject,
-          onProposal: (p) => deliver(project.id, p),
-        })
-        return
-      }
-      // 新建项目还没保存、没有项目可放对话：照旧在 AI 窗口里做。目录和扫描线索随会话一起存，关掉设置后草稿没了也能继续用
-      onAssist({ kind: 'project', title: t('AI 初始化项目'), start, subject })
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setAnalyzing(false)
-    }
-  }
-  // 对话里的 AI 按用户要求初始化项目（动作 project.init 打开时带 item=start）：打开就开始，不用再点按钮
-  const autoInit = useRef(initialSection === 'init' && item === 'start')
-  useEffect(() => {
-    if (!autoInit.current) return
-    autoInit.current = false
-    void startInit()
-    // 只在打开时看一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  // AI 没评估出默认工作流时按项目类型落到内置的「通用项目」/「UE 项目」
-  const fallbackWorkflow = (type: 'general' | 'ue') => {
-    const want = type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
-    return workflows.find((w) => w.origin === `builtin:project-${type}`) ?? workflows.find((w) => w.name === want)
-  }
-  // 刚初始化的结果和上次保存的推荐都按项目类型找内置工作流兜底
-  const initType = init?.type ?? draft.initResult?.type
-  const initFallbackId = initType ? (fallbackWorkflow(initType)?.id ?? '') : ''
-  const acceptInit = (p: ProjectProposal) => {
-    // 扫描给的工作流参数（结构技能、文档目录）没被 AI 覆盖时一起推荐
-    const params = scan && scan.workflow === p.type ? { ...scan.workflowParams, ...p.params } : p.params
-    const def = p.workflows.find((w) => w.verdict === 'default')?.id ?? fallbackWorkflow(p.type)?.id
-    const expose = workflows.find((w) => w.id === def)?.expose ?? []
-    const result: ProjectProposal = {
-      ...p,
-      params: Object.fromEntries(Object.entries(params).filter(([k]) => expose.some((e) => e.key === k))),
-    }
-    setInit(result)
-    // 推荐随项目保存：关掉设置再打开，卡片上还能直接应用（点「确认」才真正写进项目）
-    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString(), initResult: result }))
-    setDirInit(false)
-    setSection('init')
-    // AGENTS.md 刚被改过，「项目说明」页要读新的
-    if (project?.path)
-      void api
-        .projectDocs(project.id)
-        .then(setDocs)
-        .catch(() => {})
-    toast.success(t('初始化完成，按需应用推荐的设置后点「确认」保存'))
-  }
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
   // 还没初始化的旧项目打开时先到「AI 初始化」：不初始化就不能保存
   const [section, setSection] = useState(initialSection || (project && !project.initializedAt ? 'init' : 'general'))
-  const [lessonIds0] = useState(() => new Set(project?.lessons.map((l) => l.id)))
-  const [docs, setDocs] = useState<ProjectDocs | null>(null)
-  const [docError, setDocError] = useState('')
-  const [docDrafts, setDocDrafts] = useState<Partial<Record<DocFile, string>>>({})
-  // 说明文件按保存过的目录读；目录改了要先确认保存，免得读写到旧目录
-  const docsReady = !!project && !!project.path && draft.path.trim() === project.path
-  useEffect(() => {
-    if (!project || !project.path) return
-    api
-      .projectDocs(project.id)
-      .then(setDocs)
-      .catch((e) => setDocError((e as Error).message))
-  }, [project])
-  const docOf = (f: DocFile) => docs?.files.find((d) => d.path === f)
-  const changedDocs = (Object.entries(docDrafts) as [DocFile, string][]).filter(
-    ([f, c]) => c !== (docOf(f)?.content ?? '') && (docOf(f)?.exists || c.trim()),
-  )
-  const isChanged = (files: DocFile[]) => changedDocs.some(([f]) => files.includes(f))
-  const hasDoc = (files: DocFile[]) => files.some((f) => docOf(f)?.exists)
-  // 停用的 CLI 不在项目设置里出现
-  const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter(
-    (c) => c.docs.length && (!settings || cliSettings(settings, c.id).enabled),
-  )
-
-  const confirm = async () => {
-    if (!valid || saving || !draft.initializedAt) return
-    setSaving(true)
-    try {
-      // 初始化结果不在表单里编辑：本次刚初始化出来的用新的，否则用打开时读到的那份。
-      // 期间别处重新初始化或应用过推荐，由下面保存时的乐观锁拦下（409），不拿旧值静默覆盖
-      // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下：
-      // 这类写入会推进 updatedAt，第一次保存被 409 拦下并刷新列表；再点一次时 project 已是最新，fresh 就能把它们算出来
-      // 取舍：弹窗内刚初始化过（init 非空）又遇上期间别处也写过推荐时，以本次初始化为准（用户主动操作优先），不合并别处那份
-      const inDraft = new Set(draft.lessons.map((x) => x.id))
-      const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
-      const input = {
-        ...draft,
-        name: draft.name.trim(),
-        workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
-        lessons: [...draft.lessons, ...fresh],
-        // 服务端会在保存时严格校验推荐，坏值原样发回去会让整个设置保存被 400 拒掉（数据文件是用户可改的）
-        // 初始化结果和初始化时间不在表单里编辑：本次刚初始化出来的用新值；否则取刷新后的项目——
-        // 409 重试时 draft 还是打开时的快照，用它会把这期间别处写入的新推荐回滚
-        initResult: init ?? readProjectProposal(project?.initResult ?? draft.initResult),
-        initializedAt: init ? draft.initializedAt : (project?.initializedAt ?? draft.initializedAt),
-      }
-      if (project) {
-        // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
-        for (const [f, c] of changedDocs) await api.saveProjectDoc(project.id, f, c)
-        // 带着当前 project.updatedAt 保存：期间别处改过（应用了推荐、角色记了教训）就 409；刷新后重试用的就是最新版本
-        const saved = await api.updateProject(project.id, input, project.updatedAt)
-        setProjects((ps) => ps.map((p) => (p.id === saved.id ? saved : p)))
-        toast.success(t('项目设置已保存'))
-      } else {
-        const p = await api.createProject(input)
-        setProjects((ps) => [...ps, p])
-        created.current = true
-        keep.current = false
-        stash.current = null
-        onCreated(p.id)
-        go({ page: 'projects', id: p.id })
-      }
-      onClose()
-    } catch (e) {
-      const err = e as Error & { status?: number }
-      // 409：项目在别处被改过。刷新列表拿到最新 updatedAt，草稿里的编辑保留，再点一次「确认」就能存
-      if (err.status === 409) {
-        // 刷新失败时不能提示「已刷新」：重试仍会 409，让用户手动刷新页面
-        let refreshed = true
-        await api
-          .projects()
-          .then((list) => {
-            setProjects(list)
-            // 界面上的初始化时间和推荐也换成最新那份，让重试保存和界面显示用同一份数据
-            const cur = list.find((x) => x.id === project?.id)
-            if (cur)
-              setDraft((d) => ({
-                ...d,
-                initializedAt: cur.initializedAt || d.initializedAt,
-                initResult: readProjectProposal(cur.initResult) ?? d.initResult,
-              }))
-          })
-          .catch(() => {
-            refreshed = false
-          })
-        toast.error(
-          refreshed ? t('项目在别处被修改过，已刷新，请再点一次「确认」') : t('项目在别处被修改过，请刷新页面后再保存'),
-        )
-      } else toast.error(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const remove = async () => {
-    if (!project) return
-    try {
-      await api.deleteProject(project.id)
-      setProjects((ps) => ps.filter((p) => p.id !== project.id))
-      // 后端连同任务一起删了，侧栏的对话也要去掉
-      void reloadTasks()
-      toast.success(t('已删除「{name}」', { name: project.name }))
-      setDeleting(false)
-      onClose()
-      if (route.page === 'projects' && route.id === project.id) go({ page: 'home' })
-    } catch (e) {
-      toast.error((e as Error).message)
-      setDeleting(false)
-    }
-  }
-
-  /**
-   * 把 AI 的结果填进表单。会话在外壳手里：设置关着时点「填进表单」会先把设置重新打开，
-   * Body 挂载后把排队的那份结果应用掉。
-   */
-  const applyAi = (p: Proposal) => {
-    if (p.kind === 'params') {
-      const id = ai?.workflowId || p.workflowId || active?.id
-      const wf = workflows.find((w) => w.id === id)
-      const spec = wf ? derivedParams(wf, agents) : []
-      if (id)
-        setDraft((d) => {
-          const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
-          // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
-          for (const [k, v] of Object.entries(p.values)) {
-            const def = spec.find((x) => x.key === k)
-            if (def && isDefaultValue(def, v)) delete next[k]
-          }
-          return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
-        })
-      toast.success(t('已填进表单，确认保存后生效'))
-    } else if (p.kind === 'project') {
-      acceptInit(p)
-    } else if (p.kind === 'teststeps') {
-      set('testSteps', p.steps)
-      toast.success(t('已填进表单，确认保存后生效'))
-    }
-  }
-  // 交给外壳的永远是最新这一份（里面读的是当前草稿）；挂载时把关掉设置期间排队的应用掉
-  const applyLatest = useRef(applyAi)
-  applyLatest.current = applyAi
-  useEffect(() => {
-    const handler: ApplyAi = (p) => applyLatest.current(p)
-    applyRef.current = handler
-    const queuedNow = queued.current
-    queued.current = []
-    for (const one of queuedNow) handler(one)
-    return () => {
-      if (applyRef.current === handler) applyRef.current = null
-    }
-    // 注册一次转发就够：applyLatest 每次渲染都指向当前草稿，不用重挂
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const docs = useProjectDocs(project, draft.path)
+  const initFlow = useProjectInit({
+    project,
+    draft,
+    setDraft,
+    workflows,
+    initialSection,
+    item,
+    onAssist,
+    deliver,
+    setDirInit,
+    setSection,
+    setDocs: docs.setDocs,
+  })
+  const save = useProjectSave({
+    project,
+    draft,
+    setDraft,
+    valid,
+    init: initFlow.init,
+    inherited,
+    general,
+    changedDocs: docs.changedDocs,
+    created,
+    keep,
+    stash,
+    onCreated,
+    onClose,
+  })
+  useApplyAi({
+    ai,
+    activeId: active?.id,
+    workflows,
+    agents,
+    setDraft,
+    set,
+    acceptInit: initFlow.acceptInit,
+    applyRef,
+    queued,
+  })
 
   return (
     <>
       <ModalHeader icon={FolderCog} title={projectDialogTitle(project)} />
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav
-          aria-label={t('项目设置分类')}
-          className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[244px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
-        >
-          <NavItem on={section === 'general'} onClick={() => setSection('general')}>
-            <Settings2 className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('常规')}
-          </NavItem>
-          <NavItem on={section === 'init'} onClick={() => setSection('init')} dot={!draft.initializedAt}>
-            <Sparkles className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('AI 初始化')}
-          </NavItem>
-          <NavItem
-            on={section === 'roles'}
-            onClick={() => setSection('roles')}
-            dot={Object.values(draft.agentParams).some((v) => Object.keys(v).length > 0)}
-          >
-            <Users className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('必备角色')}
-          </NavItem>
-          <NavItem on={section === 'workflows'} onClick={() => setSection('workflows')}>
-            <WorkflowIcon className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('工作流')}
-          </NavItem>
-          <NavItem
-            on={section === 'tests'}
-            onClick={() => setSection('tests')}
-            hint={draft.testSteps.length ? t('{n} 步', { n: draft.testSteps.length }) : undefined}
-          >
-            <FlaskConical className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('测试步骤')}
-          </NavItem>
-          <NavItem
-            on={section === 'lessons'}
-            onClick={() => setSection('lessons')}
-            hint={draft.lessons.length ? t('{n} 条', { n: draft.lessons.length }) : undefined}
-          >
-            <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('项目教训')}
-          </NavItem>
-          {project?.path && (
-            <NavItem on={section === 'experience'} onClick={() => setSection('experience')}>
-              <Lightbulb className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-              {t('项目经验')}
-            </NavItem>
-          )}
-          <NavItem on={section === 'tables'} onClick={() => setSection('tables')} hint={draft.tables?.dirs[0]}>
-            <Sheet className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('表格')}
-          </NavItem>
-          <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
-            <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            Skill
-          </NavItem>
-          <NavItem on={section === 'mcp'} onClick={() => setSection('mcp')}>
-            <Plug className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('MCP')}
-          </NavItem>
-          <NavItem
-            on={section === 'doc'}
-            onClick={() => setSection('doc')}
-            dot={isChanged([SHARED_DOC, 'AGENT.md'])}
-            hint={hasDoc([SHARED_DOC]) ? SHARED_DOC : undefined}
-          >
-            <FileText className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-            {t('项目说明')}
-          </NavItem>
-          <span className="hidden px-2.5 pt-4 pb-1 text-caption text-subtle md:block">{t('各个 Agent 读的说明')}</span>
-          {cliPages.map((c) => (
-            <NavItem
-              key={c.id}
-              on={section === `cli:${c.id}`}
-              onClick={() => setSection(`cli:${c.id}`)}
-              dot={isChanged(cliDocs(c.id))}
-              hint={cliDocs(c.id).find((f) => docOf(f)?.exists)}
-            >
-              <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(c.id) }} />
-              {c.name}
-            </NavItem>
-          ))}
-        </nav>
+        <ProjectSettingsNav section={section} onSection={setSection} project={project} draft={draft} docs={docs} />
         {section === 'mcp' ? (
-          <div className={dialogScrollClass}>
-            {!project ? (
-              <p className="text-body leading-relaxed text-subtle">{t('先创建项目，再管这个项目的 MCP 配置。')}</p>
-            ) : !project.path || draft.path.trim() !== project.path ? (
-              <p className="text-body leading-relaxed text-subtle">
-                {t('本地目录改了，先点「确认」保存，再管新目录里的 MCP 配置。')}
-              </p>
-            ) : (
-              <ProjectMcpSection key={project.id} project={project} />
-            )}
-          </div>
+          <McpPane project={project} draftPath={draft.path} />
         ) : section === 'skills' ? (
-          <div className={dialogScrollClass}>
-            {!project ? (
-              <p className="text-body leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
-            ) : !project.path || draft.path.trim() !== project.path ? (
-              <p className="text-body leading-relaxed text-subtle">
-                {t('本地目录改了，先点「确认」保存，再管理新目录里的技能。')}
-              </p>
-            ) : (
-              <ProjectSkillsSection key={project.id} projectId={project.id} />
-            )}
-          </div>
+          <SkillsPane project={project} draftPath={draft.path} />
         ) : section === 'doc' || section.startsWith('cli:') ? (
-          <div className={dialogScrollClass}>
-            {!docsReady || !docs ? (
-              <p className="text-body leading-relaxed text-subtle">
-                {!project
-                  ? t('先创建项目，再编辑项目里的说明文件。')
-                  : !project.path || draft.path.trim() !== project.path
-                    ? t('本地目录改了，先点「确认」保存，再编辑新目录里的说明文件。')
-                    : docError || t('正在读取…')}
-              </p>
-            ) : section === 'doc' ? (
-              <DocPage
-                key="doc"
-                projectId={project!.id}
-                title={t('项目说明')}
-                desc={t(
-                  'AGENTS.md 放在项目根目录，Codex 和 Command Code 每次启动都会读它，写这个项目的约定、常用命令和注意事项。Claude Code 读的是 CLAUDE.md，可以在左边的 Claude Code 里编辑，或在 CLAUDE.md 里写一行 @AGENTS.md 引用它。',
-                )}
-                files={[SHARED_DOC]}
-                docs={docs.files}
-                drafts={docDrafts}
-                onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
-                note={
-                  docOf('AGENT.md')?.exists &&
-                  !docOf(SHARED_DOC)?.exists && (
-                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-warning/10 px-3.5 py-2.5 text-body">
-                      <span className="min-w-0 flex-1">
-                        {t('检测到 AGENT.md，但各个 Agent 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setDocDrafts((d) => ({ ...d, [SHARED_DOC]: docOf('AGENT.md')!.content }))}
-                      >
-                        {t('复制到 AGENTS.md')}
-                      </Button>
-                    </div>
-                  )
-                }
-              />
-            ) : (
-              (() => {
-                const id = section.slice(4)
-                const name = CLIS.find((c) => c.id === id)?.name ?? id
-                const files = cliDocs(id)
-                return (
-                  <DocPage
-                    key={section}
-                    projectId={project!.id}
-                    title={name}
-                    desc={CLIS.find((c) => c.id === id)?.docsNote ?? ''}
-                    files={files}
-                    docs={docs.files}
-                    drafts={docDrafts}
-                    onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
-                    extra={
-                      <>
-                        {CLIS.find((c) => c.id === id)?.trust && (
-                          <ProjectCliTrust
-                            cli={id}
-                            name={name}
-                            projectId={project?.id}
-                            value={draft.cliTrust?.[id]}
-                            onChange={(v) => {
-                              const { [id]: _, ...rest } = draft.cliTrust ?? {}
-                              set('cliTrust', v ? { ...rest, [id]: v } : rest)
-                            }}
-                          />
-                        )}
-                        {project && CLIS.find((c) => c.id === id)?.packages?.local && (
-                          <ProjectPackages
-                            def={CLIS.find((c) => c.id === id)!}
-                            projectId={project.id}
-                            trusted={draft.cliTrust?.[id] === 'approve'}
-                          />
-                        )}
-                        <section className="flex flex-col gap-2 pt-6">
-                          <h3 className="text-body font-medium">Skills</h3>
-                          <p className="text-footnote text-muted">
-                            {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
-                          </p>
-                          <CliSkills key={id} cli={id} projectId={project!.id} />
-                        </section>
-                      </>
-                    }
-                  />
-                )
-              })()
-            )}
-          </div>
+          <DocsPane section={section} project={project} draft={draft} set={set} docs={docs} />
         ) : (
           <form
             id="project-settings"
             onSubmit={(e) => {
               e.preventDefault()
-              void confirm()
+              void save.confirm()
             }}
             className={cn(dialogScrollClass, 'gap-7 md:flex-row')}
           >
@@ -925,451 +295,36 @@ function Body({
               <ProjectInitPanel
                 draft={draft}
                 setDraft={setDraft}
-                result={init}
+                result={initFlow.init}
                 workflows={workflows}
                 activeId={active?.id ?? ''}
-                fallbackId={initFallbackId}
+                fallbackId={initFlow.initFallbackId}
                 fromDir={dirInit}
                 globalFormat={globalFormat}
                 canStart={!!draft.path.trim()}
-                starting={analyzing || ai?.kind === 'project'}
-                signals={signals}
-                onStart={() => void startInit()}
+                starting={initFlow.analyzing || ai?.kind === 'project'}
+                signals={initFlow.signals}
+                onStart={() => void initFlow.startInit()}
               />
-            ) : section === 'roles' ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <PageIntro
-                  title={t('必备角色')}
-                  desc={t(
-                    '项目对话靠这几个角色运转：协调器分诊、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。',
-                  )}
-                />
-                {coreAgents.map((a) => (
-                  <Collapsible
-                    key={a.id}
-                    defaultOpen={coreAgents.indexOf(a) === 0}
-                    leading={<AgentAvatar icon={a.icon} cli={a.cli} size="sm" />}
-                    title={a.name}
-                    subtitle={coreUse(coreKey(a)!)}
-                    badge={
-                      Object.keys(draft.agentParams[a.id] ?? {}).length
-                        ? t('改了 {n} 项', { n: Object.keys(draft.agentParams[a.id] ?? {}).length })
-                        : undefined
-                    }
-                    actions={
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => go({ page: 'agents', id: a.id })}
-                        title={t('去角色页改所有项目的默认值和模型')}
-                      >
-                        {t('角色设置')}
-                      </Button>
-                    }
-                  >
-                    {paramsForVcs(a.params, vcs).length ? (
-                      <ParamsForm
-                        // 「文档根」下拉只在 P4 项目里显示（见 shared/doc-root.ts）
-                        params={paramsForVcs(a.params, vcs)}
-                        values={draft.agentParams[a.id] ?? {}}
-                        onChange={(v) =>
-                          setDraft((d) => {
-                            const next = { ...d.agentParams }
-                            if (Object.keys(v).length) next[a.id] = v
-                            else delete next[a.id]
-                            return { ...d, agentParams: next }
-                          })
-                        }
-                      />
-                    ) : (
-                      <p className="text-xs text-subtle">{t('这个角色没有可调的参数。')}</p>
-                    )}
-                    {coreKey(a) === 'docsync' && (
-                      <DocRootHint
-                        projectId={project?.id ?? ''}
-                        path={draft.path}
-                        vcs={vcs}
-                        agent={a}
-                        values={draft.agentParams[a.id] ?? {}}
-                      />
-                    )}
-                  </Collapsible>
-                ))}
-                {!coreAgents.length && (
-                  <p className="text-xs text-subtle">{t('必备角色还没装好，重启面板后会自动补上。')}</p>
-                )}
-              </div>
-            ) : section === 'workflows' ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <PageIntro
-                  title={t('工作流')}
-                  desc={t(
-                    '子对话要改代码时按工作流执行：默认用下面这一个，需求更适合某个可选工作流时，执行角色会改用它。每个工作流的配置分开保存，对新开的对话生效。',
-                  )}
-                />
-                <div className="flex flex-col gap-1.5">
-                  <span className="flex items-center gap-1 text-xs text-muted">
-                    {t('默认工作流')}
-                    <HelpTip>
-                      {t('只能从「{cat}」分类里选：这类工作流是为项目常驻流程设计的。', { cat: PROJECT_WF_CATEGORY })}
-                    </HelpTip>
-                  </span>
-                  <Select
-                    aria-label={t('默认工作流')}
-                    value={draft.workflowId}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        workflowId: e.target.value,
-                        workflowIds: d.workflowIds.filter((x) => x !== e.target.value),
-                      }))
-                    }
-                    options={[
-                      ...(!draft.workflowId
-                        ? [
-                            {
-                              value: '',
-                              label: inherited
-                                ? t('跟随分类：{name}', { name: inherited.name })
-                                : general
-                                  ? t('未选择，将使用「{name}」', { name: general.name })
-                                  : t('请选择工作流'),
-                            },
-                          ]
-                        : []),
-                      ...defaultChoices.map((w) => ({ value: w.id, label: w.name })),
-                    ]}
-                  />
-                </div>
-                {active && (
-                  <WorkflowCard
-                    key={active.id}
-                    w={active}
-                    isDefault
-                    defaultOpen
-                    body={workflowParamsBody(active)}
-                    onAi={hasAgentParams(active) ? () => aiParams(active) : undefined}
-                  />
-                )}
-                <div className="flex items-center gap-2 pt-2">
-                  <span className="text-xs text-muted">{t('可选工作流')}</span>
-                  <span className="text-xs text-subtle">{t('{n} 个', { n: optionalWorkflows.length })}</span>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button size="sm" variant="secondary" className="ml-auto" disabled={!addable.length}>
-                        <Plus className="h-3.5 w-3.5" />
-                        {t('添加可选工作流')}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-[320px]">
-                      <div className="max-h-72 overflow-y-auto">
-                        {addable.map((w) => (
-                          <PopoverClose
-                            key={w.id}
-                            className={menuItem}
-                            onClick={() => set('workflowIds', [...draft.workflowIds, w.id])}
-                          >
-                            <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
-                            <span className="flex min-w-0 flex-1 flex-col">
-                              <span className="truncate">{w.name}</span>
-                              {w.description && (
-                                <span className="truncate text-caption text-subtle">{w.description}</span>
-                              )}
-                            </span>
-                          </PopoverClose>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                {optionalWorkflows.length === 0 && (
-                  <EmptyPanel size="sm" className="text-xs">
-                    {t('还没有可选工作流。像 Bug 修复、发布这类流程可以加进来，需求合适时执行角色会自动选它。')}
-                  </EmptyPanel>
-                )}
-                {optionalWorkflows.map((w) => (
-                  <WorkflowCard
-                    key={w.id}
-                    w={w}
-                    body={workflowParamsBody(w)}
-                    onAi={hasAgentParams(w) ? () => aiParams(w) : undefined}
-                    onRemove={() =>
-                      set(
-                        'workflowIds',
-                        draft.workflowIds.filter((x) => x !== w.id),
-                      )
-                    }
-                  />
-                ))}
-              </div>
-            ) : section === 'tables' ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <PageIntro
-                  title={t('表格')}
-                  desc={t(
-                    '游戏配置表这类表格的目录。设好后侧栏多一个「表格」入口：按目录浏览、搜索、筛选、在线改单元格、看版本差异、跨项目对比。保存改动只改单元格的值，文件仍是原来的 Excel / WPS 格式。',
-                  )}
-                />
-                <ProjectTablesSection
-                  value={draft.tables}
-                  onChange={(v) => set('tables', v)}
-                  project={project}
-                  base={dir?.exists && dir.isDir ? dir.path : draft.path.trim()}
-                  path={draft.path}
-                />
-              </div>
-            ) : section === 'lessons' ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <PageIntro
-                  title={t('项目教训')}
-                  desc={t(
-                    '角色在这个项目里返工过、走过弯路的地方，写成下次能直接照做的规则。被纠正、或自己发现办法不对换了做法时，角色会自己记一条，标「角色记录」；你的新要求和某条冲突时，角色会找两全的做法改写它，找不到就先问你。新会话开头只带「所有改动」的全文和其余条目的标题，改到哪些文件再取对应的全文。优先级：你当次的要求 > 项目教训 > 全局教训。',
-                  )}
-                />
-                <LessonsEditor
-                  lessons={draft.lessons}
-                  onChange={(v) => set('lessons', v)}
-                  project={project}
-                  initialOpen={item}
-                />
-              </div>
-            ) : section === 'experience' && project ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <PageIntro
-                  title={t('项目经验')}
-                  desc={t(
-                    '做某类事最快的路：在哪个目录找、你的说法在代码里叫什么、用什么命令、怎么验证。整个对话完成后面板自动学，学到就加；对话里发「/learn 要学的」也能让角色专门学一条。Agent 需要时按关键词查，不会整份塞进提示词。这里的改动直接保存。',
-                  )}
-                />
-                <ProjectExperience projectId={project.id} initialOpen={item} />
-              </div>
-            ) : section === 'tests' ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <PageIntro
-                  title={t('测试步骤')}
-                  desc={t(
-                    '测试验收角色按这里的顺序执行。改了这里，进行中的对话下一次执行就按新步骤走；写清楚命令、在哪执行和什么时候跑，没有配置时它会自己找命令并提醒你补上。',
-                  )}
-                />
-                <Checkbox
-                  checked={draft.scaledVerify}
-                  onChange={(v) => set('scaledVerify', v)}
-                  label={t('按改动大小决定验证范围')}
-                  tip={t(
-                    '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都按「适用改动」跑完整的步骤（不适用的一样跳过）。工作流里的测试验收不受影响。',
-                  )}
-                />
-                <Checkbox
-                  checked={!!draft.requireVerify}
-                  onChange={(v) => set('requireVerify', v)}
-                  label={t('改了代码要跑过测试步骤才能结束')}
-                  tip={t(
-                    '对话用 end_turn 说做完了时，面板看这一轮改了什么、跑了什么：改了代码，适用这次改动的测试步骤却一条都没跑过、或者最后一次没通过（没配步骤时看测试、类型检查或编译），就不让它结束，并告诉它去跑或修。用命令、插件工具改的文件也算；插件自己验证通过的资产不再要求跑这里的步骤。关着时不拦，只在「完成依据」卡片上标出来。',
-                  )}
-                />
-                <TestStepsEditor
-                  steps={draft.testSteps}
-                  distro={draft.wslDistro}
-                  gitRepo={gitRepo}
-                  onChange={(v) => set('testSteps', v)}
-                  onDistro={(v) => set('wslDistro', v)}
-                  aiRunning={false}
-                  onAi={() =>
-                    onAssist({
-                      kind: 'teststeps',
-                      title: t('AI 生成测试步骤'),
-                      start: t('按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤'),
-                    })
-                  }
-                />
-                <PluginTestSteps off={draft.pluginStepsOff ?? []} onChange={(v) => set('pluginStepsOff', v)} />
-              </div>
             ) : (
-              <div className="flex min-w-0 flex-1 flex-col gap-7">
-                <FormSection title={t('基本信息')}>
-                  <div className="flex flex-wrap gap-4">
-                    <Field
-                      label={t('名称')}
-                      className="flex-[1_1_200px]"
-                      error={draft.name.trim() ? undefined : t('名称不能为空')}
-                    >
-                      <Input
-                        autoFocus={!project}
-                        value={draft.name}
-                        onChange={(e) => set('name', e.target.value)}
-                        placeholder={t('例如：官网前端')}
-                      />
-                    </Field>
-                    <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                      <span className="text-xs text-muted">{t('分类')}</span>
-                      <CategoryPicker
-                        value={draft.categoryId}
-                        onChange={(id) => set('categoryId', id)}
-                        options={projectCategories}
-                        onCreate={async (name) => {
-                          const c = await api.createProjectCategory({ name, description: '', workflowId: '' })
-                          setProjectCategories((cs) => [...cs, c])
-                          return c
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <Field label={t('简介')}>
-                    <Input
-                      value={draft.description}
-                      onChange={(e) => set('description', e.target.value)}
-                      placeholder={t('这个项目是做什么的')}
-                    />
-                  </Field>
-                </FormSection>
-
-                <FormSection title={t('本地目录')}>
-                  <DirPicker value={draft.path} onChange={pickDir} info={dir} />
-                  {!draft.initializedAt && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-accent-soft px-3.5 py-2.5">
-                      <Sparkles className="h-4 w-4 shrink-0 text-accent-text" />
-                      <span className="min-w-0 flex-1 text-body">
-                        {draft.path.trim()
-                          ? t('选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。')
-                          : t('选好本地目录后，先 AI 初始化项目才能保存。')}
-                      </span>
-                      <Button size="sm" onClick={() => void startInit()} disabled={!draft.path.trim() || analyzing}>
-                        {analyzing ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
-                        )}
-                        {t('AI 初始化项目')}
-                      </Button>
-                    </div>
-                  )}
-                </FormSection>
-
-                <FormSection title={t('Cherry-pick 目标')}>
-                  <CherryPickTarget
-                    vcs={vcs}
-                    path={draft.path.trim()}
-                    value={draft.cherryPick ?? ''}
-                    onChange={(v) => set('cherryPick', v)}
-                  />
-                </FormSection>
-
-                <FormSection title={t('文件格式')}>
-                  <div className="flex flex-wrap gap-3">
-                    <Field
-                      label={t('编码')}
-                      className="flex-[1_1_200px]"
-                      tip={t(
-                        '这个项目里新建和改写的文本文件用它，角色写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
-                      )}
-                    >
-                      <Select
-                        value={format.encoding}
-                        onChange={(e) =>
-                          set('fileFormat', { ...format, encoding: e.target.value as typeof format.encoding })
-                        }
-                        options={[
-                          { value: 'utf8', label: t('UTF-8（不带 BOM）') },
-                          { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
-                        ]}
-                      />
-                    </Field>
-                    <Field label={t('换行符')} className="flex-[1_1_200px]">
-                      <Select
-                        value={format.eol}
-                        onChange={(e) => set('fileFormat', { ...format, eol: e.target.value as typeof format.eol })}
-                        options={[
-                          { value: 'lf', label: 'LF（Linux / macOS）' },
-                          { value: 'crlf', label: 'CRLF（Windows）' },
-                        ]}
-                      />
-                    </Field>
-                  </div>
-                  <span className="text-xs text-subtle">
-                    {!draft.fileFormat && (
-                      <>
-                        <Button variant="link" onClick={() => set('fileFormat', { ...globalFormat })}>
-                          {t('和全局设置不同时，在这里单独指定')}
-                        </Button>
-                      </>
-                    )}
-                    {draft.fileFormat && (
-                      <>
-                        <Button variant="link" onClick={() => set('fileFormat', undefined)}>
-                          {t('跟随全局设置')}
-                        </Button>
-                      </>
-                    )}
-                  </span>
-                </FormSection>
-
-                <FormSection title={t('搜索')}>
-                  <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
-                </FormSection>
-
-                {gitRepo && (
-                  <FormSection title={t('独立分支')}>
-                    <Checkbox
-                      checked={draft.isolateByDefault}
-                      onChange={(v) => set('isolateByDefault', v)}
-                      label={t('新建对话默认开独立分支')}
-                      tip={t(
-                        '打开后新建对话时输入框里的「独立分支」默认勾上：对话在自己的 git 分支和目录里改，几个对话同时做不会互相覆盖，做完再决定合并还是丢弃。每次新建仍可以在输入框里改。',
-                      )}
-                    />
-                  </FormSection>
-                )}
-
-                <FormSection title={t('子对话')}>
-                  <Field
-                    label={t('子对话隔离')}
-                    tip={
-                      draft.childIsolation === 'worktree'
-                        ? t(
-                            '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话标记完成后删除分支。不是 Git 仓库（P4 等）时自动用共用目录。',
-                          )
-                        : t(
-                            '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',
-                          )
-                    }
-                  >
-                    <div>
-                      <Segmented
-                        label={t('子对话隔离')}
-                        value={draft.childIsolation}
-                        onChange={(v) => set('childIsolation', v as ProjectInput['childIsolation'])}
-                        options={[
-                          { id: 'worktree', label: t('独立 worktree（推荐）') },
-                          { id: 'claim', label: t('共用目录 + 认领文件') },
-                        ]}
-                      />
-                    </div>
-                  </Field>
-                </FormSection>
-
-                <FormSection title={t('用量上限')}>
-                  <BudgetField value={draft.budget} onChange={(v) => set('budget', v)} />
-                </FormSection>
-
-                <FormSection title={t('版本与推送')}>
-                  <Field
-                    label={t('推送到远端')}
-                    tip={t(
-                      '只管 Git 推送与合并主干，本地提交不受影响。允许直接推送：对话做完、本地提交后推到跟踪的远端分支，再用 gh 建 PR 并合并到主干；问一次：那时先问你；不推送：面板直接拦下 git push。P4 submit 仍要你在对话里要求。',
-                    )}
-                  >
-                    <Select
-                      value={draft.gitPolicy}
-                      onChange={(v) => set('gitPolicy', v.target.value as ProjectInput['gitPolicy'])}
-                      options={[
-                        { value: 'ask', label: t('第一次需要推送时问一次（推荐）') },
-                        { value: 'allow', label: t('允许直接推送') },
-                        { value: 'deny', label: t('不推送，只做本地提交') },
-                      ]}
-                    />
-                  </Field>
-                </FormSection>
-              </div>
+              <FormPage
+                section={section}
+                project={project}
+                item={item}
+                draft={draft}
+                setDraft={setDraft}
+                set={set}
+                vcs={vcs}
+                wf={{ own, inherited, general, active }}
+                onAssist={onAssist}
+                general={{
+                  pickDir,
+                  dir,
+                  globalFormat,
+                  analyzing: initFlow.analyzing,
+                  onStartInit: () => void initFlow.startInit(),
+                }}
+              />
             )}
             {section === 'general' && (
               <aside className="flex shrink-0 flex-col gap-4 md:w-[260px]">
@@ -1380,665 +335,52 @@ function Body({
         )}
       </div>
 
-      <footer className="flex shrink-0 items-center gap-2 border-t bg-panel/60 px-6 py-3.5">
-        {project && (
-          <Button
-            variant="ghost"
-            className="text-danger hover:bg-danger/10 hover:text-danger"
-            onClick={() => setDeleting(true)}
-          >
-            <Trash2 className="h-4 w-4" />
-            {t('删除项目')}
-          </Button>
-        )}
-        <span className="ml-auto" />
-        <Button variant="secondary" onClick={onClose}>
-          {t('取消')}
-        </Button>
-        {changedDocs.length > 0 && (
-          <span className="text-xs text-subtle">{t('{n} 个说明文件有改动', { n: changedDocs.length })}</span>
-        )}
-        {!draft.initializedAt && (
-          <Button variant="link" tone="warning" className="text-xs" onClick={() => setSection('init')}>
-            {t('先完成「AI 初始化项目」才能保存')}
-          </Button>
-        )}
-        {!!draft.initializedAt && !active && (
-          <Button variant="link" tone="warning" className="text-xs" onClick={() => setSection('workflows')}>
-            {t('请为项目选择子对话默认工作流')}
-          </Button>
-        )}
-        <Button onClick={() => void confirm()} disabled={!valid || saving || !draft.initializedAt}>
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {project ? t('确认') : t('创建')}
-        </Button>
-      </footer>
-
-      {project && (
-        <ConfirmDialog
-          open={deleting}
-          onOpenChange={setDeleting}
-          title={t('删除「{name}」？', { name: project.name })}
-          description={t(
-            '项目配置和它的所有对话一起放进回收站，{days} 天内可以在「设置 → 数据」里恢复；不会动本地目录里的文件。',
-            { days: TRASH_RETENTION_DAYS },
-          )}
-          onConfirm={remove}
-        />
-      )}
+      <ProjectSettingsFooter
+        project={project}
+        save={save}
+        valid={valid}
+        initialized={!!draft.initializedAt}
+        hasWorkflow={!!active}
+        changedDocs={docs.changedDocs.length}
+        onSection={setSection}
+        onClose={onClose}
+      />
     </>
   )
 }
 
-/** 扫描结果写成交给 AI 的线索 */
-function scanText(r: Awaited<ReturnType<typeof api.analyzeProject>>) {
-  return [
-    `- 名称：${r.name}`,
-    r.description ? `- 简介：${r.description}` : '',
-    `- 类型：${r.workflow}`,
-    ...r.signals.map((s) => `- ${s}`),
-    r.testSteps.length ? `- 扫出的测试步骤：${r.testSteps.map((s) => `${s.name}（${s.command}）`).join('；')}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
-/** 每个设置页顶上的标题和一句说明 */
-function PageIntro({ title, desc }: { title: string; desc: string }) {
-  return (
-    <div className="flex flex-col gap-1 pb-1">
-      <h3 className="text-heading font-semibold">{title}</h3>
-      <p className="text-footnote leading-relaxed text-subtle">{desc}</p>
-    </div>
-  )
-}
-
-/** 可以折叠的卡片：标题行常驻（图标、名称、说明、角标、操作），内容点开才显示 */
-function Collapsible({
-  leading,
-  title,
-  subtitle,
-  badge,
-  actions,
-  defaultOpen = false,
-  children,
+/** 表单里的各页（「AI 初始化」除外）：每页只拿自己那几项草稿和要用的东西 */
+function FormPage({
+  section,
+  project,
+  item,
+  draft,
+  setDraft,
+  set,
+  vcs,
+  wf,
+  onAssist,
+  general,
 }: {
-  leading?: React.ReactNode
-  title: string
-  subtitle?: string
-  badge?: string
-  actions?: React.ReactNode
-  defaultOpen?: boolean
-  children?: React.ReactNode
+  section: string
+  project?: Project
+  item?: string
+  draft: ProjectInput
+  setDraft: SetDraft
+  set: <K extends keyof ProjectInput>(k: K, v: ProjectInput[K]) => void
+  vcs: Vcs
+  /** 默认工作流的几种来源（见 Body） */
+  wf: Pick<Parameters<typeof WorkflowsPage>[0], 'own' | 'inherited' | 'general' | 'active'>
+  onAssist: (s: AiSession) => void
+  /** 只有「常规」页用的 */
+  general: Pick<Parameters<typeof GeneralPage>[0], 'pickDir' | 'dir' | 'globalFormat' | 'analyzing' | 'onStartInit'>
 }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <Card as="section">
-      <div className="flex items-center gap-3 px-3.5 py-2.5">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-        >
-          <ChevronRight
-            className={cn('h-4 w-4 shrink-0 text-subtle transition-transform', open && 'rotate-90')}
-            strokeWidth={2.3}
-          />
-          {leading}
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-body font-medium">{title}</span>
-            {subtitle && <span className="truncate text-caption text-subtle">{subtitle}</span>}
-          </span>
-          {badge && (
-            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-caption text-accent-text">
-              {badge}
-            </span>
-          )}
-        </button>
-        {actions}
-      </div>
-      {open && children && <div className="border-t px-3.5 py-3.5">{children}</div>}
-    </Card>
-  )
-}
-
-/** 一个工作流的卡片：默认的标「默认」，可选的能移除；有参数时点开配置 */
-function WorkflowCard({
-  w,
-  isDefault,
-  defaultOpen,
-  body,
-  onAi,
-  onRemove,
-}: {
-  w: Workflow
-  isDefault?: boolean
-  defaultOpen?: boolean
-  body: React.ReactNode
-  onAi?: () => void
-  onRemove?: () => void
-}) {
-  return (
-    <Collapsible
-      defaultOpen={defaultOpen}
-      leading={<WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />}
-      title={w.name}
-      subtitle={w.description || undefined}
-      badge={isDefault ? t('默认') : undefined}
-      actions={
-        <>
-          {onAi && (
-            <Button size="sm" variant="ghost" onClick={onAi}>
-              <Sparkles className="h-3.5 w-3.5" />
-              {t('AI 配置')}
-            </Button>
-          )}
-          {onRemove && <IconButton icon={X} size="sm" label={t('移除')} onClick={onRemove} />}
-        </>
-      }
-    >
-      {body ?? <p className="text-xs text-subtle">{t('这个工作流没有需要配置的参数。')}</p>}
-    </Collapsible>
-  )
-}
-
-/**
- * 测试步骤编辑器：增删、排序、启停，每条写明名称、命令、环境和工作目录。
- * 步骤属于项目，改了保存就对进行中的对话生效（执行时现读项目设置），所以这里改完要点「确认」。
- */
-function TestStepsEditor({
-  steps,
-  distro,
-  gitRepo,
-  onChange,
-  onDistro,
-  onAi,
-  aiRunning,
-}: {
-  steps: TestStep[]
-  distro: string
-  /** 项目是 Git 仓库：「禁止子对话执行」才生效（ADR 0018），不是时置灰并说明原因 */
-  gitRepo: boolean
-  onChange: (v: TestStep[]) => void
-  onDistro: (v: string) => void
-  onAi: () => void
-  aiRunning: boolean
-}) {
-  const patch = (i: number, p: Partial<TestStep>) => onChange(steps.map((s, j) => (j === i ? { ...s, ...p } : s)))
-  // 「适用改动」在输入过程中保存用户敲的原文（逗号、空格原样回显），失焦后才按 parseGlobs 归一。
-  // 每次按键就 parse 再 join 会把刚敲下的逗号吞掉，手敲不进第二条 glob，续敲会拼成匹配不上的串。
-  // 草稿按步骤 id 记：上下移动不会串到别的步骤；内部生成的步骤 id 可能重复（两个都叫 node-typecheck），
-  // 那时草稿会短暂盖住 AI 回填的新值，下一次失焦就对上了
-  const [appliesDraft, setAppliesDraft] = useState<Record<string, string>>({})
-  const dropDraft = (id: string) =>
-    setAppliesDraft((d) => {
-      const next = { ...d }
-      delete next[id]
-      return next
-    })
-  const move = (i: number, d: number) => {
-    const j = i + d
-    if (j < 0 || j >= steps.length) return
-    const next = [...steps]
-    ;[next[i], next[j]] = [next[j], next[i]]
-    onChange(next)
-  }
-  const hasWsl = steps.some((s) => s.env === 'wsl')
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 text-xs leading-relaxed text-subtle">
-          {t(
-            '测试角色按这些步骤执行构建、测试和检查。改了这里，进行中的对话下一轮、下一次子对话合并就按新步骤执行（命令、开关都是现读的），不用等新建对话；没配置时角色会自己找命令并建议你补上。',
-          )}
-          {t(
-            '每条可以写「适用改动」（glob）：只改文档、资源这类没碰到的步骤会被跳过，并在验收结论里写清原因——同时会算上从远端拉取、合并进来的改动。',
-          )}
-          {t(
-            '每条步骤选一个范围：「总是跑」每次改动都跑（类型检查、lint 这类几十秒的）；「命中适用改动才跑」只在改动命中了下面的 glob 时跑，子对话只跑命中的单测文件 / 界面分片；「全量，合并后由父对话跑」子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话，适合全量单测、全量界面检查、端到端测试。最后的范围只对 Git 项目的独立分支子对话生效，其他情况步骤照常由执行者自己跑。',
-          )}
-        </span>
-        <Button size="sm" variant="secondary" onClick={onAi} disabled={aiRunning}>
-          {aiRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {t('AI 生成步骤')}
-        </Button>
-      </div>
-      {steps.length === 0 && (
-        <EmptyPanel size="sm" className="text-xs">
-          {t('还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。')}
-        </EmptyPanel>
-      )}
-      <ul className="flex flex-col gap-2">
-        {steps.map((s, i) => (
-          <li key={s.id} className={cn('flex flex-col gap-2 rounded-xl bg-sel/40 p-3', !s.enabled && 'opacity-60')}>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-subtle">{i + 1}</span>
-              <Input
-                className="h-8 flex-[1_1_140px]"
-                value={s.name}
-                aria-label={t('步骤名')}
-                placeholder={t('步骤名，例如「单元测试」')}
-                onChange={(e) => patch(i, { name: e.target.value })}
-              />
-              <Select
-                className="h-8 w-auto min-w-[6.5rem]"
-                aria-label={t('环境')}
-                value={s.env}
-                onChange={(e) => patch(i, { env: e.target.value as TestStep['env'] })}
-                options={(Object.keys(ENV_LABEL) as TestStep['env'][]).map((k) => ({ value: k, label: ENV_LABEL[k] }))}
-              />
-              <IconButton icon={ChevronUp} size="sm" label={t('上移')} onClick={() => move(i, -1)} />
-              <IconButton icon={ChevronDown} size="sm" label={t('下移')} onClick={() => move(i, 1)} />
-              <IconButton
-                icon={Trash2}
-                size="sm"
-                label={t('删除这一步')}
-                onClick={() => onChange(steps.filter((_, j) => j !== i))}
-              />
-            </div>
-            <Input
-              className="h-8 font-mono text-xs"
-              value={s.command}
-              aria-label={t('命令')}
-              placeholder={t('要执行的命令')}
-              onChange={(e) => patch(i, { command: e.target.value })}
-            />
-            <Input
-              className="h-8 font-mono text-xs"
-              value={appliesDraft[s.id] ?? (s.appliesTo ?? []).join(', ')}
-              aria-label={t('适用改动')}
-              placeholder={t('适用改动（相对项目根的 glob，逗号分隔）：例如 **/*.cpp、**/Build.cs；留空表示总是执行')}
-              onChange={(e) => {
-                // 原文留给输入框，步骤里存解析后的 glob：保存和提示词都读后者
-                const text = e.target.value
-                setAppliesDraft((d) => ({ ...d, [s.id]: text }))
-                patch(i, { appliesTo: parseGlobs(text) })
-              }}
-              onBlur={() => dropDraft(s.id)}
-            />
-            {s.scope === 'always' && (
-              <span className="text-xs text-subtle">
-                {t('范围是「总是跑」时不用填这里：这条每次都跑，不按 glob 筛')}
-              </span>
-            )}
-            {s.scope === 'parent' && (
-              <span className="text-xs text-subtle">
-                {t('范围是「全量，合并后由父对话跑」时不用填这里：合并后由父对话跑全量，不按 glob 筛')}
-              </span>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                className="h-8 flex-[1_1_120px] font-mono text-xs"
-                value={s.cwd}
-                aria-label={t('工作目录')}
-                placeholder={t('工作目录（相对项目根，可空）')}
-                onChange={(e) => patch(i, { cwd: e.target.value })}
-              />
-              <Input
-                className="h-8 flex-[1_1_140px] text-xs"
-                value={s.when}
-                aria-label={t('补充说明')}
-                placeholder={t('补充说明，写给人看（判定以适用改动为准）')}
-                onChange={(e) => patch(i, { when: e.target.value })}
-              />
-              <Input
-                className="h-8 w-[7rem] text-xs"
-                type="number"
-                min={0}
-                value={s.timeoutSec || ''}
-                aria-label={t('超时秒数')}
-                placeholder={t('超时（秒）')}
-                onChange={(e) => patch(i, { timeoutSec: Math.max(0, Number(e.target.value) || 0) })}
-              />
-              <Checkbox
-                checked={s.enabled}
-                onChange={(v) => patch(i, { enabled: v })}
-                label={t('启用')}
-                className="items-center"
-              />
-              <span
-                className="flex"
-                title={t('角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint')}
-              >
-                <Checkbox
-                  checked={s.quick}
-                  onChange={(v) => patch(i, { quick: v })}
-                  label={t('小改动也跑')}
-                  className="items-center"
-                />
-              </span>
-              <label
-                className="flex items-center gap-1.5 text-xs text-muted"
-                title={t(
-                  '子对话只跑「总是跑」和命中了「适用改动」的步骤；选「全量，合并后由父对话跑」的步骤子对话不跑，合并后由父对话在全量里跑。',
-                )}
-              >
-                {t('范围')}
-                <Select
-                  className="h-8 w-[12.5rem] text-xs"
-                  aria-label={t('范围')}
-                  value={s.scope}
-                  onChange={(e) => patch(i, { scope: e.target.value as TestStep['scope'] })}
-                  options={[
-                    { value: 'always', label: t('总是跑') },
-                    { value: 'changed', label: t('命中适用改动才跑') },
-                    {
-                      value: 'parent',
-                      label: gitRepo ? t('全量，合并后由父对话跑') : t('全量（非 Git 项目自己跑）'),
-                    },
-                  ]}
-                />
-              </label>
-            </div>
-            {s.note && <span className="text-xs text-subtle">{s.note}</span>}
-          </li>
-        ))}
-      </ul>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() =>
-            onChange([
-              ...steps,
-              {
-                id: newTestStepId(steps),
-                name: '',
-                command: '',
-                env: 'auto',
-                cwd: '',
-                when: '',
-                appliesTo: [],
-                timeoutSec: 0,
-                note: '',
-                enabled: true,
-                merge: false,
-                scope: 'always' as const,
-                quick: false,
-              },
-            ])
-          }
-        >
-          {t('加一条步骤')}
-        </Button>
-        {hasWsl && (
-          <label className="flex items-center gap-2 text-xs text-subtle">
-            {t('WSL 发行版')}
-            <Input
-              className="h-8 w-[10rem] font-mono text-xs"
-              value={distro}
-              placeholder="Ubuntu-24.04"
-              onChange={(e) => onDistro(e.target.value)}
-            />
-          </label>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** 按 Agent 分组的参数表单：值来自 AgentParam.default，留空即用默认；同一 key 只出现一次，注明影响哪些 Agent */
-function AgentParamsEditor({
-  group,
-  agents,
-  values,
-  onChange,
-  onAi,
-  aiRunning,
-  hidden,
-}: {
-  group: AgentParamGroup
-  /** 同一个 key 在其他 Agent 里也有的情况，派生结果里已经合并，这里只用来显示影响面 */
-  agents: DerivedParam[]
-  values: Record<string, ParamValue | undefined>
-  onChange: (key: string, v: string | boolean) => void
-  onAi: () => void
-  aiRunning: boolean
-  /** 工作流 expose 已经管着的参数 key：同 key 只渲染一次，由 expose 那边负责 */
-  hidden: Set<string>
-}) {
-  // 联动按这个 Agent 自己的参数顺序算：前面参数没选到的不显示，选项跟着前面的取值缩小
-  const view = resolveParams(group.params, values as ParamValues)
-  const mine = agents.filter(
-    (d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key) && !view.hidden.includes(d.key),
-  )
-  if (!mine.length) return null
-  return (
-    <div className="flex flex-col gap-2 rounded-xl bg-sel/40 p-3">
-      <div className="flex items-center gap-2">
-        <span className="truncate text-body font-medium">{group.agentName}</span>
-        <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>
-        <Button size="sm" variant="ghost" className="ml-auto" onClick={onAi} disabled={aiRunning}>
-          {aiRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {t('AI 配置')}
-        </Button>
-      </div>
-      {mine.map((d) => (
-        <DerivedParamField
-          key={d.key}
-          d={view.options[d.key] ? { ...d, options: view.options[d.key] } : d}
-          value={values[d.key]}
-          onChange={(v) => onChange(d.key, v)}
-        />
-      ))}
-    </div>
-  )
-}
-
-/** 参数的默认值写成人能看的字：开关是「是 / 否」，多选用顿号连起来 */
-function defaultText(v: ParamValue | undefined) {
-  if (v === undefined || v === '') return ''
-  if (typeof v === 'boolean') return v ? t('是') : t('否')
-  if (Array.isArray(v)) return v.join(t('、'))
-  return String(v)
-}
-
-/** 一项派生参数：按类型渲染，显示默认值；多个 Agent 共用同一个 key 时注明影响面 */
-function DerivedParamField({
-  d,
-  value,
-  onChange,
-}: {
-  d: DerivedParam
-  value: ParamValue | undefined
-  onChange: (v: string | boolean) => void
-}) {
-  const label = d.label || d.key
-  const fallback = defaultText(d.defaultValue)
-  const shared = d.agents.length > 1
-  // 说明、默认值和影响面都收进 ⓘ，行里只留参数名——参数多时一屏能看到全条
-  const hint = [
-    d.description,
-    fallback && t('默认：{v}', { v: fallback }),
-    shared && t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) }),
-  ]
-    .filter(Boolean)
-    .join('；')
-  return (
-    <ParamRow
-      label={
-        <>
-          <span className="truncate font-medium text-muted">{label}</span>
-          <span className="shrink-0 font-mono text-caption text-subtle">{d.key}</span>
-          {d.required && <span className="shrink-0 text-caption text-warning">{t('必须填')}</span>}
-        </>
-      }
-      hint={hint}
-      controlClass={d.type === 'bool' ? undefined : 'w-[min(14rem,50%)]'}
-    >
-      {d.type === 'select' ? (
-        <Select
-          aria-label={label}
-          value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-          options={[
-            { value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') },
-            ...d.options.map((o) => ({ value: o, label: o })),
-          ]}
-        />
-      ) : d.type === 'bool' ? (
-        <Switch checked={value === true} onCheckedChange={(x) => onChange(x)} aria-label={label} />
-      ) : (
-        <Input
-          aria-label={label}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
-          className="h-9"
-        />
-      )}
-    </ParamRow>
-  )
-}
-
-/** 工作流暴露的一项配置：按类型渲染成下拉、多选、开关或文本框 */
-function ExposeField({
-  e,
-  value,
-  onChange,
-}: {
-  e: WorkflowExpose
-  value: ParamValue | undefined
-  onChange: (v: ParamValue) => void
-}) {
-  const label = e.label || e.key
-  // 多选存的是字符串数组，早先的版本存成 "a, b" 字符串，这里两种都认
-  const text =
-    typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : String(value ?? '')
-  const list = Array.isArray(value) ? value : text ? text.split(/\s*,\s*/).filter(Boolean) : []
-  // 没改过时显示默认值（这些选项本来就生效），改动后再存实际的数组
-  const shown = list.length || !Array.isArray(e.default) ? list : e.default
-  const fallback = defaultText(e.default)
-  // 和角色参数一样：说明与默认值收进 ⓘ，行里只留名字，控件靠右
-  const hint = [e.description, fallback && t('默认：{v}', { v: fallback })].filter(Boolean).join('；')
-  const on = value === true || text === 'true'
-  return (
-    <ParamRow
-      label={<span className="truncate font-medium text-muted">{label}</span>}
-      hint={hint}
-      controlClass={e.type === 'bool' ? undefined : e.type === 'multi' ? 'w-[min(20rem,60%)]' : 'w-[min(14rem,50%)]'}
-    >
-      {e.type === 'select' ? (
-        <Select
-          aria-label={label}
-          value={text}
-          onChange={(ev) => onChange(ev.target.value)}
-          options={[
-            // 没选时显示默认值（或「未选择」），选了就只显示选中的
-            ...(text ? [] : [{ value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') }]),
-            ...e.options.map((o) => ({ value: o, label: o })),
-          ]}
-        />
-      ) : e.type === 'bool' ? (
-        // 开关的取值照旧存成 'true' / 'false' 字符串，和工作流配置里的格式一致
-        <Switch checked={on} onCheckedChange={(x) => onChange(x ? 'true' : 'false')} aria-label={label} />
-      ) : e.type === 'multi' ? (
-        // 多选和角色参数用同一个控件：值是字符串数组，exposeValue 会拼成「a, b」填进 {{槽名}}
-        <ParamControl
-          param={{
-            key: e.key,
-            label,
-            type: 'multi',
-            options: e.options,
-            ask: false,
-            description: e.description,
-            default: e.default,
-          }}
-          value={shown}
-          onChange={(v) => onChange(Array.isArray(v) ? v : [])}
-        />
-      ) : (
-        <Input
-          aria-label={label}
-          value={text}
-          onChange={(ev) => onChange(ev.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
-          className="h-9"
-        />
-      )}
-    </ParamRow>
-  )
-}
-
-/**
- * 搜索排除目录：一项一个 chip，回车或点「添加」加一项，点 × 删一项。
- * 只存用户填的；内置默认清单（依赖、产物、缓存）始终生效，不占这里的输入。
- */
-function SearchExcludeField({ value, onChange }: { value: string[] | undefined; onChange: (v: string[]) => void }) {
-  const [text, setText] = useState('')
-  const list = value ?? []
-  // 输入时就把首尾空白和尾部斜杠去掉：`Saved/` 和 `Saved` 是同一个目录，存两种写法只会重复
-  const clean = (s: string) => s.trim().replace(/[\\/]+$/, '')
-  const add = () => {
-    const item = clean(text)
-    setText('')
-    if (!item || list.includes(item)) return
-    onChange([...list, item])
-  }
-  // UE 预设只补缺的：已经填过的项不重复加，用户自己加的也留着
-  const preset = () => onChange([...list, ...UE_SEARCH_EXCLUDE.filter((d) => !list.includes(d))])
-  return (
-    <ParamRow
-      label={
-        <>
-          <span className="truncate font-medium text-muted">{t('搜索时跳过的目录')}</span>
-          <span className="shrink-0 text-caption text-subtle">{t('相对项目根')}</span>
-        </>
-      }
-      hint={t(
-        'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。',
-      )}
-      stacked
-    >
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {list.map((d) => (
-            <span
-              key={d}
-              className="flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-1 pl-2 text-footnote text-muted"
-            >
-              <span className="font-mono">{d}</span>
-              <IconButton
-                icon={X}
-                size="2xs"
-                label={t('删除 {name}', { name: d })}
-                onClick={() => onChange(list.filter((x) => x !== d))}
-              />
-            </span>
-          ))}
-          <Input
-            aria-label={t('搜索时跳过的目录')}
-            value={text}
-            placeholder={t('目录名，回车添加')}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return
-              // 回车是加一项，不是提交整个设置表单
-              e.preventDefault()
-              add()
-            }}
-            className="h-7 w-[11rem] text-xs"
-          />
-          <Button variant="secondary" size="sm" onClick={add} disabled={!clean(text)} className="h-7">
-            <Plus className="h-3.5 w-3.5" />
-            {t('添加')}
-          </Button>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <Button variant="link" onClick={preset}>
-            {t('填入 UE 排除清单')}
-          </Button>
-          {list.length > 0 && (
-            <Button variant="link" tone="muted" onClick={() => onChange([])}>
-              {t('清空')}
-            </Button>
-          )}
-        </div>
-        <span className="text-xs text-subtle">
-          {t('此外始终跳过：{list}', { list: DEFAULT_SEARCH_EXCLUDE.join(t('、')) })}
-        </span>
-      </div>
-    </ParamRow>
-  )
+  if (section === 'roles') return <RolesPage project={project} draft={draft} setDraft={setDraft} vcs={vcs} />
+  if (section === 'workflows')
+    return <WorkflowsPage draft={draft} setDraft={setDraft} set={set} vcs={vcs} {...wf} onAssist={onAssist} />
+  if (section === 'tables') return <TablesPage project={project} draft={draft} set={set} dir={general.dir} />
+  if (section === 'lessons') return <LessonsPage project={project} draft={draft} set={set} item={item} />
+  if (section === 'experience' && project) return <ExperiencePage project={project} item={item} />
+  if (section === 'tests') return <TestsPage draft={draft} set={set} gitRepo={vcs === 'git'} onAssist={onAssist} />
+  return <GeneralPage project={project} draft={draft} set={set} vcs={vcs} {...general} />
 }
