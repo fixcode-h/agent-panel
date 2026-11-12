@@ -1,6 +1,6 @@
 # Windows 上 PowerShell 跑命令不算动手，收尾自检问过后放它停在半路
 
-- 状态：已修复（`server/tasks/before-end.test.ts`、`server/exec/parsers.test.ts`、`shared/hook-defs.test.ts` 通过）
+- 状态：已修复（`server/tasks/before-end.test.ts`、`server/exec/parsers.test.ts`、`shared/hooks/defs.test.ts` 通过）
 - 症状：没列计划的对话被问过「做完了吗」后，接着用 PowerShell 跑了 3 条命令，说「我再确认下 atBottom 的判定」就结束了这一轮，面板没再问
 - 入口：`server/tasks/before-end.ts` 的 `workSince`；`server/exec/parsers.ts` 的 `claudeTool`
 - 根因类型：同一份「工具名 → 类别」对照写了几处（CLI 定义的 `toolNames`、解析层写死的 `case 'Bash'`、审批卡写死的名单），新工具只进了其中一处都没进
@@ -23,4 +23,4 @@
 - 工具名到类别只认 CLI 定义的 `hooks.toolNames`（`shared/hooks.ts` 的 `toolKindOf`）：解析层、审批卡、钩子共用；`PowerShell` 加进 shell，解析层补上 `LS`。
 - 「问过以后有没有接着做」看面板工具以外的任何一次调用（`shared/end-turn.ts` 的 `isCliTool`），不按类别清单数，清单外的新工具不会再被当成什么都没做；「做了多少」仍只数跑命令、改文件（`isActTool`，收尾自检和一轮结束后的补问 `turn-info.ts` 共用），更新待办这类不算。
 - 命令前缀匹配前剥掉外壳（`shared/shell-command.ts` 的 `unwrapShell`，和 Codex 显示命令共用一份）：`cmd /c`、`wsl -e`、`powershell -Command`、`bash -c`、`&`。
-- 防线：`server/exec/parsers.test.ts`「CLI 定义里登记了类别的工具名都按类别解析」、`server/tasks/before-end.test.ts`「问过以后跑的是没登记类别的命令工具也算接着做」、`shared/hook-defs.test.ts`「命令按段比之前剥掉外壳」。
+- 防线：`server/exec/parsers.test.ts`「CLI 定义里登记了类别的工具名都按类别解析」、`server/tasks/before-end.test.ts`「问过以后跑的是没登记类别的命令工具也算接着做」、`shared/hooks/defs.test.ts`「命令按段比之前剥掉外壳」。

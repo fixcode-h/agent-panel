@@ -9,7 +9,7 @@
  * - 每段只看开头的程序名（跳过环境变量赋值、sudo、env、time 这类前缀）；
  * - 几秒就完的「快命令」（读写文件、查找、git 的本地操作）单独列出来：长命令守卫不管它们，后台命令拒收它们。
  */
-import { commandSegments } from './hook-defs.ts'
+import { commandSegments } from './hooks/defs.ts'
 import { unwrapShell } from './shell-command.ts'
 
 /**

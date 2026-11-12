@@ -13,8 +13,8 @@ import {
   type HookInput,
   type HooksData,
   commandSegments,
-} from '../../shared/hook-defs.ts'
-import { BUILTIN_HOOKS, builtinList, builtinNumber, builtinOn } from '../../shared/hook-builtins.ts'
+} from '../../shared/hooks/defs.ts'
+import { BUILTIN_HOOKS, builtinList, builtinNumber, builtinOn } from '../../shared/hooks/builtins.ts'
 import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts'

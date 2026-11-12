@@ -117,7 +117,7 @@ endCheck?: { asked: number; falseAlarm: number; streak: number } // streak：连
 
 ### 3.4 设置
 
-内置钩子「没做完不收尾」加一个参数（`shared/hook-builtins.ts` 的 `params`，可以按项目设）：
+内置钩子「没做完不收尾」加一个参数（`shared/hooks/builtins.ts` 的 `params`，可以按项目设）：
 
 | 「没列计划时的收尾自检」 | 行为                                        |
 | ------------------------ | ------------------------------------------- |
@@ -167,7 +167,7 @@ endCheck?: { asked: number; falseAlarm: number; streak: number } // streak：连
 | `server/tasks/drive.ts`                                  | `nudgeNoPlan` 用同一个「交卷」判断和新说法                    |
 | `shared/schema.ts`（或拆出的小文件）                     | `Task.endCheck`；`TaskMessage.hookWhy`                        |
 | `shared/hooks.ts`                                        | `hookMarker` 带 `hookWhy`                                     |
-| `shared/hook-builtins.ts`、`shared/locales/en/`          | 「没列计划时的收尾自检」参数和英文                            |
+| `shared/hooks/builtins.ts`、`shared/locales/en/`         | 「没列计划时的收尾自检」参数和英文                            |
 | `shared/engine.ts`、`server/orch-hint.ts`                | 提示词：何时调 `end_turn`；问用户必须用 `suggest_next_step`   |
 | `web/src/lib/fold.ts`                                    | `summaryStart` 认自检确认；折叠行统计「面板收尾自检 n 次」    |
 | `web/src/components/tasks/panel-kind.ts`、`Messages.tsx` | 按 `hookWhy` 分图标和文案；确认完成的小字行                   |

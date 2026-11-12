@@ -1,5 +1,5 @@
-import { t } from './i18n.ts'
-import type { HookEventName, HooksData } from './hook-defs.ts'
+import { t } from '../i18n.ts'
+import type { HookEventName, HooksData } from './defs.ts'
 
 /**
  * 面板自带的钩子（ADR 0049）：可以开关、看说明、改几个参数，不能删、不能改逻辑。开关可以按项目单独设（覆盖全局）。

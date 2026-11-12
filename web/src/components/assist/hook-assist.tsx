@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CircleAlert, Loader2, ShieldCheck, TriangleAlert } from 'lucide-react'
-import type { HookDefInput } from '@shared/hook-defs'
+import type { HookDefInput } from '@shared/hooks/defs'
 import { t } from '@shared/i18n'
 import { hooksApi } from '@/lib/api-hooks'
 import { Badge } from '@/components/ui/badge'

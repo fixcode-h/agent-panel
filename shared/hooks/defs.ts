@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { t } from './i18n.ts'
-import { DEFAULT_TIER, HOOK_TIERS } from './hook-builtins.ts'
-import { unwrapShell } from './shell-command.ts'
+import { t } from '../i18n.ts'
+import { DEFAULT_TIER, HOOK_TIERS } from './builtins.ts'
+import { unwrapShell } from '../shell-command.ts'
 
 /**
  * 钩子的规范（ADR 0049 第二期，设计稿 docs/openspec/changes/agent-hooks 第 6 节）：设置页「钩子」里用户建的、

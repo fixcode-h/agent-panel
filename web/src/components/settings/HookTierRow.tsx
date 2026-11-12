@@ -1,4 +1,4 @@
-import type { HookTier } from '@shared/hook-builtins'
+import type { HookTier } from '@shared/hooks/builtins'
 import { t } from '@shared/i18n'
 import { Segmented } from '@/components/ui/segmented'
 import { Button } from '@/components/ui/button'

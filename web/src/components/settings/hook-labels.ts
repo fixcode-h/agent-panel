@@ -1,4 +1,4 @@
-import type { HookEventName } from '@shared/hook-defs'
+import type { HookEventName } from '@shared/hooks/defs'
 import { t } from '@shared/i18n'
 
 /** 钩子事件在界面上的叫法（设置页「钩子」、AI 创建的预览共用） */

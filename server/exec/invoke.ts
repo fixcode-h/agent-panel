@@ -38,7 +38,7 @@ import {
   type HookFacts,
   type HookToolScope,
 } from '../../shared/hooks.ts'
-import type { HookEventName } from '../../shared/hook-defs.ts'
+import type { HookEventName } from '../../shared/hooks/defs.ts'
 
 /** 这一轮面板自己的临时目录（绝对路径）：放 CLI 要加载的桥接脚本等，用完删掉 */
 export const scratchDir = () => path.join(CACHE_DIR, 'cli-run', randomUUID().slice(0, 12))

@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import type { HookInput, HookOutput } from '../../shared/hook-defs.ts'
+import type { HookInput, HookOutput } from '../../shared/hooks/defs.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
 
 /**

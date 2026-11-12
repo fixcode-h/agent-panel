@@ -3,7 +3,7 @@ import { statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import type { Task } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
-import { globMatch } from '../../shared/hook-defs.ts'
+import { globMatch } from '../../shared/hooks/defs.ts'
 import { runSegments, segHead } from '../../shared/command-scope.ts'
 import { taskMap } from '../runtime/task-state.ts'
 

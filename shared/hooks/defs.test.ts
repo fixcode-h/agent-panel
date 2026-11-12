@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { checkOutput, commandSegments, globMatch, hookApplies, HookDef, type HookInput } from './hook-defs.ts'
-import { setLang } from './i18n.ts'
+import { checkOutput, commandSegments, globMatch, hookApplies, HookDef, type HookInput } from './defs.ts'
+import { setLang } from '../i18n.ts'
 
 setLang('zh')
 
@@ -82,7 +82,7 @@ test('新建的钩子默认关着；动作只能是脚本或 HTTP，请求头只
 })
 
 test('AI 创建的提案：范围里写的角色名、项目名换成 id，对不上的退回给 AI 改；一律关着、来源 ai', async () => {
-  const { resolveHookProposal } = await import('./assist-hook.ts')
+  const { resolveHookProposal } = await import('../assist-hook.ts')
   const agents = [{ id: 'r1', name: '评审' }] as never
   const subject = { projects: JSON.stringify([{ id: 'p1', name: '商城' }]) }
   const base = { name: '评审禁止提交', event: 'tool.before', action: { type: 'command', script: 'x' }, enabled: true }

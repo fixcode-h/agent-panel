@@ -1,5 +1,5 @@
 import { getLang, type Lang } from './i18n.ts'
-import { hookModSource } from './hook-mod.ts'
+import { hookModSource } from './hooks/mod.ts'
 import { PATH_REMINDER } from './prompt-paths.ts'
 
 /**
@@ -49,7 +49,7 @@ export const PROMPT_LANG_ENV = 'AGENT_PANEL_REPLY_LANG'
 /**
  * 给 Command Code 这类只能用 mod / 插件追加系统提示词的 CLI 用的插件源码：内容固定（两种语言都带上），
  * 运行时按 PROMPT_LANG_ENV 取规则，所以切换语言不用重写文件。
- * 面板每轮只装这一个 mod，钩子（onStop、工具前后、压缩之后，见 shared/hook-mod.ts）也放在这里，转发地址同样从环境变量取
+ * 面板每轮只装这一个 mod，钩子（onStop、工具前后、压缩之后，见 shared/hooks/mod.ts）也放在这里，转发地址同样从环境变量取
  */
 export function promptLangModSource() {
   const rules = Object.fromEntries((Object.keys(RULES) as ReplyLang[]).map((k) => [k, promptLangRules(k)]))

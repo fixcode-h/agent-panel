@@ -81,13 +81,13 @@
 ### 4.1 Claude Code 的工具钩子：每次调工具多起两个 node 进程
 
 - 现状：`shared/clis/claude.json` 给 Claude Code 装了 PreToolUse、PostToolUse，**没有按工具过滤**。每次调工具（包括 Read、Grep）都要新起两次 `node agent-panel-hook.mjs`，各发一次 HTTP 回面板。
-  默认就会装：内置的工具前规则（只读角色拒绝改文件、子对话不能改分支外的文件……）和默认开着的「计划没跟上提醒」（`shared/hook-builtins.ts` 的 `plan-pace`，工具后）。
+  默认就会装：内置的工具前规则（只读角色拒绝改文件、子对话不能改分支外的文件……）和默认开着的「计划没跟上提醒」（`shared/hooks/builtins.ts` 的 `plan-pace`，工具后）。
 - 数据：Read 最快 229 ms、中位 262 ms；Edit 中位 245 ms。Claude Code 自己读文件只要几毫秒，这 0.2 秒多基本是钩子。76 次 × 约 0.22 秒 ≈ **17 秒 / 轮（4%）**。
 - 可做的：
   1. **按需生成 matcher**：Claude Code 的钩子配置支持 `matcher`（按工具名匹配）。按这一轮实际启用的钩子关心哪些工具类别（`shared/hooks.ts` 的 `toolNames` 对照表）算出 matcher：内置的工具前规则和 `plan-pace` 只关心改文件、跑命令，Read / Grep / Glob 就不触发。用户自己配了「任意工具」的钩子时照旧全装。
   2. **PostToolUse 同理**：只在有钩子用到工具后事件、且只对相关工具装。
   3. 更彻底的做法是把转发脚本换成常驻进程或 Claude Code 支持的 HTTP 类型钩子（如果当前版本支持，需要先确认版本和 `minVersion`），每次只剩一次本机 HTTP。
-- Command Code、Pi 的钩子写在进程内的扩展里（`shared/hook-mod.ts`），是本机 fetch，**没有这个问题**。
+- Command Code、Pi 的钩子写在进程内的扩展里（`shared/hooks/mod.ts`），是本机 fetch，**没有这个问题**。
 
 ### 4.2 结束前钩子没拦住，多了一轮提醒
 

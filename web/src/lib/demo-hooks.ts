@@ -1,5 +1,5 @@
-import { HookDef, checkOutput, type HookDefInput } from '@shared/hook-defs'
-import { BUILTIN_HOOKS, builtinOn, builtinParam, tierChanged, tierOn, type HookTier } from '@shared/hook-builtins'
+import { HookDef, checkOutput, type HookDefInput } from '@shared/hooks/defs'
+import { BUILTIN_HOOKS, builtinOn, builtinParam, tierChanged, tierOn, type HookTier } from '@shared/hooks/builtins'
 import { CLIS } from '@shared/clis'
 import { hookEventsFor } from '@shared/hooks'
 import { t } from '@shared/i18n'

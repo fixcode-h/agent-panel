@@ -4,7 +4,7 @@
  * - Windows 上的 `"…\\cmd.exe" /c "…"`、`"…\\powershell.exe" -Command '…'`、`pwsh -c …`
  * - `wsl [-d 发行版] [-u 用户] [-e|--exec|--] …`
  * - PowerShell 的调用符 `& …`
- * 对话里显示命令（server/exec/rpc/codex.ts）和钩子按命令前缀比（shared/hook-defs.ts 的 commandSegments）都用这一份：
+ * 对话里显示命令（server/exec/rpc/codex.ts）和钩子按命令前缀比（shared/hooks/defs.ts 的 commandSegments）都用这一份：
  * 以前只有显示这边剥，钩子不剥，PowerShell 工具里 `cmd /c git push`、Git Bash 里 `wsl -e git push` 这一段的开头是
  * cmd / wsl，「命令开头是 git push」的守卫和用户钩子都对不上（用户 2026-11-05 问到）
  */

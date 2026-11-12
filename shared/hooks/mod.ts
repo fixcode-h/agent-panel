@@ -1,4 +1,4 @@
-import { FORWARD_TIMEOUT_MS, HOOK_CONTINUE_TYPE, HOOK_EVENTS_ENV, HOOK_TIMEOUT_MS, HOOK_URL_ENV } from './hooks.ts'
+import { FORWARD_TIMEOUT_MS, HOOK_CONTINUE_TYPE, HOOK_EVENTS_ENV, HOOK_TIMEOUT_MS, HOOK_URL_ENV } from '../hooks.ts'
 
 /**
  * Command Code 的 mod 里那几段钩子（ADR 0049）：面板每轮只装一个 mod（shared/prompt-lang.ts 的 promptLangModSource），

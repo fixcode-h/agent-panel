@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { checkOutput, type HookDef, type HookInput, type HookOutput } from '../../shared/hook-defs.ts'
+import { checkOutput, type HookDef, type HookInput, type HookOutput } from '../../shared/hooks/defs.ts'
 import { hookScriptFile } from './store.ts'
 import { t } from '../../shared/i18n.ts'
 

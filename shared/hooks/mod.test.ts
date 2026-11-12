@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
-import { promptLangModSource } from './prompt-lang.ts'
-import { HOOK_EVENTS_ENV, HOOK_URL_ENV } from './hooks.ts'
+import { promptLangModSource } from '../prompt-lang.ts'
+import { HOOK_EVENTS_ENV, HOOK_URL_ENV } from '../hooks.ts'
 
 test('mod 按这一轮的事件问面板：工具前拒绝变成 block、工具后补说明、结束前续跑、压缩后下一回合补一条消息', async () => {
   const got: { event: string; native: Record<string, unknown> }[] = []

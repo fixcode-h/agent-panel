@@ -60,7 +60,7 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 
 ### 第二期（2026-11-04）
 
-- **规范**：`shared/hook-defs.ts`（`HookDef`、统一的输入输出、`checkOutput`、`hookApplies`）；保存前 `server/hooks/validate.ts` 查字段搭配、写死的密钥、`node --check` 语法，AI 创建的提案还要用示例输入试跑一次。
+- **规范**：`shared/hooks/defs.ts`（`HookDef`、统一的输入输出、`checkOutput`、`hookApplies`）；保存前 `server/hooks/validate.ts` 查字段搭配、写死的密钥、`node --check` 语法，AI 创建的提案还要用示例输入试跑一次。
 - **存储**：数据目录 `config/hooks.json` 和 `config/hooks/<id>.mjs`，跟着「数据」页的 config 一类备份导出；项目仓库里的钩子文件不会自动生效。
 - **分派**：`server/hooks/dispatch.ts` 按这次调用的身份和开关决定装哪些事件，没人用的工具前 / 工具后不装（每次工具调用多一次脚本）。Claude Code 的工具前拒绝在本机 2.1.318 实测：工具结果变成一条「PreToolUse:Bash hook error: <原因>」的报错，模型据此改做法。
 - **内置钩子**：
@@ -91,7 +91,7 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
 - **真实接口测试**（deepseek-v4-flash 中转）：Claude Code、Codex、Pi 三个 CLI 都跑过用户钩子拒绝命令、结束前拦住同轮续跑、「对话完成」通知；Codex 只给面板自己的 3 条钩子写了信任。
   - 测出 Pi 扩展第一期起就没问过面板：`agent_before_settle` 里按 `context.canContinue === false` 提前返回，那一刻这个值永远是 false，已修。
   - 测出按命令前缀匹配认不出 `cd 项目 && npm test`，改成按 `&&`、`;`、`|` 拆开逐段比（`commandSegments`）。
-  - Command Code 用自带 API 也要先 `cmd login` 账号，没法真机跑；`shared/hook-mod.test.ts` 把生成的 mod 加载起来接本地假面板，逐个调用四个事件。
+  - Command Code 用自带 API 也要先 `cmd login` 账号，没法真机跑；`shared/hooks/mod.test.ts` 把生成的 mod 加载起来接本地假面板，逐个调用四个事件。
 
 ### 第四期（2026-11-04）
 
@@ -107,7 +107,7 @@ Claude Code 把 end_turn 当成「做完了」，面板只能在这一轮结束�
   - 独立分支越界：子对话改自己 worktree 以外的文件时拒绝；原仓库里的一律不行（项目放在临时目录里时也一样）。
 - **「没做完不收尾」补上「子对话做完却没请收尾」**：计划只剩收尾那一步、或没列计划但改过文件时，在同一轮里拦住让它调 `submit_merge`（`mergeOwedOf`）。只看计划和改动清单，不跑 git；拦过后一轮结束的 `nudgeMerge` 不再重发。
 - **两个默认关的**：原地打转提醒（同一条命令连续失败到设置的次数补一句）、改完没验证（改了文件之后一条命令都没跑就结束时拦一次）。
-- **内置钩子可配参数、可按项目开关**（`shared/hook-builtins.ts`，`hooks.json` 的 `params` / `projects`）；内置钩子拦下、补说明的也记进「最近触发」，名字按界面语言显示。
+- **内置钩子可配参数、可按项目开关**（`shared/hooks/builtins.ts`，`hooks.json` 的 `params` / `projects`）；内置钩子拦下、补说明的也记进「最近触发」，名字按界面语言显示。
 - **工具结果进输入**：CLI 定义的 `toolFields.output` / `failed` 取执行结果和是否失败；Claude Code 的工具后同时装 `PostToolUseFailure`（带 `error`），补说明的 `hookEventName` 按原生事件填（`{event}`）。Codex 报不出失败。面板自己的工具认成 `panel` 类，用户钩子按去掉前缀的工具名匹配。
 - **版本门槛**：事件可以写 `minVersion`（Codex 0.166.0、Pi 1.5.0、Claude Code 工具后 2.1.0），本机检测到的版本更老时不装那几个事件，退回一轮结束后的提醒；读不到版本照装。
 - **按 CLI 关掉事件**（`hooks.json` 的 `cliOff`）：中转站上 Codex 的工具后补说明会报错这类情况，只在那个 CLI 上关掉。

@@ -1,4 +1,10 @@
-import { isNotifyEvent, hookApplies, type HookDef, type HookEventName, type HookInput } from '../../shared/hook-defs.ts'
+import {
+  isNotifyEvent,
+  hookApplies,
+  type HookDef,
+  type HookEventName,
+  type HookInput,
+} from '../../shared/hooks/defs.ts'
 import { WEBHOOK_MAX_ATTEMPTS, type ScheduleDelivery, type ScheduleEvent } from '../../shared/schedule.ts'
 import { activePlan } from '../../shared/plan.ts'
 import type { Task } from '../../shared/schema.ts'

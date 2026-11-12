@@ -12,7 +12,7 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react'
-import type { HookDef } from '@shared/hook-defs'
+import type { HookDef } from '@shared/hooks/defs'
 import type { Proposal } from '@shared/assist'
 import { t } from '@shared/i18n'
 import { hooksApi, type BuiltinHookView, type HooksView, type HookTriggerView } from '@/lib/api-hooks'
