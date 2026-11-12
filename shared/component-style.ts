@@ -130,6 +130,13 @@ export const COMP_SPEC = {
     /** 版本差异、跨项目对比：新增的行 / 新值、删掉的行 / 旧值（改过的格子底色用 edited） */
     added: hue('green'),
     removed: hue('red'),
+    /** 两行列头里类型标签（类型、枚举、引用…）的字号（rem，跟着界面字号缩放）和圆角 */
+    tagSize: pick('md', { sm: '0.625rem', md: '0.65625rem', lg: '0.75rem' }),
+    tagRadius: px(3, 0, 8),
+    /** 格子里的显示：枚举画成胶囊、布尔画成小勾、空格子画淡淡的「—」（开 '1' 关 '0'，SheetTable 读了决定画什么） */
+    pills: bool(true, '1', '0'),
+    bools: bool(true, '1', '0'),
+    blank: bool(true, '1', '0'),
   },
   empty: {
     radius: px(10, 0, 24),

@@ -1,23 +1,31 @@
 import { useRef } from 'react'
 import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
-import { SheetTable, type SheetColHead, type SheetEditing } from '@/components/files/SheetTable'
+import { SheetTable, type SheetColHead, type SheetColKind, type SheetEditing } from '@/components/files/SheetTable'
 import { useSheetView } from '@/components/files/use-sheet-view'
 
 /** 样例：一张游戏配置表（修饰 / 导出端 / 类型 / 字段名 / 注释 + 数据），演示数据不翻译 */
 const ROWS = [
-  ['optional', 'optional', 'optional', 'optional', 'repeated', 'optional'],
-  ['Client', 'Client', 'Client', 'Editor', 'Client', 'Client'],
-  ['uint32', 'uint32', 'HomeDecorationMountType', 'bytes', 'uint32', 'int32'],
-  ['ID', 'EntryID', 'MountType', 'DisplayName', 'AllowCharacterIDs', 'TriggerState'],
-  ['全局唯一软装配置ID', '交互物Entry ID', '家装挂载类型', '软装显示名', '交互白名单角色ID列表', '触发交互状态'],
-  ['1', '781713001', 'FloorMirror', '曲线穿衣镜', '', '-1'],
-  ['2', '781713002', 'FloorMirror', '高脚穿衣镜', '', '-1'],
-  ['3', '781713003', 'TabletopDecor', '桌上圆镜', '1001;1003', '-1'],
-  ['4', '781713004', 'WallMirror', '镀金画框挂镜', '', '-1'],
-  ['5', '781713005', 'WallMirror', '简约横版挂镜', '1002', '0'],
-  ['6', '781713006', 'FloorMirror', '落地拱形镜', '', '-1'],
-  ['7', '781713007', 'TabletopDecor', '化妆台小镜', '', '-1'],
-  ['8', '781713008', 'WallMirror', '复古椭圆挂镜', '', '2'],
+  ['optional', 'optional', 'optional', 'optional', 'repeated', 'optional', 'optional'],
+  ['Client', 'Client', 'Client', 'Editor', 'Client', 'Client', 'Client'],
+  ['uint32', 'uint32', 'HomeDecorationMountType', 'bytes', 'uint32', 'int32', 'bool'],
+  ['ID', 'EntryID', 'MountType', 'DisplayName', 'AllowCharacterIDs', 'TriggerState', 'Visible'],
+  [
+    '全局唯一软装配置ID',
+    '交互物Entry ID',
+    '家装挂载类型',
+    '软装显示名',
+    '交互白名单角色ID列表',
+    '触发交互状态',
+    '是否显示',
+  ],
+  ['1', '781713001', 'FloorMirror', '曲线穿衣镜', '', '-1', '1'],
+  ['2', '781713002', 'FloorMirror', '高脚穿衣镜', '', '-1', '1'],
+  ['3', '781713003', 'TabletopDecor', '桌上圆镜', '1001;1003', '-1', '0'],
+  ['4', '781713004', 'WallMirror', '镀金画框挂镜', '', '-1', '1'],
+  ['5', '781713005', 'WallMirror', '简约横版挂镜', '1002', '0', '1'],
+  ['6', '781713006', 'FloorMirror', '落地拱形镜', '', '-1', '0'],
+  ['7', '781713007', 'TabletopDecor', '化妆台小镜', '', '-1', '1'],
+  ['8', '781713008', 'WallMirror', '复古椭圆挂镜', '', '2', '1'],
 ]
 
 /**
@@ -25,7 +33,8 @@ const ROWS = [
  * 枚举列悬停出下拉箭头、引用列虚下划线、必填空着的斜线底纹
  */
 const SAMPLE_EDIT: SheetEditing = {
-  picked: () => false,
+  // 选中一小块：外面一圈框，行号、列名跟着高亮
+  picked: (r, c) => r >= 7 && r <= 8 && c >= 1 && c <= 2,
   focus: { row: 8, col: 2 },
   focusSeq: 0,
   editing: null,
@@ -39,7 +48,17 @@ const SAMPLE_EDIT: SheetEditing = {
     ]
       .filter(Boolean)
       .join(' ') || undefined,
-  tip: (r, c) => (r === 12 && c === 5 ? 'TriggerState 只能是 -1 到 1' : undefined),
+  tip: (r, c) =>
+    r === 12 && c === 5
+      ? {
+          title: '不合规',
+          tone: 'danger',
+          lines: [
+            { label: '原因', text: 'TriggerState 只能是 -1 到 1' },
+            { label: '规则', text: 'int32 · -1~1' },
+          ],
+        }
+      : undefined,
   onDown: () => {},
   onEnter: () => {},
   onDouble: () => {},
@@ -66,6 +85,18 @@ const HEADS: (SheetColHead | undefined)[] = [
     ],
   },
   { field: 'TriggerState', tags: [{ text: 'int32', tone: 'type' }] },
+  { field: 'Visible', tags: [{ text: 'bool', tone: 'type' }] },
+]
+
+/** 每列的显示方式：数字右对齐、枚举胶囊、布尔小勾（表格页按列结构给，这里写死） */
+const KINDS: (SheetColKind | undefined)[] = [
+  { kind: 'num' },
+  { kind: 'num' },
+  { kind: 'enum' },
+  undefined,
+  undefined,
+  { kind: 'num' },
+  { kind: 'bool' },
 ]
 
 /**
@@ -91,6 +122,7 @@ export function SheetSpecimen() {
           onSort={view.setSort}
           edit={SAMPLE_EDIT}
           colHead={(c) => HEADS[c]}
+          colKind={(c) => KINDS[c]}
         />
       </div>
     </div>

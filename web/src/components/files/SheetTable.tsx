@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ListFilter } from 'lucide-react'
 import { t } from '@shared/i18n'
-import type { SheetData } from '@shared/files'
 import { dataStart, type SheetHeader } from '@shared/sheet-header'
 import { colCount, colName, colWidths, type CellHit } from '@/lib/sheet'
 import { filterActive, type ColFilter, type ColFilters, type SheetSort } from '@/lib/sheet-filter'
@@ -17,6 +16,9 @@ import {
 } from '@/components/ui/menu'
 import { SheetColumnFilter } from './SheetColumnFilter'
 import { roleShort } from './sheet-roles'
+import { CELL, SheetCell, pinCls as pinClsOf, pinned as pinnedOf, type CellCtx } from './sheet-cell'
+import { CellHint, SheetTipView, cellCut, type SheetTip } from './sheet-hint'
+import { inferColKinds, useGridLook, type SheetColKind } from './sheet-kinds'
 import './sheet-table.css'
 
 /** 行号列宽：有表头时左边还要写行的角色（修饰、类型…） */
@@ -30,10 +32,11 @@ const NO_HEADER: SheetHeader = { start: 0, roles: [] }
 
 // 行号列、列名行钉在边上，底色用表格自己的底色（sheet-table.css 的 --sheet-bg）盖住滚过去的格子
 const STICKY = 'sticky bg-(--sheet-bg) text-subtle select-none'
-const CELL = 'sheet-cell shrink-0 truncate border-r border-b border-line px-2'
 /** 看得见的列左右再多画几列；按这个步长取整，滚一点点不用重画 */
 const COL_OVER = 3
 const COL_STEP = 4
+/** 枚举胶囊的左右内边距加起来大约这么宽 */
+const PILL_PAD = 18
 /** 铺满时空列的宽度 */
 const PAD_W = 96
 /** 拖列宽的范围 */
@@ -120,20 +123,12 @@ function ResizeHandle({
   )
 }
 
-/**
- * 行高读设置 → 组件 → 数据表格的 --c-grid-rowH：虚拟滚动要按它算位置，不能只交给 CSS。
- * 每次渲染后看一眼，设置里拖了滑块下一次渲染就跟上
- */
-export function useRowH() {
-  const [h, setH] = useState(26)
-  // 故意不写依赖：设置改的是 CSS 变量，React 不知道它变了，每次渲染后都看一眼；值没变不 setState，不会循环
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => {
-    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--c-grid-rowH'))
-    if (v > 0 && v !== h) setH(v)
-  })
-  return h
-}
+/** 行高读设置 → 组件 → 数据表格的 --c-grid-rowH（虚拟滚动要按它算位置）；版本差异这些自己画行的地方也用 */
+export const useRowH = () => useGridLook().rowH
+
+export type { SheetColKind } from './sheet-kinds'
+export type { SheetTip } from './sheet-hint'
+export { SheetTabs } from './sheet-tabs'
 
 /** 两行列头的一个小标签：类型、枚举、引用、数组、必填，颜色跟着表头行的颜色（设置里调） */
 export interface SheetColTag {
@@ -159,8 +154,8 @@ export interface SheetEditing {
   editing: { r: number; c: number; node: React.ReactNode } | null
   /** 格子的额外样式类（改过、不合规） */
   mark?: (r: number, c: number) => string | undefined
-  /** 格子的悬停说明（不合规的原因）；不给就是格子的内容 */
-  tip?: (r: number, c: number) => string | undefined
+  /** 格子的悬停说明（不合规的原因 / 规则 / 允许的值）；不给时截断了的格子悬停看完整内容 */
+  tip?: (r: number, c: number) => string | SheetTip | undefined
   onDown: (r: number, c: number, e: React.MouseEvent) => void
   onEnter: (r: number, c: number, e: React.MouseEvent) => void
   onDouble: (r: number, c: number) => void
@@ -198,7 +193,10 @@ export function SheetTable({
   headCollapsed,
   onHeadCollapse,
   rowHeight,
+  colKind,
 }: {
+  /** 每列的显示方式（数字右对齐、布尔小勾、枚举胶囊）：表格页按列结构给；不传按表头类型行或数据猜 */
+  colKind?: (c: number) => SheetColKind | undefined
   /** 行高：表格页的密度（紧凑 / 宽松）；不传按设置 → 组件 → 数据表格 */
   rowHeight?: number
   /** 传了列头就是两行：字段名 + 类型标签（表格页用，按列结构算） */
@@ -236,12 +234,18 @@ export function SheetTable({
   onFilter?: (col: number, f: ColFilter | undefined) => void
   onSort?: (s: SheetSort | null) => void
 }) {
-  const settingRowH = useRowH()
-  const rowH = rowHeight ?? settingRowH
+  const look = useGridLook()
+  const rowH = rowHeight ?? look.rowH
+  const gridRef = useRef<HTMLDivElement>(null)
   const from = dataStart(header)
   const numW = header.roles.length ? NUM_W_ROLE : NUM_W
   const cols = useMemo(() => colCount(rows), [rows])
   const body = useMemo(() => order ?? rows.slice(from).map((_, i) => from + i), [order, rows, from])
+  const guessed = useMemo(
+    () => (colKind ? null : inferColKinds(rows, header, from, cols)),
+    [colKind, rows, header, from, cols],
+  )
+  const kinds = guessed ?? Array.from({ length: cols }, (_, c) => colKind?.(c))
   // 列宽看数据行和除注释外的表头行：长长的中文注释不该把列撑宽，截断后悬停看全
   const widths = useMemo(() => {
     if (!header.roles.length) return colWidths(rows, cols)
@@ -251,10 +255,15 @@ export function SheetTable({
   const [dragged, setDragged] = useColWidths(widthKey)
   const hiddenSet = useMemo(() => new Set(layout?.hidden ?? []), [layout?.hidden])
   // 隐藏的列宽度当 0：位置照算，画的时候跳过
-  const colW = useMemo(
-    () => widths.map((w, c) => (hiddenSet.has(c) ? 0 : (dragged[c] ?? w))),
-    [widths, dragged, hiddenSet],
-  )
+  // 枚举画成胶囊时左右多了内边距：按内容估的列宽给这几列加一点，免得「TabletopDecor」刚好被截断。
+  // 用列号拼成的字符串当依赖：表格页每次渲染都给新的 colKind，列宽不能因此每次重算（会连带重算看得见哪些列）
+  const pillCols = look.pills ? kinds.flatMap((k, c) => (k?.kind === 'enum' ? [c] : [])).join(',') : ''
+  const colW = useMemo(() => {
+    const pill = new Set(pillCols ? pillCols.split(',').map(Number) : [])
+    return widths.map((w, c) =>
+      hiddenSet.has(c) ? 0 : (dragged[c] ?? (pill.has(c) ? Math.min(w + PILL_PAD, 360) : w)),
+    )
+  }, [widths, dragged, hiddenSet, pillCols])
   /** 冻结的前几列：一直画、钉在左边 */
   const fz = Math.min(layout?.freeze ?? 0, colW.length)
   const lefts = useMemo(() => {
@@ -268,6 +277,20 @@ export function SheetTable({
     return out
   }, [colW, numW])
   const dataW = lefts[lefts.length - 1]
+  // 左右相邻的「没隐藏」的列：选区外框要看左右邻居在不在选区里
+  const [prevCol, nextCol] = useMemo(() => {
+    const prev: number[] = []
+    const next: number[] = Array.from({ length: colW.length }, () => -1)
+    let last = -1
+    colW.forEach((w, c) => {
+      prev.push(last)
+      if (w > 0) {
+        if (last >= 0) next[last] = c
+        last = c
+      }
+    })
+    return [prev, next]
+  }, [colW])
   /** 钉在顶上的行：列名行 + 表头（连同表头上面的标题行）；表头折起来时只剩列名行 */
   const frozen = headCollapsed && colHead ? 0 : from
   // 两行列头高一些：字段名一行、标签一行
@@ -395,61 +418,37 @@ export function SheetTable({
     for (let c = c0; c < c1; c++) if (colW[c] > 0) out.push(f(colW[c], c, false))
     return out
   }
-  /** 冻结列的格子钉在行号列右边 */
-  const pinned = (c: number, pin: boolean) => (pin ? { position: 'sticky' as const, left: lefts[c], zIndex: 1 } : {})
-  const pinCls = (c: number, pin: boolean) => pin && cn('sheet-frozen', c === fz - 1 && 'sheet-frozen-last')
+  const x: CellCtx = { rows, cols, from, edit, marked, cur, kinds, look, lefts, fz, prevCol, nextCol }
+  const pinned = (c: number, pin: boolean) => pinnedOf(x, c, pin)
+  const pinCls = (c: number, pin: boolean) => pinClsOf(x, c, pin)
   const pad = (key: string) =>
     Array.from({ length: padCols }, (_, k) => (
       <span key={`${key}${k}`} aria-hidden className={cn(CELL, 'sheet-pad')} style={{ width: PAD_W }} />
     ))
-  const cells = (r: number) => [
-    ...span((w, c, pin) => {
-      const text = rows[r]?.[c] ?? ''
-      const hit = marked.has(r * cols + c)
-      const on = !edit && hit && cur?.row === r && cur.col === c
-      if (edit?.editing && edit.editing.r === r && edit.editing.c === c)
-        return (
-          <span
-            key={c}
-            role="cell"
-            className={cn(CELL, 'sheet-editing relative overflow-visible p-0', pinCls(c, pin))}
-            style={{ width: w, ...pinned(c, pin), ...(pin ? { zIndex: 3 } : {}) }}
-          >
-            {edit.editing.node}
-          </span>
-        )
-      const picked = !!edit?.picked(r, c)
-      const focused = !!edit?.focus && edit.focus.row === r && edit.focus.col === c
-      return (
-        <span
-          key={c}
-          role="cell"
-          // 截断了或者有换行的格子，悬停看完整内容；不合规的格子悬停看原因
-          title={edit?.tip?.(r, c) ?? (text.length > 12 ? text : undefined)}
-          data-current={on || undefined}
-          aria-selected={edit ? picked : undefined}
-          data-r={edit ? r : undefined}
-          data-c={edit ? c : undefined}
-          onMouseDown={edit && ((e) => edit.onDown(r, c, e))}
-          onMouseEnter={edit && ((e) => edit.onEnter(r, c, e))}
-          onDoubleClick={edit && (() => edit.onDouble(r, c))}
-          className={cn(
-            CELL,
-            on ? 'sheet-hit-current' : hit && 'sheet-hit',
-            edit?.mark?.(r, c),
-            picked && 'sheet-sel',
-            focused && 'sheet-focus',
-            pinCls(c, pin),
-          )}
-          style={{ width: w, ...pinned(c, pin) }}
-        >
-          {edit?.display && text ? edit.display(r, c, text) : text}
-        </span>
-      )
-    }),
+  /** 一行格子；up / down 是显示顺序里的上一行、下一行（选区外框用） */
+  const cells = (r: number, up?: number, down?: number) => [
+    ...span((w, c, pin) => <SheetCell key={c} x={x} r={r} c={c} w={w} pin={pin} up={up} down={down} />),
     gap('gr', gapR),
     ...pad('p'),
   ]
+  /** 当前格所在的行、列（和选中的一块覆盖到的行、列）：行号和列名换成强调色浅底，大表里一眼看出在哪 */
+  const fo = edit?.focus
+  const rowOn = (r: number) => !!fo && (fo.row === r || !!edit?.picked(r, fo.col))
+  const colOn = (c: number) => !!fo && (fo.col === c || !!edit?.picked(fo.row, c))
+  /** 悬停说明：不合规的给原因和规则；截断了、有换行的看完整内容 */
+  const tipOf = (el: HTMLElement) => {
+    const r = Number(el.dataset.r)
+    const c = Number(el.dataset.c)
+    const own = edit?.tip?.(r, c)
+    if (own) return typeof own === 'string' ? own : <SheetTipView tip={own} />
+    const text = rows[r]?.[c] ?? ''
+    if (!text || (!text.includes('\n') && !cellCut(el))) return null
+    return text.length > 60 || text.includes('\n') ? (
+      <span className="whitespace-pre-wrap text-fg">{text.length > 2000 ? `${text.slice(0, 2000)}…` : text}</span>
+    ) : (
+      text
+    )
+  }
   /** 行号格：表格页里右键能插删行 */
   const rowNum = (r: number, node: React.ReactElement) => (edit?.rowMenu ? edit.rowMenu(r, node) : node)
   const shown: number[] = []
@@ -459,12 +458,14 @@ export function SheetTable({
 
   return (
     <div
+      ref={gridRef}
       role="table"
       aria-rowcount={rows.length}
       aria-colcount={cols}
       className="sheet-grid relative text-footnote"
       style={{ width: total, height: frozenH + rowH * (body.length + padRows) }}
     >
+      <CellHint grid={gridRef} tipOf={tipOf} />
       <div className="sticky top-0 z-2" style={{ width: total }}>
         <div role="row" className={cn(STICKY, 'flex')} style={{ height: headH }}>
           <span
@@ -493,6 +494,7 @@ export function SheetTable({
               height={headH}
               info={colHead?.(c)}
               twoLine={!!colHead}
+              on={colOn(c)}
               pin={pin ? { style: pinned(c, pin), cls: pinCls(c, pin) || '' } : undefined}
               layout={layout}
               onLayout={onLayout}
@@ -534,6 +536,7 @@ export function SheetTable({
                   CELL,
                   `sheet-role sheet-role-${role}`,
                   'left-0 z-1 flex justify-between font-mono text-caption font-normal',
+                  rowOn(r) && 'sheet-head-on',
                 )}
                 style={{ width: numW, ...lineH }}
               >
@@ -542,7 +545,7 @@ export function SheetTable({
                 </span>
                 <span>{r + 1}</span>
               </span>
-              {cells(r)}
+              {cells(r, r > 0 ? r - 1 : undefined, r + 1 < frozen ? r + 1 : body[0])}
             </div>
           )
         })}
@@ -560,13 +563,18 @@ export function SheetTable({
             {rowNum(
               r,
               <span
-                className={cn(STICKY, CELL, 'left-0 z-1 text-right font-mono text-caption')}
+                className={cn(
+                  STICKY,
+                  CELL,
+                  'left-0 z-1 text-right font-mono text-caption',
+                  rowOn(r) && 'sheet-head-on',
+                )}
                 style={{ width: numW, ...lineH }}
               >
                 {r + 1}
               </span>,
             )}
-            {cells(r)}
+            {cells(r, i > 0 ? body[i - 1] : frozen > 0 ? frozen - 1 : undefined, body[i + 1])}
           </div>
         )
       })}
@@ -617,7 +625,10 @@ function ColumnHead({
   pin,
   layout,
   onLayout,
+  on: current,
 }: {
+  /** 当前格在这一列（或选区覆盖这一列）：列名换强调色浅底 */
+  on?: boolean
   col: number
   width: number
   height: number
@@ -649,6 +660,7 @@ function ColumnHead({
         CELL,
         'group relative font-mono text-caption',
         twoLine ? 'sheet-colhead flex flex-col justify-center gap-0.5' : 'text-center',
+        current && 'sheet-head-on',
         pin?.cls,
       )}
       style={twoLine ? { width, height, ...pin?.style } : { width, ...lineH, ...pin?.style }}
@@ -740,41 +752,5 @@ function ColumnHead({
         )}
       </ContextMenuContent>
     </ContextMenu>
-  )
-}
-
-/** 多张表时的切换条（标题栏下面一行）：表多了横向滚 */
-export function SheetTabs({
-  sheets,
-  index,
-  onChange,
-}: {
-  sheets: SheetData[]
-  index: number
-  onChange: (index: number) => void
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={t('工作表')}
-      className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b px-3"
-    >
-      {sheets.map((s, i) => (
-        <button
-          key={i}
-          type="button"
-          role="tab"
-          aria-selected={i === index}
-          onClick={() => onChange(i)}
-          className={cn(
-            'h-6 shrink-0 cursor-pointer rounded-md px-2 text-body whitespace-nowrap transition-colors',
-            i === index ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-          )}
-        >
-          {s.name}
-          <span className="ml-1.5 text-caption text-subtle tabular-nums">{s.rows.length}</span>
-        </button>
-      ))}
-    </div>
   )
 }

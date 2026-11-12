@@ -1150,6 +1150,11 @@ body,
   --c-grid-invalid: var(--danger);
   --c-grid-added: var(--success);
   --c-grid-removed: var(--danger);
+  --c-grid-tagSize: 0.65625rem;
+  --c-grid-tagRadius: 3px;
+  --c-grid-pills: 1;
+  --c-grid-bools: 1;
+  --c-grid-blank: 1;
 }
 
 /*

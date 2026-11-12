@@ -79,4 +79,16 @@ export const EN_SHEET: Record<string, string> = {
   红: 'Red',
   橙: 'Orange',
   灰: 'Gray',
+  // 设置 → 组件 → 数据表格：类型标签、格子里的显示开关
+  类型标签字号: 'Type tag size',
+  类型标签圆角: 'Type tag radius',
+  枚举值画成胶囊: 'Enum values as pills',
+  布尔值画成小勾: 'Booleans as checkmarks',
+  '空格子画「—」': 'Show “—” in empty cells',
+  小: 'Small',
+  大: 'Large',
+  // 工作表切换条
+  '全部工作表（{n} 张）': 'All sheets ({n})',
+  搜索工作表: 'Search sheets',
+  没有叫这个名字的工作表: 'No sheet with that name',
 }

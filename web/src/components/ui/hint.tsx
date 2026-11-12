@@ -116,7 +116,7 @@ function useHintEscape(open: boolean, close: () => void) {
  * 悬停提示不放关闭按钮：鼠标一移开就自己消失，按钮反而占住右上角、还要处理焦点回收。
  * 需要手动关掉的是错误提示（sonner 的 toast），那边单独开 closeButton。
  */
-function HintSurface({
+export function HintSurface({
   content,
   anchor,
   contentRef,

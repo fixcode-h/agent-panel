@@ -217,16 +217,17 @@
 .sheet-colhead {
   font-family: var(--c-grid-font);
 }
+/* 字号、圆角在设置 → 组件 → 数据表格里调（--c-grid-tagSize 是 rem，跟着设置里的界面字号缩放） */
 .sheet-tag {
   flex-shrink: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border-radius: 3px;
-  padding: 0 4px;
-  font-size: 10.5px;
-  line-height: 15px;
+  border-radius: var(--c-grid-tagRadius);
+  padding: 0 0.25rem;
+  font-size: var(--c-grid-tagSize);
+  line-height: 1.45;
   color: color-mix(in oklab, var(--tag-hue) 75%, var(--fg));
   background: color-mix(in oklab, var(--tag-hue) 14%, transparent);
 }
@@ -244,4 +245,100 @@
 }
 .sheet-tag-req {
   --tag-hue: var(--c-grid-invalid);
+}
+
+/* 数字列（类型是整数 / 浮点，或没有结构时数据全是数字）：右对齐、等宽数字，位数一眼对得齐 */
+.sheet-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 当前格所在的行号、列名（选中一块时是它覆盖的行、列）：强调色浅底 + 强调色字，像 Excel / WPS。
+ * 行号列、列名行钉在边上，底色要和表格底色混成不透明的
+ */
+.sheet-grid .sheet-head-on {
+  background: color-mix(in srgb, var(--accent) 16%, var(--sheet-bg));
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/*
+ * 选中一块的外框：每个选中的格子在「邻居不在选区里」的那几边画 1px 强调色线（sheet-cell.tsx 的 selEdges）。
+ * 用背景渐变画，不占 box-shadow：当前格描边、改过、不合规都在用 box-shadow，叠在一起互不覆盖
+ */
+.sheet-grid .sheet-sel {
+  --sel-line: linear-gradient(var(--accent), var(--accent));
+  background-image: var(--sel-line), var(--sel-line), var(--sel-line), var(--sel-line);
+  background-repeat: no-repeat;
+  background-position:
+    top left,
+    bottom left,
+    top left,
+    top right;
+  background-size:
+    100% var(--sel-t, 0px),
+    100% var(--sel-b, 0px),
+    var(--sel-l, 0px) 100%,
+    var(--sel-r, 0px) 100%;
+}
+.sheet-sel-t {
+  --sel-t: 1px;
+}
+.sheet-sel-b {
+  --sel-b: 1px;
+}
+.sheet-sel-l {
+  --sel-l: 1px;
+}
+.sheet-sel-r {
+  --sel-r: 1px;
+}
+
+/*
+ * 枚举值：浅色胶囊，颜色按值固定（sheet-kinds.ts 的 pillHue 给 --pill-h），同一个值在哪张表都是同一种颜色。
+ * 字色和前景色混一下：深色、浅色主题下都读得清
+ */
+.sheet-pill {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.95em;
+  line-height: 1.55;
+  color: color-mix(in oklab, oklch(0.6 0.15 var(--pill-h)) 78%, var(--fg));
+  background: color-mix(in oklab, oklch(0.68 0.14 var(--pill-h)) 16%, transparent);
+}
+.sheet-pill:last-child {
+  margin-right: 0;
+}
+
+/* 布尔列：居中的小方块，是 = 主色底加勾，否 = 空框 */
+.sheet-boolcell {
+  text-align: center;
+}
+.sheet-bool {
+  display: inline-grid;
+  place-items: center;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  vertical-align: middle;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.sheet-bool[data-on] {
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: none;
+}
+
+/* 数据行的空格子：一道很淡的短横，看得出是空着而不是没画出来 */
+.sheet-blank::before {
+  content: '—';
+  color: var(--subtle);
+  opacity: 0.45;
 }

@@ -95,6 +95,11 @@ const gridPropLabel = (prop: string): string | undefined =>
     added: t('新增的行和新值'),
     removed: t('删掉的行和旧值'),
     stripe: t('隔行底色'),
+    tagSize: t('类型标签字号'),
+    tagRadius: t('类型标签圆角'),
+    pills: t('枚举值画成胶囊'),
+    bools: t('布尔值画成小勾'),
+    blank: t('空格子画「—」'),
   })[prop]
 
 const optionLabel = (v: string) =>
@@ -133,6 +138,9 @@ const optionLabel = (v: string) =>
     red: t('红'),
     orange: t('橙'),
     gray: t('灰'),
+    sm: t('小'),
+    md: t('中'),
+    lg: t('大'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */
