@@ -1789,7 +1789,7 @@ export function autoArchivePicks(
     .map((x) => x.id)
 }
 
-export function taskSummary(t: Task): Task {
+export function taskSummary<T extends Task>(t: T): T {
   const first = t.messages.find((m) => m.role === 'user')
   const plan = openPlan(t) ? activePlan(t) : undefined
   const left = planLeft(t)

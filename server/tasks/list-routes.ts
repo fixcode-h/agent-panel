@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
-import { descendantNeeds } from '../../shared/child-needs.ts'
 import { bugBriefs } from '../../shared/bug-overview.ts'
 import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
 import { messageChars } from '../task-store.ts'
@@ -14,10 +13,10 @@ import {
   type SearchHit,
 } from '../../shared/task-search.ts'
 import { log } from '../log.ts'
-import { taskCliAlive } from '../exec/process.ts'
 import { SEARCH_CACHE_TASKS, SEARCH_CACHE_CHARS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { createIdleRelease } from './idle-release.ts'
+import { withLegacy } from './live.ts'
 
 /**
  * 对话列表类接口：列表（带 ETag）、磁盘占用、保活列表与释放、回收站列表、对话内容搜索（带消息缓存）。
@@ -51,8 +50,8 @@ export function registerListRoutes(s: TasksScope) {
    * 只给视图和流程统计要的精简字段（shared/bug-overview.ts）。状态按内存里正在跑的那份算，和列表同一个口径
    */
   s.routes.get('/bugs', async (c) => {
-    const all = (await s.store.list()).map((t) => s.withJobs(s.idle(s.live.get(t.id)?.task ?? t)))
-    return c.json(bugBriefs(all))
+    const all = (await s.store.list()).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
+    return c.json(bugBriefs(await Promise.all(all.map(async (t) => withLegacy(t, await s.liveOf(t))))))
   })
 
   /**
@@ -79,31 +78,10 @@ export function registerListRoutes(s: TasksScope) {
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢。
     // 进了回收站的对话不在任何列表里出现（回收站自己有一个入口，见 GET /trash）
     const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
-    // 子对话还在运行时父对话也算在运行：一次算好所有父对话名下的数量，前端不用再为每个任务发请求。
-    // 口径和标题栏、能不能回收是同一个（childActive）：等结果、等回答的子对话也算，不只看 working
-    const kids = new Map<string, number>()
-    // 名下 CLI 还活着的子对话数：侧栏不点开父对话也能看出里面还开着 CLI
-    const kidsCli = new Map<string, number>()
-    for (const k of all) {
-      if (!k.parentTaskId) continue
-      if (taskCliAlive(k.id)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
-      if (!s.childActive(k)) continue
-      kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
-    }
-    // 后代对话在等用户确认、回答：父对话（以及更上层）在侧栏也是「等你处理」，不能还是「执行中」（实测报告问题 1）
-    const needs = descendantNeeds(all)
-    let list = all.map((t) => {
-      const n = kids.get(t.id) ?? 0
-      const childrenNeeds = needs.get(t.id) ?? 0
-      // 带上还在跑的后台命令：交出去的命令没跑完，列表里这个对话就还在「等结果」，不能显示成做完了
-      return taskSummary(
-        s.withJobs(
-          t.parentTaskId
-            ? { ...t, childrenNeeds }
-            : { ...t, childrenWorking: n, childrenCli: kidsCli.get(t.id) ?? 0, childrenNeeds },
-        ),
-      )
-    })
+    // 运行时状态（还在跑的子对话数、后台命令、CLI 存活、后代在等你的数）只在 liveOf 一处算（server/tasks/live.ts）：
+    // 子对话的计数是一次扫完所有父对话、按 1 秒缓存的，列表里逐个取不会每个都扫一遍。
+    // 摘要里新旧两种形状并存：live 是新的，旧的几个字段这一版照样叠上（见 withLegacy）
+    let list = await Promise.all(all.map(async (t) => taskSummary(withLegacy(t, await s.liveOf(t)))))
     // 子对话不进入项目列表：按 parentId 查询时才返回它们。
     // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
     // 直接经接口建的独立运行没有父对话，照常列

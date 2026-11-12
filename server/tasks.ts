@@ -80,6 +80,7 @@ import { createAsks } from './tasks/asks.ts'
 import { createAwaySweep } from './tasks/away-sweep.ts'
 import { createQuotaResume } from './tasks/quota-resume.ts'
 import { createPeer } from './tasks/peer.ts'
+import { createLive } from './tasks/live.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
 import { createAfterDeps } from './tasks/after-deps.ts'
@@ -230,7 +231,7 @@ export function tasksApi(deps: {
     trackUserToChild: () => trackUserToChild,
     wakeConv: () => wakeConv,
     wakeTask: () => wakeTask,
-    withJobs: () => withJobs,
+    liveOf: () => liveOf,
     withLive: () => withLive,
     learnExperience: () => learnExperience,
     quotaAfterFail: () => quotaAfterFail,
@@ -588,7 +589,7 @@ export function tasksApi(deps: {
   const { beginEdit, ensureChildWorktree, mergeLock, recordWorktreeError, restoreWorktree } = createEditWorktree(scope)
   const { noteParent, notePlanInput, sendToChild, trackUserToChild } = createChildMessages(scope)
   const { releaseAfter, startAfterNow } = createAfterDeps(scope)
-  const { background, endBackground, withJobs, settling } = createJobs(scope)
+  const { background, endBackground, settling } = createJobs(scope)
   const { parentTestStepsOf, parentTesting, parentTests, startParentTests, recordSelfTestRun, recoverParentTests } =
     createTestRuns(scope)
   const {
@@ -663,11 +664,13 @@ export function tasksApi(deps: {
     ruleCommand,
     settleChildTurn,
     startChild,
-    withLive,
+    childCountsOf,
     settleChildWorktree,
     reportKey,
     integrate,
   } = createChildren(scope)
+  // 对话的运行时状态只在这一处算（server/tasks/live.ts）：列表、详情、实时推送都经它
+  const { liveOf, withLive } = createLive(scope, childCountsOf)
   const { attachOrchestra, forwardSpawn, messageParent, remindParentFix } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)

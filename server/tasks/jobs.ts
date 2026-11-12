@@ -11,7 +11,6 @@ import {
   jobMs,
   jobOutput,
   settleJobRow,
-  uiJobs,
   type BgJob,
 } from '../background.ts'
 import { log } from '../log.ts'
@@ -19,7 +18,6 @@ import { BG_LOG_DIR } from '../store.ts'
 import { createBgPersist } from '../bg-persist.ts'
 import { t } from '../../shared/i18n.ts'
 import { settleWait, waitNote } from '../../shared/plan.ts'
-import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
 import { forwardBuildResult } from './build-results.ts'
 
@@ -206,18 +204,6 @@ export function createJobs(sc: TasksScope) {
     .then(() => sc.recoverParentTests())
     .catch((e) => log.warn('task', '重启后恢复父对话测试失败', { error: (e as Error).message }))
 
-  /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
-  /**
-   * 带上还在跑的后台命令。没有也写成空数组：界面靠「有没有这个字段」分辨这份任务是完整推送（带运行时字段）
-   * 还是别的接口顺手返回的（没带），后者不能把列表和标题栏的转圈清掉（见 web/src/lib/live-fields.ts）
-   */
-  const withJobs = (task: Task): Task => ({
-    ...task,
-    jobs: uiJobs(background.list(task.id)),
-    // CLI 进程真的还活着：按进程登记算（见 taskCliAlive），界面不再拿 status / awaitingUser 猜
-    cliAlive: taskCliAlive(task.id),
-  })
-
   /**
    * 结束对话的后台命令，连同它名下子对话的：对话停止、归档、删除时调用。
    * CLI 因为页面切走被回收、换 CLI 重启时不调用，那时对话还在，结果推回会接着开一轮
@@ -252,5 +238,5 @@ export function createJobs(sc: TasksScope) {
       .catch((err) => log.warn('task', '没能记下被停掉的后台命令', { task: id, error: (err as Error).message }))
   }
 
-  return { background, endBackground, withJobs, settling }
+  return { background, endBackground, settling }
 }

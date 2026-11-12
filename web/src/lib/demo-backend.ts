@@ -1,3 +1,4 @@
+import { demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
 import { demoChildRows } from './demo-children'
 /**
@@ -173,7 +174,6 @@ import { fail, parse } from './demo-http'
 import { live } from './demo-live'
 import { demoLocal } from './demo-comfy'
 import {
-  demoChildActive,
   demoClean,
   demoCliAlive,
   demoKill,
@@ -2596,34 +2596,13 @@ function tasksRoute(
     if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
-      // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
-      // 「继续执行」按钮也按它让位（演示版少了这个字段，这些界面分支永远走不到）
-      const kids = new Map<string, number>()
-      // 和正式版一样：名下 CLI 还开着的子对话数，侧栏不点开父对话也能看出里面还开着 CLI
-      const kidsCli = new Map<string, number>()
-      for (const k of tasks) {
-        if (!k.parentTaskId) continue
-        if (demoCliAlive(k)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
-        if (!demoChildActive(k)) continue
-        kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
-      }
-      // 和正式版一样：子对话在等你确认时父对话也是「等你处理」（见 shared/child-needs.ts）
+      // 运行时状态（live：state、CLI 存活、名下子对话计数）和正式版一样只在一处算（demo-live.ts）：
+      // 侧栏、输入框靠它说清在等什么，「继续执行」按钮也按它让位
       const needs = descendantNeeds(tasks)
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
-      return (
-        (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
-          .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
-          // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) =>
-            taskSummary({
-              ...t,
-              cliAlive: demoCliAlive(t),
-              childrenWorking: kids.get(t.id) ?? 0,
-              childrenCli: kidsCli.get(t.id) ?? 0,
-              childrenNeeds: needs.get(t.id) ?? 0,
-            }),
-          )
-      )
+      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
+        .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
+        .map((t) => taskSummary(demoWithLive(tasks, t, needs)))
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
@@ -3191,21 +3170,8 @@ function tasksRoute(
     persist()
     return task
   }
-  // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
-  // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
-  const withLive = { ...task, cliAlive: demoCliAlive(task) }
-  const full = task.parentTaskId
-    ? withLive
-    : (() => {
-        // 和正式后端的单任务一样带上三项计数（server/tasks/children.ts）：子对话刷新信号靠它们
-        const kids = tasks.filter((x) => x.parentTaskId === task.id)
-        return {
-          ...withLive,
-          childrenWorking: kids.filter(demoChildActive).length,
-          childrenCli: kids.filter(demoCliAlive).length,
-          childrenNeeds: descendantNeeds(tasks).get(task.id) ?? 0,
-        }
-      })()
+  // 和正式后端的 withLive 一样：完整任务带上 live（状态、CLI 存活、名下子对话计数），旧的几个字段这一版照样叠上
+  const full = demoWithLive(tasks, task)
   // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
   const limit = Number(query.get('limit') ?? '')
   if (!Number.isInteger(limit) || limit <= 0) return full

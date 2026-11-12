@@ -8,6 +8,7 @@
  */
 import { z } from 'zod'
 import { TaskMessage, TaskMode, TaskStatus } from './schema.ts'
+import { TaskLive } from './task-live.ts'
 
 const MessageShape = z.looseObject({
   id: z.string(),
@@ -36,12 +37,13 @@ const TaskShape = z.looseObject({
 /** 顶层对话额外带的三项计数：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
 const ChildCounts = { childrenWorking: z.number(), childrenCli: z.number(), childrenNeeds: z.number() }
 
-/** GET /tasks?projectId=：顶层对话的摘要（消息只留第一条用户消息） */
-export const TaskListContract = z.array(TaskShape.extend(ChildCounts))
+/** GET /tasks?projectId=：顶层对话的摘要（消息只留第一条用户消息）；live 是服务端算好的运行时状态（shared/task-live.ts） */
+export const TaskListContract = z.array(TaskShape.extend({ ...ChildCounts, live: TaskLive }))
 
 /** GET /tasks/:id?limit=：对话页打开时的第一页（顶层对话） */
 export const TaskPageContract = TaskShape.extend({
   ...ChildCounts,
+  live: TaskLive,
   cliAlive: z.boolean(),
   messageTotal: z.number(),
   messageHasMore: z.boolean(),

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { messageStamp, taskTitle } from '../shared/task.ts'
+import { NOT_STORED_FIELDS } from '../shared/task-live.ts'
 import { log } from './log.ts'
 import { removeTaskLog, setTaskLogPath } from './task-log.ts'
 import {
@@ -41,6 +42,16 @@ const BAD_META_LIMIT = 5
 
 /** 任务文件里只放用户消息：摘要要第一条要求，清理附件要知道哪些附件还在用 */
 const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
+
+/**
+ * 写盘的那份：去掉运行时字段（shared/task-live.ts 的 NOT_STORED_FIELDS）和交给界面时带的 live。
+ * 这些是服务端按进程、后台命令当场算的，存下来重启后就是过期的假象（旧文件里存过的由数据迁移清掉）
+ */
+function stored(t: Task): Task {
+  const out: Record<string, unknown> = { ...t }
+  for (const k of [...NOT_STORED_FIELDS, 'live']) delete out[k] // delete-ok: 写盘用的副本，不经 store.update 合并
+  return out as Task
+}
 
 /** 读过对话的任务最多留这么多个在内存里（正在执行的另外由执行器拿着） */
 const KEEP_FULL = 12
@@ -219,7 +230,7 @@ export function createTaskStore() {
   })
 
   async function writeFull(t: Task) {
-    await writeJsonAtomic(fileOf(t), head(t))
+    await writeJsonAtomic(fileOf(t), stored(head(t)))
   }
 
   /** 写对话消息：指纹没变就跳过（增量算，不每次扫全部工具输出） */
