@@ -1,35 +1,11 @@
-import { waitingAfter } from '../../shared/child-after.ts'
-import { chatMemoryFor } from '../chat-memory.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
-import { afterTurnCleanup } from './bug-cleanup.ts'
-import { recheckAfterTurn } from './bug-recheck.ts'
 
 import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
-import { readGlobalLessons } from '../lessons.ts'
-import { loadProjectLessons, projectWithLessons } from '../project-lessons.ts'
-import { loadProjectExperience } from '../project-experience.ts'
-import { recordKnowledgeHits } from '../knowledge-hits.ts'
-import { recordExperience } from '../experience-learn.ts'
+import { projectWithLessons } from '../project-lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
-import {
-  beginRun,
-  childActivity,
-  childActivityText,
-  childLastActivity,
-  childWait,
-  childWaitText,
-  childFacts,
-  convState,
-  convStateText,
-  dropEndNotes,
-  endRun,
-  trackWait,
-  taskDeleted,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
-import { isChatMode, settledTodos, turnRole } from '../../shared/conv-mode.ts'
+import { beginRun, dropEndNotes, trackWait, taskDeleted, withAttachments, withTaskModel } from '../../shared/task.ts'
+import { settledTodos, turnRole } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { expandSlash } from '../slash.ts'
@@ -37,36 +13,29 @@ import { expandSlash } from '../slash.ts'
 import { getSettings } from '../settings.ts'
 import { detectClis } from '../detect.ts'
 import { gitHead, gitNumstat } from '../exec/git.ts'
-import { noPushEnv, stalledTurn } from '../exec/runner.ts'
-import { deliverWait, forgetNotes, steerTask } from '../exec/steering.ts'
+import { stalledTurn } from '../exec/runner.ts'
+import { deliverWait, steerTask } from '../exec/steering.ts'
 import { runRealTurn } from '../exec/real-turn.ts'
 import { type RealContext } from '../exec/real-context.ts'
 import { makeAlert } from '../../shared/alerts.ts'
-import { dropHeld, hasHeld, holdForNextTurn, markHeld, takeHeld } from '../exec/delivery.ts'
+import { holdForNextTurn, markHeld, takeHeld } from '../exec/delivery.ts'
 import { resetIdleCountdown } from '../presence.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
-import { currentBranch, isBigProject, refillSpareDeps } from '../exec/worktree.ts'
-import { currentTestSteps, isUeBuildCommand } from '../../shared/test-steps.ts'
+import { isBigProject, refillSpareDeps } from '../exec/worktree.ts'
 import { log } from '../log.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'
-import { inboxWithFile } from './inbox-file.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { markChildWrapUp } from '../../shared/plan.ts'
-import { statSync } from 'node:fs'
-import path from 'node:path'
-import { holderState, ownP4Files, releaseUnchanged } from '../claims.ts'
-import { taskCliAlive } from '../exec/process.ts'
-import { p4Runner, splitChangelists } from '../p4-split.ts'
-import { projectDocRoot } from '../doc-root.ts'
-import { cherryPickFor } from '../cherry-pick.ts'
-import { TaskBusyError, isolated, parentRunRole, isP4, wrapUpFrom, wrapUpProbe } from './helpers.ts'
+import { TaskBusyError, isolated, wrapUpFrom, wrapUpProbe } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
-import { upgradeChildToBug } from './bug-upgrade.ts'
-import { pauseHelper, pauseUnit } from '../../shared/run-stops.ts'
-import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
 import { createSpawnChild } from './spawn-child.ts'
+import { conversationCaps, type TurnCapsCtx } from './turn-caps-conv.ts'
+import { failRun, settleRun, type SettleCtx } from './run-settle.ts'
+import { vcsCaps } from './turn-caps-vcs.ts'
+import { buildCaps } from './turn-caps-build.ts'
+import { knowledgeCaps } from './turn-caps-knowledge.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
@@ -243,6 +212,22 @@ export function createRun(sc: TasksScope) {
       if (first) entry.task.baseline = snapshot ?? {}
       // 收尾要的工作区探测只做一次；收尾种类本身按现在的推送授权现算（见下面的 wrapUp getter）
       const wrapProbe = await wrapUpProbe(entry.task, project.path, project.gitPolicy)
+      const caps: TurnCapsCtx = {
+        sc,
+        entry,
+        task,
+        project,
+        found,
+        agents,
+        settings,
+        dir,
+        rootId,
+        coordinatorRole,
+        ueRole,
+        startAgent,
+        changed,
+        spawnChild,
+      }
       await runRealTurn({
         task: entry.task,
         agents,
@@ -262,39 +247,6 @@ export function createRun(sc: TasksScope) {
         },
         changed,
         newId: randomUUID,
-        // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
-        // 顶层对话：计划没做完、也没在等结果就收尾时，面板推它接着做；动了手却没列计划，推它先列计划（见 nudgePlan）。
-        // 判断做完没有只看计划，不看回复里的字眼（用户 2026-11-02 定）。Chat 页没动手的那一轮不推
-        // 每一轮结束都按整棵对话树核一次用量上限（见 tasks/budget.ts）：到了上限就停下，也不再推它接着做
-        onTurnEnd: task.parentTaskId
-          ? (turn) => {
-              sc.settleChildTurn(entry.task, turn)
-              void sc.checkBudget(entry.task)
-              // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug-cleanup.ts）
-              void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
-                log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
-              )
-              // 交了修复 / 验证、写了回归测试命令：面板在改前和现在的代码上各跑一次（分析稿 B9）
-              recheckAfterTurn(sc, task.id, randomUUID)
-            }
-          : (turn) => {
-              // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，
-              // 只在 run 收尾处排的话要等闲置回收才学，用户看到的就是「对话完成了却不学」。
-              // 面板接着推它做（nudgePlan / nudgeWrapUp）会在几秒内让它跑起来，learn 到点见它没完成就不学，等下一轮结束再排
-              if (entry.task.projectId) void sc.learnExperience(task.id)
-              void sc.checkBudget(entry.task).then((over) => {
-                if (over || task.mode !== 'chat') return
-                // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
-                if (turn.tools <= 0 && isChatMode(entry.task)) return
-                // 有子对话在等它收尾时先推收尾：这时计划那一步写着「等子对话」，nudgePlan 会当成在等别人而不推
-                return sc
-                  .nudgeWrapUp(entry.task)
-                  .then((pushed) => pushed || sc.nudgePlan(entry.task, turn))
-                  .catch((e) =>
-                    log.warn('task', '推对话接着做计划失败', { task: task.id, error: (e as Error).message }),
-                  )
-              })
-            },
         isGit: snapshot !== null,
         op,
         resume,
@@ -312,420 +264,38 @@ export function createRun(sc: TasksScope) {
         get goal() {
           return ruleOwner()?.goal || ''
         },
-        takeInbox: task.parentTaskId
-          ? undefined
-          : () => {
-              const got = entry.task.inbox
-              entry.task.inbox = []
-              return got.map((m) => inboxWithFile(task.id, m))
-            },
-        messageParent: task.parentTaskId
-          ? (text, question, options, kind, fix) => sc.messageParent(entry.task, text, question, options, kind, fix)
-          : undefined,
-        // 子对话点名「禁止子对话执行」的角色时，把它转交父对话创建（见 ADR 0019）
-        forwardSpawn: task.parentTaskId ? (spec) => sc.forwardSpawn(entry.task, spec) : undefined,
-        // 父对话排着的转交请求：每轮建 Orchestra 时直接派，不依赖 AI 自己想起来调 spawn_agents
-        onOrchestra: (orch) => sc.attachOrchestra(task.id, orch),
-        // 结束前钩子（ADR 0049）：模型准备结束这一轮时，计划没做完、收尾请求没处理就在同一轮里拦住
-        beforeEnd: (input) => sc.beforeEnd(task.id, input),
         childIsolation: found?.childIsolation,
-        worktreeHome: isolated(entry.task) && found ? await sc.worktreeHome(entry.task, found) : undefined,
         // getter：保活中用户在推送授权卡上点了「允许」，下一条消息的提示词和计划就带上推送收尾
         //（取一次的快照要等下次重开进程才看得到，见 docs/lessons/prompts.md「拼的时候读现值」）
         get wrapUp() {
           return wrapUpFrom(entry.task, wrapProbe, project?.gitPolicy)
         },
-        // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
-        p4Split:
-          dir && project?.path && (await isP4(project.path))
-            ? async (input) => {
-                // 项目外的文档根里的文件不分（见 shared/doc-root.ts）：分之前现算，项目设置改了下一次就按新的
-                const docs = await projectDocRoot(project.path, agents, 'p4')
-                // 共用目录的子对话和兄弟在同一个 workspace、同一个 default changelist：没写 files 时只分它名下的认领和改过的文件，
-                // 否则会把兄弟打开的文件一起分进它的 changelist
-                const isDir = (p: string) => !!statSync(path.join(dir, p), { throwIfNoEntry: false })?.isDirectory()
-                const own = input.files?.length ? [] : ownP4Files(sc.claims, entry.task, isDir)
-                const opts = docs?.outside ? { skipUnder: docs.root } : {}
-                return splitChangelists(p4Runner(dir), own.length ? { ...input, files: own } : input, opts)
-              }
-            : undefined,
-        // 项目设了 cherry-pick 目标的顶层对话：由面板核对后搬，只收这个对话自己的提交 / 改动（用户 2026-10-31 定的强制要求）
-        cherryPick:
-          !task.parentTaskId && dir && project?.path && project.cherryPick?.trim()
-            ? await cherryPickFor(dir, project.path, project.cherryPick.trim(), () => entry.task)
-            : undefined,
-        // 不管用哪种版本管理，子对话都要请父对话收尾：评审、测试、交接和父对话验收挂在这一步上（独立分支还要合回）
-        submitMerge:
-          task.parentTaskId && task.projectId
-            ? (note, tests, build, handoff, triage, override) =>
-                sc.submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff, triage, override)
-            : undefined,
-        isolated: !!task.parentTaskId && isolated(entry.task),
-        ueBuild:
-          ueRole === 'child'
-            ? { role: 'child', request: (note) => sc.childRequestBuild(entry.task, note) }
-            : ueRole === 'parent' && found
-              ? { role: 'parent', request: (note, kids) => sc.parentRequestBuild(entry.task, found, note, kids) }
-              : undefined,
-        // 顶层项目对话收尾名下的子对话：子对话 submit_merge 请求后由它合回、标完成、删分支（ADR 0005）
-        finishChild: !task.parentTaskId && task.projectId ? (id) => sc.finishChild(entry.task, id) : undefined,
-        // 名下的工作流运行（不是子对话）：起、补充、退回、代答、终止、合回（server/tasks/flow-runs.ts）
-        runs:
-          !task.parentTaskId && !task.flowRun && found?.id ? sc.flowRuns.hostFor(() => entry.task, found) : undefined,
-        // 父对话之间：看同一项目里的其他父对话、给它们传话（编译占位时的协调就靠它）
-        peers: coordinatorRole
-          ? async () =>
-              (await sc.peerList(entry.task)).map((p) => ({
-                id: p.id,
-                title: p.title,
-                status: p.status,
-                busy: !!p.working,
-                building: sc.background
-                  .list(p.id)
-                  .filter((j) => j.exclusive && !j.endedAt)
-                  .map((j) => `${j.name}（${j.state === 'running' ? '正在跑' : '排队中'}）`)
-                  .join('、'),
-              }))
-          : undefined,
-        messagePeer: coordinatorRole
-          ? async (id, text) => {
-              const peer = (await sc.peerList(entry.task)).find((p) => p.id === id)
-              if (!peer) return { ok: false, info: '找不到这个父对话：id 从 list_peers 取，只能联系同一项目里的父对话' }
-              await sc.wakeTask(
-                peer.id,
-                entry.task,
-                `【父对话传话】来自「${entry.task.title}」（id ${entry.task.id}）：${text}\n要回话就用 message_peer 回给它；只协调，不用替它做决定。`,
-                { peer: await sc.peerOf(entry.task, 'peer', 'chat', text) },
-              )
-              return { ok: true, info: `已交给父对话「${peer.title}」` }
-            }
-          : undefined,
-        // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑
-        verify:
-          task.mode === 'chat' && found?.id
-            ? {
-                // 按项目当前步骤拼这一轮的提示词（一次取一次，这一轮不再重读）；项目读不到才用任务快照
-                steps: currentTestSteps(task.testSteps, found),
-                platform: process.platform,
-                wslDistro: found.wslDistro,
-                scaled: found.scaledVerify,
-                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛。
-                // getter 现取：runner 在这一轮里会刷新 task.changes，保活的下一条消息要按新的改动清单算
-                get changedFiles() {
-                  return entry.task.changes.map((c) => c.path)
-                },
-                ...(await parentRunRole(entry.task, found)),
-              }
-            : undefined,
-        // 父对话（协调器）就地微改动：角色开了才有，护栏在 beginInlineEdit / endInlineEdit（shared/inline-edit.ts）
-        inlineEdit:
-          coordinatorRole && startAgent?.inlineEdit === 'tiny' && dir
-            ? {
-                begin: (files, reason) => sc.beginInlineEdit(entry.task, dir, files, reason),
-                end: () => sc.endInlineEdit(entry.task, dir),
-              }
-            : undefined,
-        // 父对话（协调器）不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
-        beginEdit:
-          task.mode === 'chat' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
-            ? () => sc.beginEdit(entry, changed)
-            : undefined,
-        branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
         // 这一轮的 CLI 自带待办会不会被面板显示：Chat 模式的提示词据此决定怎么说计划（CLI 定义的 todos）
         cliTodos: !!startedRun && !!getCli(startedRun.cli)?.todos,
-        // Chat 页的对话：「关于我」和跨对话记忆进提示词，remember 工具往里记（server/chat-memory.ts）
-        chatMemory: isChatMode(task) ? await chatMemoryFor() : undefined,
-        // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
-        runBackground:
-          task.mode === 'chat' && dir
-            ? async (input) => {
-                // UE 的编译归父对话、按编译目录占位（ADR 0004）。以前这里一律拒收、让它改用 request_build，
-                // request_build 坏掉时 Agent 只能去前台硬跑（用户 2026-11-12 报）。现在不拒收，面板替它分流：
-                // 子对话交来的转成向父对话的申请，父对话交来的排进编译目录的占位队列（ADR 0006 补充 2026-11-12）
-                if (ueRole && isUeBuildCommand(input.command)) {
-                  if (ueRole === 'child') {
-                    const r = await sc.childRequestBuild(
-                      entry.task,
-                      `交来的编译命令（子对话不自己编译，面板转成了申请）：${input.command}`,
-                    )
-                    return r.ok
-                      ? {
-                          ok: true,
-                          info: `UE 项目里子对话不自己编译，面板已把这条编译命令转成向父对话的编译申请：${r.info}`,
-                        }
-                      : r
-                  }
-                  if (!found) return { ok: false, info: '找不到这个对话所在的项目，没法按编译目录占位编译' }
-                  return sc.parentRequestBuild(entry.task, found, `run_background 交来的编译：${input.name}`, [], {
-                    name: input.name,
-                    command: input.command,
-                    cwd: input.cwd,
-                    timeoutMinutes: input.timeoutMinutes,
-                  })
-                }
-                return sc.background.start({
-                  ...input,
-                  // 编译会抢文件锁：没写 exclusive 的 UE 编译也按目录排队
-                  exclusive: input.exclusive || isUeBuildCommand(input.command),
-                  // 交来的 service 原样带上（BgJob.service）：常驻服务不催、不算在等结果
-                  taskId: task.id,
-                  root: dir,
-                  env: noPushEnv(entry.task, project?.gitPolicy),
-                })
-              }
-            : undefined,
-        checkBackground: (id) => sc.background.check(task.id, id),
-        stopBackground: (id) => sc.background.stopOne(task.id, id),
-        // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样
-        claimFiles:
-          task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
-            ? (paths) => {
-                const r = sc.claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
-                // 被拒时写明对方现在怎样：停下等验收的要找父对话协调，不是「过一会儿再认领」
-                const held = r.held.map((h) => ({ ...h, state: holderState(sc.live.get(h.byId)?.task) }))
-                return { ...r, held }
-              }
-            : undefined,
-        // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；文件里的新教训和旧项目 JSON 合并后交给 Agent
-        lessons: task.projectId
-          ? {
-              list: async () => {
-                const p = await sc.deps.projects.get(task.projectId)
-                return p ? (await loadProjectLessons(p, agents)).lessons : []
-              },
-              globals: readGlobalLessons,
-              record: async (input) =>
-                sc.deps.recordLesson
-                  ? sc.deps.recordLesson(task.projectId, { ...input, source: 'agent', taskId: task.id })
-                  : { ok: false, info: '这里记不了项目教训' },
-              hit: (ids) => void recordKnowledgeHits(task.projectId, 'lessons', ids, rootId),
-            }
-          : undefined,
-        // 项目经验：设置里关了总开关就整个不给（工具、开头那一行都没有）；每次查都现读，刚学到的也能查到
-        experience:
-          task.projectId && settings.experience.enabled
-            ? {
-                list: async () => {
-                  const p = await sc.deps.projects.get(task.projectId)
-                  return p ? (await loadProjectExperience(p, agents)).items : []
-                },
-                record: async (input) => {
-                  const p = await sc.deps.projects.get(task.projectId)
-                  if (!p?.path) return { ok: false, info: '这个项目没有目录，存不了经验' }
-                  return recordExperience(p, agents, input, task.parentTaskId || task.id)
-                },
-                hit: (ids) => void recordKnowledgeHits(task.projectId, 'experience', ids, rootId),
-              }
-            : undefined,
-        releaseFiles:
-          task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
-            ? (paths) => releaseUnchanged(sc.claims, entry.task, paths)
-            : undefined,
-        listConversations: async () => {
-          const kids = await sc.store.childrenOf(entry.task.id)
-          // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
-          return kids.map((k) => {
-            const cur = sc.live.get(k.id)?.task ?? k
-            // 在做什么、在等什么、多久没新输出：父对话问「是不是卡住了」时不用再去猜
-            // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
-            const doing = sc.live.has(k.id) ? childActivity(cur) : undefined
-            return {
-              id: cur.id,
-              title: cur.title,
-              // 状态用对话的 8 个状态说（见 ConvState），和子对话栏、状态上报是同一个结论
-              status: convStateText(convState(childFacts(cur, { background: sc.pendingJobs(cur.id) }))),
-              state: convState(childFacts(cur, { background: sc.pendingJobs(cur.id) })),
-              // 收尾中也算忙：只看 working 时父对话会把收尾中的子对话当成空闲、反复重发
-              busy: cur.working || sc.startQueue.has(cur.id) || sc.completing.has(cur.id),
-              // 已完成的报关键文件：父对话按它判断新问题该交给谁，比最后一句回复准
-              summary:
-                cur.resolved && cur.handoff?.files
-                  ? `关键文件：${cur.handoff.files.replace(/\s+/g, ' ')}`
-                  : cur.summary || sc.lastReply(cur),
-              at: cur.updatedAt,
-              doing: childActivityText(doing),
-              waiting: waitingAfter(cur)
-                ? `排在 ${cur.waitAfter!.map((id) => `「${kids.find((x) => x.id === id)?.title ?? id}」`).join('、')} 之后，它们合回后面板自动启动`
-                : childWaitText(childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) })),
-              lastActivityAt: childLastActivity(cur),
-              // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
-              autoAsk: cur.autoAsk,
-              createdAt: cur.createdAt,
-              resolved: !!cur.resolved,
-            }
-          })
-        },
-        createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level, after }) => {
-          if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
-          const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
-          if (dirty && edits) return { ok: false, info: dirty }
-          const r = await spawnChild(entry.task, project, agents, {
-            title,
-            message,
-            files,
-            agentId,
-            bug,
-            fix,
-            edits,
-            level,
-            after,
-          })
-          return dirty ? { ...r, info: `${r.info}\n${dirty}` } : r
-        },
-        sendToConversation: async (id, message, bug) => {
-          // 写了 kind: "bug"：先把子对话标成用户报的 Bug，交过去的话前面带上说明（bug-upgrade.ts）
-          const up = bug && (await upgradeChildToBug(sc, entry.task.id, id, message, bug.level))
-          if (up && !up.ok) return up
-          // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
-          const r = await sc.sendToChild(entry.task.id, id, up ? up.message : message, undefined, 'task')
-          if (up && r.ok) r.info = `${r.info}\n${up.note}`
-          // 交给子对话就算回答了它的提问：父对话里的提问卡片收起
-          if (r.ok && sc.settleAsks(entry.task, id, message, 'parent')) entry.rev++
-          return r
-        },
+        // 按能力分组拼好的宿主能力（server/tasks/turn-caps-*.ts）：只放普通值和函数，要现取的 getter 留在上面
+        ...(await conversationCaps(caps)),
+        ...(await vcsCaps(caps)),
+        ...(await buildCaps(caps)),
+        ...(await knowledgeCaps(caps)),
       })
     })()
-    const settled = run
-      .catch((e) => {
-        log.error('task', '任务执行出错', { task: task.id, error: e })
-        taskLog(task.id, '执行出错', { error: e as Error })
-        // 预热失败不打扰对话：恢复原来的状态，等用户发消息时再按正常流程报错
-        if (prewarm) {
-          entry.task.status = before
-          return
-        }
-        entry.task.status = 'failed'
-        // 还画成在跑的节点、子任务一起收口：不然它们一直转圈、没有输出，终止按钮又说已经结束了
-        // 子任务中断并暂停（继续执行时在原记录里接着跑，ADR 0042），工作流节点记失败
-        const at = new Date().toISOString()
-        for (const s of entry.task.steps)
-          if (s.status !== 'running') continue
-          else if (pauseHelper(task.id, s)) pauseUnit(s)
-          else [s.status, s.endedAt] = ['failed', at]
-        entry.task.messages.push({
-          id: randomUUID(),
-          role: 'system',
-          agentId: '',
-          step: '',
-          text: t('执行出错：{error}', { error: (e as Error).message }),
-          tools: [],
-          error: true,
-          alert: makeAlert('error', (e as Error).stack ?? (e as Error).message, 'panel'),
-          at: new Date().toISOString(),
-        })
-      })
-      .finally(async () => {
-        // 面板已经放弃了这份执行（杀了进程、落了停止、让出了执行位）：后面的收尾都已经做过，再做会盖掉新的一轮
-        if (entry.orphaned) {
-          taskLog(task.id, '已放弃的执行这时才收完，不再收尾', { status: entry.task.status })
-          return
-        }
-        log.info('task', `任务结束：${entry.task.status}`, { task: task.id })
-        taskLog(task.id, '执行结束', {
-          status: entry.task.status,
-          stopReason: entry.stop ? entry.stopReason : undefined,
-          restart: entry.restart || undefined,
-          held: hasHeld(task.id) || undefined,
-        })
-        entry.task.working = false
-        entry.task.awaitingUser = false
-        entry.task.prewarming = false
-        // 排队等 API 名额的标记在 runner 里拿到或停止时就去掉；这里兜底，免得停下的对话还显示在排队
-        // 写 undefined、不用 delete：落盘按字段合并，delete 掉的字段在盘上还留着，停止时排队标记已经落过盘就清不掉
-        entry.task.apiWait = undefined
-        for (const s of entry.task.steps) s.apiWait = undefined
-        // 预热收尾要把原来的列表时间写回去，不能让它变成现在
-        let keepTime = false
-        // 预热只是把 CLI 启动好，没有处理新消息就退出时不要算完成，也不要把列表时间改成现在
-        if (prewarm && (entry.task.turnDoneAt ?? '') === beforeTurnDoneAt) {
-          // 引擎这时不会标完成，任务还停在 running；状态和时间都回到打开前
-          if (entry.task.status === 'done' || entry.task.status === 'running') entry.task.status = before
-          entry.task.updatedAt = beforeUpdatedAt
-          // 引擎收尾没有走 changed，这里补一次推送
-          entry.rev++
-          keepTime = true
-        }
-        // 工作流跑完一整轮才算完成；对话在 CLI 回复完时已经记了 turnDoneAt
-        if (!prewarm && entry.task.mode !== 'chat' && entry.task.status === 'done')
-          entry.task.turnDoneAt = new Date().toISOString()
-        // 执行中用户换了 CLI/模型/强度：旧进程的命令和上下文不能留给新的选择
-        const nowRun =
-          !prewarm && entry.task.mode === 'chat' && startAgent
-            ? agentRun(withTaskModel(startAgent, entry.task), settings)
-            : undefined
-        const switchedRun =
-          !!startedRun &&
-          !!nowRun &&
-          (startedRun.cli !== nowRun.cli || startedRun.model !== nowRun.model || startedRun.effort !== nowRun.effort)
-        if (switchedRun) {
-          entry.task.command = []
-          delete entry.task.usage.agents[entry.task.agentId]
-        }
-        endRun(entry.task)
-        // 工作流跑完（成功或失败）才有结果可看，这时起标题
-        if (!prewarm) sc.nameOnce(entry.task, startedRun?.cli ?? '')
-        // 子对话这一轮结束：认领不放、改过的文件记到它名下，撞了交给父对话（见 checkCollisions）。预热的一轮什么都不动
-        if (entry.task.parentTaskId && !prewarm) await checkCollisions(entry.task).catch(() => {})
-        // 更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
-        if (!prewarm && entry.task.parentTaskId) {
-          entry.task.summary = sc.lastReply(entry.task)
-          // 这一轮结束：消息立即落盘，不等合并窗口（进程保活等下一句时这可能是最后一次写）
-          await flush(keepTime, true)
-          await sc.reportToParent(entry.task)
-        } else await flush(keepTime, true)
-        // 只删自己的执行位：这一轮收尾时如果已经有新的一轮占住了，不能把它删掉
-        sc.release(entry)
-        // 工作流运行这一轮收完：等决定、待合回、完成时给父对话写信（放执行位之后：父对话收信马上合回、退回时不会撞上）
-        if (!prewarm && entry.task.flowRun)
-          void sc.flowRuns
-            .afterTurn(entry.task)
-            .catch((e) => log.warn('task', '工作流运行回信失败', { task: task.id, error: (e as Error).message }))
-        // 整轮结束了，没被节点取走的补充不会再有人取
-        forgetNotes(task.id)
-        // 项目里的顶层对话：整个对话（含子对话）都完成了就学经验（几秒内又跑起来就等下一轮结束）。
-        // 保活的 CLI 在 onTurnEnd 里已经排过；这里接住不保活的 CLI 和工作流（工作流整轮跑完才到这里），重复排只会重置计时
-        if (!prewarm && !entry.task.parentTaskId && entry.task.projectId) void sc.learnExperience(task.id)
-        // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
-        // 收尾停掉的（父对话 finish_child、用户点解决：stopReason finish）不是出错：收尾时交来的新任务照样接着处理
-        const endedOk = entry.task.status === 'done' || (entry.stop && entry.stopReason === 'finish')
-        if (endedOk && hasHeld(task.id) && !sc.shuttingDown) {
-          // 这一轮跑着的时候对话被删了（进了回收站或彻底删掉）：排着的消息没有对话可接，直接丢掉，不当成故障报
-          const cur = await sc.store.peek(task.id)
-          if (!cur || taskDeleted(cur)) dropHeld(task.id)
-          else {
-            const next = followUp(task.id).catch((e) => {
-              // 并发进来的另一条已经开了新的一轮：排着的这条由那一轮接着处理，不是故障
-              if (e instanceof TaskBusyError) return
-              log.error('task', '接着处理执行中收到的消息失败', { task: task.id, error: (e as Error).message })
-              sc.alertOn(task.id, 'delivery', t('收尾后没能接着处理排着的消息'))(e)
-            })
-            // 正在收尾（completeChild 在等这一份执行收完）：followUp 要先等收尾结束，收尾又在等这里结束，
-            // 在这里 await 就互相等死——子对话永远停在「收尾那一刻」，父对话交代的任务也永远开不起来。
-            // 这时不等，让这一份执行先收完，收尾结束后 followUp 再开新一轮
-            if (!sc.completing.has(task.id)) await next
-          }
-        } else if (!endedOk) {
-          // 这一轮没能正常结束（失败、被停止）：排着的消息不会再被自动处理了。
-          // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
-          const lost = dropHeld(task.id)
-          if (lost.length) {
-            markHeld(entry.task.messages, lost, 'lost')
-            await sc.store
-              .update(task.id, entry.task)
-              .catch((e) => log.warn('task', '标记没送出去的消息失败', { task: task.id, error: (e as Error).message }))
-          }
-        }
-        // 额度用完 / 被限流失败：按设置换备用模型或等到点继续（默认关；每一步都在对话里写一行）
-        if (!prewarm && entry.task.mode === 'chat' && entry.task.status === 'failed' && !sc.shuttingDown)
-          void sc.quotaAfterFail(task.id)
-        // 没在等下一轮时按新的选择直接预热，下一条消息不会再交给旧 CLI；
-        // PATCH 自己负责的重启不要在这里重复做
-        if (switchedRun && !entry.restart && entry.task.status === 'done' && !hasHeld(task.id) && !sc.shuttingDown)
-          void sc
-            .prewarmChat(entry.task, true)
-            .catch((e) => console.error(`按新的选择预热失败：${(e as Error).message}`))
-      })
+    const settle: SettleCtx = {
+      sc,
+      entry,
+      task,
+      prewarm,
+      before,
+      beforeUpdatedAt,
+      beforeTurnDoneAt,
+      startAgent,
+      startedRun,
+      settings,
+      flush,
+      followUp,
+      checkCollisions,
+    }
+    // 出错和收尾在 run-settle.ts
+    const settled = run.catch((e) => failRun(settle, e)).finally(() => settleRun(settle))
     // 面板放弃这份执行时 done 马上结束：等它的人不用陪着卡住的引擎一直等（见 keepalive.ts 的 abandonLive）
     entry.done = entry.abandoned ? Promise.race([settled, entry.abandoned]) : settled
     return entry.task
