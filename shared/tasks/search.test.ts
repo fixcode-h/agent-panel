@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SNIPPET_MAX, SNIPPET_PAD, flatText, messageHit, type SearchHit } from './task-search.ts'
+import { SNIPPET_MAX, SNIPPET_PAD, flatText, messageHit, type SearchHit } from './search.ts'
 
 test('没有命中或搜索词为空时不算命中', () => {
   assert.equal(messageHit('今天改了回收站', ''), null)

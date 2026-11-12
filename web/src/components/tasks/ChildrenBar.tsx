@@ -3,7 +3,7 @@ import { ChevronRight, CircleAlert, GitFork, Hand, Loader2, MessageCircleQuestio
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import { childCounts, sortChildren } from '@shared/task'
-import { childWord } from '@shared/task-word'
+import { childWord } from '@shared/tasks/word'
 import { cn } from '@/lib/utils'
 import { ChildReportButton } from './ChildReport'
 import { useEscape } from '@/lib/useEscape'
@@ -182,7 +182,7 @@ export function ChildrenBar({
               >
                 <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 truncate">
-                  {/* 短词和标题栏、运行区那一行同一处取（shared/task-word.ts 的 childWord，分析稿 A8、U2）：
+                  {/* 短词和标题栏、运行区那一行同一处取（shared/tasks/word.ts 的 childWord，分析稿 A8、U2）：
                       以前这里写「请用户选择」，运行区写「等用户选择」，侧栏写「等你回复」 */}
                   {asking.length > 1
                     ? t('{n} 个子对话等你回答', { n: asking.length })

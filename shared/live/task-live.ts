@@ -11,7 +11,7 @@
 import { z } from 'zod'
 import { TaskJob, type Task } from '../schema.ts'
 import { convActive, taskFacts, taskTurnUnread, type TaskFactsInput } from '../task.ts'
-import { kindWord, stateKind, type StateKind } from '../task-word.ts'
+import { kindWord, stateKind, type StateKind } from '../tasks/word.ts'
 
 export const ConvStateSchema = z.enum([
   'running',
@@ -82,7 +82,7 @@ export const withLiveFacts = <T extends object>(task: T, live: LiveRuntime) => (
   childrenNeeds: live.childrenNeeds,
 })
 
-/** 状态分类：和 taskWord 同一份事实（shared/task-word.ts），只是不带文字 */
+/** 状态分类：和 taskWord 同一份事实（shared/tasks/word.ts），只是不带文字 */
 function liveKind(x: TaskFactsInput): StateKind {
   return stateKind({ ...taskFacts(x), request: x.requests?.[0]?.kind })
 }

@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-03 用户确认并实施；和最初提议不同的地方见「实施记录」） · 2026-11-03
 
-- 影响范围：`shared/builtin/agents.ts`（`BUG_METHOD`、`BUG_REPORT_TEXT`、主理的「Bug 怎么交」、执行）、`server/orch-mcp.ts`（新工具 `submit_diagnosis`）、`server/exec/panel-requests.ts`（诊断确认请求）、`shared/task-request.ts`、`shared/schema.ts`（`Task.diagnoses`）、`shared/review-gate.ts`（收尾核对改动范围）、`web/src/components/tasks/ReviewDialog.tsx`、`RequestCard.tsx`、`ChildRequestBar.tsx`、`Messages.tsx`
+- 影响范围：`shared/builtin/agents.ts`（`BUG_METHOD`、`BUG_REPORT_TEXT`、主理的「Bug 怎么交」、执行）、`server/orch-mcp.ts`（新工具 `submit_diagnosis`）、`server/exec/panel-requests.ts`（诊断确认请求）、`shared/tasks/request.ts`、`shared/schema.ts`（`Task.diagnoses`）、`shared/review-gate.ts`（收尾核对改动范围）、`web/src/components/tasks/ReviewDialog.tsx`、`RequestCard.tsx`、`ChildRequestBar.tsx`、`Messages.tsx`
 - 取代：无。补全 `BUG_METHOD` 第 5 步「根因成立 → 先写失败测试，再修」：在「根因成立」和「修」之间加一道确认
 
 ## 背景
@@ -160,7 +160,7 @@
 - **规则**：`BUG_METHOD` 第 5 步写了交报告、等确认、修失败回到诊断、只改方案里的文件；主理的「Bug 怎么交」写了 `kind: "bug"`，且不代为确认。
 - **入口补到父对话页**（2026-11-04，用户报找不到入口）：只放在子对话工具行上时，用户在父对话页上只看到「等你查看诊断报告第 N 版」、点不开。现在父对话页「正在运行」里这个子对话的那一行、子对话列表里它的那一项都有「查看报告」（`ChildReport.tsx`，点了取子对话的报告直接打开审阅弹窗）；每一版交上来时自动弹一次审阅弹窗，关掉后不再弹（浏览器里按子对话和版本记，父对话页和子对话页共用）。仍不在父对话页另起一行、不挂请求。
 - **审阅弹窗加「取消修复」**（2026-11-04，用户要求）：底部「有疑问，再查」左边，先弹确认框。确认后这一版标「已取消」（`status: 'cancelled'`），不再等确认，也不发话叫醒子对话（交报告那一轮本来就结束了）；计划里没做完的步骤（含收尾那一步）按用户点「解决」那一套收口成完成（`settlePlan`），对话停着等用户下一句。只是结束这一轮，不置子对话完成、不回收独立分支，父对话那边按「在等下一句」显示。之后改文件、`submit_merge` 都会被拦，要先交新一版报告再确认；新一版交上来时取消的那版保留「已取消」。右上角关闭仍只是收起弹窗。
-- **退出、停止后继续仍回到等确认**（2026-11-04，用户要求）：等确认这一步等的是用户，不靠 CLI 进程。面板重启、CLI 回收、定时核对都不把它落成「已中断」，也不进重启后的继续名单（`restartUnfinished`）。用户点停止仍落成已停止，点「继续执行」或父对话继续连带恢复时，回到等确认，不拉起 CLI，也不另开一轮。父计划里等它的那一步恢复成等待，写法统一在 `shared/task-settle.ts` 的 `diagnosisWaiting` / `rewaitDiagnosis`。
+- **退出、停止后继续仍回到等确认**（2026-11-04，用户要求）：等确认这一步等的是用户，不靠 CLI 进程。面板重启、CLI 回收、定时核对都不把它落成「已中断」，也不进重启后的继续名单（`restartUnfinished`）。用户点停止仍落成已停止，点「继续执行」或父对话继续连带恢复时，回到等确认，不拉起 CLI，也不另开一轮。父计划里等它的那一步恢复成等待，写法统一在 `shared/tasks/settle.ts` 的 `diagnosisWaiting` / `rewaitDiagnosis`。
 - **派 Bug 必须写 kind**：`create_conversation` 的 `kind` 改成必填（`task` / `bug` 二选一）。以前只有写了 `bug` 才算，父对话常漏写，派出去的子对话没有 `submit_diagnosis`，也就没有报告和弹窗；服务端没写时仍按 `task` 处理。
 - **第几版只在结论被推翻时升**（2026-11-06，用户纠正）：以前每交一份报告版本号就 +1，按意见改了几句、论证 → 根因 → 方案往下走也变成「第 2 版、第 3 版」。现在区分两个号：`version` 是交报告的顺序号（接口、对话里那一行、自动弹窗的记号按它认，工具返回里写成「报告 #n」），`rev` 是给用户看的「第几版」，由 `shared/bug/phase.ts` 的 `nextRev` 定：回到更早的阶段（根因被否决回到论证、验证没过回到论证或重出方案）或换掉用户确认过的方案才 +1；按意见修改、论证多轮、阶段往下走都还是同一版，弹窗下拉里同一版同一阶段的多份标「第 k 轮」。只看阶段和用户的决定，不看回复的文字。旧数据没有 `rev`，按 `version` 显示。
 - **入口只在消息流、不修了就关闭**（2026-11-07，用户要求）：取消之前的状态栏入口（2026-11-05 加在输入框上方的「诊断报告 · 共 N 版 · 查看报告」那一行）去掉，报告入口只放在消息流最新一段下面的运行区：`web/src/components/tasks/BugReportCard.tsx` 一份一张卡片，最多列最近 3 份，交了新的顶掉最旧的；卡片写「第几版 · 阶段」和状态，点了打开审阅弹窗并直接切到那一份。点了「不修了」的那份描红边、状态写「不修了」。不修了以后报告关闭：`submit_diagnosis` 直接拒交（说法统一在 `shared/bug/phase.ts` 的 `closedInfo`，改文件、收尾的拦截也用它），用户真要修，在父对话重新报这个 Bug。上面「之后要先交新一版报告再确认」的做法作废。

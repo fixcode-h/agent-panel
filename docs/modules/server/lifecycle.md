@@ -6,7 +6,7 @@
 
 ## 状态回收：面板重启后与页面宽限到期后
 
-「落成已停止」只有一种写法：`shared/task-settle.ts` 的 `settleStopped`（启动迁移、页面回收、定时核对共用，见 [ADR 0033](../../adr/0033-state-settle-and-tasks-split.md)）。
+「落成已停止」只有一种写法：`shared/tasks/settle.ts` 的 `settleStopped`（启动迁移、页面回收、定时核对共用，见 [ADR 0033](../../adr/0033-state-settle-and-tasks-split.md)）。
 
 服务启动时 `server/tasks/startup.ts` 的 `migrateOnStart`（`tasksApi` 里暴露成 `ready`）会把「重启后已经没人接着做、界面却还会画成在跑」的任务落成 `status: 'stopped'` + `stopReason: 'restart'`：
 
@@ -29,9 +29,9 @@
 - 有执行位时按任务事实判（`convActive`：在跑、等子对话 / 子任务 / 后台命令 / 工作流、有没回复的提问和请求），再加上正在启动和还有排队的消息；
 - **没有执行位时**（这一轮已经结束、进程也退了，例如工作流节点、压缩 / 审查这类操作，或者对话页已经关了）看名下还在跑的子对话（`childrenRunning`，和 `childActive` 同一套判定）和还没回来的后台命令：它们的结果还要交回这条对话，按「没人看就回收」收掉会把它落成「已中断」（用户报的「父对话被回收」）。
 
-子对话全部结束、自己也空下来之后照旧回收，不是永不回收。宽限到点还在跑的会话在 `server/presence.ts` 里进 `pending` 之后会排一个复查（`scheduleRecheck`，间隔 `BUSY_RECHECK_MS`，用独立的 `rechecks` Map，不占宽限计时）：子对话被用户停掉、后台命令被停时不会再交回结果，也不会走 `onKeepAlive` 的 `resetIdleCountdown`，只记标记就成了永不回收，所以到点要再判一次（间隔不取宽限期，宽限期可以设成 0，按 0ms 重排会自旋）。`evict` 开头读回收开关：用户关掉「按时间回收」后，已排出去的计时器和它排出的复查也不再收。重启迁移的条目构造也走 `shared/task.ts` 的 `childEntryOf`（从 `childFacts` 派生），以后 `childFacts` 加判定字段不会在迁移这一侧漏掉。回归：`shared/task-stage.test.ts` 的 `keepAliveHolding` 用例、`server/presence.test.ts` 的「父对话在等子对话」「宽限到点还在跑的对话留一个复查」「关掉自动回收」「复查不占宽限计时」、`server/task-restart.test.ts` 的「重启时名下有子对话在跑的父对话」、`scripts/e2e/09-subagent-runtime.mjs` 的同名段；排查和旧实现对照见 [bugs/parent-reclaimed-while-children-running.md](bugs/parent-reclaimed-while-children-running.md)。
+子对话全部结束、自己也空下来之后照旧回收，不是永不回收。宽限到点还在跑的会话在 `server/presence.ts` 里进 `pending` 之后会排一个复查（`scheduleRecheck`，间隔 `BUSY_RECHECK_MS`，用独立的 `rechecks` Map，不占宽限计时）：子对话被用户停掉、后台命令被停时不会再交回结果，也不会走 `onKeepAlive` 的 `resetIdleCountdown`，只记标记就成了永不回收，所以到点要再判一次（间隔不取宽限期，宽限期可以设成 0，按 0ms 重排会自旋）。`evict` 开头读回收开关：用户关掉「按时间回收」后，已排出去的计时器和它排出的复查也不再收。重启迁移的条目构造也走 `shared/task.ts` 的 `childEntryOf`（从 `childFacts` 派生），以后 `childFacts` 加判定字段不会在迁移这一侧漏掉。回归：`shared/tasks/stage.test.ts` 的 `keepAliveHolding` 用例、`server/presence.test.ts` 的「父对话在等子对话」「宽限到点还在跑的对话留一个复查」「关掉自动回收」「复查不占宽限计时」、`server/task-restart.test.ts` 的「重启时名下有子对话在跑的父对话」、`scripts/e2e/09-subagent-runtime.mjs` 的同名段；排查和旧实现对照见 [bugs/parent-reclaimed-while-children-running.md](bugs/parent-reclaimed-while-children-running.md)。
 
-**定时核对兜底（ADR 0033）**：`server/tasks/state-sweep.ts` 每 60 秒按 `shared/task-settle.ts` 的 `stateBreaks` 找两种矛盾——记录说在做、面板里却没有执行位 / 启动队列 / 后台命令（`orphan`），收尾停在「合并中」却没在合并（`merging`）。连着两次看到、中间任务没被写过才收：`orphan` 落成已中断（`stopReason: 'lost'`）并在对话里写一句，是子对话的再交给父对话上报（`reportChild`，必填依赖），`merging` 退回「已请求收尾」并告诉父对话。日志里出现「定时核对：记录和实际对不上」就说明某条收尾路径漏了落状态，按日志里的任务去补那条路径。另外，子对话计划里挂着「等父对话安排修复」（kind `parent`）、父对话连着两次都不在执行位上时，提醒父对话一次（`remindParent`，接到 `peer.ts` 的 `remindParentFix`，叫不叫过 `holdWake`；同一条等待只提醒一次）：修复请求交出时的叫醒在面板重启时会丢、父对话被叫醒那一轮也可能没回它。回归：`server/tasks/state-sweep.test.ts`。
+**定时核对兜底（ADR 0033）**：`server/tasks/state-sweep.ts` 每 60 秒按 `shared/tasks/settle.ts` 的 `stateBreaks` 找两种矛盾——记录说在做、面板里却没有执行位 / 启动队列 / 后台命令（`orphan`），收尾停在「合并中」却没在合并（`merging`）。连着两次看到、中间任务没被写过才收：`orphan` 落成已中断（`stopReason: 'lost'`）并在对话里写一句，是子对话的再交给父对话上报（`reportChild`，必填依赖），`merging` 退回「已请求收尾」并告诉父对话。日志里出现「定时核对：记录和实际对不上」就说明某条收尾路径漏了落状态，按日志里的任务去补那条路径。另外，子对话计划里挂着「等父对话安排修复」（kind `parent`）、父对话连着两次都不在执行位上时，提醒父对话一次（`remindParent`，接到 `peer.ts` 的 `remindParentFix`，叫不叫过 `holdWake`；同一条等待只提醒一次）：修复请求交出时的叫醒在面板重启时会丢、父对话被叫醒那一轮也可能没回它。回归：`server/tasks/state-sweep.test.ts`。
 
 ## 强制更新后：把被打断的任务列进恢复名单
 

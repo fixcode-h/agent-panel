@@ -18,7 +18,7 @@ paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/c
 - 起因：用户 2026-11-02 报「父对话总在等待模型、子对话的消息不处理」「子对话进程回收了还在父对话里转圈」「停了父对话子对话不停 / 再启动子对话起不来」；后两条里有 PR #152 的 `stopTree` 只取消等待、兜底原因写成 `user` 的问题。
 - 规则：界面上「在跑」只给真的有人在推进的：对话停下后计划按暂停画（`PlanPanel` 的 `planPaused`），排着的子任务只在对话执行时进运行区（`helperShown`），图标不转圈；用户亲手停的对话不因为「名下还有东西在跑」藏「继续执行」。
 - 规则：只写在提示词里的「不要重派」靠不住：被打断的子任务由 `spawn_agents` 强制，要么 `resume` 它，要么 `stop_subtask` 终止后再派。
-- 防线：`server/tasks/keepalive-endlive.test.ts` 的「停父对话：在等子任务的子对话按随父对话停收口」；`shared/task-stage.test.ts` 的「运行区的子任务」；`server/engine-steps.test.ts` 的「有中断没做完的子任务时不能另派新的」；`web/src/components/tasks/child-line.test.ts` 的「独立分支还没合回」；`server/exec/parsers.test.ts` 的「Claude Code：网关出错时自己重试」。流程总表见 `docs/modules/server/README.md` 的「对话进程的生命周期」。
+- 防线：`server/tasks/keepalive-endlive.test.ts` 的「停父对话：在等子任务的子对话按随父对话停收口」；`shared/tasks/stage.test.ts` 的「运行区的子任务」；`server/engine-steps.test.ts` 的「有中断没做完的子任务时不能另派新的」；`web/src/components/tasks/child-line.test.ts` 的「独立分支还没合回」；`server/exec/parsers.test.ts` 的「Claude Code：网关出错时自己重试」。流程总表见 `docs/modules/server/README.md` 的「对话进程的生命周期」。
 
 ## 停下就是暂停：子任务只用 pauseUnit / cancelUnit 收，暂停的子对话不结算父计划的等待
 

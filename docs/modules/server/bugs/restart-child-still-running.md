@@ -124,7 +124,7 @@
 | 彻底做完的任务保持已完成                                            | 迁移不误伤 `done` 且没有挂起事项的任务                                                               |
 | 已经请父对话收尾的任务保留待收尾：它等的是父对话合并，不靠 CLI 进程 | `wrapup` 不被落成已停止，`wrapRequest` 原样保留                                                      |
 
-用例里的 `spins()` 和界面用同一份判定（`childSpinning` + `cliAlive: false`），不另写期望；`shared/task-stage.test.ts` 继续守着 `convState` / `childIcon` 的优先级，改图标判定时会先在那里面暴露。
+用例里的 `spins()` 和界面用同一份判定（`childSpinning` + `cliAlive: false`），不另写期望；`shared/tasks/stage.test.ts` 继续守着 `convState` / `childIcon` 的优先级，改图标判定时会先在那里面暴露。
 
 `server/reclaim.test.ts`（运行期路径，`npm run test:unit` 会跑）三条：
 

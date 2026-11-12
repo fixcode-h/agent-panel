@@ -4,7 +4,7 @@
  * 进度怎么说、父对话每轮看到的那一节、决定记录怎么拼进节点提示、父对话挑工作流的目录和判定规则。
  */
 import type { Task, TaskStep } from './schema.ts'
-import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from './task-flow-schema.ts'
+import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from './tasks/flow-schema.ts'
 import { topSteps } from './flow.ts'
 import { WRAP_NODE } from './flow-run-wrap.ts'
 import { clip } from './text.ts'

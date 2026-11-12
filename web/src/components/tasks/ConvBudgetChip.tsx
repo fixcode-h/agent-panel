@@ -1,5 +1,5 @@
 import { Gauge } from 'lucide-react'
-import type { ConvBudget } from '@shared/task-runtime-schema'
+import type { ConvBudget } from '@shared/tasks/runtime-schema'
 import { getCli } from '@shared/clis'
 import { matchModel } from '@shared/model-catalog'
 import { t } from '@shared/i18n'

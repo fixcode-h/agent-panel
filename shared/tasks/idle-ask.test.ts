@@ -7,8 +7,8 @@ import {
   CHILD_IDLE_ASK_MAX,
   planStalled,
   wrapUpPending,
-} from './task.ts'
-import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled } from './merge-stall.ts'
+} from '../task.ts'
+import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled } from '../merge-stall.ts'
 
 /** 一分钟按 1 秒算：阈值、上限这些判定不用真的等几分钟 */
 const unitMs = 1000

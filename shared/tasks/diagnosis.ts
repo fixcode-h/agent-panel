@@ -5,10 +5,10 @@
  * 用户以前只看到「等待你的下一条消息」，要翻对话、翻子对话栏才能拼出来。这里把这些事实收成一句标题 + 几行明细，
  * 判定全部复用已有的那几处（convState、childState、childStale、openPlan、stopReasonText），不另写一套。
  */
-import { t } from './i18n.ts'
-import { activePlan, needsFix, openPlan, openWork, planProgress } from './plan.ts'
-import { pendingAction, waitedText } from './user-action.ts'
-import type { Task, TaskJob, TaskMessage } from './schema.ts'
+import { t } from '../i18n.ts'
+import { activePlan, needsFix, openPlan, openWork, planProgress } from '../plan.ts'
+import { pendingAction, waitedText } from '../user-action.ts'
+import type { Task, TaskJob, TaskMessage } from '../schema.ts'
 import {
   childActivity,
   childActivityText,
@@ -26,9 +26,9 @@ import {
   timeAgo,
   type ChildEntry,
   type ConvState,
-} from './task.ts'
-import { helperRunning } from './task-helpers.ts'
-import { stateWord, type StateWord } from './task-word.ts'
+} from '../task.ts'
+import { helperRunning } from './helpers.ts'
+import { stateWord, type StateWord } from './word.ts'
 
 export type DiagTone = 'accent' | 'warning' | 'danger' | 'subtle' | 'success'
 
@@ -112,7 +112,7 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
     children: busyKids.length || (task.childrenWorking ?? 0),
   }
   const state = convState(facts)
-  // 短词按同一份事实取（shared/task-word.ts）：标题和状态不会各说各的
+  // 短词按同一份事实取（shared/tasks/word.ts）：标题和状态不会各说各的
   const word = stateWord({ ...facts, request: task.requests[0]?.kind })
   const items: DiagItem[] = []
 
@@ -214,7 +214,7 @@ function headlineOf(
   state: ConvState,
   { word, report }: StateWord,
 ): { headline: string; tone: DiagTone } {
-  // 执行中、等结果、等你处理的开头是和标题栏、侧栏、输入框占位同一个短词（shared/task-word.ts，分析稿 A8、U2）：
+  // 执行中、等结果、等你处理的开头是和标题栏、侧栏、输入框占位同一个短词（shared/tasks/word.ts，分析稿 A8、U2）：
   // 以前这里写「这一轮说完了，在等结果推回来」，标题栏写「子对话等你处理」，同一件事两种说法
   switch (state) {
     case 'running': {

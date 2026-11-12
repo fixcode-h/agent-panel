@@ -8,10 +8,10 @@ import { agentPermission, agentRun, cliSettings, defaultCli, defaultSettings } f
 import { runEngineTurn, system } from './engine.ts'
 import type { AgentCall, AgentResult } from './engine-host.ts'
 import { mergeChanges, stepUsage } from './task.ts'
-import { withTaskModel } from './task-run.ts'
+import { withTaskModel } from './tasks/run.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
-import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
+import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './tasks/export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
 import { DIAGNOSIS_LANG, demoDiagnosis } from './diagnosis.ts'
 

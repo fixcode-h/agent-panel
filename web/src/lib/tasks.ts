@@ -3,7 +3,7 @@ import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { t, uiLocale } from '@shared/i18n'
 import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
-import { cacheHitRate } from '@shared/task-export'
+import { cacheHitRate } from '@shared/tasks/export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
 import {
   PANEL_TOOL_RE,

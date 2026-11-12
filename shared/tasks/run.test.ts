@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { retryModelChoices, retryModelPatch, withTaskModel } from './task-run.ts'
+import { retryModelChoices, retryModelPatch, withTaskModel } from './run.ts'
 
 test('能选的模型：去掉正在用的那个，顺序照模型列表；空 id 不列', () => {
   const models = [{ id: 'a' }, { id: 'b' }, { id: '' }, { id: 'c' }]

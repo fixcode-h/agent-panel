@@ -1,6 +1,6 @@
 import { AlertTriangle, Wrench } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { reworkCounts } from '@shared/task-export'
+import { reworkCounts } from '@shared/tasks/export'
 import { PROBE_KINDS, probeTotal, toolFailures, toolsOutsideNodes, type ProbeFailures } from '@shared/tool-failures'
 import { t } from '@shared/i18n'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
@@ -18,7 +18,7 @@ const PROBE_TEXT: Record<keyof ProbeFailures, string> = {
   command: t('命令不存在'),
 }
 
-/** 返工按原因的说法：和 shared/task-export.ts 报告里的四个分类一一对应 */
+/** 返工按原因的说法：和 shared/tasks/export.ts 报告里的四个分类一一对应 */
 const REWORK_TEXT = {
   review: t('验收不通过'),
   rerun: t('同一节点重跑'),

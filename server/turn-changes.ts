@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { TaskMessage, TurnChanges } from '../shared/schema.ts'
-import type { TurnTrack } from '../shared/task-runtime-schema.ts'
+import type { TurnTrack } from '../shared/tasks/runtime-schema.ts'
 import {
   diffNames,
   gitHead,

@@ -26,7 +26,7 @@ ADR 0044 把工作流做成父对话下的「工作流子对话」：第一轮�
 
 ## 决策
 
-工作流运行是一个 `mode: 'workflow'`、带 `Task.flowRun` 的任务（`shared/task-flow-schema.ts`），`flowRun.owner` 记它属于哪个父对话，**没有** `parentTaskId`：子对话那套不作用到它身上，状态只看 `flowRun.phase`。
+工作流运行是一个 `mode: 'workflow'`、带 `Task.flowRun` 的任务（`shared/tasks/flow-schema.ts`），`flowRun.owner` 记它属于哪个父对话，**没有** `parentTaskId`：子对话那套不作用到它身上，状态只看 `flowRun.phase`。
 
 用户定的七条（设计稿第 8 节）：
 

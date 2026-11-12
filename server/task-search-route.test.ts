@@ -18,7 +18,7 @@ const { tasksApi } = await import('./tasks.ts')
 const { newTask } = await import('../shared/task.ts')
 const { TaskMessage } = await import('../shared/schema.ts')
 const { setLang } = await import('../shared/i18n.ts')
-const { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK } = await import('../shared/task-search.ts')
+const { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK } = await import('../shared/tasks/search.ts')
 
 setLang('zh')
 

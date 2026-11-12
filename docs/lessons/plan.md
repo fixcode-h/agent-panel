@@ -19,7 +19,7 @@ paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
 
 - 规则：一轮正常结束时计划没做完、也没在等任何结果（`planStalled`），面板推它接着做（`nudgePlan`），同一进度只推一次；判定只看计划状态，不按回复文字猜。父子之间「未完成」不发消息，推过仍停住才报一次；继续执行时被连带打断的子对话由面板拉起来，父对话交回原来的子对话，起不来才另建。见 ADR 0032。
 - 起因：80dbe4c 只给子对话加了推进，父对话同样「我跑 test:failed」后停住；父对话 20 分钟收到 13 条「未完成」，看子对话没动静又另建子对话重做。
-- 防线：e2e `09-subagent-runtime`「计划做一半就收尾」「父对话被停下后继续」；`shared/task-idle-ask.test.ts`。
+- 防线：e2e `09-subagent-runtime`「计划做一半就收尾」「父对话被停下后继续」；`shared/tasks/idle-ask.test.ts`。
 
 ## 做没做完只按计划（对话）和最后的总结（子任务）判定，不按回复里的字眼猜
 
@@ -43,4 +43,4 @@ paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
 
 - 规则：子对话一轮结束、计划没做完时，`reportChild` 只有在 `childSelfDrives`（`planStalled` 成立，或在等父对话安排修复）时才不报；新增「不报 / 不推」的守卫时，对照另一边是不是一定会接手，不能两边各自以为对方会动。子任务、子对话、后台命令一结束（含终止、被打断后直接终止），计划里等它的等待项要当场收口（`settleHelperWaits` / `settleWait`），不能指望别的路径。
 - 起因：用户 2026-11-12 第二次报「计划没做完子对话却停止了」：stop_subtask 终止被打断的子任务没收口等待项，`planStalled` 当成在等别人不推，`reportChild` 又按「没做完不报」吞掉了子对话请父对话编译的汇报，父子互等一晚上。见 `docs/modules/server/bugs/stopped-helper-wait-swallows-report.md`。
-- 防线：`server/engine-steps.test.ts`「有中断没做完的子任务」、`shared/task-idle-ask.test.ts`「子对话计划没做完时先不报父对话」。
+- 防线：`server/engine-steps.test.ts`「有中断没做完的子任务」、`shared/tasks/idle-ask.test.ts`「子对话计划没做完时先不报父对话」。

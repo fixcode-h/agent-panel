@@ -128,7 +128,7 @@ await runShard(import.meta.filename, async (api) => {
     }
     for (const name of ['状态', '环境', '上下文', 'Token 用量', '工具调用'])
       if (!(await rail.getByRole('region', { name, exact: true }).count())) errors.push(`会话栏：没有「${name}」这一块`)
-    // 「状态」说清现在是什么情况（见 shared/task-diagnosis.ts）：标题行要有一句话
+    // 「状态」说清现在是什么情况（见 shared/tasks/diagnosis.ts）：标题行要有一句话
     if (
       !(
         await rail

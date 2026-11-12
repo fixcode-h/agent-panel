@@ -4,7 +4,7 @@ import type { Task, TaskMessage } from '../../shared/schema.ts'
 import { failLostWaits } from '../../shared/plan-lost.ts'
 import { pauseUnit } from '../../shared/run-stops.ts'
 import { restartInterrupted, restartUnfinished, taskDeleted } from '../../shared/task.ts'
-import { diagnosisWaiting, droppedAsksNote, rewaitDiagnosis, settleStopped } from '../../shared/task-settle.ts'
+import { diagnosisWaiting, droppedAsksNote, rewaitDiagnosis, settleStopped } from '../../shared/tasks/settle.ts'
 import type { createTaskStore } from '../task-store.ts'
 import { rebuildClaims, type createClaims } from '../claims.ts'
 

@@ -5,7 +5,7 @@ import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage }
 import { projectWithLessons } from '../project-lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import { beginRun, dropEndNotes, trackWait, taskDeleted, withAttachments } from '../../shared/task.ts'
-import { withTaskModel } from '../../shared/task-run.ts'
+import { withTaskModel } from '../../shared/tasks/run.ts'
 import { settledTodos, turnRole } from '../../shared/conv-mode.ts'
 import { agentRun, defaultCli } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'

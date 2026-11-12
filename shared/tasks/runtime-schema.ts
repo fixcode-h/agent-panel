@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { QuotaResumeState } from './quota-resume.ts'
+import { QuotaResumeState } from '../quota-resume.ts'
 
 /**
  * 对话上的几样运行记录和「对话自己的用量上限」（分析稿 A6、A10）。

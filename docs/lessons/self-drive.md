@@ -37,4 +37,4 @@ paths: server/tasks/children.ts, server/tasks/merge.ts, server/tasks/drive.ts, s
 
 - 规则：给一侧加了「只说不做时推一次」（子对话的 `nudgeMerge`）之后，检查对面那一侧：父对话计划里「等子对话」的步骤，在子对话已请求收尾（`wrapUpPending`）时等的是父对话自己的 `finish_child`，一轮结束时由 `nudgeWrapUp` 推它；判断只在 `shared/task.ts` 一处，状态诊断（`wrapup-unhandled`）共用它。
 - 起因：用户 2026-11-03 报父对话回「现在合回」就结束了这一轮，`planStalled` 见计划有等待中的步骤就不推，父子一直互相等。
-- 防线：e2e `04-subagents`「父对话收到收尾请求却没合回」、`shared/lifecycle.test.ts`、`shared/task-idle-ask.test.ts`。
+- 防线：e2e `04-subagents`「父对话收到收尾请求却没合回」、`shared/lifecycle.test.ts`、`shared/tasks/idle-ask.test.ts`。

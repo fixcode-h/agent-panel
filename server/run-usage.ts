@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono'
 import type { Task } from '../shared/schema.ts'
 import { runTree, runUsage } from '../shared/run-usage.ts'
-import { descendantTotals } from '../shared/task-export.ts'
+import { descendantTotals } from '../shared/tasks/export.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -16,7 +16,7 @@ import { t } from '../shared/i18n.ts'
  * 子对话统计（children-stats）要从 messages 里数报错条数，那一条才读完整任务。
  *
  * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run-usage.ts` 和
- * `shared/task-export.ts`，这里只负责取数。
+ * `shared/tasks/export.ts`，这里只负责取数。
  */
 export function runUsageApi(deps: {
   /** 按 id 取任务本身（用量、节点、状态，不含完整对话）；执行中的取内存里那一份 */

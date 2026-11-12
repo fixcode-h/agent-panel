@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { setLang } from './i18n.ts'
-import { resumeNote } from './resume-kids.ts'
-import type { Task, TaskMessage, ToolUse } from './schema.ts'
-import type { TaskIcon } from './task.ts'
-import { isChatMode, nextNudge, nudgeMax } from './conv-mode.ts'
+import { setLang } from '../i18n.ts'
+import { resumeNote } from '../resume-kids.ts'
+import type { Task, TaskMessage, ToolUse } from '../schema.ts'
+import type { TaskIcon } from '../task.ts'
+import { isChatMode, nextNudge, nudgeMax } from '../conv-mode.ts'
 import {
   convActive,
   convState,
@@ -38,9 +38,9 @@ import {
   taskStage,
   taskTurnUnread,
   type ChildEntry,
-} from './task.ts'
-import { helperShown } from './task-helpers.ts'
-import { taskWaitText } from './task-word.ts'
+} from '../task.ts'
+import { helperShown } from './helpers.ts'
+import { taskWaitText } from './word.ts'
 
 // 文案断言按中文：跟着系统语言跑会让结果不稳定
 setLang('zh')
@@ -779,8 +779,8 @@ test('运行区的子任务：被打断的只在对话又跑起来时才列；�
 })
 
 test('顶层对话计划没做完就停下：状态是「未完成」不是「已完成」，不画橙点；推满了的那条警告让它显示「卡住」，摘要里也认得出', async () => {
-  const { planLeft, taskSummary } = await import('./task.ts')
-  const { TaskPlan } = await import('./schema.ts')
+  const { planLeft, taskSummary } = await import('../task.ts')
+  const { TaskPlan } = await import('../schema.ts')
   const plans = [
     TaskPlan.parse({
       id: 'p1',
@@ -813,7 +813,7 @@ test('顶层对话计划没做完就停下：状态是「未完成」不是「�
 })
 
 test('用户停止时还有没干完的活：即使 CLI 刚报完这一轮也记成已停止，才能「继续执行」接回整棵树（真实接口测试撞到）', async () => {
-  const { userCutWork } = await import('./run-stops.ts')
+  const { userCutWork } = await import('../run-stops.ts')
   const host = (steps: unknown[], plans: unknown[] = [], why = 'user') =>
     ({ task: { steps, plans }, stopReason: () => why }) as never
   assert.equal(userCutWork(host([{ slot: 'sub', status: 'pending', interrupted: true }])), true, '派出的子任务被打断')

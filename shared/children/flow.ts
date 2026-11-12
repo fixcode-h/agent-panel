@@ -7,7 +7,7 @@ import type { Task } from '../schema.ts'
 import { t } from '../i18n.ts'
 import { openPlan } from '../plan.ts'
 import { pendingAction } from '../user-action.ts'
-import { helpersWorking } from '../task-helpers.ts'
+import { helpersWorking } from '../tasks/helpers.ts'
 import { childHolds, diagnosisPending, runRunning, type ChildHold } from '../task.ts'
 
 /**

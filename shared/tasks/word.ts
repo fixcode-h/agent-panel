@@ -8,8 +8,8 @@
  * 长句子交给输入框上方的悬浮卡（确认卡、等你操作、提问弹窗），别的地方只放这个短词。
  * 单独成文件：shared/task.ts 有行数上限。
  */
-import { t } from './i18n.ts'
-import type { Task } from './schema.ts'
+import { t } from '../i18n.ts'
+import type { Task } from '../schema.ts'
 import {
   convState,
   convStateText,
@@ -18,7 +18,7 @@ import {
   type ConvFacts,
   type ConvState,
   type TaskFactsInput,
-} from './task.ts'
+} from '../task.ts'
 
 /** 等你处理的是哪一类：提问、权限确认、工作流阶段确认、等你去做的事、名下子对话在等 */
 export type NeedKind = 'answer' | 'confirm' | 'stage' | 'action' | 'children'

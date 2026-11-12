@@ -101,7 +101,13 @@ import {
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
 import { demoLifecycle } from './demo-lifecycle'
-import { descendantTotals, importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
+import {
+  descendantTotals,
+  importTaskTree,
+  parseTaskExport,
+  exportTaskTree,
+  checkExportSize,
+} from '@shared/tasks/export'
 import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
@@ -135,7 +141,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
-import { searchTasks } from '@shared/task-search'
+import { searchTasks } from '@shared/tasks/search'
 import { applyAnswer } from '@shared/requests/answer'
 import { forkedTask, rewoundTask, userMessageIndex } from '@shared/restore/rewind'
 import { trashRows } from '@shared/trash/rows'
@@ -2509,7 +2515,7 @@ function demoJobView(task: Task, jobId: string): TaskJobView {
 }
 
 /**
- * 演示里的正文搜索：和正式版同一份片段口径（shared/task-search.ts），数据都在内存里，直接扫就行。
+ * 演示里的正文搜索：和正式版同一份片段口径（shared/tasks/search.ts），数据都在内存里，直接扫就行。
  * 已删除（回收站里）的对话同样不参与
  */
 function tasksRoute(
@@ -2539,7 +2545,7 @@ function tasksRoute(
     return createTask(d, parse(NewTaskInput, body)).task
   }
   // 正文搜索 / 回收站列表：路径里带的 id 是 'search'、'trash'，要在按 id 找任务之前接住
-  // 搜索和回收站列表：和正式后端同一份逻辑（shared/task-search.ts、shared/trash/rows.ts），演示只给内存里的消息
+  // 搜索和回收站列表：和正式后端同一份逻辑（shared/tasks/search.ts、shared/trash/rows.ts），演示只给内存里的消息
   if (id === 'search' && method === 'GET')
     return searchTasks(tasks, query.get('q') ?? '', async (tk) => tk.messages, Number(query.get('limit')))
   if (id === 'trash' && method === 'GET') return trashRows(tasks)

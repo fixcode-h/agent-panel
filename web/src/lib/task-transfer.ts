@@ -14,7 +14,7 @@ import {
   withImportedAgents,
   type HelperScope,
   type TaskExport,
-} from '@shared/task-export'
+} from '@shared/tasks/export'
 import { api } from './api'
 import { createAnalysisTask } from './ai-window'
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
-import { FlowRun } from '../shared/task-flow-schema.ts'
+import { FlowRun } from '../shared/tasks/flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
 import { activePlan, applyPlan, bindWait } from '../shared/plan.ts'
@@ -942,7 +942,7 @@ test('子任务：有中断没做完的子任务时不能另派新的，要 resu
       const o = call.orch!
       const first = o.spawn([{ title: '调研 worktree', instructions: '查一下' }]).ids
       await o.wait(first, 1000)
-      // 模拟父对话停下：这个子任务被打断，落成 pending + interrupted（见 shared/task-settle.ts 的 settleStopped）
+      // 模拟父对话停下：这个子任务被打断，落成 pending + interrupted（见 shared/tasks/settle.ts 的 settleStopped）
       const prev = task.steps.find((s) => s.id === first[0])!
       prev.status = 'pending'
       prev.interrupted = true

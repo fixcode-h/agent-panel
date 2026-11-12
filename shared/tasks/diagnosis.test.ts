@@ -4,11 +4,11 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { collabEvents } from './collab-timeline.ts'
-import { setLang } from './i18n.ts'
-import { Task } from './schema.ts'
-import { diagnoseTask } from './task-diagnosis.ts'
-import { isPlanNudge } from './task.ts'
+import { collabEvents } from '../collab-timeline.ts'
+import { setLang } from '../i18n.ts'
+import { Task } from '../schema.ts'
+import { diagnoseTask } from './diagnosis.ts'
+import { isPlanNudge } from '../task.ts'
 
 setLang('zh')
 const at = '2026-10-01T00:00:00.000Z'

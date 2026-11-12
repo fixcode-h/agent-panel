@@ -4,7 +4,7 @@ import { setLang } from '../i18n.ts'
 import type { Task, TaskRequest } from '../schema.ts'
 import { descendantNeeds, pendingRequest } from './needs.ts'
 import { childReport, childWait, childWaitText, convState, taskState } from '../task.ts'
-import { taskWaitText } from '../task-word.ts'
+import { taskWaitText } from '../tasks/word.ts'
 
 setLang('zh')
 

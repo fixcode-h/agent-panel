@@ -7,11 +7,11 @@
  * 这里收成一个纯函数，调用方只决定「什么时候收、原因是什么」；另外由 server/tasks/state-sweep.ts
  * 定时找出没人收的矛盾，按同一个写法收口并告诉用户（见 ADR 0033）。
  */
-import type { StopReason, Task, TaskMessage } from './schema.ts'
-import { endRun as endPlanRun } from './plan.ts'
-import { t } from './i18n.ts'
-import { diagnosisPending, idleWaitDuration, stopReasonText, waitDuration } from './task.ts'
-import { pauseUnit } from './run-stops.ts'
+import type { StopReason, Task, TaskMessage } from '../schema.ts'
+import { endRun as endPlanRun } from '../plan.ts'
+import { t } from '../i18n.ts'
+import { diagnosisPending, idleWaitDuration, stopReasonText, waitDuration } from '../task.ts'
+import { pauseUnit } from '../run-stops.ts'
 
 /**
  * 落成已停止：结掉还在跑的轮次、步骤（记为被打断，继续执行时续接它的会话）、工作流运行和各段等待时长。

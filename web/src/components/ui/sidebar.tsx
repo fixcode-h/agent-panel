@@ -160,7 +160,7 @@ export function TaskRowStatus({
 }: {
   /** 有没回答的提问、待确认的请求 */
   needs?: boolean
-  /** 等的是什么（shared/task-word.ts 的短词，如「等你回答」「子对话等你处理」）：和标题栏用同一个词，不传就是「等你处理」 */
+  /** 等的是什么（shared/tasks/word.ts 的短词，如「等你回答」「子对话等你处理」）：和标题栏用同一个词，不传就是「等你处理」 */
   needsText?: string
   /** 自己挂着「等你操作」（request_user_action） */
   acting?: boolean

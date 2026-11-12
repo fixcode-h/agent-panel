@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import { addPick, askMeta, AWAY_PICKS_MAX, awayAnswers, AwayState, dropPicks, switchAway } from './away.ts'
-import { AskQuestion } from './task-request.ts'
+import { AskQuestion } from './tasks/request.ts'
 
 setLang('zh')
 

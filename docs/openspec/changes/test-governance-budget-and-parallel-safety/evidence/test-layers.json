@@ -1578,70 +1578,70 @@
       "lines": 563
     },
     {
-      "file": "shared/task-helper-order.test.ts",
+      "file": "shared/tasks/helper-order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 78
     },
     {
-      "file": "shared/task-html.test.ts",
+      "file": "shared/tasks/html.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 134
     },
     {
-      "file": "shared/task-idle-ask.test.ts",
+      "file": "shared/tasks/idle-ask.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 10,
       "lines": 98
     },
     {
-      "file": "shared/task-page.test.ts",
+      "file": "shared/tasks/page.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 7,
       "lines": 80
     },
     {
-      "file": "shared/task-search.test.ts",
+      "file": "shared/tasks/search.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 7,
       "lines": 70
     },
     {
-      "file": "shared/task-session-dir.test.ts",
+      "file": "shared/tasks/session-dir.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 41
     },
     {
-      "file": "shared/task-share.test.ts",
+      "file": "shared/tasks/share.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 2,
       "lines": 35
     },
     {
-      "file": "shared/task-stage.test.ts",
+      "file": "shared/tasks/stage.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 35,
       "lines": 744
     },
     {
-      "file": "shared/task-stamp.test.ts",
+      "file": "shared/tasks/stamp.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 57
     },
     {
-      "file": "shared/task-trash.test.ts",
+      "file": "shared/tasks/trash.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,

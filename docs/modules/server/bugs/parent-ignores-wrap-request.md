@@ -1,6 +1,6 @@
 # 子对话请求收尾后父对话不合回，父子一直互相等
 
-- 状态：已修复（`shared/task-idle-ask.test.ts` 的 `wrapUpPending`、`shared/lifecycle.test.ts` 的 `wrapup-unhandled`、e2e `04-subagents`「父对话收到收尾请求却没合回」通过；改前在旧代码上确认 e2e 超时失败）
+- 状态：已修复（`shared/tasks/idle-ask.test.ts` 的 `wrapUpPending`、`shared/lifecycle.test.ts` 的 `wrapup-unhandled`、e2e `04-subagents`「父对话收到收尾请求却没合回」通过；改前在旧代码上确认 e2e 超时失败）
 - 症状：子对话 `submit_merge` 后显示「待收尾」，父对话收到【收尾请求】、回了一句「改动核对通过……现在合回」就结束这一轮，没调 `finish_child`；之后父对话一直停着，状态诊断报 `child-idle-parent-waiting`
 - 入口：`server/tasks/run.ts` 的顶层 `onTurnEnd` → `server/tasks/drive.ts` 的 `nudgePlan`；`shared/task.ts` 的 `planStalled`；`server/tasks/children.ts` 的 `reportChild`
 - 根因类型：模型提前结束回合（只说不做），面板把「等子对话收尾」当成在等别人，父对话这一侧没有兜底
@@ -27,6 +27,6 @@
 
 ## 防线
 
-- `shared/task-idle-ask.test.ts`：`wrapUpPending` 只认 requested 且没完成的。
+- `shared/tasks/idle-ask.test.ts`：`wrapUpPending` 只认 requested 且没完成的。
 - `shared/lifecycle.test.ts`：待收尾时报 `wrapup-unhandled`、父对话在跑时不报。
 - e2e `04-subagents`「父对话收到收尾请求却没合回：面板推它一次，它再合回」：假 CLI 第一次收到收尾请求时不调 `finish_child`（`<FAKE_CLI_LOG>.skip-wrap`），断言面板只推了一次、父对话随后合回、子对话完成。

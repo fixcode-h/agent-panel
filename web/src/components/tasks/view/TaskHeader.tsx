@@ -17,7 +17,7 @@ import {
 import { t } from '@shared/i18n'
 import type { Agent } from '@shared/schema'
 import { liveBusy, type TaskLive } from '@shared/live/task-live'
-import { taskWord } from '@shared/task-word'
+import { taskWord } from '@shared/tasks/word'
 import type { TaskPage } from '@/lib/api'
 import { isAnalysisTask } from '@/lib/analysis-report'
 import type { ChildSummary } from '../child-line'

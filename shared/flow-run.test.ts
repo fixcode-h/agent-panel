@@ -16,7 +16,7 @@ import {
   workflowPrompt,
   type WorkflowEntry,
 } from './flow-run.ts'
-import { FlowRun } from './task-flow-schema.ts'
+import { FlowRun } from './tasks/flow-schema.ts'
 import { WRAP_FLOW, WRAP_NODE, withWrapUp, wrapRoles } from './flow-run-wrap.ts'
 import { Workflow, type Task, type TaskStep } from './schema.ts'
 import { taskTitle } from './task.ts'

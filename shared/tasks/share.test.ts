@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sharesWorkdir } from './task.ts'
+import { sharesWorkdir } from '../task.ts'
 
 const wt = (state: 'active' | 'merged' | 'discarded') => ({
   path: '/tmp/wt',

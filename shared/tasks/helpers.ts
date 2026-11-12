@@ -2,7 +2,7 @@
  * 子任务（spawn_agents 派出的步骤）的运行状态和排序：运行区、子任务列表、计数和侧栏都读这里，
  * 判定只写这一处，不在界面上各拼一套。shared/task.ts 从这里转出，调用方仍从 @shared/task 引用。
  */
-import type { Task, TaskStep } from './schema.ts'
+import type { Task, TaskStep } from '../schema.ts'
 
 /** 按开始时间倒序：越晚开始的越靠上。旧记录没有开始时间时算最早，交给调用方用 id 兜底 */
 export function byStartedDesc(a: { startedAt?: string }, b: { startedAt?: string }) {

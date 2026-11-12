@@ -14,7 +14,7 @@ import {
   type ChildHold,
 } from '../../shared/task.ts'
 import { Task, type Agent, type TaskMessage } from '../../shared/schema.ts'
-import { helperRunning, helpersWorking } from '../../shared/task-helpers.ts'
+import { helperRunning, helpersWorking } from '../../shared/tasks/helpers.ts'
 import { saveToHandoff } from './inbox-file.ts'
 import { createDrive } from './drive.ts'
 import { planProgressKey } from '../../shared/drive.ts'

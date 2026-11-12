@@ -9,7 +9,7 @@ import {
   stateBreaks,
   type StateBreak,
   type StateLive,
-} from '../../shared/task-settle.ts'
+} from '../../shared/tasks/settle.ts'
 import { taskGone } from '../../shared/task.ts'
 import { parentFixWait } from '../../shared/wake.ts'
 import { log } from '../log.ts'

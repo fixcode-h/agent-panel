@@ -16,7 +16,7 @@ const { awayApi, awayState } = await import('../away.ts')
 const { autoAllowed } = await import('./ask-request.ts')
 const { awayPickPending } = await import('./away-pick.ts')
 const { replies } = await import('./panel-requests.ts')
-const { AskQuestion } = await import('../../shared/task-request.ts')
+const { AskQuestion } = await import('../../shared/tasks/request.ts')
 type Task = import('../../shared/schema.ts').Task
 
 setLang('zh')

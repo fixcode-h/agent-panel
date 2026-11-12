@@ -4,14 +4,14 @@
  * 状态窗口（shared/lifecycle.ts）内容很全，但最上面只写「这一轮已说完」「在等你处理：确认操作或回答提问」，
  * 用户第一眼看不出该怎么办。这里按节点的事实拼一句「等你回答 · 已等 12 分钟」，后面跟一个按钮
  * （去回答、继续、重试、换个模型重试、查看在等的子对话）。
- * 短词和标题栏、侧栏同一处取（shared/task-word.ts 的 taskWord，服务端收集事实时填进 LifeFacts.word），
+ * 短词和标题栏、侧栏同一处取（shared/tasks/word.ts 的 taskWord，服务端收集事实时填进 LifeFacts.word），
  * 判定不另写：状态只读 LifeFacts.state（convState），等了多久读服务端记下的 since。
  */
 import { t } from './i18n.ts'
 import type { Task } from './schema.ts'
 import { pendingAction } from './user-action.ts'
 import { stopReasonText } from './task.ts'
-import { taskWord } from './task-word.ts'
+import { taskWord } from './tasks/word.ts'
 import { untilText } from './quota-resume.ts'
 import type { LifeFacts } from './lifecycle.ts'
 

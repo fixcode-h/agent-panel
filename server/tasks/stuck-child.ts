@@ -3,7 +3,7 @@ import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'
 import { taskDeleted } from '../../shared/task.ts'
-import { settleStopped } from '../../shared/task-settle.ts'
+import { settleStopped } from '../../shared/tasks/settle.ts'
 import {
   CHILD_RESTART_MAX,
   agentOutputSince,

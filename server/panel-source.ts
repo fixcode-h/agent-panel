@@ -11,7 +11,7 @@ export async function isPanelSource(dir: string) {
   try {
     const pkg = JSON.parse(await readFile(path.join(dir, 'package.json'), 'utf8')) as { name?: unknown }
     if (pkg.name !== 'agent-panel') return false
-    await access(path.join(dir, 'shared', 'task-export.ts'))
+    await access(path.join(dir, 'shared', 'task.ts'))
     return true
   } catch {
     return false

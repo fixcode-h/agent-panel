@@ -3,7 +3,7 @@
  * 上一次的结果先留着，新结果回来再换：列表不会在打字时闪成空。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { SearchHit } from '@shared/task-search'
+import type { SearchHit } from '@shared/tasks/search'
 import { api } from './api'
 
 /** 防抖：停下来这么久才发请求 */

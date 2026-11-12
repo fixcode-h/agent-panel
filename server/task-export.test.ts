@@ -26,7 +26,7 @@ import {
   taskReport,
   taskHtml,
   taskStats,
-} from '../shared/task-export.ts'
+} from '../shared/tasks/export.ts'
 import { endRun, pauseRun, resumeRun } from '../shared/task.ts'
 
 const at = '2026-10-19T00:00:00.000Z'

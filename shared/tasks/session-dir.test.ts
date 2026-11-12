@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sameDir, sessionMoved } from './task.ts'
-import { getCli } from './clis.ts'
+import { sameDir, sessionMoved } from '../task.ts'
+import { getCli } from '../clis.ts'
 
 const worktree = 'C:\\Users\\17787\\.agent-panel\\worktrees\\55f6571a-c89b-4ce5-ac64-be0f87e6eefb'
 const project = 'E:\\Project\\agent-panel'

@@ -6,21 +6,21 @@
  *   给出对工作流、节点、Agent 的修改建议（用户看过差异再应用，不会自动改）和面板框架本身的问题。
  * 服务端和在线演示共用。
  */
-import { liftBugFields } from './bug/task-bug.ts'
+import { liftBugFields } from '../bug/task-bug.ts'
 import { z } from 'zod'
-import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from './schema.ts'
-import { composeRole, includedAgents } from './agent-role.ts'
-import { fillSkills, fillSlots } from './expose.ts'
-import { retiredWithoutSuccessor } from './skill-guide.ts'
-import { runTree } from './run-usage.ts'
-import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from './task.ts'
-import { t } from './i18n.ts'
-import { isHelperAgent } from './builtin/core.ts'
-import { promptLangRules, promptLangWord } from './prompt-lang.ts'
-import { diagnosisPromptRules } from './diagnosis.ts'
-import { fmtDuration } from './duration.ts'
-import { verdictOf } from './submitted.ts'
-import { clip as clipText } from './text.ts'
+import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from '../schema.ts'
+import { composeRole, includedAgents } from '../agent-role.ts'
+import { fillSkills, fillSlots } from '../expose.ts'
+import { retiredWithoutSuccessor } from '../skill-guide.ts'
+import { runTree } from '../run-usage.ts'
+import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from '../task.ts'
+import { t } from '../i18n.ts'
+import { isHelperAgent } from '../builtin/core.ts'
+import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
+import { diagnosisPromptRules } from '../diagnosis.ts'
+import { fmtDuration } from '../duration.ts'
+import { verdictOf } from '../submitted.ts'
+import { clip as clipText } from '../text.ts'
 import {
   NO_PROBES,
   addProbes,
@@ -30,8 +30,8 @@ import {
   toolFailures,
   toolsOutsideNodes,
   type ProbeFailures,
-} from './tool-failures.ts'
-import { hhmm, pad2, ymd } from './datetime.ts'
+} from '../tool-failures.ts'
+import { hhmm, pad2, ymd } from '../datetime.ts'
 
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 

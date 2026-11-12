@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { userWaiting, planStalled, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
 import type { Task } from '../../shared/schema.ts'
-import { helpersWorking } from '../../shared/task-helpers.ts'
+import { helpersWorking } from '../../shared/tasks/helpers.ts'
 import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
 import { CHECK_REMINDER, idleReminders, SPIN_MAX, turnEndSince } from '../../shared/end-turn.ts'
 import { DriveBudget, planProgressKey, shortKey } from '../../shared/drive.ts'

@@ -9,7 +9,7 @@ import { finish } from './engine.ts'
 import type { EngineHost } from './engine-host.ts'
 import { cancelUnit, dropInterrupted, helperKey, helperStops, pauseUnit, pausedSignal } from './run-stops.ts'
 import { Task, TaskStep } from './schema.ts'
-import { settleStopped } from './task-settle.ts'
+import { settleStopped } from './tasks/settle.ts'
 
 const T0 = Date.parse('2026-11-03T00:00:00Z')
 const step = (x: Partial<TaskStep> = {}) =>

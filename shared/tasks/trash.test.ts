@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { TRASH_RETENTION_DAYS, taskDeleted, taskGone, trashLeftDays } from './task.ts'
+import { TRASH_RETENTION_DAYS, taskDeleted, taskGone, trashLeftDays } from '../task.ts'
 
 const DAY = 24 * 60 * 60 * 1000
 const NOW = Date.parse('2026-10-01T12:00:00.000Z')

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { Agent, Task } from './schema.ts'
-import { exportTask, taskHtml, TASK_HTML_MAX_CHARS, TASK_HTML_MSG_MAX, type TaskExport } from './task-export.ts'
+import { Agent, Task } from '../schema.ts'
+import { exportTask, taskHtml, TASK_HTML_MAX_CHARS, TASK_HTML_MSG_MAX, type TaskExport } from './export.ts'
 
 const at = '2026-10-19T00:00:00.000Z'
 const agent = Agent.parse({ id: 'a1', name: '开发', instructions: '写代码', createdAt: at, updatedAt: at })

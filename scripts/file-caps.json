@@ -13,7 +13,7 @@
     "shared/local-image.ts": 1450,
     "shared/plan.ts": 1650,
     "shared/schema.ts": 2800,
-    "shared/task-export.ts": 2200,
+    "shared/tasks/export.ts": 2200,
     "shared/task.ts": 2400,
     "web/src/components/assist/AssistDialog.tsx": 1300,
     "web/src/components/chat/Attachments.tsx": 1350,

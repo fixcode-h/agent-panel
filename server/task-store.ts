@@ -11,7 +11,7 @@ import { removeTaskLog, setTaskLogPath } from './task-log.ts'
 import { DATA_DIR, archiveBrokenFile, onReset, readJsonDetailed, writeJsonAtomic } from './store.ts'
 import { type MessagesFileState, stateFromRead, writeMessagesFile } from './tasks/messages-write.ts'
 import { MSG_JSONL, MSG_LEGACY, readMessagesFile, statMessagesFile } from './tasks/messages-file.ts'
-import { messageChars } from '../shared/task-search.ts'
+import { messageChars } from '../shared/tasks/search.ts'
 
 /**
  * 任务按项目分目录存，每个任务两个文件：

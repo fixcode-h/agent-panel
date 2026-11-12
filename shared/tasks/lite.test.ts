@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { TaskMessage } from './schema.ts'
-import { LITE_HEAD, autoArchivePicks, liteMessages } from './task.ts'
+import type { TaskMessage } from '../schema.ts'
+import { LITE_HEAD, autoArchivePicks, liteMessages } from '../task.ts'
 
 const msg = (id: string, output: string): TaskMessage =>
   ({

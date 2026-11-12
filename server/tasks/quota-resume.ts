@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
 import { defaultAgent, type Task } from '../../shared/schema.ts'
 import { agentRun, cliSettings } from '../../shared/settings.ts'
-import { canPickRun, withTaskModel } from '../../shared/task-run.ts'
+import { canPickRun, withTaskModel } from '../../shared/tasks/run.ts'
 import { taskDeleted } from '../../shared/task.ts'
 import {
   QuotaResumeSettings,

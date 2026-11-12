@@ -7,7 +7,7 @@ import { t, uiLocale } from '../i18n.ts'
 import { activePlan, planProgress } from '../plan.ts'
 import { confirmWait, confirmWaitText } from './needs.ts'
 import { pendingAction } from '../user-action.ts'
-import { helperRunning } from '../task-helpers.ts'
+import { helperRunning } from '../tasks/helpers.ts'
 import { diagnosisPending, runRunning } from '../task.ts'
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */

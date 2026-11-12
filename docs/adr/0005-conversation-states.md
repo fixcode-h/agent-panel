@@ -137,7 +137,7 @@ UE 编译占位和排队仍按 [0004](./0004-ue-build-by-parent.md)。
 
 - 收尾多一跳：子对话要等父对话处理。父对话空闲时 `wakeTask` 会开新一轮，在跑时实时送达，不会卡住。
 - 父对话不调用 `finish_child`：子对话停在「待收尾」，列表归到「差一步」，用户看得见；也可以点合并按钮手动收尾。
-- 状态判定集中后，改 `convState` 会同时影响列表、图标、上报：靠 `shared/task-stage.test.ts`、`shared/plan.test.ts` 兜住。
+- 状态判定集中后，改 `convState` 会同时影响列表、图标、上报：靠 `shared/tasks/stage.test.ts`、`shared/plan.test.ts` 兜住。
 
 ## 开放问题
 

@@ -12,7 +12,7 @@ import { messagesApi } from './api-messages'
 import { remoteApi } from './api-remote'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
-import type { TaskExport } from '@shared/task-export'
+import type { TaskExport } from '@shared/tasks/export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
 import type { SpeechStatus } from '@shared/speech'
@@ -59,13 +59,13 @@ import type {
   TaskJobView,
 } from '@shared/schema'
 import type { ChildHold } from '@shared/task'
-import type { SearchHit } from '@shared/task-search'
+import type { SearchHit } from '@shared/tasks/search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
 import type { DiagnosisDecision } from '@shared/bug/diagnosis'
 import type { PatchResult, PatchStatus } from '@shared/bug/patch'
 import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'
-import type { StatsTotal } from '@shared/task-export'
+import type { StatsTotal } from '@shared/tasks/export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
@@ -954,7 +954,7 @@ export const api = {
   purgeItem: (kind: string, id: string) => call(trashContract.purgeItem, { params: { kind, id } }),
   /** 永久删除：不进回收站，内容直接清掉（界面先让用户二次确认） */
   permanentDeleteTask: (id: string) => call(trashContract.purgeTask, { params: { id } }),
-  /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/task-search.ts） */
+  /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/tasks/search.ts） */
   searchTasks: (q: string, limit?: number) =>
     request<{ hits: SearchHit[]; scanned: number; more: boolean }>(
       `/tasks/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`,

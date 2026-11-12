@@ -1,4 +1,4 @@
-import { FlowRun } from '@shared/task-flow-schema'
+import { FlowRun } from '@shared/tasks/flow-schema'
 import { Workflow, type NewTaskInput, type Task } from '@shared/schema'
 import { planTask } from '@shared/flow'
 

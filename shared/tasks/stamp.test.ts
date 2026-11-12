@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { TaskMessage } from './schema.ts'
-import { delegatePrompt, messageStamp } from './task.ts'
+import type { TaskMessage } from '../schema.ts'
+import { delegatePrompt, messageStamp } from '../task.ts'
 
 const ask = (answer?: string): TaskMessage =>
   ({
