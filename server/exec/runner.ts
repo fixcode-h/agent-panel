@@ -4,9 +4,8 @@ import { turnInfo } from './turn-info.ts'
 import { type AgentUsage, type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
 import { hookMarker } from '../../shared/hooks.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
-import { addNoteTaker, type NoteTaker } from './delivery.ts'
 
-import { changesSince, mergeChanges, ownedChanges, stepUsage, withAttachments } from '../../shared/task.ts'
+import { changesSince, mergeChanges, ownedChanges, stepUsage } from '../../shared/task.ts'
 
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { placedFiles } from '../attachments.ts'
@@ -42,21 +41,18 @@ import {
 export { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, type ContextNote, type NetNote }
 import { awaitingCompact, CompactTracker, settleCompactRow } from './compaction.ts'
 
-import { invokeCli, type CliControl } from './invoke.ts'
+import { invokeCli } from './invoke.ts'
 
-import { REDIRECT_LIMITS, REDIRECT_NOTE, redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
 
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 
-import { pluginRunTools } from './plugin-run.ts'
 import { seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
 import { noteEdit } from '../turn-owners.ts'
 import { canKeepAlive, envStallTimeout, forgetPromptSent, silentTurn } from './retry-policy.ts'
-import { steerNote, steers } from './steering.ts'
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
@@ -71,7 +67,8 @@ import { newRunState } from './run-state.ts'
 import { createApply } from './run-events.ts'
 import { createWaiting } from './run-wait.ts'
 import { afterProcess, finishTurn } from './run-finish.ts'
-import { prepareLaunch, resolveTarget } from './run-setup.ts'
+import { attachPlugins, prepareLaunch, resolveTarget } from './run-setup.ts'
+import { createSteering } from './run-steer.ts'
 import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 // runAgent 里职责完整的几块拆在这些文件：模型和上限、选会话、拼输入、启动参数、进程没跑完一轮时交回什么
 import { windowLookup } from './model-run.ts'
@@ -392,32 +389,19 @@ async function runAgent(
   })
   const { arm } = watch
   const drafting = createDrafting(task, () => ctx.changed())
-  /**
-   * 补充排在正在执行的命令后面（Pi 要等这一批工具跑完才取）：命令跑了一会儿还没完（例如 sleep 等 CI），
-   * 用户就一直等不到回应。超过阈值就停下这条命令，让 CLI 马上处理补充；
-   * 只读命令等它自己跑完（这批工具结束时 CLI 就会取补充），卡住了才按更长的阈值停
-   */
-  const checkRedirect = () => {
-    clearTimeout(st.redirectTimer)
-    st.redirectTimer = undefined
-    const c = st.control
-    if (!st.steerPending || st.finished || !c?.redirect) return
-    // 只等命令：读文件、改文件很快就完；面板自己的工具（等子任务这些）另有办法接用户的消息
-    const wait = redirectWait(
-      [...toolStart].map(([x, at]) => ({ kind: x.kind, label: x.label, startedAt: at })),
-      Date.now(),
-      REDIRECT_LIMITS,
-    )
-    if (wait === undefined) return
-    if (wait > 0) {
-      st.redirectTimer = setTimeout(checkRedirect, wait)
-      st.redirectTimer.unref?.()
-      return
-    }
-    void c
-      .redirect(REDIRECT_NOTE)
-      .catch((e: Error) => log.warn('task', '停下命令处理补充失败', { task: task.id, error: e.message }))
-  }
+  // 用面板 MCP 工具取补充的，还得这个 CLI 能挂 MCP
+  const canTake = !!(chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk)
+  // 接用户补充的通道（插话、read_user_notes、补充排在长命令后面时停下命令）在 run-steer.ts
+  const { checkRedirect, register, taker, pendingNotes, steered } = createSteering({
+    ctx,
+    task,
+    st,
+    step,
+    agentId,
+    canTake,
+    toolStart,
+    arm,
+  })
   const asked: string[] = []
   const apply = createApply({
     ctx,
@@ -458,62 +442,12 @@ async function runAgent(
     endTurn,
     turnTools,
   })
-  const register = (c: CliControl) => {
-    st.control = c
-    st.steerer = {
-      step,
-      agentId,
-      steer: c.steer,
-      accepted: (msg) => {
-        // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
-        if (msg) steered.add(msg)
-        task.working = true
-        // 交出的插话也要等到模型的回应：一直没有输出时照样标成卡住、告诉用户，不让「等待模型」无声地挂着
-        arm(msg?.text)
-        if (c.deferSteer) {
-          st.steerPending = true
-          checkRedirect()
-        } else st.cutAfter = true
-        ctx.changed(true)
-      },
-    }
-    ;(steers.get(task.id) ?? steers.set(task.id, new Set()).get(task.id)!).add(st.steerer)
-  }
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
   // 对话的进程能不能留着等下一句（保活）：看 CLI 定义的 keepAlive 字段，不再借用 notes。
   // notes 只管「没有插话协议时怎么取补充」，两者混用会让 Pi 这种常驻协议的白白每轮重启
   const canWait = canKeepAlive({ chat, op: !!op, cliKeepAlive: def.keepAlive })
-  // 用面板 MCP 工具取补充的，还得这个 CLI 能挂 MCP
-  const canTake = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
-  let taker: NoteTaker | undefined
-  /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
-  const pendingNotes = new Set<TaskMessage>()
-  /**
-   * 以插话方式交出去的补充：CLI 收下不等于模型看见了。
-   * 这一轮一个字都没产出时（网关吞了、请求根本没发出去），这些消息要交给下一轮重放，
-   * 否则用户的消息只留在对话里，既没有回复也没有报错。
-   */
-  const steered = new Set<TaskMessage>()
-  // notes 与 steer 不互斥：steer 在 CLI 不在活跃轮次时返回 false，补充会丢；两个通道都开（同样见 invoke.ts）
-  if (canTake) {
-    taker = {
-      add: (msg) => pendingNotes.add(msg),
-      read: () => {
-        const mine = [...pendingNotes]
-        if (!mine.length) return []
-        pendingNotes.clear()
-        // 拿到就算交出去了：之后的输出另起一条，排在用户消息后面
-        st.cur = undefined
-        ctx.changed(true)
-        return mine.map((m) =>
-          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat', m.peer?.rel === 'parent'),
-        )
-      },
-    }
-    addNoteTaker(task.id, taker)
-  }
   const { waitUser, keepAlive } = createWaiting({
     ctx,
     call,
@@ -524,7 +458,7 @@ async function runAgent(
     chat,
     op,
     orch,
-    canTake: !!canTake,
+    canTake,
     canWait,
     mine,
     touched,
@@ -543,39 +477,9 @@ async function runAgent(
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
-  // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂，新会话的提示词里说明怎么用；令牌只在这一轮有效
+  // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂（run-setup.ts）
   const plugins =
-    def.mcp && !op
-      ? await pluginRunTools(
-          ctx,
-          { agent, resume: !!resume, cwd, step, agentId },
-          {
-            // 插件的改文件类工具：执行前过工具前守卫（守卫在下面 hookOptions 里装到 call.orch 上，调用时才取），
-            // 改了的文件和 CLI 自己的改文件工具一样记成这一轮的改动、登记归属
-            guardEdit: async (tool, paths, input) => (await call.orch?.guardEdit?.(tool, paths, input)) ?? '',
-            changed: (files) => {
-              for (const f of files)
-                fileEvents.track({ kind: 'edit', label: f, detail: '' }, { path: f, add: 0, del: 0 }, false)
-            },
-            // 插件的长任务交给面板的后台命令（插件框架改进 G1）：和 run_background 同一套监管，结果推回这个对话
-            background: async (job) => {
-              const orch = call.orch
-              if (!orch?.canBackground) return { ok: false, info: '这个对话不能用后台命令：插件自己跑' }
-              return orch.runBackground({
-                command: String(job.command ?? ''),
-                name:
-                  String(job.name ?? '').trim() ||
-                  String(job.command ?? '')
-                    .split('\n')[0]
-                    .slice(0, 40),
-                cwd: String(job.cwd ?? ''),
-                exclusive: job.exclusive === true,
-                ...(Number(job.timeoutMinutes) > 0 && { timeoutMinutes: Number(job.timeoutMinutes) }),
-              })
-            },
-          },
-        )
-      : undefined
+    def.mcp && !op ? await attachPlugins(ctx, call, { agent, resume, cwd, step, agentId }, fileEvents) : undefined
   if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {
