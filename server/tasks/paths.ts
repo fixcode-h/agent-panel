@@ -1,8 +1,8 @@
 import { open as openFd, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { Task } from '../shared/schema.ts'
-import { openWithSystem, revealDir, revealItem } from './open.ts'
+import type { Task } from '../../shared/schema.ts'
+import { openWithSystem, revealDir, revealItem } from '../open.ts'
 
 /**
  * 对话消息里提到的文件路径：找到本机上真实的那个文件，给悬停卡片看信息，点了用合适的方式打开。

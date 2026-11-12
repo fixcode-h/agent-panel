@@ -3,7 +3,7 @@ import test from 'node:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { removeTaskLog, setTaskLogPath, taskLog } from './task-log.ts'
+import { removeTaskLog, setTaskLogPath, taskLog } from './log.ts'
 
 test('对话日志：一行一件事，带空格的值加引号，找不到对话时不写，删除时连旧文件一起删', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'task-log-'))

@@ -1,9 +1,9 @@
 import { Hono, type Context } from 'hono'
 import { arch, cpus, homedir, platform, release, totalmem } from 'node:os'
 import { getHeapStatistics } from 'node:v8'
-import type { Task, TaskMemoryAnalysis, TaskProcesses } from '../shared/schema.ts'
-import { t } from '../shared/i18n.ts'
-import { formatBytes } from '../shared/memory.ts'
+import type { Task, TaskMemoryAnalysis, TaskProcesses } from '../../shared/schema.ts'
+import { t } from '../../shared/i18n.ts'
+import { formatBytes } from '../../shared/memory.ts'
 import {
   TASK_MEMORY_ASK,
   TASK_MEMORY_TOPIC,
@@ -14,10 +14,10 @@ import {
   taskMemoryTrend,
   taskTrendText,
   type TaskContext,
-} from '../shared/memory-analysis.ts'
-import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
-import { SAMPLE_INTERVAL_MS, loadHistory, summarize, type StoredSample } from './exec/proc-stats.ts'
-import { registerFixTopic } from './fix.ts'
+} from '../../shared/memory-analysis.ts'
+import { runTree, subtreeTaskIds } from '../../shared/run-usage.ts'
+import { SAMPLE_INTERVAL_MS, loadHistory, summarize, type StoredSample } from '../exec/proc-stats.ts'
+import { registerFixTopic } from '../fix.ts'
 
 /**
  * 会话内存的 AI 分析：把「这个会话的采样序列 + 进程面板的两路占用 + 任务树规模 + 上下文占用」

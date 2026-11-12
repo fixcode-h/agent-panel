@@ -18,7 +18,7 @@ import {
 } from '../../shared/end-turn.ts'
 import { allowEnd, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks.ts'
 import { hasHeld } from '../exec/delivery.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
 

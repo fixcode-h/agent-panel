@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cleanTitle, titleInput, titlePrompt } from './task-title.ts'
+import { cleanTitle, titleInput, titlePrompt } from './title.ts'
 
 test('从 CLI 回复里取标题：去掉引号、Markdown、前缀和结尾标点', () => {
   assert.equal(cleanTitle('「修复登录页闪退」'), '修复登录页闪退')

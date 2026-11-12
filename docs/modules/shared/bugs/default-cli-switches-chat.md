@@ -1,6 +1,6 @@
 # 改「默认 CLI」后已有对话悄悄换成另一个 CLI
 
-- 状态：已修复（`server/task-run-pick.test.ts`、`scripts/e2e/05-workflow-edge.mjs` 通过）
+- 状态：已修复（`server/tasks/run-pick.test.ts`、`scripts/e2e/05-workflow-edge.mjs` 通过）
 - 症状：默认 CLI 从 Claude Code 改成 Codex 后，原来用 Claude Code 的对话下一条消息直接由 Codex 回答（新会话），界面上没有任何提示；改回来后原来用 Codex 的对话又换回 Claude Code
 - 入口：`shared/tasks/run.ts` 的 `withTaskModel`，`shared/task.ts` 的 `newTask`，`server/exec/runner.ts` 的 `runAgent`
 - 根因类型：对话的 CLI 每轮按「角色 CLI → 默认 CLI」现算，没用上第一次运行时记下的 `sessionCli`；新建对话接口传的 `cli` 对角色对话直接丢掉

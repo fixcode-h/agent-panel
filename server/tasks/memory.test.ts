@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Hono } from 'hono'
-import type { Task, TaskProcess, TaskProcesses } from '../shared/schema.ts'
-import { setLang } from '../shared/i18n.ts'
-import { StoredSample } from './exec/proc-stats.ts'
-import { taskMemoryApi } from './task-memory.ts'
+import type { Task, TaskProcess, TaskProcesses } from '../../shared/schema.ts'
+import { setLang } from '../../shared/i18n.ts'
+import { StoredSample } from '../exec/proc-stats.ts'
+import { taskMemoryApi } from './memory.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')

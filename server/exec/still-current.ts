@@ -6,7 +6,7 @@ import type { Agent, Settings, Task } from '../../shared/schema.ts'
 import { agentRun } from '../../shared/settings.ts'
 import { withTaskModel } from '../../shared/tasks/run.ts'
 import { replyLang } from '../../shared/prompt-lang.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 
 export function makeStillCurrent(a: {
   task: Task

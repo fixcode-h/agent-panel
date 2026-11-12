@@ -2,7 +2,7 @@
 
 状态：已接受 · 2026-11-12
 
-- 影响：`server/migrations/`、`server/task-store.ts`、`server/tasks/messages-file.ts`、`server/data.ts`（导入）
+- 影响：`server/migrations/`、`server/tasks/store.ts`、`server/tasks/messages-file.ts`、`server/data.ts`（导入）
 - 起因：重构文档第 6、7 条（项目文件 `需要重构的地方.md`）
 
 ## 背景

@@ -8,7 +8,7 @@ import { isPanelMcpUrl } from '../../shared/project-mcp.ts'
 import type { Task } from '../../shared/schema.ts'
 import { log } from '../log.ts'
 import { readServerTable } from '../mcp-store.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 import { systemNote } from './recovery.ts'
 
 /**

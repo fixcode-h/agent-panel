@@ -24,7 +24,7 @@ import { invokeCli } from './invoke.ts'
 import { t } from '../../shared/i18n.ts'
 
 import { log } from '../log.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 
 import { agentUsage, contextUsage, ownContext } from './usage-record.ts'
 import { seenWhileWatched } from '../presence.ts'

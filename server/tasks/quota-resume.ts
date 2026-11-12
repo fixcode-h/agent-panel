@@ -24,7 +24,7 @@ import {
 import { getCli } from '../../shared/clis.ts'
 import { getLimits } from '../cli-extras.ts'
 import { getSettings } from '../settings.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 

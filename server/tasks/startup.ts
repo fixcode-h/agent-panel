@@ -5,7 +5,7 @@ import { failLostWaits } from '../../shared/plan-lost.ts'
 import { pauseUnit } from '../../shared/run-stops.ts'
 import { restartInterrupted, restartUnfinished, taskDeleted } from '../../shared/task.ts'
 import { diagnosisWaiting, droppedAsksNote, rewaitDiagnosis, settleStopped } from '../../shared/tasks/settle.ts'
-import type { createTaskStore } from '../task-store.ts'
+import type { createTaskStore } from './store.ts'
 import { rebuildClaims, type createClaims } from '../claims.ts'
 
 type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>

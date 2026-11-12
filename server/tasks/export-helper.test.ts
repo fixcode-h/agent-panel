@@ -4,8 +4,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Agent, Task } from '../shared/schema.ts'
-import { DIAGNOSIS_LANG } from '../shared/diagnosis.ts'
+import { Agent, Task } from '../../shared/schema.ts'
+import { DIAGNOSIS_LANG } from '../../shared/diagnosis.ts'
 import {
   analysisPrompt,
   analysisReport,
@@ -13,7 +13,7 @@ import {
   exportTask,
   HELPER_SCOPE_MARK,
   taskReport,
-} from '../shared/tasks/export.ts'
+} from '../../shared/tasks/export.ts'
 
 /** 报告里的开始/结束时间写的是本地时刻，期望值必须现算，写死会在别的时区挂 */
 const localTime = (iso: string) => {

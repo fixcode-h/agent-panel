@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { findRelapse, markRelapse, observingUntil, relapseInfo, relapseNote } from '../../shared/bug/observe.ts'
 import { log } from '../log.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 
 export async function linkRelapse(

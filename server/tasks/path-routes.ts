@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { openable, openPath, resolvePath, searchRoots } from '../task-paths.ts'
+import { openable, openPath, resolvePath, searchRoots } from './paths.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 
@@ -10,7 +10,7 @@ const OpenInput = z.object({ path: z.string().min(1).max(4096), reveal: z.boolea
 
 /**
  * 对话消息里提到的文件：解析成本机的真实路径（悬停卡片、找不到时划掉），用系统默认程序打开或在文件夹中显示。
- * 找文件的规则见 server/task-paths.ts
+ * 找文件的规则见 server/tasks/paths.ts
  */
 export function registerPathRoutes(s: TasksScope) {
   /** 这个对话找文件的根；导入的任务没有本机目录，读不了时按原因报错 */

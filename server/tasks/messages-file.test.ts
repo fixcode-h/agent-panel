@@ -10,7 +10,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-messages-file-'))
 process.env.AGENT_PANEL_DATA = dir
 
 const { parseMessagesJsonl, messagesToJsonl } = await import('./messages-file.ts')
-const { createTaskStore } = await import('../task-store.ts')
+const { createTaskStore } = await import('./store.ts')
 
 const msg = (id: string, text: string) =>
   TaskMessage.parse({ id, role: 'agent', text, at: '2026-11-12T00:00:00.000Z', tools: [] })

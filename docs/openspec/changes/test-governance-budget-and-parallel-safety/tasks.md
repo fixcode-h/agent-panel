@@ -43,7 +43,7 @@
 
 - [ ] 5.1 新增 scripts/lib/test-covers.mjs：解析测试文件顶部与 `describe` 前的 `@covers` 注解，产出文件 → 源模块 / 用例组索引；含单测覆盖单行、多行、缺注解、非法路径。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-covers.test.mjs`。
 - [ ] 5.2 `scripts/changed-tests.mjs` 输出扩展为 `{ file, groups? }` 并打印每个命中的理由（直接映射 / 影响面闭包 / 同目录回退）；`unit-tests.mjs` 支持按组执行（`--test-name-pattern` 的 OR 组合），无法定位到组时退整文件并打印原因。验证：改一个只有单组的测试文件对应源文件，输出注明「用例级命中」；人为去掉分组命名后输出「分组不可定位」。
-- [ ] 5.3 调整必须全量：高风险区收窄到契约文件清单（`shared/clis/*.json`、`shared/cli-spec.ts`、`shared/engine.ts`、`shared/schema.ts`、`shared/task.ts`、`server/task-store.ts`、`server/exec/runner.ts`、`server/exec/process.ts`），`FULL_COVERAGE_RATIO` 60% → 75%；`plan.full.tests` 改为 `{ required, triggers: [{ kind, files, threshold? }] }` 并逐条打印。验证：改 `shared/schema.ts` 输出触发类别与命中文件；改 `docs/lessons/testing.md` 不触发全量。
+- [ ] 5.3 调整必须全量：高风险区收窄到契约文件清单（`shared/clis/*.json`、`shared/cli-spec.ts`、`shared/engine.ts`、`shared/schema.ts`、`shared/task.ts`、`server/tasks/store.ts`、`server/exec/runner.ts`、`server/exec/process.ts`），`FULL_COVERAGE_RATIO` 60% → 75%；`plan.full.tests` 改为 `{ required, triggers: [{ kind, files, threshold? }] }` 并逐条打印。验证：改 `shared/schema.ts` 输出触发类别与命中文件；改 `docs/lessons/testing.md` 不触发全量。
 - [ ] 5.4 单测补：清缓存前后选择结果一致、空改动提示带基线、无对应测试交给父对话、依赖图不完整给出具体文件和 import 行。验证：`node scripts/unit-tests.mjs --files scripts/lib/changed-tests.test.mjs,scripts/changed-tests.test.mjs`。
 - [ ] 5.5 文档：`docs/modules/testing/README.md` 写「选择规则与全量触发条件」；`docs/agent-test-steps.md` 的「改动 → 增量测试」小节更新；`docs/lessons/testing.md` 补「必须全量要给触发依据」。验证：`npm run lint`。
 

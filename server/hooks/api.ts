@@ -26,7 +26,7 @@ import {
   setTier,
 } from './store.ts'
 import { watchTaskEvents } from './notify.ts'
-import { onTaskChange } from '../task-store.ts'
+import { onTaskChange } from '../tasks/store.ts'
 import { getSettings } from '../settings.ts'
 import { log } from '../log.ts'
 import { recentTriggers, runHook } from './run.ts'

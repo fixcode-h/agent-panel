@@ -8,17 +8,17 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { setLang } from '../shared/i18n.ts'
-import { openPlan } from '../shared/plan.ts'
-import { Task } from '../shared/schema.ts'
-import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSettled } from '../shared/task.ts'
+import { setLang } from '../../shared/i18n.ts'
+import { openPlan } from '../../shared/plan.ts'
+import { Task } from '../../shared/schema.ts'
+import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSettled } from '../../shared/task.ts'
 
 // 记录写在临时数据目录，别碰本机的；必须在 import server 模块之前指过去
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-restart-'))
 process.env.AGENT_PANEL_DATA = dir
-const { createTaskStore } = await import('./task-store.ts')
-const { tasksApi } = await import('./tasks.ts')
-const { restartDoing } = await import('./interrupted.ts')
+const { createTaskStore } = await import('./store.ts')
+const { tasksApi } = await import('../tasks.ts')
+const { restartDoing } = await import('../interrupted.ts')
 
 setLang('zh')
 

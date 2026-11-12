@@ -30,7 +30,7 @@ import {
   type NotifyMessage,
 } from '../shared/notify-channels.ts'
 import { taskTransitions } from './hooks/notify.ts'
-import { onTaskChange } from './task-store.ts'
+import { onTaskChange } from './tasks/store.ts'
 import { getSettings } from './settings.ts'
 import { remotePublicUrl } from './remote.ts'
 import { log } from './log.ts'

@@ -24,7 +24,7 @@ import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
 import { activePluginHooks, isPluginHook, runPluginHook } from '../plugins/contrib.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 import {
   bugDeny,
   dangerDeny,

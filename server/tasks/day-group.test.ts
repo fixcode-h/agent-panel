@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupByDay } from '../shared/task.ts'
+import { groupByDay } from '../../shared/task.ts'
 
 /** 固定的「现在」：本地时间 2026-10-20 10:00 */
 const now = new Date(2026, 9, 20, 10, 0, 0)

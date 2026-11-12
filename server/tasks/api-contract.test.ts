@@ -12,11 +12,11 @@ import test from 'node:test'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-contract-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { createTaskStore } = await import('./task-store.ts')
-const { tasksApi } = await import('./tasks.ts')
-const { newTask } = await import('../shared/task.ts')
-const { setLang } = await import('../shared/i18n.ts')
-const contract = await import('../shared/api-contract/tasks.ts')
+const { createTaskStore } = await import('./store.ts')
+const { tasksApi } = await import('../tasks.ts')
+const { newTask } = await import('../../shared/task.ts')
+const { setLang } = await import('../../shared/i18n.ts')
+const contract = await import('../../shared/api-contract/tasks.ts')
 
 setLang('zh')
 

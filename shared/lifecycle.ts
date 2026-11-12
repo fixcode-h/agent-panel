@@ -14,7 +14,7 @@ import { convStateText, stopReasonText, type ConvState } from './task.ts'
 import type { TrailItem } from './end-turn.ts'
 import type { EndTurnRecord } from './turn-end.ts'
 
-/** 对话日志里的一行（server/task-log.ts 写的格式：`2026-10-30 09:07:12.123 [事件] 键=值 …`） */
+/** 对话日志里的一行（server/tasks/log.ts 写的格式：`2026-10-30 09:07:12.123 [事件] 键=值 …`） */
 export interface LogLine {
   at: number
   event: string

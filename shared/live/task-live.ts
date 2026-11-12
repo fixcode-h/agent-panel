@@ -123,7 +123,7 @@ export const liveWaitText = (l: Pick<TaskLive, 'state' | 'need' | 'wait' | 'repo
 /**
  * 不落盘的字段：运行时的那几项（以后只在 TaskLive 里）、列表摘要才带的 askedAt、
  * 还有 runner 直接写在内存任务上的 drafting（模型正在写哪个工具的入参）。
- * 写盘前剥掉（server/task-store.ts），旧版本存过的由数据迁移清掉
+ * 写盘前剥掉（server/tasks/store.ts），旧版本存过的由数据迁移清掉
  */
 export const NOT_STORED_FIELDS = [
   'cliAlive',

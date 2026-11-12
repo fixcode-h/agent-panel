@@ -5,14 +5,14 @@
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { getCli } from '../shared/clis.ts'
-import type { Task } from '../shared/schema.ts'
-import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { safeArgs } from './assist.ts'
-import { invokeCli } from './exec/invoke.ts'
-import { childEnv } from './exec/process.ts'
-import { log } from './log.ts'
-import { getSettings } from './settings.ts'
+import { getCli } from '../../shared/clis.ts'
+import type { Task } from '../../shared/schema.ts'
+import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
+import { safeArgs } from '../assist.ts'
+import { invokeCli } from '../exec/invoke.ts'
+import { childEnv } from '../exec/process.ts'
+import { log } from '../log.ts'
+import { getSettings } from '../settings.ts'
 
 const TIMEOUT = 2 * 60_000
 /** 起标题的提示词开头：测试用的假 CLI 认它 */

@@ -2,9 +2,9 @@
 
 - 状态：已修复（代码和新增的单测随同一批改动落地；恢复效果在真实数据目录的副本上验证过，见「回归验证」）
 - 症状：电脑意外重启后，两个对话从项目列表里彻底消失（消息文件完好也没用）
-- 入口：`server/store.ts` 的 `writeJsonAtomic` / `readJsonDetailed`、`server/task-store.ts` 的 `load`
+- 入口：`server/store.ts` 的 `writeJsonAtomic` / `readJsonDetailed`、`server/tasks/store.ts` 的 `load`
 - 根因类型：落盘未刷盘 + 损坏被当成不存在
-- 模块：`server`（存储 `server/store.ts`、任务记录 `server/task-store.ts`）
+- 模块：`server`（存储 `server/store.ts`、任务记录 `server/tasks/store.ts`）
 - 关键词：重启、断电、对话消失、任务记录丢失、meta 丢失、全 0、空洞文件、fsync、`cache/broken`、重建
 
 ## 现象
@@ -39,7 +39,7 @@
 
 1. **`writeJsonAtomic` 没有 fsync**：原来是 `writeFile(tmp)` → `rename(tmp, file)`。Windows 上断电时，文件长度已经写进元数据、脏数据页还没落盘，于是目标文件保留原长度、内容全是 `0x00`。坏文件大小和原文件对得上就是这么来的。`rename` 是原子的，但它只保证「名字换代」，不保证数据已经在盘上。
 2. **`readJson` 把损坏当成不存在**：`JSON.parse` 失败后把文件 `rename` 到 `cache/broken/`，然后 `return undefined`，只打一行 `console.error`。上层拿不到「这里原本有个文件、它坏了」这个信号，任何「文件没有 = 这份数据不存在」的判断都会把损坏误当成不存在。
-3. **`load()` 只枚举任务记录**：`server/task-store.ts` 的 `load()` 用 `f.endsWith(MSG)` 跳过 `.messages.json`，只按任务记录建列表。记录一消失，任务就从列表里彻底消失，即使同目录的 `.messages.json` 完好无损；也没有任何「从 `.messages.json` 反推重建任务记录」的兜底。
+3. **`load()` 只枚举任务记录**：`server/tasks/store.ts` 的 `load()` 用 `f.endsWith(MSG)` 跳过 `.messages.json`，只按任务记录建列表。记录一消失，任务就从列表里彻底消失，即使同目录的 `.messages.json` 完好无损；也没有任何「从 `.messages.json` 反推重建任务记录」的兜底。
 
 ## 修法
 
@@ -50,7 +50,7 @@
 - **fsync 不能省**：省掉它就会出现「rename 生效了但数据没落盘」这个具体失败模式，就是这次的空洞文件。所以每次写都 fsync 临时文件，不是只对大文件或只对小文件。
 - **fsync 失败不 rename，直接抛错**：写不下去时留着旧文件比换成一个可能全 0 的新文件安全。
 - **rename 后刷目录**：`fsyncDir` 让目录项本身落盘。`process.platform === 'win32'` 时直接 `return`（Windows 打不开目录句柄，做不到就跳过；数据在上一步已经 fsync 过，目录项丢失最坏是回到上一个版本的文件），其他平台打开失败也静默跳过（部分网络盘、容器挂载不支持对目录 fsync）。
-- **为什么性能可以接受**：消息文件的写入有 `server/task-store.ts` 的 `MSG_GAP`（400ms）合并窗口挡在前面，流式输出时每秒最多几次写盘，fsync 的代价被摊掉了；任务记录、设置这类小文件本来就写得少。
+- **为什么性能可以接受**：消息文件的写入有 `server/tasks/store.ts` 的 `MSG_GAP`（400ms）合并窗口挡在前面，流式输出时每秒最多几次写盘，fsync 的代价被摊掉了；任务记录、设置这类小文件本来就写得少。
 
 ### 读取：区分「没有」和「坏了」
 
@@ -64,7 +64,7 @@
 
 ### 任务记录：缺了就按对话重建
 
-`server/task-store.ts` 的 `load()` 在**同一次** load 里同时收集任务记录和 `.messages.json`（`all()` 里 `loading ??= load()` 的并发保护不变，没有第二次扫描），然后对「有 `.messages.json` 但记录缺失 / 记录坏掉」的 id 调 `rebuildMeta()`：
+`server/tasks/store.ts` 的 `load()` 在**同一次** load 里同时收集任务记录和 `.messages.json`（`all()` 里 `loading ??= load()` 的并发保护不变，没有第二次扫描），然后对「有 `.messages.json` 但记录缺失 / 记录坏掉」的 id 调 `rebuildMeta()`：
 
 - 读 `.messages.json`，用 `TaskMessage.array().safeParse` 校验。
 - 反推出的记录再用 `Task.safeParse` 校验，**不通过就不重建、不写半截**——宁可不重建，也不能「修」出新问题。
@@ -85,7 +85,7 @@
   - `readJson：坏 JSON 被留档，调用方能拿到「存在但坏了」和原路径、字节数`（同时断言 `.broken.json` 说明里的 `file` / `size` / `reason`，以及旧签名 `readJson` 仍返回 `undefined`）
   - `readJson：全 0 的空洞文件判成损坏，并记下真实字节数`
   - `同一毫秒里归档两次同名文件：不覆盖前一份留档`（备份名撞车时往后加序号，两份原始内容都在）
-- `server/task-store.test.ts`
+- `server/tasks/store.test.ts`
   - `只有 .messages.json、没有任务记录：从对话重建任务，列表里出现且内容完整`（还断言重建出的记录写回磁盘、记录里只有用户消息、`store.get()` 能读到完整对话）
   - `任务记录损坏（全 0 的空洞文件）：从对话重建，坏文件留档`
   - `对话文件也是全 0：不重建、不伪造，留档后不抛错也不再重试`（第二次启动不再产生新留档）
@@ -133,11 +133,11 @@ npm run test:e2e:wsl   # 改了存储和启动迁移，在 WSL 里跑
 | 位置                          | 改了什么                                                                                                                                                                                                                                       |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/store.ts`             | `writeJsonAtomic` 改成同句柄 `fsync` 后再 `rename`，失败不 rename；新增 `fsyncDir`（Windows 跳过）；新增 `readJsonDetailed`、`archiveBrokenFile` 和 `JsonResult` / `BrokenJson` 类型；`readJson` 改为返回 `readJsonDetailed().value`，签名不变 |
-| `server/task-store.ts`        | `load()` 同一次扫描里同时收集任务记录和 `.messages.json`；新增 `rebuildMeta()`（校验后重建、写回、放进 map）和 `archiveBadMeta()`（schema 不过的记录先留档）；坏对话文件归档并打带 id、字节数的日志                                            |
+| `server/tasks/store.ts`       | `load()` 同一次扫描里同时收集任务记录和 `.messages.json`；新增 `rebuildMeta()`（校验后重建、写回、放进 map）和 `archiveBadMeta()`（schema 不过的记录先留档）；坏对话文件归档并打带 id、字节数的日志                                            |
 | `shared/locales/en/server.ts` | 补 `恢复的对话` 的英文 `Recovered conversation`                                                                                                                                                                                                |
 | `server/store.test.ts`        | 新增：写入可读回、覆盖写、tmp 不残留、坏 JSON 留档与三态、全 0 空洞文件、同一毫秒归档两次不覆盖前一份                                                                                                                                          |
-| `server/task-store.test.ts`   | 新增 5 条：只有消息文件时重建、记录全 0 时重建、消息全 0 时不重建只留档、消息不是消息数组时不重建、已有记录不被覆盖                                                                                                                            |
+| `server/tasks/store.test.ts`  | 新增 5 条：只有消息文件时重建、记录全 0 时重建、消息全 0 时不重建只留档、消息不是消息数组时不重建、已有记录不被覆盖                                                                                                                            |
 
 ## 待确认
 
-- 无。修法一节按最终代码核对过（`server/store.ts` 的 `writeJsonAtomic` / `fsyncDir` / `readJsonDetailed` / `archiveBrokenFile`，`server/task-store.ts` 的 `load()` / `rebuildMeta()` / `archiveBadMeta()`）。
+- 无。修法一节按最终代码核对过（`server/store.ts` 的 `writeJsonAtomic` / `fsyncDir` / `readJsonDetailed` / `archiveBrokenFile`，`server/tasks/store.ts` 的 `load()` / `rebuildMeta()` / `archiveBadMeta()`）。

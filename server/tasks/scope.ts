@@ -14,7 +14,7 @@ import type {
 } from '../../shared/schema.ts'
 import type { LessonDraft } from '../lessons.ts'
 import type { Lister, Live } from './types.ts'
-import type { createTaskStore } from '../task-store.ts'
+import type { createTaskStore } from './store.ts'
 import type { worktreeStatus } from '../exec/worktree.ts'
 import type { IntegrateKind, IntegrateResult } from '../exec/worktree-integrate.ts'
 import type { createClaims } from '../claims.ts'

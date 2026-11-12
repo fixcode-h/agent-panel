@@ -1,6 +1,6 @@
 # 父对话在等子对话时被回收成「已中断」：子对话还在跑，父对话先没了
 
-- 状态：已修复（改动、回归用例随同一批落地；`shared/tasks/stage.test.ts`、`server/presence.test.ts` 的新用例先在旧实现上确认失败，`server/task-restart.test.ts` 与 `scripts/e2e/04-subagents.mjs` 补上父子两侧的护栏）
+- 状态：已修复（改动、回归用例随同一批落地；`shared/tasks/stage.test.ts`、`server/presence.test.ts` 的新用例先在旧实现上确认失败，`server/tasks/restart.test.ts` 与 `scripts/e2e/04-subagents.mjs` 补上父子两侧的护栏）
 - 症状：一个父对话派出子对话后停在等它的结果，用户切走页面（或关掉标签页），宽限到期后父对话被落成「已中断」（`status: 'stopped'`、`stopReason: 'presence'`），而子对话还在跑；子对话的结果回来时父对话已经不在「等结果」的状态里，用户看到的是一条被回收的父对话
 - 入口：`server/presence.ts` 的 `evict`（`busy` 判定）、`server/tasks.ts` 的 `keepAliveBusy` / `childrenRunning` / `enforceKeepAlive`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `keepAliveHolding` / `keepAliveBusy` / `childFacts` / `restartInterrupted`
 - 根因类型：状态收口缺口（回收判定只看「自己有没有执行位」，不看名下还在跑的对话）
@@ -74,7 +74,7 @@
 | `server/presence.test.ts`「宽限到点还在跑的对话留一个复查：子对话被停掉、自己空下来后照旧回收」      | 评审 R1：忙时进 `pending` 之后必须有复查把它拉回回收，不能永远挂着（子对话被强制停掉时不会再有 `onKeepAlive`）                                                                 |
 | `server/presence.test.ts`「关掉自动回收：宽限或复查到点都不收」                                      | 先打开开关走到「宽限到点 → 忙 → 排上复查」，再关开关：复查到点也不能收（不是只测宽限计时器）                                                                                   |
 | `server/presence.test.ts`「复查不占宽限计时：空下来以后按宽限收，不等到复查点」                      | 复查用独立的 `rechecks` Map，`scheduleIdle` 的「已经在计时」不能把它当成宽限                                                                                                   |
-| `server/task-restart.test.ts`「重启时名下有子对话在跑的父对话：落成已停止，父子都进恢复名单」        | 重启迁移把父子都落静止（进程都回收了），`stopReason` 是 `restart`；`interruptedTaskIds` 里父对话不能漏（子对话的结果要它接）                                                   |
+| `server/tasks/restart.test.ts`「重启时名下有子对话在跑的父对话：落成已停止，父子都进恢复名单」       | 重启迁移把父子都落静止（进程都回收了），`stopReason` 是 `restart`；`interruptedTaskIds` 里父对话不能漏（子对话的结果要它接）                                                   |
 | `scripts/e2e/04-subagents.mjs`「父对话在等子对话：宽限到期不回收父对话（子对话的结果还要交给它）」   | 真实链路：不保活的 CLI 建父对话（留下没做完的计划）+ 接口建一个 `SLOW` 子对话 → 切走父对话页 → 等两倍宽限 → 父对话的 `stopReason` 不能是 `presence`、`status` 不能是 `stopped` |
 
 ## 回归验证
@@ -97,7 +97,7 @@
 
 第三次复看后，用例「关掉自动回收」的构造改成先在开关打开时真的排上复查、再关开关（原本是在宽限到点前就关，复查根本没排上，名字和实际的覆盖对不上）；同种反向验证（去掉 `evict` 开头的开关检查）后该用例照样失败。
 
-`restartInterrupted` 改成从 `childFacts` 派生是结构收敛（当前字段集下两种写法结论相同），`server/task-restart.test.ts` 的用例守的是行为契约，不声称能拦住这次重构本身。
+`restartInterrupted` 改成从 `childFacts` 派生是结构收敛（当前字段集下两种写法结论相同），`server/tasks/restart.test.ts` 的用例守的是行为契约，不声称能拦住这次重构本身。
 
 ## 落地改动
 
@@ -108,5 +108,5 @@
 | `server/presence.ts`           | `evict` 开头读回收开关（关掉后已排的计时器也不再收）；忙时记完 `pending` 再排复查（`scheduleRecheck`，独立 `rechecks` Map，间隔 `BUSY_RECHECK_MS`，不取宽限期以避开 0ms 自旋）；空下来后照常回收 |
 | `shared/tasks/stage.test.ts`   | 新增 `keepAliveHolding` 用例（含「子对话结束照旧回收」）                                                                                                                                         |
 | `server/presence.test.ts`      | 新增「父对话在等子对话」、「宽限到点还在跑的对话留一个复查」、「关掉自动回收：宽限或复查到点都不收」、「复查不占宽限计时」四条例用                                                               |
-| `server/task-restart.test.ts`  | 新增「重启时名下有子对话在跑的父对话」用例（父子落静止 + 都进恢复名单）                                                                                                                          |
+| `server/tasks/restart.test.ts` | 新增「重启时名下有子对话在跑的父对话」用例（父子落静止 + 都进恢复名单）                                                                                                                          |
 | `scripts/e2e/04-subagents.mjs` | 新增「父对话在等子对话」的端到端段（宽限两倍后父对话不被落静止），并在切走前、断言前各确认一次 `working === false`：这段时间父对话要是被叫醒在跑，断言会先把构造打红，不会静默假绿（评审 R2）    |

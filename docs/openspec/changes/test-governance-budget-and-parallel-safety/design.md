@@ -9,7 +9,7 @@
 - **规模**：单测 238 文件 / 2119 用例（server 136、shared 54、web/src 48 文件）；e2e 13 个分片（编号 01–08、10–14，无 09）；界面检查 12 个分片。父对话实测本地六步 6m5s，单测 2m53s–6m44s，e2e 1m13s–6m，界面检查 1m10s–5m35s。
 - **分层现状**：`server/` 下 72 个测试文件包含 `mkdtemp` / `execFileSync` / `spawn` / `listen` / `Hono` 一类集成特征；`shared/`、`web/src/` 目前没有这类特征。2119 个用例没有区分层。
 - **runner 现状**：
-  - `scripts/unit-tests.mjs`：`TIMING_FILES` 5 个文件（`server/exec/worktree.test.ts`、`server/exec/pi-rpc.test.ts`、`server/task-store.test.ts`、`server/exec/process.test.ts`、`server/background.test.ts`）加 `--test-concurrency=1` 串行；其余交给 `node --test` 默认并发（等于 CPU 核数）。
+  - `scripts/unit-tests.mjs`：`TIMING_FILES` 5 个文件（`server/exec/worktree.test.ts`、`server/exec/pi-rpc.test.ts`、`server/tasks/store.test.ts`、`server/exec/process.test.ts`、`server/background.test.ts`）加 `--test-concurrency=1` 串行；其余交给 `node --test` 默认并发（等于 CPU 核数）。
   - `scripts/e2e.mjs`：固定 `DEFAULT_CONCURRENCY = 4`，`AGENT_PANEL_E2E_CONCURRENCY` 覆盖；每个分片 `mkdtempSync` 独立数据目录，服务 `listen(0)` 后从 stdout 回报 `AGENT_PANEL_PORT`，`spawn-server.mjs` 校验分片唯一 `instance`。
   - `scripts/ui-check.mjs`：默认 `min(分片数, availableParallelism())`，`AGENT_PANEL_UI_CONCURRENCY` 覆盖；每个分片独立静态服务、浏览器、演示数据。
 - **选择现状**：`scripts/changed-tests.mjs` + `scripts/lib/changed-tests.mjs` 按 import 反向闭包做文件级选择；高风险区是目录级（`server/exec/**`、`shared/clis/**`、`shared/builtin/**`、`shared/engine.ts`、`shared/schema.ts`）；`FULL_COVERAGE_RATIO = 60%`；删除/改名、依赖图不完整都判必须全量。
@@ -79,7 +79,7 @@
 - **保留标准**：文件里存在真实时钟断言（`Date.now` / `setTimeout` / 落盘窗口 / 超时）或依赖并发窗口；每个条目在清单里带一行注释：断言位置 + 最近一次失败记录（链接到 `docs/lessons/testing.md` 对应小节或 issue）。
 - **实测反例（串行兜底失效的判据）**：`server/background.test.ts` 的 `assert.ok(Date.now() - t0 < 4000)`（`server/background.test.ts` 里停止对话那条用例）在 `TIMING_FILES` 串行批里实跑 5599ms 失败。`scripts/unit-tests.mjs` 里该条目的注释把原因写成「靠 1 秒内的 setTimeout 轮询等排队/启动，和别的文件抢事件循环时会晚于窗口」，与这次串行批内的失败矛盾：串行只能保证同一时刻没有别的测试文件抢 CPU，`bg.stop()` 等子进程真实退出的耗时本身就会漂移。**结论：计时类失败只要出现在串行批里，就证明瓶颈不是与其他文件争用，串行兜底对这条失效**，归因改成「靠真实时钟轮询」，治法按 spec 的 `Timing assertions are decoupled from real clock` 三条出路。
 - **收缩流程**：先落地 D6（并发上限），再逐条移出；每条移出前必须已按上面三条出路改造过（注入时钟 / 事件驱动 / 窗口 ≥ 实测 p99 的 2 倍）且在**目标并发配置下连续 3 次全量运行**通过（D6 的上限已生效，不是只跑该文件；记录并发值、机器配置和日期）；移出后任一全量失败即加回并附输出。
-- **目标**：迁移完成后清单 ≤ 2 条（预计保留 `server/task-store.test.ts`、`server/exec/process.test.ts`，等可控时钟改造）。
+- **目标**：迁移完成后清单 ≤ 2 条（预计保留 `server/tasks/store.test.ts`、`server/exec/process.test.ts`，等可控时钟改造）。
 - **替代机制**：断言侧改造（注入时钟 / 事件驱动 / ≥ 2× p99 窗口，本 change 内就要落）+ 文件级隔离重跑（D4）+ 内存 / CPU 自适应并发（D6）；串行清单只兜底真正无法改造的时钟断言，不能当作时钟漂移的修复手段。
 - **复核**：每次全量 flaky 或每季度复核一次，复核结论写进 `docs/modules/testing/README.md` 的「串行清单」小节。
 
@@ -117,7 +117,7 @@
 - **8.1 测试文件拆分**：`scripts/rules-check.mjs` 新增规则——单测试文件 ≤ 300 行，顶部 `@covers` 只能指向一个源模块（同一行为域的多个文件可以写多行，但必须在同一模块目录）；旧文件分批拆，不做全仓格式化。
 - **8.2 `@covers` 注解**：测试文件顶部 `// @covers shared/task.ts`；`describe` 前可写 `// @covers shared/task.ts#childIcon`。scripts/lib/test-covers.mjs 解析成索引（纯文本，不执行测试）。选择结果从 `{ file }` 扩展为 `{ file, groups?: string[] }`，组级命中用 `node --test --test-name-pattern` 的 OR 组合执行；无法定位到组时退回整文件并打印原因。
 - **8.3 必须全量的阈值与范围**：
-  - 高风险区从目录级收窄到文件级契约清单：`shared/clis/*.json`、`shared/cli-spec.ts`、`shared/engine.ts`、`shared/schema.ts`、`shared/task.ts`、`server/task-store.ts`、`server/exec/runner.ts`、`server/exec/process.ts`；`server/exec/` 其余文件不再一刀切。
+  - 高风险区从目录级收窄到文件级契约清单：`shared/clis/*.json`、`shared/cli-spec.ts`、`shared/engine.ts`、`shared/schema.ts`、`shared/task.ts`、`server/tasks/store.ts`、`server/exec/runner.ts`、`server/exec/process.ts`；`server/exec/` 其余文件不再一刀切。
   - `FULL_COVERAGE_RATIO` 从 60% 提到 75%；`FULL_COVERAGE_MIN_TESTS` / `FULL_COVERAGE_MIN_SHARDS` 保持并写进报告。
   - 删除/改名、依赖图不完整仍是必须全量，但报告要给出具体文件和那行 import。
 - **8.4 理由结构化**：`plan.full.tests = { required, triggers: [{ kind, files, threshold? }] }`；终端按触发类别逐条打印，JSON 输出供验收脚本核对。

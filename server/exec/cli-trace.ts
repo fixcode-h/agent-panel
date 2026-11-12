@@ -1,5 +1,5 @@
 import type { CliEvent } from './parsers.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 
 /**
  * CLI 这一轮的模型请求轨迹：每次请求什么时候发出、多久才有第一段输出、最后一次输出在什么时候、

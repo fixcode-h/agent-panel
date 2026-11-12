@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { dropEndNotes, questionAnswers, stripToolMarkup, withAttachments } from '../shared/task.ts'
-import type { TaskMessage } from '../shared/schema.ts'
+import { dropEndNotes, questionAnswers, stripToolMarkup, withAttachments } from '../../shared/task.ts'
+import type { TaskMessage } from '../../shared/schema.ts'
 
 test('模型当成文字说出来的工具调用写法不进正文', () => {
   // 半截的参数（截图里的样子）：去掉到结尾

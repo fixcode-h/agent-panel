@@ -6,7 +6,7 @@
 
 ## 数据落盘与损坏恢复
 
-用户数据都是数据目录下的 JSON 文件，写入集中在 `server/store.ts` 的 `writeJsonAtomic`，任务记录和对话文件在 `server/task-store.ts`。断电、强制重启后「文件长度对得上、内容全是 `0x00`」是这里必须防住的失败模式（起因见 [bugs/restart-lost-conversations.md](bugs/restart-lost-conversations.md)）。
+用户数据都是数据目录下的 JSON 文件，写入集中在 `server/store.ts` 的 `writeJsonAtomic`，任务记录和对话文件在 `server/tasks/store.ts`。断电、强制重启后「文件长度对得上、内容全是 `0x00`」是这里必须防住的失败模式（起因见 [bugs/restart-lost-conversations.md](bugs/restart-lost-conversations.md)）。
 
 **写入路径**：`open(tmp)` → `writeFile` → **`fh.sync()`** → `close` → `rename(tmp, file)` → `fsyncDir(父目录)`。
 
@@ -25,7 +25,7 @@
 
 留档约定：坏文件**只挪不改**，原始字节原样保留；旁边另写一份 `<backup>.broken.json` 说明（`file` 原路径、`backup` 备份路径、`reason` 原因、`size` 字节数、`at` 时间、`stamp`）。备份名已被占用时自动往后加序号（`-2`、`-3`…），同一毫秒里归档两次同名文件不会覆盖前一份。`archived: false` 表示文件被别的进程占着没挪动，它还在原位，下次启动会再处理一遍——日志会写明，不让调用方以为已经留档。除了 JSON 解析失败，「能读成 JSON 但内容用不了」的文件（任务记录、对话文件）也走 `archiveBrokenFile`，免得每次启动重读同一个用不了的文件。例外：`server/settings.ts` 的「JSON 能解析但字段不合法」分支仍是自己 `rename` 到 `cache/broken/`、不写 `.broken.json` 说明（那里只求不让每个接口都 500）。`cache/broken/` 是缓存目录，设置里清理缓存会一起删掉。
 
-**任务记录丢失时的自动恢复**：`server/task-store.ts` 的 `load()` 在同一次扫描里同时收集 `<id>.json`（任务记录）和对话文件（`<id>.messages.jsonl`，没转换的旧 `<id>.messages.json` 也认），对「有对话、但记录缺失或坏掉」的 id 调 `rebuildMeta()`。
+**任务记录丢失时的自动恢复**：`server/tasks/store.ts` 的 `load()` 在同一次扫描里同时收集 `<id>.json`（任务记录）和对话文件（`<id>.messages.jsonl`，没转换的旧 `<id>.messages.json` 也认），对「有对话、但记录缺失或坏掉」的 id 调 `rebuildMeta()`。
 
 - **什么时候重建**：对话文件能读出来、且 `TaskMessage.array().safeParse` 通过，反推出的记录也过 `Task.safeParse`。重建出的记录形态固定：`mode: 'chat'`、`status: 'stopped'`、`stopReason: 'restart'`、`simulated: false`、标题取用户第一句（没有用户消息时 `t('恢复的对话')`）、`createdAt` / `updatedAt` 取首尾消息的 `at`、`messages` 只放用户消息、`turnSeenAt` 取最后一条消息（不亮成未读）。写回磁盘后放进内存的 map，下次启动不用再重建。
 - **什么时候只留档不重建**：对话文件本身坏了 / 全 0 / 能读成 JSON 但不是消息数组 / 是空数组，或者反推出的记录过不了 schema。这时不写任何任务记录（不伪造、不写半截），把用不了的文件归档并打出带 id 和字节数的日志。归档后下次启动看不到它，因此不会反复重试。空对话不重建一个 0 条消息的空任务（断电后可能出现「记录全 0 + 对话为 `[]`」）。
@@ -46,14 +46,14 @@
 ## 对话文件：追加写的 JSONL（ADR 0060）
 
 - 格式和读写在 `server/tasks/messages-file.ts`：`<id>.messages.jsonl` 一行一条完整消息，同 id 后出现的盖掉前面的（位置不变）。坏行跳过：只坏最后半行照常；中间坏行先复制一份到 `broken/`。
-- 写在 `server/task-store.ts` 的 `writeMessages`：按 `createStampTracker` 的逐条指纹找出新增和改过的消息，盘上是前缀就追加；删过消息、换过顺序、覆盖记录超过 `max(COMPACT_MIN, 有效内容)`、或关键节点（`now`）时超过有效内容一半，就 `writeTextAtomic` 整份压实。盘上状态（`written`）不知道时一律整份重写，追加失败也丢掉状态。
+- 写在 `server/tasks/store.ts` 的 `writeMessages`：按 `createStampTracker` 的逐条指纹找出新增和改过的消息，盘上是前缀就追加；删过消息、换过顺序、覆盖记录超过 `max(COMPACT_MIN, 有效内容)`、或关键节点（`now`）时超过有效内容一半，就 `writeTextAtomic` 整份压实。盘上状态（`written`）不知道时一律整份重写，追加失败也丢掉状态。
 - 还没转换的 `.messages.json`（迁移失败、导入旧备份）照样读得出来；第一次整份写出 JSONL 时把它挪进 `backup/0003-messages-jsonl/`。
 - 合并窗口（`MSG_GAP`）照旧保留：它省的是指纹计算和写盘次数，追加写之后单次写便宜了，但流式输出一秒几十次的更新还是要合并。
-- 回归：`server/tasks/messages-file.test.ts`、`server/task-store.test.ts`。
+- 回归：`server/tasks/messages-file.test.ts`、`server/tasks/store.test.ts`。
 
 ## 对话专属日志
 
-每个对话在对话文件旁边有一份自己的日志：`tasks/projects/<项目 id>/<对话 id>.log`（聊天在 `tasks/chats/`），由 `server/task-log.ts` 的 `taskLog(id, 事件, 字段)` 写，一行一件事：`2026-10-30 09:07:12.123 [收到消息] messageId=… live=true status=running awaitingUser=true`。全局日志（`server/log.ts`）按启动分文件、各对话混在一起且主要记报错；这一份只回答「这个对话经历了什么」，查「消息发出去却没了」这类问题时先看它。
+每个对话在对话文件旁边有一份自己的日志：`tasks/projects/<项目 id>/<对话 id>.log`（聊天在 `tasks/chats/`），由 `server/tasks/log.ts` 的 `taskLog(id, 事件, 字段)` 写，一行一件事：`2026-10-30 09:07:12.123 [收到消息] messageId=… live=true status=running awaitingUser=true`。全局日志（`server/log.ts`）按启动分文件、各对话混在一起且主要记报错；这一份只回答「这个对话经历了什么」，查「消息发出去却没了」这类问题时先看它。
 
 - 记的事件：收到消息（当时的执行位、状态、是否在等下一句）、走了哪条交付路径（等下一句 `wait=ok/none/stale`、插话 `how=steer/notes/held`、卡住重开、新开一轮、执行位被占被拒）、最后「消息已记下 / 消息没有记进对话」、启动 / 执行结束（状态、停止原因）、对话 CLI 进程启动和结束、停下等下一句 / 等子任务及其结束、取消等待、标成卡住、停止（原因）、预热、激活 / 关闭 Agent、用户停止。
 - 不记模型输出；消息正文只留开头 80 字，字段超过 200 字截断。写满 2 MB 改名成 `.log.1`（只留一份旧的）。删除对话时连同日志一起删（`task-store` 的 `remove`）。
@@ -69,4 +69,4 @@
 - 用绝对路径的附件在工作目录之外，要放行的目录由 `attachmentAddDirs()` 按附件实际位置算：上传的合并成 uploads 根，粘贴路径引用的文件（`ref`）各自放行它所在的目录，工作目录里的和相对路径不放行。拷进对话目录的图片不用它再算一遍——`server/exec/runner.ts` 建 `addDirs` 时始终把整个对话目录放行。设计会话（`ui-design/server/designs.ts`）也调它，不再固定只放行 `UPLOADS_DIR`（以前 `ref` 引用的、在 worktree 执行时项目原目录里的文件会被挡掉）。实际用到的参数只有 Claude Code 的 `--add-dir`（`shared/clis/claude.json` 里 `each: addDirs` 的那条规则）；Codex 的 `--sandbox` 限制的是写和命令、读文件不受目录白名单限制，Command Code / Pi 的 CLI 定义里没有目录参数（permission 是工具批准模式），所以它们读绝对路径不需要额外参数。
 - 源文件被删掉或移走时读不到，附件只保留原路径：CLI 自己报找不到，不静默换成别的路径、也不把附件从消息里去掉——不拷贝的代价就是「源文件没了就读不到」，报错就是如实告知用户。设计会话（`designs.ts` 每轮建临时工作目录、结束后删）仍把附件复制进那个临时目录，因为设计工具按工作目录内的路径找图，和任务附件不是一回事。
 - 附件图片的缩略图（`server/thumbnail.ts`，挂在 `/api/uploads/raw` 的 `?w=` 上，`server/uploads.ts`）：消息里的卡片只有 1.25em 见方，却一直取原图（单张 100–300KB）。这里用 `server/image.ts` 已有的 PNG 解码 / 缩放 / 编码，**不引入图片库**：服务端要打成单文件（`scripts/package.mjs` 的 esbuild `bundle`），原生模块带不进去，纯 JS 的 JPEG 解码又要多一份依赖。缩略图缓存在 `<DATA_DIR>/cache/thumbs/<sha1(路径+大小+mtime+宽)>`（按文件大小和 mtime 而不是文件内容算 key，不用为了判断缓存是否新鲜先读一遍原图），同一张图的并发请求只算一次、解码缩放串行做（它是同步计算，一起来会把服务端卡住），响应带 `cache-control: private, max-age=86400`。解不开的格式（JPEG / WebP / 隔行扫描 PNG）和比目标还小的图返回 null，接口退回原图；看大图、复制图片、任务目录里的图（`/uploads/raw/file`）都不带 `w`。回归：`server/thumbnail.test.ts`。
-- 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷进对话目录的 attachments/、超上限的图片不拷、重名图片加序号、附件目录里已有同名文件不覆盖、同一源文件复用、已在附件目录的不重复拷、旧任务相对文件名复用、`ref` / `quote` 不拷、放行目录的计算）、`server/task-text.test.ts`（两种形态的说明）、`server/task-trash.test.ts`（永久删除时图片随对话目录清掉）、`server/exec/git-ignore.test.ts`（旧任务的图片不进更改列表和评审差异）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录的 attachments/、提示里给绝对路径、项目根干净、对话目录放行；文本文件不拷、给了原绝对路径）。
+- 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷进对话目录的 attachments/、超上限的图片不拷、重名图片加序号、附件目录里已有同名文件不覆盖、同一源文件复用、已在附件目录的不重复拷、旧任务相对文件名复用、`ref` / `quote` 不拷、放行目录的计算）、`server/tasks/text.test.ts`（两种形态的说明）、`server/tasks/trash.test.ts`（永久删除时图片随对话目录清掉）、`server/exec/git-ignore.test.ts`（旧任务的图片不进更改列表和评审差异）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录的 attachments/、提示里给绝对路径、项目根干净、对话目录放行；文本文件不拷、给了原绝对路径）。

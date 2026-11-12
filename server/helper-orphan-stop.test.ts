@@ -13,7 +13,7 @@ import test from 'node:test'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-helper-orphan-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { createTaskStore } = await import('./task-store.ts')
+const { createTaskStore } = await import('./tasks/store.ts')
 const { tasksApi } = await import('./tasks.ts')
 const { newTask } = await import('../shared/task.ts')
 const { blankStep } = await import('../shared/flow.ts')

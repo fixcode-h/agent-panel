@@ -6,7 +6,7 @@ import type { Attachment, Task, TaskMessage } from '../../shared/schema.ts'
 import { type Waiter, addWaiter, firstWaiter, removeWaiter, waitersOf } from './waiters.ts'
 import { hasHeld, heldMessage, markHeld, noteTakersOf, returnHeld, takeHeld } from './delivery.ts'
 import { promptLangReminder } from '../../shared/prompt-lang.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 import { withAttachments } from '../../shared/task.ts'
 import { taskMap } from '../runtime/task-state.ts'
 

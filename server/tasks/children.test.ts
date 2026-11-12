@@ -3,11 +3,11 @@
  * 只列进程还活着的、父对话的「有子对话在跑」和 CLI 生命周期约定。
  * 运行：npm run test:unit
  */
-import { taskLiveOf } from '../shared/live/task-live.ts'
+import { taskLiveOf } from '../../shared/live/task-live.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { setLang } from '../shared/i18n.ts'
-import { Task } from '../shared/schema.ts'
+import { setLang } from '../../shared/i18n.ts'
+import { Task } from '../../shared/schema.ts'
 import {
   childCounts,
   childFacts,
@@ -20,7 +20,7 @@ import {
   splitStepJobs,
   taskSummary,
   visibleChildren,
-} from '../shared/task.ts'
+} from '../../shared/task.ts'
 
 setLang('zh')
 

@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { mentioned, openable, resolvePath, searchRoots } from './task-paths.ts'
+import { mentioned, openable, resolvePath, searchRoots } from './paths.ts'
 
 function fixture() {
   // <根>/Main/Project/Client 是项目目录；表格在 <根>/Main/Project/Designer 下，Agent 写的是相对 Main 的路径

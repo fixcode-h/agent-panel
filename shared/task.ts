@@ -1817,7 +1817,7 @@ export function delegatePrompt(ask: { from: string; title: string; question: str
  * 提问卡片是否已回答也要算进去，否则在别处答完（父对话里点选、父对话转达）后卡片仍是「待决定」
  *
  * withOutput=false 时不算工具输出的内容指纹（只留长度）：那是「骨架」，用来判断这条消息有没有被改过，
- * 代价只看长度、不逐字符扫输出，落盘指纹的增量计算用它（见 server/task-store.ts 的 createStampTracker）
+ * 代价只看长度、不逐字符扫输出，落盘指纹的增量计算用它（见 server/tasks/store.ts 的 createStampTracker）
  */
 export function messageStamp(m: TaskMessage, withOutput = true) {
   // delegated 也要算进指纹：交给父对话决定后服务端只改了这几个字段，不算的话卡片推不过去，会一直停在「等你选择」

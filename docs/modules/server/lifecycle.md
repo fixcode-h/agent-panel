@@ -15,7 +15,7 @@
 - 判据是 `shared/task.ts` 的 `restartInterrupted`，走 `childSpinning` / `childState`，和图标、分组、计数是同一处，不另写一套「算不算在跑」；
 - 「待收尾」（`wrapRequest.state` 不是 `failed`，即 `requested` / `merging`）不落静止：它等的是父对话合并，不靠 CLI 进程，重启后照样能收。
 
-落成已停止后 `convState` 返回 `stopped`（`convStateText` 是「已中断」），`stopReason` 是 `restart` 不是 `user`，图标是 `idle`，行上写 `stopReasonText`（「面板重启时中断」）而不是「已暂停」；发消息才会回到 running。回归：`server/task-restart.test.ts`（计划没做完、独立分支没合回两条要在旧实现上先确认失败）。起因和完整排查见 [bugs/restart-child-still-running.md](bugs/restart-child-still-running.md)。
+落成已停止后 `convState` 返回 `stopped`（`convStateText` 是「已中断」），`stopReason` 是 `restart` 不是 `user`，图标是 `idle`，行上写 `stopReasonText`（「面板重启时中断」）而不是「已暂停」；发消息才会回到 running。回归：`server/tasks/restart.test.ts`（计划没做完、独立分支没合回两条要在旧实现上先确认失败）。起因和完整排查见 [bugs/restart-child-still-running.md](bugs/restart-child-still-running.md)。
 
 **页面宽限回收也走同一套收口（运行期的同一条路径）**：`server/presence.ts` 的 `evict` 到点回收时调 `setPresenceIdleHandler`，旧实现只有 `cancelWait(id)`——只结束还在等下一句的 CLI，一个字段都不写回任务记录，于是任务永远停在 `status: 'running'`、`working: false`：界面继续转圈并计入「N 个执行中」，而「继续」按钮只对 `shared/task.ts` 的 `resumable(status)`（`stopped` / `failed`）显示，在 `running` 下根本不渲染，用户看到一个在跑的任务却没有能拉起的入口（用户报的「很多子对话没有拉起」）。现在回调里先 `cancelWait(id)`，再分两种：
 
@@ -29,7 +29,7 @@
 - 有执行位时按任务事实判（`convActive`：在跑、等子对话 / 子任务 / 后台命令 / 工作流、有没回复的提问和请求），再加上正在启动和还有排队的消息；
 - **没有执行位时**（这一轮已经结束、进程也退了，例如工作流节点、压缩 / 审查这类操作，或者对话页已经关了）看名下还在跑的子对话（`childrenRunning`，和 `childActive` 同一套判定）和还没回来的后台命令：它们的结果还要交回这条对话，按「没人看就回收」收掉会把它落成「已中断」（用户报的「父对话被回收」）。
 
-子对话全部结束、自己也空下来之后照旧回收，不是永不回收。宽限到点还在跑的会话在 `server/presence.ts` 里进 `pending` 之后会排一个复查（`scheduleRecheck`，间隔 `BUSY_RECHECK_MS`，用独立的 `rechecks` Map，不占宽限计时）：子对话被用户停掉、后台命令被停时不会再交回结果，也不会走 `onKeepAlive` 的 `resetIdleCountdown`，只记标记就成了永不回收，所以到点要再判一次（间隔不取宽限期，宽限期可以设成 0，按 0ms 重排会自旋）。`evict` 开头读回收开关：用户关掉「按时间回收」后，已排出去的计时器和它排出的复查也不再收。重启迁移的条目构造也走 `shared/task.ts` 的 `childEntryOf`（从 `childFacts` 派生），以后 `childFacts` 加判定字段不会在迁移这一侧漏掉。回归：`shared/tasks/stage.test.ts` 的 `keepAliveHolding` 用例、`server/presence.test.ts` 的「父对话在等子对话」「宽限到点还在跑的对话留一个复查」「关掉自动回收」「复查不占宽限计时」、`server/task-restart.test.ts` 的「重启时名下有子对话在跑的父对话」、`scripts/e2e/09-subagent-runtime.mjs` 的同名段；排查和旧实现对照见 [bugs/parent-reclaimed-while-children-running.md](bugs/parent-reclaimed-while-children-running.md)。
+子对话全部结束、自己也空下来之后照旧回收，不是永不回收。宽限到点还在跑的会话在 `server/presence.ts` 里进 `pending` 之后会排一个复查（`scheduleRecheck`，间隔 `BUSY_RECHECK_MS`，用独立的 `rechecks` Map，不占宽限计时）：子对话被用户停掉、后台命令被停时不会再交回结果，也不会走 `onKeepAlive` 的 `resetIdleCountdown`，只记标记就成了永不回收，所以到点要再判一次（间隔不取宽限期，宽限期可以设成 0，按 0ms 重排会自旋）。`evict` 开头读回收开关：用户关掉「按时间回收」后，已排出去的计时器和它排出的复查也不再收。重启迁移的条目构造也走 `shared/task.ts` 的 `childEntryOf`（从 `childFacts` 派生），以后 `childFacts` 加判定字段不会在迁移这一侧漏掉。回归：`shared/tasks/stage.test.ts` 的 `keepAliveHolding` 用例、`server/presence.test.ts` 的「父对话在等子对话」「宽限到点还在跑的对话留一个复查」「关掉自动回收」「复查不占宽限计时」、`server/tasks/restart.test.ts` 的「重启时名下有子对话在跑的父对话」、`scripts/e2e/09-subagent-runtime.mjs` 的同名段；排查和旧实现对照见 [bugs/parent-reclaimed-while-children-running.md](bugs/parent-reclaimed-while-children-running.md)。
 
 **定时核对兜底（ADR 0033）**：`server/tasks/state-sweep.ts` 每 60 秒按 `shared/tasks/settle.ts` 的 `stateBreaks` 找两种矛盾——记录说在做、面板里却没有执行位 / 启动队列 / 后台命令（`orphan`），收尾停在「合并中」却没在合并（`merging`）。连着两次看到、中间任务没被写过才收：`orphan` 落成已中断（`stopReason: 'lost'`）并在对话里写一句，是子对话的再交给父对话上报（`reportChild`，必填依赖），`merging` 退回「已请求收尾」并告诉父对话。日志里出现「定时核对：记录和实际对不上」就说明某条收尾路径漏了落状态，按日志里的任务去补那条路径。另外，子对话计划里挂着「等父对话安排修复」（kind `parent`）、父对话连着两次都不在执行位上时，提醒父对话一次（`remindParent`，接到 `peer.ts` 的 `remindParentFix`，叫不叫过 `holdWake`；同一条等待只提醒一次）：修复请求交出时的叫醒在面板重启时会丢、父对话被叫醒那一轮也可能没回它。回归：`server/tasks/state-sweep.test.ts`。
 
@@ -51,7 +51,7 @@
 
 **判定和名单都在纯函数里**（`shared/task.ts`），服务端只负责取任务列表：`store.list()` 不带完整对话（只保留用户消息），但 `plans` / `steps` / `stopReason` / `wrapRequest` 都在，判「计划没做完」够用；在跑的任务用 `live` 里那份（比落盘的新）。**不要在这里改用 `store.get` 逐个读完整任务**：那是完整对话文件（长的几 MB），强制更新停 CLI 前同步读上百 MB 会卡在磁盘上（评审 R1）。`workingTasks()` 仍然保留，给清扫独立目录（`sweepStaleWorktrees`）用。
 
-回归：`server/task-restart.test.ts`（覆盖 `restartUnfinished` 的判定、`interruptedTaskIds` 只收在跑任务的名单、父子都进名单、闲置任务不进名单、`doing` 的取值）。反向验证：把 `interruptedTaskIds` 临时退回旧口径（对全部任务用 `restartUnfinished`），「强制更新的恢复名单只记本次真正被打断的」「强制更新名单里不再累计闲置的历史任务」「重启恢复名单：已收口的不再拉起」三条失败；恢复后全文件通过。
+回归：`server/tasks/restart.test.ts`（覆盖 `restartUnfinished` 的判定、`interruptedTaskIds` 只收在跑任务的名单、父子都进名单、闲置任务不进名单、`doing` 的取值）。反向验证：把 `interruptedTaskIds` 临时退回旧口径（对全部任务用 `restartUnfinished`），「强制更新的恢复名单只记本次真正被打断的」「强制更新名单里不再累计闲置的历史任务」「重启恢复名单：已收口的不再拉起」三条失败；恢复后全文件通过。
 
 ## 面板退出 / 重启后：首页「全部继续」
 

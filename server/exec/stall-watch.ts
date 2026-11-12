@@ -1,5 +1,5 @@
 import { log } from '../log.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
 import { clip } from '../../shared/text.ts'

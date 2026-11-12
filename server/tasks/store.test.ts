@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { TaskData, TaskMessage } from '../shared/schema.ts'
+import { TaskData, TaskMessage } from '../../shared/schema.ts'
 
 // 任务记录放在临时数据目录，别碰本机的
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-task-store-'))
@@ -14,9 +14,9 @@ const PERSIST_WAIT_TIMEOUT_MS = 5000
 /** 轮询间隔：够密才能尽快返回，又不至于空转抢 CPU */
 const PERSIST_WAIT_INTERVAL_MS = 20
 
-const { createStampTracker, createTaskStore, messageGap } = await import('./task-store.ts')
-const { messageChars } = await import('../shared/tasks/search.ts')
-const { parseMessagesJsonl } = await import('./tasks/messages-file.ts')
+const { createStampTracker, createTaskStore, messageGap } = await import('./store.ts')
+const { messageChars } = await import('../../shared/tasks/search.ts')
+const { parseMessagesJsonl } = await import('./messages-file.ts')
 /** 读盘上的对话文件（JSONL，按 id 归并） */
 const conv = (file: string) => parseMessagesJsonl(readFileSync(file, 'utf8')).messages
 

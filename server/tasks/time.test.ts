@@ -12,7 +12,7 @@ import {
   trackWait,
   turnStats,
   waitDuration,
-} from '../shared/task.ts'
+} from '../../shared/task.ts'
 
 const at = (s: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString()
 const ms = (s: number) => Date.parse(at(s))

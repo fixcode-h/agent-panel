@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Agent, Task, defaultAgent } from '../shared/schema.ts'
-import { defaultWorkflow } from '../shared/builtin/default.ts'
+import { Agent, Task, defaultAgent } from '../../shared/schema.ts'
+import { defaultWorkflow } from '../../shared/builtin/default.ts'
 import {
   analysisPrompt,
   analysisReport,
@@ -26,8 +26,8 @@ import {
   taskReport,
   taskHtml,
   taskStats,
-} from '../shared/tasks/export.ts'
-import { endRun, pauseRun, resumeRun } from '../shared/task.ts'
+} from '../../shared/tasks/export.ts'
+import { endRun, pauseRun, resumeRun } from '../../shared/task.ts'
 
 const at = '2026-10-19T00:00:00.000Z'
 const coder = Agent.parse({ id: 'a1', name: '开发', instructions: '写代码', createdAt: at, updatedAt: at })

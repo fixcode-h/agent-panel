@@ -11,7 +11,7 @@ paths: server/exec/process.ts, server/exec/orphans.ts, server/exec/proc-stats.ts
 - 规则：任务收口后不能拿「进程还活着」当理由留着它：收尾落 `resolved` 后按 owner 再核对一次，另有启动 + 每小时的兜底回收（判定只用 `taskSettled`）；发出停止后确认退出才丢登记（杀不掉就写回）。
 - 规则：面板起的 CLI 记在 `run/cli-pids/<面板 pid>.json`，每个实例只写、只删自己那份（共用一份再读盘合并会被别的实例退出清空、并发登记覆盖）；清理只写已退出实例的文件，「面板还活着」要 pid 在**且**命令行像 `server.mjs` / `server/index.ts`（认 `./` 和引号路径，宁多认）。
 - 起因：12 个对话各留一个进程没被闲置回收收住（当时靠保活数量上限兜底，上限已在 2026-11-02 取消）；共用目录的子对话 `resolved` 后 CLI 一直留着，用户报「4 小时前启动的进程没退」。
-- 防线：`server/presence.test.ts`、`shared/tasks/stage.test.ts` 的保活用例；`server/exec/orphans.test.ts` 的登记分账、启动清理、兜底回收、写回登记；`server/task-restart.test.ts` 的「已收口的不再拉起」。
+- 防线：`server/presence.test.ts`、`shared/tasks/stage.test.ts` 的保活用例；`server/exec/orphans.test.ts` 的登记分账、启动清理、兜底回收、写回登记；`server/tasks/restart.test.ts` 的「已收口的不再拉起」。
 
 ## 驱动转圈、计时的字段必须进 messageStamp；停止要杀到孙进程
 

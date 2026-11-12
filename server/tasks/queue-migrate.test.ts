@@ -4,8 +4,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { setLang } from '../shared/i18n.ts'
-import { Task } from '../shared/schema.ts'
+import { setLang } from '../../shared/i18n.ts'
+import { Task } from '../../shared/schema.ts'
 
 setLang('zh')
 

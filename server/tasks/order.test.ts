@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { askedAt, byAskedAt, taskSummary } from '../shared/task.ts'
-import type { Task } from '../shared/schema.ts'
+import { askedAt, byAskedAt, taskSummary } from '../../shared/task.ts'
+import type { Task } from '../../shared/schema.ts'
 
 // 任务列表按用户最近发消息的时间排，Agent 回复（updatedAt 变了）不影响顺序
 const msg = (role: 'user' | 'agent', at: string) => ({ id: at, role, agentId: '', step: '', text: '', tools: [], at })

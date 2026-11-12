@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { changesSince, ownedChanges } from '../shared/task.ts'
+import { changesSince, ownedChanges } from '../../shared/task.ts'
 
 const change = (path: string, add: number, del = 0) => ({ path, add, del })
 

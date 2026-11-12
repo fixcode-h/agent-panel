@@ -36,7 +36,7 @@
 - **`server/exec/api-wait.ts`（新）**：把排队标记的读写抽成可测的 `markApiWait` / `clearApiWait`。
 - **`server/exec/runner.ts`**：`takeApiSlot` 用 `try/finally` 无条件清标记，不再依赖「本次排过队」；新增 `reason` 参数，`yieldApiSlot` 和 `waitNext` 的「让出后拿回」传 `'yield'`，开跑前排队仍是 `'start'`。`waitNext` 里**按「让出前手里有没有名额」判断**（`slot.holding`）：预热（prewarm）对话等用户第一句时这一轮从没出过 token，是真空排队，必须按 `'start'` 显示——不能只看「走的是 `waitNext`」就写 `'yield'`（review 发现的 R2）。
 - **`shared/schema.ts`**：`ApiWait` 加 `reason: 'start' | 'yield'`，旧快照没有这个字段时默认 `'start'`（当时确实都是开跑前排队）。**实测确认不会报校验错**：任务级和步骤级各用一份「有 `apiWait`、无 `reason`」的 JSON 跑 `Task.safeParse`，都通过并自动补成 `'start'`；新格式 `reason: 'yield'` 也正常保留。
-- **`server/task-store.ts`**：`parseTask` 读快照时丢掉 `apiWait`（任务和步骤都丢）——这 5 行的作用不是兼容 schema（兼容由前面的 `.default('start')` 负责），而是**清掉内存态的临时标记**：进程重启后不可能还在排队，旧版本漏清留下的陈旧标记（磁盘上有 8 条，含 4 条 `status=done`）也会在下次加载时被抹掉，不用手工改 JSON。
+- **`server/tasks/store.ts`**：`parseTask` 读快照时丢掉 `apiWait`（任务和步骤都丢）——这 5 行的作用不是兼容 schema（兼容由前面的 `.default('start')` 负责），而是**清掉内存态的临时标记**：进程重启后不可能还在排队，旧版本漏清留下的陈旧标记（磁盘上有 8 条，含 4 条 `status=done`）也会在下次加载时被抹掉，不用手工改 JSON。
 - **`web/src/lib/tasks.ts` + `TaskView.tsx` + `RunningNow.tsx`**：判定抽成 `apiQueueWait(task, streaming)`，只对 `'start'` 且没在出 token 时显示排队；`HelperRow` 的「排队等 API」标签同样只认 `'start'`。`RunPhase` 判断「在出 token」用的 `agentIds` 必须和同一行 `LiveStats` 一致（chat 分支是 `[task.agentId]`），否则「别人在输出、这一轮自己在排队」会被当成在输出，反而把真排队遮掉（review 发现的 R3）。
 
 ## 防线

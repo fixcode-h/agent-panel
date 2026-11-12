@@ -1,5 +1,5 @@
 import { BugCase, type BugLevel } from '../../shared/bug/diagnosis-schema.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 
 /** 交给子对话的话前面加的说明：它从这一条开始按完整流程走，之前改过的文件要在报告里交代 */

@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { newTask } from '../shared/task.ts'
-import { withTaskModel } from '../shared/tasks/run.ts'
-import { LEGACY_DEFAULT_AGENT_ID, NewTaskInput, Task } from '../shared/schema.ts'
+import { newTask } from '../../shared/task.ts'
+import { withTaskModel } from '../../shared/tasks/run.ts'
+import { LEGACY_DEFAULT_AGENT_ID, NewTaskInput, Task } from '../../shared/schema.ts'
 
 const input = (agentId: string) => ({
   projectId: 'p',

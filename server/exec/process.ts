@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 import { descendants, processSnapshot } from './proc-stats.ts'
 import {
   looksLikePanelCli,
