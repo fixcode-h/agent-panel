@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-04 用户给了能力扩充报告，要求核对、改掉不合理的地方后开发） · 2026-11-04
 
-- 影响范围：`shared/cli-spec.ts`（`trust`、`packages.gallery`、`packages.npmRoot`、`packages.overlaps`、`configSettings`；第四期加 `rpc.commandsQuery`、`rpc.handled`、`packages.oneOff` / `gitRoot` / `changelog` / `resources` / `builtins` / `local`）、`shared/clis/pi.json`、`shared/schema.ts`（`Project.cliTrust`）、`server/exec/runner.ts`、`server/cli-packages.ts`、`server/cli-gallery.ts`（新增）、`server/cli-config-settings.ts`（新增）、`server/cli-trust-api.ts`（新增）、设置页 Pi 分页和项目设置的 CLI 分页
+- 影响范围：`shared/cli-spec.ts`（`trust`、`packages.gallery`、`packages.npmRoot`、`packages.overlaps`、`configSettings`；第四期加 `rpc.commandsQuery`、`rpc.handled`、`packages.oneOff` / `gitRoot` / `changelog` / `resources` / `builtins` / `local`）、`shared/clis/pi.json`、`shared/schema.ts`（`Project.cliTrust`）、`server/exec/runner.ts`、`server/cli/packages.ts`、`server/cli/gallery.ts`（新增）、`server/cli/config-settings.ts`（新增）、`server/cli/trust-api.ts`（新增）、设置页 Pi 分页和项目设置的 CLI 分页
 - 依据：Pi 1.5.0 安装包自带的 `docs/*.md`、`CHANGELOG.md` 和 `dist/` 源码；npm 搜索接口 2026-11-04 实测
 
 ## 背景
@@ -44,7 +44,7 @@
 ### 4. 插件市场（第二期）
 
 - 定义：`packages.gallery = { npmKeyword, sourcePrefix, pageUrl }`，`packages.overlaps = [{ match, note }]`，`packages.npmRoot` 是 npm 包装到哪（读已装版本）。
-- 服务端 `server/cli-gallery.ts`：`GET /api/clis/:id/gallery?q=&sort=&page=`。
+- 服务端 `server/cli/gallery.ts`：`GET /api/clis/:id/gallery?q=&sort=&page=`。
   - 没有搜索词时取 npm 搜索的前 1000 个（`size=250`，4 页），缓存进数据目录 `cache/cli-gallery/<cli>.json`，1 小时有效；有搜索词时直接问 npm（`keywords:<关键词> <搜索词>`，250 个），再在本地按「每个词都出现在名称、描述、关键词或作者里」过滤（npm 按相关度排，但会带回关键词下不相关的热门包），按搜索词缓存 10 分钟。
   - 本地按月下载（默认）/ 周下载 / 最近发布 / 被依赖数 / 名称排，每页 50 个。
   - 联网失败用旧缓存，并照实返回「没能更新：原因」；没有旧缓存就报错。走面板的出网（`server/net.ts`），和 Pi 的「离线运行」无关。
@@ -60,7 +60,7 @@
 
 ### 6. 第四期（2026-11-04 用户要求接着做）
 
-- **「/」菜单里的插件命令**：定义里 `rpc.commandsQuery`，起一次 Pi（`--mode rpc --no-session`，带上项目的信任参数）问 `get_commands`，5 分钟缓存、装删插件后清掉（`server/cli-commands.ts`）。插件包里带的模板和 Skill 按返回的文件路径由面板照常展开；插件命令（`source: extension`）只有 Pi 能执行，这一轮原样只发这一句（`server/slash.ts` 的 `slashInput`）。Pi 自己处理掉、不开新一轮时回 `disposition: handled`，面板按 `rpc.handled` 等 3 秒没收到 `agent_start` 就结束这一轮；命令自己开了一轮（开始记录可能先到）就照常等它跑完（`server/exec/rpc/spec.ts`）。插话（`steer`）里 Pi 不认插件命令，仍按普通文字。
+- **「/」菜单里的插件命令**：定义里 `rpc.commandsQuery`，起一次 Pi（`--mode rpc --no-session`，带上项目的信任参数）问 `get_commands`，5 分钟缓存、装删插件后清掉（`server/cli/commands.ts`）。插件包里带的模板和 Skill 按返回的文件路径由面板照常展开；插件命令（`source: extension`）只有 Pi 能执行，这一轮原样只发这一句（`server/slash.ts` 的 `slashInput`）。Pi 自己处理掉、不开新一轮时回 `disposition: handled`，面板按 `rpc.handled` 等 3 秒没收到 `agent_start` 就结束这一轮；命令自己开了一轮（开始记录可能先到）就照常等它跑完（`server/exec/rpc/spec.ts`）。插话（`steer`）里 Pi 不认插件命令，仍按普通文字。
 - **角色级插件**：`Agent.plugins` + 定义里 `packages.oneOff`（Pi：`-e {source}`），角色编辑页「运行」里选，执行时加参数、命令预览里看得到。第一次用到时 Pi 要下载，那一轮启动会慢，靠已有的「环境性卡住重试一次」兜底，界面上写明。
 - **插件更新说明**：定义里 `packages.changelog`（读包里 `pi.changelogPath`，默认 `CHANGELOG.md`）、`packages.gitRoot`（git 来源的安装目录）。已装列表每行一个「更新说明」，单个包更新后版本变了自动展开新增的条目。说明文件只认包目录里面的。
 - **资源开关、自带扩展、项目级插件**：`packages.resources`（按类型开关，写对象写法的空数组；不细到单个文件）、`packages.builtins`（`-builtin:<名字>`）、`packages.local`（`pi install -l --approve`，装进项目的 `.pi/settings.json`；项目配置没选「信任」时提示不会加载）。

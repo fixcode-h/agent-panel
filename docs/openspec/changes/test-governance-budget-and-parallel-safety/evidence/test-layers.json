@@ -314,14 +314,14 @@
       "lines": 356
     },
     {
-      "file": "server/cli-order.test.ts",
+      "file": "server/cli/order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 37
     },
     {
-      "file": "server/cli-packages.test.ts",
+      "file": "server/cli/packages.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",

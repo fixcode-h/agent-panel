@@ -23,7 +23,7 @@ import {
   type LibraryWriteResult,
 } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
-import { expandHome } from './cli-extras.ts'
+import { expandHome } from './cli/extras.ts'
 import { clearSlashCache, panelCommandDir, readCommand, scanCommands } from './slash.ts'
 import { ALL_AGENTS } from '../shared/commands.ts'
 import { installBundled, listBundled, readBundledEntry } from './bundled-skills.ts'

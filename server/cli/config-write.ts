@@ -1,6 +1,6 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { writeJsonAtomic } from './store.ts'
+import { writeJsonAtomic } from '../store.ts'
 
 /**
  * 写 CLI 自己的配置文件（~/.claude/settings.json、~/.claude.json、~/.codex/config.toml、Pi 的 models.json 等）。

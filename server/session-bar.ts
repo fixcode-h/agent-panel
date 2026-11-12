@@ -8,7 +8,7 @@ import path from 'node:path'
 import { getCli } from '../shared/clis.ts'
 import { CliContextBase } from '../shared/context-breakdown.ts'
 import type { SessionInfo, Task } from '../shared/schema.ts'
-import { expandHome, listSkills } from './cli-extras.ts'
+import { expandHome, listSkills } from './cli/extras.ts'
 import { gitRun } from './exec/git.ts'
 
 const git = (cwd: string, ...args: string[]) => gitRun(cwd, args)

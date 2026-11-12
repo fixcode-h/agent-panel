@@ -22,7 +22,7 @@ import {
   type QuotaFallback,
 } from '../../shared/quota-resume.ts'
 import { getCli } from '../../shared/clis.ts'
-import { getLimits } from '../cli-extras.ts'
+import { getLimits } from '../cli/extras.ts'
 import { getSettings } from '../settings.ts'
 import { taskLog } from './log.ts'
 import { log } from '../log.ts'

@@ -17,7 +17,7 @@ import {
 } from '../shared/accounts.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { t } from '../shared/i18n.ts'
-import { expandHome } from './cli-extras.ts'
+import { expandHome } from './cli/extras.ts'
 import { childEnv } from './exec/process.ts'
 import { parseToml } from './mcp-store.ts'
 import { getSettings } from './settings.ts'

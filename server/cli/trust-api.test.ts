@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { trustMarkers } from './cli-trust-api.ts'
+import { trustMarkers } from './trust-api.ts'
 
 /** ADR 0050：项目里有 Pi 只在信任后才读的文件时提示；.agents/skills 往上找到仓库根目录为止 */
 test('项目信任的提示：项目目录里的 .pi 配置、上级目录（到仓库根目录）里的 .agents/skills 都列出来', async () => {

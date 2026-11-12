@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { writeCliConfigJson, writeCliConfigText } from './cli-config-write.ts'
+import { writeCliConfigJson, writeCliConfigText } from './config-write.ts'
 
 // Windows 没有 Unix 权限位，只验证内容
 const posix = process.platform !== 'win32'

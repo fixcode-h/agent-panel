@@ -2,8 +2,8 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
-import { CLIS } from '../shared/clis.ts'
-import { trustDirs } from '../shared/cli-trust.ts'
+import { CLIS } from '../../shared/clis.ts'
+import { trustDirs } from '../../shared/cli-trust.ts'
 
 const exists = (p: string) =>
   stat(p).then(

@@ -4,8 +4,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { setLang } from '../shared/i18n.ts'
-import { orderClis } from '../shared/settings.ts'
+import { setLang } from '../../shared/i18n.ts'
+import { orderClis } from '../../shared/settings.ts'
 
 setLang('zh')
 

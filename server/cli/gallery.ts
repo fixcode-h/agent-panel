@@ -12,15 +12,15 @@ import {
   type GalleryPage,
   type GallerySort,
   type GallerySpec,
-} from '../shared/cli-gallery.ts'
-import { npmName } from '../shared/cli-spec.ts'
-import { getCli } from '../shared/clis.ts'
-import { t } from '../shared/i18n.ts'
-import { listPackages } from './cli-packages.ts'
-import { log } from './log.ts'
-import { netFetch } from './net.ts'
-import { NPMJS } from './npm-env.ts'
-import { CACHE_DIR, readJson, writeJsonAtomic } from './store.ts'
+} from '../../shared/cli-gallery.ts'
+import { npmName } from '../../shared/cli-spec.ts'
+import { getCli } from '../../shared/clis.ts'
+import { t } from '../../shared/i18n.ts'
+import { listPackages } from './packages.ts'
+import { log } from '../log.ts'
+import { netFetch } from '../net.ts'
+import { NPMJS } from '../npm-env.ts'
+import { CACHE_DIR, readJson, writeJsonAtomic } from '../store.ts'
 
 /**
  * 插件市场（ADR 0050）：从 npm 搜索接口按定义里的关键词取插件。

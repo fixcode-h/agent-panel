@@ -22,7 +22,7 @@ writeFileSync(
     }),
   ),
 )
-const { expandHome } = await import('./cli-extras.ts')
+const { expandHome } = await import('./cli/extras.ts')
 const { projectMcpApi } = await import('./project-mcp.ts')
 
 const post = (body: unknown) => ({

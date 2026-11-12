@@ -69,7 +69,7 @@
 设置 →「常规」→「额度用完或限流」两项，都默认关，结构在 `settings.quotaResume`（`shared/quota-resume.ts`）：
 
 - **换备用模型**：按用户排的顺序换成第一个还没用过的 CLI / 模型马上接着做，可以跨 CLI（runner 发现会话所在的 CLI 变了，按「换了 CLI」把之前的对话带过去）。不用角色的对话改 `cli`、`model`（跨 CLI 时清掉思考强度）；用角色的对话记成 `modelOverride`，角色固定了 CLI 的只换这个 CLI 的模型。停用的 CLI 跳过。
-- **到点自动继续**：备用的都用过了（或没开）再看恢复时间：先认报错原文（`|<秒>`、`try again in …`、`resets 3pm`），再看 CLI 推来的额度窗口（`server/cli-extras.ts` 的 `getLimits`，用满的取最晚的）。被限流读不到时间时 5 分钟后再试；额度用完读不到时间（多半要充值）不等，超过 8 天的也不等。
+- **到点自动继续**：备用的都用过了（或没开）再看恢复时间：先认报错原文（`|<秒>`、`try again in …`、`resets 3pm`），再看 CLI 推来的额度窗口（`server/cli/extras.ts` 的 `getLimits`，用满的取最晚的）。被限流读不到时间时 5 分钟后再试；额度用完读不到时间（多半要充值）不等，超过 8 天的也不等。
 
 判定只看失败那一行红色告警的分类（`quota` / `rate_limit`），不看模型回复。执行在 `server/tasks/quota-resume.ts`：`run.ts` 收尾时对话状态是 `failed` 就调 `quotaAfterFail`；接着做走「继续执行」同一个接口（`POST /tasks/:id/resume`），连带拉起子对话、父计划恢复等它都不另写。每一步（换成了什么、等到几点、为什么没接、没能拉起的原因）都在对话里写一行。
 

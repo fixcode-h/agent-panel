@@ -6,9 +6,9 @@ import type { CliPackages } from '../shared/cli-spec.ts'
 import { getCli } from '../shared/clis.ts'
 import { t } from '../shared/i18n.ts'
 import { builtinState, resourceState, setBuiltin, setResource } from '../shared/package-config.ts'
-import { expandHome } from './cli-extras.ts'
-import { readConfig } from './cli-config-settings.ts'
-import { writeCliConfigJson } from './cli-config-write.ts'
+import { expandHome } from './cli/extras.ts'
+import { readConfig } from './cli/config-settings.ts'
+import { writeCliConfigJson } from './cli/config-write.ts'
 import { packageDir, readManifest } from './package-dirs.ts'
 
 /**

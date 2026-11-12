@@ -34,7 +34,7 @@ import {
   writeSkill,
   type Entry,
 } from './bundled-skills.ts'
-import { expandHome } from './cli-extras.ts'
+import { expandHome } from './cli/extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
 import { getSettings } from './settings.ts'

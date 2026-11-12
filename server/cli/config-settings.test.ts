@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { readConfigSettings, writeConfigSetting } from './cli-config-settings.ts'
+import { readConfigSettings, writeConfigSetting } from './config-settings.ts'
 
 /** ADR 0050：设置页直接改 Pi 的 settings.json：只动这一个键，恢复默认删掉；文件坏了不写 */
 test('Pi 自己的设置：改一项只动这个键，恢复默认删掉；文件读不出来时不写、照实报', async () => {

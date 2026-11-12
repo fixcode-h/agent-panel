@@ -1,8 +1,8 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import { capture, childEnv } from './exec/process.ts'
-import { getCli } from '../shared/clis.ts'
+import { capture, childEnv } from '../exec/process.ts'
+import { getCli } from '../../shared/clis.ts'
 
 const isWin = process.platform === 'win32'
 // 测试时换成假的 npm

@@ -3,7 +3,7 @@ import { z } from 'zod'
 /**
  * CLI 自己配置文件里的设置项（ADR 0050）：没有命令行参数、也没有单次覆盖办法的设置（例如 Pi settings.json 的重试、
  * 超时、压缩），设置页直接读写 CLI 的配置文件。只写用户改过的键，「恢复默认」删掉这个键，别的键原样保留；
- * 终端里的 CLI 也会跟着变，界面上写明。这里只放定义和纯函数，读写文件在 server/cli-config-settings.ts
+ * 终端里的 CLI 也会跟着变，界面上写明。这里只放定义和纯函数，读写文件在 server/cli/config-settings.ts
  */
 export const ConfigSetting = z
   .object({

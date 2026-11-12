@@ -2,11 +2,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
-import { getAt, readValue, setAt, writeValue, type ConfigValue } from '../shared/cli-config-settings.ts'
-import { getCli } from '../shared/clis.ts'
-import { t } from '../shared/i18n.ts'
-import { expandHome } from './cli-extras.ts'
-import { writeCliConfigJson } from './cli-config-write.ts'
+import { getAt, readValue, setAt, writeValue, type ConfigValue } from '../../shared/cli-config-settings.ts'
+import { getCli } from '../../shared/clis.ts'
+import { t } from '../../shared/i18n.ts'
+import { expandHome } from './extras.ts'
+import { writeCliConfigJson } from './config-write.ts'
 
 /**
  * CLI 自己配置文件里的设置项（ADR 0050）：读的时候列出每项现在的值（没写过的不列，界面显示「跟随」）；

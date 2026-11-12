@@ -25,7 +25,7 @@ import path from 'node:path'
 import { CACHE_DIR } from '../store.ts'
 import { knownVersion } from '../detect.ts'
 import { hasCurl } from './has-curl.ts'
-import { expandHome } from '../cli-extras.ts'
+import { expandHome } from '../cli/extras.ts'
 import {
   HOOK_URL_ENV,
   hookInstall,

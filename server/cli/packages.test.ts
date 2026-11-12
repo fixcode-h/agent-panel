@@ -3,11 +3,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { getCli } from '../shared/clis.ts'
-import { Settings } from '../shared/schema.ts'
-import { cliSettings } from '../shared/settings.ts'
-import { listPackages, packageCommandEnv } from './cli-packages.ts'
-import { childEnv } from './exec/process.ts'
+import { getCli } from '../../shared/clis.ts'
+import { Settings } from '../../shared/schema.ts'
+import { cliSettings } from '../../shared/settings.ts'
+import { listPackages, packageCommandEnv } from './packages.ts'
+import { childEnv } from '../exec/process.ts'
 
 test('扩展包：读 CLI 配置文件里的列表，相对路径按配置文件所在目录换成绝对路径；npm 包读装着的版本', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pi-pkg-'))

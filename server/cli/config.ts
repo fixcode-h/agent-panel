@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import { registerCliSpecs } from '../shared/clis.ts'
-import { t } from '../shared/i18n.ts'
+import { registerCliSpecs } from '../../shared/clis.ts'
+import { t } from '../../shared/i18n.ts'
 
 /**
  * 用户自己加的 CLI：数据目录 config/clis/ 下每个 .json 是一份 CLI 配置（格式见 docs/cli-config.md），
