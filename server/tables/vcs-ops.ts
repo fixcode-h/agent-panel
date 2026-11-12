@@ -116,7 +116,8 @@ async function ensureOurs(full: string, ours: Buffer | null, backup: () => Promi
 }
 
 const parse = async (rel: string, b: Buffer | null) => (b ? (await parseTableBuffer(rel, b)).sheets : [])
-const tryRun = (cmd: string, args: string[], cwd: string) => vcsRun(cmd, args, cwd).catch(() => null)
+const tryRun = (cmd: Parameters<typeof vcsRun>[0], args: string[], cwd: string) =>
+  vcsRun(cmd, args, cwd).catch(() => null)
 const unxml = (s: string) =>
   s
     .replace(/&lt;/g, '<')

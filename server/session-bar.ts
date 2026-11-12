@@ -9,9 +9,9 @@ import { getCli } from '../shared/clis.ts'
 import { CliContextBase } from '../shared/context-breakdown.ts'
 import type { SessionInfo, Task } from '../shared/schema.ts'
 import { expandHome, listSkills } from './cli-extras.ts'
-import { capture } from './exec/process.ts'
+import { gitRun } from './exec/git.ts'
 
-const git = (cwd: string, ...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd)
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args)
 
 /** 说明文件太大时只看大小，不读内容（读进来也只为了数 @ 引用） */
 const DOC_READ_MAX = 512 * 1024

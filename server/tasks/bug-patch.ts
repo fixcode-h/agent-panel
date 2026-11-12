@@ -7,10 +7,8 @@
  * 状态和快照存在调用方给的目录（对话数据目录下），不进仓库
  */
 import { createHash } from 'node:crypto'
-import { execFile } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { t } from '../../shared/i18n.ts'
 import {
   applyErrorLines,
@@ -20,11 +18,10 @@ import {
   type PatchState,
   type PatchStatus,
 } from '../../shared/bug-patch.ts'
-
-const run = promisify(execFile)
+import { gitExec } from '../exec/git.ts'
 
 /** 一条 git 最多等这么久；补丁再大也就是几个文件 */
-const GIT_OPTS = { timeout: 20_000, maxBuffer: 64 << 20, windowsHide: true } as const
+const GIT_OPTS = { timeoutMs: 20_000, maxBuffer: 64 << 20 } as const
 
 export interface PatchDirs {
   /** 对话的独立分支目录 */
@@ -72,7 +69,7 @@ export async function loadPatch(stateDir: string): Promise<PatchState | undefine
 export const appliedOf = (s: PatchState | undefined): PatchStatus['applied'] =>
   s ? { kind: s.kind, at: s.at, files: Object.keys(s.files) } : undefined
 
-const git = (cwd: string, args: string[]) => run('git', args, { ...GIT_OPTS, cwd })
+const git = (cwd: string, args: string[]) => gitExec(cwd, args, GIT_OPTS)
 
 /** 分支起点：baseRef 是个提交就用它，否则退到和原分支的分叉点；都没有返回空 */
 async function baseOf(d: PatchDirs): Promise<string> {

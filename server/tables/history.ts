@@ -8,6 +8,7 @@ import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
 import type { SheetData } from '../../shared/files.ts'
 import { childEnv } from '../exec/process.ts'
+import { gitArgs } from '../exec/git.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import { parseZtag } from '../p4-split.ts'
 import { parseTableBuffer } from './files.ts'
@@ -36,11 +37,12 @@ const MAX_REVS = 40
 /** 旧版本的文件最大读这么多（和打开文件的上限一致） */
 const MAX_BYTES = 64 * 1024 * 1024
 
-export function vcsRun(cmd: string, args: string[], cwd: string) {
+/** 三种版本控制共用：git 的参数照 server/exec/git.ts 的 gitArgs 补上（中文路径不转义），其余原样 */
+export function vcsRun(cmd: 'git' | 'p4' | 'svn', args: string[], cwd: string) {
   return new Promise<Buffer>((resolve, reject) =>
     execFile(
       cmd,
-      args,
+      cmd === 'git' ? gitArgs(args) : args,
       {
         cwd,
         env: { ...childEnv([]), PWD: cwd },
