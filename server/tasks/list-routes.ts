@@ -12,6 +12,8 @@ import {
   messageHit,
   type SearchHit,
 } from '../../shared/task-search.ts'
+import { childCountsScan } from '../../shared/children/row.ts'
+import { taskCliAlive } from '../exec/process.ts'
 import { log } from '../log.ts'
 import { SEARCH_CACHE_TASKS, SEARCH_CACHE_CHARS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
@@ -78,8 +80,10 @@ export function registerListRoutes(s: TasksScope) {
     // 进了回收站的对话不在任何列表里出现（回收站自己有一个入口，见 GET /trash）
     const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
     // 运行时状态（还在跑的子对话数、后台命令、CLI 存活、后代在等你的数）只在 liveOf 一处算（server/tasks/live.ts）：
-    // 子对话的计数是一次扫完所有父对话、按 1 秒缓存的，列表里逐个取不会每个都扫一遍。
-    let list = await Promise.all(all.map(async (t) => taskSummary({ ...t, live: await s.liveOf(t) })))
+    // 子对话的计数在这里现扫一遍再传进去，不读 1 秒缓存：子对话刚开始一轮、很快又做完时，
+    // 缓存里可能还是开始前那份，列表就看不到父对话在跑（e2e 04-subagents 在 CI 上撞到过）
+    const kids = childCountsScan(all, { active: s.childActive, cliAlive: (k) => taskCliAlive(k.id) })
+    let list = await Promise.all(all.map(async (t) => taskSummary({ ...t, live: await s.liveOf(t, kids) })))
     // 子对话不进入项目列表：按 parentId 查询时才返回它们。
     // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
     // 直接经接口建的独立运行没有父对话，照常列
