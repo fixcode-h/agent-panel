@@ -118,6 +118,13 @@ function assertNoDemoModules(where, ids, mustHave) {
     throw new Error(
       `包里混进了演示内容（${where} 打进了 ${hit.map((id) => path.relative(root, id).split(path.sep).join('/')).join('、')}）`,
     )
+  // 插件仓库是挂在 plugins/ 的子仓库（agent-plugins），插件各自出包、用户按需安装，面板的包里一行都不能带
+  const plugins = `${root.split(path.sep).join('/')}/plugins/`
+  const fromPlugins = list.filter((id) => id.startsWith(plugins))
+  if (fromPlugins.length)
+    throw new Error(
+      `包里混进了插件仓库的代码（${where} 打进了 ${fromPlugins.map((id) => path.relative(root, id).split(path.sep).join('/')).join('、')}）`,
+    )
 }
 
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）

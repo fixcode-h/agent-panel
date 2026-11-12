@@ -17,7 +17,7 @@
     "format": "prettier --write --config config/.prettierrc.json --ignore-path .gitignore --ignore-path config/.prettierignore web/src server shared scripts config extension \"docs/**/*.md\" \"skills/**/*.md\" \"README*.md\" CONTRIBUTING.md",
     "start": "tsx server/index.ts --prod",
     "typecheck": "tsc -b && node scripts/i18n-check.mjs",
-    "lint": "oxlint -c config/.oxlintrc.json --deny-warnings --ignore-pattern dist --ignore-pattern dist-demo --ignore-pattern release --ignore-pattern build --ignore-pattern ui-shots --ignore-pattern \"server/exec/fixtures/**\" && prettier --check --config config/.prettierrc.json --ignore-path .gitignore --ignore-path config/.prettierignore --cache --cache-location .tmp/prettier-cache web/src server shared scripts config extension \"docs/**/*.md\" \"skills/**/*.md\" \"README*.md\" CONTRIBUTING.md && node scripts/rules-check.mjs && node scripts/secret-check.mjs && node scripts/test-budget.mjs --check",
+    "lint": "oxlint -c config/.oxlintrc.json --deny-warnings --ignore-pattern dist --ignore-pattern dist-demo --ignore-pattern release --ignore-pattern build --ignore-pattern ui-shots --ignore-pattern plugins --ignore-pattern \"server/exec/fixtures/**\" && prettier --check --config config/.prettierrc.json --ignore-path .gitignore --ignore-path config/.prettierignore --cache --cache-location .tmp/prettier-cache web/src server shared scripts config extension \"docs/**/*.md\" \"skills/**/*.md\" \"README*.md\" CONTRIBUTING.md && node scripts/rules-check.mjs && node scripts/secret-check.mjs && node scripts/test-budget.mjs --check",
     "check:secrets": "node scripts/secret-check.mjs",
     "lessons": "node scripts/lessons.mjs",
     "docs:bugs": "node scripts/doc-bugs.mjs",

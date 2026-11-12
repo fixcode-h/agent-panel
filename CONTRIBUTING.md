@@ -18,6 +18,8 @@ npm ci          # 按 package-lock.json 装依赖，不要用 npm i 改锁文件
 npm run dev     # 前端 :5173 + 后端 :8787
 ```
 
+插件仓库 [fixcode-h/agent-plugins](https://github.com/fixcode-h/agent-plugins) 作为子仓库挂在 `plugins/`，改插件时才需要拉：`git submodule update --init plugins`（克隆时可以直接 `git clone --recurse-submodules`）。插件在 `plugins/` 里按插件仓库自己的约定开发、提交、推送；`npm run panel` 会自动链接外层的面板源码。面板的检查、单测和出包都不碰 `plugins/`，插件也不会打进面板的安装包。
+
 服务端默认只监听 `127.0.0.1`。凭据（密码、令牌、API key）只放数据目录或环境变量，**不要**写进代码、测试、fixtures、文档和提交说明。
 
 ## 分支规则

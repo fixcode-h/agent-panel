@@ -19,6 +19,7 @@
 - 用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件。
 - 在线演示（`npm run build:demo`，即 `vite build --mode demo`）把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
 - 自带 Skill 在 `skills/`，内置角色和工作流模板在 `shared/builtin/`，浏览器扩展在 `extension/`。
+- 插件仓库 `fixcode-h/agent-plugins` 是挂在 `plugins/` 的 git 子仓库（`git submodule update --init plugins`）：插件代码在里面按插件仓库的 AGENTS.md 改、在里面提交推送，面板这边只在需要时提交子仓库指针。面板的 lint、单测、出包都不碰 `plugins/`，包里不能有插件代码（`scripts/package.mjs` 会检查）。
 
 ## 硬规则
 
