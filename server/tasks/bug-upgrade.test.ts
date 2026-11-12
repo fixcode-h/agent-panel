@@ -29,9 +29,9 @@ test('标成用户报的 Bug：有 submit_diagnosis、下一轮补带完整流�
   assert.ok(r.message.startsWith(BUG_UPGRADE_HEAD))
   assert.match(r.message, /角标不刷新/)
   assert.equal(saved.length, 1)
-  assert.equal(saved[0].bug, true)
-  assert.equal(saved[0].bugMethodPending, true)
-  assert.equal(saved[0].bugCase?.level, 'deep')
+  assert.equal(saved[0].bug?.kind, 'report')
+  assert.equal(saved[0].bug?.methodPending, true)
+  assert.equal(saved[0].bug?.case?.level, 'deep')
   // send_to_conversation 只有写了 kind: "bug" 才升级，级别写错的不带
   assert.equal(upgradeBugArg({}), undefined)
   assert.equal(upgradeBugArg({ kind: 'task' }), undefined)
@@ -51,7 +51,7 @@ test('在跑的以内存里那份为准；正在回复时拒绝，不改标记',
 
 test('已经是 Bug 的原样交，不重复补流程；不是自己名下的子对话找不到', async () => {
   const { sc, saved } = scope([
-    { id: 'c', parentTaskId: 'p', title: 'a', bug: true },
+    { bug: { kind: 'report' }, id: 'c', parentTaskId: 'p', title: 'a' },
     { id: 'd', parentTaskId: 'q', title: 'b' },
   ])
   const r = await upgradeChildToBug(sc, 'p', 'c', '原话')

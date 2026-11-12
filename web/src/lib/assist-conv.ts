@@ -28,34 +28,57 @@ export function runAssistInProject(opts: {
     subject: opts.subject,
     messages: [{ role: 'user' as const, text: opts.start }],
   }
+  return runPromptInProject({
+    projectId: opts.projectId,
+    title: opts.title,
+    analysis: opts.analysis,
+    prompt: async () => (await api.assistPrompt(base)).prompt,
+    resolve: async (reply) => {
+      const r = await api.assistResolve({ ...base, text: reply })
+      if (!r.proposal) return { error: r.error ?? '' }
+      opts.onProposal(r.proposal)
+      toast.success(t('「{title}」的结果已经交回项目设置，可以去应用', { title: opts.title }))
+      return {}
+    },
+  })
+}
+
+/**
+ * 在项目里开一个分析对话跑一段现成的提示词（插件接口 6 开放给插件，例如表格插件的「AI 分析表格风格」）：
+ * 过程在统一的 AI 分析窗口里看、能接着问；对话做完把最后一条回复交给 resolve，
+ * 返回 error 时让对话自己修正一次，再不对就提示用户在对话里说
+ */
+export function runPromptInProject(opts: {
+  projectId: string
+  /** 窗口和对话列表里的标题 */
+  title: string
+  prompt: () => Promise<string>
+  /** 对话记成哪种分析：默认 init（右侧画项目设置的应用面板）；结果在别处应用的给 run，不出那个面板 */
+  analysis?: AnalysisKind
+  resolve: (reply: string) => Promise<{ error?: string }>
+}) {
   // 自动修正只做一次：再不对就交给用户在对话里说
   let fixed = false
   openAiWindow({
     label: t('AI 分析'),
     title: opts.title,
-    create: async () => {
-      const { prompt } = await api.assistPrompt(base)
-      return createAnalysisTask({
+    create: async () =>
+      createAnalysisTask({
         scope: { kind: 'project', projectId: opts.projectId },
         kind: opts.analysis ?? 'init',
         title: opts.title,
-        prompt,
-      })
-    },
+        prompt: await opts.prompt(),
+      }),
     onDone: (task) => {
       // 用户停下的不读结果
       if (task.status !== 'done') return
       const reply = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text ?? ''
-      void api
-        .assistResolve({ ...base, text: reply })
+      void opts
+        .resolve(reply)
         .then(async (r) => {
-          if (r.proposal) {
-            opts.onProposal(r.proposal)
-            toast.success(t('「{title}」的结果已经交回项目设置，可以去应用', { title: opts.title }))
-            return
-          }
+          if (r.error === undefined) return
           if (fixed) {
-            toast.error(t('结果的格式还是不对：{error}。可以在对话里让它重新输出', { error: r.error ?? '' }))
+            toast.error(t('结果的格式还是不对：{error}。可以在对话里让它重新输出', { error: r.error }))
             return
           }
           fixed = true

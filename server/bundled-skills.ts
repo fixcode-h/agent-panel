@@ -14,7 +14,7 @@ import {
 } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
 import { SKILL_TARGET } from '../shared/deploy.ts'
-import { expandHome } from './cli-extras.ts'
+import { expandHome } from './cli/extras.ts'
 import { log } from './log.ts'
 import { pluginEnabled } from '../shared/plugins/index.ts'
 

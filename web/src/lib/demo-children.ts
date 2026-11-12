@@ -3,10 +3,10 @@
  * 这里只给演示里代替真进程、真 git 的值。
  */
 import { childRow } from '@shared/children/row'
-import { descendantNeeds } from '@shared/child-needs'
+import { descendantNeeds } from '@shared/children/needs'
 import type { Task } from '@shared/schema'
 import { taskDeleted } from '@shared/task'
-import { lastReplyText } from '@shared/task-helpers'
+import { lastReplyText } from '@shared/tasks/helpers'
 import { demoJobs } from './demo/demo-jobs'
 
 /** 还在跑 / 排队的后台命令数（演示里没有服务端的命令表，按 demo/demo-jobs.ts 那张表算） */

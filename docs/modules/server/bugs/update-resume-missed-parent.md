@@ -1,6 +1,6 @@
 # 强制更新后子对话接着跑，父对话却停在「已中断，等待继续执行」
 
-- 状态：已修复（名单口径、`doing` 文案和界面侧的显示条件随同一批改动落地；`server/task-restart.test.ts` 8/8 通过，反向验证见「回归验证」）
+- 状态：已修复（名单口径、`doing` 文案和界面侧的显示条件随同一批改动落地；`server/tasks/restart.test.ts` 8/8 通过，反向验证见「回归验证」）
 - 症状：面板强制更新后弹出「继续执行」弹窗，子对话被继续、正常接着跑，父对话却停在「已中断，等待继续执行」——输入框占位写「继续输入要求」、右边是「继续执行」按钮，同一时间它名下的子对话在跑
 - 入口：`server/tasks.ts` 的 `workingTasks` / `interruptedTasks`、`server/update.ts` 的 `stopForUpdate`、`server/interrupted.ts` 的 `recordInterrupted` / `interruptedApi` / `restartDoing`、`shared/task.ts` 的 `restartUnfinished` / `interruptedTaskIds`、`web/src/components/layout/UpdateResumeDialog.tsx`、`web/src/components/tasks/TaskView.tsx` 的「继续执行」按钮和输入框占位
 - 根因类型：恢复名单口径只看进程（`working`），漏掉「这一轮已经说完、计划没做完」的父对话
@@ -48,12 +48,12 @@
 
 - 「要不要继续」只认 `restartUnfinished` / `interruptedTaskIds`，不要再按 `working` 或 `status === 'running'` 自己挑一遍：两个问题分开问（见上）。
 - 名单判定必须拿完整任务：`taskSummary` 清空了 `plans`，用列表摘要判「计划没做完」会永远判假。
-- `server/task-restart.test.ts` 的「强制更新的恢复名单」用例覆盖四种情形（子对话在跑 + 父对话计划没做完、没有任何任务在跑、父对话计划做完了也要记、归档 / 导入的不进名单），改这块先跑它。
+- `server/tasks/restart.test.ts` 的「强制更新的恢复名单」用例覆盖四种情形（子对话在跑 + 父对话计划没做完、没有任何任务在跑、父对话计划做完了也要记、归档 / 导入的不进名单），改这块先跑它。
 - 界面上的「继续执行」必须和「有没有东西还在跑」一致：`taskWaitText` 非空时不显示，避免又出现「子对话在跑、父对话等继续」。
 
 ## 回归验证
 
-- `npx tsx --test server/task-restart.test.ts`：8/8 通过（本轮新增 3 条：`restartUnfinished` 的判定「计划没做完算、做完了不算、独立分支没合回不算」、`interruptedTaskIds` 的名单、`tasksApi().interruptedTasks()` 里父对话的 `doing` 写成「计划 6/8」）。
+- `npx tsx --test server/tasks/restart.test.ts`：8/8 通过（本轮新增 3 条：`restartUnfinished` 的判定「计划没做完算、做完了不算、独立分支没合回不算」、`interruptedTaskIds` 的名单、`tasksApi().interruptedTasks()` 里父对话的 `doing` 写成「计划 6/8」）。
 - 反向验证（按项目教训 `lmvmabgjdi271`）：把 `interruptedTasks` 的名单临时退回「只看 `working`」后，「恢复名单里的父对话说明它被打断时在做什么」这条失败（`parent` 不在名单里）；恢复后 8/8 通过。
 - 待确认：按验收标准做的实测（起面板 → 父对话有子对话在跑 → 强制更新 / 模拟 `ready` 迁移 → 看父对话是否自动继续）需要重启面板服务，由父对话在合并后统一做，本记录不声称已实测。
 
@@ -67,5 +67,5 @@
 - `web/src/components/tasks/TaskView.tsx`：「继续执行」不显示的条件、输入框占位。
 - `web/src/components/layout/UpdateResumeDialog.tsx`：说明文案。
 - `shared/locales/en/tasks.ts`、`shared/locales/en/server.ts`：对应英文文案。
-- `server/task-restart.test.ts`：新增 3 条用例。
+- `server/tasks/restart.test.ts`：新增 3 条用例。
 - 文档：`docs/modules/server/README.md` 的「强制更新后：把被打断的任务列进恢复名单」、`docs/modules/web/README.md` 的对应条目。

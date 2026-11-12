@@ -1175,13 +1175,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           ...JSON.parse(JSON.stringify(seed)),
           id: `bug-${id}`,
           title,
-          bug: true,
+          bug: { kind: 'report', diagnoses },
           status: 'done',
           working: false,
           resolved: false,
           requests: [],
           createdAt: ago(60 * 30),
-          diagnoses,
           ...more,
         })
       add('confirm', '购物车角标删完最后一件还显示 1', [

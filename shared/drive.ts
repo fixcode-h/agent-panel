@@ -1,5 +1,5 @@
 import type { TaskPlan } from './schema.ts'
-import type { DriveCount } from './task-runtime-schema.ts'
+import type { DriveCount } from './tasks/runtime-schema.ts'
 
 /**
  * 对话自驱（ADR 0041）的共用规则。这一版先放「进度指纹」：面板推对话接着做的次数按它算，

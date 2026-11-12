@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, taskSummary } from '../../shared/task.ts'
-import { bugBriefs } from '../../shared/bug-overview.ts'
+import { bugBriefs } from '../../shared/bug/overview.ts'
 import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
-import { messageChars, searchTasks } from '../../shared/task-search.ts'
+import { messageChars, searchTasks } from '../../shared/tasks/search.ts'
 import { trashRows } from '../../shared/trash/rows.ts'
 import { childCountsScan } from '../../shared/children/row.ts'
 import { taskCliAlive } from '../exec/process.ts'
@@ -41,7 +41,7 @@ export function registerListRoutes(s: TasksScope) {
 
   /**
    * 总览页的 Bug 视图：所有用户报的 Bug（多半是子对话，列表接口不返回子对话，也不该带整份报告），
-   * 只给视图和流程统计要的精简字段（shared/bug-overview.ts）。状态按内存里正在跑的那份算，和列表同一个口径
+   * 只给视图和流程统计要的精简字段（shared/bug/overview.ts）。状态按内存里正在跑的那份算，和列表同一个口径
    */
   s.routes.get('/bugs', async (c) => {
     const all = (await s.store.list()).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
@@ -111,10 +111,10 @@ export function registerListRoutes(s: TasksScope) {
   /**
    * 对话内容搜索：搜消息正文，只回命中片段 + 对话 id + 命中条数，不回整份消息。
    * 按最近活动倒序扫，三个预算任一用完就停：扫多少个对话、回多少条、读进来的字数
-   * （口径在 shared/task-search.ts）。进了回收站的对话不参与：删了就不该还能被搜出来
+   * （口径在 shared/tasks/search.ts）。进了回收站的对话不参与：删了就不该还能被搜出来
    */
   s.routes.get('/search', async (c) => {
-    // 预算和扫描顺序在 shared/task-search.ts 的 searchTasks（演示后端调同一份）；这里只管从文件读消息（带缓存）
+    // 预算和扫描顺序在 shared/tasks/search.ts 的 searchTasks（演示后端调同一份）；这里只管从文件读消息（带缓存）
     const report = await searchTasks(
       await s.store.list(),
       c.req.query('q') ?? '',

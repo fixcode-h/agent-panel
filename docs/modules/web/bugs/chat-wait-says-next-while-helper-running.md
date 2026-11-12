@@ -1,6 +1,6 @@
 # 子任务还在跑，状态行却说「等待你的下一条消息」+「空闲」
 
-- 状态：已修复（界面检查 `scripts/ui/02-task.mjs` 的「任务-等子任务时状态行 / 任务-等下一句时状态行」；纯逻辑回归 `shared/task-stage.test.ts` 的「childWait：这一轮结束、子任务还在跑时是在等子任务，不是在等下一句」）
+- 状态：已修复（界面检查 `scripts/ui/02-task.mjs` 的「任务-等子任务时状态行 / 任务-等下一句时状态行」；纯逻辑回归 `shared/tasks/stage.test.ts` 的「childWait：这一轮结束、子任务还在跑时是在等子任务，不是在等下一句」）
 - 症状：对话派出的子任务还在跑命令，状态行却写「等待你的下一条消息」+「空闲」
 - 入口：`web/src/components/tasks/TaskView.tsx` 的 `ChatWaitLine`、`web/src/components/tasks/LiveStats.tsx`
 - 根因类型：显示条件只判 `awaitingUser` + `cliAlive`，没复用 `childWait` 判「有没有子任务 / 后台命令 / 工作流在跑」
@@ -52,7 +52,7 @@
 
 ## 回归
 
-- `shared/task-stage.test.ts`「childWait：这一轮结束、子任务还在跑时是在等子任务，不是在等下一句」：`awaitingUser: true` + 一个 `running` 子任务 + 一个 `pending` 子任务时，`childWait(…, { cliAlive: true })` 返回 `{ kind: 'helpers', list: ['评审后台命令输出弹窗'] }`（只报在跑的，排队的不算「等着它完事」），不是 `next`；同时有后台命令时 `background` 排在前面；子任务都 `done` 之后才轮回到 `next`。这条用例锁的是**优先级**，防止以后有人把 `!working && cliAlive` 挪到 `helpers` 前面。
+- `shared/tasks/stage.test.ts`「childWait：这一轮结束、子任务还在跑时是在等子任务，不是在等下一句」：`awaitingUser: true` + 一个 `running` 子任务 + 一个 `pending` 子任务时，`childWait(…, { cliAlive: true })` 返回 `{ kind: 'helpers', list: ['评审后台命令输出弹窗'] }`（只报在跑的，排队的不算「等着它完事」），不是 `next`；同时有后台命令时 `background` 排在前面；子任务都 `done` 之后才轮回到 `next`。这条用例锁的是**优先级**，防止以后有人把 `!working && cliAlive` 挪到 `helpers` 前面。
 - `scripts/ui/02-task.mjs`「任务-等子任务时状态行」：打开「后台命令弹窗实时看输出」，断言 `[data-chat-wait]` 的 kind 是 `helpers`、文字含「等待 1 个子任务完成」、不含「等待你的下一条消息」、不含「空闲」、含「等待中」。
 - 同文件「任务-等下一句时状态行」（反例）：打开「整理一份 Claude Code 和 Codex 的能力对照」，断言 `[data-chat-wait="next"]` 且文字含「等待你的下一条消息」。有这条才能证明上面那条不是靠「永远不显示这句话」通过的。
 - 两个用例都按标题在演示数据里查 id、拼 `#/chat/<id>` 打开：侧栏的对话列表跟着筛选和滚动走，按 `title` 定位不稳。

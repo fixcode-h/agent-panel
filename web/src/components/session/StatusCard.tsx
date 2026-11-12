@@ -18,7 +18,7 @@ import {
 import { t } from '@shared/i18n'
 import type { Task } from '@shared/schema'
 import type { ChildEntry } from '@shared/task'
-import { diagnoseTask, type DiagItem, type DiagTone } from '@shared/task-diagnosis'
+import { diagnoseTask, type DiagItem, type DiagTone } from '@shared/tasks/diagnosis'
 import { withLiveFacts } from '@shared/live/task-live'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
@@ -46,7 +46,7 @@ const TONE: Record<DiagTone, string> = {
 }
 
 /**
- * 会话栏最上面的「状态」：这个对话现在是什么情况、在等什么、为什么停住了（见 shared/task-diagnosis.ts）。
+ * 会话栏最上面的「状态」：这个对话现在是什么情况、在等什么、为什么停住了（见 shared/tasks/diagnosis.ts）。
  * 那句话照旧把子对话算进去（「在等 2 个子对话」），但子对话不在这里逐个列：
  * 它们只有一个家，输入框上方的子对话面板（ADR 0034），右栏再列一遍就是两处
  */

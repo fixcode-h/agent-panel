@@ -1,6 +1,6 @@
 import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
-import type { BugBrief } from '@shared/bug-overview'
+import type { BugBrief } from '@shared/bug/overview'
 import type { FlowBrief } from '@shared/agent-stats'
 import type { SharedDirInfo } from '@shared/shared-dir'
 import type { SpeedRow } from '@shared/api-speed'
@@ -12,14 +12,14 @@ import { messagesApi } from './api-messages'
 import { remoteApi } from './api-remote'
 import type { CollabEvent } from '@shared/collab-timeline'
 import type { LifeReport } from '@shared/lifecycle'
-import type { TaskExport } from '@shared/task-export'
+import type { TaskExport } from '@shared/tasks/export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
 import type { SpeechStatus } from '@shared/speech'
 import type { TtsStatus } from '@shared/tts'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
-import type { ProjectSuggestion } from '@shared/project-scan'
+import type { ProjectSuggestion } from '@shared/projects/scan'
 import type {
   SessionInfo,
   Attachment,
@@ -59,13 +59,13 @@ import type {
   TaskJobView,
 } from '@shared/schema'
 import type { ChildHold } from '@shared/task'
-import type { SearchHit } from '@shared/task-search'
+import type { SearchHit } from '@shared/tasks/search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
-import type { DiagnosisDecision } from '@shared/bug-diagnosis'
-import type { PatchResult, PatchStatus } from '@shared/bug-patch'
-import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug-log-watch'
-import type { StatsTotal } from '@shared/task-export'
+import type { DiagnosisDecision } from '@shared/bug/diagnosis'
+import type { PatchResult, PatchStatus } from '@shared/bug/patch'
+import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'
+import type { StatsTotal } from '@shared/tasks/export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
@@ -83,7 +83,7 @@ import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@share
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
-import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
+import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/projects/mcp'
 import type {
   BundledSkill,
   LibraryCli,
@@ -94,8 +94,8 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
-import type { ProjectSkillsView } from '@shared/project-skills'
-import type { ProjectProposal } from '@shared/project-init'
+import type { ProjectSkillsView } from '@shared/projects/skills'
+import type { ProjectProposal } from '@shared/projects/init'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DocGroupView } from '@shared/doc-root'
 import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'
@@ -607,7 +607,7 @@ export const api = {
     request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
   /** 和实时推送的整份一样：更早的长工具输出只给开头（见 shared/task.ts 的 liteMessages） */
   taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
-  /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug-overview.ts） */
+  /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug/overview.ts） */
   taskBugs: () => request<BugBrief[]>('/tasks/bugs'),
   /** 总览页流程视图：所有 Agent 模式对话的流程数据（shared/agent-flow-briefs.ts） */
   taskFlow: () => request<FlowBrief[]>('/tasks/flow'),
@@ -954,7 +954,7 @@ export const api = {
   purgeItem: (kind: string, id: string) => call(trashContract.purgeItem, { params: { kind, id } }),
   /** 永久删除：不进回收站，内容直接清掉（界面先让用户二次确认） */
   permanentDeleteTask: (id: string) => call(trashContract.purgeTask, { params: { id } }),
-  /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/task-search.ts） */
+  /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/tasks/search.ts） */
   searchTasks: (q: string, limit?: number) =>
     request<{ hits: SearchHit[]; scanned: number; more: boolean }>(
       `/tasks/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`,

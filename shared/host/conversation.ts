@@ -1,9 +1,9 @@
 // 对话之间：子对话的创建、传话、收尾，父对话之间传话，文件认领，结束前判断。
-// 从 shared/engine-host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
+// 从 shared/engine/host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
-import type { BugLevel } from '../bug-diagnosis-schema.ts'
+import type { BugLevel } from '../bug/diagnosis-schema.ts'
 import type { DocsFirstInput } from '../docs-first.ts'
-import type { HelperSpec, Orchestra, RouteInput } from '../engine-host.ts'
+import type { HelperSpec, Orchestra, RouteInput } from '../engine/host.ts'
 import type { BeforeEndDecision, BeforeEndInput } from '../hooks.ts'
 import type { AskKind } from '../schema.ts'
 
@@ -25,7 +25,7 @@ export interface OrchConversation {
       role?: string
       route?: RouteInput
       bug?: boolean
-      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
+      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（task.bug.kind 为 fix） */
       fix?: boolean
       /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
       edits?: boolean
@@ -33,7 +33,7 @@ export interface OrchConversation {
       ignoreDirty?: boolean
       /** Bug 的级别初判：子对话的档案从它开始（快速级别根因和方案合成一次确认） */
       level?: BugLevel
-      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/child-after.ts） */
+      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/children/after.ts） */
       after?: string[]
     } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>
@@ -105,13 +105,13 @@ export interface ConversationHost {
     files?: string[]
     /** 父对话派来的 Bug（ADR 0045）：子对话修之前要交诊断报告给用户确认 */
     bug?: boolean
-    /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
+    /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（task.bug.kind 为 fix） */
     fix?: boolean
     /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
     edits?: boolean
     /** 不拦父对话目录里没提交的改动（server/tasks/dirty-parent.ts） */
     ignoreDirty?: boolean
-    /** Bug 的级别初判（Task.bugCase.level 的初值） */
+    /** Bug 的级别初判（task.bug.case.level 的初值） */
     level?: BugLevel
     /** 排在哪些子对话之后（Task.waitAfter）：它们都合回后才启动 */
     after?: string[]

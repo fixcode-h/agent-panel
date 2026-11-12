@@ -41,6 +41,18 @@ test('动作名要写成 <组>.<动词>，重名直接报错', () => {
   assert.throws(() => createRegistry([{ ...a, name: 'nogroup' }]), /<组>\.<动词>/)
 })
 
+test('插件登记的动作（插件接口 6）：每次现取，名字不合规、和面板重名的不收', async () => {
+  const mk = (name: string) =>
+    defineAction({ name, title: name, description: '', level: 'read', input: z.object({}), run: async () => name })
+  let extra = [mk('tables.list'), mk('tasks.list'), mk('Bad')]
+  const reg = createRegistry([mk('tasks.list')], () => extra)
+  assert.deepEqual(reg.groups(), ['tasks', 'tables'])
+  const ctx = { api: async () => null, ui: () => 0 }
+  assert.deepEqual(await reg.run('tables.list', {}, ctx), { ok: true, result: 'tables.list' })
+  extra = []
+  assert.equal(reg.get('tables.list'), undefined, '插件关掉后就没了')
+})
+
 test('目录从 zod 生成参数说明：可选的带问号，带上说明', () => {
   const text = catalogText(appActions.list('task').filter((a) => a.name === 'task.stop_children'))
   assert.match(text, /task\.stop_children \[danger\]/)

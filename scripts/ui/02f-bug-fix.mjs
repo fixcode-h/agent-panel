@@ -16,7 +16,7 @@ await runShard(import.meta.filename, async (api) => {
     const parent = db.tasks.find((x) => x.title.includes('购物车右上角'))
     // 用一个已经停下的子对话（演示里在跑的子对话会被模拟执行改写消息）
     const kid = db.tasks.find((x) => x.parentTaskId === parent.id && x.title.includes('修侧栏时间显示'))
-    Object.assign(kid, { resolved: false, status: 'done', working: false, bug: true, requests: [] })
+    Object.assign(kid, { resolved: false, status: 'done', working: false, bug: { kind: 'report' }, requests: [] })
     const at = new Date().toISOString()
     const base = {
       at,
@@ -37,7 +37,7 @@ await runShard(import.meta.filename, async (api) => {
       overall: '',
       before: [],
     }
-    kid.diagnoses = [
+    kid.bug.diagnoses = [
       {
         ...base,
         phase: 'plan',

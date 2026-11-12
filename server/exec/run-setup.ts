@@ -6,13 +6,13 @@ import { stat } from 'node:fs/promises'
 import { aliasAgent } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
-import { withTaskModel } from '../../shared/task-run.ts'
+import { withTaskModel } from '../../shared/tasks/run.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { withSkillDir } from '../../shared/skill-guide.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
 import { promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.ts'
-import type { AgentCall } from '../../shared/engine-host.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
 import { t } from '../../shared/i18n.ts'
 import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
 import { taskFiles } from '../task-files.ts'
@@ -155,13 +155,20 @@ export async function prepareLaunch(
 export function attachPlugins(
   ctx: RealContext,
   call: AgentCall,
-  who: { agent: RunTarget['agent']; resume: string | undefined; cwd: string; step: string; agentId: string },
+  who: {
+    agent: RunTarget['agent']
+    resume: string | undefined
+    cwd: string
+    step: string
+    agentId: string
+    conversation: boolean
+  },
   fileEvents: ReturnType<typeof createFileEvents>,
 ) {
-  const { agent, resume, cwd, step, agentId } = who
+  const { agent, resume, cwd, step, agentId, conversation } = who
   return pluginRunTools(
     ctx,
-    { agent, resume: !!resume, cwd, step, agentId },
+    { agent, resume: !!resume, cwd, step, agentId, conversation },
     {
       // 插件的改文件类工具：执行前过工具前守卫（守卫在下面 hookOptions 里装到 call.orch 上，调用时才取），
       // 改了的文件和 CLI 自己的改文件工具一样记成这一轮的改动、登记归属

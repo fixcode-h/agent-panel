@@ -10,11 +10,12 @@
 ## 职责
 
 - 本机 HTTP API：Hono + `@hono/node-server`，只监听 `127.0.0.1`（因为会启动本机 CLI、读写项目目录），同时提供前端静态文件（生产模式由 `server/static.ts` 托管构建产物：gzip + 缓存头 + ETag，见 [performance.md](performance.md)）。
-- 数据存储：用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件，读写集中在 `server/store.ts`，任务单独存在 `server/task-store.ts`。
-- 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
-- CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载，CLI 自己的插件（Pi 的扩展包，装删更新跑 CLI 的命令）和插件市场、CLI 自己配置文件里的设置项、项目信任的标记文件检测（ADR 0050）（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/cli-gallery.ts`、`server/cli-config-settings.ts`、`server/cli-trust-api.ts`、`server/install.ts`）。
+- 数据存储：用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件，读写集中在 `server/store.ts`，任务单独存在 `server/tasks/store.ts`。
+- 项目与任务：项目扫描和分类（配合 `shared/projects/scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/tasks/store.ts`）。
+- 按模块分子目录（重构文档第 14 条，一次搬一个模块）：对话相关的文件都在 `server/tasks/`，原来顶层的 `server/task-*.ts`（含测试）搬进来去掉了 `task-` 前缀（如 `server/tasks/store.ts`、`server/tasks/paths.ts`）。`server/task-files.ts` 开放给插件（`shared/plugins/host-modules.json`），留在顶层；开放模块是插件接口的一部分，不搬。CLI 的配置、安装、命令列表、信任这些服务端逻辑在 `server/cli/`（原 `server/cli-*.ts`；API 模式的 `server/api-*.ts` 也搬进来，保留 `api-` 前缀）；项目的经验、教训、Skill、MCP、锁在 `server/projects/`（原 `server/project-*.ts`，`server/projects-analyze.ts` 开放给插件，留在顶层）。
+- CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载，CLI 自己的插件（Pi 的扩展包，装删更新跑 CLI 的命令）和插件市场、CLI 自己配置文件里的设置项、项目信任的标记文件检测（ADR 0050）（`server/detect.ts`、`server/models.ts`、`server/cli/packages.ts`、`server/cli/gallery.ts`、`server/cli/config-settings.ts`、`server/cli/trust-api.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`ui-design/server/design-mcp.ts`）。编排工具是一张注册表（`server/panel-tools/registry.ts` 的 `PANEL_TOOLS`）：每个工具一个条目 `{ name, aliases?, when, def?, hint?, call }`，「给不给」（`when`）、定义、用法说明里那一句、执行写在同一处，`orchTools`（清单，表的顺序就是清单顺序）、`orchHint`（`server/orch-hint.ts` 只排各身份的句式，条件和单个工具的措辞取 `toolHint` / `hasTool`）、`callOrchTool`（按名字和旧名字找条目，不看 `when`）都从表生成。加工具：在 `server/panel-tools/` 对应的文件（或已有的 `*-tool.ts`）写条目、按位置加进 `PANEL_TOOLS`、名字登记进 `shared/panel-tools.ts`；`server/panel-tools/registry.test.ts` 核对登记和重名。插件工具不进这张表：它们挂在各自的 MCP 服务上（工具名带插件的服务名），守卫和完成依据靠工具声明的 `effect`（插件接口 3，`server/plugins/effects.ts`）看见它们。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
-- 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训（存在项目文档目录的 `lessons/<id>.md`，一条一个文件，见 [features.md](features.md)、[ADR 0039](../../adr/0039-project-lessons-in-docs.md)、[ADR 0052](../../adr/0052-p4-shared-docs.md)）、P4 / SVN 各分支共用文档根（`server/doc-group.ts`）、导出、版本更新。
+- 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训（存在项目文档目录的 `lessons/<id>.md`，一条一个文件，见 [features.md](features.md)、[ADR 0039](../../adr/0039-project-lessons-in-docs.md)、[ADR 0052](../../adr/0052-p4-shared-docs.md)）、P4 / SVN 各分支共用文档根（`server/docs/group.ts`）、导出、版本更新。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见 [library.md](library.md)「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见 [network.md](network.md)「GitHub 出网与代理回退」。
 
@@ -116,8 +117,8 @@
 - `npm run test:unit`（`server/**/*.test.ts`，每个模块基本都有同名测试）
 - 动了定时计划：`server/schedules.test.ts`（到点启动一次、单次执行后不再触发、错过不补跑、立即执行不改排期、启动失败只记原因不重试、删除后不再触发、启动期间用户改排期不会被写回覆盖、同一分钟改名字不重置状态，时钟由测试注入）
 - `server/settings-migrate.test.ts`：旧默认值 16 迁移成 64 并写回、已删掉的 `childConcurrency` 被忽略；`server/settings-migrate-keep.test.ts`：显式设过的 32 和已经迁移过的设置里显式选的 `autoCompact: 0` 都保持不动、不写盘；`server/settings-defaults.test.ts`：新装/没存过这一项时自动压缩是 70%、旧默认值 0 迁成 70（50 保持）、迁移后选回 0 不再被改
-- 动了存储和落盘：`server/store.test.ts`（`writeJsonAtomic` 写成功后 `readJson` 能读回、覆盖写读到新内容、tmp 不残留；`readJson` 对不存在的文件报 `missing`；坏 JSON 被留档且调用方拿到「存在但坏了」和原路径、字节数，旁边有 `.broken.json` 说明；全 0 的空洞文件判成损坏并记下真实字节数）、`server/task-store.test.ts`（只有 `.messages.json` 时重建任务、记录全 0 时空洞文件留档后重建、对话文件全 0 时不重建不伪造且第二次启动不重复归档、对话内容不是消息数组时不重建只留档、已有记录不被重建覆盖）、`server/store-concurrency.test.ts`（集合的「读快照 → 改 → 写盘」整体串行）
-- 动了任务重启迁移：`server/task-restart.test.ts`（这一轮还在跑的任务落成已停止并标出被打断的节点；计划没做完、独立分支没合回的子对话重启后不再画成在跑；彻底做完的不动；待收尾的保留收尾请求）
+- 动了存储和落盘：`server/store.test.ts`（`writeJsonAtomic` 写成功后 `readJson` 能读回、覆盖写读到新内容、tmp 不残留；`readJson` 对不存在的文件报 `missing`；坏 JSON 被留档且调用方拿到「存在但坏了」和原路径、字节数，旁边有 `.broken.json` 说明；全 0 的空洞文件判成损坏并记下真实字节数）、`server/tasks/store.test.ts`（只有 `.messages.json` 时重建任务、记录全 0 时空洞文件留档后重建、对话文件全 0 时不重建不伪造且第二次启动不重复归档、对话内容不是消息数组时不重建只留档、已有记录不被重建覆盖）、`server/store-concurrency.test.ts`（集合的「读快照 → 改 → 写盘」整体串行）
+- 动了任务重启迁移：`server/tasks/restart.test.ts`（这一轮还在跑的任务落成已停止并标出被打断的节点；计划没做完、独立分支没合回的子对话重启后不再画成在跑；彻底做完的不动；待收尾的保留收尾请求）
 - 动了页面宽限回收 / presence：`server/reclaim.test.ts`（进程已回收、状态还写着 `running` 的等下一句任务被收口成 `stopped` + `stopReason: 'presence'`，`childSpinning` 转假、图标 `idle`；`working` 的真在跑任务不碰；已停下的不覆盖 `stopReason: 'user'`）
 - 动了任务执行、项目、设置等跨界面流程时跑 `npm run test:e2e`（Windows 上在 WSL 里）
 - 动了账号与登录：`server/accounts.test.ts`（`loginOutcome` 的各种结局、`loginFailure` 的文案分支、Command Code 的 `loginAlreadyLoggedIn`）、`shared/ansi.test.ts`（SGR 颜色、加粗 / 暗色开关、8 位 CSI、普通方括号文本不被改），以及 `npm run test:e2e` 里「已登录再登录」和「退 0 但没凭据」两条用例（模拟 CLI 用 `scripts/fake-cli/fake-cli.mjs` 的 `FAKE_AUTH_ALREADY` / `FAKE_AUTH_NO_CREDENTIALS`）

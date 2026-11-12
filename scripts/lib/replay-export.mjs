@@ -1,5 +1,5 @@
 /**
- * 面板导出的对话包（agent-panel/task，见 shared/task-export.ts）→ 假 CLI 回放用的 Claude Code stream-json 录像
+ * 面板导出的对话包（agent-panel/task，见 shared/tasks/export.ts）→ 假 CLI 回放用的 Claude Code stream-json 录像
  * （scripts/fake-cli/replay.mjs）。
  *
  * 导出包里存的是面板解析后的消息（正文、思考、工具调用），不是 CLI 原始输出；这里按 Claude Code 的输出形状

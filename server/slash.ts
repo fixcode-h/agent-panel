@@ -2,13 +2,13 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { CliSkill, SlashCommand } from '../shared/schema.ts'
-import { expandHome, listSkills } from './cli-extras.ts'
+import { expandHome, listSkills } from './cli/extras.ts'
 import { getCli } from '../shared/clis.ts'
 import { builtinPrompt, fillCommand } from '../shared/commands.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
 import type { TrustChoice } from '../shared/cli-trust.ts'
-import { queryCliCommands } from './cli-commands.ts'
+import { queryCliCommands } from './cli/commands.ts'
 import { pluginCommands } from './plugins/contrib.ts'
 
 /**
@@ -22,7 +22,7 @@ interface Found extends SlashCommand {
   path: string
   /** 「所有 Agent」共用的命令（数据目录的 commands/，md 格式） */
   panel?: boolean
-  /** 只有 CLI 自己能执行的命令（插件命令，见 server/cli-commands.ts）：原样交给它 */
+  /** 只有 CLI 自己能执行的命令（插件命令，见 server/cli/commands.ts）：原样交给它 */
   native?: boolean
 }
 

@@ -8,7 +8,7 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, ser
 
 - 规则：给 schema 加字段时想清楚旧数据读进来是什么默认值，必要时按「新字段出现之前的数据当作已经……」处理，并加读旧数据的测试。迁移要幂等。
 - 起因：840b871，加 `turnSeenAt` 后升级用户的旧会话全部亮成未读。
-- 防线：`server/task-store.test.ts` 这类读旧数据的用例。
+- 防线：`server/tasks/store.test.ts` 这类读旧数据的用例。
 
 ## 持久化设置项的默认值变更要迁移旧默认值
 

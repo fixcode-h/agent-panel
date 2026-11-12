@@ -3,7 +3,7 @@
  *
  * 跑的是 shared/api-contract/probe.ts 那一份探查，演示后端在 web/src/lib/demo-contract.test.ts 里跑同一份：
  * 设置、分类、标签、角色、工作流、项目分类、项目、定时计划、任务列表。哪边少了字段，报错里直接写出是哪个接口。
- * 子对话栏和任务详情由 server/task-api-contract.test.ts 在单测里查（这里没有子对话）。
+ * 子对话栏和任务详情由 server/tasks/api-contract.test.ts 在单测里查（这里没有子对话）。
  */
 import assert from 'node:assert/strict'
 

@@ -1,10 +1,10 @@
 # 诊断报告「修复」一步把改过的文件整个画成新增
 
-- 状态：已修复（`shared/bug-fix.test.ts`、`server/exec/bug-source.test.ts` 回归）
+- 状态：已修复（`shared/bug/fix.test.ts`、`server/exec/bug-source.test.ts` 回归）
 - 症状：Bug 诊断报告走到「修复」，改动的代码里 C++、Lua 文件从第 1 行到最后一行全是绿色新增，看不出到底改了哪几行
-- 入口：交 `phase: fix` 时 `shared/bug-diagnosis.ts` 调 `fixFilesOf`（`shared/bug-fix.ts`），每个文件的 diff 由 `server/exec/bug-source.ts` 的 `diff` 取
+- 入口：交 `phase: fix` 时 `shared/bug/diagnosis.ts` 调 `fixFilesOf`（`shared/bug/fix.ts`），每个文件的 diff 由 `server/exec/bug-source.ts` 的 `diff` 取
 - 根因类型：取不到基线时退回「和空文件比」
-- 模块：`shared`（`shared/bug-fix.ts`），配套 `server/exec/bug-source.ts`
+- 模块：`shared`（`shared/bug/fix.ts`），配套 `server/exec/bug-source.ts`
 - 关键词：修复、fixFiles、diff、整个文件新增、P4、Perforce、SVN、不是 git、git diff --no-index、/dev/null
 
 ## 根因

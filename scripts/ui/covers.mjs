@@ -44,7 +44,7 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/RunningNow.tsx',
     // 子对话行的「计划这一步 · 最后一次工具调用」（分析稿 U5）
     'web/src/components/tasks/child-line.ts',
-    'shared/child-doing.ts',
+    'shared/children/doing.ts',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
     // 输入框下的「测试记录」（dev 的「任务-测试记录」断言它）
@@ -115,8 +115,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/DiagnosisStages.tsx',
     'web/src/components/tasks/DiagnosisCard.tsx',
     'web/src/components/tasks/ReviewDialog.tsx',
-    'shared/bug-fix-md.ts',
-    'shared/bug-md.ts',
+    'shared/bug/fix-md.ts',
+    'shared/bug/md.ts',
     'web/src/lib/diff-html.ts',
     'web/src/components/ui/UnifiedDiff.tsx',
   ],
@@ -126,9 +126,9 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/ReviewDialog.tsx',
     'web/src/components/tasks/BugReportCard.tsx',
     'web/src/components/ui/checkbox.tsx',
-    'shared/bug-recheck.ts',
-    'shared/bug-auto.ts',
-    'shared/bug-diagnosis-card.ts',
+    'shared/bug/recheck.ts',
+    'shared/bug/auto.ts',
+    'shared/bug/diagnosis-card.ts',
   ],
   // 诊断报告「等你复现」的取证：放到工作区 / 还原、面板自己取日志、自动采集的环境
   '02g-bug-evidence': [
@@ -136,9 +136,9 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/DiagnosisDialog.tsx',
     'web/src/components/tasks/ReviewDialog.tsx',
     'web/src/lib/demo-evidence.ts',
-    'shared/bug-env.ts',
-    'shared/bug-patch.ts',
-    'shared/bug-log-watch.ts',
+    'shared/bug/env.ts',
+    'shared/bug/patch.ts',
+    'shared/bug/log-watch.ts',
   ],
   // 对话里「学到经验」的卡片（演示数据在 demo-experience.ts）
   '02e-learned': [
@@ -212,8 +212,8 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/OverviewPage.tsx',
     'web/src/components/overview/',
     'shared/overview.ts',
-    'shared/bug-overview.ts',
-    'shared/bug-stats.ts',
+    'shared/bug/overview.ts',
+    'shared/bug/stats.ts',
     // 流程视图的精简行和汇总
     'shared/agent-stats.ts',
     'shared/agent-flow-briefs.ts',
@@ -237,14 +237,6 @@ export const UI_SHARD_COVERS = {
   ],
   // 弹窗调整大小：只登记专门承载这套逻辑的两个文件；modal.tsx / dialog.tsx 是所有页面都用的
   // 公共外壳，不登记在这里（changed-tests 映射不到会提示跑全量界面检查，宁可多跑）
-  '14-tables': [
-    'web/src/pages/TablesPage.tsx',
-    'web/src/components/tables/',
-    'web/src/components/projects/ProjectTablesSection.tsx',
-    'web/src/lib/tables-api.ts',
-    'web/src/lib/tables-nav.ts',
-    'web/src/lib/demo-tables.ts',
-  ],
   '12-modal-resize': ['web/src/lib/modal-size.ts', 'web/src/components/ui/modal-resize.tsx'],
 }
 

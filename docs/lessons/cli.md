@@ -1,5 +1,5 @@
 ---
-paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, shared/accounts.ts, shared/model-catalog*, shared/model-limits.ts, server/models.ts, server/accounts.ts, server/api-*.ts, server/cli-*.ts, server/install.ts, docs/cli-config.md, docs/model-catalog.md, web/src/lib/cli-*.ts, web/src/components/settings/**
+paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, shared/accounts.ts, shared/model-catalog*, shared/model-limits.ts, server/models.ts, server/accounts.ts, server/cli/**, server/install.ts, docs/cli-config.md, docs/model-catalog.md, web/src/lib/cli-*.ts, web/src/components/settings/**
 ---
 
 # CLI 定义、模型和思考强度
@@ -22,13 +22,13 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 
 - 规则：写 models.json / providers.json 这类文件，按模型目录原样写强度、上下文、是否支持思考，不按面板的档位过滤；写完用 CLI 自己的列表命令核对能选几档。先读 CLI 文档里模型条目和设置的全部字段，别只补报错的那一个。
 - 起因：Pi 的 models.json 没写 `reasoning: true`，下拉只剩一档（deacb24）；Command Code 写回 `reasoningEfforts` 被档位过滤掉几档（bc33580）；Pi 没写 `thinkingLevelMap`，xhigh 被当成不支持。
-- 防线：`server/api-config.test.ts`。
+- 防线：`server/cli/api-config.test.ts`。
 
 ## 按模型查能力统一走 apiModelInfo
 
 - 规则：按模型查强度、上下文的地方都用 `apiModelInfo`（先换成 API 映射到的模型、带上 API 的协议），按模型记的表用 `apiModelKey` 去掉 provider 前缀再查。
 - 起因：bda5817 映射后强度算错；执行前夹强度、设置页下拉没带协议，带前缀的模型查不到映射。
-- 防线：`server/api-protocol.test.ts`。
+- 防线：`server/cli/api-protocol.test.ts`。
 
 ## 账号模式要把 API 模型映射为账号模型
 
@@ -41,4 +41,4 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 
 - 规则：解析出的模型为空时不能原样传给 CLI（不带 `--model` 会退回 CLI 内置默认，第三方网关不认）；API 模式下空模型取 API 的第一个，和界面标「默认」的同一个。界面显示的默认和执行时的默认必须是同一处算出来的。
 - 起因：模型设计对话 `model: ''`，启动不带 `--model`，Claude Code 用 claude-opus-5-5 打到 deepseek 网关报错（见 `docs/modules/shared/bugs/api-empty-model-no-model-flag.md`）。
-- 防线：`server/api-config.test.ts`。
+- 防线：`server/cli/api-config.test.ts`。

@@ -10,7 +10,7 @@ import { isMainStep, mainStep, stepTree, topSteps } from '@shared/flow'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { t } from '@shared/i18n'
 import { stepMs, taskDuration, turnStats, waitDuration } from '@shared/task'
-import { cacheHitRate } from '@shared/task-export'
+import { cacheHitRate } from '@shared/tasks/export'
 
 /**
  * 任务进度：工作流按主流程节点列出状态、耗时和用量，对话按待办清单和轮次列出。

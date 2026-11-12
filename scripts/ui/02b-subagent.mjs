@@ -955,8 +955,8 @@ await runShard(import.meta.filename, async (api) => {
           { file: 'web/src/cart/store.test.ts', what: '删最后一件后断言角标归零', isNew: true },
         ],
       }
-      kid.bug = true
-      kid.diagnoses = [
+      kid.bug = { kind: 'report' }
+      kid.bug.diagnoses = [
         {
           ...base,
           version: 1,

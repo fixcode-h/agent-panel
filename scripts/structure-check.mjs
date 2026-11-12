@@ -94,7 +94,7 @@ export function measure(root) {
     const codeLines = code.split('\n')
 
     if (f === 'shared/schema.ts') m.taskFields = membersAfter(codeLines, /^export const TaskData = z\.object\(\{/)
-    if (f === 'shared/engine-host.ts')
+    if (f === 'shared/engine/host.ts')
       for (const name of ['Orchestra', 'EngineHost'])
         m.hostMembers[name] = membersAfter(codeLines, new RegExp(`^export interface ${name}\\b`))
     // 从两个大接口按能力拆出来的小接口（重构文档第 5 条）：每个都记成员数，同样只许变少

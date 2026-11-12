@@ -18,9 +18,9 @@ import {
   type ChildActivity,
   type ChildEntry,
 } from '@shared/task'
-import type { ChildRequest } from '@shared/child-needs'
-import { childWord } from '@shared/task-word'
-import type { LastTool } from '@shared/child-doing'
+import type { ChildRequest } from '@shared/children/needs'
+import { childWord } from '@shared/tasks/word'
+import type { LastTool } from '@shared/children/doing'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -34,7 +34,7 @@ export interface ChildSummary extends ChildEntry {
   activity?: ChildActivity
   /** 第一条待确认的请求：父对话页直接写出确认什么、给「允许 / 拒绝」（见 ChildRequestBar） */
   request?: ChildRequest
-  /** 最后一次工具调用（shared/child-doing.ts）：行上写「计划这一步 · 改 store.ts」（分析稿 U5） */
+  /** 最后一次工具调用（shared/children/doing.ts）：行上写「计划这一步 · 改 store.ts」（分析稿 U5） */
   lastTool?: LastTool
   /** Bug 走到五步里的第几步（0–4，5 是都走完了）：行上画五个小点（分析稿 U8） */
   bugStep?: number
@@ -160,7 +160,7 @@ export function childLabels(c: ChildSummary): ChildLabel[] {
   if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
   // 等你处理的短词（等你回答 / 等你确认 / 阶段待确认 / 等你操作 / 子对话等你处理）和标题栏、侧栏、
-  // 子对话自己页面的输入框占位同一处取（shared/task-word.ts，分析稿 A8、U2）：以前这里写「等用户选择」，
+  // 子对话自己页面的输入框占位同一处取（shared/tasks/word.ts，分析稿 A8、U2）：以前这里写「等用户选择」，
   // 侧栏写「等你回复」，同一件事两种说法
   if (icon === 'waiting') out.push({ text: childWord(c).word, tone: 'warning' })
   // 用户报的 Bug（ADR 0046）：查到哪个阶段了；等你确认报告时下面写「报告待确认」，这里只说是 Bug

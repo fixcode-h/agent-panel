@@ -273,7 +273,7 @@
 
 用户 2026-11-03 确认：适用场景表照用；「Bug 修复」工作流直接去掉；不在这个范围里的工作流删掉，现有工作流不合理的一并调整；其余按本文建议。
 
-- **第 1 期**：`start_workflow` / `stop_workflow`（父对话，角色要同时能分派、开了 canPlan）；工作流子对话记 `Task.flow`（`shared/task-flow-schema.ts`）；这一轮跑流程图的哪一段、进度、交给执行角色的话、可用工作流目录和判定规则都在 `flow-child.ts`，跑流程图那一段在 `flow-child-run.ts`（两者后来被工作流运行取代，见 `shared/flow-run.ts` 和 [workflow-runs 设计](../openspec/changes/workflow-runs/design.md)）。子对话去掉 `start_plan`，执行角色去掉 `mode` 参数。「Bug 修复」进 `RETIRED_WORKFLOWS`（没改过的副本删掉、项目引用改指「通用项目」，改过的留着）；九个内置工作流补上 `when` / `notFor` / `kind`，「通用项目」的「适用」改成正式功能开发。工作流指纹只在填了这三项时才算进去，加字段之前记下的指纹照样对得上。
+- **第 1 期**：`start_workflow` / `stop_workflow`（父对话，角色要同时能分派、开了 canPlan）；工作流子对话记 `Task.flow`（`shared/tasks/flow-schema.ts`）；这一轮跑流程图的哪一段、进度、交给执行角色的话、可用工作流目录和判定规则都在 `flow-child.ts`，跑流程图那一段在 `flow-child-run.ts`（两者后来被工作流运行取代，见 `shared/flow-run.ts` 和 [workflow-runs 设计](../openspec/changes/workflow-runs/design.md)）。子对话去掉 `start_plan`，执行角色去掉 `mode` 参数。「Bug 修复」进 `RETIRED_WORKFLOWS`（没改过的副本删掉、项目引用改指「通用项目」，改过的留着）；九个内置工作流补上 `when` / `notFor` / `kind`，「通用项目」的「适用」改成正式功能开发。工作流指纹只在填了这三项时才算进去，加字段之前记下的指纹照样对得上。
 - **第 2 期**：运行页（子对话里就地打开的 `RunView`、父对话的 `RunPanel`）加「输出 / 流程图」切换，`TaskFlow` 按运行号画、第 2 次起的运行按节点 id 对回；子对话栏标出工作流子对话，列表标签写「工作流 · 名字 n/m」；右栏打开还在跑流程图的工作流子对话时直接看流程图。
 - **第 3 期**：工作流页「在项目里运行」「重新运行」改成新建父对话、第一条消息点名工作流（带 id），父对话按判定规则第 1 条用 `start_workflow` 启动；不在项目可选列表里的工作流按 id 也认。去掉 `NextWorkflows`。
 - **输入框引入工作流**（用户 2026-11-03 要求）：输入框「+」里的「引入工作流」，新建对话和对话中的父对话都有，只在项目里、角色能启动工作流时出现，子对话没有。选好的工作流和图片一样插成输入框里的一张行内卡片（`[工作流:名字]`），发送时卡片换成点名它的那句（当时 `flow-child.ts`、现在 `shared/flow-run.ts` 的 `withWorkflow`，和「在项目里运行」同一句），由父对话照判定规则第 1 条启动；对话里那条消息把这句画回工作流卡片，对话标题取后面用户写的要求。新建对话不再建老的 `mode: 'workflow'` 任务。

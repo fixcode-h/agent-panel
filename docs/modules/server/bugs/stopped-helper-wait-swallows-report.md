@@ -1,6 +1,6 @@
 # 终止子任务后计划那一步一直「等待中」，子对话停下、交给父对话的汇报被吞
 
-- 状态：已修复（`server/engine-steps.test.ts`「有中断没做完的子任务」、`shared/task-idle-ask.test.ts`「子对话计划没做完时先不报父对话」通过）
+- 状态：已修复（`server/engine-steps.test.ts`「有中断没做完的子任务」、`shared/tasks/idle-ask.test.ts`「子对话计划没做完时先不报父对话」通过）
 - 症状：子对话改完一处、用 message_parent 请父对话编译后结束这一轮，计划才做到一半就停住；父对话一直没收到这封汇报、也不编译，两边互等到用户第二天去父对话里问「编译还是报错」（同一个子对话连着出现两次）
 - 入口：`shared/engine.ts` 的 `stopHelpers`、`helperBatch`；`server/tasks/children.ts` 的 `reportChild`；`shared/task.ts` 的 `planStalled`、`childSelfDrives`
 - 根因类型：终止被打断的子任务时没收口计划里等它的等待项；「计划没做完不报父对话」只看计划没做完，没看面板是不是真的会推它

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_FILE_FORMAT, ProjectInput, Workflow } from '@shared/schema'
-import type { ProjectProposal } from '@shared/project-init'
+import type { ProjectProposal } from '@shared/projects/init'
 import { buildGroups } from './ProjectInitPanel'
 
 const wf = Workflow.parse({

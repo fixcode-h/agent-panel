@@ -6,7 +6,7 @@
 import type { FlowBrief } from './agent-stats.ts'
 import { isChatMode } from './conv-mode.ts'
 import type { Task } from './schema.ts'
-import { reworkCounts } from './task-export.ts'
+import { reworkCounts } from './tasks/export.ts'
 import { taskDeleted, waitDuration } from './task.ts'
 
 /** 往上找到顶层对话，以及它名下的那一层：对话页只能在顶层对话的右栏里打开它的直接子对话 */
@@ -40,7 +40,7 @@ export function flowBrief(tk: Task, byId: Map<string, Task> = new Map(), now = D
     agentId: tk.agentId ?? '',
     createdAt: tk.createdAt,
     updatedAt: tk.updatedAt,
-    bug: !!tk.bug,
+    bug: tk.bug?.kind === 'report',
     drives: tk.driveCount?.total ?? 0,
     turns: tk.turns?.length ?? 0,
     ends,

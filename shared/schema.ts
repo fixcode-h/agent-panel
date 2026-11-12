@@ -1,4 +1,3 @@
-import { TablesConfig } from './tables.ts'
 import { LearnedNote } from './experience.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
@@ -6,20 +5,20 @@ import { FirstTokenStats } from './first-token-stats.ts'
 import { t } from './i18n.ts'
 import { ProjectCliTrust } from './cli-trust.ts'
 import { EndTurnRecord } from './turn-end.ts'
-import { ConvBudget, TaskRuntimeFields } from './task-runtime-schema.ts'
+import { ConvBudget, TaskRuntimeFields } from './tasks/runtime-schema.ts'
 import { RolePlugins } from './role-plugins.ts'
-import { ModelOverride } from './task-run.ts'
+import { ModelOverride } from './tasks/run.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
-import type { ProjectProposal } from './project-init.ts'
-import { AskQuestion, TaskRequest } from './task-request.ts'
+import type { ProjectProposal } from './projects/init.ts'
+import { AskQuestion, TaskRequest } from './tasks/request.ts'
 import { UserAction } from './user-action.ts'
-import { FlowRun, WorkflowKind } from './task-flow-schema.ts'
+import { FlowRun, WorkflowKind } from './tasks/flow-schema.ts'
 import { StopReason } from './stop-reason.ts'
-import { BugCase, Diagnosis, FixBrief } from './bug-diagnosis-schema.ts'
+import { TaskBug } from './bug/task-bug.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
-import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan-schema.ts'
+import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan/schema.ts'
 import { FileFormat } from './settings-schema.ts'
 
 /** 全局设置（含文件格式、外观、CLI 设置）拆在 settings-schema.ts，进程面板的结构拆在 process-schema.ts：从这里原样转出，引用处不用改 */
@@ -903,7 +902,7 @@ const ProjectFields = z.object({
    */
   scaledVerify: z.boolean().default(true),
   /**
-   * 项目教训：新数据存在项目文档目录的 lessons.md（见 server/project-lessons.ts），这里只保留旧项目的数据，
+   * 项目教训：新数据存在项目文档目录的 lessons.md（见 server/projects/lessons.ts），这里只保留旧项目的数据，
    * 读取时和文件合并、写入后清空。旧项目没有时是空数组
    */
   lessons: z.array(ProjectLesson).max(200).default([]),
@@ -942,8 +941,11 @@ const ProjectFields = z.object({
    * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）
    */
   cherryPick: z.string().trim().max(500).optional(),
-  /** 表格管理：表格目录等（shared/tables.ts）；没设时没有表格页入口 */
-  tables: TablesConfig.optional(),
+  /**
+   * 插件按项目存的设置（插件接口 6，WebPlugin.projectSections）：键是插件 id，内容由插件自己定、自己校验，
+   * 跟项目设置一起保存；面板不认识里面的东西，插件删了也原样留着，重装后接着用
+   */
+  plugins: z.record(z.string(), z.unknown()).optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
@@ -1096,7 +1098,7 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
-  /** 父对话的「子对话也提问」：之后新建子对话默认开不开提问（见 shared/child-ask.ts）；只在创建时用，不传按设置 */
+  /** 父对话的「子对话也提问」：之后新建子对话默认开不开提问（见 shared/children/ask.ts）；只在创建时用，不传按设置 */
   childAskUser: z.boolean().optional(),
   from: z.string().optional(), // 别的对话替它建的（task.create）：发件对话 id，第一条记成 peer（ADR 0041）
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
@@ -1362,14 +1364,14 @@ export const OutsideChange = z.object({ path: z.string() })
 export type OutsideChange = z.infer<typeof OutsideChange>
 
 /**
- * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn-changes.ts）：
+ * 一轮对话改了哪些文件（总结下面的「已更改 N 个文件」，见 server/turn/changes.ts）：
  * spans 是 git 快照树的起止（中间被子对话合并隔开时有几段），撤销时只撤这几段自己的改动。
  * revertedAt 是撤销的时间：撤过的卡片只显示「已撤销」，不能再撤
  */
 export const TurnChanges = z.object({
   spans: z.array(z.object({ from: z.string(), to: z.string() })),
   files: z.array(FileChange),
-  /** 剔除掉的同目录别的对话改的文件（server/turn-owners.ts）：卡片上说明一句，免得用户以为漏记了 */
+  /** 剔除掉的同目录别的对话改的文件（server/turn/owners.ts）：卡片上说明一句，免得用户以为漏记了 */
   others: z.array(z.string()).optional(),
   revertedAt: z.string().optional(),
 })
@@ -1958,7 +1960,7 @@ export const TaskData = z.object({
   /** 父对话派单时说了要改代码（create_conversation 的 edits）：第一次执行前就开好独立分支，不中途换目录重开 */
   editFirst: z.boolean().optional(),
   /**
-   * 排在哪些兄弟子对话之后（create_conversation 的 after，见 shared/child-after.ts）：建好后停在 stopReason 'after'，
+   * 排在哪些兄弟子对话之后（create_conversation 的 after，见 shared/children/after.ts）：建好后停在 stopReason 'after'，
    * 这些子对话都合回或完成后面板自动启动它，启动时清掉
    */
   waitAfter: z.array(z.string()).optional(),
@@ -2132,18 +2134,9 @@ export const TaskData = z.object({
   remotePushAt: z.string().optional(),
   runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
   flowRun: FlowRun.optional(), // 工作流运行（不是子对话）：属于哪个父对话、阶段、决定记录，见 task-flow-schema.ts
-  bug: z.boolean().optional(), // 父对话派来的 Bug（ADR 0045）：修之前交诊断报告 diagnoses，用户确认方案才能改
-  diagnoses: z.array(Diagnosis).optional(),
-  /**
-   * 加临时日志之前各文件的快照（文件相对路径 → 内容哈希，内容存在对话目录的 log-base/ 下；不存在的文件记空串）。
-   * 用户同意加日志时拍，只用来在取消修复后核对日志删干净了没有（shared/bug-cleanup.ts），不拿来还原
-   */
-  logBase: z.record(z.string(), z.string()).optional(),
+  /** 用户报的 Bug 的全部数据（要交诊断报告还是直接修、诊断报告各版、档案、简报…），见 shared/bug/task-bug.ts；普通对话没有 */
+  bug: TaskBug.optional(),
   userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts
-  bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
-  bugFix: z.boolean().optional(), // 直接修的用户 Bug（kind: "fix"，分析稿 B2）：收尾时留简版报告 fixBrief，不交诊断报告
-  fixBrief: FixBrief.optional(), // 直接修的 Bug 的简版报告（根因一句、改了什么、怎么验证的）：只读，见 shared/bug-fix-brief.ts
-  bugMethodPending: z.boolean().optional(), // 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({

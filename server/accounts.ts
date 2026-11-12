@@ -46,11 +46,11 @@ import { invalidateClis } from './detect.ts'
 import { invalidateModels, pickPiBuiltin, piBuiltinModels } from './models.ts'
 import { log } from './log.ts'
 import { getSettings, saveSettings } from './settings.ts'
-import { detectApis } from './api-detect.ts'
+import { detectApis } from './cli/api-detect.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { parseToml } from './mcp-store.ts'
 import { dataPath, writeJsonAtomic, readJson } from './store.ts'
-import { writeCliConfigJson, writeCliConfigText } from './cli-config-write.ts'
+import { writeCliConfigJson, writeCliConfigText } from './cli/config-write.ts'
 
 /**
  * CLI 的账号：登录最终就是在 CLI 的配置目录里写下凭据文件，所以

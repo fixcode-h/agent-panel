@@ -3,33 +3,50 @@ import * as serverAttachments from '../attachments.ts'
 import * as serverAuth from '../auth.ts'
 import * as serverBridge from '../bridge.ts'
 import * as serverComfy from '../comfy.ts'
+import * as serverDownload from '../download.ts'
+import * as serverExecGit from '../exec/git.ts'
 import * as serverExecInvoke from '../exec/invoke.ts'
 import * as serverExecProcess from '../exec/process.ts'
 import * as serverExecRetryPolicy from '../exec/retry-policy.ts'
+import * as serverExecVcsRun from '../exec/vcs-run.ts'
+import * as serverFs from '../fs.ts'
 import * as serverImage from '../image.ts'
 import * as serverLog from '../log.ts'
+import * as serverMergeBuild from '../merge-build.ts'
+import * as serverOpen from '../open.ts'
+import * as serverP4Split from '../p4-split.ts'
 import * as serverPluginsMcp from './mcp.ts'
+import * as serverProjectsAnalyze from '../projects-analyze.ts'
 import * as serverSettings from '../settings.ts'
+import * as serverShells from '../shells.ts'
 import * as serverSlash from '../slash.ts'
 import * as serverStore from '../store.ts'
 import * as serverStyles from '../styles.ts'
+import * as serverTaskFiles from '../task-files.ts'
 import * as serverUploads from '../uploads.ts'
+import * as serverXlsx from '../xlsx.ts'
 import * as serverZip from '../zip.ts'
 import * as sharedAssist from '../../shared/assist.ts'
 import * as sharedBrowserExt from '../../shared/browser-ext.ts'
 import * as sharedCliSpec from '../../shared/cli-spec.ts'
 import * as sharedClis from '../../shared/clis.ts'
+import * as sharedComposer from '../../shared/composer.ts'
+import * as sharedCsv from '../../shared/csv.ts'
 import * as sharedDuration from '../../shared/duration.ts'
+import * as sharedFiles from '../../shared/files.ts'
 import * as sharedFix from '../../shared/fix.ts'
 import * as sharedI18n from '../../shared/i18n.ts'
 import * as sharedLocalImage from '../../shared/local-image.ts'
 import * as sharedLocalPrompts from '../../shared/local-prompts.ts'
 import * as sharedMoss from '../../shared/moss.ts'
+import * as sharedPinyin from '../../shared/pinyin.ts'
 import * as sharedPromptLang from '../../shared/prompt-lang.ts'
 import * as sharedRaster from '../../shared/raster.ts'
 import * as sharedRestoreThresholds from '../../shared/restore/thresholds.ts'
 import * as sharedSchema from '../../shared/schema.ts'
 import * as sharedSettings from '../../shared/settings.ts'
+import * as sharedSheetDiff from '../../shared/sheet-diff.ts'
+import * as sharedSheetHeader from '../../shared/sheet-header.ts'
 import * as sharedStyleTypes from '../../shared/style-types.ts'
 import * as sharedStyles from '../../shared/styles.ts'
 import * as sharedTask from '../../shared/task.ts'
@@ -48,33 +65,50 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/auth': serverAuth,
   'server/bridge': serverBridge,
   'server/comfy': serverComfy,
+  'server/download': serverDownload,
+  'server/exec/git': serverExecGit,
   'server/exec/invoke': serverExecInvoke,
   'server/exec/process': serverExecProcess,
   'server/exec/retry-policy': serverExecRetryPolicy,
+  'server/exec/vcs-run': serverExecVcsRun,
+  'server/fs': serverFs,
   'server/image': serverImage,
   'server/log': serverLog,
+  'server/merge-build': serverMergeBuild,
+  'server/open': serverOpen,
+  'server/p4-split': serverP4Split,
   'server/plugins/mcp': serverPluginsMcp,
+  'server/projects-analyze': serverProjectsAnalyze,
   'server/settings': serverSettings,
+  'server/shells': serverShells,
   'server/slash': serverSlash,
   'server/store': serverStore,
   'server/styles': serverStyles,
+  'server/task-files': serverTaskFiles,
   'server/uploads': serverUploads,
+  'server/xlsx': serverXlsx,
   'server/zip': serverZip,
   'shared/assist': sharedAssist,
   'shared/browser-ext': sharedBrowserExt,
   'shared/cli-spec': sharedCliSpec,
   'shared/clis': sharedClis,
+  'shared/composer': sharedComposer,
+  'shared/csv': sharedCsv,
   'shared/duration': sharedDuration,
+  'shared/files': sharedFiles,
   'shared/fix': sharedFix,
   'shared/i18n': sharedI18n,
   'shared/local-image': sharedLocalImage,
   'shared/local-prompts': sharedLocalPrompts,
   'shared/moss': sharedMoss,
+  'shared/pinyin': sharedPinyin,
   'shared/prompt-lang': sharedPromptLang,
   'shared/raster': sharedRaster,
   'shared/restore/thresholds': sharedRestoreThresholds,
   'shared/schema': sharedSchema,
   'shared/settings': sharedSettings,
+  'shared/sheet-diff': sharedSheetDiff,
+  'shared/sheet-header': sharedSheetHeader,
   'shared/style-types': sharedStyleTypes,
   'shared/styles': sharedStyles,
   'shared/task': sharedTask,

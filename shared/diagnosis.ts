@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
-import { BugAttribution, BugHop, BugTimelineItem } from './bug-diagnosis-schema.ts'
+import { BugAttribution, BugHop, BugTimelineItem } from './bug/diagnosis-schema.ts'
 
 /**
  * 排查类分析（AI 排查、报错交给 AI）的结构化结论：回复末尾的 diagnosis 代码块（JSON），

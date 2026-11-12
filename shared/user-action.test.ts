@@ -39,7 +39,7 @@ test('登记：缺标题、步骤、退路时拒绝并说清缺哪项；Bug 对�
   assert.equal(miss.ok, false)
   assert.match(miss.info, /collect\.steps/)
   assert.match(miss.info, /fallback/)
-  const bug = requestAction({ bug: true }, input, 'a1', T0)
+  const bug = requestAction({ bug: { kind: 'report' } }, input, 'a1', T0)
   assert.equal(bug.ok, false)
   assert.match(bug.info, /submit_diagnosis/)
 })

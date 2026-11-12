@@ -3,19 +3,19 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { TaskPatch, Task, RequestAnswer, defaultAgent } from '../../shared/schema.ts'
 import { childHoldText, diagnosisPending, trackWait } from '../../shared/task.ts'
-import { helpersWorking } from '../../shared/task-helpers.ts'
-import { withTaskModel } from '../../shared/task-run.ts'
-import { settleStopped } from '../../shared/task-settle.ts'
+import { helpersWorking } from '../../shared/tasks/helpers.ts'
+import { withTaskModel } from '../../shared/tasks/run.ts'
+import { settleStopped } from '../../shared/tasks/settle.ts'
 import { subtreeTaskIds } from '../../shared/run-usage.ts'
 import { agentRun } from '../../shared/settings.ts'
-import { childAskEffect } from '../../shared/child-ask.ts'
+import { childAskEffect } from '../../shared/children/ask.ts'
 import { getSettings } from '../settings.ts'
 import { gitNumstat, gitRevertFile, undoSpans } from '../exec/git.ts'
 import { createWorktree } from '../exec/worktree.ts'
 import { answerRequest, dropRequests } from '../exec/requests.ts'
 import { cancelWait, forgetNotes } from '../exec/steering.ts'
 import { convChanges } from '../../shared/conv-changes.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import { cancelUserActions } from './user-actions.ts'
 import { log } from '../log.ts'
 import { settleBefore } from './helpers.ts'
@@ -260,7 +260,7 @@ export function registerActionRoutes(s: TasksScope) {
     }
     const task = cur
     const { childRun, applyChildAsk, ...rest } = p.data
-    // 「提问」联动（见 shared/child-ask.ts）：按钮关父对话时已有子对话一起关，右键菜单改的是「之后新建」的默认值，
+    // 「提问」联动（见 shared/children/ask.ts）：按钮关父对话时已有子对话一起关，右键菜单改的是「之后新建」的默认值，
     // 勾上时再按用户选的「应用到已创建」决定已有的要不要一起开。先算出结论，下面一起应用
     const askEffect = childAskEffect({
       askUser: p.data.askUser,

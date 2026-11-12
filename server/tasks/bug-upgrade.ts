@@ -1,5 +1,5 @@
-import { BugCase, type BugLevel } from '../../shared/bug-diagnosis-schema.ts'
-import { taskLog } from '../task-log.ts'
+import { BugCase, type BugLevel } from '../../shared/bug/diagnosis-schema.ts'
+import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 
 /** 交给子对话的话前面加的说明：它从这一条开始按完整流程走，之前改过的文件要在报告里交代 */
@@ -8,8 +8,8 @@ export const BUG_UPGRADE_HEAD =
 
 /**
  * 父对话 send_to_conversation 写了 kind: "bug"：把已有子对话标成用户报的 Bug（用户 2026-11-07 要的）。
- * 和用户在子对话里发 /bug 一样（server/tasks/conversation-routes.ts）：标上 Task.bug 它才有 submit_diagnosis、
- * 改文件前要过诊断关卡；续接的会话里没有完整流程，记 bugMethodPending 让下一轮补带一次（server/exec/bug-prompt.ts）。
+ * 和用户在子对话里发 /bug 一样（server/tasks/conversation-routes.ts）：标上 task.bug（kind: report）它才有 submit_diagnosis、
+ * 改文件前要过诊断关卡；续接的会话里没有完整流程，记 task.bug.methodPending 让下一轮补带一次（server/exec/bug-prompt.ts）。
  * 正在回复的这一轮换不了工具，先拒绝；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）。
  * 返回要交给子对话的话（已经是 Bug 的原样交）
  */
@@ -23,15 +23,20 @@ export async function upgradeChildToBug(
   const live = sc.live.get(id)
   const child = live?.task ?? (await sc.store.get(id))
   if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
-  if (child.bug) return { ok: true, message, note: '它已经在按用户报的 Bug 流程处理，这条按普通消息交给它。' }
+  if (child.bug?.kind === 'report')
+    return { ok: true, message, note: '它已经在按用户报的 Bug 流程处理，这条按普通消息交给它。' }
   if (child.working)
     return {
       ok: false,
       info: `子对话「${child.title}」正在回复，这一轮里换不了工具，没有升级：等它这一轮结束（做完会汇报给你）再用 kind: "bug" 交一次，或者请用户先停止它。`,
     }
-  child.bug = true
-  child.bugMethodPending = true
-  if (level && !child.bugCase) child.bugCase = BugCase.parse({ level, levelNote: '父对话初判' })
+  // 原来是直接修（kind: "fix"）的也改成要交报告的：升级后走完整流程，不再要简版报告
+  child.bug = {
+    ...child.bug,
+    kind: 'report',
+    methodPending: true,
+    ...(level && !child.bug?.case && { case: BugCase.parse({ level, levelNote: '父对话初判' }) }),
+  }
   await sc.store.update(id, child)
   taskLog(id, '升级为用户报的 Bug', { by: 'parent', level: level ?? '' })
   return {

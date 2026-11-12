@@ -119,19 +119,89 @@ test('0003：.messages.json 转成 JSONL，原文件挪进备份；读不懂的�
   assert.ok(existsSync(path.join(dir, 'bad.messages.json')), '读不懂的不动')
 })
 
+test('0004：平铺的 Bug 字段收进 task.bug；直接修的记成 fix；不是 Bug 的残留空字段丢掉；已经是新格式的不碰', async () => {
+  const d = freshDir()
+  const dir = path.join(d, 'tasks', 'chats')
+  const diag = { version: 1, phase: 'cause', status: 'pending' }
+  write(
+    path.join(dir, 'r.json'),
+    task('r', {
+      turnSeenAt: '',
+      bug: true,
+      diagnoses: [diag],
+      bugCase: { symptom: '角标' },
+      logBase: { 'a.ts': 'h' },
+      bugMethodPending: true,
+      note: '留着',
+    }),
+  )
+  write(path.join(dir, 'f.json'), task('f', { turnSeenAt: '', bugFix: true, fixBrief: { cause: '单位' } }))
+  write(path.join(dir, 'p.json'), task('p', { turnSeenAt: '', diagnoses: [] }))
+  write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', bug: { kind: 'report' } }))
+  const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
+  await runMigrations({ dataDir: d, log: quiet })
+  const r = json(path.join(dir, 'r.json'))
+  assert.deepEqual(r.bug, {
+    kind: 'report',
+    diagnoses: [diag],
+    case: { symptom: '角标' },
+    logBase: { 'a.ts': 'h' },
+    methodPending: true,
+  })
+  for (const k of ['diagnoses', 'bugCase', 'logBase', 'bugMethodPending']) assert.ok(!(k in r), `${k} 收进去了`)
+  assert.equal(r.note, '留着')
+  const f = json(path.join(dir, 'f.json'))
+  assert.deepEqual(f.bug, { kind: 'fix', fixBrief: { cause: '单位' } })
+  assert.ok(!('bugFix' in f) && !('fixBrief' in f))
+  const p = json(path.join(dir, 'p.json'))
+  assert.ok(!('bug' in p) && !('diagnoses' in p), '普通对话不凭空变成 Bug')
+  assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
+  assert.equal(json(path.join(d, 'backup', '0004-task-bug', 'tasks', 'chats', 'r.json')).bug, true, '改之前的原样备份')
+})
+
+test('0005：项目的表格设置挪进 plugins.tables；已经挪过的不覆盖；没有表格设置的项目和文件不动', async () => {
+  const d = freshDir()
+  const cfg = { dirs: ['Data'] }
+  write(path.join(d, 'projects', 'projects.json'), [
+    { id: 'a', name: 'A', path: '/a', tables: cfg, plugins: { other: 1 } },
+    { id: 'b', name: 'B', path: '/b', tables: { dirs: ['旧'] }, plugins: { tables: cfg } },
+    { id: 'c', name: 'C', path: '/c' },
+  ])
+  await runMigrations({ dataDir: d, log: quiet })
+  const [a, b, c] = json(path.join(d, 'projects', 'projects.json'))
+  assert.deepEqual(a.plugins, { other: 1, tables: cfg })
+  assert.ok(!('tables' in a) && !('tables' in b))
+  assert.deepEqual(b.plugins.tables, cfg, '已经在新位置的不被旧值盖掉')
+  assert.deepEqual(c, { id: 'c', name: 'C', path: '/c' })
+  assert.deepEqual(
+    json(path.join(d, 'backup', '0005-project-tables', 'projects', 'projects.json'))[0].tables,
+    cfg,
+    '改之前的原样备份',
+  )
+  const clean = freshDir()
+  write(path.join(clean, 'projects', 'projects.json'), [{ id: 'c' }])
+  const before = readFileSync(path.join(clean, 'projects', 'projects.json'), 'utf8')
+  await runMigrations({ dataDir: clean, log: quiet })
+  assert.equal(
+    readFileSync(path.join(clean, 'projects', 'projects.json'), 'utf8'),
+    before,
+    '没有表格设置时一个字节都不动',
+  )
+})
+
 test('版本号：跑过的不再跑；from 0 重跑（导入旧备份后）结果不变', async () => {
   const d = freshDir()
   const dir = path.join(d, 'tasks', 'chats')
   write(path.join(dir, 'x.json'), task('x', { cliAlive: true }))
   write(path.join(dir, 'x.messages.json'), [message('u', 'user', '一')])
   const first = await runMigrations({ dataDir: d, log: quiet })
-  assert.equal(first.ran.length, 3)
+  assert.equal(first.ran.length, 5)
   const again = await runMigrations({ dataDir: d, log: quiet })
   assert.deepEqual(again.ran, [], '已经是最新版本')
   const meta = readFileSync(path.join(dir, 'x.json'), 'utf8')
   const conv = readFileSync(path.join(dir, 'x.messages.jsonl'), 'utf8')
   const redo = await runMigrations({ dataDir: d, from: 0, log: quiet })
-  assert.equal(redo.ran.length, 3)
+  assert.equal(redo.ran.length, 5)
   assert.equal(readFileSync(path.join(dir, 'x.json'), 'utf8'), meta, '幂等')
   assert.equal(readFileSync(path.join(dir, 'x.messages.jsonl'), 'utf8'), conv, '幂等')
 })

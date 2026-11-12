@@ -1,6 +1,6 @@
 # 诊断报告等确认时，点输入框的停止按钮结束不了对话
 
-- 状态：已修复（`shared/bug-diagnosis.test.ts`、`scripts/e2e/09-subagent-runtime.mjs` 通过）
+- 状态：已修复（`shared/bug/diagnosis.test.ts`、`scripts/e2e/09-subagent-runtime.mjs` 通过）
 - 症状：Bug 子对话交了诊断报告、停在「等你确认」时，输入框一直是停止按钮，点了没有变化，对话一直算在运行
 - 入口：`server/tasks/actions-routes.ts` 的 `/:id/stop`、`parkDiagnoses`；`shared/task.ts` 的 `convState`
 - 根因类型：停止只收在跑的执行，碰不到这一轮已经说完、只剩待确认事项的对话
@@ -25,5 +25,5 @@
 
 ## 防线
 
-- `shared/bug-diagnosis.test.ts`：停下的对话即使报告还在等确认，状态也是 `stopped`。
+- `shared/bug/diagnosis.test.ts`：停下的对话即使报告还在等确认，状态也是 `stopped`。
 - `scripts/e2e/09-subagent-runtime.mjs`：「诊断报告等确认时点停止」——交完报告后点停止，状态变成 `stopped / user`，报告还是等确认。fake CLI 新增 `SUBMIT_DIAGNOSIS:<JSON>` 标记，用来交报告。

@@ -10,7 +10,7 @@ import {
 import { MAX_LESSONS, newLessonId, normTags, upsertLesson } from '../shared/lessons.ts'
 import { t } from '../shared/i18n.ts'
 import { applyReviewItem, type LessonReviewItem } from '../shared/lesson-review.ts'
-import { loadProjectLessons, saveProjectLessons } from './project-lessons.ts'
+import { loadProjectLessons, saveProjectLessons } from './projects/lessons.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 
 type ProjectStore = {

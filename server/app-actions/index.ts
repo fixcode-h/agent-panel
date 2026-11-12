@@ -4,16 +4,13 @@ import { taskActions } from './tasks.ts'
 import { projectActions } from './projects.ts'
 import { settingsActions } from './settings.ts'
 import { uiActions } from './ui.ts'
-import { tableActions } from './tables.ts'
+import { pluginActions } from '../plugins/runtime.ts'
 
 /** 全部动作：新增一组时在这里加一行，组名就是文件名 */
-export const appActions = createRegistry([
-  ...taskActions,
-  ...projectActions,
-  ...settingsActions,
-  ...uiActions,
-  ...tableActions,
-])
+export const appActions = createRegistry(
+  [...taskActions, ...projectActions, ...settingsActions, ...uiActions],
+  pluginActions,
+)
 
 let host: ActionHost | undefined // 模块状态：接线，启动时登记
 /** 服务端接口都挂好后由 server/index.ts 接上：进程内调接口、推给页面 */

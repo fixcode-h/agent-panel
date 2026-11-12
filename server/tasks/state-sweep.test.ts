@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
 import { Task } from '../../shared/schema.ts'
-import { dropAsked, settleStopped, stateBreaks } from '../../shared/task-settle.ts'
+import { dropAsked, settleStopped, stateBreaks } from '../../shared/tasks/settle.ts'
 import { createStateSweep } from './state-sweep.ts'
 
 setLang('zh')

@@ -14,7 +14,7 @@ test('面板源代码项目：包名和分析代码都对得上才算', async ()
     await writeFile(path.join(dir, 'package.json'), JSON.stringify({ name: 'agent-panel' }))
     assert.equal(await isPanelSource(dir), false, '同名的别的包')
     await mkdir(path.join(dir, 'shared'))
-    await writeFile(path.join(dir, 'shared', 'task-export.ts'), '')
+    await writeFile(path.join(dir, 'shared', 'task.ts'), '')
     assert.equal(await isPanelSource(dir), true)
     assert.equal(await isPanelSource(''), false)
   } finally {

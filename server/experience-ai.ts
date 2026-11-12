@@ -13,7 +13,7 @@ import {
 import { t } from '../shared/i18n.ts'
 import type { Agent, Settings, Task } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { withTaskModel } from '../shared/task-run.ts'
+import { withTaskModel } from '../shared/tasks/run.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 

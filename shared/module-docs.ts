@@ -27,7 +27,7 @@ export interface ModuleDoc {
   /** 最近一次更新：日期 · 提交号，原样保留 */
   updated: string
   /**
-   * 最近一次更新这份文档的分支（P4 / SVN 各分支共用一个文档根时写，见 server/doc-group.ts）；
+   * 最近一次更新这份文档的分支（P4 / SVN 各分支共用一个文档根时写，见 server/docs/group.ts）；
    * 没写时为空串，按当前分支写的处理
    */
   branch: string

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { timeAgo } from './child-activity.ts'
+import { timeAgo } from './children/activity.ts'
 import { t } from './i18n.ts'
 
 /**

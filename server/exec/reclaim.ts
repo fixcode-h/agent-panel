@@ -1,6 +1,6 @@
 import type { StopReason, Task } from '../../shared/schema.ts'
 import { restartInterrupted } from '../../shared/task.ts'
-import { diagnosisWaiting, rewaitDiagnosis, settleStopped } from '../../shared/task-settle.ts'
+import { diagnosisWaiting, rewaitDiagnosis, settleStopped } from '../../shared/tasks/settle.ts'
 import { log } from '../log.ts'
 
 /** 收口只需要这两个动作：读一条任务、写回它 */
@@ -18,7 +18,7 @@ type ReclaimStore = {
  * 两种都会让用户看到「转圈 + CLI 进程已回收」，而「继续执行」只在 stopped 时出现，等于没有入口
  * （用户报的现象：一批子对话停在未完成、进程早没了、很多子对话没有拉起）。
  *
- * 落成已停止走 shared/task-settle.ts 的 settleStopped（和启动迁移同一份）：结掉还在跑的步骤、轮次、工作流运行和等待时长。
+ * 落成已停止走 shared/tasks/settle.ts 的 settleStopped（和启动迁移同一份）：结掉还在跑的步骤、轮次、工作流运行和等待时长。
  * `updatedAt` 保留原值：回收不是「刚有活动」，列表时间和排序不能因为这次收口往前跳。
  *
  * 不碰的：正在执行的（`working`）、已经停下的（用户暂停、父对话结束…原因不能覆盖）、
@@ -35,7 +35,7 @@ export async function settleReclaimed(store: ReclaimStore, id: string, reason: S
   const unfinished = restartInterrupted(tk)
   if (tk.status !== 'running' && !unfinished) return false
   try {
-    // 落成已停止的写法和启动迁移、定时核对是同一份（shared/task-settle.ts）
+    // 落成已停止的写法和启动迁移、定时核对是同一份（shared/tasks/settle.ts）
     const saved = await store.update(id, settleStopped(tk, reason), { keepUpdatedAt: true })
     return !!saved
   } catch (e) {

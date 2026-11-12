@@ -1,7 +1,7 @@
 import os from 'node:os'
 import { isViewing } from '../presence.ts'
 import { log } from '../log.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import { getSettings } from '../settings.ts'
 import { trackedClis } from '../exec/orphans.ts'
 import { processSnapshot, subtree, sumRss } from '../exec/proc-stats.ts'

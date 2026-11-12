@@ -9,7 +9,7 @@
  * 服务端（server/away.ts）和演示版（web/src/lib/demo-away.ts）共用这里的判定和结构。
  */
 import { z } from 'zod'
-import type { AskQuestion, TaskRequest } from './task-request.ts'
+import type { AskQuestion, TaskRequest } from './tasks/request.ts'
 import { t } from './i18n.ts'
 
 /** 一条自动选过的记录：总览页按它列出来，点「去改」回到那个对话 */

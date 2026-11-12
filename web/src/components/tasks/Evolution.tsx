@@ -25,7 +25,7 @@ import {
   resolveChange,
   type CodeIssue,
   type ResolvedChange,
-} from '@shared/task-export'
+} from '@shared/tasks/export'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { openAiWindow } from '@/lib/ai-window'

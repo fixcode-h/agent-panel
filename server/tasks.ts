@@ -1,4 +1,4 @@
-import { lastReplyText } from '../shared/task-helpers.ts'
+import { lastReplyText } from '../shared/tasks/helpers.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import {
@@ -18,7 +18,7 @@ import { restartDoing } from './interrupted.ts'
 import { recordRestart } from './restart-interrupted.ts'
 import { entryFlow, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
-import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
+import { projectDefaultWorkflow } from '../shared/projects/workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'
 import {
   interruptedTaskIds,
@@ -40,13 +40,13 @@ import type { TasksScope } from './tasks/scope.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR } from './store.ts'
 import { taskAttachDir } from './task-files.ts'
-import { createTaskStore } from './task-store.ts'
+import { createTaskStore } from './tasks/store.ts'
 import { worktreeStatus } from './exec/worktree.ts'
 import { mkdir } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 import { log } from './log.ts'
-import { suggestTitle, titleInput } from './task-title.ts'
+import { suggestTitle, titleInput } from './tasks/title.ts'
 import { t } from '../shared/i18n.ts'
 import { subjectLine } from '../shared/peer-message.ts'
 import type { AlertKind } from '../shared/schema.ts'
@@ -768,7 +768,7 @@ export function tasksApi(deps: {
     list: () => store.list(),
     /**
      * 这个会话的进程面板（两路占用 + 每行归属）。
-     * 会话内存的 AI 分析（server/task-memory.ts）用同一份数据，保证报告和界面上的数字一致
+     * 会话内存的 AI 分析（server/tasks/memory.ts）用同一份数据，保证报告和界面上的数字一致
      */
     processPanel: async (id: string) => {
       const tk = await current(id)

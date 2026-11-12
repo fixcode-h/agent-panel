@@ -29,7 +29,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/component
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ProjectLessonsCard } from '@/components/projects/Lessons'
 import { TaskComposer } from './TaskComposer'
-import { projectDefaultWorkflow } from '@shared/project-workflow'
+import { projectDefaultWorkflow } from '@shared/projects/workflow'
 import { TaskControlButton } from './TaskControl'
 import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'

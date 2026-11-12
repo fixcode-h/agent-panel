@@ -6,7 +6,7 @@ import { t } from './i18n.ts'
  * 在哪个目录找、用户的说法在代码里叫什么、用什么命令、怎么验证。和教训分开：教训防错（被纠正、返工过才记），
  * 经验提速（这次绕了路、下次不用再绕）。经验由面板在整个对话完成后自动学（server/experience-learn.ts），
  * 不预加载进提示词，Agent 需要时用 project_experience 按关键词查。
- * 存在项目文档根的 agent-knowledge/experience/，一条一个文件（server/project-experience.ts）。
+ * 存在项目文档根的 agent-knowledge/experience/，一条一个文件（server/projects/experience.ts）。
  */
 
 /** 五种经验：找位置、叫法对照、命令、验证方法、某类改动的固定做法 */

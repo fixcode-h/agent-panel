@@ -724,7 +724,7 @@ if (streamIn) {
   const first = await next()
   input = typeof first.message.content === 'string' ? first.message.content : ''
 } else if (kind !== 'codex' && !rpcMode && !piRpc) for await (const chunk of process.stdin) input += chunk
-// 面板自动起标题（server/task-title.ts）：不记进调用日志，免得打乱各个测试数的调用次数；
+// 面板自动起标题（server/tasks/title.ts）：不记进调用日志，免得打乱各个测试数的调用次数；
 // 用户消息里的 FAIL、SLOW 这些标记也不能生效，回复改成按用户消息的第一行起的标题
 const titleFor = input.startsWith('给下面这段对话起一个标题。')
   ? (input.split('## 用户\n')[1] ?? '').split('\n')[0].slice(0, 20)

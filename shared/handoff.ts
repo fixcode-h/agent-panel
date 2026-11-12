@@ -17,7 +17,7 @@ export const HANDOFF_FIELDS = [
   { key: 'decisions', title: '关键决定', description: '做了哪些取舍、为什么，没选的方案一句话', required: false },
   { key: 'pitfalls', title: '试过不行的和要注意的', description: '试过不行的做法、容易踩的坑', required: false },
   { key: 'followups', title: '遗留和后续', description: '没做的、已知问题、下次接手先做什么', required: false },
-  // 直接修的用户 Bug（kind: "fix"）收尾时必写，面板拿它出简版报告（shared/bug-fix-brief.ts）；别的对话不写
+  // 直接修的用户 Bug（kind: "fix"）收尾时必写，面板拿它出简版报告（shared/bug/fix-brief.ts）；别的对话不写
   {
     key: 'cause',
     title: '修的 Bug 的根因',

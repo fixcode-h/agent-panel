@@ -13,9 +13,9 @@ import { mergedModelCatalog } from './model-catalog-store.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { rpcQuery } from './exec/rpc/query.ts'
 import { getSettings } from './settings.ts'
-import { resolveCommand } from './cli-source.ts'
+import { resolveCommand } from './cli/source.ts'
 import { detectClis } from './detect.ts'
-import { expandHome } from './cli-extras.ts'
+import { expandHome } from './cli/extras.ts'
 import { t } from '../shared/i18n.ts'
 
 /**

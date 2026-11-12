@@ -1,18 +1,19 @@
 /**
- * 取消修复后删临时日志（用户 2026-11-10 定，规则和核对在 shared/bug-cleanup.ts）：
+ * 取消修复后删临时日志（用户 2026-11-10 定，规则和核对在 shared/bug/cleanup.ts）：
  * - 用户同意加日志时，给日志计划里的文件拍快照（logBase，内容存对话目录的 log-base/，只用来核对）；
  * - 用户点「取消修复」时只读地查出 `[排查-` 日志（previewCleanup），交给 Agent 删；
  * - 子对话这一轮结束时核对（checkCleanup）：通过了关闭报告、收口计划，没过记下来等用户决定。
  * 面板只查不删：不做一键删除，也不拿快照还原文件
  */
+import { bugOf } from '../../shared/bug/task-bug.ts'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Task } from '../../shared/schema.ts'
-import type { CleanupState, Diagnosis } from '../../shared/bug-diagnosis-schema.ts'
-import { checkFile, fileClean, tempLogLines, type FileLine } from '../../shared/bug-cleanup.ts'
-import { cleanupFiles, cleaning, evidenceFiles, logFilesOf, phaseOf, planApproved } from '../../shared/bug-phase.ts'
-import { settleCleanup } from '../../shared/bug-diagnosis.ts'
+import type { CleanupState, Diagnosis } from '../../shared/bug/diagnosis-schema.ts'
+import { checkFile, fileClean, tempLogLines, type FileLine } from '../../shared/bug/cleanup.ts'
+import { cleanupFiles, cleaning, evidenceFiles, logFilesOf, phaseOf, planApproved } from '../../shared/bug/phase.ts'
+import { settleCleanup } from '../../shared/bug/diagnosis.ts'
 import { projectChanges } from '../exec/file-events.ts'
 import { gitExec } from '../exec/git.ts'
 import { TASK_FILES_DIR } from '../store.ts'
@@ -54,7 +55,7 @@ async function load(taskId: string, h: string | undefined): Promise<string | und
  */
 export async function snapshotLogBase(task: Task, dir: string, d: Diagnosis) {
   if (!dir || phaseOf(d) !== 'evidence') return
-  const base = (task.logBase ??= {})
+  const base = (bugOf(task).logBase ??= {})
   for (const file of evidenceFiles(d)) {
     if (file in base || !inside(dir, file)) continue
     const content = await read(dir, file)
@@ -81,7 +82,7 @@ async function createdFiles(dir: string, files: string[]): Promise<string[]> {
 export async function previewCleanup(task: Task, dir: string): Promise<CleanupPreview> {
   if (!dir) return { found: [], created: [], isolated: false }
   const changed = projectChanges(task.changes ?? [], dir).map((c) => c.path.replace(/\\/g, '/'))
-  const files = [...new Set([...logFilesOf(task.diagnoses ?? []), ...changed])].filter((f) => !f.endsWith('.md'))
+  const files = [...new Set([...logFilesOf(task.bug?.diagnoses ?? []), ...changed])].filter((f) => !f.endsWith('.md'))
   const found: FileLine[] = []
   for (const f of files) {
     const content = await read(dir, f)
@@ -109,15 +110,15 @@ export async function snapshotPre(task: Task, dir: string, files: string[]): Pro
  * 还没修过逻辑（没有确认过的方案），或者用户要求修复也撤掉：删完要和快照一模一样
  */
 export async function checkCleanup(task: Task, dir: string, newId: () => string): Promise<boolean> {
-  const d = task.diagnoses?.at(-1)
+  const d = task.bug?.diagnoses?.at(-1)
   if (!d || !cleaning(d) || d.cleanup?.state !== 'running' || !dir) return false
   const c = d.cleanup as CleanupState
-  const strict = c.revertFix || !planApproved(task.diagnoses ?? [])
+  const strict = c.revertFix || !planApproved(task.bug?.diagnoses ?? [])
   const failed: CleanupState['failed'] = []
   const files = cleanupFiles(d).filter((f) => !c.drop.includes(f))
   for (const f of files) {
     const now = (await read(dir, f)) ?? ''
-    const base = await load(task.id, task.logBase?.[f])
+    const base = await load(task.id, task.bug?.logBase?.[f])
     const r = checkFile(f, now, { base, pre: await load(task.id, c.pre[f]), strict })
     if (!fileClean(r)) failed.push(r)
   }
@@ -135,12 +136,12 @@ export async function afterTurnCleanup(
   entry: { task: Task; rev: number },
   newId: () => string,
 ) {
-  const d = entry.task.diagnoses?.at(-1)
+  const d = entry.task.bug?.diagnoses?.at(-1)
   if (!d || d.cleanup?.state !== 'running') return
   const changed = await checkCleanup(entry.task, await sc.taskDir(entry.task), newId)
   if (!changed) return
   entry.rev++
   await sc.store.update(entry.task.id, entry.task)
-  if (entry.task.diagnoses?.at(-1)?.cleanup?.state !== 'failed' && entry.task.parentTaskId)
+  if (entry.task.bug?.diagnoses?.at(-1)?.cleanup?.state !== 'failed' && entry.task.parentTaskId)
     await sc.reportToParent(entry.task)
 }

@@ -22,7 +22,7 @@ import {
 import { AGENT_ICON_IDS } from './icons.ts'
 import { libraryName, McpServer } from './library.ts'
 import { builtinCommands } from './commands.ts'
-import { buildProjectInitPrompt, ProjectInitDraft, resolveProjectInit, type ProjectProposal } from './project-init.ts'
+import { buildProjectInitPrompt, ProjectInitDraft, resolveProjectInit, type ProjectProposal } from './projects/init.ts'
 import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,
@@ -47,7 +47,6 @@ import {
 import type { DerivedParam } from './agent-params.ts'
 import { condText, includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 import { buildHookPrompt, resolveHookProposal, type HookProposal } from './assist-hook.ts'
-import { buildTablesBody, resolveTablesProposal, type TablesProposal } from './tables-assist.ts'
 
 export const AssistKind = z.enum([
   'agent',
@@ -60,7 +59,6 @@ export const AssistKind = z.enum([
   'lessons',
   'project',
   'hook',
-  'tables',
 ])
 export type AssistKind = z.infer<typeof AssistKind>
 
@@ -233,7 +231,6 @@ export type Proposal =
   | ParamsProposal
   | TestStepsProposal
   | HookProposal
-  | TablesProposal
 
 export interface AssistJob {
   id: string
@@ -298,7 +295,6 @@ const KIND_NAME = {
   lessons: '全局教训',
   project: '项目初始化',
   hook: '钩子',
-  tables: '表格风格',
 }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
@@ -450,7 +446,6 @@ function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistM
   if (kind === 'project') return buildProjectPrompt(ctx, messages)
   if (kind === 'lessons') return buildLessonsPrompt(ctx, messages)
   if (kind === 'hook') return buildHookPrompt(ctx.subject ?? {}, messages, ctx.agents)
-  if (kind === 'tables') return buildTablesBody(ctx.subject ?? {}, messages)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -1091,7 +1086,6 @@ export function resolveProposal(
     }
   }
   if (kind === 'hook') return resolveHookProposal(json, ctx.subject ?? {}, ctx.agents)
-  if (kind === 'tables') return resolveTablesProposal(json)
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)
     return r.error ? { error: r.error } : { proposal: { kind: 'teststeps', steps: r.steps! } }
@@ -1327,8 +1321,7 @@ export async function applyProposal(
     p.kind === 'teststeps' ||
     p.kind === 'lessons' ||
     p.kind === 'project' ||
-    p.kind === 'hook' ||
-    p.kind === 'tables'
+    p.kind === 'hook'
   )
     return { created: [], categories: [] }
   if (p.kind === 'agent')

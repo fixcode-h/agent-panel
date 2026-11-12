@@ -48,13 +48,16 @@ test('推送授权：没授权先 ask_push，拒绝过、项目不推送、子�
 
 test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确认后只改方案里的文件', () => {
   const diag = (status: string) =>
-    ({ task: { bug: true, diagnoses: [{ version: 1, status, files: ['src/a.ts'] }] } }) as never
-  assert.match(bugDeny(ctx({ task: { bug: true } }), edit(path.join(proj, 'src/a.ts'))), /submit_diagnosis/)
+    ({ task: { bug: { kind: 'report', diagnoses: [{ version: 1, status, files: ['src/a.ts'] }] } } }) as never
+  assert.match(
+    bugDeny(ctx({ task: { bug: { kind: 'report' } } }), edit(path.join(proj, 'src/a.ts'))),
+    /submit_diagnosis/,
+  )
   assert.match(bugDeny(ctx(diag('pending')), edit(path.join(proj, 'src/a.ts'))), /等用户确认/)
   assert.match(bugDeny(ctx(diag('questioned')), edit(path.join(proj, 'src/a.ts'))), /提了意见/)
   // 子对话就是为这个 Bug 开的：不修了以后也不改文件
   const kidCancelled = {
-    task: { parentTaskId: 'par', bug: true, diagnoses: [{ version: 1, status: 'cancelled', files: [] }] },
+    task: { bug: { kind: 'report', diagnoses: [{ version: 1, status: 'cancelled', files: [] }] }, parentTaskId: 'par' },
   } as never
   assert.match(bugDeny(ctx(kidCancelled), edit(path.join(proj, 'src/a.ts'))), /第 1 版点了「不修了」.*不改文件/)
   // 普通对话里就地查的 Bug（分析稿 B10）：不修了、日志也删完了，对话照常用，不再拦
@@ -72,7 +75,7 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
   assert.match(bugDeny(ctx(diag('pending')), noPath), /等用户确认/)
   assert.equal(bugDeny(ctx(diag('approved')), noPath), '')
   // 按阶段（用户 2026-11-05 定的）：同意了根因还不能改，确认了方案放行方案里的文件和论证时加过日志的文件
-  const list = (...ds: object[]) => ({ task: { bug: true, diagnoses: ds } }) as never
+  const list = (...ds: object[]) => ({ task: { bug: { kind: 'report', diagnoses: ds } } }) as never
   const ev = { version: 1, phase: 'evidence', status: 'answered', files: ['src/log.ts'], logPlan: [] }
   const cause = { version: 2, phase: 'cause', status: 'approved', files: [], logPlan: [] }
   const plan = { version: 3, phase: 'plan', status: 'approved', files: ['src/a.ts'], logPlan: [] }
@@ -229,24 +232,26 @@ test('独立分支越界：子对话改分支目录以外的文件拒绝；自�
 
 test('取消后删临时日志：不许整文件还原，一处一处删', () => {
   const task = {
-    bug: true,
-    diagnoses: [
-      {
-        version: 1,
-        phase: 'evidence',
-        status: 'cancelled',
-        cleanup: {
-          state: 'running',
-          found: [{ file: 'src/a.ts', line: 1, text: '[排查-x]' }],
-          drop: [],
-          revertFix: false,
-          failed: [],
-          kept: [],
-          pre: {},
-          at: '',
+    bug: {
+      kind: 'report',
+      diagnoses: [
+        {
+          version: 1,
+          phase: 'evidence',
+          status: 'cancelled',
+          cleanup: {
+            state: 'running',
+            found: [{ file: 'src/a.ts', line: 1, text: '[排查-x]' }],
+            drop: [],
+            revertFix: false,
+            failed: [],
+            kept: [],
+            pre: {},
+            at: '',
+          },
         },
-      },
-    ],
+      ],
+    },
   } as unknown as Partial<Ctx['task']>
   assert.match(bugDeny(ctx({ task }), sh('git checkout -- src/a.ts')), /一处一处删/)
   assert.match(bugDeny(ctx({ task }), sh('git restore src/a.ts')), /一处一处删/)

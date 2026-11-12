@@ -4,7 +4,7 @@
 - 症状：项目设置「AI 初始化」的推荐设置里点「全部应用」，分组里的「应用」按钮和标题上的「N 项待应用」都不变，看起来像没点
 - 入口：`web/src/components/projects/ProjectInitReport.tsx` 的 `apply`、`web/src/components/projects/ProjectSettingsDialog.tsx` 的 `deliver` / 保存确认、`server/index.ts` 的 `PUT /projects/:id/init-result`
 - 根因类型：客户端拿「打开弹窗时的整份项目快照」PUT 回去，把刚应用的推荐覆盖成旧值（后写的旧快照胜出）
-- 模块：`web`（报告面板、子对话结果交回）+ `server`（`server/index.ts`）+ `shared`（`shared/project-init.ts`），跨到三个模块
+- 模块：`web`（报告面板、子对话结果交回）+ `server`（`server/index.ts`）+ `shared`（`shared/projects/init.ts`），跨到三个模块
 - 关键词：推荐设置、全部应用、应用按钮没反应、N 项待应用、状态没调整、AI 初始化、整份快照写回、旧快照覆盖、initResult、initializedAt、`withInitResult`、`PUT /projects/:id/init-result`、初始化对话结果交回
 
 ## 现象
@@ -31,9 +31,9 @@
 
 ## 修复
 
-- 新增 `PUT /projects/:id/init-result`（`server/index.ts`）：服务端自己 `projects.get(id)` 读最新项目，再用 `shared/project-init.ts` 的 `withInitResult(cur, saved.data)` 只合并 `initResult` / `initializedAt`（时间取本次完成时间），其它字段一律用刚读到的那份。请求体只带 `{ initResult }`，用 `ProjectProposalSchema` 校验，不合法返回 400（`z.prettifyError`），项目不存在 404。
+- 新增 `PUT /projects/:id/init-result`（`server/index.ts`）：服务端自己 `projects.get(id)` 读最新项目，再用 `shared/projects/init.ts` 的 `withInitResult(cur, saved.data)` 只合并 `initResult` / `initializedAt`（时间取本次完成时间），其它字段一律用刚读到的那份。请求体只带 `{ initResult }`，用 `ProjectProposalSchema` 校验，不合法返回 400（`z.prettifyError`），项目不存在 404。
 - `ProjectSettingsDialog.tsx` 的 `deliver` 改调 `api.saveProjectInitResult`（`web/src/lib/api.ts`），不再把整份项目发回去；演示版后端 `web/src/lib/demo-backend.ts` 同步实现了同一个路由（`withInitResult`，返回字段和正式后端一致）。
-- `ProjectInitReport.tsx` 的 `apply` 与 `ProjectSettingsDialog.tsx` 的「确认」改为带版本的保存：请求体带 `expectedUpdatedAt`（打开时读到的 `updatedAt`），服务端 `PUT /projects/:id` 用 `staleProjectWrite`（`server/project-lock.ts`）比对刚读到的最新值，不一致返回 409 并提示；不再「先 GET 一次再整份 PUT」，也不再在 GET 失败时回落到面板上的旧草稿。演示后端 `web/src/lib/demo-backend.ts` 同步这条校验（409 文案一致）。
+- `ProjectInitReport.tsx` 的 `apply` 与 `ProjectSettingsDialog.tsx` 的「确认」改为带版本的保存：请求体带 `expectedUpdatedAt`（打开时读到的 `updatedAt`），服务端 `PUT /projects/:id` 用 `staleProjectWrite`（`server/projects/lock.ts`）比对刚读到的最新值，不一致返回 409 并提示；不再「先 GET 一次再整份 PUT」，也不再在 GET 失败时回落到面板上的旧草稿。演示后端 `web/src/lib/demo-backend.ts` 同步这条校验（409 文案一致）。
 - 409 之后有可用的恢复路径：两处先 `api.projects()` 刷新项目列表（`updatedAt` 拿到最新），草稿 / 面板上的推荐都保留，用户再点一次「确认」或「全部应用」就能保存；提示文案按所在位置分开（设置页「请再点一次『确认』」，报告面板「请再点一次『全部应用』」），刷新本身失败时改提示「请刷新页面后再保存」。设置页重试时 `initResult` / `initializedAt` 从刷新后的项目取（本次刚初始化过的才用草稿里的新值），不把期间别处写入的新推荐回滚；`lessons` 靠 `fresh` 合并带回期间新记的教训。`updatedAt` 为空串的旧数据也当「读到的版本」参与比对，不会静默退化成无锁；非字符串的版本值直接 400。
 - 界面检查补了「应用后状态」断言（见下），把「应用了又变回去」变成能拦住的回归。
 
@@ -45,7 +45,7 @@
 - 界面检查（`npx vite build --mode demo` + `node scripts/ui-check.mjs`）：10 个分片全过；projects 分片 39 张截图，包含新增的「AI初始化-全部应用后状态」。
 - `scripts/ui/07-projects.mjs` 的新断言：点「全部应用」后等报告面板 `[data-analysis-panel="init"]` 出现「全部推荐都已和项目设置一致」，并且面板里不能再有「项待应用」，「全部应用」按钮变成不可点。
 - 真实数据脚本对照（本机数据目录的副本）：修复前同样的保存会让「0 项待应用」变回 8 项、项目名被回滚；修复后保持 0 项、名称不回滚；坏 `initResult` 返回 400。
-- 乐观锁补修（`server/project-lock.ts`、`server/project-lock.test.ts`、`PUT /projects/:id`、报告面板与设置页的保存调用）：`npm run typecheck`、`npm run lint` 通过；`node --test server/project-lock.test.ts` 6 个用例通过（未带版本不校验、一致放行、不一致冲突、空串版本不可退化、服务端也无版本不拦、项目已删不算冲突）。
+- 乐观锁补修（`server/projects/lock.ts`、`server/projects/lock.test.ts`、`PUT /projects/:id`、报告面板与设置页的保存调用）：`npm run typecheck`、`npm run lint` 通过；`node --test server/projects/lock.test.ts` 6 个用例通过（未带版本不校验、一致放行、不一致冲突、空串版本不可退化、服务端也无版本不拦、项目已删不算冲突）。
 
 ## 已知限制
 

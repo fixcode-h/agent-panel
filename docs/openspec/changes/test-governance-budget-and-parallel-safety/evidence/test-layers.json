@@ -170,7 +170,7 @@
       "lines": 120
     },
     {
-      "file": "server/api-config.test.ts",
+      "file": "server/cli/api-config.test.ts",
       "layer": "integration",
       "markers": [
         "http-server"
@@ -179,28 +179,28 @@
       "lines": 661
     },
     {
-      "file": "server/api-detect.test.ts",
+      "file": "server/cli/api-detect.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 87
     },
     {
-      "file": "server/api-protocol.test.ts",
+      "file": "server/cli/api-protocol.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 103
     },
     {
-      "file": "server/api-slots.test.ts",
+      "file": "server/cli/api-slots.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 6,
       "lines": 170
     },
     {
-      "file": "server/api-thinking.test.ts",
+      "file": "server/cli/api-thinking.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -314,14 +314,14 @@
       "lines": 356
     },
     {
-      "file": "server/cli-order.test.ts",
+      "file": "server/cli/order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 37
     },
     {
-      "file": "server/cli-packages.test.ts",
+      "file": "server/cli/packages.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -806,7 +806,7 @@
       "lines": 425
     },
     {
-      "file": "server/project-categories.test.ts",
+      "file": "server/projects/categories.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -816,14 +816,14 @@
       "lines": 123
     },
     {
-      "file": "server/project-lock.test.ts",
+      "file": "server/projects/lock.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 6,
       "lines": 33
     },
     {
-      "file": "server/project-mcp.test.ts",
+      "file": "server/projects/mcp.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -833,14 +833,14 @@
       "lines": 114
     },
     {
-      "file": "server/project-order.test.ts",
+      "file": "server/projects/order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 8,
       "lines": 77
     },
     {
-      "file": "server/project-skills.test.ts",
+      "file": "server/projects/skills.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -1042,14 +1042,14 @@
       "lines": 92
     },
     {
-      "file": "server/task-changes.test.ts",
+      "file": "server/tasks/changes.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 27
     },
     {
-      "file": "server/task-children-count.test.ts",
+      "file": "server/tasks/children-count.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1058,7 +1058,7 @@
       "lines": 62
     },
     {
-      "file": "server/task-children-load.test.ts",
+      "file": "server/tasks/children-load.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1067,28 +1067,28 @@
       "lines": 204
     },
     {
-      "file": "server/task-children.test.ts",
+      "file": "server/tasks/children.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 23,
       "lines": 453
     },
     {
-      "file": "server/task-day-group.test.ts",
+      "file": "server/tasks/day-group.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 3,
       "lines": 38
     },
     {
-      "file": "server/task-export-helper.test.ts",
+      "file": "server/tasks/export-helper.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 15,
       "lines": 340
     },
     {
-      "file": "server/task-export-tree.test.ts",
+      "file": "server/tasks/export-tree.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1097,14 +1097,14 @@
       "lines": 112
     },
     {
-      "file": "server/task-export.test.ts",
+      "file": "server/tasks/export.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 41,
       "lines": 1344
     },
     {
-      "file": "server/task-job-view.test.ts",
+      "file": "server/tasks/job-view.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1113,7 +1113,7 @@
       "lines": 49
     },
     {
-      "file": "server/task-list-etag.test.ts",
+      "file": "server/tasks/list-etag.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1122,7 +1122,7 @@
       "lines": 69
     },
     {
-      "file": "server/task-memory.test.ts",
+      "file": "server/tasks/memory.test.ts",
       "layer": "integration",
       "markers": [
         "http-server"
@@ -1131,7 +1131,7 @@
       "lines": 176
     },
     {
-      "file": "server/task-open-page.test.ts",
+      "file": "server/tasks/open-page.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1140,21 +1140,21 @@
       "lines": 157
     },
     {
-      "file": "server/task-order.test.ts",
+      "file": "server/tasks/order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 3,
       "lines": 46
     },
     {
-      "file": "server/task-queue-migrate.test.ts",
+      "file": "server/tasks/queue-migrate.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 85
     },
     {
-      "file": "server/task-restart.test.ts",
+      "file": "server/tasks/restart.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1163,14 +1163,14 @@
       "lines": 299
     },
     {
-      "file": "server/task-run-pick.test.ts",
+      "file": "server/tasks/run-pick.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 3,
       "lines": 60
     },
     {
-      "file": "server/task-search-route.test.ts",
+      "file": "server/tasks/search-route.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -1179,7 +1179,7 @@
       "lines": 118
     },
     {
-      "file": "server/task-seen.test.ts",
+      "file": "server/tasks/seen.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -1189,14 +1189,14 @@
       "lines": 122
     },
     {
-      "file": "server/task-session.test.ts",
+      "file": "server/tasks/session.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 49
     },
     {
-      "file": "server/task-store.test.ts",
+      "file": "server/tasks/store.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -1206,28 +1206,28 @@
       "lines": 523
     },
     {
-      "file": "server/task-text.test.ts",
+      "file": "server/tasks/text.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 109
     },
     {
-      "file": "server/task-time.test.ts",
+      "file": "server/tasks/time.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 132
     },
     {
-      "file": "server/task-title.test.ts",
+      "file": "server/tasks/title.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 2,
       "lines": 20
     },
     {
-      "file": "server/task-trash.test.ts",
+      "file": "server/tasks/trash.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -1354,14 +1354,14 @@
       "lines": 67
     },
     {
-      "file": "shared/child-ask.test.ts",
+      "file": "shared/children/ask.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 8,
       "lines": 57
     },
     {
-      "file": "shared/child-flow.test.ts",
+      "file": "shared/children/flow.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 13,
@@ -1438,7 +1438,7 @@
       "lines": 37
     },
     {
-      "file": "shared/engine-budget.test.ts",
+      "file": "shared/engine/budget.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
@@ -1522,7 +1522,7 @@
       "lines": 192
     },
     {
-      "file": "shared/project-init.test.ts",
+      "file": "shared/projects/init.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 9,
@@ -1578,70 +1578,70 @@
       "lines": 563
     },
     {
-      "file": "shared/task-helper-order.test.ts",
+      "file": "shared/tasks/helper-order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 78
     },
     {
-      "file": "shared/task-html.test.ts",
+      "file": "shared/tasks/html.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 134
     },
     {
-      "file": "shared/task-idle-ask.test.ts",
+      "file": "shared/tasks/idle-ask.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 10,
       "lines": 98
     },
     {
-      "file": "shared/task-page.test.ts",
+      "file": "shared/tasks/page.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 7,
       "lines": 80
     },
     {
-      "file": "shared/task-search.test.ts",
+      "file": "shared/tasks/search.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 7,
       "lines": 70
     },
     {
-      "file": "shared/task-session-dir.test.ts",
+      "file": "shared/tasks/session-dir.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 41
     },
     {
-      "file": "shared/task-share.test.ts",
+      "file": "shared/tasks/share.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 2,
       "lines": 35
     },
     {
-      "file": "shared/task-stage.test.ts",
+      "file": "shared/tasks/stage.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 35,
       "lines": 744
     },
     {
-      "file": "shared/task-stamp.test.ts",
+      "file": "shared/tasks/stamp.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 57
     },
     {
-      "file": "shared/task-trash.test.ts",
+      "file": "shared/tasks/trash.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,

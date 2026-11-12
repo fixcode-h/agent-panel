@@ -44,7 +44,7 @@ import {
 } from '@/components/ui/sidebar'
 import { UnreadDot } from '@/components/ui/badge'
 import { IconButton } from '@/components/ui/icon-button'
-import type { SearchHit } from '@shared/task-search'
+import type { SearchHit } from '@shared/tasks/search'
 import { useTaskSearch } from '@/lib/use-task-search'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 

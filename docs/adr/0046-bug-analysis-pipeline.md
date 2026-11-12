@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-03 用户确认：开放问题都按倾向定；用户报的 Bug 和 Agent 自己发现的 Bug 分两条路，见第 0 条） · 2026-11-03
 
-- 影响范围：`shared/builtin/agents.ts`（`BUG_METHOD`、`BUG_REPORT_TEXT`、`LOG_TIMELINE_TEXT`、主理的「Bug 怎么交」、执行、开发、分析、评审、测试验收、文档）、`skills/coding/systematic-debugging/SKILL.md`、`shared/bug-diagnosis-schema.ts`、`shared/bug-diagnosis.ts`、`server/diagnosis-tool.ts`、`shared/diagnosis.ts`（分析窗口的结论块）、`web/src/components/tasks/DiagnosisDialog.tsx`、`web/src/components/tasks/ReviewDialog.tsx`、`web/src/lib/analysis-report.ts`
+- 影响范围：`shared/builtin/agents.ts`（`BUG_METHOD`、`BUG_REPORT_TEXT`、`LOG_TIMELINE_TEXT`、主理的「Bug 怎么交」、执行、开发、分析、评审、测试验收、文档）、`skills/coding/systematic-debugging/SKILL.md`、`shared/bug/diagnosis-schema.ts`、`shared/bug/diagnosis.ts`、`server/diagnosis-tool.ts`、`shared/diagnosis.ts`（分析窗口的结论块）、`web/src/components/tasks/DiagnosisDialog.tsx`、`web/src/components/tasks/ReviewDialog.tsx`、`web/src/lib/analysis-report.ts`
 - 取代：不取代 [0045](./0045-bug-diagnosis-confirm.md)。0045 定的「先交诊断报告、用户确认了方案再改、收尾核对改动范围」原样保留；本文扩充报告里装什么、报告之前怎么查、报告之后怎么修和收口
 
 ## 背景
@@ -27,8 +27,8 @@
 | `skills/coding/systematic-debugging/SKILL.md`                       | 376 行。前半段中文（先查模块 bugs.md、查到哪一层为止、定位顺序、看日志、排查记录），后半段是英文通用模板（Phase 1–4、Red Flags、Rationalizations）。和 `BUG_METHOD` 大段重复，编号是两套                                                                   |
 | `shared/builtin/agents.ts` 分析角色「排查报错和日志：先代码后日志」 | 只读分析，另写了一份定位顺序和证据链（第 1–5 步），引用 `LOG_TIMELINE_TEXT`，报告「按排查报告的小节组织」                                                                                                                                                  |
 | `shared/diagnosis.ts`                                               | 分析窗口（AI 排查、报错交给 AI）的结论块：回复末尾的 `diagnosis` 代码块，字段是根因、把握、影响、证据（problem / reference / repro / context）、修复、相关文件。右栏按它画页签                                                                             |
-| `shared/bug-diagnosis-schema.ts`、`server/diagnosis-tool.ts`        | 0045 的诊断报告：symptom、repro、location（一句话）、evidence、rootCause、confirmed、excluded、fix（一个方案）、files、risk、verify、answers；多版、用户标注、确认                                                                                         |
-| `shared/bug-diagnosis.ts` 的 `diagnosisGate`                        | 收尾核对：要有用户确认过的最新一版，改动文件不超出方案里的（测试、文档、翻译不算）                                                                                                                                                                         |
+| `shared/bug/diagnosis-schema.ts`、`server/diagnosis-tool.ts`        | 0045 的诊断报告：symptom、repro、location（一句话）、evidence、rootCause、confirmed、excluded、fix（一个方案）、files、risk、verify、answers；多版、用户标注、确认                                                                                         |
+| `shared/bug/diagnosis.ts` 的 `diagnosisGate`                        | 收尾核对：要有用户确认过的最新一版，改动文件不超出方案里的（测试、文档、翻译不算）                                                                                                                                                                         |
 | 评审角色的改动清单                                                  | 「修 Bug 的改动 → 修的是根因还是症状、有没有回归测试、临时日志清没清、同模块同样写法有没有一起处理」                                                                                                                                                       |
 | 测试验收 `onFail=自己修`                                            | 按 systematic-debugging 找根因再修，三次修不好停下                                                                                                                                                                                                         |
 | 文档角色 `bug` 参数                                                 | 用户报的 Bug 修完写 `modules/<模块>/bugs/<id>.md`（状态、症状、入口、根因类型、模块、关键词 + 现象、根因、修复、防线），由派单方把查实的内容摘进 message                                                                                                   |
@@ -285,7 +285,7 @@ BugCase = {
 
 - 改：`shared/builtin/agents.ts` 里 Bug 相关的几段换成由新文件生成；分析、评审、测试验收、文档、主理按第 9 条改几句。
 - 改：`skills/coding/systematic-debugging/SKILL.md` 由脚本生成，附录改中文。
-- 改：`shared/bug-diagnosis-schema.ts` 扩成档案；`shared/bug-diagnosis.ts` 的报告渲染、提交检查、`diagnosisGate` 按第 8 条扩；`server/diagnosis-tool.ts` 的入参改成档案。
+- 改：`shared/bug/diagnosis-schema.ts` 扩成档案；`shared/bug/diagnosis.ts` 的报告渲染、提交检查、`diagnosisGate` 按第 8 条扩；`server/diagnosis-tool.ts` 的入参改成档案。
 - 新：草稿工具（挂在面板的 MCP 工具旁边，和 `submit_diagnosis` 同一处注册）。
 - 改：`shared/diagnosis.ts` 的分析结论块改成档案的子集，旧块照读；`web/src/lib/analysis-report.ts` 和右栏按档案画。
 - 改：`web/src/components/tasks/DiagnosisDialog.tsx`、`ReviewDialog.tsx` 加时间线、调用栈、归因、假设、方案对比几块。
@@ -316,7 +316,7 @@ BugCase = {
 
 - **第 1 期（2026-11-03）**：方法放在新文件 `shared/builtin/bug-method.ts`：`BUG_FULL_TEXT`（完整流程）、`BUG_SIMPLE_TEXT`（简易版）、`BUG_ANALYSIS_TEXT`（分析角色）、`BUG_REPORT_TEXT`（按八个阶段排的 12 节排查报告）、`LOG_TIMELINE_TEXT`、`bugCommandPrompt`、`debugSkillMd`。`agents.ts` 原来的 `BUG_METHOD` 去掉。`/bug` 加进内置命令，`/fix` 的展开改成简易版。systematic-debugging 的 SKILL.md 由 `scripts/gen-debug-skill.mjs` 生成，三份附录改写成中文。诊断报告的字段暂时不变，新内容按 S6 写的对应关系装进现有字段（例如时间线进 evidence、候选方案比较进 fix、影响面进 risk）。
 
-- **第 2 期（2026-11-03）**：诊断报告扩成 Bug 档案（`shared/bug-diagnosis-schema.ts` 的 `BugCaseFields`：级别、调用栈、时间线、引入点、一致性、假设、影响面、候选方案、选定、下一步），任务上多一份草稿 `Task.bugCase`。新工具 `update_bug_case`（`server/diagnosis-tool.ts`）随查随记、返回所在阶段和还缺什么；`submit_diagnosis` 把草稿合上这次交的内容冻结成一版，按级别查必填。收尾核对（`diagnosisGate`）多了两条：`result` 里要有回归测试、影响面逐条有验证记录；`submitMerge` 还拦改动里留着的 `[排查-` 临时日志。审阅弹窗按档案画时间线表、引入点、候选方案，没选的方案有「改用方案 X」按钮（加一条「改方案」意见退回）。设置里加「诊断报告显示作者」（默认开）。父对话的子对话行写「Bug · 阶段」。
+- **第 2 期（2026-11-03）**：诊断报告扩成 Bug 档案（`shared/bug/diagnosis-schema.ts` 的 `BugCaseFields`：级别、调用栈、时间线、引入点、一致性、假设、影响面、候选方案、选定、下一步），任务上多一份草稿 `Task.bugCase`。新工具 `update_bug_case`（`server/diagnosis-tool.ts`）随查随记、返回所在阶段和还缺什么；`submit_diagnosis` 把草稿合上这次交的内容冻结成一版，按级别查必填。收尾核对（`diagnosisGate`）多了两条：`result` 里要有回归测试、影响面逐条有验证记录；`submitMerge` 还拦改动里留着的 `[排查-` 临时日志。审阅弹窗按档案画时间线表、引入点、候选方案，没选的方案有「改用方案 X」按钮（加一条「改方案」意见退回）。设置里加「诊断报告显示作者」（默认开）。父对话的子对话行写「Bug · 阶段」。
 
 - **第 3 期（2026-11-03）**：分析窗口的结论块（`shared/diagnosis.ts`）多了调用栈、时间线、引入点三块，旧块照读；结论页画出「引入点」「时间线」卡片，被分析的是一个对话时多一个「按完整流程修」，把查到的原样带上、以 `/bug` 发回那个对话。派评审时，面板把用户确认过的那一版的要点（选定方案、方案里的文件、影响面、验证计划）附进评审的提示词（`approvedBrief`）。用户报的 Bug 请父对话收尾时，收尾请求里带上 Bug 记录的草稿（`bugRecordDraft`），父对话派「文档」时原样附上。
 

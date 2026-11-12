@@ -1,11 +1,11 @@
 /**
- * 子对话之间的先后依赖（create_conversation 的 after，判定在 shared/child-after.ts）：
+ * 子对话之间的先后依赖（create_conversation 的 after，判定在 shared/children/after.ts）：
  * 前置子对话合回（childMerged）或一轮结束上报（reportChild）时扫一遍父对话名下在等的子对话，
  * 前置都合回了就启动它（这时父对话的分支已经带着合回的提交，独立分支从这里开）；前置失败、没了就不启动、告诉父对话一次
  */
 import { randomUUID } from 'node:crypto'
 import { withProjectParams } from '../../shared/builtin/core.ts'
-import { afterDecision, waitingAfter } from '../../shared/child-after.ts'
+import { afterDecision, waitingAfter } from '../../shared/children/after.ts'
 import { t } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'

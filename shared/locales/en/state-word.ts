@@ -1,4 +1,4 @@
-/** 英文词典的一部分，键是中文原文：对话状态的短词（shared/task-word.ts）和「状态」窗口最上面那一句（shared/life-next.ts） */
+/** 英文词典的一部分，键是中文原文：对话状态的短词（shared/tasks/word.ts）和「状态」窗口最上面那一句（shared/life-next.ts） */
 export const EN_STATE_WORD: Record<string, string> = {
   等你回答: 'Waiting for your answer',
   '{word}：{doing}': '{word}: {doing}',

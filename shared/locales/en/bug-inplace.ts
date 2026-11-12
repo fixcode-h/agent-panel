@@ -1,4 +1,4 @@
-/** 英文词典的一部分，键是中文原文：普通对话里发 /bug（shared/bug-in-place.ts）和偶发 Bug 的观察期（shared/bug-observe.ts） */
+/** 英文词典的一部分，键是中文原文：普通对话里发 /bug（shared/bug/in-place.ts）和偶发 Bug 的观察期（shared/bug/observe.ts） */
 export const EN_BUG_INPLACE: Record<string, string> = {
   '对话正在回复，等这一轮结束或先停止，再发 /bug':
     'The conversation is replying. Wait for this turn to finish or stop it, then send /bug again',

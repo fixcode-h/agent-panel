@@ -23,7 +23,7 @@ import { NoteMessage } from './SystemNote'
 import { stripNext } from '@shared/builtin/default'
 import { convStateText, deliveryStatus, isPlanNudge } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
-import { stripEvolution } from '@shared/task-export'
+import { stripEvolution } from '@shared/tasks/export'
 import { stripLessonReview } from '@shared/lesson-review'
 import { stripDiagnosis } from '@shared/diagnosis'
 import { stripInitJson } from '@/lib/analysis-report'
@@ -228,8 +228,8 @@ const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
  * 后台命令在 live 里，工具行自己订阅（ToolRow 的 useLiveById），不用经这里重画
  */
 type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> &
-  Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses' | 'projectId'>>
-const jobsSig = (k?: ToolTask) => `${k?.diagnoses?.map((d) => d.status)}`
+  Partial<Pick<Task, 'analysis' | 'title' | 'bug' | 'projectId'>>
+const jobsSig = (k?: ToolTask) => `${k?.bug?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {
   m: TaskMessage

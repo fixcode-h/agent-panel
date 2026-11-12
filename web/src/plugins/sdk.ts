@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { PluginConfig } from '@shared/plugins/types'
-import type { Task } from '@shared/schema'
+import type { Attachment, Project, Task } from '@shared/schema'
 import type { host } from './host'
 
 /**
@@ -50,7 +50,13 @@ export interface PluginPage {
    * 从通知、旧链接打开时转到这一页（#/plugin/<插件>/<页面>/<对话 id>）。插件关掉后对话照常列在原处
    */
   taskPlugin?: string
-  Page: ComponentType<{ path: string }>
+  /** active：这一页现在是不是显示着（keep 的页切走后还挂着，这时为 false，例如快捷键只在显示着时响应） */
+  Page: ComponentType<{ path: string; active?: boolean }>
+  /**
+   * 打开过一次就一直挂着、切走只藏起来（插件接口 6，例如表格页：打开的表、没保存的改动、滚动位置都留着，
+   * 切回来不重新加载几千张表的目录）。不给时切走就卸载
+   */
+  keep?: boolean
   /**
    * 这个位置是不是自己分成几块面板的页面（插件接口 5）：是的话面板不再套一层卡片底，插件自己画列表栏和各块面板
    * （例如 UI 设计左边是自己的项目列表）。不给时整页放在一块卡片里
@@ -83,11 +89,80 @@ export interface FileViewerProps {
   close: () => void
 }
 
+/**
+ * 插件认领的一类输入框附件（插件接口 6）：拖进、粘贴、选进输入框的文件按扩展名（或 MIME 前缀）归某个插件时，
+ * 不拷、不上传，作为卡片只引用原路径；点卡片打开插件的 Dialog，用户在里面选好要发的东西（例如视频插件截的帧图片），
+ * 发送时卡片原位换成这些附件。还没选时发送会先打开 Dialog。没挂这个扩展点的输入框照旧当普通文件。
+ * Agent 收不了的格式（视频）由懂它的插件转成能收的（图片）
+ */
+export interface AttachmentIntake {
+  id: string
+  /** 认领的扩展名：小写、不带点（mp4） */
+  exts: string[]
+  /** 也按浏览器给的 MIME 前缀认领（video/），没给扩展名的文件靠它 */
+  mimes?: string[]
+  /** 卡片上的状态：picked 是已经选好的附件数，0 时提示点开去选 */
+  status: (picked: number) => string
+  /** 还没选就点了发送时的提示（随后打开 Dialog） */
+  pending: (name: string) => string
+  Dialog: ComponentType<AttachmentIntakeProps>
+}
+
+export interface AttachmentIntakeProps {
+  /** 要处理的文件：本机绝对路径；chosen 是上次选好的（再打开时照着勾上）。null 表示关着 */
+  target: { path: string; name: string; chosen: Attachment[] } | null
+  onClose: () => void
+  /** 选好的附件交回卡片，发送时换成它们 */
+  onInsert: (list: Attachment[]) => void
+}
+
+/**
+ * 项目设置里的一页（插件接口 6）：导航里多一项，点开画 Section。设置存在项目的 plugins[<插件 id>] 里，
+ * 跟项目设置一起保存（用户点「保存」才落盘，关掉不保存就丢掉），内容由插件自己定、自己校验
+ */
+export interface ProjectSection {
+  /** 插件里唯一；地址和导航里用 plugin:<插件 id>:<id> */
+  id: string
+  label: string
+  /** 页面顶上标题（label）下面的一段说明，和面板自己的项目设置页同一个样式 */
+  desc?: string
+  icon?: ComponentType<{ className?: string; strokeWidth?: number }>
+  /** 导航那一项右侧的灰字（例如表格目录）：value 是这个插件在草稿里的设置 */
+  hint?: (value: unknown) => string | undefined
+  Section: ComponentType<ProjectSectionProps>
+}
+
+export interface ProjectSectionProps {
+  /** 草稿里这个插件的设置（project.plugins[<插件 id>]），没设过是 undefined */
+  value: unknown
+  onChange: (next: unknown) => void
+  /** 已保存的项目；新建项目时还没有 */
+  project?: Project
+  /** 项目目录：存在时是解析后的绝对路径，否则是输入框里的原文 */
+  base: string
+}
+
+/**
+ * 设置 →「组件」里的一块示例（插件接口 6）：插件自己的共用组件也要能在设置里看到和微调（用户定的长期规则），
+ * 和面板自己的组件示例排在一起
+ */
+export interface Specimen {
+  id: string
+  /** 小标题（一般写组件名） */
+  label: string
+  /** 这块示例用到的可微调部件（设置 →「组件」的部件名，例如 input、menu），点示例时右侧列出它们的调节项 */
+  tune?: string[]
+  Specimen: ComponentType
+}
+
 export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
   fileViewers?: FileViewer[]
+  attachmentIntakes?: AttachmentIntake[]
   barePages?: BarePage[]
+  projectSections?: ProjectSection[]
+  specimens?: Specimen[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>
 }

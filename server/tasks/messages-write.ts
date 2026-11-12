@@ -7,7 +7,7 @@ import { DATA_DIR, writeTextAtomic } from '../store.ts'
 import { MSG_JSONL, MSG_LEGACY, appendMessageLines, messagesToJsonl } from './messages-file.ts'
 
 /**
- * 对话文件怎么写：追加还是整份压实（ADR 0060）。从 server/task-store.ts 的 createTaskStore 拆出来，
+ * 对话文件怎么写：追加还是整份压实（ADR 0060）。从 server/tasks/store.ts 的 createTaskStore 拆出来，
  * 盘上状态由调用方拿着、显式传进来，这里不留任何模块级状态。
  */
 

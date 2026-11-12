@@ -6,8 +6,7 @@ import { useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
-import { HomeIcon, PanelIcon, TableIcon, type NavIcon } from './rail-icons'
-import { useTablesEntry } from '@/lib/tables-nav'
+import { HomeIcon, PanelIcon, type NavIcon } from './rail-icons'
 import { toggleActivityBar, useActivityBarWide } from './rail-expanded'
 import { usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
@@ -125,7 +124,6 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
           onClick={() => go({ page: n.id })}
         />
       ))}
-      <TablesItem />
       {/* 插件的整页（插件接口 2）：和通用功能页隔开另起一组，插件关掉或删掉后这一组就没了 */}
       {pages.length > 0 && <span aria-hidden className={sep} />}
       {pages.map((p) => (
@@ -159,21 +157,6 @@ function PluginItem({ page }: { page: PluginPage & { plugin: string } }) {
       on={route.page === 'plugin' && route.id === page.plugin && route.sub === page.id}
       dot={dot || undefined}
       onClick={() => go({ page: 'plugin', id: page.plugin, sub: page.id })}
-    />
-  )
-}
-
-/** 「表格」：有项目设了表格目录才出现（项目设置 → 表格） */
-function TablesItem() {
-  const { route, go } = useNav()
-  const target = useTablesEntry()
-  if (!target) return null
-  return (
-    <Item
-      icon={TableIcon}
-      label={t('表格')}
-      on={route.page === 'tables'}
-      onClick={() => go({ page: 'tables', id: target })}
     />
   )
 }

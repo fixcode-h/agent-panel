@@ -4,7 +4,7 @@ import type { Live } from './types.ts'
 import type { TasksScope } from './scope.ts'
 import type { RealContext } from '../exec/real-context.ts'
 import { randomUUID } from 'node:crypto'
-import { waitingAfter } from '../../shared/child-after.ts'
+import { waitingAfter } from '../../shared/children/after.ts'
 import { afterTurnCleanup } from './bug-cleanup.ts'
 import { recheckAfterTurn } from './bug-recheck.ts'
 import {
@@ -64,7 +64,7 @@ export async function conversationCaps(c: TurnCapsCtx) {
       ? (turn) => {
           sc.settleChildTurn(entry.task, turn)
           void sc.checkBudget(entry.task)
-          // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug-cleanup.ts）
+          // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug/cleanup.ts）
           void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
             log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
           )

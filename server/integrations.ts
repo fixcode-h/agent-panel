@@ -14,7 +14,7 @@ import {
   type IntegrationView,
 } from '../shared/integrations.ts'
 import { t } from '../shared/i18n.ts'
-import { resolveCommand } from './cli-source.ts'
+import { resolveCommand } from './cli/source.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { DATA_DIR } from './store.ts'

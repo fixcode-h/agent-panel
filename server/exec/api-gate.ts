@@ -1,13 +1,13 @@
 /** API 并发名额：拿名额（满了排队并标出在等哪个 API）、等别人时让出再拿回。从 runner.ts 拆出 */
-import type { AgentCall } from '../../shared/engine-host.ts'
-import { ApiSlot } from '../api-slots.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
+import { ApiSlot } from '../cli/api-slots.ts'
 import type { RealContext } from './real-context.ts'
 import { type TaskStep, aliasAgent } from '../../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { clearApiWait, markApiWait } from './api-wait.ts'
 import { nodeAgentRun } from '../../shared/agent-role.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
-import { withTaskModel } from '../../shared/task-run.ts'
+import { withTaskModel } from '../../shared/tasks/run.ts'
 
 /** 两个信号任一触发就触发（AbortSignal.any 要 Node 20.3+；包现在要求 22，这里留着兜底） */
 export function anySignal(a: AbortSignal, b: AbortSignal) {

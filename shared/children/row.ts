@@ -4,9 +4,9 @@
  * 都调这里，只把「真进程、真 git」这类只有一边有的东西作为参数传进来。
  * 以前两边各拼一份，演示版漏了字段或口径（例如等孙对话时的 childNeeds、回收站里的子对话）界面检查也看不出来。
  */
-import { bugStage } from '../bug-diagnosis.ts'
-import { childBugStep, lastToolCall } from '../child-doing.ts'
-import { descendantNeeds, pendingRequest } from '../child-needs.ts'
+import { bugStage } from '../bug/diagnosis.ts'
+import { childBugStep, lastToolCall } from './doing.ts'
+import { descendantNeeds, pendingRequest } from './needs.ts'
 import { openPlan } from '../plan.ts'
 import type { Task } from '../schema.ts'
 import {
@@ -21,7 +21,7 @@ import {
   runRunning,
   taskGone,
 } from '../task.ts'
-import { helpersWorking } from '../task-helpers.ts'
+import { helpersWorking } from '../tasks/helpers.ts'
 import { pendingAction } from '../user-action.ts'
 
 /** 独立分支的 git 核对结果：没核对过（checked 为 false）时界面不能把「不知道」当成干净或已合回 */
@@ -146,7 +146,7 @@ export function childCountsScan(all: Task[], probe: { active: (k: Task) => boole
     if (probe.active(k)) c.working++
     byParent.set(k.parentTaskId, c)
   }
-  // 子对话在等你确认时父对话（以及更上层）也是「等你处理」（见 shared/child-needs.ts）
+  // 子对话在等你确认时父对话（以及更上层）也是「等你处理」（见 shared/children/needs.ts）
   const needs = descendantNeeds(all)
   return (parentId: string): ChildCounts => {
     const c = byParent.get(parentId)

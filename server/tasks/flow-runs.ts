@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Agent, Project, Task, TaskMessage, Workflow } from '../../shared/schema.ts'
 import { NewTaskInput } from '../../shared/schema.ts'
-import { FlowRun } from '../../shared/task-flow-schema.ts'
+import { FlowRun } from '../../shared/tasks/flow-schema.ts'
 import type { FlowRunHost, RunTarget } from '../../shared/flow-run-orch.ts'
 import type { PickedFlow } from '../../shared/flow-run.ts'
 import { RUN_ENDED, runEntry, runLine, runNodes, rewindTo } from '../../shared/flow-run.ts'

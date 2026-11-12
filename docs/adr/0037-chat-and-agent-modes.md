@@ -65,7 +65,7 @@ Command Code 不再提示「每轮回复完成后调用 wait_user_message」；�
 
 ## 运行时
 
-推进计数存在内存（`createChildren` 里的 `nudgeCount`，规则在 `shared/conv-mode.ts` 的 `nextNudge`），面板重启后从 1 重新数（2026-11-10 更新：计数现在由 `shared/drive.ts` 的 `DriveBudget` 记，存进 `Task.driveCount`，重启后接着数；每轮改动的起点也存进 `Task.turnTrack`，见 `server/turn-changes.ts`）；计数按对话 id 记最后一个 key，进度变了（计划多完成一步、用户发了新消息）就重新计。推进前照旧等 `PLAN_NUDGE_MS` 让 CLI 停稳，再核对一次还停着才发；推送失败只写日志。
+推进计数存在内存（`createChildren` 里的 `nudgeCount`，规则在 `shared/conv-mode.ts` 的 `nextNudge`），面板重启后从 1 重新数（2026-11-10 更新：计数现在由 `shared/drive.ts` 的 `DriveBudget` 记，存进 `Task.driveCount`，重启后接着数；每轮改动的起点也存进 `Task.turnTrack`，见 `server/turn/changes.ts`）；计数按对话 id 记最后一个 key，进度变了（计划多完成一步、用户发了新消息）就重新计。推进前照旧等 `PLAN_NUDGE_MS` 让 CLI 停稳，再核对一次还停着才发；推送失败只写日志。
 
 ## 分期
 

@@ -17,7 +17,7 @@ import { childIcon, childSpinning } from '../shared/task.ts'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-reclaim-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { createTaskStore } = await import('./task-store.ts')
+const { createTaskStore } = await import('./tasks/store.ts')
 const { settleReclaimed } = await import('./exec/reclaim.ts')
 
 setLang('zh')

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { CLIS } from '../shared/clis.ts'
-import { isPanelMcpUrl, panelMcpToken } from '../shared/project-mcp.ts'
+import { isPanelMcpUrl, panelMcpToken } from '../shared/projects/mcp.ts'
 import { liveAskToken, lockedFile } from './ask-mcp.ts'
 
 /**

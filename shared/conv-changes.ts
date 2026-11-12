@@ -1,7 +1,7 @@
 import type { FileChange, TaskMessage, TurnChanges } from './schema.ts'
 
 /**
- * 整个对话改了哪些文件：把每一轮记在总结消息上的改动（turnChanges，见 server/turn-changes.ts）按先后合起来。
+ * 整个对话改了哪些文件：把每一轮记在总结消息上的改动（turnChanges，见 server/turn/changes.ts）按先后合起来。
  * 对话停下来以后，最后面那张「这个对话改了 N 个文件」卡片读它（以前每一轮总结下面各挂一张，用户要只看整个对话的）。
  *
  * 撤销过的那几轮不算；同一个文件在几轮里都改过时增删行数相加。spans 按先后拼起来，
@@ -15,7 +15,7 @@ export interface ConvChanges {
   /** 改过、但都已经撤销的轮数：卡片上写「已撤销」 */
   reverted: number
   /**
-   * 没算进来的文件：同目录别的对话那段时间改的（server/turn-owners.ts 剔除的），卡片上说明一句。
+   * 没算进来的文件：同目录别的对话那段时间改的（server/turn/owners.ts 剔除的），卡片上说明一句。
    * 别的轮里这个对话自己也改过的不列：它已经在 files 里了
    */
   others: string[]

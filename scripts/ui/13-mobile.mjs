@@ -37,7 +37,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await patchDemoOnce(p, 'mobile-bug', (db) => {
     const parent = db.tasks.find((x) => x.title.includes('购物车右上角'))
     const kid = db.tasks.find((x) => x.parentTaskId === parent.id && x.title.includes('修侧栏时间显示'))
-    Object.assign(kid, { resolved: false, status: 'done', working: false, bug: true, requests: [] })
+    Object.assign(kid, { resolved: false, status: 'done', working: false, bug: { kind: 'report' }, requests: [] })
     const base = {
       at: new Date().toISOString(),
       symptom: '购物车角标在删除最后一件商品后仍显示 1',
@@ -65,7 +65,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       overall: '',
       before: [],
     }
-    kid.diagnoses = [
+    kid.bug.diagnoses = [
       { ...base, phase: 'cause', version: 1, rev: 1, status: 'approved' },
       { ...base, phase: 'plan', version: 2, rev: 1, status: 'pending' },
     ]

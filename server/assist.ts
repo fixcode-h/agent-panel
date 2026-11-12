@@ -27,7 +27,7 @@ import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
 import { t } from '../shared/i18n.ts'
 import { readGlobalLessons } from './lessons.ts'
-import { loadProjectLessons } from './project-lessons.ts'
+import { loadProjectLessons } from './projects/lessons.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 

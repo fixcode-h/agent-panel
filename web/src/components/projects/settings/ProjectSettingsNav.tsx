@@ -6,7 +6,6 @@ import {
   Library,
   Plug,
   Settings2,
-  Sheet,
   Sparkles,
   Users,
   Workflow as WorkflowIcon,
@@ -19,6 +18,8 @@ import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
 import { NavItem } from '@/components/ui/dialog-nav'
+import { usePluginProjectSections } from '@/plugins/registry'
+import { pluginIcon } from '@/plugins/icon'
 import type { ProjectDocsState } from './use-project-docs'
 
 /**
@@ -41,6 +42,7 @@ export function ProjectSettingsNav({
   const { settings } = useData()
   const { isChanged, hasDoc, docOf } = docs
   const setSection = onSection
+  const pluginSections = usePluginProjectSections()
   // 停用的 CLI 不在项目设置里出现
   const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter(
     (c) => c.docs.length && (!settings || cliSettings(settings, c.id).enabled),
@@ -92,10 +94,20 @@ export function ProjectSettingsNav({
           {t('项目经验')}
         </NavItem>
       )}
-      <NavItem on={section === 'tables'} onClick={() => setSection('tables')} hint={draft.tables?.dirs[0]}>
-        <Sheet className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-        {t('表格')}
-      </NavItem>
+      {pluginSections.map((p) => {
+        const Icon = p.icon ?? pluginIcon('puzzle')
+        return (
+          <NavItem
+            key={p.key}
+            on={section === p.key}
+            onClick={() => setSection(p.key)}
+            hint={p.hint?.(draft.plugins?.[p.plugin])}
+          >
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+            {t(p.label)}
+          </NavItem>
+        )
+      })}
       <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
         <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
         Skill

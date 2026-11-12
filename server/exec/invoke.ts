@@ -16,7 +16,7 @@ import { APP_HINT } from '../app-actions/mcp.ts'
 import { claimPanelName, sweepPanelMcp } from '../panel-mcp-files.ts'
 import { promptLangReminder } from '../../shared/prompt-lang.ts'
 import type { ActionCaller } from '../app-actions/registry.ts'
-import type { Orchestra } from '../../shared/engine-host.ts'
+import type { Orchestra } from '../../shared/engine/host.ts'
 import { supportedEffort } from '../models.ts'
 import { log } from '../log.ts'
 import { randomUUID } from 'node:crypto'
@@ -25,7 +25,7 @@ import path from 'node:path'
 import { CACHE_DIR } from '../store.ts'
 import { knownVersion } from '../detect.ts'
 import { hasCurl } from './has-curl.ts'
-import { expandHome } from '../cli-extras.ts'
+import { expandHome } from '../cli/extras.ts'
 import {
   HOOK_URL_ENV,
   hookInstall,

@@ -82,17 +82,15 @@ import {
   ScheduleIcon,
   SkillIcon,
   SummaryIcon,
-  TableIcon,
   WorkflowIcon,
   type NavIcon,
 } from './rail-icons'
-import { useTablesEntry } from '@/lib/tables-nav'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { TRASH_RETENTION_DAYS, byAskedAt } from '@shared/task'
 import { liveBusy } from '@shared/live/task-live'
 import { useLiveOf } from '@/lib/live/store'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
-import { sortProjects } from '@shared/project-order'
+import { sortProjects } from '@shared/projects/order'
 import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
 
@@ -320,22 +318,6 @@ function PluginNavRow({ page, narrow }: { page: PluginPage & { plugin: string };
   )
 }
 
-/** 有项目设了表格目录才出现的「表格」入口：手机抽屉里一行（宽屏在图标栏，见 ActivityBar） */
-function TablesNavRow({ narrow }: { narrow: boolean }) {
-  const { route, go } = useNav()
-  const target = useTablesEntry()
-  if (!target) return null
-  return (
-    <Row
-      icon={TableIcon}
-      label={t('表格')}
-      collapsed={narrow}
-      on={route.page === 'tables'}
-      onClick={() => go({ page: 'tables', id: target })}
-    />
-  )
-}
-
 /** 切到各模式时回到上次在那个模式里看的页面 */
 let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
@@ -343,7 +325,7 @@ let lastAgentRoute: Route = { page: 'home' }
 let lastWorkRoute: Route = { page: 'home' }
 export const homeRoute = () => lastWorkRoute
 /** 功能页：会话侧栏让开，整页给这个功能 */
-export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || page === 'plugin' || page === 'tables'
+export const isToolPage = (page: PageId) => NAV.some((n) => n.id === page) || page === 'plugin'
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天。
@@ -607,7 +589,6 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   dot={n.id === 'library' ? skillDot : undefined}
                 />
               ))}
-            {mobile && <TablesNavRow narrow={narrow} />}
             {mobile && <PluginNavRows narrow={narrow} />}
           </>
         )}

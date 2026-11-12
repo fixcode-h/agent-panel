@@ -4,7 +4,7 @@
  */
 import type { Agent } from '../../shared/schema.ts'
 import type { BuildOptions, getCli } from '../../shared/clis.ts'
-import type { AgentCall } from '../../shared/engine-host.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
 import { agentPermission, type cliSettings } from '../../shared/settings.ts'
 import { limitEnvVars, longContextModel, type ModelLimits } from '../../shared/model-limits.ts'
 import { trustFor } from '../../shared/cli-trust.ts'

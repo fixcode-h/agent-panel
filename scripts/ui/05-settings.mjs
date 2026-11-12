@@ -186,18 +186,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '设置-组件-数据表格', ['修饰行', '字段名行', '表头底色浓度'])
     await spec.getByRole('button', { name: '恢复本组' }).click()
   }
-  // 表格页的格子编辑器：枚举下拉点开能选值，检查结果列着
-  {
-    const spec = p.getByText('EnumPicker · ListEditor · ProblemsBar', { exact: true }).locator('xpath=../..')
-    await spec.scrollIntoViewIfNeeded()
-    await spec.getByRole('button', { name: '打开下拉' }).click()
-    await p
-      .getByRole('option', { name: /TabletopDecor/ })
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('设置-组件：枚举下拉样例点开后没有列出能选的值'))
-    await check(p, '设置-组件-表格编辑器', ['HomeDecorationMountType', '检查结果'])
-    await p.keyboard.press('Escape')
-  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新

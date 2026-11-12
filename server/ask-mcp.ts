@@ -7,10 +7,9 @@ import { streamSSE } from 'hono/streaming'
 import type { AskQuestion } from '../shared/schema.ts'
 import { askMeta } from '../shared/away.ts'
 import type { AskReply, CliEvent } from './exec/parsers.ts'
-import type { Orchestra } from '../shared/engine-host.ts'
+import type { Orchestra } from '../shared/engine/host.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
-import { VIDEO_TOOL } from './video/agent-tool.ts'
 import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 import { log } from './log.ts'
@@ -41,7 +40,7 @@ export type Ask = (ev: AskEvent) => void
 /** 长等待（提问、等下一句）期间定期往流里写一行注释当心跳，免得 HTTP 客户端判定连接空闲 */
 const HEARTBEAT_MS = 20_000
 /** 会等很久的工具：走流式响应带心跳（wait_agents 一次可能等到子任务全部结束，见 orch-mcp.ts 的 WAIT_AGENTS_S） */
-const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents', 'video_frames']
+const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents']
 
 // 模块状态：会话，跟着进程或连接一起没
 const sessions = new Map<
@@ -216,8 +215,6 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
     ...(s.wait ? [WAIT_TOOL] : []),
     ...orch,
     ...(s.app ? APP_TOOLS : []),
-    // 从视频截帧（收在 more_tools 里）：对话里才有，帧写进这个对话的目录
-    ...(s.app ? [VIDEO_TOOL] : []),
   ]
   // 不常用的工具不直接列出，收进 more_tools（见 shared/panel-tools.ts 的 DEFERRED_TOOLS）：
   // 工具说明每个会话都要整份带着，父对话一次二十多个、上万字，大多数一轮都用不到
@@ -227,8 +224,6 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
     if (name === NOTES_TOOL.name && s.notes) return callNotes(s)
     if (s.orch && orch.some((x) => x.name === name)) return callOrchTool(s.orch, name, args, signal)
     if (s.app && APP_TOOLS.some((x) => x.name === name)) return callAppTool(s.app, name, args)
-    if (s.app && name === VIDEO_TOOL.name)
-      return (await import('./video/agent-frames.ts')).callVideoTool(s.app.taskId, args, signal)
     if (name === WAIT_TOOL.name && s.wait) {
       const text = await s.wait()
       return { content: [{ type: 'text', text: text ?? '用户已经离开了这个对话，本轮到此结束。' }] }

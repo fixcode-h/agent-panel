@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Agent } from '../shared/schema.ts'
-import { projectDocRoot } from './doc-root.ts'
+import { projectDocRoot } from './docs/root.ts'
 import { parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
 
 /**
@@ -18,7 +18,7 @@ export async function docRootOf(projectPath: string, agents: Agent[]) {
 }
 
 /**
- * 文档根和当前分支：P4 / SVN 各分支共用文档根时才有分支（server/doc-group.ts），
+ * 文档根和当前分支：P4 / SVN 各分支共用文档根时才有分支（server/docs/group.ts），
  * 模块文档上写的分支和它不同，就是别的分支写的
  */
 export async function docInfoOf(

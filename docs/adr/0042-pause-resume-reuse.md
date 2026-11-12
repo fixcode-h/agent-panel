@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-03 四期都已实施） · 2026-11-03
 
-- 影响范围：`shared/task.ts`（`childReport`）、`shared/resume-kids.ts`、`shared/plan.ts`、`server/tasks/conversation-routes.ts`（`resumeKids`、`/resume`）、`server/tasks/child-messages.ts`（`noteParent`）、`shared/engine.ts`（子任务的 `resume`、`finish`）、`shared/task-settle.ts`、`server/tasks/keepalive.ts`（`stopTree`）
+- 影响范围：`shared/task.ts`（`childReport`）、`shared/resume-kids.ts`、`shared/plan.ts`、`server/tasks/conversation-routes.ts`（`resumeKids`、`/resume`）、`server/tasks/child-messages.ts`（`noteParent`）、`shared/engine.ts`（子任务的 `resume`、`finish`）、`shared/tasks/settle.ts`、`server/tasks/keepalive.ts`（`stopTree`）
 - 取代：无。补全 [0032](./0032-conversations-keep-going.md) 的「继续时连带恢复」和 [0036](./0036-stuck-child-restart-takeover.md) 的卡住接手
 
 ## 背景

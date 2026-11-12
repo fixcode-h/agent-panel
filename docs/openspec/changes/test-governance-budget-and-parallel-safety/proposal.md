@@ -37,7 +37,7 @@
 - 不改产品功能、界面行为和执行引擎语义；只治理测试基础设施与验证方式。
 - 不引入外部测试服务（远程缓存、云测试平台）或新的测试框架。
 - 不为达标删测试：减少耗时只能来自分层、并发、选择精度和淘汰规则。
-- 不处理与本 change 无关的测试失败（例如本次验证中 `server/task-children-count.test.ts` 在并发下的偶发失败只记录，不在本 change 修）。
+- 不处理与本 change 无关的测试失败（例如本次验证中 `server/tasks/children-count.test.ts` 在并发下的偶发失败只记录，不在本 change 修）。
 
 ## Acceptance
 

@@ -1,4 +1,4 @@
-import type { HelperSpec, Orchestra } from '../../shared/engine-host.ts'
+import type { HelperSpec, Orchestra } from '../../shared/engine/host.ts'
 import type { StopReason, Task } from '../../shared/schema.ts'
 
 /** tasksApi 依赖的列表源（角色、工作流、项目、项目分类） */

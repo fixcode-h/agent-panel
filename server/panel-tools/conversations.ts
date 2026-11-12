@@ -1,6 +1,6 @@
 /** 父对话管子对话：查看、新建、交给已有的（Orchestra.coordinator），收尾子对话（Orchestra.parentOf） */
 import { childKindArgs, childKindFields, upgradeBugArg, upgradeBugFields } from '../child-kind-fields.ts'
-import { docsFirstArgs, docsFirstFields } from '../docs-first-tool.ts'
+import { docsFirstArgs, docsFirstFields } from '../docs/first-tool.ts'
 import { routeField, routeOf, stepField } from '../orch-fields.ts'
 import { noArgs, reply, str, text, type PanelTool } from './types.ts'
 

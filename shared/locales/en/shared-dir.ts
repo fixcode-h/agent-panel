@@ -1,4 +1,4 @@
-/** 英文词典的一部分，键是中文原文：几个对话共用一个目录时的提醒和改动卡片上的说明（shared/shared-dir.ts、server/turn-owners.ts） */
+/** 英文词典的一部分，键是中文原文：几个对话共用一个目录时的提醒和改动卡片上的说明（shared/shared-dir.ts、server/turn/owners.ts） */
 export const EN_SHARED_DIR: Record<string, string> = {
   '「{title}」正在这个目录里改文件，两边的改动可能互相影响':
     '"{title}" is editing files in this directory; the two conversations\' changes may affect each other',

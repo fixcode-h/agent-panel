@@ -3,7 +3,7 @@
  * orchTools（工具清单）、orchHint（用法说明）、callOrchTool（执行）都从注册表（registry.ts）生成，
  * 不再在三处各写一遍条件和说明。
  */
-import type { Orchestra } from '../../shared/engine-host.ts'
+import type { Orchestra } from '../../shared/engine/host.ts'
 
 /** 交给 CLI 的工具定义（MCP tools/list 里的一项） */
 export interface ToolDef {

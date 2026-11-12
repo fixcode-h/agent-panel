@@ -3,7 +3,7 @@ import { readdir, rmdir } from 'node:fs/promises'
 import path from 'node:path'
 import { Task } from '../../shared/schema.ts'
 import { readJson, writeJsonAtomic, writeTextAtomic } from '../store.ts'
-import { head, safeTaskId } from '../task-store.ts'
+import { head, safeTaskId } from '../tasks/store.ts'
 import { MSG_JSONL, messagesToJsonl } from '../tasks/messages-file.ts'
 import type { Migration } from './index.ts'
 
@@ -17,7 +17,7 @@ export function fillTurnSeen(raw: unknown, t: { turnSeenAt?: string; turnDoneAt?
   return true
 }
 
-/** 任务文件放在哪个目录：和 server/task-store.ts 的 taskDirOf 一样，只是按传入的数据目录算 */
+/** 任务文件放在哪个目录：和 server/tasks/store.ts 的 taskDirOf 一样，只是按传入的数据目录算 */
 export const taskDirIn = (root: string, projectId: string) =>
   projectId && safeTaskId(projectId) ? path.join(root, 'projects', projectId) : path.join(root, 'chats')
 
@@ -34,7 +34,7 @@ export async function taskDirsIn(root: string) {
  * 两代旧的任务存储布局拆成现在的「按项目分目录、每个任务一个记录文件 + 一个对话文件」：
  * - 更早：所有任务在 tasks/tasks.json 一个文件里
  * - 上一版：tasks/items/<id>.json，每个任务一个完整文件，不分项目
- * 原文件挪进备份目录。原来在 server/task-store.ts 里每次启动都检查一遍，现在只跑一次
+ * 原文件挪进备份目录。原来在 server/tasks/store.ts 里每次启动都检查一遍，现在只跑一次
  */
 export const taskLayout: Migration = {
   version: 1,

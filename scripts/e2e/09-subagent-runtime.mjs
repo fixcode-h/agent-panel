@@ -995,7 +995,7 @@ await runShard('子对话运行与监管', async (api) => {
     )
     assert.ok(!kid.bug, '普通子对话不是用户报的 Bug')
     const sent = await call('POST', `/tasks/${kid.id}/messages`, { text: '/bug 购物车角标偶尔不刷新' })
-    assert.equal(sent.bug, true, '子对话里发 /bug：标成用户报的 Bug，之后有交诊断报告的工具')
+    assert.equal(sent.bug?.kind, 'report', '子对话里发 /bug：标成用户报的 Bug，之后有交诊断报告的工具')
     const run = await callOf('购物车角标偶尔不刷新')
     assert.ok(run.input.includes('用 submit_diagnosis 分阶段交报告'), '展开成子对话按完整流程交报告的要求')
     assert.ok(run.input.includes('## 用户报的 Bug：完整查找流程'), '带上完整查找流程')
@@ -1034,7 +1034,7 @@ await runShard('子对话运行与监管', async (api) => {
     const asked = await waitFor(
       async () => {
         const x = await call('GET', `/tasks/${kid.id}`)
-        return !x.working && x.diagnoses?.at(-1)?.status === 'pending' ? x : null
+        return !x.working && x.bug?.diagnoses?.at(-1)?.status === 'pending' ? x : null
       },
       { timeout: 20000, label: '交了诊断报告、停在等确认' },
     )
@@ -1042,14 +1042,14 @@ await runShard('子对话运行与监管', async (api) => {
     const stopped = await call('POST', `/tasks/${kid.id}/stop`)
     assert.equal(stopped.status, 'stopped', '等确认时点停止：对话落成已停止，停止按钮变回来')
     assert.equal(stopped.stopReason, 'user')
-    assert.equal(stopped.diagnoses.at(-1).status, 'pending', '报告留着，之后照样能确认')
+    assert.equal(stopped.bug.diagnoses.at(-1).status, 'pending', '报告留着，之后照样能确认')
     // 停下后点「继续执行」：回到等确认这一步，不拉起 CLI 让它自己往下跑（用户 2026-11-04 要求）
     const turns = (stopped.turns ?? []).length
     const resumed = await call('POST', `/tasks/${kid.id}/resume`)
     assert.notEqual(resumed.status, 'stopped', '继续后回到等确认，不再是已中断')
     assert.equal(resumed.stopReason ?? null, null)
     assert.equal(resumed.working, false, '没有开新的一轮')
-    assert.equal(resumed.diagnoses.at(-1).status, 'pending')
+    assert.equal(resumed.bug.diagnoses.at(-1).status, 'pending')
     const after = await call('GET', `/tasks/${kid.id}`)
     assert.equal((after.turns ?? []).length, turns, '继续不拉起 CLI：确认或提意见后才接着做')
     await call('POST', `/tasks/${bp.id}/stop`).catch(() => {})

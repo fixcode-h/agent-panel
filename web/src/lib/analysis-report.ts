@@ -1,5 +1,5 @@
 import type { Agent, Task, TaskMessage } from '@shared/schema'
-import { EVOLUTION_LANG } from '@shared/task-export'
+import { EVOLUTION_LANG } from '@shared/tasks/export'
 import { LESSON_REVIEW_LANG } from '@shared/lesson-review'
 import { DIAGNOSIS_LANG } from '@shared/diagnosis'
 

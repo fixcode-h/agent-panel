@@ -4,7 +4,7 @@ import { bugSource, workDirOf } from './bug-source.ts'
 import { bugWho, collectBugEnv } from './bug-env.ts'
 import { docRootOf, lookupModuleDocs, moduleIndexText } from '../module-map.ts'
 import { runEngineTurn } from '../../shared/engine.ts'
-import type { EngineHost } from '../../shared/engine-host.ts'
+import type { EngineHost } from '../../shared/engine/host.ts'
 import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { askPushRequest, dropOwnRequests, panelRequest } from './panel-requests.ts'
@@ -18,7 +18,7 @@ import { log } from '../log.ts'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { placedFiles } from '../attachments.ts'
-import { projectDocRoot } from '../doc-root.ts'
+import { projectDocRoot } from '../docs/root.ts'
 import { projectFormat } from '../file-format.ts'
 import { gitHasRemote, reviewDiff } from './git.ts'
 import { saveHandoffFile } from './handoff-file.ts'
@@ -28,7 +28,7 @@ import { steers, waitChat } from './steering.ts'
 import { t } from '../../shared/i18n.ts'
 import { ownFiles, taskChanges } from '../own-changes.ts'
 import { p4ReviewDiff } from '../p4-review-diff.ts'
-import { gitSemantic, p4Semantic, reviewTableSchema } from './review-semantic.ts'
+import { gitSemantic, p4Semantic } from './review-semantic.ts'
 import { yieldApiSlot } from './api-gate.ts'
 import { turnExtra } from './turn-extra.ts'
 
@@ -106,13 +106,14 @@ export async function runRealTurn(ctx: RealContext) {
     prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
     changed: ctx.changed,
     newId: ctx.newId,
-    // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug-quotes.ts）
-    // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug-env.ts）
-    bugSource: ctx.task.bug
-      ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>
-          collectBugEnv(ctx.project.path, bugWho(ctx)),
-        )
-      : undefined,
+    // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug/quotes.ts）
+    // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug/env.ts）
+    bugSource:
+      ctx.task.bug?.kind === 'report'
+        ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>
+            collectBugEnv(ctx.project.path, bugWho(ctx)),
+          )
+        : undefined,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
@@ -223,13 +224,9 @@ export async function runRealTurn(ctx: RealContext) {
           // 二进制文件（表格、插件认领的扩展名）换成语义差异；整理出错只少这一节，不拦评审
           const semantic =
             d.stat && d.snapshot
-              ? await gitSemantic(
-                  ctx.project.path,
-                  d.from,
-                  d.snapshot,
-                  own,
-                  await reviewTableSchema(ctx.project),
-                ).catch((e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`)
+              ? await gitSemantic(ctx.project.path, d.from, d.snapshot, own, ctx.project).catch(
+                  (e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`,
+                )
               : ''
           return keepLongDiff(ctx.task.id, d, semantic)
         }
@@ -238,7 +235,7 @@ export async function runRealTurn(ctx: RealContext) {
             const own = files ?? [...ownFiles(ctx.task, ctx.project.path)]
             const d = await p4ReviewDiff(ctx.project.path, own)
             const semantic = d.stat
-              ? await p4Semantic(ctx.project.path, own, await reviewTableSchema(ctx.project)).catch(
+              ? await p4Semantic(ctx.project.path, own, ctx.project).catch(
                   (e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`,
                 )
               : ''

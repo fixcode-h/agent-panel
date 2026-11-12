@@ -5,7 +5,7 @@
 1. **重启路径**：面板重启后，重启前还在跑的子对话仍显示「进行中」（行首转圈、计进侧栏分组的「N 个执行中」）。启动迁移只覆盖 `status === 'running'`，「这一轮说完了但计划没做完 / 独立分支没合回」的不在范围内。
 2. **运行期路径**：不重启也会出现——页面切走后宽限到期，`server/presence.ts` 的 `evict` 只结束还在等下一句的 CLI，**不落任务状态**，任务一直写着 `status: 'running'`。用户看到一批子对话卡片停在「未完成」，每张下面都写「CLI 进程已回收，继续会重新拉起」，实际都没有在跑（计划停在 5/8、6/8、7/11），而且**在 `running` 状态下没有「继续」按钮**（它只对 `stopped` / `failed` 显示），于是「很多子对话没有拉起」。
 
-- 状态：已修复（两条路径的代码、回归用例随同一批改动落地；`server/task-restart.test.ts` 5/5、`server/reclaim.test.ts` 5/5、`web/src/components/tasks/child-line.test.ts` 10/10 通过，`npm run typecheck`、`npm run lint` 通过，实测见「回归验证」）
+- 状态：已修复（两条路径的代码、回归用例随同一批改动落地；`server/tasks/restart.test.ts` 5/5、`server/reclaim.test.ts` 5/5、`web/src/components/tasks/child-line.test.ts` 10/10 通过，`npm run typecheck`、`npm run lint` 通过，实测见「回归验证」）
 - 症状：面板重启后，重启前还在跑的子对话在界面上仍显示「进行中」（行首转圈、计进侧栏分组的「N 个执行中」）；页面切走宽限到期后回收了进程，一批子对话卡片仍停在「未完成 + 继续会重新拉起」，实际没有进程、也没有能点的「继续」
 - 入口：`server/tasks.ts` 的 `ready` 启动迁移和 `setPresenceIdleHandler`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `childIcon` / `childState`（`convState` 的 `unfinished` / `unmerged`）/ `resumable`、`web/src/components/tasks/child-line.ts` 的 `convGone`
 - 根因类型：状态收口缺口（重启迁移范围不足、页面回收只结束进程不落状态）+ 状态判定不看进程存活（两处信号不同源）
@@ -114,7 +114,7 @@
 
 ## 防复发护栏
 
-`server/task-restart.test.ts`（`npm run test:unit` 会跑）五条：
+`server/tasks/restart.test.ts`（`npm run test:unit` 会跑）五条：
 
 | 用例                                                                | 守着什么                                                                                             |
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -124,7 +124,7 @@
 | 彻底做完的任务保持已完成                                            | 迁移不误伤 `done` 且没有挂起事项的任务                                                               |
 | 已经请父对话收尾的任务保留待收尾：它等的是父对话合并，不靠 CLI 进程 | `wrapup` 不被落成已停止，`wrapRequest` 原样保留                                                      |
 
-用例里的 `spins()` 和界面用同一份判定（`childSpinning` + `cliAlive: false`），不另写期望；`shared/task-stage.test.ts` 继续守着 `convState` / `childIcon` 的优先级，改图标判定时会先在那里面暴露。
+用例里的 `spins()` 和界面用同一份判定（`childSpinning` + `cliAlive: false`），不另写期望；`shared/tasks/stage.test.ts` 继续守着 `convState` / `childIcon` 的优先级，改图标判定时会先在那里面暴露。
 
 `server/reclaim.test.ts`（运行期路径，`npm run test:unit` 会跑）三条：
 
@@ -140,7 +140,7 @@
 
 ### 用例（按项目教训 `lmvmabgjdi271`，先在旧实现上确认会失败）
 
-重启路径（`server/task-restart.test.ts`）：
+重启路径（`server/tasks/restart.test.ts`）：
 
 | 实现                                            | 结果                                                    |
 | ----------------------------------------------- | ------------------------------------------------------- |
@@ -175,7 +175,7 @@
 
 ```bash
 npm run typecheck && npm run lint
-npx tsx --test server/task-restart.test.ts   # 5/5 通过
+npx tsx --test server/tasks/restart.test.ts   # 5/5 通过
 npx tsx --test server/reclaim.test.ts        # 3/3 通过
 npm run test:e2e:wsl                         # WSL Ubuntu-24.04，退出码 0，全部分片通过
 ```
@@ -187,7 +187,7 @@ npm run test:e2e:wsl                         # WSL Ubuntu-24.04，退出码 0，
 | `shared/task.ts`                              | 新增 `restartInterrupted(task)`：按 `ChildEntry` 走 `childSpinning` / `childState`，返回「重启后界面还会画成在跑」；`wrapup` 排除                                                                                                                                                                                      |
 | `server/tasks.ts`                             | `ready` 过滤条件扩成 `status === 'running' \|\| restartInterrupted(x)`，系统消息按「这一轮还在跑」和「已经说完但没收尾」分两种文案；`setPresenceIdleHandler` 从只有 `cancelWait(id)` 改成先 `cancelWait`，有 live 记录且没在跑走 `stopTask(id, 'presence')`，没有 live 记录走 `settleReclaimed(store, id, 'presence')` |
 | `shared/locales/en/server.ts`                 | 补新文案的英文 `This work was not finished before the panel restarted and is no longer running. Send a message to continue; the CLI will be started again.`                                                                                                                                                            |
-| `server/task-restart.test.ts`                 | 新增 5 条用例（见「防复发护栏」）                                                                                                                                                                                                                                                                                      |
+| `server/tasks/restart.test.ts`                | 新增 5 条用例（见「防复发护栏」）                                                                                                                                                                                                                                                                                      |
 | `server/exec/reclaim.ts`                      | 新增 `settleReclaimed(store, id, reason)`：把「`running` 且 `working === false`」的任务落成 `stopped` + 传入的 `stopReason`；`working` 的、已停下的不碰                                                                                                                                                                |
 | `web/src/components/tasks/child-line.ts`      | `convGone` 对 `childIcon` 是 `idle` 的行也返回 `'hint'`（页面切走 / 隐置 / 重启收口），静态行上依然显示「CLI 进程已回收，继续会重新拉起」；`stopReason: 'user'` 的不显示                                                                                                                                               |
 | `server/reclaim.test.ts`                      | 新增 3 条用例（见「防复发护栏」）                                                                                                                                                                                                                                                                                      |

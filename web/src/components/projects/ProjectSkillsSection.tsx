@@ -12,8 +12,8 @@ import {
   Wand2,
   Wrench,
 } from 'lucide-react'
-import type { ProjectSkill, ProjectSkillsView } from '@shared/project-skills'
-import { DEFAULT_SKILL_REPO, projectSkillName, skillIssues } from '@shared/project-skills'
+import type { ProjectSkill, ProjectSkillsView } from '@shared/projects/skills'
+import { DEFAULT_SKILL_REPO, projectSkillName, skillIssues } from '@shared/projects/skills'
 import { CLIS } from '@shared/clis'
 import { cliSettings, orderClis } from '@shared/settings'
 import { t } from '@shared/i18n'

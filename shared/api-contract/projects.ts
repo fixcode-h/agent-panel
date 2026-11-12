@@ -3,7 +3,7 @@
  */
 import { z } from 'zod'
 import type { LessonReviewItem } from '../lesson-review.ts'
-import type { ProjectProposal } from '../project-init.ts'
+import type { ProjectProposal } from '../projects/init.ts'
 import { GlobalLesson, GlobalLessons, Project, ProjectInput, type ProjectLesson } from '../schema.ts'
 import { endpoint, shaped } from './define.ts'
 

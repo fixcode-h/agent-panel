@@ -2,7 +2,7 @@
 
 状态：已实施（用户 2026-11-05 确认流程后开发） · 2026-11-05
 
-相关：[ADR 0045](../../../adr/0045-bug-diagnosis-confirm.md)（先交诊断报告、确认了再改）、[ADR 0046](../../../adr/0046-bug-analysis-pipeline.md)（一套方法、一份档案）、`shared/bug-phase.ts`、`shared/bug-diagnosis.ts`、`shared/bug-diagnosis-md.ts`、`server/diagnosis-tool.ts`、`server/hooks/guards.ts`（`bugDeny`）、`web/src/components/tasks/DiagnosisDialog.tsx`、`ReviewDialog.tsx`、`DiagnosisStages.tsx`、`LogAttach.tsx`
+相关：[ADR 0045](../../../adr/0045-bug-diagnosis-confirm.md)（先交诊断报告、确认了再改）、[ADR 0046](../../../adr/0046-bug-analysis-pipeline.md)（一套方法、一份档案）、`shared/bug/phase.ts`、`shared/bug/diagnosis.ts`、`shared/bug/diagnosis-md.ts`、`server/diagnosis-tool.ts`、`server/hooks/guards.ts`（`bugDeny`）、`web/src/components/tasks/DiagnosisDialog.tsx`、`ReviewDialog.tsx`、`DiagnosisStages.tsx`、`LogAttach.tsx`
 
 ## 0. 用户的要求
 

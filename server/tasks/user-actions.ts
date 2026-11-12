@@ -14,7 +14,7 @@ import {
   settleAction,
   type ActionSettle,
 } from '../../shared/user-action.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 
 const Settle = z.object({

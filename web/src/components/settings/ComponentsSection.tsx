@@ -72,7 +72,6 @@ import {
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
-import { TableEditorsSpecimen } from '@/components/settings/TableEditorsSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
 import { scanText } from '@shared/config-scan'
@@ -87,6 +86,7 @@ import { TuneProvider, TuneToggle, useTune } from '@/components/settings/Compone
 import type { CompName, ComponentStyle } from '@shared/component-style'
 import type { Appearance } from '@shared/schema'
 import { applyLocalAppearance } from '@/lib/appearance'
+import { PluginSpecimens } from './PluginSpecimens'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
 const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问题挡住后续节点
@@ -615,13 +615,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         <Specimen name="SheetTable · SheetHeaderBar" tune={['grid']}>
           <SheetSpecimen />
         </Specimen>
-        <Specimen name="EnumPicker · ListEditor · ProblemsBar" tune={['input', 'menu']}>
-          <TableEditorsSpecimen />
-        </Specimen>
         <Specimen name="DirList" tune={['input', 'button']}>
           <DirListSpecimen />
         </Specimen>
       </Group>
+      <PluginSpecimens Specimen={Specimen} />
       <Group title={t('空状态')}>
         <Specimen name="EmptyPanel" tune={['empty']}>
           <EmptyPanel size="md" className="w-full max-w-md">

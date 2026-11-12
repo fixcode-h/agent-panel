@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { setLang } from '../i18n.ts'
 import { TaskData } from '../schema.ts'
 import { taskState } from '../task.ts'
-import { taskWaitText } from '../task-word.ts'
+import { taskWaitText } from '../tasks/word.ts'
 import { liveActive, liveBusy, liveWaitText, liveWord, taskLiveOf, TaskLive, type LiveRuntime } from './task-live.ts'
 
 setLang('zh')

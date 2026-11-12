@@ -14,7 +14,7 @@
 
 ## 根因
 
-- `TaskStep.brief` 早就落了盘（`shared/engine.ts` 的 `spawn`：`instructions` + 评审交接单），但前端只在导出报告 / AI 分析里用它（`shared/task-export.ts` 的 `helperReport`），
+- `TaskStep.brief` 早就落了盘（`shared/engine.ts` 的 `spawn`：`instructions` + 评审交接单），但前端只在导出报告 / AI 分析里用它（`shared/tasks/export.ts` 的 `helperReport`），
   `HelperWindow` 的滚动区只渲染 `Msgs` 或一行空态文字，从来没读 `step.brief`。
 - 另一头 `brief` 是拼接出来的结构化文本（`##` 小节、评审交接单的 `###` 子节、重试时追加的 `## 重试时补充`），直接丢进界面会是一大坨原文，看不出哪段是要求、哪段是验收标准，
   所以只把字段读出来不够，还要按内容规范化排版。

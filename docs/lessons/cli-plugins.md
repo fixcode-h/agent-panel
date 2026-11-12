@@ -1,5 +1,5 @@
 ---
-paths: shared/clis/**, server/cli-packages.ts, web/src/components/settings/CliPackages.tsx, web/src/pages/SettingsPage.tsx
+paths: shared/clis/**, server/cli/packages.ts, web/src/components/settings/CliPackages.tsx, web/src/pages/SettingsPage.tsx
 ---
 
 # CLI 自带的能力和插件
@@ -14,4 +14,4 @@ paths: shared/clis/**, server/cli-packages.ts, web/src/components/settings/CliPa
 
 - 规则：装包、更新这类用户点的管理命令，先查设置开关带的环境变量会不会让它什么都不做；会的话在定义里（`packages.env`）盖掉，执行对话时照旧。
 - 起因：Pi 的「离线运行」默认带 `PI_OFFLINE=1`，`pi update` 在离线模式下直接跳过、退出码 0，设置里点「更新」显示成功、包其实没动。
-- 防线：`server/cli-packages.test.ts`。
+- 防线：`server/cli/packages.test.ts`。

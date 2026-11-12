@@ -12,7 +12,7 @@
  */
 import { homedir } from 'node:os'
 import { capture, childEnv } from './exec/process.ts'
-import { NPM } from './cli-source.ts'
+import { NPM } from './cli/source.ts'
 import { defaultPlan, ENV_PROXY, probeProxy, type ProxyPlan } from './net.ts'
 import { t } from '../shared/i18n.ts'
 

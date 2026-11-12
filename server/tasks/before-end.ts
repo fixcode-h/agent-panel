@@ -1,6 +1,6 @@
 import type { Task } from '../../shared/schema.ts'
 import { userWaiting, planStalled, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
-import { helpersWorking } from '../../shared/task-helpers.ts'
+import { helpersWorking } from '../../shared/tasks/helpers.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
 import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan.ts'
@@ -18,7 +18,7 @@ import {
 } from '../../shared/end-turn.ts'
 import { allowEnd, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks.ts'
 import { hasHeld } from '../exec/delivery.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
 

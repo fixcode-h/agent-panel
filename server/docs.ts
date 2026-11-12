@@ -22,7 +22,7 @@ import {
   type ProjectDocs,
 } from '../shared/docs.ts'
 import type { Agent, Project } from '../shared/schema.ts'
-import { docGroupApi } from './doc-group-api.ts'
+import { docGroupApi } from './docs/group-api.ts'
 import { agentRun, cliSettings } from '../shared/settings.ts'
 import { safeArgs } from './assist.ts'
 import { invokeCli } from './exec/invoke.ts'
@@ -174,7 +174,7 @@ export function docsApi(deps: {
       const readers = CLIS.filter((d) => d.docs.includes(input.path)).map((d) => d.name)
       return start(c, { ...input, prompt: docOptimizePrompt(input, readers) }, dir)
     })
-    // P4 / SVN 各分支共用的文档根：项目设置里看、改（server/doc-group-api.ts）
+    // P4 / SVN 各分支共用的文档根：项目设置里看、改（server/docs/group-api.ts）
     .route('/', docGroupApi(deps))
 
   /** 开始一次优化：检查 CLI 能用，在 dir 里只读运行，结果用 /doc-jobs 查 */

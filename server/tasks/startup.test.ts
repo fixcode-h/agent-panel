@@ -174,7 +174,13 @@ test('migrateOnStart：诊断报告还在等用户确认的子对话（保活着
     },
   ]
   const store = memStore([
-    task('kid', { parentTaskId: 'a', bug: true, status: 'running', awaitingUser: true, diagnoses: [diag], plans }),
+    task('kid', {
+      bug: { kind: 'report', diagnoses: [diag] },
+      parentTaskId: 'a',
+      status: 'running',
+      awaitingUser: true,
+      plans,
+    }),
     // 对照：同样计划没做完、没有等确认的报告，照常落成已中断并进名单
     task('other', { parentTaskId: 'a', status: 'running', awaitingUser: true, plans }),
   ])
@@ -183,7 +189,7 @@ test('migrateOnStart：诊断报告还在等用户确认的子对话（保活着
   assert.equal(kid.status, 'done', '不是已中断：convState 按报告算在运行，弹窗和「查看报告」都在')
   assert.equal(kid.stopReason, undefined)
   assert.equal(kid.awaitingUser, false)
-  assert.equal(kid.diagnoses?.[0].status, 'pending', '报告原样留着')
+  assert.equal(kid.bug?.diagnoses?.[0].status, 'pending', '报告原样留着')
   assert.ok(!kid.messages.some((m) => /已中断|还没收尾/.test(m.text)), '不写「已中断」的说明')
   assert.deepEqual(crashed, ['other'], '不进重启后的继续名单：等的是用户，不该拉起 CLI')
   assert.equal(store.map.get('other')!.status, 'stopped')

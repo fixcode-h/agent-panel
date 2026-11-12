@@ -4,8 +4,8 @@ import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts
 import { convState, convStateText, newTask, taskFacts } from '../shared/task.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { runEngineTurn } from '../shared/engine.ts'
-import type { AgentCall, EngineHost } from '../shared/engine-host.ts'
-import { FlowRun } from '../shared/task-flow-schema.ts'
+import type { AgentCall, EngineHost } from '../shared/engine/host.ts'
+import { FlowRun } from '../shared/tasks/flow-schema.ts'
 import { withWrapUp } from '../shared/flow-run-wrap.ts'
 import { planTask } from '../shared/flow.ts'
 
@@ -804,7 +804,7 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
       id: 'b1',
       parentTaskId: 'p0',
       rootTaskId: 'p0',
-      ...(bug && { bug: true }),
+      ...(bug && { bug: { kind: 'report' } }),
     }) as Task
   const bugKid = kid(true)
   const h = host(bugKid, [], async (call) => {
@@ -833,7 +833,7 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
   h.agents = [agent('w', '执行')]
   await runEngineTurn(h)
   assert.equal(bugKid.requests.length, 0, '不挂成等你处理的请求')
-  assert.equal(bugKid.diagnoses?.[0].status, 'pending')
+  assert.equal(bugKid.bug?.diagnoses?.[0].status, 'pending')
   assert.equal(
     convState(taskFacts(bugKid)),
     'running',

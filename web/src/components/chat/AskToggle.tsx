@@ -15,13 +15,13 @@ import { Modal } from '@/components/ui/modal'
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
-import { childAskChecked, childAskInitial } from '@shared/child-ask'
+import { childAskChecked, childAskInitial } from '@shared/children/ask'
 
 /**
  * 「提问」开关，所有 AI 会话的输入框上都有：打开时 AI 有问题会弹出卡片问你，它等你回答；
  * 关着时让 AI 自己选最合适的做法接着做。审批（命令、改文件）不受它影响，按设置里的权限决定要不要你确认。
  *
- * 父对话上还多一个右键菜单「子对话也提问」：之后新建的子对话默认开不开提问（见 shared/child-ask.ts）
+ * 父对话上还多一个右键菜单「子对话也提问」：之后新建的子对话默认开不开提问（见 shared/children/ask.ts）
  */
 export function AskToggle({
   value,

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { waitingAfter } from '../../shared/child-after.ts'
+import { waitingAfter } from '../../shared/children/after.ts'
 import { Task, type PeerFrom, type PeerKind, type TaskMessage } from '../../shared/schema.ts'
 import { type ConvState, taskDeleted } from '../../shared/task.ts'
 import { steerTask } from '../exec/steering.ts'
@@ -243,7 +243,7 @@ export function createChildMessages(sc: TasksScope) {
     const child = sc.live.get(id)?.task ?? (await sc.store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: sc.READONLY }
-    // 还在等前置子对话合回、没开始过的：父对话交了消息就是要它现在开始（shared/child-after.ts）
+    // 还在等前置子对话合回、没开始过的：父对话交了消息就是要它现在开始（shared/children/after.ts）
     if (kind === 'task' && waitingAfter(child)) {
       const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
       if (parent) return sc.startAfterNow(parent, child, message)

@@ -1,8 +1,8 @@
 /**
  * 面板工具 submit_diagnosis（ADR 0045）：父对话派来的 Bug，子对话查到根因、修之前交诊断报告，用户确认了方案再改。
- * 定义、用法说明和调用都在这里（面板工具注册表的条目）；校验、记录、等确认的逻辑在 shared/bug-diagnosis.ts
+ * 定义、用法说明和调用都在这里（面板工具注册表的条目）；校验、记录、等确认的逻辑在 shared/bug/diagnosis.ts
  */
-import type { Orchestra } from '../shared/engine-host.ts'
+import type { Orchestra } from '../shared/engine/host.ts'
 import type { PanelTool } from './panel-tools/types.ts'
 
 const text = (desc: string) => ({ type: 'string', description: desc })

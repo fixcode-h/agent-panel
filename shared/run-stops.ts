@@ -1,4 +1,4 @@
-import type { EngineHost, Orchestra } from './engine-host.ts'
+import type { EngineHost, Orchestra } from './engine/host.ts'
 import type { Task, TaskStep } from './schema.ts'
 import { clip } from './text.ts'
 import { pauseStep } from './task.ts'

@@ -57,7 +57,7 @@ import { runTools } from './flow-run-orch.ts'
 import { runWithSummary } from './helper-summary.ts'
 import * as rs from './run-stops.ts'
 import { fixRoutePart } from './fix-route.ts'
-import { bugRoutePart } from './bug-route.ts'
+import { bugRoutePart } from './bug/route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { orchAskPush } from './push-auth.ts'
 import { docRootText, plainDocRootText } from './doc-root.ts'
@@ -72,9 +72,9 @@ import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
-import { childAskPrompt } from './child-ask.ts'
+import { childAskPrompt } from './children/ask.ts'
 import { topPush } from './sub-policy.ts'
-import { overBudget } from './engine-budget.ts'
+import { overBudget } from './engine/budget.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
   SLOT_PROMPT,
@@ -94,7 +94,7 @@ import {
   wrapDone,
   wrapKind,
   wrapUpPart,
-} from './engine-prompt-parts.ts'
+} from './engine/prompt-parts.ts'
 import {
   MAX_HELPERS_PER_STEP,
   MAX_RESUME_IDS,
@@ -116,8 +116,8 @@ import {
   statusTree,
   takeMail,
   wholeReport,
-} from './engine-helpers.ts'
-import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine-host.ts'
+} from './engine/helpers.ts'
+import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine/host.ts'
 
 import { bindWait, finishStepNow, WRAP_UP } from './plan.ts'
 
@@ -1709,7 +1709,7 @@ async function runHelper(
     host.changed(true)
   }
   // 派出就开跑，不按任务限数排队（用户要求）：一个节点最多派几个由 spawn 的 MAX_HELPERS_PER_STEP 管，
-  // 真要限流用 API 设置里的并发上限（server/api-slots.ts），那是按厂家限流各算各的
+  // 真要限流用 API 设置里的并发上限（server/cli/api-slots.ts），那是按厂家限流各算各的
   try {
     if (ac.signal.aborted) return stopped()
     // 工作流被叫停、还没开始的：暂停（被打断），继续时能 resume 它；不然停在「待做」既不能接着做、也挡不住另派
@@ -2096,7 +2096,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
       : ''
     const roleAsks = roleText.includes('子对话停下来等用户时必须先提问')
     const roleSuggests = roleText.includes('子对话的收尾建议也交给用户选')
-    // 提问怎么问、问给谁按子对话自己的「提问」开关（见 shared/child-ask.ts）
+    // 提问怎么问、问给谁按子对话自己的「提问」开关（见 shared/children/ask.ts）
     const askPart = childAskPrompt(host.task.askUser, roleAsks)
     if (askPart) parts.push(askPart)
     // 通用规则在角色里、或关着提问（收尾建议也不交给别人选）时：只补随项目变的完成标准
@@ -2360,7 +2360,7 @@ export async function runEngineTurn(host: EngineHost) {
   task.status = 'running'
   // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
   task.stopReason = undefined
-  // 不管是前置合回后面板启动的、还是用户手动继续的，开始了就不再排在别人后面（shared/child-after.ts）
+  // 不管是前置合回后面板启动的、还是用户手动继续的，开始了就不再排在别人后面（shared/children/after.ts）
   task.waitAfter = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算（时长也从这里开始）
   task.budgetFrom = {

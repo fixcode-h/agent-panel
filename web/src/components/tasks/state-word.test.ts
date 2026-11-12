@@ -1,7 +1,7 @@
 /**
  * 几处状态说法一致（分析稿 A8、U2）：标题栏胶囊（headStatus）、会话栏「状态」（diagnoseTask 的标题）、
  * 输入框占位（taskWaitText）、侧栏和标题图标（taskWord）、父对话运行区的子对话行（childLabels）、
- * 「状态」窗口（lifeWordFacts）都要从 shared/task-word.ts 取同一个短词。
+ * 「状态」窗口（lifeWordFacts）都要从 shared/tasks/word.ts 取同一个短词。
  * 枚举各种事实组合（在不在跑、自己的提问 / 请求 / 等你操作、名下子对话在等 / 在跑、后台命令、诊断报告、各种 status），
  * 断言几处说法对得上——以前「这里写执行中、那里写等你」的 Bug 反复出，就是每处各拼一句。
  */
@@ -10,8 +10,8 @@ import { test } from 'node:test'
 import { setLang } from '@shared/i18n'
 import { lifeWordFacts } from '@shared/life-next'
 import { Task, type TaskRequest } from '@shared/schema'
-import { diagnoseTask } from '@shared/task-diagnosis'
-import { taskWaitText, taskWord, childWord } from '@shared/task-word'
+import { diagnoseTask } from '@shared/tasks/diagnosis'
+import { taskWaitText, taskWord, childWord } from '@shared/tasks/word'
 import { liveWord, taskLiveOf } from '@shared/live/task-live'
 import { childLabels, type ChildSummary } from './child-line'
 import { headStatus } from './head-status'
@@ -91,7 +91,7 @@ function build(c: Combo) {
     childrenNeeds: c.childNeeds,
     jobs: c.jobs ? ([{ id: 'j', service: false }] as never) : undefined,
     userActions: c.own === 'action' ? ([{ id: 'a', title: '登录测试账号', status: 'waiting', at: AT }] as never) : [],
-    diagnoses: c.diagnosis ? ([{ status: 'pending', version: 1 }] as never) : [],
+    bug: c.diagnosis ? { kind: 'report' as const, diagnoses: [{ status: 'pending', version: 1 }] as never } : undefined,
   }
   const child: ChildSummary = {
     id: 'c',

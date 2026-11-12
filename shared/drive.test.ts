@@ -42,7 +42,7 @@ test('推进账本：只在真推出去时记；同一进度推满就停，进�
 })
 
 test('推进次数存进对话（A10）：面板重启后（新的账本）接着存着的次数数，用户发消息清零也写回', () => {
-  type Count = import('./task-runtime-schema.ts').DriveCount | undefined
+  type Count = import('./tasks/runtime-schema.ts').DriveCount | undefined
   const saved = new Map<string, Count>()
   const store = {
     load: (id: string) => saved.get(id),

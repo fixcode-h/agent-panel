@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { FlowRun } from '../shared/task-flow-schema.ts'
+import { FlowRun } from '../shared/tasks/flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn } from '../shared/engine.ts'
-import type { AgentCall, EngineHost } from '../shared/engine-host.ts'
+import type { AgentCall, EngineHost } from '../shared/engine/host.ts'
 import { autoLangLabel, getLang, resolveLang, setLang } from '../shared/i18n.ts'
 import {
   PROMPT_LANG_ENV,

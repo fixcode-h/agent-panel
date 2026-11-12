@@ -14,9 +14,9 @@ import type { TasksScope } from './scope.ts'
 import type { Live } from './types.ts'
 import { cancelWait } from '../exec/steering.ts'
 import { settleReclaimed } from '../exec/reclaim.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import { killTree, killTreeDeep, taskCliAlive } from '../exec/process.ts'
-import { settleStopped } from '../../shared/task-settle.ts'
+import { settleStopped } from '../../shared/tasks/settle.ts'
 import { STOP_GIVE_UP_MS, TaskBusyError } from './helpers.ts'
 
 /**

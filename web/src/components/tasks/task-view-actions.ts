@@ -15,7 +15,7 @@ export function taskExportActions(task: { id: string }) {
       (e: Error) => toast.error(e.message),
     )
   /**
-   * 导出成单文件 HTML：接收方没装面板也能看，样式内联、不执行脚本（见 shared/task-export.ts 的 taskHtml）。
+   * 导出成单文件 HTML：接收方没装面板也能看，样式内联、不执行脚本（见 shared/tasks/export.ts 的 taskHtml）。
    * 和 JSON 包分开两项：一个是给别人看的报告，一个是导回面板的数据
    */
   const exportHtml = () =>

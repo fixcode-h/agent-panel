@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../../shared/i18n.ts'
 import { defaultAgent, type Task } from '../../shared/schema.ts'
 import { agentRun, cliSettings } from '../../shared/settings.ts'
-import { canPickRun, withTaskModel } from '../../shared/task-run.ts'
+import { canPickRun, withTaskModel } from '../../shared/tasks/run.ts'
 import { taskDeleted } from '../../shared/task.ts'
 import {
   QuotaResumeSettings,
@@ -22,9 +22,9 @@ import {
   type QuotaFallback,
 } from '../../shared/quota-resume.ts'
 import { getCli } from '../../shared/clis.ts'
-import { getLimits } from '../cli-extras.ts'
+import { getLimits } from '../cli/extras.ts'
 import { getSettings } from '../settings.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from './log.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 

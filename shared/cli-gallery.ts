@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 /**
  * 插件市场（ADR 0050）：CLI 的插件按 npm 关键词收录（Pi 是 pi-package，pi.dev/packages 也是这么收的），
- * 面板从 npm 搜索接口取数据、在本地排序。这里只放定义里的字段和纯函数；联网、缓存在 server/cli-gallery.ts
+ * 面板从 npm 搜索接口取数据、在本地排序。这里只放定义里的字段和纯函数；联网、缓存在 server/cli/gallery.ts
  */
 export const GallerySpec = z.object({
   /** npm 关键词：带这个关键词的包算这个 CLI 的插件 */

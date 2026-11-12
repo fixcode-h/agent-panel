@@ -1,4 +1,4 @@
-import type { EngineHost } from './engine-host.ts'
+import type { EngineHost } from './engine/host.ts'
 
 /**
  * 项目设了 cherry-pick 目标时告诉对话：用户让它 cherry-pick 时搬到哪、只搬什么。

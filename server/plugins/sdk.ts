@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import type { HookInput, HookOutput } from '../../shared/hook-defs.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
 
@@ -113,6 +114,11 @@ export interface PluginRun {
   cwd?: string
   /** 对话的模式：agent（项目里执行）、chat、workflow…（插件接口 2） */
   mode?: string
+  /**
+   * 这一轮是不是用户直接在聊的对话（插件接口 6）：父对话、子对话、Chat 对话都是，派出的一次性子任务和工作流节点不是。
+   * 和面板自己的「操控软件」工具同一个条件：只想给对话挂的工具（例如视频截帧）按它判断，不要按 mode 猜
+   */
+  conversation?: boolean
   /** 角色名、角色（含引入的角色）用到的技能 */
   agentName: string
   skills: string[]
@@ -162,11 +168,52 @@ export interface PluginServerContext {
 export interface Textifier {
   /** 认领的扩展名：小写、不带点（uasset） */
   exts: string[]
+  /** 评审看到的「怎么比的」（例如「表格，按格子比较」）；不给时写「插件 <id> 转成文本后逐行比较」 */
+  how?: string
   /**
-   * file.path 是相对项目根的路径（判断类型、写提示用，那一版不一定在磁盘上），file.cwd 是项目目录，
+   * file.path 是相对项目根的路径（判断类型、写提示用，那一版不一定在磁盘上），file.cwd 是项目目录（或对话的工作目录），
+   * file.project 是这个对话所在的项目（插件接口 6 起有，读项目自己的设置用），
    * side 说明是改动前（old）还是改动后（new）的那一版。返回的文本按行比较，同一内容要给出同样的文本
    */
-  text: (file: { path: string; cwd: string; side: 'old' | 'new'; data: Buffer }) => string | Promise<string>
+  text: (file: TextifyFile & { side: 'old' | 'new'; data: Buffer }) => string | Promise<string>
+  /**
+   * 自己写两版的差异（插件接口 6，例如表格插件按主键对齐、逐格比）：给了就不再按 text 逐行比。
+   * old / next 是 null 表示那一版没有这个文件（新建、删掉）；返回空串表示两版内容一样
+   */
+  diff?: (file: TextifyFile, old: Buffer | null, next: Buffer | null) => string | Promise<string>
+}
+
+export interface TextifyFile {
+  path: string
+  cwd: string
+  project: { id: string; path: string }
+}
+
+/**
+ * 面板动作（插件接口 6）：和面板自己的动作（server/app-actions，ADR 0011）进同一张表，Agent 经 app_actions / app_do、
+ * 脚本经 /api/actions 调。适合「操作插件自己的页面和数据」这类事（例如表格插件按主键改格子），
+ * 和 tools()（每轮对话按需挂的 MCP 工具）不同：动作对所有对话都在，模型先看目录再调。
+ */
+export interface PluginAction {
+  /** <组>.<动词>：组名用插件 id 里的字母（例如 tables.edit），不能和面板已有的动作重名 */
+  name: string
+  title: string
+  /** 给模型看：什么时候用、会怎样 */
+  description: string
+  /** read 只读；write 能改回来；danger 不可撤销，只在用户明确要求时用 */
+  level: 'read' | 'write' | 'danger'
+  /** 参数（用面板开放的 zod 写）：面板按它校验，并生成给模型看的参数说明 */
+  input: z.ZodType
+  run(args: any, ctx: PluginActionCtx): Promise<unknown>
+}
+
+export interface PluginActionCtx {
+  /** 进程内调面板的接口（path 不带 /api，插件自己的接口是 /plugins/<id>/…）：出错时抛出接口给的原因 */
+  api(method: string, path: string, body?: unknown): Promise<unknown>
+  /** 推给打开着的面板页面做界面操作，返回几个页面收到 */
+  ui(action: string, args: Record<string, unknown>): number
+  /** 对话里的 CLI 调的才有：哪个对话、哪个项目 */
+  caller?: { taskId: string; projectId: string; parentTaskId: string }
 }
 
 export interface ServerPlugin {
@@ -184,6 +231,8 @@ export interface ServerPlugin {
   onConfig?: (next: PluginConfig, prev: PluginConfig) => boolean | void | Promise<boolean | void>
   /** 插件页上的运行状态（自由的键值，界面原样列出；插件网页部分可以自己画） */
   status?: () => Promise<Record<string, unknown>>
+  /** 登记到面板动作表里的动作（插件接口 6） */
+  actions?: PluginAction[]
   /** 二进制文件转文本：评审拿到的改动里，认领了扩展名的文件按前后两版文本的差异给（没给就只在文件列表里） */
   textify?: Textifier
   /** 关掉、删除、重启前：停后台进程、清定时器 */

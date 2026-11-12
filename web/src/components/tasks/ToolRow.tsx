@@ -524,7 +524,7 @@ function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean)
 }
 
 /** 工具行要的任务字段：诊断报告那一行还要标题和各版报告（ADR 0045） */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> & Partial<Pick<Task, 'title' | 'diagnoses' | 'projectId'>>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> & Partial<Pick<Task, 'title' | 'bug' | 'projectId'>>
 
 /** 不在任务里的工具行（AI 创建 / 分析）打开差异窗口时的占位：没有 id，窗口里就不给按任务找文件的操作 */
 const NO_TASK: Pick<Task, 'id' | 'status' | 'changes'> = { id: '', status: 'done', changes: [] }
@@ -535,9 +535,9 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   // 交诊断报告那一行（ADR 0045）：那一版还在等用户确认时一直转圈。「查看报告」不放在这一行，
   // 报告入口只在运行区的报告卡片上（BugReportCard.tsx，用户 2026-11-07 定），这里只管交上来时自动弹一次
   // 弹窗挂在任务页顶层（见 diagnosis-window.tsx）：一轮输出完这一行会收进折叠、卸载，弹窗不能跟着关
-  const diagTask = task && { id: task.id, title: task.title ?? '', diagnoses: task.diagnoses }
+  const diagTask = task && { id: task.id, title: task.title ?? '', bug: task.bug }
   const { open: showDiag, dialog: diagDialog } = useDiagnosisWindow(diagTask)
-  const report = view.diagnosis ? task?.diagnoses?.find((d) => d.version === view.diagnosis) : undefined
+  const report = view.diagnosis ? task?.bug?.diagnoses?.find((d) => d.version === view.diagnosis) : undefined
   const waitReport = report?.status === 'pending'
   // 报告交上来时自动弹一次（每一版只弹一次，和父对话页共用记号，见 ChildReport.tsx）
   useEffect(() => {

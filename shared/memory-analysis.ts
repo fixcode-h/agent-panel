@@ -16,7 +16,7 @@ import { hhmm } from './datetime.ts'
  * 所以 topic、报告正文和归属规则都单独一份，不复用 MEMORY_TOPIC（否则 AI 会把两套数据混着讲）。
  */
 
-/** 「AI 分析」用的 topic：服务端据此补运行环境（见 server/task-memory.ts） */
+/** 「AI 分析」用的 topic：服务端据此补运行环境（见 server/tasks/memory.ts） */
 export const TASK_MEMORY_TOPIC = 'task-memory'
 
 /** 判断「涨」的最小门槛：变化不到 5% 且不到 2 MB 算平稳，免得采样抖动被说成泄漏 */

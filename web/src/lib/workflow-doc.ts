@@ -8,7 +8,7 @@ marked.use({ extensions: mathExtensions })
 marked.use({ tokenizer: { del: (src) => (src.startsWith('~~') ? false : undefined) } })
 import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
-import type { LineMark } from '@shared/bug-quotes-md'
+import type { LineMark } from '@shared/bug/quotes-md'
 import { markdownDiff } from './diff-html'
 
 type Hljs = typeof import('highlight.js/lib/common').default
@@ -61,7 +61,7 @@ const safe = (href: string) => {
 
 // 渲染器提到模块级：每次渲染都新建一个，长对话里每个增量都做一遍没有意义
 const renderer = new marked.Renderer()
-// 原样 HTML 一律转义；只放行 <br>：表格单元格里没别的办法换行（诊断报告的表格，shared/bug-diagnosis-md.ts）
+// 原样 HTML 一律转义；只放行 <br>：表格单元格里没别的办法换行（诊断报告的表格，shared/bug/diagnosis-md.ts）
 renderer.html = ({ text }) => (/^<br\s*\/?>$/i.test(text.trim()) ? '<br>' : escape(text))
 renderer.link = function ({ href, title, tokens }) {
   const text = this.parser.parseInline(tokens)
@@ -240,7 +240,7 @@ renderer.code = ({ text, lang }) => {
     // 高亮失败就显示原文
   }
   const lines = lineSpans(body, name === 'diff' || name === 'patch')
-  // 信息串里的 start=48 mark=52 marks=…（诊断报告的关键代码和原文，shared/bug-diagnosis-md.ts、bug-quotes-md.ts）：
+  // 信息串里的 start=48 mark=52 marks=…（诊断报告的关键代码和原文，shared/bug/diagnosis-md.ts、bug-quotes-md.ts）：
   // 行号从文件里的真实行开始，出错那行、行内那几个字、行尾说明、临时日志行标出来
   const start = Number(/(?:^|\s)start=(\d+)/.exec(lang ?? '')?.[1] ?? 1)
   const mark = Number(/(?:^|\s)mark=(\d+)/.exec(lang ?? '')?.[1] ?? 0)

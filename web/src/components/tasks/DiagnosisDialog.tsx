@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } fro
 import { FileSearch } from 'lucide-react'
 import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
-import type { Diagnosis } from '@shared/bug-diagnosis-schema'
-import { diagnosisMarkdown, diagnosisView } from '@shared/bug-diagnosis-md'
-import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug-phase'
-import { autoOn } from '@shared/bug-auto'
-import { recheckVerdict } from '@shared/bug-recheck'
+import type { Diagnosis } from '@shared/bug/diagnosis-schema'
+import { diagnosisMarkdown, diagnosisView } from '@shared/bug/diagnosis-md'
+import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug/phase'
+import { autoOn } from '@shared/bug/auto'
+import { recheckVerdict } from '@shared/bug/recheck'
 import { Checkbox } from '@/components/ui/checkbox'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -18,7 +18,7 @@ import { DiagnosisStages } from './DiagnosisStages'
 import { DiagnosisCard, ReportFold } from './DiagnosisCard'
 import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
 import { LogWatch, PatchReminder, usePatch, WorkspacePatch } from './DiagnosisEvidence'
-import { patchKindOf } from '@shared/bug-patch'
+import { patchKindOf } from '@shared/bug/patch'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -58,7 +58,7 @@ const statusOf = (d: Diagnosis) => {
 }
 
 /** 关键代码的那几行：codeRef 写的是位置，代码从对话的工作区读（不让 Agent 抄，抄的会和实际对不上） */
-// 有 codeRefs 的新报告用交报告时取的快照（shared/bug-quotes.ts），不再现读
+// 有 codeRefs 的新报告用交报告时取的快照（shared/bug/quotes.ts），不再现读
 const refKey = (d: Diagnosis) =>
   d.codeRef?.file && !d.codeRefs?.length ? `${d.codeRef.file}:${d.codeRef.start}-${d.codeRef.end}` : ''
 
@@ -252,7 +252,7 @@ export function DiagnosisDialog({
   version,
   dock,
 }: {
-  task: Pick<Task, 'id' | 'title' | 'diagnoses'> & Partial<Pick<Task, 'changes'>>
+  task: Pick<Task, 'id' | 'title' | 'bug'> & Partial<Pick<Task, 'changes'>>
   /** 打开时先看哪一份（交报告的顺序号）；不传看最新那份 */
   version?: number
   open: boolean
@@ -263,7 +263,7 @@ export function DiagnosisDialog({
 }) {
   const { settings, agents } = useData()
   const author = settings?.bugAuthor !== false
-  const list = task.diagnoses ?? []
+  const list = task.bug?.diagnoses ?? []
   const last = list.at(-1)
   const snippets = useSnippets(task.id, list, open)
   // 和 ReviewDialog 一样稳定下来：Markdown 按引用比较，变了会重新解析、冲掉标注的位置

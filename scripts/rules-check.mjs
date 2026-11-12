@@ -35,12 +35,14 @@ import { checkModuleDocsInRoot } from './lib/doc-modules.mjs'
 import { checkBugIndexesInRoot } from './lib/doc-bugs.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+// 只要普通文件：子仓库 plugins/（agent-plugins）在 ls-files 里是一个目录条目，读它会 EISDIR；它的代码归插件仓库自己检查
+const isFileIn = (f) => !!f && existsSync(path.join(root, f)) && statSync(path.join(root, f)).isFile()
 const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
   cwd: root,
   encoding: 'utf8',
 })
   .split('\n')
-  .filter((f) => f && existsSync(path.join(root, f)))
+  .filter(isFileIn)
 const read = (f) => readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n')
 const errors = []
 
@@ -119,7 +121,7 @@ const attrBinary = attrs
   .map(([pattern]) => globToRegExp(pattern.includes('/') ? pattern : `**/${pattern}`))
 const tracked = execFileSync('git', ['ls-files', '--cached'], { cwd: root, encoding: 'utf8' })
   .split('\n')
-  .filter((f) => f && existsSync(path.join(root, f)))
+  .filter(isFileIn)
 const crlf = []
 const bom = []
 for (const f of tracked) {
@@ -542,8 +544,8 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
     'shared/builtin/bug-method.ts',
     'shared/engine.ts',
     // 从 engine.ts 拆出去的提示词段落、子任务交回的说明：拆文件不能让句子查重漏掉它们
-    'shared/engine-prompt-parts.ts',
-    'shared/engine-helpers.ts',
+    'shared/engine/prompt-parts.ts',
+    'shared/engine/helpers.ts',
     'shared/push-auth.ts',
     'shared/turn-rules.ts',
     ...files.filter(

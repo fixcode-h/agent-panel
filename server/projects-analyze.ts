@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { ProjectSuggestion } from '../shared/project-scan.ts'
+import type { ProjectSuggestion } from '../shared/projects/scan.ts'
 import { defaultTestSteps } from '../shared/test-steps.ts'
 import { resolvePath } from './fs.ts'
 import { runProcess } from './exec/process.ts'

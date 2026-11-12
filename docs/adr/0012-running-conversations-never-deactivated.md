@@ -69,4 +69,4 @@
 
 ## 分期
 
-一次做完。出口：类型检查、lint、单元测试（`shared/task-stage.test.ts` 的统一状态和 `keepAliveBusy`、`server/engine-steps.test.ts` 的终止子任务、`server/orch-mcp.test.ts` 的工具表）、e2e（`04-subagents` 的「父对话切走：宽限到期不连带停掉还在跑的子对话」）。
+一次做完。出口：类型检查、lint、单元测试（`shared/tasks/stage.test.ts` 的统一状态和 `keepAliveBusy`、`server/engine-steps.test.ts` 的终止子任务、`server/orch-mcp.test.ts` 的工具表）、e2e（`04-subagents` 的「父对话切走：宽限到期不连带停掉还在跑的子对话」）。

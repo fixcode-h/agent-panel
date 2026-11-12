@@ -16,7 +16,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-child-ask-'))
 process.env.AGENT_PANEL_DATA = dir
 
 const { tasksApi } = await import('./tasks.ts')
-const { createTaskStore } = await import('./task-store.ts')
+const { createTaskStore } = await import('./tasks/store.ts')
 const { newTask } = await import('../shared/task.ts')
 const { setLang } = await import('../shared/i18n.ts')
 const { childQuestion } = await import('./exec/child-question.ts')

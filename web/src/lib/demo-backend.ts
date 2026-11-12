@@ -8,11 +8,11 @@ import { demoChildRows } from './demo-children'
  */
 import { seedChatRail } from './demo-chat-rail'
 import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
-import { decideDiagnosis } from '@shared/bug-diagnosis'
+import { decideDiagnosis } from '@shared/bug/diagnosis'
 import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
-import { bugBriefs } from '@shared/bug-overview'
+import { bugBriefs } from '@shared/bug/overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
@@ -32,8 +32,8 @@ import {
   skillTemplate,
   type ProjectSkill,
   type ProjectSkillsView,
-} from '@shared/project-skills'
-import { ProjectProposalSchema, withInitResult } from '@shared/project-init'
+} from '@shared/projects/skills'
+import { ProjectProposalSchema, withInitResult } from '@shared/projects/init'
 import { z } from 'zod'
 import {
   Agent,
@@ -101,11 +101,17 @@ import {
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
 import { demoLifecycle } from './demo-lifecycle'
-import { descendantTotals, importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
+import {
+  descendantTotals,
+  importTaskTree,
+  parseTaskExport,
+  exportTaskTree,
+  checkExportSize,
+} from '@shared/tasks/export'
 import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
-import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
+import { orderProjects, projectOrderError, sortProjects } from '@shared/projects/order'
 import {
   REPO,
   RECENT_RELEASES,
@@ -118,7 +124,7 @@ import {
 } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
-import { childAskEffect } from '@shared/child-ask'
+import { childAskEffect } from '@shared/children/ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { stopHelper } from '@shared/run-stops'
@@ -135,7 +141,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
-import { searchTasks } from '@shared/task-search'
+import { searchTasks } from '@shared/tasks/search'
 import { applyAnswer } from '@shared/requests/answer'
 import { forkedTask, rewoundTask, userMessageIndex } from '@shared/restore/rewind'
 import { trashRows } from '@shared/trash/rows'
@@ -167,8 +173,6 @@ import { demoStyles } from './demo-styles'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
 import { DEMO_CSV, DEMO_FILES, DEMO_README, DEMO_SHEETS } from './demo-project-files'
-import { demoTables } from './demo-tables'
-import { TABLE_EXCLUDE, TABLE_INCLUDE } from '@shared/tables'
 // 拆出去的演示接口：报错和校验、在跑的一轮、本机生图、进程面板、任务里的样例
 import { fail, parse } from './demo-http'
 import { live } from './demo-live'
@@ -594,24 +598,6 @@ function seed(): Db {
           name: '商城前台',
           description: '面向用户的商城网站',
           path: '/home/demo/code/web-shop',
-          // 表格管理：data 目录里的 xlsx / CSV 在表格页里看（左侧图标栏多一个「表格」）
-          tables: {
-            dirs: ['data'],
-            include: TABLE_INCLUDE,
-            exclude: TABLE_EXCLUDE,
-            store: 'project',
-            readOnly: false,
-            // 导表脚本：{file} 执行时才换成表格的真实路径
-            exports: [
-              {
-                name: '导出 JSON',
-                command: 'python tools/export_json.py {file} -o {project}/out',
-                cwd: '',
-                timeoutMin: 30,
-              },
-              { name: '全部导成 Lua', command: 'node tools/xlsx2lua.mjs {files}', cwd: '', timeoutMin: 30 },
-            ],
-          },
           categoryId: web.id,
           workflowId: '',
           // 上次 AI 初始化保存的推荐：重开设置时卡片上能直接「应用推荐」
@@ -765,15 +751,6 @@ function seed(): Db {
           name: '客户端主工程',
           description: '',
           path: '/home/demo/code/game-client',
-          // 同一个游戏的 Release 工作区：表格页的「跨项目对比」拿它和商城前台的 data 目录比
-          tables: {
-            dirs: ['data'],
-            include: TABLE_INCLUDE,
-            exclude: TABLE_EXCLUDE,
-            store: 'project',
-            readOnly: false,
-            exports: [],
-          },
           categoryId: game.id,
           workflowId: '',
         },
@@ -1528,7 +1505,7 @@ const demoSkillFiles = new Map<string, string>([
   ['.claude/skills/shop-i18n', '---\nname: shop-i18n\n---\n\n把界面文案补上英文。\n'],
 ])
 
-/** 项目设置里的 Skill 分节：和 server/project-skills.ts 返回同样的字段 */
+/** 项目设置里的 Skill 分节：和 server/projects/skills.ts 返回同样的字段 */
 function demoProjectSkillsApi(method: string, seg: string[], query: URLSearchParams, body: Record<string, unknown>) {
   const projectPath = '/home/demo/code/web-shop'
   const repos = projectSkillRepos().map((r) => ({ ...r, exists: true }))
@@ -1767,7 +1744,6 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
-  if (res === 'video') fail('在线演示不能读本机视频，截帧要在本机运行面板')
   if (res === 'tts') return demoTts(method, seg)
   // 在线演示不装插件：插件页显示空列表，插件市场要连 GitHub，演示里不能装
   if (res === 'plugins' && !id && method === 'GET')
@@ -1775,10 +1751,6 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'plugins') fail('在线演示不能安装插件，要在本机运行面板')
   if (res === 'project-trust') return { pi: ['.pi/skills'] }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
-  if (res === 'tables') {
-    const p = load().projects.find((x) => x.id === id) ?? fail('项目不存在')
-    return demoTables(method, seg, query, body, p, (pid) => load().projects.find((x) => x.id === pid))
-  }
   if (res === 'project-mcp') {
     const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))
     return demoProjectMcp(method, seg, body ?? {}, activeClis(), project?.path ?? '')
@@ -2543,7 +2515,7 @@ function demoJobView(task: Task, jobId: string): TaskJobView {
 }
 
 /**
- * 演示里的正文搜索：和正式版同一份片段口径（shared/task-search.ts），数据都在内存里，直接扫就行。
+ * 演示里的正文搜索：和正式版同一份片段口径（shared/tasks/search.ts），数据都在内存里，直接扫就行。
  * 已删除（回收站里）的对话同样不参与
  */
 function tasksRoute(
@@ -2573,7 +2545,7 @@ function tasksRoute(
     return createTask(d, parse(NewTaskInput, body)).task
   }
   // 正文搜索 / 回收站列表：路径里带的 id 是 'search'、'trash'，要在按 id 找任务之前接住
-  // 搜索和回收站列表：和正式后端同一份逻辑（shared/task-search.ts、shared/trash/rows.ts），演示只给内存里的消息
+  // 搜索和回收站列表：和正式后端同一份逻辑（shared/tasks/search.ts、shared/trash/rows.ts），演示只给内存里的消息
   if (id === 'search' && method === 'GET')
     return searchTasks(tasks, query.get('q') ?? '', async (tk) => tk.messages, Number(query.get('limit')))
   if (id === 'trash' && method === 'GET') return trashRows(tasks)
@@ -3093,7 +3065,7 @@ function tasksRoute(
   if (method === 'PATCH') {
     const p = parse(TaskPatch, body)
     const { childRun, applyChildAsk, ...rest } = p
-    // 「提问」联动和正式后端同一份规则（shared/child-ask.ts）：按钮只管父对话自己，菜单选了才动已有子对话
+    // 「提问」联动和正式后端同一份规则（shared/children/ask.ts）：按钮只管父对话自己，菜单选了才动已有子对话
     const askEffect = childAskEffect({
       askUser: p.askUser,
       childAskUser: p.childAskUser,

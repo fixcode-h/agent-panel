@@ -4,7 +4,7 @@
 - 症状：子任务续接会话报「Session found in different project … Aborted.」，Pi 没完成这一轮就退出
 - 入口：`server/exec/runner.ts` 的 `runAgent`
 - 根因类型：会话目录判定漏掉非对话路径
-- 模块：`server-exec`（`server/exec/runner.ts`），配套 `shared/task.ts`、`shared/schema.ts`、`shared/task-export.ts`、`server/tasks.ts`
+- 模块：`server-exec`（`server/exec/runner.ts`），配套 `shared/task.ts`、`shared/schema.ts`、`shared/tasks/export.ts`、`server/tasks.ts`
 - 关键词：Session found in different project、Fork this session into current directory、Aborted、没有完成这一轮就退出了、独立分支、worktree、`--session`、`--resume`、spawn_agents 的 resume
 
 ## 现象
@@ -57,11 +57,11 @@ echo "hi" | pi -p --mode json --session <在主项目目录里开的会话 id>
   - 非对话节点/子任务：`moved` 为真就直接 `resume = undefined` 用完整提示新开一个——子任务没有「对话记录」可带，也没有 `fresh` 以外的补救。
 - **删除会话时同步清目录记录**：三处 `delete task.sessions[sessionKey]`（会话找不到、历史不兼容、压缩摘要）和 `server/tasks.ts` 换角色清会话处，都补上 `delete task.sessionDirs[...]`，避免残留旧目录让下一轮误判。
 - **旧任务的自愈兜底**：修复前写下的任务没有 `sessionDirs`，跑到那份会话上仍会撞同一句报错。`runner.ts` 新增 `SESSION_OTHER_PROJECT` 正则（匹配 `Session found in different project` / `Fork this session into current directory`），在失败分支里丢掉会话并用 `call.fresh ?? call.prompt` 重跑一次，同时 `log.warn` 记下 `cwd` 和 stderr 片段。
-- **导出不带本机信息**：`shared/task-export.ts` 把 `sessionDirs` 加进 `omit`，导入时重置成 `{}`；`shared/task.ts` 的 `newTask` 和 `taskSummary` 补上该字段。
+- **导出不带本机信息**：`shared/tasks/export.ts` 把 `sessionDirs` 加进 `omit`，导入时重置成 `{}`；`shared/task.ts` 的 `newTask` 和 `taskSummary` 补上该字段。
 
 ## 防复发护栏
 
-- `shared/task-session-dir.test.ts`：`sameDir` 的大小写/分隔符/末尾斜杠/空串；`sessionMoved` 的「换了目录判搬过」「同目录不判搬过」「没记录不误判（交给自愈）」「对话退回 `sessionDir` 兜底」「节点不用对话的 `sessionDir` 兜底」「新字段优先于旧字段」。
+- `shared/tasks/session-dir.test.ts`：`sameDir` 的大小写/分隔符/末尾斜杠/空串；`sessionMoved` 的「换了目录判搬过」「同目录不判搬过」「没记录不误判（交给自愈）」「对话退回 `sessionDir` 兜底」「节点不用对话的 `sessionDir` 兜底」「新字段优先于旧字段」。
 - 现有 `scripts/e2e/04-subagents.mjs` 已有对话侧的断言「换了目录不续接旧会话」（`!wtCall.args.includes('--resume')`）；子任务侧的同类断言尚未补。
 
 ## 回归验证
@@ -81,14 +81,14 @@ npm run typecheck && npm run lint && npm run test:unit
 
 ## 落地改动
 
-| 位置                              | 改了什么                                                                                                                                     |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/schema.ts`                | `TaskData` 新增 `sessionDirs: Record<string, string>`（默认 `{}`）                                                                           |
-| `shared/task.ts`                  | 新增 `sameDir`、`sessionMoved`；`newTask` 和 `taskSummary` 补 `sessionDirs`                                                                  |
-| `server/exec/runner.ts`           | 用 `sessionMoved` 判定；子任务搬过也丢 `resume`；`session` 事件对每个会话记目录；三处删会话同步清目录；新增 `SESSION_OTHER_PROJECT` 失败自愈 |
-| `server/tasks.ts`                 | 换角色清会话时同步清 `sessionDirs`                                                                                                           |
-| `shared/task-export.ts`           | 导出时 `omit sessionDirs`，导入时重置为 `{}`                                                                                                 |
-| `shared/task-session-dir.test.ts` | 新增 5 条用例覆盖 `sameDir` / `sessionMoved`                                                                                                 |
+| 位置                               | 改了什么                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/schema.ts`                 | `TaskData` 新增 `sessionDirs: Record<string, string>`（默认 `{}`）                                                                           |
+| `shared/task.ts`                   | 新增 `sameDir`、`sessionMoved`；`newTask` 和 `taskSummary` 补 `sessionDirs`                                                                  |
+| `server/exec/runner.ts`            | 用 `sessionMoved` 判定；子任务搬过也丢 `resume`；`session` 事件对每个会话记目录；三处删会话同步清目录；新增 `SESSION_OTHER_PROJECT` 失败自愈 |
+| `server/tasks.ts`                  | 换角色清会话时同步清 `sessionDirs`                                                                                                           |
+| `shared/tasks/export.ts`           | 导出时 `omit sessionDirs`，导入时重置为 `{}`                                                                                                 |
+| `shared/tasks/session-dir.test.ts` | 新增 5 条用例覆盖 `sameDir` / `sessionMoved`                                                                                                 |
 
 ## 待确认
 

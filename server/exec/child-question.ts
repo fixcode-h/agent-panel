@@ -1,4 +1,4 @@
-import type { EngineHost } from '../../shared/engine-host.ts'
+import type { EngineHost } from '../../shared/engine/host.ts'
 import type { CliEvent } from './parsers.ts'
 
 type AskEvent = Extract<CliEvent, { type: 'ask' }>

@@ -9,11 +9,11 @@ import {
   stateBreaks,
   type StateBreak,
   type StateLive,
-} from '../../shared/task-settle.ts'
+} from '../../shared/tasks/settle.ts'
 import { taskGone } from '../../shared/task.ts'
 import { parentFixWait } from '../../shared/wake.ts'
 import { log } from '../log.ts'
-import type { createTaskStore } from '../task-store.ts'
+import type { createTaskStore } from './store.ts'
 import { reopenMerge } from './startup.ts'
 
 type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>

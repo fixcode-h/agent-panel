@@ -2,7 +2,7 @@ import type { RemoteAccess } from '../shared/schema.ts'
 import type { TailscaleInfo } from '../shared/remote.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
-import { resolveCommand } from './cli-source.ts'
+import { resolveCommand } from './cli/source.ts'
 import { refreshWinPath } from './win-path.ts'
 
 /**

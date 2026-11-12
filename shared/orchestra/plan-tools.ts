@@ -1,11 +1,11 @@
 // Orchestra 的计划类工具（从 shared/engine.ts 的 makeOrchestra 拆出来）。
-import { kidsOf } from '../child-lookup.ts'
+import { kidsOf } from '../children/lookup.ts'
 import { pickFlow } from '../flow-run.ts'
 import { isChatMode } from '../conv-mode.ts'
 import { endTurnCheck, pushTurnEnd } from '../end-turn.ts'
 import { requestAction } from '../user-action.ts'
 import { activePlan, applyPlan, bindWait, finishPlan, runningStepId } from '../plan.ts'
-import type { Orchestra } from '../engine-host.ts'
+import type { Orchestra } from '../engine/host.ts'
 import type { OrchCtx } from './ctx.ts'
 
 /** 计划类工具：选工作流、列计划、标计划做完 */

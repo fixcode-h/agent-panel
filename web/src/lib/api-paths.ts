@@ -1,7 +1,7 @@
 /** 对话消息里提到的文件：解析成本机路径、用系统程序打开。从 api.ts 拆出（api.ts 到了行数上限），api 里展开引入 */
 import { json, request } from './api'
 
-/** 和 server/task-paths.ts 的 PathInfo 一致 */
+/** 和 server/tasks/paths.ts 的 PathInfo 一致 */
 export interface PathInfo {
   path: string
   abs: string

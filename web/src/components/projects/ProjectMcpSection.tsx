@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { Project } from '@shared/schema'
 import { McpServer, type McpEntry, type McpTestResult } from '@shared/library'
-import type { ProjectMcpDetected, ProjectMcpOverview } from '@shared/project-mcp'
+import type { ProjectMcpDetected, ProjectMcpOverview } from '@shared/projects/mcp'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { joinArgs, splitArgs } from '@/lib/utils'
@@ -38,7 +38,7 @@ import { configScanApi } from '@/lib/api-config-scan'
 /**
  * 项目设置里的 MCP：面板管理的工具（写进各 Agent 的全局配置，和「MCP 工具」页同一份数据）+
  * 项目目录里识别到的配置（只读，导入前一直留在用户自己的文件里）。
- * 后端见 server/project-mcp.ts，写入复用 mcp-store 那套（只动 mcpServers 里自己那几段）。
+ * 后端见 server/projects/mcp.ts，写入复用 mcp-store 那套（只动 mcpServers 里自己那几段）。
  */
 
 /** 「键=值」一行一个 */

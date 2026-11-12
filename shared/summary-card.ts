@@ -202,7 +202,7 @@ ${example}
 }
 
 /**
- * 子对话的「总结格式」：详细总结，普通 Markdown，不写成卡片。父对话收到的「最近的结果」是从这一段摘的要点（shared/child-letter.ts），
+ * 子对话的「总结格式」：详细总结，普通 Markdown，不写成卡片。父对话收到的「最近的结果」是从这一段摘的要点（shared/children/letter.ts），
  * 面板自动画在父对话里的卡片标题也跳到这里，所以要写到没参与的人看完就明白
  */
 export function summaryDetailRules(lang: Lang = getLang()): string {

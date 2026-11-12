@@ -430,7 +430,7 @@ export async function spansFileDiff(cwd: string, spans: TreeSpan[], file: string
 }
 
 /**
- * 几段改动的完整差异（工作总结取关键代码用，见 server/summary-diff.ts）：一段失败就报错，由调用方决定跳过；
+ * 几段改动的完整差异（工作总结取关键代码用，见 server/summary/diff.ts）：一段失败就报错，由调用方决定跳过；
  * 不截断，字数由调用方按自己的上限截
  */
 export async function spansDiff(cwd: string, spans: TreeSpan[]) {

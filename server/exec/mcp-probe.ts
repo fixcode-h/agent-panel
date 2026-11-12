@@ -4,11 +4,11 @@ import path from 'node:path'
 import { McpStore, type McpProbe } from '../../shared/cli-spec.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
-import { isPanelMcpUrl } from '../../shared/project-mcp.ts'
+import { isPanelMcpUrl } from '../../shared/projects/mcp.ts'
 import type { Task } from '../../shared/schema.ts'
 import { log } from '../log.ts'
 import { readServerTable } from '../mcp-store.ts'
-import { taskLog } from '../task-log.ts'
+import { taskLog } from '../tasks/log.ts'
 import { systemNote } from './recovery.ts'
 
 /**

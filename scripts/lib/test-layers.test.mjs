@@ -26,7 +26,7 @@ test('分层：起服务、监听端口的测试归集成层', () => {
 })
 
 test('分层：建临时目录、读写真实文件的测试归集成层', () => {
-  const { layer, markers } = layerOf('server/task-store.test.ts', LAYER_SAMPLES.tempDir)
+  const { layer, markers } = layerOf('server/tasks/store.test.ts', LAYER_SAMPLES.tempDir)
   assert.equal(layer, LAYERS.integration)
   assert.deepEqual(markers, ['temp-dir', 'real-files'])
   // fs/promises 的异步版（readFile / rm，不带 Sync 后缀）同样算真实文件读写
