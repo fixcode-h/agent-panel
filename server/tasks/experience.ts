@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { makeAlert } from '../../shared/alerts.ts'
-import { createExperienceLearner } from '../experience-learn.ts'
+import { createExperienceLearner } from '../experience/learn.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
- * 把经验学习（server/experience-learn.ts）接到任务存储上：取整份任务、找子对话、判「整个对话完成」、在对话里写一行。
+ * 把经验学习（server/experience/learn.ts）接到任务存储上：取整份任务、找子对话、判「整个对话完成」、在对话里写一行。
  * 「完成」只认 live.state（ADR 0005 的唯一判定，服务端 liveOf 带上后台命令和子对话数才算得全）
  */
 export function createTaskLearner(sc: TasksScope) {

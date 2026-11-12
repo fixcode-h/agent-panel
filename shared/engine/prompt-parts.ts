@@ -5,11 +5,11 @@
 import type { Task, Workflow } from '../schema.ts'
 import { clip } from '../text.ts'
 import { withAttachments } from '../task.ts'
-import { statePart } from '../run-state.ts'
+import { statePart } from '../run/state.ts'
 import { pushPolicyText } from '../push-auth.ts'
 import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
 import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
-import { summaryCardRules } from '../summary-card.ts'
+import { summaryCardRules } from '../summary/card.ts'
 import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from '../search-exclude.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
@@ -276,7 +276,7 @@ export function verifyPart(host: EngineHost): string[] {
   // 收尾总结里的耗时统计：只对独立分支的子对话提，它才是写收尾总结的那个。
   // 项目配了测试步骤就要求（不限于范围为 parent 的）：它自己跑的那几步也有后台命令的真实耗时
   const timed = v.parentRun === 'child' && v.steps.some((x) => x.enabled)
-  // 规则、本轮结论、耗时要求各是一段：改动清单一变只重发结论那段（见 shared/prompt-delta.ts）
+  // 规则、本轮结论、耗时要求各是一段：改动清单一变只重发结论那段（见 shared/prompt/delta.ts）
   return [rules, picked, timed ? TEST_TIME_SUMMARY_RULE : '']
 }
 
@@ -303,7 +303,7 @@ export function planPart(host: EngineHost, coordinator: boolean): string[] {
   const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
   // ADR 0020：每轮都把「当前第几步、多久没更新、下一步」正面摆在前面；滞后 / 新输入没处理时再插一条提醒
   const check = [planNowText(task, nowMs), planNotice(task, nowMs)].filter(Boolean).join('\n')
-  // 当前计划和维护规则分成两段：计划每轮都在变，规则不变，续接会话时只重发前一段（见 shared/prompt-delta.ts）
+  // 当前计划和维护规则分成两段：计划每轮都在变，规则不变，续接会话时只重发前一段（见 shared/prompt/delta.ts）
   return [
     `## 执行计划\n${now}`,
     // 进度一句（「已 N 分钟」每分钟都变）单独成段：计划没动时只重发这一句，不连计划全文。
@@ -366,7 +366,7 @@ export function commonPart(host: EngineHost, w?: Workflow, chat = false, helper 
         : ''
       : buildPart(host),
     fileFormatPart(host),
-    // 总结的类型和字段在 shared/summary-card.ts 定义，界面按同一张表把它画成卡片
+    // 总结的类型和字段在 shared/summary/card.ts 定义，界面按同一张表把它画成卡片
     summaryCardRules(),
     `## 通用要求\n完成后用${promptLangWord()}按上面的「总结格式」写总结卡：做了什么、改了哪些文件、有没有遗留问题都在卡片字段里。\n` +
       // 用户 2026-11-11 报：Agent 删掉自己加的代码时只删代码那几行，当初一起加的空行留在原处（P4 项目里没有差异给评审，常漏到提交）

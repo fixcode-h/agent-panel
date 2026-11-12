@@ -25,7 +25,7 @@ import {
   type ApiConfig,
   type ApiProtocol,
 } from '@shared/accounts'
-import { apiBaseUrl } from '@shared/api-vendors'
+import { apiBaseUrl } from '@shared/cli/api-vendors'
 import type { CliAccounts, LoginJob, ProviderAuthCheck } from '@shared/schema'
 import { api } from '@/lib/api'
 import { DetectedApis } from './DetectedApis'

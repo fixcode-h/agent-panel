@@ -13,7 +13,7 @@ import { StepIcon } from '@/components/tasks/TaskStatusIcon'
 // 数据就是全局任务列表（摘要，有任务在跑时每 2.5 秒刷新），不另外请求
 
 /**
- * 「在项目里运行」建的父对话（ADR 0044）：第一条消息点名了这个工作流（见 shared/flow-run.ts 的 workflowPrompt），
+ * 「在项目里运行」建的父对话（ADR 0044）：第一条消息点名了这个工作流（见 shared/flow/run.ts 的 workflowPrompt），
  * 由它起工作流运行；运行还没起出来时，这次执行就是这个父对话
  */
 const startsWorkflow = (tk: Task, id: string) =>

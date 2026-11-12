@@ -7,7 +7,7 @@ import {
   isDefaultValue,
   projectAgentValues,
   workflowAgentIds,
-} from '../shared/agent-params.ts'
+} from '../shared/agents/params.ts'
 import { applyExpose } from '../shared/expose.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { defaultTestSteps, isTestAgent, stepCommand, testStepsBlock, testStepIssues } from '../shared/test-steps.ts'

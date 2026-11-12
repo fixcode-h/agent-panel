@@ -14,7 +14,7 @@ import { conversationTools } from './orchestra/conversation-tools.ts'
 import { capabilityTools } from './orchestra/capability-tools.ts'
 import { recordRoute } from './orchestra/route.ts'
 
-import { commonAgents, includedAgents, mountedAgents, paramsProblem } from './agent-role.ts'
+import { commonAgents, includedAgents, mountedAgents, paramsProblem } from './agents/role.ts'
 import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from './inline-edit.ts'
 import {
   END,
@@ -48,14 +48,14 @@ import {
 } from './flow.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
-import { runRecord, runTextTooLong, sendRunMessage } from './run-state.ts'
+import { runRecord, runTextTooLong, sendRunMessage } from './run/state.ts'
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
-import { runsSection, workflowCatalogText } from './flow-run.ts'
-import { runFlowRunTurn } from './flow-run-turn.ts'
-import { runTools } from './flow-run-orch.ts'
+import { runsSection, workflowCatalogText } from './flow/run.ts'
+import { runFlowRunTurn } from './flow/run-turn.ts'
+import { runTools } from './flow/run-orch.ts'
 
 import { runWithSummary } from './helper-summary.ts'
-import * as rs from './run-stops.ts'
+import * as rs from './run/stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { bugRoutePart } from './bug/route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
@@ -63,17 +63,18 @@ import { orchAskPush } from './push-auth.ts'
 import { docRootText, plainDocRootText } from './doc-root.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
-import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
+import { summaryCardRules, summaryDetailRules } from './summary/card.ts'
 import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
 
 import { beginTurn, endTurn, pauseStep, stopReasonText } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
-import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
+import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt/delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './children/ask.ts'
 import { topPush } from './sub-policy.ts'
+import { vcsOwnOnly, vcsReadCmds } from './engine/vcs-text.ts'
 import { overBudget } from './engine/budget.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
@@ -1417,7 +1418,7 @@ function spawn(oc: OrchCtx, ...[tasks, step, opts]: Parameters<Orchestra['spawn'
         error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
       }
   }
-  // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agent-role.ts 的 mountMode）。
+  // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agents/role.ts 的 mountMode）。
   // 设成「就地用」的不派出：派出去是另一套冷启动的上下文，等于绕开了挂载的约定，也白花一次注入
   const mounts = selfAgent ? mountedAgents(selfAgent, host.agents) : []
   const mountOf = (want: string | undefined) =>
@@ -1739,7 +1740,7 @@ async function runHelper(
         : '',
       `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `最后调用 submit_result 工具交结果：state 写 done（做完）、unfinished（没做完）或 stuck（做不下去），summary 写结论和关键文件，没做完或卡住时 left 写还差什么、卡在哪。面板只按这个工具判断子任务做完没有，不看回复里写了什么；没做完就接着做，不要先交。回复本身用${promptLangWord()}写，会交回给派你的 Agent。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
     ].filter(Boolean)
-    // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
+    // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt/delta.ts）
     const sessionKey = step.session || step.id
     const sent = host.task.promptSent?.[sessionKey]
     const full = parts.join('\n\n')
@@ -1972,7 +1973,7 @@ async function conversationPrompt(
     ...planPart(host, coordinator),
     wrapUpPart(host),
     p4Part(host),
-    // 每轮的总结（shared/summary-card.ts）：子对话写详细 Markdown，其余写卡片，父对话的卡片标题链到子对话
+    // 每轮的总结（shared/summary/card.ts）：子对话写详细 Markdown，其余写卡片，父对话的卡片标题链到子对话
     kind === 'sub' ? summaryDetailRules() : summaryCardRules(undefined, coordinator),
     // 对话模式没有共享状态工具：这里不注入（跑过工作流时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
@@ -2021,7 +2022,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     const done = all.filter((c) => c.resolved).sort((a, b) => (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
     const hidden = new Set(done.slice(RECENT_DONE_CHILDREN).map((c) => c.id))
     const list = all.filter((c) => !hidden.has(c.id))
-    // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
+    // 这一段按全文记指纹（shared/prompt/delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
     // 卡住了面板会自动询问、重启（ADR 0036），父对话要看多久没输出时用 list_conversations 查
     parts.push(
       host.policy?.modules ?? '',
@@ -2040,10 +2041,10 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
           ? `## 你的定位：父对话先分析再分派，只就地做微小改动
 你是项目的父对话，负责理解用户的意思、需要时向用户问清楚、决定怎么处理、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
 - 唯一能自己改文件的情况是「就地微改动」：改什么、改成什么已经清楚、不用排查，最多 ${INLINE_EDIT_MAX_FILES} 个文件、${INLINE_EDIT_MAX_LINES} 行以内（文案、配置值、一两行文档）。先调用 begin_inline_edit 声明文件和理由，面板放行后再改；改完跑项目测试步骤里标「快速」的检查，本地提交这几个文件，再调用 end_inline_edit。Bug、要排查的、改公共接口或数据格式的、超出上限的，一律交给子对话。
-- 除此之外不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。`
+- 除此之外不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化）。看代码、搜索、跑只读命令（${vcsReadCmds(host)}这类）可以。`
           : `## 你的定位：父对话只统筹，不动手
 你是项目的父对话，负责理解用户的意思、收集上下文、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
-- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。`
+- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（${vcsReadCmds(host)}这类）可以。`
       }
 ${
   wt
@@ -2114,7 +2115,7 @@ ${ownDispatch ? '## 分派提醒\n用户的一条消息只交给关联最紧密�
 你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
 - 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent（question 设为 true）请父对话协调。没改过的部分可以用 release_files 提前让出；改过的文件留到父对话验收你的改动后由面板释放（一轮结束、停下都不释放）。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
-- 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
+- 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；${vcsOwnOnly(host)}
 - 需要父对话决定或协调时用 message_parent 并把 question 设为 true（options 列出可选的做法）；阶段进展不用单独发，一轮结束面板会把你的汇报和状态合成一封交给父对话。你不能直接联系其他子对话。`
           : `## 和父对话的协作
 你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
@@ -2146,7 +2147,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent), inline, agent)
     const parts = await buildPrompt()
     const full = parts.join('\n\n')
-    // 续接同一个会话时规则段落只发变了的（见 shared/prompt-delta.ts）；回退、预热不省，按完整的发
+    // 续接同一个会话时规则段落只发变了的（见 shared/prompt/delta.ts）；回退、预热不省，按完整的发
     const sent = task.promptSent?.[who]
     const delta = host.prewarm || task.rewind ? null : promptDelta(parts, sent, task.sessions[who])
     let prompt = delta ?? full

@@ -213,7 +213,7 @@ export function createWaiting(d: WaitDeps) {
   /**
    * 交给 CLI 的用户下一条消息（保活、模型自己调 wait_user_message 两条路一样）：以前原样交给 CLI，
    * 计划进度、子对话发来的消息、改动清单、授权变化都带不进去，也没有「## 用户这次的消息」标题。
-   * 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
+   * 交给调用方按当前状态补上变了的段落（见 shared/prompt/delta.ts）；子任务结果、/命令照旧原样
    */
   const withState = async (text: string | null) => {
     // /bug 面板自己展开，原样交过去 Claude Code 会当成它自己的同名命令

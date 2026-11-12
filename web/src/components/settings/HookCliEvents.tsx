@@ -1,4 +1,4 @@
-import type { HookEventName } from '@shared/hook-defs'
+import type { HookEventName } from '@shared/hooks/defs'
 import { t } from '@shared/i18n'
 import type { HooksView } from '@/lib/api-hooks'
 import { Checkbox } from '@/components/ui/checkbox'

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { HookEventName, type HookDefInput } from '../../shared/hook-defs.ts'
+import { HookEventName, type HookDefInput } from '../../shared/hooks/defs.ts'
 import {
   BUILTIN_HOOKS,
   HOOK_TIERS,
@@ -8,7 +8,7 @@ import {
   tierChanged,
   tierDefault,
   type HookTier,
-} from '../../shared/hook-builtins.ts'
+} from '../../shared/hooks/builtins.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { knownVersion } from '../detect.ts'
 import { hookEventsFor } from '../../shared/hooks.ts'

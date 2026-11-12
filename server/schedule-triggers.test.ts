@@ -6,7 +6,7 @@ import path from 'node:path'
 import test from 'node:test'
 import type { NewTaskInput, Task } from '../shared/schema.ts'
 import type { Schedule } from '../shared/schedule.ts'
-import { EMPTY_TRIGGER_STATE, ScheduleTrigger, type TriggerState } from '../shared/schedule-trigger.ts'
+import { EMPTY_TRIGGER_STATE, ScheduleTrigger, type TriggerState } from '../shared/schedule/trigger.ts'
 
 // 数据目录换成临时的，别动本机的计划和配置
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-triggers-'))

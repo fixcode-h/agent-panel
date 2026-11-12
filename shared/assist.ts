@@ -44,8 +44,8 @@ import {
   type Workflow,
   type WorkflowInput,
 } from './schema.ts'
-import type { DerivedParam } from './agent-params.ts'
-import { condText, includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
+import type { DerivedParam } from './agents/params.ts'
+import { condText, includedAgents, renderTemplate, resolveParams } from './agents/role.ts'
 import { buildHookPrompt, resolveHookProposal, type HookProposal } from './assist-hook.ts'
 
 export const AssistKind = z.enum([

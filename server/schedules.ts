@@ -44,7 +44,7 @@ import {
   triggerConfigError,
   triggerFires,
   triggerPrompt,
-} from '../shared/schedule-trigger.ts'
+} from '../shared/schedule/trigger.ts'
 import { probeTrigger, type TriggerProbe } from './schedule-triggers.ts'
 import { t } from '../shared/i18n.ts'
 import { createCollection } from './store.ts'

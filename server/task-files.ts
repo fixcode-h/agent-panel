@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { ATTACH_DIR } from './attachments.ts'
 import { log } from './log.ts'
-import { PATH_RULES } from '../shared/prompt-paths.ts'
+import { PATH_RULES } from '../shared/prompt/paths.ts'
 import { TASK_FILE_KINDS, TASK_FILES_DIR } from './store.ts'
 
 /**

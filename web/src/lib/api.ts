@@ -1,9 +1,9 @@
 import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
 import type { BugBrief } from '@shared/bug/overview'
-import type { FlowBrief } from '@shared/agent-stats'
+import type { FlowBrief } from '@shared/agents/stats'
 import type { SharedDirInfo } from '@shared/shared-dir'
-import type { SpeedRow } from '@shared/api-speed'
+import type { SpeedRow } from '@shared/cli/api-speed'
 import { trackedFetch } from './connection'
 import { summaryApi } from './api-summary'
 import { stylesApi } from './api-styles'
@@ -61,7 +61,7 @@ import type {
 import type { ChildHold } from '@shared/task'
 import type { SearchHit } from '@shared/tasks/search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
-import type { RunUsage } from '@shared/run-usage'
+import type { RunUsage } from '@shared/run/usage'
 import type { DiagnosisDecision } from '@shared/bug/diagnosis'
 import type { PatchResult, PatchStatus } from '@shared/bug/patch'
 import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'
@@ -78,8 +78,8 @@ import type {
   SkillUpdates,
 } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
-import type { ApiBalance } from '@shared/api-balance'
-import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
+import type { ApiBalance } from '@shared/cli/api-balance'
+import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@shared/models/catalog'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
@@ -609,7 +609,7 @@ export const api = {
   taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
   /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug/overview.ts） */
   taskBugs: () => request<BugBrief[]>('/tasks/bugs'),
-  /** 总览页流程视图：所有 Agent 模式对话的流程数据（shared/agent-flow-briefs.ts） */
+  /** 总览页流程视图：所有 Agent 模式对话的流程数据（shared/agents/flow-briefs.ts） */
   taskFlow: () => request<FlowBrief[]>('/tasks/flow'),
   /** 每个对话的磁盘占用 */
   taskDisk: () => request<TaskDiskItem[]>('/tasks/disk'),

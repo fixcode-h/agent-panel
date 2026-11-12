@@ -1,0 +1,202 @@
+import type { PlanStep, TaskStep } from '../schema.ts'
+import { mustIds, verdictOf } from '../submitted.ts'
+
+/**
+ * 评审门禁：子对话合回父对话分支之前，必须
+ * 1) 计划里有一条标了 review 的评审步骤（执行角色会把它单独写进计划，用户能在计划面板上看到）；
+ * 2) 那一步已经完成（派评审时标等待中，拿回结论后标完成）；
+ * 3) 评审子任务真的跑过、写了结论；
+ * 4) 结论是通过且没有列高级 / 中级，或者执行角色对最近一次评审的每条高级、中级都写了自己的处置（review_triage）。
+ *
+ * 第 4 条是 ADR 0009 的核心：评审只出意见，采不采纳由执行角色核实之后决定，门禁不要求「评审说通过」。
+ * 以前门禁只认评审的「通过」，执行角色又被要求「不要自己把 🛑 判成不重要」，于是每轮复看都换个角度挑出新的 🛑，
+ * 执行逐条打补丁再复看，收尾阶段一直循环。现在门禁只保证每条高级、中级都被看过、有结论和理由，
+ * 处置连同收尾请求一起交给父对话（合并就是验收），驳回得没道理的由父对话打回。
+ *
+ * 前两条读计划（PlanStep.review），后两条读 steps 里 slot 为 sub 的评审子任务——
+ * 评审就是一次普通的 spawn_agents，结论写在它的输出里：不另存状态，也不另造一套和现有工具并行的机制。
+ */
+/**
+ * 显式放行：评审没过（没派过、没写结论、列了必须处置项）而用户明确要求「已知问题也合并」时，
+ * 子对话在 submit_merge 里带 review_override，门禁放行并把记录写在任务上。
+ * 它不是静默开关：来源只能是用户或父对话，理由有字数下限，时间由面板记，记录跟着收尾消息交给父对话。
+ */
+export const OVERRIDE_BY = { user: '用户', parent: '父对话' } as const
+export type OverrideBy = keyof typeof OVERRIDE_BY
+
+/** submit_merge 传进来的放行请求（谁、为什么）；at 由面板在接收时写，不由调用方自报 */
+export interface ReviewOverride {
+  by: OverrideBy
+  reason: string
+}
+
+/** 绕过了什么：原本拦住的那条门禁原因，和放行记录一起留在任务上 */
+export interface ReviewOverrideNote extends ReviewOverride {
+  at: string
+  blocked: string
+}
+
+export type ReviewGate = { ok: true; bypass?: Omit<ReviewOverrideNote, 'at'> } | { ok: false; info: string }
+
+/** 放行理由短于这个字数就当没说：要写清带着什么问题合并，父对话合并时要看 */
+const MIN_OVERRIDE_REASON = 12
+
+/** 理由太短、来源认不出时的拒绝信息：说清差什么，别让它以为已经放行了 */
+export function overrideRejectReason(o: ReviewOverride): string {
+  return `没有请求收尾：review_override 的理由太短（${o.reason.trim().length} 字，至少 ${MIN_OVERRIDE_REASON} 字）。写清用户为什么要求在评审没过时合并、带着的是哪个问题，父对话合并前要看它。`
+}
+
+/** 从工具参数里取放行请求：来源认不出当没传（reason 的字数下限在 reviewGate 里判，失败要说清） */
+export function overrideInput(raw: unknown): ReviewOverride | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const by = String((raw as Record<string, unknown>).by ?? '').trim()
+  const reason = String((raw as Record<string, unknown>).reason ?? '').trim()
+  // 用 hasOwn：`in` 会沿原型链，'toString' 这种名字也能通过，记下来的来源就不存在了
+  if (!Object.hasOwn(OVERRIDE_BY, by) || !reason) return undefined
+  return { by: by as OverrideBy, reason }
+}
+
+/** 执行角色对一条高级 / 中级意见的处置：fix 核实是真问题并已改；reject 核实不成立；defer 是真问题但这次不改（记已知问题） */
+export interface TriageItem {
+  /** 评审意见的编号（R1、R2…）；评审没编号时写意见的原话摘要 */
+  id: string
+  decision: 'fix' | 'reject' | 'defer'
+  /** 为什么这么处置：怎么核实的（读了哪段代码、跑了什么）、改法或驳回的反例、不改的影响面 */
+  reason: string
+}
+
+export const TRIAGE_DECISIONS: Record<TriageItem['decision'], string> = {
+  fix: '已修',
+  reject: '不采纳',
+  defer: '留作已知问题',
+}
+
+/** 理由短于这个字数就当没写：「同意」「不改」这种一两个字的处置说明不了怎么核实的 */
+const MIN_REASON = 8
+
+/** 怎么派评审：拒绝时连这段一起给子对话，它照着做就能过 */
+export const REVIEW_TIP = [
+  '收尾前先派一次「评审」（spawn_agents 的 agent 写「评审」），并在计划里单独列出「评审本次改动」这一步（标 review: true）：',
+  '- 派评审时把这一步标成等待中，拿回结论后标完成；',
+  '- 改动由面板附进评审的提示词（git 仓库），instructions 里写清：这次的需求和验收标准、父对话划的范围、改到的模块和对应的模块文档路径、已经跑过的检查（命令 + 结果）；',
+  '- 评审用 submit_verdict 工具交结论（verdict 写 pass / fail），高级和中级的意见列进 blockers 并标 must: true（带 R1、R2 这样的编号）；面板门禁只认这个工具，不看评审回复里写了什么。',
+  '拿回意见后逐条自己核实再决定修不修（评审的意见是线索，不是结论）；修了要复看时用 spawn_agents 的 resume 接着上一次评审的会话，面板只附增量。最后跑完整测试，调用 submit_merge 时在 review_triage 里写清最近一次评审每条高级、中级的处置。',
+].join('\n')
+
+/** 被拦下时一起给出放行通道：只有用户明确要求才能走，理由和记录都会带给父对话 */
+export const OVERRIDE_TIP =
+  '确实要现在合并（用户明确要求「已知问题也合并」）时，在 submit_merge 里传 review_override: { by: "user" 或 "parent", reason }：面板把放行记录（谁、什么时候、为什么、原本拦住什么）写在任务上并带给父对话。不要自己判断「问题不大」就放行——理由要写清带着什么问题合并，不是用来走流程的。'
+
+/** 计划里还没有标 review 的步骤 */
+const NO_STEP = `没有请求收尾：计划里缺少评审步骤。执行角色收尾时要把评审单独写进计划（set_plan 里一条主步骤，标题写清是评审，并标 review: true）——放在别的步骤的子步骤里不算：派评审时标等待中，拿回结论后标完成，计划面板上能看到这一步才算数。`
+
+export function reviewGate(
+  steps: TaskStep[],
+  isReviewer: (agentId: string) => boolean,
+  planSteps: PlanStep[] = [],
+  triage: TriageItem[] = [],
+  override?: ReviewOverride,
+): ReviewGate {
+  const fail = gate(steps, isReviewer, planSteps, triage)
+  if (fail.ok) return fail
+  // 本来就能过时不记放行：记录只对应「这次确实绕过了门禁」
+  if (!override) return { ok: false, info: `${fail.info}\n\n${OVERRIDE_TIP}` }
+  if (override.reason.trim().length < MIN_OVERRIDE_REASON) return { ok: false, info: overrideRejectReason(override) }
+  return { ok: true, bypass: { by: override.by, reason: override.reason.trim(), blocked: fail.blocked } }
+}
+
+/** 门禁本身：放行参数在 reviewGate 里处理，这里只看评审做没做、结论和处置够不够 */
+function gate(
+  steps: TaskStep[],
+  isReviewer: (agentId: string) => boolean,
+  planSteps: PlanStep[],
+  triage: TriageItem[],
+): { ok: true } | { ok: false; info: string; blocked: string } {
+  // 不止一步时要全部完成：只看第一条会把「第一份已完成、第二份还在等」当成做完了
+  const planReviews = planSteps.filter((s) => s.review)
+  if (!planReviews.length) return block(`${NO_STEP}\n\n${REVIEW_TIP}`)
+  const open = planReviews.find((s) => s.status !== 'done')
+  if (open)
+    return block(
+      `没有请求收尾：计划里的评审步骤「${open.title}」还没完成（现在是「${open.status}」）。等评审给出结论、你逐条核实处理完，把这一步标完成之后才调用 submit_merge。`,
+    )
+  const reviews = steps.filter((s) => s.slot === 'sub' && !!s.agentId && isReviewer(s.agentId))
+  if (!reviews.length) return block(`没有请求收尾：计划里有评审步骤，但还没有真的派过「评审」。${REVIEW_TIP}`)
+  const last = reviews.at(-1)!
+  if (last.status !== 'done') {
+    const why = last.status === 'running' || last.status === 'pending' ? '还没跑完' : '没有正常结束'
+    return block(
+      `没有请求收尾：最近一次评审「${last.title}」${why}。等它给出结论再调用 submit_merge；它失败或被你停掉时重新派一次。`,
+    )
+  }
+  // 结论和必须处置的意见只认评审用 submit_verdict 交的（ADR 0041 第 16 节），不看它回复里写了什么字
+  const verdict = verdictOf(last)
+  if (!verdict)
+    return block(
+      `没有请求收尾：最近一次评审「${last.title}」没有用 submit_verdict 交结论。重新派一次评审（resume 写它的 id），让它交结论后再调用 submit_merge。`,
+    )
+  // 通过也可能带着必须处置的意见（原来的中级）：要逐条处置
+  if (verdict === 'pass' && !mustIds(last).length) return { ok: true }
+  return triageGate(last, triage)
+}
+
+/** 拒绝：blocked 是留给放行记录的一句话「原本拦住什么」（取第一句，去掉固定前缀） */
+function block(info: string): { ok: false; info: string; blocked: string } {
+  return {
+    ok: false,
+    info,
+    blocked: info
+      .split('\n')[0]
+      .replace(/^没有请求收尾：/, '')
+      .slice(0, 200),
+  }
+}
+
+/** 评审列了高级 / 中级：执行角色要对每条写下自己的处置，缺的、理由太短的都列出来 */
+function triageGate(last: TaskStep, triage: TriageItem[]): { ok: true } | { ok: false; info: string; blocked: string } {
+  const how =
+    '对每条高级、中级先自己核实（读它指的代码、按它的推导或反例推一遍），再在 review_triage 里写处置：fix（真问题、在这次范围里、已改并验证）、reject（核实不成立，写出反例或代码依据）、defer（真问题但在范围外 / 只在构造的极端数据上成立 / 代价大于收益，写影响面，交接时列为已知问题）。不要评审说什么就改什么，也不要不核实就驳回。'
+  const valid = triage.filter((x) => x.id.trim() && x.decision in TRIAGE_DECISIONS)
+  const short = valid.filter((x) => x.reason.trim().length < MIN_REASON)
+  if (short.length)
+    return block(
+      `没有请求收尾：review_triage 里 ${short.map((x) => x.id).join('、')} 的理由太短。写清你怎么核实的、为什么这么处置。`,
+    )
+  const ids = mustIds(last)
+  if (!ids.length) {
+    if (valid.length) return { ok: true }
+    return block(
+      `没有请求收尾：最近一次评审「${last.title}」的结论是不通过，你还没写处置。${how}评审没给编号时，id 写那条意见的原话摘要。`,
+    )
+  }
+  const done = new Set(valid.map((x) => x.id.trim().toUpperCase()))
+  const missing = ids.filter((id) => !done.has(id.toUpperCase()))
+  if (!missing.length) return { ok: true }
+  return block(
+    `没有请求收尾：最近一次评审「${last.title}」${verdictOf(last) === 'fail' ? '的结论是不通过，' : '交了通过但'}要处置的意见里 ${missing.join('、')} 还没有处置。${how}`,
+  )
+}
+
+/** 放行记录写成给父对话和交接摘要看的几行 */
+export function overrideText(n: ReviewOverrideNote) {
+  const who = OVERRIDE_BY[n.by] ?? n.by
+  return `- 谁放行：${who}\n- 什么时候：${n.at}\n- 为什么：${n.reason}\n- 原本拦住的是：${n.blocked}`
+}
+
+/** 处置写成给父对话和交接摘要看的几行 */
+export function triageText(triage: TriageItem[]) {
+  return triage.map((x) => `- ${x.id}：${TRIAGE_DECISIONS[x.decision] ?? x.decision}。${x.reason.trim()}`).join('\n')
+}
+
+/** 工具参数里的处置：模型传什么都可能，认不出的项丢掉 */
+export function triageInput(raw: unknown): TriageItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+    .map((x) => ({
+      id: String(x.id ?? '').trim(),
+      decision: String(x.decision ?? '').trim() as TriageItem['decision'],
+      reason: String(x.reason ?? ''),
+    }))
+    .filter((x) => x.id && x.decision in TRIAGE_DECISIONS)
+}

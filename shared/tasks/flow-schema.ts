@@ -32,7 +32,7 @@ export const FlowDecision = z.object({
 })
 export type FlowDecision = z.infer<typeof FlowDecision>
 
-/** 收尾阶段做到哪：评审、测试、修复，第几轮（按步骤现算，见 shared/flow-run.ts 的 wrapNow；不落盘） */
+/** 收尾阶段做到哪：评审、测试、修复，第几轮（按步骤现算，见 shared/flow/run.ts 的 wrapNow；不落盘） */
 export const FlowWrap = z.object({
   stage: z.enum(['review', 'test', 'fix']),
   round: z.number().int().default(1),

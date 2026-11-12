@@ -8,7 +8,7 @@ import type { EngineHost } from '../engine/host.ts'
  *   以前由父对话自己判断「是不是要查原因的 Bug」，判成完整流程后每一步都要用户在弹窗里确认，
  *   用户没开提问、只想快点修好时也被拉进了多轮确认。
  * - 已经派出去在修的，用户要改走完整流程：send_to_conversation 写 kind: "bug"，面板把那个子对话标成用户报的 Bug。
- * 按「提问」开关现算，每轮都放进父对话的提示：开关在对话中途能改，段落内容变了续接时会重发（shared/prompt-delta.ts）
+ * 按「提问」开关现算，每轮都放进父对话的提示：开关在对话中途能改，段落内容变了续接时会重发（shared/prompt/delta.ts）
  */
 export function bugRoutePart(host: Pick<EngineHost, 'task'>, coordinator: boolean) {
   if (!coordinator || !host.task.projectId) return ''

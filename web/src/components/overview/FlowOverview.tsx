@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { GitMerge, Hourglass, Layers, Repeat, Undo2, Workflow } from 'lucide-react'
-import { agentStats, flowHotspots, flowReworks, type FlowBrief, type FlowSummary } from '@shared/agent-stats'
+import { agentStats, flowHotspots, flowReworks, type FlowBrief, type FlowSummary } from '@shared/agents/stats'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { fmtTokens } from '@/lib/tasks'

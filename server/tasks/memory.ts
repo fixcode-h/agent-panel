@@ -15,7 +15,7 @@ import {
   taskTrendText,
   type TaskContext,
 } from '../../shared/memory-analysis.ts'
-import { runTree, subtreeTaskIds } from '../../shared/run-usage.ts'
+import { runTree, subtreeTaskIds } from '../../shared/run/usage.ts'
 import { SAMPLE_INTERVAL_MS, loadHistory, summarize, type StoredSample } from '../exec/proc-stats.ts'
 import { registerFixTopic } from '../fix.ts'
 

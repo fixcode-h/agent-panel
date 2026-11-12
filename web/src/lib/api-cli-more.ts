@@ -1,5 +1,5 @@
-import type { ConfigValue } from '@shared/cli-config-settings'
-import type { GalleryPage, GallerySort } from '@shared/cli-gallery'
+import type { ConfigValue } from '@shared/cli/config-settings'
+import type { GalleryPage, GallerySort } from '@shared/cli/gallery'
 import type { ChangelogEntry } from '@shared/package-changelog'
 import type { InstalledPackage } from '@shared/cli-spec'
 import { json, request } from './api'

@@ -22,7 +22,7 @@ import {
   START,
 } from '@shared/schema'
 import { MODEL_TIERS } from '@shared/clis'
-import { agentTier } from '@shared/agent-role'
+import { agentTier } from '@shared/agents/role'
 import { cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import { Segmented } from '@/components/ui/segmented'
 import { ParamsForm } from '@/components/agents/ParamFields'
@@ -228,7 +228,7 @@ export function NodeInspector({
                   />
                   {u.kind === 'agent' ? (
                     // 照设计稿：「角色」和「Agent」并排一行。节点上的一步总是用默认 Agent 的档位模型执行
-                    // （见 shared/agent-role.ts 的 nodeAgentRun），所以 Agent 这一格只读，写明实际用哪个
+                    // （见 shared/agents/role.ts 的 nodeAgentRun），所以 Agent 这一格只读，写明实际用哪个
                     <div className="flex gap-2.5">
                       <div className="flex min-w-0 flex-[3_1_0] flex-col gap-1.5">
                         <Label>{t('角色')}</Label>

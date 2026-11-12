@@ -3,7 +3,7 @@ import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
-import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary-card'
+import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary/card'
 import { isBareFileName, linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
 import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
@@ -18,7 +18,7 @@ import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidTh
 export const HandleNeedsCtx = createContext<((text: string) => Promise<void>) | null>(null)
 
 /**
- * 回复里的总结要不要画成卡片：子对话的任务页给 false。子对话写的是详细总结（shared/summary-card.ts 的
+ * 回复里的总结要不要画成卡片：子对话的任务页给 false。子对话写的是详细总结（shared/summary/card.ts 的
  * summaryDetailRules），用户要它照普通 Markdown 显示；旧的子对话里写过的卡片也一样不画
  */
 export const SummaryCardsCtx = createContext(true)
@@ -66,7 +66,7 @@ async function getMermaid() {
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 /**
- * 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论在顶上，字段名一列对齐、内容一列，
+ * 总结卡（shared/summary/card.ts）：类型标签 + 一句话结论在顶上，字段名一列对齐、内容一列，
  * 一眼扫下来就是「原因 / 修复 / 验证」。字段内容仍按 Markdown 渲染（行内代码、路径、链接照常可点）
  */
 function cardHtml(card: SummaryCard, teamNames: Set<string>, live?: boolean, act?: boolean, jump?: boolean) {

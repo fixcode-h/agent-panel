@@ -376,7 +376,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 
 以前要在 `Workflow.expose` 里手工加 `target: agent` 的一条。现在改成**按项目当前工作流实际用到的 Agent 派生**：
 
-`shared/agent-params.ts` 的 `derivedParams(workflow, agents)`：
+`shared/agents/params.ts` 的 `derivedParams(workflow, agents)`：
 
 1. 收集主 Agent + 所有节点 / 步骤里的 Agent（去重）。
 2. 收集它们的 `AgentParam`。
@@ -396,7 +396,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 
 ### 参数联动
 
-`AgentParam` 可以按**排在前面**的参数决定自己（`shared/agent-role.ts` 的 `resolveParams` 从上往下算）：
+`AgentParam` 可以按**排在前面**的参数决定自己（`shared/agents/role.ts` 的 `resolveParams` 从上往下算）：
 
 - `when`：显示条件，`{ key, values, not }`。前面参数取 `values` 里任一值时成立，`values` 为空表示「有值」，开关写 `'true'` / `'false'`。
   不成立时这个参数**隐藏**：不问、不算缺、值按空处理（开关是关、单选是空），角色设定里 `{{#if key}}` 不成立，「本次的参数」里也不列。
@@ -454,7 +454,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 | `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                                                                            |
 | `shared/builtin/merged.ts`                              | 已合并的 Agent 说明和参数换算                                                                                                                           |
 | `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                                                                                 |
-| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
+| `shared/agents/params.ts`                               | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
 | `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`stepApplies` / `pickSteps` / `parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计（`testRunSummary` 给界面） |
 | `scripts/changed-tests.mjs`                             | 改动清单 → 影响面 → 要跑的单测文件和界面检查分片（CLI，含 mtime 缓存与 `--run`）                                                                        |
 | `scripts/lib/import-graph.mjs`                          | import 依赖图：解析别名 / 扩展名、建正反向边、反向依赖闭包，纯逻辑                                                                                      |
@@ -499,7 +499,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 有独立分支的子对话按这个顺序收尾：改完 → 跑快速检查（项目测试步骤里标「快速」的）→ **评审（计划里单独一条主步骤，标 `review: true`）** → 逐条核实高级、中级意见并处置（要改的同样单列一步）→ 必要时复看（新的独立评审步骤，接着上次评审的会话）→ 完整测试/编译 → `submit_merge`（带 `review_triage`）。
 
 - 评审步骤要有状态：派「评审」（`spawn_agents` 的 agent 写「评审」）时标等待中，拿回结论后标完成。
-- `submit_merge` 前校验计划里有没有标 `review` 的步骤、那一步是否完成、最近一次评审写没写结论，以及它列的高级、中级是否每条都有处置（`shared/review-gate.ts`，[ADR 0009](adr/0009-review-findings-triaged.md)）；缺任何一项都会被拒绝并在交回说明里写清原因。
+- `submit_merge` 前校验计划里有没有标 `review` 的步骤、那一步是否完成、最近一次评审写没写结论，以及它列的高级、中级是否每条都有处置（`shared/review/gate.ts`，[ADR 0009](adr/0009-review-findings-triaged.md)）；缺任何一项都会被拒绝并在交回说明里写清原因。
 - 用户明确要求「已知问题也合并」时走显式放行：`submit_merge` 传 `review_override: { by: user | parent, reason }`（理由至少 12 字），门禁放行并把谁、什么时候（面板记）、为什么、原本拦住什么写进 `Task.reviewOverride`，收尾消息和交接摘要一起带给父对话（[ADR 0022](adr/0022-review-gate-override.md)）。执行角色自己判断「问题不大」不是放行理由。
 - 评审只做代码层面的审查：不改文件、不跑测试和构建、不搭测试环境、不写测试脚本；git 仓库里面板把改动（文件列表 + 每处改动前后几行的差异，只取这个对话改过的文件）一次附进它的提示词，复看只附增量（[ADR 0010](adr/0010-review-code-only.md)）。派评审要带交接单 `review`（第一次 `goal`、`checks` 必填），评审只评差异里改动的行，不读模块文档、不搜项目，读代码最多 3 次，跑到 6 分钟面板提醒它交卷（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）。
 - 意见分四级：🔴 高级（必须改，判不通过）、🟠 中级（应该改，要处置）、🟡 低级（可以改）、💡 建议（这一轮不做）。

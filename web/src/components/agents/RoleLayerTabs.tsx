@@ -1,5 +1,5 @@
 import { t } from '@shared/i18n'
-import { roleKind } from '@shared/agent-role'
+import { roleKind } from '@shared/agents/role'
 import { scopeOf } from '@shared/conv-mode'
 import type { Agent } from '@shared/schema'
 import { Segmented } from '@/components/ui/segmented'

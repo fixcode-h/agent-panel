@@ -1,9 +1,9 @@
 // Orchestra 的对话类工具（从 shared/engine.ts 的 makeOrchestra 拆出来）。
 import { kidTitleOf, retryTarget } from '../children/lookup.ts'
 import { docsFirst } from '../docs-first.ts'
-import { roleKind } from '../agent-role.ts'
+import { roleKind } from '../agents/role.ts'
 import { clip } from '../text.ts'
-import { runState, writeRunState } from '../run-state.ts'
+import { runState, writeRunState } from '../run/state.ts'
 import { handedToOther, noteHandOff } from '../peer-message.ts'
 import { timeAgo } from '../task.ts'
 import { findRole, modeScope, scopeOf } from '../conv-mode.ts'

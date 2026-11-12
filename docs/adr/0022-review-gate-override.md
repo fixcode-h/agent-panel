@@ -14,7 +14,7 @@
 
 **门禁保持硬拦截，另开一条只有「用户 / 父对话明确要求」才能走的出口，放行本身成为一条记录。**
 
-1. `shared/review-gate.ts` 的 `reviewGate` 加第五个参数 `override: { by: 'user' | 'parent', reason }`：
+1. `shared/review/gate.ts` 的 `reviewGate` 加第五个参数 `override: { by: 'user' | 'parent', reason }`：
    - **只在门禁真的拦下时生效**；本来就能过时忽略它，也不记放行（记录只对应确实绕过的那一次）；
    - 来源只有 `user` / `parent` 两种，执行角色自己判断「问题不大」不构成来源；
    - `reason` 短于 12 字当没写（要写清带着什么问题合并、什么时候补）；
@@ -31,7 +31,7 @@
 
 ## 与现有实现的关系
 
-- `shared/review-gate.ts`：`ReviewOverride` / `ReviewOverrideNote` / `OVERRIDE_BY` / `OVERRIDE_TIP` / `overrideInput` / `overrideText`；`reviewGate` 拆成「门禁本身」（`gate`）和「放行处理」，拒绝结果带上 `blocked`。
+- `shared/review/gate.ts`：`ReviewOverride` / `ReviewOverrideNote` / `OVERRIDE_BY` / `OVERRIDE_TIP` / `overrideInput` / `overrideText`；`reviewGate` 拆成「门禁本身」（`gate`）和「放行处理」，拒绝结果带上 `blocked`。
 - `shared/schema.ts`：`Task.reviewOverride`（`by` / `at` / `reason` / `blocked`），旧任务没有这个字段，按没有放行读。
 - `server/tasks.ts`：`submitMerge` 多一个参数，门禁结果带 `bypass` 时写 `tk.reviewOverride`，收尾消息和 `handoffText` 带上放行段。
 - `server/orch-mcp.ts`：`submit_merge` 加 `review_override`（`by` 用 enum 限制），`overrideInput` 解析；`shared/engine.ts` 的 `submitMerge` 签名同步。

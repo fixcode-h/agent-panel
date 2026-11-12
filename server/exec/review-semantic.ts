@@ -1,11 +1,11 @@
 /**
  * 评审差异里的二进制文件换成语义差异（UE 2）：按扩展名交给开着的插件的文本化接口（ServerPlugin.textify）——
  * 插件自己写差异（diff，例如表格插件按格子比）或转成文本后面板逐行比。两版内容从 git 快照或 p4 的 have 版本取。
- * 没人认领的二进制文件不处理，评审只在文件列表里看到它。拼文字见 shared/review-semantic.ts
+ * 没人认领的二进制文件不处理，评审只在文件列表里看到它。拼文字见 shared/review/semantic.ts
  */
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { semanticSection, lineDiffText, type SemanticPart } from '../../shared/review-semantic.ts'
+import { semanticSection, lineDiffText, type SemanticPart } from '../../shared/review/semantic.ts'
 import type { Project } from '../../shared/schema.ts'
 import { textifierFor } from '../plugins/runtime.ts'
 import { blobAt, gitRun } from './git.ts'

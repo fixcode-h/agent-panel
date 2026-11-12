@@ -13,7 +13,7 @@ import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { bugBriefs } from '@shared/bug/overview'
-import { agentFlowBriefs } from '@shared/agent-flow-briefs'
+import { agentFlowBriefs } from '@shared/agents/flow-briefs'
 import { demoAccounts } from './demo-accounts'
 import { demoChatTodos, demoChildCards, demoChildSummary } from './demo-child-summary'
 import { demoSettleAction, demoUserAction } from './demo-user-action'
@@ -99,7 +99,7 @@ import {
   workdayTemplate,
 } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
-import { runTree, runUsage } from '@shared/run-usage'
+import { runTree, runUsage } from '@shared/run/usage'
 import { demoLifecycle } from './demo-lifecycle'
 import {
   descendantTotals,
@@ -123,12 +123,12 @@ import {
   type InterruptedTasks,
 } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
-import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
+import { BUILTIN_MODEL_CATALOG } from '@shared/models/catalog'
 import { childAskEffect } from '@shared/children/ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
-import { stopHelper } from '@shared/run-stops'
-import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
+import { stopHelper } from '@shared/run/stops'
+import { chatMissingParams, cycleText, includeCycle } from '@shared/agents/role'
 import {
   beginRun,
   closeFlow,

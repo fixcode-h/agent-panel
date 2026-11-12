@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Modal, ModalButton, ModalHeader } from '@/components/ui/modal'
 import { RowShell } from './ToolRow'
 import { Markdown, SummaryCardView } from './Markdown'
-import type { SummaryKind } from '@shared/summary-card'
+import type { SummaryKind } from '@shared/summary/card'
 import { useChildList, useChildOpen, usePeerMail } from './child-open'
 import { replyOf } from '@/lib/tasks'
 

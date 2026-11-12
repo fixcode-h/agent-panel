@@ -3,7 +3,7 @@ import type { Task, TaskStep } from '../../shared/schema.ts'
 import { activePlan, openWork, planProgress } from '../../shared/plan.ts'
 import { planProgressKey, shortKey } from '../../shared/drive.ts'
 import { panelTrail } from '../../shared/end-turn.ts'
-import { subtreeTaskIds } from '../../shared/run-usage.ts'
+import { subtreeTaskIds } from '../../shared/run/usage.ts'
 import { taskState, wrapUpPending } from '../../shared/task.ts'
 import {
   countDone,

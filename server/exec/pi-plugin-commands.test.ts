@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CommandsQuery } from '../../shared/cli-commands-query.ts'
+import { CommandsQuery } from '../../shared/cli/commands-query.ts'
 import { RpcSpec } from '../../shared/cli-spec.ts'
 import { getCli } from '../../shared/clis.ts'
 import { parseQueried } from '../cli/commands.ts'

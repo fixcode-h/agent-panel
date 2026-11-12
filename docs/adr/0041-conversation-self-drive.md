@@ -2,7 +2,7 @@
 
 状态：已接受（P1、P2 的子对话自驱已落地；其余见「分期」） · 2026-11-02
 
-- 影响范围：`shared/drive.ts`（新增）、`server/tasks/drive.ts`（新增，从 `children.ts` 拆出）、`shared/turn-rules.ts`（新增）、`server/tasks/inbox-file.ts`（新增）、`server/tasks/children.ts`、`server/tasks/merge.ts`、`server/tasks/run.ts`、`server/tasks/conversation-routes.ts`、`server/app-actions/tasks.ts`、`shared/conv-mode.ts`、`shared/peer-message.ts`、`shared/engine.ts`、`shared/helper-batch.ts`、`server/store.ts`、`server/exec/runner.ts`、`server/exec/cli-trace.ts`、`shared/lifecycle.ts`、`server/tasks/lifecycle.ts`、`shared/alerts.ts`、内置约束（`shared/builtin/agents.ts`、`chat-agents.ts`）、`shared/agent-role.ts`
+- 影响范围：`shared/drive.ts`（新增）、`server/tasks/drive.ts`（新增，从 `children.ts` 拆出）、`shared/turn-rules.ts`（新增）、`server/tasks/inbox-file.ts`（新增）、`server/tasks/children.ts`、`server/tasks/merge.ts`、`server/tasks/run.ts`、`server/tasks/conversation-routes.ts`、`server/app-actions/tasks.ts`、`shared/conv-mode.ts`、`shared/peer-message.ts`、`shared/engine.ts`、`shared/helper-batch.ts`、`server/store.ts`、`server/exec/runner.ts`、`server/exec/cli-trace.ts`、`shared/lifecycle.ts`、`server/tasks/lifecycle.ts`、`shared/alerts.ts`、内置约束（`shared/builtin/agents.ts`、`chat-agents.ts`）、`shared/agents/role.ts`
 - 修改：[ADR 0032](./0032-conversations-keep-going.md) 第一、二节（推进次数、子对话推一次就报父对话），[ADR 0037](./0037-chat-and-agent-modes.md) 的推进次数（子对话也是 3 次）
 
 > 2026-11-03：推进次数改成设置项 `nudgeMax`（默认 6，范围 0–20，0 表示不自动推），第 2 节「同一进度最多 3 次」按设置走；Chat 页仍固定 1 次。
@@ -94,7 +94,7 @@
 
 ## 开放问题
 
-- ~~共享状态（`write_state`）、运行消息存储时截到 2 万字~~：2026-11-11 已改成超长拒绝写入并告诉调用方（`shared/run-state.ts` 的 `runTextTooLong`），让它把全文写进文件、只放路径和要点。
+- ~~共享状态（`write_state`）、运行消息存储时截到 2 万字~~：2026-11-11 已改成超长拒绝写入并告诉调用方（`shared/run/state.ts` 的 `runTextTooLong`），让它把全文写进文件、只放路径和要点。
 - 规则检查拦「拼进提示词的 `clip(` 不留指针」：写法难以静态区分摘要和正文，倾向先靠教训（`docs/lessons/self-drive.md`）和评审，定下规则前不加检查。
 - 工作流节点内部要不要也按状态行自驱：**这次不做**。很多节点有自己的输出格式（JSON、带分支的「结论：通过」），强制每个节点交「## 总结 + 状态」会打乱用户已有的工作流；没交总结就推又会让旧工作流的每个节点多跑几轮。节点已经有用户配的重试、验收钩子和主角色评估，整条运行停住由所属对话自驱接手，「说了要做却没做」靠共用的回合规则（`shared/turn-rules.ts`）。倾向：以后确有需要时做成节点的可选开关（流程图上勾「按状态行判定做完」），默认关。
 
@@ -109,7 +109,7 @@
 | A3  | 带条件连线的节点                      | 「结论：通过」，没写按通过             | 同上                                                                                       | 已落地                                                                      |
 | A4  | 主 Agent 评估（`shared/dispatch.ts`） | 回复里 dispatch 代码块，解析不出按继续 | `dispatch` 工具                                                                            | 已落地（这条路径目前默认关闭：`shared/flow.ts` 的 `dispatches` 恒为 false） |
 | A5  | 常驻编排器                            | 同上                                   | 只认 `run_workflow`（加 restart）                                                          | 已落地（没交按只回答处理，不起运行）                                        |
-| A6  | 收尾门禁（`shared/review-gate.ts`）   | 评审首行结论、「必须处置：R1」         | 评审用 `submit_verdict` 交，`blockers` 里 `must: true` 的要逐条处置                        | 已落地                                                                      |
+| A6  | 收尾门禁（`shared/review/gate.ts`）   | 评审首行结论、「必须处置：R1」         | 评审用 `submit_verdict` 交，`blockers` 里 `must: true` 的要逐条处置                        | 已落地                                                                      |
 | A7  | `server/tasks/peer.ts`                | 正文开头「【报错不是我改出来的」       | `wait_fix` 作为字段传                                                                      | 已落地                                                                      |
 
 只做展示的（总结卡片、汇报摘要、建议卡片）保留；按 CLI / 网关报错文字分类的不是模型回复，不在此列。第五期（已落地）：总结写进各自对话计划的 `summary`（`set_plan` / `finish_plan` 带 summary），子对话汇报优先读它，不写进父对话的计划。第六期（已落地）：`scripts/rules-check.mjs` 第 19 条拦 `parseVerdict` / `leadVerdict` / `parseDispatch` 在定义文件和测试之外被调用；界面上的验收徽标也改读 `submitted`。

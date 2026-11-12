@@ -1,4 +1,4 @@
-import { resolveParams } from '../../shared/agent-role.ts'
+import { resolveParams } from '../../shared/agents/role.ts'
 import { findCore } from '../../shared/builtin/core.ts'
 import { DOC_PLACE_SIBLING, isDocVcs, isInside, resolveDocRoot, type DocRootInfo } from '../../shared/doc-root.ts'
 import type { Agent } from '../../shared/schema.ts'

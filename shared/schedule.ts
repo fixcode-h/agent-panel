@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { t, uiLocale } from './i18n.ts'
 import { hhmm, pad2, ymd } from './datetime.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
-import { everyLabel, isEventSchedule, ScheduleTrigger, TriggerState } from './schedule-trigger.ts'
+import { everyLabel, isEventSchedule, ScheduleTrigger, TriggerState } from './schedule/trigger.ts'
 
 /** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
 /** 日历的时间刻度（分钟）：周视图半小时一格，拖动、拉伸、右键新建都对齐到它 */
@@ -74,7 +74,7 @@ export const ScheduleInput = z.object({
     .default(60),
   /**
    * 触发方式：按时间（默认，旧数据没有这个字段）或按事件（目录文件变了、远端新提交、命令退出码变了，
-   * 见 shared/schedule-trigger.ts）。按事件的计划不看 at / repeat，按 trigger.everyMin 定期检查
+   * 见 shared/schedule/trigger.ts）。按事件的计划不看 at / repeat，按 trigger.everyMin 定期检查
    */
   trigger: ScheduleTrigger.prefault({}),
 })
@@ -214,7 +214,7 @@ export const Schedule = ScheduleInput.extend({
     .regex(/^\d{2}:\d{2}$/)
     .optional()
     .catch(undefined),
-  /** 按事件的计划：上次检查到的现状、时间和出错原因（见 shared/schedule-trigger.ts）；按时间的计划不用 */
+  /** 按事件的计划：上次检查到的现状、时间和出错原因（见 shared/schedule/trigger.ts）；按时间的计划不用 */
   triggerState: TriggerState.prefault({}),
   createdAt: z.string(),
   updatedAt: z.string(),

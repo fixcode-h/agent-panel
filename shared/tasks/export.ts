@@ -9,10 +9,10 @@
 import { liftBugFields } from '../bug/task-bug.ts'
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from '../schema.ts'
-import { composeRole, includedAgents } from '../agent-role.ts'
+import { composeRole, includedAgents } from '../agents/role.ts'
 import { fillSkills, fillSlots } from '../expose.ts'
 import { retiredWithoutSuccessor } from '../skill-guide.ts'
-import { runTree } from '../run-usage.ts'
+import { runTree } from '../run/usage.ts'
 import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from '../task.ts'
 import { t } from '../i18n.ts'
 import { isHelperAgent } from '../builtin/core.ts'
@@ -1446,8 +1446,8 @@ export function analysisReport(bundles: TaskExport[], max = 120_000, scope?: Hel
 
 /** 面板执行工作流的代码在哪：分析框架问题时引用 */
 const FRAMEWORK_MAP = `- shared/engine.ts：工作流执行引擎（节点调度、并发、验收轮次、开始/验收/结束入口、条件连线、重试）
-- shared/flow-run.ts、shared/flow-run-turn.ts：工作流运行（父对话启动、阶段、确认与决定记录、收尾）
-- shared/agent-role.ts：拼 Agent 的角色设定、参数模板、节点用哪一档模型
+- shared/flow/run.ts、shared/flow/run-turn.ts：工作流运行（父对话启动、阶段、确认与决定记录、收尾）
+- shared/agents/role.ts：拼 Agent 的角色设定、参数模板、节点用哪一档模型
 - shared/flow.ts：流程图结构、拓扑顺序、工作流快照
 - server/exec/runner.ts：真实执行（启动 CLI、续接会话、交接文件、权限请求、提问）
 - server/exec/*.ts：各 CLI 的输出解析和参数

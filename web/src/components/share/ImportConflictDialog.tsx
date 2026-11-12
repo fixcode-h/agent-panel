@@ -2,7 +2,7 @@ import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { t } from '@shared/i18n'
-import type { ShareMode } from '@shared/agent-share'
+import type { ShareMode } from '@shared/agents/share'
 import type { ImportConflict } from '@/lib/transfer'
 
 /**

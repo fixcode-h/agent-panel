@@ -3,7 +3,7 @@ import type { Task } from '@shared/schema'
 import { api } from '@/lib/api'
 
 /**
- * 父对话名下的工作流运行（不是子对话，见 shared/flow-run.ts）：运行区的工作流卡片和右栏都要它，
+ * 父对话名下的工作流运行（不是子对话，见 shared/flow/run.ts）：运行区的工作流卡片和右栏都要它，
  * 按父对话共用一份、一个轮询，有人看时每 3 秒刷新（只是一次过滤后的列表查询），没人看就停
  */
 const POLL_MS = 3000

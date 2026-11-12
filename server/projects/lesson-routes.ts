@@ -3,7 +3,7 @@ import { t } from '../../shared/i18n.ts'
 import { LESSON_REVIEW_LANG, parseLessonReview, type LessonReviewItem } from '../../shared/lesson-review.ts'
 import type { Project } from '../../shared/schema.ts'
 import type { LessonDraft } from '../lessons.ts'
-import { experienceRoutes } from '../experience-routes.ts'
+import { experienceRoutes } from '../experience/routes.ts'
 
 export interface ProjectLessonApi {
   record(projectId: string, draft: LessonDraft): Promise<{ ok: boolean; info: string; project?: Project }>

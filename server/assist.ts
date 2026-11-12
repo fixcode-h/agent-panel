@@ -15,7 +15,7 @@ import {
   type AssistJob,
   type AssistMessage,
 } from '../shared/assist.ts'
-import { derivedParams } from '../shared/agent-params.ts'
+import { derivedParams } from '../shared/agents/params.ts'
 import { getCli } from '../shared/clis.ts'
 import type { Agent, Category, Project, TaskMessage, ToolUse, Workflow } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'

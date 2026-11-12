@@ -50,7 +50,7 @@ import { ChildListCtx, ChildMailProvider, PaneNavCtx, PaneToolbarCtx, type PeerM
 import { asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
-import { canStartFlow } from '@shared/flow-run'
+import { canStartFlow } from '@shared/flow/run'
 import { dropChip } from '@shared/composer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { FileRefLayer } from '@/components/files/FileRefLayer'

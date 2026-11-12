@@ -9,7 +9,7 @@ import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { askPushRequest, dropOwnRequests, panelRequest } from './panel-requests.ts'
 import { clip } from '../../shared/text.ts'
-import { noteConfirm, nodeTitle } from '../../shared/flow-run.ts'
+import { noteConfirm, nodeTitle } from '../../shared/flow/run.ts'
 
 import { detectVcs } from '../projects-analyze.ts'
 import { gatedRunAgent } from './runner.ts'
@@ -52,6 +52,7 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
     },
     tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
     ...(target && (vcs === 'git' || vcs === 'p4') ? { cherryPick: { vcs, target } } : {}),
+    ...(vcs && { vcs }),
     docs: await projectDocRoot(ctx.project.path, ctx.agents, vcs ?? 'none'),
     // P4 / SVN 以外的项目文档根也由面板给，和查模块文档同一个算法（不然「文档」会按 P4 用的参数写到项目外）
     ...(vcs !== 'p4' &&

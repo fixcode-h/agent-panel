@@ -1,5 +1,5 @@
-import type { HookDef, HookDefInput, HookEventName } from '@shared/hook-defs'
-import type { HookTier } from '@shared/hook-builtins'
+import type { HookDef, HookDefInput, HookEventName } from '@shared/hooks/defs'
+import type { HookTier } from '@shared/hooks/builtins'
 import { json, request } from './api'
 
 /**

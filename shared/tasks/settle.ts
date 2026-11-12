@@ -11,7 +11,7 @@ import type { StopReason, Task, TaskMessage } from '../schema.ts'
 import { endRun as endPlanRun } from '../plan.ts'
 import { t } from '../i18n.ts'
 import { diagnosisPending, idleWaitDuration, stopReasonText, waitDuration } from '../task.ts'
-import { pauseUnit } from '../run-stops.ts'
+import { pauseUnit } from '../run/stops.ts'
 
 /**
  * 落成已停止：结掉还在跑的轮次、步骤（记为被打断，继续执行时续接它的会话）、工作流运行和各段等待时长。

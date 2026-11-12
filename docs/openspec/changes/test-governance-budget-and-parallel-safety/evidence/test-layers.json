@@ -276,7 +276,7 @@
       "lines": 1256
     },
     {
-      "file": "server/child-ask-link.test.ts",
+      "file": "server/children/ask-link.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -285,7 +285,7 @@
       "lines": 100
     },
     {
-      "file": "server/child-ask.test.ts",
+      "file": "server/children/ask.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir"
@@ -706,7 +706,7 @@
       "lines": 153
     },
     {
-      "file": "server/model-limits.test.ts",
+      "file": "server/cli/model-limits.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 10,
@@ -772,7 +772,7 @@
       "lines": 92
     },
     {
-      "file": "server/panel-mcp-files.test.ts",
+      "file": "server/panel/mcp-files.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -782,7 +782,7 @@
       "lines": 128
     },
     {
-      "file": "server/panel-source.test.ts",
+      "file": "server/panel/source.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -1312,7 +1312,7 @@
       "lines": 217
     },
     {
-      "file": "shared/agent-share.test.ts",
+      "file": "shared/agents/share.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 20,
@@ -1340,14 +1340,14 @@
       "lines": 62
     },
     {
-      "file": "shared/api-balance.test.ts",
+      "file": "shared/cli/api-balance.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 3,
       "lines": 46
     },
     {
-      "file": "shared/api-vendors.test.ts",
+      "file": "shared/cli/api-vendors.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 6,
@@ -1536,7 +1536,7 @@
       "lines": 27
     },
     {
-      "file": "shared/run-usage.test.ts",
+      "file": "shared/run/usage.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 13,

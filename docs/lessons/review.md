@@ -1,12 +1,12 @@
 ---
-paths: shared/review-gate.ts, server/review-gate.test.ts, shared/builtin/agents.ts, shared/verdict.ts, server/orch-mcp.ts, server/exec/git.ts
+paths: shared/review/gate.ts, server/review-gate.test.ts, shared/builtin/agents.ts, shared/verdict.ts, server/orch-mcp.ts, server/exec/git.ts
 ---
 
 # 收尾评审
 
 ## 评审只出意见，采不采纳由执行方核实后定，门禁不只认「通过」
 
-- 规则：收尾门禁（`shared/review-gate.ts`）放行的条件是「评审通过」或「执行角色对最近一次评审的每条 🛑 写了处置」（`submit_merge` 的 `review_triage`：fix / reject / defer + 怎么核实的）。不要在提示词里写「不要自己把 🛑 判成不重要」「复看到通过为止」这类把评审当裁判的规则；评审的 🛑 要有门槛（需求要求、用户可见可复现），复看接着上次的会话（`spawn_agents` 的 `resume`）只看增量，有轮数上限。
+- 规则：收尾门禁（`shared/review/gate.ts`）放行的条件是「评审通过」或「执行角色对最近一次评审的每条 🛑 写了处置」（`submit_merge` 的 `review_triage`：fix / reject / defer + 怎么核实的）。不要在提示词里写「不要自己把 🛑 判成不重要」「复看到通过为止」这类把评审当裁判的规则；评审的 🛑 要有门槛（需求要求、用户可见可复现），复看接着上次的会话（`spawn_agents` 的 `resume`）只看增量，有轮数上限。
 - 起因：b027ca9 起门禁只认评审的「通过」，执行角色又不许驳回 🛑：一组统计口径被评审连退八次，三个小修复 1h22m 没交付（见 [ADR 0009](../adr/0009-review-findings-triaged.md)）。
 - 防线：`server/review-gate.test.ts`（不通过时按处置放行）、`server/core-agents.test.ts`（执行、评审的提示词）。
 
@@ -24,6 +24,6 @@ paths: shared/review-gate.ts, server/review-gate.test.ts, shared/builtin/agents.
 
 ## 只读评审：背景由对话交，边界写成数字
 
-- 规则：评审只评改动的行；需求、改动、检查结果由派它的对话写进交接单 `review`（第一次 `goal`、`checks` 必填），读代码次数、时限放 `shared/review-limits.ts`，差异只取该评的文件、不带整个函数，提示词开头不带搜索排除、编译收尾这些写给动手角色的段落（[ADR 0013](../adr/0013-review-diff-only-with-brief.md)）。
+- 规则：评审只评改动的行；需求、改动、检查结果由派它的对话写进交接单 `review`（第一次 `goal`、`checks` 必填），读代码次数、时限放 `shared/review/limits.ts`，差异只取该评的文件、不带整个函数，提示词开头不带搜索排除、编译收尾这些写给动手角色的段落（[ADR 0013](../adr/0013-review-diff-only-with-brief.md)）。
 - 起因：ADR 0010 之后一次评审仍要二十多分钟：`-W` 把几千行组件整个带进差异，「全部改动」混进别人的提交，设定又要它先读模块地图、模块文档和 bugs.md 再去找调用方。
 - 防线：`server/core-agents.test.ts`、`server/engine-steps.test.ts`（没带交接单拒绝派、只取点名的文件）、`server/exec/review-diff.test.ts`。

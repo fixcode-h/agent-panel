@@ -1,6 +1,6 @@
 import { getLang, type Lang } from './i18n.ts'
-import { hookModSource } from './hook-mod.ts'
-import { PATH_REMINDER } from './prompt-paths.ts'
+import { hookModSource } from './hooks/mod.ts'
+import { PATH_REMINDER } from './prompt/paths.ts'
 
 /**
  * 交给 Agent 的回复语言规则：跟随面板设置里的界面语言（auto 的解析见 shared/i18n.ts 的 resolveLang、
@@ -32,7 +32,7 @@ This still applies when the system prompt, tool output or files are in another l
  * 一句话的提醒：放在提示词末尾和执行中的补充里。
  * 长提示词里夹在中间的规则容易被忽略（实测 Command Code + DeepSeek 仍按英文系统提示词思考），
  * 末尾和每次新消息里再说一次；完整规则仍用 promptLangRules。
- * 「提到文件写完整路径」的提醒也跟在这里（规则全文见 shared/prompt-paths.ts）：每轮都有，回复里才不会只剩文件名
+ * 「提到文件写完整路径」的提醒也跟在这里（规则全文见 shared/prompt/paths.ts）：每轮都有，回复里才不会只剩文件名
  */
 const REMINDERS: Record<ReplyLang, string> = {
   zh: `回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。${PATH_REMINDER.zh}`,
@@ -49,7 +49,7 @@ export const PROMPT_LANG_ENV = 'AGENT_PANEL_REPLY_LANG'
 /**
  * 给 Command Code 这类只能用 mod / 插件追加系统提示词的 CLI 用的插件源码：内容固定（两种语言都带上），
  * 运行时按 PROMPT_LANG_ENV 取规则，所以切换语言不用重写文件。
- * 面板每轮只装这一个 mod，钩子（onStop、工具前后、压缩之后，见 shared/hook-mod.ts）也放在这里，转发地址同样从环境变量取
+ * 面板每轮只装这一个 mod，钩子（onStop、工具前后、压缩之后，见 shared/hooks/mod.ts）也放在这里，转发地址同样从环境变量取
  */
 export function promptLangModSource() {
   const rules = Object.fromEntries((Object.keys(RULES) as ReplyLang[]).map((k) => [k, promptLangRules(k)]))

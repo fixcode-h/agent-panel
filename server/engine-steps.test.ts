@@ -7,11 +7,11 @@ import { newTask, stopReasonText } from '../shared/task.ts'
 import { activePlan, applyPlan, bindWait } from '../shared/plan.ts'
 import { runEngineTurn } from '../shared/engine.ts'
 import { retryBase } from '../shared/children/lookup.ts'
-import { stopHelper } from '../shared/run-stops.ts'
+import { stopHelper } from '../shared/run/stops.ts'
 import type { AgentCall, EngineHost, Orchestra } from '../shared/engine/host.ts'
 import { t } from '../shared/i18n.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
-import { composeRole } from '../shared/agent-role.ts'
+import { composeRole } from '../shared/agents/role.ts'
 
 /**
  * 多步骤节点：每一步一条 slot=step 的执行记录、一个独立会话，按顺序执行，

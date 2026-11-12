@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CircleAlert, FlaskConical, Loader2, Plus, Trash2, TriangleAlert } from 'lucide-react'
-import type { HookDef, HookDefInput, HookEventName, ToolKind } from '@shared/hook-defs'
+import type { HookDef, HookDefInput, HookEventName, ToolKind } from '@shared/hooks/defs'
 import { t } from '@shared/i18n'
 import { hooksApi, type HookTestView } from '@/lib/api-hooks'
 import { useData } from '@/lib/data'

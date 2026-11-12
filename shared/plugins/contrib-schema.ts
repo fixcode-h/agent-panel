@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ToolKind } from '../hook-defs.ts'
+import { ToolKind } from '../hooks/defs.ts'
 import { TestStepShape } from '../schema.ts'
 
 /**
@@ -14,7 +14,7 @@ const LocalId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/)
 export const PLUGIN_HOOK_EVENTS = ['turn.beforeEnd', 'tool.before', 'tool.after', 'context.restored'] as const
 
 /**
- * 插件带的钩子：输入输出和用户钩子同一套统一格式（shared/hook-defs.ts 的 HookInput / HookOutput）。
+ * 插件带的钩子：输入输出和用户钩子同一套统一格式（shared/hooks/defs.ts 的 HookInput / HookOutput）。
  * 写了 script 就用面板的 Node 跑包里的脚本（stdin 进 JSON、stdout 出 JSON，和用户的脚本钩子一样）；
  * 没写交给插件服务端入口的 hook(id, input)（插件进程里已经连着引擎、桥接时用这个，比如写入后编译）。
  * 插件打开就生效（用户已经信任了它的代码），设置 →「钩子」里可以单独关掉某一个

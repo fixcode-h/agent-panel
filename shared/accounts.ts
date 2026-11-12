@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { apiBaseUrl } from './api-vendors.ts'
+import { apiBaseUrl } from './cli/api-vendors.ts'
 
 /**
  * 账号和 API：每个 CLI 可以用「账号」（浏览器登录的订阅账号）或「API」（全局设置里配的接口 + 密钥）。

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, taskSummary } from '../../shared/task.ts'
 import { bugBriefs } from '../../shared/bug/overview.ts'
-import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
+import { agentFlowBriefs } from '../../shared/agents/flow-briefs.ts'
 import { messageChars, searchTasks } from '../../shared/tasks/search.ts'
 import { trashRows } from '../../shared/trash/rows.ts'
 import { childCountsScan } from '../../shared/children/row.ts'
@@ -50,7 +50,7 @@ export function registerListRoutes(s: TasksScope) {
 
   /**
    * 总览页的「流程」视图（扩展 4）：所有 Agent 模式对话（含子对话）被推了几次、评审退回、合回失败、等你多久，
-   * 只给精简行（shared/agent-flow-briefs.ts），汇总由页面按搜索词筛过再算。状态按内存里正在跑的那份算
+   * 只给精简行（shared/agents/flow-briefs.ts），汇总由页面按搜索词筛过再算。状态按内存里正在跑的那份算
    */
   s.routes.get('/flow', async (c) => {
     const all = (await s.store.list()).map((t) => s.live.get(t.id)?.task ?? t)
@@ -78,7 +78,7 @@ export function registerListRoutes(s: TasksScope) {
     const kids = childCountsScan(all, { active: s.childActive, cliAlive: (k) => taskCliAlive(k.id) })
     let list = await Promise.all(all.map(async (t) => taskSummary({ ...t, live: await s.liveOf(t, kids) })))
     // 子对话不进入项目列表：按 parentId 查询时才返回它们。
-    // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
+    // 父对话名下的工作流运行（不是对话，见 shared/flow/run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
     // 直接经接口建的独立运行没有父对话，照常列
     const parent = c.req.query('parentId')
     const owner = c.req.query('owner')

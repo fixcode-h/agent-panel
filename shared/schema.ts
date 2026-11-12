@@ -3,7 +3,7 @@ import { Submitted } from './submitted.ts'
 import { z } from 'zod'
 import { FirstTokenStats } from './first-token-stats.ts'
 import { t } from './i18n.ts'
-import { ProjectCliTrust } from './cli-trust.ts'
+import { ProjectCliTrust } from './cli/trust.ts'
 import { EndTurnRecord } from './turn-end.ts'
 import { ConvBudget, TaskRuntimeFields } from './tasks/runtime-schema.ts'
 import { RolePlugins } from './role-plugins.ts'
@@ -148,7 +148,7 @@ export const AgentInput = z.object({
   /**
    * 角色的层：basic 基本角色（专注一个能力，派成子任务、当工作流节点、被高级角色挂载）；
    * advanced 高级角色（父对话、子对话的负责人：挂载若干基本角色，自己决定就地做还是派出）。
-   * 旧数据没有这个字段：按 roleKind（shared/agent-role.ts）从能力开关和挂载推导，不迁移
+   * 旧数据没有这个字段：按 roleKind（shared/agents/role.ts）从能力开关和挂载推导，不迁移
    */
   kind: z.enum(['basic', 'advanced']).optional().catch(undefined),
   /**
@@ -495,7 +495,7 @@ export const WorkflowExpose = z.object({
 export type WorkflowExpose = z.infer<typeof WorkflowExpose>
 
 /**
- * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow-run.ts）。
+ * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow/run.ts）。
  * 没有主 Agent（workflow-runs 设计 D1）：节点按连线执行，没指定角色的节点用默认执行角色。
  */
 export const WorkflowFields = z.object({
@@ -919,7 +919,7 @@ const ProjectFields = z.object({
    * 没设时只用内置默认清单（和 fileFormat 一样是可选的：旧数据和直接拼 Project 字面量的地方不用补）
    */
   searchExclude: z.array(z.string().trim().min(1).max(120)).max(60).optional(),
-  /** 每个 CLI 信不信任项目里它的配置（ADR 0050，见 shared/cli-trust.ts）；没写就跟随 CLI 自己的决定 */
+  /** 每个 CLI 信不信任项目里它的配置（ADR 0050，见 shared/cli/trust.ts）；没写就跟随 CLI 自己的决定 */
   cliTrust: ProjectCliTrust,
   /**
    * 子对话怎么避免互相干扰：
@@ -1425,7 +1425,7 @@ export const TaskMessage = z.object({
    */
   child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
   /**
-   * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary-card.ts 的 childSummaryCards）：
+   * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary/card.ts 的 childSummaryCards）：
    * 标题就是子对话总结的「类型｜结论」，child 是点标题跳过去的子对话。父对话不再自己写这张卡。
    * 子对话没写总结时为空（旧数据也没有这一项），按没有卡片显示
    */
@@ -1807,7 +1807,7 @@ export const TaskData = z.object({
    */
   handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
   /**
-   * 评审门禁的显式放行记录（见 shared/review-gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
+   * 评审门禁的显式放行记录（见 shared/review/gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
    * 面板记下谁、什么时候、为什么、原本拦住什么。收尾消息和交接摘要里一并带给父对话，任务详情里也能看到
    */
   reviewOverride: z
@@ -1933,7 +1933,7 @@ export const TaskData = z.object({
    */
   roleHashes: z.record(z.string(), z.string()).optional(),
   /**
-   * 每个会话已经收到过的提示词段落指纹（键同 sessions，见 shared/prompt-delta.ts）：续接时只发新的和变了的段落。
+   * 每个会话已经收到过的提示词段落指纹（键同 sessions，见 shared/prompt/delta.ts）：续接时只发新的和变了的段落。
    * 会话换了、压缩过就作废（runner 在压缩时删掉）
    */
   promptSent: z
@@ -2194,7 +2194,7 @@ export const RequestAnswer = z.object({
   answers: z.array(z.string().max(20000)).max(20).optional(),
   /** 允许并且这个对话里一直允许这类（请求的 rule 记进 task.allowRules，见 shared/allow-rules.ts） */
   always: z.boolean().optional(),
-  /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow-run.ts 的 noteConfirm） */
+  /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow/run.ts 的 noteConfirm） */
   ask: z.boolean().optional(),
 })
 

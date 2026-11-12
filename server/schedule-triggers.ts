@@ -1,5 +1,5 @@
 /**
- * 事件触发计划的检查（shared/schedule-trigger.ts 定义结构和判定）：去读目录、问远端、跑命令，
+ * 事件触发计划的检查（shared/schedule/trigger.ts 定义结构和判定）：去读目录、问远端、跑命令，
  * 拿到一个可以和上一次比较的值（value），以及条件成立时附给 Agent 的说明（detail）。
  * 出错一律抛出，原文由 server/schedules.ts 记进计划显示给用户，不悄悄当成「没变化」。
  */
@@ -7,7 +7,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { t } from '../shared/i18n.ts'
-import { isAbsolutePath, type ScheduleTrigger, type TriggerState } from '../shared/schedule-trigger.ts'
+import { isAbsolutePath, type ScheduleTrigger, type TriggerState } from '../shared/schedule/trigger.ts'
 import { gitRun } from './exec/git.ts'
 import { runShell } from './merge-build.ts'
 import { currentShell } from './shells.ts'

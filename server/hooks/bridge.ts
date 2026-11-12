@@ -9,7 +9,7 @@ import {
   type HookFacts,
   type HooksSpec,
 } from '../../shared/hooks.ts'
-import { HookEventName, isNotifyEvent } from '../../shared/hook-defs.ts'
+import { HookEventName, isNotifyEvent } from '../../shared/hooks/defs.ts'
 import { log } from '../log.ts'
 
 /** 这一轮挂在面板工具通道上的钩子：CLI 定义里的装法（输出模板），以及按事件回答的两个函数 */

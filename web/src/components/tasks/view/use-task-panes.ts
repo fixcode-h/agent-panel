@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ToolUse } from '@shared/schema'
-import { RUN_NO } from '@shared/flow-run'
+import { RUN_NO } from '@shared/flow/run'
 import type { TaskPage } from '@/lib/api'
 import { OPEN_CHILD_EVENT, SHOW_PARENT_EVENT } from '@/lib/ai-window'
 import { useOwnedRuns } from '@/lib/owned-runs'
@@ -63,7 +63,7 @@ export function useTaskPanes(c: TaskPanesCtx) {
   // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
   // run 为 0 是认不回来是哪次运行（调用失败、还没开始），按「没有启动运行」显示原因
   const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse; tab?: RunTab } | null>(null)
-  // 工作流运行在右栏打开时直接看它的流程图（运行只有一次，见 shared/flow-run.ts 的 RUN_NO）；每次只自动开一回，返回后不再弹回来
+  // 工作流运行在右栏打开时直接看它的流程图（运行只有一次，见 shared/flow/run.ts 的 RUN_NO）；每次只自动开一回，返回后不再弹回来
   const flowShown = useRef('')
   useEffect(() => {
     if (!pane || !task?.flowRun || flowShown.current === task.id) return

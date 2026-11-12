@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import type { TaskMessage } from './schema.ts'
-import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './hook-defs.ts'
+import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './hooks/defs.ts'
 import { panelToolName } from './panel-tools.ts'
 
 /**
  * 钩子（ADR 0049）：模型准备结束这一轮时（turn.beforeEnd），CLI 先问面板；计划没做完、也没在等任何结果时
  * 面板答「拦住」并给出下一步，CLI 在同一轮里接着做，对话里不再另起一轮【面板】提醒。第二期加了工具前、工具后、
- * 上下文恢复（压缩之后）三个事件，内置钩子和用户钩子都挂在它们上（规范见 shared/hook-defs.ts）。
+ * 上下文恢复（压缩之后）三个事件，内置钩子和用户钩子都挂在它们上（规范见 shared/hooks/defs.ts）。
  *
  * 这里放和 CLI 无关的部分：CLI 定义里的 hooks 字段、面板的判断结果、给 Claude Code 这类「钩子是一条命令」的 CLI
  * 用的转发脚本。怎么装进 CLI（参数、扩展、mod）写在各自的 CLI 定义里，代码按字段走，不按 CLI 的名字分支。

@@ -1,5 +1,5 @@
 ---
-paths: web/src/lib/demo-*.ts, shared/engine.ts, shared/flow-run*.ts
+paths: web/src/lib/demo-*.ts, shared/engine.ts, shared/flow/run*.ts
 ---
 
 # 在线演示的数据（web/src/lib/demo-*.ts）

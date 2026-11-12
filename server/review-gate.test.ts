@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PlanStep, TaskStep } from '../shared/schema.ts'
 import { applyPlan } from '../shared/plan.ts'
-import { overrideInput, reviewGate, triageInput } from '../shared/review-gate.ts'
+import { overrideInput, reviewGate, triageInput } from '../shared/review/gate.ts'
 
 const REVIEWER = 'a-reviewer'
 const isReviewer = (id: string) => id === REVIEWER

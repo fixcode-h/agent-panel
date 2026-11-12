@@ -11,9 +11,9 @@ import { capture, childEnv } from '../exec/process.ts'
 import { getSettings } from '../settings.ts'
 import { galleryApi } from './gallery.ts'
 import { configSettingsApi } from './config-settings.ts'
-import { packageConfigApi } from '../package-config.ts'
+import { packageConfigApi } from '../package/config.ts'
 import { clearQueriedCommands } from './commands.ts'
-import { packageChangelog, packageDir, readManifest } from '../package-dirs.ts'
+import { packageChangelog, packageDir, readManifest } from '../package/dirs.ts'
 
 /**
  * CLI 自己的插件（扩展包，定义里的 packages）：列表直接读 CLI 的配置文件，装、删、更新跑 CLI 自己的命令，

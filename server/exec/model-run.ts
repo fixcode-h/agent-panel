@@ -3,9 +3,9 @@
  * 从 runner.ts 拆出来（文件行数上限，见 docs/lessons/file-caps.md），runAgent 拿结果拼启动参数
  */
 import type { agentRun, cliSettings } from '../../shared/settings.ts'
-import { autoLimits, type ModelLimits } from '../../shared/model-limits.ts'
-import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
-import { mergedModelCatalog } from '../model-catalog-store.ts'
+import { autoLimits, type ModelLimits } from '../../shared/models/limits.ts'
+import { apiModelInfo, apiModelKey } from '../../shared/models/catalog.ts'
+import { mergedModelCatalog } from '../cli/model-catalog-store.ts'
 import { cachedModels, knownWindows, supportedEffort } from '../models.ts'
 
 type Run = ReturnType<typeof agentRun>

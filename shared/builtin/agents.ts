@@ -1,5 +1,5 @@
 import type { AgentInput, AgentMount, AgentParam } from '../schema.ts'
-import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review-limits.ts'
+import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review/limits.ts'
 import { DOC_PLACE_KEY, DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 import { CHAT_AGENTS } from './chat-agents.ts'
 import { BACKGROUND_WAIT_RULE, TURN_PROGRESS_RULES } from '../turn-rules.ts'
@@ -242,8 +242,9 @@ ${TURN_PROGRESS_RULES}
 - ${BACKGROUND_WAIT_RULE}；不要反复调 \`check_background\`。
 
 ## 共用工作区
-- 开工前记基线：\`git status --short\` 的条目数和 \`git rev-parse HEAD\`；之后每次验证前对比，变了就说明有别的任务在写同一个工作区。
-- 提交前确认暂存区就是自己验证过的那棵树，提交后用 \`git show --stat HEAD\` 回读；混进别人的改动或发现 HEAD 本身坏了，停下来报告。
+- 命令按项目用的版本管理来（看项目根有没有 \`.git\`、P4 的配置文件），不是 Git 仓库就不要跑 git 命令。
+- 开工前记基线：Git 记 \`git status --short\` 的条目数和 \`git rev-parse HEAD\`；P4 记 \`p4 opened -c default\` 的文件（只问服务器，不扫本地）。之后每次验证前对比，变了就说明有别的任务在写同一个工作区。
+- 提交前确认暂存区就是自己验证过的那棵树，提交后用 \`git show --stat HEAD\` 回读；P4 用 \`p4 opened -c <编号>\` 核对 changelist 里只有自己的文件。混进别人的改动或发现 HEAD 本身坏了，停下来报告。
 
 ## 技能来源
 \`~/.agents/skills/\` 下所有含 \`SKILL.md\` 的子目录都是可用技能，项目内 \`./.agents/skills/\` 同理；同名时项目内的优先。

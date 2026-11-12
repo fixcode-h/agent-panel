@@ -58,11 +58,11 @@
 | `isChatMode`（原 `isPlainChat` 改名）、`scopeOf`、`chatRoleFor` / `emptyRole`、`scopeError`、`normalizeScope`、`agentOnlyError` | `shared/conv-mode.ts`                                   |
 | `turnRole`（删掉的 Chat 角色回退助手）、`findRole`（同名先找本类）、`settledTodos`（做完的待办收起）；CLI 定义 `todos`          | `shared/conv-mode.ts`、`shared/cli-spec.ts`             |
 | `chatConversationPrompt`、`backgroundPart`（从 engine 搬来，两边共用）                                                          | `shared/chat-prompt.ts`                                 |
-| `Orchestra.plain` 删除，加 `canSpawn` / `team`；`planning` 加 `!isChatMode`；`commonAgents` 去掉 Chat 角色                      | `shared/engine.ts`、`shared/agent-role.ts`              |
+| `Orchestra.plain` 删除，加 `canSpawn` / `team`；`planning` 加 `!isChatMode`；`commonAgents` 去掉 Chat 角色                      | `shared/engine.ts`、`shared/agents/role.ts`             |
 | `PLAIN_TOOLS` 删除，按 `team` / `canSpawn` 给工具；`orchHint` 搬到单独文件，`!o.team` 分支只讲后台命令                          | `server/orch-mcp.ts`、`server/orch-hint.ts`             |
 | `ORCH_CORE_TOOLS`；握手现算                                                                                                     | `shared/panel-tools.ts`、`server/ask-mcp.ts`            |
 | 推送授权按 `!task.projectId` 判                                                                                                 | `shared/push-auth.ts`                                   |
-| runner 的空 id 角色走 `emptyRole`，`defaultChatPrompt` 按「有没有角色」判                                                       | `server/exec/runner.ts`、`shared/agent-role.ts`         |
+| runner 的空 id 角色走 `emptyRole`，`defaultChatPrompt` 按「有没有角色」判                                                       | `server/exec/runner.ts`、`shared/agents/role.ts`        |
 | 内置 `chat-rules`、`chat`；`CORE_AGENTS` 加 `chat`；`syncCore` / `sameCore` 带 `scope`                                          | `shared/builtin/chat-agents.ts`、`agents.ts`、`core.ts` |
 | 角色页三页、类别徽标、「复制为另一类」；Chat 页角色选择；待办行；各选择器按类别过滤                                             | `web/src/pages/AgentsPage.tsx`、`web/src/components/…`  |
 

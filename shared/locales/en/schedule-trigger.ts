@@ -1,4 +1,4 @@
-/** 英文词典的一部分，键是中文原文：事件触发的计划（shared/schedule-trigger.ts 和计划页的触发条件字段） */
+/** 英文词典的一部分，键是中文原文：事件触发的计划（shared/schedule/trigger.ts 和计划页的触发条件字段） */
 export const EN_SCHEDULE_TRIGGER: Record<string, string> = {
   触发方式: 'Trigger',
   按时间: 'On schedule',

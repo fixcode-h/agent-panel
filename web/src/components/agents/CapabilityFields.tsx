@@ -1,6 +1,6 @@
 import { RotateCcw } from 'lucide-react'
 import { type Agent, type AgentInput, type AgentMount } from '@shared/schema'
-import { roleKind } from '@shared/agent-role'
+import { roleKind } from '@shared/agents/role'
 import { listableAgents } from '@shared/builtin/core'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'

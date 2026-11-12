@@ -13,7 +13,7 @@ import { getSettings } from '../settings.ts'
 import { mcpConfig, mcpExtras } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
-import { claimPanelName, sweepPanelMcp } from '../panel-mcp-files.ts'
+import { claimPanelName, sweepPanelMcp } from '../panel/mcp-files.ts'
 import { promptLangReminder } from '../../shared/prompt-lang.ts'
 import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine/host.ts'
@@ -38,7 +38,7 @@ import {
   type HookFacts,
   type HookToolScope,
 } from '../../shared/hooks.ts'
-import type { HookEventName } from '../../shared/hook-defs.ts'
+import type { HookEventName } from '../../shared/hooks/defs.ts'
 
 /** 这一轮面板自己的临时目录（绝对路径）：放 CLI 要加载的桥接脚本等，用完删掉 */
 export const scratchDir = () => path.join(CACHE_DIR, 'cli-run', randomUUID().slice(0, 12))

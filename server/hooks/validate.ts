@@ -4,7 +4,7 @@ import {
   type HookEventName,
   type HookInput,
   isNotifyEvent,
-} from '../../shared/hook-defs.ts'
+} from '../../shared/hooks/defs.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { supportedEvents } from '../../shared/hooks.ts'
 import { t } from '../../shared/i18n.ts'

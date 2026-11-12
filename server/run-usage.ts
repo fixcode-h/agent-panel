@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import type { Task } from '../shared/schema.ts'
-import { runTree, runUsage } from '../shared/run-usage.ts'
+import { runTree, runUsage } from '../shared/run/usage.ts'
 import { descendantTotals } from '../shared/tasks/export.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -15,7 +15,7 @@ import { t } from '../shared/i18n.ts'
  * 只为算 token 就把整棵树的消息读上来、把打开过的任务挤出缓存，不值得（见 `getMeta` / `peek`）。
  * 子对话统计（children-stats）要从 messages 里数报错条数，那一条才读完整任务。
  *
- * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run-usage.ts` 和
+ * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run/usage.ts` 和
  * `shared/tasks/export.ts`，这里只负责取数。
  */
 export function runUsageApi(deps: {

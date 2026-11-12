@@ -540,7 +540,7 @@ export function verifyBlock(...a: Parameters<typeof verifyParts>) {
 
 /**
  * 验证段拆成两段：[规则, 本轮结论]。规则只随项目设置变；结论随改动清单变（每改一个新文件就变）。
- * 续接会话按段落指纹只重发变了的（shared/prompt-delta.ts），拼在一段里时改一个文件整段 2–4 千字都要重发
+ * 续接会话按段落指纹只重发变了的（shared/prompt/delta.ts），拼在一段里时改一个文件整段 2–4 千字都要重发
  */
 export function verifyParts(
   steps: TestStep[],

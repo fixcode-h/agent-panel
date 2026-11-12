@@ -1,4 +1,4 @@
-import { HookDef, type HookDefInput } from './hook-defs.ts'
+import { HookDef, type HookDefInput } from './hooks/defs.ts'
 import { CLIS } from './clis.ts'
 import { supportedEvents } from './hooks.ts'
 import { promptLangWord } from './prompt-lang.ts'

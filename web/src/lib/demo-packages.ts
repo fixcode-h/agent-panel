@@ -1,4 +1,4 @@
-import { mergeItems, pageOf, sortItems, type GalleryItem, type GallerySort } from '@shared/cli-gallery'
+import { mergeItems, pageOf, sortItems, type GalleryItem, type GallerySort } from '@shared/cli/gallery'
 import { npmName } from '@shared/cli-spec'
 
 /**

@@ -21,7 +21,7 @@
 | `shared/engine.ts` 的 `runConversationTurn` → 两种对话都 `makeOrchestra(host, { chat: true, … })`，Chat 页也挂上 `spawn_agents`、`send_message` 等编排工具和「派完结束这一轮」的说明（`server/orch-mcp.ts` 的 `orchHint`）                                                   |
 | `server/tasks/run.ts` 的 `onTurnEnd` → 顶层对话只在这一轮调过工具（`turn.tools > 0`）时调 `nudgePlan`                                                                                                                                                                        |
 | `server/tasks/children.ts` 的 `nudgePlan` / `nudgeAnnounced` → 同一进度（`计划 id:已完成几步`）或同一条用户消息只推一次（`planNudged`）；Chat 页没有计划，只剩 `nudgeAnnounced`（最后一句命中「我先 / 接下来…」才推）                                                        |
-| `shared/agent-role.ts` 的 `DEFAULT_CHAT_PROGRESS` → 不用角色的对话只追加「完成一组工具后先报告阶段结果再继续」，没有内置通用约束里「说了要做就同一回合做完」的配套规则（`shared/builtin/agents.ts`「回合怎么推进」）                                                         |
+| `shared/agents/role.ts` 的 `DEFAULT_CHAT_PROGRESS` → 不用角色的对话只追加「完成一组工具后先报告阶段结果再继续」，没有内置通用约束里「说了要做就同一回合做完」的配套规则（`shared/builtin/agents.ts`「回合怎么推进」）                                                        |
 | `shared/builtin/agents.ts` 通用约束 → 「用户说『继续』『自主执行』后，常规步骤不再逐个确认」，反过来读成「没说之前要逐个确认」                                                                                                                                               |
 | `server/exec/invoke.ts` 的 `WAIT_HINT` → 有 `notes` 且不是 `nativeAsk` 的 CLI（Command Code）每轮都被提示「每轮回复完成后调用 wait_user_message」；保活本来已经由面板在这一轮结束时做（`server/exec/rpc-keepalive.test.ts`「模型没调 wait_user_message，回复完进程也留着」） |
 
@@ -55,7 +55,7 @@ Command Code 不再提示「每轮回复完成后调用 wait_user_message」；�
 | `Orchestra.plain`（ADR 0038 删掉，改成 `canSpawn` / `team`）；`orchTools` 只留后台命令三件，`orchHint` 只讲后台命令（没有时返回空，runner 不拼空行）                                                    | `shared/engine.ts`、`server/orch-mcp.ts`、`server/exec/runner.ts` |
 | `AGENT_NUDGE_MAX = 3` / `nudgeMax` / `nextNudge`（推进计数的纯逻辑）；`takeNudge` / `lastNudge` 取代 `planNudged` 的「同一 key 只推一次」判断（`planNudged` 仍记最后一个 key，给 `stuckAfterNudge` 用） | `shared/conv-mode.ts`、`server/tasks/children.ts`                 |
 | `onTurnEnd`：Agent 模式没调工具但 `announcedOnly` 命中也推                                                                                                                                              | `server/tasks/run.ts`                                             |
-| `DEFAULT_CHAT_PROGRESS` 补「回合怎么推进」                                                                                                                                                              | `shared/agent-role.ts`                                            |
+| `DEFAULT_CHAT_PROGRESS` 补「回合怎么推进」                                                                                                                                                              | `shared/agents/role.ts`                                           |
 | 通用约束的「逐个确认」措辞                                                                                                                                                                              | `shared/builtin/agents.ts`                                        |
 | 去掉 `WAIT_HINT`，改 `wait_user_message` 的说明                                                                                                                                                         | `server/exec/invoke.ts`、`server/ask-mcp.ts`                      |
 

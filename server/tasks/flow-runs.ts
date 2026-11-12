@@ -9,15 +9,15 @@ import { randomUUID } from 'node:crypto'
 import type { Agent, Project, Task, TaskMessage, Workflow } from '../../shared/schema.ts'
 import { NewTaskInput } from '../../shared/schema.ts'
 import { FlowRun } from '../../shared/tasks/flow-schema.ts'
-import type { FlowRunHost, RunTarget } from '../../shared/flow-run-orch.ts'
-import type { PickedFlow } from '../../shared/flow-run.ts'
-import { RUN_ENDED, runEntry, runLine, runNodes, rewindTo } from '../../shared/flow-run.ts'
+import type { FlowRunHost, RunTarget } from '../../shared/flow/run-orch.ts'
+import type { PickedFlow } from '../../shared/flow/run.ts'
+import { RUN_ENDED, runEntry, runLine, runNodes, rewindTo } from '../../shared/flow/run.ts'
 import { newTask } from '../../shared/task.ts'
 import { settleWait } from '../../shared/plan.ts'
 import { clip } from '../../shared/text.ts'
 import { t } from '../../shared/i18n.ts'
 import { commitWorktree, createWorktree } from '../exec/worktree.ts'
-import { withWrapUp, wrapRoles } from '../../shared/flow-run-wrap.ts'
+import { withWrapUp, wrapRoles } from '../../shared/flow/run-wrap.ts'
 import { gitHead } from '../exec/git.ts'
 import { answerRequest } from '../exec/requests.ts'
 import { steerTask } from '../exec/steering.ts'
@@ -102,7 +102,7 @@ export function createFlowRuns(sc: TasksScope) {
     project: Project,
     p: PickedFlow & { input: string; title: string; files?: string[] },
   ): Promise<{ ok: boolean; id?: string; info: string }> {
-    // 改代码的运行在流程图末尾接上固定收尾（评审 → 测试 → 修复，见 shared/flow-run-wrap.ts）：先接再拍快照，
+    // 改代码的运行在流程图末尾接上固定收尾（评审 → 测试 → 修复，见 shared/flow/run-wrap.ts）：先接再拍快照，
     // 测试步骤才会按项目设置注入到收尾的测试节点里
     const roles = p.kind === 'change' ? wrapRoles(await sc.deps.agents.list()) : {}
     const wrap = (w: Workflow) => (p.kind === 'change' ? withWrapUp(w, roles) : w)

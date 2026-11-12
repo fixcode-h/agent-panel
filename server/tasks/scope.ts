@@ -645,8 +645,8 @@ export interface TasksScope {
     tests: string,
     build?: boolean,
     handoff?: import('../../shared/handoff.ts').HandoffInput,
-    triage?: import('../../shared/review-gate.ts').TriageItem[],
-    override?: import('../../shared/review-gate.ts').ReviewOverride,
+    triage?: import('../../shared/review/gate.ts').TriageItem[],
+    override?: import('../../shared/review/gate.ts').ReviewOverride,
   ) => Promise<{
     ok: boolean
     info: string
@@ -769,7 +769,7 @@ export interface TasksScope {
   ) => Promise<import('../../shared/live/task-live.ts').TaskLive>
   /** 交给界面的任务：记录加上 live（这一版旧的运行时字段也照样叠上） */
   withLive: (task: Task) => Promise<import('./live.ts').TaskWithLive>
-  /** 顶层对话一轮结束后排一次经验学习（server/experience-learn.ts） */
+  /** 顶层对话一轮结束后排一次经验学习（server/experience/learn.ts） */
   learnExperience: (taskId: string) => Promise<void>
   /** 对话这一轮失败收尾后：额度用完 / 被限流时按设置换备用模型或等到点继续（server/tasks/quota-resume.ts） */
   quotaAfterFail: (taskId: string) => Promise<void>

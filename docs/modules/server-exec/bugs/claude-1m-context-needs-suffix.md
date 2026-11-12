@@ -1,6 +1,6 @@
 # Claude Code 映射到 1M 上下文的模型，会话栏仍按 200K 算
 
-- 状态：已修复（`server/model-limits.test.ts` 通过）
+- 状态：已修复（`server/cli/model-limits.test.ts` 通过）
 - 症状：API 里模型自动识别 / 映射成 1M 上下文的模型（如 claude-sonnet-4-6），会话栏「上下文」仍显示 `/ 200.0k`，Claude Code 按 200K 提前压缩
 - 入口：`server/exec/runner.ts` 交给 CLI 的模型名（`longContextModel`）、`shared/clis/claude.json` 的 `features.longContext`
 - 根因类型：CLI 只认模型名后缀定窗口，面板传的环境变量对它认得出的模型不生效
@@ -22,4 +22,4 @@ Claude Code 走 API，模型名是 Claude 自家的（claude-sonnet-4-6），API
 
 ## 防线
 
-- `server/model-limits.test.ts`：「Claude Code 的长上下文靠模型名后缀开」。
+- `server/cli/model-limits.test.ts`：「Claude Code 的长上下文靠模型名后缀开」。

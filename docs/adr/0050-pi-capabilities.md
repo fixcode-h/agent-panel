@@ -54,7 +54,7 @@
 
 ### 5. 写进 Pi 自己配置文件的设置（第三期）
 
-- 定义加 `configSettings`（`shared/cli-config-settings.ts`）：每项写 `file`、`at`（点分路径）、`type`（`boolean` / `number` / `choice`）、默认值和范围，`unit` / `scale` 让界面用秒、文件里写毫秒。改了马上写，不等设置页的「保存」。
+- 定义加 `configSettings`（`shared/cli/config-settings.ts`）：每项写 `file`、`at`（点分路径）、`type`（`boolean` / `number` / `choice`）、默认值和范围，`unit` / `scale` 让界面用秒、文件里写毫秒。改了马上写，不等设置页的「保存」。
 - 设置页读文件里的当前值；没写过显示「跟随 Pi（默认值）」，只有用户改了才写，「恢复默认」删掉这个键，别的键原样保留。分组标题写明「写在 ~/.pi/agent/settings.json，终端里的 Pi 也会变」。
 - Pi 这期放：自动重试开关和次数、请求空闲超时、Pi 自己的自动压缩开关（说明和面板「自动压缩」的关系）、缓存预热、codemode 呈现方式、不发图片、传输方式。
 

@@ -1,5 +1,5 @@
 ---
-paths: shared/inline-edit.ts, shared/agent-role.ts, shared/dispatch.ts, shared/expose.ts
+paths: shared/inline-edit.ts, shared/agents/role.ts, shared/dispatch.ts, shared/expose.ts
 ---
 
 # 父对话分诊和就地微改动

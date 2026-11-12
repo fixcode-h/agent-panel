@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { t } from '@shared/i18n'
-import { everyLabel, TRIGGER_EVERY_OPTIONS, type ScheduleTrigger } from '@shared/schedule-trigger'
+import { everyLabel, TRIGGER_EVERY_OPTIONS, type ScheduleTrigger } from '@shared/schedule/trigger'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input, Select } from '@/components/ui/input'

@@ -1,6 +1,6 @@
 import { CircleAlert } from 'lucide-react'
 import type { CliDefinition } from '@shared/clis'
-import { versionShortfalls } from '@shared/cli-version'
+import { versionShortfalls } from '@shared/cli/version'
 import { t } from '@shared/i18n'
 
 /**

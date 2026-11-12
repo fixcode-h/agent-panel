@@ -28,7 +28,7 @@
 - 「正在重试」提示 52 次，没有一条重试耗尽（`retry_failed`），说明重试大多恢复了；这些提示只出现在一轮执行中间，事后无法统计是第几次、什么原因。
 - 子对话汇报 152 条，其中失败 5 条（3.3%）。能查到根因的 2 条都是「面板的工具没接上（握手等了 4 秒还没回应 / 列工具等了 3.517 秒还没回应）」，其中一条正是用户截图里的「保证子对话运行时父对话不被回收」。
 - 「交回失败」（父对话不存在、写消息失败）0 条，日志里也没有「回报父对话失败」。
-- 失败任务上下文 26k–410k / window 1,000,000（`shared/model-catalog.json` 与 litellm 报的 `Max Input Tokens=1000000` 一致），不是上下文超长；面板 RPC 的 `REQUEST_TIMEOUT_MS = 15000` 只用于 `get_state` 这类请求，不参与模型请求，不是本次失败的原因。
+- 失败任务上下文 26k–410k / window 1,000,000（`shared/models/catalog.json` 与 litellm 报的 `Max Input Tokens=1000000` 一致），不是上下文超长；面板 RPC 的 `REQUEST_TIMEOUT_MS = 15000` 只用于 `get_state` 这类请求，不参与模型请求，不是本次失败的原因。
 
 错误原文是上游断连：`502 Bad Gateway`、`litellm.APIConnectionError ... Connection closed`、`Response payload is not completed`、`terminated`。
 

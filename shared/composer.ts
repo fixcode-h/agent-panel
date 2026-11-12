@@ -243,7 +243,7 @@ export function solePath(text: string): string | undefined {
 
 /**
  * 引入的工作流卡片（「+」里的「引入工作流」）：取出第一张的名字，卡片都从文字里摘掉。
- * 发送时由调用方把剩下的要求写成点名这个工作流的一句（shared/flow-run.ts 的 withWorkflow）
+ * 发送时由调用方把剩下的要求写成点名这个工作流的一句（shared/flow/run.ts 的 withWorkflow）
  */
 export function takeWorkflow(value: string): { name: string; rest: string } {
   let list = segments(value)

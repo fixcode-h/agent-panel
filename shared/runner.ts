@@ -9,7 +9,7 @@ import { runEngineTurn, system } from './engine.ts'
 import type { AgentCall, AgentResult } from './engine/host.ts'
 import { mergeChanges, stepUsage } from './task.ts'
 import { withTaskModel } from './tasks/run.ts'
-import { composeRole, nodeAgentRun } from './agent-role.ts'
+import { composeRole, nodeAgentRun } from './agents/role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './tasks/export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
@@ -350,7 +350,7 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       : {
           tools: [{ kind: 'edit', label: last ?? 'src/index.ts', detail: '+6 -4' }],
           changes: [{ path: last ?? 'src/index.ts', add: 6, del: 4 }],
-          // 演示总结（shared/summary-card.ts）：真实 Agent 按「总结格式」写；子对话写详细的 Markdown 总结，其余写卡片
+          // 演示总结（shared/summary/card.ts）：真实 Agent 按「总结格式」写；子对话写详细的 Markdown 总结，其余写卡片
           text: task.parentTaskId
             ? [
                 `收到：「${need}」，已经按要求调整。`,

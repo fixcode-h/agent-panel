@@ -13,7 +13,7 @@ import { Task, type Project, type PeerFrom, type TaskMessage } from '../../share
 import { childReport, type ConvState, taskDeleted, type ChildHold } from '../../shared/task.ts'
 import { branchCommits, gitChanges, gitHead, gitNumstat } from '../exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText } from '../../shared/handoff.ts'
-import { overrideText, reviewGate, triageText, type ReviewOverride, type TriageItem } from '../../shared/review-gate.ts'
+import { overrideText, reviewGate, triageText, type ReviewOverride, type TriageItem } from '../../shared/review/gate.ts'
 import { steerTask } from '../exec/steering.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { placedFiles } from '../attachments.ts'
@@ -83,7 +83,7 @@ export function createMerge(sc: TasksScope) {
     /** 对最近一次评审每条高级、中级意见的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
     triage: TriageItem[] = [],
     /**
-     * 显式放行（见 shared/review-gate.ts）：评审没过而用户明确要求「已知问题也合并」时带上。
+     * 显式放行（见 shared/review/gate.ts）：评审没过而用户明确要求「已知问题也合并」时带上。
      * 只有门禁真的拦下时它才生效；生效后记录会写在任务上、并随收尾消息交给父对话
      */
     override?: ReviewOverride,
@@ -150,7 +150,7 @@ export function createMerge(sc: TasksScope) {
           .join('、')}）。做完并用 set_plan 标完成；确实不做的从计划里删掉并说明原因，再调用 submit_merge。`,
       }
     // 合回前必须先评审：收尾流程是 改完 → 快速检查 → 评审（计划里的独立步骤） → 按意见改 → 完整测试 → submit_merge，
-    // 评审就是一次普通的 spawn_agents，结论从它的输出里读（见 shared/review-gate.ts）。
+    // 评审就是一次普通的 spawn_agents，结论从它的输出里读（见 shared/review/gate.ts）。
     // 子任务是按 id 或名字找角色的：用户自己建了同名的「评审」时，派出去的可能是那个，所以名字也认
     const reviewerName = coreDefinition('reviewer').agent.name
     // 读不到角色列表时单独说明：兜底成空数组会让门禁报「还没有真的派过评审」，把模型引向重复派评审

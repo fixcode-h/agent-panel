@@ -813,7 +813,7 @@ test('顶层对话计划没做完就停下：状态是「未完成」不是「�
 })
 
 test('用户停止时还有没干完的活：即使 CLI 刚报完这一轮也记成已停止，才能「继续执行」接回整棵树（真实接口测试撞到）', async () => {
-  const { userCutWork } = await import('../run-stops.ts')
+  const { userCutWork } = await import('../run/stops.ts')
   const host = (steps: unknown[], plans: unknown[] = [], why = 'user') =>
     ({ task: { steps, plans }, stopReason: () => why }) as never
   assert.equal(userCutWork(host([{ slot: 'sub', status: 'pending', interrupted: true }])), true, '派出的子任务被打断')

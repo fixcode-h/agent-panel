@@ -39,7 +39,7 @@ import {
   tierFallback,
   tierOf,
 } from '@shared/settings'
-import { autoLimits, fmtTokens, limitSupport, MIN_AGENT_CONTEXT, parseTokens } from '@shared/model-limits'
+import { autoLimits, fmtTokens, limitSupport, MIN_AGENT_CONTEXT, parseTokens } from '@shared/models/limits'
 import { api } from '@/lib/api'
 import { useData, useTasks } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'

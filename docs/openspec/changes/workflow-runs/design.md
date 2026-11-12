@@ -1,6 +1,6 @@
 # Design：工作流从子对话里拆出来，做成独立的「工作流运行」
 
-> 状态：已实施（2026-11-05 用户定了 D1–D7，四期都已做完，决定记在 [ADR 0053](../../../adr/0053-workflow-runs.md)）。实施时和本稿不同的地方：文件没有拆进 shared/workflow-run/ 目录，而是 `shared/flow-run.ts`、`shared/flow-run-turn.ts`、`shared/flow-run-wrap.ts`、`shared/flow-run-orch.ts`；收尾没有单列阶段机，做成流程图末尾的「收尾」节点，验收流程是「评审 → 测试」。
+> 状态：已实施（2026-11-05 用户定了 D1–D7，四期都已做完，决定记在 [ADR 0053](../../../adr/0053-workflow-runs.md)）。实施时和本稿不同的地方：文件没有拆进 shared/workflow-run/ 目录，而是 `shared/flow/run.ts`、`shared/flow/run-turn.ts`、`shared/flow/run-wrap.ts`、`shared/flow/run-orch.ts`；收尾没有单列阶段机，做成流程图末尾的「收尾」节点，验收流程是「评审 → 测试」。
 > 规划约定：**不加反引号**的路径是实施时才创建的文件；加反引号的是现有文件。现状按 2026-11-05 的 `dev` 核对。
 > 关系：确认后取代 [ADR 0044](../../../adr/0044-workflow-started-by-parent.md) 里「挂成工作流子对话、由执行角色收尾」的部分。「只有父对话能启动」「适用场景判定」两条保留。
 
@@ -29,7 +29,7 @@
 | 节点之间的判断 | 流程图里的「主 Agent」：常驻在 `@main` 步骤上的一个 CLI 会话，每个子节点做完都要评估一次，还负责选路和最后整理结果                   | `shared/engine.ts` 的 `openMain` / `mainEvaluates` / `mainTurn`                      |
 | 收尾           | 流程图跑完后，同一个子对话的执行角色接手：评审 → 完整测试 → `submit_merge`                                                           | `flowHandoffPrompt`                                                                  |
 | 方案确认       | 节点设了「完成后等用户确认」时，在工作流子对话里挂一条 `kind: 'confirm'` 的请求；父对话只在子对话那一行行尾放一个「查看结果」按钮    | `server/exec/real-turn.ts` 的 `confirm`；`web/src/components/tasks/ChildConfirm.tsx` |
-| 停止和继续     | 跟着子对话走 0042 那套：暂停、递归拉起、`resumeKids`                                                                                 | `shared/resume-kids.ts`、`shared/run-stops.ts`                                       |
+| 停止和继续     | 跟着子对话走 0042 那套：暂停、递归拉起、`resumeKids`                                                                                 | `shared/resume-kids.ts`、`shared/run/stops.ts`                                       |
 | 显示           | 子对话栏里和普通子对话排在一起，标一个流程图标和「工作流 · 名字 n/m」；右栏打开后有「输出 / 流程图」切换，下面接着执行角色的收尾对话 | `web/src/components/tasks/ChildrenBar.tsx`、`child-line.ts`、`RunCard.tsx`           |
 
 这些事实决定了下面的判断：
@@ -106,7 +106,7 @@
 | 流程图推进（节点、连线、子流程、验收轮次、确认）     | `shared/engine.ts` 的 `runFlow` 一带                   | 原样用，去掉对 `host.task` 是对话的假设（3.5） |
 | 独立分支、依赖副本、合回                             | `server/exec/worktree.ts`、`worktree-integrate.ts`     | 原样用，分支挂在运行上                         |
 | 预算、用量、首包                                     | `shared/budget.ts`、`AgentUsage`                       | 按运行记                                       |
-| 暂停、终止的原语                                     | `shared/run-stops.ts`                                  | 原样用                                         |
+| 暂停、终止的原语                                     | `shared/run/stops.ts`                                  | 原样用                                         |
 | 生命周期诊断                                         | `shared/lifecycle.ts`                                  | 加一类「运行」节点                             |
 
 ### 3.3 运行的状态机

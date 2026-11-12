@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs'
 import path from 'node:path'
-import { checkOutput, type HookDef, type HookInput, type HooksData } from '../../shared/hook-defs.ts'
+import { checkOutput, type HookDef, type HookInput, type HooksData } from '../../shared/hooks/defs.ts'
 import { t } from '../../shared/i18n.ts'
 import { pluginEnabled } from '../../shared/plugins/index.ts'
 import { pluginItemId, setProjectProbe } from '../../shared/plugins/contrib.ts'

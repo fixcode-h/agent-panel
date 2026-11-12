@@ -43,10 +43,17 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Group } from './parts'
 import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
-import { API_VENDORS, apiBalanceUrl, apiBaseUrl, findVendor, isVendorUrl, vendorEndpoint } from '@shared/api-vendors'
-import type { ApiBalance } from '@shared/api-balance'
-import { fmtTokens } from '@shared/model-limits'
-import { matchModel } from '@shared/model-catalog'
+import {
+  API_VENDORS,
+  apiBalanceUrl,
+  apiBaseUrl,
+  findVendor,
+  isVendorUrl,
+  vendorEndpoint,
+} from '@shared/cli/api-vendors'
+import type { ApiBalance } from '@shared/cli/api-balance'
+import { fmtTokens } from '@shared/models/limits'
+import { matchModel } from '@shared/models/catalog'
 import { useModelCatalog } from '@/lib/model-catalog'
 import { loadCliModels } from '@/lib/cli-models'
 import { probeTarget } from '@/lib/api-probe'
@@ -836,7 +843,7 @@ function ApiCard({
 }
 
 /**
- * 账户余额：厂家定义里写了余额接口才有（现在只有 DeepSeek，见 shared/api-vendors.ts）。
+ * 账户余额：厂家定义里写了余额接口才有（现在只有 DeepSeek，见 shared/cli/api-vendors.ts）。
  * 卡片展开时查一次，之后点刷新才重查：失败不自动重试，免得一直刷屏请求。
  * 厂家不支持、密钥没填、查询失败都写明原因，不留空白。
  */

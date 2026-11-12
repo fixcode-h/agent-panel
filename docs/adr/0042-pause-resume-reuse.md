@@ -17,7 +17,7 @@
 | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `shared/engine.ts` 的 `runHelper`（被停时）             | 子任务记 `status: 'pending'` + `interrupted: true`，会话 id 留在 `task.sessions[step.session \|\| step.id]`           |
 | `shared/resume-kids.ts` 的 `resumeNote`                 | 子任务不自动重跑，只在续接说明里让模型用 `spawn_agents resume:<id>` 接着跑                                            |
-| `shared/run-stops.ts` 的 `interruptedBlock`             | 还有被打断没处理的子任务时，另派新的一律拒绝                                                                          |
+| `shared/run/stops.ts` 的 `interruptedBlock`             | 还有被打断没处理的子任务时，另派新的一律拒绝                                                                          |
 | `shared/engine.ts` 的 `spawn_agents` 处理 `resume`      | 命中被打断的子任务时复用原记录（同一个 id、`reruns + 1`），按原会话 `--resume`                                        |
 | `server/tasks/keepalive.ts` 的 `stopTree`               | 自上而下停，子孙记 `stopReason: 'parent'`，最后杀掉整棵树的 CLI                                                       |
 | `shared/task.ts` 的 `childReport`                       | 子对话停下时，除了 `stopReason === 'user'` 记 `hold`，其余（含 `parent`、`restart`、`stalled`）一律 `fail`            |
@@ -81,7 +81,7 @@
 ## 实施记录
 
 - 第 1 期：`childReport` 按 `stopEnds`（`archive`、`delete`、`replaced`、`lost`）结算失败，其余停下继续等；`resumeKids` 递归、拉起后 `rearmKidWait`；用户直接继续子对话时 `rearmInParent`。
-- 第 2 期：`shared/run-stops.ts` 的 `pauseUnit` / `cancelUnit`；引擎收尾（`finish`）、子任务被停 / 被叫停 / 被终止、`settleStopped`、`dropInterrupted` 都走它们。停的时候还有子任务在跑就不算答完（不再把在跑的子任务记成完成）；收口时清掉所有步骤和对话的排队标记。
+- 第 2 期：`shared/run/stops.ts` 的 `pauseUnit` / `cancelUnit`；引擎收尾（`finish`）、子任务被停 / 被叫停 / 被终止、`settleStopped`、`dropInterrupted` 都走它们。停的时候还有子任务在跑就不算答完（不再把在跑的子任务记成完成）；收口时清掉所有步骤和对话的排队标记。
 - 第 3 期：被打断的子任务由面板在原记录、原会话里接着跑——不另加一套重跑逻辑，对话这一轮是「继续执行」时，引擎在调用 CLI 之前用 `spawn_agents` 带 `resume` 的同一条路径把它们拉起（`resumePausedHelpers`），接不上的原因写进这一轮的提示。不做成设置：用户明确要求复用，默认就是这样。`/resume` 把「继续计划」（拉起了谁、没拉起谁、哪些子任务接着跑）写进对话日志，「状态」诊断里看得到。没有单独抽 `planResume` 纯函数：拉起子对话的分类已经在 `sortStoppedKids`，子任务就是 `pausedHelpers`，再包一层只是转手。
 - 第 4 期：会话接得上（有会话 id）时续接提示不再附「原来的要求」；runner 收到新会话 id 替换旧的时记「换了新会话」（前后 id），诊断里看得出换过几次会话。没有新增 `sessionGen` 字段，日志足够。
 
