@@ -18,6 +18,7 @@
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
+// 15b. 长函数只许变小：超过 scripts/file-caps.json 里 functions 的上限就失败
 // 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
 // 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
 // 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
@@ -446,6 +447,21 @@ else {
     if (lines > cap)
       errors.push(
         `${f}：${lines} 行，超过上限 ${cap}（scripts/file-caps.json）。把新加的部分拆到独立模块里；文件变小了跑 node scripts/file-caps.mjs --update 把上限降下来`,
+      )
+  }
+}
+
+// 15b. 长函数只许变小：文件上限管不到函数，runAgent、createRun、makeOrchestra 这类闭包一个就上千行。
+// 超过 functionDefault 行的函数要列在 scripts/file-caps.json 的 functions 里，且不能超过各自的上限
+{
+  const { capsPath } = await import('./lib/file-caps.mjs')
+  const { longFunctions } = await import('./lib/fn-caps.mjs')
+  const caps = JSON.parse(readFileSync(capsPath(root), 'utf8'))
+  for (const fn of longFunctions(root, caps.functionDefault)) {
+    const cap = caps.functions[fn.key] ?? caps.functionDefault
+    if (fn.lines > cap)
+      errors.push(
+        `${fn.file}:${fn.line}：函数 ${fn.name} 有 ${fn.lines} 行，超过上限 ${cap}（scripts/file-caps.json 的 functions）。把一段职责完整的逻辑拆成独立函数或文件，共享的状态显式传进去；函数变小了跑 node scripts/file-caps.mjs --update 把上限降下来`,
       )
   }
 }
