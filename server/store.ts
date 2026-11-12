@@ -29,7 +29,7 @@ export const BROKEN_DIR = path.join(DATA_DIR, 'broken')
 export const CHATS_DIR = path.join(DATA_DIR, 'chats')
 /** 节点之间交接的完整结果（太长时提示里只放开头），按任务分目录 */
 export const HANDOFF_DIR = path.join(DATA_DIR, 'tasks', 'handoff')
-/** 后台命令的完整日志（每个对话一个子目录，只留最近几份，见 server/bg-log.ts） */
+/** 后台命令的完整日志（每个对话一个子目录，只留最近几份，见 server/bg/log.ts） */
 export const BG_LOG_DIR = path.join(DATA_DIR, 'tasks', 'bg-logs')
 /**
  * 这个对话的交接目录，没有就建好。CLI 启动时就要放行它（--add-dir）：原来目录存在才放行，

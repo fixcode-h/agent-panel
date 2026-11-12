@@ -1,13 +1,13 @@
 /**
- * 后台命令的记录落盘：面板异常退出后重启，那一行的收口说明写得出当时跑到了哪（server/bg-persist.ts）。运行：npm run test:unit
+ * 后台命令的记录落盘：面板异常退出后重启，那一行的收口说明写得出当时跑到了哪（server/bg/persist.ts）。运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { createBackground, reapLostJobs } from './background.ts'
-import { createBgPersist } from './bg-persist.ts'
+import { createBackground, reapLostJobs } from '../background.ts'
+import { createBgPersist } from './persist.ts'
 
 const until = async (cond: () => boolean) => {
   const end = Date.now() + 5000

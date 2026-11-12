@@ -1,4 +1,4 @@
-import { isUeBuildCommand } from '../shared/test-steps.ts'
+import { isUeBuildCommand } from '../../shared/test-steps.ts'
 
 /**
  * 退出码 0 的后台命令是不是真的跑了：两种明摆着没跑起来的情况按失败算，不报「成功」。

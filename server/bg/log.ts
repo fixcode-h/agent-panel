@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { appendFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs'
-import { log } from './log.ts'
+import { log } from '../log.ts'
 
 /**
  * 后台命令的完整日志落盘（工作包 I）：内存里只留最近 300 行，推回对话的是提炼后的错误和结尾（shared/log-digest.ts），

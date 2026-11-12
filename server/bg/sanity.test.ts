@@ -1,9 +1,9 @@
 /**
- * 退出码 0 却没跑起来的后台命令按失败算（server/bg-sanity.ts）。运行：npm run test:unit
+ * 退出码 0 却没跑起来的后台命令按失败算（server/bg/sanity.ts）。运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { notRunReason } from './bg-sanity.ts'
+import { notRunReason } from './sanity.ts'
 
 const UE =
   '"D:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" X Win64 Development -Project="C:/P/X.uproject"'

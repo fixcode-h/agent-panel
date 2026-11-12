@@ -124,7 +124,7 @@
 决策：
 
 - **面板跑的测试步骤只经过一层 shell**：按步骤标的环境直接起 cmd / PowerShell / WSL / Git Bash 进程（`server/step-run.ts`、`BgJob.shell`）；Agent 交来的命令照旧用设置里的 shell。
-- **退出码 0 不等于跑了**：只有 cmd 横幅、或 UE 编译几秒就完没有 UnrealBuildTool 日志的，按失败推回（`server/bg-sanity.ts`）。
+- **退出码 0 不等于跑了**：只有 cmd 横幅、或 UE 编译几秒就完没有 UnrealBuildTool 日志的，按失败推回（`server/bg/sanity.ts`）。
 - **长命令只有一个入口 `run_background`**：UE 项目里交来的编译不拒收，父对话的按编译目录占位排队（`parentRequestBuild` 的 `custom`，和 `request_build` 同一套占位、知会），子对话的转成向父对话的申请（`childRequestBuild`，独立分支的照旧让它 `submit_merge`）。`request_build` 保留为「按项目编译步骤编译」的快捷口。
 - **判定只留一处**：`shared/command-scope.ts` 的 `classifySegment` 分 quick / service / heavy / suite / slow / other，前台长命令守卫按它出提示；UE 编译的提示和后台那边说同一件事。
 - **按实测用时自动归档**：前台命令工具跑完按项目记用时（`server/command-times.ts`，数据目录的 `command-times.json`），同名命令跑过 60 秒以上的，下次放前台时守卫让它交给后台。CLI 前台命令默认两分钟超时，60 秒留一半余量；守卫设置里「另外算长命令的命令前缀」保留作手动补充。
@@ -133,5 +133,5 @@
 
 ### 第三步：记录落盘、插件接入（同日）
 
-- **记录落盘**：没结束的后台命令（排队中、运行中）随状态变化写进数据目录的 `tasks/bg-jobs.json`（`server/bg-persist.ts`），日志文件攒不够一批也每 3 秒写一次。面板被强杀后重启，那一行的收口说明写清当时在排队还是在跑、跑了多久、最后的输出和完整日志路径（`background.lostNote`、`reapLostJobs` 的 `note`），不再只有一句「结果丢失」。**不自动重跑**：重启后的对话都是「被打断、点继续才接着做」，面板自己把编译重跑再推结果，会在用户没点继续时开新一轮；要不要重跑由对话按说明决定。
+- **记录落盘**：没结束的后台命令（排队中、运行中）随状态变化写进数据目录的 `tasks/bg-jobs.json`（`server/bg/persist.ts`），日志文件攒不够一批也每 3 秒写一次。面板被强杀后重启，那一行的收口说明写清当时在排队还是在跑、跑了多久、最后的输出和完整日志路径（`background.lostNote`、`reapLostJobs` 的 `note`），不再只有一句「结果丢失」。**不自动重跑**：重启后的对话都是「被打断、点继续才接着做」，面板自己把编译重跑再推结果，会在用户没点继续时开新一轮；要不要重跑由对话按说明决定。
 - **插件接入同一套监管（插件框架改进 G1）**：插件工具的 `ctx.background(job)` 交给这一轮的 `runBackground`，和 Agent 的 `run_background` 同一套名额、目录独占排队、提醒、限时、日志落盘和结果推回（插件是用户装的代码，不过用途检查和命令守卫，只拦开窗口的写法）。插件把返回的 `info` 放进工具结果，那一行按编号一直转圈到结束。SDK 副本同步到 agent-plugins 的 `sdk/server.ts`。

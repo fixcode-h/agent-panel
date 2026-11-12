@@ -11,9 +11,9 @@ import { fmtDuration } from '../shared/duration.ts'
 import { failLostWaits } from '../shared/plan-lost.ts'
 import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 import { createDigest, digestText, type LogDigest } from '../shared/log-digest.ts'
-import { openJobLog } from './bg-log.ts'
-import { notRunReason } from './bg-sanity.ts'
-import { lostJobNote, type createBgPersist, type PersistedJob } from './bg-persist.ts'
+import { openJobLog } from './bg/log.ts'
+import { notRunReason } from './bg/sanity.ts'
+import { lostJobNote, type createBgPersist, type PersistedJob } from './bg/persist.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；

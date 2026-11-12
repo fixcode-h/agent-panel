@@ -68,4 +68,4 @@ e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check
 ## 带随机编号的结果按编号对照，不排序后和固定顺序比
 
 - 规则：编号是随机生成的（`randomUUID`），断言写成 `Object.fromEntries` 按编号对照，不写 `.sort()` 后和手写顺序的数组比。
-- 起因：1a703f0 的 `server/bg-persist.test.ts` 约一半概率失败（另一个线程本地单测报）。
+- 起因：1a703f0 的 `server/bg/persist.test.ts` 约一半概率失败（另一个线程本地单测报）。

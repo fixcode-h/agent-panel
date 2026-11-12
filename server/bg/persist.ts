@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fmtDuration } from '../shared/duration.ts'
-import { log } from './log.ts'
+import { fmtDuration } from '../../shared/duration.ts'
+import { log } from '../log.ts'
 
 /**
  * 后台命令的记录落盘（后台命令重新设计第三步，用户 2026-11-12 定）：以前记录只在内存里，面板被强杀、崩溃后重启，
