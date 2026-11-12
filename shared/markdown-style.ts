@@ -158,6 +158,12 @@ export const MD_SPEC = {
     headerWeight: pick('600', WEIGHTS),
     zebra: bool(true),
     pad: num(1, 0.5, 2, 0.05),
+    /** 悬停时右上角的工具条：复制成 TSV / Markdown、全屏看 */
+    tools: bool(true),
+    /** 点表头按这一列排序（只改显示） */
+    sort: bool(true),
+    /** 超过约这么多行时表格限高、表内滚动、表头钉在顶上；0 表示不限高 */
+    rows: num(15, 0, 60, 1),
   },
   hr: {
     style: pick('fade', ['fade', 'solid', 'dashed', 'dotted'] as const),
@@ -300,6 +306,7 @@ const BOOL_CSS: Record<string, [on: string, off: string]> = {
   lineNumbers: ['inline-block', 'none'],
   outer: ['1px', '0px'],
   caption: ['block', 'none'],
+  tools: ['flex', 'none'],
   tint: ['7%', '0%'],
   grid: ['radial-gradient(var(--md-dot) 1px, transparent 1px)', 'none'],
 }
@@ -390,6 +397,19 @@ function derived(el: MdElement, prop: string, f: MdField, v: MdValue, dark: bool
           : 'none',
       ],
     ]
+  }
+  // 表头排序：鼠标指针和排序箭头两个变量；点表头时 Markdown.tsx 读指针变量判断开没开
+  if (el === 'table' && prop === 'sort') {
+    return [
+      [name, v ? 'pointer' : 'auto'],
+      [`${name}-mark`, v ? 'inline-block' : 'none'],
+    ]
+  }
+  // 长表限高：变量里只放「几行高」（表头那行也算上），高度在 index.css 里按一行的字高和内边距算——
+  // 写在 :root 的变量里引用不到 .chat-md 上才有的 --md-base。0 不限高：给一个够大的行数
+  if (el === 'table' && prop === 'rows') {
+    const n = Number(v)
+    return [[name, String(n > 0 ? n + 1 : 100000)]]
   }
   if (el === 'link' && prop === 'underline') {
     return [

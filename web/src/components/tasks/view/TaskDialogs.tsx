@@ -114,7 +114,12 @@ export function TaskDialogs(p: TaskDialogsProps) {
         )}
         onConfirm={p.remove}
       />
-      <FileDialog taskId={task.id} target={s.fileTarget} onOpenChange={(o) => !o && set('fileTarget', null)} />
+      <FileDialog
+        taskId={task.id}
+        projectId={task.projectId}
+        target={s.fileTarget}
+        onOpenChange={(o) => !o && set('fileTarget', null)}
+      />
       <JobDialog taskId={task.id} target={s.jobTarget} onOpenChange={(o) => !o && set('jobTarget', null)} />
       {p.more}
       {s.convSettings && (

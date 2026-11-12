@@ -24,7 +24,8 @@ import { JsonTree } from './JsonTree'
 import { SheetTable, SheetTabs } from './SheetTable'
 import { firstShownSheet, parseLoc } from './sheet-look'
 import { SheetHeaderBar } from './SheetHeaderBar'
-import { useSheetView } from './use-sheet-view'
+import { useClaimedSheetView } from './use-sheet-claim'
+import { SheetClaimButton } from './SheetClaimButton'
 import './file-view.css'
 
 // 编辑器（CodeMirror）只在切到编辑时才加载：只看文件的人不用下载它
@@ -59,6 +60,8 @@ export interface FileSource {
   editorOk?: (file: FileView) => boolean
   /** 保存成功后通知外面（文件树刷新大小、改动标记） */
   onSaved?: () => void
+  /** 文件所在的面板项目：表格文件交给插件认领（在表格页打开、用项目的表头设置）；聊天对话、附件没有 */
+  projectId?: string
 }
 
 /** 文件里渲染 Markdown 时没有 @角色 */
@@ -147,8 +150,20 @@ export function FileViewDialog({
     [csvShown, body, path],
   )
   const tableRows = sheet ? sheet.rows : csvRows
-  // 表格的表头（自动识别 / 手动设置）、筛选和排序；手动设的表头按「路径 + 工作表」记在本机
-  const sheetView = useSheetView(`${path}#${sheet?.name ?? ''}`, tableRows)
+  const sheetName = sheet?.name ?? ''
+  // 表格的表头、筛选和排序；表格插件认领的文件（项目表格目录里的）表头按项目的表格设置，标题栏多「在表格页打开」
+  const {
+    claim,
+    view: sheetView,
+    colHead,
+  } = useClaimedSheetView({
+    file: file?.exists && (sheets || (isCsv && isText)) ? file : null,
+    projectId: source.projectId,
+    root: source.dir || file?.dir || '',
+    key: `${path}#${sheetName}`,
+    sheet: sheetName,
+    rows: tableRows,
+  })
   // 只有阅读代码时才拆行、高亮：编辑时每敲一个字 body 都会变，在这里整份重新高亮，大文件打一个字就卡一下
   const codeShown = isText && !editing && !mdPreview && !treeShown && !csvShown
   const lines = useMemo(() => (codeShown && body ? body.split('\n') : []), [codeShown, body])
@@ -290,6 +305,14 @@ export function FileViewDialog({
           actions={
             <>
               {viewable && <ModalButton icon={Search} label={t('在文件中查找')} onClick={() => search.show()} />}
+              {!editing && (
+                <SheetClaimButton
+                  claim={claim}
+                  sheet={sheetName}
+                  // 改了 CSV 还没存：先问要不要放弃，不直接跳走
+                  leave={() => (ed.dirty ? (setAskClose(true), false) : (close(), true))}
+                />
+              )}
               <ModalButton
                 icon={Copy}
                 label={t('复制路径')}
@@ -343,6 +366,7 @@ export function FileViewDialog({
               sort={sheetView?.sort}
               onFilter={sheetView?.setFilter}
               onSort={sheetView?.setSort}
+              colHead={colHead}
             />
           ) : file.binary ? (
             <p className="p-6 text-body text-subtle">{source.binaryText}</p>
@@ -382,6 +406,7 @@ export function FileViewDialog({
               sort={sheetView?.sort}
               onFilter={sheetView?.setFilter}
               onSort={sheetView?.setSort}
+              colHead={colHead}
             />
           ) : treeShown ? (
             <JsonTree

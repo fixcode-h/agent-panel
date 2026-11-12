@@ -163,7 +163,11 @@ function F({ el, prop, label }: { el: MdElement; prop: string; label: string }) 
           ? `${round(n * basePx, 1)}px`
           : el === 'body' && prop === 'size'
             ? `${round(n * basePx, 1)}px`
-            : `×${round(n)}`
+            : el === 'table' && prop === 'rows'
+              ? n
+                ? t('{n} 行', { n })
+                : t('不限')
+              : `×${round(n)}`
     control = (
       <div className="flex flex-1 items-center gap-3">
         <input
@@ -607,6 +611,15 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         </Row>
         <Row title={t('单元格内边距')}>
           <F el="table" prop="pad" label={t('单元格内边距')} />
+        </Row>
+        <Row title={t('工具条')} desc={t('鼠标移到表格上时右上角浮出：复制成 TSV 或 Markdown、全屏查看。')}>
+          <F el="table" prop="tools" label={t('表格工具条')} />
+        </Row>
+        <Row title={t('点表头排序')} desc={t('点一下升序、再点降序、第三下回到原顺序，只改显示。')}>
+          <F el="table" prop="sort" label={t('点表头排序')} />
+        </Row>
+        <Row title={t('长表限高')} desc={t('超过约这么多行时表格限高、在表格里滚动，表头钉在顶上。0 表示不限高。')}>
+          <F el="table" prop="rows" label={t('长表限高行数')} />
         </Row>
       </Group>
 

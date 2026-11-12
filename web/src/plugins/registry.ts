@@ -11,7 +11,16 @@ import { request } from '@/lib/api'
 import { pickFileViewer } from './file-viewers'
 import { intakeByKey, pickIntake } from './attachment-intakes'
 import { pruneUpdates } from './updates'
-import type { ActivateWeb, PluginPage, ProjectSection, Specimen, TaskTab, WebPlugin } from './sdk'
+import type {
+  ActivateWeb,
+  PluginPage,
+  ProjectSection,
+  SheetClaim,
+  SheetFile,
+  Specimen,
+  TaskTab,
+  WebPlugin,
+} from './sdk'
 
 /**
  * 网页里的插件（ADR 0059）：启动时读 /api/plugins，把清单交给共享层（内置列表、工具名按它算），
@@ -159,6 +168,19 @@ export const usePluginProjectSections = (): OwnedSection[] =>
 /** 开着的插件在设置 →「组件」里加的示例 */
 export const usePluginSpecimens = (): (Specimen & { plugin: string })[] =>
   [...usePlugins().web.entries()].flatMap(([plugin, p]) => (p.specimens ?? []).map((x) => ({ ...x, plugin })))
+
+/** 开着的插件里认领这个表格文件的（按插件加载的先后问，第一个认领的算）；都不认领、出错时为 undefined */
+export async function claimSheet(
+  file: SheetFile,
+  s: State = state,
+): Promise<(SheetClaim & { plugin: string }) | undefined> {
+  for (const [plugin, p] of s.web) {
+    if (!p.sheets) continue
+    const c = await p.sheets.claim(file).catch(() => undefined)
+    if (c) return { ...c, plugin }
+  }
+  return undefined
+}
 
 /** 开着的插件里能看这个文件的查看器（按扩展名）；没有就照面板原来的规则打开 */
 export const fileViewerFor = (path: string, s: State = state) => pickFileViewer(s.web.entries(), path)

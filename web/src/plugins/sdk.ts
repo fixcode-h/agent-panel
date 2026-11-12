@@ -2,6 +2,9 @@ import type { ComponentType, ReactNode } from 'react'
 import type { PluginConfig } from '@shared/plugins/types'
 import type { Attachment, Project, Task } from '@shared/schema'
 import type { host } from './host'
+import type { SheetHeader } from '@shared/sheet-header'
+import type { SheetColHead } from '@/components/files/SheetTable'
+import type { SheetHeaderStore } from '@/components/files/use-sheet-view'
 
 /**
  * 插件网页 SDK（ADR 0059）：插件包里 web 入口的约定。插件仓库（fixcode-h/agent-plugins）里有一份类型副本，
@@ -90,6 +93,40 @@ export interface FileViewerProps {
 }
 
 /**
+ * 插件接管的表格文件（2026-11-12 加的，旧面板没有这一项时不会来问）：文件弹窗打开 xlsx / CSV 时问一遍开着的插件，
+ * 认领了的话标题栏多一个按钮（例如表格插件的「在表格页打开」），表头和两行列头按插件给的来
+ * （例如项目的表格结构文件），和插件自己的表格页显示得一样；「调整表头」也写回插件那边，不再记在浏览器里。
+ * 不认领就照面板原来的：自动识别表头，手动调的记在本机
+ */
+export interface SheetClaimer {
+  /** 认领就返回 SheetClaim；不归自己管返回 undefined。弹窗每打开一个表格文件问一次 */
+  claim: (file: SheetFile) => Promise<SheetClaim | undefined>
+}
+
+export interface SheetFile {
+  /** 本机上的完整路径 */
+  path: string
+  /** 文件所在的面板项目 */
+  projectId: string
+  /** 弹窗读文件的根目录：对话的工作目录（独立分支时是 worktree）、文件浏览页是项目目录 */
+  root: string
+}
+
+export interface SheetClaim {
+  /**
+   * 标题栏按钮：悬停文字和点了去插件的哪个整页（PluginPage 的 id）、带什么子位置；sheet 是正在看的工作表名，CSV 为空串。
+   * 面板先关弹窗再跳过去。不给就没有按钮（例如独立分支里的副本：表格页打开的是项目目录里那一份，不是这个文件）
+   */
+  open?: { label: string; page: string; path: (sheet: string) => string }
+  /** 一张表的表头从哪来：own 这张表自己设的、style 项目统一的；save 是弹窗里「调整表头」后写回 */
+  header?: (sheet: string, rows: string[][]) => SheetHeaderStore
+  /** 两行列头：每列的字段名 + 类型标签；不给就是普通列头 */
+  colHeads?: (sheet: string, rows: string[][], header: SheetHeader) => (SheetColHead | undefined)[]
+  /** 表头、列结构在别处变了（保存了表头）时叫一声，弹窗重新取 header / colHeads；返回取消订阅 */
+  subscribe?: (onChange: () => void) => () => void
+}
+
+/**
  * 插件认领的一类输入框附件（插件接口 6）：拖进、粘贴、选进输入框的文件按扩展名（或 MIME 前缀）归某个插件时，
  * 不拷、不上传，作为卡片只引用原路径；点卡片打开插件的 Dialog，用户在里面选好要发的东西（例如视频插件截的帧图片），
  * 发送时卡片原位换成这些附件。还没选时发送会先打开 Dialog。没挂这个扩展点的输入框照旧当普通文件。
@@ -159,6 +196,8 @@ export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
   fileViewers?: FileViewer[]
+  /** 文件弹窗里的表格文件归不归这个插件（2026-11-12 加的） */
+  sheets?: SheetClaimer
   attachmentIntakes?: AttachmentIntake[]
   barePages?: BarePage[]
   projectSections?: ProjectSection[]
