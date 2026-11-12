@@ -7,14 +7,14 @@ import { DOC_PLACE_SIBLING, joinPath, resolveDocRoot } from '../../shared/doc-ro
 import { hash53 } from '../../shared/hash.ts'
 import { t } from '../../shared/i18n.ts'
 import { ProjectLesson, type Agent, type Project } from '../../shared/schema.ts'
-import { sharedDocRoot } from '../doc-root.ts'
+import { sharedDocRoot } from '../docs/root.ts'
 import { log } from '../log.ts'
 import { detectVcs } from '../projects-analyze.ts'
 
 /**
  * 项目教训存进项目文档目录的 lessons/ 目录，一条一个文件（用户 2026-11-05 定的，见 ADR 0052；以前是整份 lessons.md）：
  * - Git / 没有版本管理：<项目目录>/docs/lessons/<id>.md
- * - P4：同一工程各分支共用的文档根（server/doc-group.ts）下的 lessons/，不受「文档根」下拉影响
+ * - P4：同一工程各分支共用的文档根（server/docs/group.ts）下的 lessons/，不受「文档根」下拉影响
  * - SVN：按「文档」角色的文档根（在项目外时同样是共用文档根），和模块说明、ADR 放在一起
  *
  * 一条一个文件：几个分支、几个对话同时记教训时各写各的文件，不会都去改同一个文件。

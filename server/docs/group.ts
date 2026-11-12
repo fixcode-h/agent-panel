@@ -13,10 +13,10 @@ import {
   vcsDocRoot,
   type DocGroupView,
   type DocVcs,
-} from '../shared/doc-root.ts'
-import { withModuleBranch } from '../shared/module-docs.ts'
-import { log } from './log.ts'
-import { dataPath, readJson, writeJsonAtomic } from './store.ts'
+} from '../../shared/doc-root.ts'
+import { withModuleBranch } from '../../shared/module-docs.ts'
+import { log } from '../log.ts'
+import { dataPath, readJson, writeJsonAtomic } from '../store.ts'
 
 /**
  * P4 / SVN 项目外文档的「文档组」（用户 2026-11-05 定的，见 ADR 0052）：

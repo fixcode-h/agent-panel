@@ -2,7 +2,7 @@
 
 状态：已接受 · 2026-11-05
 
-- 影响范围：`server/doc-group.ts`（新增）、`server/doc-group-api.ts`（新增）、`server/doc-root.ts`、`server/module-map.ts`、`server/projects/lessons.ts`、`shared/doc-root.ts`、`shared/module-docs.ts`、`shared/builtin/agents.ts`、`skills/docs/project-documentation`、`skills/workflow/task-records`、`web/src/components/projects/DocRootHint.tsx`
+- 影响范围：`server/docs/group.ts`（新增）、`server/docs/group-api.ts`（新增）、`server/docs/root.ts`、`server/module-map.ts`、`server/projects/lessons.ts`、`shared/doc-root.ts`、`shared/module-docs.ts`、`shared/builtin/agents.ts`、`skills/docs/project-documentation`、`skills/workflow/task-records`、`web/src/components/projects/DocRootHint.tsx`
 - 修订：ADR 0039 的 P4 教训位置（改成共用文档根下的 `lessons/`，一条一个文件）
 
 ## 背景
@@ -12,7 +12,7 @@ P4 / SVN 项目的项目外文档根按本地目录算：`<项目目录上一级
 ## 决策
 
 1. **按项目文件夹分组**（用户定的「按项目文件夹区分」，不问 p4）：项目文件夹名相同、分支目录在同一上级下的项目是同一个工程（`docGroupKey`），分支名是项目目录上一级的目录名（`branchNameOf`）。同名但不在同一上级下的项目不算一组。
-2. **一组一个文档根**，记录在数据目录的 `projects/doc-groups.json`（`server/doc-group.ts`）。组第一次建立时沿用模块文档最多的那个分支的旧 `ProjectDoc/docs`，原地不动；都没有时用当前项目按旧规则算出的位置。项目设置里可以把共用文档根改到别处，现有内容按下面的合并规则并过去。只对文档根在项目外（默认）的 P4 / SVN 项目生效；选了「项目内 docs」的照旧按分支各一份（文档在仓库里，跟着分支走）。
+2. **一组一个文档根**，记录在数据目录的 `projects/doc-groups.json`（`server/docs/group.ts`）。组第一次建立时沿用模块文档最多的那个分支的旧 `ProjectDoc/docs`，原地不动；都没有时用当前项目按旧规则算出的位置。项目设置里可以把共用文档根改到别处，现有内容按下面的合并规则并过去。只对文档根在项目外（默认）的 P4 / SVN 项目生效；选了「项目内 docs」的照旧按分支各一份（文档在仓库里，跟着分支走）。
 3. **哪些共用、哪些按分支分开**：模块说明、ADR、技术文档、Bug 记录、openspec、项目教训共用；只属于某个分支的 `p4change/`、`worklog/` 放在 `<文档根>/branches/<分支>/`。提示词的「文档根」一段写明当前分支和这个目录。
 4. **模块文档标记来源分支**：元数据头加「- 分支：」，「文档」写或改模块文档时填当前分支。协调器的模块索引给别的分支写的文档标「来自 X 分支」（本分支没有源码时也说），照常引用；`goneModulesNote` 只对本分支写的文档判断「源码都不在了」，别的分支才有的模块不会被派去清理。
 5. **老项目自动合并**：分支第一次用到时，把它的旧 `ProjectDoc/docs` 合进共用文档根：没有的复制，一样的跳过，内容不同的另存成 `<名字>.from-<分支>.<扩展名>`；模块 README 补上分支；`p4change/`、`worklog/` 搬到 `branches/<分支>/`；旧目录不删，留一份 `MOVED.md`。冲突清单进协调器的模块索引，派「文档」用新的 `task=合并` 合成一份、删掉 `.from-` 文件。合并失败不删任何东西，下一次用到时重试，错误显示在项目设置里。

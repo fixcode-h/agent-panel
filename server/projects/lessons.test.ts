@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-// 数据目录换成临时的：P4 / SVN 项目的教训位置要用文档组记录（server/doc-group.ts），不能碰真正的 ~/.agent-panel
+// 数据目录换成临时的：P4 / SVN 项目的教训位置要用文档组记录（server/docs/group.ts），不能碰真正的 ~/.agent-panel
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'panel-lessons-data-'))
 
 const { DOC_PLACE_INSIDE } = await import('../../shared/doc-root.ts')

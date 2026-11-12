@@ -43,7 +43,7 @@ export interface DocRootInfo {
   outside: boolean
   place: string
   /**
-   * 这个项目所在的分支（项目外的文档根由同一工程的各分支共用时才有，见 server/doc-group.ts）：
+   * 这个项目所在的分支（项目外的文档根由同一工程的各分支共用时才有，见 server/docs/group.ts）：
    * 按项目文件夹区分，取项目目录上一级的目录名
    */
   branch?: string

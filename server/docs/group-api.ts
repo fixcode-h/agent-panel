@@ -1,15 +1,15 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { resolveParams } from '../shared/agent-role.ts'
-import { findCore } from '../shared/builtin/core.ts'
-import { DOC_PLACE_SIBLING, resolveDocRoot, type DocGroupView } from '../shared/doc-root.ts'
-import { t } from '../shared/i18n.ts'
-import type { Agent, Project } from '../shared/schema.ts'
-import { resolveDocGroup, setDocGroupRoot } from './doc-group.ts'
-import { detectVcs } from './projects-analyze.ts'
+import { resolveParams } from '../../shared/agent-role.ts'
+import { findCore } from '../../shared/builtin/core.ts'
+import { DOC_PLACE_SIBLING, resolveDocRoot, type DocGroupView } from '../../shared/doc-root.ts'
+import { t } from '../../shared/i18n.ts'
+import type { Agent, Project } from '../../shared/schema.ts'
+import { resolveDocGroup, setDocGroupRoot } from './group.ts'
+import { detectVcs } from '../projects-analyze.ts'
 
 /**
- * 项目设置「文档」一栏看、改各分支共用的文档根（server/doc-group.ts）。
+ * 项目设置「文档」一栏看、改各分支共用的文档根（server/docs/group.ts）。
  * 只对文档根在项目外（默认）的 P4 / SVN 项目有；别的项目返回 null，界面就按原来的提示显示
  */
 export function docGroupApi(deps: {

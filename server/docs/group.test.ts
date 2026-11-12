@@ -13,10 +13,10 @@ import test from 'node:test'
 // 数据目录换成临时的：文档组记录写在数据目录里，不能碰真正的 ~/.agent-panel
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'panel-docgroup-data-'))
 
-const { resetDocGroups, resolveDocGroup, setDocGroupRoot } = await import('./doc-group.ts')
-const { goneModulesNote, lookupModuleDocs, moduleIndexText } = await import('./module-map.ts')
-const { projectDocRoot } = await import('./doc-root.ts')
-const { setLang } = await import('../shared/i18n.ts')
+const { resetDocGroups, resolveDocGroup, setDocGroupRoot } = await import('./group.ts')
+const { goneModulesNote, lookupModuleDocs, moduleIndexText } = await import('../module-map.ts')
+const { projectDocRoot } = await import('./root.ts')
+const { setLang } = await import('../../shared/i18n.ts')
 
 setLang('zh')
 
@@ -118,7 +118,7 @@ test('提示词：给出共用文档根、本分支目录和模块文档的分�
   resetDocGroups()
   const { root, dev, mainDocs } = layout()
   try {
-    const { docRootText } = await import('../shared/doc-root.ts')
+    const { docRootText } = await import('../../shared/doc-root.ts')
     const text = docRootText(await projectDocRoot(dev, [], 'p4'))
     assert.match(text, new RegExp(`文档根是 \`${mainDocs.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}\``))
     assert.match(text, /当前分支是「Dev」/)

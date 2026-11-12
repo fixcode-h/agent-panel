@@ -36,4 +36,4 @@
 
 - **先建文档由面板拦下，而不是面板自己等**：模块分析要几分钟，CLI 的一次工具调用一分钟就超时，没法在 `create_conversation` 里同步等。改成有模块还没文档时拒绝建子对话，返回写清先并行派「文档」（`params: {"task": "模块分析"}`），分析结果会自动推回协调器的这一轮，它再用同样的参数建；写 `skip_docs` 理由可放行。都有文档时面板把路径附进派单。
 - **用户项目里面板不改写 `MODULE-MAP.md`**（真实 API 实测后改的）：起初每轮结束时面板重新生成地图，结果父对话目录里留下没人提交的改动（会挡住子对话合回），几个子对话各自重新生成同一张表也会冲突。改成协调器的提示词里每轮带「已有模块文档」一节，从模块 README 的元数据现读；模块 README 是唯一来源，地图只在仓库自带生成脚本时生成。
-- **文件行数上限按功能拆**（用户 2026-11-03 纠正，见 `docs/lessons/file-caps.md`）：`shared/children/lookup.ts` 从 `engine.ts` 拆出，`server/orch-fields.ts`、`server/docs-first-tool.ts` 从 `orch-mcp.ts` 拆出。
+- **文件行数上限按功能拆**（用户 2026-11-03 纠正，见 `docs/lessons/file-caps.md`）：`shared/children/lookup.ts` 从 `engine.ts` 拆出，`server/orch-fields.ts`、`server/docs/first-tool.ts` 从 `orch-mcp.ts` 拆出。
