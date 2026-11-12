@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { decodePng, encodePng, resize } from './image.ts'
+import { decodePng, encodePng } from './image.ts'
+import { resize } from '../shared/raster.ts'
 import { CACHE_DIR } from './store.ts'
 
 /**

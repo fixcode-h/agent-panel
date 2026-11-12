@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { TaskStep } from './schema.ts'
 import type { ChildEntry } from './task.ts'
-import { newestFirst, sortChildren, sortHelpers } from './task.ts'
+import { sortChildren } from './task.ts'
+import { newestFirst, sortHelpers } from './task-helpers.ts'
 
 /** 子任务列表排序只看这四个字段，用最小对象就够 */
 const h = (id: string, status: string, startedAt = '') =>

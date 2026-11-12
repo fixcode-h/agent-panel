@@ -11,14 +11,23 @@ import {
   Trash2,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { type Agent, type Flow, type FlowNode, type FlowRef, type NodeStep, type WorkflowInput } from '@shared/schema'
+import {
+  type Agent,
+  type Flow,
+  type FlowNode,
+  type FlowRef,
+  type NodeStep,
+  type WorkflowInput,
+  END,
+  START,
+} from '@shared/schema'
 import { MODEL_TIERS } from '@shared/clis'
 import { agentTier } from '@shared/agent-role'
 import { cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import { Segmented } from '@/components/ui/segmented'
 import { ParamsForm } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
-import { END, START, entryFlow, flowLabel, newNodeStep, nodeSteps, preds, refLabel, succs } from '@shared/flow'
+import { entryFlow, flowLabel, newNodeStep, nodeSteps, preds, refLabel, succs } from '@shared/flow'
 import { useData } from '@/lib/data'
 import type { Check } from '@/lib/readiness'
 import { cn } from '@/lib/utils'

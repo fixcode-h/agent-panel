@@ -15,7 +15,8 @@ import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from 
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
 import { subPolicy } from './sub-policy.ts'
 import type { EngineHost } from './engine-host.ts'
-import { activePlan, planNotice, planNowText, planText, WRAP_UP, type WrapUpAnswer, type WrapUpKind } from './plan.ts'
+import { activePlan, planNotice, planNowText, planText, WRAP_UP, type WrapUpAnswer } from './plan.ts'
+import type { WrapUpKind } from './wrap-up.ts'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 export const SLOT_PROMPT: Record<string, string> = {

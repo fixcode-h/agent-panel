@@ -2,15 +2,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
-import {
-  BUILTIN_HOOKS,
-  HookDef,
-  HooksData,
-  tierDefault,
-  type HookDefInput,
-  type HookEventName,
-  type HookTier,
-} from '../../shared/hook-defs.ts'
+import { HookDef, HooksData, type HookDefInput, type HookEventName } from '../../shared/hook-defs.ts'
+import { BUILTIN_HOOKS, tierDefault, type HookTier } from '../../shared/hook-builtins.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 

@@ -7,12 +7,11 @@ import { demoChildRows } from './demo-children'
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { seedChatRail } from './demo-chat-rail'
-import { demoOwnedRun } from './demo-flow-run'
+import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
-import { demoFlowRun } from './demo-flow-run'
 import type { TrashRow } from '@shared/api-contract/trash'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
@@ -75,6 +74,8 @@ import {
   type CliStatus,
   type DirInfo,
   type DirListing,
+  END,
+  START,
 } from '@shared/schema'
 import {
   BUILD_OUTPUTS,
@@ -101,7 +102,7 @@ import {
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
 import { demoLifecycle } from './demo-lifecycle'
-import { descendantTotals } from '@shared/task-export'
+import { descendantTotals, importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
 import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
@@ -121,7 +122,7 @@ import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import { childAskEffect } from '@shared/child-ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
-import { stopHelper } from '@shared/engine'
+import { stopHelper } from '@shared/run-stops'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
@@ -139,7 +140,7 @@ import {
 } from '@shared/task'
 import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
 import { settlePlan } from '@shared/plan'
-import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
+import { autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import {
   builtinDefinition,
@@ -153,7 +154,6 @@ import {
 } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
-import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
 import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist'
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'

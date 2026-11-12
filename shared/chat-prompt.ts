@@ -6,7 +6,7 @@
  * 计划用 CLI 自带的待办 / 计划（TodoWrite、Codex 的 plan 这类）：只有 CLI 定义写了 todos 的才会被面板解析显示，
  * 其余的让模型在回复里列；面板计划只在 Agent 模式。放在单独的文件里：engine.ts 到了行数上限
  */
-import type { EngineHost } from './engine.ts'
+import type { EngineHost } from './engine-host.ts'
 import { promptLangRules } from './prompt-lang.ts'
 
 /** 能用后台命令时说清楚什么时候用：不说的话模型照样同步跑长命令，一直卡着（项目对话和 Chat 模式共用） */

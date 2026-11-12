@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runEngineTurn, type AgentCall, type AgentResult, type EngineHost } from './engine.ts'
+import { runEngineTurn } from './engine.ts'
+import type { AgentCall, AgentResult, EngineHost } from './engine-host.ts'
 import { AgentInput, type Agent, type StopReason, type Task } from './schema.ts'
 import { newTask } from './task.ts'
 

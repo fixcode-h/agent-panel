@@ -41,14 +41,8 @@ import { type Attachment, type Project, type TaskMessage, type ToolUse, type Tas
 import { ChatModelPicker, RoleModelBadge, type ChatRun } from './ChatModelPicker'
 import { RetryModelMenu } from './RetryModelMenu'
 import { blockedStep, flowUnfinished, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import {
-  childWait,
-  diagnosisPending,
-  taskSummary,
-  withTaskModel,
-  deliveryActive,
-  TRASH_RETENTION_DAYS,
-} from '@shared/task'
+import { childWait, diagnosisPending, taskSummary, deliveryActive, TRASH_RETENTION_DAYS } from '@shared/task'
+import { withTaskModel } from '@shared/task-run'
 import { taskWord } from '@shared/task-word'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'

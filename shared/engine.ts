@@ -74,7 +74,7 @@ import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSe
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './child-ask.ts'
 import { topPush } from './sub-policy.ts'
-import { budgetLimit, overBudget } from './engine-budget.ts'
+import { overBudget } from './engine-budget.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
   SLOT_PROMPT,
@@ -117,31 +117,9 @@ import {
   takeMail,
   wholeReport,
 } from './engine-helpers.ts'
-export { nodeRequests } from './engine-prompt-parts.ts'
-export { settleHelperWaits } from './engine-helpers.ts'
 import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine-host.ts'
-export type {
-  AgentResult,
-  Fail,
-  AgentCall,
-  ReviewDiff,
-  RouteInput,
-  HelperSpec,
-  ReviewBrief,
-  HelperReport,
-  HelperBatch,
-  Orchestra,
-  EngineHost,
-} from './engine-host.ts'
-export type { P4SplitArgs } from './host/vcs.ts'
-export type { LessonInput } from './host/knowledge.ts'
 
 import { bindWait, finishStepNow, WRAP_UP } from './plan.ts'
-
-/** 子任务、工作流运行的终止开关在 run-stops.ts：服务端路由从这里取 */
-export { stopHelper, stopPlan } from './run-stops.ts'
-/** 查名下子对话（计划对上等待、补步骤的标题、判断是不是重试）在 child-lookup.ts */
-export { retryBase } from './child-lookup.ts'
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
@@ -256,8 +234,6 @@ export interface Invocation {
 }
 
 export type FlowResult = { ok: true; output: string } | Fail
-
-export { budgetLimit, overBudget }
 
 export function system(host: EngineHost, text: string, step = '', error = false, transient = false, kind?: AlertKind) {
   host.task.messages.push({

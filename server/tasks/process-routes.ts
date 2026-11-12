@@ -1,7 +1,7 @@
 import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { getCli } from '../../shared/clis.ts'
 import { getSettings } from '../settings.ts'
-import { stopHelper, stopPlan } from '../../shared/engine.ts'
+import { stopHelper, stopPlan } from '../../shared/run-stops.ts'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { log } from '../log.ts'

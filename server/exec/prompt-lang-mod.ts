@@ -7,10 +7,8 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { PROMPT_LANG_ENV, promptLangModSource } from '../../shared/prompt-lang.ts'
+import { promptLangModSource } from '../../shared/prompt-lang.ts'
 import { DATA_DIR } from '../store.ts'
-
-export { PROMPT_LANG_ENV, promptLangModSource }
 
 export const promptLangModFile = () => path.join(DATA_DIR, 'mods', 'agent-panel-prompt-lang.mjs')
 

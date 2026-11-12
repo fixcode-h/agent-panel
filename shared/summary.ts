@@ -28,8 +28,6 @@ import {
   splitPoints,
 } from './summary-code.ts'
 
-export { SUMMARY_CODE_CHARS, SUMMARY_CODE_MAX, SummaryCode } from './summary-code.ts'
-
 /**
  * 数据目录里最多留多少份报告：左侧树要列出全部报告，这里只是防止数据文件无限长大的保险，
  * 每天几份也够存好几年。超出时删最早的

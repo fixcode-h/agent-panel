@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Task } from '../shared/schema.ts'
 
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'no-push-data-'))
-const { noPushEnv } = await import('./exec/runner.ts')
+const { noPushEnv } = await import('./exec/no-push.ts')
 
 const wt = { path: '/x', branch: 'b', baseBranch: 'main', state: 'active' } as Task['worktree']
 

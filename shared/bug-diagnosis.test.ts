@@ -7,8 +7,6 @@ import {
   bugStage,
   decideDiagnosis,
   diagnosisGate,
-  diagnosisMarkdown,
-  outOfPlan,
   pendingDiagnosis,
   requestLogs,
   settleCleanup,
@@ -16,8 +14,9 @@ import {
   updateBugCase,
   type DiagnosisInput,
 } from './bug-diagnosis.ts'
+import { diagnosisMarkdown } from './bug-diagnosis-md.ts'
+import { outOfPlan, editScope } from './bug-phase.ts'
 import { Diagnosis } from './bug-diagnosis-schema.ts'
-import { editScope } from './bug-phase.ts'
 import type { Task } from './schema.ts'
 import { childWait, childFlowOf, convState, diagnosisPending } from './task.ts'
 import { applyPlan, openPlan } from './plan.ts'

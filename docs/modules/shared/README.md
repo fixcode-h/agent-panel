@@ -117,6 +117,12 @@
   节点级统计（`taskStats` 的 `nodes`）另外给缓存写入、费用、工具调用总数、失败数，以及失败里属于「探路」的那部分：`shared/tool-failures.ts` 是唯一实现——`probeKind` 按一张从窄到宽的规则表认工具不存在 / 路径不存在 / 命令不存在，`toolFailures` 一次遍历给出 `calls` / `failed` / `probeBy`，`addProbes` / `probeTotal` / `probeText` 供合计和报告共用；探路失败是失败调用的一部分，不另算一次调用。因此报告和 HTML 的节点表多了费用、工具调用两列，输入列写成「输入/缓存写/命中」；任务级把「失败的工具调用」从「报错」里拆成独立一行「工具调用 N 次，失败 M 次（其中探路失败…）」，同一个数只在—处出现。旧导出没有这些字段时 `resolvedStats` 按记录现算补齐（和 spanMs / idleMs 同一种兜底）。回归：`server/task-export.test.ts` 的「统计：节点级工具调用、探路失败和缓存写入进导出与报告」、`shared/tool-failures.test.ts`。
 - P4 / SVN 项目的文档根（`shared/doc-root.ts`，2026-10-31 用户定的）：默认 `<项目上一级目录>/docs`（和项目文件夹同级），「文档」角色的 `docPlace` 参数可改成 `<项目>/docs`，`docRoot` 填了就按填的（相对路径接在项目后）；Git 和没有版本管理的项目不算，仍按 Agent 自己找已有 docs。服务端 `server/doc-root.ts` 的 `projectDocRoot` 按套上项目参数的角色列表和 `detectVcs` 算好，放进 `EngineHost.policy.docs`，`docRootText` 写进对话和节点 / 子任务的公共提示词，所有角色用同一个路径。文档根在项目外时提示词要求写完只落盘、不 p4 add / edit、不进任何 changelist、不 svn add；`server/p4-split.ts` 的 `splitChangelists` 收 `skipUnder` 再兜一层：`p4 where` 出本地路径，落在项目外文档根下的已打开文件不分、不挪，列出来让 Agent 原样告诉用户（Agent 不 revert）。项目设置「必备角色」里 `paramsForVcs` 让「文档位置」只在 P4 / SVN 项目显示，并显示算出来的文档根。回归：`shared/doc-root.test.ts`、`server/p4-split.test.ts`。
 
+## makeOrchestra 的共享状态和宿主小接口
+
+- `makeOrchestra`（`shared/engine.ts`）以前一个闭包拼出整份 `Orchestra`（重构文档第 3 条）。现在它只定身份字段（`self`、`planner`、`helper` 这些），把共用的东西收进 `OrchCtx`（`shared/orchestra/ctx.ts`：`host`、`ctx`（原来的入参 `OrchOpts`）、`self`（调用者节点）、`st`（这个任务的编排运行时状态，`orchState`）、`task`、`helper`、`selfAgent`、`planner`、`coordinator`、`chatMode`、`where`、`findStep`），再展开 `planTools`（`shared/orchestra/plan-tools.ts`）、`conversationTools`（`conversation-tools.ts`）、`capabilityTools`（`capability-tools.ts`）和 `engine.ts` 里的 `dispatchTools`（派子任务、等待、提问、传话）。`OrchCtx` 里只有 `st` 是可变的（派出的子任务、交回的批次）；其余是这一轮定下的值。
+- 子对话转交、已发送提示这类跨文件共用的小件在 `shared/orchestra/route.ts`（`recordRoute`、`SENT_NOTE`、`handedOff`），不放 `engine.ts`，免得 `orchestra/*` 和 `engine.ts` 互相 import。
+- 宿主接口按能力拆成小接口（重构文档第 5 条，`shared/host/`）：`ConversationHost` / `OrchConversation`（子对话、传话、认领、结束前判断）、`PlanHost` / `OrchPlan`（计划、工作流运行、收尾）、`VcsHost` / `OrchVcs`（独立分支、合回、P4、cherry-pick、推送授权、评审差异）、`BuildHost` / `OrchBuild`（UE 编译、测试步骤、后台命令）、`KnowledgeHost` / `OrchKnowledge`（教训、经验、能力、Chat 记忆、模块文档）、`BugHost` / `OrchBug`（诊断报告和取原文）。`shared/engine-host.ts` 的 `EngineHost`、`Orchestra` 只剩核心调度的成员，`extends` 这些小接口。加新能力加进对应的小接口，满了再按能力拆一个；`scripts/structure-check.mjs` 给每个接口的成员数记了基线。
+
 ## 入口
 
 - `shared/schema.ts`：所有跨前后端的数据结构。
