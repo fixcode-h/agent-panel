@@ -23,8 +23,9 @@ const BUSY_RECHECK_MS = fixedMs('AGENT_PANEL_PRESENCE_RECHECK_MS') ?? 60 * 60_00
 /** 看过之后离开的宽限：回来接着说不用重开 CLI */
 const DEFAULT_GRACE_MS = 60 * 60_000
 
+// 模块状态：配置副本，重启时重读
 let graceMs = DEFAULT_GRACE_MS
-let reclaimEnabled = true
+let reclaimEnabled = true // 模块状态：配置副本，重启时重读
 
 const nonNegative = (v: number, fallback: number) => (Number.isFinite(v) ? Math.max(0, v) : fallback)
 
@@ -52,19 +53,19 @@ export function setPresenceReclaimPolicy(p: Partial<PresenceReclaimPolicy>) {
 const grace = () => FIXED_GRACE_MS ?? graceMs
 
 /** 任务 id → 正在看这个任务的页面 */
-const viewers = new Map<string, Set<string>>()
+const viewers = new Map<string, Set<string>>() // 模块状态：会话，跟着进程或连接一起没
 /** 过了宽限、确认没人在看的任务 */
-const left = new Set<string>()
+const left = new Set<string>() // 模块状态：会话，跟着进程或连接一起没
 /** 上报过在场的任务：没有页面在用（只调接口、测试）时不要替它把 CLI 留着 */
-const reported = new Set<string>()
+const reported = new Set<string>() // 模块状态：会话，跟着进程或连接一起没
 /** 宽限计时器：页面切走后多久回收 */
-const timers = new Map<string, ReturnType<typeof setTimeout>>()
+const timers = new Map<string, ReturnType<typeof setTimeout>>() // 模块状态：会话，跟着进程或连接一起没
 /**
  * 这一轮还在跑时的复查计时器：和宽限分开存。
  * 共用一张表的话 scheduleIdle 的「已经在计时」会把复查当成宽限，子对话被停掉后本该按宽限（可能 1 分钟）
  * 回收的会话要等到复查点（默认 60 分钟）才收
  */
-const rechecks = new Map<string, ReturnType<typeof setTimeout>>()
+const rechecks = new Map<string, ReturnType<typeof setTimeout>>() // 模块状态：会话，跟着进程或连接一起没
 let onIdle: ((taskId: string) => void) | undefined
 
 /** 清掉某一个计时器（宽限或复查） */
@@ -84,7 +85,7 @@ export function setPresenceIdleHandler(fn: (taskId: string) => void) {
  * 执行中的对话不受宽限管：页面开着还是切到后台都一样，宽限到了也不结束这一轮。
  * 由调用方提供判定，只有它知道任务的状态（这里的 presence 模块只看页面在不在）
  */
-let busy: ((taskId: string) => boolean) | undefined
+let busy: ((taskId: string) => boolean) | undefined // 模块状态：接线，启动时登记
 
 export function setPresenceBusy(fn: (taskId: string) => boolean) {
   busy = fn
@@ -138,7 +139,7 @@ function scheduleIdle(taskId: string) {
  * 所以忙的时候不重排宽限，而是按复查间隔（scheduleRecheck）隔一段再判一次；
  * 这一轮真的结束了走 resetIdleCountdown 按整段重算
  */
-const pending = new Set<string>()
+const pending = new Set<string>() // 模块状态：会话，跟着进程或连接一起没
 
 /**
  * 回收一个会话：没人在看，让还在等下一句的 CLI 结束这一轮（用户回来时冷启动续接）。

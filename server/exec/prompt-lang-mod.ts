@@ -14,7 +14,7 @@ export { PROMPT_LANG_ENV, promptLangModSource }
 
 export const promptLangModFile = () => path.join(DATA_DIR, 'mods', 'agent-panel-prompt-lang.mjs')
 
-let written = ''
+let written = '' // 模块状态：缓存，丢了重算
 
 /** 确保 mod 文件存在且是最新内容，返回路径；内容没变时不重复写 */
 export async function ensurePromptLangMod() {

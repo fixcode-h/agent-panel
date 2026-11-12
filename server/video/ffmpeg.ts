@@ -107,7 +107,7 @@ async function tryBin(bin: string) {
   return version ? { path: bin, version } : null
 }
 
-let cached: { path: string; version: string } | null | undefined
+let cached: { path: string; version: string } | null | undefined // 模块状态：缓存，丢了重算
 
 /** 找可用的 ffmpeg；找不到返回 null。结果记在内存里，下载完、改路径后清掉重找 */
 export async function findFfmpeg(): Promise<{ path: string; version: string } | null> {
@@ -132,7 +132,7 @@ export async function ffmpegBin() {
   return hit.path
 }
 
-let job: (NonNullable<FfmpegStatus['job']> & { abort?: AbortController }) | undefined
+let job: (NonNullable<FfmpegStatus['job']> & { abort?: AbortController }) | undefined // 模块状态：会话，跟着进程或连接一起没
 
 export async function ffmpegStatus(): Promise<FfmpegStatus> {
   const hit = await findFfmpeg()

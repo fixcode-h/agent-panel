@@ -7,7 +7,7 @@ import type { Task } from '../../shared/schema.ts'
 import type { CliEvent } from './parsers.ts'
 
 /** 这些事件说明工具入参写完了（或者模型改去做别的了） */
-const ENDS = new Set(['tool', 'text_delta', 'text', 'thinking', 'result', 'request_start'])
+const ENDS = new Set(['tool', 'text_delta', 'text', 'thinking', 'result', 'request_start']) // 模块状态：常量，加载后不改
 
 export function createDrafting(task: Pick<Task, 'drafting'>, changed: () => void) {
   const clear = () => {

@@ -44,7 +44,7 @@ interface Session {
   running: Map<string, AbortController>
 }
 
-const sessions = new Map<string, Session>()
+const sessions = new Map<string, Session>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 会话作废：正在跑的调用都取消，插件按 ctx.signal 停掉自己起的进程 */
 function endSession(token: string) {

@@ -111,7 +111,7 @@ async function rawCommands(cli: string, cwd: string): Promise<Found[]> {
 }
 
 // Codex 列 Skill 要起一次 app-server：短时间内的重复查询用缓存
-const cache = new Map<string, { at: number; list: Promise<Found[]> }>()
+const cache = new Map<string, { at: number; list: Promise<Found[]> }>() // 模块状态：缓存，丢了重算
 
 async function all(cli: string, cwd: string, trust?: TrustChoice): Promise<Found[]> {
   const key = `${cli}\n${cwd}\n${trust ?? ''}`

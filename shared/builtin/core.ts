@@ -27,7 +27,7 @@ export const CORE_AGENTS = [
 
 export type CoreKey = (typeof CORE_AGENTS)[number]['key']
 
-const KEYS = new Set<string>(CORE_AGENTS.map((c) => c.key))
+const KEYS = new Set<string>(CORE_AGENTS.map((c) => c.key)) // 模块状态：常量，加载后不改
 
 /** 这个角色是哪个必备角色（按来源认）；不是返回 undefined */
 export function coreKey(a: Pick<Agent, 'origin'> | undefined): CoreKey | undefined {

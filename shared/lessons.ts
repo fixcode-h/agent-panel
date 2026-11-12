@@ -39,7 +39,7 @@ export function globToRegExp(g: string) {
 const norm = (p: string) => p.trim().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/+$/, '')
 
 // 同一批 glob 每次查找都要用：编译一次缓存起来（上万条时省掉大半耗时）。条目都是用户和 Agent 写的，数量有限，超了清空重来即可
-const globCache = new Map<string, RegExp>()
+const globCache = new Map<string, RegExp>() // 模块状态：缓存，丢了重算
 function globRe(g: string) {
   let re = globCache.get(g)
   if (!re) {

@@ -60,11 +60,13 @@ export function observingUntil(tk: ObserveTask, now = new Date().toISOString(), 
 }
 
 /** 太常见、对不上具体问题的词：中文按两个字一组切，英文按词 */
+// 模块状态：常量，加载后不改
 const STOP_CJK = new Set(
   '用户 一个 时候 没有 出现 问题 现在 这个 那个 但是 然后 之后 以后 已经 还是 就是 不是 可以 应该 显示 点击 打开 页面 报错 一下 有时 偶尔 偶发 每次 几次 正常 不会 不能 会出 的时 时候'.split(
     ' ',
   ),
 )
+// 模块状态：常量，加载后不改
 const STOP_EN = new Set(
   'the and for with not but when then that this from have has was are bug error null true false undefined after before'.split(
     ' ',

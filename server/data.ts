@@ -7,6 +7,7 @@ import { Settings } from '../shared/schema.ts'
 import { migrateRemovedClis } from '../shared/settings.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
 import { getSettings } from './settings.ts'
+import { runMigrations } from './migrations/index.ts'
 import type { MemorySampler } from './memory.ts'
 import { revealDir } from './open.ts'
 import { logDir, logFile } from './log.ts'
@@ -257,6 +258,8 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
       // 设置里有密钥：和平时一样只给本人读写（0600），导入不能把权限放宽
       await writeFile(full, Buffer.from(b64, 'base64'), rel === 'settings.json' ? { mode: 0o600 } : undefined)
     }
+    // 备份可能是任何旧版本导出的：所有迁移从头再跑一遍（迁移都是幂等的），再让集合重新读
+    await runMigrations({ from: 0 })
     resetCaches()
     return c.json({ ok: true, kinds, files: Object.keys(fs).length })
   })

@@ -127,7 +127,7 @@ const unxml = (s: string) =>
     .replace(/&amp;/g, '&')
 
 /** 取过的旧版本内容：提交过的版本不会再变，按「目录 + 路径 + 版本」留着（HEAD / #have / BASE 会变，不留） */
-const atCache = new Map<string, SheetData[]>()
+const atCache = new Map<string, SheetData[]>() // 模块状态：缓存，丢了重算
 const AT_CACHE = 24
 const MOVING = /^(HEAD|#have|BASE)$/
 

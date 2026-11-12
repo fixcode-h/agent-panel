@@ -1,6 +1,6 @@
 /**
  * 正式后端的接口契约（A9）：任务列表、任务详情、子对话、发消息的返回形状，
- * 和演示后端（web/src/lib/demo-contract.test.ts）用 shared/task-api-contract.ts 的同一份 schema 校验。
+ * 和演示后端（web/src/lib/demo-contract.test.ts）用 shared/api-contract/tasks.ts 的同一份 schema 校验。
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
@@ -16,7 +16,7 @@ const { createTaskStore } = await import('./task-store.ts')
 const { tasksApi } = await import('./tasks.ts')
 const { newTask } = await import('../shared/task.ts')
 const { setLang } = await import('../shared/i18n.ts')
-const contract = await import('../shared/task-api-contract.ts')
+const contract = await import('../shared/api-contract/tasks.ts')
 
 setLang('zh')
 

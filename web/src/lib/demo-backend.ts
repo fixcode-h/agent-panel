@@ -11,7 +11,7 @@ import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
-import { descendantNeeds } from '@shared/child-needs'
+import { childCountsScan } from '@shared/children/row'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
@@ -2596,33 +2596,18 @@ function tasksRoute(
     if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
-      // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
-      // 「继续执行」按钮也按它让位（演示版少了这个字段，这些界面分支永远走不到）
-      const kids = new Map<string, number>()
-      // 和正式版一样：名下 CLI 还开着的子对话数，侧栏不点开父对话也能看出里面还开着 CLI
-      const kidsCli = new Map<string, number>()
-      for (const k of tasks) {
-        if (!k.parentTaskId) continue
-        if (demoCliAlive(k)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
-        if (!demoChildActive(k)) continue
-        kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
-      }
-      // 和正式版一样：子对话在等你确认时父对话也是「等你处理」（见 shared/child-needs.ts）
-      const needs = descendantNeeds(tasks)
+      // 名下子对话的三项计数（还在跑的、CLI 还开着的、后代在等你处理的）：和正式版同一份扫法（shared/children/row.ts）。
+      // 侧栏、输入框靠它们说清在等什么，「继续执行」按钮也按它让位；演示里没有真的进程，CLI 存活用 live 登记代替
+      const counts = childCountsScan(
+        tasks.filter((t) => !t.deletedAt),
+        { active: demoChildActive, cliAlive: demoCliAlive },
+      )
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
           .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) =>
-            taskSummary({
-              ...t,
-              cliAlive: demoCliAlive(t),
-              childrenWorking: kids.get(t.id) ?? 0,
-              childrenCli: kidsCli.get(t.id) ?? 0,
-              childrenNeeds: needs.get(t.id) ?? 0,
-            }),
-          )
+          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), ...counts(t.id) }))
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
@@ -3198,13 +3183,7 @@ function tasksRoute(
     ? withLive
     : (() => {
         // 和正式后端的单任务一样带上三项计数（server/tasks/children.ts）：子对话刷新信号靠它们
-        const kids = tasks.filter((x) => x.parentTaskId === task.id)
-        return {
-          ...withLive,
-          childrenWorking: kids.filter(demoChildActive).length,
-          childrenCli: kids.filter(demoCliAlive).length,
-          childrenNeeds: descendantNeeds(tasks).get(task.id) ?? 0,
-        }
+        return { ...withLive, ...childCountsScan(tasks, { active: demoChildActive, cliAlive: demoCliAlive })(task.id) }
       })()
   // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
   const limit = Number(query.get('limit') ?? '')

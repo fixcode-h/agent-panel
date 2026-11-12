@@ -11,7 +11,7 @@ import {
 } from '../shared/schema.ts'
 import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
-import { LEGACY_AGENT_FIELDS_MORE, MERGED_AGENTS } from '../shared/builtin/legacy.ts'
+import { MERGED_AGENTS } from '../shared/builtin/merged.ts'
 import { MOVED_TO_PLUGINS } from '../shared/builtin/plugin-content.ts'
 import {
   pruneMergedAgents,
@@ -91,9 +91,14 @@ function memory(agents: Agent[], workflows: Workflow[]) {
   return { state, ops }
 }
 
-/** 本机装过的旧内置副本：设定和上一版一模一样（没改过） */
+/** 本机装过的旧内置副本（已经合并掉的角色，设定是当时那一版） */
 const oldCopy = (key: string, id: string, extra: Partial<Agent> = {}): Agent => ({
-  ...AgentInput.parse({ ...LEGACY_AGENT_FIELDS_MORE[key].at(-1)!, origin: `builtin:${key}` }),
+  ...AgentInput.parse({
+    name: `旧的 ${key}`,
+    description: `${key} 的简介`,
+    instructions: `${key} 的设定`,
+    origin: `builtin:${key}`,
+  }),
   id,
   createdAt: '',
   updatedAt: '',
@@ -116,7 +121,7 @@ const node = (id: string, agentId: string, params: Record<string, unknown>) => (
   hooks: { start: null, review: null, end: null, maxRounds: 3 },
 })
 
-test('旧工作流引用合并掉的角色：改指到通用角色并换算参数，缺的目标先建出来；没人用、没改过的旧副本删掉', async () => {
+test('旧工作流引用合并掉的角色：改指到通用角色并换算参数，缺的目标先建出来；没人用的旧副本删掉', async () => {
   const mine = Workflow.parse({
     id: 'w1',
     createdAt: '',
@@ -144,7 +149,7 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
     [
       oldCopy('debugger', 'old-debugger'),
       oldCopy('impact', 'old-impact'),
-      // 用户改过的旧副本：引用照样换掉，但副本留着
+      // 用户改过的旧副本：引用照样换掉；没人用了也删（内置的改过也不保留，用户 2026-11-12 定的；服务端删前备份）
       oldCopy('uescout', 'old-uescout', { instructions: '我改过的 UE 侦察' }),
       // 还被项目用作默认对话角色的：项目改过去后也能删
       oldCopy('second', 'old-second'),
@@ -173,9 +178,9 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
   const moved = redirectMergedProjects(projects as never, seeded.state.agents)
   const reviewer = find('reviewer')
   assert.deepEqual(moved, [{ id: 'p1', defaultAgentId: reviewer.id }])
-  // 项目还没改过去时，被项目用着的不删；其余没人用、没改过的删掉
+  // 项目还没改过去时，被项目用着的不删；其余没人用的删掉
   const first = await pruneMergedAgents(seeded.state, projects, ops)
-  assert.deepEqual(first.removed.map((a) => a.id).sort(), ['old-debugger', 'old-impact'])
+  assert.deepEqual(first.removed.map((a) => a.id).sort(), ['old-debugger', 'old-impact', 'old-uescout'])
   assert.equal(first.aliases['old-debugger'], dev.id, '旧对话里的旧 id 转到合并目标')
 
   const after = { ...seeded.state, agents: state.agents }
@@ -183,10 +188,6 @@ test('旧工作流引用合并掉的角色：改指到通用角色并换算参�
   assert.deepEqual(
     pruned.removed.map((a) => a.id),
     ['old-second'],
-  )
-  assert.ok(
-    state.agents.some((a) => a.id === 'old-uescout'),
-    '用户改过的旧副本保留',
   )
   // 再启动一遍：没有可删的，也不再改工作流
   const again = await pruneMergedAgents({ ...after, agents: state.agents }, [], ops)

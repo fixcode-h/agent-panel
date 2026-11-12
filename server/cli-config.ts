@@ -15,7 +15,7 @@ export const CLI_CONFIG_DIR = path.join(
 )
 
 /** 读到的配置原文（页面也要注册一遍）和读不进来的原因 */
-let loaded: { specs: unknown[]; errors: string[] } = { specs: [], errors: [] }
+let loaded: { specs: unknown[]; errors: string[] } = { specs: [], errors: [] } // 模块状态：配置副本，重启时重读
 
 export function loadUserClis() {
   const specs: unknown[] = []

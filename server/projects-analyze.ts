@@ -171,7 +171,7 @@ export async function detectVcs(dir: string) {
 
 /** p4 的问询结果缓存一分钟：每轮对话都要判断一次版本控制，不能每次都起一个 p4 进程 */
 const P4_PROBE_MS = 60_000
-const p4Probes = new Map<string, { at: number; got: Promise<boolean> }>()
+const p4Probes = new Map<string, { at: number; got: Promise<boolean> }>() // 模块状态：缓存，丢了重算
 
 /**
  * 这个目录在当前 P4 client 的映射里：在目录里跑 p4 where（PWD 跟着改，p4 按它找配置）。

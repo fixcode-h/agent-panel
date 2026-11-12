@@ -10,7 +10,7 @@ import { setApiLimits } from './api-slots.ts'
 import { setEnabledPlugins } from '../shared/plugins/index.ts'
 
 const FILE = dataPath('settings.json')
-let cache: Settings | null = null
+let cache: Settings | null = null // 模块状态：缓存，丢了重算
 onReset(() => (cache = null))
 
 export async function getSettings(): Promise<Settings> {
@@ -63,7 +63,7 @@ function freshSettings(): Settings {
   }
 }
 
-let writing: Promise<void> = Promise.resolve()
+let writing: Promise<void> = Promise.resolve() // 模块状态：排队，丢了没事
 
 /** 连续保存时串行写，后一次总是覆盖前一次 */
 export async function saveSettings(s: Settings) {

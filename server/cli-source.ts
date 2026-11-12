@@ -36,7 +36,7 @@ export function resolveCommand(command: string, env: NodeJS.ProcessEnv = process
   return undefined
 }
 
-let npmBinCache: { at: number; dir?: string } | undefined
+let npmBinCache: { at: number; dir?: string } | undefined // 模块状态：缓存，丢了重算
 /** npm 全局安装的命令放在哪个目录：Windows 是 prefix 本身，其他系统是 prefix/bin */
 export async function npmGlobalBin() {
   if (npmBinCache && Date.now() - npmBinCache.at < 10 * 60_000) return npmBinCache.dir

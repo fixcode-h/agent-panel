@@ -13,7 +13,7 @@ paths: shared/task.ts, server/task-store.ts, server/tasks/**, server/run-usage.t
 
 ## 几 MB 的任务对话文件不要每次更新都重写
 
-- 规则：`store.update` 会被流式输出每秒调用几十次，对话文件可能几 MB。`messageStamp`（`shared/task.ts`） 全量拼指纹、`JSON.stringify` 整个文件、写盘都要按任务节流（`server/task-store.ts` 的 `MSG_GAP`：窗口内只留最后一次，到点写最新的），任务本身的小文件照旧每次写；指纹只在真要写时算，不要每次 update 都拼一遍。改节流时注意三点：`create` 要立即写（不然新建的任务断电就丢）、旧格式迁移要把对话一起写到新文件、`remove` 要清掉窗口里等着写的那份（否则删完又被定时器写回来）。
+- 规则：`store.update` 会被流式输出每秒调用几十次，对话文件可能几 MB。`messageStamp`（`shared/task.ts`） 全量拼指纹、`JSON.stringify` 整个文件、写盘都要按任务节流（`server/task-store.ts` 的 `MSG_GAP`：窗口内只留最后一次，到点写最新的），任务本身的小文件照旧每次写；指纹只在真要写时算，不要每次 update 都拼一遍。改节流时注意两点：`create` 要立即写（不然新建的任务断电就丢）、`remove` 要清掉窗口里等着写的那份（否则删完又被定时器写回来）。2026-11-12 起对话文件是追加写的 JSONL（ADR 0060），旧格式转换在 `server/migrations/`。
 - 起因：用户反馈 Agent 实时输出时输入卡。实测 609 条 / 2.9MB 的对话：`messageStamp` 单次 2.4ms、`JSON.stringify` 13.5ms、写盘 19.5ms；100 次更新旧实现写 336MB，节流后只写 2 次 6.7MB。
 - 防线：`server/task-store.test.ts`（窗口内合并不写、窗口后写最后一次、删除后不会被定时器写回）。
 

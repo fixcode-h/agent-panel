@@ -48,7 +48,7 @@ export interface SendDeps {
 export const panelBase = () => remotePublicUrl() || `http://127.0.0.1:${process.env.PORT ?? 8787}`
 
 /** 每个渠道最近一次投递的结果（只在内存里）：设置页在那一行显示失败原因 */
-const last = new Map<string, NotifyDelivery>()
+const last = new Map<string, NotifyDelivery>() // 模块状态：运行时，最近一次投递结果，重启后不再显示
 export const notifyDeliveries = (): Record<string, NotifyDelivery> => Object.fromEntries(last)
 
 /**

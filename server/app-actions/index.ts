@@ -15,7 +15,7 @@ export const appActions = createRegistry([
   ...tableActions,
 ])
 
-let host: ActionHost | undefined
+let host: ActionHost | undefined // 模块状态：接线，启动时登记
 /** 服务端接口都挂好后由 server/index.ts 接上：进程内调接口、推给页面 */
 export const setActionHost = (h: ActionHost) => {
   host = h

@@ -13,7 +13,7 @@ const TTL = 5 * 60_000
 /** 第一次跑 --version 的限时；超时后单独重试一次用 RETRY_TIMEOUT */
 const VERSION_TIMEOUT = 15_000
 const RETRY_TIMEOUT = 30_000
-let cached: { at: number; key: string; data: CliStatus[] } | null = null
+let cached: { at: number; key: string; data: CliStatus[] } | null = null // 模块状态：缓存，丢了重算
 
 /**
  * 上次检测到的版本（不触发检测）：钩子按 CLI 定义里的 minVersion 决定装不装（ADR 0049）。
@@ -26,7 +26,7 @@ export const invalidateClis = () => {
   running = null
 }
 
-let running: { key: string; p: Promise<CliStatus[]> } | null = null
+let running: { key: string; p: Promise<CliStatus[]> } | null = null // 模块状态：缓存，丢了重算
 
 /**
  * 检测每个 CLI 是否装在本机（使用设置里的可执行文件和环境变量）。

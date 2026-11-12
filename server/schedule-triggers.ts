@@ -15,7 +15,7 @@ import { currentShell } from './shells.ts'
 /** 目录最多看这么多个文件：再多每次检查都要 stat 很久，让用户换个小一点的目录 */
 export const TRIGGER_MAX_FILES = 50_000
 /** 看目录时跳过的子目录：版本库元数据和依赖目录，变了也不是用户关心的改动 */
-const SKIP_DIRS = new Set(['.git', 'node_modules', '.svn', '.hg'])
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.svn', '.hg']) // 模块状态：常量，加载后不改
 /** 条件成立时最多列出几个变了的文件 */
 const LIST_FILES = 20
 /** 问远端的时限：连不上的远端别把检查卡住 */

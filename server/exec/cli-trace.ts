@@ -45,6 +45,7 @@ export interface CliTrace {
 }
 
 /** 不算「模型在输出」的事件：用量、会话、请求开始这些是 CLI 自己报的元数据 */
+// 模块状态：常量，加载后不改
 const META = new Set<CliEvent['type']>([
   'session',
   'request_start',
@@ -62,7 +63,7 @@ const META = new Set<CliEvent['type']>([
 ])
 
 /** 键是「对话 id + 步骤 id」：子任务、工作流节点和对话自己这一轮各记各的，不互相覆盖 */
-const traces = new Map<string, CliTrace>()
+const traces = new Map<string, CliTrace>() // 模块状态：会话，跟着进程或连接一起没
 const keyOf = (taskId: string, step = '') => `${taskId}\n${step}`
 
 /** 这个对话（或它的某一步）最近一次 CLI 调用的轨迹（只在内存里，面板重启后没有） */

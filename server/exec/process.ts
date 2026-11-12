@@ -89,7 +89,7 @@ export function earlyExitError(
 }
 
 /** 还在跑的子进程：程序退出时按这上面的 pid 统一清理 */
-const live = new Map<number, ReturnType<typeof spawn>>()
+const live = new Map<number, ReturnType<typeof spawn>>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 还在跑的子进程 pid：内存采样用它统计 CLI 子进程占了多少，不要另外维护一份 */
 export const activePids = () => [...live.keys()]
@@ -99,7 +99,7 @@ export const activePids = () => [...live.keys()]
  * 界面上的「CLI 存活」（等下一句的提示、标题流光、侧栏提示）只认这一份：进程起来时登记、
  * close / error 时去掉，不拿 status === 'running' 或 awaitingUser 去猜
  */
-const owned = new Map<number, string>()
+const owned = new Map<number, string>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 这个对话现在有没有活着的 CLI 进程 */
 export function taskCliAlive(taskId: string) {

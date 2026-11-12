@@ -7,16 +7,16 @@
  */
 
 /** API id → 上限；设置读进来、保存时更新（见 server/settings.ts） */
-const limits = new Map<string, number>()
+const limits = new Map<string, number>() // 模块状态：配置副本，重启时重读
 /** API id → 占着的名额 */
-const used = new Map<string, number>()
+const used = new Map<string, number>() // 模块状态：会话，跟着进程或连接一起没
 /** 排着的一个：enter 放它进去，moved 告诉它前面还有几个 */
 interface Queued {
   enter: () => void
   moved?: (ahead: number) => void
 }
 /** API id → 排着的（先到先得） */
-const queues = new Map<string, Queued[]>()
+const queues = new Map<string, Queued[]>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 队伍动了：每个排着的都更新一下前面还有几个（界面上显示） */
 const moved = (q: Queued[]) => q.forEach((x, i) => x.moved?.(i))

@@ -55,6 +55,7 @@ const segArgs = (seg: string) =>
  * 几秒就跑完的命令：读写文件、列目录、查找、文本处理、输出。长命令守卫不拦它们（参数里出现 e2e 不代表在跑 e2e），
  * 后台命令也不收它们（交给后台只会多一轮推送，写文件还绕开了 CLI 自己的编辑工具和面板的改文件守卫）
  */
+// 模块状态：常量，加载后不改
 const QUICK = new Set([
   // 读写、列文件
   'cat',
@@ -173,7 +174,7 @@ const SLOW_GIT = /^(?:-[cC]\s+\S+\s+)*(?:clone|fetch|pull|push|lfs|submodule|gc|
  * 搜索类：一般几秒就完（长命令守卫不拦），可扫大范围时确实会跑上几分钟（skills/project/project-structure 让它放后台），
  * 所以后台命令收它们
  */
-const SEARCH = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'find', 'fd', 'findstr', 'select-string', 'sls', 'xargs'])
+const SEARCH = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'find', 'fd', 'findstr', 'select-string', 'sls', 'xargs']) // 模块状态：常量，加载后不改
 
 /** 这一段是几秒就跑完的快命令 */
 export function quickSegment(seg: string): boolean {
@@ -219,6 +220,7 @@ export function backgroundMisuse(cmd: string): string {
  * npm run build、tsc、cargo build、加一个包的 npm install 这类时长看项目的不在这里（几秒就完的也推到后台只会多一轮），
  * 项目里确实很慢的由用户在长命令守卫的「另外算长命令的命令前缀」里补
  */
+// 模块状态：常量，加载后不改
 const HEAVY_PROGRAMS = new Set([
   // UE：RunUAT（打包、Cook）、UBT、命令行编辑器（Commandlet、自动化测试）；Engine/Build/BatchFiles/Build.bat 在下面单独认
   'runuat',

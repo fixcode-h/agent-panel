@@ -1,11 +1,12 @@
 /**
- * 面板工具 end_turn（这一轮怎么结束）：定义和调用拆在这里，orch-mcp.ts 到了行数上限。
+ * 面板工具 end_turn（这一轮怎么结束）：定义、用法说明和调用都在这里（面板工具注册表的条目）。
  * 判定在 shared/end-turn.ts，结束前钩子和一轮结束后的提醒只认它（设计稿 docs/openspec/changes/end-check-signal/design-v2.md）
  */
 import type { Orchestra } from '../shared/engine.ts'
 import { END_TURN_TOOL } from '../shared/end-turn.ts'
+import type { PanelTool } from './panel-tools/types.ts'
 
-export const END_TURN_DEF = {
+const END_TURN_DEF = {
   name: END_TURN_TOOL,
   title: '结束这一轮',
   description:
@@ -25,10 +26,22 @@ export const END_TURN_DEF = {
 }
 
 /** 执行一次 end_turn：没有这个工具（子任务、工作流节点、Chat 页）时报错 */
-export async function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown } | undefined) {
+async function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown } | undefined) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const r = o.endTurn
     ? await o.endTurn(str(a?.outcome).trim(), str(a?.need))
     : { ok: false, info: '这里不用 end_turn：做完直接结束这一轮（子任务、工作流节点按各自的 submit_* 交结果）' }
   return { content: [{ type: 'text', text: r.info }], ...(!r.ok && { isError: true }) }
+}
+
+export const END_TURN: PanelTool = {
+  name: END_TURN_TOOL,
+  when: (o) => !!o.endTurn,
+  def: () => END_TURN_DEF,
+  // 结束只认 end_turn（shared/end-turn.ts）：不写明的话模型照旧说完就停，面板只能再提醒一次
+  hint: (_o, at) =>
+    at === 'conv'
+      ? 'end_turn 结束这一轮（做完了先写好结论，再调用 end_turn（outcome: done）作为最后一个动作，之后必须用一句话简短说明收尾、不要重复总结；做不下去用 outcome: blocked，need 写缺什么）；'
+      : '',
+  call: (o, a) => callEndTurn(o, a),
 }

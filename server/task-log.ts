@@ -16,9 +16,9 @@ const MAX_BYTES = 2 * 1024 * 1024
 const MAX_FIELD = 200
 
 /** 按对话 id 找日志文件：由任务存储注册（它知道对话在哪个项目目录）；找不到时不写 */
-let resolve: (id: string) => string | undefined = () => undefined
+let resolve: (id: string) => string | undefined = () => undefined // 模块状态：接线，启动时登记
 /** 每个文件已经写了多少：第一次写时读一次实际大小，之后自己累加，不每行都 stat */
-const sizes = new Map<string, number>()
+const sizes = new Map<string, number>() // 模块状态：会话，跟着进程或连接一起没
 
 export function setTaskLogPath(fn: (id: string) => string | undefined) {
   resolve = fn

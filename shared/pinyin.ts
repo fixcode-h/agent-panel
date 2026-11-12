@@ -6,8 +6,8 @@
 const LETTERS = 'ABCDEFGHJKLMNOPQRSTWXYZ'
 const BOUNDS = '阿八嚓哒妸发旮哈讥咔垃痳拏噢妑七呥扨它穵夕丫帀'
 
-let collator: Intl.Collator | null | undefined
-const cache = new Map<string, string>()
+let collator: Intl.Collator | null | undefined // 模块状态：缓存，丢了重算
+const cache = new Map<string, string>() // 模块状态：缓存，丢了重算
 
 function letterOf(ch: string): string {
   const hit = cache.get(ch)

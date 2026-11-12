@@ -59,7 +59,7 @@ export async function listDir(p: string): Promise<DirListing> {
   return { path: full, parent: parent === full ? null : parent, dirs, roots: await roots() }
 }
 
-let driveCache: { at: number; list: { name: string; path: string }[] } | null = null
+let driveCache: { at: number; list: { name: string; path: string }[] } | null = null // 模块状态：缓存，丢了重算
 
 /** Windows 上逐个试 A: 到 Z:，没有现成的接口能列盘符；结果缓存 10 秒，插拔 U 盘后很快能看到 */
 async function roots() {

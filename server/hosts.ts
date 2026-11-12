@@ -1,5 +1,5 @@
 /** 本机访问用的主机名 */
-export const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+export const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']) // 模块状态：常量，加载后不改
 
 /** 去掉端口；IPv6 只留方括号里的部分，没有方括号的裸地址原样返回 */
 export const hostOf = (h: string) => {

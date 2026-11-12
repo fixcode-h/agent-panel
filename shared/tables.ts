@@ -39,7 +39,7 @@ export function tableKind(file: string): TableKind | null {
 }
 
 /** 一个通配写法（* 任意字符、? 一个字符）转成正则；不带 / 的只比文件名，带 / 的比相对路径 */
-const GLOB_CACHE = new Map<string, RegExp>()
+const GLOB_CACHE = new Map<string, RegExp>() // 模块状态：缓存，丢了重算
 function globRe(glob: string) {
   // 列几万个文件时每个文件都要比一遍：编译好的正则留着复用
   const hit = GLOB_CACHE.get(glob)

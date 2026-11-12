@@ -15,6 +15,7 @@ const START_TIMEOUT_MS = 60_000
  * 不看 item/completed 和命令输出：Codex 边读流边执行工具，出错前就在跑的命令会在重试期间继续输出、结束，
  * 说明不了模型请求接上了
  */
+// 模块状态：常量，加载后不改
 const PROGRESS = new Set([
   'item/started',
   'item/agentMessage/delta',

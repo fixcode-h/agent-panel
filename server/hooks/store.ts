@@ -23,7 +23,7 @@ import { t } from '../../shared/i18n.ts'
 const FILE = () => path.join(DATA_DIR, 'config', 'hooks.json')
 export const hookScriptFile = (id: string) => path.join(DATA_DIR, 'config', 'hooks', `${id}.mjs`)
 
-let cache: HooksData | undefined
+let cache: HooksData | undefined // 模块状态：缓存，丢了重算
 
 export async function readHooks(): Promise<HooksData> {
   if (cache) return cache

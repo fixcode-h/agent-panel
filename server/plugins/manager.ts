@@ -40,9 +40,9 @@ export interface PluginDeps {
   deleteWorkflow: (id: string) => Promise<unknown>
 }
 
-let deps: PluginDeps | undefined
-let installed: Installed[] = []
-let broken: { id: string; error: string }[] = []
+let deps: PluginDeps | undefined // 模块状态：接线，启动时登记
+let installed: Installed[] = [] // 模块状态：会话，跟着进程或连接一起没
+let broken: { id: string; error: string }[] = [] // 模块状态：会话，跟着进程或连接一起没
 
 export const installedList = () => installed
 export const brokenList = () => broken
@@ -67,7 +67,7 @@ export async function reloadPlugins() {
 }
 
 /** 插件读参数时取最新的设置（保存设置后不用重启插件就能读到） */
-let cachedPlugins: Settings['plugins'] | undefined
+let cachedPlugins: Settings['plugins'] | undefined // 模块状态：配置副本，重启时重读
 const getCachedPlugins = () => cachedPlugins
 
 async function backupRemoved(workflows: Workflow[], agents: Agent[], reason: string) {

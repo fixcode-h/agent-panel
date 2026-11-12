@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
-import { descendantNeeds } from '../../shared/child-needs.ts'
+import { childCountsScan } from '../../shared/children/row.ts'
 import { bugBriefs } from '../../shared/bug-overview.ts'
 import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
 import { messageChars } from '../task-store.ts'
@@ -80,29 +80,13 @@ export function registerListRoutes(s: TasksScope) {
     // 进了回收站的对话不在任何列表里出现（回收站自己有一个入口，见 GET /trash）
     const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
     // 子对话还在运行时父对话也算在运行：一次算好所有父对话名下的数量，前端不用再为每个任务发请求。
-    // 口径和标题栏、能不能回收是同一个（childActive）：等结果、等回答的子对话也算，不只看 working
-    const kids = new Map<string, number>()
-    // 名下 CLI 还活着的子对话数：侧栏不点开父对话也能看出里面还开着 CLI
-    const kidsCli = new Map<string, number>()
-    for (const k of all) {
-      if (!k.parentTaskId) continue
-      if (taskCliAlive(k.id)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
-      if (!s.childActive(k)) continue
-      kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
-    }
-    // 后代对话在等用户确认、回答：父对话（以及更上层）在侧栏也是「等你处理」，不能还是「执行中」（实测报告问题 1）
-    const needs = descendantNeeds(all)
+    // 口径和标题栏、能不能回收是同一个（childActive），和演示后端同一份扫法（shared/children/row.ts）
+    const counts = childCountsScan(all, { active: s.childActive, cliAlive: (k) => taskCliAlive(k.id) })
     let list = all.map((t) => {
-      const n = kids.get(t.id) ?? 0
-      const childrenNeeds = needs.get(t.id) ?? 0
-      // 带上还在跑的后台命令：交出去的命令没跑完，列表里这个对话就还在「等结果」，不能显示成做完了
-      return taskSummary(
-        s.withJobs(
-          t.parentTaskId
-            ? { ...t, childrenNeeds }
-            : { ...t, childrenWorking: n, childrenCli: kidsCli.get(t.id) ?? 0, childrenNeeds },
-        ),
-      )
+      const n = counts(t.id)
+      // 带上还在跑的后台命令：交出去的命令没跑完，列表里这个对话就还在「等结果」，不能显示成做完了。
+      // 子对话只带 childrenNeeds（孙对话在等你处理）；另两项只有顶层对话的侧栏读
+      return taskSummary(s.withJobs(t.parentTaskId ? { ...t, childrenNeeds: n.childrenNeeds } : { ...t, ...n }))
     })
     // 子对话不进入项目列表：按 parentId 查询时才返回它们。
     // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
