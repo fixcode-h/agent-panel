@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { isPanelSource } from './source.ts'
 
 test('面板源代码项目：包名和分析代码都对得上才算', async () => {
-  assert.equal(await isPanelSource(path.resolve(fileURLToPath(import.meta.url), '../..')), true)
+  assert.equal(await isPanelSource(path.resolve(fileURLToPath(import.meta.url), '../../..')), true)
   const dir = await mkdtemp(path.join(tmpdir(), 'panel-src-'))
   try {
     assert.equal(await isPanelSource(dir), false, '没有 package.json')
