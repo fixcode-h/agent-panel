@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang } from '@shared/i18n'
-import { clock, headStatus, type HeadStatusTask } from './head-status'
+import { taskLiveOf, type LiveRuntime } from '@shared/live/task-live'
+import { clock, headStatus as headView, type HeadStatusTask } from './head-status'
 
 // 断言的是中文文案：固定语言，不跟着 CI 的 LANG 变（见 docs/lessons 的测试教训）
 setLang('zh')
@@ -24,8 +25,16 @@ const task = (over: Partial<HeadStatusTask> = {}): HeadStatusTask => ({
   ...over,
 })
 
+/** 状态由服务端算好放在 live 里：测试里按同一个 taskLiveOf 算 */
+const headStatus = (tk: HeadStatusTask, now: number, rt: Partial<LiveRuntime> = {}) =>
+  headView(
+    tk,
+    taskLiveOf(tk, { cliAlive: false, jobs: [], childrenWorking: 0, childrenCli: 0, childrenNeeds: 0, ...rt }),
+    now,
+  )
+
 test('等子对话时只显示累计执行时长，在等什么放进提示', () => {
-  const view = headStatus(task({ childrenWorking: 1, runMs: 18 * 60_000 + 26_000 }), NOW)
+  const view = headStatus(task({ runMs: 18 * 60_000 + 26_000 }), NOW, { childrenWorking: 1 })
   assert.equal(view?.text, '18:26')
   assert.equal(view?.hint, '子对话执行中 · 18:26')
   assert.equal(view?.tone, 'run')
@@ -39,12 +48,12 @@ test('运行中按累计时长走：已完成的段加上正在跑的这段，�
 })
 
 test('超过一小时写成 1:02:05', () => {
-  const view = headStatus(task({ childrenWorking: 1, runMs: (3600 + 125) * 1000 }), NOW)
+  const view = headStatus(task({ runMs: (3600 + 125) * 1000 }), NOW, { childrenWorking: 1 })
   assert.equal(view?.text, '1:02:05')
 })
 
 test('等你处理保留琥珀提示，时长放进提示', () => {
-  const view = headStatus(task({ childrenNeeds: 1, runMs: 3 * 60_000 }), NOW)
+  const view = headStatus(task({ runMs: 3 * 60_000 }), NOW, { childrenNeeds: 1 })
   assert.equal(view?.text, '子对话等你处理')
   assert.equal(view?.hint, '子对话等你处理 · 3:00')
   assert.equal(view?.tone, 'wait')

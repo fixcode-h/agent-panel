@@ -38,32 +38,69 @@ export interface StateWord {
 /** 判定说法要看的事实：convState 的那一份，加上第一条待确认请求是哪种（提问、节点确认还是权限） */
 export type WordFacts = ConvFacts & { request?: Task['requests'][number]['kind'] }
 
+/** 状态和「等什么」的分类，不带文字：服务端算好放进 TaskLive（shared/live/task-live.ts），页面按 kindWord 换成短词 */
+export type StateKind = Omit<StateWord, 'word'>
+
 /**
- * 一组事实对应的状态和短词。等你处理按「自己的事在前、子对话的在后」取第一件：
+ * 一组事实对应的状态和分类。等你处理按「自己的事在前、子对话的在后」取第一件：
  * 自己的提问 → 自己的请求 → 等你操作 → 名下子对话在等
  */
-export function stateWord(f: WordFacts): StateWord {
+export function stateKind(f: WordFacts): StateKind {
   const state = convState(f)
   if (state === 'needs') {
-    if (f.asking) return { state, need: 'answer', word: t('等你回答') }
+    if (f.asking) return { state, need: 'answer' }
     if (f.requests) {
       // 工作流节点做完等你确认结果：和诊断报告的「报告待确认」一个说法；提问类请求是要你回答
-      if (f.request === 'confirm') return { state, need: 'stage', word: t('阶段待确认') }
-      if (f.request === 'question') return { state, need: 'answer', word: t('等你回答') }
-      return { state, need: 'confirm', word: t('等你确认') }
+      if (f.request === 'confirm') return { state, need: 'stage' }
+      if (f.request === 'question') return { state, need: 'answer' }
+      return { state, need: 'confirm' }
     }
-    if (f.action) return { state, need: 'action', word: t('等你操作') }
-    return { state, need: 'children', word: t('子对话等你处理') }
+    if (f.action) return { state, need: 'action' }
+    return { state, need: 'children' }
   }
-  if (state === 'running' && f.diagnosis && !f.working) return { state, report: true, word: t('报告待确认') }
+  if (state === 'running' && f.diagnosis && !f.working) return { state, report: true }
   if (state === 'waiting') {
     // 顺序和 childWait 一致：先说子对话，再说子任务、后台命令、工作流
-    if (f.children) return { state, wait: 'children', word: t('子对话执行中') }
-    if (f.helpers) return { state, wait: 'helpers', word: t('子任务执行中') }
-    if (f.background) return { state, wait: 'background', word: t('后台命令执行中') }
-    if (f.workflow) return { state, wait: 'workflow', word: t('工作流执行中') }
+    if (f.children) return { state, wait: 'children' }
+    if (f.helpers) return { state, wait: 'helpers' }
+    if (f.background) return { state, wait: 'background' }
+    if (f.workflow) return { state, wait: 'workflow' }
   }
-  return { state, word: convStateText(state) }
+  return { state }
+}
+
+/** 分类对应的短词：各处只显示它 */
+export function kindWord(k: StateKind): string {
+  switch (k.need) {
+    case 'answer':
+      return t('等你回答')
+    case 'stage':
+      return t('阶段待确认')
+    case 'confirm':
+      return t('等你确认')
+    case 'action':
+      return t('等你操作')
+    case 'children':
+      return t('子对话等你处理')
+  }
+  if (k.report) return t('报告待确认')
+  switch (k.wait) {
+    case 'children':
+      return t('子对话执行中')
+    case 'helpers':
+      return t('子任务执行中')
+    case 'background':
+      return t('后台命令执行中')
+    case 'workflow':
+      return t('工作流执行中')
+  }
+  return convStateText(k.state)
+}
+
+/** 一组事实对应的状态和短词（stateKind + kindWord） */
+export function stateWord(f: WordFacts): StateWord {
+  const k = stateKind(f)
+  return { ...k, word: kindWord(k) }
 }
 
 /** 顶层对话（也适用于子对话自己的页面）的短词：事实取 taskFacts，和 taskState 同一份 */

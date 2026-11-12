@@ -8,7 +8,8 @@ import type {
   WorkflowExpose,
   WorkflowInput,
 } from '../schema.ts'
-import { autoLayout, END, START } from '../flow.ts'
+import { autoLayout } from '../flow.ts'
+import { END, START } from '../schema.ts'
 import { DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 
 /**

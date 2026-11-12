@@ -88,7 +88,9 @@ import {
 } from './rail-icons'
 import { useTablesEntry } from '@/lib/tables-nav'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount, taskState } from '@shared/task'
+import { TRASH_RETENTION_DAYS, byAskedAt } from '@shared/task'
+import { liveBusy } from '@shared/live/task-live'
+import { useLiveOf } from '@/lib/live/store'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
@@ -454,8 +456,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 插件管的对话（插件整页 #/plugin，例如模型设计）在插件那边看，不列进 Agent 模式的项目对话；
   // 插件不在时照常列
   const owned = useOwnedByPlugin()
+  // 状态只读服务端给的 live（web/src/lib/live/store.ts）：筛选、「N 个执行中」、项目行的「等你处理」都是同一份
+  const liveOf = useLiveOf()
   const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId && !t.flowRun?.owner && !owned(t))
-  const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
+  const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter, liveOf(t))).sort(byAskedAt) : []
   // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
   const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))
   // 归档的不在项目分组里显示
@@ -513,7 +517,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   }
   // 一键清理：只动这个项目下没在执行的对话（子对话在跑的父对话也算在执行，删它会连带结束子对话）
   const [bulk, setBulk] = useState<{ project: Project; action: 'archive' | 'delete'; n: number }>()
-  const idleTasks = (pid: string) => recent.filter((x) => x.projectId === pid && !taskBusy(x))
+  const idleTasks = (pid: string) => recent.filter((x) => x.projectId === pid && !liveBusy(liveOf(x)))
   const runBulk = async () => {
     if (!bulk) return
     const { project, action } = bulk
@@ -717,7 +721,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           {allOpen &&
             groups.map(([pid, ts], gi) => {
               const open = !folded.has(pid)
-              const running = taskBusyCount(ts)
+              const running = ts.filter((x) => liveBusy(liveOf(x))).length
               // 收起「更多」时也要露出正在看的那个任务
               const shown = more.has(pid)
                 ? ts
@@ -775,8 +779,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         }
                         alert={
                           !open &&
-                          // 和对话行同一个判定（taskState）：子对话在等你确认时父对话也是「等你处理」
-                          ts.some((t) => taskState(t) === 'needs') && (
+                          // 和对话行同一份状态（live）：子对话在等你确认时父对话也是「等你处理」
+                          ts.some((t) => liveOf(t).state === 'needs') && (
                             <CircleAlert
                               aria-label={t('有对话需要你处理')}
                               className="h-3.5 w-3.5 shrink-0 text-warning"

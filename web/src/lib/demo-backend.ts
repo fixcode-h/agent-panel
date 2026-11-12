@@ -1,3 +1,5 @@
+import { demoJobStore, demoJobs, setDemoJobs } from './demo/demo-jobs'
+import { demoChildCounts, demoWithLive } from './demo/demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
 import { demoChildRows } from './demo-children'
 /**
@@ -5,13 +7,12 @@ import { demoChildRows } from './demo-children'
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { seedChatRail } from './demo-chat-rail'
-import { demoOwnedRun } from './demo-flow-run'
+import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
-import { demoFlowRun } from './demo-flow-run'
-import { childCountsScan } from '@shared/children/row'
+import type { TrashRow } from '@shared/api-contract/trash'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
@@ -73,6 +74,8 @@ import {
   type CliStatus,
   type DirInfo,
   type DirListing,
+  END,
+  START,
 } from '@shared/schema'
 import {
   BUILD_OUTPUTS,
@@ -99,7 +102,7 @@ import {
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
 import { demoLifecycle } from './demo-lifecycle'
-import { descendantTotals } from '@shared/task-export'
+import { descendantTotals, importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
 import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
@@ -119,7 +122,7 @@ import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import { childAskEffect } from '@shared/child-ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
-import { stopHelper } from '@shared/engine'
+import { stopHelper } from '@shared/run-stops'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
@@ -134,11 +137,10 @@ import {
   trackWait,
   trashLeftDays,
   withAttachments,
-  type TrashRow,
 } from '@shared/task'
 import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
 import { settlePlan } from '@shared/plan'
-import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
+import { autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import {
   builtinDefinition,
@@ -152,7 +154,6 @@ import {
 } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
-import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
 import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist'
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
@@ -173,7 +174,6 @@ import { fail, parse } from './demo-http'
 import { live } from './demo-live'
 import { demoLocal } from './demo-comfy'
 import {
-  demoChildActive,
   demoClean,
   demoCliAlive,
   demoKill,
@@ -205,6 +205,8 @@ interface Db {
   globalLessons?: GlobalLesson[]
   /** 演示里见过的后台命令（含已经结束的）：和任务一起存，刷新页面后仍然回看得到，见 demoJobView */
   seenJobs?: Record<string, TaskJob>
+  /** 对话上还在跑的后台命令（不属于任务记录，见 demo/demo-jobs.ts） */
+  taskJobs?: Record<string, TaskJob[]>
 }
 
 /** 演示里的全局教训：一条从别的项目提取来的 */
@@ -821,6 +823,13 @@ function load(): Db {
   // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
   // 真实后端走 Task.safeParse，演示版得自己补。注意不能写成 `(db.tasks ?? [])`：还没 seed 过的库里不能凭空造一个
   // 空数组（空数组是真值，下面 handle() 里 `if (!d.tasks)` 就再也不会建示例任务了）
+  // 后台命令不属于任务记录（shared/live/task-live.ts）：单独一张表，旧演示数据挂在任务上的那份搬过去
+  db.taskJobs ??= {}
+  for (const t of db.tasks ?? []) {
+    const legacy = (t as Task & { jobs?: TaskJob[] }).jobs
+    if (legacy) db.taskJobs[t.id] = legacy
+  }
+  demoJobStore.map = db.taskJobs
   if (db.tasks) db.tasks = db.tasks.map((t) => Task.parse(t))
   // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
   const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
@@ -2281,7 +2290,13 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     }))
   // 演示没有真的 CLI 进程：保活列表一直是空的
   if (res === 'tasks' && id === 'keepalive') return sub === 'release' ? { released: [] } : []
-  if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
+  if (res === 'tasks') {
+    // 和正式后端一样：回给界面的任务一律带上 live（server/tasks.ts 的中间件），停止、改名顺手回的也带
+    const out = await tasksRoute(method, id, sub, query, body, seg[3])
+    const isTask = (x: unknown): x is Task =>
+      !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
+    return isTask(out) && !('live' in out) ? demoWithLive(d.tasks ?? [], out) : out
+  }
   // 演示里的 AI 不会请求确认，也不会提问
   if (res === 'asks') return method === 'GET' ? [] : { ok: true }
   if (res === 'usage') return demoUsage(d, query)
@@ -2488,7 +2503,7 @@ const demoMerged = new Set<string>()
  */
 function demoJobView(task: Task, jobId: string): TaskJobView {
   const d = load()
-  const live = (task.jobs ?? []).find((j) => j.id === jobId)
+  const live = demoJobs(task).find((j) => j.id === jobId)
   const seen = (d.seenJobs ??= {})
   if (live) seen[live.id] = live
   const job = live ?? seen[jobId]
@@ -2596,19 +2611,13 @@ function tasksRoute(
     if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
-      // 名下子对话的三项计数（还在跑的、CLI 还开着的、后代在等你处理的）：和正式版同一份扫法（shared/children/row.ts）。
-      // 侧栏、输入框靠它们说清在等什么，「继续执行」按钮也按它让位；演示里没有真的进程，CLI 存活用 live 登记代替
-      const counts = childCountsScan(
-        tasks.filter((t) => !t.deletedAt),
-        { active: demoChildActive, cliAlive: demoCliAlive },
-      )
+      // 运行时状态（live：state、CLI 存活、名下子对话计数）和正式版一样只在一处算（demo/demo-task-live.ts），
+      // 子对话计数和正式版同一份扫法（shared/children/row.ts）。侧栏、输入框靠它说清在等什么，「继续执行」按钮也按它让位
+      const counts = demoChildCounts(tasks)
       // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
-      return (
-        (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
-          .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
-          // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), ...counts(t.id) }))
-      )
+      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
+        .filter((t) => !t.parentTaskId && !t.flowRun?.owner && !t.deletedAt)
+        .map((t) => taskSummary(demoWithLive(tasks, t, counts)))
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
@@ -3176,15 +3185,8 @@ function tasksRoute(
     persist()
     return task
   }
-  // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
-  // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
-  const withLive = { ...task, cliAlive: demoCliAlive(task) }
-  const full = task.parentTaskId
-    ? withLive
-    : (() => {
-        // 和正式后端的单任务一样带上三项计数（server/tasks/children.ts）：子对话刷新信号靠它们
-        return { ...withLive, ...childCountsScan(tasks, { active: demoChildActive, cliAlive: demoCliAlive })(task.id) }
-      })()
+  // 和正式后端的 withLive 一样：完整任务带上 live（状态、CLI 存活、名下子对话计数）
+  const full = demoWithLive(tasks, task)
   // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
   const limit = Number(query.get('limit') ?? '')
   if (!Number.isInteger(limit) || limit <= 0) return full
@@ -3632,7 +3634,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           runId: 1,
         })
       }
-      it.jobs = [
+      setDemoJobs(it, [
         {
           id: `job-${it.id}`,
           ...(subId ? { step: subId } : {}),
@@ -3641,7 +3643,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           state: 'running' as const,
           startedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
         },
-      ]
+      ])
     }
     // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
     if (how.alive) live.set(it.id, { stop: false })

@@ -47,9 +47,6 @@ import { settlePlan } from './plan.ts'
 import { autoApprove, autoBlock, autoOn } from './bug-auto.ts'
 import { ranInConversation, recheckCommands, recheckVerdict } from './bug-recheck.ts'
 
-export { blameLabel, diagnosisMarkdown, diagnosisView } from './bug-diagnosis-md.ts'
-export { outOfPlan, phaseOf, revOf } from './bug-phase.ts'
-
 type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes' | 'bugCase'>
 
 /**

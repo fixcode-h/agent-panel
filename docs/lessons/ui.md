@@ -17,7 +17,7 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 
 ## 一个状态只允许一处判定：childIcon、working 和橙点
 
-- 规则：子对话/任务展示只读 `shared/task.ts` 的 `childIcon(entry)`，`childStage`、`childRunning` 都从它派生，`TaskStatusIcon` 传 `icon={childIcon(c)}`，不按 `status + working` 各算；侧栏橙点读 `taskDoneDot`（完成、非当前打开才画），不和转圈共存。
+- 规则：子对话/任务展示只读 `shared/task.ts` 的 `childIcon(entry)`，`childStage`、`childRunning` 都从它派生，`TaskStatusIcon` 传 `icon={childIcon(c)}`，不按 `status + working` 各算；侧栏橙点读 `liveDot` / `liveDoneDot`（shared/live/task-live.ts，完成、非当前打开才画），不和转圈共存。
 - 规则：对话停在「等待你的下一条消息」时 `status` 仍是 `running`，合并、删除、切分支、AI 分析、回复完才显示的卡片都看 `task.working`；服务端用 `live.get(id)?.task.working`，不用 `live.has(id)`。
 - 起因：分组、图标、计数、标题 `(n)` 各算一套，已完成不显示对勾、已解决画成暂停；独立分支条和 AI 分析菜单按 `status` 判断，做完的没有合并按钮；橙点不看状态，和转圈同在一行。
 - 防线：`shared/task-stage.test.ts` 的一致性用例、`web/src/lib/title-count.test.ts`、`scripts/e2e.mjs`、`scripts/rules-check.mjs`。

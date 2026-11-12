@@ -1,13 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setLang } from './i18n.ts'
-import {
-  decideDiagnosis,
-  diagnosisMarkdown,
-  pendingDiagnosis,
-  submitDiagnosis,
-  type DiagnosisInput,
-} from './bug-diagnosis.ts'
+import { decideDiagnosis, pendingDiagnosis, submitDiagnosis, type DiagnosisInput } from './bug-diagnosis.ts'
+import { diagnosisMarkdown } from './bug-diagnosis-md.ts'
 import { cleanDiff, editPatch } from './bug-fix.ts'
 import { editScope } from './bug-phase.ts'
 import type { BugSource } from './bug-quotes.ts'

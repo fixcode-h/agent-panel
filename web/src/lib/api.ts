@@ -1,3 +1,4 @@
+import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
 import type { BugBrief } from '@shared/bug-overview'
 import type { FlowBrief } from '@shared/agent-stats'
@@ -39,7 +40,6 @@ import type {
   DirBranches,
   DirInfo,
   DirListing,
-  Project,
   ProjectCategoryInput,
   ProjectInput,
   GlobalLesson,
@@ -58,7 +58,7 @@ import type {
   TaskProcesses,
   TaskJobView,
 } from '@shared/schema'
-import type { ChildHold, TrashRow } from '@shared/task'
+import type { ChildHold } from '@shared/task'
 import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
@@ -104,6 +104,8 @@ import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from 
 import { t } from '@shared/i18n'
 import { catalogContract } from '@shared/api-contract/catalog'
 import { tasksContract } from '@shared/api-contract/tasks'
+import { projectsContract } from '@shared/api-contract/projects'
+import { trashContract } from '@shared/api-contract/trash'
 import { call } from './api/call'
 
 /** 对话页打开时的那一份（带分页信息），定义在契约里 */
@@ -130,18 +132,30 @@ export async function failure(res: Response): Promise<never> {
   throw err
 }
 
+/**
+ * 回来的任务（单个或列表）带着 live（运行时状态）：取下来放进 live/store.ts，记录本身照常交给调用方。
+ * 任务记录和运行时状态分开存，组件读状态只经 useLive（见 web/src/lib/live/store.ts）
+ */
+function withoutLive<T>(x: T): T {
+  if (Array.isArray(x)) return (x.length && isTaskLike(x[0]) ? takeLives(x) : x) as T
+  return (isTaskLike(x) ? takeLive(x) : x) as T
+}
+const isTaskLike = (x: unknown): x is { id: string; live?: unknown } =>
+  !!x && typeof x === 'object' && 'live' in x && typeof (x as { id?: unknown }).id === 'string'
+
 export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
   if (import.meta.env.VITE_DEMO) {
     const { handle } = await import('./demo-backend')
-    return handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined) as Promise<T>
+    const out = await handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined)
+    return withoutLive(out as T)
   }
   const res = await trackedFetch(`/api${url}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (!res.ok) await failure(res)
-  return res.status === 204 ? (undefined as T) : res.json()
+  return res.status === 204 ? (undefined as T) : withoutLive((await res.json()) as T)
 }
 
 /** 任务列表上次拿到的 ETag：数据没变时服务端回 304，列表不用重新赋值（侧栏不跟着重渲染） */
@@ -159,7 +173,7 @@ const allTasks = async (): Promise<Task[] | null> => {
   if (!res.ok) await failure(res)
   const tag = res.headers.get('ETag')
   if (tag) tasksEtag = tag
-  return (await res.json()) as Task[]
+  return takeLives((await res.json()) as Task[])
 }
 
 /** 一个对话在磁盘上占多少（任务文件 + 对话文件） */
@@ -554,31 +568,31 @@ export const api = {
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => call(catalogContract.createProject, { body: input }),
   updateProject: (id: string, input: ProjectInput, expectedUpdatedAt?: string) =>
-    request<Project>(
-      `/projects/${id}`,
-      json('PUT', { ...input, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) }),
-    ),
+    call(projectsContract.update, {
+      params: { id },
+      body: { ...input, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) },
+    }),
   /**
    * 只更新「AI 初始化」的结果：服务端自己读最新项目再合并，不会把用户这期间应用的推荐覆盖回旧值。
    * 初始化对话跑完才交回结果，传整份项目过去时它已经过期了。
    */
   saveProjectInitResult: (id: string, input: { initResult: ProjectProposal }) =>
-    request<Project>(`/projects/${id}/init-result`, json('PUT', input)),
+    call(projectsContract.saveInitResult, { params: { id }, body: input }),
   /** 记一条项目教训（同名的会更新），返回更新后的项目 */
   addProjectLesson: (id: string, lesson: Partial<ProjectLesson> & { title: string }) =>
-    request<Project>(`/projects/${id}/lessons`, json('POST', lesson)),
+    call(projectsContract.addLesson, { params: { id }, body: lesson }),
   /** 应用 AI 评审的一条建议，返回更新后的项目 */
   applyLessonReview: (id: string, item: LessonReviewItem) =>
-    request<Project>(`/projects/${id}/lessons/review`, json('POST', { item })),
-  globalLessons: () => request<GlobalLesson[]>('/global-lessons'),
+    call(projectsContract.applyLessonReview, { params: { id }, body: { item } }),
+  globalLessons: () => call(projectsContract.globalLessons),
   /** 全局教训只在用户确认后整份保存，confirmed 由确认按钮带上 */
   saveGlobalLessons: (lessons: GlobalLesson[]) =>
-    request<GlobalLesson[]>('/global-lessons', json('PUT', { lessons, confirmed: true })),
+    call(projectsContract.saveGlobalLessons, { body: { lessons, confirmed: true } }),
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
   orderProjects: (ids: string[]) => call(catalogContract.orderProjects, { body: ids }),
-  deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
+  deleteProject: (id: string) => call(catalogContract.deleteProject, { params: { id } }),
   /** 项目是不是 agent-panel 自己的源代码（AI 分析结果里多一个「补充进源代码」） */
-  panelSource: (id: string) => request<{ panelSource: boolean }>(`/projects/${id}/panel-source`),
+  panelSource: (id: string) => call(projectsContract.panelSource, { params: { id } }),
 
   allTasks,
   tasks: (projectId: string) => call(tasksContract.list, { query: { projectId } }),
@@ -929,29 +943,17 @@ export const api = {
   resolveTask: (id: string, resolved: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { resolved })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
     request<Task>(`/tasks/${id}`, json('PATCH', run)),
-  deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
+  deleteTask: (id: string) => call(trashContract.deleteTask, { params: { id } }),
   /** 回收站：进回收站还没到期的对话（删掉的对话不丢，7 天内能恢复） */
-  trash: () => request<TrashRow[]>('/tasks/trash'),
+  trash: () => call(trashContract.tasks),
   /** 从回收站恢复；worktreeCleared 表示独立分支目录已经没了，恢复后要重新执行 */
-  restoreTask: (id: string) => request<{ worktreeCleared: boolean }>(`/tasks/${id}/restore`, { method: 'POST' }),
+  restoreTask: (id: string) => call(trashContract.restoreTask, { params: { id }, body: {} }),
   /** 删掉的角色、工作流、项目（对话的回收站在上面）：保留期和对话一样 */
-  itemTrash: () =>
-    request<
-      {
-        kind: 'agent' | 'workflow' | 'project'
-        id: string
-        name: string
-        deletedAt: string
-        tasks: number
-        leftDays: number
-      }[]
-    >('/trash/items'),
-  restoreItem: (kind: string, id: string) =>
-    request<{ ok: true; tasks: number }>(`/trash/items/${kind}/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
-  purgeItem: (kind: string, id: string) =>
-    request<void>(`/trash/items/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  itemTrash: () => call(trashContract.items),
+  restoreItem: (kind: string, id: string) => call(trashContract.restoreItem, { params: { kind, id }, body: {} }),
+  purgeItem: (kind: string, id: string) => call(trashContract.purgeItem, { params: { kind, id } }),
   /** 永久删除：不进回收站，内容直接清掉（界面先让用户二次确认） */
-  permanentDeleteTask: (id: string) => request<void>(`/tasks/${id}/permanent`, { method: 'DELETE' }),
+  permanentDeleteTask: (id: string) => call(trashContract.purgeTask, { params: { id } }),
   /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/task-search.ts） */
   searchTasks: (q: string, limit?: number) =>
     request<{ hits: SearchHit[]; scanned: number; more: boolean }>(

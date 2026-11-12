@@ -17,18 +17,10 @@ import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
 import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
-import {
-  closeFlow,
-  diagnosisPending,
-  dropEndNotes,
-  newTask,
-  taskDeleted,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
+import { closeFlow, diagnosisPending, dropEndNotes, newTask, taskDeleted, withAttachments } from '../../shared/task.ts'
+import { withTaskModel, retryModelPatch } from '../../shared/task-run.ts'
 import { rewaitDiagnosis } from '../../shared/task-settle.ts'
 import { agentRun } from '../../shared/settings.ts'
-import { retryModelPatch } from '../../shared/task-run.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
 import { CHILD_ASK_DEFAULT, childAskInitial } from '../../shared/child-ask.ts'
@@ -387,13 +379,13 @@ export function registerConversationRoutes(s: TasksScope) {
   s.routes.post('/:id/agent/activate', async (c) => {
     const id = c.req.param('id')
     const reused = await reusedPrewarmEntry(id)
-    if (reused) return c.json(s.withJobs(reused))
+    if (reused) return c.json(await s.withLive(reused))
     const task = await s.store.get(id)
     if (!task) return s.bad(c, t('任务不存在'), 404)
     if (task.archived) return s.bad(c, t('归档的对话不能激活，先取消归档'), 409)
     touchPresence(id)
     taskLog(id, '激活 Agent')
-    return c.json(s.withJobs(await prewarmChat(task)))
+    return c.json(await s.withLive(await prewarmChat(task)))
   })
 
   /**
@@ -416,7 +408,7 @@ export function registerConversationRoutes(s: TasksScope) {
     taskLog(id, '关闭 Agent')
     const now = await s.current(id)
     if (!now) return s.bad(c, t('任务不存在'), 404)
-    return c.json(s.withJobs(now))
+    return c.json(await s.withLive(now))
   })
 
   // 对话页还开着：CLI 回复完才能停在等下一句的工具上；切走一分钟内切回来还能接着发

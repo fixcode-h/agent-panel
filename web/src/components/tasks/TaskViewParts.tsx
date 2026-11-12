@@ -18,7 +18,8 @@ import { WaitDots } from './CliAlive'
 import { type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { topSteps } from '@shared/flow'
-import { helperRunning, type ChildWait } from '@shared/task'
+import { type ChildWait } from '@shared/task'
+import { helperRunning } from '@shared/task-helpers'
 import { api } from '@/lib/api'
 import { useNow } from '@/lib/useNow'
 import { apiQueueWait, fmtDuration, tpsNow } from '@/lib/tasks'
@@ -31,7 +32,14 @@ import { PendingAuthor } from './Messages'
 import { ChatReply } from './FoldedRun'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
-import { WorktreeMark, needsMerge, useWorktreeActions, useWorktrees, worktreeKey, worktreeSummary } from './Worktrees'
+import {
+  WorktreeMark,
+  needsMerge,
+  useWorktreeActions,
+  useWorktrees,
+  useWorktreeKey,
+  worktreeSummary,
+} from './Worktrees'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 
 // TaskView 里的几个独立小部件：运行清单、流程条、独立分支条、一轮回复、等待行、运行阶段。
@@ -200,7 +208,7 @@ export function FlowBar({
  */
 export function WorktreeBar({ task }: { task: Task }) {
   const wt = task.worktree
-  const items = useWorktrees(task.id, worktreeKey(task), !!wt)
+  const items = useWorktrees(task.id, useWorktreeKey(task), !!wt)
   const actions = useWorktreeActions(task.id)
   // 要改文件时才开：还没开时说明现在在哪个目录，免得以为已经在分支里了
   if (!wt && task.wantsWorktree)

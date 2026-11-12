@@ -21,9 +21,6 @@ import { BuiltinExtensions, LocalPackages, PackageResources } from './package-co
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
-// 参数规则在 arg-rule.ts（cli-commands-query.ts 也用，放这里会循环引用）
-export { ArgRule } from './arg-rule.ts'
-
 /**
  * 输出里的一种事件：when 里的字段都相等时，按 emit 产生面板的事件（按顺序找第一条对上的）。
  * emit 里的值：「$.a.b」取事件里的字段，「$.status == success」「$.x != y」比较，其余是字面值

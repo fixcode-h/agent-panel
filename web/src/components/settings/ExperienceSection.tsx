@@ -14,7 +14,7 @@ import { Group, NumberField, Row } from './parts'
 /**
  * 设置 →「经验」：总开关管整个功能（Agent 查经验的工具、新会话开头那一行、自动学习），关了等于没有经验；
  * 下面几项只在开着时有意义。提炼和 AI 评审用的模型默认跟随对话的 Agent。
- * 直接存 settings.experience（设置页的自动保存原样带着它，见 SettingsPage 的 value）
+ * 直接存 settings.experience（设置页的自动保存原样带着它，见 settings-value.ts 的 buildSettings）
  */
 export function ExperienceSection({
   clis,

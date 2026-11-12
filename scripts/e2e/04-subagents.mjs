@@ -76,10 +76,16 @@ await runShard('子对话与计划', async (api) => {
       kids = await call('GET', `/tasks/${parent.id}/children`)
     }
     assert.equal(kids.find((x) => x.id === kid.id).cliAlive, true, '发消息后进程活着')
-    const busy = await call('GET', '/tasks')
+    // 子对话计数按 1 秒共享缓存算（server/tasks/children.ts 的 childCountsOf）：上面查子对话栏时刚算过的那份
+    // 可能还是子对话启动前的，最多等缓存过期一次再看（CI 上偶发拿到旧的 0）
+    let busy = await call('GET', '/tasks')
+    for (let i = 0; i < 20 && !(busy.find((x) => x.id === parent.id)?.live?.childrenWorking >= 1); i++) {
+      await sleep(100)
+      busy = await call('GET', '/tasks')
+    }
     assert.ok(
-      busy.find((x) => x.id === parent.id)?.childrenWorking >= 1,
-      '子对话在跑时父对话的摘要带上 childrenWorking，侧栏据此显示执行中',
+      busy.find((x) => x.id === parent.id)?.live?.childrenWorking >= 1,
+      '子对话在跑时父对话摘要的 live 带上 childrenWorking，侧栏据此显示执行中',
     )
     kid = await waitDone(kid.id, 20000)
     assert.equal(kid.status, 'done')
@@ -90,7 +96,7 @@ await runShard('子对话与计划', async (api) => {
       again.startedAt > one.startedAt,
       `完成后再接新任务：本次开启时间往前走（${one.startedAt} → ${again.startedAt}）`,
     )
-    step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
+    step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话的 live 带上 childrenWorking')
 
     // 父对话页切走、宽限期（测试里 1.2 秒）到了：在运行的子对话不能跟着失活，要自己跑完（ADR 0012）
     let away = await mkChild('子对话切走', 'SLOW 父对话切走后照样跑完')
@@ -99,7 +105,7 @@ await runShard('子对话与计划', async (api) => {
     })
     // 子对话刚起来那一刻可能还没算进父对话的计数（并行跑全量时 CPU 被抢，窗口更宽）：等它出现，
     // 不要用一次断言把「晚几十毫秒」判成失败。真的不出现时 waitFor 会带着等了多久超时
-    await waitFor(async () => ((await call('GET', `/tasks/${parent.id}`)).childrenWorking ?? 0) >= 1, {
+    await waitFor(async () => ((await call('GET', `/tasks/${parent.id}`)).live?.childrenWorking ?? 0) >= 1, {
       label: '父对话详情也带上还在运行的子对话数：标题栏据此转圈',
     })
     await call('POST', `/tasks/${parent.id}/presence`, { viewerId: 'e2e', active: false })

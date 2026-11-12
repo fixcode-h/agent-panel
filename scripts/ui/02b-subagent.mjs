@@ -9,7 +9,7 @@
  */
 
 import { runShard } from './harness.mjs'
-import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
+import { childView, closeChildTab, openCartTask, patchDemoOnce, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
   const { base, page, check, errors, settle } = api
@@ -874,8 +874,10 @@ await runShard(import.meta.filename, async (api) => {
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k))
+    // 用 patchDemoOnce 在重新加载、演示后端还没跑起来之前改：在当前页 evaluate 里改 localStorage 再 reload，
+    // 当前页的演示后端（父对话在跑的模拟执行）会在 reload 之前把内存里的旧数据写回去，改动被盖掉
+    // （子对话还是「已收起」、没有诊断报告，这一段七条断言一起失败，见 docs/lessons/ui-check-demo-data.md）
+    await patchDemoOnce(p, 'diagnosis-report', (db) => {
       const parent = db.tasks.find((x) => x.title.includes('购物车右上角'))
       // 用一个已经停下的子对话（演示里在跑的子对话会被模拟执行改写消息）：解决标记去掉，等确认期间算执行中
       const kid = db.tasks.find((x) => x.parentTaskId === parent.id && x.title.includes('修侧栏时间显示'))
@@ -991,8 +993,7 @@ await runShard(import.meta.filename, async (api) => {
       })
       localStorage.setItem(`task-child:${parent.id}`, kid.id)
       localStorage.removeItem(`task-run:${parent.id}`)
-      localStorage.setItem(k, JSON.stringify(db))
-    }, key)
+    })
     await p.reload()
     await backToTask()
     // 父对话不为它单独放一行：等报告期间它照常是在跑的子对话，那一行的说明写在等什么

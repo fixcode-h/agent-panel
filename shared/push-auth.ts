@@ -6,7 +6,7 @@
  * 回答只对这一个顶层对话有效（新对话重新问一次）；子对话不碰远端，拿不到这个工具。
  * 放在单独的文件里：engine.ts、schema.ts、runner.ts 都到了行数上限
  */
-import type { EngineHost, Orchestra } from './engine.ts'
+import type { EngineHost, Orchestra } from './engine-host.ts'
 import type { Task } from './schema.ts'
 
 export const ASK_PUSH = 'ask_push'

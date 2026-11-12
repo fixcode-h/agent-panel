@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Orchestra } from '../../shared/engine.ts'
+import type { Orchestra } from '../../shared/engine-host.ts'
 import { PANEL_TOOL_NAMES } from '../../shared/panel-tools.ts'
 import { callOrchTool, findTool, orchTools, PANEL_TOOLS, toolHint } from './registry.ts'
 

@@ -653,9 +653,6 @@ function diffStat(diff: unknown) {
   return { add, del }
 }
 
-// 剥外壳的规则和钩子按命令前缀比共用一份（shared/shell-command.ts），这里照旧导出给测试
-export { unwrapShell }
-
 function rel(cwd: string, p: unknown) {
   if (typeof p !== 'string' || !p) return ''
   const r = path.isAbsolute(p) ? path.relative(cwd, p) : p

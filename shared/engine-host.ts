@@ -1,38 +1,21 @@
 /**
  * 执行引擎和宿主之间的类型：EngineHost（宿主要提供的能力）、Orchestra（面板工具）、Agent 调用和结果。
  * 从 engine.ts 拆出来：那边顶到了行数上限，engine-budget.ts 等模块只要类型时不必再反向依赖 engine.ts（以前有类型环）。
- * engine.ts 照旧把这些类型转出，调用方 import 不用改
+ * engine.ts 照旧把这些类型转出，调用方 import 不用改。
+ * EngineHost / Orchestra 只是按能力拆开的小接口（shared/host/）的组合，加新能力时加进小接口或新开一个
  */
 
-import type { BugLevel } from './bug-diagnosis-schema.ts'
-import type { DiagnosisInput } from './bug-diagnosis.ts'
-import type { BugSource } from './bug-quotes.ts'
 import type { ReviewTarget } from './clis.ts'
 import type { DocRootInfo } from './doc-root.ts'
-import type { GateStep, TurnExtra } from './done-evidence.ts'
-import type { DocsFirstInput, ModuleDocsLookup } from './docs-first.ts'
-import type { ExperienceInput, ProjectExperience } from './experience.ts'
-import type { FlowRunHost, RunTools } from './flow-run-orch.ts'
-import type { PickedFlow, WorkflowEntry } from './flow-run.ts'
-import type { HandoffInput } from './handoff.ts'
 import type { BeforeEndDecision, BeforeEndInput } from './hooks.ts'
-import type { LessonQuery } from './lessons.ts'
-import type { PlanItemInput, WrapUpAnswer } from './plan.ts'
-import type { ReviewOverride, TriageItem } from './review-gate.ts'
-import type {
-  Agent,
-  AskKind,
-  GlobalLesson,
-  NodeTier,
-  ParamValues,
-  ProjectLesson,
-  StopReason,
-  Task,
-  TaskStep,
-  TestStep,
-  Workflow,
-} from './schema.ts'
+import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from './schema.ts'
 import type { Blocker } from './submitted.ts'
+import type { BugHost, OrchBug } from './host/bug.ts'
+import type { BuildHost, OrchBuild } from './host/build.ts'
+import type { ConversationHost, OrchConversation } from './host/conversation.ts'
+import type { KnowledgeHost, OrchKnowledge } from './host/knowledge.ts'
+import type { OrchPlan, PlanHost } from './host/plan.ts'
+import type { OrchVcs, VcsHost } from './host/vcs.ts'
 
 /** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
 export type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
@@ -163,7 +146,7 @@ export interface HelperBatch {
   take: () => string
 }
 
-export interface Orchestra {
+export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuild, OrchKnowledge, OrchBug {
   /** 调用者的节点 id */
   self: string
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
@@ -217,180 +200,9 @@ export interface Orchestra {
   ask(question: string, ms: number): Promise<{ answer?: string; pending?: boolean; error?: string }>
   send(to: string, text: string): Promise<{ ok: boolean; info: string }>
   inbox(): string[]
-  /** 父对话能启动工作流（角色开了 canPlan、能分派子对话）：start_workflow 在它名下起一次工作流运行 */
-  planning: boolean
-  /** 按 id 或名字找能启动的工作流（空是项目默认的）；找不到时 info 列出可选的 */
-  pickWorkflow(idOrName: string): { ok: false; info: string } | { ok: true; flow: PickedFlow }
-  /** 工作流运行的那几样操作（flow-run-orch.ts）：起、看、补充、调整、代答、终止、合回 */
-  runs: RunTools
-  /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
-  plans: boolean
-  /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
-  setPlan(input: {
-    title?: string
-    steps?: PlanItemInput[]
-    partial?: boolean
-    summary?: string
-  }): Promise<{ ok: boolean; info: string }>
-  finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
-  /** 对话（Agent 模式）交代这一轮怎么结束：done / blocked（shared/end-turn.ts）；其余身份没有这个工具 */
-  endTurn?: (outcome: string, need: string) => Promise<{ ok: boolean; info: string }>
-  /** 等你操作：请用户离开对话去做一件事（shared/user-action.ts）；和 endTurn 同样只给对话 */
-  requestUserAction?: (input: Record<string, unknown> | undefined) => { ok: boolean; info: string }
-  /** 协调 Agent：能不能创建 / 给子对话发消息 */
-  coordinator: boolean
-  conversations(): Promise<string>
-  /**
-   * step：计划里哪一步在等这个子对话，开出去以后它挂成等待中。
-   * role：子对话用哪个高级角色（名字），不写用「执行」；route：分诊记录（理解、理由、假设），画成分诊卡
-   */
-  createConversation(
-    title: string,
-    message: string,
-    files?: string[],
-    step?: string,
-    extra?: {
-      role?: string
-      route?: RouteInput
-      bug?: boolean
-      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
-      fix?: boolean
-      /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
-      edits?: boolean
-      /** 父对话确认子对话不需要它目录里没提交的改动（独立分支看不到它们） */
-      ignoreDirty?: boolean
-      /** Bug 的级别初判：子对话的档案从它开始（快速级别根因和方案合成一次确认） */
-      level?: BugLevel
-      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/child-after.ts） */
-      after?: string[]
-    } & DocsFirstInput,
-  ): Promise<{ ok: boolean; id?: string; info: string }>
-  sendToConversation(
-    id: string,
-    message: string,
-    step?: string,
-    route?: RouteInput,
-    /** 把这个子对话正在处理的问题升级成用户报的 Bug（send_to_conversation 写了 kind: "bug"，ADR 0057） */
-    bug?: { level?: BugLevel },
-  ): Promise<{ ok: boolean; info: string }>
-  /** 调用者的角色挂了能力：可以 use_capability 就地加载它们的做法 */
-  capabilities: boolean
-  loadCapability(name: string, params?: ParamValues): { ok: boolean; info: string }
-  /** 父对话可以就地做微小改动（shared/inline-edit.ts） */
-  inlineEdit: boolean
-  beginInlineEdit(files: string[], reason: string, route?: RouteInput): Promise<{ ok: boolean; info: string }>
-  endInlineEdit(): Promise<{ ok: boolean; info: string }>
-  /** 子对话（连同它的工作流节点）：和父对话通讯、认领要改的文件；子对话之间不能直接通讯 */
-  child: boolean
-  /** 子对话和兄弟共用目录、需要认领文件（独立分支里的不用） */
-  claims: boolean
-  /** 对话（项目对话、子对话）：长命令交给面板在后台跑，跑完把结果推回这个对话 */
-  canBackground: boolean
-  runBackground(input: {
-    command: string
-    name: string
-    cwd: string
-    exclusive: boolean
-    timeoutMinutes?: number
-    service?: boolean
-    step?: string
-  }): Promise<{
-    ok: boolean
-    info: string
-  }>
-  /** 后台命令的命令过工具前守卫（runner 装上，见 server/hooks/dispatch.ts 的 commandGuard）：拒绝时返回原因 */
-  guardCommand?: (command: string) => Promise<string>
-  /**
-   * 插件的改文件类工具（McpTool.effect = 'edit'）执行前过工具前守卫（runner 装上，见 server/hooks/dispatch.ts 的 editGuard）：
-   * 只读身份、Bug 先诊断、独立分支越界、凭据这些规则以前只认 CLI 自己的改文件工具。拒绝时返回原因
-   */
-  guardEdit?: (tool: string, paths: string[], input: Record<string, unknown>) => Promise<string>
-  checkBackground(id: string): string
-  stopBackground(id: string): { ok: boolean; info: string }
-  /** 子对话请父对话收尾：独立分支里由父对话合回原分支，共用目录、P4、没有版本管理时由父对话验收（结果推回来） */
-  canSubmit: boolean
-  /** 子对话在自己的独立分支里（Git worktree）：收尾时面板提交并合回；不在的改动已经在父对话的目录里 */
-  isolated: boolean
-  /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
-  canBeginEdit: boolean
-  beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitMerge(
-    note: string,
-    tests: string,
-    build?: boolean,
-    handoff?: HandoffInput,
-    /** 对最近一次评审每条高级、中级意见的处置（见 shared/review-gate.ts、ADR 0009） */
-    triage?: TriageItem[],
-    /** 显式放行（用户明确要求「已知问题也合并」）：门禁真的拦下时才生效，记录写在任务上 */
-    override?: ReviewOverride,
-  ): Promise<{ ok: boolean; info: string }>
-  /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
-  ueBuild: '' | 'child' | 'parent'
-  /** children：父对话替哪些子对话申请（结果也推给它们） */
-  requestBuild(note: string, step?: string, children?: string[]): Promise<{ ok: boolean; info: string }>
-  /** 顶层对话：名下有子对话时收尾它们（finish_child，见 ADR 0005） */
-  parentOf: boolean
-  finishChild(id: string): Promise<{ ok: boolean; info: string }>
-  /** 父对话之间：列出同一项目里的其他父对话、给它们传话 */
-  peers: boolean
-  listPeers(): Promise<string>
-  messagePeer(id: string, text: string): Promise<{ ok: boolean; info: string }>
-  /**
-   * 给父对话发消息。waitFix 是被「不是自己改出来的报错」卡住的计划步骤：那一步挂上等父对话通知修复，
-   * 子对话接着做别的步骤，父对话安排好修复、发消息回来时面板把它退回进行中（见 releaseParentWait）
-   */
-  toParent(
-    text: string,
-    question: boolean,
-    options?: string[],
-    kind?: AskKind,
-    waitFix?: string,
-  ): Promise<{ ok: boolean; info: string }>
-  claim(paths: string[]): { ok: boolean; info: string }
-  release(paths: string[]): { ok: boolean; info: string }
-  /**
-   * 这次运行有共享状态（存在 task.runs 里）：工作流运行才有，对话模式没有。
-   * 没有时 read_state / write_state 根本不注册，注册了也只会让模型每次都调出「这次运行没有共享状态」
-   */
-  sharedState: boolean
-  /** 本次运行的共享状态：读快照 / 写一个键 */
-  readState(): string
-  writeState(key: string, value: string): { ok: boolean; info: string }
-  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有。子任务只读不记（record 为空）：
-   * 它不和用户对话、常并行多只，值得记的交回派它的对话决定，免得各记一条重复、口径不一的 */
-  lessons?: {
-    find(files: string[], opts?: LessonQuery): Promise<string>
-    record?(input: LessonInput): Promise<{ ok: boolean; info: string }>
-  }
-  /** 项目经验（shared/experience.ts）：按关键词查；设置里关了经验、不在项目里时没有。子任务也能查 */
-  experience?: {
-    find(query: string, files: string[]): Promise<string>
-    list(): Promise<ProjectExperience[]>
-    /** 记一条（/learn 命令让 Agent 学一件事）：子任务没有，值得记的交回派它的对话 */
-    record?(input: ExperienceInput): Promise<{ ok: boolean; info: string }>
-  }
-  /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
-  p4Split?: EngineHost['p4Split']
-  /** 项目设了 cherry-pick 目标：由面板核对后搬（只收这个对话自己的提交 / 改动，见 server/cherry-pick.ts） */
-  cherryPick?: EngineHost['cherryPick']
-  /** 推送授权（ask_push，见 shared/push-auth.ts）：只有项目推送策略为「问一次」的顶层对话有 */
-  askPush?: (input: { branch?: string; summary?: string }) => Promise<{ ok: boolean; info: string }>
-  /** Bug 诊断报告（ADR 0045）：父对话派来的 Bug 子对话才有，交了等用户确认方案再改 */
-  diagnose?: (input: DiagnosisInput) => { ok: boolean; info: string }
-  bugCase?: (input: DiagnosisInput) => { ok: boolean; info: string } // update_bug_case（ADR 0046）
-  requestLogs?: (input: DiagnosisInput) => { ok: boolean; info: string } // request_logs：加好日志请用户复现
-  /** Chat 模式的跨对话记忆（remember 工具，server/chat-memory.ts）：只有 Chat 页的对话有 */
-  remember?: (text: string, forget?: boolean) => Promise<{ ok: boolean; info: string }>
 }
 
-/** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
-export interface P4SplitArgs {
-  from?: string
-  files?: string[]
-  descriptions: Partial<Record<'C++' | 'XLSX' | 'Lua' | 'Other', string>>
-}
-
-export interface EngineHost {
+export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost {
   task: Task
   agents: Agent[]
   /** 所有工作流（节点可以引用其他工作流） */
@@ -428,8 +240,6 @@ export interface EngineHost {
   prewarmTurnDoneAt?: string
   changed: (flush?: boolean) => void
   newId: () => string
-  /** Bug 诊断报告交上来时取原文：读项目文件、取引入改动的 diff（shared/bug-quotes.ts）；没有就不取快照 */
-  bugSource?: BugSource
   runAgent: (call: AgentCall) => Promise<AgentResult>
   /**
    * 调用停在工具里等别人（wait_agents 等子任务、ask_main 等主 Agent）：宿主让出这次调用的 API 并发名额，
@@ -447,11 +257,6 @@ export interface EngineHost {
   nodeNote?: () => string
   /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */
   saveHandoff?: (step: Pick<TaskStep, 'id' | 'title'>, text: string) => Promise<string>
-  /**
-   * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
-   * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0010）
-   */
-  reviewDiff?: (since?: string, files?: string[]) => Promise<ReviewDiff | null>
   /** 有节点失败或用户停止后置位：所有层级的流程都不再启动新节点、新一轮验收 */
   halted?: boolean
   /** 把一段话交给正在跑的节点（CLI 支持执行中补充时）；交不了返回 false，改放进它的收件箱 */
@@ -468,8 +273,6 @@ export interface EngineHost {
    * 其余是父对话收尾、换 CLI、面板重启这些顺带结束的动作。收尾时读现值的，所以要传函数
    */
   stopReason?: () => StopReason | undefined
-  /** 项目里可选的工作流目录：父对话按名称、说明、适用场景和节点概览挑一个（ADR 0044） */
-  workflowCatalog?: () => WorkflowEntry[]
   /**
    * 写文件的格式（项目设置优先，没设时跟随全局），写进公共部分让 Agent 照着做；
    * 不传时说明文件不带这一段（在线演示）
@@ -489,247 +292,4 @@ export interface EngineHost {
   resolveWorkflow?: (
     id: string,
   ) => { workflow: Workflow; workflows: Workflow[]; skillSlots: Record<string, string> } | undefined
-  /**
-   * 项目打开了「改了代码要跑过测试步骤才能结束」（Project.requireVerify）：end_turn 记成做完前按这些步骤核对（shared/done-evidence.ts）。
-   * 没开时不传，只记完成依据、卡片上标出来
-   */
-  verifyGate?: { steps: GateStep[] }
-  /**
-   * 这一轮工具调用之外的完成依据（shared/done-evidence.ts 的 TurnExtra）：插件工具报的改动和验证；
-   * 打开了 verifyGate 时还有命令改的文件（工作区快照差）。end_turn(done) 时现取，见 server/exec/turn-extra.ts
-   */
-  turnExtra?: () => Promise<TurnExtra>
-  /** 子对话列表：协调 Agent 判断这条消息该交给哪个子对话 */
-  listConversations?: () => Promise<
-    {
-      id: string
-      title: string
-      status: string
-      /** 状态（ConvState）：判断原来的子对话还能不能接着做（failed 才允许另建子对话接手） */
-      state?: string
-      /** 正在执行或排队等着执行：有这样的子对话时父对话自己不改文件 */
-      busy?: boolean
-      summary: string
-      at: string
-      /** 这会儿在做什么（正在调的工具、计划做到第几步）：有空就不至于以「没动静」为由猜它卡住了 */
-      doing?: string
-      /** 在等什么（等用户回答、等后台命令、等子任务）：不是在跑也不是卡住 */
-      waiting?: string
-      /** 最后有动静的时间：多久没新输出，父对话一眼能看出来 */
-      lastActivityAt?: string
-      /** 创建时间、是否已经收尾完成：计划按它们对齐等待中的步骤（见 plan.ts 的 linkKids） */
-      createdAt?: string
-      resolved?: boolean
-    }[]
-  >
-  /** 新建子对话并异步执行，返回后父对话继续；完成后由宿主把结果回报到父对话 */
-  createConversation?: (input: {
-    title: string
-    message: string
-    agentId?: string
-    /** 父对话划给这个子对话的文件 / 目录：创建时替它认领 */
-    files?: string[]
-    /** 父对话派来的 Bug（ADR 0045）：子对话修之前要交诊断报告给用户确认 */
-    bug?: boolean
-    /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
-    fix?: boolean
-    /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
-    edits?: boolean
-    /** 不拦父对话目录里没提交的改动（server/tasks/dirty-parent.ts） */
-    ignoreDirty?: boolean
-    /** Bug 的级别初判（Task.bugCase.level 的初值） */
-    level?: BugLevel
-    /** 排在哪些子对话之后（Task.waitAfter）：它们都合回后才启动 */
-    after?: string[]
-  }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
-  /** 给已有子对话追加消息并异步执行 */
-  sendToConversation?: (
-    id: string,
-    message: string,
-    bug?: { level?: BugLevel },
-  ) => Promise<{ ok: boolean; info: string }>
-  /** 工作流运行的操作（父对话用，flow-run-orch.ts）：宿主在父对话名下起运行、补充、调整、终止、合回 */
-  runs?: FlowRunHost
-  /**
-   * 父对话的就地微改动（只有项目顶层对话、角色开了 inlineEdit 时有）：begin 校验护栏并记下基线，
-   * end 按真实改动核对、越界时写提示（见 shared/inline-edit.ts）
-   */
-  inlineEdit?: {
-    begin(files: string[], reason: string): Promise<{ ok: boolean; info: string }>
-    end(): Promise<{ ok: boolean; info: string }>
-  }
-  /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、在里面验证完合回原分支，claim 共用目录认领文件 */
-  childIsolation?: 'claim' | 'worktree'
-  /** 父对话所在目录现在的分支：父对话不开独立分支，子对话从这里开、合回这里 */
-  branch?: string
-  /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。父对话要推送时先合到这里再推；子对话的完成只管合回这里，与推送无关 */
-  worktreeHome?: string
-  /**
-   * 这个对话的收尾（面板保证它是计划的最后一步，见 plan.ts 的 ensureWrapUp）：
-   * merge 子对话的独立分支合回父对话所在的分支，p4 子对话按文件类型分进各自的 pending changelist，
-   * push 父对话把分支推到远端；不用收尾的不传，'none' 是明确不推送（去掉计划里还挂着的推送收尾）
-   */
-  wrapUp?: WrapUpAnswer
-  /**
-   * 子对话请父对话收尾（不管用哪种版本管理都有）：评审、测试、交接、待回答的提问都在这里校验。
-   * 独立分支里的由父对话合回原分支（面板排队试合并，有冲突撤回，结果推回子对话）；其余的由父对话验收后标完成
-   */
-  submitMerge?: (
-    note: string,
-    tests: string,
-    build?: boolean,
-    handoff?: HandoffInput,
-    triage?: TriageItem[],
-    override?: ReviewOverride,
-  ) => Promise<{ ok: boolean; info: string }>
-  /**
-   * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
-   * child：子对话不编译，改完向父对话申请；build 为 true 的 submit_merge 合回去后也自动申请。
-   * parent：父对话收到申请（或用户要求）后向面板占位编译，面板按编译目录排队：同一目录同一时间只编译一次，
-   * 各自 worktree 的目录互不占位；结果推回父对话
-   */
-  /** 子对话在自己的独立分支（Git worktree）里：分支目录、提交和合回都由面板管 */
-  isolated?: boolean
-  ueBuild?: {
-    role: 'child' | 'parent'
-    request: (note: string, children?: string[]) => Promise<{ ok: boolean; info: string; id?: string }>
-  }
-  /**
-   * 顶层项目对话：收尾名下的子对话（子对话 submit_merge 请求后，父对话调用 finish_child）。
-   * 面板合回它的分支、标完它计划的收尾步骤、结束它并删除独立分支（见 ADR 0005）
-   */
-  finishChild?: (id: string) => Promise<{ ok: boolean; info: string }>
-  /** 父对话：同一项目里的其他父对话（顶层对话），building 是它占着的编译（没有为空） */
-  peers?: () => Promise<{ id: string; title: string; status: string; busy: boolean; building: string }[]>
-  /** 父对话给另一个父对话传话：它正在执行就实时送达，空闲就放进它的收件箱 */
-  messagePeer?: (id: string, text: string) => Promise<{ ok: boolean; info: string }>
-  /**
-   * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
-   * 不传时提示里不带这一段（没有项目的聊天、在线演示）
-   */
-  verify?: {
-    steps: TestStep[]
-    platform: string
-    wslDistro: string
-    scaled: boolean
-    /**
-     * 范围为 parent（全量、合并后由父对话跑）的步骤由谁跑（见 ADR 0018 / 0020）：独立分支的子对话是 child（它不跑），
-     * 父对话是 parent（面板自动跑、结果直接回传子对话）。只有 Git 项目、这些步骤真的生效时才传
-     */
-    parentRun?: 'child' | 'parent'
-    /**
-     * 这次任务实际改了哪些文件（服务端从 git 改动统计来）：有它就在提示词里直接给出「本轮该跑哪几条 + 命令」，
-     * 不再只给规则让 Agent 自己筛
-     */
-    changedFiles?: string[]
-  }
-  /**
-   * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面接着做（能跨目录续接的 CLI 带着原会话过去）。
-   * 只有对话有（工作流在创建时就建好了）
-   */
-  beginEdit?: () => Promise<{ ok: boolean; info: string }>
-  /** 这一轮的 CLI 自带待办会被面板解析显示（CLI 定义的 todos）：Chat 模式据此决定怎么说计划（shared/chat-prompt.ts） */
-  cliTodos?: boolean
-  /** Chat 模式的「关于我」和记忆（server/chat-memory.ts）：提示词带上，remember 工具往里记；只有 Chat 页的对话有 */
-  chatMemory?: { about: string; items: string[]; remember: NonNullable<Orchestra['remember']> }
-  /**
-   * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
-   * exclusive 的（编译这类）按项目排队，同一时间只跑一个
-   */
-  runBackground?: (input: {
-    command: string
-    name: string
-    cwd: string
-    exclusive: boolean
-    timeoutMinutes?: number
-    /** 开发服务器、监听这类常驻进程：不催、不挂计划等待，对话不算在等它（server/background.ts 的 BgJob.service） */
-    service?: boolean
-    /** 发起它的子任务步骤：子任务调用时写它自己的步骤 id，结果推回时据此标注来源 */
-    step?: string
-  }) => Promise<{
-    ok: boolean
-    info: string
-    /** 后台命令的编号：计划步骤挂等待时用，结果回来按它找到步骤 */
-    id?: string
-  }>
-  /** 查后台命令：不传编号列出这个对话的全部 */
-  checkBackground?: (id: string) => string
-  /** 停掉这个对话的一条后台命令：对话看出它卡住了时用 */
-  stopBackground?: (id: string) => { ok: boolean; info: string }
-  /**
-   * 父对话发布的全局规则（「/rule」）：子对话和它的工作流节点每次调用都带上，必须遵守。
-   * 父对话自己也带上，分派时提醒子对话
-   */
-  rules?: string[]
-  /** 父对话在对话设置里写的目标：父对话和子对话都看得到 */
-  goal?: string
-  /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
-  takeInbox?: () => { title: string; text: string }[]
-  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定，kind 区分提问和收尾建议 */
-  messageParent?: (
-    text: string,
-    question: boolean,
-    options?: string[],
-    kind?: AskKind,
-    /** 请父对话安排修复的报错（message_parent 带 wait_fix）：按这个字段判，不从正文开头反推（ADR 0041 第 16 节） */
-    fix?: boolean,
-  ) => Promise<{ ok: boolean; info: string }>
-  /**
-   * 子对话点名「只在父对话执行」的角色（runIn: 'parent'）时，把它转交父对话创建子任务（见 ADR 0019）。
-   * 同步返回：排进父对话的队列也算交出去了（子对话不等结果）；父对话接不了
-   * （当前对话没有父对话、父对话自己也是被派出来的）返回 ok: false，让调用方看到明确原因
-   */
-  forwardSpawn?: (spec: HelperSpec) => { ok: boolean; info: string; id?: string }
-  /**
-   * 引擎每次开始调对话 AI / 调完时回调（见 ADR 0019）：
-   * 开始调之前传这一轮的 Orchestra，服务端据此把子对话转交来的子任务直接派进来；调完传 undefined 清掉引用。
-   * 等子任务结果、跑计划、执行工作流节点这些阶段不在回调范围内——那时派出的子任务结果交不回来，留给下一轮
-   */
-  onOrchestra?: (orch: Orchestra | undefined) => void
-  /**
-   * 对话自己的结束前判断（ADR 0049）：计划没做完、子对话请求收尾没处理、没列计划却做了一半时拦住，在同一轮里接着做。
-   * 由服务端按计划和等待状态答（server/tasks/before-end.ts）；子任务、节点交没交结果由引擎自己判断，不走这里
-   */
-  beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
-  /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */ claimFiles?: (paths: string[]) => {
-    granted: string[]
-    held: { path: string; by: string; state?: string }[]
-  }
-  releaseFiles?: (paths: string[]) => number
-  /** 项目教训：按要改的文件查，Agent 被纠正后自己记一条（只有项目里的对话和节点有） */
-  lessons?: {
-    list: () => Promise<ProjectLesson[]>
-    /** 全局教训：只读，Agent 改不了 */
-    globals?: () => Promise<GlobalLesson[]>
-    record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
-    /** 查到并交出全文的那几条：记一次命中（shared/knowledge-hits.ts），不等写完 */
-    hit?: (ids: string[]) => void
-  }
-  /** 项目经验：每次查都现读（刚学到的也能查到）；设置里关了经验时宿主不给 */
-  experience?: {
-    list: () => Promise<ProjectExperience[]>
-    record: (input: ExperienceInput) => Promise<{ ok: boolean; info: string }>
-    /** 同 lessons.hit */
-    hit?: (ids: string[]) => void
-  }
-  /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
-  p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
-  cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
-  /** 弹推送授权卡等用户点（回答由宿主记进 task.remotePush，不受「提问」开关影响）；停止时 null */
-  askPush?: (info: { branch?: string; summary?: string }) => Promise<{ allow: boolean; message?: string } | null>
-  moduleDocs?: ModuleDocsLookup // 查模块文档（先建文档再开子对话，shared/docs-first.ts）
-}
-
-/** Agent 用 record_lesson 记的一条教训 */
-export interface LessonInput {
-  title: string
-  rule: string
-  cause: string
-  paths: string[]
-  /** 标签：优先用这个项目已有的 */
-  tags?: string[]
-  /** 改写已有的那条（用户的新要求和它冲突、找到两全的做法时）：那条的 id */
-  replaces?: string
-  /** 为什么改写 */
-  why?: string
 }

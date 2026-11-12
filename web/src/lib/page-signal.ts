@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { openPageStream } from './live/page-stream'
 import { runUiAction } from './ui-actions'
 
 /**
@@ -47,9 +48,9 @@ export function usePageSignals(onView: (view: string) => void) {
       apply()
       if (p.view && Date.now() < p.until) cb.current(p.view)
     }
-    const es = new EventSource('/api/app/events')
-    es.addEventListener('focus', (e) => {
-      const s = JSON.parse((e as MessageEvent).data) as { mark: string; view?: string }
+    const es = openPageStream()
+    es.on('focus', (e) => {
+      const s = JSON.parse(e.data) as { mark: string; view?: string }
       pending = { view: s.view, until: Date.now() + 8000 }
       mark = s.mark
       apply()
@@ -63,9 +64,9 @@ export function usePageSignals(onView: (view: string) => void) {
       window.focus()
     })
     // 对话里的 Agent 要页面做的界面操作（见 ui-actions.ts）：不等切到前台，用户可能正看着对话
-    es.addEventListener('ui', (e) => {
+    es.on('ui', (e) => {
       try {
-        const s = JSON.parse((e as MessageEvent).data) as { action: string; args: Record<string, unknown> }
+        const s = JSON.parse(e.data) as { action: string; args: Record<string, unknown> }
         runUiAction(s.action, s.args)
       } catch {}
     })

@@ -1,4 +1,4 @@
-import type { AgentResult } from '../../shared/engine.ts'
+import type { AgentResult } from '../../shared/engine-host.ts'
 import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
 import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { makeAlert } from '../../shared/alerts.ts'

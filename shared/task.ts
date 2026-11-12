@@ -9,6 +9,7 @@ import {
   type StopReason,
   type Task,
   type TaskData,
+  type TaskJob,
   type TaskMessage,
   type TaskRequest,
   type TaskTurn,
@@ -414,8 +415,6 @@ export function taskDuration(
   if (ms > 0 || task.status === 'running') return ms
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
-
-export { canPickRun, withTaskModel } from './task-run.ts'
 
 /**
  * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。
@@ -1522,26 +1521,18 @@ export function splitStepJobs<S extends { id: string; slot?: string }, J extends
  * 列表用的任务摘要：侧栏、项目首页只要标题、状态、进度和用量。去掉消息内容、节点输出这些大块数据，
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
-/**
- * 子任务的运行状态和排序在 shared/task-helpers.ts（判定只写那一处）；
- * 这里只转出，调用方仍按原路径从 @shared/task 引用。
- */
-export {
-  helperActive,
-  helperRank,
-  helperRunning,
-  helperShown,
-  helpersWorking,
-  newestFirst,
-  sortHelpers,
-} from './task-helpers.ts'
 
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
-  Partial<Pick<Task, 'childrenWorking' | 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
-    childrenNeeds?: Task['childrenNeeds']
+  Partial<Pick<Task, 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
+    /**
+     * 运行时的几项（名下在跑的子对话数、后代在等你的数、后台命令）：不在任务记录里，
+     * 由服务端算 TaskLive 时补进来（shared/live/task-live.ts 的 taskLiveOf），或者服务端内部判定时自己传
+     */
+    childrenWorking?: number
+    childrenNeeds?: number
+    jobs?: TaskJob[]
     runs?: Task['runs']
-    jobs?: Task['jobs']
     archived?: Task['archived']
     worktree?: Task['worktree']
     diagnoses?: Task['diagnoses']
@@ -1601,7 +1592,7 @@ export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
 export const taskTurnUnread = (x: {
   turnDoneAt?: string
   turnSeenAt?: string
-  jobs?: Task['jobs']
+  jobs?: TaskJob[]
   /** 后台命令数：/children 的摘要里只有数量（不读整份任务），有它一样算「还在等结果」 */
   background?: number
 }) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.some((j) => !j.service) && !x.background
@@ -1652,9 +1643,6 @@ export function taskBusy(x: TaskFactsInput) {
   return s === 'running' || s === 'waiting'
 }
 
-// 「等结果」时在等什么、各处的状态短词都在 shared/task-word.ts（分析稿 A8）：这里只转出，调用方仍可从 @shared/task 引用
-export { taskWaitText } from './task-word.ts'
-
 /**
  * 列表里「执行中」的条数：侧栏项目名的「N 个执行中」、标签页标题的 (n) 都读这个，
  * 行首图标也是同一个判定（taskBusy）——以前标题只看 working，两行在转圈却写「1 个执行中」。
@@ -1701,25 +1689,6 @@ export function keepAliveHolding(x: {
   if (!x.live) return !!x.more || !!(x.children || x.background)
   if (x.more) return true
   return !!x.task && keepAliveBusy(x.task, { background: x.background, children: x.children })
-}
-
-/**
- * 回收站里的一行：设置页「回收站」只显示这几项（标题、删除时间、还剩几天，见 server/tasks.ts 的 GET /tasks/trash）。
- * 保留期的说法只由 leftDays 算，前端不再自己拿删除时间推一遍
- */
-export interface TrashRow {
-  id: string
-  title: string
-  projectId: string
-  parentTaskId: string
-  /** 进回收站的时间 */
-  deletedAt: string
-  /** 还剩几天被物理删除，0 表示下次清理就删 */
-  leftDays: number
-  /** 跟着一起进回收站的子对话数 */
-  children: number
-  /** 独立分支状态：active 的恢复后能接着用，其他没有可用的分支 */
-  worktree: string
 }
 
 /** 推给页面时，最近这么多条消息原样给（执行中的、刚看的都在这里面） */
@@ -1789,7 +1758,7 @@ export function autoArchivePicks(
     .map((x) => x.id)
 }
 
-export function taskSummary(t: Task): Task {
+export function taskSummary<T extends Task>(t: T): T {
   const first = t.messages.find((m) => m.role === 'user')
   const plan = openPlan(t) ? activePlan(t) : undefined
   const left = planLeft(t)

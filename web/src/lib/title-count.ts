@@ -1,7 +1,7 @@
 /**
  * 标签页标题里的「(n)」：n 是正在执行的任务数。
  *
- * 「正在执行」只在 taskBusy 里定义（自己在跑、名下子对话在跑、在等派出的子任务、工作流运行没跑完）：
+ * 「正在执行」只看服务端给的 live（liveBusy：自己在跑、名下子对话在跑、在等派出的子任务、工作流运行没跑完）：
  * 侧栏「N 个执行中」、行首转圈、标题计数都读它，不再各算一套——只看 working 会因为子对话在跑、
  * 后台命令在跑而少算，出现「两行在转圈、标题写 (1)」。
  *
@@ -12,6 +12,7 @@
  * 这里只有纯计算，定时器在 notify.ts 的 useRunningTitle 里；单测用模拟时钟回放抖动序列。
  */
 import { t } from '@shared/i18n'
+import { liveBusy, type TaskLive } from '@shared/live/task-live'
 
 /** 数量增加（不是从 0 起来）时稳这么久才改标题 */
 export const TITLE_SETTLE_UP = 400
@@ -29,8 +30,8 @@ export interface TitleState {
 
 const clean = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0)
 
-/** 还在执行的任务数：定义只在 shared/task.ts 的 taskBusyCount（侧栏、行首转圈同一个判定） */
-export { taskBusyCount as countBusy } from '@shared/task'
+/** 还在执行的任务数：和侧栏、行首转圈同一个判定（shared/live/task-live.ts 的 liveBusy） */
+export const countBusy = (lives: Pick<TaskLive, 'state'>[]) => lives.filter(liveBusy).length
 
 /** 标题本体；托盘标记由 page-signal.ts 接在后面 */
 export function titleFor(count: number): string {

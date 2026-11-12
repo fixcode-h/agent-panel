@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from './api'
+import { takeLive } from './live/store'
 
 type Patch = { meta: Omit<Task, 'messages'>; messages: TaskMessage[]; total: number }
 
@@ -105,10 +106,12 @@ export function useTaskStream(
       cb.current(t)
     }
     es.addEventListener('full', (e) => {
-      emit(JSON.parse((e as MessageEvent).data))
+      // live（运行时状态）放进 live/store.ts，任务记录里不带它（见 web/src/lib/live/store.ts）
+      emit(takeLive(JSON.parse((e as MessageEvent).data) as Task))
     })
     es.addEventListener('patch', (e) => {
       const p = JSON.parse((e as MessageEvent).data) as Patch
+      p.meta = takeLive(p.meta)
       if (!last.current || last.current.id !== taskId) return
       const t = mergePatch(last.current, p)
       // 对不上（漏了一段）时重新取完整的

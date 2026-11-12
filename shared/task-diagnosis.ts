@@ -8,7 +8,7 @@
 import { t } from './i18n.ts'
 import { activePlan, needsFix, openPlan, openWork, planProgress } from './plan.ts'
 import { pendingAction, waitedText } from './user-action.ts'
-import type { Task, TaskMessage } from './schema.ts'
+import type { Task, TaskJob, TaskMessage } from './schema.ts'
 import {
   childActivity,
   childActivityText,
@@ -20,7 +20,6 @@ import {
   convActive,
   convState,
   convStateText,
-  helperRunning,
   lastFailureNote,
   runRunning,
   stopReasonText,
@@ -28,6 +27,7 @@ import {
   type ChildEntry,
   type ConvState,
 } from './task.ts'
+import { helperRunning } from './task-helpers.ts'
 import { stateWord, type StateWord } from './task-word.ts'
 
 export type DiagTone = 'accent' | 'warning' | 'danger' | 'subtle' | 'success'
@@ -66,11 +66,12 @@ type DiagTask = Pick<
   | 'worktree'
   | 'parentTaskId'
   | 'apiWait'
-  | 'cliAlive'
   | 'awaitingUser'
 > & {
   runs?: Task['runs']
-  jobs?: Task['jobs']
+  /** 运行时的几项（CLI 存活、后台命令、名下子对话计数）：页面从服务端给的 live 补进来（shared/live/task-live.ts） */
+  cliAlive?: boolean
+  jobs?: TaskJob[]
   childrenWorking?: number
   childrenNeeds?: number
   archived?: boolean
