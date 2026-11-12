@@ -37,6 +37,7 @@ import {
 } from './guards.ts'
 import { bigOutputHint, bigReadDeny } from './guards-context.ts'
 import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -158,13 +159,13 @@ function restoreText(task: Task): string {
 }
 
 /** 改文件后推送教训：每个对话里同一条教训只推一次 */
-const pushed = new Map<string, Set<string>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const pushed = taskMap<Set<string>>('hooks.dispatch 推过的教训') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
-const fails = new Map<string, Map<string, number>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const fails = taskMap<Map<string, number>>('hooks.dispatch 命令连续失败') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 计划没跟上提醒：每个对话在数哪一项、动了几次手、提醒过什么（见 shared/plan-pace.ts） */
-const paces = new Map<string, PaceState>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const paces = taskMap<PaceState>('hooks.dispatch 计划进度提醒') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 改完没验证：每个对话里按哪条输入问过（同一条输入只问一次） */
-const verified = new Map<string, string>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
+const verified = taskMap<string>('hooks.dispatch 改完没验证') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 
 /**
  * 这条输入以来改过文件、最后一次改之后一条命令都没跑过：返回这条输入的 id，不该问返回空。

@@ -12,6 +12,7 @@ import {
 } from './exec/git.ts'
 import { log } from './log.ts'
 import { closeTurn, namedSince, openTurn, peekTurn, splitOwned } from './turn-owners.ts'
+import { taskMap } from './runtime/task-state.ts'
 
 /**
  * 每轮对话改了哪些文件（总结下面那张「已更改 N 个文件」卡片的数据）。
@@ -78,7 +79,7 @@ function revive(keep: TrackKeep | undefined, dir: string, carry: boolean, ignore
   }
 }
 
-const tracks = new Map<string, Track>() // 模块状态：运行时，每轮改动的快照，重启时那一轮的改动卡片可能不全
+const tracks = taskMap<Track>('turn-changes 每轮改动快照') // 运行时（task-state 登记，对话删掉时跟着清）：每轮改动的快照，重启时那一轮的改动卡片可能不全
 /** 每个对话的操作排队做：结束一轮还在拍快照时下一轮就开始了，起点要等上一轮的终点 */
 const queues = new Map<string, Promise<unknown>>() // 模块状态：排队，丢了没事
 

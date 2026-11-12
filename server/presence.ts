@@ -6,6 +6,8 @@
  * 到点也不回收，由调用方通过 setPresenceBusy 提供判定（见 server/tasks.ts 的 keepAliveBusy）。
  * 这里只负责「到时间了该放手」
  */
+import { onForgetTask } from './runtime/task-state.ts'
+
 const fixedMs = (name: string) => {
   const raw = process.env[name]
   if (!raw) return undefined
@@ -241,6 +243,9 @@ export function seenWhileWatched(taskId: string) {
 }
 
 /** 任务删除、结束后清掉记录 */
+// 对话彻底删掉时跟着清（server/runtime/task-state.ts 的 forgetTask）
+onForgetTask('presence 在场心跳', (id) => forgetPresence(id))
+
 export function forgetPresence(taskId: string) {
   clearTimer(timers, taskId)
   clearTimer(rechecks, taskId)

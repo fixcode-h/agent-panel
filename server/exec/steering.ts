@@ -8,6 +8,7 @@ import { hasHeld, heldMessage, markHeld, noteTakersOf, returnHeld, takeHeld } fr
 import { promptLangReminder } from '../../shared/prompt-lang.ts'
 import { taskLog } from '../task-log.ts'
 import { withAttachments } from '../../shared/task.ts'
+import { taskMap } from '../runtime/task-state.ts'
 
 /** 正在跑的一次 CLI 调用里能接收补充的那个：step 为空是对话，否则是工作流节点 */
 export interface Steerer {
@@ -23,7 +24,7 @@ export interface Steerer {
 /** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
 export const steers = new Map<string, Set<Steerer>>() // 模块状态：会话，跟着进程或连接一起没
 /** 工作流里正在跑的节点都收不了补充（Command Code）时，留给下一个开始的节点 */
-export const notes = new Map<string, string[]>() // 模块状态：运行时，留给下一个节点的补充，重启后丢失
+export const notes = taskMap<string[]>('exec.steering 留给下一个节点的补充') // 运行时（task-state 登记，对话删掉时跟着清）：留给下一个节点的补充，重启后丢失
 
 /**
  * 把用户消息交给正在等下一句的 CLI。
