@@ -16,7 +16,8 @@ import {
   taskMemoryTrend,
   taskTrendText,
 } from '@shared/memory-analysis'
-import { childFacts, convActive, convState } from '@shared/task'
+import { childRecordActive } from '@shared/child-row'
+import { demoPendingJobs } from './demo-children'
 import { live } from './demo-live'
 
 /** 字符串散成稳定的数字：同一个对话每次打开看到同样的 pid，截图和验证都对得上 */
@@ -133,14 +134,7 @@ export const demoCliAlive = (task: Task) => live.has(task.id) || task.working ==
  * 子对话还在运行（和正式后端的 activeChildren / childActive 一个口径）：在跑、等结果、等回答都算，不只看 working。
  * 演示里没有 startQueue 和收件箱，后台命令数按演示数据里的 jobs 算
  */
-export const demoChildActive = (x: Task) =>
-  convActive(
-    convState(
-      childFacts(x, {
-        background: (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length,
-      }),
-    ),
-  )
+export const demoChildActive = (x: Task) => childRecordActive(x, demoPendingJobs(x))
 
 export function demoKill(task: Task, pid: number) {
   const rootId = task.rootTaskId || task.id
