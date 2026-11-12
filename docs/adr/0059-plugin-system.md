@@ -46,6 +46,8 @@
 10. **插件接口 5（2026-11-11，去掉设计模式）**：用户要侧栏顶上的模式切换只留 Agent、Chat，UI 设计像模型设计那样做成图标栏的入口。设计模式只剩 UI 设计一家在用，留着它就要多维护一套侧栏下拉和 `#/pdesign` 路由，所以整个去掉：`WebPlugin.designModes`、`DesignMode`、`#/pdesign` 都没了，设计类插件一律用整页（`PluginPage`）。为此整页加两样：`split(path)`（这个位置自己分块，面板不套卡片，插件自己画左边的列表）和带 `/` 的子位置（`#/plugin/<插件>/<页面>/<a>/<b>`，`parseHash` 把第三段以后整个交给插件）。`designModes` 不再读，只用它的旧插件（ui-design 1.0.0）在新面板上看不到入口，所以升了接口版本，ui-design 1.1.0 声明 `api: 5`，旧面板装它会提示先升级面板。旧地址 `#/design/…`、`#/pdesign/ui/…` 都转到 `#/plugin/ui-design/ui/…`。
 11. **插件接口 6（2026-11-12，视频截帧拆成插件）**：用户要把视频截帧从面板核心搬成插件（ComfyUI 留在面板）。视频功能和面板缠在两处，各加一个扩展点：输入框附件——`WebPlugin.attachmentIntakes` 让插件按扩展名 / MIME 认领拖进输入框的文件，卡片只引用原路径，点开插件自己的弹窗选好要发的（帧图片），发送时卡片原位换成这些附件（面板只按 `intake` / `picks` 两个通用字段走，不认视频）；给 Agent 的截帧工具——改成插件 `tools()`，原来只在「用户在聊的对话」里给（父对话、子对话、Chat，不给派出的子任务），`PluginRun.mode` 分不出来，所以加 `PluginRun.conversation`，和面板自己的操控软件工具同一个条件。插件要用的面板模块补进开放清单：`server/download.ts`（下载 FFmpeg）、`server/task-files.ts`（帧写进对话目录）、`shared/composer.ts`、`web/src/components/ui/lightbox.tsx`。在线演示不装插件，所以演示里没有视频截帧（用户已接受）。
 
+12. **插件接口 6 续（2026-11-12，表格拆成插件）**：表格（游戏配置表）也搬成插件，它和面板缠的地方比视频多，同在接口 6 里再加三个扩展点：面板动作——`ServerPlugin.actions` 进 `server/app-actions` 的同一张动作表（`createRegistry` 的 `extra` 每次现取开着的插件，名字不合规或和面板重名的不收），Agent 经 `app_actions` / `app_do` 照旧能按主键改格子；项目设置分页——`WebPlugin.projectSections` 在项目设置导航里加一项，设置存在 `project.plugins[<插件 id>]`（`shared/schema.ts`，面板不解析内容），跟项目设置一起点保存，插件删了数据照留；组件示例——`WebPlugin.specimens` 进设置 →「组件」，守住「共用组件都要在设置里看到和微调」的规则。表格的「AI 分析表格风格」不再占配置助手的 `kind`，开放 `web/src/lib/assist-conv.ts` 的 `runPromptInProject`，插件自己出提示词、自己解析回复。评审里 xlsx 的语义差异改由插件的 `textify` 给。
+
 ## 影响与风险
 
 - 带代码的插件在面板进程里以用户权限运行，和 Agent 执行命令同级的信任；安装确认里写明，只建议装信任的来源。

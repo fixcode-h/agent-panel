@@ -38,6 +38,7 @@ import { RolesPage } from './settings/RolesPage'
 import { WorkflowsPage } from './settings/WorkflowsPage'
 import { TestsPage } from './settings/TestsPage'
 import { ExperiencePage, LessonsPage, TablesPage } from './settings/RecordPages'
+import { PluginSectionPage } from './settings/PluginSectionPage'
 import { DocsPane, McpPane, SkillsPane } from './settings/DocsPages'
 
 const projectDialogTitle = (project?: Project) =>
@@ -379,6 +380,8 @@ function FormPage({
   if (section === 'workflows')
     return <WorkflowsPage draft={draft} setDraft={setDraft} set={set} vcs={vcs} {...wf} onAssist={onAssist} />
   if (section === 'tables') return <TablesPage project={project} draft={draft} set={set} dir={general.dir} />
+  if (section.startsWith('plugin:'))
+    return <PluginSectionPage section={section} project={project} draft={draft} set={set} dir={general.dir} />
   if (section === 'lessons') return <LessonsPage project={project} draft={draft} set={set} item={item} />
   if (section === 'experience' && project) return <ExperiencePage project={project} item={item} />
   if (section === 'tests') return <TestsPage draft={draft} set={set} gitRepo={vcs === 'git'} onAssist={onAssist} />

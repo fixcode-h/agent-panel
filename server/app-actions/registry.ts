@@ -57,23 +57,41 @@ export class ActionError extends Error {}
 
 export const groupOf = (name: string) => name.split('.')[0]
 
-export function createRegistry(list: AppAction[]) {
-  const map = new Map<string, AppAction>()
+const ACTION_NAME = /^[a-z]+\.[a-z_]+$/
+
+/**
+ * 动作表。extra 是开着的插件登记的动作（ServerPlugin.actions，插件接口 6），每次现取：插件开关、升级后不用重建。
+ * 插件的动作名不合规、和面板自己的重名时不收（面板的优先），原因写日志，插件页的错误由插件自己的单测兜
+ */
+export function createRegistry(list: AppAction[], extra: () => AppAction[] = () => []) {
+  const own = new Map<string, AppAction>()
   for (const a of list) {
-    if (!/^[a-z]+\.[a-z_]+$/.test(a.name)) throw new Error(`动作名要写成 <组>.<动词>：${a.name}`)
-    if (map.has(a.name)) throw new Error(`动作重名：${a.name}`)
-    map.set(a.name, a)
+    if (!ACTION_NAME.test(a.name)) throw new Error(`动作名要写成 <组>.<动词>：${a.name}`)
+    if (own.has(a.name)) throw new Error(`动作重名：${a.name}`)
+    own.set(a.name, a)
+  }
+  const all = () => {
+    const map = new Map(own)
+    for (const a of extra()) {
+      if (!ACTION_NAME.test(a.name) || map.has(a.name)) {
+        log.warn('action', `插件的动作没有登记（名字要写成 <组>.<动词>，不能和已有的重名）：${a.name}`)
+        continue
+      }
+      map.set(a.name, a)
+    }
+    return map
   }
   return {
-    list: (group?: string) => [...map.values()].filter((a) => !group || groupOf(a.name) === group),
-    get: (name: string) => map.get(name),
-    groups: () => [...new Set([...map.keys()].map(groupOf))],
+    list: (group?: string) => [...all().values()].filter((a) => !group || groupOf(a.name) === group),
+    get: (name: string) => all().get(name),
+    groups: () => [...new Set([...all().keys()].map(groupOf))],
     /** 执行一个动作：参数先过 zod；出错时返回原因而不是抛出，模型和 HTTP 调用方都按 ok 判断 */
     async run(
       name: string,
       raw: unknown,
       ctx: ActionCtx,
     ): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
+      const map = all()
       const a = map.get(name)
       if (!a) return { ok: false, error: `没有这个动作：${name}。可用的动作：${[...map.keys()].join('、')}` }
       const p = a.input.safeParse(raw ?? {})

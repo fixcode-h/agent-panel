@@ -109,6 +109,9 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    子位置可以带 /（#/plugin/<插件>/<页面>/<a>/<b>）
  * 6：插件认领输入框附件（WebPlugin.attachmentIntakes，例如视频插件把视频换成截好的帧图片）、
  *    这一轮是不是用户在聊的对话（PluginRun.conversation）
+ *    另外服务端入口登记面板动作（ServerPlugin.actions）；网页入口在项目设置里加页（WebPlugin.projectSections，
+ *    设置存在 project.plugins[<插件 id>]）、在设置 →「组件」里加示例（WebPlugin.specimens）；开放 web/src/lib/assist-conv
+ *    （runPromptInProject：在项目里开分析对话跑插件自己的提示词）
  */
 export const PLUGIN_API = 6
 

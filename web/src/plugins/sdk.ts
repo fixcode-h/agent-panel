@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { PluginConfig } from '@shared/plugins/types'
-import type { Attachment, Task } from '@shared/schema'
+import type { Attachment, Project, Task } from '@shared/schema'
 import type { host } from './host'
 
 /**
@@ -110,12 +110,51 @@ export interface AttachmentIntakeProps {
   onInsert: (list: Attachment[]) => void
 }
 
+/**
+ * 项目设置里的一页（插件接口 6）：导航里多一项，点开画 Section。设置存在项目的 plugins[<插件 id>] 里，
+ * 跟项目设置一起保存（用户点「保存」才落盘，关掉不保存就丢掉），内容由插件自己定、自己校验
+ */
+export interface ProjectSection {
+  /** 插件里唯一；地址和导航里用 plugin:<插件 id>:<id> */
+  id: string
+  label: string
+  icon?: ComponentType<{ className?: string; strokeWidth?: number }>
+  /** 导航那一项右侧的灰字（例如表格目录）：value 是这个插件在草稿里的设置 */
+  hint?: (value: unknown) => string | undefined
+  Section: ComponentType<ProjectSectionProps>
+}
+
+export interface ProjectSectionProps {
+  /** 草稿里这个插件的设置（project.plugins[<插件 id>]），没设过是 undefined */
+  value: unknown
+  onChange: (next: unknown) => void
+  /** 已保存的项目；新建项目时还没有 */
+  project?: Project
+  /** 项目目录：存在时是解析后的绝对路径，否则是输入框里的原文 */
+  base: string
+}
+
+/**
+ * 设置 →「组件」里的一块示例（插件接口 6）：插件自己的共用组件也要能在设置里看到和微调（用户定的长期规则），
+ * 和面板自己的组件示例排在一起
+ */
+export interface Specimen {
+  id: string
+  /** 小标题（一般写组件名） */
+  label: string
+  /** 这块示例用到的可微调部件（设置 →「组件」的部件名，例如 input、menu），点示例时右侧列出它们的调节项 */
+  tune?: string[]
+  Specimen: ComponentType
+}
+
 export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
   fileViewers?: FileViewer[]
   attachmentIntakes?: AttachmentIntake[]
   barePages?: BarePage[]
+  projectSections?: ProjectSection[]
+  specimens?: Specimen[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>
 }

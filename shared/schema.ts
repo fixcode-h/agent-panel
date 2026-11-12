@@ -944,6 +944,11 @@ const ProjectFields = z.object({
   cherryPick: z.string().trim().max(500).optional(),
   /** 表格管理：表格目录等（shared/tables.ts）；没设时没有表格页入口 */
   tables: TablesConfig.optional(),
+  /**
+   * 插件按项目存的设置（插件接口 6，WebPlugin.projectSections）：键是插件 id，内容由插件自己定、自己校验，
+   * 跟项目设置一起保存；面板不认识里面的东西，插件删了也原样留着，重装后接着用
+   */
+  plugins: z.record(z.string(), z.unknown()).optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**

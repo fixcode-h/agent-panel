@@ -66,6 +66,7 @@
     "web/src/components/ui/switch",
     "web/src/components/ui/tab-bar",
     "web/src/lib/api",
+    "web/src/lib/assist-conv",
     "web/src/lib/cli-models",
     "web/src/lib/copy-text",
     "web/src/lib/data",

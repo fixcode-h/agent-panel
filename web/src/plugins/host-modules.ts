@@ -72,6 +72,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/ui/switch': () => import('@/components/ui/switch'),
   'web/src/components/ui/tab-bar': () => import('@/components/ui/tab-bar'),
   'web/src/lib/api': () => import('@/lib/api'),
+  'web/src/lib/assist-conv': () => import('@/lib/assist-conv'),
   'web/src/lib/cli-models': () => import('@/lib/cli-models'),
   'web/src/lib/copy-text': () => import('@/lib/copy-text'),
   'web/src/lib/data': () => import('@/lib/data'),

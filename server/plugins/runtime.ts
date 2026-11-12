@@ -3,7 +3,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { t } from '../../shared/i18n.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
-import type { ActivateServer, McpCallContext, PluginRun, ServerPlugin } from './sdk.ts'
+import type { ActivateServer, McpCallContext, PluginAction, PluginRun, ServerPlugin } from './sdk.ts'
 import { log } from '../log.ts'
 import { withPluginLimit } from './limit.ts'
 import { closePluginMcp, openPluginMcp, type PluginRunHooks } from './mcp.ts'
@@ -128,6 +128,11 @@ export function textifierFor(ext: string) {
     if (tx?.exts.some((e) => e.toLowerCase() === ext)) return { id, text: tx.text }
   }
   return undefined
+}
+
+/** 开着的插件登记的面板动作（插件接口 6）：动作表每次现取，插件关掉就没了 */
+export function pluginActions(): PluginAction[] {
+  return [...active.values()].flatMap((a) => a.plugin.actions ?? [])
 }
 
 /** 插件页上的运行状态 */

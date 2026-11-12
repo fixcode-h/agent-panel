@@ -11,7 +11,7 @@ import { request } from '@/lib/api'
 import { pickFileViewer } from './file-viewers'
 import { intakeByKey, pickIntake } from './attachment-intakes'
 import { pruneUpdates } from './updates'
-import type { ActivateWeb, PluginPage, TaskTab, WebPlugin } from './sdk'
+import type { ActivateWeb, PluginPage, ProjectSection, Specimen, TaskTab, WebPlugin } from './sdk'
 
 /**
  * 网页里的插件（ADR 0059）：启动时读 /api/plugins，把清单交给共享层（内置列表、工具名按它算），
@@ -148,6 +148,17 @@ export const useTaskTabs = (task: Task | undefined): TaskTab[] => {
   const s = usePlugins()
   return task ? [...s.web.values()].flatMap((p) => p.taskTabs ?? []).filter((x) => x.when(task)) : []
 }
+
+/** 开着的插件在项目设置里加的页：导航和地址里用 plugin:<插件 id>:<页 id> */
+export type OwnedSection = ProjectSection & { plugin: string; key: string }
+export const usePluginProjectSections = (): OwnedSection[] =>
+  [...usePlugins().web.entries()].flatMap(([plugin, p]) =>
+    (p.projectSections ?? []).map((x) => ({ ...x, plugin, key: `plugin:${plugin}:${x.id}` })),
+  )
+
+/** 开着的插件在设置 →「组件」里加的示例 */
+export const usePluginSpecimens = (): (Specimen & { plugin: string })[] =>
+  [...usePlugins().web.entries()].flatMap(([plugin, p]) => (p.specimens ?? []).map((x) => ({ ...x, plugin })))
 
 /** 开着的插件里能看这个文件的查看器（按扩展名）；没有就照面板原来的规则打开 */
 export const fileViewerFor = (path: string, s: State = state) => pickFileViewer(s.web.entries(), path)

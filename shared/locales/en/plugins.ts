@@ -116,4 +116,6 @@ export const EN_PLUGINS: Record<string, string> = {
     'Switches from v{current} back to v{version}, the version before the upgrade, and restarts the plugin. Settings and plugin data are kept. To return to v{current}, roll back again.',
   // 插件在新会话开头的提示（server/exec/plugin-run.ts）
   '插件「{name}」：{text}': 'Plugin "{name}": {text}',
+  // 项目设置里插件加的页，插件关掉后（web/src/components/projects/settings/PluginSectionPage.tsx）
+  这一页来自的插件已经关掉或删除了: 'The plugin that added this page has been turned off or removed',
 }
