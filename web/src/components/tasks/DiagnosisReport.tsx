@@ -535,8 +535,12 @@ function FixCard({ f, result }: { f: DiagnosisFix; result?: FixApplyResult }) {
       )}
       <p className="px-3 py-2.5 text-body leading-relaxed">{f.change}</p>
       {rows.length > 0 && (
-        // 和别处的 diff 一个画法（UnifiedDiff）：删掉的、加上的行整行着色
-        <UnifiedDiff rows={rows.map(([kind, text]) => ({ kind, text }))} wrap={false} />
+        // 和别处的 diff 一个画法（UnifiedDiff）：删掉的、加上的行整行着色；放在卡片上，钉住的行号用卡片底色
+        <UnifiedDiff
+          rows={rows.map(([kind, text]) => ({ kind, text }))}
+          wrap={false}
+          className="[--cdiff-bg:var(--card)]"
+        />
       )}
     </section>
   )

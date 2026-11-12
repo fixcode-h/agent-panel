@@ -51,10 +51,10 @@ interface OrchState {
   /** 节点 id → 叫醒它的 wait_agents（有人给它传话时提前返回，不让话晚十几分钟才到） */
   wakers: Map<string, () => void>
 }
-const orchStates = new WeakMap<EngineHost, OrchState>()
+const orchStates = new WeakMap<EngineHost, OrchState>() // 模块状态：运行时，按引擎宿主记，宿主重建后从头来
 
 /** 这个对话已经 use_capability 加载过的能力（按调用者 + 能力 + 参数）：重复加载只回一句，不再整段返回 */
-export const loadedCaps = new WeakMap<EngineHost, Set<string>>()
+export const loadedCaps = new WeakMap<EngineHost, Set<string>>() // 模块状态：运行时，按引擎宿主记，宿主重建后从头来
 
 export function orchState(host: EngineHost): OrchState {
   let st = orchStates.get(host)

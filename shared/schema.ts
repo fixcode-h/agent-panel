@@ -218,13 +218,13 @@ export const defaultAgent = (): Agent => {
   }
 }
 
-const AGENT_REF_KEYS = new Set(['agentId', 'mainAgentId', 'defaultAgentId'])
+const AGENT_REF_KEYS = new Set(['agentId', 'mainAgentId', 'defaultAgentId']) // 模块状态：常量，加载后不改
 
 /**
  * 已经不存在的角色 id → 现在该用的 id（空字符串表示不用角色）。读旧数据时按它改写引用：
  * 默认 Agent 固定在这里；合并后被删掉的内置副本由服务端启动时登记（见 setAgentAliases）。
  */
-const agentAliases = new Map<string, string>([[LEGACY_DEFAULT_AGENT_ID, '']])
+const agentAliases = new Map<string, string>([[LEGACY_DEFAULT_AGENT_ID, '']]) // 模块状态：配置副本，重启时重读
 
 /** 登记被删掉的角色该转到哪个角色：之后读到的工作流、项目、对话里的引用都会改过去 */
 export function setAgentAliases(map: Record<string, string>) {

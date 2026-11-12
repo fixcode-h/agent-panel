@@ -25,10 +25,10 @@ export function anySignal(a: AbortSignal, b: AbortSignal) {
  * 正在跑的调用手里的 API 名额：任务 id + 节点 id（对话这一轮是空的）→ 名额。
  * 等下一句、等子任务、等别的 Agent 回答时让出，接着干之前再拿回（见 waitNext 和 yieldApiSlot）
  */
-export const apiSlots = new Map<string, ApiSlot>()
+export const apiSlots = new Map<string, ApiSlot>() // 模块状态：会话，跟着进程或连接一起没
 export const slotKey = (taskId: string, step: string) => `${taskId}\n${step}`
 /** 正停在 wait_agents / ask_main 里等别人的调用（slotKey）：见 yieldApiSlot */
-export const inToolWait = new Set<string>()
+export const inToolWait = new Set<string>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
 export function callApi(ctx: RealContext, call: AgentCall) {

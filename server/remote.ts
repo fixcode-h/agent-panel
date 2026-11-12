@@ -40,31 +40,31 @@ import type { TailscaleInfo } from '../shared/remote.ts'
  */
 
 type FetchHandler = (req: Request, env?: unknown) => Response | Promise<Response>
-let handler: FetchHandler | undefined
+let handler: FetchHandler | undefined // 模块状态：接线，启动时登记
 /** 外网专用端口：开着外网访问时才监听，见 shared/schema.ts 的 RemoteAccess.localPort */
-let external: { server: Server; port: number; https: boolean } | null = null
-let deploy: FrpDeployStatus | null = null
+let external: { server: Server; port: number; https: boolean } | null = null // 模块状态：会话，跟着进程或连接一起没
+let deploy: FrpDeployStatus | null = null // 模块状态：会话，跟着进程或连接一起没
 /** 端口映射的状态（按映射 id），frpc 重启时清空 */
-let mappingStates: Record<string, { ok: boolean; error: string }> = {}
+let mappingStates: Record<string, { ok: boolean; error: string }> = {} // 模块状态：会话，跟着进程或连接一起没
 let state: RemoteState = 'off'
-let url = ''
-let error = ''
-let child: ChildProcess | null = null
+let url = '' // 模块状态：会话，跟着进程或连接一起没
+let error = '' // 模块状态：会话，跟着进程或连接一起没
+let child: ChildProcess | null = null // 模块状态：会话，跟着进程或连接一起没
 // 正常退出时 shutdown 会等 stopRemote；进程意外退出时这里兜底结束隧道
 process.on('exit', () => {
   try {
     child?.kill('SIGKILL')
   } catch {}
 })
-let output = ''
+let output = '' // 模块状态：会话，跟着进程或连接一起没
 /** 面板开着的 tailscale serve / funnel：关外部访问、换方式时按它关掉 */
-let tsActive: { bin: string; cfg: RemoteAccess['tailscale'] } | null = null
+let tsActive: { bin: string; cfg: RemoteAccess['tailscale'] } | null = null // 模块状态：会话，跟着进程或连接一起没
 /** 正在跑的 tailscale serve / funnel（可能在等用户去后台开启）：换设置、关外部访问时停掉它 */
-let tsPending: AbortController | null = null
+let tsPending: AbortController | null = null // 模块状态：会话，跟着进程或连接一起没
 /** tailscale 等用户去后台开启 Serve / Funnel 的链接，开好后清空 */
-let enableUrl = ''
+let enableUrl = '' // 模块状态：会话，跟着进程或连接一起没
 let tsCache: { key: string; at: number; data: TailscaleInfo } | null = null
-let download: { running: boolean; percent: number; error: string } | null = null
+let download: { running: boolean; percent: number; error: string } | null = null // 模块状态：会话，跟着进程或连接一起没
 
 /**
  * 现在能从外面打开面板的地址：外网访问已经连上才有，否则为空（关掉、连接中、出错时 state 都不是 running）。
@@ -428,7 +428,7 @@ async function doApply() {
   }
 }
 
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 /** 按设置启停外网专用端口和 frpc；连续保存设置时排队执行，不会同时起两个 frpc */
 export function applyRemote() {
   const p = queue.then(doApply, doApply)

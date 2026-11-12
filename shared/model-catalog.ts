@@ -72,7 +72,7 @@ export type ModelCatalogFile = z.infer<typeof ModelCatalogFile>
 export const BUILTIN_MODEL_CATALOG: ModelCatalogEntry[] = ModelCatalogFile.parse(raw).models
 
 /** 已经不再支持的协议：旧版本写过 Gemini 协议，读用户目录之前要清掉 */
-const REMOVED_PROTOCOLS = new Set(['gemini'])
+const REMOVED_PROTOCOLS = new Set(['gemini']) // 模块状态：常量，加载后不改
 
 /**
  * 旧版本的用户补充目录里可能写着 `protocols: ["gemini"]`：协议枚举收窄后，
@@ -224,9 +224,9 @@ const EXTRA_TYPES = [
 ]
 
 /** 表示速度的后缀：匹配类型时忽略（`deepseek-v4-flash-fast` 里的 fast） */
-const SPEED = new Set(['fast', 'faster', 'fastest', 'turbo', 'turbos', 'speed', 'speedy', 'rapid', 'instant', 'quick'])
+const SPEED = new Set(['fast', 'faster', 'fastest', 'turbo', 'turbos', 'speed', 'speedy', 'rapid', 'instant', 'quick']) // 模块状态：常量，加载后不改
 /** 预览、实验等后缀，不是模型类型 */
-const QUALIFIER = new Set(['exp', 'experimental', 'preview', 'beta', 'rc', 'latest', 'stable', 'nightly', 'dev'])
+const QUALIFIER = new Set(['exp', 'experimental', 'preview', 'beta', 'rc', 'latest', 'stable', 'nightly', 'dev']) // 模块状态：常量，加载后不改
 const DATE = /^(?:20\d{6}|\d{4}-\d{2}-\d{2}|\d{6})$/
 
 const PROTOCOL_SUFFIXES: [RegExp, ApiProtocol][] = [

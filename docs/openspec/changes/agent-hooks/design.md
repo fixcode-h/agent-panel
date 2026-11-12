@@ -71,7 +71,7 @@
 
 ### 2.2 残留的按文字判断
 
-- **需要清理**：`shared/verdict.ts` 的 `parseVerdict` / `leadVerdict`，从输出里找「结论：通过 / 不通过」「Verdict: pass / fail」。只给旧版工作流节点（`shared/builtin/legacy.ts`、`legacy-workflows.ts` 里要求「最后一行写验收结论」的节点）和条件连线用；新节点已经用 `submit_verdict`。列入 P3，把旧节点迁到 `submit_verdict` 后删掉。
+- **需要清理**：`shared/verdict.ts` 的 `parseVerdict` / `leadVerdict`，从输出里找「结论：通过 / 不通过」「Verdict: pass / fail」。只给旧版工作流节点（当时 legacy 快照里要求「最后一行写验收结论」的节点）和条件连线用；新节点已经用 `submit_verdict`。列入 P3，把旧节点迁到 `submit_verdict` 后删掉。
 - **不算违规**（读的是面板自己写的固定前缀，不是模型回复）：`shared/peer-message.ts` 的 `【编译申请】`、`shared/task.ts` 的 `PLAN_NUDGE_HEAD`、`shared/collab-timeline.ts` 的 `PANEL_HEAD`。
 - **不算违规**（读模型按约定输出的结构化代码块，块类型是固定标识，不是自然语言关键字）：`dispatch.ts`、`diagnosis.ts`、`lesson-review.ts` 等读 ` ```<固定语言名> ` 代码块。规则检查要把这类和「按关键字猜状态」区分开（§10.1）。
 

@@ -9,7 +9,6 @@
     "server/index.ts": 1300,
     "shared/assist.ts": 1400,
     "shared/builtin/agents.ts": 1600,
-    "shared/builtin/legacy.ts": 1800,
     "shared/engine.ts": 3450,
     "shared/local-image.ts": 1450,
     "shared/plan.ts": 1650,

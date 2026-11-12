@@ -23,7 +23,7 @@ test('三种旧说法都改成调用 submit_verdict；没有旧说法的原样�
 })
 
 test('内置模板里已经没有「写一行验收结论」的要求', () => {
-  for (const f of ['legacy.ts', 'legacy-workflows.ts', 'workflows.ts', 'agents.ts'])
+  for (const f of ['workflows.ts', 'agents.ts'])
     assert.doesNotMatch(
       readFileSync(new URL(`./builtin/${f}`, import.meta.url), 'utf8'),
       /一行写「(验收|验证)?结论：/,

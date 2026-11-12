@@ -22,7 +22,7 @@ import {
 export const defaultSettings = (): Settings => Settings.parse({})
 
 /** 已经不再支持的 CLI：旧设置里还留着它们的配置 */
-const REMOVED_CLI_IDS = new Set(['gemini'])
+const REMOVED_CLI_IDS = new Set(['gemini']) // 模块状态：常量，加载后不改
 
 /**
  * 读设置文件之前清掉已经移除的 Gemini 条目：协议枚举里没有 `gemini` 了，

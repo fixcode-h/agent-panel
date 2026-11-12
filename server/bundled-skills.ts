@@ -30,7 +30,7 @@ const SOURCE = path.resolve(import.meta.dirname, '..', 'skills')
  * 插件带的技能（ADR 0059）：装着的插件包里的 skills/<分类>/<名字>/，插件目录由 server/plugins 在加载插件时告诉这里。
  * 只有开着的插件的技能算自带技能
  */
-let pluginSources: { id: string; dir: string; stamp: string }[] = []
+let pluginSources: { id: string; dir: string; stamp: string }[] = [] // 模块状态：配置副本，重启时重读
 export function setPluginSkillSources(list: { id: string; dir: string; stamp: string }[]) {
   pluginSources = list
 }
@@ -44,7 +44,7 @@ export interface Entry {
   files: Map<string, Buffer>
 }
 
-let cache: Promise<Entry[]> | null = null
+let cache: Promise<Entry[]> | null = null // 模块状态：缓存，丢了重算
 const pluginCache = new Map<string, Promise<Entry[]>>()
 
 async function readTree(dir: string, rel = ''): Promise<[string, Buffer][]> {

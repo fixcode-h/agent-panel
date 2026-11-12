@@ -123,7 +123,7 @@ export function scanText(file: ScanFile): ConfigFinding[] {
 }
 
 /** npx / uvx 这类「现拉现跑」的启动器：包名没带版本时每次可能拉到新代码 */
-const RUNNERS = new Set(['npx', 'uvx', 'bunx', 'pnpx'])
+const RUNNERS = new Set(['npx', 'uvx', 'bunx', 'pnpx']) // 模块状态：常量，加载后不改
 const pinned = (pkg: string) => /^@[^/]+\/[^@]+@.+$/.test(pkg) || /^[^@/][^@]*@.+$/.test(pkg) || /==/.test(pkg)
 
 /**

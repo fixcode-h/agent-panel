@@ -19,7 +19,7 @@ export const PANEL_MCP_NAME = 'agent-panel'
 const PANEL_NAME = /^(agent-panel(-[0-9a-f]{6})?|panel(-[0-9a-f]{6})?|orch)$/
 
 /** 每个目录里正在用的名字：同时在跑的几轮各用一个，不然后写的会把先写的那一项冲掉 */
-const claimed = new Map<string, Set<string>>()
+const claimed = new Map<string, Set<string>>() // 模块状态：运行时，同目录各轮的 MCP 名字，重启后由启动清扫删旧的
 
 /** 给这一轮在 cwd 里取一个面板 MCP 的名字；用完 release */
 export function claimPanelName(cwd: string, suffix: string) {

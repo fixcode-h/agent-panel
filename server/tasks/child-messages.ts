@@ -22,7 +22,7 @@ import type { TasksScope } from './scope.ts'
  * 交给子对话时最多等它开起来多久：CLI 的工具调用一分钟超时，要在那之前回话（见 sendToChild）。
  * 测试里可以改小
  */
-export let SEND_WAIT_MS = 40_000
+export let SEND_WAIT_MS = 40_000 // 模块状态：常量，加载后不改
 export function setSendWaitMs(ms: number) {
   SEND_WAIT_MS = ms
 }

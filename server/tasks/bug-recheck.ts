@@ -7,11 +7,9 @@
  * 每条命令有超时，结果（退出码、用时、输出最后一段）原样记进这一版报告；跑不了的写清原因，界面标「面板没有复核」。
  * 不悄悄重试。复核完如果用户开着「没有要注意的就自动通过」，按结果决定这一版能不能自动通过（shared/bug-auto.ts）
  */
-import { execFile } from 'node:child_process'
 import { copyFile, lstat, mkdir, mkdtemp, rm, stat, symlink, unlink } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import type { Task } from '../../shared/schema.ts'
 import type { Diagnosis, Recheck, RecheckRun } from '../../shared/bug-diagnosis-schema.ts'
 import { autoApprove, autoBlock, autoOn } from '../../shared/bug-auto.ts'
@@ -28,12 +26,11 @@ import { t } from '../../shared/i18n.ts'
 import { runShell } from '../merge-build.ts'
 import { currentShell } from '../shells.ts'
 import { noPushEnv } from '../exec/no-push.ts'
+import { gitExec } from '../exec/git.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 
-const run = promisify(execFile)
-const git = (dir: string, args: string[]) =>
-  run('git', ['-C', dir, ...args], { maxBuffer: 4 << 20, timeout: 30_000 }).then((r) => r.stdout)
+const git = (dir: string, args: string[]) => gitExec(dir, args).then((r) => r.stdout)
 
 /** 改前那一次链接过去的依赖目录：只认这几个常见的（构建产物不链，免得改前那一次写进现在的产物里） */
 const DEP_DIRS = ['node_modules', '.venv', 'venv']
@@ -42,7 +39,7 @@ const DEP_DIRS = ['node_modules', '.venv', 'venv']
 const timeoutMs = () => Number(process.env.AGENT_PANEL_RECHECK_TIMEOUT_MS) || RECHECK_TIMEOUT_MS
 
 /** 正在复核的对话：面板重启后记成 running 的那份没人在跑，下一轮结束时重新跑 */
-const running = new Set<string>()
+const running = new Set<string>() // 模块状态：运行时，正在复核的对话，重启后下一轮结束时重跑
 
 const exists = (p: string) =>
   stat(p).then(

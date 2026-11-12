@@ -1,6 +1,6 @@
 /**
- * 面板的后台命令工具（run_background / check_background / stop_background）：定义和调用都在这里，
- * 从 server/orch-mcp.ts 搬出来的（那个文件到了行数上限）。
+ * 面板的后台命令工具（run_background / check_background / stop_background）：定义、用法说明和调用都在这里，
+ * 作为面板工具注册表（server/panel-tools/registry.ts）的条目。
  *
  * 用途限定（用户 2026-11-05 定）：后台命令只给要跑很久的命令——编译、测试、打包、安装依赖、下载，
  * 以及不会自己结束的开发服务器、监听（service）。写文件、几秒就完的命令不收（shared/command-scope.ts 的 backgroundMisuse），
@@ -11,6 +11,7 @@ import { backgroundMisuse, endlessCommand } from '../shared/command-scope.ts'
 import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
 import { stepField } from './orch-fields.ts'
+import { reply, str, text, type PanelTool, type ToolArgs } from './panel-tools/types.ts'
 
 /** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
 const shellHint = () => {
@@ -18,10 +19,22 @@ const shellHint = () => {
   return sh ? shellNote(sh) : ''
 }
 
-export function backgroundTools(o: Orchestra) {
-  if (!o.canBackground) return []
-  return [
-    {
+/** run_background 在用法说明里那一句的主体：Chat 页另外补上查看、停止的两个工具 */
+const RUN_BG_HINT =
+  'run_background 只把要跑很久的命令（UE / C++ 编译打包、完整测试、整份装依赖、下载、扫整个项目的全文搜索）和开发服务器、监听（service）放到后台（跑完结果自动推回），写文件、几秒的命令不交给它'
+
+export const BACKGROUND_TOOLS: PanelTool[] = [
+  {
+    name: 'run_background',
+    when: (o) => o.canBackground,
+    hint: (_o, at) =>
+      at === 'chat'
+        ? `${RUN_BG_HINT}，check_background / stop_background 查看、停止它们；`
+        : at === 'conv'
+          ? `${RUN_BG_HINT}；`
+          : '',
+    call: (o, a) => callRunBackground(o, a),
+    def: (o) => ({
       name: 'run_background',
       title: '后台命令',
       description:
@@ -56,35 +69,36 @@ export function backgroundTools(o: Orchestra) {
         },
         required: ['command'],
       },
-    },
-    {
+    }),
+  },
+  {
+    name: 'check_background',
+    when: (o) => o.canBackground,
+    def: () => ({
       name: 'check_background',
       title: '查看后台命令',
       description:
         '查后台命令的状态、已经跑了多久、多久没输出和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询；开发服务器（service）启动后用它看地址和报错。',
       inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
-    },
-    {
+    }),
+    call: (o, a) => text(o.checkBackground(str(a?.id))),
+  },
+  {
+    name: 'stop_background',
+    when: (o) => o.canBackground,
+    def: () => ({
       name: 'stop_background',
       title: '停止后台命令',
       description:
         '停掉这个对话的一条后台命令：确认它卡住了（长时间没输出、跑偏了）、或者开发服务器 / 监听用完了才用；卡住的停掉后查清原因再重跑。',
       inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-    },
-  ]
-}
+    }),
+    call: (o, a) => reply(o.stopBackground(str(a?.id))),
+  },
+]
 
-const text = (s: string, isError = false) => ({ content: [{ type: 'text', text: s }], ...(isError && { isError }) })
-const str = (v: unknown) => (typeof v === 'string' ? v : '')
-
-/** 三个后台命令工具的调用；不是它们返回 undefined */
-export async function callBackgroundTool(o: Orchestra, name: string, a: any) {
-  if (name === 'check_background') return text(o.checkBackground(str(a?.id)))
-  if (name === 'stop_background') {
-    const r = o.stopBackground(str(a?.id))
-    return text(r.info, !r.ok)
-  }
-  if (name !== 'run_background') return undefined
+/** run_background：先看用途、再过守卫，然后交给面板在后台跑 */
+async function callRunBackground(o: Orchestra, a: ToolArgs) {
   const command = str(a?.command).trim()
   if (!command) return text('command 是空的：写要执行的命令', true)
   // 先看用途、再过守卫：写文件、快命令的拒绝理由更直接；守卫的拒绝和 CLI 命令工具上的一字不差
@@ -103,5 +117,5 @@ export async function callBackgroundTool(o: Orchestra, name: string, a: any) {
     ...(Number(a?.timeout_minutes) > 0 && { timeoutMinutes: Number(a?.timeout_minutes) }),
     step: str(a?.step).trim(),
   })
-  return text(r.info, !r.ok)
+  return reply(r)
 }

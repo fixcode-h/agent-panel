@@ -16,7 +16,7 @@ export const NO_RESPONSE_MS = Number(process.env.AGENT_PANEL_NO_RESPONSE_MS) || 
 export const MIDWAY_STALL_MS = Number(process.env.AGENT_PANEL_MIDWAY_STALL_MS) || Math.min(30_000, NO_RESPONSE_MS)
 
 /** 卡住的记录：对话按任务 id，子任务按「任务#步骤」，免得子任务和派它的对话互相覆盖 */
-const stalled = new Map<string, { input: string; since: number }>()
+const stalled = new Map<string, { input: string; since: number }>() // 模块状态：会话，跟着进程或连接一起没
 const keyOf = (taskId: string, step = '') => (step ? `${taskId}#${step}` : taskId)
 export const stalledTurn = (taskId: string, step = '') => stalled.get(keyOf(taskId, step))
 

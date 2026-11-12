@@ -54,7 +54,7 @@ export function runtimeReady() {
 
 const modelReady = (m: SpeechModel) => m.files.every((f) => existsSync(path.join(modelDir(m.id), f.name)))
 
-let job: (SpeechJob & { abort: AbortController }) | undefined
+let job: (SpeechJob & { abort: AbortController }) | undefined // 模块状态：会话，跟着进程或连接一起没
 
 export function speechStatus(): SpeechStatus {
   return {
@@ -179,7 +179,7 @@ interface Recognizer {
 }
 
 /** 加载好的识别器只留一个：换模型时丢掉旧的（几百 MB 的内存） */
-let loaded: { id: string; rec: Promise<Recognizer> } | undefined
+let loaded: { id: string; rec: Promise<Recognizer> } | undefined // 模块状态：会话，跟着进程或连接一起没
 
 function recognizer(m: SpeechModel) {
   if (loaded?.id === m.id) return loaded.rec
@@ -196,7 +196,7 @@ function recognizer(m: SpeechModel) {
 }
 
 /** 识别排队一个一个来：同一个识别器并发解码没有好处，还会把内存翻倍 */
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 
 /** 把一段 16kHz 单声道 16 位 PCM 转成文字 */
 export async function transcribe(pcm: Uint8Array) {

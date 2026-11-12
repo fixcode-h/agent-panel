@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -7,7 +7,98 @@ import { capture } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { lines } from './parsers.ts'
 
-const git = (cwd: string, ...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd)
+/*
+ * 面板里所有 git 调用的唯一入口（scripts/rules-check.mjs 第 21 条拦别处直接起 git）。
+ * 以前各文件自己包一份，参数不一致：没带 core.quotepath=off 的那几处，中文文件名会被 git 写成
+ * "\346\226\207…"，拿去和文件列表比、再当路径传回 git 都对不上。这里统一：
+ * - 固定带 core.quotepath=off、windowsHide（不弹黑框）、超时；
+ * - 可选显式 work-tree：.git/config 的 core.worktree 被别的平台写成 /mnt/... 时（本机真实遇到过），
+ *   不指定的话 rev-parse / rev-list 全部报 Invalid path。
+ * 四种形状按调用方要什么选：按行收文本（gitRun）、二进制原样（gitRaw）、失败抛错（gitExec）、同步（gitSync）。
+ */
+export interface GitOpts {
+  env?: NodeJS.ProcessEnv
+  timeoutMs?: number
+  /** 显式指定 work-tree（见上） */
+  workTree?: string
+  /** gitRaw / gitExec / gitSync 的输出上限 */
+  maxBuffer?: number
+}
+
+/** 拼出完整参数：-c core.quotepath=off、--work-tree 都要放在子命令前面 */
+export const gitArgs = (args: string[], workTree?: string) => [
+  '-c',
+  'core.quotepath=off',
+  ...(workTree ? ['--work-tree', workTree] : []),
+  ...args,
+]
+
+/** 按行收输出，退出码不为 0 也不抛（看 code）；默认 8 秒超时 */
+export const gitRun = (cwd: string, args: string[], o: GitOpts = {}) =>
+  capture('git', gitArgs(args, o.workTree), cwd, o.env ?? process.env, o.timeoutMs ?? 8000)
+
+/** 二进制安全地跑一次 git：cat-file、merge-file 的输出不能按行拆；不抛，看 code */
+export function gitRaw(cwd: string, args: string[], o: GitOpts = {}) {
+  return new Promise<{ code: number; stdout: Buffer; stderr: string }>((resolve) => {
+    execFile(
+      'git',
+      gitArgs(args, o.workTree),
+      {
+        cwd,
+        env: o.env ?? process.env,
+        encoding: 'buffer',
+        maxBuffer: o.maxBuffer ?? 256 * 1024 * 1024,
+        windowsHide: true,
+        timeout: o.timeoutMs ?? 60_000,
+      },
+      (err, stdout, stderr) => {
+        const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
+        resolve({ code, stdout: stdout ?? Buffer.alloc(0), stderr: stderr?.toString() ?? '' })
+      },
+    )
+  })
+}
+
+/**
+ * 文本原样返回（不按行拆，补丁里的 CRLF 不丢），退出码不为 0 时抛错；
+ * 错误对象上带 stdout / stderr（和 promisify(execFile) 一样），diff --no-index 有差异退出码是 1，调用方从错误里取输出
+ */
+export function gitExec(cwd: string, args: string[], o: GitOpts = {}) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(
+      'git',
+      gitArgs(args, o.workTree),
+      {
+        cwd,
+        env: o.env ?? process.env,
+        encoding: 'utf8',
+        maxBuffer: o.maxBuffer ?? 4 << 20,
+        windowsHide: true,
+        timeout: o.timeoutMs ?? 30_000,
+      },
+      (err, stdout, stderr) => {
+        if (err) reject(Object.assign(err, { stdout, stderr }))
+        else resolve({ stdout, stderr })
+      },
+    )
+  })
+}
+
+/** 同步跑一条 git（交报告时现取版本信息这类不能等异步的地方）；跑不起来（没装 git、目录不在）返回 undefined */
+export function gitSync(cwd: string, args: string[], o: GitOpts = {}) {
+  const r = spawnSync('git', gitArgs(args, o.workTree), {
+    cwd,
+    env: o.env ?? process.env,
+    encoding: 'utf8',
+    timeout: o.timeoutMs ?? 5000,
+    maxBuffer: o.maxBuffer ?? 4 << 20,
+    stdio: ['ignore', 'pipe', 'ignore'],
+    windowsHide: true,
+  })
+  return r.error ? undefined : { code: r.status ?? 1, out: r.stdout ?? '' }
+}
+
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args)
 
 /**
  * 面板自己往任务目录里放的东西不算 Agent 的改动：拷进对话目录的图片会让 git
@@ -153,7 +244,7 @@ export async function gitBranches(cwd: string): Promise<{ current: string | null
 export async function gitCheckout(cwd: string, branch: string) {
   const { branches } = await gitBranches(cwd)
   if (!branches.includes(branch)) throw new Error(t('没有这个分支：{branch}', { branch }))
-  const r = await capture('git', ['-c', 'core.quotepath=off', 'checkout', branch], cwd, process.env, 60_000)
+  const r = await gitRun(cwd, ['checkout', branch], { timeoutMs: 60_000 })
   if (r.code !== 0) throw new Error(r.stderr.trim() || r.stdout.trim() || t('切换分支失败'))
 }
 
@@ -213,7 +304,7 @@ export async function branchCommits(cwd: string, ref: string, max = 20): Promise
 export async function gitSnapshot(cwd: string, ignore?: PlacedFiles): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'ap-snap-'))
   const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') }
-  const run = (...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd, env, 30_000)
+  const run = (...args: string[]) => gitRun(cwd, args, { env, timeoutMs: 30_000 })
   try {
     // 从真正的暂存区拷一份起步：里面有文件的时间戳和大小，add 只需重新读改过的文件；
     // 只 read-tree HEAD 的话每个文件都要重新算哈希，大仓库每轮对话都这样做会卡好几秒
@@ -351,21 +442,6 @@ export async function spansDiff(cwd: string, spans: TreeSpan[]) {
     if (r.stdout.trim()) parts.push(r.stdout)
   }
   return parts.join('\n')
-}
-
-/** 二进制安全地跑一次 git：cat-file、merge-file 的输出不能按行拆 */
-function gitRaw(cwd: string, args: string[]) {
-  return new Promise<{ code: number; stdout: Buffer; stderr: string }>((resolve) => {
-    execFile(
-      'git',
-      ['-c', 'core.quotepath=off', ...args],
-      { cwd, encoding: 'buffer', maxBuffer: 256 * 1024 * 1024, windowsHide: true, timeout: 60_000 },
-      (err, stdout, stderr) => {
-        const code = err ? (typeof err.code === 'number' ? err.code : -1) : 0
-        resolve({ code, stdout: stdout ?? Buffer.alloc(0), stderr: stderr?.toString() ?? '' })
-      },
-    )
-  })
 }
 
 /**

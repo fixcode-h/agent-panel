@@ -211,7 +211,7 @@ S5 按这个顺序做：
   - systematic-debugging 的 SKILL.md 正文：放细节和例子（看日志的方法、状态流转对照、版本归因命令、方案对比的例子）。用脚本生成，`scripts/rules-check.mjs` 检查技能文件和数据一致，手改会被拦。
   - 档案的必填检查和计划预置步骤。
 - **systematic-debugging 重写成中文**，去掉英文通用模板里和本方法重复或冲突的部分（两套编号只留一套）。附带的 root-cause-tracing、defense-in-depth、condition-based-waiting 留作附录，改成中文、压缩到要点。
-- 内置角色改动按惯例把改前版本登记进 `shared/builtin/legacy.ts`。
+- 内置角色改动按惯例把改前版本登记进 legacy 快照（2026-11-12 起不再登记，快照已删，见 ADR 0061）。
 
 ### 8. 面板强制的关卡
 

@@ -12,9 +12,9 @@ export type P4Bucket = 'C++' | 'XLSX' | 'Lua' | 'Other'
 /** 分桶顺序：结果和提示里都按这个顺序列 */
 export const P4_BUCKETS: P4Bucket[] = ['C++', 'XLSX', 'Lua', 'Other']
 
-const CPP = new Set(['c', 'cc', 'cpp', 'cxx', 'h', 'hh', 'hpp', 'inl', 'ixx', 'mm'])
+const CPP = new Set(['c', 'cc', 'cpp', 'cxx', 'h', 'hh', 'hpp', 'inl', 'ixx', 'mm']) // 模块状态：常量，加载后不改
 // 表格：配置表常见的是 Excel，也有导出成 csv 的
-const TABLE = new Set(['xlsx', 'xlsm', 'xlsb', 'xls', 'csv'])
+const TABLE = new Set(['xlsx', 'xlsm', 'xlsb', 'xls', 'csv']) // 模块状态：常量，加载后不改
 
 /** 按扩展名分桶（depotFile 或本地路径都行） */
 export function p4Bucket(file: string): P4Bucket {

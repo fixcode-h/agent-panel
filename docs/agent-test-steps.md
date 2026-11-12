@@ -429,23 +429,20 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 
 内置 Agent 和工作流只在添加时创建，所以要处理老机器上的旧副本（`shared/builtin/install.ts`）：
 
-- `upgradeBuiltinWorkflows`：副本记了指纹（`builtinHash`）的，内容还是那个指纹就升级；没记过的按 `origin` + 语义比较
-  （节点、连线、说明，忽略坐标），和 `LEGACY_WORKFLOWS` 里的旧定义一致才升级，和当前定义一致的补记指纹。
-  保留 id、名称、分类、标签和节点坐标。用户改过的不覆盖。
-- `upgradeBuiltinAgents`：内置角色无条件按当前定义同步（ADR 0015），覆盖了用户改过的副本时交给调用方备份。
+- `upgradeBuiltinWorkflows`：副本的指纹（`builtinHash`）记着上次写进去的那一版。和当前定义一样就不动（用户之后改的留着）；
+  不一样（定义更新了，或者没记过指纹的老副本）就覆盖成新版，改过的也覆盖、不备份（ADR 0061）。保留 id、名称、分类、标签和节点坐标。
+- `upgradeBuiltinAgents`：内置角色无条件按当前定义同步（ADR 0015），改过的也直接覆盖、不备份（ADR 0061）。
 - `annotateMergedAgents`：已合并的 Agent 在本机还有副本时补一句说明，幂等。
 - `redirectMergedWorkflows`：用户改过、没被整体升级的工作流，把指向被合并 Agent 的节点换成合并目标，幂等。
 - 升级后结构不再匹配旧定义，**重复启动不会重复改**。
 
-用户改过的工作流副本不会被覆盖，旧工作流引用已合并的 Agent 时仍然能运行（Agent 还在，只是不再出现在「内置」里）。
-建议重新添加工作流或手动同步节点引用。
+内置定义没更新时用户改过的工作流副本不会被覆盖；用户自己的工作流引用已合并的 Agent 时会被重定向到合并目标。
 
 ## 5. 加新的升级时
 
-1. 改内置角色不用登记旧版本（每次启动直接同步）。改内置工作流时，已经记了指纹的副本自动升级；
-   为了还没记过指纹的老副本，仍把即将被替换掉的旧流程原样追加到 `LEGACY_WORKFLOWS[key]` 数组的**最后**。
+1. 改内置角色、内置工作流都不用登记旧版本：角色每次启动直接同步，工作流按指纹认出定义更新了就覆盖。
 2. 被合并掉的 Agent 记进 `MERGED_AGENTS`：老机器上的副本会补说明，用户改过的工作流会被重定向到合并目标。
-3. 确认 `server/builtin.test.ts` 里的升级测试覆盖「没改过的会升级、改过的不动（工作流）、重复启动不再改」。
+3. 确认 `server/builtin.test.ts` 里的升级测试覆盖「定义更新了就覆盖、定义没变时用户改的留着（工作流）、重复启动不再改」。
 4. 新增 Agent 或工作流前，先对照 [agent-catalog.md](./agent-catalog.md) 的判定标准和职责清单，
    确认现有 Agent 确实做不了，并在清单里补一行。
 
@@ -455,7 +452,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                                                                                                               |
 | `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                                                                            |
-| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                                                                                 |
+| `shared/builtin/merged.ts`                              | 已合并的 Agent 说明和参数换算                                                                                                                           |
 | `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                                                                                 |
 | `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
 | `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`stepApplies` / `pickSteps` / `parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计（`testRunSummary` 给界面） |

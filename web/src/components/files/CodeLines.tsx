@@ -12,10 +12,10 @@ const GUTTER = '4.5rem'
 const PAD = 8
 
 // 和以前逐行渲染的样式一致：不画斑马纹（深色下隔行底色明暗差太大，用户 2026-10-31 反馈），
-// 悬停那一行淡淡高亮帮着横向对行；跳到的那一行用强调色盖过悬停
-const ROW = 'flex whitespace-pre hover:bg-fg/4'
-const ROW_ON = 'flex whitespace-pre bg-accent/12'
-const NUM = 'w-14 shrink-0 pr-3 text-right text-subtle/55 select-none'
+// 悬停那一行淡淡高亮帮着横向对行；跳到的那一行用强调色盖过悬停。行底色和钉住的行号底色在 index.css 的 .cl-row / .cl-num
+const ROW = 'cl-row flex whitespace-pre'
+// 行号横向滚动时钉在左边（用户 2026-11-12）：代码从它下面滚过去
+const NUM = 'cl-num w-14 shrink-0 pr-3 text-right text-subtle/55 select-none'
 const CODE = 'pr-4'
 const PLAIN = 'pr-4 text-fg/90'
 
@@ -36,7 +36,7 @@ function blockHtml(
     let code = hl !== undefined ? hl : escapeHtml(lines[i])
     const m = marks?.get(i)
     if (m) code = markHtml(code, m)
-    html += `<div data-line="${n}" class="${n === target ? ROW_ON : ROW}"><span class="${NUM}">${n}</span><span class="${hl !== undefined ? CODE : PLAIN}">${code || ' '}</span></div>`
+    html += `<div data-line="${n}"${n === target ? ' data-on' : ''} class="${ROW}"><span class="${NUM}">${n}</span><span class="${hl !== undefined ? CODE : PLAIN}">${code || ' '}</span></div>`
   }
   return html
 }

@@ -17,7 +17,7 @@ export interface Waiter {
   current: () => boolean
 }
 
-const waiters = new Map<string, Set<Waiter>>()
+const waiters = new Map<string, Set<Waiter>>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 挂上一个等待 */
 export function addWaiter(taskId: string, w: Waiter) {

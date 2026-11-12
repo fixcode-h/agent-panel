@@ -1,14 +1,15 @@
 /**
- * 面板工具 request_user_action（等你操作）：定义和调用拆在这里，orch-mcp.ts 到了行数上限。
+ * 面板工具 request_user_action（等你操作）：定义和调用都在这里（面板工具注册表的条目）。
  * 判定和记录在 shared/user-action.ts（设计稿 docs/openspec/changes/user-action-wait/design.md）
  */
 import type { Orchestra } from '../shared/engine.ts'
+import type { PanelTool } from './panel-tools/types.ts'
 
-export const USER_ACTION_TOOL = 'request_user_action'
+const USER_ACTION_TOOL = 'request_user_action'
 
 const steps = { type: 'array', items: { type: 'string' } }
 
-export const USER_ACTION_DEF = {
+const USER_ACTION_DEF = {
   name: USER_ACTION_TOOL,
   title: '等你操作',
   description:
@@ -49,9 +50,16 @@ export const USER_ACTION_DEF = {
 }
 
 /** 执行一次 request_user_action：没有这个工具（子任务、工作流节点、Chat 页）时报错 */
-export function callUserAction(o: Orchestra, a: Record<string, unknown> | undefined) {
+function callUserAction(o: Orchestra, a: Record<string, unknown> | undefined) {
   const r = o.requestUserAction
     ? o.requestUserAction(a)
     : { ok: false, info: '这里不能请用户操作：缺东西就写进结果交回，由派你的对话发起' }
   return { content: [{ type: 'text', text: r.info }], ...(!r.ok && { isError: true }) }
+}
+
+export const USER_ACTION: PanelTool = {
+  name: USER_ACTION_TOOL,
+  when: (o) => !!o.requestUserAction,
+  def: () => USER_ACTION_DEF,
+  call: (o, a) => callUserAction(o, a),
 }

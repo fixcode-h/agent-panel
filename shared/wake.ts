@@ -40,8 +40,8 @@ export type WakeInput = {
  */
 export type WakeHold = 'user' | 'budget' | 'lost' | 'sender' | 'over'
 
-const HOLD_TARGET = new Set<StopReason>(['user', 'budget', 'lost'])
-const HOLD_SENDER = new Set<StopReason>(['parent', 'user', 'budget'])
+const HOLD_TARGET = new Set<StopReason>(['user', 'budget', 'lost']) // 模块状态：常量，加载后不改
+const HOLD_SENDER = new Set<StopReason>(['parent', 'user', 'budget']) // 模块状态：常量，加载后不改
 
 /** 叫醒前的判断：返回不叫的原因，该叫时返回 undefined */
 export function wakeHold(x: WakeInput): WakeHold | undefined {

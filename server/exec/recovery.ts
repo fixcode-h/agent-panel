@@ -46,7 +46,7 @@ export const noEffortRetryText = (model: string, effort: string, detail: string)
  * 已经在哪些对话里说过「这个模型的思考强度不传了」（对话 id + CLI + 模型）：markNoEffort 记在进程里、
  * 对所有对话生效，每个对话第一次碰到时说一次。返回 true 表示这次该说（同时记下，之后不再重复）
  */
-const noEffortTold = new Set<string>()
+const noEffortTold = new Set<string>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 export function firstNoEffortTell(key: string) {
   if (noEffortTold.has(key)) return false
   noEffortTold.add(key)

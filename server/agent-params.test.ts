@@ -14,7 +14,7 @@ import { defaultTestSteps, isTestAgent, stepCommand, testStepsBlock, testStepIss
 import { buildAssistPrompt, resolveParamValues, resolveTestSteps } from '../shared/assist.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { BUILTIN_WORKFLOWS, builtinAgentKeys, RETIRED_WORKFLOWS } from '../shared/builtin/workflows.ts'
-import { MERGED_AGENTS } from '../shared/builtin/legacy.ts'
+import { MERGED_AGENTS } from '../shared/builtin/merged.ts'
 import { redirectMergedWorkflows } from '../shared/builtin/install.ts'
 
 /**

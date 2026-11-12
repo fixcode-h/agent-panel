@@ -9,16 +9,16 @@ import { getCli } from '../shared/clis.ts'
 import { CliContextBase } from '../shared/context-breakdown.ts'
 import type { SessionInfo, Task } from '../shared/schema.ts'
 import { expandHome, listSkills } from './cli-extras.ts'
-import { capture } from './exec/process.ts'
+import { gitRun } from './exec/git.ts'
 
-const git = (cwd: string, ...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd)
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args)
 
 /** 说明文件太大时只看大小，不读内容（读进来也只为了数 @ 引用） */
 const DOC_READ_MAX = 512 * 1024
 
 /** Skill 列表要起 CLI（Codex 走 app-server）或扫目录：同一个 CLI + 目录一分钟内复用 */
 const SKILL_TTL = 60_000
-const skillCache = new Map<string, { at: number; list: Promise<{ name: string; chars: number }[]> }>()
+const skillCache = new Map<string, { at: number; list: Promise<{ name: string; chars: number }[]> }>() // 模块状态：缓存，丢了重算
 
 async function skillsOf(cli: string, cwd: string) {
   const key = `${cli}\n${cwd}`

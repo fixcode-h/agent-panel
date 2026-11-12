@@ -18,7 +18,7 @@ interface Rec {
   ms: number
   at: string
 }
-let data: Record<string, Record<string, Rec>> | null = null
+let data: Record<string, Record<string, Rec>> | null = null // 模块状态：会话，跟着进程或连接一起没
 let timer: ReturnType<typeof setTimeout> | null = null
 
 function load() {
