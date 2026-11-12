@@ -49,7 +49,7 @@ export interface AgentCall {
   /** 预热：打开对话页时先用 --resume 启动，只等下一句，不算一轮、不记输出 */
   prewarm?: boolean
   /**
-   * 保活的进程里来了下一条消息：按当前状态重拼对话提示，只返回这条消息和变了的段落（见 shared/prompt-delta.ts）。
+   * 保活的进程里来了下一条消息：按当前状态重拼对话提示，只返回这条消息和变了的段落（见 shared/prompt/delta.ts）。
    * 不给时 runner 原样交给 CLI
    */
   nextPrompt?: (text: string) => Promise<string>

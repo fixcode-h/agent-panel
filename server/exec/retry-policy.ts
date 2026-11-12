@@ -70,7 +70,7 @@ export function envStallFailure(n: number) {
  * 和 rpc.nativeAsk 无关：那只决定提问和审批走 CLI 自己的协议还是面板的 MCP 工具（见 invoke.ts 的 canTake），
  * 进程能不能留着开下一轮是另一件事；两者混在一起会让原生提问的常驻协议白白每轮重启。
  */
-/** 会话压缩过：之前发过的规则段落只剩摘要，下一轮对话按完整提示重发（见 shared/prompt-delta.ts） */
+/** 会话压缩过：之前发过的规则段落只剩摘要，下一轮对话按完整提示重发（见 shared/prompt/delta.ts） */
 export function forgetPromptSent(task: Task, sessionKey: string) {
   if (task.promptSent?.[sessionKey]) {
     const { [sessionKey]: _gone, ...rest } = task.promptSent

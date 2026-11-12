@@ -70,7 +70,7 @@ import { beginTurn, endTurn, pauseStep, stopReasonText } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
-import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
+import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt/delta.ts'
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './children/ask.ts'
 import { topPush } from './sub-policy.ts'
@@ -1739,7 +1739,7 @@ async function runHelper(
         : '',
       `## 要求\n只完成上面这件事，不要做发起节点的其他工作。${reviewing ? `完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。` : `最后调用 submit_result 工具交结果：state 写 done（做完）、unfinished（没做完）或 stuck（做不下去），summary 写结论和关键文件，没做完或卡住时 left 写还差什么、卡在哪。面板只按这个工具判断子任务做完没有，不看回复里写了什么；没做完就接着做，不要先交。回复本身用${promptLangWord()}写，会交回给派你的 Agent。`}\n交回时可能只带开头（全文另存文件）：先用几行写结论、关键文件和需要派你的 Agent 处理的事，细节放在后面。`,
     ].filter(Boolean)
-    // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt-delta.ts）
+    // 接着原来的子任务做（复看、重试）：会话里已经有需求和通用规则，只发新的和变了的段落（见 shared/prompt/delta.ts）
     const sessionKey = step.session || step.id
     const sent = host.task.promptSent?.[sessionKey]
     const full = parts.join('\n\n')
@@ -2021,7 +2021,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     const done = all.filter((c) => c.resolved).sort((a, b) => (b.at > a.at ? 1 : b.at < a.at ? -1 : 0))
     const hidden = new Set(done.slice(RECENT_DONE_CHILDREN).map((c) => c.id))
     const list = all.filter((c) => !hidden.has(c.id))
-    // 这一段按全文记指纹（shared/prompt-delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
+    // 这一段按全文记指纹（shared/prompt/delta.ts），逐分钟变的「最后活动 N 分钟前」会让整段每轮重发，不放进来。
     // 卡住了面板会自动询问、重启（ADR 0036），父对话要看多久没输出时用 list_conversations 查
     parts.push(
       host.policy?.modules ?? '',
@@ -2146,7 +2146,7 @@ export async function runConversationTurn(host: EngineHost, who: string) {
       conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent), inline, agent)
     const parts = await buildPrompt()
     const full = parts.join('\n\n')
-    // 续接同一个会话时规则段落只发变了的（见 shared/prompt-delta.ts）；回退、预热不省，按完整的发
+    // 续接同一个会话时规则段落只发变了的（见 shared/prompt/delta.ts）；回退、预热不省，按完整的发
     const sent = task.promptSent?.[who]
     const delta = host.prewarm || task.rewind ? null : promptDelta(parts, sent, task.sessions[who])
     let prompt = delta ?? full

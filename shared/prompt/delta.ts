@@ -10,7 +10,7 @@
  * 会话换了（新会话、CLI 自己丢了会话重开）、压缩过（runner 清掉记录）、续接了 FULL_EVERY 轮（规则离得太远，
  * 长上下文里容易被忽略，定期补一份完整的）。
  */
-import { hash53 } from './hash.ts'
+import { hash53 } from '../hash.ts'
 
 /** 每一轮都要发的段落（按标题行认）：这一轮的消息和随轮次变化的输入，不按指纹省 */
 export const ALWAYS_SECTIONS = [

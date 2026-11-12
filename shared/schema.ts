@@ -1933,7 +1933,7 @@ export const TaskData = z.object({
    */
   roleHashes: z.record(z.string(), z.string()).optional(),
   /**
-   * 每个会话已经收到过的提示词段落指纹（键同 sessions，见 shared/prompt-delta.ts）：续接时只发新的和变了的段落。
+   * 每个会话已经收到过的提示词段落指纹（键同 sessions，见 shared/prompt/delta.ts）：续接时只发新的和变了的段落。
    * 会话换了、压缩过就作废（runner 在压缩时删掉）
    */
   promptSent: z

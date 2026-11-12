@@ -10,7 +10,7 @@ import { addFirstToken } from '../../shared/first-token-stats.ts'
 import { stripLongContext } from '../../shared/models/limits.ts'
 import { modelLimitsFor } from '../../shared/models/catalog.ts'
 import { priceCost } from '../../shared/models/price.ts'
-import { compactedSilently } from '../../shared/prompt-delta.ts'
+import { compactedSilently } from '../../shared/prompt/delta.ts'
 import { stepUsage } from '../../shared/task.ts'
 import { t } from '../../shared/i18n.ts'
 import { setLimits } from '../cli/extras.ts'
@@ -232,7 +232,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         break
       }
       case 'compacted': {
-        // 压缩后会话里之前发过的规则只剩摘要：下一轮按完整提示重发（见 shared/prompt-delta.ts）
+        // 压缩后会话里之前发过的规则只剩摘要：下一轮按完整提示重发（见 shared/prompt/delta.ts）
         compacted()
         // 当作一次工具调用放进回复里，不插一条系统消息把回复切成两段；压缩后的大小晚一点从 usage 补上
         const tool = compaction.done(ev, cu())

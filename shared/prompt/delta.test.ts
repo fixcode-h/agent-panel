@@ -8,12 +8,12 @@ import {
   promptDelta,
   promptSections,
   rememberSent,
-} from './prompt-delta.ts'
-import { runConversationTurn } from './engine.ts'
-import { nodeRequests } from './engine/prompt-parts.ts'
-import type { AgentCall, EngineHost } from './engine/host.ts'
-import { applyPlan } from './plan.ts'
-import { Agent, Task } from './schema.ts'
+} from './delta.ts'
+import { runConversationTurn } from '../engine.ts'
+import { nodeRequests } from '../engine/prompt-parts.ts'
+import type { AgentCall, EngineHost } from '../engine/host.ts'
+import { applyPlan } from '../plan.ts'
+import { Agent, Task } from '../schema.ts'
 
 const rules = ['## 授权情况\n推送：先问一次', '## 计划怎么维护\n- 先列计划再动手', '## 执行方式\n直接做']
 const msg = (text: string) => `## 用户这次的消息\n${text}`
