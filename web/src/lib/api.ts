@@ -1,3 +1,4 @@
+import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
 import type { BugBrief } from '@shared/bug-overview'
 import type { FlowBrief } from '@shared/agent-stats'
@@ -130,18 +131,30 @@ export async function failure(res: Response): Promise<never> {
   throw err
 }
 
+/**
+ * 回来的任务（单个或列表）带着 live（运行时状态）：取下来放进 live/store.ts，记录本身照常交给调用方。
+ * 任务记录和运行时状态分开存，组件读状态只经 useLive（见 web/src/lib/live/store.ts）
+ */
+function withoutLive<T>(x: T): T {
+  if (Array.isArray(x)) return (x.length && isTaskLike(x[0]) ? takeLives(x) : x) as T
+  return (isTaskLike(x) ? takeLive(x) : x) as T
+}
+const isTaskLike = (x: unknown): x is { id: string; live?: unknown } =>
+  !!x && typeof x === 'object' && 'live' in x && typeof (x as { id?: unknown }).id === 'string'
+
 export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
   if (import.meta.env.VITE_DEMO) {
     const { handle } = await import('./demo-backend')
-    return handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined) as Promise<T>
+    const out = await handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined)
+    return withoutLive(out as T)
   }
   const res = await trackedFetch(`/api${url}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (!res.ok) await failure(res)
-  return res.status === 204 ? (undefined as T) : res.json()
+  return res.status === 204 ? (undefined as T) : withoutLive((await res.json()) as T)
 }
 
 /** 任务列表上次拿到的 ETag：数据没变时服务端回 304，列表不用重新赋值（侧栏不跟着重渲染） */
@@ -159,7 +172,7 @@ const allTasks = async (): Promise<Task[] | null> => {
   if (!res.ok) await failure(res)
   const tag = res.headers.get('ETag')
   if (tag) tasksEtag = tag
-  return (await res.json()) as Task[]
+  return takeLives((await res.json()) as Task[])
 }
 
 /** 一个对话在磁盘上占多少（任务文件 + 对话文件） */

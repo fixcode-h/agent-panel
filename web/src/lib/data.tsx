@@ -19,7 +19,9 @@ import { registerCliSpecs } from '@shared/clis'
 import { getLang, isLangAuto, t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
 import { helpersWorking } from '@shared/task-helpers'
-import { keepLiveFields } from './live-fields'
+import { dropLive, useLiveOf } from './live/store'
+import { useServerEvents } from './live/events'
+import { liveActive } from '@shared/live/task-live'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {
@@ -77,6 +79,7 @@ const TasksCtx = createContext<TasksData | null>(null)
 /**
  * 任务摘要里列表和侧栏会用到的字段：流式推送每个增量都会重发整个摘要，
  * 这些没变时沿用原来的对象和数组，所有 useData() 的消费者就不用跟着重渲染。
+ * 运行时状态（state、CLI 存活、子对话计数）不在这里比：它们在 live-store 里单独存、单独通知
  */
 function sameTask(a: Task, b: Task) {
   return (
@@ -86,11 +89,6 @@ function sameTask(a: Task, b: Task) {
     a.turnDoneAt === b.turnDoneAt &&
     a.turnSeenAt === b.turnSeenAt &&
     a.working === b.working &&
-    a.childrenWorking === b.childrenWorking &&
-    a.childrenNeeds === b.childrenNeeds &&
-    a.cliAlive === b.cliAlive &&
-    a.childrenCli === b.childrenCli &&
-    (a.jobs?.length ?? 0) === (b.jobs?.length ?? 0) &&
     helpersWorking(a) === helpersWorking(b) &&
     (a.parentAsks?.length ?? 0) === (b.parentAsks?.length ?? 0) &&
     a.archived === b.archived &&
@@ -172,25 +170,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // 启动时取一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // 有执行中的任务时定期刷新状态
+  // 列表和顶层对话的 live 由全局事件流推过来（server/tasks/events-routes.ts）：服务端发现变了才拉列表，
+  // 进程退出、后台命令结束这类不改任务本身的变化也能马上到
+  const { down } = useServerEvents(() => void reloadTasks())
+  // 事件流连不上（远程代理断开、在线演示没有后端）时退回旧做法：有还在运行的任务就定期拉列表。
   // CLI 还活着的也要刷：进程关掉不一定改状态，侧栏的流光和「CLI 存活」提示要跟着撤
-  const anyRunning = tasks.some((t) => t.status === 'running' || t.cliAlive || !!t.childrenCli)
+  const liveOf = useLiveOf()
+  const anyRunning = tasks.some((t) => {
+    const l = liveOf(t)
+    return liveActive(l) || l.cliAlive || l.childrenCli > 0
+  })
+  const poll = down && anyRunning
   useEffect(() => {
-    if (!anyRunning) return
+    if (!poll) return
     // 标签页在后台时不刷：多开几个标签页时后台的照样每 2.5 秒拉一次列表
     const t = setInterval(() => !document.hidden && void reloadTasks().catch(() => {}), 2500)
     return () => clearInterval(t)
-    // 有任务在执行时才定时刷新
+    // 只在需要兜底轮询时开关定时器
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [anyRunning])
+  }, [poll])
   const upsertTask = useCallback(
     // 全局列表只存摘要：暂停、继续、改名这些接口回的是带全部对话的完整任务，原样放进来的话
     // 摘要没变时 mergeTasks 会一直沿用这份，整段对话（几 MB）就跟着列表常驻内存，切走对话也不释放
     (full: Task) => {
       setTasks((ts) => {
         const i = ts.findIndex((x) => x.id === full.id)
-        // 停止、改名这类接口返回的任务不带运行时字段（后台命令、还在运行的子对话数）：沿用列表里的，转圈不闪
-        const t = taskSummary(keepLiveFields(ts[i], full))
+        // 运行时状态（live）在 api 层已经取下放进 live-store，这里只换任务记录
+        const t = taskSummary(full)
         if (i < 0) return [...ts, t]
         // 摘要没变时沿用原数组：流式输出期间每 200ms 来一次，不能每次都让侧栏重算
         if (sameTask(ts[i], t)) return ts
@@ -201,7 +207,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   )
-  const removeTask = useCallback((id: string) => setTasks((ts) => ts.filter((t) => t.id !== id)), [])
+  const removeTask = useCallback((id: string) => {
+    dropLive(id)
+    setTasks((ts) => ts.filter((t) => t.id !== id))
+  }, [])
 
   useEffect(() => {
     // CLI 检测可能要跑一遍各个 CLI，不挡住页面：其他数据到了就先显示

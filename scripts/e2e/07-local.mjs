@@ -809,7 +809,7 @@ await runShard('本机请求与设置', async (api) => {
     held = await waitFor(
       async () => {
         const t = await call('GET', `/tasks/${held.id}`)
-        return t.awaitingUser && t.jobs?.length ? t : null
+        return t.awaitingUser && t.live?.jobs?.length ? t : null
       },
       { timeout: 30000, label: '停在等后台命令结果' },
     )

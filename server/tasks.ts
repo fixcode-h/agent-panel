@@ -70,6 +70,7 @@ import { registerDiagnosisRoutes } from './tasks/diagnosis-routes.ts'
 import { registerEvidenceRoutes } from './tasks/evidence-routes.ts'
 import { registerUserActionRoutes } from './tasks/user-actions.ts'
 import { registerListRoutes } from './tasks/list-routes.ts'
+import { createTaskFeed } from './tasks/page-feed.ts'
 import { registerSharedDirRoutes } from './tasks/shared-dir-routes.ts'
 import { createIdleAsk } from './tasks/idle-ask.ts'
 import { createBudget } from './tasks/budget.ts'
@@ -80,6 +81,7 @@ import { createAsks } from './tasks/asks.ts'
 import { createAwaySweep } from './tasks/away-sweep.ts'
 import { createQuotaResume } from './tasks/quota-resume.ts'
 import { createPeer } from './tasks/peer.ts'
+import { createLive } from './tasks/live.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
 import { createAfterDeps } from './tasks/after-deps.ts'
@@ -230,7 +232,7 @@ export function tasksApi(deps: {
     trackUserToChild: () => trackUserToChild,
     wakeConv: () => wakeConv,
     wakeTask: () => wakeTask,
-    withJobs: () => withJobs,
+    liveOf: () => liveOf,
     withLive: () => withLive,
     learnExperience: () => learnExperience,
     quotaAfterFail: () => quotaAfterFail,
@@ -588,7 +590,7 @@ export function tasksApi(deps: {
   const { beginEdit, ensureChildWorktree, mergeLock, recordWorktreeError, restoreWorktree } = createEditWorktree(scope)
   const { noteParent, notePlanInput, sendToChild, trackUserToChild } = createChildMessages(scope)
   const { releaseAfter, startAfterNow } = createAfterDeps(scope)
-  const { background, endBackground, withJobs, settling } = createJobs(scope)
+  const { background, endBackground, settling } = createJobs(scope)
   const { parentTestStepsOf, parentTesting, parentTests, startParentTests, recordSelfTestRun, recoverParentTests } =
     createTestRuns(scope)
   const {
@@ -663,11 +665,13 @@ export function tasksApi(deps: {
     ruleCommand,
     settleChildTurn,
     startChild,
-    withLive,
+    childCountsOf,
     settleChildWorktree,
     reportKey,
     integrate,
   } = createChildren(scope)
+  // 对话的运行时状态只在这一处算（server/tasks/live.ts）：列表、详情、实时推送都经它
+  const { liveOf, withLive } = createLive(scope, childCountsOf)
   const { attachOrchestra, forwardSpawn, messageParent, remindParentFix } = createPeer(scope)
   const { answerChildAsk, applyAskUser, applyChildAskUser, runningConv, settleAskFromChild, settleAsks, wakeConv } =
     createAsks(scope)
@@ -696,18 +700,23 @@ export function tasksApi(deps: {
   const routes = new Hono()
 
   /**
-   * 带 ?summary=1 时回的任务换成摘要（和列表一样）：侧栏改名、归档、暂停这些地方只用标题和状态，
+   * 回给界面的任务一律带上 live（运行时状态，server/tasks/live.ts）：停止、改名、继续这类接口顺手回的任务也带，
+   * 页面拿到哪一份都有当下的状态，不用再「没带就沿用上一份」（以前的 keepLiveFields，重构文档第 1 条）。
+   * 带 ?summary=1 时换成摘要（和列表一样）：侧栏改名、归档、暂停这些地方只用标题和状态，
    * 原样回完整任务的话改个名也要把整段对话（长对话几 MB 到十几 MB）序列化、传给浏览器。
-   * 任务页自己要完整任务，不带这个参数，行为不变
+   * 任务页自己要完整任务，不带这个参数
    */
   routes.use('*', async (c, next) => {
-    if (c.req.query('summary')) {
-      const json = c.json.bind(c)
-      const isTask = (x: unknown): x is Task =>
-        !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
-      c.json = ((body: unknown, ...rest: unknown[]) =>
-        (json as (...a: unknown[]) => Response)(isTask(body) ? taskSummary(body) : body, ...rest)) as typeof c.json
-    }
+    const summary = !!c.req.query('summary')
+    const json = c.json.bind(c)
+    const isTask = (x: unknown): x is Task =>
+      !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
+    // 返回 Promise：Hono 的处理函数是 async 的，`return c.json(x)` 会等它
+    c.json = ((body: unknown, ...rest: unknown[]) => {
+      if (!isTask(body)) return (json as (...a: unknown[]) => Response)(body, ...rest)
+      const shown = 'live' in body ? Promise.resolve(body) : withLive(body)
+      return shown.then((t) => (json as (...a: unknown[]) => Response)(summary ? taskSummary(t) : t, ...rest))
+    }) as unknown as typeof c.json
     await next()
   })
   const { startMemoryGuard } = registerListRoutes(scope)
@@ -735,6 +744,8 @@ export function tasksApi(deps: {
 
   return {
     routes,
+    /** 全局事件流：列表变化和顶层对话的 live，挂在页面事件流 /api/app/events 上（见 server/tasks/page-feed.ts） */
+    pageFeed: createTaskFeed(scope),
     /**
      * 面板自己新建一个顶层对话（定时计划用）：和 POST /tasks 完全同一条链路，
      * 失败时抛出原因，由调用方记到计划里。

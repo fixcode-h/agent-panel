@@ -16,23 +16,13 @@ import {
 import { useRef, useState, type CSSProperties } from 'react'
 import { toast } from '@/lib/toast'
 import type { Project, Task } from '@shared/schema'
-import {
-  byAskedAt,
-  planLeft,
-  stopReasonText,
-  taskBusy,
-  taskDoneDot,
-  taskState,
-  taskTurnUnread,
-  taskDuration,
-  taskSummary,
-  waitDuration,
-} from '@shared/task'
-import { taskWaitText } from '@shared/task-word'
+import { byAskedAt, planLeft, stopReasonText, taskDuration, taskSummary, waitDuration } from '@shared/task'
 import { importTaskFile } from '@/lib/task-transfer'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
+import { useLive, useLiveOf } from '@/lib/live/store'
+import { liveBusy, liveDoneDot, liveWaitText, type TaskLive } from '@shared/live/task-live'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
@@ -74,7 +64,8 @@ function ProjectHome({ project }: { project: Project }) {
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务真的在跑时每秒刷新，耗时跟着走
   const now = useNow(list.some((t) => t.working))
-  const groups = groupByState(list)
+  const liveOf = useLiveOf()
+  const groups = groupByState(list, liveOf)
   const wf = projectDefaultWorkflow(project, projectCategories, workflows)
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
   // 导入别人导出的任务：放进这个项目，只能查看
@@ -226,29 +217,30 @@ function ProjectHome({ project }: { project: Project }) {
 }
 
 /** 这个任务现在要不要你处理：有确认请求、出错了、或者做完了还没看 */
-function needsYou(tk: Task) {
-  // 状态只从 taskState 来：等你处理、失败都要你看；还在运行的（子对话、子任务、后台命令没完）不算「做完没看」，
-  // 橙点也读同一处判定（taskDoneDot），不自己比 turnDoneAt / turnSeenAt。
+function needsYou(tk: Task, live: TaskLive) {
+  // 状态只读服务端给的 live：等你处理、失败都要你看；还在运行的（子对话、子任务、后台命令没完）不算「做完没看」，
+  // 橙点也读同一处判定（liveDoneDot），不自己比 turnDoneAt / turnSeenAt。
   // 和橙点同口径：只有完成态才归「需要你处理」，自己停下的、别的原因结束的都归 stopped，stopReason 只影响图标文字
-  const s = taskState(tk)
+  const s = live.state
   if (s === 'needs' || s === 'failed') return true
   // 计划推满了还停着（卡住）：要你看一下才能往下走
   if (s === 'unfinished' && planLeft(tk)?.stuck) return true
-  return taskDoneDot(tk, taskTurnUnread(tk))
+  return liveDoneDot(tk, live)
 }
 
 /**
  * 项目首页按状态分组：要你处理的放最上面，然后是正在执行的，其余按最近的要求排。
  * 组里保持原来的顺序（最近发过要求的在前），空的组不显示
  */
-function groupByState(list: Task[]) {
+function groupByState(list: Task[], liveOf: (t: Task) => TaskLive) {
   const all = [
     { key: 'you', label: t('需要你处理'), dot: 'bg-warning', items: [] as Task[] },
     { key: 'running', label: t('执行中'), dot: 'bg-accent', items: [] as Task[] },
     { key: 'rest', label: t('其他对话'), dot: 'bg-subtle', items: [] as Task[] },
   ]
   for (const tk of list) {
-    const g = needsYou(tk) ? all[0] : taskBusy(tk) ? all[1] : all[2]
+    const live = liveOf(tk)
+    const g = needsYou(tk, live) ? all[0] : liveBusy(live) ? all[1] : all[2]
     g.items.push(tk)
   }
   return all.filter((g) => g.items.length)
@@ -262,8 +254,9 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
   const w = workflows.find((x) => x.id === task.workflowId)
   const tops = task.steps.filter((s) => !s.parentId && s.kind !== 'main')
   const done = tops.filter((s) => s.status === 'done').length
-  const state = taskState(task)
-  const busy = state === 'running' || state === 'waiting'
+  const live = useLive(task)
+  const state = live.state
+  const busy = liveBusy(live)
   if (menu.renaming)
     return (
       <li className="flex items-center px-4 py-3">
@@ -290,15 +283,15 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                 working={busy}
                 spin={busy}
                 waiting={state === 'needs'}
-                cliAlive={!!task.cliAlive}
+                cliAlive={live.cliAlive}
               />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex min-w-0 items-center gap-1.5">
                   {isAnalysisTask(task, agents) && <AnalysisMark kind={task.analysis} />}
                   {/* 自己或名下子对话有活着的 CLI：标题流光 */}
                   <span
-                    title={cliAliveHint(task) || undefined}
-                    className={cn('truncate text-prose', cliTreeAlive(task) && 'cli-alive-title')}
+                    title={cliAliveHint(live) || undefined}
+                    className={cn('truncate text-prose', cliTreeAlive(live) && 'cli-alive-title')}
                   >
                     {task.title}
                   </span>
@@ -322,21 +315,20 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                         : 'text-subtle',
                 )}
               >
+                {/* 状态和「在等什么」都读服务端给的 live；停在等下一句也只认 live.next，不再拿 status 和 cliAlive 自己拼 */}
                 {state === 'needs'
-                  ? taskWaitText(task) || t('等你处理')
+                  ? liveWaitText(live) || t('等你处理')
                   : state === 'waiting'
-                    ? taskWaitText(task)
+                    ? liveWaitText(live)
                     : state === 'running'
                       ? statusLabel.running
-                      : task.status === 'done'
-                        ? timeAgo(task.updatedAt, now)
-                        : task.status === 'running' && task.cliAlive
-                          ? t('等待你的下一条消息')
-                          : task.status === 'running'
+                      : live.next
+                        ? t('等待你的下一条消息')
+                        : task.status === 'stopped'
+                          ? stopReasonText(task.stopReason)
+                          : task.status === 'done' || task.status === 'running'
                             ? timeAgo(task.updatedAt, now)
-                            : task.status === 'stopped'
-                              ? stopReasonText(task.stopReason)
-                              : statusLabel[task.status]}
+                            : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

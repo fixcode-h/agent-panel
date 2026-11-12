@@ -1,3 +1,4 @@
+import { useLiveById } from '@/lib/live/store'
 import { useMemo, useState } from 'react'
 import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
@@ -44,17 +45,20 @@ export function runningRows<C extends ChildEntry>({
   task,
   tools,
   jobs,
+  taskJobs,
   kids,
   children,
 }: {
   task?: Task
   tools: ToolUse[]
   jobs: boolean
+  /** 对话上还在跑、排队的后台命令：服务端给的 live.jobs（web/src/lib/live/store.ts） */
+  taskJobs: TaskJob[]
   kids: boolean
   /** 子对话摘要：RunningNow 从 ChildListCtx 拿，调用处也拿得到同一份，传进来免得两处判断不一致 */
   children: C[]
 }) {
-  const list = jobs ? (task?.jobs ?? []) : []
+  const list = jobs ? taskJobs : []
   // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧。
   const split = splitStepJobs(task?.steps ?? [], list)
   const own = split.own
@@ -328,6 +332,7 @@ export function RunningNow({
 }) {
   const children = useChildList()
   const openChild = useChildOpen()
+  const taskJobs = useLiveById(task?.id)?.jobs ?? []
   // 列什么只算一次：RunningNow 自己列的行和外面画不画分隔线读的是同一个函数
   const {
     sub: stepJobs,
@@ -336,7 +341,7 @@ export function RunningNow({
     helpers,
     reports,
     drafting,
-  } = runningRows({ task, tools, jobs, kids, children })
+  } = runningRows({ task, tools, jobs, taskJobs, kids, children })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
   const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
   const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))

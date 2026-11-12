@@ -1,3 +1,4 @@
+import { useLiveById } from '@/lib/live/store'
 import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react'
 import { toast } from '@/lib/toast'
 import type { Task, TaskRoute } from '@shared/schema'
@@ -66,9 +67,12 @@ export function RouteProvider({
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
+  // 后台命令只在服务端给的 live 里（web/src/lib/live/store.ts）
+  const jobs = useLiveById(task.id)?.jobs
   const live = useMemo<DispatchLive>(() => {
     const world = {
       task,
+      jobs: jobs ?? [],
       children: kids,
       latestChild: latestChildDispatch(index.all),
       rerouted: reroutedIds(task.messages, task.routes),
@@ -88,7 +92,7 @@ export function RouteProvider({
             }
           : undefined,
     }
-  }, [task, kids, index, send])
+  }, [task, jobs, kids, index, send])
   return (
     <Index.Provider value={index}>
       <Live.Provider value={live}>{children}</Live.Provider>

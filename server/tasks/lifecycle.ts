@@ -150,12 +150,13 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
     const nudged = sc.nudgeState(id)
     // 状态和短词按界面拿到的那一份算（补上后台命令、名下子对话在跑 / 在等你的数）：
     // 不补的话父对话在这里是「已完成」，标题栏、侧栏却写「子对话等你处理」（分析稿 A8）
-    const shown = await sc.withLive(tk)
+    const live = await sc.liveOf(tk)
+    const shown = { ...tk, jobs: live.jobs, childrenWorking: live.childrenWorking, childrenNeeds: live.childrenNeeds }
     const facts: LifeFacts = {
       kind: 'conversation',
       status: tk.status,
       stopReason: tk.stopReason,
-      state: taskState(shown),
+      state: live.state,
       working: !!tk.working,
       awaitingUser: !!tk.awaitingUser,
       resolved: tk.resolved === true,
