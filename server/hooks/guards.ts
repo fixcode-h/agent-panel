@@ -1,3 +1,4 @@
+import { fmtDuration } from '../../shared/duration.ts'
 import path from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import type { Project, Task } from '../../shared/schema.ts'
@@ -5,7 +6,8 @@ import { FULL_SUITE_COMMAND } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import { globMatch } from '../../shared/hook-defs.ts'
 import { pluginTestSteps } from '../../shared/plugins/contrib.ts'
-import { endlessSegment, heavySegment, quickSegment, runSegments } from '../../shared/command-scope.ts'
+import { classifySegment, runSegments } from '../../shared/command-scope.ts'
+import { isUeBuildCommand } from '../../shared/test-steps.ts'
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis, outOfPlan } from '../../shared/bug-diagnosis.ts'
 import { cleaning, editScope, revOf } from '../../shared/bug-phase.ts'
@@ -30,6 +32,8 @@ export interface GuardCtx {
   canBackground: boolean
   /** 这个守卫在设置里配的参数（列表一行一项） */
   list: (key: string) => string[]
+  /** 这一段命令在这个项目里上次在前台跑了多久（超过一分钟才有，server/command-times.ts） */
+  slowKnown?: (seg: string) => number | undefined
 }
 
 const inside = (dir: string, p: string) => {
@@ -173,14 +177,21 @@ export function longDeny(c: GuardCtx, facts: HookFacts): string {
   if (slow)
     return `【面板】${slow.command.slice(0, 80)} 是项目测试步骤「${slow.name}」（要编译、跑得久），放在前台会撞上命令的超时、整段输出也会进上下文：用面板工具 run_background 交给后台跑（带上计划步骤），跑完只推回错误、警告和结尾，完整日志存文件；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
   for (const s of segs(facts)) {
-    // 只看真正在跑的程序：cat、grep、git commit 这类快命令的参数里出现 e2e、--watch 不算（command-scope.ts）
-    if (quickSegment(s)) continue
-    if (endlessSegment(s))
-      return `【面板】${s.slice(0, 80)} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑（service 设为 true），用 check_background 看它的输出确认起来了。`
-    if (heavySegment(s))
-      return `【面板】${s.slice(0, 80)} 是要跑几分钟的编译、打包或装依赖，放在前台会撞上命令的超时被杀掉、也挡着对话：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
-    if (FULL_SUITE_COMMAND.test(s) || extra.some((x) => s.startsWith(x)))
-      return `【面板】${s.slice(0, 80)} 是要跑很久的完整检查：用面板工具 run_background 交给后台跑（带上计划步骤），跑完结果会推回来；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。`
+    // 只看真正在跑的程序：cat、grep、git commit 这类快命令的参数里出现 e2e、--watch 不算；判定统一在 command-scope.ts 的 classifySegment
+    const k = classifySegment(s, { extra, suite: FULL_SUITE_COMMAND, slowMs: c.slowKnown })
+    const head = `【面板】${s.slice(0, 80)}`
+    const hand =
+      '用面板工具 run_background 交给后台跑（带上计划步骤），跑完只推回错误、警告和结尾；交出去后做不依赖它的事，没有别的事就结束这一轮等结果。'
+    if (k.kind === 'service')
+      return `${head} 不会自己结束，放在前台会一直挡着对话：用面板工具 run_background 在后台跑（service 设为 true），用 check_background 看它的输出确认起来了。`
+    // UE 编译交给 run_background 时面板按编译目录占位排队（子对话的转成向父对话的申请），说法要和后台那边一致
+    if (k.kind === 'heavy' && isUeBuildCommand(s))
+      return `${head} 是 UE 编译，放在前台会撞上命令的超时被杀掉、整份日志也会进上下文：${hand}面板会按编译目录占位排队（子对话交来的会转成向父对话的编译申请），不用另找别的路。`
+    if (k.kind === 'heavy')
+      return `${head} 是要跑几分钟的编译、打包或装依赖，放在前台会撞上命令的超时被杀掉、也挡着对话：${hand}`
+    if (k.kind === 'slow')
+      return `${head} 在这个项目里上次跑了 ${fmtDuration(k.ms ?? 0)}，放在前台会挡着对话、还可能撞上命令的超时被杀掉：${hand}`
+    if (k.kind === 'suite') return `${head} 是要跑很久的完整检查：${hand}`
   }
   return wideSearchDeny(c, facts)
 }

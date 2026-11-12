@@ -111,3 +111,22 @@
 | 前台直接跑（后台拒收） | 读写文件、列目录、限定目录的搜索、git 本地操作                                          | 后台命令拒收，直接用命令工具               |
 
 没选：给 Claude Code 的 Grep 工具改写参数补排除项。新版已经没有这个工具（只有显式开启时才有），做了也只对老版本有用。
+
+## 补充（2026-11-12）：一个入口，面板分流；编译口真的能编
+
+用户报 Agent 交 `run_background` 跑 UE 的 Build.bat 被拒（128ms），转到 PowerShell 前台跑编译，问「为啥不允许后台命令」，并要求重新设计后台命令（设计文档：线程「重新设计后台命令」）。核对下来四个洞连在一起：
+
+- `request_build` 坏了：`stepCommand` 把 cmd 步骤包成 `cmd.exe /d /c "\"…\""`，`runShell` 再交给设置里的 shell。Git Bash 下 MSYS 改写 `/d /c`，cmd 只打印横幅以 0 退出（假成功）；PowerShell 下 `\"` 不是转义，秒失败。
+- 面板只看退出码，空跑也报成功。
+- UE 项目里 `run_background` 一律拒收 Build.bat，指向的正是坏掉的 `request_build`；前台守卫又说「交给 run_background」，两边互相指路。
+- 前台守卫拆段时把 `"D:\Program Files\…\Build.bat"` 的开头引号去掉，认不出编译，放行。
+
+决策：
+
+- **面板跑的测试步骤只经过一层 shell**：按步骤标的环境直接起 cmd / PowerShell / WSL / Git Bash 进程（`server/step-run.ts`、`BgJob.shell`）；Agent 交来的命令照旧用设置里的 shell。
+- **退出码 0 不等于跑了**：只有 cmd 横幅、或 UE 编译几秒就完没有 UnrealBuildTool 日志的，按失败推回（`server/bg-sanity.ts`）。
+- **长命令只有一个入口 `run_background`**：UE 项目里交来的编译不拒收，父对话的按编译目录占位排队（`parentRequestBuild` 的 `custom`，和 `request_build` 同一套占位、知会），子对话的转成向父对话的申请（`childRequestBuild`，独立分支的照旧让它 `submit_merge`）。`request_build` 保留为「按项目编译步骤编译」的快捷口。
+- **判定只留一处**：`shared/command-scope.ts` 的 `classifySegment` 分 quick / service / heavy / suite / slow / other，前台长命令守卫按它出提示；UE 编译的提示和后台那边说同一件事。
+- **按实测用时自动归档**：前台命令工具跑完按项目记用时（`server/command-times.ts`，数据目录的 `command-times.json`），同名命令跑过 60 秒以上的，下次放前台时守卫让它交给后台。CLI 前台命令默认两分钟超时，60 秒留一半余量；守卫设置里「另外算长命令的命令前缀」保留作手动补充。
+
+没选：保持拒收、只把提示改一致。编译口一坏 Agent 又会无路可走；让面板分流，Agent 只需记住「长命令交 run_background」。

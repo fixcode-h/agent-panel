@@ -1,3 +1,4 @@
+import { knownSlow } from '../command-times.ts'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Agent, Project, Task } from '../../shared/schema.ts'
@@ -234,6 +235,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     helper: !!c.call.orch?.helper,
     canBackground: !!c.call.orch?.canBackground,
     list: (key) => builtinList(data, id, key),
+    slowKnown: (seg) => knownSlow(c.task.projectId ?? '', seg),
   })
   const GUARDS: [string, (g: GuardCtx, f: HookFacts) => string][] = [
     ['read-only-guard', (g, f) => (who ? readOnlyDeny(c, who, f, g.list('extra')) : '')],

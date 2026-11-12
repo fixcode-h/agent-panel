@@ -404,6 +404,7 @@ export interface TasksScope {
     project: Project,
     note: string,
     children?: string[],
+    custom?: { name: string; command: string; cwd: string; timeoutMinutes?: number },
   ) => Promise<{
     ok: boolean
     info: string

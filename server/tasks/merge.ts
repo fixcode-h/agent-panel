@@ -408,8 +408,13 @@ ${
     note: string,
     /** 申请这次编译的子对话：结果同时推给它们，不用父对话转述 */
     children: string[] = [],
+    /**
+     * 父对话用 run_background 交来的编译命令（后台命令重新设计，2026-11-12）：不拒收，按同一个编译目录占位排队，
+     * 跑交来的这条命令，不跑项目测试步骤。Agent 按设置里的 shell 写的命令，照旧用那个 shell 跑
+     */
+    custom?: { name: string; command: string; cwd: string; timeoutMinutes?: number },
   ): Promise<{ ok: boolean; info: string; id?: string }> {
-    if (!buildSteps(project.testSteps).length)
+    if (!custom && !buildSteps(project.testSteps).length)
       return {
         ok: false,
         info: '项目测试步骤里没有编译步骤（勾「合并时编译」或名字带「编译」的）：请用户在项目设置 → 测试步骤里补上，补好之前不要自己拼命令编译。',
@@ -424,8 +429,8 @@ ${
         all.filter((x) => to.includes(x.id)).flatMap((x) => (sc.live.get(x.id)?.task ?? x).changes.map((c) => c.path)),
       ),
     ]
-    const steps = to.length ? buildStepsFor(project.testSteps, kidFiles) : buildSteps(project.testSteps)
-    if (!steps.length) {
+    const steps = custom ? [] : to.length ? buildStepsFor(project.testSteps, kidFiles) : buildSteps(project.testSteps)
+    if (!custom && !steps.length) {
       // 不用编译也是结果：记成通过，它们的 submit_merge 核对能过
       for (const tk of all.filter((x) => to.includes(x.id)))
         await saveBuildAsk(tk, {
@@ -445,13 +450,22 @@ ${
     // 先看占着的再排：排进去以后自己的也算在里面
     const before = sc.background.occupants(dir)
     const ids: string[] = []
-    for (const st of steps) {
+    const runs = custom
+      ? [{ name: custom.name, command: custom.command, cwd: custom.cwd, timeoutMinutes: custom.timeoutMinutes }]
+      : await Promise.all(
+          steps.map(async (st) => ({
+            name: st.name,
+            // 按步骤自己的环境直接起进程，不再包一层字符串交给设置里的 shell（server/step-run.ts）
+            ...(await stepRun(st, process.platform, project.wslDistro)),
+            cwd: st.cwd,
+            timeoutMinutes: undefined as number | undefined,
+          })),
+        )
+    for (const x of runs) {
       const r = sc.background.start({
         taskId: parent.id,
-        name: `UE 编译：${st.name}`,
-        // 按步骤自己的环境直接起进程，不再包一层字符串交给设置里的 shell（server/step-run.ts）
-        ...(await stepRun(st, process.platform, project.wslDistro)),
-        cwd: st.cwd,
+        ...x,
+        name: x.name.startsWith('UE 编译') ? x.name : `UE 编译：${x.name}`,
         root: dir,
         exclusive: true,
       })
@@ -490,7 +504,7 @@ ${
       ok: true,
       id: ids.at(-1),
       info: [
-        `已申请编译（${steps.map((x) => x.name).join('、')}），编号 ${ids.join('、')}。`,
+        `已申请编译（${runs.map((x) => x.name).join('、')}），编号 ${ids.join('、')}。`,
         added.length
           ? `children 没写，面板按申请补上了：${all
               .filter((x) => added.includes(x.id))

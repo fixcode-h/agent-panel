@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   backgroundMisuse,
+  classifySegment,
+  commandKey,
   endlessCommand,
   heavySegment,
   quickSegment,
@@ -107,4 +109,23 @@ test('PowerShell 的 & "带空格的路径" 拆段后程序名不丢：前台的
   assert.ok(heavySegment(segs[0]), segs[0])
   // 拆段切开的半边引号照旧去掉
   assert.deepEqual(runSegments('bash -lc "npm test && npm run e2e"'), ['npm test', 'npm run e2e'])
+})
+
+test('命令按实测用时归档的名字：程序名加前两个非选项参数；快命令没有名字', () => {
+  assert.equal(commandKey('npm run build -- --mode demo'), 'npm run build')
+  assert.equal(commandKey('cargo build --release'), 'cargo build')
+  assert.equal(commandKey('node scripts\\x.mjs --fast 2>&1'), 'node scripts/x.mjs')
+  assert.equal(commandKey('& "C:\\Tools\\gen.exe" A'), 'gen a')
+  assert.equal(commandKey('cat a.txt'), '')
+})
+
+test('一段命令该在哪跑只判定一处：快命令、常驻服务、一定很久、完整检查、实测慢、看项目', () => {
+  const o = { suite: /\be2e\b/, extra: ['make all'], slowMs: (s: string) => (s === 'tsc -b' ? 70_000 : undefined) }
+  assert.equal(classifySegment('cat a', o).kind, 'quick')
+  assert.equal(classifySegment('npm run dev', o).kind, 'service')
+  assert.equal(classifySegment('npm ci', o).kind, 'heavy')
+  assert.equal(classifySegment('npm run e2e', o).kind, 'suite')
+  assert.equal(classifySegment('make all', o).kind, 'suite')
+  assert.deepEqual(classifySegment('tsc -b', o), { kind: 'slow', ms: 70_000 })
+  assert.equal(classifySegment('npm run build', o).kind, 'other')
 })

@@ -281,3 +281,43 @@ export const endlessSegment = (seg: string) => !quickSegment(seg) && ENDLESS.som
 
 /** 整条命令里有不会自己结束的那一段 */
 export const endlessCommand = (cmd: string) => runSegments(cmd).some(endlessSegment)
+
+/**
+ * 按实测用时归档用的命令「名字」：程序名加前两个不是选项的参数（`npm run build`、`cargo build`、`node scripts/x.mjs`），
+ * 选项、重定向和更后面的参数不算，路径的反斜杠统一成 /。同一个名字下次再跑，按上次的用时判断该不该放后台
+ * （server/command-times.ts）。快命令（读写文件、查找、git 本地操作）没有名字，不记
+ */
+export function commandKey(seg: string): string {
+  if (quickSegment(seg)) return ''
+  const s = seg.trim().replace(/^&\s*/, '').replace(PREFIX, '')
+  const words = segArgs(s)
+    .split(/\s+/)
+    .filter((w) => w && !/^[-/]{1,2}\w/.test(w) && !/^\d*[<>|&]/.test(w))
+    .slice(0, 2)
+  return [segHead(s), ...words].join(' ').replace(/["']/g, '').replace(/\\/g, '/').toLowerCase().slice(0, 120)
+}
+
+/**
+ * 一段命令该在哪跑（后台命令重新设计，2026-11-12）：前台长命令守卫（server/hooks/guards.ts 的 longDeny）按它决定拦不拦、
+ * 说什么，后台命令的用途检查（backgroundMisuse）也按同一套快命令清单。判定只留这一处，提示词的说法跟着它：
+ * - quick：几秒就完，前台跑；交给后台拒收
+ * - service：不会自己结束（开发服务器、监听），后台按常驻服务跑
+ * - heavy：一定要跑几分钟的编译、打包、整份装依赖
+ * - suite：完整测试、e2e、界面检查，或用户在守卫设置里补的前缀
+ * - slow：这个项目里实测跑过一分钟以上（server/command-times.ts）
+ * - other：时长看项目，先前台跑，跑慢了下次自动归进 slow
+ */
+export type SegmentKind = 'quick' | 'service' | 'heavy' | 'suite' | 'slow' | 'other'
+
+export function classifySegment(
+  seg: string,
+  o: { extra?: string[]; suite?: RegExp; slowMs?: (seg: string) => number | undefined } = {},
+): { kind: SegmentKind; ms?: number } {
+  if (quickSegment(seg)) return { kind: 'quick' }
+  if (endlessSegment(seg)) return { kind: 'service' }
+  if (heavySegment(seg)) return { kind: 'heavy' }
+  const ms = o.slowMs?.(seg)
+  if (ms) return { kind: 'slow', ms }
+  if (o.suite?.test(seg) || (o.extra ?? []).some((x) => seg.startsWith(x))) return { kind: 'suite' }
+  return { kind: 'other' }
+}
