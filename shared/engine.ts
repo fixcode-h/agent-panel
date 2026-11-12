@@ -8,11 +8,14 @@
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 
-import { kidsOf, kidTitleOf, retryTarget } from './child-lookup.ts'
-import { docsFirst } from './docs-first.ts'
+import type { OrchCtx, OrchOpts } from './orchestra/ctx.ts'
+import { planTools } from './orchestra/plan-tools.ts'
+import { conversationTools } from './orchestra/conversation-tools.ts'
+import { capabilityTools } from './orchestra/capability-tools.ts'
+import { recordRoute } from './orchestra/route.ts'
 
-import { commonAgents, includedAgents, mountedAgents, roleKind, loadCapability, paramsProblem } from './agent-role.ts'
-import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES, normInlinePaths } from './inline-edit.ts'
+import { commonAgents, includedAgents, mountedAgents, paramsProblem } from './agent-role.ts'
+import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from './inline-edit.ts'
 import {
   END,
   START,
@@ -26,7 +29,6 @@ import {
   type NodeTier,
   type ParamValues,
   type Task,
-  type TaskRoute,
   type TaskStep,
   type TurnSources,
   type Workflow,
@@ -46,9 +48,9 @@ import {
 } from './flow.ts'
 import { t } from './i18n.ts'
 import { clip } from './text.ts'
-import { runRecord, runState, runTextTooLong, sendRunMessage, writeRunState } from './run-state.ts'
+import { runRecord, runTextTooLong, sendRunMessage } from './run-state.ts'
 import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
-import { pickFlow, runsSection, workflowCatalogText } from './flow-run.ts'
+import { runsSection, workflowCatalogText } from './flow-run.ts'
 import { runFlowRunTurn } from './flow-run-turn.ts'
 import { runTools } from './flow-run-orch.ts'
 
@@ -59,18 +61,13 @@ import { bugRoutePart } from './bug-route.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { orchAskPush } from './push-auth.ts'
 import { docRootText, plainDocRootText } from './doc-root.ts'
-import { handedToOther, noteHandOff, type HandOffs } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
-import { findLessons } from './lessons.ts'
-import { findExperience } from './experience.ts'
 import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
 
-import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText } from './task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
-import { endTurnCheck, pushTurnEnd } from './end-turn.ts'
-import { requestAction } from './user-action.ts'
 import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
 import {} from './builtin/default.ts'
 import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt-delta.ts'
@@ -105,11 +102,9 @@ import {
   REVIEW_WRAP_NOTE,
   briefMissing,
   briefPart,
-  diagnoseTask,
   helperLabel,
   helperOver,
   helperReport,
-  loadedCaps,
   orchState,
   putMail,
   resumeTarget,
@@ -124,16 +119,7 @@ import {
 } from './engine-helpers.ts'
 export { nodeRequests } from './engine-prompt-parts.ts'
 export { settleHelperWaits } from './engine-helpers.ts'
-import type {
-  AgentResult,
-  Fail,
-  AgentCall,
-  RouteInput,
-  HelperSpec,
-  HelperBatch,
-  Orchestra,
-  EngineHost,
-} from './engine-host.ts'
+import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine-host.ts'
 export type {
   AgentResult,
   Fail,
@@ -145,73 +131,23 @@ export type {
   HelperReport,
   HelperBatch,
   Orchestra,
-  P4SplitArgs,
   EngineHost,
-  LessonInput,
 } from './engine-host.ts'
+export type { P4SplitArgs } from './host/vcs.ts'
+export type { LessonInput } from './host/knowledge.ts'
 
-import {
-  activePlan,
-  applyPlan,
-  bindWait,
-  PARENT_FIX_REF,
-  finishPlan,
-  finishStepNow,
-  runningStepId,
-  ensureChildStep,
-  WRAP_UP,
-} from './plan.ts'
+import { bindWait, finishStepNow, WRAP_UP } from './plan.ts'
 
 /** 子任务、工作流运行的终止开关在 run-stops.ts：服务端路由从这里取 */
 export { stopHelper, stopPlan } from './run-stops.ts'
 /** 查名下子对话（计划对上等待、补步骤的标题、判断是不是重试）在 child-lookup.ts */
 export { retryBase } from './child-lookup.ts'
 
-/**
- * 每个父对话交给子对话的话 → 交给了哪个子对话、当时是哪条用户消息（见 sendToConversation：
- * 用户的一条消息只交给一个子对话）。范围和 sentToOther 一致（见 shared/peer-message.ts 的 handedToOther）
- */
-const handedOff = new WeakMap<object, HandOffs>() // 模块状态：运行时，消息交给了哪个子对话，重启后可能再交一次
-
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
 
 /** 节点提示词里节点自己的部分从这里开始，前面是同一个任务里各节点共用的部分 */
 export const NODE_PART = '## 当前节点'
-
-/** send_to_conversation 送到之后跟在返回后面的一句：这一轮可以结束、怎么跟用户说、不要猜状态 */
-export const SENT_NOTE =
-  '交出去了：这一轮可以结束，它做完会自动推回结果。给用户只说「已交回，等它的结果」，不要轮询，也不要拿 busy、「已完成」这类状态去猜它接没接到；用户问起时用 list_conversations 看一次 lastActivityAt 是否比交回的时间新。'
-
-/**
- * 记一条分诊：只记父对话（能分派子对话的顶层对话）的，界面画成分诊卡。
- * 出自哪条消息按最后一条用户消息算（这一轮就是在回应它）
- */
-function recordRoute(
-  host: EngineHost,
-  target: TaskRoute['target'],
-  refs: string[],
-  label: string,
-  route: RouteInput | undefined,
-) {
-  const { task } = host
-  const str = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 500) : '')
-  const ask = [...task.messages].reverse().find((m) => m.role === 'user' && !m.peer)
-  task.routes = [
-    ...(task.routes ?? []).slice(-499),
-    {
-      id: host.newId(),
-      target,
-      refs: refs.slice(0, 20),
-      label: label.slice(0, 200),
-      understanding: str(route?.understanding),
-      reason: str(route?.reason),
-      assumptions: str(route?.assumptions),
-      messageId: ask?.id ?? '',
-      at: now(),
-    },
-  ]
-}
 
 /** 子任务结果交给对话的 CLI。preempt：它正在回复等待期间的用户消息，先放下那条，做完再回去 */
 export const helperPrompt = (late: string, preempt = false) =>
@@ -1235,19 +1171,7 @@ async function runRef(
 
 // ---- 编排工具：派子 Agent、查状态、提问、传话 ----
 
-function makeOrchestra(
-  host: EngineHost,
-  ctx: {
-    workflow?: Workflow
-    tier: NodeTier
-    chat?: boolean
-    planning?: boolean
-    coordinator?: boolean
-    /** 调用者是派出去的子任务：只做并行的收集、核实、出计划，不能再往外派 */
-    helper?: boolean
-  },
-  self: TaskStep,
-): Orchestra {
+function makeOrchestra(host: EngineHost, ctx: OrchOpts, self: TaskStep): Orchestra {
   const st = orchState(host)
   const { task } = host
   const helper = !!ctx.helper
@@ -1269,6 +1193,7 @@ function makeOrchestra(
       task.steps.find((s) => s.title === k)
     )
   }
+  const oc: OrchCtx = { host, ctx, self, st, task, helper, selfAgent, planner, coordinator, chatMode, where, findStep }
   return {
     self: self.id,
     planner,
@@ -1290,6 +1215,44 @@ function makeOrchestra(
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过工作流之后 task.runs 会残留上一次运行，
     // 只看 runs 会把工具又注册回来，读到的还是上一次运行的 state
     sharedState: !ctx.chat && !!runRecord(task),
+    planning: !!ctx.planning && coordinator,
+    runs: runTools(task, host.runs, !helper && !!ctx.planning && coordinator, () => host.changed(true)),
+    plans: !!ctx.chat && !helper && !!task.projectId,
+    coordinator,
+    // 挂了能力的高级角色就地用能力：取能力的完整做法（子任务只做派给它的那件事，不加载别的能力）
+    capabilities: !helper && !!selfAgent && mountedAgents(selfAgent, host.agents).length > 0,
+    inlineEdit: coordinator && !!host.inlineEdit && selfAgent?.inlineEdit === 'tiny',
+    // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件（推回的结果由同一个对话处理）
+    child: !helper && !!task.parentTaskId && !!host.messageParent,
+    claims: !helper && !!host.claimFiles,
+    // 子任务也能用后台命令：命今跑在同一个对话的目录里、结果也推回同一个对话，只是记录上带自己的步骤 id，
+    // 运行区据此按「子任务 + 命令名」单独列出（见 web/src/components/tasks/RunningNow.tsx）
+    canBackground: !!host.runBackground,
+    canSubmit: !helper && !!host.submitMerge,
+    isolated: !!host.isolated,
+    // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
+    canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
+    ueBuild: !helper && ctx.chat && host.ueBuild ? host.ueBuild.role : '',
+    parentOf: !helper && !!ctx.chat && !!host.finishChild,
+    peers: !helper && !!ctx.chat && !!host.peers,
+    p4Split: host.p4Split,
+    cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
+    askPush: orchAskPush(host, !!ctx.chat, helper),
+    remember: !helper && isChatMode(task) ? host.chatMemory?.remember : undefined,
+    status: () => statusTree(host, self.id),
+    // 按派发 / 计划 / 对话 / 能力分组的工具（shared/orchestra/*.ts、本文件的 dispatchTools）
+    ...planTools(oc),
+    ...conversationTools(oc),
+    ...capabilityTools(oc),
+    ...dispatchTools(oc),
+  }
+}
+
+/** 派发类工具：派子任务、终止、等结果、交回的批次、给节点传话、收件箱 */
+function dispatchTools(oc: OrchCtx) {
+  const { host, self, st, task, helper, where, findStep } = oc
+  return {
+    spawn: (...a: Parameters<Orchestra['spawn']>) => spawn(oc, ...a),
     helperBatch() {
       const going = st.batches.get(self.id)
       if (going) return going
@@ -1329,694 +1292,6 @@ function makeOrchestra(
       })
       st.batches.set(self.id, batch)
       return batch
-    },
-    planning: !!ctx.planning && coordinator,
-    pickWorkflow(key) {
-      if (helper || !ctx.planning || !coordinator)
-        return {
-          ok: false,
-          info: '只有项目里的父对话能启动工作流；子对话、子任务和工作流节点都不能，按派给你的事直接做',
-        }
-      const r = pickFlow(host.workflowCatalog?.() ?? [], key)
-      if (r.ok || !key.trim()) return r
-      // 用户点名、不在项目可选列表里的工作流（工作流页「在项目里运行」会带上 id）：按 id 认，名字认不出来照旧报
-      const w = host.resolveWorkflow?.(key.trim())?.workflow
-      if (!w || w.id !== key.trim()) return r
-      return { ok: true as const, flow: { workflowId: w.id, workflowName: w.name, kind: w.kind ?? 'change' } }
-    },
-    runs: runTools(task, host.runs, !helper && !!ctx.planning && coordinator, () => host.changed(true)),
-    plans: !!ctx.chat && !helper && !!task.projectId,
-    async setPlan(input) {
-      if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      const r = applyPlan(task, input, undefined, host.wrapUp, await kidsOf(host))
-      if (r.ok) {
-        // 对话自己改了计划：新要求算看过了（见 inputUnhandled）
-        const plan = activePlan(task)
-        if (plan) plan.agentUpdatedAt = new Date().toISOString()
-        // 总结写进这个对话自己的计划（ADR 0041：各写各的，不写进父对话的计划）；最后一步标完成时计划已收起，写在它上面
-        const sum = input.summary?.trim()
-        const target = plan ?? task.plans?.at(-1)
-        if (sum && target) target.summary = sum.slice(0, 8000)
-        host.changed(true)
-        // 最后一步标完成、计划自动收起却没带总结：提醒补一句，不然这份计划只剩步骤列表，父对话和用户看不到结果
-        if (!plan && target?.doneAt && !target.summary)
-          return {
-            ...r,
-            info: `${r.info}\n这份计划还没写总结：用 finish_plan 的 summary 补上（做了什么、结果、遗留）。`,
-          }
-      }
-      return r
-    },
-    async finishPlan(summary) {
-      if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      // 计划已自动收起、还没总结：这次只补总结（setPlan 收起时提醒过）；正常结束时总结记在刚结束的这份上
-      const closed = !activePlan(task) ? task.plans?.at(-1) : undefined
-      if (closed && !closed.summary && summary.trim()) {
-        closed.summary = summary.trim().slice(0, 8000)
-        host.changed(true)
-        return { ok: true, info: '总结记在刚结束的那份计划上了。之后有新内容用 set_plan 开新的计划。' }
-      }
-      const r = finishPlan(task, summary, undefined, await kidsOf(host))
-      const last = task.plans?.at(-1)
-      if (r.ok && last && summary.trim()) last.summary = summary.trim().slice(0, 8000)
-      if (r.ok) host.changed(true)
-      return r
-    },
-    // 只给对话（不含 Chat 页一问一答、子任务和工作流节点）：结束前钩子只认它交代的结束，不读回复文字
-    ...(ctx.chat && !helper && !isChatMode(task)
-      ? {
-          async endTurn(outcome: string, need: string) {
-            // 命令改的文件、插件工具报的改动和验证：只在要记成做完时现取（拍快照有开销）
-            const extra = outcome === 'done' ? await host.turnExtra?.().catch(() => undefined) : undefined
-            const r = endTurnCheck(task, outcome, need, host.verifyGate, extra)
-            if (r.end) pushTurnEnd(task, r.end)
-            if (r.end) host.changed(true)
-            return { ok: r.ok, info: r.info }
-          },
-          requestUserAction(input) {
-            const r = requestAction(task, input, host.newId())
-            if (!r.action) return r
-            // 计划里正在做的那一步挂成「等你操作」：交回时按 settleWait 收口
-            const step = typeof input?.step === 'string' && input.step.trim() ? input.step : runningStepId(task)
-            const wait = step ? bindWait(task, step, { kind: 'user', ref: r.action.id, label: r.action.title }) : ''
-            host.changed(true)
-            return { ok: true, info: wait && !wait.startsWith('（') ? `${r.info}\n${wait}` : r.info }
-          },
-        }
-      : {}),
-    coordinator,
-    async conversations() {
-      if (!coordinator || !host.listConversations) return '（这个对话不能分派子对话）'
-      const list = await host.listConversations()
-      if (!list.length) return '（还没有子对话）'
-      return list
-        .map((c) =>
-          [
-            `- ${c.id}｜${c.title}｜${c.status}`,
-            c.summary ? `：${clip(c.summary, 200)}` : '',
-            // 在等什么、最后有动静多久了：「是不是卡住了」靠这两项回答，不再让人拿分支时间戳猜
-            c.waiting ? `｜${c.waiting}` : '',
-            c.doing ? `｜在做：${c.doing}` : '',
-            c.lastActivityAt ? `｜最后活动 ${timeAgo(c.lastActivityAt)}` : `｜最近 ${timeAgo(c.at)}`,
-          ].join(''),
-        )
-        .join('\n')
-    },
-    async createConversation(title, message, files, step, extra) {
-      if (!coordinator || !host.createConversation) return { ok: false, info: '这个对话不能创建子对话' }
-      if (task.inlineEdit)
-        return { ok: false, info: '就地改动还没结束：先改完、提交，调用 end_inline_edit 收尾，再派子对话' }
-      if (!message.trim()) return { ok: false, info: 'message 不能为空' }
-      // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
-      if (!title.trim())
-        return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
-      // 子对话失败、被中断后要重试：在原来那个子对话里接着做（用户 2026-10-25 定的），不另起一个「（重试）」
-      const again = await retryTarget(host, title)
-      if (again)
-        return {
-          ok: false,
-          info: `子对话「${again.title}」（id ${again.id}）${again.status}：重试不要新建子对话，用 send_to_conversation 交回给它（id ${again.id}），它在原来的会话里接着做，已经做完的不用重做。`,
-        }
-      // 子对话的角色：点名的必须是启用的高级角色（子对话是负责人，要能调度能力），不写由宿主用「执行」
-      const roleName = extra?.role?.trim()
-      const role = roleName ? findRole(host.agents, roleName, modeScope(task), (a) => a.enabled) : undefined
-      if (roleName && (!role || roleKind(role) !== 'advanced' || scopeOf(role) === 'chat')) {
-        const names = host.agents
-          .filter((a) => a.enabled && roleKind(a) === 'advanced' && !a.canDelegate && scopeOf(a) === 'agent')
-          .map((a) => `「${a.name}」`)
-          .join('、')
-        return {
-          ok: false,
-          info: `role 写的「${roleName}」不是可用的高级角色${names ? `：可以写 ${names}` : ''}；不写就用「执行」`,
-        }
-      }
-      // 计划里这一步还在等一个没做完的子对话：同一件事交回原来的子对话接着做，不另起一个重做（用户 2026-10-30 定的）。
-      // 原来的子对话失败了（起不来、交回时报错）才允许另建一个接手它的活
-      const at0 = step?.trim() ? activePlan(task)?.steps.find((s) => s.id === step.trim()) : undefined
-      if (at0) {
-        const kids = host.listConversations ? await host.listConversations().catch(() => []) : []
-        const holder = at0.waits.find(
-          (w) =>
-            w.kind === 'child' &&
-            w.state === 'waiting' &&
-            kids.some((k) => k.id === w.ref && !k.resolved && k.state !== 'failed' && k.state !== 'done'),
-        )
-        if (holder)
-          return {
-            ok: false,
-            info: `计划里「${at0.title}」这一步还在等子对话「${holder.label}」（id ${holder.ref}），它还没做完。用 send_to_conversation 交回它接着做，写清下一步；不要另建一个子对话重做。它确实起不来（交回时报错、状态是失败）再另建，并在派单里写明接手的是哪个子对话的活。`,
-          }
-      }
-      const docs = await docsFirst(
-        extra ?? {},
-        host.moduleDocs,
-        selfAgent?.params.find((p) => p.key === 'docsFirst')?.default === true,
-      )
-      if (docs.block) return { ok: false, info: docs.block }
-      const r = await host.createConversation({
-        title: title.trim(),
-        message: message + (docs.note ?? ''),
-        files,
-        ...(role && { agentId: role.id }),
-        ...(extra?.bug && { bug: true }),
-        ...(extra?.fix && !extra.bug && { fix: true }),
-        ...(extra?.edits && { edits: true }),
-        ...(extra?.ignoreDirty && { ignoreDirty: true }),
-        ...(extra?.bug && extra.level && { level: extra.level }),
-        ...(extra?.after?.length && { after: extra.after }),
-      })
-      if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
-      // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
-      // 没指定步骤就挂到计划里能对上的一步；对不上（或者计划已经结束）由 ensureChildStep 自动补一步，
-      // 不然这一步一标完成，父对话的计划就「已完成」了，子对话却还没合回（用户报过：一堆子对话在跑、计划面板还停在旧状态）
-      const at = r.ok && r.id ? step?.trim() || ensureChildStep(task, r.id, title) : ''
-      const wait = r.ok && r.id && at ? bindWait(task, at, { kind: 'child', ref: r.id, label: title.trim() }) : ''
-      if (r.ok) host.changed(true)
-      // 没写级别：子对话按标准走，一行就能修的 Bug 也要确认根因、方案两道（实测 2026-11-05）
-      const level =
-        r.ok && extra?.bug && !extra.level
-          ? '没写 level：子对话按「标准」级别查。下次派 Bug 按「Bug 怎么交」的级别初判写上 level，快速级别根因和方案合成一次确认。'
-          : ''
-      return { ok: r.ok, id: r.id, info: [r.info, r.ok && docs.info, wait, level].filter(Boolean).join('\n') }
-    },
-    async sendToConversation(id, message, step, route, bug) {
-      if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
-      if (!message.trim()) return { ok: false, info: 'message 不能为空' }
-      // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
-      // 父对话里刷出一排一模一样的「发送消息」，几个子对话还会各改各的同一处
-      // 并行发出的几次调用可能还没记进对话：这一轮已经交出去的也记在内存里一起查
-      let handed = handedOff.get(task)
-      if (!handed) handedOff.set(task, (handed = new Map()))
-      const other = handedToOther(task.messages, handed, id.trim(), message)
-      if (other)
-        return {
-          ok: false,
-          info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
-        }
-      noteHandOff(task.messages, handed, id.trim(), message)
-      const r = await host.sendToConversation(id.trim(), message, bug)
-      if (!r.ok) handed.delete(message.trim())
-      // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
-      const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
-      const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''
-      const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
-      if (r.ok) recordRoute(host, 'resend', [id.trim()], kidTitle || id.trim(), route)
-      if (r.ok) host.changed(true)
-      // 送没送到、之后怎么做由返回自己说清（以前写在协调器设定里一整节教它读返回值，ADR 0048 删掉了那一节）
-      const info = r.ok ? `${r.info}\n${SENT_NOTE}${wait ? `\n${wait}` : ''}` : r.info
-      return { ok: r.ok, info }
-    },
-    // 挂了能力的高级角色就地用能力：取能力的完整做法（子任务只做派给它的那件事，不加载别的能力）
-    capabilities: !helper && !!selfAgent && mountedAgents(selfAgent, host.agents).length > 0,
-    loadCapability(name, params) {
-      if (helper || !selfAgent) return { ok: false, info: '这里没有挂载的能力' }
-      if (!name.trim()) return { ok: false, info: 'name 不能为空：写能力的名字（见角色设定里「你挂载的能力」）' }
-      const r = loadCapability(selfAgent, host.agents, name, task.params ?? {}, task.skillSlots ?? {}, params ?? {})
-      if (!r.ok) return { ok: false, info: r.text }
-      // 同一个会话里已经加载过、参数也没变的不再整段返回：上下文里已经有了，重复贴只占地方
-      const key = `${self.id}\u0000${name.trim()}\u0000${JSON.stringify(params ?? {})}`
-      const seen = loadedCaps.get(host) ?? new Set<string>()
-      loadedCaps.set(host, seen)
-      if (seen.has(key)) return { ok: true, info: `「${name.trim()}」这一轮已经加载过，做法见上文` }
-      seen.add(key)
-      return { ok: true, info: r.text }
-    },
-    inlineEdit: coordinator && !!host.inlineEdit && selfAgent?.inlineEdit === 'tiny',
-    async beginInlineEdit(files, reason, route) {
-      if (!coordinator || !host.inlineEdit || selfAgent?.inlineEdit !== 'tiny')
-        return { ok: false, info: '这个对话不能就地改文件：把改动交给子对话（create_conversation）' }
-      const r = await host.inlineEdit.begin(normInlinePaths(files), reason.trim())
-      if (r.ok) recordRoute(host, 'inline-edit', normInlinePaths(files), reason.trim(), route)
-      host.changed(true)
-      return r
-    },
-    async endInlineEdit() {
-      if (!host.inlineEdit) return { ok: false, info: '这个对话没有就地改动' }
-      const r = await host.inlineEdit.end()
-      host.changed(true)
-      return r
-    },
-    // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件（推回的结果由同一个对话处理）
-    child: !helper && !!task.parentTaskId && !!host.messageParent,
-    claims: !helper && !!host.claimFiles,
-    // 子任务也能用后台命令：命今跑在同一个对话的目录里、结果也推回同一个对话，只是记录上带自己的步骤 id，
-    // 运行区据此按「子任务 + 命令名」单独列出（见 web/src/components/tasks/RunningNow.tsx）
-    canBackground: !!host.runBackground,
-    async runBackground(input) {
-      if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
-      if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
-      const { step, ...job } = input
-      // 归属：调用时点名的步骤优先；子任务没点名就记它自己的步骤 id（运行区据此区分两种来源）；
-      // 父对话没点名就挂到当前进行的那一步上——以前不带 step 的长命令在计划里完全看不见，计划还停在上一步
-      const owner = step?.trim() || (helper ? self.id : runningStepId(task))
-      const r = await host.runBackground(owner ? { ...job, step: owner } : job)
-      // 计划里的步骤挂上「等这条命令」：子任务的步骤不在计划里（它是 slot='sub' 的步骤），不挂
-      // 常驻服务（开发服务器、监听）一直跑到被停掉：挂上等待的话那一步永远停在等待中
-      const wait =
-        !helper && !job.service && r.ok && r.id && owner
-          ? bindWait(task, owner, { kind: 'background', ref: r.id, label: job.name })
-          : ''
-      if (r.ok) host.changed(true)
-      return { ok: r.ok, info: [r.info, wait].filter(Boolean).join('\n') }
-    },
-    checkBackground(id) {
-      return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
-    },
-    stopBackground(id) {
-      return host.stopBackground ? host.stopBackground(id.trim()) : { ok: false, info: '这里没有后台命令' }
-    },
-    canSubmit: !helper && !!host.submitMerge,
-    isolated: !!host.isolated,
-    // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
-    canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
-    async beginEdit() {
-      if (!host.beginEdit || !ctx.chat || self.parentId) return { ok: false, info: '这个对话不用开独立分支，直接改' }
-      const r = await host.beginEdit()
-      if (r.ok) host.changed(true)
-      return r
-    },
-    async submitMerge(note, tests, build, handoff, triage, override) {
-      if (!host.submitMerge) return { ok: false, info: '只有项目里的子对话能请父对话收尾' }
-      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage, override)
-      if (r.ok) host.changed(true)
-      return r
-    },
-    ueBuild: !helper && ctx.chat && host.ueBuild ? host.ueBuild.role : '',
-    async requestBuild(note, step, children) {
-      if (helper || !ctx.chat || !host.ueBuild) return { ok: false, info: '这里不用申请编译' }
-      if (!note.trim()) return { ok: false, info: '写清为什么要编译：哪些改动、哪些子对话申请的' }
-      const r = await host.ueBuild.request(note.trim(), children)
-      const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'background', ref: r.id, label: '编译' }) : ''
-      if (r.ok) host.changed(true)
-      return { ok: r.ok, info: [r.info, wait].filter(Boolean).join('\n') }
-    },
-    parentOf: !helper && !!ctx.chat && !!host.finishChild,
-    async finishChild(id) {
-      if (helper || !ctx.chat || !host.finishChild) return { ok: false, info: '这个对话没有子对话可以收尾' }
-      // 就地改动期间不合回子对话：合并和就地改动搅在同一个工作区里，改动算不清、也可能互相覆盖
-      if (task.inlineEdit)
-        return { ok: false, info: '你在就地改动：先改完、提交，调用 end_inline_edit 收尾，再收尾子对话' }
-      if (!id) return { ok: false, info: 'id 是空的：写子对话的 id（收尾请求里有）' }
-      const r = await host.finishChild(id)
-      host.changed(true)
-      return r
-    },
-    peers: !helper && !!ctx.chat && !!host.peers,
-    async listPeers() {
-      if (!host.peers) return '（这个对话不能联系其他父对话）'
-      const list = await host.peers()
-      if (!list.length) return '（这个项目里没有别的父对话）'
-      return list
-        .map(
-          (p) =>
-            `- ${p.id}｜${p.title}｜${p.busy ? '执行中' : p.status}${p.building ? `｜占着编译：${p.building}` : ''}`,
-        )
-        .join('\n')
-    },
-    async messagePeer(id, text) {
-      if (!host.messagePeer) return { ok: false, info: '这个对话不能联系其他父对话' }
-      if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      return host.messagePeer(id.trim(), text.trim())
-    },
-    async toParent(text, question, options, kind, waitFix) {
-      if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
-      if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      const at = waitFix?.trim()
-      // 写明这是要父对话分派修复的报错：父对话按「编译、测试报错的分派」规则找改出它的子对话（见 shared/fix-route.ts）
-      const body = at ? `【报错不是我改出来的，请安排修复后通知我】\n${text.trim()}` : text.trim()
-      const r = await host.messageParent(body, question, options, kind, !!at)
-      if (!r.ok || !at) return r
-      const wait = bindWait(task, at, { kind: 'parent', ref: PARENT_FIX_REF, label: '父对话安排修复' })
-      host.changed(true)
-      return {
-        ok: true,
-        info: `${r.info}\n${wait}父对话安排好修复会发消息给你，那时这一步退回进行中，你再重跑它的编译 / 测试。`,
-      }
-    },
-    claim(paths) {
-      if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
-      const list = paths.map((p) => p.trim()).filter(Boolean)
-      if (!list.length) return { ok: false, info: 'paths 是空的：写要改的文件或目录（相对项目根）' }
-      const r = host.claimFiles(list)
-      const lines = [
-        r.granted.length ? `已认领：${r.granted.join('、')}` : '',
-        r.held.length
-          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」${h.state ? `，${h.state}` : ''}）`).join('、')}。认领留到对方的改动被父对话验收才释放：先做别的部分；对方已停下或在等验收、你又绕不开时，用 message_parent（question 设为 true）请父对话协调。`
-          : '',
-      ]
-      return { ok: !r.held.length, info: lines.filter(Boolean).join('\n') }
-    },
-    release(paths) {
-      if (!host.releaseFiles) return { ok: false, info: '这个对话不需要认领文件' }
-      const n = host.releaseFiles(paths.map((p) => p.trim()).filter(Boolean))
-      return { ok: true, info: n ? `已释放 ${n} 条认领` : '没有可释放的认领（改过的文件等父对话验收后释放）' }
-    },
-    readState() {
-      const entries = Object.entries(runState(task))
-      if (!entries.length) return '（共享状态还是空的）'
-      return entries
-        .map(([k, v]) => `- ${k}（v${v.version}，${v.by || '未知节点'} 写入，${v.at}）：\n${clip(v.value, 4000)}`)
-        .join('\n\n')
-    },
-    writeState: (key, value) => writeRunState(host, self.id, key, value),
-    lessons: host.lessons
-      ? {
-          find: async (files, opts) =>
-            findLessons(
-              await host.lessons!.list(),
-              files,
-              (await host.lessons!.globals?.()) ?? [],
-              opts,
-              host.lessons!.hit,
-            ),
-          record: helper ? undefined : (input) => host.lessons!.record(input),
-        }
-      : undefined,
-    experience: host.experience
-      ? {
-          find: async (query, files) =>
-            findExperience(await host.experience!.list(), query, files, host.experience!.hit),
-          list: () => host.experience!.list(),
-          record: helper ? undefined : (input) => host.experience!.record(input),
-        }
-      : undefined,
-    p4Split: host.p4Split,
-    cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
-    askPush: orchAskPush(host, !!ctx.chat, helper),
-    // 有项目的普通对话发 /bug 也就地标成 Bug（shared/bug-in-place.ts），同样有这几个工具
-    ...(task.bug &&
-      (task.parentTaskId || task.projectId) &&
-      ctx.chat &&
-      !helper && {
-        diagnose: (x) => diagnoseTask(host, x),
-        bugCase: (x) => diagnoseTask(host, x, true),
-        requestLogs: (x) => diagnoseTask(host, x, 'logs'),
-      }),
-    remember: !helper && isChatMode(task) ? host.chatMemory?.remember : undefined,
-    status: () => statusTree(host, self.id),
-    spawn(tasks, step, opts) {
-      if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
-      const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
-      if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
-      const mine = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
-      const have = mine.length
-      if (host.halted) return { ids: [], error: '任务已经停止或有节点失败，不再派新的子 Agent' }
-      // 子任务默认用必备角色「子任务」；点名要「测试验收」「文档」这类通用角色时用点名的
-      const helperRole = host.agents.find((a) => isHelperAgent(a) && a.enabled)
-      // 独立分支里的子对话：提交和合回只走 submit_merge。派「版本控制」去收尾，它会照角色设定自己提交、
-      // 甚至自己去合并，面板的收尾步骤一直等不到 submit_merge，子对话就卡在最后一步
-      if (host.isolated) {
-        const vcs = list.find((x) => {
-          const want = x.agent?.trim()
-          return want && host.agents.some((a) => a.origin === VCS_ORIGIN && (a.id === want || a.name === want))
-        })
-        if (vcs)
-          return {
-            ids: [],
-            error:
-              '你在独立分支里，不用派「版本控制」：提交和合回都由面板做。验证跑通后你自己调用 submit_merge（面板把改动提交到你的分支，父对话合回原分支），不要自己或让子任务 git commit / merge。只想核对改动范围就自己看 git status / git diff。',
-          }
-      }
-      // 点名的角色必须真的存在：找不到时不能落到默认「子任务」，那和复看降级成子任务一样——
-      // 派出去的角色和调用方以为的不一样，提示词也跟着换，而交回的结果看不出走了样
-      const available = commonAgents(host.agents)
-        .map((a) => `「${a.name}」`)
-        .join('、')
-      for (const spec of list) {
-        const want = spec.agent?.trim()
-        const named = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
-        if (named && scopeOf(named) === 'chat')
-          return {
-            ids: [],
-            error: `「${named.name}」是 Chat 角色，只能在 Chat 页用${available ? `：可以点名 ${available}` : ''}`,
-          }
-        if (want && !named)
-          return {
-            ids: [],
-            error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
-          }
-      }
-      // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agent-role.ts 的 mountMode）。
-      // 设成「就地用」的不派出：派出去是另一套冷启动的上下文，等于绕开了挂载的约定，也白花一次注入
-      const mounts = selfAgent ? mountedAgents(selfAgent, host.agents) : []
-      const mountOf = (want: string | undefined) =>
-        want ? mounts.find((m) => m.agent.id === want || m.agent.name === want) : undefined
-      for (const spec of list) {
-        const m = mountOf(spec.agent?.trim())
-        if (m?.mode === 'inline' && !spec.resume?.trim())
-          return {
-            ids: [],
-            error: `「${m.agent.name}」在你这里挂成了就地用：调用 use_capability（name 写「${m.agent.name}」）取它的做法，在当前对话里自己做，不派子任务`,
-          }
-      }
-      // 只在父对话执行的角色（runIn: 'parent'，或挂载上定成「转交父对话」）：子对话里点名它时不在这里建，
-      // 转交父对话创建（见 ADR 0019）。判定放引擎里：对话、工作流节点、计划面板定时任务的 spawn 都走这里，放 orch-mcp 会漏
-      const local = list.filter((spec) => {
-        if (opts?.local || !host.task.parentTaskId) return true
-        const want = spec.agent?.trim()
-        if (mountOf(want)?.mode === 'parent') return false
-        return !want || findRole(host.agents, want, modeScope(host.task))?.runIn !== 'parent'
-      })
-      // 转交出去的不占这个节点的名额，也不给这个对话的收尾添等待：结果在父对话那边
-      // 对话会一直聊下去：上限只算还没结束的，做完的不占名额
-      const busy =
-        self.id === CHAT_STEP ? mine.filter((s) => s.status === 'running' || s.status === 'pending').length : have
-      if (busy + local.length > MAX_HELPERS_PER_STEP)
-        return { ids: [], error: `一个节点最多同时派 ${MAX_HELPERS_PER_STEP} 个子任务，已经派了 ${busy} 个` }
-      const handed: { spec: HelperSpec; id?: string }[] = []
-      const handFailed: string[] = []
-      for (const spec of list) {
-        if (local.includes(spec)) continue
-        // 转交出去的是父对话里新建的子任务，接不上这个对话里原来的会话
-        if (spec.resume?.trim()) {
-          handFailed.push(`「${spec.title}」不能接着原来的子任务：转交父对话创建的是新任务，去掉 resume 再派`)
-          continue
-        }
-        try {
-          if (!host.forwardSpawn) {
-            handFailed.push(`「${spec.title}」不能在这里执行：这个角色禁止子对话执行，而当前环境没有父对话可以转交`)
-            continue
-          }
-          const r = host.forwardSpawn({ ...spec, resume: undefined })
-          if (r.ok) handed.push({ spec, id: r.id })
-          else handFailed.push(`「${spec.title}」没能转交父对话：${r.info}`)
-        } catch (e) {
-          handFailed.push(`「${spec.title}」转交父对话时出错：${(e as Error).message}`)
-        }
-      }
-      // 一批全是转交的：本地不建子任务，点名的步骤立即标完成（等父对话那边的结果会把子对话卡住）
-      const stepAt = !helper && ctx.chat ? step?.trim() : ''
-      if (!local.length) {
-        if (!handed.length) return { ids: [], error: handFailed.join('\n') || '没有可以派的子任务' }
-        const lines = handed.map((h) =>
-          t('已转交父对话创建「{title}」{id}', {
-            title: h.spec.title,
-            id: h.id ? t('（id: {id}）', { id: h.id }) : '',
-          }),
-        )
-        // 一批里还有没交出去的（例如带 resume 的转交被拒）：不标完成、返回 error——
-        // 否则模型拿到「没报错 + 步骤已完成」就以为整批都派出去了，少做的那件永远没人补。
-        // 但已经交出去的那几件仍要写成系统记录：子对话的收尾总结要能说明这件事（见 ADR 0019）
-        const all = handFailed.length === 0
-        const done = all && stepAt ? finishStepNow(task, stepAt, t('已转交父对话')) : ''
-        system(host, t('「{title}」{note}', { title: self.title, note: lines.join('\n') }), where)
-        host.changed(true)
-        if (!all) return { ids: [], error: [...lines, ...handFailed].join('\n') }
-        return { ids: [], info: [lines.join('\n'), done].filter(Boolean).join('\n') }
-      }
-      // 接着之前的子任务：同一个会话同一时间只能跑一轮，还在跑的、同一批里两个都要接的都拒绝
-      const resumed = new Map<HelperSpec, TaskStep>()
-      for (const spec of local) {
-        const id = spec.resume?.trim()
-        if (!id) continue
-        const target = resumeTarget(mine, id)
-        if (!target.prev) {
-          if (target.picked.length)
-            return {
-              ids: [],
-              error: `resume 写的「${id}」能对上多个子任务，不猜，写全 id 再派：${target.picked.map(helperLabel).join('、')}`,
-            }
-          const recent = mine.slice(-MAX_RESUME_IDS)
-          const more = mine.length > recent.length ? `（共 ${mine.length} 个，只列最近 ${recent.length} 个）` : ''
-          const listed = recent.length ? `\n你派过的子任务${more}：${recent.map(helperLabel).join('、')}` : ''
-          return {
-            ids: [],
-            error: `resume 写的「${id}」不是你派过的子任务（用 spawn_agents 返回的 id）${listed}`,
-          }
-        }
-        const prev = target.prev
-        const key = prev.session || prev.id
-        const busyKey = mine.some(
-          (s) =>
-            (s.session || s.id) === key &&
-            (s.status === 'running' || (s.status === 'pending' && !s.interrupted && st.helpers.has(s.id))),
-        )
-        if (busyKey) return { ids: [], error: `「${prev.title}」的会话还在跑，等它结束再接着用` }
-        if ([...resumed.values()].some((s) => (s.session || s.id) === key))
-          return { ids: [], error: `同一批里不能有两个子任务都接着「${prev.title}」的会话` }
-        const want = spec.agent?.trim()
-        // 原来是哪个角色就以哪个角色接着跑（提示词、CLI、模型都跟着它）。
-        // 角色被删掉时不能退回默认的「子任务」：那等于换了一个角色跑原来的会话，交回的结果也看不出走了样。
-        // agentId 为空是旧数据里「没有角色」（不是角色被删），照旧交给下面的默认逻辑
-        const was = prev.agentId ? host.agents.find((a) => a.id === prev.agentId) : undefined
-        if (prev.agentId && !was && !want)
-          return {
-            ids: [],
-            error: `「${prev.title}」原来的角色已经找不到了（可能被删掉或改名），不能接着它的会话：用 get_status 看现在有哪些角色，再显式写 agent 点名一个`,
-          }
-        if (want && was && was.id !== want && was.name !== want)
-          return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
-        resumed.set(spec, prev)
-      }
-      const blocked = rs.interruptedBlock(mine, local.length - resumed.size, resumed)
-      if (blocked) return { ids: [], error: blocked }
-      // 派出去的角色：接着的子任务原来的角色（被删了才落到点名的）→ 点名的 → 默认「子任务」→ 发起者自己
-      const roleOf = (spec: HelperSpec) => {
-        const prev = resumed.get(spec)
-        const want = spec.agent?.trim()
-        return (
-          (prev && host.agents.find((a) => a.id === prev.agentId)) ||
-          (want && findRole(host.agents, want, modeScope(host.task))) ||
-          helperRole ||
-          host.agents.find((a) => a.id === self.agentId)
-        )
-      }
-      // 角色参数：挂载上定的垫底，接着的子任务沿用上一次的，这次写的最优先；只认角色声明过的 key 和选项
-      const paramsOf = new Map<HelperSpec, ParamValues | undefined>()
-      for (const spec of local) {
-        const role = roleOf(spec)
-        const bad = role && spec.params ? paramsProblem(role.name, role.params, spec.params) : ''
-        if (bad) return { ids: [], error: bad }
-        const mount = mounts.find((m) => m.agent.id === role?.id)?.params
-        const merged = { ...mount, ...resumed.get(spec)?.params, ...spec.params }
-        paramsOf.set(spec, Object.keys(merged).length ? merged : undefined)
-      }
-      // 第一次派评审代码改动：交接单必须带需求和跑过的检查（ADR 0013）。
-      // 评审只看改动的代码，这些背景只有派它的对话有；不交，评审就会自己读文档、搜项目去还原，一次评审拖到二十多分钟
-      for (const spec of local) {
-        if (resumed.has(spec)) continue
-        const want = spec.agent?.trim()
-        const role = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
-        if (!reviewsCode(role, paramsOf.get(spec))) continue
-        const lack = briefMissing(spec)
-        if (lack)
-          return {
-            ids: [],
-            error: `派「${role!.name}」评审代码改动要带交接单 review：缺 ${lack}。把你已经知道的整理进去（goal、changes、checks 必写清楚，focus、context、files 按需），评审只看改动的代码，不再自己去项目里找这些背景。`,
-          }
-      }
-      const made = local.map((spec, i) => {
-        const want = spec.agent?.trim() ?? ''
-        const prev = resumed.get(spec)
-        // 接着的是失败、被终止或中断的子任务：就在原来那个子任务里重试（同一个 id、同一条记录、同一个会话），
-        // 不另起一个新的。做完的子任务再接着做（复看的评审）才新开一条记录、借它的会话
-        if (prev && retriable(prev)) {
-          const again = st.errors.get(prev.id) || (prev.interrupted ? '上次执行到一半被中断了' : '')
-          st.errors.delete(prev.id)
-          st.delivered.delete(prev.id)
-          const more = spec.instructions.trim()
-          if (more && !prev.brief.includes(more))
-            prev.brief = [prev.brief, `## 重试时补充\n${more}`].filter(Boolean).join('\n\n')
-          prev.status = 'pending'
-          prev.interrupted = false
-          prev.output = ''
-          prev.endedAt = ''
-          prev.reruns = (prev.reruns ?? 0) + 1
-          // 原角色被删掉、这次显式点了名：换到点名那个角色上重试（它现在跑的就是这个角色）
-          const repl = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
-          if (repl && repl.id !== prev.agentId) prev.agentId = repl.id
-          prev.params = paramsOf.get(spec)
-          const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
-          return { step: prev, spec, tier, again: again || '上次没有做完' }
-        }
-        const agent = roleOf(spec)
-        const n = have + i + 1
-        const step = blankStep({
-          id: `${self.id}/sub/h${n}`,
-          parentId: self.id,
-          slot: 'sub',
-          workflowId: ctx.workflow?.id ?? '',
-          flowId: self.flowId,
-          kind: 'agent',
-          title: clip((spec.title || spec.instructions).trim().split('\n')[0], 60),
-          agentId: agent?.id ?? self.agentId,
-          session: prev ? prev.session || prev.id : '',
-          // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到。
-          // 评审的交接单也是要求的一部分，一起存
-          brief: [spec.instructions.trim(), briefPart(spec.review)].filter(Boolean).join('\n\n'),
-          params: paramsOf.get(spec),
-        })
-        task.steps.push(step)
-        const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
-        return { step, spec, tier, again: '' }
-      })
-      for (const m of made)
-        st.helpers.set(
-          m.step.id,
-          runHelper(
-            host,
-            ctx,
-            self,
-            m.step,
-            m.spec,
-            m.tier,
-            made.filter((x) => x !== m).map((x) => x.step.title),
-            m.again,
-          ),
-        )
-      const retried = made.filter((m) => m.again)
-      // 一批里既有本地建的、又有转交出去的：转交的那几个不在这个对话里跑，告诉模型结果不回这里
-      const handNote = [
-        handed.length
-          ? t('转交父对话创建：{list}（结果交回父对话，这个对话不用等）', {
-              list: handed.map((h) => h.spec.title).join(t('、')),
-            })
-          : '',
-        handFailed.length ? t('没能转交：{list}', { list: handFailed.join(t('；')) }) : '',
-      ]
-        .filter(Boolean)
-        .join('\n')
-      system(
-        host,
-        [
-          retried.length === made.length
-            ? t('「{title}」在原来的子任务里重试：{list}', {
-                title: self.title,
-                list: made.map((m) => m.step.title).join(t('、')),
-              })
-            : t('「{title}」派出 {n} 个子角色：{list}', {
-                title: self.title,
-                n: made.length,
-                list: made.map((m) => m.step.title).join(t('、')),
-              }),
-          handNote,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        where,
-      )
-      // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
-      task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
-      // 点名的计划步骤挂上等待：全部结束、结果交回时由 settleHelpers 收口（成功标完成、失败退回进行中）。
-      // 以前 spawn_agents 没有 step，派「版本控制」跑收尾那种步骤只能靠 linkKids 按标题猜，猜不中就永远挂在那里
-      const at = !helper && ctx.chat ? step?.trim() : ''
-      // 同一批子任务挂在同一步骤上：说明只回一句，否则 N 个子任务会在工具结果里刷 N 行一样的话
-      const waits = at ? [bindWait(task, at, { kind: 'helper', ref: made[0].step.id, label: made[0].step.title })] : []
-      if (at) for (const m of made.slice(1)) bindWait(task, at, { kind: 'helper', ref: m.step.id, label: m.step.title })
-      // 父对话派的子任务记一条分诊（画成分诊卡）；子对话、节点派的是它们自己的事，不进分诊
-      if (coordinator)
-        recordRoute(
-          host,
-          'subtask',
-          made.map((m) => m.step.id),
-          made.map((m) => m.step.title).join(t('、')),
-          opts?.route,
-        )
-      host.changed(true)
-      return {
-        ids: made.map((m) => m.step.id),
-        ...(waits.length || handNote ? { info: [...waits, handNote].filter(Boolean).join('\n') } : {}),
-      }
     },
     stopHelpers(ids, why) {
       if (helper) return { ok: false, info: '子任务不能终止别的子任务' }
@@ -2119,6 +1394,313 @@ function makeOrchestra(
       }
     },
     inbox: () => takeMail(host, self.id),
+  } satisfies Partial<Orchestra>
+}
+
+/** spawn_agents：派子任务（在原记录里续跑失败的、按层次分批、给版本控制收尾留规则） */
+function spawn(oc: OrchCtx, ...[tasks, step, opts]: Parameters<Orchestra['spawn']>): ReturnType<Orchestra['spawn']> {
+  const { host, ctx, self, st, task, helper, selfAgent, coordinator, where } = oc
+  if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
+  const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
+  if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
+  const mine = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
+  const have = mine.length
+  if (host.halted) return { ids: [], error: '任务已经停止或有节点失败，不再派新的子 Agent' }
+  // 子任务默认用必备角色「子任务」；点名要「测试验收」「文档」这类通用角色时用点名的
+  const helperRole = host.agents.find((a) => isHelperAgent(a) && a.enabled)
+  // 独立分支里的子对话：提交和合回只走 submit_merge。派「版本控制」去收尾，它会照角色设定自己提交、
+  // 甚至自己去合并，面板的收尾步骤一直等不到 submit_merge，子对话就卡在最后一步
+  if (host.isolated) {
+    const vcs = list.find((x) => {
+      const want = x.agent?.trim()
+      return want && host.agents.some((a) => a.origin === VCS_ORIGIN && (a.id === want || a.name === want))
+    })
+    if (vcs)
+      return {
+        ids: [],
+        error:
+          '你在独立分支里，不用派「版本控制」：提交和合回都由面板做。验证跑通后你自己调用 submit_merge（面板把改动提交到你的分支，父对话合回原分支），不要自己或让子任务 git commit / merge。只想核对改动范围就自己看 git status / git diff。',
+      }
+  }
+  // 点名的角色必须真的存在：找不到时不能落到默认「子任务」，那和复看降级成子任务一样——
+  // 派出去的角色和调用方以为的不一样，提示词也跟着换，而交回的结果看不出走了样
+  const available = commonAgents(host.agents)
+    .map((a) => `「${a.name}」`)
+    .join('、')
+  for (const spec of list) {
+    const want = spec.agent?.trim()
+    const named = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
+    if (named && scopeOf(named) === 'chat')
+      return {
+        ids: [],
+        error: `「${named.name}」是 Chat 角色，只能在 Chat 页用${available ? `：可以点名 ${available}` : ''}`,
+      }
+    if (want && !named)
+      return {
+        ids: [],
+        error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
+      }
+  }
+  // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agent-role.ts 的 mountMode）。
+  // 设成「就地用」的不派出：派出去是另一套冷启动的上下文，等于绕开了挂载的约定，也白花一次注入
+  const mounts = selfAgent ? mountedAgents(selfAgent, host.agents) : []
+  const mountOf = (want: string | undefined) =>
+    want ? mounts.find((m) => m.agent.id === want || m.agent.name === want) : undefined
+  for (const spec of list) {
+    const m = mountOf(spec.agent?.trim())
+    if (m?.mode === 'inline' && !spec.resume?.trim())
+      return {
+        ids: [],
+        error: `「${m.agent.name}」在你这里挂成了就地用：调用 use_capability（name 写「${m.agent.name}」）取它的做法，在当前对话里自己做，不派子任务`,
+      }
+  }
+  // 只在父对话执行的角色（runIn: 'parent'，或挂载上定成「转交父对话」）：子对话里点名它时不在这里建，
+  // 转交父对话创建（见 ADR 0019）。判定放引擎里：对话、工作流节点、计划面板定时任务的 spawn 都走这里，放 orch-mcp 会漏
+  const local = list.filter((spec) => {
+    if (opts?.local || !host.task.parentTaskId) return true
+    const want = spec.agent?.trim()
+    if (mountOf(want)?.mode === 'parent') return false
+    return !want || findRole(host.agents, want, modeScope(host.task))?.runIn !== 'parent'
+  })
+  // 转交出去的不占这个节点的名额，也不给这个对话的收尾添等待：结果在父对话那边
+  // 对话会一直聊下去：上限只算还没结束的，做完的不占名额
+  const busy =
+    self.id === CHAT_STEP ? mine.filter((s) => s.status === 'running' || s.status === 'pending').length : have
+  if (busy + local.length > MAX_HELPERS_PER_STEP)
+    return { ids: [], error: `一个节点最多同时派 ${MAX_HELPERS_PER_STEP} 个子任务，已经派了 ${busy} 个` }
+  const handed: { spec: HelperSpec; id?: string }[] = []
+  const handFailed: string[] = []
+  for (const spec of list) {
+    if (local.includes(spec)) continue
+    // 转交出去的是父对话里新建的子任务，接不上这个对话里原来的会话
+    if (spec.resume?.trim()) {
+      handFailed.push(`「${spec.title}」不能接着原来的子任务：转交父对话创建的是新任务，去掉 resume 再派`)
+      continue
+    }
+    try {
+      if (!host.forwardSpawn) {
+        handFailed.push(`「${spec.title}」不能在这里执行：这个角色禁止子对话执行，而当前环境没有父对话可以转交`)
+        continue
+      }
+      const r = host.forwardSpawn({ ...spec, resume: undefined })
+      if (r.ok) handed.push({ spec, id: r.id })
+      else handFailed.push(`「${spec.title}」没能转交父对话：${r.info}`)
+    } catch (e) {
+      handFailed.push(`「${spec.title}」转交父对话时出错：${(e as Error).message}`)
+    }
+  }
+  // 一批全是转交的：本地不建子任务，点名的步骤立即标完成（等父对话那边的结果会把子对话卡住）
+  const stepAt = !helper && ctx.chat ? step?.trim() : ''
+  if (!local.length) {
+    if (!handed.length) return { ids: [], error: handFailed.join('\n') || '没有可以派的子任务' }
+    const lines = handed.map((h) =>
+      t('已转交父对话创建「{title}」{id}', {
+        title: h.spec.title,
+        id: h.id ? t('（id: {id}）', { id: h.id }) : '',
+      }),
+    )
+    // 一批里还有没交出去的（例如带 resume 的转交被拒）：不标完成、返回 error——
+    // 否则模型拿到「没报错 + 步骤已完成」就以为整批都派出去了，少做的那件永远没人补。
+    // 但已经交出去的那几件仍要写成系统记录：子对话的收尾总结要能说明这件事（见 ADR 0019）
+    const all = handFailed.length === 0
+    const done = all && stepAt ? finishStepNow(task, stepAt, t('已转交父对话')) : ''
+    system(host, t('「{title}」{note}', { title: self.title, note: lines.join('\n') }), where)
+    host.changed(true)
+    if (!all) return { ids: [], error: [...lines, ...handFailed].join('\n') }
+    return { ids: [], info: [lines.join('\n'), done].filter(Boolean).join('\n') }
+  }
+  // 接着之前的子任务：同一个会话同一时间只能跑一轮，还在跑的、同一批里两个都要接的都拒绝
+  const resumed = new Map<HelperSpec, TaskStep>()
+  for (const spec of local) {
+    const id = spec.resume?.trim()
+    if (!id) continue
+    const target = resumeTarget(mine, id)
+    if (!target.prev) {
+      if (target.picked.length)
+        return {
+          ids: [],
+          error: `resume 写的「${id}」能对上多个子任务，不猜，写全 id 再派：${target.picked.map(helperLabel).join('、')}`,
+        }
+      const recent = mine.slice(-MAX_RESUME_IDS)
+      const more = mine.length > recent.length ? `（共 ${mine.length} 个，只列最近 ${recent.length} 个）` : ''
+      const listed = recent.length ? `\n你派过的子任务${more}：${recent.map(helperLabel).join('、')}` : ''
+      return {
+        ids: [],
+        error: `resume 写的「${id}」不是你派过的子任务（用 spawn_agents 返回的 id）${listed}`,
+      }
+    }
+    const prev = target.prev
+    const key = prev.session || prev.id
+    const busyKey = mine.some(
+      (s) =>
+        (s.session || s.id) === key &&
+        (s.status === 'running' || (s.status === 'pending' && !s.interrupted && st.helpers.has(s.id))),
+    )
+    if (busyKey) return { ids: [], error: `「${prev.title}」的会话还在跑，等它结束再接着用` }
+    if ([...resumed.values()].some((s) => (s.session || s.id) === key))
+      return { ids: [], error: `同一批里不能有两个子任务都接着「${prev.title}」的会话` }
+    const want = spec.agent?.trim()
+    // 原来是哪个角色就以哪个角色接着跑（提示词、CLI、模型都跟着它）。
+    // 角色被删掉时不能退回默认的「子任务」：那等于换了一个角色跑原来的会话，交回的结果也看不出走了样。
+    // agentId 为空是旧数据里「没有角色」（不是角色被删），照旧交给下面的默认逻辑
+    const was = prev.agentId ? host.agents.find((a) => a.id === prev.agentId) : undefined
+    if (prev.agentId && !was && !want)
+      return {
+        ids: [],
+        error: `「${prev.title}」原来的角色已经找不到了（可能被删掉或改名），不能接着它的会话：用 get_status 看现在有哪些角色，再显式写 agent 点名一个`,
+      }
+    if (want && was && was.id !== want && was.name !== want)
+      return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
+    resumed.set(spec, prev)
+  }
+  const blocked = rs.interruptedBlock(mine, local.length - resumed.size, resumed)
+  if (blocked) return { ids: [], error: blocked }
+  // 派出去的角色：接着的子任务原来的角色（被删了才落到点名的）→ 点名的 → 默认「子任务」→ 发起者自己
+  const roleOf = (spec: HelperSpec) => {
+    const prev = resumed.get(spec)
+    const want = spec.agent?.trim()
+    return (
+      (prev && host.agents.find((a) => a.id === prev.agentId)) ||
+      (want && findRole(host.agents, want, modeScope(host.task))) ||
+      helperRole ||
+      host.agents.find((a) => a.id === self.agentId)
+    )
+  }
+  // 角色参数：挂载上定的垫底，接着的子任务沿用上一次的，这次写的最优先；只认角色声明过的 key 和选项
+  const paramsOf = new Map<HelperSpec, ParamValues | undefined>()
+  for (const spec of local) {
+    const role = roleOf(spec)
+    const bad = role && spec.params ? paramsProblem(role.name, role.params, spec.params) : ''
+    if (bad) return { ids: [], error: bad }
+    const mount = mounts.find((m) => m.agent.id === role?.id)?.params
+    const merged = { ...mount, ...resumed.get(spec)?.params, ...spec.params }
+    paramsOf.set(spec, Object.keys(merged).length ? merged : undefined)
+  }
+  // 第一次派评审代码改动：交接单必须带需求和跑过的检查（ADR 0013）。
+  // 评审只看改动的代码，这些背景只有派它的对话有；不交，评审就会自己读文档、搜项目去还原，一次评审拖到二十多分钟
+  for (const spec of local) {
+    if (resumed.has(spec)) continue
+    const want = spec.agent?.trim()
+    const role = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
+    if (!reviewsCode(role, paramsOf.get(spec))) continue
+    const lack = briefMissing(spec)
+    if (lack)
+      return {
+        ids: [],
+        error: `派「${role!.name}」评审代码改动要带交接单 review：缺 ${lack}。把你已经知道的整理进去（goal、changes、checks 必写清楚，focus、context、files 按需），评审只看改动的代码，不再自己去项目里找这些背景。`,
+      }
+  }
+  const made = local.map((spec, i) => {
+    const want = spec.agent?.trim() ?? ''
+    const prev = resumed.get(spec)
+    // 接着的是失败、被终止或中断的子任务：就在原来那个子任务里重试（同一个 id、同一条记录、同一个会话），
+    // 不另起一个新的。做完的子任务再接着做（复看的评审）才新开一条记录、借它的会话
+    if (prev && retriable(prev)) {
+      const again = st.errors.get(prev.id) || (prev.interrupted ? '上次执行到一半被中断了' : '')
+      st.errors.delete(prev.id)
+      st.delivered.delete(prev.id)
+      const more = spec.instructions.trim()
+      if (more && !prev.brief.includes(more))
+        prev.brief = [prev.brief, `## 重试时补充\n${more}`].filter(Boolean).join('\n\n')
+      prev.status = 'pending'
+      prev.interrupted = false
+      prev.output = ''
+      prev.endedAt = ''
+      prev.reruns = (prev.reruns ?? 0) + 1
+      // 原角色被删掉、这次显式点了名：换到点名那个角色上重试（它现在跑的就是这个角色）
+      const repl = want ? findRole(host.agents, want, modeScope(host.task)) : undefined
+      if (repl && repl.id !== prev.agentId) prev.agentId = repl.id
+      prev.params = paramsOf.get(spec)
+      const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
+      return { step: prev, spec, tier, again: again || '上次没有做完' }
+    }
+    const agent = roleOf(spec)
+    const n = have + i + 1
+    const step = blankStep({
+      id: `${self.id}/sub/h${n}`,
+      parentId: self.id,
+      slot: 'sub',
+      workflowId: ctx.workflow?.id ?? '',
+      flowId: self.flowId,
+      kind: 'agent',
+      title: clip((spec.title || spec.instructions).trim().split('\n')[0], 60),
+      agentId: agent?.id ?? self.agentId,
+      session: prev ? prev.session || prev.id : '',
+      // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到。
+      // 评审的交接单也是要求的一部分，一起存
+      brief: [spec.instructions.trim(), briefPart(spec.review)].filter(Boolean).join('\n\n'),
+      params: paramsOf.get(spec),
+    })
+    task.steps.push(step)
+    const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
+    return { step, spec, tier, again: '' }
+  })
+  for (const m of made)
+    st.helpers.set(
+      m.step.id,
+      runHelper(
+        host,
+        ctx,
+        self,
+        m.step,
+        m.spec,
+        m.tier,
+        made.filter((x) => x !== m).map((x) => x.step.title),
+        m.again,
+      ),
+    )
+  const retried = made.filter((m) => m.again)
+  // 一批里既有本地建的、又有转交出去的：转交的那几个不在这个对话里跑，告诉模型结果不回这里
+  const handNote = [
+    handed.length
+      ? t('转交父对话创建：{list}（结果交回父对话，这个对话不用等）', {
+          list: handed.map((h) => h.spec.title).join(t('、')),
+        })
+      : '',
+    handFailed.length ? t('没能转交：{list}', { list: handFailed.join(t('；')) }) : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+  system(
+    host,
+    [
+      retried.length === made.length
+        ? t('「{title}」在原来的子任务里重试：{list}', {
+            title: self.title,
+            list: made.map((m) => m.step.title).join(t('、')),
+          })
+        : t('「{title}」派出 {n} 个子角色：{list}', {
+            title: self.title,
+            n: made.length,
+            list: made.map((m) => m.step.title).join(t('、')),
+          }),
+      handNote,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    where,
+  )
+  // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
+  task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
+  // 点名的计划步骤挂上等待：全部结束、结果交回时由 settleHelpers 收口（成功标完成、失败退回进行中）。
+  // 以前 spawn_agents 没有 step，派「版本控制」跑收尾那种步骤只能靠 linkKids 按标题猜，猜不中就永远挂在那里
+  const at = !helper && ctx.chat ? step?.trim() : ''
+  // 同一批子任务挂在同一步骤上：说明只回一句，否则 N 个子任务会在工具结果里刷 N 行一样的话
+  const waits = at ? [bindWait(task, at, { kind: 'helper', ref: made[0].step.id, label: made[0].step.title })] : []
+  if (at) for (const m of made.slice(1)) bindWait(task, at, { kind: 'helper', ref: m.step.id, label: m.step.title })
+  // 父对话派的子任务记一条分诊（画成分诊卡）；子对话、节点派的是它们自己的事，不进分诊
+  if (coordinator)
+    recordRoute(
+      host,
+      'subtask',
+      made.map((m) => m.step.id),
+      made.map((m) => m.step.title).join(t('、')),
+      opts?.route,
+    )
+  host.changed(true)
+  return {
+    ids: made.map((m) => m.step.id),
+    ...(waits.length || handNote ? { info: [...waits, handNote].filter(Boolean).join('\n') } : {}),
   }
 }
 
