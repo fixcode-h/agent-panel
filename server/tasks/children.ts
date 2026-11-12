@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { userWaiting } from '../../shared/task.ts'
+import { childSelfDrives, userWaiting } from '../../shared/task.ts'
 import { Task, type Agent, type TaskMessage } from '../../shared/schema.ts'
 import {
   advanceChild,
@@ -423,7 +423,8 @@ export function createChildren(sc: TasksScope) {
       if (!r.notify) return
       // 计划没做完就收尾：子对话自己按计划接着做（自驱，nudgePlan），不发消息打扰父对话——父对话收到也只能再催一遍。
       // 同一进度推满了还停在原地，才告诉父对话一次（ADR 0041）
-      if (r.state === 'unfinished' && openWork(tk).length && !sc.stuckAfterNudge(tk)) return
+      // 面板会推它的才不报（childSelfDrives）：挂着等待却没东西在跑时不报，它写给父对话的汇报就交不出去
+      if (r.state === 'unfinished' && openWork(tk).length && !sc.stuckAfterNudge(tk) && childSelfDrives(tk)) return
     }
     // 面板重启时被停下的：不是出错，重启后由恢复流程接着做，不往父对话里报「已中断」
     if (r.state === 'stopped' && tk.stopReason === 'restart') return
@@ -469,7 +470,9 @@ export function createChildren(sc: TasksScope) {
     // 停了几次：面板自己提醒过一次 submit_merge 的也算上，父对话据此判断要不要换个说法或去问用户
     const stops = stall ? stall.n + (sc.mergeNudged.has(tk.id) ? 1 : 0) : 0
     // 面板提醒不限次数（2026-11-05）：停在这里是它说了卡住、或者连着几次提醒都没动手（空转保护）
-    const nudgeText = '面板按它自己的计划提醒过它，它说了卡住或者连着几次都没动手，仍停在这里'
+    const nudgeText = sc.stuckAfterNudge(tk)
+      ? '面板按它自己的计划提醒过它，它说了卡住或者连着几次都没动手，仍停在这里'
+      : '它这一轮结束了，计划里有步骤还挂着等待，但它没有在跑的子任务、子对话或后台命令，面板不会再推它'
     const next = mergeOnly
       ? `\n这是它第 ${stops} 次停在这里没请收尾${sc.mergeNudged.has(tk.id) ? '（面板已经提醒过它一次）' : ''}。` +
         `下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。` +

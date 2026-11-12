@@ -38,3 +38,9 @@ paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
 - 规则：partial 更新只回变了的行（新步骤带 id）加进度和下一步，完整计划每轮提示里都有；新开、整份提交、带了对不上的 id 时才回全文。「没交上来」只点名还在进行中和被跳过的，排在后面还没轮到的不点。
 - 起因：审计发现（df820f2 起）每次 partial 回整份计划、点名全部待做步骤，20 步计划逐步更新约 4 万字。
 - 防线：`shared/plan.test.ts`「set_plan partial 只回变了的行…」。
+
+## 「先不报父对话、交给它自驱」的前提是面板真的会推它
+
+- 规则：子对话一轮结束、计划没做完时，`reportChild` 只有在 `childSelfDrives`（`planStalled` 成立，或在等父对话安排修复）时才不报；新增「不报 / 不推」的守卫时，对照另一边是不是一定会接手，不能两边各自以为对方会动。子任务、子对话、后台命令一结束（含终止、被打断后直接终止），计划里等它的等待项要当场收口（`settleHelperWaits` / `settleWait`），不能指望别的路径。
+- 起因：用户 2026-11-12 第二次报「计划没做完子对话却停止了」：stop_subtask 终止被打断的子任务没收口等待项，`planStalled` 当成在等别人不推，`reportChild` 又按「没做完不报」吞掉了子对话请父对话编译的汇报，父子互等一晚上。见 `docs/modules/server/bugs/stopped-helper-wait-swallows-report.md`。
+- 防线：`server/engine-steps.test.ts`「有中断没做完的子任务」、`shared/task-idle-ask.test.ts`「子对话计划没做完时先不报父对话」。

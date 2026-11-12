@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX, planStalled, wrapUpPending } from './task.ts'
+import {
+  childAutoAskWaiting,
+  childIdleAsk,
+  childSelfDrives,
+  CHILD_IDLE_ASK_MAX,
+  planStalled,
+  wrapUpPending,
+} from './task.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled } from './merge-stall.ts'
 
 /** 一分钟按 1 秒算：阈值、上限这些判定不用真的等几分钟 */
@@ -130,6 +137,37 @@ test('这一轮说完了、计划没做完也没在等别的：算停住了（�
         { status: 'done' },
         { status: 'running', note: '需要修复：等的结果没成功：e2e', waits: [{ state: 'failed' }] } as never,
       ]),
+    ),
+    true,
+  )
+})
+
+test('子对话计划没做完时先不报父对话：只在面板会推它、或在等父对话安排修复时（用户 2026-11-12 报）', () => {
+  const plan = (steps: { status: string; waits?: { kind?: string; state: string }[] }[]) =>
+    ({
+      working: false,
+      steps: [],
+      plans: [
+        {
+          id: 'p',
+          title: '',
+          steps: steps.map((s, i) => ({ id: String(i), title: `第 ${i} 步`, waits: [], children: [], ...s })),
+        },
+      ],
+    }) as unknown as Parameters<typeof childSelfDrives>[0]
+  // 面板会推它：不报，它自己接着做
+  assert.equal(childSelfDrives(plan([{ status: 'done' }, { status: 'running' }])), true)
+  // 实际现场：一步还挂着等一个早被终止的子任务，另一步「进行中」——面板不推它，必须报，不然它写给父对话的「请你编译」交不出去
+  assert.equal(
+    childSelfDrives(
+      plan([{ status: 'waiting', waits: [{ kind: 'helper', state: 'waiting' }] }, { status: 'running' }]),
+    ),
+    false,
+  )
+  // 在等父对话安排修复：那封请求已经马上交出去了，不再补报
+  assert.equal(
+    childSelfDrives(
+      plan([{ status: 'waiting', waits: [{ kind: 'parent', state: 'waiting' }] }, { status: 'pending' }]),
     ),
     true,
   )
