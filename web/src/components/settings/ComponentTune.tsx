@@ -98,6 +98,7 @@ const gridPropLabel = (prop: string): string | undefined =>
     note: t('批注角标'),
     link: t('超链接'),
     rowMark: t('整行底色标记'),
+    handle: t('填充柄大小'),
   })[prop]
 
 const optionLabel = (v: string) =>

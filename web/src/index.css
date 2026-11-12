@@ -1153,6 +1153,7 @@ body,
   --c-grid-note: var(--warning);
   --c-grid-link: var(--ctx-messages);
   --c-grid-rowMark: 3px;
+  --c-grid-handle: 7px;
 }
 
 /*

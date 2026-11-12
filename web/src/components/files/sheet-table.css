@@ -286,3 +286,29 @@
 .sheet-tag-req {
   --tag-hue: var(--c-grid-invalid);
 }
+
+/*
+ * 表格页：点行号选整行、点列名选整列（按住拖动接着选）。
+ * 填充柄是选区右下角的小方块，按住往下 / 往右拖就填充；大小在设置 → 组件 → 数据表格里调
+ */
+.sheet-grid .sheet-rownum,
+.sheet-grid .sheet-colpick {
+  cursor: pointer;
+}
+.sheet-grid .sheet-rownum:hover {
+  color: var(--fg);
+}
+.sheet-handle-cell {
+  position: relative;
+}
+.sheet-fill-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: var(--c-grid-handle);
+  height: var(--c-grid-handle);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--sheet-bg);
+  cursor: crosshair;
+}

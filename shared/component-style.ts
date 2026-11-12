@@ -134,6 +134,8 @@ export const COMP_SPEC = {
     note: hue('amber'),
     link: hue('blue'),
     rowMark: pick('thin', { off: '0px', thin: '3px', wide: '5px' }),
+    /** 表格页：选区右下角的填充柄（拖它向下 / 向右填充）有多大 */
+    handle: px(7, 5, 12),
   },
   empty: {
     radius: px(10, 0, 24),

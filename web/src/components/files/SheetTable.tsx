@@ -171,6 +171,13 @@ export interface SheetEditing {
   rowMenu?: (r: number, trigger: React.ReactElement) => React.ReactNode
   /** 格子里显示的字（引用列显示成「1001 · 小明」）；存的还是原值，不给就照原样显示 */
   display?: (r: number, c: number, text: string) => string
+  /** 按下行号 / 列名：选整行、整列（按住拖动接着选，Shift 扩大） */
+  onRowDown?: (r: number, e: React.MouseEvent) => void
+  onColDown?: (c: number, e: React.MouseEvent) => void
+  /** 填充柄：画在选区右下角那一格上，按住往外拖就填充 */
+  handle?: { r: number; c: number; onDown: (e: React.MouseEvent) => void }
+  /** 当前格的 id：外面能聚焦的表格容器用 aria-activedescendant 指过来（读屏跟着当前格走） */
+  focusId?: string
 }
 
 /**
@@ -424,7 +431,8 @@ export function SheetTable({
         return (
           <span
             key={c}
-            role="cell"
+            role={edit ? 'gridcell' : 'cell'}
+            aria-colindex={c + 1}
             className={cn(CELL, 'sheet-editing relative overflow-visible p-0', pinCls(c, pin))}
             style={{ width: w, ...pinned(c, pin), ...(pin ? { zIndex: 3 } : {}) }}
           >
@@ -436,6 +444,9 @@ export function SheetTable({
       const focused =
         !!f &&
         (m ? f.row >= m.r && f.row < m.r + m.rows && f.col >= m.c && f.col < m.c + m.cols : f.row === r && f.col === c)
+      const span1 = m ? m.cols : 1
+      const handle =
+        edit?.handle && edit.handle.r === r && edit.handle.c >= c && edit.handle.c < c + span1 ? edit.handle : null
       // 批注、超链接：合并区下面几行的空格子不带
       const lk = top ? undefined : lookCell(lookIdx, tr, tc)
       const shownText = edit?.display && text ? edit.display(tr, tc, text) : text
@@ -444,7 +455,9 @@ export function SheetTable({
       return (
         <span
           key={c}
-          role="cell"
+          role={edit ? 'gridcell' : 'cell'}
+          aria-colindex={c + 1}
+          id={focused ? edit?.focusId : undefined}
           title={tip}
           data-current={on || undefined}
           aria-selected={edit ? picked : undefined}
@@ -461,11 +474,13 @@ export function SheetTable({
             edit?.mark?.(tr, tc),
             picked && 'sheet-sel',
             focused && 'sheet-focus',
+            handle && 'sheet-handle-cell',
             pinCls(c, pin),
           )}
           style={{ width: w, ...pinned(c, pin) }}
         >
           <CellText text={shownText} link={lk?.link} editable={!!edit} onLocate={onLocate} />
+          {handle && <span aria-hidden className="sheet-fill-handle" onMouseDown={handle.onDown} />}
         </span>
       )
     }, lookIdx?.merges(r)),
@@ -481,32 +496,16 @@ export function SheetTable({
 
   return (
     <div
-      role="table"
-      aria-rowcount={rows.length}
-      aria-colcount={cols}
+      // 能编辑时 role=grid 和行列总数在外面能聚焦的容器上（读屏的当前格跟着那里的焦点走），这里只是一组行
+      role={edit ? 'rowgroup' : 'table'}
+      aria-rowcount={edit ? undefined : rows.length}
+      aria-colcount={edit ? undefined : cols}
       className="sheet-grid relative text-footnote"
       style={{ width: total, height: frozenH + rowH * (body.length + padRows) }}
     >
-      <div className="sticky top-0 z-2" style={{ width: total }}>
+      <div data-sheet-head className="sticky top-0 z-2" style={{ width: total }}>
         <div role="row" className={cn(STICKY, 'flex')} style={{ height: headH }}>
-          <span
-            className={cn(STICKY, CELL, 'left-0 z-2 flex items-center justify-center')}
-            style={{ width: numW, height: headH }}
-          >
-            {onHeadCollapse && from > 0 && (
-              <button
-                type="button"
-                aria-pressed={!headCollapsed}
-                aria-label={headCollapsed ? t('展开表头 {n} 行', { n: from }) : t('折起表头 {n} 行', { n: from })}
-                title={headCollapsed ? t('展开表头 {n} 行', { n: from }) : t('折起表头 {n} 行', { n: from })}
-                onClick={() => onHeadCollapse(!headCollapsed)}
-                className="flex h-5 cursor-pointer items-center gap-0.5 rounded-sm px-1 text-caption text-subtle hover:bg-hover hover:text-fg"
-              >
-                {headCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {t('表头')}
-              </button>
-            )}
-          </span>
+          <HeadCorner width={numW} height={headH} rows={from} collapsed={headCollapsed} onCollapse={onHeadCollapse} />
           {span((w, c, pin) => (
             <ColumnHead
               key={c}
@@ -526,6 +525,7 @@ export function SheetTable({
               sort={sort?.col === c ? sort : null}
               onFilter={onFilter}
               onSort={onSort}
+              onDown={edit?.onColDown}
             />
           ))}
           {gap('gr', gapR)}
@@ -556,7 +556,10 @@ export function SheetTable({
                   CELL,
                   `sheet-role sheet-role-${role}`,
                   'left-0 z-1 flex justify-between font-mono text-caption font-normal',
+                  edit?.onRowDown && 'sheet-rownum',
                 )}
+                role="rowheader"
+                onMouseDown={edit?.onRowDown && ((e) => edit.onRowDown!(r, e))}
                 style={{ width: numW, ...lineH }}
               >
                 <span className="truncate font-sans">
@@ -583,7 +586,15 @@ export function SheetTable({
             {rowNum(
               r,
               <span
-                className={cn(STICKY, CELL, 'left-0 z-1 text-right font-mono text-caption', mark?.cls)}
+                role="rowheader"
+                onMouseDown={edit?.onRowDown && ((e) => edit.onRowDown!(r, e))}
+                className={cn(
+                  STICKY,
+                  CELL,
+                  'left-0 z-1 text-right font-mono text-caption',
+                  edit?.onRowDown && 'sheet-rownum',
+                  mark?.cls,
+                )}
                 style={{ width: numW, ...lineH, ...mark?.style }}
                 title={mark?.tip}
               >
@@ -623,6 +634,45 @@ export function SheetTable({
   )
 }
 
+/** 左上角：表头有几行时放「折起 / 展开表头」的按钮 */
+function HeadCorner({
+  width,
+  height,
+  rows,
+  collapsed,
+  onCollapse,
+}: {
+  width: number
+  height: number
+  /** 表头几行 */
+  rows: number
+  collapsed?: boolean
+  onCollapse?: (v: boolean) => void
+}) {
+  const label = collapsed ? t('展开表头 {n} 行', { n: rows }) : t('折起表头 {n} 行', { n: rows })
+  return (
+    <span
+      data-sheet-corner
+      className={cn(STICKY, CELL, 'left-0 z-2 flex items-center justify-center')}
+      style={{ width, height }}
+    >
+      {onCollapse && rows > 0 && (
+        <button
+          type="button"
+          aria-pressed={!collapsed}
+          aria-label={label}
+          title={label}
+          onClick={() => onCollapse(!collapsed)}
+          className="flex h-5 cursor-pointer items-center gap-0.5 rounded-sm px-1 text-caption text-subtle hover:bg-hover hover:text-fg"
+        >
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {t('表头')}
+        </button>
+      )}
+    </span>
+  )
+}
+
 /** 列名格：列名居中，右边是筛选按钮（悬停才出现；在筛选或排序时一直显示并高亮） */
 function ColumnHead({
   col,
@@ -641,7 +691,10 @@ function ColumnHead({
   pin,
   layout,
   onLayout,
+  onDown,
 }: {
+  /** 按下列名：选整列（筛选按钮、拖列宽的边线不算） */
+  onDown?: (c: number, e: React.MouseEvent) => void
   col: number
   width: number
   height: number
@@ -668,10 +721,19 @@ function ColumnHead({
   const head = (
     <span
       role="columnheader"
+      aria-colindex={col + 1}
+      onMouseDown={
+        onDown &&
+        ((e) => {
+          if ((e.target as HTMLElement).closest('button, [role="separator"]')) return
+          onDown(col, e)
+        })
+      }
       aria-label={info?.field ? `${colName(col)} ${info.field}` : undefined}
       className={cn(
         CELL,
         'group relative font-mono text-caption',
+        onDown && 'sheet-colpick',
         twoLine ? 'sheet-colhead flex flex-col justify-center gap-0.5' : 'text-center',
         pin?.cls,
       )}

@@ -22,11 +22,12 @@ const ROWS = [
 ]
 
 /**
- * 表格页里的样子（只看，不能真改）：一格改过没保存、一格不合规、当前格描边，
- * 枚举列悬停出下拉箭头、引用列虚下划线、必填空着的斜线底纹
+ * 表格页里的样子（只看，不能真改）：一格改过没保存、一格不合规、选中的一块和当前格描边、
+ * 选区右下角的填充柄，枚举列悬停出下拉箭头、引用列虚下划线、必填空着的斜线底纹
  */
 const SAMPLE_EDIT: SheetEditing = {
-  picked: () => false,
+  picked: (r, c) => r >= 7 && r <= 8 && c >= 2 && c <= 3,
+  handle: { r: 8, c: 3, onDown: () => {} },
   focus: { row: 8, col: 2 },
   focusSeq: 0,
   editing: null,
@@ -94,7 +95,8 @@ export function SheetSpecimen() {
   return (
     <div data-surface="" className="flex w-full flex-col overflow-hidden rounded-lg border bg-(--c-modal-bg)">
       <SheetHeaderBar view={view} rows={ROWS} />
-      <div ref={box} className="h-64 overflow-auto">
+      {/* 带编辑样子的表格是一组行（rowgroup），外面要有 grid */}
+      <div ref={box} role="grid" aria-readonly aria-rowcount={ROWS.length} className="h-64 overflow-auto">
         <SheetTable
           rows={ROWS}
           look={SAMPLE_LOOK}
