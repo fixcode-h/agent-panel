@@ -24,6 +24,3 @@ export const linesOf = (root, file) => readFileSync(path.join(root, file), 'utf8
 
 /** 上限：当前行数留 50 行余量，取整到 50（小修小补不用每次改上限） */
 export const capOf = (lines) => Math.ceil((lines + 50) / 50) * 50
-
-/** 函数上限：当前行数留 20 行余量，取整到 10（函数比文件小，余量也收紧些） */
-export const fnCapOf = (lines) => Math.ceil((lines + 20) / 10) * 10
