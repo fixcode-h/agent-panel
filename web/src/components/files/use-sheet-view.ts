@@ -1,6 +1,7 @@
 /**
- * 表格的查看状态：表头（自动识别或手动设置）、列筛选、排序，算出要显示的数据行。
- * 手动设置的表头：文件弹窗里记在本机浏览器（按文件路径 + 工作表名）；表格页传 store，记进项目的表格结构文件。
+ * 表格的查看状态：表头、列筛选、排序，算出要显示的数据行。
+ * 文件弹窗：表头自动识别，手动改的记在本机浏览器（按文件路径 + 工作表名）。
+ * 表格页传 store：表头完全按项目的表头配置，不再自动识别（没配置就没有表头），改了记进项目的表格结构文件。
  * 两种都不碰表格文件本身（见 designs/表格管理与在线编辑-设计稿.md）。
  */
 import { useEffect, useMemo, useState } from 'react'
@@ -28,7 +29,7 @@ function writeSaved(key: string, h: SheetHeader | null) {
   }
 }
 
-/** 表格页的表头来源：这张表自己设过的（own）、项目风格里统一的（style），改了写回结构文件 */
+/** 表格页的表头来源：这张表单独设的（own）、项目统一的（style），改了写回结构文件；都没有就是没配置表头 */
 export interface SheetHeaderStore {
   own?: SheetHeader
   style?: SheetHeader
@@ -39,8 +40,10 @@ export interface SheetView {
   header: SheetHeader
   /** 是自动识别的（不是手动设置的） */
   auto: boolean
-  /** 用的是项目风格里统一的表头 */
+  /** 用的是项目统一的表头 */
   fromStyle: boolean
+  /** 表头由项目配置管（表格页）：不自动识别 */
+  managed: boolean
   /** 自动识别有没有把握 */
   sure: boolean
   /** 数据从第几行开始（从 0 数） */
@@ -60,7 +63,8 @@ export interface SheetView {
 
 /** key：文件路径 + 工作表名，换了表就是另一份设置 */
 export function useSheetView(key: string, rows: string[][] | null, store?: SheetHeaderStore): SheetView | null {
-  const detected = useMemo(() => (rows ? detectSheetHeader(rows) : null), [rows])
+  // 表格页按配置来，不用猜
+  const detected = useMemo(() => (rows && !store ? detectSheetHeader(rows) : null), [rows, store])
   const [saved, setSaved] = useState<SheetHeader | null>(null)
   const [filters, setFilters] = useState<ColFilters>({})
   const [sort, setSort] = useState<SheetSort | null>(null)
@@ -82,9 +86,10 @@ export function useSheetView(key: string, rows: string[][] | null, store?: Sheet
   if (!rows) return null
   return {
     header,
-    auto: !own && !style,
+    auto: !store && !own,
     fromStyle: !!style,
-    sure: !!own || !!style || !!detected?.sure,
+    managed: !!store,
+    sure: !!store || !!own || !!detected?.sure,
     from,
     order,
     shown,

@@ -1,7 +1,6 @@
 /** 表格类文件的查看和共用组件（文件预览里的表格、表头规则、目录列表、组件微调）：表格页搬成插件后面板自己还在用的 */
 export const EN_SHEETS: Record<string, string> = {
   '第 {n} 行的名字': 'Name of row {n}',
-  项目风格: 'Project style',
   '拖动调整 {col} 列宽度': 'Drag to resize column {col}',
   '拖动调整列宽，双击按内容自适应': 'Drag to resize; double-click to fit content',
   '展开表头 {n} 行': 'Expand the {n} header rows',
@@ -26,4 +25,9 @@ export const EN_SHEETS: Record<string, string> = {
   '{n} 个表格': '{n} tables',
   '找不到这个目录：{full}': 'Folder not found: {full}',
   项目目录: 'Project folder',
+  未配置表头: 'No header set',
+  项目表头: 'Project header',
+  单独设置: 'Own header',
+  '项目还没配置表头，全部按数据显示（项目设置 → 表格 → 表头）':
+    'No header set up for this project; every row is shown as data (Project settings → Tables → Header)',
 }

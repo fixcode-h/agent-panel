@@ -11,7 +11,12 @@
   border-right-width: var(--c-grid-lines);
 }
 .sheet-role {
-  background: color-mix(in oklab, var(--sheet-hue) var(--c-grid-tint), var(--sheet-bg));
+  /* 表格外的色块（表头设置里每行前面的小方块）没有 --sheet-bg：照弹窗底色混，不然整个颜色无效、看不到 */
+  background: color-mix(
+    in oklab,
+    var(--sheet-hue) var(--c-grid-tint),
+    var(--sheet-bg, var(--sheet-base, var(--c-modal-bg)))
+  );
 }
 .sheet-role-modifier {
   --sheet-hue: var(--c-grid-modifier);
