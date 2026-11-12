@@ -18,6 +18,7 @@ import { EN_SUMMARY } from './en/summary.ts'
 import { EN_TASKS } from './en/tasks.ts'
 import { EN_TOOL_NAMES } from './en/tool-names.ts'
 import { EN_SHEETS } from './en/sheets.ts'
+import { EN_SHEET_LOOK } from './en/sheet-look.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CONFIG_SCAN } from './en/config-scan.ts'
@@ -94,4 +95,5 @@ export const EN: Record<string, string> = {
   ...EN_DONE_GUARD,
   ...EN_UI_POLISH,
   ...EN_SHEETS,
+  ...EN_SHEET_LOOK,
 }
