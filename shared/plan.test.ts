@@ -1,7 +1,7 @@
 import { childReport } from './task.ts'
 import { makeAlert } from './alerts.ts'
 import { test } from 'node:test'
-import { failLostWaits } from './plan-lost.ts'
+import { failLostWaits } from './plan/lost.ts'
 import assert from 'node:assert/strict'
 import type { PlanStep, Task, TaskMessage, TaskPlan } from './schema.ts'
 import { PlanStatus } from './schema.ts'

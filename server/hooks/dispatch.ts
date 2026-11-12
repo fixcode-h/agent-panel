@@ -17,7 +17,7 @@ import {
 import { BUILTIN_HOOKS, builtinList, builtinNumber, builtinOn } from '../../shared/hook-builtins.ts'
 import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
-import { newPace, planPaceHint, type PaceState } from '../../shared/plan-pace.ts'
+import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts'
 import { DATA_DIR } from '../store.ts'
 import { loadProjectLessons } from '../projects/lessons.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
@@ -162,7 +162,7 @@ function restoreText(task: Task): string {
 const pushed = taskMap<Set<string>>('hooks.dispatch 推过的教训') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
 const fails = taskMap<Map<string, number>>('hooks.dispatch 命令连续失败') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
-/** 计划没跟上提醒：每个对话在数哪一项、动了几次手、提醒过什么（见 shared/plan-pace.ts） */
+/** 计划没跟上提醒：每个对话在数哪一项、动了几次手、提醒过什么（见 shared/plan/pace.ts） */
 const paces = taskMap<PaceState>('hooks.dispatch 计划进度提醒') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 改完没验证：每个对话里按哪条输入问过（同一条输入只问一次） */
 const verified = taskMap<string>('hooks.dispatch 改完没验证') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次

@@ -4,9 +4,9 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyPlan } from './plan.ts'
-import { newPace, planPaceHint } from './plan-pace.ts'
-import type { Task } from './schema.ts'
+import { applyPlan } from '../plan.ts'
+import { newPace, planPaceHint } from './pace.ts'
+import type { Task } from '../schema.ts'
 
 const fresh = () => ({ plans: [], steps: [] }) as unknown as Pick<Task, 'plans' | 'steps'>
 const at = '2026-11-04T00:00:00.000Z'

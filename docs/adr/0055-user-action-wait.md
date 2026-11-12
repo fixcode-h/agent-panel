@@ -27,4 +27,4 @@
 ## 后果
 
 - 新增面板工具 `request_user_action`（`server/user-action-tool.ts`），任务数据多了 `userActions`（`shared/user-action.ts`），发消息接口多了可选的 `userAction`，新增 `POST /tasks/:id/user-action/:aid`。
-- 计划相关的结构从 `shared/schema.ts` 拆到 `shared/plan-schema.ts`（行数上限），对外照旧从 schema.ts 引。
+- 计划相关的结构从 `shared/schema.ts` 拆到 `shared/plan/schema.ts`（行数上限），对外照旧从 schema.ts 引。

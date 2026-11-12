@@ -1,4 +1,4 @@
-import type { PlanItem, PlanStatus, PlanStep, TaskPlan } from './schema.ts'
+import type { PlanItem, PlanStatus, PlanStep, TaskPlan } from '../schema.ts'
 
 /**
  * 计划的文字版（交给 Agent 看：工具结果、每轮提示）。plan.ts 的 planText 和 set_plan 只交变更时的回包共用这一套写法，

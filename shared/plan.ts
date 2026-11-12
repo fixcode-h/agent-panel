@@ -17,8 +17,8 @@
 import { topSteps } from './flow.ts'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep } from './schema.ts'
 import { panelWrap, type WrapUpKind } from './wrap-up.ts'
-import { STATUS_TEXT, planDelta, planRows } from './plan-text.ts'
-import { waitPlans } from './plan-wait.ts'
+import { STATUS_TEXT, planDelta, planRows } from './plan/text.ts'
+import { waitPlans } from './plan/wait.ts'
 
 /** 一份计划最多多少个主步骤、每个主步骤最多多少个子步骤：再多就该拆成几份计划 */
 export const MAX_PLAN_STEPS = 20

@@ -6,7 +6,7 @@
 
 UI 示例：[等待用户操作 · UI 设计](https://claude.ai/artifact/NYRsmQreiQ4R82DAQvDeW7)。第一个画板是完整窗口（左栏、对话、右栏），可以切换三个场景，蓝色标签 A–H 标出新加的东西出现在哪；对话、日志都是虚构的。
 
-相关代码：`server/ask-mcp.ts`（`ask_user`）、`web/src/components/chat/QuestionPanel.tsx`（提问面板）、`web/src/components/tasks/ChildAskCard.tsx`（父对话里「子对话请用户选择」）、`web/src/components/tasks/ChildrenBar.tsx`、`shared/children/ask.ts`、`shared/builtin/agents.ts`（协调器）、`server/end-turn-tool.ts`、`server/tasks/jobs.ts`（后台命令结果推回）、`shared/plan-wait.ts`、`shared/task.ts`（`convState`）、`shared/bug/diagnosis.ts`（`requestLogs`、`BugCollect`）、`web/src/components/tasks/LogAttach.tsx`
+相关代码：`server/ask-mcp.ts`（`ask_user`）、`web/src/components/chat/QuestionPanel.tsx`（提问面板）、`web/src/components/tasks/ChildAskCard.tsx`（父对话里「子对话请用户选择」）、`web/src/components/tasks/ChildrenBar.tsx`、`shared/children/ask.ts`、`shared/builtin/agents.ts`（协调器）、`server/end-turn-tool.ts`、`server/tasks/jobs.ts`（后台命令结果推回）、`shared/plan/wait.ts`、`shared/task.ts`（`convState`）、`shared/bug/diagnosis.ts`（`requestLogs`、`BugCollect`）、`web/src/components/tasks/LogAttach.tsx`
 
 ## 0. 一页结论
 

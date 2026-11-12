@@ -1,4 +1,4 @@
-import type { PlanWait, Task, TaskPlan } from './schema.ts'
+import type { PlanWait, Task, TaskPlan } from '../schema.ts'
 
 // 放在单独的文件里：shared/plan.ts 到了行数上限（scripts/file-caps.json）。不引 plan.ts，免得循环引用
 

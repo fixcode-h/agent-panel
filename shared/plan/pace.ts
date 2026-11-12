@@ -1,5 +1,5 @@
-import { PLAN_STALE_MS, activePlan, itemStale, itemUpdatedAt, runningItem } from './plan.ts'
-import type { Task } from './schema.ts'
+import { PLAN_STALE_MS, activePlan, itemStale, itemUpdatedAt, runningItem } from '../plan.ts'
+import type { Task } from '../schema.ts'
 
 // 放在单独的文件里：shared/plan.ts 到了行数上限（scripts/file-caps.json）
 

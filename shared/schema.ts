@@ -18,7 +18,7 @@ import { TaskBug } from './bug/task-bug.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
-import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan-schema.ts'
+import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan/schema.ts'
 import { FileFormat } from './settings-schema.ts'
 
 /** 全局设置（含文件格式、外观、CLI 设置）拆在 settings-schema.ts，进程面板的结构拆在 process-schema.ts：从这里原样转出，引用处不用改 */
