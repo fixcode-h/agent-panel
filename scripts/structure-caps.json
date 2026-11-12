@@ -13,7 +13,7 @@
     "server/tasks/actions-routes.ts::registerActionRoutes": 640,
     "server/tasks/asks.ts::createAsks": 410,
     "server/tasks/child-messages.ts::createChildMessages": 330,
-    "server/tasks/children.ts::createChildren": 730,
+    "server/tasks/children.ts::createChildren": 700,
     "server/tasks/conversation-routes.ts::registerConversationRoutes": 660,
     "server/tasks/drive.ts::createDrive": 440,
     "server/tasks/flow-runs.ts::createFlowRuns": 400,
@@ -60,13 +60,13 @@
     "web/src/components/tasks/ReviewDialog.tsx::ReviewDialog": 690,
     "web/src/components/tasks/TaskComposer.tsx::TaskComposer": 440,
     "web/src/components/tasks/TaskFiles.tsx::TaskFiles": 370,
-    "web/src/components/tasks/TaskView.tsx::TaskView": 2130,
+    "web/src/components/tasks/TaskView.tsx::TaskView": 1020,
     "web/src/components/usage/UsageSection.tsx::UsageSection": 580,
     "web/src/components/video/VideoFramesDialog.tsx::Body": 630,
     "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 370,
     "web/src/lib/demo-backend.ts::seed": 530,
     "web/src/lib/demo-backend.ts::route": 590,
-    "web/src/lib/demo-backend.ts::tasksRoute": 640,
+    "web/src/lib/demo-backend.ts::tasksRoute": 630,
     "web/src/lib/demo-backend.ts::demoChildren": 330,
     "web/src/pages/AgentsPage.tsx::AgentsPage": 430,
     "web/src/pages/ComfyPage.tsx::ComfyPage": 840,
@@ -592,7 +592,6 @@
       "json-tree.ts",
       "latest-turn.ts",
       "library-tree.ts",
-      "live-fields.ts",
       "load-trace.ts",
       "markdown-style.ts",
       "md-math.ts",
@@ -659,7 +658,7 @@
       "worktrees.ts"
     ]
   },
-  "taskFields": 113,
+  "taskFields": 108,
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {
@@ -700,7 +699,7 @@
     "web/src/components/tasks/Messages.tsx": 1,
     "web/src/components/tasks/PeerMessage.tsx": 3,
     "web/src/components/tasks/PlanPanel.tsx": 3,
-    "web/src/components/tasks/ProjectWorkspace.tsx": 7,
+    "web/src/components/tasks/ProjectWorkspace.tsx": 5,
     "web/src/components/tasks/RunCard.tsx": 2,
     "web/src/components/tasks/RunningNow.tsx": 2,
     "web/src/components/tasks/SharedDirNotice.tsx": 3,
@@ -711,7 +710,7 @@
     "web/src/components/tasks/TaskMenu.tsx": 9,
     "web/src/components/tasks/TaskMeta.tsx": 1,
     "web/src/components/tasks/TaskPanel.tsx": 2,
-    "web/src/components/tasks/TaskView.tsx": 14,
+    "web/src/components/tasks/TaskView.tsx": 10,
     "web/src/components/tasks/TaskViewParts.tsx": 3,
     "web/src/components/tasks/ToolRow.tsx": 3,
     "web/src/components/tasks/TurnChanges.tsx": 2,
@@ -719,7 +718,7 @@
     "web/src/components/tasks/child-line.ts": 2,
     "web/src/components/tasks/task-blocks.ts": 1,
     "web/src/components/tasks/task-view-children.ts": 3,
-    "web/src/components/tasks/task-view-summary.ts": 4
+    "web/src/components/tasks/task-view-summary.ts": 2
   },
   "intervals": {
     "web/src/components/ai-window/AiWindow.tsx": 1,
