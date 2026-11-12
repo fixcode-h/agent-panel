@@ -123,3 +123,36 @@ test('插件工具报进度：交给这一轮的 progress，带服务名和工�
   assert.deepEqual(seen, ['ue/compile/编译 1/2', 'ue/compile/编译 2/2'])
   m.close()
 })
+
+test('插件的长任务交给面板的后台命令（G1）：ctx.background 交到这一轮的后台命令，info 原样回给插件', async () => {
+  const jobs: unknown[] = []
+  const tool: McpTool = {
+    name: 'export_tables',
+    description: '',
+    inputSchema: {},
+    call: async (_a, ctx) => {
+      const r = await ctx.background!({ name: '导表', command: 'node export.mjs', exclusive: true })
+      return { content: [{ type: 'text', text: r.info }] }
+    },
+  }
+  const m = openPluginMcp('tables', 'tables', 'task6', () => [tool], undefined, {
+    cwd,
+    background: async (job) => {
+      jobs.push(job)
+      return { ok: true, info: '已放到后台（编号 0a1b2c3d）。' }
+    },
+  })
+  const r = (await call(m.url, 'export_tables')) as { content: { text: string }[] }
+  assert.deepEqual(jobs, [{ name: '导表', command: 'node export.mjs', exclusive: true }])
+  assert.match(r.content[0].text, /已放到后台（编号 0a1b2c3d）/)
+  // 没有后台命令的场合（工作流节点）不给这个函数，插件照旧自己跑
+  const none: McpTool = {
+    ...tool,
+    name: 'probe',
+    call: async (_a, ctx) => ({ content: [{ type: 'text', text: String(!!ctx.background) }] }),
+  }
+  const m2 = openPluginMcp('tables', 'tables', 'task7', () => [none], undefined, { cwd })
+  assert.equal(((await call(m2.url, 'probe')) as { content: { text: string }[] }).content[0].text, 'false')
+  m.close()
+  m2.close()
+})

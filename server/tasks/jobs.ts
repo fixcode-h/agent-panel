@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { getSettings } from '../settings.ts'
@@ -15,6 +16,7 @@ import {
 } from '../background.ts'
 import { log } from '../log.ts'
 import { BG_LOG_DIR } from '../store.ts'
+import { createBgPersist } from '../bg-persist.ts'
 import { t } from '../../shared/i18n.ts'
 import { settleWait, waitNote } from '../../shared/plan.ts'
 import { taskCliAlive } from '../exec/process.ts'
@@ -191,6 +193,8 @@ export function createJobs(sc: TasksScope) {
       maxRunning: async () => (await getSettings()).backgroundLimit,
       // 完整日志落盘：推回对话的只是提炼后的错误和结尾，模型要细节时按路径去搜
       logDir: BG_LOG_DIR,
+      // 没结束的记录落盘：面板异常退出后重启，那一行的收口说明写得出当时跑到了哪（bg-persist.ts）
+      persist: createBgPersist(path.join(path.dirname(BG_LOG_DIR), 'bg-jobs.json')),
     },
   )
 

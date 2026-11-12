@@ -20,6 +20,8 @@ export interface JobLog {
 
 /** 攒够这么多行再写一次：编译日志动辄几万行，一行一写太费 */
 const BATCH = 200
+/** 攒不够一批时最多隔这么久写一次 */
+const FLUSH_MS = 3000
 
 export function openJobLog(root: string, taskId: string, jobId: string, command: string): JobLog | null {
   const dir = path.join(root, safe(taskId))
@@ -34,10 +36,13 @@ export function openJobLog(root: string, taskId: string, jobId: string, command:
   }
   let broken = false
   let pending: string[] = []
+  // 上次写盘的时间：输出慢的命令攒不够一批也隔几秒写一次，面板被强杀时日志里有最近的输出（重启后收口要读它，bg-persist.ts）
+  let wrote = Date.now()
   const flush = () => {
     if (broken || !pending.length) return
     const text = `${pending.join('\n')}\n`
     pending = []
+    wrote = Date.now()
     try {
       appendFileSync(file, text)
     } catch (e) {
@@ -50,7 +55,7 @@ export function openJobLog(root: string, taskId: string, jobId: string, command:
     write: (line) => {
       if (broken) return
       pending.push(line)
-      if (pending.length >= BATCH) flush()
+      if (pending.length >= BATCH || Date.now() - wrote >= FLUSH_MS) flush()
     },
     flush,
   }

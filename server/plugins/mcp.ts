@@ -29,6 +29,8 @@ export interface PluginRunHooks {
   changed?: (files: string[]) => void
   /** 工具报进度（ctx.progress）：写进对话里这次调用那一行（插件框架改进 G2） */
   progress?: (server: string, tool: string, text: string) => void
+  /** 交给面板的后台命令跑（ctx.background，插件框架改进 G1）：和 Agent 的 run_background 同一套监管 */
+  background?: McpCallContext['background']
 }
 
 interface Session {
@@ -122,6 +124,7 @@ async function callTool(s: Session, tool: McpTool, args: Record<string, unknown>
             if (!ctl.signal.aborted) s.hooks?.progress?.(s.server, tool.name, String(text))
           },
         }),
+        ...(s.hooks?.background && { background: s.hooks.background }),
       }),
       stopped,
     ])

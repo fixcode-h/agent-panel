@@ -13,6 +13,7 @@ import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 import { createDigest, digestText, type LogDigest } from '../shared/log-digest.ts'
 import { openJobLog } from './bg-log.ts'
 import { notRunReason } from './bg-sanity.ts'
+import { lostJobNote, type createBgPersist, type PersistedJob } from './bg-persist.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -220,6 +221,8 @@ export function createBackground(
     maxRunning?: number | (() => number | Promise<number>)
     /** 完整日志落盘的目录（每个对话一个子目录，见 bg-log.ts）；不给就不落盘（测试） */
     logDir?: string
+    /** 没结束的记录落盘（bg-persist.ts）：面板异常退出后重启，收口说明写清它当时跑到了哪；不给就只在内存里（测试） */
+    persist?: ReturnType<typeof createBgPersist>
   } = {},
 ) {
   const runShell = deps.run ?? runShellIn
@@ -246,6 +249,26 @@ export function createBackground(
     free?.()
   }
   const jobs = new Map<string, BgJob>()
+  /** 上次运行留下、还没收口的记录（异常退出前在排队或在跑）：对话里那一行收口时按它写说明，收完就删 */
+  const prior = new Map((deps.persist?.load() ?? []).map((x) => [x.id, x]))
+  const toRec = (j: BgJob): PersistedJob => ({
+    id: j.id,
+    taskId: j.taskId,
+    name: j.name,
+    command: j.command,
+    state: j.state === 'running' ? 'running' : 'queued',
+    createdAt: j.createdAt,
+    startedAt: j.startedAt,
+    ...(j.logFile ? { logFile: j.logFile } : {}),
+    lines: j.lines,
+  })
+  /** 没结束的记录写盘：交出去、开始跑、置终态时各写一次；都结束了马上写，免得退出时还留着旧记录 */
+  const persist = () => {
+    if (!deps.persist) return
+    const open = [...jobs.values()].filter((j) => !j.endedAt)
+    deps.persist.save([...open.map(toRec), ...prior.values()])
+    if (!open.length) deps.persist.flush()
+  }
   const aborts = new Map<string, AbortController>()
   /** 正在跑的命令什么时候真正结束：停止后要等进程退出再删工作目录（Windows 上进程占着目录删不掉） */
   const runs = new Map<string, Promise<void>>()
@@ -268,6 +291,7 @@ export function createBackground(
     if (info.note) j.lines.push(info.note)
     j.endedAt = iso()
     releaseGate(j.id)
+    persist()
     const t = killTimers.get(j.id)
     if (t !== undefined) {
       timers.clearTimeout(t)
@@ -390,6 +414,7 @@ export function createBackground(
     const digest = createDigest()
     const file = deps.logDir ? openJobLog(deps.logDir, j.taskId, j.id, j.command) : null
     if (file) j.logFile = file.file
+    persist()
     const r = await runShell(j.command, j.cwd, {
       shell: j.shell ?? (await currentShell()),
       timeoutMs: j.timeoutMs,
@@ -514,6 +539,7 @@ export function createBackground(
         changed: false,
       }
       jobs.set(j.id, j)
+      persist()
       // 旧记录只留最近的
       const mine = [...jobs.values()].filter((x) => x.taskId === input.taskId && x.endedAt)
       for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_JOBS))) jobs.delete(old.id)
@@ -618,6 +644,17 @@ export function createBackground(
     active() {
       return [...jobs.values()].filter((j) => !j.endedAt)
     },
+    /**
+     * 上次运行留下、结果没拿到的这条命令的收口说明（bg-persist.ts）：当时在排队还是在跑、最后的输出、日志路径。
+     * 取一次就从待收口的记录里删掉；不认识的返回 undefined，按「结果丢失」的老说法
+     */
+    lostNote(id: string) {
+      const rec = prior.get(id)
+      if (!rec) return undefined
+      prior.delete(id)
+      persist()
+      return lostJobNote(rec, iso())
+    },
     /** 面板认不认识这个编号：不认识的是上次运行留下、结果已经丢了的（见 reapLostJobs） */
     known(id: string) {
       return jobs.has(id)
@@ -706,7 +743,12 @@ export function settleJobRow(task: Task, id: string, text: string, ok: boolean, 
  * 收口成「结果丢失」的失败，不让那一行永远转圈，也不让它看着像做完了；计划里等这些命令的步骤一起收口
  * （只收那一行的话，那一步永远「等待中」）。返回收了几处
  */
-export function reapLostJobs(task: Task, known: (id: string) => boolean) {
+export function reapLostJobs(
+  task: Task,
+  known: (id: string) => boolean,
+  /** 上次运行留下的记录写得出的收口说明（background.lostNote）；没有就按「结果丢失」 */
+  note?: (id: string) => string | undefined,
+) {
   let n = 0
   for (const m of task.messages)
     for (const tool of m.tools)
@@ -716,7 +758,7 @@ export function reapLostJobs(task: Task, known: (id: string) => boolean) {
           settleJobRow(
             task,
             id,
-            `${bgResultHead(id)}面板重启前它还没跑完，结果没有拿到：需要的话重跑一次。`,
+            `${bgResultHead(id)}${note?.(id) ?? '面板重启前它还没跑完，结果没有拿到：需要的话重跑一次。'}`,
             false,
             0,
             '结果丢失',

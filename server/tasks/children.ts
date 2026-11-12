@@ -113,7 +113,7 @@ export function createChildren(sc: TasksScope) {
   /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
   async function withLive(task: Task): Promise<Task> {
     // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
-    if (reapLostJobs(task, sc.background.known)) {
+    if (reapLostJobs(task, sc.background.known, sc.background.lostNote)) {
       task.updatedAt = new Date().toISOString()
       const e = sc.live.get(task.id)
       if (e) e.rev++
