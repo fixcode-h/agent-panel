@@ -383,7 +383,7 @@ body: |
 | shared/experience.ts                      | 经验的检索、排序、预算（和 `shared/lessons.ts` 同一套写法）                                                                  |
 | shared/experience-gate.ts                 | 机械摘要和闸门（纯函数，单测）                                                                                               |
 | server/projects/experience.ts             | 读写 `experience/<id>.md`，复用 `server/projects/lessons.ts` 的写入队列和原子写                                              |
-| server/experience-learn.ts                | 对话完成后的排队、提炼调用、校验、写入                                                                                       |
+| server/experience/learn.ts                | 对话完成后的排队、提炼调用、校验、写入                                                                                       |
 | `server/projects/lessons.ts`              | 目录改成 `agent-knowledge/lessons/`；旧目录只认带标记的文件                                                                  |
 | `server/orch-mcp.ts`                      | `project_knowledge`（`project_lessons` 当别名）、`record_experience`（放进 `DEFERRED_TOOLS`）；`record_lesson` 加 `evidence` |
 | `shared/lessons.ts`                       | 预算和标题列表按 4.4 收紧；`RECORD_HINT` 改短                                                                                |

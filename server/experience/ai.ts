@@ -1,21 +1,21 @@
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { extractJson } from '../shared/assist.ts'
-import { getCli } from '../shared/clis.ts'
+import { extractJson } from '../../shared/assist.ts'
+import { getCli } from '../../shared/clis.ts'
 import {
   EXPERIENCE_KINDS,
   EXPERIENCE_SCOPE,
   type ExperienceKind,
   type ExperienceSettings,
   type ProjectExperience,
-} from '../shared/experience.ts'
-import { t } from '../shared/i18n.ts'
-import type { Agent, Settings, Task } from '../shared/schema.ts'
-import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { withTaskModel } from '../shared/tasks/run.ts'
-import { invokeCli } from './exec/invoke.ts'
-import { childEnv } from './exec/process.ts'
+} from '../../shared/experience.ts'
+import { t } from '../../shared/i18n.ts'
+import type { Agent, Settings, Task } from '../../shared/schema.ts'
+import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
+import { withTaskModel } from '../../shared/tasks/run.ts'
+import { invokeCli } from '../exec/invoke.ts'
+import { childEnv } from '../exec/process.ts'
 
 /**
  * 经验的两次模型调用：对话完成后的提炼、项目设置里的 AI 评审。都是一次性的调用：不开对话、不读项目，

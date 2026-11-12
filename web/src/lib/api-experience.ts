@@ -3,7 +3,7 @@ import type { KnowledgeHitsView } from '@shared/knowledge-hits'
 import { json, request } from './api'
 
 /**
- * 项目经验的接口（server/experience-routes.ts）：列表、加、改、删一批 / 应用评审的精简写法、AI 评审。
+ * 项目经验的接口（server/experience/routes.ts）：列表、加、改、删一批 / 应用评审的精简写法、AI 评审。
  * 单独一个文件：api.ts 到了行数上限。演示版的同样路径交给 demo-experience.ts
  */
 type Items = { items: ProjectExperience[] }

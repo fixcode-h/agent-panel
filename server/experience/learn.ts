@@ -13,17 +13,17 @@ import {
   globBase,
   newExperienceId,
   rankExperience,
-} from '../shared/experience.ts'
-import { digestOf, digestText, gateReason, landingCovered, type TraceTool } from '../shared/experience-gate.ts'
-import { branchNameOf } from '../shared/doc-root.ts'
-import { t } from '../shared/i18n.ts'
-import type { Agent, Project, Task } from '../shared/schema.ts'
-import { askOnce, experienceRun, learnPrompt, parseLearned, type LearnedItem } from './experience-ai.ts'
-import { loadProjectExperience, mergeLearned, mutateProjectExperience } from './projects/experience.ts'
-import { detectVcs } from './projects-analyze.ts'
-import { getSettings } from './settings.ts'
-import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
-import { log } from './log.ts'
+} from '../../shared/experience.ts'
+import { digestOf, digestText, gateReason, landingCovered, type TraceTool } from '../../shared/experience-gate.ts'
+import { branchNameOf } from '../../shared/doc-root.ts'
+import { t } from '../../shared/i18n.ts'
+import type { Agent, Project, Task } from '../../shared/schema.ts'
+import { askOnce, experienceRun, learnPrompt, parseLearned, type LearnedItem } from './ai.ts'
+import { loadProjectExperience, mergeLearned, mutateProjectExperience } from '../projects/experience.ts'
+import { detectVcs } from '../projects-analyze.ts'
+import { getSettings } from '../settings.ts'
+import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
+import { log } from '../log.ts'
 
 /**
  * 整个对话完成后学经验（设计稿 §6）：

@@ -6,14 +6,14 @@ import {
   ProjectExperience,
   experienceProblems,
   newExperienceId,
-} from '../shared/experience.ts'
-import { t } from '../shared/i18n.ts'
-import type { Agent, Project } from '../shared/schema.ts'
-import { askOnce, experienceRun, parseReview, reviewPrompt } from './experience-ai.ts'
-import { knowledgeHitsView, missingPaths } from './knowledge-hits.ts'
-import { loadProjectExperience, mutateProjectExperience } from './projects/experience.ts'
-import { loadProjectLessons } from './projects/lessons.ts'
-import { getSettings } from './settings.ts'
+} from '../../shared/experience.ts'
+import { t } from '../../shared/i18n.ts'
+import type { Agent, Project } from '../../shared/schema.ts'
+import { askOnce, experienceRun, parseReview, reviewPrompt } from './ai.ts'
+import { knowledgeHitsView, missingPaths } from '../knowledge-hits.ts'
+import { loadProjectExperience, mutateProjectExperience } from '../projects/experience.ts'
+import { loadProjectLessons } from '../projects/lessons.ts'
+import { getSettings } from '../settings.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 

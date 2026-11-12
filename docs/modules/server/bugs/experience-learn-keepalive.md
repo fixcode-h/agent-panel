@@ -2,7 +2,7 @@
 
 - 状态：已修复（e2e `03-chat` 通过）
 - 症状：项目里的对话一轮做完、停在「已完成」，经验学习一直不触发，对话里也没有「学到经验」或失败的提示
-- 入口：`server/tasks/run.ts` 的 `onTurnEnd`（顶层对话）、`server/experience-learn.ts` 的 `schedule`
+- 入口：`server/tasks/run.ts` 的 `onTurnEnd`（顶层对话）、`server/experience/learn.ts` 的 `schedule`
 - 根因类型：每轮结束要做的事挂在 run 的收尾处，保活时 run 不返回
 - 模块：`server`（`server/tasks/run.ts`）
 - 关键词：经验学习、自动学、对话完成、保活、keepAlive、等下一句、onTurnEnd、experience-state

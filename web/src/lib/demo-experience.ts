@@ -8,7 +8,7 @@ import {
 import type { KnowledgeHitsView } from '@shared/knowledge-hits'
 
 /**
- * 演示版的项目经验（对应 server/experience-routes.ts）：每个项目一份内存里的列表，带几条示例；
+ * 演示版的项目经验（对应 server/experience/routes.ts）：每个项目一份内存里的列表，带几条示例；
  * AI 评审返回固定的示例结论（不调模型）。刷新页面后回到示例
  */
 const now = new Date().toISOString()

@@ -303,7 +303,7 @@ export function toolView(tool: ToolUse): ToolView | null {
           Number((/报告 #(\d+)/.exec(tool.output ?? '') ?? /第 (\d+) 版/.exec(tool.output ?? ''))?.[1]) || 0
         : 0
     const send = sendOf(name, tool)
-    // 回执是面板自己写的（server/experience-learn.ts 的 recordExperience）：「已记下经验（id: e…）」
+    // 回执是面板自己写的（server/experience/learn.ts 的 recordExperience）：「已记下经验（id: e…）」
     const learned =
       name === 'record_experience' && !tool.failed
         ? /已记下经验（id: ([\w-]+)）/.exec(tool.output ?? '')?.[1]

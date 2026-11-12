@@ -6,7 +6,7 @@ import { readGlobalLessons } from '../lessons.ts'
 import { loadProjectLessons } from '../projects/lessons.ts'
 import { loadProjectExperience } from '../projects/experience.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
-import { recordExperience } from '../experience-learn.ts'
+import { recordExperience } from '../experience/learn.ts'
 
 import type { TurnCapsCtx } from './turn-caps-conv.ts'
 

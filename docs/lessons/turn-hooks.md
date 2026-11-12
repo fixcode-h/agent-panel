@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/run.ts, server/tasks/experience.ts, server/experience-learn.ts
+paths: server/tasks/run.ts, server/tasks/experience.ts, server/experience/learn.ts
 ---
 
 # 一轮结束时要做的事挂在哪
