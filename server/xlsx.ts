@@ -11,10 +11,15 @@ import type { SheetData } from '../shared/files.ts'
 export const MAX_XLSX_BYTES = 30_000_000
 /** zip 里单个文件解压后最多这么大：防压缩炸弹 */
 const MAX_ENTRY = 120_000_000
-/** 每张表、整个文件最多给页面这么多个单元格：再多页面拿到的 JSON 就上十兆了 */
-const MAX_SHEET_CELLS = 200_000
-const MAX_BOOK_CELLS = 600_000
+/**
+ * 每张表、整个文件最多读这么多个单元格。默认值给文件弹窗用：再多页面拿到的 JSON 就上十兆了；
+ * 表格插件要能改大表（3000 行 × 80 列就 24 万格），按自己的上限读（readXlsx 的 limits）
+ */
+export const XLSX_LIMITS = { sheetCells: 200_000, bookCells: 600_000 }
+export type XlsxLimits = typeof XLSX_LIMITS
 const MAX_COLS = 512
+/** 每个单元格在 XML 里最多算这么多字节：上限调大时，单个文件解压后的上限跟着放宽，但仍防压缩炸弹 */
+const BYTES_PER_CELL = 64
 
 /** 能当表格解析的扩展名 */
 export const isXlsxPath = (file: string) => /\.(xlsx|xlsm)$/i.test(file)
@@ -53,13 +58,13 @@ function zipEntries(buf: Buffer): Map<string, ZipEntry> {
   return out
 }
 
-function zipRead(buf: Buffer, entry: ZipEntry | undefined): string {
+function zipRead(buf: Buffer, entry: ZipEntry | undefined, max = MAX_ENTRY): string {
   if (!entry || buf.readUInt32LE(entry.offset) !== 0x04034b50) return ''
   const start = entry.offset + 30 + buf.readUInt16LE(entry.offset + 26) + buf.readUInt16LE(entry.offset + 28)
   const data = buf.subarray(start, start + entry.size)
   if (entry.method === 0) return data.toString('utf8')
   if (entry.method !== 8) throw new Error('unsupported zip method')
-  return inflateRawSync(data, { maxOutputLength: MAX_ENTRY }).toString('utf8')
+  return inflateRawSync(data, { maxOutputLength: max }).toString('utf8')
 }
 
 const ENTITY: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
@@ -201,10 +206,14 @@ function sheetRows(
   return { rows, truncated, cells }
 }
 
-/** 解析 xlsx：每张表一份「行 × 列」的文字。不是 xlsx（加密的、改了扩展名的）时抛错 */
-export function readXlsx(buf: Buffer): SheetData[] {
+/**
+ * 解析 xlsx：每张表一份「行 × 列」的文字。不是 xlsx（加密的、改了扩展名的）时抛错。
+ * 超过 limits 的表只读前面一部分并标 truncated（页面据此只读，免得把没读到的部分当空的写回去）
+ */
+export function readXlsx(buf: Buffer, limits: XlsxLimits = XLSX_LIMITS): SheetData[] {
   const zip = zipEntries(buf)
-  const read = (name: string) => zipRead(buf, zip.get(name))
+  const maxEntry = Math.max(MAX_ENTRY, limits.sheetCells * BYTES_PER_CELL)
+  const read = (name: string) => zipRead(buf, zip.get(name), maxEntry)
   const book = noPrefix(read('xl/workbook.xml'))
   if (!book) throw new Error('not an xlsx')
   const rels = new Map<string, string>()
@@ -217,7 +226,7 @@ export function readXlsx(buf: Buffer): SheetData[] {
   const dates = dateStyles(read('xl/styles.xml'))
   const date1904 = /<workbookPr\b[^>]*\bdate1904="(1|true)"/.test(book)
   const out: SheetData[] = []
-  let left = MAX_BOOK_CELLS
+  let left = limits.bookCells
   for (const m of book.matchAll(/<sheet\b([^>]*)>/g)) {
     const name = xmlText(attr(m[1], 'name') ?? '')
     const file = rels.get(attr(m[1], 'r:id') ?? attr(m[1], 'id') ?? '')
@@ -227,7 +236,7 @@ export function readXlsx(buf: Buffer): SheetData[] {
       out.push({ name, rows: [], truncated: true })
       continue
     }
-    const got = sheetRows(read(file), shared, dates, date1904, Math.min(MAX_SHEET_CELLS, left))
+    const got = sheetRows(read(file), shared, dates, date1904, Math.min(limits.sheetCells, left))
     left -= got.cells
     out.push({ name, rows: got.rows, ...(got.truncated ? { truncated: true } : {}) })
   }
