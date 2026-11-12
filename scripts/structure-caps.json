@@ -4,9 +4,7 @@
     "server/assist.ts::assistApi": 370,
     "server/background.ts::createBackground": 540,
     "server/exec/rpc/codex.ts::codexAdapter": 560,
-    "server/exec/runner.ts::runAgent": 1610,
-    "server/orch-mcp.ts::orchTools": 740,
-    "server/orch-mcp.ts::callOrchTool": 340,
+    "server/exec/runner.ts::runAgent": 890,
     "server/schedules.ts::schedulesApi": 470,
     "server/summary.ts::summaryApi": 330,
     "server/tables/routes.ts::tablesApi": 400,
@@ -667,7 +665,7 @@
   },
   "taskFields": 113,
   "preprocess": 10,
-  "orchInlineTools": 32,
+  "orchInlineTools": 0,
   "hostMembers": {
     "Orchestra": 69,
     "EngineHost": 67
