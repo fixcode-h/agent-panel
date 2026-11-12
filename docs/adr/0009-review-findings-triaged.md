@@ -12,7 +12,7 @@
 
 | 位置                                                     | 现状                                                                                                                                |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/review-gate.ts` 的 `reviewGate`                  | 最近一次评审结论是 `fail` 就拒绝：「按 🛑 逐条改完，再派一次评审复看，通过之后才调用 submit_merge」。唯一的放行条件是评审写「通过」 |
+| `shared/review/gate.ts` 的 `reviewGate`                  | 最近一次评审结论是 `fail` 就拒绝：「按 🛑 逐条改完，再派一次评审复看，通过之后才调用 submit_merge」。唯一的放行条件是评审写「通过」 |
 | `shared/builtin/agents.ts` 执行角色「收尾前评审」第 4 条 | 「有 🛑：先改完，再新加一条评审步骤复看……**不要自己把 🛑 判成不重要，也不要跳过复看**」                                             |
 | 同上，评审角色                                           | 「有 🛑 时必须写不通过」；🛑 的门槛只有「必须改」三个字，没说复看只看增量，也没说范围外、极端数据怎么算                             |
 | `shared/engine.ts` 的 `spawn` / `runHelper`              | 每次 `spawn_agents` 新建一个子任务、一个新会话（`sessionKey: step.id`）：复看的评审从零开始，重读模块文档、重读全量 diff            |
@@ -71,7 +71,7 @@
 
 ## 与现有实现的关系
 
-- `shared/review-gate.ts`：`reviewGate` 加第四个参数 `triage`，新增 `blockingIds`、`triageText`、`triageInput`。
+- `shared/review/gate.ts`：`reviewGate` 加第四个参数 `triage`，新增 `blockingIds`、`triageText`、`triageInput`。
 - `shared/verdict.ts`：`parseVerdict` 和「首行优先」的 `leadVerdict` 从 `engine.ts` 挪出来（`engine.ts` 仍导出 `parseVerdict`），评审门禁和执行报告不用为一个函数引整个引擎。
 - `server/orch-mcp.ts`：`submit_merge` 加 `review_triage`，`spawn_agents` 加 `resume`、`title` 改选填。
 - `server/tasks.ts`：`submitMerge` 收处置、交给门禁，写进收尾请求和交接摘要（`shared/handoff.ts` 的「评审意见的处置」）。

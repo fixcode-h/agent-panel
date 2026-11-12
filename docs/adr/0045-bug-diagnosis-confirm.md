@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-03 用户确认并实施；和最初提议不同的地方见「实施记录」） · 2026-11-03
 
-- 影响范围：`shared/builtin/agents.ts`（`BUG_METHOD`、`BUG_REPORT_TEXT`、主理的「Bug 怎么交」、执行）、`server/orch-mcp.ts`（新工具 `submit_diagnosis`）、`server/exec/panel-requests.ts`（诊断确认请求）、`shared/tasks/request.ts`、`shared/schema.ts`（`Task.diagnoses`）、`shared/review-gate.ts`（收尾核对改动范围）、`web/src/components/tasks/ReviewDialog.tsx`、`RequestCard.tsx`、`ChildRequestBar.tsx`、`Messages.tsx`
+- 影响范围：`shared/builtin/agents.ts`（`BUG_METHOD`、`BUG_REPORT_TEXT`、主理的「Bug 怎么交」、执行）、`server/orch-mcp.ts`（新工具 `submit_diagnosis`）、`server/exec/panel-requests.ts`（诊断确认请求）、`shared/tasks/request.ts`、`shared/schema.ts`（`Task.diagnoses`）、`shared/review/gate.ts`（收尾核对改动范围）、`web/src/components/tasks/ReviewDialog.tsx`、`RequestCard.tsx`、`ChildRequestBar.tsx`、`Messages.tsx`
 - 取代：无。补全 `BUG_METHOD` 第 5 步「根因成立 → 先写失败测试，再修」：在「根因成立」和「修」之间加一道确认
 
 ## 背景
@@ -23,7 +23,7 @@
 | `BUG_REPORT_TEXT`（同文件）                           | 排查报告 11 节（现象、复现、范围、时间线、调用栈、证据链、根因、修复、验证、回归、文档），**改完之后**才交                                                                                                                                                                                                                               |
 | 子对话的提问                                          | 子对话自己的「提问」开着就直接问用户，关着交给父对话答；父对话的「提问」开着时，要用户拍板的再问用户（`shared/children/ask.ts`）。没有哪一条规定 Bug 修之前要问                                                                                                                                                                          |
 | 工作流节点的「完成后等我确认」（`NodeHooks.confirm`） | 节点做完发 `kind: 'confirm'` 的请求（`server/exec/real-turn.ts` 的 `confirm`），输入框上方出现「需要你确认 · 查看结果」，点开 `ReviewDialog`：左边按 Markdown 渲染结果，选中文字可以标注，右栏列出标注；「修改」把标注整理成意见退回返工（`web/src/lib/review-feedback.ts`），「确认」往下走。只有工作流节点能发，对话（含子对话）发不了 |
-| 收尾的评审门禁（`shared/review-gate.ts`）             | 评审通过或每条高、中级意见有处置才放行；不核对改动是不是超出了修复方案的范围                                                                                                                                                                                                                                                             |
+| 收尾的评审门禁（`shared/review/gate.ts`）             | 评审通过或每条高、中级意见有处置才放行；不核对改动是不是超出了修复方案的范围                                                                                                                                                                                                                                                             |
 
 ### 问题出在哪
 

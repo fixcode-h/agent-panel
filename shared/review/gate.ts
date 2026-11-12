@@ -1,5 +1,5 @@
-import type { PlanStep, TaskStep } from './schema.ts'
-import { mustIds, verdictOf } from './submitted.ts'
+import type { PlanStep, TaskStep } from '../schema.ts'
+import { mustIds, verdictOf } from '../submitted.ts'
 
 /**
  * 评审门禁：子对话合回父对话分支之前，必须

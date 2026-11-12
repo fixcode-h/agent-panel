@@ -4,7 +4,7 @@
  * 插件认领的扩展名按插件转出的文本逐行比，或用插件自己写的差异（表格插件按格子比）。
  * 这份文字是发给评审 Agent 的提示词，不翻译。取内容（git、p4、插件）在 server/exec/review-semantic.ts
  */
-import { diffSheet, foldSame } from './sheet-diff.ts'
+import { diffSheet, foldSame } from '../sheet-diff.ts'
 
 /** 一个文件的语义差异最多这么多字：再长截掉，评审按文件列表自己去看 */
 export const SEMANTIC_FILE_MAX = 12_000

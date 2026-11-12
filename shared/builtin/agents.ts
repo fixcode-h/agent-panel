@@ -1,5 +1,5 @@
 import type { AgentInput, AgentMount, AgentParam } from '../schema.ts'
-import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review-limits.ts'
+import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review/limits.ts'
 import { DOC_PLACE_KEY, DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 import { CHAT_AGENTS } from './chat-agents.ts'
 import { BACKGROUND_WAIT_RULE, TURN_PROGRESS_RULES } from '../turn-rules.ts'

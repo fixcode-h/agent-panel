@@ -3,7 +3,7 @@ import { SENT_NOTE } from '../shared/orchestra/route.ts'
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
-import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../shared/review-limits.ts'
+import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../shared/review/limits.ts'
 import {
   BUILTIN_AGENTS,
   CODING_TEXT,
@@ -331,7 +331,7 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   // ADR 0030：按改动类型过清单，修 Bug 的改动多看根因 / 症状和回归测试
   assert.match(code, /修的是根因还是症状/)
   assert.match(code, /有没有能拦住它的回归测试/)
-  // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
+  // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review/gate.ts）会一直拦着合不回去
   const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
   assert.ok(plan.includes('submit_verdict'), '评审（方案或结论）同样要用 submit_verdict 交结论')
 })

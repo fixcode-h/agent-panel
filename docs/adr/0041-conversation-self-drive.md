@@ -109,7 +109,7 @@
 | A3  | 带条件连线的节点                      | 「结论：通过」，没写按通过             | 同上                                                                                       | 已落地                                                                      |
 | A4  | 主 Agent 评估（`shared/dispatch.ts`） | 回复里 dispatch 代码块，解析不出按继续 | `dispatch` 工具                                                                            | 已落地（这条路径目前默认关闭：`shared/flow.ts` 的 `dispatches` 恒为 false） |
 | A5  | 常驻编排器                            | 同上                                   | 只认 `run_workflow`（加 restart）                                                          | 已落地（没交按只回答处理，不起运行）                                        |
-| A6  | 收尾门禁（`shared/review-gate.ts`）   | 评审首行结论、「必须处置：R1」         | 评审用 `submit_verdict` 交，`blockers` 里 `must: true` 的要逐条处置                        | 已落地                                                                      |
+| A6  | 收尾门禁（`shared/review/gate.ts`）   | 评审首行结论、「必须处置：R1」         | 评审用 `submit_verdict` 交，`blockers` 里 `must: true` 的要逐条处置                        | 已落地                                                                      |
 | A7  | `server/tasks/peer.ts`                | 正文开头「【报错不是我改出来的」       | `wait_fix` 作为字段传                                                                      | 已落地                                                                      |
 
 只做展示的（总结卡片、汇报摘要、建议卡片）保留；按 CLI / 网关报错文字分类的不是模型回复，不在此列。第五期（已落地）：总结写进各自对话计划的 `summary`（`set_plan` / `finish_plan` 带 summary），子对话汇报优先读它，不写进父对话的计划。第六期（已落地）：`scripts/rules-check.mjs` 第 19 条拦 `parseVerdict` / `leadVerdict` / `parseDispatch` 在定义文件和测试之外被调用；界面上的验收徽标也改读 `submitted`。

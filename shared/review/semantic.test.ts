@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { lineDiffText, semanticSection, SEMANTIC_MAX } from './review-semantic.ts'
+import { lineDiffText, semanticSection, SEMANTIC_MAX } from './semantic.ts'
 
 test('逐行差异：只带改动前后几行，没改的折起来', () => {
   const a = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')

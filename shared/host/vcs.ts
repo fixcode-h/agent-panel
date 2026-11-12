@@ -3,7 +3,7 @@
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
 import type { ReviewDiff, RouteInput } from '../engine/host.ts'
 import type { HandoffInput } from '../handoff.ts'
-import type { ReviewOverride, TriageItem } from '../review-gate.ts'
+import type { ReviewOverride, TriageItem } from '../review/gate.ts'
 
 /** Orchestra 里版本管理的那部分（重构文档第 5 条：按能力拆成小接口，Orchestra 只是它们的组合） */
 export interface OrchVcs {
@@ -19,7 +19,7 @@ export interface OrchVcs {
     tests: string,
     build?: boolean,
     handoff?: HandoffInput,
-    /** 对最近一次评审每条高级、中级意见的处置（见 shared/review-gate.ts、ADR 0009） */
+    /** 对最近一次评审每条高级、中级意见的处置（见 shared/review/gate.ts、ADR 0009） */
     triage?: TriageItem[],
     /** 显式放行（用户明确要求「已知问题也合并」）：门禁真的拦下时才生效，记录写在任务上 */
     override?: ReviewOverride,

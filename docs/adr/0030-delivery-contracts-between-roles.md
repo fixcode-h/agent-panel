@@ -68,7 +68,7 @@
 
 - 全部是 `shared/builtin/agents.ts` 的内置定义改动，启动同步直接换成新版（ADR 0015），不用登记旧指纹；`tester` 新增参数 `task` 有默认值，已装副本同步后按默认「跑验收」走，`keepParamValues` 保留用户填过的其他参数。
 - 工作流定义（`shared/builtin/workflows.ts`）不改：节点仍点名同样的角色和参数，受益来自角色设定。
-- `shared/test-steps.ts` 的 `isTestAgent`、`shared/review-gate.ts` 的门禁、`shared/verdict.ts` 的结论读取都不变；「设计用例」不要求写验收结论（没有结论按通过读，它不做验收），「补测试」仍写。
+- `shared/test-steps.ts` 的 `isTestAgent`、`shared/review/gate.ts` 的门禁、`shared/verdict.ts` 的结论读取都不变；「设计用例」不要求写验收结论（没有结论按通过读，它不做验收），「补测试」仍写。
 - 测试：`server/core-agents.test.ts` 新增四条，断言契约在各角色里的位置、Bug 第 0 步和修复硬要求、写代码新规则、`tester.task` 三档的渲染和 `isTestAgent` 不变。
 - 文档：`docs/agent-catalog.md` 新增「交付契约」「角色分类」两节，更新 Bug 分工表。
 

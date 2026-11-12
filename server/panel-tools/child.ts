@@ -4,7 +4,7 @@
  */
 import { askOptions } from '../../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../../shared/handoff.ts'
-import { overrideInput, triageInput } from '../../shared/review-gate.ts'
+import { overrideInput, triageInput } from '../../shared/review/gate.ts'
 import { reply, str, text, type PanelTool } from './types.ts'
 
 export const MESSAGE_PARENT: PanelTool = {

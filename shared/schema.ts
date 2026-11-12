@@ -1807,7 +1807,7 @@ export const TaskData = z.object({
    */
   handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
   /**
-   * 评审门禁的显式放行记录（见 shared/review-gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
+   * 评审门禁的显式放行记录（见 shared/review/gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
    * 面板记下谁、什么时候、为什么、原本拦住什么。收尾消息和交接摘要里一并带给父对话，任务详情里也能看到
    */
   reviewOverride: z

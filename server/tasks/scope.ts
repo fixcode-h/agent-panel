@@ -645,8 +645,8 @@ export interface TasksScope {
     tests: string,
     build?: boolean,
     handoff?: import('../../shared/handoff.ts').HandoffInput,
-    triage?: import('../../shared/review-gate.ts').TriageItem[],
-    override?: import('../../shared/review-gate.ts').ReviewOverride,
+    triage?: import('../../shared/review/gate.ts').TriageItem[],
+    override?: import('../../shared/review/gate.ts').ReviewOverride,
   ) => Promise<{
     ok: boolean
     info: string

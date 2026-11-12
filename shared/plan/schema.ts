@@ -63,7 +63,7 @@ export const PlanStep = PlanItem.extend({
   wrapUp: z.enum(['merge', 'p4', 'deliver', 'push']).optional(),
   /**
    * 评审本次改动的一步：子对话收尾前必须把它写进计划（标 review: true）并做完，
-   * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
+   * submit_merge 会校验计划里有没有这样一步（见 shared/review/gate.ts）。旧数据没有这个字段
    */
   review: z.boolean().optional(),
   /**

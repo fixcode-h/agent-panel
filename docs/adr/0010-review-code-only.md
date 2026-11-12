@@ -40,7 +40,7 @@
 
 - `server/exec/git.ts`：`gitSnapshot`、`reviewDiff`；`server/exec/runner.ts` 接成 `EngineHost.reviewDiff`，太长的差异存进交接目录。
 - `shared/engine.ts`：`runHelper` 里 `reviewPart` 把改动拼进评审的提示词，记下 `step.snapshot`。
-- `shared/review-gate.ts`：`blockingIds` 认「必须处置：」和以 🔴 / 🟠（旧的 🛑）开头的行，只认行首，复看正文里提到上一轮的编号不算。
+- `shared/review/gate.ts`：`blockingIds` 认「必须处置：」和以 🔴 / 🟠（旧的 🛑）开头的行，只认行首，复看正文里提到上一轮的编号不算。
 - 执行、评审两个必备角色的设定，启动时直接同步。
 
 ## 风险与代价
