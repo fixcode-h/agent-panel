@@ -11,6 +11,7 @@ import { removeTaskLog, setTaskLogPath } from './task-log.ts'
 import { DATA_DIR, archiveBrokenFile, onReset, readJsonDetailed, writeJsonAtomic } from './store.ts'
 import { type MessagesFileState, stateFromRead, writeMessagesFile } from './tasks/messages-write.ts'
 import { MSG_JSONL, MSG_LEGACY, readMessagesFile, statMessagesFile } from './tasks/messages-file.ts'
+import { messageChars } from '../shared/task-search.ts'
 
 /**
  * 任务按项目分目录存，每个任务两个文件：
@@ -54,16 +55,6 @@ const KEEP_FULL = 12
  */
 const KEEP_CHARS = 16_000_000
 const KEEP_MIN = 2
-
-/** 一个任务的对话大概多大：只累加字符串长度，不序列化，执行中每次落盘都算一遍也不贵 */
-export function messageChars(msgs: TaskMessage[]) {
-  let n = 0
-  for (const m of msgs) {
-    n += m.text.length + (m.thinking?.length ?? 0) + (m.prompt?.length ?? 0)
-    for (const t of m.tools) n += t.label.length + (t.input?.length ?? 0) + (t.output?.length ?? 0)
-  }
-  return n
-}
 
 /** 每个任务的指纹缓存：跟上一次算的时候比，只重算变了的那几条消息 */
 type StampCache = {
