@@ -17,24 +17,13 @@ import {
   CORE_AGENTS,
   builtinMounts,
   coreDefinition,
-  isCoreAgent,
   sameCore,
   syncCore,
   upgradeParamDefaults,
   upgradeRunIn,
 } from './core.ts'
+import { MERGED_AGENTS, mergedParams, type MergedAgent } from './merged.ts'
 import {
-  LEGACY_AGENT_FIELDS,
-  LEGACY_AGENT_FIELDS_MORE,
-  LEGACY_WORKFLOWS,
-  MERGED_AGENTS,
-  mergedParams,
-  RETIRED_WORKFLOW_DEFS,
-  type LegacyWorkflow,
-  type MergedAgent,
-} from './legacy.ts'
-import {
-  buildFlow,
   buildWorkflow,
   builtinAgentKeys,
   GENERAL,
@@ -45,7 +34,6 @@ import {
   UE_PROJECT_KEY,
   type BuiltinWorkflow,
 } from './workflows.ts'
-import { GENERAL_LEGACY } from './legacy-workflows.ts'
 
 /**
  * 把内置工作流、内置 Agent 建进数据：自带工作流启动时全部自动装一次（用到的角色随之建好，见 seedProjectWorkflows），
@@ -202,88 +190,6 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
 /** 「通用项目」「UE 项目」：项目默认流程要用，本机没有时每次启动都补上；其余自带工作流只自动装一次 */
 const ALWAYS_SEEDED = new Set([GENERAL_KEY, UE_PROJECT_KEY]) // 模块状态：常量，加载后不改
 
-/** 参数表是否一致（忽略键的顺序） */
-const sameParams = (a: Record<string, unknown>, b: Record<string, unknown>) => {
-  const ka = Object.keys(a).sort()
-  const kb = Object.keys(b).sort()
-  return ka.length === kb.length && ka.every((k, i) => k === kb[i] && JSON.stringify(a[k]) === JSON.stringify(b[k]))
-}
-
-type FlowNodeLike = Workflow['flows'][number]['nodes'][number]
-
-/** 两个节点的语义是否一致：忽略 id 和坐标 */
-function sameNode(a: FlowNodeLike, b: FlowNodeLike) {
-  return (
-    a.title === b.title &&
-    a.kind === b.kind &&
-    a.agentId === b.agentId &&
-    (a.flow?.kind ?? '') === (b.flow?.kind ?? '') &&
-    (a.flow?.id ?? '') === (b.flow?.id ?? '') &&
-    a.tier === b.tier &&
-    sameParams(a.params, b.params) &&
-    a.retries === b.retries &&
-    a.instructions === b.instructions &&
-    a.steps.length === b.steps.length &&
-    (a.hooks.start?.kind ?? '') === (b.hooks.start?.kind ?? '') &&
-    (a.hooks.start?.id ?? '') === (b.hooks.start?.id ?? '') &&
-    (a.hooks.review?.kind ?? '') === (b.hooks.review?.kind ?? '') &&
-    (a.hooks.review?.id ?? '') === (b.hooks.review?.id ?? '') &&
-    (a.hooks.end?.kind ?? '') === (b.hooks.end?.kind ?? '') &&
-    (a.hooks.end?.id ?? '') === (b.hooks.end?.id ?? '') &&
-    a.hooks.maxRounds === b.hooks.maxRounds &&
-    !!a.hooks.confirm === !!b.hooks.confirm
-  )
-}
-
-const edgeKey = (e: { from: string; to: string; when?: string }) => `${e.from}>${e.to}>${e.when ?? ''}`
-const sameEdges = (
-  a: { from: string; to: string; when?: string }[],
-  b: { from: string; to: string; when?: string }[],
-) => a.map(edgeKey).sort().join('|') === b.map(edgeKey).sort().join('|')
-
-/**
- * 本机的「通用项目」还是没改过的旧 5 节点版本：
- * Agent 按来源比较（本机 id 因机器而异），其余语义字段一致、忽略坐标和工作流说明以外的顺序
- */
-function isLegacyGeneral(w: Workflow, agents: Agent[]) {
-  if (w.origin !== GENERAL_ORIGIN || w.entryFlowId !== 'main') return false
-  const expected = buildWorkflow(GENERAL_LEGACY, (key) => findBuiltin(agents, key)?.id ?? '')
-  const exp = expected.flows.find((f) => f.id === 'main')
-  const main = w.flows.find((f) => f.id === 'main')
-  if (!exp || !main || main.nodes.length !== exp.nodes.length) return false
-  if (!sameEdges(main.edges, exp.edges)) return false
-  if (w.document.trim() !== expected.document.trim()) return false
-  const byId = new Map(main.nodes.map((n) => [n.id, n]))
-  return exp.nodes.every((e) => {
-    const n = byId.get(e.id)
-    return !!n && sameNode(n, e)
-  })
-}
-
-/**
- * 本机副本是不是「没改过的旧版本」：和某个旧定义的流程逐个比较，
- * 节点语义、连线和说明都一致（忽略坐标），并且这个名字对应的流程在两边都有。
- * 只比较旧定义里出现过的流程 id，用户新增的流程不影响判断。
- */
-export function matchesLegacy(cur: Workflow, legacy: LegacyWorkflow, agentId: (key: string) => string) {
-  if (cur.document.trim() !== legacy.document.trim()) return false
-  const expected = legacy.flows.map((f) => buildFlow(f, agentId))
-  for (const exp of expected) {
-    const mine = cur.flows.find((f) => f.id === exp.id)
-    if (!mine || mine.nodes.length !== exp.nodes.length) return false
-    if (!sameEdges(mine.edges, exp.edges)) return false
-    const byId = new Map(mine.nodes.map((n) => [n.id, n]))
-    if (
-      !exp.nodes.every((e) => {
-        const n = byId.get(e.id)
-        return !!n && sameNode(n, e)
-      })
-    )
-      return false
-  }
-  return true
-}
-
 /**
  * 内置工作流副本的内容指纹：只算升级会换掉的部分（说明、主 Agent、入口、文档、暴露项、流程），
  * 先按 schema 解析补齐默认值，坐标不算（用户拖动节点不算改过）。
@@ -393,16 +299,6 @@ const stripMergedNote = (description: string) => {
   return (m ? description.slice(0, m.index) : description).trim()
 }
 
-function untouchedMerged(a: Agent, key: string) {
-  const olds = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])].filter(Boolean)
-  // 更早合并的几个没留指纹：它们早就只剩一条说明，引用也在上一版重定向过了
-  if (!olds.length) return true
-  const desc = stripMergedNote(a.description)
-  return olds.some(
-    (o) => a.name === o.name && desc === o.description.trim() && a.instructions.trim() === o.instructions.trim(),
-  )
-}
-
 /**
  * 删掉已经没用的已合并 Agent 副本：引用都重定向过了、没人再用、也没被用户改过的才删。
  * 返回删掉的 Agent（调用方备份）和「旧 id → 合并目标 id」，旧对话里还记着旧 id 的照这个转过去。
@@ -421,7 +317,7 @@ export async function pruneMergedAgents(
     const cur = findBuiltin(state.agents, key)
     const hit = cur && target.get(cur.id)
     if (!cur || !hit) continue
-    if (agentInUse(cur.id, state, projects) || !untouchedMerged(cur, key)) continue
+    if (agentInUse(cur.id, state, projects)) continue
     await api.deleteAgent(cur.id)
     removed.push(cur)
     aliases[cur.id] = hit.to
@@ -447,9 +343,9 @@ export async function redirectMergedWorkflows(state: BuiltinState, api: BuiltinO
 }
 
 /**
- * 升级没改过的内置工作流副本（用户机器上已经装过旧版）。保留 id、名称、分类、标签、坐标等本机字段；用户改过的副本不动。
- * 「没改过」优先看副本上记的指纹（builtinHash，面板每次写副本时记下）：内容还是那个指纹就升级，不管它停在哪个历史版本。
- * 指纹是后来才加的，没记过的副本再按 LEGACY_WORKFLOWS 里登记的历史版本逐个比；和当前定义一致的补记指纹。
+ * 内置工作流的定义更新了，就把本机副本换成新版（用户 2026-10-25 定「内置只留一份、更新时覆盖」，2026-11-12 定改过的也直接覆盖、不备份）。
+ * 保留 id、名称、分类、标签、坐标等本机字段。副本上的 builtinHash 记着上次写进去的是哪一版：
+ * 和当前定义一样说明定义没更新，用户之后改的留着；不一样（定义更新了，或者是没记过指纹的老副本）就覆盖成新版。
  * 升级后指纹更新成新内容，重复启动不会重复改（幂等）。
  */
 export async function upgradeBuiltinWorkflows(state: BuiltinState, api: BuiltinOps): Promise<Workflow[]> {
@@ -498,51 +394,12 @@ export async function upgradeBuiltinWorkflows(state: BuiltinState, api: BuiltinO
       }
       continue
     }
-    const untouched = cur.builtinHash
-      ? cur.builtinHash === mine
-      : (LEGACY_WORKFLOWS[w.key] ?? []).some((l) => matchesLegacy(cur, l, agentId))
-    if (!untouched) continue
+    // 内置定义没变过（上次写进副本的就是这一版）：用户在这之后改的留着
+    if (cur.builtinHash === latest) continue
     const next = await api.updateWorkflow(id, { ...input, builtinHash: latest })
     if (next) out.push(next)
   }
   return out
-}
-
-/**
- * 本机没改过的旧「通用项目」升级成合并后的主流程。
- * 已在 upgradeBuiltinWorkflows 里按 LEGACY_WORKFLOWS 做过通用处理；这里保留给旧调用方，
- * 语义一致时返回 null（已经升级过或结构不匹配）。
- */
-export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOps): Promise<Workflow | null> {
-  if (!api.updateWorkflow) return null
-  const cur = state.workflows.find((w) => w.origin === GENERAL_ORIGIN)
-  if (!cur || !isLegacyGeneral(cur, state.agents)) return null
-  const agentId = (key: string) => findBuiltin(state.agents, key)?.id ?? ''
-  const built = buildWorkflow(GENERAL, agentId)
-  const oldMain = cur.flows.find((f) => f.id === 'main')!
-  const newMain = built.flows.find((f) => f.id === built.entryFlowId)!
-  const pos = new Map(oldMain.nodes.map((n) => [n.id, n]))
-  const flows = built.flows.map((f) => {
-    // 其他流程（文档初始化、测试、验收）保留本机的版本，用户可能改过
-    const old = cur.flows.find((x) => x.id === f.id)
-    if (f.id !== newMain.id) return old ?? f
-    return {
-      ...f,
-      startPos: oldMain.startPos,
-      endPos: oldMain.endPos,
-      nodes: f.nodes.map((n) => {
-        const o = pos.get(n.id)
-        return o ? { ...n, x: o.x, y: o.y } : n
-      }),
-    }
-  })
-  const { id, createdAt, updatedAt, ...rest } = cur
-  return api.updateWorkflow(id, {
-    ...rest,
-    mainAgentId: built.mainAgentId,
-    entryFlowId: built.entryFlowId,
-    flows,
-  })
 }
 
 /**
@@ -581,7 +438,7 @@ export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) 
  * 启动时装上自带工作流（用户 2026-10-25 改成默认全部加入，不再手动添加）：同名或同来源的跳过，不覆盖用户改过的。
  * seeded 是已经自动装过的 key（调用方存盘）：装过一次的、用户后来删掉的不再装回来，只有「通用项目」「UE 项目」缺了就补；
  * 以后新加的自带工作流不在 seeded 里，下次启动自动装上。
- * 再把内置角色换成当前定义（replaced 是覆盖掉的、用户改过的副本，调用方备份），本机没改过的旧工作流副本升级到新定义，旧副本引用了
+ * 再把内置角色换成当前定义（改过的也直接覆盖），定义更新过的内置工作流副本换成新版，旧副本引用了
  * 已合并的 Agent 时仍能运行，结果里由调用方提示。
  * 返回装完后的数据和新的 seeded，调用方据此更新集合。
  */
@@ -617,8 +474,7 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps,
       tags: [...cur.tags, ...r.newTags],
     }
   }
-  const replaced: Agent[] = []
-  const upgradedAgents = await upgradeBuiltinAgents(cur, api, (a) => replaced.push(a))
+  const upgradedAgents = await upgradeBuiltinAgents(cur, api)
   if (upgradedAgents.length)
     cur = { ...cur, agents: cur.agents.map((a) => upgradedAgents.find((x) => x.id === a.id) ?? a) }
   const noted = await annotateMergedAgents(cur, api)
@@ -630,22 +486,20 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps,
   if (redirected.length)
     cur = { ...cur, workflows: cur.workflows.map((w) => redirected.find((x) => x.id === w.id) ?? w) }
   const nextSeeded = [...new Set([...seeded, ...builtinWorkflows().map((w) => w.key)])]
-  return { state: cur, created, updated, seeded: nextSeeded, upgradedAgents, replaced }
+  return { state: cur, created, updated, seeded: nextSeeded, upgradedAgents }
 }
 
 /**
  * 合并掉的内置工作流（RETIRED_WORKFLOWS）：本机副本和合并前的定义一致（没改过）、接替的工作流本机也有时，
- * 返回要删的副本和接替它的本机工作流 id。用户改过的副本、接替的被删掉了的，都留着不动。
+ * 返回要删的副本和接替它的本机工作流 id。用户改过的副本（或没记过指纹、认不出改没改过的老副本）、接替的被删掉了的，都留着不动。
  */
 export function retiredWorkflows(state: Pick<BuiltinState, 'agents' | 'workflows'>) {
-  const agentId = (key: string) => findBuiltin(state.agents, key)?.id ?? ''
   const out: { workflow: Workflow; into: string }[] = []
   for (const [key, intoKey] of Object.entries(RETIRED_WORKFLOWS)) {
     const into = state.workflows.find((w) => w.origin === originOf(intoKey))
     if (!into) continue
     for (const w of state.workflows.filter((x) => x.origin === originOf(key)))
-      if ((RETIRED_WORKFLOW_DEFS[key] ?? []).some((l) => matchesLegacy(w, l, agentId)))
-        out.push({ workflow: w, into: into.id })
+      if (untouchedCopy(w)) out.push({ workflow: w, into: into.id })
   }
   return out
 }
@@ -688,12 +542,13 @@ export function redirectWorkflowRefs(
 }
 
 /**
- * 本机副本是不是某个已发布的旧版本（LEGACY_AGENT_FIELDS*）：不是的说明用户自己改过，覆盖前要备份。
- * 只用来决定要不要备份，不再决定升不升级。
+ * 内置工作流副本是不是没改过：内容还是上次面板写进去的那一版（builtinHash）。没记过指纹的老副本当作改过，
+ * 删除类的清理（合并掉的、插件带的）不动它
  */
-function knownVersion(a: Agent, key: string, def: BuiltinAgent) {
-  const olds = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? []), def.agent].filter(Boolean)
-  return olds.some((o) => a.description === o.description && a.instructions.trim() === o.instructions.trim())
+export function untouchedCopy(w: Workflow) {
+  if (!w.builtinHash) return false
+  const { id: _i, createdAt: _c, updatedAt: _u, ...rest } = w
+  return w.builtinHash === workflowFingerprint(rest)
 }
 
 /**
@@ -701,14 +556,10 @@ function knownVersion(a: Agent, key: string, def: BuiltinAgent) {
  * 名称、简介、图标、角色设定、Skill、能力、参数定义、引入关系都换成当前版本；
  * 参数取值、运行配置（CLI、模型、强度、权限、额外参数、开场白）、分类、标签、启用开关留本机的。
  * 以前按「和某个历史版本逐字一致才升级」判断，历史版本漏登记一次副本就永远卡在旧版，所以不再判断。
- * 覆盖了用户自己改过的设定时，把覆盖前的副本交给 onReplaced（调用方备份）。
+ * 用户自己改过的设定也直接覆盖，不备份（用户 2026-11-12 定的）。
  * 必备角色的分类、一次性默认值升级由 ensureProjectAgents 再做一遍。没有变化的不写盘，重复启动不改文件。
  */
-export async function upgradeBuiltinAgents(
-  state: BuiltinState,
-  api: { updateAgent?: BuiltinOps['updateAgent'] },
-  onReplaced?: (before: Agent) => void,
-) {
+export async function upgradeBuiltinAgents(state: BuiltinState, api: { updateAgent?: BuiltinOps['updateAgent'] }) {
   if (!api.updateAgent) return []
   const out: Agent[] = []
   const agents = [...state.agents]
@@ -720,7 +571,6 @@ export async function upgradeBuiltinAgents(
     // 用户自己有同名的角色时保留建出来时加了后缀的名字，免得派活时按名字认错
     if (agents.some((a) => a.id !== cur.id && a.name === next.name)) next.name = cur.name
     if (sameCore(cur, next)) continue
-    if (!isCoreAgent(cur) && !knownVersion(cur, b.key, b)) onReplaced?.(cur)
     const { id, createdAt: _c, updatedAt: _u, ...rest } = { ...cur, ...next }
     const saved = await api.updateAgent(id, rest)
     if (saved) {

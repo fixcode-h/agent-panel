@@ -1,16 +1,14 @@
-import { WorkflowInput, type Agent, type Project, type ProjectCategory, type Workflow } from '../schema.ts'
+import { type Agent, type Project, type ProjectCategory, type Workflow } from '../schema.ts'
 import { t } from '../i18n.ts'
 import type { PluginManifest } from '../plugins/types.ts'
 import {
   addBuiltinAgents,
   addBuiltinWorkflow,
   agentInUse,
-  matchesLegacy,
-  workflowFingerprint,
+  untouchedCopy,
   type BuiltinOps,
   type BuiltinState,
 } from './install.ts'
-import { LEGACY_WORKFLOWS } from './legacy.ts'
 
 /**
  * 插件带的内置角色和工作流在本机的副本（ADR 0059）：打开插件时装上，关掉时清掉没改过、没人用的。
@@ -57,14 +55,6 @@ export interface PluginRemoval {
   agents: Agent[]
   /** 改过或还被用着：保留，说明原因（插件页上提示） */
   kept: { kind: 'workflow' | 'agent'; id: string; name: string; why: string }[]
-}
-
-/** 工作流副本没改过：记过指纹的看指纹，没记过的和登记的历史版本逐个比 */
-function untouchedWorkflow(w: Workflow, key: string, agents: Agent[]) {
-  const { id: _i, createdAt: _c, updatedAt: _u, ...rest } = w
-  if (w.builtinHash) return w.builtinHash === workflowFingerprint(WorkflowInput.parse(rest))
-  const agentId = (k: string) => agents.find((a) => a.origin === originOf(k))?.id ?? ''
-  return (LEGACY_WORKFLOWS[key] ?? []).some((l) => matchesLegacy(w, l, agentId))
 }
 
 /** 项目、项目分类里有没有引用这个工作流（默认工作流、可选列表） */
@@ -116,8 +106,7 @@ export function planPluginRemoval(
           name: w.name,
           why: t('在用：{list}', { list: refs.join(t('、')) }),
         })
-      else if (!untouchedWorkflow(w, key, state.agents))
-        out.kept.push({ kind: 'workflow', id: w.id, name: w.name, why: t('改过') })
+      else if (!untouchedCopy(w)) out.kept.push({ kind: 'workflow', id: w.id, name: w.name, why: t('改过') })
       else out.workflows.push(w)
     }
   }

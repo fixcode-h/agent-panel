@@ -1,5 +1,5 @@
 /**
- * 演示后端和正式后端的接口契约（重构文档第 9 条，ADR 0061）：
+ * 演示后端和正式后端的接口契约（重构文档第 9 条，ADR 0062）：
  * - 最常用的四个接口（任务列表、任务详情、子对话、发消息）用 shared/api-contract/tasks.ts 的同一份 schema 校验；
  *   正式后端那一侧见 server/task-api-contract.test.ts。
  * - 契约探查（shared/api-contract/probe.ts）把设置、角色、工作流、分类、标签、项目、定时计划、任务走一遍；

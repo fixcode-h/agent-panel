@@ -20,7 +20,6 @@ import {
   LOG_TIMELINE_TEXT,
 } from '../shared/builtin/bug-method.ts'
 import { TURN_PROGRESS_RULES } from '../shared/turn-rules.ts'
-import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
 import { ensureProjectAgents, upgradeBuiltinAgents } from '../shared/builtin/install.ts'
 import {
@@ -372,10 +371,9 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
   assert.match(section, /submit_merge/, '最后才 submit_merge')
 })
 
-test('必备角色：停在旧指纹的旧副本升级时，也不冲掉用户填的参数值', async () => {
+test('必备角色：旧版本的副本升级时，也不冲掉用户填的参数值', async () => {
   const m = memory()
-  const legacy = LEGACY_AGENT_FIELDS.reviewer ?? LEGACY_AGENT_FIELDS_MORE.reviewer?.[0]
-  assert.ok(legacy, '评审有旧指纹可用')
+  const legacy = { name: '评审员', description: '旧版评审员的简介', instructions: '旧版评审员的设定' }
   // 老项目：副本还是「评审员」那一版的设定，用户改过 target 的取值
   const old = await m.ops.createAgent({
     mounts: [],

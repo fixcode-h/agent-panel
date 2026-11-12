@@ -28,7 +28,7 @@
 
 ## 数据访问
 
-- 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。写进契约的接口用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，地址和返回类型来自 `shared/api-contract/`（ADR 0061），不再新写 `request<T>`。
+- 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。写进契约的接口用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，地址和返回类型来自 `shared/api-contract/`（ADR 0062），不再新写 `request<T>`。
 - 页面接收 app-actions 的 ui 事件：`web/src/lib/page-signal.ts` 的 `EventSource('/api/app/events')` 收到 `ui` 事件后交给 `web/src/lib/ui-actions.ts` 的 `runUiAction`，按动作名找处理函数；`web/src/App.tsx` 的 `UiActions` 用 `useUiActions` 登记处理表——`navigate`（只切到 `PAGES` 里有的页面，带 id / sub）、`open_settings`（打开指定栏）、`open_project`（先关再开项目设置弹窗，已经开着时也按这次参数重开，AI 初始化从 `start` 开始）、`reload_settings`（重新拉设置并通知开着的设置窗口用新值重建，免得自动保存写回旧值）。没登记的名字直接忽略（旧页面收到新版本服务的动作）；演示版不接 `/api/app/events`。新建 / 打开 UI 设计最终也是 `navigate` 到 `design` 页。动作本身有哪些、怎么加见 [modules/app-actions](../app-actions/README.md) 和 [ADR 0011](../../adr/0011-app-actions-for-agents.md)，这里只管前端的接收和入口。回归：`scripts/e2e/11-app-actions.mjs` 走完整链路（CLI 调 `app_do` → 动作表 → 面板接口）。
 
 ## 入口

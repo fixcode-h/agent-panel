@@ -35,7 +35,7 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 
 ## 前后端接口有契约，演示后端不另写一套业务逻辑
 
-- 规则：新加或修改接口时，在 `shared/api-contract/<模块>.ts` 里写一条 `endpoint`（请求和响应的 zod 契约，写法见 `define.ts`，ADR 0061）。服务端路由用契约里的 `body` 校验入参；前端用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，不再新写 `request<T>`；把它加进 `shared/api-contract/probe.ts`，正式后端（`scripts/e2e/17-contracts.mjs`）和演示后端（`web/src/lib/demo-contract.test.ts`）都会按它查返回形状。演示后端（`web/src/lib/demo-*.ts`）里的状态判定、计划推进这些逻辑调用 `shared/` 里和服务端同一份函数，不在演示里再写一遍。
+- 规则：新加或修改接口时，在 `shared/api-contract/<模块>.ts` 里写一条 `endpoint`（请求和响应的 zod 契约，写法见 `define.ts`，ADR 0062）。服务端路由用契约里的 `body` 校验入参；前端用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，不再新写 `request<T>`；把它加进 `shared/api-contract/probe.ts`，正式后端（`scripts/e2e/17-contracts.mjs`）和演示后端（`web/src/lib/demo-contract.test.ts`）都会按它查返回形状。演示后端（`web/src/lib/demo-*.ts`）里的状态判定、计划推进这些逻辑调用 `shared/` 里和服务端同一份函数，不在演示里再写一遍。
 - 防线：`demo-contract.test.ts`、`server/task-api-contract.test.ts`、e2e `17-contracts`；人工。
 
 ## 模块顶层的可变状态写明是哪一类
