@@ -48,6 +48,8 @@
 
 12. **插件接口 6 续（2026-11-12，表格拆成插件）**：表格（游戏配置表）也搬成插件，它和面板缠的地方比视频多，同在接口 6 里再加三个扩展点：面板动作——`ServerPlugin.actions` 进 `server/app-actions` 的同一张动作表（`createRegistry` 的 `extra` 每次现取开着的插件，名字不合规或和面板重名的不收），Agent 经 `app_actions` / `app_do` 照旧能按主键改格子；项目设置分页——`WebPlugin.projectSections` 在项目设置导航里加一项，设置存在 `project.plugins[<插件 id>]`（`shared/schema.ts`，面板不解析内容），跟项目设置一起点保存，插件删了数据照留；组件示例——`WebPlugin.specimens` 进设置 →「组件」，守住「共用组件都要在设置里看到和微调」的规则。表格的「AI 分析表格风格」不再占配置助手的 `kind`，开放 `web/src/lib/assist-conv.ts` 的 `runPromptInProject`，插件自己出提示词、自己解析回复。评审里 xlsx 的语义差异改由插件的 `textify` 给：`Textifier` 加可选的 `diff`（插件自己写两版的差异，表格按主键对齐、逐格比）和 `how`，文件参数多带 `project`（插件读项目自己的设置）。表格页要一直挂着（打开的表、没保存的改动、滚动位置切走后都留着，回来不重新读几千张表的目录），整页加 `PluginPage.keep`，`Page` 多收一个 `active`；表格页的快捷键组经开放的 `ShortcutsHelp` 的 `first` 传进去。项目上原来的 `project.tables` 由数据迁移 0005 挪进 `project.plugins.tables`；结构文件和保存前的备份还在原来的位置，插件照旧读那里。旧地址 `#/tables/<项目>` 转到 `#/plugin/tables/tables/<项目>`。在线演示不装插件，所以演示里也没有表格页了。
 
+13. **插件接口 7（2026-11-12，插件推送通道）**：表格插件原来每 4 秒请求一次 `/stat` 看打开着的文件被外面改了没有，违反「前端要实时数据用推送，不加轮询」，而插件此前没有推送的路。新增推送通道：服务端 `PluginServerContext.pages`（`push(event, data, to?)`、`open(conn)`、`onClose(fn)`，`server/plugins/pages.ts`），网页 `host.events`（`on` / `useEvent` 订阅、`conn` / `onConnect` 拿连接 id，`web/src/plugins/events.ts`）。事件走已有的页面事件流 `/api/app/events`（一个页面只开一条连接），不另开 SSE；每条连接在 `hello` 里带一个 id，插件按它只推给登记过的页面，连接断了经 `onClose` 清掉登记，断线重连的页面在 `onConnect` 里拿新 id 重新登记。插件 id 由面板填，插件只能推给自己的网页部分；插件关掉时它登记的回调一起撤掉。表格插件用它把外部改动检测换成 `fs.watch`（盯所在目录，Excel / WPS 先写临时文件再改名的保存方式也认得出）加推送。
+
 ## 影响与风险
 
 - 带代码的插件在面板进程里以用户权限运行，和 Agent 执行命令同级的信任；安装确认里写明，只建议装信任的来源。

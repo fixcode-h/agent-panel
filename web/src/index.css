@@ -1155,6 +1155,10 @@ body,
   --c-grid-pills: 1;
   --c-grid-bools: 1;
   --c-grid-blank: 1;
+  --c-grid-note: var(--warning);
+  --c-grid-link: var(--ctx-messages);
+  --c-grid-rowMark: 3px;
+  --c-grid-handle: 7px;
 }
 
 /*

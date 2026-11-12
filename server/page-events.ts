@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { randomUUID } from 'node:crypto'
 
 /**
  * 托盘要页面做的事：点图标时把已经打开的面板切到前台（focus），右键「设置」时顺便打开设置（view）。
@@ -9,8 +10,12 @@ export type PageSignal =
   | { type: 'focus'; mark: string; view?: 'settings' }
   /** Agent 经动作表（server/app-actions）要页面做的界面操作，页面在 web/src/lib/ui-actions.ts 里找处理函数 */
   | { type: 'ui'; action: string; args: Record<string, unknown> }
+  /** 插件服务端推给自己网页部分的事件（插件接口 7，PluginServerContext.pages），页面在 web/src/plugins/events.ts 分给订阅的插件 */
+  | { type: 'plugin'; plugin: string; event: string; data: unknown }
 
-const pages = new Set<(s: PageSignal) => void>() // 模块状态：会话，跟着进程或连接一起没
+/** 每条连接一个 id（连上时随 hello 发给页面）：插件按它只推给订阅了的页面，连接断了按它清掉订阅 */
+const pages = new Map<string, (s: PageSignal) => void>() // 模块状态：会话，跟着进程或连接一起没
+const closers = new Set<(conn: string) => void>() // 模块状态：会话，订阅方自己撤
 
 /**
  * 同一条页面事件流上的其他推送源（任务列表和顶层对话的 live，见 server/tasks/page-feed.ts）。
@@ -24,10 +29,34 @@ export function addPageFeed(feed: PageFeed) {
   feeds.push(feed)
 }
 
-/** 发给所有打开着的面板页面，返回有几个页面在听；没有页面时托盘直接打开新的 */
-export function signalPages(s: PageSignal) {
-  for (const p of pages) p(s)
-  return pages.size
+/**
+ * 发给打开着的面板页面，返回发给了几个页面；没有页面时托盘直接打开新的。
+ * to 给了就只发给这几条连接（插件推给订阅了某个文件的页面），不在的连接跳过
+ */
+export function signalPages(s: PageSignal, to?: Iterable<string>) {
+  if (!to) {
+    for (const p of pages.values()) p(s)
+    return pages.size
+  }
+  let n = 0
+  for (const id of new Set(to)) {
+    const p = pages.get(id)
+    if (!p) continue
+    p(s)
+    n++
+  }
+  return n
+}
+
+/** 这条连接还在不在 */
+export const pageOpen = (conn: string) => pages.has(conn)
+
+/** 连接断开时回调（插件清掉这个页面的订阅）；返回撤掉回调的函数 */
+export function onPageClose(fn: (conn: string) => void) {
+  closers.add(fn)
+  return () => {
+    closers.delete(fn)
+  }
 }
 
 /** 每个面板页面连一条（SSE），托盘有事时推过去 */
@@ -45,17 +74,27 @@ export const pageEventsApi = () =>
       }
       let closed = false
       let detach: (() => void)[] = []
+      const conn = randomUUID()
       const stop = () => {
         for (const d of detach.splice(0)) d()
+        if (!pages.delete(conn)) return
+        // 只在第一次删掉时通知：onAbort 和循环结束都会走到这里
+        for (const fn of closers) {
+          try {
+            fn(conn)
+          } catch {
+            // 一个订阅方出错不影响别的
+          }
+        }
       }
-      pages.add(push)
+      pages.set(conn, push)
       stream.onAbort(() => {
         closed = true
-        pages.delete(push)
         stop()
         wake?.()
       })
-      await stream.writeSSE({ event: 'hello', data: '' })
+      // 连接 id 随 hello 发给页面：EventSource 断线重连会拿到新 id，页面据此重新订阅
+      await stream.writeSSE({ event: 'hello', data: JSON.stringify({ conn }) })
       const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
       detach = await Promise.all(feeds.map((f) => f(send)))
       // 推送源接上之前页面就关了：onAbort 已经跑过，这里补上收尾
@@ -77,7 +116,6 @@ export const pageEventsApi = () =>
           for (const s of queue.splice(0)) await stream.writeSSE({ event: s.type, data: JSON.stringify(s) })
         else await stream.writeSSE({ event: 'ping', data: '' })
       }
-      pages.delete(push)
       stop()
     })
   })

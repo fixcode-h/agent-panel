@@ -137,6 +137,12 @@ export const COMP_SPEC = {
     pills: bool(true, '1', '0'),
     bools: bool(true, '1', '0'),
     blank: bool(true, '1', '0'),
+    /** xlsx 里还原的显示信息：批注角标、超链接的颜色；整行底色在行号左边画的色条宽度（关掉就不画） */
+    note: hue('amber'),
+    link: hue('blue'),
+    rowMark: pick('thin', { off: '0px', thin: '3px', wide: '5px' }),
+    /** 表格页：选区右下角的填充柄（拖它向下 / 向右填充）有多大 */
+    handle: px(7, 5, 12),
   },
   empty: {
     radius: px(10, 0, 24),

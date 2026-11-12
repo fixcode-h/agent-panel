@@ -1,6 +1,8 @@
 import { Check } from 'lucide-react'
+import type { SheetMerge } from '@shared/files'
 import { cn } from '@/lib/utils'
 import type { SheetEditing } from './SheetTable'
+import { CellText, lookCell, type LookIndex } from './sheet-look'
 import { boolOf, pillHue, type GridLook, type SheetColKind } from './sheet-kinds'
 
 export const CELL = 'sheet-cell shrink-0 truncate border-r border-b border-line px-2'
@@ -25,6 +27,10 @@ export interface CellCtx {
   fz: number
   prevCol: number[]
   nextCol: number[]
+  /** xlsx 里还原的批注、超链接（sheet-look.tsx） */
+  lookIdx?: LookIndex
+  /** 点了表内位置的超链接 */
+  onLocate?: (loc: string) => void
 }
 
 /** 冻结列的格子钉在行号列右边 */
@@ -78,13 +84,17 @@ function selEdges(x: CellCtx, r: number, c: number, up: number | undefined, down
   )
 }
 
-/** 一个格子。up / down 是显示顺序里上一行、下一行的行号（筛选排序后不一定相邻），没有就是 undefined */
+/**
+ * 一个格子。up / down 是显示顺序里上一行、下一行的行号（筛选排序后不一定相邻），没有就是 undefined；
+ * m 是这一格所在的合并区（xlsx 的合并单元格，合并的几列并成一格画）
+ */
 export function SheetCell({
   x,
   r,
   c,
   w,
   pin,
+  m,
   up,
   down,
 }: {
@@ -93,52 +103,84 @@ export function SheetCell({
   c: number
   w: number
   pin: boolean
+  m?: SheetMerge
   up?: number
   down?: number
 }) {
   const { edit } = x
-  const text = x.rows[r]?.[c] ?? ''
-  const hit = x.marked.has(r * x.cols + c)
-  const on = !edit && hit && x.cur?.row === r && x.cur.col === c
-  if (edit?.editing && edit.editing.r === r && edit.editing.c === c)
+  // 合并的一格按左上角那格算：字、选中、悬停说明都是它的；下面几行的合并格是空的，只为了不画格线
+  const top = !!m && r !== m.r
+  const tr = m ? m.r : r
+  const tc = m ? m.c : c
+  const text = top ? '' : (x.rows[tr]?.[tc] ?? '')
+  const hit = x.marked.has(tr * x.cols + tc)
+  const on = !edit && hit && x.cur?.row === tr && x.cur.col === tc
+  const merge = m && cn('sheet-merge', r < m.r + m.rows - 1 && down === r + 1 && 'sheet-merge-open')
+  if (edit?.editing && edit.editing.r === r && edit.editing.c >= c && edit.editing.c < c + (m ? m.cols : 1))
     return (
       <span
-        role="cell"
+        role={edit ? 'gridcell' : 'cell'}
+        aria-colindex={c + 1}
         className={cn(CELL, 'sheet-editing relative overflow-visible p-0', pinCls(x, c, pin))}
         style={{ width: w, ...pinned(x, c, pin), ...(pin ? { zIndex: 3 } : {}) }}
       >
         {edit.editing.node}
       </span>
     )
-  const picked = !!edit?.picked(r, c)
-  const focused = !!edit?.focus && edit.focus.row === r && edit.focus.col === c
-  const kind = r >= x.from ? x.kinds[c]?.kind : undefined
-  const mark = edit?.mark?.(r, c)
+  const picked = !!edit?.picked(tr, tc)
+  const f = edit?.focus
+  const focused =
+    !!f &&
+    (m ? f.row >= m.r && f.row < m.r + m.rows && f.col >= m.c && f.col < m.c + m.cols : f.row === r && f.col === c)
+  const span1 = m ? m.cols : 1
+  const handle =
+    edit?.handle && edit.handle.r === r && edit.handle.c >= c && edit.handle.c < c + span1 ? edit.handle : null
+  // 批注、超链接：合并区下面几行的空格子不带
+  const lk = top ? undefined : lookCell(x.lookIdx, tr, tc)
+  const kind = !top && tr >= x.from ? x.kinds[tc]?.kind : undefined
+  const mark = edit?.mark?.(tr, tc)
+  // 有超链接的格子照原样画成链接；其余按列的显示方式画（胶囊、小勾、空格子的「—」）
+  const body = lk?.link ? (
+    <CellText
+      text={edit?.display && text ? edit.display(tr, tc, text) : text}
+      link={lk.link}
+      editable={!!edit}
+      onLocate={x.onLocate}
+    />
+  ) : top ? null : (
+    cellBody(x, tr, tc, text, !!mark?.includes('sheet-bad'))
+  )
   return (
     <span
-      role="cell"
-      // 悬停说明不用原生 title：CellHint 按 data-r / data-c 找到这一格，截断了、不合规的才出面板自己的提示
+      role={edit ? 'gridcell' : 'cell'}
+      aria-colindex={c + 1}
+      id={focused ? edit?.focusId : undefined}
+      // 悬停说明不用原生 title：CellHint 按 data-r / data-c 找到这一格，截断了、不合规、有批注的才出面板自己的提示
       data-current={on || undefined}
       aria-selected={edit ? picked : undefined}
-      data-r={r}
-      data-c={c}
-      onMouseDown={edit && ((e) => edit.onDown(r, c, e))}
-      onMouseEnter={edit && ((e) => edit.onEnter(r, c, e))}
-      onDoubleClick={edit && (() => edit.onDouble(r, c))}
+      data-r={top ? undefined : tr}
+      data-c={top ? undefined : tc}
+      onMouseDown={edit && ((e) => edit.onDown(tr, tc, e))}
+      onMouseEnter={edit && ((e) => edit.onEnter(tr, tc, e))}
+      onDoubleClick={edit && (() => edit.onDouble(tr, tc))}
       className={cn(
         CELL,
+        merge,
+        lk?.cls,
         kind === 'num' && 'sheet-num',
         kind === 'bool' && x.look.bools && 'sheet-boolcell',
         on ? 'sheet-hit-current' : hit && 'sheet-hit',
         mark,
         picked && 'sheet-sel',
-        picked && selEdges(x, r, c, up, down),
+        picked && selEdges(x, tr, tc, up, down),
         focused && 'sheet-focus',
+        handle && 'sheet-handle-cell',
         pinCls(x, c, pin),
       )}
       style={{ width: w, ...pinned(x, c, pin) }}
     >
-      {cellBody(x, r, c, text, !!mark?.includes('sheet-bad'))}
+      {body}
+      {handle && <span aria-hidden className="sheet-fill-handle" onMouseDown={handle.onDown} />}
     </span>
   )
 }

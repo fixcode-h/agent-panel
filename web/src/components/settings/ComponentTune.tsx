@@ -100,6 +100,10 @@ const gridPropLabel = (prop: string): string | undefined =>
     pills: t('枚举值画成胶囊'),
     bools: t('布尔值画成小勾'),
     blank: t('空格子画「—」'),
+    note: t('批注角标'),
+    link: t('超链接'),
+    rowMark: t('整行底色标记'),
+    handle: t('填充柄大小'),
   })[prop]
 
 const optionLabel = (v: string) =>
@@ -141,6 +145,9 @@ const optionLabel = (v: string) =>
     sm: t('小'),
     md: t('中'),
     lg: t('大'),
+    off: t('不画'),
+    thin: t('细条'),
+    wide: t('粗条'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */
