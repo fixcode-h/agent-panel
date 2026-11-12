@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CliDefinition } from './clis.ts'
+import type { CliDefinition } from '../clis.ts'
 
 /**
  * 项目信任（ADR 0050）：有的 CLI 只在用户信任过这个项目之后才读项目里的配置、扩展和 Skill（Pi 1.3 起），

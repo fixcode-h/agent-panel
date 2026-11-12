@@ -7,7 +7,7 @@ import { getCli } from '../shared/clis.ts'
 import { builtinPrompt, fillCommand } from '../shared/commands.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR } from './store.ts'
-import type { TrustChoice } from '../shared/cli-trust.ts'
+import type { TrustChoice } from '../shared/cli/trust.ts'
 import { queryCliCommands } from './cli/commands.ts'
 import { pluginCommands } from './plugins/contrib.ts'
 

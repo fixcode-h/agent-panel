@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { defaultLabel, type ConfigSetting, type ConfigValue } from '@shared/cli-config-settings'
+import { defaultLabel, type ConfigSetting, type ConfigValue } from '@shared/cli/config-settings'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
 import { cliMoreApi } from '@/lib/api-cli-more'

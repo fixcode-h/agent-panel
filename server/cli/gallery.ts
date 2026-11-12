@@ -12,7 +12,7 @@ import {
   type GalleryPage,
   type GallerySort,
   type GallerySpec,
-} from '../../shared/cli-gallery.ts'
+} from '../../shared/cli/gallery.ts'
 import { npmName } from '../../shared/cli-spec.ts'
 import { getCli } from '../../shared/clis.ts'
 import { t } from '../../shared/i18n.ts'

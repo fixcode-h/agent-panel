@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ConfigSetting, getAt, readValue, setAt, writeValue } from './cli-config-settings.ts'
-import { getCli } from './clis.ts'
-import piSpec from './clis/pi.json' with { type: 'json' }
+import { ConfigSetting, getAt, readValue, setAt, writeValue } from './config-settings.ts'
+import { getCli } from '../clis.ts'
+import piSpec from '../clis/pi.json' with { type: 'json' }
 
 /** ADR 0050：CLI 自己配置文件里的设置项只写改过的键，恢复默认删掉，别的键原样保留 */
 

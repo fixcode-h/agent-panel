@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cautionOf, matchQuery, overlapNote, pageOf, parseSearch, sortItems, type GallerySpec } from './cli-gallery.ts'
-import { getCli } from './clis.ts'
+import { cautionOf, matchQuery, overlapNote, pageOf, parseSearch, sortItems, type GallerySpec } from './gallery.ts'
+import { getCli } from '../clis.ts'
 
 /** ADR 0050：插件市场从 npm 搜索接口取数据，本地排序、翻页；和面板功能重复的、看不到源码的只标出来 */
 

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getCli } from './clis.ts'
-import { trustDirs, trustFor } from './cli-trust.ts'
-import { versionShortfalls } from './cli-version.ts'
-import { cliSettings } from './settings.ts'
-import { Settings } from './schema.ts'
+import { getCli } from '../clis.ts'
+import { trustDirs, trustFor } from './trust.ts'
+import { versionShortfalls } from './version.ts'
+import { cliSettings } from '../settings.ts'
+import { Settings } from '../schema.ts'
 
 /** ADR 0050：Pi 在面板里（RPC 模式）不弹信任询问，默认跳过项目里的 .pi 配置；项目设置选了才带参数 */
 

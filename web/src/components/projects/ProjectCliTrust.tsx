@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
-import type { TrustChoice } from '@shared/cli-trust'
+import type { TrustChoice } from '@shared/cli/trust'
 import { t } from '@shared/i18n'
 import { cliMoreApi } from '@/lib/api-cli-more'
 import { Segmented } from '@/components/ui/segmented'

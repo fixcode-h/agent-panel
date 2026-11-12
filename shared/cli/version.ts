@@ -1,6 +1,6 @@
-import type { CliDefinition } from './clis.ts'
-import { t } from './i18n.ts'
-import { versionAtLeast } from './hooks.ts'
+import type { CliDefinition } from '../clis.ts'
+import { t } from '../i18n.ts'
+import { versionAtLeast } from '../hooks.ts'
 
 /**
  * 本机版本不够用的功能（ADR 0050）：定义里带 minVersion 的（现在是钩子）收在一起，按门槛从高到低。

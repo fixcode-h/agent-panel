@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ArgRule } from './arg-rule.ts'
+import { ArgRule } from '../arg-rule.ts'
 
 /**
  * 从 CLI 自己问出它能用的「/」命令（Pi 的 get_commands，ADR 0050 第四期）：插件注册的命令、插件包里带的提示词模板和 Skill

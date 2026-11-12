@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { GallerySpec } from '../../shared/cli-gallery.ts'
+import type { GallerySpec } from '../../shared/cli/gallery.ts'
 import { latestVersions, makeGallery, TOP_PAGES } from './gallery.ts'
 
 /** ADR 0050：不全量翻页，只取热门前 1000 个（4 次请求）缓存一小时；有搜索词直接问 npm；联网失败用旧的并说明 */

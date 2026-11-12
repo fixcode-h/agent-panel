@@ -16,7 +16,7 @@ import {
   type GalleryItem,
   type GalleryPage,
   type GallerySort,
-} from '@shared/cli-gallery'
+} from '@shared/cli/gallery'
 import { packageIdentity } from '@shared/cli-spec'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'

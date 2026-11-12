@@ -11,10 +11,10 @@ import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
 import { HooksSpec } from './hooks.ts'
-import { CliTrust } from './cli-trust.ts'
-import { GalleryOverlap, GallerySpec } from './cli-gallery.ts'
-import { ConfigSetting } from './cli-config-settings.ts'
-import { CommandsQuery, HandledReply } from './cli-commands-query.ts'
+import { CliTrust } from './cli/trust.ts'
+import { GalleryOverlap, GallerySpec } from './cli/gallery.ts'
+import { ConfigSetting } from './cli/config-settings.ts'
+import { CommandsQuery, HandledReply } from './cli/commands-query.ts'
 import { ArgRule } from './arg-rule.ts'
 import { ChangelogSpec } from './package-changelog.ts'
 import { BuiltinExtensions, LocalPackages, PackageResources } from './package-config.ts'
@@ -135,7 +135,7 @@ export const CliPackages = z.object({
       }),
     )
     .default([]),
-  /** 插件市场（ADR 0050，见 shared/cli-gallery.ts）：从 npm 按关键词浏览；不写就没有「浏览」页签 */
+  /** 插件市场（ADR 0050，见 shared/cli/gallery.ts）：从 npm 按关键词浏览；不写就没有「浏览」页签 */
   gallery: GallerySpec.optional(),
   /** 和面板自己的功能重复的包：市场里的卡片上写一句，不隐藏 */
   overlaps: z.array(GalleryOverlap).default([]),
@@ -279,9 +279,9 @@ export const RpcSpec = z.object({
   turnLimit: z.object({ when: z.record(z.string(), z.unknown()) }).optional(),
   /** 插话要等 CLI 的下一个模型请求才取走，页面上先显示成「待取走」 */
   deferSteer: z.boolean().default(false),
-  /** 从 CLI 问出「/」命令（插件的命令、插件包里的模板和 Skill，见 shared/cli-commands-query.ts） */
+  /** 从 CLI 问出「/」命令（插件的命令、插件包里的模板和 Skill，见 shared/cli/commands-query.ts） */
   commandsQuery: CommandsQuery.optional(),
-  /** 发出去的那句被当命令自己处理、可能不开新一轮时怎么认出来（见 shared/cli-commands-query.ts） */
+  /** 发出去的那句被当命令自己处理、可能不开新一轮时怎么认出来（见 shared/cli/commands-query.ts） */
   handled: HandledReply.optional(),
   /**
    * 插话要等正在执行的命令跑完才会被取走（Pi 的 steer）：命令跑太久时面板用这一套让它马上处理。
@@ -668,9 +668,9 @@ export const CliSpec = z.object({
    * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
-  /** CLI 自己配置文件里的设置项（ADR 0050，见 shared/cli-config-settings.ts）：设置页直接读写，只写改过的键 */
+  /** CLI 自己配置文件里的设置项（ADR 0050，见 shared/cli/config-settings.ts）：设置页直接读写，只写改过的键 */
   configSettings: z.array(ConfigSetting).default([]),
-  /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli-trust.ts） */
+  /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli/trust.ts） */
   trust: CliTrust.optional(),
   /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
   hooks: HooksSpec.optional(),
