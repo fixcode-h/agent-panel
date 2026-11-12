@@ -36,7 +36,7 @@ import {
   type Settings,
 } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
-import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
+import { apiModelInfo, apiModelKey } from '../shared/models/catalog.ts'
 import { ANTHROPIC_VERSION, apiBalanceUrl, apiBaseUrl, apiModelsRequest } from '../shared/cli/api-vendors.ts'
 import { parseApiBalance, type ApiBalance } from '../shared/cli/api-balance.ts'
 import { stripAnsi } from '../shared/ansi.ts'

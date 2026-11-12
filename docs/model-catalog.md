@@ -3,7 +3,7 @@
 三档模型的上下文窗口、最大输出和思考强度不再按 CLI 写死在配置里，而是按模型名查模型目录。
 目录分两份，合并后使用：
 
-- 内置目录：[`shared/model-catalog.json`](../shared/model-catalog.json)，跟着面板一起发布
+- 内置目录：[`shared/models/catalog.json`](../shared/models/catalog.json)，跟着面板一起发布
 - 用户补充目录：数据目录的 `config/models.json`（默认 `~/.agent-panel/config/models.json`），
   设置 → CLI → 模型目录里点「AI 补全」时由 AI 查完写进来；同厂商同 `id` 的记录覆盖内置的
 

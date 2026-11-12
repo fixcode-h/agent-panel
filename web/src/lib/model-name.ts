@@ -1,6 +1,6 @@
 import { cliApi } from '@shared/accounts'
 import { getCli } from '@shared/clis'
-import { shownModelName } from '@shared/model-catalog'
+import { shownModelName } from '@shared/models/catalog'
 import type { Settings } from '@shared/schema'
 import { useData } from './data'
 

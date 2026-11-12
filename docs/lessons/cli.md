@@ -1,5 +1,5 @@
 ---
-paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, shared/accounts.ts, shared/model-catalog*, shared/model-limits.ts, server/models.ts, server/accounts.ts, server/cli/**, server/install.ts, docs/cli-config.md, docs/model-catalog.md, web/src/lib/cli-*.ts, web/src/components/settings/**
+paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, shared/accounts.ts, shared/models/catalog*, shared/models/limits.ts, server/models.ts, server/accounts.ts, server/cli/**, server/install.ts, docs/cli-config.md, docs/model-catalog.md, web/src/lib/cli-*.ts, web/src/components/settings/**
 ---
 
 # CLI 定义、模型和思考强度

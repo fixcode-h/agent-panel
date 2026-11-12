@@ -12,7 +12,7 @@ import {
 import { getCli } from '../clis.ts'
 import { Settings } from '../schema.ts'
 import { cliSettings, modelText } from '../settings.ts'
-import { shownModelName } from '../model-catalog.ts'
+import { shownModelName } from '../models/catalog.ts'
 
 const relay = (p: Partial<ApiConfig> = {}) =>
   ApiConfig.parse({ id: 'r', name: 'relay', apiKey: 'sk-xxxx', models: ['m'], ...p })

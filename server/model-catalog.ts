@@ -20,7 +20,7 @@ import {
   normalizeModelId,
   type ModelCatalogInfo,
   type ModelLookupJob,
-} from '../shared/model-catalog.ts'
+} from '../shared/models/catalog.ts'
 import { API_PROTOCOLS } from '../shared/accounts.ts'
 import { getCli } from '../shared/clis.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
@@ -280,7 +280,7 @@ export function modelCatalogApi() {
           aiLookup: settings.modelCatalog.aiLookup,
         } satisfies ModelCatalogInfo)
       })
-      // 给目录里的一个模型填单价（美元 / 百万 token，shared/model-price.ts）：CLI 不报费用时按它折算。
+      // 给目录里的一个模型填单价（美元 / 百万 token，shared/models/price.ts）：CLI 不报费用时按它折算。
       // price 为 null 清掉；内置的模型也能填，写成一条补充记录（同厂商同 id 覆盖内置那条）
       .put('/price', async (c) => {
         const p = PriceInput.safeParse(await c.req.json().catch(() => ({})))

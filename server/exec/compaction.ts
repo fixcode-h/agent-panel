@@ -3,7 +3,7 @@ import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
 import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
-import { fmtTokens, MIN_AGENT_CONTEXT } from '../../shared/model-limits.ts'
+import { fmtTokens, MIN_AGENT_CONTEXT } from '../../shared/models/limits.ts'
 
 /** 压缩上下文那一行工具调用：压缩一开始就显示、转圈（像后台命令），压缩完成换成前后大小 */
 

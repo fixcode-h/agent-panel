@@ -123,7 +123,7 @@ import {
   type InterruptedTasks,
 } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
-import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
+import { BUILTIN_MODEL_CATALOG } from '@shared/models/catalog'
 import { childAskEffect } from '@shared/children/ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'

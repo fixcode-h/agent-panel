@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { priceCost } from './model-price.ts'
-import { ModelCatalogEntry } from './model-catalog.ts'
+import { priceCost } from './price.ts'
+import { ModelCatalogEntry } from './catalog.ts'
 
 test('CLI 不报费用时按填的单价折算：每百万 token 的价 × 用量', () => {
   const price = { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0 }

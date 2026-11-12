@@ -52,8 +52,8 @@ import {
   vendorEndpoint,
 } from '@shared/cli/api-vendors'
 import type { ApiBalance } from '@shared/cli/api-balance'
-import { fmtTokens } from '@shared/model-limits'
-import { matchModel } from '@shared/model-catalog'
+import { fmtTokens } from '@shared/models/limits'
+import { matchModel } from '@shared/models/catalog'
 import { useModelCatalog } from '@/lib/model-catalog'
 import { loadCliModels } from '@/lib/cli-models'
 import { probeTarget } from '@/lib/api-probe'

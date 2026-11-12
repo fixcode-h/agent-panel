@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ApiProtocol } from '@shared/accounts'
-import { matchModel } from '@shared/model-catalog'
+import { matchModel } from '@shared/models/catalog'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'

@@ -7,7 +7,7 @@ import { CLIS, catalogEfforts, offEffort, type CliDefinition } from '../shared/c
 import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { clampEffort, cliSettings } from '../shared/settings.ts'
-import { apiMappedModel, apiModelInfo, type ModelCatalogEntry } from '../shared/model-catalog.ts'
+import { apiMappedModel, apiModelInfo, type ModelCatalogEntry } from '../shared/models/catalog.ts'
 import { apiModelList, apiModelPrefix, modelsForProtocol, type ApiConfig } from '../shared/accounts.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { capture, childEnv } from './exec/process.ts'

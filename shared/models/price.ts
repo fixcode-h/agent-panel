@@ -1,4 +1,4 @@
-import type { ModelCatalogEntry } from './model-catalog.ts'
+import type { ModelCatalogEntry } from './catalog.ts'
 
 /**
  * CLI 不报费用时按模型目录里填的单价折算（设计报告 Agent P1-4）。Claude Code、Pi 自己报 costUsd，

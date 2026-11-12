@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ApiProtocol } from '@shared/accounts'
-import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
+import type { ModelCatalogInfo, ModelLookupJob } from '@shared/models/catalog'
 import { t } from '@shared/i18n'
 import { api } from './api'
 

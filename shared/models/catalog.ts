@@ -10,9 +10,9 @@
  * 5. 当前 API 的协议（OpenAI Responses / Chat、Anthropic）优先选择支持它的模型
  */
 import { z } from 'zod'
-import { API_PROTOCOLS, type ApiConfig, type ApiProtocol } from './accounts.ts'
-import type { ModelTier } from './clis.ts'
-import raw from './model-catalog.json'
+import { API_PROTOCOLS, type ApiConfig, type ApiProtocol } from '../accounts.ts'
+import type { ModelTier } from '../clis.ts'
+import raw from './catalog.json'
 
 /** 目录里没有的模型按这个估算 */
 export const DEFAULT_MODEL_CONTEXT = 1_000_000

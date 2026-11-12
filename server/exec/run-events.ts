@@ -7,9 +7,9 @@ import type { AgentUsage, Task, TaskMessage, ToolUse } from '../../shared/schema
 import type { CliDefinition } from '../../shared/clis.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { addFirstToken } from '../../shared/first-token-stats.ts'
-import { stripLongContext } from '../../shared/model-limits.ts'
-import { modelLimitsFor } from '../../shared/model-catalog.ts'
-import { priceCost } from '../../shared/model-price.ts'
+import { stripLongContext } from '../../shared/models/limits.ts'
+import { modelLimitsFor } from '../../shared/models/catalog.ts'
+import { priceCost } from '../../shared/models/price.ts'
 import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { stepUsage } from '../../shared/task.ts'
 import { t } from '../../shared/i18n.ts'
@@ -194,7 +194,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
           t.outputTokens += ev.addOutput ?? 0
           t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
           t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
-          // CLI 不报费用（Codex、Command Code）时按模型目录里填的单价折算（shared/model-price.ts）
+          // CLI 不报费用（Codex、Command Code）时按模型目录里填的单价折算（shared/models/price.ts）
           t.costUsd += ev.addCost ?? priceCost(modelLimitsFor(u.model || model, { entries }).entry?.price, ev)
         }
         if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })

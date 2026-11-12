@@ -1,11 +1,11 @@
 /**
  * 模型的上下文窗口和最大输出（token）。
  * 设置里三档模型的这两项默认按模型自动填：先用 CLI 读模型列表时给出的（Pi、Command Code 会报），
- * 再查模型目录（shared/model-catalog.json 加上用户的补充目录）；都没有时按 1M / 128K 估算。
+ * 再查模型目录（shared/models/catalog.json 加上用户的补充目录）；都没有时按 1M / 128K 估算。
  */
-import type { ApiProtocol } from './accounts.ts'
-import type { CliDefinition, ModelTier } from './clis.ts'
-import { matchModel, modelLimitsFor, type ModelCatalogEntry } from './model-catalog.ts'
+import type { ApiProtocol } from '../accounts.ts'
+import type { CliDefinition, ModelTier } from '../clis.ts'
+import { matchModel, modelLimitsFor, type ModelCatalogEntry } from './catalog.ts'
 
 export interface ModelLimits {
   context?: number

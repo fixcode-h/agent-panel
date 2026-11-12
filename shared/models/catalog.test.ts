@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { migrateModelCatalog, parseModelCatalog } from './model-catalog.ts'
+import { migrateModelCatalog, parseModelCatalog } from './catalog.ts'
 
 const entry = (over: Record<string, unknown> = {}) => ({
   vendor: 'deepseek',

@@ -1,6 +1,6 @@
 /**
  * 用户的模型补充目录：数据目录的 config/models.json。
- * 内置目录（shared/model-catalog.json）跟不上新模型时，AI 联网查到的那条写在这里，
+ * 内置目录（shared/models/catalog.json）跟不上新模型时，AI 联网查到的那条写在这里，
  * 和内置目录合并后使用（同厂商同 id 的覆盖内置的）。
  */
 import path from 'node:path'
@@ -9,7 +9,7 @@ import {
   mergeCatalog,
   parseModelCatalog,
   type ModelCatalogEntry,
-} from '../shared/model-catalog.ts'
+} from '../shared/models/catalog.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 
 export const MODEL_CONFIG_DIR = path.join(DATA_DIR, 'config')
