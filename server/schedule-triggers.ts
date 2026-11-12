@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { t } from '../shared/i18n.ts'
 import { isAbsolutePath, type ScheduleTrigger, type TriggerState } from '../shared/schedule-trigger.ts'
-import { capture } from './exec/process.ts'
+import { gitRun } from './exec/git.ts'
 import { runShell } from './merge-build.ts'
 import { currentShell } from './shells.ts'
 
@@ -84,14 +84,11 @@ async function probeFiles(dir: string, prev: TriggerState): Promise<TriggerProbe
 /** 远端分支现在的提交：ls-remote 不用拉代码，也不动工作区 */
 async function probeGit(trigger: ScheduleTrigger, dir: string, prev: TriggerState): Promise<TriggerProbe> {
   const remote = trigger.remote || 'origin'
-  const r = await capture(
-    'git',
-    ['ls-remote', remote, `refs/heads/${trigger.branch}`],
-    dir,
+  const r = await gitRun(dir, ['ls-remote', remote, `refs/heads/${trigger.branch}`], {
     // 要密码的远端别弹出输入提示把检查卡住，直接失败给用户看
-    { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    GIT_TIMEOUT_MS,
-  )
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    timeoutMs: GIT_TIMEOUT_MS,
+  })
   if (r.spawnError) throw new Error(t('git 没跑起来：{e}', { e: r.spawnError }))
   if (r.killed === 'timeout') throw new Error(t('读取远端分支超时：{remote}', { remote }))
   if (r.code !== 0) throw new Error(t('读取远端分支失败：{e}', { e: (r.stderr || r.stdout).trim().slice(-500) }))

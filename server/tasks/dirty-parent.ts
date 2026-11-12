@@ -1,5 +1,5 @@
 import type { Project, Task } from '../../shared/schema.ts'
-import { capture } from '../exec/process.ts'
+import { gitRun } from '../exec/git.ts'
 import { placedFiles } from '../attachments.ts'
 import type { TasksScope } from './scope.ts'
 
@@ -11,7 +11,7 @@ const LIST_MAX = 20
  * 面板自己放进来的附件不算，和改动清单同一个排除名单（server/attachments.ts 的 placedFiles）
  */
 export async function uncommittedFiles(dir: string, ignore: Iterable<string> = []): Promise<string[] | null> {
-  const r = await capture('git', ['-c', 'core.quotepath=off', 'status', '--porcelain', '--untracked-files=all'], dir)
+  const r = await gitRun(dir, ['status', '--porcelain', '--untracked-files=all'])
   if (r.code !== 0) return null
   const skip = new Set(ignore)
   return r.stdout

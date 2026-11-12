@@ -35,8 +35,7 @@ import type {
   NameSearch,
   SearchMode,
 } from '../shared/files.ts'
-import { capture } from './exec/process.ts'
-import { gitFileDiff } from './exec/git.ts'
+import { gitFileDiff, gitRun } from './exec/git.ts'
 import { projectFormat, writeTextFile } from './file-format.ts'
 import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
@@ -85,8 +84,7 @@ const SKIP = new Set([
 const BINARY =
   /\.(png|jpe?g|gif|webp|bmp|ico|icns|pdf|zip|gz|tgz|7z|rar|jar|war|exe|dll|so|dylib|bin|o|a|lib|class|pyc|woff2?|ttf|otf|eot|mp[34]|wav|ogg|webm|mov|avi|psd|uasset|umap|uexp|ubulk)$/i
 
-const git = (cwd: string, ...args: string[]) =>
-  capture('git', ['-c', 'core.quotepath=off', ...args], cwd, undefined, GIT_TIMEOUT)
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args, { timeoutMs: GIT_TIMEOUT })
 
 const norm = (p: string) => p.replace(/\\/g, '/')
 

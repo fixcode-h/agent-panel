@@ -12,7 +12,7 @@ import { detectVcs } from '../projects-analyze.ts'
 import { parseZtag } from '../p4-split.ts'
 import { forgetLists, forgetTable, parseTableBuffer } from './files.ts'
 import { HttpError } from './http-error.ts'
-import { vcsRun } from './history.ts'
+import { gitVcs, vcsRun } from './history.ts'
 
 export interface VcsStatus {
   vcs: 'git' | 'p4' | 'svn' | 'none'
@@ -36,7 +36,7 @@ export async function vcsStatus(cwd: string, rel: string): Promise<VcsStatus> {
   if (vcs === 'none') return { vcs, changed: false, conflict: false }
   try {
     if (vcs === 'git') {
-      const st = text(await vcsRun('git', ['status', '--porcelain=v1', '--', rel], cwd)).split('\n')[0] ?? ''
+      const st = text(await gitVcs(['status', '--porcelain=v1', '--', rel], cwd)).split('\n')[0] ?? ''
       const xy = st.slice(0, 2)
       return { vcs, changed: !!st.trim(), conflict: /U|AA|DD/.test(xy) }
     }
@@ -66,9 +66,9 @@ export async function submitTable(cwd: string, rel: string, message: string): Pr
   if (!st.changed) throw new HttpError(t('这个文件没有改动，不用提交'))
   try {
     if (st.vcs === 'git') {
-      await vcsRun('git', ['add', '--', rel], cwd)
+      await gitVcs(['add', '--', rel], cwd)
       // 带路径的 commit 只提交这个文件，暂存区里别的文件不受影响
-      return { vcs: 'git', out: text(await vcsRun('git', ['commit', '-m', msg, '--', rel], cwd)).trim() }
+      return { vcs: 'git', out: text(await gitVcs(['commit', '-m', msg, '--', rel], cwd)).trim() }
     }
     if (st.vcs === 'p4') {
       const full = p4File(cwd, rel)
@@ -116,7 +116,8 @@ async function ensureOurs(full: string, ours: Buffer | null, backup: () => Promi
 }
 
 const parse = async (rel: string, b: Buffer | null) => (b ? (await parseTableBuffer(rel, b)).sheets : [])
-const tryRun = (cmd: string, args: string[], cwd: string) => vcsRun(cmd, args, cwd).catch(() => null)
+const tryRun = (cmd: Parameters<typeof vcsRun>[0], args: string[], cwd: string) =>
+  vcsRun(cmd, args, cwd).catch(() => null)
 const unxml = (s: string) =>
   s
     .replace(/&lt;/g, '<')
@@ -131,11 +132,17 @@ export async function mergeSources(cwd: string, rel: string, backup: () => Promi
   if (!st.conflict) throw new HttpError(t('这个文件没有冲突'))
   if (st.vcs === 'git') {
     // 冲突时暂存区里有三份：:1 共同祖先、:2 我这边、:3 对方（两边都新加的文件没有 :1）
-    const base = await tryRun('git', ['show', `:1:./${rel}`], cwd)
-    const theirs = await tryRun('git', ['show', `:3:./${rel}`], cwd)
+    const base = await gitVcs(['show', `:1:./${rel}`], cwd).catch(() => null)
+    const theirs = await gitVcs(['show', `:3:./${rel}`], cwd).catch(() => null)
     if (!theirs) throw new HttpError(t('取不到对方的版本（对方删了这个文件？）'))
-    const head = text((await tryRun('git', ['rev-parse', '--short', 'MERGE_HEAD'], cwd)) ?? Buffer.from('')).trim()
-    const replaced = await ensureOurs(path.join(cwd, rel), await tryRun('git', ['show', `:2:./${rel}`], cwd), backup)
+    const head = text(
+      (await gitVcs(['rev-parse', '--short', 'MERGE_HEAD'], cwd).catch(() => null)) ?? Buffer.from(''),
+    ).trim()
+    const replaced = await ensureOurs(
+      path.join(cwd, rel),
+      await gitVcs(['show', `:2:./${rel}`], cwd).catch(() => null),
+      backup,
+    )
     return {
       vcs: 'git',
       base: await parse(rel, base),
@@ -186,7 +193,7 @@ export async function mergeSources(cwd: string, rel: string, backup: () => Promi
 export async function markResolved(cwd: string, rel: string): Promise<VcsStatus> {
   const { vcs } = await detectVcs(cwd)
   try {
-    if (vcs === 'git') await vcsRun('git', ['add', '--', rel], cwd)
+    if (vcs === 'git') await gitVcs(['add', '--', rel], cwd)
     else if (vcs === 'p4') await vcsRun('p4', ['resolve', '-ay', p4File(cwd, rel)], cwd)
     else if (vcs === 'svn') await vcsRun('svn', ['resolve', '--accept', 'working', `./${rel}`], cwd)
     else throw new HttpError(t('这个文件不在版本管理里'))
