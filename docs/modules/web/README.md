@@ -35,6 +35,7 @@
 
 - `web/src/App.tsx`：路由登记、侧栏、命令面板、通知；新增页面先在这里登记。
 - `web/src/index.css`：主题颜色 token 和 Tailwind v4 入口。
+- 对话页 `web/src/components/tasks/TaskView.tsx` 只管页面级状态和布局，按区域拆在 `web/src/components/tasks/view/`（重构文档第 13 条）：`use-task-load`（取数据、SSE、翻页、加载日志）、`use-task-actions`（发送、停止、继续等动作）、`use-task-panes`（右栏和各面板开合）、`rail-layout`（会话栏和右栏放不放得下），组件 `TaskHeader`、`TaskMessages`、`FollowComposer`、`ConversationDock`、`TaskSideRail`、`TaskDialogs`。新功能加进对应的那一块，不往 TaskView 里堆。
 
 ## 依赖
 
