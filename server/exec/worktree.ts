@@ -20,20 +20,19 @@ import type { TaskWorktree } from '../../shared/schema.ts'
 import { type ChildHold, childHoldText } from '../../shared/task.ts'
 import { t } from '../../shared/i18n.ts'
 import { DATA_DIR } from '../store.ts'
-import { capture } from './process.ts'
+import { gitRun } from './git.ts'
 import { log } from '../log.ts'
 import { aroundMerge } from '../turn-changes.ts'
 
 /** 任务的独立工作目录放在数据目录里，不放进项目目录，免得被项目自己的 git 和工具扫到 */
 export const WORKTREES_DIR = path.join(DATA_DIR, 'worktrees')
 
-const git = (cwd: string, ...args: string[]) =>
-  capture('git', ['-c', 'core.quotepath=off', ...args], cwd, process.env, 60_000)
+const git = (cwd: string, ...args: string[]) => gitRun(cwd, args, { timeoutMs: 60_000 })
 /**
  * 在主仓库里跑 git 时显式指定 work-tree：.git/config 里的 core.worktree 可能被别的平台写成
  * /mnt/...（本机真实遇到过），不指定的话 rev-parse / rev-list 全部报 Invalid path。
  */
-const gitRepo = (repo: string, ...args: string[]) => git(repo, '--work-tree', repo, ...args)
+const gitRepo = (repo: string, ...args: string[]) => gitRun(repo, args, { workTree: repo, timeoutMs: 60_000 })
 const fail = (r: { stderr: string; stdout: string }, fallback: string) =>
   new Error((r.stderr || r.stdout).trim().split('\n').slice(-4).join('\n') || fallback)
 
@@ -467,9 +466,9 @@ export async function isolateDeps(dir: string, repo: string) {
 
 /** 这个路径还没被忽略时，把 pattern 写进该工作目录自己的 info/exclude（已有同一行时不重复写） */
 async function excludeIfNeeded(dir: string, sample: string, pattern: string) {
-  const ignored = await capture('git', ['check-ignore', '-q', sample], dir, process.env, 10_000)
+  const ignored = await gitRun(dir, ['check-ignore', '-q', sample], { timeoutMs: 10_000 })
   if (ignored.code === 0) return
-  const exclude = await capture('git', ['rev-parse', '--git-path', 'info/exclude'], dir, process.env, 10_000)
+  const exclude = await gitRun(dir, ['rev-parse', '--git-path', 'info/exclude'], { timeoutMs: 10_000 })
   if (exclude.code !== 0) return
   const file = path.resolve(dir, exclude.stdout.trim())
   const text = await readFile(file, 'utf8').catch(() => '')
@@ -535,13 +534,10 @@ export async function createWorktree(repo: string, taskId: string, title: string
   // 一般项目完整检出（包括 LFS 文件），编译、写代码要用的都在；git 不管的中间文件和临时文件本来就不会带过去。
   // 只有 UE 这类大项目不下载 LFS 大文件（贴图、uasset），只留指针文件：改代码用不着，全量下载太慢也太占磁盘
   const big = await isBigProject(repo)
-  const r = await capture(
-    'git',
-    ['-c', 'core.quotepath=off', 'worktree', 'add', '-b', branch, dir, 'HEAD'],
-    repo,
-    big ? { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } : process.env,
-    10 * 60_000,
-  )
+  const r = await gitRun(repo, ['worktree', 'add', '-b', branch, dir, 'HEAD'], {
+    env: big ? { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } : process.env,
+    timeoutMs: 10 * 60_000,
+  })
   if (r.code !== 0) throw fail(r, t('创建独立分支失败'))
   await prepare(dir, repo)
   return { path: dir, branch, baseBranch: baseBranch === 'HEAD' ? '' : baseBranch, state: 'active', note: '' }
@@ -584,13 +580,10 @@ export async function ensureWorktree(
   await git(cwd, 'worktree', 'prune')
   await mkdir(path.dirname(dir), { recursive: true })
   const big = await isBigProject(cwd)
-  const r = await capture(
-    'git',
-    ['-c', 'core.quotepath=off', 'worktree', 'add', ...(branchAlive ? [dir, branch] : ['-b', branch, dir, 'HEAD'])],
-    cwd,
-    big ? { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } : process.env,
-    10 * 60_000,
-  )
+  const r = await gitRun(cwd, ['worktree', 'add', ...(branchAlive ? [dir, branch] : ['-b', branch, dir, 'HEAD'])], {
+    env: big ? { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } : process.env,
+    timeoutMs: 10 * 60_000,
+  })
   if (r.code !== 0) {
     // 失败也可能已经建出目录来：清掉，下次重试从干净的状态开始
     await git(cwd, 'worktree', 'remove', '--force', dir)
