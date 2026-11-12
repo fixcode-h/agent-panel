@@ -1,5 +1,5 @@
-import type { ApiConfig, ApiProtocol } from './accounts.ts'
-import { t } from './i18n.ts'
+import type { ApiConfig, ApiProtocol } from '../accounts.ts'
+import { t } from '../i18n.ts'
 
 /**
  * 常见的大模型厂家：API 配置的名称可以从这里选，选了接口地址就跟着厂家的协议走

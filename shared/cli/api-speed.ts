@@ -1,4 +1,4 @@
-import type { ApiProtocol } from './accounts.ts'
+import type { ApiProtocol } from '../accounts.ts'
 
 /** 大请求约多少字：按英文每 4 个字符约 1 个 token，约 2 万 token，接近 Agent 带着工具定义和几轮上下文时的一次请求 */
 export const LARGE_CHARS = 80_000

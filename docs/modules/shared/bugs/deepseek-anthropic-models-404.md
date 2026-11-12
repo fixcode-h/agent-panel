@@ -1,10 +1,10 @@
 # DeepSeek 官方 API 选 Anthropic 协议：读取模型报 404
 
-- 状态：已修复（`shared/api-vendors.test.ts`、`server/cli/api-config.test.ts` 通过）
+- 状态：已修复（`shared/cli/api-vendors.test.ts`、`server/cli/api-config.test.ts` 通过）
 - 症状：API 设置里名称选 DeepSeek、填官方密钥，协议是 Anthropic 时读取模型报「接口返回 404」；同一个密钥查余额正常
-- 入口：`server/accounts.ts` 的 `fetchApiModels`、`shared/api-vendors.ts` 的 `apiModelsRequest`
+- 入口：`server/accounts.ts` 的 `fetchApiModels`、`shared/cli/api-vendors.ts` 的 `apiModelsRequest`
 - 根因类型：厂家的 Anthropic 兼容接口只实现了 /v1/messages，没有 /v1/models
-- 模块：`shared`（`shared/api-vendors.ts`）
+- 模块：`shared`（`shared/cli/api-vendors.ts`）
 - 关键词：DeepSeek、404、读取模型、Anthropic 协议、/anthropic/v1/models、列模型、官方 API
 
 ## 现象

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseApiBalance } from './api-balance.ts'
-import { t } from './i18n.ts'
+import { t } from '../i18n.ts'
 
 test('解析 DeepSeek 的余额返回', () => {
   assert.deepEqual(

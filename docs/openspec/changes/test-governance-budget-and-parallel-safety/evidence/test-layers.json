@@ -1340,14 +1340,14 @@
       "lines": 62
     },
     {
-      "file": "shared/api-balance.test.ts",
+      "file": "shared/cli/api-balance.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 3,
       "lines": 46
     },
     {
-      "file": "shared/api-vendors.test.ts",
+      "file": "shared/cli/api-vendors.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 6,

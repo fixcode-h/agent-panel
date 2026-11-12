@@ -1,4 +1,4 @@
-import { t } from './i18n.ts'
+import { t } from '../i18n.ts'
 
 /**
  * API 账户余额：DeepSeek 有公开的余额接口（GET /user/balance），
