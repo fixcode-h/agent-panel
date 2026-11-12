@@ -563,8 +563,9 @@ function callsOf(src: string, name: string) {
 }
 
 test('自动重跑的每个调用点：环境性重试的计数和留痕都带上，丢会话 / 换参数重跑前先在对话里留痕', () => {
-  // 失败自救在 run-recover.ts，经 rerun 回到 runAgent；自动压缩在 runner.ts 里直接再调一次 runAgent
+  // 失败自救在 run-recover.ts、自动压缩在 run-finish.ts，都经 rerun 回到 runAgent；runner.ts 里只有接线的那几处
   const recover = readFileSync(new URL('./run-recover.ts', import.meta.url), 'utf8')
+  const finish = readFileSync(new URL('./run-finish.ts', import.meta.url), 'utf8')
   const runner = readFileSync(new URL('./runner.ts', import.meta.url), 'utf8')
   // 丢掉会话、去掉思考强度后 return rerun 重跑的分支：return 之前必须往对话写一行（restartNote / recoveryNote /
   // 直接 push），只写 log.warn 就是悄悄重试（AGENTS.md「Agent 执行出的错误一律显示给用户」）
@@ -584,12 +585,12 @@ test('自动重跑的每个调用点：环境性重试的计数和留痕都带�
   // 缺 envStalls 会让「只重试一次」失效，缺 envStallNotes 会让重试成功后那张红卡收不掉（评审 R2 就是这么漏的）。
   // 续接记录收在 RetryState 里：重跑展开 `...rs` 接着传，又一次完整调用用 keepEnvStall(rs)，两种都带上了这两项。
   // 压缩轮那种 `await runAgent(...)` 也算在内——它同样会走到环境性失败的重试分支
-  const reruns = callsOf(recover, 'rerun')
-  assert.ok(reruns.length >= 7, `至少有几处重跑：${reruns.length}`)
+  const reruns = [...callsOf(recover, 'rerun'), ...callsOf(finish, 'rerun')]
+  assert.ok(reruns.length >= 8, `至少有几处重跑：${reruns.length}`)
+  // runner.ts 里除了首次进入和 rerun 的接线，不许再有别的 runAgent 调用（要重跑就写进 run-recover / run-finish）
   const again = callsOf(runner, 'runAgent').filter(
     (c) => !/^runAgent\(ctx, (call|next, nextRs)\)$/.test(c.replace(/\s+/g, ' ')),
   )
-  assert.ok(again.length >= 1, `自动压缩那次调用：${again.length}`)
   for (const c of [...reruns, ...again])
     assert.match(
       c,

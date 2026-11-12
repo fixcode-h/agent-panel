@@ -4,7 +4,7 @@
     "server/assist.ts::assistApi": 370,
     "server/background.ts::createBackground": 540,
     "server/exec/rpc/codex.ts::codexAdapter": 560,
-    "server/exec/runner.ts::runAgent": 890,
+    "server/exec/runner.ts::runAgent": 800,
     "server/schedules.ts::schedulesApi": 470,
     "server/summary.ts::summaryApi": 330,
     "server/tables/routes.ts::tablesApi": 400,
