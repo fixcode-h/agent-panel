@@ -131,12 +131,12 @@ import {
   messagePage,
   taskMessageRev,
   newTask,
-  questionAnswers,
   taskSummary,
   trackWait,
   withAttachments,
 } from '@shared/task'
 import { searchTasks } from '@shared/task-search'
+import { applyAnswer } from '@shared/requests/answer'
 import { forkedTask, rewoundTask, userMessageIndex } from '@shared/restore/rewind'
 import { trashRows } from '@shared/trash/rows'
 import { settlePlan } from '@shared/plan'
@@ -2856,28 +2856,11 @@ function tasksRoute(
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
-    const a = body as { allow: boolean; answer?: string; answers?: string[] }
+    const a = body as { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean }
     simAnswers.set(rid, a)
-    task.requests = task.requests.filter((r) => r.id !== rid)
+    // 对话上怎么记、等待怎么结算：和正式后端同一份（shared/requests/answer.ts）
+    applyAnswer(task, req, a, { newId: () => `demo-${crypto.randomUUID()}` })
     trackWait(task)
-    const answers = req.kind === 'question' ? questionAnswers(req, a) : undefined
-    task.messages.push({
-      id: `demo-${crypto.randomUUID()}`,
-      role: 'system',
-      agentId: req.agentId,
-      step: req.step,
-      text:
-        req.kind === 'confirm'
-          ? a.allow
-            ? `你确认了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」的结果，接着往下执行`
-            : `你退回了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」：${a.answer ?? ''}`
-          : req.kind === 'question'
-            ? `你回答了「${req.title}」：${(a.answers ?? [a.answer ?? '']).join('；')}`
-            : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
-      tools: [],
-      at: new Date().toISOString(),
-      ...(answers ? { answers } : {}),
-    })
     persist()
     return task
   }
