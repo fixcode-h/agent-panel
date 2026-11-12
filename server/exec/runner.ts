@@ -2,14 +2,7 @@ import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
 import { stat } from 'node:fs/promises'
-import {
-  aliasAgent,
-  type AgentUsage,
-  type Task,
-  type TaskMessage,
-  type ToolUse,
-  type Alert,
-} from '../../shared/schema.ts'
+import { aliasAgent, type Task, type TaskMessage, type ToolUse, type Alert } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { hookMarker } from '../../shared/hooks.ts'
@@ -99,6 +92,7 @@ import { sourceHeader } from '../../shared/peer-message.ts'
 import { taskLog } from '../task-log.ts'
 
 import { dropAsked } from '../../shared/task-settle.ts'
+import { agentUsage, contextUsage, ownContext } from './usage-record.ts'
 import { askViaParent } from './child-question.ts'
 import { replies } from './panel-requests.ts'
 import { autoAllowed, requestOf } from './ask-request.ts'
@@ -433,23 +427,13 @@ async function runAgent(
 
   // 中途换了模型（改了 Agent 或设置）：记录换成这次实际用的，CLI 报告了模型时再以报告的为准
   const prevUsage = task.usage.agents[agentId]
-  if (prevUsage && prevUsage.model !== model) Object.assign(prevUsage, { model, window: windowFor(model) })
+  if (prevUsage && prevUsage.model !== model && !ownContext(task, owner))
+    Object.assign(prevUsage, { model, window: windowFor(model) })
   if (owner) Object.assign(stepUsage(owner), { model, window: windowFor(model) })
 
-  /** 这个 Agent 的用量记录，没有就建一条 */
-  const au = (): AgentUsage => {
-    const prev = task.usage.agents[agentId]
-    if (prev) return prev
-    return (task.usage.agents[agentId] = {
-      context: 0,
-      window: windowFor(model),
-      model,
-      tps: 0,
-      lastTps: 0,
-      outputTokens: 0,
-      genMs: 0,
-    })
-  }
+  /** 这个 Agent 的用量记录（速度、累计输出），没有就建一条；上下文占用记在 cu()（对话里的子任务不写角色那一条） */
+  const au = () => agentUsage(task, agentId, model, windowFor(model))
+  const cu = contextUsage(task, owner, au)
   // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
   const fileEvents = createFileEvents(
     cwd,
@@ -664,7 +648,7 @@ async function runAgent(
       }
       case 'usage': {
         usageSeen = true
-        const u = au()
+        const u = cu()
         // 报回来的模型名去掉长上下文后缀（[1m]），显示和按模型查映射、目录都用原名
         if (ev.model) u.model = stripLongContext(def, ev.model)
         if (ev.context !== undefined) {
@@ -677,7 +661,7 @@ async function runAgent(
           reported = true
         } else if (!reported) u.window = windowFor(u.model || model)
         if (ev.context !== undefined) compaction.measured(ev.context, u.window)
-        u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
+        au().outputTokens = (au().outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
         // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
         for (const t of owner ? [task.usage, stepUsage(owner)] : [task.usage]) {
@@ -693,10 +677,10 @@ async function runAgent(
       }
       case 'context': {
         // CLI 自己报的上下文细分：会话栏优先按它分块（一轮结束后才到，单独推一次）
-        au().snapshot = ev.snapshot
+        cu().snapshot = ev.snapshot
         // 刚压缩完还不知道整个上下文多大：细分里的总占用就是压缩后的真实大小
-        const fixed = compaction.measured(ev.snapshot.used, ev.snapshot.window || au().window)
-        if (fixed) au().context = ev.snapshot.used
+        const fixed = compaction.measured(ev.snapshot.used, ev.snapshot.window || cu().window)
+        if (fixed) cu().context = ev.snapshot.used
         ctx.changed(fixed)
         break
       }
@@ -718,7 +702,7 @@ async function runAgent(
         return
       case 'compacting': {
         // CLI 自己开始压缩（自动压缩）：像后台命令一样先放一行转圈，压缩完成（compacted）再收掉
-        const tool = compaction.startCli(au().context || undefined, toolStart)
+        const tool = compaction.startCli(cu().context || undefined, toolStart)
         if (tool) (!cur || cur.text.trim() ? newMsg() : cur).tools.push(tool)
         break
       }
@@ -726,7 +710,7 @@ async function runAgent(
         // 压缩后会话里之前发过的规则只剩摘要：下一轮按完整提示重发（见 shared/prompt-delta.ts）
         compacted()
         // 当作一次工具调用放进回复里，不插一条系统消息把回复切成两段；压缩后的大小晚一点从 usage 补上
-        const tool = compaction.done(ev, au())
+        const tool = compaction.done(ev, cu())
         if (tool) (!cur || cur.text.trim() ? newMsg() : cur).tools.push(tool)
         ctx.changed(true)
         break
@@ -1172,7 +1156,7 @@ async function runAgent(
     })
   // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
   if (op?.kind === 'compact' && !prewarmMode) {
-    const fresh = compaction.startOp(op, au().context || undefined, toolStart)
+    const fresh = compaction.startOp(op, cu().context || undefined, toolStart)
     if (fresh) newMsg().tools.push(fresh)
     ctx.changed(true)
   }
@@ -1228,7 +1212,7 @@ async function runAgent(
     onTools: op
       ? undefined
       : (tools, deferred) => {
-          au().parts = {
+          cu().parts = {
             cli: cliId,
             system: def.systemPromptFlag ? instructions.length : 0,
             tools,
@@ -1602,7 +1586,7 @@ async function runAgent(
           task,
           sessionKey,
           clipped: clippedTranscript(task, task.messages.length, carryBudget()),
-          usage: au(),
+          usage: cu(),
           tracker: compaction,
           msg: (text) => ({
             id: ctx.newId(),
@@ -1741,10 +1725,10 @@ async function runAgent(
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
     delete task.sessions[sessionKey]
     delete task.sessionDirs[sessionKey]
-    au().context = 0
+    cu().context = 0
     if (!compaction.settle(t('摘要写好了，下一轮开新会话带上')))
       sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
-  } else if (op?.kind === 'compact') compaction.finishOp(au())
+  } else if (op?.kind === 'compact') compaction.finishOp(cu())
   // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
   const u = task.usage.agents[agentId]
   if (
