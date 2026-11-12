@@ -7,7 +7,7 @@ import { t } from '../../shared/i18n.ts'
 import { createGate } from '../slots.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
-import { descendantNeeds } from '../../shared/child-needs.ts'
+import { descendantNeeds } from '../../shared/children/needs.ts'
 
 /**
  * 子对话列表：独立分支状态的缓存（git 慢时不挡列表）、/children、停止全部子对话。
@@ -89,7 +89,7 @@ export function registerChildrenRoutes(s: TasksScope) {
     const project = parent.projectId ? await s.deps.projects.get(parent.projectId) : null
     const all = (await s.store.list()).map((t) => s.live.get(t.id)?.task ?? t)
     const kids = all.filter((t) => t.parentTaskId === parent.id && !taskDeleted(t))
-    // 子对话下面的孙对话在等用户处理：这一行也要显示「等你处理」（见 shared/child-needs.ts）
+    // 子对话下面的孙对话在等用户处理：这一行也要显示「等你处理」（见 shared/children/needs.ts）
     const needs = descendantNeeds(all)
     let checking = 0
     const items = await Promise.all(

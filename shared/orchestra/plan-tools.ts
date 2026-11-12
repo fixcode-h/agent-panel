@@ -1,5 +1,5 @@
 // Orchestra 的计划类工具（从 shared/engine.ts 的 makeOrchestra 拆出来）。
-import { kidsOf } from '../child-lookup.ts'
+import { kidsOf } from '../children/lookup.ts'
 import { pickFlow } from '../flow-run.ts'
 import { isChatMode } from '../conv-mode.ts'
 import { endTurnCheck, pushTurnEnd } from '../end-turn.ts'

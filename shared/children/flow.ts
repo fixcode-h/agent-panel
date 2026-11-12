@@ -3,12 +3,12 @@
  * 从 task.ts 拆出来（文件行数上限），task.ts 原样转出，调用方仍可从 @shared/task 引用。
  * 只在函数里用 task.ts 的判定（convState、childHolds 这些），模块初始化时不取它的值，和 task.ts 互相引用也不会取到未定义
  */
-import type { Task } from './schema.ts'
-import { t } from './i18n.ts'
-import { openPlan } from './plan.ts'
-import { pendingAction } from './user-action.ts'
-import { helpersWorking } from './task-helpers.ts'
-import { childHolds, diagnosisPending, runRunning, type ChildHold } from './task.ts'
+import type { Task } from '../schema.ts'
+import { t } from '../i18n.ts'
+import { openPlan } from '../plan.ts'
+import { pendingAction } from '../user-action.ts'
+import { helpersWorking } from '../task-helpers.ts'
+import { childHolds, diagnosisPending, runRunning, type ChildHold } from '../task.ts'
 
 /**
  * 子对话完成是一条单向的状态流转，必须按这个先后走，谁都不能跳步（见 advanceChild）：

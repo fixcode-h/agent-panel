@@ -4,8 +4,8 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { childBugStep, lastToolCall } from './child-doing.ts'
-import { Task } from './schema.ts'
+import { childBugStep, lastToolCall } from './doing.ts'
+import { Task } from '../schema.ts'
 
 const at = '2026-11-10T08:00:00.000Z'
 const task = (extra: Record<string, unknown> = {}) =>

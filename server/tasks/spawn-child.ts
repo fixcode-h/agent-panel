@@ -5,8 +5,8 @@
 import { randomUUID } from 'node:crypto'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { BugCase, type BugLevel } from '../../shared/bug/diagnosis-schema.ts'
-import { childAskInitial } from '../../shared/child-ask.ts'
-import { afterDecision, checkAfter } from '../../shared/child-after.ts'
+import { childAskInitial } from '../../shared/children/ask.ts'
+import { afterDecision, checkAfter } from '../../shared/children/after.ts'
 import { t } from '../../shared/i18n.ts'
 import { NewTaskInput, type Agent, type Project, type Task } from '../../shared/schema.ts'
 import { newTask, taskDeleted } from '../../shared/task.ts'
@@ -88,7 +88,7 @@ export function createSpawnChild(sc: TasksScope) {
       level?: BugLevel
       /** 一定要改代码：第一次执行前就开好独立分支（只在独立分支模式下有用） */
       edits?: boolean
-      /** 排在哪些兄弟子对话之后（shared/child-after.ts）：它们都合回后才启动 */
+      /** 排在哪些兄弟子对话之后（shared/children/after.ts）：它们都合回后才启动 */
       after?: string[]
     },
   ) {

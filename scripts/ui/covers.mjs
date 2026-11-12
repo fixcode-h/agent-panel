@@ -44,7 +44,7 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/RunningNow.tsx',
     // 子对话行的「计划这一步 · 最后一次工具调用」（分析稿 U5）
     'web/src/components/tasks/child-line.ts',
-    'shared/child-doing.ts',
+    'shared/children/doing.ts',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
     // 输入框下的「测试记录」（dev 的「任务-测试记录」断言它）

@@ -33,7 +33,7 @@ export interface OrchConversation {
       ignoreDirty?: boolean
       /** Bug 的级别初判：子对话的档案从它开始（快速级别根因和方案合成一次确认） */
       level?: BugLevel
-      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/child-after.ts） */
+      /** 排在哪些子对话之后：它们都合回后面板才启动这个子对话（shared/children/after.ts） */
       after?: string[]
     } & DocsFirstInput,
   ): Promise<{ ok: boolean; id?: string; info: string }>

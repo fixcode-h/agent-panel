@@ -1,5 +1,5 @@
-import type { Task } from './schema.ts'
-import { stopEnds, taskDeleted } from './task.ts'
+import type { Task } from '../schema.ts'
+import { stopEnds, taskDeleted } from '../task.ts'
 
 /**
  * 子对话之间的先后依赖（create_conversation 的 after）：B 排在 A 之后时，面板先建好 B 但不启动，

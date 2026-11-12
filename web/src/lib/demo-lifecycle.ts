@@ -13,7 +13,7 @@ import {
 import { lifeWordFacts } from '@shared/life-next'
 import { subtreeTaskIds } from '@shared/run-usage'
 import { convActive, taskState } from '@shared/task'
-import { descendantNeeds } from '@shared/child-needs'
+import { descendantNeeds } from '@shared/children/needs'
 
 /**
  * 在线演示的状态诊断：没有真的 CLI 进程和日志，按演示任务的状态编一份结构一样的报告（字段和正式后端一致），

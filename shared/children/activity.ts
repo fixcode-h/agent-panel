@@ -2,13 +2,13 @@
  * 子对话这会儿在做什么、在等什么、多久前有过输出：父对话的子对话栏和给父对话的对话清单都读这里。
  * 从 task.ts 拆出来（文件行数上限），task.ts 原样转出；和 task.ts 互相引用，只在函数里取它的判定
  */
-import type { Task, ToolUse } from './schema.ts'
-import { t, uiLocale } from './i18n.ts'
-import { activePlan, planProgress } from './plan.ts'
-import { confirmWait, confirmWaitText } from './child-needs.ts'
-import { pendingAction } from './user-action.ts'
-import { helperRunning } from './task-helpers.ts'
-import { diagnosisPending, runRunning } from './task.ts'
+import type { Task, ToolUse } from '../schema.ts'
+import { t, uiLocale } from '../i18n.ts'
+import { activePlan, planProgress } from '../plan.ts'
+import { confirmWait, confirmWaitText } from './needs.ts'
+import { pendingAction } from '../user-action.ts'
+import { helperRunning } from '../task-helpers.ts'
+import { diagnosisPending, runRunning } from '../task.ts'
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */
 export interface ChildActivity {

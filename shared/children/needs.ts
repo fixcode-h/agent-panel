@@ -3,9 +3,9 @@
  * 实测报告问题 1：子对话卡在权限确认 10 分钟，父对话和侧栏一直写「执行中」，用户看不出要处理。
  * 从 task.ts 拆出来（那个文件到了行数上限），状态判定本身仍在 convState（childNeeds 一项）
  */
-import { t } from './i18n.ts'
-import type { Task, TaskRequest } from './schema.ts'
-import { pendingAction } from './user-action.ts'
+import { t } from '../i18n.ts'
+import type { Task, TaskRequest } from '../schema.ts'
+import { pendingAction } from '../user-action.ts'
 
 /** 请求标题在状态说明里最多留这么多字：命令可能很长，完整内容在确认卡上 */
 const REQUEST_NOTE_MAX = 80

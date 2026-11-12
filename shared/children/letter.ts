@@ -1,5 +1,5 @@
-import { summariesOf } from './summary-card.ts'
-import { clip } from './text.ts'
+import { summariesOf } from '../summary-card.ts'
+import { clip } from '../text.ts'
 
 /**
  * 子对话一轮结束交给父对话那封信里的「最近的结果」：只带要点，全文留在子对话里。

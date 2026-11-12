@@ -1354,14 +1354,14 @@
       "lines": 67
     },
     {
-      "file": "shared/child-ask.test.ts",
+      "file": "shared/children/ask.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 8,
       "lines": 57
     },
     {
-      "file": "shared/child-flow.test.ts",
+      "file": "shared/children/flow.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 13,

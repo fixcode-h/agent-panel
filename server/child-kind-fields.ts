@@ -24,7 +24,7 @@ export const childKindFields = {
     description:
       '这个子对话一定要改代码（实现、修改、修 Bug）时写 true：面板先开好独立分支再让它开工，省掉它中途换目录重开、重读文件。只调研、评审、回答问题的不写',
   },
-  // 扩展 2（子对话先后依赖，shared/child-after.ts）：父对话一次排好整批活，不用每次接力都自己醒来再派
+  // 扩展 2（子对话先后依赖，shared/children/after.ts）：父对话一次排好整批活，不用每次接力都自己醒来再派
   after: {
     type: 'array',
     items: { type: 'string' },

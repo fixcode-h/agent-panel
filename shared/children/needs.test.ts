@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { setLang } from './i18n.ts'
-import type { Task, TaskRequest } from './schema.ts'
-import { descendantNeeds, pendingRequest } from './child-needs.ts'
-import { childReport, childWait, childWaitText, convState, taskState } from './task.ts'
-import { taskWaitText } from './task-word.ts'
+import { setLang } from '../i18n.ts'
+import type { Task, TaskRequest } from '../schema.ts'
+import { descendantNeeds, pendingRequest } from './needs.ts'
+import { childReport, childWait, childWaitText, convState, taskState } from '../task.ts'
+import { taskWaitText } from '../task-word.ts'
 
 setLang('zh')
 

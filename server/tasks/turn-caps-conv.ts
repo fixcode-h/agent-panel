@@ -4,7 +4,7 @@ import type { Live } from './types.ts'
 import type { TasksScope } from './scope.ts'
 import type { RealContext } from '../exec/real-context.ts'
 import { randomUUID } from 'node:crypto'
-import { waitingAfter } from '../../shared/child-after.ts'
+import { waitingAfter } from '../../shared/children/after.ts'
 import { afterTurnCleanup } from './bug-cleanup.ts'
 import { recheckAfterTurn } from './bug-recheck.ts'
 import {

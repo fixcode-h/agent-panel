@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPlan, settlePlan } from './plan.ts'
-import { setLang } from './i18n.ts'
-import type { Task } from './schema.ts'
+import { applyPlan, settlePlan } from '../plan.ts'
+import { setLang } from '../i18n.ts'
+import type { Task } from '../schema.ts'
 import {
   advanceChild,
   childComplete,
@@ -19,7 +19,7 @@ import {
   type ChildFlowState,
   type ChildFlowStep,
   type ChildHold,
-} from './task.ts'
+} from '../task.ts'
 
 // 文案断言按中文：跟着系统语言跑会让结果不稳定
 setLang('zh')

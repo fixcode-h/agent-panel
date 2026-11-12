@@ -6,7 +6,7 @@
 
 UI 示例：[等待用户操作 · UI 设计](https://claude.ai/artifact/NYRsmQreiQ4R82DAQvDeW7)。第一个画板是完整窗口（左栏、对话、右栏），可以切换三个场景，蓝色标签 A–H 标出新加的东西出现在哪；对话、日志都是虚构的。
 
-相关代码：`server/ask-mcp.ts`（`ask_user`）、`web/src/components/chat/QuestionPanel.tsx`（提问面板）、`web/src/components/tasks/ChildAskCard.tsx`（父对话里「子对话请用户选择」）、`web/src/components/tasks/ChildrenBar.tsx`、`shared/child-ask.ts`、`shared/builtin/agents.ts`（协调器）、`server/end-turn-tool.ts`、`server/tasks/jobs.ts`（后台命令结果推回）、`shared/plan-wait.ts`、`shared/task.ts`（`convState`）、`shared/bug/diagnosis.ts`（`requestLogs`、`BugCollect`）、`web/src/components/tasks/LogAttach.tsx`
+相关代码：`server/ask-mcp.ts`（`ask_user`）、`web/src/components/chat/QuestionPanel.tsx`（提问面板）、`web/src/components/tasks/ChildAskCard.tsx`（父对话里「子对话请用户选择」）、`web/src/components/tasks/ChildrenBar.tsx`、`shared/children/ask.ts`、`shared/builtin/agents.ts`（协调器）、`server/end-turn-tool.ts`、`server/tasks/jobs.ts`（后台命令结果推回）、`shared/plan-wait.ts`、`shared/task.ts`（`convState`）、`shared/bug/diagnosis.ts`（`requestLogs`、`BugCollect`）、`web/src/components/tasks/LogAttach.tsx`
 
 ## 0. 一页结论
 
@@ -198,11 +198,11 @@ Task.userActions?: {
 ## 7. 提示词要改的地方
 
 - `ask_user` 的工具说明：只用来让用户拿主意；要用户离开对话去做事的用 `request_user_action`，不要把「去做…再发回来」写成选项。
-- `childAskPrompt`（`shared/child-ask.ts`）：开着那一支补「要用户动手做事的用 request_user_action，它直接交给用户」；关着那一支补「自己确实做不了、要用户动手的，仍然可以用 request_user_action，写好退路」。
+- `childAskPrompt`（`shared/children/ask.ts`）：开着那一支补「要用户动手做事的用 request_user_action，它直接交给用户」；关着那一支补「自己确实做不了、要用户动手的，仍然可以用 request_user_action，写好退路」。
 - 协调器提示词（`shared/builtin/agents.ts`）：第 3 条澄清和「子对话的提问和收尾建议怎么答」，按 §5.1 加。
 - `BACKGROUND_WAIT_RULE` / `TURN_PROGRESS_RULES`（`shared/turn-rules.ts`）、`end_turn` 的说明：「在等后台命令、子对话、子任务」加上「等你操作」；能写出步骤的不用 `blocked`。
 
-改完要搜测试里断言原句的地方（`server/engine-steps.test.ts`、`server/orch-mcp.test.ts`、`shared/child-ask.test.ts`）。
+改完要搜测试里断言原句的地方（`server/engine-steps.test.ts`、`server/orch-mcp.test.ts`、`shared/children/ask.test.ts`）。
 
 ## 8. 开放问题
 
@@ -214,7 +214,7 @@ Task.userActions?: {
 ## 9. 改动范围
 
 - 数据：`shared/schema.ts`（`Task.userActions`、`PlanWait.kind` 加 `user`、`PanelKind` 加 `action`）；`BugCollect` 从 `shared/bug/diagnosis-schema.ts` 挪到共用的地方，或者直接引用
-- 判定：`shared/task.ts`（`convState`、说法）、`shared/child-needs.ts`、`shared/end-turn.ts` 和 `server/tasks/before-end.ts`（放行档）、`shared/task-diagnosis.ts`
+- 判定：`shared/task.ts`（`convState`、说法）、`shared/children/needs.ts`、`shared/end-turn.ts` 和 `server/tasks/before-end.ts`（放行档）、`shared/task-diagnosis.ts`
 - 工具：新文件 `server/user-action-tool.ts`（`orch-mcp.ts` 已到行数上限），注册在 `server/orch-mcp.ts`；推回复用 `server/tasks/jobs.ts` 的 `pushJobNote` 那条路，抽成共用函数
 - 接口：完成、做不了、跳过；交回走现有的发消息接口，带上等你操作的 id
 - 界面：新组件 `web/src/components/tasks/UserActionPanel.tsx`（F 和 D）；子对话行的「等你操作」和「去操作」按钮（B，`child-line.ts` 和子对话行组件）；左栏角标（A）；输入框的「交回给」标签（G，`ChatComposer` 的 above）；记录行（E）；状态卡（H，`StatusCard.tsx`）；提问卡出口（`QuestionPanel.tsx`）；浏览器通知（`web/src/lib/notify.ts`）

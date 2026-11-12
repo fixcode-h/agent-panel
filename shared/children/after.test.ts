@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { afterDecision, checkAfter, predState, waitingAfter, type AfterPred } from './child-after.ts'
+import { afterDecision, checkAfter, predState, waitingAfter, type AfterPred } from './after.ts'
 
 const pred = (id: string, x: Partial<AfterPred> = {}): AfterPred => ({
   id,

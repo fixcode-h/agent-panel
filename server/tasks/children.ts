@@ -34,7 +34,7 @@ import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
-import { letterResult } from '../../shared/child-letter.ts'
+import { letterResult } from '../../shared/children/letter.ts'
 import { childSummaryCards } from '../../shared/summary-card.ts'
 
 /**
@@ -360,7 +360,7 @@ export function createChildren(sc: TasksScope) {
     if (sc.childRecovering(childId)) return
     const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
     if (!tk?.parentTaskId) return
-    // 它完成、失败、没了都可能影响排在它后面的子对话（shared/child-after.ts）：顺带扫一遍
+    // 它完成、失败、没了都可能影响排在它后面的子对话（shared/children/after.ts）：顺带扫一遍
     void sc
       .releaseAfter(tk.parentTaskId)
       .catch((e) => log.warn('task', '检查排在后面的子对话失败', { task: tk.id, error: (e as Error).message }))
@@ -416,7 +416,7 @@ export function createChildren(sc: TasksScope) {
     // 先取最新的回复：task.summary 要等整次执行收尾才更新，这一轮刚报完成（进程还在、或保活等下一句）时
     // 它还是上一轮的，上报会带着上一轮的结果
     // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
-    // 只带要点（shared/child-letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
+    // 只带要点（shared/children/letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
     const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text
     const reply = tk.pendingReport?.trim() || last || tk.summary || ''
     // 结果优先用子对话写进它自己计划的总结（ADR 0041：总结写在各自的计划里，是它明确交的，不靠从回复里认）；

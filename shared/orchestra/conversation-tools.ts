@@ -1,5 +1,5 @@
 // Orchestra 的对话类工具（从 shared/engine.ts 的 makeOrchestra 拆出来）。
-import { kidTitleOf, retryTarget } from '../child-lookup.ts'
+import { kidTitleOf, retryTarget } from '../children/lookup.ts'
 import { docsFirst } from '../docs-first.ts'
 import { roleKind } from '../agent-role.ts'
 import { clip } from '../text.ts'

@@ -118,7 +118,7 @@ import {
 } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
-import { childAskEffect } from '@shared/child-ask'
+import { childAskEffect } from '@shared/children/ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { stopHelper } from '@shared/run-stops'
@@ -3059,7 +3059,7 @@ function tasksRoute(
   if (method === 'PATCH') {
     const p = parse(TaskPatch, body)
     const { childRun, applyChildAsk, ...rest } = p
-    // 「提问」联动和正式后端同一份规则（shared/child-ask.ts）：按钮只管父对话自己，菜单选了才动已有子对话
+    // 「提问」联动和正式后端同一份规则（shared/children/ask.ts）：按钮只管父对话自己，菜单选了才动已有子对话
     const askEffect = childAskEffect({
       askUser: p.askUser,
       childAskUser: p.childAskUser,

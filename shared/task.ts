@@ -21,15 +21,15 @@ import { t } from './i18n.ts'
 import { canPickRun } from './task-run.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
-import { needsReason } from './child-needs.ts'
+import { needsReason } from './children/needs.ts'
 import { pendingAction } from './user-action.ts'
 import { byStartedDesc, helpersWorking } from './task-helpers.ts'
-import { childFlowOf } from './child-flow.ts'
-import { type ChildWait } from './child-activity.ts'
+import { childFlowOf } from './children/flow.ts'
+import { type ChildWait } from './children/activity.ts'
 
 /** 子对话完成的流转、子对话在做什么 / 等什么、按天分组拆在下面三个文件：从这里原样转出，调用方不用改 */
-export * from './child-flow.ts'
-export * from './child-activity.ts'
+export * from './children/flow.ts'
+export * from './children/activity.ts'
 export * from './day-groups.ts'
 
 export function taskTitle(prompt: string) {
@@ -514,7 +514,7 @@ export interface ConvFacts {
   helpers?: boolean
   /** 名下还在动的子对话数（它们的 convState 是执行中、等结果、等你处理，见 convActive） */
   children?: number
-  childNeeds?: number // 后代对话里在等用户确认、回答的个数（见 shared/child-needs.ts）：有它自己也是「等你处理」
+  childNeeds?: number // 后代对话里在等用户确认、回答的个数（见 shared/children/needs.ts）：有它自己也是「等你处理」
   /** 计划还没做完 */
   unfinished?: boolean
   /** 独立分支还没合回父对话的分支 */

@@ -18,9 +18,9 @@ import {
   type ChildActivity,
   type ChildEntry,
 } from '@shared/task'
-import type { ChildRequest } from '@shared/child-needs'
+import type { ChildRequest } from '@shared/children/needs'
 import { childWord } from '@shared/task-word'
-import type { LastTool } from '@shared/child-doing'
+import type { LastTool } from '@shared/children/doing'
 import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 
 /** 父对话里的子对话入口：/children 返回的完整摘要（字段和正式后端一致，演示后端也要补齐） */
@@ -34,7 +34,7 @@ export interface ChildSummary extends ChildEntry {
   activity?: ChildActivity
   /** 第一条待确认的请求：父对话页直接写出确认什么、给「允许 / 拒绝」（见 ChildRequestBar） */
   request?: ChildRequest
-  /** 最后一次工具调用（shared/child-doing.ts）：行上写「计划这一步 · 改 store.ts」（分析稿 U5） */
+  /** 最后一次工具调用（shared/children/doing.ts）：行上写「计划这一步 · 改 store.ts」（分析稿 U5） */
   lastTool?: LastTool
   /** Bug 走到五步里的第几步（0–4，5 是都走完了）：行上画五个小点（分析稿 U8） */
   bugStep?: number

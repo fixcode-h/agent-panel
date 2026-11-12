@@ -6,7 +6,7 @@ import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '..
 import { newTask, stopReasonText } from '../shared/task.ts'
 import { activePlan, applyPlan, bindWait } from '../shared/plan.ts'
 import { runEngineTurn } from '../shared/engine.ts'
-import { retryBase } from '../shared/child-lookup.ts'
+import { retryBase } from '../shared/children/lookup.ts'
 import { stopHelper } from '../shared/run-stops.ts'
 import type { AgentCall, EngineHost, Orchestra } from '../shared/engine-host.ts'
 import { t } from '../shared/i18n.ts'

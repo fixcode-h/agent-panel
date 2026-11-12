@@ -576,7 +576,7 @@ ${
     // 写 undefined 不用 delete：store.update 是把传入的字段盖到旧记录上，删掉的键盖不掉旧值
     tk.wrapRequest = undefined
     tk.updatedAt = new Date().toISOString()
-    // 排在它后面的子对话按这个时间判断能不能开始（shared/child-after.ts）
+    // 排在它后面的子对话按这个时间判断能不能开始（shared/children/after.ts）
     tk.mergedAt = tk.updatedAt
     if (entry) entry.rev++
     await sc.store.update(tk.id, tk)

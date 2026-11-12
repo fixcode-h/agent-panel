@@ -1,10 +1,10 @@
 /**
- * 父对话「提问」和子对话提问的联动规则（见 shared/child-ask.ts）。服务端 PATCH 和界面都按这里的结论走。
+ * 父对话「提问」和子对话提问的联动规则（见 shared/children/ask.ts）。服务端 PATCH 和界面都按这里的结论走。
  * 运行：npm run test:unit
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { childAskChecked, childAskEffect, childAskInitial, CHILD_ASK_DEFAULT } from './child-ask.ts'
+import { childAskChecked, childAskEffect, childAskInitial, CHILD_ASK_DEFAULT } from './ask.ts'
 
 test('默认勾选：新建的父对话「子对话也提问」开着', () => {
   assert.equal(CHILD_ASK_DEFAULT, true)

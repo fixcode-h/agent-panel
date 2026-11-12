@@ -1,10 +1,10 @@
 # 子对话卡在权限确认，父对话和侧栏还显示「执行中」
 
-- 状态：已修复（`shared/child-needs.test.ts` 通过）
+- 状态：已修复（`shared/children/needs.test.ts` 通过）
 - 症状：两个子对话在 `npm test` 上等权限确认 10 分 17 秒，父对话头部写「子对话执行中」、计划写「2 个在等待」、侧栏项目是「1 个执行中」转圈，只有点进子对话才看到「需要你确认」
 - 入口：`shared/task.ts` 的 `convState` / `taskFacts`，`server/tasks/children.ts` 的 `childCountsOf`，`server/tasks/list-routes.ts` 的 `GET /tasks`，`web/src/components/tasks/ChildrenBar.tsx`
 - 根因类型：「等你处理」只看对话自己的请求和提问，后代对话的待确认没有往上冒泡
-- 模块：`shared`（`shared/child-needs.ts`）
+- 模块：`shared`（`shared/children/needs.ts`）
 - 关键词：子对话、权限确认、等你处理、执行中、冒泡、childrenNeeds、childNeeds、descendantNeeds、允许、拒绝、实测报告问题 1
 
 ## 现象
@@ -17,7 +17,7 @@
 
 ## 修复
 
-- 服务端按整份任务列表算每个对话名下（任意层）在等用户的个数（`shared/child-needs.ts` 的 `descendantNeeds`），作为运行时字段 `Task.childrenNeeds` 随列表、详情和推送带给界面；`convState` 多一项 `childNeeds`，有它就是「等你处理」，排在「执行中」前面。侧栏行、项目行的提醒图标、项目首页分组、页签和标题栏都从这一处跟着变，标题栏写「子对话等你处理」。
+- 服务端按整份任务列表算每个对话名下（任意层）在等用户的个数（`shared/children/needs.ts` 的 `descendantNeeds`），作为运行时字段 `Task.childrenNeeds` 随列表、详情和推送带给界面；`convState` 多一项 `childNeeds`，有它就是「等你处理」，排在「执行中」前面。侧栏行、项目行的提醒图标、项目首页分组、页签和标题栏都从这一处跟着变，标题栏写「子对话等你处理」。
 - `/children` 每个子对话带上第一条待确认的请求（`pendingRequest`）；输入框上方子对话栏最前面加一行「子对话「X」等你确认：运行命令：…」（`ChildRequestBar`），命令、改文件、工具类的请求直接给「允许 / 拒绝」，提问和节点确认点「去处理」在右栏打开。
 - 计划窗口、子对话行、给父对话的上报都写出确认的是哪条命令（`childWaitText` 的 confirm 带标题，`childReport` 的 needs 说明）；子对话行的标签从「等用户选择」改成「等用户确认」。
 - 页面在后台时，父对话的 `childrenNeeds` 变多就发一条「子对话需要你确认」的系统通知。

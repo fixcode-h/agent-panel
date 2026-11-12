@@ -1098,7 +1098,7 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
-  /** 父对话的「子对话也提问」：之后新建子对话默认开不开提问（见 shared/child-ask.ts）；只在创建时用，不传按设置 */
+  /** 父对话的「子对话也提问」：之后新建子对话默认开不开提问（见 shared/children/ask.ts）；只在创建时用，不传按设置 */
   childAskUser: z.boolean().optional(),
   from: z.string().optional(), // 别的对话替它建的（task.create）：发件对话 id，第一条记成 peer（ADR 0041）
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
@@ -1960,7 +1960,7 @@ export const TaskData = z.object({
   /** 父对话派单时说了要改代码（create_conversation 的 edits）：第一次执行前就开好独立分支，不中途换目录重开 */
   editFirst: z.boolean().optional(),
   /**
-   * 排在哪些兄弟子对话之后（create_conversation 的 after，见 shared/child-after.ts）：建好后停在 stopReason 'after'，
+   * 排在哪些兄弟子对话之后（create_conversation 的 after，见 shared/children/after.ts）：建好后停在 stopReason 'after'，
    * 这些子对话都合回或完成后面板自动启动它，启动时清掉
    */
   waitAfter: z.array(z.string()).optional(),

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { LETTER_RESULT_MAX, letterResult } from './child-letter.ts'
-import { parseReport } from './peer-message.ts'
+import { LETTER_RESULT_MAX, letterResult } from './letter.ts'
+import { parseReport } from '../peer-message.ts'
 
 const long = (s: string, n: number) => Array.from({ length: n }, () => s).join('')
 

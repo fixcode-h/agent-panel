@@ -54,7 +54,7 @@
 | 冷启动成本   | 统筹设定原文：「每开一个新子对话都要重新注入角色设定、通用约束、AGENTS.md、项目教训和技能清单，一个只干 30 秒动作的子对话也要二十万 token 起步」                                                              | 统筹设定「派单的粒度」                             |
 | 位置的权限   | 由 `Orchestra` 的一组布尔值决定工具暴露：`coordinator`（开子对话）、`helper`（自己是子任务）、`child`、`canSubmit`、`planning`、`plans`、`peers`、`parentOf`、`claims`……                                      | `shared/engine.ts`、`server/orch-mcp.ts`           |
 | 子任务       | 单回合、不能再派子任务、不能启动工作流、不能开子对话、不能向用户提问，默认只读；一步最多 12 个（`MAX_HELPERS_PER_STEP`）；失败用 `resume` 在原记录重试                                                        | `helper` 设定、`shared/engine.ts`                  |
-| 子对话       | 可以多轮、用户可进入；在独立分支里改、测、评审，`submit_merge` 请父对话 `finish_child` 合回；不能开子对话、不能互相通讯；提问按「提问」开关交给用户或父对话                                                   | ADR 0005 / 0007、`shared/child-ask.ts`             |
+| 子对话       | 可以多轮、用户可进入；在独立分支里改、测、评审，`submit_merge` 请父对话 `finish_child` 合回；不能开子对话、不能互相通讯；提问按「提问」开关交给用户或父对话                                                   | ADR 0005 / 0007、`shared/children/ask.ts`          |
 | 工作流       | 子对话用 `start_plan` 启动，这一轮结束后同步跑完，结果交回对话；工作流有自己的主 Agent（`mainAgentId`）做节点间调度（`dispatch`）；节点用某个角色                                                             | `shared/engine.ts` 的 `plan`、`shared/dispatch.ts` |
 
 ### 1.2 问题
