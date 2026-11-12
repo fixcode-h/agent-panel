@@ -14,7 +14,9 @@ import {
   shownPlan,
   unfinishedSteps,
 } from '@shared/plan'
-import { childActivityText, childWaitText, taskActive, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
+import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
+import { liveActive, type TaskLive } from '@shared/task-live'
+import { useLive } from '@/lib/live-store'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
@@ -63,8 +65,8 @@ function PlanBar({ done, total, className }: { done: number; total: number; clas
  * 计划没做完、对话却已经停下（停止或失败）且名下没有东西在跑：没人在推进这份计划。
  * 这时步骤不画成进行中 / 等待中，用时停在停下那一刻（以前父对话停了，计划里等子对话的步骤还一直转圈计时，用户报过）
  */
-function planPaused(task: Task) {
-  return (task.status === 'stopped' || task.status === 'failed') && !taskActive(task)
+function planPaused(task: Task, live: TaskLive) {
+  return (task.status === 'stopped' || task.status === 'failed') && !liveActive(live)
 }
 
 /** 停下那一刻：用时按它算，不再跟着当前时间走 */
@@ -241,7 +243,8 @@ export function PlanButton({ task, kids }: { task: Task; kids?: WaitChild[] }) {
   // 只看 doneAt 会把后者也说成已完成，而列表里那一步还是等待中 —— 用户看到的就是这个矛盾
   const head = plan ? planHeadline(plan) : 'open'
   const finished = head !== 'open'
-  const paused = !finished && planPaused(task)
+  const live = useLive(task)
+  const paused = !finished && planPaused(task, live)
   // 进行中“正在做的那一步”的用时跟着当前步骤的时间走，每秒刷新；结束的计划、停下的对话不用再每秒重算
   const tick = useNow(!!plan && !finished && !paused)
   const now = paused && Number.isFinite(pausedAt(task)) ? pausedAt(task) : tick
@@ -325,7 +328,8 @@ export function PlanButton({ task, kids }: { task: Task; kids?: WaitChild[] }) {
 /** 计划窗口：当前计划的步骤（进行中的展开子步骤）；下面能翻以前的计划 */
 function PlanWindow({ task, plan, kids }: { task: Task; plan: TaskPlan; kids?: WaitChild[] }) {
   const p = planProgress(task, plan)
-  const paused = !plan.doneAt && planPaused(task)
+  const taskLive = useLive(task)
+  const paused = !plan.doneAt && planPaused(task, taskLive)
   const live = !plan.doneAt && !paused
   // 计划已经结束（全部做完或提前结束），或对话停下了没人在推进：还没做完的步骤不再画成等待中 / 进行中
   const settled = !live

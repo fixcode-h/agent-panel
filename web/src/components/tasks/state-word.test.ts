@@ -12,6 +12,7 @@ import { lifeWordFacts } from '@shared/life-next'
 import { Task, type TaskRequest } from '@shared/schema'
 import { diagnoseTask } from '@shared/task-diagnosis'
 import { taskWaitText, taskWord, childWord } from '@shared/task-word'
+import { liveWord, taskLiveOf } from '@shared/task-live'
 import { childLabels, type ChildSummary } from './child-line'
 import { headStatus } from './head-status'
 
@@ -120,8 +121,19 @@ test('枚举各种事实组合：标题栏、会话栏、输入框占位、侧�
     const { state, word } = taskWord(task)
     assert.ok(word, `${label}：短词不能是空的`)
 
+    // 服务端给页面的 live（shared/task-live.ts）：状态和短词跟 taskWord 是同一个
+    const live = taskLiveOf(task, {
+      cliAlive: false,
+      jobs: task.jobs ?? [],
+      childrenWorking: task.childrenWorking ?? 0,
+      childrenCli: 0,
+      childrenNeeds: task.childrenNeeds ?? 0,
+    })
+    assert.equal(live.state, state, `${label}：live 的状态`)
+    assert.equal(liveWord(live), word, `${label}：live 的短词`)
+
     // 标题栏胶囊：等你处理时胶囊就写这个词，执行中 / 等结果时悬停提示以它开头
-    const head = headStatus({ ...task, runMs: 60_000, runStartedAt: '' }, NOW)
+    const head = headStatus({ ...task, runMs: 60_000, runStartedAt: '' }, live, NOW)
     if (state === 'needs') assert.equal(head?.text, word, `${label}：标题栏胶囊`)
     if (state === 'needs' || state === 'running' || state === 'waiting')
       assert.ok(head?.hint.startsWith(`${word} · `), `${label}：标题栏提示「${head?.hint}」不是以「${word}」开头`)

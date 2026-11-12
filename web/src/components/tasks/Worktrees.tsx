@@ -1,3 +1,4 @@
+import { useLive } from '@/lib/live-store'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import {
@@ -70,9 +71,11 @@ export function useWorktrees(taskId: string, key: string, enabled = true) {
   return items
 }
 
-/** 页面上用来决定什么时候重新读的指纹：执行状态、这一轮的结束时间、分支状态 */
-export const worktreeKey = (task: Task) =>
-  `${task.status}:${task.working}:${task.turnDoneAt ?? ''}:${task.worktree?.state ?? ''}:${task.childrenWorking ?? 0}`
+/** 页面上用来决定什么时候重新读的指纹：执行状态、这一轮的结束时间、分支状态、名下在跑的子对话数（live） */
+export function useWorktreeKey(task: Task) {
+  const kids = useLive(task).childrenWorking
+  return `${task.status}:${task.working}:${task.turnDoneAt ?? ''}:${task.worktree?.state ?? ''}:${kids}`
+}
 
 /** 还有东西没合回原分支：分支上有原分支没有的提交，或者目录里有没提交的改动。两边都为 0 时没有可合的东西 */
 const pending = (x: WorktreeItem) => x.ahead > 0 || x.dirty > 0
@@ -395,7 +398,7 @@ export function WorktreeSection({
   /** 点中间那行打开对应的子对话；当前对话自己那行不响应 */
   onOpenChild?: (id: string) => void
 }) {
-  const items = useWorktrees(task.id, worktreeKey(task))
+  const items = useWorktrees(task.id, useWorktreeKey(task))
   const actions = useWorktreeActions(task.id)
   if (!items?.length) return null
   const open = unmergedOf(items).length

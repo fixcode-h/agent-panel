@@ -2,6 +2,7 @@
  * 演示版 `/tasks/:id/children` 的每一行：字段和正式后端 `server/tasks/children-routes.ts` 一一对应。
  * 从 demo-backend.ts 拆出来（那边顶到了行数上限），演示里没有真的进程和 git，按演示数据给值。
  */
+import { demoJobs } from './demo-jobs'
 import { bugStage } from '@shared/bug-diagnosis'
 import { childBugStep, lastToolCall } from '@shared/child-doing'
 import { descendantNeeds, pendingRequest } from '@shared/child-needs'
@@ -29,7 +30,7 @@ export function demoChildRows(task: Task, tasks: Task[], demoCliAlive: (t: Task)
       const doing = childActivity(x)
       const open = openPlan(x)
       // 还在跑 / 排队的后台命令：和正式版一样，CLI 在等命令结果时也算还没做完
-      const background = (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length
+      const background = demoJobs(x).filter((j) => j.state === 'running' || j.state === 'queued').length
       return {
         id: x.id,
         title: x.title,

@@ -34,17 +34,13 @@ const TaskShape = z.looseObject({
   usage: z.looseObject({ inputTokens: z.number(), outputTokens: z.number(), costUsd: z.number() }),
 })
 
-/** 顶层对话额外带的三项计数：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
-const ChildCounts = { childrenWorking: z.number(), childrenCli: z.number(), childrenNeeds: z.number() }
-
 /** GET /tasks?projectId=：顶层对话的摘要（消息只留第一条用户消息）；live 是服务端算好的运行时状态（shared/task-live.ts） */
-export const TaskListContract = z.array(TaskShape.extend({ ...ChildCounts, live: TaskLive }))
+export const TaskListContract = z.array(TaskShape.extend({ live: TaskLive }))
 
 /** GET /tasks/:id?limit=：对话页打开时的第一页（顶层对话） */
 export const TaskPageContract = TaskShape.extend({
-  ...ChildCounts,
+  /** 运行时状态（状态、CLI 存活、后台命令、名下子对话计数）：都在 live 里，任务本身不带（shared/task-live.ts） */
   live: TaskLive,
-  cliAlive: z.boolean(),
   messageTotal: z.number(),
   messageHasMore: z.boolean(),
 })

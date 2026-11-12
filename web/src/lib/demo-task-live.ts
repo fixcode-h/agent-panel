@@ -1,3 +1,4 @@
+import { demoJobs } from './demo-jobs'
 import type { Task } from '@shared/schema'
 import { descendantNeeds } from '@shared/child-needs'
 import { taskLiveOf, type TaskLive } from '@shared/task-live'
@@ -12,17 +13,14 @@ export function demoLive(tasks: Task[], t: Task, needs = descendantNeeds(tasks))
   const kids = top ? tasks.filter((k) => k.parentTaskId === t.id && !k.deletedAt) : []
   return taskLiveOf(t, {
     cliAlive: demoCliAlive(t),
-    jobs: t.jobs ?? [],
+    jobs: demoJobs(t),
     childrenWorking: kids.filter(demoChildActive).length,
     childrenCli: kids.filter(demoCliAlive).length,
     childrenNeeds: needs.get(t.id) ?? 0,
   })
 }
 
-/** 和正式后端的 withLegacy 一样：新旧两种形状并存，live 之外旧的几个字段照样叠上 */
+/** 和正式后端的 withLive 一样：交给页面的任务带上 live，运行时字段只在 live 里 */
 export function demoWithLive(tasks: Task[], t: Task, needs?: Map<string, number>): Task & { live: TaskLive } {
-  const live = demoLive(tasks, t, needs)
-  const { cliAlive, childrenWorking, childrenCli, childrenNeeds } = live
-  const kids = t.parentTaskId ? { childrenNeeds } : { childrenWorking, childrenCli, childrenNeeds }
-  return { ...t, cliAlive, ...kids, live }
+  return { ...t, live: demoLive(tasks, t, needs) }
 }

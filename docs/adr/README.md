@@ -67,6 +67,7 @@
 | [0057](./0057-bug-route-by-ask.md)                        | 用户报的 Bug 按「提问」开关选修法，已有子对话可以升级成 Bug 流程                    | 已接受     | 2026-11-07 | 只描述 Bug 时：提问开着先问用户选完整流程还是直接修，关着默认直接修；send_to_conversation 写 kind: "bug" 把已有子对话升级；取代 0046 第 0 条的「主理判断」                                                                                    |
 | [0058](./0058-remote-password-gate.md)                    | 外部访问改成密码登录门，去掉 Cloudflare 隧道，加 Tailscale 和反向代理配置           | 已接受     | 2026-11-07 | 外网一律走密码登录（scrypt、可吊销会话、按 IP 锁定），不再认访问令牌；方式只留 frp、Tailscale、自建反代；给 Caddy / NPM / nginx 配置；frp 逐段连接测试；主端口只认本机 Host                                                                   |
 | [0059](./0059-plugin-system.md)                           | 插件系统：插件是自包含的包，从插件仓库安装，删掉不影响面板                          | 已接受     | 2026-11-09 | 插件装在数据目录，带清单、服务端和网页入口、技能、角色和工作流；面板只认 SDK；市场默认 fixcode-h/agent-plugins；Blender（含模型设计）挪成插件                                                                                                 |
+| [0063](./0063-task-live-from-server.md)                   | 对话的运行时状态只由服务端算，页面只读 live，列表变化由全局事件流推                 | 已接受     | 2026-11-12 | `TaskLive` + `taskLiveOf` 一处算；`live-store` 只读；运行时字段不落盘；`/api/app/events` 推 `tasks` / `live`，连不上才轮询（rules-check 21）                                                                                                  |
 
 状态只有四个词，别自己造近义词：
 

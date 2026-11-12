@@ -1,3 +1,4 @@
+import type { TaskLive } from '../../shared/task-live.ts'
 import { z } from 'zod'
 import type { Task } from '../../shared/schema.ts'
 import { ActionError, defineAction, type ActionCtx } from './registry.ts'
@@ -24,8 +25,11 @@ function notSelf(id: string, ctx: ActionCtx, what: string) {
 
 const enc = encodeURIComponent
 
+/** 接口回来的任务带着 live（运行时状态，shared/task-live.ts） */
+type Shown = Task & { live?: TaskLive }
+
 /** 列表、详情里给模型看的几项：对话内容不带，太长 */
-function brief(t: Task) {
+function brief(t: Shown) {
   return {
     id: t.id,
     title: t.title,
@@ -35,7 +39,9 @@ function brief(t: Task) {
     status: t.status,
     working: !!t.working,
     archived: !!t.archived,
-    childrenWorking: t.childrenWorking ?? 0,
+    // 对外的状态（执行中、等结果、等你处理……）和名下在跑的子对话数：服务端算好的 live，不自己拼
+    state: t.live?.state ?? '',
+    childrenWorking: t.live?.childrenWorking ?? 0,
     updatedAt: t.updatedAt,
   }
 }
@@ -58,7 +64,7 @@ export const taskActions = [
       const q = new URLSearchParams()
       if (pid) q.set('projectId', pid)
       if (a.parentId) q.set('parentId', a.parentId)
-      const list = (await ctx.api('GET', `/tasks?${q}`)) as Task[]
+      const list = (await ctx.api('GET', `/tasks?${q}`)) as Shown[]
       return list
         .filter((t) => a.archived || !t.archived)
         .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))
@@ -74,12 +80,12 @@ export const taskActions = [
     input: z.object({ id: ID }),
     run: async (a, ctx) => {
       const id = target(a.id, ctx)
-      const t = (await ctx.api('GET', `/tasks/${enc(id)}`)) as Task
+      const t = (await ctx.api('GET', `/tasks/${enc(id)}`)) as Shown
       const kids = (await ctx.api('GET', `/tasks?parentId=${enc(id)}`)) as Task[]
       return {
         ...brief(t),
         subtasks: t.steps.filter((s) => s.slot === 'sub').map((s) => ({ id: s.id, title: s.title, status: s.status })),
-        background: (t.jobs ?? []).map((j) => ({ id: j.id, name: j.name, state: j.state })),
+        background: (t.live?.jobs ?? []).map((j) => ({ id: j.id, name: j.name, state: j.state })),
         children: kids.map((k) => ({ id: k.id, title: k.title, status: k.status, working: !!k.working })),
       }
     },

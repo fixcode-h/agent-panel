@@ -1,3 +1,4 @@
+import { useLive } from './live-store'
 import { useEffect, useState } from 'react'
 import type { Task } from '@shared/schema'
 import { runUsage, type RunUsage } from '@shared/run-usage'
@@ -15,8 +16,10 @@ import { api } from './api'
 export function useRunUsage(task: Task, enabled = true): RunUsage {
   const [fetched, setFetched] = useState<{ id: string; run: RunUsage } | null>(null)
   // 什么时候要重新查：执行状态、这一轮结束、名下有没有子对话
-  const key = `${task.status}:${task.working}:${task.childrenWorking ?? 0}:${task.turnDoneAt ?? ''}`
-  const busy = task.status === 'running' || !!task.working || !!task.childrenWorking || helpersWorking(task)
+  // 名下在跑的子对话数在服务端给的 live 里
+  const kids = useLive(task).childrenWorking
+  const key = `${task.status}:${task.working}:${kids}:${task.turnDoneAt ?? ''}`
+  const busy = task.status === 'running' || !!task.working || kids > 0 || helpersWorking(task)
   useEffect(() => {
     if (!enabled) return
     let alive = true

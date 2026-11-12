@@ -16,7 +16,6 @@ import { log } from '../log.ts'
 import { SEARCH_CACHE_TASKS, SEARCH_CACHE_CHARS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { createIdleRelease } from './idle-release.ts'
-import { withLegacy } from './live.ts'
 
 /**
  * 对话列表类接口：列表（带 ETag）、磁盘占用、保活列表与释放、回收站列表、对话内容搜索（带消息缓存）。
@@ -51,7 +50,7 @@ export function registerListRoutes(s: TasksScope) {
    */
   s.routes.get('/bugs', async (c) => {
     const all = (await s.store.list()).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
-    return c.json(bugBriefs(await Promise.all(all.map(async (t) => withLegacy(t, await s.liveOf(t))))))
+    return c.json(bugBriefs(await Promise.all(all.map(async (t) => ({ ...t, live: await s.liveOf(t) })))))
   })
 
   /**
@@ -80,8 +79,7 @@ export function registerListRoutes(s: TasksScope) {
     const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
     // 运行时状态（还在跑的子对话数、后台命令、CLI 存活、后代在等你的数）只在 liveOf 一处算（server/tasks/live.ts）：
     // 子对话的计数是一次扫完所有父对话、按 1 秒缓存的，列表里逐个取不会每个都扫一遍。
-    // 摘要里新旧两种形状并存：live 是新的，旧的几个字段这一版照样叠上（见 withLegacy）
-    let list = await Promise.all(all.map(async (t) => taskSummary(withLegacy(t, await s.liveOf(t)))))
+    let list = await Promise.all(all.map(async (t) => taskSummary({ ...t, live: await s.liveOf(t) })))
     // 子对话不进入项目列表：按 parentId 查询时才返回它们。
     // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
     // 直接经接口建的独立运行没有父对话，照常列

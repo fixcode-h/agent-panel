@@ -12,6 +12,18 @@ export type PageSignal =
 
 const pages = new Set<(s: PageSignal) => void>()
 
+/**
+ * 同一条页面事件流上的其他推送源（任务列表和顶层对话的 live，见 server/tasks/page-feed.ts）。
+ * 一个页面只开这一条 SSE：浏览器对同一地址最多 6 条 HTTP/1.1 连接，对话页还各有一条实时推送，
+ * 每多一条常驻连接，多开两三个标签页就会把连接占满、普通请求排队卡住。
+ * 页面连上时依次调用每个推送源，返回值在断开时调用（停掉它的定时器等）。
+ */
+export type PageFeed = (send: (event: string, data: unknown) => Promise<void>) => Promise<() => void>
+const feeds: PageFeed[] = []
+export function addPageFeed(feed: PageFeed) {
+  feeds.push(feed)
+}
+
 /** 发给所有打开着的面板页面，返回有几个页面在听；没有页面时托盘直接打开新的 */
 export function signalPages(s: PageSignal) {
   for (const p of pages) p(s)
@@ -32,13 +44,22 @@ export const pageEventsApi = () =>
         wake?.()
       }
       let closed = false
+      let detach: (() => void)[] = []
+      const stop = () => {
+        for (const d of detach.splice(0)) d()
+      }
       pages.add(push)
       stream.onAbort(() => {
         closed = true
         pages.delete(push)
+        stop()
         wake?.()
       })
       await stream.writeSSE({ event: 'hello', data: '' })
+      const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
+      detach = await Promise.all(feeds.map((f) => f(send)))
+      // 推送源接上之前页面就关了：onAbort 已经跑过，这里补上收尾
+      if (closed) stop()
       while (!closed) {
         if (!queue.length) {
           // 没事时 15 秒发一次心跳，免得连接被当成空闲断掉
@@ -57,6 +78,7 @@ export const pageEventsApi = () =>
         else await stream.writeSSE({ event: 'ping', data: '' })
       }
       pages.delete(push)
+      stop()
     })
   })
 

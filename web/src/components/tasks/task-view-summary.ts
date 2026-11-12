@@ -3,7 +3,7 @@ import { useRef } from 'react'
 import type { Task } from '@shared/schema'
 import { taskSummary } from '@shared/task'
 import type { TaskPage } from '@/lib/api'
-import { windowedForSummary } from '@/lib/live-fields'
+import { windowedForSummary } from '@/lib/summary-window'
 
 export function useSummaryPush(tasks: Task[], upsertTask: (t: Task) => void) {
   // 流式输出每 200ms 推一次：任务本身马上换（对话要实时显示），全局列表的摘要最多 1 秒写一次。
@@ -38,8 +38,7 @@ export function useSummaryPush(tasks: Task[], upsertTask: (t: Task) => void) {
       prev.turnDoneAt !== next.turnDoneAt ||
       // 未读清掉（打开对话时）也是侧栏马上要反映的变化，不能等 1 秒节流
       prev.turnSeenAt !== next.turnSeenAt ||
-      prev.childrenWorking !== next.childrenWorking ||
-      (prev.jobs?.length ?? 0) !== (next.jobs?.length ?? 0) ||
+      // 子对话计数、后台命令这些运行时状态不经摘要：它们在 live-store 里，侧栏直接订阅
       (prev.requests?.length ?? 0) !== (next.requests?.length ?? 0)
     const now = Date.now()
     if (important || now - summaryAt.current >= 1000) {

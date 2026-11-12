@@ -3,6 +3,7 @@
  * 只列进程还活着的、父对话的「有子对话在跑」和 CLI 生命周期约定。
  * 运行：npm run test:unit
  */
+import { taskLiveOf } from '../shared/task-live.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../shared/i18n.ts'
@@ -223,13 +224,15 @@ test('父对话的「执行中」：自己有子对话在跑时也算，但不�
     working: false,
   }
   const parsed = Task.parse(base)
-  // 摘要里带上 childrenWorking 时，侧栏据此转圈
-  const withKids = taskSummary({ ...parsed, childrenWorking: 2 })
-  assert.equal(withKids.childrenWorking, 2)
-  assert.equal(withKids.status, 'done', '任务本身仍然是完成：不因为子对话在跑就把状态改成执行中')
-  assert.equal(withKids.working, false, '也不是父对话自己在跑')
-  // 没有子对话在跑时字段不出现，侧栏按原来的 working 判断
-  assert.equal(taskSummary(parsed).childrenWorking, undefined)
+  // 名下子对话在跑：服务端给的 live 是「等结果」，侧栏据此转圈（shared/task-live.ts）
+  const rt = { cliAlive: false, jobs: [], childrenWorking: 2, childrenCli: 0, childrenNeeds: 0 }
+  assert.equal(taskLiveOf(parsed, rt).state, 'waiting')
+  const summary = taskSummary(parsed)
+  assert.equal(summary.status, 'done', '任务本身仍然是完成：不因为子对话在跑就把状态改成执行中')
+  assert.equal(summary.working, false, '也不是父对话自己在跑')
+  // 运行时的计数不在任务记录上，只在 live 里
+  assert.equal('childrenWorking' in summary, false)
+  assert.equal(taskLiveOf(parsed, { ...rt, childrenWorking: 0 }).state, 'done')
 })
 
 test('子对话计数：在跑又带着没做完计划的，归「执行中」，和行内「执行中」标签、转圈图标同一批', () => {

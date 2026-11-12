@@ -40,7 +40,7 @@ import { SessionContextBody, useSessionContext } from '@/components/session/Sess
 import { Progress } from '@/components/ui/progress'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
-import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
+import { WorktreeMark, WorktreeSection, useWorktrees, useWorktreeKey } from './Worktrees'
 import { META_CHIP } from './chip'
 import { TestRunsChip } from './TestRuns'
 import { ToolFailuresChip } from './ToolFailuresChip'
@@ -506,7 +506,7 @@ export function EnvChip({
   const limited = [...ids].filter((c) => hasLimits(c) && cliSettings(s, c).showLimits)
   // 在独立分支里：分支那块写「开出的分支 → 独立分支」，后面标合没合回去
   const wt = task.worktree?.state === 'active' ? task.worktree : null
-  const own = useWorktrees(task.id, worktreeKey(task), !!wt)?.find((x) => x.taskId === task.id)
+  const own = useWorktrees(task.id, useWorktreeKey(task), !!wt)?.find((x) => x.taskId === task.id)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger

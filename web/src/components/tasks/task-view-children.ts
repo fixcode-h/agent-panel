@@ -3,6 +3,7 @@
  * 从 TaskView.tsx 拆出来（文件行数上限，见 docs/lessons/file-caps.md）；两个 hook 分别在原来那几行的位置调用，
  * hook 和 effect 的先后不变
  */
+import { useLiveById } from '@/lib/live-store'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import type { StopReason } from '@shared/schema'
@@ -102,7 +103,9 @@ export function useChildPolling(task: TaskPage | null, trace: ReturnType<typeof 
           .map((m) => m.id),
       ].join(',')
   // 后代在等你确认的个数也算：子对话弹出权限确认时它不一定推新消息，靠这个数把列表（和确认行）拉回来
-  const childScan = `${task?.childrenWorking ?? 0}|${task?.childrenCli ?? 0}|${task?.childrenNeeds ?? 0}`
+  // 这几个计数在服务端给的 live 里（web/src/lib/live-store.ts）
+  const live = useLiveById(task?.id)
+  const childScan = `${live?.childrenWorking ?? 0}|${live?.childrenCli ?? 0}|${live?.childrenNeeds ?? 0}`
   const childSignalSeen = useRef({ taskId: '', key: '' })
   useEffect(() => {
     if (!task?.id || task.parentTaskId) return

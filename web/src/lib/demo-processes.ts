@@ -1,4 +1,5 @@
 /** 演示的进程面板和内存曲线：稳定的假进程、关掉进程、内存历史和分析，从 demo-backend.ts 拆出来（文件行数上限） */
+import { demoJobs } from './demo-jobs'
 import {
   Project,
   Task,
@@ -137,7 +138,7 @@ export const demoChildActive = (x: Task) =>
   convActive(
     convState(
       childFacts(x, {
-        background: (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length,
+        background: demoJobs(x).filter((j) => j.state === 'running' || j.state === 'queued').length,
       }),
     ),
   )

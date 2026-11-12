@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
+import { taskLiveOf } from '@shared/task-live'
 import {
   closeMiniTask,
   dockStateOf,
@@ -67,7 +68,15 @@ describe('mini-task 路由', () => {
 // 完整 Task 有几十个字段、与判定无关。注意：以后 taskFacts 新增字段时这里不会报错，只会静默算错，
 // 加字段时记得同步这个工厂（真实数据走 useData().tasks 的完整摘要，不受影响）
 const task = (extra: Record<string, unknown> = {}) =>
-  ({ status: 'done', steps: [], working: false, ...extra }) as unknown as Parameters<typeof dockStateOf>[0]
+  ({ status: 'done', steps: [], working: false, ...extra }) as unknown as NonNullable<Parameters<typeof dockStateOf>[0]>
+/** 浮条只读服务端给的 live：这里用同一个 taskLiveOf 从任务事实算出来（没有进程、后台命令、子对话） */
+const dock = (extra: Record<string, unknown> = {}) => {
+  const t = task(extra)
+  return dockStateOf(
+    t,
+    taskLiveOf(t, { cliAlive: false, jobs: [], childrenWorking: 0, childrenCli: 0, childrenNeeds: 0 }),
+  )
+}
 
 describe('mini-task 浮条状态', () => {
   it('对话不在列表里时是「对话已关闭」', () => {
@@ -75,28 +84,28 @@ describe('mini-task 浮条状态', () => {
   })
 
   it('跑完的对话是「已完成」', () => {
-    assert.equal(dockStateOf(task()), 'done')
+    assert.equal(dock(), 'done')
   })
 
   it('正在执行的对话是「进行中」', () => {
-    assert.equal(dockStateOf(task({ status: 'running', working: true })), 'running')
+    assert.equal(dock({ status: 'running', working: true }), 'running')
   })
 
   it('在等用户回答的对话是「等你处理」，不是「已结束」', () => {
-    assert.equal(dockStateOf(task({ status: 'running', requests: [{ step: '1', at: '' }] })), 'needs')
+    assert.equal(dock({ status: 'running', requests: [{ step: '1', at: '' }] }), 'needs')
   })
 
   it('在跑但同时等你回答：优先显示「等你处理」，不是「进行中」', () => {
-    // convState 里 needs 优先于 working；先判 taskBusy 会把它吞成进行中
-    assert.equal(dockStateOf(task({ status: 'running', working: true, requests: [{ step: '1', at: '' }] })), 'needs')
+    // convState 里 needs 优先于 working；先判在忙会把它吞成进行中
+    assert.equal(dock({ status: 'running', working: true, requests: [{ step: '1', at: '' }] }), 'needs')
   })
 
   it('执行失败的对话是「失败」，不是「已结束」', () => {
-    assert.equal(dockStateOf(task({ status: 'failed' })), 'failed')
+    assert.equal(dock({ status: 'failed' }), 'failed')
   })
 
   it('停下了的对话是「已结束」', () => {
-    assert.equal(dockStateOf(task({ status: 'stopped', stopReason: 'idle' })), 'ended')
+    assert.equal(dock({ status: 'stopped', stopReason: 'idle' }), 'ended')
   })
 })
 

@@ -31,10 +31,7 @@ export function createLive(sc: TasksScope, childCounts: ChildCounts) {
     })
   }
 
-  /**
-   * 交给界面的任务带上 live。旧字段（cliAlive、jobs、childrenWorking……）这一版还照样叠在任务上，
-   * 新旧两种形状并存，等页面都改读 live 后再删（见 shared/task-live.ts）
-   */
+  /** 交给界面的任务带上 live：运行时字段只在 live 里，任务记录本身不带（见 shared/task-live.ts） */
   async function withLive(task: Task): Promise<TaskWithLive> {
     // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
     if (reapLostJobs(task, sc.background.known, sc.background.lostNote)) {
@@ -47,16 +44,8 @@ export function createLive(sc: TasksScope, childCounts: ChildCounts) {
           log.warn('background', '收口丢失的后台命令失败', { task: task.id, error: (err as Error).message }),
         )
     }
-    const live = await liveOf(task)
-    return withLegacy(task, live)
+    return { ...task, live: await liveOf(task) }
   }
 
   return { liveOf, withLive }
-}
-
-/** 新旧形状并存期间：把 live 里的几项照旧叠到任务上（老页面、导出、AI 处理还在读） */
-export function withLegacy(task: Task, live: TaskLive): TaskWithLive {
-  const { jobs, cliAlive, childrenWorking, childrenCli, childrenNeeds } = live
-  const kids = task.parentTaskId ? { childrenNeeds } : { childrenWorking, childrenCli, childrenNeeds }
-  return { ...task, jobs, cliAlive, ...kids, live }
 }

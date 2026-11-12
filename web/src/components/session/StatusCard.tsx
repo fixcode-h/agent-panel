@@ -1,3 +1,4 @@
+import { useLive } from '@/lib/live-store'
 import { useEffect, useMemo, useState } from 'react'
 import {
   BellRing,
@@ -55,7 +56,23 @@ export function StatusCard({ task, kids = [] }: { task: Task; kids?: (ChildEntry
     const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
   }, [])
-  const d = useMemo(() => diagnoseTask(task, kids, now), [task, kids, now])
+  // 运行时的几项（CLI 存活、后台命令、名下子对话计数）只从服务端给的 live 来
+  const live = useLive(task)
+  const d = useMemo(
+    () =>
+      diagnoseTask(
+        {
+          ...task,
+          cliAlive: live.cliAlive,
+          jobs: live.jobs,
+          childrenWorking: live.childrenWorking,
+          childrenNeeds: live.childrenNeeds,
+        },
+        kids,
+        now,
+      ),
+    [task, live, kids, now],
+  )
   const items = d.items.filter((x) => x.kind !== 'child')
   return (
     <SessionCard id="status" title={t('状态')}>

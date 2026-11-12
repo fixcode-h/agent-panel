@@ -10,7 +10,7 @@
  */
 import { z } from 'zod'
 import { TaskJob, type Task } from './schema.ts'
-import { convActive, taskFacts, type TaskFactsInput } from './task.ts'
+import { convActive, taskFacts, taskTurnUnread, type TaskFactsInput } from './task.ts'
 import { kindWord, stateKind, type StateKind } from './task-word.ts'
 
 export const ConvStateSchema = z.enum([
@@ -33,6 +33,11 @@ export const TaskLive = z.object({
   wait: z.enum(['children', 'helpers', 'background', 'workflow']).optional(),
   /** 交了 Bug 诊断报告等你确认（ADR 0045）：状态仍是执行中，短词写「报告待确认」 */
   report: z.boolean().optional(),
+  /**
+   * 停在等下一句：这一轮说完了，CLI 还活着在等用户的下一条消息（「等待你的下一条消息」只认它）。
+   * 以前各处拿 status === 'running' && cliAlive && !working 自己拼
+   */
+  next: z.boolean(),
   /**
    * 这个对话现在有活着的 CLI 进程（按真实进程登记算）：
    * 「等待你的下一条消息」、标题流光、侧栏提示只认它，CLI 关了就绝不显示
@@ -61,7 +66,8 @@ export type LiveFactsInput = Omit<TaskFactsInput, 'jobs' | 'childrenWorking' | '
  */
 export function taskLiveOf(task: LiveFactsInput, rt: LiveRuntime): TaskLive {
   const facts = { ...task, jobs: rt.jobs, childrenWorking: rt.childrenWorking, childrenNeeds: rt.childrenNeeds }
-  return { ...liveKind(facts), ...rt }
+  const next = rt.cliAlive && task.status === 'running' && !task.working
+  return { ...liveKind(facts), next, ...rt }
 }
 
 /** 状态分类：和 taskWord 同一份事实（shared/task-word.ts），只是不带文字 */
@@ -77,6 +83,26 @@ export const liveBusy = (l: Pick<TaskLive, 'state'> | undefined) => l?.state ===
 
 /** 还在运行（不能被回收、失活）：见 convActive */
 export const liveActive = (l: Pick<TaskLive, 'state'> | undefined) => !!l && convActive(l.state)
+
+/**
+ * 行首要不要画橙点（「这一轮做完、你还没看」）：和 taskDoneDot 同一口径，状态读 live。
+ * 未读是上一轮完成时留下的历史事实，对话后来又跑起来时它还在：只有确实停在完成态才画，当前打开的不画
+ */
+export function liveDoneDot(
+  task: Pick<Task, 'turnDoneAt' | 'turnSeenAt'>,
+  live: Pick<TaskLive, 'state' | 'jobs'>,
+  viewing = false,
+) {
+  return liveDot(
+    live,
+    taskTurnUnread({ turnDoneAt: task.turnDoneAt, turnSeenAt: task.turnSeenAt, jobs: live.jobs }),
+    viewing,
+  )
+}
+
+/** 同上，「未读」由调用方给（侧栏会叠上本地刚点开过的那一轮） */
+export const liveDot = (live: Pick<TaskLive, 'state'>, unread: boolean, viewing = false) =>
+  unread && !viewing && live.state === 'done'
 
 /** 「等结果」时在等什么、名下子对话在等你时也写出来；别的状态是空串（和 taskWaitText 同一口径） */
 export const liveWaitText = (l: Pick<TaskLive, 'state' | 'need' | 'wait' | 'report'> | undefined) =>
@@ -95,4 +121,4 @@ export const NOT_STORED_FIELDS = [
   'childrenNeeds',
   'childrenCli',
   'askedAt',
-] as const satisfies readonly (keyof Task)[]
+] as const

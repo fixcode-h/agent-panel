@@ -15,7 +15,6 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../../shared/task-export.ts'
 import { runTree } from '../../shared/run-usage.ts'
-import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
@@ -52,23 +51,18 @@ export function registerReadRoutes(s: TasksScope) {
       let seen = ''
       const send = (event: string, data: unknown, version = '') =>
         stream.writeSSE({ event, data: JSON.stringify(data), ...(version ? { id: version } : {}) })
-      const jobKey = () =>
-        s.background
-          .list(id)
-          .filter((j) => j.state === 'queued' || j.state === 'running')
-          .map((j) => `${j.id}:${j.state}`)
-          .join(',')
-      // 名下子对话还在运行的数量也要比：子对话开始、做完不改父对话本身，标题栏的转圈要跟着变。
-      // CLI 进程退出也不一定改任务本身（回收保活、进程自己挂掉），「等待你的下一条消息」要马上撤掉
-      const liveKey = async () =>
-        `${jobKey()}|${await s.activeChildren(id)}|${taskCliAlive(id) ? 1 : 0}|${await s.cliChildren(id)}`
       while (!closed) {
         // 没在执行的任务先只看任务本身的更新时间：完整对话在内存里只留十几个，被挤出去后
         // 每秒都 current() 一次就是每秒从磁盘重读、校验一遍几 MB 的对话；没变就不用读
         const e = s.live.get(id)
         if (!e && meta) {
           const head = await s.store.peek(id)
-          if (head && `${head.updatedAt}|${await liveKey()}` === seen.slice(seen.indexOf('#') + 1)) {
+          // 运行时状态也要比：后台命令开始结束、子对话开始做完、CLI 进程退出都不一定改任务本身，
+          // 标题栏的转圈、「等待你的下一条消息」要跟着变。live 只读任务本身和进程登记，不读对话
+          if (
+            head &&
+            `${head.updatedAt}|${JSON.stringify(await s.liveOf(head))}` === seen.slice(seen.indexOf('#') + 1)
+          ) {
             if (Date.now() - beat > 15_000) {
               await stream.writeSSE({ event: 'ping', data: '' })
               beat = Date.now()
@@ -85,9 +79,9 @@ export function registerReadRoutes(s: TasksScope) {
         const t = await s.withLive(cur)
         // 没有变化时什么都不比较：长任务的消息很多，每次都逐条比较、序列化会拖慢整个服务。
         // 后台命令开始、结束、子对话开始做完都不一定改任务本身（对话空闲时），单独算进去
-        const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
+        // 运行时状态（live）整份进比较键：状态、后台命令、子对话计数、CLI 存活任何一项变了都要推
         // # 后面是不在执行时的比较键（只用任务本身的更新时间），上面那一步不读对话就能比
-        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}|${t.childrenNeeds ?? 0}|${t.cliAlive ? 1 : 0}|${t.childrenCli ?? 0}`
+        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${JSON.stringify(t.live)}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })

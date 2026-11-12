@@ -30,8 +30,9 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, planLeft, taskBusy, taskDoneDot, taskState } from '@shared/task'
-import { taskWord } from '@shared/task-word'
+import { askedAt, byAskedAt, planLeft } from '@shared/task'
+import { liveBusy, liveDot, liveWord, type TaskLive } from '@shared/task-live'
+import { useLive, useLiveOf } from '@/lib/live-store'
 import { pendingAction } from '@shared/user-action'
 import {
   SIDEBAR_GROUP_LABEL,
@@ -110,21 +111,22 @@ export function TaskRow({
   // 刚建好的对话（不到 3 秒）插进列表时播一次入场（index.css 的 row-enter），一眼看出是哪一行新加的；
   // 只在挂载时判定一次，首次加载、切换项目时列出来的老对话不播
   const [fresh] = useState(() => Date.now() - Date.parse(task.createdAt) < FRESH_MS)
+  // 状态只读服务端给的 live（和标题栏、项目首页同一份，见 web/src/lib/live-store.ts）：自己在执行、
+  // 在等子对话 / 子任务 / 后台命令 / 工作流都转圈；有没回复的提问、请求是「需要你处理」
+  const live = useLive(task)
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
-  // 状态只从 taskState 来（和标题栏、项目首页同一个判定）：自己在执行、在等子对话 / 子任务 / 后台命令 / 工作流
-  // 都转圈；有没回复的提问、请求是「需要你处理」
-  const state = taskState(task)
-  const busy = state === 'running' || state === 'waiting'
+  const state = live.state
+  const busy = liveBusy(live)
   // 自己或名下子对话有活着的 CLI：标题流光，不点开也能看出来
-  const alive = cliTreeAlive(task)
+  const alive = cliTreeAlive(live)
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
   // AI 分析开出的对话：标题前加强调色的标签，和普通对话一眼分开
   const analysis = isAnalysisTask(task, agents)
   const attention = state === 'needs' ? 'ask' : busy ? 'running' : state === 'failed' ? 'failed' : ''
-  // 橙点只在对话真的停在完成态、而且不是当前打开的那个时才画（见 taskDoneDot）：
+  // 橙点只在对话真的停在完成态、而且不是当前打开的那个时才画（见 liveDot）：
   // 未读可能是上一轮留下的，对话后来又跑起来时会和转圈撞在同一行
-  const unreadDot = taskDoneDot(task, !!unread, active)
+  const unreadDot = liveDot(live, !!unread, active)
   // 计划没做完就停下了：行尾写「未完成 / 卡住 x/y」（ADR 0041），不再像做完了一样只画橙点
   const left = state === 'unfinished' ? planLeft(task) : undefined
   return (
@@ -170,7 +172,7 @@ export function TaskRow({
                     {attention === 'ask' ? (
                       // Agent 在等你确认操作或回答问题
                       <CircleAlert
-                        aria-label={taskWord(task).word}
+                        aria-label={liveWord(live)}
                         className="h-3.5 w-3.5 shrink-0 text-warning"
                         strokeWidth={2.4}
                       />
@@ -185,7 +187,7 @@ export function TaskRow({
                   {analysis && <AnalysisMark kind={task.analysis} />}
                   {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
                   <span
-                    title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+                    title={alive ? `${task.title}\n${cliAliveHint(live)}` : undefined}
                     className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
                     style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
                   >
@@ -215,7 +217,7 @@ export function TaskRow({
                 title={
                   // 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上
                   <span
-                    title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+                    title={alive ? `${task.title}\n${cliAliveHint(live)}` : undefined}
                     className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
                     style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
                   >
@@ -227,9 +229,9 @@ export function TaskRow({
                   <TaskRowStatus
                     needs={attention === 'ask'}
                     // 等的是什么（等你回答 / 等你确认 / 子对话等你处理）和标题栏、输入框占位同一个短词（分析稿 A8、U2）
-                    needsText={attention === 'ask' ? taskWord(task).word : undefined}
+                    needsText={attention === 'ask' ? liveWord(live) : undefined}
                     acting={attention === 'ask' && !!pendingAction(task)}
-                    kids={busy ? (task.childrenWorking ?? 0) : 0}
+                    kids={busy ? live.childrenWorking : 0}
                     running={busy}
                     failed={attention === 'failed'}
                     left={left}
@@ -257,10 +259,10 @@ export const FILTERS: { id: TaskFilter; label: string }[] = [
   { id: 'archived', label: t('已归档') },
 ]
 
-/** 按标题和第一条要求搜索，按状态筛选；归档的只在「已归档」里出现 */
-export function matchTask(tk: Task, query: string, filter: TaskFilter) {
+/** 按标题和第一条要求搜索，按状态筛选（状态读服务端给的 live）；归档的只在「已归档」里出现 */
+export function matchTask(tk: Task, query: string, filter: TaskFilter, live: TaskLive) {
   if (filter === 'archived' ? !tk.archived : tk.archived) return false
-  if (filter === 'running' && !taskBusy(tk)) return false
+  if (filter === 'running' && !liveBusy(live)) return false
   if (filter === 'failed' && tk.status !== 'failed') return false
   if (filter === 'waiting' && !tk.requests?.length && !tk.awaitingUser) return false
   const q = query.trim().toLowerCase()
@@ -435,8 +437,9 @@ export function ChatList() {
   // 子对话不进 Chat 列表（导入带子对话的聊天时它们也没有项目），在父对话里看；
   // 插件整页管的对话（例如模型设计，不属于项目）在插件页里列，不混进聊天
   const owned = useOwnedByPlugin()
+  const liveOf = useLiveOf()
   const chats = tasks
-    .filter((x) => !x.projectId && !x.parentTaskId && !owned(x) && matchTask(x, query, filter))
+    .filter((x) => !x.projectId && !x.parentTaskId && !owned(x) && matchTask(x, query, filter, liveOf(x)))
     .sort(byAskedAt)
   const filtering = !!query.trim() || filter !== 'all'
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)

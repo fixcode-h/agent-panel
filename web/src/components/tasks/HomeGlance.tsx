@@ -1,7 +1,9 @@
 import { BookOpen, ChevronRight, Coffee, Folder, MessageSquare, TestTube, Wrench, type LucideIcon } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { overviewRows, type OverviewRow } from '@shared/overview'
-import { taskWaitText, timeAgo } from '@shared/task'
+import { timeAgo } from '@shared/task'
+import { liveWaitText } from '@shared/task-live'
+import { useLive, useLiveOf } from '@/lib/live-store'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { StatusPill } from '@/components/ui/status-pill'
@@ -42,6 +44,7 @@ export function HomeGlance({ onExample }: { onExample: (prompt: string) => void 
   const { projects } = useData()
   const { go } = useNav()
   const [away] = useAway()
+  const liveOf = useLiveOf()
   if (!tasksLoaded) return null
 
   if (!tasks.length)
@@ -68,7 +71,7 @@ export function HomeGlance({ onExample }: { onExample: (prompt: string) => void 
       </section>
     )
 
-  const rows = overviewRows(tasks)
+  const rows = overviewRows(tasks, liveOf)
   // 只列得下三件：真要你回答的排最前，其次是失败的，做完没看的最后（组内原本按时间排，这里是稳定排序）
   const urgency = (r: OverviewRow) => (r.state === 'needs' ? 0 : r.state === 'failed' ? 1 : 2)
   const waiting = rows.filter((r) => r.group === 'you').sort((a, b) => urgency(a) - urgency(b))
@@ -136,7 +139,8 @@ export function HomeGlance({ onExample }: { onExample: (prompt: string) => void 
 function GlanceRow({ r, project, onOpen }: { r: OverviewRow; project: string; onOpen: () => void }) {
   const { task, state } = r
   const Icon = task.projectId ? Folder : MessageSquare
-  const note = state === 'waiting' ? taskWaitText(task) : ''
+  const live = useLive(task)
+  const note = state === 'waiting' ? liveWaitText(live) : ''
   return (
     <li>
       <button

@@ -15,7 +15,7 @@
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 11. 界面检查用例必须写在 runShard 的回调里：`scripts/ui/` 分片里 runShard 调用之后的代码永远不执行
 // 12. 提示只能从 web/src/lib/toast.ts 取 toast：直接从 sonner 引会绕过排队（例外写 `sonner-toast-ok: 原因`）
-// 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
+// 13. 「完成未看」的橙点只读 liveDoneDot / liveDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
 // 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
@@ -23,6 +23,7 @@
 // 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
 // 19. 状态只认工具调用：判定逻辑不调用按回复文字识别结论 / 决定的函数（parseVerdict / leadVerdict / parseDispatch）
 // 20. 给 Agent 的规则每条只有一个出处：内置角色设定、面板提示词、方法类技能之间，同一句（30 字以上）不许出现在两个文件里（ADR 0048）
+// 21. 页面不自己推对话状态：web/src 里（演示后端除外）不调用 taskState / taskBusy / taskActive / taskDoneDot 等，改读服务端给的 live
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -395,8 +396,8 @@ for (const f of files) {
   })
 }
 
-// 13. 「完成未看」的橙点只在 shared/task.ts 的 taskDoneDot 一处判：组件里直接比 turnDoneAt / turnSeenAt
-// 会和 taskState 各算一套，对话后来又跑起来时橙点和转圈同时出现在一行（见 docs/lessons/ui.md）
+// 13. 「完成未看」的橙点只在 shared/task-live.ts 的 liveDoneDot / liveDot 一处判：组件里直接比 turnDoneAt / turnSeenAt
+// 会和 live.state 各算一套，对话后来又跑起来时橙点和转圈同时出现在一行（见 docs/lessons/ui.md）
 for (const f of files) {
   if (!/^web\/src\/components\/.+\.tsx?$/.test(f) || /\.test\.tsx?$/.test(f)) continue
   read(f)
@@ -404,7 +405,7 @@ for (const f of files) {
     .forEach((l, i) => {
       if (/\bturnDoneAt\b/.test(l) && /\bturnSeenAt\b/.test(l) && /[!=]==?/.test(l) && !/dot-ok/.test(l))
         errors.push(
-          `${f}:${i + 1} 组件里直接比较 turnDoneAt / turnSeenAt 判「完成未看」，改读 shared/task.ts 的 taskDoneDot（见 docs/lessons/ui.md）：${l.trim()}`,
+          `${f}:${i + 1} 组件里直接比较 turnDoneAt / turnSeenAt 判「完成未看」，改读 shared/task-live.ts 的 liveDoneDot / liveDot（见 docs/lessons/ui.md）：${l.trim()}`,
         )
     })
 }
@@ -566,6 +567,25 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
       errors.push(
         `同一条规则写在了 ${[...at].join('、')}：只留一个出处，别处写一行指针（ADR 0048）：${line.slice(0, 60)}…`,
       )
+}
+
+// 21. 页面不自己推对话状态（重构文档第 2 条，ADR 0063）：状态由服务端 server/tasks/live.ts 算好放进 live，
+// 页面只读 live（web/src/lib/live-store.ts）。页面拿到的任务记录里没有进程、后台命令、子对话计数这些运行时事实，
+// 在页面里调 taskState 一类函数会静默算错（以前侧栏、标题、项目首页各自叠字段再算，转圈和提问图标对不上）。
+// 演示后端（web/src/lib/demo-*.ts）扮演服务端，可以调；确实要用的行写 `live-ok: 原因`
+{
+  const derive = /\b(taskState|taskBusy|taskActive|taskWaitText|taskDoneDot|taskBusyCount|taskFacts|convState)\(/
+  for (const f of files) {
+    if (!/^web\/src\/.+\.tsx?$/.test(f) || /\.test\.tsx?$/.test(f) || /^web\/src\/lib\/demo-/.test(f)) continue
+    read(f)
+      .split('\n')
+      .forEach((l, i) => {
+        if (derive.test(l) && !/live-ok/.test(l))
+          errors.push(
+            `${f}:${i + 1} 页面里自己推对话状态，改读服务端给的 live（useLive / liveFor，shared/task-live.ts 的 live* 函数，ADR 0063）：${l.trim()}`,
+          )
+      })
+  }
 }
 
 if (errors.length) {

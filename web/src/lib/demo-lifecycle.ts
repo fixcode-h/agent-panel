@@ -1,3 +1,4 @@
+import { demoJobs } from './demo-jobs'
 import type { Task } from '@shared/schema'
 import {
   countDone,
@@ -49,7 +50,7 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
       held: 0,
       cliAlive: alive,
       helpers: tk.steps.filter((s) => s.slot === 'sub' && (s.status === 'running' || s.status === 'pending')).length,
-      jobs: tk.jobs?.length ?? 0,
+      jobs: demoJobs(tk).length,
       waitsOn: [],
       trace: tk.working ? { requests: 11, requestAt: now - 54_000, lastOutputAt: now - 60_000 } : undefined,
       exit: alive ? undefined : { at: now - 600_000, code: 0, aliveMs: 240_000 },

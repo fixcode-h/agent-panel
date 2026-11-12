@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { useNav, useTasks } from '@/lib/data'
 import { closeMiniTask, dockStateOf, miniTaskState, shownInPage, subscribeMiniTask, taskRoute } from '@/lib/mini-task'
+import { useLive } from '@/lib/live-store'
 import { MinimizedChat } from '@/components/ui/minimized-chat'
 
 /** 浮条上的标题：太长本来就会被浮条截断，这里只挡住异常长的 */
@@ -26,7 +27,7 @@ export function TaskDock() {
   const { go, route } = useNav()
   const current = mini.task
   const task = current ? tasks.find((x) => x.id === current.id) : undefined
-  const state = dockStateOf(task)
+  const state = dockStateOf(task, useLive(task))
   const running = state === 'running'
   // 收起期间跑完了：没展开过就点一个红点（和 AI 窗口的提醒方式一致）
   const [unseen, setUnseen] = useState(false)

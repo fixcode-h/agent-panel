@@ -1,12 +1,13 @@
 /**
  * 跨项目的对话总览（左侧图标栏「对话总览」）：所有项目的顶层对话按「要不要你管」分组。
  * 侧栏是「项目 → 对话」树、每个项目只露几条，项目一多就看不出哪些在等你、哪些停住了；
- * 这里只做分组和排序，状态判定全部读 shared/task.ts（taskState / taskBusy / taskDoneDot）和 openPlan。
+ * 这里只做分组和排序，状态全部读服务端给的 live（shared/task-live.ts，调用方传 liveOf）和 openPlan。
  */
 import { treeUsage } from './budget.ts'
 import { openPlan } from './plan.ts'
 import type { Task } from './schema.ts'
-import { askedAt, taskDeleted, taskDoneDot, taskState, taskTurnUnread, type ConvState } from './task.ts'
+import { askedAt, taskDeleted, type ConvState } from './task.ts'
+import { liveDoneDot, type TaskLive } from './task-live.ts'
 
 /** you：等你处理（提问、失败、做完没看）；stalled：停住了（计划没做完、也没在跑）；running：执行中或在等结果 */
 export type OverviewGroup = 'you' | 'stalled' | 'running' | 'rest'
@@ -28,7 +29,7 @@ export interface OverviewRow {
  * 分好组的行：每组按最后活动从新到旧。只列顶层对话（子对话算进父对话的 token 和「在跑的子对话」），
  * 回收站里的、归档的不列
  */
-export function overviewRows(tasks: Task[]): OverviewRow[] {
+export function overviewRows(tasks: Task[], liveOf: (t: Task) => TaskLive): OverviewRow[] {
   const kids = new Map<string, Task[]>()
   for (const tk of tasks)
     if (tk.parentTaskId && !taskDeleted(tk)) kids.set(tk.parentTaskId, [...(kids.get(tk.parentTaskId) ?? []), tk])
@@ -42,11 +43,12 @@ export function overviewRows(tasks: Task[]): OverviewRow[] {
   for (const tk of tasks) {
     if (tk.parentTaskId || tk.archived || taskDeleted(tk)) continue
     const below = subtree(tk.id)
-    const state = taskState(tk)
+    const live = liveOf(tk)
+    const state = live.state
     const plan = openPlan(tk)
     const busy = state === 'running' || state === 'waiting'
     const group: OverviewGroup =
-      state === 'needs' || state === 'failed' || taskDoneDot(tk, taskTurnUnread(tk))
+      state === 'needs' || state === 'failed' || liveDoneDot(tk, live)
         ? 'you'
         : busy
           ? 'running'
@@ -58,7 +60,7 @@ export function overviewRows(tasks: Task[]): OverviewRow[] {
       group,
       state,
       kidsBusy: below.filter((k) => {
-        const s = taskState(k)
+        const s = liveOf(k).state
         return s === 'running' || s === 'waiting' || s === 'needs'
       }).length,
       tokens: usage(tk.id).tokens,

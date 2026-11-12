@@ -1,3 +1,4 @@
+import { demoJobStore, demoJobs, setDemoJobs } from './demo-jobs'
 import { demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
 import { demoChildRows } from './demo-children'
@@ -205,6 +206,8 @@ interface Db {
   globalLessons?: GlobalLesson[]
   /** 演示里见过的后台命令（含已经结束的）：和任务一起存，刷新页面后仍然回看得到，见 demoJobView */
   seenJobs?: Record<string, TaskJob>
+  /** 对话上还在跑的后台命令（不属于任务记录，见 demo-jobs.ts） */
+  taskJobs?: Record<string, TaskJob[]>
 }
 
 /** 演示里的全局教训：一条从别的项目提取来的 */
@@ -821,6 +824,13 @@ function load(): Db {
   // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
   // 真实后端走 Task.safeParse，演示版得自己补。注意不能写成 `(db.tasks ?? [])`：还没 seed 过的库里不能凭空造一个
   // 空数组（空数组是真值，下面 handle() 里 `if (!d.tasks)` 就再也不会建示例任务了）
+  // 后台命令不属于任务记录（shared/task-live.ts）：单独一张表，旧演示数据挂在任务上的那份搬过去
+  db.taskJobs ??= {}
+  for (const t of db.tasks ?? []) {
+    const legacy = (t as Task & { jobs?: TaskJob[] }).jobs
+    if (legacy) db.taskJobs[t.id] = legacy
+  }
+  demoJobStore.map = db.taskJobs
   if (db.tasks) db.tasks = db.tasks.map((t) => Task.parse(t))
   // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
   const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
@@ -2281,7 +2291,13 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     }))
   // 演示没有真的 CLI 进程：保活列表一直是空的
   if (res === 'tasks' && id === 'keepalive') return sub === 'release' ? { released: [] } : []
-  if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
+  if (res === 'tasks') {
+    // 和正式后端一样：回给界面的任务一律带上 live（server/tasks.ts 的中间件），停止、改名顺手回的也带
+    const out = await tasksRoute(method, id, sub, query, body, seg[3])
+    const isTask = (x: unknown): x is Task =>
+      !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
+    return isTask(out) && !('live' in out) ? demoWithLive(d.tasks ?? [], out) : out
+  }
   // 演示里的 AI 不会请求确认，也不会提问
   if (res === 'asks') return method === 'GET' ? [] : { ok: true }
   if (res === 'usage') return demoUsage(d, query)
@@ -2488,7 +2504,7 @@ const demoMerged = new Set<string>()
  */
 function demoJobView(task: Task, jobId: string): TaskJobView {
   const d = load()
-  const live = (task.jobs ?? []).find((j) => j.id === jobId)
+  const live = demoJobs(task).find((j) => j.id === jobId)
   const seen = (d.seenJobs ??= {})
   if (live) seen[live.id] = live
   const job = live ?? seen[jobId]
@@ -3619,7 +3635,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           runId: 1,
         })
       }
-      it.jobs = [
+      setDemoJobs(it, [
         {
           id: `job-${it.id}`,
           ...(subId ? { step: subId } : {}),
@@ -3628,7 +3644,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           state: 'running' as const,
           startedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
         },
-      ]
+      ])
     }
     // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
     if (how.alive) live.set(it.id, { stop: false })

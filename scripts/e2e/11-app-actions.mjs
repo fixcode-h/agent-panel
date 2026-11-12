@@ -22,7 +22,7 @@ await runShard('Agent 操控软件', async (api) => {
   // ---- 用户说「停掉所有后台任务」：对话自己调 task.stop_background，后台命令停下，对话本身不停 ----
   {
     let parent = await chat('BG_LONG BG_SLOW 起一个慢命令')
-    parent = await waitTask(parent.id, (t) => (t.jobs ?? []).some((j) => j.state === 'running'), 20000)
+    parent = await waitTask(parent.id, (t) => (t.live?.jobs ?? []).some((j) => j.state === 'running'), 20000)
     await waitDone(parent.id, 20000).catch(() => {})
     await call('POST', `/tasks/${parent.id}/messages`, {
       text: '停掉所有后台任务 APP_DO:{"action":"task.stop_background"}',
@@ -31,7 +31,7 @@ await runShard('Agent 操控软件', async (api) => {
     const got = panelLog().find((x) => x.name === 'app_do')
     assert.equal(got.isError, false, `app_do 执行成功：${got.text}`)
     assert.match(got.text, /"stopped": 1/, '停了那一条后台命令')
-    const after = await waitTask(parent.id, (t) => !(t.jobs ?? []).some((j) => j.state === 'running'), 20000)
+    const after = await waitTask(parent.id, (t) => !(t.live?.jobs ?? []).some((j) => j.state === 'running'), 20000)
     assert.ok(after, '后台命令停下了')
     assert.ok(
       calls().some((c) => c.input.includes('app_actions') && c.input.includes('APP_DO')),

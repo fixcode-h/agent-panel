@@ -94,13 +94,13 @@ await runShard('子对话运行与监管', async (api) => {
     )
     const now = await call('GET', `/tasks/${slow.id}`)
     assert.deepEqual(
-      now.jobs?.map((j) => j.name),
+      now.live?.jobs?.map((j) => j.name),
       ['慢测试'],
       '回复说完时后台命令还在跑：任务上带着它，界面在总结上面转圈',
     )
     const back = await waitTask(slow.id, (k) => k.messages.some((m) => m.panel === 'background'), 30000)
     const settled = await waitDone(back.id, 20000)
-    assert.deepEqual(settled.jobs ?? [], [], '跑完以后不再列在运行中')
+    assert.deepEqual(settled.live?.jobs ?? [], [], '跑完以后不再列在运行中')
     assert.match(
       settled.messages.find((m) => m.panel === 'background').text,
       /要结束这一轮时，最后那条回复再重新总结整段工作/,
@@ -123,11 +123,11 @@ await runShard('子对话运行与监管', async (api) => {
     const withJob = await waitFor(
       async () => {
         const t = await call('GET', `/tasks/${spawned.id}`)
-        return (t.jobs?.length ?? 0) > 0 && t.jobs[0].step ? t : null
+        return (t.live?.jobs?.length ?? 0) > 0 && t.live.jobs[0].step ? t : null
       },
       { timeout: 30000, label: '子任务起的后台命令带着 step 出现在运行中' },
     )
-    const job = withJob.jobs[0]
+    const job = withJob.live.jobs[0]
     const sub = withJob.steps.find((s) => s.slot === 'sub' && s.id === job.step)
     assert.ok(sub, '子任务起的后台命令带它自己的步骤 id：没有 step 就分不清是谁起的')
     assert.equal(sub.title, '核对限流规则')
@@ -146,7 +146,7 @@ await runShard('子对话运行与监管', async (api) => {
       '推回的文本标注是哪个子任务起的',
     )
     const settled = await waitDone(back.id, 30000)
-    assert.deepEqual(settled.jobs ?? [], [], '跑完以后从运行中消失，不再占着子任务那一行')
+    assert.deepEqual(settled.live?.jobs ?? [], [], '跑完以后从运行中消失，不再占着子任务那一行')
     await call('DELETE', `/tasks/${settled.id}`)
     step('子任务起的后台命令：带子任务步骤，结果推回并标注来源，跑完消失')
   }
@@ -286,7 +286,7 @@ await runShard('子对话运行与监管', async (api) => {
       parentTaskId: p2.id,
       prompt: 'BG_LONG 跑测试',
     })
-    await waitTask(bg.id, (k) => !k.working && (k.jobs?.length ?? 0) > 0, 30000)
+    await waitTask(bg.id, (k) => !k.working && (k.live?.jobs?.length ?? 0) > 0, 30000)
     // 还在跑的子对话：用来验「父对话在跑时列表照样给」
     const busy = await call('POST', '/tasks', {
       projectId: project.id,
