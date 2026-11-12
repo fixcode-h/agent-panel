@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, RotateCcw, Trash2 } from 'lucide-react'
-import { TRASH_RETENTION_DAYS, type TrashRow } from '@shared/task'
+import { TRASH_RETENTION_DAYS } from '@shared/task'
+import type { TrashRow } from '@shared/api-contract/trash'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { toast } from '@/lib/toast'

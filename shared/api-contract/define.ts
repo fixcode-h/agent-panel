@@ -1,5 +1,5 @@
 /**
- * 前后端接口契约的写法（重构文档第 9 条，ADR 0050）：每个接口一条 `endpoint({ method, path, body?, res })`，
+ * 前后端接口契约的写法（重构文档第 9 条，ADR 0062）：每个接口一条 `endpoint({ method, path, body?, res })`，
  * 按模块放在 shared/api-contract/<模块>.ts。
  *
  * - 前端：web/src/lib/api/call.ts 的 `call(ep, …)` 按契约拼地址、带方法，返回类型从 `res` 推出来，
