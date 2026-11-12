@@ -4,8 +4,9 @@
  */
 import type { Orchestra } from '../shared/engine.ts'
 import { MEMORY_TEXT_MAX } from './chat-memory.ts'
+import type { PanelTool } from './panel-tools/types.ts'
 
-export const MEMORY_TOOL = {
+const MEMORY_TOOL = {
   name: 'remember',
   title: '记住一件事',
   description: `记下用户以后也该记住的偏好或长期事实（称呼、语言和格式偏好、常用技术栈、在做的长期项目），之后每个 Chat 对话都会带上。一条一句话，最多 ${MEMORY_TEXT_MAX} 字；不记这一次对话的细节，不记密码和密钥。记错了、用户改口了，传 forget: true 和原来那条的原文删掉它。`,
@@ -19,9 +20,16 @@ export const MEMORY_TOOL = {
   },
 }
 
-export async function callMemory(o: Orchestra, a: Record<string, unknown> | undefined) {
+async function callMemory(o: Orchestra, a: Record<string, unknown> | undefined) {
   const r = o.remember
     ? await o.remember(String(a?.text ?? ''), a?.forget === true)
     : { ok: false, info: '这里没有跨对话记忆：只有 Chat 页的对话能用 remember。' }
   return { content: [{ type: 'text', text: r.info }], ...(!r.ok && { isError: true }) }
+}
+
+export const MEMORY: PanelTool = {
+  name: 'remember',
+  when: (o) => !!o.remember,
+  def: () => MEMORY_TOOL,
+  call: callMemory,
 }
