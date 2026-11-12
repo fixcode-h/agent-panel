@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { readJson, writeJsonAtomic } from '../store.ts'
-import { MSG_LEGACY } from '../task-messages-file.ts'
+import { MSG_LEGACY } from '../tasks/messages-file.ts'
 import { fillTurnSeen, taskDirsIn } from './0001-task-layout.ts'
 import type { Migration } from './index.ts'
 

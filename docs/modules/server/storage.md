@@ -39,17 +39,17 @@
 ## 数据版本号与一次性迁移（ADR 0060）
 
 - 数据目录的 `data-version.json` 记着数据是第几版；`server/index.ts` 在 `migrateDataDir()` 之后调 `runMigrations()`（`server/migrations/index.ts`），依次跑版本号更大的迁移，每跑完一个写回。数据导入（`server/data.ts` 的 `/import`）写完文件后从 0 重跑一遍。
-- 新迁移：建 `server/migrations/NNNN-名字.ts`，导出 `{ version, name, run(ctx) }` 并登记进 `MIGRATIONS`。必须幂等；改文件前 `ctx.backup(file)`，旧文件不要了用 `ctx.moveToBackup(file)`，都落在 `backup/<NNNN>-<名字>/<相对路径>`，只留最近 3 个版本的目录。一个迁移失败：版本号停在它前面，面板照常启动，下次再试。
+- 新迁移：建 `server/migrations/<四位版本号>-<名字>.ts`，导出 `{ version, name, run(ctx) }` 并登记进 `MIGRATIONS`。必须幂等；改文件前 `ctx.backup(file)`，旧文件不要了用 `ctx.moveToBackup(file)`，都落在 `backup/<NNNN>-<名字>/<相对路径>`，只留最近 3 个版本的目录。一个迁移失败：版本号停在它前面，面板照常启动，下次再试。
 - 现有：`0001-task-layout`（`tasks.json`、`items/` 两代旧布局拆文件）、`0002-task-meta-cleanup`（补 `turnSeenAt`、删 `RUNTIME_FIELDS` 里的旧运行时字段）、`0003-messages-jsonl`（对话文件换格式）。
-- 回归：`server/migrations.test.ts`。
+- 回归：`server/migrations/migrations.test.ts`。
 
 ## 对话文件：追加写的 JSONL（ADR 0060）
 
-- 格式和读写在 `server/task-messages-file.ts`：`<id>.messages.jsonl` 一行一条完整消息，同 id 后出现的盖掉前面的（位置不变）。坏行跳过：只坏最后半行照常；中间坏行先复制一份到 `broken/`。
+- 格式和读写在 `server/tasks/messages-file.ts`：`<id>.messages.jsonl` 一行一条完整消息，同 id 后出现的盖掉前面的（位置不变）。坏行跳过：只坏最后半行照常；中间坏行先复制一份到 `broken/`。
 - 写在 `server/task-store.ts` 的 `writeMessages`：按 `createStampTracker` 的逐条指纹找出新增和改过的消息，盘上是前缀就追加；删过消息、换过顺序、覆盖记录超过 `max(COMPACT_MIN, 有效内容)`、或关键节点（`now`）时超过有效内容一半，就 `writeTextAtomic` 整份压实。盘上状态（`written`）不知道时一律整份重写，追加失败也丢掉状态。
 - 还没转换的 `.messages.json`（迁移失败、导入旧备份）照样读得出来；第一次整份写出 JSONL 时把它挪进 `backup/0003-messages-jsonl/`。
 - 合并窗口（`MSG_GAP`）照旧保留：它省的是指纹计算和写盘次数，追加写之后单次写便宜了，但流式输出一秒几十次的更新还是要合并。
-- 回归：`server/task-messages-file.test.ts`、`server/task-store.test.ts`。
+- 回归：`server/tasks/messages-file.test.ts`、`server/task-store.test.ts`。
 
 ## 对话专属日志
 

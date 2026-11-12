@@ -1,27 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, stat, unlink } from 'node:fs/promises'
+import { readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
 import { messageStamp, taskTitle } from '../shared/task.ts'
 import { log } from './log.ts'
 import { removeTaskLog, setTaskLogPath } from './task-log.ts'
-import { DATA_DIR, archiveBrokenFile, onReset, readJsonDetailed, writeJsonAtomic, writeTextAtomic } from './store.ts'
-import {
-  MSG_JSONL,
-  MSG_LEGACY,
-  appendMessageLines,
-  messagesToJsonl,
-  readMessagesFile,
-  statMessagesFile,
-} from './task-messages-file.ts'
+import { DATA_DIR, archiveBrokenFile, onReset, readJsonDetailed, writeJsonAtomic } from './store.ts'
+import { type MessagesFileState, stateFromRead, writeMessagesFile } from './tasks/messages-write.ts'
+import { MSG_JSONL, MSG_LEGACY, readMessagesFile, statMessagesFile } from './tasks/messages-file.ts'
 
 /**
  * 任务按项目分目录存，每个任务两个文件：
  *
  *   tasks/projects/<项目 id>/<任务 id>.json            任务本身（节点、用量、改动…），只带用户发的消息
- *   tasks/projects/<项目 id>/<任务 id>.messages.jsonl  全部对话消息，追加写（格式见 task-messages-file.ts）
+ *   tasks/projects/<项目 id>/<任务 id>.messages.jsonl  全部对话消息，追加写（格式见 tasks/messages-file.ts）
  *   tasks/chats/…                                      Chat 模式的聊天（不属于任何项目）
  *
  * 启动时只读第一种（小），列表、侧栏都够用；对话消息在打开任务时才读，读过的留一些在内存里。
@@ -145,14 +139,6 @@ const MSG_GAP_MAX = 2000
 /** 写一次对话文件超过这么久就记一笔日志：分得清「面板卡」是不是卡在写盘上 */
 const SLOW_WRITE_MS = 300
 
-/**
- * 对话文件里覆盖记录（同 id 的新版本）攒到多少字节就整份压实一次：至少这么多，并且不少于有效内容本身。
- * 流式输出时最后一条消息一直在变，每个窗口追加一份它的新版本；压实就是旧的整份原子重写，只是少很多次
- */
-const COMPACT_MIN = 2 * 1024 * 1024
-/** 关键节点（一轮结束、提问、停止）立即写时，覆盖记录超过有效内容的一半就顺手压实 */
-const COMPACT_AT_KEY = 0.5
-
 /** 下一次合并写至少隔多久：按这个对话上一次写盘实际花的时间放宽 */
 export function messageGap(lastWriteMs: number) {
   return Math.min(MSG_GAP_MAX, Math.max(MSG_GAP, Math.round(lastWriteMs * MSG_GAP_FACTOR)))
@@ -192,8 +178,7 @@ export function createTaskStore() {
    * 文件字节数和其中覆盖记录的字节数（决定什么时候压实）、是不是以换行结尾。
    * 没有这一项（刚启动、被挤出内存、读到坏行）时下一次整份重写：不知道盘上什么样就不往后追加
    */
-  type FileState = { key: string; ids: string[]; stamps: string[]; bytes: number; extra: number; cleanEnd: boolean }
-  const written = new Map<string, FileState>()
+  const written = new Map<string, MessagesFileState>()
 
   /** 消息指纹的增量缓存，按任务一份 */
   const stamps = createStampTracker()
@@ -226,7 +211,7 @@ export function createTaskStore() {
   })
 
   const fileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.json`)
-  /** 对话文件去掉后缀的路径：JSONL 和旧格式共用（见 task-messages-file.ts） */
+  /** 对话文件去掉后缀的路径：JSONL 和旧格式共用（见 tasks/messages-file.ts） */
   const msgBaseOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), t.id)
   const msgFileOf = (t: { id: string; projectId: string }) => msgBaseOf(t) + MSG_JSONL
   // 对话专属日志和对话文件放在一起（见 task-log.ts）：按 id 找它属于哪个项目目录，内存里没有的不写
@@ -245,58 +230,24 @@ export function createTaskStore() {
    * 盘上的是这次的前缀（只多了消息、或有几条原地改过）就只追加变了的那几行；
    * 删过、换过顺序（返工、回退）或者覆盖记录攒多了，就整份原子重写（压实）。
    */
-  async function writeMessages(t: Task, key = false) {
-    const stamp = stamps.stamp(t.id, t.messages)
+  async function writeMessages(t: Task, atKey = false) {
+    const key = stamps.stamp(t.id, t.messages)
     const prev = written.get(t.id)
-    if (prev?.key === stamp) return
-    const cur = stamps.detail(t.id)!
+    if (prev?.key === key) return
     const began = performance.now()
-    let next: FileState | undefined
-    if (prev && cur.ids.length >= prev.ids.length && prev.ids.every((id, i) => cur.ids[i] === id)) {
-      let text = ''
-      let extra = 0
-      for (let i = 0; i < cur.ids.length; i++) {
-        if (i < prev.ids.length && cur.stamps[i] === prev.stamps[i]) continue
-        const line = JSON.stringify(t.messages[i]) + '\n'
-        text += line
-        if (i < prev.ids.length) extra += Buffer.byteLength(line)
-      }
-      const total = prev.extra + extra
-      const live = prev.bytes - prev.extra
-      const compact = total > Math.max(COMPACT_MIN, live) || (key && total > live * COMPACT_AT_KEY && total > 0)
-      if (!compact) {
-        if (!prev.cleanEnd) text = '\n' + text
-        const bytes = Buffer.byteLength(text)
-        try {
-          await appendMessageLines(msgFileOf(t), text)
-        } catch (e) {
-          // 盘上可能多了半行：丢掉状态，下一次整份重写
-          written.delete(t.id)
-          throw e
-        }
-        next = {
-          key: stamp,
-          ids: [...cur.ids],
-          stamps: [...cur.stamps],
-          bytes: prev.bytes + bytes,
-          extra: total,
-          cleanEnd: true,
-        }
-      }
-    }
-    if (!next) {
-      const text = messagesToJsonl(t.messages)
-      await writeTextAtomic(msgFileOf(t), text)
-      next = {
-        key: stamp,
-        ids: [...cur.ids],
-        stamps: [...cur.stamps],
-        bytes: Buffer.byteLength(text),
-        extra: 0,
-        cleanEnd: true,
-      }
-      // 还留着上一版的整份 `.messages.json`（迁移没转完、导入了旧备份）：JSONL 已经写全了，旧文件挪走
-      await retireLegacy(t)
+    let next: MessagesFileState
+    try {
+      next = await writeMessagesFile({
+        base: msgBaseOf(t),
+        msgs: t.messages,
+        key,
+        cur: stamps.detail(t.id)!,
+        prev,
+        atKey,
+      })
+    } catch (e) {
+      if ((e as { appendFailed?: boolean }).appendFailed) written.delete(t.id)
+      throw e
     }
     const spent = performance.now() - began
     msgCost.set(t.id, spent)
@@ -306,33 +257,6 @@ export function createTaskStore() {
     written.set(t.id, next)
     // 窗口按「真的写了盘」的时间算：窗口里合并写的那一次也要算，不然下一次会提前破窗口
     msgAt.set(t.id, Date.now())
-  }
-
-  /** 上一版的整份 `.messages.json`：JSONL 已经写全了，旧文件挪进备份目录（不直接删，万一要退回旧版本） */
-  async function retireLegacy(t: Task) {
-    const old = msgBaseOf(t) + MSG_LEGACY
-    if (!existsSync(old)) return
-    // 和迁移 0003 放在同一个备份目录、同样的相对路径
-    const dest = path.join(DATA_DIR, 'backup', '0003-messages-jsonl', path.relative(DATA_DIR, old))
-    await mkdir(path.dirname(dest), { recursive: true }).catch(() => {})
-    await rename(old, dest).catch((e) => log.warn('task', '旧的对话文件没能挪走', { task: t.id, error: String(e) }))
-  }
-
-  /** 读到的对话文件记成「盘上现在的样子」，之后才能接着追加；读到坏行时不记，下一次整份重写 */
-  function noteRead(
-    id: string,
-    msgs: TaskMessage[],
-    r: { bytes: number; lines: number; bad: number; cleanEnd: boolean; legacy: boolean },
-  ) {
-    const key = stamps.stamp(id, msgs)
-    if (r.legacy || r.bad) {
-      written.delete(id)
-      return
-    }
-    const cur = stamps.detail(id)!
-    // 覆盖记录有多少字节读的时候不细算：按多出来的行数估个比例，只影响下次什么时候压实
-    const extra = r.lines > msgs.length ? Math.round((r.bytes * (r.lines - msgs.length)) / r.lines) : 0
-    written.set(id, { key, ids: [...cur.ids], stamps: [...cur.stamps], bytes: r.bytes, extra, cleanEnd: r.cleanEnd })
   }
 
   /** 同任务的写入排队，前一次失败不影响后面的 */
@@ -588,7 +512,11 @@ export function createTaskStore() {
     // 消息文件丢了或坏了：至少还有用户发的那些
     const ok = r?.state === 'ok'
     const task = { ...meta, messages: ok ? r.messages : meta.messages }
-    if (ok) noteRead(id, task.messages, r)
+    if (ok) {
+      const st = stateFromRead(stamps.stamp(id, task.messages), stamps.detail(id)!, task.messages.length, r)
+      if (st) written.set(id, st)
+      else written.delete(id)
+    }
     remember(task)
     return task
   }

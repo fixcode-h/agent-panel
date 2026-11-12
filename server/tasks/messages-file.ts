@@ -1,7 +1,7 @@
 import { copyFile, mkdir, open, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { TaskMessage } from '../shared/schema.ts'
-import { BROKEN_DIR } from './store.ts'
+import { TaskMessage } from '../../shared/schema.ts'
+import { BROKEN_DIR } from '../store.ts'
 
 /**
  * 对话消息文件：追加写的 JSONL（重构文档第 7 条）。

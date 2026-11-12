@@ -15,7 +15,7 @@ const PERSIST_WAIT_TIMEOUT_MS = 5000
 const PERSIST_WAIT_INTERVAL_MS = 20
 
 const { createStampTracker, createTaskStore, messageChars, messageGap } = await import('./task-store.ts')
-const { parseMessagesJsonl } = await import('./task-messages-file.ts')
+const { parseMessagesJsonl } = await import('./tasks/messages-file.ts')
 /** 读盘上的对话文件（JSONL，按 id 归并） */
 const conv = (file: string) => parseMessagesJsonl(readFileSync(file, 'utf8')).messages
 

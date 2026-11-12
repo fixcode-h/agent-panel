@@ -4,7 +4,7 @@ import path from 'node:path'
 import { Task } from '../../shared/schema.ts'
 import { readJson, writeJsonAtomic, writeTextAtomic } from '../store.ts'
 import { head, safeTaskId } from '../task-store.ts'
-import { MSG_JSONL, messagesToJsonl } from '../task-messages-file.ts'
+import { MSG_JSONL, messagesToJsonl } from '../tasks/messages-file.ts'
 import type { Migration } from './index.ts'
 
 /**

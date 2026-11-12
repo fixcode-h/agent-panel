@@ -8,8 +8,8 @@ import test from 'node:test'
 const root = mkdtempSync(path.join(tmpdir(), 'agent-panel-migrations-'))
 process.env.AGENT_PANEL_DATA = path.join(root, 'default')
 
-const { runMigrations, readDataVersion, DATA_VERSION } = await import('./migrations/index.ts')
-const { parseMessagesJsonl } = await import('./task-messages-file.ts')
+const { runMigrations, readDataVersion, DATA_VERSION } = await import('./index.ts')
+const { parseMessagesJsonl } = await import('../tasks/messages-file.ts')
 
 let n = 0
 const freshDir = () => {

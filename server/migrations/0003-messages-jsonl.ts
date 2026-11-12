@@ -3,12 +3,12 @@ import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { TaskMessage } from '../../shared/schema.ts'
 import { readJsonDetailed, writeTextAtomic } from '../store.ts'
-import { MSG_JSONL, MSG_LEGACY, messagesToJsonl } from '../task-messages-file.ts'
+import { MSG_JSONL, MSG_LEGACY, messagesToJsonl } from '../tasks/messages-file.ts'
 import { taskDirsIn } from './0001-task-layout.ts'
 import type { Migration } from './index.ts'
 
 /**
- * 对话文件从整份重写的 `<id>.messages.json` 换成追加写的 `<id>.messages.jsonl`（重构文档第 7 条，格式见 task-messages-file.ts）。
+ * 对话文件从整份重写的 `<id>.messages.json` 换成追加写的 `<id>.messages.jsonl`（重构文档第 7 条，格式见 tasks/messages-file.ts）。
  * 先写好新文件，再把旧文件挪进备份目录（不复制，几 MB 的对话不占双份空间）。
  * 读不懂的旧文件不动：留在原位，task-store 读的时候会按坏文件留档处理
  */

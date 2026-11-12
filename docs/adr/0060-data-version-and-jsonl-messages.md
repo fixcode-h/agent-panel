@@ -2,7 +2,7 @@
 
 状态：已接受 · 2026-11-12
 
-- 影响：`server/migrations/`、`server/task-store.ts`、`server/task-messages-file.ts`、`server/data.ts`（导入）
+- 影响：`server/migrations/`、`server/task-store.ts`、`server/tasks/messages-file.ts`、`server/data.ts`（导入）
 - 起因：重构文档第 6、7 条（项目文件 `需要重构的地方.md`）
 
 ## 背景
@@ -13,7 +13,7 @@
 ## 决策
 
 1. **数据目录写 `data-version.json`**（`{ version, history }`）。启动时拿到单实例锁之后、读任何数据之前，`runMigrations()` 按版本号依次跑还没跑过的迁移，每跑完一个写回版本号。没有这个文件的安装按 0 算。
-   - 迁移放 `server/migrations/NNNN-名字.ts`，在 `server/migrations/index.ts` 的 `MIGRATIONS` 里按顺序登记，版本号只增不改。
+   - 迁移放 `server/migrations/<四位版本号>-<名字>.ts`，在 `server/migrations/index.ts` 的 `MIGRATIONS` 里按顺序登记，版本号只增不改。
    - **迁移必须幂等**：失败时版本号停在它之前、面板照样启动（读数据的地方对没迁完的格式有兜底），下次启动整个版本重跑；导入数据备份后从 0 重跑一遍（备份可能是任何旧版本导出的）。
    - **改文件之前先备份**到 `backup/<NNNN>-<名字>/`（保持相对路径）：要改的整份复制（`ctx.backup`），转换后不再要的旧文件整个挪过去（`ctx.moveToBackup`，几 MB 的对话不占双份空间）。只留最近 3 个版本的备份目录。
    - 数据是更新版本写的（降级）时一个文件都不动，打日志；迁移最多留 `MIGRATIONS_KEEP` 个，删掉老的之后，版本更老的安装拒绝直接升级，提示先装中间版本。
