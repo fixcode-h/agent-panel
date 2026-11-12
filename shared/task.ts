@@ -1709,25 +1709,6 @@ export function keepAliveHolding(x: {
   return !!x.task && keepAliveBusy(x.task, { background: x.background, children: x.children })
 }
 
-/**
- * 回收站里的一行：设置页「回收站」只显示这几项（标题、删除时间、还剩几天，见 server/tasks.ts 的 GET /tasks/trash）。
- * 保留期的说法只由 leftDays 算，前端不再自己拿删除时间推一遍
- */
-export interface TrashRow {
-  id: string
-  title: string
-  projectId: string
-  parentTaskId: string
-  /** 进回收站的时间 */
-  deletedAt: string
-  /** 还剩几天被物理删除，0 表示下次清理就删 */
-  leftDays: number
-  /** 跟着一起进回收站的子对话数 */
-  children: number
-  /** 独立分支状态：active 的恢复后能接着用，其他没有可用的分支 */
-  worktree: string
-}
-
 /** 推给页面时，最近这么多条消息原样给（执行中的、刚看的都在这里面） */
 export const LITE_KEEP = 30
 /** 更早的消息里，工具输出超过这么长才省 */
