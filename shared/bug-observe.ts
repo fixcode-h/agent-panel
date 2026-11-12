@@ -17,7 +17,7 @@ export const OBSERVE_DAYS = 7
 
 const DAY = 86400000
 
-type ObserveTask = Pick<Task, 'id' | 'createdAt' | 'updatedAt' | 'bug' | 'bugCase' | 'diagnoses'> & {
+type ObserveTask = Pick<Task, 'id' | 'createdAt' | 'updatedAt' | 'bug'> & {
   resolved?: boolean
 }
 
@@ -28,25 +28,27 @@ const SOMETIMES =
 const ALWAYS = /(不是|并非|非)偶发|必现/
 
 /** 这个 Bug 是偶发的：现象卡里写了偶发，或者验证记了按频率跑了几次（只有偶发的要写 runs） */
-export function intermittent(tk: Pick<Task, 'bugCase' | 'diagnoses'>): boolean {
-  const symptom = [tk.bugCase?.symptom ?? '', ...(tk.diagnoses ?? []).map((d) => d.symptom)].join('\n')
+export function intermittent(tk: Pick<Task, 'bug'>): boolean {
+  const symptom = [tk.bug?.case?.symptom ?? '', ...(tk.bug?.diagnoses ?? []).map((d) => d.symptom)].join('\n')
   if (SOMETIMES.test(symptom) && !ALWAYS.test(symptom)) return true
-  const runs = [tk.bugCase?.result?.runs, ...(tk.diagnoses ?? []).map((d) => d.result?.runs)]
+  const runs = [tk.bug?.case?.result?.runs, ...(tk.bug?.diagnoses ?? []).map((d) => d.result?.runs)]
   return runs.some((r) => !!r?.trim())
 }
 
 /** 修好的时间：验证那一版用户点了结束的时间；标了已解决（父对话收尾合并）的按最后更新的时间 */
 function fixedAt(tk: ObserveTask): string | undefined {
-  if (bugOutcome({ id: tk.id, createdAt: tk.createdAt, resolved: tk.resolved, diagnoses: tk.diagnoses }) !== 'fixed')
+  if (
+    bugOutcome({ id: tk.id, createdAt: tk.createdAt, resolved: tk.resolved, diagnoses: tk.bug?.diagnoses }) !== 'fixed'
+  )
     return undefined
-  const d = tk.diagnoses?.at(-1)
+  const d = tk.bug?.diagnoses?.at(-1)
   if (d && phaseOf(d) === 'verify' && d.status === 'approved') return d.decidedAt ?? d.at
   return tk.updatedAt
 }
 
 /** 观察期的起止：偶发的、修好了的才有；过期了也返回（调用方按 now 判断还在不在观察） */
 export function observation(tk: ObserveTask, days = OBSERVE_DAYS): { since: string; until: string } | undefined {
-  if (!tk.bug || !intermittent(tk)) return undefined
+  if (!(tk.bug?.kind === 'report') || !intermittent(tk)) return undefined
   const since = fixedAt(tk)
   const ms = since ? new Date(since).getTime() : NaN
   if (!Number.isFinite(ms)) return undefined
@@ -91,8 +93,8 @@ export function bugTerms(text: string): Set<string> {
 }
 
 /** 一个 Bug 用来对关键词的文字：标题和现象（不含根因：再报的人只知道现象） */
-const bugText = (tk: Pick<Task, 'title' | 'bugCase' | 'diagnoses'>) =>
-  [tk.title, tk.bugCase?.symptom ?? '', tk.diagnoses?.at(-1)?.symptom ?? ''].join('\n')
+const bugText = (tk: Pick<Task, 'title' | 'bug'>) =>
+  [tk.title, tk.bug?.case?.symptom ?? '', tk.bug?.diagnoses?.at(-1)?.symptom ?? ''].join('\n')
 
 /**
  * 两组关键词像不像：英文标识符一个算 3 分（文件名、函数名对上了基本就是同一处），中文两字组一个算 1 分。
@@ -130,15 +132,16 @@ export function findRelapse<T extends ObserveTask & Pick<Task, 'title' | 'projec
 
 /** 原来那个 Bug 记一笔「观察期里又报了」：对话里一条系统消息，档案里记新 Bug 的 id（同一个只记一次） */
 export function markRelapse(
-  orig: Pick<Task, 'bugCase' | 'messages'>,
+  orig: Pick<Task, 'bug' | 'messages'>,
   fresh: { id: string; title: string },
   id: string,
   now = new Date().toISOString(),
 ) {
-  if (!orig.bugCase) return
-  const list = orig.bugCase.relapses ?? []
+  const c = orig.bug?.case
+  if (!c) return
+  const list = c.relapses ?? []
   if (list.some((x) => x.id === fresh.id)) return
-  orig.bugCase.relapses = [...list, { id: fresh.id, title: fresh.title.slice(0, 200), at: now }].slice(-20)
+  c.relapses = [...list, { id: fresh.id, title: fresh.title.slice(0, 200), at: now }].slice(-20)
   const msg: TaskMessage = {
     id,
     role: 'system',
@@ -154,8 +157,8 @@ export function markRelapse(
 }
 
 /** 新 Bug 的派单后面附上原来那个的记录：按原来的根因和修法先核对，别从头查（发给 Agent，不翻译） */
-export function relapseNote(orig: Pick<Task, 'id' | 'title' | 'bugCase' | 'diagnoses'>, until: string) {
-  const c = orig.bugCase
+export function relapseNote(orig: Pick<Task, 'id' | 'title' | 'bug'>, until: string) {
+  const c = orig.bug?.case
   const files = c?.files.length ? c.files.map((f) => `\`${f}\``).join('、') : '（没记）'
   const result = c?.result
   return `

@@ -105,7 +105,7 @@ export function capabilityTools(oc: OrchCtx) {
         }
       : undefined,
     // 有项目的普通对话发 /bug 也就地标成 Bug（shared/bug-in-place.ts），同样有这几个工具
-    ...(task.bug &&
+    ...(task.bug?.kind === 'report' &&
       (task.parentTaskId || task.projectId) &&
       ctx.chat &&
       !helper && {

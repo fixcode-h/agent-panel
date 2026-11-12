@@ -125,15 +125,18 @@ export function createSpawnChild(sc: TasksScope) {
     const draft = {
       ...newTask(input, undefined, at, subId, [], {}),
       id: subId,
-      ...(bug && { bug }),
-      ...(fix && !bug && { bugFix: true }),
-      ...(bug &&
-        (level || relapse) && {
-          bugCase: BugCase.parse({
-            ...(level && { level, levelNote: '父对话初判' }),
-            ...(relapse && { relapseOf: relapse.origId }),
+      ...(bug && {
+        bug: {
+          kind: 'report' as const,
+          ...((level || relapse) && {
+            case: BugCase.parse({
+              ...(level && { level, levelNote: '父对话初判' }),
+              ...(relapse && { relapseOf: relapse.origId }),
+            }),
           }),
-        }),
+        },
+      }),
+      ...(fix && !bug && { bug: { kind: 'fix' as const } }),
       ...(edits && project.childIsolation === 'worktree' && { editFirst: true }),
       ...(waiting && { status: 'stopped' as const, stopReason: 'after' as const, waitAfter: waitIds }),
     }

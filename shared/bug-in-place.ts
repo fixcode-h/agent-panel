@@ -26,9 +26,9 @@ export function bugInPlace(task: Where, agents: Agent[]): boolean {
  * 普通对话（没有父对话）里的 Bug 已经结束：修好了（验证那一版点了结束）、或不修了且临时日志删完。
  * 子对话不算：它就是为这个 Bug 开的，结束后也不该再改别的
  */
-export function inPlaceBugClosed(task: Pick<Task, 'bug' | 'parentTaskId' | 'diagnoses'> & { resolved?: boolean }) {
-  if (!task.bug || task.parentTaskId) return false
-  const outcome = bugOutcome({ id: '', createdAt: '', resolved: task.resolved, diagnoses: task.diagnoses })
+export function inPlaceBugClosed(task: Pick<Task, 'bug' | 'parentTaskId'> & { resolved?: boolean }) {
+  if (!(task.bug?.kind === 'report') || task.parentTaskId) return false
+  const outcome = bugOutcome({ id: '', createdAt: '', resolved: task.resolved, diagnoses: task.bug?.diagnoses })
   if (outcome === 'fixed') return true
-  return outcome === 'cancelled' && !cleaning(task.diagnoses?.at(-1))
+  return outcome === 'cancelled' && !cleaning(task.bug?.diagnoses?.at(-1))
 }

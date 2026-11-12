@@ -139,7 +139,8 @@ export function registerConversationRoutes(s: TasksScope) {
     // 其它文件原样用绝对路径。对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await s.placeInTask(draft, input.attachments ?? [])
     // 第一句就是 /bug 的普通对话：建好就是用户报的 Bug，第一轮就有 submit_diagnosis（分析稿 B10）
-    if (!parent && !sender && BUG_CMD.test(input.prompt.trim()) && bugInPlace(draft, agents)) draft.bug = true
+    if (!parent && !sender && BUG_CMD.test(input.prompt.trim()) && bugInPlace(draft, agents))
+      draft.bug = { kind: 'report' }
     const task = await s.store.create(draft)
     return {
       task: await s.start(s.reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
@@ -197,9 +198,9 @@ export function registerConversationRoutes(s: TasksScope) {
     // 正在回复的这一轮里没法换工具，先拦住；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）
     // 有项目的普通对话也一样就地标（分析稿 B10，shared/bug-in-place.ts）；父对话的 /bug 是派子对话，不标
     const bugCmd = BUG_CMD.test(text.trim()) && !!cur && !peer
-    if (bugCmd && cur && !cur.parentTaskId && cur.bug && inPlaceBugClosed(cur))
+    if (bugCmd && cur && !cur.parentTaskId && cur.bug?.kind === 'report' && inPlaceBugClosed(cur))
       return s.bad(c, t('这个对话里的 Bug 已经结束，新的 Bug 请新开一个对话发 /bug'), 409)
-    if (bugCmd && cur && !cur.bug && bugInPlace(cur, await s.deps.agents.list())) {
+    if (bugCmd && cur && !(cur.bug?.kind === 'report') && bugInPlace(cur, await s.deps.agents.list())) {
       const live = s.live.get(id)
       if (live?.task.working)
         return s.bad(
@@ -210,8 +211,8 @@ export function registerConversationRoutes(s: TasksScope) {
           409,
         )
       // 在跑的以内存里那份为准（s.current 拿到的就是它），落盘也落它，不拿旧的盖新的
-      cur.bug = true
-      if (live && live.task !== cur) live.task.bug = true
+      cur.bug = { ...cur.bug, kind: 'report' }
+      if (live && live.task !== cur) live.task.bug = { ...live.task.bug, kind: 'report' }
       await s.store.update(id, live?.task ?? cur)
       taskLog(id, '面板命令', { cmd: '/bug', mark: 'bug' })
     }

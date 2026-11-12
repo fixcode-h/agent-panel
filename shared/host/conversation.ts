@@ -25,7 +25,7 @@ export interface OrchConversation {
       role?: string
       route?: RouteInput
       bug?: boolean
-      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
+      /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（task.bug.kind 为 fix） */
       fix?: boolean
       /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
       edits?: boolean
@@ -105,13 +105,13 @@ export interface ConversationHost {
     files?: string[]
     /** 父对话派来的 Bug（ADR 0045）：子对话修之前要交诊断报告给用户确认 */
     bug?: boolean
-    /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（Task.bugFix） */
+    /** 直接修的用户 Bug（kind: "fix"）：收尾时留简版报告（task.bug.kind 为 fix） */
     fix?: boolean
     /** 一定要改代码：第一次执行前就开好独立分支（Task.editFirst） */
     edits?: boolean
     /** 不拦父对话目录里没提交的改动（server/tasks/dirty-parent.ts） */
     ignoreDirty?: boolean
-    /** Bug 的级别初判（Task.bugCase.level 的初值） */
+    /** Bug 的级别初判（task.bug.case.level 的初值） */
     level?: BugLevel
     /** 排在哪些子对话之后（Task.waitAfter）：它们都合回后才启动 */
     after?: string[]

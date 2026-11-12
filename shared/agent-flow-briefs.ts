@@ -40,7 +40,7 @@ export function flowBrief(tk: Task, byId: Map<string, Task> = new Map(), now = D
     agentId: tk.agentId ?? '',
     createdAt: tk.createdAt,
     updatedAt: tk.updatedAt,
-    bug: !!tk.bug,
+    bug: tk.bug?.kind === 'report',
     drives: tk.driveCount?.total ?? 0,
     turns: tk.turns?.length ?? 0,
     ends,

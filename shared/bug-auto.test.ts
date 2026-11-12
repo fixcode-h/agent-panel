@@ -42,11 +42,12 @@ const fixInput = (over: Partial<DiagnosisInput> = {}) =>
     changes: [{ file: 'web/src/lib/login.ts', what: 'max 换成次数上限', why: 'retries 按次数累加' }],
     ...over,
   })
-const bugTask = () => ({ bug: true, diagnoses: [], requests: [], messages: [], changes: [] }) as unknown as Task
+const bugTask = () =>
+  ({ bug: { kind: 'report', diagnoses: [] }, requests: [], messages: [], changes: [] }) as unknown as Task
 const ok = (r: { ok: boolean; info?: string; error?: string }) => assert.ok(r.ok, r.info ?? r.error ?? '')
 const yes = { approve: true, notes: [], overall: '' }
 const yesAuto = { ...yes, autoNext: true }
-const last = (tk: Task) => tk.diagnoses!.at(-1)!
+const last = (tk: Task) => tk.bug!.diagnoses!.at(-1)!
 
 /** 回归测试命令记进档案：交修复时带上，面板复核 */
 const withCommands = (tk: Task) =>
@@ -90,7 +91,7 @@ test('同意时勾了「后面几步没有要注意的就自动通过」：之�
   )
   ok(decideDiagnosis(tk, last(tk).version, yesAuto, id))
   assert.equal(last(tk).autoNext, true)
-  assert.ok(autoOn(tk.diagnoses!))
+  assert.ok(autoOn(tk.bug!.diagnoses!))
   const r = submitDiagnosis(tk, input({ phase: 'plan' }), id)
   ok(r)
   const d = last(tk)
@@ -102,7 +103,7 @@ test('同意时勾了「后面几步没有要注意的就自动通过」：之�
   assert.doesNotMatch(r.info, /现在结束这一轮/)
   assert.match(tk.messages.at(-1)!.text, /面板自动通过了/)
   // 决策卡写「面板自动通过」，和用户亲手点的分开
-  assert.equal(diagnosisCard(d, { list: tk.diagnoses }).status.text, '面板自动通过')
+  assert.equal(diagnosisCard(d, { list: tk.bug?.diagnoses }).status.text, '面板自动通过')
 })
 
 test('有「要注意」的照常停下，对话里写一行为什么；推翻之前结论的、不用改代码的也停', () => {
@@ -121,13 +122,13 @@ test('有「要注意」的照常停下，对话里写一行为什么；推翻�
   assert.match(tk.messages.at(-1)!.text, /没有自动通过：有要注意的：引入点还没定下来/)
   // 没勾的那次同意把设置关掉
   ok(decideDiagnosis(tk, last(tk).version, yes, id))
-  assert.equal(autoOn(tk.diagnoses!), false)
+  assert.equal(autoOn(tk.bug!.diagnoses!), false)
   // 不用改代码的结论不自动通过
   const t2 = bugTask()
   ok(submitDiagnosis(t2, input({ phase: 'cause' }), id))
   ok(decideDiagnosis(t2, last(t2).version, yesAuto, id))
   const d = { ...last(t2), status: 'pending' as const, noFix: { kind: 'config' as const, how: '改配置' } }
-  const b = autoBlock(d, [...t2.diagnoses!, d])
+  const b = autoBlock(d, [...t2.bug!.diagnoses!, d])
   assert.ok(!b.ok && b.why?.includes('不用改代码'))
 })
 
@@ -143,13 +144,13 @@ test('修复写了回归测试命令：自动通过等面板复核；复核通�
   assert.equal(d.status, 'pending')
   assert.deepEqual(d.result?.commands, ['npm test -- login.test.ts'])
   assert.match(r.info, /这一轮结束后面板会在改前的代码/)
-  const blocked = autoBlock(d, tk.diagnoses!)
+  const blocked = autoBlock(d, tk.bug!.diagnoses!)
   assert.ok(!blocked.ok && blocked.wait)
   d.recheck = recheck(false)
-  const failed = autoBlock(d, tk.diagnoses!)
+  const failed = autoBlock(d, tk.bug!.diagnoses!)
   assert.ok(!failed.ok && failed.why?.includes('复核回归测试没通过'))
   d.recheck = recheck(true)
-  assert.ok(autoBlock(d, tk.diagnoses!).ok)
+  assert.ok(autoBlock(d, tk.bug!.diagnoses!).ok)
 })
 
 test('复核过「改前失败、改后通过」：用户确认修复就同时算验证通过，能直接收尾；没复核的照旧要验证', () => {

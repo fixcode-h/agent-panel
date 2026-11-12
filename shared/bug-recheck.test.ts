@@ -71,9 +71,9 @@ test('验证页上照实写：改前改后的退出码、输出；没写命令�
 })
 
 test('直接修的 Bug（kind: "fix"）收尾要写根因一句，面板出只读的简版报告', () => {
-  assert.equal(fixBriefMissing({ bugFix: false }, {}), '')
-  assert.match(fixBriefMissing({ bugFix: true }, {}), /handoff\.cause 写根因一句/)
-  assert.equal(fixBriefMissing({ bugFix: true }, { cause: '单位混用' }), '')
+  assert.equal(fixBriefMissing({}, {}), '')
+  assert.match(fixBriefMissing({ bug: { kind: 'fix' } }, {}), /handoff\.cause 写根因一句/)
+  assert.equal(fixBriefMissing({ bug: { kind: 'fix' } }, { cause: '单位混用' }), '')
   const b = fixBriefOf({ cause: 'max 用的是秒\n细节' }, '换成次数上限', 'npm test 通过', ['src/a.ts'], 'x')
   const md = fixBriefMd(b)
   assert.match(md.split('\n')[0], /^修复简报：max 用的是秒$/)

@@ -91,7 +91,7 @@ function build(c: Combo) {
     childrenNeeds: c.childNeeds,
     jobs: c.jobs ? ([{ id: 'j', service: false }] as never) : undefined,
     userActions: c.own === 'action' ? ([{ id: 'a', title: '登录测试账号', status: 'waiting', at: AT }] as never) : [],
-    diagnoses: c.diagnosis ? ([{ status: 'pending', version: 1 }] as never) : [],
+    bug: c.diagnosis ? { kind: 'report' as const, diagnoses: [{ status: 'pending', version: 1 }] as never } : undefined,
   }
   const child: ChildSummary = {
     id: 'c',

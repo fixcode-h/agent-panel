@@ -37,7 +37,7 @@ export interface BugBrief extends BugLike {
   relapses?: number
 }
 
-const briefDiag = (d: NonNullable<Task['diagnoses']>[number]): BugDiag => ({
+const briefDiag = (d: NonNullable<NonNullable<Task['bug']>['diagnoses']>[number]): BugDiag => ({
   version: d.version,
   rev: d.rev,
   phase: d.phase,
@@ -59,7 +59,7 @@ export function bugBriefs(tasks: Task[]): BugBrief[] {
   const byId = new Map(tasks.map((x) => [x.id, x]))
   const out: BugBrief[] = []
   for (const tk of tasks) {
-    if (!tk.bug || taskDeleted(tk)) continue
+    if (!(tk.bug?.kind === 'report') || taskDeleted(tk)) continue
     // 往上找到顶层对话，记下它名下的那一层：对话页只能在顶层对话的右栏里打开它的直接子对话
     let root = tk
     let pane = tk
@@ -72,7 +72,7 @@ export function bugBriefs(tasks: Task[]): BugBrief[] {
       root = up
     }
     if (taskDeleted(root)) continue
-    const list = tk.diagnoses ?? []
+    const list = tk.bug?.diagnoses ?? []
     out.push({
       id: tk.id,
       bug: true,
@@ -87,10 +87,10 @@ export function bugBriefs(tasks: Task[]): BugBrief[] {
       state: taskState(tk),
       resolved: !!tk.resolved,
       archived: !!tk.archived || !!root.archived,
-      level: list.at(-1)?.level ?? tk.bugCase?.level ?? 'standard',
+      level: list.at(-1)?.level ?? tk.bug?.case?.level ?? 'standard',
       diagnoses: list.map(briefDiag),
       observeUntil: observation(tk)?.until,
-      relapses: tk.bugCase?.relapses?.length || undefined,
+      relapses: tk.bug?.case?.relapses?.length || undefined,
     })
   }
   return out

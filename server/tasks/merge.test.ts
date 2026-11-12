@@ -219,7 +219,7 @@ test('submit_merge：先把没提交的改动提交到子对话分支，记下�
 })
 
 test('直接修的用户 Bug（kind: "fix"，分析稿 B2）：没写根因一句不收；收下时出只读的修复简报，也交给父对话', async () => {
-  const x = await setup({ bugFix: true })
+  const x = await setup({ bug: { kind: 'fix' } })
   try {
     writeFileSync(path.join(x.wt.path, 'b.txt'), 'b\n')
     const no = await x.m.submitMerge(x.kid.id, '加文件', tests, false, handoff)
@@ -229,9 +229,9 @@ test('直接修的用户 Bug（kind: "fix"，分析稿 B2）：没写根因一�
     const r = await x.m.submitMerge(x.kid.id, '补上 b.txt', tests, false, { ...handoff, cause: '漏建了 b.txt' })
     assert.equal(r.ok, true, r.info)
     const kid = x.map.get(x.kid.id)!
-    assert.equal(kid.fixBrief?.cause, '漏建了 b.txt')
-    assert.equal(kid.fixBrief?.verify, tests)
-    assert.ok(kid.fixBrief?.files.includes('b.txt'))
+    assert.equal(kid.bug?.fixBrief?.cause, '漏建了 b.txt')
+    assert.equal(kid.bug?.fixBrief?.verify, tests)
+    assert.ok(kid.bug?.fixBrief?.files.includes('b.txt'))
     // 子对话里一行能展开回看，不用确认
     const line = kid.messages.at(-1)!
     assert.equal(line.panel, 'note')

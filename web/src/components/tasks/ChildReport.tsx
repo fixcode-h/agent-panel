@@ -29,13 +29,13 @@ export function firstShow(id: string, version: number, tag = ''): boolean {
 }
 
 /** 最新一版在等确认时的版本号；没有在等的返回 0 */
-const pendingVersion = (task: Pick<Task, 'diagnoses'>) => {
-  const last = task.diagnoses?.at(-1)
+const pendingVersion = (task: Pick<Task, 'bug'>) => {
+  const last = task.bug?.diagnoses?.at(-1)
   return last?.status === 'pending' ? last.version : 0
 }
 
 /** 同一版回到等你（加好日志等你复现）也要再弹一次：记号带上这个 */
-export const showTag = (task: Pick<Task, 'diagnoses'>) => (task.diagnoses?.at(-1)?.awaiting ? 'logs' : '')
+export const showTag = (task: Pick<Task, 'bug'>) => (task.bug?.diagnoses?.at(-1)?.awaiting ? 'logs' : '')
 
 /** 「查看报告」按钮：点了取子对话（要它的各版报告），取到就打开审阅弹窗 */
 export function ChildReportButton({ childId, className }: { childId: string; className?: string }) {

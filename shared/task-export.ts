@@ -6,6 +6,7 @@
  *   给出对工作流、节点、Agent 的修改建议（用户看过差异再应用，不会自动改）和面板框架本身的问题。
  * 服务端和在线演示共用。
  */
+import { liftBugFields } from './bug/task-bug.ts'
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from './schema.ts'
 import { composeRole, includedAgents } from './agent-role.ts'
@@ -35,7 +36,8 @@ import { hhmm, pad2, ymd } from './datetime.ts'
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
-export const TASK_EXPORT_VERSION = 1
+/** 2：Bug 字段收进 task.bug（重构文档第 15 条），读 1 版的文件时由 upgradeExport 转过来 */
+export const TASK_EXPORT_VERSION = 2
 
 /** 一个节点的统计：耗时、等待、验收轮数、用量、缓存命中率 */
 export interface NodeStat {
@@ -813,6 +815,18 @@ export const exportFileName = (title: string) => `${fileSafe(title, 'task')}.tas
 /** 单文件 HTML 报告的文件名：和 JSON 包共用同一套清洗规则，只换扩展名 */
 export const exportHtmlFileName = (title: string) => `${fileSafe(title, 'task')}.html`
 
+/**
+ * 旧版本导出的文件转成当前格式（不改传入的对象）。导出文件不在数据目录里，数据目录的一次性迁移管不到，只能在导入时转：
+ * 1 → 2：任务和子对话上平铺的 Bug 字段收进 task.bug
+ */
+function upgradeExport(o: Record<string, unknown>): Record<string, unknown> {
+  if (o.version !== 1) return o
+  const copy = structuredClone(o)
+  for (const tk of [copy.task, ...(Array.isArray(copy.children) ? copy.children : [])])
+    if (tk && typeof tk === 'object') liftBugFields(tk as Record<string, unknown>)
+  return { ...copy, version: TASK_EXPORT_VERSION }
+}
+
 /** 读导出文件：格式不对时给出能看懂的原因 */
 export function parseTaskExport(raw: unknown): TaskExport {
   if (!raw || typeof raw !== 'object') throw new Error(t('不是有效的 JSON 文件'))
@@ -820,7 +834,7 @@ export function parseTaskExport(raw: unknown): TaskExport {
   if (o.format !== TASK_EXPORT_FORMAT) throw new Error(t('这不是 Agent 面板导出的任务文件'))
   if (typeof o.version === 'number' && o.version > TASK_EXPORT_VERSION)
     throw new Error(t('这个文件是更新版本的面板导出的，请先升级面板'))
-  const p = TaskExport.safeParse(raw)
+  const p = TaskExport.safeParse(upgradeExport(o))
   if (!p.success) throw new Error(t('任务文件的格式不对：{path}', { path: p.error.issues[0]?.path.join('.') ?? '' }))
   return p.data
 }

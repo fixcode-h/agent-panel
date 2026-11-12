@@ -40,22 +40,37 @@ const verified = (n: number, symptom = '') => ({
   status: 'approved',
   symptom,
 })
-const fixedBug = (id: string, title: string, symptom: string, n = 1, extra: Record<string, unknown> = {}) =>
+/** extra 里的 bug 只覆盖给出的那几项（档案、报告），其余照默认 */
+const fixedBug = (
+  id: string,
+  title: string,
+  symptom: string,
+  n = 1,
+  { bug, ...extra }: { bug?: Record<string, unknown> } & Record<string, unknown> = {},
+) =>
   task(id, {
+    bug: {
+      kind: 'report',
+      case: BugCase.parse({ symptom, rootCause: '订阅在数据到达之后才建', files: ['web/src/avatar.ts'] }),
+      diagnoses: [verified(n, symptom)],
+      ...bug,
+    },
     title,
     parentTaskId: 'top',
-    bug: true,
-    bugCase: BugCase.parse({ symptom, rootCause: '订阅在数据到达之后才建', files: ['web/src/avatar.ts'] }),
-    diagnoses: [verified(n, symptom)],
     ...extra,
   })
 
 test('偶发：看现象卡里的频率，明说必现的不算；验证记了运行次数的也算', () => {
-  assert.equal(intermittent({ bugCase: BugCase.parse({ symptom: '登录后头像偶尔不刷新，十次两三次' }) }), true)
-  assert.equal(intermittent({ bugCase: BugCase.parse({ symptom: '必现，不是偶发' }) }), false)
-  assert.equal(intermittent({ bugCase: BugCase.parse({ symptom: '保存按钮点了没反应' }) }), false)
   assert.equal(
-    intermittent({ bugCase: BugCase.parse({ symptom: '保存失败', result: { runs: '跑 30 次坏 0 次' } }) }),
+    intermittent({ bug: { kind: 'report', case: BugCase.parse({ symptom: '登录后头像偶尔不刷新，十次两三次' }) } }),
+    true,
+  )
+  assert.equal(intermittent({ bug: { kind: 'report', case: BugCase.parse({ symptom: '必现，不是偶发' }) } }), false)
+  assert.equal(intermittent({ bug: { kind: 'report', case: BugCase.parse({ symptom: '保存按钮点了没反应' }) } }), false)
+  assert.equal(
+    intermittent({
+      bug: { kind: 'report', case: BugCase.parse({ symptom: '保存失败', result: { runs: '跑 30 次坏 0 次' } }) },
+    }),
     true,
   )
 })
@@ -66,7 +81,9 @@ test('观察期：偶发的修好后观察 7 天，按验证点结束的时间�
   assert.equal(observingUntil(a, day(3)), day(8))
   assert.equal(observingUntil(a, day(9)), undefined, '过了 7 天就不观察了')
   assert.equal(observation(fixedBug('b', '头像不刷新', '必现：头像不刷新')), undefined)
-  const open = fixedBug('c', '头像不刷新', '偶发', 1, { diagnoses: [{ ...verified(1, '偶发'), status: 'pending' }] })
+  const open = fixedBug('c', '头像不刷新', '偶发', 1, {
+    bug: { diagnoses: [{ ...verified(1, '偶发'), status: 'pending' }] },
+  })
   assert.equal(observation(open), undefined)
 })
 
@@ -88,7 +105,7 @@ test('再报关联：同项目、观察期里、最像的一个；关联后原�
   assert.equal(findRelapse([a], { ...fresh, projectId: 'q' }, day(3)), undefined)
   markRelapse(a, { id: 'n', title: '头像又不刷新' }, 'm1', day(3))
   markRelapse(a, { id: 'n', title: '头像又不刷新' }, 'm2', day(3))
-  assert.deepEqual(a.bugCase?.relapses, [{ id: 'n', title: '头像又不刷新', at: day(3) }], '同一个只记一次')
+  assert.deepEqual(a.bug?.case?.relapses, [{ id: 'n', title: '头像又不刷新', at: day(3) }], '同一个只记一次')
   assert.match(a.messages.at(-1)!.text, /观察期里又报了同类问题「头像又不刷新」/)
   const note = relapseNote(a, day(8))
   assert.match(note, /订阅在数据到达之后才建/)
@@ -101,7 +118,9 @@ test('总览：观察中列进「进行中」，观察期里又报了的提到�
     task('top'),
     fixedBug('watch', '头像偶尔不刷新', '偶发', 1),
     fixedBug('back', '列表偶尔重复', '偶发', 1, {
-      bugCase: BugCase.parse({ symptom: '偶发', relapses: [{ id: 'n', title: '列表又重复', at: day(2) }] }),
+      bug: {
+        case: BugCase.parse({ symptom: '偶发', relapses: [{ id: 'n', title: '列表又重复', at: day(2) }] }),
+      },
     }),
     fixedBug('steady', '保存按钮', '必现', 1),
   ]
@@ -125,7 +144,7 @@ test('普通对话就地查 Bug：子对话、有项目且角色不能派子对�
 })
 
 test('普通对话里的 Bug 结束后不再拦改文件：修好了、不修了且临时日志删完；子对话不算', () => {
-  const solo = (diagnoses: unknown[]) => task('s', { bug: true, diagnoses })
+  const solo = (diagnoses: unknown[]) => task('s', { bug: { kind: 'report', diagnoses: diagnoses } })
   assert.equal(inPlaceBugClosed(solo([verified(1)])), true)
   assert.equal(inPlaceBugClosed(solo([{ ...verified(1), phase: 'cause', status: 'cancelled' }])), true)
   assert.equal(
@@ -136,5 +155,8 @@ test('普通对话里的 Bug 结束后不再拦改文件：修好了、不修了
     '还在删临时日志',
   )
   assert.equal(inPlaceBugClosed(solo([{ ...verified(1), status: 'pending' }])), false)
-  assert.equal(inPlaceBugClosed(task('c', { bug: true, parentTaskId: 'top', diagnoses: [verified(1)] })), false)
+  assert.equal(
+    inPlaceBugClosed(task('c', { bug: { kind: 'report', diagnoses: [verified(1)] }, parentTaskId: 'top' })),
+    false,
+  )
 })

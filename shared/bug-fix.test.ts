@@ -62,8 +62,7 @@ const ok = (r: { ok: boolean; info?: string; error?: string }) => assert.ok(r.ok
 const src = (diffs: Record<string, string>): BugSource => ({ read: () => undefined, diff: (f) => diffs[f] ?? '' })
 const bugTask = () =>
   ({
-    bug: true,
-    diagnoses: [],
+    bug: { kind: 'report', diagnoses: [] },
     requests: [],
     messages: [],
     changes: [
@@ -104,7 +103,7 @@ test('交修复：改了的文件都要写改了什么、为什么；报告上�
       ['web/src/lib/login.test.ts', 3, 0, true],
     ],
   )
-  const md = diagnosisMarkdown(d, tk.diagnoses![0], { list: tk.diagnoses })
+  const md = diagnosisMarkdown(d, tk.bug!.diagnoses![0], { list: tk.bug?.diagnoses })
   assert.match(md, /改了 2 个文件 · \+4 −1/)
   assert.match(md, /## 改了哪些文件/)
   assert.match(md, /retries 按次数累加，上限也要按次数/)
@@ -113,7 +112,7 @@ test('交修复：改了的文件都要写改了什么、为什么；报告上�
   assert.match(md, /```diff file=web%2Fsrc%2Flib%2Flogin\.ts\n@@ -40,5 \+40,6 @@[\s\S]*\+ {2}const max = MAX_RETRIES/)
   assert.doesNotMatch(md, /排查-登录/)
   // 修复等你确认：不能改文件、不能交验证
-  assert.ok('deny' in editScope(tk.diagnoses!))
+  assert.ok('deny' in editScope(tk.bug!.diagnoses!))
   assert.match(submitDiagnosis(tk, input({ phase: 'verify' }), id).info, /还在等用户确认/)
   const r = decideDiagnosis(tk, d.version, yes, id)
   assert.ok(r.ok && /现在验证/.test(r.message) && /交 phase: verify/.test(r.message))
@@ -135,7 +134,7 @@ test('对修复的代码提疑问：放行方案里的文件，它逐条判断�
   assert.match(r.message, /stance: adopted/)
   assert.match(r.message, /stance: disagree，用事实反驳/)
   assert.match(r.message, /重新交 phase: fix（还是第 1 版）/)
-  assert.deepEqual(editScope(tk.diagnoses!), { files: ['web/src/lib/login.ts'] }, '说得对要能改代码')
+  assert.deepEqual(editScope(tk.bug!.diagnoses!), { files: ['web/src/lib/login.ts'] }, '说得对要能改代码')
   assert.match(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, src(fixed)).info, /还没回答：1/)
   ok(
     submitDiagnosis(
@@ -153,7 +152,7 @@ test('对修复的代码提疑问：放行方案里的文件，它逐条判断�
   const d = pendingDiagnosis(tk)!
   assert.equal(d.phase, 'fix')
   assert.equal(d.rev, 1)
-  assert.match(diagnosisMarkdown(d, tk.diagnoses!.at(-2), { list: tk.diagnoses }), /（\*\*不同意\*\*）：配置/)
+  assert.match(diagnosisMarkdown(d, tk.bug!.diagnoses!.at(-2), { list: tk.bug?.diagnoses }), /（\*\*不同意\*\*）：配置/)
 })
 
 // 用户 2026-11-11 报：P4 工程（不是 git）修复页把改过的 C++、Lua 整个文件都画成新增。

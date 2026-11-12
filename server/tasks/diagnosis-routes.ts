@@ -71,7 +71,7 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     const r = decideDiagnosis(task, version, body.data, randomUUID, undefined, cleanup)
     if (!r.ok) return s.bad(c, r.error, 409)
     // 同意加日志：给日志计划里的文件拍快照，取消修复后核对「日志和空行删干净了」用（不拿来还原）
-    const d = task.diagnoses?.find((x) => x.version === version)
+    const d = task.bug?.diagnoses?.find((x) => x.version === version)
     if (d && body.data.approve && phaseOf(d) === 'evidence') await snapshotLogBase(task, dir, d).catch(() => {})
     if (body.data.cancel) task.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
@@ -85,7 +85,7 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const { entry, task } = await taskOf(c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
-    const d = task.diagnoses?.at(-1)
+    const d = task.bug?.diagnoses?.at(-1)
     const cl = d?.cleanup
     if (!d || !cl || cl.state !== 'failed') return s.bad(c, t('现在没有要处理的临时日志'), 409)
     if (task.working) return s.bad(c, t('它正在回复，等这一轮结束再处理'), 409)

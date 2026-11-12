@@ -532,14 +532,14 @@ export interface ConvFacts {
 }
 
 /** 最新一版 Bug 诊断报告还在等用户确认（ADR 0045）：状态、等待原因、完成判定都读它 */
-export const diagnosisPending = (t: { diagnoses?: Task['diagnoses'] }) => t.diagnoses?.at(-1)?.status === 'pending'
+export const diagnosisPending = (t: { bug?: Task['bug'] }) => t.bug?.diagnoses?.at(-1)?.status === 'pending'
 
 /**
  * 这个对话停在等用户：待确认的请求、子对话请用户回答的提问、等确认的诊断报告、等用户去做的事。
  * 面板的提醒（计划推进、收尾提醒、结束前钩子）碰到它都不推：这时停下是对的，用户处理完会推回来
  */
 export const userWaiting = (
-  tk: Pick<Task, 'requests'> & Partial<Pick<Task, 'parentAsks' | 'diagnoses' | 'userActions'>>,
+  tk: Pick<Task, 'requests'> & Partial<Pick<Task, 'parentAsks' | 'bug' | 'userActions'>>,
   asks = true,
 ) => !!(tk.requests.length || (asks && tk.parentAsks?.length) || diagnosisPending(tk) || pendingAction(tk))
 
@@ -639,7 +639,7 @@ export function childFacts(
     archived?: Task['archived']
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
-    diagnoses?: Task['diagnoses']
+    bug?: Task['bug']
     userActions?: Task['userActions']
   },
   x: { background?: number; unmerged?: boolean; childNeeds?: number } = {},
@@ -718,7 +718,7 @@ export const stopEnds = (reason: StopReason | undefined) => !!reason && STOP_END
  * more：这一轮结束后还要接着处理排队的消息（面板交过来的、执行中收到的），也算还在执行
  */
 export function childReport(
-  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[]; diagnoses?: Task['diagnoses'] },
+  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[]; bug?: Task['bug'] },
   x: { background?: string[]; more?: boolean; unmerged?: boolean; childNeeds?: number } = {},
 ): ChildReport {
   const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged, childNeeds: x.childNeeds })
@@ -768,7 +768,7 @@ export function childReport(
             : t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
       case 'done': {
         // 用户在诊断报告上点了「不修了」：不是交付完了，父对话别当成修好了往下走（实跑 2026-11-10）
-        const d = task.diagnoses?.at(-1)
+        const d = task.bug?.diagnoses?.at(-1)
         if (d?.status === 'cancelled')
           return d.cleanup?.state === 'done'
             ? t('用户取消了修复，临时日志已删干净，诊断报告已关闭（没有改代码）')
@@ -1311,7 +1311,7 @@ export function restartInterrupted(
 export function restartUnfinished(
   task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
     runs?: Task['runs']
-    diagnoses?: Task['diagnoses']
+    bug?: Task['bug']
     userActions?: Task['userActions']
   },
 ): boolean {
@@ -1535,7 +1535,7 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
     runs?: Task['runs']
     archived?: Task['archived']
     worktree?: Task['worktree']
-    diagnoses?: Task['diagnoses']
+    bug?: Task['bug']
     userActions?: Task['userActions']
   }
 

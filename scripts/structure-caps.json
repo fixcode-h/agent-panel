@@ -10,7 +10,7 @@
     "server/tables/routes.ts::tablesApi": 400,
     "server/task-store.ts::createTaskStore": 610,
     "server/tasks.ts::tasksApi": 830,
-    "server/tasks/actions-routes.ts::registerActionRoutes": 640,
+    "server/tasks/actions-routes.ts::registerActionRoutes": 590,
     "server/tasks/asks.ts::createAsks": 410,
     "server/tasks/child-messages.ts::createChildMessages": 330,
     "server/tasks/children.ts::createChildren": 700,
@@ -65,7 +65,7 @@
     "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 370,
     "web/src/lib/demo-backend.ts::seed": 530,
     "web/src/lib/demo-backend.ts::route": 590,
-    "web/src/lib/demo-backend.ts::tasksRoute": 630,
+    "web/src/lib/demo-backend.ts::tasksRoute": 610,
     "web/src/lib/demo-backend.ts::demoChildren": 330,
     "web/src/pages/AgentsPage.tsx::AgentsPage": 430,
     "web/src/pages/ComfyPage.tsx::ComfyPage": 840,
@@ -656,7 +656,7 @@
       "worktrees.ts"
     ]
   },
-  "taskFields": 108,
+  "taskFields": 102,
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {

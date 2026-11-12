@@ -9,6 +9,7 @@
  * - 收尾（submit_merge）前核对：要有确认过的方案、交过验证且用户给了结果或点了结束，改动不超出方案里的文件（diagnosisGate）。
  * 交给 Agent 的话是提示词，不翻译；报告的小节名、对话里的提示、请求标题是界面文案，走 t()。
  */
+import { bugOf } from './bug/task-bug.ts'
 import type { Task, TaskMessage } from './schema.ts'
 import {
   BugCase,
@@ -47,7 +48,7 @@ import { settlePlan } from './plan.ts'
 import { autoApprove, autoBlock, autoOn } from './bug-auto.ts'
 import { ranInConversation, recheckCommands, recheckVerdict } from './bug-recheck.ts'
 
-type DiagTask = Pick<Task, 'bug' | 'diagnoses' | 'messages' | 'changes' | 'bugCase'>
+type DiagTask = Pick<Task, 'bug' | 'messages' | 'changes'>
 
 /**
  * submit_diagnosis / update_bug_case 交上来的内容：工具的原始参数，按 BugCase 解析（字段写坏的当没写，不让一个字段挡住整份）。
@@ -64,8 +65,8 @@ const picked = (input: DiagnosisInput) =>
   Object.fromEntries(CASE_KEYS.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]))
 
 /** 草稿合上这次写的字段 */
-const mergeCase = (task: Pick<Task, 'bugCase'>, input: DiagnosisInput) => {
-  const c = BugCase.parse({ ...(task.bugCase ?? {}), ...picked(input) })
+const mergeCase = (task: Pick<Task, 'bug'>, input: DiagnosisInput) => {
+  const c = BugCase.parse({ ...(task.bug?.case ?? {}), ...picked(input) })
   // 只写了「具体改动」没写 files：要改的文件按它补，收尾核对照样有依据
   if (!c.files.length && c.changes.length) c.files = c.changes.map((x) => x.file).filter(Boolean)
   // noFix 传 {}（how 是空的）就是去掉：之前判成不用改代码、后来发现要改
@@ -83,8 +84,8 @@ const answersOf = (input: DiagnosisInput) =>
     }))
     .filter((x) => Number.isFinite(x.id) && x.answer.trim())
 
-export const latestDiagnosis = (task: Pick<Task, 'diagnoses'>) => task.diagnoses?.at(-1)
-export const pendingDiagnosis = (task: Pick<Task, 'diagnoses'>) => {
+export const latestDiagnosis = (task: Pick<Task, 'bug'>) => task.bug?.diagnoses?.at(-1)
+export const pendingDiagnosis = (task: Pick<Task, 'bug'>) => {
   const d = latestDiagnosis(task)
   return d?.status === 'pending' ? d : undefined
 }
@@ -299,9 +300,9 @@ export function diagnosisProblem(
 }
 
 /** 查到哪个阶段了（ADR 0046）：按报告和草稿推算，父对话的子对话行上显示 */
-export function bugStage(task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>): string {
-  if (!task.bug) return ''
-  const list = task.diagnoses ?? []
+export function bugStage(task: Pick<Task, 'bug'>): string {
+  if (!(task.bug?.kind === 'report')) return ''
+  const list = task.bug?.diagnoses ?? []
   const d = list.at(-1)
   if (d) {
     const phase = phaseOf(d)
@@ -319,7 +320,7 @@ export function bugStage(task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>): str
     if (phase === 'fix') return d.status === 'approved' ? (d.merged ? t('收尾') : t('验证')) : t('修复')
     return d.status === 'questioned' ? t('验证') : t('收尾')
   }
-  const c = task.bugCase
+  const c = task.bug?.case
   if (!c) return t('立案')
   if (c.options.length || c.impact.length) return t('修复设计')
   if (c.rootCause.trim() || c.attribution) return t('归因')
@@ -345,11 +346,11 @@ const draftLeft = (c: BugCase, list: Diagnosis[]) => {
  * 排查记录跨轮次不丢，交新一版报告时自动带上；修完把结果（result）也记在这里，交验证和收尾时核对
  */
 export function updateBugCase(
-  task: Pick<Task, 'bug' | 'bugCase' | 'diagnoses'>,
+  task: Pick<Task, 'bug'>,
   input: DiagnosisInput,
   now = new Date().toISOString(),
 ): { ok: boolean; info: string } {
-  if (!task.bug)
+  if (!(task.bug?.kind === 'report'))
     return {
       ok: false,
       info: '这不是用户报的 Bug，不用记档案：按简易版直接查和修。',
@@ -360,13 +361,13 @@ export function updateBugCase(
       ok: false,
       info: `没写任何档案字段。能写的字段：${CASE_KEYS.join('、')}。`,
     }
-  task.bugCase = { ...mergeCase(task, input), updatedAt: now }
-  const list = task.diagnoses ?? []
+  const draft = (bugOf(task).case = { ...mergeCase(task, input), updatedAt: now })
+  const list = task.bug?.diagnoses ?? []
   const tail = planApproved(list)
-    ? task.bugCase.result
+    ? draft.result
       ? '修复结果已记下：交 phase: verify 请用户验证（collect 写怎么复现、看到什么算修好了）。'
       : '方案已确认：修完用 result 记下复现用例改前改后、影响面逐条的验证（area 对上报告里的影响面）、回归测试，再交 phase: verify。'
-    : draftLeft(task.bugCase, list)
+    : draftLeft(draft, list)
   return {
     ok: true,
     info: `已记进档案：${keys.join('、')}。现在在「${bugStage(task)}」。${tail}`,
@@ -393,16 +394,16 @@ export function submitDiagnosis(
   src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
   const r = submitOnce(task, input, newId, now, src)
-  if (!task.bug || task.diagnoses?.at(-1)?.status === 'cancelled') return r
+  if (!(task.bug?.kind === 'report') || task.bug?.diagnoses?.at(-1)?.status === 'cancelled') return r
   const since = [...task.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
-  const prev = task.bugCase?.rejects
-  const base = task.bugCase ?? BugCase.parse({})
+  const prev = task.bug?.case?.rejects
+  const base = task.bug?.case ?? BugCase.parse({})
   if (r.ok) {
-    task.bugCase = { ...base, rejects: prev ? { ...prev, n: 0 } : undefined }
+    bugOf(task).case = { ...base, rejects: prev ? { ...prev, n: 0 } : undefined }
     return r
   }
   const n = prev && prev.since === since ? prev.n + 1 : 1
-  task.bugCase = { ...base, rejects: { n, total: (prev?.total ?? 0) + 1, since } }
+  bugOf(task).case = { ...base, rejects: { n, total: (prev?.total ?? 0) + 1, since } }
   if (n < REJECT_MAX)
     return { ...r, info: `${r.info}\n\n（这是第 ${n} 次被退回，连续 ${REJECT_MAX} 次会停下来交给用户。）` }
   return {
@@ -435,12 +436,12 @@ function submitOnce(
   now: string,
   src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
-  if (!task.bug)
+  if (!(task.bug?.kind === 'report'))
     return {
       ok: false,
       info: '这不是父对话派来的 Bug，不用交诊断报告：按派给你的事直接做。',
     }
-  const list = task.diagnoses ?? []
+  const list = task.bug?.diagnoses ?? []
   const prev = list.at(-1)
   // 用户点过「不修了」：这份报告就此关闭，之后的对话不能再拉起它（用户 2026-11-07 定）
   if (prev?.status === 'cancelled') return { ok: false, info: closedOrCleaning(prev, revOf(prev)) }
@@ -510,9 +511,10 @@ function submitOnce(
     // 环境：第一份报告时面板采集一次，后面几份沿用（中途重采会把「出问题时的环境」换成排查到一半的）
     env: list.find((x) => x.env)?.env ?? src?.env?.(),
   }
-  ;(task.diagnoses ??= []).push(d)
+  const diags = (bugOf(task).diagnoses ??= [])
+  diags.push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写
-  task.bugCase = { ...c, updatedAt: now }
+  bugOf(task).case = { ...c, updatedAt: now }
   // 按阶段写明这一版只请用户确认什么（实测：根因那一版里写好了方案，回复说「等你确认方案 A」，
   // 弹窗按钮却是「同意根因」，用户以为点了就开始修）
   const wait =
@@ -524,16 +526,16 @@ function submitOnce(
           ? '等用户同意加日志（用户也可能直接贴日志）'
           : phase === 'cause'
             ? `这一版只请用户确认根因，修复方案要等用户同意根因后另交 phase: plan 再确认${d.options.length || d.fix.trim() ? '（你写的修法在弹窗里标成草案，这一版不确认它）' : ''}；回复用户时不要说在等他确认方案`
-            : causeInPlan(d, task.diagnoses)
+            : causeInPlan(d, diags)
               ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
               : '等用户确认修复方案，确认了才改代码'
-  const round = roundOf(d, task.diagnoses)
+  const round = roundOf(d, diags)
   const notes = [...sources.notes, ...recheckNotes(d, task.messages)]
   // 用户设了「后面几步没有要注意的就自动通过」（分析稿 B2）：这一版没有要注意的就当场通过，交给它的话和用户点同意时一样
-  const auto = autoOn(task.diagnoses)
+  const auto = autoOn(diags)
     ? autoBlock(
         d,
-        task.diagnoses,
+        diags,
         (task.changes ?? []).map((x) => x.path),
       )
     : undefined
@@ -566,11 +568,11 @@ function submitOnce(
  * request_logs：用户同意加日志后，AI 加好了日志、自己复现不了，请用户复现贴日志。那一版回到等用户（「等你复现」）
  */
 export function requestLogs(
-  task: Pick<Task, 'bug' | 'diagnoses'>,
+  task: Pick<Task, 'bug'>,
   input: DiagnosisInput,
   now = new Date().toISOString(),
 ): { ok: boolean; info: string } {
-  if (!task.bug) return { ok: false, info: '这不是用户报的 Bug，不用请用户复现。' }
+  if (!(task.bug?.kind === 'report')) return { ok: false, info: '这不是用户报的 Bug，不用请用户复现。' }
   const d = latestDiagnosis(task)
   if (!d || phaseOf(d) !== 'evidence' || d.status !== 'approved')
     return {
@@ -750,7 +752,7 @@ export function settleCleanup(
   newId: () => string,
   now = new Date().toISOString(),
 ): boolean {
-  const d = task.diagnoses?.at(-1)
+  const d = task.bug?.diagnoses?.at(-1)
   if (!d?.cleanup || d.status !== 'cancelled') return false
   const c = d.cleanup
   c.state = result.state
@@ -790,9 +792,9 @@ export const diagnosisFeedback = (d: Diagnosis): string => phaseFeedback(d)
  * 收尾（submit_merge）前的核对：父对话派来的 Bug 要有用户确认过的方案、交过验证且用户给了结果或点了结束，
  * 实际改动不超出方案里的文件（论证时加过日志的文件也算，要删临时日志）。返回拒绝的说法；能收尾返回空串
  */
-export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>, changed: string[]): string {
-  if (!task.bug) return ''
-  const list = task.diagnoses ?? []
+export function diagnosisGate(task: Pick<Task, 'bug'>, changed: string[]): string {
+  if (!(task.bug?.kind === 'report')) return ''
+  const list = task.bug?.diagnoses ?? []
   const d = list.at(-1)
   if (!d) return '没有请求收尾：这是父对话派来的 Bug，修之前要先用 submit_diagnosis 交报告，用户确认了方案再改。'
   const v = revOf(d)
@@ -821,7 +823,7 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
   if (extra.length)
     return `没有请求收尾：这些文件不在用户确认的方案（第 ${plan ? revOf(plan) : v} 版）里：${extra.join('、')}。不需要的改回去；确实要改，重新交 phase: plan 写明为什么，等用户确认后再收尾。`
   // ADR 0046：修完的结果要记进档案——回归测试、影响面逐条的验证
-  const r = task.bugCase?.result
+  const r = task.bug?.case?.result
   if (!r?.regressionTests.length)
     return '没有请求收尾：用 update_bug_case 的 result 记下修完的结果：regressionTests 写回归测试（测试文件或用例名；没法自动化的写手工步骤），reproBefore / reproAfter 写复现用例改前、改后的输出。'
   const done = new Set(r.impactChecks.filter((x) => x.output.trim() || x.command.trim()).map((x) => norm(x.area)))
@@ -832,16 +834,16 @@ export function diagnosisGate(task: Pick<Task, 'bug' | 'diagnoses' | 'bugCase'>,
 }
 
 /** 用户确认过的最后一版修复方案（旧数据里根因和方案是一版，phaseOf 也算 plan） */
-const approvedPlan = (task: Pick<Task, 'bug' | 'diagnoses'>) =>
-  task.bug
-    ? [...(task.diagnoses ?? [])].reverse().find((x) => x.status === 'approved' && phaseOf(x) === 'plan')
+const approvedPlan = (task: Pick<Task, 'bug'>) =>
+  task.bug?.kind === 'report'
+    ? [...(task.bug?.diagnoses ?? [])].reverse().find((x) => x.status === 'approved' && phaseOf(x) === 'plan')
     : undefined
 
 /**
  * 评审对照用（ADR 0046 第 9 条）：用户确认过的那一版的要点，派评审时面板附进它的提示词。
  * 没有确认过的报告返回空。发给 Agent 的提示词，不翻译
  */
-export function approvedBrief(task: Pick<Task, 'bug' | 'diagnoses'>): string {
+export function approvedBrief(task: Pick<Task, 'bug'>): string {
   const d = approvedPlan(task)
   if (!d) return ''
   const chosen = d.options.find((o) => o.id === d.chosen?.id)
@@ -863,10 +865,10 @@ export function approvedBrief(task: Pick<Task, 'bug' | 'diagnoses'>): string {
  * Bug 记录的草稿（ADR 0046 第 5 条）：修完请父对话收尾时附上，派「文档」写 Bug 记录时原样交给它，
  * 不用它再从对话里摘。元数据头照 docs/modules/<模块>/bugs/<id>.md 的格式（状态 / 症状 / 入口 / 根因类型 / 模块 / 关键词）
  */
-export function bugRecordDraft(task: Pick<Task, 'title' | 'bug' | 'diagnoses' | 'bugCase'>): string {
+export function bugRecordDraft(task: Pick<Task, 'title' | 'bug'>): string {
   const d = approvedPlan(task)
-  if (!task.bug || !d) return ''
-  const r = task.bugCase?.result
+  if (!(task.bug?.kind === 'report') || !d) return ''
+  const r = task.bug?.case?.result
   const a = d.attribution
   const chosen = d.options.find((o) => o.id === d.chosen?.id)
   const entry = d.stack.length

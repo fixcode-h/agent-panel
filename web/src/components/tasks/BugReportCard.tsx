@@ -19,8 +19,8 @@ import { useDiagnosisWindow } from './diagnosis-window'
 export const MAX_REPORT_CARDS = 1
 
 /** 运行区要列的报告卡片：用户报的 Bug 子对话才有，只取最新一份 */
-export const reportCards = (task?: Pick<Task, 'bug' | 'diagnoses'>): Diagnosis[] =>
-  task?.bug ? (task.diagnoses ?? []).slice(-MAX_REPORT_CARDS) : []
+export const reportCards = (task?: Pick<Task, 'bug'>): Diagnosis[] =>
+  task?.bug?.kind === 'report' ? (task.bug.diagnoses ?? []).slice(-MAX_REPORT_CARDS) : []
 
 const PHASE = () => ({
   evidence: t('论证'),
@@ -54,7 +54,7 @@ function statusChip(d: Diagnosis): { text: string; cls: string } {
 /** 运行区里的报告卡片：一个 Bug 一行（最新那一份） */
 export function BugReportCards({ task, list }: { task: Task; list: Diagnosis[] }) {
   const { open } = useDiagnosisWindow(task)
-  const last = task.diagnoses?.at(-1)
+  const last = task.bug?.diagnoses?.at(-1)
   const pending = last?.status === 'pending' ? last.version : 0
   // 交上来时自动弹一次（每一版一次，和父对话页共用记号）：交报告那一行折叠着时根本没挂上，不能只靠它弹
   useEffect(() => {
@@ -72,7 +72,7 @@ export function BugReportCards({ task, list }: { task: Task; list: Diagnosis[] }
 }
 
 function ReportCard({ task, d, onOpen }: { task: Task; d: Diagnosis; onOpen: () => void }) {
-  const all = task.diagnoses ?? []
+  const all = task.bug?.diagnoses ?? []
   const n = revOf(d)
   const k = roundOf(d, all)
   const phase = PHASE()[phaseOf(d)]

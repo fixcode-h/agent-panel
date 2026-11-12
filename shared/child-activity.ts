@@ -74,7 +74,7 @@ export function childWaitText(w: ChildWait | undefined): string {
 export function childWait(
   tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & {
     runs?: Task['runs']
-    diagnoses?: Task['diagnoses']
+    bug?: Task['bug']
     userActions?: Task['userActions']
   },
   x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
@@ -84,7 +84,7 @@ export function childWait(
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)
   if (diagnosisPending(tk)) {
-    const d = tk.diagnoses!.at(-1)!
+    const d = tk.bug!.diagnoses!.at(-1)!
     return { kind: 'diagnosis', version: d.version, rev: d.rev ?? d.version }
   }
   const act = pendingAction(tk)

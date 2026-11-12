@@ -32,7 +32,7 @@ function patch(task: Task, method: string, body: unknown): PatchStatus | PatchRe
     status: statusOf(task),
   })
   if (action === 'apply') {
-    const list = task.diagnoses ?? []
+    const list = task.bug?.diagnoses ?? []
     const kind = patchKindOf(list.at(-1))
     if (!kind) return done(false, '现在不是等你复现或验证的时候，没有要放的改动')
     if (applied.has(task.id)) return done(false, '补丁已经在你的工作区里了：先还原，再重新放')
@@ -48,7 +48,7 @@ function patch(task: Task, method: string, body: unknown): PatchStatus | PatchRe
 
 /** 编一段「新增的日志」：日志计划里每处一行带 [排查- 前缀的，前后夹几行不相关的 */
 function sampleLog(task: Task): string {
-  const d = task.diagnoses?.at(-1)
+  const d = task.bug?.diagnoses?.at(-1)
   const points = d?.logPlan?.length ? d.logPlan : [{ id: 'L1', file: 'src/app.ts', print: '' }]
   const lines = ['10:02:00.118 [app] route change /cart', '10:02:00.240 [net] GET /api/cart 200 38ms']
   points.forEach((p, i) => {
@@ -62,7 +62,7 @@ function sampleLog(task: Task): string {
 
 function log(task: Task, method: string, body: unknown): LogWatchStatus | LogStartResult | LogFetchResult {
   if (method !== 'POST') return { started: started.get(task.id) }
-  const d = task.diagnoses?.at(-1)
+  const d = task.bug?.diagnoses?.at(-1)
   const path = logPathIn((d?.awaiting?.collect ?? d?.collect)?.where)
   if (!path) return { ok: false, error: '报告里没有写日志文件的位置，请自己把日志贴进来' }
   if ((body as { action?: string })?.action === 'start') {

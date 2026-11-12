@@ -172,7 +172,7 @@ async function current(sc: Scope, id: string): Promise<{ task: Task; bump: () =>
  */
 export async function afterTurnRecheck(sc: Scope, taskId: string, newId: () => string) {
   const first = await current(sc, taskId)
-  const d0 = first?.task.diagnoses?.at(-1)
+  const d0 = first?.task.bug?.diagnoses?.at(-1)
   if (!first || !d0 || running.has(taskId)) return
   const stale = d0.recheck?.state === 'running'
   if (!needsRecheck(d0) && !stale) return
@@ -196,10 +196,10 @@ export async function afterTurnRecheck(sc: Scope, taskId: string, newId: () => s
     }))
     // 跑的这段时间里任务可能落过盘、换过对象：按顺序号找回那一版再写
     const now = await current(sc, taskId)
-    const d = now?.task.diagnoses?.find((x) => x.version === version)
+    const d = now?.task.bug?.diagnoses?.find((x) => x.version === version)
     if (!now || !d) return
     d.recheck = result
-    const list = now.task.diagnoses ?? []
+    const list = now.task.bug?.diagnoses ?? []
     const fix = phaseOf(d) === 'fix' && d === list.at(-1) && d.status === 'pending'
     const gate =
       fix && autoOn(list)

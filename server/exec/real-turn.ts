@@ -108,11 +108,12 @@ export async function runRealTurn(ctx: RealContext) {
     newId: ctx.newId,
     // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug-quotes.ts）
     // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug-env.ts）
-    bugSource: ctx.task.bug
-      ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>
-          collectBugEnv(ctx.project.path, bugWho(ctx)),
-        )
-      : undefined,
+    bugSource:
+      ctx.task.bug?.kind === 'report'
+        ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>
+            collectBugEnv(ctx.project.path, bugWho(ctx)),
+          )
+        : undefined,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段

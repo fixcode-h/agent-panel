@@ -74,7 +74,7 @@ export function registerEvidenceRoutes(s: TasksScope) {
     }
     if (!ctx) return s.bad(c, t('只有 Git 项目里开了独立分支的对话才能把改动放到你的工作区'), 409)
     // 放哪种、放哪些文件由服务端按报告算（不信页面传的）：等你复现时是日志计划里的文件，验证时是方案里的文件
-    const list = task.diagnoses ?? []
+    const list = task.bug?.diagnoses ?? []
     const kind = patchKindOf(list.at(-1))
     if (!kind) return s.bad(c, t('现在不是等你复现或验证的时候，没有要放的改动'), 409)
     // 它还在改文件时取出来的是改到一半的内容
@@ -92,7 +92,7 @@ export function registerEvidenceRoutes(s: TasksScope) {
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const task = await taskOf(c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
-    const d = task.diagnoses?.at(-1)
+    const d = task.bug?.diagnoses?.at(-1)
     const where = (d?.awaiting?.collect ?? d?.collect)?.where
     const project = task.imported ? undefined : (await s.deps.projects.get(task.projectId))?.path
     if (!project) return s.bad(c, t('找不到项目目录'), 409)

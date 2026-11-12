@@ -23,7 +23,7 @@ import { scratchPath } from '../exec/file-events.ts'
  * 拦住时返回交给模型的原因（发给 Agent 的提示词，不翻译），放行返回空串。纯函数，单测直接调用
  */
 export interface GuardCtx {
-  task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'diagnoses' | 'remotePush' | 'worktree' | 'testSteps'>
+  task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'remotePush' | 'worktree' | 'testSteps'>
   project: (Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> & Partial<Pick<Project, 'pluginStepsOff'>>) | null
   cwd: string
   /** 子任务、工作流节点这类辅助调用（不是对话本身） */
@@ -76,7 +76,7 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
  */
 export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   // 普通对话里就地查的 Bug 结束了：对话照常用，不再按诊断阶段拦（shared/bug-in-place.ts）
-  if (!c.task.bug || inPlaceBugClosed(c.task)) return ''
+  if (c.task.bug?.kind !== 'report' || inPlaceBugClosed(c.task)) return ''
   // 取消修复后删临时日志：要一处一处删，不整文件还原（实跑时它用 git checkout -- 文件 还原，
   // 共用目录里会把文件里别的改动一起冲掉，用户 2026-11-10 定由 Agent 删、连空行一起删）
   if (cleaning(latestDiagnosis(c.task)) && segs(facts).some(wholeFileRevert))
@@ -88,7 +88,7 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   const unknown = facts.tool?.kind === 'edit' && !raw.length
   if (!files.length && !unknown) return ''
   // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
-  const scope = editScope(c.task.diagnoses ?? [])
+  const scope = editScope(c.task.bug?.diagnoses ?? [])
   if ('deny' in scope) return `【面板】${scope.deny}`
   if (unknown) return ''
   const extra = outOfPlan(files, scope.files)

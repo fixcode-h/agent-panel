@@ -61,5 +61,5 @@ test('最后一次工具调用：压缩上下文不算、工作流节点里的�
 
 test('Bug 走到第几步：不是 Bug 时没有；还没交报告在论证（0）', () => {
   assert.equal(childBugStep(task()), undefined)
-  assert.equal(childBugStep(task({ bug: true })), 0)
+  assert.equal(childBugStep(task({ bug: { kind: 'report' } })), 0)
 })

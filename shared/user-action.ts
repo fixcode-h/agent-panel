@@ -1,3 +1,4 @@
+import type { TaskBug } from './bug/task-bug.ts'
 import { z } from 'zod'
 import { BugCollect } from './bug-diagnosis-schema.ts'
 import { t } from './i18n.ts'
@@ -69,13 +70,13 @@ const strs = (v: unknown, max: number) =>
  * bug：用户报的 Bug 对话，复现贴日志、交验证结果都在诊断报告弹窗里，不另开一套
  */
 export function requestAction(
-  tk: WithActions & { bug?: boolean },
+  tk: WithActions & { bug?: Pick<TaskBug, 'kind'> },
   input: Record<string, unknown> | undefined,
   id: string,
   now = new Date().toISOString(),
 ): { ok: boolean; info: string; action?: UserAction } {
   const a = input ?? {}
-  if (tk.bug)
+  if (tk.bug?.kind === 'report')
     return {
       ok: false,
       info: '这是用户报的 Bug：要用户复现贴日志、交验证结果，按流程用 submit_diagnosis / request_logs，在诊断报告弹窗里交，不用 request_user_action。',

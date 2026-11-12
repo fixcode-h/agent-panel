@@ -65,7 +65,7 @@ export function settleStopped(tk: Task, reason: StopReason): Task {
  * Bug 诊断报告还在等用户确认，CLI 也没在答这一轮（ADR 0045）：这一步等的是用户，不靠 CLI 进程。
  * 面板退出、CLI 回收、定时核对都不该把它落成「已中断」，继续执行也不该拉起 CLI 让它自己往下跑（用户 2026-11-04 要求）
  */
-export const diagnosisWaiting = (tk: Pick<Task, 'diagnoses' | 'working'>) => diagnosisPending(tk) && !tk.working
+export const diagnosisWaiting = (tk: Pick<Task, 'bug' | 'working'>) => diagnosisPending(tk) && !tk.working
 
 /**
  * 回到「等你确认诊断报告」：轮次、步骤、等待时长按停下结算（进程已经没了），但不记成已停止——

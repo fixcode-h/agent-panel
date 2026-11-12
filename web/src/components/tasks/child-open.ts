@@ -30,14 +30,14 @@ export interface PaneNav {
   /** 后台命令行的标题点了：在任务页顶层打开这条命令的窗口（命令跑完那一行会消失，窗口不能跟着没） */
   job?: (job: JobTarget) => void
   /** 打开诊断报告审阅弹窗：挂在任务页顶层，一轮输出完、子任务做完时行会重挂，弹窗不能跟着没（见 diagnosis-window.tsx） */
-  diagnosis?: (task: Pick<Task, 'id' | 'title' | 'diagnoses'>, auto?: boolean, version?: number) => void
+  diagnosis?: (task: Pick<Task, 'id' | 'title' | 'bug'>, auto?: boolean, version?: number) => void
   /** 顶层的诊断报告弹窗这一刻开着：自动弹的等它关了再弹下一个 */
   diagnosisShowing?: boolean
   /**
    * 有并排右栏的顶层对话页提供：把诊断报告停靠到它的右栏（分析稿 U7）。右栏里的子对话面板自己没有右栏，
    * 选了停靠时交给它（见 diagnosis-window.tsx）
    */
-  diagnosisRail?: (task: Pick<Task, 'id' | 'title' | 'diagnoses'>, auto?: boolean, version?: number) => void
+  diagnosisRail?: (task: Pick<Task, 'id' | 'title' | 'bug'>, auto?: boolean, version?: number) => void
 }
 
 export const PaneNavCtx = createContext<PaneNav | null>(null)

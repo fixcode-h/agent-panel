@@ -5,6 +5,7 @@ import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
 import { taskLayout } from './0001-task-layout.ts'
 import { taskMetaCleanup } from './0002-task-meta-cleanup.ts'
 import { messagesJsonl } from './0003-messages-jsonl.ts'
+import { taskBug } from './0004-task-bug.ts'
 
 /**
  * 数据目录的一次性迁移（重构文档第 6 条，ADR 见 docs/adr）。
@@ -36,7 +37,7 @@ export interface Migration {
   run(ctx: MigrationCtx): Promise<void>
 }
 
-export const MIGRATIONS: Migration[] = [taskLayout, taskMetaCleanup, messagesJsonl]
+export const MIGRATIONS: Migration[] = [taskLayout, taskMetaCleanup, messagesJsonl, taskBug]
 /** 当前代码认识的数据版本 */
 export const DATA_VERSION = MIGRATIONS.at(-1)!.version
 /** 最多保留多少个迁移（超过就删最老的，见上面的规矩）；只是约定，lint 不拦 */

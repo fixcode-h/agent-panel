@@ -46,7 +46,7 @@ export function childFlowOf(
   task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & {
     runs?: Task['runs']
     resolved?: boolean
-    diagnoses?: Task['diagnoses']
+    bug?: Task['bug']
     userActions?: Task['userActions']
   },
   x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},

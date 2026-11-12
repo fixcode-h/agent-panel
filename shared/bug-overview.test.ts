@@ -28,7 +28,7 @@ const diag = (version: number, phase: string, status: string, min: number, extra
   ...extra,
 })
 const kid = (id: string, diagnoses: unknown[], extra: Record<string, unknown> = {}) =>
-  task(id, { parentTaskId: 'top', bug: true, diagnoses, ...extra })
+  task(id, { bug: { kind: 'report', diagnoses: diagnoses }, parentTaskId: 'top', ...extra })
 
 test('裁剪：只列标了 bug 的对话，带父对话标题和要打开的顶层对话；多层子对话在顶层对话名下的那一层打开；回收站里的不列', () => {
   const briefs = bugBriefs([
@@ -41,10 +41,10 @@ test('裁剪：只列标了 bug 的对话，带父对话标题和要打开的顶
         symptom: '现象',
       }),
     ]),
-    task('deep', { parentTaskId: 'mid', bug: true }),
+    task('deep', { bug: { kind: 'report' }, parentTaskId: 'mid' }),
     kid('trashed', [], { deletedAt: at(5) }),
     task('gone', { deletedAt: at(5) }),
-    task('orphan', { parentTaskId: 'gone', bug: true }),
+    task('orphan', { bug: { kind: 'report' }, parentTaskId: 'gone' }),
     task('plain', { parentTaskId: 'top' }),
   ])
   assert.deepEqual(

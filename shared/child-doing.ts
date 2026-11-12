@@ -35,6 +35,6 @@ export function lastToolCall(tk: Pick<Task, 'messages'>): LastTool | undefined {
  * Bug 子对话走到五步（论证 / 根因 / 修复方案 / 修复 / 验证）的第几步（分析稿 U8）：父对话那一行直接画五个点，
  * 不用打开报告弹窗才知道。和总览的 Bug 视图同一个算法（bug-overview.ts 的 bugStep）；不是 Bug 时没有
  */
-export function childBugStep(tk: Pick<Task, 'bug' | 'diagnoses'>): number | undefined {
-  return tk.bug ? bugStep(tk.diagnoses ?? []) : undefined
+export function childBugStep(tk: Pick<Task, 'bug'>): number | undefined {
+  return tk.bug?.kind === 'report' ? bugStep(tk.bug?.diagnoses ?? []) : undefined
 }

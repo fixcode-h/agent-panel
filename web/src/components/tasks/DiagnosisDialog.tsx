@@ -252,7 +252,7 @@ export function DiagnosisDialog({
   version,
   dock,
 }: {
-  task: Pick<Task, 'id' | 'title' | 'diagnoses'> & Partial<Pick<Task, 'changes'>>
+  task: Pick<Task, 'id' | 'title' | 'bug'> & Partial<Pick<Task, 'changes'>>
   /** 打开时先看哪一份（交报告的顺序号）；不传看最新那份 */
   version?: number
   open: boolean
@@ -263,7 +263,7 @@ export function DiagnosisDialog({
 }) {
   const { settings, agents } = useData()
   const author = settings?.bugAuthor !== false
-  const list = task.diagnoses ?? []
+  const list = task.bug?.diagnoses ?? []
   const last = list.at(-1)
   const snippets = useSnippets(task.id, list, open)
   // 和 ReviewDialog 一样稳定下来：Markdown 按引用比较，变了会重新解析、冲掉标注的位置

@@ -15,7 +15,7 @@ import { AskQuestion, TaskRequest } from './task-request.ts'
 import { UserAction } from './user-action.ts'
 import { FlowRun, WorkflowKind } from './task-flow-schema.ts'
 import { StopReason } from './stop-reason.ts'
-import { BugCase, Diagnosis, FixBrief } from './bug-diagnosis-schema.ts'
+import { TaskBug } from './bug/task-bug.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
@@ -2132,18 +2132,9 @@ export const TaskData = z.object({
   remotePushAt: z.string().optional(),
   runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
   flowRun: FlowRun.optional(), // 工作流运行（不是子对话）：属于哪个父对话、阶段、决定记录，见 task-flow-schema.ts
-  bug: z.boolean().optional(), // 父对话派来的 Bug（ADR 0045）：修之前交诊断报告 diagnoses，用户确认方案才能改
-  diagnoses: z.array(Diagnosis).optional(),
-  /**
-   * 加临时日志之前各文件的快照（文件相对路径 → 内容哈希，内容存在对话目录的 log-base/ 下；不存在的文件记空串）。
-   * 用户同意加日志时拍，只用来在取消修复后核对日志删干净了没有（shared/bug-cleanup.ts），不拿来还原
-   */
-  logBase: z.record(z.string(), z.string()).optional(),
+  /** 用户报的 Bug 的全部数据（要交诊断报告还是直接修、诊断报告各版、档案、简报…），见 shared/bug/task-bug.ts；普通对话没有 */
+  bug: TaskBug.optional(),
   userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts
-  bugCase: BugCase.optional(), // Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版
-  bugFix: z.boolean().optional(), // 直接修的用户 Bug（kind: "fix"，分析稿 B2）：收尾时留简版报告 fixBrief，不交诊断报告
-  fixBrief: FixBrief.optional(), // 直接修的 Bug 的简版报告（根因一句、改了什么、怎么验证的）：只读，见 shared/bug-fix-brief.ts
-  bugMethodPending: z.boolean().optional(), // 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({

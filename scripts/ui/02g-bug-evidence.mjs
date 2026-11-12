@@ -21,7 +21,7 @@ await runShard(import.meta.filename, async (api) => {
       resolved: false,
       status: 'done',
       working: false,
-      bug: true,
+      bug: { kind: 'report' },
       requests: [],
       worktree: { path: '/tmp/wt', branch: 'ap/bug', baseBranch: 'main', state: 'active', note: '' },
     })
@@ -33,7 +33,7 @@ await runShard(import.meta.filename, async (api) => {
       expect: '',
       outcomes: [{ see: 'L2 没出现', means: '派发没走到' }],
     }
-    kid.diagnoses = [
+    kid.bug.diagnoses = [
       {
         at,
         phase: 'evidence',
