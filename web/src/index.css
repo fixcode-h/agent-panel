@@ -1768,6 +1768,28 @@ body,
   --fr-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
   color: var(--warning);
 }
+/*
+ * 文件弹窗阅读区的代码（components/files/CodeLines.tsx）：行号横向滚动时钉在左边，代码从它下面滚过去。
+ * 行号的底 = 这一行的着色（悬停 / 跳到的那行）叠在弹窗底色上，和没钉住时看到的一样
+ */
+.cl-row {
+  --ln-tint: transparent;
+  background: var(--ln-tint);
+}
+.cl-row:hover {
+  --ln-tint: color-mix(in oklab, var(--fg) 4%, transparent);
+}
+.cl-row[data-on] {
+  --ln-tint: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.cl-num {
+  @apply sticky left-0 z-1;
+  background: linear-gradient(var(--ln-tint), var(--ln-tint)), var(--c-modal-bg);
+}
+/* 搜索命中横向滚进来时别停在钉住的行号下面 */
+.cl-row mark {
+  scroll-margin-left: 4.5rem;
+}
 /* 代码块：一张卡片，顶部语言名、行数、折行和复制按钮 */
 .chat-md .md-code,
 .chat-md > pre,
@@ -1807,12 +1829,16 @@ body,
   color: var(--md-teal);
 }
 .chat-md pre {
-  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono;
+  @apply m-0 overflow-x-auto py-3 font-mono;
+  /* 左右内边距记成变量：行号列横向滚动时钉在左边，要把左边这段内边距也盖住（见 .md-ln::before） */
+  --pre-pad: calc(var(--spacing) * 3.5);
+  padding-inline: var(--pre-pad);
   font-size: calc(var(--md-pre-size) * var(--md-base));
   line-height: var(--md-pre-leading);
 }
 .chat-md-compact pre {
-  @apply px-3 py-2;
+  @apply py-2;
+  --pre-pad: calc(var(--spacing) * 3);
 }
 .chat-md pre code {
   @apply [overflow-wrap:normal];
@@ -1822,34 +1848,51 @@ body,
 .chat-md .md-code[data-wrap] pre code {
   white-space: pre-wrap;
 }
-/* 每行一个 .md-ln（workflow-doc.ts 的 lineSpans）：行号是 ::before，选中复制时不会带上；只有一行的代码块不画行号 */
+/*
+ * 每行一个 .md-ln（workflow-doc.ts 的 lineSpans）：行号是 ::before，选中复制时不会带上；只有一行的代码块不画行号。
+ * 行号横向滚动时钉在左边（sticky），代码从它下面滚过去：所以它要有不透明的底（代码块底色），
+ * 再叠上这一行的着色（--ln-tint：悬停、出错、diff 增删）；pre 左边的内边距也盖住，滚过去的字不会从行号左边露出来
+ */
 .chat-md .md-ln {
   @apply inline-block min-w-full;
+  --ln-tint: transparent;
+  background: var(--ln-tint);
 }
 .chat-md .md-ln::before {
   counter-increment: md-ln;
   content: counter(md-ln);
   display: var(--md-pre-lineNumbers);
-  @apply mr-3 w-[2.2em] border-r pr-3 text-right select-none;
+  @apply sticky z-1 text-right select-none;
+  /* sticky 按滚动区去掉内边距后的边算，left 0 就是停在原位；左边那段内边距用同色投影盖住 */
+  left: 0;
+  box-shadow: calc(-1 * var(--pre-pad, 0px)) 0 0 0 var(--md-pre-bg);
+  /* 原来「宽 2.2em + 右边框 + 外边距 0.75rem」：外边距透明，滚过去的字会从那里露出来，
+     所以把外边距也算进宽度，分隔竖线改成画在底色里 */
+  width: calc(2.2em + var(--spacing) * 3);
+  padding-right: calc(var(--spacing) * 6);
   color: color-mix(in srgb, var(--subtle) 65%, transparent);
-  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background:
+    linear-gradient(var(--ln-line), var(--ln-line)) right calc(var(--spacing) * 3) top 0 / 1px 100% no-repeat,
+    linear-gradient(var(--ln-tint), var(--ln-tint)),
+    var(--md-pre-bg);
+  --ln-line: color-mix(in srgb, var(--line) 70%, transparent);
 }
 .chat-md .md-code[data-lines='1'] .md-ln::before {
   display: none;
 }
 .chat-md .md-ln:hover {
-  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  --ln-tint: color-mix(in srgb, var(--fg) 3%, transparent);
 }
 /* 诊断报告关键代码里出错的那一行（信息串 mark=N）：和 diff 删除行同一个色相，行号也染上 */
 .chat-md .md-ln.md-mark {
-  background: color-mix(in srgb, var(--md-coral) 14%, transparent);
+  --ln-tint: color-mix(in srgb, var(--md-coral) 14%, transparent);
 }
 .chat-md .md-ln.md-mark::before {
   color: var(--md-coral);
 }
 /* 诊断报告原文里的标记（workflow-doc.ts 的 applyMarks）：相关的行琥珀淡底、没执行到的行变灰、临时日志行淡下去 */
 .chat-md .md-ln.md-rel {
-  background: color-mix(in srgb, var(--md-gold) 12%, transparent);
+  --ln-tint: color-mix(in srgb, var(--md-gold) 12%, transparent);
 }
 .chat-md .md-ln.md-skip,
 .chat-md .md-ln.md-dim {
@@ -1879,10 +1922,10 @@ body,
 }
 /* diff：增删的行整行着色，只用底色（docs/lessons/visual.md） */
 .chat-md .md-ln.md-add {
-  background: color-mix(in srgb, var(--md-teal) 11%, transparent);
+  --ln-tint: color-mix(in srgb, var(--md-teal) 11%, transparent);
 }
 .chat-md .md-ln.md-del {
-  background: color-mix(in srgb, var(--md-coral) 11%, transparent);
+  --ln-tint: color-mix(in srgb, var(--md-coral) 11%, transparent);
 }
 .chat-md .md-ln.md-add::before {
   color: var(--md-teal);
@@ -1898,9 +1941,12 @@ body,
  */
 .cdiff {
   @apply overflow-x-auto font-mono text-footnote leading-[1.65];
+  /* 不折行时行号和记号钉在左边，要一块不透明的底：默认是代码区底色，放在别的底色上的（卡片里）自己改这个变量 */
+  --cdiff-bg: var(--code-bg);
 }
 .chat-md .cdiff {
   font-size: calc(var(--md-pre-size) * var(--md-base));
+  --cdiff-bg: var(--md-pre-bg);
 }
 .cdiff-in {
   @apply inline-block min-w-full py-1;
@@ -1945,6 +1991,35 @@ body,
 }
 .cdiff-del .cdiff-s {
   @apply text-danger;
+}
+/*
+ * 不折行、横向滚动时行号和 +/− 记号钉在左边（sticky），代码从它们下面滚过去：
+ * 底色一层层叠出来，和不钉住时看到的一样：行号槽的深色 → 整行的增删色 → 不透明的底（--cdiff-bg）
+ */
+.cdiff-row {
+  --row-tint: transparent;
+  --n-tint: color-mix(in oklab, var(--field) 60%, transparent);
+}
+.cdiff-add {
+  --row-tint: color-mix(in oklab, var(--success) 10%, transparent);
+  --n-tint: color-mix(in oklab, var(--success) 20%, transparent);
+}
+.cdiff-del {
+  --row-tint: color-mix(in oklab, var(--danger) 10%, transparent);
+  --n-tint: color-mix(in oklab, var(--danger) 20%, transparent);
+}
+.cdiff:not([data-wrap]) .cdiff-n,
+.cdiff:not([data-wrap]) .cdiff-s {
+  @apply sticky left-0 z-1;
+  background: linear-gradient(var(--row-tint), var(--row-tint)), var(--cdiff-bg);
+}
+.cdiff:not([data-wrap]) .cdiff-n {
+  background:
+    linear-gradient(var(--n-tint), var(--n-tint)), linear-gradient(var(--row-tint), var(--row-tint)), var(--cdiff-bg);
+}
+/* 有行号列（w-11）时记号钉在它右边 */
+.cdiff:not([data-wrap]) .cdiff-n + .cdiff-s {
+  left: calc(var(--spacing) * 11);
 }
 .cdiff-hunk {
   @apply bg-field/70 px-3 py-0.5 font-sans text-caption text-subtle select-none;
