@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { HintSurface } from '@/components/ui/hint'
+import { lookCell, type LookIndex } from './sheet-look'
 
 /** 格子的悬停说明分几行写（不合规：原因 / 规则 / 允许的值） */
 export interface SheetTip {
@@ -116,4 +117,34 @@ export function cellCut(cell: HTMLElement) {
   if (cell.scrollWidth > cell.clientWidth + 1) return true
   const inner = cell.firstElementChild as HTMLElement | null
   return !!inner && inner.scrollWidth > inner.clientWidth + 1
+}
+
+/**
+ * 一格的悬停说明：不合规的给原因和规则，有批注、超链接的接在后面；截断了、有换行的看完整内容。
+ * 只在鼠标停住时算一次（CellHint 调），所以每次都现读格子有没有被截断
+ */
+export function cellTip(
+  el: HTMLElement,
+  rows: string[][],
+  tip: ((r: number, c: number) => string | SheetTip | undefined) | undefined,
+  lookIdx: LookIndex | undefined,
+) {
+  const r = Number(el.dataset.r)
+  const c = Number(el.dataset.c)
+  const own = tip?.(r, c)
+  const extra = lookCell(lookIdx, r, c)?.tip
+  if (own || extra)
+    return (
+      <div className="flex flex-col gap-2">
+        {own && (typeof own === 'string' ? <p>{own}</p> : <SheetTipView tip={own} />)}
+        {extra && <p className="whitespace-pre-wrap text-fg">{extra}</p>}
+      </div>
+    )
+  const text = rows[r]?.[c] ?? ''
+  if (!text || (!text.includes('\n') && !cellCut(el))) return null
+  return text.length > 60 || text.includes('\n') ? (
+    <span className="whitespace-pre-wrap text-fg">{text.length > 2000 ? `${text.slice(0, 2000)}…` : text}</span>
+  ) : (
+    text
+  )
 }

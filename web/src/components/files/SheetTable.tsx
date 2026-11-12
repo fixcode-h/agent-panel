@@ -17,10 +17,10 @@ import {
 } from '@/components/ui/menu'
 import { SheetColumnFilter } from './SheetColumnFilter'
 import { roleShort } from './sheet-roles'
-import { lookCell, lookIndex, rowMark, spanCols, type ColDraw } from './sheet-look'
+import { lookIndex, rowMark, spanCols, type ColDraw } from './sheet-look'
 import { CELL, SheetCell, pinCls as pinClsOf, pinned as pinnedOf, type CellCtx } from './sheet-cell'
-import { CellHint, SheetTipView, cellCut, type SheetTip } from './sheet-hint'
-import { inferColKinds, useGridLook, type SheetColKind } from './sheet-kinds'
+import { CellHint, cellTip, type SheetTip } from './sheet-hint'
+import { inferColKinds, neighborCols, useGridLook, type SheetColKind } from './sheet-kinds'
 // 表格插件经开放模块只拿得到这个文件：切表、表内链接要用的几个一起从这里给
 export { firstShownSheet, parseLoc, sheetOrder } from './sheet-look'
 import './sheet-table.css'
@@ -297,19 +297,7 @@ export function SheetTable({
   }, [colW, numW])
   const dataW = lefts[lefts.length - 1]
   // 左右相邻的「没隐藏」的列：选区外框要看左右邻居在不在选区里
-  const [prevCol, nextCol] = useMemo(() => {
-    const prev: number[] = []
-    const next: number[] = Array.from({ length: colW.length }, () => -1)
-    let last = -1
-    colW.forEach((w, c) => {
-      prev.push(last)
-      if (w > 0) {
-        if (last >= 0) next[last] = c
-        last = c
-      }
-    })
-    return [prev, next]
-  }, [colW])
+  const [prevCol, nextCol] = useMemo(() => neighborCols(colW), [colW])
   /** 钉在顶上的行：列名行 + 表头（连同表头上面的标题行）；表头折起来时只剩列名行 */
   const frozen = headCollapsed && colHead ? 0 : from
   // 两行列头高一些：字段名一行、标签一行
@@ -472,27 +460,7 @@ export function SheetTable({
   const fo = edit?.focus
   const rowOn = (r: number) => !!fo && (fo.row === r || !!edit?.picked(r, fo.col))
   const colOn = (c: number) => !!fo && (fo.col === c || !!edit?.picked(fo.row, c))
-  /** 悬停说明：不合规的给原因和规则，有批注、超链接的接在后面；截断了、有换行的看完整内容 */
-  const tipOf = (el: HTMLElement) => {
-    const r = Number(el.dataset.r)
-    const c = Number(el.dataset.c)
-    const own = edit?.tip?.(r, c)
-    const extra = lookCell(lookIdx, r, c)?.tip
-    if (own || extra)
-      return (
-        <div className="flex flex-col gap-2">
-          {own && (typeof own === 'string' ? <p>{own}</p> : <SheetTipView tip={own} />)}
-          {extra && <p className="whitespace-pre-wrap text-fg">{extra}</p>}
-        </div>
-      )
-    const text = rows[r]?.[c] ?? ''
-    if (!text || (!text.includes('\n') && !cellCut(el))) return null
-    return text.length > 60 || text.includes('\n') ? (
-      <span className="whitespace-pre-wrap text-fg">{text.length > 2000 ? `${text.slice(0, 2000)}…` : text}</span>
-    ) : (
-      text
-    )
-  }
+  const tipOf = (el: HTMLElement) => cellTip(el, rows, edit?.tip, lookIdx)
   /** 行号格：表格页里右键能插删行 */
   const rowNum = (r: number, node: React.ReactElement) => (edit?.rowMenu ? edit.rowMenu(r, node) : node)
   const shown: number[] = []

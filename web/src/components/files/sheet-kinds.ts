@@ -109,3 +109,18 @@ export function inferColKinds(
   }
   return out
 }
+
+/** 每列左右相邻的「没隐藏」的列（宽度为 0 的是隐藏列，-1 是没有）：选区外框看左右邻居在不在选区里 */
+export function neighborCols(colW: number[]): [number[], number[]] {
+  const prev: number[] = []
+  const next: number[] = Array.from({ length: colW.length }, () => -1)
+  let last = -1
+  colW.forEach((w, c) => {
+    prev.push(last)
+    if (w > 0) {
+      if (last >= 0) next[last] = c
+      last = c
+    }
+  })
+  return [prev, next]
+}
