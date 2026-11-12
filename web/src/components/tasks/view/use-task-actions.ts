@@ -72,7 +72,7 @@ export function useTaskActions(c: TaskActionsCtx) {
   const send = async (input?: string) => {
     if (!task) return
     const text = input ?? taRef.current?.text() ?? ''
-    if (!text.trim() && !files.attachments.length && !files.needFrames) return
+    if (!text.trim() && !files.attachments.length && !files.needPicks) return
     // 输入框已经拦过一道（Enter 和按钮同一个 ready）：这里再拦一次，并说清原因，不默默丢掉用户写的字
     if (sending || files.uploading) {
       toast.info(

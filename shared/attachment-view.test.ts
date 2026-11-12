@@ -8,8 +8,8 @@ import {
   routeOf,
   sendAttachmentOf,
   sendAttachments,
-  needFrames,
-  withVideoFrames,
+  needPicks,
+  withIntakePicks,
   type ItemLike,
 } from './attachment-view.ts'
 import { withAttachments } from './task.ts'
@@ -66,7 +66,7 @@ test('阈值分流、发送取哪份、拦发送和卡片显示', () => {
   )
 })
 
-test('视频卡片：发送时换成选好的帧图片，文字里的视频卡片原位换成帧，Agent 拿到的是帧路径', () => {
+test('插件认领的卡片（视频）：发送时换成插件里选好的附件（帧图片），文字里原位换掉，Agent 拿到的是帧路径', () => {
   const frames = [
     { name: 'v-00m01.0s.png', path: '/data/video-frames/k/a.png', size: 5, mime: 'image/png' },
     { name: 'v-00m02.0s.png', path: '/data/video-frames/k/b.png', size: 6, mime: 'image/png' },
@@ -77,18 +77,20 @@ test('视频卡片：发送时换成选好的帧图片，文字里的视频卡�
     source: '/videos/v.mp4',
     state: 'ref',
     done: { name: 'v.mp4', path: '/videos/v.mp4', size: 10, mime: 'video/mp4', ref: true },
-    video: true,
+    intake: 'video:frames',
   })
   // 没选帧：不发视频，也不当成在上传拦着；发送前要先选帧
   assert.deepEqual(sendAttachments([video]), [])
   assert.equal(blocksSend(video), false)
-  assert.equal(needFrames(video), true)
-  assert.equal(chipTextOf(video)?.status, '点击选帧')
-  const picked = { ...video, frames }
-  assert.equal(needFrames(picked), false)
-  assert.equal(chipTextOf(picked)?.status, '2 帧')
+  assert.equal(needPicks(video), true)
+  // 状态由认领它的插件给；插件没给（关掉了）时照普通附件显示
+  assert.equal(chipTextOf(video, '点击选帧')?.status, '点击选帧')
+  assert.equal(chipTextOf(video)?.status, '引用路径')
+  const picked = { ...video, picks: frames }
+  assert.equal(needPicks(picked), false)
+  assert.equal(chipTextOf(picked, '2 帧')?.status, '2 帧')
   assert.deepEqual(sendAttachments([picked]), frames)
-  const text = withVideoFrames('看看 [文件:v.mp4] 哪里不对', [picked])
+  const text = withIntakePicks('看看 [文件:v.mp4] 哪里不对', [picked])
   assert.equal(text, '看看 [图片:v-00m01.0s.png] [图片:v-00m02.0s.png] 哪里不对')
   const prompt = withAttachments(text, sendAttachments([picked]))
   assert.equal(prompt, '看看 /data/video-frames/k/a.png /data/video-frames/k/b.png 哪里不对')

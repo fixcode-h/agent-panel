@@ -18,4 +18,9 @@ export const EN_UI_POLISH: Record<string, string> = {
   '要做什么？交给它一路做完': 'What needs doing? Hand it over and it sees it through',
   '接着问，这里问一句答一句': 'Ask a follow-up. One question, one answer',
   '继续输入要求，交给它一路做完': 'Add a request. It will see it through',
+  // 视频截帧拆成插件后，面板别处（表格对比、经验卡、看大图）还在用的几条
+  变化: 'Changes',
+  手动: 'Manual',
+  '滚轮缩放 · 拖动查看 · 双击放大 / 还原': 'Scroll to zoom · drag to pan · double-click to zoom / reset',
+  还原到适应窗口: 'Reset to fit',
 }

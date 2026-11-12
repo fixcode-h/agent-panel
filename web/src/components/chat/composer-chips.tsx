@@ -27,7 +27,7 @@ import { insertFileRef, useFileRefDrop, useFileRefDropOn, type FileRef } from '@
 import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
-import { useVideoIntake } from '@/components/video/useVideoIntake'
+import { useAttachmentIntake } from '@/plugins/attachment-intake'
 import type { ChipActions, RichInputHandle } from './RichInput'
 
 /** 文字里附件卡片的名字 */
@@ -64,8 +64,8 @@ export function useComposerChips({
   /** 粘贴进来的文件：图片是剪贴板截图，没有原路径，直接上传（见 useAttachments 的 add） */
   const addPasted = useCallback((list: File[]) => void files.add(list, hooks, { clipboard: true }), [files, hooks])
   const addReady = useCallback((a: Attachment) => files.addReady(a, hooks), [files, hooks])
-  /** 放进来的视频：留在输入框里当卡片，点开截帧弹窗选帧，发送时换成帧图片（不把视频发给 Agent） */
-  const { open: openVideo, dialog: videoDialog } = useVideoIntake(files)
+  /** 插件认领的附件（视频）：留在输入框里当卡片，点开插件弹窗选好（截帧），发送时换成选好的附件（不把视频发给 Agent） */
+  const { open: openIntake, status: intakeStatus, dialog: intakeDialog } = useAttachmentIntake(files)
   /** 引用一段内容：放到输入框末尾 */
   const addQuote = useCallback(
     (quoted: string) => {
@@ -102,9 +102,9 @@ export function useComposerChips({
       // 只换附件卡片：技能 / 命令卡片可能和附件重名（输入框里的 /blender 和叫 blender 的文件），不能改成 @路径
       if (!isAttachChip(chip.kind)) return undefined
       const item = files.items.find((x) => x.name === chip.name)
-      return item ? chipTextOf(item) : undefined
+      return item ? chipTextOf(item, intakeStatus(item)) : undefined
     },
-    [files.items],
+    [files.items, intakeStatus],
   )
   const [view, setView] = useState<ViewTarget | null>(null)
   // 右键卡片弹出的菜单：位置是鼠标坐标；关闭时把焦点交回输入框
@@ -177,8 +177,8 @@ export function useComposerChips({
     () => ({
       open: (chip) => {
         const item = files.items.find((x) => x.name === chip.name)
-        // 视频卡片：打开截帧弹窗，不用文件弹窗看
-        if (item?.video) return openVideo(item.key)
+        // 插件认领的卡片（视频）：打开插件的弹窗（截帧），不用文件弹窗看
+        if (item?.intake) return openIntake(item.key)
         // 卡片上显示的是缩略图（从草稿恢复时），浮层要看原图；用 || 而不是 ??：
         // 草稿恢复存的 full 可能是空串，不能用它把有值的 preview 挡掉
         const images = files.items.flatMap((x) => {
@@ -200,7 +200,7 @@ export function useComposerChips({
       },
       context: (chip, at) => setMenu({ chip, at }),
     }),
-    [files, change, editor, openVideo],
+    [files, change, editor, openIntake],
   )
 
   /** 右键卡片的菜单：图片能复制图片，文件复制路径，引用复制原文；菜单项用面板统一样式 */
@@ -368,7 +368,7 @@ export function useComposerChips({
     viewer: (
       <>
         <AttachmentViewer target={view} onClose={() => setView(null)} />
-        {videoDialog}
+        {intakeDialog}
       </>
     ),
   }

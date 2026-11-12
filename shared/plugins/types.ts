@@ -107,8 +107,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    不带面板外壳的独立页（WebPlugin.barePages，无头浏览器截图用）
  * 5：去掉设计模式（WebPlugin.designModes、#/pdesign），设计类插件改用图标栏里的整页；整页可以自己分块（PluginPage.split），
  *    子位置可以带 /（#/plugin/<插件>/<页面>/<a>/<b>）
+ * 6：插件认领输入框附件（WebPlugin.attachmentIntakes，例如视频插件把视频换成截好的帧图片）、
+ *    这一轮是不是用户在聊的对话（PluginRun.conversation）
  */
-export const PLUGIN_API = 5
+export const PLUGIN_API = 6
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

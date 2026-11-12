@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { PluginConfig } from '@shared/plugins/types'
-import type { Task } from '@shared/schema'
+import type { Attachment, Task } from '@shared/schema'
 import type { host } from './host'
 
 /**
@@ -83,10 +83,38 @@ export interface FileViewerProps {
   close: () => void
 }
 
+/**
+ * 插件认领的一类输入框附件（插件接口 6）：拖进、粘贴、选进输入框的文件按扩展名（或 MIME 前缀）归某个插件时，
+ * 不拷、不上传，作为卡片只引用原路径；点卡片打开插件的 Dialog，用户在里面选好要发的东西（例如视频插件截的帧图片），
+ * 发送时卡片原位换成这些附件。还没选时发送会先打开 Dialog。没挂这个扩展点的输入框照旧当普通文件。
+ * Agent 收不了的格式（视频）由懂它的插件转成能收的（图片）
+ */
+export interface AttachmentIntake {
+  id: string
+  /** 认领的扩展名：小写、不带点（mp4） */
+  exts: string[]
+  /** 也按浏览器给的 MIME 前缀认领（video/），没给扩展名的文件靠它 */
+  mimes?: string[]
+  /** 卡片上的状态：picked 是已经选好的附件数，0 时提示点开去选 */
+  status: (picked: number) => string
+  /** 还没选就点了发送时的提示（随后打开 Dialog） */
+  pending: (name: string) => string
+  Dialog: ComponentType<AttachmentIntakeProps>
+}
+
+export interface AttachmentIntakeProps {
+  /** 要处理的文件：本机绝对路径；chosen 是上次选好的（再打开时照着勾上）。null 表示关着 */
+  target: { path: string; name: string; chosen: Attachment[] } | null
+  onClose: () => void
+  /** 选好的附件交回卡片，发送时换成它们 */
+  onInsert: (list: Attachment[]) => void
+}
+
 export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
   fileViewers?: FileViewer[]
+  attachmentIntakes?: AttachmentIntake[]
   barePages?: BarePage[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>

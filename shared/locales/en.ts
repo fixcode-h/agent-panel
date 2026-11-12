@@ -36,7 +36,6 @@ import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
 import { EN_AWAY } from './en/away.ts'
 import { EN_QUOTA_RESUME } from './en/quota-resume.ts'
-import { EN_VIDEO } from './en/video.ts'
 import { EN_STATE_WORD } from './en/state-word.ts'
 import { EN_RESTORE } from './en/restore.ts'
 import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
@@ -49,7 +48,6 @@ import { EN_UI_POLISH } from './en/ui-polish.ts'
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
   // 视频截帧放最前：和别处同名的词（手动、自动、增强…）以别处已有的英文为准
-  ...EN_VIDEO,
   ...EN_SHARED,
   ...EN_SERVER,
   ...EN_APP,

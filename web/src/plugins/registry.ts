@@ -9,6 +9,7 @@ import { taskPlugin } from '@shared/task'
 import type { Task } from '@shared/schema'
 import { request } from '@/lib/api'
 import { pickFileViewer } from './file-viewers'
+import { intakeByKey, pickIntake } from './attachment-intakes'
 import { pruneUpdates } from './updates'
 import type { ActivateWeb, PluginPage, TaskTab, WebPlugin } from './sdk'
 
@@ -150,3 +151,7 @@ export const useTaskTabs = (task: Task | undefined): TaskTab[] => {
 
 /** 开着的插件里能看这个文件的查看器（按扩展名）；没有就照面板原来的规则打开 */
 export const fileViewerFor = (path: string, s: State = state) => pickFileViewer(s.web.entries(), path)
+/** 开着的插件里认领这个输入框附件的（插件接口 6，按扩展名 / MIME）；没有就当普通文件 */
+export const intakeFor = (name: string, mime?: string, s: State = state) => pickIntake(s.web.entries(), name, mime)
+/** 按附件条目上记的 key 找回认领它的插件（卡片状态、打开 Dialog 用） */
+export const intakeOf = (key: string, s: State = state) => intakeByKey(s.web.entries(), key)

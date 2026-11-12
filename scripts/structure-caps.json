@@ -61,7 +61,6 @@
     "web/src/components/tasks/TaskFiles.tsx::TaskFiles": 370,
     "web/src/components/tasks/TaskView.tsx::TaskView": 1020,
     "web/src/components/usage/UsageSection.tsx::UsageSection": 580,
-    "web/src/components/video/VideoFramesDialog.tsx::Body": 630,
     "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 370,
     "web/src/lib/demo-backend.ts::seed": 530,
     "web/src/lib/demo-backend.ts::route": 590,
@@ -478,8 +477,6 @@
       "validate.ts",
       "verdict.ts",
       "version.ts",
-      "video-tools.ts",
-      "video.ts",
       "wake.ts",
       "wide-search.ts",
       "wrap-request-schema.ts",
@@ -651,7 +648,6 @@
       "useStickToBottom.ts",
       "user-name.ts",
       "utils.ts",
-      "video-api.ts",
       "workflow-doc.ts",
       "worktrees.ts"
     ]
@@ -739,8 +735,6 @@
     "web/src/components/tasks/ProcessPanel.tsx": 1,
     "web/src/components/tasks/UserActionPanel.tsx": 1,
     "web/src/components/tasks/task-view-children.ts": 1,
-    "web/src/components/video/EnhanceBar.tsx": 1,
-    "web/src/components/video/VideoFramesDialog.tsx": 3,
     "web/src/lib/app-update.ts": 1,
     "web/src/lib/data.tsx": 1,
     "web/src/lib/owned-runs.ts": 1,

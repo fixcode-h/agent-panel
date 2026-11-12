@@ -168,7 +168,7 @@ export function TaskComposer({
   const canStart =
     (standalone || !!project) &&
     // 只放了还没选帧的视频也能点发送：发送时打开截帧弹窗选帧
-    (!!prompt.trim() || files.attachments.length > 0 || !!files.needFrames) &&
+    (!!prompt.trim() || files.attachments.length > 0 || !!files.needPicks) &&
     (byCli ? !!chatRun.cli : !!agent) &&
     // 要问用户的参数没选好时不能开始：服务端也会拒绝，这里先挡住并让「参数」按钮显示警告
     !missing.length &&
@@ -192,7 +192,7 @@ export function TaskComposer({
     [asked, tasks, fixed, named],
   )
   const sendTo = async (id: string) => {
-    if ((!prompt.trim() && !files.attachments.length && !files.needFrames) || busy || files.uploading) return
+    if ((!prompt.trim() && !files.attachments.length && !files.needPicks) || busy || files.uploading) return
     // 视频卡片换成选好的帧；还有没选帧的视频时先打开截帧弹窗
     const text = files.prepare(prompt)
     if (text === null) return

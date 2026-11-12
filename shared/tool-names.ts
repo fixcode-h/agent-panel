@@ -71,7 +71,6 @@ const PANEL_TOOLS = (): Record<string, string> => ({
   wait_user_message: t('等待用户消息'),
   app_actions: t('查看软件操作'),
   app_do: t('操作软件'),
-  video_frames: t('从视频截帧'),
   more_tools: t('查看工具用法'),
 })
 
