@@ -19,6 +19,7 @@ export const EN_SHEETS: Record<string, string> = {
   新增的行和新值: 'Added rows and new values',
   删掉的行和旧值: 'Removed rows and old values',
   隔行底色: 'Row stripes',
+  填充柄大小: 'Fill handle size',
   鲜艳: 'Vivid',
   '相对项目目录，或绝对路径': 'Relative to the project folder, or an absolute path',
   '{n} 个表格': '{n} tables',
