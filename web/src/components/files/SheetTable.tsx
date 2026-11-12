@@ -210,11 +210,14 @@ export function SheetTable({
   rowHeight,
   look,
   onLocate,
+  colMenu,
 }: {
   /** xlsx 里读出的合并单元格、批注、超链接、整行底色（只读，见 sheet-look.tsx） */
   look?: SheetLook
   /** 点了表内位置的超链接（Sheet2!A1）：切表、选中那一格；不传就只显示 */
   onLocate?: (loc: string) => void
+  /** 列名右键菜单里另加的几项（表格页的插入列、删除列），接在冻结、隐藏后面 */
+  colMenu?: (col: number) => React.ReactNode
   /** 行高：表格页的密度（紧凑 / 宽松）；不传按设置 → 组件 → 数据表格 */
   rowHeight?: number
   /** 传了列头就是两行：字段名 + 类型标签（表格页用，按列结构算） */
@@ -517,6 +520,7 @@ export function SheetTable({
               pin={pin ? { style: pinned(c, pin), cls: pinCls(c, pin) || '' } : undefined}
               layout={layout}
               onLayout={onLayout}
+              extraMenu={colMenu}
               onResize={widthKey ? (v) => setDragged(c, v ?? fitWidth(c)) : undefined}
               lineH={lineH}
               rows={rows}
@@ -692,12 +696,14 @@ function ColumnHead({
   layout,
   onLayout,
   onDown,
+  extraMenu,
 }: {
   /** 按下列名：选整列（筛选按钮、拖列宽的边线不算） */
   onDown?: (c: number, e: React.MouseEvent) => void
   col: number
   width: number
   height: number
+  extraMenu?: (col: number) => React.ReactNode
   info?: SheetColHead
   /** 两行列头（表格页）：没有字段名的列也是这个高度，只写字母 */
   twoLine: boolean
@@ -824,6 +830,7 @@ function ColumnHead({
             {t('显示全部隐藏的列（{n} 列）', { n: l.hidden.length })}
           </ContextMenuItem>
         )}
+        <ExtraItems node={extraMenu?.(col)} />
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -872,5 +879,16 @@ export function SheetTabs({
         )
       })}
     </div>
+  )
+}
+
+/** 列名菜单里另加的几项：有内容才画分隔线（只读时表格页不给插删列） */
+function ExtraItems({ node }: { node: React.ReactNode }) {
+  if (node == null || node === false) return null
+  return (
+    <>
+      <ContextMenuSeparator />
+      {node}
+    </>
   )
 }
