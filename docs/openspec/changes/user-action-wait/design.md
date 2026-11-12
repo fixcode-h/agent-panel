@@ -6,7 +6,7 @@
 
 UI 示例：[等待用户操作 · UI 设计](https://claude.ai/artifact/NYRsmQreiQ4R82DAQvDeW7)。第一个画板是完整窗口（左栏、对话、右栏），可以切换三个场景，蓝色标签 A–H 标出新加的东西出现在哪；对话、日志都是虚构的。
 
-相关代码：`server/ask-mcp.ts`（`ask_user`）、`web/src/components/chat/QuestionPanel.tsx`（提问面板）、`web/src/components/tasks/ChildAskCard.tsx`（父对话里「子对话请用户选择」）、`web/src/components/tasks/ChildrenBar.tsx`、`shared/child-ask.ts`、`shared/builtin/agents.ts`（协调器）、`server/end-turn-tool.ts`、`server/tasks/jobs.ts`（后台命令结果推回）、`shared/plan-wait.ts`、`shared/task.ts`（`convState`）、`shared/bug-diagnosis.ts`（`requestLogs`、`BugCollect`）、`web/src/components/tasks/LogAttach.tsx`
+相关代码：`server/ask-mcp.ts`（`ask_user`）、`web/src/components/chat/QuestionPanel.tsx`（提问面板）、`web/src/components/tasks/ChildAskCard.tsx`（父对话里「子对话请用户选择」）、`web/src/components/tasks/ChildrenBar.tsx`、`shared/child-ask.ts`、`shared/builtin/agents.ts`（协调器）、`server/end-turn-tool.ts`、`server/tasks/jobs.ts`（后台命令结果推回）、`shared/plan-wait.ts`、`shared/task.ts`（`convState`）、`shared/bug/diagnosis.ts`（`requestLogs`、`BugCollect`）、`web/src/components/tasks/LogAttach.tsx`
 
 ## 0. 一页结论
 
@@ -90,7 +90,7 @@ UI 示例：[等待用户操作 · UI 设计](https://claude.ai/artifact/NYRsmQr
 {
   title: string,        // 一句话要用户做什么：「跑一次 PIE，抓路牌的 Actor 路径」
   why: string,          // 拿到之后用来干什么
-  collect: BugCollect & // 复用 shared/bug-diagnosis-schema.ts 的形状：steps / where / filter / expect
+  collect: BugCollect & // 复用 shared/bug/diagnosis-schema.ts 的形状：steps / where / filter / expect
     { kind: 'confirm' | 'result' },  // confirm 只要确认做完；result 要交回东西（文字、日志、文件都走输入框）
   alternative?: { title: string, steps: string[] },   // 最多一个「也可以这样」
   fallback: string,     // 必填：用户点「跳过」时它怎么继续
@@ -213,7 +213,7 @@ Task.userActions?: {
 
 ## 9. 改动范围
 
-- 数据：`shared/schema.ts`（`Task.userActions`、`PlanWait.kind` 加 `user`、`PanelKind` 加 `action`）；`BugCollect` 从 `shared/bug-diagnosis-schema.ts` 挪到共用的地方，或者直接引用
+- 数据：`shared/schema.ts`（`Task.userActions`、`PlanWait.kind` 加 `user`、`PanelKind` 加 `action`）；`BugCollect` 从 `shared/bug/diagnosis-schema.ts` 挪到共用的地方，或者直接引用
 - 判定：`shared/task.ts`（`convState`、说法）、`shared/child-needs.ts`、`shared/end-turn.ts` 和 `server/tasks/before-end.ts`（放行档）、`shared/task-diagnosis.ts`
 - 工具：新文件 `server/user-action-tool.ts`（`orch-mcp.ts` 已到行数上限），注册在 `server/orch-mcp.ts`；推回复用 `server/tasks/jobs.ts` 的 `pushJobNote` 那条路，抽成共用函数
 - 接口：完成、做不了、跳过；交回走现有的发消息接口，带上等你操作的 id

@@ -106,8 +106,8 @@ export async function runRealTurn(ctx: RealContext) {
     prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
     changed: ctx.changed,
     newId: ctx.newId,
-    // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug-quotes.ts）
-    // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug-env.ts）
+    // Bug 诊断报告交上来时取代码快照、核对原文（shared/bug/quotes.ts）
+    // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug/env.ts）
     bugSource:
       ctx.task.bug?.kind === 'report'
         ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>

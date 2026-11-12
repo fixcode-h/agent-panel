@@ -13,7 +13,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { bugRows, type BugBrief } from '@shared/bug-overview'
+import { bugRows, type BugBrief } from '@shared/bug/overview'
 import type { FlowBrief } from '@shared/agent-stats'
 import { t } from '@shared/i18n'
 import { OVERVIEW_GROUPS, overviewRows, type OverviewGroup, type OverviewRow } from '@shared/overview'

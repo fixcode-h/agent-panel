@@ -4,14 +4,14 @@
  * 状态只在内存里，刷新就没了。从 demo-backend.ts 拆出（那个文件到了行数上限）
  */
 import type { Task } from '@shared/schema'
-import { patchFilesOf, patchKindOf, type PatchResult, type PatchStatus } from '@shared/bug-patch'
+import { patchFilesOf, patchKindOf, type PatchResult, type PatchStatus } from '@shared/bug/patch'
 import {
   logPathIn,
   relatedLines,
   type LogFetchResult,
   type LogStartResult,
   type LogWatchStatus,
-} from '@shared/bug-log-watch'
+} from '@shared/bug/log-watch'
 
 const applied = new Map<string, NonNullable<PatchStatus['applied']>>()
 const started = new Map<string, { path: string; at: string }>()

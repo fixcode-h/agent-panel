@@ -1,5 +1,5 @@
 /**
- * 排查补丁放到用户工作区 / 还原（分析稿 B1，规则和类型在 shared/bug-patch.ts）：
+ * 排查补丁放到用户工作区 / 还原（分析稿 B1，规则和类型在 shared/bug/patch.ts）：
  * - 放：取独立分支里这几个文件相对分支起点的 diff，先 `git apply --check`，过了才给项目目录里这几个文件拍快照、打补丁；
  *   对不上（用户在这些文件里有没提交的改动且和补丁冲突）就什么都不动，把 git 的说明原样给用户；
  * - 还原：把这几个文件写回快照的内容，再读一遍核对一致；放了之后用户又改过的不覆盖，列出是哪几个文件。
@@ -17,7 +17,7 @@ import {
   type PatchKind,
   type PatchState,
   type PatchStatus,
-} from '../../shared/bug-patch.ts'
+} from '../../shared/bug/patch.ts'
 import { gitExec } from '../exec/git.ts'
 
 /** 一条 git 最多等这么久；补丁再大也就是几个文件 */

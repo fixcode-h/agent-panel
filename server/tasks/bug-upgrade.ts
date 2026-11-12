@@ -1,4 +1,4 @@
-import { BugCase, type BugLevel } from '../../shared/bug-diagnosis-schema.ts'
+import { BugCase, type BugLevel } from '../../shared/bug/diagnosis-schema.ts'
 import { taskLog } from '../task-log.ts'
 import type { TasksScope } from './scope.ts'
 

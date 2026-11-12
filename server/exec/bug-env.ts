@@ -1,15 +1,15 @@
 /**
- * 诊断报告的环境采集（分析稿 B4，渲染和解析在 shared/bug-env.ts）：交第一份报告时同步取一次。
+ * 诊断报告的环境采集（分析稿 B4，渲染和解析在 shared/bug/env.ts）：交第一份报告时同步取一次。
  * 交报告是工具调用、宿主同步回答，所以 git 命令同步跑、每条限时；取不到的项省略，报告照常交
  */
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { BugEnv } from '../../shared/bug-diagnosis-schema.ts'
+import type { BugEnv } from '../../shared/bug/diagnosis-schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { gitSync } from './git.ts'
 import type { Agent, Task } from '../../shared/schema.ts'
-import { COMMIT_FORMAT, ENV_COMMITS, LOCK_FILES, parseCommits, parseDirty } from '../../shared/bug-env.ts'
+import { COMMIT_FORMAT, ENV_COMMITS, LOCK_FILES, parseCommits, parseDirty } from '../../shared/bug/env.ts'
 
 /** 每条 git 命令最多等这么久：五条加起来也不会让交报告卡住十几秒 */
 const GIT_MS = 3000

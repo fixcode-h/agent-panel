@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, taskSummary } from '../../shared/task.ts'
-import { bugBriefs } from '../../shared/bug-overview.ts'
+import { bugBriefs } from '../../shared/bug/overview.ts'
 import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
 import { messageChars, searchTasks } from '../../shared/task-search.ts'
 import { trashRows } from '../../shared/trash/rows.ts'
@@ -41,7 +41,7 @@ export function registerListRoutes(s: TasksScope) {
 
   /**
    * 总览页的 Bug 视图：所有用户报的 Bug（多半是子对话，列表接口不返回子对话，也不该带整份报告），
-   * 只给视图和流程统计要的精简字段（shared/bug-overview.ts）。状态按内存里正在跑的那份算，和列表同一个口径
+   * 只给视图和流程统计要的精简字段（shared/bug/overview.ts）。状态按内存里正在跑的那份算，和列表同一个口径
    */
   s.routes.get('/bugs', async (c) => {
     const all = (await s.store.list()).map((t) => s.idle(s.live.get(t.id)?.task ?? t))

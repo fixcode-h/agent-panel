@@ -1,11 +1,11 @@
 /**
- * Bug 诊断报告交上来时取原文（shared/bug-quotes.ts 的 BugSource）：读项目文件、取引入改动的 diff、
- * 交验证时取每个改了的文件和对话开始时比的 diff（「修复」那一步显示，shared/bug-fix.ts）。
+ * Bug 诊断报告交上来时取原文（shared/bug/quotes.ts 的 BugSource）：读项目文件、取引入改动的 diff、
+ * 交验证时取每个改了的文件和对话开始时比的 diff（「修复」那一步显示，shared/bug/fix.ts）。
  * 交报告是工具调用，宿主同步回答：文件只读前 5 MB，git 命令限时 5 秒，取不到就返回 undefined（报告照常交，只是没有原文）
  */
 import { readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
-import type { BugSource } from '../../shared/bug-quotes.ts'
+import type { BugSource } from '../../shared/bug/quotes.ts'
 import type { Project, Task } from '../../shared/schema.ts'
 import { gitSync as runGit } from './git.ts'
 
@@ -27,7 +27,7 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
   let base: string | undefined
   let inRepo: boolean | undefined
   // 不是 git 工作区（P4、SVN 的工程）：没有对话开始时的版本可比，diff 返回 undefined，
-  // 由调用方改用 Agent 改文件时记下的改动（shared/bug-fix.ts 的 editPatch）。
+  // 由调用方改用 Agent 改文件时记下的改动（shared/bug/fix.ts 的 editPatch）。
   // 不能退回「和空文件比」：那样整个文件都画成新增（用户 2026-11-11 报）
   const repo = () => (inRepo ??= gitSync(dir, ['rev-parse', '--is-inside-work-tree'])?.out.trim() === 'true')
   const baseOf = () =>

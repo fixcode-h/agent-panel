@@ -1,19 +1,19 @@
 /**
- * 面板复核回归测试（分析稿 B9，判定和渲染在 shared/bug-recheck.ts）：修复、验证这一版交上来、子对话这一轮结束后，
+ * 面板复核回归测试（分析稿 B9，判定和渲染在 shared/bug/recheck.ts）：修复、验证这一版交上来、子对话这一轮结束后，
  * 把档案里写的回归测试命令在两处各跑一次：
  * - 改前：对话开始时的提交（Task.baseRef）开一个临时的分离工作区，拷进现在的测试文件（新写的回归测试改前还不存在），
  *   依赖目录（node_modules 这类）链接到现在的目录，不重新安装；
  * - 改后：现在的代码（对话的工作区）。
  * 每条命令有超时，结果（退出码、用时、输出最后一段）原样记进这一版报告；跑不了的写清原因，界面标「面板没有复核」。
- * 不悄悄重试。复核完如果用户开着「没有要注意的就自动通过」，按结果决定这一版能不能自动通过（shared/bug-auto.ts）
+ * 不悄悄重试。复核完如果用户开着「没有要注意的就自动通过」，按结果决定这一版能不能自动通过（shared/bug/auto.ts）
  */
 import { copyFile, lstat, mkdir, mkdtemp, rm, stat, symlink, unlink } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { Task } from '../../shared/schema.ts'
-import type { Diagnosis, Recheck, RecheckRun } from '../../shared/bug-diagnosis-schema.ts'
-import { autoApprove, autoBlock, autoOn } from '../../shared/bug-auto.ts'
-import { phaseOf, revOf } from '../../shared/bug-phase.ts'
+import type { Diagnosis, Recheck, RecheckRun } from '../../shared/bug/diagnosis-schema.ts'
+import { autoApprove, autoBlock, autoOn } from '../../shared/bug/auto.ts'
+import { phaseOf, revOf } from '../../shared/bug/phase.ts'
 import {
   needsRecheck,
   ranInConversation,
@@ -21,7 +21,7 @@ import {
   RECHECK_TIMEOUT_MS,
   recheckCommands,
   TEST_FILE,
-} from '../../shared/bug-recheck.ts'
+} from '../../shared/bug/recheck.ts'
 import { t } from '../../shared/i18n.ts'
 import { runShell } from '../merge-build.ts'
 import { currentShell } from '../shells.ts'

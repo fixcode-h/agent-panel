@@ -115,8 +115,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/DiagnosisStages.tsx',
     'web/src/components/tasks/DiagnosisCard.tsx',
     'web/src/components/tasks/ReviewDialog.tsx',
-    'shared/bug-fix-md.ts',
-    'shared/bug-md.ts',
+    'shared/bug/fix-md.ts',
+    'shared/bug/md.ts',
     'web/src/lib/diff-html.ts',
     'web/src/components/ui/UnifiedDiff.tsx',
   ],
@@ -126,9 +126,9 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/ReviewDialog.tsx',
     'web/src/components/tasks/BugReportCard.tsx',
     'web/src/components/ui/checkbox.tsx',
-    'shared/bug-recheck.ts',
-    'shared/bug-auto.ts',
-    'shared/bug-diagnosis-card.ts',
+    'shared/bug/recheck.ts',
+    'shared/bug/auto.ts',
+    'shared/bug/diagnosis-card.ts',
   ],
   // 诊断报告「等你复现」的取证：放到工作区 / 还原、面板自己取日志、自动采集的环境
   '02g-bug-evidence': [
@@ -136,9 +136,9 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/DiagnosisDialog.tsx',
     'web/src/components/tasks/ReviewDialog.tsx',
     'web/src/lib/demo-evidence.ts',
-    'shared/bug-env.ts',
-    'shared/bug-patch.ts',
-    'shared/bug-log-watch.ts',
+    'shared/bug/env.ts',
+    'shared/bug/patch.ts',
+    'shared/bug/log-watch.ts',
   ],
   // 对话里「学到经验」的卡片（演示数据在 demo-experience.ts）
   '02e-learned': [
@@ -212,8 +212,8 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/OverviewPage.tsx',
     'web/src/components/overview/',
     'shared/overview.ts',
-    'shared/bug-overview.ts',
-    'shared/bug-stats.ts',
+    'shared/bug/overview.ts',
+    'shared/bug/stats.ts',
     // 流程视图的精简行和汇总
     'shared/agent-stats.ts',
     'shared/agent-flow-briefs.ts',

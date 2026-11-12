@@ -1,5 +1,5 @@
 /**
- * 面板自己取日志（分析稿 B3，纯逻辑在 shared/bug-log-watch.ts）：
+ * 面板自己取日志（分析稿 B3，纯逻辑在 shared/bug/log-watch.ts）：
  * 「开始复现」记下报告里写的那个日志文件现在多大，「复现完了，取日志」读新增的那一段。
  * 读哪个文件不由页面说：路径从报告的「日志在哪」里认，页面只带一个「我确认读项目外面的这个文件」。
  * 只读项目目录、对话目录下的文件；报告里明确写了绝对路径且用户点了确认的也读；其余一律拒绝并说明
@@ -17,7 +17,7 @@ import {
   type LogFetchResult,
   type LogRefuse,
   type LogStartResult,
-} from '../../shared/bug-log-watch.ts'
+} from '../../shared/bug/log-watch.ts'
 
 /** 记下的起点：abs 是当时认定的文件，size 是那一刻的大小（字节） */
 export type WatchMark = { path: string; abs: string; size: number; at: string }

@@ -1,5 +1,5 @@
 ---
-paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared/peer-message.ts, shared/bug-diagnosis.ts, web/src/components/tasks/ToolRow.tsx
+paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared/peer-message.ts, shared/bug/diagnosis.ts, web/src/components/tasks/ToolRow.tsx
 ---
 
 # 对话状态和父子对话之间的交付
@@ -33,4 +33,4 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks/**, shared
 
 - 规则：Agent 交了东西等用户审（诊断报告这类），这件事还没做完：对话状态算执行中（`ConvFacts.diagnosis` → `running`），父对话那边照样转圈、不推它接着做；不要挂成「等你处理」的请求（`task.requests`），也不在父对话页另起一行。审阅入口放在已经有的行上：子对话里交东西的那一行工具调用，加上父对话页上这个子对话自己的那一行（「正在运行」、子对话列表），交上来时自动弹一次（每一版一次，`web/src/components/tasks/ChildReport.tsx`）。
 - 起因：ADR 0045 第一版（1efc3a9）挂成请求、父对话页多一条，用户纠正；bd191249 改成只放在子对话的工具行上，用户在父对话页找不到入口，又报过一次。
-- 防线：`shared/bug-diagnosis.test.ts`、`server/orchestrator.test.ts`、`scripts/ui/02b-subagent.mjs`（父对话页没有单独一行、子对话行和工具行上都有「查看报告」、自动弹一次）。
+- 防线：`shared/bug/diagnosis.test.ts`、`server/orchestrator.test.ts`、`scripts/ui/02b-subagent.mjs`（父对话页没有单独一行、子对话行和工具行上都有「查看报告」、自动弹一次）。

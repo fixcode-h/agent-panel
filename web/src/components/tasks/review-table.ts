@@ -4,7 +4,7 @@ import { t } from '@shared/i18n'
 /**
  * 诊断报告的候选方案表（分析稿 U7）：原来只有内容那么宽，选定的方案只在表头写了「（选定）」。
  * 这里认出这张表，表撑满正文宽度、选定的那一列整列上色（样式在 index.css 的 data-chosen-table / data-chosen）。
- * 表是 Markdown 画的（shared/bug-diagnosis-md.ts 的 optionsTable，表头「方案 A（选定）」），
+ * 表是 Markdown 画的（shared/bug/diagnosis-md.ts 的 optionsTable，表头「方案 A（选定）」），
  * 不改生成 Markdown 的那一边：只在界面上按表头认，Markdown 重画时跟着重新标
  */
 export function markChosenColumns(root: HTMLElement) {

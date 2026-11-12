@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { withProjectParams } from '../../shared/builtin/core.ts'
-import { BugCase, type BugLevel } from '../../shared/bug-diagnosis-schema.ts'
+import { BugCase, type BugLevel } from '../../shared/bug/diagnosis-schema.ts'
 import { childAskInitial } from '../../shared/child-ask.ts'
 import { afterDecision, checkAfter } from '../../shared/child-after.ts'
 import { t } from '../../shared/i18n.ts'

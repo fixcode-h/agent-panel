@@ -64,7 +64,7 @@ export async function conversationCaps(c: TurnCapsCtx) {
       ? (turn) => {
           sc.settleChildTurn(entry.task, turn)
           void sc.checkBudget(entry.task)
-          // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug-cleanup.ts）
+          // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug/cleanup.ts）
           void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
             log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
           )

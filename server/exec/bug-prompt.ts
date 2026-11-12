@@ -9,7 +9,7 @@ import { BUG_CMD, BUG_FULL_TEXT, bugCommandPrompt } from '../../shared/builtin/b
 
 /**
  * /bug 展开后的要求；不是 /bug 返回 undefined。coordinator：这个对话能开子对话（项目父对话）。
- * 有项目的普通对话在发消息时已经被标成 Bug（server/tasks/conversation-routes.ts，shared/bug-in-place.ts），按 inplace 展开
+ * 有项目的普通对话在发消息时已经被标成 Bug（server/tasks/conversation-routes.ts，shared/bug/in-place.ts），按 inplace 展开
  */
 export function bugSlash(prompt: string, task: Pick<Task, 'parentTaskId' | 'bug'>, coordinator: boolean) {
   const text = prompt.trim()

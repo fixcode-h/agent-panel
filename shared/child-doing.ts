@@ -7,7 +7,7 @@
  * childActivity（shared/task.ts）只在正在调用、或这一段还没说话时给 tool，开口说话后就换成了那句话，
  * 所以最后一次工具调用单独取一份。只看工具调用记录，不看回复文字（ADR 0041）
  */
-import { bugStep } from './bug-overview.ts'
+import { bugStep } from './bug/overview.ts'
 import type { Task, ToolUse } from './schema.ts'
 
 export type LastTool = Pick<ToolUse, 'kind' | 'name' | 'label'>

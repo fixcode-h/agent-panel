@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { BadgeCheck, ChevronRight, CircleAlert, TriangleAlert, UserRound } from 'lucide-react'
-import type { DiagnosisCard as Card } from '@shared/bug-diagnosis-card'
+import type { DiagnosisCard as Card } from '@shared/bug/diagnosis-card'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +12,7 @@ const INLINE = '[&_p]:my-0 [&_p]:text-[length:inherit] [&_p]:leading-[inherit]'
 
 /**
  * 诊断报告最上面的决策卡（用户 2026-11-07 确认的设计稿）：状态和标签胶囊、一句话结论、要你做的、要注意。
- * 内容由 shared/bug-diagnosis-card.ts 算，这里只管样式：和请求卡一样的卡片底，左边一道主题色竖线
+ * 内容由 shared/bug/diagnosis-card.ts 算，这里只管样式：和请求卡一样的卡片底，左边一道主题色竖线
  */
 export function DiagnosisCard({ card, teamNames }: { card: Card; teamNames: Set<string> }) {
   return (

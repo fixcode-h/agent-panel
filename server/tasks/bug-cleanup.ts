@@ -1,5 +1,5 @@
 /**
- * 取消修复后删临时日志（用户 2026-11-10 定，规则和核对在 shared/bug-cleanup.ts）：
+ * 取消修复后删临时日志（用户 2026-11-10 定，规则和核对在 shared/bug/cleanup.ts）：
  * - 用户同意加日志时，给日志计划里的文件拍快照（logBase，内容存对话目录的 log-base/，只用来核对）；
  * - 用户点「取消修复」时只读地查出 `[排查-` 日志（previewCleanup），交给 Agent 删；
  * - 子对话这一轮结束时核对（checkCleanup）：通过了关闭报告、收口计划，没过记下来等用户决定。
@@ -10,10 +10,10 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Task } from '../../shared/schema.ts'
-import type { CleanupState, Diagnosis } from '../../shared/bug-diagnosis-schema.ts'
-import { checkFile, fileClean, tempLogLines, type FileLine } from '../../shared/bug-cleanup.ts'
-import { cleanupFiles, cleaning, evidenceFiles, logFilesOf, phaseOf, planApproved } from '../../shared/bug-phase.ts'
-import { settleCleanup } from '../../shared/bug-diagnosis.ts'
+import type { CleanupState, Diagnosis } from '../../shared/bug/diagnosis-schema.ts'
+import { checkFile, fileClean, tempLogLines, type FileLine } from '../../shared/bug/cleanup.ts'
+import { cleanupFiles, cleaning, evidenceFiles, logFilesOf, phaseOf, planApproved } from '../../shared/bug/phase.ts'
+import { settleCleanup } from '../../shared/bug/diagnosis.ts'
 import { projectChanges } from '../exec/file-events.ts'
 import { gitExec } from '../exec/git.ts'
 import { TASK_FILES_DIR } from '../store.ts'

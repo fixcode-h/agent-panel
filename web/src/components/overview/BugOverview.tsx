@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Bug, Check, Gauge, ListChecks, MessagesSquare, Target } from 'lucide-react'
-import { RATING_TEXT } from '@shared/bug-diagnosis-card'
+import { RATING_TEXT } from '@shared/bug/diagnosis-card'
 import {
   BUG_GROUPS,
   bugLevelText,
@@ -10,8 +10,8 @@ import {
   type BugBrief,
   type BugGroup,
   type BugRow,
-} from '@shared/bug-overview'
-import { BUG_PHASES, bugStats, type BugSummary, type BugTier } from '@shared/bug-stats'
+} from '@shared/bug/overview'
+import { BUG_PHASES, bugStats, type BugSummary, type BugTier } from '@shared/bug/stats'
 import { t } from '@shared/i18n'
 import { timeAgo } from '@shared/task'
 import { cn } from '@/lib/utils'
@@ -26,7 +26,7 @@ const GROUP_LABEL: Record<BugGroup, string> = {
   ended: t('已结束'),
 }
 
-/** 每组一句话说明它为什么在这一组，规则和 shared/bug-overview.ts 的 bugWho 一致 */
+/** 每组一句话说明它为什么在这一组，规则和 shared/bug/overview.ts 的 bugWho 一致 */
 const GROUP_HINT: Record<BugGroup, string> = {
   you: t('报告等你确认、等你复现或验证，它问了问题，或者观察期里又出现了'),
   active: t('它在分析或在修，偶发的修好后在这里观察几天，暂时不用你管'),

@@ -1,6 +1,6 @@
 import type { TaskBug } from './bug/task-bug.ts'
 import { z } from 'zod'
-import { BugCollect } from './bug-diagnosis-schema.ts'
+import { BugCollect } from './bug/diagnosis-schema.ts'
 import { t } from './i18n.ts'
 
 /**

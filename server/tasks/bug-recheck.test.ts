@@ -5,8 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import os from 'node:os'
 import path from 'node:path'
 import { setLang } from '../../shared/i18n.ts'
-import { Diagnosis } from '../../shared/bug-diagnosis-schema.ts'
-import { recheckVerdict } from '../../shared/bug-recheck.ts'
+import { Diagnosis } from '../../shared/bug/diagnosis-schema.ts'
+import { recheckVerdict } from '../../shared/bug/recheck.ts'
 import type { Task } from '../../shared/schema.ts'
 import { recheck } from './bug-recheck.ts'
 

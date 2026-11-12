@@ -1,6 +1,6 @@
 import { takeLive, takeLives } from './live/store'
 import type { ShellReport } from '@shared/shells'
-import type { BugBrief } from '@shared/bug-overview'
+import type { BugBrief } from '@shared/bug/overview'
 import type { FlowBrief } from '@shared/agent-stats'
 import type { SharedDirInfo } from '@shared/shared-dir'
 import type { SpeedRow } from '@shared/api-speed'
@@ -62,9 +62,9 @@ import type { ChildHold } from '@shared/task'
 import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
-import type { DiagnosisDecision } from '@shared/bug-diagnosis'
-import type { PatchResult, PatchStatus } from '@shared/bug-patch'
-import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug-log-watch'
+import type { DiagnosisDecision } from '@shared/bug/diagnosis'
+import type { PatchResult, PatchStatus } from '@shared/bug/patch'
+import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
@@ -607,7 +607,7 @@ export const api = {
     request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
   /** 和实时推送的整份一样：更早的长工具输出只给开头（见 shared/task.ts 的 liteMessages） */
   taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
-  /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug-overview.ts） */
+  /** 总览页 Bug 视图：所有用户报的 Bug 的精简行（含子对话，见 shared/bug/overview.ts） */
   taskBugs: () => request<BugBrief[]>('/tasks/bugs'),
   /** 总览页流程视图：所有 Agent 模式对话的流程数据（shared/agent-flow-briefs.ts） */
   taskFlow: () => request<FlowBrief[]>('/tasks/flow'),

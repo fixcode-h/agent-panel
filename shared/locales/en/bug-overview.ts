@@ -1,4 +1,4 @@
-/** 英文词典的一部分，键是中文原文：对话总览页的 Bug 视图和顶上的流程数据（shared/bug-overview.ts、BugOverview.tsx） */
+/** 英文词典的一部分，键是中文原文：对话总览页的 Bug 视图和顶上的流程数据（shared/bug/overview.ts、BugOverview.tsx） */
 export const EN_BUG_OVERVIEW: Record<string, string> = {
   // 页头
   '所有用户报的 Bug 一页看：走到五步里的哪一步、现在等谁、停了多久。点一行打开那个对话。':

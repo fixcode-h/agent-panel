@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { BugCase, Diagnosis, FixBrief } from '../bug-diagnosis-schema.ts'
+import { BugCase, Diagnosis, FixBrief } from './diagnosis-schema.ts'
 
 /**
  * 对话上和用户报的 Bug 有关的数据（重构文档第 15 条）：原来平铺在 Task 顶层（bug、bugFix、diagnoses、bugCase、
@@ -15,11 +15,11 @@ export const TaskBug = z.object({
   diagnoses: z.array(Diagnosis).optional(),
   /** Bug 档案草稿（ADR 0046）：update_bug_case 随查随记，submit_diagnosis 冻结成一版（原 task.bugCase） */
   case: BugCase.optional(),
-  /** 直接修的 Bug 的简版报告（根因一句、改了什么、怎么验证的）：只读，见 shared/bug-fix-brief.ts */
+  /** 直接修的 Bug 的简版报告（根因一句、改了什么、怎么验证的）：只读，见 shared/bug/fix-brief.ts */
   fixBrief: FixBrief.optional(),
   /**
    * 加临时日志之前各文件的快照（文件相对路径 → 内容哈希，内容存在对话目录的 log-base/ 下；不存在的文件记空串）。
-   * 用户同意加日志时拍，只用来在取消修复后核对日志删干净了没有（shared/bug-cleanup.ts），不拿来还原
+   * 用户同意加日志时拍，只用来在取消修复后核对日志删干净了没有（shared/bug/cleanup.ts），不拿来还原
    */
   logBase: z.record(z.string(), z.string()).optional(),
   /** 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉（原 task.bugMethodPending） */

@@ -4,7 +4,7 @@
  * 都调这里，只把「真进程、真 git」这类只有一边有的东西作为参数传进来。
  * 以前两边各拼一份，演示版漏了字段或口径（例如等孙对话时的 childNeeds、回收站里的子对话）界面检查也看不出来。
  */
-import { bugStage } from '../bug-diagnosis.ts'
+import { bugStage } from '../bug/diagnosis.ts'
 import { childBugStep, lastToolCall } from '../child-doing.ts'
 import { descendantNeeds, pendingRequest } from '../child-needs.ts'
 import { openPlan } from '../plan.ts'

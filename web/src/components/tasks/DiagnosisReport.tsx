@@ -3,7 +3,7 @@ import { Bug, Check, CircleAlert, GraduationCap, Loader2, SquarePlus, Terminal }
 import type { Project, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
-import { blameLabel } from '@shared/bug-diagnosis-card'
+import { blameLabel } from '@shared/bug/diagnosis-card'
 import {
   diagnosisBugPrompt,
   diagnosisFixPrompt,

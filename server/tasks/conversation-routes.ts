@@ -39,7 +39,7 @@ import { returnUserAction } from './user-actions.ts'
 import { PREWARM_PROMPT, RULE_CMD, TaskBusyError, settleBefore } from './helpers.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
 import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
-import { bugInPlace, inPlaceBugClosed } from '../../shared/bug-in-place.ts'
+import { bugInPlace, inPlaceBugClosed } from '../../shared/bug/in-place.ts'
 import { pausedHelpers } from '../../shared/run-stops.ts'
 
 /**
@@ -196,7 +196,7 @@ export function registerConversationRoutes(s: TasksScope) {
     }
     // 用户在子对话里发 /bug：标成用户报的 Bug（ADR 0046），它才有 submit_diagnosis、按完整流程查。
     // 正在回复的这一轮里没法换工具，先拦住；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）
-    // 有项目的普通对话也一样就地标（分析稿 B10，shared/bug-in-place.ts）；父对话的 /bug 是派子对话，不标
+    // 有项目的普通对话也一样就地标（分析稿 B10，shared/bug/in-place.ts）；父对话的 /bug 是派子对话，不标
     const bugCmd = BUG_CMD.test(text.trim()) && !!cur && !peer
     if (bugCmd && cur && !cur.parentTaskId && cur.bug?.kind === 'report' && inPlaceBugClosed(cur))
       return s.bad(c, t('这个对话里的 Bug 已经结束，新的 Bug 请新开一个对话发 /bug'), 409)

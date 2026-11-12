@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
-import type { Diagnosis } from '@shared/bug-diagnosis-schema'
-import { causeInPlan, phaseOf } from '@shared/bug-phase'
+import type { Diagnosis } from '@shared/bug/diagnosis-schema'
+import { causeInPlan, phaseOf } from '@shared/bug/phase'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 
