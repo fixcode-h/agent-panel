@@ -10,6 +10,19 @@ import {
   removeFlatBackground,
   type Img,
 } from '../shared/raster.ts'
+// 插件开放模块（shared/plugins/host-modules.json 列了 server/image）：UI 设计插件从这里取裁剪、缩放这些函数，
+// 不是「拆走后照旧导出」的转手，删掉插件仓库就编不过（CI 的 plugins 检查会红）
+export {
+  blank,
+  resize,
+  crop,
+  paste,
+  contentBox,
+  hasAlpha,
+  chromaKey,
+  removeFlatBackground,
+  type Img,
+} from '../shared/raster.ts'
 
 /**
  * 图片处理（只处理 PNG，不依赖第三方库）：UI 设计里用来
