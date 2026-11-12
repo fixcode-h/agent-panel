@@ -1,6 +1,6 @@
 # Design：工作流从子对话里拆出来，做成独立的「工作流运行」
 
-> 状态：已实施（2026-11-05 用户定了 D1–D7，四期都已做完，决定记在 [ADR 0053](../../../adr/0053-workflow-runs.md)）。实施时和本稿不同的地方：文件没有拆进 shared/workflow-run/ 目录，而是 `shared/flow-run.ts`、`shared/flow-run-turn.ts`、`shared/flow-run-wrap.ts`、`shared/flow-run-orch.ts`；收尾没有单列阶段机，做成流程图末尾的「收尾」节点，验收流程是「评审 → 测试」。
+> 状态：已实施（2026-11-05 用户定了 D1–D7，四期都已做完，决定记在 [ADR 0053](../../../adr/0053-workflow-runs.md)）。实施时和本稿不同的地方：文件没有拆进 shared/workflow-run/ 目录，而是 `shared/flow/run.ts`、`shared/flow/run-turn.ts`、`shared/flow/run-wrap.ts`、`shared/flow/run-orch.ts`；收尾没有单列阶段机，做成流程图末尾的「收尾」节点，验收流程是「评审 → 测试」。
 > 规划约定：**不加反引号**的路径是实施时才创建的文件；加反引号的是现有文件。现状按 2026-11-05 的 `dev` 核对。
 > 关系：确认后取代 [ADR 0044](../../../adr/0044-workflow-started-by-parent.md) 里「挂成工作流子对话、由执行角色收尾」的部分。「只有父对话能启动」「适用场景判定」两条保留。
 

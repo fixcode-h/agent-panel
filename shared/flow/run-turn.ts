@@ -4,13 +4,13 @@
  * 阶段（Task.flowRun.phase）在这里推进；交回父对话的信由宿主在这一轮结束后按阶段发（server/tasks/flow-runs.ts）。
  * 从 engine.ts 拆出来：跑流程图、写系统消息、收尾这几样由引擎当参数传进来，这里不 import 引擎的实现。
  */
-import type { FlowResult, Invocation } from './engine.ts'
-import type { EngineHost, Fail } from './engine/host.ts'
-import { blockedStep, planTask, taskFlow } from './flow.ts'
-import { decisionsText, overLimit, RUN_ENDED, RUN_NO } from './flow-run.ts'
-import { t } from './i18n.ts'
-import { ensureTaskRun } from './run-state.ts'
-import { clip } from './text.ts'
+import type { FlowResult, Invocation } from '../engine.ts'
+import type { EngineHost, Fail } from '../engine/host.ts'
+import { blockedStep, planTask, taskFlow } from '../flow.ts'
+import { decisionsText, overLimit, RUN_ENDED, RUN_NO } from './run.ts'
+import { t } from '../i18n.ts'
+import { ensureTaskRun } from '../run-state.ts'
+import { clip } from '../text.ts'
 
 export interface FlowRunDeps {
   runFlow: (host: EngineHost, inv: Invocation) => Promise<FlowResult>

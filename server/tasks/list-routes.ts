@@ -78,7 +78,7 @@ export function registerListRoutes(s: TasksScope) {
     const kids = childCountsScan(all, { active: s.childActive, cliAlive: (k) => taskCliAlive(k.id) })
     let list = await Promise.all(all.map(async (t) => taskSummary({ ...t, live: await s.liveOf(t, kids) })))
     // 子对话不进入项目列表：按 parentId 查询时才返回它们。
-    // 父对话名下的工作流运行（不是对话，见 shared/flow-run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
+    // 父对话名下的工作流运行（不是对话，见 shared/flow/run.ts）也不进：按 owner 查询时返回某个父对话名下的运行（父对话的工作流栏用）；
     // 直接经接口建的独立运行没有父对话，照常列
     const parent = c.req.query('parentId')
     const owner = c.req.query('owner')

@@ -495,7 +495,7 @@ export const WorkflowExpose = z.object({
 export type WorkflowExpose = z.infer<typeof WorkflowExpose>
 
 /**
- * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow-run.ts）。
+ * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow/run.ts）。
  * 没有主 Agent（workflow-runs 设计 D1）：节点按连线执行，没指定角色的节点用默认执行角色。
  */
 export const WorkflowFields = z.object({
@@ -2194,7 +2194,7 @@ export const RequestAnswer = z.object({
   answers: z.array(z.string().max(20000)).max(20).optional(),
   /** 允许并且这个对话里一直允许这类（请求的 rule 记进 task.allowRules，见 shared/allow-rules.ts） */
   always: z.boolean().optional(),
-  /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow-run.ts 的 noteConfirm） */
+  /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow/run.ts 的 noteConfirm） */
   ask: z.boolean().optional(),
 })
 

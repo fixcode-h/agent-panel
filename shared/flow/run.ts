@@ -3,12 +3,12 @@
  * 记在一个 mode=workflow 的任务上（Task.flowRun），不是子对话。这里是不依赖引擎的纯函数：
  * 进度怎么说、父对话每轮看到的那一节、决定记录怎么拼进节点提示、父对话挑工作流的目录和判定规则。
  */
-import type { Task, TaskStep } from './schema.ts'
-import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from './tasks/flow-schema.ts'
-import { topSteps } from './flow.ts'
-import { WRAP_NODE } from './flow-run-wrap.ts'
-import { clip } from './text.ts'
-import { takeWorkflow } from './composer.ts'
+import type { Task, TaskStep } from '../schema.ts'
+import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from '../tasks/flow-schema.ts'
+import { topSteps } from '../flow.ts'
+import { WRAP_NODE } from './run-wrap.ts'
+import { clip } from '../text.ts'
+import { takeWorkflow } from '../composer.ts'
 
 type RunTask = Pick<Task, 'id' | 'title' | 'status' | 'steps' | 'runSeq' | 'flowRun'>
 

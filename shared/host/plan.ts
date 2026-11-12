@@ -2,8 +2,8 @@
 // 从 shared/engine/host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
 import type { GateStep, TurnExtra } from '../done-evidence.ts'
-import type { FlowRunHost, RunTools } from '../flow-run-orch.ts'
-import type { PickedFlow, WorkflowEntry } from '../flow-run.ts'
+import type { FlowRunHost, RunTools } from '../flow/run-orch.ts'
+import type { PickedFlow, WorkflowEntry } from '../flow/run.ts'
 import type { PlanItemInput, WrapUpAnswer } from '../plan.ts'
 
 /** Orchestra 里计划和工作流运行的那部分（重构文档第 5 条：按能力拆成小接口，Orchestra 只是它们的组合） */

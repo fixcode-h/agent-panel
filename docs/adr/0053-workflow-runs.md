@@ -64,7 +64,7 @@ ADR 0044 把工作流做成父对话下的「工作流子对话」：第一轮�
 
 ## 与现有实现的关系
 
-- 纯函数（进度、决定记录、退回、判定规则）在 `shared/flow-run.ts`；运行的一轮在 `shared/flow-run-turn.ts`；收尾的接线在 `shared/flow-run-wrap.ts`；父对话侧的工具胶水在 `shared/flow-run-orch.ts`。
+- 纯函数（进度、决定记录、退回、判定规则）在 `shared/flow/run.ts`；运行的一轮在 `shared/flow/run-turn.ts`；收尾的接线在 `shared/flow/run-wrap.ts`；父对话侧的工具胶水在 `shared/flow/run-orch.ts`。
 - 服务端宿主 `server/tasks/flow-runs.ts`：建运行（改代码的开独立分支）、补充、退回、代答、终止、合回、回信、随父对话暂停 / 继续；`GET /tasks?owner=<父对话>` 列名下运行，运行不进对话列表。
 - 引擎去掉主 Agent：`startPlan`、`run`、`closeRun`、`ask_main`、`dispatch` 工具和 `shared/dispatch.ts` 的调度提示都删了（`stripDispatch` 留着显示老消息）；`dispatch`、`mainTier` 字段从工作流 schema 里删掉。
 - 直接经接口建的 `mode: 'workflow'` 任务（端到端测试、脚本、演示）是没有父对话的独立运行，跑完直接完成。

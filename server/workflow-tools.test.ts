@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Orchestra } from '../shared/engine/host.ts'
-import { pickFlow, type WorkflowEntry } from '../shared/flow-run.ts'
+import { pickFlow, type WorkflowEntry } from '../shared/flow/run.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 
 const LIST: WorkflowEntry[] = [

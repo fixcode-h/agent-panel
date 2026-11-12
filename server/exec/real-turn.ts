@@ -9,7 +9,7 @@ import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { askPushRequest, dropOwnRequests, panelRequest } from './panel-requests.ts'
 import { clip } from '../../shared/text.ts'
-import { noteConfirm, nodeTitle } from '../../shared/flow-run.ts'
+import { noteConfirm, nodeTitle } from '../../shared/flow/run.ts'
 
 import { detectVcs } from '../projects-analyze.ts'
 import { gatedRunAgent } from './runner.ts'

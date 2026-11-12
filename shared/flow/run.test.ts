@@ -15,11 +15,11 @@ import {
   workflowCatalogText,
   workflowPrompt,
   type WorkflowEntry,
-} from './flow-run.ts'
-import { FlowRun } from './tasks/flow-schema.ts'
-import { WRAP_FLOW, WRAP_NODE, withWrapUp, wrapRoles } from './flow-run-wrap.ts'
-import { Workflow, type Task, type TaskStep } from './schema.ts'
-import { taskTitle } from './task.ts'
+} from './run.ts'
+import { FlowRun } from '../tasks/flow-schema.ts'
+import { WRAP_FLOW, WRAP_NODE, withWrapUp, wrapRoles } from './run-wrap.ts'
+import { Workflow, type Task, type TaskStep } from '../schema.ts'
+import { taskTitle } from '../task.ts'
 
 /** 工作流运行（docs/openspec/changes/workflow-runs/design.md）：进度怎么说、决定记录、退回、父对话怎么挑工作流 */
 const step = (id: string, status: TaskStep['status'], title = id, extra: Partial<TaskStep> = {}) =>

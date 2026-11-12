@@ -34,7 +34,7 @@ export * from './day-groups.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文。
-  // 点名工作流的那句（shared/flow-run.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
+  // 点名工作流的那句（shared/flow/run.ts 的 workflowPrompt）不是用户写的，跳过它取后面的要求
   const raw = prompt
     .replace(/^用工作流「[^」\n]+」(?:（id [^）\n]*）)?做：\n/, '')
     .trim()

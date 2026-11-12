@@ -4,10 +4,10 @@
  * 真正的事由宿主（server/tasks/flow-runs.ts）做；这里只做参数检查、把运行挂进父对话的计划等待。
  * 从 engine.ts 拆出来（那个文件到了行数上限），引擎在 makeOrchestra 里把它摊进编排工具。
  */
-import type { RunEntry, PickedFlow } from './flow-run.ts'
-import { runLine } from './flow-run.ts'
-import { bindWait, ensureChildStep } from './plan.ts'
-import type { Task } from './schema.ts'
+import type { RunEntry, PickedFlow } from './run.ts'
+import { runLine } from './run.ts'
+import { bindWait, ensureChildStep } from '../plan.ts'
+import type { Task } from '../schema.ts'
 
 /** 补充要求交给谁：current 正在跑的节点；later 之后所有节点（运行级说明）；其余当成节点名 / id */
 export type RunTarget = 'current' | 'later' | (string & {})

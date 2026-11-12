@@ -4,7 +4,7 @@
  * 收尾节点修，修完再评审、再测，最多 maxRounds 轮，超过按节点失败停下等父对话决定。都过了运行停在待合回。
  * 不另写一套执行：用的就是节点的验收回路（engine.ts 的 review），这里只负责把节点和验收流程拼进运行的工作流快照。
  */
-import { END, Flow, FlowNode, type Workflow } from './schema.ts'
+import { END, Flow, FlowNode, type Workflow } from '../schema.ts'
 
 /** 收尾节点和它的验收流程的 id：固定的，界面、进度按它认 */
 export const WRAP_NODE = 'wrapup'
