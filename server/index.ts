@@ -265,10 +265,6 @@ async function ensureProjectWorkflows() {
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
   if (seeded.upgradedAgents.length)
     log.info('agent', '内置角色已换成当前版本', { list: seeded.upgradedAgents.map((a) => a.name) })
-  if (seeded.replaced.length) {
-    const file = await backupRemovedAgents(seeded.replaced, '内置角色换成了新版本，这是覆盖前你改过的版本')
-    log.info('agent', '内置角色里你改过的设定已备份后覆盖', { list: seeded.replaced.map((a) => a.name), file })
-  }
   await retireWorkflows()
   await pruneMerged()
   await cleanupDisabledPlugins()
