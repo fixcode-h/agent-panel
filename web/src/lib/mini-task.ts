@@ -8,7 +8,7 @@
  * 收起和展开都不动对话本身：这里不停止、不关闭对话，只是换个地方显示。
  */
 import type { Task } from '@shared/schema'
-import { taskBusy, taskState } from '@shared/task'
+import { liveBusy, type TaskLive } from '@shared/live/task-live'
 import type { ChatDockState } from './chat-dock'
 
 export interface MiniTask {
@@ -70,14 +70,14 @@ export const minimizeBackRoute = (task: Pick<MiniTask, 'projectId'>) =>
  * 把「在等你回答」和「跑失败了」都写成「已结束」，他会以为这一轮已经正常跑完。
  * 对话已经不在列表里（`undefined`）时标「对话已关闭」，和 AI 窗口对同一件事的处理一致。
  */
-export function dockStateOf(task?: Task): ChatDockState {
-  if (!task) return 'gone'
+export function dockStateOf(task?: Task, live?: TaskLive): ChatDockState {
+  if (!task || !live) return 'gone'
   // 顺序跟 convState 的优先级一致：needs / failed 都优先于「在忙」，
-  // 先判 taskBusy 会让「在跑但同时在等你回答」显示成进行中，看不出在等他
-  const state = taskState(task)
+  // 先判在忙会让「在跑但同时在等你回答」显示成进行中，看不出在等他
+  const state = live.state
   if (state === 'needs') return 'needs'
   if (state === 'failed') return 'failed'
-  if (taskBusy(task)) return 'running'
+  if (liveBusy(live)) return 'running'
   return state === 'done' ? 'done' : 'ended'
 }
 

@@ -93,7 +93,8 @@ test('dispatchState：子对话只有最近那次派单跟着它的状态走，�
   const child = (state: Partial<ChildEntry>): ChildEntry =>
     ({ id: 'c1', status: 'running', working: true, ...state }) as ChildEntry
   const world = (kids: ChildEntry[], steps: Partial<TaskStep>[] = []): DispatchWorld => ({
-    task: { messages: msgs, steps: steps as TaskStep[], jobs: [] },
+    task: { messages: msgs, steps: steps as TaskStep[] },
+    jobs: [],
     children: kids,
     latestChild: latestChildDispatch(ds),
     rerouted: new Set(),

@@ -7,9 +7,9 @@
 import { pad2 } from '@shared/datetime'
 import type { Task } from '@shared/schema'
 import { taskDuration, type TaskFactsInput } from '@shared/task'
-import { taskWord } from '@shared/task-word'
+import { liveWord, type TaskLive } from '@shared/live/task-live'
 
-/** 胶囊要读的任务字段：状态判定用 TaskFactsInput，计时用 taskDuration 需要的几个时间字段 */
+/** 胶囊要读的任务字段：计时用 taskDuration 需要的几个时间字段（状态读服务端给的 live） */
 export type HeadStatusTask = TaskFactsInput & Pick<Task, 'runMs' | 'runStartedAt' | 'createdAt' | 'updatedAt'>
 
 export interface HeadStatusView {
@@ -33,11 +33,12 @@ export function clock(ms: number) {
 /**
  * 页签条右端的状态胶囊：运行中 / 等结果只显示累计执行时长；
  * 有提问、请求等你时保留琥珀色的一句话（这一页没有确认卡，用户要知道该去哪儿），时长放进提示。
- * 状态只从 taskWord（经 taskState 那份事实）派生，不另判。
+ * 状态只读服务端给的 live（shared/live/task-live.ts），不另判。
  */
-export function headStatus(task: HeadStatusTask, now = Date.now()): HeadStatusView | null {
-  // 状态和短词都从 taskWord 取（分析稿 A8）：侧栏、输入框占位、会话栏写的是同一个词
-  const { state, word } = taskWord(task)
+export function headStatus(task: HeadStatusTask, live: TaskLive, now = Date.now()): HeadStatusView | null {
+  // 状态和短词都从 live 取（分析稿 A8）：侧栏、输入框占位、会话栏写的是同一个词
+  const { state } = live
+  const word = liveWord(live)
   const elapsed = clock(taskDuration(task, now))
   if (state === 'running' || state === 'waiting')
     return { text: elapsed, tone: 'run', spin: true, hint: `${word} · ${elapsed}` }

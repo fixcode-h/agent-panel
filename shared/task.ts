@@ -9,6 +9,7 @@ import {
   type StopReason,
   type Task,
   type TaskData,
+  type TaskJob,
   type TaskMessage,
   type TaskRequest,
   type TaskTurn,
@@ -1538,10 +1539,15 @@ export {
 
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
-  Partial<Pick<Task, 'childrenWorking' | 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
-    childrenNeeds?: Task['childrenNeeds']
+  Partial<Pick<Task, 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
+    /**
+     * 运行时的几项（名下在跑的子对话数、后代在等你的数、后台命令）：不在任务记录里，
+     * 由服务端算 TaskLive 时补进来（shared/live/task-live.ts 的 taskLiveOf），或者服务端内部判定时自己传
+     */
+    childrenWorking?: number
+    childrenNeeds?: number
+    jobs?: TaskJob[]
     runs?: Task['runs']
-    jobs?: Task['jobs']
     archived?: Task['archived']
     worktree?: Task['worktree']
     diagnoses?: Task['diagnoses']
@@ -1601,7 +1607,7 @@ export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
 export const taskTurnUnread = (x: {
   turnDoneAt?: string
   turnSeenAt?: string
-  jobs?: Task['jobs']
+  jobs?: TaskJob[]
   /** 后台命令数：/children 的摘要里只有数量（不读整份任务），有它一样算「还在等结果」 */
   background?: number
 }) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.some((j) => !j.service) && !x.background
@@ -1770,7 +1776,7 @@ export function autoArchivePicks(
     .map((x) => x.id)
 }
 
-export function taskSummary(t: Task): Task {
+export function taskSummary<T extends Task>(t: T): T {
   const first = t.messages.find((m) => m.role === 'user')
   const plan = openPlan(t) ? activePlan(t) : undefined
   const left = planLeft(t)

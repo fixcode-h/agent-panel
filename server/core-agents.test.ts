@@ -1,5 +1,5 @@
 import { test } from 'node:test'
-import { SENT_NOTE } from '../shared/engine.ts'
+import { SENT_NOTE } from '../shared/orchestra/route.ts'
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'

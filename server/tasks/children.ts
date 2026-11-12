@@ -25,7 +25,6 @@ import { stopHelper } from '../../shared/engine.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { releaseWorktree, worktreeStatus } from '../exec/worktree.ts'
 import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrate.ts'
-import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
@@ -93,27 +92,6 @@ export function createChildren(sc: TasksScope) {
   /** 名下 CLI 进程还活着的子对话数：标题流光、侧栏提示用（见 taskCliAlive） */
   async function cliChildren(parentId: string) {
     return (await childCountsOf(parentId)).cli
-  }
-
-  /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
-  async function withLive(task: Task): Promise<Task> {
-    // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
-    if (reapLostJobs(task, sc.background.known, sc.background.lostNote)) {
-      task.updatedAt = new Date().toISOString()
-      const e = sc.live.get(task.id)
-      if (e) e.rev++
-      await sc.store
-        .update(task.id, task)
-        .catch((err) =>
-          log.warn('background', '收口丢失的后台命令失败', { task: task.id, error: (err as Error).message }),
-        )
-    }
-    const t = sc.withJobs(task)
-    const kids = await childCountsOf(task.id)
-    // 后代在等用户处理：子对话页（它下面还有孙对话）也要冒泡成「等你处理」，所以子对话也带
-    if (task.parentTaskId) return { ...t, childrenNeeds: kids.needs }
-    // 0 也写上：理由同 withJobs
-    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli, childrenNeeds: kids.needs }
   }
 
   /**
@@ -736,7 +714,7 @@ export function createChildren(sc: TasksScope) {
     ruleCommand,
     settleChildTurn,
     startChild,
-    withLive,
+    childCountsOf,
     settleChildWorktree,
     reportKey,
     integrate,

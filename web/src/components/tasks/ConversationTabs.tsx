@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import { Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { taskBusy, taskState } from '@shared/task'
-import { taskWord } from '@shared/task-word'
+import { liveBusy, liveWord } from '@shared/live/task-live'
+import { useLive } from '@/lib/live/store'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
@@ -52,7 +52,9 @@ export function ConversationTabs({
   leading?: ReactNode
   trailing: ReactNode
 }) {
-  const busy = taskBusy(task)
+  // 状态只读服务端给的 live（web/src/lib/live/store.ts），和侧栏、项目首页同一份
+  const live = useLive(task)
+  const busy = liveBusy(live)
   return (
     <TabBar
       as="header"
@@ -80,22 +82,22 @@ export function ConversationTabs({
           active={front === 'parent'}
           onSelect={onParent}
           onDoubleClick={() => onRenaming(task.title)}
-          title={[task.title, cliAliveHint(task), t('双击重命名')].filter(Boolean).join(' · ')}
+          title={[task.title, cliAliveHint(live), t('双击重命名')].filter(Boolean).join(' · ')}
           className="basis-[13.5rem]"
           icon={
             <TaskStatusIcon
               status={task.status}
               working={busy}
               spin={busy}
-              waiting={taskState(task) === 'needs'}
-              label={taskWord(task).word}
+              waiting={live.state === 'needs'}
+              label={liveWord(live)}
               className="h-3.5 w-3.5"
             />
           }
         >
           {mark && <span className="mr-1.5 inline-flex align-middle">{mark}</span>}
           {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光 */}
-          <span data-conv-title className={cn(cliTreeAlive(task) && 'cli-alive-title')}>
+          <span data-conv-title className={cn(cliTreeAlive(live) && 'cli-alive-title')}>
             {task.title}
           </span>
         </TabItem>
@@ -124,9 +126,9 @@ export function ConversationTabs({
  * 运行中、等结果都每秒刷新：等后台命令、工作流时这一段可能还在累计。
  */
 function HeadStatus({ task }: { task: Task }) {
-  const state = taskState(task)
-  const now = useNow(state === 'running' || state === 'waiting')
-  const view = headStatus(task, now)
+  const live = useLive(task)
+  const now = useNow(liveBusy(live))
+  const view = headStatus(task, live, now)
   if (!view) return null
   return (
     <StatusPill

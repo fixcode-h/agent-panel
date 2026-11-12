@@ -14,6 +14,8 @@ import { functionsOf, maskCode } from './lib/code-scan.mjs'
 
 /** 函数（含闭包、箭头函数、方法）超过这么多行就要进基线：新函数不许超过 */
 export const FN_MAX = 300
+/** shared/host/ 里新开的小接口最多几个成员（记进基线以后只许变少）：再多就该按能力再拆一个 */
+export const HOST_NEW_MAX = 16
 /** 已经超长的函数的上限：现在的行数留 20 行余量取整到 10（小修小补不用每次改基线，但不能再往里堆功能） */
 const fnCap = (lines) => Math.ceil((lines + 20) / 10) * 10
 /** 不许再往顶层加文件的目录：新文件放进按模块分的子目录（见 docs/MODULE-MAP.md） */
@@ -94,6 +96,10 @@ export function measure(root) {
     if (f === 'shared/schema.ts') m.taskFields = membersAfter(codeLines, /^export const TaskData = z\.object\(\{/)
     if (f === 'shared/engine-host.ts')
       for (const name of ['Orchestra', 'EngineHost'])
+        m.hostMembers[name] = membersAfter(codeLines, new RegExp(`^export interface ${name}\\b`))
+    // 从两个大接口按能力拆出来的小接口（重构文档第 5 条）：每个都记成员数，同样只许变少
+    if (/^shared\/host\/[^/]+\.ts$/.test(f))
+      for (const [, name] of text.matchAll(/^export interface (Orch\w+|\w+Host)\b/gm))
         m.hostMembers[name] = membersAfter(codeLines, new RegExp(`^export interface ${name}\\b`))
     if (f === 'server/orch-mcp.ts') m.orchInlineTools = (text.match(/^\s+name: '[a-z_]+',$/gm) ?? []).length
     if (!demo && /^(shared|server)\//.test(f)) m.preprocess += (text.match(/z\.preprocess\(/g) ?? []).length
@@ -179,11 +185,13 @@ export function checkStructure(root) {
     errors.push(
       `server/orch-mcp.ts 里直接写的工具定义 ${m.orchInlineTools} 个（基线 ${caps.orchInlineTools}）。新工具一个文件：导出定义、给不给的条件、用法说明和处理函数（参照 server/end-turn-tool.ts），orch-mcp.ts 只接线`,
     )
-  for (const [name, n] of Object.entries(m.hostMembers))
-    if (n > (caps.hostMembers[name] ?? 0))
+  for (const [name, n] of Object.entries(m.hostMembers)) {
+    const cap = caps.hostMembers[name] ?? HOST_NEW_MAX
+    if (n > cap)
       errors.push(
-        `shared/engine-host.ts 的 ${name} 有 ${n} 个成员（基线 ${caps.hostMembers[name]}）。新能力定义成单独的小接口，组合进来，不要再往大接口上加`,
+        `${name} 有 ${n} 个成员（基线 ${cap}）。EngineHost / Orchestra 只是 shared/host/ 里小接口的组合：新能力加进对应的小接口，小接口满了按能力再拆一个，不要再往大接口上加`,
       )
+  }
   for (const [key, msg] of Object.entries(CAPPED_MAPS))
     for (const [f, n] of Object.entries(m[key])) {
       const cap = caps[key][f] ?? 0
@@ -213,7 +221,11 @@ function update(root) {
   caps.taskFields = Math.min(caps.taskFields, m.taskFields)
   caps.preprocess = Math.min(caps.preprocess, m.preprocess)
   caps.orchInlineTools = Math.min(caps.orchInlineTools, m.orchInlineTools)
-  caps.hostMembers = shrink(caps.hostMembers, m.hostMembers)
+  // 新开的小接口按现状记进基线（检查时没记过的按 HOST_NEW_MAX 放行）；记过的只降不升
+  caps.hostMembers = {
+    ...Object.fromEntries(Object.entries(m.hostMembers).filter(([k]) => !(k in caps.hostMembers))),
+    ...shrink(caps.hostMembers, m.hostMembers),
+  }
   for (const key of Object.keys(CAPPED_MAPS)) caps[key] = shrink(caps[key], m[key])
   writeCaps(file, caps)
   console.log('基线已收紧到现状')

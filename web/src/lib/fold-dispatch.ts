@@ -3,7 +3,7 @@
  * 每次派单有一个自己往前走的对象，对象没办完时这一行不收进折叠（设计稿：回复折叠与派单行重设计 §5）；
  * 分诊记录（TaskRoute）也对到具体的那一次派单上，画在同一行里，不再另起一张卡片（§4）
  */
-import type { Task, TaskMessage, TaskRoute, TaskStep } from '@shared/schema'
+import type { Task, TaskJob, TaskMessage, TaskRoute, TaskStep } from '@shared/schema'
 import { childIcon, type ChildEntry } from '@shared/task'
 import { bgJobIds } from '@shared/panel-tools'
 import { groupTools, panelCallName, panelChildId, toolArgs } from './tasks'
@@ -174,7 +174,9 @@ export interface DispatchState {
 }
 
 export interface DispatchWorld {
-  task: Pick<Task, 'steps' | 'jobs' | 'messages'>
+  task: Pick<Task, 'steps' | 'messages'>
+  /** 对话上还在跑、排队的后台命令：服务端给的 live.jobs */
+  jobs: TaskJob[]
   children: ChildEntry[]
   /** 子对话 id → 最近一次派给它的派单 key：同一个子对话交回几次，只有最近那次跟着它的状态走 */
   latestChild: Map<string, string>
@@ -231,7 +233,7 @@ export function dispatchState(d: Dispatch, routes: TaskRoute[] | undefined, w: D
       return steps.length ? stepsState(steps) : done
     }
     case 'job': {
-      const jobs = (w.task.jobs ?? []).filter((j) => d.targets.includes(j.id))
+      const jobs = w.jobs.filter((j) => d.targets.includes(j.id))
       if (!jobs.length) return done
       return { status: jobs.some((j) => j.state === 'running') ? 'running' : 'queued', open: true }
     }

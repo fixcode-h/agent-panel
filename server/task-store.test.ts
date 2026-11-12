@@ -84,6 +84,39 @@ test('getMeta 只读任务本身，不碰消息文件', async () => {
   assert.ok(!existsSync(broken), '完整读取才会碰消息文件')
 })
 
+test('运行时字段（cliAlive、jobs、子对话计数、live）不落盘：重启后不会读到过期的假象', async () => {
+  const store = createTaskStore()
+  const created = await store.create(
+    TaskData.parse({ projectId: '', title: '运行时字段', mode: 'chat', status: 'running', messages: [] }),
+  )
+  // 交给界面的那份（withLive）被原样写回 store 时也一样：这些字段只在 TaskLive 里
+  const shown = {
+    ...created,
+    cliAlive: true,
+    jobs: [{ id: 'j1', name: '编译', command: 'make', state: 'running' as const, startedAt: '' }],
+    childrenWorking: 2,
+    childrenCli: 1,
+    childrenNeeds: 1,
+    drafting: { tool: 'Write', at: '2026-11-12T00:00:00.000Z' },
+    askedAt: '2026-11-12T00:00:00.000Z',
+    live: { state: 'running' },
+  }
+  await store.update(created.id, shown, { now: true })
+  const raw = JSON.parse(readFileSync(path.join(dir, 'tasks', 'chats', `${created.id}.json`), 'utf8'))
+  for (const k of [
+    'cliAlive',
+    'jobs',
+    'childrenWorking',
+    'childrenCli',
+    'childrenNeeds',
+    'drafting',
+    'askedAt',
+    'live',
+  ])
+    assert.equal(k in raw, false, `${k} 不写进任务文件`)
+  assert.equal(raw.title, '运行时字段', '记录本身照常写')
+})
+
 test('落盘指纹：新增消息、替换最后一条、返工删消息都能认出来', () => {
   const tracker = createStampTracker()
   const base3 = [msg('a', '第一条', '输出 1'), msg('b', '第二条', '输出 2'), msg('c', '第三条')]

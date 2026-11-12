@@ -1,3 +1,4 @@
+import { useLiveById } from '@/lib/live/store'
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'
@@ -222,10 +223,13 @@ export function AgentMessage({
 /** 启动命令是数组：任务推送时每次都是新对象，比较按内容 */
 const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
 
-/** 工具行只用到任务的这几样；后台命令、诊断报告（ADR 0045）的状态变了，那一行才重画（停转 / 开始转） */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
+/**
+ * 工具行只用到任务的这几样；诊断报告（ADR 0045）的状态变了，那一行才重画（停转 / 开始转）。
+ * 后台命令在 live 里，工具行自己订阅（ToolRow 的 useLiveById），不用经这里重画
+ */
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> &
   Partial<Pick<Task, 'analysis' | 'title' | 'diagnoses' | 'projectId'>>
-const jobsSig = (k?: ToolTask) => `${k?.jobs?.map((j) => `${j.id}:${j.state}`)}|${k?.diagnoses?.map((d) => d.status)}`
+const jobsSig = (k?: ToolTask) => `${k?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {
   m: TaskMessage
@@ -728,7 +732,9 @@ export function RunningFooter({
   // 两个表达式能分叉（live 且 tools 非空时判空说「有内容」、RunningNow 却返回 null），
   // 总结下面就会出现一条没有内容的横线
   const shownTools = live ? [] : tools
-  const rows = runningRows({ task, tools: shownTools, jobs, kids, children })
+  // 对话上还在跑的后台命令只在服务端给的 live 里
+  const taskJobs = useLiveById(task?.id)?.jobs ?? []
+  const rows = runningRows({ task, tools: shownTools, jobs, taskJobs, kids, children })
   // 工作流那一行和子对话、后台命令一样只在最新的一轮上列：latest 已经跳过尾部刚发出的用户消息，
   // 只看 last 的话，发送的一瞬间它也会跟着消失，AI 开始输出再回来。
   // 别的调用方（辅助对话、设计对话）没有 latest，仍然只按 last 判

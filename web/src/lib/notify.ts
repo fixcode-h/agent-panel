@@ -4,6 +4,8 @@ import { stopReasonText } from '@shared/task'
 import { pendingAction } from '@shared/user-action'
 import { t } from '@shared/i18n'
 import { setBaseTitle } from './page-signal'
+import { useLiveOf } from './live/store'
+import type { TaskLive } from '@shared/live/task-live'
 import { countBusy, initialTitleState, nextTitleState, titleFor, titleWait, type TitleState } from './title-count'
 
 const KEY = 'notify-task-done'
@@ -32,9 +34,9 @@ const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('�
  * 标题里显示正在执行的任务数。数量什么时候改由 title-count.ts 的状态机决定，
  * 这里只按它给的时机改标题：同一时间最多排一个定时器。
  */
-function useRunningTitle(tasks: Task[]) {
+function useRunningTitle(tasks: Task[], liveOf: (t: Task) => TaskLive) {
   const count = useRef(0)
-  count.current = countBusy(tasks)
+  count.current = countBusy(tasks.map(liveOf))
   const state = useRef<TitleState | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const shown = useRef('')
@@ -56,7 +58,7 @@ function useRunningTitle(tasks: Task[]) {
   }
   useEffect(() => {
     tick.current()
-  }, [tasks])
+  }, [tasks, liveOf])
   useEffect(() => {
     // 后台标签页的定时器会被浏览器拖慢，切回来时按当前状态重算一次，别停在旧数字上
     const onVisible = () => {
@@ -80,13 +82,15 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
   const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
-  useRunningTitle(tasks)
+  // 运行时状态（后代在等你的个数、在跑的数量）读服务端给的 live（web/src/lib/live/store.ts）
+  const liveOf = useLiveOf()
+  useRunningTitle(tasks, liveOf)
   useEffect(() => {
     const before = prev.current
     const next = new Map(
       tasks.map((task) => [
         task.id,
-        { status: task.status, done: task.turnDoneAt ?? '', needs: task.childrenNeeds ?? 0 },
+        { status: task.status, done: task.turnDoneAt ?? '', needs: liveOf(task).childrenNeeds },
       ]),
     )
     prev.current = next
@@ -114,7 +118,7 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
       if (!was) continue
       // 子对话的确认请求不在这份列表里（列表只有顶层对话）：按父对话上「后代在等你」的个数变多来通知，
       // 不然子对话卡在权限确认上、页面又在后台时，用户一点提示都收不到（实测报告问题 1）
-      if ((task.childrenNeeds ?? 0) > was.needs)
+      if (liveOf(task).childrenNeeds > was.needs)
         try {
           const n = new Notification(t('子对话需要你确认'), { body: task.title, tag: `child-ask:${task.id}` })
           n.onclick = () => {
@@ -148,5 +152,5 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
         // 有的浏览器（例如手机上）只允许 Service Worker 发通知
       }
     }
-  }, [tasks])
+  }, [tasks, liveOf])
 }

@@ -40,7 +40,8 @@ await make('count-empty-parent', { status: 'done' })
 const task = async (t: ReturnType<typeof api>, id: string) => {
   const res = await t.routes.request(`/${id}`)
   assert.equal(res.status, 200)
-  return (await res.json()) as { childrenWorking?: number; childrenCli?: number }
+  // 运行时的计数在 live 里（shared/live/task-live.ts）
+  return ((await res.json()) as { live: { childrenWorking: number; childrenCli: number } }).live
 }
 
 test('名下没有在跑的子对话时是 0（子对话只是做完了）', async () => {

@@ -750,8 +750,8 @@ await runShard(import.meta.filename, async (api) => {
         ([k, list]) => {
           const db = JSON.parse(localStorage.getItem(k))
           const parent = db.tasks.find((x) => x.title.includes('购物车'))
-          // 总是写数组（没有就空数组）：删字段会被 keepLiveFields 当成「没带运行时字段」而沿用旧的
-          parent.jobs = list ?? []
+          // 后台命令不属于任务记录：演示库单独一张表（web/src/lib/demo/demo-jobs.ts）
+          db.taskJobs = { ...db.taskJobs, [parent.id]: list ?? [] }
           localStorage.setItem(k, JSON.stringify(db))
         },
         [KEY, jobs],
@@ -1023,17 +1023,21 @@ await runShard(import.meta.filename, async (api) => {
         if (!sub) throw new Error('演示数据里找不到「核对角标的订阅时机」这个子任务')
         sub.status = 'running'
         sub.endedAt = ''
-        // 子任务起了一条还在跑的后台命令：运行区要按「子任务 + 命令名」列出来（老数据没有 jobs 字段）
-        parent.jobs = [
-          {
-            id: 'job-ui-sub',
-            step: sub.id,
-            name: '单测',
-            command: 'npm run test:unit',
-            state: 'running',
-            startedAt: new Date(Date.now() - 65_000).toISOString(),
-          },
-        ]
+        // 子任务起了一条还在跑的后台命令：运行区要按「子任务 + 命令名」列出来。
+        // 后台命令不属于任务记录：演示库单独一张表（web/src/lib/demo/demo-jobs.ts）
+        db.taskJobs = {
+          ...db.taskJobs,
+          [parent.id]: [
+            {
+              id: 'job-ui-sub',
+              step: sub.id,
+              name: '单测',
+              command: 'npm run test:unit',
+              state: 'running',
+              startedAt: new Date(Date.now() - 65_000).toISOString(),
+            },
+          ],
+        }
         localStorage.setItem(k, JSON.stringify(db))
       }, key)
       await p.reload()

@@ -33,7 +33,8 @@ import { PinMenuRow, PinnedButton, useHeaderPins } from './HeaderPins'
 import { taskHeaderItems } from './header-items'
 import { TurnRail } from './TurnRail'
 import { chatHelperIds } from './HelperCards'
-import { keepLiveFields } from '@/lib/live-fields'
+import { useLive } from '@/lib/live/store'
+import { liveActive, liveBusy, liveWaitText } from '@shared/live/task-live'
 import { latestTurnIndex } from '@/lib/latest-turn'
 import { cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Attachment, type Project, type TaskMessage, type ToolUse, type TaskSeenResult } from '@shared/schema'
@@ -43,10 +44,6 @@ import { blockedStep, flowUnfinished, taskFlow, taskWorkflows, topSteps } from '
 import {
   childWait,
   diagnosisPending,
-  taskActive,
-  taskBusy,
-  taskState,
-  taskWaitText,
   taskSummary,
   withTaskModel,
   deliveryActive,
@@ -433,9 +430,9 @@ export function TaskView({
     // 两条路都会经过这里（GET 与 SSE 首包谁先到都可能），所以起始点记在这，不记在某一条请求的 then 里；
     // 已经记过完成的不再改（startStep 对非 waiting 的步骤原样返回）
     trace.start('render')
-    // 别的接口顺手返回的任务不带运行时字段：沿用上一份，标题栏和侧栏的转圈不闪（见 keepLiveFields）。
+    // 运行时状态（live）在 api 层、实时推送里已经取下放进 live/store.ts，这里只换任务记录（见 web/src/lib/live/store.ts）。
     // 分页信息（messageTotal / messageHasMore）跟着这次那份：转截断了就该能翻页，SSE 整份到了就该收起来
-    const next = keepLiveFields(lastTask.current, raw) as TaskPage
+    const next = raw
     setTask(next)
     // 从「只有一段」恢复到整份：侧栏摘要要立刻换回第一条用户消息，不等 1 秒节流
     const wasTruncated = truncated.current
@@ -665,6 +662,8 @@ export function TaskView({
   // 记已读、在场心跳（task-view-presence.ts）
   useTaskPresence(taskId, task, trace, applySeen)
 
+  // 运行时状态（状态、等什么、后台命令、CLI 存活）只读服务端给的 live（web/src/lib/live/store.ts）
+  const live = useLive(task)
   // 打开对话页不启动 CLI：只有真正发消息时才按当前选择启动，免得只是看一眼就起一堆进程
   const running = task?.status === 'running'
   // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
@@ -682,7 +681,7 @@ export function TaskView({
   }, [working])
   // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
   // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
-  const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
+  const jobRunning = (live?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
   // 演示版把轮询当作实时更新来记：按「打开那一刻有没有在跑」判定一次，之后任务再开始 / 停下不重记
   // （加载日志记的是这次打开；startStep / skipStep 都只对 waiting 生效，跟着 running 反复切换会卡在旧状态）。
   // 轮询自己的起停由 useTaskStream 的 start / stop 包住：打开时在跑、首轮回来前就停了，也会被收回来
@@ -831,7 +830,9 @@ export function TaskView({
   // 统一用 shared/task 的 childWait（子对话栏、交给父对话的上报用的是同一个），不在这里另写一套
   // 「有没有东西在跑」——以前只看 awaitingUser，子任务还在跑也写「等待你的下一条消息」
   const chatWait =
-    task.mode === 'chat' ? childWait(task, { background: task.jobs?.length, cliAlive: task.cliAlive }) : undefined
+    task.mode === 'chat' && live
+      ? childWait(task, { background: live.jobs.length, cliAlive: live.cliAlive })
+      : undefined
   // 子对话在右栏开一个页签（和项目文件、本对话改动并排），开着时右栏一定显示
   const childOn = !pane && !!openChild
   // 功能面板占右栏（宽屏）：和文件面板同一栏，同一时间只显示一个；开着子对话时先让给子对话
@@ -1150,7 +1151,7 @@ export function TaskView({
   // 这一轮已说完、名下还有东西在跑（子对话 / 子任务 / 后台命令 / 工作流）：输入框只说「继续输入要求」
   // 会和旁边的停止按钮自相矛盾——用户看到的是「子对话在跑，父对话却停在等继续」。
   // 让它说清到底在等什么
-  const waitText = !working ? taskWaitText(task) : ''
+  const waitText = !working ? liveWaitText(live) : ''
 
   // 导出、复制对话（task-view-actions.ts）
   const { exportIt, exportHtml, exportMd, copyIt } = taskExportActions(task)
@@ -1242,7 +1243,7 @@ export function TaskView({
       }
       // 对话还在运行（自己在跑，或者子对话、子任务、后台命令、工作流还没完）就是停止按钮：
       // 停止会把这些附属的一起停掉（见服务端 /stop），判定和标题栏、侧栏同一个（taskActive）
-      running={working || taskActive(task)}
+      running={working || liveActive(live)}
       // 正在发送上一句：Enter 和按钮一起拦住，并给一句提示（见 ChatComposer 的 blocker）
       sending={sending}
       onStop={stop}
@@ -1416,9 +1417,9 @@ export function TaskView({
           {isAnalysisTask(task, localAgents) && <AnalysisMark kind={task.analysis} className="ml-1" />}
           {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光，CLI 关了就没有 */}
           <h2
-            title={[cliAliveHint(task), t('双击重命名')].filter(Boolean).join(' · ')}
+            title={[live ? cliAliveHint(live) : '', t('双击重命名')].filter(Boolean).join(' · ')}
             onDoubleClick={() => setRenaming(task.title)}
-            className={cn('min-w-0 truncate px-1 font-medium', cliTreeAlive(task) && 'cli-alive-title')}
+            className={cn('min-w-0 truncate px-1 font-medium', !!live && cliTreeAlive(live) && 'cli-alive-title')}
           >
             {task.title}
           </h2>
@@ -1437,9 +1438,9 @@ export function TaskView({
           后台命令 / 工作流都转圈，有没回复的提问、请求换成提问图标 */}
       <TaskStatusIcon
         status={task.status}
-        working={taskBusy(task)}
-        spin={taskBusy(task)}
-        waiting={taskState(task) === 'needs'}
+        working={liveBusy(live)}
+        spin={liveBusy(live)}
+        waiting={live?.state === 'needs'}
         label={taskWord(task).word}
         className="ml-1"
       />
@@ -1623,9 +1624,9 @@ export function TaskView({
       <div className="flex min-w-0 flex-1 items-center gap-1 text-prose [&_h2]:font-semibold">
         <TaskStatusIcon
           status={task.status}
-          working={taskBusy(task)}
-          spin={taskBusy(task)}
-          waiting={taskState(task) === 'needs'}
+          working={liveBusy(live)}
+          spin={liveBusy(live)}
+          waiting={live?.state === 'needs'}
           label={taskWord(task).word}
           className="shrink-0"
         />

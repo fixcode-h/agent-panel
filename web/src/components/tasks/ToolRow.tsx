@@ -1,3 +1,4 @@
+import { useLiveById } from '@/lib/live/store'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight,
@@ -523,8 +524,7 @@ function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean)
 }
 
 /** 工具行要的任务字段：诊断报告那一行还要标题和各版报告（ADR 0045） */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> &
-  Partial<Pick<Task, 'title' | 'diagnoses' | 'projectId'>>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> & Partial<Pick<Task, 'title' | 'diagnoses' | 'projectId'>>
 
 /** 不在任务里的工具行（AI 创建 / 分析）打开差异窗口时的占位：没有 id，窗口里就不给按任务找文件的操作 */
 const NO_TASK: Pick<Task, 'id' | 'status' | 'changes'> = { id: '', status: 'done', changes: [] }
@@ -557,7 +557,9 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const pending = tool.ms === undefined && !!tool.startedAt && task?.status === 'running'
   // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
   const ids = view.job ? [view.job] : (view.jobs ?? [])
-  const mine = ids.length ? (task?.jobs ?? []).filter((j) => ids.includes(j.id)) : []
+  // 对话上还在跑的后台命令只在服务端给的 live 里（web/src/lib/live/store.ts）
+  const liveJobs = useLiveById(task?.id)?.jobs
+  const mine = ids.length ? (liveJobs ?? []).filter((j) => ids.includes(j.id)) : []
   // 有结果之前一直转圈：任务上的后台命令列表还没推到（刚交出去、页面刚打开）也一样，不能先显示成完成
   const bg = mine.length > 0 || !!view.waiting
   // 申请的编译有几条：从最早开始跑的那条算；都还在排队就写「排队中」

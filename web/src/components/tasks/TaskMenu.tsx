@@ -1,3 +1,4 @@
+import { liveFor, useLive } from '@/lib/live/store'
 import { useState } from 'react'
 import { Archive, ArchiveRestore, Pause, PencilLine, Pin, PinOff, Play, Power, PowerOff, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -47,7 +48,9 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
     }
   }
   // CLI 进程还活着（含预热中、停在等下一句）：给「关闭 Agent」；没有进程时对话任务给「激活 Agent」
-  const agentAlive = !!task.cliAlive || task.prewarming || task.awaitingUser
+  // 进程活着只认服务端给的 live.cliAlive（按真实进程登记算）
+  const live = useLive(task)
+  const agentAlive = live.cliAlive || task.prewarming || task.awaitingUser
   const canActivate = !agentAlive && task.mode === 'chat' && !task.imported && !task.archived
   const showAgent = agentAlive || canActivate
   const [agentBusy, setAgentBusy] = useState(false)
@@ -63,7 +66,8 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
       const next = await api.activateAgentSummary(task.id)
       upsertTask(next)
       // 没有会话、CLI 不支持停在等待上时服务端原样返回：说清楚，别让用户以为已经启动了
-      if (next.cliAlive || next.prewarming || next.awaitingUser || next.working) toast.success(t('Agent 已激活'))
+      if (liveFor(next).cliAlive || next.prewarming || next.awaitingUser || next.working)
+        toast.success(t('Agent 已激活'))
       else toast.info(t('这个对话现在不能提前启动 Agent，发消息时会自动启动'))
     } catch (e) {
       toast.error((e as Error).message)

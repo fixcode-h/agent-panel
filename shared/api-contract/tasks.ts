@@ -7,6 +7,7 @@
 import { z } from 'zod'
 import type { ChildRow } from '../children/row.ts'
 import { FollowUpInput, NewTaskInput, TaskMessage, TaskMode, TaskStatus, type Task } from '../schema.ts'
+import { TaskLive } from '../live/task-live.ts'
 import { endpoint, shaped } from './define.ts'
 
 const MessageShape = z.looseObject({
@@ -33,9 +34,6 @@ const TaskShape = z.looseObject({
   usage: z.looseObject({ inputTokens: z.number(), outputTokens: z.number(), costUsd: z.number() }),
 })
 
-/** 顶层对话额外带的三项计数（shared/children/row.ts 的 childCountsScan）：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
-const ChildCounts = { childrenWorking: z.number(), childrenCli: z.number(), childrenNeeds: z.number() }
-
 /**
  * 打开对话时只取最近一段消息（`?limit=` / 往前翻页 `?before=`）时多带的分页信息：
  * messageTotal 是完整条数，比 messages 多就说明还有更早的要往前翻；不传 limit 时没有这两个字段。
@@ -51,12 +49,15 @@ export type TaskPage = Task & {
 }
 
 /** GET /tasks?projectId=：顶层对话的摘要（消息只留第一条用户消息） */
-export const TaskListContract = z.array(TaskShape.extend(ChildCounts))
+/**
+ * 列表、详情都带 live（运行时状态，服务端 server/tasks/live.ts 一处算好，ADR 0063）：
+ * 侧栏、标题、项目首页、子对话计数、输入框「在等什么」都只读它，记录本身不再带 cliAlive、子对话计数这些字段
+ */
+export const TaskListContract = z.array(TaskShape.extend({ live: TaskLive }))
 
 /** GET /tasks/:id?limit=：对话页打开时的第一页（顶层对话） */
 export const TaskPageContract = TaskShape.extend({
-  ...ChildCounts,
-  cliAlive: z.boolean(),
+  live: TaskLive,
   messageTotal: z.number(),
   messageHasMore: z.boolean(),
 })

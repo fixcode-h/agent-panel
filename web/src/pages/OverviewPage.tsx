@@ -17,7 +17,9 @@ import { bugRows, type BugBrief } from '@shared/bug-overview'
 import type { FlowBrief } from '@shared/agent-stats'
 import { t } from '@shared/i18n'
 import { OVERVIEW_GROUPS, overviewRows, type OverviewGroup, type OverviewRow } from '@shared/overview'
-import { taskWaitText, timeAgo } from '@shared/task'
+import { timeAgo } from '@shared/task'
+import { liveWaitText } from '@shared/live/task-live'
+import { useLive, useLiveOf } from '@/lib/live/store'
 import { showChildInPane } from '@/lib/ai-window'
 import { api } from '@/lib/api'
 import { useData, useNav, useTasks } from '@/lib/data'
@@ -133,7 +135,8 @@ export function OverviewPage() {
   }, [view, tasks])
   const bugsWaiting = useMemo(() => bugRows(bugs ?? []).filter((r) => r.group === 'you').length, [bugs])
 
-  const rows = useMemo(() => overviewRows(tasks), [tasks])
+  const liveOf = useLiveOf()
+  const rows = useMemo(() => overviewRows(tasks, liveOf), [tasks, liveOf])
   const count = (g: OverviewGroup) => rows.filter((r) => r.group === g).length
   const q = query.trim().toLowerCase()
   const shown = rows.filter(
@@ -422,7 +425,8 @@ function Row({
 }) {
   const { task, state, plan } = r
   const busy = state === 'running' || state === 'waiting'
-  const note = state === 'waiting' ? taskWaitText(task) : r.group === 'stalled' ? t('没在执行') : ''
+  const live = useLive(task)
+  const note = state === 'waiting' ? liveWaitText(live) : r.group === 'stalled' ? t('没在执行') : ''
   const ProjectIcon = task.projectId ? Folder : MessageSquare
   const showBox = picked || selecting
   return (

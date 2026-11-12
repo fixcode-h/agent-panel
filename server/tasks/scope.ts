@@ -762,8 +762,10 @@ export interface TasksScope {
       peer?: PeerFrom
     },
   ) => Promise<boolean>
-  withJobs: (task: Task) => Task
-  withLive: (task: Task) => Promise<Task>
+  /** 对话的运行时状态（server/tasks/live.ts）：状态、CLI 存活、后台命令、名下子对话计数 */
+  liveOf: (task: Task) => Promise<import('../../shared/live/task-live.ts').TaskLive>
+  /** 交给界面的任务：记录加上 live（这一版旧的运行时字段也照样叠上） */
+  withLive: (task: Task) => Promise<import('./live.ts').TaskWithLive>
   /** 顶层对话一轮结束后排一次经验学习（server/experience-learn.ts） */
   learnExperience: (taskId: string) => Promise<void>
   /** 对话这一轮失败收尾后：额度用完 / 被限流时按设置换备用模型或等到点继续（server/tasks/quota-resume.ts） */
