@@ -4,6 +4,7 @@ import test from 'node:test'
 import { FlowRun } from '../shared/task-flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
+import { activePlan, applyPlan, bindWait } from '../shared/plan.ts'
 import {
   retryBase,
   runEngineTurn,
@@ -952,7 +953,12 @@ test('子任务：有中断没做完的子任务时不能另派新的，要 resu
       // 模型没照续接说明 resume，另派了一个「重派」：拒绝，并列出要接着做的那个
       got.fresh = o.spawn([{ title: 'worktree 深挖重派', instructions: '重新查' }])
       // 终止被打断的那个（它没有在跑的进程）：直接记成已终止，之后才能另派
+      // 计划里有一步在等它（spawn_agents 带 step 时面板挂的等待）：终止后这一步要收口，不能永远「等待中」
+      applyPlan(task, { steps: [{ title: '补评', status: 'running' }, { title: '接着改' }] })
+      bindWait(task, '1', { kind: 'helper', ref: first[0], label: '调研 worktree' })
       got.stop = o.stopHelpers([first[0]], '不需要了')
+      got.wait = activePlan(task)!.steps[0].waits[0].state
+      got.stepStatus = activePlan(task)!.steps[0].status
       got.after = o.spawn([{ title: '换个方向', instructions: '查别的' }])
       await o.wait((got.after as { ids: string[] }).ids, 1000)
       return '一步结果'
@@ -970,6 +976,9 @@ test('子任务：有中断没做完的子任务时不能另派新的，要 resu
   const subs = task.steps.filter((s) => s.slot === 'sub')
   assert.equal(subs[0].status, 'skipped', '被打断的那个记成已终止')
   assert.equal(subs[0].interrupted, false)
+  // 用户 2026-11-12 报：终止后等它的那一步一直「等待中」，面板不推、汇报也不交，父子互等
+  assert.equal(got.wait, 'failed', '等它的等待项随终止收口')
+  assert.equal(got.stepStatus, 'running', '那一步退回进行中，由对话决定重做还是标跳过')
   assert.equal((got.after as { ids: string[] }).ids.length, 1, '终止之后可以另派')
   assert.equal(subs.length, 2, '被拒的那次没有多出记录')
 })

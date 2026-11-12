@@ -1294,7 +1294,12 @@ function makeOrchestra(
       const going = st.batches.get(self.id)
       if (going) return going
       const kids = () => task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
-      if (!kids().some((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))) return undefined
+      if (!kids().some((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))) {
+        // 没有要交回的结果（这一轮结束时也走这里）：顺手收掉计划里等着已经结束的子任务的等待项。
+        // 别的路径漏收（老数据、被打断后直接终止的）时，这是最后一道：不收的话那一步永远「等待中」，面板不再推它
+        settleHelperWaits(host)
+        return undefined
+      }
       const batch = settleHelperBatch(host, self).then(({ text: late, ids }): HelperBatch => {
         st.batches.delete(self.id)
         if (late) {
@@ -2026,7 +2031,13 @@ function makeOrchestra(
         if (rs.stopHelper(task.id, s.id, why) || rs.dropInterrupted(s, why)) done.push(`${s.id}｜${s.title}`)
         else over.push(`${s.id}｜${s.title}`)
       }
-      if (done.length) host.changed(true)
+      if (done.length) {
+        // 被打断、没在跑的子任务这里直接记成已终止，不会再有一批结果交回（helperBatch 只收还在跑的），
+        // 计划里等它的那一步只能在这里收口：不收的话那一步永远「等待中」，planStalled 当它在等别人不推，
+        // 子对话的阶段汇报也被「没做完不报」吞掉，父子互等到用户来问（用户 2026-11-12 报，第二次）
+        settleHelperWaits(host)
+        host.changed(true)
+      }
       if (!done.length && !over.length && !missing.length) return { ok: false, info: '没有还在执行或排队的子任务' }
       return {
         ok: done.length > 0,

@@ -1044,6 +1044,19 @@ export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'reso
 }
 
 /**
+ * 子对话一轮结束、计划没做完时，能不能先不报父对话、交给它自己接着做（ADR 0041 的自驱）：
+ * 只有面板真的会推它（planStalled），或者它在等父对话通知修复（wait_fix，那封请求已经马上交出去了）才行。
+ * 计划里挂着等待、却没有在跑的东西（等的子任务早结束了、等待项没收口）时面板不推它，
+ * 这时再不报，它这一轮写给父对话的汇报（「请你编译」）就交不出去，父子互等到用户来问（用户 2026-11-12 报，第二次）
+ */
+export function childSelfDrives(tk: Parameters<typeof planStalled>[0]) {
+  if (planStalled(tk)) return true
+  return !!activePlan(tk)?.steps.some((s) =>
+    [s, ...s.children].some((x) => x.waits?.some((w) => w.kind === 'parent' && w.state === 'waiting')),
+  )
+}
+
+/**
  * 已经请父对话收尾、还在等父对话处理的子对话（wrapRequest 是 requested，还没合回、没收下）。
  * 父对话计划里等它们的那一步看着是「在等子对话」，其实子对话等的是父对话自己调用 finish_child：
  * planStalled 会把这一步当成在等别人而不推，父对话说一句「现在合回」就结束这一轮时，两边就互相等住了
