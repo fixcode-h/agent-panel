@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Project } from './schema.ts'
+import { Project } from '../schema.ts'
 
 const base = { id: 'p', name: '项目', createdAt: '', updatedAt: '' }
 

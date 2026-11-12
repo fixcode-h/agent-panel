@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { CLIS } from '../../shared/clis.ts'
 import { Settings } from '../../shared/schema.ts'
-import type { ProjectMcpImportResult, ProjectMcpOverview } from '../../shared/project-mcp.ts'
+import type { ProjectMcpImportResult, ProjectMcpOverview } from '../../shared/projects/mcp.ts'
 
 // 数据目录在模块加载时就定死（server/store.ts 的 DATA_DIR）：先把 AGENT_PANEL_DATA 指到临时目录，再加载被测模块。
 // 不然读的是本机真实的 settings.json——本机启用过 CLI 才过，CI 的干净 HOME 上 clis 是空的

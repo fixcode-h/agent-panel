@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { Project, ProjectInput } from '@shared/schema'
 import type { Proposal } from '@shared/assist'
-import { readProjectProposal } from '@shared/project-init'
+import { readProjectProposal } from '@shared/projects/init'
 
 /**
  * 项目设置弹窗各分区共用的类型和草稿工具（从 ProjectSettingsDialog.tsx 挪出）。

@@ -5,9 +5,9 @@
  * 这里放 CLI 输出的格式、校验和提示词；测试步骤的校验沿用 assist.ts 的 resolveTestSteps。
  */
 import { z } from 'zod'
-import { promptLangWord } from './prompt-lang.ts'
-import { FILE_EOLS, FILE_FORMATS, ParamValue, TestStep, type Workflow, type WorkflowExpose } from './schema.ts'
-import { DEFAULT_SEARCH_EXCLUDE } from './search-exclude.ts'
+import { promptLangWord } from '../prompt-lang.ts'
+import { FILE_EOLS, FILE_FORMATS, ParamValue, TestStep, type Workflow, type WorkflowExpose } from '../schema.ts'
+import { DEFAULT_SEARCH_EXCLUDE } from '../search-exclude.ts'
 
 /** 可以推荐的项目设置：值和项目设置里的字段一一对应 */
 export const INIT_SETTINGS = {

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowRight, Check, ChevronRight, FilePlus2, FilePen, File, Loader2, RotateCw, Sparkles } from 'lucide-react'
 import type { FileFormat, ParamValue, ProjectInput, Workflow } from '@shared/schema'
-import type { InitSetting, ProjectProposal } from '@shared/project-init'
+import type { InitSetting, ProjectProposal } from '@shared/projects/init'
 import { ENV_LABEL } from '@shared/test-steps'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

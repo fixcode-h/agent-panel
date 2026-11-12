@@ -5,7 +5,7 @@ import * as D from '@radix-ui/react-dialog'
 import { toast, toastError } from '@/lib/toast'
 import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Terminal, Wand2, X } from 'lucide-react'
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
-import type { ProjectProposal } from '@shared/project-init'
+import type { ProjectProposal } from '@shared/projects/init'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type {

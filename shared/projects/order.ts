@@ -1,4 +1,4 @@
-import { t } from './i18n.ts'
+import { t } from '../i18n.ts'
 
 /** 排序只关心这几项：添加时间、用户拖出来的顺序，以及兜底的 id */
 export type OrderedProject = { id: string; createdAt: string; sortOrder?: number }

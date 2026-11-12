@@ -2,7 +2,7 @@
  * 新建项目时「AI 分析」的结果：读本地目录得出的事实，填进项目表单，用户确认后才保存。
  * 前后端共用这个结构（演示版也用它）。
  */
-import type { TestStep } from './schema.ts'
+import type { TestStep } from '../schema.ts'
 
 export interface ProjectSuggestion {
   name: string

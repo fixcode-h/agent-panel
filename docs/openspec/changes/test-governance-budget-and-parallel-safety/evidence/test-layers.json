@@ -1522,7 +1522,7 @@
       "lines": 192
     },
     {
-      "file": "shared/project-init.test.ts",
+      "file": "shared/projects/init.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 9,

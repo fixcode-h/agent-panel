@@ -1,6 +1,6 @@
-import type { Project, ProjectCategory, Workflow } from './schema.ts'
-import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
-import { GENERAL_NAME, GENERAL_ORIGIN } from './builtin/workflows.ts'
+import type { Project, ProjectCategory, Workflow } from '../schema.ts'
+import { DEFAULT_WORKFLOW_ID } from '../builtin/default.ts'
+import { GENERAL_NAME, GENERAL_ORIGIN } from '../builtin/workflows.ts'
 
 type ProjectRef = Pick<Project, 'workflowId' | 'categoryId'>
 type CategoryRef = Pick<ProjectCategory, 'id' | 'workflowId'>

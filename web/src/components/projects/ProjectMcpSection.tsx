@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { Project } from '@shared/schema'
 import { McpServer, type McpEntry, type McpTestResult } from '@shared/library'
-import type { ProjectMcpDetected, ProjectMcpOverview } from '@shared/project-mcp'
+import type { ProjectMcpDetected, ProjectMcpOverview } from '@shared/projects/mcp'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { joinArgs, splitArgs } from '@/lib/utils'

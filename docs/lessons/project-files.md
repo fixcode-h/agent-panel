@@ -1,5 +1,5 @@
 ---
-paths: server/ask-mcp.ts, server/panel-mcp-files.ts, server/projects/mcp.ts, server/exec/invoke.ts, shared/project-mcp.ts
+paths: server/ask-mcp.ts, server/panel-mcp-files.ts, server/projects/mcp.ts, server/exec/invoke.ts, shared/projects/mcp.ts
 ---
 
 # 面板往用户项目里临时写的文件

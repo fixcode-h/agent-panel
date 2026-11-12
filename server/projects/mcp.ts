@@ -10,7 +10,7 @@ import {
   type ProjectMcpDetected,
   type ProjectMcpImportResult,
   type ProjectMcpOverview,
-} from '../../shared/project-mcp.ts'
+} from '../../shared/projects/mcp.ts'
 import { mcpOverview, readServerTable, readToml, removeMcpFrom, testMcp, writeMcpTo } from '../mcp-store.ts'
 import { scanMcpServer } from '../../shared/config-scan/index.ts'
 import { visibleFindings } from '../config-scan.ts'

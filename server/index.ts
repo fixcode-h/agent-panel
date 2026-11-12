@@ -29,7 +29,7 @@ import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
 import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summary.ts'
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
-import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
+import { ProjectProposalSchema, withInitResult } from '../shared/projects/init.ts'
 import {
   createCollection,
   DATA_DIR,
@@ -129,7 +129,7 @@ import {
 import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject, detectVcs } from './projects-analyze.ts'
-import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
+import { orderProjects, projectOrderError, sortProjects } from '../shared/projects/order.ts'
 import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
 import { isExternalRequest, isLocalHost } from './hosts.ts'
 import { originOk } from './guard/gate.ts'

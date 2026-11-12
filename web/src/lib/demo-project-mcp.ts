@@ -1,5 +1,5 @@
 import type { McpServer } from '@shared/library'
-import type { ProjectMcpDetected, ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
+import type { ProjectMcpDetected, ProjectMcpImportResult, ProjectMcpOverview } from '@shared/projects/mcp'
 import { t } from '@shared/i18n'
 import { demoMcpOverview, demoMcpServers } from './demo-library'
 

@@ -17,7 +17,7 @@ import {
   skillTemplate,
   type ProjectSkill,
   type ProjectSkillsView,
-} from '../../shared/project-skills.ts'
+} from '../../shared/projects/skills.ts'
 import { frontField, type LibraryFile } from '../../shared/library.ts'
 import { extraFiles } from '../library.ts'
 import { scanPath } from '../config-scan.ts'

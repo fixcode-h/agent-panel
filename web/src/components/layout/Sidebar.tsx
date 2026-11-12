@@ -90,7 +90,7 @@ import { TRASH_RETENTION_DAYS, byAskedAt } from '@shared/task'
 import { liveBusy } from '@shared/live/task-live'
 import { useLiveOf } from '@/lib/live/store'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
-import { sortProjects } from '@shared/project-order'
+import { sortProjects } from '@shared/projects/order'
 import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
 

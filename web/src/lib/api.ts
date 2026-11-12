@@ -19,7 +19,7 @@ import type { SpeechStatus } from '@shared/speech'
 import type { TtsStatus } from '@shared/tts'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
-import type { ProjectSuggestion } from '@shared/project-scan'
+import type { ProjectSuggestion } from '@shared/projects/scan'
 import type {
   SessionInfo,
   Attachment,
@@ -83,7 +83,7 @@ import type { ModelCatalogEntry, ModelCatalogInfo, ModelLookupJob } from '@share
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
-import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
+import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/projects/mcp'
 import type {
   BundledSkill,
   LibraryCli,
@@ -94,8 +94,8 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
-import type { ProjectSkillsView } from '@shared/project-skills'
-import type { ProjectProposal } from '@shared/project-init'
+import type { ProjectSkillsView } from '@shared/projects/skills'
+import type { ProjectProposal } from '@shared/projects/init'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DocGroupView } from '@shared/doc-root'
 import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'

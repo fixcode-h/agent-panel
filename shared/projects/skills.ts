@@ -1,7 +1,7 @@
-import { CLIS } from './clis.ts'
-import { t } from './i18n.ts'
-import { frontField, libraryName } from './library.ts'
-import type { ScanSummary } from './config-scan/index.ts'
+import { CLIS } from '../clis.ts'
+import { t } from '../i18n.ts'
+import { frontField, libraryName } from '../library.ts'
+import type { ScanSummary } from '../config-scan/index.ts'
 
 /**
  * 项目里的 Skill：项目目录下各 Agent 的 skills.repo（`.agents/skills`、`.claude/skills`……）里

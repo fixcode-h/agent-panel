@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setLang } from '../../shared/i18n.ts'
-import { projectSkillRepos, skillIssues, skillTemplate } from '../../shared/project-skills.ts'
+import { projectSkillRepos, skillIssues, skillTemplate } from '../../shared/projects/skills.ts'
 import {
   createProjectSkill,
   deleteProjectSkill,

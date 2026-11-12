@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildAssistPrompt, resolveProposal, type AssistContext } from './assist.ts'
-import { ProjectInput, Workflow } from './schema.ts'
-import { ProjectProposalSchema, readProjectProposal, withInitResult, type ProjectProposal } from './project-init.ts'
+import { buildAssistPrompt, resolveProposal, type AssistContext } from '../assist.ts'
+import { ProjectInput, Workflow } from '../schema.ts'
+import { ProjectProposalSchema, readProjectProposal, withInitResult, type ProjectProposal } from './init.ts'
 
 const wf = (id: string, name: string, expose: unknown[] = []) =>
   Workflow.parse({ id, name, createdAt: '', updatedAt: '', mainAgentId: '', expose })

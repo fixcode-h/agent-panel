@@ -22,7 +22,7 @@ import {
 import { AGENT_ICON_IDS } from './icons.ts'
 import { libraryName, McpServer } from './library.ts'
 import { builtinCommands } from './commands.ts'
-import { buildProjectInitPrompt, ProjectInitDraft, resolveProjectInit, type ProjectProposal } from './project-init.ts'
+import { buildProjectInitPrompt, ProjectInitDraft, resolveProjectInit, type ProjectProposal } from './projects/init.ts'
 import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,

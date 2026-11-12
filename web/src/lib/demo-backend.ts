@@ -32,8 +32,8 @@ import {
   skillTemplate,
   type ProjectSkill,
   type ProjectSkillsView,
-} from '@shared/project-skills'
-import { ProjectProposalSchema, withInitResult } from '@shared/project-init'
+} from '@shared/projects/skills'
+import { ProjectProposalSchema, withInitResult } from '@shared/projects/init'
 import { z } from 'zod'
 import {
   Agent,
@@ -111,7 +111,7 @@ import {
 import { collabEvents } from '@shared/collab-timeline'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
-import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
+import { orderProjects, projectOrderError, sortProjects } from '@shared/projects/order'
 import {
   REPO,
   RECENT_RELEASES,

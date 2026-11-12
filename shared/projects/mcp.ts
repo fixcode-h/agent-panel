@@ -1,5 +1,5 @@
-import type { McpEntry, McpServer } from './library.ts'
-import type { ConfigFinding } from './config-scan/index.ts'
+import type { McpEntry, McpServer } from '../library.ts'
+import type { ConfigFinding } from '../config-scan/index.ts'
 
 /**
  * 项目里的 MCP 配置：只读扫描项目目录下各 CLI / 编辑器认的配置文件，列出来给用户看，可以导入成面板管理的配置
