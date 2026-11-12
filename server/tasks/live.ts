@@ -4,6 +4,7 @@ import { reapLostJobs, uiJobs } from '../background.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import type { ChildCounts as ScanCounts } from '../../shared/children/row.ts'
 
 /** 交给界面的任务：记录本身加上 live（运行时状态） */
 export type TaskWithLive = Task & { live: TaskLive }
@@ -11,14 +12,20 @@ export type TaskWithLive = Task & { live: TaskLive }
 /** 名下子对话的计数（server/tasks/children.ts 的 childCountsOf，结果按 1 秒缓存） */
 type ChildCounts = (parentId: string) => Promise<{ working: number; cli: number; needs: number }>
 
+/** 调用方刚扫好的一份计数（shared/children/row.ts 的 childCountsScan）：列表接口用它，不读 1 秒缓存 */
+type FreshCounts = (parentId: string) => ScanCounts
+
 /**
  * 对话的运行时状态只在这里算（重构文档第 1 条）：进程登记、后台命令、名下子对话的计数，
  * 再经 shared/live/task-live.ts 的 taskLiveOf 得出 state。列表、详情、实时推送、全局事件流都调这一处，
  * 不在各个路由里各往 Task 上叠字段。
  */
 export function createLive(sc: TasksScope, childCounts: ChildCounts) {
-  async function liveOf(task: Task): Promise<TaskLive> {
-    const kids = await childCounts(task.id)
+  async function liveOf(task: Task, fresh?: FreshCounts): Promise<TaskLive> {
+    const f = fresh?.(task.id)
+    const kids = f
+      ? { working: f.childrenWorking, cli: f.childrenCli, needs: f.childrenNeeds }
+      : await childCounts(task.id)
     // 子对话页只冒泡后代在等你的个数（它下面还有孙对话时也要显示「等你处理」）；
     // 在跑的子对话数、CLI 数只给顶层对话（和以前列表、详情带的口径一样）
     const top = !task.parentTaskId
