@@ -1,8 +1,8 @@
 /**
  * 保存和删除前的检查：服务端和在线演示的模拟后端共用，两边的规则和提示一致。
  */
-import { END, RESERVED_STEP_IDS, START, findRefCycle, nodeSteps } from './flow.ts'
-import { type Project, type ProjectCategory, type Workflow, type WorkflowInput } from './schema.ts'
+import { RESERVED_STEP_IDS, findRefCycle, nodeSteps } from './flow.ts'
+import { END, START, type Project, type ProjectCategory, type Workflow, type WorkflowInput } from './schema.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 

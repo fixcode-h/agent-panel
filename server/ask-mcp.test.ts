@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { askMcpApi, openAskBridge, orchCore, toQuestions } from './ask-mcp.ts'
 import { ORCH_CORE_TOOLS } from '../shared/panel-tools.ts'
-import type { Orchestra } from '../shared/engine.ts'
+import type { Orchestra } from '../shared/engine-host.ts'
 
 /** 直接调面板的 MCP 接口，返回这一条 JSON-RPC 的结果 */
 async function rpc(token: string, msg: unknown) {

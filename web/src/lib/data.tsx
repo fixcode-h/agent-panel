@@ -17,7 +17,8 @@ import { applySavedAppearance } from './appearance'
 import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
 import { getLang, isLangAuto, t } from '@shared/i18n'
-import { helpersWorking, taskSummary } from '@shared/task'
+import { taskSummary } from '@shared/task'
+import { helpersWorking } from '@shared/task-helpers'
 import { keepLiveFields } from './live-fields'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */

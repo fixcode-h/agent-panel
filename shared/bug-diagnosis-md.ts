@@ -36,9 +36,6 @@ import {
   reproKindMd,
 } from './bug-quotes-md.ts'
 
-/** 责任类别在界面上的说法：定义在决策卡那边（卡片也要用），这里照旧导出 */
-export { blameLabel }
-
 const PHASE_LABEL = () => ({
   evidence: t('论证'),
   cause: t('根因'),

@@ -20,7 +20,6 @@ import {
   convActive,
   convState,
   convStateText,
-  helperRunning,
   lastFailureNote,
   runRunning,
   stopReasonText,
@@ -28,6 +27,7 @@ import {
   type ChildEntry,
   type ConvState,
 } from './task.ts'
+import { helperRunning } from './task-helpers.ts'
 import { stateWord, type StateWord } from './task-word.ts'
 
 export type DiagTone = 'accent' | 'warning' | 'danger' | 'subtle' | 'success'

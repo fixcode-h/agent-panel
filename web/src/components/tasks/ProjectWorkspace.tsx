@@ -24,11 +24,11 @@ import {
   taskDoneDot,
   taskState,
   taskTurnUnread,
-  taskWaitText,
   taskDuration,
   taskSummary,
   waitDuration,
 } from '@shared/task'
+import { taskWaitText } from '@shared/task-word'
 import { importTaskFile } from '@/lib/task-transfer'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'

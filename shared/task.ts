@@ -415,8 +415,6 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
-export { canPickRun, withTaskModel } from './task-run.ts'
-
 /**
  * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。
  * 用来判断「会话开在哪个目录」与这一轮的目录是否一致。
@@ -1522,19 +1520,6 @@ export function splitStepJobs<S extends { id: string; slot?: string }, J extends
  * 列表用的任务摘要：侧栏、项目首页只要标题、状态、进度和用量。去掉消息内容、节点输出这些大块数据，
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
-/**
- * 子任务的运行状态和排序在 shared/task-helpers.ts（判定只写那一处）；
- * 这里只转出，调用方仍按原路径从 @shared/task 引用。
- */
-export {
-  helperActive,
-  helperRank,
-  helperRunning,
-  helperShown,
-  helpersWorking,
-  newestFirst,
-  sortHelpers,
-} from './task-helpers.ts'
 
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
@@ -1651,9 +1636,6 @@ export function taskBusy(x: TaskFactsInput) {
   const s = taskState(x)
   return s === 'running' || s === 'waiting'
 }
-
-// 「等结果」时在等什么、各处的状态短词都在 shared/task-word.ts（分析稿 A8）：这里只转出，调用方仍可从 @shared/task 引用
-export { taskWaitText } from './task-word.ts'
 
 /**
  * 列表里「执行中」的条数：侧栏项目名的「N 个执行中」、标签页标题的 (n) 都读这个，

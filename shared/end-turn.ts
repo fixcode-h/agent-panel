@@ -1,7 +1,8 @@
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { EndTurnRecord } from './turn-end.ts'
 import { PANEL_TOOL_RE, panelToolName } from './panel-tools.ts'
-import { activePlan, openWork, panelWrap } from './plan.ts'
+import { activePlan, openWork } from './plan.ts'
+import { panelWrap } from './wrap-up.ts'
 import { stepApplies } from './test-steps.ts'
 import { doneEvidence, gateFiles, verifyGateError, type GateStep, type TurnExtra } from './done-evidence.ts'
 

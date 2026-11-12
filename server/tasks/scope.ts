@@ -10,13 +10,13 @@ import type {
   PeerFrom,
   PeerKind,
   Workflow,
+  AlertKind,
 } from '../../shared/schema.ts'
 import type { LessonDraft } from '../lessons.ts'
 import type { Lister, Live } from './types.ts'
 import type { createTaskStore } from '../task-store.ts'
 import type { worktreeStatus } from '../exec/worktree.ts'
 import type { IntegrateKind, IntegrateResult } from '../exec/worktree-integrate.ts'
-import type { AlertKind } from '../../shared/schema.ts'
 import type { createClaims } from '../claims.ts'
 
 /**
@@ -86,7 +86,7 @@ export interface TasksScope {
   >
   applyAskUser: (task: Task, on: boolean, working: boolean) => Promise<void>
   applyChildAskUser: (parent: Task, on: boolean) => Promise<void>
-  attachOrchestra: (taskId: string, orch: import('../../shared/engine.ts').Orchestra | undefined) => void
+  attachOrchestra: (taskId: string, orch: import('../../shared/engine-host.ts').Orchestra | undefined) => void
   background: {
     start(input: {
       taskId: string
@@ -276,7 +276,7 @@ export interface TasksScope {
   ) => Promise<Task>
   forwardSpawn: (
     child: Task,
-    spec: import('../../shared/engine.ts').HelperSpec,
+    spec: import('../../shared/engine-host.ts').HelperSpec,
   ) => {
     ok: boolean
     info: string

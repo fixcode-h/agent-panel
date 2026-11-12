@@ -17,18 +17,10 @@ import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import { settleWait } from '../../shared/plan.ts'
 import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
-import {
-  closeFlow,
-  diagnosisPending,
-  dropEndNotes,
-  newTask,
-  taskDeleted,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
+import { closeFlow, diagnosisPending, dropEndNotes, newTask, taskDeleted, withAttachments } from '../../shared/task.ts'
+import { withTaskModel, retryModelPatch } from '../../shared/task-run.ts'
 import { rewaitDiagnosis } from '../../shared/task-settle.ts'
 import { agentRun } from '../../shared/settings.ts'
-import { retryModelPatch } from '../../shared/task-run.ts'
 import { getCli } from '../../shared/clis.ts'
 import { chatMissingParams } from '../../shared/agent-role.ts'
 import { CHILD_ASK_DEFAULT, childAskInitial } from '../../shared/child-ask.ts'

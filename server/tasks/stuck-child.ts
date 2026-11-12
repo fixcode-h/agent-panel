@@ -1,4 +1,4 @@
-import { stalledTurn } from '../exec/runner.ts'
+import { stalledTurn } from '../exec/stall-watch.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 import { t } from '../../shared/i18n.ts'

@@ -2,14 +2,10 @@ import { knownSlow } from '../command-times.ts'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Agent, Project, Task } from '../../shared/schema.ts'
-import type { AgentCall } from '../../shared/engine.ts'
+import type { AgentCall } from '../../shared/engine-host.ts'
 import { traceCli } from '../exec/cli-trace.ts'
 import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts, HookToolScope } from '../../shared/hooks.ts'
 import {
-  BUILTIN_HOOKS,
-  builtinList,
-  builtinNumber,
-  builtinOn,
   globMatch,
   hookApplies,
   type HookDef,
@@ -18,6 +14,7 @@ import {
   type HooksData,
   commandSegments,
 } from '../../shared/hook-defs.ts'
+import { BUILTIN_HOOKS, builtinList, builtinNumber, builtinOn } from '../../shared/hook-builtins.ts'
 import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan-pace.ts'

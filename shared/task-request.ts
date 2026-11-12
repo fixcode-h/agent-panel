@@ -4,9 +4,6 @@
  */
 import { z } from 'zod'
 
-// 等你操作的结构在 user-action.ts：和提问、确认同属「Agent 等用户」，从这里转给 schema.ts
-export { UserAction } from './user-action.ts'
-
 /** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
 export const AskQuestion = z.object({
   /** 很短的标签，多个问题时显示在页签上 */

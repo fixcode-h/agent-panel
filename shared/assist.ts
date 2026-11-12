@@ -222,7 +222,6 @@ export type LessonsProposal = {
   kind: 'lessons'
   changes: GlobalLessonChange[]
 }
-export type { ProjectProposal } from './project-init.ts'
 export type Proposal =
   | ProjectProposal
   | LessonsProposal

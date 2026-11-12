@@ -22,7 +22,6 @@ import {
   markChildWrapUp,
   markWrapUp,
   openWork,
-  panelWrap,
   openPlan,
   planChildren,
   planHeadline,
@@ -44,9 +43,9 @@ import {
   syncKids,
   unsummarized,
   WRAP_UP,
-  wrapUpKind,
   needsFix,
 } from './plan.ts'
+import { panelWrap, wrapUpKind } from './wrap-up.ts'
 
 const fresh = () => ({ plans: [], steps: [] }) as unknown as Pick<Task, 'plans' | 'steps'>
 

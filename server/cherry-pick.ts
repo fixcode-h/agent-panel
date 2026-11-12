@@ -33,8 +33,6 @@ type Result = { ok: boolean; info: string }
 
 const git = (cwd: string, ...args: string[]) => gitRun(cwd, args, { timeoutMs: 60_000 })
 
-export { ownFiles }
-
 export async function cherryPickGit(
   root: string,
   target: string,

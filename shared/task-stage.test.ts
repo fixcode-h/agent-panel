@@ -8,10 +8,8 @@ import { isChatMode, nextNudge, nudgeMax } from './conv-mode.ts'
 import {
   convActive,
   convState,
-  helperShown,
   taskActive,
   taskState,
-  taskWaitText,
   convStateText,
   messageStamp,
   stageOf,
@@ -41,6 +39,8 @@ import {
   taskTurnUnread,
   type ChildEntry,
 } from './task.ts'
+import { helperShown } from './task-helpers.ts'
+import { taskWaitText } from './task-word.ts'
 
 // 文案断言按中文：跟着系统语言跑会让结果不稳定
 setLang('zh')

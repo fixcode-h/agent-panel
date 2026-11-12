@@ -5,18 +5,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   CONTENT_FILL,
-  blank,
-  chromaKey,
-  contentBox,
   decodePng,
   encodePng,
   fitExact,
   gridStep,
   maskImage,
   normalizeGenerated,
-  resize,
   sliceSheet,
 } from './image.ts'
+import { blank, chromaKey, contentBox, resize } from '../shared/raster.ts'
 
 const GREEN: [number, number, number, number] = [0, 255, 0, 255]
 const fill = (img: ReturnType<typeof blank>, x0: number, y0: number, w: number, h: number, c: number[]) => {

@@ -9,16 +9,8 @@ import { getCli } from '../../shared/clis.ts'
 import { fmtDuration } from '../../shared/duration.ts'
 import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { classifyError, makeAlert } from '../../shared/alerts.ts'
-import {
-  clippedTranscript,
-  contextFallbackKind,
-  estTokens,
-  restartCarry,
-  SESSION_NOT_FOUND,
-  settleContextNotes,
-  settleNetNotes,
-  settleRetryNotes,
-} from './runner.ts'
+import { clippedTranscript, contextFallbackKind, estTokens, restartCarry } from './transcript.ts'
+import { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, restartNoteText } from './recovery.ts'
 import {
   envStallBudget,
   envStallFailure,
@@ -38,7 +30,6 @@ import {
   shouldRetryThrash,
   THRASH_RETRY_PROMPT,
 } from './compaction.ts'
-import { restartNoteText } from './recovery.ts'
 import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 
 // 断言里是中文，不管本机是什么语言

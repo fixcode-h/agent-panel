@@ -37,8 +37,6 @@ export interface TablesDeps {
   projects: { get(id: string): Promise<Project | null> }
 }
 
-export { HttpError }
-
 /** 项目、项目目录、表格配置；没开表格功能也给（列表为空） */
 export async function projectOf(deps: TablesDeps, id: string) {
   const p = await deps.projects.get(id)

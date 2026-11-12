@@ -95,23 +95,6 @@ export const HookDef = z.object({
 export type HookDef = z.infer<typeof HookDef>
 export type HookDefInput = z.input<typeof HookDef>
 
-// 内置钩子的清单、参数和开关的取法在 hook-builtins.ts（这里转出去，老的引用不用改）
-export {
-  BUILTIN_HOOKS,
-  HOOK_TIERS,
-  DEFAULT_TIER,
-  tierOn,
-  tierDefault,
-  tierChanged,
-  type HookTier,
-  builtinOn,
-  builtinParam,
-  builtinList,
-  builtinNumber,
-  type BuiltinHook,
-  type BuiltinParam,
-} from './hook-builtins.ts'
-
 /** 数据目录里 hooks.json 的形状：内置钩子的开关（只记改过默认值的）和用户的钩子 */
 export const HooksData = z.object({
   builtins: z.record(z.string(), z.boolean()).default({}),

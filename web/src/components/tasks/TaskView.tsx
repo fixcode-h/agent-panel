@@ -46,13 +46,12 @@ import {
   taskActive,
   taskBusy,
   taskState,
-  taskWaitText,
   taskSummary,
-  withTaskModel,
   deliveryActive,
   TRASH_RETENTION_DAYS,
 } from '@shared/task'
-import { taskWord } from '@shared/task-word'
+import { taskWaitText, taskWord } from '@shared/task-word'
+import { withTaskModel } from '@shared/task-run'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api, type TaskPage } from '@/lib/api'

@@ -1,27 +1,27 @@
 import { randomUUID } from 'node:crypto'
-import { childSelfDrives, userWaiting } from '../../shared/task.ts'
-import { Task, type Agent, type TaskMessage } from '../../shared/schema.ts'
 import {
+  childSelfDrives,
+  userWaiting,
   advanceChild,
   childFlowOf,
   childHolds,
   childHoldText,
   childReport,
   type ConvState,
-  helperRunning,
-  helpersWorking,
   runRunning,
   withAttachments,
   type ChildFlowStop,
   type ChildHold,
 } from '../../shared/task.ts'
+import { Task, type Agent, type TaskMessage } from '../../shared/schema.ts'
+import { helperRunning, helpersWorking } from '../../shared/task-helpers.ts'
 import { saveToHandoff } from './inbox-file.ts'
 import { createDrive } from './drive.ts'
 import { planProgressKey } from '../../shared/drive.ts'
 import type { TurnInfo } from '../exec/turn-info.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, turnSettled, type MergeStall } from '../../shared/merge-stall.ts'
 import { cancelWait, steerTask } from '../exec/steering.ts'
-import { stopHelper } from '../../shared/engine.ts'
+import { stopHelper } from '../../shared/run-stops.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { releaseWorktree, worktreeStatus } from '../exec/worktree.ts'
 import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrate.ts'
@@ -29,7 +29,8 @@ import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
-import { activePlan, holdWait, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
+import { activePlan, holdWait, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
+import { panelWrap } from '../../shared/wrap-up.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'

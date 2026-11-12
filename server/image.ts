@@ -10,17 +10,6 @@ import {
   removeFlatBackground,
   type Img,
 } from '../shared/raster.ts'
-export {
-  blank,
-  resize,
-  crop,
-  paste,
-  contentBox,
-  hasAlpha,
-  chromaKey,
-  removeFlatBackground,
-  type Img,
-} from '../shared/raster.ts'
 
 /**
  * 图片处理（只处理 PNG，不依赖第三方库）：UI 设计里用来
