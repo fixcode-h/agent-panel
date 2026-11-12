@@ -137,6 +137,7 @@ import {
   withAttachments,
 } from '@shared/task'
 import { searchTasks } from '@shared/task-search'
+import { forkedTask, rewoundTask, userMessageIndex } from '@shared/restore/rewind'
 import { trashRows } from '@shared/trash/rows'
 import { settlePlan } from '@shared/plan'
 import { autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
@@ -2661,28 +2662,19 @@ function tasksRoute(
     if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
     if (task.mode !== 'chat') fail('只有对话任务可以这样做')
     const { messageId } = (body ?? {}) as { messageId?: string }
-    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    const i = userMessageIndex(task, messageId)
     if (i < 0) fail('找不到这条消息')
+    // 对话怎么截、分叉带哪些字段：和正式后端同一份（shared/restore/rewind.ts）；演示没有文件可撤、没有独立分支
     if (sub === 'rewind') {
       const removed = task.messages[i]
-      task.plans = task.plans.filter((p) => p.createdAt < removed.at) // 和正式版一样：撤掉那几轮建的计划作废
-      task.messages = task.messages.slice(0, i)
-      task.status = 'done'
+      Object.assign(task, rewoundTask(task, i))
       persist()
       return { ok: true, task, text: removed.text, attachments: removed.attachments ?? [] }
     }
-    const next = task.messages.findIndex((m, k) => k > i && m.role === 'user' && !m.step)
     const now = new Date().toISOString()
     const forked: Task = {
-      ...JSON.parse(JSON.stringify(task)),
+      ...JSON.parse(JSON.stringify(forkedTask(task, i, () => `demo-${crypto.randomUUID()}`))),
       id: `demo-${crypto.randomUUID()}`,
-      title: `${task.title}（分叉）`.slice(0, 80),
-      messages: task.messages
-        .slice(0, next < 0 ? task.messages.length : next)
-        .map((m) => ({ ...m, id: `demo-${crypto.randomUUID()}` })),
-      status: 'done',
-      requests: [],
-      todos: [],
       worktree: null,
       createdAt: now,
       updatedAt: now,
