@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { packagesApi } from './cli/packages.ts'
+import { packagesApi } from '../cli/packages.ts'
 
 /** ADR 0050 第四期：资源开关、内置扩展开关写进 Pi 的 settings.json，项目里的插件读项目自己的配置 */
 test('插件细项：资源只列包里有的类型、改了写回；内置扩展开关不动别的键；带 projectId 读项目里的插件', async () => {

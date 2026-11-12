@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { getCli } from '../shared/clis.ts'
-import { packageChangelog, packageDir } from './package-dirs.ts'
+import { getCli } from '../../shared/clis.ts'
+import { packageChangelog, packageDir } from './dirs.ts'
 
 /** ADR 0050 第四期：已装插件在本机哪、更新说明读哪个文件（包自己指定的优先、只认包目录里面的） */
 test('插件目录和更新说明：npm、git、本机目录三种来源都找得到；包指定的文件优先，指到包外面的不读', async () => {

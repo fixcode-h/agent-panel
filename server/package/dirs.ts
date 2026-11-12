@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { npmName, type CliPackages, type InstalledPackage } from '../shared/cli-spec.ts'
-import { changelogPath, parseChangelog, type ChangelogEntry } from '../shared/package-changelog.ts'
-import { expandHome } from './cli/extras.ts'
+import { npmName, type CliPackages, type InstalledPackage } from '../../shared/cli-spec.ts'
+import { changelogPath, parseChangelog, type ChangelogEntry } from '../../shared/package-changelog.ts'
+import { expandHome } from '../cli/extras.ts'
 
 /**
  * 已装的包在本机哪个目录（ADR 0050）：npm 来源在 npmRoot/<包名>，git 来源在 gitRoot/<主机>/<路径>，

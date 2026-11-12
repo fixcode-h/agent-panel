@@ -144,8 +144,6 @@
       "own-changes.ts",
       "p4-review-diff.ts",
       "p4-split.ts",
-      "package-config.ts",
-      "package-dirs.ts",
       "page-events.ts",
       "panel-mcp-files.ts",
       "panel-source.ts",
