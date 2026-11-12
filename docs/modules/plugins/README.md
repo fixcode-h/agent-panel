@@ -4,7 +4,7 @@
 - 职责：插件包的安装、删除、开关、参数，插件服务端和网页部分的加载，插件给 Agent 的 MCP 工具
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
-- 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、视频插件、开放模块、插件钩子、插件测试步骤、插件命令、附件认领
+- 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、视频插件、表格插件、开放模块、插件钩子、插件测试步骤、插件命令、附件认领
 - 更新：2026-11-12
 
 ## 职责
@@ -34,6 +34,7 @@
 | `web/src/plugins/PluginsSection.tsx`、`PluginCard.tsx`           | 设置 →「插件」：已安装、插件市场、其他安装方式、安装确认、关掉 / 删除确认                                                                                                                                                 |
 | `web/src/plugins/PluginParamsNav.tsx`、`PluginParams.tsx`        | 设置 →「插件参数」：开着的插件各占一页（二级列表，页 id `pparam:<插件>`），按清单 settings 生成参数表单，带运行状态                                                                                                       |
 | `web/src/plugins/file-viewers.ts`、`PluginFileDialog.tsx`        | 插件的文件查看器（`WebPlugin.fileViewers`）：按扩展名认领文件，弹窗外壳和文件预览一样，内容交给插件画；入口在对话的文件标记（`FileRefLayer`）和文件浏览页（`ProjectFileExplorer`）                                        |
+| `web/src/plugins/kept-pages.tsx`                                 | 一直挂着的插件整页（`PluginPage.keep`，接口 6）：第一次打开时挂上，切走只藏起来，`Page` 的 `active` 说明是不是显示着（表格插件靠它留住打开的表和没保存的改动）                                                            |
 | `web/src/plugins/attachment-intakes.ts`、`attachment-intake.tsx` | 插件认领输入框附件（`WebPlugin.attachmentIntakes`，接口 6）：按扩展名 / MIME 认领，卡片只引用原路径，点开插件的弹窗选好要发的（视频插件截帧），发送时换成选好的附件；细节见 [web/conversation.md](../web/conversation.md) |
 | `web/src/plugins/PluginPage.tsx`                                 | 插件整页 `#/plugin/<插件>/<页面>/<path>`（接口 2）；图标栏、手机抽屉里的入口在 `ActivityBar.tsx`、`Sidebar.tsx`                                                                                                           |
 | `shared/plugins/contrib-schema.ts`、`contrib.ts`                 | 接口 3 的清单三段（钩子、测试步骤、「/」命令）的格式；开着的插件给项目带来的测试步骤（`pluginTestSteps`，`currentTestSteps` 接在项目步骤后面）                                                                            |

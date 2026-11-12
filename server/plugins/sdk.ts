@@ -168,11 +168,25 @@ export interface PluginServerContext {
 export interface Textifier {
   /** 认领的扩展名：小写、不带点（uasset） */
   exts: string[]
+  /** 评审看到的「怎么比的」（例如「表格，按格子比较」）；不给时写「插件 <id> 转成文本后逐行比较」 */
+  how?: string
   /**
-   * file.path 是相对项目根的路径（判断类型、写提示用，那一版不一定在磁盘上），file.cwd 是项目目录，
+   * file.path 是相对项目根的路径（判断类型、写提示用，那一版不一定在磁盘上），file.cwd 是项目目录（或对话的工作目录），
+   * file.project 是这个对话所在的项目（插件接口 6 起有，读项目自己的设置用），
    * side 说明是改动前（old）还是改动后（new）的那一版。返回的文本按行比较，同一内容要给出同样的文本
    */
-  text: (file: { path: string; cwd: string; side: 'old' | 'new'; data: Buffer }) => string | Promise<string>
+  text: (file: TextifyFile & { side: 'old' | 'new'; data: Buffer }) => string | Promise<string>
+  /**
+   * 自己写两版的差异（插件接口 6，例如表格插件按主键对齐、逐格比）：给了就不再按 text 逐行比。
+   * old / next 是 null 表示那一版没有这个文件（新建、删掉）；返回空串表示两版内容一样
+   */
+  diff?: (file: TextifyFile, old: Buffer | null, next: Buffer | null) => string | Promise<string>
+}
+
+export interface TextifyFile {
+  path: string
+  cwd: string
+  project: { id: string; path: string }
 }
 
 /**

@@ -36,7 +36,6 @@ export const EN_SHEET: Record<string, string> = {
   加一行表头: 'Add a header row',
   '套用项目的表头：': 'Use a project header:',
   '第 {n} 套（{rows} 行）': 'Layout {n} ({rows} rows)',
-  行: 'rows',
   '每行是什么（决定底色）': 'What each row is (sets its color)',
   '只记在这台电脑上，表格文件一个字节都不改。':
     'Saved on this computer only. The spreadsheet file is not changed at all.',

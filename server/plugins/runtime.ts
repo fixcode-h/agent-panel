@@ -125,7 +125,7 @@ export const runningPlugin = (id: string) => active.get(id)?.plugin
 export function textifierFor(ext: string) {
   for (const [id, a] of active) {
     const tx = a.plugin.textify
-    if (tx?.exts.some((e) => e.toLowerCase() === ext)) return { id, text: tx.text }
+    if (tx?.exts.some((e) => e.toLowerCase() === ext)) return { id, ...tx }
   }
   return undefined
 }

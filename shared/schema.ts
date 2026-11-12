@@ -1,4 +1,3 @@
-import { TablesConfig } from './tables.ts'
 import { LearnedNote } from './experience.ts'
 import { Submitted } from './submitted.ts'
 import { z } from 'zod'
@@ -942,8 +941,6 @@ const ProjectFields = z.object({
    * 用户让 Agent 把改动 cherry-pick 过去时按它做；没设时为空（可选：旧数据和直接拼 Project 字面量的地方不用补）
    */
   cherryPick: z.string().trim().max(500).optional(),
-  /** 表格管理：表格目录等（shared/tables.ts）；没设时没有表格页入口 */
-  tables: TablesConfig.optional(),
   /**
    * 插件按项目存的设置（插件接口 6，WebPlugin.projectSections）：键是插件 id，内容由插件自己定、自己校验，
    * 跟项目设置一起保存；面板不认识里面的东西，插件删了也原样留着，重装后接着用

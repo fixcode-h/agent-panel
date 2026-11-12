@@ -4,12 +4,11 @@ import { taskActions } from './tasks.ts'
 import { projectActions } from './projects.ts'
 import { settingsActions } from './settings.ts'
 import { uiActions } from './ui.ts'
-import { tableActions } from './tables.ts'
 import { pluginActions } from '../plugins/runtime.ts'
 
 /** 全部动作：新增一组时在这里加一行，组名就是文件名 */
 export const appActions = createRegistry(
-  [...taskActions, ...projectActions, ...settingsActions, ...uiActions, ...tableActions],
+  [...taskActions, ...projectActions, ...settingsActions, ...uiActions],
   pluginActions,
 )
 

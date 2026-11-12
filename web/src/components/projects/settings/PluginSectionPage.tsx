@@ -3,6 +3,7 @@ import { t } from '@shared/i18n'
 import { usePluginProjectSections } from '@/plugins/registry'
 import type { useDirInfo } from '../DirPicker'
 import type { SetField } from './project-draft'
+import { PageIntro } from './parts'
 
 /**
  * 项目设置里插件加的页（插件接口 6，WebPlugin.projectSections）：插件只读写草稿里 plugins[<插件 id>] 这一格，
@@ -27,6 +28,7 @@ export function PluginSectionPage({
   const { Section, plugin } = page
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-4">
+      {page.desc && <PageIntro title={page.label} desc={page.desc} />}
       <Section
         value={draft.plugins?.[plugin]}
         onChange={(v) => set('plugins', { ...draft.plugins, [plugin]: v })}

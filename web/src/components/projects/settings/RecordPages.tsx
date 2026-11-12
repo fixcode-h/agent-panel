@@ -1,46 +1,13 @@
 import type { Project, ProjectInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { ProjectExperience } from '../ProjectExperience'
-import { ProjectTablesSection } from '../ProjectTablesSection'
 import { LessonsEditor } from '../Lessons'
-import type { useDirInfo } from '../DirPicker'
 import { PageIntro } from './parts'
 import type { SetField } from './project-draft'
 
 /*
- * 项目设置里只有一段说明加一个编辑器的几页：表格、项目教训、项目经验（从 ProjectSettingsDialog.tsx 挪出）。
+ * 项目设置里只有一段说明加一个编辑器的几页：项目教训、项目经验（从 ProjectSettingsDialog.tsx 挪出）。
  */
-
-/** 项目设置 →「表格」：只读写草稿里的 tables */
-export function TablesPage({
-  project,
-  draft,
-  set,
-  dir,
-}: {
-  project?: Project
-  draft: ProjectInput
-  set: SetField
-  dir: ReturnType<typeof useDirInfo>
-}) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-4">
-      <PageIntro
-        title={t('表格')}
-        desc={t(
-          '游戏配置表这类表格的目录。设好后侧栏多一个「表格」入口：按目录浏览、搜索、筛选、在线改单元格、看版本差异、跨项目对比。保存改动只改单元格的值，文件仍是原来的 Excel / WPS 格式。',
-        )}
-      />
-      <ProjectTablesSection
-        value={draft.tables}
-        onChange={(v) => set('tables', v)}
-        project={project}
-        base={dir?.exists && dir.isDir ? dir.path : draft.path.trim()}
-        path={draft.path}
-      />
-    </div>
-  )
-}
 
 /** 项目设置 →「项目教训」：只读写草稿里的 lessons */
 export function LessonsPage({

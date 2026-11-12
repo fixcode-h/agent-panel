@@ -1,7 +1,5 @@
 /** 英文词典的一部分，键是中文原文：照原画还原的六步流程（新建入口、步骤条、元素框、决策卡、校验） */
 export const EN_RESTORE_FLOW: Record<string, string> = {
-  格子: 'Slot',
-  校验: 'Verify',
   先出拆件图: 'Generate a parts sheet first',
   '切图前让图片模型照原画把每个元素单独画一遍，从拆件图里切':
     'Before slicing, have the image model redraw every element of the art separately and cut slices from that sheet',

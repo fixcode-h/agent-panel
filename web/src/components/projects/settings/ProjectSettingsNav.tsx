@@ -6,7 +6,6 @@ import {
   Library,
   Plug,
   Settings2,
-  Sheet,
   Sparkles,
   Users,
   Workflow as WorkflowIcon,
@@ -95,10 +94,6 @@ export function ProjectSettingsNav({
           {t('项目经验')}
         </NavItem>
       )}
-      <NavItem on={section === 'tables'} onClick={() => setSection('tables')} hint={draft.tables?.dirs[0]}>
-        <Sheet className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-        {t('表格')}
-      </NavItem>
       {pluginSections.map((p) => {
         const Icon = p.icon ?? pluginIcon('puzzle')
         return (

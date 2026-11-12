@@ -72,7 +72,6 @@ import {
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
-import { TableEditorsSpecimen } from '@/components/settings/TableEditorsSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
 import { scanText } from '@shared/config-scan'
@@ -615,9 +614,6 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('表格')}>
         <Specimen name="SheetTable · SheetHeaderBar" tune={['grid']}>
           <SheetSpecimen />
-        </Specimen>
-        <Specimen name="EnumPicker · ListEditor · ProblemsBar" tune={['input', 'menu']}>
-          <TableEditorsSpecimen />
         </Specimen>
         <Specimen name="DirList" tune={['input', 'button']}>
           <DirListSpecimen />

@@ -50,7 +50,13 @@ export interface PluginPage {
    * 从通知、旧链接打开时转到这一页（#/plugin/<插件>/<页面>/<对话 id>）。插件关掉后对话照常列在原处
    */
   taskPlugin?: string
-  Page: ComponentType<{ path: string }>
+  /** active：这一页现在是不是显示着（keep 的页切走后还挂着，这时为 false，例如快捷键只在显示着时响应） */
+  Page: ComponentType<{ path: string; active?: boolean }>
+  /**
+   * 打开过一次就一直挂着、切走只藏起来（插件接口 6，例如表格页：打开的表、没保存的改动、滚动位置都留着，
+   * 切回来不重新加载几千张表的目录）。不给时切走就卸载
+   */
+  keep?: boolean
   /**
    * 这个位置是不是自己分成几块面板的页面（插件接口 5）：是的话面板不再套一层卡片底，插件自己画列表栏和各块面板
    * （例如 UI 设计左边是自己的项目列表）。不给时整页放在一块卡片里
@@ -118,6 +124,8 @@ export interface ProjectSection {
   /** 插件里唯一；地址和导航里用 plugin:<插件 id>:<id> */
   id: string
   label: string
+  /** 页面顶上标题（label）下面的一段说明，和面板自己的项目设置页同一个样式 */
+  desc?: string
   icon?: ComponentType<{ className?: string; strokeWidth?: number }>
   /** 导航那一项右侧的灰字（例如表格目录）：value 是这个插件在草稿里的设置 */
   hint?: (value: unknown) => string | undefined

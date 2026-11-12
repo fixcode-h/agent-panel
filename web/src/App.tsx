@@ -27,6 +27,7 @@ import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { loadPlugins, usePluginPages } from '@/plugins/registry'
+import { KeptPluginPages, useKeptPageShown } from '@/plugins/kept-pages'
 import type { PluginPage } from '@/plugins/sdk'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
@@ -38,7 +39,6 @@ const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.M
 const OverviewPage = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const PluginPageView = lazy(() => import('@/plugins/PluginPage').then((m) => ({ default: m.PluginPageView })))
-const TablesPage = lazy(() => import('@/pages/TablesPage').then((m) => ({ default: m.TablesPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
@@ -61,7 +61,6 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   mcp: () => <McpPage />,
   summary: () => <SummaryPage />,
   overview: () => <OverviewPage />,
-  tables: () => <TablesPage />,
 }
 
 /**
@@ -102,10 +101,14 @@ function parseHash(): Route {
   }
   // 旧地址：面板自带的 UI 设计（#/design/<设计稿>/<子页>）和后来的设计模式（#/pdesign/ui/<设计稿>/<子页>）
   // 现在都是 UI 设计插件的整页，收藏的链接照样能打开
+  // 面板自带的表格页（#/tables/<项目>）现在是表格插件的整页（重构文档第 15 条）
   const legacy = page === 'design' ? parts.slice(1) : page === 'pdesign' && id === 'ui' ? parts.slice(2) : undefined
-  if (legacy) {
-    const path = legacy.filter(Boolean).join('/')
-    const r: Route = { page: 'plugin', id: 'ui-design', sub: 'ui', msg: path || undefined }
+  const tables = page === 'tables' ? parts.slice(1) : undefined
+  if (legacy || tables) {
+    const path = (legacy ?? tables)!.filter(Boolean).join('/')
+    const r: Route = legacy
+      ? { page: 'plugin', id: 'ui-design', sub: 'ui', msg: path || undefined }
+      : { page: 'plugin', id: 'tables', sub: 'tables', msg: path || undefined }
     // 地址栏也换成新地址：再复制出去的就是新的
     history.replaceState(history.state, '', toHash(r))
     return r
@@ -238,9 +241,8 @@ export function App() {
   const [route, setRoute] = useHashRoute()
   // 插件的整页加载完要重算页面是不是分块的（splitPage）
   const pluginPages = usePluginPages()
-  // 表格页打开过就记下：之后一直挂着（见下面的渲染），切走只藏起来
-  const [tablesKept, setTablesKept] = useState(route.page === 'tables')
-  if (route.page === 'tables' && !tablesKept) setTablesKept(true)
+  // 一直挂着的插件整页（PluginPage.keep，例如表格）显示着时，不再按地址另挂一份
+  const keptShown = useKeptPageShown(route)
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
   const aiJob = useAiWindowValue((s) => !!s.job)
   const [project, setProject] = useState<{ open: boolean; id?: string; section?: string; item?: string }>({
@@ -297,25 +299,13 @@ export function App() {
                 )}
               >
                 {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
-                {route.page !== 'tables' && (
+                {!keptShown && (
                   <ErrorBoundary resetKey={toHash(route)}>
                     <Suspense fallback={null}>{PAGES[route.page]()}</Suspense>
                   </ErrorBoundary>
                 )}
-                {/* 表格页打开过一次就一直挂着、切走时只藏起来：打开的表、没保存的改动、滚动位置都留着，切回来不重新加载 */}
-                {tablesKept && (
-                  <div
-                    className={cn(
-                      route.page === 'tables'
-                        ? 'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden'
-                        : 'hidden',
-                    )}
-                  >
-                    <ErrorBoundary resetKey="tables">
-                      <Suspense fallback={null}>{PAGES.tables()}</Suspense>
-                    </ErrorBoundary>
-                  </div>
-                )}
+                {/* 打开过一次就一直挂着、切走时只藏起来的插件整页：打开的内容、没保存的改动、滚动位置都留着 */}
+                <KeptPluginPages route={route} />
               </div>
             </div>
           </div>

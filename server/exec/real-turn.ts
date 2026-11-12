@@ -28,7 +28,7 @@ import { steers, waitChat } from './steering.ts'
 import { t } from '../../shared/i18n.ts'
 import { ownFiles, taskChanges } from '../own-changes.ts'
 import { p4ReviewDiff } from '../p4-review-diff.ts'
-import { gitSemantic, p4Semantic, reviewTableSchema } from './review-semantic.ts'
+import { gitSemantic, p4Semantic } from './review-semantic.ts'
 import { yieldApiSlot } from './api-gate.ts'
 import { turnExtra } from './turn-extra.ts'
 
@@ -224,13 +224,9 @@ export async function runRealTurn(ctx: RealContext) {
           // 二进制文件（表格、插件认领的扩展名）换成语义差异；整理出错只少这一节，不拦评审
           const semantic =
             d.stat && d.snapshot
-              ? await gitSemantic(
-                  ctx.project.path,
-                  d.from,
-                  d.snapshot,
-                  own,
-                  await reviewTableSchema(ctx.project),
-                ).catch((e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`)
+              ? await gitSemantic(ctx.project.path, d.from, d.snapshot, own, ctx.project).catch(
+                  (e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`,
+                )
               : ''
           return keepLongDiff(ctx.task.id, d, semantic)
         }
@@ -239,7 +235,7 @@ export async function runRealTurn(ctx: RealContext) {
             const own = files ?? [...ownFiles(ctx.task, ctx.project.path)]
             const d = await p4ReviewDiff(ctx.project.path, own)
             const semantic = d.stat
-              ? await p4Semantic(ctx.project.path, own, await reviewTableSchema(ctx.project)).catch(
+              ? await p4Semantic(ctx.project.path, own, ctx.project).catch(
                   (e: unknown) => `## 二进制文件的语义差异\n整理出错：${(e as Error).message}`,
                 )
               : ''
