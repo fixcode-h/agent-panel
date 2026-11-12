@@ -26,6 +26,15 @@
 - **界面文案用 `t('中文原文')`**，英文同一个提交写进 `shared/locales/en/`；漏翻 `npm run typecheck` 会失败。发给 Agent 的提示词、注释、演示数据不翻译。
 - **界面参考 Claude Code 的风格，视觉质量很重要**。界面细则见 `docs/lessons/ui.md`。
 - **碰到文件行数上限就按功能拆成小文件**（`scripts/file-caps.json`，`npm run lint` 会拦）：把职责完整的一块挪进新文件，原文件只留调用；不删注释、不合并行凑数。细则见 `docs/lessons/file-caps.md`。
+- **代码结构只许变好**（`scripts/structure-check.mjs`，`npm run lint` 会拦，基线在 `scripts/structure-caps.json`）：
+  - 函数不超过 300 行，已有的长函数不许再变长；拆函数时把共享的变量放进显式的上下文对象传进去，不写大闭包。
+  - `server/`、`shared/`、`web/src/lib/` 顶层不再加文件，新文件放进所属模块的子目录。
+  - Task 上只放要存盘的数据：运行时状态不加成字段，某个功能专属的字段收进这个功能的子对象。界面上的对话状态只从 `convState` 派生。
+  - 一类事只走一个入口：git 走 `server/exec/git.ts`，面板工具一个工具一个文件，不在用的地方另写一份包装。
+  - 改数据格式写一次性迁移，不加 `z.preprocess` 读时迁移。
+  - 新接口在 `shared/` 写 zod 契约；演示后端调用 shared 里的同一份逻辑，不另写一套。
+  - 前端要实时数据用推送，不加轮询。
+  - 变好了跑 `node scripts/structure-check.mjs --update` 收紧基线；不许手改基线放宽，也不许换写法绕开检查。细则见 `docs/lessons/structure.md`。
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **不按模型回复的文字判断状态**：做没做完、通没通过、卡没卡住，都只看工具调用（`set_plan`、`submit_*`）和面板状态；钩子输入里的回复文字转发前就丢掉（ADR 0041、0049，`scripts/rules-check.mjs` 第 19、19b 条会拦）。
@@ -47,6 +56,7 @@
 | 测试步骤、角色参数、子对话隔离和合并编译     | [docs/agent-test-steps.md](docs/agent-test-steps.md)                                   |
 | 自带 Skill                                   | [skills/README.md](skills/README.md)                                                   |
 | CLI 输出样本                                 | [server/exec/fixtures/README.md](server/exec/fixtures/README.md)                       |
+| 新代码放哪、结构检查报错怎么改               | [docs/lessons/structure.md](docs/lessons/structure.md)                                 |
 | 踩过的坑、怎么记新的                         | [docs/lessons/README.md](docs/lessons/README.md)，平时用 `node scripts/lessons.mjs` 取 |
 | 写架构决策、查为什么这么定（ADR）            | [docs/adr/README.md](docs/adr/README.md)（什么时候写、命名和正文各节）                 |
 

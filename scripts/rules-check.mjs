@@ -23,7 +23,7 @@
 // 18. 面板工具不按「是不是 Chat 页」裁：server/orch-mcp.ts、orch-hint.ts、ask-mcp.ts 里不出现 isChatMode / isPlainChat / .plain
 // 19. 状态只认工具调用：判定逻辑不调用按回复文字识别结论 / 决定的函数（parseVerdict / leadVerdict / parseDispatch）
 // 20. 给 Agent 的规则每条只有一个出处：内置角色设定、面板提示词、方法类技能之间，同一句（30 字以上）不许出现在两个文件里（ADR 0048）
-// 21. git 只从 server/exec/git.ts 的 gitRun / gitRaw / gitExec / gitSync 起：别处直接 spawn('git'、capture('git' 会漏掉 core.quotepath=off（例外写 `git-run-ok: 原因`）
+// 21. 代码结构只许变好：函数长度、平铺目录、Task 字段、读时迁移、内联工具、大接口、git 包装、模块状态、界面拼状态、轮询（scripts/structure-check.mjs）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -569,27 +569,10 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
       )
 }
 
-// 21. git 只从 server/exec/git.ts 起：以前 7 个文件各包一份，有的没带 core.quotepath=off，
-// 中文文件名被 git 写成 "\346…" 转义，再拿去比对、当路径传回 git 都对不上；有的没设 windowsHide、超时。
-// 只认「起进程的函数 + 字面量 'git'」：vcsRun 这类按变量传命令的由它自己补参数（server/tables/history.ts）。
-// 测试和测试工具（*.test.ts、*-test-kit.ts）自己建仓库、造提交，不管。
-// 确实要绕开的（例如要逐行写进安装日志、能取消的 git clone）在那一行或上一行写 `git-run-ok: 原因`。
+// 21. 代码结构只许变好（docs/lessons/structure.md）：基线在 scripts/structure-caps.json，变好了跑 --update 收紧
 {
-  const direct =
-    /\b(?:spawn|spawnSync|execFile|execFileSync|exec|capture|runProcess|run)\(\s*['"]git['"]|\bcommand:\s*['"]git['"]/g
-  for (const f of files) {
-    if (!/^(server|shared)\/.+\.tsx?$/.test(f) || /\.test\.tsx?$|-test-kit\.ts$/.test(f) || f === 'server/exec/git.ts')
-      continue
-    const text = read(f)
-    const lines = text.split('\n')
-    for (const m of text.matchAll(direct)) {
-      const i = text.slice(0, m.index).split('\n').length - 1
-      if (/git-run-ok/.test(lines[i]) || /git-run-ok/.test(lines[i - 1] ?? '')) continue
-      errors.push(
-        `${f}:${i + 1} 直接起了 git，改用 server/exec/git.ts 的 gitRun / gitRaw / gitExec / gitSync（统一带 core.quotepath=off、windowsHide、超时）：${lines[i].trim()}`,
-      )
-    }
-  }
+  const { checkStructure } = await import('./structure-check.mjs')
+  errors.push(...checkStructure(root))
 }
 
 if (errors.length) {

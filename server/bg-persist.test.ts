@@ -29,10 +29,11 @@ test('没结束的记录写盘；重启后收口说明写清在跑还是在排�
   writeFileSync(running.logFile!, '$ make all\nCompiling a.cpp\nCompiling b.cpp\n')
   persist.flush()
   const saved = JSON.parse(readFileSync(file, 'utf8')) as { id: string; state: string }[]
-  assert.deepEqual(saved.map((x) => [x.id, x.state]).sort(), [
-    [a.id!, 'running'],
-    [b.id!, 'queued'],
-  ])
+  // 编号是随机的：按编号对照状态，不按顺序比（以前排序后和固定顺序比，b 的编号排在 a 前面时就失败）
+  assert.deepEqual(Object.fromEntries(saved.map((x) => [x.id, x.state])), {
+    [a.id!]: 'running',
+    [b.id!]: 'queued',
+  })
 
   // 面板被强杀后重启：新的一份认不出这两条，但写得出说明
   const again = createBackground(() => {}, { persist: createBgPersist(file), logDir: dir })
