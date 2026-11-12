@@ -35,7 +35,7 @@ import { killTaskClis } from '../exec/orphans.ts'
 import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { letterResult } from '../../shared/children/letter.ts'
-import { childSummaryCards } from '../../shared/summary-card.ts'
+import { childSummaryCards } from '../../shared/summary/card.ts'
 
 /**
  * 子对话的生命周期：在跑的计数、彻底完成的判定和推进（advanceChildTo，ADR 0003）、合回、上报父对话、规则命令、启动子对话。

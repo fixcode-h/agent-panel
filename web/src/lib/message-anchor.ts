@@ -1,4 +1,4 @@
-import { isSummaryTitle } from '@shared/summary-card'
+import { isSummaryTitle } from '@shared/summary/card'
 
 /**
  * 跳到某条消息：命令面板和侧栏的对话内容搜索点到一条命中时用。
@@ -33,7 +33,7 @@ export function jumpToMessage(id: string, root: ParentNode = document): boolean 
 }
 
 /**
- * 子对话里最后一份总结的标题（「修复｜……」，见 shared/summary-card.ts 的 summaryDetailRules）：
+ * 子对话里最后一份总结的标题（「修复｜……」，见 shared/summary/card.ts 的 summaryDetailRules）：
  * 父对话里点子对话结果卡片的标题时滚到这里。按渲染出来的标题文字认，旧对话里的写法也认得
  */
 export function lastSummaryHead(root: ParentNode): HTMLElement | null {

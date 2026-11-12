@@ -63,7 +63,7 @@ import { orchAskPush } from './push-auth.ts'
 import { docRootText, plainDocRootText } from './doc-root.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
-import { summaryCardRules, summaryDetailRules } from './summary-card.ts'
+import { summaryCardRules, summaryDetailRules } from './summary/card.ts'
 import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
 
 import { beginTurn, endTurn, pauseStep, stopReasonText } from './task.ts'
@@ -1972,7 +1972,7 @@ async function conversationPrompt(
     ...planPart(host, coordinator),
     wrapUpPart(host),
     p4Part(host),
-    // 每轮的总结（shared/summary-card.ts）：子对话写详细 Markdown，其余写卡片，父对话的卡片标题链到子对话
+    // 每轮的总结（shared/summary/card.ts）：子对话写详细 Markdown，其余写卡片，父对话的卡片标题链到子对话
     kind === 'sub' ? summaryDetailRules() : summaryCardRules(undefined, coordinator),
     // 对话模式没有共享状态工具：这里不注入（跑过工作流时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方

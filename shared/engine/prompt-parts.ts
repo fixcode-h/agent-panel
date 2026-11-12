@@ -9,7 +9,7 @@ import { statePart } from '../run-state.ts'
 import { pushPolicyText } from '../push-auth.ts'
 import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
 import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
-import { summaryCardRules } from '../summary-card.ts'
+import { summaryCardRules } from '../summary/card.ts'
 import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from '../search-exclude.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
@@ -366,7 +366,7 @@ export function commonPart(host: EngineHost, w?: Workflow, chat = false, helper 
         : ''
       : buildPart(host),
     fileFormatPart(host),
-    // 总结的类型和字段在 shared/summary-card.ts 定义，界面按同一张表把它画成卡片
+    // 总结的类型和字段在 shared/summary/card.ts 定义，界面按同一张表把它画成卡片
     summaryCardRules(),
     `## 通用要求\n完成后用${promptLangWord()}按上面的「总结格式」写总结卡：做了什么、改了哪些文件、有没有遗留问题都在卡片字段里。\n` +
       // 用户 2026-11-11 报：Agent 删掉自己加的代码时只删代码那几行，当初一起加的空行留在原处（P4 项目里没有差异给评审，常漏到提交）

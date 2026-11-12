@@ -1,9 +1,9 @@
 /**
- * 演示：子对话自己的详细总结和面板在父对话里自动画出的卡片（shared/summary-card.ts）。
+ * 演示：子对话自己的详细总结和面板在父对话里自动画出的卡片（shared/summary/card.ts）。
  * 子对话写 `## 类型｜结论` + 一段段 `### 段名`，照普通 Markdown 显示；父对话不再自己写卡，
  * 面板按子对话的总结自动画卡片（标题是「类型｜结论」，点标题在右栏打开子对话、滚到这份总结）
  */
-import { childSummaryCards } from '@shared/summary-card'
+import { childSummaryCards } from '@shared/summary/card'
 import type { TaskTodo } from '@shared/schema'
 
 /** 子对话的最后一条回复：按 summaryDetailRules 的「修复」段落写 */

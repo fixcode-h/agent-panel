@@ -9,7 +9,7 @@ import {
   summaryDetailRules,
   SUMMARY_KINDS,
   unfenceSummaries,
-} from './summary-card.ts'
+} from './card.ts'
 
 test('总结卡：标题加字段列表认成卡片，前后的文字照普通 Markdown 留着', () => {
   const md = [

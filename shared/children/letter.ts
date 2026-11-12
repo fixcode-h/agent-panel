@@ -1,4 +1,4 @@
-import { summariesOf } from '../summary-card.ts'
+import { summariesOf } from '../summary/card.ts'
 import { clip } from '../text.ts'
 
 /**

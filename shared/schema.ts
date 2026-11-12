@@ -1425,7 +1425,7 @@ export const TaskMessage = z.object({
    */
   child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
   /**
-   * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary-card.ts 的 childSummaryCards）：
+   * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary/card.ts 的 childSummaryCards）：
    * 标题就是子对话总结的「类型｜结论」，child 是点标题跳过去的子对话。父对话不再自己写这张卡。
    * 子对话没写总结时为空（旧数据也没有这一项），按没有卡片显示
    */

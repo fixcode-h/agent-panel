@@ -1,4 +1,4 @@
-import { getLang, type Lang } from './i18n.ts'
+import { getLang, type Lang } from '../i18n.ts'
 
 /**
  * 总结卡：Agent 每轮结束写给人看的总结，按类型规定字段（修复写原因和修法、功能写怎么用……），

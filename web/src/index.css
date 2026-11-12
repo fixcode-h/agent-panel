@@ -2349,7 +2349,7 @@ body,
     transition: none !important;
   }
 }
-/* 总结卡（shared/summary-card.ts）：类型标签 + 一句话结论，字段名一列对齐。
+/* 总结卡（shared/summary/card.ts）：类型标签 + 一句话结论，字段名一列对齐。
    类型色只用在小标签和左边一条细线上，正文保持主文字色，不抢内容 */
 .chat-md .md-card {
   --card-tone: var(--success);
