@@ -113,7 +113,7 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    设置存在 project.plugins[<插件 id>]）、在设置 →「组件」里加示例（WebPlugin.specimens）；开放 web/src/lib/assist-conv
  *    （runPromptInProject：在项目里开分析对话跑插件自己的提示词）
  */
-export const PLUGIN_API = 6
+export const PLUGIN_API = 7
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

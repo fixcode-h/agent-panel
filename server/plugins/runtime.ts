@@ -8,6 +8,7 @@ import { log } from '../log.ts'
 import { withPluginLimit } from './limit.ts'
 import { closePluginMcp, openPluginMcp, type PluginRunHooks } from './mcp.ts'
 import { pluginDataDir, type Installed } from './store.ts'
+import { pluginPages } from './pages.ts'
 
 /**
  * 插件的服务端部分在面板进程里跑（ADR 0059）：插件打开时 import 包里的 server 入口、调 activate，
@@ -19,6 +20,8 @@ interface Active {
   name: string
   plugin: ServerPlugin
   cfg: PluginConfig
+  /** 撤掉插件登记的页面回调（推送通道） */
+  dispose: () => void
 }
 const active = new Map<string, Active>() // 模块状态：会话，跟着进程或连接一起没
 const errors = new Map<string, string>()
@@ -43,6 +46,7 @@ async function start(p: Installed, config: () => PluginConfig) {
   }
   if (typeof mod.default !== 'function') throw new Error(`${p.manifest.server} 没有默认导出 activate`)
   const activate = mod.default
+  const pages = pluginPages(id)
   const plugin = await withPluginLimit('activate', () =>
     activate({
       id,
@@ -56,9 +60,13 @@ async function start(p: Installed, config: () => PluginConfig) {
         warn: (msg, data) => log.warn(`plugin:${id}`, msg, data),
       },
       t,
+      pages: pages.api,
     }),
-  )
-  active.set(id, { key: keyOf(p), name: p.manifest.name, plugin, cfg: config() })
+  ).catch((e) => {
+    pages.dispose()
+    throw e
+  })
+  active.set(id, { key: keyOf(p), name: p.manifest.name, plugin, cfg: config(), dispose: pages.dispose })
   log.info('plugin', `已启动插件 ${p.manifest.name}`, { id, version: p.manifest.version })
 }
 
@@ -67,6 +75,7 @@ export async function stopPlugin(id: string) {
   active.delete(id)
   closePluginMcp(id)
   if (!a) return
+  a.dispose()
   try {
     if (a.plugin.stop) await withPluginLimit('stop', () => a.plugin.stop!())
   } catch (e) {

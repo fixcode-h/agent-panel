@@ -130,6 +130,10 @@ export const COMP_SPEC = {
     /** 版本差异、跨项目对比：新增的行 / 新值、删掉的行 / 旧值（改过的格子底色用 edited） */
     added: hue('green'),
     removed: hue('red'),
+    /** xlsx 里还原的显示信息：批注角标、超链接的颜色；整行底色在行号左边画的色条宽度（关掉就不画） */
+    note: hue('amber'),
+    link: hue('blue'),
+    rowMark: pick('thin', { off: '0px', thin: '3px', wide: '5px' }),
     /** 表格页：选区右下角的填充柄（拖它向下 / 向右填充）有多大 */
     handle: px(7, 5, 12),
   },

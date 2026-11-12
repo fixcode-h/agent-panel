@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import type { SheetLook } from '@shared/files'
 import { SheetHeaderBar } from '@/components/files/SheetHeaderBar'
 import { SheetTable, type SheetColHead, type SheetEditing } from '@/components/files/SheetTable'
 import { useSheetView } from '@/components/files/use-sheet-view'
@@ -46,6 +47,20 @@ const SAMPLE_EDIT: SheetEditing = {
   onDouble: () => {},
 }
 
+/**
+ * 从 xlsx 里还原的显示：批注角标、超链接、整行底色色条（演示数据不翻译）。
+ * 合并单元格在第 1 行（修饰行）的后两格，表头展开时看得到
+ */
+const SAMPLE_LOOK: SheetLook = {
+  merges: [{ r: 0, c: 4, rows: 1, cols: 2 }],
+  notes: [{ r: 7, c: 3, text: '只在桌面上出现，地面摆不下', author: '策划' }],
+  links: [{ r: 10, c: 3, url: 'https://example.com/wiki/mirror', tip: '原画参考' }],
+  fills: [
+    { r: 11, color: '#f5c542' },
+    { r: 12, color: '#e5534b' },
+  ],
+}
+
 /** 表格页的两行列头：字段名 + 类型标签（颜色跟着表头每种行的颜色） */
 const HEADS: (SheetColHead | undefined)[] = [
   {
@@ -84,6 +99,7 @@ export function SheetSpecimen() {
       <div ref={box} role="grid" aria-readonly aria-rowcount={ROWS.length} className="h-64 overflow-auto">
         <SheetTable
           rows={ROWS}
+          look={SAMPLE_LOOK}
           scrollEl={box}
           header={view.header}
           order={view.order}

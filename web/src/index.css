@@ -1150,6 +1150,9 @@ body,
   --c-grid-invalid: var(--danger);
   --c-grid-added: var(--success);
   --c-grid-removed: var(--danger);
+  --c-grid-note: var(--warning);
+  --c-grid-link: var(--ctx-messages);
+  --c-grid-rowMark: 3px;
   --c-grid-handle: 7px;
 }
 

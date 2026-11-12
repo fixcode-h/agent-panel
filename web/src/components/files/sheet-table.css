@@ -119,6 +119,47 @@
     transparent 2px 7px
   );
 }
+/*
+ * xlsx 还原（sheet-look.tsx）：合并的格子并成一格，盖住斑马纹；竖着合并的去掉下边线。
+ * 批注是右上角一个小三角（用背景画，不占 ::before / ::after，和不合规的红三角、枚举箭头不打架）；
+ * 超链接是带下划线的链接色；整行底色是行号左边一条色条，宽度在设置里调（0 就是关掉）
+ */
+/* 不加权重：选中、命中、改过的底色照样盖在合并格上；表头行的合并格透出表头的颜色 */
+:where(.sheet-merge) {
+  background-color: var(--sheet-bg);
+}
+:where(.sheet-role) :where(.sheet-merge) {
+  background-color: transparent;
+}
+.sheet-merge-open {
+  border-bottom-color: transparent;
+}
+.sheet-note {
+  background-image: linear-gradient(225deg, var(--c-grid-note) 0 4.5px, transparent 4.5px);
+  background-repeat: no-repeat;
+}
+.sheet-need.sheet-note {
+  background-image:
+    linear-gradient(225deg, var(--c-grid-note) 0 4.5px, transparent 4.5px),
+    repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--c-grid-invalid) 14%, transparent) 0 2px,
+      transparent 2px 7px
+    );
+}
+.sheet-link-text {
+  color: var(--c-grid-link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--c-grid-link) 45%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.sheet-link-text:hover {
+  text-decoration-color: currentColor;
+}
+.sheet-rowmark {
+  box-shadow: inset var(--c-grid-rowMark) 0 0 var(--row-mark);
+}
 .sheet-editing {
   box-shadow: inset 0 0 0 2px var(--accent);
   z-index: 1;
