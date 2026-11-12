@@ -1319,6 +1319,10 @@ body,
   --md-table-headerWeight: 600;
   --md-table-zebra: color-mix(in srgb, var(--fg) 2.5%, transparent);
   --md-table-pad: 1;
+  --md-table-tools: flex;
+  --md-table-sort: pointer;
+  --md-table-sort-mark: inline-block;
+  --md-table-rows: 16;
   --md-hr-style: none;
   --md-hr-style-fade: linear-gradient(90deg, transparent, var(--md-hr-color) 20%, var(--md-hr-color) 80%, transparent);
   --md-hr-width: 1px;
@@ -2504,8 +2508,50 @@ body,
  * 表格：圆角外框、表头浅底、细横线，太宽时横向滚动。外框和全边框共存时，外圈只画一份：
  * 表格自己画外框（取外框和竖线里粗的那个），最右一列和最后一行的单元格不再重复画
  */
+/*
+ * 表格外面包一层 .md-table（web/src/lib/markdown/table.ts）：放悬停工具条（复制、全屏），宽度跟着表格。
+ * 表格自己是滚动区：太宽横向滚，太长（设置里的「长表限高」）限高后表内滚动，表头钉在顶上
+ */
+.chat-md .md-table {
+  @apply relative w-fit max-w-full;
+  margin-block: calc(0.86 * var(--md-base) * var(--md-k));
+}
+.chat-md .md-table:has(> table[data-chosen-table]) {
+  @apply w-full;
+}
+.chat-md .md-table-tools {
+  @apply absolute -top-2.5 right-1.5 z-[3] items-center gap-0.5 rounded-lg border p-0.5 font-sans text-caption opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,translate] duration-200;
+  display: var(--md-table-tools);
+  translate: 0 -2px;
+  background: color-mix(in srgb, var(--md-pre-bg) 88%, transparent);
+}
+.chat-md .md-table:hover > .md-table-tools,
+.chat-md .md-table-tools:focus-within,
+.chat-md .md-table-tools[data-open] {
+  @apply opacity-100;
+  translate: 0 0;
+}
+.chat-md .md-table-tools svg {
+  @apply size-3.5;
+}
+.chat-md .md-table-tools .md-copy {
+  @apply inline-grid size-6 place-items-center p-0;
+}
+/* 右边还有空的窄表格：工具条放在表格右边外面，不压表头（table.ts 的 placeTools 量出来标 data-roomy） */
+.chat-md .md-table[data-roomy] > .md-table-tools {
+  @apply top-0 right-auto left-full ml-1.5 shadow-none;
+}
+/* 触屏没有悬停：工具条一直显示，淡一点 */
+@media (hover: none) {
+  .chat-md .md-table-tools {
+    @apply opacity-80;
+    translate: 0 0;
+  }
+}
 .chat-md table {
-  @apply block w-max max-w-full overflow-x-auto;
+  @apply block w-max max-w-full overflow-auto;
+  /* 长表限高：约「设置里的行数 + 表头」那么高（一行 = 字高 + 上下内边距） */
+  max-height: calc(var(--md-table-rows) * (1.6em + 0.86 * var(--md-base) * var(--md-table-pad) * var(--md-k)) + 2px);
   border-collapse: separate;
   border-spacing: 0;
   margin-block: calc(0.86 * var(--md-base) * var(--md-k));
@@ -2527,11 +2573,34 @@ body,
   border-right-width: max(0px, calc(var(--md-table-border-col) - var(--md-table-outer)));
 }
 .chat-md th {
-  @apply text-left whitespace-nowrap;
+  @apply sticky top-0 z-[2] text-left whitespace-nowrap;
   color: var(--md-bright);
   font-weight: var(--md-table-headerWeight);
-  background: var(--md-table-headerBg);
+  /* 表头钉在顶上时下面的行从它底下滚过：表头底色叠在不透明的底上，不透出下面的字 */
+  background: linear-gradient(var(--md-table-headerBg), var(--md-table-headerBg)), var(--md-table-under, var(--bg));
   border-bottom-color: var(--line-strong);
+}
+.chat-md .md-table > table {
+  @apply my-0;
+}
+.chat-md .md-table th {
+  cursor: var(--md-table-sort);
+}
+/* 排序箭头：排着的列一直显示，别的列悬停时淡淡地提示能点 */
+.chat-md .md-table th::after {
+  content: '↑';
+  @apply ml-1 text-caption opacity-0 transition-opacity;
+  display: var(--md-table-sort-mark);
+  color: var(--md-blue);
+}
+.chat-md .md-table th:hover::after {
+  @apply opacity-40;
+}
+.chat-md .md-table th[data-sort]::after {
+  @apply opacity-100;
+}
+.chat-md .md-table th[data-sort='desc']::after {
+  content: '↓';
 }
 .chat-md td {
   @apply align-top;

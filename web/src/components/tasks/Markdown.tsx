@@ -9,6 +9,7 @@ import { useFileOpen } from './FileDialog'
 import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
+import { useMdTables } from './md-table-layer'
 import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidThemeVars } from '@/lib/mermaid-fx'
 
 /**
@@ -235,6 +236,9 @@ export function Markdown({
     if (!live && ref.current && canOpen) refs?.mark(ref.current)
   }, [html, live, refs, canOpen])
 
+  // 表格：复制菜单、全屏、点表头排序（md-table-layer.tsx）
+  const tables = useMdTables(ref, html, live)
+
   /** 行内代码里单独的文件名（不带目录，2026-11-07 起按代码显示）：悬停时去对话目录里找完整路径 */
   const nameAt = (e: React.SyntheticEvent) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('code')
@@ -272,6 +276,7 @@ export function Markdown({
       )
       return
     }
+    if (tables.onClick(e)) return
     const mmd = (e.target as HTMLElement).closest<HTMLElement>('[data-mmd]')
     if (mmd) return mermaidAction(mmd)
     // 折行：只切这一个代码块，不改设置
@@ -298,36 +303,43 @@ export function Markdown({
   }
 
   return (
-    <div
-      ref={ref}
-      onClick={onClick}
-      onContextMenu={(e) => {
-        const el = refAt(e)
-        if (el && refs) refs.menu(e, targetOf(el), el)
-      }}
-      onMouseOver={(e) => {
-        const el = refAt(e)
-        // 在同一个标记里面移动（从图标移到文件名）不重新计时
-        if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.hover(el, targetOf(el))
-        const name = canOpen && !el ? nameAt(e) : null
-        if (name && refs && !name.el.contains(e.relatedTarget as Node | null)) refs.name(name.el, name.text)
-      }}
-      onMouseOut={(e) => {
-        const el = refAt(e) ?? (canOpen ? nameAt(e)?.el : null)
-        if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.leave()
-      }}
-      onKeyDown={(e) => {
-        const el = refAt(e)
-        if (!el) return
-        if (e.key === 'Enter') onClick(e as unknown as React.MouseEvent)
-        // 键盘也能弹右键菜单：Shift+F10 或菜单键，菜单出在标记下面
-        if (refs && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
-          const r = el.getBoundingClientRect()
-          refs.menu({ clientX: r.left, clientY: r.bottom, preventDefault: () => e.preventDefault() }, targetOf(el), el)
-        }
-      }}
-      className={cn('chat-md [overflow-wrap:anywhere]', compact && 'chat-md-compact', className)}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <div
+        ref={ref}
+        onClick={onClick}
+        onContextMenu={(e) => {
+          const el = refAt(e)
+          if (el && refs) refs.menu(e, targetOf(el), el)
+        }}
+        onMouseOver={(e) => {
+          const el = refAt(e)
+          // 在同一个标记里面移动（从图标移到文件名）不重新计时
+          if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.hover(el, targetOf(el))
+          const name = canOpen && !el ? nameAt(e) : null
+          if (name && refs && !name.el.contains(e.relatedTarget as Node | null)) refs.name(name.el, name.text)
+        }}
+        onMouseOut={(e) => {
+          const el = refAt(e) ?? (canOpen ? nameAt(e)?.el : null)
+          if (el && refs && !el.contains(e.relatedTarget as Node | null)) refs.leave()
+        }}
+        onKeyDown={(e) => {
+          const el = refAt(e)
+          if (!el) return
+          if (e.key === 'Enter') onClick(e as unknown as React.MouseEvent)
+          // 键盘也能弹右键菜单：Shift+F10 或菜单键，菜单出在标记下面
+          if (refs && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+            const r = el.getBoundingClientRect()
+            refs.menu(
+              { clientX: r.left, clientY: r.bottom, preventDefault: () => e.preventDefault() },
+              targetOf(el),
+              el,
+            )
+          }
+        }}
+        className={cn('chat-md [overflow-wrap:anywhere]', compact && 'chat-md-compact', className)}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {tables.layer}
+    </>
   )
 }

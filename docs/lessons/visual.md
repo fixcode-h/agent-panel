@@ -49,3 +49,9 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 - 规则：标签和同一行文字对不齐时，先看旁边那段文字自己是不是被抬高或压低了。常见的原因是 `inline-flex` 容器的第一个子元素是图标（没有文字基线），浏览器拿图标底边当基线，整段文字会被抬高。行里的容器用块级 `flex`，不要为了对齐去改 `--chip-lift`，也不要逐处写偏移。
 - 起因：ff0008ad 给子对话收发信那一行的「汇报 / 传话 / 交代任务」加了 `chip-lift` 后，界面检查仍差 1.55px（上限 1.5px），CI 一直是红的。实测是左边对方名字的 `inline-flex`（图标打头）被抬高了约 1px，把 `PeerMessage.tsx` 改成 `flex` 就对齐了。
+
+## :root 上的 CSS 变量里不要引用只在局部才定义的变量
+
+- 规则：没注册的 CSS 变量里的 `var()` 在声明它的元素上就替换掉。写在 `:root` 的 `--md-*`（`shared/markdown-style.ts` 生成的、`index.css` 的默认值）里引用 `.chat-md` 上才有的 `--md-base`、`--md-k`，到 `:root` 就是无效值，往下继承的也是无效值，用到它的属性回到初始值（`max-height` 变成 `none`），也不报错。这类变量只放纯值（行数、开关），要按字号算的 `calc()` 写在用它的规则里。
+- 起因：对话表格「长表限高」第一版把整段 `calc(… var(--md-base) …)` 放进 `--md-table-rows`，设置里怎么调表格都不限高。
+- 防线：`scripts/ui/05-settings.mjs` 的「设置-Markdown样式-长表限高」。

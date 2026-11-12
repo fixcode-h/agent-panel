@@ -413,7 +413,12 @@ export function TaskFiles({
         />
       )}
       {(!task.projectId || target?.local) && (
-        <FileDialog taskId={task.id} target={target} onOpenChange={(open) => !open && setTarget(null)} />
+        <FileDialog
+          taskId={task.id}
+          projectId={task.projectId}
+          target={target}
+          onOpenChange={(open) => !open && setTarget(null)}
+        />
       )}
       <DiffDialog
         task={task}
