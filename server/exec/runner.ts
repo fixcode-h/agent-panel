@@ -1129,6 +1129,22 @@ async function runAgent(
               for (const f of files)
                 fileEvents.track({ kind: 'edit', label: f, detail: '' }, { path: f, add: 0, del: 0 }, false)
             },
+            // 插件的长任务交给面板的后台命令（插件框架改进 G1）：和 run_background 同一套监管，结果推回这个对话
+            background: async (job) => {
+              const orch = call.orch
+              if (!orch?.canBackground) return { ok: false, info: '这个对话不能用后台命令：插件自己跑' }
+              return orch.runBackground({
+                command: String(job.command ?? ''),
+                name:
+                  String(job.name ?? '').trim() ||
+                  String(job.command ?? '')
+                    .split('\n')[0]
+                    .slice(0, 40),
+                cwd: String(job.cwd ?? ''),
+                exclusive: job.exclusive === true,
+                ...(Number(job.timeoutMinutes) > 0 && { timeoutMinutes: Number(job.timeoutMinutes) }),
+              })
+            },
           },
         )
       : undefined

@@ -103,6 +103,10 @@ export interface TasksScope {
       timeoutMinutes?: number
       /** 被停止时也要把结果交回发起方（父对话测试用，见 background.ts 的 BgJob.notifyOnStop） */
       notifyOnStop?: boolean
+      /** 常驻服务（BgJob.service） */
+      service?: boolean
+      /** 指定用哪个 shell 起进程（面板跑的测试步骤，见 server/step-run.ts） */
+      shell?: import('../background.ts').BgJob['shell']
     }):
       | {
           ok: boolean
@@ -126,6 +130,7 @@ export interface TasksScope {
     occupants(root: string): import('../background.ts').BgJob[]
     active(): import('../background.ts').BgJob[]
     known(id: string): boolean
+    lostNote(id: string): string | undefined
     list(taskId: string): import('../background.ts').BgJob[]
     stop(taskId: string, note?: string): Promise<void>
     recover(stale?: import('../background.ts').BgJob[]): number

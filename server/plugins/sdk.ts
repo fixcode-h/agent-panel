@@ -62,6 +62,26 @@ export interface McpCallContext {
    * 工具结束后换成真正的结果。编译、导出这类要跑一阵的工具用它让用户知道到哪了。不在对话里的调用没有这个函数
    */
   progress?: (text: string) => void
+  /**
+   * 交给面板的后台命令跑（插件框架改进 G1）：要跑几分钟的外部进程（导表、渲染、打包）不要在工具里自己 spawn 着等，
+   * 交给它——和 Agent 的 run_background 同一套监管：全局名额、按目录独占排队、十分钟没输出提醒、限时、完整日志落盘、
+   * 结果（只推错误、警告和结尾）自动推回这个对话。马上返回；把返回的 info 原样放进工具结果，对话里这一行会一直转圈到命令结束。
+   * cwd 相对对话的目录；命令按用户设置里的命令行环境跑。对话不能用后台命令时（工作流节点）没有这个函数，插件照旧自己跑
+   */
+  background?: (job: BackgroundJob) => Promise<{ ok: boolean; info: string }>
+}
+
+/** 插件交给面板跑的一条后台命令（McpCallContext.background） */
+export interface BackgroundJob {
+  /** 短名字，显示在对话里和推回结果的标题上，例如「导表」 */
+  name: string
+  command: string
+  /** 相对对话目录的工作目录，不写就是对话目录 */
+  cwd?: string
+  /** 会抢文件锁的（编译、导出到同一个目录）设为 true：同一目录同一时间只跑一条 */
+  exclusive?: boolean
+  /** 最多跑多少分钟，不写默认 120，最多 480 */
+  timeoutMinutes?: number
 }
 
 /** 给 Agent 的一个 MCP 工具：面板负责协议、会话和令牌，插件只给定义和执行函数 */
