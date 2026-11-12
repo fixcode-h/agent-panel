@@ -131,10 +131,10 @@ export type {
   HelperReport,
   HelperBatch,
   Orchestra,
-  P4SplitArgs,
   EngineHost,
-  LessonInput,
 } from './engine-host.ts'
+export type { P4SplitArgs } from './host/vcs.ts'
+export type { LessonInput } from './host/knowledge.ts'
 
 import { bindWait, finishStepNow, WRAP_UP } from './plan.ts'
 

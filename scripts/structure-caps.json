@@ -663,8 +663,20 @@
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {
-    "Orchestra": 69,
-    "EngineHost": 67
+    "OrchBug": 3,
+    "BugHost": 1,
+    "OrchBuild": 8,
+    "BuildHost": 5,
+    "OrchConversation": 14,
+    "ConversationHost": 15,
+    "OrchKnowledge": 5,
+    "KnowledgeHost": 4,
+    "OrchPlan": 11,
+    "PlanHost": 6,
+    "OrchVcs": 11,
+    "VcsHost": 11,
+    "Orchestra": 17,
+    "EngineHost": 26
   },
   "gitCalls": {
     "server/comfy.ts": 1
