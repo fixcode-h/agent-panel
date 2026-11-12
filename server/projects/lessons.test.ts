@@ -12,10 +12,10 @@ import test from 'node:test'
 // 数据目录换成临时的：P4 / SVN 项目的教训位置要用文档组记录（server/doc-group.ts），不能碰真正的 ~/.agent-panel
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'panel-lessons-data-'))
 
-const { DOC_PLACE_INSIDE } = await import('../shared/doc-root.ts')
-const { setLang } = await import('../shared/i18n.ts')
-const { AgentInput, Project, ProjectInput, ProjectLesson } = await import('../shared/schema.ts')
-const { projectLessons } = await import('./lessons.ts')
+const { DOC_PLACE_INSIDE } = await import('../../shared/doc-root.ts')
+const { setLang } = await import('../../shared/i18n.ts')
+const { AgentInput, Project, ProjectInput, ProjectLesson } = await import('../../shared/schema.ts')
+const { projectLessons } = await import('../lessons.ts')
 const {
   loadProjectLessons,
   mergeProjectLessons,
@@ -24,9 +24,9 @@ const {
   renderProjectLesson,
   renderProjectLessons,
   saveProjectLessons,
-} = await import('./project-lessons.ts')
-type Agent = import('../shared/schema.ts').Agent
-type LessonReviewItem = import('../shared/lesson-review.ts').LessonReviewItem
+} = await import('./lessons.ts')
+type Agent = import('../../shared/schema.ts').Agent
+type LessonReviewItem = import('../../shared/lesson-review.ts').LessonReviewItem
 
 setLang('zh')
 
@@ -48,10 +48,10 @@ const dirText = (dir: string) => {
     .join('\n')
 }
 
-const project = (dir: string, extra: Partial<import('../shared/schema.ts').Project> = {}) =>
+const project = (dir: string, extra: Partial<import('../../shared/schema.ts').Project> = {}) =>
   Project.parse({ id: 'p1', name: '项目', path: dir, createdAt: '', updatedAt: '', ...extra })
 
-const lesson = (id: string, title: string, extra: Partial<import('../shared/schema.ts').ProjectLesson> = {}) =>
+const lesson = (id: string, title: string, extra: Partial<import('../../shared/schema.ts').ProjectLesson> = {}) =>
   ProjectLesson.parse({ id, title, rule: `${title}的规则`, ...extra })
 
 const docsAgent = (): Agent => ({
@@ -174,7 +174,7 @@ test('项目设置整份保存：队列内核对版本，旧快照不会覆盖 A
     let p = project(dir, { updatedAt: 'v0' })
     const store = {
       get: async () => p,
-      update: async (_id: string, input: import('../shared/schema.ts').ProjectInput) => {
+      update: async (_id: string, input: import('../../shared/schema.ts').ProjectInput) => {
         tick++
         p = { ...p, ...input, updatedAt: `v${tick}` }
         return p
@@ -238,7 +238,7 @@ test('几个对话同时记：排队写文件，条目一条不丢，旧 JSON �
     let p = project(dir)
     const store = {
       get: async () => p,
-      update: async (_id: string, input: import('../shared/schema.ts').ProjectInput) => {
+      update: async (_id: string, input: import('../../shared/schema.ts').ProjectInput) => {
         p = { ...p, ...input }
         return p
       },
@@ -268,7 +268,7 @@ test('旧 JSON 里的条目删除后不会复活：先迁进文件，再删就�
     let p = project(dir, { lessons: [lesson('old-a', '旧的 A'), lesson('old-b', '旧的 B')] })
     const store = {
       get: async () => p,
-      update: async (_id: string, input: import('../shared/schema.ts').ProjectInput) => {
+      update: async (_id: string, input: import('../../shared/schema.ts').ProjectInput) => {
         p = { ...p, ...input }
         return p
       },

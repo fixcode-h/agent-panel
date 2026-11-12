@@ -11,8 +11,8 @@ import { t } from '../shared/i18n.ts'
 import type { Agent, Project } from '../shared/schema.ts'
 import { askOnce, experienceRun, parseReview, reviewPrompt } from './experience-ai.ts'
 import { knowledgeHitsView, missingPaths } from './knowledge-hits.ts'
-import { loadProjectExperience, mutateProjectExperience } from './project-experience.ts'
-import { loadProjectLessons } from './project-lessons.ts'
+import { loadProjectExperience, mutateProjectExperience } from './projects/experience.ts'
+import { loadProjectLessons } from './projects/lessons.ts'
 import { getSettings } from './settings.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -29,7 +29,7 @@ const ExperienceEdit = z.object({
 
 /**
  * 项目设置 →「经验」：列出、手动加、改、删，和 AI 评审（逐条判断符不符合「经验记什么」，不符合的由用户勾选后删掉）。
- * 和教训的路由放在一起挂（server/index.ts 有行数上限）；读写都在 server/project-experience.ts
+ * 和教训的路由放在一起挂（server/index.ts 有行数上限）；读写都在 server/projects/experience.ts
  */
 export function experienceRoutes(app: Hono, deps: { projects: Lister<Project>; agents: Lister<Agent> }) {
   const projectOf = async (id: string) => {

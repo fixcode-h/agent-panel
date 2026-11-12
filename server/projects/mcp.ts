@@ -2,18 +2,18 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
-import { McpStore } from '../shared/cli-spec.ts'
-import { McpServer } from '../shared/library.ts'
-import { t } from '../shared/i18n.ts'
+import { McpStore } from '../../shared/cli-spec.ts'
+import { McpServer } from '../../shared/library.ts'
+import { t } from '../../shared/i18n.ts'
 import {
   isPanelMcpUrl,
   type ProjectMcpDetected,
   type ProjectMcpImportResult,
   type ProjectMcpOverview,
-} from '../shared/project-mcp.ts'
-import { mcpOverview, readServerTable, readToml, removeMcpFrom, testMcp, writeMcpTo } from './mcp-store.ts'
-import { scanMcpServer } from '../shared/config-scan/index.ts'
-import { visibleFindings } from './config-scan.ts'
+} from '../../shared/project-mcp.ts'
+import { mcpOverview, readServerTable, readToml, removeMcpFrom, testMcp, writeMcpTo } from '../mcp-store.ts'
+import { scanMcpServer } from '../../shared/config-scan/index.ts'
+import { visibleFindings } from '../config-scan.ts'
 
 /**
  * 项目设置里的「MCP」：列出这个项目的目录里各工具认的 MCP 配置，可以一键导入成面板管理的配置。

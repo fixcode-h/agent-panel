@@ -8,7 +8,7 @@ import {
   type KnowledgeKind,
   type KnowledgeHitsView,
 } from '../shared/knowledge-hits.ts'
-import { enqueueWrite, writeTextAtomic } from './project-lessons.ts'
+import { enqueueWrite, writeTextAtomic } from './projects/lessons.ts'
 import { DATA_DIR, readJson } from './store.ts'
 
 /**

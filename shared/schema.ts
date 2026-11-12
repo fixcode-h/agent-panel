@@ -902,7 +902,7 @@ const ProjectFields = z.object({
    */
   scaledVerify: z.boolean().default(true),
   /**
-   * 项目教训：新数据存在项目文档目录的 lessons.md（见 server/project-lessons.ts），这里只保留旧项目的数据，
+   * 项目教训：新数据存在项目文档目录的 lessons.md（见 server/projects/lessons.ts），这里只保留旧项目的数据，
    * 读取时和文件合并、写入后清空。旧项目没有时是空数组
    */
   lessons: z.array(ProjectLesson).max(200).default([]),

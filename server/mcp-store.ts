@@ -237,7 +237,7 @@ function fromObject(name: string, o: Record<string, any>, s: McpStore): McpServe
 
 /**
  * 从 { 名字: 配置 } 的表里读出工具。项目里各种 mcpServers / servers 写法共用这一处：
- * Claude Code、Cursor 的 mcpServers 和 VS Code 的 servers 字段名不同，但条目结构一样（见 server/project-mcp.ts）
+ * Claude Code、Cursor 的 mcpServers 和 VS Code 的 servers 字段名不同，但条目结构一样（见 server/projects/mcp.ts）
  */
 export function readServerTable(table: Record<string, any>, s: McpStore): Record<string, McpServer> {
   const out: Record<string, McpServer> = {}

@@ -12,7 +12,7 @@
 ## 决策
 
 - **范围**：经验只记五类（找位置、叫法对照、命令、验证、做法），写到目录为止，一两句；不记某次改动的细节、代码怎么写、一次性的事。判定写在 `shared/experience.ts` 的 `EXPERIENCE_SCOPE`，学习提示词、`record_experience` 的说明、AI 评审共用。教训的记录提示（`shared/lessons.ts` 的 `RECORD_HINT`）同步收窄：路径、叫法、命令技巧不再记成教训。
-- **存储**：项目文档根下的 `agent-knowledge/experience/<id>.md`，一条一个文件（Git 项目是 `<项目>/docs`，P4 / SVN 是共用文档根，见 ADR 0052）。读写在 `server/project-experience.ts`，复用教训的写入队列和原子写。
+- **存储**：项目文档根下的 `agent-knowledge/experience/<id>.md`，一条一个文件（Git 项目是 `<项目>/docs`，P4 / SVN 是共用文档根，见 ADR 0052）。读写在 `server/projects/experience.ts`，复用教训的写入队列和原子写。
 - **学习时机**：只在整个对话完成后学：顶层对话一轮结束后计时（默认 10 分钟），到点时整棵对话树都是「已完成」才学；期间追问就重新计时。
 - **省 token**：先用 `shared/experience-gate.ts` 只看工具调用（`ToolUse.kind`）算这次进入落点目录前绕了几步、命令是不是失败几次才成，不调模型；超过阈值（三档 12 / 8 / 5 步）、落点没被已有经验覆盖、当天没到上限，才调一次模型提炼，最多 2 条。模型用设置里指定的，默认跟随对话的 Agent 和模型。
 - **校验**：路径必须存在、字段有长度上限；同一件事合进旧条目，不重复加。学到或失败都在对话里留一行系统提示，失败不重试（AGENTS.md）。
@@ -35,5 +35,5 @@
 
 - 学到经验的系统消息带结构化的 `TaskMessage.learned`（`shared/experience.ts` 的 `LearnedNote`）：每条存写入后的快照，并入已有的另存并入前的样子；对话里画成一条一行的卡片（`web/src/components/tasks/LearnedCard.tsx`），能当场编辑、停用、删除（可撤销）、撤回合并。旧消息没有这个字段，照旧是一行字。
 - 模型给了但没通过校验的条目折叠在卡片底部给用户看（以前只进日志）；经验满了的提示同一个项目一天只出一次。
-- 合并时种类只在模型点名更新那条时才换；关键词、路径满了时这次新学的优先留下（`server/project-experience.ts` 的 `unionKeep`）。
+- 合并时种类只在模型点名更新那条时才换；关键词、路径满了时这次新学的优先留下（`server/projects/experience.ts` 的 `unionKeep`）。
 - `/learn` 让 Agent 记下的经验，`record_experience` 那一行下面画同一张卡片（标「手动」）。

@@ -4,7 +4,7 @@
 - 症状：项目 .mcp.json 里堆了几十条 panel-xxxx、orch，项目设置当成可导入的 MCP 列出来
 - 入口：`server/exec/invoke.ts` 的 `invokeCli`
 - 根因类型：异常退出不还原、按快照整文件写回
-- 模块：`server-exec`（`server/exec/invoke.ts`），配套 `server/ask-mcp.ts`、`server/panel-mcp-files.ts`、`server/project-mcp.ts`、`server/index.ts`
+- 模块：`server-exec`（`server/exec/invoke.ts`），配套 `server/ask-mcp.ts`、`server/panel-mcp-files.ts`、`server/projects/mcp.ts`、`server/index.ts`
 - 关键词：.mcp.json、panel-xxxxxx、orch、127.0.0.1:8787/api/mcp/ask、项目里识别到的配置、只在项目里
 
 ## 现象
@@ -29,4 +29,4 @@
 
 ## 防线
 
-`server/panel-mcp-files.test.ts`（名字、清理、撤回不冲掉别的条目）、`server/project-mcp.test.ts`（扫描不列面板自己的）、`scripts/e2e/07-local.mjs`（原有配置原样还原）。
+`server/panel-mcp-files.test.ts`（名字、清理、撤回不冲掉别的条目）、`server/projects/mcp.test.ts`（扫描不列面板自己的）、`scripts/e2e/07-local.mjs`（原有配置原样还原）。

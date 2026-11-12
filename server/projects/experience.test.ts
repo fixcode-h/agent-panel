@@ -3,8 +3,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ProjectExperience } from '../shared/experience.ts'
-import { mergeLearned, parseExperience, renderExperience } from './project-experience.ts'
+import { ProjectExperience } from '../../shared/experience.ts'
+import { mergeLearned, parseExperience, renderExperience } from './experience.ts'
 
 const sample = ProjectExperience.parse({
   id: 'e1',

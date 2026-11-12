@@ -2,7 +2,7 @@
 
 状态：已接受 · 2026-11-05
 
-- 影响范围：`server/doc-group.ts`（新增）、`server/doc-group-api.ts`（新增）、`server/doc-root.ts`、`server/module-map.ts`、`server/project-lessons.ts`、`shared/doc-root.ts`、`shared/module-docs.ts`、`shared/builtin/agents.ts`、`skills/docs/project-documentation`、`skills/workflow/task-records`、`web/src/components/projects/DocRootHint.tsx`
+- 影响范围：`server/doc-group.ts`（新增）、`server/doc-group-api.ts`（新增）、`server/doc-root.ts`、`server/module-map.ts`、`server/projects/lessons.ts`、`shared/doc-root.ts`、`shared/module-docs.ts`、`shared/builtin/agents.ts`、`skills/docs/project-documentation`、`skills/workflow/task-records`、`web/src/components/projects/DocRootHint.tsx`
 - 修订：ADR 0039 的 P4 教训位置（改成共用文档根下的 `lessons/`，一条一个文件）
 
 ## 背景

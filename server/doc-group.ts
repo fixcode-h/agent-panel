@@ -124,7 +124,7 @@ function fromName(rel: string, branch: string) {
   return `${rel.slice(0, rel.length - ext.length)}.from-${branchDirName(branch || 'old')}${ext}`
 }
 
-/** 项目教训的冲突不用人合并：读取时按 id 去重、取更新的那份（见 server/project-lessons.ts） */
+/** 项目教训的冲突不用人合并：读取时按 id 去重、取更新的那份（见 server/projects/lessons.ts） */
 const isLessons = (rel: string) => rel === 'lessons.md' || rel.startsWith('lessons/')
 
 /** 模块 README 搬过来时补上分支：老文档没写过分支 */

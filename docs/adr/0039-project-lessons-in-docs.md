@@ -2,7 +2,7 @@
 
 状态：已接受 · 2026-11-02（2026-11-05 被 ADR 0052 修订：教训改成 `lessons/<id>.md` 一条一个文件，P4 放各分支共用的文档根）
 
-- 影响范围：`server/project-lessons.ts`（新增）、`server/lessons.ts`、`server/index.ts`、`server/tasks/run.ts`、`server/assist.ts`、`shared/locales/en/server.ts`
+- 影响范围：`server/projects/lessons.ts`（新增）、`server/lessons.ts`、`server/index.ts`、`server/tasks/run.ts`、`server/assist.ts`、`shared/locales/en/server.ts`
 - 取代：无
 
 ## 背景
@@ -48,7 +48,7 @@
 - `title` / `rule` / `cause` 用 `|` 开头、正文缩进两行的块，允许任意多行 Markdown；
 - 解析失败（缺结束标记、字段不是「名字: 值」、数组不是 JSON、**标记之外还有非空文字**等）时不覆盖原文件，把出错的行号返回给用户。
 
-写入用临时文件、fsync、rename；同一路径的写入在进程内排队，P4 共用文件时也不会交错。项目设置里的整份保存（`PUT /projects/:id` 带 `lessons`）和 `record_lesson` / 评审应用走同一个队列，并在队列内再核对一次 `expectedUpdatedAt`，避免用设置页打开时的旧快照覆盖这期间 Agent 刚记的条目。读取点统一走 `server/project-lessons.ts` 的 `loadProjectLessons`，返回合并后的列表。
+写入用临时文件、fsync、rename；同一路径的写入在进程内排队，P4 共用文件时也不会交错。项目设置里的整份保存（`PUT /projects/:id` 带 `lessons`）和 `record_lesson` / 评审应用走同一个队列，并在队列内再核对一次 `expectedUpdatedAt`，避免用设置页打开时的旧快照覆盖这期间 Agent 刚记的条目。读取点统一走 `server/projects/lessons.ts` 的 `loadProjectLessons`，返回合并后的列表。
 
 候选方案和没选的原因：
 
@@ -59,7 +59,7 @@
 
 ## 操作清单 / 契约
 
-- 新增 `server/project-lessons.ts`：`projectLessonsFile`、`renderProjectLessons`、`parseProjectLessons`、`readProjectLessonsFile`、`mergeProjectLessons`、`loadProjectLessons`、`saveProjectLessons`、`projectWithLessons`。
+- 新增 `server/projects/lessons.ts`：`projectLessonsFile`、`renderProjectLessons`、`parseProjectLessons`、`readProjectLessonsFile`、`mergeProjectLessons`、`loadProjectLessons`、`saveProjectLessons`、`projectWithLessons`。
 - `server/lessons.ts` 的 `projectLessons(projects, deps)` 增加可选的 `deps.agents`（找「文档」角色，算 SVN 文档根）；`record` / `review` 改为读写文件，写成功后把项目 JSON 的 `lessons` 置空。
 - `server/index.ts`：`GET /projects` 返回合并后的项目；`PUT /projects/:id` 带 `lessons` 时先写文件再保存项目；`POST /projects/:id/lessons`、`POST /projects/:id/lessons/review` 的返回值带合并后的教训。
 - 读取点 `server/tasks/run.ts`、`server/assist.ts` 改用 `loadProjectLessons`；`GET /projects` 一处覆盖界面和 `projectWithLessons`。

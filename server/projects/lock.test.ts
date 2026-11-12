@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { staleProjectWrite } from './project-lock.ts'
+import { staleProjectWrite } from './lock.ts'
 
 test('没带 expectedUpdatedAt 的老请求不校验，保持原来的整份覆盖', () => {
   assert.equal(staleProjectWrite('2026-10-27T00:00:00Z', undefined), false)

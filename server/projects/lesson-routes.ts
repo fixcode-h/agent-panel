@@ -1,9 +1,9 @@
 import type { Hono } from 'hono'
-import { t } from '../shared/i18n.ts'
-import { LESSON_REVIEW_LANG, parseLessonReview, type LessonReviewItem } from '../shared/lesson-review.ts'
-import type { Project } from '../shared/schema.ts'
-import type { LessonDraft } from './lessons.ts'
-import { experienceRoutes } from './experience-routes.ts'
+import { t } from '../../shared/i18n.ts'
+import { LESSON_REVIEW_LANG, parseLessonReview, type LessonReviewItem } from '../../shared/lesson-review.ts'
+import type { Project } from '../../shared/schema.ts'
+import type { LessonDraft } from '../lessons.ts'
+import { experienceRoutes } from '../experience-routes.ts'
 
 export interface ProjectLessonApi {
   record(projectId: string, draft: LessonDraft): Promise<{ ok: boolean; info: string; project?: Project }>
@@ -12,7 +12,7 @@ export interface ProjectLessonApi {
 
 /**
  * 记一条项目教训、应用一条 AI 评审建议。单独成一个模块是为了让 server/index.ts 不超过文件行数上限
- * （scripts/file-caps.json）；路由本身不碰存储，读写和合并都在 server/project-lessons.ts。
+ * （scripts/file-caps.json）；路由本身不碰存储，读写和合并都在 server/projects/lessons.ts。
  */
 export function projectLessonRoutes(
   app: Hono,

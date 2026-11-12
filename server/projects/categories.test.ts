@@ -3,16 +3,16 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import type { ProjectCategory as Category, ProjectCategoryInput } from '../shared/schema.ts'
+import type { ProjectCategory as Category, ProjectCategoryInput } from '../../shared/schema.ts'
 
 // 数据目录换成临时的，别动本机的设置和项目分类
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-project-categories-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { createCollection } = await import('./store.ts')
-const { ProjectCategory } = await import('../shared/schema.ts')
+const { createCollection } = await import('../store.ts')
+const { ProjectCategory } = await import('../../shared/schema.ts')
 const { builtinProjectCategories, isBuiltinProjectCategory, projectCategoryDeleteError } =
-  await import('../shared/builtin/project-categories.ts')
+  await import('../../shared/builtin/project-categories.ts')
 
 const at = new Date(0).toISOString()
 const file = (name: string) => path.join(dir, name)

@@ -41,14 +41,14 @@
 
 ### 1.3 存在哪
 
-ADR 0052 之后一条一个文件：Git / 无版本管理是 `<项目>/docs/lessons/<id>.md`，P4 / SVN（文档根在项目外时）是共用文档根下的 `lessons/<id>.md`。格式是 `<!-- lesson -->` 起止标记加「名字: 值」字段（`server/project-lessons.ts`）。
+ADR 0052 之后一条一个文件：Git / 无版本管理是 `<项目>/docs/lessons/<id>.md`，P4 / SVN（文档根在项目外时）是共用文档根下的 `lessons/<id>.md`。格式是 `<!-- lesson -->` 起止标记加「名字: 值」字段（`server/projects/lessons.ts`）。
 
 ## 2. 问题：为什么说「什么都往里塞」
 
 1. **「教训」和「经验」混在一起。** `RECORD_HINT` 的第二种情况「你发现自己用的办法不对、绕了弯路才换成对的」，本质是「怎么做最快」，不是「这么做会错」。它和被纠正的规则用同一个工具、同一种格式、同样立即生效，还同样进每个新会话的提示词。
 2. **入口没有门槛。** 消息菜单和诊断报告能把任何一段话记成教训。Bug 根因本该进 Bug 记录（`docs/modules/<模块>/bugs/`），现在可能同时进了两处，两边各改各的。
 3. **越塞越贵。** 没写 `paths` 的条目每个新会话都带全文，攒多了就从 3000 字预算里挤掉真正要紧的那几条；标题列表最多 60 条，又是一两千字。条目越杂，每条被用上的概率越低，花的 token 却一样。
-4. **Git 项目的教训目录和项目自己的 `docs/lessons/` 撞了。** 面板写 `<项目>/docs/lessons/<id>.md`，而像本仓库这样自己就有 `docs/lessons/ui.md` 这类分片的项目，面板把每个分片都当成「格式不对的教训文件」，每次保存都报一长串错（`server/project-lessons.ts` 的 `readLessonsDir` 只跳过 `README.md`）；「文档」角色又往同一个目录的分片里追加另一种格式的教训。两套东西挤在一个目录里。
+4. **Git 项目的教训目录和项目自己的 `docs/lessons/` 撞了。** 面板写 `<项目>/docs/lessons/<id>.md`，而像本仓库这样自己就有 `docs/lessons/ui.md` 这类分片的项目，面板把每个分片都当成「格式不对的教训文件」，每次保存都报一长串错（`server/projects/lessons.ts` 的 `readLessonsDir` 只跳过 `README.md`）；「文档」角色又往同一个目录的分片里追加另一种格式的教训。两套东西挤在一个目录里。
 5. **只进不出。** 没有记录哪条被用过、用过几次。AI 评审只能凭内容猜「是不是过期了」，没法说「这条 90 天里一次都没被查到」。
 6. **项目的「门道」没有地方放。** 用户说的那种「表格相关的直接去某个目录找，不用每次搜全项目」，现在只能靠模块文档（要「文档」专门分析一遍才有）或塞进教训（又回到问题 1）。
 
@@ -382,9 +382,9 @@ body: |
 | shared/experience.ts（EXPERIENCE_SCOPE）  | 教训 / 经验的准入标准短句，工具说明和界面共用                                                                                |
 | shared/experience.ts                      | 经验的检索、排序、预算（和 `shared/lessons.ts` 同一套写法）                                                                  |
 | shared/experience-gate.ts                 | 机械摘要和闸门（纯函数，单测）                                                                                               |
-| server/project-experience.ts              | 读写 `experience/<id>.md`，复用 `server/project-lessons.ts` 的写入队列和原子写                                               |
+| server/projects/experience.ts             | 读写 `experience/<id>.md`，复用 `server/projects/lessons.ts` 的写入队列和原子写                                              |
 | server/experience-learn.ts                | 对话完成后的排队、提炼调用、校验、写入                                                                                       |
-| `server/project-lessons.ts`               | 目录改成 `agent-knowledge/lessons/`；旧目录只认带标记的文件                                                                  |
+| `server/projects/lessons.ts`              | 目录改成 `agent-knowledge/lessons/`；旧目录只认带标记的文件                                                                  |
 | `server/orch-mcp.ts`                      | `project_knowledge`（`project_lessons` 当别名）、`record_experience`（放进 `DEFERRED_TOOLS`）；`record_lesson` 加 `evidence` |
 | `shared/lessons.ts`                       | 预算和标题列表按 4.4 收紧；`RECORD_HINT` 改短                                                                                |
 | `POST /projects/:id/experience`           | 加 / 改 / 删 / 确认，界面用                                                                                                  |

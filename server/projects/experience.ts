@@ -1,12 +1,12 @@
 import { existsSync } from 'node:fs'
 import { readdir, readFile, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import { joinPath } from '../shared/doc-root.ts'
-import { EXP_KEYWORDS_MAX, EXP_PATHS_MAX, ProjectExperience, sameExperience } from '../shared/experience.ts'
-import { hash53 } from '../shared/hash.ts'
-import { t } from '../shared/i18n.ts'
-import type { Agent, Project } from '../shared/schema.ts'
-import { enqueueWrite, projectDocBase, writeTextAtomic } from './project-lessons.ts'
+import { joinPath } from '../../shared/doc-root.ts'
+import { EXP_KEYWORDS_MAX, EXP_PATHS_MAX, ProjectExperience, sameExperience } from '../../shared/experience.ts'
+import { hash53 } from '../../shared/hash.ts'
+import { t } from '../../shared/i18n.ts'
+import type { Agent, Project } from '../../shared/schema.ts'
+import { enqueueWrite, projectDocBase, writeTextAtomic } from './lessons.ts'
 
 /**
  * 项目经验存进项目文档根的 agent-knowledge/experience/，一条一个文件（设计稿 docs/openspec/changes/project-knowledge/design.md）：

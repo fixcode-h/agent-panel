@@ -8,8 +8,8 @@ import { lstat, mkdir, readdir, readFile, rm, unlink, writeFile } from 'node:fs/
 import path from 'node:path'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import type { Project } from '../shared/schema.ts'
-import { t } from '../shared/i18n.ts'
+import type { Project } from '../../shared/schema.ts'
+import { t } from '../../shared/i18n.ts'
 import {
   projectSkillName,
   projectSkillRepos,
@@ -17,12 +17,12 @@ import {
   skillTemplate,
   type ProjectSkill,
   type ProjectSkillsView,
-} from '../shared/project-skills.ts'
-import { frontField, type LibraryFile } from '../shared/library.ts'
-import { extraFiles } from './library.ts'
-import { scanPath } from './config-scan.ts'
-import { summarize } from '../shared/config-scan/index.ts'
-import { clearSlashCache } from './slash.ts'
+} from '../../shared/project-skills.ts'
+import { frontField, type LibraryFile } from '../../shared/library.ts'
+import { extraFiles } from '../library.ts'
+import { scanPath } from '../config-scan.ts'
+import { summarize } from '../../shared/config-scan/index.ts'
+import { clearSlashCache } from '../slash.ts'
 
 /** 技能列表：能放技能的目录（现在存不存在）+ 各目录下的技能 */
 const MAX = 60_000

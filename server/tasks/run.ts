@@ -2,7 +2,7 @@ import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
 
 import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
-import { projectWithLessons } from '../project-lessons.ts'
+import { projectWithLessons } from '../projects/lessons.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import { beginRun, dropEndNotes, trackWait, taskDeleted, withAttachments } from '../../shared/task.ts'
 import { withTaskModel } from '../../shared/tasks/run.ts'

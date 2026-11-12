@@ -5,7 +5,7 @@ import { demoMcpOverview, demoMcpServers } from './demo-library'
 
 /**
  * 在线演示里的项目 MCP：浏览器里读不到项目目录，识别到的配置是固定几条演示数据，
- * 但字段和真后端（server/project-mcp.ts）一致，导入也真的改动内存里那份面板管理的工具。
+ * 但字段和真后端（server/projects/mcp.ts）一致，导入也真的改动内存里那份面板管理的工具。
  */
 
 const entry = (

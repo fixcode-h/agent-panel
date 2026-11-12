@@ -806,7 +806,7 @@
       "lines": 425
     },
     {
-      "file": "server/project-categories.test.ts",
+      "file": "server/projects/categories.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -816,14 +816,14 @@
       "lines": 123
     },
     {
-      "file": "server/project-lock.test.ts",
+      "file": "server/projects/lock.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 6,
       "lines": 33
     },
     {
-      "file": "server/project-mcp.test.ts",
+      "file": "server/projects/mcp.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -833,14 +833,14 @@
       "lines": 114
     },
     {
-      "file": "server/project-order.test.ts",
+      "file": "server/projects/order.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 8,
       "lines": 77
     },
     {
-      "file": "server/project-skills.test.ts",
+      "file": "server/projects/skills.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",

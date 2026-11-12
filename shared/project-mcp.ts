@@ -5,7 +5,7 @@ import type { ConfigFinding } from './config-scan/index.ts'
  * 项目里的 MCP 配置：只读扫描项目目录下各 CLI / 编辑器认的配置文件，列出来给用户看，可以导入成面板管理的配置
  * （写进各 CLI 的全局配置，见 server/mcp-store.ts）。
  *
- * 扫描规则写在 server/project-mcp.ts 的 SOURCES 里，每条都注明了依据。
+ * 扫描规则写在 server/projects/mcp.ts 的 SOURCES 里，每条都注明了依据。
  * 导入只写 CLI 的全局配置，不改用户项目里的文件，所以不需要备份：原文一直在用户自己的文件里。
  */
 export interface ProjectMcpDetected {

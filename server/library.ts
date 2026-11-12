@@ -141,7 +141,7 @@ export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
 /**
  * Skill 文件夹里的文件树：目录在前、按名字排的扁平列表（路径排序天然把父目录排在子项前面）。
  * 跳过 LIBRARY_TREE_EXCLUDE 里的目录和文件；超过 LIBRARY_TREE_MAX_ENTRIES 就截断并标 truncated。
- * 项目技能（server/project-skills.ts）也用它
+ * 项目技能（server/projects/skills.ts）也用它
  */
 export async function extraFiles(dir: string): Promise<LibraryTree> {
   const entries: LibraryEntry[] = []

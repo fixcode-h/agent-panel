@@ -1505,7 +1505,7 @@ const demoSkillFiles = new Map<string, string>([
   ['.claude/skills/shop-i18n', '---\nname: shop-i18n\n---\n\n把界面文案补上英文。\n'],
 ])
 
-/** 项目设置里的 Skill 分节：和 server/project-skills.ts 返回同样的字段 */
+/** 项目设置里的 Skill 分节：和 server/projects/skills.ts 返回同样的字段 */
 function demoProjectSkillsApi(method: string, seg: string[], query: URLSearchParams, body: Record<string, unknown>) {
   const projectPath = '/home/demo/code/web-shop'
   const repos = projectSkillRepos().map((r) => ({ ...r, exists: true }))
