@@ -62,6 +62,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/ui/icon-button': () => import('@/components/ui/icon-button'),
   'web/src/components/ui/inline-rename': () => import('@/components/ui/inline-rename'),
   'web/src/components/ui/input': () => import('@/components/ui/input'),
+  'web/src/components/ui/lightbox': () => import('@/components/ui/lightbox'),
   'web/src/components/ui/menu': () => import('@/components/ui/menu'),
   'web/src/components/ui/modal': () => import('@/components/ui/modal'),
   'web/src/components/ui/progress': () => import('@/components/ui/progress'),

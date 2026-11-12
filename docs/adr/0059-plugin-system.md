@@ -44,6 +44,7 @@
    - 放弃：把面板源码整份打进插件包。状态是两份（数据上下文、提示、提问会话各一套），插件的对话和面板的对不上。
    - 落地（2026-11-11）：UI 设计搬进插件仓库的 `ui-design`（插件 id `ui-design`，设计模式 id `ui`），面板删掉自带的设计代码；旧地址 `#/design/…` 转到 `#/pdesign/ui/…`，设计稿数据由插件第一次启用时从 `designs/` 搬到 `plugin-data/ui-design/designs/`。插件仓库里类型检查和单测从仓库根的 `.panel`（面板源码）取面板模块。
 10. **插件接口 5（2026-11-11，去掉设计模式）**：用户要侧栏顶上的模式切换只留 Agent、Chat，UI 设计像模型设计那样做成图标栏的入口。设计模式只剩 UI 设计一家在用，留着它就要多维护一套侧栏下拉和 `#/pdesign` 路由，所以整个去掉：`WebPlugin.designModes`、`DesignMode`、`#/pdesign` 都没了，设计类插件一律用整页（`PluginPage`）。为此整页加两样：`split(path)`（这个位置自己分块，面板不套卡片，插件自己画左边的列表）和带 `/` 的子位置（`#/plugin/<插件>/<页面>/<a>/<b>`，`parseHash` 把第三段以后整个交给插件）。`designModes` 不再读，只用它的旧插件（ui-design 1.0.0）在新面板上看不到入口，所以升了接口版本，ui-design 1.1.0 声明 `api: 5`，旧面板装它会提示先升级面板。旧地址 `#/design/…`、`#/pdesign/ui/…` 都转到 `#/plugin/ui-design/ui/…`。
+11. **插件接口 6（2026-11-12，视频截帧拆成插件）**：用户要把视频截帧从面板核心搬成插件（ComfyUI 留在面板）。视频功能和面板缠在两处，各加一个扩展点：输入框附件——`WebPlugin.attachmentIntakes` 让插件按扩展名 / MIME 认领拖进输入框的文件，卡片只引用原路径，点开插件自己的弹窗选好要发的（帧图片），发送时卡片原位换成这些附件（面板只按 `intake` / `picks` 两个通用字段走，不认视频）；给 Agent 的截帧工具——改成插件 `tools()`，原来只在「用户在聊的对话」里给（父对话、子对话、Chat，不给派出的子任务），`PluginRun.mode` 分不出来，所以加 `PluginRun.conversation`，和面板自己的操控软件工具同一个条件。插件要用的面板模块补进开放清单：`server/download.ts`（下载 FFmpeg）、`server/task-files.ts`（帧写进对话目录）、`shared/composer.ts`、`web/src/components/ui/lightbox.tsx`。在线演示不装插件，所以演示里没有视频截帧（用户已接受）。
 
 ## 影响与风险
 

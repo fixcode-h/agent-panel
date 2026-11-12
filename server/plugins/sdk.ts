@@ -113,6 +113,11 @@ export interface PluginRun {
   cwd?: string
   /** 对话的模式：agent（项目里执行）、chat、workflow…（插件接口 2） */
   mode?: string
+  /**
+   * 这一轮是不是用户直接在聊的对话（插件接口 6）：父对话、子对话、Chat 对话都是，派出的一次性子任务和工作流节点不是。
+   * 和面板自己的「操控软件」工具同一个条件：只想给对话挂的工具（例如视频截帧）按它判断，不要按 mode 猜
+   */
+  conversation?: boolean
   /** 角色名、角色（含引入的角色）用到的技能 */
   agentName: string
   skills: string[]

@@ -560,22 +560,6 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       )
     case 'read_user_notes':
       return as(title, '', 'read')
-    // 从视频截帧：副标题写视频名和截了哪几秒（或哪一段）
-    case 'video_frames':
-      return as(
-        title,
-        [
-          String(a.path ?? '').replace(/^.*[\\/]/, ''),
-          Array.isArray(a.times)
-            ? (a.times as unknown[]).join(', ') + 's'
-            : a.start !== undefined || a.end !== undefined
-              ? `${a.start ?? 0}s – ${a.end ?? ''}${a.end !== undefined ? 's' : ''}`
-              : '',
-        ]
-          .filter(Boolean)
-          .join(' · '),
-        'read',
-      )
     // 提问和等下一句：问题本身有提问卡片，这里只说明模型在做什么
     case 'ask_user':
       return as(

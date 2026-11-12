@@ -3,6 +3,7 @@ import * as serverAttachments from '../attachments.ts'
 import * as serverAuth from '../auth.ts'
 import * as serverBridge from '../bridge.ts'
 import * as serverComfy from '../comfy.ts'
+import * as serverDownload from '../download.ts'
 import * as serverExecInvoke from '../exec/invoke.ts'
 import * as serverExecProcess from '../exec/process.ts'
 import * as serverExecRetryPolicy from '../exec/retry-policy.ts'
@@ -13,12 +14,14 @@ import * as serverSettings from '../settings.ts'
 import * as serverSlash from '../slash.ts'
 import * as serverStore from '../store.ts'
 import * as serverStyles from '../styles.ts'
+import * as serverTaskFiles from '../task-files.ts'
 import * as serverUploads from '../uploads.ts'
 import * as serverZip from '../zip.ts'
 import * as sharedAssist from '../../shared/assist.ts'
 import * as sharedBrowserExt from '../../shared/browser-ext.ts'
 import * as sharedCliSpec from '../../shared/cli-spec.ts'
 import * as sharedClis from '../../shared/clis.ts'
+import * as sharedComposer from '../../shared/composer.ts'
 import * as sharedDuration from '../../shared/duration.ts'
 import * as sharedFix from '../../shared/fix.ts'
 import * as sharedI18n from '../../shared/i18n.ts'
@@ -48,6 +51,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/auth': serverAuth,
   'server/bridge': serverBridge,
   'server/comfy': serverComfy,
+  'server/download': serverDownload,
   'server/exec/invoke': serverExecInvoke,
   'server/exec/process': serverExecProcess,
   'server/exec/retry-policy': serverExecRetryPolicy,
@@ -58,12 +62,14 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/slash': serverSlash,
   'server/store': serverStore,
   'server/styles': serverStyles,
+  'server/task-files': serverTaskFiles,
   'server/uploads': serverUploads,
   'server/zip': serverZip,
   'shared/assist': sharedAssist,
   'shared/browser-ext': sharedBrowserExt,
   'shared/cli-spec': sharedCliSpec,
   'shared/clis': sharedClis,
+  'shared/composer': sharedComposer,
   'shared/duration': sharedDuration,
   'shared/fix': sharedFix,
   'shared/i18n': sharedI18n,

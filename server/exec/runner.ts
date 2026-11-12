@@ -443,7 +443,15 @@ async function runAgent(
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
   // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂（run-setup.ts）
   const plugins =
-    def.mcp && !op ? await attachPlugins(ctx, call, { agent, resume, cwd, step, agentId }, fileEvents) : undefined
+    def.mcp && !op
+      ? await attachPlugins(
+          ctx,
+          call,
+          // 用户在聊的对话：和下面给「操控软件」工具的条件一样（orch && !orch.helper）
+          { agent, resume, cwd, step, agentId, conversation: !!orch && !orch.helper },
+          fileEvents,
+        )
+      : undefined
   if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {

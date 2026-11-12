@@ -1767,7 +1767,6 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
-  if (res === 'video') fail('在线演示不能读本机视频，截帧要在本机运行面板')
   if (res === 'tts') return demoTts(method, seg)
   // 在线演示不装插件：插件页显示空列表，插件市场要连 GitHub，演示里不能装
   if (res === 'plugins' && !id && method === 'GET')

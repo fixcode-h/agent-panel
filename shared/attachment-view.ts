@@ -25,11 +25,12 @@ export interface ItemLike {
   done?: Attachment
   state: ItemState
   /**
-   * 视频：Agent 收不了视频，发送时换成在截帧弹窗里选好的帧图片（frames）。
-   * 视频本身只引用原路径，不拷、不上传；没选帧时不发（见 needFrames）
+   * 插件认领的附件（插件接口 6，WebPlugin.attachmentIntakes）：值是「插件:id」。例如视频插件认领视频，
+   * Agent 收不了视频，发送时换成在插件弹窗里选好的帧图片（picks）。文件本身只引用原路径，不拷、不上传；
+   * 还没选时不发（见 needPicks）
    */
-  video?: boolean
-  frames?: Attachment[]
+  intake?: string
+  picks?: Attachment[]
 }
 
 /** 卡片上显示的文件大小 */
@@ -64,19 +65,20 @@ export function itemStatus(state: ItemState) {
 /** 卡片上的路径：原路径优先，没有时用拷好的数据目录路径，最后退回文件名 */
 export const itemPath = (x: Pick<ItemLike, 'source' | 'done' | 'name'>) => x.source ?? x.done?.path ?? x.name
 
-/** 卡片上的文字：路径 + 大小 + 状态（前面不加 @，用户嫌多余）；引用卡片显示原文摘要，不换 */
-export function chipTextOf(x: ItemLike) {
+/**
+ * 卡片上的文字：路径 + 大小 + 状态（前面不加 @，用户嫌多余）；引用卡片显示原文摘要，不换。
+ * intakeStatus：插件认领的附件由插件给状态（例如「3 帧」「点击选帧」），发出去的是插件选好的东西
+ */
+export function chipTextOf(x: ItemLike, intakeStatus?: string) {
   if (x.quote !== undefined || x.done?.quote !== undefined) return undefined
-  // 视频卡片的状态是选了几帧：发出去的是这些帧，不是视频
-  if (x.video) {
-    const n = x.frames?.length ?? 0
-    return { label: `${itemPath(x)} · ${formatSize(x.size)}`, status: n ? t('{n} 帧', { n }) : t('点击选帧') }
+  return {
+    label: `${itemPath(x)} · ${formatSize(x.size)}`,
+    status: x.intake && intakeStatus !== undefined ? intakeStatus : itemStatus(x.state),
   }
-  return { label: `${itemPath(x)} · ${formatSize(x.size)}`, status: itemStatus(x.state) }
 }
 
-/** 还没选帧的视频：发送前要先打开截帧弹窗选好 */
-export const needFrames = (x: ItemLike) => !!x.video && !x.frames?.length
+/** 插件认领了、还没选好要发什么的附件：发送前要先打开插件的弹窗选好 */
+export const needPicks = (x: ItemLike) => !!x.intake && !x.picks?.length
 
 /**
  * 发送时交给服务端的那份附件：已经拷好 / 传好的用它；拷贝中、拷失败的用原路径引用（ref，
@@ -90,27 +92,27 @@ export function sendAttachmentOf(x: ItemLike): Attachment | undefined {
   return undefined
 }
 
-/** 这一项会不会拦住发送：只有「还没有可发的路径」的才会（视频另看 needFrames） */
-export const blocksSend = (x: ItemLike) => !x.video && !sendAttachmentOf(x)
+/** 这一项会不会拦住发送：只有「还没有可发的路径」的才会（插件认领的另看 needPicks） */
+export const blocksSend = (x: ItemLike) => !x.intake && !sendAttachmentOf(x)
 
-/** 这一批附件交给服务端的样子：视频换成选好的帧图片 */
+/** 这一批附件交给服务端的样子：插件认领的换成插件里选好的附件（视频换成帧图片） */
 export const sendAttachments = (items: readonly ItemLike[]) =>
   items.flatMap((x) => {
-    if (x.video) return x.frames ?? []
+    if (x.intake) return x.picks ?? []
     const a = sendAttachmentOf(x)
     return a ? [a] : []
   })
 
 /**
- * 发送前的文字：视频卡片原位换成它那几帧的图片卡片，交给 Agent 时由 withAttachments 换成帧图片的路径。
- * 没选帧的视频保持原样（发送前会先拦下来选帧）
+ * 发送前的文字：插件认领的卡片原位换成插件里选好的附件卡片（视频换成那几帧的图片卡片），
+ * 交给 Agent 时由 withAttachments 换成它们的路径。还没选的保持原样（发送前会先拦下来去选）
  */
-export function withVideoFrames(text: string, items: readonly ItemLike[]) {
+export function withIntakePicks(text: string, items: readonly ItemLike[]) {
   let out = text
   for (const x of items) {
-    if (!x.video || !x.frames?.length) continue
+    if (!x.intake || !x.picks?.length) continue
     const marker = chipMarker('file', x.name)
-    out = out.split(marker).join(x.frames.map((f) => chipMarker(attachChip(f), f.name)).join(' '))
+    out = out.split(marker).join(x.picks.map((f) => chipMarker(attachChip(f), f.name)).join(' '))
   }
   return out
 }
