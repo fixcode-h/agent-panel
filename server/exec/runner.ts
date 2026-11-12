@@ -36,10 +36,9 @@ import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
-import { effortRejected, markNoEffort } from '../models.ts'
+import { effortRejected } from '../models.ts'
 import { helperGate, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 
-import { clip } from '../../shared/text.ts'
 import {
   CONTEXT_CARRY_SHARE,
   MIN_CLIP_TOKENS,
@@ -54,9 +53,7 @@ import {
   cliSwitchedText,
   systemNote,
   firstNoEffortTell,
-  noEffortRetryText,
   noEffortSkippedText,
-  restartNoteText,
   settleContextNotes,
   settleNetNotes,
   settleRetryNotes,
@@ -64,15 +61,7 @@ import {
   type NetNote,
 } from './recovery.ts'
 export { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, type ContextNote, type NetNote }
-import {
-  awaitingCompact,
-  overflowCompact,
-  CompactTracker,
-  settleCompactRow,
-  shouldRetryThrash,
-  thrashNote,
-  THRASH_RETRY_PROMPT,
-} from './compaction.ts'
+import { awaitingCompact, CompactTracker, settleCompactRow } from './compaction.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 
@@ -80,7 +69,6 @@ import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
 import { withSkillDir } from '../../shared/skill-guide.ts'
 
 import { invokeCli, type CliControl } from './invoke.ts'
-import { exitReason, stderrTail } from './process.ts'
 
 import { REDIRECT_LIMITS, REDIRECT_NOTE, redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
@@ -102,20 +90,11 @@ import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } f
 import { noteEdit } from '../turn-owners.ts'
 import { addWaiter, removeWaiter, userWaitSlot, type Waiter } from './waiters.ts'
 import {
-  EFFORT_REJECTED,
-  EnvStallNote,
-  MAX_NET_RETRIES,
-  SESSION_OTHER_PROJECT,
   canKeepAlive,
-  envStallBudget,
-  envStallFailure,
-  envStallNote,
   envStallTimeout,
-  failureHints,
   forgetPromptSent,
   isNetError,
   settleEnvStallNotes,
-  shouldRetryEnvStall,
   silentTurn,
 } from './retry-policy.ts'
 import { cancelWait, flushHeld, notes, steerNote, steers } from './steering.ts'
@@ -132,6 +111,7 @@ import { createToolRows } from './tool-rows.ts'
 import { makeStillCurrent } from './still-current.ts'
 import { newRunState } from './run-state.ts'
 import { createApply } from './run-events.ts'
+import { freshRetry, keepEnvStall, recoverFailure, type RetryState } from './run-recover.ts'
 // runAgent 里职责完整的几块拆在这些文件：模型和上限、选会话、拼输入、启动参数、进程没跑完一轮时交回什么
 import { resolveModelRun, windowLookup } from './model-run.ts'
 import { pickSession } from './session-pick.ts'
@@ -187,18 +167,10 @@ async function runWithSlot(ctx: RealContext, call: AgentCall): Promise<AgentResu
 async function runAgent(
   ctx: RealContext,
   call: AgentCall,
-  retried = false,
-  netRetries = 0,
-  retryCarry = '',
-  /** 这一串自动续接里已经写进对话的报错：续接成功后要收回成普通说明 */
-  netNotes: NetNote[] = [],
-  /** 上下文超长降级时写进对话的提示：新会话接上了要收回成普通说明 */
-  contextNotes: ContextNote[] = [],
-  /** 这一轮因为环境性失败（进程活着却没有输出）自动重试过几次：只重试一次，不能循环 */
-  envStalls = 0,
-  /** 环境性失败重试时写进对话的提示：重试成功要收回成普通说明 */
-  envStallNotes: EnvStallNote[] = [],
+  /** 一串自动重跑之间接着传的记录（见 run-recover.ts） */
+  rs: RetryState = freshRetry(),
 ): Promise<AgentResult> {
+  const { retried, retryCarry, netNotes, contextNotes, envStalls, envStallNotes } = rs
   // 单独终止这一次调用（界面上终止一个子任务）：和整个任务的停止信号合在一起，后面统一看 ctx.signal
   if (call.signal && !retried) ctx = { ...ctx, signal: anySignal(ctx.signal, call.signal) }
   // 子任务卡住到时间由面板停掉这次调用（见下面的「没有响应」检测）：记下是谁停的，返回 stalled 而不是「已停止」
@@ -1112,327 +1084,37 @@ async function runAgent(
   })
   if (early) return early
   const failed = st.result ? !st.result.ok : r.code !== 0
-  if (failed) {
-    const detail = [st.result?.error, ...errors, stderrTail(r.stderr, 6, def.stderrNoise)].filter(Boolean).join('\n')
-    // 自定义接口的模型不支持调整思考强度：记住，去掉强度再跑一次（CLI 启动时就退出，没有实际输出）
-    if (effort && !retried && EFFORT_REJECTED.test(detail)) {
-      markNoEffort(cliId, model)
-      log.warn('agent', `${def.name} 的模型 ${model} 不支持设置思考强度，去掉后重试`, {
-        task: task.id,
-        step,
-        detail: detail.slice(0, 500),
-      })
-      recoveryNote(noEffortRetryText(model, effort, detail))
-      // 说过了，重跑那次不再补「这一轮没有传」；预热轮没说，留给第一句到了再补
-      if (!st.prewarmMode) firstNoEffortTell(noEffortKey)
-      return runAgent(
-        ctx,
-        call,
-        true,
-        // 换参数重跑：续接记录保持默认（这次没有），环境性重试的计数和留痕要接着传
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        envStalls,
-        envStallNotes,
-      )
-    }
-    // 丢会话重开前留一行（原因、带没带上之前的对话、原始报错）。之前断流续接写的红卡也在这里收口：
-    // 会话都没了，后面是新会话重新执行，不能等成功后写成「从中断的地方继续了」
-    const restartNote = (why: string, carried: boolean) => {
-      settleNetNotes(netNotes, true)
-      recoveryNote(restartNoteText(why, { chat, carried, detail }))
-    }
-    // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
-    if (resume && !prewarm && !retried && SESSION_NOT_FOUND.test(detail)) {
-      delete task.sessions[sessionKey]
-      delete task.sessionDirs[sessionKey]
-      const carry = carryForRestart()
-      log.warn('agent', `${def.name} 的会话找不到了，丢掉后重开`, { task: task.id, step, detail: detail.slice(0, 500) })
-      restartNote(t('{cli} 找不到原来的会话（可能被 CLI 清理了）', { cli: def.name }), !!carry)
-      // 新会话没有之前的上下文：节点用完整提示，对话把之前的对话裁剪后带上，不然模型突然全忘了。
-      // 断流续接写的红卡已经在 restartNote 里收口，不再往下传（netRetries 照传：续接次数前后合计）
-      return runAgent(
-        ctx,
-        { ...call, prompt: call.fresh ?? call.prompt },
-        true,
-        netRetries,
-        carry,
-        [],
-        contextNotes,
-        envStalls,
-        envStallNotes,
-      )
-    }
-    // 会话存在别的项目目录里，CLI 要交互确认分叉才继续（Pi 的「Session found in different project」）：
-    // 非交互模式拿不到回答，CLI 直接按 Aborted 退出。旧任务没记会话目录时只能碰运气，撞上了就丢掉会话重开一次
-    if (resume && !prewarm && !retried && SESSION_OTHER_PROJECT.test(detail)) {
-      delete task.sessions[sessionKey]
-      delete task.sessionDirs[sessionKey]
-      log.warn('agent', `${def.name} 的会话在别的目录里，丢掉后重开`, {
-        task: task.id,
-        step,
-        cwd,
-        detail: detail.slice(0, 500),
-      })
-      const carry = carryForRestart()
-      restartNote(
-        t('{cli} 的会话存在别的项目目录里，面板没法回答它「要不要分叉到当前目录」', { cli: def.name }),
-        !!carry,
-      )
-      return runAgent(
-        ctx,
-        { ...call, prompt: call.fresh ?? call.prompt },
-        true,
-        netRetries,
-        carry,
-        [],
-        contextNotes,
-        envStalls,
-        envStallNotes,
-      )
-    }
-    // 接口拒绝了这条会话的历史（换过模型、网关换了上游，或历史里的内容片段丢了）：
-    // 之后每次请求都会失败，丢掉会话重开一次；对话把之前的记录带上，节点用完整提示
-    if (
-      resume &&
-      !prewarm &&
-      !op &&
-      !retried &&
-      (/input\.content/i.test(detail) || /text part\b[^\n]*\bnot found/i.test(detail))
-    ) {
-      delete task.sessions[sessionKey]
-      delete task.sessionDirs[sessionKey]
-      // 按预算裁剪：原来带的是不设上限的整段，重开那次已经算重试过，历史超窗口时不会再降级，直接失败
-      const carry = carryForRestart()
-      log.warn('agent', `${def.name} 的会话和当前模型不兼容，丢掉旧会话重开`, {
-        task: task.id,
-        step,
-        detail: detail.slice(0, 500),
-      })
-      restartNote(t('模型接口拒绝了 {cli} 这个会话的历史（常见于中途换了模型或网关）', { cli: def.name }), !!carry)
-      return runAgent(
-        ctx,
-        chat ? call : { ...call, prompt: call.fresh ?? call.prompt },
-        true,
-        netRetries,
-        carry,
-        [],
-        contextNotes,
-        envStalls,
-        envStallNotes,
-      )
-    }
-    const hints = failureHints(detail, def)
-    // 先写进程怎么结束的（退出码、被外部杀掉时的信号）：被 kill -9 时退出码是 null，只看 stderr 会误判原因
-    const how = exitReason(r)
-    const head = how
-      ? t('{cli} 执行失败（{reason}）：', { cli: def.name, reason: how })
-      : t('{cli} 执行失败：', { cli: def.name })
-    const raw = clip(detail || t('没有更多信息'), 1500)
-    const message = [head, ...hints, hints.length ? `\n${t('原始输出：')}\n${raw}` : raw].join('\n')
-    // 环境性卡住（请求超时，但进程还活着、一个字都没输出）：面板这边没等够，不是用户的要求有问题。
-    // 先把这件事写进对话，放宽这一轮的等待再跑一次（只一次，不能循环）；
-    // 这时旧进程已经结束（invokeCli 返回前它就退出了），不会留着孤儿进程
-    const budget = envStallBudget(cliId)
-    if (
-      shouldRetryEnvStall({
-        stall: !!st.result?.envStall,
-        retries: envStalls,
-        aborted: ctx.signal.aborted,
-        prewarm,
-        budget,
-      })
-    ) {
-      const timeoutMs = envStallTimeout(cliId)
-      const note: TaskMessage = {
-        id: ctx.newId(),
-        role: 'system',
-        agentId,
-        step,
-        text: [message, '', envStallNote(timeoutMs)].join('\n'),
-        tools: [],
-        error: true,
-        alert: makeAlert('warn', raw, 'no_response'),
-        at: new Date().toISOString(),
-      }
-      task.messages.push(note)
-      log.warn('agent', `${def.name} 没有响应（进程还活着、没有输出），放宽等待自动重试一次`, {
-        task: task.id,
-        step,
-        timeoutMs,
-      })
-      ctx.changed(true)
-      return runAgent(ctx, call, retried, netRetries, retryCarry, netNotes, contextNotes, envStalls + 1, [
-        ...envStallNotes,
-        { msg: note, base: message },
-      ])
-    }
-    // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次。
-    // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
-    const session = task.sessions[sessionKey]
-    if (isNetError(detail) && session && !prewarm && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
-      const note: TaskMessage = {
-        id: ctx.newId(),
-        role: 'system',
-        agentId,
-        step,
-        text: [
-          message,
-          '',
-          t('正在自动续接会话重试（第 {n}/{max} 次）…', { n: netRetries + 1, max: MAX_NET_RETRIES }),
-        ].join('\n'),
-        tools: [],
-        error: true,
-        alert: makeAlert('warn', raw, 'network'),
-        at: new Date().toISOString(),
-      }
-      task.messages.push(note)
-      netNotes = [...netNotes, { msg: note, base: message, n: netRetries + 1 }]
-      log.warn('agent', `${def.name} 连接中断，自动续接第 ${netRetries + 1} 次`, { task: task.id, step, detail })
-      ctx.changed(true)
-      return runAgent(
-        ctx,
-        {
-          ...call,
-          // 原来的提示存进 fresh：续接时原会话没了（会话找不到等）会改用 fresh 开新会话，
-          // 不存的话发进空会话的是这句「从中断的地方继续」，新会话根本不知道要做什么
-          fresh: call.fresh ?? call.prompt,
-          prompt:
-            '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' +
-            '如果是在一次写入很长的文件时断开的，请分几次写：先写前一部分，再分段追加，每次不要太长。',
-        },
-        retried,
-        netRetries + 1,
-        '',
-        netNotes,
-        contextNotes,
-        envStalls,
-        envStallNotes,
-      )
-    }
-    // 自动压缩抖动：CLI 压缩完马上又被一次工具输出填满、放弃了这一轮。多半是一次读进来太多，
-    // 在原会话里续一轮、让模型分段读取常常就过去了；只续一次，续之前在对话里写一行警告（不悄悄重试）
-    if (
-      shouldRetryThrash({
-        detail,
-        pattern: def.compactThrash,
-        session: !!session,
-        prewarm,
-        compact: op?.kind === 'compact',
-        aborted: ctx.signal.aborted,
-        tried: contextNotes.some((n) => n.thrash),
-      })
-    ) {
-      const note = thrashNote({ id: ctx.newId(), agentId, step, message, raw })
-      task.messages.push(note)
-      log.warn('agent', `${def.name} 自动压缩抖动，在原会话里续一轮`, {
-        task: task.id,
-        step,
-        detail: detail.slice(0, 500),
-      })
-      ctx.changed(true)
-      return runAgent(
-        ctx,
-        // 原来的提示存进 fresh：续接时原会话没了会改用它开新会话（和断流续接一样）
-        { ...call, fresh: call.fresh ?? call.prompt, prompt: THRASH_RETRY_PROMPT },
-        retried,
-        netRetries,
-        '',
-        netNotes,
-        [...contextNotes, { msg: note, base: message, thrash: true }],
-        envStalls,
-        envStallNotes,
-      )
-    }
-    // 上下文已经超过模型上限：同一段历史再发一次只会一样被拒，压缩也一样（它要把历史整段重发）。
-    // 唯一能做的自救是丢掉会话、把对话裁剪到预算内换成新会话接着做；只降一次（retried）
-    const fallback = contextFallbackKind({
-      detail,
-      retried,
+  if (failed)
+    return recoverFailure({
+      ctx,
+      call,
+      task,
+      def,
+      cliId,
+      model,
+      effort,
+      sessionKey,
+      step,
+      agentId,
+      cwd,
+      chat,
+      op,
       prewarm,
-      aborted: ctx.signal.aborted,
-      compact: op?.kind === 'compact',
-      chatResume: Boolean(chat && resume),
+      resume: !!resume,
+      prewarmMode: st.prewarmMode,
+      result: st.result,
+      r,
+      errors,
+      rs,
+      noEffortKey,
+      compaction,
+      au,
+      recoveryNote,
+      carryForRestart,
+      carryUpto,
+      carryBudget,
+      rerun: (next, nextRs) => runAgent(ctx, next, nextRs),
     })
-    if (fallback) {
-      // 压缩：不再请求模型（它照样会拒），把裁剪后的记录当作摘要写进 rewind，按压缩成功返回，下一轮开新会话带上
-      if (fallback === 'compact') {
-        const summary = overflowCompact({
-          task,
-          sessionKey,
-          clipped: clippedTranscript(task, task.messages.length, carryBudget()),
-          usage: au(),
-          tracker: compaction,
-          msg: (text) => ({
-            id: ctx.newId(),
-            role: 'system',
-            agentId,
-            step,
-            text,
-            tools: [],
-            at: new Date().toISOString(),
-          }),
-        })
-        ctx.changed(true)
-        log.warn('agent', `${def.name} 压缩上下文时仍然超过上限，改用裁剪后的记录开新会话`, {
-          task: task.id,
-          step,
-          detail: detail.slice(0, 500),
-        })
-        return { ok: true, text: summary }
-      }
-      // 普通一轮：丢掉会话，把对话裁剪后交给新会话（复用 retryCarry 的续接路径）
-      if (fallback === 'restart') {
-        delete task.sessions[sessionKey]
-        delete task.sessionDirs[sessionKey]
-        // 和丢会话重开同一份裁剪（审查操作也走这里，所以不用 carryForRestart 的「操作不带」）
-        const carry = restartCarry(task, carryUpto(), carryBudget())
-        const note: TaskMessage = {
-          id: ctx.newId(),
-          role: 'system',
-          agentId,
-          step,
-          text: [
-            message,
-            '',
-            t('这次请求的上下文已经超过 {cli} 的上限。正在丢掉旧会话，把对话裁剪后开新会话接着做…', { cli: def.name }),
-          ].join('\n'),
-          tools: [],
-          error: true,
-          alert: makeAlert('warn', raw, 'context'),
-          at: new Date().toISOString(),
-        }
-        task.messages.push(note)
-        log.warn('agent', `${def.name} 的上下文超过上限，丢掉旧会话并裁剪后重开`, {
-          task: task.id,
-          step,
-          detail: detail.slice(0, 500),
-        })
-        ctx.changed(true)
-        return runAgent(
-          ctx,
-          call,
-          true,
-          netRetries,
-          carry,
-          netNotes,
-          [...contextNotes, { msg: note, base: message }],
-          envStalls,
-          envStallNotes,
-        )
-      }
-    }
-    log.error('agent', `${def.name} 执行失败`, { task: task.id, step, code: r.code, detail })
-    // 两次都没等到响应：失败卡片里写明面板已经重试过一次，不让用户以为是第一次就失败
-    const tried = [
-      netRetries ? t('已自动续接 {n} 次，仍然失败。', { n: netRetries }) : '',
-      envStalls ? envStallFailure(envStalls) : '',
-      contextNotes.some((n) => n.thrash) ? t('已在原会话里续过一轮，仍然失败。') : '',
-    ].filter(Boolean)
-    return { ok: false, error: tried.length ? [message, '', ...tried].join('\n') : message }
-  }
   // 这一轮 CLI 报了结束，却什么都没收到（没有正文、没调工具、没改文件）：CLI 或网关出了问题。
   // 按「错误一律显示」写进对话，这一轮按失败结束；不自动重试，由用户决定重发、继续还是换模型。
   // 不限定对话：子 Agent（工作流节点、并行子任务）同样可能空着收尾，那一路要让失败报回派它的一方。
@@ -1523,17 +1205,7 @@ async function runAgent(
       reason: t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }),
     }
     // 压缩也是这一轮里的一次完整调用：环境性重试的计数和留痕要接着传，否则重置后可能再重试一次
-    const c = await runAgent(
-      ctx,
-      { ...call, op: auto },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      envStalls,
-      envStallNotes,
-    )
+    const c = await runAgent(ctx, { ...call, op: auto }, keepEnvStall(rs))
     settleCompactRow(auto, c)
     if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true, makeAlert('error', c.error))
   }
