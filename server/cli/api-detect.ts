@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { CLIS, type CliDefinition } from '../shared/clis.ts'
+import { CLIS, type CliDefinition } from '../../shared/clis.ts'
 import {
   apiProvider,
   isLegacyPanelKey,
@@ -14,13 +14,13 @@ import {
   type ApiProtocol,
   type ApiSource,
   type DetectedApi,
-} from '../shared/accounts.ts'
-import { cliSettings } from '../shared/settings.ts'
-import { t } from '../shared/i18n.ts'
-import { expandHome } from './cli/extras.ts'
-import { childEnv } from './exec/process.ts'
-import { parseToml } from './mcp-store.ts'
-import { getSettings } from './settings.ts'
+} from '../../shared/accounts.ts'
+import { cliSettings } from '../../shared/settings.ts'
+import { t } from '../../shared/i18n.ts'
+import { expandHome } from './extras.ts'
+import { childEnv } from '../exec/process.ts'
+import { parseToml } from '../mcp-store.ts'
+import { getSettings } from '../settings.ts'
 
 /** 面板改用 API 时写进 CLI 配置的提供方名字，见 shared/clis 里的 api.edits */
 const PANEL_PROVIDER = 'agentpanel'

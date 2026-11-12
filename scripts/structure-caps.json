@@ -73,9 +73,6 @@
     "server": [
       "accounts.ts",
       "agent-aliases.ts",
-      "api-detect.ts",
-      "api-slots.ts",
-      "api-speed.ts",
       "ask-mcp.ts",
       "ask-push.ts",
       "asks.ts",

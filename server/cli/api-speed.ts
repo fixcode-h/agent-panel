@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { ApiConfig, apiForProtocol, apiProtocols, type ApiProtocol } from '../shared/accounts.ts'
-import { apiBaseUrl } from '../shared/api-vendors.ts'
-import { t } from '../shared/i18n.ts'
-import { probeRequest } from './accounts.ts'
-import { hasContent, largePrompt, type SpeedRow } from '../shared/api-speed.ts'
+import { ApiConfig, apiForProtocol, apiProtocols, type ApiProtocol } from '../../shared/accounts.ts'
+import { apiBaseUrl } from '../../shared/api-vendors.ts'
+import { t } from '../../shared/i18n.ts'
+import { probeRequest } from '../accounts.ts'
+import { hasContent, largePrompt, type SpeedRow } from '../../shared/api-speed.ts'
 
 /**
  * API 测速（设置 › API 的「测速」）：对这个 API 支持的每种协议各发一个小请求、一个大请求（流式），

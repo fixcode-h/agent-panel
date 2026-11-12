@@ -28,7 +28,7 @@ import { taskLog } from '../tasks/log.ts'
 
 import { agentUsage, contextUsage, ownContext } from './usage-record.ts'
 import { seenWhileWatched } from '../presence.ts'
-import { ApiSlot } from '../api-slots.ts'
+import { ApiSlot } from '../cli/api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
 import { noteEdit } from '../turn-owners.ts'
 import { canKeepAlive, envStallTimeout, forgetPromptSent, silentTurn } from './retry-policy.ts'

@@ -170,7 +170,7 @@
       "lines": 120
     },
     {
-      "file": "server/api-config.test.ts",
+      "file": "server/cli/api-config.test.ts",
       "layer": "integration",
       "markers": [
         "http-server"
@@ -179,28 +179,28 @@
       "lines": 661
     },
     {
-      "file": "server/api-detect.test.ts",
+      "file": "server/cli/api-detect.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 5,
       "lines": 87
     },
     {
-      "file": "server/api-protocol.test.ts",
+      "file": "server/cli/api-protocol.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 4,
       "lines": 103
     },
     {
-      "file": "server/api-slots.test.ts",
+      "file": "server/cli/api-slots.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 6,
       "lines": 170
     },
     {
-      "file": "server/api-thinking.test.ts",
+      "file": "server/cli/api-thinking.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",

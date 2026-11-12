@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiSlot, apiUsage, setApiLimits } from '../api-slots.ts'
+import { ApiSlot, apiUsage, setApiLimits } from '../cli/api-slots.ts'
 import { clearApiWait, markApiWait } from './api-wait.ts'
 
 import type { ApiWait } from '../../shared/schema.ts'

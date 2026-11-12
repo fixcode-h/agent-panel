@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { getCli } from '../shared/clis.ts'
+import { getCli } from '../../shared/clis.ts'
 import {
   ApiConfig,
   CliAuth,
@@ -19,12 +19,12 @@ import {
   setModelEfforts,
   setModelInput,
   setModelLimits,
-} from '../shared/accounts.ts'
-import { mergeJson, fetchApiBalance, fetchApiModels, probeApiModel } from './accounts.ts'
+} from '../../shared/accounts.ts'
+import { mergeJson, fetchApiBalance, fetchApiModels, probeApiModel } from '../accounts.ts'
 import { toApi } from './api-detect.ts'
-import { agentRun, defaultSettings } from '../shared/settings.ts'
-import { CliSettings } from '../shared/schema.ts'
-import { t } from '../shared/i18n.ts'
+import { agentRun, defaultSettings } from '../../shared/settings.ts'
+import { CliSettings } from '../../shared/schema.ts'
+import { t } from '../../shared/i18n.ts'
 
 const auth = CliAuth.parse({
   home: '~',

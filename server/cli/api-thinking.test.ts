@@ -39,7 +39,7 @@ writeFileSync(
   'utf8',
 )
 
-const { applyApiToClis } = await import('./accounts.ts')
+const { applyApiToClis } = await import('../accounts.ts')
 
 test('一键更新给 Pi 写思考强度：每档取值表和每个模型的默认强度', async () => {
   assert.deepEqual(await applyApiToClis('a1'), ['pi'])

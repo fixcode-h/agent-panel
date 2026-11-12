@@ -1709,7 +1709,7 @@ async function runHelper(
     host.changed(true)
   }
   // 派出就开跑，不按任务限数排队（用户要求）：一个节点最多派几个由 spawn 的 MAX_HELPERS_PER_STEP 管，
-  // 真要限流用 API 设置里的并发上限（server/api-slots.ts），那是按厂家限流各算各的
+  // 真要限流用 API 设置里的并发上限（server/cli/api-slots.ts），那是按厂家限流各算各的
   try {
     if (ac.signal.aborted) return stopped()
     // 工作流被叫停、还没开始的：暂停（被打断），继续时能 resume 它；不然停在「待做」既不能接着做、也挡不住另派

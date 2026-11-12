@@ -6,7 +6,7 @@ import { defaultSettings, migrateRemovedClis, migrateSettingsDefaults } from '..
 
 import { BROKEN_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 import { applyServerLang } from './lang.ts'
-import { setApiLimits } from './api-slots.ts'
+import { setApiLimits } from './cli/api-slots.ts'
 import { setEnabledPlugins } from '../shared/plugins/index.ts'
 
 const FILE = dataPath('settings.json')

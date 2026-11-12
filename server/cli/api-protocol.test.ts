@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { apiInjection, type ApiConfig, type ApiProtocol } from '../shared/accounts.ts'
-import { getCli } from '../shared/clis.ts'
-import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
-import { parserFor } from './exec/parsers.ts'
-import { pickPiBuiltin, type PiBuiltinModel } from './models.ts'
+import { apiInjection, type ApiConfig, type ApiProtocol } from '../../shared/accounts.ts'
+import { getCli } from '../../shared/clis.ts'
+import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
+import { parserFor } from '../exec/parsers.ts'
+import { pickPiBuiltin, type PiBuiltinModel } from '../models.ts'
 
 const api = (protocol: ApiProtocol, baseUrl: string): ApiConfig => ({
   id: 'a1',

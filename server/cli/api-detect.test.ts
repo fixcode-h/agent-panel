@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getCli } from '../shared/clis.ts'
-import { ApiSource } from '../shared/accounts.ts'
+import { getCli } from '../../shared/clis.ts'
+import { ApiSource } from '../../shared/accounts.ts'
 import { parseDotenv, resolveValue, toApi } from './api-detect.ts'
-import { parseToml } from './mcp-store.ts'
+import { parseToml } from '../mcp-store.ts'
 
 test('识别 API：Codex 的 config.toml 里自己接的提供方，密钥从 env_key 指的环境变量取', () => {
   const def = getCli('codex')!
