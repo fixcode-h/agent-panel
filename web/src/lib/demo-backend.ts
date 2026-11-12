@@ -12,6 +12,7 @@ import { decideDiagnosis } from '@shared/bug-diagnosis'
 import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
+import type { TrashRow } from '@shared/api-contract/trash'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
@@ -136,7 +137,6 @@ import {
   trackWait,
   trashLeftDays,
   withAttachments,
-  type TrashRow,
 } from '@shared/task'
 import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
 import { settlePlan } from '@shared/plan'
