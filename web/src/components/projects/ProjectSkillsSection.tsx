@@ -28,9 +28,12 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { CliSkills } from '@/components/settings/CliSkills'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
+import type { ConfigFinding } from '@shared/config-scan'
+import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
+import { configScanApi } from '@/lib/api-config-scan'
 
 /** 一个技能的内容和随内容一起读出来的附带文件 */
-type Opening = { skill: ProjectSkill; content: string; files: string[] }
+type Opening = { skill: ProjectSkill; content: string; files: string[]; scan?: ConfigFinding[]; scanScope?: string }
 
 /** 列出这项技能会给哪些 Agent 读到（同一个目录常被几个 Agent 共用） */
 const cliNames = (ids: string[]) => ids.map((id) => CLIS.find((c) => c.id === id)?.name ?? id).join(t('、'))
@@ -84,7 +87,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
   const open = async (skill: ProjectSkill) => {
     try {
       const f = await api.projectSkillFile(projectId, skill.source, skill.name)
-      setEditing({ skill, content: f.content, files: f.files })
+      setEditing({ skill, content: f.content, files: f.files, scan: f.scan, scanScope: f.scanScope })
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -195,6 +198,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                         >
                           <p className="flex items-center gap-2 text-body">
                             <span className="truncate font-mono">{s.name}</span>
+                            {s.scan && <ScanBadge summary={s.scan} className="shrink-0" />}
                             {s.issues.length > 0 && (
                               <span className="chip-lift shrink-0 rounded-full bg-warning/15 px-1.5 py-px text-caption text-warning">
                                 {t('{n} 个问题', { n: s.issues.length })}
@@ -485,6 +489,7 @@ function EditSkillDialog({
   const [busy, setBusy] = useState(false)
   const issues = skillIssues(skill.name, content)
   const changed = content !== opening.content
+  const [scan, setScan] = useState(opening.scan ?? [])
   const save = async () => {
     setBusy(true)
     try {
@@ -536,6 +541,13 @@ function EditSkillDialog({
           </p>
         )}
       </div>
+      <ScanFindings
+        findings={scan}
+        onIgnore={async (f) => {
+          await configScanApi.ignore(f, opening.scanScope ?? '')
+          setScan((l) => l.filter((x) => x !== f))
+        }}
+      />
       <Textarea
         aria-label={t('SKILL.md 内容')}
         value={content}

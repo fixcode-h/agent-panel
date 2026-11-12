@@ -1,3 +1,4 @@
+import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
 import { stat } from 'node:fs/promises'
@@ -473,6 +474,8 @@ async function runAgent(
     toolStart.delete(x)
     x.ms = Date.now() - t0
     delete x.startedAt
+    // 前台命令跑了多久按项目记下：跑过一分钟以上的，下次在前台跑时长命令守卫让它交给后台（command-times.ts）
+    if (x.kind === 'run' && task.projectId) noteCommandTime(task.projectId, x.input ?? x.label, x.ms)
   }
   // 按调用 id 找工具行，补晚到的结果和边跑边来的输出（tool-rows.ts）
   const toolRows = createToolRows(endTool)

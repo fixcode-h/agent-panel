@@ -1,6 +1,7 @@
 import { CLIS } from './clis.ts'
 import { t } from './i18n.ts'
 import { frontField, libraryName } from './library.ts'
+import type { ScanSummary } from './config-scan/index.ts'
 
 /**
  * 项目里的 Skill：项目目录下各 Agent 的 skills.repo（`.agents/skills`、`.claude/skills`……）里
@@ -22,6 +23,8 @@ export interface ProjectSkill {
   clis: string[]
   /** 解析出来的问题，空数组表示格式没问题 */
   issues: string[]
+  /** 配置安全扫描中级以上的条数（没有就不带） */
+  scan?: ScanSummary
 }
 
 /** 技能列表：能放技能的目录（现在存不存在）+ 各目录下的技能 */

@@ -1,5 +1,15 @@
 import { Hono } from 'hono'
-import { BUILTIN_HOOKS, builtinOn, builtinParam, HookEventName, type HookDefInput } from '../../shared/hook-defs.ts'
+import {
+  BUILTIN_HOOKS,
+  HOOK_TIERS,
+  builtinOn,
+  builtinParam,
+  tierChanged,
+  tierDefault,
+  HookEventName,
+  type HookDefInput,
+  type HookTier,
+} from '../../shared/hook-defs.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { knownVersion } from '../detect.ts'
 import { hookEventsFor } from '../../shared/hooks.ts'
@@ -14,6 +24,7 @@ import {
   setBuiltinParam,
   setCliOff,
   setProjectBuiltin,
+  setTier,
 } from './store.ts'
 import { watchTaskEvents } from './notify.ts'
 import { onTaskChange } from '../task-store.ts'
@@ -55,6 +66,8 @@ export function hooksApi(deps?: {
           name: h.name(),
           description: h.description(),
           defaultOn: h.defaultOn,
+          tier: h.tier,
+          tierOn: tierDefault(data, h, projectId),
           on: builtinOn(data, h, projectId),
           globalOn: builtinOn(data, h),
           projectOn: projectId ? (data.projects[projectId]?.[h.id] ?? null) : null,
@@ -66,6 +79,10 @@ export function hooksApi(deps?: {
             value: builtinParam(data, h, p.key),
           })),
         })),
+        // 档位：全局的、这个项目选的（没选为 null，跟着全局），和这一层逐个改过几个
+        tier: data.tier,
+        projectTier: projectId ? (data.projectTiers[projectId] ?? null) : null,
+        tierChanged: tierChanged(data, projectId),
         hooks: data.hooks,
         // 开着的插件带的钩子（插件接口 3）：只能开关，定义跟着插件包走
         plugins: activePluginHooks(data).map((h) => ({
@@ -104,7 +121,16 @@ export function hooksApi(deps?: {
       // 带 projectId 是这个项目单独的开关；on 为 null 表示去掉单独的设置、跟着全局
       if (typeof body.projectId === 'string' && body.projectId)
         await setProjectBuiltin(body.projectId, h.id, body.on === null ? null : body.on === true)
-      else await setBuiltin(h.id, body.on === true, h.defaultOn)
+      else await setBuiltin(h.id, body.on === true)
+      return c.json({ ok: true })
+    })
+    .put('/tier', async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as { tier?: unknown; projectId?: unknown }
+      const projectId = typeof body.projectId === 'string' ? body.projectId : ''
+      const ok = HOOK_TIERS.includes(body.tier as HookTier)
+      // 只有项目层能选「跟着全局」（null）
+      if (!ok && !(projectId && body.tier === null)) return c.json({ error: t('参数不对') }, 400)
+      await setTier(ok ? (body.tier as HookTier) : null, projectId)
       return c.json({ ok: true })
     })
     .put('/plugins/:id', async (c) => {

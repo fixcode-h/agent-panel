@@ -3,6 +3,7 @@ import path from 'node:path'
 import { capture } from './exec/process.ts'
 import { runShell as runShellIn } from './merge-build.ts'
 import { currentShell } from './shells.ts'
+import type { ShellInfo } from '../shared/shells.ts'
 import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
 import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/panel-tools.ts'
@@ -11,6 +12,7 @@ import { failLostWaits } from '../shared/plan-lost.ts'
 import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 import { createDigest, digestText, type LogDigest } from '../shared/log-digest.ts'
 import { openJobLog } from './bg-log.ts'
+import { notRunReason } from './bg-sanity.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -66,6 +68,11 @@ export interface BgJob {
    * 不算对话在等它（awaitedJob），计划不挂等待；中途自己退出了照常把结果推回（多半是起不来或崩了）
    */
   service?: boolean
+  /**
+   * 指定用哪个 shell 起进程（面板自己跑的项目测试步骤，按步骤标的环境，见 server/step-run.ts）；
+   * 不带的（Agent 交来的命令）用设置里选的命令行环境，Agent 是按那个 shell 的语法写的命令
+   */
+  shell?: ShellInfo & { distro?: string }
 }
 
 /**
@@ -384,7 +391,7 @@ export function createBackground(
     const file = deps.logDir ? openJobLog(deps.logDir, j.taskId, j.id, j.command) : null
     if (file) j.logFile = file.file
     const r = await runShell(j.command, j.cwd, {
-      shell: await currentShell(),
+      shell: j.shell ?? (await currentShell()),
       timeoutMs: j.timeoutMs,
       signal: ac.signal,
       env: j.env,
@@ -414,7 +421,13 @@ export function createBackground(
     j.changed = !!before && !!after && before !== after
     if (r.spawnError) j.lines.push(r.spawnError)
     if (r.killed === 'timeout') j.lines.push(`（跑满 ${fmtDuration(j.timeoutMs)} 的限时还没结束，面板已停止它）`)
-    const state = r.killed === 'stopped' ? 'stopped' : r.code === 0 && !r.spawnError ? 'done' : 'failed'
+    let state: BgJob['state'] = r.killed === 'stopped' ? 'stopped' : r.code === 0 && !r.spawnError ? 'done' : 'failed'
+    // 退出码 0 却明显没跑起来（cmd 只打了版本横幅、UE 编译几秒就完还没有 UBT 日志）：按失败算，不报成功（bg-sanity.ts）
+    const why = state === 'done' ? notRunReason(j.command, j.lines, now() - Date.parse(j.startedAt)) : ''
+    if (why) {
+      j.lines.push(why)
+      state = 'failed'
+    }
     // 已经被停止兜底置过终态（close 来晚了）：不再改状态，也不重复推结果
     if (!settle(j, state, { code: r.code })) return
     // 被停止之后：普通命令不再把结果推回去，否则会把刚停下的对话又拉起新的一轮；父对话测试要交回去（见 settle）
@@ -460,6 +473,8 @@ export function createBackground(
       notifyOnStop?: boolean
       /** 常驻服务（见 BgJob.service） */
       service?: boolean
+      /** 指定 shell（见 BgJob.shell） */
+      shell?: BgJob['shell']
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
@@ -485,6 +500,7 @@ export function createBackground(
               ? MAX_TIMEOUT_MS
               : DEFAULT_TIMEOUT_MS,
         ...(input.service ? { service: true } : {}),
+        ...(input.shell ? { shell: input.shell } : {}),
         ...(input.env?.length ? { env: input.env } : {}),
         // 没带就不写：普通后台命令被停下时结果照旧不推回
         ...(input.notifyOnStop ? { notifyOnStop: true } : {}),

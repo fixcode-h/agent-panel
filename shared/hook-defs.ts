@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
+import { DEFAULT_TIER, HOOK_TIERS } from './hook-builtins.ts'
 import { unwrapShell } from './shell-command.ts'
 
 /**
@@ -97,6 +98,12 @@ export type HookDefInput = z.input<typeof HookDef>
 // 内置钩子的清单、参数和开关的取法在 hook-builtins.ts（这里转出去，老的引用不用改）
 export {
   BUILTIN_HOOKS,
+  HOOK_TIERS,
+  DEFAULT_TIER,
+  tierOn,
+  tierDefault,
+  tierChanged,
+  type HookTier,
   builtinOn,
   builtinParam,
   builtinList,
@@ -108,6 +115,10 @@ export {
 /** 数据目录里 hooks.json 的形状：内置钩子的开关（只记改过默认值的）和用户的钩子 */
 export const HooksData = z.object({
   builtins: z.record(z.string(), z.boolean()).default({}),
+  /** 全局档位：没逐个改过的内置钩子按它开关（旧数据没有这个字段，按标准，行为和以前一样） */
+  tier: z.enum(HOOK_TIERS).default(DEFAULT_TIER),
+  /** 按项目选的档位（项目 id → 档位）：选了就不再跟全局，项目里逐个改的仍然优先 */
+  projectTiers: z.record(z.string(), z.enum(HOOK_TIERS)).default({}),
   /** 按项目单独设的内置钩子开关（项目 id → 钩子 id → 开 / 关），覆盖全局；没设的跟着全局 */
   projects: z.record(z.string(), z.record(z.string(), z.boolean())).default({}),
   /**
@@ -205,8 +216,20 @@ export function globMatch(glob: string, file: string): boolean {
   return new RegExp(`^${re}$`).test(f)
 }
 
-/** 一段两头的引号（拆段时引号里的 && 也被切开，剩下半边引号）：比前缀前去掉 */
-const unquote = (s: string) => s.replace(/^["']+|["']+$/g, '').trim()
+/**
+ * 一段两头的引号（拆段时引号里的 && 也被切开，剩下半边引号）：比前缀前去掉。
+ * 引号成对时只去掉整段外面包的那一层：`"D:\Program Files\…\Build.bat" 参数` 开头的引号要留着，
+ * 去掉了程序名就成了 `D:\Program`，长命令守卫认不出这是编译（用户 2026-11-12 报前台 Build.bat 没被拦）
+ */
+const unquote = (s: string) => {
+  const t = s.trim()
+  const even = (q: string) => (t.split(q).length - 1) % 2 === 0
+  if (!even('"') || !even("'")) return t.replace(/^["']+|["']+$/g, '').trim()
+  const q = t[0]
+  if ((q === '"' || q === "'") && t.length > 1 && t.endsWith(q) && !t.slice(1, -1).includes(q))
+    return t.slice(1, -1).trim()
+  return t
+}
 
 /**
  * shell 命令拆成一段一段（按 &&、||、;、|、换行）：模型常写成 `cd 项目 && npm test`，按整条命令的开头比

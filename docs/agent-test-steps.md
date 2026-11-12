@@ -491,7 +491,7 @@ node scripts/test-layers.mjs --report                 # 分层基线：每个文
 - 子对话只改代码、做不用编译的检查（Lua 用 `luac -p`）。改了 C++ 才申请编译：有独立分支的 `submit_merge` 带 `build`（默认 true），合回后面板替它向父对话申请；共用目录的用 `request_build`。改动不涉及 C++ 时面板不申请（见上面「按改动范围筛选」）。
 - 父对话收到申请（或用户要求）才调用 `request_build`：面板跑勾了「合并时编译」的步骤（没有就认名字带「编译」的），排进后台独占队列。
 - 占位按编译目录：同一目录同一时间只编译一次，别的父对话占着时排在后面，双方都会收到说明；各自 worktree 的目录互不占位。
-- 子对话和父对话用 `run_background` 跑 Build.bat、UBT、UHT、RunUAT、Editor 都会被拒绝，不能绕过排队。
+- 前台命令工具里跑 Build.bat、UBT、UHT、RunUAT、Editor 会被长命令守卫拦下；交给 `run_background` 的不拒收，面板分流：子对话的转成向父对话的编译申请，父对话的排进编译目录的占位队列（ADR 0006 补充 2026-11-12）。
 - 父对话之间用 `list_peers` / `message_peer` 协调。
 
 长命令（完整测试、编译）可以用 `run_background` 交给面板在后台跑，CLI 先去做别的，跑完结果自动推回对话；

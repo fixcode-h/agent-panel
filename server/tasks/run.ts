@@ -439,17 +439,34 @@ export function createRun(sc: TasksScope) {
         runBackground:
           task.mode === 'chat' && dir
             ? async (input) => {
-                // UE 的编译归父对话：子对话交来的编译命令不跑，父对话也走 request_build 占位，不从这里绕过排队
-                if (ueRole && isUeBuildCommand(input.command))
-                  return {
-                    ok: false,
-                    info:
-                      ueRole === 'child'
-                        ? 'UE 项目里子对话不编译：改完向父对话申请（独立分支里用 submit_merge 并保持 build 为 true，否则用 request_build）。'
-                        : 'UE 编译要用 request_build 申请：面板按编译目录占位排队，不从后台命令直接跑。',
+                // UE 的编译归父对话、按编译目录占位（ADR 0004）。以前这里一律拒收、让它改用 request_build，
+                // request_build 坏掉时 Agent 只能去前台硬跑（用户 2026-11-12 报）。现在不拒收，面板替它分流：
+                // 子对话交来的转成向父对话的申请，父对话交来的排进编译目录的占位队列（ADR 0006 补充 2026-11-12）
+                if (ueRole && isUeBuildCommand(input.command)) {
+                  if (ueRole === 'child') {
+                    const r = await sc.childRequestBuild(
+                      entry.task,
+                      `交来的编译命令（子对话不自己编译，面板转成了申请）：${input.command}`,
+                    )
+                    return r.ok
+                      ? {
+                          ok: true,
+                          info: `UE 项目里子对话不自己编译，面板已把这条编译命令转成向父对话的编译申请：${r.info}`,
+                        }
+                      : r
                   }
+                  if (!found) return { ok: false, info: '找不到这个对话所在的项目，没法按编译目录占位编译' }
+                  return sc.parentRequestBuild(entry.task, found, `run_background 交来的编译：${input.name}`, [], {
+                    name: input.name,
+                    command: input.command,
+                    cwd: input.cwd,
+                    timeoutMinutes: input.timeoutMinutes,
+                  })
+                }
                 return sc.background.start({
                   ...input,
+                  // 编译会抢文件锁：没写 exclusive 的 UE 编译也按目录排队
+                  exclusive: input.exclusive || isUeBuildCommand(input.command),
                   // 交来的 service 原样带上（BgJob.service）：常驻服务不催、不算在等结果
                   taskId: task.id,
                   root: dir,

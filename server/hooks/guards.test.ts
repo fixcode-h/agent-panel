@@ -174,8 +174,9 @@ test('长命令转后台：项目测试步骤里要编译、跑得久的（合�
 test('长命令转后台：UE 编译打包、整份装依赖放前台时拒绝，加一个包照常（用户 2026-11-11 要求重新规划后台命令）', () => {
   assert.match(
     longDeny(ctx(), sh('"G:/UE_5.4/Engine/Build/BatchFiles/Build.bat" MyGameEditor Win64 Development')),
-    /编译、打包或装依赖/,
+    /UE 编译[\s\S]*run_background[\s\S]*编译目录占位/,
   )
+  assert.match(longDeny(ctx(), sh('cmake --build build')), /编译、打包或装依赖/)
   assert.match(longDeny(ctx(), sh('cd web && npm ci')), /run_background/)
   assert.equal(longDeny(ctx(), sh('npm install lodash')), '')
   assert.equal(longDeny(ctx({ canBackground: false }), sh('npm ci')), '', '没有后台工具时不拦')
@@ -251,4 +252,14 @@ test('取消后删临时日志：不许整文件还原，一处一处删', () =>
   assert.match(bugDeny(ctx({ task }), sh('git restore src/a.ts')), /一处一处删/)
   assert.match(bugDeny(ctx({ task }), sh('p4 revert src/a.ts')), /一处一处删/)
   assert.doesNotMatch(bugDeny(ctx({ task }), sh('git status')), /一处一处删/)
+})
+
+test('长命令转后台：这个项目里实测跑过一分钟以上的命令，下次放前台时拒绝（后台命令重新设计 2026-11-12）', () => {
+  const slow = (seg: string) => (seg.startsWith('npm run build') ? 95_000 : undefined)
+  assert.match(
+    longDeny({ ...ctx(), slowKnown: slow }, sh('cd web && npm run build')),
+    /上次跑了 1m 35s[\s\S]*run_background/,
+  )
+  assert.equal(longDeny({ ...ctx(), slowKnown: slow }, sh('npm run lint')), '')
+  assert.equal(longDeny({ ...ctx(), slowKnown: slow }, sh('cat package.json')), '', '快命令不看用时')
 })

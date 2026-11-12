@@ -2,7 +2,15 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
-import { HookDef, HooksData, type HookDefInput, type HookEventName } from '../../shared/hook-defs.ts'
+import {
+  BUILTIN_HOOKS,
+  HookDef,
+  HooksData,
+  tierDefault,
+  type HookDefInput,
+  type HookEventName,
+  type HookTier,
+} from '../../shared/hook-defs.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 
@@ -36,13 +44,40 @@ async function save(data: HooksData) {
   await writeJsonAtomic(FILE(), data)
 }
 
-/** 内置钩子开关：和默认值一样时不记，默认值以后改了能跟着走 */
-export async function setBuiltin(id: string, on: boolean, defaultOn: boolean) {
+/**
+ * 内置钩子（和插件钩子）的全局开关：和默认值一样时不记，默认值以后改了能跟着走。
+ * 内置钩子的默认值是全局档位下该有的值（不传 defaultOn 时按档位算），插件钩子默认开
+ */
+export async function setBuiltin(id: string, on: boolean, defaultOn?: boolean) {
   const cur = await readHooks()
+  const h = BUILTIN_HOOKS.find((x) => x.id === id)
+  const def = defaultOn ?? (h ? tierDefault(cur, h) : true)
   const builtins = { ...cur.builtins }
-  if (on === defaultOn) delete builtins[id]
+  if (on === def) delete builtins[id]
   else builtins[id] = on
   await save({ ...cur, builtins })
+}
+
+const isBuiltinKey = (k: string) => BUILTIN_HOOKS.some((h) => h.id === k)
+
+/**
+ * 选档位：选了就是「回到这一档的标准配置」，所以这一层逐个改过的内置钩子开关一起清掉；
+ * 插件钩子的开关也存在 builtins 里（键 plugin:…），不受档位管，留着。
+ * projectId 给了是这个项目的档位，tier 为 null 表示不单独选、跟着全局
+ */
+export async function setTier(tier: HookTier | null, projectId = '') {
+  const cur = await readHooks()
+  if (!projectId) {
+    const builtins = Object.fromEntries(Object.entries(cur.builtins).filter(([k]) => !isBuiltinKey(k)))
+    await save({ ...cur, tier: tier ?? 'standard', builtins })
+    return
+  }
+  const projectTiers = { ...cur.projectTiers }
+  if (tier) projectTiers[projectId] = tier
+  else delete projectTiers[projectId]
+  const projects = { ...cur.projects }
+  delete projects[projectId]
+  await save({ ...cur, projectTiers, projects })
 }
 
 /** 按项目的内置钩子开关：on 为 null 时去掉这个项目的设置，回到跟着全局 */

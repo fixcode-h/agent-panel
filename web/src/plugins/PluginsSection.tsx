@@ -10,6 +10,9 @@ import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ScanFindings } from '@/components/ui/scan-findings'
+import { configScanApi } from '@/lib/api-config-scan'
 import { Group } from '@/components/settings/parts'
 import { isNewerPlugin } from '@shared/plugins/version'
 import { pluginApi, type InstallPreview, type MarketEntry } from './api'
@@ -284,10 +287,22 @@ function OtherSources({ onPreview }: { onPreview: (p: InstallPreview) => void })
   )
 }
 
-/** 安装确认：来源、版本、会不会在本机运行代码、会不会覆盖已装的版本 */
+/**
+ * 安装确认：来源、版本、会不会在本机运行代码、会不会覆盖已装的版本，以及配置安全扫描的发现；
+ * 有高级发现时要勾选「我看过了，仍然安装」才能点安装（不直接禁止：自己的插件也可能有合理的命中）
+ */
 function InstallConfirm({ preview, onClose }: { preview?: InstallPreview; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
+  const [ack, setAck] = useState(false)
+  // 点过「这条没问题」的从列表里拿掉（服务端也记下了，下次预览不再出现）
+  const [gone, setGone] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    setAck(false)
+    setGone(new Set())
+  }, [preview?.token])
   const m = preview?.manifest
+  const scan = (preview?.scan ?? []).filter((f) => !gone.has(`${f.rule}|${f.file}|${f.line}|${f.snippet}`))
+  const needAck = scan.some((f) => f.level === 'high')
   const confirm = async () => {
     if (!preview) return
     setBusy(true)
@@ -314,10 +329,11 @@ function InstallConfirm({ preview, onClose }: { preview?: InstallPreview; onClos
       title={preview?.installed ? t('更新插件') : t('安装插件')}
       footer={
         <>
+          {needAck && <Checkbox checked={ack} onChange={setAck} label={t('我看过了，仍然安装')} disabled={busy} />}
           <Button variant="secondary" className="ml-auto" onClick={onClose} disabled={busy}>
             {t('取消')}
           </Button>
-          <Button onClick={() => void confirm()} disabled={busy}>
+          <Button onClick={() => void confirm()} disabled={busy || (needAck && !ack)}>
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {preview?.installed ? t('更新') : t('安装')}
           </Button>
@@ -351,6 +367,13 @@ function InstallConfirm({ preview, onClose }: { preview?: InstallPreview; onClos
               </span>
             </div>
           )}
+          <ScanFindings
+            findings={scan}
+            onIgnore={async (f) => {
+              await configScanApi.ignore(f, preview.scanScope ?? '')
+              setGone((g) => new Set(g).add(`${f.rule}|${f.file}|${f.line}|${f.snippet}`))
+            }}
+          />
           <ul className="flex flex-col gap-0.5 text-xs text-subtle">
             {!!m.agents.length && (
               <li>{t('角色：{list}', { list: m.agents.map((a) => a.agent.name).join(t('、')) })}</li>

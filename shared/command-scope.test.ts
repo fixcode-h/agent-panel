@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   backgroundMisuse,
+  classifySegment,
+  commandKey,
   endlessCommand,
   heavySegment,
   quickSegment,
@@ -97,4 +99,33 @@ test('一定要跑几分钟的：UE 编译打包、VS / CMake 整体编译、Doc
     'cat Engine/Build/BatchFiles/Build.bat',
   ])
     assert.ok(!heavySegment(c), c)
+})
+
+test('PowerShell 的 & "带空格的路径" 拆段后程序名不丢：前台的 UE 编译认得出来（用户 2026-11-12 报前台 Build.bat 没被拦）', () => {
+  const c =
+    '& "D:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat" TPSProjectEditor Win64 Development -Project="C:\\Users\\me\\P\\TPSProject.uproject" -WaitMutex 2>&1 | Select-Object -Last 120; \'===EXIT=\' + $LASTEXITCODE'
+  const segs = runSegments(c)
+  assert.equal(segHead(segs[0]), 'build')
+  assert.ok(heavySegment(segs[0]), segs[0])
+  // 拆段切开的半边引号照旧去掉
+  assert.deepEqual(runSegments('bash -lc "npm test && npm run e2e"'), ['npm test', 'npm run e2e'])
+})
+
+test('命令按实测用时归档的名字：程序名加前两个非选项参数；快命令没有名字', () => {
+  assert.equal(commandKey('npm run build -- --mode demo'), 'npm run build')
+  assert.equal(commandKey('cargo build --release'), 'cargo build')
+  assert.equal(commandKey('node scripts\\x.mjs --fast 2>&1'), 'node scripts/x.mjs')
+  assert.equal(commandKey('& "C:\\Tools\\gen.exe" A'), 'gen a')
+  assert.equal(commandKey('cat a.txt'), '')
+})
+
+test('一段命令该在哪跑只判定一处：快命令、常驻服务、一定很久、完整检查、实测慢、看项目', () => {
+  const o = { suite: /\be2e\b/, extra: ['make all'], slowMs: (s: string) => (s === 'tsc -b' ? 70_000 : undefined) }
+  assert.equal(classifySegment('cat a', o).kind, 'quick')
+  assert.equal(classifySegment('npm run dev', o).kind, 'service')
+  assert.equal(classifySegment('npm ci', o).kind, 'heavy')
+  assert.equal(classifySegment('npm run e2e', o).kind, 'suite')
+  assert.equal(classifySegment('make all', o).kind, 'suite')
+  assert.deepEqual(classifySegment('tsc -b', o), { kind: 'slow', ms: 70_000 })
+  assert.equal(classifySegment('npm run build', o).kind, 'other')
 })

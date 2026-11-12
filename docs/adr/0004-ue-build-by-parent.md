@@ -50,3 +50,7 @@ UBT / UHT、Editor、DDC、Shader 编译是整台机器共用的，几个子对�
 - 合并（`submitMerge` → `integrate`）的门禁不变；UE 子对话的 `tests` 写它做过的不用编译的检查。
 - 下线的两个技能登记在 `server/bundled-skills.ts` 的 `RETIRED_BUNDLED`（按部署目录的「分类/名字」），部署时清掉和当初一样的旧副本；
   已装角色副本里留着的名字由 `shared/skill-guide.ts` 的 `RETIRED_SKILLS` 在拼提示词时跳过。
+
+## 补充（2026-11-12）
+
+`run_background` 交来的 UE 编译不再拒收：父对话的按编译目录占位排队，子对话的转成向父对话的申请（见 ADR 0006 补充 2026-11-12）。排队、占位、知会和 `request_build` 是同一套，没有绕过排队的路。

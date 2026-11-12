@@ -6,10 +6,10 @@ import {
   mergeTestRun,
   parentRunSteps,
   pickSteps,
-  stepCommand,
   testRunLines,
 } from '../../shared/test-steps.ts'
 import { jobMs, type BgJob } from '../background.ts'
+import { stepRun } from '../step-run.ts'
 import { log } from '../log.ts'
 import { markWrapUp } from '../../shared/plan.ts'
 import type { TasksScope } from './scope.ts'
@@ -33,7 +33,8 @@ export function createTestRuns(sc: TasksScope) {
       const r = sc.background.start({
         taskId: parent.id,
         name,
-        command: stepCommand(step, child.platform || process.platform, project?.wslDistro ?? ''),
+        // 按步骤自己的环境直接起进程，不再包一层字符串交给设置里的 shell（server/step-run.ts）
+        ...(await stepRun(step, child.platform || process.platform, project?.wslDistro ?? '')),
         cwd: step.cwd,
         root: await sc.taskDir(parent),
         // 和编译共用一条独占队：同一目录同一时间只跑一条，UE 编译跑着时新测试排在后面

@@ -9,6 +9,7 @@ import { CLIS } from '../../shared/clis.ts'
 import { supportedEvents } from '../../shared/hooks.ts'
 import { t } from '../../shared/i18n.ts'
 import { checkSyntax, runHook } from './run.ts'
+import { scanText, type ScanLevel } from '../../shared/config-scan/index.ts'
 
 /**
  * 保存前的校验（设计稿第 6.3 节）：设置页手动保存、AI 创建的提案都走这里，errors 不为空就不能保存。
@@ -67,6 +68,8 @@ export function sampleInput(event: HookEventName): HookInput {
   }
 }
 
+const levelName = (l: ScanLevel) => ({ high: t('高'), medium: t('中'), low: t('低') })[l]
+
 export async function checkHook(input: HookDefInput, opts: { run?: boolean } = {}): Promise<HookCheck> {
   const parsed = HookDef.safeParse({ ...input, id: input.id || 'check' })
   if (!parsed.success)
@@ -81,6 +84,13 @@ export async function checkHook(input: HookDefInput, opts: { run?: boolean } = {
     warnings.push(t('出错时拒绝只对工具前的钩子有效，其余事件出错都放行'))
   const text = def.action.type === 'command' ? def.action.script : def.action.url
   if (SECRET_RES.some((re) => re.test(text))) errors.push(t('里面像是写了真实的密钥：要用凭据就从环境变量读'))
+  // 配置安全扫描（借鉴 ECC 的 AgentShield）：外传、危险命令、吞掉错误这些写成提醒，不拦保存（密钥上面已经拦了）
+  if (def.action.type === 'command')
+    for (const f of scanText({ path: 'hook.mjs', text: def.action.script, source: 'run' }))
+      if (f.rule !== 'secret')
+        warnings.push(
+          t('安全扫描（{level}）：{why}（第 {line} 行）', { level: levelName(f.level), why: f.why, line: f.line }),
+        )
   if (def.action.type === 'command') {
     const syntax = await checkSyntax(def.action.script)
     if (syntax) errors.push(t('脚本有语法错误：{error}', { error: syntax.slice(0, 500) }))

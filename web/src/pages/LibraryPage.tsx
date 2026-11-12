@@ -21,6 +21,7 @@ import { LibraryDetail } from '@/components/library/LibraryDetail'
 import { BundledBulkBar, BundledSkills } from '@/components/library/BundledSkills'
 import { BundledDetail, BundledEmpty } from '@/components/library/BundledDetail'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
+import { ScanBadge } from '@/components/ui/scan-findings'
 
 /**
  * 页面上的分页：Skill 和「自带 Skill」。
@@ -211,6 +212,8 @@ export function LibraryPage() {
                     className="flex shrink-0 items-center gap-1"
                     title={t('装在 {cli}', { cli: copies.map((c) => cliName(c.cli)).join(t('、')) })}
                   >
+                    {/* 配置安全扫描有中级以上的发现：几份里最严重的那份 */}
+                    <ScanBadge summary={worstScan(copies)} className="mr-1" />
                     {copies.map((c) => (
                       <span key={c.cli} className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.cli) }} />
                     ))}
@@ -382,4 +385,12 @@ function CreateDialog({
       </div>
     </Modal>
   )
+}
+
+/** 同名的几份里扫描结果最严重的一份（先比高级条数，再比中级） */
+function worstScan(copies: LibraryItem[]) {
+  return copies
+    .map((c) => c.scan)
+    .filter((x) => !!x)
+    .sort((a, b) => b.high - a.high || b.medium - a.medium)[0]
 }

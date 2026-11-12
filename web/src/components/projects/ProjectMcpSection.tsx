@@ -32,6 +32,8 @@ import { Switch } from '@/components/ui/switch'
 import { CliTag } from '@/components/library/parts'
 import { McpJsonFill } from '@/components/library/McpJsonFill'
 import type { McpDraft } from '@shared/mcp-json'
+import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
+import { configScanApi } from '@/lib/api-config-scan'
 
 /**
  * 项目设置里的 MCP：面板管理的工具（写进各 Agent 的全局配置，和「MCP 工具」页同一份数据）+
@@ -232,6 +234,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                         <p className="flex items-center gap-2 font-mono text-body">
                           <span className="truncate">{d.name}</span>
                           <StatusBadge status={d.status} />
+                          <ScanBadge findings={d.scan} />
                         </p>
                         <p className="truncate font-mono text-footnote text-muted" title={summary(d.server)}>
                           {summary(d.server) || t('（没有填命令或地址）')}
@@ -264,6 +267,16 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                           }
                         />
                       </span>
+                      {!!d.scan?.length && (
+                        <ScanFindings
+                          className="basis-full"
+                          findings={d.scan}
+                          onIgnore={async (f) => {
+                            await configScanApi.ignore(f, d.scanScope ?? '')
+                            await load()
+                          }}
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>

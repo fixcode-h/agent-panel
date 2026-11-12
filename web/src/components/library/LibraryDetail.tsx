@@ -14,6 +14,9 @@ import { DetailHeader } from '@/components/layout/Detail'
 import { cliColor } from '@/lib/cli-style'
 import { SkillFiles, type FilesApi } from '@/components/library/SkillFiles'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
+import type { ConfigFinding } from '@shared/config-scan'
+import { ScanFindings } from '@/components/ui/scan-findings'
+import { configScanApi } from '@/lib/api-config-scan'
 
 /** 主文件编辑框的 id：文件树里的 SKILL.md 点一下滚到这里 */
 const MAIN_EDITOR_ID = 'library-main-editor'
@@ -62,6 +65,8 @@ export function LibraryDetail({
   // 要删的是哪个 Agent 里的那一份（关掉「装在」的开关、或者「⋯」里删当前这一份）
   const [del, setDel] = useState<string | null>(null)
   const [ai, setAi] = useState(false)
+  // 配置安全扫描的发现（借鉴 ECC 的 AgentShield）：随主文件一起读
+  const [scan, setScan] = useState<{ list: ConfigFinding[]; scope: string }>({ list: [], scope: '' })
 
   // 编辑器当前的内容：判断「有没有未保存的改动」要用最新值，不能靠闭包里的旧值
   const editor = useRef({ content: '', saved: '' })
@@ -83,6 +88,7 @@ export function LibraryDetail({
           editor.current = { content: f.content, saved: f.content }
         }
         setTree(entriesOf(f))
+        setScan({ list: f.scan ?? [], scope: f.scanScope ?? '' })
         setTruncated(!!f.tree?.truncated)
         setError('')
       })
@@ -232,6 +238,14 @@ export function LibraryDetail({
             {path}
           </span>
         </div>
+
+        <ScanFindings
+          findings={scan.list}
+          onIgnore={async (f) => {
+            await configScanApi.ignore(f, scan.scope)
+            setScan((s) => ({ ...s, list: s.list.filter((x) => x !== f) }))
+          }}
+        />
 
         {error ? (
           <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
