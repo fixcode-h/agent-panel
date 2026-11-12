@@ -1,6 +1,6 @@
 import { Task, type Project } from '../../shared/schema.ts'
 import { childHoldsOf, taskDeleted } from '../../shared/task.ts'
-import { childRow } from '../../shared/child-row.ts'
+import { childRow } from '../../shared/children/row.ts'
 import { log } from '../log.ts'
 import { createWorktreeCache, type WorktreeRead } from '../worktree-cache.ts'
 import { t } from '../../shared/i18n.ts'
@@ -99,7 +99,7 @@ export function registerChildrenRoutes(s: TasksScope) {
         // 这里不等它（不让首屏跟着 git 一起慢），没核对过的先按「还不知道」回，界面不当成已合回
         const wt = await childWorktree(liveTask, project, { wait: false })
         if (!wt.checked) checking++
-        // 一行的字段和演示后端同一份（shared/child-row.ts），这里只给真进程、真 git 这些只有正式版有的
+        // 一行的字段和演示后端同一份（shared/children/row.ts），这里只给真进程、真 git 这些只有正式版有的
         return childRow(liveTask, {
           cliAlive: taskCliAlive(liveTask.id),
           background: s.pendingJobs(liveTask.id),

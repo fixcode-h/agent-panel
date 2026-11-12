@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Task, type TaskMessage } from '../../shared/schema.ts'
 import { taskDeleted, trashLeftDays, taskSummary } from '../../shared/task.ts'
-import { childCountsScan } from '../../shared/child-row.ts'
+import { childCountsScan } from '../../shared/children/row.ts'
 import { bugBriefs } from '../../shared/bug-overview.ts'
 import { agentFlowBriefs } from '../../shared/agent-flow-briefs.ts'
 import { messageChars } from '../task-store.ts'
@@ -80,7 +80,7 @@ export function registerListRoutes(s: TasksScope) {
     // 进了回收站的对话不在任何列表里出现（回收站自己有一个入口，见 GET /trash）
     const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
     // 子对话还在运行时父对话也算在运行：一次算好所有父对话名下的数量，前端不用再为每个任务发请求。
-    // 口径和标题栏、能不能回收是同一个（childActive），和演示后端同一份扫法（shared/child-row.ts）
+    // 口径和标题栏、能不能回收是同一个（childActive），和演示后端同一份扫法（shared/children/row.ts）
     const counts = childCountsScan(all, { active: s.childActive, cliAlive: (k) => taskCliAlive(k.id) })
     let list = all.map((t) => {
       const n = counts(t.id)

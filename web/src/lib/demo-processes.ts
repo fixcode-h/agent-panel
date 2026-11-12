@@ -16,7 +16,7 @@ import {
   taskMemoryTrend,
   taskTrendText,
 } from '@shared/memory-analysis'
-import { childRecordActive } from '@shared/child-row'
+import { childRecordActive } from '@shared/children/row'
 import { demoPendingJobs } from './demo-children'
 import { live } from './demo-live'
 

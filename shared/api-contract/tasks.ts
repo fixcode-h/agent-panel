@@ -5,7 +5,7 @@
  * （looseObject：两边都可以多带字段，这里只拦「界面要读的字段缺了或类型变了」），完整类型用 shaped 指定。
  */
 import { z } from 'zod'
-import type { ChildRow } from '../child-row.ts'
+import type { ChildRow } from '../children/row.ts'
 import { FollowUpInput, NewTaskInput, TaskMessage, TaskMode, TaskStatus, type Task } from '../schema.ts'
 import { endpoint, shaped } from './define.ts'
 
@@ -33,7 +33,7 @@ const TaskShape = z.looseObject({
   usage: z.looseObject({ inputTokens: z.number(), outputTokens: z.number(), costUsd: z.number() }),
 })
 
-/** 顶层对话额外带的三项计数（shared/child-row.ts 的 childCountsScan）：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
+/** 顶层对话额外带的三项计数（shared/children/row.ts 的 childCountsScan）：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
 const ChildCounts = { childrenWorking: z.number(), childrenCli: z.number(), childrenNeeds: z.number() }
 
 /**
@@ -61,7 +61,7 @@ export const TaskPageContract = TaskShape.extend({
   messageHasMore: z.boolean(),
 })
 
-/** GET /tasks/:id/children：子对话栏的一行（正式后端和演示后端都由 shared/child-row.ts 的 childRow 拼） */
+/** GET /tasks/:id/children：子对话栏的一行（正式后端和演示后端都由 shared/children/row.ts 的 childRow 拼） */
 export const ChildRowContract = z.looseObject({
   id: z.string(),
   title: z.string(),

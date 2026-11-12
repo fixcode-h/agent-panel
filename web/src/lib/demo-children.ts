@@ -1,8 +1,8 @@
 /**
- * 演示版 `/tasks/:id/children`：一行的字段和正式后端同一份（shared/child-row.ts 的 childRow），
+ * 演示版 `/tasks/:id/children`：一行的字段和正式后端同一份（shared/children/row.ts 的 childRow），
  * 这里只给演示里代替真进程、真 git 的值。
  */
-import { childRow } from '@shared/child-row'
+import { childRow } from '@shared/children/row'
 import { descendantNeeds } from '@shared/child-needs'
 import type { Task } from '@shared/schema'
 import { taskDeleted } from '@shared/task'

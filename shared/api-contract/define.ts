@@ -2,13 +2,13 @@
  * 前后端接口契约的写法（重构文档第 9 条，ADR 0050）：每个接口一条 `endpoint({ method, path, body?, res })`，
  * 按模块放在 shared/api-contract/<模块>.ts。
  *
- * - 前端：web/src/lib/api-call.ts 的 `call(ep, …)` 按契约拼地址、带方法，返回类型从 `res` 推出来，
+ * - 前端：web/src/lib/api/call.ts 的 `call(ep, …)` 按契约拼地址、带方法，返回类型从 `res` 推出来，
  *   不再在 api.ts 里手写 `request<T>`。
  * - 正式后端：路由校验入参用契约里的 `body`；出参在测试里按 `res` 查（scripts/e2e/17-contracts.mjs）。
  * - 演示后端：同一份探查（probe.ts）在 web/src/lib/demo-contract.test.ts 里跑。
  *
  * `res` 只写界面真读的字段时，用 `shaped<T>(schema)` 指定完整类型：运行时按 schema 查，类型按 T 给界面。
- * T 应该是前后端共用的函数产出的类型（例如 shared/child-row.ts 的 ChildRow），不要在这里另写一份。
+ * T 应该是前后端共用的函数产出的类型（例如 shared/children/row.ts 的 ChildRow），不要在这里另写一份。
  */
 import { z } from 'zod'
 

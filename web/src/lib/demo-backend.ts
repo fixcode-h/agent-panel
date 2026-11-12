@@ -11,7 +11,7 @@ import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { demoFlowRun } from './demo-flow-run'
-import { childCountsScan } from '@shared/child-row'
+import { childCountsScan } from '@shared/children/row'
 import { bugBriefs } from '@shared/bug-overview'
 import { agentFlowBriefs } from '@shared/agent-flow-briefs'
 import { demoAccounts } from './demo-accounts'
@@ -2596,7 +2596,7 @@ function tasksRoute(
     if (method === 'GET' && owner) return tasks.filter((t) => t.flowRun?.owner === owner && !t.deletedAt)
     if (method === 'GET') {
       const pid = query.get('projectId')
-      // 名下子对话的三项计数（还在跑的、CLI 还开着的、后代在等你处理的）：和正式版同一份扫法（shared/child-row.ts）。
+      // 名下子对话的三项计数（还在跑的、CLI 还开着的、后代在等你处理的）：和正式版同一份扫法（shared/children/row.ts）。
       // 侧栏、输入框靠它们说清在等什么，「继续执行」按钮也按它让位；演示里没有真的进程，CLI 存活用 live 登记代替
       const counts = childCountsScan(
         tasks.filter((t) => !t.deletedAt),

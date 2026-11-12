@@ -5,7 +5,7 @@
  */
 import type { BodyOf, Endpoint, PathParams, Query, ResOf } from '@shared/api-contract/define'
 import { urlOf } from '@shared/api-contract/define'
-import { json, request } from './api'
+import { json, request } from '../api'
 
 type ParamsPart<E extends Endpoint> = keyof PathParams<E['path']> extends never
   ? { params?: undefined }

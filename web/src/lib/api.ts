@@ -104,7 +104,7 @@ import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from 
 import { t } from '@shared/i18n'
 import { catalogContract } from '@shared/api-contract/catalog'
 import { tasksContract } from '@shared/api-contract/tasks'
-import { call } from './api-call'
+import { call } from './api/call'
 
 /** 对话页打开时的那一份（带分页信息），定义在契约里 */
 export type { TaskPage } from '@shared/api-contract/tasks'
@@ -646,7 +646,7 @@ export const api = {
   },
   /** 会话内存的 AI 分析报告：点「AI 分析」时现算，交给本机 CLI 体检 */
   taskMemoryAnalysis: (id: string) => request<TaskMemoryAnalysis>(`/tasks/${id}/memory-analysis`),
-  /** 子对话栏：一行的字段由正式后端和演示后端共用的 shared/child-row.ts 拼 */
+  /** 子对话栏：一行的字段由正式后端和演示后端共用的 shared/children/row.ts 拼 */
   taskChildren: (id: string) => call(tasksContract.children, { params: { id } }),
   stopChildren: (id: string) => call(tasksContract.stopChildren, { params: { id }, body: {} }),
   /** 终止对话派出的一个子任务：还在跑的结束，排队的不再开始，按「已终止」交回给对话 */

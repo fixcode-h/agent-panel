@@ -28,7 +28,7 @@ import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrat
 import { reapLostJobs } from '../background.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/child-row.ts'
+import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
 import { activePlan, holdWait, panelWrap, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
@@ -75,7 +75,7 @@ export function createChildren(sc: TasksScope) {
     if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
       // 执行中的对话以内存里那份为准：请求刚弹出来还没落盘时，父对话也要马上变成「等你处理」
       const all = (await sc.store.list()).map((k) => sc.live.get(k.id)?.task ?? k)
-      // 和任务列表、演示后端同一份扫法（shared/child-row.ts）
+      // 和任务列表、演示后端同一份扫法（shared/children/row.ts）
       childScan = {
         at: now,
         counts: childCountsScan(all, { active: childActive, cliAlive: (k) => taskCliAlive(k.id) }),
