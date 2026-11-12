@@ -5,7 +5,7 @@
 import type { agentRun, cliSettings } from '../../shared/settings.ts'
 import { autoLimits, type ModelLimits } from '../../shared/models/limits.ts'
 import { apiModelInfo, apiModelKey } from '../../shared/models/catalog.ts'
-import { mergedModelCatalog } from '../model-catalog-store.ts'
+import { mergedModelCatalog } from '../cli/model-catalog-store.ts'
 import { cachedModels, knownWindows, supportedEffort } from '../models.ts'
 
 type Run = ReturnType<typeof agentRun>

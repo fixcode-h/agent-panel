@@ -12,10 +12,10 @@ import {
   longContextModel,
   parseTokens,
   stripLongContext,
-} from '../shared/models/limits.ts'
-import { DEFAULT_MODEL_CONTEXT, DEFAULT_MODEL_MAX_OUTPUT, matchModel } from '../shared/models/catalog.ts'
-import { getCli } from '../shared/clis.ts'
-import { supportsEffort } from '../shared/settings.ts'
+} from '../../shared/models/limits.ts'
+import { DEFAULT_MODEL_CONTEXT, DEFAULT_MODEL_MAX_OUTPUT, matchModel } from '../../shared/models/catalog.ts'
+import { getCli } from '../../shared/clis.ts'
+import { supportsEffort } from '../../shared/settings.ts'
 
 test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
   const opus = knownLimits('claude-opus-5-5')

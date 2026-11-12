@@ -9,8 +9,8 @@ import {
   mergeCatalog,
   parseModelCatalog,
   type ModelCatalogEntry,
-} from '../shared/models/catalog.ts'
-import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
+} from '../../shared/models/catalog.ts'
+import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
 
 export const MODEL_CONFIG_DIR = path.join(DATA_DIR, 'config')
 export const MODEL_CONFIG_FILE = path.join(MODEL_CONFIG_DIR, 'models.json')

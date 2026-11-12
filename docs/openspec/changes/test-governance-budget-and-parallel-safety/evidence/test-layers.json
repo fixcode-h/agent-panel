@@ -706,7 +706,7 @@
       "lines": 153
     },
     {
-      "file": "server/model-limits.test.ts",
+      "file": "server/cli/model-limits.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 10,

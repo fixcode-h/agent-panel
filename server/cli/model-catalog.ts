@@ -20,18 +20,18 @@ import {
   normalizeModelId,
   type ModelCatalogInfo,
   type ModelLookupJob,
-} from '../shared/models/catalog.ts'
-import { API_PROTOCOLS } from '../shared/accounts.ts'
-import { getCli } from '../shared/clis.ts'
-import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { extractJson } from '../shared/assist.ts'
-import { childEnv } from './exec/process.ts'
-import { invokeCli } from './exec/invoke.ts'
-import { getSettings } from './settings.ts'
-import { AUTO_ANSWER } from './asks.ts'
+} from '../../shared/models/catalog.ts'
+import { API_PROTOCOLS } from '../../shared/accounts.ts'
+import { getCli } from '../../shared/clis.ts'
+import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
+import { extractJson } from '../../shared/assist.ts'
+import { childEnv } from '../exec/process.ts'
+import { invokeCli } from '../exec/invoke.ts'
+import { getSettings } from '../settings.ts'
+import { AUTO_ANSWER } from '../asks.ts'
 import { mergedModelCatalog, MODEL_CONFIG_DIR, MODEL_CONFIG_FILE, saveModelEntry } from './model-catalog-store.ts'
-import { t } from '../shared/i18n.ts'
-import { log } from './log.ts'
+import { t } from '../../shared/i18n.ts'
+import { log } from '../log.ts'
 
 const LOOKUP_TIMEOUT = 4 * 60_000
 

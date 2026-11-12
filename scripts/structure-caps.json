@@ -135,8 +135,6 @@
       "memory-tool.ts",
       "memory.ts",
       "merge-build.ts",
-      "model-catalog-store.ts",
-      "model-catalog.ts",
       "models.ts",
       "module-map.ts",
       "net.ts",
