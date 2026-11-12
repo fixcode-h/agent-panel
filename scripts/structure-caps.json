@@ -25,7 +25,6 @@
     "shared/engine.ts::runNodeSingle": 330,
     "shared/engine.ts::runNodeSteps": 380,
     "shared/engine.ts::spawn": 330,
-    "shared/engine.ts::makeOrchestra": 910,
     "web/src/components/agents/AgentDetail.tsx::AgentDetail": 940,
     "web/src/components/assist/AssistDialog.tsx::AssistDialog": 720,
     "web/src/components/chat/Attachments.tsx::useAttachments": 530,
