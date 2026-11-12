@@ -1,11 +1,9 @@
 /**
  * 交结论、交结果的面板工具（ADR 0041 第 16 节）：状态只认这些工具调用，不看回复里写了什么字。
- * 从 orch-mcp.ts 拆出来：那个文件到了行数上限
+ * 面板工具注册表（server/panel-tools/registry.ts）的条目
  */
 import type { Orchestra } from '../shared/engine.ts'
-
-const text = (s: string, isError = false) => ({ content: [{ type: 'text', text: s }], ...(isError && { isError }) })
-const str = (v: unknown) => (typeof v === 'string' ? v : '')
+import { str, text, type PanelTool, type ToolArgs } from './panel-tools/types.ts'
 
 /**
  * 交结论（ADR 0041 第 16 节）：验收、带条件连线的节点、评审都用它交「通过 / 不通过」，面板只认这个工具，不看回复里的字。
@@ -59,13 +57,24 @@ const SUBMIT_RESULT = {
   },
 }
 
-/** 这个调用者能用的交结论 / 交结果工具 */
-export function submitTools(o: Orchestra) {
-  return [...(o.submitResult ? [SUBMIT_RESULT] : []), ...(o.submitVerdict ? [SUBMIT_VERDICT] : [])]
-}
+/** 面板工具注册表的条目：交结果给子任务、交结论给要结论的节点；dispatch 只认调用 */
+export const SUBMIT_TOOLS: PanelTool[] = [
+  {
+    name: 'submit_result',
+    when: (o) => !!o.submitResult,
+    def: () => SUBMIT_RESULT,
+    call: (o, a) => callSubmitTool(o, 'submit_result', a),
+  },
+  {
+    name: 'submit_verdict',
+    when: (o) => !!o.submitVerdict,
+    def: () => SUBMIT_VERDICT,
+    call: (o, a) => callSubmitTool(o, 'submit_verdict', a),
+  },
+  { name: 'dispatch', when: () => false, call: (o, a) => callSubmitTool(o, 'dispatch', a) },
+]
 
-// oxlint-disable-next-line no-explicit-any -- MCP 的参数就是任意 JSON，和 orch-mcp.ts 的 callOrchTool 一样
-export function callSubmitTool(o: Orchestra, name: string, a: any) {
+function callSubmitTool(o: Orchestra, name: string, a: ToolArgs) {
   if (name === 'submit_verdict') {
     if (!o.submitVerdict) return text('这里不用交结论', true)
     const v = str(a?.verdict).trim().toLowerCase()

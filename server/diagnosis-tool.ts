@@ -1,8 +1,9 @@
 /**
  * 面板工具 submit_diagnosis（ADR 0045）：父对话派来的 Bug，子对话查到根因、修之前交诊断报告，用户确认了方案再改。
- * 定义和调用拆在这里，orch-mcp.ts 到了行数上限；校验、记录、等确认的逻辑在 shared/bug-diagnosis.ts
+ * 定义、用法说明和调用都在这里（面板工具注册表的条目）；校验、记录、等确认的逻辑在 shared/bug-diagnosis.ts
  */
 import type { Orchestra } from '../shared/engine.ts'
+import type { PanelTool } from './panel-tools/types.ts'
 
 const text = (desc: string) => ({ type: 'string', description: desc })
 const GRADE = { type: 'string', enum: ['good', 'cost', 'bad'] }
@@ -395,7 +396,7 @@ const TEXT_PROPS = {
 }
 
 /** update_bug_case（ADR 0046）：随查随记的档案草稿 */
-export const BUG_CASE_TOOL = {
+const BUG_CASE_TOOL = {
   name: 'update_bug_case',
   title: '记 Bug 档案',
   description:
@@ -442,7 +443,7 @@ export const BUG_CASE_TOOL = {
   },
 }
 
-export const DIAGNOSIS_TOOL = {
+const DIAGNOSIS_TOOL = {
   name: 'submit_diagnosis',
   title: '交诊断报告',
   description:
@@ -482,7 +483,7 @@ export const DIAGNOSIS_TOOL = {
 }
 
 /** request_logs：同意加日志后，加好了日志、自己复现不了，请用户复现贴日志 */
-export const REQUEST_LOGS_TOOL = {
+const REQUEST_LOGS_TOOL = {
   name: 'request_logs',
   title: '请用户复现',
   description:
@@ -502,7 +503,7 @@ export const REQUEST_LOGS_TOOL = {
 }
 
 /** 执行一次 submit_diagnosis：不是用户报的 Bug 子对话时没有这个工具 */
-export function callDiagnosis(o: Orchestra, a: Record<string, unknown> | undefined) {
+function callDiagnosis(o: Orchestra, a: Record<string, unknown> | undefined) {
   const r = o.diagnose
     ? o.diagnose(a ?? {})
     : {
@@ -516,7 +517,7 @@ export function callDiagnosis(o: Orchestra, a: Record<string, unknown> | undefin
 }
 
 /** 执行一次 request_logs */
-export function callRequestLogs(o: Orchestra, a: Record<string, unknown> | undefined) {
+function callRequestLogs(o: Orchestra, a: Record<string, unknown> | undefined) {
   const r = o.requestLogs
     ? o.requestLogs(a ?? {})
     : { ok: false, info: '这里不用请用户复现：只有用户报的 Bug 子对话要。' }
@@ -527,10 +528,26 @@ export function callRequestLogs(o: Orchestra, a: Record<string, unknown> | undef
 }
 
 /** 执行一次 update_bug_case */
-export function callBugCase(o: Orchestra, a: Record<string, unknown> | undefined) {
+function callBugCase(o: Orchestra, a: Record<string, unknown> | undefined) {
   const r = o.bugCase ? o.bugCase(a ?? {}) : { ok: false, info: '这里没有 Bug 档案：只有用户报的 Bug 子对话要记。' }
   return {
     content: [{ type: 'text', text: r.info }],
     ...(!r.ok && { isError: true }),
   }
 }
+
+/** 面板工具注册表的条目：三件都只给用户报的 Bug 子对话（Orchestra.diagnose） */
+export const DIAGNOSIS_TOOLS: PanelTool[] = [
+  {
+    name: DIAGNOSIS_TOOL.name,
+    when: (o) => !!o.diagnose,
+    def: () => DIAGNOSIS_TOOL,
+    hint: (_o, at) =>
+      at === 'child'
+        ? 'update_bug_case 查的过程中随查随记 Bug 档案（修完也用它记结果）、submit_diagnosis 按阶段交报告（论证、根因、修复方案、验证）、等用户同意再往下、request_logs 加好日志请用户复现、'
+        : '',
+    call: callDiagnosis,
+  },
+  { name: BUG_CASE_TOOL.name, when: (o) => !!o.diagnose, def: () => BUG_CASE_TOOL, call: callBugCase },
+  { name: REQUEST_LOGS_TOOL.name, when: (o) => !!o.diagnose, def: () => REQUEST_LOGS_TOOL, call: callRequestLogs },
+]
