@@ -68,6 +68,7 @@ import { integrationsApi } from './integrations.ts'
 import { hooksApi } from './hooks/api.ts'
 import { configScanApi } from './config-scan.ts'
 import { migrateVerdictText } from './verdict-migrate.ts'
+import { runMigrations } from './migrations/index.ts'
 import { installApi } from './install.ts'
 import { envApi } from './env-api.ts'
 import { libraryApi } from './library.ts'
@@ -165,6 +166,17 @@ process.on('exit', () => instanceLock.release())
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
+// 按数据版本号跑还没跑过的一次性迁移（改之前先备份，见 server/migrations/index.ts）
+{
+  const m = await runMigrations()
+  if (m.tooOld) {
+    console.error(
+      `数据目录 ${DATA_DIR} 的数据版本（${m.from}）太老，这个版本已经不能直接升级：请先安装一个中间版本启动一次，再升级到这个版本`,
+    )
+    process.exit(1)
+  }
+  if (m.ran.length) log.info('server', '数据迁移完成', { from: m.from, to: m.to, ran: m.ran.join(', ') })
+}
 // 删掉的角色该转到哪个：要在读工作流、对话之前装上，读出来的旧引用才会被改写
 loadAgentAliases()
 // 上次面板被强杀（taskkill /F、崩溃）时来不及停的 CLI：按登记文件 + 命令行特征清理，

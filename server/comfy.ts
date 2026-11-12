@@ -49,6 +49,7 @@ import { localPrompts } from '../shared/local-prompts.ts'
 import { mossLayoutJson, type MossLayoutItem, type MossLayoutSize } from '../shared/moss.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'
+import { gitRun } from './exec/git.ts'
 import { capture, childEnv, killTreeSync, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { downloadFile, removeDownload } from './download.ts'
@@ -272,7 +273,8 @@ export function installComfy() {
 
     if (!existsSync(path.join(codeDir(), 'main.py'))) {
       j.step = t('下载 ComfyUI')
-      const git = await capture('git', ['--version'], dir)
+      const git = await gitRun(dir, ['--version'])
+      // 克隆走 exec 不走 gitRun：输出要逐行写进安装日志、能被取消（structure-caps 里留了这 1 处）
       if (git.code === 0) await exec('git', ['clone', '--depth', '1', `${REPO}.git`, codeDir()], dir)
       else {
         // 没有 git：下载源码压缩包，用 Python 自带的 zipfile 解开

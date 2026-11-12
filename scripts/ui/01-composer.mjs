@@ -659,7 +659,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
         return {
           lines: rows.length,
           text: hit?.textContent ?? '',
-          marked: hit?.className.includes('bg-accent') ?? false,
+          // 跳到的那一行带 data-on（CodeLines.tsx），底色在 index.css 的 .cl-row[data-on]
+          marked: hit?.hasAttribute('data-on') ?? false,
         }
       })
       .catch(() => null)
