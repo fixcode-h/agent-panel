@@ -1,6 +1,6 @@
 # server · 数据落盘、对话日志与附件
 
-[server 模块](README.md)的子页面：原子写入与损坏恢复、对话专属日志、附件落盘。模块的状态块、`server/tasks.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
+[server 模块](README.md)的子页面：原子写入与损坏恢复、数据版本号与一次性迁移、对话文件的追加写、对话专属日志、附件落盘。模块的状态块、`server/tasks.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
 
 2026-10-31 从 `README.md` 原样挪出（文字没改），各条的日期和结论以当时为准。
 
@@ -25,7 +25,7 @@
 
 留档约定：坏文件**只挪不改**，原始字节原样保留；旁边另写一份 `<backup>.broken.json` 说明（`file` 原路径、`backup` 备份路径、`reason` 原因、`size` 字节数、`at` 时间、`stamp`）。备份名已被占用时自动往后加序号（`-2`、`-3`…），同一毫秒里归档两次同名文件不会覆盖前一份。`archived: false` 表示文件被别的进程占着没挪动，它还在原位，下次启动会再处理一遍——日志会写明，不让调用方以为已经留档。除了 JSON 解析失败，「能读成 JSON 但内容用不了」的文件（任务记录、对话文件）也走 `archiveBrokenFile`，免得每次启动重读同一个用不了的文件。例外：`server/settings.ts` 的「JSON 能解析但字段不合法」分支仍是自己 `rename` 到 `cache/broken/`、不写 `.broken.json` 说明（那里只求不让每个接口都 500）。`cache/broken/` 是缓存目录，设置里清理缓存会一起删掉。
 
-**任务记录丢失时的自动恢复**：`server/task-store.ts` 的 `load()` 在同一次扫描里同时收集 `<id>.json`（任务记录）和 `<id>.messages.json`（对话），对「有对话、但记录缺失或坏掉」的 id 调 `rebuildMeta()`。
+**任务记录丢失时的自动恢复**：`server/task-store.ts` 的 `load()` 在同一次扫描里同时收集 `<id>.json`（任务记录）和对话文件（`<id>.messages.jsonl`，没转换的旧 `<id>.messages.json` 也认），对「有对话、但记录缺失或坏掉」的 id 调 `rebuildMeta()`。
 
 - **什么时候重建**：对话文件能读出来、且 `TaskMessage.array().safeParse` 通过，反推出的记录也过 `Task.safeParse`。重建出的记录形态固定：`mode: 'chat'`、`status: 'stopped'`、`stopReason: 'restart'`、`simulated: false`、标题取用户第一句（没有用户消息时 `t('恢复的对话')`）、`createdAt` / `updatedAt` 取首尾消息的 `at`、`messages` 只放用户消息、`turnSeenAt` 取最后一条消息（不亮成未读）。写回磁盘后放进内存的 map，下次启动不用再重建。
 - **什么时候只留档不重建**：对话文件本身坏了 / 全 0 / 能读成 JSON 但不是消息数组 / 是空数组，或者反推出的记录过不了 schema。这时不写任何任务记录（不伪造、不写半截），把用不了的文件归档并打出带 id 和字节数的日志。归档后下次启动看不到它，因此不会反复重试。空对话不重建一个 0 条消息的空任务（断电后可能出现「记录全 0 + 对话为 `[]`」）。
@@ -35,6 +35,21 @@
 - **已有任务记录的 id 不会被重建覆盖**（用户自己改过的标题不能被盖掉）。重建写盘失败只打日志，本次启动仍然让它可见，下次启动再试。
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
+
+## 数据版本号与一次性迁移（ADR 0060）
+
+- 数据目录的 `data-version.json` 记着数据是第几版；`server/index.ts` 在 `migrateDataDir()` 之后调 `runMigrations()`（`server/migrations/index.ts`），依次跑版本号更大的迁移，每跑完一个写回。数据导入（`server/data.ts` 的 `/import`）写完文件后从 0 重跑一遍。
+- 新迁移：建 `server/migrations/NNNN-名字.ts`，导出 `{ version, name, run(ctx) }` 并登记进 `MIGRATIONS`。必须幂等；改文件前 `ctx.backup(file)`，旧文件不要了用 `ctx.moveToBackup(file)`，都落在 `backup/<NNNN>-<名字>/<相对路径>`，只留最近 3 个版本的目录。一个迁移失败：版本号停在它前面，面板照常启动，下次再试。
+- 现有：`0001-task-layout`（`tasks.json`、`items/` 两代旧布局拆文件）、`0002-task-meta-cleanup`（补 `turnSeenAt`、删 `RUNTIME_FIELDS` 里的旧运行时字段）、`0003-messages-jsonl`（对话文件换格式）。
+- 回归：`server/migrations.test.ts`。
+
+## 对话文件：追加写的 JSONL（ADR 0060）
+
+- 格式和读写在 `server/task-messages-file.ts`：`<id>.messages.jsonl` 一行一条完整消息，同 id 后出现的盖掉前面的（位置不变）。坏行跳过：只坏最后半行照常；中间坏行先复制一份到 `broken/`。
+- 写在 `server/task-store.ts` 的 `writeMessages`：按 `createStampTracker` 的逐条指纹找出新增和改过的消息，盘上是前缀就追加；删过消息、换过顺序、覆盖记录超过 `max(COMPACT_MIN, 有效内容)`、或关键节点（`now`）时超过有效内容一半，就 `writeTextAtomic` 整份压实。盘上状态（`written`）不知道时一律整份重写，追加失败也丢掉状态。
+- 还没转换的 `.messages.json`（迁移失败、导入旧备份）照样读得出来；第一次整份写出 JSONL 时把它挪进 `backup/0003-messages-jsonl/`。
+- 合并窗口（`MSG_GAP`）照旧保留：它省的是指纹计算和写盘次数，追加写之后单次写便宜了，但流式输出一秒几十次的更新还是要合并。
+- 回归：`server/task-messages-file.test.ts`、`server/task-store.test.ts`。
 
 ## 对话专属日志
 

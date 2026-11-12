@@ -1322,10 +1322,15 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal(mine.builtin, false, '自建分类不带内置标记')
   await call('DELETE', `/project-categories/${mine.id}`)
   assert.ok(!(await call('GET', '/project-categories')).some((c) => c.id === mine.id), '自建分类删得掉')
-  // 任务按项目分目录，任务文件里只有用户的消息，完整对话在 .messages.json 里，打开任务时才读
+  // 任务按项目分目录，任务文件里只有用户的消息，完整对话在追加写的 .messages.jsonl 里，打开任务时才读
   const legacyFile = path.join(dataDir, 'tasks/projects/legacy-project/legacy-1.json')
   assert.ok(existsSync(legacyFile), '旧的 tasks.json 拆成按项目分目录的任务文件')
-  assert.ok(existsSync(path.join(dataDir, 'tasks/projects/legacy-project/legacy-1.messages.json')))
+  assert.ok(existsSync(path.join(dataDir, 'tasks/projects/legacy-project/legacy-1.messages.jsonl')))
+  assert.equal(
+    JSON.parse(readFileSync(path.join(dataDir, 'data-version.json'), 'utf8')).version >= 3,
+    true,
+    '数据版本号记下来了',
+  )
   assert.ok(!existsSync(path.join(dataDir, 'tasks/tasks.json')))
   assert.equal((await call('GET', '/tasks/legacy-1')).messages[0].text, '旧的要求')
   assert.ok(!existsSync(path.join(dataDir, 'tasks/items')), '上一版的 items 目录转换后删掉')
@@ -1340,15 +1345,20 @@ await runShard('工作流条件与失败', async (api) => {
     ['旧的聊天', '旧的回答'],
   )
   assert.equal((await call('GET', '/tasks')).find((x) => x.id === 'legacy-2').messages[0].text, '旧的聊天')
-  // 刚跑完的任务：对话在 .messages.json 里
-  const wfFile = path.join(dataDir, `tasks/projects/${project.id}/${t.id}.messages.json`)
-  assert.ok(JSON.parse(readFileSync(wfFile, 'utf8')).some((m) => m.role === 'agent'))
+  // 刚跑完的任务：对话在 .messages.jsonl 里，一行一条
+  const wfFile = path.join(dataDir, `tasks/projects/${project.id}/${t.id}.messages.jsonl`)
+  assert.ok(
+    readFileSync(wfFile, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .some((l) => JSON.parse(l).role === 'agent'),
+  )
   const usage = await call('GET', '/data')
   assert.equal(usage.dir, dataDir)
   const kindOf = (u, k) => u.kinds.find((x) => x.id === k)
   assert.ok(kindOf(usage, 'tasks').bytes > 0 && kindOf(usage, 'uploads').files >= 1 && usage.memory.rss > 0)
-  // 拆分旧任务文件时，原文件备份在缓存里
-  assert.ok(kindOf(usage, 'cache').files >= 1, '旧的 tasks.json 备份在缓存里')
+  // 拆分旧任务文件时，原文件备份在数据目录的 backup/ 下（迁移前备份，见 server/migrations）
+  assert.ok(existsSync(path.join(dataDir, 'backup/0001-task-layout/tasks/tasks.json')), '旧的 tasks.json 备份了')
   const cacheBefore = kindOf(usage, 'cache').bytes
   mkdirSync(path.join(dataDir, 'cache/junk'), { recursive: true })
   writeFileSync(path.join(dataDir, 'cache/junk/x.bin'), 'x'.repeat(100))
