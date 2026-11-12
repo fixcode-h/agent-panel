@@ -772,7 +772,7 @@
       "lines": 92
     },
     {
-      "file": "server/panel-mcp-files.test.ts",
+      "file": "server/panel/mcp-files.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",
@@ -782,7 +782,7 @@
       "lines": 128
     },
     {
-      "file": "server/panel-source.test.ts",
+      "file": "server/panel/source.test.ts",
       "layer": "integration",
       "markers": [
         "temp-dir",

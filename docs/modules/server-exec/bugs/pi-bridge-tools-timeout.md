@@ -4,7 +4,7 @@
 - 症状：Agent 节点里写着「面板工具（set_plan、run_background、submit_merge）现在不可见，改用普通命令跑验证」，只能自己用普通命令跑测试
 - 入口：`server/exec/invoke.ts` 的 `invokeCli`，桥接扩展脚本在 `shared/clis/pi.json` 的 `mcp.files`
 - 根因类型：超时太短且不重试，失败后放弃注册全部工具
-- 模块：`server-exec`（`server/exec/invoke.ts`、`server/exec/runner.ts`、`server/exec/parsers.ts`），配套 `shared/clis/pi.json`、`server/panel-mcp-files.ts`
+- 模块：`server-exec`（`server/exec/invoke.ts`、`server/exec/runner.ts`、`server/exec/parsers.ts`），配套 `shared/clis/pi.json`、`server/panel/mcp-files.ts`
 - 关键词：面板工具、set_plan、run_background、submit_merge、Tool set_plan not found、tools/list、握手超时、agent-panel-tools、tools_failed、桥接扩展
 
 ## 现象
@@ -34,7 +34,7 @@
 - 所以「一开始有、跑着跑着没了」一定是那一轮重新拉起了进程（保活回收后冷启动、`resume`、失败重试），
   新进程的扩展又没加载成功：握手 `initialize` 超时，或者 `tools/list` 两次都没回来（见上面那条）。
 - 跟并发数本身无关：每一轮用 `scratchDir()` 开一个自己的临时目录（`server/exec/invoke.ts` 的 `CACHE_DIR/cli-run/<randomUUID 前 12 位>`）
-  写扩展，`finally` 只删自己的；`sweepPanelMcp`（`server/panel-mcp-files.ts`）清的是 `panelConfigFiles()` 里那些
+  写扩展，`finally` 只删自己的；`sweepPanelMcp`（`server/panel/mcp-files.ts`）清的是 `panelConfigFiles()` 里那些
   写进项目目录的配置条目（Command Code 的 `.mcp.json`、Gemini CLI 的 `.gemini/settings.json`），不碰 `{dir}` 下的扩展。
   10 条以上并发时丢工具的真实原因是面板 MCP 端点变忙、`tools/list` 晚回，落到同一条超时路径。
 

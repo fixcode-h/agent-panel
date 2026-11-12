@@ -86,7 +86,7 @@ function ownServer(server: string): Own | '' {
   if (s === 'design' || s === 'agent-panel-design') return 'plugin:ui-design'
   const plugin = mcpPlugin(s)
   if (plugin) return `plugin:${plugin.id}`
-  // 面板调度服务的几种写法：panel、panel-xxxx、agent-panel、agent-panel-xxxx、老版本的 orch（见 server/panel-mcp-files.ts）
+  // 面板调度服务的几种写法：panel、panel-xxxx、agent-panel、agent-panel-xxxx、老版本的 orch（见 server/panel/mcp-files.ts）
   return /^(?:(?:agent-)?panel(?:[-_][\w-]*)?|orch)$/.test(s) ? 'panel' : ''
 }
 

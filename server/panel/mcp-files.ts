@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { CLIS } from '../shared/clis.ts'
-import { isPanelMcpUrl, panelMcpToken } from '../shared/projects/mcp.ts'
-import { liveAskToken, lockedFile } from './ask-mcp.ts'
+import { CLIS } from '../../shared/clis.ts'
+import { isPanelMcpUrl, panelMcpToken } from '../../shared/projects/mcp.ts'
+import { liveAskToken, lockedFile } from '../ask-mcp.ts'
 
 /**
  * 写配置文件接面板 MCP 的 CLI（Command Code 的 .mcp.json）会在用户项目里留下面板的条目。

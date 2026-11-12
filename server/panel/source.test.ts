@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isPanelSource } from './panel-source.ts'
+import { isPanelSource } from './source.ts'
 
 test('面板源代码项目：包名和分析代码都对得上才算', async () => {
   assert.equal(await isPanelSource(path.resolve(fileURLToPath(import.meta.url), '../..')), true)

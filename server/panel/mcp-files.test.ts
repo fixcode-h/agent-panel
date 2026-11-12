@@ -4,9 +4,9 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { applyConfigFiles, openAskBridge } from './ask-mcp.ts'
-import { claimPanelName, PANEL_MCP_NAME, stripStalePanelMcp, sweepPanelMcp } from './panel-mcp-files.ts'
-import { isPanelMcpUrl } from '../shared/projects/mcp.ts'
+import { applyConfigFiles, openAskBridge } from '../ask-mcp.ts'
+import { claimPanelName, PANEL_MCP_NAME, stripStalePanelMcp, sweepPanelMcp } from './mcp-files.ts'
+import { isPanelMcpUrl } from '../../shared/projects/mcp.ts'
 
 const port = Number(process.env.PORT ?? 8787)
 const url = (token: string, kind = 'ask') => `http://127.0.0.1:${port}/api/mcp/${kind}/${token}`
