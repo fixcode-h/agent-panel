@@ -153,7 +153,7 @@ export function messageGap(lastWriteMs: number) {
  * 只给不改数据的旁观者用：回调同步调用、不等它，回调里出错也不影响落盘
  */
 type TaskChange = (old: Task | null, next: Task) => void
-const changeListeners = new Set<TaskChange>()
+const changeListeners = new Set<TaskChange>() // 模块状态：会话，跟着进程或连接一起没
 export function onTaskChange(cb: TaskChange) {
   changeListeners.add(cb)
   return () => changeListeners.delete(cb)

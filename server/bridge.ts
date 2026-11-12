@@ -53,13 +53,13 @@ interface Pending {
 }
 
 const ONLINE_MS = 45_000
-const tabs = new Map<string, BrowserTab>()
-let lastSeen = 0
-let extVersion = ''
+const tabs = new Map<string, BrowserTab>() // 模块状态：会话，跟着进程或连接一起没
+let lastSeen = 0 // 模块状态：会话，跟着进程或连接一起没
+let extVersion = '' // 模块状态：会话，跟着进程或连接一起没
 /** 用户在面板里点了「刷新扩展」：下次扩展报到时让它重新加载 */
-let reloadAsked = false
+let reloadAsked = false // 模块状态：会话，跟着进程或连接一起没
 const queue: Pending[] = []
-const pending = new Map<string, Pending>()
+const pending = new Map<string, Pending>() // 模块状态：会话，跟着进程或连接一起没
 const waiters = new Set<(p: Pending | null) => void>()
 
 /** 只认这两个网站，其他标签页扩展不会报，这里再挡一次 */
@@ -111,7 +111,7 @@ export function bundledExtensionVersion() {
  * 只有从这个目录加载的扩展读得到，别的扩展读不到其它扩展的文件
  */
 const TOKEN_FILE = path.join(DATA_DIR, 'bridge-token')
-let token = ''
+let token = '' // 模块状态：配置副本，重启时重读
 export function bridgeToken() {
   if (token) return token
   try {

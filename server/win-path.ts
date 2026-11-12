@@ -12,7 +12,7 @@ const KEYS = ['HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Enviro
 
 /** 刚读过就不再读：设置页轮询时不用每次都起 reg 进程 */
 const MIN_GAP = 10_000
-let last = 0
+let last = 0 // 模块状态：缓存，丢了重算
 
 /** 展开 %VAR%（REG_EXPAND_SZ 里常见 %USERPROFILE%、%SystemRoot%） */
 const expand = (s: string) =>

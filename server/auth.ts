@@ -17,7 +17,7 @@ import { t } from '../shared/i18n.ts'
 const FILE = path.join(DATA_DIR, 'access-token')
 const COOKIE = 'agent_panel_token'
 
-let token = ''
+let token = '' // 模块状态：配置副本，重启时重读
 export function accessToken() {
   if (token) return token
   try {

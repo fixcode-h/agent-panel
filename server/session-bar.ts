@@ -18,7 +18,7 @@ const DOC_READ_MAX = 512 * 1024
 
 /** Skill 列表要起 CLI（Codex 走 app-server）或扫目录：同一个 CLI + 目录一分钟内复用 */
 const SKILL_TTL = 60_000
-const skillCache = new Map<string, { at: number; list: Promise<{ name: string; chars: number }[]> }>()
+const skillCache = new Map<string, { at: number; list: Promise<{ name: string; chars: number }[]> }>() // 模块状态：缓存，丢了重算
 
 async function skillsOf(cli: string, cwd: string) {
   const key = `${cli}\n${cwd}`

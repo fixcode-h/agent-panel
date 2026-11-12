@@ -34,7 +34,7 @@ const ttsDir = () => path.join(speechDir(), 'tts')
 const modelDir = (m: TtsModel) => path.join(ttsDir(), m.dir)
 const modelReady = (m: TtsModel) => ttsModelFiles(m).every((f) => existsSync(path.join(modelDir(m), f)))
 
-let job: (NonNullable<TtsStatus['job']> & { abort: AbortController }) | undefined
+let job: (NonNullable<TtsStatus['job']> & { abort: AbortController }) | undefined // 模块状态：会话，跟着进程或连接一起没
 
 export function ttsStatus(): TtsStatus {
   return {
@@ -120,7 +120,7 @@ interface OfflineTts {
 }
 
 /** 加载好的模型只留一个：换模型时丢掉旧的 */
-let loaded: { id: string; tts: Promise<OfflineTts> } | undefined
+let loaded: { id: string; tts: Promise<OfflineTts> } | undefined // 模块状态：会话，跟着进程或连接一起没
 
 function engine(m: TtsModel) {
   if (loaded?.id === m.id) return loaded.tts
@@ -137,7 +137,7 @@ function engine(m: TtsModel) {
 }
 
 /** 生成排队一个一个来：同一个模型并发生成没有好处，只会互相抢 CPU */
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 
 /** 把一段文字念成 WAV；音色、语速不传时用设置里的（设置页试听会传还没保存的值） */
 export async function synthesize(text: string, opts: { voice?: number; speed?: number; model?: string } = {}) {

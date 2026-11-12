@@ -20,7 +20,7 @@ export interface TableProposal {
   at: string
 }
 
-const store = new Map<string, TableProposal>()
+const store = new Map<string, TableProposal>() // 模块状态：运行时，表格修改提议，重启后要重新提
 const MAX = 200
 const key = (projectId: string, path: string) => `${projectId}\n${path}`
 

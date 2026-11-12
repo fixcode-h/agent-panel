@@ -10,7 +10,7 @@ export type PageSignal =
   /** Agent 经动作表（server/app-actions）要页面做的界面操作，页面在 web/src/lib/ui-actions.ts 里找处理函数 */
   | { type: 'ui'; action: string; args: Record<string, unknown> }
 
-const pages = new Set<(s: PageSignal) => void>()
+const pages = new Set<(s: PageSignal) => void>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 发给所有打开着的面板页面，返回有几个页面在听；没有页面时托盘直接打开新的 */
 export function signalPages(s: PageSignal) {

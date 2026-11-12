@@ -13,7 +13,7 @@ import { clip } from './text.ts'
 export const LETTER_RESULT_MAX = 600
 
 // 改动明细逐个文件、影响写波及面：600 字里放不下，父对话核对看结论、验证和遗留/要你处理即可，最先省掉
-const SKIP = new Set(['changes', 'impact'])
+const SKIP = new Set(['changes', 'impact']) // 模块状态：常量，加载后不改
 // 父对话最要核对的：先占额度，后面的段落按剩下的分
 const FIRST = ['verified', 'remaining', 'needs']
 

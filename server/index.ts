@@ -265,10 +265,6 @@ async function ensureProjectWorkflows() {
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
   if (seeded.upgradedAgents.length)
     log.info('agent', '内置角色已换成当前版本', { list: seeded.upgradedAgents.map((a) => a.name) })
-  if (seeded.replaced.length) {
-    const file = await backupRemovedAgents(seeded.replaced, '内置角色换成了新版本，这是覆盖前你改过的版本')
-    log.info('agent', '内置角色里你改过的设定已备份后覆盖', { list: seeded.replaced.map((a) => a.name), file })
-  }
   await retireWorkflows()
   await pruneMerged()
   await cleanupDisabledPlugins()
@@ -1209,15 +1205,15 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   } else if (open) openBrowser(url)
 })
 /** 停掉内存采样的定时器，并把这批点写进历史 */
-let stopMemorySampler: (() => void) | undefined
+let stopMemorySampler: (() => void) | undefined // 模块状态：接线，启动时登记
 /** 停掉定时计划的轮询 */
-let stopSchedules: (() => void) | undefined
+let stopSchedules: (() => void) | undefined // 模块状态：接线，启动时登记
 
 /**
  * 退出前停掉正在执行的 CLI，并把任务状态落盘。macOS / Linux 上 CLI 跑在独立的进程组里，
  * 服务退出时不会跟着结束，不停掉的话会在后台继续改项目。最多等 5 秒。
  */
-let exiting = false
+let exiting = false // 模块状态：会话，跟着进程或连接一起没
 async function shutdown(code = 0) {
   if (exiting) return process.exit(1)
   exiting = true
@@ -1252,7 +1248,7 @@ if (tray) {
       )
   })
 }
-let retries = 0
+let retries = 0 // 模块状态：会话，跟着进程或连接一起没
 server.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EADDRINUSE' && restarted && retries++ < 20) {
     setTimeout(() => server.listen(port, '127.0.0.1'), 500)

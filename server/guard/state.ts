@@ -21,7 +21,7 @@ interface GuardFile {
   initialPassword: string
 }
 
-let cache: GuardFile | null = null
+let cache: GuardFile | null = null // 模块状态：缓存，丢了重算
 
 function read(): GuardFile {
   if (cache) return cache

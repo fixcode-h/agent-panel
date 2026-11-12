@@ -33,6 +33,7 @@ const TERM = new RegExp(
 )
 
 /** 驼峰里像产品名、不是代码的词：不包 */
+// 模块状态：常量，加载后不改
 const PLAIN = new Set([
   'GitHub',
   'GitLab',

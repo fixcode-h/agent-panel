@@ -54,9 +54,9 @@ export const SEARCH_CACHE_CHARS = 8_000_000
 export const REAP_GRACE_MS = 60_000
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
-const p4Dirs = new Map<string, Promise<boolean>>()
+const p4Dirs = new Map<string, Promise<boolean>>() // 模块状态：缓存，丢了重算
 /** 项目目录是不是 Git 仓库（ADR 0018 / 0020 的 parent 范围只对 Git 生效）：判定和缓存同 isP4 */
-const gitDirs = new Map<string, Promise<boolean>>()
+const gitDirs = new Map<string, Promise<boolean>>() // 模块状态：缓存，丢了重算
 export const isGit = (dir: string) => {
   let got = gitDirs.get(dir)
   if (!got) {

@@ -29,7 +29,7 @@ export interface NoteTaker {
   read: () => string[]
 }
 
-const takers = new Map<string, Set<NoteTaker>>()
+const takers = new Map<string, Set<NoteTaker>>() // 模块状态：会话，跟着进程或连接一起没
 
 export function addNoteTaker(taskId: string, taker: NoteTaker) {
   const set = takers.get(taskId) ?? new Set<NoteTaker>()
@@ -56,7 +56,7 @@ export interface HeldMessage {
   letter?: boolean
 }
 
-const held = new Map<string, HeldMessage[]>()
+const held = new Map<string, HeldMessage[]>() // 模块状态：运行时，排队待交给 CLI 的消息，重启后只剩消息上的交付状态
 
 /** 父对话交代任务的信（不是回答、收尾结果、面板消息） */
 const isLetter = (msg: TaskMessage) => msg.peer?.rel === 'parent' && msg.peer.kind === 'task'

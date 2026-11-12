@@ -1,7 +1,7 @@
 import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
-import { type AgentUsage, type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
+import { type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
 import { hookMarker } from '../../shared/hooks.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
 
@@ -48,6 +48,7 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 
+import { agentUsage, contextUsage, ownContext } from './usage-record.ts'
 import { seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
@@ -252,23 +253,13 @@ async function runAgent(
 
   // 中途换了模型（改了 Agent 或设置）：记录换成这次实际用的，CLI 报告了模型时再以报告的为准
   const prevUsage = task.usage.agents[agentId]
-  if (prevUsage && prevUsage.model !== model) Object.assign(prevUsage, { model, window: windowFor(model) })
+  if (prevUsage && prevUsage.model !== model && !ownContext(task, owner))
+    Object.assign(prevUsage, { model, window: windowFor(model) })
   if (owner) Object.assign(stepUsage(owner), { model, window: windowFor(model) })
 
-  /** 这个 Agent 的用量记录，没有就建一条 */
-  const au = (): AgentUsage => {
-    const prev = task.usage.agents[agentId]
-    if (prev) return prev
-    return (task.usage.agents[agentId] = {
-      context: 0,
-      window: windowFor(model),
-      model,
-      tps: 0,
-      lastTps: 0,
-      outputTokens: 0,
-      genMs: 0,
-    })
-  }
+  /** 这个 Agent 的用量记录（速度、累计输出），没有就建一条；上下文占用记在 cu()（对话里的子任务不写角色那一条） */
+  const au = () => agentUsage(task, agentId, model, windowFor(model))
+  const cu = contextUsage(task, owner, au)
   // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
   const fileEvents = createFileEvents(
     cwd,
@@ -433,6 +424,7 @@ async function runAgent(
     newMsg,
     streamed,
     au,
+    cu,
     windowFor,
     compacted,
     refreshChanges,
@@ -504,7 +496,7 @@ async function runAgent(
     })
   // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
   if (op?.kind === 'compact' && !st.prewarmMode) {
-    const fresh = compaction.startOp(op, au().context || undefined, toolStart)
+    const fresh = compaction.startOp(op, cu().context || undefined, toolStart)
     if (fresh) newMsg().tools.push(fresh)
     ctx.changed(true)
   }
@@ -560,7 +552,7 @@ async function runAgent(
     onTools: op
       ? undefined
       : (tools, deferred) => {
-          au().parts = {
+          cu().parts = {
             cli: cliId,
             system: def.systemPromptFlag ? instructions.length : 0,
             tools,
@@ -685,7 +677,7 @@ async function runAgent(
       rs,
       noEffortKey,
       compaction,
-      au,
+      cu,
       recoveryNote,
       carryForRestart,
       carryUpto,
@@ -714,7 +706,7 @@ async function runAgent(
     turnTools,
     compaction,
     compacted,
-    au,
+    cu,
     rerun: (next, nextRs) => runAgent(ctx, next, nextRs),
   })
 }

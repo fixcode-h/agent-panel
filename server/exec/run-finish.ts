@@ -1,7 +1,7 @@
 // runAgent 进程结束后的两段（重构文档第 3 条：按阶段拆 runAgent）：
 // afterProcess 在 invokeCli 的 finally 里收拾这次调用登记的东西（插话通道、补充、请求、计时器），
 // finishTurn 在这一轮成功结束时收口（空回合报错、续接留痕收回、用量提醒、压缩和自动压缩）。
-import type { Alert, AgentUsage, Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
+import type { Alert, Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
 import type { AgentCall, AgentResult } from '../../shared/engine.ts'
 import { makeAlert } from '../../shared/alerts.ts'
@@ -18,6 +18,7 @@ import { settleCompactRow, type CompactTracker } from './compaction.ts'
 import { settleContextNotes, settleNetNotes } from './recovery.ts'
 import { settleEnvStallNotes, silentTurn } from './retry-policy.ts'
 import { keepEnvStall, type RetryState } from './run-recover.ts'
+import type { ContextUsage } from './usage-record.ts'
 import type { createStallWatch } from './stall-watch.ts'
 import type { createDrafting } from './drafting.ts'
 import type { speedMeter } from './speed-meter.ts'
@@ -119,7 +120,8 @@ export interface FinishDeps {
   turnTools: () => number
   compaction: CompactTracker
   compacted: () => void
-  au: () => AgentUsage
+  /** 这次调用的上下文占用记录（见 usage-record.ts 的 contextUsage） */
+  cu: () => ContextUsage
   /** 再跑一次 runAgent（自动压缩用） */
   rerun: (call: AgentCall, rs: RetryState) => Promise<AgentResult>
 }
@@ -127,7 +129,7 @@ export interface FinishDeps {
 /** 进程正常结束、CLI 也没报失败：空回合按失败报，否则收口并按需自动压缩 */
 export async function finishTurn(d: FinishDeps): Promise<AgentResult> {
   const { ctx, call, task, st, def, step, agentId, sessionKey, chat, op, prewarm, pct, rewind, rs } = d
-  const { texts, errors, touched, turnTexts, turnTools, compaction, compacted, au, rerun } = d
+  const { texts, errors, touched, turnTexts, turnTools, compaction, compacted, cu, rerun } = d
   const { netNotes, contextNotes, envStallNotes } = rs
   // 这一轮 CLI 报了结束，却什么都没收到（没有正文、没调工具、没改文件）：CLI 或网关出了问题。
   // 按「错误一律显示」写进对话，这一轮按失败结束；不自动重试，由用户决定重发、继续还是换模型。
@@ -198,10 +200,10 @@ export async function finishTurn(d: FinishDeps): Promise<AgentResult> {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
     delete task.sessions[sessionKey]
     delete task.sessionDirs[sessionKey]
-    au().context = 0
+    cu().context = 0
     if (!compaction.settle(t('摘要写好了，下一轮开新会话带上')))
       sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
-  } else if (op?.kind === 'compact') compaction.finishOp(au())
+  } else if (op?.kind === 'compact') compaction.finishOp(cu())
   // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
   const u = task.usage.agents[agentId]
   if (

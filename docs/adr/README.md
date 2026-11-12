@@ -68,6 +68,8 @@
 | [0058](./0058-remote-password-gate.md)                    | 外部访问改成密码登录门，去掉 Cloudflare 隧道，加 Tailscale 和反向代理配置           | 已接受     | 2026-11-07 | 外网一律走密码登录（scrypt、可吊销会话、按 IP 锁定），不再认访问令牌；方式只留 frp、Tailscale、自建反代；给 Caddy / NPM / nginx 配置；frp 逐段连接测试；主端口只认本机 Host                                                                   |
 | [0059](./0059-plugin-system.md)                           | 插件系统：插件是自包含的包，从插件仓库安装，删掉不影响面板                          | 已接受     | 2026-11-09 | 插件装在数据目录，带清单、服务端和网页入口、技能、角色和工作流；面板只认 SDK；市场默认 fixcode-h/agent-plugins；Blender（含模型设计）挪成插件                                                                                                 |
 | [0060](./0060-data-version-and-jsonl-messages.md)         | 数据目录有版本号，旧格式只在启动时迁移一次；对话消息改成追加写                      | 已接受     | 2026-11-12 | `data-version.json` + `server/migrations/NNNN-*.ts`，迁移前备份到 `backup/`、幂等、失败下次再试；对话 `<id>.messages.jsonl` 追加写、按 id 归并、坏行跳过、攒多了压实                                                                          |
+| [0061](./0061-builtin-copies-overwrite-no-snapshots.md)   | 内置副本改过也直接覆盖，不再留历史快照                                              | 已接受     | 2026-11-12 | 角色改过直接覆盖不备份；工作流按 `builtinHash` 判断定义更新了才覆盖；删掉 `legacy*.ts` 约 3300 行快照                                                                                                                                         |
+| [0062](./0062-api-contracts-in-shared.md)                 | 前后端接口契约写在 shared，演示后端的业务口径调 shared 同一份函数                   | 已接受     | 2026-11-12 | `shared/api-contract/` 按模块写 `endpoint`；前端 `call()` 推类型；同一份探查在正式和演示后端跑；子对话行和计数共用 `shared/children/row.ts`                                                                                                   |
 
 状态只有四个词，别自己造近义词：
 

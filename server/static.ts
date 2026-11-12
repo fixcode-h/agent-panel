@@ -52,9 +52,9 @@ const GZIP_LEVEL = 6
 const CACHE_MAX = 256
 
 type Cached = { mtimeMs: number; size: number; body: Buffer }
-const cache = new Map<string, Cached>()
+const cache = new Map<string, Cached>() // 模块状态：缓存，丢了重算
 /** 正在压的同一个文件：几个请求同时到不要各压一遍 */
-const pending = new Map<string, Promise<Buffer>>()
+const pending = new Map<string, Promise<Buffer>>() // 模块状态：缓存，丢了重算
 
 /** gzip 的 Promise 包装：promisify 对 zlib 带 options 的重载推不准类型，这里直接包一层 */
 const gzipAsync = (data: Buffer) =>

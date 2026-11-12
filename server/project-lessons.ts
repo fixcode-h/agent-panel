@@ -422,7 +422,7 @@ async function stale(dir: string, keep: Set<string>) {
 }
 
 // 同一个目录同时只写一份：P4 不同分支共用一个教训目录时也不会交错
-const writing = new Map<string, Promise<unknown>>()
+const writing = new Map<string, Promise<unknown>>() // 模块状态：排队，丢了没事
 
 export function enqueueWrite<T>(file: string, run: () => Promise<T>): Promise<T> {
   const key = process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file)

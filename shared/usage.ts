@@ -330,7 +330,7 @@ const toMinutes = (hhmm: string) => {
 }
 
 /** 按指定时区取当地钟点的格式化器（每个时区建一次，表格每行都要判定） */
-const clockFormats = new Map<string, Intl.DateTimeFormat>()
+const clockFormats = new Map<string, Intl.DateTimeFormat>() // 模块状态：缓存，丢了重算
 function clockFormat(timeZone: string) {
   let f = clockFormats.get(timeZone)
   if (!f) {

@@ -22,7 +22,7 @@ const programDir =
   process.env.AGENT_PANEL_APP_DIR ??
   (typeof __APP_VERSION__ === 'string' ? path.dirname(fileURLToPath(import.meta.url)) : process.cwd())
 const FALLBACK_DIR = path.join(process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel'), 'logs')
-let dir = path.join(programDir, 'logs')
+let dir = path.join(programDir, 'logs') // 模块状态：会话，跟着进程或连接一起没
 /** 日志所在的目录 */
 export const logDir = () => dir
 const MAX_FILE = 5 * 1024 * 1024
@@ -35,10 +35,10 @@ const pad = (n: number, w = 2) => String(n).padStart(w, '0')
 const started = new Date()
 const base = `agent-panel-${started.getFullYear()}${pad(started.getMonth() + 1)}${pad(started.getDate())}-${pad(started.getHours())}${pad(started.getMinutes())}${pad(started.getSeconds())}-${process.pid}`
 
-let part = 1
+let part = 1 // 模块状态：会话，跟着进程或连接一起没
 let size = 0
-let file = ''
-let broken = false
+let file = '' // 模块状态：会话，跟着进程或连接一起没
+let broken = false // 模块状态：会话，跟着进程或连接一起没
 
 /** 当前写的日志文件；还没写过时为空 */
 export const logFile = () => file

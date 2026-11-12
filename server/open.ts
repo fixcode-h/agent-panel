@@ -77,6 +77,7 @@ export async function revealDir(dir: string): Promise<void> {
  * - 代码只放行不会被系统当脚本执行的（C/C++、Java、Go、Rust、C#、TS、CSS、SQL、diff）；js / py / sh / ps1 这类会被执行的不放；
  * - 不放 svg / html（浏览器里会以本机文件的身份跑脚本）和压缩包（交给解压程序处理，出过多次解压漏洞）
  */
+// 模块状态：常量，加载后不改
 const SAFE_OPEN = new Set(
   [
     'png jpg jpeg gif webp bmp ico tif tiff heic avif',

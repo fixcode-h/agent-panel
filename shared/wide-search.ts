@@ -52,7 +52,8 @@ function words(seg: string): string[] {
 }
 
 /** grep 后面要单独跟一个值的参数（短参数只看最后一个字母，比如 -rle PATTERN 的 e） */
-const GREP_VALUE_SHORT = new Set(['e', 'f', 'm', 'A', 'B', 'C', 'd', 'D'])
+const GREP_VALUE_SHORT = new Set(['e', 'f', 'm', 'A', 'B', 'C', 'd', 'D']) // 模块状态：常量，加载后不改
+// 模块状态：常量，加载后不改
 const GREP_VALUE_LONG = new Set([
   '--regexp',
   '--file',

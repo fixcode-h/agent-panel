@@ -43,7 +43,7 @@ export const CHECK_CONFIG_GLOBS = [
 ]
 
 /** 每个对话里拦过一次的文件（守卫 id + 绝对路径）：再来一次就放行。记在内存里，重启清空 */
-const warned = new Map<string, Set<string>>()
+const warned = new Map<string, Set<string>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 function firstTime(taskId: string, key: string) {
   const seen = warned.get(taskId) ?? new Set<string>()
   if (seen.has(key)) return false

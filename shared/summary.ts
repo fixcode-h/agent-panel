@@ -59,7 +59,7 @@ export const SUMMARY_REPLY_MAX = 600
  * 不交给 CLI 的卡片字段：验证（测试过没过）、要你处理、改动的文件清单。
  * 报告只写做了什么、为什么坏、怎么修的，这几样对看报告的人没用，带上 CLI 就会照抄
  */
-const CARD_FIELDS_SKIP = new Set(['verified', 'needs', 'changes'])
+const CARD_FIELDS_SKIP = new Set(['verified', 'needs', 'changes']) // 模块状态：常量，加载后不改
 /** 交给 CLI 的代码改动：每个对话最多多少字、全部对话合计最多多少字（超出的写明截断了） */
 export const SUMMARY_DIFF_TASK_CHARS = 12_000
 export const SUMMARY_DIFF_TOTAL_CHARS = 80_000

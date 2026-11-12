@@ -21,9 +21,9 @@ export interface Steerer {
   accepted: (msg?: TaskMessage) => void
 }
 /** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
-export const steers = new Map<string, Set<Steerer>>()
+export const steers = new Map<string, Set<Steerer>>() // 模块状态：会话，跟着进程或连接一起没
 /** 工作流里正在跑的节点都收不了补充（Command Code）时，留给下一个开始的节点 */
-export const notes = new Map<string, string[]>()
+export const notes = new Map<string, string[]>() // 模块状态：运行时，留给下一个节点的补充，重启后丢失
 
 /**
  * 把用户消息交给正在等下一句的 CLI。

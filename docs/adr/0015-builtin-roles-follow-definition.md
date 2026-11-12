@@ -1,6 +1,6 @@
 # ADR 0015：内置角色只认内置定义，每次更新都覆盖成新版
 
-状态：已接受 · 2026-10-25
+状态：已接受（2026-11-12 第 2 条和第 4 条的「改过的工作流不动」被 [0061](./0061-builtin-copies-overwrite-no-snapshots.md) 替代） · 2026-10-25
 
 ## 背景
 
@@ -36,7 +36,7 @@
 - `shared/builtin/install.ts`：`upgradeBuiltinAgents` 改成无条件同步，覆盖用户改过的副本时回调 `onReplaced`；`seedProjectWorkflows` 返回 `replaced`；新增 `workflowFingerprint`，`addBuiltinWorkflow` 建副本时记指纹。
 - `server/index.ts`：`PUT /agents/:id` 对所有内置角色走 `syncCore`；`POST /agents` 本机已有同来源时去掉来源（复制出来的是普通角色）；启动时备份被覆盖的副本。
 - `web/src/components/agents/AgentDetail.tsx`：内置角色的设定、Skill、参数定义只读，标「内置」，不显示「AI 优化」。演示版 `demo-backend.ts` 同步。
-- `shared/builtin/legacy.ts` 的角色指纹仍用于：判断要不要备份、已合并角色的 `pruneMergedAgents`。改内置角色定义**不用再登记旧指纹**。
+- legacy 快照里的角色指纹（2026-11-12 已随快照删掉，见 ADR 0061）当时仍用于：判断要不要备份、已合并角色的 `pruneMergedAgents`。改内置角色定义**不用再登记旧指纹**。
 
 ## 运行时
 

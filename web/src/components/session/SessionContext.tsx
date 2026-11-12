@@ -18,7 +18,7 @@ import { bigToolResults } from '@shared/context-big-results'
 import { SessionDisclosure, SessionDisclosureItem } from './SessionCard'
 
 /**
- * 这个对话现在是谁在答话、它的上下文用量：对话按最后一条回复的角色（和输入框下的上下文圆环同一口径），
+ * 这个对话现在是谁在答话、它的上下文用量：对话按自己最后一条回复的角色（和输入框下的上下文圆环同一口径），
  * 工作流按最近开始的、报过窗口的节点
  */
 export function sessionUsage(task: Task): { agentId: string; usage: AgentUsage } | null {
@@ -30,7 +30,8 @@ export function sessionUsage(task: Task): { agentId: string; usage: AgentUsage }
         .filter((s) => s.usage?.window && agents[s.agentId])
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]?.agentId ?? ''
   } else {
-    id = [...task.messages].reverse().find((m) => m.agentId && agents[m.agentId])?.agentId ?? ''
+    // 只看对话自己的回复：派出的子任务（带 step）的回复也在 messages 里，算上的话会话栏在对话和子任务之间来回跳
+    id = [...task.messages].reverse().find((m) => !m.step && m.agentId && agents[m.agentId])?.agentId ?? ''
   }
   if (!id) id = Object.keys(agents).at(-1) ?? ''
   return id && agents[id] ? { agentId: id, usage: agents[id] } : null

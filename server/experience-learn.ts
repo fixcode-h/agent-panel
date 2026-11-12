@@ -67,7 +67,7 @@ async function readState(): Promise<LearnState> {
   return { learned: raw?.learned ?? {}, daily: raw?.daily ?? {}, fullNotified: raw?.fullNotified ?? {} }
 }
 
-let stateChain: Promise<unknown> = Promise.resolve()
+let stateChain: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 function updateState(fn: (s: LearnState) => void) {
   const run = stateChain.then(async () => {
     const s = await readState()

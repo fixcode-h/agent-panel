@@ -10,6 +10,7 @@ import { t } from './i18n.ts'
  */
 
 /** 这些工具的子命令差别大：规则带上第一个子命令 */
+// 模块状态：常量，加载后不改
 const SUBCOMMAND = new Set([
   'git',
   'npm',
@@ -28,7 +29,7 @@ const SUBCOMMAND = new Set([
   'mvn',
 ])
 /** 删除、提权、改权限这类：再常用也每次都问 */
-const NEVER = new Set(['rm', 'rmdir', 'del', 'sudo', 'su', 'dd', 'mkfs', 'chmod', 'chown', 'shutdown', 'reboot'])
+const NEVER = new Set(['rm', 'rmdir', 'del', 'sudo', 'su', 'dd', 'mkfs', 'chmod', 'chown', 'shutdown', 'reboot']) // 模块状态：常量，加载后不改
 
 /** 命令的规则键；不适合一直允许的返回空 */
 export function commandRule(cmd: string): string {

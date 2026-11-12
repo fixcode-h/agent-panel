@@ -31,10 +31,10 @@ const keyOf = (file: string, s: { size: number; mtimeMs: number }, width: number
   createHash('sha1').update(`${file}\n${s.size}\n${s.mtimeMs}\n${width}`).digest('hex')
 
 /** 同一张图同时被请求（同一段消息渲染两遍、气泡和浮层一起打开）时只算一次 */
-const inflight = new Map<string, Promise<Buffer | null>>()
+const inflight = new Map<string, Promise<Buffer | null>>() // 模块状态：缓存，丢了重算
 
 /** 解码缩放是同步计算：串起来一张一张做，免得一堆缩略图请求同时把服务端卡住 */
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const next = queue.then(fn, fn)
   queue = next.catch(() => {})

@@ -24,7 +24,7 @@ export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads')
  * /copy 和 /discard 只认这些路径——不能凭前端传来的一段任意字符串，就让服务端去拷或删本机的文件。
  * 只在内存里，进程重启就清空；草稿里恢复的附件已经是拷好的副本，不需要重新确认。
  */
-const confirmed = new Map<string, number>()
+const confirmed = new Map<string, number>() // 模块状态：运行时，确认过的本机路径，重启后要重新选文件
 /** 确认过的路径保留多久：够用户选完文件再发送，也不会一直涨 */
 const CONFIRMED_TTL = 24 * 60 * 60 * 1000
 /** 最多记这么多条，超过时先丢最早登记的那些 */
@@ -412,7 +412,7 @@ export async function removeUploads(dirs: Iterable<string>) {
   for (const d of dirs) if (d) await rm(d, { recursive: true, force: true }).catch(() => {})
 }
 
-const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'target', 'Binaries', 'Intermediate'])
+const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'target', 'Binaries', 'Intermediate']) // 模块状态：常量，加载后不改
 const MAX_FILES = 20_000
 
 /** 项目里的文件（相对路径）：git 仓库用 ls-files，尊重 .gitignore；不是仓库时自己遍历，跳过常见的产物目录 */
@@ -438,7 +438,7 @@ async function projectFiles(root: string): Promise<string[]> {
   return out
 }
 
-const cache = new Map<string, { at: number; files: string[] }>()
+const cache = new Map<string, { at: number; files: string[] }>() // 模块状态：缓存，丢了重算
 
 /**
  * 输入 @ 时按关键字找项目文件：文件名命中排在路径命中前面，短路径优先。

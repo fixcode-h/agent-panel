@@ -24,7 +24,7 @@ export interface FixTopic {
   context?: () => Promise<string> | string
   cwd?: () => string
 }
-const topics = new Map<string, FixTopic>()
+const topics = new Map<string, FixTopic>() // 模块状态：接线，启动时登记
 export const registerFixTopic = (id: string, topic: FixTopic) => void topics.set(id, topic)
 
 /** cli:<id> 的报错（安装、更新、卸载、登录）：带上这个 CLI 的安装情况 */

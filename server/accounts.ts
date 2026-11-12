@@ -895,7 +895,7 @@ interface Login extends LoginJob {
   abort: AbortController
   write?: (s: string) => void
 }
-const logins = new Map<string, Login>()
+const logins = new Map<string, Login>() // 模块状态：会话，跟着进程或连接一起没
 const view = ({ abort, write, ...rest }: Login): LoginJob => rest
 
 const URL_RE = /https?:\/\/[^\s"'<>]+/g

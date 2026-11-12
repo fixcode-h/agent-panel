@@ -8,7 +8,7 @@ import { t } from '../../shared/i18n.ts'
 import type { AskReply } from './parsers.ts'
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
-export const replies = new Map<string, (r: AskReply) => void>()
+export const replies = new Map<string, (r: AskReply) => void>() // 模块状态：会话，跟着进程或连接一起没
 
 interface RequestCtx {
   task: Task

@@ -23,7 +23,7 @@ function inPackage(dir: string, rel: string) {
 }
 
 // 项目根目录的文件名：每轮拼提示词、每次守卫都会问，同一个目录 30 秒内用上次读的
-const rootNames = new Map<string, { at: number; names: string[] }>()
+const rootNames = new Map<string, { at: number; names: string[] }>() // 模块状态：缓存，丢了重算
 setProjectProbe((dir, globs) => {
   let hit = rootNames.get(dir)
   if (!hit || Date.now() - hit.at > 30_000) {

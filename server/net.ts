@@ -159,7 +159,7 @@ function run(cmd: string, args: string[]) {
   })
 }
 
-let systemCache: { at: number; list: string[] } | undefined
+let systemCache: { at: number; list: string[] } | undefined // 模块状态：缓存，丢了重算
 
 /** 系统里配置的代理；Linux 等平台没有统一的读取方式，交给环境变量 */
 export async function systemProxies(): Promise<string[]> {
@@ -256,7 +256,7 @@ interface ProxyCache {
   ttl: number
 }
 
-let localCache: ProxyCache | undefined
+let localCache: ProxyCache | undefined // 模块状态：缓存，丢了重算
 
 /** 探测本机正在运行的代理；同时探测所有候选，总耗时约等于一次握手超时 */
 export async function localProxies(): Promise<string[]> {
@@ -310,7 +310,7 @@ export function attemptOrder(configured: string | undefined, discovered: string[
   return dedupe(configured ? [configured, ...discovered, ''] : ['', ...discovered])
 }
 
-const dispatchers = new Map<string, Dispatcher>()
+const dispatchers = new Map<string, Dispatcher>() // 模块状态：会话，跟着进程或连接一起没
 
 function dispatcherFor(key: string) {
   let dispatcher = dispatchers.get(key)
