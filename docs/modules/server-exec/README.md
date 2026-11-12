@@ -33,6 +33,35 @@
 - 评审的二进制文件语义差异（2026-11-11，UE 2）：`git diff` 对 `.xlsx`、`.uasset` 只有一行「二进制文件不同」。`server/exec/review-semantic.ts` 按扩展名认领改了的文件：`.xlsx` / `.xlsm` 用表格页同一套 `diffSheet`（项目开了表格功能时按项目的表头规则和主键，否则自动识别），其他扩展名交给开着的插件的 `ServerPlugin.textify`，前后两版各转一次文本再逐行比；文字由 `shared/review-semantic.ts` 拼成「二进制文件的语义差异」一节，经 `ReviewDiff.semantic` 接在评审提示词的 diff 后面（`shared/engine-helpers.ts` 的 `reviewPart`）。Git 两版从快照树取（`blobAt`），P4 的旧版是 `p4 print <文件>#have`、新版读磁盘。没人认领的不处理；插件出错、读不出时把原因写进这一节；单个文件 1.2 万字、合计 4 万字、最多 30 个文件。
 - 子对话隔离：`childIsolation = worktree` 时在独立 worktree 里执行并按 git merge 合回（`server/exec/worktree.ts`）；每个独立目录准备时把自己的 `node_modules` 从项目根复制一份（`ensureWorktreeDeps`：真实文件、项目的 lock 变了才重刷、目录里缺副本时补一份，删除 worktree 时随目录一起删，各 worktree 互不影响；每个项目在分组目录下备一份按当前 lock 复制好的 `node_modules.spare/node_modules`，开新目录时改名拿走、后台再补一份，`refillSpareDeps`）；父对话 `create_conversation` 带 `edits: true` 的子对话（`Task.editFirst`）开工前就开好独立分支（`ensureChildWorktree`），不先在原目录调研再换目录；`claim` 模式的文件认领在 `server/claims.ts`，留到子对话的改动被父对话验收（`completeChild`）才放，一轮结束时把改过的文件记到名下、撞了写信给父对话（ADR 0035）。父对话收尾时把子对话分支合进父对话目录的那一段在 `server/exec/worktree-integrate.ts`（`integrateBranch`，失败按 `conflict` / `blocked` / `branch` / `error` 分类，见 [server/children.md](../server/children.md)）。
 
+## runAgent 的共享状态
+
+`runAgent`（`server/exec/runner.ts`）以前是一个一千五百多行的闭包，二十几个 `let` 被内层函数各自读写（重构文档第 3 条）。现在这些变量收进 `RunState`（`server/exec/run-state.ts`），阶段函数拿到它和一个写明依赖的 deps 对象，谁读谁写如下（文件名省掉 `server/exec/` 和 `.ts`）：
+
+| 字段                                    | 写                                                  | 读                                      |
+| --------------------------------------- | --------------------------------------------------- | --------------------------------------- |
+| `prewarmMode`                           | run-events、run-wait                                | run-events、run-wait、runner            |
+| `turnMark`                              | run-wait                                            | run-finish、run-wait、runner            |
+| `changesOpen`                           | runner                                              | runner                                  |
+| `cur`                                   | run-events、run-finish、run-steer、run-wait、runner | 同左                                    |
+| `result`                                | run-events                                          | run-events、run-wait、runner            |
+| `reported`、`thinkingOf`、`quietBefore` | run-events                                          | run-events                              |
+| `usageSeen`                             | run-events                                          | run-events、run-finish                  |
+| `gitTimer`                              | runner                                              | run-finish、runner                      |
+| `gitBusy`                               | runner                                              | runner                                  |
+| `finished`                              | run-finish                                          | run-finish、run-steer、run-wait、runner |
+| `turnEnded`                             | run-wait、runner                                    | run-wait、runner                        |
+| `steerer`                               | run-steer                                           | run-finish、run-steer、run-wait         |
+| `steerPending`                          | run-events、run-finish、run-steer                   | 同左                                    |
+| `cutAfter`                              | run-events、run-steer                               | 同左                                    |
+| `control`                               | run-steer                                           | run-steer                               |
+| `redirectTimer`                         | run-events、run-steer                               | run-events、run-finish、run-steer       |
+| `toolWaited`、`waitingHelpers`          | run-wait                                            | run-wait、runner                        |
+| `fromUser`                              | run-wait                                            | run-wait                                |
+
+- 重跑之间要带着走的计数（断线次数、环境卡住次数、要补进下一次的说明）不在 `RunState` 里，而是 `RetryState`（`run-recover.ts`），作为 `runAgent` 的第三个参数传进下一次。每个重跑都写成 `rerun(call, { ...rs, ... })` 或 `keepEnvStall(rs)`，漏带会让次数清零、无限重试；`server/exec/hints.test.ts` 按源码核对每一处 `rerun(` 都带着它。
+- `endTurn`（`markTurnDone` / `onTurnEnd`）只留在 `runner.ts` 一处：`scripts/rules-check.mjs` 第 8 条要求它们在 runner 里只出现一次。
+- 新逻辑别再写回 `runAgent` 的闭包：放进对应阶段的文件，需要的状态从 `RunState` 和 deps 拿，deps 里写清楚要什么（`docs/lessons/structure.md`）。
+
 ## 入口
 
 `server/exec/runner.ts`：由 `server/tasks/run.ts`（经 `server/exec/real-turn.ts`）在节点执行时调用，宿主决定「怎么调用一个 Agent」，执行引擎本身在 `shared/engine.ts`。
@@ -50,6 +79,13 @@
 | `speed-meter.ts`        | 实时输出速度                                                                                                |
 | `search-exclude-env.ts` | 搜索排除写成 ripgrep 配置交给 CLI                                                                           |
 | `handoff-file.ts`       | 交接内容存成文件                                                                                            |
+| `run-state.ts`          | `RunState`：`runAgent` 一次调用里各阶段共享的可变状态（见下面「runAgent 的共享状态」）                      |
+| `run-setup.ts`          | 开跑前的准备：`resolveTarget` 定角色 / CLI / 目录 / 模型，`prepareLaunch` 拼输入和启动参数，`attachPlugins` |
+| `run-events.ts`         | `createApply`：收 CLI 的流式事件，写消息、思考、用量、改动                                                  |
+| `run-steer.ts`          | `createSteering`：插话的登记、到点停下长命令、延迟取走的补充                                                |
+| `run-wait.ts`           | `createWaiting`：保活等下一句（`waitUser`）和等子任务                                                       |
+| `run-finish.ts`         | `afterProcess`：CLI 进程结束后的清理；`finishTurn`：空回合、用量提示、压缩和自动压缩                        |
+| `run-recover.ts`        | `recoverFailure`：失败后的各种重跑（断线、上下文满、环境卡住、会话续不上），`RetryState` 跨重跑带着走       |
 
 ## 依赖
 

@@ -4,7 +4,8 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { BUILTIN_HOOKS, HooksData, builtinOn, tierChanged, tierOn } from './hook-defs.ts'
+import { HooksData } from './hook-defs.ts'
+import { BUILTIN_HOOKS, builtinOn, tierChanged, tierOn } from './hook-builtins.ts'
 
 const hook = (id: string) => BUILTIN_HOOKS.find((h) => h.id === id)!
 

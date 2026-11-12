@@ -1,6 +1,6 @@
 /** 一轮真实执行的宿主上下文：runner、各个拆出去的模块都按它取任务、设置、回调 */
 import type { Agent, CliStatus, Project, Settings, StopReason, Task, Workflow } from '../../shared/schema.ts'
-import type { AgentCall, EngineHost } from '../../shared/engine.ts'
+import type { AgentCall, EngineHost } from '../../shared/engine-host.ts'
 import type { TurnInfo } from './turn-info.ts'
 
 export interface RealContext {

@@ -10,7 +10,8 @@ import { claudeParser, commandCodeParser, parserFor, type CliEvent } from './par
 import { getCli } from '../../shared/clis.ts'
 import { Settings } from '../../shared/schema.ts'
 import { cliSettings, mergeCliEnv, readCliEnvText, splitCliEnv } from '../../shared/settings.ts'
-import { codexAppSession, unwrapShell } from './rpc/codex.ts'
+import { codexAppSession } from './rpc/codex.ts'
+import { unwrapShell } from '../../shared/shell-command.ts'
 
 const CWD = '/work/shop'
 const tick = () => new Promise((r) => setTimeout(r, 0))

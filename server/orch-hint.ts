@@ -4,7 +4,7 @@
  * （server/panel-tools/registry.ts 的 toolHint / hasTool），条件和措辞跟着工具走，不在这里再写一遍。
  * orch-mcp.ts 照旧导出它
  */
-import type { Orchestra } from '../shared/engine.ts'
+import type { Orchestra } from '../shared/engine-host.ts'
 import { hasTool, toolHint } from './panel-tools/registry.ts'
 import type { HintAt } from './panel-tools/types.ts'
 

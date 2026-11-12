@@ -1,5 +1,6 @@
 import type { Task } from '../../shared/schema.ts'
-import { userWaiting, helpersWorking, planStalled, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
+import { userWaiting, planStalled, runRunning, taskDeleted, wrapUpPending } from '../../shared/task.ts'
+import { helpersWorking } from '../../shared/task-helpers.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
 import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan.ts'
@@ -206,6 +207,3 @@ export function createBeforeEnd(
     return r
   }
 }
-
-// 判断挪到了 shared/end-turn.ts（end_turn 也要用），这里照旧导出给 children.ts 和测试
-export { mergeOwedOf } from '../../shared/end-turn.ts'

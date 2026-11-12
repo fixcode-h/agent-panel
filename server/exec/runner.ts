@@ -11,34 +11,12 @@ import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { trackFileWrite, trackOutside } from './outside-changes.ts'
-import { noPushEnv } from './no-push.ts'
 
-export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
 import { effortRejected } from '../models.ts'
-import { type AgentCall, type AgentResult } from '../../shared/engine.ts'
+import type { AgentCall, AgentResult } from '../../shared/engine-host.ts'
 
-import {
-  CONTEXT_CARRY_SHARE,
-  MIN_CLIP_TOKENS,
-  clippedTranscript,
-  contextFallbackKind,
-  estTokens,
-  restartCarry,
-} from './transcript.ts'
-export { clippedTranscript, contextFallbackKind, estTokens, restartCarry }
-import {
-  SESSION_NOT_FOUND,
-  cliSwitchedText,
-  systemNote,
-  firstNoEffortTell,
-  noEffortSkippedText,
-  settleContextNotes,
-  settleNetNotes,
-  settleRetryNotes,
-  type ContextNote,
-  type NetNote,
-} from './recovery.ts'
-export { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, type ContextNote, type NetNote }
+import { CONTEXT_CARRY_SHARE, MIN_CLIP_TOKENS, restartCarry } from './transcript.ts'
+import { cliSwitchedText, systemNote, firstNoEffortTell, noEffortSkippedText } from './recovery.ts'
 import { awaitingCompact, CompactTracker, settleCompactRow } from './compaction.ts'
 
 import { invokeCli } from './invoke.ts'
@@ -60,7 +38,6 @@ import type { RealContext } from './real-context.ts'
 import { createStallWatch } from './stall-watch.ts'
 import { warnSlowMcp } from './mcp-probe.ts'
 import { createFileEvents } from './file-events.ts'
-import { continuesOutput } from './event-kinds.ts'
 import { createDrafting } from './drafting.ts'
 import { createToolRows } from './tool-rows.ts'
 import { makeStillCurrent } from './still-current.ts'
@@ -75,8 +52,6 @@ import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 import { windowLookup } from './model-run.ts'
 import { pickSession } from './session-pick.ts'
 import { exitResult, idleWarning } from './exit-result.ts'
-// 测试从这里取（以前定义在这个文件里）
-export { continuesOutput }
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -84,9 +59,6 @@ function markTurnDone(task: Task) {
   task.turnDoneAt = now
   if (seenWhileWatched(task.id)) task.turnSeenAt = now
 }
-
-/** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
-export { stalledTurn } from './stall-watch.ts'
 
 /**
  * 按 API 的并发上限执行一次调用（对话这一轮、子任务、工作流节点都从这里进）：

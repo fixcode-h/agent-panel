@@ -29,18 +29,8 @@ import {
 } from 'lucide-react'
 import type { Agent, Flow, FlowNode, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
-import {
-  END,
-  START,
-  autoLayout,
-  edge,
-  entryFlow,
-  flowLabel,
-  flowTemplate,
-  getFlow,
-  newFlow,
-  newNode,
-} from '@shared/flow'
+import { autoLayout, edge, entryFlow, flowLabel, flowTemplate, getFlow, newFlow, newNode } from '@shared/flow'
+import { END, START } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
 import { isReady, type Check } from '@/lib/readiness'

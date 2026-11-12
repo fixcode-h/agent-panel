@@ -18,10 +18,10 @@ import {
   convActive,
   convState,
   diagnosisPending,
-  helpersWorking,
   runRunning,
   taskGone,
 } from '../task.ts'
+import { helpersWorking } from '../task-helpers.ts'
 import { pendingAction } from '../user-action.ts'
 
 /** 独立分支的 git 核对结果：没核对过（checked 为 false）时界面不能把「不知道」当成干净或已合回 */

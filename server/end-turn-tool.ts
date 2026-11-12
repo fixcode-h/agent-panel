@@ -2,7 +2,7 @@
  * 面板工具 end_turn（这一轮怎么结束）：定义、用法说明和调用都在这里（面板工具注册表的条目）。
  * 判定在 shared/end-turn.ts，结束前钩子和一轮结束后的提醒只认它（设计稿 docs/openspec/changes/end-check-signal/design-v2.md）
  */
-import type { Orchestra } from '../shared/engine.ts'
+import type { Orchestra } from '../shared/engine-host.ts'
 import { END_TURN_TOOL } from '../shared/end-turn.ts'
 import type { PanelTool } from './panel-tools/types.ts'
 

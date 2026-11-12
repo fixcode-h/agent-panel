@@ -6,7 +6,8 @@ import test from 'node:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { blank, decodePng, encodePng } from './image.ts'
+import { decodePng, encodePng } from './image.ts'
+import { blank } from '../shared/raster.ts'
 
 // 数据目录（缩略图缓存放在它下面的 cache 里）在模块加载时就定死：
 // 先把 AGENT_PANEL_DATA 指到临时目录，再加载被测模块，不写本机真实的数据目录

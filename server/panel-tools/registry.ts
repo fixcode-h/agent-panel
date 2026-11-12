@@ -5,7 +5,7 @@
  *
  * 顺序就是交给 CLI 的清单顺序（改了会让各身份的清单快照、Pi 桥接的核对跟着变）。
  */
-import type { Orchestra } from '../../shared/engine.ts'
+import type { Orchestra } from '../../shared/engine-host.ts'
 import { ASK_PUSH_ENTRY } from '../ask-push.ts'
 import { BACKGROUND_TOOLS } from '../background-tools.ts'
 import { DIAGNOSIS_TOOLS } from '../diagnosis-tool.ts'

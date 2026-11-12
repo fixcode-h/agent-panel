@@ -6,7 +6,7 @@
 // 重跑带的续接记录放在 RetryState 里，用 `...rs` 展开传下去，环境性重试的计数和留痕就不会漏传。
 import type { Task, TaskMessage } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
-import type { AgentCall, AgentResult } from '../../shared/engine.ts'
+import type { AgentCall, AgentResult } from '../../shared/engine-host.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { clip } from '../../shared/text.ts'
 import { t } from '../../shared/i18n.ts'

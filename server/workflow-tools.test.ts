@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Orchestra } from '../shared/engine.ts'
+import type { Orchestra } from '../shared/engine-host.ts'
 import { pickFlow, type WorkflowEntry } from '../shared/flow-run.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 

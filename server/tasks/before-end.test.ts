@@ -9,7 +9,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-before-end-'))
-const { mergeOwedOf } = await import('./before-end.ts')
+const { mergeOwedOf } = await import('../../shared/end-turn.ts')
 
 const at = '2026-11-04T00:00:00.000Z'
 const step = (title: string, status: string, wrapUp?: string) => ({

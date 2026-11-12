@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../i18n.ts'
 import { TaskData } from '../schema.ts'
-import { taskState, taskWaitText } from '../task.ts'
+import { taskState } from '../task.ts'
+import { taskWaitText } from '../task-word.ts'
 import { liveActive, liveBusy, liveWaitText, liveWord, taskLiveOf, TaskLive, type LiveRuntime } from './task-live.ts'
 
 setLang('zh')

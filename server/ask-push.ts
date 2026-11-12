@@ -2,7 +2,7 @@
  * 面板工具 ask_push（推送授权）：定义和调用都在这里（面板工具注册表的条目）。
  * 判定和回给模型的话在 shared/push-auth.ts，卡片和回答的记录在 server/exec/panel-requests.ts
  */
-import type { Orchestra } from '../shared/engine.ts'
+import type { Orchestra } from '../shared/engine-host.ts'
 import { ASK_PUSH } from '../shared/push-auth.ts'
 import type { PanelTool } from './panel-tools/types.ts'
 

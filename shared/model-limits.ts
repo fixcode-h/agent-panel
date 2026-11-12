@@ -4,15 +4,8 @@
  * 再查模型目录（shared/model-catalog.json 加上用户的补充目录）；都没有时按 1M / 128K 估算。
  */
 import type { ApiProtocol } from './accounts.ts'
-import type { CliDefinition } from './clis.ts'
-import type { ModelTier } from './clis.ts'
-import {
-  DEFAULT_MODEL_CONTEXT,
-  DEFAULT_MODEL_MAX_OUTPUT,
-  matchModel,
-  modelLimitsFor,
-  type ModelCatalogEntry,
-} from './model-catalog.ts'
+import type { CliDefinition, ModelTier } from './clis.ts'
+import { matchModel, modelLimitsFor, type ModelCatalogEntry } from './model-catalog.ts'
 
 export interface ModelLimits {
   context?: number
@@ -141,5 +134,3 @@ export function limitEnvVars(def: CliDefinition, v: ModelLimits) {
   if (v.maxOutput && def.limitEnv?.maxOutput) out.push({ key: def.limitEnv.maxOutput, value: String(v.maxOutput) })
   return out
 }
-
-export { DEFAULT_MODEL_CONTEXT, DEFAULT_MODEL_MAX_OUTPUT }

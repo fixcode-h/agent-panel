@@ -4,7 +4,8 @@
  */
 import { useState } from 'react'
 import { Bug, Check, Link2, ListChecks, Pencil, Plus, Sparkle, X } from 'lucide-react'
-import type { SummaryCode, SummaryEntry, SummaryKind } from '@shared/summary'
+import type { SummaryEntry, SummaryKind } from '@shared/summary'
+import type { SummaryCode } from '@shared/summary-code'
 import { splitPoints } from '@shared/summary-code'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'

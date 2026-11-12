@@ -5,7 +5,7 @@
  * 这一轮结束了还没交：在同一个会话里补问一次；还没交，照常交回并写一行警告，按「没交结果」处理。
  * 子任务这一层不反复推：没做完、卡住的由派它的对话按自己的计划处理（计划里等它的那一步退回进行中，见 engine 的 settleHelperWaits）
  */
-import type { AgentCall, AgentResult, EngineHost } from './engine.ts'
+import type { AgentCall, AgentResult, EngineHost } from './engine-host.ts'
 import type { TaskStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { CHILD_RESTART_MAX } from './stuck-child.ts'

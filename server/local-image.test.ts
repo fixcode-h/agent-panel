@@ -23,7 +23,7 @@ import {
 } from '../shared/local-image.ts'
 import { t } from '../shared/i18n.ts'
 import { localPrompts } from '../shared/local-prompts.ts'
-import { blank, hasAlpha, removeFlatBackground } from './image.ts'
+import { blank, hasAlpha, removeFlatBackground } from '../shared/raster.ts'
 
 test('内置工作流都能通过检查，占位符换成实际的值', () => {
   for (const wf of BUILTIN_WORKFLOWS) {
