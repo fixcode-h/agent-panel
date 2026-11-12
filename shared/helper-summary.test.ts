@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { AgentCall, AgentResult, EngineHost } from './engine-host.ts'
+import type { AgentCall, AgentResult, EngineHost } from './engine/host.ts'
 import type { Task, TaskStep } from './schema.ts'
 import { RESULT_ASK, resultLine, resultOf, runWithSummary, stallRetryAsk } from './helper-summary.ts'
 import { CHILD_RESTART_MAX } from './stuck-child.ts'

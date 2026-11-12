@@ -6,7 +6,7 @@
 import type { Task, TaskMessage } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
 import { helperGate } from '../../shared/engine.ts'
-import type { AgentCall } from '../../shared/engine-host.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
 import { pauseRun, resumeRun, withAttachments } from '../../shared/task.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'
 import { log } from '../log.ts'

@@ -2,9 +2,9 @@
 
 - 状态：已修复（`server/p4-review-diff.test.ts` 通过）
 - 症状：Agent 先加了一段代码（临时日志、调试代码、后来不要的实现），之后再删掉，原位置多出空行；P4 项目里常漏到提交
-- 入口：`shared/engine-prompt-parts.ts` 的 `commonPart`「通用要求」；`shared/engine-helpers.ts` 的 `reviewPart`；`server/exec/real-turn.ts` 的 `reviewDiff`
+- 入口：`shared/engine/prompt-parts.ts` 的 `commonPart`「通用要求」；`shared/engine/helpers.ts` 的 `reviewPart`；`server/exec/real-turn.ts` 的 `reviewDiff`
 - 根因类型：提示词没要求；P4 评审没有差异，问题看不见
-- 模块：`shared`（`shared/engine-prompt-parts.ts`、`shared/engine-helpers.ts`、`shared/builtin/agents.ts`）、`server`（`server/p4-review-diff.ts`）
+- 模块：`shared`（`shared/engine/prompt-parts.ts`、`shared/engine/helpers.ts`、`shared/builtin/agents.ts`）、`server`（`server/p4-review-diff.ts`）
 - 关键词：空行、空白行、删代码、加了又删、P4、p4 diff、评审差异、CRLF
 
 ## 现象

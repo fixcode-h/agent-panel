@@ -1,5 +1,5 @@
 // 项目知识：教训、经验、能力、Chat 记忆、模块文档。
-// 从 shared/engine-host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
+// 从 shared/engine/host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
 import type { ModuleDocsLookup } from '../docs-first.ts'
 import type { ExperienceInput, ProjectExperience } from '../experience.ts'

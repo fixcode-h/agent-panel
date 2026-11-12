@@ -1,5 +1,5 @@
-import { t } from './i18n.ts'
-import type { EngineHost } from './engine-host.ts'
+import { t } from '../i18n.ts'
+import type { EngineHost } from './host.ts'
 
 /**
  * 两个上限（工作流设的、计划设的）取更小的非零值：都设了时谁先到都算超。

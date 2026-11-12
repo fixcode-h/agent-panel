@@ -2,7 +2,7 @@ import { knownSlow } from '../command-times.ts'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Agent, Project, Task } from '../../shared/schema.ts'
-import type { AgentCall } from '../../shared/engine-host.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
 import { traceCli } from '../exec/cli-trace.ts'
 import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts, HookToolScope } from '../../shared/hooks.ts'
 import {

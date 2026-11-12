@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { orchAskPush, pushPolicyText } from './push-auth.ts'
-import type { EngineHost } from './engine-host.ts'
+import type { EngineHost } from './engine/host.ts'
 
 const policy = (x: Partial<NonNullable<EngineHost['policy']>>) => ({ push: 'ask' as const, tools: [], ...x })
 

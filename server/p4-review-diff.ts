@@ -3,7 +3,7 @@
  * 以前 P4 只列文件名，评审要自己去读文件，「加了又删的代码留下的空行」这种只在差异里显眼的问题
  * 几乎没人看得出来（用户 2026-11-11 报：P4 项目里 Agent 删掉自己加的代码后常留下空行）
  */
-import type { ReviewDiff } from '../shared/engine-host.ts'
+import type { ReviewDiff } from '../shared/engine/host.ts'
 import { p4Runner, type P4Run } from './p4-split.ts'
 
 /** 和 Git 的评审差异同一个上限：再长就存文件，提示词里只给路径 */

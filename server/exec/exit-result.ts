@@ -5,7 +5,7 @@
  * 长时间没有输出、停掉之前的那行提醒（idleWarning）也在这里
  */
 import type { getCli } from '../../shared/clis.ts'
-import type { AgentResult } from '../../shared/engine-host.ts'
+import type { AgentResult } from '../../shared/engine/host.ts'
 import type { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { t } from '../../shared/i18n.ts'
 import { clip } from '../../shared/text.ts'

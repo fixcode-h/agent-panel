@@ -2,7 +2,7 @@
  * 面板编排工具（orch-mcp.ts）共用的参数定义：交给哪个角色、档位、续接、整批默认值、分诊记录、计划步骤这些字段，
  * 以及把它们从工具参数里取出来的函数。从 orch-mcp.ts 按功能拆出来（行数上限，见 docs/lessons/file-caps.md）
  */
-import type { HelperSpec, Orchestra, RouteInput } from '../shared/engine-host.ts'
+import type { HelperSpec, Orchestra, RouteInput } from '../shared/engine/host.ts'
 
 /** 交给哪个 Agent：列出通用 Agent，模型不用猜名字 */
 export function agentField(o: Orchestra) {

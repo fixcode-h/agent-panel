@@ -2,7 +2,7 @@
  * 面板工具 remember（Chat 模式的跨对话记忆，server/chat-memory.ts）：Chat 页的对话记下用户的长期偏好和事实，
  * 之后每个 Chat 对话的提示词都带上（shared/chat-prompt.ts 的 memoryPart）。项目里的对话没有这个工具
  */
-import type { Orchestra } from '../shared/engine-host.ts'
+import type { Orchestra } from '../shared/engine/host.ts'
 import { MEMORY_TEXT_MAX } from './chat-memory.ts'
 import type { PanelTool } from './panel-tools/types.ts'
 

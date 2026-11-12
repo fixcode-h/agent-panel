@@ -2,7 +2,7 @@
  * 派子任务：spawn_agents / stop_subtask / wait_agents（Orchestra.canSpawn）。
  * 子任务不能再派子任务，Chat 模式不派子任务（canSpawn 为 false）
  */
-import type { HelperReport, HelperSpec } from '../../shared/engine-host.ts'
+import type { HelperReport, HelperSpec } from '../../shared/engine/host.ts'
 import {
   agentField,
   batchField,

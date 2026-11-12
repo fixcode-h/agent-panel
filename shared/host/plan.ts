@@ -1,5 +1,5 @@
 // 计划和工作流运行：set_plan / finish_plan / end_turn、共享状态、在对话名下起工作流，以及宿主那边的收尾、完成依据。
-// 从 shared/engine-host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
+// 从 shared/engine/host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
 import type { GateStep, TurnExtra } from '../done-evidence.ts'
 import type { FlowRunHost, RunTools } from '../flow-run-orch.ts'

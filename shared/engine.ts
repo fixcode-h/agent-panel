@@ -74,7 +74,7 @@ import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSe
 import { isHelperAgent } from './builtin/core.ts'
 import { childAskPrompt } from './children/ask.ts'
 import { topPush } from './sub-policy.ts'
-import { overBudget } from './engine-budget.ts'
+import { overBudget } from './engine/budget.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
   SLOT_PROMPT,
@@ -94,7 +94,7 @@ import {
   wrapDone,
   wrapKind,
   wrapUpPart,
-} from './engine-prompt-parts.ts'
+} from './engine/prompt-parts.ts'
 import {
   MAX_HELPERS_PER_STEP,
   MAX_RESUME_IDS,
@@ -116,8 +116,8 @@ import {
   statusTree,
   takeMail,
   wholeReport,
-} from './engine-helpers.ts'
-import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine-host.ts'
+} from './engine/helpers.ts'
+import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine/host.ts'
 
 import { bindWait, finishStepNow, WRAP_UP } from './plan.ts'
 

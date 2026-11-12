@@ -1,5 +1,5 @@
 // 编译和后台命令：UE 编译申请、测试步骤、后台命令的起停查。
-// 从 shared/engine-host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
+// 从 shared/engine/host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
 import type { TestStep } from '../schema.ts'
 

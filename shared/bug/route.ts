@@ -1,4 +1,4 @@
-import type { EngineHost } from '../engine-host.ts'
+import type { EngineHost } from '../engine/host.ts'
 
 /**
  * 父对话：用户报的 Bug 用哪种方式修（用户 2026-11-07 定的）。

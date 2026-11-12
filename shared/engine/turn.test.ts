@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runEngineTurn } from './engine.ts'
-import type { AgentCall, AgentResult, EngineHost } from './engine-host.ts'
-import { AgentInput, type Agent, type StopReason, type Task } from './schema.ts'
-import { newTask } from './task.ts'
+import { runEngineTurn } from '../engine.ts'
+import type { AgentCall, AgentResult, EngineHost } from './host.ts'
+import { AgentInput, type Agent, type StopReason, type Task } from '../schema.ts'
+import { newTask } from '../task.ts'
 
 /**
  * 引擎一轮对话的直接单测（A9）：以前这几条路径只靠 e2e 和 server 侧的集成用例间接兜着，

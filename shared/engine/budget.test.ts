@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { finish, runConversationTurn } from './engine.ts'
-import type { EngineHost } from './engine-host.ts'
-import { budgetLimit, overBudget } from './engine-budget.ts'
-import { Task, TaskStep } from './schema.ts'
+import { finish, runConversationTurn } from '../engine.ts'
+import type { EngineHost } from './host.ts'
+import { budgetLimit, overBudget } from './budget.ts'
+import { Task, TaskStep } from '../schema.ts'
 
 test('执行上限：工作流和计划都设了时取小的那个，0 和不设都按不限', () => {
   assert.equal(budgetLimit(undefined, 0), null)

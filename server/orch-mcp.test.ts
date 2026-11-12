@@ -6,7 +6,7 @@ import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts
 import { newTask } from '../shared/task.ts'
 import { chatModePart } from '../shared/chat-prompt.ts'
 import { runEngineTurn } from '../shared/engine.ts'
-import type { AgentCall, EngineHost, HelperSpec, Orchestra } from '../shared/engine-host.ts'
+import type { AgentCall, EngineHost, HelperSpec, Orchestra } from '../shared/engine/host.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
 import { askMcpApi, openAskBridge } from './ask-mcp.ts'

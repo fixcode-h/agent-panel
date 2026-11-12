@@ -9,7 +9,7 @@ import { timeAgo } from '../task.ts'
 import { findRole, modeScope, scopeOf } from '../conv-mode.ts'
 import { activePlan, bindWait, PARENT_FIX_REF, ensureChildStep } from '../plan.ts'
 import { handedOff, SENT_NOTE, recordRoute } from './route.ts'
-import type { Orchestra } from '../engine-host.ts'
+import type { Orchestra } from '../engine/host.ts'
 import type { OrchCtx } from './ctx.ts'
 
 /** 对话类工具：子对话的列表、创建、交代，给父对话传话，父对话之间协调，文件认领，共享状态 */

@@ -5,17 +5,17 @@
  * EngineHost / Orchestra 只是按能力拆开的小接口（shared/host/）的组合，加新能力时加进小接口或新开一个
  */
 
-import type { ReviewTarget } from './clis.ts'
-import type { DocRootInfo } from './doc-root.ts'
-import type { BeforeEndDecision, BeforeEndInput } from './hooks.ts'
-import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from './schema.ts'
-import type { Blocker } from './submitted.ts'
-import type { BugHost, OrchBug } from './host/bug.ts'
-import type { BuildHost, OrchBuild } from './host/build.ts'
-import type { ConversationHost, OrchConversation } from './host/conversation.ts'
-import type { KnowledgeHost, OrchKnowledge } from './host/knowledge.ts'
-import type { OrchPlan, PlanHost } from './host/plan.ts'
-import type { OrchVcs, VcsHost } from './host/vcs.ts'
+import type { ReviewTarget } from '../clis.ts'
+import type { DocRootInfo } from '../doc-root.ts'
+import type { BeforeEndDecision, BeforeEndInput } from '../hooks.ts'
+import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from '../schema.ts'
+import type { Blocker } from '../submitted.ts'
+import type { BugHost, OrchBug } from '../host/bug.ts'
+import type { BuildHost, OrchBuild } from '../host/build.ts'
+import type { ConversationHost, OrchConversation } from '../host/conversation.ts'
+import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
+import type { OrchPlan, PlanHost } from '../host/plan.ts'
+import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 
 /** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
 export type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }

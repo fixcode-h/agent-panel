@@ -5,7 +5,7 @@
 // 其余（任务上的消息、用量、会话、待办、请求）直接写在 task 上，由 ctx.changed 落盘推送。
 import type { AgentUsage, Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
-import type { AgentCall } from '../../shared/engine-host.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
 import { addFirstToken } from '../../shared/first-token-stats.ts'
 import { stripLongContext } from '../../shared/model-limits.ts'
 import { modelLimitsFor } from '../../shared/model-catalog.ts'

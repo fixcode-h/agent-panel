@@ -86,7 +86,7 @@ export interface TasksScope {
   >
   applyAskUser: (task: Task, on: boolean, working: boolean) => Promise<void>
   applyChildAskUser: (parent: Task, on: boolean) => Promise<void>
-  attachOrchestra: (taskId: string, orch: import('../../shared/engine-host.ts').Orchestra | undefined) => void
+  attachOrchestra: (taskId: string, orch: import('../../shared/engine/host.ts').Orchestra | undefined) => void
   background: {
     start(input: {
       taskId: string
@@ -276,7 +276,7 @@ export interface TasksScope {
   ) => Promise<Task>
   forwardSpawn: (
     child: Task,
-    spec: import('../../shared/engine-host.ts').HelperSpec,
+    spec: import('../../shared/engine/host.ts').HelperSpec,
   ) => {
     ok: boolean
     info: string

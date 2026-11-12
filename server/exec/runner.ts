@@ -13,7 +13,7 @@ import { taskChanges } from '../own-changes.ts'
 import { trackFileWrite, trackOutside } from './outside-changes.ts'
 
 import { effortRejected } from '../models.ts'
-import type { AgentCall, AgentResult } from '../../shared/engine-host.ts'
+import type { AgentCall, AgentResult } from '../../shared/engine/host.ts'
 
 import { CONTEXT_CARRY_SHARE, MIN_CLIP_TOKENS, restartCarry } from './transcript.ts'
 import { cliSwitchedText, systemNote, firstNoEffortTell, noEffortSkippedText } from './recovery.ts'

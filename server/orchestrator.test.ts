@@ -4,7 +4,7 @@ import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts
 import { convState, convStateText, newTask, taskFacts } from '../shared/task.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { runEngineTurn } from '../shared/engine.ts'
-import type { AgentCall, EngineHost } from '../shared/engine-host.ts'
+import type { AgentCall, EngineHost } from '../shared/engine/host.ts'
 import { FlowRun } from '../shared/tasks/flow-schema.ts'
 import { withWrapUp } from '../shared/flow-run-wrap.ts'
 import { planTask } from '../shared/flow.ts'

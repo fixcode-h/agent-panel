@@ -3,10 +3,10 @@ import { loadCapability } from '../agent-role.ts'
 import { normInlinePaths } from '../inline-edit.ts'
 import { findLessons } from '../lessons.ts'
 import { findExperience } from '../experience.ts'
-import { diagnoseTask, loadedCaps } from '../engine-helpers.ts'
+import { diagnoseTask, loadedCaps } from '../engine/helpers.ts'
 import { bindWait, runningStepId } from '../plan.ts'
 import { recordRoute } from './route.ts'
-import type { Orchestra } from '../engine-host.ts'
+import type { Orchestra } from '../engine/host.ts'
 import type { OrchCtx } from './ctx.ts'
 
 /** 能力类工具：加载能力、就地微改动、后台命令、开独立分支、请父对话收尾、申请编译、教训和经验 */

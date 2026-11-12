@@ -1,5 +1,5 @@
 /** API 并发名额：拿名额（满了排队并标出在等哪个 API）、等别人时让出再拿回。从 runner.ts 拆出 */
-import type { AgentCall } from '../../shared/engine-host.ts'
+import type { AgentCall } from '../../shared/engine/host.ts'
 import { ApiSlot } from '../cli/api-slots.ts'
 import type { RealContext } from './real-context.ts'
 import { type TaskStep, aliasAgent } from '../../shared/schema.ts'

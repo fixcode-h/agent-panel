@@ -11,7 +11,7 @@ import type { RealContext } from './real-context.ts'
  * Agent 跑的 rg 照样扫进 Intermediate、Saved 这些产物目录，一次搜几分钟。
  * 写一份 ripgrep 配置、用 RIPGREP_CONFIG_PATH 指过去；用户本来设了的，把原来的内容放在前面一起带上。
  * 新版 Claude Code（原生安装）没有单独的搜索工具，搜索走命令行里的 rg（它自带的那份也读这个配置，2.1.322 实测）；
- * 它自己的 grep（ugrep）、find（bfs）不读，所以提示词和长命令守卫让它用 rg（shared/engine-prompt-parts.ts、shared/wide-search.ts）
+ * 它自己的 grep（ugrep）、find（bfs）不读，所以提示词和长命令守卫让它用 rg（shared/engine/prompt-parts.ts、shared/wide-search.ts）
  */
 export async function searchExcludeEnv(ctx: RealContext): Promise<{ key: string; value: string }[]> {
   const lines = rgConfigLines(ctx.project, { onlyProject: ctx.isGit })

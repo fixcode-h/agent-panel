@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { finish } from './engine.ts'
-import type { EngineHost } from './engine-host.ts'
+import type { EngineHost } from './engine/host.ts'
 import { cancelUnit, dropInterrupted, helperKey, helperStops, pauseUnit, pausedSignal } from './run-stops.ts'
 import { Task, TaskStep } from './schema.ts'
 import { settleStopped } from './tasks/settle.ts'

@@ -1,4 +1,4 @@
-import type { EngineHost } from './engine-host.ts'
+import type { EngineHost } from './engine/host.ts'
 
 /**
  * 编译、测试报错不卡住计划（用户 2026-10-30 定的）：先分清是不是自己改出来的，自己的自己修；

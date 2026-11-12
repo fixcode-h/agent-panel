@@ -2,21 +2,21 @@
  * 引擎交给 Agent 的提示词里各节点、子任务、对话共用的段落：用户需求、授权、收尾、计划维护、搜索排除、文件格式等。
  * 从 engine.ts 拆出来（文件行数上限，见 docs/lessons/file-caps.md）；每段写什么、为什么这么写的注释都跟着段落走
  */
-import type { Task, Workflow } from './schema.ts'
-import { clip } from './text.ts'
-import { withAttachments } from './task.ts'
-import { statePart } from './run-state.ts'
-import { pushPolicyText } from './push-auth.ts'
-import { docRootText, plainDocRootText, p4DocsSkip } from './doc-root.ts'
-import { promptLangRules, promptLangWord } from './prompt-lang.ts'
-import { summaryCardRules } from './summary-card.ts'
-import { sharedWrapPart, uePart } from './wrapup-prompt.ts'
-import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
-import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from './test-steps.ts'
-import { subPolicy } from './sub-policy.ts'
-import type { EngineHost } from './engine-host.ts'
-import { activePlan, planNotice, planNowText, planText, WRAP_UP, type WrapUpAnswer } from './plan.ts'
-import type { WrapUpKind } from './wrap-up.ts'
+import type { Task, Workflow } from '../schema.ts'
+import { clip } from '../text.ts'
+import { withAttachments } from '../task.ts'
+import { statePart } from '../run-state.ts'
+import { pushPolicyText } from '../push-auth.ts'
+import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
+import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
+import { summaryCardRules } from '../summary-card.ts'
+import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
+import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from '../search-exclude.ts'
+import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
+import { subPolicy } from '../sub-policy.ts'
+import type { EngineHost } from './host.ts'
+import { activePlan, planNotice, planNowText, planText, WRAP_UP, type WrapUpAnswer } from '../plan.ts'
+import type { WrapUpKind } from '../wrap-up.ts'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 export const SLOT_PROMPT: Record<string, string> = {

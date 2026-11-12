@@ -2,7 +2,7 @@
  * 面板工具 request_user_action（等你操作）：定义和调用都在这里（面板工具注册表的条目）。
  * 判定和记录在 shared/user-action.ts（设计稿 docs/openspec/changes/user-action-wait/design.md）
  */
-import type { Orchestra } from '../shared/engine-host.ts'
+import type { Orchestra } from '../shared/engine/host.ts'
 import type { PanelTool } from './panel-tools/types.ts'
 
 const USER_ACTION_TOOL = 'request_user_action'

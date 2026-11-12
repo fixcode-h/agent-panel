@@ -3,7 +3,7 @@
 // finishTurn 在这一轮成功结束时收口（空回合报错、续接留痕收回、用量提醒、压缩和自动压缩）。
 import type { Alert, Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
-import type { AgentCall, AgentResult } from '../../shared/engine-host.ts'
+import type { AgentCall, AgentResult } from '../../shared/engine/host.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { dropAsked } from '../../shared/tasks/settle.ts'
 import { t } from '../../shared/i18n.ts'

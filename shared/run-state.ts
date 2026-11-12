@@ -4,7 +4,7 @@
  */
 import { currentRun } from './flow.ts'
 import type { RunMessage, RunStateEntry, Task, TaskRun, Workflow } from './schema.ts'
-import type { EngineHost } from './engine-host.ts'
+import type { EngineHost } from './engine/host.ts'
 import { clip } from './text.ts'
 
 const now = () => new Date().toISOString()

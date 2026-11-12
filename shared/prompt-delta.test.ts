@@ -10,8 +10,8 @@ import {
   rememberSent,
 } from './prompt-delta.ts'
 import { runConversationTurn } from './engine.ts'
-import { nodeRequests } from './engine-prompt-parts.ts'
-import type { AgentCall, EngineHost } from './engine-host.ts'
+import { nodeRequests } from './engine/prompt-parts.ts'
+import type { AgentCall, EngineHost } from './engine/host.ts'
 import { applyPlan } from './plan.ts'
 import { Agent, Task } from './schema.ts'
 

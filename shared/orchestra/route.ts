@@ -1,7 +1,7 @@
 // 父对话分诊和交代子对话的记录（从 shared/engine.ts 搬来，Orchestra 的对话类工具和引擎共用）
 import type { TaskRoute } from '../schema.ts'
 import { type HandOffs } from '../peer-message.ts'
-import type { EngineHost, RouteInput } from '../engine-host.ts'
+import type { EngineHost, RouteInput } from '../engine/host.ts'
 
 const now = () => new Date().toISOString()
 

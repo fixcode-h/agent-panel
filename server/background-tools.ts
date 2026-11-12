@@ -6,7 +6,7 @@
  * 以及不会自己结束的开发服务器、监听（service）。写文件、几秒就完的命令不收（shared/command-scope.ts 的 backgroundMisuse），
  * 命令先过和 CLI 命令工具同一套守卫（Orchestra.guardCommand，见 server/hooks/dispatch.ts 的 commandGuard）
  */
-import type { Orchestra } from '../shared/engine-host.ts'
+import type { Orchestra } from '../shared/engine/host.ts'
 import { backgroundMisuse, endlessCommand } from '../shared/command-scope.ts'
 import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
