@@ -340,7 +340,7 @@ export async function ensureWorktreeDeps(
 const SPARE_DEPS = `${DEPS_DIR}.spare`
 const spareDepsDir = async (repo: string) => path.join(WORKTREES_DIR, await repoKey(repo), SPARE_DEPS)
 /** 正在补副本的项目：同一个项目同时只补一份（导出给测试：清数据目录前要等它们收完） */
-export const spareFilling = new Map<string, Promise<void>>()
+export const spareFilling = new Map<string, Promise<void>>() // 模块状态：缓存，丢了重算
 
 /** 拿走备用副本换进这个独立目录；没有、lock 对不上、被别人先拿走了都返回 false，调用方照旧现复制 */
 async function takeSpareDeps(dir: string, repo: string, stamp: DepsStamp | null) {

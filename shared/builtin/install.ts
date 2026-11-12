@@ -200,7 +200,7 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
 }
 
 /** 「通用项目」「UE 项目」：项目默认流程要用，本机没有时每次启动都补上；其余自带工作流只自动装一次 */
-const ALWAYS_SEEDED = new Set([GENERAL_KEY, UE_PROJECT_KEY])
+const ALWAYS_SEEDED = new Set([GENERAL_KEY, UE_PROJECT_KEY]) // 模块状态：常量，加载后不改
 
 /** 参数表是否一致（忽略键的顺序） */
 const sameParams = (a: Record<string, unknown>, b: Record<string, unknown>) => {

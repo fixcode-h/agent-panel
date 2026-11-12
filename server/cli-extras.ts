@@ -17,7 +17,7 @@ import { t } from '../shared/i18n.ts'
  * 额度在执行中由 CLI 推送（Codex 的 account/rateLimits/updated、Claude Code 的 rate_limit_event），
  * 记在内存里；Codex 还能主动查（account/rateLimits/read），Claude Code 只有跑过一次才知道。
  */
-const limits = new Map<string, CliLimits>()
+const limits = new Map<string, CliLimits>() // 模块状态：缓存，丢了重算
 
 export function setLimits(cli: string, l: CliLimits) {
   // 推送可能只带一部分窗口：和上次的合并，没带的窗口保留

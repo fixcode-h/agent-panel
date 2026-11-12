@@ -142,7 +142,7 @@ export interface CheckCtx {
 const isInt = (v: string) => /^[-+]?\d+$/.test(v)
 
 /** 编好的正则：同一个写法只编一次；写错的记成 null（不查，列结构里会提示写错了） */
-const RE_CACHE = new Map<string, RegExp | null>()
+const RE_CACHE = new Map<string, RegExp | null>() // 模块状态：缓存，丢了重算
 export function patternRe(p: string): RegExp | null {
   let re = RE_CACHE.get(p)
   if (re === undefined) {

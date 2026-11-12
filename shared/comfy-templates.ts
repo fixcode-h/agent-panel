@@ -412,6 +412,7 @@ const KNOWN_WIDGETS: Record<string, (string | null)[]> = {
 }
 
 /** 没有控件、但确实是 ComfyUI 节点的类型；用来区分「未知节点」和「只是没有参数」 */
+// 模块状态：常量，加载后不改
 const KNOWN_EMPTY = new Set(
   Object.entries(KNOWN_WIDGETS)
     .filter(([, v]) => !v.length)
@@ -556,7 +557,7 @@ export function templateAssets(ui: UiGraph, knownGb?: (file: string) => number |
 }
 
 /** 已知模型文件的大小（GB）：模板说明里没写大小时用 */
-const FILE_GB = new Map(LOCAL_FILES.map((f) => [f.file, f.gb]))
+const FILE_GB = new Map(LOCAL_FILES.map((f) => [f.file, f.gb])) // 模块状态：常量，加载后不改
 export const localGb = (file: string): number | undefined => FILE_GB.get(file)
 
 /* ------------------------------- 转成接口格式 ------------------------------- */

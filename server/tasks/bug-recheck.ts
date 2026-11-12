@@ -39,7 +39,7 @@ const DEP_DIRS = ['node_modules', '.venv', 'venv']
 const timeoutMs = () => Number(process.env.AGENT_PANEL_RECHECK_TIMEOUT_MS) || RECHECK_TIMEOUT_MS
 
 /** 正在复核的对话：面板重启后记成 running 的那份没人在跑，下一轮结束时重新跑 */
-const running = new Set<string>()
+const running = new Set<string>() // 模块状态：运行时，正在复核的对话，重启后下一轮结束时重跑
 
 const exists = (p: string) =>
   stat(p).then(

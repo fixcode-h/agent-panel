@@ -59,7 +59,7 @@ const FILE = () => dataPath('projects/doc-groups.json')
 const BRANCH_ONLY = ['p4change', 'worklog']
 const MOVED = 'MOVED.md'
 
-let cache: Registry | undefined
+let cache: Registry | undefined // 模块状态：缓存，丢了重算
 /** 测试用：换了数据目录后重新读 */
 export const resetDocGroups = () => {
   cache = undefined
@@ -75,7 +75,7 @@ async function load(): Promise<Registry> {
 const save = (reg: Registry) => writeJsonAtomic(FILE(), reg)
 
 // 组的建立和合并会读写同一份记录和同一批文件：几个对话同时开始时排队做，不重复复制
-let chain: Promise<unknown> = Promise.resolve()
+let chain: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 function serial<T>(run: () => Promise<T>): Promise<T> {
   const next = chain.catch(() => {}).then(run)
   chain = next

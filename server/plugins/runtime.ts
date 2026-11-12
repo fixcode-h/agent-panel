@@ -20,7 +20,7 @@ interface Active {
   plugin: ServerPlugin
   cfg: PluginConfig
 }
-const active = new Map<string, Active>()
+const active = new Map<string, Active>() // 模块状态：会话，跟着进程或连接一起没
 const errors = new Map<string, string>()
 
 /** 同一个包重装、升级后要重新 import：按安装时间区分模块地址，ESM 缓存里的旧版本不会被拿来用 */

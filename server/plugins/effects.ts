@@ -23,7 +23,7 @@ export interface PluginEffect {
 }
 
 const MAX = 200
-const effects = new Map<string, PluginEffect[]>()
+const effects = new Map<string, PluginEffect[]>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 本机路径转成相对工作目录的写法；工作目录外的保留绝对路径（正斜杠） */
 export function relTo(cwd: string, f: string) {

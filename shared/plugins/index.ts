@@ -10,8 +10,8 @@ export type { PluginConfig, PluginInfo, PluginManifest, PluginSetting, PluginSou
  * 网页拿到 /api/plugins 时更新。插件默认关着，在设置 →「插件」里打开。
  * 这里只放按清单就能算的东西（参数默认值、开着的插件带了哪些角色、工作流、技能说明、工具名），前后端共用。
  */
-let installed: PluginManifest[] = []
-let enabled = new Set<string>()
+let installed: PluginManifest[] = [] // 模块状态：配置副本，重启时重读
+let enabled = new Set<string>() // 模块状态：配置副本，重启时重读
 
 /** 插件清单里的角色只写了和默认值不同的字段：按内置角色的默认值补齐（和核心内置角色同一个 base） */
 function normalize(m: PluginManifest): PluginManifest {
@@ -60,7 +60,7 @@ export function pluginConfig(plugins: PluginsSetting | undefined, id: string): P
  * 当前开着的插件。服务端读设置、存设置时更新，网页拿到设置时更新；
  * 内置角色 / 工作流 / 技能列表、工具显示名都按它取，免得把设置一路传进每个函数。
  */
-let lastSetting: PluginsSetting | undefined
+let lastSetting: PluginsSetting | undefined // 模块状态：配置副本，重启时重读
 export function setEnabledPlugins(plugins: PluginsSetting | undefined) {
   lastSetting = plugins
   enabled = new Set(installed.filter((p) => pluginOn(plugins, p.id)).map((p) => p.id))

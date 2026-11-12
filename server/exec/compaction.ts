@@ -14,10 +14,10 @@ const fmtTok = (n: number) =>
  * 压缩上下文的那一行工具调用，按压缩操作（op 对象）记：网络中断、环境性失败重试时 op 原样传下去，
  * 接着用同一行，不在对话里多出一行压缩
  */
-export const compactRows = new WeakMap<object, { tool: ToolUse; t0: number; before?: number }>()
+export const compactRows = new WeakMap<object, { tool: ToolUse; t0: number; before?: number }>() // 模块状态：会话，跟着进程或连接一起没
 
 /** CLI 报的上下文细分里固定占的部分（系统提示词、工具定义、说明文件……）：不随压缩变，消息以外的都算 */
-const FIXED_SKIP = new Set(['messages', 'since', 'buffer', 'free', 'mcpDeferred', 'systemDeferred'])
+const FIXED_SKIP = new Set(['messages', 'since', 'buffer', 'free', 'mcpDeferred', 'systemDeferred']) // 模块状态：常量，加载后不改
 export function fixedContext(snap: ContextSnapshot | undefined) {
   return snap ? snap.rows.reduce((n, r) => (FIXED_SKIP.has(r.key) ? n : n + r.tokens), 0) : undefined
 }

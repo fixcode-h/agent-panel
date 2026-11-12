@@ -20,7 +20,7 @@ const LEGACY = [
   path.join(DATA_DIR, 'plugin-data', 'ui-design', 'designs', '_styles.json'),
 ]
 
-let styles: SavedStyle[] | undefined
+let styles: SavedStyle[] | undefined // 模块状态：配置副本，重启时重读
 /** 用户自己存的风格（不含内置的） */
 export async function loadStyles() {
   if (styles) return styles

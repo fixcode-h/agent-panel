@@ -137,7 +137,7 @@ export function usageCostOf(tokens: UsageTokens, modelId: string | undefined, sp
 const SYMBOL: Record<Currency, string> = { CNY: '¥', USD: '$' }
 
 /** Intl 实例复用：表格每行都格式化，别每次 new（和对话框里 formatAt 的教训一致） */
-const moneyFormats = new Map<string, Intl.NumberFormat>()
+const moneyFormats = new Map<string, Intl.NumberFormat>() // 模块状态：缓存，丢了重算
 
 function moneyFormat(currency: Currency, digits: number) {
   const key = `${currency}-${digits}`

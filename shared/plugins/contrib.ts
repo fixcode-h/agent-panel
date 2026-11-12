@@ -30,7 +30,7 @@ export function fillConfig(command: string, config: Record<string, string | numb
  * 界面上列出来照实写「只在有 X 的项目里生效」，不在前端猜
  */
 type Probe = (dir: string, globs: string[]) => boolean
-let probe: Probe = () => true
+let probe: Probe = () => true // 模块状态：接线，启动时登记
 export const setProjectProbe = (p: Probe) => void (probe = p)
 
 /**

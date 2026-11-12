@@ -13,11 +13,11 @@ import { runSegments, segHead } from '../../shared/command-scope.ts'
 const BINARY_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|pdf|ipynb|uasset|umap|zip|7z|exe|dll)$/i
 
 /** 整份打印文件的命令：cat、type、PowerShell 的 Get-Content（带 -Tail / -TotalCount / -Head 的只取一段，不算） */
-const DUMP_HEADS = new Set(['cat', 'type', 'get-content', 'gc'])
+const DUMP_HEADS = new Set(['cat', 'type', 'get-content', 'gc']) // 模块状态：常量，加载后不改
 const DUMP_RANGE = /\s-(tail|totalcount|head|first|last)\b/i
 
 /** 同一个对话里拦过一次的文件：再要整份读就放行（它确实要通读时不至于卡死），记在内存里，重启清空 */
-const warned = new Map<string, Set<string>>()
+const warned = new Map<string, Set<string>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 
 const sizeOf = (p: string) => {
   try {

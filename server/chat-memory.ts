@@ -34,7 +34,7 @@ export async function readChatMemory(): Promise<ChatMemory> {
 }
 
 /** 读、改、写串行：两个对话同时 remember 时不能互相覆盖 */
-let chain: Promise<unknown> = Promise.resolve()
+let chain: Promise<unknown> = Promise.resolve() // 模块状态：排队，丢了没事
 function mutate<R>(fn: (m: ChatMemory) => R): Promise<R> {
   const run = chain.then(async () => {
     const m = await readChatMemory()

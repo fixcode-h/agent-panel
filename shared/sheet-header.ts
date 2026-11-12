@@ -27,7 +27,7 @@ const SCAN = 12
 /** 一行里至少这个比例的格子符合，才算这种行 */
 const RATIO = 0.8
 
-const MODIFIERS = new Set(['optional', 'repeated', 'required', 'packed', 'map', 'key', 'list', 'array'])
+const MODIFIERS = new Set(['optional', 'repeated', 'required', 'packed', 'map', 'key', 'list', 'array']) // 模块状态：常量，加载后不改
 const SIDES = new Set(['client', 'server', 'editor', 'all', 'both', 'none', 'c', 's', 'e', 'cs', 'sc', 'ce', 'se'])
 const PRIMITIVES =
   /^(u?int(8|16|32|64)?|s?int(32|64)|s?fixed(32|64)|float|double|bool(ean)?|string|bytes?|short|long|char|number|text|json|vector[234]|date(time)?|time)(\[\])?$/i

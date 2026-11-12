@@ -34,7 +34,7 @@ const STOP_GONE_TICKS = 3
 export const STOP_KILL_MS = 8000
 
 /** 用户意图的停止（暂停、随父对话停、归档、删除）：这些才盯着进程、到点直接收口 */
-const WATCHED_STOPS = new Set<StopReason>(['user', 'parent', 'archive', 'delete'])
+const WATCHED_STOPS = new Set<StopReason>(['user', 'parent', 'archive', 'delete']) // 模块状态：常量，加载后不改
 
 export function createKeepAlive(s: TasksScope) {
   const stopTask = (id: string, reason: StopReason) => {

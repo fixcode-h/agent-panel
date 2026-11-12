@@ -96,7 +96,7 @@ export function migrateDataDir() {
 }
 
 /** 导入数据后让所有集合重新从文件读 */
-const resets = new Set<() => void>()
+const resets = new Set<() => void>() // 模块状态：接线，启动时登记
 export const onReset = (fn: () => void) => resets.add(fn)
 export const resetCaches = () => resets.forEach((fn) => fn())
 

@@ -43,6 +43,7 @@ const HEARTBEAT_MS = 20_000
 /** 会等很久的工具：走流式响应带心跳（wait_agents 一次可能等到子任务全部结束，见 orch-mcp.ts 的 WAIT_AGENTS_S） */
 const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents', 'video_frames']
 
+// 模块状态：会话，跟着进程或连接一起没
 const sessions = new Map<
   string,
   {
@@ -380,9 +381,9 @@ export const merge = (a: any, b: any): any =>
       ? { ...a, ...Object.fromEntries(Object.entries(b).map(([k, v]) => [k, k in a ? merge(a[k], v) : v])) }
       : b
 
-const held = new Map<string, { count: number; original: string | null }>()
+const held = new Map<string, { count: number; original: string | null }>() // 模块状态：运行时，加进项目 MCP 配置的条目，重启后由启动清扫删掉
 /** 同一个文件的读改写排队做：几个子对话共用一个目录时会同时往同一个配置文件里加自己的工具 */
-const locks = new Map<string, Promise<unknown>>()
+const locks = new Map<string, Promise<unknown>>() // 模块状态：排队，丢了没事
 export function lockedFile<T>(file: string, fn: () => Promise<T>) {
   const prev = locks.get(file) ?? Promise.resolve()
   const next = prev.then(fn, fn)

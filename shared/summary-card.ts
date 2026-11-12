@@ -254,8 +254,8 @@ export interface SummaryCard {
 
 export type SummarySegment = { md: string } | { card: SummaryCard }
 
-const kindByLabel = new Map<string, SummaryKind>()
-const fieldByLabel = new Map<string, string>()
+const kindByLabel = new Map<string, SummaryKind>() // 模块状态：缓存，丢了重算
+const fieldByLabel = new Map<string, string>() // 模块状态：缓存，丢了重算
 for (const k of KIND_KEYS) {
   const d = SUMMARY_KINDS[k]
   kindByLabel.set(d.zh, k)

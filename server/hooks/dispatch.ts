@@ -48,7 +48,7 @@ import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
  */
 
 /** 只读的内置角色：调研、评审、排查分析（方案设计要写规范文件，不算只读） */
-const READ_ONLY_ORIGINS = new Set(['builtin:explorer', 'builtin:reviewer', 'builtin:analyzer'])
+const READ_ONLY_ORIGINS = new Set(['builtin:explorer', 'builtin:reviewer', 'builtin:analyzer']) // 模块状态：常量，加载后不改
 /** 只读角色在命令行里也不该做的事：按命令前缀判断（不是按回复文字） */
 const WRITE_COMMANDS = [
   'git commit',
@@ -161,13 +161,13 @@ function restoreText(task: Task): string {
 }
 
 /** 改文件后推送教训：每个对话里同一条教训只推一次 */
-const pushed = new Map<string, Set<string>>()
+const pushed = new Map<string, Set<string>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 /** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
-const fails = new Map<string, Map<string, number>>()
+const fails = new Map<string, Map<string, number>>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 /** 计划没跟上提醒：每个对话在数哪一项、动了几次手、提醒过什么（见 shared/plan-pace.ts） */
-const paces = new Map<string, PaceState>()
+const paces = new Map<string, PaceState>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 /** 改完没验证：每个对话里按哪条输入问过（同一条输入只问一次） */
-const verified = new Map<string, string>()
+const verified = new Map<string, string>() // 模块状态：运行时，「说过一次」的记录，重启后最多再提醒一次
 
 /**
  * 这条输入以来改过文件、最后一次改之后一条命令都没跑过：返回这条输入的 id，不该问返回空。

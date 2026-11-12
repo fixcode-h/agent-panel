@@ -36,7 +36,7 @@ export const VISIBLE_SETTINGS = [
   'language',
   'usagePricingModel',
 ] as const satisfies readonly (keyof Settings)[]
-const visible = new Set<string>(VISIBLE_SETTINGS)
+const visible = new Set<string>(VISIBLE_SETTINGS) // 模块状态：常量，加载后不改
 
 export const visibleSettings = (s: Settings) => Object.fromEntries(Object.entries(s).filter(([k]) => visible.has(k)))
 

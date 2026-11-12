@@ -19,7 +19,7 @@ const execFileAsync = promisify(execFile)
 const isWin = process.platform === 'win32'
 const BIN = path.join(DATA_DIR, 'bin')
 const BIN_FILE = path.join(BIN, isWin ? 'cloudflared.exe' : 'cloudflared')
-let download: { running: boolean; percent: number; error: string } | null = null
+let download: { running: boolean; percent: number; error: string } | null = null // 模块状态：会话，跟着进程或连接一起没
 
 /** 下载 cloudflared：Windows / Linux 下直接放二进制，macOS 下载后解压 */
 function asset() {

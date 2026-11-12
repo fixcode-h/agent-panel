@@ -27,12 +27,12 @@ export interface TurnOwner extends Turn {
   taskId: string
 }
 
-let seq = 0
+let seq = 0 // 模块状态：运行时，改动归属，重启时那一轮的归属丢失
 const turns = new Map<string, Turn>()
 /** 目录 → 对话 → 文件（相对目录、正斜杠）→ 最近一次点名的序号。只留最近一次：判断「这一轮里点没点过」够用，也不会越记越多 */
-const edits = new Map<string, Map<string, Map<string, number>>>()
+const edits = new Map<string, Map<string, Map<string, number>>>() // 模块状态：运行时，改动归属，重启时那一轮的归属丢失
 /** 对话 → 父对话：子对话的改动算不算父对话的要沿着它往上找 */
-const parents = new Map<string, string>()
+const parents = new Map<string, string>() // 模块状态：运行时，改动归属，重启时那一轮的归属丢失
 
 const key = (dir: string) => path.resolve(dir)
 

@@ -27,7 +27,7 @@ async function sampleIntervalMs() {
 }
 
 /** Windows 上查过一次、确认拿不到之后就不再试：不用每 30 秒都起一个 PowerShell */
-let winChildMemoryUnsupported = false
+let winChildMemoryUnsupported = false // 模块状态：缓存，丢了重算
 
 /**
  * 子进程（面板拉起的 CLI、检测命令等）合计占用的内存。

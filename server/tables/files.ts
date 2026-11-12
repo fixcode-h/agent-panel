@@ -32,7 +32,7 @@ const MAX_HITS = 500
 /** 解析缓存最多留这么多个单元格（所有文件合计）；超了丢掉最久没用的 */
 const CACHE_CELLS = 6_000_000
 /** 不往里走的目录 */
-const SKIP_DIRS = new Set(['.git', '.svn', '.p4', 'node_modules', '.agentpanel'])
+const SKIP_DIRS = new Set(['.git', '.svn', '.p4', 'node_modules', '.agentpanel']) // 模块状态：常量，加载后不改
 
 const norm = (p: string) => p.replace(/\\/g, '/')
 
@@ -84,7 +84,7 @@ export function safeRel(dir: string, rel: string, cfg?: Pick<TablesConfig, 'dirs
 const STAT_BATCH = 64
 /** 列表缓存多久：表格页切来切去、搜索、检查都要列表，几秒内不重走目录 */
 const LIST_TTL = 5000
-const listCache = new Map<string, { at: number; index: Promise<TablesIndex> }>()
+const listCache = new Map<string, { at: number; index: Promise<TablesIndex> }>() // 模块状态：缓存，丢了重算
 
 /** 保存、刷新后让列表缓存失效 */
 export const forgetLists = () => listCache.clear()
@@ -182,7 +182,7 @@ interface Cached {
   cells: number
   csv?: TableDoc['csv']
 }
-const cache = new Map<string, Cached>()
+const cache = new Map<string, Cached>() // 模块状态：缓存，丢了重算
 let cachedCells = 0
 
 const countCells = (sheets: SheetData[]) => sheets.reduce((n, s) => n + s.rows.reduce((m, r) => m + r.length, 0), 0)

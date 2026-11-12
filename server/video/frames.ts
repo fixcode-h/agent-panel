@@ -43,11 +43,11 @@ const stateFile = (key: string) => path.join(sessionDir(key), 'state.json')
 const validKey = (key: string) => /^[0-9a-f]{16}$/.test(key)
 
 /** 正在自动截帧的视频的进度（按 key），截帧弹窗轮询它画进度条；做完就删 */
-const autoProgress = new Map<string, AutoProgress>()
+const autoProgress = new Map<string, AutoProgress>() // 模块状态：会话，跟着进程或连接一起没
 export const autoProgressOf = (key: string) => autoProgress.get(key) ?? null
 
 /** 同一个视频的操作排队做：自动截帧还没写完时又点了手动截帧，记录不能互相覆盖 */
-const queues = new Map<string, Promise<unknown>>()
+const queues = new Map<string, Promise<unknown>>() // 模块状态：排队，丢了没事
 export function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const next = (queues.get(key) ?? Promise.resolve()).then(fn, fn)
   queues.set(

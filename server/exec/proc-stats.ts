@@ -32,7 +32,7 @@ const run = promisify(execFile)
 /** 快照默认复用时长：进程面板 5 秒刷新，比它短一点，既是新的又不会每次都拉一遍 */
 const SNAPSHOT_TTL_MS = 4000
 
-let cache: { at: number; map: Map<number, ProcNode> | null } | null = null
+let cache: { at: number; map: Map<number, ProcNode> | null } | null = null // 模块状态：缓存，丢了重算
 let inflight: Promise<Map<number, ProcNode> | null> | null = null
 
 /** 系统进程表；同一个时刻只有一次查询在跑 */
