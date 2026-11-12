@@ -1,36 +1,16 @@
 import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
-import { stat } from 'node:fs/promises'
-import {
-  aliasAgent,
-  type AgentUsage,
-  type Task,
-  type TaskMessage,
-  type ToolUse,
-  type Alert,
-} from '../../shared/schema.ts'
-import { getCli } from '../../shared/clis.ts'
-import { makeAlert } from '../../shared/alerts.ts'
+import { type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
 import { hookMarker } from '../../shared/hooks.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
-import { addNoteTaker, holdForNextTurn, removeNoteTaker, type NoteTaker } from './delivery.ts'
 
-import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
-import {
-  changesSince,
-  mergeChanges,
-  ownedChanges,
-  stepUsage,
-  withAttachments,
-  withTaskModel,
-} from '../../shared/task.ts'
+import { changesSince, mergeChanges, ownedChanges, stepUsage } from '../../shared/task.ts'
 
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { trackFileWrite, trackOutside } from './outside-changes.ts'
-import { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 
 export { noPushEnv } // 拆到 no-push.ts，原来从这里引用的地方不用改
@@ -60,33 +40,20 @@ import {
 } from './recovery.ts'
 export { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, type ContextNote, type NetNote }
 import { awaitingCompact, CompactTracker, settleCompactRow } from './compaction.ts'
-import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
-import { fillSkills } from '../../shared/expose.ts'
 
-import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
-import { withSkillDir } from '../../shared/skill-guide.ts'
+import { invokeCli } from './invoke.ts'
 
-import { invokeCli, type CliControl } from './invoke.ts'
-
-import { REDIRECT_LIMITS, REDIRECT_NOTE, redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
 
-import { promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.ts'
-import { ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../task-log.ts'
 
-import { dropAsked } from '../../shared/task-settle.ts'
-import { replies } from './panel-requests.ts'
-
-import { turnRole } from '../../shared/conv-mode.ts'
-import { pluginRunTools } from './plugin-run.ts'
+import { agentUsage, contextUsage, ownContext } from './usage-record.ts'
 import { seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn-changes.ts'
 import { noteEdit } from '../turn-owners.ts'
-import { canKeepAlive, envStallTimeout, forgetPromptSent, settleEnvStallNotes, silentTurn } from './retry-policy.ts'
-import { cancelWait, notes, steerNote, steers } from './steering.ts'
+import { canKeepAlive, envStallTimeout, forgetPromptSent, silentTurn } from './retry-policy.ts'
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { speedMeter } from './speed-meter.ts'
 import type { RealContext } from './real-context.ts'
@@ -100,12 +67,13 @@ import { makeStillCurrent } from './still-current.ts'
 import { newRunState } from './run-state.ts'
 import { createApply } from './run-events.ts'
 import { createWaiting } from './run-wait.ts'
-import { freshRetry, keepEnvStall, recoverFailure, type RetryState } from './run-recover.ts'
+import { afterProcess, finishTurn } from './run-finish.ts'
+import { attachPlugins, prepareLaunch, resolveTarget } from './run-setup.ts'
+import { createSteering } from './run-steer.ts'
+import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 // runAgent 里职责完整的几块拆在这些文件：模型和上限、选会话、拼输入、启动参数、进程没跑完一轮时交回什么
-import { resolveModelRun, windowLookup } from './model-run.ts'
+import { windowLookup } from './model-run.ts'
 import { pickSession } from './session-pick.ts'
-import { composeInput } from './compose-input.ts'
-import { launchOptions } from './launch-options.ts'
 import { exitResult, idleWarning } from './exit-result.ts'
 // 测试从这里取（以前定义在这个文件里）
 export { continuesOutput }
@@ -159,7 +127,7 @@ async function runAgent(
   /** 一串自动重跑之间接着传的记录（见 run-recover.ts） */
   rs: RetryState = freshRetry(),
 ): Promise<AgentResult> {
-  const { retried, retryCarry, netNotes, contextNotes, envStalls, envStallNotes } = rs
+  const { retried, retryCarry, envStalls } = rs
   // 单独终止这一次调用（界面上终止一个子任务）：和整个任务的停止信号合在一起，后面统一看 ctx.signal
   if (call.signal && !retried) ctx = { ...ctx, signal: anySignal(ctx.signal, call.signal) }
   // 子任务卡住到时间由面板停掉这次调用（见下面的「没有响应」检测）：记下是谁停的，返回 stalled 而不是「已停止」
@@ -171,29 +139,10 @@ async function runAgent(
   const { task, settings, project } = ctx
   // 本轮开始的索引：重试成功时只收这一轮以后的卡（用户插话会往同一轮里再 push user，不能按 role 猜边界）
   const turnStart = task.messages.length
-  // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）；Chat 页选的角色被删了按内置助手跑（turnRole）
-  const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
-  const found = turnRole(ctx.task, ctx.agents, id)
-  if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
-  if (id && found.id !== id) log.info('agent', 'Chat 对话的角色已被删除，按内置助手跑', { task: task.id, agentId: id })
-  // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
-  const agent =
-    call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
-  const run = agentRun(agent, settings)
-  const cliId = run.cli
-  const def = getCli(cliId)
-  if (!def) return { ok: false, error: t('未知的 Agent：{cli}', { cli: cliId }) }
-  const cs = cliSettings(settings, cliId)
-  if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
-  if (!agent.enabled) return { ok: false, error: t('角色「{name}」已停用', { name: agent.name }) }
-  const cwd = project.path
-  const dir = await stat(cwd).catch(() => null)
-  if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
-
-  const model = run.model
-  // 思考强度（模型不认的换掉或去掉）和上下文上限在 model-run.ts 算
-  const { entries, requested, effort, manual, limits } = await resolveModelRun(cliId, run, cs)
+  // 用哪个角色、哪个 CLI、哪个模型和目录（不能跑就交回原因）在 run-setup.ts
+  const target = await resolveTarget(ctx, call)
+  if (target.error !== undefined) return { ok: false, error: target.error }
+  const { found, agent, cliId, def, cs, cwd, model, entries, requested, effort, manual, limits } = target
   const op = call.op
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
@@ -219,10 +168,6 @@ async function runAgent(
     retryCarry,
   })
   const windowFor = await windowLookup(cliId, model, limits, cs, entries)
-  const role = withSkillDir(
-    composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim(),
-    sharedRoot(),
-  )
   /** 上下文超长降级时留给旧对话的 token 预算：剩下的给角色设定、提示词和这一轮的要求 */
   const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
   /**
@@ -250,74 +195,10 @@ async function runAgent(
   // 会话是另一个 CLI 的（对话里换了、角色改了）：说一声旧会话不再续用。换了后空闲的对话马上预热，预热轮也要记，不然之后没机会说
   if (chat && task.sessions[sessionKey] && task.sessionCli && task.sessionCli !== cliId)
     recoveryNote(cliSwitchedText(task.sessionCli, cliId), true)
-  // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
-  // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
-  // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
-  const taskDir = await taskFiles(task.id) // 对话目录：截图和临时文件放这里，规则进系统提示词（见 task-files.ts）
-  const instructions = [
-    role,
-    def.systemPromptFlag ? promptLangRules() : '',
-    promptUserNameRules(settings.userName),
-    def.systemPromptFlag ? taskDir.rule : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
-  // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
-  const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
-  // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
-  await ensureBundled(
-    fillSkills(
-      [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
-      task.skillSlots,
-    ),
-  )
-  // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
-  const composed = await composeInput({
-    ctx,
-    call,
-    def,
-    cliId,
-    cwd,
-    chat,
-    step,
-    resume,
-    carry,
-    instructions,
-    taskDir,
-    found,
-  })
-  let input = composed.input
-  const orch = composed.orch
-  // 启动参数和环境变量（自动压缩、上下文上限、放行的目录这些）在 launch-options.ts
-  const { pct, build, env } = await launchOptions({
-    ctx,
-    def,
-    cs,
-    agent,
-    model,
-    effort,
-    limits,
-    resume,
-    fork,
-    op,
-    chat,
-    instructions,
-    systemPromptModPath,
-    taskDir,
-    cwd,
-    windowFor,
-  })
-
-  // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
-  const argv = [
-    cs.command,
-    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? t('<角色设定>') : a)),
-  ]
-  const owner = step ? task.steps.find((s) => s.id === step) : undefined
-  if (owner) owner.command = argv
-  else task.command = argv
-  log.info('agent', `启动 ${def.name}`, { task: task.id, step, agent: agent.name, cwd, command: argv.join(' ') })
-
+  // 角色设定、这一轮的输入、启动参数和启动命令在 run-setup.ts
+  const launch = await prepareLaunch(ctx, call, target, { step, chat, op, resume, fork, carry, windowFor })
+  const { instructions, orch, pct, build, env, owner } = launch
+  let input = launch.input
   // 节点开始前的改动统计，结束后相减得到这个节点改了什么
   const before = task.changes.map((c) => ({ ...c }))
   const touched = new Set<string>()
@@ -372,23 +253,13 @@ async function runAgent(
 
   // 中途换了模型（改了 Agent 或设置）：记录换成这次实际用的，CLI 报告了模型时再以报告的为准
   const prevUsage = task.usage.agents[agentId]
-  if (prevUsage && prevUsage.model !== model) Object.assign(prevUsage, { model, window: windowFor(model) })
+  if (prevUsage && prevUsage.model !== model && !ownContext(task, owner))
+    Object.assign(prevUsage, { model, window: windowFor(model) })
   if (owner) Object.assign(stepUsage(owner), { model, window: windowFor(model) })
 
-  /** 这个 Agent 的用量记录，没有就建一条 */
-  const au = (): AgentUsage => {
-    const prev = task.usage.agents[agentId]
-    if (prev) return prev
-    return (task.usage.agents[agentId] = {
-      context: 0,
-      window: windowFor(model),
-      model,
-      tps: 0,
-      lastTps: 0,
-      outputTokens: 0,
-      genMs: 0,
-    })
-  }
+  /** 这个 Agent 的用量记录（速度、累计输出），没有就建一条；上下文占用记在 cu()（对话里的子任务不写角色那一条） */
+  const au = () => agentUsage(task, agentId, model, windowFor(model))
+  const cu = contextUsage(task, owner, au)
   // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
   const fileEvents = createFileEvents(
     cwd,
@@ -509,32 +380,19 @@ async function runAgent(
   })
   const { arm } = watch
   const drafting = createDrafting(task, () => ctx.changed())
-  /**
-   * 补充排在正在执行的命令后面（Pi 要等这一批工具跑完才取）：命令跑了一会儿还没完（例如 sleep 等 CI），
-   * 用户就一直等不到回应。超过阈值就停下这条命令，让 CLI 马上处理补充；
-   * 只读命令等它自己跑完（这批工具结束时 CLI 就会取补充），卡住了才按更长的阈值停
-   */
-  const checkRedirect = () => {
-    clearTimeout(st.redirectTimer)
-    st.redirectTimer = undefined
-    const c = st.control
-    if (!st.steerPending || st.finished || !c?.redirect) return
-    // 只等命令：读文件、改文件很快就完；面板自己的工具（等子任务这些）另有办法接用户的消息
-    const wait = redirectWait(
-      [...toolStart].map(([x, at]) => ({ kind: x.kind, label: x.label, startedAt: at })),
-      Date.now(),
-      REDIRECT_LIMITS,
-    )
-    if (wait === undefined) return
-    if (wait > 0) {
-      st.redirectTimer = setTimeout(checkRedirect, wait)
-      st.redirectTimer.unref?.()
-      return
-    }
-    void c
-      .redirect(REDIRECT_NOTE)
-      .catch((e: Error) => log.warn('task', '停下命令处理补充失败', { task: task.id, error: e.message }))
-  }
+  // 用面板 MCP 工具取补充的，还得这个 CLI 能挂 MCP
+  const canTake = !!(chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk)
+  // 接用户补充的通道（插话、read_user_notes、补充排在长命令后面时停下命令）在 run-steer.ts
+  const { checkRedirect, register, taker, pendingNotes, steered } = createSteering({
+    ctx,
+    task,
+    st,
+    step,
+    agentId,
+    canTake,
+    toolStart,
+    arm,
+  })
   const asked: string[] = []
   const apply = createApply({
     ctx,
@@ -566,6 +424,7 @@ async function runAgent(
     newMsg,
     streamed,
     au,
+    cu,
     windowFor,
     compacted,
     refreshChanges,
@@ -575,62 +434,12 @@ async function runAgent(
     endTurn,
     turnTools,
   })
-  const register = (c: CliControl) => {
-    st.control = c
-    st.steerer = {
-      step,
-      agentId,
-      steer: c.steer,
-      accepted: (msg) => {
-        // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
-        if (msg) steered.add(msg)
-        task.working = true
-        // 交出的插话也要等到模型的回应：一直没有输出时照样标成卡住、告诉用户，不让「等待模型」无声地挂着
-        arm(msg?.text)
-        if (c.deferSteer) {
-          st.steerPending = true
-          checkRedirect()
-        } else st.cutAfter = true
-        ctx.changed(true)
-      },
-    }
-    ;(steers.get(task.id) ?? steers.set(task.id, new Set()).get(task.id)!).add(st.steerer)
-  }
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
   // 对话的进程能不能留着等下一句（保活）：看 CLI 定义的 keepAlive 字段，不再借用 notes。
   // notes 只管「没有插话协议时怎么取补充」，两者混用会让 Pi 这种常驻协议的白白每轮重启
   const canWait = canKeepAlive({ chat, op: !!op, cliKeepAlive: def.keepAlive })
-  // 用面板 MCP 工具取补充的，还得这个 CLI 能挂 MCP
-  const canTake = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
-  let taker: NoteTaker | undefined
-  /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
-  const pendingNotes = new Set<TaskMessage>()
-  /**
-   * 以插话方式交出去的补充：CLI 收下不等于模型看见了。
-   * 这一轮一个字都没产出时（网关吞了、请求根本没发出去），这些消息要交给下一轮重放，
-   * 否则用户的消息只留在对话里，既没有回复也没有报错。
-   */
-  const steered = new Set<TaskMessage>()
-  // notes 与 steer 不互斥：steer 在 CLI 不在活跃轮次时返回 false，补充会丢；两个通道都开（同样见 invoke.ts）
-  if (canTake) {
-    taker = {
-      add: (msg) => pendingNotes.add(msg),
-      read: () => {
-        const mine = [...pendingNotes]
-        if (!mine.length) return []
-        pendingNotes.clear()
-        // 拿到就算交出去了：之后的输出另起一条，排在用户消息后面
-        st.cur = undefined
-        ctx.changed(true)
-        return mine.map((m) =>
-          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat', m.peer?.rel === 'parent'),
-        )
-      },
-    }
-    addNoteTaker(task.id, taker)
-  }
   const { waitUser, keepAlive } = createWaiting({
     ctx,
     call,
@@ -641,7 +450,7 @@ async function runAgent(
     chat,
     op,
     orch,
-    canTake: !!canTake,
+    canTake,
     canWait,
     mine,
     touched,
@@ -660,39 +469,9 @@ async function runAgent(
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
-  // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂，新会话的提示词里说明怎么用；令牌只在这一轮有效
+  // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂（run-setup.ts）
   const plugins =
-    def.mcp && !op
-      ? await pluginRunTools(
-          ctx,
-          { agent, resume: !!resume, cwd, step, agentId },
-          {
-            // 插件的改文件类工具：执行前过工具前守卫（守卫在下面 hookOptions 里装到 call.orch 上，调用时才取），
-            // 改了的文件和 CLI 自己的改文件工具一样记成这一轮的改动、登记归属
-            guardEdit: async (tool, paths, input) => (await call.orch?.guardEdit?.(tool, paths, input)) ?? '',
-            changed: (files) => {
-              for (const f of files)
-                fileEvents.track({ kind: 'edit', label: f, detail: '' }, { path: f, add: 0, del: 0 }, false)
-            },
-            // 插件的长任务交给面板的后台命令（插件框架改进 G1）：和 run_background 同一套监管，结果推回这个对话
-            background: async (job) => {
-              const orch = call.orch
-              if (!orch?.canBackground) return { ok: false, info: '这个对话不能用后台命令：插件自己跑' }
-              return orch.runBackground({
-                command: String(job.command ?? ''),
-                name:
-                  String(job.name ?? '').trim() ||
-                  String(job.command ?? '')
-                    .split('\n')[0]
-                    .slice(0, 40),
-                cwd: String(job.cwd ?? ''),
-                exclusive: job.exclusive === true,
-                ...(Number(job.timeoutMinutes) > 0 && { timeoutMinutes: Number(job.timeoutMinutes) }),
-              })
-            },
-          },
-        )
-      : undefined
+    def.mcp && !op ? await attachPlugins(ctx, call, { agent, resume, cwd, step, agentId }, fileEvents) : undefined
   if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {
@@ -717,7 +496,7 @@ async function runAgent(
     })
   // 压缩上下文：像后台命令一样，一开始就放一行转圈，压缩完成换成前后大小（不再插一行居中的「压缩上下文」）
   if (op?.kind === 'compact' && !st.prewarmMode) {
-    const fresh = compaction.startOp(op, au().context || undefined, toolStart)
+    const fresh = compaction.startOp(op, cu().context || undefined, toolStart)
     if (fresh) newMsg().tools.push(fresh)
     ctx.changed(true)
   }
@@ -773,7 +552,7 @@ async function runAgent(
     onTools: op
       ? undefined
       : (tools, deferred) => {
-          au().parts = {
+          cu().parts = {
             cli: cliId,
             system: def.systemPromptFlag ? instructions.length : 0,
             tools,
@@ -801,51 +580,29 @@ async function runAgent(
     limits: manual,
     // 钩子（ADR 0049，见 server/hooks/dispatch.ts）：预热也装，预热的进程之后要处理用户消息；没收到消息前 before-end.ts 放行
     ...hooks,
-  }).finally(() => {
-    st.finished = true
-    drafting.clear()
-    if (chat) taskLog(task.id, '对话的 CLI 进程结束', { cli: def.name, aborted: ctx.signal.aborted || undefined })
-    plugins?.close()
-    watch.stop()
-    clearTimeout(st.redirectTimer)
-    for (const x of [...toolStart.keys()]) endTool(x)
-    // CLI 说开始压缩了，进程结束都没等到压缩完成：不能显示得像压缩成功了
-    compaction.processEnd()
-    // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
-    if (st.steerPending) {
-      st.steerPending = false
-      st.cur = undefined
-    }
-    // 进程先结束了（崩溃、被停掉）：还在等下一句的那次请求也结束，别一直挂着
-    cancelWait(task.id)
-    // 留给「下一个节点」的补充：后面还有节点会取走时就留着，没有了就清掉。
-    // 不按任务清是因为当前这个节点结束时，下一个节点还没来得及启动
-    const nextStep =
-      task.mode === 'workflow' &&
-      task.steps.some((s) => s.id !== step && s.status !== 'done' && s.status !== 'failed' && s.status !== 'skipped')
-    if (!nextStep) notes.delete(task.id)
-    clearTimeout(st.gitTimer)
-    if (st.steerer) {
-      const set = steers.get(task.id)
-      set?.delete(st.steerer)
-      if (!set?.size) steers.delete(task.id)
-    }
-    if (taker) {
-      removeNoteTaker(task.id, taker)
-      // 这一轮里没取走的补充：消息已经在对话里，记下来让这一轮结束后马上接着处理
-      for (const m of pendingNotes) holdForNextTurn(task.id, m)
-      pendingNotes.clear()
-    }
-    // 插话交出去、这一轮却一个字都没产出的：CLI 收下不等于模型看见，交回下一轮重放。
-    // texts 要等进程结束后才汇总，这里看 mine 里已经收到的正文
-    if (!turnMsgs().some((m) => m.role === 'agent' && m.text.trim()))
-      for (const m of steered) holdForNextTurn(task.id, m)
-    steered.clear()
-    meter.stop()
-    for (const id of asked) replies.delete(id) // 进程结束了（完成、停止、超时）：还没回答的请求作废，并写明作废了哪些
-    if (dropAsked(task, asked, { id: ctx.newId(), agentId, step })) ctx.changed(true)
-    if (task.usage.agents[agentId]) task.usage.agents[agentId].tps = 0
-  })
+  }).finally(() =>
+    afterProcess({
+      ctx,
+      task,
+      st,
+      def,
+      step,
+      agentId,
+      chat,
+      drafting,
+      watch,
+      meter,
+      compaction,
+      plugins,
+      taker,
+      toolStart,
+      pendingNotes,
+      steered,
+      asked,
+      endTool,
+      turnMsgs,
+    }),
+  )
 
   for (const m of mine) if (m.text && m.role === 'agent') texts.push(m.text)
   // 空回合兜底只看最后一轮：保活时前几轮的回复不能把最后一条没人答的消息盖住
@@ -920,106 +677,36 @@ async function runAgent(
       rs,
       noEffortKey,
       compaction,
-      au,
+      cu,
       recoveryNote,
       carryForRestart,
       carryUpto,
       carryBudget,
       rerun: (next, nextRs) => runAgent(ctx, next, nextRs),
     })
-  // 这一轮 CLI 报了结束，却什么都没收到（没有正文、没调工具、没改文件）：CLI 或网关出了问题。
-  // 按「错误一律显示」写进对话，这一轮按失败结束；不自动重试，由用户决定重发、继续还是换模型。
-  // 不限定对话：子 Agent（工作流节点、并行子任务）同样可能空着收尾，那一路要让失败报回派它的一方。
-  if (
-    !op &&
-    !prewarm &&
-    !ctx.signal.aborted &&
-    silentTurn({ texts: turnTexts, tools: turnTools(), changed: touched.size - st.turnMark.touched })
-  ) {
-    const what = t('这一轮 {cli} 没有返回任何内容，这条要求没有被处理', { cli: def.name })
-    task.messages.push({
-      id: ctx.newId(),
-      role: 'system',
-      agentId,
-      step,
-      text: what,
-      tools: [],
-      error: true,
-      alert: makeAlert('error', what, 'empty_turn'),
-      at: new Date().toISOString(),
-    })
-    ctx.changed(true)
-    log.error('agent', `${def.name} 没有返回任何内容`, { task: task.id, step })
-    return { ok: false, error: what }
-  }
-  log.info('agent', `${def.name} 完成`, { task: task.id, step })
-  // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）
-  settleNetNotes(netNotes)
-  // 上下文超长降级：裁剪后的新会话接上了，那张失败卡片同样要收掉
-  settleContextNotes(contextNotes)
-  // 环境性失败重试成功：那一轮其实做成了，同样收成普通说明
-  settleEnvStallNotes(envStallNotes)
-  if (netNotes.length || contextNotes.length || envStallNotes.length) ctx.changed(true)
-  const done: AgentResult = { ok: true, text: texts.join('\n\n') }
-  // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
-  if (rewind) task.rewind = undefined
-  const sysMsg = (text: string, error?: boolean, alert?: Alert) => {
-    task.messages.push({
-      id: ctx.newId(),
-      role: 'system',
-      agentId,
-      step,
-      text,
-      tools: [],
-      ...(error ? { error } : {}),
-      ...(alert || error ? { alert: alert ?? makeAlert('error', text) } : {}),
-      at: new Date().toISOString(),
-    })
-    ctx.changed(true)
-  }
-  // 这一轮调了模型、却一条用量事件都没收到（网关不回 usage）：统计会是 0，别让 0 被当成「没消耗」。
-  // 正文和报错都为空时同样要说明：那一轮很可能连模型请求都没发出去，只留一行 0 的统计会看不出问题
-  if (chat && !op && !prewarm && !st.usageSeen)
-    sysMsg(
-      texts.length || errors.length
-        ? t('这次没有拿到 {cli} 报告的用量，下面的 token 和费用统计不可信（不代表没有消耗）。', { cli: def.name })
-        : t('这次没有拿到 {cli} 的任何输出和用量：这条要求很可能没有被处理，可以重发或换一个模型再试。', {
-            cli: def.name,
-          }),
-      false,
-      texts.length || errors.length ? undefined : makeAlert('warn', errors.join('\n'), 'empty_turn'),
-    )
-  // 压缩过（原生压缩不一定报 compacted 事件）：会话里之前发过的规则段落不算数了
-  if (op?.kind === 'compact') compacted()
-  // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
-  if (op?.kind === 'compact' && def.compact === 'summary') {
-    task.rewind = { session: '', through: null, latest: false, summary: done.text }
-    delete task.sessions[sessionKey]
-    delete task.sessionDirs[sessionKey]
-    au().context = 0
-    if (!compaction.settle(t('摘要写好了，下一轮开新会话带上')))
-      sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
-  } else if (op?.kind === 'compact') compaction.finishOp(au())
-  // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
-  const u = task.usage.agents[agentId]
-  if (
-    chat &&
-    !op &&
-    !prewarm &&
-    pct &&
-    def.autoCompact === 'panel' &&
-    u?.window &&
-    (u.context / u.window) * 100 >= pct
-  ) {
-    // 原因写在压缩那一行里（点开看），不另插一行居中的说明
-    const auto = {
-      kind: 'compact' as const,
-      reason: t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }),
-    }
-    // 压缩也是这一轮里的一次完整调用：环境性重试的计数和留痕要接着传，否则重置后可能再重试一次
-    const c = await runAgent(ctx, { ...call, op: auto }, keepEnvStall(rs))
-    settleCompactRow(auto, c)
-    if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true, makeAlert('error', c.error))
-  }
-  return done
+  return finishTurn({
+    ctx,
+    call,
+    task,
+    st,
+    def,
+    step,
+    agentId,
+    sessionKey,
+    chat,
+    op,
+    prewarm,
+    pct,
+    rewind,
+    rs,
+    texts,
+    errors,
+    touched,
+    turnTexts,
+    turnTools,
+    compaction,
+    compacted,
+    cu,
+    rerun: (next, nextRs) => runAgent(ctx, next, nextRs),
+  })
 }

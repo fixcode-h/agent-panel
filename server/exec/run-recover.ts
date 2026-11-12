@@ -4,7 +4,7 @@
 // 环境性卡住放宽等待再试、断流续接、压缩抖动续一轮、上下文超长裁剪后换新会话；都不成就报失败。
 // 每次重跑前都在对话里留一行（AGENTS.md「Agent 执行出的错误一律显示给用户」），
 // 重跑带的续接记录放在 RetryState 里，用 `...rs` 展开传下去，环境性重试的计数和留痕就不会漏传。
-import type { AgentUsage, Task, TaskMessage } from '../../shared/schema.ts'
+import type { Task, TaskMessage } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
 import type { AgentCall, AgentResult } from '../../shared/engine.ts'
 import { makeAlert } from '../../shared/alerts.ts'
@@ -26,6 +26,7 @@ import {
   type NetNote,
 } from './recovery.ts'
 import { CompactTracker, overflowCompact, shouldRetryThrash, thrashNote, THRASH_RETRY_PROMPT } from './compaction.ts'
+import type { ContextUsage } from './usage-record.ts'
 import {
   EFFORT_REJECTED,
   type EnvStallNote,
@@ -103,7 +104,8 @@ export interface RecoverDeps {
   rs: RetryState
   noEffortKey: string
   compaction: CompactTracker
-  au: () => AgentUsage
+  /** 这次调用的上下文占用记录（见 usage-record.ts 的 contextUsage） */
+  cu: () => ContextUsage
   recoveryNote: (text: string, evenPrewarm?: boolean) => void
   carryForRestart: () => string
   carryUpto: () => number
@@ -115,7 +117,7 @@ export interface RecoverDeps {
 /** 这一轮失败了：能自救就重跑（返回重跑的结果），不能就返回带完整原因的失败 */
 export async function recoverFailure(d: RecoverDeps): Promise<AgentResult> {
   const { ctx, call, task, def, cliId, model, effort, sessionKey, step, agentId, cwd, chat, op, prewarm } = d
-  const { resume, result, r, errors, rs, noEffortKey, compaction, au, recoveryNote, rerun } = d
+  const { resume, result, r, errors, rs, noEffortKey, compaction, cu, recoveryNote, rerun } = d
   const { carryForRestart, carryUpto, carryBudget } = d
   const { retried, netRetries, netNotes, contextNotes, envStalls, envStallNotes } = rs
   const detail = [result?.error, ...errors, stderrTail(r.stderr, 6, def.stderrNoise)].filter(Boolean).join('\n')
@@ -323,7 +325,7 @@ export async function recoverFailure(d: RecoverDeps): Promise<AgentResult> {
         task,
         sessionKey,
         clipped: clippedTranscript(task, task.messages.length, carryBudget()),
-        usage: au(),
+        usage: cu(),
         tracker: compaction,
         msg: (text) => ({
           id: ctx.newId(),

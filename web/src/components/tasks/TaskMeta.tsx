@@ -192,7 +192,8 @@ function contextLines(
   }
   // 对话只看当前在答话的那个 Agent：换过 Agent 的旧记录不再列出来，免得一眼看不出现在用了多少
   const entries = Object.entries(task.usage.agents)
-  const lastId = [...task.messages].reverse().find((m) => m.agentId && task.usage.agents[m.agentId])?.agentId
+  // 子任务（带 step）的回复不算：它们的上下文记在节点上，见 server/exec/usage-record.ts
+  const lastId = [...task.messages].reverse().find((m) => !m.step && m.agentId && task.usage.agents[m.agentId])?.agentId
   const current = entries.find(([id]) => id === lastId) ?? entries.at(-1)
   if (!current) return []
   const [id, u] = current

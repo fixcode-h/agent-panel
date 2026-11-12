@@ -21,6 +21,7 @@ import type { RealContext } from './real-context.ts'
 import type { RunState } from './run-state.ts'
 import { settleRetryNotes } from './recovery.ts'
 import type { CompactTracker } from './compaction.ts'
+import type { ContextUsage } from './usage-record.ts'
 import { noticeRow } from './notice-row.ts'
 import { NOT_RESPONSE, PREWARM_QUIET, continuesOutput } from './event-kinds.ts'
 import { askViaParent } from './child-question.ts'
@@ -66,6 +67,8 @@ export interface EventDeps {
   newMsg: () => TaskMessage
   streamed: (text: string) => void
   au: () => AgentUsage
+  /** 这次调用的上下文占用记录（见 usage-record.ts 的 contextUsage） */
+  cu: () => ContextUsage
   windowFor: (model: string) => number
   compacted: () => void
   refreshChanges: () => void
@@ -80,7 +83,7 @@ export interface EventDeps {
 export function createApply(d: EventDeps): (ev: CliEvent) => void {
   const { ctx, task, st, def, cliId, model, entries, sessionKey, cwd, owner, step, agentId, chat, op, turnStart } = d
   const { watch, drafting, meter, compaction, toolRows, fileEvents, toolStart, turn, errors, asked } = d
-  const { newMsg, streamed, au, windowFor, compacted, refreshChanges, checkRedirect } = d
+  const { newMsg, streamed, au, cu, windowFor, compacted, refreshChanges, checkRedirect } = d
   const { endTool, emptyTurn, endTurn, turnTools } = d
   const { arm, heard } = watch
   return (ev: CliEvent) => {
@@ -170,7 +173,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
       }
       case 'usage': {
         st.usageSeen = true
-        const u = au()
+        const u = cu()
         // 报回来的模型名去掉长上下文后缀（[1m]），显示和按模型查映射、目录都用原名
         if (ev.model) u.model = stripLongContext(def, ev.model)
         if (ev.context !== undefined) {
@@ -183,7 +186,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
           st.reported = true
         } else if (!st.reported) u.window = windowFor(u.model || model)
         if (ev.context !== undefined) compaction.measured(ev.context, u.window)
-        u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
+        au().outputTokens = (au().outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
         // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
         for (const t of owner ? [task.usage, stepUsage(owner)] : [task.usage]) {
@@ -199,10 +202,10 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
       }
       case 'context': {
         // CLI 自己报的上下文细分：会话栏优先按它分块（一轮结束后才到，单独推一次）
-        au().snapshot = ev.snapshot
+        cu().snapshot = ev.snapshot
         // 刚压缩完还不知道整个上下文多大：细分里的总占用就是压缩后的真实大小
-        const fixed = compaction.measured(ev.snapshot.used, ev.snapshot.window || au().window)
-        if (fixed) au().context = ev.snapshot.used
+        const fixed = compaction.measured(ev.snapshot.used, ev.snapshot.window || cu().window)
+        if (fixed) cu().context = ev.snapshot.used
         ctx.changed(fixed)
         break
       }
@@ -224,7 +227,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         return
       case 'compacting': {
         // CLI 自己开始压缩（自动压缩）：像后台命令一样先放一行转圈，压缩完成（compacted）再收掉
-        const tool = compaction.startCli(au().context || undefined, toolStart)
+        const tool = compaction.startCli(cu().context || undefined, toolStart)
         if (tool) (!st.cur || st.cur.text.trim() ? newMsg() : st.cur).tools.push(tool)
         break
       }
@@ -232,7 +235,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         // 压缩后会话里之前发过的规则只剩摘要：下一轮按完整提示重发（见 shared/prompt-delta.ts）
         compacted()
         // 当作一次工具调用放进回复里，不插一条系统消息把回复切成两段；压缩后的大小晚一点从 usage 补上
-        const tool = compaction.done(ev, au())
+        const tool = compaction.done(ev, cu())
         if (tool) (!st.cur || st.cur.text.trim() ? newMsg() : st.cur).tools.push(tool)
         ctx.changed(true)
         break
