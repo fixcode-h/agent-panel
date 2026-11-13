@@ -179,10 +179,9 @@ export function ReviewDialog({
   )
   const resetLogs = logs.reset
   const [cancelAsk, setCancelAsk] = useState(false)
-  // 标注栏没有标注时收成一条窄边（分析稿 U7）：点它展开；加了标注、写了意见、附了日志就一直展开。
-  // 只有在等日志的几步（supply.primary：等你复现、验证）整体意见框是主要输入，不收；
-  // 论证时「我有日志」只是可选的捷径，没贴日志照样收着（用户 2026-11-12：空着的标注栏默认展开占地方）
-  const [noteOpen, setNoteOpen] = useState(false)
+  // 标注栏默认展开（用户 2026-11-13 定：默认不收起）；没有要保留的内容时可以手动收成一条窄边（分析稿 U7），
+  // 加了标注、写了意见、附了日志就不能收。在等日志的几步（supply.primary：等你复现、验证）整体意见框是主要输入，也不能收
+  const [noteOpen, setNoteOpen] = useState(true)
   const docked = !!dock?.docked
   // 多版时看的是哪一版：默认最新那版（要审的）；旧版只读，不能标注
   const [ver, setVer] = useState(initialVersion ?? '')
