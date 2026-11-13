@@ -4,6 +4,7 @@
  * 面板把根因、改了什么、怎么验证的和实际改了的文件存成 task.bug.fixBrief，在子对话里记一行能展开的「修复简报」，
  * 也随收尾请求交给父对话。小 Bug 绕开完整流程，也留得下能回看的记录
  */
+import { BUG_RECORD_ASK } from '../builtin/bug-method.ts'
 import type { FixBrief } from './diagnosis-schema.ts'
 import type { HandoffInput } from '../handoff.ts'
 import { t } from '../i18n.ts'
@@ -43,4 +44,4 @@ export function fixBriefMd(b: FixBrief): string {
 
 /** 交给父对话的那一段（提示词，不翻译） */
 export const fixBriefPrompt = (b: FixBrief) =>
-  `这是用户报的 Bug（直接修），它的简版报告：根因：${b.cause}${b.change ? `；改了什么：${b.change}` : ''}${b.files.length ? `；文件：${b.files.join('、')}` : ''}。验收时对照根因看改动是不是修在原因上；要写 Bug 记录时把这份简报交给「文档」。`
+  `这是用户报的 Bug（直接修），它的简版报告：根因：${b.cause}${b.change ? `；改了什么：${b.change}` : ''}${b.files.length ? `；文件：${b.files.join('、')}` : ''}。验收时对照根因看改动是不是修在原因上。${BUG_RECORD_ASK}用户同意写时把这份简报交给「文档」。`

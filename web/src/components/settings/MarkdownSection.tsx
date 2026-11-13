@@ -14,6 +14,7 @@ import {
   type MdValue,
 } from '@shared/markdown-style'
 import { t } from '@shared/i18n'
+import { quoteMd } from '@shared/bug/quotes-md'
 import { applyLocalAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
@@ -33,12 +34,27 @@ const IMG =
   encodeURIComponent(
     "<svg xmlns='http://www.w3.org/2000/svg' width='480' height='140'><defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='#6aabf1' stop-opacity='.35'/><stop offset='1' stop-color='#b7a1ff' stop-opacity='.35'/></linearGradient></defs><rect width='480' height='140' fill='url(#g)'/><circle cx='90' cy='70' r='38' fill='#6aabf1' opacity='.6'/><circle cx='190' cy='70' r='28' fill='#b7a1ff' opacity='.6'/><circle cx='265' cy='70' r='20' fill='#6fd6bd' opacity='.6'/><circle cx='320' cy='70' r='14' fill='#f2c46d' opacity='.6'/></svg>",
   )
+/**
+ * 诊断报告「原文」一节里的日志引用：和报告同一个函数生成（出处写在代码块外面，原文不折行、横向滚动、行号从文件里的行开始），
+ * 在这里调代码块的换行、行号就能看到报告里的样子
+ */
+const LOG_QUOTE = quoteMd({
+  id: 'Q1',
+  kind: 'log',
+  file: 'Saved/Logs/Game-backup.log',
+  start: 109550,
+  end: 109551,
+  text: '[2026.11.13-08.40.43:802][ 41]LogTemp: [ResetOverlap] occupied. Self=[BP_ExplosiveBarrel_C][170401]_183_165 InstanceID=183 Hit=[BP_ExplosiveBarrel_C][170401]_184_166 HitInstanceID=184 ZOverlap=64.00\n[2026.11.13-08.40.43:802][ 41]LogTemp: [ResetOverlap] FindResult Self=[BP_ExplosiveBarrel_C][170401]_183_165 InstanceID=183 Found=1 Offset=1 Out=X=135115.436 Y=51553.247 Z=35065.122',
+  highlight: ['ZOverlap=64.00'],
+})
 const PREVIEW: Record<string, string> = {
   body: '正文段落：Agent 的回复、工作流说明、项目文档都按这里的字号、颜色和段距排版。\n\n第二段：段落之间的距离就是「段落间距」。',
   strong: '正文里有 **粗体**、*斜体* 和 ~~删除线~~ 三种强调。',
   link: '详细说明见 [ADR 0034](https://example.com)，链接在正文里这样显示。',
   code: '改完运行 `npm run lint`，配置在 `config/.prettierrc.json`。',
-  pre: '```ts\n// 找到这个对话最近一次工作流运行\nexport function latestRun(runs: Run[], id: string) {\n  return runs.filter((r) => r.conv === id).at(-1) ?? null\n}\n```\n\n```diff\n- onClick={() => openTab(run)}\n+ onClick={() => showGraph(run)}\n```',
+  pre:
+    '```ts\n// 找到这个对话最近一次工作流运行\nexport function latestRun(runs: Run[], id: string) {\n  return runs.filter((r) => r.conv === id).at(-1) ?? null\n}\n```\n\n```diff\n- onClick={() => openTab(run)}\n+ onClick={() => showGraph(run)}\n```\n\n' +
+    LOG_QUOTE,
   quote: '> 引用：Agent 汇报里的原话放在这里。\n>\n> > 引用里再引用换一种颜色。',
   alert:
     '> [!NOTE]\n> 说明：普通的补充信息。\n\n> [!TIP]\n> 提示：双击分界线恢复默认高度。\n\n> [!WARNING]\n> 注意：等出包后更新才能用上。\n\n> [!CAUTION]\n> 警告：这一步不能撤销。',

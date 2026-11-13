@@ -1890,7 +1890,8 @@ body,
   box-shadow: calc(-1 * var(--pre-pad, 0px)) 0 0 0 var(--md-pre-bg);
   /* 原来「宽 2.2em + 右边框 + 外边距 0.75rem」：外边距透明，滚过去的字会从那里露出来，
      所以把外边距也算进宽度，分隔竖线改成画在底色里 */
-  width: calc(2.2em + var(--spacing) * 3);
+  /* --ln-digits：行号位数多（几万行起）时由 workflow-doc.ts 写上，按位数放宽 */
+  width: calc(max(2.2em, var(--ln-digits, 0ch)) + var(--spacing) * 3);
   padding-right: calc(var(--spacing) * 6);
   color: color-mix(in srgb, var(--subtle) 65%, transparent);
   background:

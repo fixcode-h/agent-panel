@@ -57,6 +57,7 @@ export const EN_BUG_LOCATE: Record<string, string> = {
   临时日志: 'Temporary log',
   '描述（不是原文）': 'Description (not the original text)',
   '你贴的日志（报告 #{n}）第 {a}~{b} 行': 'Your logs (report #{n}), lines {a}–{b}',
+  '日志 {file} 第 {a}~{b} 行': 'Log {file}, lines {a}–{b}',
   命令输出: 'Command output',
   '{n} 次': '{n} time(s)',
   '0 次': '0 times',

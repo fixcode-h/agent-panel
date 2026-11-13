@@ -10,6 +10,26 @@ import type { Project, Task } from '../../shared/schema.ts'
 import { gitSync as runGit } from './git.ts'
 
 const MAX = 5_000_000
+/** 按行号取日志文件的那几行时最多读这么大（UE 的日志动辄上百 MB）；交报告是同步工具调用，再大就不读了 */
+const MAX_LOG = 512_000_000
+
+/** 文件的第 start~end 行：按字节找换行，只解码要的那几行，不把整个大文件转成字符串 */
+function readLines(p: string, start: number, end: number) {
+  if (statSync(p).size > MAX_LOG) return undefined
+  const buf = readFileSync(p)
+  let line = 1
+  let from = start === 1 ? 0 : -1
+  let to = buf.length
+  for (let i = buf.indexOf(10); i >= 0; i = buf.indexOf(10, i + 1)) {
+    line++
+    if (line === start) from = i + 1
+    if (line === end + 1 && to === buf.length) to = i
+  }
+  // 末尾的换行不算多出一行
+  const total = buf.length && buf[buf.length - 1] === 10 ? line - 1 : line
+  const text = from < 0 ? '' : buf.subarray(from, to).toString('utf8').replace(/\r\n?/g, '\n').replace(/\n$/, '')
+  return { text, total }
+}
 
 /** 这个对话改文件的目录：独立分支在用就是它的工作区，否则是项目目录 */
 export const workDirOf = (task: Pick<Task, 'worktree'>, project: Pick<Project, 'path'>) =>
@@ -54,6 +74,13 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
         const p = path.resolve(dir, file)
         if (statSync(p).size > MAX) return undefined
         return readFileSync(p, 'utf8')
+      } catch {
+        return undefined
+      }
+    },
+    lines(file, start, end) {
+      try {
+        return readLines(path.resolve(dir, file), start, end)
       } catch {
         return undefined
       }

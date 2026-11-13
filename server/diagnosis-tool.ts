@@ -298,7 +298,7 @@ const CASE_PROPS = {
   quotes: {
     type: 'array',
     description:
-      '日志和命令输出的原文引用，一条一项，正文和证据链用编号引用。不要转述：log 写行号由面板取原文，run 原样复制；只是描述就写 kind: note（报告上标成「描述」）。原文对不上来源拒收',
+      '日志和命令输出的原文引用，一条一项，正文和证据链用编号引用。不要转述：log 写行号由面板取原文（自己读的日志文件写 file），run 原样复制；只是描述就写 kind: note（报告上标成「描述」，不要把日志原文塞进 note）。原文对不上来源拒收',
     items: {
       type: 'object',
       properties: {
@@ -306,10 +306,17 @@ const CASE_PROPS = {
         kind: {
           type: 'string',
           enum: ['log', 'run', 'note'],
-          description: 'log 用户贴的日志、run 这个对话里跑过的命令输出、note 描述（截图、用户说的）',
+          description:
+            'log 日志（用户贴的，或自己读的日志文件）、run 这个对话里跑过的命令输出、note 描述（截图、用户说的）',
         },
+        file: text(
+          'log：自己找到、读过的日志文件路径（相对项目根或绝对路径），start~end 写文件里的行号；用户贴在报告上的日志不写',
+        ),
         from: { type: 'number', description: 'log：用户在第几份报告（报告 #n）上贴的日志；不写取最近一次' },
-        start: { type: 'number', description: 'log：日志的第几行（报告里「你贴的日志」的行号）' },
+        start: {
+          type: 'number',
+          description: 'log：日志的第几行（报告里「你贴的日志」的行号；写了 file 是文件里的行号）',
+        },
         end: { type: 'number', description: 'log：到第几行（一条最多 30 行）' },
         text: text('run：原样复制的输出；log：可以不写，写了要和那几行逐字对上；note：描述'),
         highlight: {

@@ -4,11 +4,12 @@
  * - 代码（codeRefs）：交报告时读出那几行存进快照，之后回看都是当时的代码；marks.text 要在那一行里逐字出现，
  *   加了临时日志行号偏了几行的，在附近 ±5 行里找到就改过去并告诉 Agent（实跑 F5：高亮到了错的一行）；
  * - 用户贴的日志（quotes kind: log）：按「第几份报告上贴的、第几行」取原文；Agent 抄了原文的要对得上（实跑 F7）；
+ *   Agent 自己找到、读过的日志文件写 file，按文件的行号取（用户 2026-11-13 报：没地方写，只好塞进描述里，报告上一团乱）；
  * - 命令输出（kind: run）：在这个对话的工具输出里逐字（空白归一）找；
  * - 构造数据的复现只算推演，不能当排除假设的依据（实跑 F8）。
  * 这里只放纯函数；读文件、取版本管理的 diff 由宿主给（BugSource，server/exec 里接上）
  */
-import type { BugCase, BugCollect, BugEnv, BugLogPoint, CodeRef, Diagnosis } from './diagnosis-schema.ts'
+import type { BugCase, BugCollect, BugEnv, BugLogPoint, BugQuote, CodeRef, Diagnosis } from './diagnosis-schema.ts'
 import { lineDiff, TEMP_LOG } from './cleanup.ts'
 import { phaseOf } from './phase.ts'
 import { fileLead, pastedLog } from './log-watch.ts'
@@ -18,6 +19,11 @@ import type { TaskMessage } from '../schema.ts'
 export interface BugSource {
   /** 读项目里的文件（相对对话目录，也认绝对路径）；读不到返回 undefined */
   read(file: string): string | undefined
+  /**
+   * 读文件的第 start~end 行（行号从 1 起）和总行数：日志文件常常几十上百 MB，read 只认 5 MB 以内的；
+   * 宿主没给或读不到返回 undefined
+   */
+  lines?(file: string, start: number, end: number): { text: string; total: number } | undefined
   /** 版本管理里某次改动对这个文件的 diff（git show）；取不到返回 undefined */
   show?(rev: string, file: string): string | undefined
   /** 版本管理里某次改动的作者、日期、标题（git show -s）；取不到返回 undefined */
@@ -130,6 +136,42 @@ function logSource(list: Diagnosis[], from: number | undefined, src?: BugSource)
   return undefined
 }
 
+/** Agent 自己读的日志文件（写了 file）：按文件的行号取原文；没写行号的按抄的第一行在文件里找 */
+function resolveFileQuote(q: BugQuote, src?: BugSource): string {
+  const file = q.file.trim()
+  if (!q.start) {
+    const whole = src?.read(file)
+    if (whole === undefined)
+      return `${q.id}：读不到日志文件 ${file}（或超过 5 MB）。file 写相对项目根或绝对路径，并写 start~end 行号。`
+    const first = norm(linesOf(q.text.trim())[0] ?? '')
+    const at = first ? linesOf(whole).findIndex((l) => norm(l).includes(first)) : -1
+    if (at < 0) return `${q.id} 写的原文在 ${file} 里找不到：写 start~end 行号，或从文件里原样复制，不要删改。`
+    q.start = at + 1
+    q.end = at + linesOf(q.text.trim()).length
+  }
+  q.end = Math.max(q.start, q.end ?? q.start)
+  if (q.end - q.start + 1 > MAX_QUOTE_LINES) return `${q.id} 超过 ${MAX_QUOTE_LINES} 行：只引用说明问题的那几行。`
+  const got = fileLines(file, q.start, q.end, src)
+  if (!got) return `${q.id}：读不到日志文件 ${file}。file 写相对项目根或绝对路径。`
+  if (q.start > got.total) return `${q.id}：${file} 只有 ${got.total} 行，第 ${q.start} 行不存在。`
+  if (q.text.trim() && !norm(got.text).includes(norm(q.text)))
+    return `${q.id} 写的原文和 ${file} 第 ${q.start}~${q.end} 行对不上：从文件里原样复制，不要删改、不要用 … 截断（那几行是：${short(norm(got.text), 200)}）。`
+  q.text = got.text
+  q.file = file
+  q.from = undefined
+  return ''
+}
+
+/** 文件的第 start~end 行：宿主能按行读就按行读（大日志），否则整个读进来再切 */
+function fileLines(file: string, start: number, end: number, src?: BugSource) {
+  const got = src?.lines?.(file, start, end)
+  if (got) return got
+  const whole = src?.read(file)
+  if (whole === undefined) return undefined
+  const lines = linesOf(whole)
+  return { text: lines.slice(start - 1, Math.min(end, lines.length)).join('\n'), total: lines.length }
+}
+
 /** 命令输出：这个对话里所有工具输出（空白归一后逐字找） */
 const outputsOf = (messages: TaskMessage[]) =>
   messages.flatMap((m) => (m.tools ?? []).map((x) => x.output ?? '').filter(Boolean)).map(norm)
@@ -145,6 +187,9 @@ function resolveQuotes(c: BugCase, list: Diagnosis[], messages: TaskMessage[], s
       const want = norm(q.text)
       if (!outputs.some((o) => o.includes(want)))
         return `${q.id} 的原文在这个对话的命令输出里找不到：贴实际跑出来的那几行，不要改写；只是转述就改成 kind: note。`
+    } else if (q.file.trim()) {
+      const bad = resolveFileQuote(q, src)
+      if (bad) return bad
     } else {
       const s = logSource(list, q.from, src)
       if (!s)

@@ -106,6 +106,31 @@ test('日志原文：按行号取；抄的原文被删改（F7）、关键值不
   assert.match(resolveSources(base({ quotes: [{ id: 'Q1', kind: 'log', start: 1 }] }), ctx()).error, /没有用户贴的日志/)
 })
 
+// 用户 2026-11-13 报：Agent 自己读的日志文件没地方写，原文塞进描述里折行、标识符变成一个个标签
+test('自己读的日志文件：写 file 按文件行号取原文，报告上出处在代码块外面', () => {
+  const log = ['a', 'b', '[LogTemp] ResetOverlap Found=1 Offset=0', 'tail line'].join('\n')
+  const fsrc: BugSource = { read: (f) => (f === 'Saved/Logs/g.log' ? log : undefined) }
+  const c = base({ quotes: [{ id: 'Q1', kind: 'log', file: 'Saved/Logs/g.log', start: 3, highlight: ['Found=1'] }] })
+  assert.equal(resolveSources(c, ctx({ src: fsrc })).error, '')
+  assert.equal(c.quotes[0].text, '[LogTemp] ResetOverlap Found=1 Offset=0')
+  const md = quoteMd(c.quotes[0])
+  assert.match(md, /^\*\*Q1\*\* 日志 `Saved\/Logs\/g\.log` 第 3~3 行\n\n```text start=3 marks=/)
+  // 只抄了原文：在文件里找行号；按行读优先（大日志）
+  const found = base({ quotes: [{ id: 'Q1', kind: 'log', file: 'Saved/Logs/g.log', text: 'tail line' }] })
+  assert.equal(resolveSources(found, ctx({ src: fsrc })).error, '')
+  assert.equal(found.quotes[0].start, 4)
+  const big: BugSource = { read: () => undefined, lines: (_f, a, b) => ({ text: `line ${a}-${b}`, total: 200000 }) }
+  const far = base({ quotes: [{ id: 'Q1', kind: 'log', file: 'big.log', start: 109550, end: 109551 }] })
+  assert.equal(resolveSources(far, ctx({ src: big })).error, '')
+  assert.equal(far.quotes[0].text, 'line 109550-109551')
+  const cut = base({
+    quotes: [{ id: 'Q1', kind: 'log', file: 'Saved/Logs/g.log', start: 3, text: 'Found=1 … Offset' }],
+  })
+  assert.match(resolveSources(cut, ctx({ src: fsrc })).error, /对不上：从文件里原样复制/)
+  const miss = base({ quotes: [{ id: 'Q1', kind: 'log', file: 'x.log', start: 1 }] })
+  assert.match(resolveSources(miss, ctx({ src: fsrc })).error, /读不到日志文件 x\.log/)
+})
+
 test('命令输出原文要在这个对话的工具输出里找得到；描述不核对', () => {
   const messages = [
     { tools: [{ kind: 'run', label: 'npm test', output: 'FAIL  total\n  expected 120\n  received "10812.00"' }] },

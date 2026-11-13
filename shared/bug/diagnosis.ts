@@ -881,7 +881,7 @@ export function approvedBrief(task: Pick<Task, 'bug'>): string {
 }
 
 /**
- * Bug 记录的草稿（ADR 0046 第 5 条）：修完请父对话收尾时附上，派「文档」写 Bug 记录时原样交给它，
+ * Bug 记录的草稿（ADR 0046 第 5 条）：修完请父对话收尾时附上，用户同意记进 Bug 文档后派「文档」写时原样交给它，
  * 不用它再从对话里摘。元数据头照 docs/modules/<模块>/bugs/<id>.md 的格式（状态 / 症状 / 入口 / 根因类型 / 模块 / 关键词）
  */
 export function bugRecordDraft(task: Pick<Task, 'title' | 'bug'>): string {
