@@ -178,8 +178,21 @@ export const MD_SPEC = {
     caption: bool(true),
   },
   mention: { color: color('blue'), bg: bg('blue') },
-  /** mermaid 图：出场动画、悬停高亮相连的线、画布点阵底、节点渐变底 */
-  mermaid: { motion: bool(true), hover: bool(true), grid: bool(true), gradient: bool(true) },
+  /**
+   * mermaid 图：整体风格（节点和连线的配色一套套选）、连线走法和粗细、节点圆角和内边距，
+   * 以及出场动画、悬停高亮相连的线、画布点阵底、节点渐变底
+   */
+  mermaid: {
+    look: pick('soft', ['soft', 'tint', 'card', 'classic'] as const),
+    curve: pick('rounded', ['rounded', 'basis', 'linear'] as const),
+    edge: { kind: 'num', def: 1.5, min: 1, max: 3, step: 0.25, unit: 'px' } as NumField,
+    radius: px(8, 0, 16),
+    pad: px(8, 4, 20),
+    motion: bool(true),
+    hover: bool(true),
+    grid: bool(true),
+    gradient: bool(true),
+  },
 } as const satisfies Record<string, Record<string, MdField>>
 
 export type MdElement = keyof typeof MD_SPEC

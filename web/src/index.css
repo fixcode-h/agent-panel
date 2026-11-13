@@ -1356,6 +1356,11 @@ body,
   --md-img-caption: block;
   --md-mention-color: var(--md-blue);
   --md-mention-bg: color-mix(in srgb, var(--md-blue) 11%, transparent);
+  --md-mermaid-look: soft;
+  --md-mermaid-curve: rounded;
+  --md-mermaid-edge: 1.5px;
+  --md-mermaid-radius: 8px;
+  --md-mermaid-pad: 8px;
   --md-mermaid-motion: 1;
   --md-mermaid-hover: 1;
   --md-mermaid-grid: radial-gradient(var(--md-dot) 1px, transparent 1px);
@@ -2070,7 +2075,7 @@ body,
 
 /*
  * mermaid（Markdown.tsx 画图、web/src/lib/mermaid-fx.ts 加动效和缩放）：顶栏 + 画布 + 收起的源码。
- * 画布带一层淡紫光晕和点阵底（设置里可关），图可以拖动、Ctrl+滚轮缩放、全屏看
+ * 画布带一层随风格变的光晕（mermaid-looks.css 的 --mx-canvas-glow）和点阵底（设置里可关），图可以拖动、Ctrl+滚轮缩放、全屏看
  */
 .chat-md .md-mermaid {
   @apply relative;
@@ -2102,7 +2107,7 @@ body,
 .chat-md .md-mmd-canvas {
   @apply relative cursor-grab overflow-hidden;
   background:
-    radial-gradient(ellipse 70% 60% at 50% 0%, color-mix(in srgb, var(--md-violet) 7%, transparent), transparent 70%),
+    radial-gradient(ellipse 70% 60% at 50% 0%, var(--mx-canvas-glow, transparent), transparent 70%),
     var(--md-mermaid-grid) 0 0 / 16px 16px;
 }
 .chat-md .md-mmd-canvas[data-drag] {
@@ -2119,16 +2124,14 @@ body,
 .chat-md .md-mermaid-svg svg {
   @apply h-auto max-w-full overflow-visible;
 }
-/* 缩放按钮：鼠标移到图上才浮出来 */
+/* 缩放按钮：一直在右下角，平时淡一点不抢图，鼠标移到图上变实 */
 .chat-md .md-mmd-zoom {
-  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border p-0.5 font-sans text-caption text-muted opacity-0 backdrop-blur-sm transition-[opacity,translate] duration-200;
-  translate: 0 4px;
-  background: color-mix(in srgb, var(--md-pre-bg) 88%, transparent);
+  @apply absolute right-2 bottom-2 flex items-center gap-0.5 rounded-lg border border-line-strong p-0.5 font-sans text-caption text-muted opacity-60 shadow-sm transition-opacity duration-200;
+  background: var(--card);
 }
 .chat-md .md-mmd-canvas:hover .md-mmd-zoom,
 .md-mmd-full .md-mmd-zoom {
   @apply opacity-100;
-  translate: 0 0;
 }
 .chat-md .md-mmd-zoom button {
   @apply min-w-6 cursor-pointer rounded-md px-1 py-0.5 hover:bg-sel hover:text-fg;
@@ -2180,8 +2183,8 @@ body,
 /* 图里的元素：圆角、细描边，字号跟面板 */
 .md-mermaid svg .node rect.basic,
 .md-mermaid svg rect.actor {
-  rx: 8px;
-  ry: 8px;
+  rx: var(--md-mermaid-radius);
+  ry: var(--md-mermaid-radius);
 }
 .md-mermaid svg rect.note {
   rx: 6px;

@@ -1,11 +1,15 @@
 import { t } from '@shared/i18n'
 import { copyText } from '@/lib/copy-text'
 import { lineSpans } from '@/lib/workflow-doc'
+// 几套整体风格（素净 / 柔彩 / 浮卡 / 经典）的节点、连线、线上文字配色
+import '@/lib/markdown/mermaid-looks.css'
 
 /**
  * mermaid 图的外观和动效：主题变量、画好后的顶栏 / 画布 / 缩放按钮、出场动画、悬停高亮、拖动缩放、全屏。
  * 画图本身在 Markdown.tsx；这里只处理画出来的 SVG。动画、悬停、渐变底在设置 → Markdown 样式 → Mermaid 里可以关，
  * 开关落成 --md-mermaid-* 变量（'1' / '0'），画图时读一次。
+ * 整体风格（--md-mermaid-look）落成 .md-mermaid 上的 data-look，配色全在 mermaid-looks.css：
+ * 这里只给节点的形状标上种类（data-k：普通 / 判断 / 起止），不在 JS 里算颜色。
  */
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -29,6 +33,17 @@ function plainColor(value: string) {
   ctx.fillRect(0, 0, 1, 1)
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
   return `rgb(${r}, ${g}, ${b})`
+}
+
+const CURVES = ['rounded', 'basis', 'linear'] as const
+const LOOKS = ['soft', 'tint', 'card', 'classic'] as const
+
+/** 画图前要交给 mermaid.initialize 的版式：连线走法、节点内边距（菱形大小主要看它） */
+export function mermaidLayout() {
+  const c = css()
+  const curve = c.getPropertyValue('--md-mermaid-curve').trim() as (typeof CURVES)[number]
+  const padding = parseInt(c.getPropertyValue('--md-mermaid-pad'), 10)
+  return { curve: CURVES.includes(curve) ? curve : 'rounded', padding: padding > 0 ? padding : 8 }
 }
 
 /** mermaid 的主题变量：颜色都从 index.css 的 --md-* / --mmd-* 读，深浅色、配色跟着面板走 */
@@ -171,24 +186,54 @@ export function mermaidErrorHtml(src: string, why: string) {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-/** 节点换成上浅下深的渐变底：普通节点蓝、判断紫、起止青（mermaid 只认纯色，渐变要自己加 defs） */
+/** 节点形状按种类标上 data-k：普通蓝、判断、起止，颜色由 mermaid-looks.css 按当前风格给 */
+const KINDS = [
+  ['node', '.node rect.basic, rect.actor'],
+  ['pick', '.node polygon'],
+  ['end', '.node .outer-path > path:first-child, .node circle.basic'],
+] as const
+
+/** 用户在图里自己写了 style / classDef 颜色的节点不动：mermaid 把它写进形状的 style 属性 */
+const userPainted = (el: Element) => /fill\s*:/.test(el.getAttribute('style') ?? '')
+
+function tagKinds(svg: SVGSVGElement, type: string) {
+  // 类图、ER 图的方框也画成 outer-path（和流程图的圆角起止节点一样），按普通节点上色
+  const boxes = /classDiagram|^er/.test(type)
+  for (const [k, sel] of KINDS)
+    svg.querySelectorAll<SVGElement>(sel).forEach((el) => {
+      if (userPainted(el)) return
+      el.dataset.k = boxes && k === 'end' ? 'node' : k
+      // 圆角起止节点是两条路径：前一条只填色，后一条只描边
+      const outline = el.nextElementSibling as SVGElement | null
+      if (outline?.getAttribute('fill') === 'none') outline.dataset.ks = el.dataset.k
+    })
+  // 箭头跟着线的粗细走：mermaid 固定 8px，细线配大三角头重脚轻
+  const edge = parseFloat(css().getPropertyValue('--md-mermaid-edge')) || 1.5
+  const size = String(Math.round(4 + edge * 2))
+  svg.querySelectorAll('marker.flowchart-v2').forEach((m) => {
+    m.setAttribute('markerWidth', size)
+    m.setAttribute('markerHeight', size)
+  })
+}
+
+/** 饼图扇区和图例色块按顺序标 data-c（0–5），颜色由当前风格的 --mx-c* 给，两者一一对上 */
+function tagSeries(svg: SVGSVGElement) {
+  svg.querySelectorAll('.pieCircle').forEach((p, i) => ((p as SVGElement).dataset.c = String(i % 6)))
+  svg.querySelectorAll('g.legend rect').forEach((r, i) => ((r as SVGElement).dataset.c = String(i % 6)))
+}
+
+/** 节点换成上浅下深的渐变底（mermaid 只认纯色，渐变要自己加 defs）；两端颜色是当前风格的 --mx-<种类>-a / -b */
 function gradients(svg: SVGSVGElement) {
-  const v = (k: string) => css().getPropertyValue(k).trim()
-  const kinds = [
-    ['node', '.node rect.basic, rect.actor'],
-    ['pick', '.node polygon'],
-    ['end', '.node .outer-path > path:first-child, .node circle.basic'],
-  ] as const
   const defs = document.createElementNS(SVG_NS, 'defs')
-  for (const [k, sel] of kinds) {
+  for (const [k] of KINDS) {
     const id = `${svg.id}-${k}`
     defs.insertAdjacentHTML(
       'beforeend',
-      `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${v(`--mmd-${k}-a`)}"/><stop offset="1" stop-color="${v(`--mmd-${k}-b`)}"/></linearGradient>`,
+      `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--mx-${k}-a)"/><stop offset="1" style="stop-color:var(--mx-${k}-b)"/></linearGradient>`,
     )
-    svg.querySelectorAll<SVGElement>(sel).forEach((el) => {
-      el.style.fill = `url(#${id})`
-      el.style.stroke = v(`--mmd-${k}-line`)
+    svg.querySelectorAll<SVGElement>(`[data-k="${k}"]`).forEach((el) => {
+      el.style.setProperty('--mx-g', `url(#${id})`)
+      el.dataset.g = ''
     })
   }
   svg.prepend(defs)
@@ -345,7 +390,13 @@ export function enhanceMermaid(box: HTMLElement, opts: { replay?: boolean } = {}
   const svg = box.querySelector<SVGSVGElement>('.md-mermaid-svg svg')
   if (!svg) return
   const type = svg.getAttribute('aria-roledescription') ?? ''
-  if (on('gradient') && !/mindmap|pie|gantt|gitGraph/.test(type) && !opts.replay) gradients(svg)
+  const look = css().getPropertyValue('--md-mermaid-look').trim() as (typeof LOOKS)[number]
+  box.dataset.look = LOOKS.includes(look) ? look : 'soft'
+  if (!opts.replay) tagSeries(svg)
+  if (!/mindmap|pie|gantt|gitGraph/.test(type) && !opts.replay) {
+    tagKinds(svg, type)
+    if (on('gradient')) gradients(svg)
+  }
   if (on('motion')) {
     stagger(svg)
     requestAnimationFrame(() => box.classList.add('mx-in'))

@@ -11,7 +11,14 @@ import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { useMdTables } from './md-table-layer'
 import '@/components/ui/call-tree.css'
-import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidThemeVars } from '@/lib/mermaid-fx'
+import {
+  enhanceMermaid,
+  mermaidAction,
+  mermaidErrorHtml,
+  mermaidHtml,
+  mermaidLayout,
+  mermaidThemeVars,
+} from '@/lib/mermaid-fx'
 
 /**
  * 任务页提供：总结卡「要你处理」那一行的「处理」按钮把这些事交给当前对话的 Agent（新的一轮，不新建对话）。
@@ -44,7 +51,10 @@ let mermaidTheme = ''
 async function getMermaid() {
   mermaidLoad ??= import('mermaid').then((m) => m.default)
   const mermaid = await mermaidLoad
-  const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  const dark = document.documentElement.classList.contains('dark')
+  // 连线走法、节点内边距是设置里调的，画图时才读得到：和明暗一起当作要不要重新初始化的依据
+  const layout = mermaidLayout()
+  const theme = `${dark ? 'dark' : 'light'}|${layout.curve}|${layout.padding}`
   if (theme !== mermaidTheme) {
     // 用面板自己的配色画图：节点、连线、饼图、甘特都取 Markdown 那组色相（mermaid-fx.ts 的 mermaidThemeVars）
     mermaid.initialize({
@@ -53,11 +63,23 @@ async function getMermaid() {
       suppressErrorRendering: true,
       securityLevel: 'strict',
       theme: 'base',
+      // mermaid 12 默认 neo 外观：节点带浅灰投影、参与者方框加高，配色和尺寸都由面板自己的风格接管，这里用朴素的经典外观
+      look: 'classic',
       fontFamily: getComputedStyle(document.body).fontFamily,
-      themeVariables: mermaidThemeVars(theme === 'dark'),
-      flowchart: { curve: 'basis', padding: 16, nodeSpacing: 46, rankSpacing: 52 },
+      themeVariables: mermaidThemeVars(dark),
+      flowchart: { curve: layout.curve, padding: layout.padding, nodeSpacing: 40, rankSpacing: 48 },
       // 时序图、甘特图按自然宽度画，不撑满容器（撑满时字会被放大或缩得很小）
-      sequence: { mirrorActors: false, useMaxWidth: false, messageFontSize: 13, actorFontSize: 13, noteFontSize: 13 },
+      sequence: {
+        mirrorActors: false,
+        useMaxWidth: false,
+        messageFontSize: 13,
+        actorFontSize: 13,
+        noteFontSize: 13,
+        // 参与者方框默认 65px 高，比消息行还粗，压得整张图头重脚轻
+        height: 40,
+        boxMargin: 8,
+        actorMargin: 56,
+      },
       gantt: { fontSize: 12, sectionFontSize: 12, barHeight: 22, barGap: 6, leftPadding: 56, useWidth: 760 },
     })
     mermaidTheme = theme
