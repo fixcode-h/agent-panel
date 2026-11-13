@@ -16,6 +16,19 @@ const input = (over: Partial<DiagnosisInput> = {}): DiagnosisInput => ({
   symptom: '登录超时后一直转圈',
   repro: 'npm test -- login.test.ts：超时用例失败',
   location: 'web/src/lib/login.ts:40 retry → api.ts:12 fetch',
+  // 调用栈树：根因、方案这一版必须有入口和出错点
+  stack: [
+    { id: 'S1', file: 'web/src/lib/login.ts', line: 40, fn: 'retry', note: '按 max 判断要不要重试' },
+    {
+      id: 'S2',
+      parent: 'S1',
+      role: 'fault',
+      file: 'web/src/lib/login.ts',
+      line: 44,
+      fn: 'retries < max',
+      cond: { text: 'retries < max', took: '一直为真' },
+    },
+  ],
   evidence: '日志「[login] retry 3」← login.ts:44 retries < max 永远为真',
   rootCause: 'max 用的是秒，retries 按次数累加',
   confirmed: true,
