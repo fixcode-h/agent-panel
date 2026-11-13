@@ -173,9 +173,12 @@ export function ComboInput({
   onPick,
   suggestions,
   className,
+  size = 'md',
   ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'size'> & {
   value: string
+  /** 高度档，同 Input；默认 md（表格单元格里用 sm） */
+  size?: FieldSize
   onChange: (v: string) => void
   /** 从建议里选中时另外回调：和手动输入区分开（例如选了厂家顺便填好地址） */
   onPick?: (v: string) => void
@@ -205,7 +208,7 @@ export function ComboInput({
             role="combobox"
             aria-expanded={open}
             autoComplete="off"
-            className={cn(fieldClass, 'h-9 pr-8', className)}
+            className={cn(fieldClass, fieldSizes[size], 'pr-8', className)}
             onFocus={() => {
               setTyped(false)
               setOpen(true)
