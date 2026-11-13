@@ -112,8 +112,12 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    另外服务端入口登记面板动作（ServerPlugin.actions）；网页入口在项目设置里加页（WebPlugin.projectSections，
  *    设置存在 project.plugins[<插件 id>]）、在设置 →「组件」里加示例（WebPlugin.specimens）；开放 web/src/lib/assist-conv
  *    （runPromptInProject：在项目里开分析对话跑插件自己的提示词）
+ * 7：插件推送通道（PluginServerContext.pages / host.events）
+ * 8：工具和动作自己声明作用和使用时机（McpTool.guide、PluginAction.useWhen / avoidWhen），交给 Agent 的说明从它拼出来；
+ *    不开对话列出能力的目录（ServerPlugin.catalog），tools(run) 返回服务的 summary / attach 和不挂的原因 skip，
+ *    设置 →「MCP」自检时 run.dryRun 为 true（设计稿：MCP能力菜单）。都是可选的，旧插件照常加载
  */
-export const PLUGIN_API = 7
+export const PLUGIN_API = 8
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

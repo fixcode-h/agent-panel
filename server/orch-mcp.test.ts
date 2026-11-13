@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { AUDIENCE_REPS } from './mcp-catalog/audiences.ts'
+import type { Audience } from '../shared/mcp-catalog/types.ts'
 import { autoSubmit } from './submit-test-kit.ts'
 import test from 'node:test'
 import { FlowRun } from '../shared/tasks/flow-schema.ts'
@@ -1214,6 +1216,21 @@ function identityHost(op: {
 
 test('面板工具按身份裁剪：每个身份的完整清单，真实 makeOrchestra 造的和表一致，名字都登记过', async () => {
   for (const [who, o, want] of IDENTITIES) assert.deepEqual(toolNames(o), want, who)
+  // 设置 →「MCP」的「给谁」按每类对话的能力全开代表算（server/mcp-catalog/audiences.ts）：真实身份的清单都要包含在同类代表里
+  const kindOf = (who: string): Audience =>
+    who.startsWith('Chat')
+      ? 'chat'
+      : who.startsWith('项目顶层')
+        ? 'parent'
+        : who.startsWith('子对话')
+          ? 'child'
+          : who.startsWith('子任务')
+            ? 'helper'
+            : 'node'
+  for (const [who, o] of IDENTITIES) {
+    const rep = new Set(orchTools(AUDIENCE_REPS[kindOf(who)]).map((x) => x.name))
+    for (const n of toolNames(o)) assert.ok(rep.has(n), `${who} 的 ${n} 不在「给谁」的代表清单里`)
+  }
   const want = new Map(IDENTITIES.map(([who, , list]) => [who, list]))
   const real = async (op: Parameters<typeof identityHost>[0]) => {
     const { host, seen } = identityHost(op)

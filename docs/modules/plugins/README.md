@@ -4,7 +4,7 @@
 - 职责：插件包的安装、删除、开关、参数，插件服务端和网页部分的加载，插件给 Agent 的 MCP 工具
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
-- 关键词：插件、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、视频插件、表格插件、开放模块、插件钩子、插件测试步骤、插件命令、附件认领
+- 关键词：插件、插件接口 8、能力目录、MCP 能力、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、视频插件、表格插件、开放模块、插件钩子、插件测试步骤、插件命令、附件认领
 - 更新：2026-11-13
 
 ## 职责
@@ -47,6 +47,7 @@
 | `server/exec/plugin-run.ts`                                                                                     | 每轮对话问插件要工具（带项目、目录、模式），插件工具的确认卡片（`confirm`）                                                                                                                                                                                              |
 | `server/plugins/limit.ts`                                                                                       | 面板调插件代码的统一限时（activate 20 秒、tools 8 秒、status 5 秒、onConfig / stop 10 秒）：插件卡住时按出错处理，不拖住对话和开关插件                                                                                                                                   |
 | `server/plugins/effects.ts`                                                                                     | 插件工具按声明（`McpTool.effect`，接口 3）记下改了哪些文件、验证通过没有，end_turn 时交给完成依据和验证门禁                                                                                                                                                              |
+| `server/mcp-catalog/`、`shared/mcp-catalog/`                                                                    | 设置 →「MCP」的能力目录和自检（接口 8，ADR 0064）：`catalog()` 列插件工具，没有的旧插件按清单列名字；自检用 `dryRun` 的 `tools(run)`，不挂的原因取 `skip`；`describeTool` 把 `guide` 拼进交给 Agent 的说明                                                               |
 
 ## 数据流
 

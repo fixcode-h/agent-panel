@@ -36,6 +36,9 @@ export interface AppAction {
   /** 给模型看：什么时候用、会怎样 */
   description: string
   level: ActionLevel
+  /** 什么时候该用、什么时候别用（设置 →「MCP」显示，也拼进给模型看的目录）；插件动作是插件接口 8 起才有 */
+  useWhen?: string
+  avoidWhen?: string
   input: z.ZodType
   run(args: any, ctx: ActionCtx): Promise<unknown>
 }
@@ -46,6 +49,8 @@ export function defineAction<S extends z.ZodType>(a: {
   title: string
   description: string
   level: ActionLevel
+  useWhen?: string
+  avoidWhen?: string
   input: S
   run(args: z.infer<S>, ctx: ActionCtx): Promise<unknown>
 }): AppAction {
@@ -134,6 +139,8 @@ export function catalogText(list: AppAction[]) {
       return [
         `${a.name} [${a.level}] ${a.title}`,
         `  ${a.description}`,
+        ...(a.useWhen ? [`  什么时候用：${a.useWhen}`] : []),
+        ...(a.avoidWhen ? [`  不要用：${a.avoidWhen}`] : []),
         ...(params.length ? ['  参数：', ...params] : []),
       ].join('\n')
     })

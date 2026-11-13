@@ -159,6 +159,16 @@ export const COMP_SPEC = {
     legend: bool(true, 'flex', 'none'),
     edge: hue('violet'),
   },
+  /**
+   * 能力行（设置 →「MCP」的工具和动作，web/src/components/ui/capability-row.tsx）：
+   * 上下留白、悬停底的圆角、显不显示「该用 / 别用」两行、显不显示工具原名
+   */
+  capRow: {
+    pad: pick('normal', { compact: '6px', normal: '10px', loose: '14px' }),
+    radius: px(8, 0, 16),
+    when: bool(true, 'grid', 'none'),
+    name: bool(true, 'inline', 'none'),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

@@ -263,6 +263,7 @@ export function App() {
       route,
       go: setRoute,
       openSettings: (section?: string) => setSettings({ open: true, section, loaded: true }),
+      closeSettings: () => setSettings((s) => ({ ...s, open: false })),
       openProject: (id?: string, section?: string, item?: string) => setProject({ open: true, id, section, item }),
     }),
     [route, setRoute],

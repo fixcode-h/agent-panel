@@ -50,6 +50,8 @@
 
 13. **插件接口 7（2026-11-12，插件推送通道）**：表格插件原来每 4 秒请求一次 `/stat` 看打开着的文件被外面改了没有，违反「前端要实时数据用推送，不加轮询」，而插件此前没有推送的路。新增推送通道：服务端 `PluginServerContext.pages`（`push(event, data, to?)`、`open(conn)`、`onClose(fn)`，`server/plugins/pages.ts`），网页 `host.events`（`on` / `useEvent` 订阅、`conn` / `onConnect` 拿连接 id，`web/src/plugins/events.ts`）。事件走已有的页面事件流 `/api/app/events`（一个页面只开一条连接），不另开 SSE；每条连接在 `hello` 里带一个 id，插件按它只推给登记过的页面，连接断了经 `onClose` 清掉登记，断线重连的页面在 `onConnect` 里拿新 id 重新登记。插件 id 由面板填，插件只能推给自己的网页部分；插件关掉时它登记的回调一起撤掉。表格插件用它把外部改动检测换成 `fs.watch`（盯所在目录，Excel / WPS 先写临时文件再改名的保存方式也认得出）加推送。
 
+14. **插件接口 8（2026-11-13，设置 →「MCP」能力菜单，[ADR 0064](./0064-mcp-capability-catalog.md)）**：插件工具加 `guide`（作用、什么时候用 / 别用、分组，面板拼进交给 Agent 的说明）和设置页徽标用的 `confirms` / `irreversible`；面板动作加 `useWhen` / `avoidWhen`；`ServerPlugin.catalog()` 不开对话也能列出工具；`tools(run)` 不挂时可以返回 `{ skip: 原因 }`；`PluginRun.dryRun` 表示是设置页的自检，插件不起进程、不改数据；`PluginRunTools.servers[].summary` 作为 MCP 握手的 `instructions`。开放模块加 `shared/mcp-catalog/describe.ts`。
+
 ## 影响与风险
 
 - 带代码的插件在面板进程里以用户权限运行，和 Agent 执行命令同级的信任；安装确认里写明，只建议装信任的来源。

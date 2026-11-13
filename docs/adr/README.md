@@ -71,6 +71,7 @@
 | [0061](./0061-builtin-copies-overwrite-no-snapshots.md)   | 内置副本改过也直接覆盖，不再留历史快照                                              | 已接受     | 2026-11-12 | 角色改过直接覆盖不备份；工作流按 `builtinHash` 判断定义更新了才覆盖；删掉 `legacy*.ts` 约 3300 行快照                                                                                                                                         |
 | [0062](./0062-api-contracts-in-shared.md)                 | 前后端接口契约写在 shared，演示后端的业务口径调 shared 同一份函数                   | 已接受     | 2026-11-12 | `shared/api-contract/` 按模块写 `endpoint`；前端 `call()` 推类型；同一份探查在正式和演示后端跑；子对话行和计数共用 `shared/children/row.ts`                                                                                                   |
 | [0063](./0063-task-live-from-server.md)                   | 对话的运行时状态只由服务端算，页面只读 live，列表变化由全局事件流推                 | 已接受     | 2026-11-12 | `TaskLive` + `taskLiveOf` 一处算；`live-store` 只读；运行时字段不落盘；`/api/app/events` 推 `tasks` / `live`，连不上才轮询（rules-check 22）                                                                                                  |
+| [0064](./0064-mcp-capability-catalog.md)                  | MCP 工具的使用时机由工具自己声明，设置页和 Agent 看到同一份                         | 已接受     | 2026-11-13 | `ToolGuide` + `describeTool` 一处拼；插件接口 8 的 `guide` / `catalog()` / `skip` / `dryRun`；设置 →「MCP」只读                                                                                                                               |
 
 状态只有四个词，别自己造近义词：
 

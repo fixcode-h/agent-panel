@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { NavRow } from '@/components/ui/sidebar'
 import * as pp from '@/plugins/PluginParamsNav'
+import { mcpPage, mcpSub } from '@/components/settings/mcp/McpNav'
 import { SettingsSearchBox } from '@/components/settings/SettingsSearch'
 import { cliPage, type Section } from '@/components/settings/settings-sections'
 import type { SettingsSearch } from '@/components/settings/use-settings-search'
@@ -53,69 +54,84 @@ export function SettingsMainNav({
         <SettingsSearchBox value={query} onChange={setQuery} onKeyDown={onSearchKey} inputRef={searchRef} />
       </div>
       <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto p-2 md:min-h-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:px-2.5 md:pt-0 md:pb-3">
-        {SECTIONS.filter((s) => (!cliPage(s) || s.id === 'models') && !pp.pluginParamsSub(s.id)).map((s, i, list) => {
-          // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
-          // 搜索时内容区是结果列表，左栏不再标当前页
-          const on = !searching && (s.id === 'models' ? inCli : s.id === pp.PLUGIN_PARAMS ? inPlugin : s.id === cur.id)
-          const head = s.group && s.group !== list[i - 1]?.group
-          return (
-            <div key={s.id} className="contents">
-              {head && (
-                // 窄屏左栏是横向的一行，不显示组名
-                <span
+        {SECTIONS.filter((s) => (!cliPage(s) || s.id === 'models') && !pp.pluginParamsSub(s.id) && !mcpSub(s.id)).map(
+          (s, i, list) => {
+            // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
+            // 搜索时内容区是结果列表，左栏不再标当前页
+            const on =
+              !searching &&
+              (s.id === 'models'
+                ? inCli
+                : s.id === pp.PLUGIN_PARAMS
+                  ? inPlugin
+                  : s.id === 'mcp'
+                    ? mcpPage(cur.id)
+                    : s.id === cur.id)
+            const head = s.group && s.group !== list[i - 1]?.group
+            return (
+              <div key={s.id} className="contents">
+                {head && (
+                  // 窄屏左栏是横向的一行，不显示组名
+                  <span
+                    className={cn(
+                      'hidden px-2.5 pb-1.5 text-caption font-medium tracking-wide text-subtle md:block',
+                      i > 0 ? 'pt-4' : 'pt-0',
+                    )}
+                  >
+                    {s.group}
+                  </span>
+                )}
+                {/* 窄屏左栏是横向一行：行宽按文字走（w-auto），md 以上竖排才撑满 */}
+                <NavRow
+                  onClick={() => {
+                    setQuery('')
+                    onSection(s.id === pp.PLUGIN_PARAMS ? pp.pluginParamsEntry(pluginPages) : s.id)
+                  }}
+                  on={on}
+                  aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
                   className={cn(
-                    'hidden px-2.5 pb-1.5 text-caption font-medium tracking-wide text-subtle md:block',
-                    i > 0 ? 'pt-4' : 'pt-0',
+                    'w-auto shrink-0 whitespace-nowrap md:w-full',
+                    searching && !navHits(s) && 'opacity-50',
                   )}
-                >
-                  {s.group}
-                </span>
-              )}
-              {/* 窄屏左栏是横向一行：行宽按文字走（w-auto），md 以上竖排才撑满 */}
-              <NavRow
-                onClick={() => {
-                  setQuery('')
-                  onSection(s.id === pp.PLUGIN_PARAMS ? pp.pluginParamsEntry(pluginPages) : s.id)
-                }}
-                on={on}
-                aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
-                className={cn('w-auto shrink-0 whitespace-nowrap md:w-full', searching && !navHits(s) && 'opacity-50')}
-                icon={
-                  s.id === 'models' ? (
-                    <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
-                  ) : (
-                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
-                  )
-                }
-                label={s.id === 'models' ? 'Agent' : s.label}
-                trailing={
-                  <>
-                    {/* 搜索时每页右边写命中几项，没命中的页淡下去 */}
-                    {searching && navHits(s) > 0 && (
-                      <span className="shrink-0 text-footnote text-subtle tabular-nums">{navHits(s)}</span>
-                    )}
-                    {s.id === 'update' && update && (
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
-                    )}
-                    {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
-                    {s.id === 'models' && deployDot && (
-                      <span
-                        aria-hidden="true"
-                        title={deployDot}
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                      />
-                    )}
-                  </>
-                }
-              />
-              {s.id === 'models' && deployDot && (
-                <span id={agentHintId} className="sr-only">
-                  {deployDot}
-                </span>
-              )}
-            </div>
-          )
-        })}
+                  icon={
+                    s.id === 'models' ? (
+                      <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
+                    ) : (
+                      s.icon && (
+                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={2.2} />
+                      )
+                    )
+                  }
+                  label={s.id === 'models' ? 'Agent' : s.label}
+                  trailing={
+                    <>
+                      {/* 搜索时每页右边写命中几项，没命中的页淡下去 */}
+                      {searching && navHits(s) > 0 && (
+                        <span className="shrink-0 text-footnote text-subtle tabular-nums">{navHits(s)}</span>
+                      )}
+                      {s.id === 'update' && update && (
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
+                      )}
+                      {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
+                      {s.id === 'models' && deployDot && (
+                        <span
+                          aria-hidden="true"
+                          title={deployDot}
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                        />
+                      )}
+                    </>
+                  }
+                />
+                {s.id === 'models' && deployDot && (
+                  <span id={agentHintId} className="sr-only">
+                    {deployDot}
+                  </span>
+                )}
+              </div>
+            )
+          },
+        )}
       </div>
     </nav>
   )

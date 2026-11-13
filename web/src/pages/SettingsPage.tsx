@@ -8,6 +8,7 @@ import { useAutosave } from '@/lib/useAutosave'
 import { onSettingsReloaded } from '@/lib/ui-actions'
 import { Modal } from '@/components/ui/modal'
 import * as pp from '@/plugins/PluginParamsNav'
+import { McpNav, mcpPage, useMcpPages } from '@/components/settings/mcp/McpNav'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { StylesSettings } from '@/components/settings/StylesSettings'
 import { ApiSection } from '@/components/settings/ApiSection'
@@ -54,6 +55,7 @@ import {
   DeploySection,
   MarkdownSection,
   ComponentsSection,
+  McpSection,
 } from '@/components/settings/lazy-sections'
 
 /** 改 SettingsForm 里的一块：各分区只拿到自己那一块的 setter */
@@ -98,7 +100,8 @@ function SettingsBody({
   const cli = useCliDrafts({ initial, clis, refreshClis, setSettings, apis: form.apis })
   // 在线演示没有服务端，外网访问和网络代理的开关不显示
   const pluginPages = pp.usePluginParamPages()
-  const SECTIONS = sectionsFor(cli.ordered, pluginPages).filter(
+  const mcpPages = useMcpPages()
+  const SECTIONS = sectionsFor(cli.ordered, pluginPages, mcpPages).filter(
     (s) => !(demo && (s.id === 'remote' || s.id === 'network')),
   )
   const catalogInfo = useModelCatalog()
@@ -159,6 +162,8 @@ function SettingsBody({
       )}
 
       {inPlugin && !searching && <pp.PluginParamsNav pages={pluginPages} current={cur.id} onSection={onSection} />}
+
+      {mcpPage(cur.id) && !searching && <McpNav current={cur.id} onSection={onSection} />}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-4 md:px-9 md:pt-6">
@@ -283,6 +288,7 @@ function SettingsContent({ cur, inPlugin, ctx }: { cur: Section; inPlugin: boole
       )}
       {cur.id === 'plugins' && <PluginsSection />}
       {inPlugin && <PluginParamsSection section={cur.id} />}
+      {mcpPage(cur.id) && <McpSection section={cur.id} onSection={onSection} />}
       {cur.id === 'data' && <DataSection />}
       {cur.id === 'usage' && (
         <UsageSection pricingModel={form.usagePricingModel} onPricingModel={setPart('usagePricingModel')} />

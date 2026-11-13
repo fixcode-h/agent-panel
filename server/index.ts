@@ -73,6 +73,7 @@ import { installApi } from './install.ts'
 import { envApi } from './env-api.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
+import { mcpCatalogApi } from './mcp-catalog/index.ts'
 import { projectMcpApi } from './projects/mcp.ts'
 import { openBrowser, revealDir } from './open.ts'
 import { modelsApi } from './models.ts'
@@ -979,6 +980,10 @@ app.route('/designs/browser', browserExtApi())
 app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())
 app.route('/plugins', pluginsApi())
+app.route(
+  '/mcp-catalog',
+  mcpCatalogApi({ agents, projects, taskTitle: async (id) => (await tasks.get(id))?.title ?? '' }),
+)
 app.route('/mcp', askMcpApi())
 const docs = docsApi({ projects, agents })
 app.route('/project-docs', docs.routes)

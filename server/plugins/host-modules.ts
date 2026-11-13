@@ -38,6 +38,7 @@ import * as sharedFix from '../../shared/fix.ts'
 import * as sharedI18n from '../../shared/i18n.ts'
 import * as sharedLocalImage from '../../shared/local-image.ts'
 import * as sharedLocalPrompts from '../../shared/local-prompts.ts'
+import * as sharedMcpDescribe from '../../shared/mcp-catalog/describe.ts'
 import * as sharedMoss from '../../shared/moss.ts'
 import * as sharedPinyin from '../../shared/pinyin.ts'
 import * as sharedPromptLang from '../../shared/prompt-lang.ts'
@@ -100,6 +101,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'shared/i18n': sharedI18n,
   'shared/local-image': sharedLocalImage,
   'shared/local-prompts': sharedLocalPrompts,
+  'shared/mcp-catalog/describe': sharedMcpDescribe,
   'shared/moss': sharedMoss,
   'shared/pinyin': sharedPinyin,
   'shared/prompt-lang': sharedPromptLang,
