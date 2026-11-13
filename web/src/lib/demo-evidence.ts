@@ -6,6 +6,7 @@
 import type { Task } from '@shared/schema'
 import { patchFilesOf, patchKindOf, type PatchResult, type PatchStatus } from '@shared/bug/patch'
 import {
+  isAbsPath,
   logPathIn,
   relatedLines,
   type LogFetchResult,
@@ -71,7 +72,22 @@ function log(task: Task, method: string, body: unknown): LogWatchStatus | LogSta
   }
   if (!started.has(task.id)) return { ok: false, error: '还没有点「开始复现」：面板不知道从哪里开始算新增的日志' }
   const text = sampleLog(task)
-  return { ok: true, path, text, related: relatedLines(text), bytes: text.length, truncated: false, rotated: false }
+  // 演示里没有真文件：编一个绝对路径和行号，假装开始复现时文件有 411 行
+  const n = text.split('\n').length
+  const related = relatedLines(text).split('\n').filter(Boolean).length
+  const abs = isAbsPath(path) ? path : `/home/demo/shop/${path}`
+  return {
+    ok: true,
+    path,
+    abs,
+    size: 18_432 + text.length,
+    startLine: 412,
+    endLine: 411 + n,
+    bytes: text.length,
+    related,
+    truncated: false,
+    rotated: false,
+  }
 }
 
 export function demoEvidence(task: Task, sub: string, method: string, body: unknown) {

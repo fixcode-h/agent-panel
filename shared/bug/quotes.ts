@@ -11,6 +11,7 @@
 import type { BugCase, BugCollect, BugEnv, BugLogPoint, CodeRef, Diagnosis } from './diagnosis-schema.ts'
 import { lineDiff, TEMP_LOG } from './cleanup.ts'
 import { phaseOf } from './phase.ts'
+import { fileLead, pastedLog } from './log-watch.ts'
 import type { TaskMessage } from '../schema.ts'
 
 /** 宿主给的读取能力：交报告时同步调用（工具调用本来就在等结果，读几个小文件不碍事） */
@@ -118,8 +119,11 @@ function logSource(list: Diagnosis[], from: number | undefined, src?: BugSource)
     ? list.find((x) => x.version === from)
     : [...list].reverse().find((x) => x.logs.trim() || x.logFiles.length)
   if (!d) return undefined
-  if (d.logs.trim()) return { version: d.version, text: d.logs }
-  for (const f of d.logFiles) {
+  // 引用了日志文件、只写了从第几行看的：按行号去文件里找（行号是整个文件的行号）
+  const pasted = pastedLog(d.logs)
+  if (pasted) return { version: d.version, text: d.logs }
+  const lead = d.logs.trim() ? fileLead(d.logs)?.path : undefined
+  for (const f of [...new Set([...(lead ? [lead] : []), ...d.logFiles])]) {
     const text = src?.read(f)
     if (text !== undefined) return { version: d.version, text: text.slice(0, 5_000_000) }
   }

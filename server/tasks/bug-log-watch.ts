@@ -1,16 +1,18 @@
 /**
  * 面板自己取日志（分析稿 B3，纯逻辑在 shared/bug/log-watch.ts）：
- * 「开始复现」记下报告里写的那个日志文件现在多大，「复现完了，取日志」读新增的那一段。
+ * 「开始复现」记下报告里写的那个日志文件现在多大，「复现完了，取日志」算出新增内容从第几行开始（不读出内容交给页面）。
  * 读哪个文件不由页面说：路径从报告的「日志在哪」里认，页面只带一个「我确认读项目外面的这个文件」。
  * 只读项目目录、对话目录下的文件；报告里明确写了绝对路径且用户点了确认的也读；其余一律拒绝并说明
  */
-import { open, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { open, mkdir, readFile, realpath, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
 import {
   isAbsPath,
+  lineSpan,
   logPathIn,
   looksUtf16,
+  newlineOffsets,
   newRange,
   relatedLines,
   tidyLog,
@@ -110,8 +112,32 @@ export async function startWatch(
   return { ok: true, path: r.path, size: mark.size, missing: !st, outside: r.outside }
 }
 
+/** 分段读整个文件数换行：起点之前有几个、一共几个、最后一个字符是不是换行。一段 1 MB（偶数，UTF-16 的奇偶不乱） */
+async function scanLines(fh: FileHandle, size: number, mark: number) {
+  const chunk = Buffer.alloc(1 << 20)
+  let pos = 0
+  let before = 0
+  let total = 0
+  let lastNl = -1
+  let utf16: boolean | undefined
+  while (pos < size) {
+    const { bytesRead } = await fh.read(chunk, 0, Math.min(chunk.length, size - pos), pos)
+    if (!bytesRead) break
+    const b = chunk.subarray(0, bytesRead)
+    utf16 ??= looksUtf16(b)
+    for (const i of newlineOffsets(b, utf16)) {
+      total++
+      if (pos + i < mark) before++
+      lastNl = pos + i
+    }
+    pos += bytesRead
+  }
+  return { before, total, endsWithNewline: lastNl >= 0 && lastNl === size - (utf16 ? 2 : 1), utf16: !!utf16 }
+}
+
 /**
- * 复现完了：读从起点到现在新增的那一段。路径和能不能读都重新认一遍（期间文件被换成链接也按现在的算）；
+ * 复现完了：算出从起点到现在新增的内容在第几行到第几行，交给页面做成文件引用，日志内容本身不读给页面。
+ * 路径和能不能读都重新认一遍（期间文件被换成链接也按现在的算）；
  * 报告里写的位置和开始时不一样了（交了新一版）就要求重新开始
  */
 export async function fetchWatch(where: string | undefined, d: WatchDirs, confirm: boolean): Promise<LogFetchResult> {
@@ -129,23 +155,26 @@ export async function fetchWatch(where: string | undefined, d: WatchDirs, confir
       error: t('找不到日志文件 {path}：确认复现时确实写了日志，或者自己把日志贴进来', { path: r.path }),
     }
   const range = newRange(mark.size, st.size)
-  const buf = Buffer.alloc(range.length)
-  if (range.length) {
-    const fh = await open(r.abs, 'r')
-    try {
-      await fh.read(buf, 0, range.length, range.from)
-    } finally {
-      await fh.close()
+  const fh = await open(r.abs, 'r')
+  try {
+    const scan = await scanLines(fh, st.size, range.from)
+    // 新增里带 [排查- 的有几行：只是给用户看一眼对不对，太大的只数前面一段
+    const buf = Buffer.alloc(range.length)
+    if (range.length) await fh.read(buf, 0, range.length, range.from)
+    const text = tidyLog(buf.toString(scan.utf16 ? 'utf16le' : 'utf8'), range.truncated)
+    const related = relatedLines(text)
+    return {
+      ok: true,
+      path: r.path,
+      abs: r.abs,
+      size: st.size,
+      ...lineSpan({ ...scan, size: st.size }),
+      bytes: range.total,
+      related: related ? related.split('\n').length : 0,
+      truncated: range.truncated,
+      rotated: range.rotated,
     }
-  }
-  const text = tidyLog(buf.toString(looksUtf16(buf) ? 'utf16le' : 'utf8'), range.truncated)
-  return {
-    ok: true,
-    path: r.path,
-    text,
-    related: relatedLines(text),
-    bytes: range.total,
-    truncated: range.truncated,
-    rotated: range.rotated,
+  } finally {
+    await fh.close()
   }
 }
