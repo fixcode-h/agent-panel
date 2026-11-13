@@ -15,3 +15,25 @@ export function latestTurnIndex(blocks: { kind: string }[]): number {
   }
   return -1
 }
+
+/**
+ * 正在输出的是哪一轮（working 时）：最后一段，或者后面只跟着插进这一轮的用户消息的那一轮。
+ *
+ * 以前只认「最后一段」：用户在这一轮进行中插话（已插进当前这一轮），这条消息自己成一段排在后面，
+ * 原来那轮就不算在输出了，思考过程和整轮回复被立刻折叠，实际 Agent 还在接着想、接着写。
+ * inRound 判断尾部那条消息是不是还属于这一轮（插进去、排队等这一轮结束、发送中）；
+ * 遇到不属于的（新起一轮的消息、没送出去的）就不算，和以前一样。
+ */
+export function liveTurnIndex<B extends { kind: string }>(
+  blocks: B[],
+  working: boolean,
+  inRound: (b: B) => boolean,
+): number {
+  if (!working) return -1
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'turn') return i
+    if (b.kind !== 'msg' || !inRound(b)) return -1
+  }
+  return -1
+}
