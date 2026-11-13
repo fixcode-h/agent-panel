@@ -29,3 +29,9 @@ paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, we
 - 规则：子对话的请求不在父对话里弹出来：留在子对话栏那一行（`ChildRequestBar`），不进悬浮层。换掉输入框的（AI 提问 `QuestionPanel`、已收尾 / 导入只读的那一行）和常驻的信息条（独立分支条）也不浮；没有输入框可靠的地方（设置弹窗、侧栏按钮下面的 `ScopeRequests`）照旧排在原地。
 - 起因：用户 2026-11-10 要求「警告弹窗都改成悬浮在输入框的上方，不再固定挤占位置」。3d753ee 为了不挡计划那几行把悬浮层锚到了消息区底部，还把子对话等你确认的条一起浮进父对话，用户当天纠正：就贴着输入框，挡住计划没事；子对话的弹窗不要在父对话弹。
 - 防线：`scripts/ui/02d-workflow.mjs`（改文件审批卡在 `[data-float-above]` 里、底边贴着输入框那一块）。
+
+## 输入框里的光标可能被浏览器放进卡片里，插入和删除前都要先挪出来
+
+- 规则：`RichInput` 的卡片是 `contenteditable="false"`，但输入法组合结束、选区异常时 Chrome 仍会把光标放进卡片内部。处理光标的代码不能假设光标只在卡片外：插入前、选区变化和组合结束时用 `chip-caret.ts` 的 `caretOutOfChip` 挪出来，删除时用 `chipAround` 认出光标所在的卡片。
+- 起因：用户反馈粘贴图片后退格删不掉、卡片上的文件名没了（在卡片后打拼音再清掉，光标落进卡片，之后的粘贴插进卡片里面）。
+- 防线：`scripts/ui/composer-ime-chip.mjs`（01-composer 分片里用 CDP 模拟输入法）。
