@@ -6,7 +6,7 @@
  */
 import { runShard, stickyLeakProblems } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, sendNew }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByRole('button', { name: '设置' }).first().click()
@@ -598,8 +598,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.locator('#task-prompt').waitFor({ timeout: 10000 })
     await settle(p)
     await p.locator('#task-prompt').fill('Check the module layout')
-    await p.waitForTimeout(300)
-    await p.locator('#task-prompt').press('Enter')
+    await sendNew(p, '英文界面')
     await p
       .locator('#follow-up')
       .waitFor({ timeout: 20000 })
