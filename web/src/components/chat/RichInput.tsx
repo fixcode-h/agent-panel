@@ -16,6 +16,7 @@ import { setClipboardText } from '@/lib/clipboard-text'
 import { cn } from '@/lib/utils'
 import { CHIP_SHAPE, CHIP_TONE } from '@/components/ui/chip-tone'
 import { scrollCaretIntoView } from '@/lib/caret'
+import { caretOutOfChip, chipAround } from './chip-caret'
 import { quoteLabel, quoteText } from '@/lib/quote'
 import { t } from '@shared/i18n'
 
@@ -56,6 +57,12 @@ export interface ChipActions {
   remove?: (name: string) => void
   /** 右键卡片：位置是鼠标坐标，菜单自己在那个位置弹出来 */
   context?: (chip: Chip, at: { x: number; y: number }) => void
+}
+
+/** 光标停在卡片里面时是哪张卡片（见 chip-caret.ts） */
+function inChip(root: HTMLElement) {
+  const sel = window.getSelection()
+  return sel?.isCollapsed ? chipAround(root, sel.anchorNode) : null
 }
 
 const isCommand = (kind: ChipKind) => kind === 'skill' || kind === 'command'
@@ -443,6 +450,8 @@ export function RichInput({
     /** 光标处的 range：不在输入框里（点了按钮）时放到末尾 */
     const rangeNow = () => {
       const node = el.current!
+      // 光标掉进卡片里时先挪出来，不然内容会插进卡片里面（见 chip-caret.ts）
+      caretOutOfChip(node)
       const sel = window.getSelection()
       if (sel && sel.rangeCount && node.contains(sel.anchorNode)) return sel.getRangeAt(0)
       const r = document.createRange()
@@ -648,7 +657,12 @@ export function RichInput({
   // 光标动了（点、选、方向键）也要让「/」「@」列表跟着变
   useEffect(() => {
     const onSel = () => {
-      if (el.current && document.activeElement === el.current) cb.current.onSync?.()
+      const node = el.current
+      if (!node || document.activeElement !== node) return
+      // 光标掉进卡片里（输入法清空拼音后会这样）就挪回卡片外。组合中也挪：卡片里不能编辑，
+      // 光标在卡片里时不可能有正在组合的字，而组合异常结束时 compositionend 可能不来、composing 一直是 true
+      caretOutOfChip(node)
+      cb.current.onSync?.()
     }
     document.addEventListener('selectionchange', onSel)
     return () => document.removeEventListener('selectionchange', onSel)
@@ -684,6 +698,8 @@ export function RichInput({
         }}
         onCompositionEnd={() => {
           composing.current = false
+          // 在卡片紧后面打拼音再退格清掉时，组合结束后光标会落进卡片里：马上挪出来
+          if (el.current) caretOutOfChip(el.current)
           // 组合结束后再补一次重画：组合期间跳过的那些变化在这里落地
           setTimeout(() => setComposeEnd((x) => x + 1), 0)
         }}
@@ -695,11 +711,16 @@ export function RichInput({
           // 输入法组合中的按键（含选字用的回车）全部交给输入法，外部按键处理只看这里的 composing 记录：
           // 部分 Windows 输入法 compositionend 和 keydown 顺序交错，这时 nativeEvent.isComposing 还是 true，
           // 照着它过滤会把「中文输入完按的第一下回车」当成组合中的按键吞掉，消息就发不出去
-          if (composing.current) return
+          if (composing.current) {
+            if (!inChip(e.currentTarget)) return
+            // 光标在卡片里时不可能在组合（卡片里不能编辑）：是组合异常结束、compositionend 没来，记录作废
+            composing.current = false
+          }
           if (cb.current.onKeyDown?.(e)) return
           if (e.defaultPrevented) return
           if (e.key === 'Backspace' || e.key === 'Delete') {
-            const chip = chipBeside(e.key === 'Backspace' ? -1 : 1)
+            // 光标在卡片里面（见 chip-caret.ts）：删的就是这张卡片
+            const chip = inChip(e.currentTarget) ?? chipBeside(e.key === 'Backspace' ? -1 : 1)
             if (!chip) return
             e.preventDefault()
             dropAtChip(chip)

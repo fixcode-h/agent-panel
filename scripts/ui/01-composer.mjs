@@ -5,6 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import { runShard, TINY_PNG } from './harness.mjs'
+import { checkImeAfterChip } from './composer-ime-chip.mjs'
 
 /** 文件卡片显示的是路径（带目录分隔符），前面不加 @ */
 const isPathChip = (text) => !!text && !text.startsWith('@') && /[\\/]/.test(text)
@@ -185,6 +186,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await imageChip
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => errors.push('行内图片卡片：点卡片上的删除后卡片还在'))
+  // 卡片紧后面用输入法打拼音再清掉：光标不能掉进卡片里（退格删不掉、文件名被挤没）
+  await checkImeAfterChip(p, errors)
   // 「+」里引入会话
   await p.getByRole('button', { name: '添加文件、图片或引用' }).click()
   await p.getByRole('button', { name: '引入会话' }).click()
