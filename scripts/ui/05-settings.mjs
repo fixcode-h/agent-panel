@@ -178,6 +178,28 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('dialog').getByRole('button', { name: '恢复默认', exact: true }).click()
   if (await p.evaluate(() => document.getElementById('md-style')?.textContent))
     errors.push('设置-Markdown样式：全部恢复默认后 #md-style 应该是空的')
+  // Mermaid 图：默认「素净」风格，节点按种类标好（配色靠它）；切到类图、换成「柔彩」都按新设置重画
+  const mmd = p.locator('.md-mermaid[data-done="1"]').first()
+  await mmd.scrollIntoViewIfNeeded()
+  await mmd
+    .locator('svg [data-k]')
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => {})
+  if ((await mmd.getAttribute('data-look')) !== 'soft')
+    errors.push('设置-Markdown样式：Mermaid 图默认应该是「素净」风格')
+  if (!(await mmd.locator('svg [data-k="pick"]').count()))
+    errors.push('设置-Markdown样式：流程图的判断节点应该标成 data-k="pick"')
+  await p.getByLabel('预览的图').getByText('类图', { exact: true }).click()
+  await p.getByLabel('Mermaid 风格').getByText('柔彩', { exact: true }).click()
+  await p
+    .locator('.md-mermaid[data-look="tint"] svg.classDiagram [data-k="node"]')
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('设置-Markdown样式：换成柔彩、切到类图后，类图方框应该按「柔彩」重画'))
+  await check(p, '设置-Markdown样式-Mermaid类图柔彩')
+  await p.getByRole('button', { name: '全部恢复默认' }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '恢复默认', exact: true }).click()
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
   await p.getByRole('button', { name: '组件', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])

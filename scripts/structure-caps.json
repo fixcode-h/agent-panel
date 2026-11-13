@@ -50,7 +50,7 @@
     "web/src/components/settings/DeploySection.tsx::DeploySection": 330,
     "web/src/components/settings/IntegrationsSection.tsx::IntegrationsSection": 350,
     "web/src/components/settings/LocalImageSection.tsx::LocalImageSection": 370,
-    "web/src/components/settings/MarkdownSection.tsx::MarkdownSection": 400,
+    "web/src/components/settings/MarkdownSection.tsx::MarkdownSection": 390,
     "web/src/components/settings/UpdateSection.tsx::UpdateSection": 340,
     "web/src/components/tasks/ChildrenBar.tsx::ChildrenBar": 390,
     "web/src/components/tasks/DiagnosisReport.tsx::DiagnosisReport": 340,

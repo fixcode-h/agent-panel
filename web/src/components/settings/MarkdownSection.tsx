@@ -24,6 +24,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Group, Row } from '@/components/settings/parts'
 import { Markdown } from '@/components/tasks/Markdown'
+import { MERMAID_SAMPLES, type MermaidSample, mermaidSampleLabel } from './markdown/mermaid-samples'
 
 /**
  * 每组设置上面一块自己的预览：只放这一组管的元素，改哪项就在旁边看到哪里变（用户要求不要把效果都堆在一个大预览里）。
@@ -66,8 +67,6 @@ const PREVIEW: Record<string, string> = {
   hr: '分隔线上面的一段。\n\n---\n\n分隔线下面的一段。',
   img: `![替代文字显示成图注](${IMG})`,
   mention: '@协调器 是团队里的角色；@不存在 不在团队里，标成警告色。',
-  mermaid:
-    '```mermaid\nflowchart LR\n  A([开始]) --> B{通过?}\n  B -- 是 --> C[合并]\n  B -- 否 --> D[返工] --> B\n```',
 }
 const headingPreview = (h: string) =>
   `${'#'.repeat(Number(h.slice(1)))} ${h.toUpperCase()} 标题\n标题下面跟着的正文，看上下间距。`
@@ -108,6 +107,13 @@ const optionLabel = (v: string) =>
     diamond: t('菱形'),
     dot: t('圆点'),
     underline: t('渐隐底线'),
+    soft: t('素净'),
+    tint: t('柔彩'),
+    card: t('浮卡'),
+    classic: t('经典'),
+    rounded: t('圆角折线'),
+    basis: t('平滑曲线'),
+    linear: t('直线'),
     '450': t('常规'),
     '500': t('中等'),
     '600': t('半粗'),
@@ -331,6 +337,58 @@ function GroupReset({ els }: { els: MdElement[] }) {
 }
 
 const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
+
+/** Mermaid 图那一组：预览可以切换图的类型，看风格在各种图上的效果 */
+function MermaidGroup() {
+  const { style } = useStyle()
+  const [sample, setSample] = useState<MermaidSample>('flow')
+  return (
+    <Group title={t('Mermaid 图')}>
+      <GroupReset els={['mermaid']} />
+      {/* 风格、连线、动画、悬停、渐变是画图时读的设置：改了就重新挂载，让图按新设置再画一遍 */}
+      <Preview md={MERMAID_SAMPLES[sample]} remount={JSON.stringify(style.mermaid ?? {}) + sample} />
+      <div className="pb-1">
+        <Segmented
+          size="sm"
+          label={t('预览的图')}
+          value={sample}
+          onChange={setSample}
+          options={(Object.keys(MERMAID_SAMPLES) as MermaidSample[]).map((k) => ({
+            id: k,
+            label: mermaidSampleLabel(k),
+          }))}
+        />
+      </div>
+      <Row title={t('风格')} desc={t('节点和连线的整体配色；经典是之前的蓝紫青渐变。')}>
+        <F el="mermaid" prop="look" label={t('Mermaid 风格')} />
+      </Row>
+      <Row title={t('连线走法')} desc={t('折线带圆角、平滑曲线，或两点直连。')}>
+        <F el="mermaid" prop="curve" label={t('连线走法')} />
+      </Row>
+      <Row title={t('连线粗细')}>
+        <F el="mermaid" prop="edge" label={t('连线粗细')} />
+      </Row>
+      <Row title={t('节点圆角')}>
+        <F el="mermaid" prop="radius" label={t('节点圆角')} />
+      </Row>
+      <Row title={t('节点内边距')} desc={t('文字和节点边框的距离；判断用的菱形大小主要看它。')}>
+        <F el="mermaid" prop="pad" label={t('节点内边距')} />
+      </Row>
+      <Row title={t('出场动画')} desc={t('画好后节点依次浮现、连线从头画到尾、饼图展开、甘特条长出。')}>
+        <F el="mermaid" prop="motion" label={t('出场动画')} />
+      </Row>
+      <Row title={t('悬停高亮')} desc={t('鼠标停在节点上时，它和相连的线高亮并流动，其余变淡。')}>
+        <F el="mermaid" prop="hover" label={t('悬停高亮')} />
+      </Row>
+      <Row title={t('节点渐变底')}>
+        <F el="mermaid" prop="gradient" label={t('节点渐变底')} />
+      </Row>
+      <Row title={t('画布点阵底')}>
+        <F el="mermaid" prop="grid" label={t('画布点阵底')} />
+      </Row>
+    </Group>
+  )
+}
 
 /**
  * 设置 → Markdown 样式：对话回复、文档预览、总结报告共用的那套样式，按元素逐项调。
@@ -673,23 +731,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         </Row>
       </Group>
 
-      <Group title={t('Mermaid 图')}>
-        <GroupReset els={['mermaid']} />
-        {/* 动画、悬停、渐变是画图时读的设置：改了就重新挂载，让图按新设置再画一遍 */}
-        <Preview md={PREVIEW.mermaid} remount={JSON.stringify(style.mermaid ?? {})} />
-        <Row title={t('出场动画')} desc={t('画好后节点依次浮现、连线从头画到尾、饼图展开、甘特条长出。')}>
-          <F el="mermaid" prop="motion" label={t('出场动画')} />
-        </Row>
-        <Row title={t('悬停高亮')} desc={t('鼠标停在节点上时，它和相连的线高亮并流动，其余变淡。')}>
-          <F el="mermaid" prop="hover" label={t('悬停高亮')} />
-        </Row>
-        <Row title={t('节点渐变底')}>
-          <F el="mermaid" prop="gradient" label={t('节点渐变底')} />
-        </Row>
-        <Row title={t('画布点阵底')}>
-          <F el="mermaid" prop="grid" label={t('画布点阵底')} />
-        </Row>
-      </Group>
+      <MermaidGroup />
 
       <Group title={t('@提及')}>
         <GroupReset els={['mention']} />
