@@ -96,6 +96,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [rpc-steer.md](./rpc-steer.md)                   | 常驻协议的插话                          |
 | [server.md](./server.md)                         | 服务端接口和访问控制                    |
 | [settings.md](./settings.md)                     | 项目设置                                |
+| [sidebar-rows.md](./sidebar-rows.md)             | 侧栏列表行的选中态                      |
 | [state.md](./state.md)                           | 对话状态和父子对话之间的交付            |
 | [state-word.md](./state-word.md)                 | 对话状态的说法                          |
 | [status-bar.md](./status-bar.md)                 | 输入框上方的状态栏                      |

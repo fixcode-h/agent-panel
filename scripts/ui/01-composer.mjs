@@ -1150,6 +1150,29 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .first()
       .waitFor({ timeout: 10000 })
       .catch(() => {})
+    // 点开的那条要有选中底：默认「Claude Code」配色里卡片底和侧栏底同色，选中行用 bg-card 时浅色、深色都看不出来（用户 2026-11-13 报）
+    const wasDark = await c.evaluate(() => document.documentElement.classList.contains('dark'))
+    for (const dark of [false, true]) {
+      await c.evaluate((d) => document.documentElement.classList.toggle('dark', d), dark)
+      // 行上有 transition-colors：等换主题的过渡走完再取色、截图
+      await settle(c)
+      const bgs = await list.evaluate((el) => {
+        const solid = (n) => {
+          for (let x = n; x; x = x.parentElement) {
+            const v = getComputedStyle(x).backgroundColor
+            if (v && v !== 'rgba(0, 0, 0, 0)' && v !== 'transparent') return v
+          }
+          return ''
+        }
+        const on = el.querySelector('[aria-current="true"]')
+        return on && { row: getComputedStyle(on).backgroundColor, rail: solid(el) }
+      })
+      if (!bgs) errors.push('Chat 选中：点开的聊天在列表里没有 aria-current')
+      else if (bgs.row === bgs.rail || bgs.row === 'rgba(0, 0, 0, 0)')
+        errors.push(`Chat 选中（${dark ? '深色' : '浅色'}）：选中行的底色和侧栏一样，看不出选中了（${bgs.row}）`)
+      await shotOf(c, list, `Chat-选中行-${dark ? '深色' : '浅色'}`)
+    }
+    await c.evaluate((d) => document.documentElement.classList.toggle('dark', d), wasDark)
     const edges = await c.evaluate(() => {
       const body = document.querySelector('.reply-body')
       if (!body) return null

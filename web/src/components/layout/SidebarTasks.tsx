@@ -37,7 +37,7 @@ import { pendingAction } from '@shared/user-action'
 import {
   SIDEBAR_GROUP_LABEL,
   SIDEBAR_ROW_OFF,
-  SIDEBAR_ROW_ON,
+  SIDEBAR_CHAT_ROW_ON,
   SidebarTaskRowBody,
   TaskRowStatus,
   sidebarTaskRowClass,
@@ -52,9 +52,6 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 
 // 行的选中 / 悬停外观和分组标题定义在侧栏部件里（components/ui/sidebar.tsx），这里转出去给设计列表用
 export { SIDEBAR_GROUP_LABEL, SIDEBAR_ROW_OFF, SIDEBAR_ROW_ON } from '@/components/ui/sidebar'
-
-/** Chat 列表的选中行：浅卡片底加粗，和左栏底色拉开（Chat.dc.html） */
-const SIDEBAR_CHAT_ON = 'border-transparent bg-card font-medium text-fg'
 
 /** timeOnly：分组已经写了日期，行里只留时分 */
 export function shortTime(iso: string, timeOnly = false) {
@@ -146,7 +143,7 @@ export function TaskRow({
               plain
                 ? cn(
                     'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border text-left text-body transition-colors',
-                    active ? (plain ? SIDEBAR_CHAT_ON : SIDEBAR_ROW_ON) : SIDEBAR_ROW_OFF,
+                    active ? SIDEBAR_CHAT_ROW_ON : SIDEBAR_ROW_OFF,
                     fresh && 'row-enter',
                     className,
                   )

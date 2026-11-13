@@ -20,6 +20,11 @@ export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-hover hov
  * 选中是一张白卡片（深色比 card 再亮一档，见 --conv-sel）+ 极淡投影，不描边
  */
 export const SIDEBAR_BLOCK_ROW_ON = 'border-transparent bg-conv font-semibold text-fg shadow-conv'
+/**
+ * Chat 列表的选中行：和项目下的对话行同一套「对话选中」底（--conv-sel / --conv-shadow，随配色定），字重 500。
+ * 不能直接用 bg-card：「Claude Code」配色里卡片底和侧栏底是同一个颜色（深色都是 #1f1f1f），选中了也看不出来
+ */
+export const SIDEBAR_CHAT_ROW_ON = 'border-transparent bg-conv font-medium text-fg shadow-conv'
 export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent text-muted hover:bg-hover hover:text-fg'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号的次要色，和可点的行靠字号和颜色拉开，不加粗 */
