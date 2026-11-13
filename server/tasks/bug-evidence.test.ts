@@ -10,6 +10,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  realpathSync,
 } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -122,9 +123,17 @@ test('取日志：开始复现记下大小，取回新增部分；项目外的�
     appendFileSync(log, 'noise\n[排查-支付] L1 total=1\nmore\n')
     const f = await fetchWatch('日志在 logs/app.log', dirs, false)
     assert.ok(f.ok)
-    assert.equal(f.text, 'noise\n[排查-支付] L1 total=1\nmore\n')
-    assert.equal(f.related, '[排查-支付] L1 total=1')
+    // 不带内容，只说新增的在第 2 到第 4 行，交给页面做成文件引用
+    assert.equal(f.abs, realpathSync(log))
+    assert.equal(f.startLine, 2)
+    assert.equal(f.endLine, 4)
+    assert.equal(f.related, 1)
+    assert.ok(!('text' in f))
     assert.ok(!f.truncated && !f.rotated)
+    // 文件被清空重写：从第 1 行算
+    writeFileSync(log, 'fresh\n')
+    const again = await fetchWatch('日志在 logs/app.log', dirs, false)
+    assert.ok(again.ok && again.rotated && again.startLine === 1 && again.endLine === 1)
 
     assert.equal((await startWatch('浏览器控制台', dirs, false)).ok, false)
     const up = await startWatch('../../etc/app.log', dirs, false)

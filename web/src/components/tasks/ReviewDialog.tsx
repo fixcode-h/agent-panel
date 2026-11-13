@@ -18,7 +18,7 @@ import { reviewFeedback } from '@/lib/review-feedback'
 import { Segmented } from '@/components/ui/segmented'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
-import { OverallComposer, useLogFiles } from './LogAttach'
+import { OverallComposer, useLogFiles, type OverallTools } from './LogAttach'
 import { useChosenColumn } from './review-table'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
@@ -142,8 +142,8 @@ export function ReviewDialog({
   overallPlaceholder?: string
   /** 打开时先看哪一版（versions 的 key）：对话里点某一份报告的卡片打开的就是那一份；之后换了请求仍回到最新 */
   initialVersion?: string
-  /** 整体意见框上面多放的（诊断报告「面板自己取日志」）：fill 把取到的文字整个填进整体意见框 */
-  overallTools?: (fill: (text: string) => void) => ReactNode
+  /** 整体意见框上面多放的（诊断报告「面板自己取日志」）：把日志文件引用和起始行填进整体意见框 */
+  overallTools?: (tools: OverallTools) => ReactNode
   /** 「确认」按钮旁边多放的（诊断报告「后面几步没有要注意的就自动通过」）：能审、有确认按钮时才画 */
   approveExtra?: ReactNode
   /**
@@ -562,7 +562,7 @@ export function ReviewDialog({
               ))}
             </div>
             <div className="border-t px-3 py-3">
-              {!locked && overallTools?.(setOverall)}
+              {!locked && overallTools?.({ fill: setOverall, refer: logs.refer })}
               {attach ? (
                 <OverallComposer
                   value={overall}

@@ -22,6 +22,7 @@ import { t } from '../i18n.ts'
 import { alert, at, px, sec, table } from './md.ts'
 import { fixCardParts, fixSections } from './fix-md.ts'
 import { envMd, envOf } from './env.ts'
+import { fileLead } from './log-watch.ts'
 import { recheckMd, recheckTag } from './recheck.ts'
 import {
   attributionDiffMd,
@@ -65,9 +66,9 @@ const outcomesOf = (c: BugCollect | undefined, d?: Diagnosis) =>
 /** 用户贴的日志：只贴了一个文件路径的写成日志文件，不当成日志正文摆成代码块 */
 function userLogsOf(d: Diagnosis): string {
   const text = d.logs.trim()
-  const path = /^["'`]?((?:[A-Za-z]:[\\/]|\/|~[\\/])[^"'`\n]+?\.(?:log|txt|json|csv|out))["'`]?(.*)$/s.exec(text)
-  const files = [...(path ? [path[1]] : []), ...d.logFiles]
-  const rest = path ? path[2].trim() : text
+  const path = fileLead(text)
+  const files = [...new Set([...(path ? [path.path] : []), ...d.logFiles])]
+  const rest = path ? path.rest : text
   return [
     files.length ? `${t('日志文件')}：${files.map((x) => `\`${x}\``).join('、')}` : '',
     // 日志带行号，命中日志计划的行标出编号；下面是每处出现了几次的命中表（设计稿 2026-11-10 第 3.2 节）

@@ -7,12 +7,12 @@ import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Segmented } from '@/components/ui/segmented'
+import type { OverallTools } from './LogAttach'
 
 /**
  * 诊断报告「等你复现 / 等你验证」那一步的取证（分析稿 B1、B3）：
  * - WorkspacePatch：它在独立分支里加的临时日志（或修复）一键放到你的工作区，复现完一键还原；
- * - LogWatch：报告里写了日志文件在哪时，面板自己取复现期间新增的日志，填进贴日志的输入框。
+ * - LogWatch：报告里写了日志文件在哪时，面板记下复现开始时日志到了第几行，复现完把日志文件引用进输入框、写明从第几行往后看。
  * 两样都只是帮用户少动手：放不放、交不交仍由用户点，面板不替用户交日志
  */
 
@@ -151,32 +151,44 @@ export function PatchReminder({ patch }: { patch: ReturnType<typeof usePatch> })
   )
 }
 
-const sizeText = (n: number) =>
-  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
-
-type View = 'related' | 'full'
+/**
+ * 交给 Agent 的那句话：日志文件的卡片打头 + 从第几行往后看（新增内容不再粘贴进来）。
+ * 卡片要在最前面：报告和提示词按「开头是日志文件路径」认出这是引用的文件，不把这句话当日志正文（shared/bug/log-watch.ts 的 pastedLog）
+ */
+function referText(file: string, got: LogFetch) {
+  const span =
+    got.endLine > got.startLine
+      ? t('第 {from}–{to} 行', { from: got.startLine, to: got.endLine })
+      : t('第 {from} 行', { from: got.startLine })
+  return [
+    t('{file} 从第 {from} 行往后看：这是复现期间新增的日志（{span}）。', { file, from: got.startLine, span }),
+    got.related ? t('其中带 {prefix}…] 的有 {n} 行。', { prefix: TEMP_LOG, n: got.related }) : '',
+  ]
+    .filter(Boolean)
+    .join('')
+}
 
 /**
  * 贴日志的输入框上面的一条：报告里写了日志文件在哪时出现。
- * 「开始复现」服务端记下文件现在多大，「复现完了，取日志」取新增的部分填进输入框（默认只填带 [排查- 的行，可以切到完整内容）；
+ * 「开始复现」服务端记下文件现在多大；「复现完了，取日志」服务端算出新增内容从第几行开始，
+ * 这里把日志文件当文件引用放进输入框、写明从第几行往后看，不再把内容截出来粘贴（用户 2026-11-13 要的）。
  * 用户看过再点原来的「交日志」。读哪个文件由服务端按报告认，页面只带「确认读项目外面的这个文件」
  */
 export function LogWatch({
   taskId,
   where,
-  onFill,
+  tools,
 }: {
   taskId: string
   /** 报告的「日志在哪」（collect.where） */
   where: string | undefined
-  /** 把取到的日志填进输入框（整个换掉） */
-  onFill: (text: string) => void
+  /** 往整体意见框里引用文件、填文字 */
+  tools: OverallTools
 }) {
   const path = logPathIn(where)
   const [started, setStarted] = useState<{ at: string; missing?: boolean } | null>(null)
   const [busy, setBusy] = useState<'' | 'start' | 'fetch'>('')
   const [got, setGot] = useState<LogFetch | null>(null)
-  const [view, setView] = useState<View>('related')
   const [error, setError] = useState('')
   // 文件在项目目录外面：等用户点确认后带着 confirm 再发一次
   const [confirm, setConfirm] = useState<'' | 'start' | 'fetch'>('')
@@ -210,9 +222,11 @@ export function LogWatch({
         const r = await api.logWatch(taskId, 'fetch', yes)
         if (r.ok) {
           setGot(r)
-          const v: View = r.related ? 'related' : 'full'
-          setView(v)
-          if (r.text) onFill(v === 'related' ? r.related : r.text)
+          if (r.bytes) {
+            const name = r.abs.split(/[\\/]/).pop() || r.path
+            const file = tools.refer({ name, path: r.abs, size: r.size, mime: 'text/plain', ref: true })
+            tools.fill(referText(file, r))
+          }
         } else if (r.needConfirm) setConfirm(action)
         if (!r.ok) setError(r.error)
       }
@@ -222,7 +236,6 @@ export function LogWatch({
       setBusy('')
     }
   }
-  const lines = (s: string) => (s ? s.split('\n').length : 0)
   return (
     <div data-log-watch className="mb-2 rounded-lg border border-line bg-card px-2.5 py-2 text-caption">
       <div className="flex items-center gap-1.5 text-muted">
@@ -257,44 +270,31 @@ export function LogWatch({
       )}
       {got && !error && (
         <div className="mt-2 flex flex-col gap-1.5 leading-relaxed">
-          {got.text ? (
-            <>
-              <p className="text-subtle">
-                {t('新增 {size}、{n} 行，其中 {k} 行带 {prefix}…]；已经填进下面的输入框，看过再交。', {
-                  size: sizeText(got.bytes),
-                  n: lines(got.text),
-                  k: lines(got.related),
+          {got.bytes ? (
+            <p className="text-subtle">
+              {t(
+                '已把日志文件放进下面的输入框，写明从第 {from} 行往后看（新增 {n} 行，其中 {k} 行带 {prefix}…]）。看过再交。',
+                {
+                  from: got.startLine,
+                  n: Math.max(got.endLine - got.startLine + 1, 0),
+                  k: got.related,
                   prefix: TEMP_LOG,
-                })}
-              </p>
-              {got.related && got.related !== got.text && (
-                <Segmented
-                  size="sm"
-                  value={view}
-                  onChange={(v) => {
-                    setView(v)
-                    onFill(v === 'related' ? got.related : got.text)
-                  }}
-                  label={t('填进输入框的内容')}
-                  options={[
-                    { id: 'related', label: t('相关行') },
-                    { id: 'full', label: t('完整新增内容') },
-                  ]}
-                  className="self-start"
-                />
+                },
               )}
-              {!got.related && (
-                <p className="text-warning">
-                  {t('新增内容里没有带 {prefix}…] 的行，填进去的是完整新增内容。', { prefix: TEMP_LOG })}
-                </p>
-              )}
-            </>
+            </p>
           ) : (
             <p className="text-warning">{t('从开始复现到现在，这个文件没有新增内容。')}</p>
           )}
-          {got.truncated && <p className="text-warning">{t('新增内容超过 2 MB，只取了前 2 MB，后面的截掉了。')}</p>}
+          {got.bytes > 0 && !got.related && (
+            <p className="text-warning">{t('新增内容里没有带 {prefix}…] 的行。', { prefix: TEMP_LOG })}</p>
+          )}
+          {got.truncated && (
+            <p className="text-warning">
+              {t('新增内容超过 2 MB，带 {prefix}…] 的行只数了前 2 MB。', { prefix: TEMP_LOG })}
+            </p>
+          )}
           {got.rotated && (
-            <p className="text-warning">{t('日志文件比开始复现时还小（被清空或换了新文件），取的是现在整个文件。')}</p>
+            <p className="text-warning">{t('日志文件比开始复现时还小（被清空或换了新文件），从第 1 行看。')}</p>
           )}
         </div>
       )}

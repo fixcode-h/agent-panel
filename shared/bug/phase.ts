@@ -6,6 +6,7 @@
  */
 import type { BugCase, BugPhase, Diagnosis, DiagnosisNote } from './diagnosis-schema.ts'
 import { t } from '../i18n.ts'
+import { pastedLog } from './log-watch.ts'
 
 export const normPath = (p: string) => p.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
 
@@ -226,7 +227,13 @@ export function phaseFeedback(d: Diagnosis): string {
   const phase = phaseOf(d)
   const overall = d.overall ? `\n\n用户的整体意见：${d.overall}` : ''
   const notes = d.notes.length ? `\n\n用户的标注：\n${notesList(d.notes)}` : ''
-  const logs = d.logs.trim() ? `\n\n用户贴的日志：\n\`\`\`\n${d.logs.trim()}\n\`\`\`` : ''
+  // 引用日志文件、写明从第几行看的那句话不是日志正文，原样交过去，不包成代码块
+  const pasted = pastedLog(d.logs)
+  const logs = pasted
+    ? `\n\n用户贴的日志：\n\`\`\`\n${pasted}\n\`\`\``
+    : d.logs.trim()
+      ? `\n\n用户给的日志：${d.logs.trim()}`
+      : ''
   const files = d.logFiles.length
     ? `\n\n用户给的日志文件（本机路径，用工具读，大文件按需分段读）：${d.logFiles.join('、')}`
     : ''

@@ -134,7 +134,7 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
-  // B3：面板自己取日志 → 填进整体意见框，可以切换相关行 / 完整新增内容
+  // B3：面板自己取日志 → 把日志文件引用进整体意见框，写明从第几行往后看（不再粘贴日志内容）
   const watch = dlg.locator('[data-log-watch]')
   if (!(await watch.count())) errors.push('取证：报告写了日志文件，贴日志的框上面没有「开始复现」')
   else {
@@ -149,18 +149,11 @@ await runShard(import.meta.filename, async (api) => {
     await fetchBtn.click()
     const box = dlg.getByRole('textbox', { name: '整体意见' })
     await p
-      .waitForFunction(() => document.body.innerText.includes('[排查-演示] L1'), null, { timeout: 5000 })
-      .catch(() => errors.push('取证：取到的日志没有填进输入框'))
+      .waitForFunction(() => document.body.innerText.includes('从第 412 行往后看'), null, { timeout: 5000 })
+      .catch(() => errors.push('取证：取日志后输入框里没有写从第几行往后看'))
     const filled = (await box.innerText().catch(() => '')) || ''
-    if (filled.includes('[app] render done')) errors.push('取证：默认填进去的不是只有相关行')
-    const full = watch.getByRole('radio', { name: '完整新增内容' })
-    if (!(await full.count())) errors.push('取证：没有「相关行 / 完整新增内容」的切换')
-    else {
-      await full.click()
-      await p
-        .waitForFunction(() => document.body.innerText.includes('[app] render done'), null, { timeout: 5000 })
-        .catch(() => errors.push('取证：切到「完整新增内容」后输入框没换'))
-    }
+    if (filled.includes('[排查-演示]')) errors.push('取证：日志内容又被粘贴进了输入框')
+    if (!(await box.getByText('app.log').count())) errors.push('取证：输入框里没有日志文件的卡片')
     if (await dlg.getByRole('button', { name: '交日志，继续分析' }).isDisabled())
       errors.push('取证：日志填进去后「交日志，继续分析」还不能点')
     await check(p, '诊断报告-取证-取日志', ['复现完了，取日志'])

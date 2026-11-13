@@ -325,7 +325,7 @@ export function DiagnosisDialog({
         </>
       ))}
       overallTools={
-        watchWhere ? (fill) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} onFill={fill} /> : undefined
+        watchWhere ? (tools) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} tools={tools} /> : undefined
       }
       initialVersion={version ? String(version) : undefined}
       dock={dock}

@@ -51,18 +51,19 @@ export const EN_BUG_EVIDENCE: Record<string, string> = {
     'This file does not exist yet: the whole file created while reproducing counts as new. Come back and click "Done, fetch the log".',
   '已记下日志文件现在到哪了。按报告里的步骤复现，完了回来点「复现完了，取日志」。':
     'Recorded where the log file is now. Reproduce following the report, then come back and click "Done, fetch the log".',
-  '新增 {size}、{n} 行，其中 {k} 行带 {prefix}…]；已经填进下面的输入框，看过再交。':
-    '{size} added, {n} line(s), {k} with {prefix}…]; filled into the box below. Review it before submitting.',
-  填进输入框的内容: 'What to fill into the box',
-  相关行: 'Related lines',
-  完整新增内容: 'Everything added',
-  '新增内容里没有带 {prefix}…] 的行，填进去的是完整新增内容。':
-    'No added lines contain {prefix}…], so everything added was filled in.',
+  '已把日志文件放进下面的输入框，写明从第 {from} 行往后看（新增 {n} 行，其中 {k} 行带 {prefix}…]）。看过再交。':
+    'Put the log file into the box below and noted to read from line {from} on ({n} line(s) added, {k} with {prefix}…]). Review it before submitting.',
+  '新增内容里没有带 {prefix}…] 的行。': 'No added lines contain {prefix}…].',
   '从开始复现到现在，这个文件没有新增内容。': 'Nothing was added to this file since you started reproducing.',
-  '新增内容超过 2 MB，只取了前 2 MB，后面的截掉了。':
-    'More than 2 MB was added; only the first 2 MB was taken and the rest was cut.',
-  '日志文件比开始复现时还小（被清空或换了新文件），取的是现在整个文件。':
-    'The log file is smaller than when you started (cleared or rotated), so the whole current file was taken.',
+  '新增内容超过 2 MB，带 {prefix}…] 的行只数了前 2 MB。':
+    'More than 2 MB was added; lines with {prefix}…] were only counted in the first 2 MB.',
+  '日志文件比开始复现时还小（被清空或换了新文件），从第 1 行看。':
+    'The log file is smaller than when you started (cleared or rotated), so read it from line 1.',
+  '第 {from}–{to} 行': 'lines {from}–{to}',
+  '第 {from} 行': 'line {from}',
+  '{file} 从第 {from} 行往后看：这是复现期间新增的日志（{span}）。':
+    '{file} read from line {from} on: this is the log added while reproducing ({span}). ',
+  '其中带 {prefix}…] 的有 {n} 行。': '{n} of those line(s) contain {prefix}…].',
   '确认，读这个文件': 'Confirm, read this file',
   '报告里没有写日志文件的位置，请自己把日志贴进来':
     'The report does not say where the log file is; please paste the log yourself',
