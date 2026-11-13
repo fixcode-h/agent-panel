@@ -1009,6 +1009,11 @@ await runShard('子对话运行与监管', async (api) => {
       symptom: '购物车角标偶尔不刷新',
       repro: 'npm test -- badge.test.ts：并发更新用例失败',
       location: 'src/badge.ts:12 setCount',
+      // 测试目录里没有 badge.ts：调用栈不写行号，面板就不拿代码核对位置（核对见 shared/bug/stack-check.ts 的单测）
+      stack: [
+        { id: 'S1', file: 'src/badge.ts', fn: 'setCount' },
+        { id: 'S2', parent: 'S1', role: 'fault', file: 'src/badge.ts', fn: '读旧快照' },
+      ],
       evidence: '日志「[badge] stale 3」← badge.ts:14 读的是旧快照',
       rootCause: 'setCount 读的是渲染前的快照',
       confirmed: true,
