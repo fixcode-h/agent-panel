@@ -5,6 +5,8 @@ import { format, resolveConfig } from 'prettier'
 import {
   BUG_ANALYSIS_TEXT,
   BUG_FULL_TEXT,
+  BUG_RECORD_ASK,
+  bugCommandPrompt,
   BUG_REPORT_TEXT,
   BUG_SIMPLE_TEXT,
   debugSkillMd,
@@ -80,4 +82,15 @@ test('假设表按现象类型各给一份提醒：数据、状态、界面、�
   assert.ok(LOG_SCOPE_TEXT.includes(HYPOTHESIS_KINDS_TEXT))
   assert.ok(BUG_FULL_TEXT.includes(HYPOTHESIS_KINDS_TEXT))
   assert.match(BUG_ANALYSIS_TEXT, /状态类的竞态、顺序、重入/)
+})
+
+test('Bug 记录不自动写：改动分好 changelist、临时日志删干净后先问用户，同意了才派「文档」（用户 2026-11-13 定）', () => {
+  assert.match(BUG_RECORD_ASK, /changelist/)
+  assert.match(BUG_RECORD_ASK, /临时日志删干净之后，先问用户要不要把这个 Bug 记进 Bug 文档/)
+  assert.match(BUG_RECORD_ASK, /用户同意了才派「文档」写/)
+  // 子对话自己不再顺手交「文档」写 Bug 记录
+  assert.doesNotMatch(BUG_FULL_TEXT, /修完同时交给「文档」写 Bug 记录/)
+  assert.match(BUG_FULL_TEXT, /你也不派「文档」写/)
+  // 普通对话没有父对话：自己收尾后问
+  assert.ok(bugCommandPrompt('inplace', 'x').includes(BUG_RECORD_ASK))
 })
