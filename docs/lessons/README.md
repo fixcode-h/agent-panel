@@ -106,6 +106,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [tooling.md](./tooling.md)                       | 面板工具通道（MCP）和 AI 的用法         |
 | [triage.md](./triage.md)                         | 父对话分诊和就地微改动                  |
 | [ui-check-demo-data.md](./ui-check-demo-data.md) | 界面检查：改演示数据                    |
+| [ui-check-ready.md](./ui-check-ready.md)         | 界面检查：等页面真的准备好再操作        |
 | [ui-check-transient.md](./ui-check-transient.md) | 界面检查：会自己消失的元素              |
 | [ui-check.md](./ui-check.md)                     | 界面检查（scripts/ui-check.mjs）        |
 | [ui.md](./ui.md)                                 | 界面通用：文案、命名和状态判定          |

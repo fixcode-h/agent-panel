@@ -1158,8 +1158,7 @@ await runShard(import.meta.filename, async (api) => {
   // 提问窗口右上角的关闭：这个问题不回答、终止对话，窗口马上收起、换回输入框（以前停止接口返回的任务还带着提问，关不掉）
   await p.goto(base + '#/chat')
   await p.locator('#task-prompt').fill('问我日期用哪种格式再改')
-  await p.waitForTimeout(300)
-  await p.locator('#task-prompt').press('Enter')
+  await api.sendNew(p, '提问窗口')
   const ask = p.getByRole('dialog', { name: 'AI 的问题' })
   if (
     !(await ask.waitFor({ timeout: 20000 }).then(

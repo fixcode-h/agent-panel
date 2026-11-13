@@ -17,6 +17,7 @@
 // 12. 提示只能从 web/src/lib/toast.ts 取 toast：直接从 sonner 引会绕过排队（例外写 `sonner-toast-ok: 原因`）
 // 13. 「完成未看」的橙点只读 liveDoneDot / liveDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
+// 14b. 界面检查里新建对话按回车发出走 harness 的 sendNew：直接按回车会赶在 CLI 列表读到前被吞掉（例外写 `send-ready-ok: 原因`）
 // 15. 大文件只许变小：超过 scripts/file-caps.json 里的上限就失败
 // 16. 界面上的中文要走 t()：JSX 文字节点里直接写中文会在英文界面里露出来
 // 17. 不给 process.env 整个赋值：换成普通对象后再设 HOME 等变量，os.homedir() 和子进程都读不到
@@ -436,6 +437,17 @@ else {
     if (!shotPrefix.test(path.posix.basename(f)))
       errors.push(`${f}：截图前缀正则（scripts/ui/harness.mjs）认不出这个文件名，截图会和别的分片互相覆盖`)
   }
+}
+
+// 14b. 新建对话的输入框（#task-prompt）按回车发出，要先等发送按钮可用：CLI 列表是页面打开后另外异步读的，
+// 读到之前回车什么都不做，CI 机器慢时对话页打不开、后面整段断言全挂（见 docs/lessons/ui-check.md）。统一走 harness 的 sendNew
+for (const f of uiShards) {
+  const lines = read(f).split('\n')
+  lines.forEach((l, i) => {
+    if (!/#task-prompt'\)\.press\('Enter'\)/.test(l)) return
+    if (/send-ready-ok/.test(l) || /send-ready-ok/.test(lines[i - 1] ?? '')) return
+    errors.push(`${f}:${i + 1} 新建对话直接按回车，改用 harness 的 sendNew 先等发送按钮可用：${l.trim()}`)
+  })
 }
 
 // 15. 大文件只许变小：scripts/file-caps.json 里列的文件不能超过各自的上限，没列的源码文件不能超过 default。

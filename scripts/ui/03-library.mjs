@@ -6,7 +6,7 @@
  */
 import { runShard } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, sendNew }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])
@@ -161,8 +161,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await agentSwitch.click()
   }
   await p.locator('#task-prompt').fill('分析一下这个项目的结构')
-  await p.waitForTimeout(300)
-  await p.locator('#task-prompt').press('Enter')
+  await sendNew(p, '新建任务')
   await p
     .locator('#follow-up')
     .waitFor({ timeout: 20000 })

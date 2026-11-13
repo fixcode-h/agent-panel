@@ -177,6 +177,21 @@ export async function runShard(file, fn) {
       ...(clip ? { clip } : {}),
     })
 
+  /**
+   * 新建对话的输入框（#task-prompt）按回车发出去：先等发送按钮可用再按。
+   * CLI 列表是页面打开后另外异步读的（web/src/lib/data.tsx：先读 CLI 配置、再读 CLI 列表），
+   * 读到之前没有可用的 CLI，发送按钮是灰的，这时按回车输入框什么都不做。CI 的机器慢时，
+   * 输入框出来、字也填好了，CLI 列表还没到，回车被吞掉，对话页一直打不开、后面的断言全挂。
+   * 固定等几百毫秒在慢机器上不够，要等界面上「能发了」这个真实信号
+   */
+  async function sendNew(p, name) {
+    await p
+      .locator('.composer-shell:has(#task-prompt) button:is([aria-label="开始执行"], [aria-label="Start"]):enabled')
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push(`${name}：发送按钮一直不能点，发不出去`))
+    await p.locator('#task-prompt').press('Enter')
+  }
+
   async function check(p, name, expect = []) {
     for (const text of expect)
       // 只认看得见的那一个：父对话和中间的子对话页签都挂着，藏起来的那边可能有同样的文字
@@ -214,7 +229,7 @@ export async function runShard(file, fn) {
 
   let failed = false
   try {
-    await fn({ base, page, check, errors, settle, shotOf })
+    await fn({ base, page, check, errors, settle, shotOf, sendNew })
     // 分片结尾的里程碑：最后一条 check 的页面上再拍一张全页，和开头那张凑成一头一尾
     if (lastPage) await shot(lastPage, `${prefix}-zz-结束`).catch(() => {})
   } catch (e) {

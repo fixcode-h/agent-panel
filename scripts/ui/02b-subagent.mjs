@@ -1056,7 +1056,7 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await dlg.getByRole('button', { name: /依据和背景/ }).count()))
         errors.push('诊断报告：没有收起的「依据和背景」')
       if (!(await dlg.getByText('具体改动').count())) errors.push('诊断报告：方案页没有「具体改动」')
-      // 候选方案表撑满、选定那一列整列上色（分析稿 U7）；还没有标注时标注栏收成一条，「改用方案 B」挪到底栏
+      // 候选方案表撑满、选定那一列整列上色（分析稿 U7）；标注栏默认展开（用户 2026-11-13），能手动收成一条
       const chosenHead = dlg.locator('table[data-chosen-table] th[data-chosen]')
       if (
         !/方案 A/.test(
@@ -1074,7 +1074,7 @@ await runShard(import.meta.filename, async (api) => {
         ])
         if (!table || !doc || table.width < doc.width - 2) errors.push('诊断报告：候选方案表没有撑满正文宽度')
       }
-      if (!(await dlg.locator('[data-notes-folded]').count())) errors.push('诊断报告：没有标注时标注栏应收成一条')
+      if (await dlg.locator('[data-notes-folded]').count()) errors.push('诊断报告：标注栏应默认展开，不该收成一条')
       await check(p, '诊断报告-决策卡')
       // 停靠到右栏（分析稿 U7）：报告挪进右栏的页签，对话还能看、能点；转回弹窗也行
       await dlg.getByRole('button', { name: '停靠到右栏', exact: true }).click()

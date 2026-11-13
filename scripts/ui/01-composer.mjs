@@ -9,7 +9,7 @@ import { runShard, TINY_PNG } from './harness.mjs'
 /** 文件卡片显示的是路径（带目录分隔符），前面不加 @ */
 const isPathChip = (text) => !!text && !text.startsWith('@') && /[\\/]/.test(text)
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf, sendNew }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await check(p, '首页', ['新建任务'])
@@ -223,7 +223,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
         { timeout: 20000 },
       )
       .catch(() => errors.push('图片气泡：图片没有上传完'))
-    await p.locator('#task-prompt').press('Enter')
+    await sendNew(p, '图片气泡')
     // 打开对话页以后输入框换成 #follow-up：等它换掉，再找消息里的卡片（不然会匹配到输入框里那张）
     await p
       .locator('#task-prompt')
@@ -393,6 +393,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await q.goto(base + '#/chat')
     await q.locator('#task-prompt').waitFor({ timeout: 10000 })
     await settle(q)
+    // 等 CLI 列表读到（输入框里出现 CLI 选择）再开始：读到之前发送按钮是灰的，后面「拷贝中也能发送」的回车会被吞掉。
+    // 这里不能像别处那样发送前等按钮变可用，那样会一直等到拷贝完，「拷贝中也能发」就测不出来了
+    await q
+      .locator('.composer-shell:has(#task-prompt) [title="对话用的 Agent"]')
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('后台拷贝：输入框一直没读到可用的 CLI'))
     // 小文件：服务端按名字找回原路径后在后台拷贝，卡片上先显示路径、大小和「拷贝中」
     await q
       .locator('input[type=file]')
@@ -420,6 +426,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     if (!(await shotOf(q, q.locator('#task-prompt'), '附件-拷贝中也能发送')))
       errors.push('后台拷贝：没有截到拷贝中的输入框')
     // 拷贝还没完成时也能发送：这条按原路径发给 Agent
+    // send-ready-ok: 开头已等到 CLI 列表；这里等发送按钮会一直等到拷贝完，测不出「拷贝中也能发」
     await q.locator('#task-prompt').press('Enter')
     await q
       .locator('#task-prompt')
@@ -467,7 +474,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await p.locator('#task-prompt').waitFor({ timeout: 10000 })
     await settle(p)
     await p.locator('#task-prompt').fill('看看这些文件')
-    await p.locator('#task-prompt').press('Enter')
+    await sendNew(p, '路径可点')
     await p
       .locator('#task-prompt')
       .waitFor({ state: 'detached', timeout: 20000 })
