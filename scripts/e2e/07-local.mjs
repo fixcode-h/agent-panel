@@ -1287,7 +1287,17 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       url: '',
       headers: {},
     }
-    const mcpJson = path.join(project.path, '.mcp.json')
+    // 单独一个项目：共用的项目里别的对话的 CLI（保活、预热）会临时往 .mcp.json 加面板条目，读到时文件就对不上了
+    const mpDir = path.join(tmp, 'project-mcp')
+    mkdirSync(mpDir, { recursive: true })
+    const mp = await call('POST', '/projects', {
+      name: '项目 MCP 测试',
+      description: '',
+      path: mpDir,
+      categoryId: '',
+      workflowId: wf.id,
+    })
+    const mcpJson = path.join(mp.path, '.mcp.json')
     const projectMcp = JSON.stringify(
       {
         mcpServers: {
@@ -1299,16 +1309,16 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       2,
     )
     writeFileSync(mcpJson, projectMcp)
-    mkdirSync(path.join(project.path, '.vscode'), { recursive: true })
+    mkdirSync(path.join(mp.path, '.vscode'), { recursive: true })
     writeFileSync(
-      path.join(project.path, '.vscode', 'mcp.json'),
+      path.join(mp.path, '.vscode', 'mcp.json'),
       JSON.stringify({ servers: { browser: { type: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] } } }),
     )
-    mkdirSync(path.join(project.path, '.claude'), { recursive: true })
-    writeFileSync(path.join(project.path, '.claude', 'settings.json'), '{ 坏掉的 json')
+    mkdirSync(path.join(mp.path, '.claude'), { recursive: true })
+    writeFileSync(path.join(mp.path, '.claude', 'settings.json'), '{ 坏掉的 json')
 
-    let pv = await call('GET', `/project-mcp?projectId=${project.id}`)
-    assert.equal(pv.path, project.path)
+    let pv = await call('GET', `/project-mcp?projectId=${mp.id}`)
+    assert.equal(pv.path, mp.path)
     assert.deepEqual(pv.detected.map((d) => `${d.file}:${d.name}`).sort(), [
       '.mcp.json:bad name',
       '.mcp.json:fs',
@@ -1328,7 +1338,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     assert.equal((await call('POST', '/project-mcp/test', { ...server, name: 'fs' })).ok, true)
 
     // 导入一条：写进 Claude Code 的全局配置，项目文件不变；再读时状态变成「一致」
-    const imp = await call('POST', `/project-mcp/import?projectId=${project.id}`, {
+    const imp = await call('POST', `/project-mcp/import?projectId=${mp.id}`, {
       items: [{ file: '.mcp.json', name: 'fs', clis: ['claude'] }],
     })
     assert.deepEqual(imp.done, [{ name: 'fs', file: '.mcp.json' }])
@@ -1341,7 +1351,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     assert.equal(imp.overview.detected.find((d) => d.name === 'fs').status, 'same')
 
     // 名字不合规则的导入会说清原因，不写进任何全局配置
-    const bad = await call('POST', `/project-mcp/import?projectId=${project.id}`, {
+    const bad = await call('POST', `/project-mcp/import?projectId=${mp.id}`, {
       items: [{ file: '.mcp.json', name: 'bad name', clis: ['claude'] }],
     })
     assert.equal(bad.done.length, 0)
@@ -1357,7 +1367,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       url: '',
       headers: {},
     }
-    pv = await call('PUT', `/project-mcp/fs?projectId=${project.id}`, { server: fsServer, clis: [] })
+    pv = await call('PUT', `/project-mcp/fs?projectId=${mp.id}`, { server: fsServer, clis: [] })
     assert.equal(
       pv.servers.some((x) => x.name === 'fs'),
       false,
@@ -1369,9 +1379,9 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
 
     // 清理，别影响后面的用例
     rmSync(mcpJson, { force: true })
-    rmSync(path.join(project.path, '.vscode'), { recursive: true, force: true })
-    rmSync(path.join(project.path, '.claude'), { recursive: true, force: true })
-    pv = await call('GET', `/project-mcp?projectId=${project.id}`)
+    rmSync(path.join(mp.path, '.vscode'), { recursive: true, force: true })
+    rmSync(path.join(mp.path, '.claude'), { recursive: true, force: true })
+    pv = await call('GET', `/project-mcp?projectId=${mp.id}`)
     assert.deepEqual(pv.detected, [])
   }
   step('项目设置里的 MCP：识别 .mcp.json / .vscode/mcp.json，导入只写各 CLI 的全局配置，项目文件不改')
