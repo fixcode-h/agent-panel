@@ -41,15 +41,28 @@ export function pluginToolRow(m: PluginManifest, x: ToolDef): CatalogTool {
   }
 }
 
-/** 旧插件（没有 catalog）：只能按清单列出服务和工具名 */
-function legacyServers(m: PluginManifest): CatalogServer[] {
+/**
+ * 旧插件（没有 catalog）：只能按清单列出服务和工具名。清单的 toolNames 不分服务，
+ * 有几个服务（Blender 的 blender、blender-model）时合成一块列一次，不能每个服务各列一遍全部工具
+ */
+export function legacyServers(m: PluginManifest): CatalogServer[] {
   const names = pluginToolNames(m)
-  return m.mcpServers.map((name) => ({
-    name,
-    summary: '',
-    attach: t('插件没有提供能力目录（插件接口 8 以前），只能列出名字；升级插件后会补上说明'),
-    tools: Object.entries(names).map(([n, title]) => ({ name: n, title, effects: [], description: '', params: [] })),
+  const tools = Object.entries(names).map(([n, title]) => ({
+    name: n,
+    title,
+    effects: [],
+    description: '',
+    params: [],
   }))
+  if (!m.mcpServers.length && !tools.length) return []
+  return [
+    {
+      name: m.mcpServers.join(', ') || m.id,
+      summary: '',
+      attach: t('插件没有提供能力目录（插件接口 8 以前），只能列出名字；升级插件后会补上说明'),
+      tools,
+    },
+  ]
 }
 
 async function catalogServers(m: PluginManifest, plugin: ServerPlugin): Promise<CatalogServer[]> {

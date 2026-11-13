@@ -3,6 +3,8 @@ import test from 'node:test'
 import { panelSource, appSource, panelCheckRow, appCheckRow } from './panel.ts'
 import { runCheck } from './index.ts'
 import { withPanelGuides } from './guides.ts'
+import { legacyServers } from './plugins.ts'
+import type { PluginManifest } from '../../shared/plugins/types.ts'
 
 test('能力目录·面板服务：每个工具有声明、说明是补过时机的原文、标出给谁和收进 more_tools 的', () => {
   const src = panelSource()
@@ -43,5 +45,20 @@ test('能力目录·自检：面板服务按对话类型算，操控软件只给
   assert.deepEqual(
     claude.rows.map((r) => r.source),
     ['panel', 'app'],
+  )
+})
+
+test('能力目录·旧插件：几个 MCP 服务合成一块，工具名只列一次（清单的 toolNames 不分服务）', () => {
+  const m = {
+    id: 'blender',
+    mcpServers: ['blender', 'blender-model'],
+    toolNames: { blender_py: '执行 Python', blender_scene: '查看场景' },
+  } as unknown as PluginManifest
+  const servers = legacyServers(m)
+  assert.equal(servers.length, 1)
+  assert.equal(servers[0].name, 'blender, blender-model')
+  assert.deepEqual(
+    servers[0].tools.map((x) => x.name),
+    ['blender_py', 'blender_scene'],
   )
 })
