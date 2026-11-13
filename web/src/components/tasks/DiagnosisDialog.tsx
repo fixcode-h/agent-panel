@@ -20,6 +20,7 @@ import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
 import { LogWatch, PatchReminder, usePatch, WorkspacePatch } from './DiagnosisEvidence'
 import { patchKindOf } from '@shared/bug/patch'
 import { compareBase, DiagnosisCompare, RedoBadge } from './DiagnosisCompare'
+import { ChatBasis, ChatStale } from './DiagnosisChat'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -55,6 +56,8 @@ const statusOf = (d: Diagnosis) => {
   if (phaseOf(d) === 'verify' && d.status === 'approved') return t('你结束了验证')
   // 面板按「没有要注意的就自动通过」替你同意的（分析稿 B2）：和你亲手点的分开写
   if (d.status === 'approved' && d.auto) return t('面板自动通过（没有要注意的）')
+  // 你在对话里让它照这个做，它按对话更新了报告（shared/bug/chat.ts）：和你在报告上点的分开写
+  if (d.status === 'approved' && d.approvedBy?.kind === 'chat') return t('你在对话里确认了')
   return STATUS[d.status]()
 }
 
@@ -112,9 +115,11 @@ function versionsOf(
     const { ver: n, round: k } = labelOf(d, list)
     const phase = phaseLabel(d)
     const base = compareBase(d, list)
+    const label = k > 1 ? t('第 {n} 版 · {phase} · 第 {k} 轮', { n, phase, k }) : t('第 {n} 版 · {phase}', { n, phase })
     return {
       key: String(d.version),
-      label: k > 1 ? t('第 {n} 版 · {phase} · 第 {k} 轮', { n, phase, k }) : t('第 {n} 版 · {phase}', { n, phase }),
+      // 按你在对话里说的更新的一版（用户 2026-11-13 定）：标出来，和按报告上的意见重出的分开
+      label: d.chat?.length ? t('{label} · 按对话', { label }) : label,
       // 下拉按阶段分组（用户 2026-11-06 要求），组名已是阶段，列表里只写第几版、第几轮
       group: phase,
       short: k > 1 ? t('第 {n} 版 · 第 {k} 轮', { n, k }) : t('第 {n} 版', { n }),
@@ -286,7 +291,7 @@ export function DiagnosisDialog({
   version,
   dock,
 }: {
-  task: Pick<Task, 'id' | 'title' | 'bug'> & Partial<Pick<Task, 'changes'>>
+  task: Pick<Task, 'id' | 'title' | 'bug'> & Partial<Pick<Task, 'changes' | 'messages'>>
   /** 打开时先看哪一份（交报告的顺序号）；不传看最新那份 */
   version?: number
   open: boolean
@@ -354,6 +359,33 @@ export function DiagnosisDialog({
       kinds={KINDS()}
       versions={versionsOf(list, author, snippets, changed, teamNames, (d) => (
         <>
+          {d === last && (
+            <ChatStale
+              task={task}
+              onSync={async () => {
+                const r = await api.syncDiagnosis(task.id)
+                await hand(r.message, [], r.task)
+              }}
+            />
+          )}
+          <ChatBasis
+            d={d}
+            list={list}
+            onJump={() => onOpenChange(false)}
+            onRetract={
+              d === last && d.status === 'approved' && d.approvedBy?.kind === 'chat'
+                ? async () => {
+                    const r = await api.decideDiagnosis(task.id, d.version, {
+                      approve: false,
+                      retract: true,
+                      notes: [],
+                      overall: '',
+                    })
+                    await hand(r.message, [], r.task)
+                  }
+                : undefined
+            }
+          />
           {d === last && <WorkspacePatch patch={patch} kind={patchKind} />}
           <CleanupStatus task={task} d={d} onDone={onDone} />
         </>

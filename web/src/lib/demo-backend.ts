@@ -9,7 +9,8 @@ import { demoChildRows } from './demo-children'
  */
 import { seedChatRail } from './demo-chat-rail'
 import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
-import { decideDiagnosis } from '@shared/bug/diagnosis'
+import { decideDiagnosis, diagnosisMessage } from '@shared/bug/diagnosis'
+import { retractChat, syncChat } from '@shared/bug/chat'
 import { demoEvidence } from './demo-evidence'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
@@ -2812,6 +2813,23 @@ function tasksRoute(
   // 演示里没有真的代码目录：取消修复时查不到临时日志，直接按「没有日志」关闭
   if (sub === 'diagnosis-cleanup')
     return method === 'POST' ? { task, message: '' } : { found: [], created: [], isolated: false }
+  // 按对话更新报告、撤回在对话里的确认：和正式后端同一份逻辑（shared/bug/chat.ts）
+  if (sub === 'diagnosis-sync' && method === 'POST') {
+    const r = syncChat(task, (v, text) =>
+      task.messages.push(diagnosisMessage(`demo-${crypto.randomUUID()}`, v, text, new Date().toISOString())),
+    )
+    if (!r.ok) fail(r.error)
+    persist()
+    return { task, message: r.ok ? r.message : '' }
+  }
+  if (sub === 'diagnosis' && rid && method === 'POST' && (body as { retract?: boolean }).retract) {
+    const r = retractChat(task, Number(rid), (v, text) =>
+      task.messages.push(diagnosisMessage(`demo-${crypto.randomUUID()}`, v, text, new Date().toISOString())),
+    )
+    if (!r.ok) fail(r.error)
+    persist()
+    return { task, message: r.ok ? r.message : '' }
+  }
   if (sub === 'diagnosis' && rid && method === 'POST') {
     const r = decideDiagnosis(
       task,

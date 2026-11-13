@@ -56,12 +56,16 @@ export function roundOf(d: Diagnosis, list: Diagnosis[]): number {
 
 /**
  * 给用户看的版本号（用户 2026-11-13 定）：用户提问、补充或不认同后它在同一版里重出的，记成小版本 N.1、N.2；
- * 结论被推翻（nextRev 升了大版本）才是 N+1。只数这一份之前、同一大版本里用户退回过（有 intent）的几份
+ * 按用户在对话里说的更新、顶掉还没确认的上一份的也一样（shared/bug/chat.ts）；结论被推翻（nextRev 升了大版本）才是 N+1。
+ * 只数这一份之前、同一大版本里用户退回过（有 intent）或被按对话更新顶掉的几份
  */
 export function verOf(d: Diagnosis, list: Diagnosis[]): string {
   const i = list.indexOf(d)
   const before = i >= 0 ? list.slice(0, i) : list
-  const minor = before.filter((x) => revOf(x) === revOf(d) && x.intent).length
+  // 按对话更新的一版顶掉了还没确认的上一份（用户 2026-11-13 定）也算小版本：上一份被取代、下一份带着对话原话
+  const minor = before.filter(
+    (x, j) => revOf(x) === revOf(d) && (x.intent || (x.status === 'superseded' && !!list[j + 1]?.chat?.length)),
+  ).length
   return minor ? `${revOf(d)}.${minor}` : String(revOf(d))
 }
 

@@ -29,6 +29,8 @@ export interface TaskMessagesCtx {
   total: number
   /** 最新的一轮在全部段里的下标（见 lib/latest-turn.ts） */
   latestTurn: number
+  /** 正在输出的那一轮在全部段里的下标，没有是 -1（见 lib/latest-turn.ts 的 liveTurnIndex） */
+  liveTurn: number
   working: boolean
   running: boolean
   teamNames: Set<string>
@@ -86,7 +88,7 @@ function renderBlock(ctx: TaskMessagesCtx, b: Block, i: number): React.ReactNode
         msgs={b.msgs}
         task={task}
         teamNames={ctx.teamNames}
-        live={working && i + hidden === total - 1}
+        live={i + hidden === ctx.liveTurn}
         last={!working && i + hidden === total - 1}
         // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
         // 刚发出的用户消息排在后面时也算）

@@ -90,6 +90,13 @@ export function nextStep(d: Diagnosis, withCause = false): string {
   if (d.status === 'questioned')
     return phase === 'fix' ? t('你对代码提了意见，它在逐条判断') : t('你提了意见，它在接着分析')
   if (d.status === 'answered') return phase === 'verify' ? t('你给了验证结果，它在分析') : t('你给了日志，它在分析')
+  if (d.status === 'approved' && d.approvedBy && phase !== 'evidence')
+    return {
+      cause: t('你在对话里同意了根因，它在设计修复方案'),
+      plan: t('你在对话里确认了方案，它在修'),
+      fix: t('你在对话里确认了修复，它在验证'),
+      verify: t('你在对话里结束了验证，它在收尾'),
+    }[phase]
   if (d.status === 'approved')
     return {
       evidence: t('你同意了，它在加日志'),
@@ -124,7 +131,12 @@ function statusOf(d: Diagnosis): DiagnosisCard['status'] {
       text: d.awaiting ? t('等你复现') : phase === 'verify' ? t('等你验证') : t('等你确认'),
       tone: 'warning',
     }
-  if (d.status === 'approved') return { text: d.auto ? t('面板自动通过') : t('你已同意'), tone: 'success' }
+  if (d.status === 'approved')
+    return {
+      // 你在对话里让它照这个做、它按对话更新的一版（shared/bug/chat.ts）：和你在报告上点的分开写
+      text: d.auto ? t('面板自动通过') : d.approvedBy ? t('你在对话里确认了') : t('你已同意'),
+      tone: 'success',
+    }
   if (d.status === 'cancelled')
     return d.cleanup?.state === 'running'
       ? { text: t('在删临时日志'), tone: 'accent' }
