@@ -22,6 +22,7 @@ import {
 import { cleanupPrompt, TEMP_LOG } from './cleanup.ts'
 import { editPatch, fixFilesOf } from './fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './quotes.ts'
+import { checkStack, matchTrace, stackProblem } from './stack-check.ts'
 import {
   causeAgreed,
   closedOrCleaning,
@@ -175,7 +176,7 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
 function causeProblem(c: BugCase): string {
   const need: [string, boolean][] = [
     ['symptom（现象）', !!c.symptom.trim()],
-    ['stack 或 location（调用栈）', !!c.stack.length || !!c.location.trim()],
+    ['stack（调用栈树）', !!c.stack.length],
     ['evidence（证据链）', !!c.evidence.trim()],
     ['rootCause（根因）', !!c.rootCause.trim()],
   ]
@@ -279,8 +280,10 @@ export function diagnosisProblem(
       ? `第 ${revOf(prev)} 版的日志已经加好、在等用户复现贴日志，不要再交：结束这一轮，等用户的日志。`
       : `第 ${revOf(prev)} 版还在等用户确认，不要重复交：结束这一轮，等确认结果交回给你。`
   const phase = inputPhase(input, c, list)
+  // 调用栈树的结构和编号（stack-check.ts）：根因、方案这一版必须有入口和出错点，只写 location 不算
   const bad =
-    phase === 'evidence'
+    stackProblem(c, phase) ||
+    (phase === 'evidence'
       ? evidenceProblem(c, input, list)
       : phase === 'cause'
         ? causeProblem(c)
@@ -288,7 +291,7 @@ export function diagnosisProblem(
           ? planProblem(c, list)
           : phase === 'fix'
             ? fixProblem(c, list)
-            : verifyProblem(c, list, input)
+            : verifyProblem(c, list, input))
   if (bad) return bad
   if (prev?.status === 'questioned') {
     const answered = new Set(answers.map((a) => a.id))
@@ -453,6 +456,9 @@ function submitOnce(
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
   if (sources.error) return { ok: false, info: sources.error }
+  // 调用栈每一跳按工作区核对位置、出错点取快照，有报错堆栈时逐帧对上（stack-check.ts）
+  const stackBad = checkStack(c, src, sources.notes, phase) || matchTrace(c, phase)
+  if (stackBad) return { ok: false, info: stackBad }
   // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
   // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主）时不核对；
   // 不是 git 的工程拼 Agent 改文件时记下的改动，拼不出来的文件不算「没改」

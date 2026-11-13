@@ -1,0 +1,403 @@
+/*
+ * 调用栈树（web/src/lib/markdown/call-tree.ts 出 HTML）：诊断报告的调用栈、回复里的 calltree 代码块。
+ * 外框就是代码块那张卡片（.chat-md .md-code），里面照文件树的样子画：缩进 + 细连线，主次靠底色和颜色分，不加描边
+ * （docs/lessons/visual.md）。色相用 Markdown 的那几个（--md-coral 出错、--md-teal 打出来了、--md-gold 现象），
+ * 可调项是设置 → 组件 → 调用栈树的 --c-callTree-*。
+ */
+.md-calltree {
+  --ct-line: color-mix(in srgb, var(--subtle) 38%, transparent);
+  --ct-size: calc(var(--md-pre-size, 0.86) * var(--md-base, 0.875rem));
+  --ct-small: calc(0.8 * var(--md-base, 0.875rem));
+  --ct-row: calc(var(--ct-size) * 1.65);
+  /* 子项的竖线对齐上一跳图标的中心：行的左内边距 + 图标宽的一半 */
+  --ct-axis: calc(var(--spacing) * 2 + 7px);
+  container-type: inline-size;
+}
+.md-calltree .ct-body {
+  padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3) calc(var(--spacing) * 3) calc(var(--spacing) * 2);
+  overflow-x: auto;
+}
+.md-calltree .ct-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.md-calltree .ct-ul .ct-ul {
+  margin-left: var(--ct-axis);
+}
+.md-calltree .ct-li {
+  position: relative;
+  margin: 0;
+  padding: 0;
+}
+.md-calltree .ct-ul .ct-ul > .ct-li {
+  padding-left: var(--c-callTree-indent);
+}
+/* 连线：竖线 + 拐到这一跳的横线；最后一个子项竖线只画到拐角 */
+.md-calltree .ct-ul .ct-ul > .ct-li::before,
+.md-calltree .ct-ul .ct-ul > .ct-li::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  border: 0 solid var(--ct-line);
+}
+.md-calltree .ct-ul .ct-ul > .ct-li::before {
+  top: 0;
+  bottom: 0;
+  border-left-width: var(--c-callTree-lines);
+}
+.md-calltree .ct-ul .ct-ul > .ct-li:last-child::before {
+  bottom: auto;
+  height: calc(var(--ct-row) / 2 + var(--c-callTree-gap) + var(--edge-h, 0px));
+}
+.md-calltree .ct-ul .ct-ul > .ct-li::after {
+  top: calc(var(--ct-row) / 2 + var(--c-callTree-gap) + var(--edge-h, 0px));
+  width: calc(var(--c-callTree-indent) + var(--spacing) * 2 + 2px);
+  border-top-width: var(--c-callTree-lines);
+}
+/* 没走到的一跳：连线换虚线 */
+.md-calltree .ct-ul .ct-ul > .ct-missed-li::after,
+.md-calltree .ct-ul .ct-ul > .ct-missed-li:last-child::before {
+  border-style: dashed;
+}
+/* 前面有边界说明（异步、事件）的一跳：拐角往下挪一行 */
+.md-calltree .ct-li:has(> .ct-edge) {
+  --edge-h: calc(var(--ct-small) * 1.7);
+}
+
+.md-calltree .ct-row {
+  display: flex;
+  gap: calc(var(--spacing) * 2);
+  align-items: flex-start;
+  padding: var(--c-callTree-gap) calc(var(--spacing) * 2);
+  border-radius: var(--radius-sm, 6px);
+}
+.md-calltree .ct-row:hover {
+  background: color-mix(in srgb, var(--fg) 3.5%, transparent);
+}
+.md-calltree .ct-fault-row,
+.md-calltree .ct-fault-row:hover {
+  background: var(--c-callTree-fault);
+  box-shadow: inset 2px 0 0 var(--md-coral);
+}
+.md-calltree .ct-missed-row > * {
+  opacity: var(--c-callTree-missed);
+}
+.md-calltree .ct-main {
+  flex: 1;
+  min-width: 0;
+}
+.md-calltree .ct-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: calc(var(--spacing) * 2);
+  row-gap: 2px;
+  min-height: var(--ct-row);
+  line-height: var(--ct-row);
+}
+.md-calltree .ct-fn {
+  font-family: var(--app-mono);
+  font-size: var(--ct-size);
+  font-weight: 550;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.md-calltree .ct-missed-row .ct-fn {
+  font-weight: 500;
+  color: var(--muted);
+}
+.md-calltree .ct-note {
+  font-size: var(--ct-small);
+  color: var(--subtle);
+}
+/* 位置靠右；窄的时候换到下一行 */
+.md-calltree .ct-loc {
+  margin-left: auto;
+  font-size: var(--ct-small);
+  white-space: nowrap;
+}
+.md-calltree .ct-loc .fr-dim {
+  display: var(--c-callTree-dir);
+}
+
+/* 图标：一行一个小记号，宽度对齐连线拐过来的位置 */
+.md-calltree .ct-ic {
+  flex: none;
+  position: relative;
+  display: inline-block;
+  width: 14px;
+  height: var(--ct-row);
+}
+.md-calltree .ct-ic::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 999px;
+}
+.md-calltree .ct-path::before {
+  width: 7px;
+  height: 7px;
+  background: var(--subtle);
+}
+.md-calltree .ct-entry::before {
+  width: 10px;
+  height: 10px;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.md-calltree .ct-fault::before {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  rotate: 45deg;
+  background: var(--md-coral);
+}
+.md-calltree .ct-missed::before {
+  width: 9px;
+  height: 9px;
+  border: 1.5px dashed var(--subtle);
+}
+.md-calltree .ct-symptom::before {
+  content: '!';
+  width: 14px;
+  height: 14px;
+  font: 700 10px/14px var(--app-sans);
+  text-align: center;
+  color: var(--bg);
+  background: var(--md-gold);
+}
+.md-calltree .ct-side::before {
+  width: 7px;
+  height: 7px;
+  box-shadow: inset 0 0 0 1.5px var(--subtle);
+}
+
+/* 分支、值、编号、标记：小标签都是浅底不描边 */
+.md-calltree .ct-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 1px 0 3px;
+  font-size: var(--ct-small);
+}
+.md-calltree .ct-cond {
+  color: var(--muted);
+}
+.md-calltree .ct-cond b {
+  font-weight: 600;
+  color: var(--fg);
+}
+.md-calltree .ct-val,
+.md-calltree .ct-cond code.ct-val {
+  font-family: var(--app-mono);
+  font-size: calc(var(--ct-small) * 0.97);
+  line-height: 1.6;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--md-code-color, var(--code-chip-fg));
+  background: var(--md-code-bg, var(--code-chip));
+}
+.md-calltree .ct-val-bad {
+  color: var(--md-coral);
+  background: color-mix(in srgb, var(--md-coral) 12%, transparent);
+}
+.md-calltree .ct-expect {
+  margin-left: 6px;
+  padding-left: 6px;
+  color: var(--subtle);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--md-coral) 30%, transparent);
+}
+.md-calltree .ct-chip {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.6;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: var(--ct-small);
+  color: var(--subtle);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  white-space: nowrap;
+}
+.md-calltree .ct-ref-hit,
+.md-calltree .ct-chip-ok {
+  color: var(--md-teal);
+  background: color-mix(in srgb, var(--md-teal) 12%, transparent);
+}
+.md-calltree .ct-ref-miss,
+.md-calltree .ct-chip-fault {
+  color: var(--md-coral);
+  background: color-mix(in srgb, var(--md-coral) 13%, transparent);
+}
+.md-calltree .ct-ref-wait {
+  color: var(--subtle);
+  background: transparent;
+  outline: 1px dashed color-mix(in srgb, var(--subtle) 60%, transparent);
+  outline-offset: -1px;
+}
+.md-calltree .ct-chip-warn {
+  color: var(--md-gold);
+  background: color-mix(in srgb, var(--md-gold) 13%, transparent);
+}
+.md-calltree .ct-chip-fix {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  font-weight: 550;
+}
+.md-calltree .ct-chip-alt {
+  color: var(--subtle);
+}
+
+/* 出错点下面带的几行代码：和代码块同一个底，出错那一行和关键代码的出错行同一个色 */
+.md-calltree .ct-code {
+  display: var(--c-callTree-code);
+  margin: 4px 0 4px;
+  padding: 4px 0;
+  border-radius: 6px;
+  background: var(--md-pre-bg, var(--code-bg));
+  font-family: var(--app-mono);
+  font-size: calc(var(--ct-size) * 0.95);
+  line-height: 1.65;
+  overflow-x: auto;
+}
+.md-calltree .ct-code-row {
+  display: flex;
+  white-space: pre;
+  padding-right: 10px;
+}
+.md-calltree .ct-code-ln {
+  flex: none;
+  width: 3.2em;
+  padding-right: 0.9em;
+  text-align: right;
+  color: color-mix(in srgb, var(--subtle) 65%, transparent);
+  user-select: none;
+}
+.md-calltree .ct-code-mark {
+  background: color-mix(in srgb, var(--md-coral) 14%, transparent);
+}
+.md-calltree .ct-code-mark .ct-code-ln {
+  color: var(--md-coral);
+}
+
+/* 边界（异步、事件、跨进程）：这一跳上面一个淡紫的小胶囊 */
+.md-calltree .ct-edge {
+  display: flex;
+  align-items: center;
+  height: calc(var(--ct-small) * 1.7);
+  padding-left: calc(var(--spacing) * 2);
+  font-size: var(--ct-small);
+  color: var(--c-callTree-edge);
+}
+.md-calltree .ct-edge span {
+  padding: 0 7px;
+  line-height: 1.55;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-callTree-edge) 13%, transparent);
+}
+
+/* 断在这里：一条珊瑚色虚线带说明 */
+.md-calltree .ct-cut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+  padding-left: calc(var(--spacing) * 2);
+  font-size: var(--ct-small);
+  color: var(--md-coral);
+}
+.md-calltree .ct-cut::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed color-mix(in srgb, var(--md-coral) 60%, transparent);
+}
+.md-calltree .ct-ul .ct-ul > .ct-cut-li::after {
+  display: none;
+}
+
+/* 旁支：默认收起成一行 */
+.md-calltree .ct-more > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: var(--ct-row);
+  padding: var(--c-callTree-gap) calc(var(--spacing) * 2);
+  font-size: var(--ct-small);
+  color: var(--subtle);
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-sm, 6px);
+}
+.md-calltree .ct-more > summary::-webkit-details-marker {
+  display: none;
+}
+.md-calltree .ct-more > summary:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 3.5%, transparent);
+}
+.md-calltree .ct-more[open] > summary .ct-more-names {
+  display: none;
+}
+.md-calltree .ct-more-names {
+  font-family: var(--app-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-calltree .ct-more > .ct-ul {
+  margin-left: 0;
+}
+.md-calltree .ct-ul .ct-ul > .ct-more-li > .ct-more > .ct-ul > .ct-li {
+  padding-left: 0;
+}
+.md-calltree .ct-more > .ct-ul > .ct-li::before,
+.md-calltree .ct-more > .ct-ul > .ct-li::after {
+  display: none;
+}
+
+/* 图例 */
+.md-calltree .ct-legend {
+  display: var(--c-callTree-legend);
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 6px 14px;
+  font-size: var(--ct-small);
+  color: var(--subtle);
+  background: color-mix(in srgb, var(--fg) 2%, transparent);
+}
+.md-calltree .ct-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.md-calltree .ct-legend .ct-ic {
+  height: 14px;
+}
+.md-calltree .ct-lg {
+  display: inline-block;
+  width: 16px;
+  border-top: 1.5px solid var(--ct-line);
+}
+.md-calltree .ct-lg-missed {
+  border-top-style: dashed;
+}
+.md-calltree .ct-lg-edge {
+  border-top: 1.5px dashed var(--c-callTree-edge);
+}
+/* 窄的地方（手机、窄面板）：位置换到函数名下面，缩进收一档 */
+@container (max-width: 520px) {
+  .md-calltree {
+    --c-callTree-indent: 14px;
+  }
+  .md-calltree .ct-loc {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}
+/* 位置标记在这里一定放得下：不按窄处的规则把行号裁掉 */
+.md-calltree .ct-loc .fr-text {
+  overflow: visible;
+}

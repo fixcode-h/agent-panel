@@ -164,8 +164,24 @@ test('引入点：提交人以版本记录为准，取到就覆盖 Agent 写的�
 
 test('日志命中表：按 [排查-…] L<n> 数，L1 不算进 L12；没出现的加粗；结果怎么判自动对上', () => {
   const plan = [
-    { id: 'L1', file: 'src/load.js', line: 15, fn: '', print: "console.log('[排查-金额] L1')", hypothesis: 'H1' },
-    { id: 'L2', file: 'src/checkout.js', line: 17, fn: '', print: "console.log('[排查-金额] L2')", hypothesis: 'H2' },
+    {
+      id: 'L1',
+      file: 'src/load.js',
+      line: 15,
+      fn: '',
+      print: "console.log('[排查-金额] L1')",
+      hypothesis: 'H1',
+      hop: '',
+    },
+    {
+      id: 'L2',
+      file: 'src/checkout.js',
+      line: 17,
+      fn: '',
+      print: "console.log('[排查-金额] L2')",
+      hypothesis: 'H2',
+      hop: '',
+    },
   ]
   const logs = `${userLogs}\n[排查-金额] L12 别的\n[排查-金额] L1 again`
   const hits = logHits(logs, plan)

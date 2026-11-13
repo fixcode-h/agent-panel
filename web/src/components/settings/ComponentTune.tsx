@@ -47,6 +47,7 @@ export const compLabel = (c: CompName) =>
     popover: t('输入框弹层'),
     empty: t('空状态'),
     grid: t('数据表格'),
+    callTree: t('调用栈树'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -58,6 +59,7 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'switch' && prop === 'on') return t('打开时颜色')
   if (c === 'empty' && prop === 'border') return t('边框线型')
   if (c === 'grid') return gridPropLabel(prop) ?? prop
+  if (c === 'callTree') return callTreePropLabel(prop) ?? prop
   return (
     {
       radius: t('圆角'),
@@ -106,6 +108,20 @@ const gridPropLabel = (prop: string): string | undefined =>
     handle: t('填充柄大小'),
   })[prop]
 
+/** 调用栈树的项 */
+const callTreePropLabel = (prop: string): string | undefined =>
+  ({
+    lines: t('连线'),
+    indent: t('缩进'),
+    gap: t('行距'),
+    fault: t('出错点'),
+    missed: t('没走到的一跳'),
+    code: t('出错点下面带代码'),
+    dir: t('位置写出目录'),
+    legend: t('显示图例'),
+    edge: t('异步、事件边界'),
+  })[prop]
+
 const optionLabel = (v: string) =>
   ({
     card: t('卡片色'),
@@ -148,6 +164,15 @@ const optionLabel = (v: string) =>
     off: t('不画'),
     thin: t('细条'),
     wide: t('粗条'),
+    normal: t('标准'),
+    tight: t('紧凑'),
+    loose: t('宽松'),
+    fill: t('竖条 + 底色'),
+    bar: t('只有竖条'),
+    fade: t('变淡'),
+    faint: t('很淡'),
+    keep: t('不变淡'),
+    fine: t('细线'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */

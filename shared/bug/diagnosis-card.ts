@@ -8,6 +8,7 @@ import type { BugBlame, Diagnosis } from './diagnosis-schema.ts'
 import { causeInPlan, logFilesOf, NOFIX_TEXT, noFixOf, normPath, outOfPlan, phaseOf } from './phase.ts'
 import { codeTerms } from './terms.ts'
 import { recheckTag, recheckVerdict } from './recheck.ts'
+import { stackTag } from './call-tree-md.ts'
 import { t } from '../i18n.ts'
 
 export type CardTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
@@ -171,6 +172,9 @@ function tagsOf(d: Diagnosis, files: number): DiagnosisCard['tags'] {
   else tags.push(d.confirmed ? { text: t('已证实'), tone: 'success' } : { text: t('根因未证实'), tone: 'danger' })
   if (noFixOf(d)) tags.push({ text: t('不用改代码'), tone: 'accent' })
   if (phase === 'plan' && files) tags.push({ text: t('改 {n} 个文件', { n: files }), tone: 'neutral' })
+  // 调用栈每一跳按工作区核对过（stack-check.ts）：全对上是绿的，有对不上的琥珀色
+  const st = phase === 'cause' || phase === 'evidence' ? stackTag(d) : undefined
+  if (st) tags.push({ text: st.text, tone: st.warn ? 'warning' : 'success' })
   const re = recheckTag(d)
   if (re) tags.push(re)
   return tags

@@ -817,6 +817,10 @@ test('父对话派来的 Bug（ADR 0045）：子对话有 submit_diagnosis，交
       symptom: '超时后一直转圈',
       repro: '',
       location: 'login.ts:40',
+      stack: [
+        { id: 'S1', file: 'login.ts', line: 40, fn: 'retry' },
+        { id: 'S2', parent: 'S1', role: 'fault', file: 'login.ts', line: 44, fn: 'retries < max' },
+      ],
       evidence: '日志 ← login.ts:44',
       rootCause: '单位不对',
       confirmed: true,

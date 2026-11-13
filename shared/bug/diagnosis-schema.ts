@@ -23,12 +23,51 @@ const str = (max: number) => z.string().max(max).catch('').default('')
 export const BugLevel = z.enum(['quick', 'standard', 'deep'])
 export type BugLevel = z.infer<typeof BugLevel>
 
-/** 调用栈的一跳 */
+/**
+ * 调用栈的一跳（设计稿 2026-11-13「诊断报告：关键调用栈」）：扁平数组用 parent 连成树（Agent 写扁平的比嵌套 JSON 稳，
+ * 数组顺序就是兄弟之间的执行顺序）。role 是这一跳在问题里的角色：entry 入口、path 路过、fault 出错点、
+ * missed 该执行却没执行、symptom 现象出现的地方、side 和问题无关的旁支（默认收起）；
+ * edge 是从上一跳到这一跳跨了什么（异步回调、事件派发、跨进程、库内部）。
+ * 旧数据只有 file / line / fn / note：没有 id、parent，按顺序当一条直线（shared/bug/call-tree.ts 的 hopTree）
+ */
 export const BugHop = z.object({
+  id: str(20),
+  parent: str(20),
   file: str(500),
   line: z.coerce.number().int().positive().optional().catch(undefined),
   fn: str(300),
   note: str(1000),
+  role: z.enum(['entry', 'path', 'fault', 'missed', 'symptom', 'side']).catch('path').default('path'),
+  edge: z.enum(['call', 'async', 'event', 'ipc', 'lib']).catch('call').default('call'),
+  edgeNote: str(200),
+  /** 这一跳的分支：条件原文、实际走了哪边 */
+  cond: z
+    .object({ text: str(300), took: str(100) })
+    .optional()
+    .catch(undefined),
+  /** 关键值：实际值、期望值（实际值要能在日志或命令输出原文里找到才算证据，refs 写上编号） */
+  values: z
+    .array(z.object({ name: str(100), actual: str(300), expected: str(300) }))
+    .max(5)
+    .catch([])
+    .default([]),
+  /** 挂在这一跳上的编号：日志点 L、假设 H、关键代码 C、原文 Q */
+  refs: z.array(z.string().max(20)).max(10).catch([]).default([]),
+  /**
+   * 面板写，Agent 不写：交报告时按工作区核对位置（ok 对上了没有、why 对不上的原因）；
+   * code 是出错点前后几行的快照（start 是第一行的行号），之后回看都是当时的代码
+   */
+  check: z
+    .object({
+      ok: z.boolean().catch(true),
+      why: str(300),
+      start: z.number().int().optional().catch(undefined),
+      code: str(2000),
+      /** 对上了报错堆栈里的一帧（stackFrom.kind = trace 时） */
+      frame: z.boolean().optional().catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
 })
 export type BugHop = z.infer<typeof BugHop>
 
@@ -112,6 +151,8 @@ export const BugOption = z.object({
     .array(z.enum(['data', 'api', 'config']))
     .catch([])
     .default([]),
+  /** 改在调用栈的哪几跳（S3）：方案页把选定方案画在树上；没写时按 files 对 */
+  hops: z.array(z.string().max(20)).max(10).catch([]).default([]),
 })
 export type BugOption = z.infer<typeof BugOption>
 
@@ -197,6 +238,8 @@ export const BugLogPoint = z.object({
   fn: str(300),
   print: str(1000),
   hypothesis: str(300),
+  /** 挂在调用栈的哪一跳上（S2）；没写时面板按 file:line 对到最近的一跳 */
+  hop: str(20),
 })
 export type BugLogPoint = z.infer<typeof BugLogPoint>
 
@@ -273,6 +316,11 @@ export const BugCaseFields = {
   level: BugLevel.catch('standard').default('standard'),
   levelNote: str(1000),
   stack: z.array(BugHop).catch([]).default([]),
+  /** 调用栈从哪来：read 读代码推出、trace 来自报错堆栈原文（trace 写原文编号 Q2）、debugger 调试器里看到的 */
+  stackFrom: z
+    .object({ kind: z.enum(['read', 'trace', 'debugger']).catch('read'), trace: str(20) })
+    .optional()
+    .catch(undefined),
   timeline: z.array(BugTimelineItem).catch([]).default([]),
   attribution: BugAttribution.optional().catch(undefined),
   rating: BugRating.optional().catch(undefined),
@@ -298,6 +346,8 @@ export const BugCaseFields = {
         basis: str(2000),
         /** 依据引用的原文编号：构造数据复现时，已排除的假设要有日志或命令输出原文 */
         refs: z.array(z.string().max(20)).max(10).catch([]).default([]),
+        /** 检验的是调用栈的哪一跳（S2）：树上那一跳挂这个假设 */
+        hop: str(20),
       }),
     )
     .catch([])

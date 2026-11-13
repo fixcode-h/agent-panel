@@ -410,7 +410,7 @@ export function demoDiagnosis(memory: boolean): Diagnosis {
         stack: [
           { file: 'src/pages/ProductList.tsx', line: 18, fn: 'ProductList', note: '逐个渲染商品卡片' },
           { file: 'src/components/ProductCard.tsx', line: 7, fn: 'ProductCard', note: 'price 为 null 时调用 toFixed' },
-        ],
+        ].map((h) => BugHop.parse(h)),
         timeline: [
           {
             at: '10-28 15:20',
