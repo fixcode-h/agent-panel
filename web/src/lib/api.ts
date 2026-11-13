@@ -870,6 +870,9 @@ export const api = {
     // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）
     body: DiagnosisDecision,
   ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
+  /** 「让它按对话更新报告」：报告之后你在对话里说过话，返回交给子对话的话（页面再作为消息发给它） */
+  syncDiagnosis: (id: string) =>
+    request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-sync`, json('POST', {})),
   /** 点「取消修复」前：面板只读地查出代码里的临时日志、这个对话新建的文件（确认框里列出来） */
   cleanupPreview: (id: string) =>
     request<{ found: { file: string; line: number; text: string }[]; created: string[]; isolated: boolean }>(

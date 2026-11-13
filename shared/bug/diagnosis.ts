@@ -49,6 +49,7 @@ import { t } from '../i18n.ts'
 import { settlePlan } from '../plan.ts'
 import { autoApprove, autoBlock, autoOn } from './auto.ts'
 import { ranInConversation, recheckCommands, recheckVerdict } from './recheck.ts'
+import { applyChat, chatOf, chatReplaces } from './chat.ts'
 
 type DiagTask = Pick<Task, 'bug' | 'messages' | 'changes'>
 
@@ -271,9 +272,11 @@ export function diagnosisProblem(
   list: Diagnosis[],
   answers: { id: number; answer: string }[] = [],
   input: DiagnosisInput = {},
+  /** 按用户在对话里说的更新（shared/bug/chat.ts）：可以顶掉还在等确认的上一份 */
+  fromChat = false,
 ): string {
   const prev = list.at(-1)
-  if (prev?.status === 'pending')
+  if (prev?.status === 'pending' && !fromChat)
     return prev.awaiting
       ? `第 ${revOf(prev)} 版的日志已经加好、在等用户复现贴日志，不要再交：结束这一轮，等用户的日志。`
       : `第 ${revOf(prev)} 版还在等用户确认，不要重复交：结束这一轮，等确认结果交回给你。`
@@ -449,7 +452,10 @@ function submitOnce(
   if (prev?.status === 'cancelled') return { ok: false, info: closedOrCleaning(prev, revOf(prev)) }
   const c = mergeCase(task, input)
   const answers = answersOf(input)
-  const bad = diagnosisProblem(c, list, answers, input)
+  // 按对话更新（用户 2026-11-13 定）：核对上一份之后用户在对话里说过话，原话由面板取
+  const chat = chatOf(task, input, list)
+  if (chat && 'error' in chat) return { ok: false, info: chat.error }
+  const bad = diagnosisProblem(c, list, answers, input, chatReplaces(prev, chat))
   if (bad) return { ok: false, info: bad }
   const phase = inputPhase(input, c, list)
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
@@ -520,6 +526,9 @@ function submitOnce(
   diags.push(d)
   // 草稿留着：下一版从它改起，用户只问了几条时别的小节不用重写
   bugOf(task).case = { ...c, updatedAt: now }
+  // 带了对话原话：对话里记一行；用户在对话里确认过的直接记为确认，交给它的话和用户点同意时同一段，不用等用户
+  const said = chat ? applyChat(d, chat, diags, now) : undefined
+  if (said) task.messages.push(diagnosisMessage(newId(), version, said.line, now))
   // 按阶段写明这一版只请用户确认什么（实测：根因那一版里写好了方案，回复说「等你确认方案 A」，
   // 弹窗按钮却是「同意根因」，用户以为点了就开始修）
   const wait =
@@ -536,6 +545,13 @@ function submitOnce(
               : '等用户确认修复方案，确认了才改代码'
   const label = labelOf(d, diags)
   const notes = [...sources.notes, ...recheckNotes(d, task.messages)]
+  const remind = notes.length ? `\n\n面板提醒：\n${notes.map((x) => `- ${x}`).join('\n')}` : ''
+  if (said?.feedback)
+    return {
+      ok: true,
+      version,
+      info: `已交第 ${label.ver} 版的${PHASE_TEXT[phase]}（报告 #${version}）。${said.feedback}${remind}`,
+    }
   // 用户设了「后面几步没有要注意的就自动通过」（分析稿 B2）：这一版没有要注意的就当场通过，交给它的话和用户点同意时一样
   const auto = autoOn(diags)
     ? autoBlock(
@@ -550,7 +566,7 @@ function submitOnce(
     return {
       ok: true,
       version,
-      info: `已交第 ${rev} 版的${PHASE_TEXT[phase]}（报告 #${version}）。${a.feedback}${notes.length ? `\n\n面板提醒：\n${notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
+      info: `已交第 ${rev} 版的${PHASE_TEXT[phase]}（报告 #${version}）。${a.feedback}${remind}`,
     }
   }
   // 自动通过开着、这一版因为要注意的停下：对话里写一行为什么停（复核还没跑完的等复核完再判，见 server/tasks/bug-recheck.ts）
@@ -565,7 +581,7 @@ function submitOnce(
   return {
     ok: true,
     version,
-    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。${notes.length ? `\n\n面板提醒：\n${notes.map((x) => `- ${x}`).join('\n')}` : ''}`,
+    info: `${which}（报告 #${version}），${wait}。现在结束这一轮回复，用户回复之前不要改任何文件；用户的决定会作为新消息交给你。${remind}`,
   }
 }
 
@@ -598,7 +614,8 @@ export function requestLogs(
   }
 }
 
-const diagnosisMessage = (id: string, version: number, text: string, at: string): TaskMessage => ({
+/** 对话里关于诊断报告的一行（bugReport 是交报告的顺序号）：交报告、决定、按对话更新的路由都用这一个 */
+export const diagnosisMessage = (id: string, version: number, text: string, at: string): TaskMessage => ({
   id,
   role: 'system',
   agentId: '',
@@ -632,6 +649,8 @@ export type DiagnosisDecision = {
   overall: string
   /** 同意时勾了「后面几步没有要注意的就自动通过」（分析稿 B2，bug-auto.ts） */
   autoNext?: boolean
+  /** 「不是这个意思」：撤回在对话里的确认（shared/bug/chat.ts 的 retractChat，路由先处理它） */
+  retract?: boolean
 }
 
 /** 交给 AI 的日志文字最多留这么多：再长的请用户附文件 */

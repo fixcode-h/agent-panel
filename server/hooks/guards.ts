@@ -12,6 +12,7 @@ import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis } from '../../shared/bug/diagnosis.ts'
 import { outOfPlan, cleaning, editScope, revOf } from '../../shared/bug/phase.ts'
 import { inPlaceBugClosed } from '../../shared/bug/in-place.ts'
+import { chatDeny } from '../../shared/bug/chat.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
@@ -23,7 +24,8 @@ import { scratchPath } from '../exec/file-events.ts'
  * 拦住时返回交给模型的原因（发给 Agent 的提示词，不翻译），放行返回空串。纯函数，单测直接调用
  */
 export interface GuardCtx {
-  task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'remotePush' | 'worktree' | 'testSteps'>
+  task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'remotePush' | 'worktree' | 'testSteps'> &
+    Partial<Pick<Task, 'messages'>>
   project: (Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> & Partial<Pick<Project, 'pluginStepsOff'>>) | null
   cwd: string
   /** 子任务、工作流节点这类辅助调用（不是对话本身） */
@@ -89,7 +91,8 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   if (!files.length && !unknown) return ''
   // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
   const scope = editScope(c.task.bug?.diagnoses ?? [])
-  if ('deny' in scope) return `【面板】${scope.deny}`
+  // 报告在等确认、用户却在那之后直接在对话里说了话：告诉它把对话里定下的交回报告（shared/bug/chat.ts），不让它只能绕过拦截
+  if ('deny' in scope) return `【面板】${chatDeny(c.task, scope.deny)}`
   if (unknown) return ''
   const extra = outOfPlan(files, scope.files)
   if (extra.length) {

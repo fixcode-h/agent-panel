@@ -4,7 +4,7 @@ import { PaneNavCtx } from './child-open'
 import { DiagnosisDialog } from './DiagnosisDialog'
 
 /** 审阅弹窗要的任务字段：标题和各版报告 */
-export type DiagnosisTarget = Pick<Task, 'id' | 'title' | 'bug'>
+export type DiagnosisTarget = Pick<Task, 'id' | 'title' | 'bug'> & Partial<Pick<Task, 'messages' | 'changes'>>
 
 /** 任务页右栏里放停靠的诊断报告：右栏给一个页签和一块空的容器，报告用 Portal 画进去 */
 export interface DiagnosisRail {

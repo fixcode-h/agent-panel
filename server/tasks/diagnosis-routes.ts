@@ -6,7 +6,8 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { t } from '../../shared/i18n.ts'
-import { decideDiagnosis, settleCleanup } from '../../shared/bug/diagnosis.ts'
+import { decideDiagnosis, diagnosisMessage, settleCleanup } from '../../shared/bug/diagnosis.ts'
+import { retractChat, syncChat } from '../../shared/bug/chat.ts'
 import { DiagnosisNote } from '../../shared/bug/diagnosis-schema.ts'
 import { cleanupPrompt } from '../../shared/bug/cleanup.ts'
 import { phaseOf, revOf } from '../../shared/bug/phase.ts'
@@ -34,6 +35,8 @@ const Decision = z.object({
   overall: z.string().max(4000).default(''),
   /** 同意时勾了「后面几步没有要注意的就自动通过」（分析稿 B2） */
   autoNext: z.boolean().default(false),
+  /** 「不是这个意思」：撤回在对话里的确认，这一版回到等你确认（shared/bug/chat.ts） */
+  retract: z.boolean().default(false),
 })
 
 /** 临时日志没删干净时用户的选择：retry 让它再删一次；finish 我自己删 / 保留，直接关闭报告 */
@@ -61,6 +64,16 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     // 取消要收口计划：它在回复（等确认期间用户又发了话）时会和这一轮抢着写，等它停下再取消
     if (body.data.cancel && task.working) return s.bad(c, t('它正在回复，等这一轮结束再取消'), 409)
     const version = Number(c.req.param('version'))
+    if (body.data.retract) {
+      const now = new Date().toISOString()
+      const r = retractChat(task, version, (v, text) =>
+        task.messages.push(diagnosisMessage(randomUUID(), v, text, now)),
+      )
+      if (!r.ok) return s.bad(c, r.error, 409)
+      if (entry) entry.rev++
+      const saved = await s.store.update(task.id, task)
+      return c.json({ task: saved ?? task, message: r.message })
+    }
     const dir = await s.taskDir(task).catch(() => '')
     // 取消：服务端自己查临时日志（不信页面传的），有就先叫它删；用户勾的新文件只认查出来的那几个
     let cleanup
@@ -76,6 +89,18 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     const d = task.bug?.diagnoses?.find((x) => x.version === version)
     if (d && body.data.approve && phaseOf(d) === 'evidence') await snapshotLogBase(task, dir, d).catch(() => {})
     if (body.data.cancel) task.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    const saved = await s.store.update(task.id, task)
+    return c.json({ task: saved ?? task, message: r.message })
+  })
+
+  /** 「让它按对话更新报告」：报告之后你在对话里说过话，请它把对话里定下的整理进报告（shared/bug/chat.ts） */
+  s.routes.post('/:id/diagnosis-sync', async (c) => {
+    const { entry, task } = await taskOf(c.req.param('id'))
+    if (!task) return s.bad(c, t('任务不存在'), 404)
+    const now = new Date().toISOString()
+    const r = syncChat(task, (v, text) => task.messages.push(diagnosisMessage(randomUUID(), v, text, now)))
+    if (!r.ok) return s.bad(c, r.error, 409)
     if (entry) entry.rev++
     const saved = await s.store.update(task.id, task)
     return c.json({ task: saved ?? task, message: r.message })

@@ -43,7 +43,8 @@ function statusChip(d: Diagnosis): { text: string; cls: string } {
   if (d.status === 'approved')
     return {
       // 面板按「没有要注意的就自动通过」替你同意的（分析稿 B2）
-      text: verify ? t('已结束验证') : d.auto ? t('自动通过') : t('已同意'),
+      // 你在对话里让它照这个做、它按对话更新了报告（shared/bug/chat.ts）
+      text: verify ? t('已结束验证') : d.auto ? t('自动通过') : d.approvedBy ? t('对话里确认') : t('已同意'),
       cls: childLabelClass.success,
     }
   if (d.status === 'questioned') return { text: t('提了意见'), cls: childLabelClass.plain }

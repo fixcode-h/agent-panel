@@ -58,6 +58,7 @@ import { runWithSummary } from './helper-summary.ts'
 import * as rs from './run/stops.ts'
 import { fixRoutePart } from './fix-route.ts'
 import { bugRoutePart } from './bug/route.ts'
+import { bugChatPart } from './bug/chat.ts'
 import { cherryPickPart } from './cherry-pick.ts'
 import { orchAskPush } from './push-auth.ts'
 import { docRootText, plainDocRootText } from './doc-root.ts'
@@ -1968,6 +1969,8 @@ async function conversationPrompt(
     ...verifyPart(host),
     fixRoutePart(host, coordinator),
     bugRoutePart(host, coordinator),
+    // 报告之后用户直接在对话里说了话：提醒它把对话里定下的交回报告（shared/bug/chat.ts）
+    bugChatPart(host),
     editPart(host),
     backgroundPart(host),
     ...planPart(host, coordinator),

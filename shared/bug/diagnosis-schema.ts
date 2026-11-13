@@ -557,6 +557,22 @@ export const Diagnosis = z.object({
    * reject 是不认同、推翻重查（根因、验证页）。只看用户点的按钮，不看文字；没退回过的没有
    */
   intent: z.enum(['ask', 'reject']).optional().catch(undefined),
+  /**
+   * 按对话更新的一版（用户 2026-11-13 定）：用户没点报告、直接在子对话里聊着定了方案，它交报告时带 fromChat，
+   * 面板把上一份报告之后用户在对话里说的话原样取来存在这里（不让它转述），报告上列成「依据你在对话里说的」
+   */
+  chat: z
+    .array(z.object({ id: z.string(), at: z.string(), text: z.string() }))
+    .optional()
+    .catch(undefined),
+  /**
+   * 这一版怎么确认的：没有是用户在弹窗里点的（或面板自动通过，见 auto）；chat 是用户在对话里明确让它照这个做，
+   * 它交报告时带 fromChat.confirm，面板核对过引用的是用户的消息后记为确认（id、at 是那条消息）。用户可以在报告上撤回
+   */
+  approvedBy: z
+    .object({ kind: z.literal('chat'), id: z.string(), at: z.string() })
+    .optional()
+    .catch(undefined),
   overall: z.string().default(''),
   decidedAt: z.string().optional(),
   /** 交报告时工作区已经改了的文件：确认之前就动了手的，审阅时摆出来 */

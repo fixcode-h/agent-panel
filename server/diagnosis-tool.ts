@@ -503,7 +503,7 @@ const DIAGNOSIS_TOOL = {
   name: 'submit_diagnosis',
   title: '交诊断报告',
   description:
-    '用户报的 Bug：每到一个关口交一份报告，用户在弹窗里同意、标疑问或贴日志，结果作为新消息交给你。按阶段走：evidence 论证（根因还没证实：写 logPlan 要加的日志、collect 怎么复现和每种结果说明什么，用户同意后加日志、复现，拿到日志再分析，可以多轮）→ cause 根因（证据链齐了、confirmed: true，用户同意才往下）→ plan 修复方案（候选修法比较、files，用户确认才改代码）→ fix 修复（修完交，changes 每个改了的文件写 what 改了什么、why 为什么这么改，面板取实际 diff 给用户看；用户对代码标了疑问就逐条判断：对的改代码、stance: adopted，不对的用事实反驳、stance: disagree，再交 fix；用户确认修复才验证）→ verify 验证（用 update_bug_case 记下 result 后交，collect 写用户怎么验证、看到什么算修好了）。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按阶段和级别检查缺什么，缺了会退回说清。交完结束这一轮，用户回复之前不要改任何文件。用户提了意见后改好再交，answers 按编号逐条回答。版本号由面板定：按意见修改、阶段往下走还是同一版，回到更早的阶段或换掉确认过的方案才升一版；跟用户说第几版照返回里的写。',
+    '用户报的 Bug：每到一个关口交一份报告，用户在弹窗里同意、标疑问或贴日志，结果作为新消息交给你。按阶段走：evidence 论证（根因还没证实：写 logPlan 要加的日志、collect 怎么复现和每种结果说明什么，用户同意后加日志、复现，拿到日志再分析，可以多轮）→ cause 根因（证据链齐了、confirmed: true，用户同意才往下）→ plan 修复方案（候选修法比较、files，用户确认才改代码）→ fix 修复（修完交，changes 每个改了的文件写 what 改了什么、why 为什么这么改，面板取实际 diff 给用户看；用户对代码标了疑问就逐条判断：对的改代码、stance: adopted，不对的用事实反驳、stance: disagree，再交 fix；用户确认修复才验证）→ verify 验证（用 update_bug_case 记下 result 后交，collect 写用户怎么验证、看到什么算修好了）。update_bug_case 记过的档案草稿会自动带上，这里只写还没记的；按阶段和级别检查缺什么，缺了会退回说清。交完结束这一轮，用户回复之前不要改任何文件。用户提了意见后改好再交，answers 按编号逐条回答。用户没点报告、在对话里直接和你聊着定了新的做法，就带 fromChat 交新的一版，让报告跟上对话（用户在对话里确认过的写 confirm: true，面板记为确认后接着往下走），不要让报告停在旧的一版。版本号由面板定：按意见修改、阶段往下走还是同一版，回到更早的阶段或换掉确认过的方案才升一版；跟用户说第几版照返回里的写。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -516,6 +516,17 @@ const DIAGNOSIS_TOOL = {
       ...TEXT_PROPS,
       ...CASE_PROPS,
       whatChanged: text('第 2 份起：相比上一份改了什么，一两句（写在报告最上面）'),
+      fromChat: {
+        type: 'object',
+        description:
+          '用户没在报告上点、而是在对话里直接和你聊着定了（换了修法、让你照新的改、说已经修好了）时带上：面板把上一份报告之后用户在对话里说的话原样附进这一版，你不用抄；上一份还在等确认也能交，会顶掉它。用户在对话里明确让你照这个做或确认了，写 confirm: true，面板记为用户确认，交完不用结束这一轮、接着往下做（论证这一版不能带 confirm，加日志要用户在报告上同意）',
+        properties: {
+          confirm: {
+            type: 'boolean',
+            description: '用户在对话里明确让你照这个做、或确认过（例如「改吧」「就按这个来」「已经修好了」）',
+          },
+        },
+      },
       answers: {
         type: 'array',
         description: '用户提了意见后再交时：按编号逐条回应用户上一轮的标注（疑问、改方案、补充信息都要）',
