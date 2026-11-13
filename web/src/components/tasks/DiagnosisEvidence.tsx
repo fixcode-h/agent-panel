@@ -268,31 +268,10 @@ export function LogWatch({
             : t('已记下日志文件现在到哪了。按报告里的步骤复现，完了回来点「复现完了，取日志」。')}
         </p>
       )}
-      {got && !error && (
+      {got && !error && (!got.bytes || got.rotated) && (
         <div className="mt-2 flex flex-col gap-1.5 leading-relaxed">
-          {got.bytes ? (
-            <p className="text-subtle">
-              {t(
-                '已把日志文件放进下面的输入框，写明从第 {from} 行往后看（新增 {n} 行，其中 {k} 行带 {prefix}…]）。看过再交。',
-                {
-                  from: got.startLine,
-                  n: Math.max(got.endLine - got.startLine + 1, 0),
-                  k: got.related,
-                  prefix: TEMP_LOG,
-                },
-              )}
-            </p>
-          ) : (
-            <p className="text-warning">{t('从开始复现到现在，这个文件没有新增内容。')}</p>
-          )}
-          {got.bytes > 0 && !got.related && (
-            <p className="text-warning">{t('新增内容里没有带 {prefix}…] 的行。', { prefix: TEMP_LOG })}</p>
-          )}
-          {got.truncated && (
-            <p className="text-warning">
-              {t('新增内容超过 2 MB，带 {prefix}…] 的行只数了前 2 MB。', { prefix: TEMP_LOG })}
-            </p>
-          )}
+          {/* 日志已经放进输入框，那里写明了从第几行看、带排查前缀的有几行，这里不再重复（用户 2026-11-13） */}
+          {!got.bytes && <p className="text-warning">{t('从开始复现到现在，这个文件没有新增内容。')}</p>}
           {got.rotated && (
             <p className="text-warning">{t('日志文件比开始复现时还小（被清空或换了新文件），从第 1 行看。')}</p>
           )}
