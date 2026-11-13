@@ -17,11 +17,9 @@ export const EN_PLUGINS: Record<string, string> = {
   '本机没有要清掉的角色和工作流副本。': 'No role or workflow copies to clean up.',
   '下面这些会保留：': 'These will be kept:',
   含代码: 'Runs code',
-  已开启: 'On',
   '上游 {name} {version}（{license}）': 'Upstream {name} {version} ({license})',
   '关掉插件 {name}': 'Turn off plugin {name}',
   '打开插件 {name}': 'Turn on plugin {name}',
-  '删除插件 {name}': 'Remove plugin {name}',
   '关掉后保留了这些副本：': 'Kept these copies after turning it off:',
   '关掉插件「{name}」？': 'Turn off plugin “{name}”?',
   关掉: 'Turn off',
@@ -32,20 +30,12 @@ export const EN_PLUGINS: Record<string, string> = {
     'The plugin folder, its own data and its settings are deleted. You can reinstall it later from the marketplace or a zip. Nothing else in the panel is affected.',
   '插件给面板加上一组能力（工具、技能、角色、工作流、页面），装在数据目录里，可以随时关掉或删除，删掉后面板其他功能不受影响。':
     'Plugins add a set of capabilities (tools, skills, roles, workflows, pages). They live in the data folder and can be turned off or removed at any time without affecting the rest of the panel.',
-  '还没有安装插件。从下面的插件市场挑一个，或者上传插件压缩包。':
-    'No plugins installed yet. Pick one from the marketplace below or upload a plugin zip.',
   插件仓库: 'Plugin repository',
   'GitHub 仓库（owner/repo）。仓库根上的 plugins.json 列出里面的插件；没有的话整个仓库当作一个插件。':
     'A GitHub repository (owner/repo). plugins.json at its root lists the plugins in it; without one, the whole repository is treated as a single plugin.',
   '这个仓库没有插件目录，可以直接把整个仓库当作插件安装。':
     'This repository has no plugin list; you can install the whole repository as one plugin.',
   '这个仓库的插件目录是空的。': 'This repository’s plugin list is empty.',
-  其他安装方式: 'Other ways to install',
-  安装方式: 'Install from',
-  上传压缩包: 'Upload zip',
-  '本机目录（开发）': 'Local folder (development)',
-  '选择 .zip': 'Choose .zip',
-  '包的根目录（或唯一的子目录）里要有 plugin.json': 'The zip root (or its only subfolder) must contain plugin.json',
   插件目录: 'Plugin folder',
   '链接本机的插件构建目录，不复制：重新构建后关掉再打开插件就生效。':
     'Links a local plugin build folder without copying it: after rebuilding, turn the plugin off and on again.',
@@ -67,14 +57,8 @@ export const EN_PLUGINS: Record<string, string> = {
   改过: 'Edited',
   在用: 'In use',
   // 检查更新、升级
-  '{n} 个插件有新版本': '{n} plugin(s) have a new version',
-  都是最新版本: 'All up to date',
   '上次检查 {time}': 'Last checked {time}',
-  '检查 {repo} 失败：{error}': 'Couldn’t check {repo}: {error}',
-  '现在是 v{v}': 'currently v{v}',
   '升级到 v{v}': 'Upgrade to v{v}',
-  可升级: 'Update available',
-  '（装着 v{v}）': ' (installed v{v})',
   插件参数: 'Plugin settings',
   已开启的插件: 'Enabled plugins',
   加载出错: 'Failed to load',
@@ -85,7 +69,6 @@ export const EN_PLUGINS: Record<string, string> = {
   参数设置: 'Settings',
   '这个插件没有可配置的参数。': 'This plugin has no settings.',
   运行状态: 'Status',
-  '配置插件 {name} 的参数': 'Configure {name}',
   能看这个文件的插件已经关掉了: 'The plugin that can view this file has been turned off',
   // 插件接口 3：插件带的钩子、测试步骤、「/」命令
   插件带的钩子: 'Hooks from plugins',
@@ -120,4 +103,22 @@ export const EN_PLUGINS: Record<string, string> = {
   这一页来自的插件已经关掉或删除了: 'The plugin that added this page has been turned off or removed',
   // 设置 →「组件」里插件的示例组（web/src/components/settings/PluginSpecimens.tsx）
   '{name}（插件）': '{name} (plugin)',
+  // 插件页重设计：顶上一行的市场仓库、刷新和其他方式安装，已安装 / 可安装两段（web/src/plugins/）
+  '读取失败，显示的是 {time}的结果': "Couldn't refresh; showing results from {time}",
+  换插件市场仓库: 'Change plugin market repository',
+  插件市场仓库: 'Plugin market repository',
+  其他方式安装: 'Other ways to install',
+  '上传压缩包（.zip）': 'Upload a package (.zip)',
+  '链接本机目录（开发）': 'Link a local folder (development)',
+  链接本机目录: 'Link a local folder',
+  主页: 'Homepage',
+  '插件 {name} 的更多操作': 'More actions for plugin {name}',
+  重新链接: 'Link again',
+  打开主页: 'Open homepage',
+  删除插件: 'Remove plugin',
+  '还没有安装插件。从下面挑一个，或者用「其他方式安装」上传插件压缩包。':
+    'No plugins installed yet. Pick one below, or upload a plugin package with "Other ways to install".',
+  可安装: 'Available',
+  '这个市场里的插件都装好了。': 'Every plugin in this market is already installed.',
+  '{n} 个有新版本': '{n} with a new version',
 }

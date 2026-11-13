@@ -19,6 +19,17 @@ export interface MarketEntry {
   homepage?: string
 }
 
+/** 插件市场的结果（server/plugins/market-cache.ts） */
+export interface MarketResult {
+  repo: string
+  defaultRepo: string
+  /** null：这个仓库没有插件目录，整个仓库当作一个插件 */
+  plugins: MarketEntry[] | null
+  fetchedAt: string
+  /** 这次重读失败的原因（给的是旧缓存） */
+  error?: string
+}
+
 /** 安装预览：服务端下载、校验好了，等用户确认 */
 export interface InstallPreview {
   token: string
@@ -45,12 +56,15 @@ export interface RemovalPreview {
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) })
 
 export const pluginApi = {
-  market: (repo: string) =>
-    request<{ repo: string; plugins: MarketEntry[] | null }>(`/plugins/market?repo=${encodeURIComponent(repo)}`),
+  /** 插件市场：先给服务端的缓存，refresh 才去 GitHub 重读；不传 repo 用最后用的市场仓库 */
+  market: (opts: { repo?: string; refresh?: boolean } = {}) =>
+    request<MarketResult>(
+      `/plugins/market?${new URLSearchParams({ ...(opts.repo && { repo: opts.repo }), ...(opts.refresh && { refresh: '1' }) })}`,
+    ),
   /** 从 GitHub 装的插件和上游比版本 */
-  updates: () =>
+  updates: (refresh = false) =>
     request<{ updates: PluginUpdate[]; errors: { repo: string; error: string }[]; checkedAt: string }>(
-      '/plugins/updates',
+      `/plugins/updates${refresh ? '?refresh=1' : ''}`,
     ),
   fromGithub: (input: { repo: string; id?: string; ref?: string; path?: string }) =>
     request<InstallPreview>('/plugins/install/github', json('POST', input)),

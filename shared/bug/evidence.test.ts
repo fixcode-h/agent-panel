@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { envEmpty, envMd, envOf, parseCommits, parseDirty } from './env.ts'
-import { logPathIn, logPathsIn, newRange, relatedLines, tidyLog, looksUtf16 } from './log-watch.ts'
+import {
+  fileLead,
+  lineSpan,
+  logPathIn,
+  logPathsIn,
+  newlineOffsets,
+  newRange,
+  pastedLog,
+  relatedLines,
+  tidyLog,
+  looksUtf16,
+} from './log-watch.ts'
 import { patchFilesOf, patchKindOf, restoreConflicts, applyErrorLines } from './patch.ts'
 import { BugEnv, Diagnosis } from './diagnosis-schema.ts'
 import { diagnosisView } from './diagnosis-md.ts'
@@ -65,6 +76,19 @@ test('取日志：从「日志在哪」里认出文件路径，控制台、网�
   assert.equal(logPathIn(undefined), '')
 })
 
+test('取日志：引用日志文件、写明从第几行看的那句话不算日志正文', () => {
+  const ref = '@/home/me/shop/logs/app.log 从第 412 行往后看：这是复现期间新增的日志（第 412–431 行）。'
+  assert.deepEqual(fileLead(ref)?.path, '/home/me/shop/logs/app.log')
+  assert.equal(pastedLog(ref), '')
+  assert.equal(
+    fileLead('@"C:\\My Game\\Saved\\Logs\\Town.log" 从第 3 行往后看')?.path,
+    'C:\\My Game\\Saved\\Logs\\Town.log',
+  )
+  // 真贴了日志的照旧是正文
+  assert.equal(pastedLog('[排查-支付] L1 total=1\nmore'), '[排查-支付] L1 total=1\nmore')
+  assert.equal(pastedLog('/var/log/app.log\n[排查-支付] L1\nmore'), '/var/log/app.log\n[排查-支付] L1\nmore')
+})
+
 test('取日志：从记下的大小读到末尾，文件变小算轮转、超过上限截尾；相关行按 [排查- 筛', () => {
   assert.deepEqual(newRange(100, 250), { from: 100, length: 150, total: 150, truncated: false, rotated: false })
   assert.deepEqual(newRange(500, 80), { from: 0, length: 80, total: 80, truncated: false, rotated: true })
@@ -76,6 +100,12 @@ test('取日志：从记下的大小读到末尾，文件变小算轮转、超�
   // 截尾时丢掉最后半行；BOM 和 \r\n 收拾掉
   assert.equal(tidyLog('\ufeffa\r\nb\r\nhal', true), 'a\nb')
   assert.equal(tidyLog('a\r\nb'), 'a\nb')
+  // 数行：起点在行尾从下一行算，起点在一行中间从这一行算；UTF-16 的「上」(4E0A) 低字节不算换行
+  assert.deepEqual(newlineOffsets(Buffer.from('a\nbc\n'), false), [1, 4])
+  assert.deepEqual(newlineOffsets(Buffer.from('上\n', 'utf16le'), true), [2])
+  assert.deepEqual(lineSpan({ before: 2, total: 5, endsWithNewline: true, size: 30 }), { startLine: 3, endLine: 5 })
+  assert.deepEqual(lineSpan({ before: 2, total: 5, endsWithNewline: false, size: 30 }), { startLine: 3, endLine: 6 })
+  assert.deepEqual(lineSpan({ before: 0, total: 0, endsWithNewline: false, size: 0 }), { startLine: 1, endLine: 0 })
   assert.ok(looksUtf16(Buffer.from('hello log', 'utf16le')))
   assert.ok(!looksUtf16(Buffer.from('hello log', 'utf8')))
 })

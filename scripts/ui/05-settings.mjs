@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：设置：常规、全局教训、字体、Markdown 样式、风格库、数据和内存曲线、用量统计；英文界面
+ * 界面检查分片：设置：常规、插件页、全局教训、字体、Markdown 样式、风格库、数据和内存曲线、用量统计；英文界面
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -44,6 +44,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '设置-版本更新', ['自动检查更新', '还没有检查过更新，点「检查更新」查看最新版本。'])
   if ((await p.getByRole('switch', { name: '自动检查更新' }).getAttribute('aria-checked')) !== 'false')
     errors.push('设置-版本更新：「自动检查更新」默认应该是关')
+  // 插件页：只有一份卡片列表，分「已安装 / 可安装」；市场结果来自缓存（写着多久前更新），其他安装方式收进下拉
+  await p.getByRole('button', { name: '插件', exact: true }).click()
+  await check(p, '设置-插件', ['已安装', '可安装', '3 分钟前更新', '其他方式安装', '视频截帧'])
+  if ((await p.locator('[data-market-plugin]').count()) !== 4)
+    errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件')
+  await p.getByRole('button', { name: '其他方式安装' }).click()
+  await check(p, '设置-插件-其他方式安装', ['上传压缩包（.zip）', '链接本机目录（开发）'])
+  await p.keyboard.press('Escape')
   await p.getByRole('button', { name: '常规', exact: true }).click()
   // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
   await p.setViewportSize({ width: 1440, height: 560 })

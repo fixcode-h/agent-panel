@@ -243,6 +243,25 @@ test('论证：要日志计划和每种结果说明什么；同意后只放行�
     ),
   )
   assert.equal(tk.bug!.diagnoses![0].status, 'answered', '用户做过的事留着，不改成作废')
+  // 面板取日志：引用日志文件、写明从第几行看，不当成贴的日志包进代码块，命中表也不数这句话
+  const ref = bugTask()
+  ok(submitDiagnosis(ref, evidenceInput(), id))
+  ok(decideDiagnosis(ref, 1, { ...yes, approve: true }, id))
+  ok(requestLogs(ref, { added: ['L1 web/src/lib/login.ts:44'] }))
+  const line = '@/home/me/app.log 从第 412 行往后看：这是复现期间新增的日志（第 412–431 行）。'
+  const viaRef = decideDiagnosis(
+    ref,
+    1,
+    { approve: false, supply: true, logs: line, logFiles: ['/home/me/app.log'], notes: [], overall: '' },
+    id,
+  )
+  assert.ok(viaRef.ok)
+  assert.ok(!viaRef.message.includes('用户贴的日志'), '不是贴的日志')
+  assert.match(viaRef.message, /从第 412 行往后看/)
+  assert.match(viaRef.message, /用工具读/)
+  const md = diagnosisMarkdown(ref.bug!.diagnoses![0])
+  assert.ok(!md.includes('日志计划命中'), '没有日志正文就不出命中表')
+  assert.match(md, /`\/home\/me\/app\.log`/)
   ok(decideDiagnosis(tk, 2, { approve: false, supply: true, logs: 'max=30', notes: [], overall: '' }, id))
   ok(submitDiagnosis(tk, input({ phase: 'cause' }), id))
   assert.equal(tk.bug!.diagnoses![2].logPlan.length, 0, '根因那一版不带上一轮的日志计划')

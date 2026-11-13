@@ -6,6 +6,7 @@
 import type { BugCollect, BugQuote, CodeRef, Diagnosis } from './diagnosis-schema.ts'
 import { TEMP_LOG } from './cleanup.ts'
 import { logHits, outcomeMatches, type LogHit } from './quotes.ts'
+import { pastedLog } from './log-watch.ts'
 import { codeTerms } from './terms.ts'
 import { t } from '../i18n.ts'
 
@@ -84,8 +85,10 @@ const cell = (v: string) =>
 
 /** 日志命中表：日志计划的每一处在用户贴的日志里出现了几次、第一次在哪一行；没出现的加粗（常常就是关键证据） */
 export function hitsMd(d: Pick<Diagnosis, 'logs' | 'logPlan'>): string {
-  if (!d.logs.trim() || !d.logPlan.length) return ''
-  const hits = logHits(d.logs, d.logPlan)
+  // 引用日志文件、写明从第几行看的不是日志正文：没有可数的（数了全是 0 次，反而误导）
+  const logs = pastedLog(d.logs)
+  if (!logs || !d.logPlan.length) return ''
+  const hits = logHits(logs, d.logPlan)
   if (!hits.length) return ''
   const rows = hits.map((h) => [
     h.point.id,
@@ -113,7 +116,8 @@ export function logBlockMd(logs: string, plan: Diagnosis['logPlan']): string {
 /** 结果怎么判：「看到 → 说明」的表；用户贴了日志、写了可核对条件时多一列「这次」（面板对上的打 ✓） */
 export function outcomesMd(c: BugCollect | undefined, d?: Pick<Diagnosis, 'logs' | 'logPlan'>): string {
   if (!c?.outcomes.length) return ''
-  const judged = d?.logs.trim() && d.logPlan.length ? outcomeMatches(c, logHits(d.logs, d.logPlan)) : []
+  const logs = d ? pastedLog(d.logs) : ''
+  const judged = logs && d?.logPlan.length ? outcomeMatches(c, logHits(logs, d.logPlan)) : []
   const show = judged.some((x) => x !== undefined)
   const head = show ? [t('看到'), t('说明'), t('这次')] : [t('看到'), t('说明')]
   const rows = c.outcomes.map((o, i) => {

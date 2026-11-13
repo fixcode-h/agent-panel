@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
-import { copyText } from '@shared/composer'
+import { chipMarker, copyText } from '@shared/composer'
+import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { useAttachments } from '@/components/chat/Attachments'
 import { ChatComposer } from '@/components/chat/ChatComposer'
@@ -13,6 +14,7 @@ import type { RichInputHandle } from '@/components/chat/RichInput'
 export function useLogFiles() {
   const att = useAttachments()
   const list = att.attachments
+  const addRefs = att.addRefs
   return {
     files: att,
     /** 交出去的那份：拷好的用副本路径，大文件和拷贝中的用原路径 */
@@ -22,8 +24,19 @@ export function useLogFiles() {
     reset: att.clear,
     /** 输入框里的文字换成交给 AI 的样子：文件、图片卡片换成「@路径」 */
     plain: useCallback((text: string) => copyText(text, list), [list]),
+    /** 引用本机已有的文件（面板取到的日志文件）：附上并返回放进输入框的卡片标记；同一个文件再引用沿用原来那张 */
+    refer: useCallback(
+      (a: Attachment) => {
+        const chip = addRefs([a]).get(a.path)
+        return chip ? chipMarker(chip.kind, chip.name) : `@${a.path}`
+      },
+      [addRefs],
+    ),
   }
 }
+
+/** 整体意见框上面的小工具能做的：fill 把文字整个填进框里，refer 引用一个本机文件、返回它在框里的卡片标记 */
+export type OverallTools = { fill: (text: string) => void; refer: (a: Attachment) => string }
 
 /** 整体意见框：对话输入框去掉发送按钮；Enter 换行（提交走弹窗底部的按钮） */
 export function OverallComposer({
