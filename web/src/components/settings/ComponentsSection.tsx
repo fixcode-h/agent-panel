@@ -72,6 +72,7 @@ import {
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
+import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
 import { scanText } from '@shared/config-scan'
@@ -621,6 +622,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
         <Specimen name="DirList" tune={['input', 'button']}>
           <DirListSpecimen />
+        </Specimen>
+      </Group>
+      <Group title={t('调用栈')}>
+        <Specimen name="calltree" tune={['callTree']}>
+          <CallTreeSpecimen />
         </Specimen>
       </Group>
       <PluginSpecimens Specimen={Specimen} />

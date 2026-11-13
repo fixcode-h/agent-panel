@@ -144,6 +144,21 @@ export const COMP_SPEC = {
     /** 表格页：选区右下角的填充柄（拖它向下 / 向右填充）有多大 */
     handle: px(7, 5, 12),
   },
+  /**
+   * 调用栈树（诊断报告的调用栈、回复里的 calltree 代码块，web/src/components/ui/call-tree.css）：
+   * 连线粗细、缩进、行距、出错点底色、没走到的一跳多淡、出错点下面带不带代码、位置写不写目录、图例
+   */
+  callTree: {
+    lines: pick('normal', { normal: '1.5px', fine: '1px', none: '0px' }),
+    indent: px(20, 12, 32),
+    gap: pick('normal', { tight: '1px', normal: '3px', loose: '6px' }),
+    fault: pick('fill', { fill: 'color-mix(in srgb, var(--md-coral) 10%, transparent)', bar: 'transparent' }),
+    missed: pick('fade', { fade: '0.62', faint: '0.4', keep: '1' }),
+    code: bool(true, 'block', 'none'),
+    dir: bool(false, 'inline', 'none'),
+    legend: bool(true, 'flex', 'none'),
+    edge: hue('violet'),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

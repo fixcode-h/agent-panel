@@ -1130,6 +1130,15 @@ body,
   --c-sheet-bg: var(--bg);
   --c-popover-radius: 10px;
   --c-popover-bg: var(--pop);
+  --c-callTree-lines: 1.5px;
+  --c-callTree-indent: 20px;
+  --c-callTree-gap: 3px;
+  --c-callTree-fault: color-mix(in srgb, var(--md-coral) 10%, transparent);
+  --c-callTree-missed: 0.62;
+  --c-callTree-code: block;
+  --c-callTree-dir: none;
+  --c-callTree-legend: flex;
+  --c-callTree-edge: var(--peer);
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;

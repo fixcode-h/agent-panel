@@ -28,6 +28,19 @@ const input = (over: Partial<DiagnosisInput> = {}): DiagnosisInput => ({
   symptom: '登录超时后一直转圈',
   repro: 'npm test -- login.test.ts：超时用例失败',
   location: 'web/src/lib/login.ts:40 retry → api.ts:12 fetch',
+  // 调用栈树（设计稿 2026-11-13）：根因、方案这一版必须有入口和出错点
+  stack: [
+    { id: 'S1', file: 'web/src/lib/login.ts', line: 40, fn: 'retry', note: '按 max 判断要不要重试' },
+    {
+      id: 'S2',
+      parent: 'S1',
+      role: 'fault',
+      file: 'web/src/lib/login.ts',
+      line: 44,
+      fn: 'retries < max',
+      cond: { text: 'retries < max', took: '一直为真' },
+    },
+  ],
   evidence: '日志「[login] retry 3」← login.ts:44 retries < max 永远为真',
   rootCause: 'max 用的是秒，retries 按次数累加',
   confirmed: true,
@@ -435,7 +448,6 @@ test('报告渲染：根因没证实要标出来，空的小节不写', () => {
 const standard = (over: Partial<DiagnosisInput> = {}) =>
   input({
     level: 'standard',
-    stack: [{ file: 'web/src/lib/login.ts', line: 40, fn: 'retry', note: '按 max 判断要不要重试' }],
     timeline: [
       { at: '2026-10-30', source: 'a1b2c3', kind: 'change', text: '重试上限改成按秒', abnormal: true },
       { at: '10:02:01', source: 'login.ts:44', kind: 'event', text: 'retry 3' },
@@ -515,7 +527,7 @@ test('档案草稿：随查随记、按阶段提示还缺什么，交报告时�
   const r = submitDiagnosis(tk, rest, id)
   assert.ok(r.ok, r.info)
   const d = tk.bug!.diagnoses![0]
-  assert.equal(d.stack.length, 1)
+  assert.equal(d.stack.length, 2)
   assert.equal(d.timeline.length, 2)
   assert.equal(d.level, 'standard')
   assert.equal(bugStage(tk), '等你确认')
@@ -641,6 +653,10 @@ test('交报告时取代码快照、核对原文：对不上拒收、什么都�
     read: (f: string) => (f === 'web/src/lib/login.ts' ? 'a\n// [排查-登录] L1\nif (n > max) retry()\nb' : undefined),
   }
   const ref = (text: string) => ({
+    stack: [
+      { id: 'S1', file: 'web/src/lib/login.ts', line: 3, fn: 'retry' },
+      { id: 'S2', parent: 'S1', role: 'fault', file: 'web/src/lib/login.ts', line: 3, fn: 'if (n > max)' },
+    ],
     codeRefs: [
       { id: 'C1', file: 'web/src/lib/login.ts', start: 1, end: 3, marks: [{ line: 2, text, level: 'fault' }] },
     ],

@@ -103,12 +103,9 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '{label}（最新）': '{label} (latest)',
   正在写: 'Writing',
   内容较长时要写一会儿: 'Long content takes a while to write',
-  函数: 'Function',
-  做了什么: 'What it does',
   怎么解释: 'Explanation',
   结果: 'Result',
   跑了几次: 'Runs',
-  位置和调用路径: 'Location and call path',
   // 决策卡、按步骤排的报告（2026-11-07）
   '正在找 {name}…': 'Looking for {name}…',
   '项目里有 {n} 个同名文件': '{n} files with this name in the project',

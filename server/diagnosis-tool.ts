@@ -18,17 +18,59 @@ const CASE_PROPS = {
   levelNote: text('升降级的理由（降级必须写）'),
   stack: {
     type: 'array',
-    description: '调用栈，从入口到出错点一跳一项',
+    description:
+      '调用栈树（报告里画成树，最多 40 跳）：一跳一项，parent 写上一跳的 id 连成树，数组顺序就是执行顺序。entry 入口一个；从入口到出错点每一跳都写；fault 出错点一个（根因、方案必须有）；出错点之后本该执行却没执行的写 missed，一直写到现象出现的地方 symptom；和问题无关的旁支写 side。跨异步、事件、进程、第三方库的那一跳写 edge 和 edgeNote',
     items: {
       type: 'object',
       properties: {
+        id: text('编号：S1、S2…（证据链、方案、日志计划按它引用）'),
+        parent: text('上一跳的 id；入口不写'),
         file: text('文件（相对项目根）'),
-        line: { type: 'number' },
-        fn: text('函数'),
+        line: { type: 'number', description: '这一跳所在的行（面板交报告时按工作区核对）' },
+        fn: text('函数名；出错点可以写出错的那一句代码'),
         note: text('这一跳做了什么'),
+        role: {
+          type: 'string',
+          enum: ['entry', 'path', 'fault', 'missed', 'symptom', 'side'],
+          description: 'entry 入口、path 路过、fault 出错点、missed 该执行却没执行、symptom 现象出现处、side 无关旁支',
+        },
+        edge: {
+          type: 'string',
+          enum: ['call', 'async', 'event', 'ipc', 'lib'],
+          description:
+            '从上一跳过来跨了什么：call 普通调用、async 异步回调、event 事件派发、ipc 跨进程或网络、lib 第三方库内部',
+        },
+        edgeNote: text('边界说明，例如「事件 cart:change」「stream.end → finish」'),
+        cond: {
+          type: 'object',
+          description: '这一跳的分支（出错点必写）：条件原文和实际走了哪边',
+          properties: { text: text('条件原文，例如 left === 0'), took: text('实际走了哪边，例如 真 / else') },
+          required: ['text', 'took'],
+        },
+        values: {
+          type: 'array',
+          description: '关键值：实际值和期望值，实际值要来自日志或命令输出（refs 写上 L / Q 编号）',
+          items: {
+            type: 'object',
+            properties: { name: text('变量或表达式'), actual: text('实际值'), expected: text('期望值') },
+            required: ['name', 'actual'],
+          },
+        },
+        refs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '挂在这一跳上的编号：L 日志点、H 假设、C 关键代码、Q 原文',
+        },
       },
-      required: ['file', 'fn'],
+      required: ['id', 'file', 'fn'],
     },
+  },
+  stackFrom: {
+    type: 'object',
+    description:
+      '调用栈从哪来：read 读代码推出、trace 来自报错堆栈（先把堆栈作为原文 Q 引用，trace 写它的编号；树上每一跳要是堆栈里的一帧，面板逐帧核对）、debugger 调试器',
+    properties: { kind: { type: 'string', enum: ['read', 'trace', 'debugger'] }, trace: text('报错堆栈原文的编号 Q2') },
+    required: ['kind'],
   },
   timeline: {
     type: 'array',
@@ -126,6 +168,7 @@ const CASE_PROPS = {
         text: text('假设'),
         status: { type: 'string', enum: ['confirmed', 'excluded', 'open'] },
         basis: text('依据'),
+        hop: text('检验的是调用栈的哪一跳（S2）'),
       },
       required: ['text', 'status'],
     },
@@ -175,6 +218,11 @@ const CASE_PROPS = {
           type: 'array',
           items: { type: 'string', enum: ['data', 'api', 'config'] },
           description: '会动到的契约：data 数据格式、api 接口、config 配置项（报告最上面会提醒用户）',
+        },
+        hops: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '改在调用栈的哪几跳（S3）：方案页把它画在树上，一眼看出各方案改在哪',
         },
       },
       required: ['id', 'title', 'change'],
@@ -335,6 +383,7 @@ const CASE_PROPS = {
           "要加的那一行语句原文，以 [排查-<主题>] L<n> 开头，例如 console.log('[排查-金额] L1 shipping=', o.shipping, typeof o.shipping)；不写描述",
         ),
         hypothesis: text('对应的假设编号（H1），或「路标」（标出走到了调用栈哪一跳）'),
+        hop: text('挂在调用栈的哪一跳（S2）：用户贴回日志后面板在树上标出这一跳打没打'),
       },
       required: ['file', 'print'],
     },
