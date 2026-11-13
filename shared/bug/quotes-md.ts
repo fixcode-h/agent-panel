@@ -58,10 +58,14 @@ export function codeRefsMd(d: Pick<Diagnosis, 'codeRefs'>): string {
 /** 一条原文引用：日志、命令输出摆成代码块（关键值高亮）；描述画成引用块，标明「描述，不是原文」 */
 export function quoteMd(q: BugQuote): string {
   if (q.kind === 'note') return `**${q.id}** ${t('描述（不是原文）')}\n\n> ${codeTerms(q.text).replace(/\n/g, '\n> ')}`
+  // 出处（哪个文件、第几行）写在代码块外面，代码块里只放原文，不折行（用户 2026-11-13 报：塞进描述里折行、标识符变成一个个标签，看不清）
+  const span = { a: q.start ?? '?', b: q.end ?? q.start ?? '?' }
   const where =
-    q.kind === 'log'
-      ? t('你贴的日志（报告 #{n}）第 {a}~{b} 行', { n: q.from ?? '?', a: q.start ?? '?', b: q.end ?? q.start ?? '?' })
-      : t('命令输出')
+    q.kind !== 'log'
+      ? t('命令输出')
+      : q.file
+        ? t('日志 {file} 第 {a}~{b} 行', { file: `\`${q.file}\``, ...span })
+        : t('你贴的日志（报告 #{n}）第 {a}~{b} 行', { n: q.from ?? '?', ...span })
   const start = q.kind === 'log' && q.start ? q.start : 1
   const marks: LineMark[] = []
   q.text.split('\n').forEach((l, i) => {

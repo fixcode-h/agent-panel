@@ -257,7 +257,10 @@ renderer.code = ({ text, lang }) => {
   const marks = lineMarks(lang ?? '')
   if (mark >= start) marks.push({ l: mark, v: 'fault' })
   const html = marks.length ? applyMarks(lines.html, start, marks) : lines.html
-  const reset = start > 1 ? ` style="counter-reset: md-ln ${start - 1}"` : ''
+  // 行号从几万行开始（诊断报告引用大日志）时行号列按位数放宽，不然数字会压到代码上
+  const digits = String(start + lines.count - 1).length
+  const style = [start > 1 ? `counter-reset: md-ln ${start - 1}` : '', digits > 3 ? `--ln-digits: ${digits}ch` : '']
+  const reset = style.some(Boolean) ? ` style="${style.filter(Boolean).join('; ')}"` : ''
   return `<div class="md-code" data-lines="${lines.count}">${codeBar(name || 'text', lines.count)}<pre><code class="hljs"${reset}>${html}</code></pre></div>`
 }
 

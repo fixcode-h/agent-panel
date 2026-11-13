@@ -36,3 +36,16 @@ test('git 工作区：跟踪的文件和开始时比，没跟踪的新文件和�
   assert.match(a, /^\+local a = 2$/m)
   assert.match(src.diff!('b.lua')!, /^\+return 1$/m)
 })
+
+// 用户 2026-11-13 报：Agent 自己读的大日志没地方引用，塞进描述里。按行号只取那几行，大文件也能取
+test('按行号取日志文件的那几行：CRLF 归一、末尾换行不多算一行、越界返回空', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-bugsrc-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(path.join(dir, 'game.log'), 'l1\r\nl2\r\nl3 中文\r\nl4\r\n')
+  const src = bugSource(dir)!
+  assert.deepEqual(src.lines!('game.log', 2, 3), { text: 'l2\nl3 中文', total: 4 })
+  assert.deepEqual(src.lines!('game.log', 1, 1), { text: 'l1', total: 4 })
+  assert.deepEqual(src.lines!('game.log', 4, 9), { text: 'l4', total: 4 })
+  assert.equal(src.lines!('game.log', 6, 6)!.text, '')
+  assert.equal(src.lines!('nope.log', 1, 1), undefined)
+})

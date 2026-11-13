@@ -296,13 +296,15 @@ export const CodeRef = z.object({
 export type CodeRef = z.infer<typeof CodeRef>
 
 /**
- * 一条原文引用：log 用户贴的日志（from 第几份报告上贴的，start~end 行，面板取原文），
- * run 本对话跑过的命令输出（text 原样复制，面板在工具输出里逐字找），note 描述（不核对，报告上标成「描述」）
+ * 一条原文引用：log 日志（用户贴的写 from 第几份报告上贴的；Agent 自己读的日志文件写 file；start~end 行，面板取原文），
+ * run 本对话跑过的命令输出（text 原样复制，面板在工具输出里逐字找），note 描述（不核对，报告上标成「描述」，不放原文）
  */
 export const BugQuote = z.object({
   id: str(20),
   kind: z.enum(['log', 'run', 'note']).catch('note').default('note'),
   from: z.coerce.number().int().positive().optional().catch(undefined),
+  /** log：日志文件路径（相对项目根或绝对路径），Agent 自己找到、读过的日志；写了就不按报告上贴的找 */
+  file: str(500),
   start: z.coerce.number().int().positive().optional().catch(undefined),
   end: z.coerce.number().int().positive().optional().catch(undefined),
   text: str(4000),
