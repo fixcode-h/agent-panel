@@ -3,7 +3,7 @@ import { effortEnv, getCli, isOffEffort, type BuildOptions } from '../../shared/
 import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
-import { parserFor, type CliEvent } from './parsers.ts'
+import { parserFor, type AskReply, type CliEvent } from './parsers.ts'
 import { earlyExitError, runProcess, stderrTail, type ProcessResult } from './process.ts'
 import type { TrackedOwner } from './orphans.ts'
 import { t } from '../../shared/i18n.ts'
@@ -61,6 +61,23 @@ const NOTES_HINT =
   '（重要：开始动手前先调用 read_user_notes；之后每完成 2~3 个工具调用、以及准备执行耗时操作前再调用一次。' +
   '用户可能在你执行中补充要求：相关的按它调整方向继续当前任务，无关的先做完手上的事再处理，不要从头重做。）'
 
+/**
+ * 提问不交出去、就地回答的话：调用方给了改道（例如用户报的 Bug 要写进诊断报告，见 shared/bug/no-ask.ts）按它答；
+ * 「提问」关着让 CLI 自己选；返回 undefined 才交给用户
+ */
+function selfAnswer(o: { askUser?: () => boolean; askRedirect?: () => string | undefined }): AskReply | undefined {
+  const to = o.askRedirect?.()
+  if (to) return { allow: false, message: to }
+  return o.askUser?.() ? undefined : AUTO_ANSWER
+}
+
+/** 能就地回答的提问就地回答，返回答没答 */
+function answerHere(o: Parameters<typeof selfAnswer>[0], ev: { reply: (r: AskReply) => void }) {
+  const self = selfAnswer(o)
+  if (self) ev.reply(self)
+  return !!self
+}
+
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
   steer: (text: string) => Promise<boolean>
@@ -103,6 +120,8 @@ export async function invokeCli(o: {
    * 不交时让 CLI 自己选最合适的做法。审批（命令、改文件）按设置里的权限，CLI 要确认时总是交给用户
    */
   askUser?: () => boolean
+  /** 提问改道：返回一句话时 CLI 的提问不交给用户，用这句话回答（开关开着也一样）；审批不受影响 */
+  askRedirect?: () => string | undefined
   /** 不给没有提问通道的 CLI 加提问工具（调用方自己带了提问的办法，例如 UI 设计的 ask_user） */
   noAskTool?: boolean
   /** 审批和要交给用户的提问；不给时作为 ask 事件交给 onEvent（任务页自己存在任务里） */
@@ -232,7 +251,7 @@ export async function invokeCli(o: {
   const own = (askable || notes || wait) && !nativeAsk
   if (def.mcp && (own || o.orch)) {
     // 用户开着「提问」时把问题交给页面；关着时让模型自己选最合适的做法
-    const ask: Ask = (ev) => (o.askUser?.() ? (o.onAsk ? o.onAsk(ev) : o.onEvent(ev)) : ev.reply(AUTO_ANSWER))
+    const ask: Ask = (ev) => answerHere(o, ev) || (o.onAsk ? o.onAsk(ev) : o.onEvent(ev))
     bridge = openAskBridge({
       ...(own && askable ? { ask } : {}),
       ...(own && notes ? { notes } : {}),
@@ -257,7 +276,7 @@ export async function invokeCli(o: {
     if (o.orch && o.app) input = `${input}\n\n${APP_HINT}`
     if (own) {
       // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
-      if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
+      if (askable && o.askUser?.() && !o.askRedirect?.()) input = `${input}\n\n${ASK_HINT}`
       // 没有插话协议的 CLI：补充登记给它，让模型中途自己取
       if (notes) input = `${input}\n\n${NOTES_HINT}`
       // 不再提示「每轮回复完成后调用 wait_user_message」：保活由面板在这一轮结束时自己做（见 keepAlive），
@@ -392,7 +411,7 @@ async function invoke(
 
   const emit = (ev: CliEvent) => {
     if (ev.type !== 'ask') return o.onEvent(ev)
-    if (ev.kind === 'question' && !o.askUser?.()) return ev.reply(AUTO_ANSWER)
+    if (ev.kind === 'question' && answerHere(o, ev)) return
     return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
   }
 

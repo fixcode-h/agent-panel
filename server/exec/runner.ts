@@ -52,6 +52,7 @@ import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 import { windowLookup } from './model-run.ts'
 import { pickSession } from './session-pick.ts'
 import { exitResult, idleWarning } from './exit-result.ts'
+import { bugAskRedirect } from '../../shared/bug/no-ask.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -542,6 +543,8 @@ async function runAgent(
         },
     // 任务上的「提问」开关：执行中也能改，CLI 问的时候再看
     askUser: () => task.askUser,
+    // 用户报的 Bug：提问不交给用户，改成交诊断报告（shared/bug/no-ask.ts）
+    askRedirect: () => bugAskRedirect(task),
     // 对话、工作流节点和工作流跑完后的追加要求都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (!op && (step || task.mode === 'workflow')) ? (c) => register(c) : undefined,
     readNotes: taker ? () => taker.read() : undefined,
