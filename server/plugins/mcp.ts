@@ -4,6 +4,8 @@ import type { McpCallContext, McpResult, McpTool } from './sdk.ts'
 import { log } from '../log.ts'
 import { notePluginEffect } from './effects.ts'
 import { clipPluginResult, saveToHandoff } from './mcp-clip.ts'
+import { describeTool } from '../../shared/mcp-catalog/describe.ts'
+import { noteMounted } from '../mcp-catalog/last-run.ts'
 
 /**
  * 插件给 Agent 的 MCP 工具（Streamable HTTP，ADR 0059）。和设计工具、原来的 Blender 工具一样：
@@ -42,6 +44,8 @@ interface Session {
   hooks?: PluginRunHooks
   /** 正在跑的调用（JSON-RPC id → 取消用的控制器）：这一轮结束、插件关掉、CLI 发取消时 abort（插件框架改进 A3） */
   running: Map<string, AbortController>
+  /** 握手时交给 CLI 的服务级说明（插件接口 8） */
+  instructions?: string
 }
 
 const sessions = new Map<string, Session>() // 模块状态：会话，跟着进程或连接一起没
@@ -61,9 +65,10 @@ export function openPluginMcp(
   tools: () => McpTool[] | Promise<McpTool[]>,
   confirm?: McpCallContext['confirm'],
   hooks?: PluginRunHooks,
+  instructions?: string,
 ) {
   const token = randomUUID()
-  sessions.set(token, { pluginId, server, taskId, tools, confirm, hooks, running: new Map() })
+  sessions.set(token, { pluginId, server, taskId, tools, confirm, hooks, running: new Map(), instructions })
   const port = Number(process.env.PORT ?? 8787)
   return {
     name: server,
@@ -149,15 +154,19 @@ async function handle(s: Session, msg: any) {
         protocolVersion: msg.params?.protocolVersion ?? '2025-03-26',
         capabilities: { tools: {} },
         serverInfo: { name: `agent-panel-${s.server}`, version: '1.0.0' },
+        ...(s.instructions && { instructions: s.instructions }),
       })
     case 'ping':
       return reply({})
     case 'tools/list': {
       const tools = await s.tools()
+      // 设置 →「MCP」的总览里显示上一次真实对话挂上了几个
+      noteMounted(s.taskId, s.server, tools.length)
       return reply({
-        tools: tools.map(({ name, description, inputSchema, effect }) => ({
+        tools: tools.map(({ name, description, inputSchema, effect, guide }) => ({
           name,
-          description,
+          // 声明了使用时机的补在说明后面（插件接口 8），和设置页显示的同一份
+          description: describeTool(description, guide),
           inputSchema,
           // 声明了作用的按 MCP 的工具注解告诉 CLI：只读的不改环境，改文件的会改
           ...(effect && { annotations: { readOnlyHint: effect !== 'edit' } }),

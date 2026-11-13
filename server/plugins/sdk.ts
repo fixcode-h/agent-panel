@@ -36,6 +36,24 @@ export interface McpResult {
  */
 export type McpToolEffect = 'read' | 'edit' | 'verify'
 
+/**
+ * 工具自己声明的作用和使用时机（插件接口 8）：设置 →「MCP」照它显示，交给 Agent 的说明也在 description 后面补上
+ * 「什么时候用 / 不要用」两行（面板的 shared/mcp-catalog/describe.ts），人看到的和 Agent 拿到的是一份。
+ * useWhen 写给模型看：具体、能直接照做；description 里已经写过的不用重复
+ */
+export interface ToolGuide {
+  /** 显示名（几个字）；不写用清单 toolNames 里的 */
+  title: string
+  /** 作用：一句话 */
+  summary: string
+  /** 什么时候该用 */
+  useWhen: string
+  /** 什么时候别用、该改用哪个 */
+  avoidWhen?: string
+  /** 设置页上的分组（运行时对象、资源与蓝图……） */
+  group?: string
+}
+
 /** 插件工具请用户确认的内容（插件接口 2）：对话里出一张「允许 / 拒绝」卡片 */
 export interface PluginConfirm {
   title: string
@@ -93,6 +111,11 @@ export interface McpTool {
   call: (args: Record<string, unknown>, ctx: McpCallContext) => Promise<McpResult>
   /** 对项目做什么（插件接口 3），不写按只读算 */
   effect?: McpToolEffect
+  /** 作用和使用时机（插件接口 8） */
+  guide?: ToolGuide
+  /** 执行前会请用户确认（ctx.confirm）、做了收不回：设置页的徽标（插件接口 8），不影响执行 */
+  confirms?: boolean
+  irreversible?: boolean
   /** effect 为 edit 时：按参数算出这次要改的文件（本机路径），执行前交给工具前守卫判断；算不出返回空数组 */
   targets?: (args: Record<string, unknown>) => string[]
   /**
@@ -124,11 +147,21 @@ export interface PluginRun {
   skills: string[]
   /** 续接已有会话：提示词里已经说过怎么用工具，不用再说 */
   resume: boolean
+  /**
+   * 设置 →「MCP」的自检（插件接口 8）：只问挂不挂、挂哪些，不会真的调工具，taskId 为空；
+   * 插件不要在这时起外部进程、弹提示或改数据
+   */
+  dryRun?: boolean
 }
 
 export interface PluginRunTools {
   /** MCP 服务：名字要写进清单的 mcpServers，对话里的工具行才认得出 */
-  servers: { name: string; tools: () => McpTool[] | Promise<McpTool[]> }[]
+  servers: {
+    name: string
+    tools: () => McpTool[] | Promise<McpTool[]>
+    /** 这个服务做什么（插件接口 8）：握手时作为 MCP 的 instructions 交给 CLI */
+    summary?: string
+  }[]
   /** 新会话时接在用户消息后面的说明（怎么用这些工具） */
   hint?: string
   /**
@@ -136,6 +169,29 @@ export interface PluginRunTools {
    * 只给用户看，不交给 Agent；续接的会话不再显示，免得每一轮都重复
    */
   notices?: string[]
+}
+
+/**
+ * tools(run) 不挂时可以返回原因（插件接口 8）：设置 →「MCP」的自检照原文显示，例如「这个项目没在 UE 页接入」。
+ * 返回 undefined 也照旧表示不挂，只是自检里写「插件没说明原因」
+ */
+export interface PluginRunSkip {
+  skip: string
+}
+
+/** 不开对话也能列出的能力目录（插件接口 8）：设置 →「MCP」用；工具只要定义，不会被调用 */
+export interface McpCatalog {
+  servers: {
+    name: string
+    /** 这个服务做什么 */
+    summary: string
+    /** 什么时候挂（给人看的一句，例如「接入 UE 的项目里的 Agent 对话」） */
+    attach: string
+    /** 新会话开头交给 Agent 的用法说明（和 tools(run) 的 hint 同一段） */
+    hint?: string
+    /** 列不出来时抛错或给 error（例如外部程序没起），设置页照原文显示 */
+    tools: () => Omit<McpTool, 'call' | 'targets'>[] | Promise<Omit<McpTool, 'call' | 'targets'>[]>
+  }[]
 }
 
 export interface PluginServerContext {
@@ -220,6 +276,9 @@ export interface PluginAction {
   description: string
   /** read 只读；write 能改回来；danger 不可撤销，只在用户明确要求时用 */
   level: 'read' | 'write' | 'danger'
+  /** 什么时候该用、什么时候别用（插件接口 8）：设置 →「MCP」显示，也拼进 app_actions 给模型看的目录 */
+  useWhen?: string
+  avoidWhen?: string
   /** 参数（用面板开放的 zod 写）：面板按它校验，并生成给模型看的参数说明 */
   input: z.ZodType
   run(args: any, ctx: PluginActionCtx): Promise<unknown>
@@ -238,7 +297,11 @@ export interface ServerPlugin {
   /** 插件的接口，挂在 /api/plugins/<id>/ 下：收到的请求地址已去掉这个前缀 */
   fetch?: (req: Request) => Response | Promise<Response>
   /** 每轮对话开始时问一次：返回 undefined 表示这轮不挂工具 */
-  tools?: (run: PluginRun) => PluginRunTools | undefined | Promise<PluginRunTools | undefined>
+  tools?: (
+    run: PluginRun,
+  ) => PluginRunTools | PluginRunSkip | undefined | Promise<PluginRunTools | PluginRunSkip | undefined>
+  /** 能力目录（插件接口 8）：设置 →「MCP」不开对话也能列出这个插件给 Agent 的工具 */
+  catalog?: () => McpCatalog | Promise<McpCatalog>
   /**
    * 清单 hooks 里没写 script 的钩子触发时调用（插件接口 3）：id 是清单里钩子的 id，输入输出和用户钩子同一套格式
    * （工具后补 context、工具前 deny、结束前 block，都要写 reason）。返回 undefined 表示不表态；

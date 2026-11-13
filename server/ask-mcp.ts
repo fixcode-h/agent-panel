@@ -13,6 +13,9 @@ import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
 import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 import { log } from './log.ts'
+import { withPanelGuides } from './mcp-catalog/guides.ts'
+import { noteMounted } from './mcp-catalog/last-run.ts'
+import { PANEL_SUMMARY } from '../shared/mcp-catalog/panel-guides.ts'
 import { answerHook, type BridgeHook } from './hooks/bridge.ts'
 
 /** 这一轮的清单里三件核心编排工具都在：Pi 桥接据此核对清单完整 */
@@ -61,7 +64,7 @@ const sessions = new Map<
   }
 >()
 
-const TOOL = {
+export const TOOL = {
   name: 'ask_user',
   description:
     '向用户提问并等他在界面上回答。只用来让用户拿主意：做选择、补充他脑子里的信息、确认方向，不要把问题写成普通文字。要用户离开对话去做一件事（跑一次、复现、在设备上看效果、给只在他手里的文件或日志）用 request_user_action，不要把「你去做……再发回来」写成选项。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」，同时把 recommended 写成它的序号、按实际情况写 reversible；用户也能自己填写别的答案。' +
@@ -112,7 +115,7 @@ const TOOL = {
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
 /** 执行中取用户补充的工具：只在 CLI 没有插话协议、本轮挂了补充通道时给（见 CLI 配置的 notes） */
-const NOTES_TOOL = {
+export const NOTES_TOOL = {
   name: 'read_user_notes',
   description:
     '取用户在你这轮执行中补充的信息。开始动手前先调用一次；做比较久的事（跑命令、改多处文件、等测试）中间也每隔一会儿调用一次。' +
@@ -122,7 +125,7 @@ const NOTES_TOOL = {
 }
 
 /** 回复完停在进程里等用户下一句的工具：对话页开着时才有，避免每句话都重新 --resume */
-const WAIT_TOOL = {
+export const WAIT_TOOL = {
   name: 'wait_user_message',
   description:
     '等用户在这个对话里的下一条消息。只在用户要的事已经全部做完、或者需要用户拿主意时调用；还有没做完的步骤就不要调用，直接接着做。' +
@@ -209,13 +212,14 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
   const orch = s.orch ? orchTools(s.orch) : []
-  const all = [
+  // 说明后面补上声明里的「什么时候用 / 不要用」（shared/mcp-catalog/panel-guides.ts），设置 →「MCP」显示的是同一份
+  const all = withPanelGuides([
     ...(s.ask ? [TOOL] : []),
     ...(s.notes ? [NOTES_TOOL] : []),
     ...(s.wait ? [WAIT_TOOL] : []),
     ...orch,
     ...(s.app ? APP_TOOLS : []),
-  ]
+  ])
   // 不常用的工具不直接列出，收进 more_tools（见 shared/panel-tools.ts 的 DEFERRED_TOOLS）：
   // 工具说明每个会话都要整份带着，父对话一次二十多个、上万字，大多数一轮都用不到
   const { listed: tools, deferred } = splitDeferred(all)
@@ -243,12 +247,16 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
         // Pi 会报「工具清单不完整」；以后哪个身份少给了核心工具，握手也自动跟着变
         capabilities: { tools: {}, experimental: { orchestration: { enabled: orchCore(orch) } } },
         serverInfo: { name: 'agent-panel', version: '1.0.0' },
+        // 服务级说明（MCP 的 instructions）：读它的 CLI 能先知道这个服务管什么；不读的照旧靠工具说明和提示词
+        instructions: PANEL_SUMMARY,
       })
     case 'ping':
       return reply({})
     case 'tools/list':
       // 会话栏的上下文细分按这份算 MCP 工具占了多少（见 shared/context-breakdown.ts）
       s.onTools?.(tools.map(toolChars), deferred.map(toolChars))
+      // 设置 →「MCP」的总览显示上一次真实对话挂上了几个（只有对话才带调用者）
+      if (s.app) noteMounted(s.app.taskId, 'agent-panel', tools.length + deferred.length - (deferred.length ? 1 : 0))
       return reply({ tools })
     case 'tools/call': {
       const name = String(msg.params?.name ?? '')

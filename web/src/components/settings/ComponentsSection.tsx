@@ -72,6 +72,7 @@ import {
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
+import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
@@ -631,6 +632,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('调用栈')}>
         <Specimen name="calltree" tune={['callTree']}>
           <CallTreeSpecimen />
+        </Specimen>
+      </Group>
+      <Group title={t('MCP 能力')}>
+        <Specimen name="CapabilityRow · CapabilityServerHeader" tune={['capRow', 'card', 'badge']}>
+          <CapabilitySpecimen />
         </Specimen>
       </Group>
       <PluginSpecimens Specimen={Specimen} />

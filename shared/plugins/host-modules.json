@@ -145,6 +145,7 @@
     "shared/i18n",
     "shared/local-image",
     "shared/local-prompts",
+    "shared/mcp-catalog/describe",
     "shared/moss",
     "shared/pinyin",
     "shared/prompt-lang",

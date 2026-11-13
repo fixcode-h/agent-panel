@@ -1,3 +1,6 @@
+import { briefOf } from './mcp-catalog/describe.ts'
+import { PANEL_TOOL_GUIDE } from './mcp-catalog/panel-guides.ts'
+
 /**
  * 面板调度工具（panel MCP）的名字：对话里按「做了什么」显示它们（新建子对话、等待子任务）。
  * Pi 这类用扩展注册工具的 CLI 报上来的是不带服务名的裸名字，解析时要靠这张表认出来，
@@ -231,8 +234,6 @@ interface McpTool {
   inputSchema?: unknown
 }
 
-const firstSentence = (s = '') => s.split(/(?<=[。.！？])/)[0].slice(0, 80)
-
 /** 把这一轮的工具分成直接列出的和收起来的；收起来的不止一个时才加 more_tools，只有一个就照常列出 */
 export function splitDeferred<T extends McpTool>(all: T[]): { listed: (T | McpTool)[]; deferred: T[] } {
   const deferred = all.filter((t) => DEFERRED_TOOLS.includes(t.name))
@@ -242,7 +243,7 @@ export function splitDeferred<T extends McpTool>(all: T[]): { listed: (T | McpTo
     name: MORE_TOOLS,
     title: '更多面板工具',
     description:
-      `下面这些面板工具不常用，没有直接列出：${deferred.map((t) => `${t.name}（${t.title ?? firstSentence(t.description)}）`).join('、')}。` +
+      `下面这些面板工具不常用，没有直接列出：${deferred.map((t) => `${t.name}（${briefOf(t, PANEL_TOOL_GUIDE[t.name as PanelToolName])}）`).join('、')}。` +
       '提示里让你用其中某个、或者确实需要时通过这里调用：先只写 name 看它的用法和参数，再带上 name 和 arguments 调用（没有参数的写 arguments: {}）。',
     inputSchema: {
       type: 'object',

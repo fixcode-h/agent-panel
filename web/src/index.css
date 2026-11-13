@@ -1139,6 +1139,10 @@ body,
   --c-callTree-dir: none;
   --c-callTree-legend: flex;
   --c-callTree-edge: var(--peer);
+  --c-capRow-pad: 10px;
+  --c-capRow-radius: 8px;
+  --c-capRow-when: grid;
+  --c-capRow-name: inline;
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;

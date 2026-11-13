@@ -57,3 +57,6 @@ export const MarkdownSection = lazy(() =>
 export const ComponentsSection = lazy(() =>
   import('@/components/settings/ComponentsSection').then((m) => ({ default: m.ComponentsSection })),
 )
+export const McpSection = lazy(() =>
+  import('@/components/settings/mcp/McpSection').then((m) => ({ default: m.McpSection })),
+)

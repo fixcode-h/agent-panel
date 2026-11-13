@@ -9,6 +9,7 @@ import { withPluginLimit } from './limit.ts'
 import { closePluginMcp, openPluginMcp, type PluginRunHooks } from './mcp.ts'
 import { pluginDataDir, type Installed } from './store.ts'
 import { pluginPages } from './pages.ts'
+import { noteMountError } from '../mcp-catalog/last-run.ts'
 
 /**
  * 插件的服务端部分在面板进程里跑（ADR 0059）：插件打开时 import 包里的 server 入口、调 activate，
@@ -139,6 +140,9 @@ export function textifierFor(ext: string) {
   return undefined
 }
 
+/** 在跑的插件（设置 →「MCP」列能力目录、自检用）：id、显示名和服务端入口 */
+export const runningPlugins = () => [...active].map(([id, a]) => ({ id, name: a.name, plugin: a.plugin }))
+
 /** 开着的插件登记的面板动作（插件接口 6）：动作表每次现取，插件关掉就没了 */
 export function pluginActions(): PluginAction[] {
   return [...active.values()].flatMap((a) => a.plugin.actions ?? [])
@@ -181,13 +185,16 @@ export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext
       const error = (ans.reason as Error)?.message ?? String(ans.reason)
       errors.push({ id, name: a.name, error })
       log.warn('plugin', `插件给对话挂工具时出错：${id}`, { error })
+      noteMountError(run.taskId, `${a.name}：${error}`)
       continue
     }
     try {
       const r = ans.value
-      if (!r) continue
+      if (!r || 'skip' in r) continue
       for (const s of r.servers) {
-        const m = openPluginMcp(id, s.name, run.taskId, s.tools, confirm, hooks)
+        // 服务的作用和用法说明在握手时作为 MCP 的 instructions 交给 CLI（插件接口 8）；读不读由 CLI 决定，hint 照旧接在消息后面
+        const instructions = [s.summary, r.hint].filter(Boolean).join('\n\n')
+        const m = openPluginMcp(id, s.name, run.taskId, s.tools, confirm, hooks, instructions)
         servers.push({ name: m.name, url: m.url })
         closers.push(m.close)
       }

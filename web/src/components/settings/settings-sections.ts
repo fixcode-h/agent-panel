@@ -28,6 +28,7 @@ import {
   Puzzle,
   Heading,
   BellRing,
+  Plug,
 } from 'lucide-react'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
@@ -44,7 +45,7 @@ export interface Section {
 }
 
 // 左栏按分组列出，组内顺序就是这里的顺序
-export const sectionsFor = (clis: CliDefinition[], plugins: Section[]): Section[] => [
+export const sectionsFor = (clis: CliDefinition[], plugins: Section[], mcp: Section[] = []): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'chat-memory', label: t('关于我与记忆'), icon: Brain, group: t('通用') },
@@ -64,6 +65,9 @@ export const sectionsFor = (clis: CliDefinition[], plugins: Section[]): Section[
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: t('AI 创建'), icon: Sparkles, group: t('Agent 与 AI') },
   { id: 'hooks', label: t('钩子'), icon: Webhook, group: t('Agent 与 AI') },
+  // 面板和插件给 Agent 的 MCP 能力：左栏一项，二级列表里是各来源（web/src/components/settings/mcp/McpNav.tsx）
+  { id: 'mcp', label: 'MCP', icon: Plug, group: t('Agent 与 AI') },
+  ...mcp,
   // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },

@@ -11,6 +11,7 @@ import { contractProblems, urlOf, type Endpoint, type Query } from './define.ts'
 import { projectsContract as P } from './projects.ts'
 import { tasksContract as T } from './tasks.ts'
 import { trashContract as R } from './trash.ts'
+import { mcpCatalogContract as M } from './mcp-catalog.ts'
 
 /** 发一个请求、拿回解析好的 JSON（204 时是 undefined）；失败直接抛 */
 export type ProbeFetch = (method: string, url: string, body?: unknown) => Promise<unknown>
@@ -104,6 +105,10 @@ export async function probeContracts(send: ProbeFetch): Promise<ProbeReport> {
     await hit(R.tasks)
     await hit(R.restoreTask, { params: { id: first.id }, body: {} })
   }
+
+  // 设置 →「MCP」：能力目录、自检（只读）
+  await hit(M.catalog)
+  await hit(M.check, { body: { projectId: '', agentId: '', cli: 'claude', kind: 'parent' } })
 
   return { checked, problems }
 }
