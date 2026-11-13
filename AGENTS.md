@@ -26,6 +26,7 @@
 - **CLI 的差异写进 CLI 定义**（`shared/clis.ts`、`shared/clis/*.json`），代码按定义里的字段走，不按 CLI 的名字写分支（`scripts/rules-check.mjs` 会拦）。
 - **界面文案用 `t('中文原文')`**，英文同一个提交写进 `shared/locales/en/`；漏翻 `npm run typecheck` 会失败。发给 Agent 的提示词、注释、演示数据不翻译。
 - **界面参考 Claude Code 的风格，视觉质量很重要**。界面细则见 `docs/lessons/ui.md`。
+- **新界面和效果图都跟随项目现有的整体 UI 风格**：只用 `web/src/components/ui/` 的共用组件和 `web/src/index.css` 的主题变量、字号角色、圆角阶梯，不自造配色和控件；画效果图也照这套变量和现有页面的样子画，效果图只当布局参考，实现以项目风格为准。
 - **碰到文件行数上限就按功能拆成小文件**（`scripts/file-caps.json`，`npm run lint` 会拦）：把职责完整的一块挪进新文件，原文件只留调用；不删注释、不合并行凑数。细则见 `docs/lessons/file-caps.md`。
 - **代码结构只许变好**（`scripts/structure-check.mjs`，`npm run lint` 会拦，基线在 `scripts/structure-caps.json`）：
   - 函数不超过 300 行，已有的长函数不许再变长；拆函数时把共享的变量放进显式的上下文对象传进去，不写大闭包。

@@ -22,6 +22,7 @@ import {
 import { cleanupPrompt, TEMP_LOG } from './cleanup.ts'
 import { editPatch, fixFilesOf } from './fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './quotes.ts'
+import { checkStack, matchTrace, stackProblem } from './stack-check.ts'
 import {
   causeAgreed,
   closedOrCleaning,
@@ -41,7 +42,8 @@ import {
   fixApproved,
   planApproved,
   revOf,
-  roundOf,
+  labelOf,
+  verOf,
 } from './phase.ts'
 import { t } from '../i18n.ts'
 import { settlePlan } from '../plan.ts'
@@ -80,7 +82,7 @@ const answersOf = (input: DiagnosisInput) =>
     .map((x) => ({
       id: Number(x.id),
       answer: typeof x.answer === 'string' ? x.answer : '',
-      stance: (['adopted', 'explained', 'disagree'] as const).find((v) => v === x.stance),
+      stance: (['adopted', 'explained', 'disagree', 'used'] as const).find((v) => v === x.stance),
     }))
     .filter((x) => Number.isFinite(x.id) && x.answer.trim())
 
@@ -89,9 +91,6 @@ export const pendingDiagnosis = (task: Pick<Task, 'bug'>) => {
   const d = latestDiagnosis(task)
   return d?.status === 'pending' ? d : undefined
 }
-
-/** 要 Agent 回答的标注：疑问和改方案；补充信息只要用上，不用逐条回答 */
-const needsAnswer = (n: DiagnosisNote) => n.kind !== 'info'
 
 /** 影响面按名字对：忽略空白和大小写 */
 const norm = (v: string) => v.replace(/\s+/g, '').toLowerCase()
@@ -175,7 +174,7 @@ function evidenceProblem(c: BugCase, input: DiagnosisInput, list: Diagnosis[]): 
 function causeProblem(c: BugCase): string {
   const need: [string, boolean][] = [
     ['symptom（现象）', !!c.symptom.trim()],
-    ['stack 或 location（调用栈）', !!c.stack.length || !!c.location.trim()],
+    ['stack（调用栈树）', !!c.stack.length],
     ['evidence（证据链）', !!c.evidence.trim()],
     ['rootCause（根因）', !!c.rootCause.trim()],
   ]
@@ -279,8 +278,10 @@ export function diagnosisProblem(
       ? `第 ${revOf(prev)} 版的日志已经加好、在等用户复现贴日志，不要再交：结束这一轮，等用户的日志。`
       : `第 ${revOf(prev)} 版还在等用户确认，不要重复交：结束这一轮，等确认结果交回给你。`
   const phase = inputPhase(input, c, list)
+  // 调用栈树的结构和编号（stack-check.ts）：根因、方案这一版必须有入口和出错点，只写 location 不算
   const bad =
-    phase === 'evidence'
+    stackProblem(c, phase) ||
+    (phase === 'evidence'
       ? evidenceProblem(c, input, list)
       : phase === 'cause'
         ? causeProblem(c)
@@ -288,13 +289,14 @@ export function diagnosisProblem(
           ? planProblem(c, list)
           : phase === 'fix'
             ? fixProblem(c, list)
-            : verifyProblem(c, list, input)
+            : verifyProblem(c, list, input))
   if (bad) return bad
   if (prev?.status === 'questioned') {
     const answered = new Set(answers.map((a) => a.id))
-    const left = prev.notes.filter((n) => needsAnswer(n) && !answered.has(n.id)).map((n) => n.id)
+    // 补充信息也要回应（用户 2026-11-13 定）：写用在哪、对结论有没有影响，不能只「用进报告」悄悄带过
+    const left = prev.notes.filter((n) => !answered.has(n.id)).map((n) => n.id)
     if (left.length)
-      return `用户对第 ${revOf(prev)} 版的这几条意见还没回答：${left.join('、')}。answers 里按编号逐条写：查了什么、结论、补了什么证据或改了哪一节。`
+      return `用户对第 ${revOf(prev)} 版的这几条标注还没回应：${left.join('、')}。answers 里按编号逐条写：查了什么、结论、补了什么证据或改了哪一节；补充信息写 stance: used，说明用在哪、对结论有没有影响。`
   }
   return ''
 }
@@ -453,6 +455,9 @@ function submitOnce(
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
   if (sources.error) return { ok: false, info: sources.error }
+  // 调用栈每一跳按工作区核对位置、出错点取快照，有报错堆栈时逐帧对上（stack-check.ts）
+  const stackBad = checkStack(c, src, sources.notes, phase) || matchTrace(c, phase)
+  if (stackBad) return { ok: false, info: stackBad }
   // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
   // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主）时不核对；
   // 不是 git 的工程拼 Agent 改文件时记下的改动，拼不出来的文件不算「没改」
@@ -529,7 +534,7 @@ function submitOnce(
             : causeInPlan(d, diags)
               ? '等用户一起确认根因和修复方案（快速级别合成一版），确认了才改代码'
               : '等用户确认修复方案，确认了才改代码'
-  const round = roundOf(d, diags)
+  const label = labelOf(d, diags)
   const notes = [...sources.notes, ...recheckNotes(d, task.messages)]
   // 用户设了「后面几步没有要注意的就自动通过」（分析稿 B2）：这一版没有要注意的就当场通过，交给它的话和用户点同意时一样
   const auto = autoOn(diags)
@@ -555,7 +560,7 @@ function submitOnce(
     )
   const which = overturned
     ? `已交第 ${rev} 版（${PHASE_TEXT[phase]}）：回到了更早的阶段或换掉了确认过的方案，第 ${rev - 1} 版的结论作废`
-    : `已交第 ${rev} 版的${PHASE_TEXT[phase]}${round > 1 ? `（这一版的第 ${round} 轮，按意见修改不升版本号）` : ''}`
+    : `已交第 ${label.ver} 版的${PHASE_TEXT[phase]}${label.ver.includes('.') ? '（按用户的意见重出的小版本，结论没被推翻不升大版本）' : label.round > 1 ? `（这一版的第 ${label.round} 轮）` : ''}`
   // 「报告 #n」是交报告的顺序号：对话里那一行按它认出是哪一份（web/src/lib/tasks.ts）
   return {
     ok: true,
@@ -619,6 +624,11 @@ export type DiagnosisDecision = {
   logs?: string
   logFiles?: string[]
   notes: Omit<DiagnosisNote, 'id'>[]
+  /**
+   * 退回的意图（用户 2026-11-13 定）：ask 提问、补充，要它据此重出一版；reject 不认同、推翻重查。
+   * 不传按阶段：验证页的「还有问题」算 reject，其余算 ask
+   */
+  intent?: 'ask' | 'reject'
   overall: string
   /** 同意时勾了「后面几步没有要注意的就自动通过」（分析稿 B2，bug-auto.ts） */
   autoNext?: boolean
@@ -627,9 +637,8 @@ export type DiagnosisDecision = {
 /** 交给 AI 的日志文字最多留这么多：再长的请用户附文件 */
 const MAX_LOGS = 20000
 
-/** 对话里记一行：你对第几版做了什么 */
-function decisionLine(d: Diagnosis, k: number): string {
-  const n = revOf(d)
+/** 对话里记一行：你对第几版做了什么（n 是含小版本的第几版，见 verOf） */
+function decisionLine(d: Diagnosis, n: string): string {
   if (d.status === 'answered')
     return phaseOf(d) === 'verify'
       ? t('你给了第 {n} 版的验证结果，交给它分析', { n })
@@ -638,7 +647,15 @@ function decisionLine(d: Diagnosis, k: number): string {
     const phase = { evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), fix: t('修复'), verify: t('验证') }[
       phaseOf(d)
     ]
-    return t('你对第 {n} 版的{phase}提了 {k} 条意见，要它接着分析', { n, k: k || 1, phase })
+    const asks = d.notes.filter((x) => x.kind !== 'info').length
+    const infos = d.notes.length - asks
+    if (d.intent === 'reject') return t('你不认同第 {n} 版的{phase}，要它推翻重查', { n, phase })
+    // 只写了整体意见、没有逐条标注：按一条算
+    const what = [
+      asks || !infos ? t('{k} 个问题', { k: asks || 1 }) : '',
+      infos ? t('{k} 条补充', { k: infos }) : '',
+    ].filter(Boolean)
+    return t('你对第 {n} 版的{phase}提了{what}，要它据此出新一版', { n, phase, what: what.join(t('、')) })
   }
   return {
     evidence: t('你同意了第 {n} 版的日志计划', { n }),
@@ -684,6 +701,7 @@ export function decideDiagnosis(
     if (!decision.approve && !notes.length && !decision.overall.trim())
       return { ok: false, error: t('退回要写清哪里有疑问：先标注，或者写整体意见') }
     d.status = decision.approve ? 'approved' : 'questioned'
+    if (!decision.approve) d.intent = decision.intent ?? (phase === 'verify' ? 'reject' : 'ask')
     if (decision.approve) {
       d.autoNext = !!decision.autoNext
       // 面板复核过「改前失败、改后通过」：确认修复就同时算验证通过（分析稿 B2 第 ① 条）
@@ -693,7 +711,7 @@ export function decideDiagnosis(
   d.notes = notes
   d.overall = decision.overall.trim()
   d.decidedAt = now
-  task.messages.push(diagnosisMessage(newId(), version, decisionLine(d, notes.length), now))
+  task.messages.push(diagnosisMessage(newId(), version, decisionLine(d, verOf(d, task.bug?.diagnoses ?? [d])), now))
   return { ok: true, message: diagnosisFeedback(d) }
 }
 
@@ -719,7 +737,8 @@ export function cancelDiagnosis(
   d.notes = []
   d.overall = overall.trim()
   d.decidedAt = now
-  const n = revOf(d)
+  // 对话里那一行写给用户看的第几版（带小版本），交给 Agent 的话照旧用大版本号
+  const n = verOf(d, task.bug?.diagnoses ?? [d])
   if (cleanup && (cleanup.found.length || cleanup.drop.length)) {
     d.cleanup = { ...cleanup, state: 'running', failed: [], kept: [], at: now }
     task.messages.push(
@@ -733,7 +752,7 @@ export function cancelDiagnosis(
         now,
       ),
     )
-    return { ok: true, message: cleanupPrompt({ rev: n, ...cleanup }) }
+    return { ok: true, message: cleanupPrompt({ rev: revOf(d), ...cleanup }) }
   }
   settlePlan(task, now)
   task.messages.push(
@@ -759,7 +778,7 @@ export function settleCleanup(
   c.failed = result.failed ?? []
   c.kept = result.kept ?? []
   c.checkedAt = now
-  const n = revOf(d)
+  const n = verOf(d, task.bug?.diagnoses ?? [d])
   const k = c.found.length
   const line = {
     done: t('临时日志已删干净（{k} 处），诊断报告第 {n} 版已关闭', { k, n }),

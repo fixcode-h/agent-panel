@@ -43,6 +43,10 @@ const input = (over: Partial<DiagnosisInput> = {}): DiagnosisInput => ({
   symptom: '登录超时后一直转圈',
   repro: 'npm test -- login.test.ts',
   location: 'web/src/lib/login.ts:40',
+  stack: [
+    { id: 'S1', file: 'web/src/lib/login.ts', line: 40, fn: 'retry' },
+    { id: 'S2', parent: 'S1', role: 'fault', file: 'web/src/lib/login.ts', line: 44, fn: 'retries < max' },
+  ],
   evidence: '日志 retry 3',
   rootCause: 'max 用的是秒，retries 按次数累加',
   confirmed: true,
@@ -133,9 +137,9 @@ test('对修复的代码提疑问：放行方案里的文件，它逐条判断�
   assert.ok(r.ok)
   assert.match(r.message, /stance: adopted/)
   assert.match(r.message, /stance: disagree，用事实反驳/)
-  assert.match(r.message, /重新交 phase: fix（还是第 1 版）/)
+  assert.match(r.message, /重新交 phase: fix（面板记成第 1 版的小版本）/)
   assert.deepEqual(editScope(tk.bug!.diagnoses!), { files: ['web/src/lib/login.ts'] }, '说得对要能改代码')
-  assert.match(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, src(fixed)).info, /还没回答：1/)
+  assert.match(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, src(fixed)).info, /还没回应：1/)
   ok(
     submitDiagnosis(
       tk,

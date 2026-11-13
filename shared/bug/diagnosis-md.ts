@@ -24,6 +24,7 @@ import { fixCardParts, fixSections } from './fix-md.ts'
 import { envMd, envOf } from './env.ts'
 import { fileLead } from './log-watch.ts'
 import { recheckMd, recheckTag } from './recheck.ts'
+import { callTreeMd } from './call-tree-md.ts'
 import {
   attributionDiffMd,
   codeRefsMd,
@@ -197,7 +198,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
         attention: [...base.attention, ...fixed.attention].slice(0, 3),
       }
     : base
-  const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意') }
+  const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意'), used: t('已用上') }
   const answers = prev
     ? d.answers
         .map((a) => {
@@ -210,10 +211,8 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
         .filter(Boolean)
         .join('\n')
     : ''
-  const stack = table(
-    ['#', t('位置'), t('函数'), t('做了什么')],
-    d.stack.map((h, i) => [String(i + 1), at(h.file, h.line), h.fn, h.note ?? '']),
-  )
+  // 调用栈画成树（设计稿 2026-11-13）：日志点、假设挂在各自那一跳上，方案页标出各方案改在哪（call-tree-md.ts）
+  const stack = callTreeMd(d, opts.list ?? [d])
   const kindText = { event: t('事件'), state: t('状态'), change: t('变更') }
   const timeline = table(
     [t('时间'), t('类别'), t('来源'), t('内容')],
@@ -297,7 +296,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
   )
   const rootTitle = d.confirmed ? t('根因（已证实）') : t('根因（假设，还没证实）')
   const root = [px(d.rootCause), codeOf(d, opts.snippet)].filter(Boolean).join('\n\n')
-  const location = [px(d.location), stack].filter(Boolean).join('\n\n')
+  const location = px(d.location)
   const r = (phase === 'verify' && d.result) || undefined
   const result = r
     ? [
@@ -343,18 +342,20 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       ...head,
       sec(t('怎么复现'), stepsOf(d.awaiting.collect ?? d.collect)),
       sec(t('加好的日志'), d.awaiting.added.map((x) => `- ${codeTerms(x)}`).join('\n')),
+      sec(t('调用路径和日志点'), stack),
       sec(t('结果怎么判'), outcomesOf(d.awaiting.collect?.outcomes.length ? d.awaiting.collect : d.collect, d)),
     ]
     back = [
       bg(t('假设'), hypotheses),
       bg(t('日志计划'), logPlan),
       bg(t('现象'), px(d.symptom)),
-      bg(t('位置和调用路径'), location),
+      bg(t('位置'), location),
     ]
   } else if (phase === 'evidence') {
     main = [
       ...head,
       again ? sec(t('上一轮日志说明了什么'), px(d.next)) : '',
+      sec(t('调用路径和日志点'), stack),
       sec(t('假设'), hypotheses),
       sec(t('日志计划'), logPlan),
       sec(t('怎么复现'), stepsOf(d.collect)),
@@ -366,7 +367,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       again ? '' : bg(t('下一步'), px(d.next)),
       bg(t('现象'), px(d.symptom)),
       bg(t('复现'), repro),
-      bg(t('位置和调用路径'), location),
+      bg(t('位置'), location),
       bg(t('时间线'), timeline),
       bg(t('证据链'), chainOf(d)),
       bg(rootTitle, px(d.rootCause)),
@@ -376,6 +377,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(rootTitle, root),
+      sec(t('调用栈'), stack),
       // 不用改代码（分析稿 B5）：怎么处理放在根因下面，用户同意的就是这一段
       sec(t('怎么处理（不用改代码）'), noFixOf(d) ? `**${NOFIX_TEXT()[d.noFix!.kind]}**\n\n${px(d.noFix!.how)}` : ''),
       sec(t('期望和实际'), expectMd(d)),
@@ -401,7 +403,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       bg(t('现象'), px(d.symptom)),
       bg(t('复现'), repro),
       bg(t('时间线'), timeline),
-      bg(t('位置和调用路径'), location),
+      bg(t('位置'), location),
       bg(t('假设'), hypotheses),
       bg(t('已排除'), px(d.excluded)),
     ]
@@ -409,19 +411,14 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(t('候选方案'), optionsTable(d)),
+      sec(t('改在调用栈的哪里'), stack),
       sec(t('为什么选这个方案'), chosen),
       sec(t('具体改动'), changesOf(d)),
       sec(t('影响面和验证'), impact),
       sec(t('影响和风险'), alert('warning', px(d.risk))),
       earlySec,
     ]
-    back = [
-      bg(rootTitle, root),
-      bg(t('证据链'), chainOf(d)),
-      bg(t('原文'), quotes),
-      bg(t('位置和调用路径'), stack),
-      bg(t('引入点'), attribution),
-    ]
+    back = [bg(rootTitle, root), bg(t('证据链'), chainOf(d)), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
   } else if (phase === 'fix') {
     const fix = fixSections(d, opts.list ?? [d])
     // 面板复核放在长长的代码 diff 前面（fix.main 最后一节是改动的代码），不然要翻到底才看得到
@@ -449,7 +446,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       ),
       earlySec,
     ]
-    back = [bg(rootTitle, root), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
+    back = [bg(rootTitle, root), bg(t('调用栈'), stack), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
   }
   // 环境由面板采集（分析稿 B4），每一步的「依据和背景」最后都带：旧报告没有就不出这一节
   back.push(bg(t('环境（面板自动采集）'), envMd(envOf(d, opts.list), { author: opts.author })))

@@ -901,9 +901,73 @@ await runShard(import.meta.filename, async (api) => {
         before: [],
         // ADR 0046 的档案字段：调用栈、时间线、引入点、影响面、候选方案
         level: 'standard',
+        // 调用栈树（设计稿 2026-11-13）：入口 → 出错点 → 没走到的派发 → 事件边界 → 现象，旁支收起
         stack: [
-          { file: 'web/src/cart/badge.ts', line: 21, fn: 'count', note: '读购物车数量' },
-          { file: 'web/src/cart/store.ts', line: 52, fn: 'remove', note: '删除最后一件时提前 return' },
+          {
+            id: 'S1',
+            role: 'entry',
+            file: 'web/src/cart/CartPage.tsx',
+            line: 88,
+            fn: 'CartPage.onDelete',
+            note: '点删除按钮',
+          },
+          {
+            id: 'S2',
+            parent: 'S1',
+            file: 'web/src/cart/store.ts',
+            line: 48,
+            fn: 'remove(id)',
+            note: '删掉这一件，算剩几件',
+            values: [{ name: 'left', actual: '0' }],
+          },
+          {
+            id: 'S3',
+            parent: 'S2',
+            role: 'fault',
+            file: 'web/src/cart/store.ts',
+            line: 52,
+            fn: 'if (left === 0) return',
+            note: '剩 0 件时直接返回，派发在它后面',
+            cond: { text: 'left === 0', took: '真' },
+            values: [{ name: 'left', actual: '0', expected: '继续派发 count=0' }],
+            check: {
+              ok: true,
+              why: '',
+              start: 51,
+              code: "  const left = items.size\n  if (left === 0) return\n  emit('cart:change', { count: left })",
+            },
+          },
+          {
+            id: 'S4',
+            parent: 'S2',
+            role: 'missed',
+            file: 'web/src/cart/store.ts',
+            line: 53,
+            fn: "emit('cart:change', { count })",
+            note: '该派发却没派发',
+          },
+          {
+            id: 'S5',
+            parent: 'S4',
+            role: 'missed',
+            edge: 'event',
+            edgeNote: '事件 cart:change',
+            file: 'web/src/cart/badge.ts',
+            line: 12,
+            fn: 'Badge.onCartChange',
+            note: '收到事件才改角标',
+          },
+          {
+            id: 'S6',
+            parent: 'S5',
+            role: 'symptom',
+            file: 'web/src/cart/badge.ts',
+            line: 21,
+            fn: '现象：角标停在 1',
+            note: '刷新后从存储重读才归零',
+          },
+          { id: 'S7', parent: 'S2', role: 'side', file: 'web/src/cart/store.ts', line: 60, fn: 'persist()' },
+          { id: 'S8', parent: 'S2', role: 'side', file: 'web/src/cart/store.ts', line: 61, fn: "track('remove')" },
         ],
         timeline: [
           { at: '2026-10-27', source: 'c0ffee1', kind: 'change', text: '购物车删除重构：派发挪进循环', abnormal: true },
@@ -957,18 +1021,30 @@ await runShard(import.meta.filename, async (api) => {
       }
       kid.bug = { kind: 'report' }
       kid.bug.diagnoses = [
+        // 第 1 版你提了问题和补充（intent: ask），它按此重出第 1.1 版（用户 2026-11-13 定的小版本）：结论没变，证据补了一句
         {
           ...base,
           version: 1,
+          rev: 1,
           status: 'superseded',
-          notes: [{ id: 1, quote: '提前 return', kind: 'question', comment: '为什么以前没出现？' }],
+          intent: 'ask',
+          notes: [
+            { id: 1, quote: '提前 return', kind: 'question', comment: '为什么以前没出现？' },
+            { id: 2, quote: '', kind: 'info', comment: '上周合过购物车删除的重构' },
+          ],
         },
         {
           ...base,
           version: 2,
+          rev: 1,
           status: 'pending',
           notes: [],
-          answers: [{ id: 1, answer: '上周的重构把派发挪进了循环里' }],
+          risk: `${base.risk}；结算页的角标走同一个订阅，一起验证`,
+          whatChanged: '按你补充的重构，影响和风险里加上结算页的角标',
+          answers: [
+            { id: 1, answer: '上周的重构把派发挪进了循环里' },
+            { id: 2, answer: '对上了引入点 a1b2c3，根因不变', stance: 'used' },
+          ],
         },
       ]
       kid.requests = []
@@ -1000,10 +1076,10 @@ await runShard(import.meta.filename, async (api) => {
     if (await p.locator('[data-child-request]').count())
       errors.push('诊断报告：父对话页不该为等确认的诊断报告单独放一行')
     await p
-      .getByText('等你查看诊断报告第 2 版', { exact: false })
+      .getByText('等你查看诊断报告第 1.1 版', { exact: false })
       .first()
       .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('诊断报告：父对话里在跑的子对话那一行没有写「等你查看诊断报告第 2 版」'))
+      .catch(() => errors.push('诊断报告：父对话里在跑的子对话那一行没有写「等你查看诊断报告第 1.1 版」'))
     if (!(await p.getByText('报告待确认', { exact: true }).count()))
       errors.push('诊断报告：父对话里那一行没有用「报告待确认」和别的执行中区分开')
     // 报告交上来时自动弹一次审阅弹窗（每一版只弹一次，关掉后不再弹）
@@ -1096,8 +1172,25 @@ await runShard(import.meta.filename, async (api) => {
       if (!(await verPick.count())) errors.push('诊断报告：有两版却没有版本下拉')
       if (await dlg.getByRole('radiogroup', { name: '版本' }).count()) errors.push('诊断报告：版本还排在正文上面')
       if (!(await dlg.getByText('上周的重构把派发挪进了循环里').count()))
-        errors.push('诊断报告：第 2 版没有显示对上一版意见的回答')
-      // 选中根因那段文字标注：标注能选种类，「有疑问，让它修改」随之可点
+        errors.push('诊断报告：第 1.1 版没有显示对上一版意见的回答')
+      // 按你的提问重出（用户 2026-11-13 定）：报告上方写结论变没变，能切到「对比上一份」看改了哪几节
+      if (!(await dlg.locator('[data-redo-badge]').getByText('结论没变').count()))
+        errors.push('诊断报告：按提问重出的一版上方没有「结论没变」')
+      const cmpTab = dlg.getByRole('radio', { name: '对比上一份' })
+      if (!(await cmpTab.count())) errors.push('诊断报告：没有「对比上一份」')
+      else {
+        await cmpTab.click()
+        await settle(p)
+        const cmpBox = dlg.locator('[data-report-compare]')
+        if (!(await cmpBox.locator('[data-compare-section="changed"]').count()))
+          errors.push('诊断报告：对比上一份里没有标出改了的小节')
+        if (!(await cmpBox.getByText('回应了你的 2/2 条标注').count()))
+          errors.push('诊断报告：对比上一份里没写回应了几条标注')
+        await check(p, '诊断报告-对比上一份', ['结论没变', '已更新'])
+        await dlg.getByRole('radio', { name: '报告' }).click()
+        await settle(p)
+      }
+      // 选中根因那段文字标注：标注能选种类，「提问 / 补充，出新一版」随之可点
       // 和阶段确认那一步（02d）一样用真实的鼠标拖选：程序化选区不会触发弹窗里的 mouseup
       await settle(p)
       // 报告加了时间线、引入点、候选方案后变长了：根因那段可能在可视区外，先滚进来再拖
@@ -1122,8 +1215,8 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：标注上没有「疑问 / 改方案 / 补充信息」的选择')
         await dlg.getByRole('radio', { name: '改方案' }).first().click()
         await dlg.getByLabel('标注 1 的意见').fill('顺便看看结算页的角标')
-        if (await dlg.getByRole('button', { name: '有疑问，让它修改' }).isDisabled())
-          errors.push('诊断报告：标注了还不能点「有疑问，让它修改」')
+        if (await dlg.getByRole('button', { name: '提问 / 补充，出新一版' }).isDisabled())
+          errors.push('诊断报告：标注了还不能点「提问 / 补充，出新一版」')
       } else errors.push('诊断报告：选中文字后没有出现「标注」按钮')
       // ADR 0046：引入点、时间线、候选方案画出来；没选的方案能一键加「改方案」意见
       // 候选方案并排成一张比较表：方案 B 是表头一列，做法写在「做法」那一行
@@ -1143,6 +1236,18 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('诊断报告：点「改用方案 B」后标注里没有这一条')
       }
       await check(p, '诊断报告-审阅弹窗', ['诊断报告', '候选方案'])
+      // 调用栈树（设计稿 2026-11-13）：方案页画在正文里，选定的方案 A 标在出错点上，旁支收起
+      {
+        const tree = dlg.locator('.md-calltree').first()
+        if (!(await tree.count())) errors.push('诊断报告：方案页没有画调用栈树')
+        else {
+          await tree.scrollIntoViewIfNeeded()
+          await settle(p)
+          for (const text of ['出错点', '改这里 · 方案 A', '事件 cart:change', '＋2 个旁支'])
+            if (!(await tree.getByText(text, { exact: false }).count())) errors.push(`调用栈树：没有显示「${text}」`)
+          await check(p, '诊断报告-调用栈树', ['改在调用栈的哪里'])
+        }
+      }
       // 整体意见框就是对话输入框（用户 2026-11-05 要的）：能粘贴、拖进、从「+」引入日志文件和图片
       const overallBox = dlg.getByRole('textbox', { name: '整体意见' })
       if ((await overallBox.getAttribute('contenteditable').catch(() => null)) !== 'true')
@@ -1163,7 +1268,7 @@ await runShard(import.meta.filename, async (api) => {
       await check(p, '诊断报告-旧版只读')
       // 取消修复：先确认，确认后弹窗关掉，对话里记一行「你取消了…」，不再等确认
       await verPick.click()
-      await p.getByRole('option', { name: /^第 2 版/ }).click()
+      await p.getByRole('option', { name: /^第 1\.1 版/ }).click()
       await settle(p)
       const cancel = dlg.getByRole('button', { name: '取消修复' })
       if (!(await cancel.count())) errors.push('诊断报告：最新一版没有「取消修复」')
@@ -1174,9 +1279,9 @@ await runShard(import.meta.filename, async (api) => {
         await check(p, '诊断报告-取消修复确认')
         await ask.getByRole('button', { name: '不修了' }).click()
         await childView(p)
-          .getByText('你取消了诊断报告第 2 版', { exact: false })
+          .getByText('你取消了诊断报告第 1.1 版', { exact: false })
           .waitFor({ timeout: 10000 })
-          .catch(() => errors.push('诊断报告：取消后对话里没有「你取消了诊断报告第 2 版」那一行'))
+          .catch(() => errors.push('诊断报告：取消后对话里没有「你取消了诊断报告第 1.1 版」那一行'))
         if (await p.getByRole('button', { name: '确认方案，开始修' }).count())
           errors.push('诊断报告：取消后审阅弹窗还开着')
         if (await childView(p).getByText('等你查看报告').count())

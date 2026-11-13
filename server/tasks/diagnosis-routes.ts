@@ -25,6 +25,8 @@ const Decision = z.object({
   supply: z.boolean().default(false),
   logs: z.string().max(200000).default(''),
   logFiles: z.array(z.string().max(500)).max(20).default([]),
+  /** 退回的意图（用户 2026-11-13 定）：ask 提问、补充，要它据此重出一版；reject 不认同、推翻重查 */
+  intent: z.enum(['ask', 'reject']).optional(),
   notes: z
     .array(DiagnosisNote.omit({ id: true }))
     .max(50)

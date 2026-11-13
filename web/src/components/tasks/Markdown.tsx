@@ -10,6 +10,7 @@ import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { useMdTables } from './md-table-layer'
+import '@/components/ui/call-tree.css'
 import { enhanceMermaid, mermaidAction, mermaidErrorHtml, mermaidHtml, mermaidThemeVars } from '@/lib/mermaid-fx'
 
 /**

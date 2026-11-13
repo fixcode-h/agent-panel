@@ -11,6 +11,7 @@ import { getLang, t } from '@shared/i18n'
 import type { LineMark } from '@shared/bug/quotes-md'
 import { markdownDiff } from './diff-html'
 import { tableHtml } from './markdown/table'
+import { callTreeHtml } from './markdown/call-tree'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -231,6 +232,8 @@ renderer.code = ({ text, lang }) => {
     const src = lineSpans(escape(text))
     return `<div class="md-mermaid" data-src="${escape(text)}"><div class="md-code-bar"><span class="md-code-lang">mermaid <small>· ${t('正在绘制')}</small></span></div><pre><code>${src.html}</code></pre></div>`
   }
+  // 调用栈树（诊断报告、回复里的 calltree 代码块，markdown/call-tree.ts）
+  if (name === 'calltree') return callTreeHtml(text)
   // diff 和界面里别处的 diff 一个画法（diff-html.ts）；夹着别的文字认不出时照普通代码块画
   if (name === 'diff' || name === 'patch') {
     const diff = markdownDiff(text, lang ?? '', liveRender ? null : hljs, codeBar)

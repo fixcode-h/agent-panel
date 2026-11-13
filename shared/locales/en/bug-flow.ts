@@ -19,26 +19,13 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '把复现得到的日志贴在这里，也可以粘贴或拖进日志文件':
     'Paste the logs from your reproduction here, or paste / drop log files',
   同意加日志: 'Allow adding logs',
-  '有疑问，接着分析': 'Question it, keep analysing',
   '同意后它只在日志计划里的文件加临时日志，不改逻辑；手上已有日志可以贴在右下角直接交':
     'Once allowed it only adds temporary logs to the files in the log plan, no logic changes. Already have logs? Paste them at the bottom right and submit',
-  '「有疑问」把标注按编号交回，它逐条回答后接着论证':
-    '"Question it" sends your numbered notes back; it answers each and keeps gathering evidence',
   '我有日志，直接分析': 'I have logs, analyse them',
   '不用它加日志：直接分析你贴的日志': 'Skip adding logs: analyse the logs you pasted',
   '整体意见（可选）；手上已有日志可以贴在这里，或粘贴、拖进日志文件':
     'Overall comment (optional); paste logs you already have here, or paste / drop log files',
   同意根因: 'Agree with root cause',
-  '否决，再分析': 'Reject, analyse again',
-  '同意根因它就开始设计修复方案；觉得不对就选中文字标出疑问或补充，再点「否决」':
-    'Agree and it starts designing the fix; if it looks wrong, select text to add questions or facts, then click "Reject"',
-  '「否决」把疑问和补充交回：它认为证据不够会回到论证加日志（升一版），否则逐条回答后再交':
-    '"Reject" sends your points back: if it agrees the evidence is thin it goes back to adding logs (a new version), otherwise it answers each point and resubmits',
-  '有疑问，让它修改': 'Question it, ask for changes',
-  '方案没问题就确认，它才会开始改代码；有疑问先选中文字标注':
-    'Approve if the plan looks right; it only starts changing code after that. Select text to annotate questions',
-  '「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）':
-    '"Question it" sends your numbered notes back; it answers each and resubmits (same version)',
   '结束，跳过验证': 'Finish, skip verification',
   还有问题: 'Still broken',
   '「还有问题」把标注交回：它会回到论证或重新出方案':
@@ -64,8 +51,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
   // 引入日志文件
   日志文件: 'Log files',
   '先在整体意见里贴日志，或引入日志文件': 'Paste logs into the overall comment first, or add log files',
-  '还有没处理的疑问：确认后它就不再回答这些标注':
-    'Some questions are still open: approving means it will not answer those notes',
   // 对话里的工具行
   交论证: 'Submit evidence plan',
   交根因: 'Submit root cause',
@@ -82,8 +67,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你结束了验证，它在收尾': 'You finished verification; it is wrapping up',
   '你同意了根因和方案，它在修': 'You agreed with the root cause and the plan; it is fixing',
   同意根因并按这个修: 'Agree and fix it this way',
-  '根因和修复方案一起确认，确认了它才开始改代码；根因或方案有疑问先选中文字标注':
-    'Approve the root cause and the fix together; it only starts changing code after that. Select text to annotate questions about either',
   怎么复现: 'How to reproduce',
   '日志在：{where}': 'Logs are in: {where}',
   '过滤：`{filter}`': 'Filter: `{filter}`',
@@ -104,8 +87,6 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '你给了第 {n} 版的验证结果，交给它分析':
     'You provided verification results for version {n}; handed over for analysis',
   '你给了第 {n} 版要的日志，交给它分析': 'You provided the logs version {n} asked for; handed over for analysis',
-  '你对第 {n} 版的{phase}提了 {k} 条意见，要它接着分析':
-    'You raised {k} points on the {phase} of version {n} and asked it to keep analysing',
   '你同意了第 {n} 版的日志计划': 'You allowed the log plan in version {n}',
   '你同意了第 {n} 版的根因': 'You agreed with the root cause in version {n}',
   '你确认了第 {n} 版的修复方案': 'You approved the fix plan in version {n}',
@@ -122,12 +103,9 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '{label}（最新）': '{label} (latest)',
   正在写: 'Writing',
   内容较长时要写一会儿: 'Long content takes a while to write',
-  函数: 'Function',
-  做了什么: 'What it does',
   怎么解释: 'Explanation',
   结果: 'Result',
   跑了几次: 'Runs',
-  位置和调用路径: 'Location and call path',
   // 决策卡、按步骤排的报告（2026-11-07）
   '正在找 {name}…': 'Looking for {name}…',
   '项目里有 {n} 个同名文件': '{n} files with this name in the project',
