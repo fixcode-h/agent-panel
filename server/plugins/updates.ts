@@ -1,5 +1,6 @@
 import { isNewerPlugin, type PluginUpdate } from '../../shared/plugins/version.ts'
-import { readMarket, readRepoVersion, type MarketEntry } from './github.ts'
+import { readRepoVersion, type MarketEntry } from './github.ts'
+import { readMarketCached } from './market-cache.ts'
 import type { Installed } from './store.ts'
 
 /**
@@ -7,8 +8,10 @@ import type { Installed } from './store.ts'
  * 同一个仓库只读一次插件目录（plugins.json）：插件在目录里就拿目录里的版本比，
  * 仓库没有插件目录（整个仓库是一个插件）就读安装时那个分支 / 子目录上的 plugin.json。
  * 某个仓库读不到（断网、限流）只记一条错误，不影响其他仓库。
+ * 插件目录走市场缓存（server/plugins/market-cache.ts）：插件页「刷新」时先重读了市场，这里不再重复请求；
+ * refresh 时连缓存一起重读。
  */
-export async function checkPluginUpdates(list: Installed[]) {
+export async function checkPluginUpdates(list: Installed[], opts: { refresh?: boolean } = {}) {
   const github = list.filter((p) => p.source.kind === 'github')
   const markets = new Map<string, Promise<MarketEntry[] | undefined>>()
   const updates: PluginUpdate[] = []
@@ -17,7 +20,11 @@ export async function checkPluginUpdates(list: Installed[]) {
     github.map(async (p) => {
       const repo = p.source.ref
       try {
-        if (!markets.has(repo)) markets.set(repo, readMarket(repo))
+        if (!markets.has(repo))
+          markets.set(
+            repo,
+            readMarketCached(repo, { refresh: opts.refresh }).then((r) => r.plugins ?? undefined),
+          )
         const market = await markets.get(repo)
         let latest: string | undefined
         let install: PluginUpdate['install']

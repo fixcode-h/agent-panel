@@ -67,7 +67,18 @@ export function Row({
  * 不在设置页外（没挂滚动容器）用时只是多个标题，什么都不登记。
  * plain：内容本身是大块的自定义排版（预览、列表、表格），不套卡片。
  */
-export function Group({ title, children, plain }: { title?: string; children: React.ReactNode; plain?: boolean }) {
+export function Group({
+  title,
+  children,
+  plain,
+  aside,
+}: {
+  title?: string
+  children: React.ReactNode
+  plain?: boolean
+  /** 标题后面跟的小字（个数、「1 个有新版本」）；不进小节锚点和设置搜索 */
+  aside?: React.ReactNode
+}) {
   const anchor = useSectionAnchor(title)
   return (
     <section
@@ -76,7 +87,12 @@ export function Group({ title, children, plain }: { title?: string; children: Re
       data-setting-group={title}
       className="flex flex-col pt-6 first:pt-2"
     >
-      {title && <h3 className="pb-2 pl-1 text-footnote font-semibold tracking-wide text-subtle">{title}</h3>}
+      {title && (
+        <h3 className="flex items-center gap-1.5 pb-2 pl-1 text-footnote font-semibold tracking-wide text-subtle">
+          {title}
+          {aside}
+        </h3>
+      )}
       {plain ? <div className="flex flex-col">{children}</div> : <div className="settings-card">{children}</div>}
     </section>
   )

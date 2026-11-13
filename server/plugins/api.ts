@@ -7,6 +7,7 @@ import { pluginConfig, pluginOn } from '../../shared/plugins/index.ts'
 import type { PluginInfo, PluginManifest, PluginSource } from '../../shared/plugins/types.ts'
 import { getSettings } from '../settings.ts'
 import { DEFAULT_MARKET, downloadEntry, downloadSource, parseRepo, readMarket } from './github.ts'
+import { currentMarketRepo, readMarketCached } from './market-cache.ts'
 import {
   afterInstall,
   brokenList,
@@ -129,18 +130,26 @@ export function pluginsApi() {
           market: DEFAULT_MARKET,
         })
       })
-      // 插件市场：仓库的 plugins.json；没有的仓库当作单个插件
+      // 插件市场：仓库的 plugins.json（null：没有的仓库当作单个插件）。先给缓存，refresh=1 才去 GitHub 重读；
+      // 不传 repo 用最后用的市场仓库，传了就记成最后用的
       .get('/market', async (c) => {
         try {
-          const { repo, ref } = parseRepo(c.req.query('repo') || DEFAULT_MARKET)
-          const list = await readMarket(repo, c.req.query('ref') || ref)
-          return c.json({ repo, plugins: list ?? null })
+          const { repo, ref } = parseRepo(c.req.query('repo') || (await currentMarketRepo()))
+          const r = await readMarketCached(repo, {
+            ref: c.req.query('ref') || ref,
+            refresh: c.req.query('refresh') === '1',
+            remember: true,
+          })
+          return c.json({ ...r, defaultRepo: DEFAULT_MARKET })
         } catch (e) {
           return c.json(fail(e), 400)
         }
       })
-      // 检查更新：从 GitHub 装的插件和上游比版本，只读不装；升级还是走 /install/github 的预览和确认
-      .get('/updates', async (c) => c.json(await checkPluginUpdates(installedList())))
+      // 检查更新：从 GitHub 装的插件和上游比版本，只读不装；升级还是走 /install/github 的预览和确认。
+      // 插件目录走市场缓存（插件页的「刷新」先重读了市场），refresh=1 时连缓存一起重读
+      .get('/updates', async (c) =>
+        c.json(await checkPluginUpdates(installedList(), { refresh: c.req.query('refresh') === '1' })),
+      )
       .post('/install/github', async (c) => {
         const body = (await c.req.json().catch(() => ({}))) as {
           repo?: string
