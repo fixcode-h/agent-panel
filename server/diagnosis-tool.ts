@@ -511,7 +511,7 @@ const DIAGNOSIS_TOOL = {
       whatChanged: text('第 2 份起：相比上一份改了什么，一两句（写在报告最上面）'),
       answers: {
         type: 'array',
-        description: '用户提了意见后再交时：按编号回答用户上一轮的意见',
+        description: '用户提了意见后再交时：按编号逐条回应用户上一轮的标注（疑问、改方案、补充信息都要）',
         items: {
           type: 'object',
           properties: {
@@ -519,8 +519,9 @@ const DIAGNOSIS_TOOL = {
             answer: text('查了什么、结论、补了什么证据或改了哪一节'),
             stance: {
               type: 'string',
-              enum: ['adopted', 'explained', 'disagree'],
-              description: 'adopted 采纳并改了、explained 解释清楚不用改、disagree 不同意（写理由）',
+              enum: ['adopted', 'explained', 'disagree', 'used'],
+              description:
+                'adopted 采纳并改了、explained 解释清楚不用改、disagree 不同意（写理由）、used 补充信息已用上（写用在哪一节、对结论有没有影响）',
             },
           },
           required: ['id', 'answer'],

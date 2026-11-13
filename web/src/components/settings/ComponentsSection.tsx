@@ -88,6 +88,7 @@ import type { CompName, ComponentStyle } from '@shared/component-style'
 import type { Appearance } from '@shared/schema'
 import { applyLocalAppearance } from '@/lib/appearance'
 import { PluginSpecimens } from './PluginSpecimens'
+import { ReportCompareSpecimen } from './ReportCompareSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
 const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问题挡住后续节点
@@ -480,6 +481,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               open={false}
             />
           </div>
+        </Specimen>
+        <Specimen name="ReportCompare" tune={['statusPill']}>
+          <ReportCompareSpecimen />
         </Specimen>
         <Specimen name="InlineChip" tune={['chip']}>
           <p className="text-prose leading-7">

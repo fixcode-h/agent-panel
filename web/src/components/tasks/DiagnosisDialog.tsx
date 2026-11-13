@@ -4,7 +4,7 @@ import type { Attachment, Task, TaskRequest } from '@shared/schema'
 import { attachChip } from '@shared/composer'
 import type { Diagnosis } from '@shared/bug/diagnosis-schema'
 import { diagnosisMarkdown, diagnosisView } from '@shared/bug/diagnosis-md'
-import { causeInPlan, phaseOf, revOf, roundOf } from '@shared/bug/phase'
+import { causeInPlan, labelOf, phaseOf } from '@shared/bug/phase'
 import { autoOn } from '@shared/bug/auto'
 import { recheckVerdict } from '@shared/bug/recheck'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -19,6 +19,7 @@ import { DiagnosisCard, ReportFold } from './DiagnosisCard'
 import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
 import { LogWatch, PatchReminder, usePatch, WorkspacePatch } from './DiagnosisEvidence'
 import { patchKindOf } from '@shared/bug/patch'
+import { compareBase, DiagnosisCompare, RedoBadge } from './DiagnosisCompare'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话每到一个关口交一版（论证、根因、修复方案、验证），
@@ -107,16 +108,27 @@ function versionsOf(
   status?: (d: Diagnosis) => ReactNode,
 ) {
   return list.map((d, i) => {
-    const n = revOf(d)
-    const k = roundOf(d, list)
+    // 第几版带小版本（按你的提问重出的是 N.1，用户 2026-11-13 定）；同一版号只有论证多轮时写第几轮
+    const { ver: n, round: k } = labelOf(d, list)
     const phase = phaseLabel(d)
+    const base = compareBase(d, list)
     return {
       key: String(d.version),
       label: k > 1 ? t('第 {n} 版 · {phase} · 第 {k} 轮', { n, phase, k }) : t('第 {n} 版 · {phase}', { n, phase }),
       // 下拉按阶段分组（用户 2026-11-06 要求），组名已是阶段，列表里只写第几版、第几轮
       group: phase,
       short: k > 1 ? t('第 {n} 版 · 第 {k} 轮', { n, k }) : t('第 {n} 版', { n }),
-      ...viewOf(d, list[i - 1], { author, list, snippet: snippets[refKey(d)], changed }, teamNames, status?.(d)),
+      ...viewOf(
+        d,
+        list[i - 1],
+        { author, list, snippet: snippets[refKey(d)], changed },
+        teamNames,
+        <>
+          <RedoBadge d={d} list={list} />
+          {status?.(d)}
+        </>,
+      ),
+      compare: base && <DiagnosisCompare d={d} base={base} list={list} author={author} />,
       status: statusOf(d),
     }
   })
@@ -143,6 +155,12 @@ function viewOf(
   }
 }
 
+/** 根因页的「不认同」（用户 2026-11-13 定）：和「提问 / 补充」分开，交回去的意思是推翻 */
+const REJECT_CAUSE = () => ({
+  label: t('不认同，推翻重查'),
+  hint: t('它认为证据不够会回到论证加日志（升一个大版本），否则逐条回答后再交'),
+})
+
 const phaseLabel = (d: Diagnosis) =>
   ({ evidence: t('论证'), cause: t('根因'), plan: t('修复方案'), fix: t('修复'), verify: t('验证') })[phaseOf(d)]
 
@@ -150,17 +168,28 @@ const phaseLabel = (d: Diagnosis) =>
  * 每个阶段的按钮和提示（用户 2026-11-05 定的流程）：
  * 论证同意加日志（手上有日志可以直接交），等你复现时交日志；根因同意或否决；方案确认开始修；验证交日志或直接结束
  */
-function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
+/** 每一步的按钮和提示：reject 是「不认同」按钮（只有根因页有），intent 是「修改」按钮交回去的意图 */
+interface PhaseCfg {
+  texts: { approve: string; revise: string; hintApprove: string; hintRevise: string }
+  supply?: { label: string; primary?: boolean; hint: string }
+  noApprove?: boolean
+  placeholder?: string
+  reject?: { label: string; hint: string }
+  intent?: 'ask' | 'reject'
+}
+
+function phaseTexts(d: Diagnosis, list: Diagnosis[]): PhaseCfg {
   const phase = phaseOf(d)
   // 快速级别根因和方案合成一版：点一次就同意根因并开始修
   if (causeInPlan(d, list))
     return {
       texts: {
         approve: t('同意根因并按这个修'),
-        revise: t('有疑问，让它修改'),
-        hintApprove: t('根因和修复方案一起确认，确认了它才开始改代码；根因或方案有疑问先选中文字标注'),
-        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）'),
+        revise: t('提问 / 补充，出新一版'),
+        hintApprove: t('根因和修复方案一起确认，确认了它才开始改代码；有疑问或要补充先选中文字标注'),
+        hintRevise: t('把疑问和补充按编号交回：它逐条回应、重新评估后出新一版给你再看'),
       },
+      reject: REJECT_CAUSE(),
     }
   if (phase === 'evidence' && d.awaiting)
     return {
@@ -182,9 +211,9 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
     return {
       texts: {
         approve: t('同意加日志'),
-        revise: t('有疑问，接着分析'),
+        revise: t('提问 / 补充，出新一版'),
         hintApprove: t('同意后它只在日志计划里的文件加临时日志，不改逻辑；手上已有日志可以贴在右下角直接交'),
-        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答后接着论证'),
+        hintRevise: t('把疑问和补充按编号交回：它逐条回应、重新评估后出新一版论证给你再看'),
       },
       supply: { label: t('我有日志，直接分析'), hint: t('不用它加日志：直接分析你贴的日志') },
       placeholder: t('整体意见（可选）；手上已有日志可以贴在这里，或粘贴、拖进日志文件'),
@@ -193,18 +222,21 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
     return {
       texts: {
         approve: t('同意根因'),
-        revise: t('否决，再分析'),
-        hintApprove: t('同意根因它就开始设计修复方案；觉得不对就选中文字标出疑问或补充，再点「否决」'),
-        hintRevise: t('「否决」把疑问和补充交回：它认为证据不够会回到论证加日志（升一版），否则逐条回答后再交'),
+        revise: t('提问 / 补充，出新一版'),
+        hintApprove: t('同意根因它就开始设计修复方案；有疑问或要补充就选中文字标注，觉得根因不对点「不认同」'),
+        hintRevise: t(
+          '不是否定根因：它逐条回应疑问、把补充当新证据重新评估，出新一版给你再看；觉得根因不对点「不认同」',
+        ),
       },
+      reject: REJECT_CAUSE(),
     }
   if (phase === 'plan')
     return {
       texts: {
         approve: t('确认方案，开始修'),
-        revise: t('有疑问，让它修改'),
-        hintApprove: t('方案没问题就确认，它才会开始改代码；有疑问先选中文字标注'),
-        hintRevise: t('「有疑问」把标注按编号交回，它逐条回答、改好再交（还是这一版）'),
+        revise: t('提问 / 补充，出新一版'),
+        hintApprove: t('方案没问题就确认，它才会开始改代码；有疑问或要补充先选中文字标注'),
+        hintRevise: t('把疑问、改方案和补充按编号交回：它逐条回应、改好后出新一版给你再看'),
       },
     }
   // 修复（用户 2026-11-10 定）：看改了哪些代码、为什么，确认了才验证；在代码上标疑问，它逐条判断，对的改、不对的用事实反驳
@@ -234,6 +266,8 @@ function phaseTexts(d: Diagnosis, list: Diagnosis[]) {
       hintApprove: '',
       hintRevise: t('「还有问题」把标注交回：它会回到论证或重新出方案'),
     },
+    // 验证页的「还有问题」就是验证没过：推翻这次修法
+    intent: 'reject' as const,
     supply: {
       label: t('交日志，确认修好'),
       primary: true,
@@ -412,12 +446,26 @@ export function DiagnosisDialog({
           />
         ) : undefined
       }
+      reject={
+        cfg.reject && {
+          ...cfg.reject,
+          onReject: async (raw) => {
+            const r = await api.decideDiagnosis(task.id, last.version, {
+              approve: false,
+              intent: 'reject',
+              notes: notesOf(raw),
+              overall: raw.overall,
+            })
+            await hand(r.message, raw.files, r.task)
+          },
+        }
+      }
       onAnswer={async (allow, _text, raw) => {
         const r = await api.decideDiagnosis(task.id, last.version, {
           approve: allow,
           notes: notesOf(raw),
           overall: raw?.overall ?? '',
-          ...(allow && { autoNext }),
+          ...(allow ? { autoNext } : { intent: cfg.intent ?? 'ask' }),
         })
         await hand(r.message, raw?.files ?? [], r.task)
       }}

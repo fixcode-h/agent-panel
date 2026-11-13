@@ -8,7 +8,8 @@ paths: shared/bug/diagnosis.ts, shared/bug/phase.ts, shared/bug/diagnosis-md.ts,
 
 - 规则：多份提交的文档（Bug 诊断报告这类）把「交的顺序号」和「给用户看的第几版」分开：顺序号做接口和记号（`Diagnosis.version`），第几版按阶段和用户的决定算（`shared/bug/phase.ts` 的 `nextRev`）——按意见修改、阶段往下走还是同一版，回到更早的阶段或换掉用户确认过的方案才升。界面、提示词、对话里那一行都用 `revOf`，工具返回里另写「报告 #n」给界面认。
 - 起因：用户 2026-11-06 报「第 2 版 · 修复方案」：只是按意见改了几句、或者从根因走到方案，版本号就往上加了。
-- 防线：`shared/bug/diagnosis.test.ts`「第几版（用户 2026-11-06 定）」。
+- 补充（用户 2026-11-13 定）：用户提问、补充或不认同后它在同一版里重出的，显示成小版本 N.1、N.2（`verOf`），让用户看得出是针对他的意见新出的；结论推翻才升大版本。
+- 防线：`shared/bug/diagnosis.test.ts`「第几版（用户 2026-11-06 定）」。、`shared/bug/diagnosis-ask.test.ts`「小版本」。
 
 ## 论证的日志一轮加够：列全假设、每个假设一处、每跳一个路标
 

@@ -20,6 +20,7 @@ import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
 import { OverallComposer, useLogFiles, type OverallTools } from './LogAttach'
 import { useChosenColumn } from './review-table'
+import { CompareSwitch, RejectButton } from './review-extras'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -53,6 +54,8 @@ export interface ReviewVersion {
   /** 正文前后多画的（诊断报告的决策卡、收起的「依据和背景」）：在标注范围里，选中文字照样能标 */
   lead?: ReactNode
   after?: ReactNode
+  /** 和上一份的对比（诊断报告「对比上一份」，用户 2026-11-13 定）：有它时顶栏多一个「报告 / 对比上一份」切换 */
+  compare?: ReactNode
 }
 
 /** 标注和整体意见的原始内容：诊断报告要按种类、按编号交回；files 是整体意见框里附的日志文件 */
@@ -91,6 +94,7 @@ export function ReviewDialog({
   overallTools,
   approveExtra,
   dock,
+  reject,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -151,6 +155,11 @@ export function ReviewDialog({
    * 审方案时能同时翻对话、点开文件；toggle 在弹窗和右栏之间切换（宽屏才有右栏，canDock 为假时不给按钮）
    */
   dock?: { docked: boolean; canDock: boolean; toggle: () => void; slot: HTMLElement | null }
+  /**
+   * 「不认同」这类按钮（诊断报告根因页「不认同，推翻重查」，用户 2026-11-13 定）：和「修改」一样要有标注或意见，
+   * 但交回去的意思是推翻，不是提问。次要按钮，放在「修改」前面
+   */
+  reject?: { label: string; hint: string; onReject: (raw: ReviewRaw) => Promise<void> }
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -166,7 +175,11 @@ export function ReviewDialog({
   const [focusId, setFocusId] = useState<number | null>(null)
   // 选中文字后浮在选区上方的「标注」按钮，位置相对滚动区
   const [pick, setPick] = useState<{ range: Range; quote: string; top: number; left: number } | null>(null)
-  const [busy, setBusy] = useState<'' | 'allow' | 'deny' | 'supply'>('')
+  const [busy, setBusy] = useState<'' | 'allow' | 'deny' | 'supply' | 'reject'>('')
+  // 看报告还是看和上一份的对比：换版本时回到报告
+  const [cmp, setCmp] = useState(false)
+  // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注；回到看报告
+  const showVer = (key: string) => (setVer(key), setPick(null), setCmp(false))
   const logs = useLogFiles()
   // 正文和标注栏之间能拖动调宽（用户 2026-11-05 要的）：记在本机，所有审阅弹窗共用一个宽度
   // 上限按弹窗里这一行的宽度算，正文至少留 360px
@@ -191,6 +204,7 @@ export function ReviewDialog({
   const old = !!versions && !!shown && shown !== versions.at(-1)
   const locked = readOnly || old
   const detail = shown?.detail ?? req.detail
+  const comparing = cmp && !!shown?.compare
 
   // 换了一个请求（退回后 Agent 改完又来确认）时标注从头开始
   useEffect(() => {
@@ -296,14 +310,15 @@ export function ReviewDialog({
     overall: said,
     files: attach ? logs.list : [],
   })
-  // 标了疑问（feedbackFirst）或在等日志（supply.primary）时，主按钮换人；补充信息不用回答，只有它时照常确认
-  const asks = notes.some((n) => n.kind !== 'info')
-  const revisePrimary = !!feedbackFirst && asks && !supply?.primary
-  const submit = async (allow: boolean | 'supply') => {
+  // 有标注（feedbackFirst）或在等日志（supply.primary）时，主按钮换人。补充信息也算（用户 2026-11-13 定：
+  // 补充了信息就是要它据此重出一版再评估，不是附带一句就确认）
+  const revisePrimary = !!feedbackFirst && notes.length > 0 && !supply?.primary
+  const submit = async (allow: boolean | 'supply' | 'reject') => {
     if (busy || logs.busy) return
-    setBusy(allow === 'supply' ? 'supply' : allow ? 'allow' : 'deny')
+    setBusy(allow === 'supply' ? 'supply' : allow === 'reject' ? 'reject' : allow ? 'allow' : 'deny')
     try {
       if (allow === 'supply') await supply?.onSupply(raw())
+      else if (allow === 'reject') await reject?.onReject(raw())
       else await onAnswer(allow, allow ? undefined : reviewFeedback(notes, said), raw())
       onOpenChange(false)
     } catch (e) {
@@ -322,11 +337,7 @@ export function ReviewDialog({
       size="xs"
       aria-label={t('版本')}
       value={shown?.key ?? ''}
-      onChange={(e) => {
-        // 换版本时文档重画，旧版本上画的标注位置对不上：切到旧版先不显示标注
-        setVer(e.target.value)
-        setPick(null)
-      }}
+      onChange={(e) => showVer(e.target.value)}
       options={[...same].reverse().map((v) => {
         const latest = v === versions?.at(-1)
         const mark = (x: string) => (latest ? t('{label}（最新）', { label: x }) : x)
@@ -334,6 +345,14 @@ export function ReviewDialog({
       })}
       className="w-48 shrink-0"
     />
+  )
+
+  // 「报告 / 对比上一份」：这一份有上一份可比时才出
+  const tools = (shown?.compare || picker) && (
+    <>
+      {shown?.compare && <CompareSwitch on={comparing} onChange={(v) => (setCmp(v), setPick(null))} />}
+      {picker}
+    </>
   )
 
   const who = agent && (
@@ -360,7 +379,7 @@ export function ReviewDialog({
             {req.title}
           </h2>
           <span className="flex-1" />
-          {!top && picker}
+          {!top && tools}
           {dockBtn}
         </header>
       ) : (
@@ -368,7 +387,7 @@ export function ReviewDialog({
           icon={ClipboardCheck}
           iconClass="text-warning"
           title={req.title}
-          aside={!top && picker}
+          aside={!top && tools}
           actions={dockBtn || undefined}
         >
           {who}
@@ -404,19 +423,15 @@ export function ReviewDialog({
                 )}
               >
                 <FrostBarBg />
-                <div className="min-w-0 flex-1">
-                  {typeof top === 'function'
-                    ? top(shown?.key ?? '', (key) => {
-                        setVer(key)
-                        setPick(null)
-                      })
-                    : top}
-                </div>
-                {picker}
+                <div className="min-w-0 flex-1">{typeof top === 'function' ? top(shown?.key ?? '', showVer) : top}</div>
+                {tools}
               </div>
             )}
             {/* 正文随弹窗宽度铺满（用户 2026-11-06 要求自适应，不再限 820px 窄栏） */}
-            <div ref={docRef} onClick={onDocClick} data-review-doc>
+            {/* 对比放在 docRef 外面：选中对比里的文字不加标注（标注要对着报告原文）。
+                报告只藏起来不卸载：卸载了已有标注的选区就对不上了 */}
+            {comparing && shown?.compare}
+            <div ref={docRef} onClick={onDocClick} data-review-doc className={cn(comparing && 'hidden')}>
               {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
               {shown?.lead}
               {detail ? (
@@ -636,6 +651,15 @@ export function ReviewDialog({
               {cancel.label}
             </Button>
           )}
+          {reject && (
+            <RejectButton
+              {...reject}
+              ready={hasFeedback}
+              busy={busy === 'reject'}
+              disabled={!!busy}
+              onClick={() => void submit('reject')}
+            />
+          )}
           {supply && !supply.primary && (
             <Button
               size="sm"
@@ -674,7 +698,7 @@ export function ReviewDialog({
               size="sm"
               variant={revisePrimary || supply?.primary ? 'secondary' : 'primary'}
               disabled={!!busy || logs.busy}
-              title={revisePrimary ? t('还有没处理的疑问：确认后它就不再回答这些标注') : undefined}
+              title={revisePrimary ? t('还有没交回的标注：确认后它就不再回应这些标注') : undefined}
               onClick={() => void submit(true)}
             >
               {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

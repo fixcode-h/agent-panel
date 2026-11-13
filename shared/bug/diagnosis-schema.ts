@@ -525,8 +525,11 @@ export const Diagnosis = z.object({
       z.object({
         id: z.number().int(),
         answer: z.string(),
-        /** 对这条意见的态度：adopted 采纳、explained 解释、disagree 不同意（报告上画成胶囊） */
-        stance: z.enum(['adopted', 'explained', 'disagree']).optional().catch(undefined),
+        /**
+         * 对这条意见的态度：adopted 采纳、explained 解释、disagree 不同意、used 补充信息已用上
+         * （用户 2026-11-13 定：补充信息也要回应用在哪、对结论有没有影响）。报告上画成胶囊
+         */
+        stance: z.enum(['adopted', 'explained', 'disagree', 'used']).optional().catch(undefined),
       }),
     )
     .default([]),
@@ -547,6 +550,11 @@ export const Diagnosis = z.object({
   /** 验证阶段：修完的结果（回归测试、影响面逐条的验证），交验证那一版时从档案里带上 */
   result: BugResult.optional().catch(undefined),
   notes: z.array(DiagnosisNote).default([]),
+  /**
+   * 用户退回时的意图（用户 2026-11-13 定）：ask 是提问、补充，不否定结论，要它据此重出一版再评估（小版本 N.1）；
+   * reject 是不认同、推翻重查（根因、验证页）。只看用户点的按钮，不看文字；没退回过的没有
+   */
+  intent: z.enum(['ask', 'reject']).optional().catch(undefined),
   overall: z.string().default(''),
   decidedAt: z.string().optional(),
   /** 交报告时工作区已经改了的文件：确认之前就动了手的，审阅时摆出来 */

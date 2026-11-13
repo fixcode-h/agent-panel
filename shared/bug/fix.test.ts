@@ -137,9 +137,9 @@ test('对修复的代码提疑问：放行方案里的文件，它逐条判断�
   assert.ok(r.ok)
   assert.match(r.message, /stance: adopted/)
   assert.match(r.message, /stance: disagree，用事实反驳/)
-  assert.match(r.message, /重新交 phase: fix（还是第 1 版）/)
+  assert.match(r.message, /重新交 phase: fix（面板记成第 1 版的小版本）/)
   assert.deepEqual(editScope(tk.bug!.diagnoses!), { files: ['web/src/lib/login.ts'] }, '说得对要能改代码')
-  assert.match(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, src(fixed)).info, /还没回答：1/)
+  assert.match(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, src(fixed)).info, /还没回应：1/)
   ok(
     submitDiagnosis(
       tk,

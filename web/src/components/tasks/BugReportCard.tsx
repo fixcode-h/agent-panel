@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { FileSearch, Loader2 } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import type { Diagnosis } from '@shared/bug/diagnosis-schema'
-import { phaseOf, revOf, roundOf } from '@shared/bug/phase'
+import { labelOf, phaseOf } from '@shared/bug/phase'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
 import { RowShell } from './ToolRow'
@@ -73,8 +73,8 @@ export function BugReportCards({ task, list }: { task: Task; list: Diagnosis[] }
 
 function ReportCard({ task, d, onOpen }: { task: Task; d: Diagnosis; onOpen: () => void }) {
   const all = task.bug?.diagnoses ?? []
-  const n = revOf(d)
-  const k = roundOf(d, all)
+  // 第几版带小版本（按你的提问重出的是 N.1）；同一版号只有论证多轮时写第几轮
+  const { ver: n, round: k } = labelOf(d, all)
   const phase = PHASE()[phaseOf(d)]
   const waiting = d.status === 'pending'
   const cancelled = d.status === 'cancelled'

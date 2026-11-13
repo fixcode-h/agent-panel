@@ -9,6 +9,7 @@ import { confirmWait, confirmWaitText } from './needs.ts'
 import { pendingAction } from '../user-action.ts'
 import { helperRunning } from '../tasks/helpers.ts'
 import { diagnosisPending, runRunning } from '../task.ts'
+import { verOf } from '../bug/phase.ts'
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（前五项只有一项有值） */
 export interface ChildActivity {
@@ -37,7 +38,8 @@ export type ChildWait =
   | { kind: 'background'; n: number }
   | { kind: 'helpers'; list: string[] }
   | { kind: 'workflow' }
-  | { kind: 'diagnosis'; version: number; rev: number }
+  /** rev 是给用户看的第几版，带小版本（1.1，见 shared/bug/phase.ts 的 verOf） */
+  | { kind: 'diagnosis'; version: number; rev: string }
   | { kind: 'action'; title: string }
   | { kind: 'next' }
 
@@ -84,8 +86,9 @@ export function childWait(
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)
   if (diagnosisPending(tk)) {
-    const d = tk.bug!.diagnoses!.at(-1)!
-    return { kind: 'diagnosis', version: d.version, rev: d.rev ?? d.version }
+    const list = tk.bug!.diagnoses!
+    const d = list.at(-1)!
+    return { kind: 'diagnosis', version: d.version, rev: verOf(d, list) }
   }
   const act = pendingAction(tk)
   if (act) return { kind: 'action', title: act.title }

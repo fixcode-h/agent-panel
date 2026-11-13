@@ -198,7 +198,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
         attention: [...base.attention, ...fixed.attention].slice(0, 3),
       }
     : base
-  const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意') }
+  const stance = { adopted: t('已采纳'), explained: t('已解释'), disagree: t('不同意'), used: t('已用上') }
   const answers = prev
     ? d.answers
         .map((a) => {

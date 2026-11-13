@@ -54,6 +54,28 @@ export function roundOf(d: Diagnosis, list: Diagnosis[]): number {
   return before.filter((x) => revOf(x) === revOf(d) && phaseOf(x) === phaseOf(d)).length
 }
 
+/**
+ * 给用户看的版本号（用户 2026-11-13 定）：用户提问、补充或不认同后它在同一版里重出的，记成小版本 N.1、N.2；
+ * 结论被推翻（nextRev 升了大版本）才是 N+1。只数这一份之前、同一大版本里用户退回过（有 intent）的几份
+ */
+export function verOf(d: Diagnosis, list: Diagnosis[]): string {
+  const i = list.indexOf(d)
+  const before = i >= 0 ? list.slice(0, i) : list
+  const minor = before.filter((x) => revOf(x) === revOf(d) && x.intent).length
+  return minor ? `${revOf(d)}.${minor}` : String(revOf(d))
+}
+
+/**
+ * 弹窗下拉、对话里那一行的标签：ver 是第几版（含小版本）；round 是同一版号同一阶段的第几份，
+ * 只有论证多轮（贴日志后再交）会大于 1，界面写「第 k 轮」区分
+ */
+export function labelOf(d: Diagnosis, list: Diagnosis[]): { ver: string; round: number } {
+  const ver = verOf(d, list)
+  const i = list.indexOf(d)
+  const upto = i >= 0 ? list.slice(0, i + 1) : [...list, d]
+  return { ver, round: upto.filter((x) => phaseOf(x) === phaseOf(d) && verOf(x, list) === ver).length }
+}
+
 /** 最后一版论证或根因（判断能不能往方案走） */
 const lastCore = (list: Diagnosis[]) =>
   [...list].reverse().find((d) => phaseOf(d) === 'evidence' || phaseOf(d) === 'cause')
@@ -245,19 +267,30 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
 - 说得对、改了更合理：按意见改代码（只改方案里的文件；要改别的文件先重新交 phase: plan 写明为什么，面板记成第 ${v + 1} 版），answers 写 stance: adopted 和改了什么。
 - 说得不对：代码不改，answers 写 stance: disagree，用事实反驳：引用代码行、测试输出、日志原文或文档，说清为什么现在这样是对的，不只说「没问题」。
 - 只是没看明白：answers 写 stance: explained 解释清楚。
-处理完重新交 phase: fix（还是第 ${v} 版）：changes 按现在的代码写每个改了的文件改了什么、为什么，面板会重新取 diff。用户确认修复之前不做验证、不收尾。`
-  if (d.status === 'questioned') {
+- 补充信息：对照改动重新判断，answers 写 stance: used，说明用在哪、要不要因此改代码。
+处理完重新交 phase: fix（面板记成第 ${v} 版的小版本）：changes 按现在的代码写每个改了的文件改了什么、为什么，面板会重新取 diff。用户确认修复之前不做验证、不收尾。`
+  if (d.status === 'questioned' && d.intent === 'reject') {
     const back =
       phase === 'cause'
-        ? `\n\n用户否决了这版根因：觉得用户说得对、证据确实不完整，就回到论证，交 phase: evidence（新的日志计划，面板记成第 ${v + 1} 版）；证据其实够，就再交 phase: cause 逐条回答（还是第 ${v} 版）。`
+        ? `用户不认同第 ${v} 版的根因：觉得用户说得对、证据确实不完整，就回到论证，交 phase: evidence（新的日志计划，面板记成第 ${v + 1} 版）；证据其实够，就再交 phase: cause 逐条回答（面板记成第 ${v} 版的小版本）。`
         : phase === 'verify'
-          ? `\n\n验证没通过：把这次修法和失败证据写进「已排除」，回到论证（phase: evidence）或重新出修复方案（phase: plan），面板记成第 ${v + 1} 版。`
-          : ''
-    return `用户对第 ${v} 版（${PHASE_TEXT[phase]}）还有意见，先不要改文件：
-${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}${back}
+          ? `验证没通过：把这次修法和失败证据写进「已排除」，回到论证（phase: evidence）或重新出修复方案（phase: plan），面板记成第 ${v + 1} 版。`
+          : `用户不认同第 ${v} 版（${PHASE_TEXT[phase]}）：查清后改好再交。`
+    return `${back}
+${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
 
-逐条查清后用 submit_diagnosis 再交（按意见修改还是第 ${v} 版，不升版本号）：answers 按编号回答「疑问」和「改方案」（查了什么、结论、补了什么证据或改了哪一节），「补充信息」用进报告里即可。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
+answers 按编号逐条回应用户的标注（查了什么、结论、补了什么证据或改了哪一节；补充信息写 stance: used，说明用在哪、对结论有没有影响）。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
   }
+  // 提问、补充（用户 2026-11-13 定）：用户没有否定结论，要它据此重新出一版给用户再评估
+  if (d.status === 'questioned')
+    return `用户对第 ${v} 版（${PHASE_TEXT[phase]}）提了问题、补充了信息，没有否定这版结论；据此重新出一版给用户再评估，先不要改文件：
+${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
+
+- 疑问：逐条查清再回答（读代码、看日志、跑命令），不要因为用户问了就改结论；答不上来的写明还缺什么。
+- 改方案：按意见改，或说明为什么不改。
+- 补充信息：当成新证据，对照现在的结论重新评估：不影响结论写清为什么；影响了就按新证据改。
+- 结论不变（或只是补全）：再交同一阶段 phase: ${phase}，面板记成第 ${v} 版的小版本（${v}.1、${v}.2…）；补充推翻了结论（根因不成立、方案要换）：回到更早的阶段交，面板记成第 ${v + 1} 版。
+answers 按编号逐条回应每一条标注（补充信息写 stance: used，说明用在哪一节、对结论有没有影响），whatChanged 写这一版改了哪几节。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
   if (d.status === 'answered') {
     if (phase === 'verify')
       return `用户按第 ${v} 版的验证步骤复现了，给了结果。只分析这一段日志，对照「看到什么算修好了」：
