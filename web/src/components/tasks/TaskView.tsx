@@ -14,10 +14,10 @@ import { taskHeaderItems } from './header-items'
 import { TurnRail } from './TurnRail'
 import { chatHelperIds } from './HelperCards'
 import { liveWaitText } from '@shared/live/task-live'
-import { latestTurnIndex } from '@/lib/latest-turn'
+import { latestTurnIndex, liveTurnIndex } from '@/lib/latest-turn'
 import type { Project, TaskMessage } from '@shared/schema'
 import { blockedStep, flowUnfinished, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import { childWait } from '@shared/task'
+import { childWait, deliveryActive, deliveryStatus } from '@shared/task'
 import { withTaskModel } from '@shared/tasks/run'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
@@ -366,6 +366,17 @@ export function TaskView({
   // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
   // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
   const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
+  // 正在输出的一轮：用户在这一轮进行中插话时，插进去的消息排在后面，但这一轮还在接着想、接着写，
+  // 思考和过程不能因此提前折叠（用户 2026-11-13 反馈）。是不是还属于这一轮按交付状态算，不看文字
+  const liveTurn = useMemo(
+    () =>
+      liveTurnIndex(blocks, working, (b) => {
+        if (b.kind !== 'msg' || b.m.role !== 'user' || !b.m.delivery || !shownTask) return false
+        const s = deliveryStatus(b.m.delivery.how, deliveryActive(b.m.delivery.at, shownTask))
+        return !!s && s.tone !== 'warn'
+      }),
+    [blocks, working, shownTask],
+  )
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
   // 轮次目录点一条：那一轮在更早没画出来的段里时先显示出来，画好后再按消息标记滚过去（见 message-anchor）
   const jumpToTurn = (msgId: string) => {
@@ -875,6 +886,7 @@ export function TaskView({
                             hidden,
                             total: blocks.length,
                             latestTurn,
+                            liveTurn,
                             working,
                             running,
                             teamNames,

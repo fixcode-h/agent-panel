@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { latestTurnIndex } from './latest-turn.ts'
+import { latestTurnIndex, liveTurnIndex } from './latest-turn.ts'
 
 const turn = { kind: 'turn' }
 const msg = { kind: 'msg' }
@@ -42,4 +42,43 @@ test('只有用户消息、还没有任何一轮回复：没有最新的一轮',
 
 test('空对话：没有最新的一轮', () => {
   assert.equal(latestTurnIndex([]), -1)
+})
+
+test('在输出的一轮：不在跑时没有', () => {
+  assert.equal(
+    liveTurnIndex([msg, turn], false, () => true),
+    -1,
+  )
+})
+
+test('在输出的一轮：最后一段就是它', () => {
+  assert.equal(
+    liveTurnIndex([msg, turn], true, () => false),
+    1,
+  )
+})
+
+test('在输出的一轮：后面插进这一轮的用户消息不让它提前收起', () => {
+  assert.equal(
+    liveTurnIndex([msg, turn, msg, msg], true, () => true),
+    1,
+  )
+})
+
+test('在输出的一轮：尾部是新起一轮的消息时前面那轮不算在输出', () => {
+  assert.equal(
+    liveTurnIndex([msg, turn, msg], true, () => false),
+    -1,
+  )
+})
+
+test('在输出的一轮：中间隔着别的段就停', () => {
+  assert.equal(
+    liveTurnIndex([turn, steps, msg], true, () => true),
+    -1,
+  )
+  assert.equal(
+    liveTurnIndex([turn, run], true, () => true),
+    -1,
+  )
 })
