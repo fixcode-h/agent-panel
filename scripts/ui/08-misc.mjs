@@ -989,6 +989,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!(await tree.getByRole('group', { name: /^今天 · / }).count()))
       errors.push('工作总结：新报告没有出现在「今天」这一组')
     await check(p, '工作总结-报告')
+    // 宽屏整页不滚，只有报告区自己滚：滚动区里的绝对定位元素（sr-only）逃出来会把文档撑高，
+    // 拖选到报告底部时浏览器接着滚整页，顶栏和标题被推出视口
+    const docOver = await p.evaluate(() => document.documentElement.scrollHeight - innerHeight)
+    if (docOver > 1) errors.push(`工作总结：报告页把整页撑高了 ${docOver}px，拖选到底部时整页会跟着滚`)
 
     // 编辑：Markdown 正文（ADR 0065）：开头一句概要，节标题紧跟条目，条目下缩进写「- 原因：」「- 修复：」，单子跟在标题括号里，明天计划只留标题
     await view.getByRole('radio', { name: '编辑' }).click()
