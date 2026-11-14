@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
 import type { ConfigFinding, ScanSummary } from './config-scan/index.ts'
+import type { McpToolTitle } from './mcp-catalog/tool-titles.ts'
 
 /** 库里的一项：某个 CLI 用户目录下的一个 Skill 或自定义命令 */
 export interface LibraryItem {
@@ -178,7 +179,8 @@ export interface McpTestResult {
   ok: boolean
   error?: string
   server?: string
-  tools: { name: string; description: string }[]
+  /** shown：服务在 tools/list 里报的显示名（title、_meta.titles），对话里的工具行用它代替英文原名 */
+  tools: { name: string; description: string; shown?: McpToolTitle }[]
 }
 
 /** 面板自带的 Skill（仓库的 skills/<分类>/<名字>/），统一装到用户目录 ~/.agents/skills，各 CLI 共用 */

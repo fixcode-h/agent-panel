@@ -6,6 +6,7 @@ import { CLIS, type CliDefinition } from '../shared/clis.ts'
 import type { McpStore } from '../shared/cli-spec.ts'
 import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
+import { titleOfTool } from '../shared/mcp-catalog/tool-titles.ts'
 import { expandHome } from './cli/extras.ts'
 import { childEnv, runProcess } from './exec/process.ts'
 import { writeCliConfigJson, writeCliConfigText } from './cli/config-write.ts'
@@ -349,8 +350,11 @@ export async function mcpOverview(): Promise<McpOverview> {
   }
 }
 
-/** 连上去问一下有哪些工具：能确认配置是对的 */
-export async function testMcp(sv: McpServer): Promise<McpTestResult> {
+/**
+ * 连上去问一下有哪些工具：能确认配置是对的。
+ * cwd 给了就在那个目录里启动（项目里的配置常写相对路径，例如 UEToVS 的 --solution-dir .），不给用面板自己的目录
+ */
+export async function testMcp(sv: McpServer, cwd = process.cwd()): Promise<McpTestResult> {
   const init = {
     jsonrpc: '2.0',
     id: 1,
@@ -360,7 +364,10 @@ export async function testMcp(sv: McpServer): Promise<McpTestResult> {
   const listTools = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }
   const initialized = { jsonrpc: '2.0', method: 'notifications/initialized' }
   const tools = (r: any) =>
-    (r?.tools ?? []).map((x: any) => ({ name: String(x.name), description: String(x.description ?? '') }))
+    (r?.tools ?? []).map((x: any) => {
+      const shown = titleOfTool(x)
+      return { name: String(x.name), description: String(x.description ?? ''), ...(shown && { shown }) }
+    })
   try {
     if (sv.transport === 'http') {
       let session = ''
@@ -402,7 +409,7 @@ export async function testMcp(sv: McpServer): Promise<McpTestResult> {
     const r = await runProcess({
       command: sv.command,
       args: sv.args,
-      cwd: process.cwd(),
+      cwd,
       env: childEnv(Object.entries(sv.env).map(([key, value]) => ({ key, value }))),
       signal: ac.signal,
       timeoutMs: 20_000,

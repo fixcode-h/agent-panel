@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { openPageStream } from './live/page-stream'
 import { runUiAction } from './ui-actions'
+import { McpToolTitles, setMcpToolTitles } from '@shared/mcp-catalog/tool-titles'
 
 /**
  * 托盘（Windows 的 AgentPanel.exe）点图标时切到已经打开的面板，而不是每次开一个新标签页。
@@ -68,6 +69,13 @@ export function usePageSignals(onView: (view: string) => void) {
       try {
         const s = JSON.parse(e.data) as { action: string; args: Record<string, unknown> }
         runUiAction(s.action, s.args)
+      } catch {}
+    })
+    // 别家 MCP 服务（UEToVS 这类）报的工具显示名：连上时给一份，服务问到新的再推，对话里的工具行按它显示
+    es.on('mcp-titles', (e) => {
+      try {
+        const r = McpToolTitles.safeParse((JSON.parse(e.data) as { titles?: unknown }).titles)
+        if (r.success) setMcpToolTitles(r.data)
       } catch {}
     })
     window.addEventListener('focus', arrived)

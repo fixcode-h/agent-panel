@@ -1,5 +1,6 @@
 import { t } from './i18n.ts'
 import { mcpPlugin, pluginById, pluginToolNames } from './plugins/index.ts'
+import { externalToolTitle } from './mcp-catalog/tool-titles.ts'
 
 /**
  * 面板自带的 MCP 工具在对话里的中文叫法，只在这一处维护：对话里的工具行、「正在写」那一行、子对话活动、
@@ -90,6 +91,9 @@ function ownServer(server: string): Own | '' {
   return /^(?:(?:agent-)?panel(?:[-_][\w-]*)?|orch)$/.test(s) ? 'panel' : ''
 }
 
+/** 是不是面板自己（调度服务或插件）的 MCP 服务：别家服务的工具名才要去问服务要显示名 */
+export const isOwnMcpServer = (server: string) => ownServer(server) !== ''
+
 /** 面板工具（PANEL_TOOL_NAMES 里的裸名字）的中文名；没登记返回空 */
 export const panelToolTitle = (name: string): string => PANEL_TOOLS()[name] ?? ''
 
@@ -101,7 +105,8 @@ export function serverTitle(server: string): string {
 }
 
 /**
- * 某个服务里的工具名的中文名：面板自己的服务按对应的表查，别家服务的工具照原名（没法替它们起名）。
+ * 某个服务里的工具名的中文名：面板自己的服务按对应的表查；别家服务用它在 tools/list 里报的显示名
+ * （title、_meta.titles，见 shared/mcp-catalog/tool-titles.ts），没报就照原名。
  * server 不写时按「mcp__服务名__工具名」拆，拆不出就当裸名字、在面板的几张表里依次查
  */
 export function toolTitle(name: string, server?: string): string {
@@ -110,7 +115,7 @@ export function toolTitle(name: string, server?: string): string {
   const mcp = srv === undefined ? /^mcp__(.+?)__(.+)$/.exec(tool) : null
   if (mcp) [srv, tool] = [mcp[1], mcp[2]]
   const own = srv === undefined ? '' : ownServer(srv)
-  if (srv !== undefined && !own) return tool
+  if (srv !== undefined && !own) return externalToolTitle(srv, tool) || tool
   const tables = own.startsWith('plugin:')
     ? [ownPlugin(own) ? pluginToolNames(ownPlugin(own)) : {}]
     : own === 'panel'

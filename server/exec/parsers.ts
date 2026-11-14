@@ -1006,7 +1006,26 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
 /** 一行一个 JSON 事件的 CLI：内置解析器按名字找，配置文件写的事件映射用 specParser；Codex 走 rpc/codex.ts 的 app-server 协议 */
 export function parserFor(cliId: string, cwd: string): Parser {
   const p = getCli(cliId)?.parser
-  if (p && typeof p === 'object') return specParser(p, cwd)
-  if (p === 'claude') return claudeParser(cwd)
-  return commandCodeParser(cwd)
+  const parse =
+    p && typeof p === 'object' ? specParser(p, cwd) : p === 'claude' ? claudeParser(cwd) : commandCodeParser(cwd)
+  return (obj) => noteMcpTools(parse(obj), cwd)
+}
+
+/**
+ * 解析出的 MCP 工具调用（工具行记成「MCP · 服务 · 工具」）报给显示名缓存（server/mcp-catalog/external-titles.ts 启动时挂上）：
+ * 别家服务的工具名要去问服务要中文名。挂钩子而不直接 import，免得解析器（单测里大量用到）连带加载缓存、配置读写那一串
+ */
+let onMcpTool: ((server: string, tool: string, cwd: string) => void) | undefined // 模块状态：启动时挂一次
+export function observeMcpTools(fn: typeof onMcpTool) {
+  onMcpTool = fn
+}
+
+function noteMcpTools(evs: CliEvent[], cwd: string) {
+  if (!onMcpTool) return evs
+  for (const ev of evs) {
+    if (ev.type !== 'tool' || ev.tool.name !== 'MCP') continue
+    const m = /^(.+?) · (.+)$/.exec(ev.tool.label)
+    if (m) onMcpTool(m[1], m[2], cwd)
+  }
+  return evs
 }
