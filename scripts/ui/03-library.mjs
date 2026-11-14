@@ -799,23 +799,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   if (!(await p.getByText('随面板版本提供', { exact: false }).count()))
     errors.push('自带Skill-详情：没有说明这里不能编辑')
   if (await p.getByLabel('内容', { exact: true }).count()) errors.push('自带Skill-详情：自带技能不该有可编辑的正文框')
+  // 打开就显示 SKILL.md（不用先点一下，右边不再是空框），Markdown 默认按渲染效果看
+  const reader = p.locator('main [data-skill-reader]')
+  await reader
+    .locator('.chat-md')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('自带Skill-详情：打开技能后右边没有直接显示 SKILL.md'))
   // 文件树里能点开一个附件看内容（只读）：coding-standards 带 design-patterns.md
   // 按 title 定位：左栏卡片的说明里也可能出现这些文件名
   await p.locator('main button[title="design-patterns.md"]').click()
-  const bundledText = await p
-    .locator('pre')
-    .first()
-    .textContent()
-    .catch(() => '')
+  await p.waitForTimeout(300)
+  const bundledText = await reader.textContent().catch(() => '')
   if (!bundledText?.includes('设计模式'))
     errors.push(`自带Skill-详情：点开的文件内容不对（「${bundledText?.slice(0, 30)}」）`)
-  // 主文件也看得到
+  // 主文件也看得到；切到「源码」能看到带 YAML 头的原文
   await p.locator('main button[title="SKILL.md"]').click()
-  const mainBundled = await p
-    .locator('pre')
-    .first()
-    .textContent()
-    .catch(() => '')
+  await p.getByRole('radio', { name: '源码', exact: true }).click()
+  await p.waitForTimeout(300)
+  const mainBundled = await reader.textContent().catch(() => '')
   if (!mainBundled?.includes('coding-standards'))
     errors.push(`自带Skill-详情：SKILL.md 没读出来（「${mainBundled?.slice(0, 30)}」）`)
   await check(p, '自带Skill-详情-文件内容')

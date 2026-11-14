@@ -1,26 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import {
-  ChevronDown,
-  ChevronRight,
-  FilePlus2,
-  FolderPlus,
-  Loader2,
-  PencilLine,
-  Save,
-  Trash2,
-  Undo2,
-} from 'lucide-react'
+import { FilePlus2, FolderPlus, Loader2, PencilLine, Save, Trash2, Undo2 } from 'lucide-react'
 import { LIBRARY_FILE_MAX_BYTES, type LibraryEntry, type LibraryEntryContent } from '@shared/library'
 import { t } from '@shared/i18n'
-import { fileIcon } from '@/lib/file-icon'
 import { countFiles, entryName, toTree, visibleRows } from '@/lib/library-tree'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { EmptyPanel } from '@/components/ui/empty-panel'
+import { IconButton } from '@/components/ui/icon-button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Textarea } from '@/components/ui/input'
-import { Card } from '@/components/ui/card'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -28,6 +15,22 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/menu'
+import {
+  BrowserSplit,
+  MarkdownPreview,
+  PathBar,
+  ReaderNote,
+  TreeBody,
+  TreeButton,
+  TreeHead,
+  ViewSwitch,
+  fileMeta,
+  isMarkdown,
+  mainIcon,
+  rowLook,
+  sizeText,
+  toggleFolded,
+} from '@/components/library/skill-reader'
 
 /** 文件树要用的读写操作：Skill 库和项目技能各给一份实现，组件本身不认识接口 */
 export interface FilesApi {
@@ -62,9 +65,6 @@ const saveKey = (e: React.KeyboardEvent, save: () => void) => {
 
 /** 一次操作的弹窗形态：新建文件、新建目录、重命名 */
 type Ask = { kind: 'file' | 'dir' | 'rename'; path: string } | null
-
-const sizeText = (bytes: number) =>
-  bytes >= 1024 ? t('{n} KB', { n: (bytes / 1024).toFixed(1) }) : t('{n} 字节', { n: bytes })
 
 /**
  * 技能文件夹的文件结构：主文件置顶，其余文件按后端的树（扁平条目 + 完整 path）还原层级。
@@ -107,6 +107,7 @@ export function SkillFiles({
   const [ask, setAsk] = useState<Ask>(null)
   const [askText, setAskText] = useState('')
   const [del, setDel] = useState<LibraryEntryContent | string | null>(null)
+  const [mode, setMode] = useState<'preview' | 'edit'>('edit')
 
   // 附加文件大小按字符串字节数算：保存前先拦一道，不用等服务端报错
   const tooBig = useMemo(() => new TextEncoder().encode(text).length > LIBRARY_FILE_MAX_BYTES, [text])
@@ -237,195 +238,195 @@ export function SkillFiles({
     </>
   )
 
+  // 主文件和附加文件共用一个「预览 / 编辑」切换：Markdown 才有预览，能编辑的默认停在编辑上
+  const canPreview = onMain ? true : !!file && editable && isMarkdown(file.path)
+  const previewing = canPreview && mode === 'preview'
+  const editorClass =
+    'min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-4 py-3 font-mono text-footnote leading-relaxed shadow-none focus:shadow-none'
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-body font-medium">{t('文件结构')}</h3>
-        {rows.length > 0 && (
-          <span className="text-footnote text-subtle">{t('另有 {n} 个文件', { n: countFiles(rows) })}</span>
-        )}
-        {!readOnly && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('新建文件')}
-              title={t('新建文件')}
-              onClick={() => startAsk({ kind: 'file', path: '' })}
-            >
-              <FilePlus2 className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('新建目录')}
-              title={t('新建目录')}
-              onClick={() => startAsk({ kind: 'dir', path: '' })}
-            >
-              <FolderPlus className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-3 lg:flex-row">
-        {/* 文件树 */}
-        <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 self-start lg:w-[240px] lg:shrink-0">
-          {/* 主文件在上方详情页编辑：这里只提示它在哪，点一下滚上去 */}
-          <button
-            type="button"
-            onClick={() => {
-              if (main) {
-                // 切回主文件：附加文件的读取请求作废，免得晚回来的结果把选中又改走
-                opened.current++
-                setPicked(mainPath)
-                setFile(null)
-                setText('')
-              } else if (mainEditorId)
-                document.getElementById(mainEditorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-            }}
-            aria-current={onMain || undefined}
-            title={mainPath}
-            className={cn(
-              'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-body',
-              onMain ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
-            )}
-          >
-            <span className="h-3.5 w-3.5 shrink-0" />
-            <FileTextMain />
-            <span className="truncate font-mono">SKILL.md</span>
-            {mainDirty && <span className="ml-auto text-caption text-warning">{t('未保存')}</span>}
-          </button>
-          {visibleRows(rows, folded).map((r) => {
-            const Icon = r.type === 'dir' ? (folded.has(r.path) ? ChevronRight : ChevronDown) : fileIcon(r.path)
-            const row = (
-              <button
-                type="button"
-                onClick={() => (r.type === 'dir' ? setFolded((s) => toggle(s, r.path)) : open(r.path))}
-                aria-current={picked === r.path || undefined}
-                title={r.path}
-                style={{ paddingLeft: 8 + r.depth * 14 }}
-                className={cn(
-                  'flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-2 text-left text-body',
-                  picked === r.path ? 'bg-sel text-fg' : 'hover:bg-sel/60',
-                )}
-              >
-                {r.type === 'dir' ? (
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
+    <>
+      <BrowserSplit
+        tree={
+          <>
+            <TreeHead
+              count={countFiles(rows) + 1}
+              actions={
+                !readOnly && (
+                  <>
+                    <IconButton
+                      icon={FilePlus2}
+                      size="xs"
+                      label={t('新建文件')}
+                      onClick={() => startAsk({ kind: 'file', path: '' })}
+                    />
+                    <IconButton
+                      icon={FolderPlus}
+                      size="xs"
+                      label={t('新建目录')}
+                      onClick={() => startAsk({ kind: 'dir', path: '' })}
+                    />
+                  </>
+                )
+              }
+            />
+            <TreeBody>
+              <TreeButton
+                depth={0}
+                title={mainPath}
+                active={onMain}
+                icon={mainIcon}
+                label="SKILL.md"
+                mono
+                trailing={
+                  mainDirty && <span className="ml-auto shrink-0 text-caption text-warning">{t('未保存')}</span>
+                }
+                onClick={() => {
+                  if (main) {
+                    // 切回主文件：附加文件的读取请求作废，免得晚回来的结果把选中又改走
+                    opened.current++
+                    setPicked(mainPath)
+                    setFile(null)
+                    setText('')
+                  } else if (mainEditorId)
+                    document.getElementById(mainEditorId)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                }}
+              />
+              {visibleRows(rows, folded).map((r) => {
+                const row = (
+                  <TreeButton
+                    depth={r.depth}
+                    title={r.path}
+                    active={picked === r.path}
+                    onClick={() => (r.type === 'dir' ? setFolded((s) => toggleFolded(s, r.path)) : open(r.path))}
+                    {...rowLook(r, folded)}
+                  />
+                )
+                return readOnly ? (
+                  <span key={r.path}>{row}</span>
                 ) : (
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-accent-text" />
-                )}
-                <span className="truncate font-mono">{entryName(r.path)}</span>
-              </button>
-            )
-            return readOnly ? (
-              <span key={r.path}>{row}</span>
-            ) : (
-              <ContextMenu key={r.path}>
-                <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-                <ContextMenuContent>
-                  {rowMenu(r.type === 'dir' ? r.path : r.path.slice(0, r.path.lastIndexOf('/')))}
-                </ContextMenuContent>
-              </ContextMenu>
-            )
-          })}
-          {truncated && <p className="px-2 py-2 text-footnote text-subtle">{t('文件太多，只显示了前面一部分。')}</p>}
-        </Card>
-
-        {/* 附加文件的内容：没选中时给引导，选中了才显示编辑框；主文件选中时编辑主文件 */}
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {onMain && main ? (
-            <>
-              <div className="flex min-h-8 flex-wrap items-center gap-2">
-                <span className="truncate font-mono text-footnote text-subtle">{mainPath}</span>
-                {main.dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
-                {/* 保存按钮只在改过之后出现：一直挂着一个灰掉的按钮，看着像坏了 */}
-                {main.dirty && (
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <Button size="sm" variant="secondary" onClick={main.onReset}>
-                      <Undo2 className="h-3.5 w-3.5" />
-                      {t('重置')}
-                    </Button>
-                    <Button size="sm" onClick={main.onSave} disabled={main.busy} title={t('保存（Ctrl / ⌘ + S）')}>
-                      {main.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      {t('保存')}
-                    </Button>
-                  </div>
-                )}
+                  <ContextMenu key={r.path}>
+                    <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+                    <ContextMenuContent>
+                      {rowMenu(r.type === 'dir' ? r.path : r.path.slice(0, r.path.lastIndexOf('/')))}
+                    </ContextMenuContent>
+                  </ContextMenu>
+                )
+              })}
+              {truncated && (
+                <p className="px-2 py-2 text-footnote text-subtle">{t('文件太多，只显示了前面一部分。')}</p>
+              )}
+            </TreeBody>
+          </>
+        }
+      >
+        {onMain && main ? (
+          <>
+            <PathBar
+              path={mainPath}
+              meta={
+                main.dirty ? (
+                  <span className="text-warning">{t('未保存')}</span>
+                ) : (
+                  fileMeta(main.content, new TextEncoder().encode(main.content).length)
+                )
+              }
+            >
+              <ViewSwitch value={mode} onChange={setMode} source={{ id: 'edit', label: t('编辑') }} />
+              {/* 保存按钮只在改过之后出现：一直挂着一个灰掉的按钮，看着像坏了 */}
+              {main.dirty && (
+                <>
+                  <Button size="sm" variant="secondary" onClick={main.onReset}>
+                    <Undo2 className="h-3.5 w-3.5" />
+                    {t('重置')}
+                  </Button>
+                  <Button size="sm" onClick={main.onSave} disabled={main.busy} title={t('保存（Ctrl / ⌘ + S）')}>
+                    {main.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {t('保存')}
+                  </Button>
+                </>
+              )}
+            </PathBar>
+            {previewing ? (
+              <div className="min-h-0 flex-1 overflow-auto">
+                <MarkdownPreview text={main.content} />
               </div>
+            ) : (
               <Textarea
                 id={mainEditorId}
                 value={main.content}
                 onChange={(e) => main.onChange(e.target.value)}
                 onKeyDown={(e) => saveKey(e, () => main.dirty && !main.busy && main.onSave())}
                 spellCheck={false}
-                className="h-[min(62vh,640px)] resize-none font-mono text-footnote leading-relaxed"
+                className={editorClass}
                 aria-label={t('内容')}
               />
-            </>
-          ) : file === null ? (
-            <EmptyPanel>
+            )}
+          </>
+        ) : file === null ? (
+          picked ? null : (
+            <ReaderNote>
               {!countFiles(rows)
                 ? t('这个技能只有 SKILL.md，还没有附加文件。')
                 : t('在左边的文件树里点一个文件，就能看内容和改它。')}
-            </EmptyPanel>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate font-mono text-footnote text-subtle">{file.path}</span>
-                <span className="text-footnote text-subtle">{sizeText(file.size)}</span>
-                <div className="ml-auto flex items-center gap-1.5">
-                  {dirty && (
-                    <Button size="sm" variant="secondary" onClick={() => setText(file.content)}>
-                      <Undo2 className="h-3.5 w-3.5" />
-                      {t('重置')}
-                    </Button>
-                  )}
-                  {!readOnly && editable && (
-                    <Button size="sm" onClick={save} disabled={!dirty || busy || tooBig}>
-                      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      <Save className="h-3.5 w-3.5" />
-                      {t('保存')}
-                    </Button>
-                  )}
-                  {!readOnly && (
-                    <Button
-                      size="icon-sm"
-                      variant="danger-outline"
-                      aria-label={t('删除这个文件')}
-                      title={t('删除这个文件')}
-                      onClick={() => setDel(file)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {!editable ? (
-                <EmptyPanel>
-                  {file.link
-                    ? t('这是个链接，不能在这里改内容。')
-                    : t('二进制文件（{size}），不能编辑。', { size: sizeText(file.size) })}
-                </EmptyPanel>
-              ) : (
-                <Textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => saveKey(e, () => !readOnly && dirty && !busy && !tooBig && void save())}
-                  readOnly={readOnly}
-                  spellCheck={false}
-                  className={cn(
-                    'resize-none font-mono text-footnote leading-relaxed',
-                    main ? 'h-[min(62vh,640px)]' : 'h-[min(40vh,360px)]',
-                  )}
-                  aria-label={t('文件内容')}
+            </ReaderNote>
+          )
+        ) : (
+          <>
+            <PathBar path={file.path} meta={sizeText(file.size)}>
+              {canPreview && <ViewSwitch value={mode} onChange={setMode} source={{ id: 'edit', label: t('编辑') }} />}
+              {dirty && (
+                <Button size="sm" variant="secondary" onClick={() => setText(file.content)}>
+                  <Undo2 className="h-3.5 w-3.5" />
+                  {t('重置')}
+                </Button>
+              )}
+              {!readOnly && editable && (
+                <Button size="sm" onClick={save} disabled={!dirty || busy || tooBig}>
+                  {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <Save className="h-3.5 w-3.5" />
+                  {t('保存')}
+                </Button>
+              )}
+              {!readOnly && (
+                <IconButton
+                  icon={Trash2}
+                  size="sm"
+                  tone="danger"
+                  label={t('删除这个文件')}
+                  onClick={() => setDel(file)}
                 />
               )}
-              {tooBig && <p className="text-footnote text-warning">{t('文件超过 1 MB，保存不了，请精简后再试。')}</p>}
-            </>
-          )}
-        </div>
-      </div>
+            </PathBar>
+            {tooBig && (
+              <p className="border-b px-4 py-1.5 text-footnote text-warning">
+                {t('文件超过 1 MB，保存不了，请精简后再试。')}
+              </p>
+            )}
+            {!editable ? (
+              <ReaderNote>
+                {file.link
+                  ? t('这是个链接，不能在这里改内容。')
+                  : t('二进制文件（{size}），不能编辑。', { size: sizeText(file.size) })}
+              </ReaderNote>
+            ) : previewing ? (
+              <div className="min-h-0 flex-1 overflow-auto">
+                <MarkdownPreview text={text} />
+              </div>
+            ) : (
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => saveKey(e, () => !readOnly && dirty && !busy && !tooBig && void save())}
+                readOnly={readOnly}
+                spellCheck={false}
+                className={editorClass}
+                aria-label={t('文件内容')}
+              />
+            )}
+          </>
+        )}
+      </BrowserSplit>
 
       <ConfirmDialog
         open={ask !== null}
@@ -458,19 +459,6 @@ export function SkillFiles({
         description={t('会从磁盘上删掉，不能撤销。')}
         onConfirm={remove}
       />
-    </div>
+    </>
   )
-}
-
-const toggle = (s: ReadonlySet<string>, path: string) => {
-  const next = new Set(s)
-  if (next.has(path)) next.delete(path)
-  else next.add(path)
-  return next
-}
-
-/** 主文件用固定的文档图标，和附加文件区分开 */
-function FileTextMain() {
-  const Icon = fileIcon('SKILL.md')
-  return <Icon className="h-3.5 w-3.5 shrink-0 text-accent-text" />
 }

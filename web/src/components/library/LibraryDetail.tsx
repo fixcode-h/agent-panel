@@ -12,6 +12,7 @@ import { ToggleChip } from '@/components/ui/toggle-chip'
 import { MenuItem } from '@/components/ui/menu'
 import { DetailHeader } from '@/components/layout/Detail'
 import { cliColor } from '@/lib/cli-style'
+import { cn } from '@/lib/utils'
 import { SkillFiles, type FilesApi } from '@/components/library/SkillFiles'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import type { ConfigFinding } from '@shared/config-scan'
@@ -182,7 +183,13 @@ export function LibraryDetail({
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
+    // Skill：文件浏览区铺满剩下的高度（自己滚动）；命令只有一个文件，整页滚动
+    <main
+      className={cn(
+        'flex min-w-0 flex-1 flex-col md:h-full',
+        kind === 'skill' ? 'md:overflow-hidden' : 'md:overflow-y-auto',
+      )}
+    >
       <DetailHeader
         compact
         quietSave
@@ -211,7 +218,12 @@ export function LibraryDetail({
         }
       />
 
-      <div className="flex w-full max-w-[1100px] flex-col gap-4 px-4 pt-5 pb-12 md:px-8">
+      <div
+        className={cn(
+          'flex w-full flex-col gap-3 px-4 md:px-8',
+          kind === 'skill' ? 'py-2.5' : 'max-w-[1100px] gap-4 pt-5 pb-12',
+        )}
+      >
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-footnote text-subtle">{t('装在')}</span>
           {slots.map((c) => (
@@ -247,11 +259,45 @@ export function LibraryDetail({
           }}
         />
 
-        {error ? (
-          <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
-        ) : content === null ? (
-          <p className="text-body text-subtle">{t('读取中…')}</p>
-        ) : kind === 'skill' ? (
+        {kind === 'command' &&
+          (error || content === null ? (
+            <Status error={error} />
+          ) : (
+            <section className="flex flex-col gap-2">
+              <div className="flex min-h-8 flex-wrap items-center gap-2">
+                <h3 className="text-body font-medium">{t('命令文件')}</h3>
+                {dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
+                {dirty && (
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button size="sm" variant="secondary" onClick={() => setContent(saved)}>
+                      <Undo2 className="h-3.5 w-3.5" />
+                      {t('重置')}
+                    </Button>
+                    <Button size="sm" onClick={save} disabled={busy}>
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      {t('保存')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <Textarea
+                id={MAIN_EDITOR_ID}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                spellCheck={false}
+                className="h-[min(62vh,640px)] resize-none font-mono text-footnote leading-relaxed"
+                aria-label={t('内容')}
+              />
+            </section>
+          ))}
+      </div>
+
+      {kind === 'skill' &&
+        (error || content === null ? (
+          <div className="px-4 md:px-8">
+            <Status error={error} />
+          </div>
+        ) : (
           // 主文件和附加文件在同一个编辑区：左边文件树（SKILL.md 置顶、默认选中），右边一个编辑器
           <SkillFiles
             entries={tree}
@@ -269,35 +315,7 @@ export function LibraryDetail({
               onReset: () => setContent(saved),
             }}
           />
-        ) : (
-          <section className="flex flex-col gap-2">
-            <div className="flex min-h-8 flex-wrap items-center gap-2">
-              <h3 className="text-body font-medium">{t('命令文件')}</h3>
-              {dirty && <span className="text-footnote text-warning">{t('未保存')}</span>}
-              {dirty && (
-                <div className="ml-auto flex items-center gap-1.5">
-                  <Button size="sm" variant="secondary" onClick={() => setContent(saved)}>
-                    <Undo2 className="h-3.5 w-3.5" />
-                    {t('重置')}
-                  </Button>
-                  <Button size="sm" onClick={save} disabled={busy}>
-                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    {t('保存')}
-                  </Button>
-                </div>
-              )}
-            </div>
-            <Textarea
-              id={MAIN_EDITOR_ID}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              spellCheck={false}
-              className="h-[min(62vh,640px)] resize-none font-mono text-footnote leading-relaxed"
-              aria-label={t('内容')}
-            />
-          </section>
-        )}
-      </div>
+        ))}
 
       {canAi && (
         <AssistDialog
@@ -351,5 +369,14 @@ export function LibraryDetail({
         }}
       />
     </main>
+  )
+}
+
+/** 读取中 / 读取失败 */
+function Status({ error }: { error: string }) {
+  return error ? (
+    <p className="text-body text-warning">{t('读取失败：{error}', { error })}</p>
+  ) : (
+    <p className="text-body text-subtle">{t('读取中…')}</p>
   )
 }
