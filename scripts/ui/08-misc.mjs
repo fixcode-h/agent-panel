@@ -989,18 +989,25 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!(await tree.getByRole('group', { name: /^今天 · / }).count()))
       errors.push('工作总结：新报告没有出现在「今天」这一组')
     await check(p, '工作总结-报告')
+    // 宽屏整页不滚，只有报告区自己滚：滚动区里的绝对定位元素（sr-only）逃出来会把文档撑高，
+    // 拖选到报告底部时浏览器接着滚整页，顶栏和标题被推出视口
+    const docOver = await p.evaluate(() => document.documentElement.scrollHeight - innerHeight)
+    if (docOver > 1) errors.push(`工作总结：报告页把整页撑高了 ${docOver}px，拖选到底部时整页会跟着滚`)
 
-    // 编辑：Markdown 正文（ADR 0056）：条目是三级标题、内容分点，问题分「原因 / 修复 / 关键代码」三块，单子写在条目最后
+    // 编辑：Markdown 正文（ADR 0065）：开头一句概要，节标题紧跟条目，条目下缩进写「- 原因：」「- 修复：」，单子跟在标题括号里，明天计划只留标题
     await view.getByRole('radio', { name: '编辑' }).click()
     const text = await view
       .getByLabel('报告正文')
       .inputValue()
       .catch(() => '')
-    if (!/^# \d+月\d+日工作日报/.test(text)) errors.push(`工作总结：报告第一行不是日报标题（${text.slice(0, 30)}）`)
-    if (!/^### 1\. /m.test(text)) errors.push('工作总结：报告里的条目不是「### 序号. 标题」')
-    if (!/\*\*原因\*\*\n\n1\. /.test(text)) errors.push('工作总结：问题条目没有分点写的「原因」')
-    if (/内容：|原因：|修复：/.test(text)) errors.push('工作总结：报告里还有「内容：/原因：/修复：」这种行内标签')
-    if (!/单子：BUG-123/.test(text)) errors.push('工作总结：待确认时附的单子没有写进报告')
+    if (!/^# \d+月\d+日工作日报\n\n今天/.test(text))
+      errors.push(`工作总结：报告开头不是日报标题加概要（${text.slice(0, 30)}）`)
+    if (!/^## 需求\n1\. /m.test(text)) errors.push('工作总结：需求节标题后不是紧跟「1. 标题」')
+    if (!/^ {3}- 原因：/m.test(text)) errors.push('工作总结：问题条目下没有「- 原因：」')
+    if (/^###|\*\*原因\*\*/m.test(text)) errors.push('工作总结：报告里还有三级标题或加粗小标题（旧模板）')
+    if (/\n\n\n/.test(text)) errors.push('工作总结：报告里有连续空行')
+    if (!/（已修复 · BUG-123）|（未解决 · BUG-123）/.test(text)) errors.push('工作总结：待确认时附的单子没有写进报告')
+    if (!/^## 明天计划$/m.test(text)) errors.push('工作总结：报告里没有「明天计划」标题')
     await view.getByRole('radio', { name: '预览' }).click()
 
     // 再次生成：条目连同单子回到待确认，确认后是一份新报告，原报告还在

@@ -2,7 +2,7 @@
  * 提炼出的分项：需求和 Bug 分两组，每条后面一个「采纳」按钮。
  * 只是挑选，不在这里生成报告：确认按钮在页面底部的确认栏（ConfirmBar），报告只包含采纳的分项。
  */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Bug, Check, Link2, ListChecks, Pencil, Plus, Sparkle, X } from 'lucide-react'
 import type { SummaryEntry, SummaryKind } from '@shared/summary'
 import type { SummaryCode } from '@shared/summary/code'
@@ -46,32 +46,46 @@ function CodePreview({ code }: { code: SummaryCode }) {
   )
 }
 
+/** 说明里的一行：标签 + 内容；内容为空的行不画 */
+type BodyRow = { label: string; node: ReactNode }
+const pointsRow = (label: string, text: string): BodyRow[] =>
+  splitPoints(text).length ? [{ label, node: <Points text={text} /> }] : []
+
 /**
- * 分项的说明：需求是怎么做的几点；Bug 分「原因 / 修复 / 关键代码」三块（ADR 0056），
- * 没解决的没有修复和代码。没写的那一块不占位
+ * 分项的说明：需求是怎么做的几点；Bug 分「现象 / 原因 / 修复 / 关键代码」（ADR 0056），
+ * 没解决的没有修复、代码和验证。两类都可能带验证、影响、遗留、要协助的事（ADR 0065）。没写的那一块不占位
  */
 function EntryBody({ entry }: { entry: SummaryEntry }) {
-  if (entry.kind === 'need')
-    return entry.content ? (
-      <div className="mt-1 text-body leading-relaxed">
-        <Points text={entry.content} />
-      </div>
-    ) : null
-  const code = entry.fix ? (entry.code ?? []) : []
-  const rows = [
-    { label: t('原因'), node: entry.cause ? <Points text={entry.cause} /> : null },
-    { label: t('修复'), node: entry.fix ? <Points text={entry.fix} /> : null },
-    {
-      label: t('关键代码'),
-      node: code.length ? (
-        <div className="flex min-w-0 flex-col gap-1.5">
-          {code.map((c, i) => (
-            <CodePreview key={i} code={c} />
-          ))}
-        </div>
-      ) : null,
-    },
-  ].filter((r) => r.node)
+  const fixed = entry.kind === 'bug' && !!entry.fix
+  const code = fixed ? (entry.code ?? []) : []
+  const rows: BodyRow[] = [
+    ...(entry.kind === 'need'
+      ? pointsRow(t('做法'), entry.content)
+      : [
+          ...pointsRow(t('现象'), entry.symptom),
+          ...pointsRow(t('原因'), entry.cause),
+          ...pointsRow(t('修复'), entry.fix),
+        ]),
+    ...(code.length
+      ? [
+          {
+            label: t('关键代码'),
+            node: (
+              <div className="flex min-w-0 flex-col gap-1.5">
+                {code.map((c, i) => (
+                  <CodePreview key={i} code={c} />
+                ))}
+              </div>
+            ),
+          },
+        ]
+      : []),
+    // 没修好的问题谈不上验证
+    ...(entry.kind === 'need' || fixed ? pointsRow(t('验证'), entry.verify) : []),
+    ...pointsRow(t('影响'), entry.impact),
+    ...pointsRow(t('遗留'), entry.remaining),
+    ...pointsRow(t('要协助'), entry.help),
+  ]
   if (!rows.length) return null
   return (
     <dl className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 text-body leading-relaxed">
@@ -187,8 +201,10 @@ export function EntryCard({
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <p className="min-w-0 text-prose leading-snug font-medium">{entry.title}</p>
-          {entry.kind === 'bug' && !entry.fix && (
-            <span className="shrink-0 rounded-md bg-warning/10 px-1.5 py-0.5 text-xs text-warning">{t('未解决')}</span>
+          {((entry.kind === 'bug' && !entry.fix) || (entry.kind === 'need' && entry.status === 'doing')) && (
+            <span className="shrink-0 rounded-md bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
+              {entry.kind === 'bug' ? t('未解决') : t('进行中')}
+            </span>
           )}
         </div>
         <EntryBody entry={entry} />

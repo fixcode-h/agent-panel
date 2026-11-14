@@ -121,21 +121,28 @@ test('「每日工作总结」：只出报告不改代码，需求 / 问题分�
   assert.match(role, /关键代码（code）：只给已经解决的问题/)
   assert.match(role, /不改写、不补全、不编/)
   assert.match(role, /「实现了」「优化了」/, '列出不许用的 AI 说法')
-  // 版本管理操作不写（用户嫌报告里全是提交、合并这些）；测试过没过这类也不写
+  // 版本管理操作不写（用户嫌报告里全是提交、合并这些）；跑了哪些检查这类流水账也不写，验证只写一句结论（ADR 0065）
   assert.match(role, /版本管理操作：/)
   assert.match(role, /cherry-pick/)
-  assert.match(role, /测试过没过/)
+  assert.match(role, /跑了哪些命令和检查/)
+  assert.match(role, /验证（verify）：一句结论/)
+  // 让别人看出做到哪、靠不靠谱、要不要他配合（ADR 0065）
+  assert.match(role, /需求的状态（status）/)
+  assert.match(role, /遗留（remaining）/)
+  assert.match(role, /要协助（help）/)
   // 只写结果：真实跑一次时输出里贴了路径、函数名和接口名；代码只放在关键代码里
   assert.match(role, /不写文件名、函数名、命令/)
   assert.match(role, /不编造/)
-  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，关键代码从 git 只读取；输出 Markdown 两节，条目是三级标题、内容分点
+  // 自己跑（计划面板定时拉起）时读任务记录、有读取预算，关键代码从 git 只读取；输出和工作总结页同一个紧凑模板（ADR 0065）
   assert.match(role, /tasks\/projects\//)
   assert.match(role, /读取预算/)
   assert.match(role, /## 需求/)
   assert.match(role, /## 问题/)
   assert.match(role, /git diff <from> <to>/)
-  assert.match(role, /### 1\. <标题>/)
-  assert.match(role, /\*\*原因\*\*/)
+  assert.match(role, /只在节和节之间空一行/)
+  assert.match(role, / {3}- 原因：/)
+  assert.match(role, /## 明天计划/)
+  assert.match(role, /## 附：关键代码/)
   assert.match(role, /只输出报告本身/)
   // 工作总结页调用时选「面板提供」：材料由面板给，不再去读数据目录
   const panel = composeRole(

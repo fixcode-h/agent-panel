@@ -7,7 +7,7 @@ import {
   MAX_DRAFTS_PER_REPORT,
   missingDrafts,
 } from '../shared/lesson-draft.ts'
-import { renderReport } from '../shared/summary.ts'
+import { renderReport, SummaryEntry } from '../shared/summary.ts'
 
 const report = (md: string, over: Partial<{ id: string; day: string; projectNames: string[] }> = {}) => ({
   id: 'r1',
@@ -240,7 +240,7 @@ test('lessonDraftsFromReport：新报告按存下的分项提炼，没解决的�
     grain: 'day',
     from: '2026-10-29',
     to: '2026-10-29',
-    items: items.map((x) => ({ ...x, code: [] })),
+    items: items.map((x) => SummaryEntry.parse(x)),
   })
   const drafts = lessonDraftsFromReport({ id: 'r', day: '2026-10-29', md, items })
   assert.deepEqual(

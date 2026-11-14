@@ -11,6 +11,7 @@ import {
   parseExtract,
   rangeTask,
   renderReport,
+  reportPlainText,
   reportCounts,
   reportGrain,
   reportName,
@@ -127,7 +128,7 @@ test('rangeTask：只取窗口里的消息和节点，范围外和面板推的�
   assert.equal(rangeTask(makeTask({ messages: [msg('user', '昨天的事', yesterday)] }), dayWin), null)
 })
 
-test('rangeTask：总结卡的原因和修法交给 CLI，验证、改动、要你处理这类不进报告的字段去掉', () => {
+test('rangeTask：总结卡的原因、修法、验证、遗留、要你处理交给 CLI，改动清单去掉（ADR 0065）', () => {
   const card = [
     '改好了。',
     '',
@@ -148,14 +149,14 @@ test('rangeTask：总结卡的原因和修法交给 CLI，验证、改动、要�
   assert.equal(d.cards[0].title, '登录后不再报 500')
   assert.deepEqual(
     d.cards[0].fields.map((x) => x.label),
-    ['现象', '原因', '修复', '遗留'],
+    ['现象', '原因', '修复', '验证', '遗留', '要你处理'],
   )
   assert.equal(d.reply, '', '有卡片时不再带正文')
   assert.equal(d.fixCard, true, '「修复」卡片：服务端会给它带代码改动')
   const ctx = tasksContext([{ projectId: 'p1', projectName: '面板', tasks: [{ ...d, code: '+ refresh()' }] }])
   assert.match(ctx, /代码改动（统一差异格式，测试和文档没放进来）：\n```diff\n\+ refresh\(\)\n```/)
   assert.match(ctx, /总结卡「修复｜登录后不再报 500」\n {4}现象：登录后首页报 500\n {4}原因：token 过期后没有刷新/)
-  assert.doesNotMatch(ctx, /单测全过|合并到主干/)
+  assert.match(ctx, / {4}验证：单测全过/)
   // 没有卡片的老对话：带最后一条回复的一段正文（代码块去掉），原因常写在中间
   const old = rangeTask(
     makeTask({ messages: [msg('agent', '先看日志\n```\nError 500\n```\n原因是 token 过期没刷新', today(9))] }),
@@ -211,13 +212,19 @@ const entry = (over: Partial<SummaryEntry>): SummaryEntry => ({
   fix: '',
   code: [],
   link: '',
+  status: 'done',
+  symptom: '',
+  verify: '',
+  impact: '',
+  remaining: '',
+  help: '',
   ...over,
 })
 
 const record = (over: Partial<SummaryRecord>) =>
   SummaryRecord.parse({ id: 'r', createdAt: today(9), updatedAt: today(9), day: '2026-10-23', ...over })
 
-test('renderReport：条目一个三级标题，内容按序号分点；问题分原因 / 修复 / 关键代码，没解决的只写原因（ADR 0056）', () => {
+test('renderReport：只在节之间空行，条目下缩进写状态、现象、原因、修复、验证、影响；代码挪到附录，明天计划只留标题（ADR 0065）', () => {
   const md = renderReport({
     grain: 'day',
     from: '2026-10-23',
@@ -227,23 +234,37 @@ test('renderReport：条目一个三级标题，内容按序号分点；问题�
         title: '工作总结能按周生成',
         content: '日期那里加了按天和按周的切换\n按周时取周一到周日',
         link: 'https://x.test/REQ-1',
+        verify: '选上周生成了一份周报',
+        impact: '按天生成不受影响',
       }),
+      // 进行中的需求排在做完的后面
       entry({
-        kind: 'bug',
-        title: '点暂停后子任务显示**已停止**',
-        cause: '子任务进程已经退出——状态没跟着改\n界面就一直显示已停止',
-        fix: '进程退出时同步状态',
-        code: [{ file: 'server/run.ts', lang: 'ts', text: '// 退出时同步状态\nsync(task)' }],
-        link: 'BUG-7',
+        title: '加了删除报告的接口。',
+        status: 'doing',
+        content: '接口写好了',
+        remaining: '页面按钮还没接',
+        help: '删除要不要二次确认需要产品定',
       }),
-      // 没解决的：就算带了修复代码也不写
+      // 没解决的：就算带了修复代码和验证也不写，排在修好的后面
       entry({
         kind: 'bug',
         title: '日志偶尔不贴到最新。',
         cause: '刷新时滚动位置被重置了，还在查',
+        verify: '试了一次',
         code: [{ file: 'a.ts', lang: 'ts', text: 'x()' }],
       }),
-      entry({ project: '后台', title: '加了删除报告的接口。', content: '' }),
+      entry({
+        kind: 'bug',
+        title: '点暂停后子任务显示**已停止**',
+        symptom: '点暂停后一直显示已停止',
+        cause: '子任务进程已经退出——状态没跟着改\n界面就一直显示已停止',
+        fix: '进程退出时同步状态',
+        verify: '暂停再继续试了三次',
+        code: [{ file: 'server/run.ts', lang: 'ts', text: '// 退出时同步状态\nsync(task)' }],
+        link: 'BUG-7',
+      }),
+      // 一个标签下超过三点：换成下一级编号
+      entry({ kind: 'bug', title: '多点原因', cause: 'a\nb\nc\nd', fix: '改好了' }),
     ],
   })
   assert.equal(
@@ -251,53 +272,66 @@ test('renderReport：条目一个三级标题，内容按序号分点；问题�
     [
       '# 10月23日工作日报',
       '',
+      '今天完成需求 1 项，1 项需求还在做，修好问题 2 个，1 个问题还在查，需要协助 1 项。',
+      '',
       '## 需求',
-      '',
-      '### 1. 工作总结能按周生成',
-      '',
-      '1. 日期那里加了按天和按周的切换。',
-      '2. 按周时取周一到周日。',
-      '',
-      '单子：https://x.test/REQ-1',
-      '',
-      '### 2. 加了删除报告的接口',
+      '1. 工作总结能按周生成（已完成 · https://x.test/REQ-1）',
+      '   - 日期那里加了按天和按周的切换。',
+      '   - 按周时取周一到周日。',
+      '   - 验证：选上周生成了一份周报。',
+      '   - 影响：按天生成不受影响。',
+      '2. 加了删除报告的接口（进行中）',
+      '   - 接口写好了。',
       '',
       '## 问题',
+      '1. 点暂停后子任务显示已停止（已修复 · BUG-7）',
+      '   - 现象：点暂停后一直显示已停止。',
+      '   - 原因：子任务进程已经退出，状态没跟着改。界面就一直显示已停止。',
+      '   - 修复（代码见附 1）：进程退出时同步状态。',
+      '   - 验证：暂停再继续试了三次。',
+      '2. 多点原因（已修复）',
+      '   - 原因：',
+      '     1. a。',
+      '     2. b。',
+      '     3. c。',
+      '     4. d。',
+      '   - 修复：改好了。',
+      '3. 日志偶尔不贴到最新（未解决）',
+      '   - 原因：刷新时滚动位置被重置了，还在查。',
       '',
-      '### 1. 点暂停后子任务显示已停止',
+      '## 遗留与风险',
+      '- 加了删除报告的接口：页面按钮还没接。',
+      '- 问题「日志偶尔不贴到最新」还没解决。',
       '',
-      '**原因**',
+      '## 明天计划',
       '',
-      '1. 子任务进程已经退出，状态没跟着改。',
-      '2. 界面就一直显示已停止。',
+      '## 需要协助',
+      '- 加了删除报告的接口：删除要不要二次确认需要产品定。',
       '',
-      '**修复**',
-      '',
-      '1. 进程退出时同步状态。',
-      '',
-      '**关键代码**',
-      '',
+      '## 附：关键代码',
+      '附 1 · 点暂停后子任务显示已停止',
       '`server/run.ts`',
       '```ts',
       '// 退出时同步状态',
       'sync(task)',
       '```',
       '',
-      '单子：BUG-7',
-      '',
-      '### 2. 日志偶尔不贴到最新（未解决）',
-      '',
-      '**原因**',
-      '',
-      '1. 刷新时滚动位置被重置了，还在查。',
-      '',
     ].join('\n'),
   )
-  // 没有条目的节整节不写；周报标题带周号和起止日期
+  // 没有条目的节整节不写，计划节总在；周报标题带周号和起止日期，计划叫下周计划
   const week = renderReport({ grain: 'week', from: '2026-10-19', to: '2026-10-25', items: [entry({})] })
-  assert.match(week, /^# 第43周工作周报（10月19日-10月25日）/)
-  assert.doesNotMatch(week, /## 问题|暂无/)
+  assert.match(week, /^# 第43周工作周报（10月19日-10月25日）\n\n本周完成需求 1 项。/)
+  assert.match(week, /## 下周计划/)
+  assert.doesNotMatch(week, /## 问题|## 遗留|## 需要协助|## 附|暂无/)
   assert.match(renderReport({ grain: 'day', from: '2026-10-23', to: '2026-10-23', items: [] }), /没有可写的内容/)
+})
+
+test('reportPlainText：去掉 Markdown 记号，二级标题换成一、二、，代码去围栏缩进', () => {
+  const md = '# 10月23日工作日报\n\n## 需求\n1. **加粗** 和 `代码`\n\n\n## 附：关键代码\n`a.ts`\n```ts\nx()\n```\n'
+  assert.equal(
+    reportPlainText(md),
+    '10月23日工作日报\n\n一、需求\n1. 加粗 和 代码\n\n二、附：关键代码\na.ts\n    x()\n',
+  )
 })
 
 test('parseExtract：取 JSON 代码块，丢掉认不出的条目，项目名宽松匹配', () => {
