@@ -495,6 +495,7 @@
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {
+    "SearchHost": 3,
     "OrchBug": 3,
     "BugHost": 1,
     "OrchBuild": 8,
@@ -508,7 +509,7 @@
     "OrchVcs": 11,
     "VcsHost": 11,
     "Orchestra": 17,
-    "EngineHost": 26
+    "EngineHost": 24
   },
   "gitCalls": {
     "server/comfy.ts": 1

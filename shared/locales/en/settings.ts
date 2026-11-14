@@ -638,7 +638,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '还没有{kind}': 'No {kind} yet',
   命令文件: 'Command file',
   文件结构: 'Files',
-  '另有 {n} 个文件': '{n} more files',
   在这里新建文件: 'New file here',
   在这里新建目录: 'New folder here',
   新建目录: 'New folder',
@@ -713,10 +712,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '（所有 Agent 共用）': ' (shared by all agents)',
   '这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。':
     'This skill is also deployed from Settings → Deploy; redeploy there to update that copy.',
-  '在左边的文件树里点一个文件，看它的内容。': 'Click a file in the tree to see its contents.',
-  '这个技能只有 SKILL.md，点左上的 SKILL.md 看内容。':
-    'This skill is just SKILL.md — click SKILL.md at the top of the tree to read it.',
-  '二进制文件（{bytes} 字节），不显示内容。': 'Binary file ({bytes} bytes) — contents are not shown.',
+  '二进制文件（{size}），不显示内容。': 'Binary file ({size}) — contents are not shown.',
+  查看方式: 'View as',
   '在左边选一个技能，看它带哪些文件、装没装。':
     'Pick a skill on the left to see which files it ships and whether it is installed.',
   '本机 Agent 写出 SKILL.md，在右侧预览，确认再应用':

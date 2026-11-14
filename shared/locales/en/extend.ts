@@ -109,7 +109,6 @@ export const EN_EXTEND: Record<string, string> = {
   '把和自带不一样的全部换回自带版本（你改过的内容会丢掉）':
     'Replace every skill that differs with the bundled version (your edits are lost)',
   等当前操作完成: 'Wait for the current operation to finish',
-  '另有 {n} 个文件': '+{n} files',
   '用自带的版本覆盖（你改过的内容会丢掉）': 'Overwrite with the bundled version (your edits will be lost)',
   '已添加「{name}」，新建了 {n} 个角色': 'Added “{name}” and created {n} role(s)',
   '已添加「{name}」': 'Added “{name}”',
