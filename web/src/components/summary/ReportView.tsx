@@ -85,7 +85,9 @@ export function ReportView({
     .join(' · ')
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto" aria-label={t('报告')}>
+    // relative 让滚动区自己当绝对定位子元素（读屏用的 sr-only 文字）的包含块：否则它按视口定位、不被这里的
+    // overflow 裁掉，把整页撑高；拖选到报告底部时浏览器接着滚整页，顶栏和标题被一起推出视口（看起来像被拉回去）
+    <main className="relative flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto" aria-label={t('报告')}>
       <DetailHeader
         leading={
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
