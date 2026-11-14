@@ -110,7 +110,9 @@ export function SummaryComposer({
   const done = job?.status === 'done'
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto" aria-label={t('提炼工作总结')}>
+    // relative 让滚动区自己当绝对定位子元素（读屏用的 sr-only 文字）的包含块：否则它按视口定位、不被这里的
+    // overflow 裁掉，把整页撑高；拖选到报告底部时浏览器接着滚整页，顶栏和标题被一起推出视口（看起来像被拉回去）
+    <main className="relative flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto" aria-label={t('提炼工作总结')}>
       <div className="flex w-full max-w-[920px] flex-col gap-5 px-4 pt-6 pb-10 md:px-8 md:pt-8">
         <header className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
