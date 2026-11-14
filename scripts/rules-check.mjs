@@ -609,6 +609,16 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
   }
 }
 
+// 23. 自定义了滚动条就要给交汇角落定底色（docs/lessons/scrollbar.md）：不定的话横竖滚动条交汇处是白块，
+// 深色主题下表格、代码预览右下角都看得见。全局规则在 web/src/index.css，局部样式不许把角落改回实色
+{
+  const css = read('web/src/index.css')
+  if (!/^::-webkit-scrollbar-corner\s*\{\s*background:\s*transparent;/m.test(css))
+    errors.push(
+      'web/src/index.css 缺少全局 ::-webkit-scrollbar-corner { background: transparent; }，滚动条交汇角落会出现白块',
+    )
+}
+
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exit(1)

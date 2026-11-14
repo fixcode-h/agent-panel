@@ -1002,6 +1002,13 @@ body,
   background-clip: content-box;
 }
 /*
+ * 横竖两条滚动条交汇的角落：自定义了 ::-webkit-scrollbar 后 Chromium 把这一格画成白块（深色主题下最扎眼，
+ * 表格、代码预览这类两个方向都能滚的区域都有）。透明后露出滚动区自己的底色，深浅两套都跟着主题走
+ */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/*
  * 细滚动条（设计稿 `.sb`，对话消息区等长列表用）：平时透明不占眼，鼠标进到这块区域才显出圆头滑块，
  * 按住滑块再加深。写成普通类而不是 @utility：上面全局的 ::-webkit-scrollbar 不在层里，
  * 放进 utilities 层会被它压住
