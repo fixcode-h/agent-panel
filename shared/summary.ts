@@ -18,15 +18,10 @@ import { BUILTIN_AGENTS } from './builtin/agents.ts'
 import { dayKey, isoWeek, periodLabel, usagePeriod } from './usage.ts'
 import { clip as clipText } from './text.ts'
 import { summariesOf } from './summary/card.ts'
-import {
-  SUMMARY_CODE_MAX,
-  SummaryCode,
-  codeBlock,
-  codeFromMaterial,
-  joinPoints,
-  materialLines,
-  splitPoints,
-} from './summary/code.ts'
+import { SUMMARY_CODE_MAX, SummaryCode, codeFromMaterial, joinPoints, materialLines } from './summary/code.ts'
+import { plainText, renderReportBody, reportPlainText } from './summary/render.ts'
+
+export { plainText, reportPlainText }
 
 /**
  * 数据目录里最多留多少份报告：左侧树要列出全部报告，这里只是防止数据文件无限长大的保险，
@@ -50,14 +45,14 @@ export const SUMMARY_FILES_MAX = 8
  * 只给 CLI 一行结论时它只能写出「修复了 xx 问题」这种没有因果的条目
  */
 export const SUMMARY_CARDS_MAX = 6
-export const SUMMARY_CARD_FIELD_MAX = 300
+export const SUMMARY_CARD_FIELD_MAX = 600
 /** 回复里没有总结卡时（老对话、闲聊轮），最后一条回复多带一段正文，原因和修法常写在中间 */
 export const SUMMARY_REPLY_MAX = 600
 /**
- * 不交给 CLI 的卡片字段：验证（测试过没过）、要你处理、改动的文件清单。
- * 报告只写做了什么、为什么坏、怎么修的，这几样对看报告的人没用，带上 CLI 就会照抄
+ * 不交给 CLI 的卡片字段：改动的文件清单（报告里不写文件名，带上 CLI 就会照抄）。
+ * 验证、要你处理要交（ADR 0065）：报告要让人看出这么做靠不靠谱、要不要他配合，验证只收一句结论
  */
-const CARD_FIELDS_SKIP = new Set(['verified', 'needs', 'changes']) // 模块状态：常量，加载后不改
+const CARD_FIELDS_SKIP = new Set(['changes']) // 模块状态：常量，加载后不改
 /** 交给 CLI 的代码改动：每个对话最多多少字、全部对话合计最多多少字（超出的写明截断了） */
 export const SUMMARY_DIFF_TASK_CHARS = 12_000
 export const SUMMARY_DIFF_TOTAL_CHARS = 80_000
@@ -98,6 +93,8 @@ export type SummarySource = (typeof SUMMARY_SOURCES)[number]
 /** 分项的种类：需求只写做了什么，Bug 写原因和修复 */
 export const SUMMARY_KINDS = ['need', 'bug'] as const
 export type SummaryKind = (typeof SUMMARY_KINDS)[number]
+/** 需求的状态：做完了 / 还在做（进行中的报告里写清做到哪一步） */
+export const SUMMARY_STATUSES = ['done', 'doing'] as const
 
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 
@@ -120,6 +117,19 @@ export const SummaryEntry = z.object({
   code: z.array(SummaryCode).max(SUMMARY_CODE_MAX).default([]),
   /** 待确认时用户附的单子（Bug 单 / 需求单的网址或单号）：直接写进报告（ADR 0043） */
   link: z.string().trim().max(300).default(''),
+  // 下面几项让看报告的人知道做到哪、靠不靠谱、要不要他配合（ADR 0065）；老报告没有，按默认值处理
+  /** 需求做完了没有；问题看 fix 有没有内容，不用这个字段 */
+  status: z.enum(SUMMARY_STATUSES).default('done'),
+  /** 问题：用户看到的现象 */
+  symptom: z.string().trim().max(600).default(''),
+  /** 怎么验证的、结果如何，一句结论；没验证写没验证和原因 */
+  verify: z.string().trim().max(600).default(''),
+  /** 会波及的其他功能、已知风险 */
+  impact: z.string().trim().max(600).default(''),
+  /** 没做完的、已知限制：汇总进「遗留与风险」 */
+  remaining: z.string().trim().max(600).default(''),
+  /** 要谁做什么：汇总进「需要协助」 */
+  help: z.string().trim().max(600).default(''),
 })
 export type SummaryEntry = z.infer<typeof SummaryEntry>
 
@@ -618,15 +628,18 @@ export function extractPrompt(input: {
     '- 输出：只输出一个 ```json 代码块，不要别的文字。格式：',
     '```json',
     '{"items":[',
-    '  {"kind":"need","project":"<项目名>","title":"<做成了什么>","content":["<怎么做的，一点一句>"]},',
-    '  {"kind":"bug","project":"<项目名>","title":"<用户看到的问题>","cause":["<什么导致的，按因果顺序一点一句>"],"fix":["<怎么改的，一点一句；没解决就是空数组>"],',
+    '  {"kind":"need","project":"<项目名>","title":"<做成了什么>","status":"<done 做完了 / doing 还在做>","content":["<怎么做的，一点一句>"],',
+    '   "verify":["<怎么验证的、结果如何>"],"impact":["<会波及的其他功能、已知风险>"],"remaining":["<没做完的、已知限制>"],"help":["<要谁做什么>"]},',
+    '  {"kind":"bug","project":"<项目名>","title":"<用户看到的问题>","symptom":["<用户看到的现象>"],"cause":["<什么导致的，按因果顺序一点一句>"],"fix":["<怎么改的，一点一句；没解决就是空数组>"],',
+    '   "verify":[],"impact":[],"remaining":[],"help":[],',
     '   "code":[{"file":"<文件相对路径>","lang":"<代码块语言，如 ts>","text":"<带中文注释的关键代码>"}]}',
     ']}',
     '```',
     '- 标题和内容里不要写项目名称，报告不按项目区分。',
     '- 提交、推送、合并、合回、cherry-pick、开分支、打包发版这类版本管理操作不算条目，也不要写进任何条目。',
     '- 材料里的「总结卡」是 Agent 当时写的现象、原因、修复，优先照它写清因果；材料里有的原因和修法要写进去，不要压成一句「修复了 xx 问题」。',
-    '- content、cause、fix 是数组，每个元素是一点、一句话，不要在一个元素里塞几件事，也不要带序号（面板会加）。',
+    '- content、symptom、cause、fix、verify、impact、remaining、help 都是数组，每个元素是一点、一句话，不要在一个元素里塞几件事，也不要带序号（面板会加）。',
+    '- verify 只写一句结论（怎么验证的、结果如何），没验证就写「没验证」和原因；impact、remaining、help 材料里没有就给空数组，不要写「无」。需求还没做完时 status 写 doing，content 里写清做到哪一步。',
     '- code 只给已经解决的问题：从材料的「代码改动」里挑修复的关键几行，抄修改后的代码（要对比前后时 lang 写 diff，保留 +/- 号），在改动的那几行上方加中文注释说明改了什么、为什么。关键的修复有几处就给几段，测试、格式调整、日志不给。',
     '- code 里除注释外的每一行都必须在材料的代码改动里原样出现，不能改写、补全或编造；材料里没有代码改动就给空数组。',
     `- 最多 ${SUMMARY_ITEMS_MAX} 条；没有可写的内容就输出 {"items":[]}，不要凑数。`,
@@ -667,6 +680,12 @@ const RawEntry = z.object({
   cause: z.unknown().optional(),
   fix: z.unknown().optional(),
   code: z.unknown().optional(),
+  status: z.unknown().optional(),
+  symptom: z.unknown().optional(),
+  verify: z.unknown().optional(),
+  impact: z.unknown().optional(),
+  remaining: z.unknown().optional(),
+  help: z.unknown().optional(),
 })
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? clip(plainText(v), max) : '')
@@ -690,6 +709,7 @@ export function parseExtract(
   const known = new Map(projects.map((p) => [norm(p), p]))
   const codeLines = materialLines(material)
   const points = (v: unknown) => joinPoints(v, plainText, 1200)
+  const short = (v: unknown) => joinPoints(v, plainText, 600)
   const items: SummaryEntry[] = []
   for (const x of list) {
     const r = RawEntry.safeParse(x)
@@ -711,6 +731,14 @@ export function parseExtract(
       // 没解决的问题没有「修复」，也就没有修复代码
       code: fix ? codeFromMaterial(r.data.code, codeLines) : [],
       link: '',
+      // 只认 doing，别的写法都按做完了：CLI 偶尔写成「进行中」「in progress」时宁可当做完，不让条目丢掉
+      status: kind === 'need' && /^doing$/i.test(String(r.data.status ?? '').trim()) ? 'doing' : 'done',
+      symptom: kind === 'bug' ? short(r.data.symptom) : '',
+      // 没修好的问题谈不上验证
+      verify: kind === 'need' || fix ? short(r.data.verify) : '',
+      impact: short(r.data.impact),
+      remaining: short(r.data.remaining),
+      help: short(r.data.help),
     })
     if (items.length >= SUMMARY_ITEMS_MAX) break
   }
@@ -731,76 +759,15 @@ export function reportHeading(grain: SummaryGrain, from: string, to: string) {
   return `第${isoWeek(parseDay(from) ?? new Date()).week}周工作周报（${monthDay(from)}-${monthDay(to)}）`
 }
 
-/** 报告的两节：需求在前、问题在后（ADR 0043：不叫「Bug」，没有条目的节整节不写） */
-export const REPORT_SECTIONS = ['## 需求', '## 问题'] as const
-
 /**
- * 去掉一眼就像 AI 写的符号：加粗、反引号、破折号，压掉多余空白（ADR 0043）。
- * 只做确定无害的替换，不改写句子；口吻靠「每日工作总结」角色的写法规则
- */
-export function plainText(s: string) {
-  return s
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/\s*(——|—|--)\s*/g, '，')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\s*\n\s*/g, ' ')
-    .trim()
-}
-
-/** 一句话收尾：没有句末标点就补「。」，两句话拼起来不会粘在一起 */
-const sentence = (s: string) => {
-  const x = plainText(s)
-  return !x || /[。！？.!?；;）)」]$/.test(x) ? x : `${x}。`
-}
-
-/** 单子：网址原样写（贴进聊天工具能直接点），单号照写 */
-const linkLines = (link: string) => (link.trim() ? [`单子：${link.trim()}`, ''] : [])
-
-/** 一组分点：每点一行，前面加序号 */
-const numbered = (s: string) => [...splitPoints(s).map((x, i) => `${i + 1}. ${sentence(x)}`), '']
-
-/** 条目标题：去掉 AI 符号和句末标点（标题不是句子） */
-const headline = (s: string) => plainText(s).replace(/[。.；;]+$/, '')
-
-/** 加粗的固定小标题（原因 / 修复 / 关键代码）下面跟内容；内容为空时整块不写 */
-const block = (head: string, lines: string[]) => (lines.length ? [`**${head}**`, '', ...lines] : [])
-
-/**
- * 用采纳的分项拼报告（ADR 0056，取代 ADR 0043 的「一条一段话」）：
- * - 每个条目一个三级标题「### 序号. 标题」，内容按序号一点一行；
- * - 需求下面直接是怎么做的几点；
- * - 问题分「原因」「修复」「关键代码」三块，没解决的标题后加「（未解决）」，只写原因；
- * - 有单子写在条目最后。没有条目的节整节不写；两节都没有时写一句「没有可写的内容。」
+ * 用采纳的分项拼报告（模板见 shared/summary/render.ts，ADR 0065）：标题按范围算好，正文交给 renderReportBody
  */
 export function renderReport(input: { grain: SummaryGrain; from: string; to: string; items: SummaryEntry[] }) {
-  const entry = (x: SummaryEntry, i: number) => {
-    if (x.kind === 'need')
-      return [`### ${i + 1}. ${headline(x.title)}`, '', ...(x.content ? numbered(x.content) : []), ...linkLines(x.link)]
-    const fixed = !!x.fix.trim()
-    return [
-      `### ${i + 1}. ${headline(x.title)}${fixed ? '' : '（未解决）'}`,
-      '',
-      ...block('原因', x.cause ? numbered(x.cause) : []),
-      ...(fixed ? block('修复', numbered(x.fix)) : []),
-      ...(fixed
-        ? block(
-            '关键代码',
-            (x.code ?? []).flatMap((c) => [...codeBlock(c), '']),
-          )
-        : []),
-      ...linkLines(x.link),
-    ]
-  }
-  const section = (kind: SummaryKind, head: string) => {
-    const list = input.items.filter((x) => x.kind === kind)
-    return list.length ? [head, '', ...list.flatMap(entry)] : []
-  }
-  const body = [...section('need', REPORT_SECTIONS[0]), ...section('bug', REPORT_SECTIONS[1])]
-  return [`# ${reportHeading(input.grain, input.from, input.to)}`, '', ...(body.length ? body : ['没有可写的内容。'])]
-    .join('\n')
-    .trimEnd()
-    .concat('\n')
+  return renderReportBody({
+    heading: reportHeading(input.grain, input.from, input.to),
+    week: input.grain === 'week' && input.from !== input.to,
+    items: input.items,
+  })
 }
 
 /** 报告的字数（去掉空白）：报告头显示规模用，Markdown 标记也算进去，不另算一套口径 */

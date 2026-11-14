@@ -9,7 +9,7 @@ import {
   summaryPeriod,
   SummaryCreateRequest,
   SummaryExtractRequest,
-  type SummaryEntry,
+  SummaryEntry,
   type SummaryJob,
   type SummaryRecord,
 } from '@shared/summary'
@@ -17,25 +17,39 @@ import { dayKey } from '@shared/usage'
 import { LessonDraftInput, LessonDraftRecord, lessonDraftsFromReport, missingDrafts } from '@shared/lesson-draft'
 import { demoMs } from './demo-speed'
 
-/** 演示用的需求：标题 + 怎么做的（每行一点，ADR 0056） */
-const NEEDS = [
+/** 演示用的需求：标题 + 怎么做的（每行一点，ADR 0056），带验证、影响、遗留、协助（ADR 0065） */
+const NEEDS: Partial<SummaryEntry>[] = [
   {
     title: '购物车数量与结算页保持一致',
     content: '加购、改数量和结算都以服务端返回的数量为准\n切页面回来时重新拉一次购物车，不再出现两个数字',
+    verify: '加购、改数量、切页面回来各试了一遍，两处数字一致',
+    impact: '购物车多一次请求，弱网下切回来会晚半秒刷新',
   },
   {
     title: '商品列表首屏加载骨架',
-    content: '首次加载时先显示和真实行等高的占位块\n数据到了再整块替换，页面不再跳动',
+    status: 'doing',
+    content: '首次加载时先显示和真实行等高的占位块\n列表页做完了，详情页还没接',
+    remaining: '详情页的占位块还没做',
   },
-  { title: '价格显示统一保留两位小数', content: '列表、详情和订单都改用同一个价格格式化入口' },
-  { title: '搜索框支持拼音首字母', content: '输入拼音首字母也能匹配商品名，例如输入 sj 能搜到「手机」' },
+  {
+    title: '价格显示统一保留两位小数',
+    content: '列表、详情和订单都改用同一个价格格式化入口',
+    verify: '整数、一位小数、三位小数三种价格都看过',
+  },
+  {
+    title: '搜索框支持拼音首字母',
+    content: '输入拼音首字母也能匹配商品名，例如输入 sj 能搜到「手机」',
+    help: '多音字按哪个读音匹配，需要产品定',
+  },
 ]
 /** 演示里的 Bug：只有用户在对话里报过的问题才写进来；原因 / 修复每行一点，修好的附关键代码，没修好的只有原因 */
-const BUGS = [
+const BUGS: Partial<SummaryEntry>[] = [
   {
     title: '点「全部应用」后按钮状态不变',
+    symptom: '点完「全部应用」按钮还是灰的，刷新后设置也变回去',
     cause: '保存只改了内存里的值，没有写回接口\n刷新后按接口里的旧值画，又变回旧状态',
     fix: '保存时先写回接口\n写成功后重新拉取配置再刷新按钮',
+    verify: '改完点应用再刷新，设置和按钮状态都对',
     code: [
       {
         file: 'src/settings/apply.ts',
@@ -46,8 +60,11 @@ const BUGS = [
   },
   {
     title: '设置弹窗打开时先闪在左上角',
+    symptom: '打开设置时弹窗先在左上角闪一下再跳到中间',
     cause: '弹窗挂载时还没拿到定位用的锚点\n第一帧按默认位置画在左上角，下一帧才跳到中间',
     fix: '等挂载完成、量到尺寸后再显示，打开就在中间',
+    verify: '连续开关二十次没再闪',
+    impact: '所有弹窗打开会晚一帧显示，肉眼看不出',
     code: [
       {
         file: 'src/ui/Dialog.tsx',
@@ -58,9 +75,8 @@ const BUGS = [
   },
   {
     title: '接口超时后页面一直转圈',
+    symptom: '网络慢时页面一直转圈，不报错也不能重试',
     cause: '超时的请求没有走统一的错误处理，加载状态没被清掉\n还没确定是哪几个接口绕开了统一的请求入口',
-    fix: '',
-    code: [],
   },
 ]
 
@@ -81,17 +97,8 @@ function sampleItems(names: string[], round: number): SummaryEntry[] {
     const needs = [NEEDS[k % NEEDS.length], NEEDS[(k + 1) % NEEDS.length]]
     const bug = BUGS[k % BUGS.length]
     return [
-      ...needs.map((n) => ({
-        id: crypto.randomUUID(),
-        kind: 'need' as const,
-        project,
-        ...n,
-        cause: '',
-        fix: '',
-        code: [],
-        link: '',
-      })),
-      { id: crypto.randomUUID(), kind: 'bug' as const, project, content: '', ...bug, link: '' },
+      ...needs.map((n) => SummaryEntry.parse({ ...n, id: crypto.randomUUID(), kind: 'need', project })),
+      SummaryEntry.parse({ ...bug, id: crypto.randomUUID(), kind: 'bug', project }),
     ]
   })
 }

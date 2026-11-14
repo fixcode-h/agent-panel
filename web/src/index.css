@@ -1411,6 +1411,10 @@ body,
   --md-k: 0.6;
   line-height: 1.6;
 }
+/* 工作总结的报告预览：字号不变、间距收到七成，和复制出去的紧凑日报一个样子（ADR 0065） */
+.chat-md-report {
+  --md-k: 0.7;
+}
 .chat-md > * {
   margin-block: calc(0.72 * var(--md-base) * var(--md-k));
 }

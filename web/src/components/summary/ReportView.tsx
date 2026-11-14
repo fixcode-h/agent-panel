@@ -1,16 +1,17 @@
 /**
- * 右边打开的一份报告：头部写范围、来源和规模，正文可以预览 / 编辑（自动保存）、复制、删除、再次生成；
+ * 右边打开的一份报告：头部写范围、来源和规模，正文可以预览 / 编辑（自动保存）、复制（纯文本 / Markdown）、删除、再次生成；
  * 下面是从这份报告提炼候选教训的草稿区。
  * 再次生成（ADR 0043）把分项放回待确认列表，确认后生成一份新报告，这一份原样留着。
  */
 import { useState } from 'react'
-import { Copy, FileText, Layers, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, FileCode2, FileText, Layers, RefreshCw, Trash2 } from 'lucide-react'
 import {
   formatDuration,
   reportChars,
   reportCounts,
   reportGrain,
   reportName,
+  reportPlainText,
   reportSpan,
   windowLabel,
   type SummaryRecord,
@@ -120,10 +121,17 @@ export function ReportView({
               <RefreshCw className="h-3.5 w-3.5" />
               {t('再次生成')}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => onCopy(md)}>
+            {/* 默认复制纯文本：日报多半贴进企业微信、飞书、邮件，这些地方不渲染 Markdown（ADR 0065） */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onCopy(reportPlainText(md))}
+              title={t('复制为纯文本，去掉 Markdown 记号，可以直接贴进聊天工具和邮件')}
+            >
               <Copy className="h-3.5 w-3.5" />
               {t('复制')}
             </Button>
+            <IconButton icon={FileCode2} label={t('复制 Markdown')} onClick={() => onCopy(md)} />
             <IconButton icon={Trash2} label={t('删除这份报告')} onClick={onDelete} />
           </>
         }
@@ -167,7 +175,8 @@ export function ReportView({
           ) : (
             // 正文限宽：一行太长不好读；左缘和卡片内边距对齐，不居中
             <div className="max-w-[76ch] px-5 py-4">
-              <Markdown text={md} teamNames={NO_TEAM} />
+              {/* chat-md-report：段距收一档，和复制出去的紧凑排版一致 */}
+              <Markdown text={md} teamNames={NO_TEAM} className="chat-md-report" />
             </div>
           )}
         </Card>
