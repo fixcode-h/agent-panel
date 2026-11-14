@@ -6,6 +6,7 @@
  */
 import { runShard, TINY_PNG } from './harness.mjs'
 import { checkImeAfterChip } from './composer-ime-chip.mjs'
+import { checkImeAfterNewline } from './composer-ime-newline.mjs'
 
 /** 文件卡片显示的是路径（带目录分隔符），前面不加 @ */
 const isPathChip = (text) => !!text && !text.startsWith('@') && /[\\/]/.test(text)
@@ -188,6 +189,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .catch(() => errors.push('行内图片卡片：点卡片上的删除后卡片还在'))
   // 卡片紧后面用输入法打拼音再清掉：光标不能掉进卡片里（退格删不掉、文件名被挤没）
   await checkImeAfterChip(p, errors)
+  // 换行后在新的一行打字、用输入法打标点：字不能落回上一行，标点不能出来两个
+  await checkImeAfterNewline(p, errors)
   // 「+」里引入会话
   await p.getByRole('button', { name: '添加文件、图片或引用' }).click()
   await p.getByRole('button', { name: '引入会话' }).click()

@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { CHIP_SHAPE, CHIP_TONE } from '@/components/ui/chip-tone'
 import { scrollCaretIntoView } from '@/lib/caret'
 import { caretOutOfChip, chipAround } from './chip-caret'
+import { isTailBreak, syncTailBreak } from './tail-break'
 import { quoteLabel, quoteText } from '@/lib/quote'
 import { t } from '@shared/i18n'
 
@@ -108,6 +109,8 @@ function serialize(node: Node, chipText?: (chip: Chip) => string | undefined): s
       const chip = { kind, name: node.dataset.name ?? '' }
       return chipText?.(chip) ?? chipMarker(kind, chip.name)
     }
+    // 末尾换行后面占位的 <br> 不是内容（见 tail-break.ts）
+    if (isTailBreak(node)) return ''
     if (node.tagName === 'BR') return '\n'
   }
   let out = ''
@@ -244,6 +247,7 @@ function paint(
   info?: Info,
 ) {
   root.replaceChildren(...nodesOf(value, preview, actions, info))
+  syncTailBreak(root)
 }
 
 /**
@@ -412,6 +416,7 @@ export function RichInput({
     // 全删光之后浏览器会留一个占位的 <br>：它不是用户换的行（换行是自己插的文字），
     // 留着会读成「\n」，草稿不算空，拖进来的引用也会落到第二行
     if (node.childNodes.length === 1 && node.firstChild?.nodeName === 'BR') node.replaceChildren()
+    syncTailBreak(node, composing.current)
     const next = serialize(node)
     painted.current = { value: next, preview: cb.current.preview, info: cb.current.info }
     cb.current.onChange(next)
@@ -698,6 +703,8 @@ export function RichInput({
         }}
         onCompositionEnd={() => {
           composing.current = false
+          // 组合期间没动末尾占位的 <br>，这里按组合结束后的内容补上或收掉
+          if (el.current) syncTailBreak(el.current)
           // 在卡片紧后面打拼音再退格清掉时，组合结束后光标会落进卡片里：马上挪出来
           if (el.current) caretOutOfChip(el.current)
           // 组合结束后再补一次重画：组合期间跳过的那些变化在这里落地
