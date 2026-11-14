@@ -52,6 +52,8 @@
 
 14. **插件接口 8（2026-11-13，设置 →「MCP」能力菜单，[ADR 0064](./0064-mcp-capability-catalog.md)）**：插件工具加 `guide`（作用、什么时候用 / 别用、分组，面板拼进交给 Agent 的说明）和设置页徽标用的 `confirms` / `irreversible`；面板动作加 `useWhen` / `avoidWhen`；`ServerPlugin.catalog()` 不开对话也能列出工具；`tools(run)` 不挂时可以返回 `{ skip: 原因 }`；`PluginRun.dryRun` 表示是设置页的自检，插件不起进程、不改数据；`PluginRunTools.servers[].summary` 作为 MCP 握手的 `instructions`。开放模块加 `shared/mcp-catalog/describe.ts`。
 
+15. **分析报告扩展点（2026-11-14，接口号不变）**：表格插件的「AI 分析表格风格」用 `runPromptInProject` 开分析对话，结果只能回项目设置的「表格」页去勾选，分析窗口右侧没有功能面板（用户反馈「分析后右侧并没有功能面板应用分析结果到表格设置中」）。加可选的 `WebPlugin.reports`：插件登记代码块语言名（`lang`）、页签名字和 `Report` 组件，`findReport` 在 AI 分析对话里按语言名认出这条回复，`AnalysisPanel` 画插件的 `Report`（收 `task`、`messageId`、`text`），对话区经 `stripPluginReports` 去掉这个代码块。只加了可选项，旧插件不受影响；旧面板忽略它，所以插件要照旧留着别处的应用入口，接口号不加。
+
 ## 影响与风险
 
 - 带代码的插件在面板进程里以用户权限运行，和 Agent 执行命令同级的信任；安装确认里写明，只建议装信任的来源。

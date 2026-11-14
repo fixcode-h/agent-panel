@@ -3,7 +3,8 @@ import { ClipboardList, GraduationCap, SearchCheck, Settings2, Sparkles, X } fro
 import type { Project, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { parseDiagnosis } from '@shared/diagnosis'
-import type { ReportKind } from '@/lib/analysis-report'
+import { findReport, type FoundReport, type ReportKind } from '@/lib/analysis-report'
+import { usePluginReports, type OwnedReport } from '@/plugins/registry'
 import { cn } from '@/lib/utils'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { IconButton } from '@/components/ui/icon-button'
@@ -25,9 +26,21 @@ const KIND = {
     title: () => t('排查结论'),
     desc: () => t('修复建议可以发回被分析的对话，或开新任务修'),
   },
-} satisfies Record<ReportKind, { icon: typeof Sparkles; title: () => string; desc: () => string }>
+} satisfies Record<Exclude<ReportKind, 'plugin'>, { icon: typeof Sparkles; title: () => string; desc: () => string }>
 
-export const reportTitle = (kind: ReportKind) => KIND[kind].title()
+/** 对话里的报告，带上页签名字；插件的报告带上它登记的那一项（插件关掉后不再认） */
+export type TaskReport = FoundReport & { title: string; own?: OwnedReport }
+
+/** 这个对话右侧功能面板画哪份报告：面板自己的几种 + 开着的插件登记的（WebPlugin.reports） */
+export function useTaskReport(task: Task | null | undefined): TaskReport | null {
+  const plugins = usePluginReports()
+  return useMemo(() => {
+    const r = task ? findReport(task, plugins) : null
+    if (!r) return null
+    const own = r.plugin ? plugins.find((p) => p.key === r.plugin) : undefined
+    return { ...r, own, title: own ? own.title : KIND[r.kind as Exclude<ReportKind, 'plugin'>].title() }
+  }, [task, plugins])
+}
 
 /**
  * AI 分析对话右侧的功能面板（ADR 0016）：分析报告不再铺在对话区，画在这里逐项处理。
@@ -36,22 +49,24 @@ export const reportTitle = (kind: ReportKind) => KIND[kind].title()
 export function AnalysisPanel({
   task,
   project,
-  kind,
-  text,
+  report,
   onTask,
   onClose,
   className,
 }: {
   task: Task
   project?: Project
-  kind: ReportKind
-  /** 报告所在的那条回复 */
-  text: string
+  report: TaskReport
   onTask: (task: Task) => void
   onClose: () => void
   className?: string
 }) {
-  const k = KIND[kind]
+  const { kind, own } = report
+  /** 报告所在的那条回复 */
+  const text = report.message.text
+  const k = own
+    ? { icon: own.icon ?? Sparkles, title: () => own.title, desc: () => own.desc ?? '' }
+    : KIND[kind as Exclude<ReportKind, 'plugin'>]
   const Icon = k.icon
   const first = task.messages.find((m) => m.role === 'user')?.text ?? ''
   // 排查结论：页签按结论里的条目分（结论 / 证据 / 修复 / 相关文件），读不出来时只留一个页签摆原文
@@ -86,13 +101,15 @@ export function AnalysisPanel({
         )}
       </TabBar>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {kind !== 'diagnosis' && <p className="px-[1.125rem] pt-3 text-footnote text-subtle">{k.desc()}</p>}
+        {kind !== 'diagnosis' && k.desc() && <p className="px-[1.125rem] pt-3 text-footnote text-subtle">{k.desc()}</p>}
         {kind === 'diagnosis' ? (
           diag?.ok ? (
             <DiagnosisReport task={task} project={project} diagnosis={diag.value} tab={tab} onTask={onTask} />
           ) : (
             diag && <DiagnosisError parse={diag} />
           )
+        ) : own ? (
+          <own.Report task={task} messageId={report.message.id} text={text} />
         ) : kind === 'run' ? (
           <EvolutionReport task={task} project={project} text={text} onTask={onTask} />
         ) : kind === 'lessons' ? (

@@ -12,7 +12,20 @@ import { DIAGNOSIS_LANG } from '@shared/diagnosis'
  * 右侧功能面板能画的报告：执行分析（代码问题 + 角色、工作流优化）、教训评审、项目初始化的推荐设置、
  * 排查的结构化结论（根因、证据、修复，见 shared/diagnosis.ts）
  */
-export type ReportKind = 'run' | 'lessons' | 'init' | 'diagnosis'
+export type ReportKind = 'run' | 'lessons' | 'init' | 'diagnosis' | 'plugin'
+
+/** 插件登记的报告（WebPlugin.reports）在这里只用得到代码块语言名，id 带上插件 id 方便区分 */
+export interface ReportLang {
+  key: string
+  lang: string
+}
+
+/** 找到的报告：哪种、在哪条回复里；插件的报告带 plugin（登记的 key） */
+export interface FoundReport {
+  kind: ReportKind
+  message: TaskMessage
+  plugin?: string
+}
 
 /** 是不是 AI 分析开出的对话：新对话看 analysis，旧对话看是不是用的必备角色「排查分析」 */
 export function isAnalysisTask(
@@ -53,21 +66,48 @@ export function stripInitJson(text: string) {
     : text
 }
 
-/** 这个对话有哪种报告、在哪条回复里；没有报告时为空 */
+/**
+ * 回复里插件报告的代码块（不带语言名的 json 块不算）：分析结果画在右侧功能面板，
+ * 对话区不再铺一大段 JSON。只认 AI 分析开出的对话，普通对话里碰巧写了同名代码块照常显示
+ */
+export function stripPluginReports(text: string, task: Pick<Task, 'analysis'> | undefined, langs: ReportLang[]) {
+  if (!task?.analysis || !langs.length) return text
+  return langs.reduce(
+    (t, { lang }) =>
+      t.includes('```' + lang)
+        ? t.replace(new RegExp('```' + escapeRe(lang) + '[^\\n]*\\n[\\s\\S]*?(?:```|$)', 'g'), '').trimEnd()
+        : t,
+    text,
+  )
+}
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * 这个对话有哪种报告、在哪条回复里；没有报告时为空。
+ * plugins 是插件登记的报告（例如表格插件的 AI 分析表格风格）：只在 AI 分析开出的对话里认，按代码块语言名找
+ */
 export function findReport(
   task: Pick<Task, 'mode' | 'status' | 'working' | 'messages' | 'analysis'>,
-): { kind: ReportKind; message: TaskMessage } | null {
+  plugins: ReportLang[] = [],
+): FoundReport | null {
   const run = reportMessage(task, fence(EVOLUTION_LANG))
   const lessons = reportMessage(task, fence(LESSON_REVIEW_LANG))
   const init = task.analysis === 'init' ? reportMessage(task, hasJson) : undefined
   const diagnosis = reportMessage(task, fence(DIAGNOSIS_LANG))
+  const own = task.analysis
+    ? plugins.flatMap((p): FoundReport[] => {
+        const message = reportMessage(task, fence(p.lang))
+        return message ? [{ kind: 'plugin', message, plugin: p.key }] : []
+      })
+    : []
   // 同一个对话里先后出过两种（少见）：取最新的那份
   const all = [
+    ...own,
     run && { kind: 'run' as const, message: run },
     lessons && { kind: 'lessons' as const, message: lessons },
     init && { kind: 'init' as const, message: init },
     diagnosis && { kind: 'diagnosis' as const, message: diagnosis },
-  ].filter((x): x is { kind: ReportKind; message: TaskMessage } => !!x)
+  ].filter((x): x is FoundReport => !!x)
   if (!all.length) return null
   return all.reduce((a, b) => (task.messages.indexOf(b.message) > task.messages.indexOf(a.message) ? b : a))
 }

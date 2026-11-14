@@ -15,6 +15,7 @@ import {
   fixState,
   isAnalysisTask,
   stripInitJson,
+  stripPluginReports,
   timingMs,
 } from './analysis-report'
 
@@ -164,4 +165,21 @@ test('初始化对话的回复在对话区去掉末尾的 JSON', () => {
   assert.equal(stripInitJson('说明\n\n```json\n{"name":"x"}\n```'), '说明')
   assert.equal(stripInitJson('只有说明'), '只有说明')
   assert.equal(stripInitJson('命令\n```\nnpm test\n```'), '命令\n```\nnpm test\n```')
+})
+
+test('插件登记的报告：只在 AI 分析对话里按代码块语言名认，对话区去掉代码块', () => {
+  const langs = [{ key: 'tables:style', lang: 'tables-style' }]
+  const reply = '看到的风格\n\n```tables-style\n{"style":{}}\n```'
+  const msgs = [msg('u', 'user', '分析'), msg('a', 'agent', reply)]
+  const r = findReport(task(msgs, { analysis: 'run' }), langs)
+  assert.equal(r?.kind, 'plugin')
+  assert.equal(r?.plugin, 'tables:style')
+  assert.equal(r?.message.id, 'a')
+  // 普通对话、插件没开（没登记）时不认
+  assert.equal(findReport(task(msgs), langs), null)
+  assert.equal(findReport(task(msgs, { analysis: 'run' })), null)
+  assert.equal(stripPluginReports(reply, { analysis: 'run' }, langs), '看到的风格')
+  assert.equal(stripPluginReports(reply, {}, langs), reply)
+  // 还在写、代码块没收尾的也先藏起来
+  assert.equal(stripPluginReports('说明\n```tables-style\n{"st', { analysis: 'run' }, langs), '说明')
 })

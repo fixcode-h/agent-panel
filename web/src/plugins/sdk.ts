@@ -192,6 +192,33 @@ export interface Specimen {
   Specimen: ComponentType
 }
 
+/**
+ * AI 分析对话右侧功能面板里的一种报告（2026-11-14 加的，旧面板没有这一项时不画，插件要另留应用结果的地方）：
+ * 插件用 host 的 runPromptInProject 开的分析对话，回复里有语言名是 lang 的代码块，右侧功能面板就画 Report，
+ * 让用户在对话旁边直接把结果应用掉（例如表格插件的「AI 分析表格风格」逐项勾选写进结构文件）；
+ * 这个代码块不再铺在对话区。和面板自己的分析报告（执行分析、教训评审、排查结论）同一个面板、同一套页签
+ */
+export interface AnalysisReport {
+  /** 插件里唯一 */
+  id: string
+  /** 回复里代码块的语言名，例如 tables-style；别和面板自己的（workflow-evolution、diagnosis…）、json 重名 */
+  lang: string
+  /** 页签上的名字 */
+  title: string
+  /** 页签下面的一行说明 */
+  desc?: string
+  icon?: ComponentType<{ className?: string }>
+  /** text 是报告所在的那条回复（含代码块原文） */
+  Report: ComponentType<AnalysisReportProps>
+}
+
+export interface AnalysisReportProps {
+  task: Task
+  /** 报告所在那条回复的 id：插件记「这份已经应用过」用 */
+  messageId: string
+  text: string
+}
+
 export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
@@ -202,6 +229,8 @@ export interface WebPlugin {
   barePages?: BarePage[]
   projectSections?: ProjectSection[]
   specimens?: Specimen[]
+  /** AI 分析对话右侧功能面板里的报告（2026-11-14 加的） */
+  reports?: AnalysisReport[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>
 }
