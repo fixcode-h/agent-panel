@@ -85,6 +85,7 @@ import { interruptedApi } from './interrupted.ts'
 import { autoResumeAfterRestart } from './restart-interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { addPageFeed, pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
+import { installMcpToolTitles } from './mcp-catalog/external-titles.ts'
 import { appActionsApi, setActionHost } from './app-actions/index.ts'
 import { callApi } from './app-actions/registry.ts'
 import { getSettings, saveSettings } from './settings.ts'
@@ -930,6 +931,8 @@ async function sweepStaleWorktrees() {
 
 app.route('/tasks', tasks.routes)
 addPageFeed(tasks.pageFeed)
+// 别家 MCP 服务的工具显示名：Agent 用到时去问服务，推给页面（对话里的工具行显示中文名）
+installMcpToolTitles()
 // 工作总结：按天 / 按周提炼分项，采纳后拼成报告（只读任务记录，不改项目文件）
 const summaryConfigFile = dataPath('config/summary.json')
 app.route(

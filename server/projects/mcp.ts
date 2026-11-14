@@ -72,7 +72,9 @@ const sameServer = (a: McpServer, b: McpServer) => {
 const nameOk = (name: string) => /^[A-Za-z0-9][\w-]*$/.test(name)
 
 /** 读项目目录里的配置文件；读不懂的一个只记进 errors，不影响别的文件 */
-async function scan(dir: string): Promise<{ detected: ProjectMcpDetected[]; errors: ProjectMcpOverview['errors'] }> {
+export async function scanProjectMcp(
+  dir: string,
+): Promise<{ detected: ProjectMcpDetected[]; errors: ProjectMcpOverview['errors'] }> {
   const detected: ProjectMcpDetected[] = []
   const errors: ProjectMcpOverview['errors'] = []
   for (const s of SOURCES) {
@@ -122,7 +124,7 @@ async function scan(dir: string): Promise<{ detected: ProjectMcpDetected[]; erro
 async function overview(dir: string): Promise<ProjectMcpOverview> {
   const global = await mcpOverview()
   const by = new Map(global.servers.map((s) => [s.name, s]))
-  const { detected, errors } = dir ? await scan(dir) : { detected: [], errors: [] }
+  const { detected, errors } = dir ? await scanProjectMcp(dir) : { detected: [], errors: [] }
   for (const d of detected) {
     const cur = by.get(d.name)
     d.status = !cur ? 'new' : sameServer(d.server, cur) ? 'same' : 'different'
@@ -188,7 +190,7 @@ export function projectMcpApi(deps: { projectPath: (projectId: string) => Promis
         guard(async (c) => {
           const body = await c.req.json()
           const dir = await dirOf(c)
-          const { detected } = dir ? await scan(dir) : { detected: [] }
+          const { detected } = dir ? await scanProjectMcp(dir) : { detected: [] }
           const { clis } = await mcpOverview()
           const result: ProjectMcpImportResult = {
             overview: await overview(dir),

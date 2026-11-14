@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
+import type { McpToolTitles } from '../shared/mcp-catalog/tool-titles.ts'
 
 /**
  * 托盘要页面做的事：点图标时把已经打开的面板切到前台（focus），右键「设置」时顺便打开设置（view）。
@@ -12,6 +13,8 @@ export type PageSignal =
   | { type: 'ui'; action: string; args: Record<string, unknown> }
   /** 插件服务端推给自己网页部分的事件（插件接口 7，PluginServerContext.pages），页面在 web/src/plugins/events.ts 分给订阅的插件 */
   | { type: 'plugin'; plugin: string; event: string; data: unknown }
+  /** 别家 MCP 服务的工具显示名有变化（server/mcp-catalog/external-titles.ts），整份推给页面 */
+  | { type: 'mcp-titles'; titles: McpToolTitles }
 
 /** 每条连接一个 id（连上时随 hello 发给页面）：插件按它只推给订阅了的页面，连接断了按它清掉订阅 */
 const pages = new Map<string, (s: PageSignal) => void>() // 模块状态：会话，跟着进程或连接一起没
