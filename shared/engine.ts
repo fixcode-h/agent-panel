@@ -359,7 +359,7 @@ function dropRerun(host: EngineHost, step: TaskStep) {
 }
 
 /**
- * 这个项目的搜索排除清单：紧跟在通用约束的「搜索范围」后面，Agent 直接照着拼带排除的命令。
+ * 这个项目的搜索一节（代码索引 MCP、带排除的 rg、find）：紧跟在通用约束的「搜索范围」后面，Agent 直接照着拼命令。
  * 清单来自项目设置（项目填的 + 内置默认），每个项目一份；内置默认总在，所以这一段总会出现
  */
 function unitPrompt(

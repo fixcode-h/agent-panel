@@ -90,6 +90,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [process.md](./process.md)                       | CLI 进程：停止、保活和回收              |
 | [project-files.md](./project-files.md)           | 面板往用户项目里临时写的文件            |
 | [prompts.md](./prompts.md)                       | 给 Agent 的提示词                       |
+| [search-prompt.md](./search-prompt.md)           | 找代码的提示词（MCP 优先）              |
 | [prompt-delta.md](./prompt-delta.md)             | 续接只发增量的提示词                    |
 | [retry.md](./retry.md)                           | 报错后的重试                            |
 | [review.md](./review.md)                         | 收尾评审                                |

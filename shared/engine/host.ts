@@ -16,6 +16,7 @@ import type { ConversationHost, OrchConversation } from '../host/conversation.ts
 import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
 import type { OrchPlan, PlanHost } from '../host/plan.ts'
 import type { OrchVcs, VcsHost } from '../host/vcs.ts'
+import type { SearchHost } from '../host/search.ts'
 
 /** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
 export type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
@@ -202,7 +203,7 @@ export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuil
   inbox(): string[]
 }
 
-export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost {
+export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost, SearchHost {
   task: Task
   agents: Agent[]
   /** 所有工作流（节点可以引用其他工作流） */
@@ -280,16 +281,6 @@ export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHo
    * 不传时说明文件不带这一段（在线演示）
    */
   fileFormat?: { encoding: 'utf8' | 'utf8-bom'; eol: 'lf' | 'crlf' }
-  /**
-   * 项目设置里的搜索排除目录（项目自己填的会补上内置默认，见 search-exclude.ts）：
-   * 写进搜索那一段，Agent 直接照着拼 `-g '!目录'`，不靠临场叮嘱
-   */
-  searchExclude?: string[]
-  /**
-   * 工作目录是 Git 仓库：rg / git grep / CLI 自带的搜索本来就跳过 .gitignore 里的产物，
-   * 搜索段只需补项目自己填的目录，并提醒别加 --no-ignore 把它们又扫回来
-   */
-  searchInGit?: boolean
   /** 按 id 取工作流和这次运行要用的快照、技能槽；id 为空表示项目的默认工作流 */
   resolveWorkflow?: (
     id: string,

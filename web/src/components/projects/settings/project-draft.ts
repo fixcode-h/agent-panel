@@ -64,6 +64,7 @@ export const blank: ProjectInput = {
   wslDistro: '',
   fileFormat: undefined,
   searchExclude: [],
+  codeIndexTools: [],
   gitPolicy: 'ask',
   initializedAt: '',
   initResult: undefined,

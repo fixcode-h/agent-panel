@@ -12,6 +12,7 @@ import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
 import { summaryCardRules } from '../summary/card.ts'
 import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from '../search-exclude.ts'
+import { codeIndexLines } from '../mcp-catalog/code-index.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
 import { subPolicy } from '../sub-policy.ts'
 import type { EngineHost } from './host.ts'
@@ -81,12 +82,14 @@ export function searchPart(host: EngineHost) {
   const rg = host.searchInGit
     ? `这是 Git 仓库：rg、\`git grep\` 和 CLI 自带的搜索工具默认已经跳过 .gitignore 里的文件和隐藏目录，不要加 \`--no-ignore\`、\`-u\` / \`-uu\`、\`--hidden\` 把它们扫回来；rg 只需${extra ? `再排除 .gitignore 没覆盖的：\`rg ${extra} <关键字> <目录>\`` : `限定目录：\`rg <关键字> <目录>\``}。`
     : `这里没有 .gitignore 可依赖，rg 要带上整份排除：\`rg ${searchExcludeGlobs(project)} <关键字> <目录>\`。`
+  // 找代码只有这一个入口（用户 2026-11-14）：先代码索引 MCP、再 rg、按名字找文件才 find。
+  // 通用约束、各角色、Skill 里只引用这一节，不各写一份 rg 用法，免得哪处只教 rg 让 Agent 绕过更好的工具
   return [
-    `## 搜索排除（这个项目）\n${line}。找 Bug 在这一层定位时也用同样的排除。`,
-    `- 起点先限定到模块目录（CLI 自带的搜索工具也把路径参数设成模块目录），没命中再逐级扩大。`,
-    `- 搜文件内容用 rg：面板给它配好了上面的排除目录，还跳过了 .uasset、图片、模型、压缩包这类二进制文件，命中按行输出（超时被打断时已搜到的照样留下）。\`grep -r\`、\`Select-String\` 不认这份配置，不要拿它们扫大目录。`,
-    `- ${rg}`,
-    `- 按名字找文件（含 rg 跳过的 .uasset 这类资源）用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
+    `## 搜索（这个项目）\n找代码按下面的顺序，前一种能答就不往下走。${line}，找 Bug 在这一层定位时也用同样的排除。`,
+    ...codeIndexLines(host.codeIndexTools),
+    `2. 搜文件内容用 rg：起点先限定到模块目录（CLI 自带的搜索工具也把路径参数设成模块目录），没命中再逐级扩大。面板给 rg 配好了上面的排除目录，还跳过了 .uasset、图片、模型、压缩包这类二进制文件，命中按行输出（超时被打断时已搜到的照样留下）。\`grep -r\`、\`Select-String\` 不认这份配置，不要拿它们扫大目录。`,
+    `   ${rg}`,
+    `3. 按名字找文件（含 rg 跳过的 .uasset 这类资源）用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
     `- 确实要扫整个大项目（几十秒以上）时，有面板的 run_background 就放后台跑，别在前台等到超时。`,
     `- 要看被排除目录里的内容（例如 Saved/Logs 下的日志）时，直接把那个目录当起点去读或搜，不要因此去掉整份排除。`,
   ].join('\n')
