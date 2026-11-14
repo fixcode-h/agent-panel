@@ -12,3 +12,9 @@ paths: web/src/components/files/**, web/src/lib/file-highlight*.ts, web/src/lib/
 - 规则：按行定位用量出来的行高，不用 CSS 行高：排版按 1/64 像素取整，滚到一千多行就差出一整行。
 - 起因：用户 2026-11-07 报打开 167 KB 的 lua 浏览器卡死：`splitHtmlLines` 遇到超长行是平方级，编辑时 `FileViewDialog` 每敲一个字还整份重新高亮。
 - 防线：`web/src/lib/file-highlight.test.ts`、`web/src/lib/file-search.test.ts`、`web/src/lib/md-math.test.ts`；`scripts/ui/07-projects.mjs` 的「文件窗口-搜索」。
+
+## 虚拟列表的每一行必须一样高
+
+- 规则：阅读区的块按「行数 × 量出来的行高」绝对定位，任何一行被撑高，这一块就盖住下一块。行固定高度（`h-[1.6em]`），拼 HTML 时去掉落单的 `\r`（只按 `\n` 拆行，`\r\r\n` 混合换行残留的 `\r` 经 innerHTML 会变成换行）。别的会撑高行的字符也照此处理。
+- 起因：用户 2026-11-14 在诊断报告里点 UE 的 .cpp 打开弹窗，跳到的行附近几行文字叠在一起。
+- 防线：`web/src/components/files/code-lines-html.test.ts`。

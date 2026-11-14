@@ -1,45 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { escapeHtml, maxCols, type HlLines } from '@/lib/file-highlight'
-import { markHtml, type LineMark } from '@/lib/file-search'
+import { maxCols, type HlLines } from '@/lib/file-highlight'
+import type { LineMark } from '@/lib/file-search'
+import { BLOCK, blockHtml } from './code-lines-html'
 
-/** 一块多少行：滚动时按块增减，屏幕上同时只有三四块；块里的行不跟着滚动重画 */
-const BLOCK = 80
 /** 制表符宽度：和编辑区一致，切换阅读 / 编辑时缩进不跳 */
 const TAB = 4
 /** 行号列宽（w-14）和代码右边留白（pr-4），撑宽度时要加上 */
 const GUTTER = '4.5rem'
 /** 上下内边距（py-2），行的位置要加上 */
 const PAD = 8
-
-// 和以前逐行渲染的样式一致：不画斑马纹（深色下隔行底色明暗差太大，用户 2026-10-31 反馈），
-// 悬停那一行淡淡高亮帮着横向对行；跳到的那一行用强调色盖过悬停。行底色和钉住的行号底色在 index.css 的 .cl-row / .cl-num
-const ROW = 'cl-row flex whitespace-pre'
-// 行号横向滚动时钉在左边（用户 2026-11-12）：代码从它下面滚过去
-const NUM = 'cl-num w-14 shrink-0 pr-3 text-right text-subtle/55 select-none'
-const CODE = 'pr-4'
-const PLAIN = 'pr-4 text-fg/90'
-
-/** 拼一块的 HTML：每一行有 data-line 供定位，搜索命中套 <mark> */
-function blockHtml(
-  lines: string[],
-  highlighted: HlLines | null,
-  start: number,
-  target: number | undefined,
-  marks: Map<number, LineMark[]> | undefined,
-) {
-  const end = Math.min(lines.length, start + BLOCK)
-  let html = ''
-  for (let i = start; i < end; i++) {
-    const n = i + 1
-    const hl = highlighted?.[i]
-    // 高亮结果是 highlight.js 生成的，内容已经过它转义；纯文本自己转义
-    let code = hl !== undefined ? hl : escapeHtml(lines[i])
-    const m = marks?.get(i)
-    if (m) code = markHtml(code, m)
-    html += `<div data-line="${n}"${n === target ? ' data-on' : ''} class="${ROW}"><span class="${NUM}">${n}</span><span class="${hl !== undefined ? CODE : PLAIN}">${code || ' '}</span></div>`
-  }
-  return html
-}
 
 /**
  * 文件弹窗阅读时的代码：带行号、语法高亮，只画屏幕上看得见的那几块（虚拟列表），几千行的文件打开也只有几百个节点。
