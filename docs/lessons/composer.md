@@ -35,3 +35,9 @@ paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, we
 - 规则：`RichInput` 的卡片是 `contenteditable="false"`，但输入法组合结束、选区异常时 Chrome 仍会把光标放进卡片内部。处理光标的代码不能假设光标只在卡片外：插入前、选区变化和组合结束时用 `chip-caret.ts` 的 `caretOutOfChip` 挪出来，删除时用 `chipAround` 认出光标所在的卡片。
 - 起因：用户反馈粘贴图片后退格删不掉、卡片上的文件名没了（在卡片后打拼音再清掉，光标落进卡片，之后的粘贴插进卡片里面）。
 - 防线：`scripts/ui/composer-ime-chip.mjs`（01-composer 分片里用 CDP 模拟输入法）。
+
+## 输入框末尾的「\n」后面要有占位的 <br>，不然打的字落回上一行
+
+- 规则：`RichInput` 是 `pre-wrap` 的 contenteditable，换行是「\n」文字。块末尾最后一个「\n」浏览器不成行，光标停在它后面时 Chrome 会把输入位置规整到「\n」前面。改动 DOM 的地方（重画、插入、输入）都要经过 `tail-break.ts` 的 `syncTailBreak` 补上或收掉末尾的 `<br data-tail>`；读回文字时它不算，组合输入中不动它。
+- 起因：用户报输入框打一次标点出来两个（换行后用输入法打标点，组合的字插在「\n」前、上屏又插一遍）。
+- 防线：`scripts/ui/composer-ime-newline.mjs`（01-composer 分片里用 CDP 模拟输入法）。
