@@ -919,6 +919,11 @@ const ProjectFields = z.object({
    * 没设时只用内置默认清单（和 fileFormat 一样是可选的：旧数据和直接拼 Project 字面量的地方不用补）
    */
   searchExclude: z.array(z.string().trim().min(1).max(120)).max(60).optional(),
+  /**
+   * 代码索引 MCP 工具，写成「服务名/工具名」（例如 uetovs/search_lua）：Agent 找代码时先用它们再 rg。
+   * 没设或为空时面板按项目里装的 MCP 服务自动认（server/mcp-catalog/code-index.ts）
+   */
+  codeIndexTools: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
   /** 每个 CLI 信不信任项目里它的配置（ADR 0050，见 shared/cli/trust.ts）；没写就跟随 CLI 自己的决定 */
   cliTrust: ProjectCliTrust,
   /**

@@ -642,7 +642,7 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
     },
   })
   assert.equal(prompts.length, 1)
-  assert.match(prompts[0], /## 搜索排除（这个项目）/, '通用约束后面带上这个项目的排除清单')
+  assert.match(prompts[0], /## 搜索（这个项目）/, '通用约束后面带上这个项目的排除清单')
   assert.match(prompts[0], /搜索时排除：[^\n]*Saved/)
   assert.match(prompts[0], /-g '!Saved\/'/, 'rg 的排除写法直接给出来')
   assert.match(prompts[0], /-g '!node_modules\/'/, '不是 Git 仓库时 rg 要带整份清单')
@@ -654,6 +654,36 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
     '告诉它 rg 跳过二进制、按名字找资源用 find（用户 2026-11-11 报搜索超时）',
   )
   assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
+})
+
+test('搜索一节先列代码索引 MCP 工具，再 rg（用户 2026-11-14：有 search_lua 不用、先 grep 整个目录）', async () => {
+  const prompts: string[] = []
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '这个 GM 为啥没效果' } as never, undefined, '', 's1'),
+    id: 's1',
+  } as Task
+  await runEngineTurn({
+    task,
+    agents,
+    workflows: [],
+    prompt: '这个 GM 为啥没效果',
+    searchExclude: ['Saved'],
+    codeIndexTools: [
+      { server: 'uetovs', tool: 'search_lua', desc: '按名字搜 Lua 函数' },
+      { server: 'uetovs', tool: 'search_symbols' },
+    ],
+    changed: () => {},
+    newId: () => 'x',
+    runAgent: async (call) => {
+      autoSubmit(call)
+      prompts.push(call.prompt)
+      return { ok: true, text: '好了' }
+    },
+  })
+  const part = prompts[0].slice(prompts[0].indexOf('## 搜索（这个项目）')).split('\n## ')[0]
+  assert.match(part, /uetovs 服务的 `search_lua`：按名字搜 Lua 函数/)
+  assert.match(part, /uetovs 服务的 `search_symbols`/)
+  assert.ok(part.indexOf('search_lua') < part.indexOf('搜文件内容用 rg'), '索引工具排在 rg 前面')
 })
 
 test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并提醒别加 --no-ignore', async () => {
@@ -677,7 +707,7 @@ test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并
       return { ok: true, text: '好了' }
     },
   })
-  const part = prompts[0].slice(prompts[0].indexOf('## 搜索排除（这个项目）'))
+  const part = prompts[0].slice(prompts[0].indexOf('## 搜索（这个项目）'))
   assert.match(part, /不要加 `--no-ignore`/)
   assert.match(part, /`rg -g '!Saved\/' <关键字> <目录>`/, 'rg 只带项目填的，内置默认交给 .gitignore')
   assert.doesNotMatch(part.split('\n## ')[0], /-g '!node_modules\/'/)

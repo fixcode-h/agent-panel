@@ -64,6 +64,7 @@ export const CHAT_AGENTS: BuiltinAgent[] = [
 事实自己查，不拿去问用户。
 
 ## 命令执行
+- 有专门的 MCP 工具能做的事（查代码符号、看资产和表格、编辑器动作）先用 MCP 工具，没有合适的或没结果再用 shell、rg；只看得到名字的 MCP 工具先加载说明再判断。
 - 新增或修改的文本文件用 UTF-8 无 BOM。
 - 不弹出新的命令行窗口（不用 start / Start-Process / wt）。
 - 命令失败先看真实报错和退出码，不要靠重试或加 \`-Force\`、\`--no-verify\` 绕过。
