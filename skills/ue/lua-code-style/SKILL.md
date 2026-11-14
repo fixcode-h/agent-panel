@@ -1,6 +1,6 @@
 ---
 name: lua-code-style
-description: 编写或修改 Lua 代码时使用；规定换行（一条语句写一行，条件表达式、return 表达式、函数调用不按列宽拆成续行）、常用写法（local、`:` 与 `.`、拼接）、校验与防御（什么时候判空、什么时候做类型校验，避免过度防御）和日志（格式 `[模块名称] 类名/模块名=>函数名  具体日志内容`，避免高频日志），缩进、命名、引号沿用项目既有约定。触发：写或改 Lua 代码、Lua 排版、Lua 日志。不用于 C++/UE 或 C#。
+description: 编写或修改 Lua 代码时使用；规定换行（非必要不换行、不按字数或列宽换行，只在代码块、多行 table、回调函数体、多行字符串处换行，日志调用写一行）、常用写法（local、`:` 与 `.`、拼接）、校验与防御（什么时候判空、什么时候做类型校验，避免过度防御）和日志（格式 `[模块名称] 类名/模块名=>函数名  具体日志内容`，避免高频日志），缩进、命名、引号沿用项目既有约定。触发：写或改 Lua 代码、Lua 排版、Lua 日志。不用于 C++/UE 或 C#。
 user-invocable: true
 ---
 
@@ -12,9 +12,26 @@ user-invocable: true
 
 ## 换行
 
-**一条语句写一行，不按列宽换行。** `if` / `elseif` / `while` 的条件、`return` 后的表达式、赋值右边、函数调用和参数列表，都写在同一行，不管有多少个 `and` / `or`、这一行有多长。不要自己设一个 80 或 120 列的上限去折行。
+**非必要不换行，换不换行只看结构，不看字数。** 一条语句写一行：`if` / `elseif` / `while` 的条件、`return` 后的表达式、赋值右边、函数调用和参数列表，都写在同一行，不管有多少个 `and` / `or`、这一行有多长。不要自己设一个 80 或 120 列的上限去折行，也不要因为「这行看着长」「字符串参数长」就把参数挪到下一行。
+
+**只有下面几种情况换行：**
+
+1. 代码块本身：函数体、`if` / `for` / `while` / `repeat` 的块体，`end` 单独一行。
+2. 多行 table 构造：字段较多或字段值本身是 table / 函数时，每个字段一行；两三个简单字段的小 table 照样写一行。
+3. 参数里有匿名函数（回调）：`function(...)` 写在调用那一行，函数体照常分行，`end)` 收尾；其余参数不拆。
+4. 多行字符串（`[[ ... ]]`）：内容本来就是多行的。
+5. 项目格式化配置明确规定了列宽（如 `.stylua.toml` 的 `column_width`、`.editorconfig` 的 `max_line_length`）：按配置来；没有配置就不折行。
+
+除此之外都不换行。**日志调用一律写一行**：`LogWarn(` / `Logger.LogError(` 之后不换行，日志字符串和拼接的参数跟在同一行，不管多长。
 
 ```lua
+-- 错：按字数把日志字符串折到下一行
+_SP.Logger.LogWarn(
+    "[HomeDecoration] HomeDecorationScenarioDispatcher=>SwitchOutProtagonist  role manager is unavailable")
+
+-- 对：日志调用写一行
+_SP.Logger.LogWarn("[HomeDecoration] HomeDecorationScenarioDispatcher=>SwitchOutProtagonist  role manager is unavailable")
+
 -- 错：条件被拆成续行
 return CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground
     or CurrentState == ZoneState.ExitPreparing
@@ -26,11 +43,14 @@ if CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Undergr
 return CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground or CurrentState == ZoneState.ExitPreparing
 
 if CurrentState == ZoneState.EntryPreparing or CurrentState == ZoneState.Underground or CurrentState == ZoneState.ExitPreparing then
+
+-- 对：回调参数，函数体分行，其余参数不拆
+TimerMgr:AddTimer(0.5, function()
+    self:Refresh()
+end)
 ```
 
-- 唯一例外：项目里有格式化配置明确规定了列宽（如 `.stylua.toml` 的 `column_width`、`.editorconfig` 的 `max_line_length`），按配置来；没有配置就不折行。
 - 条件真的复杂到一行看不懂（多层括号混着 `and` / `or`），把其中一部分提成命名清楚的局部变量或函数，不要拆成续行。像上面这样几个同类比较连起来的，照样写一行，不提取。
-- 多行 table 构造、多行字符串、函数体本身照常分行；这一条只管「一个表达式被拆到几行」。
 - 改已有代码时，原来就折了行的不顺手合并，除非就是这次要改的那一句。
 
 ## 写法
@@ -131,6 +151,6 @@ end
 
 1. 没有过度防御：来源明确的参数没做类型判断和判空，只在找不到 / 可选 / 异步 / 外部数据处检查，检查失败没有悄悄吞掉。
 2. 新变量和函数都是 `local`，`:` / `.` 没混用，拼接的值不会是 `nil`。
-3. 新写的条件、`return`、赋值、函数调用没有被拆成续行（项目格式化配置规定了列宽的除外）。
+3. 新写的条件、`return`、赋值、函数调用、日志调用没有被拆成续行，换行只出现在上面列出的几种情况（项目格式化配置规定了列宽的除外）。
 4. 日志是 `[模块名称] 类名/模块名=>函数名  具体日志内容`，定位完整、两个空格、没有级别前缀，只打在必要路径、没有高频日志。
 5. 用的是项目已有日志接口，没有新增包装器；没动范围外的旧代码。
