@@ -31,9 +31,9 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { LiveStats } from './LiveStats'
-import { AnalysisPanel, reportTitle } from './AnalysisPanel'
+import { AnalysisPanel, useTaskReport } from './AnalysisPanel'
 import { AnalysisMark } from './AnalysisMark'
-import { findReport, isAnalysisTask } from '@/lib/analysis-report'
+import { isAnalysisTask } from '@/lib/analysis-report'
 import { LoadTrace } from './LoadTrace'
 import { RunPanel } from './RunCard'
 import { RunView } from './RunView'
@@ -164,7 +164,7 @@ export function TaskView({
   const childList = useChildList()
   const { children, setChildren, loadChildren } = childList
   // 分析报告在哪条回复里：画在右侧的功能面板，不再铺在对话区（用户 2026-10-25 要求，ADR 0016）
-  const report = useMemo(() => (task ? findReport(task) : null), [task])
+  const report = useTaskReport(task)
   // 右栏开着哪个子对话、哪次运行，各个面板收没收（view/use-task-panes.ts）
   const panes = useTaskPanes({ taskId, pane, task, childList, reportId: report?.message.id ?? '' })
   const { openChild, openRun, paneRun, reportCover, setReportCover, openChildIn } = panes
@@ -443,14 +443,7 @@ export function TaskView({
     panes.foldReport(true)
   }
   const reportPanel = report && (
-    <AnalysisPanel
-      task={task}
-      project={project}
-      kind={report.kind}
-      text={report.message.text}
-      onTask={apply}
-      onClose={closeReport}
-    />
+    <AnalysisPanel task={task} project={project} report={report} onTask={apply} onClose={closeReport} />
   )
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
@@ -622,7 +615,7 @@ export function TaskView({
     task,
     pane,
     family: !!task.parentTaskId || children.length > 0,
-    reportTitle: report ? reportTitle(report.kind) : undefined,
+    reportTitle: report ? report.title : undefined,
     reportOn,
     reportCover,
     setReportCover,
@@ -1035,7 +1028,7 @@ export function TaskView({
                 reportOn={reportOn}
                 reportCover={reportCover}
                 closeReportCover={() => setReportCover(false)}
-                reportTitle={report ? reportTitle(report.kind) : undefined}
+                reportTitle={report ? report.title : undefined}
                 reportPanel={reportPanel}
                 reportPane={reportPane}
                 taskPanel={taskPanel}

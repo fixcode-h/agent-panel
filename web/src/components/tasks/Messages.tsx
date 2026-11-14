@@ -26,7 +26,8 @@ import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/tasks/export'
 import { stripLessonReview } from '@shared/lesson-review'
 import { stripDiagnosis } from '@shared/diagnosis'
-import { stripInitJson } from '@/lib/analysis-report'
+import { stripInitJson, stripPluginReports } from '@/lib/analysis-report'
+import { usePluginReports } from '@/plugins/registry'
 import { agentIcon } from '@/lib/agent-icons'
 import { cliColor } from '@/lib/cli-style'
 import { ReplyHeader } from '@/components/ui/reply-header'
@@ -319,6 +320,8 @@ const MessageBody = memo(
     const noHeader = !!compact || !!hideAuthor
     const { cliName } = useAgentView()
     const cliLabel = cliName({ cli })
+    // 插件分析报告的代码块画在右侧功能面板里，对话区去掉
+    const reportLangs = usePluginReports()
     // 只有过程行（没有回复文字、思考，名字由外面的回复头显示）：标成过程行，和前后相邻的过程行连成一组
     const procOnly = noHeader && !slot && !m.text && !m.thinking?.trim() && !m.modelMs && m.tools.length > 0
     return (
@@ -358,7 +361,11 @@ const MessageBody = memo(
         {m.text && (
           <Markdown
             text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
-              stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
+              stripPluginReports(
+                stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
+                task,
+                reportLangs,
+              ),
             )}
             teamNames={teamNames}
             live={live}

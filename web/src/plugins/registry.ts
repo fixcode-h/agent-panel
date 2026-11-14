@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import * as jsxRuntime from 'react/jsx-runtime'
@@ -13,6 +13,7 @@ import { intakeByKey, pickIntake } from './attachment-intakes'
 import { pruneUpdates } from './updates'
 import type {
   ActivateWeb,
+  AnalysisReport,
   PluginPage,
   ProjectSection,
   SheetClaim,
@@ -156,6 +157,18 @@ export const useOwnedByPlugin = () => {
 export const useTaskTabs = (task: Task | undefined): TaskTab[] => {
   const s = usePlugins()
   return task ? [...s.web.values()].flatMap((p) => p.taskTabs ?? []).filter((x) => x.when(task)) : []
+}
+
+/** 开着的插件登记的分析报告：key 是 <插件 id>:<报告 id>（findReport 按它认、功能面板按它取） */
+export type OwnedReport = AnalysisReport & { key: string }
+export const usePluginReports = (): OwnedReport[] => {
+  const web = usePlugins().web
+  // 只在插件开关时变：对话页拿它算报告（useMemo 的依赖），每次渲染给新数组会白算
+  return useMemo(
+    () =>
+      [...web.entries()].flatMap(([plugin, p]) => (p.reports ?? []).map((x) => ({ ...x, key: `${plugin}:${x.id}` }))),
+    [web],
+  )
 }
 
 /** 开着的插件在项目设置里加的页：导航和地址里用 plugin:<插件 id>:<页 id> */
