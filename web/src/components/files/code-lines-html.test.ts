@@ -1,5 +1,6 @@
 /**
  * 文件弹窗阅读区一块的 HTML：落单的 \r 不能留在里面（innerHTML 会把它当成换行，行被撑高，后面整块错位叠字）。
+ * 拼 HTML 以前写在 CodeLines 组件里，没有单测；界面检查的演示文件都是 \n 或 \r\n 换行，碰不到这种情况。
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
