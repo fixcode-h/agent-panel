@@ -1,6 +1,6 @@
 # ADR 0056：工作报告的条目分点写，问题分原因和修复，附带注释的关键代码
 
-状态：已接受（2026-11-07 用户看过设计稿和示例后定，已实施） · 2026-11-07
+状态：部分被替代（决策第 1 条的模板由 [ADR 0065](./0065-work-report-compact-and-complete.md) 取代） · 2026-11-07
 
 - 影响范围：`shared/summary.ts`（分项、提示词、拼报告）、`shared/summary/code.ts`（分点、关键代码校验）、`server/summary/diff.ts`（交给 CLI 的代码改动）、`server/exec/git.ts`（`spansDiff`）、`shared/builtin/agents.ts`（「每日工作总结」写法）、`web/src/components/summary/EntryList.tsx`、`web/src/lib/demo-summary.ts`
 - 取代：ADR 0043 决策第 3 条的「每条一段话、不加粗、不写标签」和第 4 条里「不写文件名和代码片段」；0043 其余部分（单子链接、再次生成、不写版本管理操作、去 AI 腔用词）照旧
