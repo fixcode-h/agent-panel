@@ -1,6 +1,6 @@
 ---
 name: cpp-code-style
-description: 编写或修改 C++ / Unreal Engine C++ 代码时使用；规定换行（一条语句写一行，不按列宽折行）、声明与实现顺序、Tab 缩进与列对齐、初始化列表、if/switch 格式、命名与常用写法、校验与防御（什么时候判空、校验，避免过度防御）、避开静态分析告警的写法（循环里的 lambda 谓词、判空后解引用）、注释、日志（格式 `[模块名称] 类名=>函数名  具体日志内容`，避免高频日志），以及 UE 反射宏和模块导出宏的用法。只约束新写的代码；不用于 Lua 或 Build.cs。
+description: 编写或修改 C++ / Unreal Engine C++ 代码时使用；规定换行（非必要不换行、不按字数或列宽换行，只在代码块、初始化列表、多行初始化、lambda 体、多行字符串处换行，日志调用写一行）、声明与实现顺序、Tab 缩进与列对齐、初始化列表、if/switch 格式、命名与常用写法、校验与防御（什么时候判空、校验，避免过度防御）、避开静态分析告警的写法（循环里的 lambda 谓词、判空后解引用）、注释、日志（格式 `[模块名称] 类名=>函数名  具体日志内容`，避免高频日志），以及 UE 反射宏和模块导出宏的用法。只约束新写的代码；不用于 Lua 或 Build.cs。
 user-invocable: true
 ---
 
@@ -15,9 +15,27 @@ user-invocable: true
 
 ## 换行
 
-**一条语句写一行，不按列宽换行。** `if` / `while` 的条件、`return` 后的表达式、赋值右边、函数声明与调用的参数列表、反射宏参数，都写在同一行，不管有多少个 `&&` / `||`、这一行有多长。不要自己设一个 80 或 120 列的上限去折行。
+**非必要不换行，换不换行只看结构，不看字数。** 一条语句写一行：`if` / `while` 的条件、`return` 后的表达式、赋值右边、函数声明与调用的参数列表、反射宏参数，都写在同一行，不管有多少个 `&&` / `||`、这一行有多长。不要自己设一个 80 或 120 列的上限去折行，也不要因为「这行看着长」「字符串参数长」就把参数挪到下一行。
+
+**只有下面几种情况换行：**
+
+1. 代码块本身：函数体、`if` / `for` / `while` / `switch` 的块体，大括号按本技能的格式分行，`case` 各占一行。
+2. 构造函数的初始化列表：按下文「缩进、对齐与空白」里初始化列表的格式分行。
+3. 多行的大括号初始化：数组、结构体、`TMap` 等初始化项较多或每项本身较长时，一项一行；两三项的简单初始化照样写一行。
+4. 参数里有 lambda：lambda 的头写在调用那一行，函数体照常分行，`});` 收尾；其余参数不拆。
+5. 多行原始字符串（`R"(...)"`）：内容本来就是多行的。
+6. 项目格式化配置明确规定了列宽（如 `.clang-format` 的 `ColumnLimit` 大于 0、`.editorconfig` 的 `max_line_length`）：按配置来；没有配置就不折行。
+
+除此之外都不换行。**日志调用一律写一行**：`UE_LOG(` 之后不换行，类别、级别、`TEXT( ... )` 和格式化参数跟在同一行，不管多长；`ensureMsgf`、`checkf` 同样。
 
 ```cpp
+// 错：按字数把日志文本折到下一行
+UE_LOG( LogExampleHUD, Warning,
+	TEXT( "[HUD] AExampleHUD=>DrawHUD  跳过绘制，HudStyle 未配置" ) );
+
+// 对：日志调用写一行
+UE_LOG( LogExampleHUD, Warning, TEXT( "[HUD] AExampleHUD=>DrawHUD  跳过绘制，HudStyle 未配置" ) );
+
 // 错：条件被拆成续行
 if ( CurrentState == EZoneState::EntryPreparing || CurrentState == EZoneState::Underground
 	|| CurrentState == EZoneState::ExitPreparing )
@@ -26,9 +44,8 @@ if ( CurrentState == EZoneState::EntryPreparing || CurrentState == EZoneState::U
 if ( CurrentState == EZoneState::EntryPreparing || CurrentState == EZoneState::Underground || CurrentState == EZoneState::ExitPreparing )
 ```
 
-- 唯一例外：项目里有格式化配置明确规定了列宽（如 `.clang-format` 的 `ColumnLimit` 大于 0、`.editorconfig` 的 `max_line_length`），按配置来；没有配置就不折行。
 - 条件真的复杂到一行看不懂（多层括号混着 `&&` / `||`），把其中一部分提成命名清楚的局部变量或函数，不要拆成续行；几个同类比较连起来的照样写一行。
-- 大括号、初始化列表、`switch` 的 `case` 照常分行；这一条只管「一个表达式被拆到几行」。原来就折了行的旧代码不顺手合并。
+- 原来就折了行的旧代码不顺手合并，除非就是这次要改的那一句。
 
 ## 头文件
 
@@ -304,7 +321,7 @@ void AExampleHUD::SetCanDraw( bool bEnabled )
 
 ## 自检
 
-1. 新写的条件、`return`、声明和调用没有被拆成续行（项目格式化配置规定了列宽的除外）。
+1. 新写的条件、`return`、声明、调用和日志调用没有被拆成续行，换行只出现在「换行」一节列出的几种情况（项目格式化配置规定了列宽的除外）。
 2. 头文件分组、类内顺序和可见性合理；Tab 缩进、组内列对齐、初始化列表顺序正确；命名、`const` 符合约定；没有过度防御：契约明确的参数和生命周期有保证的成员没有层层判空，检查失败没有悄悄跳过；新函数没有 `_` 前缀；`.cpp` 定义顺序对应声明。
 3. 仅 UE：反射宏位置和 generated include 合法；没有整类导出，导出宏只加在确有跨模块需求的函数上。
 4. 日志是 `[模块名称] 类名=>函数名  具体日志内容`，只打在必要路径、没有高频日志，没有级别前缀、没有新增包装器。
