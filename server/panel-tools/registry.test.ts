@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Orchestra } from '../../shared/engine/host.ts'
 import { PANEL_TOOL_NAMES } from '../../shared/panel-tools.ts'
+import { AUDIENCE_REPS } from '../mcp-catalog/audiences.ts'
 import { callOrchTool, findTool, orchTools, PANEL_TOOLS, toolHint } from './registry.ts'
 
 const ok = () => ({ ok: true, info: '' })
@@ -63,4 +64,31 @@ test('面板工具注册表：名字都登记过、定义的名字和条目一�
     content: [{ type: 'text', text: '没有这个工具：没有的' }],
     isError: true,
   })
+})
+
+/**
+ * MCP 工具规范（ADR 0067）：面板工具的数量和定义长度只许变少。每个工具的定义每轮都整份进上下文，
+ * 加一个工具前先过 ADR 0067 的准入；真要加，在同一个提交里改下面的数，并在提交说明里写清准入理由
+ */
+// 含 knowledge_lookup / knowledge_record 取代的四个旧名字（保留一个版本，ADR 0066）：旧名字删掉时这几个数跟着减
+const TOOL_COUNT_CAP: Record<string, number> = { parent: 42, child: 30, helper: 13, node: 23, chat: 4 }
+/** 一个工具的定义（名字 + 说明 + 参数 schema 的 JSON）最多多少字 */
+const DEF_CAP = 3000
+/** 规范之前就超了的：只许变短，变短了把数改小 */
+const DEF_OVER: Record<string, number> = { submit_diagnosis: 14967, update_bug_case: 14271, spawn_agents: 3598 }
+
+test('MCP 工具规范：面板工具的名字、个数、定义长度不超规范（ADR 0067）', () => {
+  for (const [aud, o] of Object.entries(AUDIENCE_REPS)) {
+    const defs = orchTools(o)
+    assert.ok(
+      defs.length <= TOOL_COUNT_CAP[aud],
+      `${aud} 拿到 ${defs.length} 个面板工具，超过 ${TOOL_COUNT_CAP[aud]}：先按 ADR 0067 判断能不能并进已有工具`,
+    )
+    for (const d of defs) {
+      assert.match(d.name, /^[a-z][a-z0-9_]{2,29}$/, `${d.name}：工具名用小写下划线，不超过 30 个字符`)
+      const len = JSON.stringify(d).length
+      const cap = DEF_OVER[d.name] ?? DEF_CAP
+      assert.ok(len <= cap, `${d.name} 的定义 ${len} 字，超过 ${cap}：说明只写作用和时机，细节放进返回或用法查询`)
+    }
+  }
 })
