@@ -77,6 +77,15 @@ test('每轮带技能：按 CLI 定义给参数或协议请求，没有 runSkill
   assert.match(plain.note, /grilling.*SKILL\.md/)
   assert.match(plain.note, /grilling 这一轮放在/)
 
-  // 项目没打开、角色也没点名：什么都不带
+  // 项目没打开、角色也没点名、~/.agents/skills 里也没装：什么都不带
   assert.deepEqual((await prepareRunSkills({ def: claude, projectId: 'p2', opened: [], roleSkills: [] })).args, [])
+
+  // Claude Code 不读 ~/.agents/skills：那里装着的全局技能也每轮带上（不然面板装的技能它一个都看不到）；
+  // Codex 自己读那里，不重复带
+  await installBundled(['brainstorming'], [], false)
+  const g = await prepareRunSkills({ def: claude, projectId: 'p2', opened: [], roleSkills: [] })
+  assert.deepEqual(g.names, ['brainstorming'])
+  assert.ok(existsSync(path.join(g.args[1], '.claude/skills/brainstorming/SKILL.md')))
+  const gx = await prepareRunSkills({ def: getCli('codex')!, projectId: 'p2', opened: [], roleSkills: [] })
+  assert.deepEqual(gx.names, [])
 })

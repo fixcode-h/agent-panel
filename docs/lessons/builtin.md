@@ -35,3 +35,9 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 规则：能力和通用角色的正文会被父对话就地、非统筹的顶层对话、子对话、派出的子 Agent、工作流节点同时读到，模板分不出调用者，角色名也靠不住（项目默认角色设成「执行」时顶层对话读到「你是子对话」）。推送、PR、合并主干、submit 推不推、问不问，正文只写「看提示词里『授权情况』那段」，不按身份分支、不写无条件的「不推送 / 不 submit」；每种调用者的授权段由 engine 给（对话 `policyPart`，子任务、「版本控制」子任务、顶层工作流节点在 `shared/sub-policy.ts`），新的调用者不能落到父对话那份（它带「比角色设定优先」）。派出的子 Agent 不能问用户（会被自动回答成直接继续），要确认的交回派它的一方，resume 时由派它的一方贴回确认的内容。角色的不同做法（「测试验收」的 task 这类）派出时用 spawn_agents 的 `params` 点名，正文和挂载规则写明 params 怎么写，否则子任务按默认值渲染。临时文件按「截图和临时文件放哪」放对话目录。
 - 起因：审计发现（df820f2 起）「版本控制」写死「你不执行」，父对话就地用时和授权段打架；75e52882 按身份分开写后，顶层工作流节点和非统筹顶层对话仍读到互相打架的两段，「清理用例」的子 Agent 分支也因为派单带不了参数根本走不到。
 - 防线：`server/engine-steps.test.ts`「推送由父对话决定」（真实内置角色拼完整提示，按调用者断言授权段）和「resume 接着之前那个子任务的会话」（params 交给 runner、resume 沿用、写错报错）；`server/core-agents.test.ts`（版本控制 git / p4 / svn / 自动 × 两种提交方式没有无条件禁令）。
+
+## 技能装在哪，要核对每个 CLI 真的会读
+
+- 规则：面板把技能装进某个目录前，先确认每个 CLI 定义的 `skills.user` / `repo` 里有这个目录；不读的 CLI 要在 CLI 定义里写出怎么每轮带给它（`runSkills`，Claude Code 用 `shared: true` 把 `~/.agents/skills` 一起带上）。验证看 CLI 自己报的技能清单（Claude Code 的 init 事件 `skills`、上下文面板的 Skill 数），不看文件在不在。
+- 起因：自带技能统一装到 `~/.agents/skills`，注释写「各 CLI 共用」，但 Claude Code 只读 `~/.claude/skills`，用户在上下文面板看到 Skill 是 0（2026-11-15）。
+- 防线：`server/skills/run-skills.test.ts`「每轮带技能」。

@@ -85,6 +85,8 @@ export async function prepareLaunch(
     [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
     task.skillSlots,
   )
+  // 角色要用的全局自带技能先补到 ~/.agents/skills：不读那里的 CLI（Claude Code）由下面每轮一起带上
+  await ensureBundled(roleSkills)
   const skills = await launchSkills(ctx, def, roleSkills, step, call.agentId)
   const role = [
     withSkillDir(
@@ -110,7 +112,6 @@ export async function prepareLaunch(
   // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
   const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
   // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
-  await ensureBundled(roleSkills)
   // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
   const composed = await composeInput({
     ctx,

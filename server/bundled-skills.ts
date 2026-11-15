@@ -21,7 +21,7 @@ import { isProjectSkill } from './skills/config.ts'
 
 /**
  * 面板自带的 Skill：仓库里的 skills/<分类>/<名字>/。
- * 统一装到用户目录 ~/.agents/skills（<目录>/<名字>/SKILL.md），各 CLI 共用这一份；分类只用于面板里展示。
+ * 统一装到用户目录 ~/.agents/skills（<目录>/<名字>/SKILL.md），Codex、Pi、Command Code 自己读这一份，Claude Code 不读，由每轮的技能目录带上（server/skills/run-skills.ts）；分类只用于面板里展示。
  * 出包时整个目录由 esbuild 写进 server.mjs（同浏览器扩展：旧版的「版本更新」不会复制新目录）。
  */
 declare const __BUNDLED_SKILLS__: Record<string, string> | undefined
