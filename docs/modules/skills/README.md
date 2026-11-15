@@ -28,6 +28,7 @@
 
 - 按项目的**不放在用户目录**：自带技能从 `~/.agents/skills`（和「部署」的分类目录）撤掉，只撤和自带一模一样的；自己的技能从 CLI 用户目录挪进数据目录 `project-skills/<CLI>/<名字>/`，技能库照样能看、能改。安装、部署、执行前补齐都跳过它们。
 - 每轮只给项目「能力」里打开了它（`project.capabilities.skills`）的项目带上，角色点名要用的也带：放进数据目录 `run-skills/<项目>/<CLI>/`，按 CLI 定义的 `runSkills` 交给 CLI（Claude Code `--add-dir`、Codex app-server 的 extraRoots 请求、Pi 和 Command Code `--skill`）；没写 `runSkills` 的 CLI 在提示里列出技能路径。代码在 `server/skills/`。
+- Claude Code 不读 `~/.agents/skills`（只读 `~/.claude/skills`）：CLI 定义里 `runSkills.shared` 为 true，那里装着的全局自带技能也每轮放进技能目录一起带上，否则面板装的技能它一个也看不到。
 - 改回全局时挪回原来的 CLI 用户目录；自带技能不自动装回去（在「自带 Skill」页装，或角色用到时补上）。
 
 ## 入口
