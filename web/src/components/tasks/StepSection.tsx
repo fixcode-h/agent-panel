@@ -41,6 +41,21 @@ function runs(msgs: TaskMessage[]) {
   return out
 }
 
+/**
+ * 节点派出的子角色（spawn_agents）和对话里的子任务一样：节点输出里只留派单行（状态 + 点开看过程），
+ * 子角色自己的过程不再铺进节点。几个子角色并行时消息交错，按段分组会把同一个子角色拆成好几张卡片。
+ * 只收起有派单记录（spawned）的子角色，旧数据里对不上的照旧显示
+ */
+export function hideSpawned(task: Task, msgs: TaskMessage[]) {
+  const ids = new Set(task.messages.flatMap((m) => m.spawned ?? []))
+  if (!ids.size) return msgs
+  const mine = (step: string) => {
+    for (const id of ids) if (step === id || step.startsWith(`${id}/`)) return true
+    return false
+  }
+  return msgs.filter((m) => !mine(m.step))
+}
+
 /** 消息对象都没换（流式增量只替换变了的那几条） */
 const sameMsgs = (a: TaskMessage[], b: TaskMessage[]) =>
   a === b || (a.length === b.length && a.every((m, i) => m === b[i]))
@@ -83,6 +98,7 @@ function StepSectionBase({
   const a = agents.find((x) => x.id === root.agentId)
   const time = stepDuration(root, now)
   const vt = verdictText(root)
+  const shown = hideSpawned(task, msgs)
 
   return (
     <section className="flex flex-col gap-3" data-step={rootId}>
@@ -123,7 +139,7 @@ function StepSectionBase({
         </header>
       )}
       <div className={cn('flex flex-col gap-4', !bare && 'ml-[7px] border-l pl-5')}>
-        {runs(msgs).map((r, i) => {
+        {runs(shown).map((r, i) => {
           // 执行中补发的要求：跟着节点的竖线显示，不另起一段，也不再显示一遍节点头部
           if (r.user)
             return (
@@ -169,7 +185,7 @@ function StepSectionBase({
         {root.status === 'running' && (
           <span className="flex items-center gap-2 text-xs text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
-            {msgs.length ? t('执行中…') : t('正在启动…')}
+            {shown.length ? t('执行中…') : t('正在启动…')}
             <LiveStats task={task} agentIds={running(task, rootId).length ? running(task, rootId) : [root.agentId]} />
           </span>
         )}

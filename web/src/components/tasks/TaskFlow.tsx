@@ -3,6 +3,7 @@ import { MessageSquareText } from 'lucide-react'
 import type { StepStatus, Task } from '@shared/schema'
 import { childSteps, entryFlow, getFlow, stepTree, taskWorkflows, topSteps } from '@shared/flow'
 import { END, START } from '@shared/schema'
+import { placeWrap } from '@shared/flow/run-wrap'
 import { stepsTokens, tokenCount } from '@shared/run/usage'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
@@ -11,6 +12,7 @@ import { fmtTokens, stepDuration } from '@/lib/tasks'
 import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/FlowCanvas'
 import { nodeViews } from '@/components/flow/views'
 import { StepSection } from './StepSection'
+import { RouteProvider } from './route-context'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -62,7 +64,9 @@ export function TaskFlow({
     : taskWorkflows(task, data.workflows)
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const tops = run ? topSteps(task, run) : topSteps(task)
-  const flow = workflow ? (getFlow(workflow, tops[0]?.flowId ?? '') ?? entryFlow(workflow)) : undefined
+  const raw = workflow ? (getFlow(workflow, tops[0]?.flowId ?? '') ?? entryFlow(workflow)) : undefined
+  // 收尾节点按列距摆好：早先的运行快照里它和前一个节点叠在一起
+  const flow = useMemo(() => raw && placeWrap(raw), [raw])
   // 选中的是流程图上的节点 id：第 2 次起的运行记录 id 带运行前缀（`r2/impl`），按 nodeId 对回节点
   const runningId = tops.find((s) => s.status === 'running')?.nodeId
   // 执行中的节点底部的耗时每秒走一次
@@ -191,7 +195,10 @@ export function TaskFlow({
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
           >
             <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
-              <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
+              {/* 节点派出的子角色画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
+              <RouteProvider task={task}>
+                <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
+              </RouteProvider>
               {!msgs.length && step.status !== 'running' && (
                 <p className="text-body text-subtle">
                   {step.status === 'pending'

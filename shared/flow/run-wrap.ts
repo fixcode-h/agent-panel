@@ -5,6 +5,7 @@
  * 不另写一套执行：用的就是节点的验收回路（engine.ts 的 review），这里只负责把节点和验收流程拼进运行的工作流快照。
  */
 import { END, Flow, FlowNode, type Workflow } from '../schema.ts'
+import { COL } from './index.ts'
 
 /** 收尾节点和它的验收流程的 id：固定的，界面、进度按它认 */
 export const WRAP_NODE = 'wrapup'
@@ -54,7 +55,7 @@ export function withWrapUp(w: Workflow, roles: WrapRoles): Workflow {
   const reviewFlow = Flow.parse({
     id: WRAP_FLOW,
     name: '收尾评审',
-    nodes: checks.map((n, i) => ({ ...n, x: 200 + i * 220, y: 0 })),
+    nodes: checks.map((n, i) => ({ ...n, x: COL + i * COL, y: 0 })),
     edges: [
       ...chain.slice(1).map((to, i) => ({
         id: `w${i}`,
@@ -66,13 +67,12 @@ export function withWrapUp(w: Workflow, roles: WrapRoles): Workflow {
       ...(checks.length > 1 ? [{ id: 'w_fail', from: checks[0].id, to: END, when: 'fail' as const }] : []),
     ],
   })
-  const right = Math.max(0, ...entry.nodes.map((n) => n.x))
   const wrap = FlowNode.parse({
     id: WRAP_NODE,
     title: '收尾',
     agentId: roles.worker,
     instructions: WRAP_TEXT,
-    x: right + 240,
+    x: 0,
     y: 0,
     hooks: {
       start: null,
@@ -81,17 +81,35 @@ export function withWrapUp(w: Workflow, roles: WrapRoles): Workflow {
       maxRounds: WRAP_ROUNDS,
     },
   })
-  const flow = {
+  const flow = placeWrap({
     ...entry,
     nodes: [...entry.nodes, wrap],
     edges: [
       ...entry.edges.map((e) => (e.to === END ? { ...e, to: WRAP_NODE } : e)),
       { id: 'e_wrapup_end', from: WRAP_NODE, to: END },
     ],
-    endPos: { ...entry.endPos, x: Math.max(entry.endPos.x, right + 480) },
-  }
+  })
   return {
     ...w,
     flows: [...w.flows.map((f) => (f.id === entry.id ? flow : f)), ...(checks.length ? [reviewFlow] : [])],
+  }
+}
+
+/**
+ * 收尾节点放在最右边那个节点的右边一列，「结束」再往右一列。列距用自动排列的 COL：
+ * 节点卡片 264px 宽，早先按 240 摆会和前一个节点叠在一起、「结束」又压在收尾上。
+ * 已经存进运行快照的旧位置，显示时也过一遍这里（TaskFlow），不用改存档
+ */
+export function placeWrap(f: Flow): Flow {
+  const others = f.nodes.filter((n) => n.id !== WRAP_NODE)
+  if (others.length === f.nodes.length) return f
+  const last = others.reduce<(typeof others)[number] | undefined>((a, n) => (!a || n.x > a.x ? n : a), undefined)
+  const x = (last?.x ?? 0) + COL
+  const y = last?.y ?? 0
+  const end = { ...f.endPos, x: Math.max(f.endPos.x, x + COL) }
+  return {
+    ...f,
+    nodes: f.nodes.map((n) => (n.id === WRAP_NODE ? { ...n, x, y } : n)),
+    endPos: end,
   }
 }

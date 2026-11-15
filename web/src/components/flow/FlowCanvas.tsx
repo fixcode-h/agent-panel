@@ -11,11 +11,6 @@ import {
   ReactFlow,
   SelectionMode,
   applyNodeChanges,
-  getNodesBounds,
-  useNodesInitialized,
-  useReactFlow,
-  useStore,
-  type ReactFlowInstance,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -25,6 +20,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { AutoFit } from './auto-fit'
 import { CircleStop, Play, UserCheck, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, Flow, StepStatus } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -314,39 +310,6 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
 })
 
 const nodeTypes = { card: CardNode, term: TermNode }
-
-/**
- * 让流程图适合画布：放得下就居中显示全部；放不下时不缩得太小，从「开始」那一侧显示，其余拖动查看。
- */
-export function smartFit(rf: ReactFlowInstance, el: HTMLElement | null, duration = 0) {
-  const nodes = rf.getNodes()
-  if (!el || !nodes.length) return
-  const b = getNodesBounds(nodes)
-  const W = el.clientWidth
-  const H = el.clientHeight
-  const pad = 48
-  const fit = Math.min((W - pad * 2) / b.width, (H - pad * 2) / b.height)
-  // 尽量整张图都放得下；太大时最小缩到 0.45，再小字就看不清了，剩下的靠小地图和拖动
-  const zoom = Math.max(0.45, Math.min(1, fit))
-  const x = zoom > fit ? pad - b.x * zoom : (W - b.width * zoom) / 2 - b.x * zoom
-  const y = (H - b.height * zoom) / 2 - b.y * zoom
-  void rf.setViewport({ x, y, zoom }, { duration })
-}
-
-function AutoFit() {
-  const rf = useReactFlow()
-  const ready = useNodesInitialized()
-  const done = useRef(false)
-  const dom = useStore((s) => s.domNode)
-  useEffect(() => {
-    if (!ready || done.current) return
-    done.current = true
-    smartFit(rf, dom)
-    // 节点第一次量好尺寸时适配一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready])
-  return null
-}
 
 /**
  * 连线：从右边水平出发、水平进入左边。React Flow 默认的曲线按两端距离算弯曲程度，

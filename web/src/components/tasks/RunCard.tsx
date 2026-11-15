@@ -15,6 +15,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Modal, ModalHeader } from '@/components/ui/modal'
 import { FlowStrip, type FlowNode } from '@/components/ui/flow-strip'
 import { StepIcon } from './TaskStatusIcon'
+import { RouteProvider } from './route-context'
 import { StepSection } from './StepSection'
 import { Segmented } from '@/components/ui/segmented'
 import { t } from '@shared/i18n'
@@ -192,23 +193,26 @@ export function RunFlow({ task, run }: { task: Task; run: number }) {
   const scroller = useStickToBottom(run, 80)
   return (
     <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
-        {steps.map((s) => {
-          const msgs = task.messages.filter(
-            (m) => m.role !== 'user' && (m.step === s.id || m.step.startsWith(s.id + '/')),
-          )
-          if (!msgs.length && s.status === 'pending')
-            return (
-              <div key={s.id} className="flex items-center gap-2 text-body text-subtle">
-                <StepIcon status={s.status} />
-                <span className="min-w-0 truncate">{s.title}</span>
-                <span className="shrink-0 text-xs">{t('等待执行')}</span>
-              </div>
+      {/* 节点派出的子角色画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
+      <RouteProvider task={task}>
+        <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
+          {steps.map((s) => {
+            const msgs = task.messages.filter(
+              (m) => m.role !== 'user' && (m.step === s.id || m.step.startsWith(s.id + '/')),
             )
-          return <StepSection key={s.id} task={task} rootId={s.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
-        })}
-        {!steps.length && <p className="text-body text-subtle">{t('这次运行还没有节点。')}</p>}
-      </div>
+            if (!msgs.length && s.status === 'pending')
+              return (
+                <div key={s.id} className="flex items-center gap-2 text-body text-subtle">
+                  <StepIcon status={s.status} />
+                  <span className="min-w-0 truncate">{s.title}</span>
+                  <span className="shrink-0 text-xs">{t('等待执行')}</span>
+                </div>
+              )
+            return <StepSection key={s.id} task={task} rootId={s.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
+          })}
+          {!steps.length && <p className="text-body text-subtle">{t('这次运行还没有节点。')}</p>}
+        </div>
+      </RouteProvider>
     </div>
   )
 }
