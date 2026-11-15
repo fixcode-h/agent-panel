@@ -8,7 +8,11 @@
 import { createContext, useContext, useEffect, useRef, useSyncExternalStore } from 'react'
 
 export type WebTarget =
-  | { kind: 'file'; path: string }
+  /**
+   * 本机文件。taskId：按哪个对话的目录找（子对话的文件开在父对话右栏时，子对话在自己的独立分支目录里，
+   * 要按子对话找）；不给就按右栏所在的对话
+   */
+  | { kind: 'file'; path: string; taskId?: string }
   | { kind: 'url'; url: string }
   /** 插件包里的文件（插件接口 11 的 webPages 写 file:…） */
   | { kind: 'plugin-file'; plugin: string; path: string }

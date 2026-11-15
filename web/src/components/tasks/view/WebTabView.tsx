@@ -64,7 +64,7 @@ async function openOutside(target: WebTarget, taskId: string, projectId?: string
   }
   const body =
     target.kind === 'file'
-      ? { path: target.path, taskId, projectId }
+      ? { path: target.path, taskId: target.taskId ?? taskId, projectId }
       : {
           path: target.path,
           plugin: target.plugin,

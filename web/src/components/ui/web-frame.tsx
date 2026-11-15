@@ -82,7 +82,7 @@ function useWebSource(
     const fail = (e: Error) => done({ state: 'error', message: e.message })
     if (target.kind === 'html') done({ state: 'ready', src: '', local: true, html: target.html })
     else if (target.kind === 'file')
-      call(W.file, { body: { path: target.path, taskId, projectId } }).then(
+      call(W.file, { body: { path: target.path, taskId: target.taskId ?? taskId, projectId } }).then(
         (r) => done({ state: 'ready', src: r.url, local: true }),
         fail,
       )
