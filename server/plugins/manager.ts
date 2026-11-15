@@ -1,6 +1,7 @@
 import path from 'node:path'
 import type { Agent, Project, ProjectCategory, Settings, Workflow } from '../../shared/schema.ts'
 import type { BuiltinOps, BuiltinState } from '../../shared/builtin/install.ts'
+import type { ProjectCapabilities } from '../../shared/projects/capabilities.ts'
 import {
   addPluginContent,
   MOVED_TO_PLUGINS,
@@ -22,6 +23,7 @@ import { log } from '../log.ts'
 import { getSettings, saveSettings } from '../settings.ts'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { pluginConfigChanged, stopPlugin, syncRuntime } from './runtime.ts'
+import { configureProjectGate } from './project-gate.ts'
 import { listInstalled, removePackage, rollbackPackage, type Installed } from './store.ts'
 
 /**
@@ -38,6 +40,8 @@ export interface PluginDeps {
   ops: BuiltinOps
   deleteAgent: (id: string) => Promise<unknown>
   deleteWorkflow: (id: string) => Promise<unknown>
+  /** 改项目打开了的能力（插件接口 9 的 PluginServerContext.projects.enable 用） */
+  setCapabilities: (projectId: string, caps: ProjectCapabilities) => Promise<void>
 }
 
 let deps: PluginDeps | undefined // 模块状态：接线，启动时登记
@@ -119,6 +123,11 @@ async function turnOn(p: Installed) {
  */
 export async function initPlugins(d: PluginDeps) {
   deps = d
+  configureProjectGate({
+    projects: d.projects,
+    manifest: (id) => findInstalled(id)?.manifest,
+    setCapabilities: d.setCapabilities,
+  })
   cachedPlugins = (await getSettings()).plugins
   await reloadPlugins()
 }
@@ -192,10 +201,18 @@ export async function uninstallPlugin(id: string) {
   return out
 }
 
-/** 装完、升级完：重读；开着的插件补上新版本多出来的角色和工作流 */
+/**
+ * 装完、升级完：重读；开着的插件补上新版本多出来的角色和工作流。
+ * 第一次装（设置里还没有它）直接打开，不用再去插件页手动开（用户 2026-11-15 定）；
+ * 以前装过、被关掉的，升级后照旧关着
+ */
 export async function afterInstall(id: string) {
   await reloadPlugins()
   const p = findInstalled(id)
+  if (p && !(await getSettings()).plugins[id]) {
+    await updatePlugin(id, { enabled: true })
+    return
+  }
   if (p && pluginEnabled(id)) await turnOn(p)
 }
 

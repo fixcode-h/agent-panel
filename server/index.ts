@@ -258,6 +258,12 @@ async function ensureProjectWorkflows() {
     ops: builtinOps,
     deleteAgent: (id) => agents.remove(id),
     deleteWorkflow: (id) => workflows.remove(id),
+    setCapabilities: async (id, capabilities) => {
+      const p = await projects.get(id)
+      if (!p) throw new Error(`没有这个项目：${id}`)
+      const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = p
+      await projects.update(id, { ...rest, capabilities })
+    },
   })
   await removeLegacyDefaultAgent()
   const before = await loadSeededWorkflows()

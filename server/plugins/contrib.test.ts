@@ -66,6 +66,7 @@ await initPlugins({
   ops: {} as never,
   deleteAgent: async () => undefined,
   deleteWorkflow: async () => undefined,
+  setCapabilities: async () => undefined,
 })
 
 const project = { ...ProjectInput.parse({ name: 'p', path: dir }), id: 'p1' } as never

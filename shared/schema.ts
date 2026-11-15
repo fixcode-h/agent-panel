@@ -20,6 +20,7 @@ import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
 import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan/schema.ts'
 import { FileFormat } from './settings-schema.ts'
+import { ProjectCapabilities } from './projects/capabilities.ts'
 
 /** 全局设置（含文件格式、外观、CLI 设置）拆在 settings-schema.ts，进程面板的结构拆在 process-schema.ts：从这里原样转出，引用处不用改 */
 export * from './settings-schema.ts'
@@ -998,6 +999,11 @@ const ProjectFields = z.object({
    * 跟项目设置一起保存；面板不认识里面的东西，插件删了也原样留着，重装后接着用
    */
   plugins: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * 这个项目打开了哪些按项目生效的能力（插件、全局 MCP、全局技能，见 shared/projects/capabilities.ts）。
+   * 全局生效的插件不记在这里；没有这个字段的项目一个按项目的能力都没打开
+   */
+  capabilities: ProjectCapabilities.optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**

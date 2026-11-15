@@ -219,6 +219,19 @@ export interface PluginServerContext {
    * 后台任务进度）用它，不让网页定时拉接口。插件关掉时登记的 onClose 自动撤掉
    */
   pages: PluginPages
+  /**
+   * 项目能力（插件接口 9）：按项目生效的插件替项目打开、关掉自己。例如 UE 插件升级到按项目生效时，
+   * 把已经在 UE 页接入过的项目都打开，升级后行为不变；用户在 UE 页新接入一个项目时也顺手打开
+   */
+  projects: PluginProjects
+}
+
+/** 插件能用的项目能力接口（PluginServerContext.projects） */
+export interface PluginProjects {
+  /** 这个插件在这个项目里打开了没有（全局生效的插件总是 true） */
+  enabled: (projectId: string) => Promise<boolean>
+  /** 在这个项目里打开 / 关掉这个插件；项目不存在时抛错 */
+  enable: (projectId: string, on?: boolean) => Promise<void>
 }
 
 /** 插件的推送通道（PluginServerContext.pages） */
@@ -316,6 +329,20 @@ export interface ServerPlugin {
   actions?: PluginAction[]
   /** 二进制文件转文本：评审拿到的改动里，认领了扩展名的文件按前后两版文本的差异给（没给就只在文件列表里） */
   textify?: Textifier
+  /**
+   * 按目录内容推荐（插件接口 9，只对清单 activation = project 的插件有用）：新建项目、项目「能力」页问一次，
+   * 返回一句给人看的理由（例如「找到 TPSProject.uproject」），返回空表示不推荐。只读目录，不要改文件、起进程
+   */
+  detect?: (project: { path: string }) => string | undefined | Promise<string | undefined>
+  /**
+   * 打开了但还缺什么设置（插件接口 9）：返回一句给人看的说明（例如「还要选表格目录」），返回空表示已经能用。
+   * 能力页、项目工具上据此亮黄点；没设置好时 tools(run) 照旧由插件自己决定挂不挂
+   */
+  ready?: (project: {
+    id: string
+    path: string
+    plugins?: Record<string, unknown>
+  }) => string | undefined | Promise<string | undefined>
   /** 关掉、删除、重启前：停后台进程、清定时器 */
   stop?: () => void | Promise<void>
 }

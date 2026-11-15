@@ -65,6 +65,12 @@ export const PluginManifest = z.object({
   license: z.string().optional(),
   /** 搬进来的上游项目：名字、链接、版本、许可 */
   source: z.object({ name: z.string(), url: z.string(), version: z.string(), license: z.string() }).optional(),
+  /**
+   * 生效方式（插件接口 9）：global 装好就对所有项目生效，项目里没有开关（例如视频截帧）；
+   * project 只在项目设置 →「能力」里打开了的项目生效（例如 UE、表格），挂工具、项目工具里的页面都按它。
+   * 旧插件没写，按 global 处理，行为和以前一样
+   */
+  activation: z.enum(['global', 'project']).default('global'),
   /** 要求的面板插件接口版本（PLUGIN_API），不兼容的不加载 */
   api: z.number().int().default(1),
   settings: z.array(PluginSetting).default([]),
@@ -116,8 +122,12 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 8：工具和动作自己声明作用和使用时机（McpTool.guide、PluginAction.useWhen / avoidWhen），交给 Agent 的说明从它拼出来；
  *    不开对话列出能力的目录（ServerPlugin.catalog），tools(run) 返回服务的 summary / attach 和不挂的原因 skip，
  *    设置 →「MCP」自检时 run.dryRun 为 true（设计稿：MCP能力菜单）。都是可选的，旧插件照常加载
+ * 9：插件的生效方式（清单 activation：global / project）。按项目的插件只在项目「能力」里打开了的项目挂工具、
+ *    出现在项目工具里（PluginPage.scope = 'project'）；服务端入口可以按目录给出推荐（ServerPlugin.detect）、
+ *    说明还缺哪项设置（ServerPlugin.ready），也可以替已经接入的项目打开自己（PluginServerContext.projects.enable）。
+ *    设计稿：Agent侧栏与项目管理重设计 第 6 节
  */
-export const PLUGIN_API = 8
+export const PLUGIN_API = 9
 
 /** 插件从哪来 */
 export const PluginSource = z.object({
