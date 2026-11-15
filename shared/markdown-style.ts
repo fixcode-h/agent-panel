@@ -72,8 +72,11 @@ const bool = (def: boolean): BoolField => ({ kind: 'bool', def })
 const pick = <T extends string>(def: T, options: readonly T[]): EnumField => ({ kind: 'enum', def, options })
 
 const WEIGHTS = ['450', '500', '600', '700'] as const
-/** 标题前的装饰：竖条、菱形、短横、圆点，或标题下一条渐隐的线；颜色跟标题走 */
-const DECOS = ['none', 'bar', 'diamond', 'dash', 'dot', 'underline'] as const
+/**
+ * 标题前的装饰：竖条、菱形、短横、圆点；或标题下的线：渐隐底线，
+ * 短标尺（一段标题色短条压在整宽的边框色细线上，用户 2026-11-15 选来替换渐隐底线）。颜色跟标题走
+ */
+const DECOS = ['none', 'bar', 'diamond', 'dash', 'dot', 'underline', 'ruler'] as const
 type Deco = (typeof DECOS)[number]
 const heading = (
   size: number,
@@ -91,6 +94,9 @@ const heading = (
   mb: em(mb, 0, 2),
   rule: bool(false),
   font: pick('sans', ['sans', 'serif'] as const),
+  // 短标尺的短条长度（正文字号的倍数）和粗细，装饰选「短标尺」时才用到
+  rulerLen: em(3.2, 1, 12, 0.1),
+  rulerH: px(3, 1, 6),
 })
 
 /**
@@ -99,7 +105,7 @@ const heading = (
  */
 export const MD_SPEC = {
   body: { size: num(1, 0.85, 1.3, 0.01), gap: em(0.75, 0, 1.5), color: color('fg') },
-  h1: heading(1.5, 1.6, 0.7, 'gold', '700', 'underline'),
+  h1: heading(1.5, 1.6, 0.7, 'gold', '700', 'ruler'),
   h2: heading(1.28, 1.5, 0.6, 'blue', '600', 'bar'),
   h3: heading(1.12, 1.3, 0.5, 'violet', '600', 'diamond'),
   h4: heading(1, 1.1, 0.4, 'teal', '600', 'dash'),
@@ -323,14 +329,19 @@ const BOOL_CSS: Record<string, [on: string, off: string]> = {
   tint: ['7%', '0%'],
   grid: ['radial-gradient(var(--md-dot) 1px, transparent 1px)', 'none'],
 }
-/** 标题装饰落成 ::before 的显示、宽高、旋转、圆角，和渐隐底线的高度 */
-const DECO_CSS: Record<Deco, { display: string; w: string; h: string; rot: string; r: string; ul: string }> = {
-  none: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '0px' },
-  bar: { display: 'inline-block', w: '3px', h: '0.9em', rot: '0deg', r: '3px', ul: '0px' },
-  diamond: { display: 'inline-block', w: '0.42em', h: '0.42em', rot: '45deg', r: '1px', ul: '0px' },
-  dash: { display: 'inline-block', w: '0.7em', h: '2px', rot: '0deg', r: '2px', ul: '0px' },
-  dot: { display: 'inline-block', w: '0.45em', h: '0.45em', rot: '0deg', r: '50%', ul: '0px' },
-  underline: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '2px' },
+/**
+ * 标题装饰落成 ::before 的显示、宽高、旋转、圆角，渐隐底线的高度，和短标尺开不开（rul 是 0 / 1 的倍数：
+ * 短条长短粗细是单独的可调项，CSS 里乘上它，关掉时两层底都是 0）
+ */
+type DecoVars = { display: string; w: string; h: string; rot: string; r: string; ul: string; rul: string }
+const DECO_CSS: Record<Deco, DecoVars> = {
+  none: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '0px', rul: '0' },
+  bar: { display: 'inline-block', w: '3px', h: '0.9em', rot: '0deg', r: '3px', ul: '0px', rul: '0' },
+  diamond: { display: 'inline-block', w: '0.42em', h: '0.42em', rot: '45deg', r: '1px', ul: '0px', rul: '0' },
+  dash: { display: 'inline-block', w: '0.7em', h: '2px', rot: '0deg', r: '2px', ul: '0px', rul: '0' },
+  dot: { display: 'inline-block', w: '0.45em', h: '0.45em', rot: '0deg', r: '50%', ul: '0px', rul: '0' },
+  underline: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '2px', rul: '0' },
+  ruler: { display: 'none', w: '0', h: '0', rot: '0deg', r: '0', ul: '0px', rul: '1' },
 }
 const UL_MARKER: Record<string, string> = { disc: 'disc', circle: 'circle', square: 'square', dash: "'– '" }
 

@@ -107,6 +107,7 @@ const optionLabel = (v: string) =>
     diamond: t('菱形'),
     dot: t('圆点'),
     underline: t('渐隐底线'),
+    ruler: t('短标尺'),
     soft: t('素净'),
     tint: t('柔彩'),
     card: t('浮卡'),
@@ -338,6 +339,69 @@ function GroupReset({ els }: { els: MdElement[] }) {
 
 const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
 
+/** 标题那一组：按级别切换，装饰选「短标尺」时才出现短条的长度和粗细 */
+function HeadingGroup() {
+  const { style } = useStyle()
+  const [level, setLevel] = useState<(typeof HEADINGS)[number]>('h1')
+  const ruler = mdValue(style, level, 'deco') === 'ruler'
+  return (
+    <Group title={t('标题')}>
+      <GroupReset els={[...HEADINGS]} />
+      <Preview md={headingPreview(level)} />
+      <div className="pb-1">
+        <Segmented
+          size="sm"
+          label={t('标题级别')}
+          value={level}
+          onChange={setLevel}
+          options={HEADINGS.map((h) => ({
+            id: h,
+            label: h.toUpperCase() + (style[h] ? ' •' : ''),
+          }))}
+        />
+      </div>
+      <Row title={t('字号')}>
+        <F el={level} prop="size" label={t('标题字号')} />
+      </Row>
+      <Row title={t('字重')}>
+        <F el={level} prop="weight" label={t('标题字重')} />
+      </Row>
+      <Row title={t('颜色')}>
+        <F el={level} prop="color" label={t('标题颜色')} />
+      </Row>
+      <Row
+        title={t('装饰')}
+        desc={t('标题前的符号或标题下的线')}
+        hint={t('标题前的竖条、菱形、短横、圆点，或标题下的渐隐底线、短标尺（标题色短条压在一条细线上），颜色跟标题。')}
+      >
+        <F el={level} prop="deco" label={t('标题装饰')} />
+      </Row>
+      {ruler && (
+        <>
+          <Row title={t('短标尺长度')}>
+            <F el={level} prop="rulerLen" label={t('短标尺长度')} />
+          </Row>
+          <Row title={t('短标尺粗细')}>
+            <F el={level} prop="rulerH" label={t('短标尺粗细')} />
+          </Row>
+        </>
+      )}
+      <Row title={t('字体')}>
+        <F el={level} prop="font" label={t('标题字体')} />
+      </Row>
+      <Row title={t('上间距')}>
+        <F el={level} prop="mt" label={t('标题上间距')} />
+      </Row>
+      <Row title={t('下间距')}>
+        <F el={level} prop="mb" label={t('标题下间距')} />
+      </Row>
+      <Row title={t('底线')} desc={t('标题下面画一条细线，像文档里的章节分隔。')}>
+        <F el={level} prop="rule" label={t('标题底线')} />
+      </Row>
+    </Group>
+  )
+}
+
 /** Mermaid 图那一组：预览可以切换图的类型，看风格在各种图上的效果 */
 function MermaidGroup() {
   const { style } = useStyle()
@@ -396,7 +460,6 @@ function MermaidGroup() {
  */
 export function MarkdownSection({ value, onChange }: { value: Appearance; onChange: (a: Appearance) => void }) {
   const [compact, setCompact] = useState<'normal' | 'compact'>('normal')
-  const [level, setLevel] = useState<(typeof HEADINGS)[number]>('h1')
   const [confirm, setConfirm] = useState(false)
   const style = value.markdown
   const update = (markdown: MarkdownStyle) => {
@@ -458,50 +521,7 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         </Row>
       </Group>
 
-      <Group title={t('标题')}>
-        <GroupReset els={[...HEADINGS]} />
-        <Preview md={headingPreview(level)} />
-        <div className="pb-1">
-          <Segmented
-            size="sm"
-            label={t('标题级别')}
-            value={level}
-            onChange={setLevel}
-            options={HEADINGS.map((h) => ({
-              id: h,
-              label: h.toUpperCase() + (style[h] ? ' •' : ''),
-            }))}
-          />
-        </div>
-        <Row title={t('字号')}>
-          <F el={level} prop="size" label={t('标题字号')} />
-        </Row>
-        <Row title={t('字重')}>
-          <F el={level} prop="weight" label={t('标题字重')} />
-        </Row>
-        <Row title={t('颜色')}>
-          <F el={level} prop="color" label={t('标题颜色')} />
-        </Row>
-        <Row
-          title={t('装饰')}
-          desc={t('标题前的符号或标题下的线')}
-          hint={t('标题前的竖条、菱形、短横、圆点，或标题下一条渐隐的线，颜色跟标题。')}
-        >
-          <F el={level} prop="deco" label={t('标题装饰')} />
-        </Row>
-        <Row title={t('字体')}>
-          <F el={level} prop="font" label={t('标题字体')} />
-        </Row>
-        <Row title={t('上间距')}>
-          <F el={level} prop="mt" label={t('标题上间距')} />
-        </Row>
-        <Row title={t('下间距')}>
-          <F el={level} prop="mb" label={t('标题下间距')} />
-        </Row>
-        <Row title={t('底线')} desc={t('标题下面画一条细线，像文档里的章节分隔。')}>
-          <F el={level} prop="rule" label={t('标题底线')} />
-        </Row>
-      </Group>
+      <HeadingGroup />
 
       <Group title={t('粗体、斜体、删除线')}>
         <GroupReset els={['strong', 'em', 'del']} />

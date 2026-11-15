@@ -1232,11 +1232,14 @@ body,
   --md-h1-deco-h: 0;
   --md-h1-deco-rot: 0deg;
   --md-h1-deco-r: 0;
-  --md-h1-deco-ul: 2px;
+  --md-h1-deco-ul: 0px;
   --md-h1-mt: 1.6;
   --md-h1-mb: 0.7;
   --md-h1-rule: 0px;
   --md-h1-font: var(--font-sans);
+  --md-h1-deco-rul: 1;
+  --md-h1-rulerLen: 3.2;
+  --md-h1-rulerH: 3px;
   --md-h2-size: 1.28;
   --md-h2-weight: 600;
   --md-h2-color: var(--md-blue);
@@ -1250,6 +1253,9 @@ body,
   --md-h2-mb: 0.6;
   --md-h2-rule: 0px;
   --md-h2-font: var(--font-sans);
+  --md-h2-deco-rul: 0;
+  --md-h2-rulerLen: 3.2;
+  --md-h2-rulerH: 3px;
   --md-h3-size: 1.12;
   --md-h3-weight: 600;
   --md-h3-color: var(--md-violet);
@@ -1263,6 +1269,9 @@ body,
   --md-h3-mb: 0.5;
   --md-h3-rule: 0px;
   --md-h3-font: var(--font-sans);
+  --md-h3-deco-rul: 0;
+  --md-h3-rulerLen: 3.2;
+  --md-h3-rulerH: 3px;
   --md-h4-size: 1;
   --md-h4-weight: 600;
   --md-h4-color: var(--md-teal);
@@ -1276,6 +1285,9 @@ body,
   --md-h4-mb: 0.4;
   --md-h4-rule: 0px;
   --md-h4-font: var(--font-sans);
+  --md-h4-deco-rul: 0;
+  --md-h4-rulerLen: 3.2;
+  --md-h4-rulerH: 3px;
   --md-h5-size: 0.95;
   --md-h5-weight: 600;
   --md-h5-color: var(--md-coral);
@@ -1289,6 +1301,9 @@ body,
   --md-h5-mb: 0.35;
   --md-h5-rule: 0px;
   --md-h5-font: var(--font-sans);
+  --md-h5-deco-rul: 0;
+  --md-h5-rulerLen: 3.2;
+  --md-h5-rulerH: 3px;
   --md-h6-size: 0.82;
   --md-h6-weight: 600;
   --md-h6-color: var(--md-gray);
@@ -1302,6 +1317,9 @@ body,
   --md-h6-mb: 0.3;
   --md-h6-rule: 0px;
   --md-h6-font: var(--font-sans);
+  --md-h6-deco-rul: 0;
+  --md-h6-rulerLen: 3.2;
+  --md-h6-rulerH: 3px;
   --md-strong-weight: 600;
   --md-strong-color: var(--md-bright);
   --md-em-color: var(--md-sand);
@@ -1433,9 +1451,15 @@ body,
 .chat-md :is(h1, h2, h3, h4, h5, h6) {
   border-bottom: 0 solid var(--line);
 }
-/* 标题装饰（竖条、菱形、短横、圆点）画在 ::before，渐隐底线是一段渐变底；颜色都跟标题文字走 */
+/*
+ * 标题装饰（竖条、菱形、短横、圆点）画在 ::before；标题下的线是三层底，各级只改大小，不用的那层大小是 0：
+ * 第一层渐隐底线；第二层短标尺的短条（标题色）；第三层短标尺下面整宽的细线（边框色），和短条底边差 1px 叠在一起
+ */
 .chat-md :is(h1, h2, h3, h4, h5, h6) {
-  background: linear-gradient(90deg, currentColor, transparent 70%) left bottom / 100% 0 no-repeat;
+  background:
+    linear-gradient(90deg, currentColor, transparent 70%) left bottom / 100% 0 no-repeat,
+    linear-gradient(currentColor, currentColor) left bottom / 0 0 no-repeat,
+    linear-gradient(var(--line), var(--line)) left calc(100% - 1px) / 100% 0 no-repeat;
 }
 .chat-md :is(h1, h2, h3, h4, h5, h6)::before {
   content: '';
@@ -1452,8 +1476,16 @@ body,
   color: var(--md-h1-color);
   margin: calc(var(--md-h1-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h1-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h1-rule);
-  padding-bottom: max(calc(var(--md-h1-rule) * 4), calc(var(--md-h1-deco-ul) * 3));
-  background-size: 100% var(--md-h1-deco-ul);
+  padding-bottom: max(
+    calc(var(--md-h1-rule) * 4),
+    calc(var(--md-h1-deco-ul) * 3),
+    calc(var(--md-h1-rulerH) * var(--md-h1-deco-rul) * 3.3)
+  );
+  background-size:
+    100% var(--md-h1-deco-ul),
+    calc(var(--md-h1-rulerLen) * var(--md-base) * var(--md-h1-deco-rul))
+      calc(var(--md-h1-rulerH) * var(--md-h1-deco-rul)),
+    100% calc(1px * var(--md-h1-deco-rul));
 }
 .chat-md h1::before {
   display: var(--md-h1-deco-display);
@@ -1467,8 +1499,16 @@ body,
   color: var(--md-h2-color);
   margin: calc(var(--md-h2-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h2-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h2-rule);
-  padding-bottom: max(calc(var(--md-h2-rule) * 4), calc(var(--md-h2-deco-ul) * 3));
-  background-size: 100% var(--md-h2-deco-ul);
+  padding-bottom: max(
+    calc(var(--md-h2-rule) * 4),
+    calc(var(--md-h2-deco-ul) * 3),
+    calc(var(--md-h2-rulerH) * var(--md-h2-deco-rul) * 3.3)
+  );
+  background-size:
+    100% var(--md-h2-deco-ul),
+    calc(var(--md-h2-rulerLen) * var(--md-base) * var(--md-h2-deco-rul))
+      calc(var(--md-h2-rulerH) * var(--md-h2-deco-rul)),
+    100% calc(1px * var(--md-h2-deco-rul));
 }
 .chat-md h2::before {
   display: var(--md-h2-deco-display);
@@ -1482,8 +1522,16 @@ body,
   color: var(--md-h3-color);
   margin: calc(var(--md-h3-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h3-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h3-rule);
-  padding-bottom: max(calc(var(--md-h3-rule) * 4), calc(var(--md-h3-deco-ul) * 3));
-  background-size: 100% var(--md-h3-deco-ul);
+  padding-bottom: max(
+    calc(var(--md-h3-rule) * 4),
+    calc(var(--md-h3-deco-ul) * 3),
+    calc(var(--md-h3-rulerH) * var(--md-h3-deco-rul) * 3.3)
+  );
+  background-size:
+    100% var(--md-h3-deco-ul),
+    calc(var(--md-h3-rulerLen) * var(--md-base) * var(--md-h3-deco-rul))
+      calc(var(--md-h3-rulerH) * var(--md-h3-deco-rul)),
+    100% calc(1px * var(--md-h3-deco-rul));
 }
 .chat-md h3::before {
   display: var(--md-h3-deco-display);
@@ -1497,8 +1545,16 @@ body,
   color: var(--md-h4-color);
   margin: calc(var(--md-h4-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h4-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h4-rule);
-  padding-bottom: max(calc(var(--md-h4-rule) * 4), calc(var(--md-h4-deco-ul) * 3));
-  background-size: 100% var(--md-h4-deco-ul);
+  padding-bottom: max(
+    calc(var(--md-h4-rule) * 4),
+    calc(var(--md-h4-deco-ul) * 3),
+    calc(var(--md-h4-rulerH) * var(--md-h4-deco-rul) * 3.3)
+  );
+  background-size:
+    100% var(--md-h4-deco-ul),
+    calc(var(--md-h4-rulerLen) * var(--md-base) * var(--md-h4-deco-rul))
+      calc(var(--md-h4-rulerH) * var(--md-h4-deco-rul)),
+    100% calc(1px * var(--md-h4-deco-rul));
 }
 .chat-md h4::before {
   display: var(--md-h4-deco-display);
@@ -1512,8 +1568,16 @@ body,
   color: var(--md-h5-color);
   margin: calc(var(--md-h5-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h5-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h5-rule);
-  padding-bottom: max(calc(var(--md-h5-rule) * 4), calc(var(--md-h5-deco-ul) * 3));
-  background-size: 100% var(--md-h5-deco-ul);
+  padding-bottom: max(
+    calc(var(--md-h5-rule) * 4),
+    calc(var(--md-h5-deco-ul) * 3),
+    calc(var(--md-h5-rulerH) * var(--md-h5-deco-rul) * 3.3)
+  );
+  background-size:
+    100% var(--md-h5-deco-ul),
+    calc(var(--md-h5-rulerLen) * var(--md-base) * var(--md-h5-deco-rul))
+      calc(var(--md-h5-rulerH) * var(--md-h5-deco-rul)),
+    100% calc(1px * var(--md-h5-deco-rul));
 }
 .chat-md h5::before {
   display: var(--md-h5-deco-display);
@@ -1527,8 +1591,16 @@ body,
   color: var(--md-h6-color);
   margin: calc(var(--md-h6-mt) * var(--md-base) * var(--md-k)) 0 calc(var(--md-h6-mb) * var(--md-base) * var(--md-k));
   border-bottom-width: var(--md-h6-rule);
-  padding-bottom: max(calc(var(--md-h6-rule) * 4), calc(var(--md-h6-deco-ul) * 3));
-  background-size: 100% var(--md-h6-deco-ul);
+  padding-bottom: max(
+    calc(var(--md-h6-rule) * 4),
+    calc(var(--md-h6-deco-ul) * 3),
+    calc(var(--md-h6-rulerH) * var(--md-h6-deco-rul) * 3.3)
+  );
+  background-size:
+    100% var(--md-h6-deco-ul),
+    calc(var(--md-h6-rulerLen) * var(--md-base) * var(--md-h6-deco-rul))
+      calc(var(--md-h6-rulerH) * var(--md-h6-deco-rul)),
+    100% calc(1px * var(--md-h6-deco-rul));
 }
 .chat-md h6::before {
   display: var(--md-h6-deco-display);
