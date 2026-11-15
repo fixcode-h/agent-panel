@@ -4,13 +4,15 @@
  * hook 和 effect 的先后不变
  */
 import { useLiveById } from '@/lib/live/store'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import type { StopReason } from '@shared/schema'
 import { childSeenLocally, childSpinning } from '@shared/task'
 import { api, type TaskPage } from '@/lib/api'
 import type { useLoadTrace } from '@/lib/useLoadTrace'
+import { childLetters } from '@/lib/tasks'
 import { type ChildSummary } from './child-line'
+import type { PeerMail } from './child-open'
 
 /**
  * 子对话列表的刷新间隔：有子对话在跑（转圈）时看勤一点，都静止时只是等它再动，没必要每 4 秒问一遍。
@@ -169,3 +171,15 @@ export function useChildList() {
   return { children, setChildren, childrenReload, viewedChildren, childrenRef, loadChildren }
 }
 export type ChildList = ReturnType<typeof useChildList>
+
+/**
+ * 父对话和名下子对话之间的信（ADR 0034）：交代任务那行的回执、子对话面板里每个子对话的往来都读这一份。
+ * 收件箱里还没读到的按子对话数：面板上写「n 封未读」
+ */
+export function usePeerLetters(messages: TaskPage['messages'] | undefined, inbox: TaskPage['inbox'] | undefined) {
+  return useMemo<PeerMail>(() => {
+    const unread = new Map<string, number>()
+    for (const x of inbox ?? []) unread.set(x.from, (unread.get(x.from) ?? 0) + 1)
+    return { letters: childLetters(messages ?? []), unread }
+  }, [messages, inbox])
+}

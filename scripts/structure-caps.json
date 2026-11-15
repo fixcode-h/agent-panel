@@ -53,7 +53,7 @@
     "web/src/components/tasks/ReviewDialog.tsx::ReviewDialog": 690,
     "web/src/components/tasks/TaskComposer.tsx::TaskComposer": 440,
     "web/src/components/tasks/TaskFiles.tsx::TaskFiles": 370,
-    "web/src/components/tasks/TaskView.tsx::TaskView": 1020,
+    "web/src/components/tasks/TaskView.tsx::TaskView": 780,
     "web/src/components/usage/UsageSection.tsx::UsageSection": 580,
     "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 370,
     "web/src/lib/demo/demo-backend.ts::seed": 500,
