@@ -17,7 +17,8 @@ import {
   type WorkflowEntry,
 } from './run.ts'
 import { FlowRun } from '../tasks/flow-schema.ts'
-import { WRAP_FLOW, WRAP_NODE, withWrapUp, wrapRoles } from './run-wrap.ts'
+import { WRAP_FLOW, WRAP_NODE, placeWrap, withWrapUp, wrapRoles } from './run-wrap.ts'
+import { COL } from './index.ts'
 import { Workflow, type Task, type TaskStep } from '../schema.ts'
 import { taskTitle } from '../task.ts'
 
@@ -191,6 +192,18 @@ test('收尾：入口流程连到结束的线改连到收尾节点，验收流�
     ['start>review', 'review>test:pass', 'test>end', 'review>end:fail'],
     '评审不通过就不用测了，意见直接作为结果交回',
   )
+  // 收尾节点隔一整列摆在最右边的节点后面，「结束」再隔一列：节点卡片 264px 宽，间距小了会叠在一起
+  const a = main.nodes.find((n) => n.id === 'a')!
+  assert.equal(wrap.x - a.x, COL)
+  assert.equal(main.endPos.x - wrap.x, COL)
+  // 旧运行快照里挤在一起的位置，显示时按同样的列距摆开
+  const old = {
+    ...main,
+    nodes: main.nodes.map((n) => (n.id === WRAP_NODE ? { ...n, x: a.x + 240 } : n)),
+    endPos: { x: a.x + 480, y: 0 },
+  }
+  assert.equal(placeWrap(old).nodes.find((n) => n.id === WRAP_NODE)!.x - a.x, COL)
+  assert.equal(placeWrap(old).endPos.x - a.x, COL * 2)
   assert.equal(withWrapUp(got, roles), got, '接过的不重复接')
   assert.equal(withWrapUp(w, { reviewer: 'rv' }), w, '没有执行角色不接')
   assert.equal(withWrapUp(w, { worker: 'wk' }).flows[0].nodes.at(-1)?.hooks.review, null, '没有评审和测试时只补齐提交')
