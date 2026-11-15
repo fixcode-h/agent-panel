@@ -1,71 +1,41 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  Clock,
-  Coins,
-  DatabaseZap,
-  FileInput,
-  FolderGit2,
-  GitBranch,
-  Hourglass,
-  PanelRight,
-  Settings2,
-  Workflow as WorkflowIcon,
-  X,
-} from 'lucide-react'
+import { FileInput, FolderGit2, GitBranch, PanelRight, Settings2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
 import { toast } from '@/lib/toast'
-import type { Project, Task } from '@shared/schema'
-import { byAskedAt, planLeft, stopReasonText, taskDuration, taskSummary, waitDuration } from '@shared/task'
+import type { Project } from '@shared/schema'
+import { taskSummary } from '@shared/task'
 import { importTaskFile } from '@/lib/task-transfer'
-import { useData, useNav, useTasks } from '@/lib/data'
-import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
-import { useNow } from '@/lib/useNow'
-import { useLive, useLiveOf } from '@/lib/live/store'
-import { liveBusy, liveDoneDot, liveWaitText, type TaskLive } from '@shared/live/task-live'
+import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ProjectLessonsCard } from '@/components/projects/Lessons'
 import { TaskComposer } from './TaskComposer'
+import { HomeGlance } from './HomeGlance'
 import { projectDefaultWorkflow } from '@shared/projects/workflow'
-import { TaskControlButton } from './TaskControl'
-import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
-import { TaskStatusIcon } from './TaskStatusIcon'
-import { AnalysisMark } from './AnalysisMark'
-import { cliAliveHint, cliTreeAlive } from './CliAlive'
-import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { IconButton } from '@/components/ui/icon-button'
-import { useOwnedByPlugin } from '@/plugins/registry'
 import { t } from '@shared/i18n'
 
-/** 项目首页：参考 Claude Code，上面是这个项目的任务，输入框贴在底部，和对话页的输入框在同一个位置 */
+/**
+ * 项目首页：和面板首页同一个样子（HomePage），用户要求点进项目也这么显示。
+ * 中间项目名和输入框（项目固定），输入框下面是这个项目的目录、分支、工作流，
+ * 再下面是这个项目等你处理的和最近的对话（HomeGlance 按项目筛）；全部对话在侧栏的项目分组里
+ */
 function ProjectHome({ project }: { project: Project }) {
   const { workflows, projectCategories, upsertTask } = useData()
-  const { tasks, tasksLoaded } = useTasks()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
   const [filesOpen, setFilesOpen] = useState(false)
+  // 示例任务点了填进输入框（HomeGlance）
+  const [fill, setFill] = useState<{ text: string; n: number }>()
   // 文件栏和任务页的右栏一样可以拖宽；上限按这一行剩下的宽度算，给主内容至少留 480
   const row = useRef<HTMLDivElement>(null)
   const filesPane = usePaneWidth('project-files', 360, 260, () => {
     const width = row.current?.clientWidth ?? window.innerWidth
     return Math.max(320, width - 480)
   })
-  // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）；子对话只在父对话页里看
-  // 插件管的对话（设计模式、插件整页，例如模型设计）在插件那边看，项目首页不列；插件不在时照常列
-  const owned = useOwnedByPlugin()
-  const all = tasks.filter((t) => t.projectId === project.id && !t.parentTaskId && !t.flowRun?.owner && !owned(t))
-  const archived = all.filter((t) => t.archived).length
-  const list = all.filter((t) => !t.archived).sort(byAskedAt)
-  // 有任务真的在跑时每秒刷新，耗时跟着走
-  const now = useNow(list.some((t) => t.working))
-  const liveOf = useLiveOf()
-  const groups = groupByState(list, liveOf)
   const wf = projectDefaultWorkflow(project, projectCategories, workflows)
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
   // 导入别人导出的任务：放进这个项目，只能查看
@@ -120,74 +90,48 @@ function ProjectHome({ project }: { project: Project }) {
               {filesOpen ? <X className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
             </Button>
           </header>
-          <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-8 md:px-6 md:pt-12">
+          {/* 和首页同样的限宽、上下居中（HomePage）；上面多了 56px 的标题栏，底部多留同样高度，内容中心和首页对齐 */}
+          <div
+            className="mx-auto flex w-full max-w-[min(var(--content-w),808px)] flex-1 flex-col justify-center gap-7 px-4 pt-6 pb-12 md:px-6 md:pb-[calc(3rem+56px)]"
+            data-project-home
+          >
+            <h1 className="flex min-w-0 items-center justify-center gap-3 text-center font-serif text-display font-semibold tracking-tight text-fg md:text-hero">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+                <FolderGit2 className="h-5 w-5" strokeWidth={2} />
+              </span>
+              <span className="min-w-0 truncate">{project.name}</span>
+            </h1>
             <div className="flex flex-col gap-2">
-              <h1 className="flex items-center gap-3 font-serif text-display leading-tight font-semibold tracking-tight">
-                <FolderGit2 className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={2} />
-                <span className="min-w-0 truncate">{project.name}</span>
-              </h1>
-              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body text-subtle">
-                <span className="max-w-full truncate font-mono">{project.path || t('还没有选择目录')}</span>
+              <TaskComposer
+                project={project}
+                autoFocus
+                fill={fill}
+                onCreated={(created) => {
+                  upsertTask(created)
+                  open(created.id)
+                }}
+              />
+              {/* 首页这里是选项目的胶囊；项目页项目已经定了，换成这个项目的目录、分支和默认工作流 */}
+              <p className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 px-2 text-xs text-subtle">
+                <span className="flex min-w-0 items-center gap-1.5" title={project.path || undefined}>
+                  <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate font-mono">{project.path || t('还没有选择目录')}</span>
+                </span>
                 {dir?.gitBranch && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1.5">
                     <GitBranch className="h-3.5 w-3.5" />
                     <span className="font-mono">{dir.gitBranch}</span>
                   </span>
                 )}
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   <WorkflowIcon className="h-3.5 w-3.5" />
                   {wf?.name ?? t('没有默认工作流')}
                 </span>
               </p>
             </div>
-
-            {list.length === 0 && tasksLoaded ? (
-              <section className="flex flex-col">
-                <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
-                  <span className="flex-1">{t('任务 · {n}', { n: 0 })}</span>
-                  {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
-                </h2>
-                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-body text-subtle">
-                  {t('还没有任务。在下面描述要做的事，Agent 会按工作流完成。')}
-                </p>
-              </section>
-            ) : (
-              groups.map((g, i) => (
-                <section key={g.key} className="flex flex-col">
-                  <h2 className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium text-subtle">
-                    <span className={cn('h-1.5 w-1.5 rounded-full', g.dot)} aria-hidden />
-                    <span className="flex-1">
-                      {g.label} · {g.items.length}
-                    </span>
-                    {/* 归档数只在最后一组的标题上说一次 */}
-                    {i === groups.length - 1 && archived > 0 && (
-                      <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>
-                    )}
-                  </h2>
-                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
-                    {g.items.map((tk) => (
-                      <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
-                    ))}
-                  </ul>
-                </section>
-              ))
-            )}
-
+            {/* 输入框下面：这个项目等你处理的、最近的对话；还没有对话时是示例任务 */}
+            <HomeGlance projectId={project.id} onExample={(text) => setFill((f) => ({ text, n: (f?.n ?? 0) + 1 }))} />
             <ProjectLessonsCard project={project} />
-          </div>
-        </div>
-        {/* 输入框贴在底部不跟着列表滚；窄屏整页滚动时用 sticky 留在底部。和输入内容相近的对话列在输入框上方 */}
-        <div className="sticky bottom-0 shrink-0 bg-bg pt-2 pb-3 md:pb-5">
-          {/* 左右边距和上面的列表一致，输入框和列表一样宽 */}
-          <div className="mx-auto w-full max-w-(--content-w) px-4 md:px-6">
-            <TaskComposer
-              project={project}
-              autoFocus
-              onCreated={(created) => {
-                upsertTask(created)
-                open(created.id)
-              }}
-            />
           </div>
         </div>
       </main>
@@ -216,187 +160,7 @@ function ProjectHome({ project }: { project: Project }) {
   )
 }
 
-/** 这个任务现在要不要你处理：有确认请求、出错了、或者做完了还没看 */
-function needsYou(tk: Task, live: TaskLive) {
-  // 状态只读服务端给的 live：等你处理、失败都要你看；还在运行的（子对话、子任务、后台命令没完）不算「做完没看」，
-  // 橙点也读同一处判定（liveDoneDot），不自己比 turnDoneAt / turnSeenAt。
-  // 和橙点同口径：只有完成态才归「需要你处理」，自己停下的、别的原因结束的都归 stopped，stopReason 只影响图标文字
-  const s = live.state
-  if (s === 'needs' || s === 'failed') return true
-  // 计划推满了还停着（卡住）：要你看一下才能往下走
-  if (s === 'unfinished' && planLeft(tk)?.stuck) return true
-  return liveDoneDot(tk, live)
-}
-
-/**
- * 项目首页按状态分组：要你处理的放最上面，然后是正在执行的，其余按最近的要求排。
- * 组里保持原来的顺序（最近发过要求的在前），空的组不显示
- */
-function groupByState(list: Task[], liveOf: (t: Task) => TaskLive) {
-  const all = [
-    { key: 'you', label: t('需要你处理'), dot: 'bg-warning', items: [] as Task[] },
-    { key: 'running', label: t('执行中'), dot: 'bg-accent', items: [] as Task[] },
-    { key: 'rest', label: t('其他对话'), dot: 'bg-subtle', items: [] as Task[] },
-  ]
-  for (const tk of list) {
-    const live = liveOf(tk)
-    const g = needsYou(tk, live) ? all[0] : liveBusy(live) ? all[1] : all[2]
-    g.items.push(tk)
-  }
-  return all.filter((g) => g.items.length)
-}
-
-/** 任务列表里的一行：点开任务，右键可以暂停 / 继续、重命名、归档、删除 */
-function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen: () => void }) {
-  const { agents, workflows } = useData()
-  const menu = useTaskRowMenu(task)
-  const a = agents.find((x) => x.id === task.agentId)
-  const w = workflows.find((x) => x.id === task.workflowId)
-  const tops = task.steps.filter((s) => !s.parentId && s.kind !== 'main')
-  const done = tops.filter((s) => s.status === 'done').length
-  const live = useLive(task)
-  const state = live.state
-  const busy = liveBusy(live)
-  if (menu.renaming)
-    return (
-      <li className="flex items-center px-4 py-3">
-        <TaskRenameInput
-          task={task}
-          onCommit={menu.rename}
-          onCancel={() => menu.setRenaming(false)}
-          className="min-w-0 flex-1 text-prose"
-        />
-      </li>
-    )
-  return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          {/* 暂停 / 继续按钮不能套在整行的按钮里，放在行的右边 */}
-          <li className="flex items-center transition-colors hover:bg-sel/60">
-            <button
-              onClick={onOpen}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
-            >
-              <TaskStatusIcon
-                status={task.status}
-                working={busy}
-                spin={busy}
-                waiting={state === 'needs'}
-                cliAlive={live.cliAlive}
-              />
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  {isAnalysisTask(task, agents) && <AnalysisMark kind={task.analysis} />}
-                  {/* 自己或名下子对话有活着的 CLI：标题流光 */}
-                  <span
-                    title={cliAliveHint(live) || undefined}
-                    className={cn('truncate text-prose', cliTreeAlive(live) && 'cli-alive-title')}
-                  >
-                    {task.title}
-                  </span>
-                </span>
-                <span className="truncate text-xs text-subtle">
-                  {task.mode === 'workflow'
-                    ? `${task.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
-                    : t('对话 · {name}', { name: a?.name ?? t('角色已删除') })}
-                </span>
-                <TaskStats task={task} now={now} />
-              </span>
-              <span
-                className={cn(
-                  'hidden shrink-0 text-xs sm:block',
-                  state === 'failed'
-                    ? 'text-danger'
-                    : state === 'needs'
-                      ? 'text-warning'
-                      : busy
-                        ? 'text-accent-text'
-                        : 'text-subtle',
-                )}
-              >
-                {/* 状态和「在等什么」都读服务端给的 live；停在等下一句也只认 live.next，不再拿 status 和 cliAlive 自己拼 */}
-                {state === 'needs'
-                  ? liveWaitText(live) || t('等你处理')
-                  : state === 'waiting'
-                    ? liveWaitText(live)
-                    : state === 'running'
-                      ? statusLabel.running
-                      : live.next
-                        ? t('等待你的下一条消息')
-                        : task.status === 'stopped'
-                          ? stopReasonText(task.stopReason)
-                          : task.status === 'done' || task.status === 'running'
-                            ? timeAgo(task.updatedAt, now)
-                            : statusLabel[task.status]}
-              </span>
-            </button>
-            <TaskControlButton task={task} className="mr-4" />
-          </li>
-        </ContextMenuTrigger>
-        <ContextMenuContent>{menu.items}</ContextMenuContent>
-      </ContextMenu>
-      {menu.confirm}
-    </>
-  )
-}
-
-/** 任务列表里的一行用量：执行时间、Token 总数、输入、输出、缓存命中 */
-function TaskStats({ task, now }: { task: Task; now: number }) {
-  const u = task.usage
-  const ms = taskDuration(task, now)
-  const total = u.inputTokens + u.outputTokens
-  if (!ms && !total) return null
-  const rate = cacheRate(task)
-  const item = 'flex items-center gap-1 whitespace-nowrap'
-  return (
-    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-caption text-subtle tabular-nums">
-      {ms > 0 && (
-        <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
-          <Clock className="h-3 w-3" />
-          {fmtDuration(ms)}
-        </span>
-      )}
-      {waitDuration(task, now) >= 1000 && (
-        <span className={item} title={t('其中等你确认、回答问题的时间')}>
-          <Hourglass className="h-3 w-3" />
-          {t('等你 {d}', { d: fmtDuration(waitDuration(task, now)) })}
-        </span>
-      )}
-      {total > 0 && (
-        <>
-          <span className={item} title={t('Token 总数（输入 + 输出）')}>
-            <Coins className="h-3 w-3" />
-            {fmtTokens(total)}
-          </span>
-          <span className={item} title={t('输入 Token（含缓存命中）')}>
-            <ArrowUp className="h-3 w-3" />
-            {t('输入 {n}', { n: fmtTokens(u.inputTokens) })}
-          </span>
-          <span className={item} title={t('输出 Token')}>
-            <ArrowDown className="h-3 w-3" />
-            {t('输出 {n}', { n: fmtTokens(u.outputTokens) })}
-          </span>
-          <span
-            className={item}
-            title={t('缓存命中 {hit} / 输入 {input}', {
-              hit: fmtTokens(u.cacheReadTokens ?? 0),
-              input: fmtTokens(u.inputTokens),
-            })}
-          >
-            <DatabaseZap className="h-3 w-3" />
-            {t('缓存命中 {n}', { n: fmtTokens(u.cacheReadTokens ?? 0) })}
-            <span className={cn(rate >= 0.5 ? 'text-success' : '')}>
-              {t('（{n}%）', { n: (rate * 100).toFixed(0) })}
-            </span>
-          </span>
-        </>
-      )}
-    </span>
-  )
-}
-
-/** 点进一个项目后的工作区：项目首页（新建任务 + 任务列表）或任务对话 */
+/** 点进一个项目后的工作区：项目首页（新建任务 + 这个项目的对话）或任务对话 */
 export function ProjectWorkspace({ project, sub }: { project: Project; sub?: string }) {
   if (sub) return <TaskView key={sub} taskId={sub} project={project} />
   return <ProjectHome project={project} />
