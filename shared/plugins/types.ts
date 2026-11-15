@@ -71,6 +71,11 @@ export const PluginManifest = z.object({
    * 旧插件没写，按 global 处理，行为和以前一样
    */
   activation: z.enum(['global', 'project']).default('global'),
+  /**
+   * 依赖的插件和最低版本（插件接口 10）：`{ "comfy": ">=1.0.0" }`。安装、一键更新时缺的或太旧的从插件市场一起装上，
+   * 依赖没满足的不加载；被依赖的插件删除、关掉前会拦下（shared/plugins/requires.ts）
+   */
+  requires: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,39}$/), z.string()).default({}),
   /** 要求的面板插件接口版本（PLUGIN_API），不兼容的不加载 */
   api: z.number().int().default(1),
   settings: z.array(PluginSetting).default([]),
@@ -126,8 +131,9 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    出现在项目工具里（PluginPage.scope = 'project'）；服务端入口可以按目录给出推荐（ServerPlugin.detect）、
  *    说明还缺哪项设置（ServerPlugin.ready），也可以替已经接入的项目打开自己（PluginServerContext.projects.enable）。
  *    设计稿：Agent侧栏与项目管理重设计 第 6 节
+ * 10：插件之间的依赖（清单 requires）：安装、一键更新时把缺的依赖从插件市场一起装上，依赖没满足的不加载
  */
-export const PLUGIN_API = 9
+export const PLUGIN_API = 10
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

@@ -22,6 +22,7 @@ import { pluginMcpApi } from './mcp.ts'
 import { pluginError, pluginStatus, runningPlugin } from './runtime.ts'
 import { linkPackage, packageRoot, parseManifest, writePackage, type Installed } from './store.ts'
 import { checkPluginUpdates } from './updates.ts'
+import { dependentsBlock, enableRequires, installRequires, requiresPlan } from './requires-install.ts'
 import { readZip, type ZipEntry } from './zip.ts'
 import { scanBuffers, scanPath, visibleFindings } from '../config-scan.ts'
 
@@ -65,6 +66,8 @@ async function stash(p: Omit<Pending, 'at'>) {
       )
   return {
     token,
+    // 要一起装的依赖插件（插件接口 10）：市场里找不到、版本不够时这里就报错，不等用户点确认
+    requires: await requiresPlan(p.manifest, p.source),
     manifest: p.manifest,
     hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
     installed: cur ? { version: cur.manifest.version, source: cur.source } : null,
@@ -208,11 +211,13 @@ export function pluginsApi() {
         if (!p) return c.json({ error: '安装请求过期了，请重新选择插件' }, 404)
         pending.delete(token!)
         try {
+          // 依赖先装：依赖装不上就停下，插件本身不装
+          const requires = await installRequires(p.manifest, p.source)
           if (p.dir) await linkPackage(p.manifest.id, p.dir)
           else await writePackage(p.manifest.id, p.files!, p.root!, p.source)
           await afterInstall(p.manifest.id)
           const cur = findInstalled(p.manifest.id)
-          return c.json({ ok: true, plugin: cur ? info(cur) : null })
+          return c.json({ ok: true, plugin: cur ? info(cur) : null, requires })
         } catch (e) {
           return c.json(fail(e), 500)
         }
@@ -224,7 +229,11 @@ export function pluginsApi() {
           enabled?: boolean
           config?: Record<string, string | number | boolean>
         }
+        // 关掉被别的插件依赖的插件之前拦下；打开时把它依赖的插件一起打开
+        const blocked = body.enabled === false ? dependentsBlock(id, true) : ''
+        if (blocked) return c.json({ error: blocked }, 409)
         const r = await updatePlugin(id, { enabled: body.enabled, config: body.config })
+        if (body.enabled) await enableRequires(findInstalled(id)!.manifest)
         return c.json({ ok: true, removed: r[id] ?? null, error: pluginError(id) })
       })
       // 退回上一版：升级后有问题时换回升级前那一版（只留一版，退回后可以再退回到刚才那版）
@@ -239,7 +248,11 @@ export function pluginsApi() {
           return c.json(fail(e), 400)
         }
       })
-      .delete('/:id', async (c) => c.json({ ok: true, ...(await uninstallPlugin(c.req.param('id'))) }))
+      .delete('/:id', async (c) => {
+        const blocked = dependentsBlock(c.req.param('id'), false)
+        if (blocked) return c.json({ error: blocked }, 409)
+        return c.json({ ok: true, ...(await uninstallPlugin(c.req.param('id'))) })
+      })
       .get('/:id/status', async (c) => c.json((await pluginStatus(c.req.param('id'))) ?? {}))
       // 关掉 / 删除前的预览：哪些副本会删、哪些会留下
       .get('/:id/removal', async (c) => {

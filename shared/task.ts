@@ -26,6 +26,7 @@ import { pendingAction } from './user-action.ts'
 import { byStartedDesc, helpersWorking } from './tasks/helpers.ts'
 import { childFlowOf } from './children/flow.ts'
 import { type ChildWait } from './children/activity.ts'
+import { lastFailureKind, transientKind } from './tasks/failure.ts'
 
 /** 子对话完成的流转、子对话在做什么 / 等什么、按天分组拆在下面三个文件：从这里原样转出，调用方不用改 */
 export * from './children/flow.ts'
@@ -671,6 +672,8 @@ export interface ChildReport {
   settle: 'hold' | 'ok' | 'fail'
   /** 一句话：现在的状态和原因，写进父计划那一步的说明，也是上报消息的第一行 */
   why: string
+  /** why 里冒号后面的原因（界面按 state 自己画状态短词，原因单独显示） */
+  reason: string
   /** 要不要给父对话发一条状态消息：还在动的（执行中、等结果）只更新计划那一步的说明，不刷消息 */
   notify: boolean
 }
@@ -723,6 +726,7 @@ export function childReport(
 ): ChildReport {
   const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged, childNeeds: x.childNeeds })
   let state = convState(facts)
+  const transient = state === 'failed' && transientKind(lastFailureKind(task.messages))
   if (x.more && state !== 'needs' && state !== 'failed') state = 'running'
   const plan = activePlan(task)
   const progress = plan ? planProgress(task, plan) : undefined
@@ -748,7 +752,11 @@ export function childReport(
       case 'failed': {
         // 只说「执行失败了」时用户/父对话都看不出是重试耗尽、工具没接上还是进程被回收，把根因带上
         const note = lastFailureNote(task.messages)
-        return note ? t('执行失败了（{note}）', { note }) : t('执行失败了')
+        const failed = note ? t('执行失败了（{note}）', { note }) : t('执行失败了')
+        // 网关、网络、限流、额度这类临时错误：活没做错，继续它（或到点自动继续）就能接着做，父对话别跟着判失败
+        return transient
+          ? `${failed}${t('。这是临时错误，不是做错了：继续它就能接着做，计划里等它的那一步先别判失败')}`
+          : failed
       }
       case 'stopped':
         return task.stopReason === 'user' ? t('用户停掉了它，等用户决定要不要继续') : stopReasonText(task.stopReason)
@@ -784,10 +792,11 @@ export function childReport(
     settle:
       state === 'done'
         ? 'ok'
-        : state === 'failed' || (state === 'stopped' && stopEnds(task.stopReason))
+        : (state === 'failed' && !transient) || (state === 'stopped' && stopEnds(task.stopReason))
           ? 'fail'
           : 'hold',
     why: [convStateText(state), reason].filter(Boolean).join(t('：')),
+    reason: reason ?? '',
     notify: state !== 'running' && state !== 'waiting' && state !== 'needs',
   }
 }

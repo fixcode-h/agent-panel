@@ -64,7 +64,7 @@ export function createChildMessages(sc: TasksScope) {
     inboxText = body,
     settle?: { kind: PlanWait['kind']; ref: string; ok: boolean; onlyIfWaiting?: boolean },
     /** 子对话的状态上报：带上是谁、什么状态（行右边写状态，点开能跳到子对话） */
-    child?: { id: string; title: string; state: ConvState },
+    child?: { id: string; title: string; state: ConvState; reason?: string; result?: string },
     /** 发件对话：父对话里画成一行「接收消息」 */
     peer?: PeerFrom,
     /** 停下时独立分支里还有没提交的改动：父对话里那一行直接写几个文件、目录在哪，并给「继续」 */

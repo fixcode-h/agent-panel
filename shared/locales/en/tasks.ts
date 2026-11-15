@@ -1090,6 +1090,8 @@ export const EN_TASKS: Record<string, string> = {
   '有没答的提问，在等用户回答': 'Unanswered questions are waiting for the user',
   执行失败了: 'Run failed',
   '执行失败了（{note}）': 'Run failed ({note})',
+  '。这是临时错误，不是做错了：继续它就能接着做，计划里等它的那一步先别判失败':
+    '. This is a temporary error, not a mistake: continue it and it picks up where it left off. Do not mark the plan step waiting on it as failed',
   '这条汇报没能交给父对话：它已经不在了（可能被删了）。结果还在这个对话里，需要的话交给别的对话或自己处理。':
     'This report could not be handed to the parent conversation: it no longer exists (it may have been deleted). The result is still in this conversation; hand it to another conversation or handle it yourself if needed.',
   '找不到父对话（id {id}）': 'Parent conversation not found (id {id})',
@@ -1780,7 +1782,9 @@ export const EN_TASKS: Record<string, string> = {
     "To send it back, say what's in question: annotate first, or write an overall comment",
   '你取消了诊断报告第 {n} 版，这次不修了，没做的步骤已标记跳过':
     'You cancelled diagnosis report v{n}; no fix this time, and the remaining steps are marked skipped',
-  '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",
+  '它正在回复，这一轮说完后取消': "It's replying; the cancel takes effect when this turn ends",
+  '你点的取消没有执行：它这一轮交了新的一版，要取消请在新一版上再点':
+    'Your cancel was not applied: it submitted a new version this turn. To cancel, use the new version',
   '改用方案 {id}': 'Use option {id}',
   '方案 {id}：{title}': 'Option {id}: {title}',
   改用这个方案: 'Use this option instead',

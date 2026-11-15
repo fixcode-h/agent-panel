@@ -954,6 +954,12 @@ const ProjectFields = z.object({
    * 读取时和文件合并、写入后清空。旧项目没有时是空数组
    */
   lessons: z.array(ProjectLesson).max(200).default([]),
+  /**
+   * 项目教训和经验存在哪（用户 2026-11-15 定，复查报告 B5）：默认 false 存面板数据目录（<数据目录>/knowledge/<项目 id>/），
+   * 不往用户仓库里写面板自己的文件（摸底报告第 15 条：写进仓库的文件反过来拦住了派单）；
+   * true 时照旧存项目文档目录（随仓库提交，团队都能看到）
+   */
+  knowledgeInRepo: z.boolean().default(false),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
   /**
@@ -1493,9 +1499,19 @@ export const TaskMessage = z.object({
   panel: PanelKind.optional(),
   /**
    * panel 为 child / wrapup 时：是哪个子对话、上报时它处在哪个状态（见 shared/task.ts 的 ConvState）。
-   * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
+   * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示。
+   * reason、result 是状态上报的原因和最近的结果（复查报告 A3）：界面直接读它们，不再从给 Agent 的正文里解析；
+   * 旧消息没有时退回 shared/peer-message.ts 的 parseReport
    */
-  child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
+  child: z
+    .object({
+      id: z.string(),
+      title: z.string().default(''),
+      state: z.string().default(''),
+      reason: z.string().optional(),
+      result: z.string().optional(),
+    })
+    .optional(),
   /**
    * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary/card.ts 的 childSummaryCards）：
    * 标题就是子对话总结的「类型｜结论」，child 是点标题跳过去的子对话。父对话不再自己写这张卡。

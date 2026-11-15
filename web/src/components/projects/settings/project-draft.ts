@@ -61,6 +61,7 @@ export const blank: ProjectInput = {
   testSteps: [],
   scaledVerify: true,
   lessons: [],
+  knowledgeInRepo: false,
   wslDistro: '',
   fileFormat: undefined,
   searchExclude: [],

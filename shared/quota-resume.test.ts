@@ -41,6 +41,10 @@ test('从报错原文读恢复时间', () => {
   const at = resetFromText("You've hit your limit · resets 3pm", NOW)!
   assert.ok(at > NOW && at - NOW <= 86400_000)
   assert.equal(new Date(at).getHours(), 15)
+  // 网关的并发超限写 24 小时制（摸底报告第 10 条）
+  const gw = resetFromText('membership concurrency limit exceeded: 11/10 resets 03:49', NOW)!
+  assert.ok(gw > NOW && gw - NOW <= 86400_000)
+  assert.deepEqual([new Date(gw).getHours(), new Date(gw).getMinutes()], [3, 49])
   assert.equal(resetFromText('quota exceeded', NOW), undefined)
 })
 

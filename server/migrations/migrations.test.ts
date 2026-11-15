@@ -263,3 +263,27 @@ test('备份只留最近 3 个版本的', async () => {
   await runMigrations({ dataDir: d, migrations: list, log: quiet })
   assert.deepEqual(readdirSync(path.join(d, 'backup')).sort(), ['0003-m3', '0004-m4', '0005-m5'])
 })
+
+test('0007：仓库里已经有教训、经验的项目记成随仓库存，其余不写这一项', async () => {
+  const d = freshDir()
+  const withLessons = path.join(root, `repo${n++}`)
+  write(path.join(withLessons, 'docs', 'lessons', 'build.md'), '# 构建\n')
+  mkdirSync(path.join(withLessons, '.git'), { recursive: true })
+  const onlyReadme = path.join(root, `repo${n++}`)
+  write(path.join(onlyReadme, 'docs', 'lessons', 'README.md'), '# 说明\n')
+  mkdirSync(path.join(onlyReadme, '.git'), { recursive: true })
+  write(path.join(d, 'projects', 'projects.json'), [
+    { id: 'a', path: withLessons },
+    { id: 'b', path: onlyReadme },
+    { id: 'c', path: withLessons, knowledgeInRepo: false },
+    { id: 'd' },
+  ])
+  // 只跑 0007：版本号先记到 6
+  write(path.join(d, 'data-version.json'), { version: 6 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const [a, b, c, e] = json(path.join(d, 'projects', 'projects.json'))
+  assert.equal(a.knowledgeInRepo, true)
+  assert.ok(!('knowledgeInRepo' in b), '只有 README 不算记过')
+  assert.equal(c.knowledgeInRepo, false, '用户已经选过的不改')
+  assert.ok(!('knowledgeInRepo' in e))
+})

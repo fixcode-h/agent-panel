@@ -18,7 +18,6 @@
     "web/src/components/assist/AssistDialog.tsx": 1300,
     "web/src/components/chat/Attachments.tsx": 1350,
     "web/src/components/files/FileTree.tsx": 1500,
-    "web/src/lib/demo/demo-backend.ts": 4900,
-    "web/src/pages/ComfyPage.tsx": 1500
+    "web/src/lib/demo/demo-backend.ts": 4900
   }
 }

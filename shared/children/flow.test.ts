@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { applyPlan, settlePlan } from '../plan/index.ts'
 import { setLang } from '../i18n.ts'
 import { haltedTurn } from '../stop-reason.ts'
+import { classifyError } from '../alerts.ts'
 import type { Task } from '../schema.ts'
 import {
   advanceChild,
@@ -308,4 +309,36 @@ test('被叫停的一轮不在结束时收口成完成：父对话停下、用�
   const fresh = { status: 'stopped' as const, working: false, requests: [], parentAsks: [], plans: [], steps: [] }
   assert.equal(childComplete(childFlowOf(fresh, { merged: true })), true)
   assert.equal(childReport({ ...fresh, stopReason: 'parent', resolved: false }).state, 'stopped')
+})
+
+test('子对话因临时错误失败（网关并发超限、断网）：父计划先等它，不跟着判失败；真失败照旧（摸底第 10 条）', () => {
+  const failedWith = (detail: string) =>
+    ({
+      status: 'failed' as const,
+      working: false,
+      requests: [],
+      parentAsks: [],
+      plans: [],
+      steps: [],
+      resolved: false,
+      awaitingUser: false,
+      messages: [
+        {
+          id: 'e',
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: detail,
+          tools: [],
+          at: 'x',
+          alert: { kind: classifyError(detail), level: 'error', detail },
+        },
+      ],
+    }) as never
+  const gateway = childReport(failedWith('400 membership concurrency limit exceeded: 11/10 resets 03:49'))
+  assert.equal(gateway.state, 'failed', '状态如实显示失败')
+  assert.equal(gateway.settle, 'hold')
+  assert.match(gateway.why, /临时错误/)
+  assert.equal(childReport(failedWith('connect ECONNREFUSED 127.0.0.1:443')).settle, 'hold')
+  assert.equal(childReport(failedWith('TypeError: cannot read properties of undefined')).settle, 'fail')
 })

@@ -40,7 +40,6 @@ import {
   type TaskFilter,
 } from './SidebarTasks'
 import {
-  ComfyIcon,
   McpIcon,
   OverviewIcon,
   RoleIcon,
@@ -104,8 +103,6 @@ export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
   { id: 'workflows', label: t('工作流'), icon: WorkflowIcon },
   { id: 'library', label: t('Skills'), icon: SkillIcon },
   { id: 'mcp', label: t('MCP 工具'), icon: McpIcon },
-  // ComfyUI 工作流原来只在设计模式下出现；视频画质增强也用它，设计模式又要拆成插件（可能整个没有），挪到通用功能
-  { id: 'comfy', label: t('ComfyUI 工作流'), icon: ComfyIcon },
 ]
 
 /** 新建任务的快捷键（见 CommandPalette：浏览器不让网页占 Ctrl+N），行尾悬停时提示 */

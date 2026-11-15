@@ -585,6 +585,7 @@ function seed(): Db {
     workflowParams: {},
     testSteps: [],
     lessons: [],
+    knowledgeInRepo: false,
     wslDistro: '',
     gitPolicy: 'ask',
     // 演示项目都当作已经初始化过，打开设置能直接保存；「重新初始化」可以看推荐的样子

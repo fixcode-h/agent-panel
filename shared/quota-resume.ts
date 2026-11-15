@@ -82,7 +82,7 @@ export function quotaFailure(messages: Msg[]): { kind: 'quota' | 'rate_limit'; d
  * 报错原文里写的恢复时间（毫秒时间戳），认不出返回 undefined：
  * - Claude Code 老版本：`Claude AI usage limit reached|1736000000`（秒）；
  * - 「try again in 1 hour 37 minutes」「resets in 2 days」这类相对时间；
- * - Claude Code 新版本：`resets 3am`、`resets 3:30pm`（本机时区，取下一个这个时刻）
+ * - Claude Code 新版本：`resets 3am`、`resets 3:30pm`（本机时区，取下一个这个时刻）；网关的 `resets 03:49`（24 小时制）
  */
 export function resetFromText(text: string, now: number): number | undefined {
   const epoch = /\|(\d{10})\b/.exec(text)
@@ -112,6 +112,14 @@ export function resetFromText(text: string, now: number): number | undefined {
     if (clock[3].toLowerCase() === 'pm') h += 12
     const d = new Date(now)
     d.setHours(h, Number(clock[2] ?? 0), 0, 0)
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1)
+    return d.getTime()
+  }
+  // 网关的并发超限：`resets 03:49`（24 小时制、本机时区，取下一个这个时刻；摸底报告第 10 条）
+  const clock24 = /resets?\s+(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b/i.exec(text)
+  if (clock24) {
+    const d = new Date(now)
+    d.setHours(Number(clock24[1]), Number(clock24[2]), 0, 0)
     if (d.getTime() <= now) d.setDate(d.getDate() + 1)
     return d.getTime()
   }

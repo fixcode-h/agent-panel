@@ -404,6 +404,7 @@ export function tasksApi(deps: {
     testSteps: [],
     scaledVerify: true,
     lessons: [],
+    knowledgeInRepo: false,
     wslDistro: '',
     gitPolicy: 'ask',
     initializedAt: '',
