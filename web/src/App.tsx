@@ -39,7 +39,6 @@ const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.M
 const OverviewPage = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const PluginPageView = lazy(() => import('@/plugins/PluginPage').then((m) => ({ default: m.PluginPageView })))
-const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 // 项目设置弹窗带着 AI 助手和流程图画布（@xyflow/react），静态引入会把它们整个带进首屏：第一次打开项目设置时才加载
@@ -55,7 +54,6 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   agents: () => <AgentsPage />,
   workflows: () => <WorkflowsPage />,
   chat: () => <ChatPage />,
-  comfy: () => <ComfyPage />,
   plugin: () => <PluginPageView />,
   library: () => <LibraryPage />,
   mcp: () => <McpPage />,
@@ -106,14 +104,15 @@ function parseHash(): Route {
   }
   // 旧地址：面板自带的 UI 设计（#/design/<设计稿>/<子页>）和后来的设计模式（#/pdesign/ui/<设计稿>/<子页>）
   // 现在都是 UI 设计插件的整页，收藏的链接照样能打开
-  // 面板自带的表格页（#/tables/<项目>）现在是表格插件的整页（重构文档第 15 条）
+  // 面板自带的表格页（#/tables/<项目>）现在是表格插件的整页（重构文档第 15 条），
+  // 自带的 ComfyUI 工作流页（#/comfy/<分类>/<工作流>）现在是 Comfy 插件的整页（复查报告 C3）
   const legacy = page === 'design' ? parts.slice(1) : page === 'pdesign' && id === 'ui' ? parts.slice(2) : undefined
-  const tables = page === 'tables' ? parts.slice(1) : undefined
-  if (legacy || tables) {
-    const path = (legacy ?? tables)!.filter(Boolean).join('/')
+  const moved = page === 'tables' || page === 'comfy' ? parts.slice(1) : undefined
+  if (legacy || moved) {
+    const path = (legacy ?? moved)!.filter(Boolean).join('/')
     const r: Route = legacy
       ? { page: 'plugin', id: 'ui-design', sub: 'ui', msg: path || undefined }
-      : { page: 'plugin', id: 'tables', sub: 'tables', msg: path || undefined }
+      : { page: 'plugin', id: page, sub: page, msg: path || undefined }
     // 地址栏也换成新地址：再复制出去的就是新的
     history.replaceState(history.state, '', toHash(r))
     return r

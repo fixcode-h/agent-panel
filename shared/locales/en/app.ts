@@ -61,7 +61,6 @@ export const EN_APP: Record<string, string> = {
   新建聊天: 'New chat',
   新建任务: 'New task',
   项目: 'Projects',
-  更多: 'More',
   新建项目: 'New project',
   管理项目分类: 'Manage project categories',
   全部展开: 'Expand all',

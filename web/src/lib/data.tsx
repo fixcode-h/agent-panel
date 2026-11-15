@@ -326,7 +326,6 @@ export type PageId =
   | 'workflows'
   | 'projects'
   | 'chat'
-  | 'comfy'
   | 'plugin'
   | 'library'
   | 'mcp'
