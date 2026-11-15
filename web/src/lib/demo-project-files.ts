@@ -43,6 +43,19 @@ export const DEMO_CSV =
   'p-1004,USB-C 扩展坞,289,0,缺货，等补货\n' +
   'p-1005,降噪耳机,899,73,\n'
 
+/** 演示项目里的长代码文件（两百多行）：文件窗口阅读区按 80 行一块画，界面检查用它看块和块之间接得上、不叠字 */
+export const DEMO_PRODUCTS_TS =
+  "import type { Product } from '../types'\n\nconst BASE = '/api/products'\n\n" +
+  Array.from(
+    { length: 40 },
+    (_, i) =>
+      `/** 第 ${i + 1} 类商品：按分类取列表，失败时抛出带状态码的错误 */\n` +
+      `export async function listCategory${i + 1}(page = 1): Promise<Product[]> {\n` +
+      `  const res = await fetch(\`\${BASE}?category=${i + 1}&page=\${page}\`)\n` +
+      `  if (!res.ok) throw new Error(\`读取分类 ${i + 1} 失败：\${res.status}\`)\n` +
+      `  return res.json()\n}\n`,
+  ).join('\n')
+
 /** 演示项目里的 xlsx：正式版由服务端解析成各张表，演示里直接给解析后的样子 */
 export const DEMO_SHEETS: Record<string, SheetData[]> = {
   'data/stock.xlsx': [

@@ -344,6 +344,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
     }
+    // 长代码文件：阅读区按 80 行一块绝对定位，块的位置按量出来的行高算。弹窗打开时有缩放动画，
+    // 量的时候要按排版尺寸量，否则下一块会往上盖住这一块的最后几行（用户 2026-11-15 报文字叠在一起）
+    {
+      await panel.getByPlaceholder('查找文件').fill('products.ts')
+      await panel
+        .locator('button[title="src/api/products.ts"]')
+        .click({ timeout: 8000 })
+        .catch(() => errors.push('文件窗口：名称搜索找不到 src/api/products.ts'))
+      const dlg = p.getByRole('dialog')
+      await dlg
+        .locator('[data-line="81"]')
+        .waitFor({ state: 'attached', timeout: 5000 })
+        .catch(() => errors.push('文件窗口：长代码文件没有画出第 81 行'))
+      await settle(p)
+      const seam = await dlg
+        .locator('[data-line="80"], [data-line="81"]')
+        .evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom })))
+        .catch(() => [])
+      if (seam.length === 2 && Math.abs(seam[1].top - seam[0].bottom) > 1)
+        errors.push(
+          `文件窗口：第 80、81 行没接上（差 ${(seam[1].top - seam[0].bottom).toFixed(1)}px），块和块之间叠字或留缝`,
+        )
+      await p.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      await panel.getByPlaceholder('查找文件').fill('')
+    }
     // 表格和树形：CSV 阅读时是表格，xlsx 是解析好的各张表（能切表），JSON 能切到树形
     {
       const dlg = p.getByRole('dialog')
