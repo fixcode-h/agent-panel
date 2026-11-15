@@ -44,6 +44,8 @@ export interface TaskSideRailProps {
   kids: ChildSummary[]
   /** 名下工作流运行的 id：它们也在这里开，但标题写「工作流运行」 */
   ownedIds: string[]
+  /** 名下工作流运行画成子对话列表的行：运行页签的 ▾ 列它们切换 */
+  ownedRows: ChildSummary[]
   childSummaryAt: number
   closeChild: () => void
   /** 右栏里那个子对话自己的对话页（TaskView 传进来，免得两个文件互相引用） */
@@ -128,8 +130,10 @@ export function TaskSideRail(p: TaskSideRailProps) {
                 childOn
                   ? {
                       id: p.openChild,
-                      task: p.kids.find((c) => c.id === p.openChild),
+                      task: [...p.kids, ...p.ownedRows].find((c) => c.id === p.openChild),
                       label: p.ownedIds.includes(p.openChild) ? t('工作流运行') : undefined,
+                      // 打开的是工作流运行：▾ 里列名下的几次运行，和子对话页签切子对话一样
+                      list: p.ownedIds.includes(p.openChild) ? p.ownedRows : undefined,
                       onClose: p.closeChild,
                       focus: p.childSummaryAt,
                       // 切到别的页签时不卸载，回来滚动位置、输入框里的字都还在

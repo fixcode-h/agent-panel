@@ -117,6 +117,8 @@ export function TaskFiles({
     focus?: number
     /** 打开的不是子对话（名下的工作流运行）时页签上的叫法 */
     label?: string
+    /** 页签 ▾ 里列出来切换的：不给是父对话的子对话；打开的是工作流运行时是名下的几次运行 */
+    list?: ChildSummary[]
   }
   /** 停靠到右栏的诊断报告（分析稿 U7）：多一个可关的页签，报告由任务页顶层用 Portal 画进来 */
   report?: DiagnosisRail | null
@@ -300,7 +302,8 @@ export function TaskFiles({
               extra={
                 <ChildSwitcher
                   variant="chevron"
-                  list={siblings}
+                  list={child.list ?? siblings}
+                  label={child.list ? t('切换工作流运行') : undefined}
                   current={child.id}
                   onOpen={(id) => {
                     if (id === child.id) setTab('child')

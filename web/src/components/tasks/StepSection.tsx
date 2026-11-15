@@ -15,6 +15,7 @@ import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
 import { StepCommand } from './StepCommand'
+import { DispatchSlot } from './route-context'
 import { t } from '@shared/i18n'
 import { Badge } from '@/components/ui/badge'
 import { FrostBarBg } from '@/components/ui/frost'
@@ -98,7 +99,10 @@ function StepSectionBase({
   const a = agents.find((x) => x.id === root.agentId)
   const time = stepDuration(root, now)
   const vt = verdictText(root)
-  const shown = hideSpawned(task, msgs)
+  // 派出子任务的那条消息不跟着输出走：放到节点最下面（和对话里运行区固定在输入框上方一个意思），
+  // 输出再长也不会把它顶上去（用户 2026-11-15 要求）
+  const spawns = msgs.filter((m) => m.spawned?.length && m.step === rootId)
+  const shown = hideSpawned(task, msgs).filter((m) => !spawns.includes(m))
 
   return (
     <section className="flex flex-col gap-3" data-step={rootId}>
@@ -182,6 +186,13 @@ function StepSectionBase({
             </div>
           )
         })}
+        {spawns.length > 0 && (
+          <div className="proc-list flex flex-col" data-step-spawns>
+            {spawns.map((m) => (
+              <DispatchSlot key={m.id} msgId={m.id} tool={-1} />
+            ))}
+          </div>
+        )}
         {root.status === 'running' && (
           <span className="flex items-center gap-2 text-xs text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
