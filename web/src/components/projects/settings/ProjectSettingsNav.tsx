@@ -5,8 +5,7 @@ import {
   Inbox,
   Layers,
   Lightbulb,
-  Library,
-  Plug,
+  Blocks,
   Settings2,
   Sparkles,
   Users,
@@ -22,7 +21,9 @@ import { cliColor } from '@/lib/cli-style'
 import { NavItem } from '@/components/ui/dialog-nav'
 import { usePluginProjectSections } from '@/plugins/registry'
 import { pluginIcon } from '@/plugins/icon'
+import type { CapabilityPluginRow } from '@shared/projects/capability-probe'
 import type { ProjectDocsState } from './use-project-docs'
+import { capsCount } from '../caps/use-caps-draft'
 
 /**
  * 项目设置的左边菜单：常规、通用的项目说明、各个 CLI 读的说明文件（从 ProjectSettingsDialog.tsx 挪出）。
@@ -34,17 +35,25 @@ export function ProjectSettingsNav({
   project,
   draft,
   docs,
+  capRows,
 }: {
   section: string
   onSection: (s: string) => void
   project?: Project
   draft: ProjectInput
   docs: Pick<ProjectDocsState, 'isChanged' | 'hasDoc' | 'docOf'>
+  /** 按项目生效的插件和探查结果：它们的设置页挂在「能力」下面，打开了才出现，缺设置亮黄点 */
+  capRows: CapabilityPluginRow[]
 }) {
   const { settings } = useData()
   const { isChanged, hasDoc, docOf } = docs
   const setSection = onSection
-  const pluginSections = usePluginProjectSections()
+  const allSections = usePluginProjectSections()
+  const capRow = (plugin: string) => capRows.find((r) => r.id === plugin)
+  // 全局生效的插件的设置页照旧排在前面；按项目的挪到「能力」下面，只在这个项目打开了时出现
+  const pluginSections = allSections.filter((p) => !capRow(p.plugin))
+  const capSections = allSections.filter((p) => capRow(p.plugin) && draft.capabilities?.plugins?.includes(p.plugin))
+  const capsOn = capsCount(draft.capabilities)
   // 停用的 CLI 不在项目设置里出现
   const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter(
     (c) => c.docs.length && (!settings || cliSettings(settings, c.id).enabled),
@@ -122,14 +131,35 @@ export function ProjectSettingsNav({
           </NavItem>
         )
       })}
-      <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
-        <Library className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-        Skill
+      <NavItem
+        on={section === 'caps'}
+        onClick={() => setSection('caps')}
+        hint={capsOn ? String(capsOn) : undefined}
+        dot={capSections.some((p) => capRow(p.plugin)?.missing)}
+        dotTone="warning"
+      >
+        <Blocks className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+        {t('能力')}
       </NavItem>
-      <NavItem on={section === 'mcp'} onClick={() => setSection('mcp')}>
-        <Plug className="h-4 w-4 shrink-0" strokeWidth={2.2} />
-        {t('MCP')}
-      </NavItem>
+      {capSections.map((p) => {
+        const Icon = p.icon ?? pluginIcon('puzzle')
+        const missing = capRow(p.plugin)?.missing
+        return (
+          <NavItem
+            key={p.key}
+            indent
+            on={section === p.key}
+            onClick={() => setSection(p.key)}
+            hint={p.hint?.(draft.plugins?.[p.plugin])}
+            dot={!!missing}
+            dotTone="warning"
+            dotTitle={missing}
+          >
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+            {t(p.label)}
+          </NavItem>
+        )
+      })}
       <NavItem
         on={section === 'doc'}
         onClick={() => setSection('doc')}

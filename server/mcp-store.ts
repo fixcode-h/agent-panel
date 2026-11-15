@@ -7,6 +7,8 @@ import type { McpStore } from '../shared/cli-spec.ts'
 import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
 import { titleOfTool } from '../shared/mcp-catalog/tool-titles.ts'
+import { mcpServerObject, sameServer, type McpActivation } from '../shared/mcp-library/inject.ts'
+import { loadProjectMcp, saveProjectMcp } from './mcp-library/file.ts'
 import { expandHome } from './cli/extras.ts'
 import { childEnv, runProcess } from './exec/process.ts'
 import { writeCliConfigJson, writeCliConfigText } from './cli/config-write.ts'
@@ -247,23 +249,6 @@ export function readServerTable(table: Record<string, any>, s: McpStore): Record
   return out
 }
 
-function toObject(sv: McpServer, s: McpStore, old: Record<string, any> = {}) {
-  // 保留别的字段，只换掉面板管的这几个
-  const o = { ...old }
-  for (const k of ['type', 'command', 'args', 'env', 'url', 'httpUrl', 'headers', 'http_headers']) delete o[k]
-  if (sv.transport === 'stdio') {
-    if (s.stdioType) o.type = 'stdio'
-    o.command = sv.command
-    if (sv.args.length) o.args = sv.args
-    if (Object.keys(sv.env).length) o.env = sv.env
-  } else {
-    if (s.remoteType) o.type = s.remoteType
-    o[s.urlKey] = sv.url
-    if (Object.keys(sv.headers).length) o[s.headersKey] = sv.headers
-  }
-  return o
-}
-
 async function readText(file: string) {
   return existsSync(file) ? await readFile(file, 'utf8') : ''
 }
@@ -301,7 +286,7 @@ async function putServer(d: Def, sv: McpServer) {
   }
   const root = await readJsonFile(file)
   const table = (root[s.key] && typeof root[s.key] === 'object' ? root[s.key] : {}) as Record<string, any>
-  table[sv.name] = toObject(sv, s, table[sv.name])
+  table[sv.name] = mcpServerObject(sv, s, table[sv.name])
   root[s.key] = table
   await writeCliConfigJson(file, root)
 }
@@ -317,37 +302,92 @@ async function dropServer(d: Def, name: string) {
   await writeCliConfigJson(file, root)
 }
 
-/** 按 CLI id 把工具写进它的配置文件（项目里的配置导入时用，和 mcp-tools 接口走同一套写入） */
-export async function writeMcpTo(cliId: string, sv: McpServer) {
-  const d = managed().find((x) => x.id === cliId)
-  if (!d) throw new Error(t('{cli} 不支持管理 MCP 工具', { cli: cliId }))
-  await putServer(d, sv)
-}
-
-/** 按 CLI id 从它的配置文件里删掉一个工具 */
-export async function removeMcpFrom(cliId: string, name: string) {
-  const d = managed().find((x) => x.id === cliId)
-  if (!d) throw new Error(t('{cli} 不支持管理 MCP 工具', { cli: cliId }))
-  await dropServer(d, name)
-}
-
 export async function mcpOverview(): Promise<McpOverview> {
   // 停用的 CLI 不在列表和安装目标里出现
   const settings = await getSettings()
   const defs = managed().filter((d) => cliSettings(settings, d.id).enabled)
   const per = await Promise.all(defs.map((d) => readServers(d).catch(() => ({}) as Record<string, McpServer>)))
+  const lib = await loadProjectMcp()
   const by = new Map<string, McpEntry>()
+  const ownIn = new Map<string, string[]>()
   defs.forEach((d, i) => {
     for (const sv of Object.values(per[i])) {
+      // 按项目的条目以面板库里的为准：退回全局写入的那几份不另列；能注入的 CLI 里还有同名的，
+      // 说明面板没清（和条目不一样，多半是用户自己在 CLI 里加的），标出来
+      const p = lib[sv.name]
+      if (p) {
+        if (d.mcpStore.inject) ownIn.set(sv.name, [...(ownIn.get(sv.name) ?? []), d.id])
+        continue
+      }
       const cur = by.get(sv.name)
       if (cur) cur.clis.push(d.id)
-      else by.set(sv.name, { ...sv, clis: [d.id] })
+      else by.set(sv.name, { ...sv, clis: [d.id], activation: 'global' })
     }
   })
+  for (const [name, e] of Object.entries(lib)) {
+    const clis = e.clis.filter((id) => defs.some((d) => d.id === id))
+    const fallback = clis.filter((id) => !defs.find((d) => d.id === id)?.mcpStore.inject)
+    by.set(name, {
+      ...e.server,
+      clis,
+      activation: 'project',
+      ...(fallback.length && { fallback }),
+      ...(ownIn.has(name) && { ownIn: ownIn.get(name) }),
+    })
+  }
   return {
-    clis: defs.map((d) => ({ id: d.id, name: d.name, file: d.mcpStore.file })),
+    clis: defs.map((d) => ({ id: d.id, name: d.name, file: d.mcpStore.file, perProject: !!d.mcpStore.inject })),
     servers: [...by.values()].sort((a, b) => a.name.localeCompare(b.name)),
   }
+}
+
+/**
+ * 保存一个条目（「MCP 工具」页和项目设置里的 MCP 共用这一个入口）：
+ * - 全局：装进选中的 CLI 的全局配置，没选的 CLI 里同名的移除（以前的行为）；从按项目改回来时删掉面板库里那份。
+ * - 按项目：存进面板库，每轮按项目注入。能注入的 CLI 的全局配置里面板以前写过的（内容和这个条目、
+ *   改之前的条目一样）清掉；不一样的是用户自己在 CLI 里配的，不动。不能注入的 CLI 退回全局写入。
+ * activation 不给时保持原来的；previous 是界面上改之前的条目，用来认出面板以前写进全局配置的那份
+ */
+export async function saveMcpEntry(sv: McpServer, want: string[], activation?: McpActivation, previous?: McpServer) {
+  const lib = await loadProjectMcp()
+  const old = lib[sv.name]
+  const act = activation ?? (old ? 'project' : 'global')
+  const set = new Set(want)
+  if (act === 'global') {
+    if (old) {
+      delete lib[sv.name]
+      await saveProjectMcp(lib)
+    }
+    for (const d of managed()) await (set.has(d.id) ? putServer(d, sv) : dropServer(d, sv.name))
+    return
+  }
+  const mine = [sv, old?.server, previous].filter((x): x is McpServer => !!x)
+  for (const d of managed()) {
+    if (!d.mcpStore.inject) {
+      await (set.has(d.id) ? putServer(d, sv) : dropServer(d, sv.name))
+      continue
+    }
+    const cur = (await readServers(d))[sv.name]
+    if (cur && mine.some((m) => sameServer(cur, m))) await dropServer(d, sv.name)
+  }
+  lib[sv.name] = { server: sv, clis: want }
+  await saveProjectMcp(lib)
+}
+
+/** 删掉一个条目：全局的从所有 CLI 里移除；按项目的删掉面板库里那份和退回全局写入的几份，用户自己另配的不动 */
+export async function deleteMcpEntry(name: string) {
+  const lib = await loadProjectMcp()
+  const old = lib[name]
+  if (!old) {
+    for (const d of managed()) await dropServer(d, name)
+    return
+  }
+  for (const d of managed()) {
+    const cur = d.mcpStore.inject ? (await readServers(d))[name] : undefined
+    if (!d.mcpStore.inject || (cur && sameServer(cur, old.server))) await dropServer(d, name)
+  }
+  delete lib[name]
+  await saveProjectMcp(lib)
 }
 
 /**
@@ -435,6 +475,15 @@ export async function testMcp(sv: McpServer, cwd = process.cwd()): Promise<McpTe
   }
 }
 
+/** 请求里的生效方式：只认两个值，别的当没给（保持原来的） */
+export const activationOf = (v: unknown): McpActivation | undefined =>
+  v === 'global' || v === 'project' ? v : undefined
+/** 请求里改之前的条目：读不懂就当没给，只用来认出面板写过的全局配置 */
+export const previousOf = (v: unknown): McpServer | undefined => {
+  const p = McpServer.safeParse(v)
+  return p.success ? p.data : undefined
+}
+
 export function mcpApi() {
   const guard = (fn: (c: any) => Promise<Response>) => async (c: any) => {
     try {
@@ -467,15 +516,14 @@ export function mcpApi() {
         guard(async (c) => {
           const body = await c.req.json()
           const sv = parse({ ...body.server, name: c.req.param('name') })
-          const want = new Set<string>(body.clis ?? [])
-          for (const d of managed()) await (want.has(d.id) ? putServer(d, sv) : dropServer(d, sv.name))
+          await saveMcpEntry(sv, body.clis ?? [], activationOf(body.activation), previousOf(body.previous))
           return c.json(await mcpOverview())
         }),
       )
       .delete(
         '/:name',
         guard(async (c) => {
-          for (const d of managed()) await dropServer(d, c.req.param('name'))
+          await deleteMcpEntry(c.req.param('name'))
           return c.json(await mcpOverview())
         }),
       )

@@ -1,8 +1,5 @@
 /** 英文词典的一部分，键是中文原文：项目设置里的 Skill 分节 */
 export const EN_PROJECT_SKILLS: Record<string, string> = {
-  '先创建项目，再管理项目里的技能。': 'Create the project first, then manage its skills.',
-  '本地目录改了，先点「确认」保存，再管理新目录里的技能。':
-    'The folder changed. Click "Confirm" to save it, then manage the skills in the new folder.',
   'Skill「{name}」格式有问题': 'Skill "{name}" has format problems',
   '项目：{path}': 'Project: {path}',
   'SKILL.md：{file}': 'SKILL.md: {file}',

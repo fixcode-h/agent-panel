@@ -6,51 +6,16 @@ import { Button } from '@/components/ui/button'
 import { dialogScrollClass } from '@/components/ui/dialog'
 import { CliSkills } from '@/components/settings/CliSkills'
 import { DocPage } from '../ProjectDocs'
-import { ProjectMcpSection } from '../ProjectMcpSection'
-import { ProjectSkillsSection } from '../ProjectSkillsSection'
 import { ProjectCliTrust } from '../ProjectCliTrust'
 import { ProjectPackages } from '../ProjectPackages'
 import type { ProjectDocsState } from './use-project-docs'
 import type { SetField } from './project-draft'
 
 /*
- * 项目设置里直接读写项目目录的几页：MCP、Skill、项目说明和各个 Agent 读的说明（从 ProjectSettingsDialog.tsx 挪出）。
+ * 项目设置里直接读写项目目录的几页：项目说明和各个 Agent 读的说明（从 ProjectSettingsDialog.tsx 挪出；
+ * 原来的 MCP、Skill 两页挪到了项目工具的「技能与 MCP」页，见 ../caps/ProjectCapsPage.tsx）。
  * 都要按保存过的目录读写：新建项目、目录改了没保存时只显示一句提示。
  */
-
-/** 项目设置 →「MCP」 */
-export function McpPane({ project, draftPath }: { project?: Project; draftPath: string }) {
-  return (
-    <div className={dialogScrollClass}>
-      {!project ? (
-        <p className="text-body leading-relaxed text-subtle">{t('先创建项目，再管这个项目的 MCP 配置。')}</p>
-      ) : !project.path || draftPath.trim() !== project.path ? (
-        <p className="text-body leading-relaxed text-subtle">
-          {t('本地目录改了，先点「确认」保存，再管新目录里的 MCP 配置。')}
-        </p>
-      ) : (
-        <ProjectMcpSection key={project.id} project={project} />
-      )}
-    </div>
-  )
-}
-
-/** 项目设置 →「Skill」 */
-export function SkillsPane({ project, draftPath }: { project?: Project; draftPath: string }) {
-  return (
-    <div className={dialogScrollClass}>
-      {!project ? (
-        <p className="text-body leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
-      ) : !project.path || draftPath.trim() !== project.path ? (
-        <p className="text-body leading-relaxed text-subtle">
-          {t('本地目录改了，先点「确认」保存，再管理新目录里的技能。')}
-        </p>
-      ) : (
-        <ProjectSkillsSection key={project.id} projectId={project.id} />
-      )}
-    </div>
-  )
-}
 
 /**
  * 项目设置 →「项目说明」和各个 Agent 读的说明（section 是 doc 或 cli:<id>）。

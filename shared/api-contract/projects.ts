@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { LessonReviewItem } from '../lesson-review.ts'
 import type { ProjectProposal } from '../projects/init.ts'
 import { GlobalLesson, GlobalLessons, Project, ProjectInput, type ProjectLesson } from '../schema.ts'
+import { CapabilityProbe, CapabilityProbeInput } from '../projects/capability-probe.ts'
 import { endpoint, shaped } from './define.ts'
 
 export const projectsContract = {
@@ -41,6 +42,16 @@ export const projectsContract = {
     method: 'GET',
     path: '/projects/:id/panel-source',
     res: z.object({ panelSource: z.boolean() }),
+  }),
+  /**
+   * 项目「能力」页：按项目生效的插件、推荐理由（detect）和还缺的设置（ready）。
+   * 新建项目时 projectId 为空，按表单里的目录探查
+   */
+  capabilityProbe: endpoint({
+    method: 'POST',
+    path: '/project-capabilities/probe',
+    body: CapabilityProbeInput,
+    res: CapabilityProbe,
   }),
   globalLessons: endpoint({ method: 'GET', path: '/global-lessons', res: z.array(GlobalLesson) }),
   /** 全局教训只在用户确认后整份保存，confirmed 由确认按钮带上 */

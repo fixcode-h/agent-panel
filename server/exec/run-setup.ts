@@ -26,6 +26,7 @@ import { pluginRunTools } from './plugin-run.ts'
 import { systemNote } from './recovery.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { prepareRunSkills, type RunSkills } from '../skills/run-skills.ts'
+import { projectMcpForRun } from '../mcp-library/run.ts'
 import type { createFileEvents } from './file-events.ts'
 
 /** 定下这次调用的角色、CLI、目录和模型；不能跑时给出写给用户的原因 */
@@ -190,7 +191,7 @@ async function launchSkills(
  * 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂，新会话的提示词里说明怎么用；令牌只在这一轮有效。
  * 插件改了的文件经 fileEvents 记成这一轮的改动
  */
-export function attachPlugins(
+export async function attachPlugins(
   ctx: RealContext,
   call: AgentCall,
   who: {
@@ -204,7 +205,7 @@ export function attachPlugins(
   fileEvents: ReturnType<typeof createFileEvents>,
 ) {
   const { agent, resume, cwd, step, agentId, conversation } = who
-  return pluginRunTools(
+  const tools = await pluginRunTools(
     ctx,
     { agent, resume: !!resume, cwd, step, agentId, conversation },
     {
@@ -233,4 +234,8 @@ export function attachPlugins(
       },
     },
   )
+  // 全局 MCP 库里按项目生效、这个项目打开了的条目（每轮注入，见 server/mcp-library/run.ts）；
+  // 和插件工具同一个时机取：都是「这个项目这一轮交给 Agent 什么」，压缩、审查这类操作都不带
+  const project = ctx.task.projectId && ctx.task.projectId === ctx.project?.id ? ctx.project : undefined
+  return { ...tools, projectMcp: await projectMcpForRun(project) }
 }

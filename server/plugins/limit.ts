@@ -12,6 +12,8 @@ export const PLUGIN_LIMITS = {
   tools: 8_000,
   /** 插件页的运行状态 */
   status: 5_000,
+  /** 项目「能力」页问 detect / ready（插件接口 9）：只读目录，打开页面时等它 */
+  probe: 5_000,
   onConfig: 10_000,
   stop: 10_000,
 } as const

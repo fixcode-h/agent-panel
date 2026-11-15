@@ -500,8 +500,12 @@ export const api = {
     }),
   /** MCP 工具 */
   mcpTools: () => request<McpOverview>('/mcp-tools'),
-  saveMcpTool: (server: McpServer, clis: string[]) =>
-    request<McpOverview>(`/mcp-tools/${encodeURIComponent(server.name)}`, json('PUT', { server, clis })),
+  /** activation 不给时保持原来的生效方式；previous 是改之前的条目，服务端用它认出以前写进全局配置的那份 */
+  saveMcpTool: (
+    server: McpServer,
+    clis: string[],
+    more: { activation?: 'global' | 'project'; previous?: McpServer } = {},
+  ) => request<McpOverview>(`/mcp-tools/${encodeURIComponent(server.name)}`, json('PUT', { server, clis, ...more })),
   deleteMcpTool: (name: string) => request<McpOverview>(`/mcp-tools/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   testMcpTool: (server: McpServer) => request<McpTestResult>('/mcp-tools/test', json('POST', server)),
   /** 项目设置里的 MCP：按项目读，项目目录里识别到的和面板管理的一起返回 */

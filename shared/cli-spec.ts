@@ -97,6 +97,23 @@ export const McpStore = z.object({
   stdioType: z.boolean().default(false),
   /** 请求头写在哪个字段 */
   headersKey: z.string().default('headers'),
+  /**
+   * 「按项目」的 MCP 工具每轮怎么交给 CLI（设计稿 Agent侧栏与项目管理重设计 6.2，见 shared/mcp-library/inject.ts）：
+   * 条目的写法（字段名、type）和上面写进全局配置的一样，只是改成这一轮的参数。不写表示这个 CLI 还不能按项目，
+   * 「按项目」的条目对它退回全局写入，界面上注明
+   */
+  inject: z
+    .object({
+      /**
+       * json：所有条目合成一段 { [key]: { 名字: 条目 } }，填进 args 的 {json}，整段参数只加一次；
+       * toml：每个条目的每个字段单独一组 args，{key} 是 key.名字.字段，{value} 是 TOML 写法的值
+       */
+      format: z.enum(['json', 'toml']),
+      args: z.array(z.string()).min(1),
+      /** 为什么这样带（依据），只给人看 */
+      why: z.string().default(''),
+    })
+    .optional(),
 })
 export type McpStore = z.infer<typeof McpStore>
 

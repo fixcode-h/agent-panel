@@ -564,20 +564,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
     await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
     await footSpace('常规')
-    // 项目技能：项目目录里的和用户级的都列出来，缺说明的技能给出问题提示和 AI 修复
-    await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
-    await check(p, '项目设置-Skill', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
-    await footSpace('Skill')
-    // MCP：项目里识别到的配置（三种状态各有一条）、面板管理的工具、导入与 AI 排查入口
-    await dlg.getByRole('button', { name: 'MCP', exact: true }).click()
-    await check(p, '项目设置-MCP', [
-      '只在项目里',
-      '和各 Agent 的配置一致',
-      '和各 Agent 的配置不同',
-      '全部导入',
-      '用 AI 排查整页',
-    ])
-    await footSpace('MCP')
+    // 能力（设计稿：Agent侧栏与项目管理重设计 6.3）：按项目生效的插件卡片（演示给表格、UE 两个示例）、
+    // MCP 和技能列表、右栏「交给 Agent 的」；项目目录里的技能和 MCP 配置挪到了项目工具的「技能与 MCP」页（下面单独测）
+    await dlg.getByRole('button', { name: /^能力/ }).click()
+    await check(p, '项目设置-能力', ['项目能力', '表格', 'UE', 'MCP 工具', '技能', '交给 Agent 的', '始终启用'])
+    await footSpace('能力')
     // Pi 的说明页上有「项目配置」信任三选一：演示项目里有 .pi/skills，选「跟随」时提示它不会加载（ADR 0050）
     await dlg.getByRole('button', { name: /^Pi\b/ }).click()
     await check(p, '项目设置-Pi项目配置', ['项目配置', '跟随 Pi', '这个项目里有 Pi 的项目配置：.pi/skills'])
@@ -588,9 +579,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 这个项目的插件：没选「信任」时提示不会加载（ADR 0050 第四期）
     await dlg.getByText('这个项目的插件', { exact: true }).first().scrollIntoViewIfNeeded()
     await check(p, '项目设置-Pi项目插件', ['npm:@team/pi-review-rules', '没选「信任」'])
-    // 两页切回来都正常（导航里 Skill 和 MCP 相邻）
-    await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
-    await check(p, '项目设置-Skill 再切回', ['新建 Skill'])
+    // 切回「能力」也正常（滚动区换了分支再回来）
+    await dlg.getByRole('button', { name: /^能力/ }).click()
+    await check(p, '项目设置-能力 再切回', ['项目能力'])
     await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
     await check(p, '项目设置-必备角色', ['协调器', '执行', '文档', '评审', '测试验收', '版本控制'])
     await footSpace('必备角色')
@@ -714,6 +705,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.keyboard.press('Escape')
       await settle(p).catch(() => {})
     }
+    // 项目工具「技能与 MCP」（#/projects/<id>/capabilities，设计稿 B3）：项目自己的和从全局继承的分两块；
+    // 原来项目设置里的 Skill、MCP 两页在「项目技能」「项目 MCP」页签里，内容照旧
+    const projectHash = await p.evaluate(() => location.hash)
+    await p.evaluate((h) => (location.hash = `${h.split('/').slice(0, 3).join('/')}/capabilities`), projectHash)
+    await check(p, '技能与MCP-总览', ['技能与 MCP', '项目自己的', '从全局继承', 'release-notes', 'agent-panel'])
+    await p.getByRole('radio', { name: '项目技能' }).click()
+    await check(p, '技能与MCP-项目技能', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
+    await p.getByRole('radio', { name: '项目 MCP' }).click()
+    await check(p, '技能与MCP-项目MCP', [
+      '只在项目里',
+      '和各 Agent 的配置一致',
+      '和各 Agent 的配置不同',
+      '全部导入',
+      '用 AI 排查整页',
+    ])
+    await p.evaluate((h) => (location.hash = h), projectHash)
+    await settle(p).catch(() => {})
     // 项目首页：和首页一样列等你处理的对话；输入和已有对话是同一件事的要求时，提示可以直接发过去
     await p.locator('#task-prompt').click()
     await p.keyboard.type('到货通知的按钮在详情页上点了没反应')

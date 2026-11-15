@@ -146,6 +146,8 @@ const servers: McpEntry[] = [
     url: '',
     headers: {},
     clis: ['claude', 'pi'],
+    // 演示「按项目生效」：Pi 还不能每轮注入，界面上会注明退回全局
+    activation: 'project',
   },
 ]
 
@@ -165,6 +167,7 @@ const mcpClis = (active: string[]) =>
     id: c.id,
     name: c.name,
     file: c.mcpStore!.file,
+    perProject: !!c.mcpStore!.inject,
   }))
 
 export const demoMcpServers = servers
@@ -172,7 +175,13 @@ export const demoMcpOverview = (active: string[]): McpOverview => ({
   clis: mcpClis(active),
   // 停用的 CLI 不在「装在哪些 CLI」里显示
   servers: servers
-    .map((s) => ({ ...s, clis: s.clis.filter((id) => active.includes(id)) }))
+    .map((s) => {
+      const clis = s.clis.filter((id) => active.includes(id))
+      // 按项目的条目：定义里没写 inject 的 CLI 退回全局写入，和真后端的 mcpOverview 同一个口径
+      const fallback =
+        s.activation === 'project' ? clis.filter((id) => !CLIS.find((c) => c.id === id)?.mcpStore?.inject) : []
+      return { ...s, clis, activation: s.activation ?? 'global', ...(fallback.length && { fallback }) }
+    })
     .sort((a, b) => a.name.localeCompare(b.name)),
 })
 
@@ -257,8 +266,15 @@ export function demoLibrary(
     if (!id) return demoMcpOverview(active)
     const name = decodeURIComponent(id)
     const at = servers.findIndex((s) => s.name === name)
+    const prev = at >= 0 ? servers[at] : undefined
     if (at >= 0) servers.splice(at, 1)
-    if (method === 'PUT') servers.push({ ...(body.server as McpServer), name, clis: body.clis ?? [] })
+    if (method === 'PUT')
+      servers.push({
+        ...(body.server as McpServer),
+        name,
+        clis: body.clis ?? [],
+        activation: body.activation ?? prev?.activation ?? 'global',
+      })
     return demoMcpOverview(active)
   }
   // 切换全局 / 按项目（shared/api-contract/skills.ts）：演示版只改内存里的标记，按项目的自带技能算作从用户目录撤掉

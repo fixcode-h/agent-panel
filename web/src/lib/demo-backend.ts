@@ -1,5 +1,6 @@
 import { demoPlugins } from './demo/demo-plugins'
 import { demoMcpCatalog } from './demo/demo-mcp-catalog'
+import { demoCapabilities } from './demo/demo-capabilities'
 import { demoJobStore, demoJobs, setDemoJobs } from './demo/demo-jobs'
 import { demoChildCounts, demoWithLive } from './demo/demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
@@ -1756,6 +1757,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'tts') return demoTts(method, seg)
   if (res === 'plugins') return demoPlugins(method, id)
   if (res === 'mcp-catalog') return demoMcpCatalog(method, id, body)
+  if (res === 'project-capabilities' && id === 'probe') return demoCapabilities(body)
   if (res === 'project-trust') return { pi: ['.pi/skills'] }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {
