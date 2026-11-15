@@ -72,14 +72,21 @@ export function CodeLines({
   const shown: number[] = []
   for (let b = win.from; b <= Math.min(win.to, blocks - 1); b++) shown.push(b)
 
-  // 量真实行高：拿画出来的一整块的高度除以行数
+  // 量真实行高：拿画出来的一整块的高度除以行数。
+  // 用 ResizeObserver 量排版尺寸，不用 getBoundingClientRect：弹窗打开时有缩放动画（anim-dialog 从 0.96 放大），
+  // 那一刻量到的是缩小后的高度，80 行一块就差出三行多，下一块盖到这一块的末尾上，文字叠在一起（用户 2026-11-15）。
+  // 排版尺寸不受 transform 影响；字号、字体后来才变（网页字体加载完、改了字号）时它也会再报一次
   useLayoutEffect(() => {
     const el = firstBlock.current
     const rows = Number(el?.dataset.rows ?? 0)
     if (!el || !rows) return
-    const h = el.getBoundingClientRect().height / rows
-    if (h > 0 && Math.abs(h - rowHRef.current) > 0.0005) setRowH(h)
-    // 画的块换了、内容换了才重新量；量出来和现在一样就不再 setState，不会来回渲染
+    const ro = new ResizeObserver(([e]) => {
+      const h = (e.borderBoxSize?.[0]?.blockSize ?? e.contentRect.height) / rows
+      if (h > 0 && Math.abs(h - rowHRef.current) > 0.0005) setRowH(h)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+    // 画的块换了、内容换了才换一个量的对象；量出来和现在一样就不再 setState，不会来回渲染
   }, [win, lines])
 
   // 打开时滚到提到的那一行

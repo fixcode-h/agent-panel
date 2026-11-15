@@ -38,7 +38,8 @@ export function FloatAbove({
   }, [anchor])
   useLayoutEffect(() => {
     if (!el || !onHeight) return
-    const read = () => onHeight(Math.round(el.getBoundingClientRect().height))
+    // 用排版高度：外层带缩放动画时（弹窗打开）getBoundingClientRect 会量小，留出来的空就不够
+    const read = () => onHeight(el.offsetHeight)
     read()
     const ro = new ResizeObserver(read)
     ro.observe(el)

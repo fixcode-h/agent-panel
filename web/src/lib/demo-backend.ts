@@ -177,7 +177,7 @@ import { demoProjectMcp } from './demo-project-mcp'
 import { demoStyles } from './demo-styles'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
-import { DEMO_CSV, DEMO_FILES, DEMO_README, DEMO_SHEETS } from './demo-project-files'
+import { DEMO_CSV, DEMO_FILES, DEMO_PRODUCTS_TS, DEMO_README, DEMO_SHEETS } from './demo-project-files'
 // 拆出去的演示接口：报错和校验、在跑的一轮、本机生图、进程面板、任务里的样例
 import { fail, parse } from './demo-http'
 import { live } from './demo-live'
@@ -1238,6 +1238,7 @@ function demoResolve(paths: string[]): (Attachment & { from: string })[] {
 const DEMO_CONTENTS: Record<string, string> = {
   'README.md': DEMO_README,
   'data/products.csv': DEMO_CSV,
+  'src/api/products.ts': DEMO_PRODUCTS_TS,
   'src/App.tsx':
     "import { Routes, Route } from 'react-router-dom'\nimport { Login } from './pages/Login'\nimport { ProductDetail } from './pages/ProductDetail'\nimport { OrderList } from './pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
   'src/api/cart.ts':

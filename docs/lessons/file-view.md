@@ -13,8 +13,9 @@ paths: web/src/components/files/**, web/src/lib/file-highlight*.ts, web/src/lib/
 - 起因：用户 2026-11-07 报打开 167 KB 的 lua 浏览器卡死：`splitHtmlLines` 遇到超长行是平方级，编辑时 `FileViewDialog` 每敲一个字还整份重新高亮。
 - 防线：`web/src/lib/file-highlight.test.ts`、`web/src/lib/file-search.test.ts`、`web/src/lib/md-math.test.ts`；`scripts/ui/07-projects.mjs` 的「文件窗口-搜索」。
 
-## 虚拟列表的每一行必须一样高
+## 虚拟列表按排版尺寸量行高，不用 getBoundingClientRect
 
-- 规则：阅读区的块按「行数 × 量出来的行高」绝对定位，任何一行被撑高，这一块就盖住下一块。行固定高度（`h-[1.6em]`），拼 HTML 时去掉落单的 `\r`（只按 `\n` 拆行，`\r\r\n` 混合换行残留的 `\r` 经 innerHTML 会变成换行）。别的会撑高行的字符也照此处理。
-- 起因：用户 2026-11-14 在诊断报告里点 UE 的 .cpp 打开弹窗，跳到的行附近几行文字叠在一起。
-- 防线：`web/src/components/files/code-lines-html.test.ts`。
+- 规则：要存下来、拿去算位置的尺寸（虚拟列表的行高、留白高度、弹窗大小）一律量排版尺寸：`ResizeObserver` 的 `borderBoxSize`（带小数）或 `offsetWidth/offsetHeight`。`getBoundingClientRect` 受 transform 影响，弹窗打开的缩放动画（`anim-dialog` 从 0.96 放大）期间量会小 4%，阅读区 80 行一块就差出三行多，下一块盖到上一块末尾上叠字。`getBoundingClientRect` 只用来和同一时刻的指针坐标、别的元素的屏幕位置比。
+- 规则：阅读区每一行也固定高度（`h-[1.6em]`），拼 HTML 时去掉落单的 `\r`，任何一行都撑不高、块的位置只取决于行数。
+- 起因：用户 2026-11-14 / 11-15 两次报诊断报告里点开 UE 的 .cpp，跳到的行附近几行文字叠在一起、行号跳三个号。第一次按 `\r` 修（67d017d）没修到根上，真正原因是打开动画中量了行高。`modal-resize.tsx`、`minimized-chat.tsx` 早就踩过同一个坑。
+- 防线：`scripts/ui/07-projects.mjs` 打开两百多行的 `src/api/products.ts`，核对第 80、81 行接得上；`web/src/components/files/code-lines-html.test.ts`。
