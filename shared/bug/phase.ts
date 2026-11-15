@@ -169,11 +169,12 @@ export function inputPhase(input: Record<string, unknown>, c: BugCase, list: Dia
 }
 
 /**
- * 用户点了「不修了」之后给 Agent 的话：报告关闭，不再交新版、不改文件；用户回头又要修，请他在父对话重新报这个 Bug。
+ * 用户点了「不修了」、之后还没在对话里说过话时给 Agent 的话：报告关闭，不交新版、不改文件。
+ * 用户在这个对话里说要接着查，面板重新打开流程（shared/bug/reopen.ts），那时按流程交新报告。
  * 交报告、改文件、收尾三处共用一个说法。发给 Agent 的提示词，不翻译
  */
 export const closedInfo = (v: number) =>
-  `用户在第 ${v} 版点了「不修了」，这份诊断报告已经关闭：不能再交新一版，也不改文件。用户之后又要修，告诉用户在父对话里重新报这个 Bug（会开新的子对话），不要在这里接着修。`
+  `用户在第 ${v} 版点了「不修了」，这份诊断报告已经关闭：现在不交新一版，也不改文件，结束这一轮。用户之后在这个对话里说要接着查或接着修，面板会重新打开流程，那时再按流程交新的报告。`
 
 /**
  * 不修了、但临时日志还没删完（shared/bug/cleanup.ts）：这时要它删日志，不能说「不改文件」
@@ -199,7 +200,11 @@ export const closedOrCleaning = (d: Pick<Diagnosis, 'status' | 'cleanup'>, v: nu
  * 能改哪些文件：files 是放行的范围（还要排除 FREE_FILE 由调用方处理），deny 是不能改时给 Agent 的话。
  * 同意加日志后只放行日志计划里的文件；确认方案后放行方案里的文件，加上论证时加过日志的文件（要删临时日志）
  */
-export function editScope(list: Diagnosis[]): { files: string[] } | { deny: string } {
+export function editScope(
+  list: Diagnosis[],
+  /** 不修了之后用户又让它接着做（shared/bug/reopen.ts）：新报告交上来之前不改文件，说法换成「重新交报告」 */
+  reopen?: (v: number) => string,
+): { files: string[] } | { deny: string } {
   const d = list.at(-1)
   if (!d) return { deny: '这是用户报的 Bug：先按流程查，用 submit_diagnosis 交报告，用户同意了再改文件。' }
   const phase = phaseOf(d)
@@ -214,7 +219,7 @@ export function editScope(list: Diagnosis[]): { files: string[] } | { deny: stri
   if (d.status === 'questioned' && phase !== 'fix')
     return { deny: `用户对第 ${v} 版提了意见：先逐条处理、用 submit_diagnosis 改好再交，用户同意后再改文件。` }
   // 取消后删临时日志：只放行查到日志的文件（和用户勾了要删的新文件），其余照旧不改
-  if (d.status === 'cancelled') return cleaning(d) ? { files: cleanupFiles(d) } : { deny: closedInfo(v) }
+  if (d.status === 'cancelled') return cleaning(d) ? { files: cleanupFiles(d) } : { deny: (reopen ?? closedInfo)(v) }
   if (phase === 'evidence') {
     if (d.status === 'approved') return { files: d.files }
     return {
