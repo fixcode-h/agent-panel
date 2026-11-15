@@ -8,7 +8,7 @@ export const BUG_UPGRADE_HEAD =
 
 /**
  * 父对话 send_to_conversation 写了 kind: "bug"：把已有子对话标成用户报的 Bug（用户 2026-11-07 要的）。
- * 和用户在子对话里发 /bug 一样（server/tasks/conversation-routes.ts）：标上 task.bug（kind: report）它才有 submit_diagnosis、
+ * 和用户在子对话里发 /bug 一样（server/tasks/routes/conversation/send.ts）：标上 task.bug（kind: report）它才有 submit_diagnosis、
  * 改文件前要过诊断关卡；续接的会话里没有完整流程，记 task.bug.methodPending 让下一轮补带一次（server/exec/bug-prompt.ts）。
  * 正在回复的这一轮换不了工具，先拒绝；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）。
  * 返回要交给子对话的话（已经是 Bug 的原样交）

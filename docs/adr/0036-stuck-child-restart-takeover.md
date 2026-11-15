@@ -12,15 +12,15 @@
 
 ## 事实核对
 
-| 位置                                                  | 改动前                                                                                                                  |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `shared/task.ts` 的 `childIdleAsk`                    | 静默到阈值（`childIdleAskMinutes`，默认 3 分钟）问一次，同一段静默最多 3 次，只问不停                                   |
-| `server/tasks/idle-ask.ts`                            | 定时扫内存里在跑的子对话，经 `deliver` 发询问；收不下（`held`）就撤掉                                                   |
-| `server/exec/runner.ts` 的 `stalledTurn`              | 交给 CLI 的东西 90 秒没有任何输出就标「没有响应」；下一条消息交付时 `restartStalled` 停掉它接回会话重开。跑工具期间不标 |
-| `server/tasks/run.ts` 的 `restartStalled`             | 停的原因记 `stalled`，`followUp` 接回原会话（`--resume`）开新的一轮；起不来时错误抛给调用方，询问那边只写日志           |
-| `server/tasks/run.ts` 里父对话的 `createConversation` | 新建子对话的逻辑写在父对话那一轮的闭包里，面板自己建不了                                                                |
-| `server/tasks/conversation-routes.ts` 的 `resumeKids` | 父对话继续时把 `parent` / `restart` / `stalled` / `lost` 停下的子对话一起拉起来                                         |
-| `server/tasks/children/report.ts` 的 `reportChild`    | 子对话停下、失败都给父对话写「已中断 / 失败，交回原子对话重试」                                                         |
+| 位置                                                         | 改动前                                                                                                                  |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `shared/task.ts` 的 `childIdleAsk`                           | 静默到阈值（`childIdleAskMinutes`，默认 3 分钟）问一次，同一段静默最多 3 次，只问不停                                   |
+| `server/tasks/idle-ask.ts`                                   | 定时扫内存里在跑的子对话，经 `deliver` 发询问；收不下（`held`）就撤掉                                                   |
+| `server/exec/runner.ts` 的 `stalledTurn`                     | 交给 CLI 的东西 90 秒没有任何输出就标「没有响应」；下一条消息交付时 `restartStalled` 停掉它接回会话重开。跑工具期间不标 |
+| `server/tasks/run.ts` 的 `restartStalled`                    | 停的原因记 `stalled`，`followUp` 接回原会话（`--resume`）开新的一轮；起不来时错误抛给调用方，询问那边只写日志           |
+| `server/tasks/run.ts` 里父对话的 `createConversation`        | 新建子对话的逻辑写在父对话那一轮的闭包里，面板自己建不了                                                                |
+| `server/tasks/routes/conversation/resume.ts` 的 `resumeKids` | 父对话继续时把 `parent` / `restart` / `stalled` / `lost` 停下的子对话一起拉起来                                         |
+| `server/tasks/children/report.ts` 的 `reportChild`           | 子对话停下、失败都给父对话写「已中断 / 失败，交回原子对话重试」                                                         |
 
 ## 决策
 

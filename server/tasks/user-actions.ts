@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 /**
  * 等你操作（request_user_action）的服务端：用户点「完成了」「做不了」「跳过」、在输入框交回、停止对话时撤掉。
  * 判定和记录在 shared/user-action.ts；设计见 docs/openspec/changes/user-action-wait/design.md
@@ -42,9 +43,10 @@ export function settleUserAction(
   return r
 }
 
-export function registerUserActionRoutes(s: TasksScope) {
-  // 「完成了」「做不了」「跳过」：记下结果、把那一句推给对话开新的一轮（交回内容走普通的发消息，见 conversation-routes）
-  s.routes.post('/:id/user-action/:aid', async (c) => {
+export function userActionRoutes(s: TasksScope): Hono {
+  const app = new Hono()
+  // 「完成了」「做不了」「跳过」：记下结果、把那一句推给对话开新的一轮（交回内容走普通的发消息，见 server/tasks/routes/conversation/send.ts）
+  app.post('/:id/user-action/:aid', async (c) => {
     const id = c.req.param('id')
     const body = Settle.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
@@ -62,6 +64,7 @@ export function registerUserActionRoutes(s: TasksScope) {
       .catch(s.alertOn(id, 'delivery', t('没能把你的操作结果交给它，发一条消息或点「继续执行」会接着处理')))
     return c.json(await currentTask(s, id))
   })
+  return app
 }
 
 /**

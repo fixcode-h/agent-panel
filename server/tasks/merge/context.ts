@@ -6,7 +6,7 @@ import type { IntegrateResult } from '../../exec/worktree-integrate.ts'
  * 收成显式的对象传给 submit / integrate / after-merge / report，谁读谁写一眼看得出来：
  * - merging：integrate 的 finishChildStep 合并期间加、合完删；submit 拒收「正在合并」；
  *   外面经 TasksScope 读（run.ts 一轮结束时不催正在合并的子对话，worktree-routes.ts 合并中不让删分支）
- * - mergeNudged：submit 收到收尾请求时删；外面经 TasksScope 读写（run.ts、actions-routes.ts）
+ * - mergeNudged：submit 收到收尾请求时删；外面经 TasksScope 读写（run.ts、routes/actions/patch.ts）
  * - planNudged：这几个阶段不碰，经 TasksScope 由 drive.ts 读写，createMerge 的 stuckAfterNudge 读
  * - wrapRecheckMs：submit 在收尾请求退回收件箱时用
  */

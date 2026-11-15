@@ -2,9 +2,9 @@
 
 - 状态：已修复（`shared/resume-kids.test.ts`、`server/tasks/keepalive-endlive.test.ts`、`shared/plan/index.test.ts`「用户亲手停的不是失败」、e2e `09-subagent-runtime`「父对话被停下后继续……」通过）
 - 症状：先单独停掉一个子对话再停父对话，停止原因都变成「父对话」；继续父对话后已交付的子对话把做完的事又做一遍，用户停掉的子对话也被拉起；父对话把「用户停掉了它」当成失败去交回重试
-- 入口：`server/tasks/keepalive.ts` 的 `stopTask`；`server/tasks/children/stop.ts` 的 `closeChildren`、`reportChild`；`server/tasks/conversation-routes.ts` 的 `resumeKids`、`resumePrompt`；`shared/resume-kids.ts`；`shared/task.ts` 的 `childReport`
+- 入口：`server/tasks/keepalive.ts` 的 `stopTask`；`server/tasks/children/stop.ts` 的 `closeChildren`、`reportChild`；`server/tasks/routes/conversation/resume.ts` 的 `resumeKids`、`resumePrompt`；`shared/resume-kids.ts`；`shared/task.ts` 的 `childReport`
 - 根因类型：连带停止覆盖了已有的停止原因；继续时只按停止原因筛，不看父对话是否已收下结果；用户停止按失败上报
-- 模块：`server`（`server/tasks/keepalive.ts`、`server/tasks/children/index.ts`、`server/tasks/conversation-routes.ts`、`shared/resume-kids.ts`、`shared/task.ts`）
+- 模块：`server`（`server/tasks/keepalive.ts`、`server/tasks/children/index.ts`、`server/tasks/routes/conversation/resume.ts`、`shared/resume-kids.ts`、`shared/task.ts`）
 - 关键词：停止父对话、继续执行、停止原因、父对话结束时一起结束、用户暂停、返工、重派、待收尾、已交付
 
 ## 现象

@@ -2,7 +2,7 @@
 
 - 状态：已修复（`server/tasks/keepalive-endlive.test.ts`、`web/src/components/tasks/child-line.test.ts`、`server/exec/parsers.test.ts` 通过）
 - 症状：父对话长时间「等待模型」，子对话交回的消息不处理；子对话 Agent 进程已回收，父对话里那一行还在转圈；停止父对话后子对话看着没停，子对话有子任务在跑时停了父对话再继续，子对话起不来
-- 入口：`server/tasks/keepalive.ts` 的 `stopTree` / `watchStop`、`server/tasks/conversation-routes.ts` 的 `resumeKids`、`shared/task.ts` 的 `childIcon`、`server/exec/parsers.ts` 的 `claudeParser`
+- 入口：`server/tasks/keepalive.ts` 的 `stopTree` / `watchStop`、`server/tasks/routes/conversation/resume.ts` 的 `resumeKids`、`shared/task.ts` 的 `childIcon`、`server/exec/parsers.ts` 的 `claudeParser`
 - 根因类型：连带停没有记停止原因；图标判定没看进程；CLI 自己的重试事件没有映射
 - 模块：`server`、`shared`、`web`
 - 关键词：等待模型、api_retry、重试、子对话不停、子对话起不来、resumeKids、stopTree、cancelWait、stopReason、parent、user、转圈、cliAlive、unfinished、Agent 进程已回收

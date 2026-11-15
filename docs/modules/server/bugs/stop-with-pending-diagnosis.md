@@ -2,7 +2,7 @@
 
 - 状态：已修复（`shared/bug/diagnosis.test.ts`、`scripts/e2e/09-subagent-runtime.mjs` 通过）
 - 症状：Bug 子对话交了诊断报告、停在「等你确认」时，输入框一直是停止按钮，点了没有变化，对话一直算在运行
-- 入口：`server/tasks/actions-routes.ts` 的 `/:id/stop`、`parkDiagnoses`；`shared/task.ts` 的 `convState`
+- 入口：`server/tasks/routes/actions/stop.ts` 的 `/:id/stop`、`parkDiagnoses`；`shared/task.ts` 的 `convState`
 - 根因类型：停止只收在跑的执行，碰不到这一轮已经说完、只剩待确认事项的对话
 - 模块：`server`（`server/tasks/`）、`shared`、`web`
 - 关键词：诊断报告、等你确认、停止按钮、结束不了、submit_diagnosis、convState、ADR 0045

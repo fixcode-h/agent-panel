@@ -1,10 +1,11 @@
 // 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
 import { setLessonRecorder } from './knowledge/recorder.ts'
 import './lang.ts'
-import { mountExtras } from './extra-routes.ts'
 // 用户自己加的 CLI 配置要在用到 CLI 列表的模块之前读进来
 import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli/config.ts'
-import { asksApi } from './asks.ts'
+// 接口模块清单：要在 CLI 配置读进来之后引入（各接口模块会用到 CLI 列表）
+import { mountModules } from './routes/module.ts'
+import { systemModules, toolModules, workModules } from './routes/modules.ts'
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { mkdir, stat } from 'node:fs/promises'
@@ -28,67 +29,30 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow/index.ts'
-import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summary/index.ts'
+import { SummaryRecord, type SummaryReport } from '../shared/summary/index.ts'
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/projects/init.ts'
-import {
-  createCollection,
-  DATA_DIR,
-  dataPath,
-  migrateDataDir,
-  readJson,
-  sweepStaleTmp,
-  writeJsonAtomic,
-} from './store.ts'
+import { createCollection, DATA_DIR, migrateDataDir, sweepStaleTmp } from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
-import { dataApi } from './data.ts'
-import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
+import { sweepTaskInfoOf } from './cleanup.ts'
 import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks/index.ts'
 import { schedulesApi } from './schedules.ts'
-import { taskMemoryApi } from './tasks/memory.ts'
-import { usageApi } from './usage.ts'
-import { runUsageApi } from './run-usage.ts'
-import { assistApi } from './assist.ts'
-import { stylesApi } from './styles.ts'
-import { cleanupDisabledPlugins, initPlugins, pluginsApi } from './plugins/index.ts'
-import { askMcpApi } from './ask-mcp.ts'
-import { bridgeApi, bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
-import { browserExtApi } from './browser-ext-routes.ts'
+import { cleanupDisabledPlugins, initPlugins } from './plugins/index.ts'
+import { bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
 import { docsApi } from './docs/index.ts'
-import { summaryApi } from './summary/index.ts'
-import { lessonDraftsApi } from './lesson-drafts.ts'
-import { fixApi } from './fix.ts'
-import { projectSkillsApi } from './projects/skills.ts'
-import { projectCapabilitiesApi } from './projects/capabilities.ts'
 import { isPanelSource } from './panel/source.ts'
-import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
-import { accountsApi, syncCliAuths } from './accounts.ts'
-import { apiSpeedApi } from './cli/api-speed.ts'
-import { integrationsApi } from './integrations.ts'
-import { hooksApi } from './hooks/api.ts'
-import { configScanApi } from './config-scan.ts'
+import { syncCliAuths } from './accounts.ts'
 import { migrateVerdictText } from './verdict-migrate.ts'
 import { runMigrations } from './migrations/index.ts'
-import { installApi } from './install.ts'
-import { envApi } from './env-api.ts'
-import { libraryApi } from './library.ts'
-import { mcpApi } from './mcp-store.ts'
-import { mcpCatalogApi } from './mcp-catalog/index.ts'
-import { projectMcpApi } from './projects/mcp.ts'
 import { openBrowser, revealDir } from './open.ts'
-import { modelsApi } from './models.ts'
-import { modelCatalogApi } from './cli/model-catalog.ts'
 import { getLimits, isSharedSkill, listSkills } from './cli/extras.ts'
-import { packagesApi } from './cli/packages.ts'
-import { trustApi } from './cli/trust-api.ts'
-import { interruptedApi } from './interrupted.ts'
 import { autoResumeAfterRestart } from './restart-interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update/index.ts'
-import { addPageFeed, pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
+import { addPageFeed, parseTrayCommand, signalPages } from './page-events.ts'
 import { installMcpToolTitles } from './mcp-catalog/external-titles.ts'
-import { appActionsApi, setActionHost } from './app-actions/index.ts'
+import { setActionHost } from './app-actions/index.ts'
 import { callApi } from './app-actions/registry.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { setPresenceReclaimPolicy } from './presence.ts'
@@ -101,8 +65,7 @@ import { killAllProcesses, killTree } from './exec/process.ts'
 import { cleanStaleCliProcesses } from './exec/orphans.ts'
 import { startMemorySampler } from './exec/proc-stats.ts'
 import { listCommands } from './slash.ts'
-import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
-import { filesApi } from './files.ts'
+import { searchProjectFiles } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
@@ -137,7 +100,7 @@ import { orderProjects, projectOrderError, sortProjects } from '../shared/projec
 import { grantCookie, tokenGuard, viaProxy, withToken } from './auth.ts'
 import { isExternalRequest, isLocalHost } from './hosts.ts'
 import { originOk } from './guard/gate.ts'
-import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
+import { applyRemote, configureRemote, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
 import { sweepPanelMcp } from './panel/mcp-files.ts'
 import { existsSync } from 'node:fs'
@@ -148,11 +111,8 @@ import { projectLessonRoutes } from './projects/lesson-routes.ts'
 import { staleProjectWrite } from './projects/lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
 import { installHttpGuards, rawUploadAllowed } from './http-guards.ts'
-import { webViewApi } from './web-view/index.ts'
-import { findInstalled } from './plugins/manager.ts'
-import { serviceOrigin, touchService } from './plugins/services.ts'
 import { SANDBOX_PREFIX, serveSandbox } from './web-view/sandbox.ts'
-import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
+import { cleanupItemTrash, trashItem } from './item-trash.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -449,7 +409,9 @@ async function parseWorkflow(body: unknown, selfId = '') {
 // 端到端测试启动服务时会给一个分片唯一的标记（AGENT_PANEL_INSTANCE），这里回显它：
 // 调用方（scripts/e2e/spawn-server.mjs）据此确认连上的是自己刚起的服务，
 // 端口被残留进程或并行的分片占着时能立刻发现，不会等到第一个请求超时才看出假通过
-app.get('/health', (c) => c.json({ ok: true, instance: process.env.AGENT_PANEL_INSTANCE ?? '' }))
+// 本文件里直接写的几组接口：先登记在各自的子应用上，最后按清单和 server/routes/modules.ts 的各段一起挂（见文件末尾的 mountModules）
+const coreRoutes = new Hono()
+coreRoutes.get('/health', (c) => c.json({ ok: true, instance: process.env.AGENT_PANEL_INSTANCE ?? '' }))
 // ---- 设置 ----
 /** 回收策略跟着设置走：宽限、总开关；保存后立即生效，不用重启服务 */
 const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
@@ -457,8 +419,8 @@ const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
     enabled: s.reclaimIdleCli,
     graceMs: s.presenceGraceMinutes * 60_000,
   })
-app.get('/settings', async (c) => c.json(await getSettings()))
-app.put('/settings', async (c) => {
+coreRoutes.get('/settings', async (c) => c.json(await getSettings()))
+coreRoutes.put('/settings', async (c) => {
   const p = Settings.safeParse(await c.req.json())
   if (!p.success) return bad(c, z.prettifyError(p.error))
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
@@ -482,8 +444,8 @@ app.put('/settings', async (c) => {
 })
 
 // 用户在数据目录里加的 CLI 配置：页面拿去注册；改了配置文件后可以重新读
-app.get('/clis/specs', (c) => c.json(userClis()))
-app.post('/clis/specs/reveal', async (c) => {
+coreRoutes.get('/clis/specs', (c) => c.json(userClis()))
+coreRoutes.post('/clis/specs/reveal', async (c) => {
   await mkdir(CLI_CONFIG_DIR, { recursive: true })
   try {
     await revealDir(CLI_CONFIG_DIR)
@@ -492,38 +454,22 @@ app.post('/clis/specs/reveal', async (c) => {
   }
   return c.json({ ok: true, dir: CLI_CONFIG_DIR })
 })
-app.post('/clis/specs/reload', async (c) => {
+coreRoutes.post('/clis/specs/reload', async (c) => {
   loadUserClis()
   await detectClis(true)
   return c.json(userClis())
 })
-app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
-app.route('/accounts', accountsApi())
-app.route('/accounts', apiSpeedApi())
-app.route('/integrations', integrationsApi())
-app.route('/hooks', hooksApi({ projects, agents }))
-app.route('/config-scan', configScanApi())
-app.route('/library', libraryApi())
-app.route('/mcp-tools', mcpApi())
-// 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取
-app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
-app.route('/project-trust', trustApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
-app.route('/clis', installApi())
-// 本机生图、语音输入 / 朗读、Chat 记忆：各自一组的子路由（server/extra-routes.ts）
-mountExtras(app, { projects })
-app.route('/', envApi())
-app.route('/clis', modelsApi())
-app.route('/clis', packagesApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
-app.route('/model-catalog', modelCatalogApi())
+coreRoutes.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
-app.get('/clis/:id/limits', async (c) => {
+const catalogRoutes = new Hono()
+catalogRoutes.get('/clis/:id/limits', async (c) => {
   try {
     return c.json(await getLimits(c.req.param('id')))
   } catch (e) {
     return bad(c, (e as Error).message)
   }
 })
-app.get('/clis/:id/skills', async (c) => {
+catalogRoutes.get('/clis/:id/skills', async (c) => {
   const pid = c.req.query('projectId')
   const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
   try {
@@ -536,7 +482,7 @@ app.get('/clis/:id/skills', async (c) => {
 })
 
 // 输入框「/」菜单：CLI 自己带的命令和 Skill
-app.get('/clis/:id/commands', async (c) => {
+catalogRoutes.get('/clis/:id/commands', async (c) => {
   const pid = c.req.query('projectId')
   const p = pid ? await projects.get(pid) : null
   try {
@@ -547,7 +493,7 @@ app.get('/clis/:id/commands', async (c) => {
 })
 
 // ---- 分类 ----
-app.get('/categories', async (c) => c.json(await categories.list()))
+catalogRoutes.get('/categories', async (c) => c.json(await categories.list()))
 
 async function parseCategory(body: unknown, selfId?: string) {
   const p = CategoryInput.safeParse(body)
@@ -559,12 +505,12 @@ async function parseCategory(body: unknown, selfId?: string) {
   return dup ? { error: t('分类「{name}」已存在', { name: p.data.name }) } : { data: { ...p.data, scope } }
 }
 
-app.post('/categories', async (c) => {
+catalogRoutes.post('/categories', async (c) => {
   const r = await parseCategory(await c.req.json())
   return r.error ? bad(c, r.error) : c.json(await categories.create(r.data!), 201)
 })
 
-app.put('/categories/:id', async (c) => {
+catalogRoutes.put('/categories/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseCategory(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
@@ -573,7 +519,7 @@ app.put('/categories/:id', async (c) => {
 })
 
 // 删除分类时，其中的 Agent 变为未分类
-app.delete('/categories/:id', async (c) => {
+catalogRoutes.delete('/categories/:id', async (c) => {
   const id = c.req.param('id')
   if (!(await categories.remove(id))) return bad(c, t('分类不存在'), 404)
   for (const a of await agents.list()) {
@@ -586,7 +532,7 @@ app.delete('/categories/:id', async (c) => {
 })
 
 // ---- 标签：Agent 和工作流共用 ----
-app.get('/tags', async (c) => c.json(await tags.list()))
+catalogRoutes.get('/tags', async (c) => c.json(await tags.list()))
 
 async function parseTag(body: unknown, selfId?: string) {
   const p = TagInput.safeParse(body)
@@ -595,12 +541,12 @@ async function parseTag(body: unknown, selfId?: string) {
   return dup ? { error: t('标签「{name}」已存在', { name: p.data.name }) } : { data: p.data }
 }
 
-app.post('/tags', async (c) => {
+catalogRoutes.post('/tags', async (c) => {
   const r = await parseTag(await c.req.json())
   return r.error ? bad(c, r.error) : c.json(await tags.create(r.data!), 201)
 })
 
-app.put('/tags/:id', async (c) => {
+catalogRoutes.put('/tags/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseTag(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
@@ -609,7 +555,7 @@ app.put('/tags/:id', async (c) => {
 })
 
 // 删除标签时从所有 Agent 和工作流上去掉
-app.delete('/tags/:id', async (c) => {
+catalogRoutes.delete('/tags/:id', async (c) => {
   const id = c.req.param('id')
   if (!(await tags.remove(id))) return bad(c, t('标签不存在'), 404)
   for (const a of await agents.list())
@@ -620,9 +566,9 @@ app.delete('/tags/:id', async (c) => {
 })
 
 // ---- Agent ----
-app.get('/agents', async (c) => c.json(await agents.list()))
+catalogRoutes.get('/agents', async (c) => c.json(await agents.list()))
 
-app.post('/agents', async (c) => {
+catalogRoutes.post('/agents', async (c) => {
   const r = await parseAgent(await c.req.json())
   // 复制出来的内置角色是普通角色：本机已经有这个来源的就去掉来源，不然会被当成第二个内置角色、跟着内置定义被覆盖。
   // 「内置 Agent」里添加的（本机还没有）保留来源
@@ -635,7 +581,7 @@ app.post('/agents', async (c) => {
   return r.error ? bad(c, r.error) : c.json(await agents.create(r.data!), 201)
 })
 
-app.put('/agents/:id', async (c) => {
+catalogRoutes.put('/agents/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseAgent(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
@@ -661,7 +607,7 @@ app.put('/agents/:id', async (c) => {
   return a ? c.json(a) : bad(c, t('角色不存在'), 404)
 })
 
-app.delete('/agents/:id', async (c) => {
+catalogRoutes.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
   if (isCoreAgent((await agents.get(id)) ?? undefined)) return bad(c, t('必备角色不能删除'), 409)
   const err = agentDeleteError(id, await workflows.list())
@@ -677,21 +623,21 @@ app.delete('/agents/:id', async (c) => {
 })
 
 // ---- 工作流 ----
-app.get('/workflows', async (c) => c.json(await workflows.list()))
+catalogRoutes.get('/workflows', async (c) => c.json(await workflows.list()))
 
-app.post('/workflows', async (c) => {
+catalogRoutes.post('/workflows', async (c) => {
   const r = await parseWorkflow(await c.req.json())
   return r.error ? bad(c, r.error) : c.json(await workflows.create(r.data!), 201)
 })
 
-app.put('/workflows/:id', async (c) => {
+catalogRoutes.put('/workflows/:id', async (c) => {
   const r = await parseWorkflow(await c.req.json(), c.req.param('id'))
   if (r.error) return bad(c, r.error)
   const w = await workflows.update(c.req.param('id'), r.data!)
   return w ? c.json(w) : bad(c, t('工作流不存在'), 404)
 })
 
-app.delete('/workflows/:id', async (c) => {
+catalogRoutes.delete('/workflows/:id', async (c) => {
   const id = c.req.param('id')
   const err = workflowDeleteError(id, await projectCategories.list(), await projects.list())
   if (err) return bad(c, err, 409)
@@ -714,17 +660,17 @@ async function parseProjectCategory(body: unknown, selfId?: string) {
   return { data: p.data }
 }
 
-app.get('/project-categories', async (c) =>
+catalogRoutes.get('/project-categories', async (c) =>
   // builtin 标记以固定 id 为准：旧数据或手改的文件里缺这个字段时也返回正确的值，和删除判定一致
   c.json((await projectCategories.list()).map(withBuiltinFlag)),
 )
 
-app.post('/project-categories', async (c) => {
+catalogRoutes.post('/project-categories', async (c) => {
   const r = await parseProjectCategory(await c.req.json())
   return r.error ? bad(c, r.error) : c.json(withBuiltinFlag(await projectCategories.create(r.data!)), 201)
 })
 
-app.put('/project-categories/:id', async (c) => {
+catalogRoutes.put('/project-categories/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseProjectCategory(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
@@ -733,7 +679,7 @@ app.put('/project-categories/:id', async (c) => {
 })
 
 // 删除分类时，其中的项目变为未分类
-app.delete('/project-categories/:id', async (c) => {
+catalogRoutes.delete('/project-categories/:id', async (c) => {
   const id = c.req.param('id')
   const err = projectCategoryDeleteError(id)
   if (err) return bad(c, err, 409)
@@ -776,14 +722,14 @@ async function parseProject(body: unknown) {
   return { data: p.data }
 }
 
-app.get('/projects', async (c) => {
+catalogRoutes.get('/projects', async (c) => {
   // 项目教训在项目文档目录的 lessons.md 里：列表也返回合并后的结果，界面不用再单独取
   const [list, agentList] = await Promise.all([projects.list(), agents.list()])
   return c.json(sortProjects(await Promise.all(list.map((p) => projectWithLessons(p, agentList)))))
 })
 
 // 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单
-app.post('/projects/analyze', async (c) => {
+catalogRoutes.post('/projects/analyze', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { path?: string }
   const p = typeof body.path === 'string' ? body.path.trim() : ''
   if (!p) return bad(c, t('请先选择本地目录'))
@@ -791,7 +737,7 @@ app.post('/projects/analyze', async (c) => {
   return 'error' in r ? bad(c, r.error) : c.json(r)
 })
 
-app.post('/projects', async (c) => {
+catalogRoutes.post('/projects', async (c) => {
   const r = await parseProject(await c.req.json())
   return r.error ? bad(c, r.error) : c.json(await projects.create(r.data!), 201)
 })
@@ -800,7 +746,7 @@ app.post('/projects', async (c) => {
  * 侧栏拖拽后的顺序：body 是全部项目的 id，按新顺序排列。
  * 先整体校验再一次写盘，重复、不存在的 id 和漏掉的项目都直接拒绝，不会只改一半。
  */
-app.put('/projects/order', async (c) => {
+catalogRoutes.put('/projects/order', async (c) => {
   const body = (await c.req.json().catch(() => null)) as unknown
   if (!Array.isArray(body) || !body.every((id) => typeof id === 'string' && id.trim()))
     return bad(c, t('项目顺序格式不对'))
@@ -813,7 +759,7 @@ app.put('/projects/order', async (c) => {
   return c.json(sortProjects(ordered))
 })
 
-app.put('/projects/:id', async (c) => {
+catalogRoutes.put('/projects/:id', async (c) => {
   const body = await c.req.json()
   const id = c.req.param('id')
   // 客户端带着读取时的版本保存：期间被别处改过就拒绝，不拿旧快照整份覆盖刚应用的推荐
@@ -852,7 +798,7 @@ app.put('/projects/:id', async (c) => {
  * 只更新「AI 初始化」的结果：初始化对话可能跑好几分钟，结果交回来时客户端手里的项目快照已经过期。
  * 服务端自己读最新项目再合并，不把用户这期间应用的推荐（名称、简介、测试步骤、工作流……）覆盖回旧值。
  */
-app.put('/projects/:id/init-result', async (c) => {
+catalogRoutes.put('/projects/:id/init-result', async (c) => {
   const id = c.req.param('id')
   const cur = await projects.get(id)
   if (!cur) return bad(c, t('项目不存在'), 404)
@@ -867,11 +813,11 @@ app.put('/projects/:id/init-result', async (c) => {
 const lessons = projectLessons(projects, { agents })
 // 钩子里自动转正的候选也走同一个记录入口（server/knowledge/recorder.ts）
 setLessonRecorder(lessons.record)
-projectLessonRoutes(app, lessons, { projects, agents })
+projectLessonRoutes(catalogRoutes, lessons, { projects, agents })
 
 // 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具
-app.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))
-app.put('/global-lessons', async (c) => {
+catalogRoutes.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))
+catalogRoutes.put('/global-lessons', async (c) => {
   const body = (await c.req.json().catch(() => null)) as { lessons?: unknown; confirmed?: unknown } | null
   if (body?.confirmed !== true) return bad(c, t('修改全局教训需要你确认'))
   const r = GlobalLessons.safeParse(body.lessons)
@@ -880,12 +826,12 @@ app.put('/global-lessons', async (c) => {
 })
 
 // 项目是不是 agent-panel 自己的源代码：AI 分析结果据此决定能不能开子对话改进源代码
-app.get('/projects/:id/panel-source', async (c) => {
+catalogRoutes.get('/projects/:id/panel-source', async (c) => {
   const p = await projects.get(c.req.param('id'))
   return p ? c.json({ panelSource: await isPanelSource(p.path) }) : bad(c, t('项目不存在'), 404)
 })
 
-app.delete('/projects/:id', async (c) => {
+catalogRoutes.delete('/projects/:id', async (c) => {
   const id = c.req.param('id')
   const project = await projects.get(id)
   if (!project) return bad(c, t('项目不存在'), 404)
@@ -895,12 +841,6 @@ app.delete('/projects/:id', async (c) => {
   await projects.remove(id)
   return c.body(null, 204)
 })
-
-// 角色、工作流、项目的回收站（对话的回收站在 /tasks/trash）
-app.route(
-  '/trash/items',
-  itemTrashRoutes({ agents, workflows, projects, restoreTasks: (ids) => tasks.restoreTasks(ids) }),
-)
 
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
@@ -943,27 +883,9 @@ async function sweepStaleWorktrees() {
     })
 }
 
-app.route('/tasks', tasks.routes)
 addPageFeed(tasks.pageFeed)
 // 别家 MCP 服务的工具显示名：Agent 用到时去问服务，推给页面（对话里的工具行显示中文名）
 installMcpToolTitles()
-// 工作总结：按天 / 按周提炼分项，采纳后拼成报告（只读任务记录，不改项目文件）
-const summaryConfigFile = dataPath('config/summary.json')
-app.route(
-  '/summary',
-  summaryApi({
-    tasks,
-    projects,
-    agents,
-    reports: summaries,
-    // 面板里加过的项目：读坏了按空的来，页面照常能加
-    config: {
-      get: async () => SummaryConfig.catch({ projectIds: [] }).parse((await readJson(summaryConfigFile)) ?? {}),
-      set: (c) => writeJsonAtomic(summaryConfigFile, c),
-    },
-  }).routes,
-)
-app.route('/lesson-drafts', lessonDraftsApi({ drafts: lessonDrafts, reports: summaries }).routes)
 // 定时计划：到点由面板自己新建一个对话，走和页面新建任务完全一样的链路
 const schedules = schedulesApi({
   startChat: (input) => tasks.startChat(input),
@@ -975,66 +897,10 @@ const schedules = schedulesApi({
   peekTask: (id) => tasks.peek(id),
   agents: () => agents.list(),
 })
-app.route('/schedules', schedules.routes)
-// 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
-app.route('/tasks', runUsageApi({ tasks }).routes)
-// 会话内存的 AI 分析：采样序列 + 进程面板两路 + 任务树规模，整理成交给本机 CLI 的报告
-app.route(
-  '/tasks',
-  taskMemoryApi({
-    tasks,
-    panel: (id) => tasks.processPanel(id),
-    projects,
-  }).routes,
-)
-// 设置页的用量统计：按天 / 周 / 月聚合各任务每轮执行的 token
-app.route('/usage', usageApi({ tasks }).routes)
-app.route('/assist', assistApi({ agents, categories, workflows, projects }))
-// ---- 风格库和连接浏览器的扩展（UI 设计本身在 UI 设计插件里，fixcode-h/agent-plugins 的 ui-design）----
-app.route('/styles', stylesApi())
-// 浏览器扩展（扩展是面板的，借网页版图片模型出图；以前挂在设计接口下，地址不变）
-app.route('/designs/browser', browserExtApi())
-app.route('/bridge', bridgeApi())
-app.route('/asks', asksApi())
-app.route('/plugins', pluginsApi())
-app.route(
-  '/mcp-catalog',
-  mcpCatalogApi({ agents, projects, taskTitle: async (id) => (await tasks.get(id))?.title ?? '' }),
-)
-app.route('/mcp', askMcpApi())
 const docs = docsApi({ projects, agents })
-app.route('/project-docs', docs.routes)
-app.route('/doc-jobs', docs.jobRoutes)
-app.route('/ai-fix', fixApi())
-// 项目设置里的 Skill 分节：项目目录下的技能
-app.route('/project-skills', projectSkillsApi({ projects }))
-// 项目「能力」页：按项目生效的插件、推荐理由和还缺的设置（插件接口 9）
-app.route('/project-capabilities', projectCapabilitiesApi())
-app.route('/deploy', deployApi({ startDoc: docs.start }))
-// 网页页签：本机文件换沙箱地址、外部网址预检、阅读模式（ADR 0068）
-app.route(
-  '/web-view',
-  webViewApi({
-    workDir: tasks.workDir,
-    projectDir: async (id) => (await projects.get(id))?.path ?? '',
-    pluginDir: (id) => findInstalled(id)?.dir ?? '',
-    serviceOrigin,
-    touchService,
-  }),
-)
 
-// ---- 附件和 @ 引用的项目文件 ----
-app.route('/uploads/raw', uploadsRawApi())
-app.route(
-  '/uploads',
-  uploadsApi({
-    dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean),
-    known: (file) => tasks.hasAttachment(file),
-  }),
-)
-// 文件浏览页：项目里的文件树、内容搜索、看单个文件
-app.route('/project-files', filesApi({ projects }))
-app.get('/projects/:id/files', async (c) => {
+const fsRoutes = new Hono()
+fsRoutes.get('/projects/:id/files', async (c) => {
   const p = await projects.get(c.req.param('id'))
   if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
   try {
@@ -1045,14 +911,14 @@ app.get('/projects/:id/files', async (c) => {
 })
 
 // ---- 本地目录 ----
-app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
+fsRoutes.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
 
 // 目录的版本控制类型：项目设置里说明 parent 范围只对 Git 项目生效（见 ADR 0018 / 0020）。
 // 判定复用 detectVcs，和子对话开独立分支时的判断是同一套
-app.get('/fs/vcs', async (c) => c.json(await detectVcs(resolvePath(c.req.query('path') ?? ''))))
+fsRoutes.get('/fs/vcs', async (c) => c.json(await detectVcs(resolvePath(c.req.query('path') ?? ''))))
 
 // 本地分支：环境里点分支名展开的下拉用
-app.get('/fs/branches', async (c) => {
+fsRoutes.get('/fs/branches', async (c) => {
   try {
     return c.json(await gitBranches(resolvePath(c.req.query('path') ?? '')))
   } catch (e) {
@@ -1061,7 +927,7 @@ app.get('/fs/branches', async (c) => {
 })
 
 // 切换到另一个本地分支；有未提交的改动挡住时把 git 的说明带回去
-app.post('/fs/checkout', async (c) => {
+fsRoutes.post('/fs/checkout', async (c) => {
   const { path: p, branch } = (await c.req.json().catch(() => ({}))) as { path?: string; branch?: string }
   const dir = resolvePath(String(p ?? ''))
   try {
@@ -1073,7 +939,7 @@ app.post('/fs/checkout', async (c) => {
 })
 
 // 在系统的文件管理器里打开项目目录；只接受已有项目的目录，不能用来打开任意路径
-app.post('/fs/reveal', async (c) => {
+fsRoutes.post('/fs/reveal', async (c) => {
   const { projectId } = (await c.req.json().catch(() => ({}))) as { projectId?: string }
   const p = (await projects.list()).find((x) => x.id === projectId)
   if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
@@ -1090,7 +956,7 @@ app.post('/fs/reveal', async (c) => {
   return c.json({ ok: true, dir })
 })
 
-app.get('/fs/list', async (c) => {
+fsRoutes.get('/fs/list', async (c) => {
   try {
     return c.json(await listDir(c.req.query('path') ?? ''))
   } catch (e) {
@@ -1099,7 +965,7 @@ app.get('/fs/list', async (c) => {
 })
 
 // 选择项目目录时新建文件夹
-app.post('/fs/mkdir', async (c) => {
+fsRoutes.post('/fs/mkdir', async (c) => {
   const { parent, name } = (await c.req.json().catch(() => ({}))) as { parent?: string; name?: string }
   try {
     return c.json({ path: await makeDir(String(parent ?? ''), String(name ?? '')) })
@@ -1122,10 +988,6 @@ const memory = memorySampler({
 })
 memory.start()
 
-app.route('/data', dataApi({ running: () => tasks.running(), memory }))
-// 逐个目录 stat / 跑 git 的清理入口单独一块（/data/cleanup*），不和上面那套按分类扫路径的混在一起
-app.route('/data/cleanup', cleanupApi({ tasks, projects }))
-
 const updater = updateApi({
   running: () => tasks.running(),
   // server 在下面才创建，重启时一定已经有了
@@ -1137,25 +999,32 @@ const updater = updateApi({
   },
   interrupted: () => tasks.interruptedTasks(),
 })
-app.route('/app', updater.api)
-app.route('/app', pageEventsApi())
-// 操控软件的动作表（见 ADR 0011）：Agent 经 MCP 调，人和脚本经 /api/actions 调；
-// 动作进程内调上面这些接口，和界面点按钮走同一段代码
-app.route('/actions', appActionsApi())
 setActionHost({
   api: (method, path, body) => callApi((req) => app.fetch(req), method, path, body),
   ui: (action, args) => signalPages({ type: 'ui', action, args }),
 })
-// 新版本启动后问用户要不要继续被上次强制更新打断的任务
-app.route(
-  '/app',
-  interruptedApi({
-    ready: () => tasks.ready(),
-    getTask: (id) => tasks.get(id),
-    projectName: async (id) => (await projects.get(id))?.name ?? '',
+// 全部接口按清单挂上（约定见 server/routes/module.ts）：本文件里写的几组和 server/routes/modules.ts 的三段交错，
+// 顺序就是以前一行行 app.route / app.get 的顺序，Hono 按登记顺序匹配，不能调换
+mountModules(app, [
+  { prefix: '/', app: coreRoutes },
+  ...toolModules({ projects, agents }),
+  { prefix: '/', app: catalogRoutes },
+  ...workModules({ agents, categories, workflows, projects, summaries, lessonDrafts, tasks, schedules, docs }),
+  { prefix: '/', app: fsRoutes },
+  ...systemModules({
+    agents,
+    categories,
+    workflows,
+    projects,
+    summaries,
+    lessonDrafts,
+    tasks,
+    schedules,
+    docs,
+    memory,
+    updater,
   }),
-)
-app.route('/remote', remoteApi())
+])
 // 设置里开了「重启后自动继续」：迁移做完后把上次被重启打断的对话逐个继续（和首页「全部继续」同一个名单、同一个接口）
 void tasks
   .ready()

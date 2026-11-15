@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 /**
  * 工作流运行的宿主（docs/openspec/changes/workflow-runs/design.md 第 3、4 节）：父对话的 start_workflow 等工具最终落到这里。
  * 运行是一个 mode=workflow、带 flowRun 的任务，不是子对话：没有 parentTaskId，子对话那套（自驱、收尾规则、状态上报）都不作用到它。
@@ -408,10 +409,12 @@ export function createFlowRuns(sc: TasksScope) {
 }
 
 /** 运行卡片上的操作（父对话的工作流栏用）：确认、修改、追问走通用的回答请求接口，暂停、重启走 stop / resume */
-export function registerFlowRunRoutes(sc: TasksScope) {
+export function flowRunRoutes(sc: TasksScope): Hono {
+  const app = new Hono()
   // 「交给父对话决定」：确认卡片留着，写信请父对话用 answer_workflow 代答
-  sc.routes.post('/:id/delegate', async (c) => {
+  app.post('/:id/delegate', async (c) => {
     const r = await sc.flowRuns.delegate(c.req.param('id'))
     return r.ok ? c.json(r) : sc.bad(c, r.info, 409)
   })
+  return app
 }

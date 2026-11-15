@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import path from 'node:path'
 import type { Task } from '../../shared/schema.ts'
 import { sharesWorkdir } from '../../shared/task.ts'
@@ -14,7 +15,8 @@ import { currentTask } from './read.ts'
  * 几个对话共用一个目录时的提醒（规则见 shared/shared-dir.ts）：
  * 查「同一个目录里有没有别的对话正在改文件」，以及提醒上的「这个对话开独立分支」。
  */
-export function registerSharedDirRoutes(s: TasksScope) {
+export function sharedDirRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   /** 这棵对话树的顶层对话：一家的（父对话和它的子对话）不互相提醒 */
   async function rootOf(tk: Task) {
     const seen = new Set<string>()
@@ -41,7 +43,7 @@ export function registerSharedDirRoutes(s: TasksScope) {
     }
   }
 
-  s.routes.get('/:id/shared-dir', async (c) => {
+  app.get('/:id/shared-dir', async (c) => {
     const tk = await currentTask(s, c.req.param('id')!)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const none: SharedDirInfo = { peers: [], canIsolate: false }
@@ -72,7 +74,7 @@ export function registerSharedDirRoutes(s: TasksScope) {
    * 会话接不上的 CLI 带上之前的对话开新会话（sessionMoved）。
    * 正在回复时不开：这一轮还在原目录里写，换了目录它写的东西就落在两边
    */
-  s.routes.post('/:id/isolate', async (c) => {
+  app.post('/:id/isolate', async (c) => {
     const id = c.req.param('id')!
     await settleBefore(s.live.get(id))
     const e = s.live.get(id)
@@ -87,4 +89,5 @@ export function registerSharedDirRoutes(s: TasksScope) {
     taskLog(id, '用户让这个对话开独立分支', { branch: tk.worktree?.branch })
     return c.json(await s.store.update(id, tk, { now: true }))
   })
+  return app
 }

@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 /**
  * Bug 诊断报告的确认（ADR 0045）：用户在审阅弹窗里确认方案或标出疑问。
  * 只记决定、收起等确认的请求，返回交给子对话的话；页面再把这段话作为用户消息发给子对话（走普通的发消息，
@@ -44,18 +45,19 @@ const Decision = z.object({
 /** 临时日志没删干净时用户的选择：retry 让它再删一次；finish 我自己删 / 保留，直接关闭报告 */
 const CleanupAction = z.object({ action: z.enum(['retry', 'finish']) })
 
-export function registerDiagnosisRoutes(s: TasksScope) {
+export function diagnosisRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   // 诊断报告不挂在 CLI 进程上：子对话停着、不在内存里也能确认，改完落盘
   const taskOf = async (id: string) => ({ entry: s.live.get(id), task: await readTask(s, id) })
 
   /** 点「取消修复」之前：面板只读地查出代码里的临时日志、这个对话新建的文件，确认框里列出来 */
-  s.routes.get('/:id/diagnosis-cleanup', async (c) => {
+  app.get('/:id/diagnosis-cleanup', async (c) => {
     const { task } = await taskOf(c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     return c.json(await previewCleanup(task, await s.taskDir(task).catch(() => '')))
   })
 
-  s.routes.post('/:id/diagnosis/:version', async (c) => {
+  app.post('/:id/diagnosis/:version', async (c) => {
     const body = Decision.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const { entry, task } = await taskOf(c.req.param('id'))
@@ -84,7 +86,7 @@ export function registerDiagnosisRoutes(s: TasksScope) {
   })
 
   /** 「让它按对话更新报告」：报告之后你在对话里说过话，请它把对话里定下的整理进报告（shared/bug/chat.ts） */
-  s.routes.post('/:id/diagnosis-sync', async (c) => {
+  app.post('/:id/diagnosis-sync', async (c) => {
     const { entry, task } = await taskOf(c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     const now = new Date().toISOString()
@@ -96,7 +98,7 @@ export function registerDiagnosisRoutes(s: TasksScope) {
   })
 
   /** 临时日志没删干净（核对没过）时用户的选择 */
-  s.routes.post('/:id/diagnosis-cleanup', async (c) => {
+  app.post('/:id/diagnosis-cleanup', async (c) => {
     const body = CleanupAction.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const { entry, task } = await taskOf(c.req.param('id'))
@@ -122,4 +124,5 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     if (body.data.action === 'finish' && task.parentTaskId) await s.reportToParent(saved ?? task).catch(() => {})
     return c.json({ task: saved ?? task, message })
   })
+  return app
 }
