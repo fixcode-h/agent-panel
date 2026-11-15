@@ -40,7 +40,7 @@ export function useCancelCleanup(taskId: string, verifying: boolean) {
           { k: found.length },
         )
       : t(
-          '这份诊断报告就此关闭：代码里没有临时日志，计划标记为完成，之后不会再改文件。想接着查，就在这个对话里直接说，它会重新交报告。',
+          '这份诊断报告就此关闭：代码里没有临时日志，没做的步骤标记为跳过，之后不会再改文件。想接着查，就在这个对话里直接说，它会重新交报告。',
         )
   const extra =
     preview && (found.length || preview.created.length || (verifying && !preview.isolated)) ? (

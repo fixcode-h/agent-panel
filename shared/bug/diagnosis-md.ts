@@ -202,6 +202,10 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
   const answers = prev
     ? d.answers
         .map((a) => {
+          const how0 = a.stance ? `（**${stance[a.stance]}**）` : ''
+          // 编号 0 是上一版的整体意见（摸底报告第 2 条）
+          if (a.id === 0 && prev.overall.trim())
+            return `0. **${t('整体意见')}**：${prev.overall.trim()}\n   - ${t('回答')}${how0}：${codeTerms(a.answer.trim())}`
           const n = prev.notes.find((x) => x.id === a.id)
           if (!n) return ''
           const quote = n.quote ? `「${n.quote.replace(/\s+/g, ' ').slice(0, 120)}」` : ''

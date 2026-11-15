@@ -358,6 +358,31 @@ test('用户标疑问：退回的话按编号列出；新一版要逐条回应�
   )
 })
 
+test('只写了整体意见的退回：整体意见算编号 0，新一版必须回应它，报告上列出来（摸底报告第 2 条）', () => {
+  const tk = bugTask()
+  agreeCause(tk)
+  ok(submitDiagnosis(tk, input(), id))
+  const v = pendingDiagnosis(tk)!.version
+  const r = decideDiagnosis(
+    tk,
+    v,
+    { approve: false, notes: [], overall: '是哪次提交引入的？中文会不会一起被丢掉？' },
+    id,
+  )
+  assert.ok(r.ok)
+  assert.match(r.message, /用户的整体意见（编号 0，answers 里用 id: 0 回应）：是哪次提交引入的/)
+  // 回答的是别的（父对话插进来的意见）、没回应整体意见：不收
+  assert.match(
+    submitDiagnosis(tk, input({ answers: [{ id: 1, answer: '补了测试清单' }] }), id).info,
+    /还没回应：0（整体意见）.*父对话发来的话不算用户的意见/s,
+  )
+  ok(submitDiagnosis(tk, input({ answers: [{ id: 0, answer: 'a1b2c3 引入；中文不受影响，测试 zh 已过' }] }), id))
+  assert.match(
+    diagnosisMarkdown(tk.bug!.diagnoses!.at(-1)!, tk.bug!.diagnoses!.at(-2)),
+    /0\. \*\*整体意见\*\*：是哪次提交引入的？中文会不会一起被丢掉？\n {3}- 回答：a1b2c3 引入/,
+  )
+})
+
 test('确认时写的标注也交给它（以前只带整体意见）', () => {
   const tk = bugTask()
   agreeCause(tk)
@@ -587,7 +612,7 @@ test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的�
   assert.match(rec, /- 接口重试：npm test → 通过/)
 })
 
-test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；用户再开口之前报告关闭', () => {
+test('用户点取消：不再等确认，没做的步骤收成跳过（不说成做完，摸底报告第 4 条），对话不算执行中、等下一句；用户再开口之前报告关闭', () => {
   const tk = bugTask({ plans: [], steps: [] })
   applyPlan(tk, {
     steps: [{ title: '查根因', status: 'done' }, { title: '交诊断报告', status: 'running' }, { title: '按方案修' }],
@@ -599,8 +624,12 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   const d = tk.bug!.diagnoses![0]
   assert.equal(d.status, 'cancelled')
   assert.equal(d.overall, '先不修')
-  assert.equal(openPlan(tk), undefined, '计划标记完成')
-  assert.ok(tk.plans!.at(-1)!.steps.every((s) => s.status === 'done'))
+  assert.equal(openPlan(tk), undefined, '计划收口了')
+  assert.deepEqual(
+    tk.plans!.at(-1)!.steps.map((s) => s.status),
+    ['done', 'skipped', 'skipped'],
+    '做过的留着完成，没做的标跳过',
+  )
   assert.equal(diagnosisPending(tk), false)
   assert.equal(convState({ status: 'done', diagnosis: diagnosisPending(tk) }), 'done', '不再算执行中')
   assert.equal(childFlowOf({ ...tk, status: 'done', working: false, parentAsks: [] } as Task).requests, 0)

@@ -206,7 +206,13 @@ async function family(id) {
   return briefs.filter((b) => b.id === id || b.rootId === id)
 }
 
-const busy = (tk) => tk.status === 'running' || tk.working || (tk.requests ?? []).length > 0
+/**
+ * 还在动：按服务端算好的对话状态（live.state，ADR 0063）判，不只看 status——后台命令在跑、子对话的提问挂在父对话里时
+ * status 可能已经是 done（摸底报告第 17 条）。老面板没有 live 时退回原来的判法
+ */
+const ACTIVE = new Set(['running', 'waiting', 'needs'])
+const busy = (tk) =>
+  tk.status === 'running' || tk.working || (tk.requests ?? []).length > 0 || ACTIVE.has(tk.live?.state ?? '')
 
 /** 跑一个任务：建样例仓库和项目、发起对话、替用户应答，等整棵对话树连续几次都停下来 */
 async function runTask(task) {
@@ -246,6 +252,12 @@ async function runTask(task) {
           // 请求可能刚被面板收掉：报出来，不当成评测失败
           console.warn(`  应答请求失败（${tk.title}）：${e.message}`),
         )
+      // 子对话开着「提问」时问题挂在父对话的提问卡上（不是 requests）：替用户在卡上答（摸底报告第 23 条）
+      for (const ask of tk.parentTaskId ? (tk.parentAsks ?? []) : [])
+        await call('POST', `/tasks/${tk.parentTaskId}/child-asks/${ask.id}`, {
+          answer: task.answer || '按你推荐的做，不用再问我。',
+          delegate: false,
+        }).catch((e) => console.warn(`  回答子对话的提问失败（${tk.title}）：${e.message}`))
       if (busy(tk)) anyBusy = true
     }
     calm = anyBusy ? 0 : calm + 1

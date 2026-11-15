@@ -1563,15 +1563,15 @@ export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now
  * 计划落到 done（折叠头走 planHeadline 的 'done' 分支，进度归零）。只在这条路径上调用——父对话收尾
  * （finish_child）、一轮结束收口、后台命令结束仍按原样要求计划真做完（见 shared/task.ts 的 advanceChild）。
  * 还在等的结果一笔勾掉：对话已经解决了，留着「还在等它」只会和「已解决」矛盾。
- * 返回这次收口了几项（0 表示没有要收口、调用方不用落盘）。
+ * 返回这次收口了几项（0 表示没有要收口、调用方不用落盘）。as：用户取消修复时没做的步骤收成 skipped，不说成做完了（摸底报告第 4 条）。
  */
-export function settlePlan(task: PlanTask, now = new Date().toISOString()): number {
+export function settlePlan(task: PlanTask, now = new Date().toISOString(), as: 'done' | 'skipped' = 'done') {
   const plan = shownPlan(task)
   if (!plan) return 0
   let settled = 0
   const close = (item: PlanItem) => {
     if (!isSettled(item.status)) {
-      setStatus(item, 'done', now)
+      setStatus(item, as, now)
       settled++
     }
     // 不再等结果：不记成「等成功」，也不留成「等失败」，就是不等了
