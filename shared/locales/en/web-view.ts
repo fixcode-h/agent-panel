@@ -40,4 +40,10 @@ export const EN_WEB_VIEW: Record<string, string> = {
   '面板在本机取回页面，只留正文、图片和代码块，去掉脚本后显示。不带你在浏览器里的登录状态。':
     'The panel fetches the page locally and shows only the text, images and code blocks, with scripts removed. Your browser sign-ins are not used.',
   '{reason}。浏览器不会把它放进页签，换个方式看：': "{reason}. The browser won't show it in a tab. Try another way:",
+  '缩略图（mode="thumb"）': 'Thumbnail (mode="thumb")',
+  '整页（mode="full"），页面关在沙箱里': 'Full page (mode="full"), sandboxed',
+  示例网页: 'Sample page',
+  插件页面: 'Plugin page',
+  '插件 {id} 没有装好，打不开它的页面': "Plugin {id} isn't installed properly, so its page can't be opened",
+  只能打开插件目录里的文件: 'Only files in the plugin folder can be opened',
 }

@@ -13,7 +13,7 @@ import { t } from '@shared/i18n'
 import { webViewContract as W, type WebProbeRes } from '@shared/api-contract/web-view'
 import { webUrlOf } from '@shared/web-view/embed'
 import { call } from '@/lib/api/call'
-import { extensionAllows, type WebTarget } from '@/lib/web-view/tabs'
+import { extensionAllows, targetAddress, type WebTarget } from '@/lib/web-view/tabs'
 import { cn } from '@/lib/utils'
 
 /** 本机页面：能跑脚本、弹窗、下载、提交表单，不给同源 */
@@ -23,6 +23,8 @@ const FILE_SANDBOX =
 const URL_SANDBOX = `${FILE_SANDBOX} allow-same-origin`
 /** 缩略图按这个宽度排版再缩小：和常见桌面窗口差不多，网页不会按手机版排 */
 const THUMB_W = 1280
+/** 托管进程的页面开着时多久报一次「有人在看」：比最短的空闲停（1 分钟）短 */
+const KEEPALIVE_MS = 45_000
 /** 同时最多几个缩略图在加载：一屏好几张卡片时不一起拉起好几个网页 */
 const MAX_THUMBS = 3
 
@@ -53,33 +55,45 @@ function takeThumb(start: () => void) {
   }
 }
 
+/** 直接给一段 HTML（设置 → 组件里的示例、插件画好的预览）：用 srcdoc，同样关在 sandbox 里 */
+export type WebFrameTarget = WebTarget | { kind: 'html'; html: string }
+
 type Loaded =
   | { state: 'loading' }
-  | { state: 'ready'; src: string; local: boolean }
+  | { state: 'ready'; src: string; local: boolean; html?: string }
   | { state: 'blocked'; probe: WebProbeRes }
   | { state: 'error'; message: string }
 
 /** 本机文件换地址、外部网址预检；reloadKey 变了重新来一遍（令牌过期、文件改了） */
 function useWebSource(
-  target: WebTarget,
+  target: WebFrameTarget,
   taskId: string | undefined,
   projectId: string | undefined,
   run: boolean,
   reloadKey: unknown,
 ) {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
-  const key = target.kind === 'file' ? `f:${target.path}` : `u:${target.url}`
+  const key = target.kind === 'html' ? `h:${target.html}` : `${target.kind}:${targetAddress(target)}`
   useEffect(() => {
     if (!run) return
     let off = false
     setLoaded({ state: 'loading' })
     const done = (v: Loaded) => !off && setLoaded(v)
-    if (target.kind === 'file')
-      call(W.file, { body: { path: target.path, taskId, projectId } }).then(
+    const fail = (e: Error) => done({ state: 'error', message: e.message })
+    if (target.kind === 'html') done({ state: 'ready', src: '', local: true, html: target.html })
+    else if (target.kind === 'file')
+      call(W.file, { body: { path: target.path, taskId: target.taskId ?? taskId, projectId } }).then(
         (r) => done({ state: 'ready', src: r.url, local: true }),
-        (e: Error) => done({ state: 'error', message: e.message }),
+        fail,
       )
-    else if (!webUrlOf(target.url)) done({ state: 'error', message: t('只能打开 http 或 https 的网址') })
+    else if (target.kind === 'plugin-file' || target.kind === 'plugin-service') {
+      const service = target.kind === 'plugin-service' ? target.service : undefined
+      // 托管进程的页面是它自己的源（另一个端口），保留同源它的登录、存储才能用；插件包里的文件和本机文件一样关进沙箱
+      call(W.file, { body: { path: target.path, plugin: target.plugin, service } }).then(
+        (r) => done({ state: 'ready', src: r.url, local: !service }),
+        fail,
+      )
+    } else if (!webUrlOf(target.url)) done({ state: 'error', message: t('只能打开 http 或 https 的网址') })
     else
       call(W.probe, { body: { url: target.url } }).then(
         (p) =>
@@ -89,7 +103,7 @@ function useWebSource(
               ? { state: 'ready', src: p.finalUrl, local: false }
               : { state: 'blocked', probe: p },
           ),
-        (e: Error) => done({ state: 'error', message: e.message }),
+        fail,
       )
     return () => {
       off = true
@@ -97,6 +111,20 @@ function useWebSource(
     // target 每次渲染可能是新对象，按 key 判断换没换
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [key, taskId, projectId, run, reloadKey])
+  // 托管进程的页面开着时隔一会儿报一次「还有人在看」：页面自己的请求直接打到进程上，面板看不到，
+  // 不报的话进程会按空闲停掉（server/plugins/services.ts 的 stopAfterIdleMin，按分钟算）
+  const live = run && loaded.state === 'ready' && target.kind === 'plugin-service'
+  useEffect(() => {
+    if (!live || target.kind !== 'plugin-service') return
+    const body = { path: '', plugin: target.plugin, service: target.service }
+    // interval-ok: 托管进程保活，不是拉数据
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void call(W.file, { body }).catch(() => {})
+    }, KEEPALIVE_MS)
+    return () => clearInterval(timer)
+    // 按 key 判断目标换没换
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, key])
   return loaded
 }
 
@@ -120,7 +148,7 @@ export function WebFrame({
   blocked,
   className,
 }: {
-  target: WebTarget
+  target: WebFrameTarget
   /** 本机文件按哪个对话、哪个项目的目录找 */
   taskId?: string
   projectId?: string
@@ -170,7 +198,8 @@ export function WebFrame({
     body = (
       <iframe
         key={`${loaded.src}\n${String(reloadKey ?? '')}`}
-        src={loaded.src}
+        src={loaded.html === undefined ? loaded.src : undefined}
+        srcDoc={loaded.html}
         title={title ?? t('网页')}
         sandbox={sandboxOf(loaded.src, loaded.local)}
         referrerPolicy="no-referrer"

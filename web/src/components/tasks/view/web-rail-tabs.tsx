@@ -5,7 +5,7 @@
 import { useEffect, useRef } from 'react'
 import { Globe } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { closeWebTab, setWebShown, type WebTab, type useWebTabs } from '@/lib/web-view/tabs'
+import { closeWebTab, setWebShown, targetAddress, type WebTab, type useWebTabs } from '@/lib/web-view/tabs'
 import { TabItem } from '@/components/ui/tab-bar'
 
 /** 右栏当前停在哪个网页页签上（不在网页页签上时是 undefined） */
@@ -56,7 +56,7 @@ export function WebTabItems({
       onSelect={() => onSelect(x.id)}
       onClose={() => closeWebTab(taskId, x.id)}
       closeLabel={t('关闭网页')}
-      title={x.target.kind === 'file' ? x.target.path : x.target.url}
+      title={targetAddress(x.target)}
       icon={<Globe className="h-[0.8125rem] w-[0.8125rem]" />}
       className="max-w-[12rem] min-w-[5rem] shrink"
     >

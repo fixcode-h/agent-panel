@@ -9,15 +9,19 @@ import { z } from 'zod'
 import { endpoint } from './define.ts'
 
 export const WebFileInput = z.object({
-  /** 绝对路径，或相对对话工作目录的路径 */
-  path: z.string().min(1),
+  /** 绝对路径，或相对对话工作目录的路径；给了 plugin 时是相对插件目录（或托管进程根地址）的路径 */
+  path: z.string(),
   taskId: z.string().optional(),
   projectId: z.string().optional(),
+  /** 插件包里的文件、插件托管进程的页面（插件接口 11 的 webPages） */
+  plugin: z.string().optional(),
+  /** 给了就是插件的托管进程：没起就起，回它在本机的地址 */
+  service: z.string().optional(),
 })
 export const WebFile = z.object({
-  /** 沙箱源上的地址：令牌只认这个文件所在的目录，过期后要重新取 */
+  /** 沙箱源上的地址：令牌只认这个文件所在的目录，过期后要重新取。托管进程是它自己的本机地址 */
   url: z.string(),
-  /** 文件名（HTML 的 <title> 由页面自己读不到，页签上先用文件名） */
+  /** 网页的 <title>（服务端读文件开头），没有时是文件名 */
   title: z.string(),
   size: z.number(),
 })

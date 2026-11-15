@@ -31,6 +31,7 @@ import {
   setPrefersReader,
   setWebReader,
   stepWebTab,
+  targetAddress,
   type WebTab,
   type WebTarget,
 } from '@/lib/web-view/tabs'
@@ -45,8 +46,6 @@ import { Markdown } from '../Markdown'
 import { cn } from '@/lib/utils'
 
 const NO_TEAM = new Set<string>()
-
-const addressOf = (target: WebTarget) => (target.kind === 'file' ? target.path : target.url)
 
 /** 地址栏里输入的：像路径的当本机文件，其余当网址 */
 function targetOf(text: string): WebTarget | null {
@@ -63,16 +62,25 @@ async function openOutside(target: WebTarget, taskId: string, projectId?: string
     window.open(target.url, '_blank', 'noopener,noreferrer')
     return
   }
-  const r = await call(W.file, { body: { path: target.path, taskId, projectId } })
+  const body =
+    target.kind === 'file'
+      ? { path: target.path, taskId: target.taskId ?? taskId, projectId }
+      : {
+          path: target.path,
+          plugin: target.plugin,
+          service: target.kind === 'plugin-service' ? target.service : undefined,
+        }
+  const r = await call(W.file, { body })
   window.open(r.url, '_blank', 'noopener,noreferrer')
 }
 
 export function WebTabView({ tab, taskId, projectId }: { tab: WebTab; taskId: string; projectId?: string }) {
   const [reload, setReload] = useState(0)
-  const [draft, setDraft] = useState(addressOf(tab.target))
-  const address = addressOf(tab.target)
+  const [draft, setDraft] = useState(targetAddress(tab.target))
+  const address = targetAddress(tab.target)
   useEffect(() => setDraft(address), [address])
   const url = tab.target.kind === 'url' ? tab.target.url : ''
+  const local = tab.target.kind === 'file' || tab.target.kind === 'plugin-file'
   const reader = !!url && (tab.reader ?? prefersReader(url))
   const go = () => {
     const next = targetOf(draft)
@@ -105,7 +113,7 @@ export function WebTabView({ tab, taskId, projectId }: { tab: WebTab; taskId: st
             'mx-1 flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2.5 text-footnote focus-within:border-focus',
           )}
         >
-          {tab.target.kind === 'file' ? (
+          {local ? (
             <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" />
           ) : (
             <Lock className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -124,8 +132,10 @@ export function WebTabView({ tab, taskId, projectId }: { tab: WebTab; taskId: st
             className="min-w-0 flex-1 truncate bg-transparent text-fg outline-none"
           />
           <span className="ml-auto shrink-0">
-            {tab.target.kind === 'file' ? (
+            {local ? (
               <Badge tone="success">{t('本机文件 · 沙箱')}</Badge>
+            ) : tab.target.kind === 'plugin-service' ? (
+              <Badge>{t('插件页面')}</Badge>
             ) : reader ? (
               <Badge tone="accent">
                 <BookOpenText className="h-3 w-3" />
@@ -322,7 +332,7 @@ function ReaderView({ url, reload, onOutside }: { url: string; reload: number; o
             time: at ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
           })}
         </p>
-        <h1 className="font-serif text-title font-semibold tracking-tight text-fg">{doc.title}</h1>
+        <h1 className="text-title font-semibold tracking-tight text-fg">{doc.title}</h1>
         {doc.markdown ? (
           <Markdown text={doc.markdown} teamNames={NO_TEAM} />
         ) : (
