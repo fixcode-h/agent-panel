@@ -149,6 +149,8 @@ import { staleProjectWrite } from './projects/lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
 import { installHttpGuards, rawUploadAllowed } from './http-guards.ts'
 import { webViewApi } from './web-view/index.ts'
+import { findInstalled } from './plugins/manager.ts'
+import { serviceOrigin, touchService } from './plugins/services.ts'
 import { SANDBOX_PREFIX, serveSandbox } from './web-view/sandbox.ts'
 import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 
@@ -1012,7 +1014,13 @@ app.route('/deploy', deployApi({ startDoc: docs.start }))
 // 网页页签：本机文件换沙箱地址、外部网址预检、阅读模式（ADR 0068）
 app.route(
   '/web-view',
-  webViewApi({ workDir: tasks.workDir, projectDir: async (id) => (await projects.get(id))?.path ?? '' }),
+  webViewApi({
+    workDir: tasks.workDir,
+    projectDir: async (id) => (await projects.get(id))?.path ?? '',
+    pluginDir: (id) => findInstalled(id)?.dir ?? '',
+    serviceOrigin,
+    touchService,
+  }),
 )
 
 // ---- 附件和 @ 引用的项目文件 ----

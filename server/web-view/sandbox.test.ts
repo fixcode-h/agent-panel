@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import { Hono } from 'hono'
 import { installHttpGuards } from '../http-guards.ts'
 import { SANDBOX_PREFIX, grantRoot, sandboxUrl, serveSandbox } from './sandbox.ts'
+import { webFile } from './index.ts'
 
 test('按令牌发根目录里的文件，相对引用能取到，越界和过期的拒绝', async () => {
   const base = await mkdtemp(path.join(tmpdir(), 'sandbox-'))
@@ -32,5 +33,32 @@ test('按令牌发根目录里的文件，相对引用能取到，越界和过�
     assert.equal((await app.request(sandboxUrl('nope', 'style.css'))).status, 404)
   } finally {
     await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('插件页面：包里的文件按插件目录发沙箱地址、不许越界；托管进程给它自己的地址并记一次有人在看', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'plugin-'))
+  try {
+    await mkdir(path.join(dir, 'web'), { recursive: true })
+    await writeFile(path.join(dir, 'web', 'index.html'), '<p>plugin</p>')
+    const touched: string[] = []
+    const deps = {
+      workDir: async () => '',
+      projectDir: async () => '',
+      pluginDir: (id: string) => (id === 'demo' ? dir : ''),
+      serviceOrigin: async (p: string, s: string) =>
+        s === 'app' ? 'http://127.0.0.1:5999' : Promise.reject(new Error(`${p} 起不来`)),
+      touchService: (p: string, s: string) => void touched.push(`${p}/${s}`),
+    }
+    const file = await webFile(deps, { path: 'web/index.html', plugin: 'demo' })
+    assert.match(file.url, /^\/sandbox\/f\/[\w-]+\/web\/index\.html$/)
+    await assert.rejects(webFile(deps, { path: '../x.html', plugin: 'demo' }))
+    await assert.rejects(webFile(deps, { path: 'web/index.html', plugin: 'nope' }))
+    const svc = await webFile(deps, { path: '/board', plugin: 'demo', service: 'app' })
+    assert.equal(svc.url, 'http://127.0.0.1:5999/board')
+    assert.deepEqual(touched, ['demo/app'])
+    await assert.rejects(webFile(deps, { path: '', plugin: 'demo', service: 'db' }), /起不来/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
 })

@@ -19,6 +19,12 @@ export interface WebViewDeps {
   workDir: (taskId: string) => Promise<string>
   /** 项目目录；没有这个项目或没选目录时给空 */
   projectDir: (projectId: string) => Promise<string>
+  /** 插件的安装目录（链接本机目录装的是那个真实目录）；没装或没加载成功时给空 */
+  pluginDir: (pluginId: string) => string
+  /** 插件托管进程：没起就起，回 http://127.0.0.1:<端口>；起不来抛原因（server/plugins/services.ts） */
+  serviceOrigin: (pluginId: string, serviceId: string) => Promise<string>
+  /** 记一次「有人在看」，托管进程的空闲计时从头算 */
+  touchService: (pluginId: string, serviceId: string) => void
 }
 
 /** 预检结果按网址缓存这么久：同一个网页来回切页签不用每次都去问对方 */
@@ -49,7 +55,35 @@ async function rootsFor(deps: WebViewDeps, taskId?: string, projectId?: string) 
   return roots.map((r) => path.resolve(r))
 }
 
-export async function webFile(deps: WebViewDeps, input: { path: string; taskId?: string; projectId?: string }) {
+type FileInput = { path: string; taskId?: string; projectId?: string; plugin?: string; service?: string }
+
+/**
+ * 插件声明的页面（插件接口 11 的 webPages）：
+ * - 托管进程直接给它自己的本机地址：它和面板端口不同、是另一个源，碰不到面板的页面；
+ *   网页应用常用 /assets/… 这种绝对路径，挂在沙箱源的前缀下会全部找不到，所以不经沙箱源转发。
+ *   代价是外网访问面板时打不开（地址是 127.0.0.1），被拒原因照实显示。
+ * - 插件包里的文件：按插件目录发沙箱令牌，和本机文件一样
+ */
+async function pluginFile(deps: WebViewDeps, input: FileInput & { plugin: string }) {
+  const rel = input.path.replace(/^[/\\]+/, '')
+  if (input.service) {
+    const origin = await deps.serviceOrigin(input.plugin, input.service)
+    deps.touchService(input.plugin, input.service)
+    return { url: `${origin}/${rel}`, title: `${input.plugin} · ${input.service}`, size: 0 }
+  }
+  const dir = deps.pluginDir(input.plugin)
+  if (!dir) throw new Error(t('插件 {id} 没有装好，打不开它的页面', { id: input.plugin }))
+  const full = path.resolve(dir, rel)
+  if (!inside(path.resolve(dir), full)) throw new Error(t('只能打开插件目录里的文件'))
+  const info = await stat(full).catch(() => null)
+  if (!info?.isFile()) throw new Error(t('文件不存在：{path}', { path: input.path }))
+  const relPath = path.relative(dir, full).split(path.sep).join('/')
+  return { url: sandboxUrl(grantRoot(path.resolve(dir)), relPath), title: path.basename(full), size: info.size }
+}
+
+export async function webFile(deps: WebViewDeps, input: FileInput) {
+  if (input.plugin) return pluginFile(deps, { ...input, plugin: input.plugin })
+  if (!input.path) throw new Error(t('打开网页的参数不对'))
   const roots = await rootsFor(deps, input.taskId, input.projectId)
   // 相对路径按对话工作目录（没有对话时按项目目录）解析：回复里常写 docs/demo.html 这样的相对路径
   const full = path.isAbsolute(input.path) ? path.resolve(input.path) : path.resolve(roots[0], input.path)

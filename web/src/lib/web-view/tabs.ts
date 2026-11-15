@@ -7,7 +7,13 @@
  */
 import { createContext, useContext, useEffect, useRef, useSyncExternalStore } from 'react'
 
-export type WebTarget = { kind: 'file'; path: string } | { kind: 'url'; url: string }
+export type WebTarget =
+  | { kind: 'file'; path: string }
+  | { kind: 'url'; url: string }
+  /** 插件包里的文件（插件接口 11 的 webPages 写 file:…） */
+  | { kind: 'plugin-file'; plugin: string; path: string }
+  /** 插件托管进程的页面（webPages 写 service:<进程 id>/<路径>）：打开时没起就起 */
+  | { kind: 'plugin-service'; plugin: string; service: string; path: string }
 
 export interface WebTab {
   id: string
@@ -70,11 +76,19 @@ function write(taskId: string, next: WebState) {
 /** 阅读模式不跨刷新记：重新打开时先按原网页试一次 */
 const stripReader = (x: WebTab) => ({ ...x, reader: undefined })
 
-export const sameTarget = (a: WebTarget, b: WebTarget) =>
-  a.kind === b.kind && (a.kind === 'file' ? a.path === (b as typeof a).path : a.url === (b as typeof a).url)
+/** 地址栏里显示的那一串，也用来判断是不是同一个目标 */
+export function targetAddress(target: WebTarget) {
+  if (target.kind === 'file') return target.path
+  if (target.kind === 'url') return target.url
+  if (target.kind === 'plugin-file') return `plugin:${target.plugin}/${target.path}`
+  return `service:${target.plugin}/${target.service}/${target.path}`
+}
+
+export const sameTarget = (a: WebTarget, b: WebTarget) => a.kind === b.kind && targetAddress(a) === targetAddress(b)
 
 export function targetTitle(target: WebTarget) {
-  if (target.kind === 'file') return target.path.split(/[\\/]/).pop() || target.path
+  if (target.kind === 'file' || target.kind === 'plugin-file') return target.path.split(/[\\/]/).pop() || target.path
+  if (target.kind === 'plugin-service') return `${target.plugin} · ${target.service}`
   try {
     return new URL(target.url).hostname || target.url
   } catch {

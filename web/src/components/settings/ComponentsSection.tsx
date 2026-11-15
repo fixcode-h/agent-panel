@@ -84,6 +84,7 @@ import { applyLocalAppearance } from '@/lib/appearance'
 import { PluginSpecimens } from './PluginSpecimens'
 import { ReportCompareSpecimen } from './ReportCompareSpecimen'
 import { ChatQuotesSpecimen } from './ChatQuotesSpecimen'
+import { WebFrameSpecimen } from './WebFrameSpecimen'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
@@ -514,6 +515,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
         <Specimen name="ChatQuotes" tune={['statusPill']}>
           <ChatQuotesSpecimen />
+        </Specimen>
+        <Specimen name="WebFrame">
+          <WebFrameSpecimen />
         </Specimen>
         <Specimen name="InlineChip" tune={['chip']}>
           <p className="text-prose leading-7">
