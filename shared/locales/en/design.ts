@@ -11,7 +11,6 @@ export const EN_DESIGN: Record<string, string> = {
   常用: 'Common',
   放大: 'Zoom in',
   颜色: 'Color',
-  生成: 'Generate',
   '游戏 UI': 'Game UI',
   '网页 UI': 'Web UI',
   版本: 'Versions',

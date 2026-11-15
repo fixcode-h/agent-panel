@@ -37,6 +37,7 @@
     "web/src/components/chat/QuestionPanel",
     "web/src/components/chat/RichInput",
     "web/src/components/chat/SlashMenu",
+    "web/src/components/comfy/ComfyGraphView",
     "web/src/components/comfy/ComfyQueuePanel",
     "web/src/components/comfy/ComfyWeb",
     "web/src/components/files/HeaderRuleEditor",

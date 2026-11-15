@@ -43,6 +43,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/chat/QuestionPanel': () => import('@/components/chat/QuestionPanel'),
   'web/src/components/chat/RichInput': () => import('@/components/chat/RichInput'),
   'web/src/components/chat/SlashMenu': () => import('@/components/chat/SlashMenu'),
+  'web/src/components/comfy/ComfyGraphView': () => import('@/components/comfy/ComfyGraphView'),
   'web/src/components/comfy/ComfyQueuePanel': () => import('@/components/comfy/ComfyQueuePanel'),
   'web/src/components/comfy/ComfyWeb': () => import('@/components/comfy/ComfyWeb'),
   'web/src/components/files/HeaderRuleEditor': () => import('@/components/files/HeaderRuleEditor'),
