@@ -174,7 +174,9 @@ export async function conversationCaps(c: TurnCapsCtx) {
     createConversation: async ({ title, message, files, agentId, bug, fix, edits, ignoreDirty, level, after }) => {
       if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
       // 独立分支看不到父对话没提交的改动：要改代码的先拦下交回清单，其余在返回里提醒（见 dirty-parent.ts）
-      const dirty = ignoreDirty ? '' : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project)
+      const dirty = ignoreDirty
+        ? ''
+        : await (edits ? dirtyParentBlock : dirtyParentNote)(sc, entry.task, project, agents)
       if (dirty && edits) return { ok: false, info: dirty }
       const r = await spawnChild(entry.task, project, agents, {
         title,

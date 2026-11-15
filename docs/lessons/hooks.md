@@ -10,6 +10,12 @@ paths: shared/hooks/index.ts, shared/hooks/defs.ts, shared/hooks/mod.ts, server/
 - 起因：ff99f64a 的 Pi 扩展在 `agent_before_settle` 里按 `context.canContinue === false` 提前返回，可那一刻最后一条总是模型回复，这个值永远是 false，第三期真实接口测试才发现一次都没问过面板。
 - 防线：`shared/hooks/mod.test.ts`（Command Code 的 mod）；Pi 人工（真实运行）。
 
+## 钩子换成 HTTP 类型前，逐个事件用真 CLI 确认它会跑
+
+- 规则：CLI 支持 `type: http` 的钩子不等于每个事件都支持。换写法前用真 CLI 逐个事件看面板收没收到请求（压缩类事件要真把上下文压满），不跑的事件写进 CLI 定义 `hooks.http.commandOnly`，照旧走 curl / 转发脚本。
+- 起因：Claude Code 2.1.318 起所有钩子换成 http，2.1.325 实测 SessionStart 的 http 钩子不论 startup / resume / compact 都不跑，「压缩后补回计划」在 Claude Code 上从没生效（2026-11-15 长对话实测，任务日志里一次「压缩后补回计划」都没有）。
+- 防线：`shared/hooks/index.test.ts`「CLI 只认命令类钩子的事件」。
+
 ## 按命令匹配要按段比，别只比整条命令的开头
 
 - 规则：模型常写 `cd 项目 && npm test`、`npm test 2>&1 | tail`。用户钩子的命令前缀、只读守卫的写命令都按 `commandSegments`（按 `&&`、`||`、`;`、`|`、换行拆开）逐段比。

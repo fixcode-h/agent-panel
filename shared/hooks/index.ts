@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { TaskMessage } from '../schema.ts'
-import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './defs.ts'
+import { HookEventName, NOTIFY_EVENTS, type ToolKind } from './defs.ts'
 import { panelToolName } from '../panel-tools.ts'
 
 /**
@@ -95,9 +95,13 @@ export const HooksSpec = z.object({
   /**
    * 命令类钩子能直接 POST 到面板（不用每次起一个 node 跑转发脚本）：本机版本不低于 minVersion 时，
    * 配置里引用 {hookScript} 的那一项换成 entry（{url} 换成这个事件的地址，原生输入直接交给面板，回的就是 CLI 要的输出）。
-   * 读不到本机版本时不换：老版本不认这种钩子会静静地不跑，守卫就失效了
+   * 读不到本机版本时不换：老版本不认这种钩子会静静地不跑，守卫就失效了。
+   * commandOnly 列出 CLI 只认命令类钩子的事件：这些事件不换成 HTTP 钩子，照旧走 curl / 转发脚本
+   * （Claude Code 的 SessionStart 写成 http 类型会被静静跳过，压缩后补回计划就从来没生效过，2026-11-15 实测）
    */
-  http: z.object({ minVersion: z.string(), entry: z.unknown() }).optional(),
+  http: z
+    .object({ minVersion: z.string(), entry: z.unknown(), commandOnly: z.array(HookEventName).default([]) })
+    .optional(),
 })
 export type HooksSpec = z.infer<typeof HooksSpec>
 
@@ -262,7 +266,8 @@ export function hookInstall(spec: HooksSpec, dir: string, active: HookEventName[
   const own = (p: (typeof parts)[number]) => {
     const scope = p.event === 'tool.before' || p.event === 'tool.after' ? opts.tools?.[p.event] : undefined
     const matcher = toolMatcher(spec, scope)
-    const url = opts.httpUrl && spec.http ? `${opts.httpUrl}/${p.event}` : ''
+    const url =
+      opts.httpUrl && spec.http && !spec.http.commandOnly.includes(p.event) ? `${opts.httpUrl}/${p.event}` : ''
     const each = (v: unknown): unknown => {
       if (typeof v === 'string') {
         const s = v.replace(/\{toolMatcher\}/g, () => matcher)

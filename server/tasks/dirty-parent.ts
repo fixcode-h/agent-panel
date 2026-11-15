@@ -1,6 +1,8 @@
-import type { Project, Task } from '../../shared/schema.ts'
+import path from 'node:path'
+import type { Agent, Project, Task } from '../../shared/schema.ts'
 import { gitRun } from '../exec/git.ts'
 import { placedFiles } from '../attachments.ts'
+import { projectLessonsDir } from '../projects/lessons.ts'
 import type { TasksScope } from './scope.ts'
 
 /** 清单最多列这么多个：只是让父对话知道有哪些，太长反而淹没要它做的选择 */
@@ -29,8 +31,13 @@ export async function uncommittedFiles(dir: string, ignore: Iterable<string> = [
  * 不自动带进 worktree：stash 不含未跟踪文件，合回时还会和父对话目录里同一份改动撞在一起。
  * 返回空字符串表示可以开；edits 没写的子对话先在父对话目录里做事，只在返回里提醒一句（见 dirtyParentNote）
  */
-export async function dirtyParentBlock(sc: Pick<TasksScope, 'taskDir'>, parent: Task, project: Project) {
-  const files = await dirtyOf(sc, parent, project)
+export async function dirtyParentBlock(
+  sc: Pick<TasksScope, 'taskDir'>,
+  parent: Task,
+  project: Project,
+  agents: Agent[] = [],
+) {
+  const files = await dirtyOf(sc, parent, project, agents)
   if (!files?.length) return ''
   return (
     `还没开：你的目录里有 ${files.length} 个没提交的改动，子对话的独立分支从当前提交开出，看不到它们：\n${listOf(files)}\n` +
@@ -40,16 +47,37 @@ export async function dirtyParentBlock(sc: Pick<TasksScope, 'taskDir'>, parent: 
 }
 
 /** edits 没写的子对话：先在父对话目录里调研，要改文件时才开独立分支，那时同样看不到这些改动，返回里提醒一句 */
-export async function dirtyParentNote(sc: Pick<TasksScope, 'taskDir'>, parent: Task, project: Project) {
-  const files = await dirtyOf(sc, parent, project)
+export async function dirtyParentNote(
+  sc: Pick<TasksScope, 'taskDir'>,
+  parent: Task,
+  project: Project,
+  agents: Agent[] = [],
+) {
+  const files = await dirtyOf(sc, parent, project, agents)
   if (!files?.length) return ''
   return `注意：你的目录里有 ${files.length} 个没提交的改动，子对话要改文件时开出的独立分支看不到它们：\n${listOf(files)}\n它要用到的话先提交。`
 }
 
-async function dirtyOf(sc: Pick<TasksScope, 'taskDir'>, parent: Task, project: Project) {
+async function dirtyOf(sc: Pick<TasksScope, 'taskDir'>, parent: Task, project: Project, agents: Agent[]) {
   if (project.childIsolation !== 'worktree' || !project.path) return null
   const dir = await sc.taskDir(parent).catch(() => '')
-  return dir ? uncommittedFiles(dir, placedFiles(parent)).catch(() => null) : null
+  if (!dir) return null
+  const files = await uncommittedFiles(dir, placedFiles(parent)).catch(() => null)
+  const own = await lessonsPrefix(dir, project, agents)
+  return own && files ? files.filter((f) => !f.startsWith(own)) : files
+}
+
+/**
+ * 项目教训随仓库时面板写进项目文档目录的教训（docs/lessons/，见 server/projects/lessons.ts）：不算父对话没提交的改动。
+ * 子对话的教训由面板从项目目录读出来写进提示词，用不着这些文件；以前用户或 Agent 记一条教训，
+ * 之后每次派要改代码的子对话都先被拦一次，父对话还得判断这是不是「用户自己的改动」（2026-11-15 长对话实测，3 次派单 3 次被拦）。
+ * 返回相对父对话目录、以 / 结尾的前缀；教训目录不在父对话目录里时返回空
+ */
+async function lessonsPrefix(dir: string, project: Project, agents: Agent[]) {
+  const lessons = await projectLessonsDir(project, agents).catch(() => undefined)
+  if (!lessons) return ''
+  const rel = path.relative(dir, lessons)
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? `${rel.split(path.sep).join('/')}/` : ''
 }
 
 function listOf(files: string[]) {
