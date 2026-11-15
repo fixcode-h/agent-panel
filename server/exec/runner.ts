@@ -495,6 +495,7 @@ async function runAgent(
       task.messages.push(hookMarker(reason, ctx.newId(), agentId, step))
       ctx.changed(true)
     },
+    changed: () => ctx.changed(),
   })
   const r = await invokeCli({
     mcp: plugins?.servers.length ? plugins.servers : undefined,

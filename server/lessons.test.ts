@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { setLang } from '../shared/i18n.ts'
 import { GlobalLesson, Project, ProjectLesson, type ProjectInput } from '../shared/schema.ts'
 import {
+  PROMPT_CAP,
   applyGlobalChanges,
   findLessons,
   globToRegExp,
@@ -67,16 +68,22 @@ test('提示：有工具时按文件的只给标题，没有工具时按预算�
   assert.match(lessonsPrompt([], true), /record_lesson/)
   // 子任务只查不记：照样按文件查（project_lessons），不带记教训的说明；没有教训时不占提示
   const helper = lessonsPrompt(ls, true, [], false)
-  assert.match(helper, /先把文件路径传给 project_lessons/)
+  assert.match(helper, /按文件生效/)
   assert.doesNotMatch(helper, /record_lesson/)
   assert.equal(lessonsPrompt([], true, [], false), '')
 })
 
-test('提示有预算：条目再多也只给一部分全文，其余列标题', () => {
+test('提示有预算：有工具时整段不超过 1500 字，条目再多也只给一部分全文，其余列标题', () => {
   const ls = Array.from({ length: 80 }, (_, i) => lesson(`规则 ${i}`, [], { rule: '很长的说明'.repeat(40) }))
   const p = lessonsPrompt(ls, true)
-  assert.ok(p.length < 8000, `提示太长：${p.length}`)
+  assert.ok(p.length <= PROMPT_CAP, `提示太长：${p.length}`)
   assert.match(p, /另有 \d+ 条/)
+  const many = Array.from({ length: 200 }, (_, i) => lesson(`按文件的规则 ${i}`, [`src/m${i}/**`], { tags: ['界面'] }))
+  const q = lessonsPrompt(many, true)
+  assert.ok(q.length <= PROMPT_CAP, `提示太长：${q.length}`)
+  assert.match(q, /面板会推送/)
+  // 记教训的写法直接给出参数，不用先经 more_tools 查用法
+  assert.match(q, /name 写 record_lesson，arguments 照写/)
 })
 
 test('project_lessons 有预算：命中再多也只给最相关的全文，其余列标题', () => {

@@ -236,21 +236,40 @@ export function findExperience(
     .join('\n\n')
 }
 
+/** 开头附上的经验最多几条、合计多少字：给答案本身（位置、叫法），不只给标题 */
+const PRE_MAX = 3
+const PRE_BUDGET = 600
+
 /**
- * 新会话开头的「项目经验」：不放条目，只说有多少条、怎么查；preHint 打开时按这次的需求原文本地匹配，
- * 命中的最多附两条的标题和位置（不调模型）。没有经验时返回空串，不占提示
+ * 新会话开头的「项目经验」：说有多少条、怎么查；preHint 打开时按这次的需求原文本地匹配（不调模型），
+ * 命中的最多 PRE_MAX 条直接给答案（说明和位置），Agent 不用再查一次就能直奔那里（设计稿一期 ⑤）。
+ * canRecord：这次调用能记经验（子任务不能），带上直接记的写法（一期 ⑥）。没有经验又不能记时返回空串，不占提示
  */
-export function experiencePrompt(list: ProjectExperience[], request: string, preHint: boolean) {
+export function experiencePrompt(list: ProjectExperience[], request: string, preHint: boolean, canRecord = false) {
   const on = list.filter((e) => e.enabled)
-  if (!on.length) return ''
-  const hint = `## 项目经验\n这个项目有 ${on.length} 条以前对话学到的经验（找位置、叫法对照、命令、验证方法）。要在全项目搜索之前，先用 project_experience 按关键词查一下。`
-  if (!preHint || !request.trim()) return hint
-  const hit = rankExperience(on, request.slice(0, 2000)).slice(0, 2)
-  if (!hit.length) return hint
-  return `${hint}\n可能相关的：\n${hit
-    .map((e) => `- ${e.title}${e.paths.length ? `：${e.paths.join('、')}` : ''}`)
-    .join('\n')}`
+  const record = canRecord ? EXP_RECORD_HINT : ''
+  if (!on.length) return record ? `## 项目经验\n${record}` : ''
+  const hint = `## 项目经验\n这个项目有 ${on.length} 条以前对话学到的经验（找位置、叫法对照、命令、验证方法）。要在全项目搜索之前，先用 project_experience 按关键词查一下；你搜索时面板也会把关键词对得上的经验直接补给你。`
+  const hit = preHint && request.trim() ? rankExperience(on, request.slice(0, 2000)).slice(0, PRE_MAX) : []
+  const lines: string[] = []
+  let used = 0
+  for (const e of hit) {
+    const line = `- ${e.title}${e.body ? `：${e.body.replace(/\s+/g, ' ')}` : ''}${e.paths.length ? `（位置：${e.paths.join('、')}）` : ''}`
+    if (lines.length && used + line.length > PRE_BUDGET) break
+    lines.push(line.length > PRE_BUDGET ? `${line.slice(0, PRE_BUDGET - 1)}…` : line)
+    used += line.length
+  }
+  return [
+    hint,
+    lines.length ? `和这次的要求可能相关的（路径可能变过，对不上时照常找）：\n${lines.join('\n')}` : '',
+    record,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
+
+/** 记经验的写法：参数直接写出来，record_experience 收在 more_tools 里时也不用先查用法。发给 Agent 的，不翻译 */
+const EXP_RECORD_HINT = `绕了很多步才找到、以后还会有人找的位置、叫法、命令，可以当场记成经验：调 record_experience（不在工具列表里时经 more_tools 调，name 写 record_experience，arguments 照写，不用先查用法），参数如 {"kind":"locate","title":"要找的东西在哪 / 用什么","body":"一两句补充","keywords":["用户的说法","代码里的叫法"],"paths":["目录或 glob"]}（kind：locate、vocab、command、verify、flow）。没记的，对话完成后面板也会自动学。`
 
 export const newExperienceId = () => `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 

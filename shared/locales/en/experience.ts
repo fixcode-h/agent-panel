@@ -149,4 +149,10 @@ export const EN_EXPERIENCE: Record<string, string> = {
   还没用上: 'Not used yet',
   '用上 {n} 次 · {ago}': 'Used {n}× · {ago}',
   '用上 {n} 次': 'Used {n}×',
+  // 对话里工具行下面的教训、经验标签（web/src/components/ui/knowledge-tag.tsx）
+  教训: 'Lesson',
+  跑命令前推送: 'Pushed before the command ran',
+  改文件前推送: 'Pushed before the file was edited',
+  报错后按报错内容推送: 'Pushed after the error, matched by its text',
+  搜索前推送: 'Pushed before the search',
 }
