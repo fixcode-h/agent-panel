@@ -5,6 +5,7 @@ import type { Task } from '../../shared/schema.ts'
 import { wakeHold, type WakeHold } from '../../shared/wake.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 父对话的用量上限（见 shared/budget.ts）：每一轮结束时按整棵对话树核一次，顺带记速率样本（见 checkRate）。
@@ -17,7 +18,7 @@ export function createBudget(s: TasksScope) {
     let cur = tk
     const seen = new Set<string>([cur.id])
     while (cur.parentTaskId && !seen.has(cur.parentTaskId)) {
-      const up = s.live.get(cur.parentTaskId)?.task ?? (await s.store.get(cur.parentTaskId))
+      const up = await readTask(s, cur.parentTaskId)
       if (!up) break
       seen.add(up.id)
       cur = up
@@ -32,7 +33,7 @@ export function createBudget(s: TasksScope) {
     // 新建时单独设了上限的对话用它自己的，没设用项目的（A6 ①）
     const { budget, own } = budgetFor(root, await s.deps.projects.get(root.projectId))
     // 列表里的用量最多落后一次落盘：在跑的对话用内存里那一份
-    const all = (await s.store.list()).map((x) => s.live.get(x.id)?.task ?? x)
+    const all = (await s.store.list()).map((x) => freshTask(s, x))
     const use = budgetUse(root.id, all)
     return { root, budget, own, all, use, level: budgetLevel(use, budget) }
   }

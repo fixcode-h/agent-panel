@@ -14,6 +14,7 @@ import { childFilesInfo, hitList, holdTurn, normClaimPath, scopeOverlaps } from 
 import { isolated } from './helpers.ts'
 import { linkRelapse } from './bug-relapse.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask, readTask } from './read.ts'
 
 export function createSpawnChild(sc: TasksScope) {
   /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
@@ -96,7 +97,7 @@ export function createSpawnChild(sc: TasksScope) {
     let wait: ReturnType<typeof afterDecision> | undefined
     let waitIds: string[] = []
     if (after?.length) {
-      const kids = (await sc.store.childrenOf(parent.id)).map((k) => sc.live.get(k.id)?.task ?? k)
+      const kids = (await sc.store.childrenOf(parent.id)).map((k) => freshTask(sc, k))
       const ok = checkAfter(after, kids, parent.id)
       if (!ok.ok) return { ok: false, info: ok.info }
       waitIds = ok.ids
@@ -207,7 +208,7 @@ export function createSpawnChild(sc: TasksScope) {
 
   /** 面板自己替父对话新建子对话（不经父对话的那一轮）：按父对话所在项目和现在的角色列表来 */
   async function spawnChildOf(parentId: string, input: { title: string; message: string; agentId?: string }) {
-    const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+    const parent = await readTask(sc, parentId)
     if (!parent || taskDeleted(parent)) return { ok: false, info: '找不到父对话' }
     const project = parent.projectId ? await sc.deps.projects.get(parent.projectId) : null
     if (!project) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }

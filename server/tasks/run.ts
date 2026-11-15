@@ -38,6 +38,7 @@ import { failRun, settleRun, type SettleCtx } from './run-settle.ts'
 import { vcsCaps } from './turn-caps-vcs.ts'
 import { buildCaps } from './turn-caps-build.ts'
 import { knowledgeCaps } from './turn-caps-knowledge.ts'
+import { readTask } from './read.ts'
 
 /**
  * 对话的执行：开始一轮（拼角色、项目、工作流、CLI 上下文，接 Orchestra 和面板工具）、接着说（followUp）、消息交付（插话 / 交给正在跑的 CLI / 排到这一轮结束后）、卡住重开。
@@ -118,9 +119,7 @@ export function createRun(sc: TasksScope) {
       )
       project = dir && dir !== found.path ? { ...withLessons, path: dir } : withLessons
     } else if (found && dir && dir !== found.path) project = { ...found, path: dir }
-    const parentTask = task.parentTaskId
-      ? (sc.live.get(task.parentTaskId)?.task ?? (await sc.store.get(task.parentTaskId)) ?? undefined)
-      : undefined
+    const parentTask = task.parentTaskId ? ((await readTask(sc, task.parentTaskId)) ?? undefined) : undefined
     // 全局规则、目标存在谁身上：顶层对话是自己，子对话是父对话。父对话在执行位上时那份最新（落盘的可能还没写），
     // 不在时取存储里已有的内存副本（/rule、改目标都会写回存储），都没有才用这一轮开始时读的
     const ruleOwner = () =>

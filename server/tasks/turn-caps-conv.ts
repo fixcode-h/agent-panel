@@ -23,6 +23,7 @@ import { inboxWithFile } from './inbox-file.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { upgradeChildToBug } from './bug-upgrade.ts'
 import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
+import { freshTask } from './read.ts'
 
 /**
  * 拼一轮宿主能力要用到的：执行位、这一轮开始时的任务快照和项目、角色。
@@ -139,7 +140,7 @@ export async function conversationCaps(c: TurnCapsCtx) {
       const kids = await sc.store.childrenOf(entry.task.id)
       // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
       return kids.map((k) => {
-        const cur = sc.live.get(k.id)?.task ?? k
+        const cur = freshTask(sc, k)
         // 在做什么、在等什么、多久没新输出：父对话问「是不是卡住了」时不用再去猜
         // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
         const doing = sc.live.has(k.id) ? childActivity(cur) : undefined

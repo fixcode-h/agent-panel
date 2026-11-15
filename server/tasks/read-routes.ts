@@ -16,6 +16,7 @@ import { t } from '../../shared/i18n.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../../shared/tasks/export.ts'
 import { runTree } from '../../shared/run/usage.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask } from './read.ts'
 
 /**
  * 读对话：实时推送（SSE）、整份对话、完整工具输出、转写、导出和导入。
@@ -27,7 +28,7 @@ export function registerReadRoutes(s: TasksScope) {
    */
   s.routes.get('/:id/events', async (c) => {
     const id = c.req.param('id')
-    if (!(await s.current(id))) return s.bad(c, t('任务不存在'), 404)
+    if (!(await currentTask(s, id))) return s.bad(c, t('任务不存在'), 404)
     // 前端手上那份对话的版本：重连时浏览器自动带 Last-Event-ID，首次建连可以用 ?rev= 自己指定。
     // 能对上前缀就只发增量，对不上才发整份（见 shared/task.ts 的 taskRevOffset）
     const rev = c.req.header('Last-Event-ID') || c.req.query('rev') || ''
@@ -71,7 +72,7 @@ export function registerReadRoutes(s: TasksScope) {
             continue
           }
         }
-        const cur = await s.current(id)
+        const cur = await currentTask(s, id)
         if (!cur) {
           await send('gone', {})
           break
@@ -148,7 +149,7 @@ export function registerReadRoutes(s: TasksScope) {
   })
 
   s.routes.get('/:id', async (c) => {
-    const task = await s.current(c.req.param('id'))
+    const task = await currentTask(s, c.req.param('id'))
     // 进了回收站的对话当不存在：列表里已经没有它了，旧链接、AI 处理的浮条轮询都该看到「已关闭」；
     // 恢复（POST /:id/restore）之后又能读到
     if (!task || taskDeleted(task)) return s.bad(c, t('任务不存在'), 404)
@@ -175,7 +176,7 @@ export function registerReadRoutes(s: TasksScope) {
 
   /** 推送时省掉的工具输出全文（页面打开窗口看全部时取），见 liteMessages 的 outputCut */
   s.routes.get('/:id/tool-output', async (c) => {
-    const task = await s.current(c.req.param('id'))
+    const task = await currentTask(s, c.req.param('id'))
     if (!task || taskDeleted(task)) return s.bad(c, t('任务不存在'), 404)
     const m = task.messages.find((x) => x.id === c.req.query('msg'))
     const tool = m?.tools[Number(c.req.query('i'))]
@@ -185,7 +186,7 @@ export function registerReadRoutes(s: TasksScope) {
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
   s.routes.post('/:id/transcript', async (c) => {
-    const task = await s.current(c.req.param('id'))
+    const task = await currentTask(s, c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     const project = task.projectId ? await s.deps.projects.get(task.projectId) : null
     const lines = [

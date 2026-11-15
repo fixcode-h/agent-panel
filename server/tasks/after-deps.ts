@@ -11,6 +11,7 @@ import type { Task } from '../../shared/schema.ts'
 import { taskDeleted } from '../../shared/task.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask } from './read.ts'
 
 export function createAfterDeps(sc: TasksScope) {
   /** 已经告诉过父对话的「前置等不到了」：子对话 id + 前置 id + 前置状态，同一件事只说一次 */
@@ -57,7 +58,7 @@ export function createAfterDeps(sc: TasksScope) {
   /** 扫一遍父对话名下在等前置的子对话：能开始的启动，等不到的告诉父对话 */
   async function releaseAfter(parentId: string) {
     if (sc.shuttingDown) return
-    const kids = (await sc.store.childrenOf(parentId)).map((k) => sc.live.get(k.id)?.task ?? k)
+    const kids = (await sc.store.childrenOf(parentId)).map((k) => freshTask(sc, k))
     for (const k of kids) {
       if (!waitingAfter(k) || taskDeleted(k) || k.archived || sc.live.has(k.id)) continue
       const d = afterDecision(k.waitAfter!, (id) => kids.find((x) => x.id === id))

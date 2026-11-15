@@ -19,6 +19,7 @@ import path from 'node:path'
 import { sessionInfo } from '../session-bar.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask } from './read.ts'
 
 /**
  * 要改的文件相对任务目录的路径：Agent 输出里常写绝对路径，落在任务目录里面的换成相对路径交给 writeInDir
@@ -37,7 +38,7 @@ function relInDir(dir: string, want: string) {
 export function registerFileRoutes(s: TasksScope) {
   // 一个改动文件的差异：git 仓库和任务开始时的提交比；不是仓库时拼出 Agent 改这个文件时给出的改动
   s.routes.get('/:id/diff', async (c) => {
-    const tk = await s.current(c.req.param('id'))
+    const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const file = c.req.query('path') ?? ''
     if (!tk.changes.some((x) => x.path === file)) return s.bad(c, t('这个文件不在任务的改动里'))
@@ -57,7 +58,7 @@ export function registerFileRoutes(s: TasksScope) {
 
   // 一轮改动里一个文件的差异（总结下面的改动卡片点开文件）：只看这一轮自己的改动
   s.routes.get('/:id/turn-diff', async (c) => {
-    const tk = await s.current(c.req.param('id'))
+    const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const file = c.req.query('path') ?? ''
     const ch = tk.messages.find((m) => m.id === c.req.query('msg'))?.turnChanges
@@ -73,7 +74,7 @@ export function registerFileRoutes(s: TasksScope) {
 
   // 整个对话里一个文件的差异（对话停下后最后面那张改动卡片点开文件）：各轮的改动按先后拼起来，撤销过的那几轮不算
   s.routes.get('/:id/conv-diff', async (c) => {
-    const tk = await s.current(c.req.param('id'))
+    const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const file = c.req.query('path') ?? ''
     const ch = convChanges(tk.messages)
@@ -89,14 +90,14 @@ export function registerFileRoutes(s: TasksScope) {
 
   // 会话栏：环境、说明文件、Skill、新建的文件；cli 是这个对话当前用的 CLI（页面按角色算好传来）
   s.routes.get('/:id/session', async (c) => {
-    const tk = await s.current(c.req.param('id'))
+    const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     return c.json(await sessionInfo(tk, tk.imported ? '' : await s.taskDir(tk), c.req.query('cli') ?? ''))
   })
 
   /** 任务的工作目录；导入的任务没有本机目录，读文件时直接拒绝 */
   const readableDir = async (id: string | undefined) => {
-    const tk = id ? await s.current(id) : null
+    const tk = id ? await currentTask(s, id) : null
     if (!tk) throw Object.assign(new Error(t('任务不存在')), { status: 404 })
     if (tk.imported) throw Object.assign(new Error(t('导入的任务看不到对方电脑上的文件')), { status: 400 })
     const dir = await s.taskDir(tk)
@@ -163,7 +164,7 @@ export function registerFileRoutes(s: TasksScope) {
     return inTaskDir(c, async (dir) => {
       const rel = relInDir(dir, want)
       if (!rel) return s.bad(c, t('只能修改任务目录里的文件'))
-      const tk = await s.current(c.req.param('id'))
+      const tk = await currentTask(s, c.req.param('id'))
       const project = tk?.projectId ? await s.deps.projects.get(tk.projectId) : null
       const format = projectFormat(project ?? undefined, await getSettings())
       return c.json(await writeInDir(dir, rel, content, format, typeof mtime === 'string' ? mtime : undefined))

@@ -4,6 +4,7 @@ import { settleBuildJob } from '../../shared/build-ask.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask } from './read.ts'
 
 /**
  * 父对话替子对话起的 UE 编译跑完了（一条后台命令）：按子对话任务上的记录（buildAsk，会落盘）把结果推回去。
@@ -22,7 +23,7 @@ export async function forwardBuildResult(
 ): Promise<string> {
   const kids = (await sc.store.list())
     .filter((k) => k.buildAsk?.state === 'building' && k.buildAsk.jobs.includes(job.id))
-    .map((k) => sc.live.get(k.id)?.task ?? k)
+    .map((k) => freshTask(sc, k))
   const tail: string[] = []
   for (const kid of kids) {
     const ok = job.state === 'done'

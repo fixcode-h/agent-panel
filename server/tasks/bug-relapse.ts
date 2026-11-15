@@ -8,6 +8,7 @@ import { findRelapse, markRelapse, observingUntil, relapseInfo, relapseNote } fr
 import { log } from '../log.ts'
 import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask } from './read.ts'
 
 export async function linkRelapse(
   sc: Pick<TasksScope, 'live' | 'store'>,
@@ -15,7 +16,7 @@ export async function linkRelapse(
 ): Promise<{ origId: string; note: string; info: string } | undefined> {
   try {
     // 在跑的以内存里那份为准，落盘也落它
-    const all = (await sc.store.list()).map((x) => sc.live.get(x.id)?.task ?? x)
+    const all = (await sc.store.list()).map((x) => freshTask(sc, x))
     const orig = findRelapse(all, fresh)
     const until = orig && observingUntil(orig)
     if (!orig || !until) return undefined

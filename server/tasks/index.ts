@@ -1,3 +1,4 @@
+import { currentTask, idleTask, metaTask } from './read.ts'
 import { lastReplyText } from '../../shared/tasks/helpers.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
@@ -157,7 +158,6 @@ export function tasksApi(deps: {
     forwardSpawn: () => forwardSpawn,
     getMeta: () => getMeta,
     gitGate: () => gitGate,
-    idle: () => idle,
     integrate: () => integrate,
     lastReply: () => lastReply,
     live: () => live,
@@ -446,39 +446,10 @@ export function tasksApi(deps: {
     return r.attachments
   }
 
-  /**
-   * 落盘里还写着「执行中」、内存里却没有这个任务：进程早就不在了（面板重启过、崩溃过）。
-   * 按已停止返回，否则页面会一直显示执行中，也不会把 CLI 重新启动回来。
-   */
-  const idle = (task: Task): Task =>
-    task.status === 'running' && !live.has(task.id)
-      ? {
-          ...task,
-          status: 'stopped' as const,
-          stopReason: 'restart' as const,
-          working: false,
-          awaitingUser: false,
-          prewarming: false,
-        }
-      : task
-
-  const current = async (id: string) => {
-    const entry = live.get(id)
-    if (entry) return entry.task
-    const task = await store.get(id)
-    return task ? idle(task) : task
-  }
-  /**
-   * 按 id 取任务本身（用量、节点、状态），不读完整对话：执行中的取内存里那份，其余读任务文件。
-   * 每秒刷一次的用量统计用它：`current` 会把 `.messages.json` 读进 full 缓存，
-   * 一个奔跑中的任务带几个子对话，每秒就把整棵树的消息全读一遍，还会把用户刚看过的任务挤出缓存。
-   */
-  const getMeta = async (id: string) => {
-    const entry = live.get(id)
-    if (entry) return entry.task
-    const task = await store.getMeta(id)
-    return task ? idle(task) : task
-  }
+  const rd = { live, store }
+  const idle = (task: Task) => idleTask(rd, task)
+  const current = (id: string) => currentTask(rd, id)
+  const getMeta = (id: string) => metaTask(rd, id)
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
   /** 导入的任务只读：只能看、改名、归档、删除 */
   const READONLY = t('这是导入的任务，只能查看，不能继续执行')
@@ -760,7 +731,7 @@ export function tasksApi(deps: {
      * 「提问」关着时在这里自动交给父对话决定
      */
     async askParent(childId: string, text: string, options: string[] = [], kind: AskKind = 'question') {
-      const child = live.get(childId)?.task ?? (await store.get(childId))
+      const child = await current(childId)
       if (!child) throw new Error(t('任务不存在'))
       return messageParent(child, text, true, options, kind)
     },

@@ -21,6 +21,7 @@ import { extractJson } from '../../shared/assist.ts'
 import { invokeCli } from '../exec/invoke.ts'
 import { tmpdir } from 'node:os'
 import type { TasksScope } from './scope.ts'
+import { currentTask } from './read.ts'
 
 /**
  * 停子任务和后台命令、看后台命令输出、对话名下的进程（列出、结束、清理残留、AI 建议）和内存曲线。
@@ -34,7 +35,7 @@ export function registerProcessRoutes(sc: TasksScope) {
     const id = c.req.param('id')
     const body = await c.req.json().catch(() => ({}))
     const stepId = typeof body?.step === 'string' ? body.step : ''
-    const tk = await sc.current(id)
+    const tk = await currentTask(sc, id)
     if (!tk) return sc.bad(c, t('任务不存在'), 404)
     // 「停止全部子任务」（用户让 AI 停、或脚本调）：还没结束的一个个停，已经结束的 stopHelper 会跳过
     if (body?.all === true) {
@@ -51,10 +52,10 @@ export function registerProcessRoutes(sc: TasksScope) {
       // 直接收口成已终止，不再回「已经结束了」让它一直转圈
       if (!(await settleOrphanHelper(id, step.id))) return sc.bad(c, t('这个子任务已经结束了'), 409)
       log.warn('task', '终止的子任务已经没有在跑，直接收口成已终止', { task: id, step: step.id })
-      return c.json(await sc.current(id))
+      return c.json(await currentTask(sc, id))
     }
     log.info('task', '用户终止了子任务', { task: id, step: step.id })
-    return c.json(await sc.current(id))
+    return c.json(await currentTask(sc, id))
   })
 
   /**
@@ -63,10 +64,10 @@ export function registerProcessRoutes(sc: TasksScope) {
    */
   sc.routes.post('/:id/runs/stop', async (c) => {
     const id = c.req.param('id')
-    if (!(await sc.current(id))) return sc.bad(c, t('任务不存在'), 404)
+    if (!(await currentTask(sc, id))) return sc.bad(c, t('任务不存在'), 404)
     if (!stopPlan(id, '用户在界面上终止了这次工作流运行')) return sc.bad(c, t('这次工作流运行已经结束了'), 409)
     log.info('task', '用户终止了工作流运行', { task: id })
-    return c.json(await sc.current(id))
+    return c.json(await currentTask(sc, id))
   })
 
   /**
@@ -90,7 +91,7 @@ export function registerProcessRoutes(sc: TasksScope) {
   /** 停止这个对话和它名下子对话的全部后台命令（对话本身不停）；返回停了几条 */
   sc.routes.post('/:id/background/stop', async (c) => {
     const id = c.req.param('id')
-    if (!(await sc.current(id))) return sc.bad(c, t('任务不存在'), 404)
+    if (!(await currentTask(sc, id))) return sc.bad(c, t('任务不存在'), 404)
     const kids = await sc.store.childrenOf(id)
     const before = [id, ...kids.map((k) => k.id)].reduce(
       (n, tid) => n + sc.background.list(tid).filter((j) => j.state === 'queued' || j.state === 'running').length,
@@ -106,7 +107,7 @@ export function registerProcessRoutes(sc: TasksScope) {
    */
   sc.routes.get('/:id/jobs/:jobId', async (c) => {
     const id = c.req.param('id')
-    if (!(await sc.current(id))) return sc.bad(c, t('任务不存在'), 404)
+    if (!(await currentTask(sc, id))) return sc.bad(c, t('任务不存在'), 404)
     const job = sc.background.view(id, c.req.param('jobId'))
     if (!job) return sc.bad(c, t('没有这条后台命令'), 404)
     return c.json(job)
@@ -114,14 +115,14 @@ export function registerProcessRoutes(sc: TasksScope) {
 
   /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */
   sc.routes.get('/:id/processes', async (c) => {
-    const tk = await sc.current(c.req.param('id'))
+    const tk = await currentTask(sc, c.req.param('id'))
     if (!tk) return sc.bad(c, t('任务不存在'), 404)
     return c.json(await sc.processPanel(tk))
   })
 
   /** 关闭一个进程：只认这个对话进程树上的 pid，面板自己和用户自己开的进程都进不来 */
   sc.routes.post('/:id/processes/:pid/kill', async (c) => {
-    const tk = await sc.current(c.req.param('id'))
+    const tk = await currentTask(sc, c.req.param('id'))
     if (!tk) return sc.bad(c, t('任务不存在'), 404)
     const pid = Number(c.req.param('pid'))
     if (!Number.isInteger(pid) || pid <= 0) return sc.bad(c, t('进程号不对'))
@@ -149,7 +150,7 @@ export function registerProcessRoutes(sc: TasksScope) {
         pid: e.pid,
         command: e.argv.slice(0, 200),
         ownerTaskId: e.owner?.taskId ?? '',
-        ownerTitle: e.owner?.taskId ? ((await sc.current(e.owner.taskId))?.title ?? '') : '',
+        ownerTitle: e.owner?.taskId ? ((await currentTask(sc, e.owner.taskId))?.title ?? '') : '',
         startedAt: e.startedAt,
         rss: map?.get(e.pid)?.rss ?? null,
       })),
@@ -183,7 +184,7 @@ export function registerProcessRoutes(sc: TasksScope) {
    * 用户确认列表里的 pid 传进来就只清这些；传空时清这个对话的全部残留
    */
   sc.routes.post('/:id/processes/clean', async (c) => {
-    const tk = await sc.current(c.req.param('id'))
+    const tk = await currentTask(sc, c.req.param('id'))
     if (!tk) return sc.bad(c, t('任务不存在'), 404)
     const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
     const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
@@ -219,7 +220,7 @@ export function registerProcessRoutes(sc: TasksScope) {
    * 只给建议，不杀任何进程；用户确认后前端再调清理接口
    */
   sc.routes.post('/:id/processes/suggest', async (c) => {
-    const tk = await sc.current(c.req.param('id'))
+    const tk = await currentTask(sc, c.req.param('id'))
     if (!tk) return sc.bad(c, t('任务不存在'), 404)
     const panel = await sc.processPanel(tk)
     const settings = await getSettings()
@@ -262,7 +263,7 @@ export function registerProcessRoutes(sc: TasksScope) {
 
   /** 内存曲线：按时间从旧到新，from/to 是 epoch ms（不传就是全部历史） */
   sc.routes.get('/:id/memory', async (c) => {
-    const tk = await sc.current(c.req.param('id'))
+    const tk = await currentTask(sc, c.req.param('id'))
     if (!tk) return sc.bad(c, t('任务不存在'), 404)
     const from = Number(c.req.query('from') ?? '')
     const to = Number(c.req.query('to') ?? '')

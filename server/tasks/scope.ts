@@ -287,7 +287,6 @@ export interface TasksScope {
   }
   getMeta: (id: string) => Promise<Task | null>
   gitGate: <T>(run: () => Promise<T>) => Promise<T>
-  idle: (task: Task) => Task
   integrate: (tk: Task, parent: Task) => Promise<IntegrateResult>
   lastReply: (task: Task) => string
   live: Map<string, Live>
