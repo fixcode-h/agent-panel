@@ -1,6 +1,6 @@
-import { fail } from '../demo-http'
+import { fail } from './demo-http'
 
-/** 演示后端的插件接口（web/src/lib/demo-backend.ts 转过来） */
+/** 演示后端的插件接口（web/src/lib/demo/demo-backend.ts 转过来） */
 export function demoPlugins(method: string, id?: string) {
   // 在线演示不装插件：插件页显示空列表；插件市场给一份示例目录（不连 GitHub），点安装报「演示里不能装」
   if (!id && method === 'GET') return { plugins: [], broken: [], market: 'fixcode-h/agent-plugins' }

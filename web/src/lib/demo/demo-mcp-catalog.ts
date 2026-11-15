@@ -11,7 +11,7 @@ import type { Audience, CatalogTool, McpCatalog, McpCheckResult } from '@shared/
 import { t } from '@shared/i18n'
 
 /**
- * 演示后端的设置 →「MCP」（web/src/lib/demo-backend.ts 转过来）：演示里没有服务端的工具注册表，
+ * 演示后端的设置 →「MCP」（web/src/lib/demo/demo-backend.ts 转过来）：演示里没有服务端的工具注册表，
  * 面板工具按 shared 里同一份声明列出（说明用同一个 describeTool 拼），给谁不标；演示不装插件，只有面板自带的两个来源
  */
 

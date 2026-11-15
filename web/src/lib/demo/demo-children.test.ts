@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { Task } from '../../../shared/schema.ts'
+import { Task } from '../../../../shared/schema.ts'
 import { demoChildRows } from './demo-children.ts'
 
 // 演示版子对话行要和正式后端同字段：孙对话在等你处理（childNeeds）、没有摘要时用最后一条回复兜底

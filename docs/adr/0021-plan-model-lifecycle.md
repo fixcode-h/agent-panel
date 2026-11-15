@@ -229,7 +229,7 @@ Agent 的**第一件事**是判断「现有计划要不要改」：
 | `shared/engine/index.ts` `conversationPrompt`            | 本轮带新要求时注入「先判计划」段（同一段规则，不按输入类型重写一份）                                                             |
 | `server/tasks/index.ts`                                  | 收到用户消息 / 父对话转达时写 `activePlan.lastInputAt`；每轮开始构造提示前 `planNotice` 命中就 `log.warn('plan', …)`             |
 | `web/src/components/tasks/PlanPanel.tsx`                 | 进度条、「N 分钟前更新」、滞后警示、滞后步骤小标记；保留全部现有 `data-plan-*` 与等待说明结构                                    |
-| `web/src/lib/demo-backend.ts`                            | 演示计划补 `updatedAt`（含一份滞后 8 分钟的计划）和一份带 `failed` 步骤的计划，界面检查才能验到警示与失败态                      |
+| `web/src/lib/demo/demo-backend.ts`                       | 演示计划补 `updatedAt`（含一份滞后 8 分钟的计划）和一份带 `failed` 步骤的计划，界面检查才能验到警示与失败态                      |
 
 ## 与现有实现的关系
 

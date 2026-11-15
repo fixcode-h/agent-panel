@@ -361,7 +361,7 @@
 
 - key 保持 `orchestrator`，不迁移数据；`syncCore` 每次启动按定义同步名字，已装的副本自动更新。
 - 英文：`shared/locales/en/settings.ts` 里 `主理: 'Lead'` 改成 `协调器: 'Coordinator'`，`shared/locales/en/` 里含「主理」的条目一起改。
-- 界面文案、`web/src/lib/demo-backend.ts` 演示数据、`RouteCard.tsx` 等处的「主理」。
+- 界面文案、`web/src/lib/demo/demo-backend.ts` 演示数据、`RouteCard.tsx` 等处的「主理」。
 - 文档：`docs/agent-catalog.md`、`docs/modules/*`、`docs/lessons/triage.md`、`docs/lessons/prompt-delta.md`；历史 ADR 正文不改（是当时的记录）。
 - 测试里断言了「主理」原句的（`server/core-agents.test.ts`、`server/role-layers.test.ts`、`server/orch-mcp.test.ts`、`shared/conv-mode.test.ts`、`shared/peer-message.test.ts` 等）逐个改。
 

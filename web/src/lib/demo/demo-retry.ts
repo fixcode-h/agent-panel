@@ -1,6 +1,6 @@
 import type { Task } from '@shared/schema'
 import { retryModelPatch } from '@shared/tasks/run'
-import type { RetryModelPick } from './api-retry'
+import type { RetryModelPick } from '../api-retry'
 import { handle } from './demo-backend'
 
 /**

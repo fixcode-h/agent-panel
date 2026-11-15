@@ -45,7 +45,7 @@ export const DEMO_CSV =
 
 /** 演示项目里的长代码文件（两百多行）：文件窗口阅读区按 80 行一块画，界面检查用它看块和块之间接得上、不叠字 */
 export const DEMO_PRODUCTS_TS =
-  "import type { Product } from '../types'\n\nconst BASE = '/api/products'\n\n" +
+  "import type { Product } from '../../types'\n\nconst BASE = '/api/products'\n\n" +
   Array.from(
     { length: 40 },
     (_, i) =>

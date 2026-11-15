@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-14 用户看过优化方案后定，已实施） · 2026-11-14
 
-- 影响范围：`shared/summary/index.ts`（分项字段、提示词、材料）、`shared/summary/render.ts`（拼报告、纯文本）、`shared/builtin/agents.ts`（「每日工作总结」写法和自己跑时的输出格式）、`web/src/components/summary/EntryList.tsx`、`web/src/components/summary/ReportView.tsx`、`web/src/index.css`（`.chat-md-report`）、`web/src/lib/demo-summary.ts`
+- 影响范围：`shared/summary/index.ts`（分项字段、提示词、材料）、`shared/summary/render.ts`（拼报告、纯文本）、`shared/builtin/agents.ts`（「每日工作总结」写法和自己跑时的输出格式）、`web/src/components/summary/EntryList.tsx`、`web/src/components/summary/ReportView.tsx`、`web/src/index.css`（`.chat-md-report`）、`web/src/lib/demo/demo-summary.ts`
 - 取代：ADR 0056 决策第 1 条的模板（三级标题 + 加粗小标题 + 每块前后空行）；ADR 0043 第 4 条里「测试过没过不写」改成「验证只写一句结论」。0056 的分点、关键代码只收真实改动，0043 的单子链接、再次生成、不写版本管理操作、去 AI 腔照旧
 
 ## 背景

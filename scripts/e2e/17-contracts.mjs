@@ -1,7 +1,7 @@
 /**
  * 端到端测试分片：正式后端的接口返回和前后端共用的契约对得上（重构文档第 9 条，ADR 0062）。
  *
- * 跑的是 shared/api-contract/probe.ts 那一份探查，演示后端在 web/src/lib/demo-contract.test.ts 里跑同一份：
+ * 跑的是 shared/api-contract/probe.ts 那一份探查，演示后端在 web/src/lib/demo/demo-contract.test.ts 里跑同一份：
  * 设置、分类、标签、角色、工作流、项目分类、项目、定时计划、任务列表。哪边少了字段，报错里直接写出是哪个接口。
  * 子对话栏和任务详情由 server/tasks/api-contract.test.ts 在单测里查（这里没有子对话）。
  */

@@ -2,7 +2,7 @@ import { demoJobs } from './demo-jobs'
 import type { Task } from '@shared/schema'
 import { childCountsScan, type ChildCounts } from '@shared/children/row'
 import { taskLiveOf, type TaskLive } from '@shared/live/task-live'
-import { demoChildActive, demoCliAlive } from '../demo-processes'
+import { demoChildActive, demoCliAlive } from './demo-processes'
 
 /** 名下子对话的三项计数：和正式版同一份扫法（shared/children/row.ts），回收站里的不算 */
 export const demoChildCounts = (tasks: Task[]) =>

@@ -40,7 +40,7 @@
 
 - 服务端 `server/speech.ts`（路由挂在 `server/index.ts`），下载复用 `server/download.ts`，解压和在线更新同一办法。
 - 前端：`web/src/lib/speech-recorder.ts` 录音，`web/src/components/chat/SpeechButton.tsx` 挂在 `ChatComposer` 的工具条上（所有对话输入框共用），设置页 `web/src/components/settings/SpeechSection.tsx`。
-- 演示版在 `web/src/lib/demo-backend.ts` 的 `demoSpeech` 回固定文字。
+- 演示版在 `web/src/lib/demo/demo-backend.ts` 的 `demoSpeech` 回固定文字。
 
 ## 运行时
 

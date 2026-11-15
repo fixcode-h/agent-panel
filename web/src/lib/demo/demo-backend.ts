@@ -1,8 +1,8 @@
-import { demoPlugins } from './demo/demo-plugins'
-import { demoMcpCatalog } from './demo/demo-mcp-catalog'
-import { demoCapabilities } from './demo/demo-capabilities'
-import { demoJobStore, demoJobs, setDemoJobs } from './demo/demo-jobs'
-import { demoChildCounts, demoWithLive } from './demo/demo-task-live'
+import { demoPlugins } from './demo-plugins'
+import { demoMcpCatalog } from './demo-mcp-catalog'
+import { demoCapabilities } from './demo-capabilities'
+import { demoJobStore, demoJobs, setDemoJobs } from './demo-jobs'
+import { demoChildCounts, demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
 import { demoChildRows } from './demo-children'
 /**
@@ -1240,13 +1240,13 @@ const DEMO_CONTENTS: Record<string, string> = {
   'data/products.csv': DEMO_CSV,
   'src/api/products.ts': DEMO_PRODUCTS_TS,
   'src/App.tsx':
-    "import { Routes, Route } from 'react-router-dom'\nimport { Login } from './pages/Login'\nimport { ProductDetail } from './pages/ProductDetail'\nimport { OrderList } from './pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
+    "import { Routes, Route } from 'react-router-dom'\nimport { Login } from '../pages/Login'\nimport { ProductDetail } from '../pages/ProductDetail'\nimport { OrderList } from '../pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
   'src/api/cart.ts':
     "const BASE = '/api/cart'\n\nexport async function addToCart(productId: string, count: number) {\n  const res = await fetch(BASE, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ productId, count }),\n  })\n  if (!res.ok) throw new Error('加入购物车失败')\n  return res.json()\n}\n\nexport async function removeFromCart(id: string) {\n  await fetch(`${BASE}/${id}`, { method: 'DELETE' })\n}\n",
   'src/components/ProductCard.tsx':
     'import { Link } from \'react-router-dom\'\n\nexport function ProductCard({ product }: { product: { id: string; name: string; price: number } }) {\n  return (\n    <Link to={`/products/${product.id}`} className="block rounded-xl border p-4">\n      <div className="font-medium">{product.name}</div>\n      <div className="text-sm text-muted">￥{product.price.toFixed(2)}</div>\n    </Link>\n  )\n}\n',
   'src/store/cart.ts':
-    "import { addToCart } from '../api/cart'\n\ntype Item = { productId: string; count: number }\n\nlet items: Item[] = []\n\nexport const cart = {\n  get items() {\n    return items\n  },\n  async add(productId: string, count = 1) {\n    await addToCart(productId, count)\n    const hit = items.find((i) => i.productId === productId)\n    if (hit) hit.count += count\n    else items = [...items, { productId, count }]\n  },\n}\n",
+    "import { addToCart } from '../../api/cart'\n\ntype Item = { productId: string; count: number }\n\nlet items: Item[] = []\n\nexport const cart = {\n  get items() {\n    return items\n  },\n  async add(productId: string, count = 1) {\n    await addToCart(productId, count)\n    const hit = items.find((i) => i.productId === productId)\n    if (hit) hit.count += count\n    else items = [...items, { productId, count }]\n  },\n}\n",
   'package.json':
     '{\n  "name": "demo-shop",\n  "private": true,\n  "scripts": { "dev": "vite", "test": "vitest" },\n  "dependencies": { "react": "^19.0.0", "react-router-dom": "^7.0.0" },\n  "devDependencies": { "vite": "^6.0.0", "vitest": "^3.0.0" }\n}\n',
 }

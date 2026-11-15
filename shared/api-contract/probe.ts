@@ -1,6 +1,6 @@
 /**
  * 契约探查：按 catalog / tasks 契约把接口走一遍，逐个用 contractProblems 查返回形状。
- * 正式后端在 scripts/e2e/17-contracts.mjs 里跑，演示后端在 web/src/lib/demo-contract.test.ts 里跑，
+ * 正式后端在 scripts/e2e/17-contracts.mjs 里跑，演示后端在 web/src/lib/demo/demo-contract.test.ts 里跑，
  * 两边跑的是同一份流程：哪边少了字段、多了一层包装，报错里直接写出是哪个接口。
  *
  * 只给测试用，正式代码不要引入。会建一个分类、一个标签、一个角色副本，走完都删掉；

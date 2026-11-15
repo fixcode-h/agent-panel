@@ -269,7 +269,7 @@ const HookDef = z.object({
   - 「这个钩子会在什么时候触发、会拦什么」的说明，由面板按定义生成，不让 AI 自己写；
   - 校验结果（§6.3 逐项）。
 - **保存**：校验和试跑全部通过才出「保存」按钮。保存后 `enabled: false`、`createdBy: 'ai'`，由用户在列表里自己打开。改写已有钩子时显示改前改后的差异。
-- **演示模式**：`web/src/lib/demo-assist.ts` 补 `hook` 类型的模拟提案；正式包不带演示内容（`scripts/package.mjs` 会查）。
+- **演示模式**：`web/src/lib/demo/demo-assist.ts` 补 `hook` 类型的模拟提案；正式包不带演示内容（`scripts/package.mjs` 会查）。
 
 ## 8. 设置页「钩子」
 

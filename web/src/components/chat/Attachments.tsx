@@ -99,7 +99,7 @@ function uniqueName(name: string, taken: Set<string>) {
 
 /** 附件在页面上的地址：正式版从服务端的附件目录读，在线演示用内存里的内容 */
 export async function attachmentUrl(a: Attachment, opts: { thumb?: boolean } = {}) {
-  if (import.meta.env.VITE_DEMO) return (await import('@/lib/demo-backend')).demoUploads.get(a.path)
+  if (import.meta.env.VITE_DEMO) return (await import('@/lib/demo/demo-backend')).demoUploads.get(a.path)
   // thumb：消息卡片只有一行字那么高，请服务端缩好再给（看大图、复制图片仍要原图）
   const w = opts.thumb ? `&w=${ATTACHMENT_THUMB_WIDTH}` : ''
   return `/api/uploads/raw?path=${encodeURIComponent(a.path)}${w}`

@@ -1,6 +1,6 @@
 /**
  * 正式后端的接口契约（A9）：任务列表、任务详情、子对话、发消息的返回形状，
- * 和演示后端（web/src/lib/demo-contract.test.ts）用 shared/api-contract/tasks.ts 的同一份 schema 校验。
+ * 和演示后端（web/src/lib/demo/demo-contract.test.ts）用 shared/api-contract/tasks.ts 的同一份 schema 校验。
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'

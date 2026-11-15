@@ -15,8 +15,8 @@ import {
   SendMessageContract,
   TaskListContract,
   TaskPageContract,
-} from '../../../shared/api-contract/tasks.ts'
-import { probeContracts } from '../../../shared/api-contract/probe.ts'
+} from '../../../../shared/api-contract/tasks.ts'
+import { probeContracts } from '../../../../shared/api-contract/probe.ts'
 
 // 演示后端存在 localStorage 里：node 里没有，换成内存的一份；模拟等待按 100 倍缩短（见 demo-speed.ts）
 const store = new Map<string, string>([['agent-panel-demo-speed', '100']])
@@ -31,15 +31,15 @@ Object.assign(globalThis, {
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 const vite = await createServer({
   configFile: false,
-  root: r('../..'),
+  root: r('../../..'),
   logLevel: 'error',
   appType: 'custom',
-  resolve: { alias: { '@': r('..'), '@shared': r('../../../shared') } },
+  resolve: { alias: { '@': r('../..'), '@shared': r('../../../../shared') } },
   define: { 'import.meta.env.VITE_DEMO': JSON.stringify('1') },
   server: { middlewareMode: true, hmr: false, ws: false, watch: null },
   optimizeDeps: { noDiscovery: true },
 })
-const { handle } = (await vite.ssrLoadModule('/src/lib/demo-backend.ts')) as typeof import('./demo-backend.ts')
+const { handle } = (await vite.ssrLoadModule('/src/lib/demo/demo-backend.ts')) as typeof import('./demo-backend.ts')
 test.after(() => vite.close())
 
 const check = (

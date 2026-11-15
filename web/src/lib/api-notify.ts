@@ -16,10 +16,12 @@ export interface NotifyTestResult {
 
 export const notifyApi = {
   status: async (): Promise<NotifyStatus> =>
-    import.meta.env.VITE_DEMO ? (await import('./demo-notify')).demoNotifyStatus() : request('/notify-channels/status'),
+    import.meta.env.VITE_DEMO
+      ? (await import('./demo/demo-notify')).demoNotifyStatus()
+      : request('/notify-channels/status'),
   /** 用界面上正在编辑的这一行发（可能还没保存下去） */
   test: async (channel: NotifyChannel): Promise<NotifyTestResult> =>
     import.meta.env.VITE_DEMO
-      ? (await import('./demo-notify')).demoNotifyTest(channel)
+      ? (await import('./demo/demo-notify')).demoNotifyTest(channel)
       : request('/notify-channels/test', json('POST', { channel })),
 }

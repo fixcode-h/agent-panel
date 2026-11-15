@@ -11,7 +11,7 @@
 export const CART_CONVERSATION = '购物车右上角'
 
 /** 任务页的默认视口：窄屏用例会自己再改 */
-/** 演示数据存在 localStorage 的这个键里（web/src/lib/demo-backend.ts 的 KEY） */
+/** 演示数据存在 localStorage 的这个键里（web/src/lib/demo/demo-backend.ts 的 KEY） */
 const DEMO_KEY = 'agent-panel-demo-v3'
 
 export const TASK_VIEWPORT = { width: 1440, height: 900 }

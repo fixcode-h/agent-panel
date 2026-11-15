@@ -185,7 +185,7 @@ export const demoMcpOverview = (active: string[]): McpOverview => ({
     .sort((a, b) => a.name.localeCompare(b.name)),
 })
 
-const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
+const BUNDLED = import.meta.glob('../../../../skills/*/*/SKILL.md', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -195,7 +195,7 @@ const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
  * 不限扩展名——真后端的 treeOf 也按文件系统实际内容列，演示数据跟着同一个口径走。
  * 注意 ?raw 会把文件按文本读进来：skills/ 下只该放文本，别放 png、字体这类二进制。
  */
-const BUNDLED_FILES = import.meta.glob('../../../skills/*/*/**/*', {
+const BUNDLED_FILES = import.meta.glob('../../../../skills/*/*/**/*', {
   query: '?raw',
   import: 'default',
   eager: true,

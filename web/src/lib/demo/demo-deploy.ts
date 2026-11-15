@@ -15,7 +15,7 @@ import { startDemoGlobalDocJob } from './demo-docs'
 /**
  * 在线演示里的「部署」：没有本机目录，部署了什么记在页面内存里
  */
-const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
+const BUNDLED = import.meta.glob('../../../../skills/*/*/SKILL.md', {
   query: '?raw',
   import: 'default',
   eager: true,

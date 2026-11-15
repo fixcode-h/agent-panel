@@ -77,7 +77,7 @@
 
 - 单元测试：`web/src/lib/tasks.test.ts` 断言 `send_message` 判成 `{ kind: 'chat', to: '测试', body: '接口改名了' }`；
 - e2e：`05-workflow-edge` 断言节点之间传话后有运行记录（收件方是那个节点），且任务里不再出现「」→「」的居中 system 文本；
-- 界面检查：`02-task` 断言「发送消息」行（演示数据在 `web/src/lib/demo-backend.ts`）。
+- 界面检查：`02-task` 断言「发送消息」行（演示数据在 `web/src/lib/demo/demo-backend.ts`）。
 
 ## 开放问题
 

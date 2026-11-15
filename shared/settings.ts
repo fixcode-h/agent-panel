@@ -88,7 +88,7 @@ function migrateBlenderPath(raw: unknown): boolean {
 }
 
 /**
- * 老设置里各项默认值的迁移：正式后端（`server/settings.ts` 的 `getSettings`）和演示后端（`web/src/lib/demo-backend.ts`）
+ * 老设置里各项默认值的迁移：正式后端（`server/settings.ts` 的 `getSettings`）和演示后端（`web/src/lib/demo/demo-backend.ts`）
  * 共用这一份，返回是否有改动（调用方据此决定要不要写回）。只在读设置时做，幂等
  */
 export function migrateSettingsDefaults(s: Settings): boolean {

@@ -17,7 +17,7 @@ export interface RetryModelPick {
 
 export const retryWithModel = async (task: Pick<Task, 'id' | 'agentId' | 'effort'>, pick: RetryModelPick) =>
   import.meta.env.VITE_DEMO
-    ? (await import('./demo-retry')).demoRetryWithModel(task, pick)
+    ? (await import('./demo/demo-retry')).demoRetryWithModel(task, pick)
     : request<Task>(
         `/tasks/${task.id}/resume`,
         json('POST', { latest: false, model: pick.model, efforts: pick.efforts }),

@@ -219,6 +219,6 @@ Task.userActions?: {
 - 接口：完成、做不了、跳过；交回走现有的发消息接口，带上等你操作的 id
 - 界面：新组件 `web/src/components/tasks/UserActionPanel.tsx`（F 和 D）；子对话行的「等你操作」和「去操作」按钮（B，`child-line.ts` 和子对话行组件）；左栏角标（A）；输入框的「交回给」标签（G，`ChatComposer` 的 above）；记录行（E）；状态卡（H，`StatusCard.tsx`）；提问卡出口（`QuestionPanel.tsx`）；浏览器通知（`web/src/lib/notify.ts`）
 - 提示词：§7 列的几处；界面文案进 `shared/locales/en/`
-- 演示数据：`web/src/lib/demo-backend.ts` 加一个等你操作的子对话；界面检查分片加一段（面板位置、父对话卡片、交回后收起）
+- 演示数据：`web/src/lib/demo/demo-backend.ts` 加一个等你操作的子对话；界面检查分片加一段（面板位置、父对话卡片、交回后收起）
 - 测试：工具参数校验和拒绝、`convState`、结束前放行、推回的话、对话停止时撤掉、子对话交回后父对话卡片收起
 - 写一篇 ADR：提问只用来拿主意，要用户动手的走等你操作

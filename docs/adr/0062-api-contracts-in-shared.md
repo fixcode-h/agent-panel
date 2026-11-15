@@ -15,7 +15,7 @@
    - 放弃：Hono RPC（`hc<typeof app>`）。路由分散在几十个子 app 里，还有不少写在 `server/index.ts` 里，要先把类型串起来；演示后端也用不上它的类型。
 2. **前端按契约调**：`web/src/lib/api/call.ts` 的 `call(ep, { params, query, body })` 拼地址、带方法，返回类型从 `res` 推出。新接口和改到的接口都走 `call`，不再新写 `request<T>`。
 3. **入参校验用契约里那一份 schema**：路由直接 `xxxContract.yyy.body.safeParse(...)`（契约里引用的就是原来的 `AgentInput` 这类 schema，不另写）。
-4. **出参在测试里查，不在运行时查**：`contractProblems(schema, value)` 除了 parse 失败，还把「schema 用默认值补上的字段」算成对不上——Task、Agent 这类 schema 带大量默认值，单靠 parse 拦不住少字段。同一份探查流程（`shared/api-contract/probe.ts`）在两边跑：正式后端 `scripts/e2e/17-contracts.mjs`，演示后端 `web/src/lib/demo-contract.test.ts`。
+4. **出参在测试里查，不在运行时查**：`contractProblems(schema, value)` 除了 parse 失败，还把「schema 用默认值补上的字段」算成对不上——Task、Agent 这类 schema 带大量默认值，单靠 parse 拦不住少字段。同一份探查流程（`shared/api-contract/probe.ts`）在两边跑：正式后端 `scripts/e2e/17-contracts.mjs`，演示后端 `web/src/lib/demo/demo-contract.test.ts`。
    - 放弃：运行时校验每个响应。热点接口（任务列表 2.5 秒一次、子对话栏 4 秒一次）多一次整份 parse 不值得，漂移在测试里拦下就够。
 5. **演示后端的业务口径调 shared**：两边都要的业务口径（子对话栏的一行、父对话的三项计数、子对话按记录算在不在运行）放进 shared（`shared/children/row.ts`），只把「真进程、真 git」这类只有一边有的值当参数传。正式后端和演示后端里不再各拼一份。
 
