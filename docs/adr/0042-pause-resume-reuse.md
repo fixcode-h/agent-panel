@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-03 四期都已实施） · 2026-11-03
 
-- 影响范围：`shared/task.ts`（`childReport`）、`shared/resume-kids.ts`、`shared/plan.ts`、`server/tasks/conversation-routes.ts`（`resumeKids`、`/resume`）、`server/tasks/child-messages.ts`（`noteParent`）、`shared/engine.ts`（子任务的 `resume`、`finish`）、`shared/tasks/settle.ts`、`server/tasks/keepalive.ts`（`stopTree`）
+- 影响范围：`shared/task.ts`（`childReport`）、`shared/resume-kids.ts`、`shared/plan/index.ts`、`server/tasks/conversation-routes.ts`（`resumeKids`、`/resume`）、`server/tasks/child-messages.ts`（`noteParent`）、`shared/engine/index.ts`（子任务的 `resume`、`finish`）、`shared/tasks/settle.ts`、`server/tasks/keepalive.ts`（`stopTree`）
 - 取代：无。补全 [0032](./0032-conversations-keep-going.md) 的「继续时连带恢复」和 [0036](./0036-stuck-child-restart-takeover.md) 的卡住接手
 
 ## 背景
@@ -13,19 +13,19 @@
 
 ## 事实核对
 
-| 位置                                                    | 现状                                                                                                                  |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `shared/engine.ts` 的 `runHelper`（被停时）             | 子任务记 `status: 'pending'` + `interrupted: true`，会话 id 留在 `task.sessions[step.session \|\| step.id]`           |
-| `shared/resume-kids.ts` 的 `resumeNote`                 | 子任务不自动重跑，只在续接说明里让模型用 `spawn_agents resume:<id>` 接着跑                                            |
-| `shared/run/stops.ts` 的 `interruptedBlock`             | 还有被打断没处理的子任务时，另派新的一律拒绝                                                                          |
-| `shared/engine.ts` 的 `spawn_agents` 处理 `resume`      | 命中被打断的子任务时复用原记录（同一个 id、`reruns + 1`），按原会话 `--resume`                                        |
-| `server/tasks/keepalive.ts` 的 `stopTree`               | 自上而下停，子孙记 `stopReason: 'parent'`，最后杀掉整棵树的 CLI                                                       |
-| `shared/task.ts` 的 `childReport`                       | 子对话停下时，除了 `stopReason === 'user'` 记 `hold`，其余（含 `parent`、`restart`、`stalled`）一律 `fail`            |
-| `server/tasks/child-messages.ts` 的 `noteParent`        | 先 `settleWait`，再判断是不是连带停下（`cascaded`）；所以连带停下的子对话照样把父计划那一步收成失败、退回「需要修复」 |
-| `shared/plan.ts` 的 `settleWait`                        | 只匹配 `state === 'waiting'` 的等待；失败的等待不会再被结果命中                                                       |
-| `server/tasks/conversation-routes.ts` 的 `resumeKids`   | 只对顶层对话调用；拉起子对话后不恢复父计划里等它的那条等待；不递归拉起孙对话                                          |
-| `shared/resume-kids.ts` 的 `AGAIN`                      | 连带拉起的原因只有 `parent`、`restart`、`stalled`、`lost`，不含 `budget`                                              |
-| `server/tasks/conversation-routes.ts` 的 `resumePrompt` | 续接提示里把「原来的要求」原文再发一遍                                                                                |
+| 位置                                                     | 现状                                                                                                                  |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `shared/engine/index.ts` 的 `runHelper`（被停时）        | 子任务记 `status: 'pending'` + `interrupted: true`，会话 id 留在 `task.sessions[step.session \|\| step.id]`           |
+| `shared/resume-kids.ts` 的 `resumeNote`                  | 子任务不自动重跑，只在续接说明里让模型用 `spawn_agents resume:<id>` 接着跑                                            |
+| `shared/run/stops.ts` 的 `interruptedBlock`              | 还有被打断没处理的子任务时，另派新的一律拒绝                                                                          |
+| `shared/engine/index.ts` 的 `spawn_agents` 处理 `resume` | 命中被打断的子任务时复用原记录（同一个 id、`reruns + 1`），按原会话 `--resume`                                        |
+| `server/tasks/keepalive.ts` 的 `stopTree`                | 自上而下停，子孙记 `stopReason: 'parent'`，最后杀掉整棵树的 CLI                                                       |
+| `shared/task.ts` 的 `childReport`                        | 子对话停下时，除了 `stopReason === 'user'` 记 `hold`，其余（含 `parent`、`restart`、`stalled`）一律 `fail`            |
+| `server/tasks/child-messages.ts` 的 `noteParent`         | 先 `settleWait`，再判断是不是连带停下（`cascaded`）；所以连带停下的子对话照样把父计划那一步收成失败、退回「需要修复」 |
+| `shared/plan/index.ts` 的 `settleWait`                   | 只匹配 `state === 'waiting'` 的等待；失败的等待不会再被结果命中                                                       |
+| `server/tasks/conversation-routes.ts` 的 `resumeKids`    | 只对顶层对话调用；拉起子对话后不恢复父计划里等它的那条等待；不递归拉起孙对话                                          |
+| `shared/resume-kids.ts` 的 `AGAIN`                       | 连带拉起的原因只有 `parent`、`restart`、`stalled`、`lost`，不含 `budget`                                              |
+| `server/tasks/conversation-routes.ts` 的 `resumePrompt`  | 续接提示里把「原来的要求」原文再发一遍                                                                                |
 
 由此产生的主要问题：随父对话停下的子对话，被拉起并做完后，交回的结果对不上任何等待，父对话不会被叫醒；同时那一步挂着「需要修复」，面板推父对话「查原因重做」，容易重派或另建子对话。
 

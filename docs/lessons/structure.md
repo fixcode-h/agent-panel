@@ -13,6 +13,12 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 - 规则：不许用改名、换写法来绕开检查（比如把 `task.cliAlive` 改成 `const { cliAlive } = task`、把函数拆成两个仍然共享同一批外层变量的闭包）。检查只是量出来的数字，它背后的规则才是要遵守的。
 - 防线：`scripts/rules-check.mjs` 第 21 条。
 
+## 模块的入口放进模块目录，不和目录同名并存
+
+- 规则：一个模块有了自己的目录，入口就是目录里的 `index.ts`（`shared/plan/index.ts`、`server/tasks/index.ts`），不在上一层再放一个同名的 `plan.ts`：两边并存时新代码该放哪边说不清。插件开放模块（`shared/plugins/host-modules.json`）挪了旧插件会装不上，留在原处，列在结构检查的 `TWIN_OK` 里。
+- 起因：2026-11-15 复查报告 B1，搬目录后留下 12 对同名文件 + 目录，f6c8ff7 起挪进目录。
+- 防线：结构检查（`twins`）。
+
 ## 拆大函数按阶段拆，共享状态显式传
 
 - 规则：碰到超长函数（尤其是 `runAgent`、`createRun`、`makeOrchestra` 这种闭包）时，新逻辑写成独立函数放进新文件，入参写清楚需要什么，不要读写外层闭包的变量。要动闭包本身时，先在模块文档里列出共享变量（谁读、谁写），收进一个显式的上下文对象再拆。拆的提交里不夹功能改动。
@@ -30,12 +36,12 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 
 ## 一类事只有一个出口
 
-- 规则：同一类操作只用一个公共入口，缺功能就补进那个入口，不在调用的地方另写一份包装：git 走 `server/exec/git.ts`；起子进程走 `server/exec/process.ts`；面板 MCP 工具一个工具一个文件（定义、给不给的条件、用法说明、处理函数放在一起，参照 `server/end-turn-tool.ts`），`server/orch-mcp.ts` 只负责接线；提示只用 `web/src/lib/toast.ts`。新加一类公共操作时先找有没有现成的入口。
+- 规则：同一类操作只用一个公共入口，缺功能就补进那个入口，不在调用的地方另写一份包装：git 走 `server/exec/git.ts`；起子进程走 `server/exec/process.ts`；面板 MCP 工具一个工具一个文件（定义、给不给的条件、用法说明、处理函数放在一起，参照 `server/panel-tools/end-turn-tool.ts`），`server/orch-mcp.ts` 只负责接线；提示只用 `web/src/lib/toast.ts`。新加一类公共操作时先找有没有现成的入口。
 - 防线：结构检查（git、内联工具）；rules-check 第 12 条（toast）。
 
 ## 前后端接口有契约，演示后端不另写一套业务逻辑
 
-- 规则：新加或修改接口时，在 `shared/api-contract/<模块>.ts` 里写一条 `endpoint`（请求和响应的 zod 契约，写法见 `define.ts`，ADR 0062）。服务端路由用契约里的 `body` 校验入参；前端用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，不再新写 `request<T>`；把它加进 `shared/api-contract/probe.ts`，正式后端（`scripts/e2e/17-contracts.mjs`）和演示后端（`web/src/lib/demo-contract.test.ts`）都会按它查返回形状。演示后端（`web/src/lib/demo-*.ts`）里的状态判定、计划推进这些逻辑调用 `shared/` 里和服务端同一份函数，不在演示里再写一遍。
+- 规则：新加或修改接口时，在 `shared/api-contract/<模块>.ts` 里写一条 `endpoint`（请求和响应的 zod 契约，写法见 `define.ts`，ADR 0062）。服务端路由用契约里的 `body` 校验入参；前端用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，不再新写 `request<T>`；把它加进 `shared/api-contract/probe.ts`，正式后端（`scripts/e2e/17-contracts.mjs`）和演示后端（`web/src/lib/demo/demo-contract.test.ts`）都会按它查返回形状。演示后端（`web/src/lib/demo/**`）里的状态判定、计划推进这些逻辑调用 `shared/` 里和服务端同一份函数，不在演示里再写一遍。
 - 防线：`demo-contract.test.ts`、`server/tasks/api-contract.test.ts`、e2e `17-contracts`；人工。
 
 ## 前端拿实时数据用推送，不再加轮询

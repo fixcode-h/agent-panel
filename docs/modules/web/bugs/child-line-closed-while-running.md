@@ -37,7 +37,7 @@ if (icon === 'waiting') …
 if (icon === 'running' && c.plan) out.push({ text: t('计划 {done}/{total}') …)
 ```
 
-`cliAlive` 是服务端按真实进程算的（`server/exec/process.ts` 的 `taskCliAlive` 读进程登记表，`server/tasks.ts` 里以 `cliAlive: taskCliAlive(task.id)` 挂到 `/children` 的响应上），它只说明「这一刻有没有活着的 CLI 进程」，不说明「这一轮做完了没有」。而子对话在等后台命令、等子任务、等工作流时，自己的 CLI 进程本来就可能已经退出（不需要常驻），`shared/task.ts` 的 `childWait` 里 `background` / `helpers` / `workflow` 三种等待也都和 `cliAlive` 无关，只有 `next`（等下一句）才要求 `cliAlive`。于是「进程没了」和「还在跑」同时为真，一个按 `cliAlive`、一个按 `childIcon` 的两套判定把矛盾画进了同一行。
+`cliAlive` 是服务端按真实进程算的（`server/exec/process.ts` 的 `taskCliAlive` 读进程登记表，`server/tasks/index.ts` 里以 `cliAlive: taskCliAlive(task.id)` 挂到 `/children` 的响应上），它只说明「这一刻有没有活着的 CLI 进程」，不说明「这一轮做完了没有」。而子对话在等后台命令、等子任务、等工作流时，自己的 CLI 进程本来就可能已经退出（不需要常驻），`shared/task.ts` 的 `childWait` 里 `background` / `helpers` / `workflow` 三种等待也都和 `cliAlive` 无关，只有 `next`（等下一句）才要求 `cliAlive`。于是「进程没了」和「还在跑」同时为真，一个按 `cliAlive`、一个按 `childIcon` 的两套判定把矛盾画进了同一行。
 
 函数上方的注释本来写着「同一行只说一件事，全部从 childIcon / childState 派生」，「已关闭」正是这条约定的例外。另外运行区那一行是快照：CLI 回收后标签会留到下一次 `/children` 请求刷新，陈旧状态也会加重这个观感。
 
@@ -45,7 +45,7 @@ if (icon === 'running' && c.plan) out.push({ text: t('计划 {done}/{total}') �
 
 用户担心的「CLI 被提前关掉」不是回收 Bug，回收侧没有改。依据：
 
-- `server/tasks.ts` 的 `keepAliveBusy(id)`（约 3309 行）：先看 `startQueue` / `hasHeld`，再把 `background: pendingJobs(id)` 和名下还在运行的子对话数传给 `shared/task.ts` 的 `keepAliveBusy`。
+- `server/tasks/index.ts` 的 `keepAliveBusy(id)`（约 3309 行）：先看 `startQueue` / `hasHeld`，再把 `background: pendingJobs(id)` 和名下还在运行的子对话数传给 `shared/task.ts` 的 `keepAliveBusy`。
 - `pendingJobs(id)`（约 1512 行）统计 `background.list(id)` 里 `queued` / `running` 的后台命令，所以「有后台命令在跑 / 排队」是显式算进「忙」的，不依赖 `task.working`。
 - `shared/task.ts` 的 `keepAliveBusy`（约 1549 行）：`working` / `prewarming`、`status === 'running' && !awaitingUser`，最后落到 `convActive(convState(taskFacts(t) + background + children))`。
 - `convState`（`shared/task.ts:500`）：`pending = background || workflow || helpers || children` 时返回 `'waiting'`；`convActive`（`shared/task.ts:519`）把 `'running'` / `'waiting'` / `'needs'` 都算在运行。ADR 0012 的「两个回收时长、保活上限都先问它」就走这条链。
@@ -53,7 +53,7 @@ if (icon === 'running' && c.plan) out.push({ text: t('计划 {done}/{total}') �
 
 所以「等后台命令期间对话被回收掉」在判定上不成立：CLI 进程退出是设计内的省资源结果，不是回收逻辑误判。用户看到的「已关闭」纯粹是显示口径问题。
 
-顺带核实的续接链路也没断：`server/tasks.ts` 约 993 行「结果推回去会开新一轮；开不起来时（已停止、已经合并好的）就在这里再试一次回收独立分支」，后台命令结果推回来会重新拉起 CLI 接着做，进程回收不影响这一轮做完。
+顺带核实的续接链路也没断：`server/tasks/index.ts` 约 993 行「结果推回去会开新一轮；开不起来时（已停止、已经合并好的）就在这里再试一次回收独立分支」，后台命令结果推回来会重新拉起 CLI 接着做，进程回收不影响这一轮做完。
 
 ## 修复
 

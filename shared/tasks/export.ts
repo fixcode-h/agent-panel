@@ -1242,7 +1242,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
   const outs = tk.steps.filter((s) => s.output.trim())
   if (outs.length) {
     lines.push('', '## 节点的最终输出（交给下游的内容）')
-    // 引擎已经把输出截到 MAX_OUTPUT，更长的全文存在 handoff 文件里、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）。
+    // 引擎已经把输出截到 MAX_OUTPUT，更长的全文存在 handoff 文件里、去向说明写在输出末尾（见 shared/engine/index.ts 的 storeOutput）。
     // 这里按 maxOutput 再截一次正好切掉那句去向说明，分析时既看不到全文也不知道去哪读，所以原样输出
     for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, s.output.trim())
   }
@@ -1445,10 +1445,10 @@ export function analysisReport(bundles: TaskExport[], max = 120_000, scope?: Hel
 }
 
 /** 面板执行工作流的代码在哪：分析框架问题时引用 */
-const FRAMEWORK_MAP = `- shared/engine.ts：工作流执行引擎（节点调度、并发、验收轮次、开始/验收/结束入口、条件连线、重试）
+const FRAMEWORK_MAP = `- shared/engine/index.ts：工作流执行引擎（节点调度、并发、验收轮次、开始/验收/结束入口、条件连线、重试）
 - shared/flow/run.ts、shared/flow/run-turn.ts：工作流运行（父对话启动、阶段、确认与决定记录、收尾）
 - shared/agents/role.ts：拼 Agent 的角色设定、参数模板、节点用哪一档模型
-- shared/flow.ts：流程图结构、拓扑顺序、工作流快照
+- shared/flow/index.ts：流程图结构、拓扑顺序、工作流快照
 - server/exec/runner.ts：真实执行（启动 CLI、续接会话、交接文件、权限请求、提问）
 - server/exec/*.ts：各 CLI 的输出解析和参数
 - shared/task.ts：计时、等待时间、用量统计`
@@ -1563,7 +1563,7 @@ ${FRAMEWORK_MAP}
     {"target": "agent", "agentId": "…", "field": "instructions", "value": "改好后的完整角色设定", "reason": "…"}
   ],
   "issues": [
-    {"scope": "panel", "category": "执行引擎", "title": "问题标题", "detail": "现象、依据、建议怎么改", "files": ["shared/engine.ts:120"]},
+    {"scope": "panel", "category": "执行引擎", "title": "问题标题", "detail": "现象、依据、建议怎么改", "files": ["shared/engine/index.ts:120"]},
     {"scope": "project", "category": "登录页", "title": "…", "detail": "…", "files": ["src/pages/Login.tsx:42"]}
   ]
 }
@@ -2172,7 +2172,7 @@ export function demoEvolution(prompt: string) {
             title: '验收不通过后重做时没有带上一轮的改动摘要',
             detail:
               '演示示例：重做的节点重新读了一遍全部文件，耗时比第一轮还长。可以在退回意见里附上上一轮的改动列表。',
-            files: ['shared/engine.ts'],
+            files: ['shared/engine/index.ts'],
           },
           {
             scope: 'project',

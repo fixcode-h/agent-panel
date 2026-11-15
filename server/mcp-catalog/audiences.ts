@@ -1,7 +1,7 @@
 /**
  * 「给谁」：每类对话可能拿到的面板工具（设置 →「MCP」）。
  * 每类给一个能力全开的代表（角色和项目设置都开到最多），用注册表里各工具同一个 when() 判断；
- * 真实对话拿到的是它的子集。代表和执行引擎（shared/engine.ts 的 makeOrchestra）对得上由
+ * 真实对话拿到的是它的子集。代表和执行引擎（shared/engine/index.ts 的 makeOrchestra）对得上由
  * server/orch-mcp.test.ts 的「面板工具按身份裁剪」核对：每个真实身份的清单都包含在同类代表的清单里。
  */
 import type { Orchestra } from '../../shared/engine/host.ts'

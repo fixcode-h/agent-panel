@@ -5,7 +5,7 @@
 import type { Agent, FileChange, Task, TaskMessage, TaskStep, ToolUse, Workflow, Settings } from './schema.ts'
 import { getCli } from './clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli, defaultSettings } from './settings.ts'
-import { runEngineTurn, system } from './engine.ts'
+import { runEngineTurn, system } from './engine/index.ts'
 import type { AgentCall, AgentResult } from './engine/host.ts'
 import { mergeChanges, stepUsage } from './task.ts'
 import { withTaskModel } from './tasks/run.ts'

@@ -29,9 +29,9 @@ UE 项目已经有同类机制：编译归父对话、按编译目录占位（[A
 | `shared/test-steps.ts` `stepCommand` / `matchTestStep`                            | 前者按 `env` + 平台拼真实命令行；后者用命令原文或拼出来的整行比对，认出后台命令对的是哪条步骤                                                                                                                                                                            |
 | `shared/test-steps.ts` `mergeTestRun` / `testRunLines` / `TEST_TIME_SUMMARY_RULE` | 同一步骤 + 同一执行方只留最后一次、`tries` 累加；耗时行和收尾总结的要求是同两份                                                                                                                                                                                          |
 | `server/parent-tests.ts` `createParentTests`                                      | 队列：全局只有一批、一步在跑；`finishJob` 收结果、`record` 落耗时、`pass` / `fail` 交给调用方                                                                                                                                                                            |
-| `server/tasks.ts` `parentRunRole`                                                 | `isolated` 的子对话是 `child`；顶层父对话且项目是 Git 是 `parent`；其它返回空                                                                                                                                                                                            |
-| `server/tasks.ts` `finishChildStep`                                               | 合并成功（`integrate`）后有 `runInParent` 步骤时先 `startParentTests`（写 `testing`、计划收尾标等待、排队，保留 worktree）；没有时直接 `childMerged`（标完成、清 `wrapRequest`、收口删分支）                                                                             |
-| `server/tasks.ts` 后台命令回调 / `recordSelfTestRun`                              | 回调先问 `parentTests.finishJob`，命中就直接回传给子对话、不推父对话；其余推回发起的对话，`recordSelfTestRun` 按命令匹配步骤记 `by: 'self'` 的耗时                                                                                                                       |
+| `server/tasks/index.ts` `parentRunRole`                                           | `isolated` 的子对话是 `child`；顶层父对话且项目是 Git 是 `parent`；其它返回空                                                                                                                                                                                            |
+| `server/tasks/index.ts` `finishChildStep`                                         | 合并成功（`integrate`）后有 `runInParent` 步骤时先 `startParentTests`（写 `testing`、计划收尾标等待、排队，保留 worktree）；没有时直接 `childMerged`（标完成、清 `wrapRequest`、收口删分支）                                                                             |
+| `server/tasks/index.ts` 后台命令回调 / `recordSelfTestRun`                        | 回调先问 `parentTests.finishJob`，命中就直接回传给子对话、不推父对话；其余推回发起的对话，`recordSelfTestRun` 按命令匹配步骤记 `by: 'self'` 的耗时                                                                                                                       |
 | `server/background.ts` `exclusive`                                                | 独占命令按目录排成一条链，UE 编译已经在用                                                                                                                                                                                                                                |
 | `shared/task.ts` `childFlowOf` / `childHoldText`                                  | 子对话的完成判定按 `holds` 一类一项，多了一项 `parentTest`（父对话测试没跑完不能标完成、不能删分支）                                                                                                                                                                     |
 | `server/projects-analyze.ts` `detectVcs`、`server/index.ts` `GET /fs/vcs`         | 已经有一套「目录是不是 Git / P4 / SVN」的判定，设置页复用它                                                                                                                                                                                                              |
@@ -89,7 +89,7 @@ UE 项目已经有同类机制：编译归父对话、按编译目录占位（[A
 
 ## 与现有实现的关系
 
-- 新增 `server/parent-tests.ts`（队列，纯逻辑，能脱离后台队列和存储单测）和设置页的复选框；`server/tasks.ts` 里把队列接到
+- 新增 `server/parent-tests.ts`（队列，纯逻辑，能脱离后台队列和存储单测）和设置页的复选框；`server/tasks/index.ts` 里把队列接到
   `finishChildStep`、后台命令回调、重启恢复（`recoverParentTests`）和完成判定（`advanceChildTo` 的 `parentTest` hold）上。
 - `shared/test-steps.ts` 是这批规则的唯一出处：筛选、耗时记录合并、耗时行、收尾总结要求、提示词里的步骤行（`testStepsText` 标「在父对话中执行」）。
 - 启动器、`submit_merge` 门禁（父对话测试进行中拒绝重复请求）和 `finish_child` 的说明都只是复用现有链路，没有换合并 / 完成判定。

@@ -2,9 +2,9 @@
 
 - 状态：已修复（`server/engine-steps.test.ts`「有中断没做完的子任务」、`shared/tasks/idle-ask.test.ts`「子对话计划没做完时先不报父对话」通过）
 - 症状：子对话改完一处、用 message_parent 请父对话编译后结束这一轮，计划才做到一半就停住；父对话一直没收到这封汇报、也不编译，两边互等到用户第二天去父对话里问「编译还是报错」（同一个子对话连着出现两次）
-- 入口：`shared/engine.ts` 的 `stopHelpers`、`helperBatch`；`server/tasks/children.ts` 的 `reportChild`；`shared/task.ts` 的 `planStalled`、`childSelfDrives`
+- 入口：`shared/engine/index.ts` 的 `stopHelpers`、`helperBatch`；`server/tasks/children.ts` 的 `reportChild`；`shared/task.ts` 的 `planStalled`、`childSelfDrives`
 - 根因类型：终止被打断的子任务时没收口计划里等它的等待项；「计划没做完不报父对话」只看计划没做完，没看面板是不是真的会推它
-- 模块：`server`（`server/tasks/children.ts`）、`shared`（`shared/engine.ts`、`shared/task.ts`）
+- 模块：`server`（`server/tasks/children.ts`）、`shared`（`shared/engine/index.ts`、`shared/task.ts`）
 - 关键词：子对话停止、计划没做完、等待中、stop_subtask、被打断的子任务、message_parent、阶段汇报、pendingReport、父子互等、nudgePlan
 
 ## 现象

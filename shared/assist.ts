@@ -18,7 +18,7 @@ import {
   reachable,
   refLabel,
   wouldCycle,
-} from './flow.ts'
+} from './flow/index.ts'
 import { AGENT_ICON_IDS } from './icons.ts'
 import { libraryName, McpServer } from './library.ts'
 import { builtinCommands } from './commands.ts'

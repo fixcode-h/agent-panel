@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { Agent, Project, Task, ToolUse } from '../../shared/schema.ts'
 import type { ProjectExperience } from '../../shared/experience.ts'
-import type { HookFacts } from '../../shared/hooks.ts'
+import type { HookFacts } from '../../shared/hooks/index.ts'
 import {
   blockText,
   blockingLesson,

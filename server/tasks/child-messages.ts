@@ -14,10 +14,11 @@ import {
   settleWait,
   syncKids,
   waitNote,
-} from '../../shared/plan.ts'
+} from '../../shared/plan/index.ts'
 import type { PlanWait } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
 import { DIAG_PARENT_RULE, diagnosisInFlow } from '../../shared/bug/phase.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 交给子对话时最多等它开起来多久：CLI 的工具调用一分钟超时，要在那之前回话（见 sendToChild）。
@@ -73,7 +74,7 @@ export function createChildMessages(sc: TasksScope) {
     /** 面板在父对话里自动画出的子对话总结卡（见 shared/summary/card.ts 的 childSummaryCards） */
     summaryCards?: TaskMessage['summaryCards'],
   ) {
-    const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+    const parent = await readTask(sc, parentId)
     if (!parent) {
       // 交回失败：父对话没了，这份上报（计划和状态）没地方记。和「子对话这一轮失败」区分开，日志上单独一条
       log.warn('task', '子对话的上报没能交给父对话：找不到父对话', { from: from.id, parent: parentId })
@@ -97,7 +98,7 @@ export function createChildMessages(sc: TasksScope) {
         parent.updatedAt = new Date().toISOString()
         const e = sc.live.get(parent.id)
         if (e) e.rev++
-        await sc.store.update(parent.id, sc.live.get(parent.id)?.task ?? parent).catch(() => {})
+        await sc.store.update(parent.id, freshTask(sc, parent)).catch(() => {})
       }
       return
     }
@@ -144,7 +145,7 @@ export function createChildMessages(sc: TasksScope) {
     const how = entry?.task.working ? await steerTask(entry.task, text, msg).catch(() => false) : false
     // 写进「现在」的那一份：上面读的是磁盘上的旧对象，等待期间父对话可能已经开始执行（执行器拿的是一份拷贝），
     // 再往旧对象里写、拿旧对象落盘，收件箱这条会被执行器下一次落盘盖掉，父对话永远收不到这个子对话的回报
-    const target = sc.live.get(parent.id)?.task ?? parent
+    const target = freshTask(sc, parent)
     if (!how) {
       // 同一个子对话的汇报父对话还没读，新的来了就替换掉旧的：收件箱里每个子对话只留最新一封，
       // 对话流里旧的那行变淡、写「已被新的汇报取代」（ADR 0034）。提问、回答不替换
@@ -241,12 +242,12 @@ export function createChildMessages(sc: TasksScope) {
     kind?: PeerKind,
     failed = false,
   ): Promise<{ ok: boolean; info: string }> {
-    const child = sc.live.get(id)?.task ?? (await sc.store.get(id))
+    const child = await readTask(sc, id)
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: sc.READONLY }
     // 还在等前置子对话合回、没开始过的：父对话交了消息就是要它现在开始（shared/children/after.ts）
     if (kind === 'task' && waitingAfter(child)) {
-      const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+      const parent = await readTask(sc, parentId)
       if (parent) return sc.startAfterNow(parent, child, message)
     }
     // 要开新的一轮时先过 holdWake（shared/wake.ts）：整棵树已经超限就不开，免得「父对话被叫醒→交回子对话→子对话超限停下→
@@ -267,7 +268,7 @@ export function createChildMessages(sc: TasksScope) {
       if (e) e.rev++
       else await sc.store.update(child.id, child)
     }
-    const parent = kind ? (sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))) : undefined
+    const parent = kind ? await readTask(sc, parentId) : undefined
     // 父对话发给在走诊断流程的子对话：交出去照旧，回话里再提醒一次只有用户能确认（摸底报告第 1 条）。
     // 用户在父对话里答的提问（answer）是用户自己的话，不提醒
     const diagRule = kind && kind !== 'answer' && diagnosisInFlow(child) ? `\n${DIAG_PARENT_RULE}` : ''

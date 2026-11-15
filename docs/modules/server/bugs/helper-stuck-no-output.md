@@ -2,9 +2,9 @@
 
 - 状态：已修复（`server/engine-steps.test.ts`「终止或抛异常的子任务只收它自己」、`server/helper-orphan-stop.test.ts` 通过；用户现场的异常来源没拿到日志，未在真 Pi 上复现）
 - 症状：子任务一直转圈、窗口里写「已开始，还没有输出」；点终止提示「这个子任务已经结束了」，状态却不变
-- 入口：`shared/engine.ts` 的 `runHelper`；`server/tasks.ts` 的 `POST /:id/subtasks/stop`、一轮执行的 `catch` 收尾
+- 入口：`shared/engine/index.ts` 的 `runHelper`；`server/tasks/index.ts` 的 `POST /:id/subtasks/stop`、一轮执行的 `catch` 收尾
 - 根因类型：异常从子任务里冒出去，界面状态和面板里的运行状态对不上
-- 模块：`server`（`server/tasks.ts`），配套 `shared/engine.ts`
+- 模块：`server`（`server/tasks/index.ts`），配套 `shared/engine/index.ts`
 - 关键词：子任务、卡死、没有输出、已开始还没有输出、终止、已经结束了、409、runHelper、helperStops、异常、settleOrphanHelper
 
 ## 现象

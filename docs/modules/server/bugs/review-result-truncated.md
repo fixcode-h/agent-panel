@@ -2,9 +2,9 @@
 
 - 状态：已修复（`server/tasks/inbox-file.test.ts` 通过）
 - 症状：父对话说「评审摘要被面板截断，完整结论没拿到」，只能让评审子任务把上一轮结论原样重述一遍
-- 入口：`shared/engine.ts` 的 `storeOutput` / `settleHelpers`，`shared/helper-batch.ts` 的 `clipToFile`，`server/exec/runner.ts` 放行交接目录（`handoffDirOf`）
+- 入口：`shared/engine/index.ts` 的 `storeOutput` / `settleHelpers`，`shared/helper-batch.ts` 的 `clipToFile`，`server/exec/runner.ts` 放行交接目录（`handoffDirOf`）
 - 根因类型：交接文件读不到（保活 CLI 启动时目录还不存在、没放行）+ 多处直接截断不留全文指针
-- 模块：`server`（`server/exec/runner.ts`、`server/tasks/inbox-file.ts`）、`shared`（`shared/engine.ts`、`shared/helper-batch.ts`）
+- 模块：`server`（`server/exec/runner.ts`、`server/tasks/inbox-file.ts`）、`shared`（`shared/engine/index.ts`、`shared/helper-batch.ts`）
 - 关键词：评审、截断、摘要、交接文件、全文、add-dir、保活、重述、数据不全
 
 ## 根因

@@ -11,10 +11,11 @@ import type { TurnInfo } from '../exec/turn-info.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { activePlan, needsFix, planProgress, openWork } from '../../shared/plan.ts'
+import { activePlan, needsFix, planProgress, openWork } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
 import { createBeforeEnd } from './before-end.ts'
 import { awaitedJob } from '../background.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 没列计划时，这一轮动手（跑命令、改文件）几次以上才做收尾自检（见 nudgeNoPlan）：三步以上的事才可能做了一半，
@@ -69,7 +70,7 @@ export function createDrive(
    * 卡住和空转写一行警告留给用户，子对话上报父对话（planNudged 记上，children.ts 才会按「未完成」报）
    */
   async function settledByEnd(conv: Task, say: (data: Record<string, unknown>) => void): Promise<boolean> {
-    const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+    const tk = await readTask(sc, conv.id)
     if (!tk) return false
     const end = turnEndSince(tk)
     const spin = !end && idleReminders(tk.messages) >= SPIN_MAX
@@ -113,7 +114,7 @@ export function createDrive(
     const max = nudgeMax(conv)
     /** settled：这一轮已经停稳（进程结束，或者停在保活上等下一句）；刚结束那一下 CLI 还没停到等待上，不看这一项 */
     const stalled = async (settled: boolean) => {
-      const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+      const tk = await readTask(sc, conv.id)
       if (!tk || tk.imported || taskDeleted(tk)) return 'gone'
       if (!planStalled(tk)) return stallSkip(tk)
       // 已经停下、失败的不推；页面切走、闲置回收的保活进程是正常说完的一轮，照常推（同 nudgeMerge）
@@ -259,7 +260,7 @@ export function createDrive(
       return false
     }
     const stalled = async (settled: boolean) => {
-      const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+      const tk = await readTask(sc, conv.id)
       if (!tk || tk.imported || taskDeleted(tk)) return 'gone'
       if (tk.working) return 'working'
       if (haltedBy(tk)) return `halted:${haltedBy(tk)}`
@@ -271,9 +272,7 @@ export function createDrive(
       // 父对话自己还有后台命令在跑（多半是替子对话申请的编译）：结果回来会开新的一轮，到时再提醒。
       // 编译期间就催它收尾，它只能回「等编译结果」，次数白白用掉，编译出了结果反而不再提醒（用户 2026-11-04 报）
       if (sc.background.list(tk.id).some(awaitedJob)) return 'background'
-      const kids = (await sc.store.list())
-        .filter((k) => k.parentTaskId === tk.id)
-        .map((k) => sc.live.get(k.id)?.task ?? k)
+      const kids = (await sc.store.list()).filter((k) => k.parentTaskId === tk.id).map((k) => freshTask(sc, k))
       // 正在合并的、父对话已经交回了话（排着等它开新一轮）的不算没处理
       const waiting = wrapUpPending(kids).filter(
         (k) => !sc.merging.has(k.id) && !hasHeld(k.id) && !sc.startQueue.has(k.id),
@@ -332,7 +331,7 @@ export function createDrive(
   async function warnStopped(id: string, key: string, text: string) {
     if (warned.get(id) === key) return
     warned.set(id, key)
-    const tk = sc.live.get(id)?.task ?? (await sc.store.get(id))
+    const tk = await readTask(sc, id)
     if (!tk) return
     tk.messages.push({
       id: randomUUID(),
@@ -377,7 +376,7 @@ export function createDrive(
       return !!at && !!turn.since && at >= turn.since
     }
     const stalled = async (settled: boolean): Promise<Task | string> => {
-      const tk = sc.live.get(conv.id)?.task ?? (await sc.store.get(conv.id))
+      const tk = await readTask(sc, conv.id)
       if (!tk || tk.imported || taskDeleted(tk)) return 'gone'
       if (tk.working) return 'working'
       if (tk.resolved) return 'resolved'

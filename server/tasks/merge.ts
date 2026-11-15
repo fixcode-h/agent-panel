@@ -32,12 +32,13 @@ import {
   refreshChildWait,
   syncKids,
   type PlanKid,
-} from '../../shared/plan.ts'
+} from '../../shared/plan/index.ts'
 import { shrinkClaims } from '../claims.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import type { IntegrateResult } from '../exec/worktree-integrate.ts'
 import { awaitedJob } from '../background.ts'
+import { freshTask, readTask } from './read.ts'
 
 /** finish_child 最多等多久再回话：CLI 的工具调用一分钟超时，要在那之前回（见 finishChild） */
 const FINISH_WAIT_MS = 45_000
@@ -344,7 +345,7 @@ ${
 
   /** 收尾请求进了收件箱之后的复查：父对话还空着、请求还没处理，就推它一次（见 drive.ts 的 nudgeWrapUp） */
   async function recheckWrapUp(parentId: string) {
-    const parent = sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))
+    const parent = await readTask(sc, parentId)
     if (!parent || sc.live.has(parentId)) return
     await sc
       .nudgeWrapUp(parent)
@@ -422,13 +423,11 @@ ${
       }
     // 为子对话申请时按它们的改动筛编译步骤：只改了 Lua、配置、表格的不编 C++。
     // 不带子对话（用户要求、父对话自己改的）时照常编；子对话的改动清单都取不到时也照常编
-    const all = (await sc.store.list()).map((x) => sc.live.get(x.id)?.task ?? x)
+    const all = (await sc.store.list()).map((x) => freshTask(sc, x))
     // 父对话漏写 children（或写成 child）时，按「名下申请过、还没开编」的子对话补上：结果能不能回到子对话不再全看模型填没填
     const [to, added] = buildKids(all, parent.id, children)
     const kidFiles = [
-      ...new Set(
-        all.filter((x) => to.includes(x.id)).flatMap((x) => (sc.live.get(x.id)?.task ?? x).changes.map((c) => c.path)),
-      ),
+      ...new Set(all.filter((x) => to.includes(x.id)).flatMap((x) => freshTask(sc, x).changes.map((c) => c.path))),
     ]
     const steps = custom ? [] : to.length ? buildStepsFor(project.testSteps, kidFiles) : buildSteps(project.testSteps)
     if (!custom && !steps.length) {
@@ -488,7 +487,7 @@ ${
     const queuedMine = before.filter((j) => j.taskId === parent.id).length
     const holders: Task[] = []
     for (const id of new Set(before.map((j) => j.taskId).filter((x) => x !== parent.id))) {
-      const tk = sc.live.get(id)?.task ?? (await sc.store.get(id))
+      const tk = await readTask(sc, id)
       if (tk) holders.push(tk)
     }
     // 占着的是别的父对话：告诉它后面有人在等（不叫醒它，执行中就实时送达，空闲就放进收件箱）
@@ -540,7 +539,7 @@ ${
             !x.archived &&
             !taskDeleted(x),
         )
-        .map((x) => sc.live.get(x.id)?.task ?? x)
+        .map((x) => freshTask(sc, x))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .slice(0, 20)
     )
@@ -675,7 +674,7 @@ ${
   async function planKids(parentId: string): Promise<PlanKid[]> {
     const kids = await sc.store.childrenOf(parentId)
     return kids.map((k) => {
-      const cur = sc.live.get(k.id)?.task ?? k
+      const cur = freshTask(sc, k)
       return {
         id: cur.id,
         title: cur.title,
@@ -690,7 +689,7 @@ ${
     const pEntry = sc.live.get(parentId)
     const pTask = pEntry?.task ?? (await sc.store.get(parentId))
     if (!pTask) return ''
-    const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
+    const tk = await readTask(sc, childId)
     let report: ReturnType<typeof childReport> | undefined
     if (tk?.parentTaskId === parentId) {
       const jobs = sc.background
@@ -723,7 +722,7 @@ ${
    * 合并就是验收：没请求收尾（没交验证结果）的不收
    */
   async function finishChildStep(parent: Task, childId: string): Promise<FinishResult> {
-    const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
+    const tk = await readTask(sc, childId)
     if (!tk || tk.parentTaskId !== parent.id)
       return { ok: false, info: '找不到这个子对话：id 从 list_conversations 取，只能收尾你自己名下的子对话' }
     if (tk.resolved) return { ok: true, info: `子对话「${tk.title}」已经完成了，不用再收尾` }
@@ -756,7 +755,7 @@ ${
     await setReq({ ...req, state: 'merging' })
     let r: IntegrateResult
     try {
-      r = await sc.mergeLock(parent.id, async () => sc.integrate(tk, sc.live.get(parent.id)?.task ?? parent))
+      r = await sc.mergeLock(parent.id, async () => sc.integrate(tk, freshTask(sc, parent)))
     } catch (e) {
       // 面板自己合并时抛的错（git 起不来之类）：不是子对话分支的问题，按提交出错交给父对话
       const msg = (e as Error).message

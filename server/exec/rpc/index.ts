@@ -1,7 +1,7 @@
 import type { BuildOptions, CliDefinition } from '../../../shared/clis.ts'
 import { RpcSpec } from '../../../shared/cli-spec.ts'
 import { t } from '../../../shared/i18n.ts'
-import { HOOK_SCRIPT_ENV, HOOK_URL_ENV } from '../../../shared/hooks.ts'
+import { HOOK_SCRIPT_ENV, HOOK_URL_ENV } from '../../../shared/hooks/index.ts'
 import { parserFor, type CliEvent } from '../parsers.ts'
 import { claudeAdapter } from './claude.ts'
 import { codexAdapter } from './codex.ts'

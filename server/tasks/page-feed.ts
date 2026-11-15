@@ -4,6 +4,7 @@ import type { TaskLive } from '../../shared/live/task-live.ts'
 import { log } from '../log.ts'
 import type { PageFeed } from '../page-events.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask } from './read.ts'
 
 /** 全局事件流多久比一次：和以前列表轮询（2.5 秒）比，变化最多晚 1 秒到 */
 const EVENTS_TICK_MS = 1000
@@ -37,7 +38,7 @@ export function createTaskFeed(s: TasksScope): PageFeed {
   async function snapshot(): Promise<Snapshot> {
     const all = (await s.store.list())
       .filter((t) => !taskDeleted(t) && !t.parentTaskId && !t.flowRun?.owner)
-      .map((t) => s.live.get(t.id)?.task ?? t)
+      .map((t) => freshTask(s, t))
     const list = all.map(listKey).join('\n')
     const lives = new Map<string, string>()
     for (const t of all) lives.set(t.id, JSON.stringify(await s.liveOf(t)))

@@ -10,6 +10,7 @@ import type { ForwardedSpawn } from './types.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 写盘失败时抛出说得清的错：调用方是面板工具，ask-mcp 会把它作为工具错误交回 Agent。
@@ -53,7 +54,7 @@ export function createPeer(s: TasksScope) {
     /** 请父对话安排修复（message_parent 带 wait_fix）：只认这个字段，不看正文开头写了什么 */
     fix = false,
   ) {
-    const parent = s.live.get(child.parentTaskId)?.task ?? (await s.store.get(child.parentTaskId))
+    const parent = await readTask(s, child.parentTaskId)
     if (!parent) {
       // 交回失败：父对话已经没了（被删、数据丢了），子对话的结果交不出去。
       // 只写日志不够：界面要和「子对话自己跑挂了」分得开，所以在子对话里留一张「消息没有送到」的卡
@@ -168,7 +169,7 @@ export function createPeer(s: TasksScope) {
     // 写进「现在」的那一份（和 noteParent 同一个坑）：开头读的可能是磁盘上的旧对象，中间 peerOf、写子对话时
     // 父对话可能被别的子对话的上报拉起来（执行器拿的是一份拷贝），往旧对象里写、拿旧对象落盘，
     // 收件箱这条会被执行器下一次落盘盖掉，父对话被叫醒后却在收件箱里找不到报错（复核 C1-a）
-    const target = s.live.get(parent.id)?.task ?? parent
+    const target = freshTask(s, parent)
     if (!how) {
       target.messages.push(msg)
       target.inbox.push({
@@ -251,7 +252,7 @@ export function createPeer(s: TasksScope) {
    * 叫不叫同样过 holdWake；没叫（被挡住、父对话没了）返回 false
    */
   async function remindParentFix(child: Task): Promise<boolean> {
-    const parent = s.live.get(child.parentTaskId)?.task ?? (await s.store.get(child.parentTaskId))
+    const parent = await readTask(s, child.parentTaskId)
     if (!parent || taskGone(parent) || (await s.holdWake(parent))) return false
     // 当时那条请求（messageParent 写进父对话的那条，以 FIX_TAIL 结尾；叫醒那句不是）：收件箱可能已经被上一轮取走，正文从对话里找
     const tail = FIX_TAIL(child.id)
@@ -374,7 +375,7 @@ export function createPeer(s: TasksScope) {
   }
 
   /**
-   * 引擎每次开始调对话 AI / 调完时回调（见 shared/engine.ts 的 onOrchestra）：
+   * 引擎每次开始调对话 AI / 调完时回调（见 shared/engine/index.ts 的 onOrchestra）：
    * 开始调的时候把排着的转交请求直接派出去，调完（undefined）清掉引用——只有「AI 正在处理这一轮」时才接活。
    * 见 ADR 0019。
    */

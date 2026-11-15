@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { attachCode } from './diff.ts'
-import type { DayProject, DayTask } from '../../shared/summary.ts'
+import type { DayProject, DayTask } from '../../shared/summary/index.ts'
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 

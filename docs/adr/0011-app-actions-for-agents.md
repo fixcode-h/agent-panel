@@ -3,7 +3,7 @@
 状态：已接受（定了就不换：以后加能力只加动作，不再讨论 CLI 还是 MCP） · 2026-10-24
 
 - 取代：[ADR 0001](./0001-ai-operate-panel-mcp-or-cli.md) 里「每个操作一个 `panel_*` 工具」的形态；0001 选 MCP 的结论保留
-- 影响范围：新增 `server/app-actions/`（注册表、各组动作、HTTP 入口）、`web/src/lib/ui-actions.ts`；改动 `server/ask-mcp.ts`（挂两个工具）、`server/exec/invoke.ts`、`server/exec/runner.ts`（把调用者传进去）、`server/page-events.ts`（多一种推给页面的信号）、`server/tasks.ts`（补「停全部子任务」「停后台命令」两个接口）、`server/index.ts`（接上宿主）
+- 影响范围：新增 `server/app-actions/`（注册表、各组动作、HTTP 入口）、`web/src/lib/ui-actions.ts`；改动 `server/ask-mcp.ts`（挂两个工具）、`server/exec/invoke.ts`、`server/exec/runner.ts`（把调用者传进去）、`server/page-events.ts`（多一种推给页面的信号）、`server/tasks/index.ts`（补「停全部子任务」「停后台命令」两个接口）、`server/index.ts`（接上宿主）
 
 ## 背景
 
@@ -24,7 +24,7 @@ ADR 0001 已经选了 MCP，但一直停在「提议」，而且它的形态是�
 | `server/exec/invoke.ts`                                 | `def.mcp && (own \|\| o.orch)` 时开 bridge，五个 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi）都按 `def.mcp` 接好了：命令行参数、配置文件、Pi 扩展三条路           |
 | `ui-design/server/design-mcp.ts` 文件头                 | 已经写过「为什么不用命令行」：Codex 沙箱默认不能联网、Windows 上 JSON 引号容易错、每条命令都可能要审批                                                                       |
 | `server/index.ts`                                       | 业务接口都挂在 `app`（`basePath('/api')`）上，`tokenGuard` 挂在外层 `root`；`app.request()` 在进程内调接口，走同一份逻辑，不经过网络                                         |
-| `server/tasks.ts`                                       | `/:id/stop`（`userStop`：停掉对话附属的一切）、`/:id/children/stop`、`/:id/subtasks/stop`（只停一个）、`DELETE /:id`（连子对话一起删）；`endBackground` 只有内部函数没有接口 |
+| `server/tasks/index.ts`                                 | `/:id/stop`（`userStop`：停掉对话附属的一切）、`/:id/children/stop`、`/:id/subtasks/stop`（只停一个）、`DELETE /:id`（连子对话一起删）；`endBackground` 只有内部函数没有接口 |
 | `server/page-events.ts`、`web/src/lib/page-signal.ts`   | 服务端已经有一条推给所有打开着的面板页面的 SSE（`/api/app/events`），托盘用它切标签页、打开设置                                                                              |
 | `web/src/App.tsx`（`NavCtx`）                           | 页面切换（`go`）、打开设置（`openSettings(section)`）、打开项目设置（`openProject(id, section, item)`）都是前端状态，服务端改不了                                            |
 | `web/src/components/projects/ProjectSettingsDialog.tsx` | 「AI 初始化项目」是项目设置弹窗里的一段前端流程（`startInit` 扫目录 → 开 AI 对话 → 用户应用推荐）                                                                            |

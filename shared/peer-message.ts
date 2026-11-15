@@ -9,7 +9,7 @@ import { t } from './i18n.ts'
 /** 正文开头的【收尾请求】【子对话状态】这类标签是说给 AI 的，标题里不重复它 */
 export const LEAD_TAG = /^【[^】]{1,12}】/
 
-/** waitNote（shared/plan.ts）推回结果时加在最前面的那句：「（计划步骤「a」、「b」等的结果到了……）」 */
+/** waitNote（shared/plan/index.ts）推回结果时加在最前面的那句：「（计划步骤「a」、「b」等的结果到了……）」 */
 const PLAN_NOTE = /^（计划步骤(.+?)等的结果到了(，已标为完成)?[：:].*）$/
 /** 子对话状态上报的第一行：【子对话状态】「标题」（id xxx）状态：原因 */
 const REPORT_HEAD = /^【子对话状态】「([^」]*)」(?:（id:? [^）\s]+）)?(.*)$/
@@ -211,7 +211,7 @@ export interface PeerReport {
 
 /**
  * 把汇报正文拆成字段：认得出计划步骤那句或【子对话状态】开头才算，其余返回 null 照旧画全文。
- * 只按服务端拼出的固定写法认（server/tasks/children.ts 的 reportChild、shared/plan.ts 的 waitNote），
+ * 只按服务端拼出的固定写法认（server/tasks/children.ts 的 reportChild、shared/plan/index.ts 的 waitNote），
  * 旧数据里「下一步」没写前缀的重试说明也归到下一步
  */
 export function parseReport(text: string): PeerReport | null {

@@ -282,7 +282,7 @@ function startTurn(text) {
 }
 /**
  * 收到插话：记下来给用例检查，并像真的 CLI 一样马上处理里面的【收尾请求】。
- * 父对话正忙时子对话的 submit_merge 是以插话进来的（server/tasks.ts 的 noteParent → steerTask）：
+ * 父对话正忙时子对话的 submit_merge 是以插话进来的（server/tasks/index.ts 的 noteParent → steerTask）：
  * 以前只 push 不处理，父对话那一轮跑完后也不会调用 finish_child，子对话一直停在「已请父对话收尾」，
  * e2e 就停在这一步等到超时（CI 上 10 个分片并行时父对话正好在跑，必现）。
  */

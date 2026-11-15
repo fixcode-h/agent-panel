@@ -7,7 +7,7 @@ import { DirPicker, useDirInfo } from './DirPicker'
 
 /**
  * 项目设置里的 cherry-pick 目标（用户要求）：Git 项目从本地分支里下拉选，P4 项目填目标工作区里的项目路径（可以浏览选目录），
- * 其他情况说明不能设。Agent 被要求 cherry-pick 时按这里的目标做（见 shared/engine.ts 的 cherryPickPart）
+ * 其他情况说明不能设。Agent 被要求 cherry-pick 时按这里的目标做（见 shared/engine/index.ts 的 cherryPickPart）
  */
 export function CherryPickTarget({
   vcs,

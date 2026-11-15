@@ -7,7 +7,7 @@
  * 规则只写在这里，调用方拿到不叫的结论时只把消息记进收件箱（或交回失败），不开新的一轮。
  * 用户自己发的消息走路由的 followUp，不经过这里：到了上限用户再说话照样跑一轮。
  */
-import { activePlan } from './plan.ts'
+import { activePlan } from './plan/index.ts'
 import type { PlanWait, StopReason, Task, TaskStatus } from './schema.ts'
 
 /** 执行位上的停止标记：按了停止、还没收完时落盘的 status 还是旧的，要看这一份 */

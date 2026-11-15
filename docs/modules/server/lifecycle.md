@@ -1,6 +1,6 @@
 # server · 状态回收与强制更新后的恢复
 
-[server 模块](README.md)的子页面：面板重启和页面宽限到期后的状态回收、强制更新后的恢复名单。模块的状态块、`server/tasks.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
+[server 模块](README.md)的子页面：面板重启和页面宽限到期后的状态回收、强制更新后的恢复名单。模块的状态块、`server/tasks/index.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
 
 2026-10-31 从 `README.md` 原样挪出（文字没改），各条的日期和结论以当时为准。
 
@@ -35,9 +35,9 @@
 
 ## 强制更新后：把被打断的任务列进恢复名单
 
-「强制更新」会停掉所有 CLI（`server/update.ts` 的 `stopForUpdate`）。停之前先把这一批任务记下来，新版本启动后问用户要不要接着跑：
+「强制更新」会停掉所有 CLI（`server/update/index.ts` 的 `stopForUpdate`）。停之前先把这一批任务记下来，新版本启动后问用户要不要接着跑：
 
-- **记录**：`stopForUpdate` 调 `tasksApi` 的 `interruptedTasks()`（`server/tasks.ts`，`server/index.ts` 里接到 `updateApi` 的 `interrupted`），把 `{ id, doing }` 列表写进数据目录的 `cache/interrupted-by-update.json`（`server/interrupted.ts` 的 `recordInterrupted`：每次都覆盖上一次，空名单也写——清掉上次没处理完的旧记录，弹窗只显示当前这次打断要恢复的对话）。`doing` 由 `restartDoing` 生成，按「正在执行的节点标题 → 没做完的计划进度（`计划 6/8`）→ 最后一条要求的第一行」取第一个有的：重启后节点状态会变回 pending，这些只能在停之前存下来。
+- **记录**：`stopForUpdate` 调 `tasksApi` 的 `interruptedTasks()`（`server/tasks/index.ts`，`server/index.ts` 里接到 `updateApi` 的 `interrupted`），把 `{ id, doing }` 列表写进数据目录的 `cache/interrupted-by-update.json`（`server/interrupted.ts` 的 `recordInterrupted`：每次都覆盖上一次，空名单也写——清掉上次没处理完的旧记录，弹窗只显示当前这次打断要恢复的对话）。`doing` 由 `restartDoing` 生成，按「正在执行的节点标题 → 没做完的计划进度（`计划 6/8`）→ 最后一条要求的第一行」取第一个有的：重启后节点状态会变回 pending，这些只能在停之前存下来。
 - **弹窗**：新版本启动后 `interruptedApi`（`server/interrupted.ts`）提供 `GET /app/interrupted` 和 `POST /app/interrupted/ack`，`web/src/components/layout/UpdateResumeDialog.tsx` 读它、默认全勾选，勾选的逐个调 `POST /tasks/:id/resume`（`server/tasks/conversation-routes.ts` 的 `routes.post('/:id/resume')`，界面侧是 `api.resumeTask`）。读取时再过滤一遍：任务已删除、归档、导入，或者在弹窗出现前就已经跑完的不列。点「稍后再说」或关掉弹窗写 `acknowledged: true`，记录留着但不再自动弹。
 - **名单口径**（`shared/task.ts` 的 `interruptedTaskIds(tasks, working)`）：只记这次真正被打断的——现在真在跑的（`working`）+ 它们名下还有在跑子对话的父对话（`working` 条目带的 `parentTaskId`，子对话的结果要交回它，它不在名单里就没人接）+ 这一轮真的还在执行、CLI 被停掉结果回不来的（`status === 'running' && !awaitingUser`，包括在等子任务的那种）。
 - **不再算闲置任务**：以前这条名单直接用 `restartUnfinished`，它还包括「这一轮已经说完、停在等下一句、计划没做完」的任务，于是每次强制更新都把历史上所有没做完计划的任务累计进名单（用户报的「有 24 个任务被强制更新打断」，见 [bugs/update-resume-accumulates-history.md](bugs/update-resume-accumulates-history.md)）。父对话仍通过「在跑子对话的 `parentTaskId`」进名单，之前修的父子不一致（[bugs/update-resume-missed-parent.md](bugs/update-resume-missed-parent.md)）不回归。

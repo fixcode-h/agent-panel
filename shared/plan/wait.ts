@@ -1,6 +1,6 @@
 import type { PlanWait, Task, TaskPlan } from '../schema.ts'
 
-// 放在单独的文件里：shared/plan.ts 到了行数上限（scripts/file-caps.json）。不引 plan.ts，免得循环引用
+// 放在单独的文件里：shared/plan/index.ts 到了行数上限（scripts/file-caps.json）。不引 plan.ts，免得循环引用
 
 /**
  * 等的结果回来时要改哪几份计划：进行中的那份，加上还挂着这个等待的、已经结束的计划。

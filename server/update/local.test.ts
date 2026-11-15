@@ -12,7 +12,7 @@ process.env.AGENT_PANEL_DATA = path.join(root, 'data')
 after(() => rmSync(root, { recursive: true, force: true }))
 
 const { inspectPackage, packageOs, osOf } = await import('./local.ts')
-const { updateApi } = await import('../update.ts')
+const { updateApi } = await import('./index.ts')
 const { rawUploadAllowed } = await import('../http-guards.ts')
 // 断言的是中文原文；依赖链里的 lang.ts 会按系统语言重设，import 之后再固定
 setLang('zh')

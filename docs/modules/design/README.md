@@ -44,7 +44,7 @@
 - 接口：`GET /local-image/chains`（链 + 可用工作流 + 就绪集合）、`PUT /local-image/chains/:id`（保存前 `checkChain`，不合法直接 400）、`DELETE /local-image/chains/:id`、`POST /local-image/chains/:id/run`（传链 + 一张原图的 data URL，返回输出图 data URL）。链存在数据目录的 `comfy-chains.json`，和 `comfy-workflows.json` 分开，读写互不影响。
 - 段的失效处理：链里存的某个工作流被删掉时，`checkChain` 收 `workflow: ComfyWorkflow | undefined`，按**原下标**报「第 n 段的工作流已经不在了」，不压缩数组（第一段要不要原图、锚点检查都依赖下标）；界面不 `filter` 掉失效段，单段链也照样校验。
 - 链的描述口径：`localGenerateChain` 每段取「段自己的描述 → 本次传进来的描述 → 该工作流自己的说明」，链名（常是「新链」）不当提示词；试跑接口没填描述时传空串，由上面这条兜底。
-- 前端：`web/src/components/comfy/ComfyChainPanel.tsx` 挂在 ComfyPage 的队列面板下面。可以新建链、选段（只列该分类或 `both` 的工作流，模型没下载的标出来）、上下移、删段、给图生图段单独写描述，上传一张原图试跑并看原图和输出图的预览。新建链的默认段由 `defaultChainSteps` 按特征挑「不吃提示词的纯处理段 → 吃提示词的段」（即「去背景 → 图生图」），不按 id 写死。不合法时显示 `checkChain` 的问题、`chainNotes` 的提醒；第一段要原图却还没选时提示。演示版 `web/src/lib/demo-backend.ts` 的 `chains` 分支能存链，试跑返回「演示版没有真的 ComfyUI」。
+- 前端：`web/src/components/comfy/ComfyChainPanel.tsx` 挂在 ComfyPage 的队列面板下面。可以新建链、选段（只列该分类或 `both` 的工作流，模型没下载的标出来）、上下移、删段、给图生图段单独写描述，上传一张原图试跑并看原图和输出图的预览。新建链的默认段由 `defaultChainSteps` 按特征挑「不吃提示词的纯处理段 → 吃提示词的段」（即「去背景 → 图生图」），不按 id 写死。不合法时显示 `checkChain` 的问题、`chainNotes` 的提醒；第一段要原图却还没选时提示。演示版 `web/src/lib/demo/demo-backend.ts` 的 `chains` 分支能存链，试跑返回「演示版没有真的 ComfyUI」。
 - ComfyUI 工作流页（`web/src/pages/ComfyPage.tsx`，2026-10-29 照设计稿 ComfyUI 画板重排）：
   - 入口（2026-11-11 起）：图标栏的通用功能里（`web/src/components/layout/Sidebar.tsx` 的 `NAV`），哪个模式下都有；视频画质增强也用 ComfyUI，设计模式又要拆成插件，所以不再挂在设计模式下。打开时会话侧栏让开，「回到主页」回到最近的会话页。
   - 左栏：工作流按 `kind` 分「游戏 UI / 网页 UI / 图片处理（`both`）」三组，来源筛选「全部 / 内置 / 我的」，缩略块按用途上色（`USE_LOOK`），角上的点是模型下载了没有；底下常驻 ComfyUI 运行状态和「本机设置」。旧链接 `#/comfy/web` 没带工作流 id 时选第一个网页工作流。AI 生成、导入弹窗里自己选游戏 / 网页（`KindPick`），默认跟当前工作流。

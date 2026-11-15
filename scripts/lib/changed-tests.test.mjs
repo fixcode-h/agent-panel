@@ -215,7 +215,7 @@ test('演示数据和提示词里的示例 import 不算依赖（否则会误报
 
 test('高风险区：执行链路 / CLI 解析 / 内置模板 / 数据 schema 直接建议全量 + e2e', () => {
   for (const file of [
-    'shared/engine.ts',
+    'shared/engine/index.ts',
     'shared/schema.ts',
     'server/exec/parsers.ts',
     'shared/clis/pi.json',
@@ -402,12 +402,12 @@ test('删除 / 改名文件时直接建议全量：依赖它的文件无法从 i
 
 test('必须全量时给的是全量命令，不再给增量命令（照抄增量会漏跑）', () => {
   const sources = {
-    'shared/engine.ts': '',
+    'shared/engine/index.ts': '',
     'server/thing.ts': "import '@shared/engine'",
     'server/thing.test.ts': "import './thing'",
   }
   const plan = planChangedTests({
-    changed: ['shared/engine.ts'],
+    changed: ['shared/engine/index.ts'],
     testFiles: ['server/thing.test.ts'],
     sourceFiles: Object.keys(sources),
     covers,

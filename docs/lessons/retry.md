@@ -1,5 +1,5 @@
 ---
-paths: shared/engine.ts, server/orch-mcp.ts, server/tasks/**
+paths: shared/engine/index.ts, server/orch-mcp.ts, server/tasks/**
 ---
 
 # 报错后的重试

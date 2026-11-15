@@ -1,10 +1,10 @@
 # 子对话一收口，父对话还没推送合主干，计划就显示完成；合回后的子对话又被要求重交收尾
 
-- 状态：已修复（`shared/plan.test.ts`、`server/tasks/before-end.test.ts` 通过）
+- 状态：已修复（`shared/plan/index.test.ts`、`server/tasks/before-end.test.ts` 通过）
 - 症状：父对话计划最后一步「收尾：推送到远端并合并主干」在等子对话，子对话一收口这一步就打勾、计划显示已完成，PR 其实还没合；子对话被父对话合回后又收到「你还没请父对话收尾」，重新列计划、再交一次 submit_merge，父对话只好再收一次
-- 入口：`shared/plan.ts` 的 `settleWait`；`shared/end-turn.ts` 的 `mergeOwedOf`
+- 入口：`shared/plan/index.ts` 的 `settleWait`；`shared/end-turn.ts` 的 `mergeOwedOf`
 - 根因类型：通用的「等的结果都回来就标完成」套到了收尾步骤上；收尾记号（wrapRequest）清掉后没看计划里已完成的收尾
-- 模块：`shared`（`shared/plan.ts`、`shared/end-turn.ts`）
+- 模块：`shared`（`shared/plan/index.ts`、`shared/end-turn.ts`）
 - 关键词：收尾、推送到远端并合并主干、计划提前完成、settleWait、等子对话、submit_merge、你还没请父对话收尾、重复收尾、finish_child
 
 ## 现象
@@ -24,4 +24,4 @@
 
 - `settleWait`：带 `wrapUp` 的步骤等的结果都成功时退回进行中（清掉面板写的等待说明），推送收尾由 Agent 推送并合并主干后标完成，合回 / 验收仍由面板标。
 - `mergeOwedOf`：没有进行中的计划、最后一份计划里面板收尾已完成时不算欠收尾。
-- 防线：`shared/plan.test.ts`「推送收尾在等子对话、后台命令」；`server/tasks/before-end.test.ts`「已经合回过」断言。
+- 防线：`shared/plan/index.test.ts`「推送收尾在等子对话、后台命令」；`server/tasks/before-end.test.ts`「已经合回过」断言。

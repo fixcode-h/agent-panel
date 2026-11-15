@@ -12,7 +12,7 @@
   - `scripts/unit-tests.mjs`：`TIMING_FILES` 5 个文件（`server/exec/worktree.test.ts`、`server/exec/pi-rpc.test.ts`、`server/tasks/store.test.ts`、`server/exec/process.test.ts`、`server/background.test.ts`）加 `--test-concurrency=1` 串行；其余交给 `node --test` 默认并发（等于 CPU 核数）。
   - `scripts/e2e.mjs`：固定 `DEFAULT_CONCURRENCY = 4`，`AGENT_PANEL_E2E_CONCURRENCY` 覆盖；每个分片 `mkdtempSync` 独立数据目录，服务 `listen(0)` 后从 stdout 回报 `AGENT_PANEL_PORT`，`spawn-server.mjs` 校验分片唯一 `instance`。
   - `scripts/ui-check.mjs`：默认 `min(分片数, availableParallelism())`，`AGENT_PANEL_UI_CONCURRENCY` 覆盖；每个分片独立静态服务、浏览器、演示数据。
-- **选择现状**：`scripts/changed-tests.mjs` + `scripts/lib/changed-tests.mjs` 按 import 反向闭包做文件级选择；高风险区是目录级（`server/exec/**`、`shared/clis/**`、`shared/builtin/**`、`shared/engine.ts`、`shared/schema.ts`）；`FULL_COVERAGE_RATIO = 60%`；删除/改名、依赖图不完整都判必须全量。
+- **选择现状**：`scripts/changed-tests.mjs` + `scripts/lib/changed-tests.mjs` 按 import 反向闭包做文件级选择；高风险区是目录级（`server/exec/**`、`shared/clis/**`、`shared/builtin/**`、`shared/engine/index.ts`、`shared/schema.ts`）；`FULL_COVERAGE_RATIO = 60%`；删除/改名、依赖图不完整都判必须全量。
 - **CI**：`test` job（typecheck / lint / test:unit / build，timeout 30 分钟）、`e2e` job（20 分钟）、`ui` job（15 分钟），三个 job 各自独立 VM、并行。
 - **并行进行中的另一条父对话**：让 `npm run test:unit` 默认英文环境（改 runner 环境变量并修受影响断言）。本设计引用它，不重复实现。
 
@@ -117,7 +117,7 @@
 - **8.1 测试文件拆分**：`scripts/rules-check.mjs` 新增规则——单测试文件 ≤ 300 行，顶部 `@covers` 只能指向一个源模块（同一行为域的多个文件可以写多行，但必须在同一模块目录）；旧文件分批拆，不做全仓格式化。
 - **8.2 `@covers` 注解**：测试文件顶部 `// @covers shared/task.ts`；`describe` 前可写 `// @covers shared/task.ts#childIcon`。scripts/lib/test-covers.mjs 解析成索引（纯文本，不执行测试）。选择结果从 `{ file }` 扩展为 `{ file, groups?: string[] }`，组级命中用 `node --test --test-name-pattern` 的 OR 组合执行；无法定位到组时退回整文件并打印原因。
 - **8.3 必须全量的阈值与范围**：
-  - 高风险区从目录级收窄到文件级契约清单：`shared/clis/*.json`、`shared/cli-spec.ts`、`shared/engine.ts`、`shared/schema.ts`、`shared/task.ts`、`server/tasks/store.ts`、`server/exec/runner.ts`、`server/exec/process.ts`；`server/exec/` 其余文件不再一刀切。
+  - 高风险区从目录级收窄到文件级契约清单：`shared/clis/*.json`、`shared/cli-spec.ts`、`shared/engine/index.ts`、`shared/schema.ts`、`shared/task.ts`、`server/tasks/store.ts`、`server/exec/runner.ts`、`server/exec/process.ts`；`server/exec/` 其余文件不再一刀切。
   - `FULL_COVERAGE_RATIO` 从 60% 提到 75%；`FULL_COVERAGE_MIN_TESTS` / `FULL_COVERAGE_MIN_SHARDS` 保持并写进报告。
   - 删除/改名、依赖图不完整仍是必须全量，但报告要给出具体文件和那行 import。
 - **8.4 理由结构化**：`plan.full.tests = { required, triggers: [{ kind, files, threshold? }] }`；终端按触发类别逐条打印，JSON 输出供验收脚本核对。

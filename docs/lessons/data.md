@@ -1,5 +1,5 @@
 ---
-paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, server/store.ts, server/*store*.ts, server/settings*.ts, server/tasks/**, server/update*.ts, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts
+paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, server/store.ts, server/*store*.ts, server/settings*.ts, server/tasks/**, server/update/**, scripts/package.mjs, web/src/lib/demo/demo-backend.ts, web/src/lib/api.ts
 ---
 
 # 数据结构、存储、升级兼容和出包
@@ -18,7 +18,7 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, shared/settings.ts, ser
 
 ## 加字段时配套改动一次提交全
 
-- 规则：一个字段通常要同时改 `shared/schema.ts`、任务快照（`shared/task.ts`）、接口（`server/`、`web/src/lib/api.ts`）、演示后端（`web/src/lib/demo-backend.ts`）和英文词典。提交前 `git status` 确认新文件都 add 了。
+- 规则：一个字段通常要同时改 `shared/schema.ts`、任务快照（`shared/task.ts`）、接口（`server/`、`web/src/lib/api.ts`）、演示后端（`web/src/lib/demo/demo-backend.ts`）和英文词典。提交前 `git status` 确认新文件都 add 了。
 - 起因：834da58、22d2481，漏提交模块导致 typecheck 和构建失败；434c940，插入的内容落在对象闭合括号之后。
 - 防线：`npm run typecheck`、`npm run build`、`npm run build:demo`。
 

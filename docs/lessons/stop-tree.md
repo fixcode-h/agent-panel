@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/conversation-routes.ts, server/exec/parsers.ts, shared/task.ts, shared/engine.ts, shared/run/stops.ts, web/src/components/tasks/**
+paths: server/tasks/keepalive.ts, server/tasks/actions-routes.ts, server/tasks/conversation-routes.ts, server/exec/parsers.ts, shared/task.ts, shared/engine/index.ts, shared/run/stops.ts, web/src/components/tasks/**
 ---
 
 # 对话停止、续接和「在跑」的显示

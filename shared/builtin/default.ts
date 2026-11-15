@@ -1,5 +1,5 @@
 import { type Agent, type ParamValues, type TestStep, type Workflow, END, START } from '../schema.ts'
-import { autoLayout, entryFlow, topoOrder, workflowClosure } from '../flow.ts'
+import { autoLayout, entryFlow, topoOrder, workflowClosure } from '../flow/index.ts'
 import { applyExpose } from '../expose.ts'
 import { isTestAgent, testStepsBlock } from '../test-steps.ts'
 import { workflowAgentIds } from '../agents/params.ts'

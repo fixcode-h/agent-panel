@@ -148,7 +148,7 @@ const isTaskLike = (x: unknown): x is { id: string; live?: unknown } =>
 export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
   if (import.meta.env.VITE_DEMO) {
-    const { handle } = await import('./demo-backend')
+    const { handle } = await import('./demo/demo-backend')
     const out = await handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined)
     return withoutLive(out as T)
   }
@@ -190,7 +190,7 @@ export interface TaskDiskItem {
   bytes: number
 }
 
-/** 设置「数据」里的保活会话列表（server/tasks.ts 的 keepAliveList） */
+/** 设置「数据」里的保活会话列表（server/tasks/index.ts 的 keepAliveList） */
 export interface KeepAliveItem {
   id: string
   title: string

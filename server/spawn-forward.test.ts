@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
-import { runEngineTurn } from '../shared/engine.ts'
+import { runEngineTurn } from '../shared/engine/index.ts'
 import type { AgentCall, EngineHost, HelperSpec } from '../shared/engine/host.ts'
 import { coreDefinition, syncCore, upgradeRunIn } from '../shared/builtin/core.ts'
 

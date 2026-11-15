@@ -194,7 +194,7 @@ await runShard('工作流任务', async (api) => {
   // 并发和先后都看引擎记的「节点执行窗口」（step.startedAt/endedAt：startedAt 在 spawn 之前记、endedAt 在节点结束时记），
   // 不看假 CLI 进程的 start/end：那是「进程存活窗口」，CI 上 10 个分片并行时，第二个节点的 node 进程
   // 可能晚到第一个 exit 之后才写日志，两个区间就不重叠了，但引擎确实把两个节点同时放进了 running
-  // （shared/engine.ts 的 runFlow：同一阶段 for (const n of ready()) 顺序塞进 running，再 race 等先完成的）。
+  // （shared/engine/index.ts 的 runFlow：同一阶段 for (const n of ready()) 顺序塞进 running，再 race 等先完成的）。
   // 用节点时间既不会把进程启动慢半拍误判成串行，也能拦住真的串行（串行时下游的 startedAt 会晚于上游的 endedAt）
   const win = (id) => {
     const s = t.steps.find((x) => x.id === id)

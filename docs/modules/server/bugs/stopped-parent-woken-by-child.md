@@ -4,7 +4,7 @@
 - 症状：停止父对话，父对话和名下子对话都停了，过一会儿父对话自己又开了一轮，收到的是子对话「已中断」的状态，接着又把子对话叫起来
 - 入口：`server/tasks/actions-routes.ts` 的 `/:id/stop` → `keepalive.ts` 的 `stopTask` → `children.ts` 的 `closeChildren` / `reportChild` → `child-messages.ts` 的 `noteParent`
 - 根因类型：「用户停下的父对话不叫起」只看父对话自己的状态，父对话已答完时停下记成 done，判定漏过
-- 模块：`server`（`server/tasks/child-messages.ts`、`shared/engine.ts` 的 `finish`）
+- 模块：`server`（`server/tasks/child-messages.ts`、`shared/engine/index.ts` 的 `finish`）
 - 关键词：停止、暂停、父对话自己跑、重新运行、子对话已中断、叫起、wakeConv、stopReason parent
 
 ## 现象

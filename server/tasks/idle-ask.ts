@@ -7,6 +7,7 @@ import { getSettings } from '../settings.ts'
 import { hasHeld, removeHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import { readTask } from './read.ts'
 
 /**
  * 子对话没有输出时以父对话的名义自动问它状态（阈值和次数上限在 shared/task.ts 的 childIdleAsk）；
@@ -76,7 +77,7 @@ export function createIdleAsk(s: TasksScope) {
         now,
       )
       if (!decision.ask) continue
-      const parent = s.live.get(tk.parentTaskId)?.task ?? (await s.store.get(tk.parentTaskId))
+      const parent = await readTask(s, tk.parentTaskId)
       // 读父对话的时候它可能已经被停止、替换掉了：这一轮就不问了
       if (!parent || s.shuttingDown || s.live.get(tk.id) !== entry) continue
       const mins = Math.max(1, Math.round(decision.idleMs / askUnitMs))

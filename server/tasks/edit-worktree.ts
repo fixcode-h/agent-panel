@@ -12,6 +12,7 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask } from './read.ts'
 
 /**
  * 从对话现在的目录开独立分支（开不了时返回原因）。改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的。
@@ -152,7 +153,7 @@ export function createEditWorktree(s: TasksScope) {
   /** 还在执行或正在启动的子对话 */
   async function busyChildren(parentId: string) {
     return (await s.store.childrenOf(parentId))
-      .map((x) => s.live.get(x.id)?.task ?? x)
+      .map((x) => freshTask(s, x))
       .filter((x) => x.working || s.startQueue.has(x.id))
   }
 

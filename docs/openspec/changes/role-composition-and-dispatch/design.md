@@ -44,18 +44,18 @@
 
 ### 1.1 现状事实
 
-| 方面         | 现状                                                                                                                                                                                                          | 出处                                               |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| 角色和位置   | 顶层项目对话默认「统筹」（`orchestrator`），子对话默认「执行」（`worker`），`spawn_agents` 不点名默认「子任务」（`helper`），AI 分析默认「分析」（`analyzer`）                                                | `shared/builtin/core.ts` 的 `coreUse`              |
-| 角色能力开关 | `canDelegate`（能开子对话，只在顶层对话生效）、`canPlan`（能 `start_plan`）、`common`（任何角色都能派它当子任务）、`runIn`（子对话点名时转交父对话）、`includes`（把别的角色的设定**全文拼进来**，最多 3 层） | `shared/schema.ts` 的 `AgentInput`                 |
-| 角色组合     | 只有 `includes` 一种：纯提示词拼接，被引入的角色不能「派出去」，也没有「什么时候用它」的说明；内置角色全都 `includes` 了「通用约束」                                                                          | `shared/agents/role.ts` 的 `composeRole`           |
-| 统筹的职责   | 「只统筹不动手」：不改、不建、不删文件，改动再小（一行、一个文案）也交给子对话；只收集到模块为止                                                                                                              | `shared/builtin/agents.ts` 的统筹设定              |
-| 能力调用     | 文档、评审、测试验收、版本控制各是独立角色；执行角色收尾时依次派「评审」（必须）、「文档」（`runIn: parent`）、「测试验收」（改动大时）、「版本控制」（没有 `submit_merge` 时）                               | 执行角色设定、ADR 0013 / 0019                      |
-| 冷启动成本   | 统筹设定原文：「每开一个新子对话都要重新注入角色设定、通用约束、AGENTS.md、项目教训和技能清单，一个只干 30 秒动作的子对话也要二十万 token 起步」                                                              | 统筹设定「派单的粒度」                             |
-| 位置的权限   | 由 `Orchestra` 的一组布尔值决定工具暴露：`coordinator`（开子对话）、`helper`（自己是子任务）、`child`、`canSubmit`、`planning`、`plans`、`peers`、`parentOf`、`claims`……                                      | `shared/engine.ts`、`server/orch-mcp.ts`           |
-| 子任务       | 单回合、不能再派子任务、不能启动工作流、不能开子对话、不能向用户提问，默认只读；一步最多 12 个（`MAX_HELPERS_PER_STEP`）；失败用 `resume` 在原记录重试                                                        | `helper` 设定、`shared/engine.ts`                  |
-| 子对话       | 可以多轮、用户可进入；在独立分支里改、测、评审，`submit_merge` 请父对话 `finish_child` 合回；不能开子对话、不能互相通讯；提问按「提问」开关交给用户或父对话                                                   | ADR 0005 / 0007、`shared/children/ask.ts`          |
-| 工作流       | 子对话用 `start_plan` 启动，这一轮结束后同步跑完，结果交回对话；工作流有自己的主 Agent（`mainAgentId`）做节点间调度（`dispatch`）；节点用某个角色                                                             | `shared/engine.ts` 的 `plan`、`shared/dispatch.ts` |
+| 方面         | 现状                                                                                                                                                                                                          | 出处                                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 角色和位置   | 顶层项目对话默认「统筹」（`orchestrator`），子对话默认「执行」（`worker`），`spawn_agents` 不点名默认「子任务」（`helper`），AI 分析默认「分析」（`analyzer`）                                                | `shared/builtin/core.ts` 的 `coreUse`                    |
+| 角色能力开关 | `canDelegate`（能开子对话，只在顶层对话生效）、`canPlan`（能 `start_plan`）、`common`（任何角色都能派它当子任务）、`runIn`（子对话点名时转交父对话）、`includes`（把别的角色的设定**全文拼进来**，最多 3 层） | `shared/schema.ts` 的 `AgentInput`                       |
+| 角色组合     | 只有 `includes` 一种：纯提示词拼接，被引入的角色不能「派出去」，也没有「什么时候用它」的说明；内置角色全都 `includes` 了「通用约束」                                                                          | `shared/agents/role.ts` 的 `composeRole`                 |
+| 统筹的职责   | 「只统筹不动手」：不改、不建、不删文件，改动再小（一行、一个文案）也交给子对话；只收集到模块为止                                                                                                              | `shared/builtin/agents.ts` 的统筹设定                    |
+| 能力调用     | 文档、评审、测试验收、版本控制各是独立角色；执行角色收尾时依次派「评审」（必须）、「文档」（`runIn: parent`）、「测试验收」（改动大时）、「版本控制」（没有 `submit_merge` 时）                               | 执行角色设定、ADR 0013 / 0019                            |
+| 冷启动成本   | 统筹设定原文：「每开一个新子对话都要重新注入角色设定、通用约束、AGENTS.md、项目教训和技能清单，一个只干 30 秒动作的子对话也要二十万 token 起步」                                                              | 统筹设定「派单的粒度」                                   |
+| 位置的权限   | 由 `Orchestra` 的一组布尔值决定工具暴露：`coordinator`（开子对话）、`helper`（自己是子任务）、`child`、`canSubmit`、`planning`、`plans`、`peers`、`parentOf`、`claims`……                                      | `shared/engine/index.ts`、`server/orch-mcp.ts`           |
+| 子任务       | 单回合、不能再派子任务、不能启动工作流、不能开子对话、不能向用户提问，默认只读；一步最多 12 个（`MAX_HELPERS_PER_STEP`）；失败用 `resume` 在原记录重试                                                        | `helper` 设定、`shared/engine/index.ts`                  |
+| 子对话       | 可以多轮、用户可进入；在独立分支里改、测、评审，`submit_merge` 请父对话 `finish_child` 合回；不能开子对话、不能互相通讯；提问按「提问」开关交给用户或父对话                                                   | ADR 0005 / 0007、`shared/children/ask.ts`                |
+| 工作流       | 子对话用 `start_plan` 启动，这一轮结束后同步跑完，结果交回对话；工作流有自己的主 Agent（`mainAgentId`）做节点间调度（`dispatch`）；节点用某个角色                                                             | `shared/engine/index.ts` 的 `plan`、`shared/dispatch.ts` |
 
 ### 1.2 问题
 
@@ -267,7 +267,7 @@ interface DispatchPolicy {
 按顺序，越往上越稳定（利于 CLI 的提示词缓存）：
 
 1. **基础层**：通用约束（语言、编码、提问、命令执行、等待上限、安全边界），加上 5.3 的 `auto` 判据。
-2. **位置层**：面板按位置生成——你是父对话 / 子对话 / 子任务，能做什么不能做什么、怎么交回、计划规则、后台命令、独立分支、测试范围（现在 `shared/engine.ts` 里的 `buildPart`、`planPart`、`backgroundPart`、`verifyPart` 等就是这一层，原样保留）。
+2. **位置层**：面板按位置生成——你是父对话 / 子对话 / 子任务，能做什么不能做什么、怎么交回、计划规则、后台命令、独立分支、测试范围（现在 `shared/engine/index.ts` 里的 `buildPart`、`planPart`、`backgroundPart`、`verifyPart` 等就是这一层，原样保留）。
 3. **角色层**：高级角色自己的设定（定位、决策规则、汇报方式），套上参数。
 4. **能力索引**：每个挂载一行——`名字 · 什么时候用 · 用法（就地：先调 use_capability；派出：spawn_agents agent=名字；转交：自动）· 关键约束一句话`。
 5. **预加载的能力全文**：`preload: true` 的挂载直接放全文（例如执行角色的「开发」），标题写「## 能力：开发（已加载）」。
@@ -554,7 +554,7 @@ flowchart LR
 
 **C. 「子对话合并之后，父对话计划里那一步一直显示等待中」（Bug）**
 
-1. 理解：计划状态没收口。对照模块地图定位到计划模块（`shared/plan.ts`）和任务收尾（`server/tasks.ts`）。现象清楚，不问。
+1. 理解：计划状态没收口。对照模块地图定位到计划模块（`shared/plan/index.ts`）和任务收尾（`server/tasks/index.ts`）。现象清楚，不问。
 2. 分诊：第 6 条，新开子对话，任务单写现象、复现、模块入口、相关 ADR 0021。
 3. 子对话按「按模块逐层定位」找到并修，补用例；评审子任务；文档 `parent` → 父对话那边派文档子任务写 Bug 记录（用户报的 Bug）。
 4. 父对话合回、测试、汇总。
@@ -610,7 +610,7 @@ policy: DispatchPolicy.optional()
 
 - `scopeOf(task, self)` → 这个调用者所在的位置（父对话 / 子对话 / 子任务 / 工作流节点）和它允许的动作集合（4.2 的表）。
 - `allowedActions(scope, policy, mounts)` → 位置 ∩ 调度策略 ∩ 挂载，得到最终动作集合。
-- `shared/engine.ts` 构造 `Orchestra` 时只从这里取布尔值；`server/orch-mcp.ts` 的 `orchTools` 只按它出工具。调用时再校验一次（工具可能被模型凭记忆调用）。
+- `shared/engine/index.ts` 构造 `Orchestra` 时只从这里取布尔值；`server/orch-mcp.ts` 的 `orchTools` 只按它出工具。调用时再校验一次（工具可能被模型凭记忆调用）。
 
 ### 11.4 任务上的新字段
 

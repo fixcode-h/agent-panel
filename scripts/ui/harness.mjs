@@ -47,7 +47,7 @@ export const TINY_PNG = Buffer.from(
   'base64',
 )
 
-// 演示里模拟的等待（请求延迟、流式输出、安装进度）按这个倍数缩短，见 web/src/lib/demo-speed.ts。
+// 演示里模拟的等待（请求延迟、流式输出、安装进度）按这个倍数缩短，见 web/src/lib/demo/demo-speed.ts。
 // 不缩到 0：「生成中」「授权中」这些中间状态也要截图，太快就看不到了
 const DEMO_SPEED = process.env.AGENT_PANEL_UI_DEMO_SPEED ?? '4'
 

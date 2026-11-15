@@ -22,7 +22,7 @@
 2. 它派出的子任务（`slot === 'sub'`、`status === 'running'`）还在跑命令。
 3. 打开这个对话页，状态行同时显示「等待你的下一条消息」和「空闲」。
 
-演示数据里 `web/src/lib/demo-backend.ts` 的 `demoWaitingHelper` 造的就是这一刻（对话「后台命令弹窗实时看输出」：`awaitingUser: true` + `cliAlive` 有登记 + 一个 `status: 'running'` 的 `@chat/sub/h1`），界面检查靠它当正例；对照是「整理一份 Claude Code 和 Codex 的能力对照」（只有 `awaitingUser` + `cliAlive`，没有子任务），那一刻写「等待你的下一条消息」才是对的。
+演示数据里 `web/src/lib/demo/demo-backend.ts` 的 `demoWaitingHelper` 造的就是这一刻（对话「后台命令弹窗实时看输出」：`awaitingUser: true` + `cliAlive` 有登记 + 一个 `status: 'running'` 的 `@chat/sub/h1`），界面检查靠它当正例；对照是「整理一份 Claude Code 和 Codex 的能力对照」（只有 `awaitingUser` + `cliAlive`，没有子任务），那一刻写「等待你的下一条消息」才是对的。
 
 ## 根因
 

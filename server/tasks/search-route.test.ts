@@ -14,7 +14,7 @@ process.env.AGENT_PANEL_DATA = dir
 process.env.AGENT_PANEL_PRESENCE_GRACE_MS = '500'
 
 const { createTaskStore } = await import('./store.ts')
-const { tasksApi } = await import('../tasks.ts')
+const { tasksApi } = await import('./index.ts')
 const { newTask } = await import('../../shared/task.ts')
 const { TaskMessage } = await import('../../shared/schema.ts')
 const { setLang } = await import('../../shared/i18n.ts')

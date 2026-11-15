@@ -274,7 +274,7 @@ test('按 CLI 关掉的事件不装；内置钩子按项目单独的开关覆盖
 
 test('计划没跟上提醒：默认开、只给有执行计划的对话，动手到次数补一句', async () => {
   resetHooksCache()
-  const { applyPlan } = await import('../../shared/plan.ts')
+  const { applyPlan } = await import('../../shared/plan/index.ts')
   const tk = task({ id: 'pace1' })
   applyPlan(tk, { steps: [{ title: '改界面', status: 'running' }, { title: '跑测试' }] })
   // 大输出提醒、推送项目知识默认也装工具后：这里只看计划提醒，先关掉它们

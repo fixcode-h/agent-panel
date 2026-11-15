@@ -45,7 +45,7 @@
 | AI 分析          | `analyzer` 分析                                             | 高级                  | `shared/builtin/agents.ts` 730–773 行 |
 | 其他基本角色     | 调研、方案设计、评审、测试验收、版本控制、界面走查、本地化… | 基本                  | 同文件                                |
 
-每轮注入父对话的不只是角色设定，`shared/engine.ts` 的 `conversationPrompt`（约 4067-4300 行）还会拼上「你的定位」「子对话各自在独立分支里改 / 共用一个目录」「现有子对话」等几段；内置主理只跳过「这条消息怎么处理」「分派前只收集到模块为止」两节（`ownDispatch`）。
+每轮注入父对话的不只是角色设定，`shared/engine/index.ts` 的 `conversationPrompt`（约 4067-4300 行）还会拼上「你的定位」「子对话各自在独立分支里改 / 共用一个目录」「现有子对话」等几段；内置主理只跳过「这条消息怎么处理」「分派前只收集到模块为止」两节（`ownDispatch`）。
 
 ### 2.2 现在一条消息怎么走
 
@@ -361,7 +361,7 @@
 
 - key 保持 `orchestrator`，不迁移数据；`syncCore` 每次启动按定义同步名字，已装的副本自动更新。
 - 英文：`shared/locales/en/settings.ts` 里 `主理: 'Lead'` 改成 `协调器: 'Coordinator'`，`shared/locales/en/` 里含「主理」的条目一起改。
-- 界面文案、`web/src/lib/demo-backend.ts` 演示数据、`RouteCard.tsx` 等处的「主理」。
+- 界面文案、`web/src/lib/demo/demo-backend.ts` 演示数据、`RouteCard.tsx` 等处的「主理」。
 - 文档：`docs/agent-catalog.md`、`docs/modules/*`、`docs/lessons/triage.md`、`docs/lessons/prompt-delta.md`；历史 ADR 正文不改（是当时的记录）。
 - 测试里断言了「主理」原句的（`server/core-agents.test.ts`、`server/role-layers.test.ts`、`server/orch-mcp.test.ts`、`shared/conv-mode.test.ts`、`shared/peer-message.test.ts` 等）逐个改。
 

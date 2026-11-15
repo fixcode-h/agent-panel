@@ -1,6 +1,6 @@
 # 协调器说完下一步就停住，面板第三次没再推
 
-- 状态：已修复（Claude Code、Pi、Command Code 改用结束前钩子在同一轮里拦住，见 ADR 0049；e2e `03-chat` 两条「结束前钩子」、`09-subagent-runtime`「结束前钩子在同一轮里拦满 3 次」、`shared/hooks.test.ts` 通过；Codex 仍靠一轮结束后的提醒，门槛改成按这条输入累计。分析依据是用户导出的两个对话：`更新到最新版本`、子对话 `修复 Pi models.json 写入校验`，面板 v0.28.2439，Claude Code + `deepseek-v4.1-flash`，强度 high）
+- 状态：已修复（Claude Code、Pi、Command Code 改用结束前钩子在同一轮里拦住，见 ADR 0049；e2e `03-chat` 两条「结束前钩子」、`09-subagent-runtime`「结束前钩子在同一轮里拦满 3 次」、`shared/hooks/index.test.ts` 通过；Codex 仍靠一轮结束后的提醒，门槛改成按这条输入累计。分析依据是用户导出的两个对话：`更新到最新版本`、子对话 `修复 Pi models.json 写入校验`，面板 v0.28.2439，Claude Code + `deepseek-v4.1-flash`，强度 high）
 - 症状：项目对话里，协调器做着做着回一句「我看一下 lock 里的标记，然后补装。」「我直接跑一下 Pi 的模型列表，同时查面板里这条 API 配置的 provider 字段。」就结束这一轮，没有调用工具；前两次面板发了「收尾自检」把它推起来，第三次没推，对话停在「等你回复」，看上去不知道接下来要做什么
 - 入口：`server/tasks/run.ts` 的 `onTurnEnd` → `server/tasks/drive.ts` 的 `nudgePlan` → `nudgeNoPlan`；`server/exec/turn-info.ts` 的 `turnInfo`（`acts` 的算法）；`shared/turn-rules.ts` 的「回合怎么推进」
 - 根因类型：Claude Code 把 end_turn 当「做完了」，`deepseek-v4.1-flash` 写说明时约 14% 会在没生成工具调用时就 end_turn；面板只能在这一轮结束后另发提醒补救（有计划时必然看到提醒），没计划时兜底门槛按「这一轮」算又有漏洞

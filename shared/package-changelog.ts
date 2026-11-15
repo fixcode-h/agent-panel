@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { versionAtLeast } from './hooks.ts'
+import { versionAtLeast } from './hooks/index.ts'
 
 /**
  * 插件的更新说明（ADR 0050 第四期）：包里的 CHANGELOG（Pi 1.5 起插件可以带，package.json 的 pi.changelogPath 指过去，

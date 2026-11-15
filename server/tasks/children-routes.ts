@@ -8,6 +8,7 @@ import { createGate } from '../slots.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import type { TasksScope } from './scope.ts'
 import { descendantNeeds } from '../../shared/children/needs.ts'
+import { currentTask, freshTask, idleTask } from './read.ts'
 
 /**
  * 子对话列表：独立分支状态的缓存（git 慢时不挡列表）、/children、停止全部子对话。
@@ -84,10 +85,10 @@ export function registerChildrenRoutes(s: TasksScope) {
   // 这里先给手上这份，git 结果在后台补，下一次轮询就到位（见 worktree-cache.ts）
   s.routes.get('/:id/children', async (c) => {
     const began = Date.now()
-    const parent = await s.current(c.req.param('id'))
+    const parent = await currentTask(s, c.req.param('id'))
     if (!parent) return s.bad(c, t('任务不存在'), 404)
     const project = parent.projectId ? await s.deps.projects.get(parent.projectId) : null
-    const all = (await s.store.list()).map((t) => s.live.get(t.id)?.task ?? t)
+    const all = (await s.store.list()).map((t) => freshTask(s, t))
     const kids = all.filter((t) => t.parentTaskId === parent.id && !taskDeleted(t))
     // 子对话下面的孙对话在等用户处理：这一行也要显示「等你处理」（见 shared/children/needs.ts）
     const needs = descendantNeeds(all)
@@ -108,7 +109,7 @@ export function registerChildrenRoutes(s: TasksScope) {
           // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
           full: s.live.has(liveTask.id),
           lastReply: s.lastReply(liveTask),
-          stopReason: s.idle(liveTask).stopReason,
+          stopReason: idleTask(s, liveTask).stopReason,
         })
       }),
     )
@@ -121,7 +122,7 @@ export function registerChildrenRoutes(s: TasksScope) {
 
   /** 对话设置里的「停止全部子对话」：正在执行的停下（输出和状态保留），等下一句的结束这一轮 */
   s.routes.post('/:id/children/stop', async (c) => {
-    const parent = await s.current(c.req.param('id'))
+    const parent = await currentTask(s, c.req.param('id'))
     if (!parent) return s.bad(c, t('任务不存在'), 404)
     const kids = await s.store.childrenOf(parent.id)
     const before = kids.filter((x) => s.live.has(x.id)).length

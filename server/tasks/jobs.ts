@@ -17,9 +17,10 @@ import { log } from '../log.ts'
 import { BG_LOG_DIR } from '../store.ts'
 import { createBgPersist } from '../bg/persist.ts'
 import { t } from '../../shared/i18n.ts'
-import { settleWait, waitNote } from '../../shared/plan.ts'
+import { settleWait, waitNote } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
 import { forwardBuildResult } from './build-results.ts'
+import { readTask } from './read.ts'
 
 /**
  * 后台命令：交出去的命令跑完把结果推回对话（推不进去时排队重试，见 docs/modules/server/bugs/background-result-never-back.md）、对话的后台命令列表、结束一个对话的全部后台命令。
@@ -78,7 +79,7 @@ export function createJobs(sc: TasksScope) {
           })
         )
           return
-        const tk = sc.live.get(job.taskId)?.task ?? (await sc.store.get(job.taskId))
+        const tk = await readTask(sc, job.taskId)
         if (!tk || tk.archived) {
           log.warn('background', '后台命令跑完了，但发起的对话已经不在或已归档，结果没有推回', {
             task: job.taskId,
@@ -120,7 +121,7 @@ export function createJobs(sc: TasksScope) {
             error: (e as Error).message,
           })
           await new Promise((r) => setTimeout(r, 3000))
-          const cur = sc.live.get(tk.id)?.task ?? (await sc.store.get(tk.id))
+          const cur = await readTask(sc, tk.id)
           if (!cur) return
           // 第一次没送到时，消息可能已经记进对话、排进了下一轮（wakeConv 先记再等这一轮结束）：撤掉再送，
           // 不然重试和最后的兜底会在对话里留两三条一模一样的结果
@@ -181,7 +182,7 @@ export function createJobs(sc: TasksScope) {
       },
       onNotice: (job, text) =>
         void (async () => {
-          const tk = sc.live.get(job.taskId)?.task ?? (await sc.store.get(job.taskId))
+          const tk = await readTask(sc, job.taskId)
           if (tk && !tk.archived) await pushJobNote(tk, job, text)
         })().catch((e) => {
           log.warn('background', '提醒对话后台命令没输出失败', { task: job.taskId, error: (e as Error).message })

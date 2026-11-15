@@ -13,7 +13,7 @@ process.env.AGENT_PANEL_DATA = dir
 
 const { setLang } = await import('../../shared/i18n.ts')
 const { Task } = await import('../../shared/schema.ts')
-const { WEBHOOK_MAX_ATTEMPTS } = await import('../../shared/schedule.ts')
+const { WEBHOOK_MAX_ATTEMPTS } = await import('../../shared/schedule/index.ts')
 const { notifySchedule, taskTransitions, notifyHooks } = await import('./notify.ts')
 const { putHook, readHooks, deleteHook, migrateWebhook, resetHooksCache } = await import('./store.ts')
 

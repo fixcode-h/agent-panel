@@ -61,7 +61,7 @@ export type HeaderItemsCtx = {
    * 能不能转成弹窗：只在对话页本体上给——右栏子对话（pane）、AI 窗口里嵌的（embed）不需要，
    * 右栏本来就在对话旁边、AI 窗口自己已经有最小化按钮；导入的任务只能看，不收。
    * 子对话也不给：浮条的状态和标题靠 useData().tasks 找对话，而 /tasks 列表
-   * 只回顶层对话（见 server/tasks.ts），子对话收起来会一出现就写「对话已关闭」
+   * 只回顶层对话（见 server/tasks/index.ts），子对话收起来会一出现就写「对话已关闭」
    */
   canPopout: boolean
   on: {

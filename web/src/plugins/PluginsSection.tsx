@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { ArrowUpCircle, Loader2, ShieldAlert } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { upgradeFor } from './PluginUpdates'
 import { openMarket, useMarket } from './market'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
 import { canCheck, checkUpdates, usePluginUpdates } from './updates'
+import { updateAll, useUpdatingAll } from './update-all'
 
 /**
  * 设置 →「插件」（ADR 0059）：一份卡片列表，分「已安装」和「可安装」两段，装过的不在市场里重复出现。
@@ -93,11 +94,27 @@ export function PluginsSection() {
 function InstalledAside({ rows, n }: { rows: PluginRow[]; n: number }) {
   const { updates } = usePluginUpdates()
   const { result } = useMarket()
-  const newer = rows.filter((r) => upgradeFor(r, updates, result)).length
+  const list = rows.flatMap((r) => upgradeFor(r, updates, result) ?? [])
+  const running = useUpdatingAll()
   return (
     <>
       <span>· {n}</span>
-      {!!newer && <span className="font-normal text-accent-text">· {t('{n} 个有新版本', { n: newer })}</span>}
+      {!!list.length && (
+        <span className="font-normal text-accent-text">· {t('{n} 个有新版本', { n: list.length })}</span>
+      )}
+      {/* 一键更新：不弹确认，直接下载换上；每张卡片上显示进度，失败的在卡片上写原因 */}
+      {(!!list.length || running) && (
+        <Button
+          variant="link"
+          className="ml-1 font-normal"
+          disabled={running}
+          onClick={() => void updateAll(list)}
+          data-plugin-update-all
+        >
+          {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpCircle className="h-3.5 w-3.5" />}
+          {running ? t('正在更新…') : t('一键更新')}
+        </Button>
+      )}
     </>
   )
 }

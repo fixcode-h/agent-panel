@@ -2,9 +2,9 @@
 
 - 状态：已修复（代码和单测随同一批改动落地，`npm run typecheck`、`npm run lint`、`npm run test:unit` 通过，`npm run test:e2e` 全部通过；端到端用例未新增，见「待确认」）
 - 症状：用 `spawn_agents` 的 `resume` 接着上一次「评审」子任务复看，新卡片却是默认「子任务」角色，实际执行的提示词也换成子任务那一套
-- 入口：`server/orch-mcp.ts` 的 `case 'spawn_agents'`、`shared/engine.ts` 的 `spawn`
+- 入口：`server/orch-mcp.ts` 的 `case 'spawn_agents'`、`shared/engine/index.ts` 的 `spawn`
 - 根因类型：工具参数只读了嵌套层，顶层字段静默丢弃
-- 模块：`server`（`server/orch-mcp.ts`），配套 `shared/engine.ts`
+- 模块：`server`（`server/orch-mcp.ts`），配套 `shared/engine/index.ts`
 - 关键词：spawn_agents、resume、复看、评审、子任务、角色、agent、顶层字段、静默丢弃、agentId、HelperCards、who
 
 ## 现象
@@ -29,14 +29,14 @@
    ```
 
 3. `server/orch-mcp.ts` 的 `case 'spawn_agents'` 只从 `a.tasks[i]` 取 `agent` / `tier` / `resume`，顶层那份没有任何读取处，直接被丢掉。
-4. `shared/engine.ts` 的 `spawn` 收到的 `spec.resume` 是空的 → `resumed` 里没有这一项 → `prev` 为空 → 当成全新子任务，角色落到 `helperRole`（`origin === 'builtin:helper'` 的必备角色「子任务」），会话也是新开的。
+4. `shared/engine/index.ts` 的 `spawn` 收到的 `spec.resume` 是空的 → `resumed` 里没有这一项 → `prev` 为空 → 当成全新子任务，角色落到 `helperRole`（`origin === 'builtin:helper'` 的必备角色「子任务」），会话也是新开的。
 
 ## 根因
 
 1. **参数解析只读一层**：`orch-mcp.ts` 里 `list` 由 `a.tasks` map 出来，`agent` / `tier` / `resume` 都取 `x.*`。schema 里也只把这三个字段声明在 `tasks.items` 里，顶层没有；模型把它们写在顶层时既不报错也不生效。
 2. **引擎的沿用逻辑本身是对的，只是没被触发**：`spawn` 里新建记录时 `agent = (prev && host.agents.find((a) => a.id === prev.agentId)) || (want && ...) || helperRole || ...`——`prev` 命中就沿用原任务的角色。问题是 `resume` 没到这一层，`prev` 根本不存在。
 3. **风险同源**：同样的「只读一层」让写错名字的字段（例如 `resume_id`）也无声无息地失效，调用方以为生效了，实际派出去的是另一个角色的一份新会话，结果看起来和正常复看一样。
-4. **显示层不是问题**：卡片上的角色名和实际执行的角色读的是同一处——`web/src/components/tasks/HelperCards.tsx` 的 `who()`（浮层列表）和子任务窗口 header 的 `agent` 都按 `step.agentId` 查角色，默认「子任务」角色（`origin === 'builtin:helper'`）故意不显示名字；`shared/engine.ts` 的 `runHelper` 也用 `host.agents.find((a) => a.id === step.agentId)` 决定提示词、CLI 和模型。所以「显示成子任务」和「实际就是按子任务角色跑的」是同一件事，不是渲染错位。
+4. **显示层不是问题**：卡片上的角色名和实际执行的角色读的是同一处——`web/src/components/tasks/HelperCards.tsx` 的 `who()`（浮层列表）和子任务窗口 header 的 `agent` 都按 `step.agentId` 查角色，默认「子任务」角色（`origin === 'builtin:helper'`）故意不显示名字；`shared/engine/index.ts` 的 `runHelper` 也用 `host.agents.find((a) => a.id === step.agentId)` 决定提示词、CLI 和模型。所以「显示成子任务」和「实际就是按子任务角色跑的」是同一件事，不是渲染错位。
 
 ## 修法（下次遇到同类问题的规则）
 
@@ -92,7 +92,7 @@ wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"
 | 位置                            | 改了什么                                                                                                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/orch-mcp.ts`            | `spawn_agents` 顶层接受 `agent` / `tier` / `resume` 作整批默认值（任务里写的优先）；顶层 `resume` 配多个任务报错；顶层不认得的字段报错（`SPAWN_TOP_FIELDS`）；字段描述补「可写在顶层」 |
-| `shared/engine.ts`              | resume 命中但原角色已被删、又没显式点名 → 报错不退回默认「子任务」；显式点名不存在的角色报错；`agentId` 为空的老数据不算角色被删；重试分支支持换到点名的角色                           |
+| `shared/engine/index.ts`        | resume 命中但原角色已被删、又没显式点名 → 报错不退回默认「子任务」；显式点名不存在的角色报错；`agentId` 为空的老数据不算角色被删；重试分支支持换到点名的角色                           |
 | `server/orch-mcp.test.ts`       | 新增 4 条用例：顶层默认值解析、resume 角色三态（沿用 / 点名 / 非 resume 默认）、原角色不存在时报错、点名的角色不存在时报错                                                             |
 | `docs/modules/shared/README.md` | 补写 resume 的角色规则和「顶层 agent/tier/resume 是整批默认值」                                                                                                                        |
 | `docs/modules/server/README.md` | 「面板能力给 Agent 用」一行补指针                                                                                                                                                      |

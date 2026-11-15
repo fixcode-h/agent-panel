@@ -5,7 +5,7 @@
  * 钩子输入的 event 是 schedule.finished）
  */
 import { t } from '../shared/i18n.ts'
-import { whenLabel, type Schedule, type ScheduleEvent } from '../shared/schedule.ts'
+import { whenLabel, type Schedule, type ScheduleEvent } from '../shared/schedule/index.ts'
 
 /**
  * 投递出去的 JSON：能对上是哪个计划、哪一轮、结果如何。

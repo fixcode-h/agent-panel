@@ -2,7 +2,7 @@
 import { Task, type Project } from '../../shared/schema.ts'
 import { gitHasRemote } from '../exec/git.ts'
 import { currentTestSteps, parentRunRoleOf, parentRunSteps } from '../../shared/test-steps.ts'
-import { type WrapUpAnswer } from '../../shared/plan.ts'
+import { type WrapUpAnswer } from '../../shared/plan/index.ts'
 import { wrapUpKind } from '../../shared/wrap-up.ts'
 import { detectVcs } from '../projects-analyze.ts'
 import type { Live } from './types.ts'

@@ -1,5 +1,5 @@
 ---
-paths: server/background.ts, server/background-tools.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/orch-mcp.ts, server/hooks/guards.ts, shared/command-scope.ts, shared/search-exclude.ts, server/exec/search-exclude-env.ts
+paths: server/background.ts, server/panel-tools/background-tools.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/orch-mcp.ts, server/hooks/guards.ts, shared/command-scope.ts, shared/search-exclude.ts, server/exec/search-exclude-env.ts
 ---
 
 # 后台命令

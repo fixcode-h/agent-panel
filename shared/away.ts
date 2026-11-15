@@ -6,7 +6,7 @@
  * 审批（跑命令、改文件）、工作流节点确认、推送授权、诊断报告确认、等你操作（request_user_action）都不是提问，
  * 不走这里，照旧等。自动选过的每一条记进数据目录的 away.json，总览页集中列出来，回来能去改。
  *
- * 服务端（server/away.ts）和演示版（web/src/lib/demo-away.ts）共用这里的判定和结构。
+ * 服务端（server/away.ts）和演示版（web/src/lib/demo/demo-away.ts）共用这里的判定和结构。
  */
 import { z } from 'zod'
 import type { AskQuestion, TaskRequest } from './tasks/request.ts'

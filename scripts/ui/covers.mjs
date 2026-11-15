@@ -99,7 +99,7 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/DiffDialog.tsx',
     'web/src/components/tasks/TurnChanges.tsx',
     'web/src/components/tasks/DoneEvidenceCard.tsx',
-    'web/src/lib/demo-done-evidence.ts',
+    'web/src/lib/demo/demo-done-evidence.ts',
     'web/src/components/tasks/ChangesTree.tsx',
     'web/src/components/tasks/MemoryChart.tsx',
     'web/src/components/tasks/RequestCard.tsx',
@@ -135,7 +135,7 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/DiagnosisEvidence.tsx',
     'web/src/components/tasks/DiagnosisDialog.tsx',
     'web/src/components/tasks/ReviewDialog.tsx',
-    'web/src/lib/demo-evidence.ts',
+    'web/src/lib/demo/demo-evidence.ts',
     'shared/bug/env.ts',
     'shared/bug/patch.ts',
     'shared/bug/log-watch.ts',
@@ -145,7 +145,7 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/LearnedCard.tsx',
     'web/src/components/tasks/SystemNote.tsx',
     'web/src/lib/experience-store.ts',
-    'web/src/lib/demo-experience.ts',
+    'web/src/lib/demo/demo-experience.ts',
   ],
   '02d-workflow': [
     'web/src/components/tasks/RunningNow.tsx',
@@ -199,15 +199,15 @@ export const UI_SHARD_COVERS = {
     'web/src/components/comfy/',
     'web/src/pages/ComfyPage.tsx',
     'web/src/components/ui/hint.tsx',
-    // 计划面板（shared/plan.ts 那套数据的界面）
+    // 计划面板（shared/plan/index.ts 那套数据的界面）
     'web/src/pages/SchedulesPage.tsx',
     'web/src/pages/SummaryPage.tsx',
     'web/src/components/summary/',
     'web/src/lib/summary-page.ts',
     // 演示版的工作总结数据（预置的报告撑起左侧报告树，提炼给出示例分项）
-    'web/src/lib/demo-summary.ts',
+    'web/src/lib/demo/demo-summary.ts',
     // 报告树分组、拼报告的逻辑：页面直接调，改了它就跑这一片
-    'shared/summary.ts',
+    'shared/summary/index.ts',
     // 对话总览和它的 Bug 视图（分组、五步进度、流程数据）
     'web/src/pages/OverviewPage.tsx',
     'web/src/components/overview/',

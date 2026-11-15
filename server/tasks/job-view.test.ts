@@ -12,7 +12,7 @@ import test from 'node:test'
 // 任务记录放在临时数据目录，别碰本机的
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-job-view-'))
 
-const { tasksApi } = await import('../tasks.ts')
+const { tasksApi } = await import('./index.ts')
 const { createTaskStore } = await import('./store.ts')
 const { newTask } = await import('../../shared/task.ts')
 const { setLang } = await import('../../shared/i18n.ts')

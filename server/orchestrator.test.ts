@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { convState, convStateText, newTask, taskFacts } from '../shared/task.ts'
-import { activePlan, applyPlan } from '../shared/plan.ts'
-import { runEngineTurn } from '../shared/engine.ts'
+import { activePlan, applyPlan } from '../shared/plan/index.ts'
+import { runEngineTurn } from '../shared/engine/index.ts'
 import type { AgentCall, EngineHost } from '../shared/engine/host.ts'
 import { FlowRun } from '../shared/tasks/flow-schema.ts'
 import { withWrapUp } from '../shared/flow/run-wrap.ts'
-import { planTask } from '../shared/flow.ts'
+import { planTask } from '../shared/flow/index.ts'
 
 /**
  * 项目对话：父对话直接执行、分派子对话，或者用 start_workflow 起工作流运行（不是子对话）；

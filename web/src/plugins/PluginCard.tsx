@@ -12,7 +12,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu'
 import { Switch } from '@/components/ui/switch'
 import { pluginApi, type InstallPreview, type KeptItem, type RemovalPreview } from './api'
-import { UpgradeButton, useMarketEntry } from './PluginUpdates'
+import { UpgradeButton, useBulkError, useMarketEntry } from './PluginUpdates'
 import { PluginContributions } from './PluginContributions'
 import { pluginIcon } from './icon'
 import { pluginParamsId } from './PluginParamsNav'
@@ -53,6 +53,7 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
   const Icon = pluginIcon(m.icon)
   const error = row.error || webErrors.get(m.id) || ''
   const entry = useMarketEntry(row)
+  const bulkError = useBulkError(row)
   const homepage =
     entry?.homepage || m.homepage || (row.source.kind === 'github' ? `https://github.com/${row.source.ref}` : '')
   // 重新安装：市场里的按插件 id 装市场当前版本；单个插件的仓库按装时的分支和子目录；本机目录重新链接；压缩包没有来源可重装
@@ -187,6 +188,7 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
       )}
       <PluginContributions manifest={m} />
       {error && <p className="text-xs break-all text-danger">{error}</p>}
+      {bulkError && <p className="text-xs break-all text-danger">{bulkError}</p>}
       {!!kept.length && (
         <div className="text-xs text-subtle">
           {t('关掉后保留了这些副本：')}

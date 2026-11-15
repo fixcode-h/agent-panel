@@ -8,7 +8,7 @@
 - **没列计划时的提醒保留原来的门槛**（§7 第 2 条改了）：这条输入以来动手 3 次以上（读文件、搜索每 3 次折 1 次），或者一个工具都没调就要结束，才问。小事、纯问答照旧不打扰，主动调 end_turn 的直接放行。问过以后只回了话、没再动手的不会再问，所以不限次数也不会在这一档空转。
 - **空转保护照做**（§7 第 1 条）：计划没做完、收尾请求没处理这几档提醒不限次数，连着 3 次提醒之间一个工具都没调就停下，留一条警告，子对话上报父对话。
 - 「面板提醒次数」设置去掉；`Settings.nudgeMax` 只为兼容旧文件留着。
-- 实现：判断和显示在 `shared/end-turn.ts`，工具在 `server/end-turn-tool.ts`，记录在 `Task.turnEnds`，状态面板的卡片是 `web/src/components/tasks/ReminderTrail.tsx`。
+- 实现：判断和显示在 `shared/end-turn.ts`，工具在 `server/panel-tools/end-turn-tool.ts`，记录在 `Task.turnEnds`，状态面板的卡片是 `web/src/components/tasks/ReminderTrail.tsx`。
 
 替代 [v1](./design.md)。v1 保留在仓库里，只作参考。
 
@@ -66,7 +66,7 @@
 
 ### 2.3 提示词：主动结束
 
-`shared/engine.ts` 的回合推进说明和 `server/orch-hint.ts` 的工具清单加上：
+`shared/engine/index.ts` 的回合推进说明和 `server/orch-hint.ts` 的工具清单加上：
 
 - 这次的事做完了：先写好最终回复（总结、结论），然后调用 `end_turn`（`outcome: done`）作为最后一个动作，之后不要再输出任何内容。
 - 要用户在几个做法里选：用 `suggest_next_step`，不要只写在文字里。它算在等用户，不需要再调 `end_turn`。
@@ -185,7 +185,7 @@ end_turn({
 | `server/tasks/drive.ts`、`server/tasks/children.ts`            | 兜底提醒用同一套判断和说法；「推满了」改成 `blocked` / 空转                   |
 | `shared/drive.ts`                                              | `DriveBudget` 只计数不截断                                                    |
 | `shared/clis.ts`、`shared/cli-spec.ts`、`shared/clis/*.json`   | `hooks` 加 `stopAfterTool` 能力；给 `end_turn` 装工具后停止                   |
-| `shared/engine.ts`、`server/orch-hint.ts`                      | 提示词：结束要调 `end_turn`；问用户用 `suggest_next_step`                     |
+| `shared/engine/index.ts`、`server/orch-hint.ts`                | 提示词：结束要调 `end_turn`；问用户用 `suggest_next_step`                     |
 | `shared/lifecycle.ts`                                          | 「面板提醒」计数算上钩子拦截；去掉 `/max`；提醒列表的数据                     |
 | `web/src/components/tasks/LifecycleDetail.tsx`（按需拆新文件） | 「面板提醒」卡片                                                              |
 | `web/src/components/tasks/Messages.tsx`、`web/src/lib/fold.ts` | 跳过提醒和 `end_turn`；按位置隐藏 `end_turn(done)` 前后的文字；`blocked` 提示 |

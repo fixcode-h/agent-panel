@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { statSync } from 'node:fs'
-import type { HookFacts } from '../../shared/hooks.ts'
+import type { HookFacts } from '../../shared/hooks/index.ts'
 import { runSegments, segHead } from '../../shared/command-scope.ts'
 import { taskMap } from '../runtime/task-state.ts'
 

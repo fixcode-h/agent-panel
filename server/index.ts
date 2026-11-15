@@ -27,8 +27,8 @@ import {
   WorkflowInput,
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
-import { migrateDocSteps } from '../shared/flow.ts'
-import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summary.ts'
+import { migrateDocSteps } from '../shared/flow/index.ts'
+import { SummaryConfig, SummaryRecord, type SummaryReport } from '../shared/summary/index.ts'
 import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/projects/init.ts'
 import {
@@ -44,7 +44,7 @@ import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
 import { memorySampler } from './memory.ts'
-import { tasksApi } from './tasks.ts'
+import { tasksApi } from './tasks/index.ts'
 import { schedulesApi } from './schedules.ts'
 import { taskMemoryApi } from './tasks/memory.ts'
 import { usageApi } from './usage.ts'
@@ -55,8 +55,8 @@ import { cleanupDisabledPlugins, initPlugins, pluginsApi } from './plugins/index
 import { askMcpApi } from './ask-mcp.ts'
 import { bridgeApi, bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
 import { browserExtApi } from './browser-ext-routes.ts'
-import { docsApi } from './docs.ts'
-import { summaryApi } from './summary.ts'
+import { docsApi } from './docs/index.ts'
+import { summaryApi } from './summary/index.ts'
 import { lessonDraftsApi } from './lesson-drafts.ts'
 import { fixApi } from './fix.ts'
 import { projectSkillsApi } from './projects/skills.ts'
@@ -85,7 +85,7 @@ import { packagesApi } from './cli/packages.ts'
 import { trustApi } from './cli/trust-api.ts'
 import { interruptedApi } from './interrupted.ts'
 import { autoResumeAfterRestart } from './restart-interrupted.ts'
-import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
+import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update/index.ts'
 import { addPageFeed, pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { installMcpToolTitles } from './mcp-catalog/external-titles.ts'
 import { appActionsApi, setActionHost } from './app-actions/index.ts'
@@ -201,7 +201,7 @@ const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory
   builtinProjectCategories,
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
-/** 工作总结报告：存最近几份，用户编辑后也写这里（保留份数见 shared/summary.ts 的 SUMMARY_KEEP） */
+/** 工作总结报告：存最近几份，用户编辑后也写这里（保留份数见 shared/summary/index.ts 的 SUMMARY_KEEP） */
 const summaries = createCollection<SummaryReport, SummaryRecord>('summaries.json', SummaryRecord)
 // 候选教训草稿：从工作总结提炼的半成品，用户看过后手动写进 docs/lessons/（不会自动落盘）
 const lessonDrafts = createCollection<LessonDraftInput, LessonDraftRecord>('lesson-drafts.json', LessonDraftRecord)
@@ -1202,7 +1202,7 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   // 内存曲线：30 秒采一点（面板 server + 各对话的 CLI 进程树），落盘后重启接着用
   stopMemorySampler = startMemorySampler()
-  // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule.ts）
+  // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule/index.ts）
   stopSchedules = schedules.start()
   // 回收没人管的独立目录、清掉回收站里过期的对话：启动后跑一次，之后每小时一次（进程退出不用等它）
   setTimeout(runCleanup, 10_000).unref()

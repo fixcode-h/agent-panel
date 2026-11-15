@@ -1,10 +1,10 @@
 # 打开有多条子对话的对话时「读取子对话」和「连接实时更新」一起卡 20 秒以上（/children 同步等每个子对话的 git）
 
-- 状态：已修复（`server/worktree-cache.ts` 新增、`server/tasks.ts` 的 `/children` 改成不等 git；回归用例 `server/tasks/children-load.test.ts` 3/3、`server/worktree-cache.test.ts` 13/13 通过，`npm run typecheck`、`npm run lint`、增量单测 13 个文件通过；实测见「回归验证」）
+- 状态：已修复（`server/worktree-cache.ts` 新增、`server/tasks/index.ts` 的 `/children` 改成不等 git；回归用例 `server/tasks/children-load.test.ts` 3/3、`server/worktree-cache.test.ts` 13/13 通过，`npm run typecheck`、`npm run lint`、增量单测 13 个文件通过；实测见「回归验证」）
 - 症状：打开一条子对话很多的父对话，加载日志停在「读取子对话 进行中 · 已等 20s」和「连接实时更新 进行中 · 已等 21.2s」两行同时往上涨；「读取对话」「标记已读」「渲染消息」都已完成（1.2s / 1.2s / 45ms）。关掉再开、开第二个页面都一样。
-- 入口：`server/tasks.ts` 的 `GET /:id/children`（每个子对话 `await childWorktree()` → `server/exec/worktree.ts` 的 `worktreeStatus`，3~4 条 git）、`GET /:id/events` 首包（`liveKey()` → `childCountsOf`）、`web/src/components/tasks/TaskView.tsx` 的 `children` / `stream` 两步和 `web/src/lib/task-stream.ts` 的 `open` 回调
+- 入口：`server/tasks/index.ts` 的 `GET /:id/children`（每个子对话 `await childWorktree()` → `server/exec/worktree.ts` 的 `worktreeStatus`，3~4 条 git）、`GET /:id/events` 首包（`liveKey()` → `childCountsOf`）、`web/src/components/tasks/TaskView.tsx` 的 `children` / `stream` 两步和 `web/src/lib/task-stream.ts` 的 `open` 回调
 - 根因类型：热点接口在请求里同步跑外部进程（git）+ 没有 in-flight 去重，慢查询被轮询反复放大；同进程的 SSE 首包被拖住，于是一个慢点表现为两条步骤一起卡
-- 模块：`server`（`server/tasks.ts` 的 `childWorktree` / `/children`、新增 `server/worktree-cache.ts`）、`web`（`TaskView` 的子对话轮询）
+- 模块：`server`（`server/tasks/index.ts` 的 `childWorktree` / `/children`、新增 `server/worktree-cache.ts`）、`web`（`TaskView` 的子对话轮询）
 - 关键词：打开对话慢、读取子对话、连接实时更新、21 秒、20 秒、/children、SSE 首包、childWorktree、worktreeStatus、git status、worktreeSeen、UNMERGED_TTL、STOPPED_TTL、gitGate、in-flight 去重、stale-while-revalidate、worktreeChecked、59 个子对话、LoadTrace、加载日志
 
 ## 现象
@@ -108,10 +108,10 @@ GET /api/tasks/93b08721…/events（单独打）              首包：74ms
 
 ### 用例先在旧实现上确认会失败（项目教训 `lmvmabgjdi271`）
 
-| 实现                                                 | 结果                                                                                                                           |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 旧实现（`git checkout -- server/tasks.ts`，HEAD 版） | 两条都失败：「这次还没核对过，要如实告诉界面」断言失败；第二条卡到 `5.35s` 超时（它在同步等 git，没有 `worktreeChecked` 可等） |
-| 新实现                                               | 3/3 通过                                                                                                                       |
+| 实现                                                       | 结果                                                                                                                           |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 旧实现（`git checkout -- server/tasks/index.ts`，HEAD 版） | 两条都失败：「这次还没核对过，要如实告诉界面」断言失败；第二条卡到 `5.35s` 超时（它在同步等 git，没有 `worktreeChecked` 可等） |
+| 新实现                                                     | 3/3 通过                                                                                                                       |
 
 「查不到 ≠ 干净」这两条也用反向验证过（把 `read` 改回 `checked: true`、`childUnmerged` 改回 `!!value && !value.merged`、`/children` 改回 `dirty ?? 0`、`unmerged: !!value && ...`）：`worktree-cache.test.ts` 与 `task-children-load.test.ts` 合计 **4 条失败**（两条目标用例 + 两条占位值断言），改回来就全绿。
 
@@ -147,14 +147,14 @@ npx tsx --test server/tasks/children-load.test.ts server/worktree-cache.test.ts 
 
 ## 落地改动
 
-| 位置                                                | 改了什么                                                                                                                                                                                                                                                                                       |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/worktree-cache.ts`                          | 新增：`peek`（立即返回、可能过期、后台补）/ `read`（等结果，失败时 `checked: false`）/ 按 id 的 in-flight 去重 / `latest` 挡掉过时结果 / 失败不写缓存 / 条目上限 / 前后台两道闸                                                                                                                |
-| `server/tasks.ts`                                   | `childWorktree` 加 `{ wait: false }` 走 `peek`、返回 `{ value, checked }`；`/children` 不等 git，没核对过时 `unmerged` / `dirty` 不给值；`childUnmerged` 查不到按「还没合回」算；新增 `backgroundGitGate = createGate(2)`；慢于 500ms 记 warn 日志；`deps` 加可选 `worktreeStatus`（测试注入） |
-| `web/src/lib/demo-backend.ts`、`web/src/lib/api.ts` | 演示版后端 `/children` 返回 `worktreeChecked: true`（项目教训 `lmvknaj45x05u`：两边字段一致），前端类型补上这个可选字段                                                                                                                                                                        |
-| `server/tasks/children-load.test.ts`                | 新增 3 条：`/children` 不等 git、并发不叠 git、git 读失败时不给「干净」的结论                                                                                                                                                                                                                  |
-| `server/worktree-cache.test.ts`                     | 新增 13 条（含 R1/R2/R3 与「查不到 ≠ 干净」的护栏）                                                                                                                                                                                                                                            |
-| `scripts/e2e/04-subagents.mjs`                      | 「停下的子对话」那段不再打一次 `/children` 就断言：先要求占位时 `dirty` / `unmerged` 是 `undefined`（不能是 0 / false），再 `waitFor` 到 `worktreeChecked === true` 后才断言 `dirty > 0`                                                                                                       |
+| 位置                                                     | 改了什么                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/worktree-cache.ts`                               | 新增：`peek`（立即返回、可能过期、后台补）/ `read`（等结果，失败时 `checked: false`）/ 按 id 的 in-flight 去重 / `latest` 挡掉过时结果 / 失败不写缓存 / 条目上限 / 前后台两道闸                                                                                                                |
+| `server/tasks/index.ts`                                  | `childWorktree` 加 `{ wait: false }` 走 `peek`、返回 `{ value, checked }`；`/children` 不等 git，没核对过时 `unmerged` / `dirty` 不给值；`childUnmerged` 查不到按「还没合回」算；新增 `backgroundGitGate = createGate(2)`；慢于 500ms 记 warn 日志；`deps` 加可选 `worktreeStatus`（测试注入） |
+| `web/src/lib/demo/demo-backend.ts`、`web/src/lib/api.ts` | 演示版后端 `/children` 返回 `worktreeChecked: true`（项目教训 `lmvknaj45x05u`：两边字段一致），前端类型补上这个可选字段                                                                                                                                                                        |
+| `server/tasks/children-load.test.ts`                     | 新增 3 条：`/children` 不等 git、并发不叠 git、git 读失败时不给「干净」的结论                                                                                                                                                                                                                  |
+| `server/worktree-cache.test.ts`                          | 新增 13 条（含 R1/R2/R3 与「查不到 ≠ 干净」的护栏）                                                                                                                                                                                                                                            |
+| `scripts/e2e/04-subagents.mjs`                           | 「停下的子对话」那段不再打一次 `/children` 就断言：先要求占位时 `dirty` / `unmerged` 是 `undefined`（不能是 0 / false），再 `waitFor` 到 `worktreeChecked === true` 后才断言 `dirty > 0`                                                                                                       |
 
 ## 待确认
 

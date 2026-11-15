@@ -1,7 +1,7 @@
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { EndTurnRecord } from './turn-end.ts'
 import { PANEL_TOOL_RE, panelToolName } from './panel-tools.ts'
-import { activePlan, openWork } from './plan.ts'
+import { activePlan, openWork } from './plan/index.ts'
 import { panelWrap } from './wrap-up.ts'
 import { stepApplies } from './test-steps.ts'
 import { doneEvidence, gateFiles, verifyGateError, type GateStep, type TurnExtra } from './done-evidence.ts'
@@ -43,7 +43,7 @@ export function isPanelTool(x: Pick<ToolUse, 'name' | 'label'>) {
 
 /** 只看、不动手的工具类别：读文件、搜索、看网页 */
 const LOOK_KINDS: readonly ToolUse['kind'][] = ['read', 'search', 'web']
-/** 动手的工具类别：跑命令、改文件（哪个工具名算哪一类由 CLI 定义的 toolNames 决定，见 shared/hooks.ts 的 toolKindOf） */
+/** 动手的工具类别：跑命令、改文件（哪个工具名算哪一类由 CLI 定义的 toolNames 决定，见 shared/hooks/index.ts 的 toolKindOf） */
 const ACT_KINDS: readonly ToolUse['kind'][] = ['run', 'edit']
 
 /** 只读的一次调用（读文件、搜索、看网页） */

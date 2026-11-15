@@ -8,13 +8,13 @@
 
 ## 事实核对
 
-| 位置                                             | 现状                                                                                         |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `server/tasks.ts` `completeChild`                | 完成时结束 CLI 进程、停后台命令、删独立分支，置 `resolved`；`task.sessions` 里的会话 id 保留 |
-| `server/tasks.ts` `start`（`resolved` 的子对话） | 再收到消息时取消完成标记，`restoreWorktree` 在原路径重建独立分支，CLI 冷启动后接回原会话     |
-| `server/exec/runner.ts` `task.rewind.summary`    | 已有「开新会话、带上摘要」的路子（手动压缩用它），用完清掉                                   |
-| `server/orch-mcp.ts` `submit_merge`              | 只有 `note`（一句话）和 `tests`                                                              |
-| `shared/engine.ts` `summaryOf`                   | 子对话的 `summary` 只是最后一条回复的前 300 字，`list_conversations` 里父对话靠它找子对话    |
+| 位置                                                   | 现状                                                                                         |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `server/tasks/index.ts` `completeChild`                | 完成时结束 CLI 进程、停后台命令、删独立分支，置 `resolved`；`task.sessions` 里的会话 id 保留 |
+| `server/tasks/index.ts` `start`（`resolved` 的子对话） | 再收到消息时取消完成标记，`restoreWorktree` 在原路径重建独立分支，CLI 冷启动后接回原会话     |
+| `server/exec/runner.ts` `task.rewind.summary`          | 已有「开新会话、带上摘要」的路子（手动压缩用它），用完清掉                                   |
+| `server/orch-mcp.ts` `submit_merge`                    | 只有 `note`（一句话）和 `tests`                                                              |
+| `shared/engine/index.ts` `summaryOf`                   | 子对话的 `summary` 只是最后一条回复的前 300 字，`list_conversations` 里父对话靠它找子对话    |
 
 ## 决策
 
@@ -51,7 +51,7 @@
 
 ## 与现有实现的关系
 
-改 `shared/schema.ts`（`Task.handoff`）、新增 `shared/handoff.ts`（模板、拼摘要、判定）、`server/orch-mcp.ts`（参数）、`server/tasks.ts`（`submitMerge` 存摘要、叫醒时判定、列表摘要）、`server/exec/git.ts`（分支提交列表）。复用 `task.rewind.summary`，不新增会话机制。共用目录的子对话没有 `submit_merge`，照旧接回原会话。
+改 `shared/schema.ts`（`Task.handoff`）、新增 `shared/handoff.ts`（模板、拼摘要、判定）、`server/orch-mcp.ts`（参数）、`server/tasks/index.ts`（`submitMerge` 存摘要、叫醒时判定、列表摘要）、`server/exec/git.ts`（分支提交列表）。复用 `task.rewind.summary`，不新增会话机制。共用目录的子对话没有 `submit_merge`，照旧接回原会话。
 
 ## 运行时
 

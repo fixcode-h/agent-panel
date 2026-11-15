@@ -1,5 +1,5 @@
 ---
-paths: shared/engine.ts, shared/panel-tools.ts, server/p4-split.ts, server/ask-mcp.ts, shared/clis/**, server/exec/invoke.ts, docs/lessons/**
+paths: shared/engine/index.ts, shared/panel-tools.ts, server/p4-split.ts, server/ask-mcp.ts, shared/clis/**, server/exec/invoke.ts, docs/lessons/**
 ---
 
 # 面板工具通道（MCP）和 AI 的用法
@@ -14,7 +14,7 @@ paths: shared/engine.ts, shared/panel-tools.ts, server/p4-split.ts, server/ask-m
 
 - 规则：完整测试、端到端、构建、超过一分钟的检查一律交给面板的后台工具（`run_background`），带上计划步骤；不要用前台命令跑——前台跑着时用户发来的消息只能等它跑完，对话看起来就是卡住。交出去后做不依赖它的实事，没有别的事就结束这一轮等结果推回。
 - 起因：2026-10-27 用户指出「长命令用对应的后台工具来执行啊」：用前台 Bash 跑完整单测一两分钟，用户执行中发来的消息全被挡到跑完才处理。
-- 防线：提示词已在 `shared/engine.ts` 的「长命令放到后台」一节；人工。
+- 防线：提示词已在 `shared/engine/index.ts` 的「长命令放到后台」一节；人工。
 
 ## 输出格式的硬要求在工具里卡住，不只写进提示词
 

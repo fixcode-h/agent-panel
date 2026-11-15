@@ -84,7 +84,7 @@ end_turn({
 })
 ```
 
-- **什么时候调用**：提示词（`shared/engine.ts` 的回合推进说明、`server/orch-hint.ts`）写明，没列计划、这条输入以来动过手，交最终回复前调用一次。小事、纯问答不用调（本来就不会被问）。
+- **什么时候调用**：提示词（`shared/engine/index.ts` 的回合推进说明、`server/orch-hint.ts`）写明，没列计划、这条输入以来动过手，交最终回复前调用一次。小事、纯问答不用调（本来就不会被问）。
 - **要用户选下一步的**，照旧用 `suggest_next_step`，提示词里强调「结论里问用户的话必须用它，不要只写在文字里」。它也算交卷。
 - **`blocked`**：面板把对话标成等用户（和 `ask_user` 一样亮「等待」），留一条警告，写上 `need`。父对话收到「子对话卡住」的上报，不再推它。
 - **结束前钩子**：这条输入以来（自检过的从自检之后算）调用过 `end_turn`、`suggest_next_step`、`ask_user`、`finish_plan`、`submit_merge` 任一个，就放行（`why: 'declared'`）。只看工具调用，符合硬规则。
@@ -166,9 +166,9 @@ endCheck?: { asked: number; falseAlarm: number; streak: number } // streak：连
 | `server/tasks/before-end.ts`                             | `declared` 放行；降频；读新参数；自检最多 1 次；新说法        |
 | `server/tasks/drive.ts`                                  | `nudgeNoPlan` 用同一个「交卷」判断和新说法                    |
 | `shared/schema.ts`（或拆出的小文件）                     | `Task.endCheck`；`TaskMessage.hookWhy`                        |
-| `shared/hooks.ts`                                        | `hookMarker` 带 `hookWhy`                                     |
+| `shared/hooks/index.ts`                                  | `hookMarker` 带 `hookWhy`                                     |
 | `shared/hooks/builtins.ts`、`shared/locales/en/`         | 「没列计划时的收尾自检」参数和英文                            |
-| `shared/engine.ts`、`server/orch-hint.ts`                | 提示词：何时调 `end_turn`；问用户必须用 `suggest_next_step`   |
+| `shared/engine/index.ts`、`server/orch-hint.ts`          | 提示词：何时调 `end_turn`；问用户必须用 `suggest_next_step`   |
 | `web/src/lib/fold.ts`                                    | `summaryStart` 认自检确认；折叠行统计「面板收尾自检 n 次」    |
 | `web/src/components/tasks/panel-kind.ts`、`Messages.tsx` | 按 `hookWhy` 分图标和文案；确认完成的小字行                   |
 | `web/src/lib/demo-*.ts`                                  | 演示里补一段「自检确认完成」                                  |

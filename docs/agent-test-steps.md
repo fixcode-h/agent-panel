@@ -232,7 +232,7 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 5. **同目录回退**：某个改动文件在影响面里一个测试都没命中时才回退到同目录；同目录测试超过
    `SAME_DIR_FALLBACK_MAX`（6）个说明是公共目录，直接报映射不出来。
 6. **高风险区强制全量**（`HIGH_RISK_AREAS`，`server/exec/**`、`shared/clis/**`、`shared/builtin/**`、
-   `shared/engine.ts`、`shared/schema.ts`）：一改就影响所有 CLI / 工作流 / 落盘数据，增量挑不出可靠范围，
+   `shared/engine/index.ts`、`shared/schema.ts`）：一改就影响所有 CLI / 工作流 / 落盘数据，增量挑不出可靠范围，
    直接建议全量单测 + e2e。影响面宽到接近全量（`FULL_COVERAGE_RATIO` 60%，且总量超过
    `FULL_COVERAGE_MIN_TESTS` / `FULL_COVERAGE_MIN_SHARDS`）时也建议全量。
 7. **算不出来时保守报出来**：影响面里的非测试文件有解析不了的 import（路径不存在、非字面量的动态 import）时，

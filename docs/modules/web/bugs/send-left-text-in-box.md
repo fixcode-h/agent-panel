@@ -2,7 +2,7 @@
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run build`、WSL 里的 `npm run test:e2e` 通过；界面检查见下）
 - 症状：对话右侧已经出现用户那条气泡、下面标着「已交给 CLI，这一轮接着处理」，同一个输入框里仍完整保留着刚发出去的文字；点发送到消息出现之间还要等一段时间
-- 入口：`web/src/components/tasks/TaskView.tsx` 的 `send`、`web/src/lib/api.ts` 的 `sendMessage`、`server/tasks.ts` 的 `POST /tasks/:id/messages` / `followUp` / `deliver`
+- 入口：`web/src/components/tasks/TaskView.tsx` 的 `send`、`web/src/lib/api.ts` 的 `sendMessage`、`server/tasks/index.ts` 的 `POST /tasks/:id/messages` / `followUp` / `deliver`
 - 根因类型：清空输入框和消息入库都写在 `await` 接口之后；而不带 `interrupt` 的发送接口要等 `followUp → start` 的一串串行前置（settings、项目、git / p4 探测、CLI 拉起）才响应；消息本身早已经 SSE 到界面；`DeliveryHow` 里也没有「待认领」
 - 模块：web + server
 - 关键词：发送、输入框没清空、发送慢、待认领、已交给 CLI、乐观更新、messageId、POST /tasks/:id/messages
@@ -38,7 +38,7 @@ files.clear()
 - **面板自己的命令不留假消息**：`/rule` 发布全局规则由服务端 `ruleCommand` 处理，只 push 一条 system 提示、不把用户这条记进对话。页面的本地那条「待认领」按 id 清不掉，会永久挂在对话里。`send` 拿到响应后用 `web/src/lib/tasks.ts` 的 `messageRecorded` 判断：返回的对话里没有这个 id 就撤掉本地那条。
 - **启动失败不留下「执行中」**：`start` 一进去就把任务标成 `status='running'`、`working=true` 并写 `runStartedAt`，而失败时执行位已经释放。`followUp` 的 catch 在落盘前把这些字段和速度恢复成启动前的值，再只让这条消息的 `lost` 生效，避免落盘一个没有进程在跑的「执行中」任务。
 - **失败时先确认是不是真的没发出去**：请求报错不代表服务端没收到（响应断了而已）。catch 里用 `landedMessage` 先看本地、再问一次服务端；`deliveredToCli` 为真（已记下且不是 `lost`）时只弹错误、不恢复草稿，否则才撤掉本地那条并把原文放回输入框——不然又会出现「消息发出去了、输入框里字还在」。
-- **演示版对齐**（`web/src/lib/demo-backend.ts`）：`followUp` 与执行中分支都沿用 `messageId`，带 `messageId` 时同样写 `wait`，字段和正式后端一致。
+- **演示版对齐**（`web/src/lib/demo/demo-backend.ts`）：`followUp` 与执行中分支都沿用 `messageId`，带 `messageId` 时同样写 `wait`，字段和正式后端一致。
 
 实测（演示版，把发消息接口人为拖慢 3 秒模拟服务端 `followUp → start` 的串行前置；量的是「点击发送 → 气泡出现 / 输入框清空」）：
 

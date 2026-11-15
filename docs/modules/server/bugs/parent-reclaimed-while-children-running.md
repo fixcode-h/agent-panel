@@ -2,9 +2,9 @@
 
 - 状态：已修复（改动、回归用例随同一批落地；`shared/tasks/stage.test.ts`、`server/presence.test.ts` 的新用例先在旧实现上确认失败，`server/tasks/restart.test.ts` 与 `scripts/e2e/04-subagents.mjs` 补上父子两侧的护栏）
 - 症状：一个父对话派出子对话后停在等它的结果，用户切走页面（或关掉标签页），宽限到期后父对话被落成「已中断」（`status: 'stopped'`、`stopReason: 'presence'`），而子对话还在跑；子对话的结果回来时父对话已经不在「等结果」的状态里，用户看到的是一条被回收的父对话
-- 入口：`server/presence.ts` 的 `evict`（`busy` 判定）、`server/tasks.ts` 的 `keepAliveBusy` / `childrenRunning` / `enforceKeepAlive`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `keepAliveHolding` / `keepAliveBusy` / `childFacts` / `restartInterrupted`
+- 入口：`server/presence.ts` 的 `evict`（`busy` 判定）、`server/tasks/index.ts` 的 `keepAliveBusy` / `childrenRunning` / `enforceKeepAlive`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `keepAliveHolding` / `keepAliveBusy` / `childFacts` / `restartInterrupted`
 - 根因类型：状态收口缺口（回收判定只看「自己有没有执行位」，不看名下还在跑的对话）
-- 模块：`server`（回收触发 `server/presence.ts`、判定与上限 `server/tasks.ts`、收口 `server/exec/reclaim.ts`）、`shared`（判定 `shared/task.ts`）
+- 模块：`server`（回收触发 `server/presence.ts`、判定与上限 `server/tasks/index.ts`、收口 `server/exec/reclaim.ts`）、`shared`（判定 `shared/task.ts`）
 - 关键词：父对话被回收、等子对话、子对话还在跑、presence、宽限到期、keepAliveBusy、keepAliveLimit、保活上限、没有执行位、不保活的 CLI、canWait、stopReason presence、已中断、父对话落成已停止、childrenRunning、keepAliveHolding、settleReclaimed
 
 ## 现象
@@ -20,7 +20,7 @@
 1. 父对话派出一个跑得比较久的子对话（父对话这一轮结束后不再有输出，名下的子对话仍在跑）；
 2. 父对话用的 CLI 不支持保活，或者这一轮结束时进程已经退出——`server/exec/runner.ts` 的 `canWait = chat && !op && def.keepAlive && !def.rpc?.nativeAsk`，`features.keepAlive` 没开的 CLI（`shared/clis/*.json` 里的 claude / codex / gemini）就走这条路：一轮结束后 `live` 里没有它的条目；
 3. 用户切走页面，`server/presence.ts` 的宽限到期；
-4. `evict` 先问 `busy(taskId)`（接的是 `server/tasks.ts` 的 `keepAliveBusy`）。旧实现第一行是 `if (!entry) return false`：**没有执行位就当空闲**，于是走进 `onIdle`；
+4. `evict` 先问 `busy(taskId)`（接的是 `server/tasks/index.ts` 的 `keepAliveBusy`）。旧实现第一行是 `if (!entry) return false`：**没有执行位就当空闲**，于是走进 `onIdle`；
 5. `onIdle` 里没有 live 记录的分支走 `settleReclaimed(store, id, 'presence')`。父对话的计划里通常还挂着「等子对话」那一步（`openPlan` 有值，`restartInterrupted` 为真），或者这一轮还写着 `status: 'running'`，两者都命中收口条件 → 落成 `stopped` + `stopReason: 'presence'`。
 
 保活上限（`enforceKeepAlive`）走的是同一个判定，所以超额时也会把这类父对话放进候选池；父对话只是在 `live` 里没有条目时不受上限影响，一旦有保活条目、名下的子对话又刚好不在 `live` 里（旧实现只从 `live` 枚举子对话）就会被算成空闲。
@@ -42,15 +42,15 @@
 - **有执行位**：`more`（正在启动 / 还有排队的消息）→ 忙；否则走原来的 `keepAliveBusy(task, { background, children })`；
 - **没有执行位**：名下有还在跑的子对话、后台命令没回来，或者正在启动 / 有排队的消息 → 忙；都没有 → 空闲，照旧回收。
 
-`server/tasks.ts` 的 `keepAliveBusy` 只剩取数：`live` 里有没有这条、`pendingJobs(id)`、`childrenRunning(id)`、`startQueue` / `hasHeld`。回收时长（`server/presence.ts` 的 `setPresenceBusy`）和保活上限（`enforceKeepAlive`）读的还是同一个 `keepAliveBusy`，没有在触发点各加一个 `if`。
+`server/tasks/index.ts` 的 `keepAliveBusy` 只剩取数：`live` 里有没有这条、`pendingJobs(id)`、`childrenRunning(id)`、`startQueue` / `hasHeld`。回收时长（`server/presence.ts` 的 `setPresenceBusy`）和保活上限（`enforceKeepAlive`）读的还是同一个 `keepAliveBusy`，没有在触发点各加一个 `if`。
 
-`childrenRunning(parentId)` 从 `server/tasks.ts` 里抽出来：`live` 中 `parentTaskId` 是它、且 `childActive(task)` 为真的条目数。「数几个」和「某个子对话在不在跑」是同一个判定（`childActive`）。
+`childrenRunning(parentId)` 从 `server/tasks/index.ts` 里抽出来：`live` 中 `parentTaskId` 是它、且 `childActive(task)` 为真的条目数。「数几个」和「某个子对话在不在跑」是同一个判定（`childActive`）。
 
 **不是永不回收**：子对话全部结束、父对话也空下来之后 `children` 归零，`keepAliveHolding` 返回 `false`，两段时间和上限照旧收（`shared/tasks/stage.test.ts` 的用例里显式断言了这一条）。
 
 ### 宽限到点还在跑的对话留一个复查（评审 R1）
 
-修完上面两处后有一个反方向的缺口：`server/presence.ts` 的 `evict` 在忙时只 `pending.add(taskId)` 就返回，而唯一能把「待回收」变回计时器的是 `resetIdleCountdown`，全仓只有 `server/tasks.ts` 的 `onKeepAlive`（这一轮结束开始保活）调它。没有执行位的父对话永远不会走 `onKeepAlive`：子对话被用户强制停掉、后台命令被停、子对话启动失败，都不会再交回结果，于是父对话就永远挂在 `pending` 里，两段时间和保活上限都不再作用于它——从「被误回收」变成了「永不回收」，违反边界④。
+修完上面两处后有一个反方向的缺口：`server/presence.ts` 的 `evict` 在忙时只 `pending.add(taskId)` 就返回，而唯一能把「待回收」变回计时器的是 `resetIdleCountdown`，全仓只有 `server/tasks/index.ts` 的 `onKeepAlive`（这一轮结束开始保活）调它。没有执行位的父对话永远不会走 `onKeepAlive`：子对话被用户强制停掉、后台命令被停、子对话启动失败，都不会再交回结果，于是父对话就永远挂在 `pending` 里，两段时间和保活上限都不再作用于它——从「被误回收」变成了「永不回收」，违反边界④。
 
 修法：`evict` 忙的时候记完标记再排一个复查计时器（`scheduleRecheck`），到点重新判一次——还忙就继续等，空下来就照常回收。复查间隔是独立常量 `BUSY_RECHECK_MS`（默认 60 分钟，测试用 `AGENT_PANEL_PRESENCE_RECHECK_MS` 缩短），**不取宽限期**：宽限期可以设成 0，按 0ms 重排会把事件循环打成自旋（项目教训里的老坑）。复查用独立的 `rechecks` Map，不和宽限的 `timers` 共用：共用的话 `scheduleIdle` 的「已经在计时」会把复查当成宽限，宽限是 1 分钟的用户要等到复查点（默认 60 分钟）才能回收。`resetIdleCountdown` / `setViewer(active)` / `forgetPresence` 会把两种计时器一起清掉或重排。
 
@@ -104,7 +104,7 @@
 | 位置                           | 改了什么                                                                                                                                                                                         |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `shared/task.ts`               | 新增 `keepAliveHolding`（有 / 没有执行位两种口径的保活结论）、抽出 `childEntryOf` 让 `restartInterrupted` 从 `childFacts` 派生条目                                                               |
-| `server/tasks.ts`              | 抽出 `childrenRunning(parentId)`（从 `live` 枚举 `childActive` 的子对话）；`keepAliveBusy` 改为取数后交给 `keepAliveHolding`，不再在没有执行位时直接返回 `false`                                 |
+| `server/tasks/index.ts`        | 抽出 `childrenRunning(parentId)`（从 `live` 枚举 `childActive` 的子对话）；`keepAliveBusy` 改为取数后交给 `keepAliveHolding`，不再在没有执行位时直接返回 `false`                                 |
 | `server/presence.ts`           | `evict` 开头读回收开关（关掉后已排的计时器也不再收）；忙时记完 `pending` 再排复查（`scheduleRecheck`，独立 `rechecks` Map，间隔 `BUSY_RECHECK_MS`，不取宽限期以避开 0ms 自旋）；空下来后照常回收 |
 | `shared/tasks/stage.test.ts`   | 新增 `keepAliveHolding` 用例（含「子对话结束照旧回收」）                                                                                                                                         |
 | `server/presence.test.ts`      | 新增「父对话在等子对话」、「宽限到点还在跑的对话留一个复查」、「关掉自动回收：宽限或复查到点都不收」、「复查不占宽限计时」四条例用                                                               |

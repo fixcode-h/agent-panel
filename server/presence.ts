@@ -3,7 +3,7 @@
  * 切走（页面卸载或隐藏）后给一段宽限，期间切回来还能直接接着说；过了宽限让 CLI 结束这一轮。
  * 宽限时长在设置里改（presenceGraceMinutes），环境变量优先，测试用。
  * 宽限只管「回复完停在等下一句」的空闲会话：这一轮还在跑（CLI 正在处理、在等子任务）的对话
- * 到点也不回收，由调用方通过 setPresenceBusy 提供判定（见 server/tasks.ts 的 keepAliveBusy）。
+ * 到点也不回收，由调用方通过 setPresenceBusy 提供判定（见 server/tasks/index.ts 的 keepAliveBusy）。
  * 这里只负责「到时间了该放手」
  */
 import { onForgetTask } from './runtime/task-state.ts'

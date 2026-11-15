@@ -8,7 +8,7 @@ import {
   type HookAnswer,
   type HookFacts,
   type HooksSpec,
-} from '../../shared/hooks.ts'
+} from '../../shared/hooks/index.ts'
 import { HookEventName, isNotifyEvent } from '../../shared/hooks/defs.ts'
 import { log } from '../log.ts'
 

@@ -1,8 +1,8 @@
-import { settleWait } from '../plan.ts'
+import { settleWait } from './index.ts'
 import { waitPlans } from './wait.ts'
 import type { PlanWait, Task } from '../schema.ts'
 
-// 放在单独的文件里：shared/plan.ts 到了行数上限（scripts/file-caps.json）
+// 放在单独的文件里：shared/plan/index.ts 到了行数上限（scripts/file-caps.json）
 
 /**
  * 结果不会再来的等待（面板崩溃，后台命令的记录跟着进程没了）按「没成功」收口：那一步退回进行中、写「需要修复」，

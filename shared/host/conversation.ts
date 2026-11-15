@@ -4,7 +4,7 @@
 import type { BugLevel } from '../bug/diagnosis-schema.ts'
 import type { DocsFirstInput } from '../docs-first.ts'
 import type { HelperSpec, Orchestra, RouteInput } from '../engine/host.ts'
-import type { BeforeEndDecision, BeforeEndInput } from '../hooks.ts'
+import type { BeforeEndDecision, BeforeEndInput } from '../hooks/index.ts'
 import type { AskKind } from '../schema.ts'
 
 /** Orchestra 里对话之间的那部分（重构文档第 5 条：按能力拆成小接口，Orchestra 只是它们的组合） */

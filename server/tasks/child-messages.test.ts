@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
-import { bindWait, ensureChildStep } from '../../shared/plan.ts'
+import { bindWait, ensureChildStep } from '../../shared/plan/index.ts'
 import { Task, type StopReason } from '../../shared/schema.ts'
 import { createBudget } from './budget.ts'
 import { createChildMessages, setSendWaitMs } from './child-messages.ts'

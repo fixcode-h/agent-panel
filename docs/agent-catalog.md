@@ -40,7 +40,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 评审列了高级（🔴）或中级（🟠）时，执行角色要逐条写处置（`review_triage`）才合得回去；评审只看代码、不跑测试（[ADR 0010](adr/0010-review-code-only.md)）。用户明确要求带着已知问题合并时，执行角色在 `submit_merge` 传 `review_override` 放行，记录（谁 / 何时 / 为什么 / 原本拦住什么）进任务详情、收尾消息和交接摘要（[ADR 0022](adr/0022-review-gate-override.md)）。
 「分析」是面板上所有「AI 分析」「AI 排查」开出的对话默认用的角色，开在哪里由 `shared/analysis-home.ts` 统一决定（见 [ADR 0014](adr/0014-ai-analysis-home.md)）。
 「助手」（`chat`）是 Chat 类：Chat 页没选角色的对话（`agentId` 为空，含旧对话）运行时都按它跑，引入「聊天约束」；它的运行配置不生效（Chat 页在输入框选 CLI 和模型），也不进项目设置的必备角色参数区（Chat 没有项目）。
-「子任务」（`helper`）保留定义、但**不作为可选角色展示**：它是 `spawn_agents` 不点名时的默认执行角色（`shared/engine.ts` 按 `isHelperAgent` 找它），删了所有子任务就没有默认角色和提示词了；
+「子任务」（`helper`）保留定义、但**不作为可选角色展示**：它是 `spawn_agents` 不点名时的默认执行角色（`shared/engine/index.ts` 按 `isHelperAgent` 找它），删了所有子任务就没有默认角色和提示词了；
 角色页、内置角色弹窗和角色选择器都按 `shared/builtin/core.ts` 的 `listableAgents` 把它去掉，计数、分组、搜索也不算它，停用和删除由必备角色保护拦下。
 改这几个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
 其他内置角色也一样（[ADR 0015](adr/0015-builtin-roles-follow-definition.md)）：设定由面板维护、每次启动和保存都按定义同步，用户只改参数取值、运行配置、分类、标签和启用；区别只是可以删除、可以停用。
@@ -127,7 +127,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 不拿 busy、「已完成」这类状态字段猜，给用户只说「已交回，等结果」；拿不准时 `list_conversations` 看一次 `lastActivityAt`，超过等待时限没动静再发一次，
 还不动就按没送到处理（做到一半卡住的由面板自动问、重启、接手）。通用约束的「执行纪律」同批加了一条：工具回成功不等于已生效，
 对外的异步动作以推回结果为准、同步的回读一次，不为此轮询。
-2026-11-03 起（[ADR 0048](adr/0048-coordinator-docs-first.md)）这些说法不再写在协调器设定里：`send_to_conversation` 送到后的返回自带一句（`shared/engine.ts` 的 `SENT_NOTE`）。
+2026-11-03 起（[ADR 0048](adr/0048-coordinator-docs-first.md)）这些说法不再写在协调器设定里：`send_to_conversation` 送到后的返回自带一句（`shared/engine/index.ts` 的 `SENT_NOTE`）。
 同批：协调器先提炼关键词再读模块文档定位；「方案设计」只能派出、不再挂「评审」复核大方案；给 Agent 的规则每条只有一个出处（`scripts/rules-check.mjs` 第 20 条）。
 
 ### 角色分类

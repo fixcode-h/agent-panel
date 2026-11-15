@@ -134,7 +134,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     errors.push('设置-外观：换回默认的「Claude Code」配色后 html 上应该挂 data-palette="code"')
   // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
   await p.getByRole('button', { name: '正文排版', exact: true }).click()
-  await check(p, '设置-Markdown样式', ['H1 标题', '斑马纹', '自动换行', '字号'])
+  await check(p, '设置-Markdown样式', ['H1 标题', '斑马纹', '自动换行', '字号', '短标尺长度', '短标尺粗细'])
+  // H1 默认的短标尺：标题下三层底里，短条那层（第二层）有宽度，细线那层（第三层）有高度
+  const h1Size = await p
+    .locator('.chat-md h1')
+    .filter({ visible: true })
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundSize.split(','))
+  if (parseFloat(h1Size[1] ?? '0') <= 0 || !(h1Size[2] ?? '').trim().endsWith('1px'))
+    errors.push(`设置-Markdown样式：H1 默认应该画短标尺（短条加细线），实际 background-size 是 ${h1Size.join(',')}`)
   await p.getByRole('switch', { name: '表格斑马纹' }).click()
   if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
     errors.push('设置-Markdown样式：打开斑马纹后 #md-style 里应该有 --md-table-zebra')
@@ -244,6 +252,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await p.getByRole('button', { name: '恢复本组' }).first().click()
     if (await p.evaluate(() => document.getElementById('md-style')?.textContent))
       errors.push('设置-组件：恢复本组后 #md-style 应该是空的')
+  }
+  // 下拉框搜索：选项多的下拉框打开就带搜索框，打字筛、回车选中；选项少的仍是原来的列表（没有搜索框）
+  {
+    const long = p.getByRole('combobox', { name: '示例长下拉框' })
+    await long.scrollIntoViewIfNeeded()
+    await long.click()
+    const box = p.getByRole('textbox', { name: '搜索示例长下拉框' })
+    if (
+      !(await box.waitFor({ timeout: 3000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('设置-组件：16 项的下拉框打开后应该有搜索框')
+    else {
+      await box.fill('play')
+      if ((await p.getByRole('option').count()) !== 1) errors.push('设置-组件：下拉框搜「play」应该只剩 1 项')
+      await check(p, '设置-组件-下拉框搜索', ['LogPlayerController'])
+      await box.press('Enter')
+      if (!(await long.textContent())?.includes('LogPlayerController'))
+        errors.push('设置-组件：下拉框搜索后回车应该选中 LogPlayerController')
+    }
+    await p.getByRole('combobox', { name: '示例下拉框', exact: true }).first().click()
+    await p.getByRole('option', { name: 'Codex' }).waitFor({ timeout: 3000 })
+    if (await p.getByRole('textbox', { name: /^搜索/ }).count()) errors.push('设置-组件：3 项的下拉框不该带搜索框')
+    await p.keyboard.press('Escape')
   }
   // 数据表格：样例自动认出 5 行表头；微调里改修饰行的颜色立刻写进 #md-style
   {

@@ -37,7 +37,7 @@ export const EN_SCHEDULE: Record<string, string> = {
   '每天 {time} 总结当天的工作': 'Summarize the day at {time} every day',
   新建空白计划: 'New blank plan',
 
-  // 下次执行时间的文案（shared/schedule.ts）
+  // 下次执行时间的文案（shared/schedule/index.ts）
   今晚: 'tonight',
   明天: 'tomorrow',
   后天: 'the day after tomorrow',

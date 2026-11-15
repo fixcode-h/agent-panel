@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { finish, runConversationTurn } from '../engine.ts'
+import { finish, runConversationTurn } from './index.ts'
 import type { EngineHost } from './host.ts'
 import { budgetLimit, overBudget } from './budget.ts'
 import { Task, TaskStep } from '../schema.ts'

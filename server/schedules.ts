@@ -2,7 +2,7 @@
  * 定时计划（左侧导航的「计划」）：面板进程在跑时，按计划到点新建一个对话并开始执行。
  *
  * - 计划存在数据目录的 config/schedules.json，和设置、角色这些配置一起被「数据」页覆盖（导出、清理）
- * - 到点判定、执行后往后推时间的规则全在 shared/schedule.ts（有单测），这里只负责读写和启动对话
+ * - 到点判定、执行后往后推时间的规则全在 shared/schedule/index.ts（有单测），这里只负责读写和启动对话
  * - 进程不在时错过的计划不补跑：下一次轮询发现已经过了宽限时间的，只标成错过
  * - 启动出来的对话和用户手动新建的一样（走 tasks 的创建链路），不另造一套执行流程
  */
@@ -32,10 +32,10 @@ import {
   ScheduleInput,
   type RunTaskState,
   type ScheduleRun,
-} from '../shared/schedule.ts'
+} from '../shared/schedule/index.ts'
 import { NewTaskInput, type Agent, type Task } from '../shared/schema.ts'
 import { scopeError } from '../shared/conv-mode.ts'
-import type { ScheduleDelivery, ScheduleEvent } from '../shared/schedule.ts'
+import type { ScheduleDelivery, ScheduleEvent } from '../shared/schedule/index.ts'
 import {
   EMPTY_TRIGGER_STATE,
   isEventSchedule,

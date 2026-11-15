@@ -2,7 +2,7 @@
 
 状态：被替代（被 [0011](./0011-app-actions-for-agents.md) 替代：选 MCP 的结论保留；「一个操作一个 `panel_*` 工具」改成动作注册表 + 两个固定工具） · 2026-10-23
 
-- 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks.ts`（组装数据并注入）；`server/orch-mcp.ts`、`ui-design/server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
+- 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks/index.ts`（组装数据并注入）；`server/orch-mcp.ts`、`ui-design/server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
 - 相关文档：`docs/cli-config.md`（`mcp` 能力、面板工具的接入方式）、`AGENTS.md`（硬规则与安全边界）、`docs/lessons/server.md`
 
 ## 背景
@@ -23,12 +23,12 @@
 | `server/ask-mcp.ts`                                                                                             | 一次 CLI 调用开一个只在那一轮有效的 MCP 服务（随机令牌），挂 `ask_user`、`read_user_notes`、`wait_user_message` 和 `orch-mcp.ts` 的编排工具；反问和长等待用 SSE + 20 秒心跳，避免客户端判空闲断开   |
 | `server/ask-mcp.ts`（`openAskBridge`）                                                                          | 令牌即会话：`close()` 时这一轮的提问全部作废；地址是 `http://127.0.0.1:<PORT>/api/mcp/ask/<token>`                                                                                                  |
 | `server/orch-mcp.ts`                                                                                            | `orchTools(o: Orchestra)` 生成工具定义、`callOrchTool` 执行、`orchHint` 写进提示词的一句话用法；工具是否出现由 `Orchestra` 的能力字段决定（`o.plans`、`o.canBackground`、`o.child`…）               |
-| `shared/engine.ts:249`                                                                                          | `Orchestra` 接口：一次调用能做什么全看它，`makeOrchestra(host, ctx, self)` 按 `ctx` 的能力拼出这个对象                                                                                              |
+| `shared/engine/index.ts:249`                                                                                    | `Orchestra` 接口：一次调用能做什么全看它，`makeOrchestra(host, ctx, self)` 按 `ctx` 的能力拼出这个对象                                                                                              |
 | `server/exec/invoke.ts`                                                                                         | 只有 `def.mcp` 且 `own` 或 `o.orch` 为真时才开 bridge，`servers.unshift({ name: fileBased ? 'panel-<后6位>' : 'panel', url })`：**一次调用只挂一套面板 MCP**（`ask-mcp.ts` 文件头也写明了这条约定） |
 | `server/auth.ts`（`tokenGuard`）                                                                                | `/api/mcp/ask/`、`/api/mcp/design/` 白名单放行（CLI 没有 Cookie），令牌不对由接口自己回 404                                                                                                         |
 | `server/mcp-store.ts`（`mcpApi`）                                                                               | 用户自定义 MCP：写进各 CLI 自己的配置（`CliDefinition.mcpStore`），面板不另存                                                                                                                       |
 | `server/ask-mcp.ts`（`applyConfigFiles`）                                                                       | 文件型配置（Command Code、Gemini CLI、Pi）在用户项目目录里读改写合并，用完还原                                                                                                                      |
-| `server/tasks.ts` 返回对象                                                                                      | `tasksApi({...})` 同时返回 Hono `routes` 和内部函数（`list`、`get`、`running`、`stopAll`…），`runUsageApi({ tasks })` 就是这么注入的                                                                |
+| `server/tasks/index.ts` 返回对象                                                                                | `tasksApi({...})` 同时返回 Hono `routes` 和内部函数（`list`、`get`、`running`、`stopAll`…），`runUsageApi({ tasks })` 就是这么注入的                                                                |
 | `shared/run/usage.ts`、`server/run-usage.ts`（口径实现在 shared 的 `runUsage`，接口是 server 的 `runUsageApi`） | 整个运行的口径已经算好：`total` / `own` / `sub` / `tps` / `runTps` / `children` / `helpers`；接口在 `server/index.ts:669` 用 `runUsageApi({ tasks })` 挂上                                          |
 | `server/asks.ts`                                                                                                | 审批和提问的挂起表：`askSession(scope)`、`answerAsk`、`wantsAnswers`；界面走 `/asks?scope=` 和 `/tasks/:id/requests/:rid`                                                                           |
 | `server/log.ts`                                                                                                 | 日志写 `<程序目录>/logs/`（写不进去退到数据目录下），保留 30 个文件 / 100 MB，`token=…` 会打码                                                                                                      |
@@ -199,8 +199,8 @@ JSON Schema 手写，和 `orch-mcp.ts:68 orchTools` 一致（那边也是手写�
 
 面板工具要的数据（别的对话、整个运行的用量、设置、合并和停止）都在 `tasksApi` 手里，`RealContext`（`server/exec/runner.ts:72`）只有本轮的 `task`、`project`、`settings`。所以：
 
-- `server/tasks.ts:2568` 那个返回对象（`routes` + `list`、`get`、`running`、`stopAll`…）再导出面板组要用的几个函数；
-- deps 在 `server/tasks.ts:1149` 组装 `RealContext` 的地方注入，写法照 `server/index.ts` 里挂 `runUsageApi({ tasks })` 的那几行：`runUsageApi` 也是这么拿到任务存储的；
+- `server/tasks/index.ts:2568` 那个返回对象（`routes` + `list`、`get`、`running`、`stopAll`…）再导出面板组要用的几个函数；
+- deps 在 `server/tasks/index.ts:1149` 组装 `RealContext` 的地方注入，写法照 `server/index.ts` 里挂 `runUsageApi({ tasks })` 的那几行：`runUsageApi` 也是这么拿到任务存储的；
 - `RealContext` 加一个可选字段（例如 `panel?: PanelOps`），`invoke.ts` 原样转给 `openAskBridge`。子对话这轮不需要面板组时不传，工具列表里就没有 `panel_*`。
 
 ### 提示词

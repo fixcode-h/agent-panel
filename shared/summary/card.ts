@@ -44,7 +44,7 @@ const sec = (x: FieldDef, hint: string): DetailDef => ({ ...x, hint })
 export const NEEDS_YOU = f('needs', '要你处理', 'Needs you')
 const VERIFIED = f('verified', '验证', 'Verified')
 const REMAINING = f('remaining', '遗留', 'Remaining')
-// 详细总结的段落：和卡片字段同名的复用同一个 key，提炼工作总结时两种写法按 key 一样取舍（见 shared/summary.ts）
+// 详细总结的段落：和卡片字段同名的复用同一个 key，提炼工作总结时两种写法按 key 一样取舍（见 shared/summary/index.ts）
 const CHANGES = f('changes', '改动明细', 'Changes')
 const PROBLEM = f('problem', '问题', 'Problem')
 const SOLUTION = f('solution', '修改方案', 'Solution')

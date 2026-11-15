@@ -9,9 +9,10 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { markWrapUp } from '../../shared/plan.ts'
+import { markWrapUp } from '../../shared/plan/index.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask, freshTask, readTask } from './read.ts'
 
 /**
  * 对话的工作目录和独立分支：取目录、列出 / 合并 / 丢弃独立分支、删除对话时清理分支。
@@ -26,7 +27,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
   ): Promise<string> => {
     if (isolated(tk)) return tk.worktree!.path
     if (tk.parentTaskId) {
-      const parent = s.live.get(tk.parentTaskId)?.task ?? (await s.store.get(tk.parentTaskId))
+      const parent = await readTask(s, tk.parentTaskId)
       if (parent && isolated(parent) && existsSync(parent.worktree!.path)) return parent.worktree!.path
     }
     return tk.projectId ? ((await s.deps.projects.get(tk.projectId))?.path ?? '') : path.join(CHATS_DIR, tk.id)
@@ -34,7 +35,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
 
   /** 独立分支合回去的目录：子对话合进父对话的目录（父也在独立分支时是父的那个），顶层对话合进项目目录 */
   async function worktreeHome(tk: Task, project: Project) {
-    const parent = tk.parentTaskId ? (s.live.get(tk.parentTaskId)?.task ?? (await s.store.get(tk.parentTaskId))) : null
+    const parent = tk.parentTaskId ? await readTask(s, tk.parentTaskId) : null
     return parent ? (await taskDir(parent)) || project.path : project.path
   }
 
@@ -47,10 +48,10 @@ export function registerWorktreeRoutes(s: TasksScope) {
    */
   s.routes.get('/:id/worktrees', async (c) => {
     const id = c.req.param('id')!
-    const tk = await s.current(id)
+    const tk = await currentTask(s, id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const project = tk.projectId ? await s.deps.projects.get(tk.projectId) : null
-    const kids = (await s.store.childrenOf(id)).map((k) => s.live.get(k.id)?.task ?? k)
+    const kids = (await s.store.childrenOf(id)).map((k) => freshTask(s, k))
     const list = [tk, ...kids].filter((x) => x.worktree)
     const items = await Promise.all(
       list.map(async (x) => {
@@ -77,7 +78,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
           holds:
             x.id === id
               ? undefined
-              : childHoldsOf(s.live.get(x.id)?.task ?? x, {
+              : childHoldsOf(freshTask(s, x), {
                   background: s.pendingJobs(x.id),
                   merged: st ? st.merged : wt.state === 'merged',
                 }),
@@ -94,14 +95,14 @@ export function registerWorktreeRoutes(s: TasksScope) {
   s.routes.post('/:id/worktree/merge', async (c) => {
     const id = c.req.param('id')!
     if (busyWith(id)) return s.bad(c, t('对话正在执行，等这一轮结束后再合并'), 409)
-    const tk = await s.current(id)
+    const tk = await currentTask(s, id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     if (!isolated(tk)) return s.bad(c, t('这个任务没有待处理的独立分支'))
     const project = await s.deps.projects.get(tk.projectId)
     if (!project) return s.bad(c, t('任务所属的项目已经不存在'))
     // 子对话已经请父对话收尾：用户在界面上点合并就是替父对话收尾，走同一条路（合回、标完成、删分支）
     if (tk.parentTaskId && tk.wrapRequest?.state === 'requested') {
-      const parent = await s.current(tk.parentTaskId)
+      const parent = await currentTask(s, tk.parentTaskId)
       if (!parent) return s.bad(c, t('父对话已经不存在'))
       const r = await s.finishChild(parent, id)
       // 只有两个分支真冲突时才给「用 AI 合并」：目录挡路（暂存区、未提交改动、换了分支）交给 AI 合并也没用，
@@ -116,7 +117,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
               : t('父对话的目录挡住了合并：{why}。处理后再点合并', { why })
         return c.json({ error, conflict: r.kind === 'conflict' }, 409)
       }
-      return c.json({ task: await s.current(id), into: tk.worktree!.baseBranch, overlap: [] })
+      return c.json({ task: await currentTask(s, id), into: tk.worktree!.baseBranch, overlap: [] })
     }
     const wt = tk.worktree!
     try {
@@ -155,7 +156,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
         // 这条提醒是合并后马上要看的：不走 400ms 的消息写盘节流，否则紧接着的刷新（和 e2e）读不到它
         await s.store.update(id, { ...base, messages }, { now: true })
       }
-      return c.json({ task: await s.current(id), into, overlap, sides })
+      return c.json({ task: await currentTask(s, id), into, overlap, sides })
     } catch (e) {
       return c.json({ error: (e as Error).message, conflict: !!(e as { conflict?: boolean }).conflict }, 409)
     }
@@ -167,7 +168,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
     if (busyWith(id)) return s.bad(c, t('对话正在执行，等这一轮结束后再删除独立分支'), 409)
     // 父对话正在合并这个子对话：先让它合完（或失败）再丢弃，否则两边同时动分支和工作目录
     if (s.merging.has(id)) return s.bad(c, t('父对话正在合并这个子对话，等结果出来再删除独立分支'), 409)
-    const tk = await s.current(id)
+    const tk = await currentTask(s, id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     if (!isolated(tk)) return s.bad(c, t('这个任务没有待处理的独立分支'))
     const project = await s.deps.projects.get(tk.projectId)

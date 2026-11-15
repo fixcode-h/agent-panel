@@ -7,9 +7,9 @@
 
 - 状态：已修复（两条路径的代码、回归用例随同一批改动落地；`server/tasks/restart.test.ts` 5/5、`server/reclaim.test.ts` 5/5、`web/src/components/tasks/child-line.test.ts` 10/10 通过，`npm run typecheck`、`npm run lint` 通过，实测见「回归验证」）
 - 症状：面板重启后，重启前还在跑的子对话在界面上仍显示「进行中」（行首转圈、计进侧栏分组的「N 个执行中」）；页面切走宽限到期后回收了进程，一批子对话卡片仍停在「未完成 + 继续会重新拉起」，实际没有进程、也没有能点的「继续」
-- 入口：`server/tasks.ts` 的 `ready` 启动迁移和 `setPresenceIdleHandler`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `childIcon` / `childState`（`convState` 的 `unfinished` / `unmerged`）/ `resumable`、`web/src/components/tasks/child-line.ts` 的 `convGone`
+- 入口：`server/tasks/index.ts` 的 `ready` 启动迁移和 `setPresenceIdleHandler`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `childIcon` / `childState`（`convState` 的 `unfinished` / `unmerged`）/ `resumable`、`web/src/components/tasks/child-line.ts` 的 `convGone`
 - 根因类型：状态收口缺口（重启迁移范围不足、页面回收只结束进程不落状态）+ 状态判定不看进程存活（两处信号不同源）
-- 模块：`server`（启动迁移与回收回调 `server/tasks.ts`、进程清理 `server/exec/orphans.ts`、回收收口 `server/exec/reclaim.ts`、宽限计时 `server/presence.ts`）、`shared`（状态判定 `shared/task.ts`）、`web`（子对话行的提示 `web/src/components/tasks/child-line.ts`）
+- 模块：`server`（启动迁移与回收回调 `server/tasks/index.ts`、进程清理 `server/exec/orphans.ts`、回收收口 `server/exec/reclaim.ts`、宽限计时 `server/presence.ts`）、`shared`（状态判定 `shared/task.ts`）、`web`（子对话行的提示 `web/src/components/tasks/child-line.ts`）
 - 关键词：重启、页切走回收、presence、页面切走后结束、转圈、执行中、N 个执行中、很多子对话没有拉起、CLI 进程已回收、Agent 进程已回收、继续会重新拉起、没有「继续」入口、stopReason restart、stopReason presence、unfinished、unmerged、childIcon、ready、cleanStaleCliProcesses、settleReclaimed、cancelWait、childClosedHint、resumable
 
 ## 现象
@@ -39,7 +39,7 @@
 
 1. 子对话这一轮已经说过话了（落盘里 `status` 是 `done`），但**计划没做完**（`openPlan` 有值，例如 6/8）或者**独立分支还没合回**（`worktree.state === 'active'`）。
 2. 这时重启面板（关掉服务再开，或者崩溃后被重新拉起）。
-3. 重启后 `server/exec/orphans.ts` 的 `cleanStaleCliProcesses` 按 `run/cli-pids.json` 把遗留 CLI 杀掉、清掉登记，但**不碰任务记录**；`server/tasks.ts` 的 `ready` 只迁移 `status === 'running'` 的任务，这一类 `status` 是 `done`，原样留在落盘里。
+3. 重启后 `server/exec/orphans.ts` 的 `cleanStaleCliProcesses` 按 `run/cli-pids.json` 把遗留 CLI 杀掉、清掉登记，但**不碰任务记录**；`server/tasks/index.ts` 的 `ready` 只迁移 `status === 'running'` 的任务，这一类 `status` 是 `done`，原样留在落盘里。
 4. 界面按 `childIcon` 判定：`convState` 因为 `unfinished` / `unmerged` 返回 `unfinished`，`childIcon` 对它返回 `running` → 行首转圈、子对话栏算在跑；同一行 `cliAlive` 是 `false`，`convGone` 返回 `hint`，又挂一句「Agent 进程已回收，继续会重新拉起」（当时的界面文案叫 CLI，后来统一改叫 Agent）。
 
 本机真实数据里就是这样一条：子对话 `c8f2721d-f0e7-4057-b1ee-734aa377da0a`（父对话 `93b08721-4bab-4f55-93e6-0e2fe180eeab`），落盘里 `status: 'done'`、`working: false`、计划 6/8（`doneAt: ''`）、`worktree.state: 'active'`、没有 `wrapRequest`。
@@ -48,14 +48,14 @@
 
 1. 一个子对话这一轮说完了，CLI 留着等下一句（MCP 工具等回复间隙）：落盘里 `status: 'running'`、`working: false`，计划停在 6/8。
 2. 用户切走页面（或关掉页面、切到别的对话），`server/presence.ts` 的 `scheduleIdle` 开始计宽限（「设置 · 自动回收闲置 Agent」开启时；宽限时长默认 60 分钟，未读的更短），到点 `evict(taskId)`；这一轮还在跑（`busy`）就不回收，只记 `pending`。
-3. `evict` 调 `onIdle`（即 `server/tasks.ts` 的 `setPresenceIdleHandler`），旧实现只有 `cancelWait(id)`：它让在等下一句的 CLI 结束这一轮，**一个字段都不写回任务记录**。
+3. `evict` 调 `onIdle`（即 `server/tasks/index.ts` 的 `setPresenceIdleHandler`），旧实现只有 `cancelWait(id)`：它让在等下一句的 CLI 结束这一轮，**一个字段都不写回任务记录**。
 4. 于是任务永远停在 `status: 'running'`、`working: false`：`convState` 走 `unfinished`（计划没做完）→ `childIcon` 是 `running`（转圈、计入「N 个执行中」），而进程真的没了、`cliAlive` 为假 → `convGone` 给 `hint`「Agent 进程已回收，继续会重新拉起」；「继续」按钮的显示条件是 `shared/task.ts` 的 `resumable(status)`（只看 `stopped` / `failed`），在 `running` 状态下根本不渲染——这一轮既不会自动拉起，用户也没有可点的入口。
 
 ## 根因
 
 先按三种候选分别查，结论是第三种为主、第二种是伴生现象：
 
-1. **「启动时只清了进程、没把任务状态改成已停止」**：一半成立。`cleanStaleCliProcesses`（`server/exec/orphans.ts`）只按 pid 登记杀进程并清登记文件，确实不动任务记录；但 `server/tasks.ts` 的 `ready` 本来就有迁移，问题在它的**范围**——过滤条件是 `x.status === 'running'`。
+1. **「启动时只清了进程、没把任务状态改成已停止」**：一半成立。`cleanStaleCliProcesses`（`server/exec/orphans.ts`）只按 pid 登记杀进程并清登记文件，确实不动任务记录；但 `server/tasks/index.ts` 的 `ready` 本来就有迁移，问题在它的**范围**——过滤条件是 `x.status === 'running'`。
 2. **「状态改了、界面的 running 判定另算一处」**：成立，是伴生现象。行首图标和子对话栏读 `childIcon`（`unfinished` 也返回 `running`），而「进程还在不在」这句提示读 `cliAlive`（`convGone` / `childClosedHint`）。两处信号不同源，就出现「转圈 + CLI 进程已回收」同屏；侧栏分组的「N 个执行中」又走 `taskBusyCount` / `taskBusy` → `convState(taskFacts)`，和行首图标不是同一个函数。
 3. **「重启后没有重新校验进程在不在就沿用旧状态」**：主因。`childIcon` 的输入 `ChildEntry.cliAlive` 只影响「已关闭」标签，**不参与图标判定**；`childIcon` 对 `unfinished` / `unmerged` / `wrapup` 一律返回 `running`。这个「还有事没做完 = 还在跑」的判定在进程活着时是对的，重启后 CLI 已经没了、后台命令和工作流的内存记录也一起没了，它就不再成立，而启动迁移没有把这一类任务收口。
 
@@ -83,7 +83,7 @@
 
 ### `ready` 的迁移范围扩到「界面还会画成在跑」
 
-`server/tasks.ts` 的 `ready` 过滤条件从 `x.status === 'running'` 改成 `x.status === 'running' || restartInterrupted(x)`，原来的字段改写保持不变（`status: 'stopped'`、`stopReason: 'restart'`、清 `requests` / `working` / `awaitingUser` / `prewarming`、结算 `runMs` / `waitMs` / `idleWaitMs`、把 `status === 'running'` 的节点 `pauseStep` 后标 `interrupted: true`、`turns` 收口）。
+`server/tasks/index.ts` 的 `ready` 过滤条件从 `x.status === 'running'` 改成 `x.status === 'running' || restartInterrupted(x)`，原来的字段改写保持不变（`status: 'stopped'`、`stopReason: 'restart'`、清 `requests` / `working` / `awaitingUser` / `prewarming`、结算 `runMs` / `waitMs` / `idleWaitMs`、把 `status === 'running'` 的节点 `pauseStep` 后标 `interrupted: true`、`turns` 收口）。
 
 - **`stopReason` 必须是 `restart`**：这是面板重启打断的，不是用户按的暂停（项目教训 `lmvkmbatncz75`）。界面因此显示 `stopReasonText('restart')`（「面板重启时中断」），图标是 `idle`，不会写成「已暂停」。
 - **系统消息按情况分两种**：这一轮还在跑的仍写原来那句「点『继续执行』从中断的节点接着做」；「这一轮已经说完、只是没收尾」的改成 `面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。`（英文在 `shared/locales/en/server.ts`）。它没有可续接的中断节点，说「继续执行」会误导。
@@ -98,7 +98,7 @@
 - **两条不碰**：`working === true`（真在执行，不能把产出中的任务写成已停止）和已经停下的（`stopped` / `failed` / `done`）——原因（用户按的暂停、父对话结束…）不能被覆盖（和 `stopTask` 的原因语义一致，项目教训 `lmvkmbatncz75`）。
 - **放在 `server/exec/`**：它和 `stopTask` 一样属于执行链路的收尾，只依赖一个很小的 `{ get, update }` 形状，测试里用真的 `createTaskStore` + 临时数据目录验（不 mock 落盘）。
 
-**`server/tasks.ts` 的 `setPresenceIdleHandler`**（旧实现是 `setPresenceIdleHandler((id) => cancelWait(id))`）：
+**`server/tasks/index.ts` 的 `setPresenceIdleHandler`**（旧实现是 `setPresenceIdleHandler((id) => cancelWait(id))`）：
 
 1. 先 `cancelWait(id)`：还在等下一句的 CLI 结束这一轮（没有就跳过）。
 2. 内存里有 live 记录且没在跑（`!entry.task.working`）→ `stopTask(id, 'presence')`，走引擎的正常停止流程收尾；
@@ -149,10 +149,10 @@
 
 运行期路径（`server/reclaim.test.ts`）：
 
-| 实现                                                                                                                                       | 结果                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 旧实现（`git show d93265eb:server/tasks.ts` 的 `setPresenceIdleHandler((id) => cancelWait(id))`，且该提交下没有 `server/exec/reclaim.ts`） | 三条都无从通过：旧实现没有写回状态的分支，用例也不能加载收口函数（代码比对结论，本轮未在旧实现上重跑，见「待确认」）；用例第一条断言 `spins(waiting) === true` 就是「回收前界面把它画成在跑」的复现 |
-| 新实现                                                                                                                                     | 3/3 通过（本轮跑过）                                                                                                                                                                                |
+| 实现                                                                                                                                             | 结果                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 旧实现（`git show d93265eb:server/tasks/index.ts` 的 `setPresenceIdleHandler((id) => cancelWait(id))`，且该提交下没有 `server/exec/reclaim.ts`） | 三条都无从通过：旧实现没有写回状态的分支，用例也不能加载收口函数（代码比对结论，本轮未在旧实现上重跑，见「待确认」）；用例第一条断言 `spins(waiting) === true` 就是「回收前界面把它画成在跑」的复现 |
+| 新实现                                                                                                                                           | 3/3 通过（本轮跑过）                                                                                                                                                                                |
 
 界面侧（`web/src/components/tasks/child-line.test.ts`）：新增的「页面宽限回收后的静止行」一条本轮 10/10 全文件通过。
 
@@ -185,7 +185,7 @@ npm run test:e2e:wsl                         # WSL Ubuntu-24.04，退出码 0，
 | 位置                                          | 改了什么                                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shared/task.ts`                              | 新增 `restartInterrupted(task)`：按 `ChildEntry` 走 `childSpinning` / `childState`，返回「重启后界面还会画成在跑」；`wrapup` 排除                                                                                                                                                                                      |
-| `server/tasks.ts`                             | `ready` 过滤条件扩成 `status === 'running' \|\| restartInterrupted(x)`，系统消息按「这一轮还在跑」和「已经说完但没收尾」分两种文案；`setPresenceIdleHandler` 从只有 `cancelWait(id)` 改成先 `cancelWait`，有 live 记录且没在跑走 `stopTask(id, 'presence')`，没有 live 记录走 `settleReclaimed(store, id, 'presence')` |
+| `server/tasks/index.ts`                       | `ready` 过滤条件扩成 `status === 'running' \|\| restartInterrupted(x)`，系统消息按「这一轮还在跑」和「已经说完但没收尾」分两种文案；`setPresenceIdleHandler` 从只有 `cancelWait(id)` 改成先 `cancelWait`，有 live 记录且没在跑走 `stopTask(id, 'presence')`，没有 live 记录走 `settleReclaimed(store, id, 'presence')` |
 | `shared/locales/en/server.ts`                 | 补新文案的英文 `This work was not finished before the panel restarted and is no longer running. Send a message to continue; the CLI will be started again.`                                                                                                                                                            |
 | `server/tasks/restart.test.ts`                | 新增 5 条用例（见「防复发护栏」）                                                                                                                                                                                                                                                                                      |
 | `server/exec/reclaim.ts`                      | 新增 `settleReclaimed(store, id, reason)`：把「`running` 且 `working === false`」的任务落成 `stopped` + 传入的 `stopReason`；`working` 的、已停下的不碰                                                                                                                                                                |

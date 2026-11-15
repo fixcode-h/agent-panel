@@ -2,9 +2,9 @@
 
 - 状态：已修复（e2e `09-subagent-runtime`「父对话被停下后继续……」、`shared/tasks/stage.test.ts`「继续执行的续接说明……」、`server/tasks/restart.test.ts` 通过）
 - 症状：父对话被停下（或面板重启）后点「继续执行」，名下一起被打断的子对话没动；父对话看子对话没动静，自己手写「被中断后恢复」逐个转发，或另建一个子对话重做
-- 入口：`server/tasks.ts` 的 `/:id/resume`（`resumeKids`、`resumePrompt`）、启动迁移 `ready`、`sendToChild`；`shared/task.ts` 的 `resumeNote`；`shared/engine.ts` 的 `create_conversation`
+- 入口：`server/tasks/index.ts` 的 `/:id/resume`（`resumeKids`、`resumePrompt`）、启动迁移 `ready`、`sendToChild`；`shared/task.ts` 的 `resumeNote`；`shared/engine/index.ts` 的 `create_conversation`
 - 根因类型：继续执行只管自己，不管一起被打断的子对话、子任务、工作流
-- 模块：`server`（`server/tasks.ts`、`shared/task.ts`、`shared/engine.ts`）
+- 模块：`server`（`server/tasks/index.ts`、`shared/task.ts`、`shared/engine/index.ts`）
 - 关键词：继续执行、中断、恢复、子对话没继续、另建子对话、重做、面板重启、工作流运行、合并中
 
 ## 现象

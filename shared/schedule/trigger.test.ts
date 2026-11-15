@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupOf, nextToRun, pickDue, Schedule, weekOccurrences, weekStartOf } from '../schedule.ts'
+import { groupOf, nextToRun, pickDue, Schedule, weekOccurrences, weekStartOf } from './index.ts'
 import {
   everyLabel,
   isEventSchedule,

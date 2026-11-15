@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
-import { openPlan } from '../../shared/plan.ts'
+import { openPlan } from '../../shared/plan/index.ts'
 import { Task } from '../../shared/schema.ts'
 import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSettled } from '../../shared/task.ts'
 
@@ -17,7 +17,7 @@ import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSe
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-restart-'))
 process.env.AGENT_PANEL_DATA = dir
 const { createTaskStore } = await import('./store.ts')
-const { tasksApi } = await import('../tasks.ts')
+const { tasksApi } = await import('./index.ts')
 const { restartDoing } = await import('../interrupted.ts')
 
 setLang('zh')

@@ -4,7 +4,7 @@
  * - 分点：CLI 交回的 content / cause / fix 是数组（老格式是一段话），存成每行一点，报告里按序号一项项写；
  * - 关键代码：Bug 条目附的代码只收材料里真实改动过的行，CLI 改写或编出来的那段整段丢掉，不让报告里出现假代码。
  *
- * 纯逻辑，提示词和拼报告在 shared/summary.ts
+ * 纯逻辑，提示词和拼报告在 shared/summary/index.ts
  */
 import { z } from 'zod'
 

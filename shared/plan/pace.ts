@@ -1,7 +1,7 @@
-import { PLAN_STALE_MS, activePlan, itemStale, itemUpdatedAt, runningItem } from '../plan.ts'
+import { PLAN_STALE_MS, activePlan, itemStale, itemUpdatedAt, runningItem } from './index.ts'
 import type { Task } from '../schema.ts'
 
-// 放在单独的文件里：shared/plan.ts 到了行数上限（scripts/file-caps.json）
+// 放在单独的文件里：shared/plan/index.ts 到了行数上限（scripts/file-caps.json）
 
 /**
  * 计划没跟上提醒（内置钩子 plan-pace，工具后）：对话一股脑做完再补计划时，在这一轮中间就拉它回来更新。

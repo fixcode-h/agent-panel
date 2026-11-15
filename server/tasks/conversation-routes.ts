@@ -12,10 +12,10 @@ import {
   type TaskSeenResult,
   defaultAgent,
 } from '../../shared/schema.ts'
-import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow.ts'
+import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow/index.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
-import { settleWait } from '../../shared/plan.ts'
+import { settleWait } from '../../shared/plan/index.ts'
 import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
 import { closeFlow, diagnosisPending, dropEndNotes, newTask, taskDeleted, withAttachments } from '../../shared/task.ts'
 import { withTaskModel, retryModelPatch } from '../../shared/tasks/run.ts'
@@ -41,6 +41,7 @@ import { scopeError } from '../../shared/conv-mode.ts'
 import { BUG_CMD } from '../../shared/builtin/bug-method.ts'
 import { bugInPlace, inPlaceBugClosed } from '../../shared/bug/in-place.ts'
 import { pausedHelpers } from '../../shared/run/stops.ts'
+import { currentTask } from './read.ts'
 
 /**
  * 新建对话、发消息、预热、激活与关闭 Agent、在看 / 已读、结束流程、继续执行（连带拉起一起被打断的子对话）。
@@ -129,7 +130,7 @@ export function registerConversationRoutes(s: TasksScope) {
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
     const raw0 = await s.expandForWorkflow(draft, input.prompt)
     // 别的对话替它建的（app 动作 task.create）：第一条记成「同项目对话发来」，交给 CLI 时写明不是用户说的（ADR 0041）
-    const sender = input.from && !parent ? await s.current(input.from) : undefined
+    const sender = input.from && !parent ? await currentTask(s, input.from) : undefined
     const first = draft.messages[0]
     if (sender && first) first.peer = await s.peerOf(sender, 'peer', 'task', input.prompt)
     const head = first ? sourceHeader(first) : ''
@@ -162,9 +163,9 @@ export function registerConversationRoutes(s: TasksScope) {
     const p = tasksContract.send.body.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
     const { text, attachments, interrupt, messageId, from, userAction } = p.data
-    const cur = await s.current(id)
+    const cur = await currentTask(s, id)
     // 别的对话替它发的：按「同项目的其他对话」记来源；发件对话找不到（被删了）就当用户消息，不丢这条
-    const sender = from && from !== id ? await s.current(from) : undefined
+    const sender = from && from !== id ? await currentTask(s, from) : undefined
     const peer = sender ? await s.peerOf(sender, 'peer', 'task', text) : undefined
     const liveNow = s.live.get(id)
     taskLog(id, '收到消息', {
@@ -409,7 +410,7 @@ export function registerConversationRoutes(s: TasksScope) {
       )
     log.info('task', '用户关闭了对话的 Agent', { task: id })
     taskLog(id, '关闭 Agent')
-    const now = await s.current(id)
+    const now = await currentTask(s, id)
     if (!now) return s.bad(c, t('任务不存在'), 404)
     return c.json(await s.withLive(now))
   })

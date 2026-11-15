@@ -4,7 +4,7 @@
  */
 import { z } from 'zod'
 import { t } from '../../shared/i18n.ts'
-import { settleWait } from '../../shared/plan.ts'
+import { settleWait } from '../../shared/plan/index.ts'
 import type { Task } from '../../shared/schema.ts'
 import { subtreeTaskIds } from '../../shared/run/usage.ts'
 import {
@@ -16,6 +16,7 @@ import {
 } from '../../shared/user-action.ts'
 import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask } from './read.ts'
 
 const Settle = z.object({
   how: z.enum(['done', 'cannot', 'skipped']),
@@ -59,7 +60,7 @@ export function registerUserActionRoutes(s: TasksScope) {
     void s
       .wakeConv(id, r.prompt, { panel: 'action' })
       .catch(s.alertOn(id, 'delivery', t('没能把你的操作结果交给它，发一条消息或点「继续执行」会接着处理')))
-    return c.json(await s.current(id))
+    return c.json(await currentTask(s, id))
   })
 }
 

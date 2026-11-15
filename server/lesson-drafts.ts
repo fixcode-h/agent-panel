@@ -11,7 +11,7 @@ import {
   lessonDraftsFromReport,
   missingDrafts,
 } from '../shared/lesson-draft.ts'
-import type { SummaryRecord } from '../shared/summary.ts'
+import type { SummaryRecord } from '../shared/summary/index.ts'
 import { t } from '../shared/i18n.ts'
 import { log } from './log.ts'
 

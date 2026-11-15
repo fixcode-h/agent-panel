@@ -1,6 +1,6 @@
 # 停下父对话再继续，子对话接着做完了父对话却一直等
 
-- 状态：已修复（`shared/resume-kids.test.ts`、`shared/plan.test.ts`、`scripts/e2e/09-subagent-runtime.mjs` 通过）
+- 状态：已修复（`shared/resume-kids.test.ts`、`shared/plan/index.test.ts`、`scripts/e2e/09-subagent-runtime.mjs` 通过）
 - 症状：停下父对话再点继续，子对话被拉起来做完了，父对话不被叫醒、计划那一步挂着「需要修复」；面板推父对话查原因，它就另建子对话重做
 - 入口：`shared/task.ts` 的 `childReport`；`server/tasks/child-messages.ts` 的 `noteParent`；`server/tasks/conversation-routes.ts` 的 `resumeKids`；`shared/resume-kids.ts` 的 `rearmKidWait`
 - 根因类型：暂停被当成失败结算，结果回来时等待已经不在「等待中」
@@ -26,6 +26,6 @@
 
 ## 防线
 
-- `shared/plan.test.ts`：各停止原因的结算（暂停的继续等、不会回来的收成失败）。
+- `shared/plan/index.test.ts`：各停止原因的结算（暂停的继续等、不会回来的收成失败）。
 - `shared/resume-kids.test.ts`：恢复等待、清掉「需要修复」、主步骤回到等待中；用量上限也连带拉起。
 - `scripts/e2e/09-subagent-runtime.mjs`：「停下就是暂停」——停父对话后那一步还在等，继续后原来的子对话做完、计划收到结果、没有另建子对话。

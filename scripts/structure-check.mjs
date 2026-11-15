@@ -27,6 +27,9 @@ const GIT_RE = /\(\s*'git'\s*,/g
 /** 模块顶层的可变状态：let，或者 const x = new Map / Set / WeakMap / WeakSet */
 const STATE_RE = /^(?:export )?(?:let |const [\w$]+(?:\s*:[^=]+)?\s*=\s*new (?:Map|Set|WeakMap|WeakSet)\b)/
 
+/** 和同名目录并存、暂时不能挪的文件：shared/clis.ts、web/src/lib/api.ts 是插件开放模块（shared/plugins/host-modules.json），挪了旧插件装不上；shared/locales/en.ts 不能进 en/（i18n-check 把 en/ 里每个文件都当文案表读） */
+const TWIN_OK = ['shared/clis.ts', 'web/src/lib/api.ts', 'shared/locales/en.ts']
+
 const capsFile = (root) => path.join(root, 'scripts', 'structure-caps.json')
 
 function listFiles(root) {
@@ -64,6 +67,7 @@ export function measure(root) {
     flatFiles: {},
     taskFields: 0,
     preprocess: 0,
+    liveFallback: 0,
     orchInlineTools: 0,
     hostMembers: {},
     gitCalls: {},
@@ -102,6 +106,9 @@ export function measure(root) {
       for (const [, name] of text.matchAll(/^export interface (Orch\w+|\w+Host)\b/gm))
         m.hostMembers[name] = membersAfter(codeLines, new RegExp(`^export interface ${name}\\b`))
     if (f === 'server/orch-mcp.ts') m.orchInlineTools = (text.match(/^\s+name: '[a-z_]+',$/gm) ?? []).length
+    // 手写「先看内存那份、没有再读盘」：各写各的就会漏掉 idle() 的纠正，入口统一在 server/tasks/read.ts
+    if (f.startsWith('server/') && f !== 'server/tasks/read.ts')
+      m.liveFallback += (text.match(/live\.get\([^)]*\)\?\.task \?\?/g) ?? []).length
     if (!demo && /^(shared|server)\//.test(f)) m.preprocess += (text.match(/z\.preprocess\(/g) ?? []).length
 
     // git 只经 server/exec/git.ts 调
@@ -132,6 +139,11 @@ export function measure(root) {
     }
   }
   for (const dir of FLAT_DIRS) m.flatFiles[dir].sort()
+  // 同名的文件和目录并存时（x.ts 和 x/），新代码该放哪边说不清：入口挪进目录当 index.ts
+  const dirs = new Set(files.map((f) => path.posix.dirname(f)))
+  m.twins = files.filter(
+    (f) => /\.tsx?$/.test(f) && !isTest(f) && dirs.has(f.replace(/\.tsx?$/, '')) && !TWIN_OK.includes(f),
+  )
   return m
 }
 
@@ -173,9 +185,17 @@ export function checkStructure(root) {
         errors.push(
           `${dir}/${f}：${dir}/ 顶层不再加新文件。放进所属模块的子目录（没有就按 docs/MODULE-MAP.md 的模块新建一个，比如 ${dir}/<模块>/）`,
         )
+  for (const f of m.twins)
+    errors.push(
+      `${f}：和同名目录 ${f.replace(/\.tsx?$/, '')}/ 并存。把它挪进目录当 index.ts（引用跟着改），或者改个不同名的名字`,
+    )
   if (m.taskFields > caps.taskFields)
     errors.push(
       `shared/schema.ts 的 TaskData 顶层字段 ${m.taskFields} 个（基线 ${caps.taskFields}）。新字段放进所属功能的子对象；只在运行时算、不存盘的状态不要加到 Task 上（docs/lessons/structure.md）`,
+    )
+  if (m.liveFallback > (caps.liveFallback ?? 0))
+    errors.push(
+      `手写「live.get(id)?.task ?? …」${m.liveFallback} 处（基线 ${caps.liveFallback ?? 0}）。一律走 server/tasks/read.ts：判断、显示用 currentTask / metaTask（会纠正盘上残留的「执行中」），要就地改再落盘的用 readTask，手里已有一份的用 freshTask`,
     )
   if (m.preprocess > caps.preprocess)
     errors.push(
@@ -183,7 +203,7 @@ export function checkStructure(root) {
     )
   if (m.orchInlineTools > caps.orchInlineTools)
     errors.push(
-      `server/orch-mcp.ts 里直接写的工具定义 ${m.orchInlineTools} 个（基线 ${caps.orchInlineTools}）。新工具一个文件：导出定义、给不给的条件、用法说明和处理函数（参照 server/end-turn-tool.ts），orch-mcp.ts 只接线`,
+      `server/orch-mcp.ts 里直接写的工具定义 ${m.orchInlineTools} 个（基线 ${caps.orchInlineTools}）。新工具一个文件：导出定义、给不给的条件、用法说明和处理函数（参照 server/panel-tools/end-turn-tool.ts），orch-mcp.ts 只接线`,
     )
   for (const [name, n] of Object.entries(m.hostMembers)) {
     const cap = caps.hostMembers[name] ?? HOST_NEW_MAX
@@ -220,6 +240,7 @@ function update(root) {
     caps.flatFiles[dir] = (caps.flatFiles[dir] ?? []).filter((f) => m.flatFiles[dir].includes(f))
   caps.taskFields = Math.min(caps.taskFields, m.taskFields)
   caps.preprocess = Math.min(caps.preprocess, m.preprocess)
+  caps.liveFallback = Math.min(caps.liveFallback ?? m.liveFallback, m.liveFallback)
   caps.orchInlineTools = Math.min(caps.orchInlineTools, m.orchInlineTools)
   // 新开的小接口按现状记进基线（检查时没记过的按 HOST_NEW_MAX 放行）；记过的只降不升
   caps.hostMembers = {

@@ -20,7 +20,7 @@ import { reopenedAfterCancel, reopenInfo } from './reopen.ts'
 import { Diagnosis } from './diagnosis-schema.ts'
 import type { Task } from '../schema.ts'
 import { childWait, childFlowOf, convState, diagnosisPending } from '../task.ts'
-import { applyPlan, openPlan } from '../plan.ts'
+import { applyPlan, openPlan } from '../plan/index.ts'
 
 /** Bug 先交诊断报告、用户确认了再往下走（ADR 0045）；按阶段走：论证 → 根因 → 修复方案 → 验证（用户 2026-11-05 定的） */
 setLang('zh')

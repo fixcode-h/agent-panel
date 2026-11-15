@@ -14,6 +14,7 @@ import { placedFiles } from '../attachments.ts'
 import { normClaimPath, overlaps } from '../claims.ts'
 import { gitChanges, gitHead, gitNumstat } from '../exec/git.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask } from './read.ts'
 
 /**
  * 父对话的就地微改动（shared/inline-edit.ts）：开始时的护栏、结束时的快速检查和轻评审门禁、越界核对。
@@ -25,7 +26,7 @@ export function createInlineEdit(sc: TasksScope) {
    * 独立分支划的范围或已经改了的文件）时拒绝；能开始就记下声明的范围和工作区基线，结束时按它核对真实改动
    */
   async function beginInlineEdit(parent: Task, dir: string, files: string[], reason: string) {
-    const kids = (await sc.store.childrenOf(parent.id)).map((k) => sc.live.get(k.id)?.task ?? k)
+    const kids = (await sc.store.childrenOf(parent.id)).map((k) => freshTask(sc, k))
     const merging = kids
       .filter((k) => k.wrapRequest && (k.wrapRequest.state === 'merging' || k.wrapRequest.state === 'testing'))
       .map((k) => k.title)

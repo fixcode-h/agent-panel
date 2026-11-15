@@ -5,7 +5,7 @@
  * 「schema 替它补了默认值」的情况，也就是正式后端或演示后端少给了字段。
  */
 import { z } from 'zod'
-import { Schedule, ScheduleInput } from '../schedule.ts'
+import { Schedule, ScheduleInput } from '../schedule/index.ts'
 import {
   Agent,
   AgentInput,

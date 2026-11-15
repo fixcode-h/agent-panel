@@ -451,7 +451,7 @@ for (const f of uiShards) {
 }
 
 // 15. 大文件只许变小：scripts/file-caps.json 里列的文件不能超过各自的上限，没列的源码文件不能超过 default。
-// server/tasks.ts 拆分前四天涨了 1000 行；上限只拦「继续变大」，新代码放进拆出来的模块（见 scripts/file-caps.mjs）
+// server/tasks/index.ts 拆分前四天涨了 1000 行；上限只拦「继续变大」，新代码放进拆出来的模块（见 scripts/file-caps.mjs）
 {
   const { capsPath, linesOf, sourceFiles } = await import('./lib/file-caps.mjs')
   const caps = JSON.parse(readFileSync(capsPath(root), 'utf8'))
@@ -505,7 +505,7 @@ for (const f of uiShards) {
 }
 
 // 18. 面板工具按能力给，不按「是不是某个页面」的身份开关（ADR 0038，见 docs/lessons/panel-tools.md）：
-// 模式上限只在 shared/engine.ts 的 makeOrchestra 取一次，算成 canSpawn / team 这类能力字段，工具清单、说明、握手只读能力
+// 模式上限只在 shared/engine/index.ts 的 makeOrchestra 取一次，算成 canSpawn / team 这类能力字段，工具清单、说明、握手只读能力
 for (const f of ['server/orch-mcp.ts', 'server/orch-hint.ts', 'server/ask-mcp.ts']) {
   if (!existsSync(path.join(root, f))) continue
   read(f)
@@ -534,15 +534,15 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
 }
 
 // 19b. 钩子同样不读回复文字（ADR 0049）：CLI 钩子的输入里带着模型最后一句话（Claude Code / Codex 的 last_assistant_message、
-// Command Code mod 的 lastAssistantText），转发前就丢掉。面板代码里只许在 shared/hooks.ts 列出要丢的字段，别处出现就拦下
+// Command Code mod 的 lastAssistantText），转发前就丢掉。面板代码里只许在 shared/hooks/index.ts 列出要丢的字段，别处出现就拦下
 for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(x) && !/\.test\.tsx?$/.test(x))) {
-  if (f === 'shared/hooks.ts') continue
+  if (f === 'shared/hooks/index.ts') continue
   read(f)
     .split('\n')
     .forEach((line, i) => {
       if (/last_assistant_message|lastAssistantText/.test(line))
         errors.push(
-          `${f}:${i + 1}：钩子不读模型回复的文字（ADR 0049），要丢的字段只写在 shared/hooks.ts 和 CLI 定义的 dropInput 里`,
+          `${f}:${i + 1}：钩子不读模型回复的文字（ADR 0049），要丢的字段只写在 shared/hooks/index.ts 和 CLI 定义的 dropInput 里`,
         )
     })
 }
@@ -554,7 +554,7 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
   const ruleFiles = [
     'shared/builtin/agents.ts',
     'shared/builtin/bug-method.ts',
-    'shared/engine.ts',
+    'shared/engine/index.ts',
     // 从 engine.ts 拆出去的提示词段落、子任务交回的说明：拆文件不能让句子查重漏掉它们
     'shared/engine/prompt-parts.ts',
     'shared/engine/helpers.ts',

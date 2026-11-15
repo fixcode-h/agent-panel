@@ -1,6 +1,6 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_FLOW: Record<string, string> = {
-  // 计划 / 任务带的执行上限（shared/engine.ts、server/exec/runner.ts）
+  // 计划 / 任务带的执行上限（shared/engine/index.ts、server/exec/runner.ts）
   '这次执行已经用了 {used} token，达到计划设定的上限 {limit}，已暂停。已经产出的内容都保留着，点「继续执行」会重新计。':
     'This run has used {used} tokens, reaching the limit of {limit} set on the plan and was paused. Everything produced so far is kept; click "Continue" to start a fresh allowance.',
   '这次执行已经用了 {used} 分钟，达到计划设定的上限 {limit} 分钟，已暂停。已经产出的内容都保留着，点「继续执行」会重新计时。':

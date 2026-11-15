@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { BrowserTab } from '../shared/browser-ext.ts'
 import { t } from '../shared/i18n.ts'
-import { appDir } from './update.ts'
+import { appDir } from './update/index.ts'
 import { log } from './log.ts'
 import { DATA_DIR } from './store.ts'
 

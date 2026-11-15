@@ -1,10 +1,10 @@
 # GitHub API 限流时检查到新版本：只能去 GitHub 下载，更新说明也是空的
 
-- 状态：已修复（`server/update.test.ts`「Release feed 解析……」「API 被限流时退到 Release feed……」通过）
+- 状态：已修复（`server/update/index.test.ts`「Release feed 解析……」「API 被限流时退到 Release feed……」通过）
 - 症状：设置 · 版本更新里点「检查更新」，提示有新版本，但右边只有「到 GitHub Releases 下载」，没有「更新到 …」按钮；最近的版本里这一条没有「下载」，展开是「没有更新说明。」
-- 入口：`server/update.ts` 的 `parseFeed`、`releaseAssets`、`htmlToMarkdown`；`web/src/components/settings/UpdateSection.tsx` 的「有新版本」一行和 `ReleaseRow`
+- 入口：`server/update/index.ts` 的 `parseFeed`、`releaseAssets`、`htmlToMarkdown`；`web/src/components/settings/UpdateSection.tsx` 的「有新版本」一行和 `ReleaseRow`
 - 根因类型：兜底数据源字段不全，界面按缺字段降级成只能看
-- 模块：`server`（`server/update.ts`）、`scripts`（`scripts/package.mjs` 的包名注释）
+- 模块：`server`（`server/update/index.ts`）、`scripts`（`scripts/package.mjs` 的包名注释）
 - 关键词：检查更新、有新版本、到 GitHub Releases 下载、没有下载、没有更新说明、更新说明为空、Release feed、releases.atom、限流、403、tarUrl、sumsUrl
 
 ## 现象
@@ -28,4 +28,4 @@ GitHub API 每小时只给 60 次未认证请求，被限流（403 / 429）、�
 
 ## 回归验证
 
-`server/update.test.ts`：feed 解析断言更新说明转成 Markdown、Linux / Windows / macOS 各自的安装包地址和校验文件地址；限流退到 feed 的用例断言列表里的 feed 版本带下载地址。
+`server/update/index.test.ts`：feed 解析断言更新说明转成 Markdown、Linux / Windows / macOS 各自的安装包地址和校验文件地址；限流退到 feed 的用例断言列表里的 feed 版本带下载地址。

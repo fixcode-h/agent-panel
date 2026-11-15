@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { openable, openPath, resolvePath, searchRoots } from './paths.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask } from './read.ts'
 
 /** 一次最多解析这么多个：一条长回复里的路径通常十几个，再多就是传错了 */
 const MAX_PATHS = 200
@@ -16,7 +17,7 @@ export function registerPathRoutes(s: TasksScope) {
   /** 这个对话找文件的根；导入的任务没有本机目录，读不了时按原因报错 */
   const rootsOf = async (id: string) => {
     const dir = await s.readableDir(id)
-    const tk = (await s.current(id))!
+    const tk = (await currentTask(s, id))!
     const project = tk.projectId ? await s.deps.projects.get(tk.projectId) : null
     const homes = [dir, project?.path ?? ''].filter(Boolean)
     return { tk, homes, roots: searchRoots(dir, project?.path ?? '') }

@@ -7,7 +7,7 @@
  */
 import { spansDiff } from '../exec/git.ts'
 import { log } from '../log.ts'
-import { SUMMARY_DIFF_TASK_CHARS, SUMMARY_DIFF_TOTAL_CHARS, type DayProject } from '../../shared/summary.ts'
+import { SUMMARY_DIFF_TASK_CHARS, SUMMARY_DIFF_TOTAL_CHARS, type DayProject } from '../../shared/summary/index.ts'
 
 /** 不放进材料的文件：测试、文档、锁文件、快照和样本，这些不是「修复的关键代码」 */
 const SKIP_FILE =

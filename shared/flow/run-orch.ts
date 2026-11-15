@@ -6,7 +6,7 @@
  */
 import type { RunEntry, PickedFlow } from './run.ts'
 import { runLine } from './run.ts'
-import { bindWait, ensureChildStep } from '../plan.ts'
+import { bindWait, ensureChildStep } from '../plan/index.ts'
 import type { Task } from '../schema.ts'
 
 /** 补充要求交给谁：current 正在跑的节点；later 之后所有节点（运行级说明）；其余当成节点名 / id */

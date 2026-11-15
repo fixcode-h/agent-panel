@@ -17,8 +17,8 @@
 
 | 位置 → 现状（改动前）                                                                                                                                                                                                                                                                                       |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/engine.ts` 的 `Orchestra.plain` → 按「是不是 Chat 页」一刀切：`server/orch-mcp.ts` 的 `PLAIN_TOOLS` 只留后台命令三件                                                                                                                                                                                |
-| `shared/engine.ts` 的 `conversationPrompt` → Chat 页和项目对话共用一套。沙盒实测 Chat 页读到「## 授权情况 …… 调用面板工具 ask_push」（这一轮没有 `ask_push`）、「## 搜索排除（这个项目）」「## 工作流」「## 执行方式 …… 你是用户直接对话的项目对话」「## 总结格式」，都是项目对话那套漏进来的               |
+| `shared/engine/index.ts` 的 `Orchestra.plain` → 按「是不是 Chat 页」一刀切：`server/orch-mcp.ts` 的 `PLAIN_TOOLS` 只留后台命令三件                                                                                                                                                                          |
+| `shared/engine/index.ts` 的 `conversationPrompt` → Chat 页和项目对话共用一套。沙盒实测 Chat 页读到「## 授权情况 …… 调用面板工具 ask_push」（这一轮没有 `ask_push`）、「## 搜索排除（这个项目）」「## 工作流」「## 执行方式 …… 你是用户直接对话的项目对话」「## 总结格式」，都是项目对话那套漏进来的         |
 | Chat 页的对话 `agentId` 为空，按「无角色」跑，只追加 `DEFAULT_CHAT_PROGRESS`；用户的自建角色在 Chat 页选不了（`TaskComposer` 的 `standalone` 时 `wanted = ''`）                                                                                                                                             |
 | `server/ask-mcp.ts` 握手 `orchestration.enabled = !!s.orch && !s.orch.plain` → 按身份字段声明，Pi 桥接扩展据此核对 `CORE_TOOLS`                                                                                                                                                                             |
 | CLI 自带的待办 → Claude Code 的 `TodoWrite`、Codex 的 `turn/plan/updated` 已经解析成 `task.todos`（`server/exec/parsers.ts`、`server/exec/rpc/codex.ts`），没有被禁用，但只有工作流任务的「任务进度」面板显示它；Chat 页看不到。面板计划段里写着「不要用 CLI 自带的待办」，只在项目对话（`planPart`）里出现 |
@@ -58,7 +58,7 @@
 | `isChatMode`（原 `isPlainChat` 改名）、`scopeOf`、`chatRoleFor` / `emptyRole`、`scopeError`、`normalizeScope`、`agentOnlyError` | `shared/conv-mode.ts`                                   |
 | `turnRole`（删掉的 Chat 角色回退助手）、`findRole`（同名先找本类）、`settledTodos`（做完的待办收起）；CLI 定义 `todos`          | `shared/conv-mode.ts`、`shared/cli-spec.ts`             |
 | `chatConversationPrompt`、`backgroundPart`（从 engine 搬来，两边共用）                                                          | `shared/chat-prompt.ts`                                 |
-| `Orchestra.plain` 删除，加 `canSpawn` / `team`；`planning` 加 `!isChatMode`；`commonAgents` 去掉 Chat 角色                      | `shared/engine.ts`、`shared/agents/role.ts`             |
+| `Orchestra.plain` 删除，加 `canSpawn` / `team`；`planning` 加 `!isChatMode`；`commonAgents` 去掉 Chat 角色                      | `shared/engine/index.ts`、`shared/agents/role.ts`       |
 | `PLAIN_TOOLS` 删除，按 `team` / `canSpawn` 给工具；`orchHint` 搬到单独文件，`!o.team` 分支只讲后台命令                          | `server/orch-mcp.ts`、`server/orch-hint.ts`             |
 | `ORCH_CORE_TOOLS`；握手现算                                                                                                     | `shared/panel-tools.ts`、`server/ask-mcp.ts`            |
 | 推送授权按 `!task.projectId` 判                                                                                                 | `shared/push-auth.ts`                                   |

@@ -131,6 +131,9 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   菱形: 'Diamond',
   圆点: 'Dot',
   渐隐底线: 'Fading underline',
+  短标尺: 'Ruler',
+  短标尺长度: 'Ruler length',
+  短标尺粗细: 'Ruler thickness',
   素净: 'Neutral',
   柔彩: 'Soft color',
   浮卡: 'Cards',
@@ -152,8 +155,8 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   提示块: 'Callouts',
   'Mermaid 图': 'Mermaid diagrams',
   标题装饰: 'Heading decoration',
-  '标题前的竖条、菱形、短横、圆点，或标题下一条渐隐的线，颜色跟标题。':
-    'A bar, diamond, dash or dot before the heading, or a fading line under it, in the heading color.',
+  '标题前的竖条、菱形、短横、圆点，或标题下的渐隐底线、短标尺（标题色短条压在一条细线上），颜色跟标题。':
+    'A bar, diamond, dash or dot before the heading, or a line under it: a fading underline, or a ruler (a short bar in the heading color over a hairline). Uses the heading color.',
   代码块行号: 'Line numbers',
   '只有一行的代码块不显示；复制时不会带上行号。': 'Hidden for one-line blocks; never copied with the code.',
   引用圆角: 'Quote corner radius',

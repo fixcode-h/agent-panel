@@ -30,7 +30,7 @@ import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrat
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
-import { activePlan, holdWait, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
+import { activePlan, holdWait, planProgress, openWork, settlePlan } from '../../shared/plan/index.ts'
 import { panelWrap } from '../../shared/wrap-up.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'
@@ -38,6 +38,7 @@ import { RULE_CMD, isolated, HELPER_STOP_TIMEOUT_MS, HELPER_STOP_POLL_MS } from 
 import type { TasksScope } from './scope.ts'
 import { letterResult } from '../../shared/children/letter.ts'
 import { childSummaryCards } from '../../shared/summary/card.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 子对话的生命周期：在跑的计数、彻底完成的判定和推进（advanceChildTo，ADR 0003）、合回、上报父对话、规则命令、启动子对话。
@@ -76,7 +77,7 @@ export function createChildren(sc: TasksScope) {
     const now = Date.now()
     if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
       // 执行中的对话以内存里那份为准：请求刚弹出来还没落盘时，父对话也要马上变成「等你处理」
-      const all = (await sc.store.list()).map((k) => sc.live.get(k.id)?.task ?? k)
+      const all = (await sc.store.list()).map((k) => freshTask(sc, k))
       // 和任务列表、演示后端同一份扫法（shared/children/row.ts）
       childScan = {
         at: now,
@@ -360,7 +361,7 @@ export function createChildren(sc: TasksScope) {
     if (sc.shuttingDown) return
     // 卡住了、面板正在重启它或找人接手：结论出来前不报中断 / 失败（恢复了照常报，换人接手由那边写信）
     if (sc.childRecovering(childId)) return
-    const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
+    const tk = await readTask(sc, childId)
     if (!tk?.parentTaskId) return
     // 它完成、失败、没了都可能影响排在它后面的子对话（shared/children/after.ts）：顺带扫一遍
     void sc
@@ -521,7 +522,7 @@ export function createChildren(sc: TasksScope) {
    * 只差「请父对话收尾」却没请的提醒它一次；其余照常上报现在的状态
    */
   async function settleChildWorktree(childId: string, turn?: TurnInfo) {
-    const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
+    const tk = await readTask(sc, childId)
     if (!tk?.parentTaskId) return
     // 被叫停的（父对话停下、用户暂停……）只上报现在的状态（已中断），不在这时收口成完成、删独立分支：
     // 没开工的子对话按完成条件什么都不缺，会被误判成交付完了（摸底报告第 3 条）。继续时由它接着做

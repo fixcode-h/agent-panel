@@ -913,7 +913,7 @@ export async function releaseWorktree(repo: string, wt: TaskWorktree, holds: Chi
   if (!st?.merged) return childHoldText(['unmerged'])
   const problems = await removeWorktree(repo, wt, true)
   if (!problems) return ''
-  // 不抛错：调用方（server/tasks.ts 的 completeChild）把抛错当成「回收完了」吞掉，失败会被藏起来。
+  // 不抛错：调用方（server/tasks/index.ts 的 completeChild）把抛错当成「回收完了」吞掉，失败会被藏起来。
   // 返回非空原因让它按「还没收口」处理：任务不会被标成干净回收，下一轮还会再试一次。
   log.error('worktree', '独立目录或分支没删掉，任务不算回收完成', {
     dir: wt.path,

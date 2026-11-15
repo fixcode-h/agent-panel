@@ -2,7 +2,7 @@
 
 - 状态：已修复（e2e `03-chat`「动了手却没列计划就收尾」、`09-subagent-runtime`「子任务没交最后的总结就结束」通过）
 - 症状：对话（Claude Code + `deepseek-v4.1-flash`）查了一半，回复「情况基本清楚了……我再确认这些连接的状态和目标 IP……」或「现在删除远端这 12 个已合并分支。」后这一轮就结束了，没有调用任何工具，停在「等下一句」，用户说「继续啊」才接着做；子任务说完「继续读操作原语与快照/选择器。」就交回，结果只有这一句
-- 入口：`server/tasks/run.ts` 的 `onTurnEnd` → `server/tasks/drive.ts` 的 `nudgePlan` / `nudgeNoPlan`（2026-11-02 从 `children.ts` 拆出）；子任务是 `shared/engine.ts` 的 `runHelper` → `shared/helper-summary.ts` 的 `runWithSummary`
+- 入口：`server/tasks/run.ts` 的 `onTurnEnd` → `server/tasks/drive.ts` 的 `nudgePlan` / `nudgeNoPlan`（2026-11-02 从 `children.ts` 拆出）；子任务是 `shared/engine/index.ts` 的 `runHelper` → `shared/helper-summary.ts` 的 `runWithSummary`
 - 根因类型：模型提前结束回合（CLI 正常报这一轮结束，stop_reason 是 end_turn），面板的兜底只认「计划没做完」，没列计划的对话和子任务没人推
 - 模块：`server`（`server/tasks/drive.ts`、`shared/helper-summary.ts`）
 - 关键词：Chat 模式、只说不做、提前结束回合、继续、没有计划、催办、deepseek、Codex、接着读、删除远端分支、子任务、总结

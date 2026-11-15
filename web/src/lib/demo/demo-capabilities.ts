@@ -1,7 +1,7 @@
 import { probeRow, type CapabilityProbe, type CapabilityProbeInput } from '@shared/projects/capability-probe'
 
 /**
- * 演示后端的项目「能力」探查（web/src/lib/demo-backend.ts 转过来）：演示不装插件，这里按市场里的
+ * 演示后端的项目「能力」探查（web/src/lib/demo/demo-backend.ts 转过来）：演示不装插件，这里按市场里的
  * 表格、UE 两个按项目生效的插件给示例行，推荐理由按演示项目的目录名给，拼行用和正式后端同一个 probeRow
  */
 const DEMO_PLUGINS = [

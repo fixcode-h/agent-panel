@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { Task, TaskStep } from '../../shared/schema.ts'
-import { activePlan, openWork, planProgress } from '../../shared/plan.ts'
+import { activePlan, openWork, planProgress } from '../../shared/plan/index.ts'
 import { planProgressKey, shortKey } from '../../shared/drive.ts'
 import { panelTrail } from '../../shared/end-turn.ts'
 import { subtreeTaskIds } from '../../shared/run/usage.ts'
@@ -27,9 +27,10 @@ import { commandSummary, ownedEntries, processSnapshot } from '../exec/proc-stat
 import { isViewing, isWatched } from '../presence.ts'
 import { getSettings } from '../settings.ts'
 import { taskLogPath } from './log.ts'
-import { currentVersion } from '../update.ts'
+import { currentVersion } from '../update/index.ts'
 import type { TasksScope } from './scope.ts'
 import { awaitedJob } from '../background.ts'
+import { readTask } from './read.ts'
 
 /*
  * 状态诊断的事实收集：一棵对话树（对话、子对话、子任务、工作流节点）每个节点的现场快照、落盘状态、
@@ -111,7 +112,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       }))
   const tasks = new Map<string, Task>()
   for (const id of ids) {
-    const tk = sc.live.get(id)?.task ?? (await sc.store.get(id))
+    const tk = await readTask(sc, id)
     if (tk) tasks.set(id, tk)
   }
   const nodes: LifeNode[] = []

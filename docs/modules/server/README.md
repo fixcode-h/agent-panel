@@ -11,7 +11,7 @@
 
 - 本机 HTTP API：Hono + `@hono/node-server`，只监听 `127.0.0.1`（因为会启动本机 CLI、读写项目目录），同时提供前端静态文件（生产模式由 `server/static.ts` 托管构建产物：gzip + 缓存头 + ETag，见 [performance.md](performance.md)）。
 - 数据存储：用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件，读写集中在 `server/store.ts`，任务单独存在 `server/tasks/store.ts`。
-- 项目与任务：项目扫描和分类（配合 `shared/projects/scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/tasks/store.ts`）。
+- 项目与任务：项目扫描和分类（配合 `shared/projects/scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks/index.ts`、`server/tasks/store.ts`）。
 - 按模块分子目录（重构文档第 14 条，一次搬一个模块）：对话相关的文件都在 `server/tasks/`，原来顶层的 `server/task-*.ts`（含测试）搬进来去掉了 `task-` 前缀（如 `server/tasks/store.ts`、`server/tasks/paths.ts`）。`server/task-files.ts` 开放给插件（`shared/plugins/host-modules.json`），留在顶层；开放模块是插件接口的一部分，不搬。CLI 的配置、安装、命令列表、信任这些服务端逻辑在 `server/cli/`（原 `server/cli-*.ts`；API 模式的 `server/api-*.ts` 也搬进来，保留 `api-` 前缀）；项目的经验、教训、Skill、MCP、锁在 `server/projects/`（原 `server/project-*.ts`，`server/projects-analyze.ts` 开放给插件，留在顶层）；另有 `server/bg/`（后台命令）、`server/docs/`（项目文档目录）、`server/experience/`（经验库）、`server/knowledge/`（知识候选、没配上的查询、提炼，ADR 0066）、`server/package/`（出包配置）、`server/children/`、`server/panel/`、`server/update/`、`server/summary/`、`server/turn/`；模型目录搬进 `server/cli/`（保留 `model-` 前缀）。
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载，CLI 自己的插件（Pi 的扩展包，装删更新跑 CLI 的命令）和插件市场、CLI 自己配置文件里的设置项、项目信任的标记文件检测（ADR 0050）（`server/detect.ts`、`server/models.ts`、`server/cli/packages.ts`、`server/cli/gallery.ts`、`server/cli/config-settings.ts`、`server/cli/trust-api.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`ui-design/server/design-mcp.ts`）。编排工具是一张注册表（`server/panel-tools/registry.ts` 的 `PANEL_TOOLS`）：每个工具一个条目 `{ name, aliases?, when, def?, hint?, call }`，「给不给」（`when`）、定义、用法说明里那一句、执行写在同一处，`orchTools`（清单，表的顺序就是清单顺序）、`orchHint`（`server/orch-hint.ts` 只排各身份的句式，条件和单个工具的措辞取 `toolHint` / `hasTool`）、`callOrchTool`（按名字和旧名字找条目，不看 `when`）都从表生成。加工具：在 `server/panel-tools/` 对应的文件（或已有的 `*-tool.ts`）写条目、按位置加进 `PANEL_TOOLS`、名字登记进 `shared/panel-tools.ts`，并在 `shared/mcp-catalog/panel-guides.ts` 写作用和什么时候用（类型强制，交给 Agent 的说明和设置 →「MCP」都取它，ADR 0064）；`server/panel-tools/registry.test.ts` 核对登记和重名。插件工具不进这张表：它们挂在各自的 MCP 服务上（工具名带插件的服务名），守卫和完成依据靠工具声明的 `effect`（插件接口 3，`server/plugins/effects.ts`）看见它们。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
@@ -19,7 +19,7 @@
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见 [library.md](library.md)「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见 [network.md](network.md)「GitHub 出网与代理回退」。
 
-这份 README 只放概览、`server/tasks.ts` 的拆分表和入口，各块的细节在同目录的子页面里（2026-10-31 从这份 README 原样拆出）：
+这份 README 只放概览、`server/tasks/index.ts` 的拆分表和入口，各块的细节在同目录的子页面里（2026-10-31 从这份 README 原样拆出）：
 
 | 子页面                                           | 内容                                                                                                         |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
@@ -33,13 +33,13 @@
 | [每轮改动卡片与撤销](turn-changes.md)            | 对话每轮的改动记录和撤销                                                                                     |
 | [bugs.md](bugs.md)                               | 本模块用户报过的 Bug 索引（生成物，详情在 `bugs/`）                                                          |
 
-## server/tasks.ts 拆分后的位置（ADR 0033）
+## server/tasks/index.ts 拆分后的位置（ADR 0033）
 
-文档、教训和 Bug 记录里写「`server/tasks.ts` 的 `xxx`」的，函数名没变，按下表找所在文件。`tasksApi` 本身只留共用状态、小工具、路由组装和对外接口；模块经 `TasksScope`（`server/tasks/scope.ts`）取闭包里的名字。
+文档、教训和 Bug 记录里写「`server/tasks/index.ts` 的 `xxx`」的，函数名没变，按下表找所在文件。`tasksApi` 本身只留共用状态、小工具、路由组装和对外接口；模块经 `TasksScope`（`server/tasks/scope.ts`）取闭包里的名字。
 
 | 文件                                                                            | 内容                                                                                                                                                                                                                                                                                                                                       | 主要函数                                                                                |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `server/tasks.ts`                                                               | 共用状态和小工具、路由组装、对外接口                                                                                                                                                                                                                                                                                                       | `tasksApi`、`current`、`peerOf`、`placeInTask`、`autoArchive`                           |
+| `server/tasks/index.ts`                                                         | 共用状态和小工具、路由组装、对外接口                                                                                                                                                                                                                                                                                                       | `tasksApi`、`current`、`peerOf`、`placeInTask`、`autoArchive`                           |
 | `server/tasks/run.ts`                                                           | 开始一轮、接着说、消息交付、卡住重开                                                                                                                                                                                                                                                                                                       | `start`、`followUp`、`deliver`、`restartStalled`                                        |
 | `server/tasks/turn-caps-conv.ts`                                                | `createRun` 交给引擎的对话之间的宿主能力（子对话、父子传话、父对话之间、一轮结束回调），共享状态见下面「createRun 的共享状态」                                                                                                                                                                                                             | `conversationCaps`、`TurnCapsCtx`                                                       |
 | `server/tasks/turn-caps-vcs.ts`、`turn-caps-build.ts`、`turn-caps-knowledge.ts` | 同上：版本管理、编译和后台命令、教训 / 经验 / Chat 记忆                                                                                                                                                                                                                                                                                    | `vcsCaps`、`buildCaps`、`knowledgeCaps`                                                 |
@@ -66,7 +66,7 @@
 | `server/tasks/*-routes.ts`                                                      | 接口：`list`（列表、搜索、回收站、保活）、`children`、`process`（子任务 / 后台命令 / 进程 / 内存）、`read`（SSE、整份对话、导出导入）、`conversation`（新建、发消息、预热、继续执行）、`worktree`、`files`、`actions`（改设置、倒回、分叉、压缩、评审、停止、回答）                                                                        | `createTask`、`prewarmChat`、`resumeKids`、`taskDir`、`childUnmerged`                   |
 | `server/tasks/helpers.ts`、`types.ts`、`scope.ts`                               | 不依赖闭包的常量和小工具、`Live` 等类型、`TasksScope` 和 `lazyScope`                                                                                                                                                                                                                                                                       |                                                                                         |
 
-新功能放进对应模块，别加回 `server/tasks.ts`：它在 `scripts/file-caps.json` 里有行数上限（规则检查第 15 条）。
+新功能放进对应模块，别加回 `server/tasks/index.ts`：它在 `scripts/file-caps.json` 里有行数上限（规则检查第 15 条）。
 
 ## 对话进程的生命周期：停止、保活、回收、续接
 
@@ -91,7 +91,7 @@
 | CLI 自己在重试模型请求         | Claude Code 的 `api_retry`、Codex 的 `willRetry`、Pi 的 `auto_retry_*` 都画成「正在重试」，接上后收成已恢复；不能只显示「等待模型」                                                                                                                                                                                                                                          | `server/exec/parsers.ts`、`server/exec/rpc/codex.ts`、`shared/clis/pi.json`                         |
 | 子对话行的图标                 | `childIcon`：`unfinished` 只在 `cliAlive` 时转圈；重启迁移（`restartInterrupted`）按状态判，不受图标影响                                                                                                                                                                                                                                                                     | `shared/task.ts`、`web/src/components/tasks/child-line.ts`                                          |
 | 对话停下后的界面               | 计划没做完、对话停止 / 失败且名下没东西在跑：计划按暂停画（步骤不转圈，用时停在停下那一刻，`planPaused`）；排着的子任务（被打断或还没开始）只在对话执行时进运行区（`helperShown`）；用户亲手停的一定给「继续执行」                                                                                                                                                           | `web/src/components/tasks/PlanPanel.tsx`、`shared/task.ts`、`web/src/components/tasks/TaskView.tsx` |
-| 被打断的子任务                 | 对话继续后用 `spawn_agents` 的 `resume: <id>` 在原来的记录和会话里接着跑；还有被打断没做完的子任务时另派新的会被拒绝，不要了就 `stop_subtask`（被打断的直接记成已终止）                                                                                                                                                                                                      | `shared/engine.ts`、`shared/resume-kids.ts`                                                         |
+| 被打断的子任务                 | 对话继续后用 `spawn_agents` 的 `resume: <id>` 在原来的记录和会话里接着跑；还有被打断没做完的子任务时另派新的会被拒绝，不要了就 `stop_subtask`（被打断的直接记成已终止）                                                                                                                                                                                                      | `shared/engine/index.ts`、`shared/resume-kids.ts`                                                   |
 
 ## 入口
 
@@ -109,7 +109,7 @@
 
 ## 依赖
 
-`shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
+`shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule/index.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
 
 ## 回归验证
 

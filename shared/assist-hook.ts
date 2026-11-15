@@ -1,6 +1,6 @@
 import { HookDef, type HookDefInput } from './hooks/defs.ts'
 import { CLIS } from './clis.ts'
-import { supportedEvents } from './hooks.ts'
+import { supportedEvents } from './hooks/index.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import type { AssistMessage } from './assist.ts'
 import type { Agent } from './schema.ts'

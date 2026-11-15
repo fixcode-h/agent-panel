@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto'
 import type { Agent } from '../../shared/schema.ts'
 import type { getCli } from '../../shared/clis.ts'
-import { NODE_PART } from '../../shared/engine.ts'
+import { NODE_PART } from '../../shared/engine/index.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { defaultChatPrompt } from '../../shared/agents/role.ts'
 import { trustFor } from '../../shared/cli/trust.ts'

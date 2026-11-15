@@ -9,6 +9,7 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { TaskBusyError } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 提问和确认：子对话的提问交给父对话或用户、父对话代答、回答落到对应对话；叫醒对话（wakeConv）也在这里。
@@ -65,7 +66,7 @@ export function createAsks(s: TasksScope) {
    * 父对话里的卡片仍停在「待决定」，还得再答一次
    */
   async function settleAskFromChild(childId: string, answer: string) {
-    const child = s.live.get(childId)?.task ?? (await s.store.get(childId))
+    const child = await readTask(s, childId)
     if (!child?.parentTaskId) return
     const entry = s.live.get(child.parentTaskId)
     const parent = entry?.task ?? (await s.store.get(child.parentTaskId))
@@ -308,7 +309,7 @@ export function createAsks(s: TasksScope) {
     await dropChildAsks(ask.from, [m.id])
     // 问题全文一起交过去：父对话续上等下一句的那次调用时，收件箱不会重新读，只写「在收件箱里」它拿不到内容
     const nudge = await nudgeParent(parent, delegatePrompt(ask))
-    const cur = s.live.get(parent.id)?.task ?? parent
+    const cur = freshTask(s, parent)
     const at = new Date().toISOString()
     if (nudge.ok) {
       // 记下叫起的时间，重复点击据此判断；问题已经随消息交出去了，收件箱里不再留一份免得又答一遍
@@ -372,7 +373,7 @@ export function createAsks(s: TasksScope) {
       await restoreChildAsk(from, ask).catch(() => {})
       return { error: r.info }
     }
-    const cur = s.live.get(parent.id)?.task ?? parent
+    const cur = freshTask(s, parent)
     settleAsks(cur, from, answer, 'user', m.id) // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
     const note = suggestion
       ? `用户已经决定了子对话「${title}」建议的下一步，不用再回答。\n建议：${question}\n用户的选择：${answer}`

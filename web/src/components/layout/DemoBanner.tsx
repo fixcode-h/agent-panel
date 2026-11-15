@@ -14,7 +14,7 @@ export function DemoBanner() {
   const [confirming, setConfirming] = useState(false)
   if (!open) return null
   const reset = async () => {
-    const { resetDemo } = await import('@/lib/demo-backend')
+    const { resetDemo } = await import('@/lib/demo/demo-backend')
     resetDemo()
     location.reload()
   }

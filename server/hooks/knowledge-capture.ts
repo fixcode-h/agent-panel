@@ -1,4 +1,4 @@
-import type { HookFacts } from '../../shared/hooks.ts'
+import type { HookFacts } from '../../shared/hooks/index.ts'
 import type { ErrorPrint, ProjectLesson } from '../../shared/schema.ts'
 import { addEpisode, candidateLesson, dropCandidate, episodePrompt, purposeOf } from '../../shared/knowledge/capture.ts'
 import { errorPrint } from '../../shared/knowledge/match/fingerprint.ts'

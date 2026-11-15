@@ -17,7 +17,7 @@
 | `server/exec/parsers.ts` `genericTool`        | 只认裸名字的面板工具；`panel_run_background` 这类带前缀的名字被 `/run/` 匹配成 CLI 自己的命令（kind `run`），界面认不出是后台命令，不转圈 |
 | `web/src/components/tasks/ToolRow.tsx`        | 认出来的后台命令会转圈，但时间停在调用返回的那一刻；跑完后这一行还是「已放到后台」，看不到结果                                            |
 | `server/background.ts`                        | 只有完成时推结果；没有「多久没输出」「跑了多久」的监视；超时固定两小时；对话停不掉单独一条                                                |
-| `server/tasks.ts` 后台结果的推送              | `sendToChild` 的返回值没看，推送失败只 `log.warn`，结果可能悄悄丢                                                                         |
+| `server/tasks/index.ts` 后台结果的推送        | `sendToChild` 的返回值没看，推送失败只 `log.warn`，结果可能悄悄丢                                                                         |
 | `shared/task.ts` `taskBusy`、`task-unread.ts` | 不看后台命令：这一轮说完、命令还在跑时，侧栏显示成做完了、还标「完成未读」                                                                |
 | `shared/clis.ts` Claude Code                  | 自带的 `Bash run_in_background`、超时自动转后台、`Monitor` 都开着，那些命令面板看不见                                                     |
 

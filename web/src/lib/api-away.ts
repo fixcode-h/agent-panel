@@ -7,12 +7,14 @@ import { json, request } from './api'
  */
 export const awayApi = {
   get: async (): Promise<AwayState> =>
-    import.meta.env.VITE_DEMO ? (await import('./demo-away')).demoAwayGet() : request('/away'),
+    import.meta.env.VITE_DEMO ? (await import('./demo/demo-away')).demoAwayGet() : request('/away'),
   set: async (on: boolean): Promise<AwayState> =>
-    import.meta.env.VITE_DEMO ? (await import('./demo-away')).demoAwaySet(on) : request('/away', json('PUT', { on })),
+    import.meta.env.VITE_DEMO
+      ? (await import('./demo/demo-away')).demoAwaySet(on)
+      : request('/away', json('PUT', { on })),
   /** 不给 id 时全部清掉 */
   drop: async (id?: string): Promise<AwayState> =>
     import.meta.env.VITE_DEMO
-      ? (await import('./demo-away')).demoAwayDrop(id)
+      ? (await import('./demo/demo-away')).demoAwayDrop(id)
       : request(id ? `/away/picks/${encodeURIComponent(id)}` : '/away/picks', { method: 'DELETE' }),
 }

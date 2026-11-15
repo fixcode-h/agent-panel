@@ -7,7 +7,7 @@
 
 import type { ReviewTarget } from '../clis.ts'
 import type { DocRootInfo } from '../doc-root.ts'
-import type { BeforeEndDecision, BeforeEndInput } from '../hooks.ts'
+import type { BeforeEndDecision, BeforeEndInput } from '../hooks/index.ts'
 import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from '../schema.ts'
 import type { Blocker } from '../submitted.ts'
 import type { BugHost, OrchBug } from '../host/bug.ts'

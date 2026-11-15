@@ -5,7 +5,7 @@
 // 等到消息后 st.cur 置空（之后的输出另起一条）、st.prewarmMode 关掉、st.turnMark 和 st.turnEnded 重新开始一段。
 import type { Task, TaskMessage } from '../../shared/schema.ts'
 import type { CliDefinition } from '../../shared/clis.ts'
-import { helperGate } from '../../shared/engine.ts'
+import { helperGate } from '../../shared/engine/index.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { pauseRun, resumeRun, withAttachments } from '../../shared/task.ts'
 import { sourceHeader } from '../../shared/peer-message.ts'

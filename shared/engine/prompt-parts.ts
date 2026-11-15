@@ -16,7 +16,7 @@ import { codeIndexLines } from '../mcp-catalog/code-index.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
 import { subPolicy } from '../sub-policy.ts'
 import type { EngineHost } from './host.ts'
-import { activePlan, planNotice, planNowText, planText, WRAP_UP, type WrapUpAnswer } from '../plan.ts'
+import { activePlan, planNotice, planNowText, planText, WRAP_UP, type WrapUpAnswer } from '../plan/index.ts'
 import type { WrapUpKind } from '../wrap-up.ts'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */

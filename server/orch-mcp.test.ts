@@ -7,9 +7,9 @@ import { FlowRun } from '../shared/tasks/flow-schema.ts'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { chatModePart } from '../shared/chat-prompt.ts'
-import { runEngineTurn } from '../shared/engine.ts'
+import { runEngineTurn } from '../shared/engine/index.ts'
 import type { AgentCall, EngineHost, HelperSpec, Orchestra } from '../shared/engine/host.ts'
-import { activePlan, applyPlan } from '../shared/plan.ts'
+import { activePlan, applyPlan } from '../shared/plan/index.ts'
 import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
 import { askMcpApi, openAskBridge } from './ask-mcp.ts'
 import { PANEL_TOOL_NAMES } from '../shared/panel-tools.ts'
@@ -810,7 +810,7 @@ test('点名的角色不存在：报错，不落到默认「子任务」', async
 
 /**
  * 面板工具按身份裁剪的快照：docs/modules/server-exec/README.md「面板工具按身份裁剪」照这张表写（README 不写个数）。
- * 字段和 shared/engine.ts 的 makeOrchestra 一一对应，默认全关，每个身份只开 makeOrchestra 会给它开的；
+ * 字段和 shared/engine/index.ts 的 makeOrchestra 一一对应，默认全关，每个身份只开 makeOrchestra 会给它开的；
  * 下面的用例再拿真实 makeOrchestra 造的 Orchestra 核对其中几项，免得表里的字段组合和引擎各说各的。
  * 加 / 删一个工具会让这里失败：按新清单改表，同一个提交把 README 那一节一起改（以前 README 五组数字全对不上）
  */
@@ -866,7 +866,7 @@ const BG = ['run_background', 'check_background', 'stop_background']
 const LESSON_TOOLS = ['knowledge_lookup', 'knowledge_record', 'project_lessons', 'record_lesson']
 const TAIL = ['spawn_agents', 'stop_subtask', 'send_message', 'read_messages']
 const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation']
-// 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/workflow-tools.ts）
+// 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/panel-tools/workflow-tools.ts）
 const WF = [
   'start_workflow',
   'list_workflows',

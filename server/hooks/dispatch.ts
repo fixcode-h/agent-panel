@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import type { Agent, Project, Task } from '../../shared/schema.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { traceCli } from '../exec/cli-trace.ts'
-import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts, HookToolScope } from '../../shared/hooks.ts'
+import type {
+  BeforeEndDecision,
+  BeforeEndInput,
+  HookAnswer,
+  HookFacts,
+  HookToolScope,
+} from '../../shared/hooks/index.ts'
 import {
   hookApplies,
   type HookDef,
@@ -14,7 +20,7 @@ import {
   commandSegments,
 } from '../../shared/hooks/defs.ts'
 import { BUILTIN_HOOKS, builtinList, builtinNumber, builtinOn } from '../../shared/hooks/builtins.ts'
-import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
+import { activePlan, planNowText, planProgress } from '../../shared/plan/index.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts'
 import { DATA_DIR } from '../store.ts'
@@ -193,7 +199,7 @@ export function unverifiedEdit(task: Pick<Task, 'messages'>): string {
 export async function hookOptions(c: HookCallCtx): Promise<{
   beforeEnd?: (input: BeforeEndInput) => Promise<BeforeEndDecision>
   hookEvents?: HookEventName[]
-  /** 工具前 / 工具后各自关心哪几类工具：能按工具名过滤的 CLI 只对这几类触发（见 shared/hooks.ts 的 toolMatcher） */
+  /** 工具前 / 工具后各自关心哪几类工具：能按工具名过滤的 CLI 只对这几类触发（见 shared/hooks/index.ts 的 toolMatcher） */
   hookTools?: HookToolScope
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 }> {
@@ -530,7 +536,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
-  // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
+  // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/panel-tools/background-tools.ts）
   c.call.orch.guardCommand = commandGuard
   // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
   c.call.orch.guardEdit = editGuard

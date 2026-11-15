@@ -20,7 +20,7 @@ import type { IntegrateKind, IntegrateResult } from '../exec/worktree-integrate.
 import type { createClaims } from '../claims.ts'
 
 /**
- * tasksApi 闭包里、被 server/tasks/ 下各模块用到的名字（值在 server/tasks.ts 的 scope 对象里，取值时才读）。
+ * tasksApi 闭包里、被 server/tasks/ 下各模块用到的名字（值在 server/tasks/index.ts 的 scope 对象里，取值时才读）。
  * 模块要用闭包里的新名字时：在这里加一项类型，在 scope 对象（lazyScope）里加一个同名取值函数（let 变量写成 [取值, 写入]）。
  */
 export interface TasksScope {
@@ -287,7 +287,6 @@ export interface TasksScope {
   }
   getMeta: (id: string) => Promise<Task | null>
   gitGate: <T>(run: () => Promise<T>) => Promise<T>
-  idle: (task: Task) => Task
   integrate: (tk: Task, parent: Task) => Promise<IntegrateResult>
   lastReply: (task: Task) => string
   live: Map<string, Live>
@@ -396,8 +395,8 @@ export interface TasksScope {
   /** 结束前钩子（ADR 0049）：CLI 在模型准备结束这一轮时问，拦住就在同一轮里接着做（见 before-end.ts） */
   beforeEnd: (
     convId: string,
-    input: import('../../shared/hooks.ts').BeforeEndInput,
-  ) => Promise<import('../../shared/hooks.ts').BeforeEndDecision>
+    input: import('../../shared/hooks/index.ts').BeforeEndInput,
+  ) => Promise<import('../../shared/hooks/index.ts').BeforeEndDecision>
   /** 推进计数的现状（诊断用）：最后一个进度指纹和推了几次 */
   nudgeState: (id: string) => { key: string; n: number } | undefined
   /** 用户亲自发了新消息：推进次数清零（ADR 0041） */
@@ -453,7 +452,7 @@ export interface TasksScope {
       quote?: string | undefined
     }[]
   >
-  planKids: (parentId: string) => Promise<import('../../shared/plan.ts').PlanKid[]>
+  planKids: (parentId: string) => Promise<import('../../shared/plan/index.ts').PlanKid[]>
   planNudged: Map<string, string>
   planWorkflow: (
     project: Project,

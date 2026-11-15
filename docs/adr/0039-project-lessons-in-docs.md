@@ -25,7 +25,7 @@
 | `shared/doc-root.ts` 的 `vcsDocRoot`      | 项目外是 `<项目上一级>/ProjectDoc/docs`，项目内是 `<项目>/docs`                                           |
 | `shared/doc-root.ts` 的 `resolveDocRoot`  | P4 / SVN 按「文档根」下拉算根；Git / 无版本管理返回 `undefined`                                           |
 | `server/tasks/run.ts` 的 `lessons.list`   | 读 `projects.get(task.projectId)?.lessons` 交给提示词                                                     |
-| `server/orch-mcp.ts` 的 `project_lessons` | 通过 `Orchestra.lessons.list()` 查（`shared/engine.ts`）                                                  |
+| `server/orch-mcp.ts` 的 `project_lessons` | 通过 `Orchestra.lessons.list()` 查（`shared/engine/index.ts`）                                            |
 | `server/assist.ts` 的 `contextFor`        | `kind: 'lessons'` 时把 `project.lessons` 放进分析上下文                                                   |
 
 ## 决策
