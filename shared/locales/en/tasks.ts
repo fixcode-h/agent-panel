@@ -1090,6 +1090,8 @@ export const EN_TASKS: Record<string, string> = {
   '有没答的提问，在等用户回答': 'Unanswered questions are waiting for the user',
   执行失败了: 'Run failed',
   '执行失败了（{note}）': 'Run failed ({note})',
+  '。这是临时错误，不是做错了：继续它就能接着做，计划里等它的那一步先别判失败':
+    '. This is a temporary error, not a mistake: continue it and it picks up where it left off. Do not mark the plan step waiting on it as failed',
   '这条汇报没能交给父对话：它已经不在了（可能被删了）。结果还在这个对话里，需要的话交给别的对话或自己处理。':
     'This report could not be handed to the parent conversation: it no longer exists (it may have been deleted). The result is still in this conversation; hand it to another conversation or handle it yourself if needed.',
   '找不到父对话（id {id}）': 'Parent conversation not found (id {id})',

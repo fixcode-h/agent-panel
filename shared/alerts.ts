@@ -202,7 +202,12 @@ export function classifyError(text: string): AlertKind {
   )
     return 'auth'
   if (/insufficient[_ ](balance|quota|funds)|quota|billing|credit balance|余额不足|额度/i.test(s)) return 'quota'
-  if (/\b429\b|\b529\b|rate[_ ]?limit|too many requests|overloaded|限流|过载/i.test(s)) return 'rate_limit'
+  if (
+    /\b429\b|\b529\b|rate[_ ]?limit|too many requests|overloaded|concurrency limit|限流|过载|并发.{0,4}(超|上限)/i.test(
+      s,
+    )
+  )
+    return 'rate_limit'
   if (
     /context[_ ]length|context window|prompt is too long|maximum context|too many tokens|上下文.{0,6}(超|上限)/i.test(s)
   )
