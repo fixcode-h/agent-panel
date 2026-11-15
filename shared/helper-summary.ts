@@ -10,11 +10,8 @@ import type { TaskStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { CHILD_RESTART_MAX } from './stuck-child.ts'
 import { allowEnd, type BeforeEndDecision } from './hooks/index.ts'
-import { VERDICT_ASK, verdictOf } from './submitted.ts'
-
-/** 补问那一句（发给 Agent，不翻译） */
-export const RESULT_ASK =
-  '【面板】你还没有用 submit_result 工具交结果。面板只按这个工具判断子任务做完没有，不看回复里写了什么：现在调用它，state 写 done（做完）、unfinished（没做完）或 stuck（做不下去），summary 写结论和关键文件，没做完或卡住时 left 写还差什么、卡在哪。'
+import { verdictOf } from './submitted.ts'
+import { RESULT_ASK, VERDICT_ASK, stallRetryAsk } from './prompt/letters/helper.ts'
 
 /** 这一步交的结果；没交返回 undefined */
 export const resultOf = (step: Pick<TaskStep, 'submitted'>) => step.submitted?.state
@@ -65,10 +62,6 @@ export function submitGate(step: TaskStep, need: 'result' | 'verdict', signal?: 
     return { block: true, reason: need === 'result' ? RESULT_ASK : VERDICT_ASK, why: `no-${need}` }
   }
 }
-
-/** 卡住重试时交给子任务的那句（发给 Agent，不翻译） */
-export const stallRetryAsk = (error: string) =>
-  `【面板】你上一次卡住了：${error}\n面板停掉了那次调用，接回这个会话。先看看已经做了哪些，从中断的地方接着做，已经做完的不用重做；做完照样用 submit_result 交结果。`
 
 /**
  * 跑一次子任务调用；CLI 卡住被 runner 停掉（stalled，见 runner 的「没有响应」检测）就接回会话重试，

@@ -64,6 +64,20 @@ export function setLang(l: Lang, isAuto = false) {
   auto = isAuto
 }
 
+/**
+ * 临时换成某种语言算一段文字（同步执行完就换回）：给 Agent 的话固定用中文（提示词不翻译），
+ * 可有的句子是和界面共用的（例如子对话状态的原因，复查报告 A3），界面切成英文时不能把英文混进给 Agent 的话
+ */
+export function inLang<T>(l: Lang, fn: () => T): T {
+  const prev = lang
+  lang = l
+  try {
+    return fn()
+  } finally {
+    lang = prev
+  }
+}
+
 /** 补充词典：只在某些构建里用到的文案（例如在线演示），不放进主词典 */
 export function extendDict(l: Lang, dict: Record<string, string>) {
   const d = DICTS[l]

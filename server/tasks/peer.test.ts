@@ -65,7 +65,7 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
   assert.match(root.inbox[0].text, /TS2322[\s\S]*id: kid/)
   assert.equal(root.messages.at(-1)!.panel, 'child')
   assert.match(out.info, /叫起它安排修复/)
-  assert.equal(kid.pendingReport, undefined)
+  assert.equal(kid.child?.pendingReport, undefined)
   // 定时核对发现父对话一直没回（叫醒在重启时丢了、那一轮没回它）：再提醒一次，从对话里找回当时的报错
   assert.equal(await r.remindParentFix(kid), true)
   assert.match(r.woke[1].text, /还在等你安排修复[\s\S]*TS2322/)
@@ -76,8 +76,8 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
   const r2 = rig(task('root', '', 'done', undefined, { askUser: true }), quiet)
   await r2.messageParent(quiet, FIX, true, ['a', 'b'], 'question', true)
   assert.equal(r2.woke.length, 1)
-  assert.equal(quiet.pendingReport, undefined)
-  assert.equal(quiet.parentAsks?.length ?? 0, 0)
+  assert.equal(quiet.child?.pendingReport, undefined)
+  assert.equal(quiet.child?.parentAsks?.length ?? 0, 0)
   assert.equal(r2.map.get('root')!.messages.filter((m) => m.panel === 'ask').length, 0)
 
   // 闲置回收停下的父对话不是用户让它停的：照样叫
@@ -98,13 +98,13 @@ test('请父对话安排修复：父对话空闲就叫醒它，消息和收件�
   const r4 = rig(task('root', '', 'done'), plain)
   await r4.messageParent(plain, '做完了第一步', false)
   assert.deepEqual(r4.woke, [])
-  assert.equal(plain.pendingReport, '做完了第一步')
+  assert.equal(plain.child?.pendingReport, '做完了第一步')
   // 模型自己在正文开头写了「【报错不是我改出来的…」但没带 wait_fix：不按文字当成修复请求
   const typed = task('kid', 'root', 'running', undefined, { askUser: true })
   const r6 = rig(task('root', '', 'done'), typed)
   await r6.messageParent(typed, FIX, false)
   assert.deepEqual(r6.woke, [])
-  assert.equal(typed.pendingReport, FIX)
+  assert.equal(typed.child?.pendingReport, FIX)
 })
 
 test('不叫醒父对话：用户亲手停下（落盘的、刚按停止的）、用量上限停下、核对收成已中断、整棵树已超限、子对话自己正在停，提问关着的自动作答也一样', async () => {

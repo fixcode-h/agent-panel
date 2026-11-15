@@ -64,7 +64,8 @@ import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
-import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
+import { HtmlCardSpecimen } from '@/components/settings/HtmlCardSpecimen'
+import { ReferenceSpecimens } from './StyleRefSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
@@ -83,6 +84,7 @@ import { applyLocalAppearance } from '@/lib/appearance'
 import { PluginSpecimens } from './PluginSpecimens'
 import { ReportCompareSpecimen } from './ReportCompareSpecimen'
 import { ChatQuotesSpecimen } from './ChatQuotesSpecimen'
+import { WebFrameSpecimen } from './WebFrameSpecimen'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
@@ -514,6 +516,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         <Specimen name="ChatQuotes" tune={['statusPill']}>
           <ChatQuotesSpecimen />
         </Specimen>
+        <Specimen name="WebFrame">
+          <WebFrameSpecimen />
+        </Specimen>
         <Specimen name="InlineChip" tune={['chip']}>
           <p className="text-prose leading-7">
             {t('按这张')}
@@ -609,9 +614,10 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           <DirListSpecimen />
         </Specimen>
       </Group>
-      <Group title={t('调用栈')}>
-        <Specimen name="calltree" tune={['callTree']}>
-          <CallTreeSpecimen />
+      <ReferenceSpecimens Specimen={Specimen} />
+      <Group title={t('HTML 卡片 · 本轮产出')}>
+        <Specimen name="HtmlCard · OutputsCard · OutputRow" tune={['htmlCard', 'iconButton']}>
+          <HtmlCardSpecimen />
         </Specimen>
       </Group>
       <Group title={t('MCP 能力')}>

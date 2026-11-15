@@ -391,6 +391,35 @@ export async function deleteMcpEntry(name: string) {
 }
 
 /**
+ * 插件声明的 MCP 服务（插件接口 11）退回全局写入：只对没有每轮注入（mcpStore.inject）的 CLI。
+ * prev 是上次面板替插件写进去的，want 是现在该有的：prev 里不再要的删掉（内容和当时写的一样才删，用户改过的不动），
+ * want 里的写进去（已有同名、但不是面板上次写的那份时不覆盖，那是用户自己配的）。返回实际写进去的
+ */
+export async function syncFallbackServers(want: McpServer[], prev: McpServer[]): Promise<McpServer[]> {
+  const written: McpServer[] = []
+  for (const d of managed().filter((x) => !x.mcpStore.inject)) {
+    const cur = await readServers(d).catch(() => ({}) as Record<string, McpServer>)
+    for (const old of prev)
+      if (!want.some((w) => w.name === old.name) && cur[old.name] && sameServer(cur[old.name], old))
+        await dropServer(d, old.name)
+    for (const sv of want) {
+      const have = cur[sv.name]
+      const ours = prev.find((x) => x.name === sv.name)
+      if (have && !(ours && sameServer(have, ours)) && !sameServer(have, sv)) continue
+      if (!have || !sameServer(have, sv)) await putServer(d, sv)
+      if (!written.some((w) => w.name === sv.name)) written.push(sv)
+    }
+  }
+  return written
+}
+
+/** 没有每轮注入、只能全局写入的 CLI（界面上注明「退回全局写入」用） */
+export const fallbackClis = () =>
+  managed()
+    .filter((d) => !d.mcpStore.inject)
+    .map((d) => d.id)
+
+/**
  * 连上去问一下有哪些工具：能确认配置是对的。
  * cwd 给了就在那个目录里启动（项目里的配置常写相对路径，例如 UEToVS 的 --solution-dir .），不给用面板自己的目录
  */

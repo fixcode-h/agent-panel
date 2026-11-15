@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 /**
  * 工作流运行的宿主（docs/openspec/changes/workflow-runs/design.md 第 3、4 节）：父对话的 start_workflow 等工具最终落到这里。
  * 运行是一个 mode=workflow、带 flowRun 的任务，不是子对话：没有 parentTaskId，子对话那套（自驱、收尾规则、状态上报）都不作用到它。
@@ -24,6 +25,7 @@ import { steerTask } from '../exec/steering.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask, readTask } from './read.ts'
+import { flowDelegateLetter, flowRunLetter } from '../../shared/prompt/letters/notice.ts'
 
 const now = () => new Date().toISOString()
 const bad = (info: string) => ({ ok: false, info })
@@ -342,17 +344,7 @@ export function createFlowRuns(sc: TasksScope) {
     if (!owner) return
     const e = runEntry(run)!
     const last = [...run.messages].reverse().find((m) => m.error)?.text ?? ''
-    const body = [
-      `【工作流运行】${runLine(e)}`,
-      f.phase === 'failed' && last ? `出错：${clip(last, 600)}` : '',
-      (f.phase === 'ready' || f.phase === 'done') && f.summary ? `结论：\n${clip(f.summary, 1500)}` : '',
-      f.phase === 'ready'
-        ? '看过结论后用 finish_workflow 合回（merge）或放弃（discard）；要改某个节点用 revise_workflow 退回。'
-        : '',
-      f.phase === 'failed' ? '要它带着意见重跑就用 revise_workflow；不做了就 stop_workflow。' : '',
-    ]
-      .filter(Boolean)
-      .join('\n')
+    const body = flowRunLetter({ line: runLine(e), phase: f.phase, error: last, summary: f.summary })
     if (f.phase === 'done' || f.phase === 'cancelled') settle(owner.id, run.id, f.phase === 'done')
     await sc.wakeTask(owner.id, run, body, { panel: 'workflow' })
   }
@@ -368,7 +360,7 @@ export function createFlowRuns(sc: TasksScope) {
     await sc.wakeTask(
       f.owner,
       run,
-      `【工作流运行】工作流「${f.workflowName}」（id ${run.id}）的节点「${n.node}」做完了，用户请你决定：\n${clip(detail, 3000)}\n\n用 answer_workflow 回答：confirm 通过，revise 写清改什么。`,
+      flowDelegateLetter({ workflow: f.workflowName, id: run.id, node: n.node, detail }),
       { panel: 'workflow' },
     )
     return { ok: true, info: t('已交给父对话决定') }
@@ -408,10 +400,12 @@ export function createFlowRuns(sc: TasksScope) {
 }
 
 /** 运行卡片上的操作（父对话的工作流栏用）：确认、修改、追问走通用的回答请求接口，暂停、重启走 stop / resume */
-export function registerFlowRunRoutes(sc: TasksScope) {
+export function flowRunRoutes(sc: TasksScope): Hono {
+  const app = new Hono()
   // 「交给父对话决定」：确认卡片留着，写信请父对话用 answer_workflow 代答
-  sc.routes.post('/:id/delegate', async (c) => {
+  app.post('/:id/delegate', async (c) => {
     const r = await sc.flowRuns.delegate(c.req.param('id'))
     return r.ok ? c.json(r) : sc.bad(c, r.info, 409)
   })
+  return app
 }

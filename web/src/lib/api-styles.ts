@@ -1,19 +1,22 @@
 /** 风格库和浏览器扩展的接口：从 api.ts 拆出（api.ts 到了行数上限），api 里展开引入，调用方照旧用 api.xxx。
- *  UI 设计本身的接口在 UI 设计插件里；浏览器扩展的地址还是以前挂在设计接口下的 /designs/browser，扩展和旧版本认这个地址 */
-import type { BrowserStatus } from '@shared/browser-ext'
-import type { SavedStyle, SavedStyleInput } from '@shared/style-types'
-import { json, request } from './api'
+ *  按 shared/api-contract/styles.ts 的契约调。UI 设计本身的接口在 UI 设计插件里；
+ *  浏览器扩展的地址还是以前挂在设计接口下的 /designs/browser，扩展和旧版本认这个地址 */
+import type { SavedStyleInput } from '@shared/style-types'
+import { browserExtContract as B, stylesContract as S } from '@shared/api-contract/styles'
+import type { BodyOf } from '@shared/api-contract/define'
+import { call } from './api/call'
 
 export const stylesApi = {
-  browserStatus: () => request<BrowserStatus>('/designs/browser'),
-  styles: () => request<SavedStyle[]>('/styles'),
-  createStyle: (input: SavedStyleInput) => request<SavedStyle>('/styles', json('POST', input)),
-  updateStyle: (id: string, patch: Partial<SavedStyleInput>) =>
-    request<SavedStyle>(`/styles/${id}`, json('PUT', patch)),
-  deleteStyle: (id: string) => request<void>(`/styles/${id}`, { method: 'DELETE' }),
-  installExtension: (browser: string) =>
-    request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
-  reloadExtension: (browser: string) =>
-    request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
-  revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
+  browserStatus: () => call(B.status),
+  styles: () => call(S.list),
+  // 调用方传的是编辑时的样子（z.input，kind 这些可以不填）；契约的请求体类型按 parse 之后算，默认值由服务端补
+  createStyle: (input: SavedStyleInput) => call(S.create, { body: input as BodyOf<typeof S.create> }),
+  updateStyle: (id: string, patch: Partial<SavedStyleInput>) => call(S.update, { params: { id }, body: patch }),
+  deleteStyle: (id: string) => call(S.remove, { params: { id } }),
+  /** 自己的风格换参考图：data 是图片的 data URL */
+  uploadStyleImage: (id: string, data: string) => call(S.uploadImage, { params: { id }, body: { data } }),
+  removeStyleImage: (id: string) => call(S.removeImage, { params: { id } }),
+  installExtension: (browser: string) => call(B.install, { body: { browser } }),
+  reloadExtension: (browser: string) => call(B.reload, { body: { browser } }),
+  revealExtension: () => call(B.reveal, { body: {} }),
 }

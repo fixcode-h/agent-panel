@@ -130,8 +130,9 @@ export function DiagnosisReport({
   // 「应用这 N 处修改」每一处的结果（按修复的序号）：只在这次打开里记着，重开后再点会按文件现状重新判断
   const [applied, setApplied] = useState<Record<number, FixApplyResult>>({})
   const [applying, setApplying] = useState(false)
-  // 被分析的那个对话：记在 analysisOf 上；和对话无关的排查（设置页、CLI 的报错）就在这个分析对话里修
-  const target = task.analysisOf && task.analysisOf !== task.id ? task.analysisOf : ''
+  // 被分析的那个对话：记在 analysis.of 上；和对话无关的排查（设置页、CLI 的报错）就在这个分析对话里修
+  const of = task.analysis?.of
+  const target = of && of !== task.id ? of : ''
   const selfState = target ? 'todo' : fixState(task, d.rootCause.title)
   // 去别的对话：窗口里嵌着时先把窗口收起来，不然跳过去了还被窗口盖着
   const leave = (r: Route) => {

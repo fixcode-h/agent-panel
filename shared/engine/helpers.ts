@@ -107,7 +107,6 @@ export function helperReport(host: EngineHost, s: TaskStep): HelperReport {
 }
 
 export const REVIEW_SOFT_LIMIT_MS = REVIEW_SOFT_LIMIT_MIN * 60_000
-export const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（调用 submit_verdict 交结论，必须处置的意见列进 blockers）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
 
 /** 这个角色是不是在评审代码改动（必备角色「评审」、评审对象是代码改动）；评审方案或结论的不算 */
 export function reviewsCode(agent: Agent | undefined, params?: ParamValues) {
@@ -247,7 +246,12 @@ export async function settleHelperBatch(host: EngineHost, step: TaskStep): Promi
           `\n${RETRY_HINT(k.id)}`,
     )
     .join('\n\n')
-  return { text, ids: late.map((k) => k.id) }
+  // 子任务的原文用户在对话里点开就能看到：父对话再整段转述一遍，同一份结果在对话里出现三次（摸底报告第 22 条）。
+  // 用「处理完这个结果后」开头：界面显示时按这个开头把这句说给 AI 的话去掉（web/src/components/tasks/Messages.tsx）
+  const tail = text
+    ? `\n处理完这个结果后，回复里只写你的判断、采纳了哪些、下一步做什么；子任务原文用户在对话里点开就能看到，不整段转述。`
+    : ''
+  return { text: text + tail, ids: late.map((k) => k.id) }
 }
 
 /** 任务里各个 Agent 的状态，按层级缩进，给 get_status 用 */

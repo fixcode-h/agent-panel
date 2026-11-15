@@ -48,8 +48,9 @@ const dirText = (dir: string) => {
     .join('\n')
 }
 
+// 这里测的是随仓库存时的目录规则，默认打开；存数据目录的另有一条
 const project = (dir: string, extra: Partial<import('../../shared/schema.ts').Project> = {}) =>
-  Project.parse({ id: 'p1', name: '项目', path: dir, createdAt: '', updatedAt: '', ...extra })
+  Project.parse({ id: 'p1', name: '项目', path: dir, createdAt: '', updatedAt: '', knowledgeInRepo: true, ...extra })
 
 const lesson = (id: string, title: string, extra: Partial<import('../../shared/schema.ts').ProjectLesson> = {}) =>
   ProjectLesson.parse({ id, title, rule: `${title}的规则`, ...extra })
@@ -184,7 +185,12 @@ test('项目设置整份保存：队列内核对版本，旧快照不会覆盖 A
     const added = await record('p1', { title: 'Agent 刚记的' })
     assert.equal(added.ok, true)
     const before = dirText(dir)
-    const snapshot = ProjectInput.parse({ name: '项目', path: dir, lessons: [lesson('x', '旧快照')] })
+    const snapshot = ProjectInput.parse({
+      name: '项目',
+      path: dir,
+      knowledgeInRepo: true,
+      lessons: [lesson('x', '旧快照')],
+    })
     const stale = await replace('p1', snapshot, 'v0')
     assert.equal(stale.ok, false)
     assert.equal(stale.status, 409)
@@ -370,4 +376,15 @@ test('P4 各分支共用教训：Main 记的教训在 Dev 分支也读得到', a
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('默认存面板数据目录：不往仓库里写文件', async () => {
+  const dir = temp()
+  const p = project(dir, { id: 'data-only', knowledgeInRepo: false })
+  const where = await projectLessonsDir(p, [])
+  assert.equal(where, path.join(process.env.AGENT_PANEL_DATA!, 'knowledge', 'data-only', 'lessons'))
+  await saveProjectLessons(p, [], [lesson('l1', '只在数据目录')])
+  assert.ok(existsSync(path.join(where!, 'l1.md')) || readdirSync(where!).length > 0, '写进了数据目录')
+  assert.equal(dirText(dir), '', '仓库里没有教训文件')
+  assert.equal((await loadProjectLessons(p, [])).lessons[0]?.title, '只在数据目录')
 })

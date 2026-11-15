@@ -5,6 +5,7 @@
  */
 import type { PeerFrom, PeerKind, TaskMessage } from './schema.ts'
 import { t } from './i18n.ts'
+import { convStateText } from './task.ts'
 
 /** 正文开头的【收尾请求】【子对话状态】这类标签是说给 AI 的，标题里不重复它 */
 export const LEAD_TAG = /^【[^】]{1,12}】/
@@ -211,11 +212,11 @@ export interface PeerReport {
 
 /**
  * 把汇报正文拆成字段：认得出计划步骤那句或【子对话状态】开头才算，其余返回 null 照旧画全文。
- * 只按服务端拼出的固定写法认（server/tasks/children.ts 的 reportChild、shared/plan/index.ts 的 waitNote），
+ * 只按服务端拼出的固定写法认（server/tasks/children/report.ts 的 reportChild、shared/plan/index.ts 的 waitNote），
  * 旧数据里「下一步」没写前缀的重试说明也归到下一步
  */
 export function parseReport(text: string): PeerReport | null {
-  // 末尾「这是摘要……全文在哪」是写给父对话 AI 的（见 server/tasks/children.ts 的 reportChild），界面上点子对话就能看全文
+  // 末尾「这是摘要……全文在哪」是写给父对话 AI 的（见 server/tasks/children/report.ts 的 reportChild），界面上点子对话就能看全文
   const lines = text
     .replace(/\n处理完这个结果后[^\n]*$/, '')
     .replace(/\n（这是摘要[，。][^\n]*）$/, '')
@@ -258,4 +259,24 @@ export function parseReport(text: string): PeerReport | null {
     // 「（id xxx）」是给 AI 调工具用的，界面上有打开子对话的按钮
     out.next.push(l.replace(/^下一步：/, '').replace(/（id:? [^）\s]+）/g, ''))
   return out
+}
+
+/**
+ * 界面上画子对话状态上报用的字段：新消息直接读 child 上存的状态、原因、结果（复查报告 A3，按当前界面语言画状态短词），
+ * 只有「下一步」和计划步骤那句仍从正文里取（它们本来就是写给父对话 AI 的中文）；旧消息没有结构时整段按正文解析
+ */
+export function reportOf(m: Pick<TaskMessage, 'text' | 'child'>): PeerReport | null {
+  const parsed = parseReport(m.text)
+  const c = m.child
+  if (c?.reason === undefined) return parsed
+  return {
+    steps: parsed?.steps ?? [],
+    stepsDone: parsed?.stepsDone ?? false,
+    child: c.title,
+    state: c.state ? convStateText(c.state) : '',
+    reason: c.reason,
+    next: parsed?.next ?? [],
+    result: c.result ?? '',
+    rest: '',
+  }
 }

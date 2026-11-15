@@ -182,8 +182,8 @@ export function useRerun(workflowId: string, prepare?: () => Promise<void>) {
         askUser: full.askUser,
         childAskUser: full.childAskUser,
         ...(full.worktree ? { isolate: true } : {}),
-        ...(full.budgetTokens ? { budgetTokens: full.budgetTokens } : {}),
-        ...(full.budgetMinutes ? { budgetMinutes: full.budgetMinutes } : {}),
+        ...(full.budget?.tokens ? { budgetTokens: full.budget.tokens } : {}),
+        ...(full.budget?.minutes ? { budgetMinutes: full.budget.minutes } : {}),
       })
       upsertTask(taskSummary(created))
       go({ page: 'projects', id: created.projectId, sub: created.id })

@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { waitingAfter } from '../../shared/children/after.ts'
 import { Task, type PeerFrom, type PeerKind, type TaskMessage } from '../../shared/schema.ts'
@@ -64,7 +65,7 @@ export function createChildMessages(sc: TasksScope) {
     inboxText = body,
     settle?: { kind: PlanWait['kind']; ref: string; ok: boolean; onlyIfWaiting?: boolean },
     /** 子对话的状态上报：带上是谁、什么状态（行右边写状态，点开能跳到子对话） */
-    child?: { id: string; title: string; state: ConvState },
+    child?: { id: string; title: string; state: ConvState; reason?: string; result?: string },
     /** 发件对话：父对话里画成一行「接收消息」 */
     peer?: PeerFrom,
     /** 停下时独立分支里还有没提交的改动：父对话里那一行直接写几个文件、目录在哪，并给「继续」 */
@@ -205,7 +206,7 @@ export function createChildMessages(sc: TasksScope) {
     // 记在「现在」的那一份上：发消息时子对话已经被拉起来了，执行器落盘用的是 live 里那份
     const ce = sc.live.get(child.id)
     const target = ce?.task ?? (await sc.store.get(child.id)) ?? child
-    target.userDirect = brief.slice(0, 600)
+    setChild(target, { userDirect: brief.slice(0, 600) })
     if (ce) ce.rev++
     else await sc.store.update(child.id, target)
   }

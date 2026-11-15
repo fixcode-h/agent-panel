@@ -1,10 +1,9 @@
 import { Hono } from 'hono'
-import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { pluginConfig, pluginOn } from '../../shared/plugins/index.ts'
-import type { PluginInfo, PluginManifest, PluginSource } from '../../shared/plugins/types.ts'
+import type { PluginInfo, PluginSource } from '../../shared/plugins/types.ts'
 import { getSettings } from '../settings.ts'
 import { DEFAULT_MARKET, downloadEntry, downloadSource, parseRepo, readMarket } from './github.ts'
 import { currentMarketRepo, readMarketCached } from './market-cache.ts'
@@ -19,59 +18,19 @@ import {
   updatePlugin,
 } from './manager.ts'
 import { pluginMcpApi } from './mcp.ts'
+import { pluginServicesApi } from './services-api.ts'
 import { pluginError, pluginStatus, runningPlugin } from './runtime.ts'
 import { linkPackage, packageRoot, parseManifest, writePackage, type Installed } from './store.ts'
 import { checkPluginUpdates } from './updates.ts'
-import { readZip, type ZipEntry } from './zip.ts'
-import { scanBuffers, scanPath, visibleFindings } from '../config-scan.ts'
+import { dependentsBlock, enableRequires, installRequires } from './requires-install.ts'
+import { readZip } from './zip.ts'
+import { stash, takePending } from './install-pending.ts'
+import { wrapApi } from './wrap/api.ts'
 
 /**
  * 插件接口（ADR 0059），挂在 /api/plugins 下：列表、市场、安装（先预览再确认）、开关和参数、删除，
  * 插件网页部分的静态文件（/<id>/web/…）和插件自己的接口（/<id>/api/…）。
  */
-
-/** 等用户确认的安装：预览时下载好、校验过，确认后直接写盘；十分钟没确认就丢掉 */
-interface Pending {
-  manifest: PluginManifest
-  source: PluginSource
-  files?: ZipEntry[]
-  root?: string
-  /** 链接本机目录 */
-  dir?: string
-  at: number
-}
-const pending = new Map<string, Pending>() // 模块状态：会话，跟着进程或连接一起没
-const PENDING_MS = 10 * 60_000
-
-/**
- * 记下等确认的安装，返回给弹窗的预览。顺便做配置安全扫描（借鉴 ECC 的 AgentShield）：包里的技能、钩子脚本、
- * 服务端代码有没有提示注入、外传、危险命令、密钥；弹窗里列出来，有高级的要用户勾选「我看过了」才能装
- */
-async function stash(p: Omit<Pending, 'at'>) {
-  for (const [k, v] of pending) if (Date.now() - v.at > PENDING_MS) pending.delete(k)
-  const token = randomUUID()
-  pending.set(token, { ...p, at: Date.now() })
-  const cur = findInstalled(p.manifest.id)
-  const scope = `plugin:${p.manifest.id}`
-  const scan = p.dir
-    ? await scanPath(p.dir, scope)
-    : await visibleFindings(
-        scanBuffers(
-          (p.files ?? [])
-            .filter((f) => f.name.startsWith(p.root ?? '') && !f.name.endsWith('/'))
-            .map((f) => ({ rel: f.name.slice((p.root ?? '').length), data: f.data })),
-        ),
-        scope,
-      )
-  return {
-    token,
-    manifest: p.manifest,
-    hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
-    installed: cur ? { version: cur.manifest.version, source: cur.source } : null,
-    scan,
-    scanScope: scope,
-  }
-}
 
 function fromZip(zip: Buffer, source: PluginSource, sub = '') {
   const files = readZip(zip)
@@ -118,6 +77,9 @@ export function pluginsApi() {
   return (
     new Hono()
       .route('/mcp', pluginMcpApi())
+      .route('/wrap', wrapApi())
+      // 插件接口 11 的托管进程：状态、起、停
+      .route('/', pluginServicesApi())
       .get('/', async (c) => {
         const s = await getSettings()
         return c.json({
@@ -204,15 +166,16 @@ export function pluginsApi() {
       })
       .post('/install/confirm', async (c) => {
         const { token } = (await c.req.json().catch(() => ({}))) as { token?: string }
-        const p = token ? pending.get(token) : undefined
+        const p = takePending(token)
         if (!p) return c.json({ error: '安装请求过期了，请重新选择插件' }, 404)
-        pending.delete(token!)
         try {
+          // 依赖先装：依赖装不上就停下，插件本身不装
+          const requires = await installRequires(p.manifest, p.source)
           if (p.dir) await linkPackage(p.manifest.id, p.dir)
-          else await writePackage(p.manifest.id, p.files!, p.root!, p.source)
+          else await writePackage(p.manifest.id, p.files!, p.root!, p.source, p.prepare)
           await afterInstall(p.manifest.id)
           const cur = findInstalled(p.manifest.id)
-          return c.json({ ok: true, plugin: cur ? info(cur) : null })
+          return c.json({ ok: true, plugin: cur ? info(cur) : null, requires })
         } catch (e) {
           return c.json(fail(e), 500)
         }
@@ -224,7 +187,11 @@ export function pluginsApi() {
           enabled?: boolean
           config?: Record<string, string | number | boolean>
         }
+        // 关掉被别的插件依赖的插件之前拦下；打开时把它依赖的插件一起打开
+        const blocked = body.enabled === false ? dependentsBlock(id, true) : ''
+        if (blocked) return c.json({ error: blocked }, 409)
         const r = await updatePlugin(id, { enabled: body.enabled, config: body.config })
+        if (body.enabled) await enableRequires(findInstalled(id)!.manifest)
         return c.json({ ok: true, removed: r[id] ?? null, error: pluginError(id) })
       })
       // 退回上一版：升级后有问题时换回升级前那一版（只留一版，退回后可以再退回到刚才那版）
@@ -239,7 +206,11 @@ export function pluginsApi() {
           return c.json(fail(e), 400)
         }
       })
-      .delete('/:id', async (c) => c.json({ ok: true, ...(await uninstallPlugin(c.req.param('id'))) }))
+      .delete('/:id', async (c) => {
+        const blocked = dependentsBlock(c.req.param('id'), false)
+        if (blocked) return c.json({ error: blocked }, 409)
+        return c.json({ ok: true, ...(await uninstallPlugin(c.req.param('id'))) })
+      })
       .get('/:id/status', async (c) => c.json((await pluginStatus(c.req.param('id'))) ?? {}))
       // 关掉 / 删除前的预览：哪些副本会删、哪些会留下
       .get('/:id/removal', async (c) => {

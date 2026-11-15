@@ -3,7 +3,7 @@
  *
  * 挂在任务落盘的监听上（onTaskChange），和钩子的面板事件（server/hooks/notify.ts 的 taskTransitions）是同一个触发点，
  * 不另造一套事件判定：失败、做完直接取它比出来的 task.failed / task.done；「等你处理」按 shared/task.ts 的 taskState
- * 前后对比（和侧栏、标题栏同一个结论）；「快到用量上限」看 Task.budgetNotice 升级（server/tasks/budget.ts 写的）。
+ * 前后对比（和侧栏、标题栏同一个结论）；「快到用量上限」看 Task.budget.notice 升级（server/tasks/budget.ts 写的）。
  *
  * 投递规矩：超时 NOTIFY_TIMEOUT_MS，失败只写日志、记到那一行的「最近一次」里，不重试、不等它、不影响对话本身。
  * 地址里带着机器人的 key：日志和报错里一律打码（maskUrl / maskUrlIn）。
@@ -117,8 +117,8 @@ export function channelEvents(old: Task | null, next: Task): { event: NotifyEven
   if (hooks.has('task.failed')) out.push({ event: 'failed' })
   if (hooks.has('task.done') && !next.parentTaskId && now !== 'needs' && next.status !== 'failed')
     out.push({ event: 'done' })
-  if (rank(next.budgetNotice) > rank(old.budgetNotice))
-    out.push({ event: 'budget', over: next.budgetNotice === 'over' })
+  if (rank(next.budget?.notice) > rank(old.budget?.notice))
+    out.push({ event: 'budget', over: next.budget?.notice === 'over' })
   return out
 }
 

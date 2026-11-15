@@ -441,7 +441,7 @@ async function runAgent(
   if (trackChanges && !st.prewarmMode) openChanges(!!call.carry)
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
-  const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
+  const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budget?.minutes ?? 0)
   // 插件给 Agent 的工具（ADR 0059）：开着的插件按这轮对话决定挂不挂（run-setup.ts）
   const plugins =
     def.mcp && !op
@@ -453,7 +453,7 @@ async function runAgent(
           fileEvents,
         )
       : undefined
-  if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
+  input = [input, !resume && plugins?.hint, plugins?.turnNote].filter(Boolean).join('\n\n')
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {
       cli: def.name,

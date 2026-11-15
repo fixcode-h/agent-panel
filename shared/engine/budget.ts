@@ -25,7 +25,8 @@ export function budgetLimit(
  */
 export function overBudget(host: EngineHost, includeWorkflow = true): string {
   const w = includeWorkflow ? host.workflow : undefined
-  const { usage, budgetFrom, budgetTokens, budgetMinutes } = host.task
+  const { usage } = host.task
+  const { from: budgetFrom, tokens: budgetTokens, minutes: budgetMinutes } = host.task.budget ?? {}
   const usd = usage.costUsd - (budgetFrom?.usd ?? 0)
   const tokens = usage.inputTokens + usage.outputTokens - (budgetFrom?.tokens ?? 0)
   if (w?.budgetUsd && usd >= w.budgetUsd)

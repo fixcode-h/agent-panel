@@ -21,7 +21,7 @@ import {
 import { copyText } from '@/lib/copy-text'
 import type { PeerKind, TaskMessage } from '@shared/schema'
 import type { SendTarget } from '@/lib/tasks'
-import { LEAD_TAG, parseReport, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'
+import { LEAD_TAG, reportOf, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'
 import type { PeerReport } from '@shared/peer-message'
 import { convStateText } from '@shared/task'
 import { t } from '@shared/i18n'
@@ -475,7 +475,7 @@ export function ReceivedRow({ m }: { m: TaskMessage }) {
               : ''
         }
         childId={peer.rel === 'child' ? peer.id : undefined}
-        report={parseReport(m.text) ?? undefined}
+        report={reportOf(m) ?? undefined}
         convState={m.child?.state}
         at={m.at}
         superseded={peer.superseded}

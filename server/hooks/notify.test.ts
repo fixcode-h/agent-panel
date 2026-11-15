@@ -64,7 +64,7 @@ test('对话状态的变化比出事件：完成一轮、失败、等你、请�
     status: 'failed',
     turnDoneAt: at,
     awaitingUser: true,
-    wrapRequest: { state: 'requested', at, note: '可以合回了' },
+    child: { wrapRequest: { state: 'requested', at, note: '可以合回了' } },
     plans: [plan('done')],
   })
   const evs = taskTransitions(old, next)

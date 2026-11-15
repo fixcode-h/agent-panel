@@ -197,7 +197,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   assert.equal(
     liveRuns.length,
     1,
-    `项目设置里勾上「禁止子对话执行」后，进行中的对话下一次合并就交给父对话跑，不看创建时的快照（wrapRequest=${JSON.stringify(live.wrapRequest)}，testRuns=${JSON.stringify(live.testRuns)}）`,
+    `项目设置里勾上「禁止子对话执行」后，进行中的对话下一次合并就交给父对话跑，不看创建时的快照（wrapRequest=${JSON.stringify(live.child?.wrapRequest)}，testRuns=${JSON.stringify(live.testRuns)}）`,
   )
   assert.equal(liveRuns[0].stepName, '端到端测试')
   assert.ok(liveRuns[0].ok, '父对话真的跑通了这条步骤')
@@ -257,7 +257,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   assert.ok(dropped, '等它停下来后可以丢弃独立分支')
   // 分支已经合回过：丢弃时记 merged；没合回的记 discarded。两种都表示目录和分支没了
   assert.ok(['discarded', 'merged'].includes(dropped.worktree.state), `独立分支已回收（${dropped.worktree.state}）`)
-  assert.equal(dropped.wrapRequest, undefined, '丢弃后不再留着 testing / test-failed')
+  assert.equal(dropped.child?.wrapRequest, undefined, '丢弃后不再留着 testing / test-failed')
   assert.ok(
     (dropped.plans?.at(-1)?.steps ?? []).filter((s) => s.wrapUp === 'merge').every((s) => s.status === 'done'),
     '计划里的合回收尾步骤一并收口，不再拦住完成',

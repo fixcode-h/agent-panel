@@ -179,6 +179,25 @@ export const COMP_SPEC = {
     when: bool(true, 'grid', 'none'),
     name: bool(true, 'inline', 'none'),
   },
+  /**
+   * HTML 卡片（回复里的 .html / .svg 和「本轮产出」，web/src/components/ui/html-card.tsx）：
+   * 圆角、要不要缩略预览、预览多高、正在右栏显示时描边的颜色
+   */
+  htmlCard: {
+    radius: px(10, 0, 20),
+    preview: bool(true, 'block', 'none'),
+    previewH: px(168, 96, 320),
+    active: hue('orange'),
+  },
+  /**
+   * 风格参考图和风格选择（web/src/components/ui/style-thumb.tsx、style-picker.tsx）：
+   * 缩略图圆角、列表行里缩略图多宽、选中风格的描边颜色
+   */
+  styleRef: {
+    radius: px(6, 0, 16),
+    thumbW: px(56, 40, 120),
+    ring: hue('orange'),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

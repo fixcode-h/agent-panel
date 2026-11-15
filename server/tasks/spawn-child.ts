@@ -15,6 +15,7 @@ import { isolated } from './helpers.ts'
 import { linkRelapse } from './bug-relapse.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask, readTask } from './read.ts'
+import { fileClashLetter } from '../../shared/prompt/letters/notice.ts'
 
 export function createSpawnChild(sc: TasksScope) {
   /** 每个子对话已经报给父对话的撞车（路径 + 对方 id），见 checkCollisions */
@@ -47,9 +48,7 @@ export function createSpawnChild(sc: TasksScope) {
     await sc.noteParent(
       child.parentTaskId,
       child,
-      `【文件撞了】子对话「${child.title}」（id ${child.id}）这一轮改了已经归别的子对话、改动还没被你验收的文件：${list}。` +
-        `它们和你共用一个目录，后写的会覆盖先写的（P4 里一个文件也分不进两个 changelist）。验收前先定谁的版本算数：` +
-        `用 send_to_conversation 让一方撤回，或等另一方被你验收后再改，必要时自己核对文件内容；不要同时收下两边。`,
+      fileClashLetter(child, list),
       undefined,
       undefined,
       undefined,

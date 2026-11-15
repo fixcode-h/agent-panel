@@ -18,7 +18,7 @@
 ## 根因（证据链）
 
 1. 父对话把推送收尾挂上了等子对话和后台命令的等待 ← `settleWait` 在一项的等待全部成功时一律 `setStatus(item, 'done')`，不分是不是收尾步骤。收尾步骤等的只是收尾前要先回来的结果，收尾本身（推送并合主干 / 合回）还没做。
-2. 子对话被合回时 `childMerged`（`server/tasks/merge.ts`）清掉 `wrapRequest`、标完成收尾步骤、计划随之收起 ← `mergeOwedOf` 看到没有进行中的计划、`changes` 还有改动，按「没列计划但改过文件」判成欠收尾。
+2. 子对话被合回时 `childMerged`（`server/tasks/merge/after-merge.ts`）清掉 `wrapRequest`、标完成收尾步骤、计划随之收起 ← `mergeOwedOf` 看到没有进行中的计划、`changes` 还有改动，按「没列计划但改过文件」判成欠收尾。
 
 ## 修复
 

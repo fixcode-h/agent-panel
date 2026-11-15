@@ -17,6 +17,7 @@ import {
   setEnabledPlugins,
   setInstalledPlugins,
 } from '../../shared/plugins/index.ts'
+import { splitByRequires } from '../../shared/plugins/requires.ts'
 import { removePluginSkills, setPluginSkillSources } from '../bundled-skills.ts'
 import { clearSlashCache } from '../slash.ts'
 import { log } from '../log.ts'
@@ -24,6 +25,7 @@ import { getSettings, saveSettings } from '../settings.ts'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { pluginConfigChanged, stopPlugin, syncRuntime } from './runtime.ts'
 import { configureProjectGate } from './project-gate.ts'
+import { syncDeclared } from './declared-sync.ts'
 import { listInstalled, removePackage, rollbackPackage, type Installed } from './store.ts'
 
 /**
@@ -55,8 +57,12 @@ export const findInstalled = (id: string) => installed.find((p) => p.manifest.id
 /** 重读装着的插件，同步到共享层的列表、技能来源和运行中的服务端部分 */
 export async function reloadPlugins() {
   const r = await listInstalled()
-  installed = r.ok
-  broken = r.broken
+  // 依赖插件没装、版本太旧的不加载（插件接口 10），和读不出来的一起列在「出错」里，写明缺什么
+  const split = splitByRequires(
+    r.ok.map((p) => ({ id: p.manifest.id, version: p.manifest.version, requires: p.manifest.requires, p })),
+  )
+  installed = split.ok.map((x) => x.p)
+  broken = [...r.broken, ...[...split.bad].map(([id, error]) => ({ id, error }))]
   setInstalledPlugins(installed.map((p) => p.manifest))
   setPluginSkillSources(installed.map((p) => ({ id: p.manifest.id, dir: p.dir, stamp: p.installedAt })))
   const s = await getSettings()
@@ -67,6 +73,11 @@ export async function reloadPlugins() {
     installed,
     (id) => pluginOn(s.plugins, id),
     (id) => pluginConfig(getCachedPlugins(), id),
+  )
+  await syncDeclared(
+    installed,
+    (id) => pluginOn(s.plugins, id),
+    (id) => pluginConfig(s.plugins, id),
   )
 }
 
@@ -160,6 +171,12 @@ export async function applyPluginSettings(prev: Settings['plugins'], next: Setti
     installed,
     (id) => pluginOn(next, id),
     (id) => pluginConfig(getCachedPlugins(), id),
+  )
+  // 插件接口 11：MCP 退回全局写入、托管进程跟着开关走
+  await syncDeclared(
+    installed,
+    (id) => pluginOn(next, id),
+    (id) => pluginConfig(next, id),
   )
   return result
 }

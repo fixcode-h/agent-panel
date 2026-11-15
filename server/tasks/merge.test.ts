@@ -1,12 +1,13 @@
+import { setChild } from '../../shared/children/task-child.ts'
 /**
- * 子对话收尾（server/tasks/merge.ts）：submit_merge 的各道校验、finish_child 合回独立分支、
+ * 子对话收尾（server/tasks/merge/）：submit_merge 的各道校验、finish_child 合回独立分支、
  * 冲突时退回子对话且保留分支、父对话目录挡路时留给父对话处理、分支上没有新改动、合并途中 / 父对话测试中的重复收尾，
  * 以及共用目录没请求收尾就不收。
  *
- * 为什么这样搭：merge.ts 只做编排（校验、先提交、记收尾请求、按结果改状态和通知），真正的 git 合并在
+ * 为什么这样搭：merge/ 只做编排（校验、先提交、记收尾请求、按结果改状态和通知），真正的 git 合并在
  * TasksScope.integrate（children.ts）里，它要整套 tasksApi 闭包才建得起来。这里给一个最小的假 scope，
  * integrate 直接调 children.ts 用的同一个 integrateBranch（worktree-integrate.ts）在真实的临时仓库上合，
- * 这样「提交到分支 → 合进原目录 → 冲突 / 挡路撤回」走的是真实 git 和真实文案，断言的是 merge.ts 自己的状态流转。
+ * 这样「提交到分支 → 合进原目录 → 冲突 / 挡路撤回」走的是真实 git 和真实文案，断言的是 merge/ 自己的状态流转。
  * 运行：npx tsx --test server/tasks/merge.test.ts
  */
 import assert from 'node:assert/strict'
@@ -20,7 +21,7 @@ import type { TasksScope } from './scope.ts'
 
 // 下面这些模块（日志、附件等）加载时会读数据目录：必须在上面的工具包设好 AGENT_PANEL_DATA 之后再加载
 const { Task, TaskStep, PlanStep, TaskPlan, TestStep } = await import('../../shared/schema.ts')
-const { createMerge } = await import('./merge.ts')
+const { createMerge } = await import('./merge/index.ts')
 const { createClaims } = await import('../claims.ts')
 const { integrateBranch } = await import('../exec/worktree-integrate.ts')
 const { forwardBuildResult } = await import('./build-results.ts')
@@ -169,7 +170,7 @@ test('submit_merge：不是子对话、没写 tests、后台命令没跑完、�
     assert.equal(left.ok, false)
     assert.match(left.info, /计划还有步骤没做完（3「补测试」）/)
     // 被拒的请求不能留下收尾记录，也不能叫起父对话
-    assert.equal(x.map.get(x.kid.id)!.wrapRequest, undefined)
+    assert.equal(x.map.get(x.kid.id)!.child?.wrapRequest, undefined)
     assert.deepEqual(x.woke, [])
   } finally {
     await x.cleanup()
@@ -186,7 +187,7 @@ test('submit_merge：独立分支没派过评审时被评审门禁拦下；交�
     const h = await x.m.submitMerge(x.kid.id, '', tests, false, {})
     assert.equal(h.ok, false)
     assert.match(h.info, /handoff 里还缺「关键文件和模块」/)
-    assert.equal(x.map.get(x.kid.id)!.wrapRequest, undefined)
+    assert.equal(x.map.get(x.kid.id)!.child?.wrapRequest, undefined)
   } finally {
     await x.cleanup()
   }
@@ -203,11 +204,11 @@ test('submit_merge：先把没提交的改动提交到子对话分支，记下�
     assert.equal(git(x.wt.path, 'status', '--porcelain').toString().trim(), '')
     assert.match(git(x.wt.path, 'log', '--oneline', '-1').toString(), /Agent 面板：子对话 — 加文件/)
     const kid = x.map.get(x.kid.id)!
-    assert.equal(kid.wrapRequest?.state, 'requested')
-    assert.equal(kid.wrapRequest?.tests, tests)
+    assert.equal(kid.child?.wrapRequest?.state, 'requested')
+    assert.equal(kid.child?.wrapRequest?.tests, tests)
     // 交接摘要带上面板补的事实：分支名、改动文件
-    assert.match(kid.handoff!.text, new RegExp(x.wt.branch))
-    assert.match(kid.handoff!.text, /b\.txt/)
+    assert.match(kid.child?.handoff!.text, new RegExp(x.wt.branch))
+    assert.match(kid.child?.handoff!.text, /b\.txt/)
     assert.equal(kid.plans.at(-1)!.steps.at(-1)!.status, 'waiting')
     assert.equal(x.woke.length, 1)
     assert.equal(x.woke[0].id, 'root')
@@ -225,7 +226,7 @@ test('直接修的用户 Bug（kind: "fix"，分析稿 B2）：没写根因一�
     const no = await x.m.submitMerge(x.kid.id, '加文件', tests, false, handoff)
     assert.equal(no.ok, false)
     assert.match(no.info, /handoff\.cause 写根因一句/)
-    assert.equal(x.map.get(x.kid.id)!.wrapRequest, undefined)
+    assert.equal(x.map.get(x.kid.id)!.child?.wrapRequest, undefined)
     const r = await x.m.submitMerge(x.kid.id, '补上 b.txt', tests, false, { ...handoff, cause: '漏建了 b.txt' })
     assert.equal(r.ok, true, r.info)
     const kid = x.map.get(x.kid.id)!
@@ -266,7 +267,7 @@ test('finish_child：合回成功时改动进了原目录，收尾步骤标完�
     assert.match(r.info, /已把子对话「子对话」合回/)
     assert.equal(readText(path.join(x.repo, 'b.txt')), 'b\n')
     const kid = x.map.get(x.kid.id)!
-    assert.equal(kid.wrapRequest, undefined)
+    assert.equal(kid.child?.wrapRequest, undefined)
     assert.equal(kid.plans.at(-1)!.steps.at(-1)!.status, 'done')
     assert.match(kid.messages.at(-1)!.text, /【父对话收尾】已合回原分支/)
     // 删分支、置完成不在这里做：只走 advanceChildTo（见 docs/lessons/child-wrapup.md）
@@ -302,8 +303,8 @@ test('finish_child：和原分支冲突时退回子对话，分支和目录都�
     assert.equal(readText(path.join(x.repo, 'README.md')), '# 父对话改的\n')
     assert.equal(git(x.repo, 'status', '--porcelain').toString().trim(), '')
     const kid = x.map.get(x.kid.id)!
-    assert.equal(kid.wrapRequest?.state, 'failed')
-    assert.match(kid.wrapRequest!.info, /冲突/)
+    assert.equal(kid.child?.wrapRequest?.state, 'failed')
+    assert.match(kid.child?.wrapRequest!.info, /冲突/)
     // 收尾步骤退回进行中，写清没合回
     const wrap = kid.plans.at(-1)!.steps.at(-1)!
     assert.equal(wrap.status, 'running')
@@ -379,7 +380,7 @@ test('finish_child：父对话目录挡路（暂存区、未提交改动 / 未�
       // 一行原因带上具体文件（暂存区那条以前只剩冒号，文件名被截掉）
       if (scene !== 'branch' && scene !== 'merge-head') assert.match(r.why ?? '', how.name, scene)
       const kid = x.map.get(x.kid.id)!
-      assert.equal(kid.wrapRequest?.state, 'requested', `${scene}：收尾请求留着`)
+      assert.equal(kid.child?.wrapRequest?.state, 'requested', `${scene}：收尾请求留着`)
       const wrap = kid.plans.at(-1)!.steps.at(-1)!
       assert.equal(wrap.status, 'waiting', scene)
       assert.match(wrap.note, /父对话的目录挡住了合并/, scene)
@@ -389,7 +390,7 @@ test('finish_child：父对话目录挡路（暂存区、未提交改动 / 未�
       const again = await x.m.finishChild(x.parent, x.kid.id)
       assert.equal(again.ok, true, `${scene}：${again.info}`)
       assert.equal(readText(path.join(x.repo, 'README.md')), '# 子对话改的\n', scene)
-      assert.equal(x.map.get(x.kid.id)!.wrapRequest, undefined, scene)
+      assert.equal(x.map.get(x.kid.id)!.child?.wrapRequest, undefined, scene)
       assert.deepEqual(x.advanced, [x.kid.id], scene)
     } finally {
       await x.cleanup()
@@ -406,7 +407,7 @@ test('finish_child：分支上没有新改动时照常收尾，原目录不多�
     assert.equal(r.ok, true, r.info)
     assert.match(r.info, /分支上没有新的改动/)
     assert.equal(git(x.repo, 'rev-parse', 'HEAD').toString().trim(), head)
-    assert.equal(x.map.get(x.kid.id)!.wrapRequest, undefined)
+    assert.equal(x.map.get(x.kid.id)!.child?.wrapRequest, undefined)
     assert.deepEqual(x.advanced, [x.kid.id])
   } finally {
     await x.cleanup()
@@ -425,7 +426,7 @@ test('合并途中、父对话测试中、已经完成时都不重复收尾；�
     assert.match((await x.m.submitMerge(x.kid.id, '', tests, false, handoff)).info, /父对话正在合并你的分支/)
     x.m.merging.delete(x.kid.id)
     const kid = x.map.get(x.kid.id)!
-    kid.wrapRequest = { ...kid.wrapRequest!, state: 'testing' }
+    setChild(kid, { wrapRequest: { ...kid.child!.wrapRequest!, state: 'testing' } })
     assert.match((await x.m.finishChild(x.parent, x.kid.id)).info, /等结果，不要重复收尾/)
     kid.resolved = true
     const done = await x.m.finishChild(x.parent, x.kid.id)
@@ -472,7 +473,7 @@ test('共用目录的子对话：改了文件但没请求收尾时不收；请�
   assert.match(ok.info, /已验收并标完成/)
   assert.deepEqual(x.integrated, [])
   assert.deepEqual(x.advanced, [kid.id])
-  assert.equal(x.map.get(kid.id)!.wrapRequest, undefined)
+  assert.equal(x.map.get(kid.id)!.child?.wrapRequest, undefined)
 })
 
 test('UE 共用目录的子对话（用户 2026-11-04 报）：没拿到这次改动的编译通过不能请求验收；父对话漏写 children 时面板按申请补上，结果推回子对话', async () => {
@@ -495,14 +496,14 @@ test('UE 共用目录的子对话（用户 2026-11-04 报）：没拿到这次�
   assert.match((await submit()).info, /还没申请过编译/)
   // 2. 申请了：记在子对话上，父对话收到编译申请；结果出来之前照样拒
   assert.equal((await x.m.childRequestBuild(x.map.get(kid.id)!, '改了 Move.cpp')).ok, true)
-  assert.equal(x.map.get(kid.id)!.buildAsk?.state, 'asked')
+  assert.equal(x.map.get(kid.id)!.child?.buildAsk?.state, 'asked')
   assert.match(x.woke.at(-1)!.text, /【编译申请】/)
   assert.match((await submit()).info, /编译还没出结果/)
   // 3. 父对话申请编译时漏了 children：面板按「谁申请过还没编」补上
   const pr = await x.m.parentRequestBuild(parent, { testSteps: [ue], wslDistro: '' } as never, '编 Move.cpp', [])
   assert.equal(pr.ok, true, pr.info)
   assert.match(pr.info, /children 没写，面板按申请补上了：「改角色移动」/)
-  assert.equal(x.map.get(kid.id)!.buildAsk?.state, 'building')
+  assert.equal(x.map.get(kid.id)!.child?.buildAsk?.state, 'building')
   // 4. 编译跑完：按子对话上的记录推回给它（没在等收尾，照常叫醒它）
   const tail = await forwardBuildResult(
     x.s,
@@ -510,7 +511,7 @@ test('UE 共用目录的子对话（用户 2026-11-04 报）：没拿到这次�
     'UE 编译：编译 跑完了：成功',
   )
   assert.equal(tail, '')
-  assert.equal(x.map.get(kid.id)!.buildAsk?.state, 'passed')
+  assert.equal(x.map.get(kid.id)!.child?.buildAsk?.state, 'passed')
   assert.match(x.toChild.at(-1)!.text, /【父对话编译结果】UE 编译：编译 跑完了：成功/)
   // 5. 编译通过：能请求验收了（rig 的后台命令表不分对话，把这条编译标成跑完）
   for (const j of x.jobs) j.state = 'done'
@@ -518,7 +519,7 @@ test('UE 共用目录的子对话（用户 2026-11-04 报）：没拿到这次�
   assert.equal(ok.ok, true, ok.info)
   // 6. 通过之后又改了 C++：要重新编译
   const k = x.map.get(kid.id)!
-  k.wrapRequest = undefined
+  setChild(k, { wrapRequest: undefined })
   k.changes = [{ path: 'Source/Game/Move.cpp', add: 5, del: 1 }]
   assert.match((await submit()).info, /编译通过之后又改了要编译的文件/)
 })
@@ -530,8 +531,7 @@ test('编译通过时子对话已经在等收尾：不叫醒它（叫醒会作�
       id,
       parentTaskId: 'root',
       title: id,
-      buildAsk: { state: 'building', at, sig: 's', jobs: [job] },
-      ...over,
+      child: { buildAsk: { state: 'building', at, sig: 's', jobs: [job] }, ...over },
     })
   const waiting = building('wait-kid', 'j1', { wrapRequest: { state: 'requested', at } })
   const broken = building('bad-kid', 'j2', { wrapRequest: { state: 'requested', at } })
@@ -543,10 +543,10 @@ test('编译通过时子对话已经在等收尾：不叫醒它（叫醒会作�
   )
   assert.equal(x.toChild.length, 0, '不叫醒它')
   const w = x.map.get('wait-kid')!
-  assert.equal(w.wrapRequest?.state, 'requested', '收尾请求还在')
+  assert.equal(w.child?.wrapRequest?.state, 'requested', '收尾请求还在')
   assert.match(w.messages.at(-1)!.text, /编译通过：编译成功\n你已经请父对话验收/)
   // 失败：照常叫醒它去修（它的收尾请求本来就该作废）
   assert.equal(await forwardBuildResult(x.s, { id: 'j2', state: 'failed', taskId: 'root' }, '编译失败：C2065'), '')
-  assert.equal(x.map.get('bad-kid')!.buildAsk?.state, 'failed')
+  assert.equal(x.map.get('bad-kid')!.child?.buildAsk?.state, 'failed')
   assert.match(x.toChild.at(-1)!.text, /【父对话编译结果】编译失败：C2065/)
 })

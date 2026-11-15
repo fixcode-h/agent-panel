@@ -49,6 +49,8 @@ export const compLabel = (c: CompName) =>
     grid: t('数据表格'),
     callTree: t('调用栈树'),
     capRow: t('能力行'),
+    htmlCard: t('HTML 卡片'),
+    styleRef: t('风格参考图'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -62,6 +64,12 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'empty' && prop === 'border') return t('边框线型')
   if (c === 'grid') return gridPropLabel(prop) ?? prop
   if (c === 'callTree') return callTreePropLabel(prop) ?? prop
+  if (c === 'htmlCard' && prop !== 'radius')
+    return (
+      { preview: t('缩略预览'), previewH: t('预览高度'), active: t('右栏正在显示的描边') } as Record<string, string>
+    )[prop]
+  if (c === 'styleRef' && prop !== 'radius')
+    return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'capRow' && prop !== 'radius')
     return ({ pad: t('上下留白'), when: t('显示「该用 / 别用」'), name: t('显示原名') } as Record<string, string>)[prop]
   return (

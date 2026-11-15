@@ -33,10 +33,13 @@ export function comparePluginVersions(a: string, b: string) {
 /** 市场或仓库里的版本比装着的新 */
 export const isNewerPlugin = (latest: string, current: string) => comparePluginVersions(latest, current) > 0
 
-/** 一个可以升级的插件：去哪儿装新版本（交给 /plugins/install/github 预览） */
+/**
+ * 一个可以升级的插件：去哪儿装新版本（交给 /plugins/install/github 预览）。
+ * wrap 为真的是从 GitHub 链接包装的插件（ADR 0068）：repo 是上游仓库，升级走 /plugins/wrap/preview（update）
+ */
 export interface PluginUpdate {
   id: string
   current: string
   latest: string
-  install: { repo: string; id?: string; ref?: string; path?: string }
+  install: { repo: string; id?: string; ref?: string; path?: string; wrap?: boolean }
 }

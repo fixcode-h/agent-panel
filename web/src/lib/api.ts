@@ -106,6 +106,7 @@ import { catalogContract } from '@shared/api-contract/catalog'
 import { tasksContract } from '@shared/api-contract/tasks'
 import { projectsContract } from '@shared/api-contract/projects'
 import { trashContract } from '@shared/api-contract/trash'
+import { turnOutputsContract } from '@shared/api-contract/turn-outputs'
 import { skillsContract } from '@shared/api-contract/skills'
 import type { SkillActivationInput } from '@shared/skills/activation'
 import { call } from './api/call'
@@ -814,6 +815,9 @@ export const api = {
     request<{ path: string; diff: string }>(
       `/tasks/${id}/turn-diff?msg=${encodeURIComponent(msg)}&path=${encodeURIComponent(path)}`,
     ),
+  /** 本轮产出：这一轮改过的能直接看的文件（候选由界面按 shared/turn-outputs/pick.ts 挑好） */
+  turnOutputs: (id: string, msgs: string[], paths: string[]) =>
+    call(turnOutputsContract.outputs, { params: { id }, body: { msgs, paths } }),
   /** 撤销一轮的改动：有文件撤不干净时 ok 为 false，列出冲突的文件，一个都没动 */
   convDiff: (id: string, path: string) =>
     request<{ path: string; diff: string }>(`/tasks/${id}/conv-diff?path=${encodeURIComponent(path)}`),

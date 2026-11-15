@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { type TaskMessage } from '../../shared/schema.ts'
 import { childIdleAsk, childLastActivity, childWait } from '../../shared/task.ts'
@@ -8,6 +9,7 @@ import { hasHeld, removeHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { readTask } from './read.ts'
+import { idleAskLetter } from '../../shared/prompt/letters/notice.ts'
 
 /**
  * 子对话没有输出时以父对话的名义自动问它状态（阈值和次数上限在 shared/task.ts 的 childIdleAsk）；
@@ -60,7 +62,7 @@ export function createIdleAsk(s: TasksScope) {
             working: tk.working,
             lastActivityAt,
             wait,
-            autoAsk: tk.autoAsk,
+            autoAsk: tk.child?.autoAsk,
             toolRunning: childToolRunning(tk),
             unitMs: askUnitMs,
           },
@@ -73,7 +75,7 @@ export function createIdleAsk(s: TasksScope) {
         continue
       }
       const decision = childIdleAsk(
-        { minutes, working: tk.working, lastActivityAt, wait, autoAsk: tk.autoAsk, unitMs: askUnitMs },
+        { minutes, working: tk.working, lastActivityAt, wait, autoAsk: tk.child?.autoAsk, unitMs: askUnitMs },
         now,
       )
       if (!decision.ask) continue
@@ -81,9 +83,7 @@ export function createIdleAsk(s: TasksScope) {
       // 读父对话的时候它可能已经被停止、替换掉了：这一轮就不问了
       if (!parent || s.shuttingDown || s.live.get(tk.id) !== entry) continue
       const mins = Math.max(1, Math.round(decision.idleMs / askUnitMs))
-      const text =
-        `【状态询问】你已经 ${mins} 分钟没有输出了。请简短报告：现在在做什么、是否卡住；` +
-        `卡住请说明卡在哪一步、需要什么才能继续。没有卡住就说明下一步还要多久，然后接着做。`
+      const text = idleAskLetter(mins)
       const msg: TaskMessage = {
         id: randomUUID(),
         role: 'system',
@@ -109,7 +109,7 @@ export function createIdleAsk(s: TasksScope) {
         if (r.how === 'held') {
           removeHeld(tk.id, msg.id)
           after.messages = after.messages.filter((m) => m.id !== msg.id)
-          after.autoAsk = { at: new Date().toISOString(), count: decision.count, held: true }
+          setChild(after, { autoAsk: { at: new Date().toISOString(), count: decision.count, held: true } })
           await s.store.update(after.id, after)
           log.info('task', '子对话这一轮收不下自动询问，跳过', {
             task: tk.id,
@@ -121,7 +121,7 @@ export function createIdleAsk(s: TasksScope) {
         }
         // 记成询问交付后的最后活动时间：询问自己的那条消息会把时间刷新到这一刻，
         // 之后有输出才显示成「已经回复」；重启路径下 followUp 另记的那条也不会让「等回复」立刻消失
-        after.autoAsk = { at: childLastActivity(after) || msg.at, count: decision.count }
+        setChild(after, { autoAsk: { at: childLastActivity(after) || msg.at, count: decision.count } })
         await s.store.update(after.id, after)
         log.info('task', '子对话没有输出，自动问了它的状态', {
           task: tk.id,
@@ -136,7 +136,7 @@ export function createIdleAsk(s: TasksScope) {
         const after = s.live.get(tk.id)?.task ?? entry.task
         removeHeld(tk.id, msg.id)
         after.messages = after.messages.filter((m) => m.id !== msg.id)
-        after.autoAsk = { at: new Date().toISOString(), count: decision.count, held: true }
+        setChild(after, { autoAsk: { at: new Date().toISOString(), count: decision.count, held: true } })
         await s.store.update(after.id, after).catch(() => {})
         log.warn('task', '自动询问没能交给子对话', { task: tk.id, error: (e as Error).message })
       }

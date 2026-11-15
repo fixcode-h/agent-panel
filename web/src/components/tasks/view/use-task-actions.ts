@@ -4,7 +4,7 @@
  * 用到的页面状态都放在 ctx 里显式传进来；这几个动作自己的「进行中」状态（发送中、继续中…）收在这里。
  * 出错一律照原文弹给用户，不悄悄重试
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import type { Attachment, Project, Task, TaskMessage, Workflow } from '@shared/schema'
 import { taskSummary, TRASH_RETENTION_DAYS } from '@shared/task'
@@ -317,4 +317,16 @@ export function useTaskActions(c: TaskActionsCtx) {
     remove,
     changeRun,
   }
+}
+
+/**
+ * 总结卡「要你处理」的「处理」按钮：交给当前对话新的一轮（见 Markdown 的 HandleNeedsCtx）。
+ * 给出去的函数保持不变，免得每次刷新都让所有回复重画；真正发送的那份每次渲染更新。
+ * 「处理」按钮发的话不碰输入框：用户正在写的草稿和附件原样留着。
+ * 执行中也照样发，和输入框一样由服务端决定插话还是排到这一轮结束后；工作流停住时处理完会接着走流程
+ */
+export function useHandleNeeds(say: (text: string) => Promise<void>) {
+  const needsRef = useRef<(text: string) => Promise<void>>(async () => {})
+  needsRef.current = say
+  return useCallback((text: string) => needsRef.current(text), [])
 }

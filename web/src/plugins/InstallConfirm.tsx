@@ -83,6 +83,18 @@ export function InstallConfirm({ preview, onClose }: { preview?: InstallPreview;
               {t('已经装着 v{v}：会换成这个版本，参数保留。', { v: preview.installed.version })}
             </p>
           )}
+          {!!preview.requires?.length && (
+            <div className="flex flex-col gap-0.5 rounded-lg bg-field p-3 text-body text-muted">
+              <span>{t('它依赖下面的插件，会先一起装上：')}</span>
+              {preview.requires.map((r) => (
+                <span key={r.id} className="text-subtle">
+                  {r.current
+                    ? t('{name}：v{cur} 升到 v{latest}', { name: r.name, cur: r.current, latest: r.latest })
+                    : t('{name}：v{latest}', { name: r.name, latest: r.latest })}
+                </span>
+              ))}
+            </div>
+          )}
           {preview.hasCode && (
             <div className="flex gap-2 rounded-lg bg-warning/10 p-3 text-body text-warning">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />

@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { Task, type TaskTestRun, type TestStep } from '../../shared/schema.ts'
 import { createParentTests, parentTestFailText, parentTestRun } from '../parent-tests.ts'
 import {
@@ -14,6 +15,11 @@ import { log } from '../log.ts'
 import { markWrapUp } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
 import { currentTask, freshTask } from './read.ts'
+import {
+  PARENT_TEST_NONE_LETTER,
+  parentTestFailedLetter,
+  parentTestPassedLetter,
+} from '../../shared/prompt/letters/build.ts'
 
 /**
  * 测试步骤：父对话代跑子对话的测试（ADR 0018 / 0020）、记录测试结果、重启后接着等还没出结果的测试。
@@ -58,18 +64,18 @@ export function createTestRuns(sc: TasksScope) {
       const lines = testRunLines(tk.testRuns)
       await sc.childMerged(
         run.childId,
-        `【父对话测试通过】父对话在它自己的目录里跑完了范围为「全量，合并后由父对话跑」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        parentTestPassedLetter(lines),
         parent ? { peer: await sc.peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
       )
     },
     fail: async (run, failed) => {
       const tk = await currentTask(sc, run.childId)
-      if (!tk?.wrapRequest) return
+      if (!tk?.child?.wrapRequest) return
       const failedText = parentTestFailText(failed)
       // 报错原文只留前面一段：它会随任务存盘，父对话读到的也只有第一行
       const info = failedText.length > 4000 ? `${failedText.slice(0, 4000)}…` : failedText
       // 用单独的状态：'failed' 的语义是「没合进去」，这里分支已经合回、只是测试没过，两侧的说明完全不同（评审 R3）
-      tk.wrapRequest = { ...tk.wrapRequest, state: 'test-failed', info }
+      setChild(tk, { wrapRequest: { ...tk.child?.wrapRequest, state: 'test-failed', info } })
       markWrapUp(tk, 'merge', 'running', `父对话测试没通过：第 ${failed.index + 1} 步「${failed.step.name}」`)
       tk.updatedAt = new Date().toISOString()
       const entry = sc.live.get(tk.id)
@@ -81,7 +87,7 @@ export function createTestRuns(sc: TasksScope) {
       await sc.sendToChild(
         run.parentId,
         run.childId,
-        `【父对话测试未通过】来自子对话「${run.childTitle}」（id ${run.childId}）：你的分支已经合回，但父对话在它的目录里跑这条步骤时失败了，下面是它的报错。\n${failedText}\n${lines.length ? `已记录的耗时：\n${lines.join('\n')}\n` : ''}你的独立分支还在：按报错修好、在你的分支里重新跑通其它检查后调用 submit_merge；合回去时面板会把这些步骤全部重跑一遍（跑过也不跳过），通过才收尾。`,
+        parentTestFailedLetter({ id: run.childId, title: run.childTitle }, failedText, lines),
         'build',
         'test',
         true,
@@ -139,8 +145,8 @@ export function createTestRuns(sc: TasksScope) {
    * 父对话测试没通过之前，这些都不能做
    */
   async function startParentTests(tk: Task, steps: TestStep[]) {
-    if (!tk.parentTaskId || !tk.wrapRequest) return
-    tk.wrapRequest = { ...tk.wrapRequest, state: 'testing', info: '' }
+    if (!tk.parentTaskId || !tk.child?.wrapRequest) return
+    setChild(tk, { wrapRequest: { ...tk.child?.wrapRequest, state: 'testing', info: '' } })
     markWrapUp(tk, 'merge', 'waiting', `已合回，等父对话跑测试：${steps.map((s) => s.name).join('、')}`)
     tk.updatedAt = new Date().toISOString()
     const entry = sc.live.get(tk.id)
@@ -185,8 +191,8 @@ export function createTestRuns(sc: TasksScope) {
     ).run
 
   /** 这个子对话是否在等父对话测试：任务上的状态（重启后还在）+ 内存里的队列 */
-  const parentTesting = (childId: string, tk: Pick<Task, 'wrapRequest'>) =>
-    tk.wrapRequest?.state === 'testing' || parentTests.statusOf(childId) !== ''
+  const parentTesting = (childId: string, tk: Pick<Task, 'child'>) =>
+    tk.child?.wrapRequest?.state === 'testing' || parentTests.statusOf(childId) !== ''
 
   /**
    * 面板重启后把没跑完的父对话测试重新排队（ADR 0018）：批次记在任务上（wrapRequest.state = testing），
@@ -194,17 +200,17 @@ export function createTestRuns(sc: TasksScope) {
    */
   async function recoverParentTests() {
     for (const raw of await sc.store.list()) {
-      if (raw.archived || raw.wrapRequest?.state !== 'testing') continue
+      if (raw.archived || raw.child?.wrapRequest?.state !== 'testing') continue
       const tk = freshTask(sc, raw)
       if (!tk.parentTaskId) {
-        tk.wrapRequest = undefined
+        setChild(tk, { wrapRequest: undefined })
         await sc.store.update(tk.id, tk)
         continue
       }
       const steps = await parentTestStepsOf(tk)
       if (!steps.length) {
         await sc
-          .childMerged(tk.id, '【父对话测试】项目里已经没有要由父对话跑的测试步骤了，直接收尾。')
+          .childMerged(tk.id, PARENT_TEST_NONE_LETTER)
           .catch((e) => log.warn('task', '没有父对话测试步骤时收尾失败', { task: tk.id, error: (e as Error).message }))
         continue
       }

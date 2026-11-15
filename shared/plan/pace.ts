@@ -1,5 +1,6 @@
 import { PLAN_STALE_MS, activePlan, itemStale, itemUpdatedAt, runningItem } from './index.ts'
 import type { Task } from '../schema.ts'
+import { PLAN_NONE_RUNNING, planStaleHint } from '../prompt/letters/nudge.ts'
 
 // 放在单独的文件里：shared/plan/index.ts 到了行数上限（scripts/file-caps.json）
 
@@ -60,16 +61,12 @@ export function planPaceHint(
     // 都在等结果、或者都做完了：这时动手多半是在处理推回来的结果，不催
     const pending = plan.steps.flatMap((s) => [s, ...s.children]).find((x) => x.status === 'pending')
     if (!pending || state.calls < 3) return ''
-    return hint(
-      '【面板】计划里现在没有进行中的步骤，你却在改文件、跑命令：先用 set_plan（partial: true，带步骤 id）把正在做的那一步标成进行中，已经做完的标完成，再接着做。',
-    )
+    return hint(PLAN_NONE_RUNNING)
   }
   const stale = itemStale(cur.item, now) !== undefined && state.calls >= Math.max(1, Math.ceil(calls / 3))
   if (state.calls < Math.max(1, calls) && !stale) return ''
   const how = stale
     ? `超过 ${Math.round(PLAN_STALE_MS / 60_000)} 分钟、改文件和跑命令 ${state.calls} 次`
     : `改文件和跑命令 ${state.calls} 次`
-  return hint(
-    `【面板】计划里「${cur.item.title}」上次更新以后，已经${how}，计划没再动过。这一步做完了就马上用 set_plan（partial: true，带步骤 id）标完成、把下一步标进行中，再接着做；不要几步做完再一起补。这一步确实还没做完就接着做，不用回复这句。`,
-  )
+  return hint(planStaleHint(cur.item.title, how))
 }

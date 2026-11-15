@@ -89,7 +89,7 @@ export function TaskTitle({
     )
   return (
     <>
-      {isAnalysisTask(task, localAgents) && <AnalysisMark kind={task.analysis} className="ml-1" />}
+      {isAnalysisTask(task, localAgents) && <AnalysisMark kind={task.analysis?.kind} className="ml-1" />}
       {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光，CLI 关了就没有 */}
       <h2
         title={[live ? cliAliveHint(live) : '', t('双击重命名')].filter(Boolean).join(' · ')}

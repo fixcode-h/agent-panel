@@ -263,3 +263,110 @@ test('备份只留最近 3 个版本的', async () => {
   await runMigrations({ dataDir: d, migrations: list, log: quiet })
   assert.deepEqual(readdirSync(path.join(d, 'backup')).sort(), ['0003-m3', '0004-m4', '0005-m5'])
 })
+
+test('0007：仓库里已经有教训、经验的项目记成随仓库存，其余不写这一项', async () => {
+  const d = freshDir()
+  const withLessons = path.join(root, `repo${n++}`)
+  write(path.join(withLessons, 'docs', 'lessons', 'build.md'), '# 构建\n')
+  mkdirSync(path.join(withLessons, '.git'), { recursive: true })
+  const onlyReadme = path.join(root, `repo${n++}`)
+  write(path.join(onlyReadme, 'docs', 'lessons', 'README.md'), '# 说明\n')
+  mkdirSync(path.join(onlyReadme, '.git'), { recursive: true })
+  write(path.join(d, 'projects', 'projects.json'), [
+    { id: 'a', path: withLessons },
+    { id: 'b', path: onlyReadme },
+    { id: 'c', path: withLessons, knowledgeInRepo: false },
+    { id: 'd' },
+  ])
+  // 只跑 0007：版本号先记到 6
+  write(path.join(d, 'data-version.json'), { version: 6 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const [a, b, c, e] = json(path.join(d, 'projects', 'projects.json'))
+  assert.equal(a.knowledgeInRepo, true)
+  assert.ok(!('knowledgeInRepo' in b), '只有 README 不算记过')
+  assert.equal(c.knowledgeInRepo, false, '用户已经选过的不改')
+  assert.ok(!('knowledgeInRepo' in e))
+})
+
+test('0008：平铺的执行上限字段收进 task.budget；0（不限）丢掉；什么都没设的不造出 budget；已经是新格式的不碰', async () => {
+  const d = freshDir()
+  const dir = path.join(d, 'tasks', 'chats')
+  const from = { usd: 0.5, tokens: 1200, at: 1760000000000 }
+  write(
+    path.join(dir, 'a.json'),
+    task('a', { turnSeenAt: '', budgetTokens: 5000, budgetMinutes: 30, budgetFrom: from, budgetNotice: 'warn' }),
+  )
+  write(path.join(dir, 'z.json'), task('z', { turnSeenAt: '', budgetTokens: 0, budgetMinutes: 0 }))
+  write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', budget: { tokens: 10 } }))
+  const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
+  write(path.join(d, 'data-version.json'), { version: 7 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const a = json(path.join(dir, 'a.json'))
+  assert.deepEqual(a.budget, { tokens: 5000, minutes: 30, from, notice: 'warn' })
+  for (const k of ['budgetTokens', 'budgetMinutes', 'budgetFrom', 'budgetNotice']) assert.ok(!(k in a), `${k} 收进去了`)
+  const z = json(path.join(dir, 'z.json'))
+  assert.ok(!('budget' in z) && !('budgetTokens' in z) && !('budgetMinutes' in z), '不限的不留空对象')
+  assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
+  assert.equal(json(path.join(d, 'backup', '0008-task-budget', 'tasks', 'chats', 'a.json')).budgetTokens, 5000)
+})
+
+test('0009：analysis 种类和 analysisOf 收进 task.analysis；modelDesign 转成 plugin；已经是新格式的不碰', async () => {
+  const d = freshDir()
+  const dir = path.join(d, 'tasks', 'chats')
+  write(path.join(dir, 'a.json'), task('a', { turnSeenAt: '', analysis: 'fix', analysisOf: 'b' }))
+  write(path.join(dir, 'o.json'), task('o', { turnSeenAt: '', analysisOf: 'b' }))
+  write(path.join(dir, 'm.json'), task('m', { turnSeenAt: '', modelDesign: true }))
+  write(path.join(dir, 'k.json'), task('k', { turnSeenAt: '', modelDesign: true, plugin: 'x.y' }))
+  write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', analysis: { kind: 'run' }, plugin: 'blender.model' }))
+  const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
+  write(path.join(d, 'data-version.json'), { version: 8 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const a = json(path.join(dir, 'a.json'))
+  assert.deepEqual(a.analysis, { kind: 'fix', of: 'b' })
+  assert.ok(!('analysisOf' in a))
+  const o = json(path.join(dir, 'o.json'))
+  assert.ok(!('analysis' in o) && !('analysisOf' in o), '没有种类的不算分析对话')
+  const m = json(path.join(dir, 'm.json'))
+  assert.equal(m.plugin, 'blender.model')
+  assert.ok(!('modelDesign' in m))
+  assert.equal(json(path.join(dir, 'k.json')).plugin, 'x.y', '已有的 plugin 不覆盖')
+  assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
+})
+
+test('0010：只有子对话用的字段收进 task.child；空提问列表丢掉；父对话那一侧的 inbox 留在顶层；已经是新格式的不碰', async () => {
+  const d = freshDir()
+  const dir = path.join(d, 'tasks', 'chats')
+  const wrap = { state: 'requested', at: '', note: '做完了', tests: '', info: '' }
+  const ask = { id: 'q', question: '用哪个？', options: ['A'], kind: 'question' }
+  write(
+    path.join(dir, 'k.json'),
+    task('k', {
+      turnSeenAt: '',
+      parentTaskId: 'p',
+      wrapRequest: wrap,
+      handoff: { text: '交接', files: '', at: '' },
+      pendingReport: '汇报',
+      parentAsks: [ask],
+      autoAsk: { at: '', count: 1 },
+    }),
+  )
+  write(path.join(dir, 'p.json'), task('p', { turnSeenAt: '', parentAsks: [], inbox: [] }))
+  write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', child: { userDirect: '改成蓝色' } }))
+  const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
+  write(path.join(d, 'data-version.json'), { version: 9 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const k = json(path.join(dir, 'k.json'))
+  assert.deepEqual(k.child, {
+    wrapRequest: wrap,
+    handoff: { text: '交接', files: '', at: '' },
+    pendingReport: '汇报',
+    parentAsks: [ask],
+    autoAsk: { at: '', count: 1 },
+  })
+  for (const x of ['wrapRequest', 'handoff', 'pendingReport', 'parentAsks', 'autoAsk'])
+    assert.ok(!(x in k), `${x} 收进去了`)
+  const p = json(path.join(dir, 'p.json'))
+  assert.ok(!('child' in p) && !('parentAsks' in p), '空的提问列表不造出 task.child')
+  assert.deepEqual(p.inbox, [], '父对话那一侧的字段不动')
+  assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
+})

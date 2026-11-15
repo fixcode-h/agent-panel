@@ -26,6 +26,8 @@ export async function pluginRunTools(
     agentId: string
     /** 用户直接在聊的对话（不是派出的子任务、工作流节点），见 PluginRun.conversation */
     conversation: boolean
+    /** 这一轮的角色参数（PluginRun.params） */
+    params: Record<string, unknown>
   },
   /** 插件改文件类工具的守卫和改动记录（插件接口 3，见 server/plugins/mcp.ts 的 PluginRunHooks） */
   hooks?: Omit<PluginRunHooks, 'cwd'>,
@@ -55,6 +57,7 @@ export async function pluginRunTools(
         ...new Set([...run.agent.skills, ...includedAgents(run.agent, ctx.agents).flatMap((x) => x.agent.skills)]),
       ],
       resume: run.resume,
+      params: run.params,
     },
     confirm,
     {

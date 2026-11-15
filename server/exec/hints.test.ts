@@ -607,3 +607,21 @@ test('上下文超长：截断后的整段（含「谁说的」前缀和省略�
   const many = clippedTranscript(asTask([{ ...chatMsg('m2', 'agent', '好'), tools }]), 1, 10_000)
   assert.match(many, /等 1 项/)
 })
+
+test('压缩完这一轮没再报用量：进程结束时记成等下一轮补，下一轮第一次报用量填上压缩后的大小（摸底报告第 20 条）', () => {
+  const track = new CompactTracker(() => {})
+  const starts = new Map<ToolUse, number>()
+  const row = track.startCli(36_000, starts)!
+  // 只报了消息多大、还没有细分：这一轮先不填压缩后
+  track.done({ before: 36_000, messages: 4_000 }, { context: 36_000, window: 200_000 })
+  assert.equal(row.compact?.after, undefined)
+  track.processEnd()
+  assert.equal(row.compact?.awaitAfter, true)
+  const next = new CompactTracker(
+    () => {},
+    awaitingCompact([{ agentId: 'a', step: '', tools: [row] } as never], 'a', ''),
+  )
+  assert.ok(next.measured(12_000, 200_000))
+  assert.equal(row.compact?.after, 12_000)
+  assert.match(row.label, /压缩了 24\.0k token/)
+})

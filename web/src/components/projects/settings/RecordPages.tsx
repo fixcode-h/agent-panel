@@ -2,6 +2,7 @@ import type { Project, ProjectInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { ProjectExperience } from '../ProjectExperience'
 import { LessonsEditor } from '../Lessons'
+import { Checkbox } from '@/components/ui/checkbox'
 import { PageIntro } from './parts'
 import type { SetField } from './project-draft'
 
@@ -28,6 +29,14 @@ export function LessonsPage({
         title={t('项目教训')}
         desc={t(
           '角色在这个项目里返工过、走过弯路的地方，写成下次能直接照做的规则。被纠正、或自己发现办法不对换了做法时，角色会自己记一条，标「角色记录」；你的新要求和某条冲突时，角色会找两全的做法改写它，找不到就先问你。新会话开头只带「所有改动」的全文和其余条目的标题，改到哪些文件再取对应的全文。优先级：你当次的要求 > 项目教训 > 全局教训。',
+        )}
+      />
+      <Checkbox
+        checked={draft.knowledgeInRepo}
+        onChange={(v) => set('knowledgeInRepo', v)}
+        label={t('教训和经验随仓库存')}
+        tip={t(
+          '默认存在面板的数据目录里，不往你的仓库里写文件。打开后存进项目的文档目录（Git 项目是 docs/lessons），随代码提交、团队都能看到。切换后保存时，现有的教训和经验会写到新位置，原来那份不删。',
         )}
       />
       <LessonsEditor lessons={draft.lessons} onChange={(v) => set('lessons', v)} project={project} initialOpen={item} />

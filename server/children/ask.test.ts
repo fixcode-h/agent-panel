@@ -57,7 +57,7 @@ test('「提问」关着：子对话提问自动交给父对话决定，不产�
   const r = await t.askParent('c1', '接口要不要改成 B 方案？', ['保持 A', '改成 B'])
   assert.equal(r.ok, true)
   // 子对话：没有挂着等用户选的弹窗（界面上就是卡片和「需要你处理」的计数）
-  assert.equal((await read('c1')).parentAsks?.length ?? 0, 0, '子对话上没有等用户选的弹窗')
+  assert.equal((await read('c1')).child?.parentAsks?.length ?? 0, 0, '子对话上没有等用户选的弹窗')
   // 父对话：不产生 ask 卡片（卡片和「交给父对话决定」的折叠行都是它渲染的），只有一条给 AI 看的汇报
   const parent = await askStateUntil(t, 'p1', (x) => x.messages.some((m) => m.panel === 'child'))
   assert.equal(parent.messages.filter((m) => m.panel === 'ask').length, 0, '父对话里没有要用户回答的卡片')
@@ -81,7 +81,7 @@ test('「提问」开着：仍然交给用户选，不自动交出', async () =>
 
   await t.askParent('c2', '先做前端还是后端？', ['前端', '后端'])
   const kid = await read('c2')
-  assert.equal(kid.parentAsks?.length, 1, '子对话挂着等用户选的卡片')
+  assert.equal(kid.child?.parentAsks?.length, 1, '子对话挂着等用户选的卡片')
   const ask = (await askStateUntil(t, 'p2', (x) => x.messages.some((m) => m.panel === 'ask'))).messages.find(
     (m) => m.panel === 'ask',
   )!
@@ -93,7 +93,10 @@ test('用户点「交给父对话决定」：记成已交出，并收起子对�
   await make('c3', { parentTaskId: 'p3', rootTaskId: 'p3', askUser: true })
   const t = api()
   await t.askParent('c3', '要不要顺手重构？', ['重构', '不动'])
-  const pending = (await read('p3')).messages.find((m) => m.panel === 'ask')!
+  // 走 tasksApi 自己的读接口等卡片落下：另开 store 读盘可能读到写盘队列前的旧快照（CI 抖动过）
+  const pending = (await askStateUntil(t, 'p3', (x) => x.messages.some((m) => m.panel === 'ask'))).messages.find(
+    (m) => m.panel === 'ask',
+  )!
 
   const res = await t.routes.request(`/p3/child-asks/${pending.id}`, {
     method: 'POST',
@@ -107,7 +110,8 @@ test('用户点「交给父对话决定」：记成已交出，并收起子对�
     (x) => x.messages.find((m) => m.id === pending.id)?.ask?.delegated === true,
   )
   assert.equal(after.messages.find((m) => m.id === pending.id)?.ask?.delegated, true, '点按钮交出也记同一个字段')
-  assert.equal((await read('c3')).parentAsks?.length ?? 0, 0, '子对话的弹窗收起')
+  const kid = await askStateUntil(t, 'c3', (x) => (x.child?.parentAsks?.length ?? 0) === 0)
+  assert.equal(kid.child?.parentAsks?.length ?? 0, 0, '子对话的弹窗收起')
 })
 
 test('收尾建议：「提问」关着时同样自动交给父对话，不弹给用户', async () => {
@@ -117,7 +121,7 @@ test('收尾建议：「提问」关着时同样自动交给父对话，不弹�
 
   const r = await t.askParent('c4', '接着补两个模块的回归测试', ['继续补测试（推荐）', '先停在这'], 'suggestion')
   assert.equal(r.ok, true)
-  assert.equal((await read('c4')).parentAsks?.length ?? 0, 0, '建议不弹给用户')
+  assert.equal((await read('c4')).child?.parentAsks?.length ?? 0, 0, '建议不弹给用户')
   const parent = await askStateUntil(t, 'p4', (x) => x.messages.some((m) => m.panel === 'child'), 8000)
   assert.equal(parent.messages.filter((m) => m.panel === 'ask').length, 0, '建议也不产生要用户选的卡片')
   assert.match(parent.messages.find((m) => m.panel === 'child')!.text, /接着补两个模块的回归测试/)
@@ -133,8 +137,8 @@ test('关掉「提问」：父对话里还没回答的子对话提问一起交�
     (m) => m.panel === 'ask',
   )!
   assert.equal(pending.ask?.delegated, undefined, '开着时先正常等用户选')
-  const kidBefore = await askStateUntil(t, 'c5', (x) => (x.parentAsks?.length ?? 0) === 1)
-  assert.equal(kidBefore.parentAsks?.length, 1, '子对话挂着等用户选的弹窗')
+  const kidBefore = await askStateUntil(t, 'c5', (x) => (x.child?.parentAsks?.length ?? 0) === 1)
+  assert.equal(kidBefore.child?.parentAsks?.length, 1, '子对话挂着等用户选的弹窗')
 
   const res = await t.routes.request('/p5', {
     method: 'PATCH',
@@ -152,8 +156,8 @@ test('关掉「提问」：父对话里还没回答的子对话提问一起交�
     after.messages.some((m) => m.panel === 'child' && m.text.includes('要不要一起改配置？')),
     '交给父对话的 AI 作答',
   )
-  const kid = await askStateUntil(t, 'c5', (x) => (x.parentAsks?.length ?? 0) === 0)
-  assert.equal(kid.parentAsks?.length ?? 0, 0, '子对话的选择弹窗收起')
+  const kid = await askStateUntil(t, 'c5', (x) => (x.child?.parentAsks?.length ?? 0) === 0)
+  assert.equal(kid.child?.parentAsks?.length ?? 0, 0, '子对话的选择弹窗收起')
 })
 
 test('子对话自己没开「提问」：提问和收尾建议不交给父对话，由它自己决定、记进这一轮的汇报', async () => {
@@ -167,9 +171,9 @@ test('子对话自己没开「提问」：提问和收尾建议不交给父对�
   const s = await t.askParent('c6', '下一步要不要顺手补测试？', [], 'suggestion')
   assert.match(s.info, /收尾建议不交给别人选/)
   const kid = await askState(t, 'c6')
-  assert.equal(kid.parentAsks?.length ?? 0, 0, '子对话上没有等人选的弹窗')
-  assert.match(kid.pendingReport ?? '', /由我自己决定）日志要不要保留旧格式？/)
-  assert.match(kid.pendingReport ?? '', /收尾建议，「提问」关着由我自己决定）下一步要不要顺手补测试？/)
+  assert.equal(kid.child?.parentAsks?.length ?? 0, 0, '子对话上没有等人选的弹窗')
+  assert.match(kid.child?.pendingReport ?? '', /由我自己决定）日志要不要保留旧格式？/)
+  assert.match(kid.child?.pendingReport ?? '', /收尾建议，「提问」关着由我自己决定）下一步要不要顺手补测试？/)
   const parent = await askState(t, 'p6')
   assert.equal(
     parent.messages.filter((m) => m.panel === 'ask' || m.panel === 'child').length,

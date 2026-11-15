@@ -116,7 +116,7 @@ test('初始化的 JSON 只在初始化对话里算报告', () => {
   const json = '说明\n\n```json\n{"name":"x"}\n```'
   assert.equal(findReport(task([msg('u', 'user', '初始化'), msg('a', 'agent', json)])), null)
   assert.equal(
-    findReport(task([msg('u', 'user', '初始化'), msg('a', 'agent', json)], { analysis: 'init' }))?.kind,
+    findReport(task([msg('u', 'user', '初始化'), msg('a', 'agent', json)], { analysis: { kind: 'init' } }))?.kind,
     'init',
   )
 })
@@ -155,7 +155,7 @@ test('分析对话：新对话看 analysis，旧对话看角色', () => {
     { id: 'an', origin: 'builtin:analyzer' },
     { id: 'w', origin: 'builtin:worker' },
   ]
-  assert.equal(isAnalysisTask({ analysis: 'run', agentId: '' }, agents), true)
+  assert.equal(isAnalysisTask({ analysis: { kind: 'run' }, agentId: '' }, agents), true)
   assert.equal(isAnalysisTask({ agentId: 'an' }, agents), true)
   assert.equal(isAnalysisTask({ agentId: 'w' }, agents), false)
   assert.equal(isAnalysisTask({ agentId: '' }, agents), false)
@@ -171,15 +171,15 @@ test('插件登记的报告：只在 AI 分析对话里按代码块语言名认�
   const langs = [{ key: 'tables:style', lang: 'tables-style' }]
   const reply = '看到的风格\n\n```tables-style\n{"style":{}}\n```'
   const msgs = [msg('u', 'user', '分析'), msg('a', 'agent', reply)]
-  const r = findReport(task(msgs, { analysis: 'run' }), langs)
+  const r = findReport(task(msgs, { analysis: { kind: 'run' } }), langs)
   assert.equal(r?.kind, 'plugin')
   assert.equal(r?.plugin, 'tables:style')
   assert.equal(r?.message.id, 'a')
   // 普通对话、插件没开（没登记）时不认
   assert.equal(findReport(task(msgs), langs), null)
-  assert.equal(findReport(task(msgs, { analysis: 'run' })), null)
-  assert.equal(stripPluginReports(reply, { analysis: 'run' }, langs), '看到的风格')
+  assert.equal(findReport(task(msgs, { analysis: { kind: 'run' } })), null)
+  assert.equal(stripPluginReports(reply, { analysis: { kind: 'run' } }, langs), '看到的风格')
   assert.equal(stripPluginReports(reply, {}, langs), reply)
   // 还在写、代码块没收尾的也先藏起来
-  assert.equal(stripPluginReports('说明\n```tables-style\n{"st', { analysis: 'run' }, langs), '说明')
+  assert.equal(stripPluginReports('说明\n```tables-style\n{"st', { analysis: { kind: 'run' } }, langs), '说明')
 })

@@ -131,4 +131,31 @@ export const EN_PLUGINS: Record<string, string> = {
     'This project hasn\'t turned on "{name}": turn it on in Project settings → Capabilities',
   '「{name}」只在打开了它的项目里生效': '"{name}" only works in projects that turned it on',
   '没有这个项目：{id}': 'No such project: {id}',
+  '它依赖下面的插件，会先一起装上：': 'It depends on these plugins, which will be installed first:',
+  '{name}：v{cur} 升到 v{latest}': '{name}: v{cur} → v{latest}',
+  '{name}：v{latest}': '{name}: v{latest}',
+  '依赖插件 {id} 版本太旧（要 {min} 或更新，现在是 {cur}）':
+    'Required plugin {id} is too old (needs {min} or newer, has {cur})',
+  '缺少依赖插件 {id}（{min} 或更新）': 'Missing required plugin {id} ({min} or newer)',
+  '缺少依赖插件 {id}': 'Missing required plugin {id}',
+  '依赖插件 {id} 要 {min} 或更新，插件市场里只有 {latest}':
+    'Required plugin {id} needs {min} or newer, but the marketplace only has {latest}',
+  '依赖插件 {id} 在插件市场里找不到，请先手动装上它':
+    'Required plugin {id} is not in the marketplace; install it manually first',
+  '插件市场里 {id} 的包实际是 {got}，没有安装': 'The marketplace package for {id} is actually {got}; not installed',
+  '{names} 依赖这个插件，先关掉它们再关这个': '{names} depend on this plugin; turn them off first',
+  '{names} 依赖这个插件，先删掉它们再删这个': '{names} depend on this plugin; remove them first',
+  // 插件接口 11：托管进程
+  '{sec} 秒内没起来（{last}）': 'Did not start within {sec} seconds ({last})',
+  连不上: 'connection refused',
+  '插件 {id} 没开着或没装': 'Plugin {id} is not enabled or not installed',
+  '插件 {plugin} 没有托管进程 {id}': 'Plugin {plugin} has no managed process {id}',
+  '进程退出了：{why}': 'Process exited: {why}',
+  托管进程没起来: 'The managed process did not start',
+  'PATH 前置 {dirs}': 'Prepend to PATH: {dirs}',
+  'MCP 服务': 'MCP servers',
+  '每轮对话注入；不支持每轮注入的 Agent 退回全局写入':
+    'Injected each turn; agents without per-turn injection fall back to their global config',
+  网页页面: 'Web pages',
+  托管进程: 'Managed processes',
 }

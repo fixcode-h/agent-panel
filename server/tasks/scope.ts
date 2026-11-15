@@ -382,6 +382,8 @@ export interface TasksScope {
       id: string
       title: string
       state: import('../../shared/task.ts').ConvState
+      reason?: string
+      result?: string
     },
     peer?: PeerFrom,
     worktree?: import('../../shared/schema.ts').TaskMessage['worktree'],
@@ -434,7 +436,7 @@ export interface TasksScope {
       id: string
     }[]
   >
-  parentTesting: (childId: string, tk: Pick<Task, 'wrapRequest'>) => boolean
+  parentTesting: (childId: string, tk: Pick<Task, 'child'>) => boolean
   parentTests: import('../parent-tests.ts').ParentTests
   peerList: (self: Task) => Promise<Task[]>
   peerOf: (from: Task, rel: PeerFrom['rel'], kind: PeerKind, subject: string, failed?: boolean) => Promise<PeerFrom>

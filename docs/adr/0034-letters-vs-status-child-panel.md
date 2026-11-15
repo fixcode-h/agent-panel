@@ -29,13 +29,13 @@
 
 ### 一、服务端降噪
 
-| 子对话发生了什么                    | 改成                                                                                                               |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 随父对话一起停下（已中断）          | 不发。`noteParent` 只把计划那一步退回进行中并落盘，不写对话流、不进收件箱；继续时由面板连带拉起（ADR 0032）        |
-| AI 自己 `message_parent` 的阶段汇报 | 不单独发，记在 `Task.pendingReport`；这一轮 `reportChild` 发状态时并进去当「最近的结果」，发出后清空。一轮只交一封 |
-| 提问、收尾建议、`wait_fix` 报错     | 照旧马上发（要父对话动手）                                                                                         |
-| 用户直接在子对话里交代              | 不发消息。父计划那一步挂等待并写「你直接交代了新要求：…」，原话记在 `Task.userDirect`，下一封汇报里带上            |
-| 同一子对话没读的汇报又来一封        | 收件箱里替换掉旧的（`inbox[].report`），对话流里旧那行 `peer.superseded`，界面变淡写「已被新的汇报取代」           |
+| 子对话发生了什么                    | 改成                                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 随父对话一起停下（已中断）          | 不发。`noteParent` 只把计划那一步退回进行中并落盘，不写对话流、不进收件箱；继续时由面板连带拉起（ADR 0032）              |
+| AI 自己 `message_parent` 的阶段汇报 | 不单独发，记在 `Task.child.pendingReport`；这一轮 `reportChild` 发状态时并进去当「最近的结果」，发出后清空。一轮只交一封 |
+| 提问、收尾建议、`wait_fix` 报错     | 照旧马上发（要父对话动手）                                                                                               |
+| 用户直接在子对话里交代              | 不发消息。父计划那一步挂等待并写「你直接交代了新要求：…」，原话记在 `Task.child.userDirect`，下一封汇报里带上            |
+| 同一子对话没读的汇报又来一封        | 收件箱里替换掉旧的（`inbox[].report`），对话流里旧那行 `peer.superseded`，界面变淡写「已被新的汇报取代」                 |
 
 `message_parent` 的工具说明和子对话提示词同步改成：要父对话决定或协调时 `question: true`，阶段进展不用单独发。
 
@@ -60,18 +60,18 @@
 
 ## 操作清单 / 契约
 
-| 位置                                           | 改动                                                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `shared/schema.ts`                             | `PeerFrom.superseded`；`Task.inbox[].mid` / `report`；`Task.pendingReport`、`Task.userDirect` |
-| `server/tasks/child-messages.ts`               | `noteParent` 连带中断只改计划；汇报替换；`trackUserToChild` 改成 `holdWait` + `userDirect`    |
-| `server/tasks/peer.ts`                         | `messageParent` 非提问记 `pendingReport`                                                      |
-| `server/tasks/children.ts`                     | `reportChild` 并入 `pendingReport` / `userDirect`，发出后清空                                 |
-| `server/orch-mcp.ts`、`shared/engine/index.ts` | `message_parent` 说明、子对话提示词                                                           |
-| `web/src/components/tasks/PeerMessage.tsx`     | 行首箭头 + 对方；`LetterReceipt`；`superseded` 变淡；`data-letter` 锚点                       |
-| `web/src/components/tasks/ChildrenBar.tsx`     | 从 `TaskView.tsx` 拆出；未读数、按子对话展开往来                                              |
-| `web/src/components/tasks/ChildMail.tsx`       | `ChildLetters`、子对话侧 `ParentBar`                                                          |
-| `web/src/components/tasks/CollabLog.tsx`       | 原 `CollabCard`，改成对话菜单打开的弹窗                                                       |
-| `web/src/components/tasks/child-open.ts`       | `PeerMailCtx`：父对话页提供信件和未读数                                                       |
+| 位置                                           | 改动                                                                                                      |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `shared/schema.ts`                             | `PeerFrom.superseded`；`Task.inbox[].mid` / `report`；`Task.child.pendingReport`、`Task.child.userDirect` |
+| `server/tasks/child-messages.ts`               | `noteParent` 连带中断只改计划；汇报替换；`trackUserToChild` 改成 `holdWait` + `userDirect`                |
+| `server/tasks/peer.ts`                         | `messageParent` 非提问记 `pendingReport`                                                                  |
+| `server/tasks/children/report.ts`              | `reportChild` 并入 `pendingReport` / `userDirect`，发出后清空                                             |
+| `server/orch-mcp.ts`、`shared/engine/index.ts` | `message_parent` 说明、子对话提示词                                                                       |
+| `web/src/components/tasks/PeerMessage.tsx`     | 行首箭头 + 对方；`LetterReceipt`；`superseded` 变淡；`data-letter` 锚点                                   |
+| `web/src/components/tasks/ChildrenBar.tsx`     | 从 `TaskView.tsx` 拆出；未读数、按子对话展开往来                                                          |
+| `web/src/components/tasks/ChildMail.tsx`       | `ChildLetters`、子对话侧 `ParentBar`                                                                      |
+| `web/src/components/tasks/CollabLog.tsx`       | 原 `CollabCard`，改成对话菜单打开的弹窗                                                                   |
+| `web/src/components/tasks/child-open.ts`       | `PeerMailCtx`：父对话页提供信件和未读数                                                                   |
 
 ## 与现有实现的关系
 

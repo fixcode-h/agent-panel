@@ -50,7 +50,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   if ((await p.locator('[data-market-plugin]').count()) !== 4)
     errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件')
   await p.getByRole('button', { name: '其他方式安装' }).click()
-  await check(p, '设置-插件-其他方式安装', ['上传压缩包（.zip）', '链接本机目录（开发）'])
+  await check(p, '设置-插件-其他方式安装', ['从 GitHub 链接包装…', '上传压缩包（.zip）', '链接本机目录（开发）'])
+  // 从 GitHub 链接包装（ADR 0068）：先让贴链接，不贴不能读取
+  await p.locator('[data-wrap-open]').click()
+  await check(p, '设置-插件-从GitHub包装', ['从 GitHub 包装插件', '分析时只下载、不运行任何代码'])
+  if (await p.getByRole('button', { name: '读取' }).isEnabled())
+    errors.push('设置-插件-从GitHub包装：没贴链接时「读取」应该不能点')
   await p.keyboard.press('Escape')
   await p.getByRole('button', { name: '常规', exact: true }).click()
   // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
@@ -218,6 +223,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
   await p.getByRole('button', { name: '控件样式', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
+  // 包装预览的样例：识别出的内容能勾选，按配方的写明配方文件
+  await check(p, '设置-组件-插件包装', ['WrapPreviewBody', '识别出的内容', '按配方 wraps/tt-a1i__archify.json'])
+  if ((await p.locator('[data-wrap-candidate]').count()) !== 3)
+    errors.push('设置-组件-插件包装：样例应该有 3 行识别结果')
   const sample = p.getByRole('tablist', { name: '示例页签' })
   await sample.getByRole('tab', { name: /代码审查/ }).click()
   await sample.getByRole('button', { name: '关闭页签' }).first().click()
@@ -268,7 +277,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       errors.push('设置-组件：16 项的下拉框打开后应该有搜索框')
     else {
       await box.fill('play')
-      if ((await p.getByRole('option').count()) !== 1) errors.push('设置-组件：下拉框搜「play」应该只剩 1 项')
+      // 只数这个下拉框自己的列表：页面上的风格选择样张也有常驻的选项行
+      if ((await p.getByRole('listbox', { name: '示例长下拉框' }).getByRole('option').count()) !== 1)
+        errors.push('设置-组件：下拉框搜「play」应该只剩 1 项')
       await check(p, '设置-组件-下拉框搜索', ['LogPlayerController'])
       await box.press('Enter')
       if (!(await long.textContent())?.includes('LogPlayerController'))
@@ -297,6 +308,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     )
       errors.push('设置-组件：修饰行改成红色后 #md-style 里应该有 --c-grid-modifier')
     await check(p, '设置-组件-数据表格', ['修饰行', '字段名行', '表头底色浓度'])
+    await spec.getByRole('button', { name: '恢复本组' }).click()
+  }
+  // HTML 卡片 · 本轮产出（设计稿 6.6、6.7）：大卡片、小卡片、本轮产出都画出来；关掉缩略预览立刻写进 #md-style
+  {
+    const spec = p.getByText('HtmlCard · OutputsCard · OutputRow', { exact: true }).locator('xpath=../..')
+    await spec.scrollIntoViewIfNeeded()
+    if ((await spec.locator('[data-html-card]').count()) !== 4) errors.push('设置-组件：HTML 卡片样张应该有 4 张卡片')
+    if (!(await spec.locator('[data-html-card][data-active]').count()))
+      errors.push('设置-组件：HTML 卡片样张里应该有一张「右栏正在显示」')
+    await spec.getByRole('button', { name: '微调', exact: true }).click()
+    await spec.getByRole('switch', { name: '缩略预览' }).click()
+    if (
+      !(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes(
+        '--c-htmlCard-preview:none',
+      )
+    )
+      errors.push('设置-组件：关掉 HTML 卡片的缩略预览后 #md-style 里应该有 --c-htmlCard-preview:none')
+    await check(p, '设置-组件-HTML卡片', ['本轮产出', '右栏正在显示', '预览高度'])
     await spec.getByRole('button', { name: '恢复本组' }).click()
   }
   await p.getByRole('button', { name: '风格库' }).click()

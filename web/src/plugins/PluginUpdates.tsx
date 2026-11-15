@@ -9,6 +9,7 @@ import { pluginApi, type InstallPreview, type MarketEntry, type MarketResult } f
 import { useMarket } from './market'
 import type { PluginRow } from './registry'
 import { usePluginUpdates } from './updates'
+import { openWrap } from './wrap-state'
 
 /** 这个插件在当前市场里的条目（从这个市场仓库装的才算） */
 export function marketEntryOf(row: PluginRow, market?: MarketResult): MarketEntry | undefined {
@@ -46,9 +47,12 @@ export function UpgradeButton({ row, onPreview }: { row: PluginRow; onPreview?: 
   const step = usePluginUpdates().bulk.get(row.manifest.id)
   const [busy, setBusy] = useState(false)
   // 一键更新排着队、正在装或已经装好时，卡片上显示进度（BulkStepLine），不再给单独升级的按钮；失败了留着按钮好重试
-  if (step && step.status !== 'failed') return <BulkStepLine status={step.status} to={step.to} />
+  if (step && step.status !== 'failed' && step.status !== 'skipped')
+    return <BulkStepLine status={step.status} to={step.to} />
   if (!u || !onPreview) return null
   const upgrade = async () => {
+    // 包装插件的升级走包装预览：只列新增发现和权限变化（ADR 0068）
+    if (u.install.wrap) return openWrap({ url: u.install.repo, update: true })
     setBusy(true)
     try {
       onPreview(await pluginApi.fromGithub(u.install))
@@ -90,5 +94,6 @@ function BulkStepLine({ status, to }: { status: 'waiting' | 'updating' | 'done';
 /** 一键更新失败的原因，显示在卡片的错误行（和开关、删除的错误同一处） */
 export function useBulkError(row: PluginRow) {
   const step = usePluginUpdates().bulk.get(row.manifest.id)
+  if (step?.status === 'skipped') return t('没有自动更新到 v{v}：{error}', { v: step.to, error: step.error ?? '' })
   return step?.status === 'failed' ? t('更新到 v{v} 失败：{error}', { v: step.to, error: step.error ?? '' }) : ''
 }

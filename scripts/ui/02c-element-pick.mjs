@@ -281,6 +281,50 @@ await runShard(import.meta.filename, async (api) => {
       }
     }
 
+    // 本轮产出（设计稿 6.7）：完成依据上面，HTML 两列卡片 + 其余文件一行一个，只列这一轮的
+    {
+      const out = p.locator('[data-turn-outputs]')
+      if ((await out.count()) !== 1) errors.push(`本轮产出：应该正好一张，实际 ${await out.count()} 张`)
+      else {
+        const text = (await out.textContent()) ?? ''
+        for (const want of [
+          '本轮产出',
+          '这一轮新建了 4 个能直接看的文件',
+          '角标刷新问题-排查记录.md',
+          'cart-badge-after.png',
+        ])
+          if (!text.includes(want)) errors.push(`本轮产出：卡片里没有「${want}」`)
+        if ((await out.locator('[data-html-card]').count()) !== 2)
+          errors.push('本轮产出：两个 HTML 文件应该画成两张卡片')
+        if (text.includes('CartBadge.tsx')) errors.push('本轮产出：源代码不该算产出')
+        const below = await p.evaluate(() => {
+          const a = document.querySelector('[data-turn-outputs]')
+          const b = document.querySelector('[data-done-evidence]')
+          return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+        })
+        if (!below) errors.push('本轮产出：应该在完成依据上面')
+        await out.scrollIntoViewIfNeeded()
+        await check(p, '本轮产出', ['本轮产出', 'cart-badge.html'])
+      }
+      // 回复里提到的 HTML 文件换成卡片
+      const reply = p.locator('.chat-md [data-html-card-slot] [data-html-card]').first()
+      if (!(await reply.count())) errors.push('HTML 卡片：回复里的 demo/cart-badge.html 没有画成卡片')
+      else {
+        // 标题取网页的 <title>；点了开到右栏网页页签，卡片描上「右栏正在显示」
+        if (!((await reply.textContent()) ?? '').includes('购物车角标 · 示例页'))
+          errors.push('HTML 卡片：标题应该取网页的 <title>')
+        await reply.scrollIntoViewIfNeeded()
+        await reply.click()
+        await reply
+          .and(p.locator('[data-active]'))
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('HTML 卡片：点了之后应该标成「右栏正在显示」'))
+        if (!(await p.getByRole('tab', { name: /cart-badge\.html/ }).count()))
+          errors.push('HTML 卡片：点了之后右栏应该开一个 cart-badge.html 的网页页签')
+        await check(p, 'HTML卡片-右栏打开', ['右栏正在显示', '购物车角标'])
+      }
+    }
+
     // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动
     await card.getByRole('button', { name: /^查看全部/ }).click()
     await file('tests/cart.test.ts').click()
@@ -326,7 +370,7 @@ await runShard(import.meta.filename, async (api) => {
     // 窄屏：文件树自动隐藏，只留顶部的上一个 / 下一个
     await p.setViewportSize({ width: 820, height: 800 })
     await file('src/components/RestockButton.tsx').click()
-    await check(p, '差异-一轮改动-窄屏', ['到货通知我', '2 / 4'])
+    await check(p, '差异-一轮改动-窄屏', ['到货通知我', '2 / 8'])
     if (
       await p
         .locator('[role="dialog"] aside[aria-label="这个对话的改动"]')

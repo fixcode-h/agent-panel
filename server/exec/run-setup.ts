@@ -27,6 +27,7 @@ import { systemNote } from './recovery.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { prepareRunSkills, type RunSkills } from '../skills/run-skills.ts'
 import { projectMcpForRun } from '../mcp-library/run.ts'
+import { pluginMcpForRun } from '../plugins/declared-mcp.ts'
 import type { createFileEvents } from './file-events.ts'
 
 /** 定下这次调用的角色、CLI、目录和模型；不能跑时给出写给用户的原因 */
@@ -207,7 +208,8 @@ export async function attachPlugins(
   const { agent, resume, cwd, step, agentId, conversation } = who
   const tools = await pluginRunTools(
     ctx,
-    { agent, resume: !!resume, cwd, step, agentId, conversation },
+    // 角色参数和角色设定用的同一份：节点上填的，对话里选的
+    { agent, resume: !!resume, cwd, step, agentId, conversation, params: call.params ?? (step ? {} : ctx.task.params) },
     {
       // 插件的改文件类工具：执行前过工具前守卫（守卫在下面 hookOptions 里装到 call.orch 上，调用时才取），
       // 改了的文件和 CLI 自己的改文件工具一样记成这一轮的改动、登记归属
@@ -237,5 +239,11 @@ export async function attachPlugins(
   // 全局 MCP 库里按项目生效、这个项目打开了的条目（每轮注入，见 server/mcp-library/run.ts）；
   // 和插件工具同一个时机取：都是「这个项目这一轮交给 Agent 什么」，压缩、审查这类操作都不带
   const project = ctx.task.projectId && ctx.task.projectId === ctx.project?.id ? ctx.project : undefined
-  return { ...tools, projectMcp: await projectMcpForRun(project) }
+  // 开着的插件声明的外部 MCP 服务（插件接口 11）同样每轮注入，用户库里同名的以用户的为准
+  const lib = await projectMcpForRun(project)
+  const fromPlugins = await pluginMcpForRun(
+    project?.id,
+    lib.map((e) => e.server.name),
+  )
+  return { ...tools, projectMcp: [...lib, ...fromPlugins] }
 }

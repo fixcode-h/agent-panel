@@ -86,7 +86,7 @@ test('演示后端的任务列表、详情、子对话、发消息：返回形�
   )
 })
 
-test('演示后端走一遍契约探查：设置、角色、工作流、分类、标签、项目、定时计划、任务都和契约对得上', async () => {
+test('演示后端走一遍契约探查：设置、角色、工作流、分类、标签、项目、定时计划、任务、钩子、风格库、工作总结都和契约对得上', async () => {
   const report = await probeContracts((method, url, body) => handle(method, url, body))
   assert.deepEqual(report.problems, [], report.problems.join('\n'))
   assert.ok(report.checked.length >= 20, `探查走过的接口太少：${report.checked.join('、')}`)

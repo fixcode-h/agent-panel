@@ -25,14 +25,6 @@ export const SPIN_MAX = 3
 export const END_REJECTED = '【没有结束】'
 export const END_BLOCKED = '【已记下卡点】'
 
-/** 交给 Agent 的说法里，怎么结束的那一句（提醒、提示词都引用它；不翻译） */
-export const END_TURN_HOW =
-  '做完了就调用 end_turn（outcome: done），之后必须用一句话简短说明收尾，不要重复总结；做不下去就调用 end_turn（outcome: blocked），need 写缺什么。'
-
-/** 没列计划时的收尾自检（用户 2026-11-05 定的说法） */
-export const CHECK_REMINDER =
-  '【面板】（收尾自检）这次的事做完了吗？没做完就直接调用工具接着做，不用先说明；' + END_TURN_HOW
-
 /**
  * 这条工具调用是不是面板自己的工具（end_turn、set_plan、get_status……）：各家 CLI 报上来的写法不同
  * （裸名字、mcp__panel__x、记成「MCP · panel · x」），按名字和标题一起认，同 isEndTurnTool
@@ -122,10 +114,10 @@ export function idleReminders(msgs: Pick<TaskMessage, 'role' | 'panel' | 'tools'
  * 已经请过、已经提醒过（nudged）、被收下的不算；返回原因，不该拦返回空。只看计划和改动清单，不跑 git
  */
 export function mergeOwedOf(
-  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'>,
+  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'child' | 'plans' | 'steps' | 'changes'>,
   nudged: boolean,
 ): string {
-  if (!tk.parentTaskId || tk.resolved || tk.wrapRequest || nudged) return ''
+  if (!tk.parentTaskId || tk.resolved || tk.child?.wrapRequest || nudged) return ''
   // 父对话已经合回 / 收下：合进去时面板清掉 wrapRequest、把收尾步骤标完成、计划随之收起，
   // 这时再按「没列计划但改过文件」算会让它把已经合进去的改动重新请一次收尾（用户 2026-11-05 报：
   // 子对话被提醒「你还没请父对话收尾」，又开一份计划、再交一次，父对话只好再收一次）
@@ -143,7 +135,7 @@ export function mergeOwedOf(
  * 只看计划和改动清单。返回给 Agent 的文字不翻译
  */
 export function endTurnCheck(
-  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'> &
+  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'child' | 'plans' | 'steps' | 'changes'> &
     Partial<Pick<Task, 'messages' | 'bug' | 'inlineEdit'>>,
   outcome: string,
   need: string,
@@ -193,7 +185,11 @@ export function endTurnCheck(
       })
     : ''
   if (gateErr) return { ok: false, info: `${END_REJECTED}${gateErr}` }
-  return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome, evidence } }
+  return {
+    ok: true,
+    info: '已结束这一轮。前面的回复已经说清了就不用再写；没说的用一句话补上，不要重复总结。',
+    end: { outcome, evidence },
+  }
 }
 
 /** 拒绝「就地改动还没收尾」时带的记号：同一轮只拒一次 */

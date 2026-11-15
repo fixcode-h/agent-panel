@@ -90,7 +90,7 @@ function sameTask(a: Task, b: Task) {
     a.turnSeenAt === b.turnSeenAt &&
     a.working === b.working &&
     helpersWorking(a) === helpersWorking(b) &&
-    (a.parentAsks?.length ?? 0) === (b.parentAsks?.length ?? 0) &&
+    (a.child?.parentAsks?.length ?? 0) === (b.child?.parentAsks?.length ?? 0) &&
     a.archived === b.archived &&
     a.pinned === b.pinned &&
     a.projectId === b.projectId &&
@@ -326,7 +326,6 @@ export type PageId =
   | 'workflows'
   | 'projects'
   | 'chat'
-  | 'comfy'
   | 'plugin'
   | 'library'
   | 'mcp'

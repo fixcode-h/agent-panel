@@ -39,6 +39,8 @@ export interface InstallPreview {
   /** 配置安全扫描的发现（老的服务端没有）；scanScope 是点「这条没问题」时记的范围 */
   scan?: ConfigFinding[]
   scanScope?: string
+  /** 要一起装的依赖插件（插件接口 10，老的服务端没有） */
+  requires?: { id: string; name: string; min: string; current: string; latest: string }[]
 }
 
 export interface KeptItem {
@@ -82,7 +84,8 @@ export const pluginApi = {
     if (!res.ok) throw new Error(body.error ?? t('请求失败（{status}）', { status: res.status }))
     return body
   },
-  confirm: (token: string) => request<{ ok: true }>('/plugins/install/confirm', json('POST', { token })),
+  confirm: (token: string) =>
+    request<{ ok: true; requires?: string[] }>('/plugins/install/confirm', json('POST', { token })),
   update: (id: string, patch: { enabled?: boolean; config?: Record<string, string | number | boolean> }) =>
     request<{ ok: true; removed: { kept: KeptItem[]; skillsKept: string[] } | null; error: string }>(
       `/plugins/${encodeURIComponent(id)}`,

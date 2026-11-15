@@ -39,7 +39,7 @@ test('stateBreaks：只有记录说在做、面板里又没有执行位 / 启动
   assert.deepEqual(stateBreaks(task('d'), idle), [], '做完的不算')
   assert.deepEqual(stateBreaks(task('w', { working: true }), idle), ['orphan'])
   assert.deepEqual(stateBreaks({ ...running, deletedAt: at }, idle), [], '回收站里的不管')
-  const merging = task('m', { wrapRequest: { state: 'merging', note: '', tests: '', at } })
+  const merging = task('m', { child: { wrapRequest: { state: 'merging', note: '', tests: '', at } } })
   assert.deepEqual(stateBreaks(merging, idle), ['merging'])
   assert.deepEqual(stateBreaks(merging, { ...idle, merging: true }), [])
 })
@@ -116,7 +116,7 @@ test('定时核对：连着两次看到同一个矛盾才收口，中间被写�
 test('定时核对：第二次之前被拉起来的不收；合并中没人在合的退回待处理并告诉父对话', async () => {
   const store = memStore([
     task('p', { status: 'done' }),
-    task('k', { parentTaskId: 'p', wrapRequest: { state: 'merging', note: '', tests: '', at } }),
+    task('k', { parentTaskId: 'p', child: { wrapRequest: { state: 'merging', note: '', tests: '', at } } }),
     task('r', { status: 'running' }),
   ])
   let liveR = false
@@ -130,7 +130,7 @@ test('定时核对：第二次之前被拉起来的不收；合并中没人在�
   liveR = true
   assert.deepEqual(await sweep.sweep(), [{ id: 'k', kind: 'merging' }])
   assert.equal(store.map.get('r')!.status, 'running', '已经有执行位的不动')
-  assert.equal(store.map.get('k')!.wrapRequest?.state, 'requested')
+  assert.equal(store.map.get('k')!.child?.wrapRequest?.state, 'requested')
   assert.match(store.map.get('p')!.inbox.at(-1)!.text, /重新调用 finish_child/)
 })
 
@@ -139,7 +139,7 @@ test('定时核对：子对话落成已中断后交给父对话上报（只报�
     task('p', { status: 'done' }),
     task('k', { status: 'running', parentTaskId: 'p' }),
     task('top', { status: 'running' }),
-    task('m', { parentTaskId: 'p', wrapRequest: { state: 'merging', note: '', tests: '', at } }),
+    task('m', { parentTaskId: 'p', child: { wrapRequest: { state: 'merging', note: '', tests: '', at } } }),
   ])
   const reported: Task[] = []
   const sweep = createStateSweep({

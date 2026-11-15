@@ -465,7 +465,7 @@ test('调研、子任务、评审三个角色：先读模块地图和模块文�
   const text = (key: string) => BUILTIN_AGENTS.find((b) => b.key === key)!.agent.instructions
   // 三个角色共用同一句定位顺序（措辞只有一份），删掉它三处会一起红
   const lookup =
-    /先读文档根的 `MODULE-MAP\.md`[\s\S]*?再看文档根下的 `modules\/<模块>\/README\.md`（本项目即 `docs\/modules\/<模块>\/README\.md`）在不在，在就先读/
+    /先看文档根（默认 `docs\/`，以提示里「文档根」一段为准）的 `MODULE-MAP\.md`（有的话）[\s\S]*?再看文档根下的 `modules\/<模块>\/README\.md` 在不在，在就先读/
   for (const [key, who] of [
     ['explorer', '调研'],
     ['helper', '子任务'],
@@ -492,11 +492,19 @@ test('调研、子任务、评审三个角色：先读模块地图和模块文�
   assert.match(doc, /写之前先读 `modules\/<模块>\/README\.md`/, '文档角色写之前先读模块文档')
   assert.match(doc, /合并时只改对应小节/, '已有文档时合并，不整文件覆盖')
   assert.match(doc, /删掉 `modules\/<模块>\/` 整个目录/, '模块没了删掉模块文档目录')
-  assert.match(doc, /不要手写、手改模块表，地图不存在也不要建/, '模块表不手改、不自己建')
+  assert.match(
+    doc,
+    /地图不存在就不要建；项目的 AGENTS\.md 或文档写了生成脚本时改完元数据头跑一下，不手改生成的模块表/,
+    '地图不自己建，生成的模块表不手改',
+  )
   assert.doesNotMatch(doc, /retired/, '不留墓碑目录')
   // 评审代码改动（ADR 0013）：材料只有交接单和面板附的差异，不读模块文档和 bugs.md；评审方案或结论时才按上面的顺序定位
   assert.match(text('reviewer'), /不读 `MODULE-MAP\.md`、模块文档、`bugs\.md`/, '评审代码不读模块文档')
-  assert.match(text('worker'), /docs\/MODULE-MAP\.md/, '执行角色调研模块前先看模块地图和模块文档')
+  assert.match(
+    text('worker'),
+    /先看文档根（默认 `docs\/`）的 `MODULE-MAP\.md`（有的话）和 `modules\/<模块>\/README\.md`/,
+    '执行角色调研模块前先看模块地图和模块文档',
+  )
 })
 
 /** 测试用的内存 ops：新建的东西按顺序编 id，更新的记下来 */

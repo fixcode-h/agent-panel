@@ -1,5 +1,5 @@
 ---
-paths: server/step-run.ts, server/bg/sanity.ts, server/merge-build.ts, server/tasks/merge.ts, server/tasks/test-runs.ts, shared/hooks/defs.ts
+paths: server/step-run.ts, server/bg/sanity.ts, server/merge-build.ts, server/tasks/merge/**, server/tasks/test-runs.ts, shared/hooks/defs.ts
 ---
 
 # 面板替 Agent 跑的命令
