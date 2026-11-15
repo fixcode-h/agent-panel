@@ -3,6 +3,7 @@ import { useData, useNav, useTasks } from '@/lib/data'
 import { ownedPage, ownedPageRoute, usePluginPages } from '@/plugins/registry'
 import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
 import { AllProjects } from '@/components/projects/AllProjects'
+import { ProjectCapsPage } from '@/components/projects/caps/ProjectCapsPage'
 
 /**
  * 项目页：#/projects 是「全部项目」卡片页（侧栏项目下拉底部进来），#/projects/<id> 是项目工作区；
@@ -27,17 +28,19 @@ export function ProjectsPage() {
       go({ page: 'projects', id: selected.id })
       openProject(selected.id)
     }
-    // 「技能与 MCP」项目页还没接上时（侧栏项目工具里的入口），先打开项目设置里的技能一栏
-    else if (route.sub === 'capabilities') {
-      go({ page: 'projects', id: selected.id })
-      openProject(selected.id, 'skills')
-    }
     // 导航函数每次渲染都是新的
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, selected, route.id, route.sub, tasks, page])
 
   if (!route.id) return <AllProjects />
-  if (!selected || route.sub === 'settings' || route.sub === 'capabilities') return null
+  if (!selected || route.sub === 'settings') return null
   if (page) return null
+  // 项目工具里的「技能与 MCP」（#/projects/<id>/capabilities）：普通整页，套上和别的页面一样的面板底
+  if (route.sub === 'capabilities')
+    return (
+      <div className="panel flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
+        <ProjectCapsPage key={selected.id} project={selected} />
+      </div>
+    )
   return <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} />
 }

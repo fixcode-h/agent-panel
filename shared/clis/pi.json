@@ -772,6 +772,7 @@
     "compactReserve": 16384,
     "docsMode": "first"
   },
+  "runSkills": { "args": ["--skill", "{dir}"] },
   "skills": {
     "user": ["${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills", "~/.agents/skills"],
     "repo": [".pi/skills", ".agents/skills"]

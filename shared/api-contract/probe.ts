@@ -80,6 +80,7 @@ export async function probeContracts(send: ProbeFetch): Promise<ProbeReport> {
     await hit(P.update, { params: { id: p.id }, body: { ...p, expectedUpdatedAt: p.updatedAt } })
     await hit(P.addLesson, { params: { id: p.id }, body: { title: '契约探查的教训' } })
     await hit(P.panelSource, { params: { id: p.id } })
+    await hit(P.capabilityProbe, { body: { projectId: p.id, path: String(p.path ?? '') } })
   }
   const lessons = await hit(P.globalLessons)
   await hit(P.saveGlobalLessons, { body: { lessons, confirmed: true } })

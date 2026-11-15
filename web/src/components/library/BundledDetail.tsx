@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { DetailEmpty, DetailHeader } from '@/components/layout/Detail'
 import { categoryLabel } from '@/components/library/BundledSkills'
 import { SkillBrowser } from '@/components/library/SkillBrowser'
+import { SkillActivation } from '@/components/library/SkillActivation'
 
 /** 装到用户目录里的位置：所有 Agent 共用这一份 */
 const SHARED_DIR = '~/.agents/skills'
@@ -25,12 +26,16 @@ export function BundledDetail({
   item,
   busy,
   onInstall,
+  onChanged,
 }: {
   item: BundledSkill
   /** 正在安装的项名（页面统一管，左栏的批量按钮也用这个） */
   busy: string
   onInstall: (names: string[], key: string, overwrite: boolean) => void
+  /** 生效方式改了：重读列表 */
+  onChanged: () => void
 }) {
+  const project = item.activation === 'project'
   const changed = item.status.shared === 'changed'
   const { openSettings } = useNav()
   // 部署到「分类/名字」的那份要在设置里更新：这里指过去，免得用户在这一页找不到
@@ -68,8 +73,14 @@ export function BundledDetail({
             size="sm"
             variant={item.status.shared === 'missing' ? 'primary' : 'secondary'}
             onClick={() => onInstall([item.name], item.name, true)}
-            disabled={!!busy || item.status.shared === 'same'}
-            title={changed ? t('用自带的版本覆盖（你改过的内容会丢掉）') : undefined}
+            disabled={!!busy || item.status.shared === 'same' || project}
+            title={
+              project
+                ? t('按项目生效的技能不装进用户目录，每轮只给打开了它的项目带上')
+                : changed
+                  ? t('用自带的版本覆盖（你改过的内容会丢掉）')
+                  : undefined
+            }
           >
             {busy === item.name ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -86,18 +97,20 @@ export function BundledDetail({
       {/* 一行事实：分类、装在哪、只读说明。剩下的高度全给文件浏览区，不再限宽、不再有空框 */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-4 py-2.5 text-footnote md:px-8">
         <Fact label={t('分类')}>{categoryLabel(item.category)}</Fact>
-        <Fact label={t('装在')}>
-          <span className="font-mono">
-            {SHARED_DIR}/{item.name}
-          </span>
-          <span className="text-subtle">{t('（所有 Agent 共用）')}</span>
-          <IconButton
-            icon={Copy}
-            size="2xs"
-            label={t('复制路径')}
-            onClick={() => void copyText(`${SHARED_DIR}/${item.name}`, { done: t('已复制') })}
-          />
-        </Fact>
+        {!project && (
+          <Fact label={t('装在')}>
+            <span className="font-mono">
+              {SHARED_DIR}/{item.name}
+            </span>
+            <span className="text-subtle">{t('（所有 Agent 共用）')}</span>
+            <IconButton
+              icon={Copy}
+              size="2xs"
+              label={t('复制路径')}
+              onClick={() => void copyText(`${SHARED_DIR}/${item.name}`, { done: t('已复制') })}
+            />
+          </Fact>
+        )}
         <span className="flex items-center gap-1.5 text-subtle">
           <Lock className="h-3 w-3 shrink-0" />
           {t('随面板版本提供，只读；要改请复制一份到自己的技能目录')}
@@ -116,6 +129,9 @@ export function BundledDetail({
             </Button>
           </span>
         )}
+      </div>
+      <div className="px-4 pb-2.5 md:px-8">
+        <SkillActivation name={item.name} value={item.activation} onChanged={onChanged} />
       </div>
       <SkillBrowser
         entries={item.tree?.entries ?? []}

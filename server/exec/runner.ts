@@ -499,6 +499,7 @@ async function runAgent(
   })
   const r = await invokeCli({
     mcp: plugins?.servers.length ? plugins.servers : undefined,
+    projectMcp: plugins?.projectMcp,
     cliId,
     command: cs.command,
     build,

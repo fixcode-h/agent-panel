@@ -63,6 +63,7 @@ import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
+import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
 import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
@@ -588,6 +589,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('MCP 能力')}>
         <Specimen name="CapabilityRow · CapabilityServerHeader" tune={['capRow', 'card', 'badge']}>
           <CapabilitySpecimen />
+        </Specimen>
+      </Group>
+      <Group title={t('项目能力')}>
+        <Specimen name="CapabilityCard · CapabilityItem · AgentLoadSummary" tune={['card', 'switch', 'badge']}>
+          <CapsSpecimen />
         </Specimen>
       </Group>
       <PluginSpecimens Specimen={Specimen} />

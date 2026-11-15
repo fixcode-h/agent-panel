@@ -6,6 +6,7 @@ import { useNav } from '@/lib/data'
 import { usePluginPages, usePlugins } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
 import { ProjectToolRow, ProjectToolsHeader } from '@/components/ui/project-switcher'
+import { useProjectCapsCount } from '@/components/projects/caps/use-caps-data'
 
 type OwnedPage = PluginPage & { plugin: string }
 
@@ -32,6 +33,8 @@ export function useProjectPages(project: Project | undefined): OwnedPage[] {
 export function ProjectTools({ project }: { project: Project }) {
   const { route, go, openProject } = useNav()
   const pages = useProjectPages(project)
+  // 行尾的数字：项目自己的 + 从全局继承的（效果图 B 的「4 + 继承 9」），读不出来时不写
+  const caps = useProjectCapsCount(project)
   const here = (page: OwnedPage) =>
     route.page === 'plugin' && route.project === project.id && route.id === page.plugin && route.sub === page.id
   return (
@@ -50,6 +53,7 @@ export function ProjectTools({ project }: { project: Project }) {
       <ProjectToolRow
         icon={Sparkles}
         label={t('技能与 MCP')}
+        meta={caps && t('{own} + 继承 {n}', { own: caps.own, n: caps.inherited })}
         on={route.page === 'projects' && route.id === project.id && route.sub === 'capabilities'}
         onClick={() => go({ page: 'projects', id: project.id, sub: 'capabilities' })}
       />

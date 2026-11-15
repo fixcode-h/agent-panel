@@ -33,6 +33,8 @@ export interface PermissionOption {
 
 export interface BuildOptions {
   model: string
+  /** 走协议的 CLI 开会话前发的请求：告诉它这一轮按项目带的技能在哪（CLI 定义的 runSkills.rpc，已填好路径） */
+  skillsRpc?: { method: string; params: unknown }
   /** 思考强度，取值见各 CLI 的 efforts；为空不传 */
   effort?: string
   permission: string
@@ -266,6 +268,8 @@ export interface CliDefinition {
   /** 启动新会话前探测项目里的远程 MCP（见 server/exec/mcp-probe.ts）；没有时不探测 */
   mcpProbe?: import('./cli-spec.ts').McpProbe
   packages?: import('./cli-spec.ts').CliPackages
+  /** 每轮怎么带上按项目的技能（见 cli-spec.ts 的 RunSkills）；没有时在提示里列出技能路径 */
+  runSkills?: import('./cli-spec.ts').RunSkills
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean
   /** 用户放在数据目录里的配置（不是面板内置的） */

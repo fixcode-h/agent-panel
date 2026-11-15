@@ -10,6 +10,7 @@ export const EN_PROJECT_SIDEBAR: Record<string, string> = {
   项目工具: 'Project tools',
   '技能与 MCP': 'Skills & MCP',
   经验与文档: 'Experience & docs',
+  '{own} + 继承 {n}': '{own} + {n} inherited',
   '全部 {n}': 'All {n}',
   '点卡片切到那个项目；拖动左上角的手柄调整顺序，右上角是更多操作。':
     'Click a card to switch to that project. Drag the handle at the top left to reorder; more actions are at the top right.',
