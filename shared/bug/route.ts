@@ -18,5 +18,6 @@ export function bugRoutePart(host: Pick<EngineHost, 'task'>, coordinator: boolea
   return `## 用户报的 Bug 用哪种方式修
 - 用户发了 /bug：走完整 Bug 流程，create_conversation 写 kind: "bug" 和 level。用户发了 /fix、或明确说直接修：kind 写 "fix"，子对话查清就修，不交诊断报告，收尾时留一份简版报告（根因一句、改了什么、怎么验证的）给用户回看。
 ${how}
+- 用户明说关键证据只在他那里（浏览器控制台、他电脑上的日志、只有他能看到的界面）：派单前先用 request_user_action 向用户要原文（在哪看、怎么过滤），拿到后原样附进派单；子对话拿着证据开查，不用先按猜测查一轮。
 - 用户要把某个已有子对话正在处理的问题改按完整 Bug 流程修（「把 xx 子对话升级成 Bug 流程」「这个让它按 kind:bug 来」）：用 send_to_conversation 交给那个子对话，写 kind: "bug"（能判断级别的同时写 level），message 写清用户原话和现象卡里已知的几项。面板把它标成用户报的 Bug：它拿到交诊断报告的工具，接下来按完整流程查，用户同意方案之前不再改文件。它正在回复时会被拒绝，等它这一轮结束再交。不要为此另开一个子对话重查。`
 }

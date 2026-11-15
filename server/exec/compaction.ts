@@ -195,8 +195,15 @@ export class CompactTracker {
     return true
   }
 
-  /** 进程结束：CLI 说开始压缩了却没等到压缩完成，不能显示得像压缩成功了 */
+  /**
+   * 进程结束：CLI 说开始压缩了却没等到压缩完成，不能显示得像压缩成功了。
+   * 压缩完了、这一轮里却没再报用量（Claude Code 只报 post_tokens、还没有细分时）：记成等下一轮补，
+   * 不然那一行永远只有「压缩前」（摸底报告第 20 条）
+   */
   processEnd() {
+    const p = this.pending
+    if (p && p.before !== undefined && p.tool.compact?.after === undefined)
+      p.tool.compact = { ...p.tool.compact, before: p.before, awaitAfter: true }
     if (!this.cli || !this.row) return
     this.row.tool.failed = true
     this.row.tool.label = t('压缩没有完成')

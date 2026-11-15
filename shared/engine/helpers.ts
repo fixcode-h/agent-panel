@@ -247,7 +247,12 @@ export async function settleHelperBatch(host: EngineHost, step: TaskStep): Promi
           `\n${RETRY_HINT(k.id)}`,
     )
     .join('\n\n')
-  return { text, ids: late.map((k) => k.id) }
+  // 子任务的原文用户在对话里点开就能看到：父对话再整段转述一遍，同一份结果在对话里出现三次（摸底报告第 22 条）。
+  // 用「处理完这个结果后」开头：界面显示时按这个开头把这句说给 AI 的话去掉（web/src/components/tasks/Messages.tsx）
+  const tail = text
+    ? `\n处理完这个结果后，回复里只写你的判断、采纳了哪些、下一步做什么；子任务原文用户在对话里点开就能看到，不整段转述。`
+    : ''
+  return { text: text + tail, ids: late.map((k) => k.id) }
 }
 
 /** 任务里各个 Agent 的状态，按层级缩进，给 get_status 用 */
