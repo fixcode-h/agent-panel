@@ -16,6 +16,7 @@ import {
 } from './diagnosis.ts'
 import { diagnosisMarkdown } from './diagnosis-md.ts'
 import { outOfPlan, editScope } from './phase.ts'
+import { reopenedAfterCancel, reopenInfo } from './reopen.ts'
 import { Diagnosis } from './diagnosis-schema.ts'
 import type { Task } from '../schema.ts'
 import { childWait, childFlowOf, convState, diagnosisPending } from '../task.ts'
@@ -586,7 +587,7 @@ test('评审对照和 Bug 记录草稿（ADR 0046）：只取用户确认过的�
   assert.match(rec, /- 接口重试：npm test → 通过/)
 })
 
-test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；报告关闭，不能再交新一版', () => {
+test('用户点取消：不再等确认，计划收口成完成，对话不算执行中、等下一句；用户再开口之前报告关闭', () => {
   const tk = bugTask({ plans: [], steps: [] })
   applyPlan(tk, {
     steps: [{ title: '查根因', status: 'done' }, { title: '交诊断报告', status: 'running' }, { title: '按方案修' }],
@@ -607,12 +608,37 @@ test('用户点取消：不再等确认，计划收口成完成，对话不算�
   assert.equal(bugStage(tk), '已取消')
   assert.match(diagnosisGate(tk, []), /第 1 版点了「不修了」/)
   assert.equal(decideDiagnosis(tk, 1, yes, id).ok, false, '取消过的不能再确认')
-  // 不修了的报告关闭（用户 2026-11-07 定）：之后的对话不能再交新一版拉起它
+  // 用户还没在对话里说话：报告关闭，它自己不能交新一版拉起来
   const v2 = submitDiagnosis(tk, input(), id)
   assert.equal(v2.ok, false)
-  assert.match(v2.info, /不修了.*不能再交新一版/)
+  assert.match(v2.info, /不修了.*现在不交新一版/)
   assert.equal(tk.bug!.diagnoses!.length, 1)
   assert.equal(tk.bug!.diagnoses![0].status, 'cancelled')
+})
+
+test('不修了之后用户在同一个对话里让它接着查：重新打开，交新报告前不改文件、不收尾（用户 2026-11-15 报）', () => {
+  const tk = bugTask({ plans: [], steps: [] })
+  ok(submitDiagnosis(tk, input(), id))
+  ok(decideDiagnosis(tk, 1, { approve: false, cancel: true, notes: [], overall: '' }, id))
+  const later = '2999-01-01T00:00:00.000Z'
+  // 别的对话转来的、面板推的不算用户开口
+  tk.messages.push({ id: 'p1', role: 'user', text: '父对话：继续', peer: { id: 'par' }, at: later } as never)
+  tk.messages.push({ id: 'p2', role: 'user', text: '面板提醒', panel: true, at: later } as never)
+  assert.equal(reopenedAfterCancel(tk), false)
+  assert.equal(submitDiagnosis(tk, input(), id).ok, false)
+  tk.messages.push({ id: 'u1', role: 'user', text: '继续找这个 Bug', at: later } as Task['messages'][number])
+  assert.equal(reopenedAfterCancel(tk), true)
+  const scope = editScope(tk.bug!.diagnoses!, reopenInfo)
+  assert.ok('deny' in scope && /接着做.*submit_diagnosis/.test(scope.deny), '新报告交上来之前不改文件')
+  assert.match(diagnosisGate(tk, []), /没有请求收尾：.*接着做/)
+  ok(submitDiagnosis(tk, input(), id))
+  const list = tk.bug!.diagnoses!
+  assert.deepEqual(
+    list.map((d) => d.status),
+    ['cancelled', 'pending'],
+    '取消那一版留着，新的一版等用户确认',
+  )
+  assert.equal(diagnosisPending(tk), true)
 })
 
 test('取消时代码里有临时日志：先叫它删，核对通过才关闭报告、收口计划；没过等用户决定', () => {

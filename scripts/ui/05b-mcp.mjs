@@ -39,6 +39,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, '设置-MCP-你装的', ['打开「MCP 工具」页'])
 
   // 共用组件能在设置 →「组件」里看到和微调
-  await p.getByRole('dialog').getByRole('button', { name: '组件', exact: true }).first().click({ force: true })
+  await p.getByRole('dialog').getByRole('button', { name: '控件样式', exact: true }).first().click({ force: true })
   await check(p, '设置-组件-MCP 能力', ['MCP 能力', '运行时对象', '改属性'])
 })

@@ -285,7 +285,7 @@ export const BUG_CMD = /^\/bug(?=\s|$)/i
 export type BugCommandWhere = 'coordinator' | 'child' | 'inplace' | 'solo'
 
 /** 普通对话没有父对话：阶段反馈里「请父对话收尾（submit_merge）」在这里换成什么 */
-const INPLACE_WRAP = `这是普通对话，没有父对话：后面面板说「请父对话收尾（submit_merge）」时，改成在这里按项目的提交约定把改动本地提交（推送照「授权情况」那段），再写修复总结；用户报的 Bug 收尾后不自动写 Bug 记录，按这条问：${BUG_RECORD_ASK}问完结束这一轮；说「在父对话里重新报」时，改成请用户新开一个对话发 /bug。Bug 结束（验证点了结束、或不修了且临时日志删完）后这个对话照常使用。`
+const INPLACE_WRAP = `这是普通对话，没有父对话：后面面板说「请父对话收尾（submit_merge）」时，改成在这里按项目的提交约定把改动本地提交（推送照「授权情况」那段），再写修复总结；用户报的 Bug 收尾后不自动写 Bug 记录，按这条问：${BUG_RECORD_ASK}问完结束这一轮。Bug 结束（验证点了结束、或不修了且临时日志删完）后这个对话照常使用；不修了之后用户又让你接着查这个 Bug，就按流程重新交报告。`
 
 /**
  * /bug：用户明确要求走完整流程（ADR 0046 第 0 条）。展开成发给 Agent 的要求；

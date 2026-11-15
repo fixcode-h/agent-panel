@@ -38,7 +38,7 @@ const LOOKUP_TIMEOUT = 4 * 60_000
 const LookupInput = z.object({
   model: z.string().trim().min(1).max(300),
   protocol: z.enum(API_PROTOCOLS).optional(),
-  /** 用哪个 CLI 查；不写用「AI 创建」里设置的 */
+  /** 用哪个 CLI 查；不写用「AI 辅助」里设置的 */
   cli: z.string().trim().default(''),
 })
 
