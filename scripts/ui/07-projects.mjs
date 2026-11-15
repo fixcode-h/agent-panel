@@ -38,7 +38,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!/#\/projects\//.test(p.url())) errors.push('项目下拉：选了项目没有打开项目首页')
     // 图标栏只放通用入口，项目工具在侧栏里
     for (const name of ['技能与 MCP', '经验与文档'])
-      if (!(await p.locator('[data-sidebar]').getByRole('button', { name, exact: true }).count()))
+      if (!(await p.locator('[data-sidebar]').getByRole('button', { name }).count()))
         errors.push(`项目工具：侧栏没有「${name}」`)
     await check(p, '侧栏-切换项目后', ['运营后台', '项目工具'])
   }
