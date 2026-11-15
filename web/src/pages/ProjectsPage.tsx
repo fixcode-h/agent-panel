@@ -4,6 +4,7 @@ import { ownedPage, ownedPageRoute, usePluginPages } from '@/plugins/registry'
 import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
 import { AllProjects } from '@/components/projects/AllProjects'
 import { ProjectCapsPage } from '@/components/projects/caps/ProjectCapsPage'
+import { ProjectExperiencePage } from '@/components/projects/ProjectExperiencePage'
 
 /**
  * 项目页：#/projects 是「全部项目」卡片页（侧栏项目下拉底部进来），#/projects/<id> 是项目工作区；
@@ -40,6 +41,13 @@ export function ProjectsPage() {
     return (
       <div className="panel flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
         <ProjectCapsPage key={selected.id} project={selected} />
+      </div>
+    )
+  // 项目工具里的「经验与文档」（#/projects/<id>/experience）：和项目设置里的「项目经验」同一份内容，不弹设置
+  if (route.sub === 'experience')
+    return (
+      <div className="panel flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
+        <ProjectExperiencePage key={selected.id} project={selected} />
       </div>
     )
   return <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} />

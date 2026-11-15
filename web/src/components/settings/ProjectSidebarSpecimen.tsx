@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/sidebar'
 import {
   AddFirstProject,
+  ProjectBackButton,
   ProjectNewRow,
   ProjectPickerGroup,
   ProjectPickerRow,
@@ -85,6 +86,11 @@ export function ProjectSidebarSpecimen() {
           onOpen={() => {}}
         />
         <AddFirstProject onClick={() => {}} />
+        {/* 盖住侧栏的项目工具页（UE、表格）导航栏顶上的项目卡片：点一下回到项目对话 */}
+        <div className="flex flex-col gap-1.5 rounded-lg bg-rail px-2.5 py-2.5">
+          <ProjectBackButton icon={Gamepad2} name="UnLua · TPSProject" meta="UE 5.4 · C++ · Git" />
+          <ProjectBackButton name="客户端主工程" meta="D:/Work/TPSProject" />
+        </div>
       </div>
     </div>
   )

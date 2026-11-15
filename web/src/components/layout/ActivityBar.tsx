@@ -10,6 +10,8 @@ import { HomeIcon, PanelIcon, type NavIcon } from './rail-icons'
 import { toggleActivityBar, useActivityBarWide } from './rail-expanded'
 import { usePluginPages } from '@/plugins/registry'
 import type { PluginPage } from '@/plugins/sdk'
+import { useCoversSidebar } from '@/plugins/cover'
+import { projectReturnRoute } from '@/lib/projects/return-route'
 import { ModeSwitch, NAV, homeRoute, isToolPage, toggleSidebar, useSidebarCollapsed } from './Sidebar'
 
 /**
@@ -84,6 +86,9 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
   const { route, go, openSettings } = useNav()
   const collapsed = useSidebarCollapsed()
   const tool = isToolPage(route)
+  // 盖住侧栏的项目工具页（UE、表格）：会话侧栏不在，顶上一格是「回到项目」，模式切换也挪到这里
+  const covered = useCoversSidebar(route)
+  const coverProject = covered ? route.project : undefined
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
   const skillUpd = useSkillUpdates()
@@ -104,11 +109,13 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
     >
       {tool ? (
         <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute())} />
+      ) : coverProject ? (
+        <Item icon={HomeIcon} label={t('回到项目对话')} onClick={() => go(projectReturnRoute(coverProject))} />
       ) : (
         <Item icon={PanelIcon} label={collapsed ? t('展开侧栏') : t('收起侧栏')} onClick={toggleSidebar} />
       )}
       {/* 会话侧栏让开时（功能页、收起）模式切换跟着到图标栏来：不然从功能页切不了 Agent / Chat / 设计 */}
-      {(tool || collapsed) && (
+      {(tool || collapsed || covered) && (
         <div className={cn('mt-1', wide && 'px-0.5')}>
           {/* 展开后横着放得下三个模式，和会话侧栏顶上那一排一样 */}
           <ModeSwitch narrow={!wide} />

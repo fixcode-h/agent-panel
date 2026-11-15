@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
-import { Check, ChevronsUpDown, Folder, FolderPlus, Settings } from 'lucide-react'
+import { Check, ChevronLeft, ChevronsUpDown, Folder, FolderPlus, Settings } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { IconButton } from './icon-button'
@@ -53,6 +53,46 @@ export const ProjectSwitcherButton = forwardRef<
     </button>
   )
 })
+
+/**
+ * 盖住侧栏的项目工具页（UE、表格）导航栏顶上的项目卡片：和项目切换器同一个外形（bg-sel、导航行圆角），
+ * 左边一个返回箭头，点一下回到项目对话。icon 换成工具自己的图标（UE 是手柄），meta 写工具自己的一行小字
+ */
+export function ProjectBackButton({
+  name,
+  meta,
+  icon: Icon = Folder,
+  className,
+  ...rest
+}: {
+  name: ReactNode
+  meta?: ReactNode
+  icon?: (p: { className?: string; strokeWidth?: number }) => ReactNode
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'name'>) {
+  return (
+    <button
+      type="button"
+      title={t('回到项目对话')}
+      aria-label={typeof name === 'string' ? t('回到项目对话：{name}', { name }) : t('回到项目对话')}
+      className={cn(
+        'group/back press flex h-12 w-full cursor-pointer items-center gap-1.5 rounded-(--c-nav-radius) bg-sel pr-2.5 pl-1.5 text-left transition-colors hover:bg-hover',
+        'outline-none focus-visible:ring-2 focus-visible:ring-focus-soft',
+        className,
+      )}
+      {...rest}
+    >
+      <ChevronLeft
+        className="h-4 w-4 shrink-0 text-subtle transition-transform group-hover/back:-translate-x-0.5 group-hover/back:text-fg"
+        strokeWidth={2.2}
+      />
+      <Icon className="mr-1 h-4 w-4 shrink-0 text-proj-ico" strokeWidth={2.2} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-prose font-semibold text-fg">{name}</span>
+        {meta && <span className="truncate text-caption text-subtle">{meta}</span>}
+      </span>
+    </button>
+  )
+}
 
 /** 下拉里的一个项目：文件夹 + 名字 + 行尾状态（执行中、等你处理、对话数），当前项目打勾 */
 export function ProjectPickerRow({

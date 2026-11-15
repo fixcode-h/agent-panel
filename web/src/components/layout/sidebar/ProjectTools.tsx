@@ -57,7 +57,13 @@ export function ProjectTools({ project }: { project: Project }) {
         on={route.page === 'projects' && route.id === project.id && route.sub === 'capabilities'}
         onClick={() => go({ page: 'projects', id: project.id, sub: 'capabilities' })}
       />
-      <ProjectToolRow icon={Lightbulb} label={t('经验与文档')} onClick={() => openProject(project.id, 'experience')} />
+      {/* 「经验与文档」（#/projects/<项目>/experience）：右边整页显示，内容和项目设置的「项目经验」一样 */}
+      <ProjectToolRow
+        icon={Lightbulb}
+        label={t('经验与文档')}
+        on={route.page === 'projects' && route.id === project.id && route.sub === 'experience'}
+        onClick={() => go({ page: 'projects', id: project.id, sub: 'experience' })}
+      />
     </section>
   )
 }

@@ -45,7 +45,10 @@ export function ListPane({
   compact,
   newMenu,
   resizeKey,
+  top,
 }: {
+  /** 标题上面的一块（盖住侧栏的表格页放「回到项目」的项目卡片） */
+  top?: React.ReactNode
   /** 传了就能拖右边缘调宽度，记在本机（表格页：表名长、目录深） */
   resizeKey?: string
   /**
@@ -81,6 +84,7 @@ export function ListPane({
 }) {
   return (
     <ResizablePane resizeKey={resizeKey} title={title}>
+      {top && <div className={cn('shrink-0 px-2.5', compact ? 'pt-2.5' : 'pt-3')}>{top}</div>}
       <div className={cn('flex flex-col px-4', compact ? 'gap-2.5 pt-4 pb-2.5' : 'gap-3 pt-5 pb-3')}>
         <div className="flex items-center gap-2">
           {/* 标题可以被压缩：不放 min-w-0 + truncate 时它按内容宽度撑着，后面的按钮会被顶出左栏 */}

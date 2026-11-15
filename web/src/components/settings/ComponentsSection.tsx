@@ -603,7 +603,10 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
       </Group>
       <Group title={t('侧栏 · 项目')}>
-        <Specimen name="ProjectSwitcher · ProjectToolRow · ProjectPicker · ProjectCard" tune={['nav', 'menu', 'card']}>
+        <Specimen
+          name="ProjectSwitcher · ProjectToolRow · ProjectPicker · ProjectCard · ProjectBackButton"
+          tune={['nav', 'menu', 'card']}
+        >
           <ProjectSidebarSpecimen />
         </Specimen>
       </Group>
