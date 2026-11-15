@@ -151,7 +151,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                 <AiFixButton
                   variant="ghost"
                   label={t('让 AI 安装')}
-                  title={t('让「AI 创建」里设置的 Agent 直接在这台电脑上装好 ComfyUI 和 PyTorch')}
+                  title={t('让「AI 辅助」里设置的 Agent 直接在这台电脑上装好 ComfyUI 和 PyTorch')}
                   issue={{
                     title: t('本机生图：安装 ComfyUI'),
                     topic: 'local-image',
@@ -305,7 +305,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             {job.log && <JobLog job={job} />}
             {job.status === 'failed' && (
               <p className="mt-2 text-footnote text-subtle">
-                {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。')}
+                {t('「AI 处理」会把出错的步骤和输出交给「AI 辅助」里设置的 Agent，让它在安装目录里排查并修好环境。')}
               </p>
             )}
           </Card>

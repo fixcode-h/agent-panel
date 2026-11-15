@@ -15,7 +15,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '设置', ['常规', '内容宽度', '命令行 Shell', 'PowerShell（默认）', '子对话卡住时追问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
   // 关于我与记忆（设计报告 Chat P1-4）：「关于我」能改、记忆能看能删能加（演示里有两条示例）
-  await p.getByRole('button', { name: '关于我与记忆', exact: true }).click()
+  await p.getByRole('button', { name: '关于我', exact: true }).click()
   await check(p, '设置-关于我与记忆', ['关于我', '叫我小王', '命令要能在 PowerShell 里跑', '2 条'])
   // 打开时内容不满一屏（滚不动）：小节导航要选第一个「关于我」，不能被「滚到底」误判成「记忆」（用户报的 Bug）
   const toc = p.getByRole('tablist', { name: '本页小节' })
@@ -89,6 +89,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     // 问号里的详细说明也要能搜到：「续接」出现在「子对话完成后保留」的悬停说明里
     await box.fill('续接')
     await check(p, '设置-搜索-悬停说明', ['子对话完成后保留'])
+    // 左栏改过名的页（2026-11-15 重新分组）：搜旧名也要找到新页
+    await box.fill('Markdown 样式')
+    await p
+      .getByRole('option', { name: /正文排版/ })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('设置搜索：搜旧名「Markdown 样式」没有找到改名后的「正文排版」'))
     await box.fill('额外参数')
     await p.getByRole('option', { name: /额外参数/ }).waitFor({ timeout: 5000 })
     await box.press('Enter')
@@ -112,7 +119,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .click()
     .catch(() => {})
   await check(p, '设置-语音朗读-本机模型', ['音色', '还没下载模型'])
-  await p.getByRole('button', { name: '外观', exact: true }).click()
+  await p.getByRole('button', { name: '主题与字体', exact: true }).click()
   await check(p, '设置-外观', ['配色', 'Claude Code（默认）', 'Claude', '中性', 'Maple Mono NL', '字间距', '空格宽度'])
   // 换配色：html 上挂 data-palette，主按钮颜色跟着变；默认的「Claude Code」挂 code，只有「Claude」配色不挂属性
   await p.getByRole('radio', { name: '中性' }).click()
@@ -126,7 +133,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== 'code')
     errors.push('设置-外观：换回默认的「Claude Code」配色后 html 上应该挂 data-palette="code"')
   // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
-  await p.getByRole('button', { name: 'Markdown 样式', exact: true }).click()
+  await p.getByRole('button', { name: '正文排版', exact: true }).click()
   await check(p, '设置-Markdown样式', ['H1 标题', '斑马纹', '自动换行', '字号'])
   await p.getByRole('switch', { name: '表格斑马纹' }).click()
   if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
@@ -201,7 +208,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('button', { name: '全部恢复默认' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '恢复默认', exact: true }).click()
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
-  await p.getByRole('button', { name: '组件', exact: true }).click()
+  await p.getByRole('button', { name: '控件样式', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
   const sample = p.getByRole('tablist', { name: '示例页签' })
   await sample.getByRole('tab', { name: /代码审查/ }).click()
@@ -517,7 +524,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await settingsRow().click()
   const agentItem = p.getByRole('button', { name: 'Agent', exact: true })
   await agentItem.click()
-  const deployItem = p.locator('nav[aria-label="Agent"]').getByRole('button', { name: '部署', exact: true })
+  const deployItem = p.locator('nav[aria-label="Agent"]').getByRole('button', { name: '说明与技能', exact: true })
   await deployItem.waitFor({ timeout: 5000 })
   if ((await hintOf(agentItem)) !== deployHint) errors.push('部署提醒点：设置里「Agent」项上没有提示')
   if ((await hintOf(deployItem)) !== deployHint) errors.push('部署提醒点：设置里「部署」项上没有提示')
