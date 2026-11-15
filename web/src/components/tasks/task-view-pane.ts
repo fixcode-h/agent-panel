@@ -25,6 +25,8 @@ export const FILES_PANE_CAP = 440
  * 分析对话才是主体，文件栏只是顺手翻文件（用户 2026-10-30 要求文件栏别太宽、比例合适）
  */
 export const EMBED_FILES_PANE_CAP = 320
+/** 打开网页页签时右栏至少多宽：440 的文件栏里网页基本按手机版排，看不清页面布局 */
+export const WEB_RAIL_MIN = 600
 /** 会话栏的宽度，和中间对话至少要留的宽度：放不下时会话栏和右侧文件栏只显示后打开的那个 */
 export const SESSION_BAR_W = 320
 /** 会话栏和面板右边缘之间留给消息区滚动条的宽度（和 index.css 的 thin-scroll 一样宽） */

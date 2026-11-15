@@ -68,6 +68,7 @@ import {
   REPORT_PANE_MIN,
   SESSION_BAR_KEY,
   SESSION_BAR_W,
+  WEB_RAIL_MIN,
   paneMax,
   useHalfPane,
   writeStored,
@@ -84,6 +85,7 @@ import { TaskMessages } from './view/TaskMessages'
 import { FollowComposer, flowHint } from './view/FollowComposer'
 import { ConversationDock } from './view/ConversationDock'
 import { TaskSideRail } from './view/TaskSideRail'
+import { WebHostCtx, useWebTabFocus, useWebTabs } from '@/lib/web-view/tabs'
 import { NO_DIALOGS, TaskDialogs, type TaskDialogState } from './view/TaskDialogs'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
@@ -225,6 +227,15 @@ export function TaskView({
     rowWidth,
     railMounted,
   )
+  // 网页页签（设计稿第 6 节）：新开了网页就展开右栏（窄屏拉出抽屉），右栏太窄时放宽一些（不写本机，拖过的宽度照旧）。
+  // 放在父对话右栏里的子对话（pane）没有自己的右栏，网页开到父对话那边
+  useWebTabFocus(pane ? '' : taskId, () => {
+    if (panes.filesFolded) panes.toggleFiles()
+    panes.setLastRail('files')
+    if (taskPanel.width < WEB_RAIL_MIN) taskPanel.fit(WEB_RAIL_MIN)
+    if (!matchMedia('(min-width: 80rem)').matches) setPanel(true)
+  })
+  const webTabCount = useWebTabs(pane ? '' : taskId).tabs.length
   const [scrolled, setScrolled] = useState(false)
   useEscape(panel, () => setPanel(false))
   useEscape(progressOpen, () => setProgressOpen(false))
@@ -402,7 +413,8 @@ export function TaskView({
   const pluginHome = pluginTabs.some((x) => x.home)
   // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示。
   // 插件页签标了 home 的对话（例如模型设计的 3D 预览，不属于项目）照样要右栏放那个页签
-  const noFiles = !task.projectId && !pluginHome
+  // 开着网页页签的聊天同样要右栏放它
+  const noFiles = !task.projectId && !pluginHome && !webTabCount
   // Chat 页的聊天换成自己的标题栏和右栏（Chat.dc.html）；项目里的对话照旧用页签条。
   // 聊天派出了子对话或开着运行页签时也退回页签条，那些页签要有地方放
   const chatPage = noFiles && !pane && !embed && task.mode === 'chat' && !children.length && !openRun
@@ -728,6 +740,7 @@ export function TaskView({
         aiLook={aiLook}
         handleNeeds={task.imported ? null : handleNeeds}
         cards={!task.parentTaskId}
+        web={{ taskId: pane ? (task.parentTaskId ?? task.id) : task.id, projectId: task.projectId }}
       >
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
@@ -1106,6 +1119,7 @@ function TaskViewCtx({
   aiLook,
   handleNeeds,
   cards,
+  web,
   children,
 }: {
   taskId: string
@@ -1115,17 +1129,21 @@ function TaskViewCtx({
   handleNeeds: ((text: string) => Promise<void>) | null
   /** 子对话里总结照普通 Markdown 显示，不画卡片（见 Markdown 的 SummaryCardsCtx） */
   cards: boolean
+  /** 回复里的网页开到哪个对话的右栏（lib/web-view/tabs.ts） */
+  web: { taskId: string; projectId?: string }
   children: React.ReactNode
 }) {
   return (
-    <FileOpenCtx.Provider value={openFile}>
-      <FileRefLayer taskId={taskId} projectId={projectId} preview={openFile}>
-        <AiLookCtx.Provider value={aiLook}>
-          <HandleNeedsCtx.Provider value={handleNeeds}>
-            <SummaryCardsCtx.Provider value={cards}>{children}</SummaryCardsCtx.Provider>
-          </HandleNeedsCtx.Provider>
-        </AiLookCtx.Provider>
-      </FileRefLayer>
-    </FileOpenCtx.Provider>
+    <WebHostCtx.Provider value={web}>
+      <FileOpenCtx.Provider value={openFile}>
+        <FileRefLayer taskId={taskId} projectId={projectId} preview={openFile}>
+          <AiLookCtx.Provider value={aiLook}>
+            <HandleNeedsCtx.Provider value={handleNeeds}>
+              <SummaryCardsCtx.Provider value={cards}>{children}</SummaryCardsCtx.Provider>
+            </HandleNeedsCtx.Provider>
+          </AiLookCtx.Provider>
+        </FileRefLayer>
+      </FileOpenCtx.Provider>
+    </WebHostCtx.Provider>
   )
 }

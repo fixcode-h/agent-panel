@@ -3,6 +3,7 @@ import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
+import { openWebTab, useWebHost } from '@/lib/web-view/tabs'
 import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary/card'
 import { isBareFileName, linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
@@ -129,10 +130,19 @@ function renderReply(text: string, teamNames: Set<string>, live?: boolean, act?:
  */
 export function SummaryCardView({ card }: { card: SummaryCard }) {
   const openSummary = useChildSummaryOpen()
+  const webHost = useWebHost()
   const canJump = !!openSummary
   // card 是 ReceivedRow 每次渲染新建的对象，用 useMemo 永远命中不了，直接算
   const html = cardHtml(card, new Set(), false, false, canJump)
   const onClick = (e: React.MouseEvent) => {
+    // 回复里的网址：直接点在对话右栏的网页页签里打开；按着 Ctrl / ⌘ / Shift 点照浏览器默认（新标签页）
+    const a = webHost && (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]')
+    const href = a ? (a.getAttribute('href') ?? '') : ''
+    if (webHost && /^https?:\/\//i.test(href) && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      openWebTab(webHost.taskId, { kind: 'url', url: href })
+      return
+    }
     const go = (e.target as HTMLElement).closest<HTMLElement>('[data-child-summary]')
     if (go && openSummary) openSummary(go.dataset.childSummary ?? '')
   }

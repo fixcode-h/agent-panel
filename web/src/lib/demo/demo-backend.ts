@@ -1,3 +1,4 @@
+import { demoWebView } from './demo-web-view'
 import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
 import { demoCapabilities } from './demo-capabilities'
@@ -2337,6 +2338,8 @@ export async function handle(method: string, url: string, body: unknown) {
   }
   if (url.startsWith('/app/restart-interrupted')) return demoRestart(d, url)
   if (url.startsWith('/app/')) return demoApp(url)
+  // 网页页签：演示项目里的 HTML 换成 blob 地址，预检和阅读模式用演示数据（demo-web-view.ts）
+  if (url.startsWith('/web-view/')) return demoWebView(url, body, (p) => DEMO_CONTENTS[p])
   const result = await route(method, url, body)
   // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新
   return result === undefined ? undefined : JSON.parse(JSON.stringify(result))

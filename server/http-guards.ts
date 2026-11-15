@@ -1,6 +1,7 @@
 import type { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { t } from '../shared/i18n.ts'
+import { SANDBOX_CSP, SANDBOX_PREFIX } from './web-view/sandbox.ts'
 
 /** 本地安装包上传：请求体就是安装包本身，不是 JSON */
 const LOCAL_PACKAGE = '/api/app/local-package'
@@ -19,6 +20,12 @@ export function installHttpGuards(app: Hono) {
   // 不许被别的网页用 iframe 嵌进去：令牌默认关着时，任意网页都能嵌入面板诱导用户点「运行」「删除」（点击劫持）
   app.use('*', async (c, next) => {
     await next()
+    // 沙箱源（网页页签里的本机 HTML）要能被面板自己嵌：只许同源的面板页面嵌，页面本身关进 CSP sandbox
+    if (c.req.path.startsWith(SANDBOX_PREFIX)) {
+      c.header('Content-Security-Policy', SANDBOX_CSP)
+      c.header('X-Content-Type-Options', 'nosniff')
+      return
+    }
     c.header('X-Frame-Options', 'DENY')
     c.header('Content-Security-Policy', "frame-ancestors 'none'")
     c.header('X-Content-Type-Options', 'nosniff')

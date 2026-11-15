@@ -772,6 +772,8 @@ export function tasksApi(deps: {
     sweepState: () => stateSweep.sweep(),
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
     ready: () => ready,
+    /** 对话能读文件的工作目录（独立分支时是 worktree）：网页页签按它发本机文件（server/web-view） */
+    workDir: (id: string) => readableDir(id),
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */
     get: (id: string) => current(id),
     /** 同上，但不读完整对话：用量统计、只用到任务元数据的地方用它 */
