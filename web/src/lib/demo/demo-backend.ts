@@ -3365,7 +3365,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     role: 'system' as const,
     agentId: '',
     step: '',
-    text: '「' + task.title + '」派出 1 个子角色：' + title,
+    text: '「' + task.title + '」派出 1 个子任务：' + title,
     tools: [],
     at,
     spawned: [id],

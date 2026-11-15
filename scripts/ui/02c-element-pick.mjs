@@ -1039,12 +1039,12 @@ await runShard(import.meta.filename, async (api) => {
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p
-    .getByText('子角色 · 单元测试', { exact: false })
+    .getByText('子任务 · 单元测试', { exact: false })
     .first()
     .waitFor({ timeout: 30000 })
     .catch(() => {})
 
-  await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子角色 · 单元测试'])
+  await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子任务 · 单元测试'])
   // 执行中发消息：在聊天页新建一个对话，趁它还在回复时再发一条。消息立刻出现在对话里，
   // 没有「排队」卡片、也没有「下一条」的排队提示
   await p.goto(base + '#/chat')
