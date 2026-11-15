@@ -710,8 +710,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '还没有自带 Skill。': 'No bundled skills yet.',
   '，所有 Agent 共用': ', shared by all agents',
   '（所有 Agent 共用）': ' (shared by all agents)',
-  '这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。':
-    'This skill is also deployed from Settings → Deploy; redeploy there to update that copy.',
+  '这个技能还有一份部署在「设置 → Agent → 说明与技能」，那份要覆盖部署一次才会更新。':
+    'This skill is also deployed from Settings → Agent → Instructions & skills; redeploy there to update that copy.',
   '二进制文件（{size}），不显示内容。': 'Binary file ({size}) — contents are not shown.',
   查看方式: 'View as',
   '在左边选一个技能，看它带哪些文件、装没装。':
@@ -772,6 +772,14 @@ export const EN_SETTINGS: Record<string, string> = {
   '默认换成这一版自带的；不勾时保留本机改过的版本':
     'Replaced with the bundled version by default; uncheck to keep your locally changed versions',
   部署: 'Deploy',
+  // 设置左栏 2026-11-15 重新分组后的新名称
+  主题与字体: 'Theme & fonts',
+  正文排版: 'Text formatting',
+  控件样式: 'Controls',
+  说明与技能: 'Instructions & skills',
+  'AI 辅助': 'AI helper',
+  记忆与经验: 'Memory & experience',
+  账号授权: 'Account sign-ins',
   // AI 处理报错
   'AI 处理': 'Handle with AI',
   'AI 修复': 'Fix with AI',
@@ -813,8 +821,8 @@ export const EN_SETTINGS: Record<string, string> = {
   // 模型目录
   模型目录: 'Model catalog',
   '未知模型用 AI 补全': 'Use AI to fill in unknown models',
-  '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。':
-    'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the agent set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
+  '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 辅助」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。':
+    'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the agent set under “AI helper” to look up the context window, max output, and default/available reasoning efforts online.',
   补充目录: 'Supplement file',
   '上下文低于 {min}：Agent 模式光系统提示词和工具定义就约 44K，一次读几个大文件就可能刚压缩完又满（压缩抖动），这一轮会失败。':
     'Context is below {min}: in Agent mode the system prompt and tool definitions alone take about 44K, so reading a few large files at once can refill the context right after compaction (autocompact thrashing) and fail the turn.',
@@ -1437,7 +1445,6 @@ export const EN_SETTINGS: Record<string, string> = {
   中性: 'Neutral',
   海蓝: 'Ocean',
   森绿: 'Forest',
-  组件: 'Components',
   '界面里用到的通用部件都在这里，按当前配色画出来。页面只用这些部件拼，改一处全站跟着变：点部件下面的「微调」调圆角、底色、边框这些，改了立刻生效。':
     'Every shared component used in the interface, drawn with the current palette. Pages are built only from these, so a change here applies everywhere: open “Fine-tune” under a component to adjust radius, background, border and more, with changes applied right away.',
   总结卡: 'Summary card',
@@ -1601,9 +1608,9 @@ export const EN_SETTINGS: Record<string, string> = {
   '打不开 Hugging Face 时打开': 'Turn on when Hugging Face is unreachable',
   '模型从 hf-mirror.com 下载，Python 依赖从清华镜像安装。':
     'Models download from hf-mirror.com, Python packages from the Tsinghua mirror.',
-  '相对「外观 → 字号」的倍数': 'Multiple of Appearance → Font size',
-  '其他元素按正文等比缩放。行高在「外观」里调。':
-    'Other elements scale with the body text. Line height is set in Appearance.',
+  '相对「主题与字体 → 字号」的倍数': 'Multiple of Theme & fonts → Font size',
+  '其他元素按正文等比缩放。行高在「主题与字体」里调。':
+    'Other elements scale with the body text. Line height is set in Theme & fonts.',
   装饰: 'Decoration',
   标题前的符号或标题下的线: 'A mark before the heading or a line under it',
   上间距: 'Top spacing',
@@ -1923,6 +1930,5 @@ export const EN_SETTINGS: Record<string, string> = {
   还没有记忆: 'No memories yet',
   '自己加一条，例如：我的电脑是 Windows，命令要能在 PowerShell 里跑':
     'Add one yourself, e.g. My computer runs Windows, so commands must work in PowerShell',
-  关于我与记忆: 'About me & memory',
   '新建任务（在 Chat 页时新建聊天）': 'New task (a new chat when on the Chat page)',
 }

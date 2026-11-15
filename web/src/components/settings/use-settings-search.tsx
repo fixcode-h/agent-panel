@@ -52,7 +52,8 @@ export function useSettingsSearch({
       section: s.id,
       title: s.id === 'models' ? 'Agent' : s.label,
       isSection: true,
-      zh: s.id,
+      // 旧名（改名前的叫法）也放进去，搜旧名照样能找到这一页
+      zh: [s.id, ...(s.aliases ?? [])].join('\n'),
     }))
     for (const e of settingsIndex) {
       const section = e.section === '@cli' ? `cli:${defCli}` : e.section

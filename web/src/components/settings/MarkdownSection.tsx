@@ -445,8 +445,8 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Preview md={PREVIEW.body} />
         <Row
           title={t('字号')}
-          desc={t('相对「外观 → 字号」的倍数')}
-          hint={t('其他元素按正文等比缩放。行高在「外观」里调。')}
+          desc={t('相对「主题与字体 → 字号」的倍数')}
+          hint={t('其他元素按正文等比缩放。行高在「主题与字体」里调。')}
         >
           <F el="body" prop="size" label={t('正文字号')} />
         </Row>

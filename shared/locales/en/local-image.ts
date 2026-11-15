@@ -19,8 +19,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '已安装，未启动': 'Installed, not running',
   一键安装: 'Install',
   '让 AI 安装': 'Let AI install',
-  '让「AI 创建」里设置的 Agent 直接在这台电脑上装好 ComfyUI 和 PyTorch':
-    'Have the agent set under "AI creation" install ComfyUI and PyTorch on this computer',
+  '让「AI 辅助」里设置的 Agent 直接在这台电脑上装好 ComfyUI 和 PyTorch':
+    'Have the agent set under "AI helper" install ComfyUI and PyTorch on this computer',
   '本机生图：安装 ComfyUI': 'Local images: install ComfyUI',
   '从 {src} 装 PyTorch': 'Installing PyTorch from {src}',
   '装 PyTorch': 'Installing PyTorch',
@@ -45,8 +45,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   'Python {v} 装不上：ComfyUI 的依赖还没有这个版本的安装包，请改用 {recommend}':
     "Python {v} won't work: ComfyUI's dependencies have no build for it yet. Use {recommend}",
   '{n}GB 显存': '{n} GB VRAM',
-  '「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。':
-    '"Handle with AI" hands the failed step and its output to the agent set under "AI Create", which diagnoses and repairs the environment in the install folder.',
+  '「AI 处理」会把出错的步骤和输出交给「AI 辅助」里设置的 Agent，让它在安装目录里排查并修好环境。':
+    '"Handle with AI" hands the failed step and its output to the agent set under "AI helper", which diagnoses and repairs the environment in the install folder.',
   '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。':
     'Download one to get started; recommended models come first. Downloaded models show up under "Image source" in UI design. Less VRAM than suggested still works, just slower.',
   推荐: 'Recommended',
@@ -102,8 +102,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '换成更快的设置，适合批量': 'Use faster settings for batches',
   'AI 生成工作流': 'Generate a workflow with AI',
   'AI 优化「{name}」': 'Improve "{name}" with AI',
-  '用「AI 创建」里设置的 Agent；ComfyUI 在运行时会按它装的节点来写':
-    'Uses the agent set under "AI Create"; when ComfyUI is running it writes against the installed nodes',
+  '用「AI 辅助」里设置的 Agent；ComfyUI 在运行时会按它装的节点来写':
+    'Uses the agent set under "AI helper"; when ComfyUI is running it writes against the installed nodes',
   '想生成什么样的资源、什么风格？': 'What assets and style do you want?',
   '想怎么改？': 'What should change?',
   '这是界面格式的工作流。请在 ComfyUI 里用「导出（API）」再导出一次。':
