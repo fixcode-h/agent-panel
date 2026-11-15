@@ -14,6 +14,13 @@ import { createDigest, digestText, type LogDigest } from '../shared/log-digest.t
 import { openJobLog } from './bg/log.ts'
 import { notRunReason } from './bg/sanity.ts'
 import { lostJobNote, type createBgPersist, type PersistedJob } from './bg/persist.ts'
+import {
+  bgLastOutput,
+  bgResultLetter,
+  bgSlowNotice,
+  bgStallNotice,
+  bgTimeoutLine,
+} from '../shared/prompt/letters/background.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -343,21 +350,22 @@ export function createBackground(
       const ran = t - Date.parse(j.startedAt)
       const quiet = t - Date.parse(j.lastOutputAt || j.startedAt)
       const last = j.lines.slice(-10).join('\n')
-      const out = last ? `\n最后的输出：\n\`\`\`\n${last}\n\`\`\`` : ''
-      const left = `面板会在跑满 ${fmtDuration(j.timeoutMs)} 时停掉它。`
+      const notice = {
+        name: j.name,
+        id: j.id,
+        command: j.command,
+        ran: fmtDuration(ran),
+        quiet: fmtDuration(quiet),
+        out: bgLastOutput(last),
+        left: bgTimeoutLine(fmtDuration(j.timeoutMs)),
+      }
       if (quiet >= stallMs && !j.stalled) {
         j.stalled = true
         j.nextCheckMs = Math.max(j.nextCheckMs ?? 0, ran + checkFirstMs)
-        deps.onNotice?.(
-          j,
-          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtDuration(ran)}，最近 ${fmtDuration(quiet)} 没有任何输出，可能卡住了（下载或解压完了却没退出、在等输入、死锁）。\n命令：${j.command}${out}\n先用 check_background 看它现在的状态，再用只读命令核对它该产出的东西（文件、进程）在不在；确认卡住就用 stop_background 停掉，查清原因再重跑。它还在正常干活（只是不输出）就不用管，结果照样会推回来。${left}`,
-        )
+        deps.onNotice?.(j, bgStallNotice(notice))
       } else if (j.nextCheckMs !== undefined && ran >= j.nextCheckMs) {
         j.nextCheckMs = ran * 2
-        deps.onNotice?.(
-          j,
-          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtDuration(ran)}，还没结束（最近一次输出在 ${fmtDuration(quiet)} 前）。\n命令：${j.command}${out}\n看一眼进度是否正常：输出一直在重复（反复重试、死循环）或者明显跑偏就用 stop_background 停掉；正常就不用管，结束后结果会推回来，下一次提醒在跑满 ${fmtDuration(j.nextCheckMs)} 时。${left}`,
-        )
+        deps.onNotice?.(j, bgSlowNotice(notice, fmtDuration(j.nextCheckMs)))
       }
       stallTimers.set(j.id, timers.setTimeout(tick, every))
     }
@@ -386,20 +394,10 @@ export function createBackground(
     killTimers.set(j.id, t)
   }
 
-  const resultText = (j: BgJob) => {
-    const head = headText(j)
-    const warn = j.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
-    // 只给提炼后的日志（错误和警告行、结尾几十行、完整日志路径；成功只给最后几行），不再整段 6000 字进上下文；
-    // brief 的（UE 编译）只报状态，失败带日志路径
-    const body = jobBody(j)
-    const cmd = j.brief ? '' : `\n命令：${j.command}`
-    // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以收尾时要整体重写。
-    // 但只能要求「结束这一轮时」再总结：以前写「处理完这个结果后，重新总结整段工作」，模型一收到结果就先写一段总结，
-    // 没有工具调用的回复会直接结束这一轮，计划还没做完就停（用户 2026-11-06 报结束前钩子反复拦住，一半紧跟在推回结果之后）
-    const ask =
-      '\n按这个结果接着做，不用先写总结；要结束这一轮时，最后那条回复再重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
-    return `【面板】${head}${warn}${cmd}${body ? `\n${body}` : ''}${ask}`
-  }
+  // 只给提炼后的日志（错误和警告行、结尾几十行、完整日志路径；成功只给最后几行），不再整段 6000 字进上下文；
+  // brief 的（UE 编译）只报状态，失败带日志路径
+  const resultText = (j: BgJob) =>
+    bgResultLetter({ head: headText(j), changed: !!j.changed, command: j.brief ? '' : j.command, body: jobBody(j) })
 
   /**
    * 置终态并把结果交给发起方：除了「被停止且不需要通知」的命令，其余都走这里收口。

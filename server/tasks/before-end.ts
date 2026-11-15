@@ -5,7 +5,6 @@ import { isChatMode } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
 import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan/index.ts'
 import {
-  CHECK_REMINDER,
   idleReminders,
   inputIndex,
   isActTool,
@@ -24,6 +23,7 @@ import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
 import { freshTask, readTask } from './read.ts'
 import { mergeOwedBlock, wrapWaitingBlock } from '../../shared/prompt/letters/wrap.ts'
+import { CHECK_REMINDER, planBlock } from '../../shared/prompt/letters/nudge.ts'
 
 /**
  * 对话（顶层对话、子对话）的结束前判断（ADR 0049）：模型准备结束这一轮时 CLI 问到这里，
@@ -147,20 +147,10 @@ export function createBeforeEnd(
       const left = openWork(tk)
       const failed = left.find(needsFix)
       const next = failed ?? left.find((s) => s.status === 'running') ?? left[0]
-      return block(
-        tk,
-        'plan-open',
-        planProgressKey(plan),
-        `【面板】你的计划才做了 ${p.done}/${p.total}，也没有在等任何结果，先别结束。` +
-          (failed
-            ? `「${failed.title}」${failed.note}。先查清原因、修好后重做；确实不做了就标成跳过并说明原因，然后接着做计划。`
-            : next
-              ? `接着做「${next.title}」：`
-              : '接着做下一步：') +
-          '直接调用工具去做，不用先说明；一步做完就用 set_plan 标完成，接着做下一步，直到计划做完再调用 end_turn（outcome: done）。' +
-          '确实做不下去就调用 end_turn（outcome: blocked），need 写卡在哪一步、需要什么。',
-        { done: p.done, total: p.total },
-      )
+      return block(tk, 'plan-open', planProgressKey(plan), planBlock({ done: p.done, total: p.total, failed, next }), {
+        done: p.done,
+        total: p.total,
+      })
     }
 
     // 没列计划、也没用 end_turn 交代结束：问一句做完没有（用户 2026-11-05 定的说法），提醒不画进对话

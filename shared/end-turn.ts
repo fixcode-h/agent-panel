@@ -25,14 +25,6 @@ export const SPIN_MAX = 3
 export const END_REJECTED = '【没有结束】'
 export const END_BLOCKED = '【已记下卡点】'
 
-/** 交给 Agent 的说法里，怎么结束的那一句（提醒、提示词都引用它；不翻译） */
-export const END_TURN_HOW =
-  '做完了就调用 end_turn（outcome: done），之后必须用一句话简短说明收尾，不要重复总结；做不下去就调用 end_turn（outcome: blocked），need 写缺什么。'
-
-/** 没列计划时的收尾自检（用户 2026-11-05 定的说法） */
-export const CHECK_REMINDER =
-  '【面板】（收尾自检）这次的事做完了吗？没做完就直接调用工具接着做，不用先说明；' + END_TURN_HOW
-
 /**
  * 这条工具调用是不是面板自己的工具（end_turn、set_plan、get_status……）：各家 CLI 报上来的写法不同
  * （裸名字、mcp__panel__x、记成「MCP · panel · x」），按名字和标题一起认，同 isEndTurnTool

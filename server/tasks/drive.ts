@@ -3,7 +3,8 @@ import { userWaiting, planStalled, runRunning, taskDeleted, wrapUpPending } from
 import type { Task } from '../../shared/schema.ts'
 import { helpersWorking } from '../../shared/tasks/helpers.ts'
 import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
-import { CHECK_REMINDER, idleReminders, SPIN_MAX, turnEndSince } from '../../shared/end-turn.ts'
+import { idleReminders, SPIN_MAX, turnEndSince } from '../../shared/end-turn.ts'
+import { CHECK_REMINDER, planNudge } from '../../shared/prompt/letters/nudge.ts'
 import { DriveBudget, planProgressKey, shortKey } from '../../shared/drive.ts'
 import { taskLog } from './log.ts'
 import { makeAlert } from '../../shared/alerts.ts'
@@ -187,15 +188,7 @@ export function createDrive(
         // 要修的步骤（等的结果没成功、工作流没走完）先处理：不点明的话对话会跳过它往下做，或者干脆停着
         const failed = left.find(needsFix)
         const next = failed ?? left.find((s) => s.status === 'running') ?? left[0]
-        const text =
-          `【面板】你的计划才做了 ${again.p.done}/${again.p.total}，也没有在等任何结果，这一轮却结束了。` +
-          (failed
-            ? `「${failed.title}」${failed.note}。先查清原因、修好后重做，不要把它当成失败放着；确实不做了就标成跳过并说明原因，然后接着做计划。`
-            : next
-              ? `接着做「${next.title}」：`
-              : '接着做下一步：') +
-          '直接调用工具去做，不用先说明；一步做完就用 set_plan 标完成，并在同一条回复里接着调用工具做下一步，直到计划做完再调用 end_turn（outcome: done）。' +
-          '确实做不下去就调用 end_turn（outcome: blocked），need 写卡在哪一步、需要什么。'
+        const text = planNudge({ done: again.p.done, total: again.p.total, failed, next })
         const ok = again.tk.parentTaskId
           ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'nudge')).ok
           : await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(

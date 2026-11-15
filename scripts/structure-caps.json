@@ -2,7 +2,7 @@
   "_说明": "代码结构只许变好：超过这里的数字 npm run lint 会失败。见 scripts/structure-check.mjs、docs/lessons/structure.md",
   "functions": {
     "server/assist.ts::assistApi": 370,
-    "server/background.ts::createBackground": 540,
+    "server/background.ts::createBackground": 530,
     "server/exec/rpc/codex.ts::codexAdapter": 560,
     "server/exec/runner.ts::runAgent": 610,
     "server/schedules.ts::schedulesApi": 470,
@@ -11,7 +11,7 @@
     "server/tasks/index.ts::tasksApi": 810,
     "server/tasks/asks.ts::createAsks": 410,
     "server/tasks/child-messages.ts::createChildMessages": 330,
-    "server/tasks/drive.ts::createDrive": 440,
+    "server/tasks/drive.ts::createDrive": 430,
     "server/tasks/flow-runs.ts::createFlowRuns": 390,
     "server/tasks/keepalive.ts::createKeepAlive": 400,
     "server/tasks/peer.ts::createPeer": 390,
