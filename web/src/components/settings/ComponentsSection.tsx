@@ -65,6 +65,7 @@ import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
 import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
+import { HtmlCardSpecimen } from '@/components/settings/HtmlCardSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
@@ -612,6 +613,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('调用栈')}>
         <Specimen name="calltree" tune={['callTree']}>
           <CallTreeSpecimen />
+        </Specimen>
+      </Group>
+      <Group title={t('HTML 卡片 · 本轮产出')}>
+        <Specimen name="HtmlCard · OutputsCard · OutputRow" tune={['htmlCard', 'iconButton']}>
+          <HtmlCardSpecimen />
         </Specimen>
       </Group>
       <Group title={t('MCP 能力')}>

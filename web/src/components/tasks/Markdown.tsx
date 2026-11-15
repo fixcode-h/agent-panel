@@ -10,6 +10,8 @@ import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { useMdTables } from './md-table-layer'
+import { useHtmlCards } from './html-card-layer'
+import { htmlCardSlots } from '@/lib/markdown/html-cards'
 import '@/components/ui/call-tree.css'
 import {
   enhanceMermaid,
@@ -187,8 +189,10 @@ export function Markdown({
     const h = cards
       ? renderReply(deferred, teamNames, live, canAct, canJump)
       : renderDoc(unfenceSummaries(deferred), teamNames, live)
-    return canOpen ? linkPaths(h) : h
-  }, [deferred, teamNames, canOpen, live, ready, canAct, cards, canJump])
+    if (!canOpen) return h
+    // 任务页里回复停下后，HTML 文件换成 HTML 卡片（占位在这里放，卡片由 useHtmlCards 挂上）
+    return refs && !live ? htmlCardSlots(linkPaths(h)) : linkPaths(h)
+  }, [deferred, teamNames, canOpen, live, ready, canAct, cards, canJump, refs])
 
   useEffect(() => {
     const root = ref.current
@@ -261,6 +265,8 @@ export function Markdown({
 
   // 表格：复制菜单、全屏、点表头排序（md-table-layer.tsx）
   const tables = useMdTables(ref, html, live)
+  // 回复里的 HTML 文件卡片（设计稿 6.6）
+  const htmlCards = useHtmlCards(ref, html, live)
 
   /** 行内代码里单独的文件名（不带目录，2026-11-07 起按代码显示）：悬停时去对话目录里找完整路径 */
   const nameAt = (e: React.SyntheticEvent) => {
@@ -363,6 +369,7 @@ export function Markdown({
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {tables.layer}
+      {htmlCards}
     </>
   )
 }

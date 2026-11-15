@@ -32,6 +32,7 @@ import { ToolRow } from './ToolRow'
 import { runningTools } from './RunningNow'
 import { ConvChangesCard } from './TurnChanges'
 import { DoneEvidenceCard } from './DoneEvidenceCard'
+import { TurnOutputsCard } from './TurnOutputsCard'
 import { useEffortOf } from './ChatModelPicker'
 import { DispatchSlot, InlineRoutes, useDispatchOpen, useRouteAnchors } from './route-context'
 
@@ -370,6 +371,8 @@ export function ChatReply({
             running={
               convCard ? (
                 <>
+                  {/* 本轮产出只看这一轮（用户最后一次发话以后），不累加：新的一轮结束后换成新一轮的 */}
+                  <TurnOutputsCard task={task!} />
                   <DoneEvidenceCard task={task!} />
                   <ConvChangesCard task={task!} />
                   {footer}

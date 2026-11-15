@@ -46,6 +46,11 @@ interface FileRefApi {
   leave: () => void
   /** 把 root 里的文件标记按真实情况标出来：找不到的划掉（回复渲染完调用） */
   mark: (root: HTMLElement) => void
+  /** 解析一个路径（有缓存）：HTML 卡片要知道文件在不在、多大 */
+  info: (path: string) => Promise<PathInfo | null>
+  /** 标记所在的对话和项目：HTML 卡片在这个对话的右栏网页页签里打开 */
+  taskId: string
+  projectId?: string
 }
 
 const FileRefCtx = createContext<FileRefApi | null>(null)
@@ -206,8 +211,11 @@ export function FileRefLayer({
           }),
         )
       },
+      info: resolve,
+      taskId,
+      projectId,
     }),
-    [open, resolve, resolveMany, findName],
+    [open, resolve, resolveMany, findName, taskId, projectId],
   )
   useEffect(() => () => clearTimeout(timer.current), [])
   // 滚动时卡片会和标记错开，直接收起
