@@ -2,7 +2,7 @@
  * 网页页签的接口（契约 shared/api-contract/web-view.ts，ADR 0068）：
  * 本机文件换沙箱地址、外部网址预检能不能嵌、阅读模式取正文。
  */
-import { stat } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { webViewContract as W } from '../../shared/api-contract/web-view.ts'
@@ -92,7 +92,21 @@ export async function webFile(deps: WebViewDeps, input: FileInput) {
   const info = await stat(full).catch(() => null)
   if (!info?.isFile()) throw new Error(t('文件不存在：{path}', { path: input.path }))
   const rel = path.relative(root, full).split(path.sep).join('/')
-  return { url: sandboxUrl(grantRoot(root), rel), title: path.basename(full), size: info.size }
+  const title = (await headTitle(full).catch(() => '')) || path.basename(full)
+  return { url: sandboxUrl(grantRoot(root), rel), title, size: info.size }
+}
+
+/** 网页的 <title>：只读文件开头一段（HTML 卡片、页签标题用），不整份加载 */
+async function headTitle(full: string) {
+  if (!/\.(html?|svg)$/i.test(full)) return ''
+  const fh = await open(full, 'r')
+  try {
+    const buf = Buffer.alloc(16 * 1024)
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+    return pageTitle(buf.subarray(0, bytesRead).toString('utf8'))
+  } finally {
+    await fh.close()
+  }
 }
 
 export async function probeUrl(raw: string, now = Date.now()) {
