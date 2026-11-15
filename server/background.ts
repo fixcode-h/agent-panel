@@ -74,6 +74,11 @@ export interface BgJob {
    * 不带的（Agent 交来的命令）用设置里选的命令行环境，Agent 是按那个 shell 的语法写的命令
    */
   shell?: ShellInfo & { distro?: string }
+  /**
+   * 结果只报状态（失败再带完整日志的路径），不带日志摘录：UE 编译的日志又长又杂，摘录每次都要占两三千字上下文，
+   * 用户 2026-11-15 要求成功只回状态、失败只回日志路径，要细节由 Agent 自己按路径去搜（ADR 0066）
+   */
+  brief?: boolean
 }
 
 /**
@@ -153,10 +158,26 @@ export function jobDigestText(j: BgJob) {
   return digestText(j.lines, d, j.state === 'done', j.logFile)
 }
 
-/** 对话里发起这条命令的那一行工具调用跑完后显示什么：结果和输出结尾 */
+/**
+ * 结果里状态之后的那段：brief 的（UE 编译）成功什么都不带，失败只带日志路径和错误条数；其余带提炼后的日志
+ */
+export function jobBody(j: BgJob) {
+  if (!j.brief) return jobDigestText(j)
+  if (j.state === 'done') return ''
+  const n = j.digest?.errorCount
+  return j.logFile
+    ? `完整日志：${j.logFile}${n ? `（认出 ${n} 条错误）` : ''}。要细节用 rg 按 error 搜这个文件、只取需要的几行，不要整份读进来。`
+    : ''
+}
+
+/**
+ * 对话里发起这条命令的那一行工具调用跑完后接上什么：和推回给 Agent 的同一段（状态 + jobBody）。
+ * 以前接的是输出结尾 6000 字，会话栏「最大的工具结果」按它估，一次编译显示占了 2k token，其实没进上下文（ADR 0066）；
+ * 完整输出点那一行打开命令行窗口看
+ */
 export function jobOutput(j: BgJob) {
-  const tail = j.lines.join('\n').slice(-6000)
-  return `${bgResultHead(j.id)}${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${tail ? `\n\n${tail}` : ''}`
+  const body = jobBody(j)
+  return `${bgResultHead(j.id)}${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${body ? `\n${body}` : ''}`
 }
 
 /**
@@ -368,14 +389,16 @@ export function createBackground(
   const resultText = (j: BgJob) => {
     const head = headText(j)
     const warn = j.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
-    // 只给提炼后的日志（错误和警告行、结尾几十行、完整日志路径；成功只给最后几行），不再整段 6000 字进上下文
-    const body = jobDigestText(j)
+    // 只给提炼后的日志（错误和警告行、结尾几十行、完整日志路径；成功只给最后几行），不再整段 6000 字进上下文；
+    // brief 的（UE 编译）只报状态，失败带日志路径
+    const body = jobBody(j)
+    const cmd = j.brief ? '' : `\n命令：${j.command}`
     // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以收尾时要整体重写。
     // 但只能要求「结束这一轮时」再总结：以前写「处理完这个结果后，重新总结整段工作」，模型一收到结果就先写一段总结，
     // 没有工具调用的回复会直接结束这一轮，计划还没做完就停（用户 2026-11-06 报结束前钩子反复拦住，一半紧跟在推回结果之后）
     const ask =
       '\n按这个结果接着做，不用先写总结；要结束这一轮时，最后那条回复再重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
-    return `【面板】${head}${warn}\n命令：${j.command}${body ? `\n${body}` : ''}${ask}`
+    return `【面板】${head}${warn}${cmd}${body ? `\n${body}` : ''}${ask}`
   }
 
   /**
@@ -496,6 +519,8 @@ export function createBackground(
       service?: boolean
       /** 指定 shell（见 BgJob.shell） */
       shell?: BgJob['shell']
+      /** 结果只报状态和日志路径（见 BgJob.brief） */
+      brief?: boolean
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
@@ -525,6 +550,7 @@ export function createBackground(
         ...(input.env?.length ? { env: input.env } : {}),
         // 没带就不写：普通后台命令被停下时结果照旧不推回
         ...(input.notifyOnStop ? { notifyOnStop: true } : {}),
+        ...(input.brief ? { brief: true } : {}),
         state: 'queued',
         code: null,
         createdAt: iso(),

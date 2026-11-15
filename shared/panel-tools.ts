@@ -221,7 +221,8 @@ export const DEFERRED_TOOLS: readonly string[] = [
   'stop_subtask',
   'check_background',
   'stop_background',
-  'close_run',
+  // 每轮提示里已有「名下的工作流」，状态变了也会来信：单独查进度很少用到（ADR 0066 梳理）
+  'list_workflows',
   'p4_split_changelists',
   'app_actions',
   'app_do',
