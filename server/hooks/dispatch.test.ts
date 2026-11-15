@@ -277,8 +277,9 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   const { applyPlan } = await import('../../shared/plan.ts')
   const tk = task({ id: 'pace1' })
   applyPlan(tk, { steps: [{ title: '改界面', status: 'running' }, { title: '跑测试' }] })
-  // 大输出提醒默认也装工具后：这里只看计划提醒，先关掉它
+  // 大输出提醒、推送项目知识默认也装工具后：这里只看计划提醒，先关掉它们
   await setBuiltin('big-output-hint', false, true)
+  await setBuiltin('push-lessons', false, true)
   const none = await hookOptions(ctx({ task: tk }))
   assert.ok(!none.hookEvents?.includes('tool.after'), '没有执行计划（子任务、Chat 页）不装')
   await setBuiltinParam('plan-pace', 'calls', 2, false)
@@ -291,6 +292,7 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:plan-pace' && x.result === 'context'))
   await setBuiltinParam('plan-pace', 'calls', 20, true)
   await setBuiltin('big-output-hint', true, true)
+  await setBuiltin('push-lessons', true, true)
 })
 
 test('大输出提醒：默认开，一次结果超过字数补一句，每次调用最多两次', async () => {
@@ -324,4 +326,77 @@ test('档位：严格档装上「不许改检查配置」，回到标准就不�
   await setTier('standard')
   const std = await hookOptions(ctx({ task: task({ id: 'tier-std' }) }))
   assert.ok(!(await std.onHook!('tool.before', edit('tsconfig.json'))).deny)
+})
+
+test('推送项目教训和经验：默认开；跑命令、改文件、搜索之前推，报错之后按报错推；同一条只推一次，标到工具行上', async () => {
+  resetHooksCache()
+  const { ProjectLesson } = await import('../../shared/schema.ts')
+  const { ProjectExperience } = await import('../../shared/experience.ts')
+  const l = (o: Record<string, unknown>) => ProjectLesson.parse({ title: 't', rule: '', createdAt: at, ...o })
+  const withLessons = {
+    ...(project as object),
+    lessons: [
+      l({ id: 'cmd', title: 'e2e 在 WSL 里跑', rule: '`npm run test:e2e` 放到 WSL 里跑' }),
+      l({ id: 'path', title: 'CLI 差异写进定义', rule: '不按名字写分支', paths: ['shared/clis/**'] }),
+      l({
+        id: 'err',
+        title: 'zod 深推断超限拆 schema',
+        rule: '报 TS2589 Type instantiation is excessively deep 时拆开',
+      }),
+    ],
+  } as never
+  const exps = [
+    ProjectExperience.parse({ id: 'drop', title: '掉落表在哪', keywords: ['UDropTable'], paths: ['Source/Loot'] }),
+  ]
+  const t = task({
+    id: 'know1',
+    messages: [
+      {
+        id: 'm1',
+        role: 'agent',
+        text: '',
+        at,
+        tools: [{ kind: 'run', label: 'npm run test:e2e', input: 'npm run test:e2e' }],
+      },
+    ],
+  })
+  const o = await hookOptions({
+    ...ctx({ task: t, orch: { experience: { list: async () => exps } } }),
+    project: withLessons,
+  })
+  assert.ok(o.hookEvents?.includes('tool.before') && o.hookEvents.includes('tool.after'))
+  const shell = (command: string, result?: { output: string; failed: boolean }) => ({
+    tool: {
+      kind: 'shell' as const,
+      name: 'Bash',
+      input: { command },
+      path: '',
+      paths: [],
+      ...(result ? { result } : {}),
+    },
+  })
+  const a = await o.onHook!('tool.before', shell('cd x && npm run test:e2e'))
+  assert.match(a.context ?? '', /e2e 在 WSL 里跑/)
+  assert.deepEqual(
+    (t as { messages: { tools: { knowledge?: { id: string }[] }[] }[] }).messages[0].tools[0].knowledge?.map(
+      (k) => k.id,
+    ),
+    ['cmd'],
+    '标到对话里那一行命令上',
+  )
+  assert.ok(!(await o.onHook!('tool.before', shell('npm run test:e2e'))).context, '同一条只推一次')
+  assert.match((await o.onHook!('tool.before', edit('shared/clis/pi.json'))).context ?? '', /CLI 差异写进定义/)
+  const s = await o.onHook!('tool.before', {
+    tool: { kind: 'read' as const, name: 'Grep', input: { pattern: 'UDropTable' }, path: '', paths: [] },
+  })
+  assert.match(s.context ?? '', /掉落表在哪/)
+  const e = await o.onHook!(
+    'tool.after',
+    shell('npx tsc', { output: 'a.ts(1,1): error TS2589: Type instantiation is excessively deep.', failed: true }),
+  )
+  assert.match(e.context ?? '', /以前遇到过类似的报错[\s\S]*zod 深推断超限/)
+  assert.ok(
+    recentTriggers().some((x) => x.hookId === 'builtin:push-lessons'),
+    '记进最近触发',
+  )
 })

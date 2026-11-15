@@ -91,6 +91,7 @@ import { applyLocalAppearance } from '@/lib/appearance'
 import { PluginSpecimens } from './PluginSpecimens'
 import { ReportCompareSpecimen } from './ReportCompareSpecimen'
 import { ChatQuotesSpecimen } from './ChatQuotesSpecimen'
+import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
 const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问题挡住后续节点
@@ -483,6 +484,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               open={false}
             />
           </div>
+        </Specimen>
+        <Specimen name="KnowledgeTags" tune={['chip']}>
+          <KnowledgeTagsSpecimen />
         </Specimen>
         <Specimen name="ReportCompare" tune={['statusPill']}>
           <ReportCompareSpecimen />

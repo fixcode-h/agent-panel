@@ -1297,6 +1297,20 @@ export const ToolUse = z.object({
   /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */
   alert: Alert.optional(),
   /**
+   * 面板在这次调用前后推给模型的项目教训、经验（server/hooks/knowledge-push.ts）：对话里画在这一行下面，
+   * 一眼看得到这一步用上了哪条、按什么命中的
+   */
+  knowledge: z
+    .array(
+      z.object({
+        kind: z.enum(['lesson', 'experience']),
+        id: z.string(),
+        title: z.string(),
+        why: z.enum(['command', 'path', 'error', 'search']).catch('command'),
+      }),
+    )
+    .optional(),
+  /**
    * 推给页面时省掉了输出的后半段（只出现在推送里，不存盘，见 shared/task.ts 的 liteMessages）：
    * 原来的长度、行数，和取全文用的消息 id、第几个工具。页面打开窗口看全部时再按这个去取
    */

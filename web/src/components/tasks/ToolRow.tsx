@@ -1,3 +1,4 @@
+import { KnowledgeTags } from '@/components/ui/knowledge-tag'
 import { useLiveById } from '@/lib/live/store'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -419,15 +420,25 @@ export function ToolRow({
         at={raw.startedAt ? new Date(raw.startedAt).toISOString() : undefined}
       />
     )
+  // 面板推给模型的教训、经验：画在这一行下面（server/hooks/knowledge-push.ts）
+  const known = raw.knowledge?.length ? <KnowledgeTags items={raw.knowledge} /> : null
   // /learn 让 Agent 记下的经验：工具行下面画同一张经验卡片（标「手动」），能当场看、改、删
   if (view.learned && task?.projectId)
     return (
       <>
         <ToolLine view={view} task={task} />
+        {known}
         <LearnedTool id={view.learned} projectId={task.projectId} />
       </>
     )
-  return <ToolLine view={view} task={task} />
+  return known ? (
+    <>
+      <ToolLine view={view} task={task} />
+      {known}
+    </>
+  ) : (
+    <ToolLine view={view} task={task} />
+  )
 }
 
 /**

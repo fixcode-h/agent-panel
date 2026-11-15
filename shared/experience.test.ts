@@ -43,13 +43,15 @@ test('findExperience 没有经验、没命中、空查询各有说法', () => {
   assert.match(findExperience(list, 'zz', ['Source/Table/Drop.cpp']), /### 表格在哪/)
 })
 
-test('新会话提示只说有几条；preHint 命中时附最多两条', () => {
+test('新会话提示说有几条；preHint 命中时直接给答案（说明和位置）；能记时带记的写法', () => {
   assert.equal(experiencePrompt([], '配表', true), '')
-  const list = [exp({ title: '表格在哪', keywords: ['配表'], paths: ['Source/Table'] })]
+  assert.match(experiencePrompt([], '配表', true, true), /record_experience/)
+  const list = [exp({ title: '表格在哪', body: '代码和数据分两处', keywords: ['配表'], paths: ['Source/Table'] })]
   const plain = experiencePrompt(list, '配表', false)
   assert.match(plain, /有 1 条/)
   assert.doesNotMatch(plain, /可能相关/)
-  assert.match(experiencePrompt(list, '改一下配表', true), /- 表格在哪：Source\/Table/)
+  assert.doesNotMatch(plain, /record_experience/, '子任务不能记，不带记的写法')
+  assert.match(experiencePrompt(list, '改一下配表', true), /- 表格在哪：代码和数据分两处（位置：Source\/Table）/)
 })
 
 test('同一件事：标题一样，或关键词和路径都有重合', () => {

@@ -6,7 +6,6 @@ import type { AgentCall } from '../../shared/engine/host.ts'
 import { traceCli } from '../exec/cli-trace.ts'
 import type { BeforeEndDecision, BeforeEndInput, HookAnswer, HookFacts, HookToolScope } from '../../shared/hooks.ts'
 import {
-  globMatch,
   hookApplies,
   type HookDef,
   type HookEventName,
@@ -19,8 +18,7 @@ import { activePlan, planNowText, planProgress } from '../../shared/plan.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts'
 import { DATA_DIR } from '../store.ts'
-import { loadProjectLessons } from '../projects/lessons.ts'
-import { recordKnowledgeHits } from '../knowledge-hits.ts'
+import { knowledgePush } from './knowledge-push.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
 import { activePluginHooks, isPluginHook, runPluginHook } from '../plugins/contrib.ts'
@@ -71,6 +69,8 @@ export interface HookCallCtx {
   call: AgentCall
   /** 拦住、续跑时在对话里记一行（runner 负责：之后的输出另起一条） */
   mark: (reason: string) => void
+  /** 对话改了（推送项目知识时给工具行挂了标签），推给页面 */
+  changed?: () => void
 }
 
 const rel = (cwd: string, p: string) => {
@@ -158,8 +158,6 @@ function restoreText(task: Task): string {
   return parts.length ? `【面板】上下文刚压缩过，下面是现在的进度，接着做：\n\n${parts.join('\n\n')}` : ''
 }
 
-/** 改文件后推送教训：每个对话里同一条教训只推一次 */
-const pushed = taskMap<Set<string>>('hooks.dispatch 推过的教训') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 原地打转提醒：每个对话里每条命令连续失败了几次（成功一次就清零），提醒过的记在 hinted 里不再重复 */
 const fails = taskMap<Map<string, number>>('hooks.dispatch 命令连续失败') // 运行时（task-state 登记，对话删掉时跟着清）：「说过一次」的记录，重启后最多再提醒一次
 /** 计划没跟上提醒：每个对话在数哪一项、动了几次手、提醒过什么（见 shared/plan/pace.ts） */
@@ -219,12 +217,20 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const all: HookDef[] = [...data.hooks, ...activePluginHooks(data)]
   // 这次调用范围对得上的用户钩子：装不装这个事件看它，工具类别、路径这些到触发时再看
   const mine = (event: HookEventName) => all.filter((h) => h.enabled && h.event === event && scopeOk(h, base))
-  const lessons =
+  // 推送项目教训和经验（knowledge-push.ts）：项目里的对话才有；条目到触发时才读，没有条目的项目不多花什么
+  const know =
     on('push-lessons') && c.project.id
-      ? (await loadProjectLessons(c.project, c.agents).catch(() => ({ lessons: [] }))).lessons.filter(
-          (l) => l.enabled && l.paths.length,
-        )
-      : []
+      ? knowledgePush({
+          task: c.task,
+          project: c.project,
+          agents: c.agents,
+          cwd: c.cwd,
+          step: c.call.step?.id ?? '',
+          experience: c.call.orch.experience ? () => c.call.orch!.experience!.list() : undefined,
+          note: (event, detail) => noteBuiltin('push-lessons', event, 'context', detail),
+          changed: () => c.changed?.(),
+        })
+      : undefined
   // 工具前的内置守卫，按这个顺序问，第一个拒绝的说了算（第四期的几个见 guards.ts）
   const guard = (id: string): GuardCtx => ({
     task: c.task,
@@ -254,11 +260,11 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   // 设置里按 CLI 关掉的事件（比如中转站上 Codex 的工具后）：内置的、自己的钩子都不装
   const off = new Set(data.cliOff[c.cliId] ?? [])
   const events: HookEventName[] = []
-  if (guards.length || mine('tool.before').length) events.push('tool.before')
+  if (guards.length || know || mine('tool.before').length) events.push('tool.before')
   // 计划没跟上提醒：只给有执行计划的对话（项目里的对话，不含子任务、Chat 页）
   const pace = on('plan-pace') && !!c.call.orch.plans
   const bigOut = on('big-output-hint') && builtinNumber(data, 'big-output-hint', 'chars') > 0
-  if (lessons.length || on('loop-hint') || pace || bigOut || mine('tool.after').length) events.push('tool.after')
+  if (know || on('loop-hint') || pace || bigOut || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
   // 各事件关心哪几类工具：内置的守卫、提醒只看改文件和跑命令（guards.ts、plan-pace 的 WORK、loopHint、教训），
@@ -266,13 +272,14 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const userKinds = (event: HookEventName) => mine(event).map((h) => h.match.tool)
   const hookTools: HookToolScope = {
     'tool.before': [
-      ...(guards.length ? (['edit', 'shell'] as const) : []),
-      // 读大文件守卫要看读文件工具
-      ...(guards.some(([id]) => id === 'big-read-guard') ? (['read'] as const) : []),
+      ...(guards.length || know ? (['edit', 'shell'] as const) : []),
+      // 读大文件守卫要看读文件工具；推送经验要看搜索（各家的搜索工具都归在读文件这一类）
+      ...(guards.some(([id]) => id === 'big-read-guard') || know ? (['read'] as const) : []),
       ...userKinds('tool.before'),
     ],
     'tool.after': [
-      ...(lessons.length ? (['edit'] as const) : []),
+      // 推送教训：任何工具报错之后都看一眼报错
+      ...(know ? (['edit', 'shell', 'read'] as const) : []),
       ...(bigOut ? (['shell', 'read'] as const) : []),
       ...(on('loop-hint') ? (['shell'] as const) : []),
       ...(pace ? (['edit', 'shell'] as const) : []),
@@ -424,30 +431,15 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       const u = await runUser(event, facts)
       if (u.deny) return { deny: true, reason: u.deny }
-      return u.context.length ? { context: u.context.join('\n\n') } : {}
+      // 守卫和用户钩子都放行了才推送：被拒绝的调用不会执行，推了也白推
+      const pushedText = know ? await know.before(facts) : ''
+      const ctx = [...(pushedText ? [pushedText] : []), ...u.context]
+      return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
     if (event === 'tool.after') {
       const ctx: string[] = []
-      const r = rel(c.cwd, facts.tool?.path ?? '')
-      if (lessons.length && facts.tool?.kind === 'edit' && r) {
-        const seen = pushed.get(c.task.id) ?? new Set<string>()
-        pushed.set(c.task.id, seen)
-        const hit = lessons.filter((l) => !seen.has(l.id) && l.paths.some((g) => globMatch(g, r)))
-        for (const l of hit) seen.add(l.id)
-        // 推给模型的教训也算命中（shared/knowledge-hits.ts）
-        if (hit.length)
-          void recordKnowledgeHits(
-            c.project.id,
-            'lessons',
-            hit.map((l) => l.id),
-            c.task.parentTaskId || c.task.id,
-          )
-        if (hit.length) noteBuiltin('push-lessons', event, 'context', `${r}：${hit.map((l) => l.title).join('、')}`)
-        if (hit.length)
-          ctx.push(
-            `【面板】${r} 有相关的项目教训，照着做：\n${hit.map((l) => `- ${l.title}${l.rule ? `：${l.rule}` : ''}`).join('\n')}`,
-          )
-      }
+      const lessonText = know ? await know.after(facts) : ''
+      if (lessonText) ctx.push(lessonText)
       const loop = on('loop-hint') ? loopHint(facts) : ''
       if (loop) ctx.push(loop)
       // 大输出提醒：每次调用最多两次，提醒多了就成了噪音

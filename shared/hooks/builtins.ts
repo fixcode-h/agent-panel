@@ -293,11 +293,15 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     tier: 'strict',
   },
   {
+    // id 沿用以前的「改文件后推送教训」：用户按项目关过的开关照旧生效
     id: 'push-lessons',
-    event: 'tool.after',
-    name: () => t('改文件后推送教训'),
-    description: () => t('第一次改到某个文件时，把项目教训里管这个文件的几条补给模型'),
-    tier: 'strict',
+    event: 'tool.before',
+    name: () => t('推送项目教训和经验'),
+    description: () =>
+      t(
+        '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来',
+      ),
+    tier: 'minimal',
   },
 ]
 

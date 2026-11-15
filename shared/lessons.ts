@@ -8,8 +8,7 @@ import type { GlobalLesson, ProjectLesson } from './schema.ts'
 
 /** 一次最多存多少条：再多就该合并同类项了 */
 export const MAX_LESSONS = 200
-/** 全文的预算（字数）：超出的只列标题 */
-const FULL_BUDGET = 3000
+/** 没有面板工具时全文的预算（字数）：超出的只列标题。有工具时见下面的 PROMPT_CAP */
 const FULL_BUDGET_NO_TOOL = 6000
 /** 全局教训的全文预算：排在项目教训后面，给少一些 */
 const GLOBAL_BUDGET = 2000
@@ -191,20 +190,18 @@ export function findLessons(
     .join('\n\n')
 }
 
-const tagLine = (tc: [string, number][]) =>
+const tagLine = (tc: [string, number][], max = MAX_TAG_HINT) =>
   `已有的标签：${tc
-    .slice(0, MAX_TAG_HINT)
+    .slice(0, max)
     .map(([x, n]) => `${x}（${n}）`)
-    .join('、')}${tc.length > MAX_TAG_HINT ? ` 等 ${tc.length} 个` : ''}`
+    .join('、')}${tc.length > max ? ` 等 ${tc.length} 个` : ''}`
+
+const titleLine = (l: ProjectLesson | GlobalLesson, withId = false) =>
+  `- ${l.title}${l.paths.length ? `（${l.paths.join('、')}）` : ''}${'tags' in l && l.tags.length ? ` ${l.tags.map((x) => `#${x}`).join(' ')}` : ''}${withId ? `〔id: ${l.id}〕` : ''}`
 
 const titles = (ls: (ProjectLesson | GlobalLesson)[], withId = false) =>
   [
-    ...ls
-      .slice(0, MAX_TITLES)
-      .map(
-        (l) =>
-          `- ${l.title}${l.paths.length ? `（${l.paths.join('、')}）` : ''}${'tags' in l && l.tags.length ? ` ${l.tags.map((x) => `#${x}`).join(' ')}` : ''}${withId ? `〔id: ${l.id}〕` : ''}`,
-      ),
+    ...ls.slice(0, MAX_TITLES).map((l) => titleLine(l, withId)),
     ls.length > MAX_TITLES
       ? `- 另有 ${ls.length - MAX_TITLES} 条${withId ? '（用 project_lessons 的 query 或 tags 查）' : ''}`
       : '',
@@ -226,10 +223,20 @@ function pick<T extends ProjectLesson | GlobalLesson>(pool: T[], budget: number,
   return full
 }
 
+/** 有面板工具时开头这一段的总字数上限：其余的按文件、命令、报错在执行中推送（shared/knowledge/push.ts），或用 project_lessons 查 */
+export const PROMPT_CAP = 1500
+/** 有面板工具时「所有改动都适用」的条目给全文的预算，每条全文最多多少字 */
+const CAP_FULL = 650
+const CAP_GLOBAL = 250
+const CAP_ONE = 360
+/** 开头列多少个已有标签 */
+const CAP_TAGS = 12
+
 /**
  * 新会话开头的「项目教训」：tools 表示这次调用挂了面板工具，能按文件查；canRecord 表示还能自己记
  * （子任务只查不记，见 shared/engine.ts 的 Orchestra.lessons），不能记时不带记教训的说明，省下这段提示。
  * globals 是全局教训：所有项目共用，排在项目教训后面、优先级也更低。
+ * 有工具时整段不超过 PROMPT_CAP：条目再多也只给最要紧的全文和放得下的标题，其余执行中由面板按命令、文件、报错推送。
  * 没有启用的条目时返回空串，不占提示
  */
 export function lessonsPrompt(
@@ -241,41 +248,108 @@ export function lessonsPrompt(
   const on = lessons.filter((l) => l.enabled)
   const gs = globals.filter((l) => l.enabled)
   if (!on.length && !gs.length) return canRecord ? `## 项目教训\n${RECORD_HINT}` : ''
-  // 有工具时「所有改动都适用」的条目给全文、按文件的只给标题；没工具时 Agent 没法再查，按预算尽量给全文
-  const pool = tools ? on.filter((l) => !l.paths.length) : on
-  const full = pick(pool, tools ? FULL_BUDGET : FULL_BUDGET_NO_TOOL, tools)
-  const rest = on.filter((l) => !full.includes(l))
-  const gpool = tools ? gs.filter((l) => !l.paths.length) : gs
-  const gfull = pick(gpool, GLOBAL_BUDGET, false)
-  const grest = gs.filter((l) => !gfull.includes(l))
-  const restHint = tools
-    ? '下面这些按文件生效：想好要改哪些文件后，先把文件路径传给 project_lessons 取相关条目的全文再动手'
-    : '下面这些只列了标题，改到括号里的文件时照着做'
-  return [
+  if (!tools) return untooledPrompt(on, gs)
+  const head = [
     '## 项目教训',
-    '以前返工过的地方写成了规则，照做能少走弯路。优先级：用户这次的要求 > 项目教训 > 全局教训；冲突时按前面的做。',
-    on.length ? '这个项目的教训：' : '',
-    full.map((l) => lessonText(l, tools)).join('\n\n'),
-    rest.length ? `${restHint}：\n${titles(rest, tools)}` : '',
-    gs.length ? '### 全局教训（所有项目共用，只有用户能改）' : '',
-    gfull.map((l) => lessonText(l)).join('\n\n'),
-    grest.length ? `${restHint}：\n${titles(grest)}` : '',
-    canRecord && tagCounts(on).length ? `${tagLine(tagCounts(on))}。记教训时优先用这些标签，不另造近义词` : '',
+    '以前返工过的地方写成了规则，照做能少走弯路。优先级：用户这次的要求 > 项目教训 > 全局教训；冲突时按前面的做。跑命令、改文件、遇到报错时，面板会把对得上的教训自动补给你。',
+  ]
+  const tc = tagCounts(on)
+  const tail = [
+    canRecord && tc.length ? `${tagLine(tc, CAP_TAGS)}。记教训时优先用这些标签，不另造近义词` : '',
     canRecord ? RECORD_HINT : '',
+  ].filter(Boolean)
+  // 「所有改动都适用」的条目给全文（每条截到 CAP_ONE），按文件的只给标题
+  const short = (l: ProjectLesson | GlobalLesson, withId: boolean) => {
+    const x = lessonText(l, withId)
+    return x.length > CAP_ONE ? `${x.slice(0, CAP_ONE - 1)}…（全文用 project_lessons 带 id 查）` : x
+  }
+  const takeFull = <T extends ProjectLesson | GlobalLesson>(pool: T[], budget: number, withId: boolean) => {
+    const out: T[] = []
+    let used = 0
+    for (const l of pool) {
+      const n = short(l, withId).length
+      if (out.length && used + n > budget) break
+      out.push(l)
+      used += n
+    }
+    return out
+  }
+  const full = takeFull(
+    on.filter((l) => !l.paths.length),
+    CAP_FULL,
+    true,
+  )
+  const gfull = takeFull(
+    gs.filter((l) => !l.paths.length),
+    CAP_GLOBAL,
+    false,
+  )
+  const fixed = [...head, ...tail].join('\n\n').length + 40
+  let left =
+    PROMPT_CAP -
+    fixed -
+    full.reduce((n, l) => n + short(l, true).length + 2, 0) -
+    gfull.reduce((n, l) => n + short(l, false).length + 2, 0)
+  // 标题按剩下的预算放，放不下的只报个数
+  const fit = (ls: (ProjectLesson | GlobalLesson)[], withId: boolean) => {
+    const lines: string[] = []
+    for (const l of ls) {
+      const line = titleLine(l, withId)
+      if (left - line.length - 1 < 60) break
+      lines.push(line)
+      left -= line.length + 1
+    }
+    if (ls.length > lines.length)
+      lines.push(
+        `- 另有 ${ls.length - lines.length} 条（改到相关文件、跑相关命令时面板会推送，也可以用 project_lessons 查）`,
+      )
+    return lines.join('\n')
+  }
+  const rest = on.filter((l) => !full.includes(l))
+  const grest = gs.filter((l) => !gfull.includes(l))
+  return [
+    ...head,
+    on.length ? '这个项目的教训：' : '',
+    full.map((l) => short(l, true)).join('\n\n'),
+    rest.length ? `下面这些按文件生效，只列标题：\n${fit(rest, true)}` : '',
+    gs.length ? '### 全局教训（所有项目共用，只有用户能改）' : '',
+    gfull.map((l) => short(l, false)).join('\n\n'),
+    grest.length ? `只列标题：\n${fit(grest, false)}` : '',
+    ...tail,
   ]
     .filter(Boolean)
     .join('\n\n')
 }
 
+/** 没有面板工具的 CLI：执行中查不了、也不会被推送，按预算尽量给全文 */
+function untooledPrompt(on: ProjectLesson[], gs: GlobalLesson[]) {
+  const full = pick(on, FULL_BUDGET_NO_TOOL, false)
+  const rest = on.filter((l) => !full.includes(l))
+  const gfull = pick(gs, GLOBAL_BUDGET, false)
+  const grest = gs.filter((l) => !gfull.includes(l))
+  const restHint = '下面这些只列了标题，改到括号里的文件时照着做'
+  return [
+    '## 项目教训',
+    '以前返工过的地方写成了规则，照做能少走弯路。优先级：用户这次的要求 > 项目教训 > 全局教训；冲突时按前面的做。',
+    on.length ? '这个项目的教训：' : '',
+    full.map((l) => lessonText(l)).join('\n\n'),
+    rest.length ? `${restHint}：\n${titles(rest)}` : '',
+    gs.length ? '### 全局教训（所有项目共用，只有用户能改）' : '',
+    gfull.map((l) => lessonText(l)).join('\n\n'),
+    grest.length ? `${restHint}：\n${titles(grest)}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/**
+ * 记教训的说明：把要填的参数直接写出来（设计稿一期 ⑥），record_lesson 收在 more_tools 里时也不用先查一次用法。
+ * 发给 Agent 的，不翻译
+ */
 const RECORD_HINT = `### 记教训（record_lesson）
-什么时候记：
-- 用户纠正了你的做法；
-- 你用的办法被证明是错的、换了做法才成（例如用某种方式等待或计时，结果被判定立即结束）：把行得通的做法记下来，下次直接用；
-- 你在修这个项目里之前（你或别的 Agent）改出来的问题。
-不记成教训的：东西在哪个目录、用户的说法在代码里叫什么、编译测试用什么命令这类「找路」的心得是经验，面板在对话完成后自动学；一次性的事件经过、Bug 的来龙去脉也不记。
-写成下次换个场景也能照做的通用规则，具体事件只写进起因，paths 填它管的文件或目录。同类的已经有了就带上它的 id 改写那一条，不要重复记。
-用户这次的要求和某条项目教训相反时：先想有没有两全的做法（既满足这次的要求，又避开那条教训要防的问题）。有就照它做，并用 record_lesson 带上那条的 id 改写教训，在 change 里写清为什么改；没有就先别动手，用提问工具让用户选：按教训做 / 按这次的要求做并改写教训 / 只这次例外。
-和全局教训冲突时直接以用户和项目教训为准，不用问；全局教训你改不了，需要时记一条项目教训写明这个项目的例外。`
+用户纠正了你的做法、你的办法被证明不对换了做法才成（命令报错后改了参数、换了命令才过）、或你在修之前改出来的问题时记。找位置、叫法、命令这类「找路」的心得是经验，不记成教训；一次性的经过也不记。写成换个场景也能照做的规则，具体经过写进 cause，把用到的命令用反引号写出来（面板按它在下次跑同样的命令前推送）；同类已有就带 id 改写。
+直接调用，参数照这个写（不在工具列表里时经 more_tools 调：name 写 record_lesson，arguments 照写，不用先查用法）：{"title":"一句话规则：该怎么做","rule":"具体做法和别做的事，命令用反引号","cause":"这次哪里出错、报了什么","paths":["它管的文件 glob，全局适用不写"],"tags":["已有标签"]}
+用户这次的要求和某条项目教训冲突时：有两全的做法就照做，并带 id 改写那条（change 写为什么改）；没有就先用提问工具让用户选。全局教训你改不了，需要时记一条项目教训写明这个项目的例外。`
 export const newLessonId = () => `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
 /**
