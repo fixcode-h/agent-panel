@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { Task } from '@shared/schema'
+import { childRow } from '@shared/children/row'
 import { api } from '@/lib/api'
 
 /**
@@ -48,4 +49,22 @@ export function useOwnedRuns(ownerId: string): Task[] {
     [ownerId],
   )
   return useSyncExternalStore(subscribe, () => (ownerId ? (store.get(ownerId)?.list ?? EMPTY) : EMPTY))
+}
+
+/**
+ * 名下运行画成子对话列表的一行：右栏「工作流运行」页签的 ▾ 和子对话页签一样列出来切换（用户 2026-11-15 要求）。
+ * 运行不是对话进程，没有 CLI 存活、后台命令、独立分支核对这些，按「没有」给
+ */
+export const ownedRunRow = (x: Task) => {
+  const row = childRow(x, {
+    cliAlive: false,
+    background: 0,
+    childNeeds: 0,
+    worktree: { checked: false, value: null },
+    full: true,
+    lastReply: '',
+    stopReason: x.stopReason,
+  })
+  // 和子对话列表一样：没停下原因时是 undefined，不是空字符串（task-view-children.ts）
+  return { ...row, stopReason: row.stopReason || undefined }
 }

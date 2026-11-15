@@ -120,6 +120,7 @@ export function ChildSwitcher({
   onOpen,
   className,
   variant = 'icon',
+  label = t('切换子对话'),
 }: {
   list: ChildSummary[]
   /** 右栏当前打开的子对话 id：没有时为空 */
@@ -128,6 +129,8 @@ export function ChildSwitcher({
   className?: string
   /** chevron：页签上的 ▾，和页签的关闭按钮同一套尺寸 */
   variant?: 'icon' | 'chevron'
+  /** 按钮的说法：列的是工作流运行时写「切换工作流运行」 */
+  label?: string
 }) {
   if (!list.length || (variant === 'chevron' && list.length < 2)) return null
   return (
@@ -136,8 +139,8 @@ export function ChildSwitcher({
         {variant === 'chevron' ? (
           <button
             type="button"
-            aria-label={t('切换子对话')}
-            title={t('切换子对话')}
+            aria-label={label}
+            title={label}
             data-child-switch
             // 页签本身点了是选中它：点 ▾ 只开列表
             onClick={(e) => e.stopPropagation()}
@@ -152,7 +155,7 @@ export function ChildSwitcher({
           <IconButton
             size="2xs"
             icon={ListTree}
-            label={t('切换子对话')}
+            label={label}
             // 行本身是可点的（打开子对话）：点这个按钮只开列表，不跟着打开当前行
             onClick={(e) => e.stopPropagation()}
             className={className}

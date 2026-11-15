@@ -420,7 +420,6 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 加好日志请用户复现：和交报告那一行一样能打开报告
     case 'request_logs':
       return as(title, Array.isArray(a.added) ? a.added.join('、') : '', 'other')
-    // 父对话启动工作流（ADR 0044）：开出来的是工作流子对话，点它和子对话一样在右栏打开
     // 等你操作：标题写要你做什么，展开看步骤（面板上的那一份）
     case 'request_user_action': {
       const c = (a.collect ?? {}) as Record<string, unknown>

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useContext, useMemo } from 'react'
+import { Suspense, lazy, useContext, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { t } from '@shared/i18n'
 import { useDiagDialogs } from './diag-dialogs'
@@ -172,6 +172,16 @@ export function TaskView({
   const scroll = useTaskScroll({ taskId, jumpSummary, loadedId: task?.id, messageCount: task?.messages.length })
   const { scroller, view, setView, flowSel, setFlowSel, focus, openFlow } = scroll
   const stickToBottom = scroller.pin
+  // 工作流运行在右栏打开时先看流程图：用这块面板自己（页签条上）的「对话 / 流程图」切，
+  // 不再盖一层带「输出 / 流程图」的运行视图，两排切换重复（用户 2026-11-15 要求只留上面那排）。每个运行只自动切一回
+  const flowShown = useRef('')
+  useEffect(() => {
+    if (!pane || !task?.flowRun || flowShown.current === task.id) return
+    flowShown.current = task.id
+    setView('flow')
+    // 只看对话换了没有、是不是工作流运行：task 每次推送都是新对象
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [pane, task?.id, !!task?.flowRun])
   // 输入框：草稿、附件、@ 引用、拖文件、消息引用、「/」菜单（view/use-task-composer.ts）
   const composerState = useTaskComposer({
     taskId,
@@ -789,6 +799,7 @@ export function TaskView({
                 openChild={openChild}
                 kids={children}
                 ownedIds={panes.ownedIds}
+                ownedRows={panes.ownedRows}
                 childSummaryAt={panes.childSummaryAt}
                 closeChild={() => openChildIn('')}
                 childView={

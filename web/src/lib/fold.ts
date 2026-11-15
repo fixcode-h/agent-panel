@@ -41,7 +41,7 @@ function processBrief(process: TaskMessage[], helpers: number, notes: number, sk
     m.tools.flatMap((x, k) => {
       if (skip.has(dispatchKey(m.id, k))) return []
       const v = toolView(x)
-      return v ? [{ tool: v.tool, call: panelCallName(x) }] : []
+      return v ? [{ tool: v.tool, call: panelCallName(x), failed: !!x.failed }] : []
     }),
   )
   const files = (kind: ToolUse['kind']) =>
@@ -56,10 +56,15 @@ function processBrief(process: TaskMessage[], helpers: number, notes: number, sk
   const read = files('read').size || count('read')
   const edited = [...files('edit')]
   const edits = edited.length || count('edit')
-  const newChild = calls('create_conversation', 'start_workflow')
+  const newChild = calls('create_conversation')
+  // 启动失败的（例如工作流名字不对）没有起出运行，只算进末尾的「n 次失败」
+  const runs = tools.filter((x) => x.call === 'start_workflow' && !x.failed).length
   const resend = calls('send_to_conversation')
   const other =
-    tools.filter((x) => !['read', 'edit', 'run', 'search', 'web'].includes(x.tool.kind)).length - newChild - resend
+    tools.filter((x) => !['read', 'edit', 'run', 'search', 'web'].includes(x.tool.kind)).length -
+    newChild -
+    calls('start_workflow') -
+    resend
   const thoughts = process.filter((m) => m.thinking?.trim()).length
   const parts = [
     read && t('查看 {n} 个文件', { n: read }),
@@ -71,6 +76,7 @@ function processBrief(process: TaskMessage[], helpers: number, notes: number, sk
     count('search') && t('搜索 {n} 次', { n: count('search') }),
     count('web') && t('查阅网页 {n} 次', { n: count('web') }),
     newChild && t('新开 {n} 个子对话', { n: newChild }),
+    runs && t('启动 {n} 个工作流', { n: runs }),
     resend && t('交回子对话 {n} 次', { n: resend }),
     helpers && t('派出 {n} 个子任务', { n: helpers }),
     other > 0 && t('其他操作 {n} 次', { n: other }),

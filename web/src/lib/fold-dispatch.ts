@@ -36,7 +36,8 @@ export const dispatchKey = (msgId: string, tool: number) => `${msgId}#${tool}`
 
 const KIND: Record<string, DispatchKind> = {
   create_conversation: 'child-new',
-  start_workflow: 'child-new',
+  // 启动的是名下的工作流运行（不是子对话，shared/flow/run.ts）：运行区有它自己的卡片，这里不再画成「新开子对话」
+  start_workflow: 'run',
   send_to_conversation: 'child-resend',
   spawn_agents: 'subtask',
   run_background: 'job',
