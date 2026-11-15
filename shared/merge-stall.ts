@@ -1,11 +1,11 @@
 /**
- * 子对话停在「只剩合回、没请父对话收尾」时面板怎么推（server/tasks/children.ts 的 nudgeMerge、reportChild 读这里）。
+ * 子对话停在「只剩合回、没请父对话收尾」时面板怎么推（server/tasks/children/turn-end.ts 的 nudgeMerge、reportChild 读这里）。
  * 判定写成纯函数放这里，服务端只拿结论执行，测试不用搭整套任务作用域
  */
 import type { Task } from './schema.ts'
 
 /**
- * 子对话这一轮已经说完、能提醒它请父对话收尾了（server/tasks/children.ts 的 nudgeMerge 读它）：
+ * 子对话这一轮已经说完、能提醒它请父对话收尾了（server/tasks/children/turn-end.ts 的 nudgeMerge 读它）：
  * CLI 不在处理这一轮，进程退出了（done），或者还挂着（running：保活等下一句、刚报完 result）。
  * 不能只认 done：Claude Code 这类保活的 CLI 一轮结束后进程还在等下一句，status 一直是 running，
  * 只认 done 时「催它 submit_merge」永远发不出去，子对话停在合回前没人推（实测报告问题 2）。

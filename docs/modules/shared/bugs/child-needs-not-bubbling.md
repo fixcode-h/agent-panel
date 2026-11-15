@@ -2,7 +2,7 @@
 
 - 状态：已修复（`shared/children/needs.test.ts` 通过）
 - 症状：两个子对话在 `npm test` 上等权限确认 10 分 17 秒，父对话头部写「子对话执行中」、计划写「2 个在等待」、侧栏项目是「1 个执行中」转圈，只有点进子对话才看到「需要你确认」
-- 入口：`shared/task.ts` 的 `convState` / `taskFacts`，`server/tasks/children.ts` 的 `childCountsOf`，`server/tasks/list-routes.ts` 的 `GET /tasks`，`web/src/components/tasks/ChildrenBar.tsx`
+- 入口：`shared/task.ts` 的 `convState` / `taskFacts`，`server/tasks/children/count.ts` 的 `childCountsOf`，`server/tasks/list-routes.ts` 的 `GET /tasks`，`web/src/components/tasks/ChildrenBar.tsx`
 - 根因类型：「等你处理」只看对话自己的请求和提问，后代对话的待确认没有往上冒泡
 - 模块：`shared`（`shared/children/needs.ts`）
 - 关键词：子对话、权限确认、等你处理、执行中、冒泡、childrenNeeds、childNeeds、descendantNeeds、允许、拒绝、实测报告问题 1

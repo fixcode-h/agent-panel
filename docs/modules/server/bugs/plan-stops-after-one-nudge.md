@@ -2,7 +2,7 @@
 
 - 状态：已修复（`shared/drive.test.ts`、e2e `09-subagent-runtime` 通过）
 - 症状：项目里的对话（Claude Code + `deepseek-v4.1-flash`）计划才做一部分，面板只推过一次「接着做」，之后几轮结束都没再推，停在等下一句；诊断文件里看不出为什么没推
-- 入口：`server/tasks/drive.ts` 的 `nudgePlan`（原在 `server/tasks/children.ts`），`shared/drive.ts` 的 `DriveBudget`
+- 入口：`server/tasks/drive.ts` 的 `nudgePlan`（原在 `createChildren` 里），`shared/drive.ts` 的 `DriveBudget`
 - 根因类型：计数时机错误（刚结束就记次数，复查没通过也算一次）+ 进度键太粗（只看已完成几步）+ 决策不写对话日志
 - 模块：`server`（`server/tasks/drive.ts`）、`shared`（`shared/drive.ts`）
 - 关键词：推进、nudge、计划没做完、停住、等下一句、后台结果、推满、诊断、task.send、继续

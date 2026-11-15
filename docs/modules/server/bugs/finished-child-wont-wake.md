@@ -2,7 +2,7 @@
 
 - 状态：已修复（`server/tasks/child-messages.test.ts`、`server/tasks/keepalive-endlive.test.ts` 通过）
 - 症状：子对话做完、父对话收尾后，父对话用 `send_to_conversation` 再交代任务，工具调用转圈到 1 分钟超时；查子对话状态停在「收尾那一刻」，重发一次照样超时，子对话一直没被叫起来
-- 入口：`server/tasks/child-messages.ts` 的 `sendToChild`、`server/tasks/asks.ts` 的 `wakeConv`、`server/tasks/children.ts` 的 `completeChild`、`server/tasks/keepalive.ts` 的 `endLive`、`server/exec/invoke.ts` 的保活结束
+- 入口：`server/tasks/child-messages.ts` 的 `sendToChild`、`server/tasks/asks.ts` 的 `wakeConv`、`server/tasks/children/complete.ts` 的 `completeChild`、`server/tasks/keepalive.ts` 的 `endLive`、`server/exec/invoke.ts` 的保活结束
 - 根因类型：等进程退出没有时限，执行位一直占着，后面所有交给这个对话的消息都排在它后面
 - 模块：`server`、`server-exec`、`web`（已收尾子对话的输入框）
 - 关键词：子对话收尾、已完成子对话、交代任务超时、send_to_conversation 超时、收尾那一刻、执行位、cancelWait、entry.done、completing、resume、重新打开

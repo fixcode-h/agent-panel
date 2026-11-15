@@ -20,7 +20,7 @@
 | `server/tasks/run.ts` 的 `restartStalled`             | 停的原因记 `stalled`，`followUp` 接回原会话（`--resume`）开新的一轮；起不来时错误抛给调用方，询问那边只写日志           |
 | `server/tasks/run.ts` 里父对话的 `createConversation` | 新建子对话的逻辑写在父对话那一轮的闭包里，面板自己建不了                                                                |
 | `server/tasks/conversation-routes.ts` 的 `resumeKids` | 父对话继续时把 `parent` / `restart` / `stalled` / `lost` 停下的子对话一起拉起来                                         |
-| `server/tasks/children.ts` 的 `reportChild`           | 子对话停下、失败都给父对话写「已中断 / 失败，交回原子对话重试」                                                         |
+| `server/tasks/children/report.ts` 的 `reportChild`    | 子对话停下、失败都给父对话写「已中断 / 失败，交回原子对话重试」                                                         |
 
 ## 决策
 
