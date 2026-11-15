@@ -1,6 +1,7 @@
 import { childSelfDrives, childReport, type ConvState } from '../../../shared/task.ts'
 import type { Task } from '../../../shared/schema.ts'
-import { DIAG_PARENT_RULE, diagnosisInFlow } from '../../../shared/bug/phase.ts'
+import { diagnosisInFlow } from '../../../shared/bug/phase.ts'
+import { childStatusLetter, fullSummaryAt, reportNextText } from '../../../shared/prompt/letters/child-report.ts'
 import { saveToHandoff } from '../inbox-file.ts'
 import { planProgressKey } from '../../../shared/drive.ts'
 import { MERGE_STALL_REPORTS, nextMergeStall, type MergeStall } from '../../../shared/merge-stall.ts'
@@ -119,33 +120,40 @@ export async function reportChild(ctx: ChildrenCtx, childId: string) {
   // 父对话里由面板自动显示的卡片（父对话不再自己写）：标题取子对话这一轮总结的「类型｜结论」，
   // 点标题跳到子对话里的详细总结；没写总结时为空。卡片只做展示，从回复里画
   const cards = childSummaryCards(reply, tk.id)
-  // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
-  const direct = tk.userDirect ? `\n用户在这个子对话里直接交代过：${tk.userDirect}` : ''
   // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
   // 停了几次：面板自己提醒过一次 submit_merge 的也算上，父对话据此判断要不要换个说法或去问用户
   const stops = stall ? stall.n + (sc.mergeNudged.has(tk.id) ? 1 : 0) : 0
   // 面板提醒不限次数（2026-11-05）：停在这里是它说了卡住、或者连着几次提醒都没动手（空转保护）
-  const nudgeText = sc.stuckAfterNudge(tk)
-    ? '面板按它自己的计划提醒过它，它说了卡住或者连着几次都没动手，仍停在这里'
-    : '它这一轮结束了，计划里有步骤还挂着等待，但它没有在跑的子任务、子对话或后台命令，面板不会再推它'
-  const next = mergeOnly
-    ? `\n这是它第 ${stops} 次停在这里没请收尾${sc.mergeNudged.has(tk.id) ? '（面板已经提醒过它一次）' : ''}。` +
-      `下一步：用 send_to_conversation 让它${isolated(tk) ? '在自己的分支里' : ''}评审处置完、跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。` +
-      (stall!.n >= MERGE_STALL_REPORTS
-        ? '这是面板最后一次转告：交回后它仍不调用 submit_merge，就停下来告诉用户它卡在合回前、卡在哪，由用户决定，不要再来回催。'
-        : '')
-    : r.state === 'unfinished' && diagnosisInFlow(tk)
-      ? // 诊断报告的每一步都由用户确认（ADR 0045）：不能叫父对话「缺信息就回答它」，它会替用户拍板（摸底报告第 1 条）
-        `\n下一步：${nudgeText}。${DIAG_PARENT_RULE}要补的事实、你自己的意见可以用 send_to_conversation 交给它（id ${tk.id}），写明是你的意见；不要另建子对话重做。`
-      : r.state === 'unfinished'
-        ? `\n下一步：${nudgeText}，看上面的结果判断卡在哪：缺信息就回答它，方向不对就改要求，都用 send_to_conversation 交回这个子对话（id ${tk.id}），写清新的要求或答案；不要只发「继续」（它会自己接着做，催也没用），也不要另建一个子对话重做。确实做不下去就告诉用户。`
-        : r.state === 'stopped' && tk.stopReason === 'user'
-          ? // 用户亲手停的是「先别动」，不是失败：实测里父对话把它当成中断去交回重试，用户停它的意思就没了
-            '\n下一步：这是用户自己停掉的，不是失败。不要自动交回、重派或另建子对话重做；计划里等它的那一步继续等，用户要它接着做时会自己继续，或者交代你再交给它。'
-          : r.state === 'failed' || r.state === 'stopped'
-            ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
-            : ''
-  const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${agentWhy}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要。${fullAt(tk.parentTaskId, tk.title, src)}面板会自动给用户显示它的总结卡片，不用转述细节）` : ''}` : ''}`
+  const stuck = sc.stuckAfterNudge(tk)
+  const next = reportNextText(
+    mergeOnly
+      ? {
+          kind: 'merge-only',
+          stops,
+          nudged: sc.mergeNudged.has(tk.id),
+          isolated: isolated(tk),
+          last: stall!.n >= MERGE_STALL_REPORTS,
+        }
+      : r.state === 'unfinished' && diagnosisInFlow(tk)
+        ? { kind: 'diagnosis', id: tk.id, stuck }
+        : r.state === 'unfinished'
+          ? { kind: 'unfinished', id: tk.id, stuck }
+          : r.state === 'stopped' && tk.stopReason === 'user'
+            ? { kind: 'user-stopped' }
+            : r.state === 'failed' || r.state === 'stopped'
+              ? { kind: 'retry', id: tk.id }
+              : null,
+  )
+  // 用户直接在子对话里交代过新要求：不再单独发消息，这封汇报里带上原话
+  const text = childStatusLetter({
+    title: tk.title,
+    id: tk.id,
+    why: agentWhy,
+    next,
+    userDirect: tk.userDirect,
+    summary,
+    fullAt: summary && brief.cut ? fullAt(tk.parentTaskId, tk.title, src) : undefined,
+  })
   await sc.noteParent(
     tk.parentTaskId,
     tk,
@@ -178,9 +186,9 @@ export async function reportChild(ctx: ChildrenCtx, childId: string) {
 /** 摘要截掉的全文存进父对话的交接目录，告诉它去哪读（ADR 0041 第 14 节）；存不了就说在子对话里 */
 const fullAt = (parentId: string, title: string, src: string) => {
   try {
-    return `完整总结在文件 ${saveToHandoff(parentId, `子对话「${title}」的总结`, src)}，需要细节时读它；`
+    return fullSummaryAt(title, saveToHandoff(parentId, `子对话「${title}」的总结`, src))
   } catch {
-    return `完整总结在子对话「${title}」里；`
+    return fullSummaryAt(title, null)
   }
 }
 

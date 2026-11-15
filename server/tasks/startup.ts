@@ -7,6 +7,7 @@ import { restartInterrupted, restartUnfinished, taskDeleted } from '../../shared
 import { diagnosisWaiting, droppedAsksNote, rewaitDiagnosis, settleStopped } from '../../shared/tasks/settle.ts'
 import type { createTaskStore } from './store.ts'
 import { rebuildClaims, type createClaims } from '../claims.ts'
+import { mergeReopenedLetter } from '../../shared/prompt/letters/child-report.ts'
 
 type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>
 
@@ -168,7 +169,7 @@ export async function reopenMerge(store: Store, id: string, why: string): Promis
   await store.update(kid.id, { ...kid, wrapRequest: { ...kid.wrapRequest, state: 'requested' } })
   const parent = kid.parentTaskId ? await store.get(kid.parentTaskId) : null
   if (!parent) return true
-  const text = `【子对话状态】「${kid.title}」（id ${kid.id}）${why}，这次合并没有完成，收尾请求退回待处理：重新调用 finish_child 合回它。`
+  const text = mergeReopenedLetter(kid, why)
   await store.update(parent.id, {
     ...parent,
     inbox: [...parent.inbox, { from: kid.id, title: kid.title, text, at: new Date().toISOString() }],

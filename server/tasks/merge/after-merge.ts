@@ -7,6 +7,7 @@ import { log } from '../../log.ts'
 import { isolated } from '../helpers.ts'
 import type { IntegrateResult } from '../../exec/worktree-integrate.ts'
 import type { FinishResult, MergeCtx } from './context.ts'
+import { parentMergedLetter } from '../../../shared/prompt/letters/wrap.ts'
 
 /**
  * 合并成功（共用目录的子对话是父对话验收通过）：只更新分支状态（「已在「dev」里」）和计划最后一步，不等于这个子对话做完了。
@@ -85,13 +86,10 @@ export async function afterMerged(
         .join('\n'),
     }
   }
-  const done = await childMerged(
-    ctx,
-    tk.id,
-    `【父对话收尾】已合回原分支：${r.info}
-父对话已经验收合并。计划、后台命令、提问都收口后面板结束这个子对话并删除独立分支；不要再改已经合进去的文件。`,
-    { quiet: true, peer: await sc.peerOf(parent, 'parent', 'merge', `已合回原分支：${r.info}`) },
-  )
+  const done = await childMerged(ctx, tk.id, parentMergedLetter(r.info), {
+    quiet: true,
+    peer: await sc.peerOf(parent, 'parent', 'merge', `已合回原分支：${r.info}`),
+  })
   const finished = !!done && !done.holds.length
   return {
     ok: true,

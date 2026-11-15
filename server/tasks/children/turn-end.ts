@@ -16,6 +16,7 @@ import { readTask } from '../read.ts'
 import type { ChildrenCtx } from './context.ts'
 import { advanceChildTo } from './complete.ts'
 import { reportChild } from './report.ts'
+import { deliverOwedNudge, mergeOwedNudge } from '../../../shared/prompt/letters/wrap.ts'
 
 /**
  * 子对话一轮结束 / 整次执行结束时的收口：独立分支能收就收（advanceChildTo），没请收尾的提醒一次（nudgeMerge），
@@ -102,9 +103,7 @@ async function nudgeMerge(sc: TasksScope, child: Task): Promise<boolean> {
   const r = await sc.sendToChild(
     child.parentTaskId,
     child.id,
-    st.merged
-      ? '【面板】你的分支已经在父对话的分支里了，但还没请父对话收尾，计划停在「合回父对话所在的分支」。直接调用 submit_merge（tests 写上跑过的验证），父对话确认后面板标完成并删除分支。以后收尾都用 submit_merge，不要自己或派子任务去 git merge。'
-      : `【面板】你的独立分支里还有没合回父对话分支的改动（${what.join('、')}），也还没请父对话收尾。按「验证」在你的分支里跑通编译和测试后调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；没合回去之前不算做完。验证没过就修好再交，确实不该合并就说明原因。`,
+    mergeOwedNudge(st.merged ? { merged: true } : { merged: false, what }),
     'build',
   )
   return r.ok
@@ -124,7 +123,7 @@ async function nudgeShared(sc: TasksScope, child: Task): Promise<boolean> {
   const r = await sc.sendToChild(
     child.parentTaskId!,
     child.id,
-    `【面板】${child.changes.length ? `你改了 ${child.changes.length} 个文件，` : '计划只剩收尾，'}还没请父对话验收。你和父对话共用目录（P4、没有版本管理或项目设成共用目录），没有分支要合，但收尾的必备步骤一样要做：改了代码先按「收尾前评审」派评审、逐条处置${plan?.steps.some((s) => s.wrapUp === 'p4' && s.status !== 'done') ? '，P4 按文件类型分好 changelist' : ''}，按「验证」跑通编译和测试，再调用 submit_merge（tests 写上跑了什么、结果如何，handoff 写交接要点）。没请父对话验收之前不算做完；确实不该交付就说明原因。`,
+    deliverOwedNudge(child.changes.length, !!plan?.steps.some((s) => s.wrapUp === 'p4' && s.status !== 'done')),
     'build',
   )
   return r.ok

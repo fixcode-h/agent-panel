@@ -7,6 +7,7 @@ import type { IntegrateResult } from '../../exec/worktree-integrate.ts'
 import { freshTask, readTask } from '../read.ts'
 import type { FinishResult, MergeCtx } from './context.ts'
 import { afterMerged, childMerged } from './after-merge.ts'
+import { PARENT_ACCEPTED_LETTER, parentMergeFailedLetter } from '../../../shared/prompt/letters/wrap.ts'
 
 /**
  * 共用目录的子对话（P4、没有版本管理、项目设成共用目录）收尾：没有分支要合，父对话收下就是验收。
@@ -24,12 +25,10 @@ export async function acceptShared(ctx: MergeCtx, parent: Task, tk: Task): Promi
   // 没改文件、也没请求过的（只读排查）：不替它把收尾标完成，条件都满足才收口，免得计划没做完也被收掉一步
   const r = !accepted
     ? await sc.advanceChildTo(tk.id, { quiet: true })
-    : ((await childMerged(
-        ctx,
-        tk.id,
-        '【父对话收尾】父对话已验收你的改动。计划、后台命令、提问都收口后面板结束这个子对话；不要再改这次交付的文件。',
-        { quiet: true, peer: await sc.peerOf(parent, 'parent', 'merge', '已验收') },
-      )) ?? { holds: ['working'] as ChildHold[], info: '它这一轮还没结束，收口后面板自动结束它' })
+    : ((await childMerged(ctx, tk.id, PARENT_ACCEPTED_LETTER, {
+        quiet: true,
+        peer: await sc.peerOf(parent, 'parent', 'merge', '已验收'),
+      })) ?? { holds: ['working'] as ChildHold[], info: '它这一轮还没结束，收口后面板自动结束它' })
   return r.holds.length
     ? { ok: false, info: `子对话「${tk.title}」${accepted ? '已验收，但' : ''}还没做完：${r.info}` }
     : {
@@ -111,15 +110,7 @@ export async function finishChildStep(ctx: MergeCtx, parent: Task, childId: stri
     await sc.store.update(cur.id, cur)
     // 退回去了：它处理好再请求时要重新上报一次
     sc.reportedState.delete(childId)
-    await sc.sendToChild(
-      parent.id,
-      childId,
-      `【父对话收尾】没能合回原分支：${r.info}
-在你的分支里处理好、重新跑通验证后再调用 submit_merge 请父对话收尾。`,
-      'build',
-      'merge',
-      true,
-    )
+    await sc.sendToChild(parent.id, childId, parentMergeFailedLetter(r.info), 'build', 'merge', true)
     return {
       ok: false,
       kind: 'conflict',

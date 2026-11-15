@@ -16,6 +16,7 @@ import type { TasksScope } from './scope.ts'
 import { createBeforeEnd } from './before-end.ts'
 import { awaitedJob } from '../background.ts'
 import { freshTask, readTask } from './read.ts'
+import { wrapWaitingNudge } from '../../shared/prompt/letters/wrap.ts'
 
 /**
  * 没列计划时，这一轮动手（跑命令、改文件）几次以上才做收尾自检（见 nudgeNoPlan）：三步以上的事才可能做了一半，
@@ -309,13 +310,9 @@ export function createDrive(
           say({ action: 'stuck', reason: 'exhausted', max })
           return
         }
-        const lines = again.waiting.map(
-          (k) =>
-            `- 「${k.title}」（id ${k.id}）：${k.worktree?.state === 'active' ? '合回它的独立分支' : '验收它的改动'}，验证够了就调用 finish_child（id ${k.id}）；要它补的用 send_to_conversation 交回`,
+        const text = wrapWaitingNudge(
+          again.waiting.map((k) => ({ id: k.id, title: k.title, branch: k.worktree?.state === 'active' })),
         )
-        const text =
-          `【面板】这些子对话已经请你收尾，你这一轮结束了却还没处理，它们一直在等你：\n${lines.join('\n')}\n` +
-          '直接调用工具处理，不用先说明；收尾请求里有它的验证结果，核对后决定合回还是交回。'
         const ok = await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(
           () => true,
           () => false,

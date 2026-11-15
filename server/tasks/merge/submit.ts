@@ -2,7 +2,6 @@ import { bugOf } from '../../../shared/bug/task-bug.ts'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { coreDefinition } from '../../../shared/builtin/core.ts'
-import { BUG_RECORD_ASK } from '../../../shared/builtin/bug-method.ts'
 import { bugRecordDraft, diagnosisGate } from '../../../shared/bug/diagnosis.ts'
 import { fixBriefMd, fixBriefMissing, fixBriefOf, fixBriefPrompt } from '../../../shared/bug/fix-brief.ts'
 import { projectChanges } from '../../exec/file-events.ts'
@@ -27,6 +26,7 @@ import { awaitedJob } from '../../background.ts'
 import type { MergeCtx } from './context.ts'
 import { buildSigOf, buildSkip } from './build.ts'
 import { recheckWrapUp, wakeTask } from './wake.ts'
+import { wrapRequestLetter } from '../../../shared/prompt/letters/wrap.ts'
 
 /**
  * 子对话只剩合回时请父对话收尾（ADR 0005）：子对话这边能做的都做完了——计划除了合回都做完、
@@ -227,13 +227,20 @@ export async function submitMerge(
     sc,
     parentId,
     tk,
-    `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩${wt ? '合回' : '验收'}了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
-${wt ? `它在独立分支 ${wt.branch} 里的验证` : '它和你共用目录（改动已经在你的目录里，没有分支要合），它的验证'}：${clipWithFile(parentId, `「${tk.title}」的验证`, tests, 600)}${noBuild ? `\n合回后不用编译：${noBuild}` : ''}${note ? `\n它的说明：${clipWithFile(parentId, `「${tk.title}」的说明`, note, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${clipWithFile(parentId, `「${tk.title}」的评审处置`, triageText(triage), 1500)}` : ''}${tk.bug?.fixBrief ? `\n${clipWithFile(parentId, `「${tk.title}」的修复简报`, fixBriefPrompt(tk.bug?.fixBrief), 1500)}` : ''}${record ? `\n这是用户报的 Bug。收下它（finish_child）之后：${BUG_RECORD_ASK}下面是 Bug 记录的草稿（用户同意写时派「文档」原样附上，不用它再从对话里摘）：\n${clipWithFile(parentId, `「${tk.title}」的 Bug 记录草稿`, record, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
-${
-  wt
-    ? `请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。`
-    : `请你验收：核对它的验证和改动，没问题就调用 finish_child（id ${tk.id}），面板把它计划里的收尾步骤标完成、结束它。`
-}验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
+    wrapRequestLetter({
+      title: tk.title,
+      id: tk.id,
+      worktree: wt,
+      tests: clipWithFile(parentId, `「${tk.title}」的验证`, tests, 600),
+      noBuild,
+      note: note ? clipWithFile(parentId, `「${tk.title}」的说明`, note, 300) : undefined,
+      triage: triage.length ? clipWithFile(parentId, `「${tk.title}」的评审处置`, triageText(triage), 1500) : undefined,
+      fixBrief: tk.bug?.fixBrief
+        ? clipWithFile(parentId, `「${tk.title}」的修复简报`, fixBriefPrompt(tk.bug?.fixBrief), 1500)
+        : undefined,
+      record: record ? clipWithFile(parentId, `「${tk.title}」的 Bug 记录草稿`, record, 1500) : undefined,
+      bypass: bypass ? overrideText(bypass) : undefined,
+    }),
     {
       panel: 'wrapup',
       child,
