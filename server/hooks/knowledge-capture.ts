@@ -2,6 +2,7 @@ import type { HookFacts } from '../../shared/hooks.ts'
 import type { ErrorPrint, ProjectLesson } from '../../shared/schema.ts'
 import { addEpisode, candidateLesson, dropCandidate, episodePrompt, purposeOf } from '../../shared/knowledge/capture.ts'
 import { errorPrint } from '../../shared/knowledge/match/fingerprint.ts'
+import { segmentExits } from '../../shared/knowledge/match/exit-codes.ts'
 import { errorLessons } from '../../shared/knowledge/push.ts'
 import { recordKnowledgeFeedback } from '../knowledge-hits.ts'
 import { recordLessonDraft } from '../knowledge/recorder.ts'
@@ -132,13 +133,31 @@ export function knowledgeCapture(c: CaptureCtx) {
       if (tool?.kind !== 'shell' || !tool.result || !c.projectId) return ''
       const cmd = String(tool.input.command ?? '')
       if (!cmd.trim()) return ''
-      const failed = !!tool.result.failed
       const output = tool.result.output ?? ''
-      feedback(cmd, failed, output)
-      return capture(cmd, failed, output).catch((e) => {
-        console.warn('当场捕获失败：', e)
-        return ''
-      })
+      // 命令里自己 echo 了退出码的，按段还原（整条退出码是 0、CLI 报不出失败）
+      const exits = segmentExits(cmd, output)
+      const runs = exits.length
+        ? exits.map((e) => ({ cmd: e.command, failed: e.code !== 0 }))
+        : [{ cmd, failed: !!tool.result.failed }]
+      feedback(
+        cmd,
+        runs.some((r) => r.failed),
+        output,
+      )
+      const texts: string[] = []
+      for (const r of runs) {
+        const x = await capture(r.cmd, r.failed, output).catch((e) => {
+          console.warn('当场捕获失败：', e)
+          return ''
+        })
+        if (x) texts.push(x)
+      }
+      return texts.join('\n\n')
     },
   }
+}
+
+/** 这次命令算不算失败：CLI 报的失败，或者命令里自己 echo 出来的某段退出码不是 0 */
+export function ranFailed(command: string, result: { failed?: boolean; output: string }): boolean {
+  return !!result.failed || segmentExits(command, result.output ?? '').some((e) => e.code !== 0)
 }

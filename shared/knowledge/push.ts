@@ -76,14 +76,20 @@ export function lessonCommands(l: Pick<ProjectLesson, 'title' | 'rule' | 'cause'
 
 /** 明确写下的命令触发键（triggers.commands）：取「目的」的写法和正文里的一样，只是不挑通用程序名（用户写了就算） */
 export function triggerCommands(l: Partial<Pick<ProjectLesson, 'triggers'>>): string[][] {
-  return (l.triggers?.commands ?? [])
-    .flatMap((c) => commandSegments(c).slice(0, 1))
-    .map((seg) => {
-      const ws = commandWords(seg)
-      return ws.length ? [ws[0], ...ws.slice(1).filter((w) => !w.startsWith('-'))].slice(0, 3) : []
-    })
-    .filter((w) => w.length)
+  return (
+    (l.triggers?.commands ?? [])
+      .flatMap((c) => commandSegments(c).slice(0, 1))
+      .map((seg) => {
+        const ws = commandWords(seg)
+        return ws.length ? [ws[0], ...ws.slice(1).filter((w) => !w.startsWith('-'))].slice(0, 3) : []
+      })
+      // 只有一个通用程序名的（`node`、`git`）不能当触发键：会对上这个程序的所有命令
+      .filter((w) => w.length > 1 || (w.length === 1 && !GENERIC_PROG.has(w[0])))
+  )
 }
+
+/** 当场捕获存触发键前用：只有通用程序名的目的不存 */
+export const specificPurpose = (purpose: string) => !!purpose && (purpose.includes(' ') || !GENERIC_PROG.has(purpose))
 
 /** 要跑的这条命令对不对得上教训里写的命令：任一段的开头几个非选项词和教训里的「目的」或命令触发键一样 */
 export function commandHits(

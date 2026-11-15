@@ -18,7 +18,7 @@ import { loadProjectLessons } from '../projects/lessons.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { taskMap } from '../runtime/task-state.ts'
 import { taskLog } from '../tasks/log.ts'
-import { knowledgeCapture, notePushedCommand } from './knowledge-capture.ts'
+import { knowledgeCapture, notePushedCommand, ranFailed } from './knowledge-capture.ts'
 
 /**
  * 内置钩子「推送项目教训和经验」（push-lessons）：设计稿「经验与教训重新设计」一期 ②③④⑦。
@@ -160,9 +160,11 @@ export function knowledgePush(c: KnowledgePushCtx) {
       await load()
       // 反馈和当场捕获（要在推本次报错的教训之前判：事前推没推过按推之前的算）
       const caught = await capture.after(facts)
-      // 只认 CLI 报出来的失败（failed === true），报不出失败的 CLI 不猜
+      // 只认 CLI 报出来的失败（failed === true）和命令里自己 echo 的退出码，报不出失败的 CLI 不猜
       const pushedText =
-        tool.result.failed && tool.result.output && lessons.length
+        tool.result.output &&
+        lessons.length &&
+        (tool.kind === 'shell' ? ranFailed(String(tool.input.command ?? ''), tool.result) : tool.result.failed)
           ? deliver(facts, 'tool.after', errorLessons(lessons, tool.result.output), 'error')
           : ''
       return [pushedText, caught].filter(Boolean).join('\n\n')

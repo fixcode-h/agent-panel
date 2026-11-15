@@ -9,18 +9,54 @@ import {
 import { printKey, printScore } from './match/fingerprint.ts'
 import { commandWords } from './match/normalize.ts'
 import { commandSegments } from '../hooks/defs.ts'
+import { specificPurpose } from './push.ts'
 
 /**
  * 当场捕获（设计稿 4.5，三期）：纯函数，server/hooks/knowledge-capture.ts 和单测共用。
  * 「失败后换了做法才成」是机械判定的：一条命令失败，之后几步里同目的的另一条命令成功——不看模型说了什么（ADR 0041）
  */
 
+/** 只做准备、说明不了目的的命令 */
+// 模块状态：常量，加载后不改
+const SETUP = new Set(['cd', 'pushd', 'popd', 'export', 'set', 'source', 'setlocal', 'chcp'])
+/** 解释器：后面的脚本路径就是命令的目的 */
+// 模块状态：常量，加载后不改
+const INTERPRETERS = new Set([
+  'node',
+  'python',
+  'python3',
+  'py',
+  'bash',
+  'sh',
+  'pwsh',
+  'powershell',
+  'deno',
+  'bun',
+  'tsx',
+  'ruby',
+  'perl',
+  'lua',
+])
+/** 后面跟着「跑哪个」的子命令 */
+// 模块状态：常量，加载后不改
+const RUNNERS = new Set(['run', 'exec', 'run-script', 'dlx', 'x'])
+
 /** 命令的目的：程序名 + 子命令（第一个不是选项、不像文件的参数），`npx tsc -p a.json` 和 `npx tsc` 是同一件事 */
 export function purposeOf(command: string): string {
-  const seg = commandSegments(command).find((s) => commandWords(s).length) ?? ''
+  // 跳过只换目录、设变量的段（`cd web && npm test` 的目的是 npm test）
+  const seg =
+    commandSegments(command).find((s) => {
+      const w = commandWords(s)
+      return w.length && !SETUP.has(w[0])
+    }) ?? ''
   const [p, ...rest] = commandWords(seg)
-  const sub = rest.find((w) => !w.startsWith('-'))
-  return [p, sub && !/[./\\]/.test(sub) ? sub : ''].filter(Boolean).join(' ')
+  const args = rest.filter((w) => !w.startsWith('-'))
+  // 解释器后面的脚本就是目的（`node scripts/build.mjs`、`python tools/gen.py`），别的程序后面像文件的参数不算
+  const script = args[0] && INTERPRETERS.has(p) ? args[0].replaceAll('\\', '/') : ''
+  const sub = script || (args[0] && !/[./\\]/.test(args[0]) ? args[0] : '')
+  // `npm run lint` 和 `npm run build` 是两件事：run / exec 这类子命令再带上它跑的那个名字
+  const what = sub && RUNNERS.has(sub) && args[1] ? args[1] : ''
+  return [p, sub, what].filter(Boolean).join(' ')
 }
 
 export interface Episode {
@@ -74,7 +110,7 @@ export function addEpisode(
     cause: ep.print.sample ? clip(`报错：${ep.print.sample}`, 500) : '',
     paths: [],
     tags: [],
-    commands: ep.purpose ? [ep.purpose] : [],
+    commands: specificPurpose(ep.purpose) ? [ep.purpose] : [],
     errors: ep.print.codes.length || ep.print.words.length ? [ep.print] : [],
     failed: clip(ep.failed, 400),
     fixed: clip(ep.fixed, 400),
