@@ -277,7 +277,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       errors.push('设置-组件：16 项的下拉框打开后应该有搜索框')
     else {
       await box.fill('play')
-      if ((await p.getByRole('option').count()) !== 1) errors.push('设置-组件：下拉框搜「play」应该只剩 1 项')
+      // 只数这个下拉框自己的列表：页面上的风格选择样张也有常驻的选项行
+      if ((await p.getByRole('listbox', { name: '示例长下拉框' }).getByRole('option').count()) !== 1)
+        errors.push('设置-组件：下拉框搜「play」应该只剩 1 项')
       await check(p, '设置-组件-下拉框搜索', ['LogPlayerController'])
       await box.press('Enter')
       if (!(await long.textContent())?.includes('LogPlayerController'))

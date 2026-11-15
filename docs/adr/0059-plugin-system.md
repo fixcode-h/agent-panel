@@ -62,6 +62,7 @@
     - `services`：托管进程（`server/plugins/services.ts`，接口契约 `shared/api-contract/plugin-services.ts`）。端口只绑 127.0.0.1（`auto` 时面板分）、按 `health` 等起来、日志写 `plugin-data/<id>/logs/`、`on-open` 的空闲 `stopAfterIdleMin` 分钟停、插件关掉和面板退出时停；起不来原样报原因，不重试；环境变量用 `childEnv`，不带账号设置里的凭据。状态走插件推送通道（事件 `service`）。网页页签、沙箱源经 `serviceOrigin()` 拿地址（顺带记「有人在用」）。
     - `webPages`：声明式网页页面，`url` 是 `service:<进程>/…`、`file:<包里的路径>` 或外部网址，面板用网页页签的组件画；`scope` 同接口 9。
     - `wrap`：包装记录（上游仓库、固定的提交、怎么查更新、配方、类型、来源分级），给界面徽标和更新比对用。
+18. **插件接口 12（2026-11-15，角色参数和每轮说明）**：Blender 建模要按用户选的模型风格给 Agent 约束（设计稿「Blender建模风格」）。`PluginRun.params` 是这一轮的角色参数（对话里选的、工作流节点上填的，和拼角色设定用的同一份），插件按自己角色声明的参数决定说明；`PluginRunTools.turnNote` 是续接的会话也带的说明（`hint` 只在新会话带），只在有新情况时给（例如用户刚在页面上换了风格），交没交过由插件自己记。开放模块加了风格选择和参考图组件（`web/src/components/ui/style-picker.tsx`、`style-thumb.tsx`）和风格约束拼说明（`shared/style/rules-text.ts`）。
 
 ## 影响与风险
 

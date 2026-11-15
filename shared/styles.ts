@@ -1,4 +1,5 @@
 import type { PromptCategory, SavedStyle } from './style-types.ts'
+import { MODEL_STYLES } from './style/model-styles.ts'
 
 /**
  * 内置风格库：游戏 UI 和网页 UI 各一批市面上常见、好用的整体美术风格，随程序一起打包。
@@ -28,6 +29,8 @@ const make = (kind: 'game' | 'web', defs: Def[]): SavedStyle[] =>
     summary: d.summary,
     en: d.en,
     prompts: d.prompts,
+    rules: [],
+    image: '',
     builtin: true,
     createdAt: AT,
     updatedAt: AT,
@@ -452,7 +455,7 @@ const WEB = make('web', [
   },
 ])
 
-/** 内置风格（游戏在前、网页在后）；id 都以 builtin- 开头 */
-export const BUILTIN_STYLES: SavedStyle[] = [...GAME, ...WEB]
+/** 内置风格（游戏、网页、3D 模型）；id 都以 builtin- 开头 */
+export const BUILTIN_STYLES: SavedStyle[] = [...GAME, ...WEB, ...MODEL_STYLES]
 
 export const isBuiltinStyle = (id: string) => id.startsWith('builtin-')

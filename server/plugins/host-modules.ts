@@ -50,6 +50,7 @@ import * as sharedSheetDiff from '../../shared/sheet-diff.ts'
 import * as sharedSheetHeader from '../../shared/sheet-header.ts'
 import * as sharedStyleTypes from '../../shared/style-types.ts'
 import * as sharedStyles from '../../shared/styles.ts'
+import * as sharedStyleRulesText from '../../shared/style/rules-text.ts'
 import * as sharedTask from '../../shared/task.ts'
 import * as sharedText from '../../shared/text.ts'
 import * as zod from 'zod'
@@ -112,6 +113,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'shared/sheet-diff': sharedSheetDiff,
   'shared/sheet-header': sharedSheetHeader,
   'shared/style-types': sharedStyleTypes,
+  'shared/style/rules-text': sharedStyleRulesText,
   'shared/styles': sharedStyles,
   'shared/task': sharedTask,
   'shared/text': sharedText,

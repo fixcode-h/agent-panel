@@ -208,7 +208,8 @@ export async function attachPlugins(
   const { agent, resume, cwd, step, agentId, conversation } = who
   const tools = await pluginRunTools(
     ctx,
-    { agent, resume: !!resume, cwd, step, agentId, conversation },
+    // 角色参数和角色设定用的同一份：节点上填的，对话里选的
+    { agent, resume: !!resume, cwd, step, agentId, conversation, params: call.params ?? (step ? {} : ctx.task.params) },
     {
       // 插件的改文件类工具：执行前过工具前守卫（守卫在下面 hookOptions 里装到 call.orch 上，调用时才取），
       // 改了的文件和 CLI 自己的改文件工具一样记成这一轮的改动、登记归属

@@ -1155,6 +1155,9 @@ body,
   --c-htmlCard-preview: block;
   --c-htmlCard-previewH: 168px;
   --c-htmlCard-active: var(--accent);
+  --c-styleRef-radius: 6px;
+  --c-styleRef-thumbW: 56px;
+  --c-styleRef-ring: var(--accent);
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;

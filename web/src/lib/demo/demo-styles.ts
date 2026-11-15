@@ -21,13 +21,17 @@ const demoStyleList: SavedStyle[] = [
       { category: 'material', zh: '石刻底框、暗金描边', en: 'carved stone frames, aged gold trim' },
       { category: 'light', zh: '幽蓝符文微光', en: 'faint glowing blue runes' },
     ],
+    rules: [],
+    image: '',
     createdAt: '2026-10-17T08:00:00.000Z',
     updatedAt: '2026-10-17T08:00:00.000Z',
   },
 ]
 
-export function demoStyles(method: string, sid: string | undefined, body: any): unknown {
+export function demoStyles(method: string, sid: string | undefined, body: any, sub?: string): unknown {
   if (method === 'GET') return [...demoStyleList, ...BUILTIN_STYLES]
+  // 参考图要存文件：演示里没有本机服务，明说做不到
+  if (sub === 'image') fail('演示里不能上传参考图，在本机的面板里可以')
   if (isBuiltinStyle(sid ?? '')) fail('内置风格不能修改，复制成自己的再改')
   if (method === 'POST') {
     const at = now()
