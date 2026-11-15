@@ -4,7 +4,7 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 
 # 界面通用：文案、命名和状态判定
 
-只放所有界面代码都适用的规则；只和某个模块有关的放进对应分片（输入框 [composer.md](./composer.md)、对话消息 [messages.md](./messages.md)、视觉 [visual.md](./visual.md)、界面检查 [ui-check.md](./ui-check.md)）。
+只放所有界面代码都适用的规则；只和某个模块有关的放进对应分片（输入框 [composer.md](./composer.md)、对话消息 [messages.md](./messages.md)、视觉 [visual.md](./visual.md)、界面检查 [ui-check.md](./ui-check.md)、提示 [toast.md](./toast.md)）。
 
 ## 文案、命名和控件的写法
 
@@ -39,9 +39,3 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 - 规则：运行区、工具行、子对话行这类会跟着一轮输出、子任务结果重挂或收进折叠的行，打开的弹窗不能用行自己的 state 渲染，要交给任务页顶层（`PaneNav` 里的 `job`、`diagnosis`，见 `web/src/components/tasks/diagnosis-window.tsx`）；弹窗只由用户关。自动弹的不顶掉别的对话已经开着的弹窗。
 - 起因：用户 2026-11-05 报诊断报告弹窗在对话输出完、子任务做完时被自动关掉——弹窗挂在运行区的「诊断报告」行和交报告那一行里，行一卸载就跟着没了（后台命令窗口早先因同样原因挪到了顶层）。
 - 防线：人工（`scripts/ui/02b-subagent.mjs` 只覆盖弹出和手动关闭）。
-
-## 第三方组件的默认外观要改成项目的浮层样式
-
-- 规则：引进来的现成组件（sonner 提示这类）不能沿用它自带的配色，要把它的颜色变量接到项目的主题变量和设置 → 组件的 `--c-*` 上（提示见 `web/src/index.css` 的 `[data-sonner-toast]`、`web/src/components/ui/toaster.tsx`），深浅色都看一遍。挪位置时先查清楚当初为什么放在那里（提示从右下角挪到右上角是为了让开最小化浮条），新位置要把那个理由一起处理掉，而不是只改回去。
-- 起因：用户 2026-11-15 反馈表格页的提示「纯黑底、摆在上面，太丑」，要求挪到右下角；sonner 默认深色是纯黑底白字。
-- 防线：`scripts/ui/10-toast.mjs`「提示-位置在右下角」；外观人工看设置 → 控件样式里的提示样张。

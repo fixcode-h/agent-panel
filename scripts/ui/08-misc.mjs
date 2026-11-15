@@ -386,6 +386,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .catch(() => errors.push('计划详情：结束日期早于第一次执行时没有拦下保存'))
       const endDate = ymdOf(Date.now() + 10 * 86_400_000)
       await endInput.fill(endDate)
+      // 提示在右下角（299331a）：上一次拦下的出错提示正好压在详情栏的「保存」上，先关掉再点，和用户的操作一样
+      await p
+        .getByRole('region', { name: /Notifications/ })
+        .getByRole('button', { name: '关闭' })
+        .first()
+        .click({ timeout: 3000 })
+        .catch(() => {})
       await saveBtn.click()
       await p
         .getByText('计划已保存')
