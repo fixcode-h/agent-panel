@@ -11,6 +11,9 @@ import { MAX_LESSONS, newLessonId, normTags, upsertLesson } from '../shared/less
 import { t } from '../shared/i18n.ts'
 import { applyReviewItem, type LessonReviewItem } from '../shared/lesson-review.ts'
 import { loadProjectLessons, saveProjectLessons } from './projects/lessons.ts'
+import { loadProjectExperience, mutateProjectExperience } from './projects/experience.ts'
+import type { KnowledgeProject } from './projects/knowledge-place.ts'
+import { log } from './log.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 
 type ProjectStore = {
@@ -134,11 +137,16 @@ export function projectLessons(projects: ProjectStore, deps?: ProjectLessonDeps)
           info: t('项目在别处被修改过，请刷新后重试'),
           status: 409 as const,
         }
-      const written = await saveProjectLessons(
-        { path: input.path, agentParams: input.agentParams },
-        await agentList(),
-        input.lessons,
-      )
+      const agents = await agentList()
+      const place = {
+        id: projectId,
+        path: input.path,
+        agentParams: input.agentParams,
+        knowledgeInRepo: input.knowledgeInRepo ?? p.knowledgeInRepo,
+      }
+      // 整份教训写到新位置：改了「随仓库」时就是把教训搬过去（旧位置的文件不删，留给用户自己处理）
+      const written = await saveProjectLessons(place, agents, input.lessons)
+      if (written.ok && place.knowledgeInRepo !== p.knowledgeInRepo) await moveExperience(p, place, agents)
       if (!written.ok)
         return {
           ok: false as const,
@@ -172,4 +180,15 @@ export async function readGlobalLessons(): Promise<GlobalLesson[]> {
 export async function writeGlobalLessons(list: GlobalLesson[]) {
   await writeJsonAtomic(GLOBAL_FILE, { lessons: list })
   return list
+}
+
+/** 改了教训、经验存在哪（随仓库 / 数据目录）：经验也带过去，同 id 的以新位置已有的为准；旧位置不删 */
+async function moveExperience(from: KnowledgeProject, to: KnowledgeProject, agents: Agent[]) {
+  const old = await loadProjectExperience(from, agents)
+  if (!old.items.length) return
+  const r = await mutateProjectExperience(to, agents, (items) => ({
+    items: [...items, ...old.items.filter((x) => !items.some((y) => y.id === x.id))],
+    result: null,
+  }))
+  if (!r.ok) log.warn('lessons', '经验没能带到新位置', { project: to.id, error: r.error })
 }

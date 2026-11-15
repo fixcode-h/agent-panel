@@ -8,6 +8,7 @@ import { messagesJsonl } from './0003-messages-jsonl.ts'
 import { taskBug } from './0004-task-bug.ts'
 import { projectTables } from './0005-project-tables.ts'
 import { projectCapabilities } from './0006-project-capabilities.ts'
+import { knowledgePlace } from './0007-knowledge-place.ts'
 
 /**
  * 数据目录的一次性迁移（重构文档第 6 条，ADR 见 docs/adr）。
@@ -46,6 +47,7 @@ export const MIGRATIONS: Migration[] = [
   taskBug,
   projectTables,
   projectCapabilities,
+  knowledgePlace,
 ]
 /** 当前代码认识的数据版本 */
 export const DATA_VERSION = MIGRATIONS.at(-1)!.version

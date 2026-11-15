@@ -954,6 +954,12 @@ const ProjectFields = z.object({
    * 读取时和文件合并、写入后清空。旧项目没有时是空数组
    */
   lessons: z.array(ProjectLesson).max(200).default([]),
+  /**
+   * 项目教训和经验存在哪（用户 2026-11-15 定，复查报告 B5）：默认 false 存面板数据目录（<数据目录>/knowledge/<项目 id>/），
+   * 不往用户仓库里写面板自己的文件（摸底报告第 15 条：写进仓库的文件反过来拦住了派单）；
+   * true 时照旧存项目文档目录（随仓库提交，团队都能看到）
+   */
+  knowledgeInRepo: z.boolean().default(false),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
   /**
