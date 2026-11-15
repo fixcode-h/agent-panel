@@ -1158,6 +1158,12 @@ body,
   --c-styleRef-radius: 6px;
   --c-styleRef-thumbW: 56px;
   --c-styleRef-ring: var(--accent);
+  --c-toast-position: bottom-right;
+  --c-toast-duration: 4000;
+  --c-toast-radius: 10px;
+  --c-toast-bg: var(--pop);
+  --c-toast-border: 1px;
+  --c-toast-bar: 0px;
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
@@ -3362,10 +3368,89 @@ html[data-modal-resizing] * {
   }
 }
 
-/* 提示统一走 web/src/lib/toast.ts（排队）和 App.tsx 的 Toaster（右上角、展开堆叠）。
-   这里只管两件视觉上的事：关闭按钮什么时候出现，进出动画多快。
+/* 提示统一走 web/src/lib/toast.ts（排队）和 components/ui/toaster.tsx（默认右下角、展开堆叠）。
    sonner 自己用 JS 往 head 末尾插样式（排在打包样式表之后），同特异性的规则压不住它，
-   所以下面都带上 html 祖先把优先级提上去。 */
+   所以下面都带上 html 祖先把优先级提上去。
+
+   外观照项目的浮层走（和下拉菜单、悬停富提示同一套）：浮层色底、细描边、--shadow-pop 投影，
+   标题用正文字号、说明淡一档，图标按类型着色——sonner 默认的深色是纯黑底白字，和面板格格不入（用户反馈）。
+   圆角、底色、描边、左侧色条在设置 → 组件 →「提示」里调（--c-toast-*）。 */
+html [data-sonner-toaster][data-sonner-theme] {
+  --width: 356px;
+  --border-radius: var(--c-toast-radius);
+  --normal-bg: var(--c-toast-bg);
+  --normal-bg-hover: var(--sel);
+  --normal-border: var(--line-strong);
+  --normal-border-hover: var(--line-strong);
+  --normal-text: var(--fg);
+  font-family: var(--app-sans);
+}
+html [data-sonner-toast][data-styled='true'] {
+  /* 类型色：图标和左侧色条共用；普通提示（不带类型）用强调色 */
+  --toast-tone: var(--accent);
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px 12px;
+  border-width: var(--c-toast-border);
+  box-shadow:
+    inset var(--c-toast-bar) 0 0 0 var(--toast-tone),
+    var(--shadow-pop);
+  font-size: var(--text-body);
+}
+html [data-sonner-toast][data-type='success'] {
+  --toast-tone: var(--success);
+}
+html [data-sonner-toast][data-type='error'] {
+  --toast-tone: var(--danger);
+}
+html [data-sonner-toast][data-type='warning'] {
+  --toast-tone: var(--warning);
+}
+/* 图标对齐标题第一行（行高 1.5 的 13px 字，比 16px 图标高 3px 多） */
+html [data-sonner-toast][data-styled='true'] [data-icon] {
+  margin-top: 2px;
+  color: var(--toast-tone);
+}
+html [data-sonner-toast][data-styled='true'] [data-content] {
+  gap: 2px;
+  min-width: 0;
+}
+html [data-sonner-toast][data-styled='true'] [data-title] {
+  font-weight: 550;
+  line-height: 1.5;
+  color: var(--fg);
+}
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast][data-styled='true'] [data-description] {
+  font-size: var(--text-footnote);
+  line-height: 1.5;
+  color: var(--subtle);
+}
+/* 动作按钮（「撤销」「查看」）：照项目的小号主按钮，sonner 默认是反色小块 */
+html [data-sonner-toast][data-styled='true'] [data-button] {
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--c-button-radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-footnote);
+  font-weight: var(--c-button-weight);
+}
+html [data-sonner-toast][data-styled='true'] [data-button][data-cancel] {
+  background: var(--sel);
+  color: var(--fg);
+}
+html [data-sonner-toast][data-styled='true'] [data-close-button] {
+  background: var(--c-toast-bg);
+  border-color: var(--line-strong);
+  color: var(--subtle);
+}
+html [data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  background: var(--sel);
+  color: var(--fg);
+}
+
+/* 关闭按钮的出现时机和动画如下 */
 
 /* 关闭按钮平时不显示：提示大多只是告诉用户「做完了」，常显的 ✕ 会抢走正文的注意力。
    鼠标悬停在这条提示上、或者键盘聚焦到它时才出现；触屏没有悬停，常显。

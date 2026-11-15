@@ -4,7 +4,7 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 
 # 界面通用：文案、命名和状态判定
 
-只放所有界面代码都适用的规则；只和某个模块有关的放进对应分片（输入框 [composer.md](./composer.md)、对话消息 [messages.md](./messages.md)、视觉 [visual.md](./visual.md)、界面检查 [ui-check.md](./ui-check.md)）。
+只放所有界面代码都适用的规则；只和某个模块有关的放进对应分片（输入框 [composer.md](./composer.md)、对话消息 [messages.md](./messages.md)、视觉 [visual.md](./visual.md)、界面检查 [ui-check.md](./ui-check.md)、提示 [toast.md](./toast.md)）。
 
 ## 文案、命名和控件的写法
 

@@ -53,6 +53,8 @@ import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { byAskedAt } from '@shared/task'
 import { useLiveOf } from '@/lib/live/store'
 import { useOwnedByPlugin, usePluginPages } from '@/plugins/registry'
+import { useCoversSidebar } from '@/plugins/cover'
+import { rememberProjectRoute } from '@/lib/projects/return-route'
 import type { PluginPage } from '@/plugins/sdk'
 import { ProjectPicker } from './sidebar/ProjectPicker'
 import { ProjectTools } from './sidebar/ProjectTools'
@@ -357,9 +359,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
-  // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页
+  // 盖住侧栏的项目工具页（UE、表格）：宽屏时插件自己的导航栏占侧栏的位置
+  const covered = useCoversSidebar(route)
+  // 功能页不记：从功能页切模式、回主页都回到最近的会话页，不是又回到功能页。
+  // 盖住侧栏的工具页也不记成 Agent 模式的落点：从那里点 Agent 回到项目对话
   if (chatMode) lastChatRoute = route
-  else if (!isToolPage(route)) lastAgentRoute = route
+  else if (!isToolPage(route) && !covered) lastAgentRoute = route
+  rememberProjectRoute(route)
   if (!isToolPage(route)) lastWorkRoute = route
 
   const current = useCurrentProject()
@@ -558,8 +564,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         />
         {body(true)}
       </Sheet>
-      {/* 宽屏：收起时整栏让开（图标栏还在），功能页（计划、工作流……）也让开，整页给那个功能 */}
-      {!collapsed && !isToolPage(route) && (
+      {/* 宽屏：收起时整栏让开（图标栏还在），功能页（计划、工作流……）也让开，整页给那个功能；
+          盖住侧栏的项目工具页（UE、表格）让给插件自己的导航栏 */}
+      {!collapsed && !isToolPage(route) && !covered && (
         <aside
           aria-label={t('侧栏')}
           data-sidebar

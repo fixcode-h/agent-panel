@@ -70,4 +70,8 @@ export const EN_PROJECT_CAPS: Record<string, string> = {
   '派子对话、问你、等你操作、记教训等面板自带的工具':
     'Built-in panel tools: sub-conversations, asking you, waiting for you, recording lessons and more',
   探查项目能力的参数不对: 'Invalid parameters for probing project capabilities',
+  // 盖住侧栏的项目工具页（UE、表格）和「经验与文档」整页
+  回到项目对话: 'Back to project chats',
+  '回到项目对话：{name}': 'Back to project chats: {name}',
+  '经验与文档 · {name}': 'Experience & docs · {name}',
 }

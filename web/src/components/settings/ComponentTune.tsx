@@ -51,6 +51,7 @@ export const compLabel = (c: CompName) =>
     capRow: t('能力行'),
     htmlCard: t('HTML 卡片'),
     styleRef: t('风格参考图'),
+    toast: t('提示'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -70,6 +71,8 @@ const propLabel = (c: CompName, prop: string) => {
     )[prop]
   if (c === 'styleRef' && prop !== 'radius')
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
+  if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')
+    return ({ position: t('位置'), duration: t('停留时长'), bar: t('左侧色条宽度') } as Record<string, string>)[prop]
   if (c === 'capRow' && prop !== 'radius')
     return ({ pad: t('上下留白'), when: t('显示「该用 / 别用」'), name: t('显示原名') } as Record<string, string>)[prop]
   return (
@@ -191,6 +194,15 @@ const optionLabel = (v: string) =>
     faint: t('很淡'),
     keep: t('不变淡'),
     fine: t('细线'),
+    window: t('窗口色'),
+    bottomRight: t('右下角'),
+    topRight: t('右上角'),
+    bottomCenter: t('底部居中'),
+    topCenter: t('顶部居中'),
+    '3s': t('3 秒'),
+    '4s': t('4 秒'),
+    '6s': t('6 秒'),
+    '8s': t('8 秒'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */

@@ -13,6 +13,7 @@ import { Field, Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
+import { ProjectBackCard } from '@/components/projects/ProjectBackCard'
 import { appendDraft } from '@/components/chat/ChatComposer'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { TaskView } from '@/components/tasks/TaskView'
@@ -102,6 +103,8 @@ export function host(id: string, config: () => PluginConfig) {
       DirPicker,
       TaskView,
       TaskComposer,
+      /** 盖住侧栏的项目工具页（PluginPage.cover）导航栏顶上的项目卡片，点一下回到项目对话 */
+      ProjectBackCard,
     },
     toast,
     cn,

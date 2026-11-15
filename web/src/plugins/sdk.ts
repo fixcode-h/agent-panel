@@ -50,6 +50,11 @@ export interface PluginPage {
    * 页面里不用再自己切项目（Page 的 project 参数）
    */
   scope?: 'global' | 'project'
+  /**
+   * scope = project 的页打开时盖住会话侧栏（2026-11-15 加的，旧面板不认、照旧和侧栏并排）：宽屏不显示会话侧栏，
+   * 插件自己的导航栏占那个位置；导航栏顶上放 host.ui.ProjectBackCard，点一下回到项目对话（例如 UE、表格）
+   */
+  cover?: boolean
   /** 函数组件（lucide 图标或自己画的 svg）：图标栏按 24px、线宽 1.75 画 */
   icon: (p: { className?: string; strokeWidth?: number }) => ReactNode
   /** 图标右上角的小点（有新内容、出错），给文字时也写进悬停提示 */

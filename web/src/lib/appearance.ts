@@ -1,4 +1,5 @@
 import { Appearance, type Palette } from '@shared/schema'
+import type { ComponentStyle } from '@shared/component-style'
 import { applyMarkdownStyle } from './markdown-style'
 
 const CJK = {
@@ -98,6 +99,22 @@ let applied = { vars: '', palette: '', md: '', all: '' }
 /** 设置页里最近一次本地改外观的时间：拖动期间自动保存回来的旧值不能把页面拉回去 */
 let localAt = 0
 
+/**
+ * 当前生效的部件微调：大部分项落成 CSS 变量就够了，提示的位置、停留时长是 Toaster 的属性，
+ * 要由 React 读值重画，所以在这里留一份并通知订阅的组件（web/src/components/ui/toaster.tsx）。
+ */
+// 模块状态：会话，跟着页面走，刷新后由下一次 applyAppearance 重新写入
+let components: ComponentStyle = {}
+// 模块状态：接线，订阅的组件挂载时登记、卸载时摘掉
+const componentListeners = new Set<() => void>()
+export const componentsSnapshot = () => components
+export function subscribeComponents(f: () => void) {
+  componentListeners.add(f)
+  return () => {
+    componentListeners.delete(f)
+  }
+}
+
 /** 应用到页面，并记在浏览器里：index.html 加载时先用记下的，免得设置取回来前闪一下默认字体 */
 export function applyAppearance(a: Appearance | undefined) {
   const parsed = Appearance.parse(a ?? {})
@@ -121,6 +138,8 @@ export function applyAppearance(a: Appearance | undefined) {
   if (mdKey !== applied.md) {
     applied.md = mdKey
     applyMarkdownStyle(parsed.markdown, parsed.components)
+    components = parsed.components
+    for (const f of componentListeners) f()
   }
   try {
     localStorage.setItem('appearance', varsKey)
