@@ -198,7 +198,9 @@ export function registerConversationRoutes(s: TasksScope) {
     // 正在回复的这一轮里没法换工具，先拦住；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）
     // 有项目的普通对话也一样就地标（分析稿 B10，shared/bug/in-place.ts）；父对话的 /bug 是派子对话，不标
     const bugCmd = BUG_CMD.test(text.trim()) && !!cur && !peer
-    if (bugCmd && cur && !cur.parentTaskId && cur.bug?.kind === 'report' && inPlaceBugClosed(cur))
+    // 修好了才算结束；不修了的可以在这个对话里接着查（用户 2026-11-15 定，shared/bug/reopen.ts）
+    const cancelled = cur?.bug?.diagnoses?.at(-1)?.status === 'cancelled'
+    if (bugCmd && cur && !cur.parentTaskId && cur.bug?.kind === 'report' && inPlaceBugClosed(cur) && !cancelled)
       return s.bad(c, t('这个对话里的 Bug 已经结束，新的 Bug 请新开一个对话发 /bug'), 409)
     if (bugCmd && cur && !(cur.bug?.kind === 'report') && bugInPlace(cur, await s.deps.agents.list())) {
       const live = s.live.get(id)

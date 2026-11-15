@@ -12,6 +12,7 @@ import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis } from '../../shared/bug/diagnosis.ts'
 import { outOfPlan, cleaning, editScope, revOf } from '../../shared/bug/phase.ts'
 import { inPlaceBugClosed } from '../../shared/bug/in-place.ts'
+import { reopenedAfterCancel, reopenInfo } from '../../shared/bug/reopen.ts'
 import { chatDeny } from '../../shared/bug/chat.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR } from '../store.ts'
@@ -90,7 +91,7 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   const unknown = facts.tool?.kind === 'edit' && !raw.length
   if (!files.length && !unknown) return ''
   // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
-  const scope = editScope(c.task.bug?.diagnoses ?? [])
+  const scope = editScope(c.task.bug?.diagnoses ?? [], reopenedAfterCancel(c.task) ? reopenInfo : undefined)
   // 报告在等确认、用户却在那之后直接在对话里说了话：告诉它把对话里定下的交回报告（shared/bug/chat.ts），不让它只能绕过拦截
   if ('deny' in scope) return `【面板】${chatDeny(c.task, scope.deny)}`
   if (unknown) return ''

@@ -50,6 +50,7 @@ import { settlePlan } from '../plan.ts'
 import { autoApprove, autoBlock, autoOn } from './auto.ts'
 import { ranInConversation, recheckCommands, recheckVerdict } from './recheck.ts'
 import { applyChat, chatOf, chatReplaces } from './chat.ts'
+import { reopenedAfterCancel, reopenInfo } from './reopen.ts'
 
 type DiagTask = Pick<Task, 'bug' | 'messages' | 'changes'>
 
@@ -399,7 +400,8 @@ export function submitDiagnosis(
   src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
   const r = submitOnce(task, input, newId, now, src)
-  if (!(task.bug?.kind === 'report') || task.bug?.diagnoses?.at(-1)?.status === 'cancelled') return r
+  const closed = task.bug?.diagnoses?.at(-1)?.status === 'cancelled' && !reopenedAfterCancel(task)
+  if (!(task.bug?.kind === 'report') || closed) return r
   const since = [...task.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
   const prev = task.bug?.case?.rejects
   const base = task.bug?.case ?? BugCase.parse({})
@@ -448,8 +450,9 @@ function submitOnce(
     }
   const list = task.bug?.diagnoses ?? []
   const prev = list.at(-1)
-  // 用户点过「不修了」：这份报告就此关闭，之后的对话不能再拉起它（用户 2026-11-07 定）
-  if (prev?.status === 'cancelled') return { ok: false, info: closedOrCleaning(prev, revOf(prev)) }
+  // 用户点过「不修了」：报告关闭；用户之后又在这个对话里说了话就重新打开，接着交（用户 2026-11-15 定，shared/bug/reopen.ts）
+  if (prev?.status === 'cancelled' && !reopenedAfterCancel(task))
+    return { ok: false, info: closedOrCleaning(prev, revOf(prev)) }
   const c = mergeCase(task, input)
   const answers = answersOf(input)
   // 按对话更新（用户 2026-11-13 定）：核对上一份之后用户在对话里说过话，原话由面板取
@@ -740,7 +743,7 @@ export function decideDiagnosis(
  *   计划里没做完的步骤（含收尾那一步）收口成完成（settlePlan，和用户点「解决」同一套），对话停着等用户的下一句。
  * - 有临时日志（用户 2026-11-10 定）：报告标「已取消」，但先叫 Agent 把日志删掉（返回给它的话），
  *   这一轮结束时面板核对（server/tasks/bug-cleanup.ts），通过了才关闭报告、收口计划（settleCleanup）。
- * 之后用户要它接着修，改文件仍会被拦（bugDeny），要在父对话重新报这个 Bug
+ * 之后用户在这个对话里让它接着做，就重新打开（shared/bug/reopen.ts）：交新报告、用户确认后再改文件
  */
 export function cancelDiagnosis(
   task: DiagTask & Pick<Task, 'plans' | 'steps'>,
@@ -830,7 +833,7 @@ export const diagnosisFeedback = (d: Diagnosis): string => phaseFeedback(d)
  * 收尾（submit_merge）前的核对：父对话派来的 Bug 要有用户确认过的方案、交过验证且用户给了结果或点了结束，
  * 实际改动不超出方案里的文件（论证时加过日志的文件也算，要删临时日志）。返回拒绝的说法；能收尾返回空串
  */
-export function diagnosisGate(task: Pick<Task, 'bug'>, changed: string[]): string {
+export function diagnosisGate(task: Pick<Task, 'bug'> & Partial<Pick<Task, 'messages'>>, changed: string[]): string {
   if (!(task.bug?.kind === 'report')) return ''
   const list = task.bug?.diagnoses ?? []
   const d = list.at(-1)
@@ -841,7 +844,8 @@ export function diagnosisGate(task: Pick<Task, 'bug'>, changed: string[]): strin
       ? `没有请求收尾：第 ${v} 版在等用户复现贴日志。`
       : `没有请求收尾：第 ${v} 版还在等用户，用户回复之前不能收尾。`
   if (d.status === 'questioned') return `没有请求收尾：用户对第 ${v} 版提了意见，先逐条处理、改好再交，等用户确认。`
-  if (d.status === 'cancelled') return `没有请求收尾：${closedOrCleaning(d, v)}`
+  if (d.status === 'cancelled')
+    return `没有请求收尾：${reopenedAfterCancel(task) ? reopenInfo(v) : closedOrCleaning(d, v)}`
   const phase = phaseOf(d)
   // 用户同意了「不用改代码」：除了删临时日志什么都不该改（临时日志删没删干净由 submitMerge 另查）
   if (phase === 'cause' && d.status === 'approved' && noFixOf(d)) {

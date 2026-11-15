@@ -60,6 +60,18 @@ test('Bug 先诊断：没诊断、等确认、被提意见时不改文件；确�
     task: { bug: { kind: 'report', diagnoses: [{ version: 1, status: 'cancelled', files: [] }] }, parentTaskId: 'par' },
   } as never
   assert.match(bugDeny(ctx(kidCancelled), edit(path.join(proj, 'src/a.ts'))), /第 1 版点了「不修了」.*不改文件/)
+  // 不修了之后用户在子对话里又让它接着查（用户 2026-11-15 报）：说法换成重新交报告，不再说报告已关闭
+  const kidReopened = {
+    task: {
+      bug: {
+        kind: 'report',
+        diagnoses: [{ version: 1, status: 'cancelled', files: [], decidedAt: '2026-11-15T00:00:00Z' }],
+      },
+      parentTaskId: 'par',
+      messages: [{ id: 'u1', role: 'user', text: '继续', at: '2026-11-15T00:01:00Z' }],
+    },
+  } as never
+  assert.match(bugDeny(ctx(kidReopened), edit(path.join(proj, 'src/a.ts'))), /接着做.*submit_diagnosis/)
   // 普通对话里就地查的 Bug（分析稿 B10）：不修了、日志也删完了，对话照常用，不再拦
   assert.equal(bugDeny(ctx(diag('cancelled')), edit(path.join(proj, 'src/a.ts'))), '')
   assert.equal(bugDeny(ctx(diag('approved')), edit(path.join(proj, 'src/a.ts'))), '')
