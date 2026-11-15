@@ -109,7 +109,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     if ((await box.inputValue()) !== '') errors.push('设置搜索：Esc 没有清空搜索框')
     if (!(await p.getByRole('dialog').count())) errors.push('设置搜索：搜索框里按 Esc 不该关掉设置弹窗')
   }
-  await p.getByRole('button', { name: '全局教训', exact: true }).click()
+  await p.getByRole('button', { name: '教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   // 语音朗读和语音输入分开：引擎、音色、语速、试听，下面列开源的 Kokoro 模型可以下载
   await p.getByRole('button', { name: '语音朗读', exact: true }).first().click()

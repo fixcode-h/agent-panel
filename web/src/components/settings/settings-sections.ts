@@ -70,7 +70,7 @@ export const sectionsFor = (clis: CliDefinition[], plugins: Section[], mcp: Sect
   ...mcp,
   { id: 'chat-memory', label: t('关于我'), icon: Brain, group: t('记忆与经验'), aliases: ['关于我与记忆', '记忆'] },
   { id: 'experience', label: t('经验'), icon: Lightbulb, group: t('记忆与经验') },
-  { id: 'global-lessons', label: t('全局教训'), icon: GraduationCap, group: t('记忆与经验') },
+  { id: 'global-lessons', label: t('教训'), icon: GraduationCap, group: t('记忆与经验'), aliases: ['全局教训'] },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
