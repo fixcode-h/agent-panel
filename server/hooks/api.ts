@@ -1,14 +1,8 @@
-import { Hono } from 'hono'
-import { HookEventName, type HookDefInput } from '../../shared/hooks/defs.ts'
-import {
-  BUILTIN_HOOKS,
-  HOOK_TIERS,
-  builtinOn,
-  builtinParam,
-  tierChanged,
-  tierDefault,
-  type HookTier,
-} from '../../shared/hooks/builtins.ts'
+import { Hono, type Context } from 'hono'
+import { z } from 'zod'
+import { HookEventName } from '../../shared/hooks/defs.ts'
+import { hooksContract as H } from '../../shared/api-contract/hooks.ts'
+import { BUILTIN_HOOKS, builtinOn, builtinParam, tierChanged, tierDefault } from '../../shared/hooks/builtins.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { knownVersion } from '../detect.ts'
 import { hookEventsFor } from '../../shared/hooks/index.ts'
@@ -36,6 +30,7 @@ import { activePluginHooks } from '../plugins/contrib.ts'
 /**
  * 设置页「钩子」的接口（ADR 0049 第二期）：列表、内置钩子开关、用户钩子增删改排序、校验、试跑、最近触发。
  * 保存前一律过 checkHook：语法、密钥、字段搭配不对就拒绝（AI 生成的提案也走这里）。
+ * 入参按前后端共用的契约校验（shared/api-contract/hooks.ts），不对的回 400 和 zod 的说明。
  * 给了 deps 时顺带接上只通知的面板事件（task.*，见 notify.ts）、把设置里原来的「计划 Webhook」迁成钩子
  */
 export function hooksApi(deps?: {
@@ -116,41 +111,44 @@ export function hooksApi(deps?: {
     .put('/builtins/:id', async (c) => {
       const h = BUILTIN_HOOKS.find((x) => x.id === c.req.param('id'))
       if (!h) return c.json({ error: t('没有这个内置钩子') }, 404)
-      const body = (await c.req.json().catch(() => ({}))) as { on?: unknown; projectId?: unknown }
+      const p = await parse(c, H.setBuiltin.body)
+      if (!p.ok) return p.res
+      const { on, projectId } = p.data
       // 带 projectId 是这个项目单独的开关；on 为 null 表示去掉单独的设置、跟着全局
-      if (typeof body.projectId === 'string' && body.projectId)
-        await setProjectBuiltin(body.projectId, h.id, body.on === null ? null : body.on === true)
-      else await setBuiltin(h.id, body.on === true)
+      if (projectId) await setProjectBuiltin(projectId, h.id, on)
+      else await setBuiltin(h.id, on === true)
       return c.json({ ok: true })
     })
     .put('/tier', async (c) => {
-      const body = (await c.req.json().catch(() => ({}))) as { tier?: unknown; projectId?: unknown }
-      const projectId = typeof body.projectId === 'string' ? body.projectId : ''
-      const ok = HOOK_TIERS.includes(body.tier as HookTier)
+      const p = await parse(c, H.setTier.body)
+      if (!p.ok) return p.res
+      const { tier, projectId = '' } = p.data
       // 只有项目层能选「跟着全局」（null）
-      if (!ok && !(projectId && body.tier === null)) return c.json({ error: t('参数不对') }, 400)
-      await setTier(ok ? (body.tier as HookTier) : null, projectId)
+      if (tier === null && !projectId) return c.json({ error: t('参数不对') }, 400)
+      await setTier(tier, projectId)
       return c.json({ ok: true })
     })
     .put('/plugins/:id', async (c) => {
       // 插件钩子的开关：默认开，只记关掉的（和内置钩子同一份 builtins，键是 plugin:<插件>:<钩子>）
       const h = activePluginHooks(await readHooks()).find((x) => x.id === c.req.param('id'))
       if (!h) return c.json({ error: t('没有这个插件钩子，插件可能关掉了') }, 404)
-      const body = (await c.req.json().catch(() => ({}))) as { on?: unknown }
-      await setBuiltin(h.id, body.on === true, true)
+      const p = await parse(c, H.setPlugin.body)
+      if (!p.ok) return p.res
+      await setBuiltin(h.id, p.data.on, true)
       return c.json({ ok: true })
     })
     .put('/cli-off/:cli', async (c) => {
-      const body = (await c.req.json().catch(() => ({}))) as { events?: unknown }
-      const events = HookEventName.array().safeParse(body.events ?? [])
-      if (!events.success || !CLIS.some((x) => x.id === c.req.param('cli')))
-        return c.json({ error: t('参数不对') }, 400)
-      await setCliOff(c.req.param('cli'), events.data)
+      const p = await parse(c, H.setCliOff.body)
+      if (!p.ok) return p.res
+      if (!CLIS.some((x) => x.id === c.req.param('cli'))) return c.json({ error: t('参数不对') }, 400)
+      await setCliOff(c.req.param('cli'), p.data.events)
       return c.json({ ok: true })
     })
     .put('/builtins/:id/params', async (c) => {
       const h = BUILTIN_HOOKS.find((x) => x.id === c.req.param('id'))
-      const body = (await c.req.json().catch(() => ({}))) as { key?: unknown; value?: unknown }
+      const parsed = await parse(c, H.setParam.body)
+      if (!parsed.ok) return parsed.res
+      const body = parsed.data
       const p = h?.params?.find((x) => x.key === body.key)
       if (!h || !p) return c.json({ error: t('没有这个参数') }, 404)
       const value =
@@ -167,15 +165,16 @@ export function hooksApi(deps?: {
       return c.json({ ok: true })
     })
     .post('/check', async (c) => {
-      const body = (await c.req.json().catch(() => ({}))) as { def?: HookDefInput; run?: boolean }
-      if (!body.def) return c.json({ error: t('没有钩子定义') }, 400)
-      const r = await checkHook(body.def, { run: !!body.run })
+      const p = await parse(c, H.check.body)
+      if (!p.ok) return p.res
+      const r = await checkHook(p.data.def, { run: !!p.data.run })
       return c.json({ errors: r.errors, warnings: r.warnings })
     })
     .post('/test', async (c) => {
       // 试跑：用示例输入跑一次（可以改输入），显示原始输出和面板读出来的决定；不用先保存
-      const body = (await c.req.json().catch(() => ({}))) as { def?: HookDefInput; input?: unknown }
-      if (!body.def) return c.json({ error: t('没有钩子定义') }, 400)
+      const p = await parse(c, H.test.body)
+      if (!p.ok) return p.res
+      const body = p.data
       const r = await checkHook(body.def)
       if (!r.def) return c.json({ errors: r.errors }, 400)
       const input = { ...sampleInput(r.def.event), ...(body.input && typeof body.input === 'object' ? body.input : {}) }
@@ -189,8 +188,9 @@ export function hooksApi(deps?: {
     })
     .get('/triggers', (c) => c.json(recentTriggers()))
     .post('/order', async (c) => {
-      const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
-      await orderHooks(Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === 'string') : [])
+      const p = await parse(c, H.order.body)
+      if (!p.ok) return p.res
+      await orderHooks(p.data.ids)
       return c.json({ ok: true })
     })
     .post('/', async (c) => save(c, ''))
@@ -201,8 +201,19 @@ export function hooksApi(deps?: {
     })
 }
 
-async function save(c: { req: { json: () => Promise<unknown> }; json: (b: unknown, s?: 400) => Response }, id: string) {
-  const body = ((await c.req.json().catch(() => ({}))) ?? {}) as HookDefInput
+/** 按契约读请求体：读不出 JSON 按空对象算，不合契约回 400 */
+async function parse<S extends z.ZodType>(
+  c: Context,
+  schema: S,
+): Promise<{ ok: true; data: z.output<S> } | { ok: false; res: Response }> {
+  const p = schema.safeParse(await c.req.json().catch(() => ({})))
+  return p.success ? { ok: true, data: p.data } : { ok: false, res: c.json({ error: z.prettifyError(p.error) }, 400) }
+}
+
+async function save(c: Context, id: string) {
+  const p = await parse(c, id ? H.update.body : H.create.body)
+  if (!p.ok) return c.json({ errors: [t('没有钩子定义')] }, 400)
+  const body = p.data
   if (!HookEventName.safeParse(body.event).success) return c.json({ errors: [t('事件不对')] }, 400)
   const r = await checkHook(body)
   if (r.errors.length) return c.json({ errors: r.errors, warnings: r.warnings }, 400)
