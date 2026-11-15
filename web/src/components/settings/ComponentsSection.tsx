@@ -85,6 +85,7 @@ import { PluginSpecimens } from './PluginSpecimens'
 import { ReportCompareSpecimen } from './ReportCompareSpecimen'
 import { ChatQuotesSpecimen } from './ChatQuotesSpecimen'
 import { WebFrameSpecimen } from './WebFrameSpecimen'
+import { ToastSpecimen } from './ToastSpecimen'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
@@ -845,6 +846,9 @@ function OverlaySpecimens() {
             {t('抽屉是浮起的一整列，靠底色和投影和页面分开，不描边。')}
           </p>
         </Sheet>
+      </Specimen>
+      <Specimen name="toast" tune={['toast']}>
+        <ToastSpecimen />
       </Specimen>
       <Specimen name="ComposerPopover" tune={['popover']}>
         {/* 输入框外壳要是 relative，弹层贴在它顶上往上长 */}
