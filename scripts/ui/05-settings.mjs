@@ -134,7 +134,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     errors.push('设置-外观：换回默认的「Claude Code」配色后 html 上应该挂 data-palette="code"')
   // Markdown 样式：顶部预览是真的 Markdown 组件；改一项立刻写进 #md-style，恢复默认后清空
   await p.getByRole('button', { name: '正文排版', exact: true }).click()
-  await check(p, '设置-Markdown样式', ['H1 标题', '斑马纹', '自动换行', '字号'])
+  await check(p, '设置-Markdown样式', ['H1 标题', '斑马纹', '自动换行', '字号', '短标尺长度', '短标尺粗细'])
+  // H1 默认的短标尺：标题下三层底里，短条那层（第二层）有宽度，细线那层（第三层）有高度
+  const h1Size = await p
+    .locator('.chat-md h1')
+    .filter({ visible: true })
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundSize.split(','))
+  if (parseFloat(h1Size[1] ?? '0') <= 0 || !(h1Size[2] ?? '').trim().endsWith('1px'))
+    errors.push(`设置-Markdown样式：H1 默认应该画短标尺（短条加细线），实际 background-size 是 ${h1Size.join(',')}`)
   await p.getByRole('switch', { name: '表格斑马纹' }).click()
   if (!(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes('--md-table-zebra'))
     errors.push('设置-Markdown样式：打开斑马纹后 #md-style 里应该有 --md-table-zebra')
