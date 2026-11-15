@@ -245,6 +245,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     if (await p.evaluate(() => document.getElementById('md-style')?.textContent))
       errors.push('设置-组件：恢复本组后 #md-style 应该是空的')
   }
+  // 下拉框搜索：选项多的下拉框打开就带搜索框，打字筛、回车选中；选项少的仍是原来的列表（没有搜索框）
+  {
+    const long = p.getByRole('combobox', { name: '示例长下拉框' })
+    await long.scrollIntoViewIfNeeded()
+    await long.click()
+    const box = p.getByRole('textbox', { name: '搜索示例长下拉框' })
+    if (
+      !(await box.waitFor({ timeout: 3000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('设置-组件：16 项的下拉框打开后应该有搜索框')
+    else {
+      await box.fill('play')
+      if ((await p.getByRole('option').count()) !== 1) errors.push('设置-组件：下拉框搜「play」应该只剩 1 项')
+      await check(p, '设置-组件-下拉框搜索', ['LogPlayerController'])
+      await box.press('Enter')
+      if (!(await long.textContent())?.includes('LogPlayerController'))
+        errors.push('设置-组件：下拉框搜索后回车应该选中 LogPlayerController')
+    }
+    await p.getByRole('combobox', { name: '示例下拉框', exact: true }).first().click()
+    await p.getByRole('option', { name: 'Codex' }).waitFor({ timeout: 3000 })
+    if (await p.getByRole('textbox', { name: /^搜索/ }).count()) errors.push('设置-组件：3 项的下拉框不该带搜索框')
+    await p.keyboard.press('Escape')
+  }
   // 数据表格：样例自动认出 5 行表头；微调里改修饰行的颜色立刻写进 #md-style
   {
     const spec = p.getByText('SheetTable · SheetHeaderBar', { exact: true }).locator('xpath=../..')

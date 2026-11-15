@@ -1130,6 +1130,7 @@ body,
   --c-menu-itemRadius: 7px;
   --c-menu-bg: var(--pop);
   --c-menu-border: 1px;
+  --c-menu-search: 10;
   --c-modal-radius: 14px;
   --c-modal-bg: var(--window);
   --c-modal-border: 1px;

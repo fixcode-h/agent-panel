@@ -56,6 +56,7 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'chip' && prop === 'ring') return t('描边')
   if (c === 'input' && prop === 'ring') return t('聚焦光圈')
   if (c === 'menu' && prop === 'itemRadius') return t('菜单项圆角')
+  if (c === 'menu' && prop === 'search') return t('下拉框搜索框')
   if (c === 'segmented' && prop === 'itemRadius') return t('选中块圆角')
   if (c === 'switch' && prop === 'on') return t('打开时颜色')
   if (c === 'empty' && prop === 'border') return t('边框线型')
@@ -145,6 +146,11 @@ const optionLabel = (v: string) =>
     '500': t('中等'),
     '600': t('半粗'),
     custom: t('自定义'),
+    always: t('总是显示'),
+    from6: t('6 项起'),
+    from10: t('10 项起'),
+    from20: t('20 项起'),
+    never: t('不显示'),
     mono: t('等宽'),
     sans: t('界面字体'),
     all: t('画'),
