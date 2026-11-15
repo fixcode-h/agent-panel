@@ -1,0 +1,29 @@
+/** 英文词典的一部分，键是中文原文：节点确认的阶段报告（submit_report，审阅弹窗的分区、决策勾选、版本） */
+export const EN_STAGE_REPORT: Record<string, string> = {
+  这一版你已确认: 'You approved this version',
+  '这一版你改了决策，已交给 Agent 重出': 'You changed decisions in this version; sent back to the Agent to redo',
+  '这一版你提了修改意见，已退回': 'You asked for changes to this version; sent back',
+  '这一版你已确认，Agent 接着问下一轮': 'You approved this version; the Agent moved on to the next round',
+  '第 {n} 版 · 没交报告': 'Version {n} · no report submitted',
+  '改了 {n} 项决策：确认后交给 Agent 按你的选择重出一版':
+    'Changed {n} decision(s): approving sends it back to the Agent to redo with your choices',
+  '确认后 Agent 按报告接着做下一轮': 'After you approve, the Agent continues with the next round',
+  '都按推荐：没有要改的地方就点「确认」继续': 'All as recommended: click "Approve" if nothing needs changing',
+  '「修改」会把标注、意见和改了的决策一起交给 Agent':
+    '"Revise" sends your notes, comments and changed decisions to the Agent',
+  已改: 'Changed',
+  'Agent 推荐': 'Recommended',
+  '推荐理由：{why}': 'Why: {why}',
+  '{n} 项 · 改了 {k} 项': '{n} items · {k} changed',
+  需要你决定: 'Your decisions',
+  我按规则定的: 'Decided by the Agent',
+  不同意也可以改: 'You can still change these',
+  '确认后接着：': 'Next after approval: ',
+  方案详情: 'Plan details',
+  过程记录: 'Work log',
+  '（Agent 做这一步时说的话）': '(what the Agent said while working)',
+  按你改的决策重出: 'Redone with your decisions',
+  按你的修改意见重出: 'Redone with your feedback',
+  确认上一轮后接着问: 'Next round after approval',
+  '上一版你改了：{list}': 'Last version you changed: {list}',
+}

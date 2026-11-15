@@ -69,6 +69,7 @@ export const PANEL_TOOL_NAMES = [
   // 交结论（ADR 0041 第 16 节：状态只认工具调用）
   'submit_verdict',
   'submit_result',
+  'submit_report',
   'dispatch',
   // 提问和补充这几个也挂在同一个面板服务上：不登记的话对话里会显示成原始工具名
   // （带服务名的写法报的是 mcp__panel_xxx__ask_user 这类，界面认不出来）
@@ -154,6 +155,7 @@ export const PANEL_TOOL_ROLE: Record<PanelToolName, ToolRole> = {
   read_messages: 'work',
   submit_verdict: 'wrap',
   submit_result: 'wrap',
+  submit_report: 'wrap',
   dispatch: 'wrap',
   ask_user: 'ask',
   read_user_notes: 'work',

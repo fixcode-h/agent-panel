@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { toastError } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import { ReviewDialog } from './ReviewDialog'
+import { ConfirmReview } from './ConfirmReview'
 
 /**
  * 子对话的工作流节点做完、等你确认这一步结果时，父对话页上的入口：和诊断报告的「查看报告」一样
@@ -48,14 +48,14 @@ export function ChildConfirmButton({ childId, className }: { childId: string; cl
         {t('查看结果')}
       </Button>
       {hit && (
-        <ReviewDialog
+        <ConfirmReview
           req={hit.req}
           agent={a ? { name: a.name, icon: a.icon, cli: a.cli } : undefined}
           open
           onOpenChange={(o) => !o && setHit(null)}
           // 出错时抛出：弹窗留着并提示错误，标注不会白写（见 ReviewDialog）
-          onAnswer={async (allow, answer) => {
-            await api.answerRequest(hit.task.id, hit.req.id, { allow, answer })
+          onAnswer={async (allow, answer, picks) => {
+            await api.answerRequest(hit.task.id, hit.req.id, { allow, answer, picks })
           }}
         />
       )}

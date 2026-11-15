@@ -17,7 +17,8 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { ReviewDialog } from './ReviewDialog'
+import { ConfirmReview } from './ConfirmReview'
+import type { Picks } from '@shared/flow/stage-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
 import { t } from '@shared/i18n'
@@ -93,7 +94,10 @@ export function RequestCard({
   className,
 }: {
   requests: TaskRequest[]
-  onAnswer: (id: string, r: { allow: boolean; answer?: string; answers?: string[]; always?: boolean }) => Promise<void>
+  onAnswer: (
+    id: string,
+    r: { allow: boolean; answer?: string; answers?: string[]; always?: boolean; picks?: Picks },
+  ) => Promise<void>
   agent?: { name: string; icon: string; cli: string }
   /** 提问右上角的关闭（不回答，终止对话）；不给就没有关闭按钮 */
   onClose?: () => Promise<void>
@@ -184,7 +188,7 @@ export function RequestCard({
         req={req}
         agent={a}
         more={requests.length - 1}
-        answer={(allow, text) => onAnswer(req.id, { allow, answer: text })}
+        answer={(allow, text, picks) => onAnswer(req.id, { allow, answer: text, ...(picks && { picks }) })}
         className={className}
       />
     )
@@ -276,7 +280,7 @@ function ConfirmEntry({
   agent?: { name: string; icon: string; cli: string }
   more: number
   /** 出错时抛出：弹窗留着、提示错误，标注不会白写 */
-  answer: (allow: boolean, text?: string) => Promise<void>
+  answer: (allow: boolean, text?: string, picks?: Picks) => Promise<void>
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -308,7 +312,7 @@ function ConfirmEntry({
           {t('查看结果')}
         </Button>
       </div>
-      <ReviewDialog req={req} agent={agent} open={open} onOpenChange={setOpen} onAnswer={answer} />
+      <ConfirmReview req={req} agent={agent} open={open} onOpenChange={setOpen} onAnswer={answer} />
     </>
   )
 }

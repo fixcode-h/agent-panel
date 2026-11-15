@@ -148,6 +148,8 @@ export type AskReply = {
   always?: boolean
   /** 工作流节点确认时只是追问：回答问题、不改结果（见 engine.ts 的确认循环） */
   ask?: boolean
+  /** 节点确认时每个决策选了哪项（shared/flow/stage-report.ts） */
+  picks?: Record<string, string>
 }
 
 export type Parser = (obj: any) => CliEvent[]

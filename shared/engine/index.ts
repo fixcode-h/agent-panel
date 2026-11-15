@@ -66,6 +66,7 @@ import { makeAlert } from '../alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from '../prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from '../summary/card.ts'
 import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from '../submitted.ts'
+import { settleReport, type StageReport } from '../flow/stage-report.ts'
 
 import { beginTurn, endTurn, pauseStep, stopReasonText } from '../task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from '../conv-mode.ts'
@@ -355,6 +356,13 @@ function dropRerun(host: EngineHost, step: TaskStep) {
  * 这个项目的搜索一节（代码索引 MCP、带排除的 rg、find）：紧跟在通用约束的「搜索范围」后面，Agent 直接照着拼命令。
  * 清单来自项目设置（项目填的 + 内置默认），每个项目一份；内置默认总在，所以这一段总会出现
  */
+/**
+ * 勾了「完成后等我确认」的节点：做完用 submit_report 交阶段报告（shared/flow/stage-report.ts）。
+ * 「提问」开关关着时 Agent 会自己做决定（长对话实测报告提过）：这里要求把这些也列成决策，用户在确认时能看到、能改
+ */
+const REPORT_PART = `## 交给用户确认
+这一步做完后用户会审阅结果再继续。最后用 submit_report 交阶段报告：summary 写结论；要用户拍板的决策和你按规则自己定的决策（self: true）都列进 decisions，每项给 2–4 个选项、你选的 pick 和理由；确认后还要接着做的（例如下一轮要问的问题）写进 next。报告交完就结束这一轮，回复里不用再重复报告。`
+
 function unitPrompt(
   host: EngineHost,
   inv: Invocation,
@@ -398,6 +406,7 @@ function unitPrompt(
       : '',
     `## 要求\n只完成本${multi ? '步' : '节点'}「${step.title}」，不要做其他${multi ? '步骤' : '节点'}的工作。`,
     reviewing ? `你在验收上面「输入」里的结果。逐条检查，不通过时列出必须修改的地方。最后${VERDICT_LINE.review}。` : '',
+    (multi ? unit.confirm : node.hooks.confirm) && host.confirm ? REPORT_PART : '',
     deciding
       ? `## 结论\n后面的流程按你的结论走${route('pass') ? `：通过时接着做${route('pass')}` : ''}${route('fail') ? `；不通过时接着做${route('fail')}` : ''}。完成后最后${VERDICT_LINE.branch}。`
       : '',
@@ -537,7 +546,11 @@ async function runNodeSingle(
   // 后面有条件连线：按结论选路。有主 Agent 评估时由主 Agent 选，否则要求节点自己给出结论
   const branchy = inv.flow.edges.some((e) => e.from === node.id && e.when)
   const deciding = node.kind === 'agent' && branchy
-  const orch = makeOrchestra(host, { workflow: inv.workflow, tier: node.tier }, step)
+  const orch = makeOrchestra(
+    host,
+    { workflow: inv.workflow, tier: node.tier, report: !!node.hooks.confirm && !!host.confirm },
+    step,
+  )
 
   // 节点本身；返工时 round 往上加（流程节点的返工按 round 区分子节点）
   let bodyRound = 1
@@ -699,6 +712,16 @@ async function runNodeSingle(
     const c = await host.confirm(step, text)
     if (!c) return fail({ ok: false, stopped: true, error: t('已停止') })
     step.awaitConfirm = false
+    // 交了阶段报告：这一版记下用户的选择；改了决策、报告里还有下一轮时回到 Agent 重出一版（shared/flow/stage-report.ts）
+    const settled = settleReport(step.submitted?.reports, c)
+    if (settled.output) text = settled.output
+    if (settled.follow) {
+      host.changed(true)
+      const nx = await rework(settled.follow, `用户确认了决策：\n${settled.follow}`)
+      if (!nx.ok) return fail(nx)
+      text = nx.text
+      continue
+    }
     if (c.allow) break
     if (c.ask) {
       // 追问：只回答，不改已经做好的结果；回答接在结果后面，仍停在等确认，不算一轮修改
@@ -712,7 +735,7 @@ async function runNodeSingle(
       continue
     }
     const fb = await rework(
-      `用户看了结果，要求修改：\n${c.answer || '（没有写具体意见）'}\n\n请按要求继续完善本节点「${step.title}」的工作，完成后同样简要总结。`,
+      `用户看了结果，要求修改：\n${c.answer || '（没有写具体意见）'}\n\n请按要求继续完善本节点「${step.title}」的工作，完成后同样${step.submitted?.reports?.length ? '用 submit_report 交新的阶段报告' : '简要总结'}。`,
       `用户看了上一轮的结果，要求修改：\n${c.answer || '（没有写具体意见）'}`,
     )
     if (!fb.ok) return fail(fb)
@@ -930,7 +953,11 @@ async function runNodeSteps(
         deciding: decidingHere,
         tier: unit.tier,
         params: unit.params,
-        orch: makeOrchestra(host, { workflow: inv.workflow, tier: unit.tier }, r),
+        orch: makeOrchestra(
+          host,
+          { workflow: inv.workflow, tier: unit.tier, report: !!unit.confirm && !!host.confirm },
+          r,
+        ),
         signal: rs.planSignal(host),
       })
     let res = await call((extra || cont || full) + tail)
@@ -1026,6 +1053,15 @@ async function runNodeSteps(
     const c = await host.confirm(r, texts[i])
     if (!c) return { ok: false, stopped: true, error: t('已停止') }
     r.awaitConfirm = false
+    const settled = settleReport(r.submitted?.reports, c)
+    if (settled.output) texts[i] = settled.output
+    if (settled.follow) {
+      host.changed(true)
+      const nx = await reworkText(i, settled.follow, `用户确认了决策：\n${settled.follow}`)
+      if (!nx.ok) return nx
+      texts[i] = nx.text
+      return 'rework'
+    }
     if (c.allow) return null
     if (c.ask) {
       const qa = await reworkText(
@@ -1039,7 +1075,7 @@ async function runNodeSteps(
     }
     const fb = await reworkText(
       i,
-      `用户看了结果，要求修改：\n${c.answer || '（没有写具体意见）'}\n\n请按要求继续完善这一步「${r.title}」的工作，完成后同样简要总结。`,
+      `用户看了结果，要求修改：\n${c.answer || '（没有写具体意见）'}\n\n请按要求继续完善这一步「${r.title}」的工作，完成后同样${r.submitted?.reports?.length ? '用 submit_report 交新的阶段报告' : '简要总结'}。`,
       `用户看了上一轮的结果，要求修改：\n${c.answer || '（没有写具体意见）'}`,
     )
     if (!fb.ok) return fb
@@ -1176,6 +1212,14 @@ function makeOrchestra(host: EngineHost, ctx: OrchOpts, self: TaskStep): Orchest
       submitVerdict: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) =>
         submitOn(self, { verdict: v.verdict, blockers: v.blockers ?? [] }, () => host.changed(true)),
     }),
+    ...(where &&
+      ctx.report && {
+        // 一次一版：已经有的版本留着，审阅弹窗能切版本、和上一版对比
+        submitReport: (r: StageReport) =>
+          submitOn(self, { reports: [...(self.submitted?.reports ?? []), { report: r, at: now() }] }, () =>
+            host.changed(true),
+          ),
+      }),
     ...(helper && {
       submitResult: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) =>
         submitOn(self, r, () => host.changed(true)),

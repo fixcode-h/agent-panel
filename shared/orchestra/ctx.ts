@@ -13,6 +13,8 @@ export interface OrchOpts {
   coordinator?: boolean
   /** 调用者是派出去的子任务：只做并行的收集、核实、出计划，不能再往外派 */
   helper?: boolean
+  /** 节点勾了「完成后等我确认」：给 submit_report 交阶段报告 */
+  report?: boolean
 }
 
 export interface OrchCtx {

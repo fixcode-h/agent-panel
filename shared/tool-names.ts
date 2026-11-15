@@ -68,6 +68,7 @@ const PANEL_TOOLS = (): Record<string, string> => ({
   read_messages: t('查看消息'),
   submit_verdict: t('交结论'),
   submit_result: t('交结果'),
+  submit_report: t('交阶段报告'),
   dispatch: t('交决定'),
   ask_user: t('向用户提问'),
   read_user_notes: t('查看用户补充'),

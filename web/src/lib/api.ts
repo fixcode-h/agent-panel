@@ -910,7 +910,15 @@ export const api = {
   answerRequest: (
     id: string,
     rid: string,
-    body: { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean },
+    body: {
+      allow: boolean
+      answer?: string
+      answers?: string[]
+      always?: boolean
+      ask?: boolean
+      /** 节点确认时每个决策选了哪项（shared/flow/stage-report.ts） */
+      picks?: Record<string, string>
+    },
   ) => request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   /** 父对话名下的工作流运行（不进对话列表）；delegateRun：节点确认交给父对话决定 */
   flowRuns: (ownerId: string) => request<Task[]>(`/tasks?owner=${encodeURIComponent(ownerId)}`),

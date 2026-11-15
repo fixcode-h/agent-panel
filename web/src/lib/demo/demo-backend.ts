@@ -2869,7 +2869,14 @@ function tasksRoute(
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
-    const a = body as { allow: boolean; answer?: string; answers?: string[]; always?: boolean; ask?: boolean }
+    const a = body as {
+      allow: boolean
+      answer?: string
+      answers?: string[]
+      always?: boolean
+      ask?: boolean
+      picks?: Record<string, string>
+    }
     simAnswers.set(rid, a)
     // 对话上怎么记、等待怎么结算：和正式后端同一份（shared/requests/answer.ts）
     applyAnswer(task, req, a, { newId: () => `demo-${crypto.randomUUID()}` })

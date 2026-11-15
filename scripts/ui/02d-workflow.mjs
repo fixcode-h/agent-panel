@@ -186,6 +186,100 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
+  // 阶段报告（submit_report，用户 2026-11-15 定）：结论在最上面，决策一题一张卡片、Agent 选的那项预先勾上，
+  // 改了勾选标「已改」、底栏提示会重出一版；有多版时能切版本、对比上一版。确认时交回选择，对话里写清改了哪几项
+  {
+    const KEY = 'agent-panel-demo-v3'
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+      const task = (db.tasks ?? []).find((x) => x.title.startsWith('购物车右上角'))
+      if (!task) return
+      const step = task.steps[0]
+      const opt = (id, label, note = '') => ({ id, label, note })
+      const report = (pick) => ({
+        summary: '角标不刷新是因为角标组件自己缓存了一份数量，推荐改成订阅购物车 store。',
+        decisions: [
+          {
+            id: 'Q1',
+            title: '角标怎么拿到最新数量',
+            question: '角标组件自己缓存数量，加入商品后不会刷新。',
+            options: [
+              opt('A', '订阅购物车 store 的 count', '改 2 个文件'),
+              opt('B', '加入商品后手动刷新角标', '以后还会漏'),
+            ],
+            pick,
+            why: '只有改成同一份数据才能根治。',
+            self: false,
+          },
+          {
+            id: 'M1',
+            title: '读数量的写法',
+            question: '',
+            options: [opt('A', '沿用 useCart()'), opt('B', '新写 useCartCount()')],
+            pick: 'A',
+            why: '项目里已有 9 处这么用。',
+            self: true,
+          },
+        ],
+        details: '### 改动\n1. CartBadge.tsx 改成订阅 count',
+        next: '',
+      })
+      task.requests = [
+        {
+          id: 'ui-stage-report',
+          step: step?.id ?? '',
+          agentId: step?.agentId,
+          kind: 'confirm',
+          title: '「压测并确认」完成了，看一下结果再继续',
+          detail: '先读了 CartBadge.tsx，再核对购物车 store 的广播。',
+          reports: [
+            { report: report('B'), at: '2026-11-15T09:00:00.000Z', picks: { Q1: 'A' }, result: 'changed' },
+            { report: report('A'), at: '2026-11-15T09:20:00.000Z' },
+          ],
+          options: [],
+          at: new Date().toISOString(),
+        },
+      ]
+      localStorage.setItem(k, JSON.stringify(db))
+    }, KEY)
+    await p.reload()
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    const entry = p.getByRole('button', { name: '查看结果', exact: true })
+    if (
+      !(await entry.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('阶段报告：输入框上方没有「查看结果」入口')
+    else {
+      await entry.click()
+      const dlg = p.getByRole('dialog')
+      await dlg.waitFor()
+      await settle(p)
+      const card = dlg.locator('[data-decision="Q1"]')
+      if ((await card.getByRole('checkbox', { checked: true }).count()) !== 1)
+        errors.push('阶段报告：Q1 应该只勾着 Agent 推荐的那一项')
+      for (const dark of [false, true]) {
+        await p.evaluate((d) => document.documentElement.classList.toggle('dark', d), dark)
+        await settle(p)
+        await check(p, `阶段报告-${dark ? '深色' : '浅色'}`, ['结论', '需要你决定', '我按规则定的', 'Agent 推荐'])
+      }
+      await p.evaluate(() => document.documentElement.classList.toggle('dark', false))
+      await card.getByRole('checkbox', { name: /手动刷新角标/ }).click()
+      if (!(await card.getAttribute('data-changed'))) errors.push('阶段报告：改了勾选后卡片没有标成已改')
+      await check(p, '阶段报告-改了一项', ['已改', '改了 1 项决策'])
+      await dlg.getByRole('button', { name: '确认', exact: true }).click()
+      await dlg.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('阶段报告：点「确认」后弹窗没关'))
+      const said = await p.evaluate((k) => {
+        const task = JSON.parse(localStorage.getItem(k) ?? '{}').tasks.find((x) => x.title.startsWith('购物车右上角'))
+        return task.messages.at(-1)?.text ?? ''
+      }, KEY)
+      if (!said.includes('改了 1 项决策') || !said.includes('Q1'))
+        errors.push(`阶段报告：确认后对话里没写清改了哪项：${said}`)
+    }
+  }
+
   // 子对话的阶段确认（工作流节点完成后等你确认）：父对话页不在输入框上方另起黄色确认条，
   // 和诊断报告一样留在运行区子对话那一行（「阶段待确认」+ 行尾「查看结果」），点了直接在父对话页审阅
   {

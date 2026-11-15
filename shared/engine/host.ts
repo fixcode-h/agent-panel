@@ -9,7 +9,7 @@ import type { ReviewTarget } from '../clis.ts'
 import type { DocRootInfo } from '../doc-root.ts'
 import type { BeforeEndDecision, BeforeEndInput } from '../hooks/index.ts'
 import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from '../schema.ts'
-import type { Blocker } from '../submitted.ts'
+import type { Picks } from '../flow/stage-report.ts'
 import type { BugHost, OrchBug } from '../host/bug.ts'
 import type { BuildHost, OrchBuild } from '../host/build.ts'
 import type { ConversationHost, OrchConversation } from '../host/conversation.ts'
@@ -17,6 +17,7 @@ import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
 import type { OrchPlan, PlanHost } from '../host/plan.ts'
 import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 import type { SearchHost } from '../host/search.ts'
+import type { OrchSubmit } from '../host/submit.ts'
 
 /** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
 export type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
@@ -147,7 +148,7 @@ export interface HelperBatch {
   take: () => string
 }
 
-export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuild, OrchKnowledge, OrchBug {
+export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuild, OrchKnowledge, OrchBug, OrchSubmit {
   /** 调用者的节点 id */
   self: string
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
@@ -156,13 +157,6 @@ export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuil
   common: { name: string; description: string }[]
   /** 调用者自己就是子任务：不能再派子任务、不能启动工作流、不能开子对话 */
   helper: boolean
-  /** 交结果（submit_result）：只有子任务有 */
-  submitResult?: (r: { state: 'done' | 'unfinished' | 'stuck'; summary: string; left: string }) => {
-    ok: boolean
-    info: string
-  }
-  /** 交结论（submit_verdict，ADR 0041 第 16 节）：节点和子任务有，对话本身没有 */
-  submitVerdict?: (v: { verdict: 'pass' | 'fail'; blockers?: Blocker[] }) => { ok: boolean; info: string }
   /** 能派子任务（spawn_agents / stop_subtask / wait_agents）：子任务和 Chat 模式没有（ADR 0038） */
   canSpawn: boolean
   /** 有并行的节点、子任务可查可传话（get_status / send_message / read_messages）：Chat 模式没有 */
@@ -255,7 +249,10 @@ export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHo
    * 没有时（例如在线演示之外的宿主不支持）不等待，直接往下走
    */
   /** ask：只是追问、不算退回，节点回答后仍停在等确认 */
-  confirm?: (step: TaskStep, text: string) => Promise<{ allow: boolean; answer?: string; ask?: boolean } | null>
+  confirm?: (
+    step: TaskStep,
+    text: string,
+  ) => Promise<{ allow: boolean; answer?: string; ask?: boolean; picks?: Picks } | null>
   /** 工作流运行里已经定下的事（决定记录、运行级说明）：每个节点开始时现取，拼进节点的输入 */
   nodeNote?: () => string
   /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */

@@ -3,7 +3,8 @@
  * 面板工具注册表（server/panel-tools/registry.ts）的条目
  */
 import type { Orchestra } from '../../shared/engine/host.ts'
-import { str, text, type PanelTool, type ToolArgs } from './types.ts'
+import { parseStageReport } from '../../shared/flow/stage-report.ts'
+import { reply, str, text, type PanelTool, type ToolArgs } from './types.ts'
 
 /**
  * 交结论（ADR 0041 第 16 节）：验收、带条件连线的节点、评审都用它交「通过 / 不通过」，面板只认这个工具，不看回复里的字。
@@ -33,6 +34,54 @@ const SUBMIT_VERDICT = {
       },
     },
     required: ['verdict'],
+  },
+}
+
+/**
+ * 交阶段报告：勾了「完成后等我确认」的节点用（shared/flow/stage-report.ts）。
+ * 准入（ADR 0067）：CLI 自己没法把决策画成能勾选的卡片、也拿不回用户改了哪项；并不进 submit_verdict（那是通过 / 不通过）
+ */
+const SUBMIT_REPORT = {
+  name: 'submit_report',
+  title: '交阶段报告',
+  description:
+    '这一步做完、要用户确认时交阶段报告：面板按它排版给用户审，决策画成选项让用户勾选。用户改了哪项会原样告诉你，你按用户的选择重出一版。交完就结束这一轮。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: '结论：这一步得出了什么，两三句' },
+      decisions: {
+        type: 'array',
+        description: '决策：要用户拍板的，和你按规则自己定的（self 写 true）。每项一个问题，给 2–4 个选项和你选的那项',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: '编号：Q1、Q2…；自己定的写 M1、M2…' },
+            title: { type: 'string', description: '几个字的标题' },
+            question: { type: 'string', description: '为什么要定、不定会怎样，一两句' },
+            options: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'A、B、C…' },
+                  label: { type: 'string', description: '选项，一句话' },
+                  note: { type: 'string', description: '代价和影响，一句话' },
+                },
+                required: ['id', 'label'],
+              },
+            },
+            pick: { type: 'string', description: '你选的那项的 id' },
+            why: { type: 'string', description: '为什么选它' },
+            self: { type: 'boolean', description: '按规则自己定的、不必用户拍板' },
+          },
+          required: ['id', 'title', 'options', 'pick'],
+        },
+      },
+      details: { type: 'string', description: '方案详情（Markdown）：依据、方案正文、风险。过程中的自言自语不要写' },
+      next: { type: 'string', description: '确认后还要接着做的，例如下一轮要问的问题；没有就不写' },
+    },
+    required: ['summary'],
   },
 }
 
@@ -70,6 +119,16 @@ export const SUBMIT_TOOLS: PanelTool[] = [
     when: (o) => !!o.submitVerdict,
     def: () => SUBMIT_VERDICT,
     call: (o, a) => callSubmitTool(o, 'submit_verdict', a),
+  },
+  {
+    name: 'submit_report',
+    when: (o) => !!o.submitReport,
+    def: () => SUBMIT_REPORT,
+    call: (o, a) => {
+      if (!o.submitReport) return text('这一步不用交阶段报告：只有勾了「完成后等我确认」的节点要交', true)
+      const r = parseStageReport(a)
+      return r.ok ? reply(o.submitReport(r.report)) : text(r.error, true)
+    },
   },
   { name: 'dispatch', when: () => false, call: (o, a) => callSubmitTool(o, 'dispatch', a) },
 ]

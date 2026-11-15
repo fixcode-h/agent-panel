@@ -398,6 +398,8 @@ export const EN_SERVER: Record<string, string> = {
   '运行 pi，在里面输入 /login': 'run pi and type /login',
   运行它并按提示登录: 'run it and follow the login prompt',
   '你确认了「{title}」的结果，接着往下执行': 'You approved the result of "{title}"; continuing',
+  '你确认了「{title}」，改了 {n} 项决策：{list}。交给 Agent 按你的选择重出一版':
+    'You approved "{title}" and changed {n} decision(s): {list}. Sent back to the Agent to redo it with your choices',
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
   '你追问了「{title}」：{answer}': 'You asked about "{title}": {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
