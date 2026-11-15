@@ -83,11 +83,12 @@ function Item({
 export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings } = useNav()
   const collapsed = useSidebarCollapsed()
-  const tool = isToolPage(route.page)
+  const tool = isToolPage(route)
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
   const skillUpd = useSkillUpdates()
-  const pages = usePluginPages()
+  // 按项目的插件页（插件接口 9）在侧栏「项目工具」里，图标栏只放通用入口
+  const pages = usePluginPages().filter((p) => p.scope !== 'project')
   const wide = useActivityBarWide()
   // 分隔线：收起时是格子下面居中的一小段，展开时横贯整栏（左右留一点边）
   const sep = cn('activity-sep my-1 h-px shrink-0', wide ? 'mx-2 self-stretch' : 'w-5')
@@ -154,7 +155,7 @@ function PluginItem({ page }: { page: PluginPage & { plugin: string } }) {
     <Item
       icon={page.icon}
       label={page.label}
-      on={route.page === 'plugin' && route.id === page.plugin && route.sub === page.id}
+      on={route.page === 'plugin' && !route.project && route.id === page.plugin && route.sub === page.id}
       dot={dot || undefined}
       onClick={() => go({ page: 'plugin', id: page.plugin, sub: page.id })}
     />

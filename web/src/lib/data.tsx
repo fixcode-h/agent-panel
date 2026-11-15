@@ -339,6 +339,11 @@ export interface Route {
   sub?: string
   /** 对话里要定位到的消息 id：从搜索结果点进来时带上（见 web/src/lib/message-anchor.ts） */
   msg?: string
+  /**
+   * 按项目的插件页（PluginPage.scope = 'project'，插件接口 9）属于哪个项目：
+   * 地址是 #/projects/<项目>/plugin/<插件>/<页面>/<path>，会话侧栏照常开着，项目工具里那一行亮着
+   */
+  project?: string
 }
 export const NavCtx = createContext<{
   route: Route

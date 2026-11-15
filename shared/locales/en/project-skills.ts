@@ -60,4 +60,24 @@ export const EN_PROJECT_SKILLS: Record<string, string> = {
     'The name may only contain letters, digits, . _ - and must start with a letter or digit',
   先在项目设置里填好项目目录: 'Fill in the project folder in the project settings first',
   'SKILL.md 不能为空': 'SKILL.md cannot be empty',
+  // 全局技能的生效方式（全局 / 按项目，工作包 W4）
+  '按项目生效的技能不装进用户目录，每轮只给打开了它的项目带上':
+    'Per-project skills are not installed in your home folder; each turn they are given only to projects that turned them on',
+  '已改成按项目。下面这些被改过或目标已有同名的，留在原处没动，仍对所有项目生效：{list}':
+    'Switched to per project. These were edited or already exist at the destination, so they stayed where they were and still apply to every project: {list}',
+  '已改回全局。下面这些目标已有同名的，没挪回去：{list}':
+    'Switched back to global. These already exist at the destination and were not moved back: {list}',
+  已改成按项目: 'Switched to per project',
+  已改回全局: 'Switched back to global',
+  技能的生效方式: 'Where the skill applies',
+  '只在项目「能力」里打开了它的项目里交给 Agent，每轮带上，不放在用户目录':
+    'Given to the agent only in projects that turned it on under "Capabilities", added each turn and kept out of your home folder',
+  '放在用户目录，所有项目、所有对话都读得到': 'Kept in your home folder, so every project and conversation can read it',
+  '；{clis} 不能按会话加载技能，改成在提示里列出它的路径':
+    '; {clis} cannot load skills per session, so its path is listed in the prompt instead',
+  '这个项目打开的技能没能交给 Codex（{error}），这一轮用不了它们':
+    'The skills turned on for this project could not be given to Codex ({error}); they are unavailable this turn',
+  '这个项目打开的技能这一轮没能带上，Agent 暂时用不了它们。':
+    'The skills turned on for this project could not be added this turn, so the agent cannot use them for now.',
+  '没有这个技能：{name}': 'No such skill: {name}',
 }

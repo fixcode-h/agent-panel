@@ -106,6 +106,8 @@ import { catalogContract } from '@shared/api-contract/catalog'
 import { tasksContract } from '@shared/api-contract/tasks'
 import { projectsContract } from '@shared/api-contract/projects'
 import { trashContract } from '@shared/api-contract/trash'
+import { skillsContract } from '@shared/api-contract/skills'
+import type { SkillActivationInput } from '@shared/skills/activation'
 import { call } from './api/call'
 
 /** 对话页打开时的那一份（带分页信息），定义在契约里 */
@@ -446,6 +448,8 @@ export const api = {
   /** 自带 Skill 的文件内容（只读）：path 传空读 SKILL.md，其余读技能目录里的附加文件 */
   bundledEntry: (name: string, path: string) =>
     request<LibraryEntryContent>(`/library/bundled/entry?${new URLSearchParams({ name, path })}`),
+  /** 技能改成全局 / 按项目：自带的和各 CLI 目录里同名的一起切（shared/skills/activation.ts） */
+  setSkillActivation: (b: SkillActivationInput) => call(skillsContract.setActivation, { body: b }),
   installBundled: (b: { names: string[]; clis: string[]; overwrite: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/bundled/install', json('POST', b)),
   libraryFile: (cli: string, kind: 'skill' | 'command', name: string) =>

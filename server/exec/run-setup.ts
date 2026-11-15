@@ -23,6 +23,9 @@ import { composeInput } from './compose-input.ts'
 import { launchOptions } from './launch-options.ts'
 import { ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { pluginRunTools } from './plugin-run.ts'
+import { systemNote } from './recovery.ts'
+import { makeAlert } from '../../shared/alerts.ts'
+import { prepareRunSkills, type RunSkills } from '../skills/run-skills.ts'
 import { projectMcpForRun } from '../mcp-library/run.ts'
 import type { createFileEvents } from './file-events.ts'
 
@@ -76,10 +79,21 @@ export async function prepareLaunch(
   const { task, settings } = ctx
   const { found, agent, cliId, def, cs, cwd, model, effort, limits } = target
   const { step, chat, op, resume, fork, carry, windowFor } = o
-  const role = withSkillDir(
-    composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim(),
-    sharedRoot(),
+  // 角色点名要用的技能；按项目的那些和项目能力里打开的一起放进这一轮的技能目录（server/skills/run-skills.ts）
+  const roleSkills = fillSkills(
+    [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
+    task.skillSlots,
   )
+  const skills = await launchSkills(ctx, def, roleSkills, step, call.agentId)
+  const role = [
+    withSkillDir(
+      composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim(),
+      sharedRoot(),
+    ),
+    skills.note,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
@@ -95,12 +109,7 @@ export async function prepareLaunch(
   // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
   const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
   // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
-  await ensureBundled(
-    fillSkills(
-      [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
-      task.skillSlots,
-    ),
-  )
+  await ensureBundled(roleSkills)
   // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
   const composed = await composeInput({
     ctx,
@@ -134,6 +143,7 @@ export async function prepareLaunch(
     taskDir,
     cwd,
     windowFor,
+    skills,
   })
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
@@ -147,6 +157,34 @@ export async function prepareLaunch(
   log.info('agent', `启动 ${def.name}`, { task: task.id, step, agent: agent.name, cwd, command: argv.join(' ') })
 
   return { instructions, input: composed.input, orch: composed.orch, pct, build, env, owner }
+}
+
+/**
+ * 这一轮带上的按项目技能（工作包 W4）：准备失败时在对话里写一行警告，这一轮不带它们照常跑
+ * （不悄悄吞掉：Agent 说找不到技能时用户要知道为什么）
+ */
+async function launchSkills(
+  ctx: RealContext,
+  def: RunTarget['def'],
+  roleSkills: string[],
+  step: string,
+  agentId: string,
+): Promise<RunSkills> {
+  try {
+    return await prepareRunSkills({
+      def,
+      projectId: ctx.project.id,
+      opened: ctx.project.capabilities?.skills,
+      roleSkills,
+    })
+  } catch (err) {
+    ctx.task.messages.push({
+      ...systemNote(ctx.newId(), agentId, step, t('这个项目打开的技能这一轮没能带上，Agent 暂时用不了它们。')),
+      alert: makeAlert('warn', (err as Error).message, 'panel'),
+    })
+    ctx.changed(true)
+    return { names: [], args: [], note: '' }
+  }
 }
 
 /**

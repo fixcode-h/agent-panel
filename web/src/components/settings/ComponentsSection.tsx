@@ -58,17 +58,7 @@ import { STATUS_TONES, StatusPill, type StatusTone } from '@/components/ui/statu
 import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { SourceLink } from '@/components/ui/source-link'
-import {
-  NavRow,
-  SIDEBAR_GROUP_LABEL,
-  SidebarModeTabs,
-  SidebarProjectName,
-  SidebarProjectRow,
-  SidebarTaskBlock,
-  SidebarTaskRowBody,
-  TaskRowStatus,
-  sidebarTaskRowClass,
-} from '@/components/ui/sidebar'
+import { NavRow, SidebarModeTabs } from '@/components/ui/sidebar'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
@@ -76,6 +66,7 @@ import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
 import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
+import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
 import { scanText } from '@shared/config-scan'
 
@@ -553,8 +544,8 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
       </Group>
       <Group title={t('侧栏')}>
-        <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow" tune={['nav']}>
-          {/* 侧栏贴着底色画：项目 → 对话两层，选中项目是淡蓝底，选中对话是白卡片，行尾状态做轻 */}
+        <Specimen name="ModeTabs · NavRow" tune={['nav']}>
+          {/* 侧栏贴着底色画：导航选中是 bg-sel；项目切换器、项目工具和项目卡片在下面「侧栏 · 项目」 */}
           <div className="flex w-64 flex-col gap-0.5 rounded-lg bg-rail px-2.5 py-2.5">
             <div className="mb-2 flex">
               <SidebarModeTabs
@@ -574,56 +565,12 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               trailing={<Kbd className="ml-auto opacity-0 transition-opacity group-hover/nav:opacity-100">⌘⇧O</Kbd>}
             />
             <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={2.2} />} label={t('工作流')} on />
-            <p className={cn('px-2 pt-2.5 pb-1.5 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
-            {/* 项目行和对话行用侧栏同一套部件：正在看的项目是淡蓝底，里面选中的对话是白卡片 */}
-            <SidebarProjectRow
-              open
-              on
-              count={3}
-              name={
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <SidebarProjectName open on name="agent-panel" />
-                </span>
-              }
-            />
-            <SidebarTaskBlock>
-              <div className={cn(sidebarTaskRowClass(true, true), 'pr-2 pl-2')}>
-                <SidebarTaskRowBody
-                  active
-                  title={t('右栏改成页签工作台')}
-                  status={<TaskRowStatus kids={8} running />}
-                />
-              </div>
-              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
-                <SidebarTaskRowBody workflow title={t('修复设置弹窗闪动')} status={<TaskRowStatus unread />} />
-              </div>
-              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
-                <SidebarTaskRowBody title={t('接入 Pi CLI 输出')} status={<TaskRowStatus needs />} />
-              </div>
-              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
-                <SidebarTaskRowBody
-                  title={t('状态弹窗日志贴到最新')}
-                  status={<TaskRowStatus left={{ done: 3, total: 7, stuck: true }} />}
-                />
-              </div>
-              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
-                <SidebarTaskRowBody
-                  title={t('清理已合并的分支')}
-                  status={<TaskRowStatus left={{ done: 2, total: 4, stuck: false }} />}
-                />
-              </div>
-            </SidebarTaskBlock>
-            <SidebarProjectRow
-              open={false}
-              running={1}
-              count={2}
-              name={
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <SidebarProjectName open={false} name="docs-site" />
-                </span>
-              }
-            />
           </div>
+        </Specimen>
+      </Group>
+      <Group title={t('侧栏 · 项目')}>
+        <Specimen name="ProjectSwitcher · ProjectToolRow · ProjectPicker · ProjectCard" tune={['nav', 'menu', 'card']}>
+          <ProjectSidebarSpecimen />
         </Specimen>
       </Group>
       <Group title={t('表格')}>

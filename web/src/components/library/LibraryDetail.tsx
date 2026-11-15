@@ -18,6 +18,7 @@ import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import type { ConfigFinding } from '@shared/config-scan'
 import { ScanFindings } from '@/components/ui/scan-findings'
 import { configScanApi } from '@/lib/api-config-scan'
+import { activationIn, SkillActivation } from '@/components/library/SkillActivation'
 
 /** 主文件编辑框的 id：文件树里的 SKILL.md 点一下滚到这里 */
 const MAIN_EDITOR_ID = 'library-main-editor'
@@ -250,6 +251,8 @@ export function LibraryDetail({
             {path}
           </span>
         </div>
+
+        {kind === 'skill' && <SkillActivation name={name} value={activationIn(here, cli)} onChanged={onChanged} />}
 
         <ScanFindings
           findings={scan.list}

@@ -110,8 +110,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }
 
     // 悬停时实现会把 title 暂存到 data-hint（不然浏览器还会弹它自己那条黑条），两种写法都能定位
-    const newProject = p.locator('button[title="新建项目"], button[data-hint="新建项目"]').first()
-    if (!(await newProject.count())) errors.push('提示-悬停：侧栏找不到「新建项目」按钮')
+    const newProject = p.locator('button[title="项目设置"], button[data-hint="项目设置"]').first()
+    if (!(await newProject.count())) errors.push('提示-悬停：侧栏找不到「项目设置」按钮（项目工具标题上的齿轮）')
     else {
       // 静态 DOM 里 title 还在：界面检查和其他用例靠它定位，摘掉只在悬停那一刻发生
       if (!(await newProject.getAttribute('title'))) errors.push('提示-悬停：没悬停时 title 属性就被提前摘掉了')
@@ -122,7 +122,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ timeout: 5000 })
         .catch(() => errors.push('提示-悬停：鼠标停上去没有出现提示浮层'))
       const text = ((await tooltip.first().textContent()) ?? '').trim()
-      if (text !== '新建项目') errors.push(`提示-悬停：浮层文字是「${text}」，不是按钮的 title`)
+      if (text !== '项目设置') errors.push(`提示-悬停：浮层文字是「${text}」，不是按钮的 title`)
       // 悬停期间 title 要摘掉，否则浏览器还会弹它自己那条黑条
       if (await newProject.getAttribute('title')) errors.push('提示-悬停：浮层出来了但 title 还在，原生黑条会一起出现')
       // 悬停提示不放关闭按钮
@@ -133,7 +133,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await moveAway()
       if (await tooltip.count()) errors.push('提示-消失：鼠标移开后浮层没有自己消失')
       // 消失后 title 要还原：静态 DOM 回到原样，界面检查按 title 定位才不受影响
-      if ((await newProject.getAttribute('title')) !== '新建项目')
+      if ((await newProject.getAttribute('title')) !== '项目设置')
         errors.push('提示-消失：移开后 title 没有还原，界面检查按 title 定位会失效')
       await check(p, '提示-移开后自动消失并还原')
 
@@ -285,7 +285,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await moveAway()
       await p.goto(base)
       await settle(p)
-      await p.locator('aside').getByText('商城前台').first().click({ button: 'right' })
+      // 右键侧栏顶上的项目切换器是当前项目的操作菜单（原来是项目树行上的右键菜单）
+      await p.locator('[data-project-switcher]').click({ button: 'right' })
       await p
         .getByRole('menuitem', { name: '项目设置' })
         .first()
@@ -368,7 +369,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 同屏只能有一个提示浮层
     {
       await moveAway()
-      await hoverCenter(p.locator('button[title="新建项目"], button[data-hint="新建项目"]').first())
+      await hoverCenter(p.locator('button[title="项目设置"], button[data-hint="项目设置"]').first())
       await p.waitForTimeout(400)
       const second = p.locator('button[title="更多"], button[data-hint="更多"]').first()
       if (await second.count()) await hoverCenter(second)

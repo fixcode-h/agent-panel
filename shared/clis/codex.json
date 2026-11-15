@@ -192,6 +192,7 @@
     "docsMode": "first"
   },
   "docsNote": "Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。",
+  "runSkills": { "rpc": { "method": "skills/extraRoots/set", "params": { "extraRoots": ["{dir}"] } } },
   "skills": {
     "user": [],
     "repo": []

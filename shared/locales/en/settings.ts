@@ -1512,8 +1512,6 @@ export const EN_SETTINGS: Record<string, string> = {
   页签: 'Tabs',
   示例页签: 'Sample tabs',
   右栏改成页签工作台: 'Turn the right pane into tabs',
-  修复设置弹窗闪动: 'Fix the settings dialog flicker',
-  '接入 Pi CLI 输出': 'Parse Pi CLI output',
   代码审查: 'Code review',
   开发流程: 'Development flow',
   需求分析: 'Requirements',
@@ -1900,8 +1898,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '没有残留进程：所有对话的 CLI 都在跑或已经结束。':
     "No leftover processes: every conversation's CLI is either running or has exited.",
   '（不属于任何对话）': '(not part of any conversation)',
-  状态弹窗日志贴到最新: 'Stick the status log to the latest',
-  清理已合并的分支: 'Clean up merged branches',
   协议和接口地址: 'Protocols and endpoints',
   没有勾选这种协议: 'Protocol not enabled',
   '{protocol} 的接口地址': '{protocol} endpoint',
