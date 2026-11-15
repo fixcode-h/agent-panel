@@ -461,6 +461,8 @@ export function DiagnosisDialog({
             notes: [],
             overall,
           })
+          // 它正在回复：取消先记下，这一轮说完由面板执行（不再报错让你等着再点）
+          if (r.queued) toast.info(t('它正在回复，这一轮说完后取消'))
           if (r.message) await hand(r.message, [], r.task)
           else onDone?.(r.task)
         },

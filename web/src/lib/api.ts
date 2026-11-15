@@ -875,9 +875,10 @@ export const api = {
   decideDiagnosis: (
     id: string,
     version: number,
-    // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）
+    // cancel：这次不修，计划标完成，返回的 message 为空（不用发给子对话）；它正在回复时 queued 为真，这一轮结束后执行
     body: DiagnosisDecision,
-  ) => request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
+  ) =>
+    request<{ task: Task; message: string; queued?: boolean }>(`/tasks/${id}/diagnosis/${version}`, json('POST', body)),
   /** 「让它按对话更新报告」：报告之后你在对话里说过话，返回交给子对话的话（页面再作为消息发给它） */
   syncDiagnosis: (id: string) =>
     request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-sync`, json('POST', {})),

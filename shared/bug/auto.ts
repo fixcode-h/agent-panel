@@ -14,6 +14,7 @@ import { diagnosisView } from './diagnosis-md.ts'
 import { noFixOf, phaseFeedback, phaseOf, revOf } from './phase.ts'
 import { recheckCommands, recheckVerdict } from './recheck.ts'
 import { t } from '../i18n.ts'
+import { moveDiagnosis } from './transition.ts'
 
 /** 现在开着自动通过没有：看用户最近一次亲手同意的那一版勾没勾（之后用户每次同意都可以改） */
 export function autoOn(list: Diagnosis[]): boolean {
@@ -67,7 +68,7 @@ function autoLine(d: Diagnosis): string {
  * 修复这一版复核通过时验证合在一起（merged）
  */
 export function autoApprove(d: Diagnosis, now: string): { line: string; feedback: string } {
-  d.status = 'approved'
+  moveDiagnosis(d, 'approved')
   d.auto = true
   // 自动通过的这一版也带着「之后接着自动」：用户没亲手改过设置之前一直开着
   d.autoNext = true

@@ -6,6 +6,7 @@ import type { RealContext } from '../exec/real-context.ts'
 import { randomUUID } from 'node:crypto'
 import { waitingAfter } from '../../shared/children/after.ts'
 import { afterTurnCleanup } from './bug-cleanup.ts'
+import { afterTurnCancel } from './diagnosis-decide.ts'
 import { recheckAfterTurn } from './bug-recheck.ts'
 import {
   childActivity,
@@ -66,9 +67,11 @@ export async function conversationCaps(c: TurnCapsCtx) {
           sc.settleChildTurn(entry.task, turn)
           void sc.checkBudget(entry.task)
           // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug/cleanup.ts）
-          void afterTurnCleanup(sc, entry, randomUUID).catch((e) =>
-            log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }),
-          )
+          // 它回复时用户点的取消排在核对之后执行：先执行的话会把刚开始的删日志当成这一轮没删干净
+          void afterTurnCleanup(sc, entry, randomUUID)
+            .catch((e) => log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }))
+            .then(() => afterTurnCancel(sc, entry))
+            .catch((e) => log.warn('task', '执行排队的取消失败', { task: task.id, error: (e as Error).message }))
           // 交了修复 / 验证、写了回归测试命令：面板在改前和现在的代码上各跑一次（分析稿 B9）
           recheckAfterTurn(sc, task.id, randomUUID)
         }

@@ -6,14 +6,14 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { t } from '../../shared/i18n.ts'
-import { decideDiagnosis, diagnosisMessage, settleCleanup } from '../../shared/bug/diagnosis.ts'
+import { diagnosisMessage, pendingDiagnosis, settleCleanup } from '../../shared/bug/diagnosis.ts'
 import { retractChat, syncChat } from '../../shared/bug/chat.ts'
 import { DiagnosisNote } from '../../shared/bug/diagnosis-schema.ts'
 import { cleanupPrompt } from '../../shared/bug/cleanup.ts'
-import { phaseOf, revOf } from '../../shared/bug/phase.ts'
+import { revOf } from '../../shared/bug/phase.ts'
 import type { TasksScope } from './scope.ts'
-import { log } from '../log.ts'
-import { previewCleanup, snapshotLogBase, snapshotPre } from './bug-cleanup.ts'
+import { previewCleanup } from './bug-cleanup.ts'
+import { applyDecision, queueCancel } from './diagnosis-decide.ts'
 import { readTask } from './read.ts'
 
 const Decision = z.object({
@@ -60,8 +60,6 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const { entry, task } = await taskOf(c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
-    // 取消要收口计划：它在回复（等确认期间用户又发了话）时会和这一轮抢着写，等它停下再取消
-    if (body.data.cancel && task.working) return s.bad(c, t('它正在回复，等这一轮结束再取消'), 409)
     const version = Number(c.req.param('version'))
     if (body.data.retract) {
       const now = new Date().toISOString()
@@ -73,30 +71,16 @@ export function registerDiagnosisRoutes(s: TasksScope) {
       const saved = await s.store.update(task.id, task)
       return c.json({ task: saved ?? task, message: r.message })
     }
-    const dir = await s.taskDir(task).catch(() => '')
-    // 取消：服务端自己查临时日志（不信页面传的），有就先叫它删；用户勾的新文件只认查出来的那几个
-    let cleanup
-    if (body.data.cancel) {
-      const p = await previewCleanup(task, dir)
-      const drop = body.data.drop.filter((f) => p.created.includes(f))
-      const files = [...new Set(p.found.map((x) => x.file))]
-      cleanup = { found: p.found, drop, revertFix: body.data.revertFix, pre: await snapshotPre(task, dir, files) }
+    // 取消要收口计划：它在回复（等确认期间用户又发了话）时会和这一轮抢着写，记下来等这一轮结束再执行（摸底报告第 19 条）
+    if (body.data.cancel && task.working) {
+      if (!pendingDiagnosis(task) || pendingDiagnosis(task)?.version !== version)
+        return s.bad(c, t('这一版诊断报告已经处理过了'), 409)
+      queueCancel(task.id, version, body.data)
+      return c.json({ task, message: '', queued: true })
     }
-    const r = decideDiagnosis(task, version, body.data, randomUUID, undefined, cleanup)
+    const r = await applyDecision(s, task, entry, version, body.data)
     if (!r.ok) return s.bad(c, r.error, 409)
-    // 同意加日志：给日志计划里的文件拍快照，取消修复后核对「日志和空行删干净了」用（不拿来还原）
-    const d = task.bug?.diagnoses?.find((x) => x.version === version)
-    if (d && body.data.approve && phaseOf(d) === 'evidence') await snapshotLogBase(task, dir, d).catch(() => {})
-    if (body.data.cancel) task.updatedAt = new Date().toISOString()
-    if (entry) entry.rev++
-    const saved = await s.store.update(task.id, task)
-    // 取消且不用删临时日志：报告当场关闭，不交话给子对话、也不会再开一轮，没有别的时机上报父对话了。
-    // 不报的话父计划那一步一直「还在等它」（摸底报告第 4 条）；要删日志的等核对完由那一轮的收口上报
-    if (body.data.cancel && !r.message && task.parentTaskId)
-      await s
-        .reportToParent(saved ?? task)
-        .catch((e) => log.warn('task', '取消修复后上报父对话失败', { task: task.id, error: (e as Error).message }))
-    return c.json({ task: saved ?? task, message: r.message })
+    return c.json({ task: r.task, message: r.message })
   })
 
   /** 「让它按对话更新报告」：报告之后你在对话里说过话，请它把对话里定下的整理进报告（shared/bug/chat.ts） */

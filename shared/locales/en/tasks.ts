@@ -1780,7 +1780,9 @@ export const EN_TASKS: Record<string, string> = {
     "To send it back, say what's in question: annotate first, or write an overall comment",
   '你取消了诊断报告第 {n} 版，这次不修了，没做的步骤已标记跳过':
     'You cancelled diagnosis report v{n}; no fix this time, and the remaining steps are marked skipped',
-  '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",
+  '它正在回复，这一轮说完后取消': "It's replying; the cancel takes effect when this turn ends",
+  '你点的取消没有执行：它这一轮交了新的一版，要取消请在新一版上再点':
+    'Your cancel was not applied: it submitted a new version this turn. To cancel, use the new version',
   '改用方案 {id}': 'Use option {id}',
   '方案 {id}：{title}': 'Option {id}: {title}',
   改用这个方案: 'Use this option instead',

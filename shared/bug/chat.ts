@@ -13,6 +13,7 @@ import type { Task, TaskMessage } from '../schema.ts'
 import type { Diagnosis } from './diagnosis-schema.ts'
 import { editScope, labelOf, normPath, outOfPlan, PHASE_TEXT, phaseFeedback, phaseOf, revOf } from './phase.ts'
 import { t } from '../i18n.ts'
+import { moveDiagnosis } from './transition.ts'
 
 export type ChatQuote = { id: string; at: string; text: string }
 
@@ -134,7 +135,7 @@ export function applyChat(
   const phase = phaseName(d)
   if (!chat.confirm) return { line: t('它按你在对话里说的更新了诊断报告：第 {n} 版{phase}，等你确认', { n, phase }) }
   const last = chat.said[chat.said.length - 1]
-  d.status = 'approved'
+  moveDiagnosis(d, 'approved')
   d.approvedBy = { kind: 'chat', id: last.id, at: last.at }
   d.decidedAt = now
   return {
@@ -218,7 +219,7 @@ export function retractChat(
   const d = list.at(-1)
   if (!d || d.version !== version || d.status !== 'approved' || d.approvedBy?.kind !== 'chat')
     return { ok: false, error: t('这一版不是按对话确认的，或者后面已经交了新的一版') }
-  d.status = 'pending'
+  moveDiagnosis(d, 'pending')
   d.approvedBy = undefined
   d.decidedAt = undefined
   line(d.version, t('你撤回了在对话里对第 {n} 版的确认，等你在报告上决定', { n: labelOf(d, list).ver }))

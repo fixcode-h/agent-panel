@@ -51,6 +51,7 @@ import { autoApprove, autoBlock, autoOn } from './auto.ts'
 import { ranInConversation, recheckCommands, recheckVerdict } from './recheck.ts'
 import { applyChat, chatOf, chatReplaces } from './chat.ts'
 import { reopenedAfterCancel, reopenInfo } from './reopen.ts'
+import { moveDiagnosis } from './transition.ts'
 
 type DiagTask = Pick<Task, 'bug' | 'messages' | 'changes'>
 
@@ -492,7 +493,7 @@ function submitOnce(
       }
   }
   // 用户的决定（取消、同意、贴了日志）留着：那是用户做过的事，不是被新一版顶掉的
-  if (prev && (prev.status === 'pending' || prev.status === 'questioned')) prev.status = 'superseded'
+  if (prev && (prev.status === 'pending' || prev.status === 'questioned')) moveDiagnosis(prev, 'superseded')
   const version = (prev?.version ?? 0) + 1
   const { rev, overturned } = nextRev(list, phase)
   const { result, updatedAt: _u, rejects: _r, ...body } = c
@@ -610,7 +611,7 @@ export function requestLogs(
   const parsed = input.collect === undefined ? undefined : BugCollect.safeParse(input.collect)
   const collect = parsed?.success ? parsed.data : d.collect
   if (!collect?.steps.length) return { ok: false, info: 'collect.steps 要写用户怎么复现（日志计划里没写时这里补上）。' }
-  d.status = 'pending'
+  moveDiagnosis(d, 'pending')
   d.awaiting = { at: now, added: added.slice(0, 50), collect }
   d.collect = collect
   return {
@@ -718,13 +719,13 @@ export function decideDiagnosis(
     const logs = (decision.logs ?? '').trim()
     const logFiles = (decision.logFiles ?? []).filter(Boolean).slice(0, 20)
     if (!logs && !logFiles.length) return { ok: false, error: t('先贴日志或引入日志文件') }
-    d.status = 'answered'
+    moveDiagnosis(d, 'answered')
     d.logs = logs.slice(0, MAX_LOGS)
     d.logFiles = logFiles
   } else {
     if (!decision.approve && !notes.length && !decision.overall.trim())
       return { ok: false, error: t('退回要写清哪里有疑问：先标注，或者写整体意见') }
-    d.status = decision.approve ? 'approved' : 'questioned'
+    moveDiagnosis(d, decision.approve ? 'approved' : 'questioned')
     if (!decision.approve) d.intent = decision.intent ?? (phase === 'verify' ? 'reject' : 'ask')
     if (decision.approve) {
       d.autoNext = !!decision.autoNext
@@ -757,7 +758,7 @@ export function cancelDiagnosis(
 ): { ok: true; message: string } | { ok: false; error: string } {
   const d = pendingDiagnosis(task)
   if (!d || d.version !== version) return { ok: false, error: t('这一版诊断报告已经处理过了') }
-  d.status = 'cancelled'
+  moveDiagnosis(d, 'cancelled')
   d.notes = []
   d.overall = overall.trim()
   d.decidedAt = now
