@@ -467,3 +467,37 @@ function b64(bytes) {
 }
 
 void loop()
+
+// ---- 允许嵌入（面板的网页页签） ----
+// 有的网站回 X-Frame-Options / CSP frame-ancestors，不许别的网页用 iframe 嵌入，面板的网页页签里就是一块空白。
+// 用户在扩展弹窗里按站点打开「允许嵌入」后，只对「面板页面（127.0.0.1 / localhost）里嵌的这个站点的子框架」
+// 去掉这两个响应头：用户自己在浏览器里直接打开这些网站时不受影响。默认一个站点都没有。
+const EMBED_RULE_BASE = 9000
+
+async function syncEmbedRules() {
+  const { embedSites = [] } = await chrome.storage.local.get('embedSites')
+  const old = await chrome.declarativeNetRequest.getDynamicRules()
+  const removeRuleIds = old.filter((r) => r.id >= EMBED_RULE_BASE).map((r) => r.id)
+  const addRules = embedSites.map((site, i) => ({
+    id: EMBED_RULE_BASE + i,
+    priority: 1,
+    action: {
+      type: 'modifyHeaders',
+      responseHeaders: [
+        { header: 'x-frame-options', operation: 'remove' },
+        { header: 'content-security-policy', operation: 'remove' },
+      ],
+    },
+    condition: {
+      requestDomains: [site],
+      resourceTypes: ['sub_frame'],
+      initiatorDomains: ['127.0.0.1', 'localhost'],
+    },
+  }))
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules })
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.embedSites) void syncEmbedRules().catch(() => {})
+})
+chrome.runtime.onInstalled.addListener(() => void syncEmbedRules().catch(() => {}))

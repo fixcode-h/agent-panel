@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task } from '../../shared/schema.ts'
-import { upgradeChildToBug, BUG_UPGRADE_HEAD } from './bug-upgrade.ts'
+import { upgradeChildToBug } from './bug-upgrade.ts'
+import { BUG_UPGRADE_HEAD } from '../../shared/prompt/letters/notice.ts'
 import { upgradeBugArg } from '../children/kind-fields.ts'
 
 /** 父对话把已有子对话升级成用户报的 Bug（send_to_conversation 写 kind: "bug"，ADR 0057） */

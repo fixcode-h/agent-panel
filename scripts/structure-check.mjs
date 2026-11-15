@@ -74,6 +74,7 @@ export function measure(root) {
     moduleState: {},
     uiLiveFields: {},
     intervals: {},
+    requests: {},
     unreadable: [],
   }
   for (const dir of FLAT_DIRS) m.flatFiles[dir] = []
@@ -136,6 +137,12 @@ export function measure(root) {
         if (/\bsetInterval\(/.test(codeLines[i]) && !marked(lines, i, /interval-ok/)) n++
       })
       if (n) m.intervals[f] = n
+      // 手写的 request<T>(url) / request(url)：返回类型和服务端没有编译期关联，新接口按契约走 call（ADR 0062）。
+      // call.ts 是契约调用自己的出口，不算
+      if (f !== 'web/src/lib/api/call.ts') {
+        const r = (code.match(/\brequest\s*[<(]/g) ?? []).length
+        if (r) m.requests[f] = r
+      }
     }
   }
   for (const dir of FLAT_DIRS) m.flatFiles[dir].sort()
@@ -156,6 +163,8 @@ const CAPPED_MAPS = {
     `${f}：直接读对话的 status / working / cliAlive 这类运行时字段 ${n} 处（基线 ${cap}）。界面上的对话状态只从 convState 派生（shared/task.ts、web/src/lib 里的工具函数），缺的显示加进那里`,
   intervals: (f, n, cap) =>
     `${f}：setInterval ${n} 处（基线 ${cap}）。走表用 web/src/lib/useNow.ts；拉数据不要再加轮询，用已有的推送（task-stream）；确实要定时的写 interval-ok: 原因`,
+  requests: (f, n, cap) =>
+    `${f}：手写 request<T>() / request() ${n} 处（基线 ${cap}）。新接口和改到的接口在 shared/api-contract/<模块>.ts 写契约、前端用 web/src/lib/api/call.ts 的 call(ep, …) 调，并加进 shared/api-contract/probe.ts（docs/lessons/structure.md，ADR 0062）`,
 }
 
 /** 和基线比：变差了就返回错误 */
@@ -214,7 +223,7 @@ export function checkStructure(root) {
   }
   for (const [key, msg] of Object.entries(CAPPED_MAPS))
     for (const [f, n] of Object.entries(m[key])) {
-      const cap = caps[key][f] ?? 0
+      const cap = caps[key]?.[f] ?? 0
       if (n > cap) errors.push(msg(f, n, cap))
     }
   return errors
@@ -247,7 +256,8 @@ function update(root) {
     ...Object.fromEntries(Object.entries(m.hostMembers).filter(([k]) => !(k in caps.hostMembers))),
     ...shrink(caps.hostMembers, m.hostMembers),
   }
-  for (const key of Object.keys(CAPPED_MAPS)) caps[key] = shrink(caps[key], m[key])
+  // 新加的一项第一次按现状记基线，之后只降不升
+  for (const key of Object.keys(CAPPED_MAPS)) caps[key] = caps[key] ? shrink(caps[key], m[key]) : m[key]
   writeCaps(file, caps)
   console.log('基线已收紧到现状')
 }

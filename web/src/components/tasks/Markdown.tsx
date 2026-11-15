@@ -3,6 +3,7 @@ import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
+import { openWebTab, useWebHost } from '@/lib/web-view/tabs'
 import { splitSummaryCards, unfenceSummaries, type SummaryCard } from '@shared/summary/card'
 import { isBareFileName, linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
@@ -10,6 +11,8 @@ import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { useMdTables } from './md-table-layer'
+import { useHtmlCards } from './html-card-layer'
+import { htmlCardSlots } from '@/lib/markdown/html-cards'
 import '@/components/ui/call-tree.css'
 import {
   enhanceMermaid,
@@ -129,10 +132,19 @@ function renderReply(text: string, teamNames: Set<string>, live?: boolean, act?:
  */
 export function SummaryCardView({ card }: { card: SummaryCard }) {
   const openSummary = useChildSummaryOpen()
+  const webHost = useWebHost()
   const canJump = !!openSummary
   // card 是 ReceivedRow 每次渲染新建的对象，用 useMemo 永远命中不了，直接算
   const html = cardHtml(card, new Set(), false, false, canJump)
   const onClick = (e: React.MouseEvent) => {
+    // 回复里的网址：直接点在对话右栏的网页页签里打开；按着 Ctrl / ⌘ / Shift 点照浏览器默认（新标签页）
+    const a = webHost && (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]')
+    const href = a ? (a.getAttribute('href') ?? '') : ''
+    if (webHost && /^https?:\/\//i.test(href) && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      openWebTab(webHost.taskId, { kind: 'url', url: href })
+      return
+    }
     const go = (e.target as HTMLElement).closest<HTMLElement>('[data-child-summary]')
     if (go && openSummary) openSummary(go.dataset.childSummary ?? '')
   }
@@ -187,8 +199,10 @@ export function Markdown({
     const h = cards
       ? renderReply(deferred, teamNames, live, canAct, canJump)
       : renderDoc(unfenceSummaries(deferred), teamNames, live)
-    return canOpen ? linkPaths(h) : h
-  }, [deferred, teamNames, canOpen, live, ready, canAct, cards, canJump])
+    if (!canOpen) return h
+    // 任务页里回复停下后，HTML 文件换成 HTML 卡片（占位在这里放，卡片由 useHtmlCards 挂上）
+    return refs && !live ? htmlCardSlots(linkPaths(h)) : linkPaths(h)
+  }, [deferred, teamNames, canOpen, live, ready, canAct, cards, canJump, refs])
 
   useEffect(() => {
     const root = ref.current
@@ -261,6 +275,8 @@ export function Markdown({
 
   // 表格：复制菜单、全屏、点表头排序（md-table-layer.tsx）
   const tables = useMdTables(ref, html, live)
+  // 回复里的 HTML 文件卡片（设计稿 6.6）
+  const htmlCards = useHtmlCards(ref, html, live)
 
   /** 行内代码里单独的文件名（不带目录，2026-11-07 起按代码显示）：悬停时去对话目录里找完整路径 */
   const nameAt = (e: React.SyntheticEvent) => {
@@ -363,6 +379,7 @@ export function Markdown({
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {tables.layer}
+      {htmlCards}
     </>
   )
 }

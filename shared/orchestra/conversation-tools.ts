@@ -11,6 +11,7 @@ import { activePlan, bindWait, PARENT_FIX_REF, ensureChildStep } from '../plan/i
 import { handedOff, SENT_NOTE, recordRoute } from './route.ts'
 import type { Orchestra } from '../engine/host.ts'
 import type { OrchCtx } from './ctx.ts'
+import { FIX_HEAD } from '../prompt/letters/fix.ts'
 
 /** 对话类工具：子对话的列表、创建、交代，给父对话传话，父对话之间协调，文件认领，共享状态 */
 export function conversationTools(oc: OrchCtx) {
@@ -142,7 +143,7 @@ export function conversationTools(oc: OrchCtx) {
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
       const at = waitFix?.trim()
       // 写明这是要父对话分派修复的报错：父对话按「编译、测试报错的分派」规则找改出它的子对话（见 shared/fix-route.ts）
-      const body = at ? `【报错不是我改出来的，请安排修复后通知我】\n${text.trim()}` : text.trim()
+      const body = at ? `${FIX_HEAD}\n${text.trim()}` : text.trim()
       const r = await host.messageParent(body, question, options, kind, !!at)
       if (!r.ok || !at) return r
       const wait = bindWait(task, at, { kind: 'parent', ref: PARENT_FIX_REF, label: '父对话安排修复' })

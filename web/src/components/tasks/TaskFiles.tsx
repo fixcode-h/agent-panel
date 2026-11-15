@@ -38,6 +38,9 @@ import type { DiagnosisRail } from './diagnosis-window'
 import { DiffDialog } from './DiffDialog'
 import { useTaskTabs } from '@/plugins/registry'
 import { FileDialog } from './FileDialog'
+import { useWebTabs } from '@/lib/web-view/tabs'
+import { WebTabView } from './view/WebTabView'
+import { WebTabItems, useWebRail } from './view/web-rail-tabs'
 
 /**
  * 执行中文件改动合并的时间窗。一次工具调用可能连着改好几个文件，
@@ -122,7 +125,9 @@ export function TaskFiles({
   // 插件给的页签（ADR 0059，例如模型设计的「模型」）：标了 home 的默认停在它上面，建模时要盯的是模型，不是文件
   const pluginTabs = useTaskTabs(task)
   const home = pluginTabs.find((x) => x.home)?.id ?? 'files'
-  const [tab, setTab] = useState<string>(child ? 'child' : home)
+  // 网页页签（设计稿第 6 节）：按对话记在这台浏览器里；刚用 openWebTab 打开的（shown）挂上时直接停在它上面
+  const web = useWebTabs(task.id)
+  const [tab, setTab] = useState<string>(web.shown ? `web:${web.shown}` : child ? 'child' : home)
   // 新开（或换了）子对话就切到它的页签；关掉后回默认页签
   const childId = child?.id ?? ''
   const childFocus = child?.focus
@@ -142,6 +147,9 @@ export function TaskFiles({
   const onChild = tab === 'child' && !!child
   const onPlugin = pluginTabs.find((x) => x.id === tab)
   const onModel = !!onPlugin
+  const onWeb = useWebRail(task.id, web, tab, setTab, home)
+  /** 右栏正显示的不是文件 / 改动页（文件页的工具和信息行都不画） */
+  const onOther = onChild || onModel || onReport || !!onWeb
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [target, setTarget] = useState<{ path: string; line?: number; local?: boolean } | null>(null)
@@ -213,7 +221,7 @@ export function TaskFiles({
         trailing={
           <>
             {child && <div ref={setChildSlot} className={cn('flex items-center gap-0.5', !onChild && 'hidden')} />}
-            {!onChild && !onModel && !onReport && (
+            {!onOther && (
               <>
                 {tab === 'files' ? (
                   <IconButton
@@ -330,7 +338,9 @@ export function TaskFiles({
             <span data-report-tab>{t('诊断报告')}</span>
           </TabItem>
         )}
+        <WebTabItems taskId={task.id} tabs={web.tabs} current={onWeb?.id} onSelect={(id) => setTab(`web:${id}`)} />
       </TabBar>
+      {onWeb && <WebTabView key={onWeb.id} tab={onWeb} taskId={task.id} projectId={task.projectId} />}
       {/* 停靠的诊断报告：报告组件挂在任务页顶层，用 Portal 画进这块；切到别的页签只是藏起来 */}
       {report && <div ref={report.setSlot} className={cn('flex min-h-0 flex-1 flex-col', !onReport && 'hidden')} />}
       {/* 子对话页签：切到文件、改动时只是藏起来，不卸载 */}
@@ -348,7 +358,7 @@ export function TaskFiles({
           <onPlugin.Panel task={task} />
         </Suspense>
       )}
-      {!onChild && !onModel && !onReport && (
+      {!onOther && (
         <>
           {/* 项目信息行：分支 · 改动数，只放信息；这一页的工具在页签条右端（ADR 0047） */}
           <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b px-4 text-footnote text-subtle">

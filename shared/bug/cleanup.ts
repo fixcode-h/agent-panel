@@ -6,7 +6,7 @@
  * 这里只放纯函数（查日志、逐行比较、核对、给 Agent 的话），读写文件在 server/tasks/bug-cleanup.ts
  */
 
-/** 临时日志的统一前缀（`[排查-<主题>]`），和收尾核对（server/tasks/merge.ts）同一个 */
+/** 临时日志的统一前缀（`[排查-<主题>]`），和收尾核对（server/tasks/merge/submit.ts）同一个 */
 export const TEMP_LOG = '[排查-'
 
 /** 文件里的一行：行号从 1 起，text 是那一行原文（去掉行尾空白） */

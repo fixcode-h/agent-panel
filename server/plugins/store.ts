@@ -11,6 +11,7 @@ import {
   type PluginManifest as Manifest,
 } from '../../shared/plugins/types.ts'
 import { hostModulesError, missingHostModules } from '../../shared/plugins/host-modules-check.ts'
+import { usesApi11 } from '../../shared/plugins/runtime-schema.ts'
 import { DATA_DIR } from '../store.ts'
 import { safeRel, type ZipEntry } from './zip.ts'
 
@@ -84,7 +85,24 @@ export function parseManifest(raw: unknown): Manifest {
   // 钩子脚本、命令文件也只能在包里（插件接口 3）
   for (const f of [...m.hooks.map((h) => h.script), ...m.commands.map((c) => c.file)])
     if (f && !safeRel(f)) throw new Error(`包里的文件路径不对：${f}`)
+  checkRuntimeFields(m)
   return m
+}
+
+/** 插件接口 11 的字段（runtime-schema.ts）：要声明 api 11，路径只能在包里，页面指的托管进程要存在 */
+function checkRuntimeFields(m: Manifest) {
+  if (usesApi11(m) && m.api < 11) throw new Error('用了 env / mcp / services / webPages / wrap 的插件要写 "api": 11')
+  const pathVar = Object.entries(m.env).find(([k]) => k.toUpperCase() === 'PATH')?.[1]
+  for (const d of typeof pathVar === 'object' ? pathVar.prepend : [])
+    if (!safeRel(d)) throw new Error(`PATH 只能前置包里的目录：${d}`)
+  for (const s of m.services) if (s.cwd !== '.' && !safeRel(s.cwd)) throw new Error(`托管进程的工作目录不对：${s.cwd}`)
+  const ids = new Set(m.services.map((s) => s.id))
+  for (const p of m.webPages) {
+    const sv = /^service:([a-z][a-z0-9-]*)\//.exec(p.url)?.[1]
+    if (sv && !ids.has(sv)) throw new Error(`网页页面「${p.label}」指的托管进程 ${sv} 在 services 里没有`)
+    if (p.url.startsWith('file:') && !safeRel(p.url.slice(5).split(/[?#]/)[0]))
+      throw new Error(`网页页面的路径不对：${p.url}`)
+  }
 }
 
 async function readPackage(dir: string): Promise<Manifest> {
@@ -159,7 +177,14 @@ async function currentVersion(dir: string) {
  * 把包里的文件写进 plugins/<id>/：先写临时目录再换掉旧的，中途失败不留半个插件。
  * 旧的那一版不删，挪到 plugins/.prev/<id>/ 留着退回用（只留一版）
  */
-export async function writePackage(id: string, files: ZipEntry[], root: string, source: PluginSource) {
+export async function writePackage(
+  id: string,
+  files: ZipEntry[],
+  root: string,
+  source: PluginSource,
+  /** 换上去之前在临时目录里做的事（包装插件的安装动作）：失败时删掉临时目录，旧版本不动 */
+  prepare?: (dir: string) => Promise<void>,
+) {
   const dest = path.join(PLUGINS_DIR, id)
   const tmp = `${dest}.tmp-${process.pid}-${Date.now()}`
   await rm(tmp, { recursive: true, force: true })
@@ -171,6 +196,11 @@ export async function writePackage(id: string, files: ZipEntry[], root: string, 
     await mkdir(path.dirname(full), { recursive: true })
     await writeFile(full, f.data)
   }
+  if (prepare)
+    await prepare(tmp).catch(async (e: unknown) => {
+      await rm(tmp, { recursive: true, force: true })
+      throw e
+    })
   const previousVersion = existsSync(dest) ? await currentVersion(dest).catch(() => '') : ''
   await writeFile(
     path.join(tmp, RECORD),

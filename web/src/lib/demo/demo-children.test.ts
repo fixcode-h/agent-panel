@@ -23,7 +23,7 @@ test('演示版子对话行：带 childNeeds，摘要为空时取最后一条回
   const child = make('c1', 'p1', {
     messages: [{ id: 'm1', role: 'agent', agentId: '', step: '', text: '  改好了\n两个文件 ', tools: [], at: iso }],
   })
-  const grand = make('g1', 'c1', { parentAsks: [{ id: 'a1', question: '用哪个？', options: [] }] })
+  const grand = make('g1', 'c1', { child: { parentAsks: [{ id: 'a1', question: '用哪个？', options: [] }] } })
   const [row] = demoChildRows(parent, [parent, child, grand], () => false)
   assert.equal(row.childNeeds, 1, '孙对话在提问，子对话行也算等你处理')
   assert.equal(row.summary, '改好了 两个文件')

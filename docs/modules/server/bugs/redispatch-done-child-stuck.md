@@ -2,7 +2,7 @@
 
 - 状态：已修复（`server/tasks/keepalive-endlive.test.ts` 通过；没能用真实 CLI 复现，见下面「复现」）
 - 症状：子对话收尾成功、已完成，父对话觉得不合适又把修改交给它；子对话里能看到父对话发来的任务，但一直显示「等待模型」不开始。用户停止后点继续，子对话开始输出，却完全不知道父对话刚交代的任务
-- 入口：`server/tasks/children.ts` 的 `completeChild`、`server/tasks/keepalive.ts` 的 `endLive`、`server/tasks/child-messages.ts` 的 `sendToChild`、`server/tasks/asks.ts` 的 `wakeConv`、`server/tasks/run.ts` 的 `followUp` / `deliver`
+- 入口：`server/tasks/children/complete.ts` 的 `completeChild`、`server/tasks/keepalive.ts` 的 `endLive`、`server/tasks/child-messages.ts` 的 `sendToChild`、`server/tasks/asks.ts` 的 `wakeConv`、`server/tasks/run.ts` 的 `followUp` / `deliver`
 - 根因类型：收尾停不下来的那份执行一直占着执行位，后来的消息被交进一份已经没有进程在跑的执行
 - 模块：`server`（`server/tasks/keepalive.ts`、`server/tasks/run.ts`、`server/tasks/index.ts`）
 - 关键词：子对话完成后再交代、send_to_conversation、等待模型、不启动、继续后不知道新任务、endLive、执行位、不再等它、abandonLive、orphaned

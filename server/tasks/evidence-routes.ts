@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 /**
  * Bug 诊断「取证」的两组接口（分析稿 B1、B3）：
  * - 排查补丁放到用户工作区 / 还原（server/tasks/bug-patch.ts）；
@@ -26,7 +27,8 @@ const WatchAction = z.object({
 
 const stateDir = (taskId: string, kind: 'patch' | 'log') => path.join(TASK_FILES_DIR, taskId, 'evidence', kind)
 
-export function registerEvidenceRoutes(s: TasksScope) {
+export function evidenceRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   /** 只对 Git 项目、对话在独立分支里时有补丁这回事（P4 / SVN / 共用目录：改动本来就在工作区，或没法保证还原干净） */
   const patchCtx = async (task: Task) => {
     const wt = task.worktree?.state === 'active' ? task.worktree : null
@@ -46,13 +48,13 @@ export function registerEvidenceRoutes(s: TasksScope) {
     applied: appliedOf(await loadPatch(stateDir(task.id, 'patch'))),
   })
 
-  s.routes.get('/:id/diagnosis-patch', async (c) => {
+  app.get('/:id/diagnosis-patch', async (c) => {
     const task = await readTask(s, c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     return c.json(await statusOf(task, !!(await patchCtx(task))))
   })
 
-  s.routes.post('/:id/diagnosis-patch', async (c) => {
+  app.post('/:id/diagnosis-patch', async (c) => {
     const body = PatchAction.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const task = await readTask(s, c.req.param('id'))
@@ -81,12 +83,12 @@ export function registerEvidenceRoutes(s: TasksScope) {
     return reply(await applyPatch(ctx, kind, patchFilesOf(list, kind)))
   })
 
-  s.routes.get('/:id/diagnosis-log', async (c) => {
+  app.get('/:id/diagnosis-log', async (c) => {
     const m = await loadMark(stateDir(c.req.param('id'), 'log'))
     return c.json({ started: m && { path: m.path, at: m.at } } satisfies LogWatchStatus)
   })
 
-  s.routes.post('/:id/diagnosis-log', async (c) => {
+  app.post('/:id/diagnosis-log', async (c) => {
     const body = WatchAction.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const task = await readTask(s, c.req.param('id'))
@@ -107,4 +109,5 @@ export function registerEvidenceRoutes(s: TasksScope) {
         : await fetchWatch(where, dirs, body.data.confirm),
     )
   })
+  return app
 }

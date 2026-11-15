@@ -30,7 +30,7 @@ export function demoLifecycle(task: Task, tasks: Task[]): LifeReport {
   const shownOf = (tk: Task) => ({
     ...tk,
     childrenNeeds: needs.get(tk.id) ?? 0,
-    // 正式后端只给顶层对话补在跑的子对话数（见 server/tasks/children.ts 的 withLive）
+    // 正式后端只给顶层对话补在跑的子对话数（见 server/tasks/live.ts 的 withLive）
     ...(!tk.parentTaskId && {
       childrenWorking: tasks.filter((k) => k.parentTaskId === tk.id && convActive(taskState(k))).length,
     }),

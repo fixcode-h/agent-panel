@@ -356,7 +356,6 @@ const idleChild = () =>
     status: 'running',
     working: false,
     requests: [],
-    parentAsks: [],
     plans: [],
     steps: [],
   }) as unknown as Task

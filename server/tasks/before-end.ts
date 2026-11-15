@@ -5,7 +5,6 @@ import { isChatMode } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
 import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan/index.ts'
 import {
-  CHECK_REMINDER,
   idleReminders,
   inputIndex,
   isActTool,
@@ -23,6 +22,8 @@ import { changedSomething } from '../exec/turn-info.ts'
 import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
 import { freshTask, readTask } from './read.ts'
+import { mergeOwedBlock, wrapWaitingBlock } from '../../shared/prompt/letters/wrap.ts'
+import { CHECK_REMINDER, planBlock } from '../../shared/prompt/letters/nudge.ts'
 
 /**
  * 对话（顶层对话、子对话）的结束前判断（ADR 0049）：模型准备结束这一轮时 CLI 问到这里，
@@ -53,7 +54,7 @@ export function createBeforeEnd(
     if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
     if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
     if (helpersWorking(tk) || runRunning(tk)) return 'helpers'
-    const wrap = tk.wrapRequest?.state
+    const wrap = tk.child?.wrapRequest?.state
     if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return `wrap:${wrap}`
     return ''
   }
@@ -118,16 +119,11 @@ export function createBeforeEnd(
     // 子对话请父对话收尾了、父对话还没处理：先收尾（这时计划那一步写着「等子对话」，按计划会当成在等别人）
     const wrap = await wrapWaiting(tk)
     if (wrap.length) {
-      const lines = wrap.map(
-        (k) =>
-          `- 「${k.title}」（id ${k.id}）：${k.worktree?.state === 'active' ? '合回它的独立分支' : '验收它的改动'}，验证够了就调用 finish_child（id ${k.id}）；要它补的用 send_to_conversation 交回`,
-      )
       return block(
         tk,
         'wrap-pending',
-        `wrap:${wrap.map((k) => `${k.id}@${k.wrapRequest!.at}`).join(',')}`,
-        `【面板】这些子对话已经请你收尾，它们一直在等你，先处理再结束：\n${lines.join('\n')}\n` +
-          '直接调用工具处理，不用先说明；收尾请求里有它的验证结果，核对后决定合回还是交回。',
+        `wrap:${wrap.map((k) => `${k.id}@${k.child?.wrapRequest!.at}`).join(',')}`,
+        wrapWaitingBlock(wrap.map((k) => ({ id: k.id, title: k.title, branch: k.worktree?.state === 'active' }))),
       )
     }
 
@@ -136,15 +132,7 @@ export function createBeforeEnd(
     const merge = mergeOwedOf(tk, false)
     if (merge) {
       sc.mergeNudged.add(tk.id)
-      return block(
-        tk,
-        'merge-owed',
-        `merge:${inputOf(tk)}`,
-        isolated(tk)
-          ? '【面板】你还没请父对话收尾：独立分支里的改动没合回之前不算做完。按「验证」跑通编译和测试，然后直接调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；不要自己 git merge。验证没过就修好再交，确实不该合并就调用 end_turn（outcome: blocked）说明原因。'
-          : '【面板】你还没请父对话验收：改了代码先按「收尾前评审」派评审、逐条处置，按「验证」跑通编译和测试，再直接调用 submit_merge（tests 写上跑了什么、结果如何，handoff 写交接要点）。确实不该交付就调用 end_turn（outcome: blocked）说明原因。',
-        { merge },
-      )
+      return block(tk, 'merge-owed', `merge:${inputOf(tk)}`, mergeOwedBlock(isolated(tk)), { merge })
     }
 
     // 它用 end_turn 交代做完了（计划没做完时 end_turn 会被拒，走不到这里）
@@ -159,20 +147,10 @@ export function createBeforeEnd(
       const left = openWork(tk)
       const failed = left.find(needsFix)
       const next = failed ?? left.find((s) => s.status === 'running') ?? left[0]
-      return block(
-        tk,
-        'plan-open',
-        planProgressKey(plan),
-        `【面板】你的计划才做了 ${p.done}/${p.total}，也没有在等任何结果，先别结束。` +
-          (failed
-            ? `「${failed.title}」${failed.note}。先查清原因、修好后重做；确实不做了就标成跳过并说明原因，然后接着做计划。`
-            : next
-              ? `接着做「${next.title}」：`
-              : '接着做下一步：') +
-          '直接调用工具去做，不用先说明；一步做完就用 set_plan 标完成，接着做下一步，直到计划做完再调用 end_turn（outcome: done）。' +
-          '确实做不下去就调用 end_turn（outcome: blocked），need 写卡在哪一步、需要什么。',
-        { done: p.done, total: p.total },
-      )
+      return block(tk, 'plan-open', planProgressKey(plan), planBlock({ done: p.done, total: p.total, failed, next }), {
+        done: p.done,
+        total: p.total,
+      })
     }
 
     // 没列计划、也没用 end_turn 交代结束：问一句做完没有（用户 2026-11-05 定的说法），提醒不画进对话

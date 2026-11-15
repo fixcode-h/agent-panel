@@ -101,7 +101,6 @@ import {
   MAX_HELPERS_PER_STEP,
   MAX_RESUME_IDS,
   REVIEW_SOFT_LIMIT_MS,
-  REVIEW_WRAP_NOTE,
   briefMissing,
   briefPart,
   helperLabel,
@@ -122,25 +121,19 @@ import {
 import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './host.ts'
 
 import { bindWait, finishStepNow, WRAP_UP } from '../plan/index.ts'
+import {
+  REVIEW_WRAP_NOTE,
+  helperPrompt,
+  resumeSection,
+  retrySection,
+  sideChatPrompt,
+} from '../prompt/letters/helper.ts'
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
 
 /** 节点提示词里节点自己的部分从这里开始，前面是同一个任务里各节点共用的部分 */
 export const NODE_PART = '## 当前节点'
-
-/** 子任务结果交给对话的 CLI。preempt：它正在回复等待期间的用户消息，先放下那条，做完再回去 */
-export const helperPrompt = (late: string, preempt = false) =>
-  preempt
-    ? `【面板】你派出的子任务都结束了。先放下正在回复的这条用户消息，根据下面的结果把派子任务之前的工作做完；` +
-      `做完后再回到那条用户消息，接着回复还没回复完的部分。\n\n${late}`
-    : `【面板】你派出的子任务都结束了，结果如下：\n\n${late}\n\n请根据这些结果接着做。`
-
-/** 等子任务期间用户发来的消息：马上回复，子任务的结果交回后再接着之前的工作 */
-export const sideChatPrompt = (text: string) =>
-  '【面板】你派出的子任务还在执行，用户在等待期间发来了消息。请直接回复这条消息，不要停下来等子任务；' +
-  '需要用到子任务结果的部分说明会在结果交回后处理。子任务全部交回后面板会把结果交给你，到时先处理结果，' +
-  `再回到这里没做完的部分。\n\n用户的消息：\n${text}`
 
 /**
  * 对话等子任务的这段时间：用户照样能聊，消息马上交给 CLI 回复；
@@ -1729,11 +1722,9 @@ async function runHelper(
       ...(reviewing ? reviewCommonPart(host) : commonPart(host, ctx.workflow, !!ctx.chat, !vcs, vcs)),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
       step.session
-        ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
+        ? resumeSection(host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session)
         : '',
-      again
-        ? `## 这是重试\n这个子任务上次没有做完：${clip(again, 600)}。还在同一个会话里的话，先看看之前已经做了哪些，从中断的地方接着做，已经做完的不用重做。`
-        : '',
+      again ? retrySection(again) : '',
       spec.instructions.trim() ? `## 要做的事\n${spec.instructions.trim()}` : '',
       review,
       siblings.length
@@ -2367,10 +2358,9 @@ export async function runEngineTurn(host: EngineHost) {
   // 不管是前置合回后面板启动的、还是用户手动继续的，开始了就不再排在别人后面（shared/children/after.ts）
   task.waitAfter = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算（时长也从这里开始）
-  task.budgetFrom = {
-    usd: task.usage.costUsd,
-    tokens: task.usage.inputTokens + task.usage.outputTokens,
-    at: Date.now(),
+  task.budget = {
+    ...task.budget,
+    from: { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens, at: Date.now() },
   }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行
   for (const s of task.steps) if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'

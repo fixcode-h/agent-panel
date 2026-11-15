@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import type { Task, TaskMessage } from '../../shared/schema.ts'
 import { settleBuildJob } from '../../shared/build-ask.ts'
@@ -5,6 +6,11 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask } from './read.ts'
+import {
+  buildPassedParentLine,
+  buildPassedWaitingLetter,
+  buildResultLetter,
+} from '../../shared/prompt/letters/build.ts'
 
 /**
  * 父对话替子对话起的 UE 编译跑完了（一条后台命令）：按子对话任务上的记录（buildAsk，会落盘）把结果推回去。
@@ -22,27 +28,31 @@ export async function forwardBuildResult(
   result: string,
 ): Promise<string> {
   const kids = (await sc.store.list())
-    .filter((k) => k.buildAsk?.state === 'building' && k.buildAsk.jobs.includes(job.id))
+    .filter((k) => k.child?.buildAsk?.state === 'building' && k.child?.buildAsk.jobs.includes(job.id))
     .map((k) => freshTask(sc, k))
   const tail: string[] = []
   for (const kid of kids) {
     const ok = job.state === 'done'
-    const r = settleBuildJob(kid.buildAsk!, job.id, ok, result.split('\n')[0].slice(0, 300), new Date().toISOString())
-    kid.buildAsk = r.ask
+    const r = settleBuildJob(
+      kid.child!.buildAsk!,
+      job.id,
+      ok,
+      result.split('\n')[0].slice(0, 300),
+      new Date().toISOString(),
+    )
+    setChild(kid, { buildAsk: r.ask })
     const entry = sc.live.get(kid.id)
     if (entry) entry.rev++
     await sc.store.update(kid.id, kid)
     // 一次编译分好几条命令时，全部跑完（或有一条失败）才算出结果
     if (!r.result) continue
-    if (r.result === 'passed' && kid.wrapRequest?.state === 'requested') {
-      await noteChild(sc, kid, `【父对话编译结果】编译通过：${result}\n你已经请父对话验收，等它收下，不用再做什么。`)
-      tail.push(
-        `子对话「${kid.title}」（id ${kid.id}）申请的编译通过了，它已经请你收尾、正在等你：核对它的收尾请求，没问题就调用 finish_child（id ${kid.id}）；要它补的用 send_to_conversation 交回。它不会自己再动。`,
-      )
+    if (r.result === 'passed' && kid.child?.wrapRequest?.state === 'requested') {
+      await noteChild(sc, kid, buildPassedWaitingLetter(result))
+      tail.push(buildPassedParentLine(kid))
       continue
     }
     await sc
-      .sendToChild(job.taskId, kid.id, `【父对话编译结果】${result}`, 'build', 'build', r.result === 'failed')
+      .sendToChild(job.taskId, kid.id, buildResultLetter(result), 'build', 'build', r.result === 'failed')
       .catch((e) => {
         log.warn('task', '编译结果推给子对话失败', { task: kid.id, error: (e as Error).message })
         sc.alertOn(kid.id, 'delivery', t('父对话的编译结果没能交给这个对话'), 'error')(e)

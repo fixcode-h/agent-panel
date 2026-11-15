@@ -20,7 +20,7 @@
    - 放弃：插件直接 import 面板源码。面板内部一重构插件就坏，第三方插件也拿不到源码。
 3. **插件从仓库安装，默认市场是 fixcode-h/agent-plugins**。仓库根的 `plugins.json` 列出插件和下载方式（Release 附件或仓库子目录）；没有它的仓库当作一个插件。另外可以上传 zip、链接本机目录（开发用）。安装先预览：服务端下载、校验清单（格式、接口版本、和内置模板的 key 撞没撞），弹窗写明来源、版本、会不会在本机运行代码，用户确认后才写盘。
 4. **开、关、删的内容规则**沿用内置模板的来源 `builtin:<key>`：打开时按「添加内置工作流」建出角色和工作流；关掉、删除时没改过、没人用的副本删掉（先备份到 `backup/removed-plugin-content-*.json`），改过的、项目或分类在用的留下并告诉用户；技能删掉和自带一致的副本。删除再删包目录、插件数据和设置里的参数。
-5. **完全删除不影响面板**：插件的接口、工具、页面都在包里；对话上的 `task.plugin` 在插件不在时当普通对话显示；以前内置、现在挪进插件的模板（`MOVED_TO_PLUGINS`）在插件没装或关着时按第 4 条清理；旧的 `Settings.blender.path` 迁成 `plugins.blender.config.blenderPath`，旧的 `Task.modelDesign` 读成 `blender.model`。
+5. **完全删除不影响面板**：插件的接口、工具、页面都在包里；对话上的 `task.plugin` 在插件不在时当普通对话显示；以前内置、现在挪进插件的模板（`MOVED_TO_PLUGINS`）在插件没装或关着时按第 4 条清理；旧的 `Settings.blender.path` 迁成 `plugins.blender.config.blenderPath`，旧的 `Task.modelDesign` 由数据迁移 0009 转成 `plugin: 'blender.model'`。
 6. **Blender 整体挪进插件仓库**：dsh-blender-plugin 的副本（运行时、宿主层、Blender 扩展、blender-modeling 技能）、面板原有的两个技能、角色和工作流、模型设计（后台 Blender、`blender_python` / `blender_scene`、3D 预览）都在 agent-plugins 的 `blender/` 里，构建成一个插件包发到 Release。
 
 7. **插件接口 2（2026-11-10，为 UE 插件）**：只加不改，接口 1 的插件照常加载。
@@ -55,6 +55,13 @@
 15. **分析报告扩展点（2026-11-14，接口号不变）**：表格插件的「AI 分析表格风格」用 `runPromptInProject` 开分析对话，结果只能回项目设置的「表格」页去勾选，分析窗口右侧没有功能面板（用户反馈「分析后右侧并没有功能面板应用分析结果到表格设置中」）。加可选的 `WebPlugin.reports`：插件登记代码块语言名（`lang`）、页签名字和 `Report` 组件，`findReport` 在 AI 分析对话里按语言名认出这条回复，`AnalysisPanel` 画插件的 `Report`（收 `task`、`messageId`、`text`），对话区经 `stripPluginReports` 去掉这个代码块。只加了可选项，旧插件不受影响；旧面板忽略它，所以插件要照旧留着别处的应用入口，接口号不加。
 
 16. **插件接口 10（2026-11-15，插件之间的依赖）**：Comfy 页面搬成插件后，UI 设计插件里「打开 Comfy 页」要靠它，用户定「插件依赖就安装也需要安装依赖插件」。清单加 `requires`（`{ "<插件 id>": ">=最低版本" }`，只认下限：插件之间都经开放模块和面板接口打交道，没有「不能太新」的情况）。安装预览列出要一起装的依赖，市场里找不到、版本不够时预览就报错；确认时先装依赖（依赖的依赖一并装，绕成圈的只装一次），依赖装不上就停下、插件本身不装；装着但关着的依赖一起打开。一键更新走同一个确认，所以新版本要求更新的依赖时也会先升级依赖。依赖没满足的插件不加载，列在「出错」里写明缺什么（链上一环缺了，后面依赖它的连带不加载）。被依赖的插件删除、关掉前拦下，写明是谁在依赖。依赖从同一个市场仓库找，找不到再找默认市场；从压缩包、本机目录装的直接找默认市场。`shared/plugins/requires.ts`（按清单算）、`server/plugins/requires-install.ts`（下载和安装顺序）。
+
+17. **插件接口 11（2026-11-15，声明式的运行时字段）**：为了把普通 GitHub 仓库包装成插件（设计稿「GitHub项目一键变插件与网页页签」第 5 节，包装器和来源分级见 ADR 0068），清单加 5 个可选字段，插件不写代码也能接进面板，用了任何一个都要写 `api: 11`。格式在 `shared/plugins/runtime-schema.ts`，值里能用占位符 `{config.<key>}`、`{port}`、`{dir}`、`{data}`（`shared/plugins/placeholders.ts`）。
+    - `env`：给 Agent 的环境变量，`PATH` 只能写 `{ "prepend": [包里的目录] }`。注入点只有跑 CLI 时组环境变量那一处（`server/exec/launch-options.ts` → `server/plugins/declared-env.ts`），只在这个插件对这一轮生效时带（全局插件每轮带，按项目的只在打开了它的项目带，`project-gate.ts` 判断）；放在账号设置的变量前面，同名时账号设置的赢。凭据类（`*_API_KEY`、`*_AUTH_TOKEN`、`*_SECRET`、`GITHUB_TOKEN`……）和面板自己的变量（`AGENT_PANEL_*`、`ANTHROPIC_*`、`OPENAI_*`、`GIT_*`、`HOME`）直接拒装。
+    - `mcp`：外部 MCP 服务，形状同 MCP 库条目。和 MCP 库的按项目条目一样每轮注入（`server/plugins/declared-mcp.ts`，用户库里同名的以用户的为准），关掉、删掉插件时没有要撤的；CLI 定义里没有 `mcpStore.inject` 的（Pi）退回全局写入（`declared-sync.ts`，记在 `config/plugin-mcp-fallback.json`，只删自己写的，不覆盖用户同名的），插件卡片上注明。
+    - `services`：托管进程（`server/plugins/services.ts`，接口契约 `shared/api-contract/plugin-services.ts`）。端口只绑 127.0.0.1（`auto` 时面板分）、按 `health` 等起来、日志写 `plugin-data/<id>/logs/`、`on-open` 的空闲 `stopAfterIdleMin` 分钟停、插件关掉和面板退出时停；起不来原样报原因，不重试；环境变量用 `childEnv`，不带账号设置里的凭据。状态走插件推送通道（事件 `service`）。网页页签、沙箱源经 `serviceOrigin()` 拿地址（顺带记「有人在用」）。
+    - `webPages`：声明式网页页面，`url` 是 `service:<进程>/…`、`file:<包里的路径>` 或外部网址，面板用网页页签的组件画；`scope` 同接口 9。
+    - `wrap`：包装记录（上游仓库、固定的提交、怎么查更新、配方、类型、来源分级），给界面徽标和更新比对用。
 
 ## 影响与风险
 

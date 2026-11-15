@@ -416,6 +416,31 @@ export async function spansNumstat(cwd: string, spans: TreeSpan[]): Promise<File
   return [...out.values()]
 }
 
+/**
+ * 几段改动里这几个文件最后是新建、修改还是删掉了（「本轮产出」用）：第一次出现是新建的算新建，
+ * 最后一段删掉的算删掉。不认重命名，和 spansNumstat 一致
+ */
+export async function spansNameStatus(cwd: string, spans: TreeSpan[], files: string[]) {
+  // 第一段里的状态说明改之前在不在，最后一段的说明改完还在不在
+  const first = new Map<string, string>()
+  const last = new Map<string, string>()
+  const out = new Map<string, 'added' | 'modified' | 'deleted'>()
+  if (!files.length) return out
+  for (const s of spans) {
+    if (s.from === s.to) continue
+    const r = await git(cwd, 'diff', '--name-status', '--no-renames', s.from, s.to, '--', ...files)
+    if (r.code !== 0) throw new Error(r.stderr.trim() || t('读不出改动'))
+    for (const line of r.stdout.split('\n')) {
+      const m = line.match(/^([AMDT])\t(.+)$/)
+      if (!m) continue
+      if (!first.has(m[2])) first.set(m[2], m[1])
+      last.set(m[2], m[1])
+    }
+  }
+  for (const [f, a] of first) out.set(f, last.get(f) === 'D' ? 'deleted' : a === 'A' ? 'added' : 'modified')
+  return out
+}
+
 /** 一个文件在几段改动里的差异，按先后拼起来 */
 export async function spansFileDiff(cwd: string, spans: TreeSpan[], file: string) {
   const parts: string[] = []

@@ -25,7 +25,6 @@ const kid = (over: Record<string, unknown> = {}) =>
   ({
     parentTaskId: 'par',
     resolved: false,
-    wrapRequest: undefined,
     plans: [],
     steps: [],
     changes: [],
@@ -47,7 +46,7 @@ test('计划只剩合回那一步、没列计划但改过文件：该请收尾�
   assert.equal(mergeOwedOf(kid({ plans: plan('done') }), false), '', '收尾那步做完了')
   assert.equal(mergeOwedOf(kid({ plans: plan('pending') }), true), '', '提醒过一次就不再拦')
   assert.equal(
-    mergeOwedOf(kid({ plans: plan('pending'), wrapRequest: { state: 'requested', at } }), false),
+    mergeOwedOf(kid({ plans: plan('pending'), child: { wrapRequest: { state: 'requested', at } } }), false),
     '',
     '已经请过',
   )

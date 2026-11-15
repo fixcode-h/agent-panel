@@ -6,6 +6,7 @@
  * 以前这些都靠在回复里找「验收结论：通过」「## 总结」这类字眼，没写时还默认按通过 / 做完算，模型漏写一行就被放行了
  */
 import { z } from 'zod'
+import { VERDICT_ASK } from './prompt/letters/helper.ts'
 
 /** 评审、验收列出的一条意见；must：要执行的一方逐条处置（原来的高级 / 中级） */
 export const Blocker = z.object({
@@ -51,10 +52,6 @@ export function mergeSubmitted(prev: Submitted | undefined, next: Partial<Submit
     at,
   })
 }
-
-/** 补问那一句（发给 Agent，不翻译） */
-export const VERDICT_ASK =
-  '【面板】你还没有用 submit_verdict 工具交结论。面板只按这个工具判定通过还是不通过，不看回复里写了什么：现在调用它，verdict 写 pass 或 fail，不通过时 blockers 列出必须改的地方。'
 
 /** 把工具交的内容记到交它的那一步上（引擎和测试共用），返回给 Agent 的回执 */
 export function submitOn(

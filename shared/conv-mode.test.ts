@@ -61,7 +61,7 @@ test('角色分两类：各入口的类别校验、Chat 角色保存时归零能
   assert.match(scopeError(chat, worker), /是 Agent 角色，只能在项目里用/)
   assert.match(scopeError({ ...chat, projectId: 'p' }, helper), /是 Chat 角色，只能在 Chat 页用/)
   assert.match(scopeError({ ...chat, projectId: 'p', parentTaskId: 'P' }, helper), /Chat 角色/)
-  assert.equal(scopeError({ ...chat, analysis: 'diagnose' }, mk('分析', { origin: 'builtin:analyzer' })), '')
+  assert.equal(scopeError({ ...chat, analysis: { kind: 'fix' } }, mk('分析', { origin: 'builtin:analyzer' })), '')
   assert.equal(scopeError(chat, helper), '')
   assert.equal(scopeError({ ...chat, projectId: 'p' }, worker), '')
   assert.equal(scopeError({ ...chat, mode: 'workflow', projectId: 'p' }, helper), '', '工作流任务不看对话角色')

@@ -11,6 +11,7 @@ import { request } from '@/lib/api'
 import { pickFileViewer } from './file-viewers'
 import { intakeByKey, pickIntake } from './attachment-intakes'
 import { pruneUpdates } from './updates'
+import { declaredWebPages } from './web-pages'
 import type {
   ActivateWeb,
   AnalysisReport,
@@ -115,7 +116,10 @@ export async function loadPlugins() {
   for (const row of r.plugins.filter((p) => p.enabled)) {
     try {
       const p = await activate(row)
-      if (p) web.set(row.manifest.id, p)
+      // 清单里声明的网页页面（插件接口 11）：没有网页入口的插件也能出整页，和入口登记的页面放在一起
+      const declared = declaredWebPages(row.manifest)
+      if (declared.length) web.set(row.manifest.id, { ...p, pages: [...(p?.pages ?? []), ...declared] })
+      else if (p) web.set(row.manifest.id, p)
     } catch (e) {
       webErrors.set(row.manifest.id, (e as Error).message)
     }
@@ -131,7 +135,7 @@ const pluginPages = (s: State = state): OwnedPage[] =>
 export const usePluginPages = (): OwnedPage[] => pluginPages(usePlugins())
 
 /** 对话归开着的插件的整页（PluginPage.taskPlugin，例如 Blender 的模型设计页）；插件不在时当普通对话 */
-export const ownedPage = (task: Pick<Task, 'plugin' | 'modelDesign'>, pages: OwnedPage[] = pluginPages()) => {
+export const ownedPage = (task: Pick<Task, 'plugin'>, pages: OwnedPage[] = pluginPages()) => {
   const id = taskPlugin(task)
   return id ? pages.find((p) => p.taskPlugin === id) : undefined
 }
@@ -150,7 +154,7 @@ export const ownedPageRoute = (page: OwnedPage, taskId: string) => ({
  */
 export const useOwnedByPlugin = () => {
   const pages = pluginPages(usePlugins())
-  return (task: Pick<Task, 'plugin' | 'modelDesign'>) => !!ownedPage(task, pages)
+  return (task: Pick<Task, 'plugin'>) => !!ownedPage(task, pages)
 }
 
 /** 这个对话右栏多出来的页签 */

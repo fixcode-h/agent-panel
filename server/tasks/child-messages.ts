@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { waitingAfter } from '../../shared/children/after.ts'
 import { Task, type PeerFrom, type PeerKind, type TaskMessage } from '../../shared/schema.ts'
@@ -205,7 +206,7 @@ export function createChildMessages(sc: TasksScope) {
     // 记在「现在」的那一份上：发消息时子对话已经被拉起来了，执行器落盘用的是 live 里那份
     const ce = sc.live.get(child.id)
     const target = ce?.task ?? (await sc.store.get(child.id)) ?? child
-    target.userDirect = brief.slice(0, 600)
+    setChild(target, { userDirect: brief.slice(0, 600) })
     if (ce) ce.rev++
     else await sc.store.update(child.id, target)
   }

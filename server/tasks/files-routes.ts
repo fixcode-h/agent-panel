@@ -20,6 +20,9 @@ import { sessionInfo } from '../session-bar.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 import { currentTask } from './read.ts'
+import { z } from 'zod'
+import { turnOutputsContract } from '../../shared/api-contract/turn-outputs.ts'
+import { turnOutputs } from '../turn/outputs.ts'
 
 /**
  * 要改的文件相对任务目录的路径：Agent 输出里常写绝对路径，落在任务目录里面的换成相对路径交给 writeInDir
@@ -67,6 +70,22 @@ export function registerFileRoutes(s: TasksScope) {
     if (!dir || tk.imported) return s.bad(c, t('导入的任务看不到对方电脑上的文件'))
     try {
       return c.json({ path: file, diff: await spansFileDiff(dir, ch.spans, file) })
+    } catch (e) {
+      return s.bad(c, (e as Error).message)
+    }
+  })
+
+  // 本轮产出（对话停下后完成依据上面那张卡片）：这一轮改过的能直接看的文件，新建还是修改、多大
+  s.routes.post('/:id/turn-outputs', async (c) => {
+    const p = turnOutputsContract.outputs.body.safeParse(await c.req.json())
+    if (!p.success) return s.bad(c, z.prettifyError(p.error))
+    const tk = await currentTask(s, c.req.param('id'))
+    if (!tk) return s.bad(c, t('任务不存在'), 404)
+    const dir = await s.taskDir(tk)
+    // 导入的任务看不到对方电脑上的文件：没有产出可列，卡片不显示
+    if (!dir || tk.imported) return c.json({ files: [] })
+    try {
+      return c.json({ files: await turnOutputs(dir, tk.messages, p.data.msgs, p.data.paths) })
     } catch (e) {
       return s.bad(c, (e as Error).message)
     }

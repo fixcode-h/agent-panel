@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/merge.ts, server/exec/worktree-integrate.ts, server/tasks/worktree-routes.ts
+paths: server/tasks/merge/**, server/exec/worktree-integrate.ts, server/tasks/worktree-routes.ts
 ---
 
 # 子对话合回失败退回给谁

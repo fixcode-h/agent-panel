@@ -179,6 +179,16 @@ export const COMP_SPEC = {
     when: bool(true, 'grid', 'none'),
     name: bool(true, 'inline', 'none'),
   },
+  /**
+   * HTML 卡片（回复里的 .html / .svg 和「本轮产出」，web/src/components/ui/html-card.tsx）：
+   * 圆角、要不要缩略预览、预览多高、正在右栏显示时描边的颜色
+   */
+  htmlCard: {
+    radius: px(10, 0, 20),
+    preview: bool(true, 'block', 'none'),
+    previewH: px(168, 96, 320),
+    active: hue('orange'),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

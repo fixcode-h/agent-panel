@@ -1,14 +1,11 @@
 import { BugCase, type BugLevel } from '../../shared/bug/diagnosis-schema.ts'
 import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
-
-/** 交给子对话的话前面加的说明：它从这一条开始按完整流程走，之前改过的文件要在报告里交代 */
-export const BUG_UPGRADE_HEAD =
-  '【改按用户报的 Bug 处理】用户要求把你正在处理的这个问题改按完整的 Bug 查找流程处理：你现在有了 submit_diagnosis，接下来按完整流程分阶段交诊断报告（论证、根因、修复方案、验证），用户在弹窗里同意之前不再改任何文件；之前已经改过的文件写进报告（改了什么、要不要保留）。'
+import { BUG_UPGRADE_HEAD } from '../../shared/prompt/letters/notice.ts'
 
 /**
  * 父对话 send_to_conversation 写了 kind: "bug"：把已有子对话标成用户报的 Bug（用户 2026-11-07 要的）。
- * 和用户在子对话里发 /bug 一样（server/tasks/conversation-routes.ts）：标上 task.bug（kind: report）它才有 submit_diagnosis、
+ * 和用户在子对话里发 /bug 一样（server/tasks/routes/conversation/send.ts）：标上 task.bug（kind: report）它才有 submit_diagnosis、
  * 改文件前要过诊断关卡；续接的会话里没有完整流程，记 task.bug.methodPending 让下一轮补带一次（server/exec/bug-prompt.ts）。
  * 正在回复的这一轮换不了工具，先拒绝；挂着等下一句的旧进程由交付时的「选择对不上」重开（runner 的 stillCurrent）。
  * 返回要交给子对话的话（已经是 Bug 的原样交）

@@ -56,23 +56,27 @@ import { releaseIfSame, reserveOnce } from '../slots.ts'
 import { killTree } from '../exec/process.ts'
 import { reapSettledTaskClis } from '../exec/orphans.ts'
 import { registerFileRoutes } from './files-routes.ts'
-import { registerPathRoutes } from './path-routes.ts'
-import { registerCollabRoutes } from './collab-routes.ts'
+import { pathRoutes } from './path-routes.ts'
+import { collabRoutes } from './collab-routes.ts'
 import { createTrash } from './trash.ts'
-import { registerActionRoutes } from './actions-routes.ts'
-import { registerConversationRoutes } from './conversation-routes.ts'
+import { actionRoutes } from './routes/actions/index.ts'
+import {
+  conversationRoutes,
+  createTask as createTaskIn,
+  prewarmChat as prewarmChatIn,
+} from './routes/conversation/index.ts'
 import { isolated, REAP_GRACE_MS } from './helpers.ts'
 import { registerWorktreeRoutes } from './worktree-routes.ts'
 import { registerReadRoutes } from './read-routes.ts'
 import { registerChildrenRoutes } from './children-routes.ts'
 import { registerProcessRoutes } from './process-routes.ts'
-import { registerLifecycleRoutes } from './lifecycle-routes.ts'
-import { registerDiagnosisRoutes } from './diagnosis-routes.ts'
-import { registerEvidenceRoutes } from './evidence-routes.ts'
-import { registerUserActionRoutes } from './user-actions.ts'
+import { lifecycleRoutes } from './lifecycle-routes.ts'
+import { diagnosisRoutes } from './diagnosis-routes.ts'
+import { evidenceRoutes } from './evidence-routes.ts'
+import { userActionRoutes } from './user-actions.ts'
 import { registerListRoutes } from './list-routes.ts'
 import { createTaskFeed } from './page-feed.ts'
-import { registerSharedDirRoutes } from './shared-dir-routes.ts'
+import { sharedDirRoutes } from './shared-dir-routes.ts'
 import { createIdleAsk } from './idle-ask.ts'
 import { createBudget } from './budget.ts'
 import { createTaskLearner } from './experience.ts'
@@ -83,15 +87,15 @@ import { createAwaySweep } from './away-sweep.ts'
 import { createQuotaResume } from './quota-resume.ts'
 import { createPeer } from './peer.ts'
 import { createLive } from './live.ts'
-import { createChildren } from './children.ts'
-import { createMerge } from './merge.ts'
+import { createChildren } from './children/index.ts'
+import { createMerge } from './merge/index.ts'
 import { createInlineEdit } from './inline-edit.ts'
 import { createAfterDeps } from './after-deps.ts'
 import { createTestRuns } from './test-runs.ts'
 import { createJobs } from './jobs.ts'
 import { createEditWorktree } from './edit-worktree.ts'
 import { createChildMessages } from './child-messages.ts'
-import { createFlowRuns, registerFlowRunRoutes } from './flow-runs.ts'
+import { createFlowRuns, flowRunRoutes } from './flow-runs.ts'
 import { awaitedJob } from '../background.ts'
 
 /** 任务接口与执行。执行中的任务放在内存里，按节点落盘，避免流式输出时频繁写文件 */
@@ -692,21 +696,24 @@ export function tasksApi(deps: {
     await next()
   })
   const { startMemoryGuard } = registerListRoutes(scope)
-  registerFlowRunRoutes(scope)
+  routes.route('/', flowRunRoutes(scope))
   const { childUnmerged, gitGate } = registerChildrenRoutes(scope)
-  registerCollabRoutes(scope)
+  routes.route('/', collabRoutes(scope))
   registerProcessRoutes(scope)
-  registerLifecycleRoutes(scope)
-  registerDiagnosisRoutes(scope)
-  registerEvidenceRoutes(scope)
-  registerUserActionRoutes(scope)
+  routes.route('/', lifecycleRoutes(scope))
+  routes.route('/', diagnosisRoutes(scope))
+  routes.route('/', evidenceRoutes(scope))
+  routes.route('/', userActionRoutes(scope))
   registerReadRoutes(scope)
-  const { prewarmChat, createTask } = registerConversationRoutes(scope)
+  routes.route('/', conversationRoutes(scope))
+  const prewarmChat = (task: Task, force?: boolean): Promise<Task> => prewarmChatIn(scope, task, force)
+  const createTask = (input: NewTaskInput, raw: unknown): ReturnType<typeof createTaskIn> =>
+    createTaskIn(scope, input, raw)
   const { dropWorktree, taskDir, worktreeHome } = registerWorktreeRoutes(scope)
   const { readableDir } = registerFileRoutes(scope)
-  registerPathRoutes(scope)
-  registerActionRoutes(scope)
-  registerSharedDirRoutes(scope)
+  routes.route('/', pathRoutes(scope))
+  routes.route('/', actionRoutes(scope))
+  routes.route('/', sharedDirRoutes(scope))
   const { purgeTasks, enterTrash, restoreTasks } = createTrash(scope)
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉
@@ -772,6 +779,8 @@ export function tasksApi(deps: {
     sweepState: () => stateSweep.sweep(),
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
     ready: () => ready,
+    /** 对话能读文件的工作目录（独立分支时是 worktree）：网页页签按它发本机文件（server/web-view） */
+    workDir: (id: string) => readableDir(id),
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */
     get: (id: string) => current(id),
     /** 同上，但不读完整对话：用量统计、只用到任务元数据的地方用它 */

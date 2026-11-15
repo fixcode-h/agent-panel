@@ -77,9 +77,8 @@ test('聊天模式的执行上限：token 和时长超了都给出能读懂的�
 
   // token：计划设了 1000，用量按这一轮开始时起算
   const tokens = host({
-    budgetTokens: 1000,
+    budget: { tokens: 1000, from: { usd: 0, tokens: 0, at: Date.now() } },
     usage: { agents: {}, inputTokens: 800, outputTokens: 400, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
-    budgetFrom: { usd: 0, tokens: 0, at: Date.now() },
   })
   const tokenMsg = overBudget(tokens)
   assert.match(tokenMsg, /计划设定的上限/)
@@ -89,19 +88,18 @@ test('聊天模式的执行上限：token 和时长超了都给出能读懂的�
   assert.equal(
     overBudget(
       host({
-        budgetTokens: 1000,
+        budget: { tokens: 1000, from: { usd: 0, tokens: 0, at: Date.now() } },
         usage: { agents: {}, inputTokens: 300, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
-        budgetFrom: { usd: 0, tokens: 0, at: Date.now() },
       }),
     ),
     '',
   )
 
-  // 时长：从这一轮开始算（budgetFrom.at），超过就停
-  const minutes = host({ budgetMinutes: 30, budgetFrom: { usd: 0, tokens: 0, at: Date.now() - 31 * 60_000 } })
+  // 时长：从这一轮开始算（budget.from.at），超过就停
+  const minutes = host({ budget: { minutes: 30, from: { usd: 0, tokens: 0, at: Date.now() - 31 * 60_000 } } })
   assert.match(overBudget(minutes), /计划设定的上限 30 分钟/)
   // 旧任务没有开始时刻：按不限处理，不能一上来就判超
-  assert.equal(overBudget(host({ budgetMinutes: 30, budgetFrom: { usd: 0, tokens: 0 } })), '')
+  assert.equal(overBudget(host({ budget: { minutes: 30, from: { usd: 0, tokens: 0 } } })), '')
 })
 
 test('聊天模式：计划设了 token 上限，一开跑就停，不调用 Agent 也不丢已有消息', async () => {
@@ -115,10 +113,10 @@ test('聊天模式：计划设了 token 上限，一开跑就停，不调用 Age
     mode: 'chat',
     status: 'running',
     messages: [{ id: 'm1', role: 'user', agentId: '', step: '', text: '把构建跑完', tools: [], at: iso }],
-    budgetTokens: 100,
+    budget: { tokens: 100 },
     usage: { agents: {}, inputTokens: 200, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
   })
-  task.budgetFrom = { usd: 0, tokens: 0, at: Date.now() }
+  task.budget = { ...task.budget, from: { usd: 0, tokens: 0, at: Date.now() } }
   let called = false
   const host = {
     task,
@@ -154,7 +152,7 @@ test('聊天轮次不读工作流预算：对话里跑过工作流之后，工�
     messages: [],
     usage: { agents: {}, inputTokens: 500, outputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 1 },
   })
-  task.budgetFrom = { usd: 0, tokens: 0, at: Date.now() }
+  task.budget = { from: { usd: 0, tokens: 0, at: Date.now() } }
   // 对话里跑过 start_plan 之后任务会一直带着工作流快照（host.workflow 非空）
   const host = {
     task,

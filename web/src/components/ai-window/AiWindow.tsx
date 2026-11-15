@@ -102,7 +102,7 @@ export function AiWindow() {
       ? fmtDuration(timingMs(timing, now))
       : ''
   // 来源标签：排查（报错交给 AI）用红色，和设计稿「测试失败」那种一致；别的分析用中性底色
-  const fromIssue = entry?.analysis === 'fix'
+  const fromIssue = entry?.analysis?.kind === 'fix'
   const from = [project?.name, parent?.title].filter(Boolean).join(' · ')
   const actions = (
     <>

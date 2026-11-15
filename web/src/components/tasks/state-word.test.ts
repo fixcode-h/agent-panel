@@ -84,7 +84,7 @@ function build(c: Combo) {
       working: c.working,
       requests,
       waitStartedAt: requests.length ? AT : '',
-      parentAsks: c.own === 'ask' ? [{ id: 'q', question: '选哪个？', options: ['A', 'B'] }] : undefined,
+      child: { parentAsks: c.own === 'ask' ? [{ id: 'q', question: '选哪个？', options: ['A', 'B'] }] : undefined },
     }),
     // 下面几项是服务端补的（子对话数）或结构较大、这里只要判定用到的那一个字段
     childrenWorking: c.children,

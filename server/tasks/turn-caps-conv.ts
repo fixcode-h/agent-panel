@@ -25,6 +25,7 @@ import { taskCliAlive } from '../exec/process.ts'
 import { upgradeChildToBug } from './bug-upgrade.ts'
 import { dirtyParentBlock, dirtyParentNote } from './dirty-parent.ts'
 import { freshTask } from './read.ts'
+import { peerRelayLetter } from '../../shared/prompt/letters/notice.ts'
 
 /**
  * 拼一轮宿主能力要用到的：执行位、这一轮开始时的任务快照和项目、角色。
@@ -130,12 +131,9 @@ export async function conversationCaps(c: TurnCapsCtx) {
       ? async (id, text) => {
           const peer = (await sc.peerList(entry.task)).find((p) => p.id === id)
           if (!peer) return { ok: false, info: '找不到这个父对话：id 从 list_peers 取，只能联系同一项目里的父对话' }
-          await sc.wakeTask(
-            peer.id,
-            entry.task,
-            `【父对话传话】来自「${entry.task.title}」（id ${entry.task.id}）：${text}\n要回话就用 message_peer 回给它；只协调，不用替它做决定。`,
-            { peer: await sc.peerOf(entry.task, 'peer', 'chat', text) },
-          )
+          await sc.wakeTask(peer.id, entry.task, peerRelayLetter(entry.task, text), {
+            peer: await sc.peerOf(entry.task, 'peer', 'chat', text),
+          })
           return { ok: true, info: `已交给父对话「${peer.title}」` }
         }
       : undefined,
@@ -157,8 +155,8 @@ export async function conversationCaps(c: TurnCapsCtx) {
           busy: cur.working || sc.startQueue.has(cur.id) || sc.completing.has(cur.id),
           // 已完成的报关键文件：父对话按它判断新问题该交给谁，比最后一句回复准
           summary:
-            cur.resolved && cur.handoff?.files
-              ? `关键文件：${cur.handoff.files.replace(/\s+/g, ' ')}`
+            cur.resolved && cur.child?.handoff?.files
+              ? `关键文件：${cur.child?.handoff.files.replace(/\s+/g, ' ')}`
               : cur.summary || sc.lastReply(cur),
           at: cur.updatedAt,
           doing: childActivityText(doing),
@@ -167,7 +165,7 @@ export async function conversationCaps(c: TurnCapsCtx) {
             : childWaitText(childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) })),
           lastActivityAt: childLastActivity(cur),
           // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
-          autoAsk: cur.autoAsk,
+          autoAsk: cur.child?.autoAsk,
           createdAt: cur.createdAt,
           resolved: !!cur.resolved,
         }

@@ -4,7 +4,7 @@ import { taskMap } from '../runtime/task-state.ts'
 
 /**
  * 交给 CLI 的附件路径：按任务上记的落盘映射换成那一份（图片在对话目录里的绝对路径），
- * 查不到的（非图片、旧任务没记的）用原路径。排着的消息收进来时已经拷过，见 conversation-routes 的 placeInTask。
+ * 查不到的（非图片、旧任务没记的）用原路径。排着的消息收进来时已经拷过，见 server/tasks/routes/conversation/send.ts 的 placeInTask。
  */
 export function placedPaths(tk: Pick<Task, 'placedAttachments'>, attachments: readonly Attachment[]): Attachment[] {
   return attachments.map((a) => {

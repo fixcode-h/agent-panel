@@ -119,7 +119,6 @@ test('childHoldsOf：从任务上取状态，后台命令数和合并状态由�
     ({
       working: false,
       requests: [],
-      parentAsks: [],
       plans: [],
       steps: [],
       ...over,
@@ -128,9 +127,12 @@ test('childHoldsOf：从任务上取状态，后台命令数和合并状态由�
   assert.deepEqual(childHoldsOf(task(), { merged: false }), ['unmerged'])
   assert.deepEqual(childHoldsOf(task({ working: true }), { merged: true }), ['working'])
   assert.deepEqual(childHoldsOf(task(), { background: 2, merged: true }), ['background'])
-  assert.deepEqual(childHoldsOf(task({ parentAsks: [{ id: 'a' }] as Task['parentAsks'] }), { merged: true }), [
-    'asking',
-  ])
+  assert.deepEqual(
+    childHoldsOf(task({ child: { parentAsks: [{ id: 'a' }] as NonNullable<Task['child']>['parentAsks'] } }), {
+      merged: true,
+    }),
+    ['asking'],
+  )
   assert.deepEqual(childHoldsOf(task({ requests: [{ id: 'r' }] as Task['requests'] }), { merged: true }), ['requests'])
 })
 
@@ -174,7 +176,6 @@ test('工作流还在跑：不算彻底完成、阶段仍是执行中、任务�
     status: 'running' as const,
     working: true,
     requests: [],
-    parentAsks: [],
     plans: [],
     steps: [],
     runs: [{ id: 1, status: 'running', startedAt: '', endedAt: '' }] as Task['runs'],
@@ -192,7 +193,6 @@ test('派出去的子任务还在跑：也不算彻底完成', () => {
     status: 'running' as const,
     working: false,
     requests: [],
-    parentAsks: [],
     plans: [],
     steps: [{ slot: 'sub', status: 'running' }] as Task['steps'],
     runs: [] as Task['runs'],
@@ -362,7 +362,6 @@ test('keepAliveHolding：名下有子对话在跑时，这一轮结束、进程�
     working: false,
     awaitingUser: true,
     requests: [],
-    parentAsks: [],
     plans: [],
     steps: [],
   }
@@ -404,7 +403,6 @@ const kidTask = (over: Partial<Task> = {}) =>
     messages: [],
     steps: [],
     requests: [],
-    parentAsks: [],
     plans: [],
     updatedAt: '2026-01-01T10:00:00Z',
     ...over,
@@ -434,7 +432,7 @@ const planOf = (status: 'running' | 'waiting' = 'running') =>
   ] as unknown as Task['plans']
 
 test('childWait：等用户 > 等确认 > 等后台命令 > 等子任务 > 等工作流 > 等下一句', () => {
-  const ask = kidTask({ parentAsks: [{}] as never, requests: [] as never })
+  const ask = kidTask({ child: { parentAsks: [{}] as never }, requests: [] as never })
   assert.deepEqual(childWait(ask, { background: 2, cliAlive: true }), { kind: 'answer', n: 1 })
 
   const confirm = kidTask({ requests: [{}] as never })
@@ -613,7 +611,7 @@ test('对外状态统一：子对话、子任务、后台命令、工作流没�
   assert.equal(taskState({ ...base, requests: [{}] as never }), 'needs')
   assert.equal(taskBusy({ ...base, requests: [{}] as never }), false)
   assert.equal(taskActive({ ...base, requests: [{}] as never }), true)
-  assert.equal(taskActive({ ...base, parentAsks: [{}] as never }), true)
+  assert.equal(taskActive({ ...base, child: { parentAsks: [{}] as never } }), true)
   // 真闲着的：可以回收
   assert.equal(taskActive(base), false)
   assert.equal(taskActive({ ...base, status: 'done' }), false)
@@ -654,7 +652,7 @@ test('橙点只在停在完成态时画：未读和转圈不能同在一行（�
     ],
     ['在等后台命令', { ...done, status: 'running', jobs: [{}] as never }],
     ['在等工作流', { ...done, status: 'running', runs: [{ status: 'running' }] as never }],
-    ['等你处理', { ...done, status: 'running', parentAsks: [{}] as never }],
+    ['等你处理', { ...done, status: 'running', child: { parentAsks: [{}] as never } }],
     ['等你确认请求', { ...done, status: 'running', requests: [{}] as never }],
     ['执行失败', { ...done, status: 'failed' }],
     ['被停止', { ...done, status: 'stopped' }],

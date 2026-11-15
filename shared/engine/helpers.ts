@@ -107,7 +107,6 @@ export function helperReport(host: EngineHost, s: TaskStep): HelperReport {
 }
 
 export const REVIEW_SOFT_LIMIT_MS = REVIEW_SOFT_LIMIT_MIN * 60_000
-export const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（调用 submit_verdict 交结论，必须处置的意见列进 blockers）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
 
 /** 这个角色是不是在评审代码改动（必备角色「评审」、评审对象是代码改动）；评审方案或结论的不算 */
 export function reviewsCode(agent: Agent | undefined, params?: ParamValues) {

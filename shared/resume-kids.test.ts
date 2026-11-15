@@ -42,8 +42,8 @@ test('继续父对话：只拉被连带打断、活还没交的；用户停的�
     kid('A'),
     kid('B', { stopReason: 'user' }),
     kid('C'),
-    kid('W', { wrapRequest: { state: 'requested', at: 'x', note: '', tests: '', info: '' } }),
-    kid('F', { wrapRequest: { state: 'test-failed', at: 'x', note: '', tests: '', info: '' } }),
+    kid('W', { child: { wrapRequest: { state: 'requested', at: 'x', note: '', tests: '', info: '' } } }),
+    kid('F', { child: { wrapRequest: { state: 'test-failed', at: 'x', note: '', tests: '', info: '' } } }),
     kid('S', { stopReason: 'switch' }),
   ]
   const r = sortStoppedKids(p, kids)

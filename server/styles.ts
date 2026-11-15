@@ -2,7 +2,8 @@ import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { SavedStyle, SavedStyleInput } from '../shared/style-types.ts'
+import { SavedStyle } from '../shared/style-types.ts'
+import { stylesContract as S } from '../shared/api-contract/styles.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
@@ -33,12 +34,12 @@ const saveStyles = () => writeJsonAtomic(FILE, styles ?? [], true)
 const now = () => new Date().toISOString()
 const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
 
-/** /api/styles：自己存的在前，内置的（程序自带、只读）在后 */
+/** /api/styles：自己存的在前，内置的（程序自带、只读）在后；入参按前后端共用的契约校验（shared/api-contract/styles.ts） */
 export const stylesApi = () =>
   new Hono()
     .get('/', async (c) => c.json([...(await loadStyles()), ...BUILTIN_STYLES]))
     .post('/', async (c) => {
-      const p = SavedStyleInput.safeParse(await c.req.json().catch(() => ({})))
+      const p = S.create.body.safeParse(await c.req.json().catch(() => ({})))
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const at = now()
       const item: SavedStyle = { id: randomUUID(), ...p.data, createdAt: at, updatedAt: at }
@@ -50,7 +51,7 @@ export const stylesApi = () =>
     .put('/:sid', async (c) => {
       const body = await c.req.json().catch(() => ({}))
       if (isBuiltinStyle(c.req.param('sid'))) return bad(c, t('内置风格不能修改，复制成自己的再改'))
-      const p = SavedStyleInput.partial().safeParse(body)
+      const p = S.update.body.safeParse(body)
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const list = await loadStyles()
       const i = list.findIndex((x) => x.id === c.req.param('sid'))

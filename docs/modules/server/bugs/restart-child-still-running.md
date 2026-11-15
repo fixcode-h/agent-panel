@@ -75,7 +75,7 @@
 
 ### 判据放进 `shared/task.ts`，和图标同一处
 
-新增 `restartInterrupted(task)`：按界面同一套方式构造 `ChildEntry`（`plan` 取 `openPlan(task)`、`unmerged` 取 `task.worktree?.state === 'active'`、`wrapup` 取 `task.wrapRequest`、`cliAlive` 固定 `false`），然后返回 `childSpinning(entry) && childState(entry) !== 'wrapup'`——即「重启后界面还会画成正在跑」。
+新增 `restartInterrupted(task)`：按界面同一套方式构造 `ChildEntry`（`plan` 取 `openPlan(task)`、`unmerged` 取 `task.worktree?.state === 'active'`、`wrapup` 取 `task.child.wrapRequest`、`cliAlive` 固定 `false`），然后返回 `childSpinning(entry) && childState(entry) !== 'wrapup'`——即「重启后界面还会画成正在跑」。
 
 - **走 `childSpinning` / `childState`，不另写判定**：行首图标、列表分组、计数、徽标都从 `childIcon` / `convState` 派生，判据跟着它们走，以后加状态不会漏掉这个迁移。
 - **「待收尾」排除**：`wrapRequest.state` 不是 `failed` 时（`requested` / `merging`）说明已经在等父对话合并，不靠 CLI 进程，重启后照样能收，落成已停止反而把收尾请求的状态搅乱。

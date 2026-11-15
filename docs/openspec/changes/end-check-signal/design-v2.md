@@ -182,7 +182,7 @@ end_turn({
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `server/orch-mcp.ts`、`shared/panel-tools.ts`                  | 新工具 `end_turn`，按 §2.4 返回                                               |
 | `server/tasks/before-end.ts`                                   | `declared` 放行；去掉 3 次门槛和次数上限；新说法；空转保护                    |
-| `server/tasks/drive.ts`、`server/tasks/children.ts`            | 兜底提醒用同一套判断和说法；「推满了」改成 `blocked` / 空转                   |
+| `server/tasks/drive.ts`、`server/tasks/children/index.ts`      | 兜底提醒用同一套判断和说法；「推满了」改成 `blocked` / 空转                   |
 | `shared/drive.ts`                                              | `DriveBudget` 只计数不截断                                                    |
 | `shared/clis.ts`、`shared/cli-spec.ts`、`shared/clis/*.json`   | `hooks` 加 `stopAfterTool` 能力；给 `end_turn` 装工具后停止                   |
 | `shared/engine/index.ts`、`server/orch-hint.ts`                | 提示词：结束要调 `end_turn`；问用户用 `suggest_next_step`                     |

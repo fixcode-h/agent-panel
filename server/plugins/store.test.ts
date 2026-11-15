@@ -96,3 +96,17 @@ test('GitHub 地址：owner/repo、完整链接、带分支和子目录的链接
   })
   assert.throws(() => parseRepo('not a repo'), /owner\/repo/)
 })
+
+test('清单：接口 11 的字段要写 api 11，路径不许跳出包，页面指的托管进程要存在', () => {
+  assert.throws(() => parseManifest(manifest({ api: 10, env: { FOO: '1' } })), /"api": 11/)
+  assert.equal(parseManifest(manifest({ api: 11, env: { PATH: { prepend: ['bin'] } } })).api, 11)
+  assert.throws(() => parseManifest(manifest({ api: 11, env: { PATH: { prepend: ['../bin'] } } })), /PATH/)
+  assert.throws(
+    () => parseManifest(manifest({ api: 11, webPages: [{ id: 'app', label: 'App', url: 'service:app/' }] })),
+    /托管进程 app/,
+  )
+  assert.throws(
+    () => parseManifest(manifest({ api: 11, services: [{ id: 'app', command: 'node', cwd: '../x' }] })),
+    /工作目录/,
+  )
+})

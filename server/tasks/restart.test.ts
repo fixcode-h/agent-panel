@@ -68,11 +68,11 @@ const spins = (t: Task, alive = false) =>
     cliAlive: alive,
     startedAt: t.createdAt,
     requests: t.requests.length,
-    asking: t.parentAsks?.length ?? 0,
+    asking: t.child?.parentAsks?.length ?? 0,
     resolved: t.resolved === true,
     plan: openPlan(t),
     unmerged: t.worktree?.state === 'active',
-    wrapup: !!t.wrapRequest && t.wrapRequest.state !== 'failed',
+    wrapup: !!t.child?.wrapRequest && t.child?.wrapRequest.state !== 'failed',
     stopReason: t.stopReason,
   })
 
@@ -147,11 +147,11 @@ test('已经请父对话收尾的任务保留待收尾：它等的是父对话�
   const t = task('wrapup', {
     status: 'done',
     plans: [halfPlan()],
-    wrapRequest: { state: 'requested', at, note: '做完了', tests: 'npm run test:unit 通过', info: '' },
+    child: { wrapRequest: { state: 'requested', at, note: '做完了', tests: 'npm run test:unit 通过', info: '' } },
   })
   const back = await afterRestart(t)
   assert.equal(back.status, 'done')
-  assert.equal(back.wrapRequest?.state, 'requested', '收尾请求不能丢')
+  assert.equal(back.child?.wrapRequest?.state, 'requested', '收尾请求不能丢')
 })
 
 test('重启后还有活要自己干：这一轮被打断、计划没做完的算，计划做完的不算', () => {
@@ -205,7 +205,7 @@ test('强制更新的恢复名单只记本次真正被打断的：闲置但计�
       task('wrapup', {
         status: 'done',
         plans: [halfPlan()],
-        wrapRequest: { state: 'requested', at, note: '', tests: '', info: '' },
+        child: { wrapRequest: { state: 'requested', at, note: '', tests: '', info: '' } },
       }),
     ),
     false,
@@ -292,7 +292,7 @@ test('终态判定：已收口的任务名下不该再有 CLI 进程', () => {
       task('wrapup', {
         status: 'done',
         plans: [halfPlan()],
-        wrapRequest: { state: 'requested', at, note: '', tests: '', info: '' },
+        child: { wrapRequest: { state: 'requested', at, note: '', tests: '', info: '' } },
       }),
     ),
     true,
@@ -303,7 +303,7 @@ test('终态判定：已收口的任务名下不该再有 CLI 进程', () => {
       task('test-failed', {
         status: 'done',
         plans: [halfPlan()],
-        wrapRequest: { state: 'test-failed', at, note: '', tests: '', info: '' },
+        child: { wrapRequest: { state: 'test-failed', at, note: '', tests: '', info: '' } },
       }),
     ),
     false,
@@ -334,10 +334,14 @@ test('重启前没走完的工作流运行和合并到一半的子对话：运�
   const kid = await afterRestart(
     task('merging-kid', {
       parentTaskId: parent.id,
-      wrapRequest: { state: 'merging', at, note: '' },
+      child: { wrapRequest: { state: 'merging', at, note: '' } },
     }),
   )
-  assert.equal(kid.wrapRequest?.state, 'requested', '「合并中」只在内存里有效：重启后退回已请求，finish_child 才能重来')
+  assert.equal(
+    kid.child?.wrapRequest?.state,
+    'requested',
+    '「合并中」只在内存里有效：重启后退回已请求，finish_child 才能重来',
+  )
   const p = await createTaskStore().get(parent.id)
   assert.ok(
     p?.inbox.some((x) => x.from === kid.id && /重新调用 finish_child/.test(x.text)),

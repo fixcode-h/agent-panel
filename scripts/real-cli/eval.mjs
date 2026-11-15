@@ -253,7 +253,7 @@ async function runTask(task) {
           console.warn(`  应答请求失败（${tk.title}）：${e.message}`),
         )
       // 子对话开着「提问」时问题挂在父对话的提问卡上（不是 requests）：替用户在卡上答（摸底报告第 23 条）
-      for (const ask of tk.parentTaskId ? (tk.parentAsks ?? []) : [])
+      for (const ask of tk.parentTaskId ? (tk.child?.parentAsks ?? []) : [])
         await call('POST', `/tasks/${tk.parentTaskId}/child-asks/${ask.id}`, {
           answer: task.answer || '按你推荐的做，不用再问我。',
           delegate: false,

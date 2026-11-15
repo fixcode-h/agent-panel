@@ -3,7 +3,8 @@ import { userWaiting, planStalled, runRunning, taskDeleted, wrapUpPending } from
 import type { Task } from '../../shared/schema.ts'
 import { helpersWorking } from '../../shared/tasks/helpers.ts'
 import { isChatMode, nudgeMax } from '../../shared/conv-mode.ts'
-import { CHECK_REMINDER, idleReminders, SPIN_MAX, turnEndSince } from '../../shared/end-turn.ts'
+import { idleReminders, SPIN_MAX, turnEndSince } from '../../shared/end-turn.ts'
+import { CHECK_REMINDER, planNudge } from '../../shared/prompt/letters/nudge.ts'
 import { DriveBudget, planProgressKey, shortKey } from '../../shared/drive.ts'
 import { taskLog } from './log.ts'
 import { makeAlert } from '../../shared/alerts.ts'
@@ -16,6 +17,7 @@ import type { TasksScope } from './scope.ts'
 import { createBeforeEnd } from './before-end.ts'
 import { awaitedJob } from '../background.ts'
 import { freshTask, readTask } from './read.ts'
+import { wrapWaitingNudge } from '../../shared/prompt/letters/wrap.ts'
 
 /**
  * 没列计划时，这一轮动手（跑命令、改文件）几次以上才做收尾自检（见 nudgeNoPlan）：三步以上的事才可能做了一半，
@@ -60,7 +62,7 @@ export function createDrive(
   /** 真推出去时记一次：返回这是这个进度的第几次（从 1 开始），推满了返回 0 */
   const takeNudge = (conv: Task, key: string, max: number): number => {
     const n = budget.take(conv.id, key, max, inputOf(conv))
-    // 子对话「推满了还停在原地」的判定（merge.ts 的 stuckAfterNudge）读这个：推满才记，没推满时子对话还在自驱，不报父对话
+    // 子对话「推满了还停在原地」的判定（merge/index.ts 的 stuckAfterNudge）读这个：推满才记，没推满时子对话还在自驱，不报父对话
     if (n && n >= max) sc.planNudged.set(conv.id, key)
     else if (n) sc.planNudged.delete(conv.id)
     return n
@@ -186,15 +188,7 @@ export function createDrive(
         // 要修的步骤（等的结果没成功、工作流没走完）先处理：不点明的话对话会跳过它往下做，或者干脆停着
         const failed = left.find(needsFix)
         const next = failed ?? left.find((s) => s.status === 'running') ?? left[0]
-        const text =
-          `【面板】你的计划才做了 ${again.p.done}/${again.p.total}，也没有在等任何结果，这一轮却结束了。` +
-          (failed
-            ? `「${failed.title}」${failed.note}。先查清原因、修好后重做，不要把它当成失败放着；确实不做了就标成跳过并说明原因，然后接着做计划。`
-            : next
-              ? `接着做「${next.title}」：`
-              : '接着做下一步：') +
-          '直接调用工具去做，不用先说明；一步做完就用 set_plan 标完成，并在同一条回复里接着调用工具做下一步，直到计划做完再调用 end_turn（outcome: done）。' +
-          '确实做不下去就调用 end_turn（outcome: blocked），need 写卡在哪一步、需要什么。'
+        const text = planNudge({ done: again.p.done, total: again.p.total, failed, next })
         const ok = again.tk.parentTaskId
           ? (await sc.sendToChild(again.tk.parentTaskId, again.tk.id, text, 'nudge')).ok
           : await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(
@@ -230,7 +224,7 @@ export function createDrive(
   function stallSkip(tk: Task): string {
     if (tk.working) return 'working'
     if (tk.resolved) return 'resolved'
-    const wrap = tk.wrapRequest?.state
+    const wrap = tk.child?.wrapRequest?.state
     if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return `wrap:${wrap}`
     const plan = activePlan(tk)
     if (!plan) return 'no-plan'
@@ -278,7 +272,7 @@ export function createDrive(
         (k) => !sc.merging.has(k.id) && !hasHeld(k.id) && !sc.startQueue.has(k.id),
       )
       if (!waiting.length) return 'none-pending'
-      return { tk, waiting, key: `wrap:${waiting.map((k) => `${k.id}@${k.wrapRequest!.at}`).join(',')}` }
+      return { tk, waiting, key: `wrap:${waiting.map((k) => `${k.id}@${k.child?.wrapRequest!.at}`).join(',')}` }
     }
     const now = await stalled(false)
     if (typeof now === 'string') {
@@ -309,13 +303,9 @@ export function createDrive(
           say({ action: 'stuck', reason: 'exhausted', max })
           return
         }
-        const lines = again.waiting.map(
-          (k) =>
-            `- 「${k.title}」（id ${k.id}）：${k.worktree?.state === 'active' ? '合回它的独立分支' : '验收它的改动'}，验证够了就调用 finish_child（id ${k.id}）；要它补的用 send_to_conversation 交回`,
+        const text = wrapWaitingNudge(
+          again.waiting.map((k) => ({ id: k.id, title: k.title, branch: k.worktree?.state === 'active' })),
         )
-        const text =
-          `【面板】这些子对话已经请你收尾，你这一轮结束了却还没处理，它们一直在等你：\n${lines.join('\n')}\n` +
-          '直接调用工具处理，不用先说明；收尾请求里有它的验证结果，核对后决定合回还是交回。'
         const ok = await sc.wakeConv(again.tk.id, text, { panel: 'nudge' }).then(
           () => true,
           () => false,
@@ -389,7 +379,7 @@ export function createDrive(
       if (settled && tk.turnDoneAt !== conv.turnDoneAt) return 'new-turn'
       if (userWaiting(tk)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
-      if (tk.wrapRequest && tk.wrapRequest.state !== 'failed') return 'wrap'
+      if (tk.child?.wrapRequest && tk.child?.wrapRequest.state !== 'failed') return 'wrap'
       if (sc.pendingJobs(tk.id) || helpersWorking(tk) || runRunning(tk) || (await activeChildren(tk.id)))
         return 'waiting'
       return tk

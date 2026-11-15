@@ -2,22 +2,18 @@
   "_说明": "代码结构只许变好：超过这里的数字 npm run lint 会失败。见 scripts/structure-check.mjs、docs/lessons/structure.md",
   "functions": {
     "server/assist.ts::assistApi": 370,
-    "server/background.ts::createBackground": 540,
+    "server/background.ts::createBackground": 530,
     "server/exec/rpc/codex.ts::codexAdapter": 560,
     "server/exec/runner.ts::runAgent": 610,
     "server/schedules.ts::schedulesApi": 470,
     "server/summary/index.ts::summaryApi": 330,
     "server/tasks/store.ts::createTaskStore": 610,
     "server/tasks/index.ts::tasksApi": 810,
-    "server/tasks/actions-routes.ts::registerActionRoutes": 590,
     "server/tasks/asks.ts::createAsks": 410,
     "server/tasks/child-messages.ts::createChildMessages": 330,
-    "server/tasks/children.ts::createChildren": 700,
-    "server/tasks/conversation-routes.ts::registerConversationRoutes": 660,
-    "server/tasks/drive.ts::createDrive": 440,
-    "server/tasks/flow-runs.ts::createFlowRuns": 400,
+    "server/tasks/drive.ts::createDrive": 430,
+    "server/tasks/flow-runs.ts::createFlowRuns": 390,
     "server/tasks/keepalive.ts::createKeepAlive": 400,
-    "server/tasks/merge.ts::createMerge": 840,
     "server/tasks/peer.ts::createPeer": 390,
     "server/tasks/run.ts::createRun": 610,
     "server/update/index.ts::updateApi": 550,
@@ -55,7 +51,7 @@
     "web/src/components/tasks/ReviewDialog.tsx::ReviewDialog": 690,
     "web/src/components/tasks/TaskComposer.tsx::TaskComposer": 440,
     "web/src/components/tasks/TaskFiles.tsx::TaskFiles": 370,
-    "web/src/components/tasks/TaskView.tsx::TaskView": 1020,
+    "web/src/components/tasks/TaskView.tsx::TaskView": 780,
     "web/src/components/usage/UsageSection.tsx::UsageSection": 580,
     "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 370,
     "web/src/lib/demo/demo-backend.ts::seed": 500,
@@ -96,7 +92,6 @@
       "detect.ts",
       "download.ts",
       "env-api.ts",
-      "extra-routes.ts",
       "file-format.ts",
       "files.ts",
       "fix.ts",
@@ -433,7 +428,7 @@
       "worktrees.ts"
     ]
   },
-  "taskFields": 102,
+  "taskFields": 91,
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {
@@ -525,5 +520,22 @@
     "web/src/pages/OverviewPage.tsx": 1,
     "web/src/pages/SchedulesPage.tsx": 1
   },
-  "liveFallback": 10
+  "liveFallback": 10,
+  "requests": {
+    "web/src/lib/api-away.ts": 3,
+    "web/src/lib/api-cli-more.ts": 12,
+    "web/src/lib/api-config-scan.ts": 1,
+    "web/src/lib/api-experience.ts": 10,
+    "web/src/lib/api-messages.ts": 2,
+    "web/src/lib/api-net.ts": 1,
+    "web/src/lib/api-notify.ts": 2,
+    "web/src/lib/api-paths.ts": 2,
+    "web/src/lib/api-remote.ts": 9,
+    "web/src/lib/api-retry.ts": 1,
+    "web/src/lib/api.ts": 270,
+    "web/src/lib/app-update.ts": 3,
+    "web/src/plugins/api.ts": 10,
+    "web/src/plugins/host.ts": 2,
+    "web/src/plugins/registry.ts": 1
+  }
 }

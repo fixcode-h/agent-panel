@@ -6,7 +6,7 @@
  *   给出对工作流、节点、Agent 的修改建议（用户看过差异再应用，不会自动改）和面板框架本身的问题。
  * 服务端和在线演示共用。
  */
-import { liftBugFields } from '../bug/task-bug.ts'
+import { TASK_EXPORT_VERSION, upgradeExport } from './export-upgrade.ts'
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from '../schema.ts'
 import { composeRole, includedAgents } from '../agents/role.ts'
@@ -36,8 +36,7 @@ import { hhmm, pad2, ymd } from '../datetime.ts'
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
-/** 2：Bug 字段收进 task.bug（重构文档第 15 条），读 1 版的文件时由 upgradeExport 转过来 */
-export const TASK_EXPORT_VERSION = 2
+export { TASK_EXPORT_VERSION }
 
 /** 一个节点的统计：耗时、等待、验收轮数、用量、缓存命中率 */
 export interface NodeStat {
@@ -619,7 +618,6 @@ const ExportedTask = TaskData.omit({
   baseRef: true,
   requests: true,
   worktree: true,
-  budgetFrom: true,
   archived: true,
   imported: true,
   // 这些是运行中的临时状态，导入后都按空闲算
@@ -700,14 +698,16 @@ function exportedBody(task: Task, now: Date): ExportedTask {
     baseRef: _br,
     requests: _rq,
     worktree: _w,
-    budgetFrom: _bf,
     archived: _a,
     imported: _i,
     ...rest
   } = task
   const at = now.toISOString()
+  // 这一轮的起算点只在本机执行时有意义，上限本身（tokens / minutes）和提醒级别照旧带走
+  const { from: _bf, ...budget } = task.budget ?? {}
   return {
     ...rest,
+    budget: task.budget && Object.keys(budget).length ? budget : undefined,
     // 还在执行的任务导出的是当时的样子：状态和还在跑的轮次、节点都按导出这一刻收尾。
     // 不收尾的话，导入后再算统计（recordSpan 会拿「现在」当还在跑的结束时间）跨度会一直涨
     status: rest.status === 'running' ? 'stopped' : rest.status,
@@ -814,18 +814,6 @@ export const exportFileName = (title: string) => `${fileSafe(title, 'task')}.tas
 
 /** 单文件 HTML 报告的文件名：和 JSON 包共用同一套清洗规则，只换扩展名 */
 export const exportHtmlFileName = (title: string) => `${fileSafe(title, 'task')}.html`
-
-/**
- * 旧版本导出的文件转成当前格式（不改传入的对象）。导出文件不在数据目录里，数据目录的一次性迁移管不到，只能在导入时转：
- * 1 → 2：任务和子对话上平铺的 Bug 字段收进 task.bug
- */
-function upgradeExport(o: Record<string, unknown>): Record<string, unknown> {
-  if (o.version !== 1) return o
-  const copy = structuredClone(o)
-  for (const tk of [copy.task, ...(Array.isArray(copy.children) ? copy.children : [])])
-    if (tk && typeof tk === 'object') liftBugFields(tk as Record<string, unknown>)
-  return { ...copy, version: TASK_EXPORT_VERSION }
-}
 
 /** 读导出文件：格式不对时给出能看懂的原因 */
 export function parseTaskExport(raw: unknown): TaskExport {

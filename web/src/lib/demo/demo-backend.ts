@@ -1,9 +1,12 @@
+import { setChild } from '@shared/children/task-child'
+import { demoWebView } from './demo-web-view'
 import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
 import { demoCapabilities } from './demo-capabilities'
 import { demoJobStore, demoJobs, setDemoJobs } from './demo-jobs'
 import { demoChildCounts, demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
+import { demoOutputChanges, demoTurnOutputs } from './demo-turn-outputs'
 import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
@@ -174,7 +177,7 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
-import { demoStyles } from './demo-styles'
+import { demoBrowserExt, demoStyles } from './demo-styles'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
 import { DEMO_CSV, DEMO_FILES, DEMO_PRODUCTS_TS, DEMO_README, DEMO_SHEETS } from './demo-project-files'
@@ -2266,6 +2269,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     return { name, path, size: 4096, mime: 'text/markdown' }
   }
   if (res === 'styles') return demoStyles(method, id, body ?? {})
+  if (res === 'designs' && id === 'browser') return demoBrowserExt(sub)
   if (res === 'schedules') return demoSchedules(method, seg, body)
   if (res === 'tasks' && id === 'disk')
     return (d.tasks ?? []).map((tk) => ({
@@ -2337,6 +2341,8 @@ export async function handle(method: string, url: string, body: unknown) {
   }
   if (url.startsWith('/app/restart-interrupted')) return demoRestart(d, url)
   if (url.startsWith('/app/')) return demoApp(url)
+  // 网页页签：演示项目里的 HTML 换成 blob 地址，预检和阅读模式用演示数据（demo-web-view.ts）
+  if (url.startsWith('/web-view/')) return demoWebView(url, body, (p) => DEMO_CONTENTS[p])
   const result = await route(method, url, body)
   // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新
   return result === undefined ? undefined : JSON.parse(JSON.stringify(result))
@@ -2810,11 +2816,11 @@ function tasksRoute(
   // 子对话请用户决定的提问点了关闭：都不回答，父对话的卡片记成不回答，子对话终止
   if (sub === 'parent-asks' && rid === 'close') {
     const parent = tasks.find((x) => x.id === task.parentTaskId)
-    for (const a of task.parentAsks ?? []) {
+    for (const a of task.child?.parentAsks ?? []) {
       const m = parent?.messages.find((x) => x.id === a.id && x.ask)
       if (m) m.ask = { ...m.ask!, answer: '不回答，终止了子对话', by: 'user', declined: true }
     }
-    task.parentAsks = []
+    setChild(task, { parentAsks: [] })
     if (live.has(id)) live.get(id)!.stop = true
     task.working = false
     task.status = 'stopped'
@@ -3045,6 +3051,8 @@ function tasksRoute(
     const file = query.get('path') ?? ''
     return { path: file, diff: DEMO_DIFFS[file] ?? '' }
   }
+  if (sub === 'turn-outputs' && method === 'POST')
+    return demoTurnOutputs(task, body as { msgs: string[]; paths: string[] })
   if (sub === 'turn-revert' && method === 'POST') {
     if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
     const m = task.messages.find((x) => x.id === (body as { msg?: string } | undefined)?.msg)
@@ -3624,7 +3632,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       { q: '购物车数量用哪种缓存？', options: ['内存缓存', 'localStorage'] },
       { q: '缓存多久失效？', options: ['5 分钟', '切页面时刷新'] },
     ]
-    asker.parentAsks = qs.map((x, i) => {
+    const asks = qs.map((x, i) => {
       const id = `${asker.id}-ask${i + 1}`
       parent.messages.push({
         id,
@@ -3639,6 +3647,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       })
       return { id, question: x.q, options: x.options, kind: 'question' as const }
     })
+    setChild(asker, { parentAsks: asks })
   }
   // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON 参数），
   // 折叠行要用它兜底显示命令，不能只剩「后台命令」。界面检查按这条断言
@@ -3801,6 +3810,8 @@ async function seedTasks(d: Db) {
     ]
     // 对话停下后最后面挂「这个对话改了 N 个文件」：超过 3 个文件，卡片上才有「查看全部」可点
     const summary = [...task.messages].reverse().find((m) => m.role === 'agent' && !m.step && m.text.trim())
+    // 回复里提到做好的示例页：停下后画成 HTML 卡片（设计稿 6.6）
+    if (summary) summary.text += '\n\n示例页放在 `demo/cart-badge.html`，打开就能看到角标归零的效果。'
     if (summary)
       summary.turnChanges = {
         spans: [{ from: 'demo-before', to: 'demo-after' }],
@@ -3809,6 +3820,8 @@ async function seedTasks(d: Db) {
           // 和 DEMO_DIFFS 里的样例对得上：cart.ts 是短改动，cart.test.ts 是整份删除
           { path: 'src/store/cart.ts', add: 4, del: 1 },
           { path: 'tests/cart.test.ts', add: 0, del: 62 },
+          // 本轮产出：示例网页、架构图、排查记录、截图（demo-turn-outputs.ts）
+          ...demoOutputChanges(),
         ],
       }
     demoDoneEvidence(task)

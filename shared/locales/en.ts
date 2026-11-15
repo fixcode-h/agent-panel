@@ -25,6 +25,7 @@ import { EN_SHEET_LOOK } from './en/sheet-look.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
 import { EN_CONFIG_SCAN } from './en/config-scan.ts'
+import { EN_PLUGIN_WRAP } from './en/plugin-wrap.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
 import { EN_NOTIFY_CHANNELS } from './en/notify-channels.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
@@ -35,6 +36,8 @@ import { EN_SHEET } from './en/sheet.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_CALL_TREE } from './en/call-tree.ts'
+import { EN_WEB_VIEW } from './en/web-view.ts'
+import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
 import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
@@ -72,6 +75,8 @@ export const EN: Record<string, string> = {
   ...EN_BUG_FLOW,
   ...EN_BUG_LOCATE,
   ...EN_CALL_TREE,
+  ...EN_WEB_VIEW,
+  ...EN_TURN_OUTPUTS,
   ...EN_BUG_OVERVIEW,
   ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,
@@ -99,6 +104,7 @@ export const EN: Record<string, string> = {
   ...EN_SPEECH,
   ...EN_HOOKS,
   ...EN_CONFIG_SCAN,
+  ...EN_PLUGIN_WRAP,
   ...EN_CLI_MORE,
   ...EN_NOTIFY_CHANNELS,
   ...EN_EXPERIENCE,

@@ -15,7 +15,7 @@ export { LINE_RULES, type ScanCategory, type ScanLevel, type ScanSource } from '
 
 export const ConfigFinding = z.object({
   rule: z.string(),
-  category: z.enum(['inject', 'exfil', 'exec', 'mcp', 'secret', 'hook']),
+  category: z.enum(['inject', 'exfil', 'exec', 'mcp', 'secret', 'hook', 'package']),
   level: z.enum(['high', 'medium', 'low']),
   /** 相对扫描根的文件（插件包、Skill 目录、项目根）；MCP 配置是「文件#服务名」 */
   file: z.string(),

@@ -59,10 +59,9 @@ type DiagTask = Pick<
   | 'messages'
   | 'plans'
   | 'requests'
-  | 'parentAsks'
+  | 'child'
   | 'resolved'
   | 'stopReason'
-  | 'wrapRequest'
   | 'worktree'
   | 'parentTaskId'
   | 'apiWait'
@@ -79,7 +78,7 @@ type DiagTask = Pick<
   userActions?: Task['userActions']
 }
 
-/** 面板推它接着做计划的那条消息（见 server/tasks/children.ts 的 nudgePlan）：开头固定 */
+/** 面板推它接着做计划的那条消息（见 server/tasks/drive.ts 的 nudgePlan）：开头固定 */
 const NUDGE_HEAD = '【面板】你的计划才做了'
 
 /** 最近一次「面板推它接着做」：在最后一条 Agent 回复之后才算还没被回应 */
@@ -117,7 +116,7 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
   const items: DiagItem[] = []
 
   // 等你处理的排最前：不处理它就不会往下走
-  const asking = task.parentAsks?.length ?? 0
+  const asking = task.child?.parentAsks?.length ?? 0
   if (asking) items.push({ kind: 'ask', text: t('{n} 个提问等你回答', { n: asking }), tone: 'warning' })
   if (task.requests.length)
     items.push({ kind: 'ask', text: t('{n} 项操作等你确认', { n: task.requests.length }), tone: 'warning' })
@@ -199,7 +198,7 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
       })
   }
 
-  if (task.parentTaskId && task.worktree?.state === 'active' && !task.wrapRequest && state === 'unfinished')
+  if (task.parentTaskId && task.worktree?.state === 'active' && !task.child?.wrapRequest && state === 'unfinished')
     items.push({ kind: 'branch', text: t('独立分支里的改动还没合回父对话'), tone: 'warning' })
 
   const { headline, tone } = headlineOf(task, state, word)

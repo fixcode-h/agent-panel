@@ -18,8 +18,8 @@ export function requestNote(req: Pick<TaskRequest, 'kind' | 'title'>, n = 1): st
 }
 
 /** 这个对话自己在等用户：有待确认的请求、没答的提问或等用户去做的事（和 convState 的 requests / asking / action 同一口径） */
-export const ownNeeds = (tk: Partial<Pick<Task, 'requests' | 'parentAsks' | 'userActions'>>) =>
-  !!(tk.requests?.length || tk.parentAsks?.length || pendingAction(tk))
+export const ownNeeds = (tk: Partial<Pick<Task, 'requests' | 'child' | 'userActions'>>) =>
+  !!(tk.requests?.length || tk.child?.parentAsks?.length || pendingAction(tk))
 
 /**
  * 每个对话名下（任意层的后代）有几个对话在等用户处理：一次扫完整份任务列表，按 parentTaskId 一路往上记。
@@ -28,7 +28,7 @@ export const ownNeeds = (tk: Partial<Pick<Task, 'requests' | 'parentAsks' | 'use
  */
 export function descendantNeeds(
   list: (Pick<Task, 'id' | 'parentTaskId'> &
-    Partial<Pick<Task, 'requests' | 'parentAsks' | 'userActions' | 'archived' | 'deletedAt' | 'worktree'>>)[],
+    Partial<Pick<Task, 'requests' | 'child' | 'userActions' | 'archived' | 'deletedAt' | 'worktree'>>)[],
 ): Map<string, number> {
   const parentOf = new Map(list.map((k) => [k.id, k.parentTaskId ?? '']))
   const out = new Map<string, number>()
@@ -89,9 +89,9 @@ export function confirmWaitText(
  * 子对话给父对话上报「等你处理」时的原因（childReport 的 needs）：确认请求写出是哪条命令 / 哪个文件，
  * 后代对话在等用户时说清是它的子对话——父对话据此知道不用催它，该提醒用户
  */
-export function needsReason(task: Partial<Pick<Task, 'requests' | 'parentAsks'>>, childNeeds = 0): string {
+export function needsReason(task: Partial<Pick<Task, 'requests' | 'child'>>, childNeeds = 0): string {
   const req = task.requests?.[0]
   if (req) return requestNote(req, task.requests!.length)
-  if (!task.parentAsks?.length && childNeeds) return t('它的子对话在等用户处理（确认请求或回答提问）')
+  if (!task.child?.parentAsks?.length && childNeeds) return t('它的子对话在等用户处理（确认请求或回答提问）')
   return t('有没答的提问，在等用户回答')
 }

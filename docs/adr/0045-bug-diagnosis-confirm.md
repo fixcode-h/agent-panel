@@ -153,7 +153,7 @@
 实现（一次做完）：
 
 - **逻辑**：都在 `shared/bug/diagnosis.ts`，包括交报告、校验、渲染、用户的决定、交回的话、收尾核对。数据结构在 `shared/bug/diagnosis-schema.ts`，挂在 `Task.bug`、`Task.diagnoses` 上。
-- **工具**：`submit_diagnosis` 的定义和调用在 `server/panel-tools/diagnosis-tool.ts`，只有 `task.bug` 的子对话有。决定接口是 `POST /tasks/:id/diagnosis/:version`（`server/tasks/diagnosis-routes.ts`）。收尾核对在 `server/tasks/merge.ts` 的 `submitMerge`。
+- **工具**：`submit_diagnosis` 的定义和调用在 `server/panel-tools/diagnosis-tool.ts`，只有 `task.bug` 的子对话有。决定接口是 `POST /tasks/:id/diagnosis/:version`（`server/tasks/diagnosis-routes.ts`）。收尾核对在 `server/tasks/merge/submit.ts` 的 `submitMerge`。
 - **等确认的状态**：不挂成等你处理的请求，只看最新一版报告的状态（`shared/task.ts` 的 `diagnosisPending`）。`ConvFacts.diagnosis` 让对话算执行中；`childWait` 写「等你查看诊断报告第 N 版」；自驱、收尾提醒按「在等用户」不推；完成判定和等确认的请求一样拦着。
 - **2026-11-03 用户纠正**：第一版（1efc3a9）把诊断报告挂成「等你处理」的请求，子对话不转圈，父对话页还多一条「查看报告」。用户要求：等报告期间子对话仍是运行中、在父对话里照样转圈；「查看报告」只放在子对话里转圈的那一行工具调用上。已按此改，教训记在 `docs/lessons/state.md`。
 - **审阅弹窗**：`ReviewDialog` 加了标注种类、多版切换（旧版只读）和只读模式；诊断报告的包装在 `web/src/components/tasks/DiagnosisDialog.tsx`。「回答上一版的意见」作为报告的第一节显示在正文里，没有挪到右栏每条标注下面：正文里按编号对得上，右栏留给这次的新标注。

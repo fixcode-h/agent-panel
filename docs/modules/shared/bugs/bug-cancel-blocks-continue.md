@@ -13,7 +13,7 @@
 
 ## 根因
 
-2026-11-07 定的规则（ADR 0045「入口只在消息流、不修了就关闭」）：最新一版是 `cancelled` 时，`submitOnce` 无条件拒交，`editScope`、`diagnosisGate` 都返回同一句 `closedInfo`。这三处只看最后一版的状态，不管用户之后有没有在这个对话里开口，所以取消后这个对话永远起不了新报告。普通对话里就地查的 Bug 再发 /bug 也被 `conversation-routes.ts` 拒成「新开一个对话」。和 dev 84c8d2f（等确认时退出 / 停止后回到等确认）无关：那条只处理 `pending`，取消后的状态是清干净的。
+2026-11-07 定的规则（ADR 0045「入口只在消息流、不修了就关闭」）：最新一版是 `cancelled` 时，`submitOnce` 无条件拒交，`editScope`、`diagnosisGate` 都返回同一句 `closedInfo`。这三处只看最后一版的状态，不管用户之后有没有在这个对话里开口，所以取消后这个对话永远起不了新报告。普通对话里就地查的 Bug 再发 /bug 也被 `server/tasks/routes/conversation/send.ts` 拒成「新开一个对话」。和 dev 84c8d2f（等确认时退出 / 停止后回到等确认）无关：那条只处理 `pending`，取消后的状态是清干净的。
 
 ## 修复
 

@@ -178,7 +178,6 @@ test('子对话状态上报（复查报告 A3）：界面读消息上存的状�
       status: 'failed',
       working: false,
       requests: [],
-      parentAsks: [],
       plans: [],
       steps: [],
       resolved: false,

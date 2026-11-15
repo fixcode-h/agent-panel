@@ -360,7 +360,7 @@ const MessageBody = memo(
         )}
         {m.text && (
           <Markdown
-            text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
+            text={(task?.analysis?.kind === 'init' ? stripInitJson : (x: string) => x)(
               stripPluginReports(
                 stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
                 task,

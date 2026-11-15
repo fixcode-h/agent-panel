@@ -16,6 +16,7 @@ import { openMarket, useMarket } from './market'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
 import { canCheck, checkUpdates, usePluginUpdates } from './updates'
 import { updateAll, useUpdatingAll } from './update-all'
+import { WrapDialog } from './WrapDialog'
 
 /**
  * 设置 →「插件」（ADR 0059）：一份卡片列表，分「已安装」和「可安装」两段，装过的不在市场里重复出现。
@@ -43,6 +44,7 @@ export function PluginsSection() {
         )}
       </p>
       <MarketBar onPreview={setPreview} />
+      <WrapDialog />
       <Group title={t('已安装')} plain aside={<InstalledAside rows={rows} n={rows.length + broken.length} />}>
         {!loaded ? (
           <p className="text-body text-subtle">{t('读取中…')}</p>
