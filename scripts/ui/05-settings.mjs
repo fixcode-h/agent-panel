@@ -225,7 +225,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
   // 包装预览的样例：识别出的内容能勾选，按配方的写明配方文件
   await check(p, '设置-组件-插件包装', ['WrapPreviewBody', '识别出的内容', '按配方 wraps/tt-a1i__archify.json'])
-  if ((await p.locator('[data-wrap-candidate]').count()) !== 3) errors.push('设置-组件-插件包装：样例应该有 3 行识别结果')
+  if ((await p.locator('[data-wrap-candidate]').count()) !== 3)
+    errors.push('设置-组件-插件包装：样例应该有 3 行识别结果')
   const sample = p.getByRole('tablist', { name: '示例页签' })
   await sample.getByRole('tab', { name: /代码审查/ }).click()
   await sample.getByRole('button', { name: '关闭页签' }).first().click()

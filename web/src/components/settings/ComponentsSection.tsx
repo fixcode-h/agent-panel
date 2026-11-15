@@ -64,7 +64,7 @@ import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
-import { WrapSpecimen } from '@/components/settings/WrapSpecimen'
+import { WrapSpecimens } from '@/components/settings/WrapSpecimen'
 import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
 import { HtmlCardSpecimen } from '@/components/settings/HtmlCardSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
@@ -631,11 +631,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           <CapsSpecimen />
         </Specimen>
       </Group>
-      <Group title={t('插件包装')}>
-        <Specimen name="WrapPreviewBody" tune={['badge', 'checkbox', 'segmented']}>
-          <WrapSpecimen />
-        </Specimen>
-      </Group>
+      <WrapSpecimens Specimen={Specimen} />
       <PluginSpecimens Specimen={Specimen} />
       <Group title={t('空状态')}>
         <Specimen name="EmptyPanel" tune={['empty']}>
