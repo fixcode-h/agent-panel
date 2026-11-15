@@ -76,7 +76,7 @@ await runShard('子对话与计划', async (api) => {
       kids = await call('GET', `/tasks/${parent.id}/children`)
     }
     assert.equal(kids.find((x) => x.id === kid.id).cliAlive, true, '发消息后进程活着')
-    // 子对话计数按 1 秒共享缓存算（server/tasks/children.ts 的 childCountsOf）：上面查子对话栏时刚算过的那份
+    // 子对话计数按 1 秒共享缓存算（server/tasks/children/count.ts 的 childCountsOf）：上面查子对话栏时刚算过的那份
     // 可能还是子对话启动前的，最多等缓存过期一次再看（CI 上偶发拿到旧的 0）
     let busy = await call('GET', '/tasks')
     for (let i = 0; i < 20 && !(busy.find((x) => x.id === parent.id)?.live?.childrenWorking >= 1); i++) {

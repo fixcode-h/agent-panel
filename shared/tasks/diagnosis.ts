@@ -79,7 +79,7 @@ type DiagTask = Pick<
   userActions?: Task['userActions']
 }
 
-/** 面板推它接着做计划的那条消息（见 server/tasks/children.ts 的 nudgePlan）：开头固定 */
+/** 面板推它接着做计划的那条消息（见 server/tasks/drive.ts 的 nudgePlan）：开头固定 */
 const NUDGE_HEAD = '【面板】你的计划才做了'
 
 /** 最近一次「面板推它接着做」：在最后一条 Agent 回复之后才算还没被回应 */

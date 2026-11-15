@@ -9,7 +9,7 @@ import type { ChildCounts as ScanCounts } from '../../shared/children/row.ts'
 /** 交给界面的任务：记录本身加上 live（运行时状态） */
 export type TaskWithLive = Task & { live: TaskLive }
 
-/** 名下子对话的计数（server/tasks/children.ts 的 childCountsOf，结果按 1 秒缓存） */
+/** 名下子对话的计数（server/tasks/children/count.ts 的 childCountsOf，结果按 1 秒缓存） */
 type ChildCounts = (parentId: string) => Promise<{ working: number; cli: number; needs: number }>
 
 /** 调用方刚扫好的一份计数（shared/children/row.ts 的 childCountsScan）：列表接口用它，不读 1 秒缓存 */

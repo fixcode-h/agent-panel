@@ -212,11 +212,11 @@ export interface PeerReport {
 
 /**
  * 把汇报正文拆成字段：认得出计划步骤那句或【子对话状态】开头才算，其余返回 null 照旧画全文。
- * 只按服务端拼出的固定写法认（server/tasks/children.ts 的 reportChild、shared/plan/index.ts 的 waitNote），
+ * 只按服务端拼出的固定写法认（server/tasks/children/report.ts 的 reportChild、shared/plan/index.ts 的 waitNote），
  * 旧数据里「下一步」没写前缀的重试说明也归到下一步
  */
 export function parseReport(text: string): PeerReport | null {
-  // 末尾「这是摘要……全文在哪」是写给父对话 AI 的（见 server/tasks/children.ts 的 reportChild），界面上点子对话就能看全文
+  // 末尾「这是摘要……全文在哪」是写给父对话 AI 的（见 server/tasks/children/report.ts 的 reportChild），界面上点子对话就能看全文
   const lines = text
     .replace(/\n处理完这个结果后[^\n]*$/, '')
     .replace(/\n（这是摘要[，。][^\n]*）$/, '')

@@ -122,7 +122,7 @@ export type ChildRow = ReturnType<typeof childRow>
 
 /**
  * 子对话按记录算还在不在运行（见 convActive）：在跑、等结果、等回答，或者还有交过来的消息要接着处理。
- * 正式版另外还要算「正在启动、还没取到执行位」的（server/tasks/children.ts 的 childActive），那部分只有它有
+ * 正式版另外还要算「正在启动、还没取到执行位」的（server/tasks/children/count.ts 的 childActive），那部分只有它有
  */
 export const childRecordActive = (tk: Task, background: number) => convActive(convState(childFacts(tk, { background })))
 

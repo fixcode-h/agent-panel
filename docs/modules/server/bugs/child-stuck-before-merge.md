@@ -2,9 +2,9 @@
 
 - 状态：已修复（`shared/tasks/idle-ask.test.ts` 的 `turnSettled`、`nextMergeStall` 用例通过）
 - 症状：子对话说「现在收尾」就结束这一轮，没调用 `submit_merge`；之后面板不提醒，父对话也不再收到上报，父子两边都停在「等下一句」
-- 入口：`server/tasks/children.ts` 的 `nudgeMerge`、`reportChild`；`shared/merge-stall.ts`
+- 入口：`server/tasks/children/turn-end.ts` 的 `nudgeMerge`、`reportChild`；`shared/merge-stall.ts`
 - 根因类型：提醒只认进程退出（status done），保活的 CLI 永远不满足；上报按「状态没变」去重，再停一次被吞掉
-- 模块：`server`（`server/tasks/children.ts`、`shared/merge-stall.ts`）
+- 模块：`server`（`server/tasks/children/index.ts`、`shared/merge-stall.ts`）
 - 关键词：子对话、合回、submit_merge、收尾、保活、等下一句、去重、整棵树停住、Claude Code
 
 ## 现象
