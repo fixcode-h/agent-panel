@@ -40,6 +40,7 @@ import { dataPath, readJson, writeJsonAtomic } from './store.ts'
 import { getSettings } from './settings.ts'
 import { writeTextFile } from './file-format.ts'
 import { cliSettings } from '../shared/settings.ts'
+import { isProjectSkill } from './skills/config.ts'
 
 const FILE = dataPath('config/deploy.json')
 const docClis = () => CLIS.filter((d) => d.globalDoc)
@@ -117,8 +118,10 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
   const root = skillRoot()
   const out: DeployResult = { skills: [], kept: [], removed: [], docs: [] }
   // 选了特化技能（例如 ue-project-structure）就连它扩展的通用技能一起部署，单独一份读不全
-  run = { ...run, skills: resolveSkills(run.skills) }
+  // 按项目的技能不部署到用户目录（每轮只给打开了它的项目带上），勾着也跳过，全局说明末尾的清单里也不列
+  run = { ...run, skills: resolveSkills(run.skills).filter((n) => !isProjectSkill(n)) }
   for (const e of all) {
+    if (isProjectSkill(e.name)) continue
     const dir = deployedRoot(e)
     const s = await statusIn(e, dir)
     if (run.skills.includes(e.name)) {

@@ -44,6 +44,12 @@ export interface TaskTab {
 export interface PluginPage {
   id: string
   label: string
+  /**
+   * 页面放在哪（插件接口 9）：global（默认）在图标栏，所有项目共用；project 是项目工具，
+   * 只出现在打开了这个插件（清单 activation = project）的项目的侧栏「项目工具」里，打开时地址带上当前项目，
+   * 页面里不用再自己切项目（Page 的 project 参数）
+   */
+  scope?: 'global' | 'project'
   /** 函数组件（lucide 图标或自己画的 svg）：图标栏按 24px、线宽 1.75 画 */
   icon: (p: { className?: string; strokeWidth?: number }) => ReactNode
   /** 图标右上角的小点（有新内容、出错），给文字时也写进悬停提示 */
@@ -54,7 +60,12 @@ export interface PluginPage {
    */
   taskPlugin?: string
   /** active：这一页现在是不是显示着（keep 的页切走后还挂着，这时为 false，例如快捷键只在显示着时响应） */
-  Page: ComponentType<{ path: string; active?: boolean }>
+  Page: ComponentType<{
+    path: string
+    active?: boolean
+    /** scope = project 时是当前项目的 id（插件接口 9） */
+    project?: string
+  }>
   /**
    * 打开过一次就一直挂着、切走只藏起来（插件接口 6，例如表格页：打开的表、没保存的改动、滚动位置都留着，
    * 切回来不重新加载几千张表的目录）。不给时切走就卸载

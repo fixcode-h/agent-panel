@@ -1,30 +1,56 @@
 /**
- * 界面检查分片：项目：侧栏排序和拖拽、浅色主题、文件面板、项目设置、AI 初始化、项目教训
+ * 界面检查分片：项目：侧栏项目下拉、全部项目页排序和拖拽、浅色主题、文件面板、项目设置、AI 初始化、项目教训
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard, dialogBottomSpaceProblems, segmentedContrastProblems } from './harness.mjs'
+import { runShard, dialogBottomSpaceProblems, pickProject, segmentedContrastProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
-  // 侧栏项目分组：默认按添加时间排（演示项目的时间各不相同），拖拽手柄能调整顺序并持久化，刷新后还是新顺序
-  const projectRows = () =>
-    p
-      .locator('[data-sidebar] section button[title^="打开项目「"]')
-      .evaluateAll((els) => els.map((e) => (e.getAttribute('title') ?? '').match(/「(.+?)」/)?.[1] ?? ''))
+  // 侧栏方案 B：顶上是当前项目切换器，点开是项目下拉（搜索、新建项目、项目列表、全部项目），
+  // 「全部项目」页是项目卡片，默认按添加时间排（演示项目的时间各不相同），拖动手柄能调整顺序并持久化
+  const projectCards = () =>
+    p.locator('[data-all-projects] [data-project-name]').evaluateAll((els) => els.map((e) => e.dataset.projectName))
+  await p.goto(base)
+  {
+    const sw = p.locator('[data-project-switcher]')
+    await sw.waitFor({ timeout: 10000 })
+    await sw.click()
+    const picker = p.locator('[data-project-picker]')
+    await picker.waitFor({ timeout: 5000 })
+    const firstRow = await picker.getByRole('button').nth(0).textContent()
+    if (!/新建项目/.test(firstRow ?? '')) errors.push(`项目下拉：搜索框下面第一行不是「新建项目」（是「${firstRow}」）`)
+    for (const name of ['商城前台', '运营后台', '全部项目', '管理项目分类'])
+      if (!(await picker.getByText(name, { exact: true }).count())) errors.push(`项目下拉：没有「${name}」`)
+    await check(p, '侧栏-项目下拉', ['新建项目', '全部项目'])
+    // 搜索：只留名字或路径对得上的
+    await picker.getByPlaceholder('搜索项目').fill('admin')
+    if (await picker.getByText('商城前台', { exact: true }).count()) errors.push('项目下拉：搜索 admin 还列着商城前台')
+    await check(p, '侧栏-项目下拉-搜索', ['运营后台'])
+    await picker.getByText('运营后台', { exact: true }).click()
+    await p
+      .locator('[data-project-switcher]', { hasText: '运营后台' })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('项目下拉：点了「运营后台」，切换器没换成它'))
+    if (!/#\/projects\//.test(p.url())) errors.push('项目下拉：选了项目没有打开项目首页')
+    // 图标栏只放通用入口，项目工具在侧栏里
+    for (const name of ['技能与 MCP', '经验与文档'])
+      if (!(await p.locator('[data-sidebar]').getByRole('button', { name }).count()))
+        errors.push(`项目工具：侧栏没有「${name}」`)
+    await check(p, '侧栏-切换项目后', ['运营后台', '项目工具'])
+  }
   await p.goto(base + '#/projects')
-  // 侧栏是异步取数据画出来的：等第一个项目出现再读顺序，CI 上机器慢时直接读会拿到空列表
-  await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
-  const order0 = await projectRows()
+  await p.locator('[data-all-projects] [data-project-name]').first().waitFor({ timeout: 10000 })
+  const order0 = await projectCards()
   assert.deepEqual(
     order0.slice(0, 4),
     ['商城前台', '运营后台', '客户端主工程', '旧官网'],
-    `侧栏项目没有按添加时间排序：${order0.join('、')}`,
+    `全部项目：没有按添加时间排序：${order0.join('、')}`,
   )
-  await check(p, '侧栏-项目按添加时间', ['商城前台', '运营后台'])
+  await check(p, '全部项目-按添加时间', ['商城前台', '运营后台'])
   // 图标栏能展开成带字的（分析稿 U4）：每格写名字，刷新后还是展开的；收起回到只有图标
   {
     const bar = p.locator('nav[aria-label="功能栏"]')
@@ -54,55 +80,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       errors.push('图标栏：刷新后没记住展开')
     await bar.getByRole('button', { name: '只显示图标', exact: true }).click()
     if (await bar.getByText('对话总览', { exact: true }).count()) errors.push('图标栏：收起后还写着名字')
-    await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
+    await p.locator('[data-project-switcher]').first().waitFor({ timeout: 10000 })
   }
   // 拖住「运营后台」的手柄，放到「商城前台」上：出现插入提示
+  await p.goto(base + '#/projects')
+  await p.locator('[data-all-projects] [data-project-name]').first().waitFor({ timeout: 10000 })
   const orderGrip = p.getByRole('button', { name: '拖动调整「运营后台」的顺序' })
-  const target = (await p.locator('[data-sidebar] section').nth(0).boundingBox()) ?? null
-  if (!(await orderGrip.count()) || !target) errors.push('侧栏-拖拽：没有拖拽手柄')
+  if (!(await orderGrip.count())) errors.push('全部项目-拖拽：没有拖拽手柄')
   else {
     // 无头浏览器的鼠标拖不出 HTML5 拖放，用脚本发拖放事件（和 UI 设计拖图片的写法一样）
+    const fire = (type) =>
+      p.evaluate((type) => {
+        const target = document.querySelector('[data-all-projects] [data-project-name]')
+        const r = target.getBoundingClientRect()
+        target.dispatchEvent(
+          new DragEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: window.__dt,
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+          }),
+        )
+      }, type)
     await p.evaluate(() => {
       window.__dt = new DataTransfer()
       const handle = document.querySelector('[aria-label="拖动调整「运营后台」的顺序"]')
       handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__dt }))
     })
     await p.waitForTimeout(150)
-    await p.evaluate(() => {
-      const section = document.querySelectorAll('[data-sidebar] section')[0]
-      const r = section.getBoundingClientRect()
-      section.dispatchEvent(
-        new DragEvent('dragover', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: window.__dt,
-          clientX: r.left + r.width / 2,
-          clientY: r.top + r.height / 2,
-        }),
-      )
-    })
+    await fire('dragover')
     await p.waitForTimeout(150)
-    await check(p, '侧栏-拖拽插入提示')
-    await p.evaluate(() => {
-      const section = document.querySelectorAll('[data-sidebar] section')[0]
-      const r = section.getBoundingClientRect()
-      section.dispatchEvent(
-        new DragEvent('drop', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: window.__dt,
-          clientX: r.left + r.width / 2,
-          clientY: r.top + r.height / 2,
-        }),
-      )
+    await check(p, '全部项目-拖拽插入提示')
+    await fire('drop')
+    await p.evaluate(() =>
       document
         .querySelector('[aria-label="拖动调整「运营后台」的顺序"]')
-        .dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt }))
-    })
-    for (let i = 0; i < 40 && (await projectRows())[0] !== '运营后台'; i++) await p.waitForTimeout(50)
-    const order1 = await projectRows()
+        ?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt })),
+    )
+    for (let i = 0; i < 40 && (await projectCards())[0] !== '运营后台'; i++) await p.waitForTimeout(50)
+    const order1 = await projectCards()
     assert.deepEqual(order1.slice(0, 2), ['运营后台', '商城前台'], `拖拽后顺序不对：${order1.join('、')}`)
-    await check(p, '侧栏-拖拽后顺序', ['运营后台', '商城前台'])
+    await check(p, '全部项目-拖拽后顺序', ['运营后台', '商城前台'])
     // 刷新后仍是新顺序（演示版把顺序存在浏览器里，等价于真实服务端写盘）
     const saved = await p.evaluate(() => JSON.parse(localStorage.getItem('agent-panel-demo-v3') ?? '{}'))
     assert.ok(
@@ -110,9 +129,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '拖拽后没有把顺序存下来',
     )
     await p.reload()
-    await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
-    assert.deepEqual((await projectRows()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
-    await check(p, '侧栏-刷新后顺序', ['运营后台', '商城前台'])
+    await p.locator('[data-all-projects] [data-project-name]').first().waitFor({ timeout: 10000 })
+    assert.deepEqual((await projectCards()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
+    await check(p, '全部项目-刷新后顺序', ['运营后台', '商城前台'])
   }
   // 深色下侧栏的模式切换（Agent / Chat / 设计）选中项要认得出来（用户反馈过「黑暗模式看不清」）
   await p.evaluate(() => document.documentElement.classList.add('dark'))
@@ -124,7 +143,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 新建对话时单独设用量上限（分析稿 A6）：输入框工具条上的图标，点开填 token 和费用；
   // 演示里默认的 CLI 自己报费用，不出「算不了费用」那句
   {
-    await p.getByText('商城前台', { exact: true }).first().click()
+    await pickProject(p, '商城前台')
     // 项目首页和面板首页同一个样子：项目名、输入框，下面只列这个项目等你处理的和最近的对话
     {
       const home = p.locator('[data-project-home]')
@@ -168,7 +187,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   {
     await p.goto(base)
     // #/projects 的地址里带项目 id，演示里的 id 每次生成都不一样，从侧栏点进去
-    await p.locator('[data-sidebar]').getByText('商城前台').first().click()
+    await pickProject(p, '商城前台')
     // 面板打开时才开始读文件：清掉之前页面记下的请求，再看打开面板读了哪几层
     await p.evaluate(() => {
       window.__fileCalls = []
@@ -343,6 +362,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .getByRole('dialog')
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
+    }
+    // 长代码文件：阅读区按 80 行一块绝对定位，块的位置按量出来的行高算。弹窗打开时有缩放动画，
+    // 量的时候要按排版尺寸量，否则下一块会往上盖住这一块的最后几行（用户 2026-11-15 报文字叠在一起）
+    {
+      await panel.getByPlaceholder('查找文件').fill('products.ts')
+      await panel
+        .locator('button[title="src/api/products.ts"]')
+        .click({ timeout: 8000 })
+        .catch(() => errors.push('文件窗口：名称搜索找不到 src/api/products.ts'))
+      const dlg = p.getByRole('dialog')
+      await dlg
+        .locator('[data-line="81"]')
+        .waitFor({ state: 'attached', timeout: 5000 })
+        .catch(() => errors.push('文件窗口：长代码文件没有画出第 81 行'))
+      await settle(p)
+      const seam = await dlg
+        .locator('[data-line="80"], [data-line="81"]')
+        .evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom })))
+        .catch(() => [])
+      if (seam.length === 2 && Math.abs(seam[1].top - seam[0].bottom) > 1)
+        errors.push(
+          `文件窗口：第 80、81 行没接上（差 ${(seam[1].top - seam[0].bottom).toFixed(1)}px），块和块之间叠字或留缝`,
+        )
+      await p.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+      await panel.getByPlaceholder('查找文件').fill('')
     }
     // 表格和树形：CSV 阅读时是表格，xlsx 是解析好的各张表（能切表），JSON 能切到树形
     {
@@ -543,16 +588,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.keyboard.press('Escape')
   }
   // 项目设置：测试步骤和按 Agent 派生的参数都要能正常显示，不能溢出、不能串行
-  // 先点侧栏的项目（title 是「打开项目「名字」」）进入项目首页，管理区里有「项目设置」按钮
-  const settingsButton = p.getByRole('button', { name: '项目设置' })
-  if (!(await settingsButton.count()))
-    await p
-      .locator('[data-sidebar] button[title^="打开项目「"]')
-      // 演示里只有「商城前台」配了测试步骤，按名字点它，不依赖侧栏顺序
-      .filter({ hasText: '商城前台' })
-      .first()
-      .click()
-      .catch(() => {})
+  // 演示里只有「商城前台」配了测试步骤：先在项目下拉里切到它，侧栏「项目工具」标题上的齿轮是「项目设置」
+  await pickProject(p, '商城前台').catch(() => errors.push('项目设置：切不到「商城前台」'))
+  const settingsButton = p.locator('[data-sidebar]').getByRole('button', { name: '项目设置' })
   if (await settingsButton.count()) {
     await settingsButton.first().click()
     const dlg = p.getByRole('dialog')
@@ -564,20 +602,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
     await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
     await footSpace('常规')
-    // 项目技能：项目目录里的和用户级的都列出来，缺说明的技能给出问题提示和 AI 修复
-    await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
-    await check(p, '项目设置-Skill', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
-    await footSpace('Skill')
-    // MCP：项目里识别到的配置（三种状态各有一条）、面板管理的工具、导入与 AI 排查入口
-    await dlg.getByRole('button', { name: 'MCP', exact: true }).click()
-    await check(p, '项目设置-MCP', [
-      '只在项目里',
-      '和各 Agent 的配置一致',
-      '和各 Agent 的配置不同',
-      '全部导入',
-      '用 AI 排查整页',
-    ])
-    await footSpace('MCP')
+    // 能力（设计稿：Agent侧栏与项目管理重设计 6.3）：按项目生效的插件卡片（演示给表格、UE 两个示例）、
+    // MCP 和技能列表、右栏「交给 Agent 的」；项目目录里的技能和 MCP 配置挪到了项目工具的「技能与 MCP」页（下面单独测）
+    await dlg.getByRole('button', { name: /^能力/ }).click()
+    await check(p, '项目设置-能力', ['项目能力', '表格', 'UE', 'MCP 工具', '技能', '交给 Agent 的', '始终启用'])
+    await footSpace('能力')
     // Pi 的说明页上有「项目配置」信任三选一：演示项目里有 .pi/skills，选「跟随」时提示它不会加载（ADR 0050）
     await dlg.getByRole('button', { name: /^Pi\b/ }).click()
     await check(p, '项目设置-Pi项目配置', ['项目配置', '跟随 Pi', '这个项目里有 Pi 的项目配置：.pi/skills'])
@@ -588,9 +617,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 这个项目的插件：没选「信任」时提示不会加载（ADR 0050 第四期）
     await dlg.getByText('这个项目的插件', { exact: true }).first().scrollIntoViewIfNeeded()
     await check(p, '项目设置-Pi项目插件', ['npm:@team/pi-review-rules', '没选「信任」'])
-    // 两页切回来都正常（导航里 Skill 和 MCP 相邻）
-    await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
-    await check(p, '项目设置-Skill 再切回', ['新建 Skill'])
+    // 切回「能力」也正常（滚动区换了分支再回来）
+    await dlg.getByRole('button', { name: /^能力/ }).click()
+    await check(p, '项目设置-能力 再切回', ['项目能力'])
     await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
     await check(p, '项目设置-必备角色', ['协调器', '执行', '文档', '评审', '测试验收', '版本控制'])
     await footSpace('必备角色')
@@ -714,6 +743,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.keyboard.press('Escape')
       await settle(p).catch(() => {})
     }
+    // 项目工具「技能与 MCP」（#/projects/<id>/capabilities，设计稿 B3）：项目自己的和从全局继承的分两块；
+    // 原来项目设置里的 Skill、MCP 两页在「项目技能」「项目 MCP」页签里，内容照旧
+    const projectHash = await p.evaluate(() => location.hash)
+    await p.evaluate((h) => (location.hash = `${h.split('/').slice(0, 3).join('/')}/capabilities`), projectHash)
+    await check(p, '技能与MCP-总览', ['技能与 MCP', '项目自己的', '从全局继承', 'release-notes', 'agent-panel'])
+    await p.getByRole('radio', { name: '项目技能' }).click()
+    await check(p, '技能与MCP-项目技能', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
+    await p.getByRole('radio', { name: '项目 MCP' }).click()
+    await check(p, '技能与MCP-项目MCP', [
+      '只在项目里',
+      '和各 Agent 的配置一致',
+      '和各 Agent 的配置不同',
+      '全部导入',
+      '用 AI 排查整页',
+    ])
+    await p.evaluate((h) => (location.hash = h), projectHash)
+    await settle(p).catch(() => {})
     // 项目首页：和首页一样列等你处理的对话；输入和已有对话是同一件事的要求时，提示可以直接发过去
     await p.locator('#task-prompt').click()
     await p.keyboard.type('到货通知的按钮在详情页上点了没反应')
@@ -750,7 +796,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
   await p.goto(base + '#/projects')
   const createButton = () => p.getByRole('dialog').getByRole('button', { name: '创建', exact: true })
+  // 「全部项目」页右上角的「新建项目」（侧栏里的在项目下拉里）；建好后会切到新项目，每次先回到这一页
   const newProject = async (dirPath) => {
+    if (!/#\/projects$/.test(p.url())) await p.goto(base + '#/projects')
     await p.getByRole('button', { name: '新建项目' }).first().click()
     await p.getByRole('dialog').getByLabel('本地目录').fill(dirPath)
   }

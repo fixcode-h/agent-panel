@@ -11,7 +11,17 @@ import {
   type ProjectMcpImportResult,
   type ProjectMcpOverview,
 } from '../../shared/projects/mcp.ts'
-import { mcpOverview, readServerTable, readToml, removeMcpFrom, testMcp, writeMcpTo } from '../mcp-store.ts'
+import {
+  activationOf,
+  deleteMcpEntry,
+  mcpOverview,
+  previousOf,
+  readServerTable,
+  readToml,
+  saveMcpEntry,
+  testMcp,
+} from '../mcp-store.ts'
+import { sameServer } from '../../shared/mcp-library/inject.ts'
 import { scanMcpServer } from '../../shared/config-scan/index.ts'
 import { visibleFindings } from '../config-scan.ts'
 
@@ -55,19 +65,6 @@ const SOURCES: Source[] = [
   { file: '.vscode/mcp.json', store: jsonStore('servers'), source: 'VS Code 工作区配置' },
   { file: '.codex/config.toml', store: tomlStore, source: 'Codex 项目配置' },
 ]
-
-/** 配置内容是否一样（不算名字和装在哪几个 CLI） */
-const sameServer = (a: McpServer, b: McpServer) => {
-  const norm = (v: Record<string, string>) => JSON.stringify(Object.entries(v).sort())
-  return (
-    a.transport === b.transport &&
-    a.command === b.command &&
-    a.url === b.url &&
-    JSON.stringify(a.args) === JSON.stringify(b.args) &&
-    norm(a.env) === norm(b.env) &&
-    norm(a.headers) === norm(b.headers)
-  )
-}
 
 const nameOk = (name: string) => /^[A-Za-z0-9][\w-]*$/.test(name)
 
@@ -171,16 +168,14 @@ export function projectMcpApi(deps: { projectPath: (projectId: string) => Promis
         guard(async (c) => {
           const body = await c.req.json()
           const sv = parse({ ...body.server, name: c.req.param('name') })
-          const clis = (body.clis ?? []) as string[]
-          const { clis: targets } = await mcpOverview()
-          for (const t of targets) await (clis.includes(t.id) ? writeMcpTo(t.id, sv) : removeMcpFrom(t.id, sv.name))
+          await saveMcpEntry(sv, body.clis ?? [], activationOf(body.activation), previousOf(body.previous))
           return c.json(await overview(await dirOf(c)))
         }),
       )
       .delete(
         '/:name',
         guard(async (c) => {
-          for (const t of (await mcpOverview()).clis) await removeMcpFrom(t.id, c.req.param('name'))
+          await deleteMcpEntry(c.req.param('name'))
           return c.json(await overview(await dirOf(c)))
         }),
       )
@@ -208,7 +203,9 @@ export function projectMcpApi(deps: { projectPath: (projectId: string) => Promis
             )
             try {
               const sv = parse(hit.server)
-              for (const id of target) await writeMcpTo(id, sv)
+              // 导入是「加上」：已经装着的 CLI 保留，生效方式照原来的（新的条目是全局）
+              const had = (await mcpOverview()).servers.find((x) => x.name === sv.name)?.clis ?? []
+              await saveMcpEntry(sv, [...new Set([...had, ...target])])
               result.done.push({ name: hit.name, file: hit.file })
             } catch (e) {
               result.skipped.push({ name: hit.name, file: hit.file, reason: (e as Error).message })

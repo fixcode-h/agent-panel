@@ -83,6 +83,7 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 | `configSettings`                  | CLI 自己配置文件里的设置项 `[{ "id", "label", "hint", "file", "at", "type", "default", "min", "max", "unit", "scale", "choices" }]`：没有命令行参数的设置（Pi `settings.json` 的重试、超时、压缩），设置页直接读写，只写改过的键，选回「跟随」删掉；`at` 是点分路径，`scale` 是界面上的数乘多少写进文件（秒 → 毫秒写 1000）。见 `shared/cli/config-settings.ts`、ADR 0050                                                                                                            |
 | `trust`                           | 项目信任 `{ "markers", "upMarkers", "why" }`：CLI 只在信任过项目后才读的项目文件（`upMarkers` 还会往上找到仓库根目录）。写了它，项目设置里这个 CLI 的分页多一行「跟随 / 信任 / 不信任」（`Project.cliTrust`），参数规则里用条件 `trust=approve` / `trust=deny`（Pi 是 `--approve` / `--no-approve`）；选「跟随」而项目里有标记文件时提示它们不会加载。见 `shared/cli/trust.ts`、ADR 0050                                                                                             |
 | `packages`                        | CLI 自己的插件（扩展包），设置里能装、删、更新，推荐的一键安装，见下面「插件」                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `runSkills`                       | 每轮带上按项目的技能（项目「能力」里打开的）：`subdir` 是技能放在 `{root}` 下哪个子目录，`args` 是加的参数，`rpc` 是走协议的 CLI 开会话前发的请求，`{root}` / `{dir}` 换成数据目录 `run-skills/<项目>/<CLI>/`（`server/skills/run-skills.ts`）。Claude Code `--add-dir {root}`（读其中的 `.claude/skills`），Codex 走 app-server 的 extraRoots 请求，Pi、Command Code `--skill {dir}`。不写的 CLI 改成在提示里列出技能路径                                                           |
 | `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
@@ -355,6 +356,19 @@ UI 设计的服务名是 `design`，它的工具本来就不含这三个。
 Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json` 要先信任项目），用户自己的 MCP 服务器通过 `mcpStore`
 出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），
 而项目里的配置受「项目信任」管控，print / json / rpc 模式不会弹信任提示；`-e` 显式加载的扩展不受这两点影响。
+
+### 按项目的 MCP 工具 `mcpStore.inject`
+
+「MCP 工具」页的条目可以选「全局」或「按项目生效」（设计稿 Agent侧栏与项目管理重设计 6.2）。全局的照旧写进 `mcpStore.file`，所有项目都加载；
+按项目的存在面板数据目录 `config/mcp-library.json`，只在项目「能力」里打开了它（`project.capabilities.mcp`）的项目里每轮交给 CLI。
+怎么交写在 `mcpStore.inject`，条目的字段名、`type` 和写全局配置时一样（`shared/mcp-library/inject.ts` 的 `mcpServerObject`）：
+
+- `format: "json"`：所有条目合成一段 `{ [key]: { 名字: 条目 } }` 填进 `args` 的 `{json}`，只加一次。Claude Code 用 `--mcp-config {json}`（可以给多次，和面板自己的那份并存）。
+- `format: "toml"`：每个条目的每个字段一组 `args`，`{key}` 是 `key.名字.字段`，`{value}` 是 TOML 写法的值。Codex 用 `-c {key}={value}`。
+
+没写 `inject` 的 CLI（现在是 Command Code、Pi）对按项目的条目退回全局写入，「MCP 工具」页在条目下注明。
+从全局改成按项目时，能注入的 CLI 的全局配置里只清掉和条目内容一样的那份（面板写的），用户自己在 CLI 里另配的同名工具不动、在页面上标出来。
+和面板、插件这一轮的服务同名的条目不带（`server/exec/invoke.ts` 的 `projectMcpArgs`）。
 
 ### 联网搜索
 

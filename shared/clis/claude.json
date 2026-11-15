@@ -229,6 +229,7 @@
     "docsImports": true
   },
   "docsNote": "Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。",
+  "runSkills": { "subdir": ".claude/skills", "args": ["--add-dir", "{root}"] },
   "skills": {
     "user": ["~/.claude/skills"],
     "repo": [".claude/skills"]
@@ -571,7 +572,12 @@
     "urlKey": "url",
     "remoteType": "http",
     "stdioType": true,
-    "headersKey": "headers"
+    "headersKey": "headers",
+    "inject": {
+      "format": "json",
+      "args": ["--mcp-config", "{json}"],
+      "why": "--mcp-config 可以给多次，和面板自己的那份并存；stdio、http 都支持，字段和 ~/.claude.json 的 mcpServers 一样"
+    }
   },
   "i18n": {
     "en": {

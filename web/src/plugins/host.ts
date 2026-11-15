@@ -30,7 +30,9 @@ function usePluginRoute(id: string) {
   return {
     page: here ? (route.sub ?? '') : '',
     path: here ? (route.msg ?? '') : '',
-    go: (page: string, path?: string) => go({ page: 'plugin', id, sub: page, msg: path || undefined }),
+    // 项目工具页（插件接口 9）在页内跳转时留在同一个项目下
+    go: (page: string, path?: string) =>
+      go({ page: 'plugin', id, sub: page, msg: path || undefined, project: here ? route.project : undefined }),
   }
 }
 

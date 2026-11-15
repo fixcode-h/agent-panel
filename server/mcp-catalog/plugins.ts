@@ -19,6 +19,7 @@ import { withPluginLimit } from '../plugins/limit.ts'
 import { pluginError, runningPlugins } from '../plugins/runtime.ts'
 import type { McpTool, PluginRun, ServerPlugin } from '../plugins/sdk.ts'
 import { actionRow } from './panel.ts'
+import { pluginGate } from '../plugins/project-gate.ts'
 
 type ToolDef = Omit<McpTool, 'call' | 'targets'>
 
@@ -139,6 +140,12 @@ export async function pluginCheckRows(run: PluginRun): Promise<McpCheckRow[]> {
       continue
     }
     const server = m.mcpServers.join(', ') || m.id
+    // 按项目生效的插件：和真跑时同一处把关（server/plugins/project-gate.ts），这个项目没打开就照原因写
+    const gate = await pluginGate(m.id, run.projectId)
+    if (!gate.on) {
+      rows.push({ source: `plugin:${m.id}`, name: m.name, server, state: 'off', count: 0, reason: gate.reason ?? '' })
+      continue
+    }
     try {
       const ans = await withPluginLimit('tools', async () => r.plugin.tools!(run))
       if (!ans || 'skip' in ans) {

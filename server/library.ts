@@ -29,6 +29,10 @@ import { ALL_AGENTS } from '../shared/commands.ts'
 import { installBundled, listBundled, readBundledEntry } from './bundled-skills.ts'
 import { getSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
+import { isProjectSkill, projectSkillStore, userSkillDir } from './skills/config.ts'
+import { setSkillActivation } from './skills/activation.ts'
+import { skillsContract } from '../shared/api-contract/skills.ts'
+import { z } from 'zod'
 
 /**
  * Skills / 命令库：管各 CLI 用户目录下的 Skill 和自定义命令（项目里的归项目管）。
@@ -47,12 +51,10 @@ interface Home {
   format: 'md' | 'toml'
 }
 
-const skillRoot = (d: CliDefinition) => d.skills.user[0] ?? d.rpc?.skillsDir ?? ''
-
 const cliHome = (d: CliDefinition): Home => ({
   id: d.id,
   name: d.name,
-  skill: skillRoot(d) && expandHome(skillRoot(d)),
+  skill: userSkillDir(d),
   command: d.commands.user[0] ? expandHome(d.commands.user[0]) : '',
   format: d.commands.format,
 })
@@ -89,7 +91,8 @@ export async function libraryClis(): Promise<LibraryCli[]> {
 /** 要操作的目录：名字合法，并且落在 CLI 的用户目录里 */
 function target(cli: string, kind: Kind, name: string) {
   const d = homeOf(cli)
-  const root = d && d[kind]
+  // 按项目的技能挪到了面板数据目录（server/skills/activation.ts）：看、改、删都在那一份上做
+  const root = d && (kind === 'skill' && d.skill && isProjectSkill(name) ? projectSkillStore(d.id) : d[kind])
   if (!d || !root)
     throw new Error(t('这个 Agent 没有用户级的{kind}目录', { kind: kind === 'skill' ? 'Skill' : t('命令') }))
   if (!libraryName(kind, name)) throw new Error(t('名字只能用字母、数字、. _ -'))
@@ -107,28 +110,46 @@ function withScan(found: ConfigFinding[]): { scan?: ScanSummary } {
   return s.high || s.medium ? { scan: s } : {}
 }
 
+/** 一个目录下的技能（<名字>/SKILL.md）：按项目的那份（面板数据目录里）标上 activation */
+async function skillsIn(root: string, cli: string, project: boolean): Promise<LibraryItem[]> {
+  const out: LibraryItem[] = []
+  for (const e of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (!e.isDirectory() && !e.isSymbolicLink()) continue
+    const file = path.join(root, e.name, 'SKILL.md')
+    const text = await readFile(file, 'utf8').catch(() => '')
+    if (!text) continue
+    const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
+    const desc =
+      fm
+        .match(/^description:\s*(.*)$/m)?.[1]
+        ?.trim()
+        .replace(/^["']|["']$/g, '') ?? ''
+    const dir = path.join(root, e.name)
+    const found = await scanPath(dir, scanScope(dir))
+    out.push({
+      cli,
+      kind: 'skill',
+      name: e.name,
+      description: desc,
+      path: file,
+      activation: project ? 'project' : 'global',
+      ...withScan(found),
+    })
+  }
+  return out
+}
+
 export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
   const out: LibraryItem[] = []
   for (const d of await homes()) {
     const root = d[kind]
-    if (!root || !existsSync(root)) continue
+    if (!root) continue
     if (kind === 'skill') {
-      for (const e of await readdir(root, { withFileTypes: true }).catch(() => [])) {
-        if (!e.isDirectory() && !e.isSymbolicLink()) continue
-        const file = path.join(root, e.name, 'SKILL.md')
-        const text = await readFile(file, 'utf8').catch(() => '')
-        if (!text) continue
-        const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
-        const desc =
-          fm
-            .match(/^description:\s*(.*)$/m)?.[1]
-            ?.trim()
-            .replace(/^["']|["']$/g, '') ?? ''
-        const dir = path.join(root, e.name)
-        const found = await scanPath(dir, scanScope(dir))
-        out.push({ cli: d.id, kind, name: e.name, description: desc, path: file, ...withScan(found) })
-      }
-    } else {
+      if (existsSync(root)) out.push(...(await skillsIn(root, d.id, false)))
+      // 按项目的技能已经挪进面板数据目录，在库里照样列出来（标「按项目」）
+      const store = projectSkillStore(d.id)
+      if (existsSync(store)) out.push(...(await skillsIn(store, d.id, true)))
+    } else if (existsSync(root)) {
       for (const c of await scanCommands(root, root, d.format)) {
         const found = await scanPath(c.path, scanScope(c.path))
         out.push({ cli: d.id, kind, name: c.name, description: c.description, path: c.path, ...withScan(found) })
@@ -562,6 +583,15 @@ export function libraryApi() {
         guard(async (c) => {
           await deleteLibrary(c.req.query('cli') ?? '', kindOf(c.req.query('kind')), c.req.query('name') ?? '')
           return c.json({ ok: true })
+        }),
+      )
+      // 技能改成全局 / 按项目（shared/api-contract/skills.ts）：按项目的从用户目录撤掉，只给打开了它的项目带上
+      .put(
+        '/skill-activation',
+        guard(async (c) => {
+          const p = skillsContract.setActivation.body.safeParse(await c.req.json())
+          if (!p.success) throw new Error(z.prettifyError(p.error))
+          return c.json(await setSkillActivation(p.data))
         }),
       )
       .get(

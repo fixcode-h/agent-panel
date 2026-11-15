@@ -189,19 +189,33 @@ test('0005：项目的表格设置挪进 plugins.tables；已经挪过的不覆�
   )
 })
 
+test('0006：项目里配置过的插件记进 capabilities.plugins；已经有的不重复；没配置插件的项目不动', async () => {
+  const d = freshDir()
+  write(path.join(d, 'projects', 'projects.json'), [
+    { id: 'a', name: 'A', plugins: { tables: { dirs: ['Data'] } } },
+    { id: 'b', name: 'B', plugins: { tables: {}, ue: {} }, capabilities: { plugins: ['tables'], mcp: ['x'] } },
+    { id: 'c', name: 'C' },
+  ])
+  await runMigrations({ dataDir: d, log: quiet })
+  const [a, b, c] = json(path.join(d, 'projects', 'projects.json'))
+  assert.deepEqual(a.capabilities, { plugins: ['tables'] })
+  assert.deepEqual(b.capabilities, { plugins: ['tables', 'ue'], mcp: ['x'] }, '只补缺的，别的能力原样')
+  assert.deepEqual(c, { id: 'c', name: 'C' })
+})
+
 test('版本号：跑过的不再跑；from 0 重跑（导入旧备份后）结果不变', async () => {
   const d = freshDir()
   const dir = path.join(d, 'tasks', 'chats')
   write(path.join(dir, 'x.json'), task('x', { cliAlive: true }))
   write(path.join(dir, 'x.messages.json'), [message('u', 'user', '一')])
   const first = await runMigrations({ dataDir: d, log: quiet })
-  assert.equal(first.ran.length, 5)
+  assert.equal(first.ran.length, DATA_VERSION)
   const again = await runMigrations({ dataDir: d, log: quiet })
   assert.deepEqual(again.ran, [], '已经是最新版本')
   const meta = readFileSync(path.join(dir, 'x.json'), 'utf8')
   const conv = readFileSync(path.join(dir, 'x.messages.jsonl'), 'utf8')
   const redo = await runMigrations({ dataDir: d, from: 0, log: quiet })
-  assert.equal(redo.ran.length, 5)
+  assert.equal(redo.ran.length, DATA_VERSION)
   assert.equal(readFileSync(path.join(dir, 'x.json'), 'utf8'), meta, '幂等')
   assert.equal(readFileSync(path.join(dir, 'x.messages.jsonl'), 'utf8'), conv, '幂等')
 })

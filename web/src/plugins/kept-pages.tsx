@@ -1,5 +1,6 @@
-import { Suspense, useRef, useState } from 'react'
-import type { Route } from '@/lib/data'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useData, useNav, type Route } from '@/lib/data'
+import { pickCurrentProject } from '@/lib/projects/current'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { usePluginPages } from './registry'
 
@@ -19,11 +20,17 @@ export function KeptPluginPages({ route }: { route: Route }) {
   const pages = usePluginPages().filter((p) => p.keep)
   const key = keyOf(route)
   const shown = pages.some((p) => `${p.plugin}/${p.id}` === key)
+  useProjectForPage(pages.some((p) => p.scope === 'project' && `${p.plugin}/${p.id}` === key))
   const [kept, setKept] = useState<string[]>([])
   if (shown && !kept.includes(key)) setKept([...kept, key])
   // 藏起来的页面保留最后的子位置：切回来时地址会再带上，期间不按别的页面的地址重画
   const paths = useRef<Record<string, string>>({})
-  if (shown) paths.current[key] = route.msg ?? ''
+  // 项目同理：藏着的项目工具页还认它最后一次显示时的项目
+  const projects = useRef<Record<string, string | undefined>>({})
+  if (shown) {
+    paths.current[key] = route.msg ?? ''
+    projects.current[key] = route.project
+  }
   return kept.map((k) => {
     const p = pages.find((x) => `${x.plugin}/${x.id}` === k)
     if (!p) return null
@@ -32,10 +39,25 @@ export function KeptPluginPages({ route }: { route: Route }) {
       <div key={k} className={on ? 'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden' : 'hidden'}>
         <ErrorBoundary resetKey={k}>
           <Suspense fallback={null}>
-            <p.Page path={paths.current[k] ?? ''} active={on} />
+            <p.Page path={paths.current[k] ?? ''} active={on} project={projects.current[k]} />
           </Suspense>
         </ErrorBoundary>
       </div>
     )
   })
+}
+
+/**
+ * 按项目的插件页（插件接口 9）从不带项目的地址打开（旧书签 #/tables、插件里自己跳的链接）：
+ * 换成当前项目下的同一页，侧栏和页面认同一个项目
+ */
+export function useProjectForPage(projectScoped: boolean) {
+  const { route, go } = useNav()
+  const { projects, loading } = useData()
+  const target = projectScoped && !route.project && !loading ? pickCurrentProject(projects, route)?.id : undefined
+  useEffect(() => {
+    if (target) go({ ...route, project: target })
+    // 只在缺项目时补一次；go、route 每次渲染都是新的
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [target])
 }

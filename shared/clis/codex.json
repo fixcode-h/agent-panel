@@ -192,6 +192,7 @@
     "docsMode": "first"
   },
   "docsNote": "Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。",
+  "runSkills": { "rpc": { "method": "skills/extraRoots/set", "params": { "extraRoots": ["{dir}"] } } },
   "skills": {
     "user": [],
     "repo": []
@@ -321,7 +322,12 @@
     "urlKey": "url",
     "remoteType": "",
     "stdioType": false,
-    "headersKey": "http_headers"
+    "headersKey": "http_headers",
+    "inject": {
+      "format": "toml",
+      "args": ["-c", "{key}={value}"],
+      "why": "-c 覆盖 config.toml 里的键，值按 TOML 解析：mcp_servers.<名字>.command / args / env / url / http_headers 和写进 config.toml 的一样"
+    }
   },
   "options": [
     {

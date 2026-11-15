@@ -72,7 +72,7 @@ const pluginSplit = (r: Route, pages: (PluginPage & { plugin: string })[]) => {
   return !!p?.split?.(r.msg ?? '')
 }
 const splitPage = (r: Route, pages: (PluginPage & { plugin: string })[]) =>
-  r.page === 'projects' ||
+  (r.page === 'projects' && !!r.id) ||
   (r.page === 'chat' && !!r.id) ||
   (r.page === 'plugin' && pluginSplit(r, pages)) ||
   r.page === 'schedules'
@@ -99,6 +99,11 @@ function parseHash(): Route {
     const rest = parts.slice(3).join('/')
     return { page: 'plugin', id: id || undefined, sub: sub || undefined, msg: rest || undefined }
   }
+  // 项目工具里的插件页（插件接口 9）：#/projects/<项目>/plugin/<插件>/<页面>/<path>
+  if (page === 'projects' && id && sub === 'plugin') {
+    const rest = parts.slice(5).join('/')
+    return { page: 'plugin', project: id, id: msg || undefined, sub: parts[4] || undefined, msg: rest || undefined }
+  }
   // 旧地址：面板自带的 UI 设计（#/design/<设计稿>/<子页>）和后来的设计模式（#/pdesign/ui/<设计稿>/<子页>）
   // 现在都是 UI 设计插件的整页，收藏的链接照样能打开
   // 面板自带的表格页（#/tables/<项目>）现在是表格插件的整页（重构文档第 15 条）
@@ -119,6 +124,7 @@ function parseHash(): Route {
 }
 const toHash = (r: Route) =>
   '#/' +
+  (r.page === 'plugin' && r.project ? `projects/${encodeURIComponent(r.project)}/` : '') +
   [r.page, r.id, r.sub, r.msg]
     // 插件整页的子位置按 / 分段编码，地址里还是一段段的（#/plugin/ui-design/ui/<设计>/<子页>）
     .map((x, i) =>

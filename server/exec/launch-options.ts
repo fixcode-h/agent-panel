@@ -18,6 +18,7 @@ import { noPushEnv } from './no-push.ts'
 import { childEnv } from './process.ts'
 import { searchExcludeEnv } from './search-exclude-env.ts'
 import type { RealContext } from './real-context.ts'
+import type { RunSkills } from '../skills/run-skills.ts'
 
 export interface LaunchArgs {
   ctx: RealContext
@@ -36,11 +37,13 @@ export interface LaunchArgs {
   taskDir: Awaited<ReturnType<typeof taskFiles>>
   cwd: string
   windowFor: (model: string) => number
+  /** 这一轮带上的按项目技能（server/skills/run-skills.ts）：参数加在后面，走协议的在开会话前发请求 */
+  skills: Pick<RunSkills, 'args' | 'rpc'>
 }
 
 export async function launchOptions(a: LaunchArgs) {
   const { ctx, def, cs, agent, model, effort, limits, resume, fork, op, chat, instructions } = a
-  const { systemPromptModPath, taskDir, cwd, windowFor } = a
+  const { systemPromptModPath, taskDir, cwd, windowFor, skills } = a
   const { task, settings } = ctx
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
   const pct = cs.autoCompact
@@ -52,7 +55,8 @@ export async function launchOptions(a: LaunchArgs) {
     permission: agentPermission(agent, settings),
     // 项目设置里信任了（或明确不信任）这个 CLI 的项目配置：按定义加参数（ADR 0050）
     trust: trustFor(def, ctx.project),
-    extraArgs: [...cs.extraArgs, ...agent.extraArgs, ...pluginArgs(def, agent.plugins)],
+    extraArgs: [...cs.extraArgs, ...agent.extraArgs, ...pluginArgs(def, agent.plugins), ...skills.args],
+    skillsRpc: skills.rpc,
     maxTurns: cs.maxTurns || undefined,
     resume,
     fork,

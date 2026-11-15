@@ -3,6 +3,7 @@ import { Puzzle } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { useNav } from '@/lib/data'
 import { usePluginPages, usePlugins } from './registry'
+import { useProjectForPage } from './kept-pages'
 
 /**
  * 插件的整页（#/plugin/<插件>/<页面>/<path>，插件接口 2）：整页交给插件自己画，path 是它自己的子位置。
@@ -12,10 +13,11 @@ export function PluginPageView() {
   const { route } = useNav()
   const { loaded } = usePlugins()
   const page = usePluginPages().find((p) => p.plugin === route.id && p.id === route.sub)
+  useProjectForPage(page?.scope === 'project')
   if (page)
     return (
       <Suspense fallback={null}>
-        <page.Page path={route.msg ?? ''} />
+        <page.Page path={route.msg ?? ''} project={route.project} />
       </Suspense>
     )
   return (

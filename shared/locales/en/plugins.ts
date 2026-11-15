@@ -121,4 +121,8 @@ export const EN_PLUGINS: Record<string, string> = {
   可安装: 'Available',
   '这个市场里的插件都装好了。': 'Every plugin in this market is already installed.',
   '{n} 个有新版本': '{n} with a new version',
+  '这个项目没有打开「{name}」：在项目设置 →「能力」里打开':
+    'This project hasn\'t turned on "{name}": turn it on in Project settings → Capabilities',
+  '「{name}」只在打开了它的项目里生效': '"{name}" only works in projects that turned it on',
+  '没有这个项目：{id}': 'No such project: {id}',
 }

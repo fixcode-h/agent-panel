@@ -238,6 +238,7 @@ export function LibraryPage() {
             item={bundledPicked}
             busy={bundled.busy}
             onInstall={bundled.install}
+            onChanged={() => void bundled.load()}
           />
         ) : (
           <BundledEmpty />
