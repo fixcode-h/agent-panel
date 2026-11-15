@@ -1,4 +1,4 @@
-/** 工作总结页（web/src/pages/SummaryPage.tsx、web/src/components/summary/、server/summary.ts） */
+/** 工作总结页（web/src/pages/SummaryPage.tsx、web/src/components/summary/、server/summary/index.ts） */
 export const EN_SUMMARY: Record<string, string> = {
   // 分项与采纳
   需求: 'Requirement',

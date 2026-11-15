@@ -10,8 +10,8 @@
 
 ## 一、重构与模块整理
 
-- [x] **server/tasks.ts 一个闭包装下全部对话逻辑** — 5704 行、只导出 3 个顶层函数，其余 96 个内部函数全在 `tasksApi` 闭包里（执行位与 presence 回收、worktree、submitMerge、父子派发、后台命令、测试步骤、附件落盘、计划同步）— 证据：`server/tasks.ts:295`、`server/tasks.ts:5704`，如 `submitMerge:1358`、`startParentTests:1278`、`placeInTask:517` — 建议：拆成 `server/tasks/{live,children,merge,background,tests,uploads}.ts`，`tasksApi` 只做组装与路由 — P0
-      （2026-10-31 已完成 · 提交 `2b0c2410`；按 [ADR 0033](../adr/0033-state-settle-and-tasks-split.md) 拆成 `server/tasks/` 下的工厂 + `TasksScope`，`server/tasks.ts` 剩 826 行）
+- [x] **server/tasks/index.ts 一个闭包装下全部对话逻辑** — 5704 行、只导出 3 个顶层函数，其余 96 个内部函数全在 `tasksApi` 闭包里（执行位与 presence 回收、worktree、submitMerge、父子派发、后台命令、测试步骤、附件落盘、计划同步）— 证据：`server/tasks/index.ts:295`、`server/tasks/index.ts:5704`，如 `submitMerge:1358`、`startParentTests:1278`、`placeInTask:517` — 建议：拆成 `server/tasks/{live,children,merge,background,tests,uploads}.ts`，`tasksApi` 只做组装与路由 — P0
+      （2026-10-31 已完成 · 提交 `2b0c2410`；按 [ADR 0033](../adr/0033-state-settle-and-tasks-split.md) 拆成 `server/tasks/` 下的工厂 + `TasksScope`，`server/tasks/index.ts` 剩 826 行）
 - [ ] **演示版在后端重复实现整套 API** — `demo-backend.ts` 4191 行重写 `server/index.ts` 的 54 条路由，加 11 个 `demo-*.ts` 共 7774 行；字段只能人工对齐（已发生过一次字段漂移事故）— 证据：`web/src/lib/demo-backend.ts`（全文）、`server/index.ts`（54 处路由）— 建议：把请求处理抽成 shared 里的纯函数（入参 = 存储 + 执行替身），demo 只提供存储/执行实现 — P0
 - [ ] **单函数 1400 行：runAgent** — `server/exec/runner.ts:808` 到 `server/exec/runner.ts:2222` 一个函数里含 CLI 调用、重试/退避、RPC 保活、token 累加、工具块解析、交付与空回合判定、错误归类 — 证据：`server/exec/runner.ts:808`、`server/exec/runner.ts:2222` — 建议：拆成 `call` → `attempt`（含重试策略）→ `postprocess`（解析+统计+判定）三段，每段可单测 — P1
 - [ ] **engine.ts 提示词拼装与流程执行混在一个 4224 行文件** — `shared/engine/index.ts:1007`–`shared/engine/index.ts:1326` 是约 20 个 `*Part()` 提示词片段，`shared/engine/index.ts:1418` 起才是节点与单元执行；`EngineHost` 接口 60 个成员全在 `shared/engine/index.ts:461`–`:722` — 证据：`shared/engine/index.ts:1007`、`shared/engine/index.ts:1418`、`shared/engine/index.ts:1817`、`shared/engine/index.ts:461` — 建议：拆出提示词目录（放 shared 下，纯字符串，可快照测）与执行核心；`EngineHost` 按能力拆成几个小接口 — P1
@@ -29,7 +29,7 @@
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `shared/text.ts`）
 - [x] **统一剪贴板复制 `copyText`** — `navigator.clipboard` 共 23 处，其中 4 份独立函数、其余内联「writeText + toast」— 证据：`web/src/components/files/FileTree.tsx:88`（最完整，带 execCommand 兜底）、`web/src/components/tasks/Evolution.tsx:124`、`Worktrees.tsx:192`、`ToolDialog.tsx:25`，以及 12+ 处内联 — 建议：提取到 `copy-text.ts`（放 `web/src/lib/`，剪贴板 → textarea + execCommand 兜底 → 失败 toast）— P1
       （2026-10-27 已完成 · 提交 `99fb4a6d`）
-- [x] **让服务端都走 `readJson`** — `store.ts` 已有带「损坏文件归档」的读法，但 20 处仍自己 `JSON.parse(await readFile(...))` — 证据：`server/store.ts:218`、`server/store.ts:242` 是已有实现；未复用的如 `server/models.ts:281`、`server/cli/config.ts:31`、`server/lang.ts:18`、`server/exec/orphans.ts:49`、`server/update.ts:42`、`server/accounts.ts:105` 等 — 建议：只把调用换成 `await readJson(file)`，让损坏文件也能归档到 `cache/broken` — P1
+- [x] **让服务端都走 `readJson`** — `store.ts` 已有带「损坏文件归档」的读法，但 20 处仍自己 `JSON.parse(await readFile(...))` — 证据：`server/store.ts:218`、`server/store.ts:242` 是已有实现；未复用的如 `server/models.ts:281`、`server/cli/config.ts:31`、`server/lang.ts:18`、`server/exec/orphans.ts:49`、`server/update/index.ts:42`、`server/accounts.ts:105` 等 — 建议：只把调用换成 `await readJson(file)`，让损坏文件也能归档到 `cache/broken` — P1
       （2026-10-27 已完成 · 提交 `99fb4a6d`）
 - [x] **日期/时刻拼串 helper** — `padStart(2,'0')` 自定义 6 次，`YYYY-MM-DD` / `HH:mm` 手拼 8 处 — 证据：`shared/schedule/index.ts:159`、`shared/schedule/index.ts:219`、`shared/usage.ts:134`、`shared/tasks/export.ts:900`、`web/src/components/settings/UpdateSection.tsx:35`、`DataSection.tsx:123`、`CliLimits.tsx:84`、`ui-design/web/src/components/design/Versions.tsx:17`、`fields.tsx:205`、`shared/memory.ts:25`、`shared/memory-analysis.ts:197` — 建议：提取到 `datetime.ts`（放 shared）的 `pad2` / `ymd` / `hhmm`，`shared/summary/index.ts:142` 的 `dayKey` 并入同一口径 — P2
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `shared/datetime.ts`）
@@ -60,7 +60,7 @@
 
 ## 四、体验与功能缺口
 
-- [x] **删除对话彻底不可恢复** — 右键删除/批量删除会连子对话、worktree、上传附件、聊天工作目录一起物理删掉，只有一句「找不回来」— 证据：`server/tasks.ts:5549`、`web/src/components/layout/Sidebar.tsx:937` — 建议：默认进「回收站」（保留 7 天），入口放设置页「数据」— P0
+- [x] **删除对话彻底不可恢复** — 右键删除/批量删除会连子对话、worktree、上传附件、聊天工作目录一起物理删掉，只有一句「找不回来」— 证据：`server/tasks/index.ts:5549`、`web/src/components/layout/Sidebar.tsx:937` — 建议：默认进「回收站」（保留 7 天），入口放设置页「数据」— P0
       （2026-10-27 已完成 · 提交 `53f7d6c8`；删除改为标记删除 + 7 天保留，支持恢复/永久删除/过期清理）
 - [x] **对话搜索只搜标题和第一条要求** — 找「那次聊过某个方案」只能凭标题猜 — 证据：`web/src/components/layout/SidebarTasks.tsx:163`；服务端无对话内容搜索路由 — 建议：加 `GET /tasks/search?q=`（扫 messages，返回命中片段），扩展现有命令面板搜索 — P1
       （2026-10-27 已完成 · 提交 `53f7d6c8`；新增 `GET /tasks/search` 与 `shared/tasks/search.ts`）

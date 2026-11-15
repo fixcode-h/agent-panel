@@ -16,10 +16,10 @@
 | 位置                                                     | 现状                                                                                                     |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `shared/task.ts` `taskBusy`                              | 顶层对话的「在跑」自己拼一套，不看提问和请求；`childrenWorking` 只数 `working` 的子对话                  |
-| `server/tasks.ts` 列表接口                               | 只在列表摘要里给 `childrenWorking`；`GET /:id`、SSE 不给，标题栏只在子对话正在回话时才可能转圈           |
-| `server/tasks.ts` `setPresenceIdleHandler`               | 宽限到期 `cancelWait` + `closeChildren`：父对话页切走一小时，名下还在跑的子对话被连带停掉                |
-| `server/tasks.ts` `stopTask`                             | 不管什么原因都 `closeChildren`：保活上限（idle）、换 CLI（switch）、打断重发、CLI 卡住重开都会杀掉子对话 |
-| `server/tasks.ts` 换 CLI / 模型                          | 空闲时重启父对话后再 `closeChildren`                                                                     |
+| `server/tasks/index.ts` 列表接口                         | 只在列表摘要里给 `childrenWorking`；`GET /:id`、SSE 不给，标题栏只在子对话正在回话时才可能转圈           |
+| `server/tasks/index.ts` `setPresenceIdleHandler`         | 宽限到期 `cancelWait` + `closeChildren`：父对话页切走一小时，名下还在跑的子对话被连带停掉                |
+| `server/tasks/index.ts` `stopTask`                       | 不管什么原因都 `closeChildren`：保活上限（idle）、换 CLI（switch）、打断重发、CLI 卡住重开都会杀掉子对话 |
+| `server/tasks/index.ts` 换 CLI / 模型                    | 空闲时重启父对话后再 `closeChildren`                                                                     |
 | `server/presence.ts` / `keepAliveBusy`（1ced9bb 刚加的） | 又一套「在不在跑」：后台命令、活着的子对话（不管闲不闲）、这一轮没收尾                                   |
 | 子任务                                                   | 只能整个对话停止；没有单独终止的入口                                                                     |
 | 输入框                                                   | 只在 `working` 时是停止按钮：子任务、子对话、后台命令还在跑时显示发送箭头                                |

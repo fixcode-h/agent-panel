@@ -1,10 +1,10 @@
 # 强制更新弹窗累计显示历史上被打断的任务
 
-- 状态：已修复（相关单测 `server/tasks/restart.test.ts`、`server/interrupted.test.ts`、`server/update.test.ts`、`shared/children/flow.test.ts` 共 46/46 通过；反向验证见「回归验证」）
+- 状态：已修复（相关单测 `server/tasks/restart.test.ts`、`server/interrupted.test.ts`、`server/update/index.test.ts`、`shared/children/flow.test.ts` 共 46/46 通过；反向验证见「回归验证」）
 - 症状：面板强制更新后弹窗写「有 24 个任务被强制更新打断」，列表里混着很多早就停下、计划没做完的历史任务（很多条「被打断时：计划 0/6」），不是这次强制更新真正打断的对话
-- 入口：`server/tasks.ts` 的 `interruptedTasks`、`server/update.ts` 的 `stopForUpdate`、`server/interrupted.ts` 的 `recordInterrupted`、`shared/task.ts` 的 `interruptedTaskIds` / `restartUnfinished`
+- 入口：`server/tasks/index.ts` 的 `interruptedTasks`、`server/update/index.ts` 的 `stopForUpdate`、`server/interrupted.ts` 的 `recordInterrupted`、`shared/task.ts` 的 `interruptedTaskIds` / `restartUnfinished`
 - 根因类型：恢复名单把「这一轮说完了、计划没做完」的闲置任务也算成本次被打断，记录又只在非空时覆盖
-- 模块：`server`（`server/tasks.ts`、`server/interrupted.ts`、`server/update.ts`）、`shared`（`shared/task.ts`）
+- 模块：`server`（`server/tasks/index.ts`、`server/interrupted.ts`、`server/update/index.ts`）、`shared`（`shared/task.ts`）
 - 关键词：强制更新、继续执行弹窗、24 个任务、名单累计、历史任务、计划 0/6、restartUnfinished、openPlan、interruptedTaskIds、recordInterrupted、空名单不写、interrupted-by-update
 
 ## 现象
@@ -18,7 +18,7 @@
 名单由 `shared/task.ts` 的 `interruptedTaskIds(tasks, working)` 生成，它对全部任务用 `restartUnfinished` 判：
 
 - `restartUnfinished` 的最后一个分支是「这一轮说完了，但计划还没做完（`openPlan`）」（`shared/task.ts:1618`）。这个判定本来是给启动迁移的崩溃名单和界面「还有没有活要干」用的（`server/tasks/startup.ts:45`），对历史闲置任务同样成立。
-- `interruptedTasks()`（`server/tasks.ts:328`）把它当成本次强制更新的名单：`working` 之外的所有任务只要 `restartUnfinished` 成立就进名单。于是每条历史上「停在等下一句、计划没做完」的任务都会被算成这次被打断的。
+- `interruptedTasks()`（`server/tasks/index.ts:328`）把它当成本次强制更新的名单：`working` 之外的所有任务只要 `restartUnfinished` 成立就进名单。于是每条历史上「停在等下一句、计划没做完」的任务都会被算成这次被打断的。
 - `recordInterrupted`（`server/interrupted.ts:32`）在空名单时直接 return，上次没处理完的旧记录不会被清掉；下一次更新继续沿用旧名单，看起来就是不断累计。
 
 真正的打断只有两类：CLI 正在产出（`working`），或者这一轮还在执行、被停掉的 CLI 结果回不来（`status === 'running'` 且不在等下一句，包括在等子任务）。停在等下一句的闲置任务不是这次打的断，重启后也不该默认被拉起来。
@@ -38,7 +38,7 @@
 
 ## 回归验证
 
-- `npx tsx --test server/tasks/restart.test.ts server/interrupted.test.ts server/update.test.ts shared/children/flow.test.ts`：46/46 通过。
+- `npx tsx --test server/tasks/restart.test.ts server/interrupted.test.ts server/update/index.test.ts shared/children/flow.test.ts`：46/46 通过。
 - 反向验证：把 `interruptedTaskIds` 的循环临时退回旧口径（直接对全部任务用 `restartUnfinished`），`server/tasks/restart.test.ts` 有 3 条失败——「强制更新的恢复名单只记本次真正被打断的：闲置但计划没做完的不算」「强制更新名单里不再累计闲置的历史任务」「重启恢复名单：已收口的不再拉起，只在等下一句的不算被打断」；恢复后全文件通过。
 - 待确认：真实强制更新的弹窗列表需要在打包版本上跑一次（会重启面板），由父对话合并后统一验证，本记录不声称已实测。
 
@@ -46,6 +46,6 @@
 
 - `shared/task.ts`：`interruptedTaskIds` 收窄名单口径，同步 `restartUnfinished` 的注释分工。
 - `server/interrupted.ts`：`recordInterrupted` 空名单也覆盖写，更新 `restartDoing` 的注释。
-- `server/tasks.ts`：`interruptedTasks` 的口径注释。
-- `server/tasks/restart.test.ts`、`server/interrupted.test.ts`、`server/update.test.ts`：按新口径改断言、补覆盖。
+- `server/tasks/index.ts`：`interruptedTasks` 的口径注释。
+- `server/tasks/restart.test.ts`、`server/interrupted.test.ts`、`server/update/index.test.ts`：按新口径改断言、补覆盖。
 - 文档：`docs/modules/server/lifecycle.md` 的「强制更新后：把被打断的任务列进恢复名单」「面板退出 / 重启后：首页『全部继续』」两节。

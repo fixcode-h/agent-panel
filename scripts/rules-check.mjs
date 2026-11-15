@@ -451,7 +451,7 @@ for (const f of uiShards) {
 }
 
 // 15. 大文件只许变小：scripts/file-caps.json 里列的文件不能超过各自的上限，没列的源码文件不能超过 default。
-// server/tasks.ts 拆分前四天涨了 1000 行；上限只拦「继续变大」，新代码放进拆出来的模块（见 scripts/file-caps.mjs）
+// server/tasks/index.ts 拆分前四天涨了 1000 行；上限只拦「继续变大」，新代码放进拆出来的模块（见 scripts/file-caps.mjs）
 {
   const { capsPath, linesOf, sourceFiles } = await import('./lib/file-caps.mjs')
   const caps = JSON.parse(readFileSync(capsPath(root), 'utf8'))

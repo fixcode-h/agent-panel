@@ -27,7 +27,7 @@ import { commandSummary, ownedEntries, processSnapshot } from '../exec/proc-stat
 import { isViewing, isWatched } from '../presence.ts'
 import { getSettings } from '../settings.ts'
 import { taskLogPath } from './log.ts'
-import { currentVersion } from '../update.ts'
+import { currentVersion } from '../update/index.ts'
 import type { TasksScope } from './scope.ts'
 import { awaitedJob } from '../background.ts'
 

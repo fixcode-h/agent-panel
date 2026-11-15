@@ -41,7 +41,7 @@ const sv = (verdict: 'pass' | 'fail', ids: string[] = []) => ({
 const passed = sv('pass')
 /** 不通过、意见没编号 */
 const blocked = {
-  submitted: { ...sv('fail').submitted, blockers: [{ id: '', text: 'server/tasks.ts:1120 少判空', must: true }] },
+  submitted: { ...sv('fail').submitted, blockers: [{ id: '', text: 'server/tasks/index.ts:1120 少判空', must: true }] },
 }
 
 test('评审门禁：计划里没有评审步骤时拦下，并说清要单独写进计划', () => {
@@ -89,7 +89,7 @@ test('评审门禁：不通过时不要求复看到通过，要求逐条写处�
   assert.match(r.ok === false ? r.info : '', /review_triage/)
   // 评审没编号：写一条处置（id 写意见原话摘要）就放行，采不采纳是执行角色的事
   const t = [
-    { id: '少判空', decision: 'fix' as const, reason: '读了 server/tasks.ts:1120，确实会空指针，已补判空和用例' },
+    { id: '少判空', decision: 'fix' as const, reason: '读了 server/tasks/index.ts:1120，确实会空指针，已补判空和用例' },
   ]
   assert.equal(reviewGate([sub(blocked)], isReviewer, planDone, t).ok, true)
 })

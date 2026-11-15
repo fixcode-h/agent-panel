@@ -1032,7 +1032,7 @@
       "lines": 38
     },
     {
-      "file": "server/summary.test.ts",
+      "file": "server/summary/index.test.ts",
       "layer": "integration",
       "markers": [
         "http-server",
@@ -1257,7 +1257,7 @@
       "lines": 215
     },
     {
-      "file": "server/update.test.ts",
+      "file": "server/update/index.test.ts",
       "layer": "integration",
       "markers": [
         "http-server",

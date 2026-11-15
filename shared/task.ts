@@ -543,7 +543,7 @@ export const userWaiting = (
   asks = true,
 ) => !!(tk.requests.length || (asks && tk.parentAsks?.length) || diagnosisPending(tk) || pendingAction(tk))
 
-/** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks.ts 的 cleanupTrash） */
+/** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks/index.ts 的 cleanupTrash） */
 export const TRASH_RETENTION_DAYS = 7
 const DAY_MS = 24 * 60 * 60 * 1000
 /** 剩几天被物理删除：向上取整，0 表示下次清理就删；删除时间读不懂时按已到期算 */
@@ -1027,7 +1027,7 @@ export const CHILD_IDLE_ASK_MAX = 3
 /**
  * 这一轮已经说完、计划却没做完，也没有在等任何东西：对话停在等下一句，没人推就不会往下走。
  * 常见于模型只回了一句「先跑类型检查」就收尾、没真的调工具（用户报过：父对话一直等子对话，子对话一直等下一句）。
- * 面板据此在一轮结束时推它接着做（server/tasks.ts 的 nudgePlan）。
+ * 面板据此在一轮结束时推它接着做（server/tasks/index.ts 的 nudgePlan）。
  * 计划里还有在等结果的步骤（等孙对话、等合并）、已经请父对话收尾的，都不算：那是在等别人
  */
 export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'resolved' | 'wrapRequest'>) {
@@ -1338,7 +1338,7 @@ export function restartUnfinished(
 }
 
 /**
- * 强制更新、面板退出停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
+ * 强制更新、面板退出停 CLI 之前要记下哪些任务（见 server/tasks/index.ts 的 interruptedTasks）：
  * - 现在真在跑的（working）；
  * - 名下还有在跑的子对话的父对话：子对话的结果要交回它，它不在名单里就没人接；
  * - 这一轮真的还在执行、CLI 被停掉结果回不来的（`status === 'running'` 且不是停在等下一句，
@@ -1668,7 +1668,7 @@ export function keepAliveBusy(
 }
 
 /**
- * 保活回收的完整结论（见 server/tasks.ts 的 keepAliveBusy）：先分清这一轮还在不在执行位里。
+ * 保活回收的完整结论（见 server/tasks/index.ts 的 keepAliveBusy）：先分清这一轮还在不在执行位里。
  * - 在（这一轮在跑、或者停在等下一句保活着）：看任务自己的事实，见上面的 keepAliveBusy；
  * - 不在（这一轮结束、进程已退出，例如不支持保活的 CLI）：名下还有子对话 / 后台命令没回来时它在等结果，
  *   不能按「没人看就不留着」回收——回收会把它落成「已中断」，子对话的结果回来时没人在等（用户报的「父对话被回收」）。
@@ -1839,7 +1839,7 @@ export function messageStamp(m: TaskMessage, withOutput = true) {
 /**
  * 前端手上那份对话的版本：条数 + 最后一条消息 id。
  * 不用内容指纹：拿它对上的时候，服务端从「最后一条」开始补发，最后一条本身也重发一遍，
- * 正在流式增长的那条不会漏。SSE 重连时前端报这个版本，服务端能对上就只发增量（见 server/tasks.ts 的 /:id/events）
+ * 正在流式增长的那条不会漏。SSE 重连时前端报这个版本，服务端能对上就只发增量（见 server/tasks/index.ts 的 /:id/events）
  */
 export function taskMessageRev(messages: Pick<TaskMessage, 'id'>[]): string {
   return `${messages.length}:${messages.at(-1)?.id ?? ''}`

@@ -647,7 +647,7 @@ function looksLikeWrapUp(title: string) {
  * 没有就加（Agent 刚删掉的那个原样放回，id 不变），多写了只留一个，挪到中间的放回最后。
  * Agent 自己写的收尾（多半是新开计划时把上一份的收尾抄了过来）：计划里已经有面板的收尾就去掉它，
  * 没有就认成面板的收尾、状态照它写的。做完的收尾之后又有要做的事：重新打开挪到最后。
- * 计划里始终只有一条收尾。分支到底合没合回以 git 为准（见 server/tasks.ts 的 childUnmerged），不靠这一步的状态。
+ * 计划里始终只有一条收尾。分支到底合没合回以 git 为准（见 server/tasks/index.ts 的 childUnmerged），不靠这一步的状态。
  * 后来开的计划全是做完的步骤（合回后回顾一下做了什么）不再加收尾：已经合回了，加上就永远「只剩合回」
  */
 function ensureWrapUp(

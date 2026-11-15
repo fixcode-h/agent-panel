@@ -27,6 +27,9 @@ const GIT_RE = /\(\s*'git'\s*,/g
 /** 模块顶层的可变状态：let，或者 const x = new Map / Set / WeakMap / WeakSet */
 const STATE_RE = /^(?:export )?(?:let |const [\w$]+(?:\s*:[^=]+)?\s*=\s*new (?:Map|Set|WeakMap|WeakSet)\b)/
 
+/** 和同名目录并存、暂时不能挪的文件：shared/clis.ts、web/src/lib/api.ts 是插件开放模块（shared/plugins/host-modules.json），挪了旧插件装不上；shared/locales/en.ts 不能进 en/（i18n-check 把 en/ 里每个文件都当文案表读） */
+const TWIN_OK = ['shared/clis.ts', 'web/src/lib/api.ts', 'shared/locales/en.ts']
+
 const capsFile = (root) => path.join(root, 'scripts', 'structure-caps.json')
 
 function listFiles(root) {
@@ -132,6 +135,11 @@ export function measure(root) {
     }
   }
   for (const dir of FLAT_DIRS) m.flatFiles[dir].sort()
+  // 同名的文件和目录并存时（x.ts 和 x/），新代码该放哪边说不清：入口挪进目录当 index.ts
+  const dirs = new Set(files.map((f) => path.posix.dirname(f)))
+  m.twins = files.filter(
+    (f) => /\.tsx?$/.test(f) && !isTest(f) && dirs.has(f.replace(/\.tsx?$/, '')) && !TWIN_OK.includes(f),
+  )
   return m
 }
 
@@ -173,6 +181,10 @@ export function checkStructure(root) {
         errors.push(
           `${dir}/${f}：${dir}/ 顶层不再加新文件。放进所属模块的子目录（没有就按 docs/MODULE-MAP.md 的模块新建一个，比如 ${dir}/<模块>/）`,
         )
+  for (const f of m.twins)
+    errors.push(
+      `${f}：和同名目录 ${f.replace(/\.tsx?$/, '')}/ 并存。把它挪进目录当 index.ts（引用跟着改），或者改个不同名的名字`,
+    )
   if (m.taskFields > caps.taskFields)
     errors.push(
       `shared/schema.ts 的 TaskData 顶层字段 ${m.taskFields} 个（基线 ${caps.taskFields}）。新字段放进所属功能的子对象；只在运行时算、不存盘的状态不要加到 Task 上（docs/lessons/structure.md）`,

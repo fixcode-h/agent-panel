@@ -2,9 +2,9 @@
 
 - 状态：已修复（`server/background.test.ts`「命令没能启动……」通过）
 - 症状：对话交出一条后台命令后一直在等，计划那一步一直「等待中」，后台命令一行一直转圈或者结果始终没回来
-- 入口：`server/background.ts` 的 `run`；`server/exec/runner.ts` 的 `flushHeld`；`server/tasks.ts` 后台命令结束回调的重试
+- 入口：`server/background.ts` 的 `run`；`server/exec/runner.ts` 的 `flushHeld`；`server/tasks/index.ts` 后台命令结束回调的重试
 - 根因类型：异步任务发出去不收错；排队消息只在整次执行结束时处理，保活进程不结束
-- 模块：`server`（`server/background.ts`、`server/exec/runner.ts`、`server/tasks.ts`）
+- 模块：`server`（`server/background.ts`、`server/exec/runner.ts`、`server/tasks/index.ts`）
 - 关键词：后台命令、run_background、没启动、结果没回来、卡住、等待中、held、保活、重复结果
 
 ## 现象

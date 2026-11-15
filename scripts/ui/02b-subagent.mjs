@@ -174,7 +174,7 @@ await runShard(import.meta.filename, async (api) => {
       await check(p, '独立分支-右键菜单')
       await closeMenu()
     }
-    // 已删除的项：后端 discard 只认 active（server/tasks.ts 的 isolated），点了必被拒，
+    // 已删除的项：后端 discard 只认 active（server/tasks/index.ts 的 isolated），点了必被拒，
     // 所以菜单里的删除必须也是不可用（评审 R1：行内按钮早就隐藏，菜单却可点就两边不一致了）
     {
       const menu = await menuOf('修侧栏时间显示', 'removed')
@@ -663,7 +663,7 @@ await runShard(import.meta.filename, async (api) => {
     await gotoTask()
   }
 
-  // 用户点「解决」时计划一并收口（见 server/tasks.ts 的 settleChildForUser）：
+  // 用户点「解决」时计划一并收口（见 server/tasks/index.ts 的 settleChildForUser）：
   // 造一条「计划 2/6 没做完、这一轮没在跑、没有独立分支要合回」的子对话，点解决后折叠头要说全部完成、
   // 「n 步没做完」的提示消失、标题栏换成「已解决」。真机上分支没合回会先被拦住，这里验的是计划收口这件事
   {

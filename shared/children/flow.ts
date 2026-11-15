@@ -15,7 +15,7 @@ import { childHolds, diagnosisPending, runRunning, type ChildHold } from '../tas
  * wrapup 这一轮收尾 → plan 计划全做完 → pending 后台命令 / 工作流 / 派出的子任务 / 提问 / 请求都收口
  * → complete 子对话自己置完成 → report 上报父对话 → list 父对话列表按上报的状态刷新。
  *
- * 「父对话点标记完成」「合并成功」都只是发起这一趟流转（见 server/tasks.ts 的 advanceChildTo），
+ * 「父对话点标记完成」「合并成功」都只是发起这一趟流转（见 server/tasks/index.ts 的 advanceChildTo），
  * 判定和置完成仍然在子对话这一侧，父对话不直接改最终状态。
  */
 export type ChildFlowStep = 'wrapup' | 'plan' | 'pending' | 'complete' | 'report' | 'list'

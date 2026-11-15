@@ -9,7 +9,7 @@
  * 范围外的内容一律不交给 CLI：对话只取窗口内的消息和节点，报告只取覆盖范围落在窗口内的。
  *
  * 这里只有纯逻辑：时间窗口、材料整理、提示词、解析 CLI 的分项、拼报告。
- * 跑 CLI 和存报告在 server/summary.ts；页面在 web/src/pages/SummaryPage.tsx
+ * 跑 CLI 和存报告在 server/summary/index.ts；页面在 web/src/pages/SummaryPage.tsx
  */
 import { z } from 'zod'
 import { t } from '../i18n.ts'

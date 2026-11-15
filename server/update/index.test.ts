@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { setLang } from '../shared/i18n.ts'
+import { setLang } from '../../shared/i18n.ts'
 
 // 强制更新的记录写在数据目录里，用临时的别碰本机
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-update-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { platformAsset, stopForUpdate, updateApi, parseFeed } = await import('./update.ts')
+const { platformAsset, stopForUpdate, updateApi, parseFeed } = await import('./index.ts')
 
 // 断言的是中文原文，CI 的系统语言是英文。update.ts 的依赖链会引入 lang.ts，
 // 它加载时按系统语言重新设置，所以要在 import 之后再固定

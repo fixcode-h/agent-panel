@@ -2280,7 +2280,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   // 演示没有真的 CLI 进程：保活列表一直是空的
   if (res === 'tasks' && id === 'keepalive') return sub === 'release' ? { released: [] } : []
   if (res === 'tasks') {
-    // 和正式后端一样：回给界面的任务一律带上 live（server/tasks.ts 的中间件），停止、改名顺手回的也带
+    // 和正式后端一样：回给界面的任务一律带上 live（server/tasks/index.ts 的中间件），停止、改名顺手回的也带
     const out = await tasksRoute(method, id, sub, query, body, seg[3])
     const isTask = (x: unknown): x is Task =>
       !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
@@ -3112,7 +3112,7 @@ function tasksRoute(
     if (askEffect.existingChildren !== undefined)
       for (const kid of tasks) if (kid.parentTaskId === task.id) kid.askUser = askEffect.existingChildren
     if (childRun !== undefined) task.childRun = childRun ?? undefined
-    // 和正式后端一致（见 server/tasks.ts 的 settleChildForUser）：用户点「解决」时把计划里没做完的步骤一并收口，
+    // 和正式后端一致（见 server/tasks/index.ts 的 settleChildForUser）：用户点「解决」时把计划里没做完的步骤一并收口，
     // 否则演示版会停在「已解决但计划还有 n 步没做完」，界面检查就测不到真机上收口后的样子
     if (rest.resolved === true && task.parentTaskId) settlePlan(task)
     persist()

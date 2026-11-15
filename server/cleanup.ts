@@ -20,7 +20,7 @@ import type { Project, Task } from '../shared/schema.ts'
 import { taskDeleted } from '../shared/task.ts'
 import { CHATS_DIR, DATA_DIR } from './store.ts'
 import { WORKTREES_DIR, sweepWorktrees, type SweepTaskInfo } from './exec/worktree.ts'
-import { appDir } from './update.ts'
+import { appDir } from './update/index.ts'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 

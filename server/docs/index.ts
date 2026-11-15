@@ -2,13 +2,13 @@
  * 项目说明文件（AGENTS.md、CLAUDE.md…）：读、写，以及用本机 CLI 优化。
  * 只认 shared/docs.ts 里列出的文件名，不能借这个接口读写项目里的其他文件。
  */
-import { askSession } from './asks.ts'
+import { askSession } from '../asks.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
-import { CLIS, getCli } from '../shared/clis.ts'
+import { CLIS, getCli } from '../../shared/clis.ts'
 import {
   docFiles,
   type DocFile,
@@ -20,17 +20,17 @@ import {
   type DocJob,
   type ProjectDoc,
   type ProjectDocs,
-} from '../shared/docs.ts'
-import type { Agent, Project } from '../shared/schema.ts'
-import { docGroupApi } from './docs/group-api.ts'
-import { agentRun, cliSettings } from '../shared/settings.ts'
-import { safeArgs } from './assist.ts'
-import { invokeCli } from './exec/invoke.ts'
-import { childEnv } from './exec/process.ts'
-import { log } from './log.ts'
-import { getSettings } from './settings.ts'
-import { projectFormat, writeTextFile } from './file-format.ts'
-import { t } from '../shared/i18n.ts'
+} from '../../shared/docs.ts'
+import type { Agent, Project } from '../../shared/schema.ts'
+import { docGroupApi } from './group-api.ts'
+import { agentRun, cliSettings } from '../../shared/settings.ts'
+import { safeArgs } from '../assist.ts'
+import { invokeCli } from '../exec/invoke.ts'
+import { childEnv } from '../exec/process.ts'
+import { log } from '../log.ts'
+import { getSettings } from '../settings.ts'
+import { projectFormat, writeTextFile } from '../file-format.ts'
+import { t } from '../../shared/i18n.ts'
 
 const TIMEOUT = 10 * 60_000
 

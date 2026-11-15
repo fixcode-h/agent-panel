@@ -20,7 +20,7 @@ import type { IntegrateKind, IntegrateResult } from '../exec/worktree-integrate.
 import type { createClaims } from '../claims.ts'
 
 /**
- * tasksApi 闭包里、被 server/tasks/ 下各模块用到的名字（值在 server/tasks.ts 的 scope 对象里，取值时才读）。
+ * tasksApi 闭包里、被 server/tasks/ 下各模块用到的名字（值在 server/tasks/index.ts 的 scope 对象里，取值时才读）。
  * 模块要用闭包里的新名字时：在这里加一项类型，在 scope 对象（lazyScope）里加一个同名取值函数（let 变量写成 [取值, 写入]）。
  */
 export interface TasksScope {

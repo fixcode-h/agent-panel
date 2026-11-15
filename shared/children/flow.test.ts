@@ -292,7 +292,7 @@ test('计划收口只发生在用户点「解决」：父对话收尾照旧被�
   const blocked = await advanceChild(childFlowOf(task), recorder().host)
   assert.deepEqual(blocked.holds, ['plan'])
   assert.deepEqual(blocked.steps, [], '一步都没走')
-  // 用户点了「解决」才收口（见 server/tasks.ts 的 advanceChildTo 的 fromUser）：同一套流转接着走完
+  // 用户点了「解决」才收口（见 server/tasks/index.ts 的 advanceChildTo 的 fromUser）：同一套流转接着走完
   assert.equal(settlePlan(task), 1)
   const { calls, host } = recorder()
   const run = await advanceChild(childFlowOf(task), host)

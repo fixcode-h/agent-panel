@@ -17,7 +17,7 @@ import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSe
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-restart-'))
 process.env.AGENT_PANEL_DATA = dir
 const { createTaskStore } = await import('./store.ts')
-const { tasksApi } = await import('../tasks.ts')
+const { tasksApi } = await import('./index.ts')
 const { restartDoing } = await import('../interrupted.ts')
 
 setLang('zh')

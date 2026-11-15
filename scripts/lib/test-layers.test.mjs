@@ -20,7 +20,7 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 test('分层：起服务、监听端口的测试归集成层', () => {
-  const { layer, markers } = layerOf('server/tasks.test.ts', LAYER_SAMPLES.httpServer)
+  const { layer, markers } = layerOf('server/tasks/index.test.ts', LAYER_SAMPLES.httpServer)
   assert.equal(layer, LAYERS.integration)
   assert.deepEqual(markers, ['http-server'])
 })

@@ -11,24 +11,24 @@
 
 还有一件同源的事：`start_plan` 启动的工作流，工具调用一返回就被当成这一轮结束（行上显示 `0.00s`），工作流运行其实还在后面跑，对话没被算成「执行中」。
 
-根因是 ADR 0002 定的「合进去就把子对话标记完成」：`server/tasks.ts` 的 `childMerged` 合并成功后直接 `tk.resolved = true`，而 `shared/task.ts` 的 `taskStage` 里 `resolved` 排在 `working` 之前、见到就返回 `done`。于是合并那一刻「已完成」和「还在跑」同时成立，回收独立分支的路径也照着 `resolved` 直接删目录。
+根因是 ADR 0002 定的「合进去就把子对话标记完成」：`server/tasks/index.ts` 的 `childMerged` 合并成功后直接 `tk.resolved = true`，而 `shared/task.ts` 的 `taskStage` 里 `resolved` 排在 `working` 之前、见到就返回 `done`。于是合并那一刻「已完成」和「还在跑」同时成立，回收独立分支的路径也照着 `resolved` 直接删目录。
 
 要定的是：完成判定、独立分支回收、面板阶段显示共用哪一套口径，以及哪些触发点允许回收。
 
 ## 事实核对
 
-| 位置                                                        | 现状                                                                                                                      |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `shared/task.ts` `childHolds` / `childComplete`             | 一次列全 8 个条件码：working / background / workflow / helpers / plan / asking / requests / unmerged，空数组才算彻底完成  |
-| `shared/task.ts` `childHoldsOf`                             | 把任务状态换成 `childHolds` 的入参；后台命令数、合并状态这两样服务端才知道，由调用方补                                    |
-| `shared/task.ts` `runRunning`                               | 工作流运行还没跑完：以 `task.runs` 最后一条为准（`status === 'running' && !endedAt`），老任务没有运行记录时退回看 `steps` |
-| `shared/task.ts` `taskStage` / `childStage`                 | 阶段口径：`requests`/`asking` → 需要你处理，`working`/`background`/`workflow`/`helpers` → 执行中，`resolved` 排在这些之后 |
-| `shared/task.ts` `childRunning` / `taskBusy`                | 转圈和「运行中」汇总的口径，都已按上一条带上后台命令、工作流运行和派出的子任务                                            |
-| `server/tasks.ts` `releaseChild`                            | 唯一的回收点：`worktreeStatus` 说没合就拒绝；`childHoldsOf` 非空就原样保留并返回原因                                      |
-| `server/tasks.ts` `childMerged`                             | 合并成功只写一条面板消息（分支状态），不再置 `resolved`、不再删目录                                                       |
-| `server/tasks.ts` `settleChildTurn` / `settleChildWorktree` | 一轮结束收口；后台命令结束的回调、PATCH 手动标记完成也都收敛到 `releaseChild`                                             |
-| `server/exec/worktree.ts` `releaseWorktree`                 | 删之前再核一次 `worktreeStatus().merged`：删了找不回来，不能只靠调用方记得传对                                            |
-| `POST /:id/worktree/discard`、`DELETE /:id`                 | 用户显式「删除独立分支 / 丢弃」和删任务仍直接 `removeWorktree(..., true)`，这些是用户主动要求删，不设门禁                 |
+| 位置                                                              | 现状                                                                                                                      |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `shared/task.ts` `childHolds` / `childComplete`                   | 一次列全 8 个条件码：working / background / workflow / helpers / plan / asking / requests / unmerged，空数组才算彻底完成  |
+| `shared/task.ts` `childHoldsOf`                                   | 把任务状态换成 `childHolds` 的入参；后台命令数、合并状态这两样服务端才知道，由调用方补                                    |
+| `shared/task.ts` `runRunning`                                     | 工作流运行还没跑完：以 `task.runs` 最后一条为准（`status === 'running' && !endedAt`），老任务没有运行记录时退回看 `steps` |
+| `shared/task.ts` `taskStage` / `childStage`                       | 阶段口径：`requests`/`asking` → 需要你处理，`working`/`background`/`workflow`/`helpers` → 执行中，`resolved` 排在这些之后 |
+| `shared/task.ts` `childRunning` / `taskBusy`                      | 转圈和「运行中」汇总的口径，都已按上一条带上后台命令、工作流运行和派出的子任务                                            |
+| `server/tasks/index.ts` `releaseChild`                            | 唯一的回收点：`worktreeStatus` 说没合就拒绝；`childHoldsOf` 非空就原样保留并返回原因                                      |
+| `server/tasks/index.ts` `childMerged`                             | 合并成功只写一条面板消息（分支状态），不再置 `resolved`、不再删目录                                                       |
+| `server/tasks/index.ts` `settleChildTurn` / `settleChildWorktree` | 一轮结束收口；后台命令结束的回调、PATCH 手动标记完成也都收敛到 `releaseChild`                                             |
+| `server/exec/worktree.ts` `releaseWorktree`                       | 删之前再核一次 `worktreeStatus().merged`：删了找不回来，不能只靠调用方记得传对                                            |
+| `POST /:id/worktree/discard`、`DELETE /:id`                       | 用户显式「删除独立分支 / 丢弃」和删任务仍直接 `removeWorktree(..., true)`，这些是用户主动要求删，不设门禁                 |
 
 ## 决策
 
@@ -69,7 +69,7 @@
 ## 与现有实现的关系
 
 - 取代 ADR 0002「决策」中的这一条：_合进去就把子对话标记完成，这一轮结束后回收独立分支和 CLI 进程_。合并由面板做、编译测试留在子对话分支、冲突撤回并推回、`tests` 必填、一轮做完没合就催一次，这些结论仍然有效。
-- 改动落在 `shared/task.ts`（判定）、`server/tasks.ts`（`releaseChild` 与各触发点）、`server/exec/worktree.ts`（`releaseWorktree`）、`web/src/components/tasks/Worktrees.tsx`（分支状态行的原因），文案同一个提交写进 `shared/locales/en/tasks.ts`。
+- 改动落在 `shared/task.ts`（判定）、`server/tasks/index.ts`（`releaseChild` 与各触发点）、`server/exec/worktree.ts`（`releaseWorktree`）、`web/src/components/tasks/Worktrees.tsx`（分支状态行的原因），文案同一个提交写进 `shared/locales/en/tasks.ts`。
 - ADR 0002 的状态行改为被本条取代，正文保留。
 
 ## 运行时

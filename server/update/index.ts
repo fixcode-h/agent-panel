@@ -5,7 +5,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { chmod, cp, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CACHE_DIR } from './store.ts'
+import { CACHE_DIR } from '../store.ts'
 import {
   REPO,
   STALE_UPDATE_MS,
@@ -20,14 +20,14 @@ import {
   type AppUpdateBusy,
   type AppUpdateJob,
   type LocalPackageInfo,
-} from '../shared/version.ts'
-import { capture } from './exec/process.ts'
-import { recordInterrupted, type InterruptedEntry } from './interrupted.ts'
-import { netFetch } from './net.ts'
-import { downloadFile } from './download.ts'
-import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './update/local.ts'
-import { log } from './log.ts'
-import { t } from '../shared/i18n.ts'
+} from '../../shared/version.ts'
+import { capture } from '../exec/process.ts'
+import { recordInterrupted, type InterruptedEntry } from '../interrupted.ts'
+import { netFetch } from '../net.ts'
+import { downloadFile } from '../download.ts'
+import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './local.ts'
+import { log } from '../log.ts'
+import { t } from '../../shared/i18n.ts'
 
 // 出包时由 esbuild 写入版本号；从源码运行时没有
 declare const __APP_VERSION__: string | undefined

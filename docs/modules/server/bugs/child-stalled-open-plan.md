@@ -2,9 +2,9 @@
 
 - 状态：已修复（`shared/tasks/idle-ask.test.ts`、e2e `04-subagents` 通过）
 - 症状：子对话只回了一句「先跑类型检查和 fold 单测。」就结束这一轮，计划停在 1/8；父对话的计划一直「还在等它」，子对话一直停在等下一句，没有任何提醒
-- 入口：`server/tasks.ts` 的 `askIdleChildren`；`shared/task.ts` 的 `childIdleAsk`、`planStalled`
+- 入口：`server/tasks/index.ts` 的 `askIdleChildren`；`shared/task.ts` 的 `childIdleAsk`、`planStalled`
 - 根因类型：自动询问只管还在执行（`working`）的子对话，这一轮已经说完、计划没做完的被当成「没在执行」跳过
-- 模块：`server`（`server/tasks.ts`、`shared/task.ts`）
+- 模块：`server`（`server/tasks/index.ts`、`shared/task.ts`）
 - 关键词：子对话、停住、卡住、计划没做完、等下一句、自动询问、状态询问、父对话等它
 
 ## 现象

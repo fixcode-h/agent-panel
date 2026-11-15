@@ -200,7 +200,7 @@ export const Settings = z.object({
   /**
    * 对话页切走后，CLI 还停在等下一句的工具上多久（分钟）；0 表示回复完就结束这一轮。
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多。
-   * 只管空闲会话：正在执行的一轮（切到后台也一样）到点不回收，见 server/tasks.ts 的 keepAliveBusy
+   * 只管空闲会话：正在执行的一轮（切到后台也一样）到点不回收，见 server/tasks/index.ts 的 keepAliveBusy
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
   /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */

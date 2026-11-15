@@ -15,7 +15,7 @@
 
 - `WorktreeSection` 直接 `orderWorktrees(items).map(...)` 平铺全部项，`orderWorktrees` 只负责「父对话第一、其余按创建时间」，不看 `item.state`，所以 `active`（分支还在）、`merged`（已合并、分支已删）、`discarded`（已删除、改动没合并）三种状态的行依次混排。
 - `WorktreeRow` 行上只有 `idle`（`active && !item.working`）时才显示的两个行内按钮，没有 `ContextMenu`，也没有别的入口。
-- 后端不是原因：`GET /tasks/:id/worktrees`（`server/tasks.ts`）用 `[tk, ...kids].filter((x) => x.worktree)` 取列表、不看工作目录是否 `exists`；`POST /tasks/:id/worktree/discard` 只 `removeWorktree` 删目录和分支，再把 `task.worktree` 改成 `{ ...wt, state: 'merged' | 'discarded', note }`，task 上的记录一直留着。所以「已删除」的项前端本来就拿得到，缺的只是分组展示，这次没有改后端。
+- 后端不是原因：`GET /tasks/:id/worktrees`（`server/tasks/index.ts`）用 `[tk, ...kids].filter((x) => x.worktree)` 取列表、不看工作目录是否 `exists`；`POST /tasks/:id/worktree/discard` 只 `removeWorktree` 删目录和分支，再把 `task.worktree` 改成 `{ ...wt, state: 'merged' | 'discarded', note }`，task 上的记录一直留着。所以「已删除」的项前端本来就拿得到，缺的只是分组展示，这次没有改后端。
 
 ## 修复
 

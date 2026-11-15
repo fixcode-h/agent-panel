@@ -190,7 +190,7 @@ export interface TaskDiskItem {
   bytes: number
 }
 
-/** 设置「数据」里的保活会话列表（server/tasks.ts 的 keepAliveList） */
+/** 设置「数据」里的保活会话列表（server/tasks/index.ts 的 keepAliveList） */
 export interface KeepAliveItem {
   id: string
   title: string

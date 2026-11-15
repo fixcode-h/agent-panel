@@ -47,7 +47,7 @@ export interface ChildRowEnv {
   full: boolean
   /** 还没生成摘要时的兜底：最后一条回复的开头 */
   lastReply: string
-  /** 停下的原因（正式版要按回收规则补，见 server/tasks.ts 的 idle） */
+  /** 停下的原因（正式版要按回收规则补，见 server/tasks/index.ts 的 idle） */
   stopReason: Task['stopReason']
 }
 

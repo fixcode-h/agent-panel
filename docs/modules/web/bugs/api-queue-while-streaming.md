@@ -22,7 +22,7 @@
 
 三条叠加，缺一条都不会出现这个画面：
 
-1. **`apiWait` 会残留，而且跨任务结束都存在。** 本机数据目录里有 8 条任务带着 `apiWait={"api":"OpenDesign","ahead":0}`，其中 4 条 `status=done`，还有一条 `awaitingUser=true`（在等下一句、CLI 空闲）。`server/tasks.ts` 收尾里的兜底清理在对话保活路径下跑不到（`run()` 根本不返回），字段跟着快照一起落盘。
+1. **`apiWait` 会残留，而且跨任务结束都存在。** 本机数据目录里有 8 条任务带着 `apiWait={"api":"OpenDesign","ahead":0}`，其中 4 条 `status=done`，还有一条 `awaitingUser=true`（在等下一句、CLI 空闲）。`server/tasks/index.ts` 收尾里的兜底清理在对话保活路径下跑不到（`run()` 根本不返回），字段跟着快照一起落盘。
 
 2. **`apiWait` 的语义和「在出 token」并不互斥。** 它只由 `takeApiSlot(ctx, undefined, ...)` 写，而 `waitNext` / `yieldApiSlot` 都是「先 `slot.drop()` 让出名额，等完再 `takeApiSlot` 拿回」——让出停止的是**占名额**，不是 CLI 进程，让出期间 CLI 可能还在输出。拿回时如果名额被别人占着就会排队并写上标记。旧实现里清不清由闭包变量 `queued`（本次有没有排过队）决定，而 `ApiSlot.take` 会复用 `slot.pending`：复用别处已经在排的队时 `onQueue` 不会再回调、`queued` 为假，写进去的标记就没人清。
 

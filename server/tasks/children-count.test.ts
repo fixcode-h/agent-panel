@@ -13,7 +13,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-child-counts-'))
 process.env.AGENT_PANEL_DATA = dir
 
 const { createTaskStore } = await import('./store.ts')
-const { tasksApi } = await import('../tasks.ts')
+const { tasksApi } = await import('./index.ts')
 const { newTask } = await import('../../shared/task.ts')
 const { setLang } = await import('../../shared/i18n.ts')
 const { resetCaches } = await import('../store.ts')

@@ -13,7 +13,7 @@
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `scripts/package.mjs`                  | 服务端用 esbuild 打成单文件 `server.mjs`，依赖全部内联；包里没有 `node_modules`，解压后只要 Node.js 20+                                                                  |
 | `server/download.ts` 的 `downloadFile` | 大文件分片并发、断点续传、可取消，本机生图下模型就用它                                                                                                                   |
-| `server/update.ts`                     | 在线更新用系统自带的 `tar` 解压（Windows 10 起自带）                                                                                                                     |
+| `server/update/index.ts`               | 在线更新用系统自带的 `tar` 解压（Windows 10 起自带）                                                                                                                     |
 | `server/index.ts` 的全局中间件         | 写操作必须是 `application/json`，挡跨站的 text/plain POST                                                                                                                |
 | npm `sherpa-onnx-node`（1.13.8）       | 原生扩展；平台库在兄弟包 `sherpa-onnx-<平台>-<架构>` 里，`addon.js` 按 `../sherpa-onnx-<平台>/` 找；有 `OfflineRecognizer.createAsync` / `decodeAsync`（不阻塞事件循环） |
 

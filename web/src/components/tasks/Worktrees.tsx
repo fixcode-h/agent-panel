@@ -211,7 +211,7 @@ function mergeState(item: WorktreeItem, busy: boolean): Availability {
 }
 
 function removeState(item: WorktreeItem, busy: boolean): Availability {
-  // 已经删掉的分支后端会直接拒（isolated 只认 active，见 server/tasks.ts 的 discard），
+  // 已经删掉的分支后端会直接拒（isolated 只认 active，见 server/tasks/index.ts 的 discard），
   // 不能给可点：否则用户确认一遍、才看到一条报错，行内按钮那边却根本没有这个入口
   if (item.state !== 'active') return { ok: false, reason: t('这个分支已经删除了') }
   if (busy) return { ok: false, reason: t('正在处理这个独立分支，等它结束') }

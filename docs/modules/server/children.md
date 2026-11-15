@@ -1,6 +1,6 @@
 # server · 子对话、提问与计划推进
 
-[server 模块](README.md)的子页面：子对话分派和完成流转、`/children` 摘要、删除独立分支、提问开关联动、合回后的父对话测试、计划推进、转交父对话。模块的状态块、`server/tasks.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
+[server 模块](README.md)的子页面：子对话分派和完成流转、`/children` 摘要、删除独立分支、提问开关联动、合回后的父对话测试、计划推进、转交父对话。模块的状态块、`server/tasks/index.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
 
 2026-10-31 从 `README.md` 原样挪出（文字没改），各条的日期和结论以当时为准。
 

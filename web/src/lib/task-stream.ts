@@ -28,7 +28,7 @@ export function mergePatch(task: Task, p: Patch): Task {
 }
 
 /**
- * 跟着任务的实时变化：服务端用 SSE 推送增量（见 server/tasks.ts 的 /tasks/:id/events），
+ * 跟着任务的实时变化：服务端用 SSE 推送增量（见 server/tasks/index.ts 的 /tasks/:id/events），
  * 合并后交给 onTask。在线演示没有服务端，执行中时定时拉一次。
  *
  * boot：打开对话时先拿到的那一份（GET 的结果）和它的版本（整份都在它里面时才有）。

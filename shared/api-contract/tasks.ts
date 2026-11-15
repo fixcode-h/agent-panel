@@ -37,7 +37,7 @@ const TaskShape = z.looseObject({
 /**
  * 打开对话时只取最近一段消息（`?limit=` / 往前翻页 `?before=`）时多带的分页信息：
  * messageTotal 是完整条数，比 messages 多就说明还有更早的要往前翻；不传 limit 时没有这两个字段。
- * messageRev 只在整份对话都在这一份里时给（见 server/tasks.ts 的 GET /:id）：前端建 SSE 时带上它，
+ * messageRev 只在整份对话都在这一份里时给（见 server/tasks/index.ts 的 GET /:id）：前端建 SSE 时带上它，
  * 首包就只补发增量；截断的那段不是整份的前缀，不能当版本用
  */
 export type TaskPage = Task & {

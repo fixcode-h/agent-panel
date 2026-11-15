@@ -13,6 +13,12 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 - 规则：不许用改名、换写法来绕开检查（比如把 `task.cliAlive` 改成 `const { cliAlive } = task`、把函数拆成两个仍然共享同一批外层变量的闭包）。检查只是量出来的数字，它背后的规则才是要遵守的。
 - 防线：`scripts/rules-check.mjs` 第 21 条。
 
+## 模块的入口放进模块目录，不和目录同名并存
+
+- 规则：一个模块有了自己的目录，入口就是目录里的 `index.ts`（`shared/plan/index.ts`、`server/tasks/index.ts`），不在上一层再放一个同名的 `plan.ts`：两边并存时新代码该放哪边说不清。插件开放模块（`shared/plugins/host-modules.json`）挪了旧插件会装不上，留在原处，列在结构检查的 `TWIN_OK` 里。
+- 起因：2026-11-15 复查报告 B1，搬目录后留下 12 对同名文件 + 目录，f6c8ff7 起挪进目录。
+- 防线：结构检查（`twins`）。
+
 ## 拆大函数按阶段拆，共享状态显式传
 
 - 规则：碰到超长函数（尤其是 `runAgent`、`createRun`、`makeOrchestra` 这种闭包）时，新逻辑写成独立函数放进新文件，入参写清楚需要什么，不要读写外层闭包的变量。要动闭包本身时，先在模块文档里列出共享变量（谁读、谁写），收进一个显式的上下文对象再拆。拆的提交里不夹功能改动。

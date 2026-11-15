@@ -8,12 +8,12 @@
 
 ## 事实核对
 
-| 位置                                          | 现状（改动前）                                                                      |
-| --------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `server/tasks.ts` `submitMerge` / `integrate` | 子对话调用 `submit_merge` 后面板按父对话排队（`mergeLock`）试合并、提交，冲突就撤回 |
-| `server/tasks.ts` PATCH `/:id` `resolved`     | 标记完成要用户手动点，没合并时 409，标记后删独立分支                                |
-| `server/tasks.ts` `reportToParent`            | 子对话做完只提醒父对话「要它调用 submit_merge 才算进去」，没调用就一直不合          |
-| `shared/engine/index.ts` `buildPart`          | 编译、测试在子对话自己的独立分支里跑（093a41e 起，合并时不再编译）                  |
+| 位置                                                | 现状（改动前）                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `server/tasks/index.ts` `submitMerge` / `integrate` | 子对话调用 `submit_merge` 后面板按父对话排队（`mergeLock`）试合并、提交，冲突就撤回 |
+| `server/tasks/index.ts` PATCH `/:id` `resolved`     | 标记完成要用户手动点，没合并时 409，标记后删独立分支                                |
+| `server/tasks/index.ts` `reportToParent`            | 子对话做完只提醒父对话「要它调用 submit_merge 才算进去」，没调用就一直不合          |
+| `shared/engine/index.ts` `buildPart`                | 编译、测试在子对话自己的独立分支里跑（093a41e 起，合并时不再编译）                  |
 
 ## 决策
 
@@ -38,7 +38,7 @@
 
 ## 与现有实现的关系
 
-改 `server/tasks.ts`（`submitMerge`、`childMerged`、`closeChild`、`nudgeMerge`、`settleChildTurn`、`reportToParent`）、`server/orch-mcp.ts`（参数）、`shared/engine/index.ts`（提示词）。手动「标记完成」和手动合并按钮保留，共用 `closeChild`。已完成的子对话再收到消息时取消完成标记，分支按 b3945d5 的方式重建。
+改 `server/tasks/index.ts`（`submitMerge`、`childMerged`、`closeChild`、`nudgeMerge`、`settleChildTurn`、`reportToParent`）、`server/orch-mcp.ts`（参数）、`shared/engine/index.ts`（提示词）。手动「标记完成」和手动合并按钮保留，共用 `closeChild`。已完成的子对话再收到消息时取消完成标记，分支按 b3945d5 的方式重建。
 
 ## 运行时
 

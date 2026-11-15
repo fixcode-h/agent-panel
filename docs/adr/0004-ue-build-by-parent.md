@@ -16,15 +16,15 @@ UBT / UHT、Editor、DDC、Shader 编译是整台机器共用的，几个子对�
 
 ## 事实核对
 
-| 位置                                                     | 现状                                                                                         |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `server/background.ts` `start`（`exclusive`）            | 独占命令按 `root` 目录排成一条链，同一目录同一时间只跑一条                                   |
-| `server/background.ts` `occupants`                       | 新增：列出某个目录里还没结束的独占命令（正在跑的在前），用来回答「谁占着编译」               |
-| `server/exec/worktree.ts` `isBigProject`                 | 项目目录或仓库根有 `.uproject` 就算 UE 项目（原来只用于跳过 LFS 检出），现在也导出给编译判断 |
-| `shared/test-steps.ts` `buildSteps` / `isUeBuildCommand` | 申请编译跑哪些步骤；认出 Build.bat / UBT / UHT / RunUAT / Editor 这类命令                    |
-| `server/tasks.ts` `childRequestBuild` / `askParentBuild` | 子对话的申请交给父对话并叫醒它                                                               |
-| `server/tasks.ts` `parentRequestBuild`                   | 父对话申请：把编译步骤排进后台独占队列，告诉申请方谁占着、告诉占着的父对话有人在等           |
-| `server/tasks.ts` `peerList` / `messagePeer`（host）     | 同一项目的其他顶层父对话；传话时对方在跑就实时送达，空闲就开一轮                             |
+| 位置                                                           | 现状                                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `server/background.ts` `start`（`exclusive`）                  | 独占命令按 `root` 目录排成一条链，同一目录同一时间只跑一条                                   |
+| `server/background.ts` `occupants`                             | 新增：列出某个目录里还没结束的独占命令（正在跑的在前），用来回答「谁占着编译」               |
+| `server/exec/worktree.ts` `isBigProject`                       | 项目目录或仓库根有 `.uproject` 就算 UE 项目（原来只用于跳过 LFS 检出），现在也导出给编译判断 |
+| `shared/test-steps.ts` `buildSteps` / `isUeBuildCommand`       | 申请编译跑哪些步骤；认出 Build.bat / UBT / UHT / RunUAT / Editor 这类命令                    |
+| `server/tasks/index.ts` `childRequestBuild` / `askParentBuild` | 子对话的申请交给父对话并叫醒它                                                               |
+| `server/tasks/index.ts` `parentRequestBuild`                   | 父对话申请：把编译步骤排进后台独占队列，告诉申请方谁占着、告诉占着的父对话有人在等           |
+| `server/tasks/index.ts` `peerList` / `messagePeer`（host）     | 同一项目的其他顶层父对话；传话时对方在跑就实时送达，空闲就开一轮                             |
 
 ## 决策
 

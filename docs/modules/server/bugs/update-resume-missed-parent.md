@@ -2,9 +2,9 @@
 
 - 状态：已修复（名单口径、`doing` 文案和界面侧的显示条件随同一批改动落地；`server/tasks/restart.test.ts` 8/8 通过，反向验证见「回归验证」）
 - 症状：面板强制更新后弹出「继续执行」弹窗，子对话被继续、正常接着跑，父对话却停在「已中断，等待继续执行」——输入框占位写「继续输入要求」、右边是「继续执行」按钮，同一时间它名下的子对话在跑
-- 入口：`server/tasks.ts` 的 `workingTasks` / `interruptedTasks`、`server/update.ts` 的 `stopForUpdate`、`server/interrupted.ts` 的 `recordInterrupted` / `interruptedApi` / `restartDoing`、`shared/task.ts` 的 `restartUnfinished` / `interruptedTaskIds`、`web/src/components/layout/UpdateResumeDialog.tsx`、`web/src/components/tasks/TaskView.tsx` 的「继续执行」按钮和输入框占位
+- 入口：`server/tasks/index.ts` 的 `workingTasks` / `interruptedTasks`、`server/update/index.ts` 的 `stopForUpdate`、`server/interrupted.ts` 的 `recordInterrupted` / `interruptedApi` / `restartDoing`、`shared/task.ts` 的 `restartUnfinished` / `interruptedTaskIds`、`web/src/components/layout/UpdateResumeDialog.tsx`、`web/src/components/tasks/TaskView.tsx` 的「继续执行」按钮和输入框占位
 - 根因类型：恢复名单口径只看进程（`working`），漏掉「这一轮已经说完、计划没做完」的父对话
-- 模块：`server`（强制更新 `server/update.ts`、被打断记录与弹窗接口 `server/interrupted.ts`、任务 API `server/tasks.ts`、接线 `server/index.ts`）、`shared`（名单判定 `shared/task.ts`、英文文案）、`web`（弹窗 `web/src/components/layout/UpdateResumeDialog.tsx`、输入框「继续执行」与占位 `web/src/components/tasks/TaskView.tsx`）
+- 模块：`server`（强制更新 `server/update/index.ts`、被打断记录与弹窗接口 `server/interrupted.ts`、任务 API `server/tasks/index.ts`、接线 `server/index.ts`）、`shared`（名单判定 `shared/task.ts`、英文文案）、`web`（弹窗 `web/src/components/layout/UpdateResumeDialog.tsx`、输入框「继续执行」与占位 `web/src/components/tasks/TaskView.tsx`）
 - 关键词：强制更新、继续执行弹窗、父对话没继续、子对话在跑父对话等继续、继续输入要求、interrupted-by-update、强制更新打断的任务、workingTasks、interruptedTasks、restartUnfinished、interruptedTaskIds、stopForUpdate、stopReason restart、计划没做完
 
 ## 现象
@@ -18,7 +18,7 @@
 
 ## 查实的证据
 
-- `~/.agent-panel/cache/interrupted-by-update.json`（本轮已读）：`at` 为 `2026-10-26T05:28:17.346Z`（本地 13:28:17），`acknowledged: true`，`tasks` 只有一项 `b41b2c3f-cec0-456c-937a-0e1d80dbc4f2`，`doing` 是「你停在「等下一句」已经 2 小时…请接着把这条做完并收尾。」——**父对话不在名单里**，所以新版本启动后没有任何东西把它拉起来；它被启动迁移（`server/tasks.ts` 的 `ready`）落成 `stopped` + `stopReason: 'restart'`，界面只能显示「已中断 · 面板重启时中断」和「继续执行」。
+- `~/.agent-panel/cache/interrupted-by-update.json`（本轮已读）：`at` 为 `2026-10-26T05:28:17.346Z`（本地 13:28:17），`acknowledged: true`，`tasks` 只有一项 `b41b2c3f-cec0-456c-937a-0e1d80dbc4f2`，`doing` 是「你停在「等下一句」已经 2 小时…请接着把这条做完并收尾。」——**父对话不在名单里**，所以新版本启动后没有任何东西把它拉起来；它被启动迁移（`server/tasks/index.ts` 的 `ready`）落成 `stopped` + `stopReason: 'restart'`，界面只能显示「已中断 · 面板重启时中断」和「继续执行」。
 - 名单之所以只挑到子对话：强制更新停 CLI 前调的是 `workingTasks()`，它按 `working === true`（CLI 正在产出）过滤。父对话当时停在等下一句，`working: false`，计划只做到一部分，于是两头不沾：既不在「在跑」的名单里，也没人给它重新拉起。
 - 待确认：排查时引用的面板日志 `logs/agent-panel-20261026-132825-77740.log`（13:28:28 只对子对话 `b41b2c3f` 继续执行，父对话 `93b08721` 直到 13:29:25 才被手动继续）在本轮写文档时已不在 `logs/` 下（目录里最早的只剩 13:42 那一批），未能重新复核；同一时刻的名单文件内容与上述结论一致（见上一条）。
 
@@ -60,9 +60,9 @@
 ## 落地改动
 
 - `shared/task.ts`：新增 `restartUnfinished`、`interruptedTaskIds`。
-- `server/tasks.ts`：新增 `tasksApi` 的 `interruptedTasks()`。
+- `server/tasks/index.ts`：新增 `tasksApi` 的 `interruptedTasks()`。
 - `server/interrupted.ts`：新增 `restartDoing`（`doing` 的取值顺序）。
-- `server/update.ts`：`stopForUpdate` 的 `interrupted` 允许异步（名单要读任务文件，读不出来也照常停 CLI）。
+- `server/update/index.ts`：`stopForUpdate` 的 `interrupted` 允许异步（名单要读任务文件，读不出来也照常停 CLI）。
 - `server/index.ts`：`updateApi` 的 `interrupted` 接到 `tasks.interruptedTasks()`。
 - `web/src/components/tasks/TaskView.tsx`：「继续执行」不显示的条件、输入框占位。
 - `web/src/components/layout/UpdateResumeDialog.tsx`：说明文案。

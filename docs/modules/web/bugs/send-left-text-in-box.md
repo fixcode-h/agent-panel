@@ -2,7 +2,7 @@
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run build`、WSL 里的 `npm run test:e2e` 通过；界面检查见下）
 - 症状：对话右侧已经出现用户那条气泡、下面标着「已交给 CLI，这一轮接着处理」，同一个输入框里仍完整保留着刚发出去的文字；点发送到消息出现之间还要等一段时间
-- 入口：`web/src/components/tasks/TaskView.tsx` 的 `send`、`web/src/lib/api.ts` 的 `sendMessage`、`server/tasks.ts` 的 `POST /tasks/:id/messages` / `followUp` / `deliver`
+- 入口：`web/src/components/tasks/TaskView.tsx` 的 `send`、`web/src/lib/api.ts` 的 `sendMessage`、`server/tasks/index.ts` 的 `POST /tasks/:id/messages` / `followUp` / `deliver`
 - 根因类型：清空输入框和消息入库都写在 `await` 接口之后；而不带 `interrupt` 的发送接口要等 `followUp → start` 的一串串行前置（settings、项目、git / p4 探测、CLI 拉起）才响应；消息本身早已经 SSE 到界面；`DeliveryHow` 里也没有「待认领」
 - 模块：web + server
 - 关键词：发送、输入框没清空、发送慢、待认领、已交给 CLI、乐观更新、messageId、POST /tasks/:id/messages

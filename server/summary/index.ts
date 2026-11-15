@@ -8,15 +8,15 @@
  * - PUT / DELETE /summary/:id：编辑正文、删除报告；GET / PUT /summary/config：面板里加过的项目。
  * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary/index.ts。
  */
-import { askSession } from './asks.ts'
-import { attachCode } from './summary/diff.ts'
+import { askSession } from '../asks.ts'
+import { attachCode } from './diff.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { getCli } from '../shared/clis.ts'
-import type { Agent, Project, Task } from '../shared/schema.ts'
-import { taskDeleted } from '../shared/task.ts'
-import { renderTemplate, resolveParams } from '../shared/agents/role.ts'
+import { getCli } from '../../shared/clis.ts'
+import type { Agent, Project, Task } from '../../shared/schema.ts'
+import { taskDeleted } from '../../shared/task.ts'
+import { renderTemplate, resolveParams } from '../../shared/agents/role.ts'
 import {
   activeInRange,
   collectRangeProjects,
@@ -39,14 +39,14 @@ import {
   summaryPeriod,
   tasksContext,
   type SummaryJob,
-} from '../shared/summary/index.ts'
-import { agentPermission, agentRun, cliSettings } from '../shared/settings.ts'
-import { safeArgs } from './assist.ts'
-import { invokeCli } from './exec/invoke.ts'
-import { childEnv } from './exec/process.ts'
-import { log } from './log.ts'
-import { getSettings } from './settings.ts'
-import { t } from '../shared/i18n.ts'
+} from '../../shared/summary/index.ts'
+import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
+import { safeArgs } from '../assist.ts'
+import { invokeCli } from '../exec/invoke.ts'
+import { childEnv } from '../exec/process.ts'
+import { log } from '../log.ts'
+import { getSettings } from '../settings.ts'
+import { t } from '../../shared/i18n.ts'
 
 const TIMEOUT = 10 * 60_000
 

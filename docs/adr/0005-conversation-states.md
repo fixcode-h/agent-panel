@@ -15,14 +15,14 @@
 
 ## 事实核对
 
-| 位置（改动前）                                                        | 现状                                                                                                                       |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `shared/task.ts` `taskStage` / `childIcon` / `childHolds`             | 列表分组、行首图标、「彻底完成」各自判断，说法不一                                                                         |
-| `shared/plan/index.ts` `childTurnSettle`                              | 子对话一轮结束时收口父计划的另一套判据，只看 requests / working / status / 后台命令 / 计划，漏了提问、工作流、派出的子任务 |
-| `server/tasks.ts` `reportToParent` / `settleParentTurn` / `childLeft` | 三条给父对话报状态的路，各自拼文案，会重复报、报早                                                                         |
-| `server/tasks.ts` `completeChild`                                     | 彻底完成时 `stopTask(id, 'finish')` 结束等下一句的进程                                                                     |
-| `shared/engine/index.ts` `runConversationTurn`                        | 被停下且没答完就写「这一轮被中断」：上面那次 `finish` 停止也被当成中断                                                     |
-| `server/tasks.ts` `submitMerge`（0002）                               | 子对话调用后面板直接合并，父对话事后才知道                                                                                 |
+| 位置（改动前）                                                              | 现状                                                                                                                       |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `shared/task.ts` `taskStage` / `childIcon` / `childHolds`                   | 列表分组、行首图标、「彻底完成」各自判断，说法不一                                                                         |
+| `shared/plan/index.ts` `childTurnSettle`                                    | 子对话一轮结束时收口父计划的另一套判据，只看 requests / working / status / 后台命令 / 计划，漏了提问、工作流、派出的子任务 |
+| `server/tasks/index.ts` `reportToParent` / `settleParentTurn` / `childLeft` | 三条给父对话报状态的路，各自拼文案，会重复报、报早                                                                         |
+| `server/tasks/index.ts` `completeChild`                                     | 彻底完成时 `stopTask(id, 'finish')` 结束等下一句的进程                                                                     |
+| `shared/engine/index.ts` `runConversationTurn`                              | 被停下且没答完就写「这一轮被中断」：上面那次 `finish` 停止也被当成中断                                                     |
+| `server/tasks/index.ts` `submitMerge`（0002）                               | 子对话调用后面板直接合并，父对话事后才知道                                                                                 |
 
 ## 决策
 
@@ -55,7 +55,7 @@
 ### 三、子对话上报只有一条路：`childReport` + `reportChild`
 
 - `shared/task.ts` 的 `childReport(task, {background, more, unmerged})` 返回 `state`、父计划那一步怎么收口（`done` → ok，`failed`/`stopped` → fail，其余 hold）、一句话 `why`、要不要发消息 `notify`。
-- `server/tasks.ts` 的 `reportChild` 是唯一出口：按 `reportKey`（状态 + why）去重，同一状态不重复报；`running`/`waiting`/`needs` 只更新父计划那一步的说明，不刷消息。
+- `server/tasks/index.ts` 的 `reportChild` 是唯一出口：按 `reportKey`（状态 + why）去重，同一状态不重复报；`running`/`waiting`/`needs` 只更新父计划那一步的说明，不刷消息。
 - 上报消息带 `child: {id, title, state}`，界面显示成「子对话状态 · 标题 · 状态」的工具行，点开跳到子对话。
 - 独立分支的子对话一轮结束先走 `settleChildWorktree`：能推进就推进（`advanceChildTo`），该催合并就催（`nudgeMerge`），最后上报。
 

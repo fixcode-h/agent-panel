@@ -74,7 +74,7 @@
 - `shared/review/gate.ts`：`reviewGate` 加第四个参数 `triage`，新增 `blockingIds`、`triageText`、`triageInput`。
 - `shared/verdict.ts`：`parseVerdict` 和「首行优先」的 `leadVerdict` 从 `engine.ts` 挪出来（`engine.ts` 仍导出 `parseVerdict`），评审门禁和执行报告不用为一个函数引整个引擎。
 - `server/orch-mcp.ts`：`submit_merge` 加 `review_triage`，`spawn_agents` 加 `resume`、`title` 改选填。
-- `server/tasks.ts`：`submitMerge` 收处置、交给门禁，写进收尾请求和交接摘要（`shared/handoff.ts` 的「评审意见的处置」）。
+- `server/tasks/index.ts`：`submitMerge` 收处置、交给门禁，写进收尾请求和交接摘要（`shared/handoff.ts` 的「评审意见的处置」）。
 - 角色设定：执行、评审、文档三个必备角色，启动时直接同步，不用登记旧指纹。
 
 ## 运行时

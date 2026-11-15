@@ -1032,7 +1032,7 @@ await runShard('子对话与计划', async (api) => {
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
   }
   // 用户点「解决」时计划一并收口：走正式后端这条路径（PATCH resolved → settleChildForUser → settlePlan → 流转）。
-  // 界面检查只覆盖演示后端，这条改的是 server/tasks.ts，得在这里兜住
+  // 界面检查只覆盖演示后端，这条改的是 server/tasks/index.ts，得在这里兜住
   {
     // 前提：子对话和父对话共用一个目录（不开独立分支）。有独立分支且没合回时，点解决仍会先被「分支没合回」拦住，
     // 测不到计划收口这条路径。项目原来的隔离方式用完恢复
@@ -1105,7 +1105,7 @@ await runShard('子对话与计划', async (api) => {
     )
     step('计划没做完时父对话收尾仍被拦（计划不会跟着收口）')
     // 用户点「解决」：计划一并收口，不再因为「计划没做完」返回 409。
-    // PATCH 路由自己就会写 resolved: true（见 server/tasks.ts 的 Object.assign），所以返回值证明不了「真的置完成」：
+    // PATCH 路由自己就会写 resolved: true（见 server/tasks/index.ts 的 Object.assign），所以返回值证明不了「真的置完成」：
     // 真正的证据是父对话多一条这个子对话的完成上报（上报排在置完成之后，见 reportChild）
     const reportsOf = (x) => x.messages.filter((m) => m.peer?.kind === 'report' && m.peer.id === solveKid.id)
     const reportsBefore = reportsOf(await call('GET', `/tasks/${solveParent.id}`)).length

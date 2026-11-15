@@ -4,7 +4,7 @@
 - 症状：对话框里的「正在重试」原样甩出 500 + litellm 的 JSON，看不出是网关断连、限流还是上下文超长；子对话跑挂后交给父对话的汇报只有「失败：执行失败了」，用户以为是「汇报这个动作失败了」
 - 入口：`server/exec/parsers.ts` 的 `notice` / `retry_ok` 解析、`shared/alerts.ts` 的 `alertInfo` / `classifyError`、`shared/task.ts` 的 `childReport`
 - 根因类型：错误分类漏掉上游网关断连；失败汇报不带根因；重试成功没有收回「正在重试」
-- 模块：`server-exec`（`server/exec/`），配套 `shared/alerts.ts`、`shared/task.ts`、`server/tasks.ts`、`shared/clis/pi.json`、`web/src/components/tasks/PeerMessage.tsx`
+- 模块：`server-exec`（`server/exec/`），配套 `shared/alerts.ts`、`shared/task.ts`、`server/tasks/index.ts`、`shared/clis/pi.json`、`web/src/components/tasks/PeerMessage.tsx`
 - 关键词：正在重试、模型请求失败、502 Bad Gateway、Connection closed、litellm、APIConnectionError、汇报失败、执行失败了、auto_retry_end、retry_ok、gateway、lastFailureNote
 
 ## 现象
@@ -45,7 +45,7 @@
 - `shared/clis/pi.json` + `server/exec/parsers.ts`：新增 `retry_ok` 事件（Pi 的 `auto_retry_end success: true`，字段 `attempt`，事件形状见 Pi 包里的 JSON 事件文档（`@earendil-works/pi-coding-agent` 的 `json.md`）），解析成 `{ type: 'retry_ok', text, attempt }`；`notice` 的 `retry` / `retry_failed` 带上 `kind`、`attempt`、`maxAttempts`、`error`。
 - `server/exec/runner.ts`：`settleRetryNotes()` 把前面所有未恢复的「正在重试」收成「已恢复」；`retry_ok` 不额外占一行提示（保持「重试成功不再提示」的既有约定）；每次重试、重试失败、恢复都写 agent 日志（task、step、cli、kind、attempt、maxAttempts、error），事后可统计。
 - `shared/task.ts`：`lastFailureNote()` 取最后一条未恢复的 error 级报错（工具行上是 CLI 报的，消息行上是面板写的），`childReport` 的失败分支变成 `执行失败了（根因）`。父对话收到的汇报、父计划等待说明、子对话栏读的是同一份结论。
-- `server/tasks.ts`：`messageParent` / `noteParent` 找不到父对话时写 warn 日志，`messageParent` 回给子对话的 info 也说明没交回去。界面上「子对话自己跑挂了」是带失败的「汇报」卡片，「交回失败」是「消息没有送到」类警告或只有日志，两者不再是同一种样子。
+- `server/tasks/index.ts`：`messageParent` / `noteParent` 找不到父对话时写 warn 日志，`messageParent` 回给子对话的 info 也说明没交回去。界面上「子对话自己跑挂了」是带失败的「汇报」卡片，「交回失败」是「消息没有送到」类警告或只有日志，两者不再是同一种样子。
 - `web/src/components/tasks/PeerMessage.tsx`：失败汇报的副标题改成「子对话自己这一轮失败」；`AlertRow.tsx` 把 `alert.detail` 传给 `alertInfo`。
 
 ## 验证

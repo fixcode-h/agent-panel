@@ -34,7 +34,7 @@
 | `shared/plan/index.ts` `runningStepId`                         | 派子对话时没点名步骤就挂「正在做的那一步」（`running`，其次 `waiting`）                                                                                                                         |
 | `shared/engine/index.ts` `planPart`                            | 每轮提示里只有计划文本（`planText`）和一段维护规则；没有「现在是第几步、多久没动、下一步是什么」，没有滞后提醒，也没有「新输入先判计划」                                                        |
 | `shared/engine/index.ts` `runBackground` 分支                  | `run_background` 只有**显式带 `step`** 才 `bindWait`；不带 `step` 的长命令在计划里完全不可见                                                                                                    |
-| `server/tasks.ts` 后台命令结束回调                             | `settleWait(tk, 'background', job.id, ok)`；子对话收尾 `refreshChildWait` / `syncKids`；合回 `markWrapUp`；这些事件已经是自动推进的锚点，缺的是「失败态」和「计划没跟上」的检测                 |
+| `server/tasks/index.ts` 后台命令结束回调                       | `settleWait(tk, 'background', job.id, ok)`；子对话收尾 `refreshChildWait` / `syncKids`；合回 `markWrapUp`；这些事件已经是自动推进的锚点，缺的是「失败态」和「计划没跟上」的检测                 |
 | `server/orch-mcp.ts` `set_plan`                                | 工具参数：整份 / `partial`；语义稳定，这次不推翻                                                                                                                                                |
 | `web/src/components/tasks/PlanPanel.tsx`                       | 每项右侧有用时（`data-plan-time`）、顶部有总用时（`data-plan-total`）、按钮上有当前步骤耗时（`data-plan-current-time`）；没有进度条、没有「N 分钟前更新」、没有滞后警示                         |
 | `scripts/ui/02-task.mjs`（执行计划分片）                       | 断言上述 `data-plan-*` 结构、等待中的说明文字必须正好是「等：端到端测试」、状态图标的计算样式；UI 改造要保持这些契约                                                                            |
@@ -227,7 +227,7 @@ Agent 的**第一件事**是判断「现有计划要不要改」：
 | `shared/engine/index.ts` `runBackground`                 | 没带 `step` 时挂到 `runningStepId(task)`，让长命令在计划里可见                                                                   |
 | `shared/engine/index.ts` `planPart`                      | 计划文本前加「现在：第几步 / 已多久 / 下一步」，再插 `planNotice`；规则段补「做完立刻更新」「一个 `running`」「什么算完成一步」  |
 | `shared/engine/index.ts` `conversationPrompt`            | 本轮带新要求时注入「先判计划」段（同一段规则，不按输入类型重写一份）                                                             |
-| `server/tasks.ts`                                        | 收到用户消息 / 父对话转达时写 `activePlan.lastInputAt`；每轮开始构造提示前 `planNotice` 命中就 `log.warn('plan', …)`             |
+| `server/tasks/index.ts`                                  | 收到用户消息 / 父对话转达时写 `activePlan.lastInputAt`；每轮开始构造提示前 `planNotice` 命中就 `log.warn('plan', …)`             |
 | `web/src/components/tasks/PlanPanel.tsx`                 | 进度条、「N 分钟前更新」、滞后警示、滞后步骤小标记；保留全部现有 `data-plan-*` 与等待说明结构                                    |
 | `web/src/lib/demo-backend.ts`                            | 演示计划补 `updatedAt`（含一份滞后 8 分钟的计划）和一份带 `failed` 步骤的计划，界面检查才能验到警示与失败态                      |
 

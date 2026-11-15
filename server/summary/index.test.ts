@@ -9,19 +9,19 @@ import type {
   SummaryJob,
   SummaryRecord as ReportRecord,
   SummaryReport,
-} from '../shared/summary/index.ts'
-import type { Agent } from '../shared/schema.ts'
+} from '../../shared/summary/index.ts'
+import type { Agent } from '../../shared/schema.ts'
 
 // 数据目录换成临时的，别动本机的报告
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-summary-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { createCollection } = await import('./store.ts')
-const { summaryApi, summaryRoleText } = await import('./summary.ts')
-const { SummaryRecord, summaryRole } = await import('../shared/summary/index.ts')
-const { BUILTIN_AGENTS } = await import('../shared/builtin/agents.ts')
+const { createCollection } = await import('../store.ts')
+const { summaryApi, summaryRoleText } = await import('./index.ts')
+const { SummaryRecord, summaryRole } = await import('../../shared/summary/index.ts')
+const { BUILTIN_AGENTS } = await import('../../shared/builtin/agents.ts')
 // 语言在 server/lang.ts 里按 process.env.LANG 定（CI 是英文），断言用同一个 t() 算期望值
-const { t } = await import('../shared/i18n.ts')
+const { t } = await import('../../shared/i18n.ts')
 
 const reports = createCollection<SummaryReport, ReportRecord>('summaries.json', SummaryRecord)
 let config: SummaryConfig = { projectIds: [] }

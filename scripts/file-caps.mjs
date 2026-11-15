@@ -2,7 +2,7 @@
 // node scripts/file-caps.mjs          列出超过默认上限的文件和它们的上限
 // node scripts/file-caps.mjs --update 把变小了的文件的上限跟着降下来（只降不升）
 //
-// 为什么要有：server/tasks.ts 拆分前四天涨了 1000 行，大文件越长越难拆、并行改时越容易冲突。
+// 为什么要有：server/tasks/index.ts 拆分前四天涨了 1000 行，大文件越长越难拆、并行改时越容易冲突。
 // 上限只拦「继续变大」，不逼着一次拆完；要加功能就把新代码放进拆出来的模块（见 server/tasks/）。
 // 确实要放宽某个文件时，手改 file-caps.json 里那一项，提交说明里写为什么。
 import { readFileSync, writeFileSync } from 'node:fs'

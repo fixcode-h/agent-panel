@@ -1,6 +1,6 @@
 # server · 每轮改动卡片与撤销
 
-[server 模块](README.md)的子页面：对话每轮的改动记录和撤销。模块的状态块、`server/tasks.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
+[server 模块](README.md)的子页面：对话每轮的改动记录和撤销。模块的状态块、`server/tasks/index.ts` 拆分表、入口、依赖和回归验证见 [README.md](README.md)，Bug 记录见 [bugs.md](bugs.md)。
 
 2026-10-31 从 `README.md` 原样挪出（文字没改），各条的日期和结论以当时为准。
 
