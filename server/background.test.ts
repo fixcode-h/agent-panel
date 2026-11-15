@@ -137,6 +137,28 @@ test('推回的只是提炼后的日志：中间的报错行、结尾几十行�
   assert.match(full, /linking step 499/)
 })
 
+test('UE 编译（brief）：成功只报状态，失败只给日志路径和错误条数，不带日志摘录和命令（ADR 0067）', async () => {
+  const dir = repo()
+  const logDir = path.join(dir, '.logs')
+  const { bg, got, all } = collect(2, { logDir })
+  const ok = nodeScript(dir, 'ok.cjs', "for (let i = 0; i < 50; i++) console.log('ok step ' + i)\n")
+  const bad = nodeScript(
+    dir,
+    'bad.cjs',
+    "console.log('src/a.cpp(12): error C2065: foo undeclared')\nconsole.log('tail line')\nprocess.exitCode = 2\n",
+  )
+  bg.start({ taskId: 't-b1', name: 'UE 编译：成功', command: ok, cwd: '', root: dir, exclusive: false, brief: true })
+  bg.start({ taskId: 't-b2', name: 'UE 编译：失败', command: bad, cwd: '', root: dir, exclusive: false, brief: true })
+  await all
+  const done = got.find((x) => x.job.state === 'done')!
+  const failed = got.find((x) => x.job.state === 'failed')!
+  assert.match(done.text, /跑完了：成功/)
+  assert.doesNotMatch(done.text, /ok step|命令：|完整日志/)
+  assert.ok(failed.job.logFile && failed.text.includes(failed.job.logFile), '失败写明日志路径')
+  assert.match(failed.text, /认出 1 条错误/)
+  assert.doesNotMatch(failed.text, /C2065|tail line|命令：/, '不带日志摘录和命令原文')
+})
+
 test('命令没能启动（跑命令之前就抛错）：照样置终态并把失败推回，不留一条永远「运行中」的记录', async () => {
   const dir = repo()
   const { bg, got, all } = collect(1, {

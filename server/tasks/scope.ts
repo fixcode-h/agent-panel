@@ -107,6 +107,8 @@ export interface TasksScope {
       service?: boolean
       /** 指定用哪个 shell 起进程（面板跑的测试步骤，见 server/step-run.ts） */
       shell?: import('../background.ts').BgJob['shell']
+      /** 结果只报状态和日志路径（UE 编译，BgJob.brief） */
+      brief?: boolean
     }):
       | {
           ok: boolean

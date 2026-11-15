@@ -11,14 +11,29 @@ const HEAD = 4000
 
 const ERROR_LINE = /error|err!|failed|fatal|exception|denied|unauthorized|not found|cannot|错误|失败|找不到|无法/i
 const CODE_RE =
-  /\b(E[A-Z]{3,}|TS\d{4}|[CE]\d{4}|LNK\d{4}|MSB\d{4}|CS\d{4}|[A-Z][A-Za-z]+(?:Error|Exception)|HTTP\s?[45]\d\d|\b[45]\d\d\s+(?:Unauthorized|Forbidden|Not Found))\b/g
+  /\b(E_?[A-Z][A-Z_]{2,}|TS\d{4}|[CE]\d{4}|LNK\d{4}|MSB\d{4}|CS\d{4}|[A-Z][A-Za-z]+(?:Error|Exception)|HTTP\s?[45]\d\d|\b[45]\d\d\s+(?:Unauthorized|Forbidden|Not Found))\b/g
 /** 太泛的错误名：只当普通词，不当错误码 */
 // 模块状态：常量，加载后不改
 const GENERIC_CODE = new Set(['Error', 'TypeError', 'SyntaxError', 'ReferenceError', 'RangeError', 'Exception'])
 
+/**
+ * Claude Code 的钩子给的命令结果是一段 JSON（{"stdout":…,"stderr":…,"interrupted":…}）：取出 stdout、stderr 再算，
+ * 不然 stdout、interrupted 这些字段名会混进报错的词里（实跑发现的）
+ */
+export function plainOutput(output: string): string {
+  const t = output.trimStart()
+  if (!t.startsWith('{') || !t.includes('"stdout"')) return output
+  try {
+    const o = JSON.parse(t) as { stdout?: unknown; stderr?: unknown }
+    return [o.stderr, o.stdout].filter((x) => typeof x === 'string' && x).join('\n')
+  } catch {
+    return output
+  }
+}
+
 /** 从失败输出里取报错特征：挑含报错字样的行（最多 5 行），没有就取最后 5 个非空行 */
 export function errorPrint(output: string): ErrorPrint {
-  const head = output.slice(0, HEAD)
+  const head = plainOutput(output).slice(0, HEAD)
   const lines = head.split('\n').map((x) => x.trim())
   const nonEmpty = lines.filter(Boolean)
   let pick = nonEmpty.filter((x) => ERROR_LINE.test(x)).slice(0, 5)

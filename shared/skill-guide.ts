@@ -37,6 +37,9 @@ export const RETIRED_SKILL_MAP: Record<string, string> = {
   'test-driven-development': 'project-testing',
   // 太宽泛；编码时真正用得上的扩展点、配置化规则在 coding-standards 里
   'software-architecture-design': 'coding-standards',
+  // Blender 插件（3.1.0-alpha.5 起）把这两个技能并进了 blender-modeling；插件建的「Blender 建模」角色副本不会自动升级
+  blender: 'blender-modeling',
+  'blender-model-animation-workflow': 'blender-modeling',
 }
 export const RETIRED_SKILLS = new Set(Object.keys(RETIRED_SKILL_MAP)) // 模块状态：常量，加载后不改
 

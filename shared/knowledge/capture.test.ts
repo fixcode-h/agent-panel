@@ -118,3 +118,29 @@ test('升降级建议：推了还犯建议拦截，很久没用上建议过时�
     ['v:upgrade', 's:stale', 'p:promote'],
   )
 })
+
+test('实跑发现的两处：解释器后面的脚本算目的、通用程序名不当触发键；命令自己 echo 的退出码按段还原', async () => {
+  const { segmentExits } = await import('./match/exit-codes.ts')
+  assert.equal(purposeOf('cd /x && BUILD_MODE=ci node scripts/build.mjs'), 'node scripts/build.mjs')
+  assert.equal(purposeOf('cd web && npm run test:e2e -- --failed'), 'npm run test:e2e')
+  const l = L({ id: 'b', title: '构建要带 BUILD_MODE', triggers: { commands: ['node scripts/build.mjs', 'node'] } })
+  assert.deepEqual(
+    commandLessons([l], 'BUILD_MODE=ci node scripts/build.mjs').map((h) => h.id),
+    ['b'],
+  )
+  assert.deepEqual(commandLessons([l], 'node --test'), [], '单写一个 node 不对上所有 node 命令')
+  assert.deepEqual(
+    segmentExits(
+      'node b.mjs; echo "first exit=$?"; B=ci node b.mjs; echo "second exit=$?"',
+      'err\nfirst exit=1\nok\nsecond exit=0',
+    ),
+    [
+      { command: 'node b.mjs', code: 1 },
+      { command: 'B=ci node b.mjs', code: 0 },
+    ],
+  )
+  assert.deepEqual(errorPrint('error E_BUILD_MODE: not set').codes, ['E_BUILD_MODE'])
+  // Claude Code 钩子给的结果是 JSON：字段名不混进报错的词
+  const p = errorPrint(JSON.stringify({ stdout: 'build failed: error E_BUILD_MODE', stderr: '', interrupted: false }))
+  assert.ok(!p.words.includes('stdout') && !p.words.includes('interrupted'))
+})
