@@ -64,6 +64,7 @@ import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
+import { WrapSpecimen } from '@/components/settings/WrapSpecimen'
 import { CallTreeSpecimen } from '@/components/settings/CallTreeSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
@@ -622,6 +623,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('项目能力')}>
         <Specimen name="CapabilityCard · CapabilityItem · AgentLoadSummary" tune={['card', 'switch', 'badge']}>
           <CapsSpecimen />
+        </Specimen>
+      </Group>
+      <Group title={t('插件包装')}>
+        <Specimen name="WrapPreviewBody" tune={['badge', 'checkbox', 'segmented']}>
+          <WrapSpecimen />
         </Specimen>
       </Group>
       <PluginSpecimens Specimen={Specimen} />

@@ -2,9 +2,10 @@ import { isNewerPlugin, type PluginUpdate } from '../../shared/plugins/version.t
 import { readRepoVersion, type MarketEntry } from './github.ts'
 import { readMarketCached } from './market-cache.ts'
 import type { Installed } from './store.ts'
+import { checkWrapUpdate } from './wrap/updates.ts'
 
 /**
- * 检查插件更新：只看从 GitHub 装的插件（压缩包、本机目录没有上游可比）。
+ * 检查插件更新：只看从 GitHub 装的插件（压缩包、本机目录没有上游可比；包装插件见 wrap/updates.ts）。
  * 同一个仓库只读一次插件目录（plugins.json）：插件在目录里就拿目录里的版本比，
  * 仓库没有插件目录（整个仓库是一个插件）就读安装时那个分支 / 子目录上的 plugin.json。
  * 某个仓库读不到（断网、限流）只记一条错误，不影响其他仓库。
@@ -20,6 +21,12 @@ export async function checkPluginUpdates(list: Installed[], opts: { refresh?: bo
     github.map(async (p) => {
       const repo = p.source.ref
       try {
+        // 包装插件：上游仓库没有 plugin.json，按 wrap.track 比提交或 Release 标签
+        if (p.manifest.wrap) {
+          const u = await checkWrapUpdate(p)
+          if (u) updates.push(u)
+          return
+        }
         if (!markets.has(repo))
           markets.set(
             repo,

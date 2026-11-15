@@ -9,7 +9,7 @@ import { t } from '../i18n.ts'
 export type ScanLevel = 'high' | 'medium' | 'low'
 /** 一行文字从哪来：run 会被执行或直接进提示词；example 是文档里的示例代码；manifest 是清单、MCP 配置 */
 export type ScanSource = 'run' | 'example' | 'manifest'
-export type ScanCategory = 'inject' | 'exfil' | 'exec' | 'mcp' | 'secret' | 'hook'
+export type ScanCategory = 'inject' | 'exfil' | 'exec' | 'mcp' | 'secret' | 'hook' | 'package'
 
 export interface LineRule {
   id: string

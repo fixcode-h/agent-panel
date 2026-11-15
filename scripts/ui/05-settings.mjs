@@ -50,7 +50,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   if ((await p.locator('[data-market-plugin]').count()) !== 4)
     errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件')
   await p.getByRole('button', { name: '其他方式安装' }).click()
-  await check(p, '设置-插件-其他方式安装', ['上传压缩包（.zip）', '链接本机目录（开发）'])
+  await check(p, '设置-插件-其他方式安装', ['从 GitHub 链接包装…', '上传压缩包（.zip）', '链接本机目录（开发）'])
+  // 从 GitHub 链接包装（ADR 0068）：先让贴链接，不贴不能读取
+  await p.locator('[data-wrap-open]').click()
+  await check(p, '设置-插件-从GitHub包装', ['从 GitHub 包装插件', '分析时只下载、不运行任何代码'])
+  if (await p.getByRole('button', { name: '读取' }).isEnabled())
+    errors.push('设置-插件-从GitHub包装：没贴链接时「读取」应该不能点')
   await p.keyboard.press('Escape')
   await p.getByRole('button', { name: '常规', exact: true }).click()
   // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
@@ -218,6 +223,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
   await p.getByRole('button', { name: '控件样式', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
+  // 包装预览的样例：识别出的内容能勾选，按配方的写明配方文件
+  await check(p, '设置-组件-插件包装', ['WrapPreviewBody', '识别出的内容', '按配方 wraps/tt-a1i__archify.json'])
+  if ((await p.locator('[data-wrap-candidate]').count()) !== 3) errors.push('设置-组件-插件包装：样例应该有 3 行识别结果')
   const sample = p.getByRole('tablist', { name: '示例页签' })
   await sample.getByRole('tab', { name: /代码审查/ }).click()
   await sample.getByRole('button', { name: '关闭页签' }).first().click()
