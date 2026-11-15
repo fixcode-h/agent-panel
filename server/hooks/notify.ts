@@ -139,8 +139,8 @@ export function taskTransitions(
   if (next.status === 'failed' && old.status !== 'failed') out.push({ event: 'task.failed', notice: notice() })
   if ((next.awaitingUser && !old.awaitingUser) || (next.requests?.length ?? 0) > (old.requests?.length ?? 0))
     out.push({ event: 'task.waitingUser', notice: notice() })
-  if (next.wrapRequest?.state === 'requested' && old.wrapRequest?.state !== 'requested')
-    out.push({ event: 'task.wrapRequested', notice: notice(next.wrapRequest.note) })
+  if (next.child?.wrapRequest?.state === 'requested' && old.child?.wrapRequest?.state !== 'requested')
+    out.push({ event: 'task.wrapRequested', notice: notice(next.child?.wrapRequest.note) })
   const before = doneSteps(old)
   for (const s of doneSteps(next)) if (!before.has(s)) out.push({ event: 'plan.stepDone', notice: notice(s) })
   return out

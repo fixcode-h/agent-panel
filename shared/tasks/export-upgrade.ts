@@ -1,4 +1,5 @@
 import { liftBugFields } from '../bug/task-bug.ts'
+import { liftChildFields } from '../children/task-child.ts'
 import { liftAnalysisFields } from './task-analysis.ts'
 import { liftBudgetFields } from './task-budget.ts'
 
@@ -10,6 +11,7 @@ const EXPORT_UPGRADES: [number, (tk: Record<string, unknown>) => unknown][] = [
   [2, liftBugFields], // 平铺的 Bug 字段收进 task.bug（重构文档第 15 条，迁移 0004）
   [3, liftBudgetFields], // 平铺的执行上限字段收进 task.budget（复查报告 A7，迁移 0008）
   [4, liftAnalysisFields], // 平铺的分析字段收进 task.analysis，modelDesign 转成 plugin（复查报告 A7，迁移 0009）
+  [5, liftChildFields], // 只有子对话用的平铺字段收进 task.child（复查报告 A7，迁移 0010）
 ]
 
 /** 导出文件的格式版本：最后一次转换转到的那一版 */

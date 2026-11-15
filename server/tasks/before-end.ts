@@ -53,7 +53,7 @@ export function createBeforeEnd(
     if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
     if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
     if (helpersWorking(tk) || runRunning(tk)) return 'helpers'
-    const wrap = tk.wrapRequest?.state
+    const wrap = tk.child?.wrapRequest?.state
     if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return `wrap:${wrap}`
     return ''
   }
@@ -125,7 +125,7 @@ export function createBeforeEnd(
       return block(
         tk,
         'wrap-pending',
-        `wrap:${wrap.map((k) => `${k.id}@${k.wrapRequest!.at}`).join(',')}`,
+        `wrap:${wrap.map((k) => `${k.id}@${k.child?.wrapRequest!.at}`).join(',')}`,
         `【面板】这些子对话已经请你收尾，它们一直在等你，先处理再结束：\n${lines.join('\n')}\n` +
           '直接调用工具处理，不用先说明；收尾请求里有它的验证结果，核对后决定合回还是交回。',
       )

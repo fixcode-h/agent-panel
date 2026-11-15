@@ -172,7 +172,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
  */
 export function ParentAskPanel({ task, onClosed }: { task: Task; onClosed: (t: Task) => void }) {
   const user = useUserName()
-  const asks = task.parentAsks ?? []
+  const asks = task.child?.parentAsks ?? []
   const parentId = task.parentTaskId
   if (!asks.length || !parentId) return null
   const suggesting = asks.every((a) => a.kind === 'suggestion')

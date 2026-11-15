@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { Task, type Project } from '../../shared/schema.ts'
 import { childHoldsOf } from '../../shared/task.ts'
@@ -101,7 +102,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
     const project = await s.deps.projects.get(tk.projectId)
     if (!project) return s.bad(c, t('任务所属的项目已经不存在'))
     // 子对话已经请父对话收尾：用户在界面上点合并就是替父对话收尾，走同一条路（合回、标完成、删分支）
-    if (tk.parentTaskId && tk.wrapRequest?.state === 'requested') {
+    if (tk.parentTaskId && tk.child?.wrapRequest?.state === 'requested') {
       const parent = await currentTask(s, tk.parentTaskId)
       if (!parent) return s.bad(c, t('父对话已经不存在'))
       const r = await s.finishChild(parent, id)
@@ -196,7 +197,7 @@ export function registerWorktreeRoutes(s: TasksScope) {
     const cur = (await s.store.get(id)) ?? tk
     // 分支丢弃后没有「合回」这一步了：收尾请求和父对话测试的状态一并清掉，按普通「没有分支可合」的路径收尾。
     // 四种状态里任何一个留着都会让后面某条收尾入口按旧状态说话（评审 R3 / R4）
-    if (cur.wrapRequest) cur.wrapRequest = undefined
+    if (cur.child?.wrapRequest) setChild(cur, { wrapRequest: undefined })
     // 计划里的收尾步骤也要收口：它停在「已合回，等父对话跑测试」，不收的话 plan hold 会一直拦住完成（评审 R2）
     markWrapUp(cur, 'merge', 'done', '独立分支已删除，不需要合回')
     const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }

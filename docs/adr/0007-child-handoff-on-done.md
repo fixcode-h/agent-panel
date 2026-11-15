@@ -43,15 +43,15 @@
 
 ## 操作清单 / 契约
 
-| 入口                 | 行为                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `submit_merge`       | `handoff.files` 必填，空的拒绝并给模板；成功时把整理好的摘要存进 `task.handoff`          |
-| 已完成的子对话被叫醒 | 有 `task.handoff` 且上下文 ≥ 30k：写 `task.rewind = { summary }`，这一轮开新会话带上摘要 |
-| `list_conversations` | 已完成的子对话「最近结果」换成交接摘要里的关键文件，父对话按它判断该交给谁               |
+| 入口                 | 行为                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `submit_merge`       | `handoff.files` 必填，空的拒绝并给模板；成功时把整理好的摘要存进 `task.child.handoff`          |
+| 已完成的子对话被叫醒 | 有 `task.child.handoff` 且上下文 ≥ 30k：写 `task.rewind = { summary }`，这一轮开新会话带上摘要 |
+| `list_conversations` | 已完成的子对话「最近结果」换成交接摘要里的关键文件，父对话按它判断该交给谁                     |
 
 ## 与现有实现的关系
 
-改 `shared/schema.ts`（`Task.handoff`）、新增 `shared/handoff.ts`（模板、拼摘要、判定）、`server/orch-mcp.ts`（参数）、`server/tasks/index.ts`（`submitMerge` 存摘要、叫醒时判定、列表摘要）、`server/exec/git.ts`（分支提交列表）。复用 `task.rewind.summary`，不新增会话机制。共用目录的子对话没有 `submit_merge`，照旧接回原会话。
+改 `shared/schema.ts`（`Task.child.handoff`）、新增 `shared/handoff.ts`（模板、拼摘要、判定）、`server/orch-mcp.ts`（参数）、`server/tasks/index.ts`（`submitMerge` 存摘要、叫醒时判定、列表摘要）、`server/exec/git.ts`（分支提交列表）。复用 `task.rewind.summary`，不新增会话机制。共用目录的子对话没有 `submit_merge`，照旧接回原会话。
 
 ## 运行时
 
@@ -61,7 +61,7 @@
 
 `scripts/real-cli/pi-handoff.mjs` 用真实 Pi 加按剧本回答的模拟模型（`scripts/real-cli/mock-model.mjs`）跑完整流程：缺 handoff 被拒、按模板写好后收尾、父对话合回、叫醒时按上下文大小开新会话或接回原会话、叫醒后再请求收尾。不进 CI（要装 Pi）。
 
-真实 Pi 下发现：完成时 `delete tk.wrapRequest` 落不了盘（`store.update` 是合并写），收尾请求一直挂在 `merging`，叫醒后的 submit_merge 永远被拒。已改成写 `undefined`，并只认内存里的合并中状态。另外 Pi 按 schema 校验工具参数，完全没带 `handoff` 时在 Pi 那一层就被拦下（报错里没有模板，靠参数说明），`files` 写空才会收到面板的模板。
+真实 Pi 下发现：完成时 `delete tk.child.wrapRequest` 落不了盘（`store.update` 是合并写），收尾请求一直挂在 `merging`，叫醒后的 submit_merge 永远被拒。已改成写 `undefined`，并只认内存里的合并中状态。另外 Pi 按 schema 校验工具参数，完全没带 `handoff` 时在 Pi 那一层就被拦下（报错里没有模板，靠参数说明），`files` 写空才会收到面板的模板。
 
 ## 分期
 

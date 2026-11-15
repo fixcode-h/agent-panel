@@ -21,7 +21,7 @@
 
 ## 修复
 
-- `shared/build-ask.ts` + `Task.buildAsk`（落盘）：子对话申请编译时记下；父对话 `request_build` 漏写 `children` 时按「名下申请过、还没开编」自动补上（也认旧的 `child` 写法），提示改成 `children`；编译跑完按这份记录推回（`server/tasks/build-results.ts`），一次编译分几条命令时全部跑完才推。
+- `shared/build-ask.ts` + `Task.child.buildAsk`（落盘）：子对话申请编译时记下；父对话 `request_build` 漏写 `children` 时按「名下申请过、还没开编」自动补上（也认旧的 `child` 写法），提示改成 `children`；编译跑完按这份记录推回（`server/tasks/build-results.ts`），一次编译分几条命令时全部跑完才推。
 - 编译通过、子对话已在待收尾：不叫醒它（只在它的对话里记一行），改在父对话收到的结果后面点名「它在等你收尾，调用 finish_child」。失败照常叫醒子对话去修。
 - `submitMerge` 硬约束：共用目录的 UE 子对话改了要编译的文件，没有这次改动的编译通过结果（按改动指纹核对，通过后又改了 C++ 要重编）就拒绝请求验收。
 - `nudgeWrapUp`：父对话自己还有后台命令在跑时不催、不扣次数。

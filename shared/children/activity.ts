@@ -74,14 +74,14 @@ export function childWaitText(w: ChildWait | undefined): string {
  * background 由服务端给（后台命令在服务端跑，任务里只有编号），cliAlive 同理
  */
 export function childWait(
-  tk: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'steps'> & {
+  tk: Pick<Task, 'status' | 'working' | 'requests' | 'child' | 'steps'> & {
     runs?: Task['runs']
     bug?: Task['bug']
     userActions?: Task['userActions']
   },
   x: { background?: number; cliAlive?: boolean; childNeeds?: number } = {},
 ): ChildWait | undefined {
-  const asking = tk.parentAsks?.length ?? 0
+  const asking = tk.child?.parentAsks?.length ?? 0
   if (asking) return { kind: 'answer', n: asking }
   const requests = tk.requests?.length ?? 0
   if (requests) return confirmWait(tk.requests)

@@ -77,7 +77,7 @@ export async function settleChildWorktree(ctx: ChildrenCtx, childId: string, tur
  * 只提醒一次，再结束还没请就照常上报父对话（未完成），由父对话决定。提醒发出去了返回 true
  */
 async function nudgeMerge(sc: TasksScope, child: Task): Promise<boolean> {
-  if (!child.parentTaskId || sc.mergeNudged.has(child.id) || child.wrapRequest) return false
+  if (!child.parentTaskId || sc.mergeNudged.has(child.id) || child.child?.wrapRequest) return false
   // 这一轮说完了就提醒（见 turnSettled）：保活的 CLI 一轮结束后 status 还是 running，只认 done 永远提醒不到
   if (!turnSettled(child)) return false
   // 进程还挂着时派出的子任务、工作流可能还没跑完（done 时不会有）：那是在等结果，不是停在合回前

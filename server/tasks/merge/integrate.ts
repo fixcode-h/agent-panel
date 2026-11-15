@@ -1,3 +1,4 @@
+import { setChild } from '../../../shared/children/task-child.ts'
 import { type Task } from '../../../shared/schema.ts'
 import { type ChildHold } from '../../../shared/task.ts'
 import { t } from '../../../shared/i18n.ts'
@@ -15,12 +16,12 @@ import { afterMerged, childMerged } from './after-merge.ts'
  */
 export async function acceptShared(ctx: MergeCtx, parent: Task, tk: Task): Promise<{ ok: boolean; info: string }> {
   const { sc } = ctx
-  if (tk.changes.length && tk.wrapRequest?.state !== 'requested')
+  if (tk.changes.length && tk.child?.wrapRequest?.state !== 'requested')
     return {
       ok: false,
       info: `子对话「${tk.title}」${openWork(tk).length ? `还没做完：${t('计划还没做完')}。它` : ''}改了 ${tk.changes.length} 个文件，还没请求收尾：它和你共用目录，没有分支要合，但评审、验证和交接一样要做，要它先做完再调用 submit_merge。需要催它就用 send_to_conversation。`,
     }
-  const accepted = tk.wrapRequest?.state === 'requested'
+  const accepted = tk.child?.wrapRequest?.state === 'requested'
   // 没改文件、也没请求过的（只读排查）：不替它把收尾标完成，条件都满足才收口，免得计划没做完也被收掉一步
   const r = !accepted
     ? await sc.advanceChildTo(tk.id, { quiet: true })
@@ -54,25 +55,25 @@ export async function finishChildStep(ctx: MergeCtx, parent: Task, childId: stri
   if (tk.resolved) return { ok: true, info: `子对话「${tk.title}」已经完成了，不用再收尾` }
   if (!isolated(tk)) return acceptShared(ctx, parent, tk)
   if (merging.has(childId)) return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
-  if (tk.wrapRequest?.state === 'testing')
+  if (tk.child?.wrapRequest?.state === 'testing')
     return {
       ok: false,
       info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它范围为「全量，合并后由父对话跑」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
     }
-  if (tk.wrapRequest?.state !== 'requested')
+  if (tk.child?.wrapRequest?.state !== 'requested')
     return {
       ok: false,
       info:
-        tk.wrapRequest?.state === 'test-failed'
-          ? `子对话「${tk.title}」的分支已经合回，但父对话测试没通过（${tk.wrapRequest.info.split('\n')[0]}），已经退回给它修。它修好会再请你收尾，等它请求，不要重复收尾。`
-          : `子对话「${tk.title}」还没请求收尾${tk.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
+        tk.child?.wrapRequest?.state === 'test-failed'
+          ? `子对话「${tk.title}」的分支已经合回，但父对话测试没通过（${tk.child?.wrapRequest.info.split('\n')[0]}），已经退回给它修。它修好会再请你收尾，等它请求，不要重复收尾。`
+          : `子对话「${tk.title}」还没请求收尾${tk.child?.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.child?.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
     }
-  const req = tk.wrapRequest
+  const req = tk.child?.wrapRequest
   merging.add(childId)
-  const setReq = async (next: Task['wrapRequest']) => {
+  const setReq = async (next: NonNullable<Task['child']>['wrapRequest']) => {
     const entry = sc.live.get(childId)
     const cur = entry?.task ?? tk
-    cur.wrapRequest = next
+    setChild(cur, { wrapRequest: next })
     cur.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await sc.store.update(cur.id, cur)

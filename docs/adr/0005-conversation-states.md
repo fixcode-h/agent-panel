@@ -126,7 +126,7 @@ UE 编译占位和排队仍按 [0004](./0004-ue-build-by-parent.md)。
 ## 运行时
 
 - 状态事实：任务字段（`status`、`working`、`requests`、`parentAsks`、计划、`runs`、`wrapRequest`、`stopReason`）+ 服务端补的后台命令数、是否未合回。
-- `Task.wrapRequest`：`requested | merging | failed`，`failed` 只指冲突（父对话目录挡路时留在 `requested`）；子对话开新一轮时清掉 requested/failed，收尾步骤退回 running。
+- `Task.child.wrapRequest`：`requested | merging | failed`，`failed` 只指冲突（父对话目录挡路时留在 `requested`）；子对话开新一轮时清掉 requested/failed，收尾步骤退回 running。
 - 推送：消息和工具行的状态字段都进 `messageStamp`，服务端改了才会推到界面。
 
 ## 分期

@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { withProjectParams } from '../../shared/builtin/core.ts'
 import { randomUUID } from 'node:crypto'
 
@@ -399,10 +400,10 @@ export function createRun(sc: TasksScope) {
     }
     // 请过收尾又开始干活（父对话退回、用户追加要求）：收尾请求作废，做完要重新请求；正在合并的不动
     // （记录上是 merging、内存里却没在合并的是残留：旧版本完成时没清掉，留着它 submit_merge 会一直被拒）
-    if (next.wrapRequest && !sc.merging.has(id)) {
-      if (next.wrapRequest.state === 'requested')
+    if (next.child?.wrapRequest && !sc.merging.has(id)) {
+      if (next.child?.wrapRequest.state === 'requested')
         markChildWrapUp(next, 'running', '又有新的要求：做完、验证后再请父对话收尾')
-      next.wrapRequest = undefined
+      setChild(next, { wrapRequest: undefined })
       sc.reportedState.delete(id)
     }
     // 这条消息新记进对话时一并记下交付方式和独立分支的改动情况：界面读它就能说清「已排到下一轮」「N 个文件未提交」。

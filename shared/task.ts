@@ -541,9 +541,9 @@ export const diagnosisPending = (t: { bug?: Task['bug'] }) => t.bug?.diagnoses?.
  * 面板的提醒（计划推进、收尾提醒、结束前钩子）碰到它都不推：这时停下是对的，用户处理完会推回来
  */
 export const userWaiting = (
-  tk: Pick<Task, 'requests'> & Partial<Pick<Task, 'parentAsks' | 'bug' | 'userActions'>>,
+  tk: Pick<Task, 'requests'> & Partial<Pick<Task, 'child' | 'bug' | 'userActions'>>,
   asks = true,
-) => !!(tk.requests.length || (asks && tk.parentAsks?.length) || diagnosisPending(tk) || pendingAction(tk))
+) => !!(tk.requests.length || (asks && tk.child?.parentAsks?.length) || diagnosisPending(tk) || pendingAction(tk))
 
 /** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks/index.ts 的 cleanupTrash） */
 export const TRASH_RETENTION_DAYS = 7
@@ -635,9 +635,8 @@ export function convStateText(s: ConvState | string): string {
 
 /** 子对话的事实：任务上有的直接取，后台命令、排队的下一轮、合没合回由服务端补 */
 export function childFacts(
-  task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps' | 'resolved' | 'stopReason'> & {
+  task: Pick<Task, 'status' | 'working' | 'requests' | 'child' | 'plans' | 'steps' | 'resolved' | 'stopReason'> & {
     runs?: Task['runs']
-    wrapRequest?: Task['wrapRequest']
     archived?: Task['archived']
     deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
@@ -653,14 +652,14 @@ export function childFacts(
     action: !!pendingAction(task),
     resolved: task.resolved === true,
     requests: task.requests.length,
-    asking: task.parentAsks?.length ?? 0,
+    asking: task.child?.parentAsks?.length ?? 0,
     childNeeds: x.childNeeds,
     background: x.background,
     workflow: runRunning(task),
     helpers: helpersWorking(task),
     unfinished: !!openPlan(task),
     unmerged: x.unmerged,
-    wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
+    wrapup: !!task.child?.wrapRequest && task.child?.wrapRequest.state !== 'failed',
     stopReason: task.stopReason,
     gone: taskGone(task),
   }
@@ -770,9 +769,9 @@ export function childReport(
       case 'wrapup':
         // 合回已经做完、面板正在父对话目录里跑勾了「禁止子对话执行」的步骤（见 ADR 0018）：
         // 这时收尾还早，说法不能再是「用 finish_child 合并」
-        return task.wrapRequest?.state === 'testing'
+        return task.child?.wrapRequest?.state === 'testing'
           ? t('已合回，等父对话跑测试（面板自动执行，结果回传给它）')
-          : task.wrapRequest?.state === 'test-failed'
+          : task.child?.wrapRequest?.state === 'test-failed'
             ? t('已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）')
             : t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
       case 'done': {
@@ -906,7 +905,7 @@ export function runRunning(task: { status: Task['status']; runs?: Task['runs']; 
  * merged 传 false 表示独立分支还没合回去；不传或 true 表示已经合了（或者根本没有独立分支）。
  */
 export function childHoldsOf(
-  task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & { runs?: Task['runs'] },
+  task: Pick<Task, 'status' | 'working' | 'requests' | 'child' | 'plans' | 'steps'> & { runs?: Task['runs'] },
   x: { background?: number; merged?: boolean; parentTest?: boolean } = {},
 ): ChildHold[] {
   return childHolds(childFlowOf(task, x))
@@ -1040,9 +1039,9 @@ export const CHILD_IDLE_ASK_MAX = 3
  * 面板据此在一轮结束时推它接着做（server/tasks/index.ts 的 nudgePlan）。
  * 计划里还有在等结果的步骤（等孙对话、等合并）、已经请父对话收尾的，都不算：那是在等别人
  */
-export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'resolved' | 'wrapRequest'>) {
+export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'resolved' | 'child'>) {
   if (tk.working || tk.resolved) return false
-  const wrap = tk.wrapRequest?.state
+  const wrap = tk.child?.wrapRequest?.state
   if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
   const plan = activePlan(tk)
   if (!plan) return false
@@ -1072,8 +1071,8 @@ export function childSelfDrives(tk: Parameters<typeof planStalled>[0]) {
  * （用户 2026-11-03 报）。父对话一轮结束时的兜底（server/tasks/drive.ts 的 nudgeWrapUp）、
  * 状态诊断（shared/lifecycle.ts 的 wrapup-unhandled）都只按这一处判断
  */
-export function wrapUpPending<K extends Pick<Task, 'id' | 'wrapRequest' | 'resolved'>>(kids: K[]): K[] {
-  return kids.filter((k) => !k.resolved && k.wrapRequest?.state === 'requested')
+export function wrapUpPending<K extends Pick<Task, 'id' | 'child' | 'resolved'>>(kids: K[]): K[] {
+  return kids.filter((k) => !k.resolved && k.child?.wrapRequest?.state === 'requested')
 }
 
 export interface ChildIdleAskDecision {
@@ -1274,7 +1273,7 @@ function childEntryOf(
     // childFacts 里这几项是可选的（服务端补的事实可能没填），ChildEntry 要求必填
     working: !!task.working,
     requests: task.requests.length,
-    asking: task.parentAsks?.length ?? 0,
+    asking: task.child?.parentAsks?.length ?? 0,
     // 重启迁移走这一处：进程已经回收，这一项只影响「已关闭」标签，不参与图标判定
     cliAlive: false,
     startedAt: task.createdAt,
@@ -1319,7 +1318,7 @@ export function restartInterrupted(
  * 不靠这条恢复名单。
  */
 export function restartUnfinished(
-  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
+  task: Pick<Task, 'status' | 'steps' | 'plans' | 'child' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
     runs?: Task['runs']
     bug?: Task['bug']
     userActions?: Task['userActions']
@@ -1337,7 +1336,7 @@ export function restartUnfinished(
   if (task.stopReason === 'after') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
   // failed（没合进去）和 test-failed（合回了、父对话测试没过）都要它自己动手修，照常进恢复名单
-  const wrap = task.wrapRequest?.state
+  const wrap = task.child?.wrapRequest?.state
   if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
   // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来。
   // 「停在等下一句」（awaitingUser）不算被打断：它这一轮已经说完，只剩用户下一句，
@@ -1361,16 +1360,7 @@ export function restartUnfinished(
 export function interruptedTaskIds(
   tasks: (Pick<
     Task,
-    | 'id'
-    | 'status'
-    | 'steps'
-    | 'plans'
-    | 'wrapRequest'
-    | 'stopReason'
-    | 'resolved'
-    | 'awaitingUser'
-    | 'imported'
-    | 'archived'
+    'id' | 'status' | 'steps' | 'plans' | 'child' | 'stopReason' | 'resolved' | 'awaitingUser' | 'imported' | 'archived'
   > & {
     runs?: Task['runs']
   })[],
@@ -1405,12 +1395,11 @@ export function taskSettled(
     | 'status'
     | 'working'
     | 'requests'
-    | 'parentAsks'
+    | 'child'
     | 'plans'
     | 'steps'
     | 'resolved'
     | 'stopReason'
-    | 'wrapRequest'
     | 'archived'
     | 'deletedAt'
     | 'worktree'
@@ -1421,7 +1410,7 @@ export function taskSettled(
   if (tk.status === 'running') return false
   if (tk.status === 'stopped') return true
   // failed / test-failed 不算：那两种要它自己动手修，重启后还会拉起 CLI（见 restartUnfinished）
-  const wrap = tk.wrapRequest?.state
+  const wrap = tk.child?.wrapRequest?.state
   if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return true
   return convState(childFacts(tk, { unmerged: tk.worktree?.state === 'active' })) === 'done'
 }
@@ -1534,7 +1523,7 @@ export function splitStepJobs<S extends { id: string; slot?: string }, J extends
 
 /** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
 export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
-  Partial<Pick<Task, 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
+  Partial<Pick<Task, 'requests' | 'child' | 'resolved' | 'stopReason' | 'plans'>> & {
     /**
      * 运行时的几项（名下在跑的子对话数、后代在等你的数、后台命令）：不在任务记录里，
      * 由服务端算 TaskLive 时补进来（shared/live/task-live.ts 的 taskLiveOf），或者服务端内部判定时自己传
@@ -1561,7 +1550,7 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     action: !!pendingAction(x),
     resolved: x.resolved === true,
     requests: x.requests?.length ?? 0,
-    asking: x.parentAsks?.length ?? 0,
+    asking: x.child?.parentAsks?.length ?? 0,
     // 常驻服务（开发服务器、监听）一直跑到被停掉，不算「还在等后台结果」
     background: x.jobs?.filter((j) => !j.service).length ?? 0,
     workflow: runRunning(x),

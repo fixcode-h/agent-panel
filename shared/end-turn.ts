@@ -122,10 +122,10 @@ export function idleReminders(msgs: Pick<TaskMessage, 'role' | 'panel' | 'tools'
  * 已经请过、已经提醒过（nudged）、被收下的不算；返回原因，不该拦返回空。只看计划和改动清单，不跑 git
  */
 export function mergeOwedOf(
-  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'>,
+  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'child' | 'plans' | 'steps' | 'changes'>,
   nudged: boolean,
 ): string {
-  if (!tk.parentTaskId || tk.resolved || tk.wrapRequest || nudged) return ''
+  if (!tk.parentTaskId || tk.resolved || tk.child?.wrapRequest || nudged) return ''
   // 父对话已经合回 / 收下：合进去时面板清掉 wrapRequest、把收尾步骤标完成、计划随之收起，
   // 这时再按「没列计划但改过文件」算会让它把已经合进去的改动重新请一次收尾（用户 2026-11-05 报：
   // 子对话被提醒「你还没请父对话收尾」，又开一份计划、再交一次，父对话只好再收一次）
@@ -143,7 +143,7 @@ export function mergeOwedOf(
  * 只看计划和改动清单。返回给 Agent 的文字不翻译
  */
 export function endTurnCheck(
-  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'> &
+  tk: Pick<Task, 'parentTaskId' | 'resolved' | 'child' | 'plans' | 'steps' | 'changes'> &
     Partial<Pick<Task, 'messages' | 'bug' | 'inlineEdit'>>,
   outcome: string,
   need: string,

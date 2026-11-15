@@ -1,3 +1,4 @@
+import { setChild } from '../../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { type PeerFrom, type Task, type TaskMessage } from '../../../shared/schema.ts'
 import { type ChildHold } from '../../../shared/task.ts'
@@ -40,7 +41,7 @@ export async function childMerged(
   markChildWrapUp(tk, 'done', isolated(tk) ? '已合回父对话所在的分支' : '父对话已验收')
   // 收尾请求办完了：合进去之后它就不再是「待收尾」。
   // 写 undefined 不用 delete：store.update 是把传入的字段盖到旧记录上，删掉的键盖不掉旧值
-  tk.wrapRequest = undefined
+  setChild(tk, { wrapRequest: undefined })
   tk.updatedAt = new Date().toISOString()
   // 排在它后面的子对话按这个时间判断能不能开始（shared/children/after.ts）
   tk.mergedAt = tk.updatedAt
@@ -63,7 +64,7 @@ export async function afterMerged(
   ctx: MergeCtx,
   parent: Task,
   tk: Task,
-  req: NonNullable<Task['wrapRequest']>,
+  req: NonNullable<NonNullable<Task['child']>['wrapRequest']>,
   r: IntegrateResult,
 ): Promise<FinishResult> {
   const { sc } = ctx

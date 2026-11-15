@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { stalledTurn } from '../exec/stall-watch.ts'
 import { log } from '../log.ts'
 import { taskLog } from './log.ts'
@@ -72,7 +73,7 @@ export function createStuckChild(s: TasksScope) {
       })
       // 新的一轮从头算静默：上一段的询问记录作废（清字段写 undefined，见 docs/lessons/data.md）
       const now = s.live.get(id)?.task ?? next
-      now.autoAsk = undefined
+      setChild(now, { autoAsk: undefined })
       await s.store.update(id, now)
     } catch (e) {
       restarted.delete(id)

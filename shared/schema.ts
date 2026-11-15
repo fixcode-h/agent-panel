@@ -1867,6 +1867,63 @@ export const TaskJobView = z.object({
 })
 export type TaskJobView = z.infer<typeof TaskJobView>
 
+/**
+ * 只有子对话用的数据（复查报告 A7）：原来平铺在 Task 顶层（wrapRequest、buildAsk、handoff、pendingReport、userDirect、
+ * parentAsks、autoAsk），收进 task.child 一个子对象，键名不变。顶层对话没有 task.child。
+ * 写的时候整个换掉（shared/children/task-child.ts 的 setChild），不就地改：列表摘要、推送比对新旧时和旧对象共用同一个子对象。
+ * 旧数据由 server/migrations/0010-task-child.ts 一次性转过来，旧导出文件导入时由 liftChildFields 转。
+ * 父对话那一侧的（inbox、childRun、childAskUser：存在父对话上、管名下子对话的）不在这里
+ */
+export const TaskChild = z.object({
+  /** 子对话请父对话收尾的记录（ADR 0005，见 wrap-request-schema.ts） */
+  wrapRequest: WrapRequest.optional(),
+  buildAsk: BuildAsk.optional(), // UE 子对话申请的编译和结果（见 build-ask.ts），结果按它推回子对话
+  /**
+   * 子对话的交接摘要（见 ADR 0007）：submit_merge 时按模板写的关键信息加上面板补的 git 事实。
+   * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
+   */
+  handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
+  /**
+   * 子对话：这一轮 AI 自己用 message_parent 写的阶段汇报，还没交给父对话。
+   * 一轮只交一封（ADR 0034）：面板这一轮结束上报状态时把它并进去当「结果」，交出后清空
+   */
+  pendingReport: z.string().optional(),
+  /** 子对话：用户直接在子对话里交代的要求（最近一条）。不再给父对话单独发消息，下一封汇报里带上，交出后清空 */
+  userDirect: z.string().optional(),
+  /**
+   * 子对话：请用户决定、还没人回答的提问（父对话里也有一张对应的卡片，id 是那条消息的 id）。
+   * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
+   */
+  parentAsks: z
+    .array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        options: z.array(z.string()).default([]),
+        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
+        kind: AskKind.default('question'),
+      }),
+    )
+    .optional(),
+  /**
+   * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
+   * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
+   * 判定时按 at 之后有没有输出算），这样界面能看出「问过、在等回复」
+   */
+  autoAsk: z
+    .object({
+      at: z.string(),
+      count: z.number().int().min(0).default(0),
+      /**
+       * 这条询问没交出去（CLI 这一轮收不下，已经从队列和对话里撤掉）：算一次尝试、按阈值隔开再试，
+       * 但不显示「等回复」，也不能让它在收尾时开新一轮
+       */
+      held: z.boolean().optional(),
+    })
+    .optional(),
+})
+export type TaskChild = z.infer<typeof TaskChild>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -1877,14 +1934,6 @@ export const TaskData = z.object({
   parentTaskId: z.string().default(''),
   /** 顶层对话的 id：子对话从哪个项目对话分出来的；顶层对话自己为空 */
   rootTaskId: z.string().default(''),
-  /** 子对话请父对话收尾的记录（ADR 0005，见 wrap-request-schema.ts） */
-  wrapRequest: WrapRequest.optional(),
-  buildAsk: BuildAsk.optional(), // UE 子对话申请的编译和结果（见 build-ask.ts），结果按它推回子对话
-  /**
-   * 子对话的交接摘要（见 ADR 0007）：submit_merge 时按模板写的关键信息加上面板补的 git 事实。
-   * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
-   */
-  handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
   /**
    * 评审门禁的显式放行记录（见 shared/review/gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
    * 面板记下谁、什么时候、为什么、原本拦住什么。收尾消息和交接摘要里一并带给父对话，任务详情里也能看到
@@ -1925,28 +1974,6 @@ export const TaskData = z.object({
       }),
     )
     .default([]),
-  /**
-   * 子对话：这一轮 AI 自己用 message_parent 写的阶段汇报，还没交给父对话。
-   * 一轮只交一封（ADR 0034）：面板这一轮结束上报状态时把它并进去当「结果」，交出后清空
-   */
-  pendingReport: z.string().optional(),
-  /** 子对话：用户直接在子对话里交代的要求（最近一条）。不再给父对话单独发消息，下一封汇报里带上，交出后清空 */
-  userDirect: z.string().optional(),
-  /**
-   * 子对话：请用户决定、还没人回答的提问（父对话里也有一张对应的卡片，id 是那条消息的 id）。
-   * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
-   */
-  parentAsks: z
-    .array(
-      z.object({
-        id: z.string(),
-        question: z.string(),
-        options: z.array(z.string()).default([]),
-        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
-        kind: AskKind.default('question'),
-      }),
-    )
-    .optional(),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
@@ -2154,22 +2181,6 @@ export const TaskData = z.object({
   prewarming: z.boolean().default(false),
   /** 对话这一轮在排队等 API 的并发名额（仍算在运行，可以停止）；拿到就去掉 */
   apiWait: ApiWait.optional(),
-  /**
-   * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
-   * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
-   * 判定时按 at 之后有没有输出算），这样界面能看出「问过、在等回复」
-   */
-  autoAsk: z
-    .object({
-      at: z.string(),
-      count: z.number().int().min(0).default(0),
-      /**
-       * 这条询问没交出去（CLI 这一轮收不下，已经从队列和对话里撤掉）：算一次尝试、按阈值隔开再试，
-       * 但不显示「等回复」，也不能让它在收尾时开新一轮
-       */
-      held: z.boolean().optional(),
-    })
-    .optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /** 置顶（Chat 页的聊天）：侧栏聊天列表最上面单独一组「置顶」，不影响排序时间；旧数据没有这一项，按没置顶算 */
@@ -2197,6 +2208,8 @@ export const TaskData = z.object({
   remotePushAt: z.string().optional(),
   runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
   flowRun: FlowRun.optional(), // 工作流运行（不是子对话）：属于哪个父对话、阶段、决定记录，见 task-flow-schema.ts
+  /** 只有子对话用的数据（收尾请求、交接摘要、待交的汇报、等用户决定的提问…），见上面的 TaskChild；顶层对话没有 */
+  child: TaskChild.optional(),
   /** 用户报的 Bug 的全部数据（要交诊断报告还是直接修、诊断报告各版、档案、简报…），见 shared/bug/task-bug.ts；普通对话没有 */
   bug: TaskBug.optional(),
   userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts

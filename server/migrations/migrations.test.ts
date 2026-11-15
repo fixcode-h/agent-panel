@@ -332,3 +332,41 @@ test('0009：analysis 种类和 analysisOf 收进 task.analysis；modelDesign �
   assert.equal(json(path.join(dir, 'k.json')).plugin, 'x.y', '已有的 plugin 不覆盖')
   assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
 })
+
+test('0010：只有子对话用的字段收进 task.child；空提问列表丢掉；父对话那一侧的 inbox 留在顶层；已经是新格式的不碰', async () => {
+  const d = freshDir()
+  const dir = path.join(d, 'tasks', 'chats')
+  const wrap = { state: 'requested', at: '', note: '做完了', tests: '', info: '' }
+  const ask = { id: 'q', question: '用哪个？', options: ['A'], kind: 'question' }
+  write(
+    path.join(dir, 'k.json'),
+    task('k', {
+      turnSeenAt: '',
+      parentTaskId: 'p',
+      wrapRequest: wrap,
+      handoff: { text: '交接', files: '', at: '' },
+      pendingReport: '汇报',
+      parentAsks: [ask],
+      autoAsk: { at: '', count: 1 },
+    }),
+  )
+  write(path.join(dir, 'p.json'), task('p', { turnSeenAt: '', parentAsks: [], inbox: [] }))
+  write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', child: { userDirect: '改成蓝色' } }))
+  const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
+  write(path.join(d, 'data-version.json'), { version: 9 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const k = json(path.join(dir, 'k.json'))
+  assert.deepEqual(k.child, {
+    wrapRequest: wrap,
+    handoff: { text: '交接', files: '', at: '' },
+    pendingReport: '汇报',
+    parentAsks: [ask],
+    autoAsk: { at: '', count: 1 },
+  })
+  for (const x of ['wrapRequest', 'handoff', 'pendingReport', 'parentAsks', 'autoAsk'])
+    assert.ok(!(x in k), `${x} 收进去了`)
+  const p = json(path.join(dir, 'p.json'))
+  assert.ok(!('child' in p) && !('parentAsks' in p), '空的提问列表不造出 task.child')
+  assert.deepEqual(p.inbox, [], '父对话那一侧的字段不动')
+  assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
+})

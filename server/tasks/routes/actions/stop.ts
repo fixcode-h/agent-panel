@@ -1,3 +1,4 @@
+import { setChild } from '../../../../shared/children/task-child.ts'
 import { Hono } from 'hono'
 import { diagnosisPending, trackWait } from '../../../../shared/task.ts'
 import { settleStopped } from '../../../../shared/tasks/settle.ts'
@@ -50,8 +51,8 @@ async function userStop(s: TasksScope, id: string) {
     const e = s.live.get(tid)
     const tk = e?.task ?? (await s.store.get(tid))
     if (!tk) continue
-    const asked = !!tk.parentAsks?.length
-    if (asked) tk.parentAsks = []
+    const asked = !!tk.child?.parentAsks?.length
+    if (asked) setChild(tk, { parentAsks: [] })
     if (!dropRequests(tk) && !asked) continue
     tk.updatedAt = new Date().toISOString()
     if (e) {
@@ -92,7 +93,7 @@ export function stopRoutes(s: TasksScope): Hono {
     const e = s.live.get(id)
     const child = e?.task ?? (await s.store.get(id))
     if (!child) return s.bad(c, t('任务不存在'), 404)
-    const asks = child.parentAsks ?? []
+    const asks = child.child?.parentAsks ?? []
     if (asks.length && child.parentTaskId) {
       const pe = s.live.get(child.parentTaskId)
       const parent = pe?.task ?? (await s.store.get(child.parentTaskId))
@@ -111,7 +112,7 @@ export function stopRoutes(s: TasksScope): Hono {
       }
     }
     // 子对话这边马上去掉：settleAsks 收起弹窗是异步的，返回的任务里不能再带着它
-    child.parentAsks = []
+    setChild(child, { parentAsks: [] })
     child.updatedAt = new Date().toISOString()
     if (e) e.rev++
     await s.store.update(child.id, child)

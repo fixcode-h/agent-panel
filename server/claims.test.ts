@@ -99,9 +99,12 @@ test('共用目录：一轮结束认领不放、改过的记到名下，release_
   assert.deepEqual(c.claim('root', { taskId: 'B', title: 'B' }, ['src/extra.ts']).granted, ['src/extra.ts'])
   // 认领被拒时写明对方状态：不在内存里的、停下的、等验收的
   assert.match(holderState(undefined), /不在执行/)
-  assert.match(holderState({ working: false, wrapRequest: undefined }), /已停下/)
+  assert.match(holderState({ working: false, child: { wrapRequest: undefined } }), /已停下/)
   assert.match(
-    holderState({ working: false, wrapRequest: { state: 'requested', at: '', note: '', tests: '', info: '' } }),
+    holderState({
+      working: false,
+      child: { wrapRequest: { state: 'requested', at: '', note: '', tests: '', info: '' } },
+    }),
     /验收/,
   )
 })

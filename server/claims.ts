@@ -237,10 +237,10 @@ export function forgetClaims(claims: Claims, tk: Pick<Task, 'id' | 'parentTaskId
 }
 
 /** 认领被拒时对方现在怎样：Agent 据此知道是等一会儿，还是该找父对话协调 */
-export function holderState(tk: Pick<Task, 'working' | 'wrapRequest'> | undefined) {
+export function holderState(tk: Pick<Task, 'working' | 'child'> | undefined) {
   // 不在内存里：这一轮早结束了，进程也回收了
   if (!tk) return '不在执行，改动还没被父对话验收'
-  if (tk.wrapRequest) return '已交给父对话验收，改动还没被收下'
+  if (tk.child?.wrapRequest) return '已交给父对话验收，改动还没被收下'
   if (tk.working) return '正在改'
   return '已停下，改动还没交给父对话验收'
 }

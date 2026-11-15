@@ -204,7 +204,6 @@ test('childFlowOf：和 childHoldsOf 用同一套判定，另外带出完成 / �
       status: 'running',
       working: false,
       requests: [],
-      parentAsks: [],
       plans: [],
       steps: [],
       resolved: false,
@@ -215,7 +214,7 @@ test('childFlowOf：和 childHoldsOf 用同一套判定，另外带出完成 / �
     task(),
     task({ working: true }),
     task({ resolved: true }),
-    task({ parentAsks: [{ id: 'a' }] as Task['parentAsks'] }),
+    task({ child: { parentAsks: [{ id: 'a' }] as NonNullable<Task['child']>['parentAsks'] } }),
   ]) {
     for (const extra of [{}, { background: 1 }, { merged: false }]) {
       assert.deepEqual(
@@ -228,10 +227,12 @@ test('childFlowOf：和 childHoldsOf 用同一套判定，另外带出完成 / �
   assert.equal(childFlowOf(task({ resolved: true })).completed, true)
   assert.equal(childFlowOf(task(), { reported: true }).reported, true)
   assert.equal(childFlowOf(task()).completed, false)
-  assert.deepEqual(childHoldsOf(task({ parentAsks: [{ id: 'a' }] as Task['parentAsks'] }), { merged: false }), [
-    'asking',
-    'unmerged',
-  ])
+  assert.deepEqual(
+    childHoldsOf(task({ child: { parentAsks: [{ id: 'a' }] as NonNullable<Task['child']>['parentAsks'] } }), {
+      merged: false,
+    }),
+    ['asking', 'unmerged'],
+  )
 })
 
 test('合回了但父对话测试没跑完：停在 pending，不能标完成、不能回收独立分支', () => {
@@ -264,10 +265,9 @@ test('父对话测试没过、已退回修复：说法是「测试没通过」�
     status: 'done' as const,
     working: false,
     requests: [],
-    parentAsks: [],
     plans: [],
     steps: [],
-    wrapRequest: wrap,
+    child: { wrapRequest: wrap },
     resolved: false,
     awaitingUser: false,
   }
@@ -279,12 +279,15 @@ test('父对话测试没过、已退回修复：说法是「测试没通过」�
   assert.equal(restartUnfinished({ ...task, status: 'running' }), true)
   // 在等面板 / 父对话动作的几种不进名单
   for (const state of ['requested', 'merging', 'testing'] as const)
-    assert.equal(restartUnfinished({ ...task, status: 'running', wrapRequest: { ...wrap, state } }), false, state)
+    assert.equal(
+      restartUnfinished({ ...task, status: 'running', child: { wrapRequest: { ...wrap, state } } }),
+      false,
+      state,
+    )
 })
 
 test('计划收口只发生在用户点「解决」：父对话收尾照旧被「计划没做完」拦住', async () => {
-  const child = () =>
-    ({ status: 'done', working: false, requests: [], parentAsks: [], plans: [], steps: [] }) as unknown as Task
+  const child = () => ({ status: 'done', working: false, requests: [], plans: [], steps: [] }) as unknown as Task
   const task = child()
   applyPlan(task, {
     steps: [{ title: 'A', status: 'done' }, { title: 'B' }],
@@ -306,7 +309,7 @@ test('被叫停的一轮不在结束时收口成完成：父对话停下、用�
   for (const r of ['presence', 'idle', 'finish', 'close', undefined] as const)
     assert.equal(haltedTurn(r), false, String(r))
   // 刚建好就被父对话一起停下：没有计划、分支上没有改动，按完成条件看什么都不缺——所以收口前必须先认「被叫停」
-  const fresh = { status: 'stopped' as const, working: false, requests: [], parentAsks: [], plans: [], steps: [] }
+  const fresh = { status: 'stopped' as const, working: false, requests: [], plans: [], steps: [] }
   assert.equal(childComplete(childFlowOf(fresh, { merged: true })), true)
   assert.equal(childReport({ ...fresh, stopReason: 'parent', resolved: false }).state, 'stopped')
 })
@@ -317,7 +320,6 @@ test('子对话因临时错误失败（网关并发超限、断网）：父计�
       status: 'failed' as const,
       working: false,
       requests: [],
-      parentAsks: [],
       plans: [],
       steps: [],
       resolved: false,

@@ -43,7 +43,7 @@ const facts = (tk: Task, over: Partial<LifeFacts> = {}): LifeFacts => ({
 })
 
 test('等你回答：写出等了多久，按钮是「去回答」', () => {
-  const tk = task({ parentAsks: [{ id: 'q', question: '选哪个？', options: ['A'] }], turnDoneAt: AT })
+  const tk = task({ child: { parentAsks: [{ id: 'q', question: '选哪个？', options: ['A'] }] }, turnDoneAt: AT })
   const next = lifeNext(facts(tk, { state: 'needs' }), NOW)
   assert.equal(next?.text, '等你回答 · 已等 12 分钟')
   assert.deepEqual(next?.action, { kind: 'go', label: '去回答' })

@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import type { Task, TaskMessage } from '../../shared/schema.ts'
 import { settleBuildJob } from '../../shared/build-ask.ts'
@@ -22,19 +23,25 @@ export async function forwardBuildResult(
   result: string,
 ): Promise<string> {
   const kids = (await sc.store.list())
-    .filter((k) => k.buildAsk?.state === 'building' && k.buildAsk.jobs.includes(job.id))
+    .filter((k) => k.child?.buildAsk?.state === 'building' && k.child?.buildAsk.jobs.includes(job.id))
     .map((k) => freshTask(sc, k))
   const tail: string[] = []
   for (const kid of kids) {
     const ok = job.state === 'done'
-    const r = settleBuildJob(kid.buildAsk!, job.id, ok, result.split('\n')[0].slice(0, 300), new Date().toISOString())
-    kid.buildAsk = r.ask
+    const r = settleBuildJob(
+      kid.child!.buildAsk!,
+      job.id,
+      ok,
+      result.split('\n')[0].slice(0, 300),
+      new Date().toISOString(),
+    )
+    setChild(kid, { buildAsk: r.ask })
     const entry = sc.live.get(kid.id)
     if (entry) entry.rev++
     await sc.store.update(kid.id, kid)
     // 一次编译分好几条命令时，全部跑完（或有一条失败）才算出结果
     if (!r.result) continue
-    if (r.result === 'passed' && kid.wrapRequest?.state === 'requested') {
+    if (r.result === 'passed' && kid.child?.wrapRequest?.state === 'requested') {
       await noteChild(sc, kid, `【父对话编译结果】编译通过：${result}\n你已经请父对话验收，等它收下，不用再做什么。`)
       tail.push(
         `子对话「${kid.title}」（id ${kid.id}）申请的编译通过了，它已经请你收尾、正在等你：核对它的收尾请求，没问题就调用 finish_child（id ${kid.id}）；要它补的用 send_to_conversation 交回。它不会自己再动。`,

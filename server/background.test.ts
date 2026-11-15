@@ -248,7 +248,7 @@ test('进程不退出（close 永远不来）：停止后记录先置终态，�
   assert.equal(bg.list('t1')[0].state, 'running', '先算在执行中')
 
   const pending = () => bg.list('t1').filter((j) => j.state === 'queued' || j.state === 'running').length
-  const task = { status: 'done' as const, working: false, requests: [], parentAsks: [], plans: [], steps: [] }
+  const task = { status: 'done' as const, working: false, requests: [], plans: [], steps: [] }
   assert.ok(childHoldsOf(task, { background: pending() }).includes('background'), '卡住时确实拦着')
 
   // stop 不能无限等一个不来的 close：上限到了就放，记录已经先置终态了

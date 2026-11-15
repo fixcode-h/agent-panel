@@ -346,6 +346,13 @@ test('导入 3 版的导出文件：平铺的分析字段收进 task.analysis，
   assert.equal(got.children[0].plugin, 'blender.model')
 })
 
+test('导入 4 版的导出文件：只有子对话用的平铺字段收进 task.child', () => {
+  const b = JSON.parse(JSON.stringify(exportTask(task, [coder])))
+  const old = { ...b, version: 4, children: [{ ...b.task, id: 'k', pendingReport: '汇报', parentAsks: [] }] }
+  const got = parseTaskExport(old)
+  assert.deepEqual(got.children[0].child, { pendingReport: '汇报' })
+})
+
 test('去密钥：常见格式都能认出，普通文字不动', () => {
   assert.equal(redactSecrets('token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), 'token: [已移除]')
   assert.equal(redactSecrets('Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxx'), 'Authorization: Bearer [已移除]')

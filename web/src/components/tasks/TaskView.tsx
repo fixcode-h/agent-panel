@@ -337,7 +337,7 @@ export function TaskView({
 
   // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
   // 子对话请用户选择：和 Agent 的提问一样换掉输入框（Agent 自己的提问优先）
-  const askOpen = (task.parentAsks ?? []).length > 0 && !task.imported && !asksQuestion(task.requests)
+  const askOpen = (task.child?.parentAsks ?? []).length > 0 && !task.imported && !asksQuestion(task.requests)
   // AI 分析窗口里嵌的分析对话：左侧对话区照设计稿 AiWindow 画（见 lib/ai-look.ts），普通对话页不受影响
   const aiLook = !!embed && isAnalysisTask(task, localAgents)
   // 已收尾（已解决）的子对话不给输入框：换成「已收尾 + 重新打开」一行，点了才重新出现输入框（用户 2026-10-31）

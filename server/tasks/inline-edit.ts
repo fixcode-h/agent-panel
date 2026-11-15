@@ -28,7 +28,11 @@ export function createInlineEdit(sc: TasksScope) {
   async function beginInlineEdit(parent: Task, dir: string, files: string[], reason: string) {
     const kids = (await sc.store.childrenOf(parent.id)).map((k) => freshTask(sc, k))
     const merging = kids
-      .filter((k) => k.wrapRequest && (k.wrapRequest.state === 'merging' || k.wrapRequest.state === 'testing'))
+      .filter(
+        (k) =>
+          k.child?.wrapRequest &&
+          (k.child?.wrapRequest.state === 'merging' || k.child?.wrapRequest.state === 'testing'),
+      )
       .map((k) => k.title)
     const want = files.map(normClaimPath).filter(Boolean)
     const held: { path: string; by: string }[] = []

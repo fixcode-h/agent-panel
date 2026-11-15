@@ -123,7 +123,7 @@ test('这一轮说完了、计划没做完也没在等别的：算停住了（�
   // 在等孙对话、已经请父对话收尾、计划做完了：是在等别人，不算停住
   assert.equal(planStalled(plan([{ status: 'done' }, { status: 'waiting', waits: [{ state: 'waiting' }] }])), false)
   assert.equal(
-    planStalled({ ...stalled, wrapRequest: { state: 'requested', at: '', note: '' } } as typeof stalled),
+    planStalled({ ...stalled, child: { wrapRequest: { state: 'requested', at: '', note: '' } } } as typeof stalled),
     false,
   )
   assert.equal(planStalled(plan([{ status: 'done' }])), false)
@@ -197,10 +197,10 @@ test('只剩合回又停下：每停一轮记一次，同一轮重复上报不�
 test('wrapUpPending：只认请过收尾、还没被父对话处理的子对话', () => {
   const req = (state: string) => ({ state, at: '2026-11-03T00:00:00Z', note: '', tests: '', info: '' }) as never
   const kids = [
-    { id: 'a', resolved: false, wrapRequest: req('requested') },
-    { id: 'b', resolved: false, wrapRequest: req('merging') },
-    { id: 'c', resolved: false, wrapRequest: req('failed') },
-    { id: 'd', resolved: true, wrapRequest: req('requested') },
+    { id: 'a', resolved: false, child: { wrapRequest: req('requested') } },
+    { id: 'b', resolved: false, child: { wrapRequest: req('merging') } },
+    { id: 'c', resolved: false, child: { wrapRequest: req('failed') } },
+    { id: 'd', resolved: true, child: { wrapRequest: req('requested') } },
     { id: 'e', resolved: false },
   ]
   assert.deepEqual(

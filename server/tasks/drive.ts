@@ -230,7 +230,7 @@ export function createDrive(
   function stallSkip(tk: Task): string {
     if (tk.working) return 'working'
     if (tk.resolved) return 'resolved'
-    const wrap = tk.wrapRequest?.state
+    const wrap = tk.child?.wrapRequest?.state
     if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return `wrap:${wrap}`
     const plan = activePlan(tk)
     if (!plan) return 'no-plan'
@@ -278,7 +278,7 @@ export function createDrive(
         (k) => !sc.merging.has(k.id) && !hasHeld(k.id) && !sc.startQueue.has(k.id),
       )
       if (!waiting.length) return 'none-pending'
-      return { tk, waiting, key: `wrap:${waiting.map((k) => `${k.id}@${k.wrapRequest!.at}`).join(',')}` }
+      return { tk, waiting, key: `wrap:${waiting.map((k) => `${k.id}@${k.child?.wrapRequest!.at}`).join(',')}` }
     }
     const now = await stalled(false)
     if (typeof now === 'string') {
@@ -389,7 +389,7 @@ export function createDrive(
       if (settled && tk.turnDoneAt !== conv.turnDoneAt) return 'new-turn'
       if (userWaiting(tk)) return 'asking'
       if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
-      if (tk.wrapRequest && tk.wrapRequest.state !== 'failed') return 'wrap'
+      if (tk.child?.wrapRequest && tk.child?.wrapRequest.state !== 'failed') return 'wrap'
       if (sc.pendingJobs(tk.id) || helpersWorking(tk) || runRunning(tk) || (await activeChildren(tk.id)))
         return 'waiting'
       return tk
