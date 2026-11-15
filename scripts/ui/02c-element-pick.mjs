@@ -307,8 +307,22 @@ await runShard(import.meta.filename, async (api) => {
         await check(p, '本轮产出', ['本轮产出', 'cart-badge.html'])
       }
       // 回复里提到的 HTML 文件换成卡片
-      if (!(await p.locator('.chat-md [data-html-card-slot] [data-html-card]').count()))
-        errors.push('HTML 卡片：回复里的 demo/cart-badge.html 没有画成卡片')
+      const reply = p.locator('.chat-md [data-html-card-slot] [data-html-card]').first()
+      if (!(await reply.count())) errors.push('HTML 卡片：回复里的 demo/cart-badge.html 没有画成卡片')
+      else {
+        // 标题取网页的 <title>；点了开到右栏网页页签，卡片描上「右栏正在显示」
+        if (!((await reply.textContent()) ?? '').includes('购物车角标 · 示例页'))
+          errors.push('HTML 卡片：标题应该取网页的 <title>')
+        await reply.scrollIntoViewIfNeeded()
+        await reply.click()
+        await reply
+          .and(p.locator('[data-active]'))
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('HTML 卡片：点了之后应该标成「右栏正在显示」'))
+        if (!(await p.getByRole('tab', { name: /cart-badge\.html/ }).count()))
+          errors.push('HTML 卡片：点了之后右栏应该开一个 cart-badge.html 的网页页签')
+        await check(p, 'HTML卡片-右栏打开', ['右栏正在显示', '购物车角标'])
+      }
     }
 
     // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动

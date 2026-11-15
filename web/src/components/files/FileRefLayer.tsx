@@ -19,6 +19,8 @@ import { MenuItem, MenuSeparator, PointMenu, popoverPanel } from '@/components/u
 import { cn } from '@/lib/utils'
 import { PluginFileDialog, type PluginFileTarget } from '@/plugins/PluginFileDialog'
 import { fileViewerFor, usePlugins } from '@/plugins/registry'
+import { isHtmlFile } from '@shared/turn-outputs/pick'
+import { openWebTab, useWebHost } from '@/lib/web-view/tabs'
 
 /** 一个文件标记指向的东西 */
 export interface FileRefTarget {
@@ -141,6 +143,8 @@ export function FileRefLayer({
   )
   // 插件来看的文件：弹窗挂在这一层（任务页顶层），不跟着回复里的行重挂
   const plugins = usePlugins()
+  // 回复里的网页开到哪个对话的右栏（子对话放在父对话右栏里时是父对话）
+  const web = useWebHost()
   const [pluginFile, setPluginFile] = useState<PluginFileTarget | null>(null)
   const previewOf = useCallback(
     async (target: FileRefTarget) => {
@@ -159,12 +163,17 @@ export function FileRefLayer({
       clearTimeout(timer.current)
       setCard(null)
       // 目录看扩展名看不出来：按解析结果（回复渲染完已经解析过，一般直接命中缓存）
-      const dir = !target.local && !!(await resolve(target.path))?.dir
-      if (dir || (clickAction(target.path) === 'system' && !fileViewerFor(target.path, plugins)))
+      const info = target.local ? null : await resolve(target.path)
+      // 网页（.html / .htm / .svg）开到右栏的网页页签（设计稿 6.6）：用完整路径，子对话的文件开在父对话右栏里也找得到
+      if (web && !info?.dir && isHtmlFile(target.path)) {
+        openWebTab(web.taskId, { kind: 'file', path: info?.exists ? info.abs : target.path })
+        return
+      }
+      if (info?.dir || (clickAction(target.path) === 'system' && !fileViewerFor(target.path, plugins)))
         return openSystem(target)
       void previewOf(target)
     },
-    [openSystem, previewOf, resolve, plugins],
+    [openSystem, previewOf, resolve, plugins, web],
   )
 
   const api_ = useMemo<FileRefApi>(

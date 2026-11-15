@@ -17,7 +17,7 @@ export const WebFileInput = z.object({
 export const WebFile = z.object({
   /** 沙箱源上的地址：令牌只认这个文件所在的目录，过期后要重新取 */
   url: z.string(),
-  /** 文件名（HTML 的 <title> 由页面自己读不到，页签上先用文件名） */
+  /** 网页的 <title>（服务端读文件开头），没有时是文件名 */
   title: z.string(),
   size: z.number(),
 })

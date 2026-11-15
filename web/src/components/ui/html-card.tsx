@@ -24,6 +24,7 @@ export function HtmlCard({
   onOpen,
   onNewWindow,
   menu,
+  onMore,
   className,
 }: {
   /** 网页的 <title>，取不到时调用方传文件名 */
@@ -42,6 +43,8 @@ export function HtmlCard({
   onNewWindow?: () => void
   /** 「更多」菜单的内容（MenuItem）：复制路径、在文件浏览里显示、发给对话 */
   menu?: ReactNode
+  /** 「更多」交给调用方自己弹（对话里复用文件标记的右键菜单）；和 menu 二选一 */
+  onMore?: (e: React.MouseEvent<HTMLButtonElement>) => void
   className?: string
 }) {
   const large = variant === 'large'
@@ -105,6 +108,7 @@ export function HtmlCard({
             </button>
           )}
           {onNewWindow && <IconButton icon={ExternalLink} size="sm" label={t('在新窗口打开')} onClick={onNewWindow} />}
+          {onMore && <IconButton icon={MoreHorizontal} size="sm" label={t('更多')} onClick={onMore} />}
           {menu && (
             <Menu>
               <MenuTrigger asChild>

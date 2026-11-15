@@ -63,7 +63,9 @@ export function TurnOutputsCard({ task }: { task: Pick<Task, 'id' | 'messages'> 
     <OutputsCard
       note={note}
       aside={t('上一轮的在「本对话改动」里')}
-      cards={shownHtml.length > 0 && shownHtml.map((f) => <TaskHtmlCard key={f.path} path={f.path} size={f.size} />)}
+      cards={
+        shownHtml.length > 0 && shownHtml.map((f) => <TaskHtmlCard key={f.path} path={f.path} size={f.size} compact />)
+      }
       more={files.length > FIRST ? { all, onToggle: () => setAll(!all) } : undefined}
     >
       {shownRest.length > 0 &&
