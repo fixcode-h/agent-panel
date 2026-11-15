@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PluginManifest } from './types.ts'
 import { reservedEnv, usesApi11 } from './runtime-schema.ts'
+import { fillPlaceholders, missingConfig } from './placeholders.ts'
 
 const base = { id: 'demo', name: 'Demo', version: '1.0.0', api: 11 }
 
@@ -42,4 +43,13 @@ test('接口 11：默认值和是否用到', () => {
     PluginManifest.safeParse({ ...base, webPages: [{ id: 'x', label: 'X', url: 'javascript:1' }] }).success,
     false,
   )
+})
+
+test('接口 11：占位符换成参数、目录和端口，认不出的原样留', () => {
+  const v = { config: { chromePath: 'C:/chrome.exe', n: 3 }, dir: '/p', data: '/d', port: 8080 }
+  assert.equal(fillPlaceholders('{config.chromePath}', v), 'C:/chrome.exe')
+  assert.equal(fillPlaceholders('{dir}/bin:{data}/x --port {port} {config.n}', v), '/p/bin:/d/x --port 8080 3')
+  assert.equal(fillPlaceholders('{config.missing}{other}', v), '{other}')
+  assert.equal(fillPlaceholders('{port}', { ...v, port: undefined }), '{port}')
+  assert.deepEqual(missingConfig('{config.chromePath} {config.key}', { chromePath: '', key: 'x' }), ['chromePath'])
 })

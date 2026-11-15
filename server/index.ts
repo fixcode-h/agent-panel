@@ -148,6 +148,8 @@ import { projectLessonRoutes } from './projects/lesson-routes.ts'
 import { staleProjectWrite } from './projects/lock.ts'
 import { acquireInstanceLock } from './instance-lock.ts'
 import { installHttpGuards, rawUploadAllowed } from './http-guards.ts'
+import { webViewApi } from './web-view/index.ts'
+import { SANDBOX_PREFIX, serveSandbox } from './web-view/sandbox.ts'
 import { cleanupItemTrash, itemTrashRoutes, trashItem } from './item-trash.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -1007,6 +1009,11 @@ app.route('/project-skills', projectSkillsApi({ projects }))
 // 项目「能力」页：按项目生效的插件、推荐理由和还缺的设置（插件接口 9）
 app.route('/project-capabilities', projectCapabilitiesApi())
 app.route('/deploy', deployApi({ startDoc: docs.start }))
+// 网页页签：本机文件换沙箱地址、外部网址预检、阅读模式（ADR 0068）
+app.route(
+  '/web-view',
+  webViewApi({ workDir: tasks.workDir, projectDir: async (id) => (await projects.get(id))?.path ?? '' }),
+)
 
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())
@@ -1163,6 +1170,8 @@ root.onError((e, c) => {
   return c.json({ error: e.message || t('服务出错') }, 500)
 })
 installHttpGuards(root)
+// 沙箱源排在令牌检查前面：沙箱页面是不透明源，浏览器不给它带面板的 Cookie，地址里的令牌就是凭据（见 web-view/sandbox.ts）
+root.get(`${SANDBOX_PREFIX}*`, serveSandbox)
 root.use('*', tokenGuard)
 root.route('/', app)
 // 生产模式下直接托管前端构建产物

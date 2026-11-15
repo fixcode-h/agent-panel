@@ -58,7 +58,8 @@ export default defineConfig(({ mode }) => {
     define: demo ? { 'import.meta.env.VITE_DEMO': JSON.stringify('1') } : {},
     server: {
       port: 5173,
-      proxy: { '/api': 'http://localhost:8787' },
+      // /sandbox 是网页页签里本机 HTML 的沙箱源（server/web-view/sandbox.ts），和接口一样转给后端
+      proxy: { '/api': 'http://localhost:8787', '/sandbox': 'http://localhost:8787' },
     },
     build: {
       // 演示版以前打成单个 JS + CSS（字体全部 base64 内联，CSS 有 15 MB），打开在线演示要先下十几 MB；

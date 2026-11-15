@@ -25,6 +25,7 @@ import { getSettings, saveSettings } from '../settings.ts'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { pluginConfigChanged, stopPlugin, syncRuntime } from './runtime.ts'
 import { configureProjectGate } from './project-gate.ts'
+import { syncDeclared } from './declared-sync.ts'
 import { listInstalled, removePackage, rollbackPackage, type Installed } from './store.ts'
 
 /**
@@ -72,6 +73,11 @@ export async function reloadPlugins() {
     installed,
     (id) => pluginOn(s.plugins, id),
     (id) => pluginConfig(getCachedPlugins(), id),
+  )
+  await syncDeclared(
+    installed,
+    (id) => pluginOn(s.plugins, id),
+    (id) => pluginConfig(s.plugins, id),
   )
 }
 
@@ -165,6 +171,12 @@ export async function applyPluginSettings(prev: Settings['plugins'], next: Setti
     installed,
     (id) => pluginOn(next, id),
     (id) => pluginConfig(getCachedPlugins(), id),
+  )
+  // 插件接口 11：MCP 退回全局写入、托管进程跟着开关走
+  await syncDeclared(
+    installed,
+    (id) => pluginOn(next, id),
+    (id) => pluginConfig(next, id),
   )
   return result
 }
