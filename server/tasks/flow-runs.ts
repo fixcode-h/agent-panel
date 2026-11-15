@@ -23,12 +23,13 @@ import { answerRequest } from '../exec/requests.ts'
 import { steerTask } from '../exec/steering.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
+import { freshTask, readTask } from './read.ts'
 
 const now = () => new Date().toISOString()
 const bad = (info: string) => ({ ok: false, info })
 
 export function createFlowRuns(sc: TasksScope) {
-  const get = async (id: string) => sc.live.get(id)?.task ?? (await sc.store.get(id))
+  const get = async (id: string) => await readTask(sc, id)
 
   /** 改一次运行并落盘：在执行位上的改内存里那份（推送跟着走），不在的改存储里的 */
   async function edit(id: string, fn: (tk: Task) => void) {
@@ -161,7 +162,7 @@ export function createFlowRuns(sc: TasksScope) {
   async function list(ownerId: string) {
     const all = (await sc.store.list()).filter((x) => x.flowRun?.owner === ownerId)
     return all
-      .map((x) => runEntry(sc.live.get(x.id)?.task ?? x))
+      .map((x) => runEntry(freshTask(sc, x)))
       .filter((e) => !!e)
       .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
   }

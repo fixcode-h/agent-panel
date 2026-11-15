@@ -15,6 +15,7 @@ import { fetchWatch, loadMark, startWatch } from './bug-log-watch.ts'
 import type { LogWatchStatus } from '../../shared/bug/log-watch.ts'
 import { isGit } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { readTask } from './read.ts'
 
 const PatchAction = z.object({ action: z.enum(['apply', 'restore', 'forget']) })
 const WatchAction = z.object({
@@ -26,8 +27,6 @@ const WatchAction = z.object({
 const stateDir = (taskId: string, kind: 'patch' | 'log') => path.join(TASK_FILES_DIR, taskId, 'evidence', kind)
 
 export function registerEvidenceRoutes(s: TasksScope) {
-  const taskOf = async (id: string) => s.live.get(id)?.task ?? (await s.store.get(id))
-
   /** 只对 Git 项目、对话在独立分支里时有补丁这回事（P4 / SVN / 共用目录：改动本来就在工作区，或没法保证还原干净） */
   const patchCtx = async (task: Task) => {
     const wt = task.worktree?.state === 'active' ? task.worktree : null
@@ -48,7 +47,7 @@ export function registerEvidenceRoutes(s: TasksScope) {
   })
 
   s.routes.get('/:id/diagnosis-patch', async (c) => {
-    const task = await taskOf(c.req.param('id'))
+    const task = await readTask(s, c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     return c.json(await statusOf(task, !!(await patchCtx(task))))
   })
@@ -56,7 +55,7 @@ export function registerEvidenceRoutes(s: TasksScope) {
   s.routes.post('/:id/diagnosis-patch', async (c) => {
     const body = PatchAction.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
-    const task = await taskOf(c.req.param('id'))
+    const task = await readTask(s, c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     const ctx = await patchCtx(task)
     const dir = stateDir(task.id, 'patch')
@@ -90,7 +89,7 @@ export function registerEvidenceRoutes(s: TasksScope) {
   s.routes.post('/:id/diagnosis-log', async (c) => {
     const body = WatchAction.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
-    const task = await taskOf(c.req.param('id'))
+    const task = await readTask(s, c.req.param('id'))
     if (!task) return s.bad(c, t('任务不存在'), 404)
     const d = task.bug?.diagnoses?.at(-1)
     const where = (d?.awaiting?.collect ?? d?.collect)?.where

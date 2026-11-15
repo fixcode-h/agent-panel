@@ -14,6 +14,7 @@ import {
 } from '../../shared/stuck-child.ts'
 import type { Live } from './types.ts'
 import type { TasksScope } from './scope.ts'
+import { readTask } from './read.ts'
 
 /**
  * 卡住的子对话由面板接着处理（判定在 shared/stuck-child.ts）：
@@ -53,9 +54,7 @@ export function createStuckChild(s: TasksScope) {
     // 停下的这段时间里已经开了新的一轮（用户发了消息、排着的消息接上了）：交给那一轮，照样核对它有没有动起来
     if (s.live.has(id)) return
     const cur = await s.store.get(id)
-    const parent = cur?.parentTaskId
-      ? (s.live.get(cur.parentTaskId)?.task ?? (await s.store.get(cur.parentTaskId)))
-      : null
+    const parent = cur?.parentTaskId ? await readTask(s, cur.parentTaskId) : null
     if (!cur || !parent || taskDeleted(cur)) {
       restarted.delete(id)
       return
@@ -139,13 +138,13 @@ export function createStuckChild(s: TasksScope) {
         s.stopTask(id, 'replaced')
         if (e.done) await e.done.catch(() => {})
       }
-      let old = s.live.get(id)?.task ?? (await s.store.get(id))
+      let old = await readTask(s, id)
       if (!old?.parentTaskId || taskDeleted(old)) return
       if (!s.live.has(id) && (old.status !== 'stopped' || old.stopReason !== 'replaced')) {
         old = settleStopped(old, 'replaced')
         await s.store.update(id, old)
       }
-      const parent = s.live.get(old.parentTaskId)?.task ?? (await s.store.get(old.parentTaskId))
+      const parent = await readTask(s, old.parentTaskId)
       if (!parent || taskDeleted(parent)) return
       const title = takeoverTitle(old.title)
       log.warn('task', '卡住的子对话重启没恢复，新开子对话接手', { task: id, parent: parent.id, why })

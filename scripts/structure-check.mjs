@@ -67,6 +67,7 @@ export function measure(root) {
     flatFiles: {},
     taskFields: 0,
     preprocess: 0,
+    liveFallback: 0,
     orchInlineTools: 0,
     hostMembers: {},
     gitCalls: {},
@@ -105,6 +106,9 @@ export function measure(root) {
       for (const [, name] of text.matchAll(/^export interface (Orch\w+|\w+Host)\b/gm))
         m.hostMembers[name] = membersAfter(codeLines, new RegExp(`^export interface ${name}\\b`))
     if (f === 'server/orch-mcp.ts') m.orchInlineTools = (text.match(/^\s+name: '[a-z_]+',$/gm) ?? []).length
+    // 手写「先看内存那份、没有再读盘」：各写各的就会漏掉 idle() 的纠正，入口统一在 server/tasks/read.ts
+    if (f.startsWith('server/') && f !== 'server/tasks/read.ts')
+      m.liveFallback += (text.match(/live\.get\([^)]*\)\?\.task \?\?/g) ?? []).length
     if (!demo && /^(shared|server)\//.test(f)) m.preprocess += (text.match(/z\.preprocess\(/g) ?? []).length
 
     // git 只经 server/exec/git.ts 调
@@ -189,6 +193,10 @@ export function checkStructure(root) {
     errors.push(
       `shared/schema.ts 的 TaskData 顶层字段 ${m.taskFields} 个（基线 ${caps.taskFields}）。新字段放进所属功能的子对象；只在运行时算、不存盘的状态不要加到 Task 上（docs/lessons/structure.md）`,
     )
+  if (m.liveFallback > (caps.liveFallback ?? 0))
+    errors.push(
+      `手写「live.get(id)?.task ?? …」${m.liveFallback} 处（基线 ${caps.liveFallback ?? 0}）。一律走 server/tasks/read.ts：判断、显示用 currentTask / metaTask（会纠正盘上残留的「执行中」），要就地改再落盘的用 readTask，手里已有一份的用 freshTask`,
+    )
   if (m.preprocess > caps.preprocess)
     errors.push(
       `z.preprocess ${m.preprocess} 处（基线 ${caps.preprocess}）。不要再往 schema 里挂读一次迁一次的迁移，迁移写成一次性的、迁完写回磁盘（docs/lessons/structure.md）`,
@@ -232,6 +240,7 @@ function update(root) {
     caps.flatFiles[dir] = (caps.flatFiles[dir] ?? []).filter((f) => m.flatFiles[dir].includes(f))
   caps.taskFields = Math.min(caps.taskFields, m.taskFields)
   caps.preprocess = Math.min(caps.preprocess, m.preprocess)
+  caps.liveFallback = Math.min(caps.liveFallback ?? m.liveFallback, m.liveFallback)
   caps.orchInlineTools = Math.min(caps.orchInlineTools, m.orchInlineTools)
   // 新开的小接口按现状记进基线（检查时没记过的按 HOST_NEW_MAX 放行）；记过的只降不升
   caps.hostMembers = {

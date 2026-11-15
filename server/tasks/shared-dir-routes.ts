@@ -8,6 +8,7 @@ import { t } from '../../shared/i18n.ts'
 import { openTaskWorktree } from './edit-worktree.ts'
 import { settleBefore } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask } from './read.ts'
 
 /**
  * 几个对话共用一个目录时的提醒（规则见 shared/shared-dir.ts）：
@@ -20,7 +21,7 @@ export function registerSharedDirRoutes(s: TasksScope) {
     let x = tk
     while (x.parentTaskId && !seen.has(x.id)) {
       seen.add(x.id)
-      const p = await s.current(x.parentTaskId)
+      const p = await currentTask(s, x.parentTaskId)
       if (!p) break
       x = p
     }
@@ -41,7 +42,7 @@ export function registerSharedDirRoutes(s: TasksScope) {
   }
 
   s.routes.get('/:id/shared-dir', async (c) => {
-    const tk = await s.current(c.req.param('id')!)
+    const tk = await currentTask(s, c.req.param('id')!)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const none: SharedDirInfo = { peers: [], canIsolate: false }
     // 只管项目里的对话；已经在（或者下一轮就会回到）自己分支里的不和别人共用目录

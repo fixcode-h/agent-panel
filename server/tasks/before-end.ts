@@ -21,6 +21,7 @@ import { hasHeld } from '../exec/delivery.ts'
 import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
+import { freshTask, readTask } from './read.ts'
 
 /**
  * 对话（顶层对话、子对话）的结束前判断（ADR 0049）：模型准备结束这一轮时 CLI 问到这里，
@@ -59,9 +60,7 @@ export function createBeforeEnd(
   /** 父对话名下请过收尾、还没处理的子对话（和 nudgeWrapUp 同一个判断） */
   async function wrapWaiting(tk: Task) {
     if (tk.parentTaskId || !tk.projectId) return []
-    const kids = (await sc.store.list())
-      .filter((k) => k.parentTaskId === tk.id)
-      .map((k) => sc.live.get(k.id)?.task ?? k)
+    const kids = (await sc.store.list()).filter((k) => k.parentTaskId === tk.id).map((k) => freshTask(sc, k))
     return wrapUpPending(kids).filter((k) => !sc.merging.has(k.id) && !hasHeld(k.id) && !sc.startQueue.has(k.id))
   }
 
@@ -100,7 +99,7 @@ export function createBeforeEnd(
   }
 
   async function decide(convId: string, input: BeforeEndInput): Promise<BeforeEndDecision> {
-    const tk = sc.live.get(convId)?.task ?? (await sc.store.get(convId))
+    const tk = await readTask(sc, convId)
     if (!tk || tk.imported || taskDeleted(tk)) return allowEnd('gone')
     // 预热还没收到用户的消息：这时结束是在停下等下一句，不是没做完（收到消息后 runner 会清掉 prewarming）
     if (tk.prewarming) return allowEnd('prewarm')

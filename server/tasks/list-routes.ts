@@ -11,6 +11,7 @@ import { log } from '../log.ts'
 import { SEARCH_CACHE_TASKS, SEARCH_CACHE_CHARS } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import { createIdleRelease } from './idle-release.ts'
+import { freshTask, idleTask } from './read.ts'
 
 /**
  * 对话列表类接口：列表（带 ETag）、磁盘占用、保活列表与释放、回收站列表、对话内容搜索（带消息缓存）。
@@ -44,7 +45,7 @@ export function registerListRoutes(s: TasksScope) {
    * 只给视图和流程统计要的精简字段（shared/bug/overview.ts）。状态按内存里正在跑的那份算，和列表同一个口径
    */
   s.routes.get('/bugs', async (c) => {
-    const all = (await s.store.list()).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
+    const all = (await s.store.list()).map((t) => idleTask(s, freshTask(s, t)))
     return c.json(bugBriefs(await Promise.all(all.map(async (t) => ({ ...t, live: await s.liveOf(t) })))))
   })
 
@@ -53,7 +54,7 @@ export function registerListRoutes(s: TasksScope) {
    * 只给精简行（shared/agents/flow-briefs.ts），汇总由页面按搜索词筛过再算。状态按内存里正在跑的那份算
    */
   s.routes.get('/flow', async (c) => {
-    const all = (await s.store.list()).map((t) => s.live.get(t.id)?.task ?? t)
+    const all = (await s.store.list()).map((t) => freshTask(s, t))
     return c.json(agentFlowBriefs(all))
   })
 
@@ -71,7 +72,7 @@ export function registerListRoutes(s: TasksScope) {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢。
     // 进了回收站的对话不在任何列表里出现（回收站自己有一个入口，见 GET /trash）
-    const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => s.idle(s.live.get(t.id)?.task ?? t))
+    const all = (await s.store.list()).filter((t) => !taskDeleted(t)).map((t) => idleTask(s, freshTask(s, t)))
     // 运行时状态（还在跑的子对话数、后台命令、CLI 存活、后代在等你的数）只在 liveOf 一处算（server/tasks/live.ts）：
     // 子对话的计数在这里现扫一遍再传进去，不读 1 秒缓存：子对话刚开始一轮、很快又做完时，
     // 缓存里可能还是开始前那份，列表就看不到父对话在跑（e2e 04-subagents 在 CI 上撞到过）

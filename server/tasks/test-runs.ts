@@ -13,6 +13,7 @@ import { stepRun } from '../step-run.ts'
 import { log } from '../log.ts'
 import { markWrapUp } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
+import { currentTask, freshTask } from './read.ts'
 
 /**
  * 测试步骤：父对话代跑子对话的测试（ADR 0018 / 0020）、记录测试结果、重启后接着等还没出结果的测试。
@@ -26,8 +27,8 @@ export function createTestRuns(sc: TasksScope) {
    */
   const parentTests = createParentTests({
     start: async ({ run, step, name }) => {
-      const child = await sc.current(run.childId)
-      const parent = await sc.current(run.parentId)
+      const child = await currentTask(sc, run.childId)
+      const parent = await currentTask(sc, run.parentId)
       if (!child || !parent) return { ok: false, info: '这个子对话或父对话已经不在了，这批测试没有跑。' }
       const project = child.projectId ? await sc.deps.projects.get(child.projectId) : null
       const r = sc.background.start({
@@ -51,9 +52,9 @@ export function createTestRuns(sc: TasksScope) {
       await recordTestRun(run.childId, parentTestRun(step, done, new Date().toISOString()))
     },
     pass: async (run) => {
-      const tk = await sc.current(run.childId)
+      const tk = await currentTask(sc, run.childId)
       if (!tk) return
-      const parent = await sc.current(run.parentId)
+      const parent = await currentTask(sc, run.parentId)
       const lines = testRunLines(tk.testRuns)
       await sc.childMerged(
         run.childId,
@@ -62,7 +63,7 @@ export function createTestRuns(sc: TasksScope) {
       )
     },
     fail: async (run, failed) => {
-      const tk = await sc.current(run.childId)
+      const tk = await currentTask(sc, run.childId)
       if (!tk?.wrapRequest) return
       const failedText = parentTestFailText(failed)
       // 报错原文只留前面一段：它会随任务存盘，父对话读到的也只有第一行
@@ -112,7 +113,7 @@ export function createTestRuns(sc: TasksScope) {
    * 耗时用后台命令的真实起止时间，不靠 Agent 自报
    */
   async function recordSelfTestRun(job: BgJob) {
-    const tk = await sc.current(job.taskId)
+    const tk = await currentTask(sc, job.taskId)
     if (!tk) return
     const project = tk.projectId ? await sc.deps.projects.get(tk.projectId) : null
     const step = matchTestStep(
@@ -194,7 +195,7 @@ export function createTestRuns(sc: TasksScope) {
   async function recoverParentTests() {
     for (const raw of await sc.store.list()) {
       if (raw.archived || raw.wrapRequest?.state !== 'testing') continue
-      const tk = sc.live.get(raw.id)?.task ?? raw
+      const tk = freshTask(sc, raw)
       if (!tk.parentTaskId) {
         tk.wrapRequest = undefined
         await sc.store.update(tk.id, tk)

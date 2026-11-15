@@ -27,6 +27,7 @@ import type { TasksScope } from './scope.ts'
 import { forgetClaims } from '../claims.ts'
 import { scopeError } from '../../shared/conv-mode.ts'
 import { forkedTask, rewoundTask, userMessageIndex } from '../../shared/restore/rewind.ts'
+import { currentTask, readTask } from './read.ts'
 
 /**
  * 对话上的操作：应用排查结论的修复、撤销改动、回答子对话提问和权限确认、改对话设置、倒回、分叉、压缩、评审、停止。
@@ -40,9 +41,9 @@ export function registerActionRoutes(s: TasksScope) {
   s.routes.post('/:id/apply-fixes', async (c) => {
     const body = FixApplyInput.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
-    const tk = await s.current(c.req.param('id'))
+    const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
-    const owner = tk.analysisOf && tk.analysisOf !== tk.id ? await s.current(tk.analysisOf) : tk
+    const owner = tk.analysisOf && tk.analysisOf !== tk.id ? await currentTask(s, tk.analysisOf) : tk
     if (!owner) return s.bad(c, t('被分析的对话已经不在了，不知道该改哪个目录'), 404)
     // 正在动手的对话可能也在改这几个文件，两边一起写会互相覆盖
     if (owner.working) return s.bad(c, t('「{title}」正在执行，等这一轮结束后再应用', { title: owner.title }), 409)
@@ -83,7 +84,7 @@ export function registerActionRoutes(s: TasksScope) {
   s.routes.post('/:id/turn-revert', async (c) => {
     const id = c.req.param('id')
     const { msg } = (await c.req.json().catch(() => ({}))) as { msg?: string }
-    const tk = await s.current(id)
+    const tk = await currentTask(s, id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     if (tk.imported) return s.bad(c, s.READONLY, 409)
     // 保活等下一句时进程还在，但这时没人在改文件，可以撤；正在回复、子任务或工作流节点还在跑时会和它们抢着写同一批文件
@@ -125,7 +126,7 @@ export function registerActionRoutes(s: TasksScope) {
   // 之后用户自己又改的保留，有文件撤不干净时一个都不动，把冲突交回页面
   s.routes.post('/:id/conv-revert', async (c) => {
     const id = c.req.param('id')
-    const tk = await s.current(id)
+    const tk = await currentTask(s, id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     if (tk.imported) return s.bad(c, s.READONLY, 409)
     if (tk.working || tk.steps.some((x) => x.status === 'running'))
@@ -205,7 +206,7 @@ export function registerActionRoutes(s: TasksScope) {
       if (holds.length) return s.bad(c, info || childHoldText(holds), 409)
       Object.assign(cur, {
         resolved: true,
-        worktree: (s.live.get(id)?.task ?? (await s.store.get(id)) ?? cur).worktree,
+        worktree: ((await readTask(s, id)) ?? cur).worktree,
       })
     }
     // 取消完成：再完成一次时该重新上报父对话
@@ -395,7 +396,7 @@ export function registerActionRoutes(s: TasksScope) {
     const kids = (await s.store.list()).filter((x) => x.parentTaskId === id && x.createdAt >= at && !x.archived)
     for (const k of kids) {
       await s.stopTree(k.id, 'parent').catch(() => {})
-      const cur = s.live.get(k.id)?.task ?? (await s.store.get(k.id))
+      const cur = await readTask(s, k.id)
       if (!cur) continue
       cur.archived = true
       cur.updatedAt = new Date().toISOString()
@@ -559,7 +560,7 @@ export function registerActionRoutes(s: TasksScope) {
       cancelWait(id)
       forgetNotes(id)
     }
-    return c.json(await s.current(id))
+    return c.json(await currentTask(s, id))
   })
 
   // 子对话请用户决定的提问，用户点了关闭：这些提问不回答，子对话终止。
@@ -596,6 +597,6 @@ export function registerActionRoutes(s: TasksScope) {
     await userStop(id)
     cancelWait(id)
     forgetNotes(id)
-    return c.json(await s.current(id))
+    return c.json(await currentTask(s, id))
   })
 }

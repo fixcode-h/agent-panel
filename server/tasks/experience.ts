@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { makeAlert } from '../../shared/alerts.ts'
 import { createExperienceLearner } from '../experience/learn.ts'
 import type { TasksScope } from './scope.ts'
+import { readTask } from './read.ts'
 
 /**
  * 把经验学习（server/experience/learn.ts）接到任务存储上：取整份任务、找子对话、判「这一轮结束」、在对话里写一行。
@@ -9,7 +10,7 @@ import type { TasksScope } from './scope.ts'
  */
 export function createTaskLearner(sc: TasksScope) {
   const learner = createExperienceLearner({
-    getTask: async (id) => sc.live.get(id)?.task ?? (await sc.store.get(id).catch(() => null)),
+    getTask: (id) => readTask(sc, id).catch(() => null),
     listTasks: () => sc.store.list(),
     // 一轮结束就学（ADR 0066 / 设计稿 Q3）：不再等整棵对话树（子对话、后台命令）都完成——
     // 等全树完成时，长对话里前面绕的路早就过了用得上的时候；只看上次学过之后的新调用，学多次不会重复

@@ -14,6 +14,7 @@ import { phaseOf, revOf } from '../../shared/bug/phase.ts'
 import type { TasksScope } from './scope.ts'
 import { log } from '../log.ts'
 import { previewCleanup, snapshotLogBase, snapshotPre } from './bug-cleanup.ts'
+import { readTask } from './read.ts'
 
 const Decision = z.object({
   approve: z.boolean(),
@@ -44,11 +45,8 @@ const Decision = z.object({
 const CleanupAction = z.object({ action: z.enum(['retry', 'finish']) })
 
 export function registerDiagnosisRoutes(s: TasksScope) {
-  const taskOf = async (id: string) => {
-    const entry = s.live.get(id)
-    // 诊断报告不挂在 CLI 进程上：子对话停着、不在内存里也能确认，改完落盘
-    return { entry, task: entry?.task ?? (await s.store.get(id)) }
-  }
+  // 诊断报告不挂在 CLI 进程上：子对话停着、不在内存里也能确认，改完落盘
+  const taskOf = async (id: string) => ({ entry: s.live.get(id), task: await readTask(s, id) })
 
   /** 点「取消修复」之前：面板只读地查出代码里的临时日志、这个对话新建的文件，确认框里列出来 */
   s.routes.get('/:id/diagnosis-cleanup', async (c) => {
