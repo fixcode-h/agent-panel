@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { BuiltinAgent } from '../builtin/agents.ts'
 import type { BuiltinWorkflow } from '../builtin/workflows.ts'
 import { PluginCommand, PluginHook, PluginTestStep } from './contrib-schema.ts'
+import { PluginRuntimeFields } from './runtime-schema.ts'
 
 /**
  * 插件清单（ADR 0059）：插件包根目录的 plugin.json。插件是自包含的包，装在数据目录 plugins/<id>/，
@@ -99,6 +100,11 @@ export const PluginManifest = z.object({
    * 面板安装、启动时逐项核对：这个面板版本没开放的就拒绝，写明要先升级面板，而不是装上后运行到那里才报错
    */
   hostModules: z.object({ web: z.array(z.string()).optional(), server: z.array(z.string()).optional() }).optional(),
+  /**
+   * 插件接口 11：给 Agent 的环境变量（env，含 PATH 前置）、外部 MCP 服务（mcp）、托管进程（services）、
+   * 声明式网页页面（webPages）和包装记录（wrap），格式见 runtime-schema.ts
+   */
+  ...PluginRuntimeFields,
   /** 服务端入口、网页入口（相对包根的 ESM 文件），没有就是纯内容插件 */
   server: z.string().optional(),
   web: z.string().optional(),
@@ -132,8 +138,11 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    说明还缺哪项设置（ServerPlugin.ready），也可以替已经接入的项目打开自己（PluginServerContext.projects.enable）。
  *    设计稿：Agent侧栏与项目管理重设计 第 6 节
  * 10：插件之间的依赖（清单 requires）：安装、一键更新时把缺的依赖从插件市场一起装上，依赖没满足的不加载
+ * 11：声明式的运行时字段（清单 env / mcp / services / webPages / wrap，见 runtime-schema.ts）：插件不写代码也能给 Agent
+ *    带环境变量和 PATH、外部 MCP 服务，由面板起停托管进程、出网页页面；从 GitHub 链接包装出来的插件靠它接进面板。
+ *    设计稿：GitHub项目一键变插件与网页页签 第 5 节，ADR 0068
  */
-export const PLUGIN_API = 10
+export const PLUGIN_API = 11
 
 /** 插件从哪来 */
 export const PluginSource = z.object({
