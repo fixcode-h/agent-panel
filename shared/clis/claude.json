@@ -558,7 +558,8 @@
     "http": {
       "minVersion": "2.1.318",
       "entry": { "type": "http", "url": "{url}", "timeout": 70 },
-      "why": "2.1.318 实测支持 type: http 的钩子：直接 POST 到面板，不用每次调工具都起一个 node 跑转发脚本（Windows 上每次 0.1–0.2 秒）。读不到本机版本时照旧用转发脚本"
+      "commandOnly": ["context.restored"],
+      "why": "2.1.318 实测支持 type: http 的钩子：直接 POST 到面板，不用每次调工具都起一个 node 跑转发脚本（Windows 上每次 0.1–0.2 秒）。读不到本机版本时照旧用转发脚本。SessionStart 只认命令类钩子（2.1.325 实测 http 类型的 SessionStart 不论 startup / resume / compact 都不跑），压缩后补回计划（context.restored）留在 curl / 转发脚本上"
     }
   },
   "mcpProbe": {

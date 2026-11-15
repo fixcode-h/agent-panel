@@ -265,6 +265,28 @@ test('HTTP 钩子：给了地址时转发脚本那一项换成 POST 到面板，
   assert.ok(codex.files.some((f) => f.path.endsWith(HOOK_SCRIPT)))
 })
 
+test('HTTP 钩子：CLI 只认命令类钩子的事件（Claude Code 的 SessionStart）不换成 http，压缩后补回计划才会跑', () => {
+  const spec = getCli('claude')!.hooks!
+  assert.ok(spec.http?.commandOnly.includes('context.restored'))
+  const url = 'http://127.0.0.1:1/api/mcp/ask/tok/hook'
+  const r = hookInstall(spec, '/tmp/run', ['tool.before', 'context.restored'], { httpUrl: url, curlUrl: url })
+  const cfg = r.files.find((f) => f.path.endsWith('agent-panel-hooks.json'))!.content as {
+    hooks: Record<string, { matcher?: string; hooks: { type: string; url?: string; command?: string }[] }[]>
+  }
+  // 工具前照旧是 http
+  assert.equal(cfg.hooks.PreToolUse[0].hooks[0].type, 'http')
+  // SessionStart 是命令类：本机有 curl 时直接 POST 到面板
+  const ss = cfg.hooks.SessionStart[0]
+  assert.equal(ss.matcher, 'compact|resume')
+  assert.equal(ss.hooks[0].type, 'command')
+  assert.match(ss.hooks[0].command!, /^curl .*"http:\/\/127\.0\.0\.1:1\/api\/mcp\/ask\/tok\/hook\/context\.restored"$/)
+  // 没有 curl 时退回转发脚本
+  const noCurl = hookInstall(spec, '/tmp/run', ['context.restored'], { httpUrl: url })
+  const cfg2 = noCurl.files.find((f) => f.path.endsWith('agent-panel-hooks.json'))!.content as typeof cfg
+  assert.match(cfg2.hooks.SessionStart[0].hooks[0].command!, /node ".*agent-panel-hook\.mjs" context\.restored/)
+  assert.ok(noCurl.files.some((f) => f.path.endsWith(HOOK_SCRIPT)))
+})
+
 test('通用的 curl 直连：不支持 HTTP 钩子的命令类钩子，本机有 curl 时调转发脚本的命令换成 curl 直接 POST 到面板', () => {
   const url = 'http://127.0.0.1:1/api/mcp/ask/tok/hook'
   // Codex：参数里的命令换成 curl，地址走环境变量（命令每轮不变，信任一次就够）；不再写转发脚本
