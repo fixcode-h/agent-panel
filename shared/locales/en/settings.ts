@@ -1089,7 +1089,6 @@ export const EN_SETTINGS: Record<string, string> = {
   改写教训: 'Rewrite lesson',
   记下教训: 'Record lesson',
   查看项目教训: 'Check project lessons',
-  全局教训: 'Global lessons',
   修改全局教训需要你确认: 'Changing global lessons needs your confirmation',
   // 命令行环境
   命令行环境: 'Command shell',
