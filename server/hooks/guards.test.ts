@@ -123,6 +123,17 @@ test('危险命令：递归删根、家、项目，原分支上清工作区，�
   const wt = ctx({ task: { parentTaskId: 'par', worktree: { path: proj, state: 'active' } as never } })
   assert.equal(dangerDeny(wt, sh('git reset --hard HEAD')), '', '子对话自己的分支里放行')
   assert.ok(dangerDeny(ctx({ list: () => ['docker system prune'] }), sh('docker system prune -a')), '设置里加的也拦')
+  // 数据目录里属于这个对话自己的地方：对话目录下的临时目录、数据目录里的独立分支目录，里面的东西可以删
+  const own = path.join(data, 'tasks', 'files', 't')
+  assert.equal(dangerDeny(ctx(), sh(`rm -rf ${own}/tmp/probe`)), '', '对话目录里自己的临时目录')
+  assert.ok(dangerDeny(ctx(), sh(`rm -rf ${own}`)), '对话目录本身照样拦')
+  assert.ok(
+    dangerDeny(ctx(), sh(`rm -rf ${path.join(data, 'tasks', 'files', 'other', 'tmp')}`)),
+    '别的对话的目录照样拦',
+  )
+  const tree = path.join(data, 'worktrees', 'w1')
+  assert.equal(dangerDeny(ctx({ cwd: tree }), sh('rm -rf dist')), '', '数据目录里的独立分支目录里删 dist')
+  assert.ok(dangerDeny(ctx({ cwd: tree }), sh(`rm -rf ${path.join(data, 'worktrees')}`)), '分支目录的上级照样拦')
 })
 
 test('长命令转后台：开发服务器、完整测试在前台跑时拒绝；没有后台工具、普通命令放行', () => {
