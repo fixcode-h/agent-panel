@@ -6,7 +6,7 @@
  *   用「每日工作总结」角色的设定和它的 CLI / 模型跑，CLI 只读运行、不改文件。
  * - POST /summary：用采纳的分项按固定格式拼出报告并保存（不再跑 CLI）。
  * - PUT / DELETE /summary/:id：编辑正文、删除报告；GET / PUT /summary/config：面板里加过的项目。
- * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary/index.ts。
+ * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary/index.ts；入参按 shared/api-contract/summary.ts 的契约校验。
  */
 import { askSession } from '../asks.ts'
 import { attachCode } from './diff.ts'
@@ -32,7 +32,6 @@ import {
   SUMMARY_KEEP,
   summaryRole,
   SummaryConfig,
-  SummaryCreateRequest,
   SummaryExtractRequest,
   SummaryRecord,
   SummaryReport,
@@ -40,6 +39,7 @@ import {
   tasksContext,
   type SummaryJob,
 } from '../../shared/summary/index.ts'
+import { summaryContract as S } from '../../shared/api-contract/summary.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
 import { safeArgs } from '../assist.ts'
 import { invokeCli } from '../exec/invoke.ts'
@@ -297,14 +297,14 @@ export function summaryApi(deps: {
     .get('/', async (c) => c.json({ reports: await sorted() }))
     .get('/config', async (c) => c.json(await deps.config.get()))
     .put('/config', async (c) => {
-      const p = SummaryConfig.safeParse(await c.req.json())
+      const p = S.saveConfig.body.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const ids = [...new Set(p.data.projectIds)]
       await deps.config.set({ projectIds: ids })
       return c.json({ projectIds: ids })
     })
     .post('/extract', async (c) => {
-      const p = SummaryExtractRequest.safeParse(await c.req.json())
+      const p = S.extract.body.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       return start(c, p.data)
     })
@@ -353,7 +353,7 @@ export function summaryApi(deps: {
       return c.json(view(j))
     })
     .post('/', async (c) => {
-      const p = SummaryCreateRequest.safeParse(await c.req.json())
+      const p = S.create.body.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const { items, ...meta } = p.data
       const record = await save({
@@ -365,7 +365,7 @@ export function summaryApi(deps: {
       return c.json(record, 201)
     })
     .put('/:id', async (c) => {
-      const p = z.object({ md: z.string().max(200_000) }).safeParse(await c.req.json())
+      const p = S.save.body.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const old = (await deps.reports.list()).find((r) => r.id === c.req.param('id'))
       if (!old) return bad(c, t('找不到这份报告'), 404)

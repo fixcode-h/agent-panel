@@ -8,7 +8,7 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 
 ## 能量化的都由结构检查拦，按报错提示放到对的地方
 
-- 规则：`npm run lint` 跑 `scripts/structure-check.mjs`（rules-check 第 21 条），现状记在 `scripts/structure-caps.json`，只许变好：函数超过 300 行（已有的超长函数不许再变长）；往 `server/`、`shared/`、`web/src/lib/` 顶层加新文件；`TaskData` 顶层加字段；新加 `z.preprocess`；在 `server/orch-mcp.ts` 里直接写工具定义；`Orchestra` / `EngineHost` 或 `shared/host/` 里的小接口（`ConversationHost`、`OrchPlan` 这些）加成员；`server/exec/git.ts` 以外直接调 git；模块顶层加 let / new Map；组件里直接读对话的 `status`、`working`、`cliAlive` 这类字段；新加 `setInterval`。报错会说该放哪。
+- 规则：`npm run lint` 跑 `scripts/structure-check.mjs`（rules-check 第 21 条），现状记在 `scripts/structure-caps.json`，只许变好：函数超过 300 行（已有的超长函数不许再变长）；往 `server/`、`shared/`、`web/src/lib/` 顶层加新文件；`TaskData` 顶层加字段；新加 `z.preprocess`；在 `server/orch-mcp.ts` 里直接写工具定义；`Orchestra` / `EngineHost` 或 `shared/host/` 里的小接口（`ConversationHost`、`OrchPlan` 这些）加成员；`server/exec/git.ts` 以外直接调 git；模块顶层加 let / new Map；组件里直接读对话的 `status`、`working`、`cliAlive` 这类字段；新加 `setInterval`；前端手写 `request<T>()` / `request()`。报错会说该放哪。
 - 规则：变好了（拆了函数、挪走了文件）跑 `node scripts/structure-check.mjs --update` 收紧基线，和改动一起提交。不许为了过检查手改基线放宽；确实要放宽时提交说明写清楚原因，并在回复里告诉用户。
 - 规则：不许用改名、换写法来绕开检查（比如把 `task.cliAlive` 改成 `const { cliAlive } = task`、把函数拆成两个仍然共享同一批外层变量的闭包）。检查只是量出来的数字，它背后的规则才是要遵守的。
 - 防线：`scripts/rules-check.mjs` 第 21 条。
@@ -42,7 +42,8 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 ## 前后端接口有契约，演示后端不另写一套业务逻辑
 
 - 规则：新加或修改接口时，在 `shared/api-contract/<模块>.ts` 里写一条 `endpoint`（请求和响应的 zod 契约，写法见 `define.ts`，ADR 0062）。服务端路由用契约里的 `body` 校验入参；前端用 `web/src/lib/api/call.ts` 的 `call(ep, …)` 调，不再新写 `request<T>`；把它加进 `shared/api-contract/probe.ts`，正式后端（`scripts/e2e/17-contracts.mjs`）和演示后端（`web/src/lib/demo/demo-contract.test.ts`）都会按它查返回形状。演示后端（`web/src/lib/demo/**`）里的状态判定、计划推进这些逻辑调用 `shared/` 里和服务端同一份函数，不在演示里再写一遍。
-- 防线：`demo-contract.test.ts`、`server/tasks/api-contract.test.ts`、e2e `17-contracts`；人工。
+- 规则：`web/src/` 里手写的 `request<T>()` / `request()` 按文件记了基线（结构检查 `requests`，`web/src/lib/api/call.ts` 不算），只许变少：迁一批接口到契约后跑 `--update` 收紧；不要换个名字包一层 fetch 绕开。
+- 防线：`demo-contract.test.ts`、`server/tasks/api-contract.test.ts`、e2e `17-contracts`、结构检查（`requests`）。
 
 ## 前端拿实时数据用推送，不再加轮询
 

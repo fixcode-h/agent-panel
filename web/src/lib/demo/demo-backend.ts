@@ -174,7 +174,7 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
-import { demoStyles } from './demo-styles'
+import { demoBrowserExt, demoStyles } from './demo-styles'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 import { demoMs } from './demo-speed'
 import { DEMO_CSV, DEMO_FILES, DEMO_PRODUCTS_TS, DEMO_README, DEMO_SHEETS } from './demo-project-files'
@@ -2266,6 +2266,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     return { name, path, size: 4096, mime: 'text/markdown' }
   }
   if (res === 'styles') return demoStyles(method, id, body ?? {})
+  if (res === 'designs' && id === 'browser') return demoBrowserExt(sub)
   if (res === 'schedules') return demoSchedules(method, seg, body)
   if (res === 'tasks' && id === 'disk')
     return (d.tasks ?? []).map((tk) => ({

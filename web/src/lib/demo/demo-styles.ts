@@ -1,3 +1,4 @@
+import type { BrowserStatus } from '@shared/browser-ext'
 import { SavedStyleInput, type SavedStyle } from '@shared/style-types'
 import { BUILTIN_STYLES, isBuiltinStyle } from '@shared/styles'
 
@@ -42,4 +43,13 @@ export function demoStyles(method: string, sid: string | undefined, body: any): 
   }
   demoStyleList[i] = { ...demoStyleList[i], ...body, updatedAt: now() }
   return demoStyleList[i]
+}
+
+/**
+ * 演示里的浏览器扩展：浏览器里没有面板的本机服务，扩展连不上，按「没连上」回状态（形状同 shared/api-contract/styles.ts）；
+ * 装、刷新、打开目录在正式版会开浏览器和文件夹，演示里做不到，直接报错让页面照常提示
+ */
+export function demoBrowserExt(sub: string | undefined): BrowserStatus {
+  if (sub) fail('演示里不能安装或刷新浏览器扩展')
+  return { connected: false, version: '', latestVersion: '1.5.0', tabs: [], extensionDir: '', browsers: [] }
 }

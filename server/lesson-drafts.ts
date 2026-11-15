@@ -1,6 +1,7 @@
 /**
  * 候选教训草稿区：工作总结生成后从这里提炼、编辑、丢弃，**不会自动写进 docs/lessons/**。
  * 提炼规则在 shared/lesson-draft.ts（纯函数，能单测）；这里只管存取和「同一份报告不重复提炼」。
+ * 入参按前后端共用的契约校验（shared/api-contract/summary.ts）。
  */
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
@@ -11,6 +12,7 @@ import {
   lessonDraftsFromReport,
   missingDrafts,
 } from '../shared/lesson-draft.ts'
+import { lessonDraftsContract as L } from '../shared/api-contract/summary.ts'
 import type { SummaryRecord } from '../shared/summary/index.ts'
 import { t } from '../shared/i18n.ts'
 import { log } from './log.ts'
@@ -36,7 +38,7 @@ export function lessonDraftsApi(deps: { drafts: Drafts; reports: { list(): Promi
        * 丢掉一条后再点提炼能找回来，不用把剩下的也丢掉。
        */
       .post('/', async (c) => {
-        const p = z.object({ reportId: z.string().min(1) }).safeParse(await c.req.json())
+        const p = L.extract.body.safeParse(await c.req.json())
         if (!p.success) return bad(c, z.prettifyError(p.error))
         const report = (await deps.reports.list()).find((r) => r.id === p.data.reportId)
         if (!report) return bad(c, t('找不到这份报告'), 404)
@@ -56,7 +58,7 @@ export function lessonDraftsApi(deps: { drafts: Drafts; reports: { list(): Promi
         })
       })
       .put('/:id', async (c) => {
-        const p = LessonDraftInput.safeParse(await c.req.json())
+        const p = L.save.body.safeParse(await c.req.json())
         if (!p.success) return bad(c, z.prettifyError(p.error))
         // 和页面上的保存按钮同一个判据（shared/lesson-draft.ts）：落到分片时才发现超标就晚了
         const problems = lessonDraftProblems(p.data)
