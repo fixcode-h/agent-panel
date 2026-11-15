@@ -10,6 +10,7 @@ import { ProjectLesson, type Agent, type Project } from '../../shared/schema.ts'
 import { sharedDocRoot } from '../docs/root.ts'
 import { log } from '../log.ts'
 import { detectVcs } from '../projects-analyze.ts'
+import { knowledgeBase, type KnowledgeProject } from './knowledge-place.ts'
 
 /**
  * 项目教训存进项目文档目录的 lessons/ 目录，一条一个文件（用户 2026-11-05 定的，见 ADR 0052；以前是整份 lessons.md）：
@@ -68,13 +69,10 @@ export async function projectDocBase(
   return joinPath(dir, 'docs')
 }
 
-/** 这个项目的教训目录；项目没有目录时返回 undefined，仍用旧的项目 JSON */
-export async function projectLessonsDir(
-  project: Pick<Project, 'path' | 'agentParams'>,
-  agents: Agent[],
-): Promise<string | undefined> {
-  const base = await projectDocBase(project, agents)
-  return base && joinPath(base, LESSONS_DIR)
+/** 这个项目的教训目录（默认在数据目录，随仓库时在项目文档目录，见 knowledge-place.ts）；项目没有目录时返回 undefined，仍用旧的项目 JSON */
+export async function projectLessonsDir(project: KnowledgeProject, agents: Agent[]): Promise<string | undefined> {
+  const k = await knowledgeBase(project, agents, projectDocBase)
+  return k && (k.inRepo ? joinPath(k.base, LESSONS_DIR) : path.join(k.base, LESSONS_DIR))
 }
 
 /** 把一条教训写成人和面板都能读的 Markdown：字段在上面，正文用缩进两行的 | 块 */
@@ -360,7 +358,7 @@ export interface LessonSource {
 
 /** 读取项目教训的合并结果：对话提示词、project_lessons、AI 分析、项目接口都用这一份 */
 export async function loadProjectLessons(
-  project: Pick<Project, 'path' | 'agentParams' | 'lessons'>,
+  project: KnowledgeProject & Pick<Project, 'lessons'>,
   agents: Agent[],
 ): Promise<LessonSource> {
   const json = project.lessons ?? []
@@ -391,7 +389,7 @@ export interface SaveLessonsResult {
  * 同一个目录的写入排队，几个对话同时记时不会互相盖掉（读改写由调用方的 queue 串行）。
  */
 export async function saveProjectLessons(
-  project: Pick<Project, 'path' | 'agentParams'>,
+  project: KnowledgeProject,
   agents: Agent[],
   lessons: ProjectLesson[],
 ): Promise<SaveLessonsResult> {

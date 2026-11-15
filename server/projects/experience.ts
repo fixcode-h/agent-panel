@@ -5,8 +5,9 @@ import { joinPath } from '../../shared/doc-root.ts'
 import { EXP_KEYWORDS_MAX, EXP_PATHS_MAX, ProjectExperience, sameExperience } from '../../shared/experience.ts'
 import { hash53 } from '../../shared/hash.ts'
 import { t } from '../../shared/i18n.ts'
-import type { Agent, Project } from '../../shared/schema.ts'
+import type { Agent } from '../../shared/schema.ts'
 import { enqueueWrite, projectDocBase, writeTextAtomic } from './lessons.ts'
+import { knowledgeBase, type KnowledgeProject } from './knowledge-place.ts'
 
 /**
  * 项目经验存进项目文档根的 agent-knowledge/experience/，一条一个文件（设计稿 docs/openspec/changes/project-knowledge/design.md）：
@@ -26,9 +27,10 @@ const README_TEXT = `# 项目经验
 可以直接改；某个文件格式不对时面板跳过它、不覆盖。
 `
 
-export async function projectExperienceDir(project: Pick<Project, 'path' | 'agentParams'>, agents: Agent[]) {
-  const base = await projectDocBase(project, agents)
-  return base && joinPath(base, `${KNOWLEDGE_DIR}/${EXP_DIR}`)
+/** 经验目录：默认在数据目录 <数据目录>/knowledge/<项目 id>/experience，随仓库时在项目文档目录的 agent-knowledge/experience */
+export async function projectExperienceDir(project: KnowledgeProject, agents: Agent[]) {
+  const k = await knowledgeBase(project, agents, projectDocBase)
+  return k && (k.inRepo ? joinPath(k.base, `${KNOWLEDGE_DIR}/${EXP_DIR}`) : path.join(k.base, EXP_DIR))
 }
 
 const block = (key: string, value: string) => [`${key}: |`, ...value.split('\n').map((l) => (l ? `  ${l}` : ''))]
@@ -157,10 +159,7 @@ export interface ExperienceList {
   dir?: string
 }
 
-export async function loadProjectExperience(
-  project: Pick<Project, 'path' | 'agentParams'>,
-  agents: Agent[],
-): Promise<ExperienceList> {
+export async function loadProjectExperience(project: KnowledgeProject, agents: Agent[]): Promise<ExperienceList> {
   const dir = await projectExperienceDir(project, agents)
   if (!dir) return { items: [], errors: [] }
   const st = await readDir(dir)
@@ -169,7 +168,7 @@ export async function loadProjectExperience(
 
 /** 改动一组经验：fn 拿到当前列表（读改写在同一个目录队列里，几个对话同时学到时不互相覆盖），返回要写回的列表 */
 export async function mutateProjectExperience<R>(
-  project: Pick<Project, 'path' | 'agentParams'>,
+  project: KnowledgeProject,
   agents: Agent[],
   fn: (items: ProjectExperience[]) => { items: ProjectExperience[]; result: R },
 ): Promise<{ ok: true; result: R; items: ProjectExperience[] } | { ok: false; error: string }> {
