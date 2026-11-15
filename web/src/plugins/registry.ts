@@ -11,6 +11,7 @@ import { request } from '@/lib/api'
 import { pickFileViewer } from './file-viewers'
 import { intakeByKey, pickIntake } from './attachment-intakes'
 import { pruneUpdates } from './updates'
+import { declaredWebPages } from './web-pages'
 import type {
   ActivateWeb,
   AnalysisReport,
@@ -115,7 +116,10 @@ export async function loadPlugins() {
   for (const row of r.plugins.filter((p) => p.enabled)) {
     try {
       const p = await activate(row)
-      if (p) web.set(row.manifest.id, p)
+      // 清单里声明的网页页面（插件接口 11）：没有网页入口的插件也能出整页，和入口登记的页面放在一起
+      const declared = declaredWebPages(row.manifest)
+      if (declared.length) web.set(row.manifest.id, { ...p, pages: [...(p?.pages ?? []), ...declared] })
+      else if (p) web.set(row.manifest.id, p)
     } catch (e) {
       webErrors.set(row.manifest.id, (e as Error).message)
     }
