@@ -15,7 +15,7 @@ import { detectClis } from './detect.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 
-/** 用哪个 CLI 处理：「AI 创建」里设置的，没设置或不可用时用默认 CLI */
+/** 用哪个 CLI 处理：「AI 辅助」里设置的，没设置或不可用时用默认 CLI */
 export const fixCli = (settings: Settings) =>
   settings.assist.cli && getCli(settings.assist.cli) ? settings.assist.cli : defaultCli(settings)
 

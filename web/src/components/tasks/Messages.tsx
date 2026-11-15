@@ -192,7 +192,7 @@ export function AgentMessage({
   slot?: React.ReactNode
   /** slot 的内容签名：slot 每次都是新画的元素，按引用比较会让这条消息每次都重渲染 */
   slotKey?: string
-  /** 不是某个 Agent 说的（例如「AI 创建」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
+  /** 不是某个 Agent 说的（例如「AI 辅助」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
   author?: Author
   /** 启动这条回复的命令：没有 author 时（按 Agent 显示的对话）用这个 */
   command?: string[]

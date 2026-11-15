@@ -213,7 +213,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('button', { name: '存到 API 配置' }).first().click()
   await check(p, '设置-API-已存', ['已在列表中', '一键更新', '映射模型'])
   // 授权：检测外部 CLI，在面板里完成浏览器授权（演示里模拟），退出后回到未授权
-  await p.getByRole('button', { name: '授权', exact: true }).first().click()
+  await p.getByRole('button', { name: '账号授权', exact: true }).first().click()
   await check(p, '设置-授权', ['GitHub CLI', '浏览器授权', '用 Token 授权'])
   await p.getByRole('button', { name: '浏览器授权' }).first().click()
   await p
@@ -326,7 +326,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByRole('dialog').getByText('默认 Agent', { exact: true }).first().click()
   // 部署：全局说明写进各 CLI，技能默认不选，选了再部署
-  await p.getByRole('button', { name: '部署', exact: true }).first().click()
+  await p.getByRole('button', { name: '说明与技能', exact: true }).first().click()
   await check(p, '设置-部署', ['全局说明（AGENTS.md）', '写到哪些 Agent', '要部署的技能', 'grilling'])
   await p.getByRole('switch', { name: 'grilling' }).click()
   await p.getByRole('button', { name: '部署', exact: true }).last().click()

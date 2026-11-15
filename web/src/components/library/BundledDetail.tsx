@@ -105,7 +105,7 @@ export function BundledDetail({
         {deployed && (
           <span className="flex items-center gap-2 text-muted">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            {t('这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。')}
+            {t('这个技能还有一份部署在「设置 → Agent → 说明与技能」，那份要覆盖部署一次才会更新。')}
             <Button
               size="sm"
               variant="ghost"
