@@ -1,3 +1,4 @@
+import { sameServer } from '@shared/mcp-library/inject'
 import type { McpServer } from '@shared/library'
 import type { ProjectMcpDetected, ProjectMcpImportResult, ProjectMcpOverview } from '@shared/projects/mcp'
 import { t } from '@shared/i18n'
@@ -58,10 +59,6 @@ const detected: Omit<ProjectMcpDetected, 'status'>[] = [
   }),
 ]
 
-/** 只看配置内容：名字和「装在哪些 Agent」不算（全局那条是 McpEntry，多了 clis 字段） */
-const same = (a: McpServer, b: McpServer) =>
-  JSON.stringify({ ...a, name: '', clis: undefined }) === JSON.stringify({ ...b, name: '', clis: undefined })
-
 function overview(active: string[], path: string): ProjectMcpOverview {
   const base = demoMcpOverview(active)
   const global = new Map(base.servers.map((s) => [s.name, s]))
@@ -71,7 +68,8 @@ function overview(active: string[], path: string): ProjectMcpOverview {
     servers: base.servers,
     detected: detected.map((d) => {
       const cur = global.get(d.name)
-      return { ...d, status: !cur ? 'new' : same(d.server, cur) ? 'same' : 'different' }
+      // 和正式后端（server/projects/mcp.ts）同一个比较：只看配置内容，条目上的 clis、activation、fallback 不算
+      return { ...d, status: !cur ? 'new' : sameServer(d.server, cur) ? 'same' : 'different' }
     }),
     errors: [],
   }
