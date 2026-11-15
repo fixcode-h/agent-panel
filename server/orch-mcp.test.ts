@@ -863,7 +863,7 @@ const CONV = {
 const TOP = { ...CONV, parentOf: true }
 const CHILD = { ...CONV, child: true, canSubmit: true }
 const BG = ['run_background', 'check_background', 'stop_background']
-const LESSON_TOOLS = ['project_lessons', 'record_lesson']
+const LESSON_TOOLS = ['knowledge_lookup', 'knowledge_record', 'project_lessons', 'record_lesson']
 const TAIL = ['spawn_agents', 'stop_subtask', 'send_message', 'read_messages']
 const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation']
 // 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/workflow-tools.ts）
@@ -1054,7 +1054,16 @@ const IDENTITIES: [string, object, string[]][] = [
       submitResult: okCb,
       submitVerdict: okCb,
     },
-    ['get_status', ...BG, 'project_lessons', 'send_message', 'read_messages', 'submit_result', 'submit_verdict'],
+    [
+      'get_status',
+      ...BG,
+      'knowledge_lookup',
+      'project_lessons',
+      'send_message',
+      'read_messages',
+      'submit_result',
+      'submit_verdict',
+    ],
   ],
   [
     '子任务·工作流节点派的（工作流任务里）',
@@ -1069,6 +1078,7 @@ const IDENTITIES: [string, object, string[]][] = [
     },
     [
       'get_status',
+      'knowledge_lookup',
       'project_lessons',
       'read_state',
       'write_state',

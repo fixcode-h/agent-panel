@@ -2,6 +2,9 @@ import type { ProjectLesson } from '../schema.ts'
 import type { ProjectExperience } from '../experience.ts'
 import { globToRegExp } from '../lessons.ts'
 import { commandSegments } from '../hooks/defs.ts'
+import { commandWords, searchWords, wordsOf } from './match/normalize.ts'
+import { errorPrint, printScore } from './match/fingerprint.ts'
+import type { ErrorPrint } from '../schema.ts'
 
 /**
  * 教训、经验的事件推送（设计稿「经验与教训重新设计 2026-11-15」一期）：不改数据格式，用现有字段做粗匹配，
@@ -19,8 +22,6 @@ export const PUSH_RULES = {
   errorMinRatio: 0.3,
   /** 搜索匹配经验：别名（关键词）整词相同直接算；否则至少几个词命中 */
   searchMinTerms: 2,
-  /** 报错只看前这么多字（命令输出可能很长） */
-  errorHead: 4000,
 } as const
 
 /** 命中了哪一条、按什么命中：推送文字和对话里的标签都用它 */
@@ -32,75 +33,6 @@ export interface PushHit {
   why: 'command' | 'path' | 'error' | 'search'
   /** 推给模型的那一行 */
   line: string
-}
-
-/** 太常见、匹配了也说明不了什么的词 */
-// 模块状态：常量，加载后不改
-const STOP = new Set(
-  (
-    'the and for with from this that are was not but you your have has can will all any use used using get set new ' +
-    'src lib dist test tests spec file files dir path line col error errors warn warning info debug failed fail failure ' +
-    'true false null undefined const let var function return import export default class type types string number ' +
-    'object array value values name names data json yml yaml txt log logs cmd exe ' +
-    'npm node git run main dev index'
-  ).split(' '),
-)
-
-/**
- * 拆成检索词：英文按驼峰、下划线、点、连字符拆开并保留整词（UDropTable → u、drop、table、udroptable），
- * 中文两字一组（和 shared/experience.ts 的 queryTerms 同一个思路）。一个字母的、停用词不算
- */
-export function wordsOf(s: string): string[] {
-  const out = new Set<string>()
-  for (const raw of s.split(/[^A-Za-z0-9一-鿿]+/)) {
-    if (!raw) continue
-    if (/[一-鿿]/.test(raw)) {
-      for (const han of raw.match(/[一-鿿]+/g) ?? [])
-        if (han.length <= 2) out.add(han)
-        else for (let i = 0; i + 2 <= han.length; i++) out.add(han.slice(i, i + 2))
-      for (const x of raw.split(/[一-鿿]+/)) addAscii(out, x)
-    } else addAscii(out, raw)
-  }
-  return [...out].filter((w) => !STOP.has(w))
-}
-
-function addAscii(out: Set<string>, raw: string) {
-  if (!raw) return
-  const whole = raw.toLowerCase()
-  if (whole.length >= 2 && !/^\d+$/.test(whole)) out.add(whole)
-  // 驼峰：UDropTable → U Drop Table；HTTPServer → HTTP Server
-  const parts = raw
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .split(/[\s_]+/)
-  if (parts.length > 1) for (const p of parts) if (p.length >= 3 && !/^\d+$/.test(p)) out.add(p.toLowerCase())
-}
-
-/** 程序名归一：去掉目录和 .exe / .cmd，小写 */
-const prog = (s: string) =>
-  s
-    .replace(/^["']|["']$/g, '')
-    .split(/[\\/]/)
-    .pop()!
-    .replace(/\.(exe|cmd|bat|ps1)$/i, '')
-    .toLowerCase()
-
-/** 一段命令拆成词，去掉环境变量赋值、sudo、npx、env 这类前缀：剩下的开头几个词就是这条命令的「目的」 */
-export function commandWords(seg: string): string[] {
-  const words = seg.trim().split(/\s+/).filter(Boolean)
-  let i = 0
-  while (i < words.length) {
-    const w = words[i]
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w) || /^(sudo|npx|time|command|exec|call|&)$/i.test(w)) i++
-    else if (/^env$/i.test(w)) {
-      i++
-      // env -u NAME / env -i / env NAME=value
-      while (i < words.length && (words[i].startsWith('-') || /=/.test(words[i]))) i += words[i] === '-u' ? 2 : 1
-    } else break
-  }
-  const rest = words.slice(i)
-  if (!rest.length) return []
-  return [prog(rest[0]), ...rest.slice(1).map((w) => w.replace(/^["']|["']$/g, ''))]
 }
 
 /** 只有程序名、说明不了目的的命令：教训里单写一个 `git` 不能拿来匹配所有 git 命令 */
@@ -142,9 +74,23 @@ export function lessonCommands(l: Pick<ProjectLesson, 'title' | 'rule' | 'cause'
   return out
 }
 
-/** 要跑的这条命令对不对得上教训里写的命令：任一段的开头几个非选项词和教训里的「目的」一样 */
-export function commandHits(lesson: Pick<ProjectLesson, 'title' | 'rule' | 'cause'>, command: string): boolean {
-  const wants = lessonCommands(lesson)
+/** 明确写下的命令触发键（triggers.commands）：取「目的」的写法和正文里的一样，只是不挑通用程序名（用户写了就算） */
+export function triggerCommands(l: Partial<Pick<ProjectLesson, 'triggers'>>): string[][] {
+  return (l.triggers?.commands ?? [])
+    .flatMap((c) => commandSegments(c).slice(0, 1))
+    .map((seg) => {
+      const ws = commandWords(seg)
+      return ws.length ? [ws[0], ...ws.slice(1).filter((w) => !w.startsWith('-'))].slice(0, 3) : []
+    })
+    .filter((w) => w.length)
+}
+
+/** 要跑的这条命令对不对得上教训里写的命令：任一段的开头几个非选项词和教训里的「目的」或命令触发键一样 */
+export function commandHits(
+  lesson: Pick<ProjectLesson, 'title' | 'rule' | 'cause'> & Partial<Pick<ProjectLesson, 'triggers'>>,
+  command: string,
+): boolean {
+  const wants = [...triggerCommands(lesson), ...lessonCommands(lesson)]
   if (!wants.length) return false
   for (const seg of commandSegments(command)) {
     const ws = commandWords(seg)
@@ -153,41 +99,6 @@ export function commandHits(lesson: Pick<ProjectLesson, 'title' | 'rule' | 'caus
     if (wants.some((w) => w.every((x, i) => purpose[i] === x))) return true
   }
   return false
-}
-
-/** 报错的特征：错误码（ENOENT、TS2589、LNK2019、xxxError）和抹掉路径、数字后的词 */
-export interface ErrorPrint {
-  codes: string[]
-  words: string[]
-}
-
-const ERROR_LINE = /error|err!|failed|fatal|exception|denied|unauthorized|not found|cannot|错误|失败|找不到|无法/i
-const CODE_RE =
-  /\b(E[A-Z]{3,}|TS\d{4}|[CE]\d{4}|LNK\d{4}|MSB\d{4}|CS\d{4}|[A-Z][A-Za-z]+(?:Error|Exception)|HTTP\s?[45]\d\d|\b[45]\d\d\s+(?:Unauthorized|Forbidden|Not Found))\b/g
-/** 太泛的错误名：只当普通词，不当错误码 */
-// 模块状态：常量，加载后不改
-const GENERIC_CODE = new Set(['Error', 'TypeError', 'SyntaxError', 'ReferenceError', 'RangeError', 'Exception'])
-
-/** 从失败输出里取报错特征：挑含报错字样的行（最多 5 行），没有就取最后 5 个非空行 */
-export function errorPrint(output: string): ErrorPrint {
-  const head = output.slice(0, PUSH_RULES.errorHead)
-  const lines = head.split('\n').map((x) => x.trim())
-  const nonEmpty = lines.filter(Boolean)
-  let pick = nonEmpty.filter((x) => ERROR_LINE.test(x)).slice(0, 5)
-  if (!pick.length) pick = nonEmpty.slice(-5)
-  const text = pick
-    .join('\n')
-    // 绝对路径只留文件名，十六进制、UUID、时间戳、数字都是会变的
-    .replace(/(?:[A-Za-z]:)?[\\/][^\s:'"()]+[\\/]([^\s\\/:'"()]+)/g, ' $1 ')
-    .replace(/\b[0-9a-f]{8,}\b/gi, ' ')
-    .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z?/g, ' ')
-  const codes = [...new Set([...text.matchAll(CODE_RE)].map((m) => m[1].replace(/\s+/g, ' ')))].filter(
-    (c) => !GENERIC_CODE.has(c),
-  )
-  const words = wordsOf(text.replace(/\d+/g, ' '))
-    .filter((w) => /[一-鿿]/.test(w) || w.length >= 3)
-    .slice(0, 20)
-  return { codes, words }
 }
 
 const lessonWords = new WeakMap<object, Set<string>>() // 模块状态：缓存，丢了重算（按教训对象记，对象没了跟着回收）
@@ -200,8 +111,16 @@ function wordsOfLesson(l: Pick<ProjectLesson, 'title' | 'rule' | 'cause'>) {
   return s
 }
 
-/** 这条教训和这次报错有多相关：错误码对上 +5，词对上的个数够多、占比够高再按个数加分；0 表示不推 */
-export function errorScore(l: Pick<ProjectLesson, 'title' | 'rule' | 'cause'>, p: ErrorPrint): number {
+/**
+ * 这条教训和这次报错有多相关：先比存下的报错指纹（triggers.errors，录入时用真实报错算的，最准）；
+ * 再比正文：错误码对上 +5，词对上的个数够多、占比够高再按个数加分；0 表示不推
+ */
+export function errorScore(
+  l: Pick<ProjectLesson, 'title' | 'rule' | 'cause'> & Partial<Pick<ProjectLesson, 'triggers'>>,
+  p: ErrorPrint,
+): number {
+  const stored = Math.max(0, ...(l.triggers?.errors ?? []).map((e) => printScore(e, p)))
+  if (stored) return stored + 5
   const text = `${l.title}\n${l.rule}\n${l.cause}`
   const code = p.codes.some((c) => text.includes(c)) ? 5 : 0
   const ws = wordsOfLesson(l)
@@ -210,66 +129,6 @@ export function errorScore(l: Pick<ProjectLesson, 'title' | 'rule' | 'cause'>, p
   const score = code + (enough ? n : 0)
   // 错误码对上但一个词都不沾边的（同一个码在别的工具上出现）不算
   return code && n === 0 ? 0 : score >= 5 ? score : 0
-}
-
-/**
- * 搜索工具（Grep、Glob、rg、grep、find…）要搜什么：从参数里抠出字面量词。
- * 读文件类工具看 pattern / query / glob / regex 这几个参数（各家搜索工具都这么叫，不按工具名判断）；
- * 跑命令看每段命令是不是搜索命令。不是搜索返回 null
- */
-export function searchText(kind: string, input: Record<string, unknown>): string | null {
-  if (kind === 'read') {
-    const v = ['pattern', 'query', 'regex', 'glob', 'name']
-      .map((k) => input[k])
-      .filter((x): x is string => typeof x === 'string' && !!x.trim())
-    return v.length ? v.join(' ') : null
-  }
-  if (kind !== 'shell') return null
-  const out: string[] = []
-  for (const seg of commandSegments(String(input.command ?? ''))) {
-    const ws = commandWords(seg)
-    const p = ws[0]
-    if (!p) continue
-    const sub =
-      p === 'git' && ws[1] === 'grep' ? 2 : /^(rg|grep|egrep|ag|ack|findstr|select-string|sls|fd)$/.test(p) ? 1 : 0
-    if (sub) {
-      // 第一个不是选项的参数是要搜的东西（-e 后面跟的也是）；带值的选项（--type ts、-g '*.h'）跳过它的值
-      for (let i = sub; i < ws.length; i++) {
-        if (ws[i] === '-e' || ws[i] === '--regexp' || ws[i] === '-Pattern') {
-          if (ws[i + 1]) out.push(ws[i + 1])
-          break
-        }
-        if (VALUE_OPTS.has(ws[i])) {
-          i++
-          continue
-        }
-        if (!ws[i].startsWith('-')) {
-          out.push(ws[i])
-          break
-        }
-      }
-    } else if (p === 'find' || p === 'get-childitem' || p === 'gci') {
-      for (let i = 1; i < ws.length - 1; i++) if (/^-(i?name|i?path|filter|include)$/i.test(ws[i])) out.push(ws[i + 1])
-    }
-  }
-  return out.length ? out.join(' ') : null
-}
-
-/** 搜索命令里后面跟一个值的选项：值不是要搜的东西 */
-// 模块状态：常量，加载后不改
-const VALUE_OPTS = new Set(
-  '-t --type -T --type-not -g --glob --iglob -A -B -C --context --after-context --before-context -m --max-count --max-depth -d -j --threads -M --max-columns --include --exclude --exclude-dir -f --file -Path -Include'.split(
-    ' ',
-  ),
-)
-
-/** 正则、glob 里的字面量：去掉转义类和量词（DT_\w+Row → DT Row），再拆成检索词 */
-export function searchWords(q: string): string[] {
-  const lit = q
-    .replace(/\\[wdsbWDSB]/g, ' ')
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/[.*+?^$(){}|\\]/g, ' ')
-  return wordsOf(lit)
 }
 
 /** 搜索词和经验的关键词、标题对不对得上：关键词整词相同直接算；否则要至少两个词命中 */
@@ -316,8 +175,8 @@ export function insideAnchor(e: ProjectExperience, searchPath: string): boolean 
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
-export const lessonLine = (l: Pick<ProjectLesson, 'id' | 'title' | 'rule'>) =>
-  `- [教训 ${l.id}] ${clip(l.title, 80)}${l.rule ? `：${clip(l.rule.replace(/\s+/g, ' '), 160)}` : ''}`
+export const lessonLine = (l: Pick<ProjectLesson, 'id' | 'title' | 'rule'> & Partial<Pick<ProjectLesson, 'wrong'>>) =>
+  `- [教训 ${l.id}] ${clip(l.title, 80)}${l.rule ? `：${clip(l.rule.replace(/\s+/g, ' '), 160)}` : ''}${l.wrong ? `（别这样：${clip(l.wrong.replace(/\s+/g, ' '), 80)}）` : ''}`
 
 export const experienceLine = (e: Pick<ProjectExperience, 'id' | 'title' | 'body' | 'paths'>) =>
   `- [经验 ${e.id}] ${clip(e.title, 60)}${e.body ? `：${clip(e.body.replace(/\s+/g, ' '), 140)}` : ''}${e.paths.length ? `（位置：${e.paths.slice(0, 4).join('、')}）` : ''}`
@@ -344,21 +203,46 @@ export function pushText(hits: PushHit[], why: PushHit['why'], subject: string):
     error: '【面板】以前遇到过类似的报错，当时记下的做法（对不上就照常排查）：',
     search: '【面板】项目经验里记过这个位置，先去这里看，对不上再照常搜：',
   }[why]
-  return `${head}\n${hits.map((h) => h.line).join('\n')}${why === 'error' ? '' : '\n要看全文用 project_lessons / project_experience 带 id 查。'}`
+  return `${head}\n${hits.map((h) => h.line).join('\n')}${why === 'error' ? '' : '\n要看全文用 knowledge_lookup 带 id 查。'}`
+}
+
+/**
+ * 会推送的教训（设计稿 4.7）：停用的、只在查询里出现的（hint）、已经提炼进 AGENTS.md 或钩子的（promoted）不推；
+ * 置顶的排前面，锚点核对不过的（stale）排后面。旧数据没有这两个字段时按 warn / active
+ */
+export function pushable<T extends Partial<Pick<ProjectLesson, 'severity' | 'status'>> & { enabled: boolean }>(
+  lessons: T[],
+): T[] {
+  const rank = (l: T) => (l.status === 'pinned' ? 0 : l.status === 'stale' ? 2 : 1)
+  return lessons
+    .filter((l) => l.enabled && l.severity !== 'hint' && l.status !== 'promoted')
+    .map((l, i) => ({ l, i }))
+    .sort((a, b) => rank(a.l) - rank(b.l) || a.i - b.i)
+    .map((x) => x.l)
+}
+
+/** 升级成拦截（block）的教训里，这条命令对得上的第一条：跑之前直接拒绝，给出对的做法 */
+export function blockingLesson(lessons: ProjectLesson[], command: string): ProjectLesson | undefined {
+  return lessons.find((l) => l.enabled && l.severity === 'block' && l.status !== 'promoted' && commandHits(l, command))
+}
+
+/** 拦截时给模型的说明：错在哪、该怎么做；不是真要这么跑的，让用户在知识页把这条降回提醒 */
+export function blockText(l: Pick<ProjectLesson, 'id' | 'title' | 'rule' | 'wrong'>, command: string): string {
+  return `【面板】这条命令（${clip(command.replace(/\s+/g, ' '), 80)}）被项目教训拦下了（用户把它升级成了拦截）：${l.title}${l.wrong ? `\n错的做法：${clip(l.wrong, 200)}` : ''}${l.rule ? `\n对的做法：${clip(l.rule.replace(/\s+/g, ' '), 300)}` : ''}\n照对的做法改了再跑；确实要这么跑，停下来说明原因，请用户在项目设置的教训里把 ${l.id} 降回提醒。`
 }
 
 /** 跑命令之前：命令对得上教训里写的命令 */
 export function commandLessons(lessons: ProjectLesson[], command: string): PushHit[] {
-  return lessons
-    .filter((l) => l.enabled && commandHits(l, command))
+  return pushable(lessons)
+    .filter((l) => commandHits(l, command))
     .map((l) => ({ kind: 'lesson' as const, id: l.id, title: l.title, why: 'command' as const, line: lessonLine(l) }))
 }
 
 /** 改文件之前：路径对得上教训的 paths（不写 paths 的「全局适用」条目开头已经给过，不在这里推） */
 export function pathLessons(lessons: ProjectLesson[], rel: string): PushHit[] {
   if (!rel) return []
-  return lessons
-    .filter((l) => l.enabled && l.paths.length && l.paths.some((g) => globToRegExp(g).test(rel)))
+  return pushable(lessons)
+    .filter((l) => l.paths.length && l.paths.some((g) => globToRegExp(g).test(rel)))
     .map((l) => ({ kind: 'lesson' as const, id: l.id, title: l.title, why: 'path' as const, line: lessonLine(l) }))
 }
 
@@ -366,9 +250,8 @@ export function pathLessons(lessons: ProjectLesson[], rel: string): PushHit[] {
 export function errorLessons(lessons: ProjectLesson[], output: string): PushHit[] {
   const p = errorPrint(output)
   if (!p.words.length && !p.codes.length) return []
-  return lessons
-    .filter((l) => l.enabled)
-    .map((l) => ({ l, s: errorScore(l, p) }))
+  return pushable(lessons)
+    .map((l) => ({ l, s: errorScore(l, p) * (l.status === 'stale' ? 0.3 : 1) }))
     .filter((x) => x.s > 0)
     .sort((a, b) => b.s - a.s)
     .map(({ l }) => ({ kind: 'lesson' as const, id: l.id, title: l.title, why: 'error' as const, line: lessonLine(l) }))

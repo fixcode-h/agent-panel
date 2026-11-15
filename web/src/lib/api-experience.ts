@@ -1,5 +1,7 @@
 import type { ExperienceEdit, ExperienceListView, ExperienceReviewView, ProjectExperience } from '@shared/experience'
 import type { KnowledgeHitsView } from '@shared/knowledge-hits'
+import type { DistillRequest, DistillResult, KnowledgeStateView } from '@shared/knowledge/candidate'
+import type { Project } from '@shared/schema'
 import { json, request } from './api'
 
 /**
@@ -21,4 +23,26 @@ export const experienceApi = {
   review: (id: string) => request<ExperienceReviewView>(`/projects/${id}/experience/review`, json('POST', {})),
   /** 经验和教训的命中记录、路径失效的条目（设置页按「很久没用上」排序、标过期） */
   hits: (id: string) => request<KnowledgeHitsView>(`/projects/${id}/knowledge-hits`),
+}
+
+/** 收下 / 忽略一条候选的回执：收下的是教训时带上写好的项目（界面换掉项目列表里那一份） */
+export interface CandidateResult {
+  ok: boolean
+  info: string
+  project?: Project
+}
+
+/**
+ * 知识候选、没配上的查询、对教训的建议和提炼（shared/knowledge/candidate.ts 的契约）。
+ * 打开候选页、提炼页时拉一次，操作后再拉，不轮询
+ */
+export const knowledgeApi = {
+  state: (id: string) => request<KnowledgeStateView>(`/projects/${id}/knowledge`),
+  candidate: (id: string, cid: string, action: 'accept' | 'dismiss') =>
+    request<CandidateResult>(
+      `/projects/${id}/knowledge/candidates/${encodeURIComponent(cid)}`,
+      json('POST', { action }),
+    ),
+  distill: (id: string, req: DistillRequest) =>
+    request<DistillResult>(`/projects/${id}/knowledge/distill`, json('POST', req)),
 }

@@ -4,16 +4,15 @@ import { relPath } from '../experience-gate.ts'
 import {
   budgetHits,
   commandLessons,
-  commandWords,
   errorLessons,
-  errorPrint,
   pathLessons,
   pushText,
   searchExperience,
-  searchText,
   type PushHit,
 } from './push.ts'
-import { commandSegments } from '../hooks/defs.ts'
+import { searchText } from './match/normalize.ts'
+import { errorPrint, printKey } from './match/fingerprint.ts'
+import { purposeOf } from './capture.ts'
 
 /**
  * 回放评测（设计稿 6.4，一期 ①）：拿已有对话里的工具调用，按时间顺序重放面板钩子的推送规则，
@@ -79,19 +78,6 @@ export function toolFacts(t: ToolUse, roots: string[]) {
 }
 
 const failedOf = (t: ToolUse) => !!t.failed || (t.exitCode !== undefined && t.exitCode !== 0)
-/** 报错特征的键：错误码 + 前几个词，同一个报错在不同对话里对得上 */
-const printKey = (output: string) => {
-  const p = errorPrint(output)
-  return [...p.codes, ...p.words.slice(0, 6)].join(' ')
-}
-/** 命令的目的：程序名 + 子命令（第一个不是选项、不像文件的参数），`npx tsc -p a.json` 和 `npx tsc` 是同一件事 */
-const purposeOf = (command: string) => {
-  const seg = commandSegments(command).find((s) => commandWords(s).length) ?? ''
-  const [p, ...rest] = commandWords(seg)
-  const sub = rest.find((w) => !w.startsWith('-'))
-  return [p, sub && !/[./\\]/.test(sub) ? sub : ''].filter(Boolean).join(' ')
-}
-
 export function replay(
   convs: ReplayConversation[],
   lessons: ProjectLesson[],
@@ -178,7 +164,7 @@ export function replay(
       if (!failed) continue
       s.failures++
       if (t.output) {
-        const key = printKey(t.output)
+        const key = printKey(errorPrint(t.output))
         if (key) {
           const p = prints.get(key) ?? {
             convs: new Set<string>(),

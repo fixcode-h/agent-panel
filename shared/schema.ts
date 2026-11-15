@@ -808,6 +808,32 @@ export const LessonRevision = z.object({
 })
 export type LessonRevision = z.infer<typeof LessonRevision>
 
+/**
+ * 报错指纹（shared/knowledge/fingerprint.ts 算出来）：错误码 + 抹掉路径数字后的词。
+ * 记教训时面板按这次真实的报错算好存进去（设计稿 4.4.2），Agent 不用、也不该自己编
+ */
+export const ErrorPrint = z.object({
+  codes: z.array(z.string().max(40)).max(10).catch([]).default([]),
+  words: z.array(z.string().max(40)).max(20).catch([]).default([]),
+  /** 报错原文的头一行（截短），界面上给人看 */
+  sample: z.string().max(200).catch('').default(''),
+})
+export type ErrorPrint = z.infer<typeof ErrorPrint>
+
+/**
+ * 教训的触发键（设计稿 4.3）：面板靠它在运行时机械匹配，不调模型。路径仍写在 ProjectLesson.paths；
+ * 正文里用反引号写的命令也会被认成命令触发键（shared/knowledge/push.ts 的 lessonCommands），这里存的是明确写下的
+ */
+export const LessonTriggers = z.object({
+  /** 命令前缀：「npm run test:e2e」「UnrealBuildTool」，按段比开头几个非选项词 */
+  commands: z.array(z.string().trim().min(1).max(200)).max(10).catch([]).default([]),
+  /** 报错指纹：这些报错再出现时推送 */
+  errors: z.array(ErrorPrint).max(5).catch([]).default([]),
+  /** 意图词：新会话开头按用户需求原文匹配（「新加 CLI」「接入 CLI」） */
+  intents: z.array(z.string().trim().min(1).max(30)).max(8).catch([]).default([]),
+})
+export type LessonTriggers = z.infer<typeof LessonTriggers>
+
 export const ProjectLesson = z.object({
   id: z.string().min(1),
   /** 一句话的规则：该怎么做，不是发生了什么 */
@@ -830,8 +856,29 @@ export const ProjectLesson = z.object({
   updatedAt: z.string().default(''),
   /** 改写前的版本（新的在前，最多留几条）：用户能看到它为什么变了，改坏了也能照着改回去 */
   history: z.array(LessonRevision).max(5).catch([]).default([]),
+  /** 错的做法：下次看到这个要停下（设计稿 4.3 的 wrong；对的做法仍写在 rule） */
+  wrong: z.string().trim().max(300).catch('').default(''),
+  /** 触发键：命令、报错指纹、意图词；旧数据没有时为空，照样按 paths 和正文里的命令匹配 */
+  triggers: LessonTriggers.prefault({}),
+  /**
+   * 推送的强度：hint 只在查询里出现、warn 按触发推送（默认）、block 跑对得上的命令前直接拒绝并给出对的做法。
+   * block 只能由用户在界面上升级（推了还是犯的教训会提示升级，设计稿 4.7）
+   */
+  severity: z.enum(['hint', 'warn', 'block']).catch('warn').default('warn'),
+  /**
+   * 状态：active 生效；pinned 置顶（排序加权，开头一定带）；promoted 已经提炼进 AGENTS.md 或项目钩子，不再推送但仍可查；
+   * stale 锚点核对不过，推送降权。停用仍用 enabled
+   */
+  status: z.enum(['active', 'pinned', 'promoted', 'stale']).catch('active').default('active'),
 })
 export type ProjectLesson = z.infer<typeof ProjectLesson>
+/** 二期加的字段的默认值：手写的教训对象（界面新建、演示数据）展开它，不用逐个写 */
+export const lessonExtras = (): Pick<ProjectLesson, 'wrong' | 'triggers' | 'severity' | 'status'> => ({
+  wrong: '',
+  triggers: { commands: [], errors: [], intents: [] },
+  severity: 'warn',
+  status: 'active',
+})
 
 /**
  * 全局教训：从各个项目的教训里提取出来、换个项目也适用的规则，所有项目的对话都会带上。

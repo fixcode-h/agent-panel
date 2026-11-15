@@ -94,6 +94,7 @@ export function capabilityTools(oc: OrchCtx) {
               host.lessons!.hit,
             ),
           record: helper ? undefined : (input) => host.lessons!.record(input),
+          propose: helper ? host.lessons.propose : undefined,
         }
       : undefined,
     experience: host.experience
@@ -102,6 +103,7 @@ export function capabilityTools(oc: OrchCtx) {
             findExperience(await host.experience!.list(), query, files, host.experience!.hit),
           list: () => host.experience!.list(),
           record: helper ? undefined : (input) => host.experience!.record(input),
+          miss: host.experience.miss,
         }
       : undefined,
     // 有项目的普通对话发 /bug 也就地标成 Bug（shared/bug/in-place.ts），同样有这几个工具

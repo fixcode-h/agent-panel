@@ -4,14 +4,16 @@ import { createExperienceLearner } from '../experience/learn.ts'
 import type { TasksScope } from './scope.ts'
 
 /**
- * 把经验学习（server/experience/learn.ts）接到任务存储上：取整份任务、找子对话、判「整个对话完成」、在对话里写一行。
- * 「完成」只认 live.state（ADR 0005 的唯一判定，服务端 liveOf 带上后台命令和子对话数才算得全）
+ * 把经验学习（server/experience/learn.ts）接到任务存储上：取整份任务、找子对话、判「这一轮结束」、在对话里写一行。
+ * 「一轮结束」只看这个对话还在不在跑（ADR 0066 改的：以前要整个对话树完成）
  */
 export function createTaskLearner(sc: TasksScope) {
   const learner = createExperienceLearner({
     getTask: async (id) => sc.live.get(id)?.task ?? (await sc.store.get(id).catch(() => null)),
     listTasks: () => sc.store.list(),
-    isDone: async (tk) => !sc.live.get(tk.id)?.task.working && (await sc.liveOf(tk)).state === 'done',
+    // 一轮结束就学（ADR 0066 / 设计稿 Q3）：不再等整棵对话树（子对话、后台命令）都完成——
+    // 等全树完成时，长对话里前面绕的路早就过了用得上的时候；只看上次学过之后的新调用，学多次不会重复
+    isDone: async (tk) => !sc.live.get(tk.id)?.task.working,
     projects: sc.deps.projects,
     agents: sc.deps.agents,
     // 学到什么、失败的原因都写进对话：学到的画成按条展示的卡片，失败画成可点开的警告行（原始报错在里面），不只留在日志

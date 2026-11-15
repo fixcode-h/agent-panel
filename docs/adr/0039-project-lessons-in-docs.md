@@ -1,6 +1,6 @@
 # ADR 0039：项目教训存进项目文档目录的 lessons.md
 
-状态：已接受 · 2026-11-02（2026-11-05 被 ADR 0052 修订：教训改成 `lessons/<id>.md` 一条一个文件，P4 放各分支共用的文档根）
+状态：已接受 · 2026-11-02（2026-11-05 被 ADR 0052 修订：教训改成 `lessons/<id>.md` 一条一个文件，P4 放各分支共用的文档根；2026-11-15 被 ADR 0066 修订：开头只带少量，其余按命令、文件、报错在执行中推送，教训加触发键等字段）
 
 - 影响范围：`server/projects/lessons.ts`（新增）、`server/lessons.ts`、`server/index.ts`、`server/tasks/run.ts`、`server/assist.ts`、`shared/locales/en/server.ts`
 - 取代：无

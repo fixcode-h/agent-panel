@@ -19,6 +19,8 @@ import { CLAIM_TOOLS, MESSAGE_PARENT, SUBMIT_MERGE, SUGGEST_NEXT_STEP } from './
 import { CONVERSATION_TOOLS, FINISH_CHILD } from './conversations.ts'
 import { BEGIN_EDIT, INLINE_EDIT, USE_CAPABILITY } from './edit.ts'
 import { EXPERIENCE_TOOLS, LESSON_TOOLS } from './knowledge.ts'
+import { KNOWLEDGE_LOOKUP } from './knowledge-lookup.ts'
+import { KNOWLEDGE_RECORD } from './knowledge-record.ts'
 import { PLAN_TOOLS, START_PLAN } from './plan.ts'
 import { SPAWN_TOOLS } from './spawn.ts'
 import { GET_STATUS, MESSAGES, SHARED_STATE } from './team.ts'
@@ -49,6 +51,9 @@ export const PANEL_TOOLS: readonly PanelTool[] = [
   USER_ACTION,
   ...DIAGNOSIS_TOOLS,
   MEMORY,
+  KNOWLEDGE_LOOKUP,
+  KNOWLEDGE_RECORD,
+  // 旧的四个名字：收进 more_tools，保留一个版本（ADR 0066）
   ...LESSON_TOOLS,
   ...EXPERIENCE_TOOLS,
   ...SHARED_STATE,

@@ -485,7 +485,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             />
           </div>
         </Specimen>
-        <Specimen name="KnowledgeTags" tune={['chip']}>
+        <Specimen name="KnowledgeTags" tune={['row']}>
           <KnowledgeTagsSpecimen />
         </Specimen>
         <Specimen name="ReportCompare" tune={['statusPill']}>

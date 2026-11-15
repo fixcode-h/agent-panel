@@ -1,4 +1,6 @@
 import type { GlobalLesson, ProjectLesson } from './schema.ts'
+// 循环引用（push.ts 也用这里的 globToRegExp）：两边都只在调用时用，模块加载时不取值，没问题
+import { lessonCommands } from './knowledge/push.ts'
 
 /**
  * 项目教训怎么交给 Agent：条目会越积越多，全文塞进每次的提示太费 token。
@@ -244,8 +246,13 @@ export function lessonsPrompt(
   tools: boolean,
   globals: GlobalLesson[] = [],
   canRecord = tools,
+  /** 用户这次的需求原文：教训的意图词（triggers.intents）对得上的开头就给全文（ADR 0066） */
+  request = '',
 ) {
-  const on = lessons.filter((l) => l.enabled)
+  // 已经提炼进 AGENTS.md / 钩子的（promoted）、只在查询里出现的（hint）开头不带；置顶的排前面
+  const on = lessons
+    .filter((l) => l.enabled && l.status !== 'promoted' && l.severity !== 'hint')
+    .sort((a, b) => Number(b.status === 'pinned') - Number(a.status === 'pinned'))
   const gs = globals.filter((l) => l.enabled)
   if (!on.length && !gs.length) return canRecord ? `## 项目教训\n${RECORD_HINT}` : ''
   if (!tools) return untooledPrompt(on, gs)
@@ -261,7 +268,7 @@ export function lessonsPrompt(
   // 「所有改动都适用」的条目给全文（每条截到 CAP_ONE），按文件的只给标题
   const short = (l: ProjectLesson | GlobalLesson, withId: boolean) => {
     const x = lessonText(l, withId)
-    return x.length > CAP_ONE ? `${x.slice(0, CAP_ONE - 1)}…（全文用 project_lessons 带 id 查）` : x
+    return x.length > CAP_ONE ? `${x.slice(0, CAP_ONE - 1)}…（全文用 knowledge_lookup 带 id 查）` : x
   }
   const takeFull = <T extends ProjectLesson | GlobalLesson>(pool: T[], budget: number, withId: boolean) => {
     const out: T[] = []
@@ -274,8 +281,21 @@ export function lessonsPrompt(
     }
     return out
   }
+  // 开头给全文的：意图词对上这次需求的（最多 3 条），和没有任何触发键的（路径、命令、报错都没写，执行中推不到它）
+  const req = request.toLowerCase()
+  const intent = req ? on.filter((l) => l.triggers.intents.some((w) => req.includes(w.toLowerCase()))).slice(0, 3) : []
   const full = takeFull(
-    on.filter((l) => !l.paths.length),
+    [
+      ...intent,
+      ...on.filter(
+        (l) =>
+          !intent.includes(l) &&
+          !l.paths.length &&
+          !l.triggers.commands.length &&
+          !l.triggers.errors.length &&
+          (l.status === 'pinned' || !lessonCommands(l).length),
+      ),
+    ],
     CAP_FULL,
     true,
   )
@@ -301,7 +321,7 @@ export function lessonsPrompt(
     }
     if (ls.length > lines.length)
       lines.push(
-        `- 另有 ${ls.length - lines.length} 条（改到相关文件、跑相关命令时面板会推送，也可以用 project_lessons 查）`,
+        `- 另有 ${ls.length - lines.length} 条（改到相关文件、跑相关命令时面板会推送，也可以用 knowledge_lookup 查）`,
       )
     return lines.join('\n')
   }
@@ -311,7 +331,7 @@ export function lessonsPrompt(
     ...head,
     on.length ? '这个项目的教训：' : '',
     full.map((l) => short(l, true)).join('\n\n'),
-    rest.length ? `下面这些按文件生效，只列标题：\n${fit(rest, true)}` : '',
+    rest.length ? `下面这些按文件、命令、报错生效，只列标题：\n${fit(rest, true)}` : '',
     gs.length ? '### 全局教训（所有项目共用，只有用户能改）' : '',
     gfull.map((l) => short(l, false)).join('\n\n'),
     grest.length ? `只列标题：\n${fit(grest, false)}` : '',
@@ -346,9 +366,9 @@ function untooledPrompt(on: ProjectLesson[], gs: GlobalLesson[]) {
  * 记教训的说明：把要填的参数直接写出来（设计稿一期 ⑥），record_lesson 收在 more_tools 里时也不用先查一次用法。
  * 发给 Agent 的，不翻译
  */
-const RECORD_HINT = `### 记教训（record_lesson）
-用户纠正了你的做法、你的办法被证明不对换了做法才成（命令报错后改了参数、换了命令才过）、或你在修之前改出来的问题时记。找位置、叫法、命令这类「找路」的心得是经验，不记成教训；一次性的经过也不记。写成换个场景也能照做的规则，具体经过写进 cause，把用到的命令用反引号写出来（面板按它在下次跑同样的命令前推送）；同类已有就带 id 改写。
-直接调用，参数照这个写（不在工具列表里时经 more_tools 调：name 写 record_lesson，arguments 照写，不用先查用法）：{"title":"一句话规则：该怎么做","rule":"具体做法和别做的事，命令用反引号","cause":"这次哪里出错、报了什么","paths":["它管的文件 glob，全局适用不写"],"tags":["已有标签"]}
+const RECORD_HINT = `### 记教训（knowledge_record）
+用户纠正了你的做法、你的办法被证明不对换了做法才成（命令报错后改了参数、换了命令才过）、或你在修之前改出来的问题时记。找位置、叫法、命令这类「找路」的心得是经验（kind 写 experience），不记成教训；一次性的经过也不记。写成换个场景也能照做的规则，具体经过写进 cause；写清它管的文件（paths）或命令（commands），面板据此在下次跑同样的命令、改同样的文件前推送；同类已有就带 id 改写。面板当场提示里给了 episode 编号的，带上它，命令和报错不用再写。
+直接调用，参数照这个写（不在工具列表里时经 more_tools 调：name 写 knowledge_record，arguments 照写，不用先查用法）：{"kind":"lesson","title":"一句话规则：该怎么做","rule":"具体做法和别做的事，命令用反引号","wrong":"错的做法","cause":"这次哪里出错、报了什么","paths":["它管的文件 glob"],"commands":["它管的命令，如 npm run test:e2e"],"tags":["已有标签"]}；所有改动都适用、没有文件和命令可写的加 "global": true。
 用户这次的要求和某条项目教训冲突时：有两全的做法就照做，并带 id 改写那条（change 写为什么改）；没有就先用提问工具让用户选。全局教训你改不了，需要时记一条项目教训写明这个项目的例外。`
 export const newLessonId = () => `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
@@ -359,7 +379,8 @@ export const newLessonId = () => `l${Date.now().toString(36)}${Math.random().toS
 export function upsertLesson(
   lessons: ProjectLesson[],
   l: ProjectLesson,
-  opts: { replaces?: string; why?: string } = {},
+  /** keepFlags: false 时用 l 的严重度和状态（用户在界面上改的）；默认沿用原来的 */
+  opts: { replaces?: string; why?: string; keepFlags?: boolean } = {},
 ): { list: ProjectLesson[]; added: boolean; full?: boolean; missing?: boolean } {
   const key = (s: string) => s.replace(/\s+/g, '').toLowerCase()
   const same = opts.replaces
@@ -379,6 +400,11 @@ export function upsertLesson(
       cause: l.cause || same.cause,
       paths: l.paths.length ? l.paths : same.paths,
       tags: l.tags.length ? l.tags : same.tags,
+      wrong: l.wrong || same.wrong,
+      // 触发键取并集：Agent 改写规则时常不带触发键，旧的不能丢；拦截档和状态只由用户在界面上改，记录时沿用原来的
+      triggers: mergeTriggers(same.triggers, l.triggers),
+      severity: opts.keepFlags === false ? l.severity : same.severity,
+      status: opts.keepFlags === false ? l.status : same.status,
       id: same.id,
       createdAt: same.createdAt,
       updatedAt: now,
@@ -388,6 +414,19 @@ export function upsertLesson(
   }
   if (lessons.length >= MAX_LESSONS) return { list: lessons, added: false, full: true }
   return { list: [...lessons, l], added: true }
+}
+
+/** 两份触发键取并集（报错指纹按错误码 + 词去重），各自不超过上限 */
+function mergeTriggers(a: ProjectLesson['triggers'], b: ProjectLesson['triggers']): ProjectLesson['triggers'] {
+  const uniq = <T>(xs: T[], key: (x: T) => string, max: number) => {
+    const seen = new Set<string>()
+    return xs.filter((x) => !seen.has(key(x)) && !!seen.add(key(x))).slice(0, max)
+  }
+  return {
+    commands: uniq([...b.commands, ...a.commands], (x) => x, 10),
+    errors: uniq([...b.errors, ...a.errors], (e) => [...e.codes, ...e.words].join(' '), 5),
+    intents: uniq([...b.intents, ...a.intents], (x) => x, 8),
+  }
 }
 
 export const newGlobalLessonId = () => `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`

@@ -9,17 +9,14 @@ import {
   PUSH_RULES,
   budgetHits,
   commandLessons,
-  commandWords,
   errorLessons,
-  errorPrint,
   lessonCommands,
   pathLessons,
   pushText,
   searchExperience,
-  searchText,
-  searchWords,
-  wordsOf,
 } from './push.ts'
+import { commandWords, searchText, searchWords, wordsOf } from './match/normalize.ts'
+import { errorPrint } from './match/fingerprint.ts'
 
 const lesson = (o: Partial<ProjectLesson>) =>
   ProjectLesson.parse({ id: 'l1', title: 't', rule: '', createdAt: '', ...o })

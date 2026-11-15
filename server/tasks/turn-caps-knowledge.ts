@@ -7,6 +7,7 @@ import { loadProjectLessons } from '../projects/lessons.ts'
 import { loadProjectExperience } from '../projects/experience.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { recordExperience } from '../experience/learn.ts'
+import { lessonFromAgent, noteMiss, proposeKnowledge } from '../knowledge/agent-record.ts'
 
 import type { TurnCapsCtx } from './turn-caps-conv.ts'
 
@@ -22,10 +23,17 @@ export async function knowledgeCaps(c: TurnCapsCtx) {
             return p ? (await loadProjectLessons(p, agents)).lessons : []
           },
           globals: readGlobalLessons,
-          record: async (input) =>
-            sc.deps.recordLesson
-              ? sc.deps.recordLesson(task.projectId, { ...input, source: 'agent', taskId: task.id })
-              : { ok: false, info: '这里记不了项目教训' },
+          record: async (input) => {
+            const rec = sc.deps.recordLesson
+            if (!rec) return { ok: false, info: '这里记不了项目教训' }
+            const p = await sc.deps.projects.get(task.projectId)
+            const current = p ? (await loadProjectLessons(p, agents)).lessons : []
+            // knowledge_record 的入库校验、episode 补全在 server/knowledge/agent-record.ts；旧的 record_lesson 不校验
+            return lessonFromAgent(task.projectId, input, current, (draft) =>
+              rec(task.projectId, { ...draft, source: 'agent', taskId: task.id }),
+            )
+          },
+          propose: (input) => proposeKnowledge(task.projectId, input, rootId),
           hit: (ids) => void recordKnowledgeHits(task.projectId, 'lessons', ids, rootId),
         }
       : undefined,
@@ -43,6 +51,7 @@ export async function knowledgeCaps(c: TurnCapsCtx) {
               return recordExperience(p, agents, input, task.parentTaskId || task.id)
             },
             hit: (ids) => void recordKnowledgeHits(task.projectId, 'experience', ids, rootId),
+            miss: (query) => noteMiss(task.projectId, query, rootId),
           }
         : undefined,
     // Chat 页的对话：「关于我」和跨对话记忆进提示词，remember 工具往里记（server/chat-memory.ts）
