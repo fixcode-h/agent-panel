@@ -273,8 +273,8 @@ export const EN_FLOW: Record<string, string> = {
   '节点没有单独指定角色时用它；节点按连线并发执行，不再由它调度':
     'Used by nodes that do not pick a role; nodes run concurrently along the connections and it no longer dispatches.',
   选择默认执行角色: 'Select default role',
-  '在流程图的节点上选；节点执行中还可以自己再派子角色并发处理':
-    'Chosen on the nodes in the flow chart; a running node can also start more sub-roles to work in parallel',
+  '在流程图的节点上选；节点执行中还可以自己再派子任务并发处理':
+    'Chosen on the nodes in the flow chart; a running node can also start subtasks to work in parallel',
   '节点还都由默认执行角色自己做。': 'All nodes are still done by the default role.',
   节点的角色都还在: 'Node roles all exist',
   '这些节点的角色已经删除：{names}': 'The roles of these nodes were deleted: {names}',

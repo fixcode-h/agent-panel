@@ -72,7 +72,7 @@ export function TeamEditor({
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted">
           {t('子角色')}{' '}
-          <span className="text-subtle">· {t('在流程图的节点上选；节点执行中还可以自己再派子角色并发处理')}</span>
+          <span className="text-subtle">· {t('在流程图的节点上选；节点执行中还可以自己再派子任务并发处理')}</span>
         </span>
         {subs.length ? (
           <ul className="flex flex-wrap gap-2">

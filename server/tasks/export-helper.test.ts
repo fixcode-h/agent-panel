@@ -77,7 +77,7 @@ const task = Task.parse({
       id: 's1',
       role: 'system',
       step: '',
-      text: '「改造某个功能」派出 2 个子角色：查组件、补用例',
+      text: '「改造某个功能」派出 2 个子任务：查组件、补用例',
       spawned: ['@chat/sub/h1', '@chat/sub/h2'],
       at,
     },

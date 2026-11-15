@@ -127,6 +127,11 @@ export const RunSkills = z.object({
   subdir: z.string().default(''),
   args: z.array(z.string()).default([]),
   rpc: z.object({ method: z.string(), params: z.unknown() }).optional(),
+  /**
+   * 这个 CLI 不读面板自带技能装的 ~/.agents/skills（Claude Code 只读 ~/.claude/skills）：
+   * 那里装着的全局技能也每轮一起放进技能目录，不然面板装的技能它一个也看不到
+   */
+  shared: z.boolean().default(false),
 })
 export type RunSkills = z.infer<typeof RunSkills>
 

@@ -1640,7 +1640,7 @@ function spawn(oc: OrchCtx, ...[tasks, step, opts]: Parameters<Orchestra['spawn'
             title: self.title,
             list: made.map((m) => m.step.title).join(t('、')),
           })
-        : t('「{title}」派出 {n} 个子角色：{list}', {
+        : t('「{title}」派出 {n} 个子任务：{list}', {
             title: self.title,
             n: made.length,
             list: made.map((m) => m.step.title).join(t('、')),

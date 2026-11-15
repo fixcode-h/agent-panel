@@ -454,7 +454,7 @@ export const SLOT_LABEL: Record<string, string> = {
   end: t('结束'),
   body: t('执行'),
   step: t('步骤'),
-  sub: t('子角色'),
+  sub: t('子任务'),
   call: t('委派'),
 }
 

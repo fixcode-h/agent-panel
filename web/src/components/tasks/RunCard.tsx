@@ -193,7 +193,7 @@ export function RunFlow({ task, run }: { task: Task; run: number }) {
   const scroller = useStickToBottom(run, 80)
   return (
     <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-      {/* 节点派出的子角色画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
+      {/* 节点派出的子任务画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
       <RouteProvider task={task}>
         <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
           {steps.map((s) => {

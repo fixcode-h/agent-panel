@@ -105,7 +105,7 @@ export const EN_SHARED: Record<string, string> = {
     'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '「{title}」没有用 submit_verdict 交结论，不知道该走哪条分支':
     '"{title}" did not submit a verdict with submit_verdict, so the branch to take is unknown',
-  '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
+  '「{title}」派出 {n} 个子任务：{list}': '"{title}" started {n} subtasks: {list}',
   '子任务没能执行：{error}': 'Subtask could not run: {error}',
   '子任务补问了一次还是没有用 submit_result 交结果，做没做完不确定':
     'The subtask was asked once more but still did not submit a result with submit_result; whether it finished is unknown',

@@ -279,7 +279,7 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   // （工具表另有一处 deepEqual 断言含 read_state / write_state；节点内 read_state 能读出 a 写的值）
   const withState = task.runs[0]?.state.interface
   assert.ok(withState && withState.version >= 1, '节点 a 写的共享状态留在这次运行里')
-  assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子角色/.test(m.text)))
+  assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子任务/.test(m.text)))
 })
 
 test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失效', async () => {

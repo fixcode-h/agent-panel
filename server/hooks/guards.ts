@@ -15,7 +15,7 @@ import { inPlaceBugClosed } from '../../shared/bug/in-place.ts'
 import { reopenedAfterCancel, reopenInfo } from '../../shared/bug/reopen.ts'
 import { chatDeny } from '../../shared/bug/chat.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
-import { DATA_DIR } from '../store.ts'
+import { DATA_DIR, TASK_FILES_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
 import { scratchPath } from '../exec/file-events.ts'
 
@@ -128,6 +128,17 @@ export function dangerDeny(c: GuardCtx, facts: HookFacts): string {
 
 const MAIN_BRANCHES = /^(main|master|trunk)$/
 
+/**
+ * 数据目录里属于这个对话自己的地方：独立分支的工作目录（worktrees/ 在数据目录里）、对话目录（tasks/files/<id>，
+ * 提示词让 Agent 把临时脚本、测试数据放在它的 tmp/、tests/ 下）。删它们里面的东西是在收拾自己的临时文件，
+ * 以前一律按「删面板数据目录」拦，Agent 清理自己建的临时目录、独立分支里删 dist 都被挡住。
+ * 只放行目录里面的路径，目录本身和它的上级照样拦
+ */
+const ownScratch = (c: GuardCtx, p: string) =>
+  [c.cwd, c.project?.path, path.join(TASK_FILES_DIR, c.task.id)].some(
+    (d) => !!d && inside(d, p) && path.resolve(d) !== path.resolve(p),
+  )
+
 function dangerOf(c: GuardCtx, s: string): string {
   const extra = c.list('extra').find((x) => x && s.startsWith(x))
   if (extra) return `在设置里列为危险命令（${extra}）`
@@ -145,7 +156,7 @@ function dangerOf(c: GuardCtx, s: string): string {
       const p = path.resolve(c.cwd, a.replace(/^~(?=\/|$)/, home))
       if (p === path.parse(p).root || p === home) return '会递归删除根目录或家目录'
       if (inside(p, project) || inside(p, c.cwd)) return '会递归删除整个项目（或它的上级目录）'
-      if (inside(p, DATA_DIR) || inside(DATA_DIR, p)) return '会删除面板的数据目录'
+      if (inside(p, DATA_DIR) || (inside(DATA_DIR, p) && !ownScratch(c, p))) return '会删除面板的数据目录'
     }
     return ''
   }

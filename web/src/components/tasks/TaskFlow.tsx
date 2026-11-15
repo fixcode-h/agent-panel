@@ -195,7 +195,7 @@ export function TaskFlow({
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
           >
             <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
-              {/* 节点派出的子角色画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
+              {/* 节点派出的子任务画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
               <RouteProvider task={task}>
                 <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
               </RouteProvider>

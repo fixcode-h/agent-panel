@@ -42,9 +42,9 @@ function runs(msgs: TaskMessage[]) {
 }
 
 /**
- * 节点派出的子角色（spawn_agents）和对话里的子任务一样：节点输出里只留派单行（状态 + 点开看过程），
- * 子角色自己的过程不再铺进节点。几个子角色并行时消息交错，按段分组会把同一个子角色拆成好几张卡片。
- * 只收起有派单记录（spawned）的子角色，旧数据里对不上的照旧显示
+ * 节点派出的子任务（spawn_agents）和对话里的子任务一样：节点输出里只留派单行（状态 + 点开看过程），
+ * 子任务自己的过程不再铺进节点。几个子任务并行时消息交错，按段分组会把同一个子任务拆成好几张卡片。
+ * 只收起有派单记录（spawned）的子任务，旧数据里对不上的照旧显示
  */
 export function hideSpawned(task: Task, msgs: TaskMessage[]) {
   const ids = new Set(task.messages.flatMap((m) => m.spawned ?? []))
