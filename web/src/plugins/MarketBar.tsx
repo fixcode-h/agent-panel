@@ -1,16 +1,27 @@
 import { useRef, useState } from 'react'
-import { ChevronDown, FolderOpen, Loader2, Plus, RefreshCw, Store, Upload, WifiOff } from 'lucide-react'
+import { ChevronDown, FolderOpen, Link2, Loader2, Plus, RefreshCw, Store, Upload, WifiOff } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { timeAgo } from '@shared/task'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Menu, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/menu'
 import { Modal } from '@/components/ui/modal'
 import { pluginApi, type InstallPreview } from './api'
 import { marketError, refreshMarket, switchMarket, useMarket } from './market'
 import { usePluginUpdates } from './updates'
+import { openWrap } from './wrap-state'
 
 /**
  * 插件页顶上的一行：当前市场仓库（点开可换）、多久前读的（读失败时写明在用旧结果）、「刷新」和「其他方式安装」。
@@ -109,7 +120,7 @@ function RepoPicker() {
   )
 }
 
-/** 其他安装方式：上传压缩包、链接本机目录（开发插件时链接构建产物，不复制） */
+/** 其他安装方式：从 GitHub 链接包装（ADR 0068）、上传压缩包、链接本机目录（开发插件时链接构建产物，不复制） */
 function OtherSources({ onPreview }: { onPreview: (p: InstallPreview) => void }) {
   const [askDir, setAskDir] = useState(false)
   const [dir, setDir] = useState('')
@@ -148,6 +159,19 @@ function OtherSources({ onPreview }: { onPreview: (p: InstallPreview) => void })
           </Button>
         </MenuTrigger>
         <MenuContent>
+          <MenuItem onSelect={() => openWrap()} data-wrap-open>
+            <Link2 className="mt-0.5 h-3.5 w-3.5 self-start" />
+            <span className="flex flex-col">
+              <span className="flex items-center gap-1.5">
+                {t('从 GitHub 链接包装…')}
+                <Badge tone="accent">{t('新')}</Badge>
+              </span>
+              <span className="text-xs text-subtle">
+                {t('贴一个开源项目的链接，自动识别成技能、MCP、命令行或网页应用')}
+              </span>
+            </span>
+          </MenuItem>
+          <MenuSeparator />
           <MenuItem onSelect={() => file.current?.click()}>
             <Upload className="h-3.5 w-3.5" />
             {t('上传压缩包（.zip）')}
