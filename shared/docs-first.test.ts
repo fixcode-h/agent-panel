@@ -41,3 +41,13 @@ test('用户报的 Bug 不等文档：照建子对话，派单写明文档在并
   // 没写 modules 照样要它写上（拦一下不用等，只是补参数）
   assert.match((await docsFirst({ bug: true }, lookup([]), true)).block!, /要写 modules/)
 })
+
+test('小项目不单建模块文档：源文件清单附进派单，不拦（摸底报告第 7 条）', async () => {
+  const small = async (modules: string[]) => ({ ...(await lookup([])(modules)), small: ['src/calc.ts', 'src/main.ts'] })
+  const r = await docsFirst({ modules: ['calc'] }, small, true)
+  assert.equal(r.block, undefined)
+  assert.match(r.note!, /项目只有 2 个源文件，不单建模块文档/)
+  assert.match(r.note!, /- src\/calc\.ts/)
+  // 大项目照旧拦，并说清新文档不单独提交
+  assert.match((await docsFirst({ modules: ['calc'] }, lookup([]), true)).block!, /新文档不要单独提交/)
+})

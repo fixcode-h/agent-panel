@@ -14,6 +14,7 @@ export const EN_KNOWLEDGE_UI: Record<string, string> = {
   '（还没写标题）': '(No title yet)',
   失败后改对: 'Fixed after a failure',
   子对话记录: 'From a sub-conversation',
+  '对话记录（只在记下它的对话里生效）': 'Recorded in a conversation (active only there)',
   '出现在 {n} 个对话': 'Seen in {n} conversations',
   同一个报错在不止一个对话里出现过: 'The same error has shown up in more than one conversation',
   复发: 'Recurring',

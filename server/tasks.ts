@@ -84,6 +84,7 @@ import { createPeer } from './tasks/peer.ts'
 import { createLive } from './tasks/live.ts'
 import { createChildren } from './tasks/children.ts'
 import { createMerge } from './tasks/merge.ts'
+import { createInlineEdit } from './tasks/inline-edit.ts'
 import { createAfterDeps } from './tasks/after-deps.ts'
 import { createTestRuns } from './tasks/test-runs.ts'
 import { createJobs } from './tasks/jobs.ts'
@@ -595,9 +596,7 @@ export function tasksApi(deps: {
     createTestRuns(scope)
   const {
     PLAN_NUDGE_MS,
-    beginInlineEdit,
     childRequestBuild,
-    endInlineEdit,
     finishChild,
     mergeNudged,
     merging,
@@ -610,6 +609,7 @@ export function tasksApi(deps: {
     planKids,
     childMerged,
   } = createMerge(scope)
+  const { beginInlineEdit, endInlineEdit } = createInlineEdit(scope)
 
   /** 后台命令还在跑 / 排队：结果推回来还要接着做，不算彻底结束 */
   const pendingJobs = (id: string) => background.list(id).filter(awaitedJob).length

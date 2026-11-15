@@ -49,7 +49,7 @@ export async function vcsCaps(c: TurnCapsCtx) {
       coordinatorRole && startAgent?.inlineEdit === 'tiny' && dir && (await isGit(dir))
         ? {
             begin: (files, reason) => sc.beginInlineEdit(entry.task, dir, files, reason),
-            end: () => sc.endInlineEdit(entry.task, dir),
+            end: (force) => sc.endInlineEdit(entry.task, dir, force),
           }
         : undefined,
     // 父对话（协调器）不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里

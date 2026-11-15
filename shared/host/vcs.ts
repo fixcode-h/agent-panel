@@ -65,11 +65,12 @@ export interface VcsHost {
   beginEdit?: () => Promise<{ ok: boolean; info: string }>
   /**
    * 父对话的就地微改动（只有项目顶层对话、角色开了 inlineEdit 时有）：begin 校验护栏并记下基线，
-   * end 按真实改动核对、越界时写提示（见 shared/inline-edit.ts）
+   * end 先过收尾门禁（快速检查、轻评审），再按真实改动核对、越界时写提示（见 shared/inline-edit.ts）；
+   * force 是一轮结束时面板自动收：门禁没过也收，但告诉用户
    */
   inlineEdit?: {
     begin(files: string[], reason: string): Promise<{ ok: boolean; info: string }>
-    end(): Promise<{ ok: boolean; info: string }>
+    end(force?: boolean): Promise<{ ok: boolean; info: string }>
   }
   /**
    * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。

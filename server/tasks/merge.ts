@@ -12,7 +12,7 @@ import { planProgressKey } from '../../shared/drive.ts'
 import { randomUUID } from 'node:crypto'
 import { Task, type Project, type PeerFrom, type TaskMessage } from '../../shared/schema.ts'
 import { childReport, type ConvState, taskDeleted, type ChildHold } from '../../shared/task.ts'
-import { branchCommits, gitChanges, gitHead, gitNumstat } from '../exec/git.ts'
+import { branchCommits, gitNumstat } from '../exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText } from '../../shared/handoff.ts'
 import { overrideText, reviewGate, triageText, type ReviewOverride, type TriageItem } from '../../shared/review/gate.ts'
 import { steerTask } from '../exec/steering.ts'
@@ -33,8 +33,7 @@ import {
   syncKids,
   type PlanKid,
 } from '../../shared/plan.ts'
-import { normClaimPath, overlaps, shrinkClaims } from '../claims.ts'
-import { inlineEditBlocker, inlineEditOverrun, inlineEditOverrunText } from '../../shared/inline-edit.ts'
+import { shrinkClaims } from '../claims.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 import type { IntegrateResult } from '../exec/worktree-integrate.ts'
@@ -599,60 +598,6 @@ ${
    * 共用目录的子对话收尾完父计划一直挂着等待，父对话的 Agent 也看不到计划变成什么样
    */
   /**
-   * 父对话开始就地微改动（shared/inline-edit.ts）：子对话正在合回、要改的文件有子对话在用（共用目录的认领、
-   * 独立分支划的范围或已经改了的文件）时拒绝；能开始就记下声明的范围和工作区基线，结束时按它核对真实改动
-   */
-  async function beginInlineEdit(parent: Task, dir: string, files: string[], reason: string) {
-    const kids = (await sc.store.childrenOf(parent.id)).map((k) => sc.live.get(k.id)?.task ?? k)
-    const merging = kids
-      .filter((k) => k.wrapRequest && (k.wrapRequest.state === 'merging' || k.wrapRequest.state === 'testing'))
-      .map((k) => k.title)
-    const want = files.map(normClaimPath).filter(Boolean)
-    const held: { path: string; by: string }[] = []
-    for (const c of sc.claims.list(parent.id))
-      if (c.taskId !== parent.id && want.some((w) => overlaps(c.path, w))) held.push({ path: c.path, by: c.title })
-    const declared = sc.scopes.get(parent.id)
-    for (const k of kids) {
-      if (k.resolved) continue
-      const busy = [...(declared?.get(k.id)?.files ?? []), ...k.changes.map((c) => c.path)]
-      for (const p of want) if (busy.some((b) => overlaps(b, p))) held.push({ path: p, by: k.title })
-    }
-    const why = inlineEditBlocker({ files, reason, merging, held, active: !!parent.inlineEdit })
-    if (why) return { ok: false, info: why }
-    const head = await gitHead(dir)
-    const baseline = await gitNumstat(dir, head, placedFiles(parent))
-    if (!baseline) return { ok: false, info: '这个目录不是 git 仓库，没法核对就地改动：交给子对话做' }
-    parent.inlineEdit = { files, reason, startedAt: new Date().toISOString(), head, baseline }
-    return {
-      ok: true,
-      info: `可以改了：${files.join('、')}。改完跑项目测试步骤里标「快速」的检查，按版本控制的规则本地提交（只提交这几个文件），再调用 end_inline_edit。改动期间不能收尾子对话、不能派子对话。`,
-    }
-  }
-
-  /** 结束就地微改动：按真实改动核对文件数、行数和没声明的文件，越界写一条醒目警告；没提交的改动列出来 */
-  async function endInlineEdit(parent: Task, dir: string) {
-    const st = parent.inlineEdit
-    if (!st) return { ok: true, info: '没有进行中的就地改动' }
-    const changes = (await gitChanges(dir, st.baseline, st.head, placedFiles(parent))) ?? []
-    // 清字段写 undefined（见 docs/lessons/data.md）
-    parent.inlineEdit = undefined
-    const r = inlineEditOverrun(st.files, changes)
-    const now = (await gitNumstat(dir, '', placedFiles(parent))) ?? {}
-    const uncommitted = changes.map((c) => c.path).filter((p) => p in now && st.baseline[p] !== now[p])
-    if (r.over) await sc.panelAlert(parent.id, 'panel', inlineEditOverrunText(r), r.undeclared.join('、') || '')
-    return {
-      ok: true,
-      info: [
-        `就地改动结束：改了 ${r.files} 个文件、${r.lines} 行。`,
-        uncommitted.length ? `还没提交：${uncommitted.join('、')}——按版本控制的规则提交，或者说明为什么不提交。` : '',
-        r.over ? inlineEditOverrunText(r) : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    }
-  }
-
-  /**
    * 共用目录的子对话（P4、没有版本管理、项目设成共用目录）收尾：没有分支要合，父对话收下就是验收。
    * 改过文件的和独立分支一样要先请求收尾（submit_merge 里校验了评审、测试和交接），没请求的不收：
    * 以前这里直接标完成，评审、验证、交接全被跳过（用户 2026-10-31 报的 P4 子对话改完不评审）
@@ -900,9 +845,7 @@ ${
 
   return {
     PLAN_NUDGE_MS,
-    beginInlineEdit,
     childRequestBuild,
-    endInlineEdit,
     finishChild,
     mergeNudged,
     merging,

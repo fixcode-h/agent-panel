@@ -5,7 +5,13 @@ import { newTask } from '../shared/task.ts'
 import { runEngineTurn } from '../shared/engine.ts'
 import type { AgentCall, EngineHost } from '../shared/engine/host.ts'
 import { composeRole, loadCapability, mountMode, mountedAgents, roleKind } from '../shared/agents/role.ts'
-import { INLINE_EDIT_MAX_FILES, inlineEditBlocker, inlineEditOverrun, normInlinePaths } from '../shared/inline-edit.ts'
+import {
+  INLINE_EDIT_MAX_FILES,
+  inlineEditBlocker,
+  inlineEditGate,
+  inlineEditOverrun,
+  normInlinePaths,
+} from '../shared/inline-edit.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { CORE_AGENTS, findCore, syncCore } from '../shared/builtin/core.ts'
 import { ensureProjectAgents } from '../shared/builtin/install.ts'
@@ -134,6 +140,22 @@ test('就地微改动核对：超出文件数、行数或改了没声明的文�
   )
   assert.deepEqual(extra.undeclared, ['b.ts'])
   assert.equal(extra.over, true)
+})
+
+test('就地改动收尾门禁：快速检查没跑通、没评审、评审没交结论或不通过都拦下（摸底报告第 6 条）', () => {
+  const quick = [{ name: '类型检查', command: 'npm run typecheck' }]
+  const pass = { title: '评审', status: 'done', verdict: 'pass', must: 0 }
+  const ok = { head: 'abc123', quick, passed: ['类型检查'], reviews: [pass] }
+  assert.equal(inlineEditGate(ok), '')
+  assert.match(inlineEditGate({ ...ok, passed: [] }), /标「快速」的检查.*类型检查（`npm run typecheck`）/)
+  assert.match(inlineEditGate({ ...ok, reviews: [] }), /还没评审.*git diff abc123/)
+  assert.match(inlineEditGate({ ...ok, reviews: [{ ...pass, status: 'running' }] }), /还没跑完/)
+  assert.match(inlineEditGate({ ...ok, reviews: [{ ...pass, verdict: undefined }] }), /submit_verdict/)
+  assert.match(inlineEditGate({ ...ok, reviews: [{ ...pass, verdict: 'fail' }] }), /没过评审.*resume/)
+  assert.match(inlineEditGate({ ...ok, reviews: [{ ...pass, must: 2 }] }), /2 条必须处置/)
+  // 只看最后一次：不通过之后复看通过了就放行；项目没有快速步骤时只要评审
+  assert.equal(inlineEditGate({ ...ok, reviews: [{ ...pass, verdict: 'fail' }, pass] }), '')
+  assert.equal(inlineEditGate({ ...ok, quick: [], passed: [] }), '')
 })
 
 function chatHost(task: Task, runAgent: EngineHost['runAgent'], extra: Partial<EngineHost> = {}): EngineHost {

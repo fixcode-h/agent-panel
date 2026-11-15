@@ -24,7 +24,7 @@ export const INLINE_EDIT: PanelTool[] = [
     def: () => ({
       name: 'begin_inline_edit',
       title: '开始就地改动',
-      description: `父对话就地做一个微小改动前调用：改什么、改成什么已经清楚、不用排查，最多 ${INLINE_EDIT_MAX_FILES} 个文件、${INLINE_EDIT_MAX_LINES} 行以内（文案、配置值、一两行文档）。面板校验子对话有没有在合回、要改的文件有没有子对话在用；通过后你改文件、跑项目的快速检查、本地提交，再调用 end_inline_edit。Bug、要排查的、改公共接口或数据格式的都交给子对话，不走这里。`,
+      description: `父对话就地做一个微小改动前调用：改什么、改成什么已经清楚、不用排查，最多 ${INLINE_EDIT_MAX_FILES} 个文件、${INLINE_EDIT_MAX_LINES} 行以内（文案、配置值、一两行文档）。面板校验子对话有没有在合回、要改的文件有没有子对话在用；通过后你改文件、跑项目的快速检查、本地提交、派一次轻评审（spawn_agents 评审），评审通过再调用 end_inline_edit。Bug、要排查的、改公共接口或数据格式的都交给子对话，不走这里。`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -51,7 +51,7 @@ export const INLINE_EDIT: PanelTool[] = [
       name: 'end_inline_edit',
       title: '结束就地改动',
       description:
-        '就地改动改完、跑过快速检查并本地提交后调用：面板按真实改动核对文件数、行数和没声明的文件，越界会提示用户；然后恢复子对话的收尾。这一轮结束时没调用也会自动收。',
+        '就地改动改完、跑过快速检查、本地提交、轻评审通过后调用：面板先核对标「快速」的检查跑通过了、开始之后的评审交了通过，没有就拒绝并说差什么；再按真实改动核对文件数、行数和没声明的文件，越界会提示用户；然后恢复子对话的收尾。这一轮结束时没调用也会自动收，没走完检查会告诉用户。',
       inputSchema: noArgs(),
     }),
     call: async (o) => reply(await o.endInlineEdit()),

@@ -6,6 +6,7 @@ import { holdForNextTurn } from '../exec/delivery.ts'
 import type { Live } from './types.ts'
 import { placedFiles } from '../attachments.ts'
 import { createWorktree, ensureWorktree, checkRepo } from '../exec/worktree.ts'
+import { carryModuleDocs } from '../exec/carry-docs.ts'
 import { existsSync } from 'node:fs'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
@@ -25,6 +26,9 @@ export async function openTaskWorktree(s: Pick<TasksScope, 'taskDir'>, tk: Task)
     return (e as Error).message
   }
   tk.wantsWorktree = false
+  // 父对话目录里还没提交的模块文档（开子对话前「文档」写的，第 7 条）一起带进分支：算进基线，不算这个对话的改动，
+  // 收尾时随它的提交一起合回
+  if (tk.parentTaskId) await carryModuleDocs(base, tk.worktree.path).catch(() => [])
   tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
   tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? {}
   return ''

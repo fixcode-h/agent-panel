@@ -7,7 +7,7 @@ import { loadProjectLessons } from '../projects/lessons.ts'
 import { loadProjectExperience } from '../projects/experience.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { recordExperience } from '../experience/learn.ts'
-import { lessonFromAgent, noteMiss, proposeKnowledge } from '../knowledge/agent-record.ts'
+import { lessonFromAgent, noteMiss, proposeKnowledge, withConvLessons } from '../knowledge/agent-record.ts'
 
 import type { TurnCapsCtx } from './turn-caps-conv.ts'
 
@@ -20,17 +20,24 @@ export async function knowledgeCaps(c: TurnCapsCtx) {
       ? {
           list: async () => {
             const p = await sc.deps.projects.get(task.projectId)
-            return p ? (await loadProjectLessons(p, agents)).lessons : []
+            // 这个对话自己记下、还没被用户收下的也在里面（第 8 条）
+            return p ? withConvLessons(task.projectId, (await loadProjectLessons(p, agents)).lessons, rootId) : []
           },
           globals: readGlobalLessons,
           record: async (input) => {
             const rec = sc.deps.recordLesson
             if (!rec) return { ok: false, info: '这里记不了项目教训' }
             const p = await sc.deps.projects.get(task.projectId)
-            const current = p ? (await loadProjectLessons(p, agents)).lessons : []
+            const current = p
+              ? await withConvLessons(task.projectId, (await loadProjectLessons(p, agents)).lessons, rootId)
+              : []
             // knowledge_record 的入库校验、episode 补全在 server/knowledge/agent-record.ts；旧的 record_lesson 不校验
-            return lessonFromAgent(task.projectId, input, current, (draft) =>
-              rec(task.projectId, { ...draft, source: 'agent', taskId: task.id }),
+            return lessonFromAgent(
+              task.projectId,
+              input,
+              current,
+              (draft) => rec(task.projectId, { ...draft, source: 'agent', taskId: task.id }),
+              rootId,
             )
           },
           propose: (input) => proposeKnowledge(task.projectId, input, rootId),

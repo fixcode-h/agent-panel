@@ -70,9 +70,12 @@ export interface Episode {
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
 
-/** 同一个坑：报错指纹像，或者目的一样、改对的命令也一样 */
+/**
+ * 同一个坑：报错指纹像，或者目的一样、改对的命令也一样。
+ * 对话里 Agent 带 episode 记下的（agent）也算：同一个坑在别的对话里再出现时，按 Agent 写好的规则转正（Q2）
+ */
 function sameEpisode(c: KnowledgeCandidate, ep: Episode): boolean {
-  if (c.origin !== 'episode') return false
+  if (c.origin !== 'episode' && c.origin !== 'agent') return false
   if (c.errors.some((e) => printScore(e, ep.print) > 0)) return true
   return !!ep.purpose && c.commands.includes(ep.purpose) && oneLine(c.fixed) === oneLine(ep.fixed)
 }
@@ -127,19 +130,20 @@ export function addEpisode(
   return { next: { ...state, candidates: [cand, ...kept] }, cand, recurred: false }
 }
 
-/** 子对话记的知识先放候选（Q2：其余的等用户），同标题的合并 */
+/** 子对话记的知识先放候选（Q2：其余的等用户），同标题的合并；对话里 Agent 记的教训也走这里（origin: agent） */
 export function addSubtaskCandidate(
   state: ProjectKnowledgeState,
   input: Partial<KnowledgeCandidate> & Pick<KnowledgeCandidate, 'kind' | 'title'>,
   conv: string,
   now: string,
+  origin: 'subtask' | 'agent' = 'subtask',
 ): { next: ProjectKnowledgeState; cand: KnowledgeCandidate } {
   const key = (s: string) => s.replace(/\s+/g, '').toLowerCase()
   const old = state.candidates.find((c) => c.kind === input.kind && key(c.title) === key(input.title))
   const base: KnowledgeCandidate = old ?? {
     id: newCandidateId(),
     kind: input.kind,
-    origin: 'subtask',
+    origin,
     title: '',
     rule: '',
     wrong: '',

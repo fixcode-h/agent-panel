@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 
 import { Task, type Agent, type Attachment, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
 import { projectWithLessons } from '../projects/lessons.ts'
+import { withConvLessons } from '../knowledge/agent-record.ts'
 import { taskWorkflows } from '../../shared/flow.ts'
 import { beginRun, dropEndNotes, trackWait, taskDeleted, withAttachments } from '../../shared/task.ts'
 import { withTaskModel } from '../../shared/tasks/run.ts'
@@ -109,6 +110,12 @@ export function createRun(sc: TasksScope) {
     let project = found
     if (found && task.projectId) {
       const withLessons = await projectWithLessons(found, agents)
+      // 这个对话自己记下、还没被用户收下的教训也拼进提示词（第 8 条：只在记下它的对话里生效）
+      withLessons.lessons = await withConvLessons(
+        task.projectId,
+        withLessons.lessons ?? [],
+        task.parentTaskId || task.id,
+      )
       project = dir && dir !== found.path ? { ...withLessons, path: dir } : withLessons
     } else if (found && dir && dir !== found.path) project = { ...found, path: dir }
     const parentTask = task.parentTaskId

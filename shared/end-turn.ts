@@ -144,7 +144,7 @@ export function mergeOwedOf(
  */
 export function endTurnCheck(
   tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'> &
-    Partial<Pick<Task, 'messages' | 'bug'>>,
+    Partial<Pick<Task, 'messages' | 'bug' | 'inlineEdit'>>,
   outcome: string,
   need: string,
   /** 项目打开了「改了代码要跑过测试步骤才能结束」时传项目的测试步骤（见 shared/done-evidence.ts） */
@@ -164,6 +164,8 @@ export function endTurnCheck(
       end: { outcome, need: need.trim().slice(0, 2000) },
     }
   }
+  const inline = openInlineEdit(tk)
+  if (inline) return { ok: false, info: inline }
   const left = openWork(tk)
   if (left.length)
     return {
@@ -192,6 +194,23 @@ export function endTurnCheck(
     : ''
   if (gateErr) return { ok: false, info: `${END_REJECTED}${gateErr}` }
   return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome, evidence } }
+}
+
+/** 拒绝「就地改动还没收尾」时带的记号：同一轮只拒一次 */
+const INLINE_OPEN = '就地改动还没收尾'
+
+/**
+ * 就地改动开着就说做完了（摸底报告第 6 条）：快速检查和轻评审是 end_inline_edit 的门禁，这里提醒一次去走完。
+ * 同一轮只拒一次：评审没过、决定交给子对话时还能结束，这一轮结束时面板自动收并告诉用户没走完检查
+ */
+function openInlineEdit(tk: Partial<Pick<Task, 'messages' | 'inlineEdit'>>): string {
+  if (!tk.inlineEdit) return ''
+  const msgs = tk.messages ?? []
+  const told = msgs
+    .slice(inputIndex(msgs) + 1)
+    .some((m) => m.tools?.some((x) => isEndTurnTool(x) && (x.output ?? '').includes(INLINE_OPEN)))
+  if (told) return ''
+  return `${END_REJECTED}${INLINE_OPEN}：跑项目里标「快速」的检查、派一次轻评审，通过后调用 end_inline_edit（它会告诉你还差什么）。评审没过、要交给子对话时，说明原因后再调用一次 end_turn。`
 }
 
 /** 拒绝「诊断报告已确认还说等确认」时带的记号：同一轮只拒一次，第二次照常记下卡点 */

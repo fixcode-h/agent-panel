@@ -156,3 +156,17 @@ test('诊断报告这一版用户已确认还要以「做不下去」结束：�
   assert.equal(endTurnCheck({ ...base, bug: bug('pending'), messages: [user(0)] }, 'blocked', '等确认').ok, true)
   assert.equal(endTurnCheck({ ...base, bug: bug('approved', 'verify'), messages: [user(0)] }, 'blocked', '缺').ok, true)
 })
+
+test('就地改动开着就说做完了：拒一次，提醒走完快速检查和评审；再调一次照常结束（摸底报告第 6 条）', () => {
+  const base = { resolved: false, plans: [], steps: [], changes: [] } as unknown as Parameters<typeof endTurnCheck>[0]
+  const inlineEdit = { files: ['a.ts'], reason: '改文案', startedAt: at(0), head: 'abc', baseline: {} }
+  const first = endTurnCheck({ ...base, inlineEdit, messages: [user(0)] }, 'done', '')
+  assert.equal(first.ok, false)
+  assert.match(first.info, /就地改动还没收尾.*end_inline_edit/)
+  const again = endTurnCheck(
+    { ...base, inlineEdit, messages: [user(0), agent(1, '', [end('done', { output: first.info })])] },
+    'done',
+    '',
+  )
+  assert.equal(again.ok, true)
+})
