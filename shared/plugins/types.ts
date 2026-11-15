@@ -141,8 +141,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 11：声明式的运行时字段（清单 env / mcp / services / webPages / wrap，见 runtime-schema.ts）：插件不写代码也能给 Agent
  *    带环境变量和 PATH、外部 MCP 服务，由面板起停托管进程、出网页页面；从 GitHub 链接包装出来的插件靠它接进面板。
  *    设计稿：GitHub项目一键变插件与网页页签 第 5 节，ADR 0068
+ * 12：一轮对话的角色参数（PluginRun.params）和续接的会话也带的说明（PluginRunTools.turnNote）；开放模块加了
+ *    风格选择和参考图组件、风格约束拼说明（shared/style/rules-text）。设计稿：Blender建模风格 第 8 节
  */
-export const PLUGIN_API = 11
+export const PLUGIN_API = 12
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

@@ -17,6 +17,14 @@ export const stylesContract = {
   /** 只传要改的字段 */
   update: endpoint({ method: 'PUT', path: '/styles/:id', body: SavedStyleInput.partial(), res: SavedStyle }),
   remove: endpoint({ method: 'DELETE', path: '/styles/:id', res: z.void() }),
+  /** 自己的风格上传参考图（data URL，最大 8 MB）；返回改好的风格。取图是 GET /styles/:id/image（图片本身，不走契约） */
+  uploadImage: endpoint({
+    method: 'POST',
+    path: '/styles/:id/image',
+    body: z.object({ data: z.string().max(12_000_000) }),
+    res: SavedStyle,
+  }),
+  removeImage: endpoint({ method: 'DELETE', path: '/styles/:id/image', res: SavedStyle }),
 }
 
 export const browserExtContract = {

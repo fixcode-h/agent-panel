@@ -176,6 +176,7 @@ export interface PluginToolError {
 export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext['confirm'], hooks?: PluginRunHooks) {
   const servers: { name: string; url: string }[] = []
   const hints: string[] = []
+  const turnNotes: string[] = []
   const closers: (() => void)[] = []
   const errors: PluginToolError[] = []
   const notices: { name: string; text: string }[] = []
@@ -203,11 +204,19 @@ export async function pluginToolsForRun(run: PluginRun, confirm?: McpCallContext
         closers.push(m.close)
       }
       if (r.hint) hints.push(r.hint)
+      if (r.turnNote) turnNotes.push(r.turnNote)
       for (const text of r.notices ?? []) if (String(text).trim()) notices.push({ name: a.name, text: String(text) })
     } catch (e) {
       errors.push({ id, name: a.name, error: (e as Error).message })
       log.warn('plugin', `插件给对话挂工具时出错：${id}`, { error: (e as Error).message })
     }
   }
-  return { servers, hint: hints.join('\n\n'), errors, notices, close: () => closers.forEach((c) => c()) }
+  return {
+    servers,
+    hint: hints.join('\n\n'),
+    turnNote: turnNotes.join('\n\n'),
+    errors,
+    notices,
+    close: () => closers.forEach((c) => c()),
+  }
 }

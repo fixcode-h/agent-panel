@@ -2268,7 +2268,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     )
     return { name, path, size: 4096, mime: 'text/markdown' }
   }
-  if (res === 'styles') return demoStyles(method, id, body ?? {})
+  if (res === 'styles') return demoStyles(method, id, body ?? {}, sub)
   if (res === 'designs' && id === 'browser') return demoBrowserExt(sub)
   if (res === 'schedules') return demoSchedules(method, seg, body)
   if (res === 'tasks' && id === 'disk')

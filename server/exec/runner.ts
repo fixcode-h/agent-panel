@@ -453,7 +453,7 @@ async function runAgent(
           fileEvents,
         )
       : undefined
-  if (plugins?.hint && !resume) input = `${input}\n\n${plugins.hint}`
+  input = [input, !resume && plugins?.hint, plugins?.turnNote].filter(Boolean).join('\n\n')
   if (chat)
     taskLog(task.id, '对话的 CLI 进程启动', {
       cli: def.name,

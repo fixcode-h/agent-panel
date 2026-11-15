@@ -13,6 +13,9 @@ export const stylesApi = {
   createStyle: (input: SavedStyleInput) => call(S.create, { body: input as BodyOf<typeof S.create> }),
   updateStyle: (id: string, patch: Partial<SavedStyleInput>) => call(S.update, { params: { id }, body: patch }),
   deleteStyle: (id: string) => call(S.remove, { params: { id } }),
+  /** 自己的风格换参考图：data 是图片的 data URL */
+  uploadStyleImage: (id: string, data: string) => call(S.uploadImage, { params: { id }, body: { data } }),
+  removeStyleImage: (id: string) => call(S.removeImage, { params: { id } }),
   installExtension: (browser: string) => call(B.install, { body: { browser } }),
   reloadExtension: (browser: string) => call(B.reload, { body: { browser } }),
   revealExtension: () => call(B.reveal, { body: {} }),
