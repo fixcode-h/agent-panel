@@ -46,6 +46,7 @@ import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_BUG_ASK } from './en/bug-ask.ts'
 import { EN_BUG_CHAT } from './en/bug-chat.ts'
 import { EN_USER_ACTION } from './en/user-action.ts'
+import { EN_STAGE_REPORT } from './en/stage-report.ts'
 import { EN_AWAY } from './en/away.ts'
 import { EN_QUOTA_RESUME } from './en/quota-resume.ts'
 import { EN_STATE_WORD } from './en/state-word.ts'
@@ -86,6 +87,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_ASK,
   ...EN_BUG_CHAT,
   ...EN_USER_ACTION,
+  ...EN_STAGE_REPORT,
   ...EN_AWAY,
   ...EN_QUOTA_RESUME,
   ...EN_DESIGN,

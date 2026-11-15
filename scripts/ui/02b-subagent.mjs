@@ -1333,7 +1333,8 @@ await runShard(import.meta.filename, async (api) => {
         .getByRole('button', { name: '确认', exact: true })
         .waitFor({ timeout: 5000 })
         .catch(() => errors.push('工作流栏：点「查看结果」没有打开审阅弹窗'))
-      await check(p, '工作流栏-查看结果', ['方案：购物车角标改成订阅购物车数据'])
+      // 演示里「方案」节点交了阶段报告（web/src/lib/demo/demo-stage-report.ts）：按报告分区画，第 2 版在等确认
+      await check(p, '工作流栏-查看结果', ['需要你决定', '这次要不要补单测', '第 2 版'])
       await p.keyboard.press('Escape')
     }
   }

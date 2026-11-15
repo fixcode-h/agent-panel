@@ -11,6 +11,7 @@ export const EN_TOOL_NAMES: Record<string, string> = {
   结束这一轮: 'End turn',
   交结论: 'Submit verdict',
   交结果: 'Submit result',
+  交阶段报告: 'Submit stage report',
   交决定: 'Submit decision',
   // Blender 工具
 }

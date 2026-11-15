@@ -4,6 +4,7 @@
  * 进度怎么说、父对话每轮看到的那一节、决定记录怎么拼进节点提示、父对话挑工作流的目录和判定规则。
  */
 import type { Task, TaskStep } from '../schema.ts'
+import type { Picks } from './stage-report.ts'
 import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from '../tasks/flow-schema.ts'
 import { topSteps } from './index.ts'
 import { WRAP_NODE } from './run-wrap.ts'
@@ -186,6 +187,7 @@ export interface ConfirmReply {
   allow: boolean
   answer?: string
   ask?: boolean
+  picks?: Picks
 }
 
 /**

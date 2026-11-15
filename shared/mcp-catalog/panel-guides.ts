@@ -186,6 +186,14 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
     group: G.plan,
     effects: ['verify'],
   },
+  submit_report: {
+    title: '交阶段报告',
+    summary: '交这一步的结论、决策和方案，给用户审阅勾选。',
+    useWhen: '勾了「完成后等我确认」的节点做完、要用户确认结果时；自己定的决策也列进去标 self',
+    avoidWhen: '要交通过 / 不通过时用 submit_verdict',
+    group: G.plan,
+    effects: ['verify'],
+  },
   claim_files: {
     title: '认领文件',
     summary: '子对话改文件前认领，避免和别的子对话撞车。',

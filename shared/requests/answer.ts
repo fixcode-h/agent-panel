@@ -6,6 +6,7 @@
 import { ruleText } from '../allow-rules.ts'
 import { t } from '../i18n.ts'
 import type { Task, TaskRequest } from '../schema.ts'
+import { pendingReport, reportChanges, type Picks } from '../flow/stage-report.ts'
 import { questionAnswers, resumeRun } from '../task.ts'
 
 /** 用户的回答（server/exec/parsers.ts 的 AskReply 里这里用得到的几项） */
@@ -15,12 +16,22 @@ export interface RequestAnswer {
   answers?: string[]
   always?: boolean
   ask?: boolean
+  picks?: Picks
 }
 
 const stepTitle = (task: Pick<Task, 'steps'>, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
 
 /** 对话里记的那一行；denied：连续拒绝时正式后端换成的说法（见 server/exec/deny-advice.ts） */
 export function answerText(task: Pick<Task, 'steps'>, req: TaskRequest, r: RequestAnswer, denied?: string) {
+  // 改了阶段报告里的决策：写清改了哪几项，Agent 会按你的选择重出一版（shared/flow/stage-report.ts）
+  const rep = req.kind === 'confirm' && r.allow ? pendingReport(req.reports) : undefined
+  const changed = rep ? reportChanges(rep.report, r.picks) : []
+  if (changed.length)
+    return t('你确认了「{title}」，改了 {n} 项决策：{list}。交给 Agent 按你的选择重出一版', {
+      title: stepTitle(task, req.step),
+      n: changed.length,
+      list: changed.map((c) => `${c.id} ${c.from} → ${c.to}`).join('；'),
+    })
   if (req.kind === 'confirm')
     return r.allow
       ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })

@@ -208,6 +208,8 @@ export async function runRealTurn(ctx: RealContext) {
         title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
         // 审阅弹窗按文档渲染整段结果、还要在上面标注，截得太短看不全
         detail: clip(text, 40000),
+        // 交了阶段报告：弹窗按它分区排版、决策画成勾选、能切版本（shared/flow/stage-report.ts）
+        ...(step.submitted?.reports?.length && { reports: step.submitted.reports }),
       })
       if (f && r) noteConfirm(f, nodeTitle(ctx.task, step), r, f.delegated ? 'parent' : 'user')
       return r
