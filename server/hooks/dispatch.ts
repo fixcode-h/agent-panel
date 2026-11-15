@@ -530,7 +530,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
-  // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/background-tools.ts）
+  // 装到这次调用的 Orchestra 上：run_background 放行前调它（server/panel-tools/background-tools.ts）
   c.call.orch.guardCommand = commandGuard
   // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
   c.call.orch.guardEdit = editGuard

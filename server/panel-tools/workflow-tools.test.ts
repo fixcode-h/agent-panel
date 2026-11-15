@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Orchestra } from '../shared/engine/host.ts'
-import { pickFlow, type WorkflowEntry } from '../shared/flow/run.ts'
-import { callOrchTool, orchTools } from './orch-mcp.ts'
+import type { Orchestra } from '../../shared/engine/host.ts'
+import { pickFlow, type WorkflowEntry } from '../../shared/flow/run.ts'
+import { callOrchTool, orchTools } from '../orch-mcp.ts'
 
 const LIST: WorkflowEntry[] = [
   { id: 'g', name: '通用项目', description: '默认', steps: [], kind: 'change' },
   { id: 'r', name: '代码评审', description: '只读评审', steps: [], kind: 'readonly' },
 ]
 
-/** 父对话操作工作流运行的面板工具（server/workflow-tools.ts）：参数检查、交给 Orchestra.runs */
+/** 父对话操作工作流运行的面板工具（server/panel-tools/workflow-tools.ts）：参数检查、交给 Orchestra.runs */
 function orch() {
   const calls: unknown[][] = []
   const rec =

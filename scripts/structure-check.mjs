@@ -183,7 +183,7 @@ export function checkStructure(root) {
     )
   if (m.orchInlineTools > caps.orchInlineTools)
     errors.push(
-      `server/orch-mcp.ts 里直接写的工具定义 ${m.orchInlineTools} 个（基线 ${caps.orchInlineTools}）。新工具一个文件：导出定义、给不给的条件、用法说明和处理函数（参照 server/end-turn-tool.ts），orch-mcp.ts 只接线`,
+      `server/orch-mcp.ts 里直接写的工具定义 ${m.orchInlineTools} 个（基线 ${caps.orchInlineTools}）。新工具一个文件：导出定义、给不给的条件、用法说明和处理函数（参照 server/panel-tools/end-turn-tool.ts），orch-mcp.ts 只接线`,
     )
   for (const [name, n] of Object.entries(m.hostMembers)) {
     const cap = caps.hostMembers[name] ?? HOST_NEW_MAX

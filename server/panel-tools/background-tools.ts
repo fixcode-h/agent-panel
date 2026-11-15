@@ -6,12 +6,12 @@
  * 以及不会自己结束的开发服务器、监听（service）。写文件、几秒就完的命令不收（shared/command-scope.ts 的 backgroundMisuse），
  * 命令先过和 CLI 命令工具同一套守卫（Orchestra.guardCommand，见 server/hooks/dispatch.ts 的 commandGuard）
  */
-import type { Orchestra } from '../shared/engine/host.ts'
-import { backgroundMisuse, endlessCommand } from '../shared/command-scope.ts'
-import { shellNote } from '../shared/shells.ts'
-import { lastShell } from './shells.ts'
-import { stepField } from './orch-fields.ts'
-import { reply, str, text, type PanelTool, type ToolArgs } from './panel-tools/types.ts'
+import type { Orchestra } from '../../shared/engine/host.ts'
+import { backgroundMisuse, endlessCommand } from '../../shared/command-scope.ts'
+import { shellNote } from '../../shared/shells.ts'
+import { lastShell } from '../shells.ts'
+import { stepField } from '../orch-fields.ts'
+import { reply, str, text, type PanelTool, type ToolArgs } from './types.ts'
 
 /** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
 const shellHint = () => {

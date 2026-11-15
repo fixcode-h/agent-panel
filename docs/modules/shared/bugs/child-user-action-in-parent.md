@@ -2,7 +2,7 @@
 
 - 状态：已修复（`server/core-agents.test.ts` 通过）
 - 症状：父对话头部是「子对话执行中」，输入框上方却挂着完整的「等你操作」卡（步骤列表、做不了 / 跳过 / 完成了）和「交回给：…」标签；卡里的「跳过的话」写的是「子对话先用现有 client.log 继续排查」
-- 入口：`shared/builtin/agents.ts` 统筹角色「Bug 怎么交」「子对话的提问和收尾建议怎么答」两节，`server/user-action-tool.ts` 的工具说明
+- 入口：`shared/builtin/agents.ts` 统筹角色「Bug 怎么交」「子对话的提问和收尾建议怎么答」两节，`server/panel-tools/user-action-tool.ts` 的工具说明
 - 根因类型：提示词前后矛盾：一处要统筹「把复现步骤和要贴的日志原样转给用户」，统筹就在自己的对话里调 request_user_action
 - 模块：`shared`（`shared/builtin/agents.ts`）
 - 关键词：等你操作、request_user_action、交回给、父对话、子对话、复现、抓日志、request_logs、统筹、原样转给用户

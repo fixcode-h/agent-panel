@@ -866,7 +866,7 @@ const BG = ['run_background', 'check_background', 'stop_background']
 const LESSON_TOOLS = ['knowledge_lookup', 'knowledge_record', 'project_lessons', 'record_lesson']
 const TAIL = ['spawn_agents', 'stop_subtask', 'send_message', 'read_messages']
 const COORD = ['list_conversations', 'create_conversation', 'send_to_conversation']
-// 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/workflow-tools.ts）
+// 能启动工作流的父对话（planning）：起运行和操作运行的一组（server/panel-tools/workflow-tools.ts）
 const WF = [
   'start_workflow',
   'list_workflows',

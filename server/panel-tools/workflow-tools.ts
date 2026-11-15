@@ -4,10 +4,10 @@
  * 工作流运行不是子对话：子对话那套（send_to_conversation、finish_child）不作用到它身上。
  * 定义和调用都在这里，作为面板工具注册表（server/panel-tools/registry.ts）的条目；只有能启动工作流的父对话（Orchestra.planning）拿得到
  */
-import type { Orchestra, RouteInput } from '../shared/engine/host.ts'
-import { clip } from '../shared/text.ts'
-import { stepField } from './orch-fields.ts'
-import { str, text as out, type PanelTool, type ToolDef } from './panel-tools/types.ts'
+import type { Orchestra, RouteInput } from '../../shared/engine/host.ts'
+import { clip } from '../../shared/text.ts'
+import { stepField } from '../orch-fields.ts'
+import { str, text as out, type PanelTool, type ToolDef } from './types.ts'
 const idField = { type: 'string', description: '工作流运行的 id（start_workflow 返回的，或 list_workflows 里的）' }
 
 export const WORKFLOW_TOOL_NAMES = [

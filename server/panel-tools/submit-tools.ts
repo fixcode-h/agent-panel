@@ -2,8 +2,8 @@
  * 交结论、交结果的面板工具（ADR 0041 第 16 节）：状态只认这些工具调用，不看回复里写了什么字。
  * 面板工具注册表（server/panel-tools/registry.ts）的条目
  */
-import type { Orchestra } from '../shared/engine/host.ts'
-import { str, text, type PanelTool, type ToolArgs } from './panel-tools/types.ts'
+import type { Orchestra } from '../../shared/engine/host.ts'
+import { str, text, type PanelTool, type ToolArgs } from './types.ts'
 
 /**
  * 交结论（ADR 0041 第 16 节）：验收、带条件连线的节点、评审都用它交「通过 / 不通过」，面板只认这个工具，不看回复里的字。

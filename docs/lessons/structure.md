@@ -30,7 +30,7 @@ paths: server/**, shared/**, web/src/**, scripts/structure-check.mjs, scripts/st
 
 ## 一类事只有一个出口
 
-- 规则：同一类操作只用一个公共入口，缺功能就补进那个入口，不在调用的地方另写一份包装：git 走 `server/exec/git.ts`；起子进程走 `server/exec/process.ts`；面板 MCP 工具一个工具一个文件（定义、给不给的条件、用法说明、处理函数放在一起，参照 `server/end-turn-tool.ts`），`server/orch-mcp.ts` 只负责接线；提示只用 `web/src/lib/toast.ts`。新加一类公共操作时先找有没有现成的入口。
+- 规则：同一类操作只用一个公共入口，缺功能就补进那个入口，不在调用的地方另写一份包装：git 走 `server/exec/git.ts`；起子进程走 `server/exec/process.ts`；面板 MCP 工具一个工具一个文件（定义、给不给的条件、用法说明、处理函数放在一起，参照 `server/panel-tools/end-turn-tool.ts`），`server/orch-mcp.ts` 只负责接线；提示只用 `web/src/lib/toast.ts`。新加一类公共操作时先找有没有现成的入口。
 - 防线：结构检查（git、内联工具）；rules-check 第 12 条（toast）。
 
 ## 前后端接口有契约，演示后端不另写一套业务逻辑

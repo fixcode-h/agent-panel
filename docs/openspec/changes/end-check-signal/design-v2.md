@@ -8,7 +8,7 @@
 - **没列计划时的提醒保留原来的门槛**（§7 第 2 条改了）：这条输入以来动手 3 次以上（读文件、搜索每 3 次折 1 次），或者一个工具都没调就要结束，才问。小事、纯问答照旧不打扰，主动调 end_turn 的直接放行。问过以后只回了话、没再动手的不会再问，所以不限次数也不会在这一档空转。
 - **空转保护照做**（§7 第 1 条）：计划没做完、收尾请求没处理这几档提醒不限次数，连着 3 次提醒之间一个工具都没调就停下，留一条警告，子对话上报父对话。
 - 「面板提醒次数」设置去掉；`Settings.nudgeMax` 只为兼容旧文件留着。
-- 实现：判断和显示在 `shared/end-turn.ts`，工具在 `server/end-turn-tool.ts`，记录在 `Task.turnEnds`，状态面板的卡片是 `web/src/components/tasks/ReminderTrail.tsx`。
+- 实现：判断和显示在 `shared/end-turn.ts`，工具在 `server/panel-tools/end-turn-tool.ts`，记录在 `Task.turnEnds`，状态面板的卡片是 `web/src/components/tasks/ReminderTrail.tsx`。
 
 替代 [v1](./design.md)。v1 保留在仓库里，只作参考。
 
