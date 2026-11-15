@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { tasksContract } from '../../../../shared/api-contract/tasks.ts'
 import { sourceHeader } from '../../../../shared/peer-message.ts'
 import { randomUUID } from 'node:crypto'
@@ -120,8 +121,9 @@ export async function createTask(
 }
 
 /** POST /tasks：界面上新建对话 */
-export function registerCreateRoute(s: TasksScope) {
-  s.routes.post('/', async (c) => {
+export function createRoute(s: TasksScope): Hono {
+  const app = new Hono()
+  app.post('/', async (c) => {
     const body = await c.req.json().catch(() => null)
     const p = tasksContract.create.body.safeParse(body)
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
@@ -129,4 +131,5 @@ export function registerCreateRoute(s: TasksScope) {
     if ('error' in res) return s.bad(c, res.error, res.status)
     return c.json(res.task, 201)
   })
+  return app
 }

@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { z } from 'zod'
 import { PresenceInput, type TaskSeenResult } from '../../../../shared/schema.ts'
 import { rescheduleIfUnwatched, setViewer } from '../../../presence.ts'
@@ -5,9 +6,10 @@ import { t } from '../../../../shared/i18n.ts'
 import type { TasksScope } from '../../scope.ts'
 
 /** 对话页的心跳（还开着）和已读（侧栏橙点消失） */
-export function registerPresenceRoutes(s: TasksScope) {
+export function presenceRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   // 对话页还开着：CLI 回复完才能停在等下一句的工具上；切走一分钟内切回来还能接着发
-  s.routes.post('/:id/presence', async (c) => {
+  app.post('/:id/presence', async (c) => {
     const id = c.req.param('id')
     const p = PresenceInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
@@ -18,7 +20,7 @@ export function registerPresenceRoutes(s: TasksScope) {
   })
 
   // 用户打开了这个对话：侧栏的橙点消失，CLI 也可以按宽限期回收了
-  s.routes.post('/:id/seen', async (c) => {
+  app.post('/:id/seen', async (c) => {
     const id = c.req.param('id')
     const entry = s.live.get(id)
     // 只要「这一轮看到哪」，不读整份对话：以前这里读 2MB、再把 2.4MB 的完整任务回给前端，
@@ -38,4 +40,5 @@ export function registerPresenceRoutes(s: TasksScope) {
     }
     return c.json({ turnSeenAt: tk.turnSeenAt } satisfies TaskSeenResult)
   })
+  return app
 }

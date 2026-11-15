@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { Task, type TaskMessage, type Workflow, defaultAgent } from '../../../../shared/schema.ts'
 import { blockedStep, taskFlow, taskWorkflows } from '../../../../shared/flow/index.ts'
@@ -18,9 +19,10 @@ import { settleBefore } from '../../helpers.ts'
 import { pausedHelpers } from '../../../../shared/run/stops.ts'
 
 /** 结束工作流，和失败或停止后的「继续执行」（连带拉起一起被打断的子对话） */
-export function registerResumeRoutes(s: TasksScope) {
+export function resumeRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   // 结束工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理
-  s.routes.post('/:id/end-flow', async (c) => {
+  app.post('/:id/end-flow', async (c) => {
     const id = c.req.param('id')
     const prev = s.live.get(id)
     await settleBefore(prev)
@@ -34,7 +36,7 @@ export function registerResumeRoutes(s: TasksScope) {
   })
 
   // 失败或停止后继续：不加新消息，从没完成的节点接着跑；工作流已完成时重做最后一条要求
-  s.routes.post('/:id/resume', async (c) => {
+  app.post('/:id/resume', async (c) => {
     const id = c.req.param('id')
     const prev = s.live.get(id)
     await settleBefore(prev)
@@ -141,6 +143,7 @@ export function registerResumeRoutes(s: TasksScope) {
       throw e
     }
   })
+  return app
 }
 
 /**

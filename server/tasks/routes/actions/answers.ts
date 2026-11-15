@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { RequestAnswer } from '../../../../shared/schema.ts'
@@ -7,9 +8,10 @@ import { t } from '../../../../shared/i18n.ts'
 import type { TasksScope } from '../../scope.ts'
 
 /** 回答：子对话交给父对话决定的提问、Agent 的权限确认和提问 */
-export function registerAnswerRoutes(s: TasksScope) {
+export function answerRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   // 回答子对话交给父对话决定的提问：直接把决定交给子对话，或者交给父对话的 AI 决定
-  s.routes.post('/:id/child-asks/:mid', async (c) => {
+  app.post('/:id/child-asks/:mid', async (c) => {
     const body = z
       .object({ answer: z.string().default(''), delegate: z.boolean().default(false) })
       .safeParse(await c.req.json())
@@ -23,7 +25,7 @@ export function registerAnswerRoutes(s: TasksScope) {
   })
 
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
-  s.routes.post('/:id/requests/:rid', async (c) => {
+  app.post('/:id/requests/:rid', async (c) => {
     const e = s.live.get(c.req.param('id'))
     const body = RequestAnswer.safeParse(await c.req.json())
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
@@ -34,4 +36,5 @@ export function registerAnswerRoutes(s: TasksScope) {
     await s.store.update(e.task.id, e.task)
     return c.json(e.task)
   })
+  return app
 }

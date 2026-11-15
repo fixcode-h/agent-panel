@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { tasksContract } from '../../../../shared/api-contract/tasks.ts'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -16,8 +17,9 @@ import { currentTask } from '../../read.ts'
  * POST /tasks/:id/messages：给对话发消息。执行中先试实时送到 CLI（等下一句、插话、read_user_notes），
  * 收不下就记进对话排到这一轮之后；空闲时开新的一轮。/rule、/bug 这类面板命令也在这里处理
  */
-export function registerSendRoute(s: TasksScope) {
-  s.routes.post('/:id/messages', async (c) => {
+export function sendRoute(s: TasksScope): Hono {
+  const app = new Hono()
+  app.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
     // 入参按前后端共用的契约校验（shared/api-contract/tasks.ts）
     const p = tasksContract.send.body.safeParse(await c.req.json())
@@ -147,4 +149,5 @@ export function registerSendRoute(s: TasksScope) {
       throw e
     }
   })
+  return app
 }

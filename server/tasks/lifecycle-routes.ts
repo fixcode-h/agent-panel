@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
@@ -26,8 +27,9 @@ function diagName(title: string, at = new Date()) {
  * - POST /file 生成诊断文件（完整日志、去掉密钥）并把文件放进系统剪贴板，粘贴到聊天里就是附件
  * - GET /download 下载同一份文件
  */
-export function registerLifecycleRoutes(sc: TasksScope) {
-  sc.routes.get('/:id/lifecycle', async (c) => {
+export function lifecycleRoutes(sc: TasksScope): Hono {
+  const app = new Hono()
+  app.get('/:id/lifecycle', async (c) => {
     const r = await lifecycleReport(sc, c.req.param('id'))
     if (!r) return sc.bad(c, t('任务不存在'), 404)
     return c.json(r)
@@ -45,7 +47,7 @@ export function registerLifecycleRoutes(sc: TasksScope) {
     return file
   }
 
-  sc.routes.post('/:id/lifecycle/file', async (c) => {
+  app.post('/:id/lifecycle/file', async (c) => {
     const file = await writeDiag(c.req.param('id'))
     if (!file) return sc.bad(c, t('任务不存在'), 404)
     const copied = await copyFileToClipboard(file)
@@ -56,7 +58,7 @@ export function registerLifecycleRoutes(sc: TasksScope) {
    * 「AI 分析」：先照样写一份诊断文件（AI 要看整棵树时自己读），再把选中节点的材料整理成 AI 处理的输入，
    * 页面拿去走统一的 AI 分析窗口（openAiFix）。材料去掉密钥
    */
-  sc.routes.post('/:id/lifecycle/analysis', async (c) => {
+  app.post('/:id/lifecycle/analysis', async (c) => {
     const id = c.req.param('id')
     const body = (await c.req.json().catch(() => ({}))) as { node?: string }
     const r = await lifecycleReport(sc, id, true)
@@ -74,7 +76,7 @@ export function registerLifecycleRoutes(sc: TasksScope) {
     })
   })
 
-  sc.routes.get('/:id/lifecycle/download', async (c) => {
+  app.get('/:id/lifecycle/download', async (c) => {
     const id = c.req.param('id')
     const r = await lifecycleReport(sc, id, true)
     if (!r) return sc.bad(c, t('任务不存在'), 404)
@@ -85,9 +87,10 @@ export function registerLifecycleRoutes(sc: TasksScope) {
   })
 
   /** 剪贴板放不进去时：在文件管理器里打开诊断文件所在的目录 */
-  sc.routes.post('/:id/lifecycle/reveal', async (c) => {
+  app.post('/:id/lifecycle/reveal', async (c) => {
     await mkdir(DIAG_DIR(), { recursive: true })
     await revealDir(DIAG_DIR())
     return c.json({ ok: true })
   })
+  return app
 }

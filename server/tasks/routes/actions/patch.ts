@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { z } from 'zod'
 import { TaskPatch, Task, defaultAgent } from '../../../../shared/schema.ts'
 import { childHoldText } from '../../../../shared/task.ts'
@@ -18,8 +19,9 @@ import { readTask } from '../../read.ts'
 const MARK_KEYS = new Set(['title', 'archived', 'pinned'])
 
 /** PATCH /tasks/:id：改对话设置（标题、归档、置顶、完成、角色、CLI / 模型 / 强度、提问开关……） */
-export function registerPatchRoute(s: TasksScope) {
-  s.routes.patch('/:id', async (c) => {
+export function patchRoute(s: TasksScope): Hono {
+  const app = new Hono()
+  app.patch('/:id', async (c) => {
     const id = c.req.param('id')
     const p = TaskPatch.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
@@ -162,4 +164,5 @@ export function registerPatchRoute(s: TasksScope) {
     await s.store.update(id, task)
     return c.json(await s.prewarmChat(task, true))
   })
+  return app
 }

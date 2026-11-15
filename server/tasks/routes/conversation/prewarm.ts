@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { defaultAgent, type Task } from '../../../../shared/schema.ts'
 import { withTaskModel } from '../../../../shared/tasks/run.ts'
 import { agentRun } from '../../../../shared/settings.ts'
@@ -91,9 +92,10 @@ export async function prewarmChat(s: TasksScope, task: Task, force = false): Pro
 }
 
 /** 打开对话页时的预热，以及对话菜单的「激活 Agent」「关闭 Agent」 */
-export function registerPrewarmRoutes(s: TasksScope) {
+export function prewarmRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   // 打开对话页时调用
-  s.routes.post('/:id/prewarm', async (c) => {
+  app.post('/:id/prewarm', async (c) => {
     const id = c.req.param('id')
     // 看到 done 就立刻预热的请求会撞在「状态标完、执行位还没释放」的那几毫秒上：
     // 先等它收尾，再按正常流程启动，不要返回一份没启动的 done
@@ -109,7 +111,7 @@ export function registerPrewarmRoutes(s: TasksScope) {
    * 从侧栏点的时候页面可能没开着、早过了宽限：先当成刚有人看过，不然 CLI 一停到等待就退出了。
    * 不能提前启动的（没有会话、CLI 不支持停在等待上）原样返回，界面按返回的状态告诉用户
    */
-  s.routes.post('/:id/agent/activate', async (c) => {
+  app.post('/:id/agent/activate', async (c) => {
     const id = c.req.param('id')
     const reused = await reusedPrewarmEntry(s, id)
     if (reused) return c.json(await s.withLive(reused))
@@ -126,7 +128,7 @@ export function registerPrewarmRoutes(s: TasksScope) {
    * 正在执行这一轮的不关（和归档一样）：那是「暂停」的事，关进程会把这一轮掐断。
    * 名下子对话不跟着关：它们有自己的进程，只是父对话这边不再占着 CLI
    */
-  s.routes.post('/:id/agent/close', async (c) => {
+  app.post('/:id/agent/close', async (c) => {
     const id = c.req.param('id')
     const e = s.live.get(id)
     if (!e && !(await s.getMeta(id))) return s.bad(c, t('任务不存在'), 404)
@@ -143,4 +145,5 @@ export function registerPrewarmRoutes(s: TasksScope) {
     if (!now) return s.bad(c, t('任务不存在'), 404)
     return c.json(await s.withLive(now))
   })
+  return app
 }

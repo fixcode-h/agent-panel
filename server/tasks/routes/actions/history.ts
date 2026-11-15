@@ -1,4 +1,4 @@
-import { type Context } from 'hono'
+import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { Task } from '../../../../shared/schema.ts'
 import { gitNumstat, undoSpans } from '../../../exec/git.ts'
@@ -60,7 +60,8 @@ async function forkWorktree(s: TasksScope, task: Task, id: string, title: string
 }
 
 /** 停着的对话上的操作：撤回到某条消息、分叉、压缩上下文、审查改动 */
-export function registerHistoryRoutes(s: TasksScope) {
+export function historyRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   /**
    * 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊；返回被撤回的那条，方便改了再发。
    * files：连同被撤掉那几轮改的文件一起撤（每一轮记下的 turnChanges，和「撤销整个对话」同一套 undoSpans）——
@@ -69,7 +70,7 @@ export function registerHistoryRoutes(s: TasksScope) {
    * 被撤掉那几轮里建的计划作废、开的子对话停下并归档：它们是为被撤掉的要求做的，留着会接着往下推。
    * 第一条也能撤：等于清空对话重新开始（会话从头开）
    */
-  s.routes.post('/:id/rewind', async (c) => {
+  app.post('/:id/rewind', async (c) => {
     const task = await idleTask(s, c)
     if (task instanceof Response) return task
     const body = (await c.req.json().catch(() => ({}))) as { messageId?: string; files?: boolean }
@@ -108,7 +109,7 @@ export function registerHistoryRoutes(s: TasksScope) {
   })
 
   // 从某条消息分叉：新建一个对话，带着到这条消息为止的对话（含它的回复），原对话不动
-  s.routes.post('/:id/fork', async (c) => {
+  app.post('/:id/fork', async (c) => {
     const task = await idleTask(s, c)
     if (task instanceof Response) return task
     const { messageId } = (await c.req.json().catch(() => ({}))) as { messageId?: string }
@@ -122,7 +123,7 @@ export function registerHistoryRoutes(s: TasksScope) {
   })
 
   // 压缩上下文：让 CLI 把这个对话的会话压缩（不能压缩的 CLI 写一份摘要，下一轮开新会话带上）
-  s.routes.post('/:id/compact', async (c) => {
+  app.post('/:id/compact', async (c) => {
     const id = c.req.param('id')
     const e = s.live.get(id)
     // 正在回复：现有的 CLI 都没法不打断这一轮就压缩，等这一轮结束（界面上按钮这时是灰的）
@@ -145,7 +146,7 @@ export function registerHistoryRoutes(s: TasksScope) {
   })
 
   // 审查改动：Codex 用自己的审查模式，其他 CLI 按审查的要求跑一轮；只审查，不改文件
-  s.routes.post('/:id/review', async (c) => {
+  app.post('/:id/review', async (c) => {
     const task = await idleTask(s, c, false)
     if (task instanceof Response) return task
     // 占执行位放在检查目录这些 await 之前：两条「审查」请求不会各自通过检查再各启动一遍
@@ -175,4 +176,5 @@ export function registerHistoryRoutes(s: TasksScope) {
       throw e
     }
   })
+  return app
 }

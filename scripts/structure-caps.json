@@ -94,7 +94,6 @@
       "detect.ts",
       "download.ts",
       "env-api.ts",
-      "extra-routes.ts",
       "file-format.ts",
       "files.ts",
       "fix.ts",

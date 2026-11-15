@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { z } from 'zod'
 import { openable, openPath, resolvePath, searchRoots } from './paths.ts'
 import { t } from '../../shared/i18n.ts'
@@ -13,7 +14,8 @@ const OpenInput = z.object({ path: z.string().min(1).max(4096), reveal: z.boolea
  * 对话消息里提到的文件：解析成本机的真实路径（悬停卡片、找不到时划掉），用系统默认程序打开或在文件夹中显示。
  * 找文件的规则见 server/tasks/paths.ts
  */
-export function registerPathRoutes(s: TasksScope) {
+export function pathRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   /** 这个对话找文件的根；导入的任务没有本机目录，读不了时按原因报错 */
   const rootsOf = async (id: string) => {
     const dir = await s.readableDir(id)
@@ -24,7 +26,7 @@ export function registerPathRoutes(s: TasksScope) {
   }
   const fail = (e: unknown) => ({ error: (e as Error).message, status: (e as { status?: 400 | 404 }).status ?? 400 })
 
-  s.routes.post('/:id/paths', async (c) => {
+  app.post('/:id/paths', async (c) => {
     const p = Paths.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return s.bad(c, t('路径列表不对'))
     try {
@@ -37,7 +39,7 @@ export function registerPathRoutes(s: TasksScope) {
     }
   })
 
-  s.routes.post('/:id/open-path', async (c) => {
+  app.post('/:id/open-path', async (c) => {
     const p = OpenInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return s.bad(c, t('缺少文件路径'))
     try {
@@ -51,4 +53,5 @@ export function registerPathRoutes(s: TasksScope) {
       return s.bad(c, f.error, f.status)
     }
   })
+  return app
 }

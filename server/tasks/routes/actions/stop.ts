@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { diagnosisPending, trackWait } from '../../../../shared/task.ts'
 import { settleStopped } from '../../../../shared/tasks/settle.ts'
 import { subtreeTaskIds } from '../../../../shared/run/usage.ts'
@@ -64,8 +65,9 @@ async function userStop(s: TasksScope, id: string) {
 }
 
 /** 停止：停止按钮，以及子对话请用户决定的提问被关掉（不回答、终止子对话） */
-export function registerStopRoutes(s: TasksScope) {
-  s.routes.post('/:id/stop', async (c) => {
+export function stopRoutes(s: TasksScope): Hono {
+  const app = new Hono()
+  app.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
     taskLog(id, '用户停止', { force: c.req.query('force') ? true : undefined })
     await userStop(s, id)
@@ -85,7 +87,7 @@ export function registerStopRoutes(s: TasksScope) {
 
   // 子对话请用户决定的提问，用户点了关闭：这些提问不回答，子对话终止。
   // 父对话里的提问卡片记成「不回答」，它的 AI 也从收件箱知道，不会再替用户决定
-  s.routes.post('/:id/parent-asks/close', async (c) => {
+  app.post('/:id/parent-asks/close', async (c) => {
     const id = c.req.param('id')
     const e = s.live.get(id)
     const child = e?.task ?? (await s.store.get(id))
@@ -119,4 +121,5 @@ export function registerStopRoutes(s: TasksScope) {
     forgetNotes(id)
     return c.json(await currentTask(s, id))
   })
+  return app
 }

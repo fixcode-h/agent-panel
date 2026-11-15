@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { z } from 'zod'
 import { gitNumstat, gitRevertFile, undoSpans } from '../../../exec/git.ts'
 import { convChanges } from '../../../../shared/conv-changes.ts'
@@ -10,13 +11,14 @@ import type { TasksScope } from '../../scope.ts'
 import { currentTask } from '../../read.ts'
 
 /** 改文件的操作：应用排查结论的修复，撤销一个文件、一轮、整个对话的改动 */
-export function registerRevertRoutes(s: TasksScope) {
+export function revertRoutes(s: TasksScope): Hono {
+  const app = new Hono()
   /**
    * 排查结论的「应用这 N 处修改」：在被分析的那个对话的工作目录里按原文替换（分析的就是它的代码，
    * 它有独立分支时 taskDir 给的是 worktree）；和对话无关的排查（没有 analysisOf）改分析对话自己的目录。
    * 被分析的对话找不到了不退回别的目录：改错地方比不改更糟，报出来让用户自己处理
    */
-  s.routes.post('/:id/apply-fixes', async (c) => {
+  app.post('/:id/apply-fixes', async (c) => {
     const body = FixApplyInput.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const tk = await currentTask(s, c.req.param('id'))
@@ -35,7 +37,7 @@ export function registerRevertRoutes(s: TasksScope) {
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子
-  s.routes.post('/:id/revert', async (c) => {
+  app.post('/:id/revert', async (c) => {
     const id = c.req.param('id')
     if (s.live.has(id)) return s.bad(c, t('任务正在执行，等它停下后再撤销'), 409)
     const tk = await s.store.get(id)
@@ -59,7 +61,7 @@ export function registerRevertRoutes(s: TasksScope) {
 
   // 撤销一轮的改动（总结下面「已更改 N 个文件」的撤销）：只撤这一轮自己改的，之后用户或后面几轮又改的保留；
   // 有文件撤不干净（同一处后来又改过）时一个都不动，把冲突的文件和原因交回页面
-  s.routes.post('/:id/turn-revert', async (c) => {
+  app.post('/:id/turn-revert', async (c) => {
     const id = c.req.param('id')
     const { msg } = (await c.req.json().catch(() => ({}))) as { msg?: string }
     const tk = await currentTask(s, id)
@@ -102,7 +104,7 @@ export function registerRevertRoutes(s: TasksScope) {
 
   // 撤销整个对话的改动（对话停下后最后面那张改动卡片的撤销）：各轮从后往前一起撤，规则和撤一轮相同——
   // 之后用户自己又改的保留，有文件撤不干净时一个都不动，把冲突交回页面
-  s.routes.post('/:id/conv-revert', async (c) => {
+  app.post('/:id/conv-revert', async (c) => {
     const id = c.req.param('id')
     const tk = await currentTask(s, id)
     if (!tk) return s.bad(c, t('任务不存在'), 404)
@@ -136,4 +138,5 @@ export function registerRevertRoutes(s: TasksScope) {
     const saved = await s.store.update(id, { ...base, changes }, { now: true })
     return c.json({ ok: true, task: saved, files: r.files })
   })
+  return app
 }
