@@ -90,6 +90,26 @@ const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问�
 - **卡在哪**：\`/opsx\` 斜杠指令在当前 CLI 不可用，\`openspec validate\` 失败。
 - **已完成**：项目根、Git 基线、相关模块和历史 Bug 均已定位。
 - **要你处理**：在项目根执行 \`openspec update\` 生成指令文件。`
+/** 选项多的下拉框示例（UE 日志分类那种）：打开时顶上带搜索框，几项起带由「下拉菜单」里的「下拉框搜索框」调 */
+const LONG_OPTIONS = [
+  'LogActorComponent',
+  'LogAssetRegistry',
+  'LogAudio',
+  'LogBlueprint',
+  'LogCore',
+  'LogEditor',
+  'LogGameMode',
+  'LogInit',
+  'LogLoad',
+  'LogNet',
+  'LogPlayerController',
+  'LogRenderer',
+  'LogSlate',
+  'LogStreaming',
+  'LogUObjectGlobals',
+  'LogWorld',
+].map((v) => ({ value: v, label: v }))
+
 const NO_TEAM = new Set<string>()
 
 /** 一格展示：左边部件名（代码里的名字），右边实物；能微调的部件下面多一个「微调」，展开就地调 */
@@ -157,6 +177,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
   const [on, setOn] = useState(true)
   const [checked, setChecked] = useState(true)
   const [pick, setPick] = useState('claude')
+  const [longPick, setLongPick] = useState('LogWorld')
   const [open, setOpen] = useState(false)
   const [kids, setKids] = useState(['review', 'flow'])
   const toneLabel: Record<StatusTone, string> = {
@@ -281,6 +302,13 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               { value: 'codex', label: 'Codex' },
               { value: 'pi', label: 'Pi' },
             ]}
+          />
+          <Select
+            aria-label={t('示例长下拉框')}
+            className="w-56"
+            value={longPick}
+            onChange={(e) => setLongPick(e.target.value)}
+            options={LONG_OPTIONS}
           />
         </Specimen>
         <Specimen name="Textarea">

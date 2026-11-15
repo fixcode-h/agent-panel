@@ -2,6 +2,7 @@ import {
   createContext,
   forwardRef,
   useContext,
+  useRef,
   useState,
   type InputHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -12,6 +13,9 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { HelpTip } from './help-tip'
+import { listItem, SelectSearchPanel, wantSearch, type SelectOption } from './select-search'
+
+export { listItem }
 
 export const fieldClass =
   'w-full rounded-(--c-input-radius) border-(length:--c-input-border) border-line-strong bg-(--c-input-bg) px-3 text-sm text-fg placeholder:text-subtle ' +
@@ -59,7 +63,7 @@ export const SelectLook = createContext<'field' | 'ghost'>('field')
 
 const ghostTrigger =
   'ml-auto flex h-8 w-fit max-w-full items-center justify-end gap-1.5 rounded-lg px-2 text-sm text-muted outline-none ' +
-  'transition-colors hover:bg-hover hover:text-fg focus-visible:ring-[3px] focus-visible:ring-focus-soft data-[state=open]:bg-active data-[state=open]:text-fg'
+  'transition-colors hover:bg-hover hover:text-fg focus-visible:ring-[3px] focus-visible:ring-focus-soft data-[state=open]:bg-active data-[state=open]:text-fg data-[searching]:bg-active data-[searching]:text-fg'
 
 const EMPTY = '__empty__'
 const enc = (v: string) => (v === '' ? EMPTY : v)
@@ -68,13 +72,13 @@ const dec = (v: string) => (v === EMPTY ? '' : v)
 const listPanel =
   'z-50 max-h-[min(360px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] ' +
   'overflow-hidden rounded-(--c-menu-radius) border-(length:--c-menu-border) border-pop-edge bg-(--c-menu-bg) shadow-pop anim-pop'
-export const listItem =
-  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-(--c-menu-itemRadius) py-1 pr-8 pl-2.5 text-left text-body leading-5 ' +
-  'outline-none data-[highlighted]:bg-hover data-[state=checked]:text-fg data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
-
-/** 下拉框：样式和输入框一致，弹出的列表也跟随主题（不用系统原生列表） */
+/**
+ * 下拉框：样式和输入框一致，弹出的列表也跟随主题（不用系统原生列表）。
+ * 选项多（设置 → 组件 → 下拉菜单的「搜索框」，默认 10 项起）时打开带搜索框的列表，打字就能筛
+ */
 export function Select({
   options,
+  search,
   className,
   value,
   onChange,
@@ -90,7 +94,7 @@ export function Select({
   /** 没选时显示的提示 */
   placeholder?: string
   /** 带 group 的选项按组显示；short：列表里显示的短说法（组名已经说了的部分省掉），选中后框里仍显示 label */
-  options: { value: string; label: string; group?: string; short?: string }[]
+  options: SelectOption[]
   value: string
   onChange: (e: { target: { value: string } }) => void
   className?: string
@@ -99,37 +103,68 @@ export function Select({
   /** 悬停提示 */
   title?: string
   'aria-label'?: string
+  /** 强制带 / 不带搜索框；不传时按选项个数和设置决定 */
+  search?: boolean
 }) {
+  const [searching, setSearching] = useState(false)
+  const [radixOpen, setRadixOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const groups = [...new Set(options.map((o) => o.group ?? ''))]
   const current = options.find((o) => o.value === value)
   const ghost = useContext(SelectLook) === 'ghost'
   const ctxSize = useContext(FieldSizeContext)
   const size = sizeProp ?? ctxSize
+  const trigger = (
+    <S.Trigger
+      ref={triggerRef}
+      data-select-search-anchor=""
+      data-searching={searching ? '' : undefined}
+      id={id}
+      title={title}
+      aria-label={ariaLabel}
+      className={cn(
+        ghost
+          ? [ghostTrigger, size !== 'md' && 'h-7 text-body']
+          : [
+              fieldClass,
+              'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-(length:--c-input-ring) data-[state=open]:ring-accent-soft',
+              'data-[searching]:border-accent data-[searching]:ring-(length:--c-input-ring) data-[searching]:ring-accent-soft',
+              size !== 'md' && fieldSizes[size],
+            ],
+        'cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60',
+        className,
+      )}
+    >
+      <span className={cn('min-w-0 truncate', !current && 'text-subtle')}>
+        {current?.label ?? (value || placeholder)}
+      </span>
+      <S.Icon>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-subtle" />
+      </S.Icon>
+    </S.Trigger>
+  )
   return (
-    <S.Root value={enc(value)} onValueChange={(v) => onChange({ target: { value: dec(v) } })} disabled={disabled}>
-      <S.Trigger
-        id={id}
-        title={title}
-        aria-label={ariaLabel}
-        className={cn(
-          ghost
-            ? [ghostTrigger, size !== 'md' && 'h-7 text-body']
-            : [
-                fieldClass,
-                'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-(length:--c-input-ring) data-[state=open]:ring-accent-soft',
-                size !== 'md' && fieldSizes[size],
-              ],
-          'cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60',
-          className,
-        )}
-      >
-        <span className={cn('min-w-0 truncate', !current && 'text-subtle')}>
-          {current?.label ?? (value || placeholder)}
-        </span>
-        <S.Icon>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-subtle" />
-        </S.Icon>
-      </S.Trigger>
+    <S.Root
+      value={enc(value)}
+      onValueChange={(v) => onChange({ target: { value: dec(v) } })}
+      disabled={disabled}
+      open={radixOpen}
+      onOpenChange={(o) => {
+        // 选项多时不开 Radix 的列表，换成带搜索框的；再点一下下拉框就关上
+        if (o && (searching || wantSearch(options.length, search))) setSearching(!searching)
+        else setRadixOpen(o)
+      }}
+    >
+      <SelectSearchPanel
+        open={searching}
+        onOpenChange={setSearching}
+        anchor={trigger}
+        options={options}
+        value={value}
+        onPick={(v) => onChange({ target: { value: v } })}
+        label={ariaLabel ?? title}
+        returnFocus={() => triggerRef.current?.focus()}
+      />
       <S.Portal>
         <S.Content position="popper" sideOffset={6} className={listPanel}>
           <S.ScrollUpButton className="grid h-5 place-items-center text-subtle">

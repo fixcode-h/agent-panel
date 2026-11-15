@@ -102,7 +102,17 @@ export const COMP_SPEC = {
   chip: { radius: px(5, 0, 12), ring: bool(true, '1px', '0px') },
   row: { radius: px(7, 0, 16), bg: color('default', { default: tint(3.5), ...BG }) },
   nav: { radius: px(7, 0, 16) },
-  menu: { radius: px(10, 0, 20), itemRadius: px(7, 0, 14), bg: color('pop'), border: BORDER },
+  /**
+   * 下拉菜单：search 是下拉框（ui/input 的 Select）几项起打开时顶上带搜索框，值是项数，0 是不显示；
+   * Select 打开时读这个变量决定用哪种列表（web/src/components/ui/select-search.tsx）
+   */
+  menu: {
+    radius: px(10, 0, 20),
+    itemRadius: px(7, 0, 14),
+    bg: color('pop'),
+    border: BORDER,
+    search: pick('from10', { always: '1', from6: '6', from10: '10', from20: '20', never: '0' }),
+  },
   // 弹窗照 Claude Code 网页版的方案弹窗：圆角 8、深色下比页面亮一档的窗口色（--window）
   modal: { radius: px(14, 0, 28), bg: color('window', { window: 'var(--window)', ...BG }), border: BORDER },
   sheet: { radius: px(14, 0, 24), bg: color('bg') },
