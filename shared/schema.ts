@@ -1493,9 +1493,19 @@ export const TaskMessage = z.object({
   panel: PanelKind.optional(),
   /**
    * panel 为 child / wrapup 时：是哪个子对话、上报时它处在哪个状态（见 shared/task.ts 的 ConvState）。
-   * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
+   * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示。
+   * reason、result 是状态上报的原因和最近的结果（复查报告 A3）：界面直接读它们，不再从给 Agent 的正文里解析；
+   * 旧消息没有时退回 shared/peer-message.ts 的 parseReport
    */
-  child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
+  child: z
+    .object({
+      id: z.string(),
+      title: z.string().default(''),
+      state: z.string().default(''),
+      reason: z.string().optional(),
+      result: z.string().optional(),
+    })
+    .optional(),
   /**
    * 子对话交回结果时面板自动画在父对话里的总结卡（见 shared/summary/card.ts 的 childSummaryCards）：
    * 标题就是子对话总结的「类型｜结论」，child 是点标题跳过去的子对话。父对话不再自己写这张卡。

@@ -382,6 +382,8 @@ export interface TasksScope {
       id: string
       title: string
       state: import('../../shared/task.ts').ConvState
+      reason?: string
+      result?: string
     },
     peer?: PeerFrom,
     worktree?: import('../../shared/schema.ts').TaskMessage['worktree'],

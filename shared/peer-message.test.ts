@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PeerKind, TaskMessage } from './schema.ts'
+import { inLang, setLang } from './i18n.ts'
+import { childReport } from './task.ts'
 import {
   currentAskIndex,
   handedToOther,
   noteHandOff,
   parseReport,
+  reportOf,
   peerOfMessage,
   sentToOther,
   sourceHeader,
@@ -154,4 +157,39 @@ test('sourceHeader：父对话、其他对话发来的写明「不是用户说�
   assert.equal(sourceHeader({ peer: peer('child', 'report') }), '')
   assert.equal(sourceHeader({ panel: 'nudge', peer: peer('parent') }), '')
   assert.equal(sourceHeader({}), '')
+})
+
+test('子对话状态上报（复查报告 A3）：界面读消息上存的状态、原因、结果；给 Agent 的原因固定中文', () => {
+  const m = msg({
+    text: '【子对话状态】「修登录」（id c1）Failed: Run failed\n下一步：要重试就用 send_to_conversation 交回这个子对话（id c1）',
+    child: { id: 'c1', title: '修登录', state: 'failed', reason: 'Run failed', result: '改了一半' },
+  })
+  const r = reportOf(m)!
+  assert.equal(r.child, '修登录')
+  assert.equal(r.reason, 'Run failed', '原因直接取存好的，不从正文解析')
+  assert.equal(r.result, '改了一半')
+  assert.equal(r.next.length, 1, '下一步仍取正文里写给父对话的那句')
+  // 旧消息没有结构：照旧按正文解析
+  assert.equal(reportOf(msg({ text: m.text }))?.child, '修登录')
+  // 界面是英文时，给 Agent 的那句仍是中文
+  setLang('en')
+  try {
+    const kid = {
+      status: 'failed',
+      working: false,
+      requests: [],
+      parentAsks: [],
+      plans: [],
+      steps: [],
+      resolved: false,
+      awaitingUser: false,
+    } as never
+    assert.doesNotMatch(childReport(kid).why, /[一-龥]/, '界面上的说法跟着英文')
+    assert.match(
+      inLang('zh', () => childReport(kid).why),
+      /执行失败/,
+    )
+  } finally {
+    setLang('zh')
+  }
 })

@@ -28,7 +28,7 @@ import { hasHeld } from '../exec/delivery.ts'
 import { releaseWorktree, worktreeStatus } from '../exec/worktree.ts'
 import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrate.ts'
 import { log } from '../log.ts'
-import { t } from '../../shared/i18n.ts'
+import { inLang, t } from '../../shared/i18n.ts'
 import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
 import { activePlan, holdWait, planProgress, openWork, settlePlan } from '../../shared/plan/index.ts'
 import { panelWrap } from '../../shared/wrap-up.ts'
@@ -376,13 +376,17 @@ export function createChildren(sc: TasksScope) {
     // 这一轮结束后还要接着做：排队的要求、面板交过来的消息、刚开好独立分支马上在分支目录里接着做的
     const more = sc.startQueue.has(childId) || hasHeld(childId)
     const project = isolated(tk) ? await sc.deps.projects.get(tk.projectId) : null
-    const r = childReport(tk, {
+    const facts = {
       background: jobs,
       more,
       unmerged: await sc.childUnmerged(tk, project ?? null),
       // 它下面的孙对话在等用户：报「等你处理」并说清是它的子对话，父对话不会当成它卡住了去催
       childNeeds: (await childCountsOf(tk.id)).needs,
-    })
+    }
+    const r = childReport(tk, facts)
+    // 给父对话 AI 的那封信固定用中文（提示词不翻译）：界面切成英文时 r.why 是英文，混进去就成了半中半英（复查报告 A3）。
+    // 界面上的状态和原因按结构存在消息的 child 上，由页面按当时的语言画，不再从信的正文里解析
+    const agentWhy = inLang('zh', () => childReport(tk, facts).why)
     if (r.settle === 'hold') {
       await holdChildWait(tk, r.why).catch((e) =>
         log.warn('task', '更新父对话计划的等待说明失败', { task: tk.id, error: (e as Error).message }),
@@ -457,14 +461,14 @@ export function createChildren(sc: TasksScope) {
             : r.state === 'failed' || r.state === 'stopped'
               ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
               : ''
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要。${fullAt(tk.parentTaskId, tk.title, src)}面板会自动给用户显示它的总结卡片，不用转述细节）` : ''}` : ''}`
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${agentWhy}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要。${fullAt(tk.parentTaskId, tk.title, src)}面板会自动给用户显示它的总结卡片，不用转述细节）` : ''}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
       tk,
       text,
       text,
       r.settle === 'hold' ? undefined : { kind: 'child', ref: tk.id, ok: r.settle === 'ok' },
-      { id: tk.id, title: tk.title, state: r.state },
+      { id: tk.id, title: tk.title, state: r.state, reason: r.reason, result: summary },
       await sc.peerOf(tk, 'child', 'report', r.why, r.state === 'failed'),
       undefined,
       // 只有「只剩合回却没请收尾」要叫起父对话；失败、中断的重试提示照旧放进收件箱

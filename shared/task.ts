@@ -672,6 +672,8 @@ export interface ChildReport {
   settle: 'hold' | 'ok' | 'fail'
   /** 一句话：现在的状态和原因，写进父计划那一步的说明，也是上报消息的第一行 */
   why: string
+  /** why 里冒号后面的原因（界面按 state 自己画状态短词，原因单独显示） */
+  reason: string
   /** 要不要给父对话发一条状态消息：还在动的（执行中、等结果）只更新计划那一步的说明，不刷消息 */
   notify: boolean
 }
@@ -794,6 +796,7 @@ export function childReport(
           ? 'fail'
           : 'hold',
     why: [convStateText(state), reason].filter(Boolean).join(t('：')),
+    reason: reason ?? '',
     notify: state !== 'running' && state !== 'waiting' && state !== 'needs',
   }
 }
