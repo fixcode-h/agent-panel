@@ -1,6 +1,5 @@
 /** 英文词典的一部分：项目设置里的 MCP 分节（项目里识别到的配置、导入、AI 排查） */
 export const EN_MCP: Record<string, string> = {
-  '{cli} 不支持管理 MCP 工具': "{cli} doesn't support managing MCP tools",
   项目里已经没有这条配置了: 'This entry is no longer in the project',
   MCP: 'MCP',
   项目里识别到的配置: 'Found in the project',

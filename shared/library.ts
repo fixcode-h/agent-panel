@@ -165,13 +165,22 @@ export const McpServer = z.object({
 export type McpServer = z.infer<typeof McpServer>
 
 export interface McpEntry extends McpServer {
-  /** 装在哪些 CLI 里 */
+  /** 装在哪些 CLI 里（按项目的条目：交给哪些 CLI） */
   clis: string[]
+  /**
+   * 生效方式（见 shared/mcp-library/inject.ts）：global 写进 CLI 的全局配置，所有项目都加载；
+   * project 只在项目「能力」里打开了它的项目里每轮注入。缺省当 global
+   */
+  activation?: 'global' | 'project'
+  /** 按项目的条目里，还不能每轮注入、退回全局写入的 CLI（CLI 定义里没写 mcpStore.inject） */
+  fallback?: string[]
+  /** 按项目的条目同名、但面板没清掉的全局配置（和条目不一样，可能是用户自己在 CLI 里加的）：在哪些 CLI 里 */
+  ownIn?: string[]
 }
 
 export interface McpOverview {
-  /** 面板能管 MCP 工具的 CLI，和它们的配置文件 */
-  clis: { id: string; name: string; file: string }[]
+  /** 面板能管 MCP 工具的 CLI，和它们的配置文件；perProject：能不能每轮按项目注入 */
+  clis: { id: string; name: string; file: string; perProject?: boolean }[]
   servers: McpEntry[]
 }
 

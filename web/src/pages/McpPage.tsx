@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CliTag, PageFrame } from '@/components/library/parts'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
@@ -61,7 +62,7 @@ export function McpPage() {
     <PageFrame
       title={t('MCP 工具')}
       intro={t(
-        'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 Agent 自己的配置文件，装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。',
+        'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。「全局」的直接写进各个 Agent 自己的配置文件，所有项目都加载；「按项目生效」的只在项目设置「能力」里打开了它的项目里，每轮对话交给 Agent。装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。',
       )}
       actions={
         <Button onClick={() => setEdit('new')} disabled={!data}>
@@ -86,10 +87,18 @@ export function McpPage() {
                 <Terminal className="h-4 w-4 shrink-0 text-accent-text" />
               )}
               <div className="min-w-0 flex-[1_1_240px]">
-                <p className="truncate font-mono text-body">{s.name}</p>
+                <p className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-mono text-body">{s.name}</span>
+                  {s.activation === 'project' && (
+                    <Badge tone="accent" title={t('只在项目设置「能力」里打开了它的项目里交给 Agent')}>
+                      {t('按项目生效')}
+                    </Badge>
+                  )}
+                </p>
                 <p className="truncate font-mono text-footnote text-muted" title={summary(s)}>
                   {summary(s)}
                 </p>
+                <ScopeNote entry={s} data={data} />
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                 {data.clis.map((c) => (
@@ -150,7 +159,13 @@ export function McpPage() {
         open={!!del}
         onOpenChange={(o) => !o && setDel(null)}
         title={t('删除「{name}」？', { name: del?.name ?? '' })}
-        description={t('会从所有 Agent 的配置文件里移除这个工具。')}
+        description={
+          del?.activation === 'project'
+            ? t(
+                '会从面板的 MCP 库里删掉它，打开了它的项目从下一轮对话起不再带上；退回全局写入的 Agent 配置里的也一起移除。',
+              )
+            : t('会从所有 Agent 的配置文件里移除这个工具。')
+        }
         onConfirm={async () => {
           try {
             setData(await api.deleteMcpTool(del!.name))
@@ -161,6 +176,24 @@ export function McpPage() {
         }}
       />
     </PageFrame>
+  )
+}
+
+/** 按项目的条目里还做不到按项目的地方：退回全局写入的 Agent、用户自己在 Agent 里另配的同名工具 */
+function ScopeNote({ entry, data }: { entry: McpEntry; data: McpOverview }) {
+  const names = (ids: string[] = []) => ids.map((id) => data.clis.find((c) => c.id === id)?.name ?? id).join(t('、'))
+  const fallback = names(entry.fallback)
+  const own = names(entry.ownIn)
+  if (!fallback && !own) return null
+  return (
+    <p className="mt-0.5 flex items-start gap-1 text-footnote text-warning">
+      <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        {fallback && t('{names} 还不能按项目，写进了它的全局配置，所有项目都会加载。', { names: fallback })}
+        {own &&
+          t('{names} 的全局配置里还有一份不一样的同名工具（多半是在 Agent 里自己加的），面板没动它。', { names: own })}
+      </span>
+    </p>
   )
 }
 
@@ -185,6 +218,7 @@ function EditDialog({
   const [url, setUrl] = useState(entry?.url ?? '')
   const [headers, setHeaders] = useState(toLines(entry?.headers ?? {}, ': '))
   const [clis, setClis] = useState<string[]>(entry?.clis ?? data.clis.map((c) => c.id))
+  const [activation, setActivation] = useState<'global' | 'project'>(entry?.activation ?? 'global')
   const [busy, setBusy] = useState(false)
   const [test, setTest] = useState<McpTestResult | 'running' | null>(null)
   // 让 AI 排查时带去的当前配置和报错（打开那一刻的快照）
@@ -225,7 +259,7 @@ function EditDialog({
   const save = async () => {
     setBusy(true)
     try {
-      onSaved(await api.saveMcpTool(server(), clis))
+      onSaved(await api.saveMcpTool(server(), clis, { activation, ...(entry && { previous: entry }) }))
     } catch (e) {
       toast.error((e as Error).message)
       setBusy(false)
@@ -340,6 +374,30 @@ function EditDialog({
           </label>
         </>
       )}
+      <div className="flex flex-col gap-1.5">
+        <Segmented
+          label={t('生效范围')}
+          value={activation}
+          onChange={setActivation}
+          options={[
+            { id: 'global', label: t('全局') },
+            { id: 'project', label: t('按项目生效') },
+          ]}
+        />
+        <span className="text-footnote text-subtle">
+          {activation === 'global'
+            ? t('写进 Agent 的全局配置，所有项目都加载。')
+            : t('不写进全局配置，只在项目设置「能力」里打开了它的项目里，每轮对话交给 Agent。')}
+          {activation === 'project' &&
+            !!data.clis.filter((c) => !c.perProject && clis.includes(c.id)).length &&
+            t('{names} 还不能按项目，对它仍写进全局配置。', {
+              names: data.clis
+                .filter((c) => !c.perProject && clis.includes(c.id))
+                .map((c) => c.name)
+                .join(t('、')),
+            })}
+        </span>
+      </div>
       <div className="flex flex-col gap-2">
         <span className="text-body font-medium">{t('装进哪些 Agent')}</span>
         <div className="flex flex-wrap gap-x-5 gap-y-2">

@@ -571,7 +571,12 @@
     "urlKey": "url",
     "remoteType": "http",
     "stdioType": true,
-    "headersKey": "headers"
+    "headersKey": "headers",
+    "inject": {
+      "format": "json",
+      "args": ["--mcp-config", "{json}"],
+      "why": "--mcp-config 可以给多次，和面板自己的那份并存；stdio、http 都支持，字段和 ~/.claude.json 的 mcpServers 一样"
+    }
   },
   "i18n": {
     "en": {

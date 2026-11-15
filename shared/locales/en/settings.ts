@@ -673,8 +673,23 @@ export const EN_SETTINGS: Record<string, string> = {
   内容: 'Content',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':
     "Only the copy in {cli} is deleted. The file is removed from disk and can't be restored.",
-  'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 Agent 自己的配置文件，装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。':
-    "MCP tools let an agent reach outside services and data (docs, databases, browsers…). This reads and writes each agent's own config file; the switches on the right decide which agent has the tool. Tools installed with an agent's own commands are listed too.",
+  'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。「全局」的直接写进各个 Agent 自己的配置文件，所有项目都加载；「按项目生效」的只在项目设置「能力」里打开了它的项目里，每轮对话交给 Agent。装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。':
+    "MCP tools let an agent reach outside services and data (docs, databases, browsers…). Global tools are written to each agent's own config file and load in every project; per-project tools are handed to the agent each turn, only in projects that turn them on under Capabilities in project settings. The switches on the right decide which agent has the tool. Tools installed with an agent's own commands are listed too.",
+  按项目生效: 'Per project',
+  '只在项目设置「能力」里打开了它的项目里交给 Agent':
+    'Handed to agents only in projects that turn it on under Capabilities in project settings',
+  '{names} 还不能按项目，写进了它的全局配置，所有项目都会加载。':
+    "{names} can't load tools per project yet, so it was written to their global config and loads in every project.",
+  '{names} 的全局配置里还有一份不一样的同名工具（多半是在 Agent 里自己加的），面板没动它。':
+    '{names} still has a different tool with the same name in its global config (probably added in the agent itself); the panel left it alone.',
+  生效范围: 'Scope',
+  '写进 Agent 的全局配置，所有项目都加载。': "Written to the agent's global config; loads in every project.",
+  '不写进全局配置，只在项目设置「能力」里打开了它的项目里，每轮对话交给 Agent。':
+    'Not written to global config; handed to the agent each turn, only in projects that turn it on under Capabilities in project settings.',
+  '{names} 还不能按项目，对它仍写进全局配置。':
+    "{names} can't load tools per project yet, so it is still written to their global config.",
+  '会从面板的 MCP 库里删掉它，打开了它的项目从下一轮对话起不再带上；退回全局写入的 Agent 配置里的也一起移除。':
+    "Removes it from the panel's MCP library; projects that had it on stop getting it from the next turn. Copies written to agents' global config as a fallback are removed too.",
   '还没有装 MCP 工具，点右上角「添加」。': 'No MCP tools yet — click “Add” at the top right.',
   '在 {cli} 里启用': 'Enable in {cli}',
   '配置文件：': 'Config files: ',
