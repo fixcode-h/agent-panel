@@ -41,7 +41,9 @@ import { ExperiencePage, LessonsPage } from './settings/RecordPages'
 import { CandidatesPage } from './knowledge/CandidatesPage'
 import { DistillPage } from './knowledge/DistillPage'
 import { PluginSectionPage } from './settings/PluginSectionPage'
-import { DocsPane, McpPane, SkillsPane } from './settings/DocsPages'
+import { DocsPane } from './settings/DocsPages'
+import { CapabilitiesPage } from './caps/CapabilitiesPage'
+import { useCapsDraft } from './caps/use-caps-draft'
 
 const projectDialogTitle = (project?: Project) =>
   project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')
@@ -231,7 +233,12 @@ function Body({
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
   // 还没初始化的旧项目打开时先到「AI 初始化」：不初始化就不能保存
-  const [section, setSection] = useState(initialSection || (project && !project.initializedAt ? 'init' : 'general'))
+  // 原来的「Skill」「MCP」两页合成了「能力」（项目目录里的技能、MCP 配置挪到项目工具的「技能与 MCP」页），旧链接落到「能力」
+  const [section, setSection] = useState(() => {
+    const s = initialSection || (project && !project.initializedAt ? 'init' : 'general')
+    return s === 'skills' || s === 'mcp' ? 'caps' : s
+  })
+  const caps = useCapsDraft({ project, draft, setDraft })
   const docs = useProjectDocs(project, draft.path)
   const initFlow = useProjectInit({
     project,
@@ -278,11 +285,24 @@ function Body({
       <ModalHeader icon={FolderCog} title={projectDialogTitle(project)} />
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <ProjectSettingsNav section={section} onSection={setSection} project={project} draft={draft} docs={docs} />
-        {section === 'mcp' ? (
-          <McpPane project={project} draftPath={draft.path} />
-        ) : section === 'skills' ? (
-          <SkillsPane project={project} draftPath={draft.path} />
+        <ProjectSettingsNav
+          section={section}
+          onSection={setSection}
+          project={project}
+          draft={draft}
+          docs={docs}
+          capRows={caps.probe.rows ?? []}
+        />
+        {section === 'caps' ? (
+          <CapabilitiesPage
+            isNew={!project}
+            projectId={project?.id}
+            draft={draft}
+            setDraft={setDraft}
+            probe={caps.probe}
+            recommended={caps.recommended}
+            onSection={setSection}
+          />
         ) : section === 'doc' || section.startsWith('cli:') ? (
           <DocsPane section={section} project={project} draft={draft} set={set} docs={docs} />
         ) : (

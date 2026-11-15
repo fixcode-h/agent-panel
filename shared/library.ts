@@ -13,6 +13,8 @@ export interface LibraryItem {
   path: string
   /** 配置安全扫描中级以上的条数（没有就不带），列表上画小盾牌 */
   scan?: ScanSummary
+  /** 生效方式（和插件清单同名）：project 只在项目「能力」里打开了的项目带上；没写当 global */
+  activation?: 'global' | 'project'
 }
 
 export interface LibraryCli {
@@ -167,6 +169,8 @@ export type McpServer = z.infer<typeof McpServer>
 export interface McpEntry extends McpServer {
   /** 装在哪些 CLI 里 */
   clis: string[]
+  /** 生效方式（和插件清单同名）：project 只在项目「能力」里打开了的项目注入；没写当 global */
+  activation?: 'global' | 'project'
 }
 
 export interface McpOverview {
@@ -200,6 +204,8 @@ export interface BundledSkill {
   status: Record<string, 'missing' | 'same' | 'changed'>
   /** 插件带的技能：插件 id（界面上标「来自插件」，ADR 0059） */
   plugin?: string
+  /** 生效方式（和插件清单同名）：project 只在项目「能力」里打开了的项目带上；没写当 global */
+  activation?: 'global' | 'project'
 }
 
 export const BUNDLED_CATEGORIES: { id: string; label: string }[] = [

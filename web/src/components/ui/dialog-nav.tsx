@@ -20,6 +20,9 @@ export function NavItem({
   on,
   onClick,
   dot,
+  dotTone = 'accent',
+  dotTitle,
+  indent,
   hint,
   children,
 }: {
@@ -27,6 +30,12 @@ export function NavItem({
   onClick: () => void
   /** 有没保存的改动 */
   dot?: boolean
+  /** 点的颜色：accent 有没保存的改动（默认）；warning 还缺设置（例如项目能力里没设置好的插件） */
+  dotTone?: 'accent' | 'warning'
+  /** 点的悬停说明；不给时按 dotTone 用默认说法 */
+  dotTitle?: string
+  /** 挂在上一项下面的子项（项目设置「能力」下的插件设置页）：往里缩一格 */
+  indent?: boolean
   /** 右边的小字：用的是哪个文件 */
   hint?: string
   children: React.ReactNode
@@ -38,6 +47,7 @@ export function NavItem({
       aria-current={on ? 'page' : undefined}
       className={cn(
         'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-body whitespace-nowrap transition-colors',
+        indent && 'md:pl-8',
         on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >
@@ -47,8 +57,12 @@ export function NavItem({
       )}
       {dot && (
         <span
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full bg-accent', !hint && 'ml-auto')}
-          title={t('有未保存的改动')}
+          className={cn(
+            'h-1.5 w-1.5 shrink-0 rounded-full',
+            dotTone === 'warning' ? 'bg-warning' : 'bg-accent',
+            !hint && 'ml-auto',
+          )}
+          title={dotTitle ?? (dotTone === 'warning' ? t('还缺设置') : t('有未保存的改动'))}
         />
       )}
     </button>

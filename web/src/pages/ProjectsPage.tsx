@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { ownedPage, ownedPageRoute, usePluginPages } from '@/plugins/registry'
 import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
+import { ProjectCapsPage } from '@/components/projects/caps/ProjectCapsPage'
 
 /**
  * 项目页只剩项目工作区：项目列在侧栏里，项目设置是弹窗，分类在「设置 · 项目分类」里管理。
@@ -32,5 +33,12 @@ export function ProjectsPage() {
 
   if (!selected || route.sub === 'settings') return null
   if (page) return null
+  // 项目工具里的「技能与 MCP」（#/projects/<id>/capabilities）：普通整页，套上和别的页面一样的面板底
+  if (route.sub === 'capabilities')
+    return (
+      <div className="panel flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
+        <ProjectCapsPage key={selected.id} project={selected} />
+      </div>
+    )
   return <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} />
 }

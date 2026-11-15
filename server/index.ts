@@ -60,6 +60,7 @@ import { summaryApi } from './summary.ts'
 import { lessonDraftsApi } from './lesson-drafts.ts'
 import { fixApi } from './fix.ts'
 import { projectSkillsApi } from './projects/skills.ts'
+import { projectCapabilitiesApi } from './projects/capabilities.ts'
 import { isPanelSource } from './panel/source.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
@@ -1003,6 +1004,8 @@ app.route('/doc-jobs', docs.jobRoutes)
 app.route('/ai-fix', fixApi())
 // 项目设置里的 Skill 分节：项目目录下的技能
 app.route('/project-skills', projectSkillsApi({ projects }))
+// 项目「能力」页：按项目生效的插件、推荐理由和还缺的设置（插件接口 9）
+app.route('/project-capabilities', projectCapabilitiesApi())
 app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----

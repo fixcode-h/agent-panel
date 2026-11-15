@@ -9,6 +9,7 @@ import { EN_LOCAL_IMAGE } from './en/local-image.ts'
 import { EN_MCP } from './en/mcp.ts'
 import { EN_MCP_CATALOG } from './en/mcp-catalog.ts'
 import { EN_PROJECT_SKILLS } from './en/project-skills.ts'
+import { EN_PROJECT_CAPS } from './en/project-caps.ts'
 import { EN_SCHEDULE } from './en/schedule.ts'
 import { EN_SCHEDULE_TRIGGER } from './en/schedule-trigger.ts'
 import { EN_SERVER } from './en/server.ts'
@@ -88,6 +89,7 @@ export const EN: Record<string, string> = {
   ...EN_MCP,
   ...EN_MCP_CATALOG,
   ...EN_PROJECT_SKILLS,
+  ...EN_PROJECT_CAPS,
   ...EN_SCHEDULE,
   ...EN_SCHEDULE_TRIGGER,
   ...EN_ALERTS,
