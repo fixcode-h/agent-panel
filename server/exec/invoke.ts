@@ -1,5 +1,5 @@
 import { tracedEvents } from './cli-trace.ts'
-import { effortEnv, getCli, isOffEffort, type BuildOptions } from '../../shared/clis.ts'
+import { effortEnv, getCli, isOffEffort, type BuildOptions, type CliDefinition } from '../../shared/clis.ts'
 import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
@@ -11,6 +11,8 @@ import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
 import { getSettings } from '../settings.ts'
 import { mcpConfig, mcpExtras } from '../../shared/cli-spec.ts'
+import { mcpInjectArgs } from '../../shared/mcp-library/inject.ts'
+import type { LibraryEntry } from '../mcp-library/file.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
 import { claimPanelName, sweepPanelMcp } from '../panel/mcp-files.ts'
@@ -149,6 +151,11 @@ export async function invokeCli(o: {
   images?: string[]
   /** 这一轮额外交给 CLI 的其他 MCP 服务；CLI 定义里没写怎么接 MCP 时忽略 */
   mcp?: { name: string; url: string }[]
+  /**
+   * 项目「能力」里打开了的、全局 MCP 库里按项目生效的条目（server/mcp-library/run.ts）：
+   * 只交给条目选了的、CLI 定义写了 mcpStore.inject 的 CLI，其余 CLI 是退回全局写入的，这里不再带
+   */
+  projectMcp?: LibraryEntry[]
   /** 编排工具：和提问、等下一句一起挂在面板的 MCP 上 */
   orch?: Orchestra
   /** 操控软件的动作（app_actions / app_do）：对话的调用才给，值是调用者（见 ADR 0011） */
@@ -346,6 +353,8 @@ export async function invokeCli(o: {
       o.onEvent({ type: 'notice', text: message, failed: true })
     }
   }
+  const libArgs = projectMcpArgs(def, o.projectMcp, servers)
+  if (libArgs.length) run = { ...run, build: { ...run.build, extraArgs: [...(run.build.extraArgs ?? []), ...libArgs] } }
   const restoreLimits = await applyLimitFile(def, o.cwd, model, cs.api ? undefined : o.limits)
   try {
     return await invoke(run, def, setControl, hard.signal, () => hard.abort())
@@ -358,6 +367,13 @@ export async function invokeCli(o: {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
     if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => {})
   }
+}
+
+/** 按项目的 MCP 条目换成这个 CLI 的参数；和面板、插件的服务同名的跳过（那几个是这一轮自己的） */
+function projectMcpArgs(def: CliDefinition, entries: LibraryEntry[] | undefined, taken: { name: string }[]) {
+  const names = new Set(taken.map((x) => x.name))
+  const mine = (entries ?? []).filter((e) => e.clis.includes(def.id) && !names.has(e.server.name)).map((e) => e.server)
+  return mcpInjectArgs(def.mcpStore, mine)
 }
 
 /**

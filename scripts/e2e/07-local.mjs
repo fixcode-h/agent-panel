@@ -1259,6 +1259,24 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     const gs = JSON.parse(readFileSync(path.join(homeDir, '.custom', 'settings.json'), 'utf8'))
     assert.equal(gs.mcpServers.web.url, 'https://x.example/mcp')
     assert.equal(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.web.type, 'http')
+    // 改成按项目生效：能每轮注入的 Claude Code、Codex 的全局配置里面板写的那份清掉；
+    // 自定义 CLI 的定义里没写 inject，退回全局写入，界面上按 fallback 注明
+    ov = await call('PUT', '/mcp-tools/mini', {
+      server,
+      clis: ['claude', 'codex', 'custom'],
+      activation: 'project',
+    })
+    const pm = ov.servers.find((x) => x.name === 'mini')
+    assert.equal(pm.activation, 'project')
+    assert.deepEqual(pm.fallback, ['custom'])
+    assert.equal(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.mini, undefined)
+    assert.ok(!readFileSync(codexToml, 'utf8').includes('[mcp_servers.mini]'))
+    assert.ok(JSON.parse(readFileSync(path.join(homeDir, '.custom', 'settings.json'), 'utf8')).mcpServers.mini)
+    assert.ok(ov.clis.find((c) => c.id === 'claude').perProject)
+    // 改回全局：照旧写进各 CLI 的全局配置
+    ov = await call('PUT', '/mcp-tools/mini', { server, clis: ['claude', 'codex', 'custom'], activation: 'global' })
+    assert.equal(ov.servers.find((x) => x.name === 'mini').activation, 'global')
+    assert.ok(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.mini)
     // 只留 Codex：别的 CLI 里的同名工具被移除
     await call('PUT', '/mcp-tools/mini', { server, clis: ['codex'] })
     assert.equal(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.mini, undefined)

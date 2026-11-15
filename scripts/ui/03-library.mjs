@@ -885,7 +885,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     errors.push('自带Skill-一键更新：更新后列表里没有标成已安装')
   await check(p, '自带Skill-一键更新')
   await p.goto(base + '#/mcp')
-  await check(p, 'MCP工具', ['github', 'filesystem'])
+  await check(p, 'MCP工具', ['github', 'filesystem', '按项目生效'])
   await p.getByLabel('编辑').first().click()
   await p.getByRole('button', { name: '测试连接' }).click()
   await check(p, 'MCP编辑', ['连接成功', 'read_file'])

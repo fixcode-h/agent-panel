@@ -356,6 +356,19 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），
 而项目里的配置受「项目信任」管控，print / json / rpc 模式不会弹信任提示；`-e` 显式加载的扩展不受这两点影响。
 
+### 按项目的 MCP 工具 `mcpStore.inject`
+
+「MCP 工具」页的条目可以选「全局」或「按项目生效」（设计稿 Agent侧栏与项目管理重设计 6.2）。全局的照旧写进 `mcpStore.file`，所有项目都加载；
+按项目的存在面板数据目录 `config/mcp-library.json`，只在项目「能力」里打开了它（`project.capabilities.mcp`）的项目里每轮交给 CLI。
+怎么交写在 `mcpStore.inject`，条目的字段名、`type` 和写全局配置时一样（`shared/mcp-library/inject.ts` 的 `mcpServerObject`）：
+
+- `format: "json"`：所有条目合成一段 `{ [key]: { 名字: 条目 } }` 填进 `args` 的 `{json}`，只加一次。Claude Code 用 `--mcp-config {json}`（可以给多次，和面板自己的那份并存）。
+- `format: "toml"`：每个条目的每个字段一组 `args`，`{key}` 是 `key.名字.字段`，`{value}` 是 TOML 写法的值。Codex 用 `-c {key}={value}`。
+
+没写 `inject` 的 CLI（现在是 Command Code、Pi）对按项目的条目退回全局写入，「MCP 工具」页在条目下注明。
+从全局改成按项目时，能注入的 CLI 的全局配置里只清掉和条目内容一样的那份（面板写的），用户自己在 CLI 里另配的同名工具不动、在页面上标出来。
+和面板、插件这一轮的服务同名的条目不带（`server/exec/invoke.ts` 的 `projectMcpArgs`）。
+
 ### 联网搜索
 
 面板不自己做联网搜索，各 CLI 用自己的：Claude Code 的 `WebSearch` / `WebFetch`、Codex 的 `web_search`、Command Code 的 Web 工具都照常开着

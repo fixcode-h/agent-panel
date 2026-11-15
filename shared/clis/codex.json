@@ -321,7 +321,12 @@
     "urlKey": "url",
     "remoteType": "",
     "stdioType": false,
-    "headersKey": "http_headers"
+    "headersKey": "http_headers",
+    "inject": {
+      "format": "toml",
+      "args": ["-c", "{key}={value}"],
+      "why": "-c 覆盖 config.toml 里的键，值按 TOML 解析：mcp_servers.<名字>.command / args / env / url / http_headers 和写进 config.toml 的一样"
+    }
   },
   "options": [
     {
