@@ -1,4 +1,5 @@
 // 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
+import { setLessonRecorder } from './knowledge/recorder.ts'
 import './lang.ts'
 import { mountExtras } from './extra-routes.ts'
 // 用户自己加的 CLI 配置要在用到 CLI 列表的模块之前读进来
@@ -853,6 +854,8 @@ app.put('/projects/:id/init-result', async (c) => {
 
 // 记一条项目教训（对话里「记成项目教训」）和应用一条 AI 评审建议：路由在单独模块里
 const lessons = projectLessons(projects, { agents })
+// 钩子里自动转正的候选也走同一个记录入口（server/knowledge/recorder.ts）
+setLessonRecorder(lessons.record)
 projectLessonRoutes(app, lessons, { projects, agents })
 
 // 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具

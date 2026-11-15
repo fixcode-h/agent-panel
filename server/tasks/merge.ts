@@ -470,7 +470,7 @@ ${
         name: x.name.startsWith('UE 编译') ? x.name : `UE 编译：${x.name}`,
         root: dir,
         exclusive: true,
-        // 编译结果只报状态，失败带日志路径（用户 2026-11-15 要求，ADR 0066）
+        // 编译结果只报状态，失败带日志路径（用户 2026-11-15 要求，ADR 0067）
         brief: true,
       })
       if (!r.ok) return { ok: false, info: r.info }

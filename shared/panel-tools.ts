@@ -55,6 +55,8 @@ export const PANEL_TOOL_NAMES = [
   'use_capability',
   'begin_inline_edit',
   'end_inline_edit',
+  'knowledge_lookup',
+  'knowledge_record',
   'project_lessons',
   'record_lesson',
   'project_experience',
@@ -139,6 +141,8 @@ export const PANEL_TOOL_ROLE: Record<PanelToolName, ToolRole> = {
   use_capability: 'work',
   begin_inline_edit: 'dispatch',
   end_inline_edit: 'wrap',
+  knowledge_lookup: 'work',
+  knowledge_record: 'wrap',
   project_lessons: 'work',
   record_lesson: 'wrap',
   project_experience: 'work',
@@ -212,6 +216,10 @@ export const MORE_TOOLS = 'more_tools'
  * Pi 的桥接扩展靠它们核对工具清单是否完整（shared/clis/pi.json 的 CORE_TOOLS）
  */
 export const DEFERRED_TOOLS: readonly string[] = [
+  'knowledge_record',
+  // 旧名字（ADR 0066）：knowledge_lookup / knowledge_record 取代，保留一个版本
+  'project_lessons',
+  'project_experience',
   'record_lesson',
   'record_experience',
   'begin_inline_edit',
@@ -221,7 +229,7 @@ export const DEFERRED_TOOLS: readonly string[] = [
   'stop_subtask',
   'check_background',
   'stop_background',
-  // 每轮提示里已有「名下的工作流」，状态变了也会来信：单独查进度很少用到（ADR 0066 梳理）
+  // 每轮提示里已有「名下的工作流」，状态变了也会来信：单独查进度很少用到（ADR 0067 梳理）
   'list_workflows',
   'p4_split_changelists',
   'app_actions',

@@ -6,6 +6,16 @@ import {
   type LearnedNote,
 } from '@shared/experience'
 import type { KnowledgeHitsView } from '@shared/knowledge-hits'
+import {
+  KnowledgeCandidate,
+  type DistillRequest,
+  type DistillResult,
+  type KnowledgeMiss,
+  type KnowledgeStateView,
+} from '@shared/knowledge/candidate'
+import { distill } from '@shared/knowledge/distill'
+import { lessonSuggestions } from '@shared/knowledge/lifecycle'
+import type { Project } from '@shared/schema'
 
 /**
  * 演示版的项目经验（对应 server/experience/routes.ts）：每个项目一份内存里的列表，带几条示例；
@@ -114,10 +124,90 @@ export function demoKnowledgeHits(): KnowledgeHitsView {
   const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
   return {
     experience: {
-      'e-demo-1': { count: 7, lastAt: ago(0.2), taskIds: [] },
-      'e-demo-2': { count: 2, lastAt: ago(12), taskIds: [] },
+      'e-demo-1': { count: 7, lastAt: ago(0.2), taskIds: [], helped: 0, violated: 0, missed: 0 },
+      'e-demo-2': { count: 2, lastAt: ago(12), taskIds: [], helped: 0, violated: 0, missed: 0 },
     },
-    lessons: { 'demo-lesson-2': { count: 4, lastAt: ago(1), taskIds: [] } },
+    // 推了还犯了两次：教训列表上出现「升级为拦截」
+    lessons: { 'demo-lesson-2': { count: 4, lastAt: ago(1), taskIds: [], helped: 1, violated: 2, missed: 0 } },
     stale: { experience: {}, lessons: { 'demo-lesson-3': ['mock/**'] } },
+  }
+}
+
+/**
+ * 演示版的候选和没配上的查询（对应 GET /projects/:id/knowledge、POST …/candidates/:cid、POST …/distill）：
+ * 一条「失败后改对」的教训候选（两个对话里复发过）、一条子对话记下的经验候选；收下、忽略只是从列表拿掉。
+ * 建议和提炼调 shared 里的同一份逻辑（lessonSuggestions、distill），演示数据不翻译
+ */
+const DEMO_CANDIDATES = (): KnowledgeCandidate[] => {
+  const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
+  return [
+    KnowledgeCandidate.parse({
+      id: 'cand-demo-1',
+      kind: 'lesson',
+      origin: 'episode',
+      title: '类型检查用 npx tsc -b，不要直接 npx tsc',
+      rule: '项目是多个 tsconfig 的引用工程，`npx tsc` 只查根目录、会报找不到模块；用 `npx tsc -b`。',
+      commands: ['npx tsc'],
+      errors: [
+        {
+          codes: ['TS2307'],
+          words: ['cannot', 'find', 'module'],
+          sample: "error TS2307: Cannot find module '@shared/schema'",
+        },
+      ],
+      failed: 'npx tsc --noEmit',
+      fixed: 'npx tsc -b',
+      convs: ['demo-task-1', 'demo-task-2'],
+      count: 2,
+      firstAt: ago(3),
+      lastAt: ago(0.1),
+    }),
+    KnowledgeCandidate.parse({
+      id: 'cand-demo-2',
+      kind: 'experience',
+      origin: 'subtask',
+      title: '优惠券规则在 src/payment/coupon/',
+      body: '优惠券的计算和校验都在这个目录，配置在 config/coupon.json。',
+      keywords: ['优惠券', 'coupon'],
+      paths: ['src/payment/coupon/'],
+      convs: ['demo-task-3'],
+      firstAt: ago(1),
+      lastAt: ago(1),
+    }),
+  ]
+}
+const DEMO_MISSES = (): KnowledgeMiss[] => [
+  { query: '会员等级 折扣', count: 3, convs: [], lastAt: new Date(Date.now() - 7_200_000).toISOString() },
+  { query: 'refund webhook', count: 2, convs: [], lastAt: new Date(Date.now() - 86_400_000).toISOString() },
+]
+const knowledgeByProject = new Map<string, { candidates: KnowledgeCandidate[]; misses: KnowledgeMiss[] }>()
+
+export function demoKnowledge(
+  project: Project | undefined,
+  method: string,
+  seg: string[],
+  body: unknown,
+): KnowledgeStateView | DistillResult | { ok: boolean; info: string } {
+  const id = project?.id ?? ''
+  const cur =
+    knowledgeByProject.get(id) ??
+    knowledgeByProject.set(id, { candidates: DEMO_CANDIDATES(), misses: DEMO_MISSES() }).get(id)!
+  const hits = demoKnowledgeHits()
+  const [what, cid] = seg.slice(3)
+  if (what === 'candidates' && method === 'POST') {
+    const action = (body as { action?: string } | undefined)?.action
+    const c = cur.candidates.find((x) => x.id === cid)
+    if (!c) return { ok: false, info: '这条候选已经不在了' }
+    cur.candidates = cur.candidates.filter((x) => x !== c)
+    return { ok: true, info: action === 'accept' ? `（演示）已收下：${c.title}` : '' }
+  }
+  if (what === 'distill' && method === 'POST') {
+    const req = (body ?? {}) as DistillRequest
+    if (req.target === 'hook') return { ok: false, info: '（演示）演示版不写钩子' }
+    return distill(req.target, project?.name ?? '', project?.lessons ?? [], hits.lessons, cur.misses)
+  }
+  return {
+    ...cur,
+    suggestions: lessonSuggestions(project?.lessons ?? [], hits.lessons, hits.stale.lessons),
   }
 }

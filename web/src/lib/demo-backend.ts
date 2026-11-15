@@ -25,7 +25,7 @@ import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
 import { demoIsolate, demoSharedDir } from './demo-shared-dir'
-import { demoExperience, demoKnowledgeHits, demoLearnedNote } from './demo-experience'
+import { demoExperience, demoKnowledge, demoKnowledgeHits, demoLearnedNote } from './demo-experience'
 import { demoChatMemory } from './demo-chat-memory'
 import { demoCliPackages } from './demo-packages'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -78,6 +78,7 @@ import {
   type DirListing,
   END,
   START,
+  lessonExtras,
 } from '@shared/schema'
 import {
   BUILD_OUTPUTS,
@@ -660,6 +661,7 @@ function seed(): Db {
           lessons: [
             {
               id: 'demo-lesson-1',
+              ...lessonExtras(),
               title: '价格一律用分（整数）存和算，只在显示时转成元',
               rule: '接口、数据库、购物车计算都用整数分；格式化统一走 src/utils/money.ts 的 formatPrice，不要在组件里自己除以 100。',
               cause: '结算页用浮点数相加，0.1 + 0.2 显示成 0.30000000000000004 元。',
@@ -674,6 +676,7 @@ function seed(): Db {
             },
             {
               id: 'demo-lesson-2',
+              ...lessonExtras(),
               title: '新增支付方式写进 payment/providers 的配置，不在下单流程里按名字判断',
               rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期、是否显示优惠角标）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。活动期间的临时规则也写进配置的 promo 字段，带上结束时间。',
               cause: '加微信支付时分期开关写死在下单流程里，后来接 PayPal 又改了一遍。',
@@ -695,6 +698,7 @@ function seed(): Db {
             },
             {
               id: 'demo-lesson-3',
+              ...lessonExtras(),
               title: '改接口字段时同步改 mock 数据和类型',
               rule: 'src/api/types.ts 改了，mock/ 下对应的 JSON 一起改，否则本地开发和 e2e 用的还是旧结构。',
               cause: '订单接口加了 couponId，mock 没跟上，e2e 一直测的旧结构。',
@@ -709,6 +713,7 @@ function seed(): Db {
             },
             {
               id: 'demo-lesson-4',
+              ...lessonExtras(),
               title: '后台命令报完成后先看用时，明显不对就查原因再换做法',
               rule: '定时、轮询、等构建这类要等的事交给 run_background；结果回来先核对用时和输出，比如一小时的倒计时 0 秒就「成功」，说明命令没按预期运行，先查清楚再换做法，不要直接当作完成。',
               cause: '设一小时倒计时，脚本 0 秒就被判定完成，换成面板的长驻任务才对。',
@@ -723,6 +728,7 @@ function seed(): Db {
             },
             {
               id: 'demo-lesson-5',
+              ...lessonExtras(),
               title: '购物车相关改动同时改 legacy-cart 的旧接口',
               rule: '旧版 App 还在调 cartV1，改购物车字段时 src/legacy-cart/ 下的适配层一起改。',
               cause: '加优惠券字段时旧版 App 购物车白屏。',
@@ -1763,6 +1769,13 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'config-scan') return { ok: true }
   if (res === 'projects' && id && sub === 'experience') return demoExperience(id, method, seg, body)
   if (res === 'projects' && id && sub === 'knowledge-hits') return demoKnowledgeHits()
+  if (res === 'projects' && id && sub === 'knowledge')
+    return demoKnowledge(
+      d.projects.find((p) => p.id === id),
+      method,
+      seg,
+      body,
+    )
   if (res === 'chat-memory') return demoChatMemory(method, seg, (body ?? {}) as Record<string, unknown>)
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
   if (res === 'project-skills') return demoProjectSkillsApi(method, seg, query, (body ?? {}) as Record<string, unknown>)

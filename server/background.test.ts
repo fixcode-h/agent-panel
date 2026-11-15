@@ -137,7 +137,7 @@ test('推回的只是提炼后的日志：中间的报错行、结尾几十行�
   assert.match(full, /linking step 499/)
 })
 
-test('UE 编译（brief）：成功只报状态，失败只给日志路径和错误条数，不带日志摘录和命令（ADR 0066）', async () => {
+test('UE 编译（brief）：成功只报状态，失败只给日志路径和错误条数，不带日志摘录和命令（ADR 0067）', async () => {
   const dir = repo()
   const logDir = path.join(dir, '.logs')
   const { bg, got, all } = collect(2, { logDir })

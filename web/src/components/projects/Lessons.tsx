@@ -7,7 +7,7 @@ import { HitMeta, KnowledgeSortChips, useKnowledgeHits, type KnowledgeSort } fro
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/lib/toast'
 import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
-import type { GlobalLesson, Project, ProjectLesson } from '@shared/schema'
+import { lessonExtras, type GlobalLesson, type Project, type ProjectLesson } from '@shared/schema'
 import {
   DEFAULT_TAB,
   applyGlobalChanges,
@@ -33,6 +33,8 @@ import { timeAgo } from '@/lib/tasks'
 import { AssistDialog } from '@/components/assist/LazyAssistDialog'
 import { AnalyzeDialog } from '@/components/tasks/Evolution'
 import { startLessonReview } from '@/lib/task-transfer'
+import { FeedbackMeta, HookAction, LessonExtraFields, SuggestionAction } from './knowledge/LessonExtraFields'
+import { useKnowledgeState } from './knowledge/use-knowledge-state'
 
 /** 输入框里的范围：逗号、顿号、空白都能分隔 */
 const splitPaths = (s: string) =>
@@ -42,6 +44,7 @@ const splitPaths = (s: string) =>
     .filter(Boolean)
 
 const blankLesson = (): ProjectLesson => ({
+  ...lessonExtras(),
   id: newLessonId(),
   title: '',
   rule: '',
@@ -86,6 +89,8 @@ export function LessonsEditor({
   const [reviewing, setReviewing] = useState(false)
   // 命中记录只有保存过的项目才有（按项目 id 存在面板数据目录）
   const hits = useKnowledgeHits(project?.id)
+  // 面板对各条的建议（升级为拦截、标为过时、可以提炼）：按钮只改草稿，照常点「确认」保存
+  const suggestions = useKnowledgeState(project?.id).state?.suggestions
   const [sort, setSort] = useState<KnowledgeSort>('default')
   const patch = (id: string, p: Partial<ProjectLesson>) =>
     onChange(lessons.map((l) => (l.id === id ? { ...l, ...p } : l)))
@@ -242,6 +247,7 @@ export function LessonsEditor({
                         <span className="shrink-0 truncate">{l.tags.map((x) => `#${x}`).join(' ')}</span>
                       )}
                       {hits && <HitMeta hit={hits.lessons[l.id]} stale={hits.stale.lessons[l.id]} />}
+                      {hits && <FeedbackMeta hit={hits.lessons[l.id]} />}
                     </span>
                   </span>
                   {l.history.length > 0 && (
@@ -262,6 +268,12 @@ export function LessonsEditor({
                     </Badge>
                   )}
                 </button>
+                <SuggestionAction
+                  lesson={l}
+                  suggestion={suggestions?.find((x) => x.id === l.id)}
+                  onChange={(p) => patch(l.id, p)}
+                />
+                <HookAction projectId={project?.id} lesson={l} saved={!!project} />
                 <Checkbox
                   checked={l.enabled}
                   onChange={(v) => patch(l.id, { enabled: v })}
@@ -278,6 +290,7 @@ export function LessonsEditor({
               {expanded && (
                 <div className="flex flex-col gap-3 border-t px-3.5 py-3.5">
                   <LessonFields lesson={l} knownTags={tags} onChange={(p) => patch(l.id, p)} />
+                  <LessonExtraFields lesson={l} onChange={(p) => patch(l.id, p)} />
                   {l.history.length > 0 && <LessonHistory lesson={l} onRestore={(p) => patch(l.id, p)} />}
                 </div>
               )}

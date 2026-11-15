@@ -79,11 +79,11 @@ export async function composeInput(a: ComposeInputArgs) {
   if (bugMethod) input = `${input}\n\n${bugMethod}`
   // 升级成 Bug 后补带的完整流程只带一次（这一轮是 /bug 时展开里已经带了，一样算带过）
   if (!op && task.bug?.methodPending) task.bug.methodPending = undefined
-  // 项目教训：新会话开头带一次（整段不超过 1500 字），其余的执行中由面板按命令、文件、报错推送，或 Agent 用 project_lessons 自己取；
+  // 项目教训：新会话开头带一次（整段不超过 1500 字），其余的执行中由面板按命令、文件、报错推送，或 Agent 用 knowledge_lookup 自己取；
   // 子任务只查不记，不带记教训的说明
   if (!resume && !op && task.projectId) {
     const globals = await readGlobalLessons()
-    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, globals, !!orch?.lessons?.record)
+    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, globals, !!orch?.lessons?.record, ctx.prompt)
     // 项目经验：说有几条、怎么查，按需求原文本地匹配到的直接给答案；能记的带上直接记的写法（shared/experience.ts）
     const exp =
       orch?.experience &&

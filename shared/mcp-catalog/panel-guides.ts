@@ -316,6 +316,22 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
   },
 
   // ---- 教训与经验 ----
+  knowledge_lookup: {
+    title: '查项目知识',
+    summary: '一个入口查项目教训和经验：按关键词、要改的文件、标签或 id。',
+    useWhen: '动手改文件前传 files；要全项目搜索或试命令前传 query；面板推送里的条目要看全文时传 id',
+    avoidWhen: '面板已经在工具调用前后推过的条目不用再查',
+    group: G.know,
+    effects: ['read'],
+  },
+  knowledge_record: {
+    title: '记下项目知识',
+    summary: '记一条教训（踩过的坑）或经验（位置、叫法、命令），记教训前面板会做入库校验。',
+    useWhen: '用户纠正了做法、命令失败后换了做法才成（面板提示里给了 episode 编号就带上），或绕了很多步才找到的位置',
+    avoidWhen: '一次性的经过、笔误不记；同类已有就带 id 改写',
+    group: G.know,
+    effects: ['edit'],
+  },
   project_lessons: {
     title: '查看项目教训',
     summary: '按要改的文件或关键词取项目教训。',

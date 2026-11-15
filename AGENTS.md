@@ -37,7 +37,7 @@
   - 新接口在 `shared/` 写 zod 契约；演示后端调用 shared 里的同一份逻辑，不另写一套。
   - 前端要实时数据用推送，不加轮询。
   - 变好了跑 `node scripts/structure-check.mjs --update` 收紧基线；不许手改基线放宽，也不许换写法绕开检查。细则见 `docs/lessons/structure.md`。
-- **MCP 工具不随手加**（ADR 0066）：加工具前先过准入四问（CLI 自带工具做不到、并不进已有工具、Agent 拿得到结果、说得清什么时候用）；定义不超过 3000 字，返回默认不超过 4000 字，日志和长内容写文件只回路径。面板工具的个数和长度上限由 `server/panel-tools/registry.test.ts` 核对。
+- **MCP 工具不随手加**（ADR 0067）：加工具前先过准入四问（CLI 自带工具做不到、并不进已有工具、Agent 拿得到结果、说得清什么时候用）；定义不超过 3000 字，返回默认不超过 4000 字，日志和长内容写文件只回路径。面板工具的个数和长度上限由 `server/panel-tools/registry.test.ts` 核对。
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **不按模型回复的文字判断状态**：做没做完、通没通过、卡没卡住，都只看工具调用（`set_plan`、`submit_*`）和面板状态；钩子输入里的回复文字转发前就丢掉（ADR 0041、0049，`scripts/rules-check.mjs` 第 19、19b 条会拦）。

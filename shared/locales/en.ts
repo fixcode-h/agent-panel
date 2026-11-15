@@ -26,6 +26,7 @@ import { EN_CONFIG_SCAN } from './en/config-scan.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
 import { EN_NOTIFY_CHANNELS } from './en/notify-channels.ts'
 import { EN_EXPERIENCE } from './en/experience.ts'
+import { EN_KNOWLEDGE_UI } from './en/knowledge-ui.ts'
 import { EN_FILE_REF } from './en/file-ref.ts'
 import { EN_MD_TABLE } from './en/md-table.ts'
 import { EN_SHEET } from './en/sheet.ts'
@@ -96,6 +97,7 @@ export const EN: Record<string, string> = {
   ...EN_CLI_MORE,
   ...EN_NOTIFY_CHANNELS,
   ...EN_EXPERIENCE,
+  ...EN_KNOWLEDGE_UI,
   ...EN_FILE_REF,
   ...EN_MD_TABLE,
   ...EN_SHEET,

@@ -98,9 +98,17 @@ function renderLesson(l: ProjectLesson): string {
     ...block('cause', l.cause),
     // 改写记录是给界面看的元数据，用 JSON 一行写完，不占正文
     `history: ${JSON.stringify(l.history)}`,
+    // 二期加的字段：都是默认值时不写，旧条目的文件不变；旧版面板读到不认识的字段会跳过
+    ...(l.wrong ? block('wrong', l.wrong) : []),
+    ...(l.severity !== 'warn' ? [`severity: ${l.severity}`] : []),
+    ...(l.status !== 'active' ? [`status: ${l.status}`] : []),
+    ...(hasTriggers(l) ? [`triggers: ${JSON.stringify(l.triggers)}`] : []),
     LESSON_END,
   ].join('\n')
 }
+
+const hasTriggers = (l: ProjectLesson) =>
+  !!(l.triggers.commands.length || l.triggers.errors.length || l.triggers.intents.length)
 
 /** 一条教训单独一个文件的内容：只有这一段，不带整份文件的维护说明（说明在目录的 README.md 里） */
 export function renderProjectLesson(l: ProjectLesson): string {
@@ -216,6 +224,15 @@ function lessonFromFields(fields: Record<string, string>, line: number): { lesso
       return { error: t('第 {n} 行的 history 要写成 JSON 数组', { n: line }) }
     }
   }
+  let triggers: unknown = {}
+  const triggersText = (fields.triggers ?? '').trim()
+  if (triggersText) {
+    try {
+      triggers = JSON.parse(triggersText)
+    } catch {
+      return { error: t('第 {n} 行的 triggers 要写成 JSON 对象', { n: line }) }
+    }
+  }
   const parsed = ProjectLesson.safeParse({
     // 手写的条目没写 id 时按内容算一个稳定的 id，下次读取还是同一个
     id: (fields.id ?? '').trim() || `l${hash53(`${title}\n${rule}`).slice(0, 12)}`,
@@ -230,6 +247,10 @@ function lessonFromFields(fields: Record<string, string>, line: number): { lesso
     createdAt: fields.createdAt ?? '',
     updatedAt: fields.updatedAt ?? '',
     history,
+    wrong: fields.wrong ?? '',
+    triggers,
+    severity: (fields.severity ?? '').trim() || undefined,
+    status: (fields.status ?? '').trim() || undefined,
   })
   if (!parsed.success)
     return {

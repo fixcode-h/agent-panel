@@ -1,6 +1,6 @@
 # ADR 0054：项目经验：整个对话完成后自动学「做某类事最快的路」，按需检索
 
-状态：已接受（2026-11-05 用户看过设计稿后定，已实施） · 2026-11-05
+状态：已接受（2026-11-05 用户看过设计稿后定，已实施；2026-11-15 被 ADR 0066 修订：每一轮结束就学，搜索前按关键词推送，记录工具改名 knowledge_record） · 2026-11-05
 
 - 设计稿：[docs/openspec/changes/project-knowledge/design.md](../openspec/changes/project-knowledge/design.md)
 - 和 [ADR 0039](./0039-project-lessons-in-docs.md) 的项目教训分工：教训管防错，经验管提速

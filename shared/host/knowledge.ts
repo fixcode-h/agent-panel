@@ -16,6 +16,8 @@ export interface OrchKnowledge {
   lessons?: {
     find(files: string[], opts?: LessonQuery): Promise<string>
     record?(input: LessonInput): Promise<{ ok: boolean; info: string }>
+    /** 子任务用 knowledge_record 记的：放进知识候选等用户收下（设计稿三期，Q2），不直接生效 */
+    propose?(input: KnowledgeProposal): Promise<{ ok: boolean; info: string }>
   }
   /** 项目经验（shared/experience.ts）：按关键词查；设置里关了经验、不在项目里时没有。子任务也能查 */
   experience?: {
@@ -23,6 +25,8 @@ export interface OrchKnowledge {
     list(): Promise<ProjectExperience[]>
     /** 记一条（/learn 命令让 Agent 学一件事）：子任务没有，值得记的交回派它的对话 */
     record?(input: ExperienceInput): Promise<{ ok: boolean; info: string }>
+    /** knowledge_lookup 什么都没配上的查询：记下来，提炼页列出反复没配上的（四期） */
+    miss?(query: string): void
   }
   /** Chat 模式的跨对话记忆（remember 工具，server/chat-memory.ts）：只有 Chat 页的对话有 */
   remember?: (text: string, forget?: boolean) => Promise<{ ok: boolean; info: string }>
@@ -36,6 +40,8 @@ export interface KnowledgeHost {
     /** 全局教训：只读，Agent 改不了 */
     globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
+    /** 同 OrchKnowledge.lessons.propose */
+    propose?: (input: KnowledgeProposal) => Promise<{ ok: boolean; info: string }>
     /** 查到并交出全文的那几条：记一次命中（shared/knowledge-hits.ts），不等写完 */
     hit?: (ids: string[]) => void
   }
@@ -43,6 +49,8 @@ export interface KnowledgeHost {
   experience?: {
     list: () => Promise<ProjectExperience[]>
     record: (input: ExperienceInput) => Promise<{ ok: boolean; info: string }>
+    /** 同 OrchKnowledge.experience.miss */
+    miss?: (query: string) => void
     /** 同 lessons.hit */
     hit?: (ids: string[]) => void
   }
@@ -63,4 +71,17 @@ export interface LessonInput {
   replaces?: string
   /** 为什么改写 */
   why?: string
+  /** 错的做法（下次看到这个要停下） */
+  wrong?: string
+  /** 命令触发键：跑这些命令前推送 */
+  commands?: string[]
+  /** knowledge_record 记的：先过入库校验（shared/knowledge/admission.ts）；旧的 record_lesson 不校验 */
+  strict?: boolean
+  /** 所有改动都适用（没有触发键也收） */
+  global?: boolean
+  /** 面板当场捕获的「失败后改对」的编号（knowledge_record 的 episode）：命令和报错指纹从候选里补上 */
+  episode?: string
 }
+
+/** 子任务记的一条知识（进候选） */
+export type KnowledgeProposal = ({ kind: 'lesson' } & LessonInput) | { kind: 'experience'; exp: ExperienceInput }

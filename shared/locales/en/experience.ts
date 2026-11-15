@@ -155,4 +155,19 @@ export const EN_EXPERIENCE: Record<string, string> = {
   改文件前推送: 'Pushed before the file was edited',
   报错后按报错内容推送: 'Pushed after the error, matched by its text',
   搜索前推送: 'Pushed before the search',
+  // 知识页「提炼」（shared/knowledge/distill.ts、server/knowledge/distill-routes.ts）
+  '还没有反复出现、又没配上经验的查询': 'No repeated searches without a matching experience yet',
+  '补经验：没配上的查询': 'Add experience: unmatched searches',
+  '还没有够格写进 AGENTS.md 的教训：置顶，或推到 3 次以上、帮上 2 次以上的才算':
+    'No lessons qualify for AGENTS.md yet: only pinned ones, or ones pushed 3+ times or that helped 2+ times',
+  没有管具体文件的教训可以合进模块文档: 'No file-scoped lessons to merge into module docs',
+  '还没有推送效果不好的教训（事前没推到、推了还犯）':
+    'No poorly performing lessons yet (missed beforehand, or repeated after being pushed)',
+  '提炼教训进 AGENTS.md': 'Distill lessons into AGENTS.md',
+  教训合进模块文档: 'Merge lessons into module docs',
+  面板改进建议: 'Panel improvement suggestions',
+  提炼的请求不对: 'Invalid distill request',
+  '这条教训里认不出命令：先在教训里写上触发命令再转成钩子':
+    'No command found in this lesson: add a trigger command before turning it into a hook',
+  '已转成钩子：{name}': 'Turned into a hook: {name}',
 }

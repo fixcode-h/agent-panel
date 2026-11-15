@@ -6,14 +6,21 @@ import assert from 'node:assert/strict'
 import { ProjectExperience, findExperience } from './experience.ts'
 import { addHits, hitLabel, pruneHits, sortByIdle, HIT_TASKS_MAX } from './knowledge-hits.ts'
 import { findLessons } from './lessons.ts'
-import { GlobalLesson, type ProjectLesson } from './schema.ts'
+import { GlobalLesson, lessonExtras, type ProjectLesson } from './schema.ts'
 
 test('记命中：次数累加、同一批重复只算一次、对话去重且新的在前', () => {
   let h = addHits({}, ['a', 'a', 'b'], 't1', '2026-11-01T00:00:00Z')
   assert.equal(h.a.count, 1)
   h = addHits(h, ['a'], 't2', '2026-11-02T00:00:00Z')
   h = addHits(h, ['a'], 't1', '2026-11-03T00:00:00Z')
-  assert.deepEqual(h.a, { count: 3, lastAt: '2026-11-03T00:00:00Z', taskIds: ['t1', 't2'] })
+  assert.deepEqual(h.a, {
+    count: 3,
+    lastAt: '2026-11-03T00:00:00Z',
+    taskIds: ['t1', 't2'],
+    helped: 0,
+    violated: 0,
+    missed: 0,
+  })
   for (let i = 0; i < 10; i++) h = addHits(h, ['b'], `x${i}`, '2026-11-04T00:00:00Z')
   assert.equal(h.b.taskIds.length, HIT_TASKS_MAX)
   assert.equal(h.b.taskIds[0], 'x9')
@@ -21,8 +28,8 @@ test('记命中：次数累加、同一批重复只算一次、对话去重且�
 
 test('很久没用上的在前：没命中过按建好的时间算，刚记下的不排最前', () => {
   const hits = {
-    used: { count: 5, lastAt: '2026-11-10T00:00:00Z', taskIds: [] },
-    old: { count: 1, lastAt: '2026-09-01T00:00:00Z', taskIds: [] },
+    used: { count: 5, lastAt: '2026-11-10T00:00:00Z', taskIds: [], helped: 0, violated: 0, missed: 0 },
+    old: { count: 1, lastAt: '2026-09-01T00:00:00Z', taskIds: [], helped: 0, violated: 0, missed: 0 },
   }
   const list = [
     { id: 'used', createdAt: '2026-01-01T00:00:00Z' },
@@ -59,6 +66,7 @@ test('查经验：交出全文的算命中，只列标题、什么都没查到�
 
 test('查教训：交出全文的项目教训算命中，全局教训不算', () => {
   const lesson = (id: string, paths: string[]): ProjectLesson => ({
+    ...lessonExtras(),
     id,
     title: `规则 ${id}`,
     rule: '照做',

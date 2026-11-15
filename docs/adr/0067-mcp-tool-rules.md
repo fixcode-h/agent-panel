@@ -1,4 +1,4 @@
-# ADR 0066：MCP 工具规范：准入、命名、说明和返回都有上限，不随手加工具
+# ADR 0067：MCP 工具规范：准入、命名、说明和返回都有上限，不随手加工具
 
 状态：已接受 · 2026-11-15
 
@@ -9,7 +9,7 @@
   - 推回给 Agent 的摘要本身也不短：失败时有 30 条错误、10 条警告、40 行结尾，再加命令原文，常常两三千字。
 - 同一张截图最上面的 `LOG="C:/Users/…/.agent-panel/…"`（约 2.7k）不是 MCP 工具。它是 Agent 自己跑的一条 Bash 命令，按推回结果里的日志路径去搜编译日志。工具结果按「动作和对象」显示，Bash 显示的就是命令开头。
 - 面板和插件的工具是一个个加起来的。一共一百多个，没有统一的准入标准，返回多长也各写各的：
-  - 面板：注册表里 40 个，另有提问、补充、等下一句、操控软件 5 个。
+  - 面板：注册表里 42 个（含 4 个过渡的旧名字），另有提问、补充、等下一句、操控软件 5 个。
   - 插件：UE 19 个、Blender 8 个、UI 设计 29 个（只在设计页自己的对话里给）、视频截帧 1 个、表格 9 个面板动作。
 - 用户要求：只保留必要且有用的工具，定一份规范，以后不能随意加工具。
 
@@ -33,7 +33,7 @@
 - 一个工具的定义（名字、说明、参数 schema 的 JSON）不超过 3000 字。说明只写作用、时机和关键约束。参数的细节放进返回（交错了说清缺什么）或用法查询（`more_tools` 只写 name 时返回用法）。
 - 不常用的面板工具收进 `more_tools`（`DEFERRED_TOOLS`，ADR 0028）。
 - 规范之前已经超了的只许变短：`submit_diagnosis` 约 15k、`update_bug_case` 约 14k、`spawn_agents` 约 3.6k。前两个只在 Bug 对话里给，但仍是面板工具里最占上下文的，下一步要瘦身。
-- 面板各类对话拿到的工具个数也设了上限（父对话 40、子对话 28、子任务 12、工作流节点 21、Chat 4）。
+- 面板各类对话拿到的工具个数也设了上限（父对话 42、子对话 30、子任务 13、工作流节点 23、Chat 4；含 ADR 0066 保留一个版本的四个教训、经验旧名字，删掉时跟着减）。
 
 ### 4. 返回的内容
 
@@ -59,7 +59,7 @@
 | 面板 · 子任务与协作 | `spawn_agents`、`wait_agents`、`stop_subtask`、`get_status`、`send_message`、`read_messages`、`read_state`、`write_state`、`submit_result`、`submit_verdict`                                                                         | 保留：`get_status`、`send_message`、`read_messages` 是 Pi 桥接核对清单用的核心工具                             |
 | 面板 · 后台与编译   | `run_background`、`check_background`、`stop_background`、`request_build`、`list_peers`、`message_peer`                                                                                                                               | 保留；`request_build` 的结果按上面第 4 条精简                                                                  |
 | 面板 · 改动与版本   | `begin_edit`、`begin_inline_edit`、`end_inline_edit`、`use_capability`、`p4_split_changelists`、`cherry_pick`、`ask_push`                                                                                                            | 保留                                                                                                           |
-| 面板 · 知识         | `project_lessons`、`record_lesson`、`project_experience`、`record_experience`、`remember`                                                                                                                                            | 保留：教训和经验是两份存储，查法不同（ADR 0039、0054）                                                         |
+| 面板 · 知识         | `knowledge_lookup`、`knowledge_record`、`remember`；旧名字 `project_lessons`、`record_lesson`、`project_experience`、`record_experience`                                                                                             | 保留：ADR 0066 已把教训和经验合成一个查、一个记的入口，四个旧名字收进 `more_tools` 留一个版本，之后删掉        |
 | 面板 · Bug          | `submit_diagnosis`、`update_bug_case`、`request_logs`                                                                                                                                                                                | 保留；前两个定义超长，下一步瘦身                                                                               |
 | 面板 · 提问与软件   | `ask_user`、`read_user_notes`、`wait_user_message`、`request_user_action`、`app_actions`、`app_do`                                                                                                                                   | 保留                                                                                                           |
 | 面板 · 只认调用     | `start_plan`、`submit_build`（`submit_merge` 的旧名）、`dispatch`                                                                                                                                                                    | 不列出，只给老会话说清改用哪个                                                                                 |

@@ -4,6 +4,8 @@ import { LESSON_REVIEW_LANG, parseLessonReview, type LessonReviewItem } from '..
 import type { Project } from '../../shared/schema.ts'
 import type { LessonDraft } from '../lessons.ts'
 import { experienceRoutes } from '../experience/routes.ts'
+import { knowledgeRoutes } from '../knowledge/routes.ts'
+import { distillRoutes } from '../knowledge/distill-routes.ts'
 
 export interface ProjectLessonApi {
   record(projectId: string, draft: LessonDraft): Promise<{ ok: boolean; info: string; project?: Project }>
@@ -21,6 +23,9 @@ export function projectLessonRoutes(
 ) {
   // 项目经验的路由也挂在这里（index.ts 有行数上限）
   experienceRoutes(app, deps)
+  // 知识页的候选、建议（server/knowledge/routes.ts）
+  knowledgeRoutes(app, deps)
+  distillRoutes(app, deps)
   // 对话里「记成项目教训」：单独的接口，不用把整个项目设置发回来，也不会盖掉 Agent 刚记的
   app.post('/projects/:id/lessons', async (c) => {
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
