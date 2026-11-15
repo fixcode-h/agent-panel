@@ -59,6 +59,12 @@ export const EN_PLUGINS: Record<string, string> = {
   // 检查更新、升级
   '上次检查 {time}': 'Last checked {time}',
   '升级到 v{v}': 'Upgrade to v{v}',
+  '已更新到 v{v}': 'Updated to v{v}',
+  '正在更新到 v{v}…': 'Updating to v{v}…',
+  '等待更新到 v{v}': 'Waiting to update to v{v}',
+  '更新到 v{v} 失败：{error}': 'Update to v{v} failed: {error}',
+  一键更新: 'Update all',
+  '正在更新…': 'Updating…',
   插件参数: 'Plugin settings',
   已开启的插件: 'Enabled plugins',
   加载出错: 'Failed to load',
