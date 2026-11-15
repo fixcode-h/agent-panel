@@ -527,7 +527,7 @@ await runShard('本机请求与设置', async (api) => {
     })
     const offDone = await waitDone(off.id)
     assert.equal(offDone.requests.length, 0)
-    assert.match(readLog(log + '.askbridge').at(-1).got, /不回答问题/)
+    assert.match(readLog(log + '.askbridge').at(-1).got, /「提问」开关关着，这个问题没有交给用户/)
     rmSync(mcpFile, { force: true })
   }
   step('没有提问通道的 CLI：临时接 ask_user 工具，回答后交回模型，开关关着时让模型自己选，项目里原有的配置还原')
