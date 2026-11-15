@@ -43,7 +43,7 @@ export function settleUserAction(
 }
 
 export function registerUserActionRoutes(s: TasksScope) {
-  // 「完成了」「做不了」「跳过」：记下结果、把那一句推给对话开新的一轮（交回内容走普通的发消息，见 conversation-routes）
+  // 「完成了」「做不了」「跳过」：记下结果、把那一句推给对话开新的一轮（交回内容走普通的发消息，见 server/tasks/routes/conversation/send.ts）
   s.routes.post('/:id/user-action/:aid', async (c) => {
     const id = c.req.param('id')
     const body = Settle.safeParse(await c.req.json().catch(() => null))

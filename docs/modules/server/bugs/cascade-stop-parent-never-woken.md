@@ -2,7 +2,7 @@
 
 - 状态：已修复（`shared/resume-kids.test.ts`、`shared/plan/index.test.ts`、`scripts/e2e/09-subagent-runtime.mjs` 通过）
 - 症状：停下父对话再点继续，子对话被拉起来做完了，父对话不被叫醒、计划那一步挂着「需要修复」；面板推父对话查原因，它就另建子对话重做
-- 入口：`shared/task.ts` 的 `childReport`；`server/tasks/child-messages.ts` 的 `noteParent`；`server/tasks/conversation-routes.ts` 的 `resumeKids`；`shared/resume-kids.ts` 的 `rearmKidWait`
+- 入口：`shared/task.ts` 的 `childReport`；`server/tasks/child-messages.ts` 的 `noteParent`；`server/tasks/routes/conversation/resume.ts` 的 `resumeKids`；`shared/resume-kids.ts` 的 `rearmKidWait`
 - 根因类型：暂停被当成失败结算，结果回来时等待已经不在「等待中」
 - 模块：`server`（`server/tasks/`）、`shared`
 - 关键词：停止、继续执行、连带拉起、resumeKids、需要修复、父对话不醒、重复子对话、ADR 0042
