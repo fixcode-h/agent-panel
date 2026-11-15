@@ -68,7 +68,7 @@ async function dirtyOf(sc: Pick<TasksScope, 'taskDir'>, parent: Task, project: P
 }
 
 /**
- * 面板自己写进项目文档目录的教训（docs/lessons/，见 server/projects/lessons.ts）：不算父对话没提交的改动。
+ * 项目教训随仓库时面板写进项目文档目录的教训（docs/lessons/，见 server/projects/lessons.ts）：不算父对话没提交的改动。
  * 子对话的教训由面板从项目目录读出来写进提示词，用不着这些文件；以前用户或 Agent 记一条教训，
  * 之后每次派要改代码的子对话都先被拦一次，父对话还得判断这是不是「用户自己的改动」（2026-11-15 长对话实测，3 次派单 3 次被拦）。
  * 返回相对父对话目录、以 / 结尾的前缀；教训目录不在父对话目录里时返回空

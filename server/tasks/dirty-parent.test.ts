@@ -54,11 +54,11 @@ test('只在独立分支模式下拦；干净的目录不拦；没写 edits 的�
   assert.equal(await dirtyParentBlock(sc, parent, { path: dir, childIsolation: 'claim' } as never), '')
 })
 
-test('面板自己写的项目教训（docs/lessons/）不算没提交的改动：记了教训之后派子对话不再被拦', async (t) => {
+test('项目教训随仓库时，面板自己写的教训（docs/lessons/）不算没提交的改动：记了教训之后派子对话不再被拦', async (t) => {
   const dir = repo()
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const sc = { taskDir: async () => dir }
-  const wt = { path: dir, childIsolation: 'worktree' } as never
+  const wt = { id: 'p', path: dir, childIsolation: 'worktree', knowledgeInRepo: true } as never
   mkdirSync(path.join(dir, 'docs/lessons'), { recursive: true })
   writeFileSync(path.join(dir, 'docs/lessons/README.md'), '# 项目教训\n')
   writeFileSync(path.join(dir, 'docs/lessons/abc.md'), '<!-- lesson -->\n')
