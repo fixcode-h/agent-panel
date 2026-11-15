@@ -6,12 +6,15 @@ import { liveWaitText } from '@shared/live/task-live'
 import { useLive, useLiveOf } from '@/lib/live/store'
 import { useData, useNav, useTasks } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { useOwnedByPlugin } from '@/plugins/registry'
 import { StatusPill } from '@/components/ui/status-pill'
 import { useAway } from '@/components/overview/AwayCard'
 
 /** 首页列出来的条数：只是一眼看个大概，完整的在总览 */
 const WAIT_MAX = 3
 const RECENT_MAX = 3
+/** 项目页只列这一个项目的，最近的多列几个：项目页原来是这个项目的完整对话列表，一下子缩到三条找不到 */
+const PROJECT_RECENT_MAX = 8
 
 /** 第一次用（一个对话都没有）时的示例：点了填进输入框，用户改两句就能发 */
 const EXAMPLES: { icon: LucideIcon; label: string; prompt: string }[] = [
@@ -37,17 +40,23 @@ const EXAMPLES: { icon: LucideIcon; label: string; prompt: string }[] = [
 /**
  * 首页输入框下面（分析稿 U6）：回到面板最想先知道哪些在等你。
  * 「等你处理 N 件」和最近三个对话，点一行直接进那个对话；分组口径和总览页同一份（shared/overview.ts）。
- * 一个对话都没有时换成三个示例任务，点了填进输入框
+ * 一个对话都没有时换成三个示例任务，点了填进输入框。
+ * 传了 projectId 时是项目页用：只列这个项目的对话，行上不再写项目名
  */
-export function HomeGlance({ onExample }: { onExample: (prompt: string) => void }) {
+export function HomeGlance({ onExample, projectId }: { onExample: (prompt: string) => void; projectId?: string }) {
   const { tasks, tasksLoaded } = useTasks()
   const { projects } = useData()
   const { go } = useNav()
   const [away] = useAway()
   const liveOf = useLiveOf()
+  const owned = useOwnedByPlugin()
   if (!tasksLoaded) return null
 
-  if (!tasks.length)
+  // 项目页：插件管的对话（设计模式、插件整页）和工作流里的子执行在各自的地方看，和侧栏的项目分组同口径
+  const inScope = (tk: (typeof tasks)[number]) =>
+    !projectId || (tk.projectId === projectId && !tk.flowRun?.owner && !owned(tk))
+  const scoped = projectId ? tasks.filter((tk) => !tk.parentTaskId && inScope(tk)) : tasks
+  if (!scoped.length)
     return (
       <section aria-label={t('试试这些')} className="flex flex-col gap-2" data-home-examples>
         <h2 className="px-1 text-xs text-subtle">{t('试试这些')}</h2>
@@ -71,7 +80,8 @@ export function HomeGlance({ onExample }: { onExample: (prompt: string) => void 
       </section>
     )
 
-  const rows = overviewRows(tasks, liveOf)
+  // 分组要用整棵对话树（子对话的状态算在父对话上），所以先按全部对话算，再筛出这个项目的
+  const rows = overviewRows(tasks, liveOf).filter((r) => inScope(r.task))
   // 只列得下三件：真要你回答的排最前，其次是失败的，做完没看的最后（组内原本按时间排，这里是稳定排序）
   const urgency = (r: OverviewRow) => (r.state === 'needs' ? 0 : r.state === 'failed' ? 1 : 2)
   const waiting = rows.filter((r) => r.group === 'you').sort((a, b) => urgency(a) - urgency(b))
@@ -80,8 +90,10 @@ export function HomeGlance({ onExample }: { onExample: (prompt: string) => void 
   const recent = rows
     .filter((r) => !shownWaiting.includes(r))
     .sort((a, b) => b.task.updatedAt.localeCompare(a.task.updatedAt))
-    .slice(0, RECENT_MAX)
-  const projectName = (id: string) => (id ? (projects.find((p) => p.id === id)?.name ?? t('已删除的项目')) : t('聊天'))
+    .slice(0, projectId ? PROJECT_RECENT_MAX : RECENT_MAX)
+  // 项目页上每行都是同一个项目，不再重复写项目名
+  const projectName = (id: string) =>
+    projectId ? '' : id ? (projects.find((p) => p.id === id)?.name ?? t('已删除的项目')) : t('聊天')
   const open = (r: OverviewRow) =>
     r.task.projectId
       ? go({ page: 'projects', id: r.task.projectId, sub: r.task.id })
@@ -107,7 +119,7 @@ export function HomeGlance({ onExample }: { onExample: (prompt: string) => void 
         <section aria-label={t('等你处理')} className="flex flex-col gap-1" data-home-waiting>
           <button
             type="button"
-            // 只有一件时直接进那个对话，多件时去总览看全部
+            // 只有一件时直接进那个对话，多件时去总览看全部（项目页也一样，总览里能按项目名搜）
             onClick={() => (waiting.length === 1 ? open(waiting[0]) : go({ page: 'overview' }))}
             className="flex cursor-pointer items-center gap-1 self-start rounded-md px-1 text-xs font-medium text-accent-text hover:underline"
           >
@@ -151,9 +163,11 @@ function GlanceRow({ r, project, onOpen }: { r: OverviewRow; project: string; on
       >
         <Icon className="h-4 w-4 shrink-0 text-subtle" />
         <span className="min-w-0 flex-1 truncate text-body text-fg">{task.title}</span>
-        <span className={cn('hidden min-w-0 max-w-[40%] truncate text-xs text-subtle sm:block')}>
-          {note ? `${project} · ${note}` : project}
-        </span>
+        {(project || note) && (
+          <span className={cn('hidden min-w-0 max-w-[40%] truncate text-xs text-subtle sm:block')}>
+            {project && note ? `${project} · ${note}` : project || note}
+          </span>
+        )}
         {r.group === 'you' ? (
           <StatusPill tone={state === 'failed' ? 'err' : state === 'needs' ? 'wait' : 'ok'}>
             {state === 'failed' ? t('失败') : state === 'needs' ? t('等你回复') : t('待查看')}

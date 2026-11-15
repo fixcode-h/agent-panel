@@ -125,6 +125,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 演示里默认的 CLI 自己报费用，不出「算不了费用」那句
   {
     await p.getByText('商城前台', { exact: true }).first().click()
+    // 项目首页和面板首页同一个样子：项目名、输入框，下面只列这个项目等你处理的和最近的对话
+    {
+      const home = p.locator('[data-project-home]')
+      await home.waitFor({ timeout: 10000 }).catch(() => errors.push('项目首页：没有按首页样式显示'))
+      await home
+        .locator('[data-home-row]')
+        .first()
+        .waitFor({ timeout: 10000 })
+        .catch(() => errors.push('项目首页：没有列出这个项目的对话'))
+      const ids = await home.locator('[data-home-row]').evaluateAll((els) => els.map((e) => e.dataset.homeRow))
+      const other = await p.evaluate((ids) => {
+        const data = JSON.parse(localStorage.getItem('agent-panel-demo-v3') ?? '{}')
+        const shop = data.projects?.find((x) => x.name === '商城前台')?.id
+        return ids.filter((id) => (data.tasks ?? []).find((x) => x.id === id)?.projectId !== shop)
+      }, ids)
+      if (other.length) errors.push(`项目首页：列出了别的项目的对话（${other.join('、')}）`)
+      await check(p, '项目首页-首页样式', ['商城前台', '等你处理'])
+    }
     const chip = p.getByRole('button', { name: '这个对话的用量上限', exact: true })
     await chip.waitFor({ timeout: 10000 })
     await chip.click()
@@ -696,10 +714,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.keyboard.press('Escape')
       await settle(p).catch(() => {})
     }
-    // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
+    // 项目首页：和首页一样列等你处理的对话；输入和已有对话是同一件事的要求时，提示可以直接发过去
     await p.locator('#task-prompt').click()
     await p.keyboard.type('到货通知的按钮在详情页上点了没反应')
-    await check(p, '项目首页-相关对话', ['发到这里', '需要你处理'])
+    await check(p, '项目首页-相关对话', ['发到这里', '等你处理'])
     await p.keyboard.press('ControlOrMeta+a')
     await p.keyboard.press('Backspace')
     // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
