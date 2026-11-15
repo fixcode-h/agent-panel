@@ -1090,6 +1090,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 8000 })
       .catch(() => errors.push('对话总览：没有列出对话'))
     await check(p, '对话总览', ['对话总览', '等你处理', '执行中'])
+    // 行上右键：和侧栏任务行同一份菜单，前面多「打开」「选择」
+    await p.locator('[data-overview-row]').first().click({ button: 'right' })
+    await p
+      .getByRole('menu')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('对话总览：行上右键没有出现菜单'))
+    await check(p, '对话总览-右键菜单', ['打开', '选择', '重命名', '归档', '删除'])
+    await p.keyboard.press('Escape')
     await p.locator('[data-overview-row]').first().getByRole('checkbox').click()
     await p
       .locator('[data-overview-batch]')
