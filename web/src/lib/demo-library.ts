@@ -206,6 +206,10 @@ const installedBundled = new Map<string, BundledSkill['status'][string]>([
   ['brainstorming', 'changed'],
   ['systematic-debugging', 'changed'],
 ])
+/** 标成按项目的技能名（演示版记在内存里，真后端在 config/skill-activation.json） */
+const projectSkills = new Set<string>(['ue-project-structure'])
+const activationOf = (name: string) => (projectSkills.has(name) ? ('project' as const) : ('global' as const))
+
 function bundledList(): BundledSkill[] {
   return Object.entries(BUNDLED)
     .map(([file, text]) => {
@@ -223,6 +227,7 @@ function bundledList(): BundledSkill[] {
         files: tree.entries.filter((e) => e.type === 'file').length,
         tree,
         status,
+        activation: activationOf(name),
       }
     })
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
@@ -255,6 +260,18 @@ export function demoLibrary(
     if (at >= 0) servers.splice(at, 1)
     if (method === 'PUT') servers.push({ ...(body.server as McpServer), name, clis: body.clis ?? [] })
     return demoMcpOverview(active)
+  }
+  // 切换全局 / 按项目（shared/api-contract/skills.ts）：演示版只改内存里的标记，按项目的自带技能算作从用户目录撤掉
+  if (id === 'skill-activation') {
+    const { name, activation } = body as { name: string; activation: 'global' | 'project' }
+    const moved = items.filter((x) => x.kind === 'skill' && x.name === name).map((x) => x.cli)
+    const isBundled = !!bundledOf(name)
+    if (!moved.length && !isBundled) throw new Error(`没有这个技能：${name}`)
+    if (activation === 'project') projectSkills.add(name)
+    else projectSkills.delete(name)
+    const removed = activation === 'project' && isBundled && installedBundled.get(name) === 'same' ? [name] : []
+    for (const n of removed) installedBundled.delete(n)
+    return { name, activation, moved, removed, kept: [] }
   }
   // 自带 Skill：内容取仓库 skills/ 下的 SKILL.md，装没装记在内存里
   if (id === 'bundled') {
@@ -342,7 +359,8 @@ export function demoLibrary(
         .filter((x) => x.kind === kind && (active.includes(x.cli) || x.cli === ALL_AGENTS))
         .map(({ content: _c, extra: _e, dirs: _d, ...i }) => {
           const s = summarize(scanOf(items.find((x) => x.kind === kind && x.cli === i.cli && x.name === i.name)!))
-          return s.high || s.medium ? { ...i, scan: s } : i
+          const withAct = i.kind === 'skill' ? { ...i, activation: activationOf(i.name) } : i
+          return s.high || s.medium ? { ...withAct, scan: s } : withAct
         }),
     }
   if (id === 'copy') {

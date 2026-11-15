@@ -568,6 +568,18 @@ export function codexAdapter(
       }
       ctx.send({ method: 'initialized' })
       if (o.trustHooks) await trustPanelHooks(ctx, o.cwd)
+      // 这一轮带上的按项目技能（CLI 定义的 runSkills.rpc，见 server/skills/run-skills.ts）：开会话前告诉它技能目录
+      if (o.skillsRpc) {
+        const r = await ctx.request(o.skillsRpc, { timeoutMs: START_TIMEOUT_MS })
+        if (r?.error)
+          ctx.emit({
+            type: 'notice',
+            text: t('这个项目打开的技能没能交给 Codex（{error}），这一轮用不了它们', {
+              error: String(r.error.message),
+            }),
+            failed: true,
+          })
+      }
       if (needsWinSandbox) {
         const ready = await ctx.request(
           { method: 'windowsSandbox/readiness', params: {} },

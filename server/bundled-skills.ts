@@ -17,6 +17,7 @@ import { SKILL_TARGET } from '../shared/deploy.ts'
 import { expandHome } from './cli/extras.ts'
 import { log } from './log.ts'
 import { pluginEnabled } from '../shared/plugins/index.ts'
+import { isProjectSkill } from './skills/config.ts'
 
 /**
  * 面板自带的 Skill：仓库里的 skills/<分类>/<名字>/。
@@ -244,6 +245,7 @@ export async function listBundled(): Promise<BundledSkill[]> {
       tree,
       status: { shared: await statusIn(e, root) },
       ...(e.plugin && { plugin: e.plugin }),
+      activation: isProjectSkill(e.name) ? 'project' : 'global',
     })
   }
   return out.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
@@ -284,6 +286,11 @@ export async function installBundled(names: string[], _clis: string[], overwrite
   for (const name of names) {
     const e = all.find((x) => x.name === name)
     if (!e) throw new Error(t('没有自带的 Skill「{name}」', { name }))
+    // 按项目的技能不进用户目录（每轮只给打开了它的项目带上），装了就又对所有项目生效了
+    if (isProjectSkill(name)) {
+      skipped.push(name)
+      continue
+    }
     // 点了更新（覆盖）：「部署」那份装过又旧了的一起换掉，不然部署那边的提示点还亮着
     if (overwrite && (await refreshCopy(e, deployedRoot(e)))) done.push(name)
     const s = await statusIn(e, root)
@@ -311,7 +318,8 @@ export async function ensureBundled(names: string[]) {
     const added: string[] = []
     for (const name of names) {
       const e = all.find((x) => x.name === name)
-      if (!e || existsSync(path.join(root, name, 'SKILL.md'))) continue
+      // 按项目的由这一轮的技能目录带上（server/skills/run-skills.ts），不往用户目录补
+      if (!e || isProjectSkill(name) || existsSync(path.join(root, name, 'SKILL.md'))) continue
       await writeSkill(e, root)
       added.push(name)
     }
@@ -327,9 +335,17 @@ export async function ensureBundled(names: string[]) {
  * 只删和插件里那份一模一样的（目录里每个文件都一致、没有多出来的文件）；用户改过的保留，返回保留的名字
  */
 export async function removePluginSkills(pluginId: string) {
+  return removeCopies((await allPluginEntries()).filter((x) => x.plugin === pluginId))
+}
+
+/**
+ * 清掉这些自带技能在用户目录里的副本（「自带 Skill」页装的和「部署」放的两处）：插件关掉时、技能改成按项目时用。
+ * 只删和自带的一模一样的，用户改过的保留，返回保留的名字
+ */
+export async function removeCopies(list: Entry[]) {
   const removed: string[] = []
   const kept: string[] = []
-  for (const e of (await allPluginEntries()).filter((x) => x.plugin === pluginId)) {
+  for (const e of list) {
     for (const root of [sharedRoot(), deployedRoot(e)]) {
       const dir = path.join(root, e.name)
       if (!existsSync(path.join(dir, 'SKILL.md'))) continue

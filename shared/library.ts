@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { t } from './i18n.ts'
 import type { ConfigFinding, ScanSummary } from './config-scan/index.ts'
 import type { McpToolTitle } from './mcp-catalog/tool-titles.ts'
+import type { PluginActivation } from './projects/capabilities.ts'
 
 /** 库里的一项：某个 CLI 用户目录下的一个 Skill 或自定义命令 */
 export interface LibraryItem {
@@ -13,6 +14,8 @@ export interface LibraryItem {
   path: string
   /** 配置安全扫描中级以上的条数（没有就不带），列表上画小盾牌 */
   scan?: ScanSummary
+  /** 技能的生效方式（见 shared/skills/activation.ts）：project 的已经挪进面板数据目录，只给打开了它的项目带上；缺省当 global */
+  activation?: PluginActivation
 }
 
 export interface LibraryCli {
@@ -200,6 +203,8 @@ export interface BundledSkill {
   status: Record<string, 'missing' | 'same' | 'changed'>
   /** 插件带的技能：插件 id（界面上标「来自插件」，ADR 0059） */
   plugin?: string
+  /** 生效方式（见 shared/skills/activation.ts）：project 的不装进用户目录，只给打开了它的项目带上；缺省当 global */
+  activation?: PluginActivation
 }
 
 export const BUNDLED_CATEGORIES: { id: string; label: string }[] = [

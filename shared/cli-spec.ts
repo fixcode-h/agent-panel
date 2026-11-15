@@ -101,6 +101,19 @@ export const McpStore = z.object({
 export type McpStore = z.infer<typeof McpStore>
 
 /**
+ * 每轮带上的技能（项目能力里打开的「按项目」技能，见 shared/skills/activation.ts）：面板把这一轮要带的技能放进
+ * 数据目录里这个项目、这个 CLI 自己的目录（{root}/{subdir}/<名字>/SKILL.md），再按这里告诉 CLI。
+ * args 是加的启动参数，rpc 是走协议的 CLI 开会话前发的请求；{root}、{dir}（= {root}/{subdir}）换成实际路径。
+ * 不写表示这个 CLI 不能按会话加载技能：面板改成在提示里列出这些技能的路径，让它需要时自己读
+ */
+export const RunSkills = z.object({
+  subdir: z.string().default(''),
+  args: z.array(z.string()).default([]),
+  rpc: z.object({ method: z.string(), params: z.unknown() }).optional(),
+})
+export type RunSkills = z.infer<typeof RunSkills>
+
+/**
  * 扩展包（例如 Pi 的 pi install）：已装的从配置文件 file 的 key 数组里读（每项是来源字符串，或带 source 字段的对象），
  * 装、删、更新跑 CLI 自己的命令，{source} 是包的来源。相对路径的来源按配置文件所在目录换成绝对路径再交给命令
  */
@@ -679,6 +692,7 @@ export const CliSpec = z.object({
   /** 启动新会话前探测项目里的远程 MCP，卡住时在对话里提示；不写表示不探测 */
   mcpProbe: McpProbe.optional(),
   packages: CliPackages.optional(),
+  runSkills: RunSkills.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
   auth: CliAuth.optional(),
   /** 界面文案的翻译：{ "en": { "中文": "English" } } */
@@ -896,6 +910,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     trust: spec.trust,
     mcpStore: spec.mcpStore,
     mcpProbe: spec.mcpProbe,
+    runSkills: spec.runSkills,
     packages: spec.packages && {
       ...spec.packages,
       placeholder: tr(spec.packages.placeholder),
