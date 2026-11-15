@@ -177,7 +177,14 @@ async function currentVersion(dir: string) {
  * 把包里的文件写进 plugins/<id>/：先写临时目录再换掉旧的，中途失败不留半个插件。
  * 旧的那一版不删，挪到 plugins/.prev/<id>/ 留着退回用（只留一版）
  */
-export async function writePackage(id: string, files: ZipEntry[], root: string, source: PluginSource) {
+export async function writePackage(
+  id: string,
+  files: ZipEntry[],
+  root: string,
+  source: PluginSource,
+  /** 换上去之前在临时目录里做的事（包装插件的安装动作）：失败时删掉临时目录，旧版本不动 */
+  prepare?: (dir: string) => Promise<void>,
+) {
   const dest = path.join(PLUGINS_DIR, id)
   const tmp = `${dest}.tmp-${process.pid}-${Date.now()}`
   await rm(tmp, { recursive: true, force: true })
@@ -189,6 +196,11 @@ export async function writePackage(id: string, files: ZipEntry[], root: string, 
     await mkdir(path.dirname(full), { recursive: true })
     await writeFile(full, f.data)
   }
+  if (prepare)
+    await prepare(tmp).catch(async (e: unknown) => {
+      await rm(tmp, { recursive: true, force: true })
+      throw e
+    })
   const previousVersion = existsSync(dest) ? await currentVersion(dest).catch(() => '') : ''
   await writeFile(
     path.join(tmp, RECORD),
