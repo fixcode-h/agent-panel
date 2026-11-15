@@ -1300,7 +1300,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 工作流页加载完会自动选中第一个工作流（地址变了，抽屉跟着关上）：等它跳完再开抽屉。
   // 抽屉滑出来之前，页面上的「设置」是看不见的那个：只点看得见的；没出来就再点一次
   await m.waitForURL(/#\/workflows\/.+/, { timeout: 10000 }).catch(() => {})
-  const mobileSettings = m.getByRole('button', { name: '设置' }).filter({ visible: true }).first()
+  // exact：抽屉里还有项目工具标题上的「项目设置」齿轮
+  const mobileSettings = m.getByRole('button', { name: '设置', exact: true }).filter({ visible: true }).first()
   for (let i = 0; i < 3; i++) {
     await m.getByRole('button', { name: '打开菜单' }).click()
     if (

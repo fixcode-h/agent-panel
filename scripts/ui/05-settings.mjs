@@ -4,7 +4,7 @@
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
-import { runShard, stickyLeakProblems } from './harness.mjs'
+import { pickProject, runShard, stickyLeakProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle, sendNew }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -659,7 +659,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await check(p, '英文-执行中发消息')
     // 英文的文件面板：搜索框、计数文案都换成英文
     await p.goto(base)
-    await p.locator('[data-sidebar]').getByText('商城前台').first().click()
+    await pickProject(p, '商城前台')
     await p.getByRole('button', { name: 'Show files', exact: true }).first().click()
     await p
       .getByText('files read', { exact: false })

@@ -366,6 +366,18 @@ export async function stickyLeakProblems(p, label) {
 }
 
 /**
+ * 切到某个项目的首页：点侧栏顶上的项目切换器打开下拉，再点那个项目（方案 B 侧栏只显示当前项目，
+ * 原来点项目树里的项目名，现在都走这里）
+ */
+export async function pickProject(p, name) {
+  await p.locator('[data-project-switcher]').first().click()
+  const picker = p.locator('[data-project-picker]')
+  await picker.waitFor({ timeout: 5000 })
+  await picker.getByRole('button', { name, exact: false }).first().click()
+  await picker.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+}
+
+/**
  * 分段切换在深色下认不出选中项：选中块和轨道的底色亮度差太小（深色下 card 和 sel 只差几个色阶）。
  * 把页面上每个分段单选（radiogroup 里直接放 radio 按钮的）拿出来，比选中块和轨道的相对亮度，比值低于 1.15 就报。
  * 门槛按「浅色下白卡片压在浅灰轨道上（约 1.2，另有投影）认得出、出问题的深色（约 1.0）认不出」定
