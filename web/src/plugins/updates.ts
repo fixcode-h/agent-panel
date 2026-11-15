@@ -12,8 +12,16 @@ interface State {
   errors: { repo: string; error: string }[]
   checking: boolean
   checkedAt: string
+  /** 「一键更新」里每个插件走到哪一步（按插件 id），卡片按它显示进度和失败原因；见 update-all.ts */
+  bulk: Map<string, BulkStep>
 }
-let state: State = { updates: new Map(), errors: [], checking: false, checkedAt: '' }
+export interface BulkStep {
+  status: 'waiting' | 'updating' | 'done' | 'failed'
+  /** 要升到的版本 */
+  to: string
+  error?: string
+}
+let state: State = { updates: new Map(), errors: [], checking: false, checkedAt: '', bulk: new Map() }
 const subs = new Set<() => void>()
 const emit = (next: Partial<State>) => {
   state = { ...state, ...next }
@@ -23,7 +31,9 @@ const subscribe = (f: () => void) => {
   subs.add(f)
   return () => subs.delete(f)
 }
-export const usePluginUpdates = () => useSyncExternalStore(subscribe, () => state)
+/** 当前状态（React 外读，比如一键更新跑完后的测试） */
+export const pluginUpdatesState = () => state
+export const usePluginUpdates = () => useSyncExternalStore(subscribe, pluginUpdatesState)
 
 const AUTO_MS = 10 * 60_000
 
@@ -50,4 +60,10 @@ export function pruneUpdates(rows: PluginRow[]) {
     [...state.updates].filter(([id, u]) => rows.find((r) => r.manifest.id === id)?.manifest.version === u.current),
   )
   if (next.size !== state.updates.size) emit({ updates: next })
+}
+
+/** 一键更新改某个插件的进度；传 undefined 时清空全部（新一轮开始前） */
+export function setBulkStep(id?: string, step?: BulkStep) {
+  if (!id) return emit({ bulk: new Map() })
+  emit({ bulk: new Map(state.bulk).set(id, step!) })
 }
