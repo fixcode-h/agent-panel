@@ -533,7 +533,6 @@
     "web/src/components/tasks/Messages.tsx": 1,
     "web/src/components/tasks/PeerMessage.tsx": 3,
     "web/src/components/tasks/PlanPanel.tsx": 3,
-    "web/src/components/tasks/ProjectWorkspace.tsx": 5,
     "web/src/components/tasks/RunCard.tsx": 2,
     "web/src/components/tasks/RunningNow.tsx": 2,
     "web/src/components/tasks/SharedDirNotice.tsx": 3,
