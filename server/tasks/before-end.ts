@@ -19,6 +19,7 @@ import {
 import { allowEnd, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks/index.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { taskLog } from './log.ts'
+import { changedSomething } from '../exec/turn-info.ts'
 import type { TasksScope } from './scope.ts'
 import { isolated } from './helpers.ts'
 import { freshTask, readTask } from './read.ts'
@@ -82,8 +83,8 @@ export function createBeforeEnd(
     for (const m of at >= 0 ? tk.messages.slice(at + 1) : tk.messages)
       for (const x of m.role === 'agent' ? m.tools : []) {
         if (isCliTool(x)) tools++
-        if (isActTool(x)) acts++
-        else if (isLookTool(x)) reads++
+        if (changedSomething(x)) acts++
+        else if (isLookTool(x) || isActTool(x)) reads++
       }
     return { acts, reads, tools, checked: checked >= 0 }
   }

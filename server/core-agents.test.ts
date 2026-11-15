@@ -327,7 +327,7 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   assert.match(code, new RegExp(`最多 ${REVIEW_READ_BUDGET} 次`), '读代码有次数上限')
   assert.match(code, new RegExp(`${REVIEW_SOFT_LIMIT_MIN} 分钟内交卷`), '有时限')
   assert.match(code, /评审交接单/, '用对话交来的交接单')
-  assert.doesNotMatch(code, /MODULE-MAP\.md`（本项目即/, '评审代码不走模块定位')
+  assert.doesNotMatch(code, /以提示里「文档根」一段为准）的 `MODULE-MAP\.md`/, '评审代码不走模块定位')
   // ADR 0030：按改动类型过清单，修 Bug 的改动多看根因 / 症状和回归测试
   assert.match(code, /修的是根因还是症状/)
   assert.match(code, /有没有能拦住它的回归测试/)

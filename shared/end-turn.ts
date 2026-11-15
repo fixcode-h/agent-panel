@@ -193,7 +193,11 @@ export function endTurnCheck(
       })
     : ''
   if (gateErr) return { ok: false, info: `${END_REJECTED}${gateErr}` }
-  return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome, evidence } }
+  return {
+    ok: true,
+    info: '已结束这一轮。前面的回复已经说清了就不用再写；没说的用一句话补上，不要重复总结。',
+    end: { outcome, evidence },
+  }
 }
 
 /** 拒绝「就地改动还没收尾」时带的记号：同一轮只拒一次 */
