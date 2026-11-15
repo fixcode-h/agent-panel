@@ -15,6 +15,7 @@ import { UserAction } from './user-action.ts'
 import { FlowRun, WorkflowKind } from './tasks/flow-schema.ts'
 import { StopReason } from './stop-reason.ts'
 import { TaskBug } from './bug/task-bug.ts'
+import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS, TaskBudget } from './tasks/task-budget.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
@@ -1120,13 +1121,7 @@ export type Attachment = z.infer<typeof Attachment>
  * 找不到时没超过这个上限的仍然上传一份
  */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
-/**
- * 一个对话最多能设多少 token 的执行上限：一亿 token 已经远超一次对话，
- * 再大一定是填错了；太小会挡住正常的长时间任务，所以不收更小的人工上限
- */
-export const MAX_TASK_BUDGET_TOKENS = 100_000_000
-/** 一个对话的时长上限最多几天（分钟）：和设置里的单步时限同一个上限，超过一天的任务该拆成多个 */
-export const MAX_TASK_BUDGET_MINUTES = 1440
+export { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS }
 /**
  * 消息里图片卡片取的图有多宽（像素）。卡片本身是 1.25em 见方（约 20px），2 倍屏上按 40px 显示，
  * 取 160 已留 4 倍余量；同一批 48 张截图实测：原图 3501KB，640 要 2376KB，160 只要 266KB。
@@ -1983,8 +1978,6 @@ export const TaskData = z.object({
   status: TaskStatus,
   /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
   stopReason: StopReason.optional(),
-  /** 顶层对话的用量上限提醒到了哪一级（warn 提醒过、over 停过）：同一级只说一次；调高上限后跟着回落 */
-  budgetNotice: z.enum(['warn', 'over']).optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */
@@ -2145,18 +2138,8 @@ export const TaskData = z.object({
     .optional(),
   /** 父对话的分诊记录：每次派单 / 交回 / 派子任务 / 就地改动时的理解、理由和假设，界面画成分诊卡 */
   routes: z.array(TaskRoute).max(500).default([]),
-  /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
-  budgetFrom: z
-    .object({
-      usd: z.number(),
-      tokens: z.number(),
-      /** 这一轮开始的时刻（epoch ms）：时长上限从它算起；旧记录没有，时长上限按不限处理 */
-      at: z.number().optional(),
-    })
-    .optional(),
-  /** 执行上限（定时计划带的）：token 上限和时长上限（分钟），0 表示不限 */
-  budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).default(0),
-  budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
+  /** 执行上限（定时计划带的 token / 时长上限、这一轮的起算点）和用量上限提醒级别，见 shared/tasks/task-budget.ts */
+  budget: TaskBudget.optional(),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
   /** 模型正在写一个工具调用的入参（写大段报告、大文件时要一二十秒）：哪个工具、从什么时候开始。不存盘意义不大，调用到了就去掉 */

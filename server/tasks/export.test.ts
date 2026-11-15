@@ -26,6 +26,7 @@ import {
   taskReport,
   taskHtml,
   taskStats,
+  TASK_EXPORT_VERSION,
 } from '../../shared/tasks/export.ts'
 import { endRun, pauseRun, resumeRun } from '../../shared/task.ts'
 
@@ -83,7 +84,7 @@ const task = Task.parse({
 test('导出：带版本号和统计，去掉会话、命令、项目、附件路径和密钥', () => {
   const b = exportTask(task, [defaultAgent(), coder], '0.26.1', new Date(at))
   assert.equal(b.format, 'agent-panel/task')
-  assert.equal(b.version, 2)
+  assert.equal(b.version, TASK_EXPORT_VERSION)
   assert.equal(b.app, '0.26.1')
   const raw = JSON.stringify(b)
   assert.ok(!raw.includes('sess-1') && !raw.includes('"p1"') && !raw.includes('/home/me'), raw)
@@ -317,11 +318,19 @@ test('导入 1 版的导出文件：平铺的 Bug 字段收进 task.bug，传进
   }
   const before = JSON.stringify(old)
   const got = parseTaskExport(old)
-  assert.equal(got.version, 2)
+  assert.equal(got.version, TASK_EXPORT_VERSION)
   assert.equal(got.task.bug?.kind, 'report')
   assert.equal(got.task.bug?.case?.symptom, '角标')
   assert.equal(got.children[0].bug?.kind, 'fix')
   assert.equal(JSON.stringify(old), before)
+})
+
+test('导入 2 版的导出文件：平铺的执行上限字段收进 task.budget', () => {
+  const b = JSON.parse(JSON.stringify(exportTask(task, [coder])))
+  const old = { ...b, version: 2, task: { ...b.task, budgetTokens: 5000, budgetMinutes: 0, budgetNotice: 'over' } }
+  const got = parseTaskExport(old)
+  assert.deepEqual(got.task.budget, { tokens: 5000, notice: 'over' })
+  assert.ok(!('budgetTokens' in got.task))
 })
 
 test('去密钥：常见格式都能认出，普通文字不动', () => {

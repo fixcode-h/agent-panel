@@ -287,3 +287,25 @@ test('0007：仓库里已经有教训、经验的项目记成随仓库存，其�
   assert.equal(c.knowledgeInRepo, false, '用户已经选过的不改')
   assert.ok(!('knowledgeInRepo' in e))
 })
+
+test('0008：平铺的执行上限字段收进 task.budget；0（不限）丢掉；什么都没设的不造出 budget；已经是新格式的不碰', async () => {
+  const d = freshDir()
+  const dir = path.join(d, 'tasks', 'chats')
+  const from = { usd: 0.5, tokens: 1200, at: 1760000000000 }
+  write(
+    path.join(dir, 'a.json'),
+    task('a', { turnSeenAt: '', budgetTokens: 5000, budgetMinutes: 30, budgetFrom: from, budgetNotice: 'warn' }),
+  )
+  write(path.join(dir, 'z.json'), task('z', { turnSeenAt: '', budgetTokens: 0, budgetMinutes: 0 }))
+  write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', budget: { tokens: 10 } }))
+  const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
+  write(path.join(d, 'data-version.json'), { version: 7 })
+  await runMigrations({ dataDir: d, log: quiet })
+  const a = json(path.join(dir, 'a.json'))
+  assert.deepEqual(a.budget, { tokens: 5000, minutes: 30, from, notice: 'warn' })
+  for (const k of ['budgetTokens', 'budgetMinutes', 'budgetFrom', 'budgetNotice']) assert.ok(!(k in a), `${k} 收进去了`)
+  const z = json(path.join(dir, 'z.json'))
+  assert.ok(!('budget' in z) && !('budgetTokens' in z) && !('budgetMinutes' in z), '不限的不留空对象')
+  assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
+  assert.equal(json(path.join(d, 'backup', '0008-task-budget', 'tasks', 'chats', 'a.json')).budgetTokens, 5000)
+})

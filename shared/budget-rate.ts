@@ -10,7 +10,7 @@ import { fmtTokens } from './budget.ts'
  *   用户离开一晚上再回来也不会把平均速率拉低到一回来就报
  * - 平均速率取「窗口开始之前」的那段（不含最近 10 分钟本身），免得飙升把平均也拉高、永远到不了倍数
  * - 绝对量有下限：最近 10 分钟至少用了 RATE_MIN_TOKENS，窗口之前至少跑过 RATE_MIN_HISTORY_MS，刚开始的对话不报
- * - 只提醒、不停（停是用量上限的事），每个对话只提醒一次（Task.rateNoticeAt），不碰 budgetNotice（通知渠道按它发）
+ * - 只提醒、不停（停是用量上限的事），每个对话只提醒一次（Task.rateNoticeAt），不碰 budget.notice（通知渠道按它发）
  * 样本在每一轮结束核用量上限时记（server/tasks/budget.ts），只在内存里：面板重启后重新攒，前 10 分钟不报
  */
 

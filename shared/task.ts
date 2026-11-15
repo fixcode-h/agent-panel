@@ -171,8 +171,9 @@ export function newTask(
     testRuns: [],
     platform: '',
     // 计划带的执行上限：之后改计划不影响这个已经启动的对话
-    budgetTokens: input.budgetTokens ?? 0,
-    budgetMinutes: input.budgetMinutes ?? 0,
+    ...(input.budgetTokens || input.budgetMinutes
+      ? { budget: { tokens: input.budgetTokens || undefined, minutes: input.budgetMinutes || undefined } }
+      : {}),
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
