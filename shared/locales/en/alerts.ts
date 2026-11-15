@@ -137,6 +137,8 @@ export const EN_ALERTS: Record<string, string> = {
   '{s} 秒后有输出了，接着在处理': 'Output resumed after {s}s and it is working again',
   '等了 {s} 秒没收到响应头（首字节超时）': 'no response headers after {s}s (first-byte timeout)',
   '（之前 {s} 秒没有新的输出）': ' (no new output for {s}s before this)',
+  '这个模型返回的思考内容 Claude Code 认不了，丢掉后重新请求（之后不再提示）；经常出现时把思考强度改成「关闭」能省掉这些重发':
+    "Claude Code can't use this model's thinking output, so it discarded it and asked again (shown once); if this happens often, set reasoning effort to Off to skip these retries",
   '模型输出中途断了，Claude Code 丢掉没写完的这段、重新请求':
     'The model output broke off partway; Claude Code dropped the unfinished part and is requesting again',
   '{cli} {s} 秒没有新的输出。再过 {k} 秒还是没有，面板会停掉它、接回会话重试。':

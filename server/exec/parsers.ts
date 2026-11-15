@@ -350,6 +350,9 @@ export function claudeParser(cwd: string): Parser {
   let stopReason = ''
   /** Claude Code 自己在重试模型请求（api_retry）：第几次。之后模型回应开始了就算接上，发 retry_ok */
   let retrying = 0
+  /** 这条回应第一块是 redacted_thinking（有的网关把思考换成占位）：被丢掉重发不是断流，同一对话只提示一次（摸底报告第 9 条） */
+  let redactedFirst = false
+  let redactedNoted = false
   return (o) => {
     const out: CliEvent[] = []
     // 网关报错（529 / 5xx / 超时）时 Claude Code 自己重试，最多十来次、间隔越来越长，期间没有别的输出。
@@ -389,6 +392,31 @@ export function claudeParser(cwd: string): Parser {
     // 输出到一半断流（CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS 到点）：Claude Code 在 message_stop 上带 abandoned_blocks
     // 丢掉没写完的这段，只有思考时直接重新请求，不发 api_retry（2.1.318 对真实网关实测）。不接的话界面上
     // 思考突然断掉又从头来，看不出发生了什么；已经写了正文的，接着会以 Stream idle timeout 结束这一轮
+    if (o.type === 'stream_event' && o.event?.type === 'message_start') redactedFirst = false
+    if (
+      o.type === 'stream_event' &&
+      o.event?.type === 'content_block_start' &&
+      o.event.index === 0 &&
+      o.event.content_block?.type === 'redacted_thinking'
+    )
+      redactedFirst = true
+    if (o.type === 'stream_event' && o.event?.type === 'message_stop' && o.abandoned_blocks && redactedFirst) {
+      // 实测（deepseek 网关）四成请求首块是占位的 redacted_thinking，Claude Code 丢掉原样重发、几秒就接上：
+      // 说成「输出中途断了」会让用户以为网络不好，每条消息还挂一行。只说一次，并给出能消掉它的做法
+      if (redactedNoted) return out
+      redactedNoted = true
+      retrying += 1
+      out.push({
+        type: 'notice',
+        text: t(
+          '这个模型返回的思考内容 Claude Code 认不了，丢掉后重新请求（之后不再提示）；经常出现时把思考强度改成「关闭」能省掉这些重发',
+        ),
+        kind: 'retry',
+        attempt: retrying,
+        error: 'redacted thinking',
+      })
+      return out
+    }
     if (o.type === 'stream_event' && o.event?.type === 'message_stop' && o.abandoned_blocks) {
       retrying += 1
       out.push({

@@ -451,7 +451,8 @@ function matchOld<T extends PlanItem>(x: PlanItemInput, old: T[], used: Set<T>):
   const id = clean(x.id, 40)
   const title = clean(x.title, 120)
   const byId = id ? old.find((o) => !used.has(o) && o.id === id) : undefined
-  if (byId) return byId
+  // 收尾步骤只在标题也对得上（或没写标题）时按 id 认：写错 id 会把评审步骤改到收尾上，来回改计划（摸底报告第 11 条）
+  if (byId && !((byId as Partial<PlanStep>).wrapUp && title && normTitle(title) !== normTitle(byId.title))) return byId
   if (!title) return undefined
   const exact = old.find((o) => !used.has(o) && o.title === title)
   if (exact) return exact
