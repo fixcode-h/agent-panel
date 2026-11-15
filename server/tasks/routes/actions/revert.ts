@@ -23,7 +23,8 @@ export function revertRoutes(s: TasksScope): Hono {
     if (!body.success) return s.bad(c, z.prettifyError(body.error))
     const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
-    const owner = tk.analysisOf && tk.analysisOf !== tk.id ? await currentTask(s, tk.analysisOf) : tk
+    const of = tk.analysis?.of
+    const owner = of && of !== tk.id ? await currentTask(s, of) : tk
     if (!owner) return s.bad(c, t('被分析的对话已经不在了，不知道该改哪个目录'), 404)
     // 正在动手的对话可能也在改这几个文件，两边一起写会互相覆盖
     if (owner.working) return s.bad(c, t('「{title}」正在执行，等这一轮结束后再应用', { title: owner.title }), 409)

@@ -135,7 +135,7 @@ const pluginPages = (s: State = state): OwnedPage[] =>
 export const usePluginPages = (): OwnedPage[] => pluginPages(usePlugins())
 
 /** 对话归开着的插件的整页（PluginPage.taskPlugin，例如 Blender 的模型设计页）；插件不在时当普通对话 */
-export const ownedPage = (task: Pick<Task, 'plugin' | 'modelDesign'>, pages: OwnedPage[] = pluginPages()) => {
+export const ownedPage = (task: Pick<Task, 'plugin'>, pages: OwnedPage[] = pluginPages()) => {
   const id = taskPlugin(task)
   return id ? pages.find((p) => p.taskPlugin === id) : undefined
 }
@@ -154,7 +154,7 @@ export const ownedPageRoute = (page: OwnedPage, taskId: string) => ({
  */
 export const useOwnedByPlugin = () => {
   const pages = pluginPages(usePlugins())
-  return (task: Pick<Task, 'plugin' | 'modelDesign'>) => !!ownedPage(task, pages)
+  return (task: Pick<Task, 'plugin'>) => !!ownedPage(task, pages)
 }
 
 /** 这个对话右栏多出来的页签 */

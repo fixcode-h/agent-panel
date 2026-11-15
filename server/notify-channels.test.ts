@@ -76,11 +76,11 @@ test('事件：失败、做完取钩子的 task.failed / task.done；子对话�
 })
 
 test('事件：用量提醒升级才发（快到、到了各一次），回落不发', () => {
-  assert.deepEqual(channelEvents(task(), task({ budgetNotice: 'warn' })), [{ event: 'budget', over: false }])
-  assert.deepEqual(channelEvents(task({ budgetNotice: 'warn' }), task({ budgetNotice: 'over' })), [
+  assert.deepEqual(channelEvents(task(), task({ budget: { notice: 'warn' } })), [{ event: 'budget', over: false }])
+  assert.deepEqual(channelEvents(task({ budget: { notice: 'warn' } }), task({ budget: { notice: 'over' } })), [
     { event: 'budget', over: true },
   ])
-  assert.deepEqual(channelEvents(task({ budgetNotice: 'over' }), task({ budgetNotice: 'warn' })), [])
+  assert.deepEqual(channelEvents(task({ budget: { notice: 'over' } }), task({ budget: { notice: 'warn' } })), [])
 })
 
 test('投递：真的 POST 到本地服务，飞书模板的请求体对得上；机器人回 200 但业务拒收算失败', async () => {

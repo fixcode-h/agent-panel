@@ -1,3 +1,4 @@
+import { setChild } from '../../../shared/children/task-child.ts'
 import {
   advanceChild,
   childFlowOf,
@@ -76,7 +77,7 @@ async function completeChild(sc: TasksScope, childId: string, tk: Task): Promise
     tk.worktree = { ...tk.worktree!, state: 'merged', note: tk.worktree!.baseBranch }
   }
   tk.resolved = true
-  tk.wrapRequest = undefined
+  setChild(tk, { wrapRequest: undefined })
   tk.updatedAt = new Date().toISOString()
   if (entry) entry.rev++
   await sc.store.update(tk.id, tk)
@@ -107,7 +108,7 @@ async function settleChildForUser(
   // 停不掉的（工作流运行、待回答的提问 / 请求）先判：不能先把在跑的子任务杀了再告诉他解决不了
   const left = childHolds({
     workflow: runRunning(tk),
-    asking: tk.parentAsks?.length ?? 0,
+    asking: tk.child?.parentAsks?.length ?? 0,
     requests: tk.requests.length,
   })
   if (left.length) return { holds: left, info: childHoldText(left) }
@@ -186,7 +187,7 @@ export async function advanceChildTo(
       background: sc.pendingJobs(childId),
       // 合回了、父对话的测试还没跑完或没通过（已退回修复）：都不能标完成、不能删分支（ADR 0018）。
       // 只在还有独立分支时算：分支被丢弃后没有「合回」这回事了，不能再拿它拦完成（评审 R4）
-      parentTest: isolated(tk) && (sc.parentTesting(childId, tk) || tk.wrapRequest?.state === 'test-failed'),
+      parentTest: isolated(tk) && (sc.parentTesting(childId, tk) || tk.child?.wrapRequest?.state === 'test-failed'),
       reported: done || reportedDone.has(childId),
     }),
     {

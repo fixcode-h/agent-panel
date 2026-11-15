@@ -1,3 +1,4 @@
+import { setChild } from '../../../shared/children/task-child.ts'
 import { childSelfDrives, childReport, type ConvState } from '../../../shared/task.ts'
 import type { Task } from '../../../shared/schema.ts'
 import { diagnosisInFlow } from '../../../shared/bug/phase.ts'
@@ -24,7 +25,7 @@ import { childCountsOf } from './count.ts'
  * 父对话就收到一串「未完成」，用户报过 20 分钟 13 条）；其余按这一轮算（每次失败、中断都要知道）
  */
 export const reportKey = (tk: Task, state: ConvState) => {
-  if (state === 'wrapup') return `wrapup|${tk.wrapRequest?.at ?? ''}`
+  if (state === 'wrapup') return `wrapup|${tk.child?.wrapRequest?.at ?? ''}`
   if (state === 'unfinished') {
     const plan = activePlan(tk)
     return `unfinished|${plan ? planProgressKey(plan) : ''}|${openWork(tk).length}`
@@ -110,7 +111,7 @@ export async function reportChild(ctx: ChildrenCtx, childId: string) {
   // 这一轮 AI 自己用 message_parent 写的汇报并进这一封当「结果」（ADR 0034：一轮只交一封），没写才取最后一条回复
   // 只带要点（shared/children/letter.ts）：最后一条回复取全文从里面认总结，lastReply 只有开头 300 字、认不出末尾的总结
   const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())?.text
-  const reply = tk.pendingReport?.trim() || last || tk.summary || ''
+  const reply = tk.child?.pendingReport?.trim() || last || tk.summary || ''
   // 结果优先用子对话写进它自己计划的总结（ADR 0041：总结写在各自的计划里，是它明确交的，不靠从回复里认）；
   // 计划还没收尾、没写总结时才退回最后的回复
   const plan = tk.plans?.at(-1)
@@ -150,7 +151,7 @@ export async function reportChild(ctx: ChildrenCtx, childId: string) {
     id: tk.id,
     why: agentWhy,
     next,
-    userDirect: tk.userDirect,
+    userDirect: tk.child?.userDirect,
     summary,
     fullAt: summary && brief.cut ? fullAt(tk.parentTaskId, tk.title, src) : undefined,
   })
@@ -170,11 +171,11 @@ export async function reportChild(ctx: ChildrenCtx, childId: string) {
   // 并进去的阶段汇报、用户的原话已经交出去了，下一封不再重复带。
   // 随父对话（或用量上限）停下的那次 noteParent 只改计划、不发（见 noteParent 的 cascaded），留到继续后的那一封
   const sent = !(r.state === 'stopped' && (tk.stopReason === 'parent' || tk.stopReason === 'budget'))
-  if (sent && (tk.pendingReport || tk.userDirect)) {
+  if (sent && (tk.child?.pendingReport || tk.child?.userDirect)) {
     const ce = sc.live.get(tk.id)
     const cur = ce?.task ?? tk
-    cur.pendingReport = undefined
-    cur.userDirect = undefined
+    setChild(cur, { pendingReport: undefined })
+    setChild(cur, { userDirect: undefined })
     if (ce) ce.rev++
     else
       await sc.store

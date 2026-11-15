@@ -5,7 +5,7 @@ import { stopReasonText, taskDeleted } from './task.ts'
 // 放在单独的文件里：shared/task.ts、shared/plan/index.ts 都快到行数上限（scripts/file-caps.json）
 
 /** 父对话继续时要看的子对话字段 */
-export type ResumeKid = Pick<Task, 'id' | 'title' | 'stopReason' | 'wrapRequest'>
+export type ResumeKid = Pick<Task, 'id' | 'title' | 'stopReason' | 'child'>
 
 /** 被连带打断、父对话继续时要接着做的停止原因：父对话停的、面板重启、卡住重开、核对时收口、整棵树到了用量上限 */
 const AGAIN: StopReason[] = ['parent', 'restart', 'stalled', 'lost', 'budget']
@@ -57,7 +57,7 @@ export function restartResumable(
 
 /** 已经请父对话收尾、在等父对话合并或跑测试：子对话这边没有活了。测试没通过退回修的（test-failed）还要它接着改，不算 */
 function waitingWrap(k: ResumeKid) {
-  const s = k.wrapRequest?.state
+  const s = k.child?.wrapRequest?.state
   return s === 'requested' || s === 'merging' || s === 'testing'
 }
 

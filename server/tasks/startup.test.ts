@@ -148,13 +148,13 @@ test('migrateOnStart：替子对话起的编译跑到一半面板重启：退回
     task('kid', {
       parentTaskId: 'p',
       title: '改角色移动',
-      buildAsk: { state: 'building', at, sig: 's', jobs: ['job-1'] },
+      child: { buildAsk: { state: 'building', at, sig: 's', jobs: ['job-1'] } },
     }),
   ])
   await migrateOnStart(store, createClaims())
   const kid = store.map.get('kid')!
-  assert.equal(kid.buildAsk?.state, 'asked', '父对话再 request_build 时面板会自动补上它')
-  assert.deepEqual(kid.buildAsk?.jobs, [])
+  assert.equal(kid.child?.buildAsk?.state, 'asked', '父对话再 request_build 时面板会自动补上它')
+  assert.deepEqual(kid.child?.buildAsk?.jobs, [])
   assert.match(
     store.map.get('p')!.inbox.at(-1)!.text,
     /替子对话「改角色移动」（id kid）起的编译没跑完.*重新调用 request_build/,

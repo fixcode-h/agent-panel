@@ -2358,10 +2358,9 @@ export async function runEngineTurn(host: EngineHost) {
   // 不管是前置合回后面板启动的、还是用户手动继续的，开始了就不再排在别人后面（shared/children/after.ts）
   task.waitAfter = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算（时长也从这里开始）
-  task.budgetFrom = {
-    usd: task.usage.costUsd,
-    tokens: task.usage.inputTokens + task.usage.outputTokens,
-    at: Date.now(),
+  task.budget = {
+    ...task.budget,
+    from: { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens, at: Date.now() },
   }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行
   for (const s of task.steps) if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'

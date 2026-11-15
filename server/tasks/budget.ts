@@ -103,7 +103,7 @@ export function createBudget(s: TasksScope) {
 
   /**
    * 速率提醒（shared/budget-rate.ts）：每一轮结束记一个整棵树的样本，最近 10 分钟比平均快很多时在顶层对话里说一次。
-   * 只提醒、不停；提醒过的对话（rateNoticeAt）不再记样本。不动 budgetNotice：通知渠道按它的 warn / over 发
+   * 只提醒、不停；提醒过的对话（rateNoticeAt）不再记样本。不动 budget.notice：通知渠道按它的 warn / over 发
    */
   async function checkRate(root: Task, tokens: number, all: Task[]) {
     if (root.rateNoticeAt) return
@@ -131,10 +131,10 @@ export function createBudget(s: TasksScope) {
     const tk = entry?.task ?? (await s.store.get(rootId))
     if (!tk) return
     const want = level === 'warn' || level === 'over' ? level : undefined
-    if (tk.budgetNotice === want) return
+    if (tk.budget?.notice === want) return
     const rank = (x?: string) => (x === 'over' ? 2 : x === 'warn' ? 1 : 0)
-    const up = rank(want) > rank(tk.budgetNotice)
-    tk.budgetNotice = want
+    const up = rank(want) > rank(tk.budget?.notice)
+    tk.budget = { ...tk.budget, notice: want }
     if (up && text) {
       const at = new Date().toISOString()
       tk.messages.push({ id: randomUUID(), role: 'system', agentId: '', step: '', text, tools: [], at })

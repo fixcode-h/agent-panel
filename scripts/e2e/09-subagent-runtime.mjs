@@ -520,7 +520,7 @@ await runShard('子对话运行与监管', async (api) => {
           return {
             status: t.status,
             working: t.working,
-            autoAsk: t.autoAsk,
+            autoAsk: t.child?.autoAsk,
             lastAt: t.messages.at(-1)?.at,
             threshold: (await call('GET', '/settings')).childIdleAskMinutes,
             tail: t.messages.slice(-3).map((m) => `${m.role}:${m.text.slice(0, 40)}`),
@@ -588,7 +588,7 @@ await runShard('子对话运行与监管', async (api) => {
         return {
           status: t.status,
           stopReason: t.stopReason,
-          autoAsk: t.autoAsk,
+          autoAsk: t.child?.autoAsk,
           tail: t.messages.slice(-4).map((m) => `${m.role}:${m.text.slice(0, 50)}`),
         }
       },

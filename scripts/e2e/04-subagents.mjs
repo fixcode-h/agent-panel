@@ -557,8 +557,8 @@ await runShard('子对话与计划', async (api) => {
       '答完一轮后被合并回收，不写「这一轮被中断」',
     )
     // 交接摘要（ADR 0007）：子对话写的关键信息加面板补的提交和改动文件，分支删掉后还留着
-    assert.match(closed.handoff?.text ?? '', /## 关键文件和模块\nchild-done\.txt — 子对话完成的标记/)
-    assert.match(closed.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*child-done\.txt/, '面板补上了改动文件')
+    assert.match(closed.child?.handoff?.text ?? '', /## 关键文件和模块\nchild-done\.txt — 子对话完成的标记/)
+    assert.match(closed.child.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*child-done\.txt/, '面板补上了改动文件')
     // 已完成的子对话再被叫醒：不管上下文多大都 resume 接回原会话（用户 2026-10-31 定的，取代 ADR 0007 的换新会话）
     const logBefore = readLog(log).length
     const wokeAt = new Date().toISOString()
@@ -855,7 +855,7 @@ await runShard('子对话与计划', async (api) => {
     assert.deepEqual(askMsg.ask.options, ['A 方案', 'B 方案'], '卡片带上子对话给的选项')
     assert.equal(askMsg.ask.answer, undefined, '还没回答')
     assert.deepEqual(
-      (await call('GET', `/tasks/${askKid.id}`)).parentAsks?.map((x) => x.id),
+      (await call('GET', `/tasks/${askKid.id}`)).child?.parentAsks?.map((x) => x.id),
       [askMsg.id],
       '子对话上也挂着这个提问，输入框换成选择弹窗',
     )
@@ -885,7 +885,7 @@ await runShard('子对话与计划', async (api) => {
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')
     assert.equal(answeredAsk.ask.by, 'user')
-    await waitTask(askKid.id, (k) => !k.parentAsks?.length)
+    await waitTask(askKid.id, (k) => !k.child?.parentAsks?.length)
     assert.ok(
       askParent.inbox.some((x) => x.from === askKid.id && x.text.includes('用户已回答')) &&
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
@@ -913,9 +913,9 @@ await runShard('子对话与计划', async (api) => {
         },
         { label: '第二个子对话的提问进了父对话' },
       )
-      assert.equal((await call('GET', `/tasks/${closeKid.id}`)).parentAsks?.length, 1)
+      assert.equal((await call('GET', `/tasks/${closeKid.id}`)).child?.parentAsks?.length, 1)
       const closedKid = await call('POST', `/tasks/${closeKid.id}/parent-asks/close`)
-      assert.deepEqual(closedKid.parentAsks, [], '返回的子对话里已经没有提问，弹窗马上收起')
+      assert.deepEqual(closedKid.child?.parentAsks, [], '返回的子对话里已经没有提问，弹窗马上收起')
       await waitFor(
         async () =>
           (await call('GET', `/tasks/${askParentTask.id}/children`)).find((x) => x.id === closeKid.id)?.cliAlive ===
@@ -1181,7 +1181,7 @@ await runShard('子对话与计划', async (api) => {
       const wrap = closed.plans.at(-1).steps.find((x) => x.wrapUp)
       assert.equal(wrap?.wrapUp, 'deliver', '计划里有面板加的「请父对话验收」')
       assert.equal(wrap.status, 'done', '父对话验收后面板把收尾标完成')
-      assert.ok(closed.handoff?.text, '交接要点照样留在任务上')
+      assert.ok(closed.child?.handoff?.text, '交接要点照样留在任务上')
       step('共用目录的子对话：评审门禁照样拦、复看通过后请父对话验收，验收后才完成')
     }
     // ---- 共用目录的认领留到改动交出去：以前一轮结束就放，父对话还没验收，兄弟就能认领同一个文件接着改 ----

@@ -174,10 +174,10 @@ await runShard('真实 Pi：子对话交接摘要', async (api) => {
   assert.equal(closed.status, 'done', '子对话完成')
   assert.ok(!existsSync(closed.worktree.path), '独立分支目录回收了')
   assert.equal(readFileSync(path.join(projectDir, 'handoff-demo.txt'), 'utf8'), 'hello\n', '改动合回了父对话的分支')
-  assert.ok(!closed.wrapRequest, `完成后不再挂着收尾请求（${JSON.stringify(closed.wrapRequest)}）`)
-  assert.match(closed.handoff?.text ?? '', /## 关键文件和模块\nhandoff-demo\.txt — 交接验证用的标记文件/)
-  assert.match(closed.handoff.text, /## 相关文档\ndocs\/adr\/0007/)
-  assert.match(closed.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*handoff-demo\.txt/, '面板补上了改动文件')
+  assert.ok(!closed.child?.wrapRequest, `完成后不再挂着收尾请求（${JSON.stringify(closed.child?.wrapRequest)}）`)
+  assert.match(closed.child?.handoff?.text ?? '', /## 关键文件和模块\nhandoff-demo\.txt — 交接验证用的标记文件/)
+  assert.match(closed.child.handoff.text, /## 相关文档\ndocs\/adr\/0007/)
+  assert.match(closed.child.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*handoff-demo\.txt/, '面板补上了改动文件')
   const ctx = closed.usage.agents[closed.agentId]?.context ?? 0
   assert.ok(ctx >= 30000, `完成时记下的上下文够大（${ctx}）`)
   const list = (await call('GET', `/tasks/${parent.id}/children`)).find((k) => k.id === kid.id)
@@ -200,7 +200,7 @@ await runShard('真实 Pi：子对话交接摘要', async (api) => {
       JSON.stringify(
         {
           resolved: k.resolved,
-          wrap: k.wrapRequest,
+          wrap: k.child?.wrapRequest,
           wt: k.worktree?.state,
           msgs: k.messages.slice(-4).map((m) => [m.role, m.panel, m.text?.slice(0, 300)]),
           calls: requests().slice(before).at(-1)?.calls,
@@ -226,8 +226,8 @@ await runShard('真实 Pi：子对话交接摘要', async (api) => {
     .at(-1)
   assert.ok(resubmit && !resubmit.error, `叫醒后再请求收尾成功：${resubmit?.result}`)
   assert.equal(readFileSync(path.join(projectDir, 'second.txt'), 'utf8'), 'hello\n', '第二次的改动也合回了')
-  assert.match(again.handoff?.text ?? '', /## 关键文件和模块\nsecond\.txt/, '交接摘要换成这次的')
-  assert.ok(!again.wrapRequest, `完成后不再挂着收尾请求（${JSON.stringify(again.wrapRequest)}）`)
+  assert.match(again.child?.handoff?.text ?? '', /## 关键文件和模块\nsecond\.txt/, '交接摘要换成这次的')
+  assert.ok(!again.child?.wrapRequest, `完成后不再挂着收尾请求（${JSON.stringify(again.child?.wrapRequest)}）`)
   step(
     `叫醒已完成的子对话：开新会话只带交接摘要（会话 ${Object.values(sessionsBefore)} → ${Object.values(again.sessions)}），改完再请父对话收尾、合回、完成`,
   )
@@ -243,7 +243,7 @@ await runShard('真实 Pi：子对话交接摘要', async (api) => {
   const smallDone = await waitTask(small.id, (x) => x.resolved && x.worktree?.state === 'merged', 120000)
   const smallCtx = smallDone.usage.agents[smallDone.agentId]?.context ?? 0
   assert.ok(smallCtx > 0 && smallCtx < 30000, `上下文小（${smallCtx}）`)
-  assert.ok(smallDone.handoff?.text, '小的也留了交接摘要')
+  assert.ok(smallDone.child?.handoff?.text, '小的也留了交接摘要')
   const before2 = requests().length
   await call('POST', `/tasks/${small.id}/messages`, { text: 'WAKE_AGAIN SMALL_CTX 再补一个小改动' })
   const smallWoke = await waitTask(
@@ -330,7 +330,7 @@ await runShard('真实 Pi：子对话交接摘要', async (api) => {
       console.error(
         JSON.stringify(
           {
-            wrap: k.wrapRequest,
+            wrap: k.child?.wrapRequest,
             wt: k.worktree,
             msgs: k.messages.map((m) => [m.role, m.panel, m.text?.slice(0, 200)]),
           },
@@ -348,7 +348,7 @@ await runShard('真实 Pi：子对话交接摘要', async (api) => {
   )
   const bossEnd = await waitTask(boss.id, (x) => !!x.plans.at(-1)?.doneAt, 60000)
   assert.equal(bossEnd.plans.at(-1).steps[0].status, 'done', '子对话合回后，派它的那一步才标完成')
-  assert.ok(!stallDone.wrapRequest, '完成后不挂收尾请求')
+  assert.ok(!stallDone.child?.wrapRequest, '完成后不挂收尾请求')
   step(
     '子对话（真实 Pi）派「版本控制」收尾被拒，自己 git merge 后不请收尾：面板提醒它 submit_merge；父对话合回后计划才完成',
   )

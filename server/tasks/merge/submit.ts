@@ -1,3 +1,4 @@
+import { setChild } from '../../../shared/children/task-child.ts'
 import { bugOf } from '../../../shared/bug/task-bug.ts'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -100,7 +101,7 @@ export async function submitMerge(
       ok: false,
       info: '没有请求收尾：你的分支已经合回，父对话正在跑范围为「全量，合并后由父对话跑」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
     }
-  if (tk.requests.length || tk.parentAsks?.length)
+  if (tk.requests.length || tk.child?.parentAsks?.length)
     return {
       ok: false,
       info: '没有请求收尾：还有等用户或父对话回答的提问。等回答回来、按回答处理完再调用 submit_merge。',
@@ -142,7 +143,7 @@ export async function submitMerge(
   // 面板侧的硬约束：提示词里说了「编译通过再 submit_merge」，模型照样会申请完编译就顺手交收尾，
   // 交了之后父子两边都以为对方会动，子对话一直停在「待收尾」（用户 2026-11-04 报）
   if (build && !own) {
-    const gate = buildGate(tk.buildAsk, await buildSigOf(sc, tk))
+    const gate = buildGate(tk.child?.buildAsk, await buildSigOf(sc, tk))
     if (gate) return { ok: false, info: gate }
   }
   // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
@@ -174,7 +175,7 @@ export async function submitMerge(
       ])
     : [[], Object.fromEntries(tk.changes.map((c) => [c.path, `+${c.add} -${c.del}`]))]
   const request = tk.messages.find((m) => m.role === 'user' && !m.step && !m.panel)?.text ?? ''
-  tk.handoff = {
+  const handoffRec = {
     text: handoffText(handoff, {
       title: tk.title,
       request,
@@ -191,11 +192,12 @@ export async function submitMerge(
     files: handoff.files ?? '',
     at,
   }
+  setChild(tk, { handoff: handoffRec })
   // 改了什么才编译什么：只改 Lua、配置、表格、资源、文档时合回后不申请 UE 编译（Lua 用 luac -p 查语法就够）
   const files = [...new Set([...Object.keys(changed ?? {}), ...tk.changes.map((c) => c.path)])]
   const noBuild = build ? await buildSkip(sc, tk, files) : ''
   if (noBuild) build = false
-  tk.wrapRequest = { state: 'requested', at, note, tests, ...(build && { build }), info: '' }
+  setChild(tk, { wrapRequest: { state: 'requested', at, note, tests, ...(build && { build }), info: '' } })
   // 简版报告：不用用户确认，在子对话里记一行能展开回看（再次收尾时换成最新的）
   if (tk.bug?.kind === 'fix') {
     const brief = (bugOf(tk).fixBrief = fixBriefOf(handoff, note, tests, files, at))

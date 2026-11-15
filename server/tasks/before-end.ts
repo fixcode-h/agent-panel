@@ -54,7 +54,7 @@ export function createBeforeEnd(
     if (hasHeld(tk.id) || sc.startQueue.has(tk.id)) return 'input-queued'
     if (sc.background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return 'background'
     if (helpersWorking(tk) || runRunning(tk)) return 'helpers'
-    const wrap = tk.wrapRequest?.state
+    const wrap = tk.child?.wrapRequest?.state
     if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return `wrap:${wrap}`
     return ''
   }
@@ -122,7 +122,7 @@ export function createBeforeEnd(
       return block(
         tk,
         'wrap-pending',
-        `wrap:${wrap.map((k) => `${k.id}@${k.wrapRequest!.at}`).join(',')}`,
+        `wrap:${wrap.map((k) => `${k.id}@${k.child?.wrapRequest!.at}`).join(',')}`,
         wrapWaitingBlock(wrap.map((k) => ({ id: k.id, title: k.title, branch: k.worktree?.state === 'active' }))),
       )
     }

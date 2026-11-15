@@ -15,6 +15,8 @@ import { UserAction } from './user-action.ts'
 import { FlowRun, WorkflowKind } from './tasks/flow-schema.ts'
 import { StopReason } from './stop-reason.ts'
 import { TaskBug } from './bug/task-bug.ts'
+import { AnalysisKind, TaskAnalysis } from './tasks/task-analysis.ts'
+import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS, TaskBudget } from './tasks/task-budget.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
 import { PanelKind } from './panel-kind.ts'
@@ -1092,12 +1094,7 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
-/**
- * AI 分析对话的种类（见 ADR 0014、0016）：标题在列表里和别的对话区分开，右侧功能面板按种类挑内容。
- * run：分析执行记录（对话、子任务、几次工作流执行）；init：AI 初始化项目；lessons：教训评审；fix：AI 排查报错
- */
-export const AnalysisKind = z.enum(['run', 'init', 'lessons', 'fix'])
-export type AnalysisKind = z.infer<typeof AnalysisKind>
+export { AnalysisKind }
 
 /** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
 export const Attachment = z.object({
@@ -1120,13 +1117,7 @@ export type Attachment = z.infer<typeof Attachment>
  * 找不到时没超过这个上限的仍然上传一份
  */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
-/**
- * 一个对话最多能设多少 token 的执行上限：一亿 token 已经远超一次对话，
- * 再大一定是填错了；太小会挡住正常的长时间任务，所以不收更小的人工上限
- */
-export const MAX_TASK_BUDGET_TOKENS = 100_000_000
-/** 一个对话的时长上限最多几天（分钟）：和设置里的单步时限同一个上限，超过一天的任务该拆成多个 */
-export const MAX_TASK_BUDGET_MINUTES = 1440
+export { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS }
 /**
  * 消息里图片卡片取的图有多宽（像素）。卡片本身是 1.25em 见方（约 20px），2 倍屏上按 40px 显示，
  * 取 160 已留 4 倍余量；同一批 48 张截图实测：原图 3501KB，640 要 2376KB，160 只要 266KB。
@@ -1876,6 +1867,63 @@ export const TaskJobView = z.object({
 })
 export type TaskJobView = z.infer<typeof TaskJobView>
 
+/**
+ * 只有子对话用的数据（复查报告 A7）：原来平铺在 Task 顶层（wrapRequest、buildAsk、handoff、pendingReport、userDirect、
+ * parentAsks、autoAsk），收进 task.child 一个子对象，键名不变。顶层对话没有 task.child。
+ * 写的时候整个换掉（shared/children/task-child.ts 的 setChild），不就地改：列表摘要、推送比对新旧时和旧对象共用同一个子对象。
+ * 旧数据由 server/migrations/0010-task-child.ts 一次性转过来，旧导出文件导入时由 liftChildFields 转。
+ * 父对话那一侧的（inbox、childRun、childAskUser：存在父对话上、管名下子对话的）不在这里
+ */
+export const TaskChild = z.object({
+  /** 子对话请父对话收尾的记录（ADR 0005，见 wrap-request-schema.ts） */
+  wrapRequest: WrapRequest.optional(),
+  buildAsk: BuildAsk.optional(), // UE 子对话申请的编译和结果（见 build-ask.ts），结果按它推回子对话
+  /**
+   * 子对话的交接摘要（见 ADR 0007）：submit_merge 时按模板写的关键信息加上面板补的 git 事实。
+   * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
+   */
+  handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
+  /**
+   * 子对话：这一轮 AI 自己用 message_parent 写的阶段汇报，还没交给父对话。
+   * 一轮只交一封（ADR 0034）：面板这一轮结束上报状态时把它并进去当「结果」，交出后清空
+   */
+  pendingReport: z.string().optional(),
+  /** 子对话：用户直接在子对话里交代的要求（最近一条）。不再给父对话单独发消息，下一封汇报里带上，交出后清空 */
+  userDirect: z.string().optional(),
+  /**
+   * 子对话：请用户决定、还没人回答的提问（父对话里也有一张对应的卡片，id 是那条消息的 id）。
+   * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
+   */
+  parentAsks: z
+    .array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        options: z.array(z.string()).default([]),
+        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
+        kind: AskKind.default('question'),
+      }),
+    )
+    .optional(),
+  /**
+   * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
+   * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
+   * 判定时按 at 之后有没有输出算），这样界面能看出「问过、在等回复」
+   */
+  autoAsk: z
+    .object({
+      at: z.string(),
+      count: z.number().int().min(0).default(0),
+      /**
+       * 这条询问没交出去（CLI 这一轮收不下，已经从队列和对话里撤掉）：算一次尝试、按阈值隔开再试，
+       * 但不显示「等回复」，也不能让它在收尾时开新一轮
+       */
+      held: z.boolean().optional(),
+    })
+    .optional(),
+})
+export type TaskChild = z.infer<typeof TaskChild>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -1886,14 +1934,6 @@ export const TaskData = z.object({
   parentTaskId: z.string().default(''),
   /** 顶层对话的 id：子对话从哪个项目对话分出来的；顶层对话自己为空 */
   rootTaskId: z.string().default(''),
-  /** 子对话请父对话收尾的记录（ADR 0005，见 wrap-request-schema.ts） */
-  wrapRequest: WrapRequest.optional(),
-  buildAsk: BuildAsk.optional(), // UE 子对话申请的编译和结果（见 build-ask.ts），结果按它推回子对话
-  /**
-   * 子对话的交接摘要（见 ADR 0007）：submit_merge 时按模板写的关键信息加上面板补的 git 事实。
-   * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
-   */
-  handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
   /**
    * 评审门禁的显式放行记录（见 shared/review/gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
    * 面板记下谁、什么时候、为什么、原本拦住什么。收尾消息和交接摘要里一并带给父对话，任务详情里也能看到
@@ -1934,28 +1974,6 @@ export const TaskData = z.object({
       }),
     )
     .default([]),
-  /**
-   * 子对话：这一轮 AI 自己用 message_parent 写的阶段汇报，还没交给父对话。
-   * 一轮只交一封（ADR 0034）：面板这一轮结束上报状态时把它并进去当「结果」，交出后清空
-   */
-  pendingReport: z.string().optional(),
-  /** 子对话：用户直接在子对话里交代的要求（最近一条）。不再给父对话单独发消息，下一封汇报里带上，交出后清空 */
-  userDirect: z.string().optional(),
-  /**
-   * 子对话：请用户决定、还没人回答的提问（父对话里也有一张对应的卡片，id 是那条消息的 id）。
-   * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
-   */
-  parentAsks: z
-    .array(
-      z.object({
-        id: z.string(),
-        question: z.string(),
-        options: z.array(z.string()).default([]),
-        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
-        kind: AskKind.default('question'),
-      }),
-    )
-    .optional(),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
@@ -1970,21 +1988,15 @@ export const TaskData = z.object({
    * 父对话关掉提问时已有子对话一起关，这个字段不变，所以重新打开父对话后菜单项又回到勾选
    */
   childAskUser: z.boolean().default(true),
-  /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
-  analysis: AnalysisKind.optional(),
-  /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」发回它）；旧数据、和对话无关的分析没有 */
-  analysisOf: z.string().optional(),
-  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填，读法见 taskPlugin */
+  /** AI 分析开出的对话：哪种分析、分析的是哪个对话，见 shared/tasks/task-analysis.ts；普通对话没有 */
+  analysis: TaskAnalysis.optional(),
+  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填 */
   plugin: z.string().optional(),
-  /** 旧版的模型设计对话（ADR 0025，现在是 Blender 插件的 blender.model），只读不写 */
-  modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
   /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
   stopReason: StopReason.optional(),
-  /** 顶层对话的用量上限提醒到了哪一级（warn 提醒过、over 停过）：同一级只说一次；调高上限后跟着回落 */
-  budgetNotice: z.enum(['warn', 'over']).optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */
@@ -2145,18 +2157,8 @@ export const TaskData = z.object({
     .optional(),
   /** 父对话的分诊记录：每次派单 / 交回 / 派子任务 / 就地改动时的理解、理由和假设，界面画成分诊卡 */
   routes: z.array(TaskRoute).max(500).default([]),
-  /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
-  budgetFrom: z
-    .object({
-      usd: z.number(),
-      tokens: z.number(),
-      /** 这一轮开始的时刻（epoch ms）：时长上限从它算起；旧记录没有，时长上限按不限处理 */
-      at: z.number().optional(),
-    })
-    .optional(),
-  /** 执行上限（定时计划带的）：token 上限和时长上限（分钟），0 表示不限 */
-  budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).default(0),
-  budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
+  /** 执行上限（定时计划带的 token / 时长上限、这一轮的起算点）和用量上限提醒级别，见 shared/tasks/task-budget.ts */
+  budget: TaskBudget.optional(),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
   /** 模型正在写一个工具调用的入参（写大段报告、大文件时要一二十秒）：哪个工具、从什么时候开始。不存盘意义不大，调用到了就去掉 */
@@ -2179,22 +2181,6 @@ export const TaskData = z.object({
   prewarming: z.boolean().default(false),
   /** 对话这一轮在排队等 API 的并发名额（仍算在运行，可以停止）；拿到就去掉 */
   apiWait: ApiWait.optional(),
-  /**
-   * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
-   * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
-   * 判定时按 at 之后有没有输出算），这样界面能看出「问过、在等回复」
-   */
-  autoAsk: z
-    .object({
-      at: z.string(),
-      count: z.number().int().min(0).default(0),
-      /**
-       * 这条询问没交出去（CLI 这一轮收不下，已经从队列和对话里撤掉）：算一次尝试、按阈值隔开再试，
-       * 但不显示「等回复」，也不能让它在收尾时开新一轮
-       */
-      held: z.boolean().optional(),
-    })
-    .optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /** 置顶（Chat 页的聊天）：侧栏聊天列表最上面单独一组「置顶」，不影响排序时间；旧数据没有这一项，按没置顶算 */
@@ -2222,6 +2208,8 @@ export const TaskData = z.object({
   remotePushAt: z.string().optional(),
   runSeq: z.number().int().default(0), // 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离
   flowRun: FlowRun.optional(), // 工作流运行（不是子对话）：属于哪个父对话、阶段、决定记录，见 task-flow-schema.ts
+  /** 只有子对话用的数据（收尾请求、交接摘要、待交的汇报、等用户决定的提问…），见上面的 TaskChild；顶层对话没有 */
+  child: TaskChild.optional(),
   /** 用户报的 Bug 的全部数据（要交诊断报告还是直接修、诊断报告各版、档案、简报…），见 shared/bug/task-bug.ts；普通对话没有 */
   bug: TaskBug.optional(),
   userActions: z.array(UserAction).optional(), // 等你操作（request_user_action）：最近的在最后，见 shared/user-action.ts

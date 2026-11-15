@@ -530,7 +530,7 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       )}\n\`\`\``,
     }
   // AI 初始化项目（项目对话里做）：回复末尾带上初始化结果的 JSON，演示里对话右侧的设置应用面板也能看到推荐
-  if (!call.step && ctx.first && task.analysis === 'init')
+  if (!call.step && ctx.first && task.analysis?.kind === 'init')
     out = {
       tools: [
         { kind: 'read', label: 'package.json', detail: '' },

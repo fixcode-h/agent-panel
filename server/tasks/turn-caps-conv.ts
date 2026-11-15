@@ -155,8 +155,8 @@ export async function conversationCaps(c: TurnCapsCtx) {
           busy: cur.working || sc.startQueue.has(cur.id) || sc.completing.has(cur.id),
           // 已完成的报关键文件：父对话按它判断新问题该交给谁，比最后一句回复准
           summary:
-            cur.resolved && cur.handoff?.files
-              ? `关键文件：${cur.handoff.files.replace(/\s+/g, ' ')}`
+            cur.resolved && cur.child?.handoff?.files
+              ? `关键文件：${cur.child?.handoff.files.replace(/\s+/g, ' ')}`
               : cur.summary || sc.lastReply(cur),
           at: cur.updatedAt,
           doing: childActivityText(doing),
@@ -165,7 +165,7 @@ export async function conversationCaps(c: TurnCapsCtx) {
             : childWaitText(childWait(cur, { background: sc.pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) })),
           lastActivityAt: childLastActivity(cur),
           // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
-          autoAsk: cur.autoAsk,
+          autoAsk: cur.child?.autoAsk,
           createdAt: cur.createdAt,
           resolved: !!cur.resolved,
         }

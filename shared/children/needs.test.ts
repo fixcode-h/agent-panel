@@ -33,7 +33,7 @@ test('后代在等确认时一路往上记：父对话、祖父对话都算，�
     row('top'),
     row('a', 'top'),
     row('b', 'top', { requests: [req()] }),
-    row('a1', 'a', { parentAsks: [{ id: 'q', question: '选哪个？', options: [], kind: 'question' }] }),
+    row('a1', 'a', { child: { parentAsks: [{ id: 'q', question: '选哪个？', options: [], kind: 'question' }] } }),
     row('other'),
   ])
   assert.equal(m.get('top'), 2)
@@ -71,7 +71,7 @@ test('子对话卡在权限确认：父对话是「等你处理」，不是「�
 })
 
 test('子对话行和计划窗口写出确认的是哪条命令', () => {
-  const kid = { status: 'running' as const, working: false, requests: [req()], parentAsks: [], steps: [] }
+  const kid = { status: 'running' as const, working: false, requests: [req()], steps: [] }
   const w = childWait(kid)
   assert.deepEqual(w, { kind: 'confirm', n: 1, title: req().title, question: false })
   assert.equal(childWaitText(w), '等用户确认：运行命令：npm test 2>&1 | tail -30')
@@ -92,7 +92,6 @@ test('上报父对话的说明写出确认什么，孙对话在等时说清是�
     status: 'running' as const,
     working: false,
     requests: [req()],
-    parentAsks: [],
     plans: [],
     steps: [],
     resolved: false,

@@ -462,7 +462,10 @@ await runShard(import.meta.filename, async (api) => {
         await p.evaluate((k) => {
           const db = JSON.parse(localStorage.getItem(k))
           const task = db.tasks.find((x) => x.title.includes('购物车右上角'))
-          task.parentAsks = [{ id: 'demo-ask', question: '角标用红色还是主题色？', options: ['红色', '主题色'] }]
+          task.child = {
+            ...task.child,
+            parentAsks: [{ id: 'demo-ask', question: '角标用红色还是主题色？', options: ['红色', '主题色'] }],
+          }
           localStorage.setItem(k, JSON.stringify(db))
         }, key)
         await p.reload()

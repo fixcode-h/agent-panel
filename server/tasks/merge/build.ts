@@ -1,3 +1,4 @@
+import { setChild } from '../../../shared/children/task-child.ts'
 import { type Project, type Task } from '../../../shared/schema.ts'
 import { buildSkipText, buildSteps, buildStepsFor, currentTestSteps } from '../../../shared/test-steps.ts'
 import { stepRun } from '../../step-run.ts'
@@ -18,7 +19,7 @@ export async function buildSigOf(sc: TasksScope, tk: Task) {
 
 /** 改了子对话的编译记录：在跑的改内存里那份（rev++ 让它落盘），没在跑的直接写盘 */
 export async function saveBuildAsk(sc: TasksScope, tk: Task, ask: BuildAsk) {
-  tk.buildAsk = ask
+  setChild(tk, { buildAsk: ask })
   const entry = sc.live.get(tk.id)
   if (entry) entry.rev++
   await sc.store.update(tk.id, tk)
@@ -120,7 +121,7 @@ export async function parentRequestBuild(
       await saveBuildAsk(sc, tk, {
         state: 'passed',
         at: new Date().toISOString(),
-        note: tk.buildAsk?.note ?? note,
+        note: tk.child?.buildAsk?.note ?? note,
         sig: await buildSigOf(sc, tk),
         jobs: [],
         info: '改动不涉及要编译的文件',
@@ -163,8 +164,8 @@ export async function parentRequestBuild(
     await saveBuildAsk(sc, tk, {
       state: 'building',
       at: new Date().toISOString(),
-      note: tk.buildAsk?.note ?? note,
-      sig: tk.buildAsk?.sig || (await buildSigOf(sc, tk)),
+      note: tk.child?.buildAsk?.note ?? note,
+      sig: tk.child?.buildAsk?.sig || (await buildSigOf(sc, tk)),
       jobs: ids,
       info: '',
     })

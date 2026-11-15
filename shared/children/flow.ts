@@ -43,7 +43,7 @@ export type ChildFlowState = Parameters<typeof childHolds>[0] & {
  * merged 传 false 表示独立分支还没合回去；reported 表示父对话已经收到过这次完成的上报。
  */
 export function childFlowOf(
-  task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & {
+  task: Pick<Task, 'status' | 'working' | 'requests' | 'child' | 'plans' | 'steps'> & {
     runs?: Task['runs']
     resolved?: boolean
     bug?: Task['bug']
@@ -57,7 +57,7 @@ export function childFlowOf(
     workflow: runRunning(task),
     helpers: helpersWorking(task),
     plan: openPlan(task),
-    asking: task.parentAsks?.length ?? 0,
+    asking: task.child?.parentAsks?.length ?? 0,
     // 诊断报告等确认（ADR 0045）和等确认的请求一样拦着完成
     requests: task.requests.length + (diagnosisPending(task) ? 1 : 0) + (pendingAction(task) ? 1 : 0),
     unmerged: x.merged === false,

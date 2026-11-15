@@ -1,3 +1,4 @@
+import { setChild } from '@shared/children/task-child'
 import { demoWebView } from './demo-web-view'
 import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
@@ -2815,11 +2816,11 @@ function tasksRoute(
   // 子对话请用户决定的提问点了关闭：都不回答，父对话的卡片记成不回答，子对话终止
   if (sub === 'parent-asks' && rid === 'close') {
     const parent = tasks.find((x) => x.id === task.parentTaskId)
-    for (const a of task.parentAsks ?? []) {
+    for (const a of task.child?.parentAsks ?? []) {
       const m = parent?.messages.find((x) => x.id === a.id && x.ask)
       if (m) m.ask = { ...m.ask!, answer: '不回答，终止了子对话', by: 'user', declined: true }
     }
-    task.parentAsks = []
+    setChild(task, { parentAsks: [] })
     if (live.has(id)) live.get(id)!.stop = true
     task.working = false
     task.status = 'stopped'
@@ -3631,7 +3632,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       { q: '购物车数量用哪种缓存？', options: ['内存缓存', 'localStorage'] },
       { q: '缓存多久失效？', options: ['5 分钟', '切页面时刷新'] },
     ]
-    asker.parentAsks = qs.map((x, i) => {
+    const asks = qs.map((x, i) => {
       const id = `${asker.id}-ask${i + 1}`
       parent.messages.push({
         id,
@@ -3646,6 +3647,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       })
       return { id, question: x.q, options: x.options, kind: 'question' as const }
     })
+    setChild(asker, { parentAsks: asks })
   }
   // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON 参数），
   // 折叠行要用它兜底显示命令，不能只剩「后台命令」。界面检查按这条断言

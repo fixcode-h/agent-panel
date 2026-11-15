@@ -123,7 +123,7 @@ export interface StateLive {
 }
 
 export function stateBreaks(
-  tk: Pick<Task, 'status' | 'working' | 'prewarming' | 'deletedAt' | 'wrapRequest'> & { runs?: Task['runs'] },
+  tk: Pick<Task, 'status' | 'working' | 'prewarming' | 'deletedAt' | 'child'> & { runs?: Task['runs'] },
   x: StateLive,
 ): StateBreak[] {
   const out: StateBreak[] = []
@@ -134,6 +134,6 @@ export function stateBreaks(
     tk.prewarming === true ||
     !!tk.runs?.some((r) => r.status === 'running')
   if (claims && !x.live && !x.queued && !x.jobs) out.push('orphan')
-  if (tk.wrapRequest?.state === 'merging' && !x.merging) out.push('merging')
+  if (tk.child?.wrapRequest?.state === 'merging' && !x.merging) out.push('merging')
   return out
 }

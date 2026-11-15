@@ -59,7 +59,7 @@ const spins = (t: Task, alive = false) =>
     cliAlive: alive,
     startedAt: t.createdAt,
     requests: t.requests.length,
-    asking: t.parentAsks?.length ?? 0,
+    asking: t.child?.parentAsks?.length ?? 0,
     resolved: t.resolved === true,
     plan: openPlan(t),
     stopReason: t.stopReason,

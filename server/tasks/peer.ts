@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { Task, type AskKind, type TaskMessage } from '../../shared/schema.ts'
 import { askOptions, taskGone } from '../../shared/task.ts'
@@ -85,7 +86,9 @@ export function createPeer(s: TasksScope) {
     if (!question && !fix) {
       const ce = s.live.get(child.id)
       const target = ce?.task ?? child
-      target.pendingReport = [target.pendingReport, text.trim()].filter(Boolean).join('\n\n').slice(-4000)
+      setChild(target, {
+        pendingReport: [target.child?.pendingReport, text.trim()].filter(Boolean).join('\n\n').slice(-4000),
+      })
       if (ce) ce.rev++
       else await s.store.update(child.id, target).catch(saveFailed)
       return {
@@ -100,7 +103,7 @@ export function createPeer(s: TasksScope) {
       const ce = s.live.get(child.id)
       const target = ce?.task ?? child
       const note = `（${suggestion ? '收尾建议' : '提问'}，「提问」关着由我自己决定）${text.trim()}`
-      target.pendingReport = [target.pendingReport, note].filter(Boolean).join('\n\n').slice(-4000)
+      setChild(target, { pendingReport: [target.child?.pendingReport, note].filter(Boolean).join('\n\n').slice(-4000) })
       if (ce) ce.rev++
       else await s.store.update(child.id, target).catch(saveFailed)
       return {
@@ -152,7 +155,9 @@ export function createPeer(s: TasksScope) {
     // 提问、收尾建议同时挂在子对话上：子对话的输入框换成选择弹窗，用户进子对话就能直接选
     // 自动交给父对话的不挂：不产生要用户回答的弹窗，也不计入「需要你处理」
     if (question && !auto) {
-      child.parentAsks = [...(child.parentAsks ?? []), { id: msg.id, question: text, options: opts, kind }]
+      setChild(child, {
+        parentAsks: [...(child.child?.parentAsks ?? []), { id: msg.id, question: text, options: opts, kind }],
+      })
       const ce = s.live.get(child.id)
       if (ce) ce.rev++
       else await s.store.update(child.id, child).catch(saveFailed)

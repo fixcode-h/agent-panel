@@ -1,3 +1,4 @@
+import { setChild } from '../../shared/children/task-child.ts'
 import { randomUUID } from 'node:crypto'
 import { Task, type DeliveryHow, type TaskMessage } from '../../shared/schema.ts'
 import { delegatePrompt } from '../../shared/task.ts'
@@ -44,18 +45,18 @@ export function createAsks(s: TasksScope) {
   async function dropChildAsks(childId: string, ids: string[]) {
     const entry = s.live.get(childId)
     const child = entry?.task ?? (await s.store.get(childId))
-    if (!child?.parentAsks?.some((x) => ids.includes(x.id))) return
-    child.parentAsks = child.parentAsks.filter((x) => !ids.includes(x.id))
+    if (!child?.child?.parentAsks?.some((x) => ids.includes(x.id))) return
+    setChild(child, { parentAsks: child.child?.parentAsks.filter((x) => !ids.includes(x.id)) })
     if (entry) entry.rev++
     else await s.store.update(child.id, child)
   }
 
   /** 交给子对话没成功：把刚收起的提问挂回去，用户还能再答一次 */
-  async function restoreChildAsk(childId: string, ask: NonNullable<Task['parentAsks']>[number]) {
+  async function restoreChildAsk(childId: string, ask: NonNullable<NonNullable<Task['child']>['parentAsks']>[number]) {
     const entry = s.live.get(childId)
     const child = entry?.task ?? (await s.store.get(childId))
-    if (!child || child.parentAsks?.some((x) => x.id === ask.id)) return
-    child.parentAsks = [...(child.parentAsks ?? []), ask]
+    if (!child || child.child?.parentAsks?.some((x) => x.id === ask.id)) return
+    setChild(child, { parentAsks: [...(child.child?.parentAsks ?? []), ask] })
     if (entry) entry.rev++
     else await s.store.update(child.id, child)
   }

@@ -139,7 +139,7 @@ export async function lifecycleReport(sc: TasksScope, rootId: string, full = fal
       .filter((w) => w.kind === 'child' && w.state === 'waiting')
       .map((w) => {
         const kid = tasks.get(w.ref)
-        const wrapAt = kid && wrapUpPending([kid]).length ? kid.wrapRequest!.at : undefined
+        const wrapAt = kid && wrapUpPending([kid]).length ? kid.child?.wrapRequest!.at : undefined
         return {
           id: w.ref,
           title: kid?.title ?? w.label ?? w.ref,

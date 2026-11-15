@@ -23,7 +23,7 @@ UE 项目已经有同类机制：编译归父对话、按编译目录占位（[A
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `shared/schema.ts` `TestStepFields`                                               | 步骤字段都在这一个对象里；已有 `merge`（合并时编译）、`quick`（小改动也跑）、`appliesTo`、`cwd`、`timeoutSec`；本次新增 `runInParent`                                                                                                                                    |
 | `shared/schema.ts` `TaskTestRun` / `Task.testRuns`                                | 一条耗时记录：`stepId` / `stepName` / `by: 'parent' \| 'self'` / `ok` / `durationMs` / `tries` / `at`；随任务持久化                                                                                                                                                      |
-| `shared/schema.ts` `Task.wrapRequest.state`                                       | `requested` / `merging` / `failed` / `testing` / `test-failed`：后两个是本次新增的——`testing` 是「已合回、父对话在跑这些步骤」（合回成功不再直接结束），`test-failed` 是「合回了、父对话测试没过、正在退回修复」（和「没合进去」的 `failed` 分开，两侧的说法才不会相反） |
+| `shared/schema.ts` `Task.child.wrapRequest.state`                                 | `requested` / `merging` / `failed` / `testing` / `test-failed`：后两个是本次新增的——`testing` 是「已合回、父对话在跑这些步骤」（合回成功不再直接结束），`test-failed` 是「合回了、父对话测试没过、正在退回修复」（和「没合进去」的 `failed` 分开，两侧的说法才不会相反） |
 | `shared/test-steps.ts` `parentRunSteps`                                           | 筛选「要由父对话跑」的步骤只这一处：启用、勾了字段、不是 `merge`、有命令                                                                                                                                                                                                 |
 | `shared/test-steps.ts` `verifyBlock`                                              | 按 `parentRun`（`child` / `parent`）说法不同；`parentRun` 为空时完全不提这件事                                                                                                                                                                                           |
 | `shared/test-steps.ts` `stepCommand` / `matchTestStep`                            | 前者按 `env` + 平台拼真实命令行；后者用命令原文或拼出来的整行比对，认出后台命令对的是哪条步骤                                                                                                                                                                            |
@@ -43,7 +43,7 @@ UE 项目已经有同类机制：编译归父对话、按编译目录占位（[A
 **测试步骤新增 `runInParent`：勾了的步骤子对话不跑；子对话照常 `submit_merge`，合回后由面板在父对话目录里按顺序跑，
 结果和耗时回传给发起合并的那个子对话；通过才让它收尾，失败就带着报错退回给它修。只对 Git 项目的独立分支子对话生效。**
 
-- 数据：`TestStepFields.runInParent`，默认 `false`，老项目不用迁移；`Task.testRuns` 存耗时；`Task.wrapRequest.state` 多一个 `testing`。
+- 数据：`TestStepFields.runInParent`，默认 `false`，老项目不用迁移；`Task.testRuns` 存耗时；`Task.child.wrapRequest.state` 多一个 `testing`。
 - 生效范围：子对话得先有独立分支（`isolated`）才有「合回」这一步。P4 / SVN / 无版本控制的子对话没有分支可合，字段被忽略；
   设置页里不是 Git 时置灰并说明原因。判定复用 `detectVcs`（设置页走 `GET /fs/vcs`），不另写一套检测。
 - `merge`（合并时编译）的步骤不在这批里：它仍按 ADR 0004 由父对话 `request_build` 申请，两边都跑会让 UE 编译编两次。
@@ -78,7 +78,7 @@ UE 项目已经有同类机制：编译归父对话、按编译目录占位（[A
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TestStep.runInParent`                         | `z.boolean().catch(false).default(false)`；只有 Git 项目的独立分支子对话生效；`merge: true` 的步骤即勾也仍走编译链路                                                                            |
 | `Task.testRuns: TaskTestRun[]`                 | `{ stepId, stepName, by: 'parent' \| 'self', ok, durationMs, tries, at }`；随任务持久化，重启后收尾总结还能用                                                                                   |
-| `Task.wrapRequest.state`                       | 新增 `testing`（已合回、父对话在跑这些步骤）和 `test-failed`（测试没过、已退回修复）；`info` 写失败步骤和报错                                                                                   |
+| `Task.child.wrapRequest.state`                 | 新增 `testing`（已合回、父对话在跑这些步骤）和 `test-failed`（测试没过、已退回修复）；`info` 写失败步骤和报错                                                                                   |
 | `shared/test-steps.ts` `parentRunSteps(steps)` | 唯一筛选：`enabled && runInParent && !merge && command.trim()`；子对话跳过哪些、父对话跑哪些都读它                                                                                              |
 | `server/parent-tests.ts` `createParentTests`   | `enqueue` / `finishJob` / `statusOf` / `idle`；依赖由调用方注入（起命令、落耗时、通过、失败）                                                                                                   |
 | 后台命令                                       | 名 `父对话测试：<子对话标题> · <步骤名>`，`taskId` 是父对话，`root` 是父对话目录，`exclusive: true`，步骤写了 `timeoutSec` 时按它换算 `timeoutMinutes`（至少 1 分钟），0 时用后台命令的默认上限 |

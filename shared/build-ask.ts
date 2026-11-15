@@ -30,7 +30,7 @@ export const buildSig = (changes: { path: string; add: number; del: number }[]) 
     .sort()
     .join('|')
 
-type Kid = { id: string; parentTaskId: string; buildAsk?: BuildAsk; resolved?: boolean }
+type Kid = { id: string; parentTaskId: string; child?: { buildAsk?: BuildAsk }; resolved?: boolean }
 
 /**
  * 这次编译替哪些子对话编：父对话写了 children（或旧写法 child）就按它，只认它名下的；
@@ -40,7 +40,7 @@ export function buildKids(kids: Kid[], parentId: string, named: string[]): [stri
   const mine = kids.filter((k) => k.parentTaskId === parentId && !k.resolved)
   const want = [...new Set(named.map((x) => x.trim()).filter(Boolean))]
   if (want.length) return [want.filter((id) => mine.some((k) => k.id === id)), []]
-  const asked = mine.filter((k) => k.buildAsk?.state === 'asked').map((k) => k.id)
+  const asked = mine.filter((k) => k.child?.buildAsk?.state === 'asked').map((k) => k.id)
   return [asked, asked]
 }
 

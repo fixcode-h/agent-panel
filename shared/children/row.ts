@@ -90,12 +90,12 @@ export function childRow(x: Task, env: ChildRowEnv) {
     dirty: wt.checked ? (wt.value?.dirty ?? 0) : undefined,
     worktreeChecked: wt.checked,
     // 已经请父对话收尾、还没出结果：行上是「待收尾」
-    wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
+    wrapup: !!x.child?.wrapRequest && x.child?.wrapRequest.state !== 'failed',
     // 两处不同就是「做完了还没看」（见 shared/task.ts 的 childDoneDot）
     turnDoneAt: x.turnDoneAt ?? '',
     turnSeenAt: x.turnSeenAt ?? '',
     // 请用户选择、还没人回答的提问数
-    asking: x.parentAsks?.length ?? 0,
+    asking: x.child?.parentAsks?.length ?? 0,
     branch: x.worktree?.branch ?? '',
     // 独立分支目录：停下时告诉用户改动在哪个目录里
     dir: x.worktree?.path ?? '',
@@ -105,12 +105,12 @@ export function childRow(x: Task, env: ChildRowEnv) {
     // 最后有动静的时间：几分钟没有新输出、又不能用等待解释时标黄 / 标红
     lastActivityAt: childLastActivity(x),
     // 面板以父对话的名义自动问过它状态：之后还没有新输出时行上写「已自动询问，等回复」
-    autoAsk: x.autoAsk,
+    autoAsk: x.child?.autoAsk,
     // 在等什么（等用户回答、等后台命令、等子任务、等工作流、等下一句）
     waiting: childWait(x, { background: env.background, cliAlive: env.cliAlive, childNeeds: env.childNeeds }),
     // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
     resolved: x.resolved === true,
-    analysis: x.analysis,
+    analysis: x.analysis?.kind,
     stopReason: env.stopReason ?? ('' as const),
     // 已收起（归档 / 独立分支被删掉）：运行区、子对话栏、执行中计数都读这一处把它排掉
     gone: taskGone(x),

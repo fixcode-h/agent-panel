@@ -414,8 +414,10 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
   holdWait(askTask, 'child', 'kid', ask.why)
   assert.equal(activePlan(askTask)!.steps[0].status, 'waiting')
   // 等父对话回答的提问也算（以前只看 requests，漏了 parentAsks）
-  const parentAsk = [{ id: 'q', question: '?', options: [], kind: 'question' }] as Task['parentAsks']
-  assert.equal(childReport(child({ parentAsks: parentAsk })).state, 'needs')
+  const parentAsk = [{ id: 'q', question: '?', options: [], kind: 'question' }] as NonNullable<
+    Task['child']
+  >['parentAsks']
+  assert.equal(childReport(child({ child: { parentAsks: parentAsk } })).state, 'needs')
 
   // 执行失败、被归档（不会再回来）：退回进行中，note 里看得出是等谁失败了；有未完成计划也算结束
   for (const status of ['failed', 'stopped'] as const) {
@@ -455,7 +457,10 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
 
   // 只剩合回、已经请父对话收尾：待收尾，继续等父对话
   const wrap = childReport(
-    child({ plans: childPlan(true), wrapRequest: { state: 'requested', at: 'x', note: '', tests: 't', info: '' } }),
+    child({
+      plans: childPlan(true),
+      child: { wrapRequest: { state: 'requested', at: 'x', note: '', tests: 't', info: '' } },
+    }),
     { unmerged: true },
   )
   assert.equal(wrap.state, 'wrapup')

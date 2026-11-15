@@ -16,11 +16,11 @@ const ask = (over: Partial<BuildAsk> = {}): BuildAsk => ({
 
 test('替谁编：父对话写了 children 按它（只认自己名下的）；一个都没写时补上申请过、还没开编的', () => {
   const kids = [
-    { id: 'k1', parentTaskId: 'p', buildAsk: ask() },
-    { id: 'k2', parentTaskId: 'p', buildAsk: ask({ state: 'building' }) },
+    { id: 'k1', parentTaskId: 'p', child: { buildAsk: ask() } },
+    { id: 'k2', parentTaskId: 'p', child: { buildAsk: ask({ state: 'building' }) } },
     { id: 'k3', parentTaskId: 'p' },
-    { id: 'k4', parentTaskId: 'other', buildAsk: ask() },
-    { id: 'k5', parentTaskId: 'p', buildAsk: ask(), resolved: true },
+    { id: 'k4', parentTaskId: 'other', child: { buildAsk: ask() } },
+    { id: 'k5', parentTaskId: 'p', child: { buildAsk: ask() }, resolved: true },
   ]
   assert.deepEqual(buildKids(kids, 'p', ['k3', 'k4', ' k3 ']), [['k3'], []], '写了就按写的，别人名下的不认')
   assert.deepEqual(buildKids(kids, 'p', []), [['k1'], ['k1']], '漏写时按申请补上：已在编的、已完成的、没申请的都不补')
