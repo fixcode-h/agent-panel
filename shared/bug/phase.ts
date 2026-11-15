@@ -257,6 +257,9 @@ export function phaseFeedback(d: Diagnosis): string {
   const v = revOf(d)
   const phase = phaseOf(d)
   const overall = d.overall ? `\n\n用户的整体意见：${d.overall}` : ''
+  // 退回时的整体意见也是要回答的一条（编号 0）：只写了整体意见、没逐条标注时，以前没有东西能核对，
+  // 第 2 版回答了父对话插进来的话却写成「回答了用户的意见」（摸底报告第 2 条）
+  const ask = d.overall ? `\n\n用户的整体意见（编号 0，answers 里用 id: 0 回应）：${d.overall}` : ''
   const notes = d.notes.length ? `\n\n用户的标注：\n${notesList(d.notes)}` : ''
   // 引用日志文件、写明从第几行看的那句话不是日志正文，原样交过去，不包成代码块
   const pasted = pastedLog(d.logs)
@@ -270,7 +273,7 @@ export function phaseFeedback(d: Diagnosis): string {
     : ''
   if (d.status === 'questioned' && phase === 'fix')
     return `用户看了第 ${v} 版修复改的代码，提了这些意见：
-${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
+${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${ask}
 
 逐条判断用户说得对不对，查清楚再动手（读代码、跑测试、看日志），不要因为用户提了就照改：
 - 说得对、改了更合理：按意见改代码（只改方案里的文件；要改别的文件先重新交 phase: plan 写明为什么，面板记成第 ${v + 1} 版），answers 写 stance: adopted 和改了什么。
@@ -286,14 +289,14 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
           ? `验证没通过：把这次修法和失败证据写进「已排除」，回到论证（phase: evidence）或重新出修复方案（phase: plan），面板记成第 ${v + 1} 版。`
           : `用户不认同第 ${v} 版（${PHASE_TEXT[phase]}）：查清后改好再交。`
     return `${back}
-${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
+${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${ask}
 
 answers 按编号逐条回应用户的标注（查了什么、结论、补了什么证据或改了哪一节；补充信息写 stance: used，说明用在哪、对结论有没有影响）。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
   }
   // 提问、补充（用户 2026-11-13 定）：用户没有否定结论，要它据此重新出一版给用户再评估
   if (d.status === 'questioned')
     return `用户对第 ${v} 版（${PHASE_TEXT[phase]}）提了问题、补充了信息，没有否定这版结论；据此重新出一版给用户再评估，先不要改文件：
-${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${overall}
+${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${ask}
 
 - 疑问：逐条查清再回答（读代码、看日志、跑命令），不要因为用户问了就改结论；答不上来的写明还缺什么。
 - 改方案：按意见改，或说明为什么不改。
@@ -353,3 +356,19 @@ export function outOfPlan(changed: string[], files: string[]) {
     .filter((p) => p && !FREE_FILE.test(p))
     .filter((p) => !plan.some((f) => p === f || (f.endsWith('/') && p.startsWith(f))))
 }
+
+/**
+ * 诊断流程还没走完：最新一版不是取消、也不是已确认的验证。这时报告的每一步都只能由用户确认（ADR 0045），
+ * 父对话收到它的状态、给它发话时都要带上这条规矩
+ */
+export const diagnosisInFlow = (tk: { bug?: { diagnoses?: Diagnosis[] } }) => {
+  const d = tk.bug?.diagnoses?.at(-1)
+  return !!d && d.status !== 'cancelled' && !(d.status === 'approved' && phaseOf(d) === 'verify')
+}
+
+/**
+ * 给父对话的规矩：实测里父对话收到「缺信息就回答它」，就对子对话说「诊断报告已确认」，
+ * 还编了一句用户原话当授权，对用户说方案确认了（摸底报告第 1 条）。确认只认用户在报告上点的，面板的门禁也只认它
+ */
+export const DIAG_PARENT_RULE =
+  '它在走 Bug 诊断流程：诊断报告只能由用户在报告上确认，你不能代为确认，你发给它的话也不算确认；给它或给用户的话里不要说方案已经确认，转述用户的话只能引用用户消息的原文，没有原文就不要写「用户说过」。它在等确认时告诉用户去它的对话里看报告。'

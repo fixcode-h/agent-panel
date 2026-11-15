@@ -253,8 +253,8 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
   },
   end_inline_edit: {
     title: '结束就地改动',
-    summary: '就地改动改完后让面板核对范围。',
-    useWhen: '改完、跑过快速检查并本地提交之后',
+    summary: '就地改动改完后让面板核对快速检查、评审和范围。',
+    useWhen: '改完、跑过快速检查、本地提交、轻评审通过之后',
     group: G.edit,
     effects: ['verify'],
   },

@@ -2290,9 +2290,9 @@ export async function runConversationTurn(host: EngineHost, who: string) {
   } finally {
     // 这一轮结束了：宿主不再拿它派转交来的子任务
     host.onOrchestra?.(undefined)
-    // 就地改动这一轮没收：自动收尾核对（越界会写警告），免得下一轮一直拦着收尾子对话
+    // 就地改动这一轮没收：自动收尾核对（越界、没走完快速检查和评审都会写警告），免得下一轮一直拦着收尾子对话
     if (task.inlineEdit && host.inlineEdit)
-      await host.inlineEdit.end().then(
+      await host.inlineEdit.end(true).then(
         () => host.changed(true),
         () => undefined,
       )

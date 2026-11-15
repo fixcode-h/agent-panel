@@ -83,3 +83,34 @@ export function inlineEditOverrunText(r: ReturnType<typeof inlineEditOverrun>) {
   ].filter(Boolean)
   return `就地改动越界：${why.join('；')}。这已经不是微改动了，建议开一个子对话评审这些改动（或者交给子对话重做）。`
 }
+
+/**
+ * 就地改动的收尾门禁（摸底报告第 6 条，2026-11-15 用户定）：用户 2026-11-01 定了「不管改多少都要代码审查」，
+ * 就地微改动以前完全不评审。现在 end_inline_edit 要两样都有才放行：
+ * 1) 项目里标「快速」的测试步骤在这次就地改动开始之后跑通过了（按工具调用和后台命令的结果认，不看回复文字）；
+ * 2) 开始之后派过一次「评审」，用 submit_verdict 交了通过、没有必须处置的意见。评审不过就打回：改完 resume 复看，
+ *    或者改动已经不是微改动，交给子对话。
+ * 返回拒绝原因；能放行返回空字符串。发给 Agent 的，不翻译
+ */
+export function inlineEditGate(input: {
+  head: string
+  /** 项目里标「快速」、启用的步骤 */
+  quick: { name: string; command: string }[]
+  /** 这次就地改动开始之后跑通过的步骤名 */
+  passed: string[]
+  /** 开始之后派的评审，最后一次在最后：verdict 是 submit_verdict 交的结论，must 是必须处置的意见数 */
+  reviews: { title: string; status: string; verdict?: string; must: number }[]
+}): string {
+  const left = input.quick.filter((s) => !input.passed.includes(s.name))
+  if (left.length)
+    return `就地改动还不能收尾：先跑项目里标「快速」的检查并通过——${left.map((s) => `${s.name}（\`${s.command}\`）`).join('、')}。跑通后再调用 end_inline_edit。`
+  const how = `派一次轻评审：spawn_agents 的 agent 写「评审」，instructions 写清只读、只看这次就地改动（\`git diff ${input.head.slice(0, 12) || 'HEAD~1'}\`）、改了什么为什么、跑过的检查；评审用 submit_verdict 交结论。`
+  const last = input.reviews.at(-1)
+  if (!last) return `就地改动还不能收尾：还没评审。${how}拿到通过再调用 end_inline_edit。`
+  if (last.status === 'running' || last.status === 'pending')
+    return `就地改动还不能收尾：评审「${last.title}」还没跑完，等结论推回来再调用 end_inline_edit。`
+  if (!last.verdict) return `就地改动还不能收尾：评审「${last.title}」没有用 submit_verdict 交结论。${how}`
+  if (last.verdict !== 'pass' || last.must > 0)
+    return `就地改动没过评审（「${last.title}」${last.verdict === 'pass' ? `有 ${last.must} 条必须处置的意见` : '结论是不通过'}）：按意见改完、跑快速检查，用 spawn_agents 的 resume 接着这次评审复看；改动已经不是微改动的，交给子对话重做。`
+  return ''
+}

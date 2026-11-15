@@ -12,6 +12,7 @@ import { DiagnosisNote } from '../../shared/bug/diagnosis-schema.ts'
 import { cleanupPrompt } from '../../shared/bug/cleanup.ts'
 import { phaseOf, revOf } from '../../shared/bug/phase.ts'
 import type { TasksScope } from './scope.ts'
+import { log } from '../log.ts'
 import { previewCleanup, snapshotLogBase, snapshotPre } from './bug-cleanup.ts'
 
 const Decision = z.object({
@@ -91,6 +92,12 @@ export function registerDiagnosisRoutes(s: TasksScope) {
     if (body.data.cancel) task.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     const saved = await s.store.update(task.id, task)
+    // 取消且不用删临时日志：报告当场关闭，不交话给子对话、也不会再开一轮，没有别的时机上报父对话了。
+    // 不报的话父计划那一步一直「还在等它」（摸底报告第 4 条）；要删日志的等核对完由那一轮的收口上报
+    if (body.data.cancel && !r.message && task.parentTaskId)
+      await s
+        .reportToParent(saved ?? task)
+        .catch((e) => log.warn('task', '取消修复后上报父对话失败', { task: task.id, error: (e as Error).message }))
     return c.json({ task: saved ?? task, message: r.message })
   })
 

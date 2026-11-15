@@ -1778,8 +1778,8 @@ export const EN_TASKS: Record<string, string> = {
   这一版诊断报告已经处理过了: 'This version of the diagnosis report has already been handled',
   '退回要写清哪里有疑问：先标注，或者写整体意见':
     "To send it back, say what's in question: annotate first, or write an overall comment",
-  '你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成':
-    'You cancelled diagnosis report v{n}; no fix this time, and the plan is marked done',
+  '你取消了诊断报告第 {n} 版，这次不修了，没做的步骤已标记跳过':
+    'You cancelled diagnosis report v{n}; no fix this time, and the remaining steps are marked skipped',
   '它正在回复，等这一轮结束再取消': "It's replying; cancel after this turn ends",
   '改用方案 {id}': 'Use option {id}',
   '方案 {id}：{title}': 'Option {id}: {title}',

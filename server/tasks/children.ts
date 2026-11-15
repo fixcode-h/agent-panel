@@ -14,6 +14,8 @@ import {
   type ChildHold,
 } from '../../shared/task.ts'
 import { Task, type Agent, type TaskMessage } from '../../shared/schema.ts'
+import { haltedTurn } from '../../shared/stop-reason.ts'
+import { DIAG_PARENT_RULE, diagnosisInFlow } from '../../shared/bug/phase.ts'
 import { helperRunning, helpersWorking } from '../../shared/tasks/helpers.ts'
 import { saveToHandoff } from './inbox-file.ts'
 import { createDrive } from './drive.ts'
@@ -443,14 +445,17 @@ export function createChildren(sc: TasksScope) {
         (stall!.n >= MERGE_STALL_REPORTS
           ? '这是面板最后一次转告：交回后它仍不调用 submit_merge，就停下来告诉用户它卡在合回前、卡在哪，由用户决定，不要再来回催。'
           : '')
-      : r.state === 'unfinished'
-        ? `\n下一步：${nudgeText}，看上面的结果判断卡在哪：缺信息就回答它，方向不对就改要求，都用 send_to_conversation 交回这个子对话（id ${tk.id}），写清新的要求或答案；不要只发「继续」（它会自己接着做，催也没用），也不要另建一个子对话重做。确实做不下去就告诉用户。`
-        : r.state === 'stopped' && tk.stopReason === 'user'
-          ? // 用户亲手停的是「先别动」，不是失败：实测里父对话把它当成中断去交回重试，用户停它的意思就没了
-            '\n下一步：这是用户自己停掉的，不是失败。不要自动交回、重派或另建子对话重做；计划里等它的那一步继续等，用户要它接着做时会自己继续，或者交代你再交给它。'
-          : r.state === 'failed' || r.state === 'stopped'
-            ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
-            : ''
+      : r.state === 'unfinished' && diagnosisInFlow(tk)
+        ? // 诊断报告的每一步都由用户确认（ADR 0045）：不能叫父对话「缺信息就回答它」，它会替用户拍板（摸底报告第 1 条）
+          `\n下一步：${nudgeText}。${DIAG_PARENT_RULE}要补的事实、你自己的意见可以用 send_to_conversation 交给它（id ${tk.id}），写明是你的意见；不要另建子对话重做。`
+        : r.state === 'unfinished'
+          ? `\n下一步：${nudgeText}，看上面的结果判断卡在哪：缺信息就回答它，方向不对就改要求，都用 send_to_conversation 交回这个子对话（id ${tk.id}），写清新的要求或答案；不要只发「继续」（它会自己接着做，催也没用），也不要另建一个子对话重做。确实做不下去就告诉用户。`
+          : r.state === 'stopped' && tk.stopReason === 'user'
+            ? // 用户亲手停的是「先别动」，不是失败：实测里父对话把它当成中断去交回重试，用户停它的意思就没了
+              '\n下一步：这是用户自己停掉的，不是失败。不要自动交回、重派或另建子对话重做；计划里等它的那一步继续等，用户要它接着做时会自己继续，或者交代你再交给它。'
+            : r.state === 'failed' || r.state === 'stopped'
+              ? `\n下一步：要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。它确实起不来（交回时报错）再另建子对话接着做，并在派单里写明接手的是哪个子对话的活。`
+              : ''
     const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${direct}${summary ? `\n最近的结果：${summary}${brief.cut ? `\n（这是摘要。${fullAt(tk.parentTaskId, tk.title, src)}面板会自动给用户显示它的总结卡片，不用转述细节）` : ''}` : ''}`
     await sc.noteParent(
       tk.parentTaskId,
@@ -518,7 +523,11 @@ export function createChildren(sc: TasksScope) {
   async function settleChildWorktree(childId: string, turn?: TurnInfo) {
     const tk = sc.live.get(childId)?.task ?? (await sc.store.get(childId))
     if (!tk?.parentTaskId) return
-    if (isolated(tk)) {
+    // 被叫停的（父对话停下、用户暂停……）只上报现在的状态（已中断），不在这时收口成完成、删独立分支：
+    // 没开工的子对话按完成条件什么都不缺，会被误判成交付完了（摸底报告第 3 条）。继续时由它接着做
+    const live = sc.live.get(childId)
+    const halted = haltedTurn(live?.stop ? live.stopReason : tk.status === 'stopped' ? tk.stopReason : undefined)
+    if (isolated(tk) && !halted) {
       const { holds } = await advanceChildTo(childId)
       if (!holds.length) return
       if (await nudgeMerge(tk)) return

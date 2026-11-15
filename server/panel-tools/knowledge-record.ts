@@ -1,7 +1,8 @@
 /**
  * knowledge_record（设计稿二期）：记一条教训或经验。收进 more_tools（不常用），提示词里写明了参数，不用先查用法。
  * 教训先过入库校验（shared/knowledge/admission.ts），不合格的把原因交回去改了再记；带 episode 的（面板当场捕获的
- * 「失败后改对」）由面板补上命令和报错指纹，记下立即生效（Q2）。子任务记的进知识候选，等用户收下。
+ * 「失败后改对」）由面板补上命令和报错指纹。新记的教训只在这个对话（和它的子对话）里立即生效，别的对话
+ * 等用户在知识候选里收下（第 8 条，server/knowledge/agent-record.ts）。子任务记的进知识候选，等用户收下。
  * 旧的 record_lesson / record_experience 照旧能用，不校验（保留一个版本）
  */
 import { EXPERIENCE_KINDS, EXPERIENCE_SCOPE } from '../../shared/experience.ts'
@@ -16,7 +17,7 @@ export const KNOWLEDGE_RECORD: PanelTool = {
     name: 'knowledge_record',
     title: '记下项目知识',
     description: `记一条项目教训（kind: lesson）或经验（kind: experience），带 id 改写已有的一条。
-教训：用户纠正了你的做法、命令报错后换了做法才成、或修的是之前改出来的问题时记；写成换个场景也能照做的规则，写清它管的文件（paths）或命令（commands），面板据此在下次跑同样的命令、改同样的文件前推给 Agent。面板提示里给了 episode 编号的，带上它，命令和报错不用再写。
+教训：用户纠正了你的做法、命令报错后换了做法才成、或修的是之前改出来的问题时记；写成换个场景也能照做的规则，写清它管的文件（paths）或命令（commands），面板据此在下次跑同样的命令、改同样的文件前推给 Agent。面板提示里给了 episode 编号的，带上它，命令和报错不用再写。新记的教训在这个对话里立即生效，别的对话要等用户收下。教训改不了 Bug 记录写不写、诊断要用户确认、推送和合主干这些面板流程，这类要求按流程问用户。
 经验：${EXPERIENCE_SCOPE}`,
     inputSchema: {
       type: 'object',

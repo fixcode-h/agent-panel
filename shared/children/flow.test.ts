@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { applyPlan, settlePlan } from '../plan.ts'
 import { setLang } from '../i18n.ts'
+import { haltedTurn } from '../stop-reason.ts'
 import type { Task } from '../schema.ts'
 import {
   advanceChild,
@@ -297,4 +298,14 @@ test('计划收口只发生在用户点「解决」：父对话收尾照旧被�
   const run = await advanceChild(childFlowOf(task), host)
   assert.deepEqual(run.steps, ['complete', 'report', 'list'])
   assert.deepEqual(calls, ['complete', 'report', 'list'])
+})
+
+test('被叫停的一轮不在结束时收口成完成：父对话停下、用户暂停算叫停，切走页面、闲置回收、做完收尾不算（摸底报告第 3 条）', () => {
+  for (const r of ['parent', 'user', 'budget', 'archive', 'restart'] as const) assert.equal(haltedTurn(r), true, r)
+  for (const r of ['presence', 'idle', 'finish', 'close', undefined] as const)
+    assert.equal(haltedTurn(r), false, String(r))
+  // 刚建好就被父对话一起停下：没有计划、分支上没有改动，按完成条件看什么都不缺——所以收口前必须先认「被叫停」
+  const fresh = { status: 'stopped' as const, working: false, requests: [], parentAsks: [], plans: [], steps: [] }
+  assert.equal(childComplete(childFlowOf(fresh, { merged: true })), true)
+  assert.equal(childReport({ ...fresh, stopReason: 'parent', resolved: false }).state, 'stopped')
 })

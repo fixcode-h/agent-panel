@@ -114,7 +114,13 @@ function CandidateRow({
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-subtle">
             <span>{lesson ? t('教训') : t('经验')}</span>
             <span>·</span>
-            <span>{c.origin === 'episode' ? t('失败后改对') : t('子对话记录')}</span>
+            <span>
+              {c.origin === 'episode'
+                ? t('失败后改对')
+                : c.origin === 'agent'
+                  ? t('对话记录（只在记下它的对话里生效）')
+                  : t('子对话记录')}
+            </span>
             <span>·</span>
             <span>{t('出现在 {n} 个对话', { n: Math.max(c.convs.length, 1) })}</span>
             {c.lastAt && <span>· {timeAgo(c.lastAt)}</span>}

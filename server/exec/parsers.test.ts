@@ -330,6 +330,19 @@ test('Claude Code：网关出错时自己重试（api_retry）画成「正在重
   )
   const again = cut({ type: 'assistant', message: { id: 'resp_2', content: [{ type: 'text', text: '好' }] } })
   assert.equal(again[0].type, 'retry_ok')
+  // 首块是占位的 redacted_thinking、被丢掉重发（摸底报告第 9 条）：不说成断流，同一对话只提示一次
+  const gw = claudeParser(CWD)
+  const redactedRound = () => {
+    gw({ type: 'stream_event', event: { type: 'message_start', message: { id: 'r', usage: {} } } })
+    gw({
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'redacted_thinking', data: 'x' } },
+    })
+    return gw({ type: 'stream_event', event: { type: 'message_stop' }, abandoned_blocks: { from_block_index: 0 } })
+  }
+  const once = redactedRound()
+  assert.match((once[0] as { text: string }).text, /思考内容 Claude Code 认不了.*关闭/)
+  assert.deepEqual(redactedRound(), [], '第二次不再提示')
 })
 
 test('Codex app-server：网关把推理 delta 挂在回复条目上时思考不重复、正文不丢', async () => {

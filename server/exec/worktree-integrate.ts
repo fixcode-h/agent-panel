@@ -19,6 +19,7 @@ import {
   mergeSidesText,
   trialMerge,
 } from './worktree.ts'
+import { clearCarriedCopies } from './carry-docs.ts'
 
 export type IntegrateKind = 'conflict' | 'blocked' | 'branch' | 'error'
 
@@ -79,46 +80,62 @@ export async function integrateBranch(target: string, wt: TaskWorktree, title: s
   const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
   // 父对话总结下面的改动卡片不含子对话的改动：合并的那一下从父对话这一轮里切掉
   return aroundMerge(target, async (): Promise<IntegrateResult> => {
-    const m = await trialMerge(target, wt.branch)
-    if (!m.ok) {
-      if (m.dirty) {
-        // 解析不到文件名（git 换了说法）时退回整段报错，至少原文还在
-        const files = m.blockers.length ? fileList(m.blockers) : m.error
-        return {
-          ok: false,
-          kind: 'blocked',
-          why: `这些文件有还没提交的改动、子对话的分支也改了它们：${m.blockers.length ? fileLine(m.blockers) : m.error.split('\n')[0]}`,
-          info: `你的目录 ${target} 里这些文件有还没提交的改动，子对话的分支也改了它们，git 拒绝合并，你的目录没有改动：\n${files}\n${ownOrAsk('改')}${about}`,
-        }
-      }
-      return {
-        ok: false,
-        kind: 'conflict',
-        why: `和「${base}」上新合进去的改动冲突`,
-        info: `和「${base}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${base} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
-      }
-    }
-    if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
-    try {
-      const sha = await commitMerge(target, `Agent 面板：合并「${title}」`)
-      const both = overlap.length
-        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
-        : ''
-      return {
-        ok: true,
-        info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
-      }
-    } catch (e) {
-      await abortMerge(target)
-      const msg = (e as Error).message
-      return {
-        ok: false,
-        kind: 'error',
-        why: `合并后提交失败：${msg.split('\n')[0]}`,
-        info:
-          `合并后提交失败，已撤回：${msg}\n` +
-          '看报错：是你目录的问题（锁文件、提交身份）就处理后再 finish_child；是子对话的改动过不了提交钩子就用 send_to_conversation 把报错交回给它。',
-      }
-    }
+    // 开分支时带过去的模块文档（第 7 条）：父对话目录里那份没跟踪的副本先挪开，合并没成就写回
+    const restore = await clearCarriedCopies(target, wt.branch).catch(() => async () => {})
+    const r = await mergeIn(target, wt, title, base, overlap, about)
+    if (!r.ok) await restore().catch(() => {})
+    return r
   })
+}
+
+/** 试合并 → 提交（integrateBranch 的后半段） */
+async function mergeIn(
+  target: string,
+  wt: TaskWorktree,
+  title: string,
+  base: string,
+  overlap: string[],
+  about: string,
+): Promise<IntegrateResult> {
+  const m = await trialMerge(target, wt.branch)
+  if (!m.ok) {
+    if (m.dirty) {
+      // 解析不到文件名（git 换了说法）时退回整段报错，至少原文还在
+      const files = m.blockers.length ? fileList(m.blockers) : m.error
+      return {
+        ok: false,
+        kind: 'blocked',
+        why: `这些文件有还没提交的改动、子对话的分支也改了它们：${m.blockers.length ? fileLine(m.blockers) : m.error.split('\n')[0]}`,
+        info: `你的目录 ${target} 里这些文件有还没提交的改动，子对话的分支也改了它们，git 拒绝合并，你的目录没有改动：\n${files}\n${ownOrAsk('改')}${about}`,
+      }
+    }
+    return {
+      ok: false,
+      kind: 'conflict',
+      why: `和「${base}」上新合进去的改动冲突`,
+      info: `和「${base}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${base} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
+    }
+  }
+  if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
+  try {
+    const sha = await commitMerge(target, `Agent 面板：合并「${title}」`)
+    const both = overlap.length
+      ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
+      : ''
+    return {
+      ok: true,
+      info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
+    }
+  } catch (e) {
+    await abortMerge(target)
+    const msg = (e as Error).message
+    return {
+      ok: false,
+      kind: 'error',
+      why: `合并后提交失败：${msg.split('\n')[0]}`,
+      info:
+        `合并后提交失败，已撤回：${msg}\n` +
+        '看报错：是你目录的问题（锁文件、提交身份）就处理后再 finish_child；是子对话的改动过不了提交钩子就用 send_to_conversation 把报错交回给它。',
+    }
+  }
 }

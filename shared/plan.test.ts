@@ -664,6 +664,30 @@ test('子对话的收尾：面板加在计划最后，漏写、挪到前面都�
   assert.notEqual(task.plans!.at(-1)!.doneAt, '', '父对话收下后收尾做完，计划结束')
 })
 
+test('partial 写错 id 撞到收尾步骤：标题对不上就不改收尾，按标题认回原来那步（摸底报告第 11 条）', () => {
+  const task = fresh()
+  applyPlan(
+    task,
+    {
+      steps: [
+        { title: '改代码', status: 'done' },
+        { title: '评审复看', review: true, status: 'running' },
+      ],
+    },
+    undefined,
+    'merge',
+  )
+  const wrap = activePlan(task)!.steps.at(-1)!
+  assert.equal(wrap.wrapUp, 'merge')
+  // 模型按位置把「评审复看」写成了收尾的 id
+  applyPlan(task, { partial: true, steps: [{ id: wrap.id, title: '评审复看', status: 'done' }] }, undefined, 'merge')
+  const steps = activePlan(task)!.steps
+  assert.equal(steps.find((x) => x.title === '评审复看')!.status, 'done', '标完成落到评审那一步')
+  assert.equal(steps.at(-1)!.wrapUp, 'merge')
+  assert.equal(steps.at(-1)!.title, wrap.title, '收尾没被改名')
+  assert.equal(steps.length, 3, '没多出一步')
+})
+
 test('共用目录、没有版本管理的子对话也有收尾：请父对话验收，只由面板标完成', () => {
   const task = fresh()
   applyPlan(

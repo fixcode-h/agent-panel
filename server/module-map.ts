@@ -8,6 +8,8 @@ import path from 'node:path'
 import type { Agent } from '../shared/schema.ts'
 import { projectDocRoot } from './docs/root.ts'
 import { parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
+import { CODE_FILE, SMALL_PROJECT_FILES } from '../shared/docs-first.ts'
+import { gitRun } from './exec/git.ts'
 
 /**
  * 项目的文档根：P4 / SVN 项目按「文档」角色的设置算（可能在项目外）；Git 和没有版本管理的项目 projectDocRoot 不给，
@@ -77,7 +79,20 @@ export async function lookupModuleDocs(projectPath: string, agents: Agent[], mod
     if (existsSync(file)) found[m] = path.relative(projectPath, file).split(path.sep).join('/') || file
     else missing.push(m)
   }
-  return { root, found, missing }
+  // 小项目不单建模块文档（第 7 条）：源文件一共没几个时列出来附进派单，子对话直接读
+  const small = missing.length ? await smallProjectFiles(projectPath) : undefined
+  return { root, found, missing, ...(small && { small }) }
+}
+
+/** 项目的源文件不超过 SMALL_PROJECT_FILES 个时返回它们（git 跟踪的和没忽略的新文件）；多了或不是 git 仓库返回 undefined */
+async function smallProjectFiles(projectPath: string) {
+  const r = await gitRun(projectPath, ['ls-files', '--cached', '--others', '--exclude-standard']).catch(() => null)
+  if (!r || r.code !== 0) return undefined
+  const files = String(r.stdout)
+    .split('\n')
+    .map((f) => f.trim())
+    .filter((f) => CODE_FILE.test(f))
+  return files.length <= SMALL_PROJECT_FILES ? files : undefined
 }
 
 /**

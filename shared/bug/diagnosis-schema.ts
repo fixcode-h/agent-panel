@@ -538,7 +538,7 @@ export const Diagnosis = z.object({
   /** 第 2 版起：相比上一份改了什么（一两句，写在报告最上面） */
   whatChanged: z.string().default(''),
   /**
-   * cancelled：用户在审阅弹窗里点了「取消」，这次不修了（计划收口成完成，对话等用户下一句）。
+   * cancelled：用户在审阅弹窗里点了「取消」，这次不修了（没做的步骤收成跳过，对话等用户下一句）。
    * answered：用户贴了日志（论证阶段复现的结果、验证阶段的结果），交给 AI 分析
    */
   status: z.enum(['pending', 'questioned', 'approved', 'answered', 'superseded', 'cancelled']).default('pending'),

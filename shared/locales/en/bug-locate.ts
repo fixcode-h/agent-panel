@@ -4,8 +4,8 @@ export const EN_BUG_LOCATE: Record<string, string> = {
   '正在查代码里的临时日志…': 'Looking for temporary logs in the code…',
   '这份诊断报告不再等你确认。代码里还有 {k} 处 [排查-…] 临时日志，确认后它会一处一处删掉（连加日志时带进来的空行），面板核对干净后才关闭报告；之后不会再改别的文件。想接着查，就在这个对话里直接说，它会重新交报告。':
     'This diagnosis report will stop waiting for your confirmation. The code still has {k} [排查-…] temporary log line(s); after you confirm, it removes them one by one (including blank lines added with them), and the report closes once the panel verifies the code is clean. No other files will be changed. To keep investigating, just say so in this conversation and it will submit a new report.',
-  '这份诊断报告就此关闭：代码里没有临时日志，计划标记为完成，之后不会再改文件。想接着查，就在这个对话里直接说，它会重新交报告。':
-    'This diagnosis report will be closed: there are no temporary logs in the code, the plan is marked done, and no more files will be changed. To keep investigating, just say so in this conversation and it will submit a new report.',
+  '这份诊断报告就此关闭：代码里没有临时日志，没做的步骤标记为跳过，之后不会再改文件。想接着查，就在这个对话里直接说，它会重新交报告。':
+    'This diagnosis report will be closed: there are no temporary logs in the code, the remaining steps are marked skipped, and no more files will be changed. To keep investigating, just say so in this conversation and it will submit a new report.',
   要删的临时日志: 'Temporary logs to remove',
   '这些日志加在它的独立分支里。你照复现步骤在自己的工作区里加过同样几行的话，记得自己删掉。':
     'These logs were added in its own isolated branch. If you added the same lines in your own workspace while reproducing, remember to remove them yourself.',

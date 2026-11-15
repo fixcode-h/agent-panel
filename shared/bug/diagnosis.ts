@@ -299,8 +299,10 @@ export function diagnosisProblem(
     const answered = new Set(answers.map((a) => a.id))
     // 补充信息也要回应（用户 2026-11-13 定）：写用在哪、对结论有没有影响，不能只「用进报告」悄悄带过
     const left = prev.notes.filter((n) => !answered.has(n.id)).map((n) => n.id)
+    // 整体意见算编号 0（摸底报告第 2 条）：只认用户在报告上写的，父对话发来的话不在这里，不能拿来顶替
+    if (prev.overall.trim() && !answered.has(0)) left.unshift(0)
     if (left.length)
-      return `用户对第 ${revOf(prev)} 版的这几条标注还没回应：${left.join('、')}。answers 里按编号逐条写：查了什么、结论、补了什么证据或改了哪一节；补充信息写 stance: used，说明用在哪、对结论有没有影响。`
+      return `用户对第 ${revOf(prev)} 版的这几条意见还没回应：${left.map((x) => (x ? x : '0（整体意见）')).join('、')}。answers 里按编号逐条写：查了什么、结论、补了什么证据或改了哪一节；补充信息写 stance: used，说明用在哪、对结论有没有影响。只回应用户在报告上写的，父对话发来的话不算用户的意见。`
   }
   return ''
 }
@@ -776,9 +778,9 @@ export function cancelDiagnosis(
     )
     return { ok: true, message: cleanupPrompt({ rev: revOf(d), ...cleanup }) }
   }
-  settlePlan(task, now)
+  settlePlan(task, now, 'skipped')
   task.messages.push(
-    diagnosisMessage(newId(), version, t('你取消了诊断报告第 {n} 版，这次不修了，计划已标记完成', { n }), now),
+    diagnosisMessage(newId(), version, t('你取消了诊断报告第 {n} 版，这次不修了，没做的步骤已标记跳过', { n }), now),
   )
   return { ok: true, message: '' }
 }
@@ -807,7 +809,7 @@ export function settleCleanup(
     failed: t('临时日志没删干净：{text}', { text: failedSummary(c) }),
     skipped: t('你选了不让它再删，诊断报告第 {n} 版已关闭', { n }),
   }[result.state]
-  if (result.state !== 'failed') settlePlan(task, now)
+  if (result.state !== 'failed') settlePlan(task, now, 'skipped')
   task.messages.push(diagnosisMessage(newId(), d.version, line, now))
   return true
 }

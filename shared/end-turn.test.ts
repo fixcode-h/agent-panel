@@ -137,3 +137,36 @@ test('状态面板的记录：提醒之后做了什么、结束交代、被隐�
   )
   assert.equal(trail[1].hidden, '收尾一句')
 })
+
+test('诊断报告这一版用户已确认还要以「做不下去」结束：拒一次，提醒按方案接着做；再调一次照常记下（摸底报告第 5 条）', () => {
+  const bug = (status: string, phase = 'plan') =>
+    ({ kind: 'report', diagnoses: [{ version: 2, phase, status }] }) as never
+  const base = { resolved: false, plans: [], steps: [], changes: [] } as unknown as Parameters<typeof endTurnCheck>[0]
+  const first = endTurnCheck({ ...base, bug: bug('approved'), messages: [user(0)] }, 'blocked', '等用户在报告上确认')
+  assert.equal(first.ok, false)
+  assert.match(first.info, /诊断报告已经确认了：第 2 版用户已在报告上点了确认/)
+  // 同一轮里已经被拒过一次：确实卡在别的事上，照常记下
+  const again = endTurnCheck(
+    { ...base, bug: bug('approved'), messages: [user(0), agent(1, '', [end('blocked', { output: first.info })])] },
+    'blocked',
+    '缺编辑器路径',
+  )
+  assert.equal(again.ok, true)
+  // 还在等确认、验证那一版确认过了：都不拦
+  assert.equal(endTurnCheck({ ...base, bug: bug('pending'), messages: [user(0)] }, 'blocked', '等确认').ok, true)
+  assert.equal(endTurnCheck({ ...base, bug: bug('approved', 'verify'), messages: [user(0)] }, 'blocked', '缺').ok, true)
+})
+
+test('就地改动开着就说做完了：拒一次，提醒走完快速检查和评审；再调一次照常结束（摸底报告第 6 条）', () => {
+  const base = { resolved: false, plans: [], steps: [], changes: [] } as unknown as Parameters<typeof endTurnCheck>[0]
+  const inlineEdit = { files: ['a.ts'], reason: '改文案', startedAt: at(0), head: 'abc', baseline: {} }
+  const first = endTurnCheck({ ...base, inlineEdit, messages: [user(0)] }, 'done', '')
+  assert.equal(first.ok, false)
+  assert.match(first.info, /就地改动还没收尾.*end_inline_edit/)
+  const again = endTurnCheck(
+    { ...base, inlineEdit, messages: [user(0), agent(1, '', [end('done', { output: first.info })])] },
+    'done',
+    '',
+  )
+  assert.equal(again.ok, true)
+})

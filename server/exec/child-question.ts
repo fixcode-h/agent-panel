@@ -33,9 +33,7 @@ export function askViaParent(ev: AskEvent, messageParent: NonNullable<EngineHost
     .then((r) =>
       ev.reply({
         allow: false,
-        message: r.ok
-          ? `这个问题没有直接问用户，已经交给父对话决定：${r.info}`
-          : `这个问题没能交给父对话：${r.info}。${self}`,
+        message: r.ok ? `这个问题没有在你这里弹出：${r.info}` : `这个问题没能交给父对话：${r.info}。${self}`,
       }),
     )
     .catch((e: Error) => ev.reply({ allow: false, message: `这个问题没能交给父对话（${e.message}）。${self}` }))

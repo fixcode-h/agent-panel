@@ -7,6 +7,8 @@ import { ErrorPrint } from '../schema.ts'
  * - 失败后换了做法才成（episode）：面板机械地记下失败的命令、报错指纹和改对后的命令，当场提示 Agent 记；
  *   同一个报错指纹在另一个对话里再出现时自动转正成教训（Q2）。
  * - 子对话记的（subtask）：子对话不和用户对话、常并行多只，记的先放候选，等用户在知识页点「收下」。
+ * - 对话记的（agent）：Agent 用 knowledge_record / record_lesson 新记的教训，在记下它的对话里立即生效，
+ *   对别的对话是候选，等用户收下（第 8 条，shared/knowledge/conv-lessons.ts）。
  * 界面（项目设置 → 候选）和演示后端都用这里的类型
  */
 
@@ -18,8 +20,8 @@ export const CANDIDATE_CONVS_MAX = 10
 export const KnowledgeCandidate = z.object({
   id: z.string().min(1),
   kind: z.enum(['lesson', 'experience']).catch('lesson'),
-  /** episode：面板从「失败后改对」机械捕获的；subtask：子对话用 knowledge_record 记的 */
-  origin: z.enum(['episode', 'subtask']).catch('episode'),
+  /** episode：面板从「失败后改对」机械捕获的；subtask：子对话用 knowledge_record 记的；agent：对话里的 Agent 记的 */
+  origin: z.enum(['episode', 'subtask', 'agent']).catch('episode'),
   title: z.string().max(200).catch('').default(''),
   /** 教训：对的做法；经验：一两句补充写在 body */
   rule: z.string().max(1500).catch('').default(''),

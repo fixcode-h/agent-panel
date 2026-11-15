@@ -241,6 +241,7 @@ export interface TasksScope {
   endInlineEdit: (
     parent: Task,
     dir: string,
+    force?: boolean,
   ) => Promise<{
     ok: boolean
     info: string

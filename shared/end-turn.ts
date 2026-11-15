@@ -5,6 +5,7 @@ import { activePlan, openWork } from './plan.ts'
 import { panelWrap } from './wrap-up.ts'
 import { stepApplies } from './test-steps.ts'
 import { doneEvidence, gateFiles, verifyGateError, type GateStep, type TurnExtra } from './done-evidence.ts'
+import { phaseOf, revOf } from './bug/phase.ts'
 
 /**
  * 一轮怎么结束（设计稿 docs/openspec/changes/end-check-signal/design-v2.md）：
@@ -143,7 +144,7 @@ export function mergeOwedOf(
  */
 export function endTurnCheck(
   tk: Pick<Task, 'parentTaskId' | 'resolved' | 'wrapRequest' | 'plans' | 'steps' | 'changes'> &
-    Partial<Pick<Task, 'messages'>>,
+    Partial<Pick<Task, 'messages' | 'bug' | 'inlineEdit'>>,
   outcome: string,
   need: string,
   /** 项目打开了「改了代码要跑过测试步骤才能结束」时传项目的测试步骤（见 shared/done-evidence.ts） */
@@ -155,12 +156,16 @@ export function endTurnCheck(
     return { ok: false, info: `${END_REJECTED}outcome 只能是 done（做完了）或 blocked（做不下去）` }
   if (outcome === 'blocked') {
     if (!need.trim()) return { ok: false, info: `${END_REJECTED}need 写清缺什么、需要谁做什么才能继续` }
+    const approved = approvedDiagnosisBlock(tk)
+    if (approved) return { ok: false, info: approved }
     return {
       ok: true,
       info: `${END_BLOCKED}面板会把卡点告诉用户，等用户回复再接着做。不用再写什么，这一轮直接结束。`,
       end: { outcome, need: need.trim().slice(0, 2000) },
     }
   }
+  const inline = openInlineEdit(tk)
+  if (inline) return { ok: false, info: inline }
   const left = openWork(tk)
   if (left.length)
     return {
@@ -189,6 +194,42 @@ export function endTurnCheck(
     : ''
   if (gateErr) return { ok: false, info: `${END_REJECTED}${gateErr}` }
   return { ok: true, info: '已结束这一轮：之后用一句话简短说明收尾，不要重复总结。', end: { outcome, evidence } }
+}
+
+/** 拒绝「就地改动还没收尾」时带的记号：同一轮只拒一次 */
+const INLINE_OPEN = '就地改动还没收尾'
+
+/**
+ * 就地改动开着就说做完了（摸底报告第 6 条）：快速检查和轻评审是 end_inline_edit 的门禁，这里提醒一次去走完。
+ * 同一轮只拒一次：评审没过、决定交给子对话时还能结束，这一轮结束时面板自动收并告诉用户没走完检查
+ */
+function openInlineEdit(tk: Partial<Pick<Task, 'messages' | 'inlineEdit'>>): string {
+  if (!tk.inlineEdit) return ''
+  const msgs = tk.messages ?? []
+  const told = msgs
+    .slice(inputIndex(msgs) + 1)
+    .some((m) => m.tools?.some((x) => isEndTurnTool(x) && (x.output ?? '').includes(INLINE_OPEN)))
+  if (told) return ''
+  return `${END_REJECTED}${INLINE_OPEN}：跑项目里标「快速」的检查、派一次轻评审，通过后调用 end_inline_edit（它会告诉你还差什么）。评审没过、要交给子对话时，说明原因后再调用一次 end_turn。`
+}
+
+/** 拒绝「诊断报告已确认还说等确认」时带的记号：同一轮只拒一次，第二次照常记下卡点 */
+const DIAG_APPROVED = '诊断报告已经确认了'
+
+/**
+ * 最新一版诊断报告用户已经确认（还没到验证）却要以「做不下去」结束：多半是确认在这一轮里才到、模型没看到状态变了，
+ * 照着之前的「等你确认」结束，之后没人叫醒它（摸底报告第 5 条）。只看报告状态，不读 need 写了什么；
+ * 同一轮只拒一次，确实卡在别的事上的再调一次就照常记下
+ */
+function approvedDiagnosisBlock(tk: Partial<Pick<Task, 'messages' | 'bug'>>): string {
+  const d = tk.bug?.diagnoses?.at(-1)
+  if (d?.status !== 'approved' || phaseOf(d) === 'verify') return ''
+  const msgs = tk.messages ?? []
+  const told = msgs
+    .slice(inputIndex(msgs) + 1)
+    .some((m) => m.tools?.some((x) => isEndTurnTool(x) && (x.output ?? '').includes(DIAG_APPROVED)))
+  if (told) return ''
+  return `${END_REJECTED}${DIAG_APPROVED}：第 ${revOf(d)} 版用户已在报告上点了确认，按确认的方案接着做，不用再等确认。确实卡在别的事上（不是等确认），再调用一次 end_turn(blocked) 写清缺什么。`
 }
 
 /** 门禁的步骤对这批改动适不适用：老数据、单测只给名字和命令的按「总是执行」算（shared/test-steps.ts 的 stepApplies） */

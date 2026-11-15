@@ -24,3 +24,12 @@ export const StopReason = z.enum([
   'after', // 建好了还没开始：排在别的子对话之后，等它们合回再由面板启动（见 shared/children/after.ts）
 ])
 export type StopReason = z.infer<typeof StopReason>
+
+/**
+ * 这一轮是被叫停的（用户暂停、父对话停下、归档、用量上限……），不是做完后收掉进程：
+ * 页面切走（presence）、闲置回收（idle）、做完收尾（finish）、用户关掉 Agent 进程（close）时这一轮已经正常结束。
+ * 被叫停的子对话不能在这时按「没有剩下的事」判成做完：刚建好、还没开工就被父对话一起停下的子对话
+ * 没有计划、分支上也没改动，按完成条件看什么都不缺，实测被报成「已完成：交付完了」、独立分支被删（摸底报告第 3 条）
+ */
+export const haltedTurn = (reason: StopReason | undefined) =>
+  !!reason && reason !== 'presence' && reason !== 'idle' && reason !== 'finish' && reason !== 'close'

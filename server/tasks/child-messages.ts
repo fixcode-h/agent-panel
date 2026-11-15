@@ -17,6 +17,7 @@ import {
 } from '../../shared/plan.ts'
 import type { PlanWait } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
+import { DIAG_PARENT_RULE, diagnosisInFlow } from '../../shared/bug/phase.ts'
 
 /**
  * 交给子对话时最多等它开起来多久：CLI 的工具调用一分钟超时，要在那之前回话（见 sendToChild）。
@@ -267,6 +268,9 @@ export function createChildMessages(sc: TasksScope) {
       else await sc.store.update(child.id, child)
     }
     const parent = kind ? (sc.live.get(parentId)?.task ?? (await sc.store.get(parentId))) : undefined
+    // 父对话发给在走诊断流程的子对话：交出去照旧，回话里再提醒一次只有用户能确认（摸底报告第 1 条）。
+    // 用户在父对话里答的提问（answer）是用户自己的话，不提醒
+    const diagRule = kind && kind !== 'answer' && diagnosisInFlow(child) ? `\n${DIAG_PARENT_RULE}` : ''
     // 回答是「用户的决定：」换行再写答案：标题里接成一行
     const subject = kind === 'answer' ? message.replace(/：\n/, '：') : message
     const peer = parent && kind ? await sc.peerOf(parent, 'parent', kind, subject, failed) : undefined
@@ -295,7 +299,7 @@ export function createChildMessages(sc: TasksScope) {
               : r.how === 'next-node'
                 ? '子对话正在执行，已实时送达，它接下来的步骤会带上'
                 : '子对话正在执行，这一轮结束后会自动处理这条'
-      return { ok: true, info: `「${child.title}」${how}${kind === 'task' ? letterGap(id, true) : ''}` }
+      return { ok: true, info: `「${child.title}」${how}${kind === 'task' ? letterGap(id, true) : ''}${diagRule}` }
     }
     // 等它真的开起来再回话：起不来（CLI 没装、独立分支重建失败……）要把错误交回给发消息的一方。
     // 以前是发出去就不管、先回「已交给」，父对话以为它在做，它其实没起来（用户要求起不来必须报错）。
@@ -319,7 +323,7 @@ export function createChildMessages(sc: TasksScope) {
         log.warn('task', '交给子对话时它还在收尾上一轮，先回话', { task: id, waitMs: SEND_WAIT_MS })
         return {
           ok: true,
-          info: `子对话「${child.title}」上一轮还在收尾，这条已交给它，收尾完会自动开始处理，不用重发。起不来时会在子对话里报警告`,
+          info: `子对话「${child.title}」上一轮还在收尾，这条已交给它，收尾完会自动开始处理，不用重发。起不来时会在子对话里报警告${diagRule}`,
         }
       }
     } catch (e) {
@@ -339,7 +343,7 @@ export function createChildMessages(sc: TasksScope) {
       log.error('task', '子对话执行出错', { task: id, error: (e as Error).message })
       sc.alertOn(id, 'panel', t('执行这个子对话时出错'), 'error')(e)
     })
-    return { ok: true, info: `已交给子对话「${child.title}」，它在后台执行` }
+    return { ok: true, info: `已交给子对话「${child.title}」，它在后台执行${diagRule}` }
   }
 
   return { noteParent, notePlanInput, sendToChild, trackUserToChild }

@@ -8,10 +8,19 @@
  * 放在单独的文件里：engine.ts、orch-mcp.ts 都到了行数上限
  */
 
-/** 宿主查模块文档：给模块名，回文档根和每个模块的 README 路径（不存在的列进 missing） */
+/**
+ * 小项目（源文件不超过这么多个）不单建模块文档（摸底报告第 7 条，2026-11-15 用户定）：实测里改一个函数先等
+ * 「文档·模块分析」十分钟、两百多万 token；这种项目把源文件清单附进派单，子对话直接读更快
+ */
+export const SMALL_PROJECT_FILES = 10
+/** 算「源文件」的扩展名：文档、配置、数据不算 */
+export const CODE_FILE =
+  /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|kts|cs|c|cc|cpp|cxx|h|hh|hpp|lua|rb|php|swift|m|mm|vue|svelte|dart|scala|sh|ps1)$/i
+
+/** 宿主查模块文档：给模块名，回文档根和每个模块的 README 路径（不存在的列进 missing）；小项目带上源文件清单（small） */
 export type ModuleDocsLookup = (
   modules: string[],
-) => Promise<{ root: string; found: Record<string, string>; missing: string[] }>
+) => Promise<{ root: string; found: Record<string, string>; missing: string[]; small?: string[] }>
 
 export interface DocsFirstInput {
   modules?: string[]
@@ -63,6 +72,10 @@ export async function docsFirst(
     ? `\n\n## 模块文档（先读，在它基础上查）\n${have.map(([m, p]) => `- ${m}：${p}`).join('\n')}`
     : ''
   if (!r.missing.length) return { note: docs }
+  if (r.small)
+    return {
+      note: `${docs}\n\n## 模块说明（项目只有 ${r.small.length} 个源文件，不单建模块文档）\n${r.small.map((f) => `- ${f}`).join('\n') || '- （还没有源文件）'}\n直接读这些文件，不用先找文档。`,
+    }
   const skip = input.skipDocs?.trim()
   if (!enabled || skip)
     return {
@@ -78,7 +91,7 @@ export async function docsFirst(
   return {
     block: `没有建子对话：这些模块还没有模块文档：${r.missing.join('、')}（文档根 ${r.root}）。先建文档再派单，子对话从文档读起就不用从头摸索：
 1. 用 spawn_agents 给每个模块派一个「文档」子任务，params 写 {"task": "模块分析"}，几个一起派、能并行就并行；instructions 写模块名或目录、你提炼的关键词和用户原话，带上这次的 step。
-2. 结果推回来后，用同样的参数再调用一次 create_conversation（modules 不变），面板会把新文档的路径附进派单。
+2. 结果推回来后，用同样的参数再调用一次 create_conversation（modules 不变），面板会把新文档的路径附进派单。新文档不要单独提交：面板开子对话的独立分支时把它带过去，随子对话的改动一起合回。
 模块分析失败、或者这次确实不值得先建文档（一次性的小改动）时，在 skip_docs 里写明理由再调用。`,
   }
 }

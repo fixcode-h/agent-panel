@@ -15,6 +15,7 @@ import {
 } from '../../shared/knowledge/push.ts'
 import { searchText } from '../../shared/knowledge/match/normalize.ts'
 import { loadProjectLessons } from '../projects/lessons.ts'
+import { withConvLessons } from '../knowledge/agent-record.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { taskMap } from '../runtime/task-state.ts'
 import { taskLog } from '../tasks/log.ts'
@@ -63,15 +64,20 @@ export function knowledgePush(c: KnowledgePushCtx) {
   let loaded = 0
   let lessons: Awaited<ReturnType<typeof loadProjectLessons>>['lessons'] = []
   let exps: ProjectExperience[] = []
+  const root = c.task.parentTaskId || c.task.id
   const load = async () => {
     if (Date.now() - loaded < RELOAD_MS) return
     loaded = Date.now()
-    lessons = (await loadProjectLessons(c.project, c.agents).catch(() => ({ lessons: [] }))).lessons.filter(
-      (l) => l.enabled,
-    )
+    // 这个对话自己记下、还没被用户收下的也推（第 8 条）
+    lessons = (
+      await withConvLessons(
+        c.project.id,
+        (await loadProjectLessons(c.project, c.agents).catch(() => ({ lessons: [] }))).lessons,
+        root,
+      )
+    ).filter((l) => l.enabled)
     exps = c.experience ? (await c.experience().catch(() => [])).filter((e) => e.enabled) : []
   }
-  const root = c.task.parentTaskId || c.task.id
 
   /** 去掉这个对话推过的，按预算挑，记命中、记触发、标到工具行上 */
   const deliver = (facts: HookFacts, event: 'tool.before' | 'tool.after', all: PushHit[], why: PushHit['why']) => {
