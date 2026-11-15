@@ -3,7 +3,7 @@
  * 新建子对话前判断是不是在重试一个失败、中断的子对话（retryTarget）。从 engine.ts 拆出来（行数上限，按功能拆）
  */
 import type { EngineHost } from '../engine/host.ts'
-import type { PlanKid } from '../plan.ts'
+import type { PlanKid } from '../plan/index.ts'
 import { convStateText } from '../task.ts'
 
 /**

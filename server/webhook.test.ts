@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { whenLabel, type Schedule } from '../shared/schedule.ts'
+import { whenLabel, type Schedule } from '../shared/schedule/index.ts'
 import { webhookPayload } from './webhook.ts'
 
 const at = (y: number, mo: number, d: number, h: number) => new Date(y, mo - 1, d, h).toISOString()

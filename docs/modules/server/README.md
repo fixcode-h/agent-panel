@@ -91,7 +91,7 @@
 | CLI 自己在重试模型请求         | Claude Code 的 `api_retry`、Codex 的 `willRetry`、Pi 的 `auto_retry_*` 都画成「正在重试」，接上后收成已恢复；不能只显示「等待模型」                                                                                                                                                                                                                                          | `server/exec/parsers.ts`、`server/exec/rpc/codex.ts`、`shared/clis/pi.json`                         |
 | 子对话行的图标                 | `childIcon`：`unfinished` 只在 `cliAlive` 时转圈；重启迁移（`restartInterrupted`）按状态判，不受图标影响                                                                                                                                                                                                                                                                     | `shared/task.ts`、`web/src/components/tasks/child-line.ts`                                          |
 | 对话停下后的界面               | 计划没做完、对话停止 / 失败且名下没东西在跑：计划按暂停画（步骤不转圈，用时停在停下那一刻，`planPaused`）；排着的子任务（被打断或还没开始）只在对话执行时进运行区（`helperShown`）；用户亲手停的一定给「继续执行」                                                                                                                                                           | `web/src/components/tasks/PlanPanel.tsx`、`shared/task.ts`、`web/src/components/tasks/TaskView.tsx` |
-| 被打断的子任务                 | 对话继续后用 `spawn_agents` 的 `resume: <id>` 在原来的记录和会话里接着跑；还有被打断没做完的子任务时另派新的会被拒绝，不要了就 `stop_subtask`（被打断的直接记成已终止）                                                                                                                                                                                                      | `shared/engine.ts`、`shared/resume-kids.ts`                                                         |
+| 被打断的子任务                 | 对话继续后用 `spawn_agents` 的 `resume: <id>` 在原来的记录和会话里接着跑；还有被打断没做完的子任务时另派新的会被拒绝，不要了就 `stop_subtask`（被打断的直接记成已终止）                                                                                                                                                                                                      | `shared/engine/index.ts`、`shared/resume-kids.ts`                                                   |
 
 ## 入口
 
@@ -109,7 +109,7 @@
 
 ## 依赖
 
-`shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
+`shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule/index.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
 
 ## 回归验证
 

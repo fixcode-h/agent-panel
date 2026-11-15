@@ -9,7 +9,7 @@ import type { AgentCall, AgentResult, EngineHost } from './engine/host.ts'
 import type { TaskStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { CHILD_RESTART_MAX } from './stuck-child.ts'
-import { allowEnd, type BeforeEndDecision } from './hooks.ts'
+import { allowEnd, type BeforeEndDecision } from './hooks/index.ts'
 import { VERDICT_ASK, verdictOf } from './submitted.ts'
 
 /** 补问那一句（发给 Agent，不翻译） */

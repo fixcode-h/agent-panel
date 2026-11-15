@@ -13,9 +13,9 @@ import {
   supportedEvents,
   versionAtLeast,
   HOOK_URL_ENV,
-} from './hooks.ts'
-import { getCli } from './clis.ts'
-import { promptLangModSource } from './prompt-lang.ts'
+} from './index.ts'
+import { getCli } from '../clis.ts'
+import { promptLangModSource } from '../prompt-lang.ts'
 
 // 结束前钩子（ADR 0049）：CLI 定义里声明怎么装，代码按字段走；面板只拿「是不是已经续过一次」，回复文字一律丢掉
 

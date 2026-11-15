@@ -1,8 +1,8 @@
 import type { StopReason, Task } from './schema.ts'
-import { activePlan, FAIL_PREFIX, rollUp, setStatus } from './plan.ts'
+import { activePlan, FAIL_PREFIX, rollUp, setStatus } from './plan/index.ts'
 import { stopReasonText, taskDeleted } from './task.ts'
 
-// 放在单独的文件里：shared/task.ts、shared/plan.ts 都快到行数上限（scripts/file-caps.json）
+// 放在单独的文件里：shared/task.ts、shared/plan/index.ts 都快到行数上限（scripts/file-caps.json）
 
 /** 父对话继续时要看的子对话字段 */
 export type ResumeKid = Pick<Task, 'id' | 'title' | 'stopReason' | 'wrapRequest'>

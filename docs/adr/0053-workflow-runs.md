@@ -20,8 +20,8 @@ ADR 0044 把工作流做成父对话下的「工作流子对话」：第一轮�
 | ------------------------------------------------------------------------ | ------------------------------------------------------- |
 | `flow-child.ts`、`flow-child-run.ts`（已删）                             | 工作流子对话：哪一段流程图、进度、交给执行角色的话      |
 | `server/tasks/run.ts` 的 `spawnChild`（带 `flow`）                       | `start_workflow` 开子对话；`again` 改流程图状态再跑一次 |
-| `shared/engine.ts` 的 `startPlan` / `run` / `closeRun`                   | 对话里起运行、常驻编排器起停运行                        |
-| `shared/flow.ts` 的 `dispatches()`                                       | 恒返回 false，`@main` 不再生成                          |
+| `shared/engine/index.ts` 的 `startPlan` / `run` / `closeRun`             | 对话里起运行、常驻编排器起停运行                        |
+| `shared/flow/index.ts` 的 `dispatches()`                                 | 恒返回 false，`@main` 不再生成                          |
 | `shared/dispatch.ts`、`server/panel-tools/submit-tools.ts` 的 `dispatch` | 主 Agent 交决定的提示词和工具，走不到                   |
 
 ## 决策

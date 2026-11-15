@@ -32,7 +32,7 @@ import {
   refreshChildWait,
   syncKids,
   type PlanKid,
-} from '../../shared/plan.ts'
+} from '../../shared/plan/index.ts'
 import { shrinkClaims } from '../claims.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'

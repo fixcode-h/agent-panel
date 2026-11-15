@@ -1,7 +1,7 @@
 /**
  * 子任务窗口顶上那块「派给它的要求」：把 TaskStep.brief 拆成能一眼看懂的几块。
  *
- * brief 是派发时原样交给它的要求，由 `shared/engine.ts` 的 spawn 落盘：instructions 原文，后面可能接着
+ * brief 是派发时原样交给它的要求，由 `shared/engine/index.ts` 的 spawn 落盘：instructions 原文，后面可能接着
  * - `## 评审交接单（派你的对话整理）` + 引擎按固定小标题写的几节（`briefPart`，评审才带）
  * - `## 重试时补充`（同一个子任务重试时追加，可能追加多次）
  * 而 instructions 本身通常是 `## 用户原话`、`## 要做的事` 这类小节。这里只做排版用的拆分：
@@ -37,15 +37,15 @@ export interface BriefView {
 }
 
 /**
- * 引擎拼进 brief 的两段（原文，改了 `shared/engine.ts` 这里要跟着改）：
+ * 引擎拼进 brief 的两段（原文，改了 `shared/engine/index.ts` 这里要跟着改）：
  * 评审交接单的开头、重试时追加的要求。
  */
 const REVIEW_HEAD = '## 评审交接单（派你的对话整理）'
-/** 重试时追加的那一节（见 `shared/engine.ts` 的 spawn）：展示时另标一块，和上面的原始要求分开 */
+/** 重试时追加的那一节（见 `shared/engine/index.ts` 的 spawn）：展示时另标一块，和上面的原始要求分开 */
 const RETRY_TITLE = '重试时补充'
 /**
  * 交接单开头那句是引擎写给评审的提示（`briefPart` 里写死的），不是要求本身。
- * 当前引擎不会产出「只有引言、没有子节」的交接单（`shared/engine.ts` 的 briefPart 在 rows 为空时直接返回空串），
+ * 当前引擎不会产出「只有引言、没有子节」的交接单（`shared/engine/index.ts` 的 briefPart 在 rows 为空时直接返回空串），
  * 这条剔除只是防御：旧记录里的 brief、或以后引擎改了拼接方式时，别把这行提示当成要求显示
  */
 const REVIEW_HINT = '这就是评审要用的背景，不用再去读模块文档、搜项目还原它们。'

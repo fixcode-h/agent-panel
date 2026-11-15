@@ -4,7 +4,7 @@
  */
 import type { Task, ToolUse } from '../schema.ts'
 import { t, uiLocale } from '../i18n.ts'
-import { activePlan, planProgress } from '../plan.ts'
+import { activePlan, planProgress } from '../plan/index.ts'
 import { confirmWait, confirmWaitText } from './needs.ts'
 import { pendingAction } from '../user-action.ts'
 import { helperRunning } from '../tasks/helpers.ts'

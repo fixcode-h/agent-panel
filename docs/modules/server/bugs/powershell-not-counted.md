@@ -20,7 +20,7 @@
 
 ## 修复
 
-- 工具名到类别只认 CLI 定义的 `hooks.toolNames`（`shared/hooks.ts` 的 `toolKindOf`）：解析层、审批卡、钩子共用；`PowerShell` 加进 shell，解析层补上 `LS`。
+- 工具名到类别只认 CLI 定义的 `hooks.toolNames`（`shared/hooks/index.ts` 的 `toolKindOf`）：解析层、审批卡、钩子共用；`PowerShell` 加进 shell，解析层补上 `LS`。
 - 「问过以后有没有接着做」看面板工具以外的任何一次调用（`shared/end-turn.ts` 的 `isCliTool`），不按类别清单数，清单外的新工具不会再被当成什么都没做；「做了多少」仍只数跑命令、改文件（`isActTool`，收尾自检和一轮结束后的补问 `turn-info.ts` 共用），更新待办这类不算。
 - 命令前缀匹配前剥掉外壳（`shared/shell-command.ts` 的 `unwrapShell`，和 Codex 显示命令共用一份）：`cmd /c`、`wsl -e`、`powershell -Command`、`bash -c`、`&`。
 - 防线：`server/exec/parsers.test.ts`「CLI 定义里登记了类别的工具名都按类别解析」、`server/tasks/before-end.test.ts`「问过以后跑的是没登记类别的命令工具也算接着做」、`shared/hooks/defs.test.ts`「命令按段比之前剥掉外壳」。

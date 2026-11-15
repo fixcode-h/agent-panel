@@ -7,7 +7,7 @@
 import { bugStage } from '../bug/diagnosis.ts'
 import { childBugStep, lastToolCall } from './doing.ts'
 import { descendantNeeds, pendingRequest } from './needs.ts'
-import { openPlan } from '../plan.ts'
+import { openPlan } from '../plan/index.ts'
 import type { Task } from '../schema.ts'
 import {
   childActivity,

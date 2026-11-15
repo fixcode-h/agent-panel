@@ -39,7 +39,7 @@ import {
   type HookAnswer,
   type HookFacts,
   type HookToolScope,
-} from '../../shared/hooks.ts'
+} from '../../shared/hooks/index.ts'
 import type { HookEventName } from '../../shared/hooks/defs.ts'
 
 /** 这一轮面板自己的临时目录（绝对路径）：放 CLI 要加载的桥接脚本等，用完删掉 */
@@ -176,7 +176,7 @@ export async function invokeCli(o: {
    * 只装这几个；onHook 按事件和从原生输入里取出的事实回答
    */
   hookEvents?: HookEventName[]
-  /** 工具前 / 工具后各自关心哪几类工具（见 shared/hooks.ts 的 HookToolScope） */
+  /** 工具前 / 工具后各自关心哪几类工具（见 shared/hooks/index.ts 的 HookToolScope） */
   hookTools?: HookToolScope
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 }): Promise<ProcessResult> {

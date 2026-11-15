@@ -199,7 +199,7 @@ export const UI_SHARD_COVERS = {
     'web/src/components/comfy/',
     'web/src/pages/ComfyPage.tsx',
     'web/src/components/ui/hint.tsx',
-    // 计划面板（shared/plan.ts 那套数据的界面）
+    // 计划面板（shared/plan/index.ts 那套数据的界面）
     'web/src/pages/SchedulesPage.tsx',
     'web/src/pages/SummaryPage.tsx',
     'web/src/components/summary/',
@@ -207,7 +207,7 @@ export const UI_SHARD_COVERS = {
     // 演示版的工作总结数据（预置的报告撑起左侧报告树，提炼给出示例分项）
     'web/src/lib/demo-summary.ts',
     // 报告树分组、拼报告的逻辑：页面直接调，改了它就跑这一片
-    'shared/summary.ts',
+    'shared/summary/index.ts',
     // 对话总览和它的 Bug 视图（分组、五步进度、流程数据）
     'web/src/pages/OverviewPage.tsx',
     'web/src/components/overview/',

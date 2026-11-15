@@ -1,6 +1,6 @@
 # 停父对话再继续：已交付的子对话返工，用户停掉的子对话被拉起
 
-- 状态：已修复（`shared/resume-kids.test.ts`、`server/tasks/keepalive-endlive.test.ts`、`shared/plan.test.ts`「用户亲手停的不是失败」、e2e `09-subagent-runtime`「父对话被停下后继续……」通过）
+- 状态：已修复（`shared/resume-kids.test.ts`、`server/tasks/keepalive-endlive.test.ts`、`shared/plan/index.test.ts`「用户亲手停的不是失败」、e2e `09-subagent-runtime`「父对话被停下后继续……」通过）
 - 症状：先单独停掉一个子对话再停父对话，停止原因都变成「父对话」；继续父对话后已交付的子对话把做完的事又做一遍，用户停掉的子对话也被拉起；父对话把「用户停掉了它」当成失败去交回重试
 - 入口：`server/tasks/keepalive.ts` 的 `stopTask`；`server/tasks/children.ts` 的 `closeChildren`、`reportChild`；`server/tasks/conversation-routes.ts` 的 `resumeKids`、`resumePrompt`；`shared/resume-kids.ts`；`shared/task.ts` 的 `childReport`
 - 根因类型：连带停止覆盖了已有的停止原因；继续时只按停止原因筛，不看父对话是否已收下结果；用户停止按失败上报
@@ -27,5 +27,5 @@
 
 - `shared/resume-kids.test.ts`：分类和续接说明。
 - `server/tasks/keepalive-endlive.test.ts`：「用户已经停下的子对话再被父对话连带停……」。
-- `shared/plan.test.ts`：用户亲手停的子对话 `settle` 是 `hold`。
+- `shared/plan/index.test.ts`：用户亲手停的子对话 `settle` 是 `hold`。
 - `scripts/e2e/09-subagent-runtime.mjs`：「父对话被停下后继续……」里加了已交付的子对话和用户单独停掉的子对话：停父对话后原因不变，继续时不被拉起，父对话的续接说明列出用户停掉的那个。

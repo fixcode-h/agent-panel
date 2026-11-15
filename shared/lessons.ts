@@ -236,7 +236,7 @@ const CAP_TAGS = 12
 
 /**
  * 新会话开头的「项目教训」：tools 表示这次调用挂了面板工具，能按文件查；canRecord 表示还能自己记
- * （子任务只查不记，见 shared/engine.ts 的 Orchestra.lessons），不能记时不带记教训的说明，省下这段提示。
+ * （子任务只查不记，见 shared/engine/index.ts 的 Orchestra.lessons），不能记时不带记教训的说明，省下这段提示。
  * globals 是全局教训：所有项目共用，排在项目教训后面、优先级也更低。
  * 有工具时整段不超过 PROMPT_CAP：条目再多也只给最要紧的全文和放得下的标题，其余执行中由面板按命令、文件、报错推送。
  * 没有启用的条目时返回空串，不占提示

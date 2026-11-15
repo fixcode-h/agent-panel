@@ -12,10 +12,10 @@ import {
   type TaskSeenResult,
   defaultAgent,
 } from '../../shared/schema.ts'
-import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow.ts'
+import { blockedStep, taskFlow, taskWorkflows } from '../../shared/flow/index.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
 import { exposeSlots } from '../../shared/expose.ts'
-import { settleWait } from '../../shared/plan.ts'
+import { settleWait } from '../../shared/plan/index.ts'
 import { kidsSkipNote, rearmKidWait, resumeNote, sortStoppedKids } from '../../shared/resume-kids.ts'
 import { closeFlow, diagnosisPending, dropEndNotes, newTask, taskDeleted, withAttachments } from '../../shared/task.ts'
 import { withTaskModel, retryModelPatch } from '../../shared/tasks/run.ts'

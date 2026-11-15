@@ -16,10 +16,10 @@ import {
   type TurnEnd,
   type Workflow,
 } from './schema.ts'
-import { currentRun, inRun, planTask } from './flow.ts'
+import { currentRun, inRun, planTask } from './flow/index.ts'
 import { t } from './i18n.ts'
 import { canPickRun } from './tasks/run.ts'
-import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
+import { activePlan, openPlan, openWork, planProgress } from './plan/index.ts'
 import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 import { needsReason } from './children/needs.ts'
 import { pendingAction } from './user-action.ts'
@@ -835,7 +835,7 @@ export function askOptions(options: string[] | undefined, kind: AskKind = 'quest
  * - background：后台命令还在跑 / 排队（结果推回来还要接着做）
  * - workflow：工作流运行还没跑完（工作流子对话的流程图，或老对话里 start_plan 起的运行）
  * - helpers：它派出去的子任务还在跑（结果交回来时它还要接着做）
- * - plan：计划还没做完（见 shared/plan.ts 的 openPlan）
+ * - plan：计划还没做完（见 shared/plan/index.ts 的 openPlan）
  * - asking：还有待用户回答的提问
  * - requests：还有待用户确认的请求
  * - unmerged：独立分支还有没合回父对话分支的改动

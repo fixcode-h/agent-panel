@@ -3,13 +3,13 @@
  * 前后端共用同一份规则：服务端按它判断到没到点、执行后把时间往后推，界面按它显示下次执行时间。
  * 时间一律存 ISO 字符串，界面按本机时区显示和编辑。
  *
- * 和任务里的「执行计划」（task.plans，见 shared/plan.ts）不是一回事，这里叫 Schedule。
+ * 和任务里的「执行计划」（task.plans，见 shared/plan/index.ts）不是一回事，这里叫 Schedule。
  */
 import { z } from 'zod'
-import { t, uiLocale } from './i18n.ts'
-import { hhmm, pad2, ymd } from './datetime.ts'
-import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
-import { everyLabel, isEventSchedule, ScheduleTrigger, TriggerState } from './schedule/trigger.ts'
+import { t, uiLocale } from '../i18n.ts'
+import { hhmm, pad2, ymd } from '../datetime.ts'
+import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from '../schema.ts'
+import { everyLabel, isEventSchedule, ScheduleTrigger, TriggerState } from './trigger.ts'
 
 /** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
 /** 日历的时间刻度（分钟）：周视图半小时一格，拖动、拉伸、右键新建都对齐到它 */

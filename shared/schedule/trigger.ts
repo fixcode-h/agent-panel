@@ -6,7 +6,7 @@
  * - 新建对话走和定时计划同一条链路：执行上限、上游依赖、跑完的通知都复用（server/schedules.ts）
  * - 这里只放前后端共用的结构、判定和文案；真正去读目录、问远端、跑命令在 server/schedule-triggers.ts
  *
- * 不 import shared/schedule.ts：那边的 ScheduleInput 要引用这里的结构，反过来引用会成环
+ * 不 import shared/schedule/index.ts：那边的 ScheduleInput 要引用这里的结构，反过来引用会成环
  */
 import { z } from 'zod'
 import { t } from '../i18n.ts'

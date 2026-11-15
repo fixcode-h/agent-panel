@@ -30,7 +30,7 @@ import { integrateBranch, type IntegrateResult } from '../exec/worktree-integrat
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import { childCountsScan, childRecordActive, type ChildCounts } from '../../shared/children/row.ts'
-import { activePlan, holdWait, planProgress, openWork, settlePlan } from '../../shared/plan.ts'
+import { activePlan, holdWait, planProgress, openWork, settlePlan } from '../../shared/plan/index.ts'
 import { panelWrap } from '../../shared/wrap-up.ts'
 import { killTree, taskCliAlive } from '../exec/process.ts'
 import { killTaskClis } from '../exec/orphans.ts'

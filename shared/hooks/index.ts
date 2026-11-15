@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import type { TaskMessage } from './schema.ts'
-import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './hooks/defs.ts'
-import { panelToolName } from './panel-tools.ts'
+import type { TaskMessage } from '../schema.ts'
+import { NOTIFY_EVENTS, type HookEventName, type ToolKind } from './defs.ts'
+import { panelToolName } from '../panel-tools.ts'
 
 /**
  * 钩子（ADR 0049）：模型准备结束这一轮时（turn.beforeEnd），CLI 先问面板；计划没做完、也没在等任何结果时

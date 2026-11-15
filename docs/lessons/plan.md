@@ -1,14 +1,14 @@
 ---
-paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
+paths: shared/plan/index.ts, shared/engine/index.ts, server/p4-split.ts
 ---
 
 # 执行计划
 
 ## 子对话的收尾是计划的最后一步，由面板加
 
-- 规则：子对话的收尾（独立分支 `submit_merge` 合回父对话所在的分支；P4 工作区按 [C++]/[XLSX]/[Lua]/[Other] 分进各自的 pending changelist 再请验收；共用目录、没有版本管理时直接请验收）由 `applyPlan` 的 `wrapUp` 自动放在计划最后（`shared/plan.ts` 的 `ensureWrapUp`），Agent 漏写、删掉、挪到前面都会放回去；这三种收尾（`PANEL_WRAPS`）都只由面板在父对话收下后标完成（`markChildWrapUp`），Agent 自己标不算。提示词里不要再写「收尾不列进计划」，P4 分桶规则写在对话提示词（`wrapUpPart`）里，不要只靠 project-vcs 技能或「版本控制」角色。
+- 规则：子对话的收尾（独立分支 `submit_merge` 合回父对话所在的分支；P4 工作区按 [C++]/[XLSX]/[Lua]/[Other] 分进各自的 pending changelist 再请验收；共用目录、没有版本管理时直接请验收）由 `applyPlan` 的 `wrapUp` 自动放在计划最后（`shared/plan/index.ts` 的 `ensureWrapUp`），Agent 漏写、删掉、挪到前面都会放回去；这三种收尾（`PANEL_WRAPS`）都只由面板在父对话收下后标完成（`markChildWrapUp`），Agent 自己标不算。提示词里不要再写「收尾不列进计划」，P4 分桶规则写在对话提示词（`wrapUpPart`）里，不要只靠 project-vcs 技能或「版本控制」角色。
 - 起因：用户纠正——以前提示词要求「合回父分支是收尾动作，不写进计划步骤」，子对话改完就停，P4 改动全留在 default 或塞进同一个 changelist。
-- 防线：`shared/plan.test.ts` 的收尾用例、`server/engine-steps.test.ts` 的提示词断言。
+- 防线：`shared/plan/index.test.ts` 的收尾用例、`server/engine-steps.test.ts` 的提示词断言。
 
 ## 必须照做的规则交给面板执行
 
@@ -31,13 +31,13 @@ paths: shared/plan.ts, shared/engine.ts, server/p4-split.ts
 
 - 规则：`linkKids` 只认 id、或步骤标题和子对话标题一致（去掉「子对话：」前缀）；只是含着子对话标题的，要 Agent 自己写成等待中、子对话还没做完、也没挂在别的步骤上才认。已完成的子对话只给写了 id 且等待中的、或完全同名又没被别的步骤认领的步骤收口，不把只含同样字眼的新步骤当场标完成。
 - 起因：审计发现（df820f2 起）已完成的子对话「类型检查」把后加的「合并后跑全量类型检查」直接标完成；2bb92363 收紧时连完全同名也不收口，步骤停在待做、推进时 Agent 会重做。
-- 防线：`shared/plan.test.ts`「按标题认子对话」。
+- 防线：`shared/plan/index.test.ts`「按标题认子对话」。
 
 ## set_plan 的 partial 回包只给变化
 
 - 规则：partial 更新只回变了的行（新步骤带 id）加进度和下一步，完整计划每轮提示里都有；新开、整份提交、带了对不上的 id 时才回全文。「没交上来」只点名还在进行中和被跳过的，排在后面还没轮到的不点。
 - 起因：审计发现（df820f2 起）每次 partial 回整份计划、点名全部待做步骤，20 步计划逐步更新约 4 万字。
-- 防线：`shared/plan.test.ts`「set_plan partial 只回变了的行…」。
+- 防线：`shared/plan/index.test.ts`「set_plan partial 只回变了的行…」。
 
 ## 「先不报父对话、交给它自驱」的前提是面板真的会推它
 

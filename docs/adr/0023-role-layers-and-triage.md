@@ -10,13 +10,13 @@
 
 ## 事实核对
 
-| 位置                                       | 改动前                                                                                                    |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `shared/schema.ts` 的 `AgentInput`         | 只有 `canDelegate` / `canPlan` / `common` / `runIn` / `includes`；`includes` 把被引入角色的设定全文拼进来 |
-| `shared/builtin/agents.ts` 的「统筹」      | 「只统筹不动手」：不改、不建、不删文件，改动再小也交给子对话                                              |
-| `shared/engine.ts` 的 `conversationPrompt` | 父对话一段「你的定位：父对话只统筹，不动手」，固定注入                                                    |
-| `shared/engine.ts` 的 `spawn`              | 点名的角色只要存在就能派；`runIn: 'parent'` 时转交父对话（ADR 0019）                                      |
-| `server/orch-mcp.ts`                       | 没有就地加载能力的工具；派单工具没有分诊记录                                                              |
+| 位置                                             | 改动前                                                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `shared/schema.ts` 的 `AgentInput`               | 只有 `canDelegate` / `canPlan` / `common` / `runIn` / `includes`；`includes` 把被引入角色的设定全文拼进来 |
+| `shared/builtin/agents.ts` 的「统筹」            | 「只统筹不动手」：不改、不建、不删文件，改动再小也交给子对话                                              |
+| `shared/engine/index.ts` 的 `conversationPrompt` | 父对话一段「你的定位：父对话只统筹，不动手」，固定注入                                                    |
+| `shared/engine/index.ts` 的 `spawn`              | 点名的角色只要存在就能派；`runIn: 'parent'` 时转交父对话（ADR 0019）                                      |
+| `server/orch-mcp.ts`                             | 没有就地加载能力的工具；派单工具没有分诊记录                                                              |
 
 ## 决策
 
@@ -51,7 +51,7 @@
 ## 与现有实现的关系
 
 - 数据：`shared/schema.ts`（`AgentMount`、`AgentInput` 新字段、`TaskRoute`、`Task.inlineEdit`、`Task.routes`），旧数据全部按默认值读，不迁移。
-- 逻辑：`shared/agents/role.ts`（`roleKind`、`mountMode`、`mountedAgents`、`capabilityIndex`、`loadCapability`）、`shared/inline-edit.ts`（护栏判定）、`shared/engine.ts`（工具实现、`spawn` 按挂载拦截 / 转交、分诊记录、父对话提示词）、`server/orch-mcp.ts`（工具定义）、`server/tasks.ts`（`beginInlineEdit` / `endInlineEdit`）。
+- 逻辑：`shared/agents/role.ts`（`roleKind`、`mountMode`、`mountedAgents`、`capabilityIndex`、`loadCapability`）、`shared/inline-edit.ts`（护栏判定）、`shared/engine/index.ts`（工具实现、`spawn` 按挂载拦截 / 转交、分诊记录、父对话提示词）、`server/orch-mcp.ts`（工具定义）、`server/tasks.ts`（`beginInlineEdit` / `endInlineEdit`）。
 - 内置定义：`shared/builtin/agents.ts`（主理、执行、分析是高级角色并带挂载；评审 `independent`）；`shared/builtin/core.ts` 的 `syncCore` 同步挂载（定义决定挂哪些，用户改的用法和参数取值保留）、`upgradeRunIn` 一次性把旧的统筹副本升级成 `inlineEdit: 'tiny'`、`DEFAULT_CHANGES` 把「大改动先确认」升级成默认开。
 - 界面：角色详情新增「能力」页（`web/src/components/agents/CapabilityFields.tsx`），列表副标题写角色层；对话里的分诊卡（原 RouteCard，2026-11-09 起并进派单行 `web/src/components/tasks/DispatchRow.tsx`）。
 - 与已有 ADR：ADR 0019 的 `runIn` 保留，挂载用法 `parent` 是同一语义的挂载级覆盖；ADR 0015 的同步范围加上挂载；子对话收尾、评审门禁、测试分档（0005、0009、0013、0018、0020、0022）不变。

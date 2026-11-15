@@ -374,7 +374,7 @@ export function createPeer(s: TasksScope) {
   }
 
   /**
-   * 引擎每次开始调对话 AI / 调完时回调（见 shared/engine.ts 的 onOrchestra）：
+   * 引擎每次开始调对话 AI / 调完时回调（见 shared/engine/index.ts 的 onOrchestra）：
    * 开始调的时候把排着的转交请求直接派出去，调完（undefined）清掉引用——只有「AI 正在处理这一轮」时才接活。
    * 见 ADR 0019。
    */

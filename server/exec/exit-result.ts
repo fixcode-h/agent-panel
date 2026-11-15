@@ -6,7 +6,7 @@
  */
 import type { getCli } from '../../shared/clis.ts'
 import type { AgentResult } from '../../shared/engine/host.ts'
-import type { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
+import type { effectiveTimeoutMinutes } from '../../shared/schedule/index.ts'
 import { t } from '../../shared/i18n.ts'
 import { clip } from '../../shared/text.ts'
 import { makeAlert } from '../../shared/alerts.ts'

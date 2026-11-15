@@ -5,7 +5,7 @@
  */
 import type { Task, TaskStep } from '../schema.ts'
 import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from '../tasks/flow-schema.ts'
-import { topSteps } from '../flow.ts'
+import { topSteps } from './index.ts'
 import { WRAP_NODE } from './run-wrap.ts'
 import { clip } from '../text.ts'
 import { takeWorkflow } from '../composer.ts'

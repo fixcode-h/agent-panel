@@ -1,5 +1,5 @@
 ---
-paths: shared/prompt/delta.ts, shared/engine.ts, shared/chat-prompt.ts, server/tasks/run.ts, server/exec/runner.ts
+paths: shared/prompt/delta.ts, shared/engine/index.ts, shared/chat-prompt.ts, server/tasks/run.ts, server/exec/runner.ts
 ---
 
 # 续接只发增量的提示词

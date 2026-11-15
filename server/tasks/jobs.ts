@@ -17,7 +17,7 @@ import { log } from '../log.ts'
 import { BG_LOG_DIR } from '../store.ts'
 import { createBgPersist } from '../bg/persist.ts'
 import { t } from '../../shared/i18n.ts'
-import { settleWait, waitNote } from '../../shared/plan.ts'
+import { settleWait, waitNote } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
 import { forwardBuildResult } from './build-results.ts'
 

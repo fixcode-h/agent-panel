@@ -3,7 +3,7 @@
  * makeOrchestra 仍在 engine.ts，这里只放它调用的部分（engine.ts 贴着行数上限时整块挪出来的）
  */
 import type { Agent, ParamValues, TaskStep } from '../schema.ts'
-import { isMainStep } from '../flow.ts'
+import { isMainStep } from '../flow/index.ts'
 import { clip } from '../text.ts'
 import { runMail, sendRunMessage } from '../run/state.ts'
 import { layeredBatch } from '../helper-batch.ts'
@@ -12,7 +12,7 @@ import { resultLine, resultOf } from '../helper-summary.ts'
 import { changedFilesPart } from '../wrapup-prompt.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from '../review/limits.ts'
 import type { HelperSpec, ReviewBrief, HelperReport, HelperBatch, EngineHost } from './host.ts'
-import { activePlan, settleWait } from '../plan.ts'
+import { activePlan, settleWait } from '../plan/index.ts'
 import { SLOT_PROMPT } from './prompt-parts.ts'
 
 /** 一个节点最多派几个子 Agent */

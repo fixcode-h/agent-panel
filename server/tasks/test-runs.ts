@@ -11,7 +11,7 @@ import {
 import { jobMs, type BgJob } from '../background.ts'
 import { stepRun } from '../step-run.ts'
 import { log } from '../log.ts'
-import { markWrapUp } from '../../shared/plan.ts'
+import { markWrapUp } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
 
 /**

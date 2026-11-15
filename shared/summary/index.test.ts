@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { Task } from './schema.ts'
+import { Task } from '../schema.ts'
 import {
   activeInRange,
   clip,
@@ -24,7 +24,7 @@ import {
   summaryPeriod,
   tasksContext,
   type SummaryEntry,
-} from './summary.ts'
+} from './index.ts'
 
 /** 本机时区的时间：用例里写「今天 09:00」比写 UTC 好读 */
 const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min)

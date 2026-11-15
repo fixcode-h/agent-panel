@@ -2,12 +2,12 @@ import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
 import { type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
-import { hookMarker } from '../../shared/hooks.ts'
+import { hookMarker } from '../../shared/hooks/index.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
 
 import { changesSince, mergeChanges, ownedChanges, stepUsage } from '../../shared/task.ts'
 
-import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
+import { effectiveTimeoutMinutes } from '../../shared/schedule/index.ts'
 import { placedFiles } from '../attachments.ts'
 import { taskChanges } from '../own-changes.ts'
 import { trackFileWrite, trackOutside } from './outside-changes.ts'

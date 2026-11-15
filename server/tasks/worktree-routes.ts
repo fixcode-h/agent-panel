@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { markWrapUp } from '../../shared/plan.ts'
+import { markWrapUp } from '../../shared/plan/index.ts'
 import { isolated } from './helpers.ts'
 import type { TasksScope } from './scope.ts'
 

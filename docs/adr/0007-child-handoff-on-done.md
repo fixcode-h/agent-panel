@@ -14,7 +14,7 @@
 | `server/tasks.ts` `start`（`resolved` 的子对话） | 再收到消息时取消完成标记，`restoreWorktree` 在原路径重建独立分支，CLI 冷启动后接回原会话     |
 | `server/exec/runner.ts` `task.rewind.summary`    | 已有「开新会话、带上摘要」的路子（手动压缩用它），用完清掉                                   |
 | `server/orch-mcp.ts` `submit_merge`              | 只有 `note`（一句话）和 `tests`                                                              |
-| `shared/engine.ts` `summaryOf`                   | 子对话的 `summary` 只是最后一条回复的前 300 字，`list_conversations` 里父对话靠它找子对话    |
+| `shared/engine/index.ts` `summaryOf`             | 子对话的 `summary` 只是最后一条回复的前 300 字，`list_conversations` 里父对话靠它找子对话    |
 
 ## 决策
 

@@ -11,7 +11,7 @@ import {
   type Schedule,
   type ScheduleDelivery,
   type ScheduleEvent,
-} from '../shared/schedule.ts'
+} from '../shared/schedule/index.ts'
 
 // 数据目录换成临时的，别动本机的计划和配置
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-schedules-'))

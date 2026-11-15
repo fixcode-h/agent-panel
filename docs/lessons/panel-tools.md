@@ -18,7 +18,7 @@ paths: server/orch-mcp.ts, shared/panel-tools.ts, server/ask-mcp.ts
 
 ## 给某一类对话裁工具按能力和客观条件，不加「是不是某个页面」的身份开关
 
-- 规则：一类对话少给哪些工具，在 `shared/engine.ts` 的 `makeOrchestra` 算成能力字段（`canSpawn`、`team`、`plans`）或宿主的客观条件（有没有项目、有没有并行节点），`orchTools` / `orchHint` / 握手只读这些字段；握手 `orchestration.enabled` 按清单里核心三件（`ORCH_CORE_TOOLS`）现算，不认身份。新字段别和 `Orchestra` 已有的方法同名（`spawn` 是派子任务的方法，布尔字段叫 `canSpawn`）。
+- 规则：一类对话少给哪些工具，在 `shared/engine/index.ts` 的 `makeOrchestra` 算成能力字段（`canSpawn`、`team`、`plans`）或宿主的客观条件（有没有项目、有没有并行节点），`orchTools` / `orchHint` / 握手只读这些字段；握手 `orchestration.enabled` 按清单里核心三件（`ORCH_CORE_TOOLS`）现算，不认身份。新字段别和 `Orchestra` 已有的方法同名（`spawn` 是派子任务的方法，布尔字段叫 `canSpawn`）。
 - 起因：186443c6 加 `Orchestra.plain` 一刀切 Chat 页，连计划、提示词都跟着漏改（Chat 页读到 `ask_push`、「你是项目对话」），ADR 0038 改成按能力给。
 - 防线：`scripts/rules-check.mjs` 第 18 条；`server/ask-mcp.test.ts` 握手用例（含和 `pi.json` 的 `CORE_TOOLS` 一致）。
 

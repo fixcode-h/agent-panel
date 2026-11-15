@@ -2,7 +2,7 @@
 
 状态：部分被替代（决策第 3 条的一段话模板和第 4 条的不写代码由 [ADR 0056](./0056-work-report-points-and-code.md) 取代） · 2026-11-03
 
-- 影响范围：`shared/summary.ts`（分项、拼报告、提示词）、`shared/builtin/agents.ts`（「每日工作总结」角色的写法）、`shared/lesson-draft.ts`、`server/summary.ts`、`web/src/pages/SummaryPage.tsx`、`web/src/components/summary/`、`web/src/lib/summary-page.ts`、`web/src/lib/demo-summary.ts`
+- 影响范围：`shared/summary/index.ts`（分项、拼报告、提示词）、`shared/builtin/agents.ts`（「每日工作总结」角色的写法）、`shared/lesson-draft.ts`、`server/summary.ts`、`web/src/pages/SummaryPage.tsx`、`web/src/components/summary/`、`web/src/lib/summary-page.ts`、`web/src/lib/demo-summary.ts`
 - 取代：无。沿用工作总结「先提炼分项、逐项采纳、按固定格式拼报告」的两步流程
 
 ## 背景
@@ -18,8 +18,8 @@
 
 | 位置                                                 | 现状                                                                                                                               |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/summary.ts` 的 `SummaryEntry`                | 分项字段：`kind`、`project`、`title`、`content`（需求）、`cause` / `fix`（Bug），没有链接                                          |
-| `shared/summary.ts` 的 `renderReport`                | 固定模板：`## 一、需求` / `## 二、Bug` 两节，条目是 `1. **标题**`，下面缩进 `内容：` / `原因：` / `修复：`；某节没有条目写「暂无」 |
+| `shared/summary/index.ts` 的 `SummaryEntry`          | 分项字段：`kind`、`project`、`title`、`content`（需求）、`cause` / `fix`（Bug），没有链接                                          |
+| `shared/summary/index.ts` 的 `renderReport`          | 固定模板：`## 一、需求` / `## 二、Bug` 两节，条目是 `1. **标题**`，下面缩进 `内容：` / `原因：` / `修复：`；某节没有条目写「暂无」 |
 | `server/summary.ts` 的 `POST /summary`               | 只收采纳的分项，按 `renderReport` 拼正文存成新报告；`PUT /summary/:id` 只改正文                                                    |
 | `server/summary.ts` 的提炼任务（`jobs`）             | 内存里留一小时；页面按 job id 轮询，取分项                                                                                         |
 | `web/src/lib/summary-page.ts`                        | 页面状态（来源、日期、job id、已采纳的分项 id）存在本机                                                                            |

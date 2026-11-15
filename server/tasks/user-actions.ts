@@ -4,7 +4,7 @@
  */
 import { z } from 'zod'
 import { t } from '../../shared/i18n.ts'
-import { settleWait } from '../../shared/plan.ts'
+import { settleWait } from '../../shared/plan/index.ts'
 import type { Task } from '../../shared/schema.ts'
 import { subtreeTaskIds } from '../../shared/run/usage.ts'
 import {

@@ -34,7 +34,7 @@
 - `shared/review/gate.ts`：`ReviewOverride` / `ReviewOverrideNote` / `OVERRIDE_BY` / `OVERRIDE_TIP` / `overrideInput` / `overrideText`；`reviewGate` 拆成「门禁本身」（`gate`）和「放行处理」，拒绝结果带上 `blocked`。
 - `shared/schema.ts`：`Task.reviewOverride`（`by` / `at` / `reason` / `blocked`），旧任务没有这个字段，按没有放行读。
 - `server/tasks.ts`：`submitMerge` 多一个参数，门禁结果带 `bypass` 时写 `tk.reviewOverride`，收尾消息和 `handoffText` 带上放行段。
-- `server/orch-mcp.ts`：`submit_merge` 加 `review_override`（`by` 用 enum 限制），`overrideInput` 解析；`shared/engine.ts` 的 `submitMerge` 签名同步。
+- `server/orch-mcp.ts`：`submit_merge` 加 `review_override`（`by` 用 enum 限制），`overrideInput` 解析；`shared/engine/index.ts` 的 `submitMerge` 签名同步。
 - `shared/handoff.ts`：`handoffText` 加可选的 `override` 段。
 
 ## 风险与代价

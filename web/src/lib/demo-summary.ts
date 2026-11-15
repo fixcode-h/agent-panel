@@ -1,6 +1,6 @@
 /**
  * 在线演示版的工作总结：不跑 CLI，过一会儿按选中的项目给出示例分项（需求 / Bug），
- * 采纳后用正式那份 renderReport 拼报告。接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），
+ * 采纳后用正式那份 renderReport 拼报告。接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary/index.ts），
  * 页面两边共用一套代码。第一次打开时预置几份报告，左侧树里能看到按天、按周的分组。
  */
 import {

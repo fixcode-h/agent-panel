@@ -7,7 +7,7 @@ import {
   MAX_DRAFTS_PER_REPORT,
   missingDrafts,
 } from '../shared/lesson-draft.ts'
-import { renderReport, SummaryEntry } from '../shared/summary.ts'
+import { renderReport, SummaryEntry } from './summary/index.ts'
 
 const report = (md: string, over: Partial<{ id: string; day: string; projectNames: string[] }> = {}) => ({
   id: 'r1',

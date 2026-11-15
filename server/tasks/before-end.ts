@@ -3,7 +3,7 @@ import { userWaiting, planStalled, runRunning, taskDeleted, wrapUpPending } from
 import { helpersWorking } from '../../shared/tasks/helpers.ts'
 import { isChatMode } from '../../shared/conv-mode.ts'
 import { planProgressKey, shortKey, type DriveBudget } from '../../shared/drive.ts'
-import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan.ts'
+import { activePlan, needsFix, openWork, planProgress } from '../../shared/plan/index.ts'
 import {
   CHECK_REMINDER,
   idleReminders,
@@ -16,7 +16,7 @@ import {
   SPIN_MAX,
   turnEndSince,
 } from '../../shared/end-turn.ts'
-import { allowEnd, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks.ts'
+import { allowEnd, type BeforeEndDecision, type BeforeEndInput } from '../../shared/hooks/index.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { taskLog } from './log.ts'
 import type { TasksScope } from './scope.ts'

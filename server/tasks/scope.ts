@@ -396,8 +396,8 @@ export interface TasksScope {
   /** 结束前钩子（ADR 0049）：CLI 在模型准备结束这一轮时问，拦住就在同一轮里接着做（见 before-end.ts） */
   beforeEnd: (
     convId: string,
-    input: import('../../shared/hooks.ts').BeforeEndInput,
-  ) => Promise<import('../../shared/hooks.ts').BeforeEndDecision>
+    input: import('../../shared/hooks/index.ts').BeforeEndInput,
+  ) => Promise<import('../../shared/hooks/index.ts').BeforeEndDecision>
   /** 推进计数的现状（诊断用）：最后一个进度指纹和推了几次 */
   nudgeState: (id: string) => { key: string; n: number } | undefined
   /** 用户亲自发了新消息：推进次数清零（ADR 0041） */
@@ -453,7 +453,7 @@ export interface TasksScope {
       quote?: string | undefined
     }[]
   >
-  planKids: (parentId: string) => Promise<import('../../shared/plan.ts').PlanKid[]>
+  planKids: (parentId: string) => Promise<import('../../shared/plan/index.ts').PlanKid[]>
   planNudged: Map<string, string>
   planWorkflow: (
     project: Project,

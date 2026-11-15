@@ -2,7 +2,7 @@
 
 状态：被替代（被 [0053](./0053-workflow-runs.md) 替代：2026-11-05 起工作流是父对话名下的一次独立运行，不再挂成子对话；「只由父对话启动」和判定规则保留） · 2026-11-03
 
-- 影响范围：`server/orch-mcp.ts`（`start_plan` / `stop_workflow` 换成 `start_workflow` / `stop_workflow`）、`shared/engine.ts`（`makeOrchestra` 的 `plan`、`startPlan`、`runConversationTurn`、`conversationPrompt`）、`shared/builtin/agents.ts`（主理、执行）、`shared/builtin/workflows.ts`（`CHILD_RULES`、各工作流的适用场景）、`shared/schema.ts`（`Workflow`、`Task`）、`shared/task.ts`（`childHolds`、`runRunning`）、`shared/resume-kids.ts`、`shared/run/stops.ts`、`server/tasks/run.ts`（`spawnChild`）、`web/src/components/tasks/`（`TaskView`、`RunCard`、`RunView`、`TaskFlow`、`ConversationTabs`、`NextWorkflows`）、`web/src/components/workflows/RunInProjectDialog.tsx`、`docs/agent-catalog.md`
+- 影响范围：`server/orch-mcp.ts`（`start_plan` / `stop_workflow` 换成 `start_workflow` / `stop_workflow`）、`shared/engine/index.ts`（`makeOrchestra` 的 `plan`、`startPlan`、`runConversationTurn`、`conversationPrompt`）、`shared/builtin/agents.ts`（主理、执行）、`shared/builtin/workflows.ts`（`CHILD_RULES`、各工作流的适用场景）、`shared/schema.ts`（`Workflow`、`Task`）、`shared/task.ts`（`childHolds`、`runRunning`）、`shared/resume-kids.ts`、`shared/run/stops.ts`、`server/tasks/run.ts`（`spawnChild`）、`web/src/components/tasks/`（`TaskView`、`RunCard`、`RunView`、`TaskFlow`、`ConversationTabs`、`NextWorkflows`）、`web/src/components/workflows/RunInProjectDialog.tsx`、`docs/agent-catalog.md`
 - 取代：`docs/agent-catalog.md`「改代码的工作流由子对话（执行角色）用 `start_plan` 启动」这一条；补全 [0042](./0042-pause-resume-reuse.md) 里工作流运行的暂停 / 继续
 
 ## 背景
@@ -54,9 +54,9 @@
 | 位置                                              | 现状                                                                                                                                                                                              |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/orch-mcp.ts` 的工具表                     | `o.planning` 时给 `start_plan`（workflow、input、step）；`o.planner && !o.planning` 时给 `run_workflow` / `close_run`；协调者有 `stop_workflow`，用来终止子对话里 `start_plan` 正在跑的那次运行   |
-| `shared/engine.ts` 的 `runConversationTurn`       | `planning = agent.canPlan && !isChatMode(task)`；这一轮 CLI 结束后，`takePendingPlans` 逐个 `startPlan` 同步跑完，再把「计划执行结果」作为下一条提示交回同一个会话                                |
-| `shared/engine.ts` 的 `startPlan`                 | 运行写进当前任务：`task.runs` 加一条，节点进 `task.steps`；`bindRun` 把它挂成计划里的一个主步骤；终止开关在 `rs.planStops`                                                                        |
-| `shared/engine.ts` 的 `conversationPrompt`        | 子对话有 `planning` 时，「执行方式」写「要修改代码、跨模块改动或较大的研究时调用 start_plan」，并列出「可用工作流」目录                                                                           |
+| `shared/engine/index.ts` 的 `runConversationTurn` | `planning = agent.canPlan && !isChatMode(task)`；这一轮 CLI 结束后，`takePendingPlans` 逐个 `startPlan` 同步跑完，再把「计划执行结果」作为下一条提示交回同一个会话                                |
+| `shared/engine/index.ts` 的 `startPlan`           | 运行写进当前任务：`task.runs` 加一条，节点进 `task.steps`；`bindRun` 把它挂成计划里的一个主步骤；终止开关在 `rs.planStops`                                                                        |
+| `shared/engine/index.ts` 的 `conversationPrompt`  | 子对话有 `planning` 时，「执行方式」写「要修改代码、跨模块改动或较大的研究时调用 start_plan」，并列出「可用工作流」目录                                                                           |
 | `shared/builtin/agents.ts` 的主理                 | `canDelegate: true`、`canPlan: false`，注释写「不在父对话里起工作流：改代码的工作流要独立分支和收尾，放子对话」；分派表里写「要按固定剧本做的 → create_conversation，message 里点名用哪个工作流」 |
 | `shared/builtin/agents.ts` 的执行（`worker`）     | `canPlan: true`；`mode=自动` 时正式功能、跨模块改动用 `start_plan`，Bug 不起工作流；`mode=总是按工作流` 时 Bug 也走「Bug 修复」工作流                                                             |
 | `shared/resume-kids.ts` 的 `resumeNote`           | 中断时没跑完的工作流不接着跑，只写「还要跑就用 start_plan 重新启动那一步」                                                                                                                        |

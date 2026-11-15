@@ -42,7 +42,7 @@
 2. 后台命令都结束了（`queued` / `running` 一个都没有）；
 3. 工作流运行跑完了（`runRunning` 为 false）；
 4. 派出去的子任务都交回结果了；
-5. 计划做完（`shared/plan.ts` 的 `openPlan` 为空）；
+5. 计划做完（`shared/plan/index.ts` 的 `openPlan` 为空）；
 6. 没有待用户回答的提问、没有待确认的请求；
 7. 已经合回父对话分支——按 git 现查（`worktreeStatus`），不信任务上记的 `worktree.state`。
 
@@ -74,7 +74,7 @@
 
 ## 运行时
 
-- 数据来源：任务状态（`working`、`requests`、`parentAsks`、`plans`、`steps`、`runs`）从 `Task` 上取；后台命令数来自 `background.list(id)` 里 `queued` / `running` 的条数；合并状态来自 `worktreeStatus(project.path, tk.worktree)`；工作流运行状态来自 `task.runs` 最后一条，由 `shared/engine.ts` 在运行开始和结束时写入。
+- 数据来源：任务状态（`working`、`requests`、`parentAsks`、`plans`、`steps`、`runs`）从 `Task` 上取；后台命令数来自 `background.list(id)` 里 `queued` / `running` 的条数；合并状态来自 `worktreeStatus(project.path, tk.worktree)`；工作流运行状态来自 `task.runs` 最后一条，由 `shared/engine/index.ts` 在运行开始和结束时写入。
 - 失败怎么表现：git 读不出状态时按「没合回去」处理（不删、报原因）；`releaseWorktree` 抛错只记一条 warn 并保留，不会因为删失败把任务标成完成。
 
 ## 分期

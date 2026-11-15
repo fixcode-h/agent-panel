@@ -3,7 +3,7 @@
  *
  * 地址：#/summary 是提炼面板，#/summary/<报告 id> 打开一份报告。
  * 提炼分两步：先由「每日工作总结」角色提炼出一条条需求 / Bug（服务端 job，页面轮询），
- * 用户逐项采纳，确认后只用采纳的分项拼出报告（见 shared/summary.ts 的 renderReport）。
+ * 用户逐项采纳，确认后只用采纳的分项拼出报告（见 shared/summary/index.ts 的 renderReport）。
  * 来源、日期、进行中的提炼和已采纳的分项存在本机（web/src/lib/summary-page.ts），加过的项目存在服务端。
  */
 import { modelNameIn } from '@/lib/model-name'

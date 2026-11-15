@@ -2,7 +2,7 @@
 
 状态：已接受（2026-11-03 用户确认设计稿 `docs/openspec/changes/coordinator-docs-first/design.md`，按期实施，见「分期」） · 2026-11-03
 
-- 影响范围：`shared/builtin/agents.ts`（协调器、执行、通用约束、排查分析）、`shared/engine.ts`（父对话提示词、`send_to_conversation` 的返回）、`shared/push-auth.ts`、`server/exec/real-turn.ts`、`server/tasks/drive.ts`、`scripts/rules-check.mjs`
+- 影响范围：`shared/builtin/agents.ts`（协调器、执行、通用约束、排查分析）、`shared/engine/index.ts`（父对话提示词、`send_to_conversation` 的返回）、`shared/push-auth.ts`、`server/exec/real-turn.ts`、`server/tasks/drive.ts`、`scripts/rules-check.mjs`
 - 取代：[0023](./0023-role-layers-and-triage.md) 里「主理」的叫法和主理挂载的「方案设计（就地用）」「评审（大方案复核）」
 
 ## 背景

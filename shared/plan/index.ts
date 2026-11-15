@@ -14,11 +14,11 @@
  *   auto 步骤 Agent 不知道、不会写进 set_plan，合并时按原索引放回，不当成「不做了」删掉
  * 前后端都用（界面画弹窗、服务端改状态），不能引 node 模块
  */
-import { topSteps } from './flow.ts'
-import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep } from './schema.ts'
-import { panelWrap, type WrapUpKind } from './wrap-up.ts'
-import { STATUS_TEXT, planDelta, planRows } from './plan/text.ts'
-import { waitPlans } from './plan/wait.ts'
+import { topSteps } from '../flow/index.ts'
+import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep } from '../schema.ts'
+import { panelWrap, type WrapUpKind } from '../wrap-up.ts'
+import { STATUS_TEXT, planDelta, planRows } from './text.ts'
+import { waitPlans } from './wait.ts'
 
 /** 一份计划最多多少个主步骤、每个主步骤最多多少个子步骤：再多就该拆成几份计划 */
 export const MAX_PLAN_STEPS = 20

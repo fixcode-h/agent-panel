@@ -64,7 +64,7 @@ export const FULL_COVERAGE_MIN_SHARDS = 8
  * 增量测试挑不出可靠的范围，直接建议全量单测 + e2e。加新的高风险目录时只加一行。
  */
 export const HIGH_RISK_AREAS = [
-  { path: 'shared/engine.ts', why: '执行引擎' },
+  { path: 'shared/engine/index.ts', why: '执行引擎' },
   { path: 'shared/schema.ts', why: '数据 schema' },
   { dir: 'server/exec/', why: 'CLI 执行链路与输出解析' },
   { dir: 'shared/clis/', why: 'CLI 定义与输出解析' },

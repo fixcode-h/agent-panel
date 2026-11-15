@@ -24,20 +24,20 @@
 
 ## 事实核对
 
-| 位置                                                      | 现状                                                                                                                                                                                            |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/schema.ts` `PlanStatus` / `PlanItem` / `TaskPlan` | 状态只有 `pending` / `running` / `waiting` / `done`；`PlanItem` 有 `startedAt` / `endedAt`，没有「最后变化时间」；`TaskPlan` 有 `createdAt` / `reopenedAt` / `doneAt`，同样没有「最后变化时间」 |
-| `shared/plan.ts` `applyPlan`                              | `set_plan` 的合并入口：完成的锁死、漏写的未完成项在 `partial` 下保留、等结果的项被 `held` 退回 `waiting`；**没有**「同时只有一个 `running`」这条校验                                            |
-| `shared/plan.ts` `settleWait` / `holdWait`                | 等的结果回来时收口：成功标 `done`；失败时退回 `running` 并写 `等的结果没成功：` 备注；子对话这一轮没交付完写 `还在等它：` 继续 `waiting`                                                        |
-| `shared/plan.ts` `syncKids` / `linkKids`                  | 计划和名下的子对话对齐：写了它的 id、标题和它一致、或写成等待中并提到它的步骤挂成 `waiting`，子对话已完成就按它的结束时间标 `done`（2026-10-31 收紧，见 `docs/lessons/plan.md`）                |
-| `shared/plan.ts` `markWrapUp` / `endRun` / `closeIfDone`  | 合回（`submit_merge` → `finish_child`）由面板推进收尾步骤；工作流运行结束推进它那一步；全部 `done` 时写 `doneAt` 收起                                                                           |
-| `shared/plan.ts` `runningStepId`                          | 派子对话时没点名步骤就挂「正在做的那一步」（`running`，其次 `waiting`）                                                                                                                         |
-| `shared/engine.ts` `planPart`                             | 每轮提示里只有计划文本（`planText`）和一段维护规则；没有「现在是第几步、多久没动、下一步是什么」，没有滞后提醒，也没有「新输入先判计划」                                                        |
-| `shared/engine.ts` `runBackground` 分支                   | `run_background` 只有**显式带 `step`** 才 `bindWait`；不带 `step` 的长命令在计划里完全不可见                                                                                                    |
-| `server/tasks.ts` 后台命令结束回调                        | `settleWait(tk, 'background', job.id, ok)`；子对话收尾 `refreshChildWait` / `syncKids`；合回 `markWrapUp`；这些事件已经是自动推进的锚点，缺的是「失败态」和「计划没跟上」的检测                 |
-| `server/orch-mcp.ts` `set_plan`                           | 工具参数：整份 / `partial`；语义稳定，这次不推翻                                                                                                                                                |
-| `web/src/components/tasks/PlanPanel.tsx`                  | 每项右侧有用时（`data-plan-time`）、顶部有总用时（`data-plan-total`）、按钮上有当前步骤耗时（`data-plan-current-time`）；没有进度条、没有「N 分钟前更新」、没有滞后警示                         |
-| `scripts/ui/02-task.mjs`（执行计划分片）                  | 断言上述 `data-plan-*` 结构、等待中的说明文字必须正好是「等：端到端测试」、状态图标的计算样式；UI 改造要保持这些契约                                                                            |
+| 位置                                                           | 现状                                                                                                                                                                                            |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/schema.ts` `PlanStatus` / `PlanItem` / `TaskPlan`      | 状态只有 `pending` / `running` / `waiting` / `done`；`PlanItem` 有 `startedAt` / `endedAt`，没有「最后变化时间」；`TaskPlan` 有 `createdAt` / `reopenedAt` / `doneAt`，同样没有「最后变化时间」 |
+| `shared/plan/index.ts` `applyPlan`                             | `set_plan` 的合并入口：完成的锁死、漏写的未完成项在 `partial` 下保留、等结果的项被 `held` 退回 `waiting`；**没有**「同时只有一个 `running`」这条校验                                            |
+| `shared/plan/index.ts` `settleWait` / `holdWait`               | 等的结果回来时收口：成功标 `done`；失败时退回 `running` 并写 `等的结果没成功：` 备注；子对话这一轮没交付完写 `还在等它：` 继续 `waiting`                                                        |
+| `shared/plan/index.ts` `syncKids` / `linkKids`                 | 计划和名下的子对话对齐：写了它的 id、标题和它一致、或写成等待中并提到它的步骤挂成 `waiting`，子对话已完成就按它的结束时间标 `done`（2026-10-31 收紧，见 `docs/lessons/plan.md`）                |
+| `shared/plan/index.ts` `markWrapUp` / `endRun` / `closeIfDone` | 合回（`submit_merge` → `finish_child`）由面板推进收尾步骤；工作流运行结束推进它那一步；全部 `done` 时写 `doneAt` 收起                                                                           |
+| `shared/plan/index.ts` `runningStepId`                         | 派子对话时没点名步骤就挂「正在做的那一步」（`running`，其次 `waiting`）                                                                                                                         |
+| `shared/engine/index.ts` `planPart`                            | 每轮提示里只有计划文本（`planText`）和一段维护规则；没有「现在是第几步、多久没动、下一步是什么」，没有滞后提醒，也没有「新输入先判计划」                                                        |
+| `shared/engine/index.ts` `runBackground` 分支                  | `run_background` 只有**显式带 `step`** 才 `bindWait`；不带 `step` 的长命令在计划里完全不可见                                                                                                    |
+| `server/tasks.ts` 后台命令结束回调                             | `settleWait(tk, 'background', job.id, ok)`；子对话收尾 `refreshChildWait` / `syncKids`；合回 `markWrapUp`；这些事件已经是自动推进的锚点，缺的是「失败态」和「计划没跟上」的检测                 |
+| `server/orch-mcp.ts` `set_plan`                                | 工具参数：整份 / `partial`；语义稳定，这次不推翻                                                                                                                                                |
+| `web/src/components/tasks/PlanPanel.tsx`                       | 每项右侧有用时（`data-plan-time`）、顶部有总用时（`data-plan-total`）、按钮上有当前步骤耗时（`data-plan-current-time`）；没有进度条、没有「N 分钟前更新」、没有滞后警示                         |
+| `scripts/ui/02-task.mjs`（执行计划分片）                       | 断言上述 `data-plan-*` 结构、等待中的说明文字必须正好是「等：端到端测试」、状态图标的计算样式；UI 改造要保持这些契约                                                                            |
 
 ## 决策
 
@@ -213,23 +213,23 @@ Agent 的**第一件事**是判断「现有计划要不要改」：
 
 ## 操作清单 / 契约
 
-| 对象                                               | 约定                                                                                                                             |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/schema.ts`                                 | `PlanStatus` 增加 `failed` / `skipped`；`PlanItem.updatedAt`、`TaskPlan.updatedAt` / `lastInputAt` 都是 `optional`（旧数据没有） |
-| `shared/plan.ts` `PLAN_STALE_MS`                   | `3 * 60_000`，滞后阈值（一处定义，检测与界面共用）                                                                               |
-| `shared/plan.ts` `PLAN_RESTART_RATIO`              | `0.5`：整份提交里新步骤占原未完成步骤的比例超过它，就在返回说明里提示「应该重开计划」                                            |
-| `shared/plan.ts` `planRebuilt(task)`               | 这份计划是不是「上一份结束后新开的」：界面标「重建」、检测连续重建都用它                                                         |
-| `shared/plan.ts` `planUpdatedAt` / `itemUpdatedAt` | 时间戳的读取：有 `updatedAt` 用它，没有退回 `startedAt` / 创建时间，日期解析失败时返回 `undefined`（不拿 0 当「很久以前」）      |
-| `shared/plan.ts` `isSettled` / `isStaleStep`       | 终态判定与滞后判定各只此一处；`leftSteps` / `unfinishedSteps` / `openWork` / `closeIfSettled` 都读 `isSettled`                   |
-| `shared/plan.ts` `planNotice(task, now)`           | 滞后与新输入两条检测的唯一实现，返回要插进提示词的文字（没有就空串）；`planPart` 和日志都调它                                    |
-| `shared/plan.ts` `applyPlan`                       | 合并后：唯一 `running`、无 `waits` 的 `waiting` 归一成 `running`、失败的等待项退回 `waiting`（`held`）都算；`touchedAt` 写时间戳 |
-| `shared/plan.ts` `settleWait`                      | 失败 → `failed` + 失败备注（原来退回 `running`）                                                                                 |
-| `shared/engine.ts` `runBackground`                 | 没带 `step` 时挂到 `runningStepId(task)`，让长命令在计划里可见                                                                   |
-| `shared/engine.ts` `planPart`                      | 计划文本前加「现在：第几步 / 已多久 / 下一步」，再插 `planNotice`；规则段补「做完立刻更新」「一个 `running`」「什么算完成一步」  |
-| `shared/engine.ts` `conversationPrompt`            | 本轮带新要求时注入「先判计划」段（同一段规则，不按输入类型重写一份）                                                             |
-| `server/tasks.ts`                                  | 收到用户消息 / 父对话转达时写 `activePlan.lastInputAt`；每轮开始构造提示前 `planNotice` 命中就 `log.warn('plan', …)`             |
-| `web/src/components/tasks/PlanPanel.tsx`           | 进度条、「N 分钟前更新」、滞后警示、滞后步骤小标记；保留全部现有 `data-plan-*` 与等待说明结构                                    |
-| `web/src/lib/demo-backend.ts`                      | 演示计划补 `updatedAt`（含一份滞后 8 分钟的计划）和一份带 `failed` 步骤的计划，界面检查才能验到警示与失败态                      |
+| 对象                                                     | 约定                                                                                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/schema.ts`                                       | `PlanStatus` 增加 `failed` / `skipped`；`PlanItem.updatedAt`、`TaskPlan.updatedAt` / `lastInputAt` 都是 `optional`（旧数据没有） |
+| `shared/plan/index.ts` `PLAN_STALE_MS`                   | `3 * 60_000`，滞后阈值（一处定义，检测与界面共用）                                                                               |
+| `shared/plan/index.ts` `PLAN_RESTART_RATIO`              | `0.5`：整份提交里新步骤占原未完成步骤的比例超过它，就在返回说明里提示「应该重开计划」                                            |
+| `shared/plan/index.ts` `planRebuilt(task)`               | 这份计划是不是「上一份结束后新开的」：界面标「重建」、检测连续重建都用它                                                         |
+| `shared/plan/index.ts` `planUpdatedAt` / `itemUpdatedAt` | 时间戳的读取：有 `updatedAt` 用它，没有退回 `startedAt` / 创建时间，日期解析失败时返回 `undefined`（不拿 0 当「很久以前」）      |
+| `shared/plan/index.ts` `isSettled` / `isStaleStep`       | 终态判定与滞后判定各只此一处；`leftSteps` / `unfinishedSteps` / `openWork` / `closeIfSettled` 都读 `isSettled`                   |
+| `shared/plan/index.ts` `planNotice(task, now)`           | 滞后与新输入两条检测的唯一实现，返回要插进提示词的文字（没有就空串）；`planPart` 和日志都调它                                    |
+| `shared/plan/index.ts` `applyPlan`                       | 合并后：唯一 `running`、无 `waits` 的 `waiting` 归一成 `running`、失败的等待项退回 `waiting`（`held`）都算；`touchedAt` 写时间戳 |
+| `shared/plan/index.ts` `settleWait`                      | 失败 → `failed` + 失败备注（原来退回 `running`）                                                                                 |
+| `shared/engine/index.ts` `runBackground`                 | 没带 `step` 时挂到 `runningStepId(task)`，让长命令在计划里可见                                                                   |
+| `shared/engine/index.ts` `planPart`                      | 计划文本前加「现在：第几步 / 已多久 / 下一步」，再插 `planNotice`；规则段补「做完立刻更新」「一个 `running`」「什么算完成一步」  |
+| `shared/engine/index.ts` `conversationPrompt`            | 本轮带新要求时注入「先判计划」段（同一段规则，不按输入类型重写一份）                                                             |
+| `server/tasks.ts`                                        | 收到用户消息 / 父对话转达时写 `activePlan.lastInputAt`；每轮开始构造提示前 `planNotice` 命中就 `log.warn('plan', …)`             |
+| `web/src/components/tasks/PlanPanel.tsx`                 | 进度条、「N 分钟前更新」、滞后警示、滞后步骤小标记；保留全部现有 `data-plan-*` 与等待说明结构                                    |
+| `web/src/lib/demo-backend.ts`                            | 演示计划补 `updatedAt`（含一份滞后 8 分钟的计划）和一份带 `failed` 步骤的计划，界面检查才能验到警示与失败态                      |
 
 ## 与现有实现的关系
 
@@ -254,7 +254,7 @@ Agent 的**第一件事**是判断「现有计划要不要改」：
 
 一次做完，三块按依赖顺序落地：
 
-1. 状态机 + 时间戳 + 自动推进（`shared/plan.ts`、`shared/schema.ts`、`shared/engine.ts` 的 `runBackground`）+ 单测；
+1. 状态机 + 时间戳 + 自动推进（`shared/plan/index.ts`、`shared/schema.ts`、`shared/engine/index.ts` 的 `runBackground`）+ 单测；
 2. 滞后 / 新输入检测 + 提示词 + 日志 + 单测；
 3. `PlanPanel` 重做 + 演示数据 + 界面检查断言；同步 `docs/modules/{shared,server,web}/README.md`。
 

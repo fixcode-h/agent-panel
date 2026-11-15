@@ -1508,7 +1508,7 @@
       "lines": 58
     },
     {
-      "file": "shared/plan.test.ts",
+      "file": "shared/plan/index.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 69,
@@ -1543,7 +1543,7 @@
       "lines": 281
     },
     {
-      "file": "shared/schedule.test.ts",
+      "file": "shared/schedule/index.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 32,
@@ -1571,7 +1571,7 @@
       "lines": 210
     },
     {
-      "file": "shared/summary.test.ts",
+      "file": "shared/summary/index.test.ts",
       "layer": "pure",
       "markers": [],
       "cases": 32,

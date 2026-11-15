@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { InterruptedTask, InterruptedTasks } from '../shared/version.ts'
 import type { Task } from '../shared/schema.ts'
 import { t } from '../shared/i18n.ts'
-import { openPlan } from '../shared/plan.ts'
+import { openPlan } from '../shared/plan/index.ts'
 import { CACHE_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { restartRoutes } from './restart-interrupted.ts'
 

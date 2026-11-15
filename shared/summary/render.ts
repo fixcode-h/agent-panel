@@ -5,9 +5,9 @@
  * 概要一句 → 需求 → 问题 → 遗留与风险 → 明天计划（只留标题给用户自己填）→ 需要协助 → 附：关键代码。
  * 只在节和节之间空一行，条目内部不空行：日报常贴进企业微信 / 飞书，空行和多层标题会把一屏撑得只剩两三条。
  *
- * 纯逻辑；标题（日期）在 shared/summary.ts 的 renderReport 里算好传进来，这里不碰时间
+ * 纯逻辑；标题（日期）在 shared/summary/index.ts 的 renderReport 里算好传进来，这里不碰时间
  */
-import type { SummaryEntry } from '../summary.ts'
+import type { SummaryEntry } from './index.ts'
 import { codeBlock, splitPoints } from './code.ts'
 
 /**

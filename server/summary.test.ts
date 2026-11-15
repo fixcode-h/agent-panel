@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { Hono } from 'hono'
-import type { SummaryConfig, SummaryJob, SummaryRecord as ReportRecord, SummaryReport } from '../shared/summary.ts'
+import type {
+  SummaryConfig,
+  SummaryJob,
+  SummaryRecord as ReportRecord,
+  SummaryReport,
+} from '../shared/summary/index.ts'
 import type { Agent } from '../shared/schema.ts'
 
 // 数据目录换成临时的，别动本机的报告
@@ -13,7 +18,7 @@ process.env.AGENT_PANEL_DATA = dir
 
 const { createCollection } = await import('./store.ts')
 const { summaryApi, summaryRoleText } = await import('./summary.ts')
-const { SummaryRecord, summaryRole } = await import('../shared/summary.ts')
+const { SummaryRecord, summaryRole } = await import('../shared/summary/index.ts')
 const { BUILTIN_AGENTS } = await import('../shared/builtin/agents.ts')
 // 语言在 server/lang.ts 里按 process.env.LANG 定（CI 是英文），断言用同一个 t() 算期望值
 const { t } = await import('../shared/i18n.ts')

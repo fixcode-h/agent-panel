@@ -8,7 +8,7 @@
  * 定时找出没人收的矛盾，按同一个写法收口并告诉用户（见 ADR 0033）。
  */
 import type { StopReason, Task, TaskMessage } from '../schema.ts'
-import { endRun as endPlanRun } from '../plan.ts'
+import { endRun as endPlanRun } from '../plan/index.ts'
 import { t } from '../i18n.ts'
 import { diagnosisPending, idleWaitDuration, stopReasonText, waitDuration } from '../task.ts'
 import { pauseUnit } from '../run/stops.ts'

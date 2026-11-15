@@ -50,7 +50,7 @@
 
 - **把状态改成显式的状态机（每次写状态都走转移表）**：读法已经集中在 `convState`，真正缺的是「漏写」的兜底；把几十处写 `status` / `working` / `wrapRequest` 的地方都改成转移调用，改动面大、并行冲突多，收益不如先把收口写法统一 + 定时核对。核对的日志会告诉我们哪些路径真的会漏。
 - **按领域重写成 `ctx` 参数的普通函数**：要改每一处调用，等于重写 6000 行；工厂 + `TasksScope` 只改标识符引用，行为不变。
-- **一次把大文件都拆完**：其余大文件（`shared/engine.ts`、`server/exec/runner.ts`、`TaskView.tsx`、`demo-backend.ts`）先用上限挡住继续变大，按需再拆。
+- **一次把大文件都拆完**：其余大文件（`shared/engine/index.ts`、`server/exec/runner.ts`、`TaskView.tsx`、`demo-backend.ts`）先用上限挡住继续变大，按需再拆。
 
 ## 风险与代价
 

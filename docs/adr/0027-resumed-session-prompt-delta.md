@@ -10,13 +10,13 @@
 
 ## 事实核对
 
-| 位置                                     | 现状（改之前）                                                                                                  |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `shared/engine.ts` `runConversationTurn` | 每一轮都把 `conversationPrompt` 的整份结果作为 `prompt` 交给 `runAgent`，不看会话是不是续接                     |
-| `server/exec/runner.ts` `runAgent`       | 角色设定（没有系统提示词参数的 CLI）、项目教训、编排工具说明只在新会话带一次（`!resume`）；对话规则那份每轮都带 |
-| `shared/engine.ts` `mainTurn`            | 工作流主 Agent 已经是「续接只发事件、`fresh` 带完整的」                                                         |
-| `shared/engine.ts` `runHelper`           | 接着原来的子任务做（`step.session`）时也重发整份通用开头                                                        |
-| `shared/engine.ts` `userRequests`        | 对话里派的子任务、`start_plan` 跑的工作流节点，「用户需求」带对话里**全部**用户消息                             |
+| 位置                                           | 现状（改之前）                                                                                                  |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `shared/engine/index.ts` `runConversationTurn` | 每一轮都把 `conversationPrompt` 的整份结果作为 `prompt` 交给 `runAgent`，不看会话是不是续接                     |
+| `server/exec/runner.ts` `runAgent`             | 角色设定（没有系统提示词参数的 CLI）、项目教训、编排工具说明只在新会话带一次（`!resume`）；对话规则那份每轮都带 |
+| `shared/engine/index.ts` `mainTurn`            | 工作流主 Agent 已经是「续接只发事件、`fresh` 带完整的」                                                         |
+| `shared/engine/index.ts` `runHelper`           | 接着原来的子任务做（`step.session`）时也重发整份通用开头                                                        |
+| `shared/engine/index.ts` `userRequests`        | 对话里派的子任务、`start_plan` 跑的工作流节点，「用户需求」带对话里**全部**用户消息                             |
 
 实测（真实 Pi 1.x + 记请求的假 OpenAI 接口，`.tmp` 下的测试台，数字是字符数）：
 

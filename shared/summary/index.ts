@@ -12,14 +12,14 @@
  * 跑 CLI 和存报告在 server/summary.ts；页面在 web/src/pages/SummaryPage.tsx
  */
 import { z } from 'zod'
-import { t } from './i18n.ts'
-import type { Agent, Task } from './schema.ts'
-import { BUILTIN_AGENTS } from './builtin/agents.ts'
-import { dayKey, isoWeek, periodLabel, usagePeriod } from './usage.ts'
-import { clip as clipText } from './text.ts'
-import { summariesOf } from './summary/card.ts'
-import { SUMMARY_CODE_MAX, SummaryCode, codeFromMaterial, joinPoints, materialLines } from './summary/code.ts'
-import { plainText, renderReportBody, reportPlainText } from './summary/render.ts'
+import { t } from '../i18n.ts'
+import type { Agent, Task } from '../schema.ts'
+import { BUILTIN_AGENTS } from '../builtin/agents.ts'
+import { dayKey, isoWeek, periodLabel, usagePeriod } from '../usage.ts'
+import { clip as clipText } from '../text.ts'
+import { summariesOf } from './card.ts'
+import { SUMMARY_CODE_MAX, SummaryCode, codeFromMaterial, joinPoints, materialLines } from './code.ts'
+import { plainText, renderReportBody, reportPlainText } from './render.ts'
 
 export { plainText, reportPlainText }
 

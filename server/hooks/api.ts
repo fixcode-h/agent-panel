@@ -11,7 +11,7 @@ import {
 } from '../../shared/hooks/builtins.ts'
 import { CLIS } from '../../shared/clis.ts'
 import { knownVersion } from '../detect.ts'
-import { hookEventsFor } from '../../shared/hooks.ts'
+import { hookEventsFor } from '../../shared/hooks/index.ts'
 import { t } from '../../shared/i18n.ts'
 import {
   deleteHook,

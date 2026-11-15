@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyPlan } from '../plan.ts'
+import { applyPlan } from './index.ts'
 import { newPace, planPaceHint } from './pace.ts'
 import type { Task } from '../schema.ts'
 

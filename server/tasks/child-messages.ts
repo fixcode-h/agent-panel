@@ -14,7 +14,7 @@ import {
   settleWait,
   syncKids,
   waitNote,
-} from '../../shared/plan.ts'
+} from '../../shared/plan/index.ts'
 import type { PlanWait } from '../../shared/schema.ts'
 import type { TasksScope } from './scope.ts'
 import { DIAG_PARENT_RULE, diagnosisInFlow } from '../../shared/bug/phase.ts'

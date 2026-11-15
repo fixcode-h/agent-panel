@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { handoffDirOf } from '../store.ts'
 import { clip } from '../../shared/text.ts'
 
-/** 父对话每轮提示里一条子对话消息最多放多少字（shared/engine.ts 的 inboxPart 按这个上限截） */
+/** 父对话每轮提示里一条子对话消息最多放多少字（shared/engine/index.ts 的 inboxPart 按这个上限截） */
 export const INBOX_CHARS = 2000
 
 /**

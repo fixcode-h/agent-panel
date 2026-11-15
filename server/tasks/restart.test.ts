@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
-import { openPlan } from '../../shared/plan.ts'
+import { openPlan } from '../../shared/plan/index.ts'
 import { Task } from '../../shared/schema.ts'
 import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSettled } from '../../shared/task.ts'
 

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
-import { activePlan } from '../../shared/plan.ts'
+import { activePlan } from '../../shared/plan/index.ts'
 import { Task } from '../../shared/schema.ts'
 import { planStalled } from '../../shared/task.ts'
 import { migrateOnStart } from './startup.ts'

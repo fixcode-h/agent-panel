@@ -1,5 +1,5 @@
 import type { Agent, AgentParam, ParamValue, ParamValues, Workflow } from '../schema.ts'
-import { nodeSteps } from '../flow.ts'
+import { nodeSteps } from '../flow/index.ts'
 import { coerceValue, isEmptyValue, paramLabel } from './role.ts'
 
 /**

@@ -8,14 +8,14 @@
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 
-import type { OrchCtx, OrchOpts } from './orchestra/ctx.ts'
-import { planTools } from './orchestra/plan-tools.ts'
-import { conversationTools } from './orchestra/conversation-tools.ts'
-import { capabilityTools } from './orchestra/capability-tools.ts'
-import { recordRoute } from './orchestra/route.ts'
+import type { OrchCtx, OrchOpts } from '../orchestra/ctx.ts'
+import { planTools } from '../orchestra/plan-tools.ts'
+import { conversationTools } from '../orchestra/conversation-tools.ts'
+import { capabilityTools } from '../orchestra/capability-tools.ts'
+import { recordRoute } from '../orchestra/route.ts'
 
-import { commonAgents, includedAgents, mountedAgents, paramsProblem } from './agents/role.ts'
-import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from './inline-edit.ts'
+import { commonAgents, includedAgents, mountedAgents, paramsProblem } from '../agents/role.ts'
+import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../inline-edit.ts'
 import {
   END,
   START,
@@ -32,7 +32,7 @@ import {
   type TaskStep,
   type TurnSources,
   type Workflow,
-} from './schema.ts'
+} from '../schema.ts'
 import {
   blankStep,
   flowLabel,
@@ -45,38 +45,38 @@ import {
   runPrefix,
   stepTree,
   isMainStep,
-} from './flow.ts'
-import { t } from './i18n.ts'
-import { clip } from './text.ts'
-import { runRecord, runTextTooLong, sendRunMessage } from './run/state.ts'
-import { clipToFile, layeredBatch, WHOLE_OUTPUT } from './helper-batch.ts'
-import { runsSection, workflowCatalogText } from './flow/run.ts'
-import { runFlowRunTurn } from './flow/run-turn.ts'
-import { runTools } from './flow/run-orch.ts'
+} from '../flow/index.ts'
+import { t } from '../i18n.ts'
+import { clip } from '../text.ts'
+import { runRecord, runTextTooLong, sendRunMessage } from '../run/state.ts'
+import { clipToFile, layeredBatch, WHOLE_OUTPUT } from '../helper-batch.ts'
+import { runsSection, workflowCatalogText } from '../flow/run.ts'
+import { runFlowRunTurn } from '../flow/run-turn.ts'
+import { runTools } from '../flow/run-orch.ts'
 
-import { runWithSummary } from './helper-summary.ts'
-import * as rs from './run/stops.ts'
-import { fixRoutePart } from './fix-route.ts'
-import { bugRoutePart } from './bug/route.ts'
-import { bugChatPart } from './bug/chat.ts'
-import { cherryPickPart } from './cherry-pick.ts'
-import { orchAskPush } from './push-auth.ts'
-import { docRootText, plainDocRootText } from './doc-root.ts'
-import { makeAlert } from './alerts.ts'
-import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
-import { summaryCardRules, summaryDetailRules } from './summary/card.ts'
-import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from './submitted.ts'
+import { runWithSummary } from '../helper-summary.ts'
+import * as rs from '../run/stops.ts'
+import { fixRoutePart } from '../fix-route.ts'
+import { bugRoutePart } from '../bug/route.ts'
+import { bugChatPart } from '../bug/chat.ts'
+import { cherryPickPart } from '../cherry-pick.ts'
+import { orchAskPush } from '../push-auth.ts'
+import { docRootText, plainDocRootText } from '../doc-root.ts'
+import { makeAlert } from '../alerts.ts'
+import { promptLangRules, promptLangWord, VERDICT_LINE } from '../prompt-lang.ts'
+import { summaryCardRules, summaryDetailRules } from '../summary/card.ts'
+import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from '../submitted.ts'
 
-import { beginTurn, endTurn, pauseStep, stopReasonText } from './task.ts'
-import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from './conv-mode.ts'
-import { backgroundPart, chatConversationPrompt } from './chat-prompt.ts'
-import {} from './builtin/default.ts'
-import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from './prompt/delta.ts'
-import { isHelperAgent } from './builtin/core.ts'
-import { childAskPrompt } from './children/ask.ts'
-import { topPush } from './sub-policy.ts'
-import { vcsOwnOnly, vcsReadCmds } from './engine/vcs-text.ts'
-import { overBudget } from './engine/budget.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText } from '../task.ts'
+import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from '../conv-mode.ts'
+import { backgroundPart, chatConversationPrompt } from '../chat-prompt.ts'
+import {} from '../builtin/default.ts'
+import { LIVE, nextSent, type PromptSent, promptDelta, promptSources, rememberSent } from '../prompt/delta.ts'
+import { isHelperAgent } from '../builtin/core.ts'
+import { childAskPrompt } from '../children/ask.ts'
+import { topPush } from '../sub-policy.ts'
+import { vcsOwnOnly, vcsReadCmds } from './vcs-text.ts'
+import { overBudget } from './budget.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
   SLOT_PROMPT,
@@ -96,7 +96,7 @@ import {
   wrapDone,
   wrapKind,
   wrapUpPart,
-} from './engine/prompt-parts.ts'
+} from './prompt-parts.ts'
 import {
   MAX_HELPERS_PER_STEP,
   MAX_RESUME_IDS,
@@ -118,10 +118,10 @@ import {
   statusTree,
   takeMail,
   wholeReport,
-} from './engine/helpers.ts'
-import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './engine/host.ts'
+} from './helpers.ts'
+import type { AgentResult, Fail, AgentCall, HelperSpec, HelperBatch, Orchestra, EngineHost } from './host.ts'
 
-import { bindWait, finishStepNow, WRAP_UP } from './plan.ts'
+import { bindWait, finishStepNow, WRAP_UP } from '../plan/index.ts'
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'

@@ -6,7 +6,7 @@
  *   用「每日工作总结」角色的设定和它的 CLI / 模型跑，CLI 只读运行、不改文件。
  * - POST /summary：用采纳的分项按固定格式拼出报告并保存（不再跑 CLI）。
  * - PUT / DELETE /summary/:id：编辑正文、删除报告；GET / PUT /summary/config：面板里加过的项目。
- * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary.ts。
+ * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary/index.ts。
  */
 import { askSession } from './asks.ts'
 import { attachCode } from './summary/diff.ts'
@@ -39,7 +39,7 @@ import {
   summaryPeriod,
   tasksContext,
   type SummaryJob,
-} from '../shared/summary.ts'
+} from '../shared/summary/index.ts'
 import { agentPermission, agentRun, cliSettings } from '../shared/settings.ts'
 import { safeArgs } from './assist.ts'
 import { invokeCli } from './exec/invoke.ts'

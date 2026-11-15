@@ -43,7 +43,7 @@ export const PlanItem = z.object({
   endedAt: z.string().default(''),
   /**
    * 这一项最后一次真正变化（状态、标题、备注、等待项）的时间：滞后检测和界面的「N 分钟前更新」读它。
-   * 旧数据没有这个字段，读时退回 startedAt（见 shared/plan.ts 的 itemUpdatedAt）
+   * 旧数据没有这个字段，读时退回 startedAt（见 shared/plan/index.ts 的 itemUpdatedAt）
    */
   updatedAt: z.string().optional(),
 })
@@ -99,7 +99,7 @@ export const TaskPlan = z.object({
   lastInputAt: z.string().optional(),
   /**
    * 已经为哪一次输入提醒过「计划没跟着改」（对应 lastInputAt 的值）：只提醒一次，
-   * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
+   * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan/index.ts 的 inputUnhandled）
    */
   inputNotedAt: z.string().optional(),
   /**

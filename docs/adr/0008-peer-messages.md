@@ -56,14 +56,14 @@
 
 延续 [0005](./0005-conversation-states.md)「父子之间的操作都显示成工具调用」：上报的状态判定、去重、收尾流程都不变，只是消息多带一份 peer、换一种显示。面板自己的消息（后台命令结果、催合并）不是对话之间的消息，仍是原来的面板行。
 
-`send_message` 只在发件方留一行，不再额外写一条居中说明。原先 `Orchestra.send()`（`shared/engine.ts`）除了把正文记进运行记录（`sendRunMessage` → `TaskRun.messages`），还 push 一条 `role: 'system'`、不带 `peer` / `panel` 的消息，文案是「「{from}」→「{to}」：{text}」；`web/src/components/tasks/Messages.tsx` 的 `inlineEntry()` 只认 `panel: 'ask'`、`peerOfMessage(m)` 和 `m.panel`，这一类落不进去，就走成居中的说明块 `NoteMessage`，整段 markdown 正文铺在对话流中间（用户 2026-10-24 截图反馈）。现在删掉那条 system 消息：发件方由「发送消息」行承载正文（点整行展开、点标题弹窗看全文），收件方照旧在 `TaskRun.messages` 里收到「来自「X」的消息：…」、交给正在跑的节点时标已读。原因是收件方本来就有带 peer 的「接收消息」，发件方再铺一份正文既重复，又打断对话流、把正文摊成一大块。
+`send_message` 只在发件方留一行，不再额外写一条居中说明。原先 `Orchestra.send()`（`shared/engine/index.ts`）除了把正文记进运行记录（`sendRunMessage` → `TaskRun.messages`），还 push 一条 `role: 'system'`、不带 `peer` / `panel` 的消息，文案是「「{from}」→「{to}」：{text}」；`web/src/components/tasks/Messages.tsx` 的 `inlineEntry()` 只认 `panel: 'ask'`、`peerOfMessage(m)` 和 `m.panel`，这一类落不进去，就走成居中的说明块 `NoteMessage`，整段 markdown 正文铺在对话流中间（用户 2026-10-24 截图反馈）。现在删掉那条 system 消息：发件方由「发送消息」行承载正文（点整行展开、点标题弹窗看全文），收件方照旧在 `TaskRun.messages` 里收到「来自「X」的消息：…」、交给正在跑的节点时标已读。原因是收件方本来就有带 peer 的「接收消息」，发件方再铺一份正文既重复，又打断对话流、把正文摊成一大块。
 
 ## 补充：一条消息只交给一个子对话（2026-10-24）
 
 用户截图反馈：用户在父对话里连着定了几条「硬规则」，父对话把每条都用 `send_to_conversation` 逐个转给四五个子对话，父对话里刷出四五行标题一模一样的「发送消息 · 交代任务」。查用户导出的对话：没有同一条发了两遍，是每条都发给了每个子对话；用户随后定下：**用户发的一条消息，父对话挑出关联最紧密的一个子对话交给它处理，不能发给多个子对话去修**（用户定的规则也一样）。
 
-- 面板拒绝：`send_to_conversation` 发现同一段话（去掉首尾空白后完全相同）已经交给了别的子对话，就返回失败，提示选关联最紧密的那一个。判定在 `shared/peer-message.ts` 的 `sentToOther`（按对话里记下的调用查；2026-10-31 起只查当前这条用户消息，子对话交回、面板推进拉起的几轮也认得，用户发了新消息就重新算；转发的正文就是某条更早的用户消息原文时从那条算起，插话、read_user_notes 进来的规则放不过它，见 `handOffFrom`），并行发出、还没记进对话的几次靠 `shared/engine.ts` 的 `handedOff` 补上（不随插话清空）。再发给同一个子对话（补充、催）照常放行。
-- 提示词：父对话的分派说明（`shared/engine.ts`）、`send_to_conversation` 的工具说明、内置统筹角色（`shared/builtin/agents.ts`）都写明「用户的一条消息（连同定下的规则）只交给关联最紧密的那一个子对话」。要所有子对话遵守的规则仍由用户自己用「/rule」发布。
+- 面板拒绝：`send_to_conversation` 发现同一段话（去掉首尾空白后完全相同）已经交给了别的子对话，就返回失败，提示选关联最紧密的那一个。判定在 `shared/peer-message.ts` 的 `sentToOther`（按对话里记下的调用查；2026-10-31 起只查当前这条用户消息，子对话交回、面板推进拉起的几轮也认得，用户发了新消息就重新算；转发的正文就是某条更早的用户消息原文时从那条算起，插话、read_user_notes 进来的规则放不过它，见 `handOffFrom`），并行发出、还没记进对话的几次靠 `shared/engine/index.ts` 的 `handedOff` 补上（不随插话清空）。再发给同一个子对话（补充、催）照常放行。
+- 提示词：父对话的分派说明（`shared/engine/index.ts`）、`send_to_conversation` 的工具说明、内置统筹角色（`shared/builtin/agents.ts`）都写明「用户的一条消息（连同定下的规则）只交给关联最紧密的那一个子对话」。要所有子对话遵守的规则仍由用户自己用「/rule」发布。
 - 旧记录：相邻几次把同一段话交给不同子对话的，界面合成一行（`web/src/lib/tasks.ts` 的 `groupTools`），右边写「发给 N 个：A、B…」，展开列出每个收件人的回执和打开按钮。
 - 没选的方案：给 `send_to_conversation` 加 `ids` 一次群发、加一个让父对话自己发布全局规则的工具——用户明确要的是一条消息只交给一个子对话处理。
 

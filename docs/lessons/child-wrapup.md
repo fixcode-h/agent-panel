@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/merge.ts, server/tasks/children.ts, server/tasks/run.ts, server/tasks/helpers.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-push.test.ts, web/src/components/tasks/Worktrees.tsx, shared/plan.ts
+paths: server/tasks/merge.ts, server/tasks/children.ts, server/tasks/run.ts, server/tasks/helpers.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-push.test.ts, web/src/components/tasks/Worktrees.tsx, shared/plan/index.ts
 ---
 
 # 子对话收尾和独立分支
@@ -8,7 +8,7 @@ paths: server/tasks/merge.ts, server/tasks/children.ts, server/tasks/run.ts, ser
 
 - 规则：评审、测试记录、交接要点、父对话验收、做完没请收尾的提醒是交付的必备步骤，Git 独立分支、共用目录、P4、没有版本管理都要做；版本管理方式只决定最后一步是合回分支（`merge`）、分 changelist（`p4`）还是直接验收（`deliver`）。新加按 `isolated()` / `isP4()` / `isGit` 分叉的代码时先问：这一支是不是把必备步骤也一起跳过了；门禁、提醒按「改没改文件」（`task.changes`）判，不按有没有分支判。
 - 起因：用户 2026-10-31 报 P4 项目的子对话改完代码不评审：`submit_merge` 只开给独立分支，P4 的收尾是 Agent 自己标完成，评审门禁、交接、父对话验收全被跳过。
-- 防线：`shared/plan.test.ts`（每种版本管理组合的子对话都落到 `panelWrap`）、e2e `04-subagents`「共用目录的子对话」。
+- 防线：`shared/plan/index.test.ts`（每种版本管理组合的子对话都落到 `panelWrap`）、e2e `04-subagents`「共用目录的子对话」。
 
 ## 面板的提醒不能把用户停下的对话又推起来
 
@@ -32,7 +32,7 @@ paths: server/tasks/merge.ts, server/tasks/children.ts, server/tasks/run.ts, ser
 
 - 规则：计划里挂着等待（子对话、后台命令）的步骤，Agent 自己标完成不算，面板在结果推回时标；父对话开子对话、交消息没写 step 时挂在正在做（或在等）的那一步。独立分支里的子对话不派「版本控制」收尾（`spawn` 直接拒），自己或子任务 `git merge` 过去后计划停在「合回」时也要提醒它 submit_merge。finish_child 每条出口都由 syncParentPlan 刷新父计划。
 - 起因：2026-10-24 父对话把子对话的计划抄进自己的计划一口气标完成，界面显示「计划已完成」；子对话的工具搜索没找到 submit_merge，派「版本控制」直接合进 dev，分支已合进去所以面板不提醒，子对话在收尾卡了 13 分钟。
-- 防线：`shared/plan.test.ts` 的「还在等子对话的步骤」「刷新计划」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。
+- 防线：`shared/plan/index.test.ts` 的「还在等子对话的步骤」「刷新计划」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。
 
 ## 状态字段是记录不是事实，判据按实际情况算
 

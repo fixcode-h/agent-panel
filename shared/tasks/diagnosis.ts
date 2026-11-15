@@ -6,7 +6,7 @@
  * 判定全部复用已有的那几处（convState、childState、childStale、openPlan、stopReasonText），不另写一套。
  */
 import { t } from '../i18n.ts'
-import { activePlan, needsFix, openPlan, openWork, planProgress } from '../plan.ts'
+import { activePlan, needsFix, openPlan, openWork, planProgress } from '../plan/index.ts'
 import { pendingAction, waitedText } from '../user-action.ts'
 import type { Task, TaskJob, TaskMessage } from '../schema.ts'
 import {

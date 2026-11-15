@@ -4,7 +4,7 @@
 - 症状：用户绕过父对话直接在子对话里输入新要求，子对话照常做完，父对话却一直以为它停在「已完成」，不会被叫起来处理结果
 - 入口：`server/tasks.ts` 的 `POST /tasks/:id/messages`、`trackUserToChild`、`reportChild` / `noteParent`、`deliver`
 - 根因类型：上报只在父对话计划有步骤等这个子对话时才叫起父对话，用户直接交代的要求没有在父对话计划里挂等待
-- 模块：`server`（`server/tasks.ts`）、`shared`（`shared/plan.ts` 的 `ensureChildStep` / `bindWait`，未改动）
+- 模块：`server`（`server/tasks.ts`）、`shared`（`shared/plan/index.ts` 的 `ensureChildStep` / `bindWait`，未改动）
 - 关键词：子对话直接输入、用户直接发给子对话、父对话收不到状态、停在已完成、收件箱、计划等待、trackUserToChild、reportChild、noteParent、resolved
 
 ## 根因

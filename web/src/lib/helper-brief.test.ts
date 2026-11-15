@@ -162,7 +162,7 @@ test('交接单没有子节时，引擎写给评审的那句提示语不占展�
 })
 
 test('added 只数真正的「重试时补充」块，整体重跑的次数不掺进来', () => {
-  // reruns 在整体重跑时也会加（shared/engine.ts 的 1346 / 1732 / 1826），那些不追加 brief，
+  // reruns 在整体重跑时也会加（shared/engine/index.ts 的 1346 / 1732 / 1826），那些不追加 brief，
   // 所以徽标不能拿 reruns 当补充次数，否则数字和正文块数对不上
   assert.equal(helperBriefView(INSTRUCTIONS).added, 0)
   assert.equal(helperBriefView(`${INSTRUCTIONS.trim()}\n\n## 重试时补充\n甲`).added, 1)

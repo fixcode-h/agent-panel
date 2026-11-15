@@ -4,7 +4,7 @@
  * 这里只做分组和排序，状态全部读服务端给的 live（shared/live/task-live.ts，调用方传 liveOf）和 openPlan。
  */
 import { treeUsage } from './budget.ts'
-import { openPlan } from './plan.ts'
+import { openPlan } from './plan/index.ts'
 import type { Task } from './schema.ts'
 import { askedAt, taskDeleted, type ConvState } from './task.ts'
 import { liveDoneDot, type TaskLive } from './live/task-live.ts'

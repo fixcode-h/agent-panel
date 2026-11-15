@@ -1,6 +1,6 @@
 # 重试提示只显示原始 JSON，子对话失败汇报只有一句「执行失败了」
 
-- 状态：已修复（`npm run typecheck`、`npm run lint` 通过；`shared/alerts.test.ts`、`shared/plan.test.ts`、`server/exec/parsers.test.ts`、`server/exec/hints.test.ts`、`server/exec/pi-rpc.test.ts` 通过；全量单测与端到端、界面检查随合并由父对话跑）
+- 状态：已修复（`npm run typecheck`、`npm run lint` 通过；`shared/alerts.test.ts`、`shared/plan/index.test.ts`、`server/exec/parsers.test.ts`、`server/exec/hints.test.ts`、`server/exec/pi-rpc.test.ts` 通过；全量单测与端到端、界面检查随合并由父对话跑）
 - 症状：对话框里的「正在重试」原样甩出 500 + litellm 的 JSON，看不出是网关断连、限流还是上下文超长；子对话跑挂后交给父对话的汇报只有「失败：执行失败了」，用户以为是「汇报这个动作失败了」
 - 入口：`server/exec/parsers.ts` 的 `notice` / `retry_ok` 解析、`shared/alerts.ts` 的 `alertInfo` / `classifyError`、`shared/task.ts` 的 `childReport`
 - 根因类型：错误分类漏掉上游网关断连；失败汇报不带根因；重试成功没有收回「正在重试」
@@ -54,7 +54,7 @@
 - `shared/alerts.test.ts`：「上游网关断开单列一类」「重试提示按原因给出不同的下一步」「重试的原因看不出时给通用说明」。
 - `server/exec/parsers.test.ts`：「Pi 的重试事件：带上次数和原因，重试成功后算恢复而不是失败」。
 - `server/exec/pi-rpc.test.ts` 的既有用例「Pi RPC：自动重试显示在回复里，不当成失败」保持通过：`retry_ok` 不能多出一行提示，只用来收掉前面那张卡。
-- `shared/plan.test.ts`：「子对话执行失败：上报带上这次失败的原因」——重试耗尽、面板工具没接上、进程被回收三种根因都会出现在汇报里；已恢复的报错不算。
+- `shared/plan/index.test.ts`：「子对话执行失败：上报带上这次失败的原因」——重试耗尽、面板工具没接上、进程被回收三种根因都会出现在汇报里；已恢复的报错不算。
 
 ## 顺带发现（已修复）
 

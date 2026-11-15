@@ -12,7 +12,7 @@ export function byStartedDesc(a: { startedAt?: string }, b: { startedAt?: string
 /**
  * 列表里「新的在前」：按开始时间倒序，越晚开始的越靠上；时间一样、或者旧记录 / 演示数据没有开始时间时，
  * 用 id 的序号兜底（`@chat/sub/h10` 比 `h2` 新），保证每次渲染顺序一致不抖动。
- * 兜底依赖编号随派出递增（engine 的 spawn 用「现存子任务数 + 1」，见 shared/engine.ts 的 n = have + i + 1），
+ * 兜底依赖编号随派出递增（engine 的 spawn 用「现存子任务数 + 1」，见 shared/engine/index.ts 的 n = have + i + 1），
  * 而删除都是整批的（dropRerun 删父亲下全部 sub、dropNodeSteps 删整棵子树），不会出现「删了 h1、留着 h3」
  * 再派回一个重复编号，所以这个方向成立。
  * 子任务列表（sortHelpers）和运行区的子任务行用它；子对话栏（sortChildren）的时间倒序也走 byStartedDesc，

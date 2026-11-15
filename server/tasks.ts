@@ -16,7 +16,7 @@ import {
 import { type LessonDraft } from './lessons.ts'
 import { restartDoing } from './interrupted.ts'
 import { recordRestart } from './restart-interrupted.ts'
-import { entryFlow, topoOrder } from '../shared/flow.ts'
+import { entryFlow, topoOrder } from '../shared/flow/index.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/projects/workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'

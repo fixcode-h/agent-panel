@@ -46,7 +46,7 @@ import {
   verOf,
 } from './phase.ts'
 import { t } from '../i18n.ts'
-import { settlePlan } from '../plan.ts'
+import { settlePlan } from '../plan/index.ts'
 import { autoApprove, autoBlock, autoOn } from './auto.ts'
 import { ranInConversation, recheckCommands, recheckVerdict } from './recheck.ts'
 import { applyChat, chatOf, chatReplaces } from './chat.ts'

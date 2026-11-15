@@ -6,7 +6,7 @@ import {
   isNotifyEvent,
 } from '../../shared/hooks/defs.ts'
 import { CLIS } from '../../shared/clis.ts'
-import { supportedEvents } from '../../shared/hooks.ts'
+import { supportedEvents } from '../../shared/hooks/index.ts'
 import { t } from '../../shared/i18n.ts'
 import { checkSyntax, runHook } from './run.ts'
 import { scanText, type ScanLevel } from '../../shared/config-scan/index.ts'

@@ -13,7 +13,7 @@
 
 ## 根因
 
-界面没有把子对话的卡搬到父对话：`UserActionPanel` 只读当前对话自己的 `userActions`，`requestUserAction`（`shared/engine.ts`）也只写调用它的那个对话。卡在父对话里，是父对话的 Agent 自己调了 request_user_action——卡里「子对话先用现有 client.log 继续排查」这种第三人称说法只有父对话会写。
+界面没有把子对话的卡搬到父对话：`UserActionPanel` 只读当前对话自己的 `userActions`，`requestUserAction`（`shared/engine/index.ts`）也只写调用它的那个对话。卡在父对话里，是父对话的 Agent 自己调了 request_user_action——卡里「子对话先用现有 client.log 继续排查」这种第三人称说法只有父对话会写。
 
 统筹角色的提示词前后矛盾：「Bug 怎么交」核对子对话结论那条写着「它要用户复现并贴日志的，把复现步骤和要贴的日志原样转给用户，拿到后交回原子对话」，下面「子对话发起的等你操作直接交给用户、不经过你」只管子对话自己发起的情形。子对话交回「缺复现日志」的结论时，统筹按前一条把请求接过来、在自己这里发了 request_user_action。结果卡挂在父对话里，交回的日志也先回到父对话，再由它转交。
 

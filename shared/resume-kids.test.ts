@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task } from './schema.ts'
-import { activePlan, applyPlan, bindWait, settleWait } from './plan.ts'
+import { activePlan, applyPlan, bindWait, settleWait } from './plan/index.ts'
 import { kidAccepted, kidsSkipNote, rearmKidWait, sortStoppedKids, type ResumeKid } from './resume-kids.ts'
 
 const kid = (id: string, x: Partial<ResumeKid> = {}): ResumeKid => ({ id, title: id, stopReason: 'parent', ...x })

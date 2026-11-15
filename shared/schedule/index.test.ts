@@ -47,9 +47,9 @@ import {
   willRunAgain,
   workdayTemplate,
   Schedule,
-} from './schedule.ts'
-import { t } from './i18n.ts'
-import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
+} from './index.ts'
+import { t } from '../i18n.ts'
+import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from '../schema.ts'
 
 /** 本机时区的某个时刻，测试里不直接写 ISO，避免跟着机器时区变 */
 const at = (y: number, mo: number, d: number, h: number, mi = 0) => new Date(y, mo - 1, d, h, mi, 0, 0).toISOString()

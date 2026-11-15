@@ -1,10 +1,10 @@
-import { childReport } from './task.ts'
-import { makeAlert } from './alerts.ts'
+import { childReport } from '../task.ts'
+import { makeAlert } from '../alerts.ts'
 import { test } from 'node:test'
-import { failLostWaits } from './plan/lost.ts'
+import { failLostWaits } from './lost.ts'
 import assert from 'node:assert/strict'
-import type { PlanStep, Task, TaskMessage, TaskPlan } from './schema.ts'
-import { PlanStatus } from './schema.ts'
+import type { PlanStep, Task, TaskMessage, TaskPlan } from '../schema.ts'
+import { PlanStatus } from '../schema.ts'
 import {
   activePlan,
   applyPlan,
@@ -44,8 +44,8 @@ import {
   unsummarized,
   WRAP_UP,
   needsFix,
-} from './plan.ts'
-import { panelWrap, wrapUpKind } from './wrap-up.ts'
+} from './index.ts'
+import { panelWrap, wrapUpKind } from '../wrap-up.ts'
 
 const fresh = () => ({ plans: [], steps: [] }) as unknown as Pick<Task, 'plans' | 'steps'>
 

@@ -1,6 +1,6 @@
 import type { Task } from './schema.ts'
 import { CHILD_IDLE_ASK_MAX, type ChildWait } from './task.ts'
-import { activePlan, planText } from './plan.ts'
+import { activePlan, planText } from './plan/index.ts'
 
 /**
  * 子对话卡住时由面板接着处理：自动询问（childIdleAsk）之后一直没回复 → 停掉 CLI、接回原会话重启；

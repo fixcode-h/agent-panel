@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card'
 
 /**
  * 页头的一条概览：下一次是谁、什么时候，以及待执行 / 出过问题的数量。
- * 分组、排序和「还会不会跑」都读 shared/schedule.ts 的现成结果，不在这里另判一次。
+ * 分组、排序和「还会不会跑」都读 shared/schedule/index.ts 的现成结果，不在这里另判一次。
  */
 export function ScheduleOverview({
   buckets,

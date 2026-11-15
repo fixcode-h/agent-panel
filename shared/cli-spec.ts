@@ -10,7 +10,7 @@ import type { BuildOptions, CliDefinition, ModelTier } from './clis.ts'
 import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
-import { HooksSpec } from './hooks.ts'
+import { HooksSpec } from './hooks/index.ts'
 import { CliTrust } from './cli/trust.ts'
 import { GalleryOverlap, GallerySpec } from './cli/gallery.ts'
 import { ConfigSetting } from './cli/config-settings.ts'
@@ -702,7 +702,7 @@ export const CliSpec = z.object({
   configSettings: z.array(ConfigSetting).default([]),
   /** 项目信任（ADR 0050）：只在信任后才读的项目文件；参数规则里用 trust=approve / trust=deny（见 shared/cli/trust.ts） */
   trust: CliTrust.optional(),
-  /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
+  /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks/index.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
   hooks: HooksSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),

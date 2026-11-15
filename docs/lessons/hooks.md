@@ -1,5 +1,5 @@
 ---
-paths: shared/hooks.ts, shared/hooks/defs.ts, shared/hooks/mod.ts, server/hooks/**, shared/clis/pi.json, shared/clis/codex.json, shared/clis/claude.json, shared/clis/commandcode.json
+paths: shared/hooks/index.ts, shared/hooks/defs.ts, shared/hooks/mod.ts, server/hooks/**, shared/clis/pi.json, shared/clis/codex.json, shared/clis/claude.json, shared/clis/commandcode.json
 ---
 
 # 钩子（ADR 0049）

@@ -15,8 +15,8 @@ import {
   type Workflow,
   type WorkflowInput,
   type WorkflowMember,
-} from './schema.ts'
-import { t } from './i18n.ts'
+} from '../schema.ts'
+import { t } from '../i18n.ts'
 
 const rand = () => Math.random().toString(36).slice(2, 10)
 export const flowId = (prefix: 'nd' | 'e' | 'fl' | 'st') => `${prefix}_${rand()}`

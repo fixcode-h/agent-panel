@@ -16,7 +16,7 @@ process.env.AGENT_PANEL_DATA = dir
 const { createTaskStore } = await import('./tasks/store.ts')
 const { tasksApi } = await import('./tasks.ts')
 const { newTask } = await import('../shared/task.ts')
-const { blankStep } = await import('../shared/flow.ts')
+const { blankStep } = await import('../shared/flow/index.ts')
 const { setLang } = await import('../shared/i18n.ts')
 
 setLang('zh')

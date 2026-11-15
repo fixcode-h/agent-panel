@@ -18,10 +18,10 @@
 | 位置（改动前）                                                        | 现状                                                                                                                       |
 | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `shared/task.ts` `taskStage` / `childIcon` / `childHolds`             | 列表分组、行首图标、「彻底完成」各自判断，说法不一                                                                         |
-| `shared/plan.ts` `childTurnSettle`                                    | 子对话一轮结束时收口父计划的另一套判据，只看 requests / working / status / 后台命令 / 计划，漏了提问、工作流、派出的子任务 |
+| `shared/plan/index.ts` `childTurnSettle`                              | 子对话一轮结束时收口父计划的另一套判据，只看 requests / working / status / 后台命令 / 计划，漏了提问、工作流、派出的子任务 |
 | `server/tasks.ts` `reportToParent` / `settleParentTurn` / `childLeft` | 三条给父对话报状态的路，各自拼文案，会重复报、报早                                                                         |
 | `server/tasks.ts` `completeChild`                                     | 彻底完成时 `stopTask(id, 'finish')` 结束等下一句的进程                                                                     |
-| `shared/engine.ts` `runConversationTurn`                              | 被停下且没答完就写「这一轮被中断」：上面那次 `finish` 停止也被当成中断                                                     |
+| `shared/engine/index.ts` `runConversationTurn`                        | 被停下且没答完就写「这一轮被中断」：上面那次 `finish` 停止也被当成中断                                                     |
 | `server/tasks.ts` `submitMerge`（0002）                               | 子对话调用后面板直接合并，父对话事后才知道                                                                                 |
 
 ## 决策
@@ -50,7 +50,7 @@
 
 ### 二、彻底完成后结束进程是「对话结束」，不是中断
 
-`shared/engine.ts` 的 `finishedStop(host)`：停止原因是 `finish` 时按答完处理，不写「这一轮被中断」。`convState` 也不把它算 `stopped`。
+`shared/engine/index.ts` 的 `finishedStop(host)`：停止原因是 `finish` 时按答完处理，不写「这一轮被中断」。`convState` 也不把它算 `stopped`。
 
 ### 三、子对话上报只有一条路：`childReport` + `reportChild`
 
@@ -137,7 +137,7 @@ UE 编译占位和排队仍按 [0004](./0004-ue-build-by-parent.md)。
 
 - 收尾多一跳：子对话要等父对话处理。父对话空闲时 `wakeTask` 会开新一轮，在跑时实时送达，不会卡住。
 - 父对话不调用 `finish_child`：子对话停在「待收尾」，列表归到「差一步」，用户看得见；也可以点合并按钮手动收尾。
-- 状态判定集中后，改 `convState` 会同时影响列表、图标、上报：靠 `shared/tasks/stage.test.ts`、`shared/plan.test.ts` 兜住。
+- 状态判定集中后，改 `convState` 会同时影响列表、图标、上报：靠 `shared/tasks/stage.test.ts`、`shared/plan/index.test.ts` 兜住。
 
 ## 开放问题
 

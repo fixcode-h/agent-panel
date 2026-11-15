@@ -352,7 +352,7 @@ test('修改建议：解析、对比、应用；不合法的值和找不到的�
   const evo = parseEvolution(text)!
   assert.equal(evo.changes.length, 3)
   assert.equal(evo.changes[2].target, 'agent')
-  assert.equal(evo.issues[0].files[0], 'shared/engine.ts')
+  assert.equal(evo.issues[0].files[0], 'shared/engine/index.ts')
   assert.deepEqual(
     evo.issues.map((x) => [x.scope, x.category]),
     [
@@ -399,7 +399,7 @@ test('修改建议：解析、对比、应用；不合法的值和找不到的�
 })
 
 test('节点的最终输出原样导出：保留末尾的 handoff 文件去向，不再二次截断', () => {
-  // 引擎已经把输出截到 MAX_OUTPUT，超长部分的全文存在 handoff 文件、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）
+  // 引擎已经把输出截到 MAX_OUTPUT，超长部分的全文存在 handoff 文件、去向说明写在输出末尾（见 shared/engine/index.ts 的 storeOutput）
   const file = 'C:\\Users\\me\\.agent-panel\\handoff\\t1\\n1.md'
   const output = `${'甲'.repeat(4000)}\n\n（完整结果有 9000 字，这里只附了开头。完整内容在文件 ${file}，开始之前请先读完。）`
   const report = analysisReport([exportTask(Task.parse({ ...task, steps: [{ ...task.steps[0], output }] }), [coder])])

@@ -5,8 +5,8 @@ import {
   type HookEventName,
   type HookInput,
 } from '../../shared/hooks/defs.ts'
-import { WEBHOOK_MAX_ATTEMPTS, type ScheduleDelivery, type ScheduleEvent } from '../../shared/schedule.ts'
-import { activePlan } from '../../shared/plan.ts'
+import { WEBHOOK_MAX_ATTEMPTS, type ScheduleDelivery, type ScheduleEvent } from '../../shared/schedule/index.ts'
+import { activePlan } from '../../shared/plan/index.ts'
 import type { Task } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
 import { readHooks } from './store.ts'

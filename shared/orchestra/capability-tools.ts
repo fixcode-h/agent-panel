@@ -1,10 +1,10 @@
-// Orchestra 的能力类工具（从 shared/engine.ts 的 makeOrchestra 拆出来）。
+// Orchestra 的能力类工具（从 shared/engine/index.ts 的 makeOrchestra 拆出来）。
 import { loadCapability } from '../agents/role.ts'
 import { normInlinePaths } from '../inline-edit.ts'
 import { findLessons } from '../lessons.ts'
 import { findExperience } from '../experience.ts'
 import { diagnoseTask, loadedCaps } from '../engine/helpers.ts'
-import { bindWait, runningStepId } from '../plan.ts'
+import { bindWait, runningStepId } from '../plan/index.ts'
 import { recordRoute } from './route.ts'
 import type { Orchestra } from '../engine/host.ts'
 import type { OrchCtx } from './ctx.ts'
