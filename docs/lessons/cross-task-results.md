@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/merge.ts, server/tasks/jobs.ts, server/tasks/build-results.ts, server/tasks/drive.ts, shared/build-ask.ts, shared/wrapup-prompt.ts, server/orch-mcp.ts
+paths: server/tasks/merge/**, server/tasks/jobs.ts, server/tasks/build-results.ts, server/tasks/drive.ts, shared/build-ask.ts, shared/wrapup-prompt.ts, server/orch-mcp.ts
 ---
 
 # 对话之间交回的结果

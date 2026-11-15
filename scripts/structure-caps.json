@@ -16,7 +16,6 @@
     "server/tasks/drive.ts::createDrive": 440,
     "server/tasks/flow-runs.ts::createFlowRuns": 400,
     "server/tasks/keepalive.ts::createKeepAlive": 400,
-    "server/tasks/merge.ts::createMerge": 840,
     "server/tasks/peer.ts::createPeer": 390,
     "server/tasks/run.ts::createRun": 610,
     "server/update/index.ts::updateApi": 550,

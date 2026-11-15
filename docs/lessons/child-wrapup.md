@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/merge.ts, server/tasks/children/**, server/tasks/run.ts, server/tasks/helpers.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-push.test.ts, web/src/components/tasks/Worktrees.tsx, shared/plan/index.ts
+paths: server/tasks/merge/**, server/tasks/children/**, server/tasks/run.ts, server/tasks/helpers.ts, server/orch-mcp.ts, server/exec/worktree.ts, server/no-push.test.ts, web/src/components/tasks/Worktrees.tsx, shared/plan/index.ts
 ---
 
 # 子对话收尾和独立分支

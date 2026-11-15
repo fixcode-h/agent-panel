@@ -13,9 +13,9 @@
 | 位置                                             | 改动前                                                                                   |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | `server/tasks/run.ts` 的 `submitMerge`           | 只给 `parentTaskId && isolated` 的子对话，P4、共用目录、没有版本管理的子对话没有这个工具 |
-| `server/tasks/merge.ts` `submitMerge`            | 评审门禁、测试记录、交接要点、待回答的提问、后台命令都在这里校验，没有独立分支直接拒绝   |
+| `server/tasks/merge/` `submitMerge`              | 评审门禁、测试记录、交接要点、待回答的提问、后台命令都在这里校验，没有独立分支直接拒绝   |
 | `shared/plan/index.ts` `wrapUpKind`              | 子对话：独立分支 `merge`，P4 `p4`（Agent 分完 changelist 自己标完成），其余没有收尾      |
-| `server/tasks/merge.ts` `finishChildStep`        | 共用目录的子对话不要求先请求收尾，条件满足就直接标完成                                   |
+| `server/tasks/merge/` `finishChildStep`          | 共用目录的子对话不要求先请求收尾，条件满足就直接标完成                                   |
 | `server/tasks/children/turn-end.ts` `nudgeMerge` | 做完没请收尾的提醒只对独立分支                                                           |
 | `shared/builtin/agents.ts` 执行角色              | 「要合回父对话分支的子对话」才按收尾前评审的顺序做                                       |
 | `shared/engine/index.ts` `reviewPart`            | 不是 Git 仓库时评审拿不到改动，只有交接单                                                |

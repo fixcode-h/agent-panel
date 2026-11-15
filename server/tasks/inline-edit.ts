@@ -18,7 +18,7 @@ import { freshTask } from './read.ts'
 
 /**
  * 父对话的就地微改动（shared/inline-edit.ts）：开始时的护栏、结束时的快速检查和轻评审门禁、越界核对。
- * 从 server/tasks/merge.ts 挪出来（那个函数到了长度上限），收尾门禁是摸底报告第 6 条加的
+ * 从 server/tasks/merge/ 挪出来（那个函数到了长度上限），收尾门禁是摸底报告第 6 条加的
  */
 export function createInlineEdit(sc: TasksScope) {
   /**
