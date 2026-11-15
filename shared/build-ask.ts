@@ -7,7 +7,7 @@ import { z } from 'zod'
  * 或者面板重启丢了内存里的对应关系，结果就只推给父对话。子对话已经请了收尾时两边互相等，子对话一直停在「待收尾」
  * （用户 2026-11-04 报）。现在由面板记账：父对话漏填时按「谁申请过还没编」自动补上，结果按这里的记录推回，
  * 共用目录的子对话没拿到这次改动的编译通过，submit_merge 直接拒（面板侧的硬约束，不靠提示词）。
- * 这里只放结构和纯函数；起命令、推消息在 server/tasks/merge.ts、server/tasks/jobs.ts
+ * 这里只放结构和纯函数；起命令、推消息在 server/tasks/merge/build.ts、server/tasks/jobs.ts
  */
 export const BuildAsk = z.object({
   /** asked 申请了还没编；building 父对话已经替它起了编译；passed / failed 这次的结果 */

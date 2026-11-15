@@ -1,5 +1,5 @@
 ---
-paths: server/claims.ts, server/claims.test.ts, server/tasks/merge.ts, server/tasks/children.ts, server/tasks/stuck-child.ts
+paths: server/claims.ts, server/claims.test.ts, server/tasks/merge/**, server/tasks/children.ts, server/tasks/stuck-child.ts
 ---
 
 # 共用目录的文件认领

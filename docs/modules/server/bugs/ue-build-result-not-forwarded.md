@@ -2,9 +2,9 @@
 
 - 状态：已修复（`shared/build-ask.test.ts`、`server/tasks/merge.test.ts` 的「UE 共用目录的子对话」「编译通过时子对话已经在等收尾」、`server/tasks/startup.test.ts` 的编译重启用例通过；流程用例在改前的 `merge.ts` 上确认失败）
 - 症状：UE 项目里子对话向父对话申请编译，父对话编译完成后子对话收不到结果，或收到后也不动，一直停在「待收尾」
-- 入口：`server/tasks/merge.ts` 的 `childRequestBuild` / `parentRequestBuild` / `submitMerge`；`server/tasks/jobs.ts` 的编译结果回调；`server/tasks/drive.ts` 的 `nudgeWrapUp`；`shared/wrapup-prompt.ts` 的 `uePart`
+- 入口：`server/tasks/merge/build.ts` 的 `childRequestBuild` / `parentRequestBuild`、`server/tasks/merge/submit.ts` 的 `submitMerge`；`server/tasks/jobs.ts` 的编译结果回调；`server/tasks/drive.ts` 的 `nudgeWrapUp`；`shared/wrapup-prompt.ts` 的 `uePart`
 - 根因类型：跨对话的交付结果靠模型填参数传递，面板没有记账；结果推给待收尾的子对话会作废它的收尾请求
-- 模块：`server`（`server/tasks/merge.ts`、`server/tasks/jobs.ts`、`server/tasks/build-results.ts`、`server/tasks/drive.ts`、`server/tasks/startup.ts`）、`shared`（`shared/build-ask.ts`、`shared/wrapup-prompt.ts`）
+- 模块：`server`（`server/tasks/merge/`、`server/tasks/jobs.ts`、`server/tasks/build-results.ts`、`server/tasks/drive.ts`、`server/tasks/startup.ts`）、`shared`（`shared/build-ask.ts`、`shared/wrapup-prompt.ts`）
 - 关键词：UE、编译申请、request_build、children、编译结果、待收尾、finish_child、submit_merge、父对话不告诉子对话、互相等
 
 ## 现象

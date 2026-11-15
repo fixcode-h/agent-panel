@@ -1,5 +1,5 @@
 ---
-paths: server/tasks/children.ts, server/tasks/merge.ts, server/tasks/drive.ts, shared/drive.ts, shared/turn-rules.ts, shared/helper-batch.ts, server/tasks/inbox-file.ts, server/store.ts
+paths: server/tasks/children.ts, server/tasks/merge/**, server/tasks/drive.ts, shared/drive.ts, shared/turn-rules.ts, shared/helper-batch.ts, server/tasks/inbox-file.ts, server/store.ts
 ---
 
 # 对话自驱和交给模型的数据（ADR 0041）

@@ -1,12 +1,12 @@
 /**
- * 子对话收尾（server/tasks/merge.ts）：submit_merge 的各道校验、finish_child 合回独立分支、
+ * 子对话收尾（server/tasks/merge/）：submit_merge 的各道校验、finish_child 合回独立分支、
  * 冲突时退回子对话且保留分支、父对话目录挡路时留给父对话处理、分支上没有新改动、合并途中 / 父对话测试中的重复收尾，
  * 以及共用目录没请求收尾就不收。
  *
- * 为什么这样搭：merge.ts 只做编排（校验、先提交、记收尾请求、按结果改状态和通知），真正的 git 合并在
+ * 为什么这样搭：merge/ 只做编排（校验、先提交、记收尾请求、按结果改状态和通知），真正的 git 合并在
  * TasksScope.integrate（children.ts）里，它要整套 tasksApi 闭包才建得起来。这里给一个最小的假 scope，
  * integrate 直接调 children.ts 用的同一个 integrateBranch（worktree-integrate.ts）在真实的临时仓库上合，
- * 这样「提交到分支 → 合进原目录 → 冲突 / 挡路撤回」走的是真实 git 和真实文案，断言的是 merge.ts 自己的状态流转。
+ * 这样「提交到分支 → 合进原目录 → 冲突 / 挡路撤回」走的是真实 git 和真实文案，断言的是 merge/ 自己的状态流转。
  * 运行：npx tsx --test server/tasks/merge.test.ts
  */
 import assert from 'node:assert/strict'
@@ -20,7 +20,7 @@ import type { TasksScope } from './scope.ts'
 
 // 下面这些模块（日志、附件等）加载时会读数据目录：必须在上面的工具包设好 AGENT_PANEL_DATA 之后再加载
 const { Task, TaskStep, PlanStep, TaskPlan, TestStep } = await import('../../shared/schema.ts')
-const { createMerge } = await import('./merge.ts')
+const { createMerge } = await import('./merge/index.ts')
 const { createClaims } = await import('../claims.ts')
 const { integrateBranch } = await import('../exec/worktree-integrate.ts')
 const { forwardBuildResult } = await import('./build-results.ts')
