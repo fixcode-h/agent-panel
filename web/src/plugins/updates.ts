@@ -16,7 +16,8 @@ interface State {
   bulk: Map<string, BulkStep>
 }
 export interface BulkStep {
-  status: 'waiting' | 'updating' | 'done' | 'failed'
+  /** skipped：包装插件的权限变了或有新增中高级发现，一键更新跳过、要用户单独确认（ADR 0068） */
+  status: 'waiting' | 'updating' | 'done' | 'failed' | 'skipped'
   /** 要升到的版本 */
   to: string
   error?: string

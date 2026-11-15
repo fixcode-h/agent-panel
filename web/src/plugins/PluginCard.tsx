@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { ExternalLink, Loader2, MoreHorizontal, RotateCcw, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react'
+import {
+  ExternalLink,
+  Loader2,
+  MoreHorizontal,
+  Package,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+  Undo2,
+} from 'lucide-react'
 import { t } from '@shared/i18n'
 import { useNav } from '@/lib/data'
 import { toast } from '@/lib/toast'
@@ -17,12 +26,16 @@ import { PluginContributions } from './PluginContributions'
 import { pluginIcon } from './icon'
 import { pluginParamsId } from './PluginParamsNav'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
+import { openWrap } from './wrap-state'
 
 export { pluginIcon }
 
 /** 来源的一行说明：GitHub 仓库、上传的文件、本机目录 */
-export function sourceLabel(row: Pick<PluginRow, 'source'>) {
+export function sourceLabel(row: Pick<PluginRow, 'source' | 'manifest'>) {
   const s = row.source
+  // 包装插件：上游仓库固定在哪个提交（ADR 0068）
+  const w = row.manifest.wrap
+  if (w) return `${w.repo}@${w.commit.slice(0, 7)}`
   if (s.kind === 'github') return `GitHub · ${s.ref}${s.tag && s.tag !== 'HEAD' ? ` @ ${s.tag}` : ''}`
   if (s.kind === 'zip') return t('压缩包 · {name}', { name: s.ref })
   return t('本机目录 · {dir}', { dir: s.ref })
@@ -58,8 +71,9 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
     entry?.homepage || m.homepage || (row.source.kind === 'github' ? `https://github.com/${row.source.ref}` : '')
   // 重新安装：市场里的按插件 id 装市场当前版本；单个插件的仓库按装时的分支和子目录；本机目录重新链接；压缩包没有来源可重装
   const s = row.source
-  const reinstallFrom =
-    s.kind === 'github'
+  const reinstallFrom = m.wrap
+    ? undefined
+    : s.kind === 'github'
       ? () => pluginApi.fromGithub(entry ? { repo: s.ref, id: m.id } : { repo: s.ref, ref: s.tag, path: s.path })
       : s.kind === 'dir'
         ? () => pluginApi.fromDir(s.ref)
@@ -158,6 +172,12 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-prose font-semibold">{m.name}</span>
             <Badge>v{m.version}</Badge>
+            {m.wrap && (
+              <Badge tone="accent" title={t('从 GitHub 链接包装的插件')}>
+                <Package className="h-3 w-3" />
+                {t('包装 · GitHub')}
+              </Badge>
+            )}
             {row.hasCode && <Badge tone="warning">{t('含代码')}</Badge>}
           </div>
           <p className="truncate text-xs text-subtle" title={sourceLabel(row)}>
@@ -220,6 +240,12 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
                 {t('退回上一版 v{version}', { version: row.rollback })}
               </MenuItem>
             )}
+            {m.wrap && (
+              <MenuItem disabled={busy} onSelect={() => openWrap({ url: m.wrap!.repo, update: true })}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                {t('重新包装')}
+              </MenuItem>
+            )}
             {reinstallFrom && onPreview && (
               <MenuItem disabled={busy} onSelect={() => void reinstall()}>
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -232,7 +258,7 @@ export function PluginCard({ row, onPreview }: { row: PluginRow; onPreview?: (p:
                 {t('打开主页')}
               </MenuItem>
             )}
-            {(row.rollback || (reinstallFrom && onPreview) || homepage) && <MenuSeparator />}
+            {(row.rollback || m.wrap || (reinstallFrom && onPreview) || homepage) && <MenuSeparator />}
             <MenuItem danger onSelect={() => ask('delete')}>
               <Trash2 className="h-3.5 w-3.5" />
               {t('删除插件')}

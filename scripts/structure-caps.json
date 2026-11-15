@@ -525,5 +525,22 @@
     "web/src/pages/OverviewPage.tsx": 1,
     "web/src/pages/SchedulesPage.tsx": 1
   },
-  "liveFallback": 10
+  "liveFallback": 10,
+  "requests": {
+    "web/src/lib/api-away.ts": 3,
+    "web/src/lib/api-cli-more.ts": 12,
+    "web/src/lib/api-config-scan.ts": 1,
+    "web/src/lib/api-experience.ts": 10,
+    "web/src/lib/api-messages.ts": 2,
+    "web/src/lib/api-net.ts": 1,
+    "web/src/lib/api-notify.ts": 2,
+    "web/src/lib/api-paths.ts": 2,
+    "web/src/lib/api-remote.ts": 9,
+    "web/src/lib/api-retry.ts": 1,
+    "web/src/lib/api.ts": 270,
+    "web/src/lib/app-update.ts": 3,
+    "web/src/plugins/api.ts": 10,
+    "web/src/plugins/host.ts": 2,
+    "web/src/plugins/registry.ts": 1
+  }
 }

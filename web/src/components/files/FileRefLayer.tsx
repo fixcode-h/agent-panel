@@ -166,14 +166,14 @@ export function FileRefLayer({
       const info = target.local ? null : await resolve(target.path)
       // 网页（.html / .htm / .svg）开到右栏的网页页签（设计稿 6.6）：用完整路径，子对话的文件开在父对话右栏里也找得到
       if (web && !info?.dir && isHtmlFile(target.path)) {
-        openWebTab(web.taskId, { kind: 'file', path: info?.exists ? info.abs : target.path })
+        openWebTab(web.taskId, { kind: 'file', path: info?.exists ? info.abs : target.path, taskId })
         return
       }
       if (info?.dir || (clickAction(target.path) === 'system' && !fileViewerFor(target.path, plugins)))
         return openSystem(target)
       void previewOf(target)
     },
-    [openSystem, previewOf, resolve, plugins, web],
+    [openSystem, previewOf, resolve, plugins, web, taskId],
   )
 
   const api_ = useMemo<FileRefApi>(

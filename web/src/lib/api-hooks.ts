@@ -1,102 +1,46 @@
-import type { HookDef, HookDefInput, HookEventName } from '@shared/hooks/defs'
+import type { z } from 'zod'
+import type { HookDefInput, HookEventName } from '@shared/hooks/defs'
 import type { HookTier } from '@shared/hooks/builtins'
-import { json, request } from './api'
+import {
+  hooksContract as H,
+  type BuiltinHookView as BuiltinHookViewSchema,
+  type HookCheckView as HookCheckViewSchema,
+  type HookTestView as HookTestViewSchema,
+  type HookTriggerView as HookTriggerViewSchema,
+  type HooksView as HooksViewSchema,
+  type PluginHookView as PluginHookViewSchema,
+} from '@shared/api-contract/hooks'
+import { call } from './api/call'
 
 /**
- * 设置页「钩子」的接口（server/hooks/api.ts）。单独一个文件：api.ts 到了行数上限。
+ * 设置页「钩子」的接口（server/hooks/api.ts），按 shared/api-contract/hooks.ts 的契约调。单独一个文件：api.ts 到了行数上限。
  * 演示版没有后端，同样的路径交给 demo-hooks.ts 的模拟实现
  */
-export interface BuiltinHookView {
-  id: string
-  event: HookEventName
-  name: string
-  description: string
-  defaultOn: boolean
-  /** 从哪一档开始开；老的服务端没有 */
-  tier?: HookTier
-  /** 这一层按档位该是什么（不看逐个改过的） */
-  tierOn?: boolean
-  /** 实际用的值：看的是某个项目时按那个项目算 */
-  on: boolean
-  globalOn: boolean
-  /** 这个项目单独设的开关；没设（跟着全局）为 null */
-  projectOn: boolean | null
-  params: { key: string; kind: 'list' | 'number'; label: string; hint: string; value: string[] | number }[]
-}
+export type BuiltinHookView = z.infer<typeof BuiltinHookViewSchema>
 /** 开着的插件带的钩子：只能开关 */
-export interface PluginHookView {
-  id: string
-  name: string
-  description: string
-  event: HookEventName
-  /** 插件名 */
-  plugin: string
-  on: boolean
-}
-export interface HooksView {
-  builtins: BuiltinHookView[]
-  /** 全局档位、这个项目选的档位（没选为 null）、这一层逐个改过几个；老的服务端没有 */
-  tier?: HookTier
-  projectTier?: HookTier | null
-  tierChanged?: number
-  hooks: HookDef[]
-  /** 老的服务端没有这个字段 */
-  plugins?: PluginHookView[]
-  support: {
-    id: string
-    name: string
-    /** 本机检测到的版本；没检测到为空 */
-    version?: string
-    events: HookEventName[]
-    /** 本机版本太老、装不上的事件和要多少版本 */
-    tooOld: { event: HookEventName; min: string }[]
-  }[]
-  /** 按 CLI 关掉的事件 */
-  cliOff: Record<string, HookEventName[]>
-}
-export interface HookCheckView {
-  errors: string[]
-  warnings: string[]
-}
-export interface HookTestView extends HookCheckView {
-  input: unknown
-  out?: { block?: boolean; deny?: boolean; reason?: string; context?: string }
-  error?: string
-  ms: number
-}
-export interface HookTriggerView {
-  at: string
-  hookId: string
-  name: string
-  event: string
-  taskId: string
-  result: 'none' | 'block' | 'deny' | 'context' | 'error'
-  detail: string
-  ms: number
-}
+export type PluginHookView = z.infer<typeof PluginHookViewSchema>
+export type HooksView = z.infer<typeof HooksViewSchema>
+export type HookCheckView = z.infer<typeof HookCheckViewSchema>
+export type HookTestView = z.infer<typeof HookTestViewSchema>
+export type HookTriggerView = z.infer<typeof HookTriggerViewSchema>
 
 export const hooksApi = {
-  list: (projectId = '') =>
-    request<HooksView>(projectId ? `/hooks?projectId=${encodeURIComponent(projectId)}` : '/hooks'),
+  list: (projectId = '') => call(H.list, { query: { projectId } }),
   /** projectId 给了是这个项目单独的开关；on 为 null 去掉单独的设置 */
   setBuiltin: (id: string, on: boolean | null, projectId = '') =>
-    request<{ ok: true }>(`/hooks/builtins/${id}`, json('PUT', projectId ? { on, projectId } : { on })),
+    call(H.setBuiltin, { params: { id }, body: projectId ? { on, projectId } : { on } }),
   /** projectId 给了是这个项目的档位；tier 为 null 表示项目跟随全局 */
   setTier: (tier: HookTier | null, projectId = '') =>
-    request<{ ok: true }>('/hooks/tier', json('PUT', projectId ? { tier, projectId } : { tier })),
-  setPlugin: (id: string, on: boolean) =>
-    request<{ ok: true }>(`/hooks/plugins/${encodeURIComponent(id)}`, json('PUT', { on })),
-  setCliOff: (cli: string, events: HookEventName[]) =>
-    request<{ ok: true }>(`/hooks/cli-off/${cli}`, json('PUT', { events })),
+    call(H.setTier, { body: projectId ? { tier, projectId } : { tier } }),
+  setPlugin: (id: string, on: boolean) => call(H.setPlugin, { params: { id }, body: { on } }),
+  setCliOff: (cli: string, events: HookEventName[]) => call(H.setCliOff, { params: { cli }, body: { events } }),
   setParam: (id: string, key: string, value: string[] | number) =>
-    request<{ ok: true }>(`/hooks/builtins/${id}/params`, json('PUT', { key, value })),
-  check: (def: HookDefInput, run = false) => request<HookCheckView>('/hooks/check', json('POST', { def, run })),
-  test: (def: HookDefInput, input?: unknown) => request<HookTestView>('/hooks/test', json('POST', { def, input })),
+    call(H.setParam, { params: { id }, body: { key, value } }),
+  check: (def: HookDefInput, run = false) => call(H.check, { body: { def, run } }),
+  test: (def: HookDefInput, input?: unknown) => call(H.test, { body: { def, input } }),
   save: (def: HookDefInput) =>
-    def.id
-      ? request<{ hook: HookDef; warnings: string[] }>(`/hooks/${def.id}`, json('PUT', def))
-      : request<{ hook: HookDef; warnings: string[] }>('/hooks', json('POST', def)),
-  remove: (id: string) => request<{ ok: true }>(`/hooks/${id}`, { method: 'DELETE' }),
-  order: (ids: string[]) => request<{ ok: true }>('/hooks/order', json('POST', { ids })),
-  triggers: () => request<HookTriggerView[]>('/hooks/triggers'),
+    def.id ? call(H.update, { params: { id: def.id }, body: def }) : call(H.create, { body: def }),
+  remove: (id: string) => call(H.remove, { params: { id } }),
+  order: (ids: string[]) => call(H.order, { body: { ids } }),
+  triggers: () => call(H.triggers),
 }
