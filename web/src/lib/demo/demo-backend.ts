@@ -5,6 +5,7 @@ import { demoCapabilities } from './demo-capabilities'
 import { demoJobStore, demoJobs, setDemoJobs } from './demo-jobs'
 import { demoChildCounts, demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
+import { demoOutputChanges, demoTurnOutputs } from './demo-turn-outputs'
 import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
@@ -3048,6 +3049,8 @@ function tasksRoute(
     const file = query.get('path') ?? ''
     return { path: file, diff: DEMO_DIFFS[file] ?? '' }
   }
+  if (sub === 'turn-outputs' && method === 'POST')
+    return demoTurnOutputs(task, body as { msgs: string[]; paths: string[] })
   if (sub === 'turn-revert' && method === 'POST') {
     if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
     const m = task.messages.find((x) => x.id === (body as { msg?: string } | undefined)?.msg)
@@ -3804,6 +3807,8 @@ async function seedTasks(d: Db) {
     ]
     // 对话停下后最后面挂「这个对话改了 N 个文件」：超过 3 个文件，卡片上才有「查看全部」可点
     const summary = [...task.messages].reverse().find((m) => m.role === 'agent' && !m.step && m.text.trim())
+    // 回复里提到做好的示例页：停下后画成 HTML 卡片（设计稿 6.6）
+    if (summary) summary.text += '\n\n示例页放在 `demo/cart-badge.html`，打开就能看到角标归零的效果。'
     if (summary)
       summary.turnChanges = {
         spans: [{ from: 'demo-before', to: 'demo-after' }],
@@ -3812,6 +3817,8 @@ async function seedTasks(d: Db) {
           // 和 DEMO_DIFFS 里的样例对得上：cart.ts 是短改动，cart.test.ts 是整份删除
           { path: 'src/store/cart.ts', add: 4, del: 1 },
           { path: 'tests/cart.test.ts', add: 0, del: 62 },
+          // 本轮产出：示例网页、架构图、排查记录、截图（demo-turn-outputs.ts）
+          ...demoOutputChanges(),
         ],
       }
     demoDoneEvidence(task)

@@ -100,6 +100,10 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/TurnChanges.tsx',
     'web/src/components/tasks/DoneEvidenceCard.tsx',
     'web/src/lib/demo/demo-done-evidence.ts',
+    'web/src/components/tasks/TurnOutputsCard.tsx',
+    'web/src/components/tasks/TaskHtmlCard.tsx',
+    'web/src/components/tasks/html-card-layer.tsx',
+    'web/src/lib/demo/demo-turn-outputs.ts',
     'web/src/components/tasks/ChangesTree.tsx',
     'web/src/components/tasks/MemoryChart.tsx',
     'web/src/components/tasks/RequestCard.tsx',
@@ -171,12 +175,7 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/AgentsPage.tsx',
     'web/src/pages/McpPage.tsx',
   ],
-  '04-design': [
-    'web/src/plugins/PluginPage.tsx',
-    'web/src/components/comfy/',
-    'web/src/components/ai-window/',
-    'web/src/pages/ComfyPage.tsx',
-  ],
+  '04-design': ['web/src/plugins/PluginPage.tsx', 'web/src/components/ai-window/', 'web/src/App.tsx'],
   '05-settings': ['web/src/components/settings/', 'web/src/components/usage/', 'web/src/pages/SettingsPage.tsx'],
   '06-settings-agent': [
     'web/src/components/settings/',
@@ -196,8 +195,6 @@ export const UI_SHARD_COVERS = {
   // 四个小题合成一片：各自只有 8~13 步，固定开销（静态服务 + 浏览器）占掉一半。
   // 四个分片原来各自断言的源码都登记在它名下，改哪一个都跑这一片
   '08-misc': [
-    'web/src/components/comfy/',
-    'web/src/pages/ComfyPage.tsx',
     'web/src/components/ui/hint.tsx',
     // 计划面板（shared/plan/index.ts 那套数据的界面）
     'web/src/pages/SchedulesPage.tsx',

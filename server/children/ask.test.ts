@@ -93,7 +93,10 @@ test('用户点「交给父对话决定」：记成已交出，并收起子对�
   await make('c3', { parentTaskId: 'p3', rootTaskId: 'p3', askUser: true })
   const t = api()
   await t.askParent('c3', '要不要顺手重构？', ['重构', '不动'])
-  const pending = (await read('p3')).messages.find((m) => m.panel === 'ask')!
+  // 走 tasksApi 自己的读接口等卡片落下：另开 store 读盘可能读到写盘队列前的旧快照（CI 抖动过）
+  const pending = (await askStateUntil(t, 'p3', (x) => x.messages.some((m) => m.panel === 'ask'))).messages.find(
+    (m) => m.panel === 'ask',
+  )!
 
   const res = await t.routes.request(`/p3/child-asks/${pending.id}`, {
     method: 'POST',
@@ -107,7 +110,8 @@ test('用户点「交给父对话决定」：记成已交出，并收起子对�
     (x) => x.messages.find((m) => m.id === pending.id)?.ask?.delegated === true,
   )
   assert.equal(after.messages.find((m) => m.id === pending.id)?.ask?.delegated, true, '点按钮交出也记同一个字段')
-  assert.equal((await read('c3')).parentAsks?.length ?? 0, 0, '子对话的弹窗收起')
+  const kid = await askStateUntil(t, 'c3', (x) => (x.parentAsks?.length ?? 0) === 0)
+  assert.equal(kid.parentAsks?.length ?? 0, 0, '子对话的弹窗收起')
 })
 
 test('收尾建议：「提问」关着时同样自动交给父对话，不弹给用户', async () => {

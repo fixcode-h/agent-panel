@@ -1151,6 +1151,10 @@ body,
   --c-capRow-radius: 8px;
   --c-capRow-when: grid;
   --c-capRow-name: inline;
+  --c-htmlCard-radius: 10px;
+  --c-htmlCard-preview: block;
+  --c-htmlCard-previewH: 168px;
+  --c-htmlCard-active: var(--accent);
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;

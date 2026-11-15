@@ -299,6 +299,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await check(p, '设置-组件-数据表格', ['修饰行', '字段名行', '表头底色浓度'])
     await spec.getByRole('button', { name: '恢复本组' }).click()
   }
+  // HTML 卡片 · 本轮产出（设计稿 6.6、6.7）：大卡片、小卡片、本轮产出都画出来；关掉缩略预览立刻写进 #md-style
+  {
+    const spec = p.getByText('HtmlCard · OutputsCard · OutputRow', { exact: true }).locator('xpath=../..')
+    await spec.scrollIntoViewIfNeeded()
+    if ((await spec.locator('[data-html-card]').count()) !== 4) errors.push('设置-组件：HTML 卡片样张应该有 4 张卡片')
+    if (!(await spec.locator('[data-html-card][data-active]').count()))
+      errors.push('设置-组件：HTML 卡片样张里应该有一张「右栏正在显示」')
+    await spec.getByRole('button', { name: '微调', exact: true }).click()
+    await spec.getByRole('switch', { name: '缩略预览' }).click()
+    if (
+      !(await p.evaluate(() => document.getElementById('md-style')?.textContent ?? '')).includes(
+        '--c-htmlCard-preview:none',
+      )
+    )
+      errors.push('设置-组件：关掉 HTML 卡片的缩略预览后 #md-style 里应该有 --c-htmlCard-preview:none')
+    await check(p, '设置-组件-HTML卡片', ['本轮产出', '右栏正在显示', '预览高度'])
+    await spec.getByRole('button', { name: '恢复本组' }).click()
+  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新
