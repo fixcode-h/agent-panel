@@ -15,7 +15,10 @@ export function KnowledgeTagsSpecimen() {
         open={false}
       />
       <KnowledgeTags
-        items={[{ kind: 'lesson', id: 'l8k2', title: '沙箱里跑 e2e 要先去掉 ANTHROPIC_BASE_URL', why: 'command' }]}
+        items={[
+          { kind: 'lesson', id: 'l8k2', title: '沙箱里跑 e2e 要先去掉 ANTHROPIC_BASE_URL', why: 'command' },
+          { kind: 'lesson', id: 'l2p9', title: 'e2e 在 WSL 里跑', why: 'command' },
+        ]}
       />
       <RowShell glyph={<Search className="h-3.5 w-3.5" />} verb={t('搜索')} title="DropTable" ms={90} open={false} />
       <KnowledgeTags items={[{ kind: 'experience', id: 'e3m1', title: '掉落表的代码和数据在哪', why: 'search' }]} />

@@ -431,6 +431,12 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       const u = await runUser(event, facts)
       if (u.deny) return { deny: true, reason: u.deny }
+      // 用户升级成拦截的教训（ADR 0066）：对得上的命令直接拒绝，给出对的做法
+      const blocked = know ? await know.blocked(facts) : ''
+      if (blocked) {
+        noteBuiltin('push-lessons', event, 'deny', blocked)
+        return { deny: true, reason: blocked }
+      }
       // 守卫和用户钩子都放行了才推送：被拒绝的调用不会执行，推了也白推
       const pushedText = know ? await know.before(facts) : ''
       const ctx = [...(pushedText ? [pushedText] : []), ...u.context]

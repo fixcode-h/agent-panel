@@ -59,17 +59,17 @@ test('提示：有工具时按文件的只给标题，没有工具时按预算�
   assert.match(withTools, /### 全局规则/)
   assert.doesNotMatch(withTools, /### 按文件的规则/)
   assert.match(withTools, /- 按文件的规则（src\/\*\*）/)
-  assert.match(withTools, /record_lesson/)
+  assert.match(withTools, /knowledge_record/)
   const noTools = lessonsPrompt(ls, false)
   assert.match(noTools, /### 按文件的规则/)
-  assert.doesNotMatch(noTools, /record_lesson/)
+  assert.doesNotMatch(noTools, /knowledge_record/)
   // 没有教训：有工具时只提醒怎么记，没工具时不占提示
   assert.equal(lessonsPrompt([], false), '')
-  assert.match(lessonsPrompt([], true), /record_lesson/)
+  assert.match(lessonsPrompt([], true), /knowledge_record/)
   // 子任务只查不记：照样按文件查（project_lessons），不带记教训的说明；没有教训时不占提示
   const helper = lessonsPrompt(ls, true, [], false)
-  assert.match(helper, /按文件生效/)
-  assert.doesNotMatch(helper, /record_lesson/)
+  assert.match(helper, /按文件、命令、报错生效/)
+  assert.doesNotMatch(helper, /knowledge_record/)
   assert.equal(lessonsPrompt([], true, [], false), '')
 })
 
@@ -83,7 +83,7 @@ test('提示有预算：有工具时整段不超过 1500 字，条目再多也�
   assert.ok(q.length <= PROMPT_CAP, `提示太长：${q.length}`)
   assert.match(q, /面板会推送/)
   // 记教训的写法直接给出参数，不用先经 more_tools 查用法
-  assert.match(q, /name 写 record_lesson，arguments 照写/)
+  assert.match(q, /name 写 knowledge_record，arguments 照写/)
 })
 
 test('project_lessons 有预算：命中再多也只给最相关的全文，其余列标题', () => {

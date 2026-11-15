@@ -28,7 +28,7 @@ import { log } from '../log.ts'
 /**
  * 整个对话完成后学经验（设计稿 §6）：
  * 1. 顶层对话一轮结束就排一次，空闲够久（设置里的分钟数）再看——这期间用户追问了、对话又跑起来了就重排；
- * 2. 到点时整个对话（含所有子对话、工作流）必须是「已完成」，否则不学；
+ * 2. 到点时这个对话不能还在跑（一轮结束就学，ADR 0066；以前要整个对话树完成），否则不学；
  * 3. 只看上次学过之后的新工具调用，先机械摘要和过闸门（不花 token），过了才调一次模型提炼；
  * 4. 学到的条目按规矩校验、路径必须存在，合进已有的同一件事或新加，结果在对话里写一行。
  * 学过的时间记在数据目录 experience-state.json：同一段对话不会反复学。
@@ -41,7 +41,7 @@ export interface LearnDeps {
   getTask(id: string): Promise<Task | null>
   /** 任务列表（只用 id 和 parentTaskId 找子对话） */
   listTasks(): Promise<Pick<Task, 'id' | 'parentTaskId'>[]>
-  /** 整个对话现在是不是「已完成」（含子对话、后台命令、工作流） */
+  /** 这个对话的这一轮是不是结束了（不在跑） */
   isDone(task: Task): Promise<boolean>
   projects: Lister<Project>
   agents: Lister<Agent>

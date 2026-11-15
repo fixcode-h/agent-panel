@@ -3,8 +3,10 @@ import path from 'node:path'
 import { globBase } from '../shared/experience.ts'
 import {
   ProjectKnowledgeHits,
+  addFeedback,
   addHits,
   pruneHits,
+  type FeedbackKind,
   type KnowledgeKind,
   type KnowledgeHitsView,
 } from '../shared/knowledge-hits.ts'
@@ -70,4 +72,16 @@ export async function knowledgeHitsView(
       lessons: root ? await missingPaths(root, lessons) : {},
     },
   }
+}
+
+/** 记一次推送后的反馈（帮上 / 违反 / 漏推，server/hooks/knowledge-feedback.ts 判定）：和命中同一个文件、同一个队列 */
+export function recordKnowledgeFeedback(projectId: string, ids: string[], kind: FeedbackKind) {
+  if (!projectId || !ids.length) return Promise.resolve()
+  const file = hitsFile(projectId)
+  return enqueueWrite(file, async () => {
+    const cur = await readKnowledgeHits(projectId)
+    const at = new Date().toISOString()
+    for (const id of new Set(ids)) cur.lessons = addFeedback(cur.lessons, id, kind, at)
+    await writeTextAtomic(file, JSON.stringify(cur, null, 2))
+  }).catch((e) => console.warn('记录教训反馈失败：', e))
 }

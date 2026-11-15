@@ -2,6 +2,8 @@ import {
   FileText,
   FlaskConical,
   GraduationCap,
+  Inbox,
+  Layers,
   Lightbulb,
   Library,
   Plug,
@@ -92,6 +94,18 @@ export function ProjectSettingsNav({
         <NavItem on={section === 'experience'} onClick={() => setSection('experience')}>
           <Lightbulb className="h-4 w-4 shrink-0" strokeWidth={2.2} />
           {t('项目经验')}
+        </NavItem>
+      )}
+      {project && (
+        <NavItem on={section === 'candidates'} onClick={() => setSection('candidates')}>
+          <Inbox className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+          {t('候选')}
+        </NavItem>
+      )}
+      {project && (
+        <NavItem on={section === 'distill'} onClick={() => setSection('distill')}>
+          <Layers className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+          {t('提炼')}
         </NavItem>
       )}
       {pluginSections.map((p) => {

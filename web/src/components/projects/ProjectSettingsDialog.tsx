@@ -38,6 +38,8 @@ import { RolesPage } from './settings/RolesPage'
 import { WorkflowsPage } from './settings/WorkflowsPage'
 import { TestsPage } from './settings/TestsPage'
 import { ExperiencePage, LessonsPage } from './settings/RecordPages'
+import { CandidatesPage } from './knowledge/CandidatesPage'
+import { DistillPage } from './knowledge/DistillPage'
 import { PluginSectionPage } from './settings/PluginSectionPage'
 import { DocsPane, McpPane, SkillsPane } from './settings/DocsPages'
 
@@ -383,6 +385,8 @@ function FormPage({
     return <PluginSectionPage section={section} project={project} draft={draft} set={set} dir={general.dir} />
   if (section === 'lessons') return <LessonsPage project={project} draft={draft} set={set} item={item} />
   if (section === 'experience' && project) return <ExperiencePage project={project} item={item} />
+  if (section === 'candidates' && project) return <CandidatesPage project={project} />
+  if (section === 'distill' && project) return <DistillPage project={project} />
   if (section === 'tests') return <TestsPage draft={draft} set={set} gitRepo={vcs === 'git'} onAssist={onAssist} />
   return <GeneralPage project={project} draft={draft} set={set} vcs={vcs} {...general} />
 }

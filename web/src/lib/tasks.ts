@@ -305,7 +305,7 @@ export function toolView(tool: ToolUse): ToolView | null {
     const send = sendOf(name, tool)
     // 回执是面板自己写的（server/experience/learn.ts 的 recordExperience）：「已记下经验（id: e…）」
     const learned =
-      name === 'record_experience' && !tool.failed
+      (name === 'record_experience' || name === 'knowledge_record') && !tool.failed
         ? /已记下经验（id: ([\w-]+)）/.exec(tool.output ?? '')?.[1]
         : undefined
     return {
@@ -520,6 +520,15 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 请用户授权推送（项目设置「第一次需要推送时问一次」）：标题写分支，展开看用户的决定
     case 'ask_push':
       return as(title, firstLine(a.branch), 'other', tool.output || undefined)
+    case 'knowledge_record':
+      return as(
+        a.id ? t('改写知识') : a.kind === 'experience' ? t('记下经验') : t('记下教训'),
+        firstLine(a.title),
+        'other',
+        text(a.kind === 'experience' ? a.body : a.rule),
+      )
+    case 'knowledge_lookup':
+      return as(title, firstLine(a.query) || list(a.files) || list(a.tags), 'read')
     case 'record_lesson':
       return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
     case 'project_lessons':

@@ -3,19 +3,22 @@ import type { Agent, Project, Task, ToolUse } from '../../shared/schema.ts'
 import type { ProjectExperience } from '../../shared/experience.ts'
 import type { HookFacts } from '../../shared/hooks.ts'
 import {
+  blockText,
+  blockingLesson,
   budgetHits,
   commandLessons,
   errorLessons,
   pathLessons,
   pushText,
   searchExperience,
-  searchText,
   type PushHit,
 } from '../../shared/knowledge/push.ts'
+import { searchText } from '../../shared/knowledge/match/normalize.ts'
 import { loadProjectLessons } from '../projects/lessons.ts'
 import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { taskMap } from '../runtime/task-state.ts'
 import { taskLog } from '../tasks/log.ts'
+import { knowledgeCapture, notePushedCommand } from './knowledge-capture.ts'
 
 /**
  * 内置钩子「推送项目教训和经验」（push-lessons）：设计稿「经验与教训重新设计」一期 ②③④⑦。
@@ -84,6 +87,8 @@ export function knowledgePush(c: KnowledgePushCtx) {
     const subject = subjectOf(c.cwd, facts)
     c.note(event, `${subject}：${hits.map((h) => h.title).join('、')}`)
     taskLog(c.task.id, '推送项目知识', { why, ids: hits.map((h) => h.id) })
+    // 跑命令前推的教训：等这条命令的结果判帮没帮上（server/hooks/knowledge-capture.ts）
+    if (why === 'command' && facts.tool) notePushedCommand(c.task.id, String(facts.tool.input.command ?? ''), ls)
     const list = pending.get(c.task.id) ?? []
     list.push({ facts, hits, at: Date.now() })
     pending.set(c.task.id, list)
@@ -101,7 +106,27 @@ export function knowledgePush(c: KnowledgePushCtx) {
     else pending.delete(c.task.id)
   }
 
+  const capture = knowledgeCapture({
+    taskId: c.task.id,
+    projectId: c.project.id,
+    root,
+    lessons: () => lessons,
+    pushedIds: () => pushed.get(c.task.id) ?? new Set<string>(),
+  })
+
   return {
+    /** 拦截档（用户升级成 block 的教训）：命令对得上就拒绝，返回拒绝理由；没有就是空串 */
+    async blocked(facts: HookFacts): Promise<string> {
+      const tool = facts.tool
+      if (tool?.kind !== 'shell') return ''
+      await load()
+      const command = String(tool.input.command ?? '')
+      const l = blockingLesson(lessons, command)
+      if (!l) return ''
+      void recordKnowledgeHits(c.project.id, 'lessons', [l.id], root)
+      taskLog(c.task.id, '教训拦截命令', { id: l.id })
+      return blockText(l, command)
+    },
     async before(facts: HookFacts): Promise<string> {
       flushTags()
       const tool = facts.tool
@@ -131,11 +156,16 @@ export function knowledgePush(c: KnowledgePushCtx) {
     async after(facts: HookFacts): Promise<string> {
       flushTags()
       const tool = facts.tool
-      // 只认 CLI 报出来的失败（failed === true），报不出失败的 CLI 不猜
-      if (!tool?.result?.failed || !tool.result.output) return ''
+      if (!tool?.result) return ''
       await load()
-      if (!lessons.length) return ''
-      return deliver(facts, 'tool.after', errorLessons(lessons, tool.result.output), 'error')
+      // 反馈和当场捕获（要在推本次报错的教训之前判：事前推没推过按推之前的算）
+      const caught = await capture.after(facts)
+      // 只认 CLI 报出来的失败（failed === true），报不出失败的 CLI 不猜
+      const pushedText =
+        tool.result.failed && tool.result.output && lessons.length
+          ? deliver(facts, 'tool.after', errorLessons(lessons, tool.result.output), 'error')
+          : ''
+      return [pushedText, caught].filter(Boolean).join('\n\n')
     },
   }
 }

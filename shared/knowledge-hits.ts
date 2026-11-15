@@ -18,6 +18,13 @@ export const KnowledgeHit = z.object({
   lastAt: z.string().catch('').default(''),
   /** 最近命中的对话（顶层对话 id），新的在前 */
   taskIds: z.array(z.string()).max(HIT_TASKS_MAX).catch([]).default([]),
+  /**
+   * 推送后的反馈（设计稿 4.7，三期，server/hooks/knowledge-feedback.ts 判定，只看工具调用不看回复文字）：
+   * helped 推了之后同目的的命令一次就过；violated 推了还是出现了这条记下的报错；missed 报错对上了这条、事前却没推到
+   */
+  helped: z.number().int().min(0).catch(0).default(0),
+  violated: z.number().int().min(0).catch(0).default(0),
+  missed: z.number().int().min(0).catch(0).default(0),
 })
 export type KnowledgeHit = z.infer<typeof KnowledgeHit>
 
@@ -36,14 +43,23 @@ export function addHits(hits: KnowledgeHits, ids: string[], taskId: string, at: 
   const next = { ...hits }
   for (const id of new Set(ids)) {
     if (!id) continue
-    const old = next[id] ?? { count: 0, lastAt: '', taskIds: [] }
+    const old = next[id] ?? { count: 0, lastAt: '', taskIds: [], helped: 0, violated: 0, missed: 0 }
     next[id] = {
+      ...old,
       count: old.count + 1,
       lastAt: at,
       taskIds: taskId ? [taskId, ...old.taskIds.filter((x) => x !== taskId)].slice(0, HIT_TASKS_MAX) : old.taskIds,
     }
   }
   return next
+}
+
+export type FeedbackKind = 'helped' | 'violated' | 'missed'
+
+/** 记一次反馈：没有命中记录的条目也能记（missed 就是事前没推到） */
+export function addFeedback(hits: KnowledgeHits, id: string, kind: FeedbackKind, at: string): KnowledgeHits {
+  const old = hits[id] ?? { count: 0, lastAt: '', taskIds: [], helped: 0, violated: 0, missed: 0 }
+  return { ...hits, [id]: { ...old, [kind]: old[kind] + 1, lastAt: old.lastAt || at } }
 }
 
 /** 只留还在的条目：删掉的经验 / 教训不再占记录 */

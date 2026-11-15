@@ -1500,6 +1500,7 @@ export const EN_TASKS: Record<string, string> = {
   '已停止 {n} 个对话': 'Stopped {n} conversations',
   '已归档 {n} 个对话': 'Archived {n} conversations',
   取消选择: 'Clear selection',
+  选择: 'Select',
   没有符合的对话: 'No matching conversations',
   这一组现在没有对话: 'No conversations in this group right now',
   '选择「{title}」': 'Select “{title}”',
