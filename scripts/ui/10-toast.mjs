@@ -2,8 +2,8 @@
  * 界面检查分片：提示（toast）统一走 web/src/lib/toast.ts 之后的行为
  *
  * 拦住的是这次改造的几件事，都是别的用例不会碰到的：
- * - 位置在右上角（原来在右下角，会压住最小化浮条）
- * - 最新的在最上面，依次往下
+ * - 默认位置在右下角（用户要求；最小化浮条在的时候整体抬高让开它，见 ui/toaster.tsx）
+ * - 最新的贴着底边，旧的依次往上（下文说的「最上面那条」指最新的一条，即 data-index=0）
  * - 同屏最多 TOAST_VISIBLE_LIMIT 条，其余排队、前面的消失后补位
  *   （不是 sonner 的 visibleToasts，那个只把超出的藏起来、不补位）
  * - 关闭按钮只在鼠标悬停 / 键盘聚焦时出现，触屏常显
@@ -174,7 +174,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await envTitle.waitFor({ timeout: 5000 }).catch(() => {})
     }
     // 右键菜单和菜单项都直接派发事件，不用鼠标点：提示叠满展开后会盖住那一行的右半边和弹出的菜单
-    // （提示在右上角，那一行也在右边），鼠标点会被提示挡住、一直重试到超时。这条用例测的是提示排队，
+    // （提示叠起来很高，那一行也在右边），鼠标点会被提示挡住、一直重试到超时。这条用例测的是提示排队，
     // 不是这一行点不点得到，所以不走命中测试
     const box = await row.boundingBox()
     await row.dispatchEvent('contextmenu', {
@@ -228,23 +228,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '提示-排队与同屏上限')
   }
 
-  /* 位置：右上角 */
+  /* 位置：右下角 */
   await ensure(1)
   {
     const box = await toasts.first().boundingBox()
     const viewport = p.viewportSize()
     if (!box || !viewport) errors.push('提示：量不到提示的位置')
     else {
-      // 离右边 32px 以内、离上边 60px 以内算右上角
+      // 离右边 32px 以内、离下边 100px 以内算右下角（最小化浮条在时会再抬高一截）
       const fromRight = viewport.width - (box.x + box.width)
-      const fromTop = box.y
+      const fromBottom = viewport.height - (box.y + box.height)
       if (fromRight > 32) errors.push(`提示：没在右边（离右边缘 ${Math.round(fromRight)}px）`)
-      if (fromTop > 60) errors.push(`提示：没在上边（离上边缘 ${Math.round(fromTop)}px，原来在右下角）`)
-      await check(p, '提示-位置在右上角')
+      if (fromBottom > 100) errors.push(`提示：没在下边（离下边缘 ${Math.round(fromBottom)}px，原来在右上角）`)
+      await check(p, '提示-位置在右下角')
     }
   }
 
-  /* 最新的在最上面：data-index 越大 y 越大（index 0 是最新的一条） */
+  /* 最新的贴着底边：data-index 越大 y 越小，旧的依次往上（index 0 是最新的一条） */
   await ensure(VISIBLE_LIMIT)
   {
     const tops = await p.evaluate(() =>
@@ -256,10 +256,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const byIndex = [...tops].sort((a, b) => a.index - b.index)
     const ys = byIndex.map((t) => t.y)
     if (ys.length < 2) errors.push(`提示-顺序：屏幕上只有 ${ys.length} 条，量不出先后顺序`)
-    else if (!ys.every((y, i) => i === 0 || y > ys[i - 1]))
-      errors.push(`提示-顺序：没有按「最新的在最上面」依次往下排（各条 y = ${ys.join(', ')}）`)
-    if (byIndex[0] && byIndex[0].index !== 0) errors.push('提示-顺序：找不到最上面那条（data-index=0）')
-    await check(p, '提示-最新的在最上面')
+    else if (!ys.every((y, i) => i === 0 || y < ys[i - 1]))
+      errors.push(`提示-顺序：没有按「最新的贴着底边」依次往上排（各条 y = ${ys.join(', ')}）`)
+    if (byIndex[0] && byIndex[0].index !== 0) errors.push('提示-顺序：找不到最新的那条（data-index=0）')
+    await check(p, '提示-最新的贴着底边')
   }
 
   /* 关闭按钮：不悬停时隐藏，悬停在这条提示上才出现，移开又收起来 */

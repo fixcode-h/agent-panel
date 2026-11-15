@@ -1,7 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePageSignals } from '@/lib/page-signal'
-import { Toaster } from 'sonner'
-import { TOAST_VISIBLE_LIMIT } from '@/lib/toast-queue'
+import { AppToaster } from '@/components/ui/toaster'
 import { DataProvider, NavCtx, useData, useNav, type Route, useTasks } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
 import { useTaskDoneUnread } from '@/lib/task-unread'
@@ -23,7 +22,6 @@ import { GlobalHintHost } from '@/components/ui/hint'
 import { TaskDock } from '@/components/tasks/TaskDock'
 import { useAiWindowValue } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
-import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { loadPlugins, usePluginPages } from '@/plugins/registry'
@@ -342,22 +340,8 @@ export function App() {
         )}
         {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
         <UpdateResumeDialog />
-        {/* 提示统一走 web/src/lib/toast.ts（自己排队，同屏上限见 lib/toast-queue.ts 的 TOAST_VISIBLE_LIMIT）：
-            位置在右上角，最新的在最上面、依次往下。
-            `visibleToasts` 必须和队列上限是同一个数：sonner 自己还会按 `index + 1 <= visibleToasts`
-            把超出的那条设成 `data-visible="false"`（opacity 0、不吃指针），默认值是 3，
-            队列放进来的第 4 条就会被它默默藏掉；设成同一个数后两者不打架。
-            `expand` 必须有：不展开时 sonner 把非最上面那条压成一条边（内容透明），
-            和「依次展示下来」相反；展开后鼠标悬上去也不会再整体跳一下。
-            关闭按钮通过 `closeButton` 整体开启，样式在 index.css 里改成「悬停才显示」。 */}
-        <Toaster
-          theme={dark ? 'dark' : 'light'}
-          position="top-right"
-          expand
-          visibleToasts={TOAST_VISIBLE_LIMIT}
-          closeButton
-          toastOptions={{ closeButtonAriaLabel: t('关闭') }}
-        />
+        {/* 提示统一走 web/src/lib/toast.ts；位置、停留时长读设置 → 组件 →「提示」（默认右下角），细节见 ui/toaster.tsx */}
+        <AppToaster dark={dark} />
       </NavCtx.Provider>
     </DataProvider>
   )

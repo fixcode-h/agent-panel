@@ -198,6 +198,25 @@ export const COMP_SPEC = {
     thumbW: px(56, 40, 120),
     ring: hue('orange'),
   },
+  /**
+   * 提示（toast，web/src/components/ui/toaster.tsx 和 index.css 的 [data-sonner-toast]）：
+   * 浮层色的小卡片，图标按类型着色。位置和停留时长不是 CSS，Toaster 读设置里的值；
+   * 这里也落成变量只是为了和别的项走同一套登记、校验，默认值和 index.css 对得上
+   */
+  toast: {
+    position: pick('bottomRight', {
+      bottomRight: 'bottom-right',
+      topRight: 'top-right',
+      bottomCenter: 'bottom-center',
+      topCenter: 'top-center',
+    }),
+    duration: pick('4s', { '3s': '3000', '4s': '4000', '6s': '6000', '8s': '8000' }),
+    radius: px(10, 0, 20),
+    bg: color('pop', { window: 'var(--window)', ...BG }),
+    border: BORDER,
+    /** 左侧按类型着色的竖条，0 是不画 */
+    bar: px(0, 0, 6),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),
