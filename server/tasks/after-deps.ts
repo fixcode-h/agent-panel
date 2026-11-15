@@ -12,6 +12,7 @@ import { taskDeleted } from '../../shared/task.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask } from './read.ts'
+import { afterDepsLetter } from '../../shared/prompt/letters/notice.ts'
 
 export function createAfterDeps(sc: TasksScope) {
   /** 已经告诉过父对话的「前置等不到了」：子对话 id + 前置 id + 前置状态，同一件事只说一次 */
@@ -75,9 +76,7 @@ export function createAfterDeps(sc: TasksScope) {
       await sc.noteParent(
         parentId,
         k,
-        `【前置没合回】子对话「${k.title}」（id ${k.id}）排在 ${fresh.map((b) => `「${b.title}」（id ${b.id}）`).join('、')} 之后，` +
-          `${fresh.map((b) => `「${b.title}」${b.why}`).join('；')}，所以它还没启动。` +
-          `前置修好合回后它会自动开始；要它现在就开始，用 send_to_conversation 交给它（写清前置没做完、它该怎么办）；确实不做了就在计划里把那一步标跳过。`,
+        afterDepsLetter(k, fresh),
         undefined,
         undefined,
         undefined,

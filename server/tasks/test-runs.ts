@@ -14,6 +14,11 @@ import { log } from '../log.ts'
 import { markWrapUp } from '../../shared/plan/index.ts'
 import type { TasksScope } from './scope.ts'
 import { currentTask, freshTask } from './read.ts'
+import {
+  PARENT_TEST_NONE_LETTER,
+  parentTestFailedLetter,
+  parentTestPassedLetter,
+} from '../../shared/prompt/letters/build.ts'
 
 /**
  * 测试步骤：父对话代跑子对话的测试（ADR 0018 / 0020）、记录测试结果、重启后接着等还没出结果的测试。
@@ -58,7 +63,7 @@ export function createTestRuns(sc: TasksScope) {
       const lines = testRunLines(tk.testRuns)
       await sc.childMerged(
         run.childId,
-        `【父对话测试通过】父对话在它自己的目录里跑完了范围为「全量，合并后由父对话跑」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        parentTestPassedLetter(lines),
         parent ? { peer: await sc.peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
       )
     },
@@ -81,7 +86,7 @@ export function createTestRuns(sc: TasksScope) {
       await sc.sendToChild(
         run.parentId,
         run.childId,
-        `【父对话测试未通过】来自子对话「${run.childTitle}」（id ${run.childId}）：你的分支已经合回，但父对话在它的目录里跑这条步骤时失败了，下面是它的报错。\n${failedText}\n${lines.length ? `已记录的耗时：\n${lines.join('\n')}\n` : ''}你的独立分支还在：按报错修好、在你的分支里重新跑通其它检查后调用 submit_merge；合回去时面板会把这些步骤全部重跑一遍（跑过也不跳过），通过才收尾。`,
+        parentTestFailedLetter({ id: run.childId, title: run.childTitle }, failedText, lines),
         'build',
         'test',
         true,
@@ -204,7 +209,7 @@ export function createTestRuns(sc: TasksScope) {
       const steps = await parentTestStepsOf(tk)
       if (!steps.length) {
         await sc
-          .childMerged(tk.id, '【父对话测试】项目里已经没有要由父对话跑的测试步骤了，直接收尾。')
+          .childMerged(tk.id, PARENT_TEST_NONE_LETTER)
           .catch((e) => log.warn('task', '没有父对话测试步骤时收尾失败', { task: tk.id, error: (e as Error).message }))
         continue
       }

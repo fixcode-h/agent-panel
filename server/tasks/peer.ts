@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Task, type AskKind, type TaskMessage } from '../../shared/schema.ts'
 import { askOptions, taskGone } from '../../shared/task.ts'
-import { clip } from '../../shared/text.ts'
 import type { WakeHold } from '../../shared/wake.ts'
 import { steerTask } from '../exec/steering.ts'
 import type { HelperSpec, Orchestra } from '../../shared/engine/host.ts'
@@ -11,6 +10,7 @@ import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask, readTask } from './read.ts'
+import { FIX_HEAD_LINE, FIX_TAIL, fixAskWake, fixWaitingWake } from '../../shared/prompt/letters/fix.ts'
 
 /**
  * 写盘失败时抛出说得清的错：调用方是面板工具，ask-mcp 会把它作为工具错误交回 Agent。
@@ -19,13 +19,6 @@ import { freshTask, readTask } from './read.ts'
 const saveFailed = (e: unknown): never => {
   throw new Error(`写盘失败，这条消息没有记下（重启后会丢）：${(e as Error).message}`)
 }
-
-/** 叫醒文案里要去掉的那一行开头（叫醒文案自己说了是什么事） */
-const FIX_HEAD_LINE = /^【报错不是我改出来的[^】\n]*】/
-/** 父对话里那条修复请求的结尾（remindParentFix 按它找回当时的报错） */
-const FIX_TAIL = (id: string) => `（修好后用 send_to_conversation 通知这个子对话重跑验证，id: ${id}）`
-/** 叫醒父对话时直接带上的报错正文长度：只说「在收件箱里」的话，收件箱万一没写进去父对话就无从下手 */
-const FIX_WAKE_CHARS = 1500
 
 /** 不叫醒父对话时回给子对话的原因（见 shared/wake.ts 的 WakeHold） */
 const HELD_WHY: Record<WakeHold, string> = {
@@ -199,7 +192,7 @@ export function createPeer(s: TasksScope) {
           .wakeConv(
             parent.id,
             fix
-              ? `子对话「${child.title}」（id: ${child.id}）报了一个不是它改出来的报错，请你安排修复：\n${clip(text.replace(FIX_HEAD_LINE, '').trim(), FIX_WAKE_CHARS)}\n\n按出错的文件找出改出它的子对话，用 send_to_conversation 交给它修；没有对应的子对话、或是你自己改出来的，就自己修或新建子对话修。修好后用 send_to_conversation 通知「${child.title}」（id: ${child.id}）重跑验证：它卡住的那一步在等你的通知。`
+              ? fixAskWake(child, text)
               : `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
             { panel: 'child', peer },
           )
@@ -263,16 +256,10 @@ export function createPeer(s: TasksScope) {
           .trim()
           .replace(FIX_HEAD_LINE, '')
       : ''
-    await s
-      .wakeConv(
-        parent.id,
-        `【面板】子对话「${child.title}」（id: ${child.id}）还在等你安排修复：它报的错还没人回它，它那一步一直挂着等你的通知。${body ? `\n${clip(body.trim(), FIX_WAKE_CHARS)}\n` : ''}\n按出错的文件找出改出它的子对话，用 send_to_conversation 交给它修；没有对应的子对话、或是你自己改出来的，就自己修或新建子对话修。修好后用 send_to_conversation 通知「${child.title}」重跑验证；确实不用修了也用 send_to_conversation 告诉它，别让它一直等。`,
-        { panel: 'child' },
-      )
-      .catch((e) => {
-        s.alertOn(parent.id, 'delivery', t('子对话还在等你安排修复，面板提醒时没能开一轮来处理'))(e)
-        throw e
-      })
+    await s.wakeConv(parent.id, fixWaitingWake(child, body), { panel: 'child' }).catch((e) => {
+      s.alertOn(parent.id, 'delivery', t('子对话还在等你安排修复，面板提醒时没能开一轮来处理'))(e)
+      throw e
+    })
     return true
   }
 

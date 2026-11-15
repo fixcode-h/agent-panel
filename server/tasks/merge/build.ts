@@ -6,6 +6,7 @@ import { isolated } from '../helpers.ts'
 import type { TasksScope } from '../scope.ts'
 import { freshTask, readTask } from '../read.ts'
 import { wakeTask } from './wake.ts'
+import { buildAskLetter, buildQueuedLetter } from '../../../shared/prompt/letters/build.ts'
 
 /** 要编译的改动的指纹（见 shared/build-ask.ts）：只算会触发编译的文件；项目没有编译步骤时为空 */
 export async function buildSigOf(sc: TasksScope, tk: Task) {
@@ -41,18 +42,11 @@ export async function buildSkip(sc: TasksScope, tk: Task, files: string[]) {
  */
 async function askParentBuild(sc: TasksScope, child: Task, note: string, checks = '') {
   if (!child.parentTaskId) return
-  await wakeTask(
-    sc,
-    child.parentTaskId,
-    child,
-    `【编译申请】子对话「${child.title}」（id ${child.id}）申请 UE 编译：${note}${checks ? `\n它做过的检查：${checks.slice(0, 400)}` : ''}
-按申请处理：还有别的子对话的申请没编时合成一次，用 request_build 向面板申请编译，children 写上这些子对话的 id；编译结果面板会同时推给你和它们，失败时它们自己修好再申请。`,
-    {
-      panel: 'wrapup',
-      child: { id: child.id, title: child.title, state: 'waiting' },
-      peer: await sc.peerOf(child, 'child', 'build', `申请 UE 编译：${note}`),
-    },
-  )
+  await wakeTask(sc, child.parentTaskId, child, buildAskLetter(child, note, checks), {
+    panel: 'wrapup',
+    child: { id: child.id, title: child.title, state: 'waiting' },
+    peer: await sc.peerOf(child, 'child', 'build', `申请 UE 编译：${note}`),
+  })
 }
 
 export async function childRequestBuild(
@@ -185,7 +179,7 @@ export async function parentRequestBuild(
     await sc.noteParent(
       h.id,
       parent,
-      `【编译占位】父对话「${parent.title}」（id ${parent.id}）申请了编译（${note.slice(0, 200)}），排在你占着的编译后面，你的编译跑完它会自动开始。你还要连着编、或者需要它等你的改动时，用 message_peer 告诉它。`,
+      buildQueuedLetter(parent, note),
       undefined,
       undefined,
       undefined,

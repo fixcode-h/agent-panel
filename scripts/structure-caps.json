@@ -12,7 +12,7 @@
     "server/tasks/asks.ts::createAsks": 410,
     "server/tasks/child-messages.ts::createChildMessages": 330,
     "server/tasks/drive.ts::createDrive": 440,
-    "server/tasks/flow-runs.ts::createFlowRuns": 400,
+    "server/tasks/flow-runs.ts::createFlowRuns": 390,
     "server/tasks/keepalive.ts::createKeepAlive": 400,
     "server/tasks/peer.ts::createPeer": 390,
     "server/tasks/run.ts::createRun": 610,

@@ -8,6 +8,7 @@ import { hasHeld, removeHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { readTask } from './read.ts'
+import { idleAskLetter } from '../../shared/prompt/letters/notice.ts'
 
 /**
  * 子对话没有输出时以父对话的名义自动问它状态（阈值和次数上限在 shared/task.ts 的 childIdleAsk）；
@@ -81,9 +82,7 @@ export function createIdleAsk(s: TasksScope) {
       // 读父对话的时候它可能已经被停止、替换掉了：这一轮就不问了
       if (!parent || s.shuttingDown || s.live.get(tk.id) !== entry) continue
       const mins = Math.max(1, Math.round(decision.idleMs / askUnitMs))
-      const text =
-        `【状态询问】你已经 ${mins} 分钟没有输出了。请简短报告：现在在做什么、是否卡住；` +
-        `卡住请说明卡在哪一步、需要什么才能继续。没有卡住就说明下一步还要多久，然后接着做。`
+      const text = idleAskLetter(mins)
       const msg: TaskMessage = {
         id: randomUUID(),
         role: 'system',

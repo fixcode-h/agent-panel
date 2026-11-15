@@ -25,6 +25,7 @@ import { steerTask } from '../exec/steering.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask, readTask } from './read.ts'
+import { flowDelegateLetter, flowRunLetter } from '../../shared/prompt/letters/notice.ts'
 
 const now = () => new Date().toISOString()
 const bad = (info: string) => ({ ok: false, info })
@@ -343,17 +344,7 @@ export function createFlowRuns(sc: TasksScope) {
     if (!owner) return
     const e = runEntry(run)!
     const last = [...run.messages].reverse().find((m) => m.error)?.text ?? ''
-    const body = [
-      `【工作流运行】${runLine(e)}`,
-      f.phase === 'failed' && last ? `出错：${clip(last, 600)}` : '',
-      (f.phase === 'ready' || f.phase === 'done') && f.summary ? `结论：\n${clip(f.summary, 1500)}` : '',
-      f.phase === 'ready'
-        ? '看过结论后用 finish_workflow 合回（merge）或放弃（discard）；要改某个节点用 revise_workflow 退回。'
-        : '',
-      f.phase === 'failed' ? '要它带着意见重跑就用 revise_workflow；不做了就 stop_workflow。' : '',
-    ]
-      .filter(Boolean)
-      .join('\n')
+    const body = flowRunLetter({ line: runLine(e), phase: f.phase, error: last, summary: f.summary })
     if (f.phase === 'done' || f.phase === 'cancelled') settle(owner.id, run.id, f.phase === 'done')
     await sc.wakeTask(owner.id, run, body, { panel: 'workflow' })
   }
@@ -369,7 +360,7 @@ export function createFlowRuns(sc: TasksScope) {
     await sc.wakeTask(
       f.owner,
       run,
-      `【工作流运行】工作流「${f.workflowName}」（id ${run.id}）的节点「${n.node}」做完了，用户请你决定：\n${clip(detail, 3000)}\n\n用 answer_workflow 回答：confirm 通过，revise 写清改什么。`,
+      flowDelegateLetter({ workflow: f.workflowName, id: run.id, node: n.node, detail }),
       { panel: 'workflow' },
     )
     return { ok: true, info: t('已交给父对话决定') }

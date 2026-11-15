@@ -15,6 +15,7 @@ import {
 import type { Live } from './types.ts'
 import type { TasksScope } from './scope.ts'
 import { readTask } from './read.ts'
+import { childReplacedLetter, stuckRestartLetter } from '../../shared/prompt/letters/notice.ts'
 
 /**
  * 卡住的子对话由面板接着处理（判定在 shared/stuck-child.ts）：
@@ -59,9 +60,7 @@ export function createStuckChild(s: TasksScope) {
       restarted.delete(id)
       return
     }
-    const text =
-      `【卡住重启】你已经 ${mins} 分钟没有任何输出，状态询问也没有回复，面板判断 CLI 卡住了，已经停掉它并接回这个会话。` +
-      `先用一句话说明刚才卡在哪一步，再从中断的地方接着做；已经做完的不用重做。`
+    const text = stuckRestartLetter(mins)
     try {
       const next = await s.followUp(id, {
         text,
@@ -182,10 +181,7 @@ export function createStuckChild(s: TasksScope) {
         await s.store.update(target.id, target).catch(() => {})
       }
       // 给父对话的 Agent 一封信：它不用再交回原来的子对话，等新的回报
-      const body =
-        `【子对话换人接手】「${old.title}」（id ${id}）卡住了：${why}。面板停掉它、接回原会话重启也没恢复，` +
-        `已经新开子对话「${title}」（id ${r.id}）带上原任务和已有进展接手，计划里等它的步骤改成了等新的子对话。` +
-        `不要再交回原来的子对话，等新的子对话回报。`
+      const body = childReplacedLetter({ id, title: old.title }, why, { id: r.id, title })
       await s.noteParent(
         parent.id,
         old,

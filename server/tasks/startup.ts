@@ -8,6 +8,7 @@ import { diagnosisWaiting, droppedAsksNote, rewaitDiagnosis, settleStopped } fro
 import type { createTaskStore } from './store.ts'
 import { rebuildClaims, type createClaims } from '../claims.ts'
 import { mergeReopenedLetter } from '../../shared/prompt/letters/child-report.ts'
+import { buildReopenedLetter } from '../../shared/prompt/letters/build.ts'
 
 type Store = Pick<ReturnType<typeof createTaskStore>, 'list' | 'get' | 'update'>
 
@@ -152,7 +153,7 @@ async function reopenBuild(store: Store, id: string) {
   await store.update(kid.id, { ...kid, buildAsk: { ...kid.buildAsk, state: 'asked', jobs: [] } })
   const parent = kid.parentTaskId ? await store.get(kid.parentTaskId) : null
   if (!parent) return
-  const text = `【编译申请】面板重启前替子对话「${kid.title}」（id ${kid.id}）起的编译没跑完，结果没有拿到：重新调用 request_build（children 写 ["${kid.id}"]），结果会推给它。`
+  const text = buildReopenedLetter(kid)
   await store.update(parent.id, {
     ...parent,
     inbox: [...parent.inbox, { from: kid.id, title: kid.title, text, at: new Date().toISOString() }],
