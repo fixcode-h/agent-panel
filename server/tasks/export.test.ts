@@ -333,6 +333,19 @@ test('导入 2 版的导出文件：平铺的执行上限字段收进 task.budge
   assert.ok(!('budgetTokens' in got.task))
 })
 
+test('导入 3 版的导出文件：平铺的分析字段收进 task.analysis，modelDesign 转成 plugin', () => {
+  const b = JSON.parse(JSON.stringify(exportTask(task, [coder])))
+  const old = {
+    ...b,
+    version: 3,
+    task: { ...b.task, analysis: 'run', analysisOf: 'x' },
+    children: [{ ...b.task, id: 'k', modelDesign: true }],
+  }
+  const got = parseTaskExport(old)
+  assert.deepEqual(got.task.analysis, { kind: 'run', of: 'x' })
+  assert.equal(got.children[0].plugin, 'blender.model')
+})
+
 test('去密钥：常见格式都能认出，普通文字不动', () => {
   assert.equal(redactSecrets('token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), 'token: [已移除]')
   assert.equal(redactSecrets('Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxx'), 'Authorization: Bearer [已移除]')

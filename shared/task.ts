@@ -27,6 +27,7 @@ import { byStartedDesc, helpersWorking } from './tasks/helpers.ts'
 import { childFlowOf } from './children/flow.ts'
 import { type ChildWait } from './children/activity.ts'
 import { lastFailureKind, transientKind } from './tasks/failure.ts'
+import type { AnalysisKind } from './tasks/task-analysis.ts'
 
 /** 子对话完成的流转、子对话在做什么 / 等什么、按天分组拆在下面三个文件：从这里原样转出，调用方不用改 */
 export * from './children/flow.ts'
@@ -126,8 +127,7 @@ export function newTask(
     askUser: input.askUser ?? false,
     // 父对话的「子对话也提问」：之后新建的子对话默认问不问（设置里的全局默认由创建时填进来）
     childAskUser: input.childAskUser ?? true,
-    ...(input.analysis && { analysis: input.analysis }),
-    ...(input.analysisOf && { analysisOf: input.analysisOf }),
+    ...(input.analysis && { analysis: { kind: input.analysis, ...(input.analysisOf && { of: input.analysisOf }) } }),
     ...(input.plugin && { plugin: input.plugin }),
     ...(input.convBudget && (input.convBudget.tokens || input.convBudget.costUsd) && { convBudget: input.convBudget }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
@@ -969,8 +969,8 @@ export interface ChildEntry {
   childNeeds?: number // 它的后代对话里在等用户处理的个数（见 descendantNeeds）：行上同样是「等你处理」
   /** 用户标记的「解决」：算已完成 */
   resolved?: boolean
-  /** AI 分析开出的子对话（见 Task.analysis）：列表里标题和别的子对话区分开 */
-  analysis?: Task['analysis']
+  /** AI 分析开出的子对话是哪种分析（见 Task.analysis.kind）：列表里标题和别的子对话区分开 */
+  analysis?: AnalysisKind
   /** 还没做完的计划：「计划 7/8」，有它就不算已完成；正在做的那一步也带上 */
   plan?: { done: number; total: number; step?: string; child?: string }
   /** 已经收起（归档 / 独立分支被删掉）：见 taskGone；没在动时不算执行中、也不进运行区 */
@@ -2003,6 +2003,5 @@ export function closeFlow(task: Task, id: string, now = new Date().toISOString()
   task.updatedAt = now
 }
 
-/** 对话归哪个插件的设计模式：旧版的模型设计对话（modelDesign）算 Blender 插件的 blender.model（ADR 0059） */
-export const taskPlugin = (task: { plugin?: string; modelDesign?: boolean }) =>
-  task.plugin || (task.modelDesign ? 'blender.model' : undefined)
+/** 对话归哪个插件的设计模式（ADR 0059）；旧版的模型设计对话（modelDesign）由迁移 0009 转成了 plugin: 'blender.model' */
+export const taskPlugin = (task: { plugin?: string }) => task.plugin || undefined

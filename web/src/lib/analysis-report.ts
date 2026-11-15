@@ -92,7 +92,7 @@ export function findReport(
 ): FoundReport | null {
   const run = reportMessage(task, fence(EVOLUTION_LANG))
   const lessons = reportMessage(task, fence(LESSON_REVIEW_LANG))
-  const init = task.analysis === 'init' ? reportMessage(task, hasJson) : undefined
+  const init = task.analysis?.kind === 'init' ? reportMessage(task, hasJson) : undefined
   const diagnosis = reportMessage(task, fence(DIAGNOSIS_LANG))
   const own = task.analysis
     ? plugins.flatMap((p): FoundReport[] => {

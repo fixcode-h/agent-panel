@@ -110,7 +110,7 @@ export function childRow(x: Task, env: ChildRowEnv) {
     waiting: childWait(x, { background: env.background, cliAlive: env.cliAlive, childNeeds: env.childNeeds }),
     // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
     resolved: x.resolved === true,
-    analysis: x.analysis,
+    analysis: x.analysis?.kind,
     stopReason: env.stopReason ?? ('' as const),
     // 已收起（归档 / 独立分支被删掉）：运行区、子对话栏、执行中计数都读这一处把它排掉
     gone: taskGone(x),

@@ -590,7 +590,7 @@ export function TaskView({
                     onParent={() => panes.setOnParent(true)}
                     onOther={() => panes.setOnParent(false)}
                     onCloseRun={() => panes.openRunIn(0)}
-                    mark={isAnalysisTask(task, localAgents) ? <AnalysisMark kind={task.analysis} /> : undefined}
+                    mark={isAnalysisTask(task, localAgents) ? <AnalysisMark kind={task.analysis?.kind} /> : undefined}
                     trailing={badgesAndActions}
                   />
                 )}

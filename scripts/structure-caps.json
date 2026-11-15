@@ -428,7 +428,7 @@
       "worktrees.ts"
     ]
   },
-  "taskFields": 99,
+  "taskFields": 97,
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {

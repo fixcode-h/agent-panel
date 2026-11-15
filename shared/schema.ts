@@ -15,6 +15,7 @@ import { UserAction } from './user-action.ts'
 import { FlowRun, WorkflowKind } from './tasks/flow-schema.ts'
 import { StopReason } from './stop-reason.ts'
 import { TaskBug } from './bug/task-bug.ts'
+import { AnalysisKind, TaskAnalysis } from './tasks/task-analysis.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS, TaskBudget } from './tasks/task-budget.ts'
 import { WrapRequest } from './wrap-request-schema.ts'
 import { BuildAsk } from './build-ask.ts'
@@ -1093,12 +1094,7 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
-/**
- * AI 分析对话的种类（见 ADR 0014、0016）：标题在列表里和别的对话区分开，右侧功能面板按种类挑内容。
- * run：分析执行记录（对话、子任务、几次工作流执行）；init：AI 初始化项目；lessons：教训评审；fix：AI 排查报错
- */
-export const AnalysisKind = z.enum(['run', 'init', 'lessons', 'fix'])
-export type AnalysisKind = z.infer<typeof AnalysisKind>
+export { AnalysisKind }
 
 /** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
 export const Attachment = z.object({
@@ -1965,14 +1961,10 @@ export const TaskData = z.object({
    * 父对话关掉提问时已有子对话一起关，这个字段不变，所以重新打开父对话后菜单项又回到勾选
    */
   childAskUser: z.boolean().default(true),
-  /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
-  analysis: AnalysisKind.optional(),
-  /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」发回它）；旧数据、和对话无关的分析没有 */
-  analysisOf: z.string().optional(),
-  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填，读法见 taskPlugin */
+  /** AI 分析开出的对话：哪种分析、分析的是哪个对话，见 shared/tasks/task-analysis.ts；普通对话没有 */
+  analysis: TaskAnalysis.optional(),
+  /** 归哪个插件的设计模式（插件网页部分登记的 id，例如 blender.model；ADR 0059），普通对话不填 */
   plugin: z.string().optional(),
-  /** 旧版的模型设计对话（ADR 0025，现在是 Blender 插件的 blender.model），只读不写 */
-  modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,

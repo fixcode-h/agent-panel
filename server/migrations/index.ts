@@ -10,6 +10,7 @@ import { projectTables } from './0005-project-tables.ts'
 import { projectCapabilities } from './0006-project-capabilities.ts'
 import { knowledgePlace } from './0007-knowledge-place.ts'
 import { taskBudget } from './0008-task-budget.ts'
+import { taskAnalysis } from './0009-task-analysis.ts'
 
 /**
  * 数据目录的一次性迁移（重构文档第 6 条，ADR 见 docs/adr）。
@@ -50,6 +51,7 @@ export const MIGRATIONS: Migration[] = [
   projectCapabilities,
   knowledgePlace,
   taskBudget,
+  taskAnalysis,
 ]
 /** 当前代码认识的数据版本 */
 export const DATA_VERSION = MIGRATIONS.at(-1)!.version

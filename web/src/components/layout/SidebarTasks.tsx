@@ -181,7 +181,7 @@ export function TaskRow({
                       />
                     ) : null}
                   </span>
-                  {analysis && <AnalysisMark kind={task.analysis} />}
+                  {analysis && <AnalysisMark kind={task.analysis?.kind} />}
                   {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
                   <span
                     title={alive ? `${task.title}\n${cliAliveHint(live)}` : undefined}
@@ -210,7 +210,7 @@ export function TaskRow({
               <SidebarTaskRowBody
                 workflow={task.mode === 'workflow'}
                 active={active}
-                lead={analysis && <AnalysisMark kind={task.analysis} />}
+                lead={analysis && <AnalysisMark kind={task.analysis?.kind} />}
                 title={
                   // 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上
                   <span
