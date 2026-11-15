@@ -2272,6 +2272,8 @@ export const RequestAnswer = z.object({
   always: z.boolean().optional(),
   /** 工作流节点确认时只是追问（allow 为 false）：回答问题、不改结果，不算一轮修改（见 shared/flow/run.ts 的 noteConfirm） */
   ask: z.boolean().optional(),
+  /** 节点确认时每个决策选了哪项（决策编号 → 选项编号，见 shared/flow/stage-report.ts）：和推荐不同的交回给 Agent */
+  picks: z.record(z.string().max(40), z.string().max(40)).optional(),
 })
 
 /** 一个保存下来的账号 */

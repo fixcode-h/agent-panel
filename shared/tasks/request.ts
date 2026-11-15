@@ -3,6 +3,7 @@
  * schema.ts 原样转出，引用的地方不用改
  */
 import { z } from 'zod'
+import { StageReportVersion } from '../flow/stage-report.ts'
 
 /** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
 export const AskQuestion = z.object({
@@ -42,6 +43,11 @@ export const TaskRequest = z.object({
   diff: z.string().optional(),
   /** 「一直允许这类」的规则键（shared/allow-rules.ts）；没有就不能一直允许 */
   rule: z.string().optional(),
+  /**
+   * 节点确认：Agent 用 submit_report 交的各版阶段报告，最后一版没处理过时就是这次要审的。
+   * 审阅弹窗按它分区排版、决策画成勾选、能切版本和对比上一版；没交的旧节点只有 detail
+   */
+  reports: z.array(StageReportVersion).optional(),
   at: z.string(),
 })
 export type TaskRequest = z.infer<typeof TaskRequest>

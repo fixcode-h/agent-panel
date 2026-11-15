@@ -173,6 +173,63 @@ test('工作流运行停在等确认时被停下：继续时直接回到确认�
   assert.equal(task.flowRun?.phase, 'ready')
 })
 
+test('阶段报告：确认节点有 submit_report；改了决策就带着差异回到 Agent 重出一版，没改才往下走，下游拿到最终决策', async () => {
+  const w = workflow()
+  w.flows[0].nodes[0].hooks.confirm = true
+  const task = flowRun('r-report')
+  const log: AgentCall[] = []
+  const report = (pick: string) => ({
+    summary: '用方案 A',
+    decisions: [
+      {
+        id: 'Q1',
+        title: '路线',
+        question: '',
+        options: [
+          { id: 'A', label: '订阅 store', note: '' },
+          { id: 'B', label: '手动刷新', note: '' },
+        ],
+        pick,
+        why: '',
+        self: false,
+      },
+    ],
+    details: '改两个文件',
+    next: '',
+  })
+  const h = host(task, log, async (call) => {
+    if (call.step?.id === 'a') {
+      assert.ok(call.orch?.submitReport, '确认节点要有 submit_report')
+      assert.match(call.prompt, /submit_report/)
+      // 第二次是按用户的选择重出：交的 pick 是用户选的那项
+      call.orch!.submitReport!(report(/改选「手动刷新」/.test(call.prompt) ? 'B' : 'A'))
+    } else assert.equal(call.orch?.submitReport, undefined, '不等确认的节点没有 submit_report')
+    return { ok: true, text: '边做边说的话' }
+  })
+  h.workflow = w
+  const seen: { n: number }[] = []
+  h.confirm = async (step) => {
+    seen.push({ n: step.submitted?.reports?.length ?? 0 })
+    return seen.length === 1 ? { allow: true, picks: { Q1: 'B' } } : { allow: true, picks: { Q1: 'B' } }
+  }
+  await runEngineTurn(h)
+  const a = task.steps.find((s) => s.id === 'a')!
+  assert.deepEqual(
+    seen.map((x) => x.n),
+    [1, 2],
+    '改了决策后重出了第 2 版，再确认一次',
+  )
+  assert.deepEqual(
+    a.submitted?.reports?.map((v) => v.result),
+    ['changed', 'confirmed'],
+  )
+  const rerun = log.filter((c) => c.step?.id === 'a')[1]
+  assert.match(rerun.prompt, /Q1「路线」：你推荐「订阅 store」，用户改选「手动刷新」/)
+  const down = log.find((c) => c.step?.id === 'b')!
+  assert.match(down.prompt, /## 用户确认的决策\n- Q1 路线：手动刷新/)
+  assert.doesNotMatch(down.prompt, /边做边说的话/)
+})
+
 test('改代码的运行的收尾：评审不通过意见交回收尾节点修，修完再评审、测试都过了才待合回', async () => {
   const w = withWrapUp(workflow(), { worker: 'w', reviewer: 'rv', tester: 'ts' })
   const task = flowRun('r-wrap', { steps: planTask(w).steps })

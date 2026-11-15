@@ -432,6 +432,7 @@
   "preprocess": 10,
   "orchInlineTools": 0,
   "hostMembers": {
+    "OrchSubmit": 3,
     "SearchHost": 3,
     "OrchBug": 3,
     "BugHost": 1,
@@ -445,7 +446,7 @@
     "PlanHost": 6,
     "OrchVcs": 11,
     "VcsHost": 11,
-    "Orchestra": 17,
+    "Orchestra": 15,
     "EngineHost": 24
   },
   "gitCalls": {

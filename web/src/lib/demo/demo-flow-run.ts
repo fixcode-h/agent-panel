@@ -1,6 +1,7 @@
 import { FlowRun } from '@shared/tasks/flow-schema'
 import { Workflow, type NewTaskInput, type Task } from '@shared/schema'
 import { planTask } from '@shared/flow'
+import { DEMO_STAGE_REPORTS } from './demo-stage-report'
 
 /**
  * 演示里的工作流任务按「工作流运行」建（带 flowRun）。工作流改成独立运行后（4304d14），引擎只跑带 flowRun 的工作流任务，
@@ -72,6 +73,7 @@ export function demoOwnedRun(parent: Task, id: string): Task {
         kind: 'confirm',
         title: '「方案」完成了，看一下结果再继续',
         detail: PLAN,
+        reports: DEMO_STAGE_REPORTS,
         options: [],
         at: now,
       },

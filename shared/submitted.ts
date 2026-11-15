@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { VERDICT_ASK } from './prompt/letters/helper.ts'
+import { StageReportVersion } from './flow/stage-report.ts'
 
 /** 评审、验收列出的一条意见；must：要执行的一方逐条处置（原来的高级 / 中级） */
 export const Blocker = z.object({
@@ -23,6 +24,8 @@ export const Submitted = z.object({
   summary: z.string().default(''),
   /** 没做完还差什么 / 卡在哪、需要什么 */
   left: z.string().default(''),
+  /** 等确认的节点用 submit_report 交的阶段报告，一次一版（shared/flow/stage-report.ts）：审阅弹窗按版本看、和上一版对比 */
+  reports: z.array(StageReportVersion).optional(),
   at: z.string().default(''),
 })
 export type Submitted = z.infer<typeof Submitted>
@@ -66,7 +69,9 @@ export function submitOn(
     ? `结论「${next.verdict === 'pass' ? '通过' : '不通过'}」`
     : next.state
       ? `结果「${{ done: '做完', unfinished: '没做完', stuck: '卡住' }[next.state]}」`
-      : '内容'
+      : next.reports
+        ? `第 ${next.reports.length} 版阶段报告：用户会在审阅弹窗里按它看结论、勾选决策`
+        : '内容'
   return { ok: true, info: `已记下${what}。交完就结束这一轮，不用再在回复里重复写结论。` }
 }
 

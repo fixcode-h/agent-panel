@@ -14,6 +14,7 @@ import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './tasks/export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
 import { DIAGNOSIS_LANG, demoDiagnosis } from './diagnosis.ts'
+import type { Picks } from './flow/stage-report.ts'
 
 export interface RunContext {
   task: Task
@@ -595,7 +596,7 @@ function demoNext(document: string, task: Task) {
 }
 
 /** 在线演示里用户对「完成后等我确认」的回答：请求 id → 决定（演示后端回答请求时写进来） */
-export const simAnswers = new Map<string, { allow: boolean; answer?: string }>() // 模块状态：会话，跟着进程或连接一起没
+export const simAnswers = new Map<string, { allow: boolean; answer?: string; ask?: boolean; picks?: Picks }>() // 模块状态：会话，跟着进程或连接一起没
 
 /** 执行一轮（模拟） */
 export async function runTurn(ctx: RunContext) {
@@ -618,6 +619,7 @@ export async function runTurn(ctx: RunContext) {
         kind: 'confirm' as const,
         title: `「${step.title}」完成了，看一下结果再继续`,
         detail: text.length > 40000 ? text.slice(0, 40000) + '…' : text,
+        ...(step.submitted?.reports?.length && { reports: step.submitted.reports }),
         options: [],
         at: new Date().toISOString(),
       })

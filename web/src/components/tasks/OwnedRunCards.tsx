@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ComposerPopover } from '@/components/ui/composer-popover'
 import { FlowStrip, type FlowNode } from '@/components/ui/flow-strip'
-import { ReviewDialog } from './ReviewDialog'
+import { ConfirmReview } from './ConfirmReview'
 
 /** 名下还没结束的运行，按开始先后排 */
 export const liveRuns = (list: Task[]) =>
@@ -280,14 +280,14 @@ function OwnedRunCard({ ownerId, task, onOpen }: { ownerId: string; task: Task; 
       )}
       {review && (
         <span onClick={(e) => e.stopPropagation()}>
-          <ReviewDialog
+          <ConfirmReview
             req={review.req}
             agent={a ? { name: a.name, icon: a.icon, cli: a.cli } : undefined}
             open
             onOpenChange={(o) => !o && setReview(null)}
             // 出错时抛出：弹窗留着并提示错误，标注不会白写（见 ReviewDialog）
-            onAnswer={async (allow, answer) => {
-              await api.answerRequest(run.id, review.req.id, { allow, answer })
+            onAnswer={async (allow, answer, picks) => {
+              await api.answerRequest(run.id, review.req.id, { allow, answer, picks })
               await reloadOwnedRuns(ownerId)
             }}
           />

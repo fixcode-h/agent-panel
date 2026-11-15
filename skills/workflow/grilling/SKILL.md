@@ -22,6 +22,8 @@ Format a round like so:
 ➡️ <your recommended answer>
 ```
 
+When you run inside a workflow node that waits for the user's confirmation (the `submit_report` panel tool is available), don't print the round as text: submit it with `submit_report`. Each question becomes one item of `decisions` with 2–4 `options` and your recommended `pick`; mechanical decisions you settled yourself go in too with `self: true`; the questions that wait on this round go in `next`. The panel shows the options as checkboxes and tells you exactly which picks the user changed.
+
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), look it up yourself before asking. Don't block on it: a lookup still in progress is an unsettled prerequisite, so only the questions downstream of it wait for the report; ask the rest of the frontier now. The _decisions_ are the user's: put each to them and wait.
