@@ -16,6 +16,7 @@ import { handoffDirOf } from '../store.ts'
 import type { taskFiles } from '../task-files.ts'
 import { noPushEnv } from './no-push.ts'
 import { childEnv } from './process.ts'
+import { pluginEnvForRun, prependPath } from '../plugins/declared-env.ts'
 import { searchExcludeEnv } from './search-exclude-env.ts'
 import type { RealContext } from './real-context.ts'
 import type { RunSkills } from '../skills/run-skills.ts'
@@ -82,7 +83,10 @@ export async function launchOptions(a: LaunchArgs) {
     // 对话的标题交给能给会话起名的 CLI，在它自己的会话列表里认得出是哪个对话
     title: chat && task.title ? task.title : undefined,
   }
+  // 插件声明的环境变量（插件接口 11）放在最前：和账号设置同名时以账号设置为准，插件不覆盖用户自己的配置
+  const plugin = await pluginEnvForRun(task.projectId === ctx.project.id ? task.projectId : undefined)
   const env = childEnv([
+    ...plugin.vars,
     ...cs.env,
     // mod 按它选语言规则（见 prompt-lang-mod.ts）
     ...(systemPromptModPath ? [{ key: PROMPT_LANG_ENV, value: replyLang() }] : []),
@@ -94,5 +98,7 @@ export async function launchOptions(a: LaunchArgs) {
     ...noPushEnv(task, ctx.project.gitPolicy),
     ...(await searchExcludeEnv(ctx)),
   ])
+  // 插件包里的可执行文件目录前置到 PATH，Agent 的命令行才找得到（例如包装来的命令行工具）
+  prependPath(env, plugin.pathPrepend)
   return { pct, build, env }
 }

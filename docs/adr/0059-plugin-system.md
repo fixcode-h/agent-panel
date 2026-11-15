@@ -56,6 +56,13 @@
 
 16. **插件接口 10（2026-11-15，插件之间的依赖）**：Comfy 页面搬成插件后，UI 设计插件里「打开 Comfy 页」要靠它，用户定「插件依赖就安装也需要安装依赖插件」。清单加 `requires`（`{ "<插件 id>": ">=最低版本" }`，只认下限：插件之间都经开放模块和面板接口打交道，没有「不能太新」的情况）。安装预览列出要一起装的依赖，市场里找不到、版本不够时预览就报错；确认时先装依赖（依赖的依赖一并装，绕成圈的只装一次），依赖装不上就停下、插件本身不装；装着但关着的依赖一起打开。一键更新走同一个确认，所以新版本要求更新的依赖时也会先升级依赖。依赖没满足的插件不加载，列在「出错」里写明缺什么（链上一环缺了，后面依赖它的连带不加载）。被依赖的插件删除、关掉前拦下，写明是谁在依赖。依赖从同一个市场仓库找，找不到再找默认市场；从压缩包、本机目录装的直接找默认市场。`shared/plugins/requires.ts`（按清单算）、`server/plugins/requires-install.ts`（下载和安装顺序）。
 
+17. **插件接口 11（2026-11-15，声明式的运行时字段）**：为了把普通 GitHub 仓库包装成插件（设计稿「GitHub项目一键变插件与网页页签」第 5 节，包装器和来源分级见 ADR 0068），清单加 5 个可选字段，插件不写代码也能接进面板，用了任何一个都要写 `api: 11`。格式在 `shared/plugins/runtime-schema.ts`，值里能用占位符 `{config.<key>}`、`{port}`、`{dir}`、`{data}`（`shared/plugins/placeholders.ts`）。
+    - `env`：给 Agent 的环境变量，`PATH` 只能写 `{ "prepend": [包里的目录] }`。注入点只有跑 CLI 时组环境变量那一处（`server/exec/launch-options.ts` → `server/plugins/declared-env.ts`），只在这个插件对这一轮生效时带（全局插件每轮带，按项目的只在打开了它的项目带，`project-gate.ts` 判断）；放在账号设置的变量前面，同名时账号设置的赢。凭据类（`*_API_KEY`、`*_AUTH_TOKEN`、`*_SECRET`、`GITHUB_TOKEN`……）和面板自己的变量（`AGENT_PANEL_*`、`ANTHROPIC_*`、`OPENAI_*`、`GIT_*`、`HOME`）直接拒装。
+    - `mcp`：外部 MCP 服务，形状同 MCP 库条目。和 MCP 库的按项目条目一样每轮注入（`server/plugins/declared-mcp.ts`，用户库里同名的以用户的为准），关掉、删掉插件时没有要撤的；CLI 定义里没有 `mcpStore.inject` 的（Pi）退回全局写入（`declared-sync.ts`，记在 `config/plugin-mcp-fallback.json`，只删自己写的，不覆盖用户同名的），插件卡片上注明。
+    - `services`：托管进程（`server/plugins/services.ts`，接口契约 `shared/api-contract/plugin-services.ts`）。端口只绑 127.0.0.1（`auto` 时面板分）、按 `health` 等起来、日志写 `plugin-data/<id>/logs/`、`on-open` 的空闲 `stopAfterIdleMin` 分钟停、插件关掉和面板退出时停；起不来原样报原因，不重试；环境变量用 `childEnv`，不带账号设置里的凭据。状态走插件推送通道（事件 `service`）。网页页签、沙箱源经 `serviceOrigin()` 拿地址（顺带记「有人在用」）。
+    - `webPages`：声明式网页页面，`url` 是 `service:<进程>/…`、`file:<包里的路径>` 或外部网址，面板用网页页签的组件画；`scope` 同接口 9。
+    - `wrap`：包装记录（上游仓库、固定的提交、怎么查更新、配方、类型、来源分级），给界面徽标和更新比对用。
+
 ## 影响与风险
 
 - 带代码的插件在面板进程里以用户权限运行，和 Agent 执行命令同级的信任；安装确认里写明，只建议装信任的来源。
