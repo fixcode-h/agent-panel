@@ -17,7 +17,7 @@ user-invocable: true
 ## 铁律
 
 ```
-没有新鲜的验证证据，不说「完成」
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
 ```
 
 这一轮没跑过验证命令，就不能说它通过了。
@@ -25,17 +25,17 @@ user-invocable: true
 ## 下结论前的关卡
 
 ```
-说任何状态、表示满意之前：
+BEFORE claiming any status or expressing satisfaction:
 
-1. 找命令：哪条命令能证明这句话？
-2. 跑：完整地跑一遍（现在跑，不缩水）
-3. 读：看完整输出，看退出码，数失败个数
-4. 核对：输出能证明这句话吗？
-   - 不能：照实说现状，附上证据
-   - 能：下结论，附上证据
-5. 到这一步才下结论
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+   - If NO: State actual status with evidence
+   - If YES: State claim WITH evidence
+5. ONLY THEN: Make the claim
 
-跳过任何一步 = 编造，不是验证
+Skip any step = lying, not verifying
 ```
 
 ## 常见的错
@@ -78,36 +78,36 @@ user-invocable: true
 **测试：**
 
 ```
-✅ [跑测试命令] [看到：34/34 通过]「全部测试通过」
-❌「现在应该能过了」/「看着没问题」
+✅ [Run test command] [See: 34/34 pass] "All tests pass"
+❌ "Should pass now" / "Looks correct"
 ```
 
 **回归测试（TDD 红-绿）：**
 
 ```
-✅ 写测试 → 跑（通过）→ 撤掉修复 → 跑（必须失败）→ 恢复修复 → 跑（通过）
-❌「我写了回归测试」（没走红-绿验证）
+✅ Write → Run (pass) → Revert fix → Run (MUST FAIL) → Restore → Run (pass)
+❌ "I've written a regression test" (without red-green verification)
 ```
 
 **构建：**
 
 ```
-✅ [跑构建] [看到：退出码 0]「构建通过」
-❌「lint 过了」（lint 不检查编译）
+✅ [Run build] [See: exit 0] "Build passes"
+❌ "Linter passed" (linter doesn't check compilation)
 ```
 
 **需求：**
 
 ```
-✅ 重读计划 → 列清单 → 逐条核对 → 报告缺口或完成
-❌「测试过了，这一阶段完成」
+✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
+❌ "Tests pass, phase complete"
 ```
 
 **派给子 Agent 的活：**
 
 ```
-✅ 子 Agent 报告成功 → 看版本管理的 diff → 核对改动 → 报告实际状态
-❌ 直接相信它的报告
+✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
+❌ Trust agent report
 ```
 
 ## 为什么重要

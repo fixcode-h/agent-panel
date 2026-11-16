@@ -41,3 +41,8 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 规则：面板把技能装进某个目录前，先确认每个 CLI 定义的 `skills.user` / `repo` 里有这个目录；不读的 CLI 要在 CLI 定义里写出怎么每轮带给它（`runSkills`，Claude Code 用 `shared: true` 把 `~/.agents/skills` 一起带上）。验证看 CLI 自己报的技能清单（Claude Code 的 init 事件 `skills`、上下文面板的 Skill 数），不看文件在不在。
 - 起因：自带技能统一装到 `~/.agents/skills`，注释写「各 CLI 共用」，但 Claude Code 只读 `~/.claude/skills`，用户在上下文面板看到 Skill 是 0（2026-11-15）。
 - 防线：`server/skills/run-skills.test.ts`「每轮带技能」。
+
+## 翻译自带技能只译正文
+
+- 规则：把英文技能改成中文时只译正文和表格；代码块（含 dot 流程图、命令、示例输出）保持原文不动。提问方式（弹不弹窗）由面板的提问设置决定，技能里只写问法（一个问题配几个选项），不指定提问工具，原来写了的保持原样。
+- 起因：9bb4e7b 把 brainstorming 的流程图和 verification-before-completion 的代码块也译成了中文，还在技能里指定了提问弹窗，用户纠正。
