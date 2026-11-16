@@ -41,6 +41,19 @@ test('第一次读去 GitHub，之后先给缓存；刷新才重读', async () =
   await s.done()
 })
 
+test('cacheOnly（打开插件页）：没有缓存也不去 GitHub，有缓存不管多旧都只给缓存', async () => {
+  const s = await setup()
+  const a = await readMarketCached('o/r', { cacheOnly: true })
+  assert.equal(a.unchecked, true)
+  assert.equal(s.calls.length, 0)
+  await readMarketCached('o/r', { refresh: true })
+  const b = await readMarketCached('o/r', { cacheOnly: true })
+  assert.equal(b.unchecked, undefined)
+  assert.equal(b.plugins?.[0].version, '1.0.0')
+  assert.equal(s.calls.length, 1)
+  await s.done()
+})
+
 test('重读失败：给旧缓存并带上错误；没有缓存时直接报错', async () => {
   const s = await setup()
   await readMarketCached('o/r')

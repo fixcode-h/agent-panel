@@ -4,8 +4,7 @@ import { pluginApi } from './api'
 import type { PluginRow } from './registry'
 
 /**
- * 插件更新（设置 →「插件」）：打开插件页时自动查一次，之后十分钟内不重复查（GitHub 匿名请求有限流），
- * 点「检查更新」随时重查。结果按插件 id 存着，装好新版本后按装着的版本自动去掉过期的提示。
+ * 插件更新（设置 →「插件」）：只在用户点「刷新」时查（用户定的长期规则：拉 GitHub 只能手动，打开页面不自动查）。结果按插件 id 存着，装好新版本后按装着的版本自动去掉过期的提示。
  */
 interface State {
   updates: Map<string, PluginUpdate>
@@ -36,14 +35,8 @@ const subscribe = (f: () => void) => {
 export const pluginUpdatesState = () => state
 export const usePluginUpdates = () => useSyncExternalStore(subscribe, pluginUpdatesState)
 
-const AUTO_MS = 10 * 60_000
-
-/** 有没有能查更新的插件（只有从 GitHub 装的才有上游） */
-export const canCheck = (rows: PluginRow[]) => rows.some((r) => r.source.kind === 'github')
-
-export async function checkUpdates(opts: { auto?: boolean } = {}) {
+export async function checkUpdates() {
   if (state.checking) return
-  if (opts.auto && state.checkedAt && Date.now() - Date.parse(state.checkedAt) < AUTO_MS) return
   emit({ checking: true })
   try {
     const r = await pluginApi.updates()

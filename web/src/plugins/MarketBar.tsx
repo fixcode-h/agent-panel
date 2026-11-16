@@ -44,6 +44,8 @@ export function MarketBar({ onPreview }: { onPreview: (p: InstallPreview) => voi
             · <WifiOff className="h-3 w-3" />
             {t('读取失败，显示的是 {time}的结果', { time: timeAgo(result.fetchedAt) })}
           </span>
+        ) : result?.unchecked ? (
+          <span>· {t('还没读取')}</span>
         ) : (
           result && <span>· {t('{time}更新', { time: timeAgo(result.fetchedAt) })}</span>
         )}
