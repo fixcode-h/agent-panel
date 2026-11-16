@@ -97,7 +97,23 @@ export function dispatchesOf(msgs: TaskMessage[], offset = 0): Dispatch[] {
       })
     })
   })
-  return out
+  return dropRetried(out)
+}
+
+/**
+ * 在原来的子任务里重试（spawn_agents 的 resume，常见于面板重启后接着做）沿用同一个步骤 id，
+ * 又记一条带 spawned 的系统消息：同一个子任务只由最近派它的那次代表，前面那次去掉它，
+ * 去空了整行不画，否则同一个子任务会出现两行「派子任务」、两行都跟着它显示执行中
+ */
+function dropRetried(ds: Dispatch[]): Dispatch[] {
+  const last = new Map<string, string>()
+  for (const d of ds) if (d.kind === 'subtask' && !d.failed) for (const id of d.targets) last.set(id, d.key)
+  return ds.flatMap((d) => {
+    if (d.kind !== 'subtask' || d.failed) return [d]
+    const targets = d.targets.filter((id) => last.get(id) === d.key)
+    if (targets.length === d.targets.length) return [d]
+    return targets.length ? [{ ...d, targets }] : []
+  })
 }
 
 /** 分诊去向对得上哪几种派单 */

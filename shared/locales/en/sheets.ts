@@ -20,6 +20,8 @@ export const EN_SHEETS: Record<string, string> = {
   删掉的行和旧值: 'Removed rows and old values',
   隔行底色: 'Row stripes',
   填充柄大小: 'Fill handle size',
+  列宽量上列头: 'Fit columns to headers',
+  自动列宽上限: 'Max auto column width',
   鲜艳: 'Vivid',
   '相对项目目录，或绝对路径': 'Relative to the project folder, or an absolute path',
   '{n} 个表格': '{n} tables',

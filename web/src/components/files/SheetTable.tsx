@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ListFilter } from 'lucid
 import { t } from '@shared/i18n'
 import type { SheetLook, SheetMerge } from '@shared/files'
 import { dataStart, type SheetHeader } from '@shared/sheet-header'
-import { colCount, colName, colWidths, type CellHit } from '@/lib/sheet'
+import { colCount, colName, type CellHit } from '@/lib/sheet'
 import { filterActive, type ColFilter, type ColFilters, type SheetSort } from '@/lib/sheet-filter'
 import { cn } from '@/lib/utils'
 import {
@@ -21,6 +21,7 @@ import { lookIndex, rowMark, spanCols, type ColDraw } from './sheet-look'
 import { CELL, SheetCell, pinCls as pinClsOf, pinned as pinnedOf, type CellCtx } from './sheet-cell'
 import { CellHint, cellTip, type SheetTip } from './sheet-hint'
 import { inferColKinds, neighborCols, useGridLook, type SheetColKind } from './sheet-kinds'
+import { fitColWidth, useColW } from './sheet-colw'
 // 表格插件经开放模块只拿得到这个文件：切表、表内链接要用的几个一起从这里给
 export { firstShownSheet, parseLoc, sheetOrder } from './sheet-look'
 import './sheet-table.css'
@@ -39,8 +40,6 @@ const STICKY = 'sticky bg-(--sheet-bg) text-subtle select-none'
 /** 看得见的列左右再多画几列；按这个步长取整，滚一点点不用重画 */
 const COL_OVER = 3
 const COL_STEP = 4
-/** 枚举胶囊的左右内边距加起来大约这么宽 */
-const PILL_PAD = 18
 /** 铺满时空列的宽度 */
 const PAD_W = 96
 /** 拖列宽的范围 */
@@ -268,24 +267,20 @@ export function SheetTable({
     [colKind, rows, header, from, cols],
   )
   const kinds = guessed ?? Array.from({ length: cols }, (_, c) => colKind?.(c))
-  // 列宽看数据行和除注释外的表头行：长长的中文注释不该把列撑宽，截断后悬停看全
-  const widths = useMemo(() => {
-    if (!header.roles.length) return colWidths(rows, cols)
-    const head = header.roles.flatMap((r, i) => (r === 'comment' ? [] : [rows[header.start + i] ?? []]))
-    return colWidths([...head, ...rows.slice(from)], cols)
-  }, [rows, from, header, cols])
   const [dragged, setDragged] = useColWidths(widthKey)
   const hiddenSet = useMemo(() => new Set(layout?.hidden ?? []), [layout?.hidden])
-  // 隐藏的列宽度当 0：位置照算，画的时候跳过
-  // 枚举画成胶囊时左右多了内边距：按内容估的列宽给这几列加一点，免得「TabletopDecor」刚好被截断。
-  // 用列号拼成的字符串当依赖：表格页每次渲染都给新的 colKind，列宽不能因此每次重算（会连带重算看得见哪些列）
-  const pillCols = gridLook.pills ? kinds.flatMap((k, c) => (k?.kind === 'enum' ? [c] : [])).join(',') : ''
-  const colW = useMemo(() => {
-    const pill = new Set(pillCols ? pillCols.split(',').map(Number) : [])
-    return widths.map((w, c) =>
-      hiddenSet.has(c) ? 0 : (dragged[c] ?? (pill.has(c) ? Math.min(w + PILL_PAD, 360) : w)),
-    )
-  }, [widths, dragged, hiddenSet, pillCols])
+  const canFilter = !!(onFilter && onSort)
+  const colW = useColW({
+    rows,
+    header,
+    cols,
+    kinds,
+    colHead,
+    look: gridLook,
+    dragged,
+    hidden: hiddenSet,
+    filter: canFilter,
+  })
   /** 冻结的前几列：一直画、钉在左边 */
   const fz = Math.min(layout?.freeze ?? 0, colW.length)
   const lefts = useMemo(() => {
@@ -307,18 +302,8 @@ export function SheetTable({
   const headH = colHead ? Math.round(rowH * 1.75) : rowH
   const frozenH = headH + rowH * frozen
   const [win, setWin] = useState({ from: 0, to: 60 })
-  /**
-   * 双击列边线：按看得见的这一段（最多 200 行）加表头量这一列的宽度，不扫整列（几万行的表也不顿）。
-   * 两行列头的字段名、类型标签也算进去
-   */
-  const fitWidth = (c: number) => {
-    const sample: string[][] = []
-    header.roles.forEach((r, i) => r !== 'comment' && sample.push([rows[header.start + i]?.[c] ?? '']))
-    for (const r of body.slice(win.from, win.from + 200)) sample.push([rows[r]?.[c] ?? ''])
-    const head = colHead?.(c)
-    if (head) sample.push([head.field], [head.tags.map((g) => g.text).join('  ')])
-    return colWidths(sample, 1)[0]
-  }
+  const fitWidth = (c: number) =>
+    fitColWidth(c, { rows, header, body, winFrom: win.from, head: colHead?.(c), look: gridLook, filter: canFilter })
   // 横向也只画看得见的列（宽表上百列时，每行只画屏幕上那十几列）
   const [cwin, setCwin] = useState({ from: 0, to: 40 })
   const leftsRef = useRef(lefts)

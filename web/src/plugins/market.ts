@@ -3,8 +3,8 @@ import { pluginApi, type MarketResult } from './api'
 import { checkUpdates } from './updates'
 
 /**
- * 插件市场（设置 →「插件」下半部分）：服务端缓存着上次读到的 plugins.json，打开插件页先直接显示缓存，
- * 缓存超过一小时才在后台重读一次；点「刷新」同时重读市场和检查更新。换仓库由服务端记住。
+ * 插件市场（设置 →「插件」下半部分）：服务端缓存着上次读到的 plugins.json，打开插件页只显示缓存，
+ * 不管多旧都不自动去 GitHub（用户定的长期规则：拉 GitHub 只能手动）；点「刷新」同时重读市场和检查更新。换仓库由服务端记住。
  */
 interface State {
   result?: MarketResult
@@ -26,10 +26,7 @@ export const useMarket = () => useSyncExternalStore(subscribe, () => state)
 /** 上一次读取有没有失败（换仓库后决定弹层关不关） */
 export const marketError = () => state.error
 
-/** 缓存多旧就在后台重读 */
-const STALE_MS = 60 * 60_000
-
-export async function loadMarket(opts: { repo?: string; refresh?: boolean } = {}) {
+export async function loadMarket(opts: { repo?: string; refresh?: boolean; cacheOnly?: boolean } = {}) {
   if (state.loading) return
   emit({ loading: true })
   try {
@@ -41,11 +38,9 @@ export async function loadMarket(opts: { repo?: string; refresh?: boolean } = {}
   }
 }
 
-/** 打开插件页：先拿缓存，太旧就接着在后台重读（列表先显示着，读完替换） */
+/** 打开插件页：只拿服务端缓存，没有缓存也不去 GitHub，界面提示点「刷新」 */
 export async function openMarket() {
-  if (!state.result) await loadMarket()
-  const at = Date.parse(state.result?.fetchedAt ?? '')
-  if (state.result && !state.result.error && Date.now() - at > STALE_MS) await loadMarket({ refresh: true })
+  if (!state.result) await loadMarket({ cacheOnly: true })
 }
 
 /** 「刷新」：重读当前市场，再检查更新（插件目录用刚读到的缓存，不重复请求） */

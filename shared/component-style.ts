@@ -153,6 +153,9 @@ export const COMP_SPEC = {
     rowMark: pick('thin', { off: '0px', thin: '3px', wide: '5px' }),
     /** 表格页：选区右下角的填充柄（拖它向下 / 向右填充）有多大 */
     handle: px(7, 5, 12),
+    /** 列宽自适应：两行列头的字段名、类型标签也量进去（不被截断）；自动列宽最多这么宽，太长的格子截断、悬停看全 */
+    fitHead: bool(true, '1', '0'),
+    colMax: px(320, 160, 640),
   },
   /**
    * 调用栈树（诊断报告的调用栈、回复里的 calltree 代码块，web/src/components/ui/call-tree.css）：

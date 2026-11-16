@@ -93,6 +93,7 @@ export function pluginsApi() {
         })
       })
       // 插件市场：仓库的 plugins.json（null：没有的仓库当作单个插件）。先给缓存，refresh=1 才去 GitHub 重读；
+      // cached=1（打开插件页）没有缓存也不去 GitHub，返回 unchecked 等用户点「刷新」；
       // 不传 repo 用最后用的市场仓库，传了就记成最后用的
       .get('/market', async (c) => {
         try {
@@ -100,6 +101,7 @@ export function pluginsApi() {
           const r = await readMarketCached(repo, {
             ref: c.req.query('ref') || ref,
             refresh: c.req.query('refresh') === '1',
+            cacheOnly: c.req.query('cached') === '1',
             remember: true,
           })
           return c.json({ ...r, defaultRepo: DEFAULT_MARKET })
