@@ -4,7 +4,6 @@ import type { Project } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { useNav } from '@/lib/data'
 import { usePlugins } from '@/plugins/registry'
-import { pluginOnFor } from '@shared/projects/capabilities'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
@@ -13,7 +12,7 @@ import { CapabilityBlockHeader, CapabilityItem, CapabilityItemList } from '@/com
 import { PageFrame } from '@/components/library/parts'
 import { ProjectSkillsSection } from '../ProjectSkillsSection'
 import { ProjectMcpSection } from '../ProjectMcpSection'
-import { itemOn, type CapItem } from './caps-items'
+import { itemOn, pluginMcpItems, type CapItem } from './caps-items'
 import { panelMcpItem, useCapsLists } from './use-caps-data'
 import { ScopeTrailing } from './CapabilitiesPage'
 
@@ -83,18 +82,7 @@ function Overview({ project, onGlobal }: { project: Project; onGlobal: (page: 'l
   const [q, setQ] = useState('')
   // 从全局继承的：面板自带的 MCP、开着的插件（按项目的只算这个项目打开了的）、全局库里生效的
   const inherited = useMemo(() => {
-    const plugins: CapItem[] = rows
-      .filter((r) => r.enabled && r.manifest.mcpServers.length)
-      .filter((r) => pluginOnFor(project, r.manifest.id, r.manifest.activation))
-      .map((r) => ({
-        key: `mcp:plugin:${r.manifest.id}`,
-        kind: 'mcp',
-        name: t('{name}（插件）', { name: t(r.manifest.name) }),
-        description: r.manifest.description,
-        scope: r.manifest.activation === 'project' ? 'project' : 'global',
-        where: t('面板插件'),
-        whereNote: '',
-      }))
+    const plugins = pluginMcpItems(rows, project)
     return [panelMcpItem(), ...plugins, ...(lists.global ?? []).filter((x) => itemOn(x, project.capabilities))]
   }, [rows, project, lists.global])
   const match = (x: CapItem) =>

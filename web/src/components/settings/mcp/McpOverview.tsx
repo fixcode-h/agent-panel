@@ -16,6 +16,7 @@ import { pluginIcon } from '@/plugins/icon'
 import { mcpPageId, sourceCounts } from './McpNav'
 import { reloadMcpCatalog, useMcpCatalog } from './mcp-store'
 import { sourceIcon } from './source-icon'
+import { sourceScope } from './source-scope'
 
 /** 设置 →「MCP」第一页：检查 Agent 能拿到什么 + 各来源卡片 */
 export function McpOverview({ onSection }: { onSection: (id: string) => void }) {
@@ -51,6 +52,7 @@ function SourceCard({ s, onOpen }: { s: CatalogSource; onOpen: () => void }) {
   const Icon = s.kind === 'plugin' ? pluginIcon(s.icon ?? '') : sourceIcon(s.kind)
   const tools = s.servers.flatMap((x) => x.tools).length
   const { missing } = sourceCounts(s)
+  const scope = sourceScope(s)
   const what = [
     tools ? t('{n} 个工具', { n: tools }) : '',
     s.actions.length ? t('{n} 个面板动作', { n: s.actions.length }) : '',
@@ -68,6 +70,11 @@ function SourceCard({ s, onOpen }: { s: CatalogSource; onOpen: () => void }) {
           <span className="text-caption text-subtle">
             {s.kind === 'plugin' ? t('插件 {v}', { v: s.version ?? '' }) : t('面板自带')}
           </span>
+          {scope && (
+            <span className={cn('ml-auto shrink-0 text-caption', scope.off ? 'text-warning' : 'text-subtle')}>
+              {scope.short}
+            </span>
+          )}
         </span>
         <span className="mt-0.5 block text-caption text-muted">{what || t('没有给 Agent 的工具')}</span>
         {s.error ? (

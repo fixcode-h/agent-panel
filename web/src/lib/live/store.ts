@@ -48,6 +48,21 @@ export function dropLive(id: string) {
   }
 }
 
+/**
+ * 盯一个对话的 live：它变了（这一轮说完、又被接着问）就回调。AI 分析窗口靠它在推送到达时马上去看结果，
+ * 不靠定时轮询（后台标签页的定时器会被浏览器压慢甚至冻住）；返回取消订阅的函数
+ */
+export function onLiveChange(id: string, cb: (live: TaskLive) => void): () => void {
+  let last = lives.get(id)
+  const off = subscribe(() => {
+    const now = lives.get(id)
+    if (!now || now === last) return
+    last = now
+    cb(now)
+  })
+  return () => void off()
+}
+
 /** 还没拿到服务端那份时的占位：只按任务记录本身算（同一个 taskLiveOf），刚新建、刚导入的对话会短暂走到这里 */
 function placeholder(task: Task): TaskLive {
   return taskLiveOf(task, { cliAlive: false, jobs: [], childrenWorking: 0, childrenCli: 0, childrenNeeds: 0 })

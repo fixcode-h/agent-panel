@@ -42,6 +42,12 @@ export async function pluginGate(id: string, projectId: string | undefined): Pro
   }
 }
 
+/** 按项目生效的插件在哪些项目里打开了（设置 →「MCP」写生效范围），返回项目名 */
+export async function projectsWithPlugin(id: string): Promise<string[]> {
+  const m = wiring?.manifest(id)
+  return ((await wiring?.projects()) ?? []).filter((p) => pluginOnFor(p, id, m?.activation)).map((p) => p.name)
+}
+
 /** 给插件的 PluginServerContext.projects：只能开关自己 */
 export function pluginProjectsApi(id: string): PluginProjects {
   return {

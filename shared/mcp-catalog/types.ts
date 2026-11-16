@@ -105,6 +105,10 @@ export const CatalogSource = z.object({
   actions: z.array(CatalogAction),
   /** 插件没提供目录（插件接口 8 以前），只能从清单的 mcpServers / toolNames 列出名字 */
   legacy: z.boolean().optional(),
+  /** 插件的生效范围（插件接口 9）：global 对所有项目挂工具；project 只在项目「能力」里打开了的项目挂 */
+  activation: z.enum(['global', 'project']).optional(),
+  /** activation = project 时，打开了它的项目名（界面写「在哪些项目生效」） */
+  projects: z.array(z.string()).optional(),
   error: z.string().optional(),
 })
 export type CatalogSource = z.infer<typeof CatalogSource>
