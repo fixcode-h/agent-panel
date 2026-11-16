@@ -146,6 +146,8 @@ export const EN_PLUGINS: Record<string, string> = {
   '依赖插件 {id} 在插件市场里找不到，请先手动装上它':
     'Required plugin {id} is not in the marketplace; install it manually first',
   '插件市场里 {id} 的包实际是 {got}，没有安装': 'The marketplace package for {id} is actually {got}; not installed',
+  '插件市场写着 {id} v{want}，但下载到的包是 v{got}（{tag}），没有安装：插件仓库的新版本可能还没发布成功，过几分钟点「刷新」再试，还不行请到插件仓库检查发布':
+    'The marketplace lists {id} v{want}, but the downloaded package is v{got} ({tag}); not installed. The new version may not have been released yet: click Refresh in a few minutes, and if it still fails, check the release in the plugin repository',
   '{names} 依赖这个插件，先关掉它们再关这个': '{names} depend on this plugin; turn them off first',
   '{names} 依赖这个插件，先删掉它们再删这个': '{names} depend on this plugin; remove them first',
   // 插件接口 11：托管进程
