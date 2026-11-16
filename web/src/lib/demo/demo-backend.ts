@@ -3636,7 +3636,14 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     // 父对话开着「提问」才把子对话的提问交给用户：关着时卡片不出现，交给父对话的 AI 决定
     parent.askUser = true
     const qs = [
-      { q: '购物车数量用哪种缓存？', options: ['内存缓存', 'localStorage'] },
+      // 第一题按提问格式写（问题 / 为什么问 / 折叠的核查，选项第一行是做法、后面是结果和 ✓✕ 对照），界面检查截它
+      {
+        q: '购物车数量用哪种缓存？\n\n商品页和购物车页各请求一次接口，切页面时角标会闪成 0。\n\n<details><summary>核查</summary>\n\n- `useCart` 每次挂载都重新请求 `/api/cart`\n- 接口平均 180ms，角标先渲染成 0 再更新\n</details>',
+        options: [
+          '内存缓存（推荐）\n切页面不再闪，刷新页面后重新请求\n✓ 不改接口',
+          'localStorage\n刷新后也保留\n✓ 不改接口\n✕ 要处理多个标签页同步',
+        ],
+      },
       { q: '缓存多久失效？', options: ['5 分钟', '切页面时刷新'] },
     ]
     const asks = qs.map((x, i) => {
