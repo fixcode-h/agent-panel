@@ -121,6 +121,8 @@ const gridPropLabel = (prop: string): string | undefined =>
     link: t('超链接'),
     rowMark: t('整行底色标记'),
     handle: t('填充柄大小'),
+    fitHead: t('列宽量上列头'),
+    colMax: t('自动列宽上限'),
   })[prop]
 
 /** 调用栈树的项 */
