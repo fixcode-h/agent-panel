@@ -1,31 +1,53 @@
 ---
 name: grilling
-description: 按设计树分轮追问用户，压测计划、决策或想法：每轮把所有前置已定的问题一起问出并给出推荐答案，事实自己查，决策交给用户。需要压测设计、在动手前对齐理解，或用户说「拷问」「grill」时使用。
+description: 按设计树逐个追问用户，压测计划、决策或想法：每次问一个问题、给 2–4 个选项并标出推荐，事实自己查，决策交给用户，最后把共识整理出来请用户确认。需要压测设计、在动手前对齐理解，或用户说「拷问」「grill」时使用。
 user-invocable: true
 ---
 
-Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
+# 拷问（grilling）
 
-Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled: the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.
+一直追问，直到和用户对一件事达成共识。把要定的事画成一棵**设计树**：每个决策下面挂着依赖它的决策，上面的定了，下面的才问得出来。
 
-Format a round like so:
+## 先分清事实和决策
+
+- **事实归你查**：代码怎么写的、文件在不在、命令输出什么、文档和 ADR 怎么定的，都自己查，不拿去问用户。查的时候不要卡住整棵树：还在查的事实只挡住依赖它的那几个问题，其余的照常问。
+- **机械决策自己定**：命名、目录布局、格式这类按项目约定就能定的，自己定，记进「我按规则定的」，最后一起给用户看，不单独打断。
+- **决策交给用户**：偏好、范围、取舍、不可逆的事，每一个都问用户并等回答。
+
+## 一次问一个
+
+**前沿**是所有前置条件都已定的决策，也就是现在问不用猜用户答案的问题。每次从前沿里挑**最上游的一个**问：答案会改变最多后续问题的那个先问，细节放后面。依赖还没回答的问题的，留到后面再问。
+
+每个问题都是「一个问题 + 几个选项」。用不用提问弹窗由面板和 CLI 的提问设置决定，这里不管；写在文字里时按下面的格式：
 
 ```
-❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
+**❓ <几个字的短标题>**
 
-➡️ <your recommended answer>
+<完整的问题：背景、为什么要定、你倾向哪个的理由，一两句话>
 
----
+1. **<选项>（推荐）**：<选了会怎样、代价是什么>
+2. **<选项>**：<选了会怎样、代价是什么>
+3. **<选项>**：<选了会怎样、代价是什么>
 
-❓ **Q2** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
-
-➡️ <your recommended answer>
+回复序号即可，也可以直接写你的想法。
 ```
 
-When you run inside a workflow node that waits for the user's confirmation (the `submit_report` panel tool is available), don't print the round as text: submit it with `submit_report`. Each question becomes one item of `decisions` with 2–4 `options` and your recommended `pick`; mechanical decisions you settled yourself go in too with `self: true`; the questions that wait on this round go in `next`. The panel shows the options as checkboxes and tells you exactly which picks the user changed.
+- 一次只问**一个问题**，问完就停下等回答。
+- 给 **2–4 个选项**，每个都写清后果和代价；推荐的放第一位，末尾标「（推荐）」。
+- 能同时选好几项的问题（「要包含哪些」「先做哪几个」），在短标题后面标「（可多选）」，最后一行改成「回复序号，可以选多个」。
+- 做了就收不回的选项（删除、推送、发布、改用户数据）在说明里写明「不可撤销」。
+- 用户回序号就按对应选项；用户自己写了答案就以他写的为准，不要把同一个问题换个说法再问一遍。
+- 问下一个问题前，先用一行确认上一个的结论（「✅ <短标题>：<结论>」），让用户看得到你理解的对不对。
 
-Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
+用户回答后，设计树随之变化：定了的决策把前沿往外推，解锁依赖它的问题，也可能让某些分支不用再问。重新算前沿，再问下一个。
 
-Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), look it up yourself before asking. Don't block on it: a lookup still in progress is an unsettled prerequisite, so only the questions downstream of it wait for the report; ask the rest of the frontier now. The _decisions_ are the user's: put each to them and wait.
+## 在等确认的工作流节点里
 
-The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
+节点给了 `submit_report` 面板工具（节点勾了「完成后等我确认」）时，不在回复里逐个问，每一轮用 `submit_report` 交：前沿上的问题各写成 `decisions` 的一项（2–4 个 `options`、你推荐的 `pick` 和理由），机械决策也列进去并标 `self: true`，要等这一轮答完才能问的写进 `next`。面板会把决策画成可勾选的卡片，并告诉你用户改了哪几项；按用户的选择接着下一轮。
+
+## 收尾
+
+- 前沿空了才算完：设计树每个分支都走到了，没有悄悄假设的地方。
+- 收尾时把共识整理成一份清单：每个决策写「问题 → 结论」，用户定的和你按规则定的分开列，没定的写进「待确认」。
+- 最后照上面的格式问一次「以上共识对不对」（选项如「确认，按这个做」「还有要改的」），用户确认之前不按它动手。
+- 要落盘（例如 OpenSpec 的 `grilling.md`）时只记结论不记过程：每个决策写问题、候选项（`- [ ]` / `- [x]` 勾选列表，选中的打勾）和结论，用户自己填的答案直接替换对应的候选项。
