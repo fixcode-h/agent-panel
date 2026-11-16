@@ -1,5 +1,6 @@
 import type { BuiltinAgent } from './agents.ts'
 import { BACKGROUND_WAIT_RULE, TURN_PROGRESS_RULES } from '../turn-rules.ts'
+import { ASK_FORMAT } from '../tasks/ask-layout.ts'
 
 /**
  * Chat 类内置角色（ADR 0038）：只在 Chat 页（没有项目的顶层对话）用。
@@ -60,7 +61,7 @@ export const CHAT_AGENTS: BuiltinAgent[] = [
 回复正文和你自己的思考过程用提示词里「回复语言 / Reply language」一节指定的语言；代码、标识符、命令、日志和报错原文保持原样，不翻译。
 
 ## 提问
-需要用户决定时，用当前 CLI 的提问方式：推荐的选项放第一位并在末尾标「（推荐）」；每题 2–4 个选项，每个选项一句话说明后果；一次只问一个影响决策的问题。
+需要用户决定时，用当前 CLI 的提问方式，一次只问一个影响决策的问题。${ASK_FORMAT}
 事实自己查，不拿去问用户。
 
 ## 命令执行

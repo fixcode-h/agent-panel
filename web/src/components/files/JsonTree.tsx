@@ -65,7 +65,13 @@ function Node({ name, value, depth, path }: { name?: string | number; value: unk
         >
           <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
         </button>
-        <span className="min-w-0">
+        {/* 点键名这一段也能展开收起（用户嫌只能点箭头，2026-11-16）；拖选文字时不算 */}
+        <span
+          className={cn('min-w-0', kids.length > 0 && 'cursor-pointer')}
+          onClick={() => {
+            if (kids.length && !window.getSelection()?.toString()) setPicked(!open)
+          }}
+        >
           {label}
           <span className="text-muted">{isArr ? '[' : '{'}</span>
           {(!open || !kids.length) && (

@@ -18,12 +18,17 @@ export const MESSAGE_PARENT: PanelTool = {
     inputSchema: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: '要告诉父对话的内容，写清背景和你的建议' },
+        text: {
+          type: 'string',
+          description:
+            '要告诉父对话的内容。question 为 true 时第一句就是要定的事（一句话，问号结尾），空一行用一两句说为什么问，核查证据放进 <details>…</details>；选项写在 options 里，正文不再列一遍',
+        },
         question: { type: 'boolean', description: '需要父对话（或用户）决定时为 true' },
         options: {
           type: 'array',
           items: { type: 'string' },
-          description: 'question 为 true 时可选的几种做法（2–4 个，每个一句话），用户可以直接点选',
+          description:
+            'question 为 true 时可选的几种做法（2–4 个），用户可以直接点选。每项第一行是动词开头的短做法，推荐的放第一个并在末尾标「（推荐）」；换行写选了会怎样，再换行写和已定要求的对照（✓ 符合 / ✕ 冲突，每条一行）',
         },
         ...(o.plans
           ? {
