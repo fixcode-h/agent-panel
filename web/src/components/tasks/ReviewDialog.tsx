@@ -106,7 +106,7 @@ export function ReviewDialog({
   /** 多版文档：最后一项是这次要审的（就是 req.detail），前面的只读 */
   versions?: ReviewVersion[]
   /** 按钮和提示的说法：诊断报告是「确认方案，开始修」「有疑问，再查」 */
-  texts?: { approve: string; revise: string; hintApprove: string; hintRevise: string }
+  texts?: { approve: string; revise: string; hintApprove: string; hintRevise: string; changed?: boolean }
   /** 只看不审（已经确认过的报告） */
   readOnly?: boolean
   /** 右栏上方的快捷标注按钮（只在能审的时候出现） */
@@ -675,8 +675,8 @@ export function ReviewDialog({
           <Button
             size="sm"
             variant={revisePrimary ? 'primary' : 'secondary'}
-            disabled={!!busy || !hasFeedback}
-            title={hasFeedback ? undefined : t('先标注要改的地方')}
+            disabled={!!busy || !(hasFeedback || texts?.changed)}
+            title={hasFeedback || texts?.changed ? undefined : t('先标注要改的地方')}
             onClick={() => void submit(false)}
             className={cn(revisePrimary && 'order-last')}
           >

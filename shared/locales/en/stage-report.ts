@@ -5,12 +5,12 @@ export const EN_STAGE_REPORT: Record<string, string> = {
   '这一版你提了修改意见，已退回': 'You asked for changes to this version; sent back',
   '这一版你已确认，Agent 接着问下一轮': 'You approved this version; the Agent moved on to the next round',
   '第 {n} 版 · 没交报告': 'Version {n} · no report submitted',
-  '改了 {n} 项决策：确认后交给 Agent 按你的选择重出一版':
-    'Changed {n} decision(s): approving sends it back to the Agent to redo with your choices',
+  '改了 {n} 项决策：点「确认」交给 Agent 按你的选择重出一版；还有别的要改，写标注或整体意见再点「修改」':
+    'Changed {n} decision(s): "Approve" sends it back to the Agent to redo with your choices; for anything else, add notes or comments and click "Revise"',
   '确认后 Agent 按报告接着做下一轮': 'After you approve, the Agent continues with the next round',
   '都按推荐：没有要改的地方就点「确认」继续': 'All as recommended: click "Approve" if nothing needs changing',
-  '「修改」会把标注、意见和改了的决策一起交给 Agent':
-    '"Revise" sends your notes, comments and changed decisions to the Agent',
+  '「修改」把标注、意见和改了的决策一起交给 Agent；「确认」只交改了的决策，不带标注':
+    '"Revise" sends your notes, comments and changed decisions to the Agent; "Approve" sends only the changed decisions, without notes',
   已改: 'Changed',
   'Agent 推荐': 'Recommended',
   '推荐理由：{why}': 'Why: {why}',
