@@ -23,7 +23,7 @@ export const EN_APP: Record<string, string> = {
   搜索: 'Search',
   就绪检查: 'Readiness check',
   '请求失败（{status}）': 'Request failed ({status})',
-  '加载失败：{msg}': 'Failed to load: {msg}',
+  '加载失败：{msg}（会自动重试）': 'Failed to load: {msg} (retrying automatically)',
 
   // 在线演示提示条
   关闭提示: 'Dismiss',

@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
-import { Check, ChevronLeft, ChevronsUpDown, Folder, FolderPlus, Settings } from 'lucide-react'
+import { Check, ChevronLeft, ChevronsUpDown, Folder, FolderPlus, Loader2, Settings } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { IconButton } from './icon-button'
@@ -185,6 +185,20 @@ export function ProjectToolRow({
       {meta && <span className="shrink-0 text-caption font-normal text-subtle tabular-nums">{meta}</span>}
       {dot && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
     </button>
+  )
+}
+
+/** 项目列表还在取：占住切换器的位置（同样高），取到后换成切换器或「添加第一个项目」 */
+export function ProjectPickerLoading() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      className="flex h-12 w-full items-center gap-2 rounded-(--c-nav-radius) px-3 text-prose text-subtle"
+    >
+      <Loader2 className="h-4 w-4 animate-spin" />
+      {t('正在读取项目…')}
+    </div>
   )
 }
 

@@ -20,6 +20,7 @@ export const EN_PROJECT_SIDEBAR: Record<string, string> = {
   '「{name}」的更多操作': 'More actions for “{name}”',
   还没有对话: 'No conversations yet',
   添加第一个项目: 'Add your first project',
+  '正在读取项目…': 'Loading projects…',
   '侧栏 · 项目': 'Sidebar · Projects',
   '项目就是本机上的一个代码目录，Agent 会在里面执行任务。':
     'A project is a code folder on this machine where Agents run tasks.',
