@@ -23,6 +23,7 @@ import { StatusPill } from '@/components/ui/status-pill'
 import { ProjectRunning, SidebarCount } from '@/components/ui/sidebar'
 import {
   AddFirstProject,
+  ProjectPickerLoading,
   ProjectNewRow,
   ProjectPickerGroup,
   ProjectPickerRow,
@@ -76,7 +77,7 @@ export function ProjectPicker({
   hotkey?: boolean
 }) {
   const { route, go, openProject, openSettings } = useNav()
-  const { projects, categories } = useData()
+  const { projects, categories, loading } = useData()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   useEffect(() => {
@@ -95,7 +96,9 @@ export function ProjectPicker({
     if (!open) setQuery('')
   }, [open])
 
-  if (!current) return <AddFirstProject onClick={() => openProject()} />
+  // 还在取项目列表（服务刚启动时可能要好几秒）：先占位，不能显示「添加第一个项目」，
+  // 不然用户以为旧项目没了，点进去是一个空的新建项目
+  if (!current) return loading ? <ProjectPickerLoading /> : <AddFirstProject onClick={() => openProject()} />
 
   const q = query.trim().toLowerCase()
   const hits = q

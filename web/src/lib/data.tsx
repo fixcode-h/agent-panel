@@ -22,6 +22,7 @@ import { helpersWorking } from '@shared/tasks/helpers'
 import { dropLive, useLiveOf } from './live/store'
 import { useServerEvents } from './live/events'
 import { liveActive } from '@shared/live/task-live'
+import { loadInitialData, part } from './data-load/initial'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {
@@ -222,27 +223,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .then(() => api.clis())
       .then(setClis)
       .catch(() => {})
-    Promise.all([
-      api.agents(),
-      api.categories(),
-      api.workflows(),
-      api.projects(),
-      api.projectCategories(),
-      api.settings(),
-      // 旧版本的服务没有标签接口：取不到当作没有标签
-      api.tags().catch(() => [] as Tag[]),
-    ])
-      .then(([a, c, w, p, pc, s, tg]) => {
-        setTags(tg)
-        setSettings(s)
-        setProjects(p)
-        setProjectCategories(pc)
-        setAgents(a)
-        setCategories(c)
-        setWorkflows(w)
-      })
-      .catch((e) => toast.error(t('加载失败：{msg}', { msg: (e as Error).message })))
-      .finally(() => setLoading(false))
+    // 每份各取各的，失败的自动重取，都取到才算加载完（见 loadInitialData：以前一份失败项目列表就一直是空的）
+    return loadInitialData(
+      [
+        part('agents', api.agents, setAgents),
+        part('categories', api.categories, setCategories),
+        part('workflows', api.workflows, setWorkflows),
+        part('projects', api.projects, setProjects),
+        part('projectCategories', api.projectCategories, setProjectCategories),
+        part('settings', api.settings, setSettings),
+        // 旧版本的服务没有标签接口：取不到当作没有标签
+        part('tags', () => api.tags().catch(() => [] as Tag[]), setTags),
+      ],
+      () => setLoading(false),
+      (msg) => toast.error(t('加载失败：{msg}（会自动重试）', { msg })),
+    )
   }, [])
 
   const refreshClis = useCallback(async (force = true) => {
