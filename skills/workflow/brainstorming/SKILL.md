@@ -77,38 +77,38 @@ user-invocable: true
 
 ```dot
 digraph brainstorming {
-    "分级：spike / bounded / architectural" [shape=diamond];
-    "说出问题和试法（2–3 句）" [shape=box];
-    "澄清问题（bounded）" [shape=box];
-    "在对话里给简短设计" [shape=box];
-    "用户批准？" [shape=diamond];
-    "调查，汇报建议" [shape=doublecircle];
-    "按正常流程实现（不写计划文档）" [shape=doublecircle];
-    "了解项目上下文" [shape=box];
-    "澄清问题" [shape=box];
-    "提出 2–3 个方案" [shape=box];
-    "分段给出设计" [shape=box];
-    "用户认可设计？" [shape=diamond];
-    "记下设计共识" [shape=box];
-    "交出定下的设计" [shape=doublecircle];
-    "发现隐藏复杂度？升级路径" [shape=box];
+    "Classify: spike / bounded / architectural" [shape=diamond];
+    "Present question + probe (2-3 sentences)" [shape=box];
+    "Ask clarifying questions (bounded)" [shape=box];
+    "Present short design in chat" [shape=box];
+    "Human approves?" [shape=diamond];
+    "Investigate; report recommendation" [shape=doublecircle];
+    "Implement via normal workflow (no plan doc)" [shape=doublecircle];
+    "Explore project context" [shape=box];
+    "Ask clarifying questions" [shape=box];
+    "Propose 2-3 approaches" [shape=box];
+    "Present design sections" [shape=box];
+    "User approves design?" [shape=diamond];
+    "User reviews design consensus?" [shape=diamond];
+    "Hand off agreed design" [shape=doublecircle];
+    "Hidden complexity? Upgrade path" [shape=box];
 
-    "分级：spike / bounded / architectural" -> "说出问题和试法（2–3 句）" [label="spike"];
-    "分级：spike / bounded / architectural" -> "澄清问题（bounded）" [label="bounded"];
-    "分级：spike / bounded / architectural" -> "了解项目上下文" [label="architectural"];
-    "说出问题和试法（2–3 句）" -> "用户批准？";
-    "澄清问题（bounded）" -> "在对话里给简短设计";
-    "在对话里给简短设计" -> "用户批准？";
-    "用户批准？" -> "调查，汇报建议" [label="spike：同意"];
-    "用户批准？" -> "按正常流程实现（不写计划文档）" [label="bounded：同意"];
-    "发现隐藏复杂度？升级路径" -> "分级：spike / bounded / architectural";
-    "了解项目上下文" -> "澄清问题";
-    "澄清问题" -> "提出 2–3 个方案";
-    "提出 2–3 个方案" -> "分段给出设计";
-    "分段给出设计" -> "用户认可设计？";
-    "用户认可设计？" -> "分段给出设计" [label="不认可，修改"];
-    "用户认可设计？" -> "记下设计共识" [label="认可"];
-    "记下设计共识" -> "交出定下的设计";
+    "Classify: spike / bounded / architectural" -> "Present question + probe (2-3 sentences)" [label="spike"];
+    "Classify: spike / bounded / architectural" -> "Ask clarifying questions (bounded)" [label="bounded"];
+    "Classify: spike / bounded / architectural" -> "Explore project context" [label="architectural"];
+    "Present question + probe (2-3 sentences)" -> "Human approves?";
+    "Ask clarifying questions (bounded)" -> "Present short design in chat";
+    "Present short design in chat" -> "Human approves?";
+    "Human approves?" -> "Investigate; report recommendation" [label="spike: yes"];
+    "Human approves?" -> "Implement via normal workflow (no plan doc)" [label="bounded: yes"];
+    "Hidden complexity? Upgrade path" -> "Classify: spike / bounded / architectural";
+    "Explore project context" -> "Ask clarifying questions";
+    "Ask clarifying questions" -> "Propose 2-3 approaches";
+    "Propose 2-3 approaches" -> "Present design sections";
+    "Present design sections" -> "User approves design?";
+    "User approves design?" -> "Present design sections" [label="no, revise"];
+"User approves design?" -> "Record design consensus" [label="yes"];
+"Record design consensus" -> "Hand off agreed design";
 }
 ```
 
