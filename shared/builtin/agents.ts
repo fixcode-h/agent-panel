@@ -3,6 +3,7 @@ import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../review/limits.ts'
 import { DOC_PLACE_KEY, DOC_PLACE_SIBLING, DOC_PLACES } from '../doc-root.ts'
 import { CHAT_AGENTS } from './chat-agents.ts'
 import { BACKGROUND_WAIT_RULE, TURN_PROGRESS_RULES } from '../turn-rules.ts'
+import { ASK_FORMAT } from '../tasks/ask-layout.ts'
 import { BUG_ANALYSIS_TEXT, BUG_SIMPLE_TEXT } from './bug-method.ts'
 
 /**
@@ -193,7 +194,7 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
 Windows PowerShell 5.1 的 \`-Encoding UTF8\` 会写 BOM，要用 \`New-Object System.Text.UTF8Encoding($false)\`（PowerShell 7 用 \`utf8NoBOM\`）。
 
 ## 提问
-需要用户决定时，用当前 CLI 的提问方式：推荐的选项放第一位并在末尾标「（推荐）」；每题 2–4 个选项，每个选项一句话说明后果；每轮优先只问一个影响决策的问题。
+需要用户决定时，用当前 CLI 的提问方式，每轮优先只问一个影响决策的问题。${ASK_FORMAT}
 事实自己查，不拿去问用户。
 
 ### 子对话停下来等用户时必须先提问

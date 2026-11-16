@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { QuestionPanel } from '@/components/chat/QuestionPanel'
+import { splitOption } from '@shared/tasks/ask-layout'
 import { t } from '@shared/i18n'
 import { Markdown } from './Markdown'
 import { RowShell } from './ToolRow'
@@ -201,7 +202,8 @@ export function ParentAskPanel({ task, onClosed }: { task: Task; onClosed: (t: T
       questions={asks.map((a, i) => ({
         header: asks.length > 1 ? t('问题 {n}', { n: i + 1 }) : undefined,
         question: a.question,
-        options: a.options.map((label) => ({ label })),
+        // 子对话只能传字符串选项：第一行是做法，换行后的结果、✓✕ 对照当说明
+        options: a.options.map(splitOption),
       }))}
       onSubmit={(answers) => answerAll(answers, false)}
       onSkip={() => answerAll([], true)}

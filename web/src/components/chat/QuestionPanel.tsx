@@ -3,14 +3,12 @@ import { useUserName } from '@/lib/user-name'
 // 每个问题的选项最后一项都是「自己输入」。任务对话（CLI 的提问）和 UI 设计（AI 问风格等）共用
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Loader2, PencilLine, X } from 'lucide-react'
+import { recommendedIndex } from '@shared/tasks/ask-layout'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
-import { Markdown } from '@/components/tasks/Markdown'
-
-/** 选项名结尾的「（推荐）」「(Recommended)」：AI 用它标出建议的那一项 */
-const RECOMMENDED = /\s*[（(](?:推荐|建议|Recommended)[)）]\s*$/i
+import { Num, OptionRow, QuestionHead } from './QuestionParts'
 
 /** 问题里的 @名字 只是普通文字时不当成提及高亮 */
 const NO_NAMES = new Set<string>()
@@ -22,6 +20,8 @@ export interface PanelQuestion {
   options: { label: string; description?: string }[]
   /** 可以选多个 */
   multiSelect?: boolean
+  /** 推荐第几个选项（从 0 数）；没有时认 label 末尾的「（推荐）」 */
+  recommended?: number
 }
 
 interface Answer {
@@ -94,6 +94,7 @@ export function QuestionPanel({
   const q = questions[Math.min(at, n - 1)]
   const a = answers[at] ?? empty()
   const last = at === n - 1
+  const rec = q ? recommendedIndex(q) : -1
   const all = answers.every(done)
   if (!q) return null
 
@@ -209,48 +210,21 @@ export function QuestionPanel({
           </IconButton>
         )}
       </div>
-      {/* 问题正文可能是 AI 写的 Markdown：渲染出来，长了在框里滚，选项和底部按钮始终留着 */}
-      <div className="px-0.5 text-prose font-medium">
-        <Markdown
-          text={q.question}
-          teamNames={teamNames ?? NO_NAMES}
-          compact
-          className="max-h-[min(50vh,460px)] overflow-y-auto"
-        />
-      </div>
+      {/* 问题正文是 AI 写的 Markdown：按约定拆成标题、背景、折叠的细节（QuestionParts） */}
+      <QuestionHead key={q.question} text={q.question} teamNames={teamNames ?? NO_NAMES} />
       <div className="-mx-1 flex max-h-[min(46vh,420px)] flex-col gap-0.5 overflow-y-auto">
-        {q.options.map((o, i) => {
-          const on = a.picked.includes(i)
-          // AI 在选项名后面标的「（推荐）」：从名字里拿掉，画成一个小胶囊
-          const rec = RECOMMENDED.exec(o.label)
-          const name = rec ? o.label.slice(0, rec.index).trim() : o.label
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => pick(i)}
-              aria-pressed={on}
-              className={cn(
-                'group/opt flex min-h-[1.875rem] w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1 text-left transition-colors hover:bg-ask-sel',
-                on && 'bg-ask-sel',
-              )}
-            >
-              <Mark on={on} multi={q.multiSelect} />
-              <span className="min-w-0 flex-1">
-                <span className={cn('flex items-center gap-1.5 text-prose', on && 'font-medium')}>
-                  <span className="min-w-0">{name}</span>
-                  {rec && (
-                    <span className="shrink-0 rounded-full bg-success/12 px-1.5 text-caption leading-4 font-medium text-success">
-                      {t('推荐')}
-                    </span>
-                  )}
-                </span>
-                {o.description && <span className="block text-footnote leading-snug text-subtle">{o.description}</span>}
-              </span>
-              <Num n={i + 1} />
-            </button>
-          )
-        })}
+        {q.options.map((o, i) => (
+          <OptionRow
+            key={i}
+            label={o.label}
+            description={o.description}
+            rec={i === rec}
+            on={a.picked.includes(i)}
+            multi={q.multiSelect}
+            n={i + 1}
+            onPick={() => pick(i)}
+          />
+        ))}
         {/* 最后一项：自己输入 */}
         <label
           className={cn(
@@ -325,44 +299,5 @@ export function QuestionPanel({
         </Button>
       </div>
     </div>
-  )
-}
-
-/** 选项前面的单选圆点（多选是方框）：选中时实心描边，和组件库「提问」一致 */
-function Mark({ on, multi }: { on: boolean; multi?: boolean }) {
-  if (multi)
-    return (
-      <span
-        className={cn(
-          'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] transition-colors',
-          on ? 'bg-warning text-card' : 'shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
-        )}
-      >
-        {on && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
-      </span>
-    )
-  // 单选（设计稿）：14px 圆圈，选中是琥珀色细圈 + 中间实心圆点
-  return (
-    <span
-      className={cn(
-        'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full transition-shadow',
-        on ? 'shadow-[inset_0_0_0_1.5px_var(--warning)]' : 'shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
-      )}
-    >
-      {on && <span className="h-[7px] w-[7px] rounded-full bg-warning" />}
-    </span>
-  )
-}
-
-/** 选项行尾的数字键：按这个数字直接选它 */
-function Num({ n }: { n: number }) {
-  // 平时不占眼（设计稿的选项行只有圆点和名字），悬停这一行才显出可以按的数字键
-  return (
-    <span
-      aria-hidden
-      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-[4px] bg-sel/70 px-1 font-mono text-micro text-subtle tabular-nums opacity-0 transition-opacity group-hover/opt:opacity-100"
-    >
-      {n}
-    </span>
   )
 }

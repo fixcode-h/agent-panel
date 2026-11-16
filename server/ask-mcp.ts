@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AskQuestion } from '../shared/schema.ts'
 import { askMeta } from '../shared/away.ts'
+import { ASK_FORMAT } from '../shared/tasks/ask-layout.ts'
 import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine/host.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
@@ -67,7 +68,9 @@ const sessions = new Map<
 export const TOOL = {
   name: 'ask_user',
   description:
-    '向用户提问并等他在界面上回答。只用来让用户拿主意：做选择、补充他脑子里的信息、确认方向，不要把问题写成普通文字。要用户离开对话去做一件事（跑一次、复现、在设备上看效果、给只在他手里的文件或日志）用 request_user_action，不要把「你去做……再发回来」写成选项。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」，同时把 recommended 写成它的序号、按实际情况写 reversible；用户也能自己填写别的答案。' +
+    '向用户提问并等他在界面上回答。只用来让用户拿主意：做选择、补充他脑子里的信息、确认方向，不要把问题写成普通文字。要用户离开对话去做一件事（跑一次、复现、在设备上看效果、给只在他手里的文件或日志）用 request_user_action，不要把「你去做……再发回来」写成选项。一次可以问几个相关的问题。' +
+    ASK_FORMAT +
+    '推荐的同时把 recommended 写成它的序号、按实际情况写 reversible。' +
     '问题本身可以同时选好几项时（例如「现在修哪些」「要包含哪些」「要改哪几个文件」），必须把 multiSelect 设为 true：界面会变成方框、可以多选，标题后面也会标出「多选」。只有一个答案能选时才用单选（不写或 false）。',
   inputSchema: {
     type: 'object',
@@ -78,12 +81,18 @@ export const TOOL = {
           type: 'object',
           properties: {
             header: { type: 'string', description: '问题的短标题（几个字）' },
-            question: { type: 'string', description: '完整的问题' },
+            question: { type: 'string', description: '第一句是要用户定的事；空一行写为什么问；证据放 <details>' },
             options: {
               type: 'array',
               items: {
                 type: 'object',
-                properties: { label: { type: 'string' }, description: { type: 'string' } },
+                properties: {
+                  label: { type: 'string' },
+                  description: {
+                    type: 'string',
+                    description: '第一行写选了会怎样；对照已定要求的每条一行，以 ✓ 或 ✕ 开头',
+                  },
+                },
                 required: ['label'],
               },
             },
