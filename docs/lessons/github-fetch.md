@@ -9,3 +9,9 @@ paths: server/plugins/**, web/src/plugins/**, server/update/**, web/src/lib/app-
 - 规则：插件市场、插件更新、版本更新、UEKit 插件目录这类读 GitHub 的地方，打开页面、定时器、缓存过期都不自动请求；只显示上次缓存（写明多久前），从没读过就提示点「刷新」/「检查更新」。安装、换仓库这类用户点的动作可以顺带读。设置里用户自己打开的「自动检查更新」开关（默认关）除外。
 - 起因：插件页打开时缓存超过一小时就自动重读市场、自动查更新（market.ts 的 STALE_MS、updates.ts 的 auto），UE 插件页也按 1 小时 / 6 小时自动重读，用户要求全部改成手动（插件仓库 ccec0ef）。
 - 防线：`server/plugins/market-cache.test.ts`（cacheOnly 不去 GitHub）；其余人工。
+
+## 从插件市场装的包，版本要和市场条目写的一致，对不上就报错不装
+
+- 规则：按 `plugins.json` 条目下载插件包（升级、一键更新、装依赖）后，先核对包里 `plugin.json` 的版本等于条目的 `version`，对不上直接报错并写明两边版本和下载的 tag / 附件，不装。不能只看「确认安装」成功就算升级成功。
+- 起因：插件仓库 UE 0.16.5 改了 `version` 却没改 `tag` / `asset`，发布那次 CI 失败、`ue-v0.16.5` 没发出来；面板照 tag 下到 0.16.4 的包装上，一键更新显示完成、版本不变、按钮又变回「升级到 v0.16.5」，用户反复点也没有任何报错（前一次修 PR #350 只处理了显示）。
+- 防线：`server/plugins/github.test.ts`（`checkEntryVersion`）。

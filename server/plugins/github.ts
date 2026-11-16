@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { t } from '../../shared/i18n.ts'
 import { netError, netFetch } from '../net.ts'
 
 /**
@@ -132,4 +133,18 @@ export async function downloadEntry(repo: string, e: MarketEntry, ref = 'HEAD') 
     return { zip, path: '' }
   }
   return { zip: await downloadSource(repo, ref), path: e.path ?? e.id }
+}
+
+/**
+ * 市场条目写的版本和下载到的包里 plugin.json 的版本要一致：插件仓库改了版本号、但发布没出来（tag / asset 还指着上一版）时，
+ * 下载到的其实是旧包，装上去版本不变、界面上却像升级成功了，用户反复点也升不上去。这里直接拦下并说清原因
+ */
+export function checkEntryVersion(e: MarketEntry, got: string) {
+  if (got === e.version) return
+  throw new Error(
+    t(
+      '插件市场写着 {id} v{want}，但下载到的包是 v{got}（{tag}），没有安装：插件仓库的新版本可能还没发布成功，过几分钟点「刷新」再试，还不行请到插件仓库检查发布',
+      { id: e.id, want: e.version, got, tag: e.tag && e.asset ? `${e.tag}/${e.asset}` : (e.path ?? e.id) },
+    ),
+  )
 }

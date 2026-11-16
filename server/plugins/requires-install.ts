@@ -3,7 +3,7 @@ import { dependentsOf, unmetRequires, type UnmetRequire } from '../../shared/plu
 import type { PluginManifest, PluginSource } from '../../shared/plugins/types.ts'
 import { comparePluginVersions } from '../../shared/plugins/version.ts'
 import { log } from '../log.ts'
-import { DEFAULT_MARKET, downloadEntry, type MarketEntry } from './github.ts'
+import { checkEntryVersion, DEFAULT_MARKET, downloadEntry, type MarketEntry } from './github.ts'
 import { afterInstall, findInstalled, installedList, updatePlugin } from './manager.ts'
 import { readMarketCached } from './market-cache.ts'
 import { packageRoot, parseManifest, writePackage } from './store.ts'
@@ -83,6 +83,7 @@ export async function installRequires(m: PluginManifest, source?: PluginSource, 
     const root = packageRoot(files, got.path)
     const dep = parseManifest(JSON.parse(files.find((f) => f.name === `${root}plugin.json`)!.data.toString('utf8')))
     if (dep.id !== u.id) throw new Error(t('插件市场里 {id} 的包实际是 {got}，没有安装', { id: u.id, got: dep.id }))
+    checkEntryVersion(entry, dep.version)
     done.push(...(await installRequires(dep, { kind: 'github', ref: repo }, seen)))
     await writePackage(dep.id, files, root, { kind: 'github', ref: repo, tag: entry.tag ?? 'HEAD', path: got.path })
     await afterInstall(dep.id)

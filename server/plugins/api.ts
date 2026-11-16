@@ -5,7 +5,15 @@ import path from 'node:path'
 import { pluginConfig, pluginOn } from '../../shared/plugins/index.ts'
 import type { PluginInfo, PluginSource } from '../../shared/plugins/types.ts'
 import { getSettings } from '../settings.ts'
-import { DEFAULT_MARKET, downloadEntry, downloadSource, parseRepo, readMarket } from './github.ts'
+import {
+  checkEntryVersion,
+  DEFAULT_MARKET,
+  downloadEntry,
+  downloadSource,
+  parseRepo,
+  readMarket,
+  type MarketEntry,
+} from './github.ts'
 import { currentMarketRepo, readMarketCached } from './market-cache.ts'
 import {
   afterInstall,
@@ -32,11 +40,13 @@ import { wrapApi } from './wrap/api.ts'
  * 插件网页部分的静态文件（/<id>/web/…）和插件自己的接口（/<id>/api/…）。
  */
 
-function fromZip(zip: Buffer, source: PluginSource, sub = '') {
+/** entry：从市场条目下载的，核对包里的版本和市场写的一致（不一致不装，见 checkEntryVersion） */
+function fromZip(zip: Buffer, source: PluginSource, sub = '', entry?: MarketEntry) {
   const files = readZip(zip)
   const root = packageRoot(files, sub)
   const raw = files.find((f) => f.name === `${root}plugin.json`)!
   const manifest = parseManifest(JSON.parse(raw.data.toString('utf8')))
+  if (entry) checkEntryVersion(entry, manifest.version)
   return stash({ manifest, source, files, root })
 }
 
@@ -134,6 +144,7 @@ export function pluginsApi() {
                 got.zip,
                 { kind: 'github', ref: parsed.repo, tag: entry.tag ?? ref, path: got.path },
                 got.path,
+                entry,
               ),
             )
           }
