@@ -2,10 +2,12 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { toast } from '@/lib/toast'
 import { type AnalysisKind, type Attachment, type Task } from '@shared/schema'
 import { analysisHome, analyzerId, rootIdOf, type AnalysisScope } from '@shared/analysis-home'
+import { liveActive } from '@shared/live/task-live'
 import { t } from '@shared/i18n'
 import { type ClosePlan, closeWindowPlan } from './ai-window-close'
 import { api } from './api'
 import { analysisTiming, type AnalysisTiming } from './analysis-report'
+import { liveFor, onLiveChange } from './live/store'
 
 /**
  * 统一的 AI 分析窗口：面板上所有「AI 分析」「AI 排查」只管调用 openAiWindow，
@@ -83,20 +85,46 @@ function watch(id: string) {
   let finished = false
   // 结束后已经慢速盯了几轮：查不多之后就收手，不把轮询永久挂在后台
   let slowTicks = 0
+  // 定时器和推送都会叫 tick：同一时间只排一个、只跑一个，跑的时候又被叫了就跑完再来一次
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let busy = false
+  let again = false
+  const later = (ms: number) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => void kick(), ms)
+  }
+  // 轮询封了顶，接着问的那一轮靠推送叫醒：这个对话的 live 一变（又跑起来、这一轮说完）马上去看，
+  // 不等定时器。以前收手之后就再也看不到，用户追问几轮缺 JSON，要等 CLI 空闲退出（二十多分钟）才补发纠正
+  const off = onLiveChange(id, () => void kick())
+  const kick = async () => {
+    if (state.taskId !== id) return off()
+    if (busy) return void (again = true)
+    busy = true
+    clearTimeout(timer)
+    try {
+      await tick()
+    } finally {
+      busy = false
+      if (again) {
+        again = false
+        void kick()
+      }
+    }
+  }
   const tick = async () => {
-    if (state.taskId !== id) return
     try {
       // 轮询只看状态和用时：只取最后一条消息，不把整段对话（可能几 MB）每 1.5 秒拉一遍
       const task = await api.task(id, { limit: 1 })
       if (state.taskId !== id) return
       const timing = analysisTiming(task)
+      const status = turnStatus(task)
       // 状态和用时都没变就不通知：每次 set 都会让订阅的组件重渲染
-      if (task.status !== state.status || !sameTiming(timing, state.timing)) set({ status: task.status, timing })
+      if (status !== state.status || !sameTiming(timing, state.timing)) set({ status, timing })
       // 结束后又被接着问了：这一轮结束时还要再提醒、再交回结果
-      if (running(task.status)) {
+      if (running(status)) {
         finished = false
         slowTicks = 0
-        return void setTimeout(tick, RUNNING_POLL_MS)
+        return later(RUNNING_POLL_MS)
       }
       if (!finished) {
         finished = true
@@ -117,18 +145,31 @@ function watch(id: string) {
       // 结束后降到 ENDED_POLL_MS 一次，再盯 ENDED_POLL_MAX 次就收手（还能盖住「被接着问了又结束」这种短期情况）
       slowTicks += 1
       if (slowTicks > ENDED_POLL_MAX) return
-      setTimeout(tick, ENDED_POLL_MS)
+      later(ENDED_POLL_MS)
     } catch (e) {
       if (state.taskId !== id) return
-      if (isTaskGone(e)) return void set({ gone: true })
+      if (isTaskGone(e)) {
+        off()
+        return void set({ gone: true })
+      }
       // 网络抖动之类的先不判死：下一轮再看。但后端一直不通时也不能无限发请求，
       // 和结束后那一支用同一个计数、同一个慢节奏
       slowTicks += 1
       if (slowTicks > ENDED_POLL_MAX) return
-      setTimeout(tick, ENDED_POLL_MS)
+      later(ENDED_POLL_MS)
     }
   }
-  setTimeout(tick, RUNNING_POLL_MS)
+  later(RUNNING_POLL_MS)
+}
+
+/**
+ * 窗口认的状态：分析对话的 CLI 说完一轮后还开着等下一句，任务记录的 status 一直是 running，
+ * 要到 CLI 空闲退出才变（可能二十多分钟）。这一轮有没有说完只看 live（convState），说完了就按这一轮结束算，
+ * 结束提醒、交回结果（onDone）、标题栏「分析完成」都跟着每一轮走
+ */
+export function turnStatus(task: Task): Task['status'] {
+  if (task.status !== 'running') return task.status
+  return liveActive(liveFor(task)) ? 'running' : 'done'
 }
 
 async function start(job: AiJob) {
