@@ -65,6 +65,30 @@ test('dispatchesOf：新开、交回子对话和派出子任务都认成派单�
   )
 })
 
+test('dispatchesOf：在原来的子任务里重试时，同一个子任务只由最近那次派单代表', () => {
+  const list: TaskMessage[] = [
+    msg('u1', 0, { role: 'user', text: '做第 2 步' }),
+    msg('s1', 1, { role: 'system', spawned: ['h1', 'h2'] }),
+    msg('s2', 3, { role: 'system', spawned: ['h1'] }),
+    msg('s3', 5, { role: 'system', spawned: ['h2'] }),
+  ]
+  const ds = dispatchesOf(list)
+  assert.deepEqual(
+    ds.map((d) => [d.key, d.targets]),
+    [
+      ['s2#-1', ['h1']],
+      ['s3#-1', ['h2']],
+    ],
+  )
+  // 第一次派单时记的分诊跟到接替它的那一次上，不另画一行
+  const { byKey, orphan } = routeDispatches(list, [route('r1', 'subtask', ['h1', 'h2'], 2)], ds)
+  assert.deepEqual(
+    byKey.get('s2#-1')?.map((r) => r.id),
+    ['r1'],
+  )
+  assert.equal(orphan.size, 0)
+})
+
 test('routeDispatches：分诊按对象对到具体那一次派单，对不上的才挂在消息上', () => {
   const ds = dispatchesOf(msgs)
   const { byKey, orphan } = routeDispatches(
