@@ -9,6 +9,7 @@ import { CapabilityGroup, CapabilityRow, audienceLabel, effectLabel } from '@/co
 import { CapabilityServerHeader } from '@/components/ui/capability-server-header'
 import { pluginIcon } from '@/plugins/icon'
 import { sourceIcon } from './source-icon'
+import { sourceScope } from './source-scope'
 
 type GroupBy = 'use' | 'effect' | 'who'
 
@@ -17,6 +18,7 @@ export function McpSourcePage({ s }: { s: CatalogSource }) {
   const [by, setBy] = useState<GroupBy>('use')
   const Icon = s.kind === 'plugin' ? pluginIcon(s.icon ?? '') : sourceIcon(s.kind)
   const hasTools = s.servers.some((x) => x.tools.length)
+  const scope = sourceScope(s)
   return (
     <div className="flex max-w-[960px] flex-col gap-6 pt-1">
       {s.error && <p className="text-body text-danger">{s.error}</p>}
@@ -37,7 +39,10 @@ export function McpSourcePage({ s }: { s: CatalogSource }) {
               )
             }
             summary={srv.summary || s.summary}
-            rows={[{ label: t('什么时候挂'), value: srv.attach }]}
+            rows={[
+              ...(scope ? [{ label: t('在哪些项目生效'), value: scope.long }] : []),
+              { label: t('什么时候挂'), value: srv.attach },
+            ]}
             hint={srv.hint}
           />
           {srv.error && <p className="text-body text-danger">{srv.error}</p>}

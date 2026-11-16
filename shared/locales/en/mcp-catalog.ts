@@ -65,6 +65,13 @@ export const EN_MCP_CATALOG: Record<string, string> = {
   '面板这次启动后还没有对话取过工具。': 'No conversation has fetched tools since the panel started.',
   默认角色: 'Default role',
   插件已开启: 'Plugin on',
+  所有项目: 'All projects',
+  '按项目 · 还没有项目打开': 'Per project · on in no project',
+  '按项目：还没有项目打开，在项目设置 →「能力」里打开':
+    'Per project: not on in any project yet; turn it on in Project settings → Capabilities',
+  '按项目 · {n} 个项目打开': 'Per project · on in {n} projects',
+  '按项目：{names}': 'Per project: {names}',
+  在哪些项目生效: 'Applies to',
   '，全部挂上': ', all attached',
   '，有插件出错：{e}': ', plugin errors: {e}',
   用法说明: 'Usage notes',

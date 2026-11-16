@@ -237,7 +237,9 @@ export function ScopeTrailing({
 }) {
   if (item.scope === 'project' && onToggle)
     return <Switch checked={on} onCheckedChange={(v) => onToggle(item.name, v)} aria-label={item.name} />
-  if (item.scope === 'project') return <Badge tone={on ? 'accent' : 'neutral'}>{on ? t('已打开') : t('没打开')}</Badge>
+  // 只读的地方（技能与 MCP 页）写明是「本项目」开没开，和标「全局」的对所有项目都生效的分开
+  if (item.scope === 'project')
+    return <Badge tone={on ? 'accent' : 'neutral'}>{on ? t('本项目已打开') : t('本项目没打开')}</Badge>
   if (item.scope === 'always') return <Badge tone="success">{t('始终启用')}</Badge>
   if (item.scope === 'own')
     return item.importable ? <Badge tone="warning">{t('未导入')}</Badge> : <Badge>{t('项目里')}</Badge>

@@ -19,7 +19,7 @@ import { withPluginLimit } from '../plugins/limit.ts'
 import { pluginError, runningPlugins } from '../plugins/runtime.ts'
 import type { McpTool, PluginRun, ServerPlugin } from '../plugins/sdk.ts'
 import { actionRow } from './panel.ts'
-import { pluginGate } from '../plugins/project-gate.ts'
+import { pluginGate, projectsWithPlugin } from '../plugins/project-gate.ts'
 
 type ToolDef = Omit<McpTool, 'call' | 'targets'>
 
@@ -102,7 +102,18 @@ export async function pluginSources(): Promise<{ sources: CatalogSource[]; actio
       const r = running.get(m.id)
       const actions = (r?.plugin.actions ?? []).map(actionRow)
       for (const a of actions) actionNames.add(a.name)
-      const base = { id: `plugin:${m.id}`, kind: 'plugin' as const, name: m.name, version: m.version, icon: m.icon }
+      // 生效范围：按项目的插件列出打开了它的项目，免得只看到「插件已开启」却不知道哪个项目的对话才挂得上
+      const activation = m.activation === 'project' ? ('project' as const) : ('global' as const)
+      const projects = activation === 'project' ? await projectsWithPlugin(m.id) : undefined
+      const base = {
+        id: `plugin:${m.id}`,
+        kind: 'plugin' as const,
+        name: m.name,
+        version: m.version,
+        icon: m.icon,
+        activation,
+        ...(projects && { projects }),
+      }
       const summary = m.description
       if (!r) return { ...base, summary, servers: legacyServers(m), actions, error: pluginError(m.id) || undefined }
       if (!r.plugin.catalog) return { ...base, summary, servers: legacyServers(m), actions, legacy: true }

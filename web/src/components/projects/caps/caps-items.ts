@@ -1,7 +1,8 @@
 import type { BundledSkill, LibraryItem, McpEntry } from '@shared/library'
 import type { ProjectMcpDetected } from '@shared/projects/mcp'
 import type { ProjectSkill } from '@shared/projects/skills'
-import type { ProjectCapabilities } from '@shared/projects/capabilities'
+import { pluginOnFor, type ProjectCapabilities } from '@shared/projects/capabilities'
+import type { PluginRow } from '@/plugins/registry'
 import { CLIS } from '@shared/clis'
 import { t } from '@shared/i18n'
 
@@ -29,6 +30,11 @@ export interface CapItem {
   whereNote: string
   /** 项目里识别到、还没导入成面板管理的 MCP 配置 */
   importable?: boolean
+  /**
+   * 已经算好的开没开：面板插件带的 MCP 按插件开关（capabilities.plugins）算，不在 capabilities.mcp 的名单里，
+   * 不能拿显示名去名单里找（以前这样找，UE 插件明明在项目里打开了也显示「没打开」）
+   */
+  on?: boolean
 }
 
 const cliNames = (ids: string[]) =>
@@ -110,9 +116,32 @@ export function globalItems(input: {
   return out
 }
 
+/**
+ * 开着的插件带的 MCP 里，这个项目实际会挂上的（和服务端每轮挂工具同一条规则 pluginOnFor）：
+ * 全局生效的插件标「全局」，按项目生效的标「本项目已打开」。开没开直接算好放进 on，不去 capabilities.mcp 里按名字找
+ */
+export function pluginMcpItems(
+  rows: PluginRow[],
+  project: { capabilities?: Partial<ProjectCapabilities> } | undefined,
+): CapItem[] {
+  return rows
+    .filter((r) => r.enabled && r.manifest.mcpServers.length)
+    .filter((r) => pluginOnFor(project, r.manifest.id, r.manifest.activation))
+    .map((r) => ({
+      key: `mcp:plugin:${r.manifest.id}`,
+      kind: 'mcp',
+      name: t('{name}（插件）', { name: t(r.manifest.name) }),
+      description: r.manifest.description,
+      scope: r.manifest.activation === 'project' ? 'project' : 'global',
+      where: t('面板插件'),
+      whereNote: '',
+      on: true,
+    }))
+}
+
 /** 按项目生效的条目在这个项目里打开了没有 */
 export const itemOn = (item: CapItem, caps: Partial<ProjectCapabilities> | undefined) =>
-  item.scope !== 'project' || !!(item.kind === 'mcp' ? caps?.mcp : caps?.skills)?.includes(item.name)
+  item.on ?? (item.scope !== 'project' || !!(item.kind === 'mcp' ? caps?.mcp : caps?.skills)?.includes(item.name))
 
 /** 这个项目实际会带上的：始终、全局、项目自己的都算，按项目的看开关 */
 export const activeItems = (items: CapItem[], caps: Partial<ProjectCapabilities> | undefined) =>

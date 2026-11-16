@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 import { call } from '@/lib/api/call'
 import { usePlugins } from '@/plugins/registry'
 import type { ProjectCapabilities } from '@shared/projects/capabilities'
-import { globalItems, itemOn, ownItems, type CapItem } from './caps-items'
+import { globalItems, itemOn, ownItems, pluginMcpItems, type CapItem } from './caps-items'
 
 /**
  * 按项目生效的插件探查（detect / ready）：目录、表单里的插件设置变了再问一遍（停顿一下再问，打字时不连发）。
@@ -83,11 +83,13 @@ export const panelMcpItem = (): CapItem => ({
 })
 
 /**
- * 侧栏「技能与 MCP」一行后面的数字：项目自己的 + 从全局继承的（全局库里在这个项目生效的，加上面板自带的 MCP）。
- * 读不出来时为 undefined，侧栏就不写数字
+ * 侧栏「技能与 MCP」一行后面的数字：项目自己的 + 从全局继承的（面板自带的 MCP、在这个项目挂上的插件 MCP、
+ * 全局库里在这个项目生效的），和「技能与 MCP」页的「从全局继承」同一个数。读不出来时为 undefined，侧栏就不写数字
  */
 export function useProjectCapsCount(project: { id: string; capabilities?: Partial<ProjectCapabilities> }) {
   const { own, global } = useCapsLists(project.id)
+  const { rows } = usePlugins()
   if (!own || !global) return undefined
-  return { own: own.length, inherited: 1 + global.filter((x) => itemOn(x, project.capabilities)).length }
+  const plugins = pluginMcpItems(rows, project).length
+  return { own: own.length, inherited: 1 + plugins + global.filter((x) => itemOn(x, project.capabilities)).length }
 }
