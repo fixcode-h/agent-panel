@@ -1,5 +1,5 @@
 ---
-paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, web/src/components/tasks/ChatModelPicker.tsx, web/src/lib/fileDrag.ts, scripts/ui/01-composer.mjs
+paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, web/src/components/tasks/ChatModelPicker.tsx, web/src/lib/fileDrag.ts, scripts/ui/01-composer.mjs, web/src/lib/caret.ts
 ---
 
 # 对话输入框
@@ -41,3 +41,9 @@ paths: web/src/components/chat/**, web/src/components/tasks/TaskComposer.tsx, we
 - 规则：`RichInput` 是 `pre-wrap` 的 contenteditable，换行是「\n」文字。块末尾最后一个「\n」浏览器不成行，光标停在它后面时 Chrome 会把输入位置规整到「\n」前面。改动 DOM 的地方（重画、插入、输入）都要经过 `tail-break.ts` 的 `syncTailBreak` 补上或收掉末尾的 `<br data-tail>`；读回文字时它不算，组合输入中不动它。
 - 起因：用户报输入框打一次标点出来两个（换行后用输入法打标点，组合的字插在「\n」前、上屏又插一遍）。
 - 防线：`scripts/ui/composer-ime-newline.mjs`（01-composer 分片里用 CDP 模拟输入法）。
+
+## 全站「光标滚进视野」兜底只管单个光标，拖选和选中一段时不插手
+
+- 规则：`installCaretAutoScroll`（`web/src/lib/caret.ts`）这类全局兜底只在选区折叠成一个光标、且没按着鼠标时才滚；选了一段文字或正在拖选时，滚动交给浏览器（它会把选区的活动端滚进视野）。兜底量的是选区起点，拖选时也滚就会和浏览器的自动滚动来回抢。
+- 起因：578c751 加了全局兜底，没区分拖选；用户 2026-11-16 反馈工作总结的编辑框往下拖选时来回抽搐、选不下去，所有带滚动条的输入框都受影响。
+- 防线：`scripts/ui/08-misc.mjs` 工作总结用例（编辑框里往下拖选，滚动位置不许往回跳）。

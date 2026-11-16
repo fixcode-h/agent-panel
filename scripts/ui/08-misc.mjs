@@ -946,6 +946,39 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (/\n\n\n/.test(text)) errors.push('工作总结：报告里有连续空行')
     if (!/（已修复 · BUG-123）|（未解决 · BUG-123）/.test(text)) errors.push('工作总结：待确认时附的单子没有写进报告')
     if (!/^## 明天计划$/m.test(text)) errors.push('工作总结：报告里没有「明天计划」标题')
+    // 拖选往下拉：输入框只能跟着往下滚。全站的「光标滚进视野」兜底量的是选区起点，
+    // 拖选时也跟着滚的话会和浏览器的自动滚动来回抢，输入框抽搐、选不下去。压矮输入框让它有滚动条，不改正文
+    const body = view.getByLabel('报告正文')
+    await body.evaluate((el) => {
+      el.style.minHeight = '0'
+      el.style.height = '120px'
+      el.scrollTop = 0
+    })
+    const tb = await body.boundingBox()
+    await p.evaluate(() => {
+      const el = document.querySelector('textarea[aria-label="报告正文"]')
+      window.__dragTops = []
+      const tick = () => {
+        if (!window.__dragTops) return
+        window.__dragTops.push(el.scrollTop)
+        requestAnimationFrame(tick)
+      }
+      tick()
+    })
+    await p.mouse.move(tb.x + 60, tb.y + 20)
+    await p.mouse.down()
+    await p.mouse.move(tb.x + 60, tb.y + tb.height - 6, { steps: 8 })
+    await p.waitForTimeout(800)
+    await p.mouse.up()
+    const tops = await p.evaluate(() => {
+      const r = window.__dragTops
+      window.__dragTops = null
+      return r
+    })
+    if (tops.some((v, i) => i > 0 && v < tops[i - 1] - 1))
+      errors.push('工作总结：在编辑框里往下拖选时输入框来回抽搐（滚动位置往回跳）')
+    else if (Math.max(...tops) < 1) errors.push('工作总结：在编辑框里往下拖选到底边时输入框没有跟着滚')
+    await body.evaluate((el) => el.removeAttribute('style'))
     await view.getByRole('radio', { name: '预览' }).click()
 
     // 再次生成：条目连同单子回到待确认，确认后是一份新报告，原报告还在

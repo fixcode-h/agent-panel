@@ -205,6 +205,17 @@ const textField = (el: Element | null): el is HTMLTextAreaElement | HTMLInputEle
 const editing = (el: Element | null): el is HTMLElement =>
   !!el && (textField(el) || (el instanceof HTMLElement && el.isContentEditable))
 
+/**
+ * 选了一段文字（不是单个光标）：这时浏览器自己会把选区的活动端滚进视野，这里不插手。
+ * 量位置只看选区起点，要是也跟着滚，往下拖选时浏览器往下滚、这里把起点拉回来，
+ * 输入框就在两头之间来回抽搐，拖选拉不下去
+ */
+function selecting(el: HTMLElement): boolean {
+  if (textField(el)) return el.selectionStart !== el.selectionEnd
+  const sel = window.getSelection()
+  return !!sel && !sel.isCollapsed
+}
+
 /** 有滚动条的输入框才需要管 */
 const scrollable = (el: HTMLElement) => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1
 
@@ -215,6 +226,8 @@ const scrollable = (el: HTMLElement) => el.scrollHeight > el.clientHeight + 1 ||
 export function installCaretAutoScroll(): () => void {
   let frame = 0
   const last = new WeakMap<HTMLElement, string>()
+  // 按着鼠标时是在点选或拖选，光标就在鼠标底下，浏览器管滚动；松手后再看一眼
+  let pressed = false
 
   const check = (target?: EventTarget | null) => {
     const active = document.activeElement
@@ -224,11 +237,11 @@ export function installCaretAutoScroll(): () => void {
         : editing(active)
           ? active
           : null
-    if (!el || !scrollable(el)) return
+    if (!el || pressed || !scrollable(el)) return
     cancelAnimationFrame(frame)
     // 等默认行为和布局都落定再量
     frame = requestAnimationFrame(() => {
-      if (!el.isConnected) return
+      if (!el.isConnected || selecting(el)) return
       const key = snapshot(el)
       if (last.get(el) === key) return
       last.set(el, key)
@@ -242,12 +255,22 @@ export function installCaretAutoScroll(): () => void {
   // 方向键、Home/End：光标位置变了，和输入一样要跟
   const onKey = () => check()
   const onFocus = (e: Event) => check(e.target)
+  const onDown = (e: PointerEvent) => {
+    if (e.button === 0) pressed = true
+  }
+  const onUp = () => {
+    pressed = false
+  }
 
   document.addEventListener('selectionchange', onSelection)
   document.addEventListener('input', onInput, true)
   document.addEventListener('keyup', onKey, true)
   document.addEventListener('focusin', onFocus, true)
   document.addEventListener('compositionend', onInput, true)
+  document.addEventListener('pointerdown', onDown, true)
+  // 松手可能在窗口外，pointercancel（拖进了别的手势）也算松手
+  window.addEventListener('pointerup', onUp, true)
+  window.addEventListener('pointercancel', onUp, true)
   return () => {
     cancelAnimationFrame(frame)
     document.removeEventListener('selectionchange', onSelection)
@@ -255,5 +278,8 @@ export function installCaretAutoScroll(): () => void {
     document.removeEventListener('keyup', onKey, true)
     document.removeEventListener('focusin', onFocus, true)
     document.removeEventListener('compositionend', onInput, true)
+    document.removeEventListener('pointerdown', onDown, true)
+    window.removeEventListener('pointerup', onUp, true)
+    window.removeEventListener('pointercancel', onUp, true)
   }
 }
