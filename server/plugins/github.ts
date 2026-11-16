@@ -46,10 +46,29 @@ async function get(url: string, what: string) {
   return res
 }
 
+/**
+ * 把分支名（默认 HEAD）换成提交号：raw.githubusercontent.com 按地址缓存约 5 分钟，用分支名读，刚发版后点「刷新」
+ * 还会拿到旧的 plugins.json（市场显示旧版本，一键更新装上旧版）；按提交号读每次都是最新内容。
+ * 换不到（限流、断网、私有仓库）就照旧用分支名，不因此读不了市场。
+ */
+export async function resolveRef(repo: string, ref = 'HEAD') {
+  if (/^[0-9a-f]{40}$/.test(ref)) return ref
+  try {
+    const res = await netFetch(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`, {
+      headers: { ...HEADERS, Accept: 'application/vnd.github.sha' },
+      timeoutMs: 15_000,
+    })
+    const sha = res.ok ? (await res.text()).trim() : ''
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : ref
+  } catch {
+    return ref
+  }
+}
+
 /** 仓库的插件目录；仓库没有 plugins.json 时返回 undefined（当作单个插件） */
 export async function readMarket(repo: string, ref = 'HEAD') {
   const res = await get(
-    `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(ref)}/plugins.json`,
+    `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(await resolveRef(repo, ref))}/plugins.json`,
     '读插件目录',
   )
   if (res.status === 404) return undefined

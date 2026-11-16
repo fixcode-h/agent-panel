@@ -46,9 +46,11 @@ export function UpgradeButton({ row, onPreview }: { row: PluginRow; onPreview?: 
   const u = useUpgrade(row)
   const step = usePluginUpdates().bulk.get(row.manifest.id)
   const [busy, setBusy] = useState(false)
-  // 一键更新排着队、正在装或已经装好时，卡片上显示进度（BulkStepLine），不再给单独升级的按钮；失败了留着按钮好重试
-  if (step && step.status !== 'failed' && step.status !== 'skipped')
+  // 一键更新排着队、正在装时，卡片上显示进度（BulkStepLine），不再给单独升级的按钮；失败了留着按钮好重试。
+  // 装好之后又查到更新的版本（之后又发了版再点「刷新」）时，「已更新到」让位给升级按钮，不然顶上数着有新版本、卡片上却找不到
+  if (step && (step.status === 'waiting' || step.status === 'updating'))
     return <BulkStepLine status={step.status} to={step.to} />
+  if (step?.status === 'done' && !u) return <BulkStepLine status="done" to={row.manifest.version} />
   if (!u || !onPreview) return null
   const upgrade = async () => {
     // 包装插件的升级走包装预览：只列新增发现和权限变化（ADR 0068）

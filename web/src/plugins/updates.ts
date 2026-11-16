@@ -37,7 +37,9 @@ export const usePluginUpdates = () => useSyncExternalStore(subscribe, pluginUpda
 
 export async function checkUpdates() {
   if (state.checking) return
-  emit({ checking: true })
+  // 重新查更新时清掉上一轮一键更新留下的「已更新到」和失败原因，卡片按这次查到的结果重新显示；还在跑的不动
+  const running = [...state.bulk.values()].some((s) => s.status === 'waiting' || s.status === 'updating')
+  emit({ checking: true, ...(!running && { bulk: new Map() }) })
   try {
     const r = await pluginApi.updates()
     emit({ updates: new Map(r.updates.map((u) => [u.id, u])), errors: r.errors, checkedAt: r.checkedAt })
