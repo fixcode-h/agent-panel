@@ -38,7 +38,7 @@ export function ProjectSidebarSpecimen() {
         <ProjectToolRow icon={Gamepad2} label="UE" dot="本次日志有错误" />
         <ProjectToolRow icon={Sparkles} label={t('技能与 MCP')} meta="4 + 9" />
         <ProjectToolRow icon={Lightbulb} label={t('经验与文档')} />
-        {/* 当前项目的对话：进行中、最近两组，行尾状态做轻，选中是 bg-sel */}
+        {/* 当前项目的对话：进行中，再按今天 / 昨天 / 前天分组，更早的收起；行尾状态做轻，选中是 bg-sel */}
         <p className={cn('px-2.5 pt-2', SIDEBAR_GROUP_LABEL)}>{t('进行中')}</p>
         <div className={cn(sidebarTaskRowClass(true, false), 'px-2.5')}>
           <SidebarTaskRowBody active title="复查当前编译是否仍报错" status={<TaskRowStatus kids={1} running />} />
@@ -46,7 +46,7 @@ export function ProjectSidebarSpecimen() {
         <div className={cn(sidebarTaskRowClass(false, false), 'px-2.5')}>
           <SidebarTaskRowBody title="接入 Pi CLI 输出" status={<TaskRowStatus needs />} />
         </div>
-        <p className={cn('px-2.5 pt-2', SIDEBAR_GROUP_LABEL)}>{t('最近')}</p>
+        <p className={cn('px-2.5 pt-2', SIDEBAR_GROUP_LABEL)}>{t('今天')}</p>
         <div className={cn(sidebarTaskRowClass(false, false), 'px-2.5')}>
           <SidebarTaskRowBody workflow title="修复设置弹窗闪动" status={<TaskRowStatus unread />} />
         </div>
@@ -57,8 +57,9 @@ export function ProjectSidebarSpecimen() {
           />
         </div>
         <div className={cn(sidebarTaskRowClass(false, false), 'px-2.5')}>
-          <SidebarTaskRowBody title="清理已合并的分支" time="11/6" />
+          <SidebarTaskRowBody title="清理已合并的分支" time="10:03" />
         </div>
+        <p className={cn('px-2.5 pt-2', SIDEBAR_GROUP_LABEL)}>{t('更早')} · 58</p>
       </div>
       <div className={cn(popoverPanel, 'relative w-72')}>
         <MenuSearch value="" onChange={() => {}} placeholder={t('搜索项目')} autoFocus={false} />
