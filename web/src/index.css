@@ -1193,6 +1193,8 @@ body,
   --c-grid-link: var(--ctx-messages);
   --c-grid-rowMark: 3px;
   --c-grid-handle: 7px;
+  --c-grid-fitHead: 1;
+  --c-grid-colMax: 320px;
 }
 
 /*

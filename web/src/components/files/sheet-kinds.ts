@@ -17,9 +17,27 @@ export interface GridLook {
   pills: boolean
   bools: boolean
   blank: boolean
+  /** 列宽自适应：列头（字段名 + 类型标签）也量进去、自动列宽的上限（px） */
+  fitHead: boolean
+  colMax: number
+  /** 量列头文字用：表格字体（已解析成具体字体名）、界面 1rem 的像素 */
+  font: string
+  rem: number
+  /** 类型标签字号（rem） */
+  tagRem: number
 }
 
-const LOOK0: GridLook = { rowH: 26, pills: true, bools: true, blank: true }
+const LOOK0: GridLook = {
+  rowH: 26,
+  pills: true,
+  bools: true,
+  blank: true,
+  fitHead: true,
+  colMax: 320,
+  font: 'monospace',
+  rem: 16,
+  tagRem: 0.65625,
+}
 
 /**
  * 读设置 → 组件 → 数据表格的几项：行高要参与虚拟滚动的位置计算，开关决定格子里画什么，都不能只交给 CSS。
@@ -33,14 +51,23 @@ export function useGridLook(): GridLook {
     const s = getComputedStyle(document.documentElement)
     const flag = (name: string) => s.getPropertyValue(name).trim() !== '0'
     const h = parseFloat(s.getPropertyValue('--c-grid-rowH'))
+    const num = (name: string, def: number) => {
+      const v = parseFloat(s.getPropertyValue(name))
+      return v > 0 ? v : def
+    }
     const next: GridLook = {
       rowH: h > 0 ? h : look.rowH,
       pills: flag('--c-grid-pills'),
       bools: flag('--c-grid-bools'),
       blank: flag('--c-grid-blank'),
+      fitHead: flag('--c-grid-fitHead'),
+      colMax: num('--c-grid-colMax', LOOK0.colMax),
+      // 自定义属性的计算值里 var() 已经换成具体值，--c-grid-font 读出来就是字体名
+      font: s.getPropertyValue('--c-grid-font').trim() || LOOK0.font,
+      rem: parseFloat(s.fontSize) || LOOK0.rem,
+      tagRem: num('--c-grid-tagSize', LOOK0.tagRem),
     }
-    if (next.rowH !== look.rowH || next.pills !== look.pills || next.bools !== look.bools || next.blank !== look.blank)
-      setLook(next)
+    if ((Object.keys(next) as (keyof GridLook)[]).some((k) => next[k] !== look[k])) setLook(next)
   })
   return look
 }

@@ -38,7 +38,7 @@ const MAX_W = 320
  * 每列的宽度（px）：按前面一些行里最长的那一格估，中日韩文字比英文字母宽（界面默认是等宽字体，12px 下英文约 7.4px、中文 12px）；太长的格子截断显示，悬停看全。
  * 表格是虚拟滚动的，屏幕外的行不在页面里，没法让浏览器自己排列宽。
  */
-export function colWidths(rows: string[][], cols = colCount(rows)): number[] {
+export function colWidths(rows: string[][], cols = colCount(rows), max = MAX_W): number[] {
   const units = Array.from<number>({ length: cols }).fill(0)
   const end = Math.min(rows.length, WIDTH_SAMPLE)
   for (let r = 0; r < end; r++) {
@@ -55,7 +55,7 @@ export function colWidths(rows: string[][], cols = colCount(rows)): number[] {
       if (u > units[c]) units[c] = u
     }
   }
-  return units.map((u) => Math.max(MIN_W, Math.min(MAX_W, Math.round(u * 7.4) + 20)))
+  return units.map((u) => Math.max(MIN_W, Math.min(max, Math.round(u * 7.4) + 20)))
 }
 
 /** 命中的一格 */
