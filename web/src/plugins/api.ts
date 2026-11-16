@@ -28,6 +28,8 @@ export interface MarketResult {
   fetchedAt: string
   /** 这次重读失败的原因（给的是旧缓存） */
   error?: string
+  /** 还没从 GitHub 读过（打开页面不自动读，等用户点「刷新」） */
+  unchecked?: boolean
 }
 
 /** 安装预览：服务端下载、校验好了，等用户确认 */
@@ -58,10 +60,14 @@ export interface RemovalPreview {
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) })
 
 export const pluginApi = {
-  /** 插件市场：先给服务端的缓存，refresh 才去 GitHub 重读；不传 repo 用最后用的市场仓库 */
-  market: (opts: { repo?: string; refresh?: boolean } = {}) =>
+  /** 插件市场：先给服务端的缓存，refresh 才去 GitHub 重读；cacheOnly 没缓存也不读；不传 repo 用最后用的市场仓库 */
+  market: (opts: { repo?: string; refresh?: boolean; cacheOnly?: boolean } = {}) =>
     request<MarketResult>(
-      `/plugins/market?${new URLSearchParams({ ...(opts.repo && { repo: opts.repo }), ...(opts.refresh && { refresh: '1' }) })}`,
+      `/plugins/market?${new URLSearchParams({
+        ...(opts.repo && { repo: opts.repo }),
+        ...(opts.refresh && { refresh: '1' }),
+        ...(opts.cacheOnly && { cached: '1' }),
+      })}`,
     ),
   /** 从 GitHub 装的插件和上游比版本 */
   updates: (refresh = false) =>

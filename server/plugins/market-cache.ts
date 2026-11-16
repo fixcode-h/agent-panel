@@ -5,7 +5,8 @@ import { DEFAULT_MARKET, readMarket, type MarketEntry } from './github.ts'
 
 /**
  * 插件市场的缓存：读到的 plugins.json 按「仓库@分支」存进数据目录，打开插件页先直接显示缓存，
- * 不用每次都等 GitHub（断网、限流时整块是空的）。只有点「刷新」或缓存太旧（前端判断）才重读；
+ * 不用每次都等 GitHub（断网、限流时整块是空的）。只有用户点「刷新」、换市场仓库时才去 GitHub 读，
+ * 打开页面一律不自动请求（用户定的长期规则：拉 GitHub 只能手动），没有缓存时 cacheOnly 返回 unchecked；
  * 重读失败时仍然给缓存，并带上这次的错误，界面上写明「显示的是多久前的结果」。
  * 还记着用户最后用的市场仓库，换过的仓库下次打开还是它。
  */
@@ -17,6 +18,8 @@ export interface MarketResult {
   fetchedAt: string
   /** 这次重读失败的原因（给的是旧缓存） */
   error?: string
+  /** cacheOnly 且从没读过：还没去 GitHub 读，等用户点「刷新」 */
+  unchecked?: boolean
 }
 
 interface CacheFile {
@@ -48,12 +51,12 @@ export async function currentMarketRepo() {
 }
 
 /**
- * 读市场：refresh 时一定去 GitHub 读；不 refresh 时有缓存给缓存，没有才读。
+ * 读市场：refresh 时一定去 GitHub 读；不 refresh 时有缓存给缓存，没有才读；cacheOnly 时没有缓存也不读（打开插件页用）。
  * remember：记成「最后用的市场仓库」（插件页上换仓库时传；检查更新顺带读别的仓库时不传）
  */
 export async function readMarketCached(
   repo: string,
-  opts: { ref?: string; refresh?: boolean; remember?: boolean } = {},
+  opts: { ref?: string; refresh?: boolean; remember?: boolean; cacheOnly?: boolean } = {},
 ): Promise<MarketResult> {
   const key = keyOf(repo, opts.ref)
   const cache = await load()
@@ -64,6 +67,7 @@ export async function readMarketCached(
     if (hit && !opts.refresh) await save(cache)
   }
   if (hit && !opts.refresh) return { repo, ...hit }
+  if (opts.cacheOnly && !opts.refresh) return { repo, plugins: [], fetchedAt: '', unchecked: true }
   try {
     const plugins = (await cacheDeps.read(repo, opts.ref)) ?? null
     const entry = { plugins, fetchedAt: cacheDeps.now().toISOString() }

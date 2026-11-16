@@ -126,6 +126,9 @@ export const EN_PLUGINS: Record<string, string> = {
     'No plugins installed yet. Pick one below, or upload a plugin package with "Other ways to install".',
   可安装: 'Available',
   '这个市场里的插件都装好了。': 'Every plugin in this market is already installed.',
+  '还没读取插件市场，点上面的「刷新」从 GitHub 读取。':
+    'The plugin market has not been loaded yet. Click Refresh above to load it from GitHub.',
+  还没读取: 'not loaded yet',
   '{n} 个有新版本': '{n} with a new version',
   '这个项目没有打开「{name}」：在项目设置 →「能力」里打开':
     'This project hasn\'t turned on "{name}": turn it on in Project settings → Capabilities',
