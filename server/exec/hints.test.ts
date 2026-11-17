@@ -10,7 +10,14 @@ import { fmtDuration } from '../../shared/duration.ts'
 import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { classifyError, makeAlert } from '../../shared/alerts.ts'
 import { clippedTranscript, contextFallbackKind, estTokens, restartCarry } from './transcript.ts'
-import { SESSION_NOT_FOUND, settleContextNotes, settleNetNotes, settleRetryNotes, restartNoteText } from './recovery.ts'
+import {
+  SESSION_NOT_FOUND,
+  dropRetryNotes,
+  settleContextNotes,
+  settleNetNotes,
+  settleRetryNotes,
+  restartNoteText,
+} from './recovery.ts'
 import {
   envStallBudget,
   envStallFailure,
@@ -462,6 +469,26 @@ test('重试成功后，前面那张「正在重试」收成已恢复', () => {
   assert.equal(msgs[0].tools[0].alert?.resolved, undefined, '上一轮留下的卡不收：写这一轮的第 N 次会张冠李戴')
   // 已经恢复过、或者根本没有这张卡：返回 false，不再多插一行「已恢复」
   assert.equal(settleRetryNotes(msgs, '再来一次', 2), false)
+})
+
+test('重试用完没恢复：本轮的「正在重试」撤掉，不收成「已恢复」', () => {
+  const card = (label: string, resolved?: string): ToolUse => ({
+    kind: 'other',
+    name: '提示',
+    label,
+    detail: '',
+    alert: { ...makeAlert('warn', 'stream idle timeout', 'retry'), ...(resolved ? { resolved } : {}) },
+  })
+  const msgs: TaskMessage[] = [
+    { id: 'old', role: 'agent', agentId: '', step: '', text: '', tools: [card('上一轮的卡')], at: '' },
+    { id: 'a', role: 'agent', agentId: '', step: '', text: '写到一半', tools: [card('早先恢复的', '已恢复')], at: '' },
+    { id: 'b', role: 'agent', agentId: '', step: '', text: '', tools: [card('模型输出中途断了')], at: '' },
+  ]
+  dropRetryNotes(msgs, 1)
+  assert.deepEqual(msgs[2].tools, [], '本轮还挂着的那张撤掉，失败原因看紧跟着的失败行')
+  assert.equal(msgs[1].tools.length, 1, '早先已经恢复的那次重试照常留着')
+  assert.equal(msgs[0].tools.length, 1, '上一轮的卡不动')
+  assert.ok(!msgs.some((m) => m.tools.some((x) => x.alert?.resolved && /没有恢复/.test(x.alert.resolved))))
 })
 
 test('上游网关断开的失败卡也给连接中断的说明', () => {

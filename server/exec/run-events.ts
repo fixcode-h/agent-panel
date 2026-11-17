@@ -12,14 +12,13 @@ import { modelLimitsFor } from '../../shared/models/catalog.ts'
 import { priceCost } from '../../shared/models/price.ts'
 import { compactedSilently } from '../../shared/prompt/delta.ts'
 import { stepUsage } from '../../shared/task.ts'
-import { t } from '../../shared/i18n.ts'
 import { setLimits } from '../cli/extras.ts'
 import { log } from '../log.ts'
 import { taskLog } from '../tasks/log.ts'
 import type { CliEvent } from './parsers.ts'
 import type { RealContext } from './real-context.ts'
 import type { RunState } from './run-state.ts'
-import { settleRetryNotes } from './recovery.ts'
+import { dropRetryNotes, settleRetryNotes } from './recovery.ts'
 import type { CompactTracker } from './compaction.ts'
 import type { ContextUsage } from './usage-record.ts'
 import { noticeRow } from './notice-row.ts'
@@ -259,8 +258,8 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         break
       case 'notice': {
         // 重试、失败、面板工具没接上：写进日志，放进回复里当一行状态，不打断回复（见 notice-row.ts）
-        // 重试用完了：前面那张「正在重试」收掉，失败原因看这一行
-        if (ev.kind === 'retry_failed') settleRetryNotes(task.messages, t('重试用完了，没有恢复'), turnStart)
+        // 重试用完了：前面那张「正在重试」撤掉，失败原因看这一行（不收成「已恢复」，见 dropRetryNotes）
+        if (ev.kind === 'retry_failed') dropRetryNotes(task.messages, turnStart)
         const m = !st.cur || st.cur.text.trim() ? newMsg() : st.cur
         m.tools.push(noticeRow(ev, { task: task.id, step, cli: def.name }, st.quietBefore))
         break

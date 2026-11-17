@@ -352,6 +352,8 @@ export function claudeParser(cwd: string): Parser {
   let stopReason = ''
   /** Claude Code 自己在重试模型请求（api_retry）：第几次。之后模型回应开始了就算接上，发 retry_ok */
   let retrying = 0
+  /** 最近一次重试的原因：重试用完时 result 往往只剩子类型（error_during_execution），靠它说清是哪一类失败 */
+  let retryCause = ''
   /** 这条回应第一块是 redacted_thinking（有的网关把思考换成占位）：被丢掉重发不是断流，同一对话只提示一次（摸底报告第 9 条） */
   let redactedFirst = false
   let redactedNoted = false
@@ -375,6 +377,7 @@ export function claudeParser(cwd: string): Parser {
           .join(' '),
         300,
       )
+      retryCause = err
       out.push({
         type: 'notice',
         text: t('模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}', {
@@ -408,6 +411,7 @@ export function claudeParser(cwd: string): Parser {
       if (redactedNoted) return out
       redactedNoted = true
       retrying += 1
+      retryCause = 'redacted thinking'
       out.push({
         type: 'notice',
         text: t(
@@ -421,6 +425,7 @@ export function claudeParser(cwd: string): Parser {
     }
     if (o.type === 'stream_event' && o.event?.type === 'message_stop' && o.abandoned_blocks) {
       retrying += 1
+      retryCause = 'stream idle timeout'
       out.push({
         type: 'notice',
         text: t('模型输出中途断了，Claude Code 丢掉没写完的这段、重新请求'),
@@ -566,7 +571,10 @@ export function claudeParser(cwd: string): Parser {
       // 重试之后一直没等到模型回应就结束了：Claude Code 把重试用完了。补一条 retry_failed，
       // runner 据此把前面那张「正在重试」收掉，不然它一直挂成「还在重试」，和下面的失败原因并存
       if (retrying && o.type === 'result') {
-        const err = oneLine(String(o.result ?? o.subtype ?? ''), 300)
+        const said = oneLine(String(o.result ?? ''), 300)
+        // result 没写原因时只有子类型（error_during_execution），看不出是网关、断流还是 CLI 自己出错：
+        // 带上最近一次重试的原因，界面才能按它归类（断流归「网络」，不笼统写成「Agent 执行失败」）
+        const err = said || [o.subtype, retryCause].filter(Boolean).join(' · ')
         out.push({
           type: 'notice',
           text: t('自动重试 {n} 次后仍然失败：{error}', { n: retrying, error: err || t('原因未知') }),
@@ -576,6 +584,7 @@ export function claudeParser(cwd: string): Parser {
           ...(err ? { error: err } : {}),
         })
         retrying = 0
+        retryCause = ''
       }
       const c = claudeInput(o.usage ?? {})
       const gap = (total: number, seen: number) => Math.max(0, total - seen)
