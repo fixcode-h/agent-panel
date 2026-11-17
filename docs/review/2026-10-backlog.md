@@ -33,7 +33,7 @@
       （2026-10-27 已完成 · 提交 `99fb4a6d`）
 - [x] **日期/时刻拼串 helper** — `padStart(2,'0')` 自定义 6 次，`YYYY-MM-DD` / `HH:mm` 手拼 8 处 — 证据：`shared/schedule/index.ts:159`、`shared/schedule/index.ts:219`、`shared/usage.ts:134`、`shared/tasks/export.ts:900`、`web/src/components/settings/UpdateSection.tsx:35`、`DataSection.tsx:123`、`CliLimits.tsx:84`、`ui-design/web/src/components/design/Versions.tsx:17`、`fields.tsx:205`、`shared/memory.ts:25`、`shared/memory-analysis.ts:197` — 建议：提取到 `datetime.ts`（放 shared）的 `pad2` / `ymd` / `hhmm`，`shared/summary/index.ts:142` 的 `dayKey` 并入同一口径 — P2
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `shared/datetime.ts`）
-- [x] **空态片区 `<EmptyPanel>`** — 同一串空态 class 出现在 11 处 — 证据：`web/src/components/library/BundledDetail.tsx:198`、`SkillFiles.tsx:298`、`web/src/components/projects/ProjectMcpSection.tsx:162`、`ProjectCategoryList.tsx:39`、`web/src/components/projects/Lessons.tsx:653` 等 — 建议：提取一个空态组件（内容 + 可选操作按钮）— P2
+- [x] **空态片区 `<EmptyPanel>`** — 同一串空态 class 出现在 11 处 — 证据：`web/src/components/library/BundledDetail.tsx:198`、`SkillFiles.tsx:298`、`web/src/components/projects/caps/OwnBlock.tsx`、`ProjectCategoryList.tsx:39`、`web/src/components/projects/Lessons.tsx:653` 等 — 建议：提取一个空态组件（内容 + 可选操作按钮）— P2
       （2026-10-27 已完成 · 提交 `99fb4a6d`；落地位置 `web/src/components/ui/empty-panel.tsx`）
 
 ## 三、测试与工程效率

@@ -521,8 +521,10 @@ export const api = {
       method: 'DELETE',
     }),
   testProjectMcp: (server: McpServer) => request<McpTestResult>('/project-mcp/test', json('POST', server)),
-  importProjectMcp: (projectId: string, items: { file: string; name: string; clis?: string[] }[]) =>
-    request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
+  importProjectMcp: (
+    projectId: string,
+    items: { file: string; name: string; clis?: string[]; toProject?: boolean }[],
+  ) => request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   /** refresh：马上问 GitHub；cached：只读上次检查存下的列表，不联网 */

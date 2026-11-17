@@ -743,15 +743,27 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.keyboard.press('Escape')
       await settle(p).catch(() => {})
     }
-    // 项目工具「技能与 MCP」（#/projects/<id>/capabilities，设计稿 B3）：项目自己的和从全局继承的分两块；
-    // 原来项目设置里的 Skill、MCP 两页在「项目技能」「项目 MCP」页签里，内容照旧
+    // 项目工具「技能与 MCP」（#/projects/<id>/capabilities，设计稿 B3）：只有一排「全部 / 技能 / MCP」筛选，
+    // 项目自己的和从全局继承的分两块；原来「项目技能」「项目 MCP」页签的操作都在「项目自己的」行上（用户 2026-11-17）
     const projectHash = await p.evaluate(() => location.hash)
     await p.evaluate((h) => (location.hash = `${h.split('/').slice(0, 3).join('/')}/capabilities`), projectHash)
-    await check(p, '技能与MCP-总览', ['技能与 MCP', '项目自己的', '从全局继承', 'release-notes', 'agent-panel'])
-    await p.getByRole('radio', { name: '项目技能' }).click()
-    await check(p, '技能与MCP-项目技能', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
-    await p.getByRole('radio', { name: '项目 MCP' }).click()
-    await check(p, '技能与MCP-项目MCP', ['还没导入', '和面板里的一致', '和面板里的不同', '全部导入', '用 AI 排查整页'])
+    await check(p, '技能与MCP-全部', ['技能与 MCP', '项目自己的', '从全局继承', 'release-notes', 'agent-panel'])
+    if (await p.getByRole('radio', { name: '项目技能' }).count())
+      errors.push('技能与 MCP：还留着上面那排「项目技能」页签')
+    await p.getByRole('radio', { name: /^技能 \d+$/ }).click()
+    await check(p, '技能与MCP-技能', ['release-notes', 'shop-i18n', '新建技能'])
+    await p.getByRole('radio', { name: /^MCP \d+$/ }).click()
+    // idea 在项目里也有、却装成了全局：标「全局生效」并给「改为只在本项目」；全局那块不再重复列它
+    await check(p, '技能与MCP-MCP', ['还没导入', '和面板里的不同', '全局生效', '改为只在本项目', '全部导入 MCP'])
+    await p.getByRole('button', { name: '改为只在本项目' }).first().click()
+    await p.getByRole('dialog').getByRole('button', { name: '改为只在本项目' }).click()
+    await p
+      .getByRole('dialog')
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => {})
+    if (await p.getByText('全局生效', { exact: true }).count())
+      errors.push('技能与 MCP：改为只在本项目后还标着「全局生效」')
+    await check(p, '技能与MCP-改为只在本项目后')
     await p.evaluate((h) => (location.hash = h), projectHash)
     await settle(p).catch(() => {})
     // 项目首页：和首页一样列等你处理的对话；输入和已有对话是同一件事的要求时，提示可以直接发过去

@@ -137,6 +137,17 @@ const servers: McpEntry[] = [
     headers: { Authorization: 'Bearer ghp_demo' },
     clis: ['claude', 'codex'],
   },
+  // 演示「项目里也有、却装成了全局的」：项目「技能与 MCP」页在「项目自己的」里给「改为只在本项目」
+  {
+    name: 'idea',
+    transport: 'http',
+    command: '',
+    args: [],
+    env: {},
+    url: 'http://127.0.0.1:64342/stream',
+    headers: {},
+    clis: ['claude', 'codex'],
+  },
   {
     name: 'filesystem',
     transport: 'stdio',
