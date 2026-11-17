@@ -154,3 +154,16 @@ export function settleRetryNotes(messages: TaskMessage[], note: string, from = 0
   }
   return settled
 }
+
+/**
+ * 重试用完、没有恢复：把本轮还挂着的「正在重试」撤掉，失败原因由紧跟着的那行「自动重试 N 次后仍然失败」交代。
+ * 不能收成 resolved：resolved 在界面上就是「已恢复」（灰掉、打勾），和「重试用完了」自相矛盾（用户 2026-11-17 报）。
+ * from 的含义同 settleRetryNotes。
+ */
+export function dropRetryNotes(messages: TaskMessage[], from = 0) {
+  for (let i = messages.length - 1; i >= from; i--) {
+    const m = messages[i]
+    if (m.tools.some((x) => x.alert?.kind === 'retry' && !x.alert.resolved))
+      m.tools = m.tools.filter((x) => x.alert?.kind !== 'retry' || !!x.alert.resolved)
+  }
+}

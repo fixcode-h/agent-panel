@@ -9,6 +9,7 @@ paths: shared/alerts.ts, shared/locales/en/alerts.ts, server/exec/runner.ts, ser
 - 规则：断流、退出码异常先把完整错误显示在节点上，再按规则续接（最多 2 次）；不吞错误、不静默重试。
 - 规则：面板自己换做法重跑（丢会话重开、去掉思考强度）也算重试：`return runAgent` 前先用 `restartNote` / `recoveryNote` 在对话里写一行（原因、带没带上之前的对话、CLI 原始报错），对话的重开带 `restartCarry`（按预算裁剪）；判断「会话找不到」只用 `SESSION_NOT_FOUND`，别写宽正则。
 - 规则：CLI 自己的重试映射成 `notice(kind:'retry')` + `retry_ok`；协议没有成功信号时（Codex 的 `error.willRetry`）由适配器在模型又出内容时补发 `retry_ok`，不能拿出错前就在跑的命令输出当信号。
+- 规则：`alert.resolved` 只表示「后来恢复了」（界面画成灰色打勾、标「已恢复」），重试用完、没恢复不能写进 `resolved`，要撤掉那张「正在重试」（`dropRetryNotes`），失败原因由紧跟的失败行交代；失败行在 result 只有子类型（`error_during_execution`）时带上最近一次重试的原因，按它归类，别笼统写成「Agent 执行失败」。起因：用户 2026-11-17 报一张卡标着「已恢复」、正文却写「重试用完了，没有恢复」（aba8ccd 之前的 `settleRetryNotes` 复用了 resolved）。
 - 起因：审计发现（df820f2 起） runner 的会话找不到 / 在别的目录 / 接口拒绝历史 / 强度被拒四处只写 log 就重跑，Codex 的 willRetry 整个丢掉。
 - 防线：`server/exec/hints.test.ts`「自动重跑的每个 runAgent 调用点」「会话找不到」；`server/exec/parsers.test.ts` 的 Codex 重试用例。
 

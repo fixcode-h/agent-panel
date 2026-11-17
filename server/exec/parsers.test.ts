@@ -12,6 +12,7 @@ import { Settings } from '../../shared/schema.ts'
 import { cliSettings, mergeCliEnv, readCliEnvText, splitCliEnv } from '../../shared/settings.ts'
 import { codexAppSession } from './rpc/codex.ts'
 import { unwrapShell } from '../../shared/shell-command.ts'
+import { classifyError } from '../../shared/alerts.ts'
 
 const CWD = '/work/shop'
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -261,6 +262,17 @@ test('Claude Code：重试用完就结束（result 前没等到模型回应）�
   })
   // 没在重试时结束一轮不补
   assert.ok(!parse({ type: 'result', subtype: 'success', result: 'ok' }).some((e) => e.type === 'notice'))
+})
+
+test('Claude Code：输出断流重新请求后这一轮就以 error_during_execution 结束：失败行带上断流原因', () => {
+  const parse = claudeParser(CWD)
+  parse({ type: 'stream_event', event: { type: 'message_stop' }, abandoned_blocks: [{ type: 'text' }] })
+  const end = parse({ type: 'result', subtype: 'error_during_execution', is_error: true })
+  const failed = end.find((e) => e.type === 'notice')
+  assert.ok(failed && failed.type === 'notice' && failed.kind === 'retry_failed')
+  assert.equal(failed.text, '自动重试 1 次后仍然失败：error_during_execution · stream idle timeout')
+  // 原因带上后归到「网络」，不笼统显示成「Agent 执行失败」
+  assert.equal(classifyError(failed.text), 'network')
 })
 
 test('Claude Code：网关出错时自己重试（api_retry）画成「正在重试」，模型回应开始后收成已恢复', () => {
