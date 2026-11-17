@@ -15,6 +15,7 @@ import {
 } from '@shared/panel-tools'
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
 import { panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
+import { proxiedTool } from '@shared/mcp-catalog/proxy-tool'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -323,10 +324,18 @@ export function toolView(tool: ToolUse): ToolView | null {
   const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null
   if (!mcp) return { tool }
   const a = toolArgs(tool)
-  const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
-  // 面板自己的设计、插件服务的工具换成中文名，服务名也换成中文；别家的工具照原名
+  // execute_tool 这类代转工具：按参数里真正执行的工具显示（shared/mcp-catalog/proxy-tool.ts）
+  const proxied = proxiedTool(mcp[2], a)
+  const arg = proxied
+    ? proxied.arg
+    : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
+  // 面板自己的设计、插件服务的工具换成中文名，服务名也换成中文；别家的工具用服务报的或面板备好的显示名，都没有照原名
   return {
-    tool: { ...tool, name: toolTitle(mcp[2], mcp[1]), label: arg ? firstLine(arg).slice(0, 120) : '' },
+    tool: {
+      ...tool,
+      name: toolTitle(proxied?.tool ?? mcp[2], mcp[1]),
+      label: arg ? firstLine(arg).slice(0, 120) : '',
+    },
     server: serverTitle(mcp[1]),
   }
 }
