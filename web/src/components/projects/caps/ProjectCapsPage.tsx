@@ -10,24 +10,31 @@ import { Segmented } from '@/components/ui/segmented'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { CapabilityBlockHeader, CapabilityItem, CapabilityItemList } from '@/components/ui/capability-item'
 import { PageFrame } from '@/components/library/parts'
-import { ProjectSkillsSection } from '../ProjectSkillsSection'
-import { ProjectMcpSection } from '../ProjectMcpSection'
+import { OwnBlock } from './OwnBlock'
+import { useOwnMcp, type OwnMcp } from './use-own-mcp'
+import { useOwnSkills, type OwnSkills } from './use-own-skills'
 import { itemOn, pluginMcpItems, type CapItem } from './caps-items'
-import { panelMcpItem, useCapsLists } from './use-caps-data'
+import { panelMcpItem, useCapsLists, usePluginAttach } from './use-caps-data'
 import { ScopeTrailing } from './CapabilitiesPage'
 
 type View = 'all' | 'skill' | 'mcp'
-type Tab = 'overview' | 'skills' | 'mcp'
 
 /**
  * 项目工具里的「技能与 MCP」（设计稿 B3）：这个项目里的 Agent 实际能用到的技能和 MCP。
- * 上面是项目自己的（项目目录里，跟着仓库走），下面是从全局继承的（面板自带、插件、全局库）。
- * 原来项目设置里的「Skill」「MCP」两页挪到这里的「项目技能」「项目 MCP」页签（新建、编辑、导入都在那里）；
- * 开关按项目的能力在右上角「管理能力」（项目设置 →「能力」）
+ * 只有一排「全部 / 技能 / MCP」筛选（用户 2026-11-17 定：原来上面还有「总览 / 项目技能 / 项目 MCP」一排，两排重复显得乱），
+ * 下面分两块：项目自己的（项目目录里，跟着仓库走；新建、编辑、导入、AI 修复都在这块的行上，见 OwnBlock），
+ * 从全局继承的（面板自带、插件、全局库）。开关按项目的能力在右上角「管理能力」（项目设置 →「能力」）
  */
 export function ProjectCapsPage({ project }: { project: Project }) {
+  return <CapsBody key={project.id} project={project} />
+}
+
+/** 换项目时整页重建（key），项目自己的技能、MCP 和弹窗状态不串到别的项目 */
+function CapsBody({ project }: { project: Project }) {
   const { openProject, go } = useNav()
-  const [tab, setTab] = useState<Tab>('overview')
+  const lists = useCapsLists(project.id)
+  const s = useOwnSkills(project.id, lists.reload)
+  const m = useOwnMcp(project, lists.reload)
   return (
     <PageFrame
       align="left"
@@ -37,13 +44,13 @@ export function ProjectCapsPage({ project }: { project: Project }) {
       )}
       actions={
         <>
-          <Button variant="secondary" onClick={() => setTab('skills')}>
+          <Button variant="secondary" onClick={s.create} disabled={!s.canCreate}>
             <Plus className="h-4 w-4" />
             {t('新建技能')}
           </Button>
-          <Button variant="secondary" onClick={() => setTab('mcp')}>
+          <Button variant="secondary" onClick={m.add} disabled={!m.data}>
             <FolderInput className="h-4 w-4" />
-            {t('导入 MCP 配置')}
+            {t('添加 MCP')}
           </Button>
           <Button onClick={() => openProject(project.id, 'caps')}>
             <Settings2 className="h-4 w-4" />
@@ -52,46 +59,56 @@ export function ProjectCapsPage({ project }: { project: Project }) {
         </>
       }
     >
-      <Segmented<Tab>
-        value={tab}
-        onChange={setTab}
-        label={t('技能与 MCP 的页签')}
-        options={[
-          { id: 'overview', label: t('总览') },
-          { id: 'skills', label: t('项目技能') },
-          { id: 'mcp', label: t('项目 MCP') },
-        ]}
-      />
       {!project.path ? (
         <EmptyPanel size="md">{t('项目还没设本地目录，先在项目设置里选目录。')}</EmptyPanel>
-      ) : tab === 'skills' ? (
-        <ProjectSkillsSection key={project.id} projectId={project.id} />
-      ) : tab === 'mcp' ? (
-        <ProjectMcpSection key={project.id} project={project} />
       ) : (
-        <Overview project={project} onGlobal={(page) => go({ page })} />
+        <Overview project={project} lists={lists} s={s} m={m} onGlobal={(page) => go({ page })} />
       )}
+      {s.dialogs}
+      {m.dialogs}
     </PageFrame>
   )
 }
 
-function Overview({ project, onGlobal }: { project: Project; onGlobal: (page: 'library' | 'mcp') => void }) {
-  const lists = useCapsLists(project.id)
+function Overview({
+  project,
+  lists,
+  s,
+  m,
+  onGlobal,
+}: {
+  project: Project
+  lists: ReturnType<typeof useCapsLists>
+  s: OwnSkills
+  m: OwnMcp
+  onGlobal: (page: 'library' | 'mcp') => void
+}) {
   const { rows } = usePlugins()
+  const attachOf = usePluginAttach()
   const [view, setView] = useState<View>('all')
   const [q, setQ] = useState('')
+  const detected = m.data?.detected
+  // 项目里识别到、已经导入面板的 MCP 在「项目自己的」里列（带本项目开没开），全局那块不再列一遍
+  const ownMcpNames = useMemo(() => new Set((detected ?? []).map((d) => d.name)), [detected])
   // 从全局继承的：面板自带的 MCP、开着的插件（按项目的只算这个项目打开了的）、全局库里生效的
   const inherited = useMemo(() => {
-    const plugins = pluginMcpItems(rows, project)
-    return [panelMcpItem(), ...plugins, ...(lists.global ?? []).filter((x) => itemOn(x, project.capabilities))]
-  }, [rows, project, lists.global])
-  const match = (x: CapItem) =>
-    (view === 'all' || x.kind === view) &&
-    (!q.trim() || `${x.name} ${x.description}`.toLowerCase().includes(q.trim().toLowerCase()))
-  const own = (lists.own ?? []).filter(match)
-  const inh = inherited.filter(match)
-  const all = [...(lists.own ?? []), ...inherited]
-  const count = (k: View) => all.filter((x) => k === 'all' || x.kind === k).length
+    const plugins = pluginMcpItems(rows, project, attachOf)
+    const lib = (lists.global ?? []).filter(
+      (x) => itemOn(x, project.capabilities) && !(x.kind === 'mcp' && ownMcpNames.has(x.name)),
+    )
+    return [panelMcpItem(), ...plugins, ...lib]
+  }, [rows, project, lists.global, ownMcpNames, attachOf])
+  const hit = (text: string) => !q.trim() || text.toLowerCase().includes(q.trim().toLowerCase())
+  const ownSkills = s.view?.skills ?? []
+  const ownMcp = detected ?? []
+  const shownSkills = view === 'mcp' ? [] : ownSkills.filter((x) => hit(`${x.name} ${x.description}`))
+  const shownMcp = view === 'skill' ? [] : ownMcp.filter((d) => hit(`${d.name} ${d.file} ${m.summary(d.server)}`))
+  const inh = inherited.filter((x) => (view === 'all' || x.kind === view) && hit(`${x.name} ${x.description}`))
+  const ownReady = !!s.view && !!m.data
+  const count = (k: View) =>
+    (k === 'mcp' ? 0 : ownSkills.length) +
+    (k === 'skill' ? 0 : ownMcp.length) +
+    inherited.filter((x) => k === 'all' || x.kind === k).length
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -110,19 +127,13 @@ function Overview({ project, onGlobal }: { project: Project; onGlobal: (page: 'l
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('搜索能力')} className="pl-8" />
         </div>
       </div>
-      {lists.error && <p className="text-footnote break-all text-danger">{lists.error}</p>}
-      <section className="flex flex-col gap-3">
-        <CapabilityBlockHeader
-          title={t('项目自己的')}
-          meta={lists.own ? t('{n} 项 · 在项目目录里', { n: lists.own.length }) : t('正在读取…')}
-        />
-        {lists.own &&
-          (own.length ? (
-            <List items={own} caps={project.capabilities} />
-          ) : (
-            <EmptyPanel size="md">{t('项目目录里还没有技能和 MCP 配置。')}</EmptyPanel>
-          ))}
-      </section>
+      <OwnBlock
+        s={s}
+        m={m}
+        skills={shownSkills}
+        mcp={shownMcp}
+        total={ownReady ? ownSkills.length + ownMcp.length : undefined}
+      />
       <section className="flex flex-col gap-3">
         <CapabilityBlockHeader
           title={t('从全局继承')}
@@ -140,7 +151,12 @@ function Overview({ project, onGlobal }: { project: Project; onGlobal: (page: 'l
             </>
           }
         />
-        {inh.length > 0 && <List items={inh} caps={project.capabilities} />}
+        {lists.error && <p className="text-footnote break-all text-danger">{lists.error}</p>}
+        {inh.length > 0 ? (
+          <List items={inh} caps={project.capabilities} />
+        ) : (
+          <EmptyPanel size="md">{t('没有符合筛选的条目。')}</EmptyPanel>
+        )}
       </section>
     </div>
   )

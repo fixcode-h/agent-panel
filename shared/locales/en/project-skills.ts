@@ -4,23 +4,12 @@ export const EN_PROJECT_SKILLS: Record<string, string> = {
   '项目：{path}': 'Project: {path}',
   'SKILL.md：{file}': 'SKILL.md: {file}',
   '当前的 SKILL.md：': 'Current SKILL.md:',
-  '这个项目里的技能，放在项目目录下的技能目录里，跟着项目一起提交。Agent 按 SKILL.md 里的 description 判断什么时候用；改了这里的内容，新开的对话就会读到。':
-    'Skills of this project live in the skill folders inside the project, and are committed with it. Agents use the description in SKILL.md to decide when to use one; new conversations pick up changes made here.',
-  '先在「常规」里填好项目目录，再管理这里的技能。':
-    'Fill in the project folder under "General" first, then manage skills here.',
-  还没有: 'none yet',
-  '还没有项目技能。点「新建 Skill」写一个，或者把已有的技能文件夹放进上面的目录。':
-    'No project skills yet. Click "New skill" to write one, or put an existing skill folder into the directories above.',
-  '{clis} 会读这里': '{clis} read this folder',
   '{n} 个问题': '{n} issue(s)',
   '没写 description：Agent 不知道什么时候该用它': 'No description: agents cannot tell when to use it',
   '把 SKILL.md 和问题一起交给 AI 排查并修好': 'Send SKILL.md and the issues to an agent to diagnose and fix',
   '让 AI 改写 SKILL.md：说明和触发条件写清楚，看完再决定用不用':
     'Let an agent rewrite SKILL.md: clearer instructions and trigger conditions, you decide whether to keep it',
   '编辑 {name}': 'Edit {name}',
-  '各 Agent 还能看到的用户级技能': 'User-level skills each agent can also see',
-  '用户目录里的技能不在这个项目里，改它们去 Skills 页；这里只是看清项目里的 Agent 一共能用哪些。':
-    'Skills in your home folder are not part of this project; edit them on the Skills page. This only shows what agents can use here.',
   '已创建 {dir}，接着改里面的 SKILL.md': 'Created {dir}; edit its SKILL.md next',
   '已更新 {dir}/SKILL.md': 'Updated {dir}/SKILL.md',
   '删除 Skill「{name}」': 'Delete skill "{name}"',

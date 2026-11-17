@@ -39,12 +39,7 @@ export const EN_PROJECT_CAPS: Record<string, string> = {
   '这个项目里的 Agent 实际能用到的能力。项目自己的写在项目目录里、跟着仓库走；全局的对所有项目生效，在图标栏的 Skills、MCP 里管。':
     "What agents in this project can actually use. The project's own live in its folder and travel with the repository; global ones apply to every project and are managed under Skills and MCP in the icon bar.",
   新建技能: 'New skill',
-  '导入 MCP 配置': 'Import MCP config',
   管理能力: 'Manage capabilities',
-  '技能与 MCP 的页签': 'Skills & MCP tabs',
-  总览: 'Overview',
-  项目技能: 'Project skills',
-  '项目 MCP': 'Project MCP',
   '项目还没设本地目录，先在项目设置里选目录。':
     'The project has no local folder yet. Pick one in project settings first.',
   面板插件: 'Panel plugin',
@@ -74,4 +69,23 @@ export const EN_PROJECT_CAPS: Record<string, string> = {
   回到项目对话: 'Back to project chats',
   '回到项目对话：{name}': 'Back to project chats: {name}',
   '经验与文档 · {name}': 'Experience & docs · {name}',
+  // 「技能与 MCP」页只留一排筛选，项目自己的技能、MCP 的操作都在「项目自己的」行上
+  '全部导入 MCP（{n}）': 'Import all MCP ({n})',
+  '用 AI 排查项目的 MCP 配置': "Diagnose the project's MCP configs with AI",
+  '没有符合筛选的条目。': 'Nothing matches the filter.',
+  '技能目录：': 'Skill folders: ',
+  '（还没有）': ' (not created yet)',
+  'MCP 配置：.mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.codex/config.toml':
+    'MCP configs: .mcp.json, .claude/settings*.json, .cursor/mcp.json, .vscode/mcp.json, .codex/config.toml',
+  '添加 MCP': 'Add MCP',
+  // 项目里也有、却装成全局的 MCP；只在某些页面里挂的插件
+  按场景: 'By context',
+  '写在各 Agent 的全局配置里，所有项目的对话都会带上':
+    "Written to each agent's global config, so chats in every project get it",
+  全局生效: 'Global',
+  改为只在本项目: 'Make project-only',
+  '把「{name}」改为只在本项目生效？': 'Make “{name}” apply to this project only?',
+  '会从各 Agent 的全局配置里移走它，改成只在这个项目生效并打开；别的项目要用，在那个项目的「管理能力」里打开。项目里的配置文件不会改动。':
+    "It is removed from each agent's global config and turned on for this project only; to use it in another project, turn it on under that project's Manage capabilities. Config files in the project are left untouched.",
+  '已改为只在本项目生效：{name}': 'Now applies to this project only: {name}',
 }

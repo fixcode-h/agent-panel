@@ -1,9 +1,6 @@
 /** 英文词典的一部分：项目设置里的 MCP 分节（项目里识别到的配置、导入、AI 排查） */
 export const EN_MCP: Record<string, string> = {
   项目里已经没有这条配置了: 'This entry is no longer in the project',
-  项目里识别到的配置: 'Found in the project',
-  '共 {n} 条': '{n} entries',
-  '全部导入（{n}）': 'Import all ({n})',
   没有找到: 'None found',
   '（没有填命令或地址）': '(no command or URL)',
   '名字里有空格或特殊字符，导入前要在项目文件里改名':
@@ -12,18 +9,9 @@ export const EN_MCP: Record<string, string> = {
   覆盖已有配置: 'Overwrite existing',
   导入: 'Import',
   '用 AI 排查这条': 'Diagnose this one with AI',
-  面板管理的工具: 'Managed by the panel',
-  '用 AI 排查整页': 'Diagnose all with AI',
-  '还没有面板管理的 MCP 工具：点右上角「添加」，或导入上面识别到的配置。':
-    'No panel-managed MCP tools yet: click "Add" at the top right, or import the config found above.',
   编辑中的配置: 'The config being edited',
   '导入「{name}」？': 'Import “{name}”?',
   '导入这 {n} 条配置？': 'Import these {n} entries?',
-  '先创建项目，再管这个项目的 MCP 配置。': 'Create the project first, then manage its MCP config.',
-  '这个项目还没设本地目录，所以识别不到项目里的配置。在「常规」里填好目录并保存后再回来。':
-    'This project has no local directory yet, so config in the project cannot be found. Fill in the directory under "General", save, and come back.',
-  '没找到项目里的 MCP 配置。支持 .mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.codex/config.toml。':
-    'No MCP config found in the project. Supported: .mcp.json, .claude/settings*.json, .cursor/mcp.json, .vscode/mcp.json, .codex/config.toml.',
   '已导入 {n} 条配置': 'Imported {n} entries',
   '{n} 条没有导入：{reason}': '{n} entries were not imported: {reason}',
   '项目的 MCP「{name}」': 'Project MCP “{name}”',
@@ -46,10 +34,7 @@ export const EN_MCP: Record<string, string> = {
   '没在 JSON 里找到 MCP 工具的配置': 'No MCP tool config found in the JSON',
   '导入成只在这个项目生效的 MCP 并打开，之后由面板管理；项目里的配置文件不会改动。面板里已有同名的会用项目里的配置覆盖。':
     'Imported as an MCP for this project only and turned on here, managed by the panel from then on; config files in the project are left untouched. A same-named entry in the panel is overwritten with the project config.',
-  'MCP 工具让 Agent 连上外部的服务和数据。项目目录里自带的配置读到就自动导入并在这个项目打开，你关掉的不会再被打开；Agent 自己只对这个项目配的识别出来，要你一键导入。这里的改动立即生效，不用下面的按钮保存。':
-    'MCP tools connect agents to external services and data. Configs shipped in the project folder are imported and turned on for this project automatically, and ones you turn off stay off; ones an agent keeps for this project in its own config are detected for you to import with one click. Changes here apply immediately; no need to press Save below.',
   还没导入: 'Not imported',
-  和面板里的一致: 'Same as panel',
   和面板里的不同: 'Differs from panel',
   本项目已打开: 'On in this project',
   本项目已关闭: 'Off in this project',

@@ -241,6 +241,13 @@ export function ScopeTrailing({
   if (item.scope === 'project')
     return <Badge tone={on ? 'accent' : 'neutral'}>{on ? t('本项目已打开') : t('本项目没打开')}</Badge>
   if (item.scope === 'always') return <Badge tone="success">{t('始终启用')}</Badge>
+  // 全局插件但只在某些对话里挂（UI 设计页、Blender 页……）：写「按场景」，那一句在来源下面
+  if (item.scope === 'global' && item.when)
+    return (
+      <Badge tone="accent" title={item.when}>
+        {t('按场景')}
+      </Badge>
+    )
   if (item.scope === 'own')
     return item.importable ? <Badge tone="warning">{t('未导入')}</Badge> : <Badge>{t('项目里')}</Badge>
   return <Badge>{t('全局')}</Badge>

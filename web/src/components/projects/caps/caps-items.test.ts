@@ -26,3 +26,17 @@ test('没打开的项目、全局关着的插件不列', () => {
     [],
   )
 })
+
+// 起因：UI 设计插件的 MCP 只在 UI 设计页的对话里挂，「技能与 MCP」页却标「全局」（用户 2026-11-17）
+test('插件 MCP 带上能力目录里的「挂在哪些对话」，读不到时照旧', () => {
+  const project = { capabilities: { plugins: [], mcp: [], skills: [] } }
+  const attach = (id: string) => (id === 'design' ? '只在 UI 设计页的 AI 对话里' : '')
+  const items = pluginMcpItems([row('design', 'global'), row('video', 'global')], project, attach)
+  assert.deepEqual(
+    items.map((x) => [x.key, x.when, x.whereNote]),
+    [
+      ['mcp:plugin:design', '只在 UI 设计页的 AI 对话里', '只在 UI 设计页的 AI 对话里'],
+      ['mcp:plugin:video', undefined, ''],
+    ],
+  )
+})

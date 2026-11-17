@@ -23,7 +23,7 @@ const entry = (
   nameOk: /^[A-Za-z0-9][\w-]*$/.test(name),
 })
 
-/** 三种状态各有一条：还没导入（browser）、和面板里一样（filesystem）、同名但配置不同（github） */
+/** 三种状态各有一条：还没导入（browser）、和面板里一样（filesystem 按项目、idea 装成了全局）、同名但配置不同（github） */
 const detected: Omit<ProjectMcpDetected, 'status'>[] = [
   entry('github', '.mcp.json', 'Claude Code 项目配置', {
     transport: 'http',
@@ -39,6 +39,14 @@ const detected: Omit<ProjectMcpDetected, 'status'>[] = [
     args: ['-y', '@modelcontextprotocol/server-filesystem', '~/projects'],
     env: {},
     url: '',
+    headers: {},
+  }),
+  entry('idea', '.mcp.json', 'Claude Code 项目配置', {
+    transport: 'http',
+    command: '',
+    args: [],
+    env: {},
+    url: 'http://127.0.0.1:64342/stream',
     headers: {},
   }),
   entry('browser', '.vscode/mcp.json', 'VS Code 工作区配置', {
@@ -76,10 +84,12 @@ function overview(active: string[], path: string): ProjectMcpOverview {
 }
 
 /** 把项目里的一条写进面板管理的那份（演示版只在内存里） */
-function install(server: McpServer, clis: string[]) {
+function install(server: McpServer, clis: string[], toProject?: boolean) {
   const at = demoMcpServers.findIndex((s) => s.name === server.name)
-  if (at >= 0) demoMcpServers.splice(at, 1, { ...server, clis })
-  else demoMcpServers.push({ ...server, clis })
+  // 和正式后端一样：已有的条目生效方式照原来的，toProject（「改为只在本项目」）时改成按项目
+  const activation = toProject ? ('project' as const) : at >= 0 ? demoMcpServers[at].activation : ('project' as const)
+  if (at >= 0) demoMcpServers.splice(at, 1, { ...server, clis, activation })
+  else demoMcpServers.push({ ...server, clis, activation })
 }
 
 export function demoProjectMcp(method: string, seg: string[], body: any, active: string[], path: string): unknown {
@@ -96,7 +106,7 @@ export function demoProjectMcp(method: string, seg: string[], body: any, active:
   if (id === 'import') {
     const result: ProjectMcpImportResult = { overview: overview(active, path), done: [], skipped: [] }
     const all = demoMcpOverview(active).clis.map((c) => c.id)
-    for (const item of (body.items ?? []) as { file: string; name: string; clis?: string[] }[]) {
+    for (const item of (body.items ?? []) as { file: string; name: string; clis?: string[]; toProject?: boolean }[]) {
       const hit = detected.find((d) => d.file === item.file && d.name === item.name)
       if (!hit) {
         result.skipped.push({ name: item.name, file: item.file, reason: t('项目里已经没有这条配置了') })
@@ -106,7 +116,7 @@ export function demoProjectMcp(method: string, seg: string[], body: any, active:
         result.skipped.push({ name: hit.name, file: hit.file, reason: t('工具名只能用字母、数字、- 和 _') })
         continue
       }
-      install(hit.server, item.clis?.length ? item.clis.filter((x) => all.includes(x)) : all)
+      install(hit.server, item.clis?.length ? item.clis.filter((x) => all.includes(x)) : all, item.toProject)
       result.done.push({ name: hit.name, file: hit.file })
     }
     return { ...result, overview: overview(active, path) }

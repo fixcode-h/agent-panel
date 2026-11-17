@@ -226,7 +226,12 @@ export function projectMcpApi(deps: {
             done: [],
             skipped: [],
           }
-          for (const item of (body.items ?? []) as { file: string; name: string; clis?: string[] }[]) {
+          for (const item of (body.items ?? []) as {
+            file: string
+            name: string
+            clis?: string[]
+            toProject?: boolean
+          }[]) {
             const hit = detected.find((d) => d.file === item.file && d.name === item.name)
             if (!hit) {
               result.skipped.push({ name: item.name, file: item.file, reason: t('项目里已经没有这条配置了') })
@@ -237,10 +242,13 @@ export function projectMcpApi(deps: {
             )
             try {
               const sv = parse(hit.server)
-              // 导入是「加上」：已经装着的 CLI 保留；已有的条目生效方式照原来的，新的条目按项目、在这个项目里打开
+              // 导入是「加上」：已经装着的 CLI 保留；已有的条目生效方式照原来的，新的条目按项目、在这个项目里打开。
+              // toProject：项目里也有、却装成了全局的（老版本导入或别的工具写进各 Agent 全局配置的），用户点「改为只在本项目」
+              // 时改成按项目、从全局配置里移走，并在这个项目打开（用户 2026-11-17：项目导入的不应该是全局）
               const had = (await mcpOverview()).servers.find((x) => x.name === sv.name)
-              await saveMcpEntry(sv, [...new Set([...(had?.clis ?? []), ...target])], had?.activation ?? 'project')
-              if (had?.activation !== 'global') await deps.enableMcp(projectId, [sv.name])
+              const act = item.toProject ? 'project' : (had?.activation ?? 'project')
+              await saveMcpEntry(sv, [...new Set([...(had?.clis ?? []), ...target])], act)
+              if (act !== 'global') await deps.enableMcp(projectId, [sv.name])
               await markSeen(projectId, [sv.name])
               result.done.push({ name: hit.name, file: hit.file })
             } catch (e) {

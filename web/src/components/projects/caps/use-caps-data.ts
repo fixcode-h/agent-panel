@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { projectsContract as P } from '@shared/api-contract/projects'
 import type { CapabilityPluginRow } from '@shared/projects/capability-probe'
 import { t } from '@shared/i18n'
@@ -8,6 +8,7 @@ import { usePlugins } from '@/plugins/registry'
 import type { ProjectCapabilities } from '@shared/projects/capabilities'
 import { globalItems, itemOn, ownItems, pluginMcpItems, type CapItem } from './caps-items'
 import { useAutoMcpNotice } from './use-auto-mcp'
+import { useMcpCatalog } from '@/components/settings/mcp/mcp-store'
 
 /**
  * 按项目生效的插件探查（detect / ready）：目录、表单里的插件设置变了再问一遍（停顿一下再问，打字时不连发）。
@@ -44,6 +45,8 @@ export function useCapsLists(projectId: string | undefined) {
   const { rows: plugins } = usePlugins()
   const [own, setOwn] = useState<CapItem[] | null>(null)
   const [global, setGlobal] = useState<CapItem[] | null>(null)
+  // 项目目录里识别到的 MCP 名字（含已经导入的）：「技能与 MCP」页把它们都算项目自己的，全局那块不重复算
+  const [detected, setDetected] = useState<string[]>([])
   const [error, setError] = useState('')
   const [tick, setTick] = useState(0)
   const { notice } = useAutoMcpNotice()
@@ -62,6 +65,7 @@ export function useCapsLists(projectId: string | undefined) {
       .then(([mcp, skills, bundled, library]) => {
         if (!live) return
         setOwn(ownItems(skills, mcp.detected))
+        setDetected(mcp.detected.map((d) => d.name))
         setGlobal(globalItems({ mcp: mcp.servers, bundled, library, pluginName }))
         setError('')
       })
@@ -72,7 +76,7 @@ export function useCapsLists(projectId: string | undefined) {
     // 插件列表只用来取插件名，变了不用重读
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, tick])
-  return { own, global, error, reload: () => setTick((n) => n + 1) }
+  return { own, global, detected, error, reload: () => setTick((n) => n + 1) }
 }
 
 /** 面板自带的 MCP（派子对话、问你、等你操作…）：始终交给 Agent，不进项目清单 */
@@ -91,9 +95,32 @@ export const panelMcpItem = (): CapItem => ({
  * 全局库里在这个项目生效的），和「技能与 MCP」页的「从全局继承」同一个数。读不出来时为 undefined，侧栏就不写数字
  */
 export function useProjectCapsCount(project: { id: string; capabilities?: Partial<ProjectCapabilities> }) {
-  const { own, global } = useCapsLists(project.id)
+  const { own, global, detected } = useCapsLists(project.id)
   const { rows } = usePlugins()
   if (!own || !global) return undefined
   const plugins = pluginMcpItems(rows, project).length
-  return { own: own.length, inherited: 1 + plugins + global.filter((x) => itemOn(x, project.capabilities)).length }
+  const names = new Set(detected)
+  const inherited = global.filter((x) => itemOn(x, project.capabilities) && !(x.kind === 'mcp' && names.has(x.name)))
+  return { own: own.filter((x) => x.kind === 'skill').length + names.size, inherited: 1 + plugins + inherited.length }
+}
+
+/**
+ * 插件 MCP 挂在哪些对话：取设置 →「MCP」同一份能力目录（各插件 catalog() 的 attach），
+ * 「技能与 MCP」页据此把只在某个页面里挂的插件（UI 设计、Blender）写成「按场景」而不是「全局」
+ */
+export function usePluginAttach(): (id: string) => string {
+  const { data } = useMcpCatalog()
+  return useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of data?.sources ?? [])
+      if (s.kind === 'plugin')
+        m.set(
+          s.id.replace(/^plugin:/, ''),
+          s.servers
+            .map((x) => x.attach)
+            .filter(Boolean)
+            .join(t('；')),
+        )
+    return (id: string) => m.get(id) ?? ''
+  }, [data])
 }
