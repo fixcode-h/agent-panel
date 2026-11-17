@@ -34,6 +34,7 @@ import { McpJsonFill } from '@/components/library/McpJsonFill'
 import type { McpDraft } from '@shared/mcp-json'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
 import { configScanApi } from '@/lib/api-config-scan'
+import { useAutoMcpNotice } from './caps/use-auto-mcp'
 
 /**
  * 项目设置里的 MCP：面板管理的工具（写进各 Agent 的全局配置，和「MCP 工具」页同一份数据）+
@@ -71,6 +72,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
   // 导入确认：一次一条或全部
   const [confirm, setConfirm] = useState<{ file: string; name: string }[] | null>(null)
   const [importing, setImporting] = useState(false)
+  const { notice, refreshProjects } = useAutoMcpNotice()
 
   const load = () => {
     if (!project) return
@@ -80,6 +82,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
       .then((d) => {
         setData(d)
         setError('')
+        notice(d)
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false))
@@ -150,7 +153,11 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
     try {
       const r = await api.importProjectMcp(project.id, confirm)
       setData(r.overview)
-      if (r.done.length) toast.success(t('已导入 {n} 条配置', { n: r.done.length }))
+      if (r.done.length) {
+        toast.success(t('已导入 {n} 条配置', { n: r.done.length }))
+        // 导入的同时在这个项目里打开了：项目记录变了，重新取一份
+        refreshProjects()
+      }
       if (r.skipped.length)
         toast.error(t('{n} 条没有导入：{reason}', { n: r.skipped.length, reason: r.skipped[0].reason }))
       setConfirm(null)
@@ -170,6 +177,10 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
     )
 
   const todo = (data?.detected ?? []).filter((d) => d.nameOk && d.status !== 'same')
+  const onHere = (name: string) =>
+    data?.servers.find((x) => x.name === name)?.activation === 'project'
+      ? !!project.capabilities?.mcp?.includes(name)
+      : undefined
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -235,6 +246,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                           <span className="truncate">{d.name}</span>
                           <StatusBadge status={d.status} />
                           <ScanBadge findings={d.scan} />
+                          {d.status === 'same' && <OnBadge on={onHere(d.name)} />}
                         </p>
                         <p className="truncate font-mono text-footnote text-muted" title={summary(d.server)}>
                           {summary(d.server) || t('（没有填命令或地址）')}
@@ -251,7 +263,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                           disabled={!d.nameOk || d.status === 'same'}
                           title={!d.nameOk ? t('名字里有空格或特殊字符，导入前要在项目文件里改名') : undefined}
                         >
-                          {d.status === 'same' ? t('已导入') : d.status === 'different' ? t('覆盖全局配置') : t('导入')}
+                          {d.status === 'same' ? t('已导入') : d.status === 'different' ? t('覆盖已有配置') : t('导入')}
                         </Button>
                         <IconButton
                           icon={Wand2}
@@ -379,7 +391,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
             : t('导入这 {n} 条配置？', { n: confirm?.length ?? 0 })
         }
         description={t(
-          '写进各 Agent 的全局配置文件，之后由面板管理；项目里的配置文件不会改动。同名且配置不同的会覆盖全局那一份。',
+          '导入成只在这个项目生效的 MCP 并打开，之后由面板管理；项目里的配置文件不会改动。面板里已有同名的会用项目里的配置覆盖。',
         )}
         confirmText={t('导入')}
         onConfirm={doImport}
@@ -417,7 +429,7 @@ function Intro({ action }: { action?: React.ReactNode }) {
         <h3 className="text-heading font-semibold">{t('MCP 工具')}</h3>
         <p className="text-footnote leading-relaxed text-subtle">
           {t(
-            'MCP 工具让 Agent 连上外部的服务和数据。这里管当前项目用的 MCP：面板写进各 Agent 的全局配置文件（和「MCP 工具」页是同一份），项目目录里已有的配置只读识别出来、可以一键导入。这里的改动立即生效，不用下面的按钮保存。',
+            'MCP 工具让 Agent 连上外部的服务和数据。项目目录里自带的配置读到就自动导入并在这个项目打开，你关掉的不会再被打开；Agent 自己只对这个项目配的识别出来，要你一键导入。这里的改动立即生效，不用下面的按钮保存。',
           )}
         </p>
       </div>
@@ -427,10 +439,22 @@ function Intro({ action }: { action?: React.ReactNode }) {
 }
 
 const STATUS = {
-  new: { label: t('只在项目里'), cls: 'bg-accent/10 text-accent-text' },
-  same: { label: t('和各 Agent 的配置一致'), cls: 'bg-success/10 text-success' },
-  different: { label: t('和各 Agent 的配置不同'), cls: 'bg-warning/10 text-warning' },
+  new: { label: t('还没导入'), cls: 'bg-accent/10 text-accent-text' },
+  same: { label: t('和面板里的一致'), cls: 'bg-success/10 text-success' },
+  different: { label: t('和面板里的不同'), cls: 'bg-warning/10 text-warning' },
 } as const
+
+/** 导入过的按项目条目在这个项目里开没开（全局的对所有项目生效，不标）；开关在项目设置 →「能力」 */
+function OnBadge({ on }: { on: boolean | undefined }) {
+  if (on === undefined) return null
+  return (
+    <span
+      className={`shrink-0 rounded-full px-1.5 py-px text-caption ${on ? 'bg-success/10 text-success' : 'bg-sel text-subtle'}`}
+    >
+      {on ? t('本项目已打开') : t('本项目已关闭')}
+    </span>
+  )
+}
 
 function StatusBadge({ status }: { status: ProjectMcpDetected['status'] }) {
   return (

@@ -98,6 +98,12 @@ export const McpStore = z.object({
   /** 请求头写在哪个字段 */
   headersKey: z.string().default('headers'),
   /**
+   * 这个 CLI 在全局配置里按项目目录另存的工具表（只有 json）：root[projectTable][项目目录][key]。
+   * 例如 Claude Code 的 local scope 存在 ~/.claude.json 的 projects 下。面板只读它，项目 MCP 页列为可导入，
+   * 不自动导入（用户定：自动导入只管项目目录里的文件）。不写表示这个 CLI 没有这种存法
+   */
+  projectTable: z.string().optional(),
+  /**
    * 「按项目」的 MCP 工具每轮怎么交给 CLI（设计稿 Agent侧栏与项目管理重设计 6.2，见 shared/mcp-library/inject.ts）：
    * 条目的写法（字段名、type）和上面写进全局配置的一样，只是改成这一轮的参数。不写表示这个 CLI 还不能按项目，
    * 「按项目」的条目对它退回全局写入，界面上注明

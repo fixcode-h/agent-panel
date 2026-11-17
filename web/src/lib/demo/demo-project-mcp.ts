@@ -23,7 +23,7 @@ const entry = (
   nameOk: /^[A-Za-z0-9][\w-]*$/.test(name),
 })
 
-/** 三种状态各有一条：只在项目里（browser）、和面板里一样（filesystem）、同名但配置不同（github） */
+/** 三种状态各有一条：还没导入（browser）、和面板里一样（filesystem）、同名但配置不同（github） */
 const detected: Omit<ProjectMcpDetected, 'status'>[] = [
   entry('github', '.mcp.json', 'Claude Code 项目配置', {
     transport: 'http',

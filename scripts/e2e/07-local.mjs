@@ -1335,6 +1335,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     mkdirSync(path.join(mp.path, '.claude'), { recursive: true })
     writeFileSync(path.join(mp.path, '.claude', 'settings.json'), '{ 坏掉的 json')
 
+    // 打开项目时读到的项目目录配置自动导入成按项目的条目，并在这个项目里打开（名字不合规的留给用户改名）
     let pv = await call('GET', `/project-mcp?projectId=${mp.id}`)
     assert.equal(pv.path, mp.path)
     assert.deepEqual(pv.detected.map((d) => `${d.file}:${d.name}`).sort(), [
@@ -1342,7 +1343,16 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       '.mcp.json:fs',
       '.vscode/mcp.json:browser',
     ])
-    assert.equal(pv.detected.find((d) => d.name === 'fs').status, 'new')
+    assert.deepEqual([...pv.autoEnabled].sort(), ['browser', 'fs'])
+    assert.equal(pv.detected.find((d) => d.name === 'fs').status, 'same')
+    assert.equal(pv.servers.find((x) => x.name === 'fs').activation, 'project')
+    const capsOf = async () => (await call('GET', '/projects')).find((x) => x.id === mp.id).capabilities?.mcp ?? []
+    assert.deepEqual([...(await capsOf())].sort(), ['browser', 'fs'])
+    assert.equal(readFileSync(mcpJson, 'utf8'), projectMcp, '项目里的配置文件不能被改')
+    // 按项目的条目每轮注入，不写进 Claude Code 的全局配置
+    const claudeJson = path.join(homeDir, '.claude.json')
+    const readClaude = () => (existsSync(claudeJson) ? JSON.parse(readFileSync(claudeJson, 'utf8')) : {})
+    assert.equal(readClaude().mcpServers?.fs, undefined)
     assert.equal(pv.detected.find((d) => d.name === 'browser').source, 'VS Code 工作区配置')
     // 名字合不合面板规则要能看出来（导入前要在项目文件里改名）
     assert.equal(pv.detected.find((d) => d.name === 'bad name').nameOk, false)
@@ -1355,41 +1365,43 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     // 项目里的工具也能测试连接（和「MCP 工具」页同一个实现）
     assert.equal((await call('POST', '/project-mcp/test', { ...server, name: 'fs' })).ok, true)
 
-    // 导入一条：写进 Claude Code 的全局配置，项目文件不变；再读时状态变成「一致」
-    const imp = await call('POST', `/project-mcp/import?projectId=${mp.id}`, {
-      items: [{ file: '.mcp.json', name: 'fs', clis: ['claude'] }],
-    })
-    assert.deepEqual(imp.done, [{ name: 'fs', file: '.mcp.json' }])
-    assert.equal(readFileSync(mcpJson, 'utf8'), projectMcp, '项目里的配置文件不能被改')
-    assert.deepEqual(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.fs, {
-      type: 'stdio',
-      command: 'npx',
-      args: ['-y', 'fs-mcp'],
-    })
-    assert.equal(imp.overview.detected.find((d) => d.name === 'fs').status, 'same')
-
-    // 名字不合规则的导入会说清原因，不写进任何全局配置
+    // 名字不合规则的导入会说清原因，不写进任何配置
     const bad = await call('POST', `/project-mcp/import?projectId=${mp.id}`, {
       items: [{ file: '.mcp.json', name: 'bad name', clis: ['claude'] }],
     })
     assert.equal(bad.done.length, 0)
     assert.match(bad.skipped[0].reason, /工具名/)
 
-    // 项目分节写的是同一份配置：停用后「MCP 工具」页也没了
-    const fsServer = {
-      name: 'fs',
-      transport: 'stdio',
-      command: 'npx',
-      args: ['-y', 'fs-mcp'],
-      env: {},
-      url: '',
-      headers: {},
-    }
-    pv = await call('PUT', `/project-mcp/fs?projectId=${mp.id}`, { server: fsServer, clis: [] })
+    // Claude Code 只对这个项目生效的配置（~/.claude.json 的 projects）：识别出来列为可导入，不自动导入
+    writeFileSync(
+      claudeJson,
+      JSON.stringify({
+        ...readClaude(),
+        projects: { [mp.path]: { mcpServers: { local: { command: 'uvx', args: ['l'] } } } },
+      }),
+    )
+    pv = await call('GET', `/project-mcp?projectId=${mp.id}`)
+    const local = pv.detected.find((d) => d.name === 'local')
+    assert.equal(local.fromAgent, true)
+    assert.equal(local.status, 'new')
+    assert.equal(pv.autoEnabled, undefined)
+    // 手动导入：成为按项目的条目并在这个项目里打开
+    const imp = await call('POST', `/project-mcp/import?projectId=${mp.id}`, {
+      items: [{ file: local.file, name: 'local' }],
+    })
+    assert.deepEqual(imp.done, [{ name: 'local', file: local.file }])
+    assert.equal(imp.overview.detected.find((d) => d.name === 'local').status, 'same')
+    assert.ok((await capsOf()).includes('local'))
+
+    // 用户删掉自动导入的条目后，再读项目也不会被重新导入（用户关掉的不再自动打开）
+    pv = await call('DELETE', `/project-mcp/fs?projectId=${mp.id}`)
     assert.equal(
       pv.servers.some((x) => x.name === 'fs'),
       false,
     )
+    pv = await call('GET', `/project-mcp?projectId=${mp.id}`)
+    assert.equal(pv.autoEnabled, undefined)
+    assert.equal(pv.detected.find((d) => d.name === 'fs').status, 'new')
     assert.equal(
       (await call('GET', '/mcp-tools')).servers.some((x) => x.name === 'fs'),
       false,
@@ -1399,10 +1411,13 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     rmSync(mcpJson, { force: true })
     rmSync(path.join(mp.path, '.vscode'), { recursive: true, force: true })
     rmSync(path.join(mp.path, '.claude'), { recursive: true, force: true })
+    const { projects: _p, ...restClaude } = readClaude()
+    writeFileSync(claudeJson, JSON.stringify(restClaude))
+    for (const n of ['browser', 'local']) await call('DELETE', `/project-mcp/${n}?projectId=${mp.id}`)
     pv = await call('GET', `/project-mcp?projectId=${mp.id}`)
     assert.deepEqual(pv.detected, [])
   }
-  step('项目设置里的 MCP：识别 .mcp.json / .vscode/mcp.json，导入只写各 CLI 的全局配置，项目文件不改')
+  step('项目设置里的 MCP：项目目录里的自动导入并打开、删掉的不再导入，Agent 为项目单独配的列为可导入，项目文件不改')
 
   // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
   {

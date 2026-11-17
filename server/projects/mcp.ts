@@ -13,6 +13,7 @@ import {
 } from '../../shared/projects/mcp.ts'
 import {
   activationOf,
+  agentProjectServers,
   deleteMcpEntry,
   mcpOverview,
   previousOf,
@@ -24,12 +25,14 @@ import {
 import { sameServer } from '../../shared/mcp-library/inject.ts'
 import { scanMcpServer } from '../../shared/config-scan/index.ts'
 import { visibleFindings } from '../config-scan.ts'
+import { autoImportProjectMcp, markSeen } from './mcp-auto.ts'
 
 /**
  * 项目设置里的「MCP」：列出这个项目的目录里各工具认的 MCP 配置，可以一键导入成面板管理的配置。
  *
- * 只读用户的文件。导入写的是各 CLI 的全局配置（mcp-store 那套，只动 mcpServers 里自己那几段），
- * 项目里的配置文件原文一直留在用户自己手里，所以不需要备份、也不会被改坏。
+ * 只读用户的文件。导入成「按项目」的条目（面板库，见 mcp-store 的 saveMcpEntry）并在这个项目里打开；
+ * 同名的全局条目已经存在时照旧更新全局那份。项目里的配置文件原文一直留在用户自己手里，所以不需要备份、也不会被改坏。
+ * 项目目录里的配置读到时自动导入、打开（./mcp-auto.ts）；Agent 自己配置里只对这个项目生效的那份只列为可导入。
  */
 
 const jsonStore = (key: string) => McpStore.parse({ file: '', format: 'json', key })
@@ -115,6 +118,21 @@ export async function scanProjectMcp(
       errors.push({ file: s.file, error: (e as Error).message })
     }
   }
+  for (const a of await agentProjectServers(dir)) {
+    for (const [name, server] of Object.entries(a.servers)) {
+      if (isPanelMcpUrl(server.url)) continue
+      detected.push({
+        name,
+        server,
+        file: a.file,
+        source: t('{cli} 里只对本项目生效的配置', { cli: a.cli }),
+        status: 'new',
+        raw: JSON.stringify(a.raw[name], null, 2),
+        nameOk: nameOk(name),
+        fromAgent: true,
+      })
+    }
+  }
   return { detected, errors }
 }
 
@@ -133,8 +151,14 @@ async function overview(dir: string): Promise<ProjectMcpOverview> {
   return { path: dir, clis: global.clis, servers: global.servers, detected, errors }
 }
 
-/** 项目目录从项目记录里取（server/index.ts 注入，不在这里另存一份） */
-export function projectMcpApi(deps: { projectPath: (projectId: string) => Promise<string> }) {
+/**
+ * 项目目录从项目记录里取，打开能力也在项目记录上改（server/index.ts 注入，不在这里另存一份）。
+ * enableMcp 把名字加进项目的 capabilities.mcp
+ */
+export function projectMcpApi(deps: {
+  projectPath: (projectId: string) => Promise<string>
+  enableMcp: (projectId: string, names: string[]) => Promise<void>
+}) {
   const guard = (fn: (c: any) => Promise<Response>) => async (c: any) => {
     try {
       return await fn(c)
@@ -154,9 +178,18 @@ export function projectMcpApi(deps: { projectPath: (projectId: string) => Promis
 
   return (
     new Hono()
+      // 读的时候顺带自动导入项目目录里新出现的配置（打开项目、进项目 MCP 页都会读这里）
       .get(
         '/',
-        guard(async (c) => c.json(await overview(await dirOf(c)))),
+        guard(async (c) => {
+          const id = String(c.req.query('projectId') ?? '')
+          const dir = await deps.projectPath(id)
+          const auto = dir
+            ? await autoImportProjectMcp(id, (await scanProjectMcp(dir)).detected, deps.enableMcp)
+            : { enabled: [] }
+          const o = await overview(dir)
+          return c.json(auto.enabled.length ? { ...o, autoEnabled: auto.enabled } : o)
+        }),
       )
       .post(
         '/test',
@@ -184,6 +217,7 @@ export function projectMcpApi(deps: { projectPath: (projectId: string) => Promis
         '/import',
         guard(async (c) => {
           const body = await c.req.json()
+          const projectId = String(c.req.query('projectId') ?? '')
           const dir = await dirOf(c)
           const { detected } = dir ? await scanProjectMcp(dir) : { detected: [] }
           const { clis } = await mcpOverview()
@@ -203,9 +237,11 @@ export function projectMcpApi(deps: { projectPath: (projectId: string) => Promis
             )
             try {
               const sv = parse(hit.server)
-              // 导入是「加上」：已经装着的 CLI 保留，生效方式照原来的（新的条目是全局）
-              const had = (await mcpOverview()).servers.find((x) => x.name === sv.name)?.clis ?? []
-              await saveMcpEntry(sv, [...new Set([...had, ...target])])
+              // 导入是「加上」：已经装着的 CLI 保留；已有的条目生效方式照原来的，新的条目按项目、在这个项目里打开
+              const had = (await mcpOverview()).servers.find((x) => x.name === sv.name)
+              await saveMcpEntry(sv, [...new Set([...(had?.clis ?? []), ...target])], had?.activation ?? 'project')
+              if (had?.activation !== 'global') await deps.enableMcp(projectId, [sv.name])
+              await markSeen(projectId, [sv.name])
               result.done.push({ name: hit.name, file: hit.file })
             } catch (e) {
               result.skipped.push({ name: hit.name, file: hit.file, reason: (e as Error).message })

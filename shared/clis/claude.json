@@ -573,6 +573,7 @@
     "urlKey": "url",
     "remoteType": "http",
     "stdioType": true,
+    "projectTable": "projects",
     "headersKey": "headers",
     "inject": {
       "format": "json",

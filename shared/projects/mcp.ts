@@ -27,6 +27,11 @@ export interface ProjectMcpDetected {
   /** 配置安全扫描的发现（没固定版本的 npx、自动批准、监听 0.0.0.0、明文密钥）；没有就不带 */
   scan?: ConfigFinding[]
   scanScope?: string
+  /**
+   * 这一条在 Agent 自己的配置里（例如 Claude Code 在 ~/.claude.json 里只对这个项目生效的那份），不在项目目录里：
+   * 只识别出来列为可导入，不自动导入（用户定：自动导入只管项目目录里的）
+   */
+  fromAgent?: boolean
 }
 
 export interface ProjectMcpOverview {
@@ -40,6 +45,8 @@ export interface ProjectMcpOverview {
   detected: ProjectMcpDetected[]
   /** 读不懂的配置文件：只提示，不影响别的文件 */
   errors: { file: string; error: string }[]
+  /** 这次读的时候自动导入、在项目里打开了的（见 server/projects/mcp-auto.ts）；界面据此提示一次并刷新项目 */
+  autoEnabled?: string[]
 }
 
 /** 导入结果：没做成的逐条给出原因，界面上照实显示 */
