@@ -26,6 +26,7 @@ import { configScanApi } from '../config-scan.ts'
 import { libraryApi } from '../library.ts'
 import { mcpApi } from '../mcp-store.ts'
 import { projectMcpApi } from '../projects/mcp.ts'
+import { toggleCapability } from '../../shared/projects/capabilities.ts'
 import { trustApi } from '../cli/trust-api.ts'
 import { installApi } from '../install.ts'
 import { envApi } from '../env-api.ts'
@@ -89,6 +90,16 @@ export interface ModuleDeps {
 /** CLI、账号、集成、MCP、模型这一段：挂在「设置、CLI 配置」之后，「CLI 额度、角色、工作流、项目」之前 */
 export function toolModules({ projects, agents }: Pick<ModuleDeps, 'projects' | 'agents'>): ApiModule[] {
   const projectPath = async (id: string) => (await projects.get(id))?.path ?? ''
+  // 项目 MCP 导入后在这个项目里打开：读最新的项目记录再改，只动 capabilities.mcp
+  const enableMcp = async (id: string, names: string[]) => {
+    const p = id ? await projects.get(id) : undefined
+    if (!p) return
+    let caps = p.capabilities
+    for (const n of names) caps = toggleCapability(caps, 'mcp', n, true)
+    if (JSON.stringify(caps) === JSON.stringify(p.capabilities)) return
+    const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = p
+    await projects.update(id, { ...rest, capabilities: caps })
+  }
   return [
     { prefix: '/accounts', app: accountsApi() },
     { prefix: '/accounts', app: apiSpeedApi() },
@@ -98,7 +109,7 @@ export function toolModules({ projects, agents }: Pick<ModuleDeps, 'projects' | 
     { prefix: '/library', app: libraryApi() },
     { prefix: '/mcp-tools', app: mcpApi() },
     // 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取
-    { prefix: '/project-mcp', app: projectMcpApi({ projectPath }) },
+    { prefix: '/project-mcp', app: projectMcpApi({ projectPath, enableMcp }) },
     { prefix: '/project-trust', app: trustApi({ projectPath }) },
     { prefix: '/clis', app: installApi() },
     // 本机生图、语音输入 / 朗读、Chat 记忆：各自一组的子路由（./extras.ts）

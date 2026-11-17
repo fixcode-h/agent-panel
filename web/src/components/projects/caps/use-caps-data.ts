@@ -7,6 +7,7 @@ import { call } from '@/lib/api/call'
 import { usePlugins } from '@/plugins/registry'
 import type { ProjectCapabilities } from '@shared/projects/capabilities'
 import { globalItems, itemOn, ownItems, pluginMcpItems, type CapItem } from './caps-items'
+import { useAutoMcpNotice } from './use-auto-mcp'
 
 /**
  * 按项目生效的插件探查（detect / ready）：目录、表单里的插件设置变了再问一遍（停顿一下再问，打字时不连发）。
@@ -45,12 +46,15 @@ export function useCapsLists(projectId: string | undefined) {
   const [global, setGlobal] = useState<CapItem[] | null>(null)
   const [error, setError] = useState('')
   const [tick, setTick] = useState(0)
+  const { notice } = useAutoMcpNotice()
   useEffect(() => {
     let live = true
     const pluginName = (id: string) => plugins.find((p) => p.manifest.id === id)?.manifest.name ?? id
     const fail = (e: unknown) => live && setError((e as Error).message)
     Promise.all([
-      projectId ? api.projectMcp(projectId) : api.mcpTools().then((o) => ({ servers: o.servers, detected: [] })),
+      projectId
+        ? api.projectMcp(projectId).then((o) => (notice(o), o))
+        : api.mcpTools().then((o) => ({ servers: o.servers, detected: [] })),
       projectId ? api.projectSkills(projectId).then((v) => v.skills) : Promise.resolve([]),
       api.bundledSkills().then((r) => r.items),
       api.library('skill').then((r) => r.items),

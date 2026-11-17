@@ -277,6 +277,43 @@ async function readServers(d: Def): Promise<Record<string, McpServer>> {
   return out
 }
 
+/** 比较两个目录是不是同一个：Claude Code 在 Windows 上存的键是正斜杠，盘符大小写也可能不同 */
+const samePath = (a: string, b: string) => {
+  const norm = (p: string) => {
+    const r = path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '')
+    return process.platform === 'win32' ? r.toLowerCase() : r
+  }
+  return norm(a) === norm(b)
+}
+
+/**
+ * 各 CLI 在自己的全局配置里按项目目录另存的 MCP（定义里的 mcpStore.projectTable，例如 Claude Code 的 local scope）。
+ * 只读；读不到、读不懂的 CLI 跳过（这是顺带识别，不该让项目 MCP 页报错）
+ */
+export async function agentProjectServers(dir: string) {
+  const out: { cli: string; file: string; servers: Record<string, McpServer>; raw: Record<string, unknown> }[] = []
+  for (const d of managed()) {
+    const s = d.mcpStore
+    if (!s.projectTable || s.format !== 'json') continue
+    const file = fileOf(d)
+    if (!existsSync(file)) continue
+    try {
+      const table = (await readJsonFile(file))[s.projectTable]
+      if (!table || typeof table !== 'object') continue
+      const hit = Object.entries(table as Record<string, any>).find(([k]) => samePath(k, dir))?.[1]
+      const raw = hit?.[s.key]
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+      const servers: Record<string, McpServer> = {}
+      for (const [name, v] of Object.entries(raw))
+        if (v && typeof v === 'object') servers[name] = fromObject(name, v as any, s)
+      if (Object.keys(servers).length) out.push({ cli: d.name, file: d.mcpStore.file, servers, raw })
+    } catch {
+      continue
+    }
+  }
+  return out
+}
+
 async function putServer(d: Def, sv: McpServer) {
   const s = d.mcpStore
   const file = fileOf(d)

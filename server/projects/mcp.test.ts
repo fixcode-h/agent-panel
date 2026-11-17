@@ -31,7 +31,7 @@ const post = (body: unknown) => ({
   body: JSON.stringify(body),
 })
 
-test('项目 MCP：识别常见配置文件，导入只写 CLI 的全局配置', async () => {
+test('项目 MCP：识别常见配置文件，项目里的自动导入并打开，Agent 里的列为可导入', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'projmcp-home-'))
   const dir = mkdtempSync(path.join(tmpdir(), 'projmcp-project-'))
   const old = { ...process.env }
@@ -68,7 +68,12 @@ test('项目 MCP：识别常见配置文件，导入只写 CLI 的全局配置',
     mkdirSync(path.join(dir, '.claude'), { recursive: true })
     writeFileSync(path.join(dir, '.claude', 'settings.json'), '{ 坏掉的 json')
 
-    const api = projectMcpApi({ projectPath: async () => dir })
+    // 打开项目时读到的配置自动导入成按项目的条目，并在这个项目里打开（用户 2026-11-17 定）
+    const enabled: string[][] = []
+    const api = projectMcpApi({
+      projectPath: async () => dir,
+      enableMcp: async (_id, names) => void enabled.push(names),
+    })
     const first = (await (await api.request('/?projectId=p1')).json()) as ProjectMcpOverview
     assert.deepEqual(first.detected.map((d) => `${d.file}:${d.name}`).sort(), [
       '.codex/config.toml:pg',
@@ -76,34 +81,61 @@ test('项目 MCP：识别常见配置文件，导入只写 CLI 的全局配置',
       '.mcp.json:web',
       '.vscode/mcp.json:browser',
     ])
-    assert.ok(first.detected.every((d) => d.status === 'new'))
+    assert.deepEqual([...(first.autoEnabled ?? [])].sort(), ['browser', 'fs', 'pg', 'web'])
+    assert.deepEqual([...enabled[0]].sort(), ['browser', 'fs', 'pg', 'web'])
+    assert.ok(first.detected.every((d) => d.status === 'same'))
+    assert.ok(first.servers.filter((x) => x.name !== 'local').every((x) => x.activation === 'project'))
     assert.equal(first.detected.find((d) => d.name === 'web')?.server.transport, 'http')
     assert.equal(first.detected.find((d) => d.name === 'browser')?.source, 'VS Code 工作区配置')
+    // 项目里的文件一字不动
+    assert.equal(readFileSync(path.join(dir, '.mcp.json'), 'utf8'), mcpJson)
     // 读不懂的文件只记进 errors，别的文件照常读
     assert.deepEqual(
       first.errors.map((e) => e.file),
       ['.claude/settings.json'],
     )
 
-    // 导入一条到某一个 CLI：写的是它的全局配置，项目里的文件一字不动
-    const target = CLIS.filter((d) => d.mcpStore && first.clis.some((c) => c.id === d.id))[0]
-    assert.ok(target, '临时用户目录里应该至少有一个能管 MCP 的 CLI')
+    // 再读一次（用户可能已经在项目里关掉了某条）：处理过的名字不再自动打开
+    const again = (await (await api.request('/?projectId=p1')).json()) as ProjectMcpOverview
+    assert.equal(again.autoEnabled, undefined)
+    assert.equal(enabled.length, 1)
+    // 项目里后来新加的一条照样自动导入，只处理新的这条
+    mkdirSync(path.join(dir, '.cursor'), { recursive: true })
+    writeFileSync(
+      path.join(dir, '.cursor', 'mcp.json'),
+      JSON.stringify({ mcpServers: { docs: { url: 'https://d.example/mcp' } } }),
+    )
+    const third = (await (await api.request('/?projectId=p1')).json()) as ProjectMcpOverview
+    assert.deepEqual(third.autoEnabled, ['docs'])
+    // 另一个项目第一次读到同样的配置：条目已在面板库里、配置一样，只在那个项目里打开，不重复导入
+    const other = (await (await api.request('/?projectId=p2')).json()) as ProjectMcpOverview
+    assert.deepEqual([...(other.autoEnabled ?? [])].sort(), ['browser', 'docs', 'fs', 'pg', 'web'])
+
+    // Agent 自己配置里只对这个项目生效的（Claude Code 的 local scope）：识别出来列为可导入，不自动导入
+    const claude = CLIS.find((d) => d.mcpStore?.projectTable && first.clis.some((c) => c.id === d.id))
+    assert.ok(claude, '应该有在全局配置里按项目存 MCP 的 CLI')
+    const claudeFile = expandHome(claude.mcpStore!.file)
+    const before = existsSync(claudeFile) ? JSON.parse(readFileSync(claudeFile, 'utf8')) : {}
+    before.projects = { [dir]: { mcpServers: { local: { command: 'uvx', args: ['local-mcp'] } } } }
+    writeFileSync(claudeFile, JSON.stringify(before))
+    const withAgent = (await (await api.request('/?projectId=p1')).json()) as ProjectMcpOverview
+    const local = withAgent.detected.find((d) => d.name === 'local')
+    assert.equal(local?.fromAgent, true)
+    assert.equal(local?.status, 'new')
+    assert.equal(withAgent.autoEnabled, undefined)
+    // 用户手动导入：成为按项目的条目，并在这个项目里打开
     const res = (await (
-      await api.request('/import?projectId=p1', post({ items: [{ file: '.mcp.json', name: 'fs', clis: [target.id] }] }))
+      await api.request('/import?projectId=p1', post({ items: [{ file: local!.file, name: 'local' }] }))
     ).json()) as ProjectMcpImportResult
-    assert.deepEqual(res.done, [{ name: 'fs', file: '.mcp.json' }])
+    assert.deepEqual(res.done, [{ name: 'local', file: local!.file }])
     assert.deepEqual(res.skipped, [])
-    assert.equal(readFileSync(path.join(dir, '.mcp.json'), 'utf8'), mcpJson)
-    const global = expandHome(target.mcpStore!.file)
-    assert.ok(existsSync(global), '应该写进这个 CLI 的全局配置文件')
-    assert.ok(readFileSync(global, 'utf8').includes('fs-mcp'))
-    // 再读一次：这条和全局一致了
-    assert.equal(res.overview.detected.find((d) => d.name === 'fs')?.status, 'same')
-    assert.equal(res.overview.servers.find((s) => s.name === 'fs')?.clis.includes(target.id), true)
+    assert.deepEqual(enabled.at(-1), ['local'])
+    assert.equal(res.overview.detected.find((d) => d.name === 'local')?.status, 'same')
+    assert.equal(res.overview.servers.find((s) => s.name === 'local')?.activation, 'project')
 
     // 项目还没设目录时只返回面板管理的，不去扫磁盘
     const empty = (await (
-      await projectMcpApi({ projectPath: async () => '' }).request('/')
+      await projectMcpApi({ projectPath: async () => '', enableMcp: async () => {} }).request('/')
     ).json()) as ProjectMcpOverview
     assert.equal(empty.path, '')
     assert.deepEqual(empty.detected, [])

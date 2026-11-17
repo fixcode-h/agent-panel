@@ -370,6 +370,15 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 从全局改成按项目时，能注入的 CLI 的全局配置里只清掉和条目内容一样的那份（面板写的），用户自己在 CLI 里另配的同名工具不动、在页面上标出来。
 和面板、插件这一轮的服务同名的条目不带（`server/exec/invoke.ts` 的 `projectMcpArgs`）。
 
+### 项目自带的 MCP 自动导入 `mcpStore.projectTable`
+
+项目目录里自带的 MCP 配置（`.mcp.json`、`.cursor/mcp.json` 等，见 `server/projects/mcp.ts` 的 `SOURCES`）读到就自动导入成按项目的条目，
+并在这个项目里打开（`server/projects/mcp-auto.ts`，用户 2026-11-17 定）。每个项目每个名字只自动处理一次，记在数据目录
+`config/project-mcp-auto.json`，用户之后关掉的不会再被打开；全局已有同名的不动，面板库里同名但配置不同的留给用户手动导入。
+
+CLI 在自己的全局配置里按项目目录另存的 MCP 写在 `mcpStore.projectTable`（只支持 json，`root[projectTable][项目目录][key]`），
+例如 Claude Code 的 local scope 是 `~/.claude.json` 的 `projects`。这些只识别出来、在项目 MCP 页列为可导入，不自动导入。
+
 ### 联网搜索
 
 面板不自己做联网搜索，各 CLI 用自己的：Claude Code 的 `WebSearch` / `WebFetch`、Codex 的 `web_search`、Command Code 的 Web 工具都照常开着
