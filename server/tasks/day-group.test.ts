@@ -11,7 +11,7 @@ const item = (id: string, y: number, m: number, d: number, h = 9, min = 0) => ({
 const shape = (list: { id: string; at: string }[]) =>
   groupByDay(list, (x) => x.at, now).map((g) => [g.label, g.items.map((x) => x.id)])
 
-test('任务按自然日分组：今天、昨天，更早的写日期，新的日期在前', () => {
+test('任务按自然日分组：今天写「今天」，昨天起写日期，新的日期在前', () => {
   const list = [
     item('a', 2026, 10, 20, 9, 51),
     item('b', 2026, 10, 20, 9, 46),
@@ -22,7 +22,7 @@ test('任务按自然日分组：今天、昨天，更早的写日期，新的�
   ]
   assert.deepEqual(shape(list), [
     ['今天', ['a', 'b']],
-    ['昨天', ['c', 'd']],
+    ['10月19日', ['c', 'd']],
     ['10月17日', ['e', 'f']],
   ])
 })

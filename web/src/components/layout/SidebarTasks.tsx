@@ -30,6 +30,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
+import { dayLabel } from '@shared/day-groups'
 import { askedAt, byAskedAt, planLeft } from '@shared/task'
 import { liveBusy, liveDot, liveWord, type TaskLive } from '@shared/live/task-live'
 import { useLive, useLiveOf } from '@/lib/live/store'
@@ -62,8 +63,7 @@ export function shortTime(iso: string, timeOnly = false) {
   // 跨夏令时的那天相差 23 / 25 小时，取整
   const diff = Math.round((today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000)
   if (diff <= 0) return d.toTimeString().slice(0, 5)
-  if (diff === 1) return t('昨天')
-  if (diff < 7) return t('{n} 天前', { n: diff })
+  // 今天以前一律写日期，不写「昨天」「3 天前」：和分组标题一个口径，不用再换算是哪天
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
@@ -393,7 +393,7 @@ export function ContentHits({
 }
 
 /**
- * 聊天列表按「置顶 / 今天 / 昨天 / 7 天内 / 30 天内 / 更早」分段（Chat.dc.html）：聊天多是一次性的，
+ * 聊天列表按「置顶 / 今天 / 昨天的日期 / 7 天内 / 30 天内 / 更早」分段（Chat.dc.html），昨天写具体日期不写「昨天」：聊天多是一次性的，
  * 按具体日期一天一组会切得太碎，扫一眼找不到；list 已经按最近发言排好，分段后组内顺序不变。
  * 置顶的聊天只出现在最上面那一组，不在日期组里重复
  */
@@ -404,7 +404,11 @@ function chatBuckets(list: Task[], now = new Date()) {
   const buckets = [
     pinned,
     { key: 'today', label: t('今天'), items: [] as Task[] },
-    { key: 'yesterday', label: t('昨天'), items: [] as Task[] },
+    {
+      key: 'yesterday',
+      label: dayLabel(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), now),
+      items: [] as Task[],
+    },
     { key: 'week', label: t('7 天内'), items: [] as Task[] },
     { key: 'month', label: t('30 天内'), items: [] as Task[] },
     { key: 'older', label: t('更早'), items: [] as Task[] },
