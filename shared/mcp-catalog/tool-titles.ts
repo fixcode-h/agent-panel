@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getLang } from '../i18n.ts'
+import { knownToolTitle } from './known-titles.ts'
 
 /**
  * 别家 MCP 服务（不是面板、也不是插件的服务，例如 UEToVS）给自己工具起的显示名。
@@ -49,8 +50,8 @@ export const mcpToolTitles = () => known
 /** 别家服务的工具在当前界面语言下的显示名；服务没报就返回空，调用方用原名 */
 export function externalToolTitle(server: string, tool: string): string {
   const e = known[server]?.[tool] ?? known[server.toLowerCase()]?.[tool]
-  if (!e) return ''
   const lang = getLang()
-  // 界面语言的那个没报就退回 title：中文界面至少显示服务给的英文显示名，比原名好认
-  return e.titles?.[lang] ?? e.title ?? ''
+  // 服务报的同语言名优先；没报就用面板备好的（JetBrains IDE 这类只报英文的服务，见 known-titles.ts）；
+  // 再退回服务给的 title：中文界面至少显示服务给的英文显示名，比原名好认
+  return e?.titles?.[lang] ?? knownToolTitle(server, tool)?.titles?.[lang] ?? e?.title ?? ''
 }

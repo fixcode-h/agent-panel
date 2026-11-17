@@ -36,3 +36,24 @@ test('别家服务的工具行按界面语言显示服务报的名字，没报�
   setLang('zh')
   setMcpToolTitles({})
 })
+
+test('JetBrains IDE 服务没报中文名时用面板备好的，服务报了中文名以服务的为准', async () => {
+  const { proxiedTool } = await import('./proxy-tool.ts')
+  setLang('zh')
+  assert.equal(toolTitle('build_project', 'idea'), '编译项目')
+  assert.equal(toolTitle('mcp__rider__search_symbol'), '搜索符号')
+  assert.equal(toolTitle('build_project', 'other'), 'build_project')
+  setMcpToolTitles({ idea: { build_project: { title: 'Build', titles: { zh: '构建' } } } })
+  assert.equal(toolTitle('build_project', 'idea'), '构建')
+  setMcpToolTitles({})
+  setLang('en')
+  assert.equal(toolTitle('build_project', 'idea'), 'build_project')
+  setLang('zh')
+  assert.deepEqual(proxiedTool('execute_tool', { command: 'read_file path=a.lua' }), {
+    tool: 'read_file',
+    arg: 'path=a.lua',
+  })
+  assert.deepEqual(proxiedTool('call_tool', { tool_name: 'x', arguments: { q: 'hi' } }), { tool: 'x', arg: 'hi' })
+  assert.equal(proxiedTool('read_file', { command: 'x' }), undefined)
+  assert.equal(proxiedTool('execute_tool', { command: '{"bad": 1}' }), undefined)
+})

@@ -93,6 +93,22 @@ test('MCP 服务名的写法也认：panel-xxxx · record_lesson', () => {
   assert.equal(view?.server, undefined)
 })
 
+test('IDE 的 execute_tool 按参数里真正执行的工具显示中文名和参数', () => {
+  const run = toolView(
+    tool('MCP', 'idea · execute_tool', { input: '{"command":"search_text query=UMyActor","projectPath":"/p"}' }),
+  )
+  assert.deepEqual([run?.tool.name, run?.tool.label, run?.server], ['搜索文本', 'query=UMyActor', 'idea'])
+  // EmmyLua 注册进 IDE 服务的工具也认；只有工具名没有参数时标签留空
+  const lua = toolView(tool('MCP', 'idea · execute_tool', { input: '{"command":"lua_debug_inspect"}' }))
+  assert.deepEqual([lua?.tool.name, lua?.tool.label], ['Lua 调试：栈和变量', ''])
+  // 不认识的子工具照原名显示，至少不再只写 execute_tool
+  const odd = toolView(tool('MCP', 'idea · execute_tool', { input: '{"command":"my_tool --x 1"}' }))
+  assert.deepEqual([odd?.tool.name, odd?.tool.label], ['my_tool', '--x 1'])
+  // 直接调的 IDE 工具也有中文名，别家服务的同名工具不套用
+  assert.equal(toolView(tool('MCP', 'jetbrains · get_file_problems', { input: '{}' }))?.tool.name, '检查文件问题')
+  assert.equal(toolView(tool('MCP', 'notion · search_text', { input: '{}' }))?.tool.name, 'search_text')
+})
+
 test('别的 MCP 服务里的同名工具不会被当成面板工具', () => {
   // 带服务名的才会被当成那家的工具，显示服务名 + 原始工具名
   const other = toolView(tool('MCP', 'notion · record_lesson', { input: '{"title":"x"}' }))
