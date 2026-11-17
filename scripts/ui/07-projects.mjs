@@ -751,13 +751,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.getByRole('radio', { name: '项目技能' }).click()
     await check(p, '技能与MCP-项目技能', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
     await p.getByRole('radio', { name: '项目 MCP' }).click()
-    await check(p, '技能与MCP-项目MCP', [
-      '还没导入',
-      '和面板里的一致',
-      '和面板里的不同',
-      '全部导入',
-      '用 AI 排查整页',
-    ])
+    await check(p, '技能与MCP-项目MCP', ['还没导入', '和面板里的一致', '和面板里的不同', '全部导入', '用 AI 排查整页'])
     await p.evaluate((h) => (location.hash = h), projectHash)
     await settle(p).catch(() => {})
     // 项目首页：和首页一样列等你处理的对话；输入和已有对话是同一件事的要求时，提示可以直接发过去
