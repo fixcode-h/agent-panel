@@ -19,6 +19,7 @@ import { useNewAskUser } from '@/components/chat/AskToggle'
 import { TaskView } from '@/components/tasks/TaskView'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
 import { pluginEvents } from './events'
+import { PluginParams } from './PluginParamForm'
 
 /**
  * 交给插件网页部分的宿主（ADR 0059，类型见 sdk.ts 的 WebHost）：面板的数据、导航、界面组件和插件自己的接口。
@@ -105,6 +106,11 @@ export function host(id: string, config: () => PluginConfig) {
       TaskComposer,
       /** 盖住侧栏的项目工具页（PluginPage.cover）导航栏顶上的项目卡片，点一下回到项目对话 */
       ProjectBackCard,
+      /**
+       * 这个插件的参数（清单 settings）里挑几个分组画成表单、带保存（2026-11-17 加的）：插件自己的设置页用，
+       * 和设置 →「插件参数」改的是同一份值。{ groups?: string[] }，不给画全部
+       */
+      PluginParams: (p: { groups?: string[] }) => React.createElement(PluginParams, { pluginId: id, groups: p.groups }),
     },
     toast,
     cn,
