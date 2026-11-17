@@ -1,7 +1,7 @@
 # design：ComfyUI 工作流、风格库与 UI 设计插件的入口
 
 - 状态：documented
-- 职责：本机生图（ComfyUI）服务和工作流链、风格库、浏览器扩展、旧的 UI 设计 / ComfyUI 工作流地址跳转；UI 设计和 ComfyUI 工作流页本身在插件里（图标栏里的插件整页）
+- 职责：本机生图（ComfyUI）服务和工作流链、风格库、浏览器扩展、旧的 UI 设计 / ComfyUI 工作流地址跳转；UI 设计和 ComfyUI 工作流页本身在插件里（UI 设计是项目工具，ComfyUI 是图标栏里的插件整页）
 - 源码：`web/src/components/comfy/`, `server/comfy.ts`, `server/styles.ts`, `server/browser-ext-routes.ts`, `shared/local-image.ts`, `shared/comfy-chain.ts`, `shared/moss.ts`, `shared/style-types.ts`
 - 入口：`server/comfy.ts`
 - 关键词：UI 设计插件、ComfyUI、工作流链、风格库、MOSS、浏览器扩展
@@ -9,7 +9,7 @@
 
 ## 职责
 
-- 面板没有单独的「设计模式」（2026-11-11 用户要求，插件接口 5 去掉了 `designModes` 和 `#/pdesign`）：侧栏顶上的模式切换只有 Agent、Chat 两个。UI 设计插件（fixcode-h/agent-plugins 的 `ui-design`，2026-11-11 以前是面板自带的）和 Blender 插件的模型设计一样，是图标栏里的插件整页（`#/plugin/ui-design/ui/<设计>/<子页>`），左边的项目列表由插件自己画（`PluginPage.split`）。
+- 面板没有单独的「设计模式」（2026-11-11 用户要求，插件接口 5 去掉了 `designModes` 和 `#/pdesign`）：侧栏顶上的模式切换只有 Agent、Chat 两个。UI 设计插件（fixcode-h/agent-plugins 的 `ui-design`，2026-11-11 以前是面板自带的）和 Blender 插件的模型设计一样，是插件整页（`#/plugin/ui-design/ui/<设计>/<子页>`），左边的项目列表由插件自己画（`PluginPage.split`）。ui-design 1.4.0（2026-11-17）起按项目启用（`activation: project`、`scope: 'project'`、`cover`），和表格、UE 一样在侧栏「项目工具」里打开、盖住会话侧栏；UI 项目记着所属的面板项目（`owner`），旧数据由插件启动时按 id、目录归一次。
 - 旧地址：`#/design/<设计稿>/<子页>`（面板自带 UI 设计时）和 `#/pdesign/ui/<设计稿>/<子页>`（设计模式时）在 `App.tsx` 的 `parseHash` 里换成 `#/plugin/ui-design/ui/<设计稿>/<子页>`，地址栏同时改成新地址；对话里旧的 `design` 服务的工具名归 UI 设计插件显示（`shared/tool-names.ts`）。
 - ComfyUI 工作流页（2026-11-15 起是 fixcode-h/agent-plugins 的 `comfy` 插件，复查报告 C3）：内置和自己的工作流、节点图、AI 优化、试生成、模板商店、工作流链，页面代码在插件的 `comfy/web/`；面板留着生图服务（`/api/local-image`）、设置「本机生图」和插件要用的 `ComfyGraphView`、`ComfyQueuePanel`、`ComfyWeb`（开放模块），UI 设计、视频截帧插件不依赖 Comfy 插件。旧地址 `#/comfy/<分类>/<工作流>` 在 `App.tsx` 的 `parseHash` 里转到 `#/plugin/comfy/comfy/<分类>/<工作流>`。下面「前端」「ComfyUI 工作流页」两段说的界面现在都在插件里，文件名按插件里的路径读。
 - 风格库：`/api/styles`（`server/styles.ts`，数据 `styles.json`，旧版的 `designs/_styles.json` 读得到就接着用），设置里管理，对话出图和 UI 设计插件都用。
