@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { externalToolTitle, setMcpToolTitles, titleOfTool } from './tool-titles.ts'
+import { externalToolTitle, setMcpToolTitles, splitZhTitleLine, titleOfTool } from './tool-titles.ts'
 import { toolTitle } from '../tool-names.ts'
 import { setLang } from '../i18n.ts'
 
@@ -56,4 +56,24 @@ test('JetBrains IDE 服务没报中文名时用面板备好的，服务报了中
   assert.deepEqual(proxiedTool('call_tool', { tool_name: 'x', arguments: { q: 'hi' } }), { tool: 'x', arg: 'hi' })
   assert.equal(proxiedTool('read_file', { command: 'x' }), undefined)
   assert.equal(proxiedTool('execute_tool', { command: '{"bad": 1}' }), undefined)
+})
+
+test('IDE 服务不转发 _meta 时，从说明最后一行「Title (zh): …」认中文名，并从说明里去掉这一行', () => {
+  const description = 'Lua debug session.\nUSE FIRST WHEN: x\nTitle (zh): Lua 调试：会话与单步'
+  assert.deepEqual(splitZhTitleLine(description), {
+    description: 'Lua debug session.\nUSE FIRST WHEN: x',
+    zh: 'Lua 调试：会话与单步',
+  })
+  assert.equal(splitZhTitleLine('Title (zh): 旧名\nmore\nTitle (zh): 新名\n').zh, '新名')
+  assert.deepEqual(splitZhTitleLine('no title line'), { description: 'no title line' })
+  assert.deepEqual(titleOfTool({ name: 'lua_debug_session', description }), { titles: { zh: 'Lua 调试：会话与单步' } })
+  // _meta.titles 报了中文名时以它为准
+  assert.deepEqual(titleOfTool({ name: 'x', description, _meta: { titles: { zh: '别的名' } } }), {
+    titles: { zh: '别的名' },
+  })
+  // 插件新起的工具不在面板的表里，也能显示中文名
+  setMcpToolTitles({ idea: { lua_debug_new: titleOfTool({ name: 'lua_debug_new', description })! } })
+  setLang('zh')
+  assert.equal(toolTitle('lua_debug_new', 'idea'), 'Lua 调试：会话与单步')
+  setMcpToolTitles({})
 })

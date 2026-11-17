@@ -6,7 +6,7 @@ import { CLIS, type CliDefinition } from '../shared/clis.ts'
 import type { McpStore } from '../shared/cli-spec.ts'
 import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
-import { titleOfTool } from '../shared/mcp-catalog/tool-titles.ts'
+import { splitZhTitleLine, titleOfTool } from '../shared/mcp-catalog/tool-titles.ts'
 import { mcpServerObject, sameServer, type McpActivation } from '../shared/mcp-library/inject.ts'
 import { loadProjectMcp, saveProjectMcp } from './mcp-library/file.ts'
 import { expandHome } from './cli/extras.ts'
@@ -472,7 +472,9 @@ export async function testMcp(sv: McpServer, cwd = process.cwd()): Promise<McpTe
   const tools = (r: any) =>
     (r?.tools ?? []).map((x: any) => {
       const shown = titleOfTool(x)
-      return { name: String(x.name), description: String(x.description ?? ''), ...(shown && { shown }) }
+      // 说明里给面板认中文名的「Title (zh): …」那一行不显示
+      const { description } = splitZhTitleLine(String(x.description ?? ''))
+      return { name: String(x.name), description, ...(shown && { shown }) }
     })
   try {
     if (sv.transport === 'http') {

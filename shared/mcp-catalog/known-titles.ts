@@ -3,7 +3,8 @@ import type { McpToolTitle } from './tool-titles.ts'
 /**
  * 面板替几家常见的别家 MCP 服务备好的中文显示名：服务自己没在 tools/list 里报 `_meta.titles` 时用（见 tool-titles.ts 的 externalToolTitle）。
  * JetBrains IDE 自带的 MCP 服务（2025.x 条目名 `jetbrains`，2026.1 起按产品名，如 `idea`、`rider`）只报英文名；
- * 装在 IDE 里的插件（例如 EmmyLua 的 lua_debug_*）把工具注册进这个服务后，插件自己写的中文名也带不过来，所以都记在这里。
+ * 装在 IDE 里的插件（例如 EmmyLua 的 lua_debug_*）把工具注册进这个服务后 _meta 带不过来，插件改在说明最后一行写「Title (zh): …」，
+ * 面板问过工具表就按它显示（tool-titles.ts）；还没问过、或旧版插件时用这里的兜底。
  * 写成数据（同 _meta.titles 的形状），不走 t()：英文界面直接用工具原名，和服务报的英文名一样好认。
  */
 const JETBRAINS: Record<string, string> = {
@@ -80,7 +81,8 @@ const JETBRAINS: Record<string, string> = {
   get_repositories: '查看代码仓库',
   git_status: '查看 Git 状态',
   execute_tool: '调用 IDE 工具',
-  // EmmyLua 插件注册进 IDE 服务的工具（fixcode-h/IntelliJ-EmmyLua，插件里的 titleZh）
+  // EmmyLua 插件注册进 IDE 服务的工具（fixcode-h/IntelliJ-EmmyLua）：新版插件在说明最后一行写「Title (zh): …」，
+  // 面板问过工具表后按那一行显示（tool-titles.ts 的 titleOfTool）；这里留给还没问过工具表、或旧版插件时用
   lua_code: 'Lua 代码查找',
   lua_debug_session: 'Lua 调试：会话与单步',
   lua_debug_breakpoints: 'Lua 断点',

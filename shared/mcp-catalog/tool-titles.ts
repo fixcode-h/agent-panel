@@ -24,6 +24,19 @@ export type McpToolTitles = z.infer<typeof McpToolTitles>
 
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
 
+// IDE 自带的 MCP 服务（JetBrains 系）不转发插件写的 _meta，EmmyLua 这类插件只好把中文名写在说明的最后一行：
+// 「Title (zh): Lua 调试：会话与单步」（fixcode-h/IntelliJ-EmmyLua 的约定）。有多行时取最后一个
+const ZH_TITLE_LINE = /^[ \t]*Title \(zh\):[ \t]*(.+?)[ \t]*$/gm
+
+/** 从说明里拆出「Title (zh): …」那一行：返回去掉这一行的说明和中文名；没有这一行原样返回 */
+export function splitZhTitleLine(description: string): { description: string; zh?: string } {
+  const all = [...description.matchAll(ZH_TITLE_LINE)]
+  const last = all.at(-1)
+  if (!last || last.index === undefined) return { description }
+  const rest = (description.slice(0, last.index) + description.slice(last.index + last[0].length)).replace(/\s+$/, '')
+  return { description: rest, zh: last[1] }
+}
+
 /** 从 tools/list 的一个工具里取显示名；什么都没报返回 undefined */
 export function titleOfTool(x: any): McpToolTitle | undefined {
   const title = str(x?.title) ?? str(x?.annotations?.title)
@@ -34,6 +47,9 @@ export function titleOfTool(x: any): McpToolTitle | undefined {
       const s = str(v)
       if (s) titles[k.slice(0, 2).toLowerCase()] = s
     }
+  // _meta 里没报中文名时认说明最后一行的「Title (zh): …」
+  const zh = typeof x?.description === 'string' ? splitZhTitleLine(x.description).zh : undefined
+  if (zh && !titles.zh) titles.zh = zh
   const has = Object.keys(titles).length > 0
   if (!title && !has) return undefined
   return { ...(title && { title }), ...(has && { titles }) }
