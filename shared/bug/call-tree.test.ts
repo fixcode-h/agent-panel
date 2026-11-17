@@ -148,6 +148,16 @@ test('结构核对：根因、方案必须有入口和出错点；编号要对�
     /options\.hops.*S7/,
   )
   assert.match(stackProblem(caseOf({ stackFrom: { kind: 'trace', trace: 'Q9' } }), 'cause'), /stackFrom\.trace/)
+  // 层数不设上限（用户 2026-11-17 定）：深调用链按实际写，不逼 Agent 合并到 8 层
+  const deep = Array.from({ length: 12 }, (_, i) =>
+    hop({
+      id: `S${i + 1}`,
+      parent: i ? `S${i}` : '',
+      fn: `f${i}`,
+      role: i === 0 ? 'entry' : i === 11 ? 'fault' : 'path',
+    }),
+  )
+  assert.equal(stackProblem(BugCase.parse({ stack: deep }), 'cause'), '')
 })
 
 test('位置核对：附近找函数名，偏了几行校准过去；出错点存快照；一半以上对不上拒收；修完沿用根因那一版', () => {

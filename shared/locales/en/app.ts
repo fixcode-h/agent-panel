@@ -34,7 +34,6 @@ export const EN_APP: Record<string, string> = {
   工作流: 'Workflow',
   今天: 'Today',
   昨天: 'Yesterday',
-  前天: 'Day before yesterday',
   '{n} 天前': '{n}d ago',
   'Chat 模式：直接聊天，不用选项目': 'Chat mode: chat directly, no project needed',
   'Agent 模式：在项目里执行任务和工作流': 'Agent mode: run tasks and workflows in a project',

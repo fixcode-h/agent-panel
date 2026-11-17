@@ -1,17 +1,16 @@
 /**
  * 调用栈树的核对（设计稿 2026-11-13「诊断报告：关键调用栈」第 4.3 节）：交报告时面板做，不信 Agent 写的。
- * - 结构：编号唯一、parent 存在、出错点至多一个、最多 40 跳 8 层；根因、方案这一版必须有入口和出错点；
+ * - 结构：编号唯一、parent 存在、出错点至多一个、最多 40 跳；层数不限（用户 2026-11-17 定：按实际调用路径写，不强制合并）；根因、方案这一版必须有入口和出错点；
  * - 编号：每跳挂的 L / H / C / Q、方案的 hops、假设和日志点的 hop 都要对得上；
  * - 位置：读工作区，那一行附近找得到函数名（偏了几行的校准过去），出错点存前后几行快照；
  * - 报错堆栈：stackFrom.kind = trace 时按常见格式把原文解析成帧，树上每一跳要对上一帧。
  * 只放纯函数；读文件由宿主给（BugSource）
  */
-import type { BugCase, BugHop } from './diagnosis-schema.ts'
+import type { BugCase } from './diagnosis-schema.ts'
 import type { BugSource } from './quotes.ts'
 import { hopTree } from './call-tree.ts'
 
 export const MAX_HOPS = 40
-const MAX_DEPTH = 8
 /** 行号偏了几行（临时日志挤的、Agent 记错）时往上下找这么多行 */
 const NEAR = 3
 /** 出错点快照带前后几行 */
@@ -36,7 +35,6 @@ export function stackProblem(c: BugCase, phase: string): string {
   const roots = hopTree(hops).roots
   if (withId.length && roots.length > 1)
     return `stack 只能有一个入口（parent 为空的只能一跳），现在有 ${roots.map((h) => h.id).join('、')}：别的跳写上 parent。`
-  if (depthOf(hops) > MAX_DEPTH) return `stack 超过 ${MAX_DEPTH} 层：中间只是转一手的跳合并掉，库内部的帧不写。`
   const faults = hops.filter((h) => h.role === 'fault')
   if (faults.length > 1)
     return `出错点（role: fault）只能有一个，现在有 ${faults.length} 个：其余的写成 path 或 missed。`
@@ -65,12 +63,6 @@ function refProblem(c: BugCase, hopIds: Set<string>): string {
   if (f?.kind === 'trace' && !c.quotes.some((q) => q.id === f.trace.trim()))
     return 'stackFrom.kind 是 trace：先把报错堆栈作为原文写进 quotes（kind: log 或 run），stackFrom.trace 写它的编号。'
   return ''
-}
-
-function depthOf(hops: BugHop[]): number {
-  const { roots, kids } = hopTree(hops)
-  const walk = (h: BugHop, d: number): number => Math.max(d, ...(kids.get(h) ?? []).map((k) => walk(k, d + 1)))
-  return Math.max(0, ...roots.map((r) => walk(r, 1)))
 }
 
 /**

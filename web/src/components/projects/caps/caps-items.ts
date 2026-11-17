@@ -35,6 +35,11 @@ export interface CapItem {
    * 不能拿显示名去名单里找（以前这样找，UE 插件明明在项目里打开了也显示「没打开」）
    */
   on?: boolean
+  /**
+   * 插件 MCP 实际在哪些对话里挂（插件能力目录里的 attach，例如「只在 UI 设计页的 AI 对话里」）：
+   * 有它的全局插件不再只标「全局」，标「按场景」并写出这一句（用户 2026-11-17：UI 设计的 MCP 只在 UI 设计里生效）
+   */
+  when?: string
 }
 
 const cliNames = (ids: string[]) =>
@@ -123,6 +128,8 @@ export function globalItems(input: {
 export function pluginMcpItems(
   rows: PluginRow[],
   project: { capabilities?: Partial<ProjectCapabilities> } | undefined,
+  /** 插件 id → 挂在哪些对话（能力目录的 attach）；读不到时为空，照旧只标全局 / 按项目 */
+  attachOf: (id: string) => string = () => '',
 ): CapItem[] {
   return rows
     .filter((r) => r.enabled && r.manifest.mcpServers.length)
@@ -134,8 +141,9 @@ export function pluginMcpItems(
       description: r.manifest.description,
       scope: r.manifest.activation === 'project' ? 'project' : 'global',
       where: t('面板插件'),
-      whereNote: '',
+      whereNote: attachOf(r.manifest.id),
       on: true,
+      ...(attachOf(r.manifest.id) && { when: attachOf(r.manifest.id) }),
     }))
 }
 

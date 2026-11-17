@@ -45,8 +45,16 @@ export function CapabilityItem({
       </span>
       {(where || whereNote) && (
         <span className="hidden max-w-[45%] shrink-0 flex-col items-end text-right text-caption text-subtle sm:flex">
-          {where && <span className="truncate font-mono">{where}</span>}
-          {whereNote && <span className="truncate">{whereNote}</span>}
+          {where && (
+            <span className="truncate font-mono" title={where}>
+              {where}
+            </span>
+          )}
+          {whereNote && (
+            <span className="truncate" title={whereNote}>
+              {whereNote}
+            </span>
+          )}
         </span>
       )}
       {trailing && <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>}
