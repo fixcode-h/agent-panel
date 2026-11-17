@@ -752,9 +752,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '技能与MCP-项目技能', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
     await p.getByRole('radio', { name: '项目 MCP' }).click()
     await check(p, '技能与MCP-项目MCP', [
-      '只在项目里',
-      '和各 Agent 的配置一致',
-      '和各 Agent 的配置不同',
+      '还没导入',
+      '和面板里的一致',
+      '和面板里的不同',
       '全部导入',
       '用 AI 排查整页',
     ])
