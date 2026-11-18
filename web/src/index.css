@@ -1174,6 +1174,11 @@ body,
   --c-toast-bar: 0px;
   --c-canvas-minimap: visible;
   --c-canvas-minimapW: 180px;
+  --c-sectionRail-width: 52px;
+  --c-sectionRail-radius: 10px;
+  --c-sectionRail-count: inline-flex;
+  --c-sectionRail-bg: var(--panel);
+  --c-sectionRail-panelBg: var(--panel);
   --c-countBadge-size: 18px;
   --c-countBadge-bg: var(--danger);
   --c-countBadge-ring: var(--card);
