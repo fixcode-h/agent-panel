@@ -218,6 +218,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动，Git、P4 或没有版本控�
 ## 约定
 - 目录、模块、Build.cs / Target.cs、UHT/UBT、资产和 Cook 的规则按 project-structure 和它的 UE 特化 ue-project-structure。
 - 版本控制在「识别现场与侦察」自动识别，后面的节点按识别结果操作：Git 只处理本次任务的文件；P4 修改前先 p4 edit / add，最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
+- 回放测试：能在游戏里操作到的新功能，实现节点派「游戏测试」（装了 UE 插件才有）写一份 GameTest 回放放进 regression/，验收时「测试验收」用 ue_gametest 跑 tag=regression 的回归。
 - 编译归父对话：子对话和工作流节点都不编译、不 Cook、不启动 Editor，只做不需要编译的检查（Lua 语法、静态检查、对照调用方自查）；评审之后由执行角色向父对话申请编译（独立分支里是 submit_merge 带 build，共用目录是 request_build），编译报错交回来再修。需要 Editor、PIE 或设备的验证登记为延期验证。
 ${CHILD_RULES}`,
   expose: [{ ...STRUCTURE, default: 'ue-project-structure' }, DOC_ROOT],
@@ -253,7 +254,7 @@ ${CHILD_RULES}`,
           params: { lang: '多种', tdd: false },
           retries: 1,
           instructions:
-            '按已确认的方案实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子任务并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要编译（子任务也不要），有 Lua 改动时做语法检查，记下做了哪些检查；编译由执行角色在评审之后向父对话申请。',
+            '按已确认的方案实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子任务并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要编译（子任务也不要），有 Lua 改动时做语法检查，记下做了哪些检查；编译由执行角色在评审之后向父对话申请。做的是能在游戏里操作到的玩法或界面、并且可用角色里有「游戏测试」时，用 spawn_agents 派它照 ue-gametest-authoring 技能给这个功能写一份回放测试，放进场景根的 regression/<模块>/（只写脚本和校验，编辑器没开就不跑，登记为延期验证）。',
         },
         {
           ...DOCS_NODE,
