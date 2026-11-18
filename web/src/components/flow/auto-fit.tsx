@@ -56,8 +56,9 @@ export function AutoFit() {
   useEffect(() => {
     if (!ready) return
     if (first.current) {
-      first.current = false
       last.current = smartFit(rf, dom)
+      // 画布还没有尺寸（藏在没切到的页签、折叠区里）时这次不算：等量出尺寸后再适配第一次
+      if (last.current) first.current = false
       return
     }
     // 用户动过视口就不再自动改，免得看着看着画面跳走

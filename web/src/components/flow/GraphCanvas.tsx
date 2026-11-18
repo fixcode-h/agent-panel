@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -6,9 +6,11 @@ import {
   MiniMap,
   ReactFlow,
   SelectionMode,
+  applyNodeChanges,
   useReactFlow,
   type Edge,
   type Node,
+  type NodeChange,
   type ReactFlowProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -112,6 +114,21 @@ export function GraphCanvas<N extends Node = Node, E extends Edge = Edge>({
   ...flow
 }: GraphCanvasProps<N, E>) {
   const count = flow.nodes?.length ?? 0
+  // 调用方不管节点变化（布局全由数据算的画布，比如 GameTest 流程图）时，画布自己收下量到的尺寸：
+  // xyflow 的受控模式下不回写 measured，useNodesInitialized 一直是 false，自动适配、小地图都不工作。
+  // 数据换了就换成新节点，但沿用同 id 节点量过的尺寸，免得每次改动都先藏起来再量一遍
+  const own = !flow.onNodesChange && !!flow.nodes
+  const [local, setLocal] = useState<N[]>(flow.nodes ?? [])
+  useEffect(() => {
+    if (!own) return
+    setLocal((old) => {
+      const seen = new Map(old.map((n) => [n.id, n.measured]))
+      return (flow.nodes ?? []).map((n) => (n.measured || !seen.get(n.id) ? n : { ...n, measured: seen.get(n.id) }))
+    })
+  }, [own, flow.nodes])
+  const owned = own
+    ? { nodes: local, onNodesChange: (c: NodeChange<N>[]) => setLocal((ns) => applyNodeChanges(c, ns)) }
+    : {}
   return (
     // 右键用来拖动画布，不弹浏览器菜单；按画布自己的宽度（容器查询）决定放不放小地图
     <div className={cn('@container relative min-h-0', frameClassName)} onContextMenu={(e) => e.preventDefault()}>
@@ -132,6 +149,7 @@ export function GraphCanvas<N extends Node = Node, E extends Edge = Edge>({
         proOptions={{ hideAttribution: true }}
         className={cn(!editable && 'read-only', className)}
         {...flow}
+        {...owned}
       >
         {autoFit && <AutoFit />}
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} />
