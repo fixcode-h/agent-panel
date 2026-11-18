@@ -1414,6 +1414,10 @@ body,
   --md-mermaid-hover: 1;
   --md-mermaid-grid: radial-gradient(var(--md-dot) 1px, transparent 1px);
   --md-mermaid-gradient: 1;
+  --md-mermaid-seq: steps;
+  --md-mermaid-seqColor: 1;
+  --md-mermaid-seqText: 14px;
+  --md-mermaid-seqNote: auto;
 }
 .dark {
   --md-gold: #f2c46d;

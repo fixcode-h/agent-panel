@@ -3,6 +3,8 @@ import { copyText } from '@/lib/copy-text'
 import { lineSpans } from '@/lib/workflow-doc'
 // 几套整体风格（素净 / 柔彩 / 浮卡 / 经典）的节点、连线、线上文字配色
 import '@/lib/markdown/mermaid-looks.css'
+import '@/lib/markdown/mermaid-seq.css'
+import { enhanceSequence, SEQ_STYLES, type SeqStyle } from '@/lib/markdown/mermaid-seq'
 
 /**
  * mermaid 图的外观和动效：主题变量、画好后的顶栏 / 画布 / 缩放按钮、出场动画、悬停高亮、拖动缩放、全屏。
@@ -282,7 +284,7 @@ function stagger(svg: SVGSVGElement) {
   // 时序图：按从上到下的位置一条条出现，同一高度的（线、文字、序号）一起
   const seq = [
     ...svg.querySelectorAll<SVGGraphicsElement>(
-      '.messageLine0, .messageLine1, .messageText, .sequenceNumber, rect.note, .noteText, rect[class^=activation]',
+      '.messageLine0, .messageLine1, .messageText, .sequenceNumber, rect.note, .noteText, rect[class^=activation], .sq-step, .sq-pill, .sq-note-bar',
     ),
   ]
   if (seq.length) {
@@ -393,6 +395,14 @@ export function enhanceMermaid(box: HTMLElement, opts: { replay?: boolean } = {}
   const look = css().getPropertyValue('--md-mermaid-look').trim() as (typeof LOOKS)[number]
   box.dataset.look = LOOKS.includes(look) ? look : 'soft'
   if (!opts.replay) tagSeries(svg)
+  if (/^sequence/.test(type)) {
+    const seq = css().getPropertyValue('--md-mermaid-seq').trim() as SeqStyle
+    box.dataset.seq = SEQ_STYLES.includes(seq) ? seq : 'steps'
+    const note = css().getPropertyValue('--md-mermaid-seqNote').trim()
+    if (['stripe', 'block', 'aside'].includes(note)) box.dataset.seqNote = note
+    else delete box.dataset.seqNote
+    enhanceSequence(svg, box.dataset.seq as SeqStyle, on('seqColor'))
+  }
   if (!/mindmap|pie|gantt|gitGraph/.test(type) && !opts.replay) {
     tagKinds(svg, type)
     if (on('gradient')) gradients(svg)
