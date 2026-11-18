@@ -136,6 +136,8 @@ const gridPropLabel = (prop: string): string | undefined =>
 /** 调用栈树的项 */
 const callTreePropLabel = (prop: string): string | undefined =>
   ({
+    report: t('诊断报告里的样式'),
+    chat: t('对话里的样式'),
     lines: t('连线'),
     indent: t('缩进'),
     gap: t('行距'),
@@ -198,6 +200,10 @@ const optionLabel = (v: string) =>
     tight: t('紧凑'),
     compact: t('紧凑'),
     loose: t('宽松'),
+    tree: t('树线'),
+    rail: t('时间轴'),
+    cards: t('卡片'),
+    ide: t('调试器'),
     fill: t('竖条 + 底色'),
     bar: t('只有竖条'),
     fade: t('变淡'),

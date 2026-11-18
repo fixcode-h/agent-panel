@@ -1138,6 +1138,8 @@ body,
   --c-sheet-bg: var(--bg);
   --c-popover-radius: 10px;
   --c-popover-bg: var(--pop);
+  --c-callTree-report: ide;
+  --c-callTree-chat: tree;
   --c-callTree-lines: 1.5px;
   --c-callTree-indent: 20px;
   --c-callTree-gap: 3px;

@@ -45,15 +45,20 @@ function locHtml(n: CallNode): string {
   return `<span class="ct-loc">${fileRefHtml({ path: n.file, line: n.line }, { parent })}</span>`
 }
 
-function codeHtml(n: CallNode): string {
-  if (!n.code.length) return ''
-  const rows = n.code
+function codeHtml(n: CallNode, peek: boolean): string {
+  const code = n.code.filter((c) => !!c.peek === peek)
+  if (!code.length) return ''
+  const rows = code
     .map(
       (c) =>
         `<div class="ct-code-row${c.mark ? ' ct-code-mark' : ''}"><span class="ct-code-ln">${c.line ?? ''}</span><span>${esc(c.text) || ' '}</span></div>`,
     )
     .join('')
-  return `<div class="ct-code">${rows}</div>`
+  // 别的跳的代码收起成一个小标签，点开在这一跳下面展开（设计稿 Bug 模式子对话体验 N6）。
+  // 不做成悬停浮层：树外框横向能滚动，浮层会被裁掉；悬停时撑开又会让下面的行跳来跳去
+  return peek
+    ? `<details class="ct-peek"><summary>${esc(t('代码'))} <small>${esc(t('第 {n} 行', { n: code.find((c) => c.mark)?.line ?? code[0].line ?? '' }))}</small></summary><div class="ct-code">${rows}</div></details>`
+    : `<div class="ct-code">${rows}</div>`
 }
 
 function metaHtml(n: CallNode): string {
@@ -86,7 +91,7 @@ function nodeHtml(n: CallNode): string {
     (n.role === 'fault' ? `<span class="ct-chip ct-chip-fault">${esc(t('出错点'))}</span>` : '') +
     (n.role === 'missed' ? `<span class="ct-chip">${esc(t('没走到'))}</span>` : '') +
     (n.note ? `<span class="ct-note">${esc(n.note)}</span>` : '') +
-    `${locHtml(n)}</div>${metaHtml(n)}${codeHtml(n)}</div></div>`
+    `${locHtml(n)}</div>${metaHtml(n)}${codeHtml(n, false)}${codeHtml(n, true)}</div></div>`
   return `<li class="ct-li ${ROLE_CLS[n.role]}-li">${edge}${row}${listHtml(n.children)}</li>`
 }
 

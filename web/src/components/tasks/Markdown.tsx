@@ -15,6 +15,7 @@ import { useStructureViews } from './structure-views'
 import { useHtmlCards } from './html-card-layer'
 import { htmlCardSlots } from '@/lib/markdown/html-cards'
 import '@/components/ui/call-tree.css'
+import '@/components/ui/call-tree-looks.css'
 import '@/components/ui/structure-views.css'
 import {
   enhanceMermaid,
