@@ -10,6 +10,7 @@ import {
   parseModelCatalog,
   type ModelCatalogEntry,
 } from '../../shared/models/catalog.ts'
+import { catalogKey } from '../../shared/models/discover.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
 
 export const MODEL_CONFIG_DIR = path.join(DATA_DIR, 'config')
@@ -30,9 +31,25 @@ export async function mergedModelCatalog(): Promise<ModelCatalogEntry[]> {
 
 /** 写入一条（同厂商同 id 的替换），返回写入后的全部补充记录 */
 export async function saveModelEntry(entry: ModelCatalogEntry): Promise<ModelCatalogEntry[]> {
+  return saveModelEntries([entry])
+}
+
+/** 一次写入几条（联网检查后勾选加入的），同厂商同 id 的替换 */
+export async function saveModelEntries(entries: ModelCatalogEntry[]): Promise<ModelCatalogEntry[]> {
+  const keys = new Set(entries.map(catalogKey))
   const list = await userModelCatalog()
-  const key = (m: ModelCatalogEntry) => `${m.vendor}:${m.id.toLowerCase()}`
-  const next = [...list.filter((m) => key(m) !== key(entry)), entry]
-  await writeJsonAtomic(MODEL_CONFIG_FILE, { updated: new Date().toISOString().slice(0, 10), models: next })
-  return next
+  return writeUserCatalog([...list.filter((m) => !keys.has(catalogKey(m))), ...entries])
+}
+
+/** 删掉一条补充记录（同名的内置记录重新生效）；没有这条时原样返回 */
+export async function removeModelEntry(vendor: string, id: string): Promise<ModelCatalogEntry[]> {
+  const key = catalogKey({ vendor, id })
+  const list = await userModelCatalog()
+  if (!list.some((m) => catalogKey(m) === key)) return list
+  return writeUserCatalog(list.filter((m) => catalogKey(m) !== key))
+}
+
+async function writeUserCatalog(models: ModelCatalogEntry[]) {
+  await writeJsonAtomic(MODEL_CONFIG_FILE, { updated: new Date().toISOString().slice(0, 10), models })
+  return models
 }

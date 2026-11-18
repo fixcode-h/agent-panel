@@ -69,7 +69,10 @@ export const ModelCatalogFile = z.object({
 })
 export type ModelCatalogFile = z.infer<typeof ModelCatalogFile>
 
-export const BUILTIN_MODEL_CATALOG: ModelCatalogEntry[] = ModelCatalogFile.parse(raw).models
+const BUILTIN_FILE = ModelCatalogFile.parse(raw)
+export const BUILTIN_MODEL_CATALOG: ModelCatalogEntry[] = BUILTIN_FILE.models
+/** 内置目录最后一次按官方文档核对的日期，设置里显示 */
+export const BUILTIN_CATALOG_UPDATED = BUILTIN_FILE.updated
 
 /** 已经不再支持的协议：旧版本写过 Gemini 协议，读用户目录之前要清掉 */
 const REMOVED_PROTOCOLS = new Set(['gemini']) // 模块状态：常量，加载后不改
@@ -141,6 +144,8 @@ const VENDORS: Record<string, string> = {
   anthropic: 'anthropic',
   claude: 'anthropic',
   openai: 'openai',
+  google: 'google',
+  gemini: 'google',
   gpt: 'openai',
   codex: 'openai',
   deepseek: 'deepseek',
@@ -158,6 +163,8 @@ const VENDORS: Record<string, string> = {
   dashscope: 'alibaba',
   tencent: 'tencent',
   hunyuan: 'tencent',
+  // 混元第四代起模型名是 hy4、hy4-flash
+  hy: 'tencent',
   xiaomi: 'xiaomi',
   mimo: 'xiaomi',
   bytedance: 'bytedance',
@@ -547,4 +554,8 @@ export interface ModelCatalogInfo {
   file: string
   dir: string
   aiLookup: boolean
+  /** 内置目录的核对日期 */
+  builtinUpdated: string
+  /** 补充目录里的记录（catalogKey：厂商:id），设置里标「补充」、可以删 */
+  userKeys: string[]
 }

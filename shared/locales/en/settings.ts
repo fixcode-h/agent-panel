@@ -1836,9 +1836,6 @@ export const EN_SETTINGS: Record<string, string> = {
   角色没指定模型时用: 'Used when a role sets no model',
   'AI 补全模型信息': 'Fill in model info with AI',
   目录里没有的模型联网查: 'Looks up models missing from the catalog online',
-  '已收录 {n} 个模型': '{n} models listed',
-  'AI 补全的模型信息写在这个文件里，和内置目录合并使用。':
-    'Model info filled in by AI is written to this file and merged with the built-in catalog.',
   '生图 Agent': 'Image agent',
   'UI 设计生成图片时用': 'Used to generate images in UI design',
   生图模型: 'Image model',

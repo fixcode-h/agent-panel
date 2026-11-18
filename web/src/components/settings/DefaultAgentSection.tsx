@@ -11,6 +11,7 @@ import { Group, ReadValue, Row } from '@/components/settings/parts'
 import { RestoreSettings } from '@/components/settings/RestoreSettings'
 import { CustomClis } from '@/components/settings/CustomClis'
 import { AssistModel, TierTable, defaultEffortText, defaultModelText } from '@/components/settings/CliSection'
+import { ModelCatalogBrowser, ModelDiscover } from '@/components/settings/ModelCatalogList'
 import type { CliDrafts } from '@/components/settings/use-cli-drafts'
 
 /**
@@ -140,9 +141,32 @@ export function DefaultAgentSection({
           />
         </Row>
         <Row
+          title={t('全部模型')}
+          desc={t('共 {n} 个 · 内置目录核对于 {date}', {
+            n: catalog?.entries.length ?? 0,
+            date: catalog?.builtinUpdated || '-',
+          })}
+          hint={t(
+            '内置目录随面板发布，按各厂商官方文档核对；标「补充」的是 AI 补全或联网检查后加入的，写在补充目录里，同名时覆盖内置的。三档模型的上下文、最大输出和思考强度按这里自动填。',
+          )}
+          stack
+        >
+          <ModelCatalogBrowser catalog={catalog} />
+        </Row>
+        <Row
+          title={t('检查新模型')}
+          desc={t('联网查各厂商有没有新模型')}
+          hint={t(
+            '点了才联网：用「AI 辅助」里设置的 Agent 查各厂商的官方文档，列出目录里还没有的模型，勾选后写进补充目录。不会自动检查，也不会自动加入。',
+          )}
+          stack
+        >
+          <ModelDiscover demo={demo} />
+        </Row>
+        <Row
           title={t('补充目录')}
-          desc={t('已收录 {n} 个模型', { n: catalog?.entries.length ?? 0 })}
-          hint={t('AI 补全的模型信息写在这个文件里，和内置目录合并使用。')}
+          desc={t('补充了 {n} 个模型', { n: catalog?.userKeys.length ?? 0 })}
+          hint={t('AI 补全和联网检查加入的模型信息写在这个文件里，和内置目录合并使用。')}
         >
           <ReadValue mono>{catalog?.file || '~/.agent-panel/config/models.json'}</ReadValue>
         </Row>

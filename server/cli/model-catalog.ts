@@ -3,16 +3,15 @@
  * - GET  /model-catalog            内置目录 + 用户补充目录，设置里显示补充文件的位置
  * - POST /model-catalog/lookup     模型目录里没有时，让 AI 联网查官方数字，写进 config/models.json
  * - GET  /model-catalog/lookup/:id 查询进度
+ * 联网检查新模型、勾选加入、删补充记录在 ./model-discover.ts
  *
  * AI 查询按设置里的「AI 创建」CLI 和模型跑，只给只读权限，不执行用户的额外参数。
  */
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
+  BUILTIN_CATALOG_UPDATED,
   DEFAULT_MODEL_CONTEXT,
   DEFAULT_MODEL_MAX_OUTPUT,
   MODEL_TIER_NAMES,
@@ -23,17 +22,21 @@ import {
 } from '../../shared/models/catalog.ts'
 import { API_PROTOCOLS } from '../../shared/accounts.ts'
 import { getCli } from '../../shared/clis.ts'
-import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { extractJson } from '../../shared/assist.ts'
-import { childEnv } from '../exec/process.ts'
-import { invokeCli } from '../exec/invoke.ts'
 import { getSettings } from '../settings.ts'
-import { AUTO_ANSWER } from '../asks.ts'
-import { mergedModelCatalog, MODEL_CONFIG_DIR, MODEL_CONFIG_FILE, saveModelEntry } from './model-catalog-store.ts'
+import { runCatalogAgent } from './model-agent-run.ts'
+import {
+  mergedModelCatalog,
+  MODEL_CONFIG_DIR,
+  MODEL_CONFIG_FILE,
+  saveModelEntry,
+  userModelCatalog,
+} from './model-catalog-store.ts'
+import { catalogKey } from '../../shared/models/discover.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 
-const LOOKUP_TIMEOUT = 4 * 60_000
+const LOOKUP_MINUTES = 4
 
 const LookupInput = z.object({
   model: z.string().trim().min(1).max(300),
@@ -43,12 +46,6 @@ const LookupInput = z.object({
 })
 
 type Job = ModelLookupJob & { abort: AbortController; at: number; cli: string }
-
-const lookupCli = (settings: Awaited<ReturnType<typeof getSettings>>, own?: string) => {
-  if (own && getCli(own)) return own
-  if (settings.assist.cli && getCli(settings.assist.cli)) return settings.assist.cli
-  return defaultCli(settings)
-}
 
 function promptFor(input: { model: string; protocol?: string }) {
   return `你在维护本机 Agent 面板的模型目录。请联网查 ${input.model} 的官方模型信息。
@@ -185,64 +182,9 @@ export function modelCatalogApi() {
   }, 10 * 60_000).unref()
 
   async function run(job: Job) {
-    const settings = await getSettings()
-    const cli = lookupCli(settings, job.cli)
-    const def = getCli(cli)
-    if (!def) return fail(job, t('没有可用的 Agent，请先在设置里安装并启用'))
-    const cs = cliSettings(settings, cli)
-    if (!cs.enabled) return fail(job, t('{cli} 在设置里被停用了', { cli: def.name }))
-    const picked = agentRun({ cli, model: settings.assist.model, effort: '' }, settings)
-    // 查询只需要读网页，用一个固定的临时工作目录，不留下每次查询的目录
-    const cwd = path.join(tmpdir(), 'agent-panel-model-lookup')
-    await mkdir(cwd, { recursive: true })
-    let errors = ''
-    const r = await invokeCli({
-      cliId: cli,
-      command: cs.command,
-      build: {
-        model: picked.model,
-        effort: picked.effort,
-        // 只读：AI 只需要联网查资料，不在用户目录里改东西
-        permission: def.readOnly || cs.permission,
-        extraArgs: [],
-        maxTurns: cs.maxTurns || 60,
-      },
-      cwd,
-      env: childEnv(cs.env),
-      input: promptFor(job),
-      signal: job.abort.signal,
-      timeoutMs: LOOKUP_TIMEOUT,
-      askUser: () => false,
-      // 查询只读资料：审批请求一律不批准，别让进程停在等用户确认上
-      onAsk: (ev) => ev.reply(AUTO_ANSWER),
-      onEvent: (ev) => {
-        if (ev.type === 'text_delta') job.text = (job.text + ev.text).slice(-8000)
-        else if (ev.type === 'text')
-          job.text = (job.text ? `${job.text.trimEnd()}\n\n${ev.text}` : ev.text).slice(-8000)
-        else if (ev.type === 'error') errors = ev.message
-      },
-    }).catch((e) => {
-      fail(job, (e as Error).message)
-      return undefined
-    })
-    if (!r || job.status === 'failed') return
-    if (r.killed === 'stopped') return fail(job, t('已停止'))
-    if (r.killed === 'timeout') return fail(job, t('超过 {n} 分钟没有完成，已停止', { n: 4 }))
-    if (r.spawnError)
-      return fail(
-        job,
-        t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
-          error: r.spawnError,
-          cli: def.name,
-          hint: def.installHint,
-        }),
-      )
-    if (r.code !== 0)
-      return fail(
-        job,
-        [errors, r.stderr.trim().split('\n').slice(-4).join('\n')].filter(Boolean).join('\n') ||
-          t('{cli} 退出码 {code}', { cli: def.name, code: String(r.code) }),
-      )
+    const error = await runCatalogAgent(job, promptFor(job), LOOKUP_MINUTES)
+    if (error) return fail(job, error)
+    if (job.status === 'failed') return
     const ex = extractJson(job.text)
     if (!ex.json) return fail(job, ex.error || t('回复里没有 JSON'))
     try {
@@ -278,6 +220,8 @@ export function modelCatalogApi() {
           file: MODEL_CONFIG_FILE,
           dir: MODEL_CONFIG_DIR,
           aiLookup: settings.modelCatalog.aiLookup,
+          builtinUpdated: BUILTIN_CATALOG_UPDATED,
+          userKeys: (await userModelCatalog()).map(catalogKey),
         } satisfies ModelCatalogInfo)
       })
       // 给目录里的一个模型填单价（美元 / 百万 token，shared/models/price.ts）：CLI 不报费用时按它折算。

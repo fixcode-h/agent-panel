@@ -3,9 +3,11 @@
 三档模型的上下文窗口、最大输出和思考强度不再按 CLI 写死在配置里，而是按模型名查模型目录。
 目录分两份，合并后使用：
 
-- 内置目录：[`shared/models/catalog.json`](../shared/models/catalog.json)，跟着面板一起发布
+- 内置目录：[`shared/models/catalog.json`](../shared/models/catalog.json)，跟着面板一起发布；`updated` 是最后一次按各厂商官方文档核对的日期，每条的 `source` 写核对用的文档地址
 - 用户补充目录：数据目录的 `config/models.json`（默认 `~/.agent-panel/config/models.json`），
-  设置 → CLI → 模型目录里点「AI 补全」时由 AI 查完写进来；同厂商同 `id` 的记录覆盖内置的
+  「AI 补全」单个模型、「联网检查」后勾选加入的模型写在这里；同厂商同 `id` 的记录覆盖内置的
+
+设置 → 默认 Agent → 模型目录里能看到合并后的全部模型（按厂商分组、可搜索，补充的标「补充」、可以删）。
 
 ## 一条记录
 
@@ -70,6 +72,16 @@ deepseek-v4-flash-fast
 
 匹配分数太低（例如只是名字里碰巧有某个词）时当作没找到。**没找到的模型统一按 1M 上下文、128K 最大输出估算**，
 思考强度交给 CLI 自己决定。
+
+## 联网检查新模型
+
+设置 → 默认 Agent → 模型目录 →「检查新模型」：
+
+- 只有点「联网检查」时才联网，不自动检查。按「AI 辅助」里设置的 Agent 跑一次只读查询（`server/cli/model-discover.ts`），
+  提示词里带上每家厂商已有的模型，让它查官方文档，只列能通过 API 调用、目录里还没有的对话 / 编程模型。
+- 查到的先列成候选（`shared/models/discover.ts` 的 `newModelCandidates` 去掉只差日期、preview 后缀或是别名的），
+  默认全勾，用户核对后点「加入选中的 n 个」才写进补充目录。
+- 更新内置目录时可以照这个流程查一遍，把结果核对后写进 `catalog.json`，再改 `updated`。
 
 ## 补充目录和 AI 补全
 

@@ -34,6 +34,7 @@ import { envApi } from '../env-api.ts'
 import { modelsApi } from '../models.ts'
 import { packagesApi } from '../cli/packages.ts'
 import { modelCatalogApi } from '../cli/model-catalog.ts'
+import { modelDiscoverApi } from '../cli/model-discover.ts'
 import { itemTrashRoutes } from '../item-trash.ts'
 import type { tasksApi } from '../tasks/index.ts'
 import { summaryApi } from '../summary/index.ts'
@@ -119,6 +120,8 @@ export function toolModules({ projects, agents }: Pick<ModuleDeps, 'projects' | 
     { prefix: '/clis', app: modelsApi() },
     { prefix: '/clis', app: packagesApi({ projectPath }) },
     { prefix: '/model-catalog', app: modelCatalogApi() },
+    // 联网检查新模型、勾选加入、删补充记录（只在用户点按钮时联网）
+    { prefix: '/model-catalog', app: modelDiscoverApi() },
   ]
 }
 
