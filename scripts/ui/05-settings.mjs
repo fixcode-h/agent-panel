@@ -223,6 +223,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
   await p.getByRole('button', { name: '控件样式', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
+  // 调用栈样例：报告里、对话里各一份，各按自己的整体样式画（用户 2026-11-18 定：报告默认调试器，对话默认树线）
+  {
+    const looks = await p.evaluate(() => {
+      const frame = (el) => (el ? getComputedStyle(el, '::before').content : '')
+      const report = document.querySelector('[data-ct-scope="report"] .md-calltree .ct-row')
+      const chat = [...document.querySelectorAll('.md-calltree .ct-row')].find((r) => !r.closest('[data-ct-scope]'))
+      return { attr: document.documentElement.dataset.ctReport, report: frame(report), chat: frame(chat) }
+    })
+    if (looks.attr !== 'ide') errors.push(`设置-组件-调用栈：报告里的样式默认应该是调试器，实际 ${looks.attr}`)
+    if (!/counter/.test(looks.report)) errors.push('设置-组件-调用栈：报告里那份没有按调试器样式画帧号')
+    if (/counter/.test(looks.chat)) errors.push('设置-组件-调用栈：对话里那份默认应该是树线，不画帧号')
+  }
   // 包装预览的样例：识别出的内容能勾选，按配方的写明配方文件
   await check(p, '设置-组件-插件包装', ['WrapPreviewBody', '识别出的内容', '按配方 wraps/tt-a1i__archify.json'])
   if ((await p.locator('[data-wrap-candidate]').count()) !== 3)
