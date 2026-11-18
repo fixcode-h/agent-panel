@@ -54,6 +54,7 @@ export const compLabel = (c: CompName) =>
     changesCard: t('改动卡片'),
     styleRef: t('风格参考图'),
     toast: t('提示'),
+    scrollbar: t('滚动条'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -86,6 +87,16 @@ const propLabel = (c: CompName, prop: string) => {
     return ({ position: t('位置'), duration: t('停留时长'), bar: t('左侧色条宽度') } as Record<string, string>)[prop]
   if (c === 'modal' && prop === 'resizeEdge') return t('拖边缩放时的边线颜色')
   if (c === 'modal' && prop === 'resizeLine') return t('拖边缩放时的边线粗细')
+  if (c === 'scrollbar')
+    return (
+      {
+        size: t('轨道宽度'),
+        pad: t('滑块两边留白'),
+        thumb: t('滑块颜色'),
+        hover: t('悬停时颜色'),
+        idle: t('平时'),
+      } as Record<string, string>
+    )[prop]
   if (c === 'capRow' && prop !== 'radius')
     return ({ pad: t('上下留白'), when: t('显示「该用 / 别用」'), name: t('显示原名') } as Record<string, string>)[prop]
   return (
@@ -225,6 +236,9 @@ const optionLabel = (v: string) =>
     '4s': t('4 秒'),
     '6s': t('6 秒'),
     '8s': t('8 秒'),
+    theme: t('跟随配色'),
+    strong: t('深一些'),
+    hover: t('鼠标进来才显示'),
     round: t('这一轮'),
     conv: t('整个对话'),
   })[v] ?? v

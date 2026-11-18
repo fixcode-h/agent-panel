@@ -65,13 +65,9 @@ export function ConversationShell({
           }}
           // 界面检查按它找消息区（消息视图是 messages，流程图视图是 fill），不依赖具体的类名组合
           data-conversation-scroll={fill ? 'fill' : 'messages'}
-          // 消息流：细滚动条（悬停才显出），见 index.css 的 thin-scroll。顶部不再渐隐：吸顶的回复头是毛玻璃通栏，
+          // 消息流：滚动条和全站一样（index.css 的 ::-webkit-scrollbar）。顶部不再渐隐：吸顶的回复头是毛玻璃通栏，
           // 渐隐会把它的上沿也淡掉；overflow-x 隐藏也是给通栏裁边用的（见 frost-bar）
-          className={
-            fill
-              ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
-              : 'thin-scroll flex-1 overflow-x-hidden overflow-y-auto'
-          }
+          className={fill ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-x-hidden overflow-y-auto'}
           style={rail ? { paddingRight: rail } : undefined}
         >
           {fill ?? (

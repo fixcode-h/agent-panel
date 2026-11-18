@@ -494,7 +494,7 @@ function ChangesList({
   const grouped = outside.length > 0
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {!changes.length && !outside.length ? (
           <p className="mx-2 my-3 rounded-xl border border-dashed border-line-strong p-6 text-center text-body text-subtle">
             {scoped ? t('这个节点没有改动文件。') : t('还没有改动文件。')}

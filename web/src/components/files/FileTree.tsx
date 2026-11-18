@@ -616,7 +616,7 @@ export function FileExplorer({
         )}
       </div>
 
-      <div className={cn('min-h-0 flex-1 overflow-auto', compact ? 'thin-scroll p-1.5' : 'px-2 py-2 md:px-3')}>
+      <div className={cn('min-h-0 flex-1 overflow-auto', compact ? 'p-1.5' : 'px-2 py-2 md:px-3')}>
         {/* 空白处右键：作用于整棵树，不碰具体文件 */}
         <ContextMenu>
           <ContextMenuTrigger asChild>

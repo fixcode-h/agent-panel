@@ -14,6 +14,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { Context } from 'hono'
 import { t } from '../../shared/i18n.ts'
+import { withPanelScrollbar } from '../../shared/web-view/scrollbar.ts'
 
 export const SANDBOX_PREFIX = '/sandbox/f/'
 
@@ -105,8 +106,11 @@ export async function serveSandbox(c: Context) {
   if (!info?.isFile()) return c.text(t('文件不存在'), 404)
   if (info.size > MAX_FILE) return c.text(t('文件太大，超过 {mb} MB', { mb: MAX_FILE / 1024 / 1024 }), 413)
   const buf = await readFile(full)
-  return c.body(new Uint8Array(buf), 200, {
-    'Content-Type': sandboxType(full),
+  const type = sandboxType(full)
+  // HTML 页面插一段全站同款的滚动条样式（iframe 里管不到，见 shared/web-view/scrollbar.ts）
+  const body = type.startsWith('text/html') ? new TextEncoder().encode(withPanelScrollbar(buf.toString('utf8'))) : buf
+  return c.body(new Uint8Array(body), 200, {
+    'Content-Type': type,
     // 改了文件刷新就要看到新的
     'Cache-Control': 'no-store',
     'Referrer-Policy': 'no-referrer',

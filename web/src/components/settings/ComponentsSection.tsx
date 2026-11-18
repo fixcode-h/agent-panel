@@ -86,6 +86,7 @@ import { ReportCompareSpecimen } from './ReportCompareSpecimen'
 import { ChatQuotesSpecimen } from './ChatQuotesSpecimen'
 import { WebFrameSpecimen } from './WebFrameSpecimen'
 import { ToastSpecimen } from './ToastSpecimen'
+import { ScrollbarSpecimen } from './ScrollbarSpecimen'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
@@ -636,6 +637,11 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           <EmptyPanel size="md" className="w-full max-w-md">
             {t('还没有计划')}
           </EmptyPanel>
+        </Specimen>
+      </Group>
+      <Group title={t('滚动条')}>
+        <Specimen name="Scrollbar" tune={['scrollbar']}>
+          <ScrollbarSpecimen />
         </Specimen>
       </Group>
       <OverlaySpecimens />
