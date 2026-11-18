@@ -4,10 +4,9 @@
  * 从 Messages.tsx 拆出来：那边只留单条消息、过程行和运行区
  */
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { cn } from '@/lib/utils'
+import { FoldBar } from '@/components/ui/fold-bar'
 import { useData } from '@/lib/data'
 import { useAiLook } from '@/lib/ai-look'
 import { useAgentView } from '@/lib/agent-view'
@@ -36,7 +35,9 @@ import { TurnOutputsCard } from './TurnOutputsCard'
 import { useEffortOf } from './ChatModelPicker'
 import { DispatchSlot, InlineRoutes, useDispatchOpen, useRouteAnchors } from './route-context'
 
-/** 折叠行：折起来的那部分做了什么、几次失败；点了展开收起 */
+/**
+ * 折叠行：折起来的那部分做了什么、几次失败；整行点都能展开收起（共用的 FoldBar，外观在设置 → 组件 →「折叠条」调）
+ */
 function FoldLine({
   part,
   open,
@@ -56,19 +57,18 @@ function FoldLine({
   sub?: boolean
 }) {
   return (
-    <button
+    <FoldBar
       data-fold-msgs={ids}
       data-fold={sub ? 'coord' : 'main'}
-      onClick={onToggle}
-      aria-expanded={open}
+      open={open}
+      onToggle={onToggle}
       title={open ? t('收起过程') : t('展开过程')}
-      className="flex w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-xs text-subtle hover:text-muted"
+      hint={open ? t('收起过程') : t('展开过程')}
     >
-      <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
       <span className="truncate">{part.parts.join(' · ')}</span>
       {part.failed > 0 && <span className="shrink-0 text-danger">{t('{n} 次失败', { n: part.failed })}</span>}
       {stopped && <span className="shrink-0">· {t('已停止')}</span>}
-    </button>
+    </FoldBar>
   )
 }
 
