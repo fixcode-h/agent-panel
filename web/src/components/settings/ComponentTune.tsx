@@ -84,6 +84,8 @@ const propLabel = (c: CompName, prop: string) => {
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')
     return ({ position: t('位置'), duration: t('停留时长'), bar: t('左侧色条宽度') } as Record<string, string>)[prop]
+  if (c === 'modal' && prop === 'resizeEdge') return t('拖边缩放时的边线颜色')
+  if (c === 'modal' && prop === 'resizeLine') return t('拖边缩放时的边线粗细')
   if (c === 'capRow' && prop !== 'radius')
     return ({ pad: t('上下留白'), when: t('显示「该用 / 别用」'), name: t('显示原名') } as Record<string, string>)[prop]
   return (
@@ -165,6 +167,7 @@ const optionLabel = (v: string) =>
     default: t('默认浅底'),
     warning: t('警告色'),
     primary: t('主色'),
+    emphasis: t('强调色'),
     success: t('成功色'),
     dashed: t('虚线'),
     solid: t('实线'),

@@ -116,7 +116,18 @@ export const COMP_SPEC = {
     search: pick('from10', { always: '1', from6: '6', from10: '10', from20: '20', never: '0' }),
   },
   // 弹窗照 Claude Code 网页版的方案弹窗：圆角 8、深色下比页面亮一档的窗口色（--window）
-  modal: { radius: px(14, 0, 28), bg: color('window', { window: 'var(--window)', ...BG }), border: BORDER },
+  /** resizeEdge / resizeLine：拖边缘缩放时点亮那一边边线的颜色和粗细（web/src/components/ui/modal-resize.tsx） */
+  modal: {
+    radius: px(14, 0, 28),
+    bg: color('window', { window: 'var(--window)', ...BG }),
+    border: BORDER,
+    resizeEdge: color('emphasis', {
+      emphasis: 'var(--accent)',
+      primary: 'var(--primary)',
+      gray: tint(40),
+    }),
+    resizeLine: px(2, 1, 4),
+  },
   sheet: { radius: px(14, 0, 24), bg: color('bg') },
   popover: { radius: px(10, 0, 24), bg: color('pop') },
   /** 数据表格（文件弹窗里的 xlsx / CSV，web/src/components/files/SheetTable.tsx）：表头每种行一个颜色 */

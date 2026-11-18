@@ -1134,6 +1134,8 @@ body,
   --c-modal-radius: 14px;
   --c-modal-bg: var(--window);
   --c-modal-border: 1px;
+  --c-modal-resizeEdge: var(--accent);
+  --c-modal-resizeLine: 2px;
   --c-sheet-radius: 14px;
   --c-sheet-bg: var(--bg);
   --c-popover-radius: 10px;

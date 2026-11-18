@@ -64,6 +64,40 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if ((await settings().locator('[data-modal-resize]').count()) !== 8)
     errors.push('弹窗调整大小：设置弹窗应该有 8 个拖拽手柄（4 边 + 4 角）')
 
+  // 悬停只点亮鼠标所在那一边的边线（含它的圆角），角落点亮相邻两边；手柄本身不铺底色
+  {
+    const litSides = () =>
+      settings()
+        .locator('[data-modal-edge][data-lit]')
+        .evaluateAll((els) =>
+          els
+            .map((el) => el.getAttribute('data-modal-edge'))
+            .sort()
+            .join(''),
+        )
+    const hoverHandle = async (key) => {
+      const h = await settings().locator(`[data-modal-resize="${key}"]`).boundingBox()
+      if (!h) return errors.push(`弹窗调整大小：${key} 手柄看不到`)
+      await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2)
+      await settle(p)
+    }
+    await hoverHandle('e')
+    if ((await litSides()) !== 'e') errors.push(`弹窗调整大小：悬停右边应只亮右边，实际亮了「${await litSides()}」`)
+    const handleBg = await settings()
+      .locator('[data-modal-resize="e"]')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+    if (!/rgba\(0, 0, 0, 0\)|transparent/.test(handleBg))
+      errors.push(`弹窗调整大小：手柄悬停时不该铺底色（${handleBg}）`)
+    await check(p, '弹窗调整大小-悬停右边只亮右边')
+    await hoverHandle('nw')
+    if ((await litSides()) !== 'nw')
+      errors.push(`弹窗调整大小：悬停左上角应亮上边和左边，实际亮了「${await litSides()}」`)
+    await check(p, '弹窗调整大小-悬停角落亮相邻两边')
+    await p.mouse.move(5, 5)
+    await settle(p)
+    if ((await litSides()) !== '') errors.push('弹窗调整大小：鼠标移开后边线应熄灭')
+  }
+
   const defaultBox = await boxOf(settings())
   await dragHandle(settings(), 'e', 40, 0)
   const wider = await boxOf(settings())

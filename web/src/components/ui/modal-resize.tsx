@@ -211,11 +211,31 @@ interface HandleSpec {
   label: string
 }
 
+type Side = 'n' | 's' | 'w' | 'e'
+const SIDES: Side[] = ['n', 's', 'w', 'e']
+
 /**
- * 弹窗四边 + 四角的手柄：贴在外壳内侧，透明，悬停时亮一条浅色；
+ * 每条边的高亮：整圈描边（圆角和弹窗内缘一致），再用 clip-path 只留这一边的一条带子。
+ * 带子宽度取内圆角半径（至少一条线粗），正好装下这条直边和两头的圆角弧段，又不碰到相邻直边；
+ * 角落拖动时相邻两条边一起亮，角上的弧段自然连成一整段。
+ */
+const SIDE_CLIP: Record<Side, string> = {
+  n: 'inset(0 0 calc(100% - var(--modal-edge-band)) 0)',
+  s: 'inset(calc(100% - var(--modal-edge-band)) 0 0 0)',
+  w: 'inset(0 calc(100% - var(--modal-edge-band)) 0 0)',
+  e: 'inset(0 0 0 calc(100% - var(--modal-edge-band)))',
+}
+
+/**
+ * 弹窗四边 + 四角的手柄：贴在外壳内侧、本身透明；
+ * 悬停或拖动时只把鼠标所在那一边的边线（连同属于它的圆角）点亮，角落点亮相邻两边。
+ * 颜色、粗细读 --c-modal-resizeEdge / --c-modal-resizeLine，在设置 → 组件 → 弹窗里调。
  * 角落盖在边上（z-30），拖到角优先按等比缩放处理。
  */
 export function ModalResizeHandles({ resize }: { resize: ModalResizeState }) {
+  const [hover, setHover] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const lit = dragging ?? hover
   const specs: HandleSpec[] = [
     {
       key: 'n',
@@ -286,8 +306,29 @@ export function ModalResizeHandles({ resize }: { resize: ModalResizeState }) {
       label: t('拖动调整大小'),
     },
   ]
+  const finish = (e: ReactPointerEvent<HTMLDivElement>) => {
+    setDragging(null)
+    resize.end(e)
+  }
   return (
     <>
+      {SIDES.map((side) => (
+        <div
+          key={side}
+          aria-hidden
+          data-modal-edge={side}
+          data-lit={lit?.includes(side) ? '' : undefined}
+          // 外壳 overflow-hidden 会裁掉画在边框上的东西，所以贴着内缘画，圆角取内缘半径
+          className="pointer-events-none absolute inset-0 z-20 rounded-[max(0px,calc(var(--c-modal-radius)-var(--c-modal-border)))] border-(length:--c-modal-resizeLine) border-(color:--c-modal-resizeEdge) opacity-0 transition-opacity duration-(--dur-base) data-lit:opacity-100"
+          style={
+            {
+              '--modal-edge-band':
+                'max(var(--c-modal-resizeLine), calc(var(--c-modal-radius) - var(--c-modal-border)))',
+              clipPath: SIDE_CLIP[side],
+            } as CSSProperties
+          }
+        />
+      ))}
       {specs.map((s) => (
         <div
           key={s.key}
@@ -296,13 +337,19 @@ export function ModalResizeHandles({ resize }: { resize: ModalResizeState }) {
           aria-orientation={s.orientation}
           aria-label={s.label}
           tabIndex={-1}
-          className={cn('absolute z-20 touch-none transition-colors hover:bg-accent/30', s.className)}
-          onPointerDown={resize.begin(s.dirX, s.dirY, s.cursor)}
+          className={cn('absolute z-20 touch-none', s.className)}
+          onPointerEnter={() => setHover(s.key)}
+          onPointerLeave={() => setHover((h) => (h === s.key ? null : h))}
+          onPointerDown={(e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return
+            if (resize.contentRef.current) setDragging(s.key)
+            resize.begin(s.dirX, s.dirY, s.cursor)(e)
+          }}
           onPointerMove={resize.move}
-          onPointerUp={resize.end}
-          onPointerCancel={resize.end}
+          onPointerUp={finish}
+          onPointerCancel={finish}
           // 没被卸载但丢了指针捕获（浏览器打断、捕获被别处抢走）时也收尾
-          onLostPointerCapture={resize.end}
+          onLostPointerCapture={finish}
         />
       ))}
     </>
