@@ -70,7 +70,8 @@ test('厂商初筛不拿别家凑数；opus / sonnet 这类别名按类型匹配
 
 test('太老的模型不套新模型的数值', () => {
   assert.equal(matchModel('claude-haiku-3-5'), undefined)
-  assert.equal(matchModel('claude-haiku-4-5'), undefined)
+  // Haiku 4.5 在目录里有自己的一条（200K / 64K），不能套 Haiku 5.5 的 1M
+  assert.equal(matchModel('claude-haiku-4-5')?.entry.context, 200_000)
   assert.equal(matchModel('claude-haiku-6')?.entry.id, 'claude-haiku-5-5')
 })
 

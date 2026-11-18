@@ -47,14 +47,14 @@ test('一键更新给 Pi 写思考强度：每档取值表和每个模型的默�
   const list = models.providers.tokenapi.models as Record<string, unknown>[]
   const sol = list.find((m) => m.id === 'gpt-6.1-sol')!
   assert.equal(sol.reasoning, true)
-  // 目录里 gpt-6.1-sol 支持 low~xhigh：xhigh 要写出来 Pi 才认，minimal / max 写 null
+  // 目录里 gpt-6.1-sol 支持 low~max：xhigh、max 要写出来 Pi 才认，minimal 写 null
   assert.deepEqual(sol.thinkingLevelMap, {
     minimal: null,
     low: 'low',
     medium: 'medium',
     high: 'high',
     xhigh: 'xhigh',
-    max: null,
+    max: 'max',
   })
   // 目录里不认识的模型不动
   const custom = list.find((m) => m.id === 'custom-x')!

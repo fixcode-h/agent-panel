@@ -133,7 +133,7 @@ import {
   type InterruptedTasks,
 } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
-import { BUILTIN_MODEL_CATALOG } from '@shared/models/catalog'
+import { BUILTIN_MODEL_CATALOG, BUILTIN_CATALOG_UPDATED } from '@shared/models/catalog'
 import { childAskEffect } from '@shared/children/ask'
 import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
@@ -1754,12 +1754,16 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'model-catalog') {
     if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
+    if (method === 'POST' && id === 'discover') fail('在线演示不能联网检查新模型')
+    if (method === 'POST' && id === 'entries') fail('在线演示不能改模型目录')
     const settings = Settings.parse(d.settings ?? {})
     return {
       entries: BUILTIN_MODEL_CATALOG,
       file: '~/.agent-panel/config/models.json',
       dir: '~/.agent-panel/config',
       aiLookup: settings.modelCatalog.aiLookup,
+      builtinUpdated: BUILTIN_CATALOG_UPDATED,
+      userKeys: [],
     }
   }
   if (res === 'local-image') return demoLocal(method, seg, body)

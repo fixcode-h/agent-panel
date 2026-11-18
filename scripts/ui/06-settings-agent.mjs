@@ -325,6 +325,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 回到 CLI 的默认 CLI 页（部署在它下面）
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByRole('dialog').getByText('默认 Agent', { exact: true }).first().click()
+  // 模型目录：全部模型按厂商列出、能筛选；「联网检查」在演示里不能点
+  await p.getByRole('textbox', { name: '筛选模型' }).fill('astra')
+  await check(p, '设置-模型目录', ['全部模型', '检查新模型', 'GPT-6.2 Astra', '在线演示不能联网检查'])
+  await p.getByRole('textbox', { name: '筛选模型' }).fill('')
   // 部署：全局说明写进各 CLI，技能默认不选，选了再部署
   await p.getByRole('button', { name: '说明与技能', exact: true }).first().click()
   await check(p, '设置-部署', ['全局说明（AGENTS.md）', '写到哪些 Agent', '要部署的技能', 'grilling'])
