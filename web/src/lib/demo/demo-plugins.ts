@@ -38,6 +38,14 @@ export function demoPlugins(method: string, id?: string) {
           icon: 'film',
           description: '把视频拖进对话输入框就能截帧：手动截、按画面变化自动截，选段、标注、去重。',
         },
+        {
+          id: 'archify',
+          name: 'Archify 架构图',
+          version: '',
+          icon: 'layout-template',
+          description: '让 Agent 把系统、流程、问题画成能交互的单页 HTML（十种图和一页式讲解页）。',
+          wrap: 'tt-a1i/archify',
+        },
       ],
     }
   if (id === 'updates' && method === 'GET') return { updates: [], errors: [], checkedAt: new Date().toISOString() }

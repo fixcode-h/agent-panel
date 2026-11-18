@@ -17,6 +17,8 @@ export interface MarketEntry {
   asset?: string
   path?: string
   homepage?: string
+  /** 包装配方：上游仓库 owner/repo，安装走「从 GitHub 包装」（server/plugins/github.ts） */
+  wrap?: string
 }
 
 /** 插件市场的结果（server/plugins/market-cache.ts） */

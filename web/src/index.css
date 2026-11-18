@@ -1147,6 +1147,10 @@ body,
   --c-callTree-dir: none;
   --c-callTree-legend: flex;
   --c-callTree-edge: var(--peer);
+  --c-structure-radius: 10px;
+  --c-structure-diagramH: 560px;
+  --c-structure-why: inline;
+  --c-structure-nodes: flex;
   --c-capRow-pad: 10px;
   --c-capRow-radius: 8px;
   --c-capRow-when: grid;

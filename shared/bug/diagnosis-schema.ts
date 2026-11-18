@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BugViews } from './views-schema.ts'
 
 /**
  * Bug 的诊断报告（ADR 0045）：父对话派来的 Bug，子对话查到根因、修之前交这份报告，用户确认了方案才能改。
@@ -323,6 +324,8 @@ export const BugCaseFields = {
     .object({ kind: z.enum(['read', 'trace', 'debugger']).catch('read'), trace: str(20) })
     .optional()
     .catch(undefined),
+  /** 功能结构（设计稿 2026-11-18 第 2 节）：时序图、类图、架构页和默认页签；调用栈仍在 stack */
+  views: BugViews.optional().catch(undefined),
   timeline: z.array(BugTimelineItem).catch([]).default([]),
   attribution: BugAttribution.optional().catch(undefined),
   rating: BugRating.optional().catch(undefined),

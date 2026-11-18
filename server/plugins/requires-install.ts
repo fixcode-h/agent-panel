@@ -3,7 +3,7 @@ import { dependentsOf, unmetRequires, type UnmetRequire } from '../../shared/plu
 import type { PluginManifest, PluginSource } from '../../shared/plugins/types.ts'
 import { comparePluginVersions } from '../../shared/plugins/version.ts'
 import { log } from '../log.ts'
-import { checkEntryVersion, DEFAULT_MARKET, downloadEntry, type MarketEntry } from './github.ts'
+import { checkEntryVersion, DEFAULT_MARKET, downloadEntry, installable, type MarketEntry } from './github.ts'
 import { afterInstall, findInstalled, installedList, updatePlugin } from './manager.ts'
 import { readMarketCached } from './market-cache.ts'
 import { packageRoot, parseManifest, writePackage } from './store.ts'
@@ -37,7 +37,7 @@ async function findEntry(u: UnmetRequire, source?: PluginSource) {
   let tooOld: { repo: string; entry: MarketEntry } | undefined
   for (const repo of markets(source)) {
     const list = (await readMarketCached(repo).catch(() => undefined))?.plugins
-    const entry = list?.find((e) => e.id === u.id)
+    const entry = list && installable(list).find((e) => e.id === u.id)
     if (!entry) continue
     if (!u.min || comparePluginVersions(entry.version, u.min) >= 0) return { repo, entry }
     tooOld ??= { repo, entry }

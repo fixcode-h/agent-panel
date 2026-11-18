@@ -36,6 +36,7 @@ import { EN_SHEET } from './en/sheet.ts'
 import { EN_BUG_FLOW } from './en/bug-flow.ts'
 import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_CALL_TREE } from './en/call-tree.ts'
+import { EN_STRUCTURE_VIEWS } from './en/structure-views.ts'
 import { EN_WEB_VIEW } from './en/web-view.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
@@ -77,6 +78,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_FLOW,
   ...EN_BUG_LOCATE,
   ...EN_CALL_TREE,
+  ...EN_STRUCTURE_VIEWS,
   ...EN_WEB_VIEW,
   ...EN_TURN_OUTPUTS,
   ...EN_BUG_OVERVIEW,
