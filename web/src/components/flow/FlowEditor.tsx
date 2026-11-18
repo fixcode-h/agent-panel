@@ -49,6 +49,7 @@ import { Spinner } from '@/components/ui/status-pill'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas } from './FlowCanvas'
 import { smartFit } from './auto-fit'
+import { CanvasToolbar } from './GraphCanvas'
 import { nodeViews, parseRef, refOptions } from './views'
 import { FlowInspector, Label, NodeInspector, type Team, type W } from './Inspector'
 import { useFlowHistory } from './history'
@@ -347,11 +348,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             </div>
           </div>
           {/* 底部工具条：只放有真实功能的按钮（平移、加节点、自动排列、就绪检查、全屏、属性栏、运行） */}
-          <div
-            role="toolbar"
-            aria-label={t('画布工具')}
-            className="absolute bottom-3 left-16 z-10 flex h-12 items-center gap-1 rounded-2xl bg-card px-2 shadow-pop md:bottom-4 @3xl:left-1/2 @3xl:-translate-x-1/2"
-          >
+          <CanvasToolbar>
             <IconButton
               icon={Hand}
               size="sm"
@@ -471,7 +468,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 {runs.running.length > 1 ? t('运行中 {n}', { n: runs.running.length }) : t('运行中')}
               </button>
             )}
-          </div>
+          </CanvasToolbar>
           {drop && (
             <div className="absolute inset-0 z-20" onPointerDown={() => setDrop(null)}>
               <div

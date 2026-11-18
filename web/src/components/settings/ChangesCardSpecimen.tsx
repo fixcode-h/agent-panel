@@ -5,6 +5,7 @@ import { componentsSnapshot, subscribeComponents } from '@/lib/appearance'
 import { ChangesCard, ChangesCardNote, type ChangesScope } from '@/components/ui/changes-card'
 import { Group } from './parts'
 import { HtmlCardSpecimen } from './HtmlCardSpecimen'
+import { FoldBarSpecimen } from './FoldBarSpecimen'
 
 /** 样张数据（不翻译）：这一轮 3 个、整个对话 9 个 */
 const ROUND = [
@@ -23,7 +24,7 @@ const CONV = [
 ]
 
 /**
- * 设置 → 组件里的改动卡片样张：分段切「这一轮 / 整个对话」，撤销跟着变；默认看哪一段、先列几个读这里的设置，
+ * 设置 → 组件里的改动卡片样张：分段切「这一轮 / 整个对话」，撤销跟着变；默认看哪一段、先列几个、一开始折不折读这里的设置，
  * 改了马上看得到
  */
 export function ChangesCardSpecimen() {
@@ -31,6 +32,8 @@ export function ChangesCardSpecimen() {
   const want = compValue(style, 'changesCard', 'scope') === 'conv' ? 'conv' : 'round'
   const [picked, setPicked] = useState<ChangesScope | null>(null)
   const [all, setAll] = useState(false)
+  const [unfolded, setUnfolded] = useState<boolean | null>(null)
+  const open = unfolded ?? compValue(style, 'changesCard', 'fold') === 'open'
   const scope = picked ?? want
   const files = scope === 'round' ? ROUND : CONV
   return (
@@ -48,6 +51,7 @@ export function ChangesCardSpecimen() {
         onAll={() => setAll(!all)}
         reverted={false}
         onOpen={() => {}}
+        fold={{ open, onToggle: () => setUnfolded(!open) }}
         revert={{ label: scope === 'round' ? t('撤销这一轮') : t('撤销'), title: '', onClick: () => {} }}
         tag={(p) =>
           p.endsWith('badge.ts') ? (
@@ -82,6 +86,10 @@ export function TurnCardSpecimens({
     <Group title={t('HTML 卡片 · 本轮产出')}>
       <Specimen name="HtmlCard · OutputsCard · OutputRow · UrlRow" tune={['htmlCard', 'iconButton']}>
         <HtmlCardSpecimen />
+      </Specimen>
+      {/* 折叠条：回复收尾后过程收起来的那一行，改动卡片折起来的那一行也是它 */}
+      <Specimen name="FoldBar" tune={['foldBar']}>
+        <FoldBarSpecimen />
       </Specimen>
       <Specimen name="ChangesCard" tune={['changesCard', 'segmented', 'badge']}>
         <ChangesCardSpecimen />

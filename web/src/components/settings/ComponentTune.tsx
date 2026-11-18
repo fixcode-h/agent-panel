@@ -52,9 +52,12 @@ export const compLabel = (c: CompName) =>
     capRow: t('能力行'),
     htmlCard: t('HTML 卡片'),
     changesCard: t('改动卡片'),
+    foldBar: t('折叠条'),
     styleRef: t('风格参考图'),
     toast: t('提示'),
     scrollbar: t('滚动条'),
+    canvas: t('流程图画布'),
+    countBadge: t('数字角标'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -80,11 +83,15 @@ const propLabel = (c: CompName, prop: string) => {
       { preview: t('缩略预览'), previewH: t('预览高度'), active: t('右栏正在显示的描边') } as Record<string, string>
     )[prop]
   if (c === 'changesCard' && prop !== 'radius')
-    return ({ scope: t('默认显示'), first: t('先列几个文件') } as Record<string, string>)[prop]
+    return ({ scope: t('默认显示'), first: t('先列几个文件'), fold: t('一开始') } as Record<string, string>)[prop]
+  if (c === 'foldBar' && prop === 'hint') return t('右边写「展开 / 收起」')
   if (c === 'styleRef' && prop !== 'radius')
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')
     return ({ position: t('位置'), duration: t('停留时长'), bar: t('左侧色条宽度') } as Record<string, string>)[prop]
+  if (c === 'canvas') return ({ minimap: t('小地图'), minimapW: t('小地图宽度') } as Record<string, string>)[prop]
+  if (c === 'countBadge')
+    return ({ size: t('大小'), bg: t('底色'), ring: t('外圈颜色') } as Record<string, string>)[prop]
   if (c === 'modal' && prop === 'resizeEdge') return t('拖边缩放时的边线颜色')
   if (c === 'modal' && prop === 'resizeLine') return t('拖边缩放时的边线粗细')
   if (c === 'scrollbar')
@@ -180,6 +187,8 @@ const optionLabel = (v: string) =>
     primary: t('主色'),
     emphasis: t('强调色'),
     success: t('成功色'),
+    danger: t('危险色'),
+    run: t('运行色'),
     dashed: t('虚线'),
     solid: t('实线'),
     '400': t('常规'),
@@ -241,6 +250,8 @@ const optionLabel = (v: string) =>
     hover: t('鼠标进来才显示'),
     round: t('这一轮'),
     conv: t('整个对话'),
+    closed: t('折成一行'),
+    open: t('展开'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */

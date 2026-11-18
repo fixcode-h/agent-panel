@@ -5,7 +5,6 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MiniMap,
   Handle,
   Position,
   ReactFlow,
@@ -21,6 +20,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { AutoFit } from './auto-fit'
+import { CanvasMiniMap } from './GraphCanvas'
 import { CircleStop, Play, UserCheck, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, Flow, StepStatus } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -653,20 +653,7 @@ export function FlowCanvas({
         <ArrowMarkers id={markerId} />
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} />
         <Controls showInteractive={false} position="bottom-left" />
-        {flow.nodes.length > 4 && (
-          <MiniMap
-            pannable
-            zoomable
-            position="bottom-right"
-            ariaLabel={t('小地图')}
-            className="!m-4 hidden overflow-hidden rounded-xl !bg-card shadow-pop @2xl:block"
-            style={{ width: 180, height: 110 }}
-            maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"
-            nodeColor={miniColor}
-            nodeBorderRadius={3}
-            nodeStrokeWidth={0}
-          />
-        )}
+        {flow.nodes.length > 4 && <CanvasMiniMap nodeColor={miniColor} />}
       </ReactFlow>
     </div>
   )

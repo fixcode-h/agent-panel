@@ -23,6 +23,7 @@ import { DiffShell } from './DiffDialog'
  * 改动卡片（外形见 web/src/components/ui/changes-card.tsx，数据见 shared/conv-changes.ts，每一轮的记录见 server/turn/changes.ts）：
  * 只在对话停下来以后、挂在对话最后面一张。默认看「这一轮」（用户最后一次发话以后到它停下，和本轮产出同一个口径），
  * 标题左边切到「整个对话」；默认看哪一段、先列几个在设置 → 组件 →「改动卡片」里改（设计稿 Bug模式子对话体验 第 3 节）。
+ * 默认折成一行（用户 2026-11-18），点整行展开成完整的卡片；一开始展不展开也在那里改。
  * 以前只有整个对话一张（更早是每一轮总结下面各挂一张）；用户 2026-11-18 要看这一段改了什么，整个对话收成切换。
  * 只算这个对话自己的改动：子任务、工作流在对话里改的算，子对话合进来的、用户在两轮之间自己改的不算。
  * 点文件打开差异窗口（左边改动树、右边左右对照）；「撤销」跟着切换走：这一轮时只撤这一轮，整个对话时各轮从后往前一起撤，
@@ -55,6 +56,9 @@ export function ConvChangesCard({
   const added = useAddedFiles(task.id, ch)
   const { upsertTask } = useData()
   const [all, setAll] = useState(false)
+  // 折起成一行还是展开（设置 → 组件 →「改动卡片」的「一开始」，默认折起）；用户点过就照点的
+  const [unfolded, setUnfolded] = useState<boolean | null>(null)
+  const expanded = unfolded ?? compValue(style, 'changesCard', 'fold') === 'open'
   const [open, setOpen] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [conflicts, setConflicts] = useState<{ path: string; reason: string }[]>([])
@@ -116,6 +120,7 @@ export function ConvChangesCard({
       onAll={() => setAll(!all)}
       reverted={reverted}
       onOpen={setOpen}
+      fold={{ open: expanded, onToggle: () => setUnfolded(!expanded) }}
       tag={tagOf}
       revert={{
         label: isRound ? t('撤销这一轮') : t('撤销'),

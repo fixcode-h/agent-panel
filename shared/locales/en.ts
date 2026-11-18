@@ -40,6 +40,7 @@ import { EN_STRUCTURE_VIEWS } from './en/structure-views.ts'
 import { EN_WEB_VIEW } from './en/web-view.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
+import { EN_FOLD_BAR } from './en/fold-bar.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
 import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
@@ -64,6 +65,7 @@ import { EN_SELECT_SEARCH } from './en/select-search.ts'
 import { EN_MODAL_RESIZE } from './en/modal-resize.ts'
 import { EN_TOAST } from './en/toast.ts'
 import { EN_SCROLLBAR } from './en/scrollbar.ts'
+import { EN_GRAPH_CANVAS } from './en/graph-canvas.ts'
 import { EN_MODEL_CATALOG } from './en/model-catalog.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
@@ -87,6 +89,7 @@ export const EN: Record<string, string> = {
   ...EN_WEB_VIEW,
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
+  ...EN_FOLD_BAR,
   ...EN_BUG_OVERVIEW,
   ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,
@@ -133,6 +136,7 @@ export const EN: Record<string, string> = {
   ...EN_MODAL_RESIZE,
   ...EN_TOAST,
   ...EN_SCROLLBAR,
+  ...EN_GRAPH_CANVAS,
   ...EN_MODEL_CATALOG,
   ...EN_SHEETS,
   ...EN_SHEET_LOOK,
