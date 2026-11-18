@@ -257,6 +257,26 @@ export const COMP_SPEC = {
     /** 左侧按类型着色的竖条，0 是不画 */
     bar: px(0, 0, 6),
   },
+  /**
+   * 流程图画布（web/src/components/flow/GraphCanvas.tsx：工作流编辑器、插件的流程图共用）：
+   * minimap 是右下角小地图显不显示（落成 visibility，不和容器查询的 display 打架），minimapW 是小地图宽度
+   */
+  canvas: {
+    minimap: bool(true, 'visible', 'hidden'),
+    minimapW: px(180, 120, 300),
+  },
+  /** 圆底数字角标（web/src/components/ui/count-badge.tsx）：size 是圆的直径，ring 是和底下卡片隔开的那圈颜色 */
+  countBadge: {
+    size: px(18, 14, 26),
+    bg: color('danger', {
+      danger: 'var(--danger)',
+      accent: 'var(--accent)',
+      primary: 'var(--primary)',
+      run: 'var(--run)',
+      warning: 'var(--warning)',
+    }),
+    ring: color('card', BG),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

@@ -55,6 +55,8 @@ export const compLabel = (c: CompName) =>
     styleRef: t('风格参考图'),
     toast: t('提示'),
     scrollbar: t('滚动条'),
+    canvas: t('流程图画布'),
+    countBadge: t('数字角标'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -85,6 +87,9 @@ const propLabel = (c: CompName, prop: string) => {
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')
     return ({ position: t('位置'), duration: t('停留时长'), bar: t('左侧色条宽度') } as Record<string, string>)[prop]
+  if (c === 'canvas') return ({ minimap: t('小地图'), minimapW: t('小地图宽度') } as Record<string, string>)[prop]
+  if (c === 'countBadge')
+    return ({ size: t('大小'), bg: t('底色'), ring: t('外圈颜色') } as Record<string, string>)[prop]
   if (c === 'modal' && prop === 'resizeEdge') return t('拖边缩放时的边线颜色')
   if (c === 'modal' && prop === 'resizeLine') return t('拖边缩放时的边线粗细')
   if (c === 'scrollbar')
@@ -180,6 +185,8 @@ const optionLabel = (v: string) =>
     primary: t('主色'),
     emphasis: t('强调色'),
     success: t('成功色'),
+    danger: t('危险色'),
+    run: t('运行色'),
     dashed: t('虚线'),
     solid: t('实线'),
     '400': t('常规'),

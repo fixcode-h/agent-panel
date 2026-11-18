@@ -56,6 +56,7 @@
 - 启动：`ensureProjectWorkflows` 先 `initPlugins`（读包 → `setInstalledPlugins` → 按设置 `setEnabledPlugins` → 启动开着的插件的服务端入口），再装内置模板（开着的插件带的角色和工作流算内置），最后 `cleanupDisabledPlugins`。
 - 安装：`POST /api/plugins/install/{github,zip,dir}` 下载、校验（Release 附件旁有 `<附件>.sha256` 时核对校验和，对不上不装；旧 Release 没有就不核对），返回预览和令牌；预览里带配置安全扫描的发现（`scan`，规则在 `shared/config-scan/`，读文件和忽略记录在 `server/config-scan.ts`），弹窗有高级发现时要勾「我看过了，仍然安装」才能点安装；`POST /install/confirm` 写盘、重读，开着的插件补上新版本多出来的内容。
 - 升级与退回：覆盖安装时旧版挪到 `plugins/.prev/<id>/`（只留一版），新版的 `.install.json` 记 `previousVersion` 交给插件的 `ctx.previousVersion`；`POST /api/plugins/:id/rollback` 把两版对换并重启插件，卡片上的「退回上一版」按钮调它。删除插件时上一版一起删。
+- 画流程图的插件（UE 插件的 GameTest 流程图）用开放的 `web/src/components/flow/GraphCanvas`（通用画布、小地图、底部工具条）、`web/src/components/ui/count-badge`（圆底数字角标）和包 `@xyflow/react`：xyflow 必须和面板共用一份实例，插件不能自己打包一份。
 - 开放模块核对：插件仓库构建时把用到的开放模块写进清单 `hostModules`，`parseManifest` 用 `shared/plugins/host-modules-check.ts` 对照 `host-modules.json`，缺了就拒装、拒启动并写明要升级面板。面板 CI 的 `plugins` job 拉插件仓库 dev 用当前面板构建、冒烟、单测（SDK 副本不一致只提醒）。
 - 包装：`POST /api/plugins/wrap/preview` 下载仓库（不执行）、按社区配方或识别结果生成插件包、扫描，返回和其他来源一样的预览（多一段 `wrap`：识别结果、会做什么、生效范围）；确认同样走 `/install/confirm`，写盘前在临时目录里跑白名单安装动作，并把用的配方和扫描记成包里的 `wrap-recipe.json`、`wrap-scan.json` 给以后更新比对。包装插件的更新按 `wrap.track` 查上游，升级走 `wrap/preview` 的 `update`，一键更新跳过权限或扫描有新增的。
 - 更新：`GET /api/plugins/updates` 只读不装，返回有新版本的插件和去哪儿装（`install`）；点「升级」用它调 `/install/github` 拿预览，确认后同安装。装好后 `loadPlugins` 按装着的版本去掉过期的提示。

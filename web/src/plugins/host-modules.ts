@@ -52,6 +52,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/files/SheetTable': () => import('@/components/files/SheetTable'),
   'web/src/components/files/sheet-roles': () => import('@/components/files/sheet-roles'),
   'web/src/components/files/use-sheet-view': () => import('@/components/files/use-sheet-view'),
+  'web/src/components/flow/GraphCanvas': () => import('@/components/flow/GraphCanvas'),
   'web/src/components/layout/Detail': () => import('@/components/layout/Detail'),
   'web/src/components/layout/ListPane': () => import('@/components/layout/ListPane'),
   'web/src/components/layout/ShortcutsHelp': () => import('@/components/layout/ShortcutsHelp'),
@@ -72,6 +73,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/ui/button': () => import('@/components/ui/button'),
   'web/src/components/ui/card': () => import('@/components/ui/card'),
   'web/src/components/ui/checkbox': () => import('@/components/ui/checkbox'),
+  'web/src/components/ui/count-badge': () => import('@/components/ui/count-badge'),
   'web/src/components/ui/chip-group': () => import('@/components/ui/chip-group'),
   'web/src/components/ui/dialog': () => import('@/components/ui/dialog'),
   'web/src/components/ui/dialog-nav': () => import('@/components/ui/dialog-nav'),
@@ -115,6 +117,8 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/plugins/registry': () => import('@/plugins/registry'),
   '@radix-ui/react-dialog': () => import('@radix-ui/react-dialog'),
   '@radix-ui/react-popover': () => import('@radix-ui/react-popover'),
+  // 插件画自己的流程图（GameTest）要和面板的 GraphCanvas 共用同一份 xyflow：两份实例的上下文对不上，useReactFlow 会取不到
+  '@xyflow/react': () => import('@xyflow/react'),
   zod: () => import('zod'),
 }
 

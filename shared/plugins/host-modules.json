@@ -46,6 +46,7 @@
     "web/src/components/files/SheetTable",
     "web/src/components/files/sheet-roles",
     "web/src/components/files/use-sheet-view",
+    "web/src/components/flow/GraphCanvas",
     "web/src/components/layout/Detail",
     "web/src/components/layout/ListPane",
     "web/src/components/layout/ShortcutsHelp",
@@ -66,6 +67,7 @@
     "web/src/components/ui/button",
     "web/src/components/ui/card",
     "web/src/components/ui/checkbox",
+    "web/src/components/ui/count-badge",
     "web/src/components/ui/chip-group",
     "web/src/components/ui/dialog",
     "web/src/components/ui/dialog-nav",
@@ -165,6 +167,6 @@
     "shared/task",
     "shared/text"
   ],
-  "webPackages": ["@radix-ui/react-dialog", "@radix-ui/react-popover", "zod"],
+  "webPackages": ["@radix-ui/react-dialog", "@radix-ui/react-popover", "@xyflow/react", "zod"],
   "serverPackages": ["zod"]
 }

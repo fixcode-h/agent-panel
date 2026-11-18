@@ -1167,6 +1167,11 @@ body,
   --c-toast-bg: var(--pop);
   --c-toast-border: 1px;
   --c-toast-bar: 0px;
+  --c-canvas-minimap: visible;
+  --c-canvas-minimapW: 180px;
+  --c-countBadge-size: 18px;
+  --c-countBadge-bg: var(--danger);
+  --c-countBadge-ring: var(--card);
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
@@ -3226,6 +3231,10 @@ html[data-modal-resizing] * {
 }
 .react-flow__pane.dragging {
   cursor: grabbing;
+}
+/* 小地图显不显示在设置 → 组件 → 流程图画布里调（GraphCanvas 的 CanvasMiniMap） */
+.canvas-minimap {
+  visibility: var(--c-canvas-minimap);
 }
 .react-flow__controls {
   /* 左下浮动的缩放控件：和画布上其他浮动面板一样，白底圆角 + 浮起阴影（阴影自带一圈细线） */
