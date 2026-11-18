@@ -1,5 +1,5 @@
 import { markdownCss, type MarkdownStyle } from '@shared/markdown-style'
-import { componentCss, type ComponentStyle } from '@shared/component-style'
+import { compValue, componentCss, type ComponentStyle } from '@shared/component-style'
 
 const KEY = 'appearance-md'
 const ID = 'md-style'
@@ -17,6 +17,11 @@ export function applyMarkdownStyle(style: MarkdownStyle, components: ComponentSt
     document.head.appendChild(el)
   }
   if (el.textContent !== css) el.textContent = css
+  // 调用栈树的整体样式按场合选（报告里 / 对话里），一套是一组规则，不是一个 CSS 值：落成 html 上的属性，
+  // call-tree-looks.css 按它选规则。默认值也写上，不靠「没有属性」时的兜底
+  const root = document.documentElement.dataset
+  root.ctReport = String(compValue(components, 'callTree', 'report'))
+  root.ctChat = String(compValue(components, 'callTree', 'chat'))
   try {
     if (css) localStorage.setItem(KEY, css)
     else localStorage.removeItem(KEY)

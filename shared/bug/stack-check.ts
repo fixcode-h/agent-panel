@@ -122,13 +122,15 @@ export function checkStack(c: BugCase, src: BugSource | undefined, notes: string
       h.line = found
     }
     h.check = { ok: true, why: '', code: '' }
-    if (h.role === 'fault') {
+    // 出错点的几行直接画在树上；别的跳也留同样几行快照，界面上悬停才显示（设计稿 Bug 模式子对话体验 N6：
+    // 读调用栈时不用逐个打开文件）。没走到、旁支不留：前者那几行就是该执行没执行的，看出错点就够，后者不重要
+    if (h.role !== 'missed' && h.role !== 'side') {
       const start = Math.max(1, found - AROUND)
       h.check.start = start
       h.check.code = lines
         .slice(start - 1, found + AROUND)
         .join('\n')
-        .slice(0, 2000)
+        .slice(0, h.role === 'fault' ? 2000 : 600)
     }
   }
   if (placed.length >= 2 && misses.length * 2 > placed.length)

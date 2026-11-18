@@ -14,6 +14,7 @@ import { useMdTables } from './md-table-layer'
 import { useHtmlCards } from './html-card-layer'
 import { htmlCardSlots } from '@/lib/markdown/html-cards'
 import '@/components/ui/call-tree.css'
+import '@/components/ui/call-tree-looks.css'
 import {
   enhanceMermaid,
   mermaidAction,

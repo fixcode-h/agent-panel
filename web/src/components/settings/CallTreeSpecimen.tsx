@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { Markdown } from '@/components/tasks/Markdown'
 
 /** 设置 → 组件里的调用栈树样例：真的 Markdown 组件画 calltree 代码块，微调立刻跟着变（示例数据不翻译） */
@@ -21,6 +22,21 @@ const SAMPLE = [
 
 const TEAM = new Set<string>()
 
+/**
+ * 两份并排：诊断报告里和对话里各按自己选的整体样式画（上面「诊断报告里的样式」「对话里的样式」两项），
+ * 报告那份包在 data-ct-scope="report" 里，和诊断报告弹窗同一个开关
+ */
 export function CallTreeSpecimen() {
-  return <Markdown text={SAMPLE} teamNames={TEAM} className="w-full max-w-3xl" />
+  return (
+    <div className="flex w-full max-w-3xl flex-col gap-3">
+      <div className="flex flex-col gap-1" data-ct-scope="report">
+        <span className="text-xs text-subtle">{t('诊断报告里')}</span>
+        <Markdown text={SAMPLE} teamNames={TEAM} className="w-full" />
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-subtle">{t('对话里')}</span>
+        <Markdown text={SAMPLE} teamNames={TEAM} className="w-full" />
+      </div>
+    </div>
+  )
 }

@@ -434,7 +434,13 @@ export function ReviewDialog({
             {/* 对比放在 docRef 外面：选中对比里的文字不加标注（标注要对着报告原文）。
                 报告只藏起来不卸载：卸载了已有标注的选区就对不上了 */}
             {comparing && shown?.compare}
-            <div ref={docRef} onClick={onDocClick} data-review-doc className={cn(comparing && 'hidden')}>
+            <div
+              ref={docRef}
+              onClick={onDocClick}
+              data-review-doc
+              data-ct-scope="report"
+              className={cn(comparing && 'hidden')}
+            >
               {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
               {shown?.lead}
               {detail ? (
