@@ -7,16 +7,19 @@
  *
  * 每轮按这一轮要带的重建：关掉的技能下一轮就不在了。同一个项目同时跑的几个对话共用这个目录，
  * 先在旁边写好再换上，不会读到写了一半的技能
+ *
+ * 开着的插件带的技能也每轮带上（server/skills/plugin-skills.ts），提示里另列一节写明用法和路径
  */
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 import type { CliDefinition } from '../../shared/clis.ts'
 import { frontField } from '../../shared/library.ts'
-import { roleSkillDirNote, runSkillNames, runSkillsNote } from '../../shared/skills/activation.ts'
+import { pluginSkillsNote, roleSkillDirNote, runSkillNames, runSkillsNote } from '../../shared/skills/activation.ts'
 import { entries, sharedRoot, writeSkill } from '../bundled-skills.ts'
 import { log } from '../log.ts'
 import { isProjectSkill, projectSkills, projectSkillStore, runSkillsRoot } from './config.ts'
+import type { PluginSkill } from './plugin-skills.ts'
 
 export interface RunSkills {
   /** 这一轮带上的技能名 */
@@ -68,13 +71,27 @@ export async function prepareRunSkills(a: {
   projectId: string
   opened: string[] | undefined
   roleSkills: string[]
+  /** 开着的插件带的技能（server/skills/plugin-skills.ts）：每轮都带，提示里列出用法 */
+  plugins?: PluginSkill[]
 }): Promise<RunSkills> {
   const want = runSkillNames(projectSkills(), a.opened, a.roleSkills)
+  // 插件技能：按项目的那些已经在 want 里；已经装进 ~/.agents/skills 的由 CLI 自己读（或下面随全局技能一起带），不再放一份
+  const plugins = (a.plugins ?? []).filter((p) => !want.includes(p.entry.name))
+  const pluginPut = plugins.filter((p) => !p.shared)
   // 不读 ~/.agents/skills 的 CLI（runSkills.shared）：那里装着的全局技能也一起带上
-  const shared = a.def.runSkills?.shared ? await sharedSkills(want) : []
-  if (!want.length && !shared.length) return EMPTY
+  const shared = a.def.runSkills?.shared ? await sharedSkills([...want, ...pluginPut.map((p) => p.entry.name)]) : []
   const root = runSkillsRoot(a.projectId, a.def.id)
   const dir = path.join(root, a.def.runSkills?.subdir ?? '')
+  // 插件技能这一轮在哪：放进这一轮目录的、随全局技能带进来的在 dir 下，其余就是 ~/.agents/skills 里那份
+  const pluginNote = pluginSkillsNote(
+    plugins.map((p) => ({
+      name: p.entry.name,
+      plugin: p.pluginName,
+      description: frontField(p.entry.files.get('SKILL.md')!.toString('utf8'), 'description'),
+      file: `${!p.shared || a.def.runSkills?.shared ? dir : sharedRoot()}/${p.entry.name}/SKILL.md`,
+    })),
+  )
+  if (!want.length && !shared.length && !pluginPut.length) return pluginNote ? { ...EMPTY, note: pluginNote } : EMPTY
   const staging = `${root}.next-${process.pid}-${Date.now()}`
   const stagingDir = path.join(staging, a.def.runSkills?.subdir ?? '')
   try {
@@ -86,6 +103,7 @@ export async function prepareRunSkills(a: {
       const description = await place(name, a.def.id, stagingDir, bundled)
       if (description !== null) placed.push({ name, description })
     }
+    for (const p of pluginPut) await writeSkill(p.entry, stagingDir)
     for (const name of shared) {
       const from = path.join(sharedRoot(), name)
       await cp(from, path.join(stagingDir, name), { recursive: true, verbatimSymlinks: true })
@@ -102,20 +120,23 @@ export async function prepareRunSkills(a: {
       await rm(staging, { recursive: true, force: true })
     }
     await rm(old, { recursive: true, force: true })
-    if (!placed.length) return EMPTY
+    const names = [...placed.map((x) => x.name), ...pluginPut.map((p) => p.entry.name)]
+    if (!names.length) return EMPTY
     const roleNames = placed.map((x) => x.name).filter((n) => want.includes(n) && a.roleSkills.includes(n))
+    // 插件技能另有一节说明，不在「这个项目打开的技能」清单里重复列
+    const listed = placed.filter((x) => !plugins.some((p) => p.entry.name === x.name))
     const spec = a.def.runSkills
     if (!spec)
       return {
-        names: placed.map((x) => x.name),
+        names,
         args: [],
-        note: [runSkillsNote(dir, placed), roleSkillDirNote(dir, roleNames)].filter(Boolean).join('\n\n'),
+        note: [runSkillsNote(dir, listed), pluginNote, roleSkillDirNote(dir, roleNames)].filter(Boolean).join('\n\n'),
       }
     return {
-      names: placed.map((x) => x.name),
+      names,
       args: spec.args.map((x) => fill(x, root, dir) as string),
       ...(spec.rpc && { rpc: fill(spec.rpc, root, dir) as RunSkills['rpc'] }),
-      note: roleSkillDirNote(dir, roleNames),
+      note: [pluginNote, roleSkillDirNote(dir, roleNames)].filter(Boolean).join('\n\n'),
     }
   } catch (err) {
     await rm(staging, { recursive: true, force: true }).catch(() => {})

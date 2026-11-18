@@ -41,6 +41,8 @@ export interface Entry {
   category: string
   /** 插件带的技能：插件 id */
   plugin?: string
+  /** 插件带的技能：技能在插件包里的目录（「/」菜单展开时读这里的 SKILL.md） */
+  dir?: string
   /** 相对技能目录的路径 → 内容 */
   files: Map<string, Buffer>
 }
@@ -93,7 +95,9 @@ export async function allPluginEntries(): Promise<Entry[]> {
     const key = `${p.id}|${p.dir}|${p.stamp}`
     let got = pluginCache.get(key)
     if (!got) {
-      got = readTree(path.join(p.dir, 'skills')).then((files) => group(files, p.id))
+      got = readTree(path.join(p.dir, 'skills')).then((files) =>
+        group(files, p.id).map((e) => ({ ...e, dir: path.join(p.dir, 'skills', e.category, e.name) })),
+      )
       pluginCache.set(key, got)
     }
     out.push(...(await got))

@@ -89,3 +89,76 @@ test('每轮带技能：按 CLI 定义给参数或协议请求，没有 runSkill
   const gx = await prepareRunSkills({ def: getCli('codex')!, projectId: 'p2', opened: [], roleSkills: [] })
   assert.deepEqual(gx.names, [])
 })
+
+test('插件带的技能装上就每轮带上：提示里列出用法和路径，按项目的插件只在打开了的项目里带', async () => {
+  const { setPluginSkillSources } = await import('../bundled-skills.ts')
+  const { setInstalledPlugins, setEnabledPlugins } = await import('../../shared/plugins/index.ts')
+  const { pluginSkillsFor } = await import('./plugin-skills.ts')
+  const { pluginSkillCommands } = await import('../plugins/contrib.ts')
+  const plug = (id: string, skill: string) => {
+    const dir = path.join(home, 'plugins', id)
+    mkdirSync(path.join(dir, 'skills/diagram', skill), { recursive: true })
+    writeFileSync(path.join(dir, 'skills/diagram', skill, 'SKILL.md'), skillMd(skill, `${skill} 画架构图`))
+    return dir
+  }
+  setPluginSkillSources([
+    { id: 'archify', dir: plug('archify', 'archify'), stamp: '1' },
+    { id: 'ue', dir: plug('ue', 'ue-only'), stamp: '1' },
+  ])
+  setInstalledPlugins([
+    { id: 'archify', name: 'Archify 架构图', activation: 'global', agents: [] },
+    { id: 'ue', name: 'UE', activation: 'project', agents: [] },
+  ] as never)
+  setEnabledPlugins({ archify: { enabled: true }, ue: { enabled: true } } as never)
+
+  // 按项目的插件：项目没打开它就不带
+  const none = await pluginSkillsFor({ capabilities: {} })
+  assert.deepEqual(
+    none.map((p) => p.entry.name),
+    ['archify'],
+  )
+  const both = await pluginSkillsFor({ capabilities: { plugins: ['ue'] } })
+  assert.deepEqual(both.map((p) => p.entry.name).sort(), ['archify', 'ue-only'])
+
+  const r = await prepareRunSkills({
+    def: getCli('claude')!,
+    projectId: 'p3',
+    opened: [],
+    roleSkills: [],
+    plugins: none,
+  })
+  assert.ok(r.names.includes('archify'))
+  assert.ok(existsSync(path.join(r.args[1], '.claude/skills/archify/SKILL.md')))
+  assert.match(r.note, /装着的插件带的技能/)
+  assert.match(r.note, /`archify`（插件「Archify 架构图」）：archify 画架构图/)
+  assert.match(r.note, /\/名字 要求/)
+
+  // 「/」菜单里也有它，由面板展开
+  const cmds = await pluginSkillCommands()
+  assert.deepEqual(
+    cmds.map((c) => [c.name, c.kind]),
+    [
+      ['archify', 'skill'],
+      ['ue-only', 'skill'],
+    ],
+  )
+
+  // 已经装进 ~/.agents/skills 的：读那里的 CLI（Codex）不再另放一份，提示里指向那一份
+  mkdirSync(path.join(sharedRoot(), 'archify'), { recursive: true })
+  writeFileSync(path.join(sharedRoot(), 'archify/SKILL.md'), skillMd('archify', 'archify 画架构图'))
+  const again = await pluginSkillsFor({ capabilities: {} })
+  assert.equal(again[0].shared, true)
+  const cx = await prepareRunSkills({
+    def: getCli('codex')!,
+    projectId: 'p3',
+    opened: [],
+    roleSkills: [],
+    plugins: again,
+  })
+  assert.ok(!cx.names.includes('archify'))
+  assert.ok(cx.note.includes(`${sharedRoot()}/archify/SKILL.md`))
+
+  // 关掉插件：下一轮就不带了
+  setEnabledPlugins({ archify: { enabled: false }, ue: { enabled: true } } as never)
+  assert.deepEqual(await pluginSkillsFor({ capabilities: {} }), [])
+})

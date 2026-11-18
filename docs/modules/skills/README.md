@@ -5,7 +5,7 @@
 - 源码：`skills/`
 - 入口：`skills/README.md`
 - 关键词：Skill、技能、SKILL.md、内置技能
-- 更新：2026-11-15
+- 更新：2026-11-18
 
 ## 职责
 
@@ -30,6 +30,14 @@
 - 每轮只给项目「能力」里打开了它（`project.capabilities.skills`）的项目带上，角色点名要用的也带：放进数据目录 `run-skills/<项目>/<CLI>/`，按 CLI 定义的 `runSkills` 交给 CLI（Claude Code `--add-dir`、Codex app-server 的 extraRoots 请求、Pi 和 Command Code `--skill`）；没写 `runSkills` 的 CLI 在提示里列出技能路径。代码在 `server/skills/`。
 - Claude Code 不读 `~/.agents/skills`（只读 `~/.claude/skills`）：CLI 定义里 `runSkills.shared` 为 true，那里装着的全局自带技能也每轮放进技能目录一起带上，否则面板装的技能它一个也看不到。
 - 改回全局时挪回原来的 CLI 用户目录；自带技能不自动装回去（在「自带 Skill」页装，或角色用到时补上）。
+
+## 插件带的技能装上就能用（2026-11-18）
+
+以前插件技能只在「自带 Skill」页点了安装、或者角色点名要用时才装进 `~/.agents/skills`；只带技能的包装插件（Archify 这类）没有角色，装好后 Agent 看不到，只能自己 find 插件目录。现在：
+
+- 开着的插件带的技能（按项目生效的插件只算这个项目打开了的，技能本身标成按项目的照旧看项目开关）每轮和按项目的技能一起放进 `run-skills/<项目>/<CLI>/`（`server/skills/plugin-skills.ts`）；关掉插件下一轮就没了，升级后下一轮就是新版。已经装进 `~/.agents/skills` 的那份照旧由 CLI 自己读，不重复放。
+- 提示里另列一节「装着的插件带的技能」：名字、哪个插件、什么时候用、SKILL.md 的路径，并说明用户打「/名字」就是点名用它（`shared/skills/activation.ts` 的 `pluginSkillsNote`）。
+- 「/」菜单列出开着的插件带的技能，来源写「插件 · 名字」，由面板把 SKILL.md 展开成要求（`server/plugins/contrib.ts` 的 `pluginSkillCommands`），对所有 CLI 都一样。
 
 ## 入口
 

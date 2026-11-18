@@ -111,6 +111,12 @@ export function BundledDetail({
             />
           </Fact>
         )}
+        {/* 插件带的技能每轮直接交给 Agent（server/skills/plugin-skills.ts），「未安装」不代表 Agent 用不了 */}
+        {item.plugin && !project && (
+          <span className="text-muted">
+            {t('插件开着时每轮自动交给 Agent，不用安装；输入框打「/{name}」可以点名用它', { name: item.name })}
+          </span>
+        )}
         <span className="flex items-center gap-1.5 text-subtle">
           <Lock className="h-3 w-3 shrink-0" />
           {t('随面板版本提供，只读；要改请复制一份到自己的技能目录')}

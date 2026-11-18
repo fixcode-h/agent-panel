@@ -28,6 +28,7 @@ import { mcpApi } from '../mcp-store.ts'
 import { projectMcpApi } from '../projects/mcp.ts'
 import { toggleCapability } from '../../shared/projects/capabilities.ts'
 import { trustApi } from '../cli/trust-api.ts'
+import { docRootOf } from '../module-map.ts'
 import { installApi } from '../install.ts'
 import { envApi } from '../env-api.ts'
 import { modelsApi } from '../models.ts'
@@ -191,6 +192,11 @@ export function workModules(d: Omit<ModuleDeps, 'memory' | 'updater'>): ApiModul
       app: webViewApi({
         workDir: tasks.workDir,
         projectDir: async (id) => (await projects.get(id))?.path ?? '',
+        docRoot: async (id) => {
+          const p = await projects.get(id)
+          return p?.path ? docRootOf(p.path, await agents.list()) : ''
+        },
+        outsideFiles: async (id) => ((await tasks.get(id))?.outsideChanges ?? []).map((c) => c.path),
         pluginDir: (id) => findInstalled(id)?.dir ?? '',
         serviceOrigin,
         touchService,
