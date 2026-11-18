@@ -24,6 +24,7 @@ import { editPatch, fixFilesOf } from './fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './quotes.ts'
 import { checkStack, matchTrace, stackProblem } from './stack-check.ts'
 import { checkViews, viewsProblem } from './views.ts'
+import { droppedFields } from './dropped.ts'
 import {
   causeAgreed,
   closedOrCleaning,
@@ -373,6 +374,9 @@ export function updateBugCase(
       ok: false,
       info: `没写任何档案字段。能写的字段：${CASE_KEYS.join('、')}。`,
     }
+  // 写了却会被 schema 丢掉的字段：不记，免得把档案里原来那一组也冲成空的
+  const dropped = droppedFields(BugCase.shape, picked(input))
+  if (dropped) return { ok: false, info: dropped }
   const draft = (bugOf(task).case = { ...mergeCase(task, input), updatedAt: now })
   const list = task.bug?.diagnoses ?? []
   const tail = planApproved(list)
@@ -390,6 +394,12 @@ export function updateBugCase(
  * 交一版报告：草稿合上这次交的内容，按阶段、级别检查后冻结成新的一版，上一版作废，等用户（不跟「提问」开关走）。
  * 返回给 Agent 的话；不合格时 ok 为 false、什么都不改
  */
+/** 一次退回里有几处问题：编号列出来，让 Agent 一次改完 */
+const joinProblems = (xs: string[]) =>
+  xs.length === 1
+    ? xs[0]
+    : `这一版有 ${xs.length} 处要改，一次改完再交：\n${xs.map((x, i) => `${i + 1}. ${x}`).join('\n')}`
+
 /** 同一段（用户最近一条消息以来）连续退回几次就停下来交给用户（分析稿 B8） */
 export const REJECT_MAX = 3
 
@@ -465,15 +475,18 @@ function submitOnce(
   const chat = chatOf(task, input, list)
   if (chat && 'error' in chat) return { ok: false, info: chat.error }
   const bad = diagnosisProblem(c, list, answers, input, chatReplaces(prev, chat))
-  if (bad) return { ok: false, info: bad }
+  // 上一版还在等用户：只说这一句，别的不用核对
+  if (bad && prev?.status === 'pending' && !chatReplaces(prev, chat)) return { ok: false, info: bad }
   const phase = inputPhase(input, c, list)
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
-  if (sources.error) return { ok: false, info: sources.error }
   // 调用栈每一跳按工作区核对位置、出错点取快照，有报错堆栈时逐帧对上（stack-check.ts）
   const stackBad =
     checkStack(c, src, sources.notes, phase) || matchTrace(c, phase) || checkViews(c, src, sources.notes, phase)
-  if (stackBad) return { ok: false, info: stackBad }
+  // 几组核对的问题一次说完（实跑 2026-11-18：每次只报第一处，三处小问题各退一次，三次用完报告没交上去）；
+  // 写了却被 schema 丢掉的字段放最前面，后面编号对不上多半是它连带的（dropped.ts）
+  const problems = [droppedFields(BugCase.shape, picked(input)), bad, sources.error, stackBad].filter(Boolean)
+  if (problems.length) return { ok: false, info: joinProblems(problems) }
   // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
   // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主）时不核对；
   // 不是 git 的工程拼 Agent 改文件时记下的改动，拼不出来的文件不算「没改」

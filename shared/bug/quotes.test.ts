@@ -131,6 +131,30 @@ test('自己读的日志文件：写 file 按文件行号取原文，报告上�
   assert.match(resolveSources(miss, ctx({ src: fsrc })).error, /读不到日志文件 x\.log/)
 })
 
+// 实跑 2026-11-18：sed -n 'a,bp' | rg -n 打出的是相对行号，Agent 换算错了几十行，highlight 对不上被退回
+test('日志引用行号偏了：附近找原文和关键值都对得上的一段挪过去，告诉 Agent', () => {
+  const lines = Array.from({ length: 400 }, (_, i) => `[08.16.59] line ${i + 1}`)
+  lines[313] = '[08.16.59] PreDestroyTargetTask TaskID : 111016'
+  lines[314] = '[08.16.59] AppendTaskStateStack TaskID : 111016 State : PreDestroy'
+  const log = lines.join('\n')
+  const fsrc: BugSource = { read: (f) => (f === 'g.log' ? log : undefined) }
+  const c = base({
+    quotes: [{ id: 'Q4', kind: 'log', file: 'g.log', start: 280, end: 281, highlight: ['PreDestroyTargetTask'] }],
+  })
+  const r = resolveSources(c, ctx({ src: fsrc }))
+  assert.equal(r.error, '')
+  assert.deepEqual([c.quotes[0].start, c.quotes[0].end], [313, 314], '离原位置最近、两行都在范围里')
+  assert.match(c.quotes[0].text, /PreDestroyTargetTask/)
+  assert.ok(r.notes.some((x) => /Q4 写的第 280~281 行对不上.*第 313~314 行对得上.*相对行号/.test(x)))
+  // 用户贴的日志一样校准
+  const pasted = base({ quotes: [{ id: 'Q1', kind: 'log', start: 2, highlight: ['line 9'] }] })
+  assert.equal(resolveSources(pasted, ctx({ list: withLogs(lines.slice(0, 20).join('\n')) })).error, '')
+  assert.equal(pasted.quotes[0].start, 9)
+  // 附近找不到：照样退回，并提醒相对行号
+  const none = base({ quotes: [{ id: 'Q4', kind: 'log', file: 'g.log', start: 5, highlight: ['NotThere'] }] })
+  assert.match(resolveSources(none, ctx({ src: fsrc })).error, /Q4 的原文里没有「NotThere」（第 5~5 行.*相对行号/)
+})
+
 test('命令输出原文要在这个对话的工具输出里找得到；描述不核对', () => {
   const messages = [
     { tools: [{ kind: 'run', label: 'npm test', output: 'FAIL  total\n  expected 120\n  received "10812.00"' }] },

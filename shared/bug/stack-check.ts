@@ -47,22 +47,32 @@ export function stackProblem(c: BugCase, phase: string): string {
 
 /** 每跳挂的编号、方案 / 假设 / 日志点指向的跳，都要在档案里有 */
 function refProblem(c: BugCase, hopIds: Set<string>): string {
+  const out: string[] = []
   const known = new Set([...ids(c.quotes), ...ids(c.codeRefs), ...ids(c.logPlan), ...ids(c.hypotheses)])
   const badRefs = c.stack.flatMap((h) => h.refs.filter((r) => r.trim() && !known.has(r.trim())))
   if (badRefs.length)
-    return `stack 里挂的这些编号在 quotes、codeRefs、logPlan、hypotheses 里没有：${[...new Set(badRefs)].join('、')}。`
+    out.push(
+      `stack 里挂的这些编号在 quotes、codeRefs、logPlan、hypotheses 里没有：${[...new Set(badRefs)].join('、')}。`,
+    )
   const pointing = [
     ...c.options.flatMap((o) => o.hops),
     ...c.hypotheses.map((h) => h.hop),
     ...c.logPlan.map((l) => l.hop),
   ].filter((x) => x.trim())
   const badHops = pointing.filter((x) => !hopIds.has(x.trim()))
+  // 实跑 2026-11-18：写成「S2 → S9」这种范围，只说「在 stack 里没有」Agent 看不出错在写法
+  const ranged = badHops.some((x) => /[→\-~,，、\s]/.test(x.trim()))
   if (badHops.length)
-    return `options.hops、hypotheses.hop、logPlan.hop 里这些编号在 stack 里没有：${[...new Set(badHops)].join('、')}。`
+    out.push(
+      `options.hops、hypotheses.hop、logPlan.hop 里这些编号在 stack 里没有：${[...new Set(badHops)].join('、')}。` +
+        (ranged ? '一项只写一个编号（S2），不写范围或箭头；options.hops 要写几跳就写几项。' : ''),
+    )
   const f = c.stackFrom
   if (f?.kind === 'trace' && !c.quotes.some((q) => q.id === f.trace.trim()))
-    return 'stackFrom.kind 是 trace：先把报错堆栈作为原文写进 quotes（kind: log 或 run），stackFrom.trace 写它的编号。'
-  return ''
+    out.push(
+      'stackFrom.kind 是 trace：先把报错堆栈作为原文写进 quotes（kind: log 或 run），stackFrom.trace 写它的编号。',
+    )
+  return out.join('\n')
 }
 
 /**
