@@ -12,8 +12,10 @@ import { Globe, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { webViewContract as W, type WebProbeRes } from '@shared/api-contract/web-view'
 import { webUrlOf } from '@shared/web-view/embed'
+import { withPanelScrollbar } from '@shared/web-view/scrollbar'
 import { call } from '@/lib/api/call'
 import { extensionAllows, targetAddress, type WebTarget } from '@/lib/web-view/tabs'
+import { panelScrollbarLook } from '@/lib/web-view/scrollbar-look'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
 
@@ -207,7 +209,8 @@ export function WebFrame({
       <iframe
         key={`${loaded.src}\n${String(reloadKey ?? '')}`}
         src={loaded.html === undefined ? loaded.src : undefined}
-        srcDoc={loaded.html}
+        // 直接给的 HTML 也用全站那套滚动条（iframe 是另一个文档，管不到）
+        srcDoc={loaded.html === undefined ? undefined : withPanelScrollbar(loaded.html, panelScrollbarLook())}
         title={title ?? t('网页')}
         sandbox={sandboxOf(loaded.src, loaded.local)}
         referrerPolicy="no-referrer"

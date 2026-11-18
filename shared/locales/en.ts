@@ -62,6 +62,7 @@ import { EN_DONE_GUARD } from './en/done-guard.ts'
 import { EN_UI_POLISH } from './en/ui-polish.ts'
 import { EN_SELECT_SEARCH } from './en/select-search.ts'
 import { EN_TOAST } from './en/toast.ts'
+import { EN_SCROLLBAR } from './en/scrollbar.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -128,6 +129,7 @@ export const EN: Record<string, string> = {
   ...EN_UI_POLISH,
   ...EN_SELECT_SEARCH,
   ...EN_TOAST,
+  ...EN_SCROLLBAR,
   ...EN_SHEETS,
   ...EN_SHEET_LOOK,
 }
