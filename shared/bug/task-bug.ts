@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { BugCase, Diagnosis, FixBrief } from './diagnosis-schema.ts'
+import { BugProbe, BugRepro } from './probe-schema.ts'
 
 /**
  * 对话上和用户报的 Bug 有关的数据（重构文档第 15 条）：原来平铺在 Task 顶层（bug、bugFix、diagnoses、bugCase、
@@ -24,6 +25,10 @@ export const TaskBug = z.object({
   logBase: z.record(z.string(), z.string()).optional(),
   /** 父对话把已有子对话升级成用户报的 Bug（ADR 0057）：下一轮补带一次完整流程，带过就清掉（原 task.bugMethodPending） */
   methodPending: z.boolean().optional(),
+  /** 补排查加的临时代码（P1、P2…）：不修了、收尾、单条撤掉都按它找要删的地方，见 shared/bug/probe.ts */
+  probes: z.array(BugProbe).optional(),
+  /** 复现记录：每次「开始复现 → 取日志」一条（设计稿 N3） */
+  repros: z.array(BugRepro).optional(),
 })
 export type TaskBug = z.infer<typeof TaskBug>
 

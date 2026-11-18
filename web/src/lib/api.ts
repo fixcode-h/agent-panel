@@ -64,6 +64,8 @@ import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run/usage'
 import type { DiagnosisDecision } from '@shared/bug/diagnosis'
 import type { PatchResult, PatchStatus } from '@shared/bug/patch'
+import { bugProbeContract } from '@shared/api-contract/bug-probe'
+import type { BodyOf } from '@shared/api-contract/define'
 import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'
 import type { StatsTotal } from '@shared/tasks/export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
@@ -896,6 +898,12 @@ export const api = {
   /** 临时日志没删干净：retry 让它再删一次（返回交给它的话），finish 不再删、直接关闭报告 */
   cleanupAction: (id: string, action: 'retry' | 'finish') =>
     request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-cleanup`, json('POST', { action })),
+  /** 补排查：马上加（返回交给子对话的话，页面再作为消息发给它） */
+  startProbe: (id: string, body: BodyOf<typeof bugProbeContract.start>) =>
+    call(bugProbeContract.start, { params: { id }, body }),
+  /** 临时排查改动清单上的撤掉 / 让它改：返回交给子对话的话 */
+  probeAction: (id: string, body: BodyOf<typeof bugProbeContract.action>) =>
+    call(bugProbeContract.action, { params: { id }, body }),
   /** 排查补丁（分析稿 B1）：独立分支里的临时日志 / 修复有没有放在你的工作区里；不是 Git 独立分支的对话 eligible 为 false */
   patchStatus: (id: string) => request<PatchStatus>(`/tasks/${id}/diagnosis-patch`),
   /** apply 放到工作区、restore 还原、forget 我自己处理（不再记）；ok 为 false 时什么都没动，reason 是说明 */

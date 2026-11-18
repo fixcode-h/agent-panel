@@ -5,6 +5,8 @@
  */
 import type { Task } from '@shared/schema'
 import { patchFilesOf, patchKindOf, type PatchResult, type PatchStatus } from '@shared/bug/patch'
+import { addRepro, markerHits, probedReady, probeFiles } from '@shared/bug/probe'
+import { bugOf } from '@shared/bug/task-bug'
 import {
   isAbsPath,
   logPathIn,
@@ -34,10 +36,10 @@ function patch(task: Task, method: string, body: unknown): PatchStatus | PatchRe
   })
   if (action === 'apply') {
     const list = task.bug?.diagnoses ?? []
-    const kind = patchKindOf(list.at(-1))
+    const kind = patchKindOf(list.at(-1), probedReady(task.bug))
     if (!kind) return done(false, '现在不是等你复现或验证的时候，没有要放的改动')
     if (applied.has(task.id)) return done(false, '补丁已经在你的工作区里了：先还原，再重新放')
-    const files = patchFilesOf(list, kind)
+    const files = patchFilesOf(list, kind, probeFiles(task.bug))
     if (!files.length) return done(false, '报告里没有写要放哪些文件')
     applied.set(task.id, { kind, at: new Date().toISOString(), files })
     return done(true, '', files)
@@ -52,6 +54,10 @@ function sampleLog(task: Task): string {
   const d = task.bug?.diagnoses?.at(-1)
   const points = d?.logPlan?.length ? d.logPlan : [{ id: 'L1', file: 'src/app.ts', print: '' }]
   const lines = ['10:02:00.118 [app] route change /cart', '10:02:00.240 [net] GET /api/cart 200 38ms']
+  // 补排查加好的也各打一行，复现记录里能看出「打出来了」
+  for (const p of task.bug?.probes ?? [])
+    if (p.state === 'added')
+      lines.push(`10:02:01.2${p.id.slice(1).padStart(2, '0')} [排查-${p.id}] ${p.ask.slice(0, 40)}`)
   points.forEach((p, i) => {
     lines.push(
       `10:02:01.${String(300 + i * 7).padStart(3, '0')} [排查-演示] ${p.id || `L${i + 1}`} ${p.file} hit left=0`,
@@ -85,11 +91,19 @@ function log(task: Task, method: string, body: unknown): LogWatchStatus | LogSta
     endLine: 411 + n,
     bytes: text.length,
     related,
+    hits: markerHits(text),
     truncated: false,
     rotated: false,
   }
 }
 
-export function demoEvidence(task: Task, sub: string, method: string, body: unknown) {
-  return sub === 'diagnosis-patch' ? patch(task, method, body) : log(task, method, body)
+export function demoEvidence(task: Task, sub: string, method: string, body: unknown, persist: () => void) {
+  if (sub === 'diagnosis-patch') return patch(task, method, body)
+  const r = log(task, method, body)
+  // 取到日志就记一条复现记录（和正式后端同一份 shared/bug/probe.ts 的 addRepro）
+  if ('endLine' in r && r.ok) {
+    addRepro(bugOf(task), r, new Date().toISOString())
+    persist()
+  }
+  return r
 }

@@ -41,6 +41,7 @@ import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
 import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
+import { EN_BUG_PROBE } from './en/bug-probe.ts'
 import { EN_BUG_INPLACE } from './en/bug-inplace.ts'
 import { EN_BUG_AUTO } from './en/bug-auto.ts'
 import { EN_BUG_ASK } from './en/bug-ask.ts'
@@ -82,6 +83,7 @@ export const EN: Record<string, string> = {
   ...EN_BUG_OVERVIEW,
   ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,
+  ...EN_BUG_PROBE,
   ...EN_BUG_INPLACE,
   ...EN_BUG_AUTO,
   ...EN_BUG_ASK,

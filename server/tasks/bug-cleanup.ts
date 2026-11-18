@@ -20,22 +20,22 @@ import { TASK_FILES_DIR } from '../store.ts'
 import type { TasksScope } from './scope.ts'
 
 /** 快照里「加日志之前这个文件还不存在」的记号 */
-const ABSENT = 'absent'
+export const ABSENT = 'absent'
 
 const baseDir = (taskId: string) => path.join(TASK_FILES_DIR, taskId, 'log-base')
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
-const inside = (dir: string, file: string) => {
+export const inside = (dir: string, file: string) => {
   const p = path.resolve(dir, file)
   const r = path.relative(dir, p)
   return r && !r.startsWith('..') && !path.isAbsolute(r) ? p : ''
 }
-const read = (dir: string, file: string) => {
+export const readIn = (dir: string, file: string) => {
   const p = inside(dir, file)
   return p ? readFile(p, 'utf8').catch(() => undefined) : Promise.resolve(undefined)
 }
 
 /** 存一份内容，返回哈希（同样的内容只存一份） */
-async function keep(taskId: string, content: string): Promise<string> {
+export async function keep(taskId: string, content: string): Promise<string> {
   const h = sha(content)
   await mkdir(baseDir(taskId), { recursive: true })
   const f = path.join(baseDir(taskId), `${h}.txt`)
@@ -43,7 +43,7 @@ async function keep(taskId: string, content: string): Promise<string> {
   return h
 }
 
-async function load(taskId: string, h: string | undefined): Promise<string | undefined> {
+export async function load(taskId: string, h: string | undefined): Promise<string | undefined> {
   if (!h) return undefined
   if (h === ABSENT) return ''
   return readFile(path.join(baseDir(taskId), `${h}.txt`), 'utf8').catch(() => undefined)
@@ -58,7 +58,7 @@ export async function snapshotLogBase(task: Task, dir: string, d: Diagnosis) {
   const base = (bugOf(task).logBase ??= {})
   for (const file of evidenceFiles(d)) {
     if (file in base || !inside(dir, file)) continue
-    const content = await read(dir, file)
+    const content = await readIn(dir, file)
     base[file] = content === undefined ? ABSENT : await keep(task.id, content)
   }
 }
@@ -85,7 +85,7 @@ export async function previewCleanup(task: Task, dir: string): Promise<CleanupPr
   const files = [...new Set([...logFilesOf(task.bug?.diagnoses ?? []), ...changed])].filter((f) => !f.endsWith('.md'))
   const found: FileLine[] = []
   for (const f of files) {
-    const content = await read(dir, f)
+    const content = await readIn(dir, f)
     if (content !== undefined) found.push(...tempLogLines(f, content))
   }
   const created = await createdFiles(
@@ -99,7 +99,7 @@ export async function previewCleanup(task: Task, dir: string): Promise<CleanupPr
 export async function snapshotPre(task: Task, dir: string, files: string[]): Promise<Record<string, string>> {
   const pre: Record<string, string> = {}
   for (const f of files) {
-    const content = await read(dir, f)
+    const content = await readIn(dir, f)
     if (content !== undefined) pre[f] = await keep(task.id, content)
   }
   return pre
@@ -117,14 +117,17 @@ export async function checkCleanup(task: Task, dir: string, newId: () => string)
   const failed: CleanupState['failed'] = []
   const files = cleanupFiles(d).filter((f) => !c.drop.includes(f))
   for (const f of files) {
-    const now = (await read(dir, f)) ?? ''
+    const now = (await readIn(dir, f)) ?? ''
     const base = await load(task.id, task.bug?.logBase?.[f])
     const r = checkFile(f, now, { base, pre: await load(task.id, c.pre[f]), strict })
     if (!fileClean(r)) failed.push(r)
   }
   const kept: string[] = []
   for (const f of c.drop) if (await stat(path.join(dir, f)).catch(() => null)) kept.push(f)
-  return settleCleanup(task, { state: failed.length || kept.length ? 'failed' : 'done', failed, kept }, newId)
+  const ok = !failed.length && !kept.length
+  // 不修了的清理删的是整张清单（论证日志 + 补排查）：核对通过时补排查那几条一起记成撤掉
+  if (ok) for (const p of task.bug?.probes ?? []) if (p.state !== 'removed') p.state = 'removed'
+  return settleCleanup(task, { state: ok ? 'done' : 'failed', failed, kept }, newId)
 }
 
 /**

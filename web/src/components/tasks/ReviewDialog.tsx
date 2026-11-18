@@ -95,6 +95,7 @@ export function ReviewDialog({
   approveExtra,
   dock,
   reject,
+  slots,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -160,6 +161,8 @@ export function ReviewDialog({
    * 但交回去的意思是推翻，不是提问。次要按钮，放在「修改」前面
    */
   reject?: { label: string; hint: string; onReject: (raw: ReviewRaw) => Promise<void> }
+  /** 只读时也在的：footer 底栏左边的动作（诊断报告的「补排查」），aside 标注栏最上面（补排查记录） */
+  slots?: { footer?: ReactNode; aside?: ReactNode }
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -512,6 +515,7 @@ export function ReviewDialog({
               </div>
             )}
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
+              {slots?.aside}
               {notes.length === 0 && (
                 <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">
                   {t('选中左边的文字，点「标注」写下要改的地方')}
@@ -608,6 +612,7 @@ export function ReviewDialog({
           docked ? 'flex-wrap px-4' : 'max-md:flex-wrap max-md:px-4',
         )}
       >
+        {slots?.footer}
         {!notesShown &&
           quick.map((p) => (
             <Button key={p.label} size="sm" variant="secondary" className="shrink-0" onClick={() => addPreset(p)}>

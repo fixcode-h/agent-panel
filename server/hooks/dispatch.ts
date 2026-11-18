@@ -40,6 +40,7 @@ import {
   type GuardCtx,
 } from './guards.ts'
 import { bigOutputHint, bigReadDeny } from './guards-context.ts'
+import { snapshotBeforeEdit } from '../tasks/bug-probe.ts'
 import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
 import { taskMap } from '../runtime/task-state.ts'
 
@@ -437,6 +438,9 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       const u = await runUser(event, facts)
       if (u.deny) return { deny: true, reason: u.deny }
+      // 补排查窗口开着：放行的改文件先给文件拍「加之前」的快照，这一轮结束按它核对（server/tasks/bug-probe.ts）
+      if (facts.tool?.kind === 'edit' && c.task.bug?.probes?.length)
+        await snapshotBeforeEdit(c.task, c.cwd, facts.tool.paths.length ? facts.tool.paths : [facts.tool.path])
       // 用户升级成拦截的教训（ADR 0066）：对得上的命令直接拒绝，给出对的做法
       const blocked = know ? await know.blocked(facts) : ''
       if (blocked) {

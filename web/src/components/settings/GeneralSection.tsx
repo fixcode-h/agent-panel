@@ -191,6 +191,19 @@ function GeneralInputGroup({ value, checks, onChange }: GeneralProps) {
         />
       </Row>
       <Row
+        title={t('Bug 对话的动作条')}
+        desc={t('输入框上方放补排查、查看报告、放到工作区')}
+        hint={t(
+          '用户报的 Bug 交了诊断报告以后，子对话的输入框上方多一行常用动作：补排查（随时加日志、调试绘制）、查看报告、把临时代码放到你的工作区或还原。关掉后这些只在报告里点。',
+        )}
+      >
+        <Switch
+          aria-label={t('Bug 对话的动作条')}
+          checked={value.bugBar}
+          onCheckedChange={(v) => onChange({ bugBar: v })}
+        />
+      </Row>
+      <Row
         title={t('大文件只传路径')}
         desc={t('超过这个大小不上传，直接引用原文件')}
         hint={t('粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。')}

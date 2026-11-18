@@ -204,6 +204,8 @@ export function editScope(
   list: Diagnosis[],
   /** 不修了之后用户又让它接着做（shared/bug/reopen.ts）：新报告交上来之前不改文件，说法换成「重新交报告」 */
   reopen?: (v: number) => string,
+  /** 补排查加过临时代码的文件（shared/bug/probe.ts 的 probeFiles）：和论证日志一样，修完要删，放行 */
+  probed: string[] = [],
 ): { files: string[] } | { deny: string } {
   const d = list.at(-1)
   if (!d) return { deny: '这是用户报的 Bug：先按流程查，用 submit_diagnosis 交报告，用户同意了再改文件。' }
@@ -227,13 +229,13 @@ export function editScope(
     }
   }
   // 不用改代码：只放行删临时日志
-  if (phase === 'cause' && noFixOf(d)) return { files: logFilesOf(list) }
+  if (phase === 'cause' && noFixOf(d)) return { files: [...new Set([...logFilesOf(list), ...probed])] }
   if (phase === 'cause')
     return { deny: `用户同意了第 ${v} 版的根因：先交 phase: plan 的修复方案，用户确认后再改文件。` }
   const plan = lastPlan(list)
   if (!plan || plan.status !== 'approved')
     return { deny: '还没有用户确认的修复方案：先交 phase: plan，用户确认后再改文件。' }
-  return { files: [...new Set([...plan.files, ...logFilesOf(list)])] }
+  return { files: [...new Set([...plan.files, ...logFilesOf(list), ...probed])] }
 }
 
 export const KIND_TEXT: Record<DiagnosisNote['kind'], string> = {
@@ -250,7 +252,7 @@ export const notesList = (notes: DiagnosisNote[]) =>
 
 // 正式日志只对已有日志体系的模块要求（实测：纯函数库照「留下或补上正式日志」会被推着加 console.log）
 const CLEANUP =
-  '收尾前把 `[排查-` 前缀的临时日志全部删掉（面板会核对）。正式日志：改到的模块已经有日志体系的，按它的写法、级别和前缀在关键分支补上关键值（不打密钥和大段数据），下次出同类问题看日志就能定位；没有日志的模块（纯函数、工具库）不加，在 result 里写一句为什么不加。'
+  '收尾前把 `[排查-` 前缀的临时日志全部删掉，补排查加的成对 `[排查-P… 开始]` … `[排查-P… 结束]` 整段删（面板会核对）。正式日志：改到的模块已经有日志体系的，按它的写法、级别和前缀在关键分支补上关键值（不打密钥和大段数据），下次出同类问题看日志就能定位；没有日志的模块（纯函数、工具库）不加，在 result 里写一句为什么不加。'
 
 /** 用户的决定交给 AI 的话：按这一版的阶段和用户的选择分别写 */
 export function phaseFeedback(d: Diagnosis): string {
