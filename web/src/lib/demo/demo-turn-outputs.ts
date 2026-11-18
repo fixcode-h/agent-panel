@@ -1,5 +1,7 @@
 import type { FileChange, Task } from '@shared/schema'
 import type { TurnOutput } from '@shared/turn-outputs/pick'
+import { parseScope, scopeChanges } from '@shared/conv-changes'
+import { fail } from './demo-http'
 
 /**
  * 演示：最后一轮除了改代码，还做了一个示例网页、一张 archify 架构图、一份排查记录和一张截图，
@@ -37,4 +39,18 @@ export function demoTurnOutputs(task: Task, body: { msgs: string[]; paths: strin
       }
     })
   return { files }
+}
+
+/**
+ * POST /tasks/:id/conv-revert：演示里没有仓库，撤销只把这一段的几轮记成已撤销。
+ * 和正式版同一份口径（shared/conv-changes.ts）：切在「这一轮」时只撤这一轮的几条
+ */
+export function demoConvRevert(task: Task, body: unknown) {
+  const round = parseScope((body as { scope?: unknown } | undefined)?.scope) === 'round'
+  const ch = scopeChanges(task.messages, round ? 'round' : 'conv')
+  if (!ch.files.length) fail(round ? '这一轮没有要撤销的改动' : '这个对话没有要撤销的改动', 404)
+  const at = new Date().toISOString()
+  for (const m of task.messages.filter((x) => ch.turns.includes(x.id)))
+    m.turnChanges = { ...m.turnChanges!, revertedAt: at }
+  return { ok: true, task, files: ch.files.map((f) => f.path) }
 }

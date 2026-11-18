@@ -4,11 +4,10 @@ import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
 import { demoCapabilities } from './demo-capabilities'
 import { demoJobAction, demoJobStore, demoJobs, demoUrlStore, setDemoJobs } from './demo-jobs'
-import { parseScope, scopeChanges } from '@shared/conv-changes'
 import type { LiveUrl } from '@shared/turn-outputs/local-url'
 import { demoChildCounts, demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
-import { demoOutputChanges, demoTurnOutputs } from './demo-turn-outputs'
+import { demoConvRevert, demoOutputChanges, demoTurnOutputs } from './demo-turn-outputs'
 import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
@@ -3085,16 +3084,9 @@ function tasksRoute(
   // 整个对话的改动（对话停下后最后面那张卡片）：差异和一轮的共用样例（见上面），撤销把带改动的每一轮都记成已撤销
   if (sub === 'conv-revert' && method === 'POST') {
     if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
-    const at = new Date().toISOString()
-    // 和正式版同一份口径（shared/conv-changes.ts）：切在「这一轮」时只撤这一轮的几条
-    const round = parseScope((body as { scope?: unknown } | undefined)?.scope) === 'round'
-    const ch = scopeChanges(task.messages, round ? 'round' : 'conv')
-    if (!ch.files.length) fail(round ? '这一轮没有要撤销的改动' : '这个对话没有要撤销的改动', 404)
-    for (const m of task.messages.filter((x) => ch.turns.includes(x.id)))
-      m.turnChanges = { ...m.turnChanges!, revertedAt: at }
-    const files = new Set(ch.files.map((f) => f.path))
+    const r = demoConvRevert(task, body)
     persist()
-    return { ok: true, task, files: [...files] }
+    return r
   }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行', 409)
