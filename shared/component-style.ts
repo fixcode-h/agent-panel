@@ -116,7 +116,18 @@ export const COMP_SPEC = {
     search: pick('from10', { always: '1', from6: '6', from10: '10', from20: '20', never: '0' }),
   },
   // 弹窗照 Claude Code 网页版的方案弹窗：圆角 8、深色下比页面亮一档的窗口色（--window）
-  modal: { radius: px(14, 0, 28), bg: color('window', { window: 'var(--window)', ...BG }), border: BORDER },
+  /** resizeEdge / resizeLine：拖边缘缩放时点亮那一边边线的颜色和粗细（web/src/components/ui/modal-resize.tsx） */
+  modal: {
+    radius: px(14, 0, 28),
+    bg: color('window', { window: 'var(--window)', ...BG }),
+    border: BORDER,
+    resizeEdge: color('emphasis', {
+      emphasis: 'var(--accent)',
+      primary: 'var(--primary)',
+      gray: tint(40),
+    }),
+    resizeLine: px(2, 1, 4),
+  },
   sheet: { radius: px(14, 0, 24), bg: color('bg') },
   popover: { radius: px(10, 0, 24), bg: color('pop') },
   /** 数据表格（文件弹窗里的 xlsx / CSV，web/src/components/files/SheetTable.tsx）：表头每种行一个颜色 */
@@ -250,6 +261,28 @@ export const COMP_SPEC = {
     radius: px(10, 0, 24),
     bg: color('none'),
     border: pick('dashed', { dashed: 'dashed', solid: 'solid', none: 'none' }),
+  },
+  /**
+   * 滚动条（全站一套，照 Claude Code：细、无箭头、透明轨道、圆头滑块，web/src/index.css 的 ::-webkit-scrollbar）：
+   * size 是整条轨道多宽，pad 是滑块两边留的透明边（滑块宽 = size - 2 × pad）。
+   * size 上限 12：对话区右边给消息区滚动条留的槽就是 12px（RAIL_GUTTER），再宽会钻到会话栏底下。
+   * idle 是平时（鼠标不在滚动区里）滑块的颜色：一直显示就等于 thumb，「进来才显示」就是透明
+   */
+  scrollbar: {
+    size: px(10, 6, 12),
+    pad: px(2, 0, 4),
+    thumb: color('theme', {
+      theme: 'var(--scroll-thumb)',
+      faint: tint(14),
+      strong: tint(32),
+      orange: tint(55, 'var(--accent)'),
+    }),
+    hover: color('theme', {
+      theme: 'var(--scroll-thumb-hover)',
+      strong: tint(45),
+      orange: 'var(--accent)',
+    }),
+    idle: pick('always', { always: 'var(--c-scrollbar-thumb)', hover: 'transparent' }),
   },
 } as const satisfies Record<string, Record<string, CompField>>
 

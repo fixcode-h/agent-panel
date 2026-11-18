@@ -64,7 +64,7 @@ export function FloatAbove({
         style={room ? { maxHeight: room } : undefined}
         // 容器本身不接鼠标：卡片之间、两侧的空白要能点到下面的消息。上面留一点空，滚动裁边时不切掉卡片的投影
         className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-y-auto thin-scroll *:first:mt-2 *:shrink-0 *:pointer-events-auto',
+          'pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-y-auto *:first:mt-2 *:shrink-0 *:pointer-events-auto',
           className,
         )}
       >

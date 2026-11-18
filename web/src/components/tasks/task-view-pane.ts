@@ -29,7 +29,7 @@ export const EMBED_FILES_PANE_CAP = 320
 export const WEB_RAIL_MIN = 600
 /** 会话栏的宽度，和中间对话至少要留的宽度：放不下时会话栏和右侧文件栏只显示后打开的那个 */
 export const SESSION_BAR_W = 320
-/** 会话栏和面板右边缘之间留给消息区滚动条的宽度（和 index.css 的 thin-scroll 一样宽） */
+/** 会话栏和面板右边缘之间留给消息区滚动条的宽度（全站滚动条最宽 12px，见 shared/component-style.ts 的 scrollbar.size） */
 export const RAIL_GUTTER = 12
 export const CONVERSATION_MIN = 640
 /** 右栏拖动时中间至少留下的宽度 */

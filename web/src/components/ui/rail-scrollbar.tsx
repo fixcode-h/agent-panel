@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { cn } from '@/lib/utils'
 
-/** 滑块最短多高，和 index.css 里 thin-scroll 的 min-height 一致 */
+/** 滑块最短多高，和 index.css 里全站滚动条滑块的 min-height 一致 */
 const MIN_THUMB = 40
 
 /**
@@ -97,13 +97,17 @@ export function RailScrollbar({
     >
       <div
         className={cn(
-          'absolute inset-x-1 rounded-full transition-[background-color] duration-150',
-          visible
-            ? 'pointer-events-auto bg-[var(--scroll-thumb)] hover:bg-[var(--scroll-thumb-hover)]'
-            : 'bg-transparent',
-          dragging && 'bg-[var(--scroll-thumb-hover)]',
+          'absolute right-0 rounded-full bg-clip-padding transition-[background-color] duration-150',
+          visible ? 'pointer-events-auto bg-(--c-scrollbar-thumb) hover:bg-(--c-scrollbar-hover)' : 'bg-transparent',
+          dragging && 'bg-(--c-scrollbar-hover)',
         )}
-        style={{ top: geo.top, height: geo.height }}
+        // 和全站滚动条同宽同留白（设置 → 组件 →「滚动条」），贴槽的右边，和消息区自己的原生滑块落在同一条竖线上
+        style={{
+          top: geo.top,
+          height: geo.height,
+          width: 'var(--c-scrollbar-size)',
+          border: 'var(--c-scrollbar-pad) solid transparent',
+        }}
         data-rail-thumb={visible ? 'shown' : 'hidden'}
         onPointerDown={(e) => {
           const el = target.current

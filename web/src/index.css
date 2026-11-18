@@ -991,15 +991,46 @@ body,
 ::selection {
   background: var(--selection);
 }
+/*
+ * 全站滚动条（照 Claude Code）：细、没有上下箭头、轨道透明不画分隔线，圆头滑块，悬停 / 按住加深，深浅色跟着主题。
+ * 所有滚动区都走这一套（虚拟列表、代码编辑器、表格、插件页面），不再按区域各写一份；
+ * 宽度、内边距、颜色、要不要平时就显示在设置 → 组件 →「滚动条」里调（--c-scrollbar-*，shared/component-style.ts）。
+ * 不给 html / body 写标准的 scrollbar-width / scrollbar-color：Chromium 121 起只要元素上有这两个属性就不认
+ * ::-webkit-scrollbar，改画系统原生的（Windows 上就是带箭头、带竖分隔线的那种），所以标准属性只留给 Firefox
+ */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--c-scrollbar-size);
+  height: var(--c-scrollbar-size);
+  background: transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+  border: 0;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--scroll-thumb);
+  background-color: var(--c-scrollbar-idle);
   border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
+  border: var(--c-scrollbar-pad) solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:vertical {
+  min-height: 40px;
+}
+::-webkit-scrollbar-thumb:horizontal {
+  min-width: 40px;
+}
+/* 「鼠标进来才显示」时：进到滚动区就显出平时的颜色；「一直显示」时 idle 就是这个颜色，这条不起作用 */
+:hover::-webkit-scrollbar-thumb {
+  background-color: var(--c-scrollbar-thumb);
+}
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--c-scrollbar-hover);
 }
 /*
  * 横竖两条滚动条交汇的角落：自定义了 ::-webkit-scrollbar 后 Chromium 把这一格画成白块（深色主题下最扎眼，
@@ -1008,55 +1039,15 @@ body,
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
-/*
- * 细滚动条（设计稿 `.sb`，对话消息区等长列表用）：平时透明不占眼，鼠标进到这块区域才显出圆头滑块，
- * 按住滑块再加深。写成普通类而不是 @utility：上面全局的 ::-webkit-scrollbar 不在层里，
- * 放进 utilities 层会被它压住
- */
-.thin-scroll::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-.thin-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.thin-scroll::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 999px;
-  border: 4px solid transparent;
-  background-clip: padding-box;
-  min-height: 40px;
-}
-.thin-scroll:hover::-webkit-scrollbar-thumb {
-  background-color: var(--scroll-thumb);
-}
-.thin-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scroll-thumb-hover);
-}
-/* 没有 webkit 滚动条伪元素的浏览器（Firefox）：用标准属性画细条，同样悬停才显色 */
+/* 没有 webkit 滚动条伪元素的浏览器（Firefox）：用标准属性画细条，颜色同一套 */
 @supports not selector(::-webkit-scrollbar) {
-  .thin-scroll {
+  * {
     scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+    scrollbar-color: var(--c-scrollbar-idle) transparent;
   }
-  .thin-scroll:hover {
-    scrollbar-color: var(--scroll-thumb) transparent;
+  :hover {
+    scrollbar-color: var(--c-scrollbar-thumb) transparent;
   }
-}
-/*
- * 「Claude Code」配色的滚动条（照参考图）：轨道透明，滑块是 6px 宽的圆头灰条，比分界线亮一档、一直看得见；
- * 只把滑块两边的透明边收窄（滑块变宽），轨道宽度不变，滚动区的排版不跟着动
- */
-[data-palette='code'] ::-webkit-scrollbar-thumb {
-  border-width: 2px;
-}
-[data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb {
-  border-width: 3px;
-  background-color: var(--scroll-thumb);
-}
-[data-palette='code'] .thin-scroll::-webkit-scrollbar-thumb:hover,
-[data-palette='code'] ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scroll-thumb-hover);
 }
 /*
  * 对话正文和会话栏共用右边一条滚动槽（web/src/components/ui/rail-scrollbar.tsx）：鼠标在会话栏那块时，
@@ -1064,7 +1055,8 @@ body,
  * 正文和会话栏里嵌套的滚动区照常显示。写在各配色的滑块规则后面，同优先级时靠后的生效
  */
 [data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb,
-[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb:hover {
+[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]::-webkit-scrollbar-thumb:hover,
+[data-scroll-pair][data-scroll-focus='rail'] [data-conversation-scroll]:hover::-webkit-scrollbar-thumb {
   background-color: transparent;
 }
 @supports not selector(::-webkit-scrollbar) {
@@ -1134,6 +1126,8 @@ body,
   --c-modal-radius: 14px;
   --c-modal-bg: var(--window);
   --c-modal-border: 1px;
+  --c-modal-resizeEdge: var(--accent);
+  --c-modal-resizeLine: 2px;
   --c-sheet-radius: 14px;
   --c-sheet-bg: var(--bg);
   --c-popover-radius: 10px;
@@ -1176,6 +1170,11 @@ body,
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
+  --c-scrollbar-size: 10px;
+  --c-scrollbar-pad: 2px;
+  --c-scrollbar-thumb: var(--scroll-thumb);
+  --c-scrollbar-hover: var(--scroll-thumb-hover);
+  --c-scrollbar-idle: var(--c-scrollbar-thumb);
   --c-grid-rowH: 26px;
   --c-grid-font: var(--app-mono);
   --c-grid-lines: 1px;
@@ -3506,34 +3505,6 @@ html [data-sonner-toast][data-styled='true'] {
 }
 /* 关掉动效时不动：sonner 自己的 `@media (prefers-reduced-motion)` 会把这些过渡全禁掉，
    这里不要用 !important 把它的兜底盖回来。 */
-
-/* 侧栏：滚动条比全局（10px）窄一档，平时更淡，鼠标移上去再加深。
-   侧栏本来就窄，滚动条占宽太明显；限定在 [data-sidebar] 里，不改别的面板 */
-[data-sidebar]::-webkit-scrollbar,
-[data-sidebar] *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-[data-sidebar]::-webkit-scrollbar-thumb,
-[data-sidebar] *::-webkit-scrollbar-thumb {
-  background: var(--scroll-thumb);
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-[data-sidebar]::-webkit-scrollbar-thumb:hover,
-[data-sidebar] *::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scroll-thumb-hover);
-}
-
-/* 设置弹窗里的滚动条比全局细一号：弹窗里左栏和内容区各有一条，10px 的轨道挤占列表宽度。
-   只覆盖设置弹窗（data-settings-dialog 在 SettingsPage 的 D.Content 上），不影响其他页面 */
-[data-settings-dialog] ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-[data-settings-dialog] ::-webkit-scrollbar-thumb {
-  border-width: 2px;
-}
 
 /*
  * AI 回复的正文比回复头缩进 32px：彩色图标留在最左，名字、正文、过程行、下面的复制按钮在同一条竖线上（用户要求）。

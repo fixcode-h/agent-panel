@@ -45,3 +45,17 @@ test('阅读模式：取 article 正文，丢掉脚本和导航，链接补成�
   assert.doesNotMatch(md, /evil|首页|版权|javascript/)
   assert.match(md, /坏链接/)
 })
+
+test('iframe 里的面板页面插入全站滚动条样式：插在 <head> 后、不进怪异模式、不重复插', async () => {
+  const { withPanelScrollbar } = await import('./scrollbar.ts')
+  const page = '<!doctype html><html lang="zh"><head><title>x</title></head><body></body></html>'
+  const out = withPanelScrollbar(page)
+  assert.ok(out.startsWith('<!doctype html><html lang="zh"><head><style data-panel-scrollbar>'))
+  assert.match(out, /::-webkit-scrollbar-button\{display:none/)
+  assert.equal(withPanelScrollbar(out), out)
+  assert.ok(withPanelScrollbar('<!DOCTYPE html><p>hi</p>').startsWith('<!DOCTYPE html><style'))
+  assert.ok(withPanelScrollbar('<p>hi</p>').startsWith('<style'))
+  // 坏值不能把 <style> 提前闭合
+  const bad = withPanelScrollbar('<p/>', { size: '10px', pad: '2px', thumb: 'red</style><script>', hover: 'blue' })
+  assert.equal(bad.match(/<\/style>/g)?.length, 1)
+})
