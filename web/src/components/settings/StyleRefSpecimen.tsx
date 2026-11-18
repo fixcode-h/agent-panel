@@ -5,10 +5,11 @@ import { BUILTIN_STYLES } from '@shared/styles'
 import { StylePicker, StyleOption } from '@/components/ui/style-picker'
 import { StyleThumb } from '@/components/ui/style-thumb'
 import { CallTreeSpecimen } from './CallTreeSpecimen'
+import { StructureSpecimen } from './StructureSpecimen'
 import { Group } from './parts'
 
 /**
- * 设置 →「控件样式」里看图类部件的两组样张：调用栈树、风格参考图和风格选择。
+ * 设置 →「控件样式」里看图类部件的几组样张：调用栈树、功能结构、风格参考图和风格选择。
  * 从 ComponentsSection 挪出来（那个函数到了行数基线），示例外框 Specimen 由组件页传进来
  */
 export function ReferenceSpecimens({
@@ -21,6 +22,11 @@ export function ReferenceSpecimens({
       <Group title={t('调用栈')}>
         <Specimen name="calltree" tune={['callTree']}>
           <CallTreeSpecimen />
+        </Specimen>
+      </Group>
+      <Group title={t('功能结构')}>
+        <Specimen name="structure" tune={['structure', 'segmented']}>
+          <StructureSpecimen />
         </Specimen>
       </Group>
       <Group title={t('风格参考图 · 风格选择')}>

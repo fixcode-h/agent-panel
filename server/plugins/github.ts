@@ -23,9 +23,26 @@ export const MarketEntry = z.object({
   /** 仓库里的子目录（没有 Release 附件时下载源码包取这个目录） */
   path: z.string().optional(),
   homepage: z.string().optional(),
+  /**
+   * 包装配方（插件仓库 wraps/，ADR 0068）：上游仓库 owner/repo。安装走「从 GitHub 包装」，没有插件包可下载、
+   * 不参加检查更新和依赖安装（installable 过滤掉）。plugins.json 里写在单独的 wraps 数组，旧面板读不到就不显示
+   */
+  wrap: z.string().optional(),
 })
 export type MarketEntry = z.infer<typeof MarketEntry>
-const MarketIndex = z.object({ plugins: z.array(MarketEntry) })
+/** plugins.json 的 wraps：只列配方，版本跟着上游走，不写版本号 */
+const MarketWrap = z.object({
+  repo: z.string(),
+  id: z.string(),
+  name: z.string(),
+  description: z.string().default(''),
+  icon: z.string().default('puzzle'),
+  homepage: z.string().optional(),
+})
+const MarketIndex = z.object({ plugins: z.array(MarketEntry), wraps: z.array(MarketWrap).catch([]).default([]) })
+
+/** 能直接下载插件包的条目（去掉包装配方）：检查更新、装依赖、按 id 安装只看这些 */
+export const installable = (list: MarketEntry[]) => list.filter((e) => !e.wrap)
 
 /** 「owner/repo」「https://github.com/owner/repo(.git)(/tree/<ref>/<path>)」都认 */
 export function parseRepo(input: string): { repo: string; ref?: string; path?: string } {
@@ -74,9 +91,17 @@ export async function readMarket(repo: string, ref = 'HEAD') {
   )
   if (res.status === 404) return undefined
   if (!res.ok) throw new Error(`读插件目录失败：HTTP ${res.status}`)
-  const p = MarketIndex.safeParse(await res.json().catch(() => null))
+  return parseMarketIndex(await res.json().catch(() => null))
+}
+
+/** plugins.json → 市场条目：配方排在插件后面，和插件同一张列表给界面（标「包装」，安装走包装流程）；和插件同 id 的配方不列 */
+export function parseMarketIndex(json: unknown): MarketEntry[] {
+  const p = MarketIndex.safeParse(json)
   if (!p.success) throw new Error('仓库里的 plugins.json 格式不对')
-  return p.data.plugins
+  const wraps = p.data.wraps
+    .filter((w) => !p.data.plugins.some((e) => e.id === w.id))
+    .map(({ repo, ...w }): MarketEntry => ({ ...w, version: '', wrap: repo }))
+  return [...p.data.plugins, ...wraps]
 }
 
 /** 单个插件的仓库：读 ref 上（子目录里）plugin.json 的版本号；没有这个文件返回 undefined */

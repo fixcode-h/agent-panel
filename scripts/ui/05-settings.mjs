@@ -47,8 +47,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 插件页：只有一份卡片列表，分「已安装 / 可安装」；市场结果来自缓存（写着多久前更新），其他安装方式收进下拉
   await p.getByRole('button', { name: '插件', exact: true }).click()
   await check(p, '设置-插件', ['已安装', '可安装', '3 分钟前更新', '其他方式安装', '视频截帧'])
-  if ((await p.locator('[data-market-plugin]').count()) !== 4)
-    errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件')
+  if ((await p.locator('[data-market-plugin]').count()) !== 5)
+    errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件和 Archify 配方')
+  // 官方包装配方（Archify）列在市场里，标「包装」，没有版本号
+  const archify = p.locator('[data-market-plugin="archify"]')
+  if (!(await archify.getByText('包装', { exact: true }).count()))
+    errors.push('设置-插件：市场里的 Archify 没有标「包装」')
   await p.getByRole('button', { name: '其他方式安装' }).click()
   await check(p, '设置-插件-其他方式安装', ['从 GitHub 链接包装…', '上传压缩包（.zip）', '链接本机目录（开发）'])
   // 从 GitHub 链接包装（ADR 0068）：先让贴链接，不贴不能读取

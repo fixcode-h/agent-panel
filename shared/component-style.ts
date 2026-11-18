@@ -180,6 +180,16 @@ export const COMP_SPEC = {
     edge: hue('violet'),
   },
   /**
+   * 诊断报告的功能结构（调用栈 / 时序图 / 类图 / 架构页四个页签，web/src/components/ui/structure-views.css）：
+   * 架构页说明卡的圆角、图最高多高（超出在框里滚动）、显不显示「它选的」理由、图下面列不列节点对到的代码位置
+   */
+  structure: {
+    radius: px(10, 0, 20),
+    diagramH: px(560, 240, 900),
+    why: bool(true, 'inline', 'none'),
+    nodes: bool(true, 'flex', 'none'),
+  },
+  /**
    * 能力行（设置 →「MCP」的工具和动作，web/src/components/ui/capability-row.tsx）：
    * 上下留白、悬停底的圆角、显不显示「该用 / 别用」两行、显不显示工具原名
    */

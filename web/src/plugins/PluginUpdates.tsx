@@ -14,7 +14,7 @@ import { openWrap } from './wrap-state'
 /** 这个插件在当前市场里的条目（从这个市场仓库装的才算） */
 export function marketEntryOf(row: PluginRow, market?: MarketResult): MarketEntry | undefined {
   if (row.source.kind !== 'github' || row.source.ref !== market?.repo) return undefined
-  return market.plugins?.find((e) => e.id === row.manifest.id)
+  return market.plugins?.find((e) => e.id === row.manifest.id && !e.wrap)
 }
 export const useMarketEntry = (row: PluginRow) => marketEntryOf(row, useMarket().result)
 
