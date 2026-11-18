@@ -192,6 +192,8 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   复制源码: 'Copy source',
   '复制 SVG': 'Copy SVG',
   全屏: 'Full screen',
+  看图形还是源码: 'Show diagram or source',
+  图形: 'Diagram',
   '源码 · {n} 行': 'Source · {n} lines',
   重要: 'Important',
   注意: 'Warning',
