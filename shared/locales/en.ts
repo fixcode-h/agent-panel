@@ -38,6 +38,7 @@ import { EN_BUG_LOCATE } from './en/bug-locate.ts'
 import { EN_CALL_TREE } from './en/call-tree.ts'
 import { EN_WEB_VIEW } from './en/web-view.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
+import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
 import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
@@ -79,6 +80,7 @@ export const EN: Record<string, string> = {
   ...EN_CALL_TREE,
   ...EN_WEB_VIEW,
   ...EN_TURN_OUTPUTS,
+  ...EN_TURN_SCOPE,
   ...EN_BUG_OVERVIEW,
   ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,

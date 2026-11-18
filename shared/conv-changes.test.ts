@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { convChanges } from './conv-changes.ts'
+import { convChanges, scopeChanges } from './conv-changes.ts'
 
 const turn = (id: string, files: { path: string; add: number; del: number }[], revertedAt?: string) => ({
   id,
@@ -52,4 +52,23 @@ test('整个对话的改动：剔除掉的别的对话的文件合起来说明�
   Object.assign(m3.turnChanges, { others: ['z.ts'] })
   assert.deepEqual(convChanges([m1, m2, m3] as never).others, ['x.ts', 'y.ts'])
   assert.deepEqual(convChanges([turn('m1', [{ path: 'a.ts', add: 1, del: 0 }])] as never).others, [])
+})
+
+test('改动卡片的范围：这一轮只算用户最后一次发话以后的，整个对话算全部', () => {
+  const ch = (path: string) => ({ spans: [], files: [{ path, add: 1, del: 0 }] })
+  const msgs = [
+    { id: 'u1', role: 'user' as const },
+    { id: 'a1', role: 'agent' as const, turnChanges: ch('old.ts') },
+    { id: 'u2', role: 'user' as const },
+    { id: 'a2', role: 'agent' as const, turnChanges: ch('new.ts') },
+  ]
+  assert.deepEqual(
+    scopeChanges(msgs, 'round').files.map((f) => f.path),
+    ['new.ts'],
+  )
+  assert.deepEqual(scopeChanges(msgs, 'round').turns, ['a2'])
+  assert.deepEqual(
+    scopeChanges(msgs, 'conv').files.map((f) => f.path),
+    ['old.ts', 'new.ts'],
+  )
 })

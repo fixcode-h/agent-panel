@@ -113,6 +113,48 @@ export function registerProcessRoutes(sc: TasksScope) {
     return c.json(job)
   })
 
+  /**
+   * 本轮产出里「可浏览的地址」那一行的停止：只停这一条（开发服务器），对话本身不停；
+   * 结果按后台命令的老规矩不推回对话（停下的命令推回去会把对话拉起新的一轮）
+   */
+  sc.routes.post('/:id/jobs/:jobId/stop', async (c) => {
+    const id = c.req.param('id')
+    if (!(await currentTask(sc, id))) return sc.bad(c, t('任务不存在'), 404)
+    const r = sc.background.stopOne(id, c.req.param('jobId'))
+    return c.json({ ok: r.ok, info: r.ok ? t('已停止') : r.info })
+  })
+
+  /**
+   * 「可浏览的地址」停了以后的重新运行：按原来的命令、目录、环境变量再起一次，当常驻服务跑。
+   * 是用户在页面上点的、不是对话让跑的：结果不推回对话（quiet），对话停着就一直停着
+   */
+  sc.routes.post('/:id/jobs/:jobId/rerun', async (c) => {
+    const id = c.req.param('id')
+    const tk = await currentTask(sc, id)
+    if (!tk) return sc.bad(c, t('任务不存在'), 404)
+    const old = sc.background.list(id).find((j) => j.id === c.req.param('jobId'))
+    if (!old) return sc.bad(c, t('没有这条后台命令'), 404)
+    if (!old.endedAt) return c.json({ ok: false, info: t('这条命令还在跑') })
+    const root = await sc.taskDir(tk)
+    if (!root || tk.imported) return sc.bad(c, t('任务没有工作目录'), 404)
+    const r = sc.background.start({
+      taskId: id,
+      name: old.name,
+      command: old.command,
+      cwd: path.relative(root, old.cwd),
+      root,
+      exclusive: false,
+      service: true,
+      quiet: true,
+      ...(old.env ? { env: old.env } : {}),
+      ...(old.shell ? { shell: old.shell } : {}),
+    })
+    if (!r.ok || !('id' in r)) return c.json({ ok: false, info: r.info })
+    log.info('background', '页面上重新运行了后台命令', { task: id, from: old.id, job: r.id })
+    // r.info 是写给 Agent 的（让它用 check_background 看输出），页面上只说一句
+    return c.json({ ok: true, id: r.id, info: t('已重新运行') })
+  })
+
   /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */
   sc.routes.get('/:id/processes', async (c) => {
     const tk = await currentTask(sc, c.req.param('id'))

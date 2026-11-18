@@ -50,6 +50,7 @@ export const compLabel = (c: CompName) =>
     callTree: t('调用栈树'),
     capRow: t('能力行'),
     htmlCard: t('HTML 卡片'),
+    changesCard: t('改动卡片'),
     styleRef: t('风格参考图'),
     toast: t('提示'),
   })[c]
@@ -69,6 +70,8 @@ const propLabel = (c: CompName, prop: string) => {
     return (
       { preview: t('缩略预览'), previewH: t('预览高度'), active: t('右栏正在显示的描边') } as Record<string, string>
     )[prop]
+  if (c === 'changesCard' && prop !== 'radius')
+    return ({ scope: t('默认显示'), first: t('先列几个文件') } as Record<string, string>)[prop]
   if (c === 'styleRef' && prop !== 'radius')
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')
@@ -205,6 +208,8 @@ const optionLabel = (v: string) =>
     '4s': t('4 秒'),
     '6s': t('6 秒'),
     '8s': t('8 秒'),
+    round: t('这一轮'),
+    conv: t('整个对话'),
   })[v] ?? v
 
 /** 一项的控件：圆角、高度给滑块，开关给开关，选项给分段，颜色给下拉（自定义时浅色、深色各一个取色器） */

@@ -1,4 +1,4 @@
-import { demoJobs } from './demo-jobs'
+import { demoJobs, demoUrls } from './demo-jobs'
 import type { Task } from '@shared/schema'
 import { childCountsScan, type ChildCounts } from '@shared/children/row'
 import { taskLiveOf, type TaskLive } from '@shared/live/task-live'
@@ -27,6 +27,7 @@ export function demoLive(
   return taskLiveOf(t, {
     cliAlive: demoCliAlive(t),
     jobs: demoJobs(t),
+    ...(demoUrls(t).length ? { urls: demoUrls(t) } : {}),
     childrenWorking: top ? c.childrenWorking : 0,
     childrenCli: top ? c.childrenCli : 0,
     childrenNeeds: c.childrenNeeds,

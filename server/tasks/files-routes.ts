@@ -1,6 +1,6 @@
 import { type Context } from 'hono'
 import { gitFileDiff, gitNumstat, spansFileDiff } from '../exec/git.ts'
-import { convChanges } from '../../shared/conv-changes.ts'
+import { parseScope, scopeChanges } from '../../shared/conv-changes.ts'
 import { uploadFileOf } from '../uploads.ts'
 import {
   listDir,
@@ -96,7 +96,8 @@ export function registerFileRoutes(s: TasksScope) {
     const tk = await currentTask(s, c.req.param('id'))
     if (!tk) return s.bad(c, t('任务不存在'), 404)
     const file = c.req.query('path') ?? ''
-    const ch = convChanges(tk.messages)
+    // scope=round：改动卡片切在「这一轮」时只拼这一轮的几段
+    const ch = scopeChanges(tk.messages, parseScope(c.req.query('scope')))
     if (!ch.files.some((x) => x.path === file)) return s.bad(c, t('这个文件不在这个对话的改动里'))
     const dir = await s.taskDir(tk)
     if (!dir || tk.imported) return s.bad(c, t('导入的任务看不到对方电脑上的文件'))

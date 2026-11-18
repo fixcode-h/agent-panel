@@ -193,6 +193,15 @@ export const COMP_SPEC = {
     active: hue('orange'),
   },
   /**
+   * 改动卡片（对话停下后最后面那张「这一轮 / 整个对话改了 N 个文件」，web/src/components/ui/changes-card.tsx）：
+   * 圆角、默认看哪一段、先列几个文件。后两项不是 CSS，ConvChangesCard 读设置里的值；落成变量只为走同一套登记
+   */
+  changesCard: {
+    radius: px(12, 0, 20),
+    scope: pick('round', { round: 'round', conv: 'conv' }),
+    first: pick('3', { '3': '3', '5': '5', '8': '8', '20': '20' }),
+  },
+  /**
    * 风格参考图和风格选择（web/src/components/ui/style-thumb.tsx、style-picker.tsx）：
    * 缩略图圆角、列表行里缩略图多宽、选中风格的描边颜色
    */

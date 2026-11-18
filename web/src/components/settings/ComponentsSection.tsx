@@ -64,7 +64,7 @@ import { Group } from '@/components/settings/parts'
 import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
-import { HtmlCardSpecimen } from '@/components/settings/HtmlCardSpecimen'
+import { TurnCardSpecimens } from '@/components/settings/ChangesCardSpecimen'
 import { ReferenceSpecimens } from './StyleRefSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
@@ -619,11 +619,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
       </Group>
       <ReferenceSpecimens Specimen={Specimen} />
-      <Group title={t('HTML 卡片 · 本轮产出')}>
-        <Specimen name="HtmlCard · OutputsCard · OutputRow" tune={['htmlCard', 'iconButton']}>
-          <HtmlCardSpecimen />
-        </Specimen>
-      </Group>
+      <TurnCardSpecimens Specimen={Specimen} />
       <Group title={t('MCP 能力')}>
         <Specimen name="CapabilityRow · CapabilityServerHeader" tune={['capRow', 'card', 'badge']}>
           <CapabilitySpecimen />

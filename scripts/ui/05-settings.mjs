@@ -312,7 +312,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   }
   // HTML 卡片 · 本轮产出（设计稿 6.6、6.7）：大卡片、小卡片、本轮产出都画出来；关掉缩略预览立刻写进 #md-style
   {
-    const spec = p.getByText('HtmlCard · OutputsCard · OutputRow', { exact: true }).locator('xpath=../..')
+    const spec = p.getByText('HtmlCard · OutputsCard · OutputRow · UrlRow', { exact: true }).locator('xpath=../..')
     await spec.scrollIntoViewIfNeeded()
     if ((await spec.locator('[data-html-card]').count()) !== 4) errors.push('设置-组件：HTML 卡片样张应该有 4 张卡片')
     if (!(await spec.locator('[data-html-card][data-active]').count()))
@@ -325,7 +325,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       )
     )
       errors.push('设置-组件：关掉 HTML 卡片的缩略预览后 #md-style 里应该有 --c-htmlCard-preview:none')
-    await check(p, '设置-组件-HTML卡片', ['本轮产出', '右栏正在显示', '预览高度'])
+    await check(p, '设置-组件-HTML卡片', ['本轮产出', '右栏正在显示', '预览高度', 'localhost:5173'])
+    await spec.getByRole('button', { name: '恢复本组' }).click()
+  }
+  // 改动卡片（Bug模式子对话体验 第 3 节）：默认看这一轮，「默认显示」改成整个对话，样张马上跟着切
+  {
+    const spec = p.getByText('ChangesCard', { exact: true }).locator('xpath=../..')
+    await spec.scrollIntoViewIfNeeded()
+    if (!((await spec.textContent()) ?? '').includes('这一轮改了 3 个文件'))
+      errors.push('设置-组件：改动卡片样张默认应该看这一轮')
+    await spec.getByRole('button', { name: '微调', exact: true }).click()
+    await spec.getByRole('radiogroup', { name: '默认显示' }).getByRole('radio', { name: '整个对话' }).click()
+    if (!((await spec.textContent()) ?? '').includes('这个对话改了 9 个文件'))
+      errors.push('设置-组件：改动卡片「默认显示」改成整个对话后样张应该跟着切')
+    await check(p, '设置-组件-改动卡片', ['这个对话改了 9 个文件', '默认显示', '先列几个文件'])
     await spec.getByRole('button', { name: '恢复本组' }).click()
   }
   await p.getByRole('button', { name: '风格库' }).click()

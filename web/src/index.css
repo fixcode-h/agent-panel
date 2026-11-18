@@ -1155,6 +1155,9 @@ body,
   --c-htmlCard-preview: block;
   --c-htmlCard-previewH: 168px;
   --c-htmlCard-active: var(--accent);
+  --c-changesCard-radius: 12px;
+  --c-changesCard-scope: round;
+  --c-changesCard-first: 3;
   --c-styleRef-radius: 6px;
   --c-styleRef-thumbW: 56px;
   --c-styleRef-ring: var(--accent);

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { t } from '@shared/i18n'
 import { HtmlCard } from '@/components/ui/html-card'
 import { MenuItem } from '@/components/ui/menu'
-import { OutputRow, OutputsCard } from '@/components/ui/outputs-card'
+import { OutputRow, OutputsCard, UrlRow } from '@/components/ui/outputs-card'
 
 /** 样张里的缩略预览：画一张示意的网页（标题条、几个方块和连线），不加载真的文件 */
 function MockPage() {
@@ -29,6 +29,7 @@ function MockPage() {
  */
 export function HtmlCardSpecimen() {
   const [active, setActive] = useState('rag')
+  const [served, setServed] = useState(true)
   const menu = (
     <>
       <MenuItem>{t('复制路径')}</MenuItem>
@@ -60,6 +61,16 @@ export function HtmlCardSpecimen() {
       <OutputsCard
         note={t('这一轮新建了 {n} 个能直接看的文件', { n: 4 })}
         aside={t('上一轮的在「本对话改动」里')}
+        urls={
+          <UrlRow
+            url="http://localhost:5173/"
+            running={served}
+            command="npm run dev"
+            onOpen={() => {}}
+            onStop={() => setServed(false)}
+            onRerun={() => setServed(true)}
+          />
+        }
         cards={
           <>
             <HtmlCard
