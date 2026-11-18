@@ -192,6 +192,23 @@ export const EN_MARKDOWN_STYLE: Record<string, string> = {
   复制源码: 'Copy source',
   '复制 SVG': 'Copy SVG',
   全屏: 'Full screen',
+  看图形还是源码: 'Show diagram or source',
+  泳道: 'Lanes',
+  跟随样式: 'Follow style',
+  色条: 'Stripe',
+  整块: 'Block',
+  旁注: 'Aside',
+  时序图样式: 'Sequence diagram style',
+  '素净只用中性色；泳道在每个参与者身后铺一列底色；步骤给每条消息标序号；卡片把消息文字放进胶囊。':
+    'Plain keeps neutral colors; Lanes shade a column behind each participant; Steps number every message; Pills put message text in a capsule.',
+  参与者着色: 'Color participants',
+  '每个参与者一种颜色，它的方框、生命线和发出的箭头同色。素净样式不着色。':
+    'Each participant gets its own color, shared by its box, lifeline and the arrows it sends. Plain stays uncolored.',
+  消息文字大小: 'Message text size',
+  注释样式: 'Note style',
+  '时序图里 Note 的样子：左边一道色条、整块底色、只留灰色旁注，或跟随时序图样式。':
+    'How notes look in sequence diagrams: side bar, filled block, gray aside, or follow the diagram style.',
+  图形: 'Diagram',
   '源码 · {n} 行': 'Source · {n} lines',
   重要: 'Important',
   注意: 'Warning',

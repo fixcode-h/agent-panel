@@ -169,6 +169,31 @@ await runShard(import.meta.filename, async (api) => {
   await p.waitForTimeout(1500)
   await check(p, '功能结构-切回时序图', ['提前 return'])
 
+  // 全屏看图：铺满整个窗口（不是弹窗），「图形 / 源码」能切；图在弹窗里时 Esc、「关闭」都要退得出来，诊断报告弹窗还开着
+  const seqBox = sv.locator('[data-sv-panel="sequence"] .md-mermaid')
+  const full = p.locator('.md-mmd-full')
+  await seqBox.locator('[data-mmd="full"]').click()
+  await full.waitFor({ timeout: 5000 }).catch(() => errors.push('全屏看图：点「全屏」没打开'))
+  const fb = await full.boundingBox()
+  const vp = p.viewportSize()
+  if (!fb || !vp || fb.width < vp.width - 1 || fb.height < vp.height - 1) errors.push('全屏看图：没有铺满窗口')
+  // 时序消息按行依次出场，等放完再截图
+  await p.waitForTimeout(2500)
+  await check(p, '全屏看图-图形', ['图形', '源码', '关闭', '提前 return'])
+  await full.locator('[data-mmd-view="src"]').click()
+  if (!(await full.locator('.md-mmd-src').isVisible())) errors.push('全屏看图：切到源码后看不到源码')
+  if (await full.locator('.md-mmd-canvas').isVisible()) errors.push('全屏看图：切到源码后图还在')
+  await check(p, '全屏看图-源码', ['sequenceDiagram'])
+  await full.locator('[data-mmd-view="graph"]').click()
+  if (!(await full.locator('.md-mmd-canvas').isVisible())) errors.push('全屏看图：切回图形后看不到图')
+  await p.keyboard.press('Escape')
+  if (await full.count()) errors.push('全屏看图：按 Esc 退不出全屏')
+  if (!(await dlg.first().isVisible())) errors.push('全屏看图：按 Esc 把诊断报告弹窗也关了')
+  await seqBox.locator('[data-mmd="full"]').click()
+  await full.locator('[data-mmd="full"]').click()
+  if (await full.count()) errors.push('全屏看图：点「关闭」退不出全屏')
+  if (!(await dlg.first().isVisible())) errors.push('全屏看图：点「关闭」把诊断报告弹窗也关了')
+
   await sv.locator('.sv-tab[data-sv-tab="stack"]').click()
   await check(p, '功能结构-调用栈', ['剩 0 件提前返回'])
 

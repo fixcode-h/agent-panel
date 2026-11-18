@@ -13,6 +13,7 @@ import type { BugCase, BugCollect, BugEnv, BugLogPoint, BugQuote, CodeRef, Diagn
 import { lineDiff, TEMP_LOG } from './cleanup.ts'
 import { phaseOf } from './phase.ts'
 import { fileLead, pastedLog } from './log-watch.ts'
+import { LOG_NEAR, shiftQuote } from './quote-shift.ts'
 import type { TaskMessage } from '../schema.ts'
 
 /** 宿主给的读取能力：交报告时同步调用（工具调用本来就在等结果，读几个小文件不碍事） */
@@ -137,7 +138,7 @@ function logSource(list: Diagnosis[], from: number | undefined, src?: BugSource)
 }
 
 /** Agent 自己读的日志文件（写了 file）：按文件的行号取原文；没写行号的按抄的第一行在文件里找 */
-function resolveFileQuote(q: BugQuote, src?: BugSource): string {
+function resolveFileQuote(q: BugQuote, notes: string[], src?: BugSource): string {
   const file = q.file.trim()
   if (!q.start) {
     const whole = src?.read(file)
@@ -151,9 +152,11 @@ function resolveFileQuote(q: BugQuote, src?: BugSource): string {
   }
   q.end = Math.max(q.start, q.end ?? q.start)
   if (q.end - q.start + 1 > MAX_QUOTE_LINES) return `${q.id} 超过 ${MAX_QUOTE_LINES} 行：只引用说明问题的那几行。`
-  const got = fileLines(file, q.start, q.end, src)
+  let got = fileLines(file, q.start, q.end, src)
   if (!got) return `${q.id}：读不到日志文件 ${file}。file 写相对项目根或绝对路径。`
   if (q.start > got.total) return `${q.id}：${file} 只有 ${got.total} 行，第 ${q.start} 行不存在。`
+  const moved = shiftQuote(q, got.text, (a, b) => fileLines(file, a, b, src)?.text, notes)
+  if (moved) got = fileLines(file, q.start, q.end!, src) ?? got
   if (q.text.trim() && !norm(got.text).includes(norm(q.text)))
     return `${q.id} 写的原文和 ${file} 第 ${q.start}~${q.end} 行对不上：从文件里原样复制，不要删改、不要用 … 截断（那几行是：${short(norm(got.text), 200)}）。`
   q.text = got.text
@@ -176,7 +179,13 @@ function fileLines(file: string, start: number, end: number, src?: BugSource) {
 const outputsOf = (messages: TaskMessage[]) =>
   messages.flatMap((m) => (m.tools ?? []).map((x) => x.output ?? '').filter(Boolean)).map(norm)
 
-function resolveQuotes(c: BugCase, list: Diagnosis[], messages: TaskMessage[], src?: BugSource): string {
+function resolveQuotes(
+  c: BugCase,
+  list: Diagnosis[],
+  messages: TaskMessage[],
+  notes: string[],
+  src?: BugSource,
+): string {
   let outputs: string[] | undefined
   for (const q of c.quotes) {
     if (!q.id.trim()) return 'quotes 每一条都要写 id（Q1、Q2…），正文和证据链用编号引用。'
@@ -188,7 +197,7 @@ function resolveQuotes(c: BugCase, list: Diagnosis[], messages: TaskMessage[], s
       if (!outputs.some((o) => o.includes(want)))
         return `${q.id} 的原文在这个对话的命令输出里找不到：贴实际跑出来的那几行，不要改写；只是转述就改成 kind: note。`
     } else if (q.file.trim()) {
-      const bad = resolveFileQuote(q, src)
+      const bad = resolveFileQuote(q, notes, src)
       if (bad) return bad
     } else {
       const s = logSource(list, q.from, src)
@@ -208,14 +217,19 @@ function resolveQuotes(c: BugCase, list: Diagnosis[], messages: TaskMessage[], s
       if (q.start > lines.length)
         return `${q.id}：第 ${s.version} 份报告的日志只有 ${lines.length} 行，第 ${q.start} 行不存在。`
       if (q.end - q.start + 1 > MAX_QUOTE_LINES) return `${q.id} 超过 ${MAX_QUOTE_LINES} 行：只引用说明问题的那几行。`
-      const got = lines.slice(q.start - 1, Math.min(q.end, lines.length)).join('\n')
+      const cut = (a: number, b: number) => lines.slice(a - 1, Math.min(b, lines.length)).join('\n')
+      if (shiftQuote(q, cut(q.start, q.end), cut, notes)) q.end = Math.min(q.end!, lines.length)
+      const got = cut(q.start, q.end!)
       if (q.text.trim() && !norm(got).includes(norm(q.text)))
         return `${q.id} 写的原文和用户贴的日志第 ${q.start}~${q.end} 行对不上：从日志里原样复制，不要删改、不要用 … 截断（那几行是：${short(norm(got), 200)}）。`
       q.text = got
       q.from = s.version
     }
     const miss = q.highlight.find((h) => h.trim() && !q.text.includes(h))
-    if (miss) return `${q.id} 的原文里没有「${short(miss, 40)}」：highlight 写原文里逐字出现的关键值。`
+    if (miss)
+      return q.kind === 'log' && q.start
+        ? `${q.id} 的原文里没有「${short(miss, 40)}」（第 ${q.start}~${q.end} 行，附近 ${LOG_NEAR} 行里也找不到对得上的一段）：highlight 写原文里逐字出现的关键值；行号写整个文件的行号（sed -n 'a,bp' | rg -n 打出的是相对行号）。`
+        : `${q.id} 的原文里没有「${short(miss, 40)}」：highlight 写原文里逐字出现的关键值。`
   }
   return ''
 }
@@ -355,7 +369,7 @@ export function resolveSources(
       if (bad) return { error: bad, notes }
     }
   } else for (const r of c.codeRefs) r.snapshot = undefined
-  const q = resolveQuotes(c, ctx.list, ctx.messages, src)
+  const q = resolveQuotes(c, ctx.list, ctx.messages, notes, src)
   if (q) return { error: q, notes }
   const refs = refsProblem(c)
   if (refs) return { error: refs, notes }

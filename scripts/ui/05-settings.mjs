@@ -222,6 +222,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('设置-Markdown样式：换成柔彩、切到类图后，类图方框应该按「柔彩」重画'))
   await check(p, '设置-Markdown样式-Mermaid类图柔彩')
+  // 时序图：默认「步骤」样式，参与者按色相编号、每条消息一枚序号；换成「泳道」后重画、身后垫底色列
+  await p.getByLabel('预览的图').getByText('时序图', { exact: true }).click()
+  const seqBox = p.locator('.md-mermaid[data-seq="steps"]').first()
+  await seqBox
+    .locator('svg .sq-step')
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('设置-Markdown样式：时序图默认应该是「步骤」样式、每条消息有序号'))
+  if (!(await seqBox.locator('svg [data-et="participant"][data-p="2"]').count()))
+    errors.push('设置-Markdown样式：时序图的参与者应该按从左到右编号着色')
+  await check(p, '设置-Markdown样式-Mermaid时序图步骤')
+  await p.getByLabel('时序图样式').getByText('泳道', { exact: true }).click()
+  await p
+    .locator('.md-mermaid[data-seq="lane"] svg .sq-lane')
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('设置-Markdown样式：换成泳道后时序图应该按泳道重画'))
+  await check(p, '设置-Markdown样式-Mermaid时序图泳道')
   await p.getByRole('button', { name: '全部恢复默认' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '恢复默认', exact: true }).click()
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个

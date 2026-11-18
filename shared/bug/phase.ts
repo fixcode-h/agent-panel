@@ -35,16 +35,19 @@ export const revOf = (d: Pick<Diagnosis, 'rev' | 'version'>) => d.rev ?? d.versi
  * - 回到更早的阶段（根因被否决回到论证、验证没过回到论证或重出方案）：之前的结论不成立了，+1。
  * - 用户确认过的修复方案换成新方案（修的时候发现要改别的文件）：+1。
  * - 按用户的意见修改、论证多轮、阶段往下走（论证 → 根因 → 方案 → 修复 → 验证）：还是同一版。
+ * - 用户提问、补充（没否定结论）后回到更早的阶段补证据（例如方案阶段用户要再加日志确认根因，用户 2026-11-18 提）：
+ *   结论还没被推翻，只是补充，同一版的小版本（back 为真、overturned 为假）。补完推翻了结论，下一次交时照常升版。
  * 只看阶段和用户的决定，不看回复的文字
  */
-export function nextRev(list: Diagnosis[], phase: BugPhase): { rev: number; overturned: boolean } {
+export function nextRev(list: Diagnosis[], phase: BugPhase): { rev: number; overturned: boolean; back?: BugPhase } {
   const prev = list.at(-1)
   if (!prev) return { rev: 1, overturned: false }
   const from = phaseOf(prev)
   const back = PHASES.indexOf(phase) < PHASES.indexOf(from)
+  const supplement = back && prev.status === 'questioned' && prev.intent === 'ask'
   const replan = phase === 'plan' && from === 'plan' && prev.status === 'approved'
-  const overturned = back || replan
-  return { rev: revOf(prev) + (overturned ? 1 : 0), overturned }
+  const overturned = (back && !supplement) || replan
+  return { rev: revOf(prev) + (overturned ? 1 : 0), overturned, back: back ? from : undefined }
 }
 
 /** 这一份是这一版里同一阶段的第几轮（按意见改了几次、论证了几轮）：弹窗的版本下拉用来区分 */
@@ -238,6 +241,15 @@ export function editScope(
   return { files: [...new Set([...plan.files, ...logFilesOf(list), ...probed])] }
 }
 
+/**
+ * 用户在后面的阶段要回头补的时候（用户 2026-11-18 提：方案阶段想再加日志确认根因，流程却回不到论证）：
+ * 回到哪一步由 Agent 按用户的话自己判断，交那一阶段的报告就是回退，面板按它走（阶段条标出回退）。论证阶段没有可回的
+ */
+const backHint = (phase: BugPhase, v: number) =>
+  phase === 'evidence'
+    ? ''
+    : `\n- 用户要回头补（再加日志确认根因、重新核实某一环、换个方向查）：自己判断回到哪一步，直接交那一阶段——要加临时日志就交 phase: evidence（新的日志计划，用户同意后再加），只是根因要补证据或改写就交 phase: cause；面板按你交的阶段回退，之后照流程往下走（根因、方案要用户重新确认）。只是提问、补充时回退记成第 ${v} 版的小版本，结论被推翻才升版。`
+
 export const KIND_TEXT: Record<DiagnosisNote['kind'], string> = {
   question: '疑问',
   change: '改方案',
@@ -289,7 +301,7 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${ask}
         ? `用户不认同第 ${v} 版的根因：觉得用户说得对、证据确实不完整，就回到论证，交 phase: evidence（新的日志计划，面板记成第 ${v + 1} 版）；证据其实够，就再交 phase: cause 逐条回答（面板记成第 ${v} 版的小版本）。`
         : phase === 'verify'
           ? `验证没通过：把这次修法和失败证据写进「已排除」，回到论证（phase: evidence）或重新出修复方案（phase: plan），面板记成第 ${v + 1} 版。`
-          : `用户不认同第 ${v} 版（${PHASE_TEXT[phase]}）：查清后改好再交。`
+          : `用户不认同第 ${v} 版（${PHASE_TEXT[phase]}）：查清后改好再交。${backHint(phase, v)}`
     return `${back}
 ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${ask}
 
@@ -303,7 +315,7 @@ ${notesList(d.notes) || '（没有逐条标注，见整体意见）'}${ask}
 - 疑问：逐条查清再回答（读代码、看日志、跑命令），不要因为用户问了就改结论；答不上来的写明还缺什么。
 - 改方案：按意见改，或说明为什么不改。
 - 补充信息：当成新证据，对照现在的结论重新评估：不影响结论写清为什么；影响了就按新证据改。
-- 结论不变（或只是补全）：再交同一阶段 phase: ${phase}，面板记成第 ${v} 版的小版本（${v}.1、${v}.2…）；补充推翻了结论（根因不成立、方案要换）：回到更早的阶段交，面板记成第 ${v + 1} 版。
+- 结论不变（或只是补全）：再交同一阶段 phase: ${phase}，面板记成第 ${v} 版的小版本（${v}.1、${v}.2…）；补充推翻了结论（根因不成立、方案要换）：回到更早的阶段交，面板记成第 ${v + 1} 版。${backHint(phase, v)}
 answers 按编号逐条回应每一条标注（补充信息写 stance: used，说明用在哪一节、对结论有没有影响），whatChanged 写这一版改了哪几节。只处理被问到的几条，别的小节照抄上一版，不要整份重写。`
   if (d.status === 'answered') {
     if (phase === 'verify')

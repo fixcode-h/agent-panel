@@ -11,11 +11,12 @@ import {
   requestLogs,
   settleCleanup,
   submitDiagnosis,
+  rejectStop,
   updateBugCase,
   type DiagnosisInput,
 } from './diagnosis.ts'
 import { diagnosisMarkdown } from './diagnosis-md.ts'
-import { outOfPlan, editScope } from './phase.ts'
+import { outOfPlan, editScope, phaseFeedback } from './phase.ts'
 import { reopenedAfterCancel, reopenInfo } from './reopen.ts'
 import { Diagnosis } from './diagnosis-schema.ts'
 import type { Task } from '../schema.ts'
@@ -779,7 +780,7 @@ test('第几版（用户 2026-11-06 定）：按意见修改、阶段往下走�
   assert.equal(last().rev, 1, '按意见修改不升版本')
   assert.match(same.info, /已交第 1\.1 版的根因（按用户的意见重出的小版本，结论没被推翻不升大版本）（报告 #4）/)
   // 用户否决根因、回到论证：之前的结论不成立，第 2 版
-  ok(decideDiagnosis(tk, last().version, note, id))
+  ok(decideDiagnosis(tk, last().version, { ...note, intent: 'reject' }, id))
   const back = submitDiagnosis(tk, evidenceInput({ answers: [{ id: 1, answer: '证据不够，重新加日志' }] }), id)
   ok(back)
   assert.equal(last().rev, 2)
@@ -852,20 +853,45 @@ test('论证的日志一次加够（用户 2026-11-06 定）：至少两个假�
   )
 })
 
-test('连续退回（分析稿 B8）：同一段里第 3 次让它停下交给用户换模型；用户再发话重新数，交成功清零', () => {
+test('连续退回（分析稿 B8）：同样的问题连退 3 次停下交给用户；用户再发话重新数，交成功清零', () => {
   const tk = bugTask({ messages: [{ id: 'u1', role: 'user', text: '查一下' }] as Task['messages'] })
   const bad = () => submitDiagnosis(tk, input({ phase: 'cause', symptom: '' }), id)
-  assert.match(bad().info, /第 1 次被退回/)
-  assert.match(bad().info, /第 2 次被退回/)
-  assert.match(bad().info, /连续第 3 次被退回.*end_turn（outcome: blocked）.*换一个能力更强的模型/s)
-  assert.deepEqual(tk.bug?.case?.rejects, { n: 3, total: 3, since: 'u1' })
+  assert.match(bad().info, /这一段第 1 次被退回/)
+  assert.match(bad().info, /这一段第 2 次被退回/)
+  const third = bad().info
+  assert.match(third, /其中 3 次问题没有变少.*end_turn（outcome: blocked）/s)
+  assert.doesNotMatch(third, /能力更强的模型/, '不把面板的核对问题说成模型不行')
+  assert.match(rejectStop(tk) ?? '', /symptom/, '停下时留着最后一次退回的原文')
+  assert.deepEqual(
+    { ...tk.bug?.case?.rejects, last: undefined },
+    { n: 3, total: 3, since: 'u1', run: 3, size: 1, last: undefined },
+  )
   tk.messages.push({ id: 'u2', role: 'user', text: '换了模型，继续' } as Task['messages'][number])
-  assert.match(bad().info, /第 1 次被退回/, '用户发了新消息：重新数')
+  assert.equal(rejectStop(tk), undefined, '用户发了话：不再算那几次退回停下的')
+  assert.match(bad().info, /这一段第 1 次被退回/, '用户发了新消息：重新数')
   ok(submitDiagnosis(tk, input({ phase: 'cause' }), id))
-  assert.deepEqual(tk.bug?.case?.rejects, { n: 0, total: 4, since: 'u2' }, '交成功清零，总数留着')
+  assert.equal(tk.bug?.case?.rejects?.n, 0, '交成功清零')
+  assert.equal(tk.bug?.case?.rejects?.total, 4, '总数留着')
   // Agent 不能自己写退回次数
   updateBugCase(tk, { rejects: { n: 0, total: 0, since: '' } } as unknown as DiagnosisInput)
   assert.equal(tk.bug?.case?.rejects?.total, 4)
+})
+
+// 实跑 2026-11-18：三个不同的小问题各退一次就停了，它其实每次都在往前改
+test('连续退回：问题比上次少算在往前改，不算打转；一共退回 6 次兜底停下', () => {
+  const tk = bugTask({ messages: [{ id: 'u1', role: 'user', text: '查一下' }] as Task['messages'] })
+  const cases: Partial<DiagnosisInput>[] = [
+    { symptom: '', levelNote: 'x'.repeat(1001) }, // 两处：缺现象、字段超长
+    { symptom: '' }, // 一处：少了
+  ]
+  for (const c of cases) submitDiagnosis(tk, input({ phase: 'cause', ...c }), id)
+  assert.equal(tk.bug?.case?.rejects?.n, 1, '第二次问题变少，不加')
+  let last = ''
+  for (let i = 0; i < 4; i++) {
+    tk.bug!.case!.rejects!.n = 0 // 假装每次都在往前改
+    last = submitDiagnosis(tk, input({ phase: 'cause', symptom: '' }), id).info
+  }
+  assert.match(last, /这一段已经被退回 6 次.*end_turn/s)
 })
 
 test('不用改代码（分析稿 B5）：根因带 noFix，同意后不交方案、只放行删临时日志，没改代码就能收尾', () => {
@@ -884,4 +910,38 @@ test('不用改代码（分析稿 B5）：根因带 noFix，同意后不交方�
   ok(updateBugCase(tk2, { noFix: { kind: 'config', how: 'x' } } as unknown as DiagnosisInput))
   ok(updateBugCase(tk2, { noFix: {} } as unknown as DiagnosisInput))
   assert.equal(tk2.bug?.case?.noFix, undefined)
+})
+
+// 用户 2026-11-18 提：方案阶段提问「想再加日志确认根因」，流程回不到论证。回到哪一步由 Agent 自己定，交那一阶段就是回退
+test('回退：方案阶段用户提问后 Agent 交论证，同一版的小版本；之后根因、方案要重新确认', () => {
+  const tk = bugTask()
+  agreeCause(tk)
+  ok(submitDiagnosis(tk, input({ phase: 'plan' }), id))
+  const plan = pendingDiagnosis(tk)!
+  ok(
+    decideDiagnosis(
+      tk,
+      plan.version,
+      {
+        approve: false,
+        intent: 'ask',
+        notes: [{ quote: '', kind: 'question', comment: '再加点日志确认根因' }],
+        overall: '',
+      },
+      id,
+    ),
+  )
+  assert.match(phaseFeedback(tk.bug!.diagnoses!.at(-1)!), /要加临时日志就交 phase: evidence/)
+  const r = submitDiagnosis(
+    tk,
+    evidenceInput({ answers: [{ id: 1, answer: '回到论证加日志', stance: 'adopted' }] }),
+    id,
+  )
+  ok(r)
+  assert.match(r.info, /从修复方案回到论证补充/)
+  const d = tk.bug!.diagnoses!.at(-1)!
+  assert.equal(d.rev, plan.rev, '只是补充，不升大版本')
+  assert.equal(bugStage(tk), '等你确认')
+  // 方案作废、要重新走根因：编辑范围不再按旧方案放行
+  assert.match(JSON.stringify(editScope(tk.bug!.diagnoses!)), /还在等用户确认/)
 })

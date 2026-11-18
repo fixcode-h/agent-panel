@@ -1414,6 +1414,10 @@ body,
   --md-mermaid-hover: 1;
   --md-mermaid-grid: radial-gradient(var(--md-dot) 1px, transparent 1px);
   --md-mermaid-gradient: 1;
+  --md-mermaid-seq: steps;
+  --md-mermaid-seqColor: 1;
+  --md-mermaid-seqText: 14px;
+  --md-mermaid-seqNote: auto;
 }
 .dark {
   --md-gold: #f2c46d;
@@ -2455,29 +2459,46 @@ body,
     stroke-dashoffset: -12;
   }
 }
-/* 全屏看图：遮罩淡入、面板放大弹出，图可以拖动和滚轮缩放 */
+/* 全屏看图：铺满整个窗口，顶栏中间「图形 / 源码」切换；图可以拖动和滚轮缩放 */
 .md-mmd-full {
-  @apply fixed inset-0 z-50 grid place-items-center bg-black/55 backdrop-blur-sm;
-  animation: mx-fade 0.2s both;
+  @apply pointer-events-auto fixed inset-0 z-50 flex flex-col;
+  background: var(--bg);
+  animation: mx-fade 0.18s both;
 }
 .md-mmd-full > .chat-md {
-  @apply flex h-[86vh] w-[min(92vw,1400px)] flex-col;
-  animation: mx-zoom-in 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+  @apply flex min-h-0 flex-1 flex-col;
 }
 .md-mmd-full .md-mermaid {
-  @apply my-0 flex h-full flex-col;
+  @apply my-0 flex h-full min-h-0 flex-col rounded-none border-0;
+}
+.md-mmd-full .md-code-bar {
+  @apply relative flex py-2 pr-3 pl-4 text-footnote;
 }
 .md-mmd-full .md-mmd-canvas {
-  @apply flex-1;
+  @apply min-h-0 flex-1;
 }
 .md-mmd-full .md-mermaid-svg {
   @apply h-full items-center;
 }
-@keyframes mx-zoom-in {
-  from {
-    opacity: 0;
-    scale: 0.94;
-  }
+.md-mmd-full[data-view='src'] .md-mmd-canvas,
+.md-mmd-full[data-view='graph'] .md-mmd-src {
+  @apply hidden;
+}
+.md-mmd-full .md-mmd-src {
+  @apply min-h-0 flex-1 overflow-auto;
+}
+.md-mmd-full .md-mmd-src pre {
+  @apply min-h-full py-4;
+}
+/* 「图形 / 源码」：和 Segmented 同一套轨道、选中块，摆在顶栏正中 */
+.md-mmd-views {
+  @apply seg-track absolute top-1/2 left-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-(--c-segmented-radius) p-0.5 font-sans;
+}
+.md-mmd-views button {
+  @apply h-7 cursor-pointer rounded-(--c-segmented-itemRadius) px-3 text-footnote text-muted transition-colors hover:text-fg;
+}
+.md-mmd-views button[aria-checked='true'] {
+  @apply seg-thumb font-medium;
 }
 @media (prefers-reduced-motion: reduce) {
   .md-mermaid *,

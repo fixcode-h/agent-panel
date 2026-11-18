@@ -198,6 +198,11 @@ export const MD_SPEC = {
     hover: bool(true),
     grid: bool(true),
     gradient: bool(true),
+    /** 时序图：样式（素净 / 泳道 / 步骤 / 卡片）、参与者着色、消息文字大小、注释样式（auto 跟着样式走） */
+    seq: pick('steps', ['soft', 'lane', 'steps', 'pill'] as const),
+    seqColor: bool(true),
+    seqText: px(14, 12, 16),
+    seqNote: pick('auto', ['auto', 'stripe', 'block', 'aside'] as const),
   },
 } as const satisfies Record<string, Record<string, MdField>>
 

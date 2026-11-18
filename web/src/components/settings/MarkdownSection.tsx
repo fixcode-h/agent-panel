@@ -112,6 +112,13 @@ const optionLabel = (v: string) =>
     tint: t('柔彩'),
     card: t('浮卡'),
     classic: t('经典'),
+    lane: t('泳道'),
+    steps: t('步骤'),
+    pill: t('卡片'),
+    auto: t('跟随样式'),
+    stripe: t('色条'),
+    block: t('整块'),
+    aside: t('旁注'),
     rounded: t('圆角折线'),
     basis: t('平滑曲线'),
     linear: t('直线'),
@@ -449,6 +456,24 @@ function MermaidGroup() {
       </Row>
       <Row title={t('画布点阵底')}>
         <F el="mermaid" prop="grid" label={t('画布点阵底')} />
+      </Row>
+      <Row
+        title={t('时序图样式')}
+        desc={t('素净只用中性色；泳道在每个参与者身后铺一列底色；步骤给每条消息标序号；卡片把消息文字放进胶囊。')}
+      >
+        <F el="mermaid" prop="seq" label={t('时序图样式')} />
+      </Row>
+      <Row title={t('参与者着色')} desc={t('每个参与者一种颜色，它的方框、生命线和发出的箭头同色。素净样式不着色。')}>
+        <F el="mermaid" prop="seqColor" label={t('参与者着色')} />
+      </Row>
+      <Row title={t('消息文字大小')}>
+        <F el="mermaid" prop="seqText" label={t('消息文字大小')} />
+      </Row>
+      <Row
+        title={t('注释样式')}
+        desc={t('时序图里 Note 的样子：左边一道色条、整块底色、只留灰色旁注，或跟随时序图样式。')}
+      >
+        <F el="mermaid" prop="seqNote" label={t('注释样式')} />
       </Row>
     </Group>
   )

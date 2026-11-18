@@ -392,7 +392,7 @@ export const BugCaseFields = {
     .optional()
     .catch(undefined),
   /** 多段关键代码（出错点、触发条件、调用方、对照的正确写法），代码由面板交报告时取快照（bug-quotes.ts） */
-  codeRefs: z.array(CodeRef).max(6).catch([]).default([]),
+  codeRefs: z.array(CodeRef).catch([]).default([]),
   /** 日志、命令输出的原文引用：面板按来源取原文或逐字核对，对不上拒收 */
   quotes: z.array(BugQuote).max(30).catch([]).default([]),
   /** 期望和实际：一行一个值，actual 引用原文编号 */
@@ -624,10 +624,21 @@ export const BugCase = z.object({
   result: BugResult.optional().catch(undefined),
   /**
    * 交报告被面板连续退回的次数（分析稿 B8）：从用户最近一条消息算起，交成功清零。
-   * total 是这个 Bug 一共被退回几次（流程数据用）；since 是开始计数时用户最后一条消息的 id
+   * total 是这个 Bug 一共被退回几次（流程数据用）；since 是开始计数时用户最后一条消息的 id；
+   * n 只数没进展的退回（问题没比上一次少），在往前改的另由 REJECT_TOTAL 兜底
    */
   rejects: z
-    .object({ n: z.number().int().catch(0), total: z.number().int().catch(0), since: z.string().catch('') })
+    .object({
+      n: z.number().int().catch(0),
+      total: z.number().int().catch(0),
+      since: z.string().catch(''),
+      /** 这一段一共退回了几次（含在往前改的） */
+      run: z.number().int().optional().catch(undefined),
+      /** 上一次退回列了几处问题：这次比它少就是在往前改，不算原地打转（2026-11-18） */
+      size: z.number().int().optional().catch(undefined),
+      /** 最后一次退回的原文：停下时给用户和父对话看（2026-11-18） */
+      last: z.string().max(4000).optional().catch(undefined),
+    })
     .optional()
     .catch(undefined),
   /**

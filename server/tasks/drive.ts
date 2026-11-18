@@ -7,7 +7,8 @@ import { idleReminders, SPIN_MAX, turnEndSince } from '../../shared/end-turn.ts'
 import { CHECK_REMINDER, planNudge } from '../../shared/prompt/letters/nudge.ts'
 import { DriveBudget, planProgressKey, shortKey } from '../../shared/drive.ts'
 import { taskLog } from './log.ts'
-import { makeAlert } from '../../shared/alerts.ts'
+import { BLOCKED_LEAD, makeAlert, REJECT_LEAD } from '../../shared/alerts.ts'
+import { rejectStop } from '../../shared/bug/diagnosis.ts'
 import type { TurnInfo } from '../exec/turn-info.ts'
 import { hasHeld } from '../exec/delivery.ts'
 import { log } from '../log.ts'
@@ -82,12 +83,17 @@ export function createDrive(
     }
     if (!end && !spin) return false
     say({ action: 'stuck', reason: end ? 'declared-blocked' : 'spin' })
+    // 诊断报告被退回太多次停下的：警告和父对话上报都带上退回原文，说法也不是「没做完就停下了」（2026-11-18）
+    const rejected = end ? rejectStop(tk) : undefined
     await warnStopped(
       tk.id,
       end ? `blocked:${end.at}` : `spin:${inputOf(tk)}`,
-      end
-        ? t('卡住了：{need}', { need: end.need ?? '' })
-        : t('面板连着提醒了 {n} 次，它都没动手，也没说做完或卡住：停在这里等你看一下', { n: SPIN_MAX }),
+      rejected
+        ? t('诊断报告没通过面板核对，停下等你：{need}', { need: end?.need ?? '' })
+        : end
+          ? t('卡住了：{need}', { need: end.need ?? '' })
+          : t('面板连着提醒了 {n} 次，它都没动手，也没说做完或卡住：停在这里等你看一下', { n: SPIN_MAX }),
+      rejected ? `${REJECT_LEAD}\n${rejected}` : end ? `${BLOCKED_LEAD}${end.need ?? ''}` : '',
     )
     if (tk.parentTaskId) {
       const plan = activePlan(tk)
@@ -318,7 +324,7 @@ export function createDrive(
 
   /** 推满了还停着的那一轮：每个进度只写一次警告行（按 nudge 的 key 记） */
   const warned = new Map<string, string>()
-  async function warnStopped(id: string, key: string, text: string) {
+  async function warnStopped(id: string, key: string, text: string, detail = '') {
     if (warned.get(id) === key) return
     warned.set(id, key)
     const tk = await readTask(sc, id)
@@ -330,7 +336,7 @@ export function createDrive(
       step: '',
       text,
       tools: [],
-      alert: makeAlert('warn', '', 'unfinished'),
+      alert: makeAlert('warn', detail, 'unfinished'),
       at: new Date().toISOString(),
     })
     const entry = sc.live.get(id)

@@ -24,6 +24,7 @@ import { editPatch, fixFilesOf } from './fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './quotes.ts'
 import { checkStack, matchTrace, stackProblem } from './stack-check.ts'
 import { checkViews, viewsProblem } from './views.ts'
+import { droppedFields } from './dropped.ts'
 import {
   causeAgreed,
   closedOrCleaning,
@@ -373,6 +374,9 @@ export function updateBugCase(
       ok: false,
       info: `没写任何档案字段。能写的字段：${CASE_KEYS.join('、')}。`,
     }
+  // 写了却会被 schema 丢掉的字段：不记，免得把档案里原来那一组也冲成空的
+  const dropped = droppedFields(BugCase.shape, picked(input))
+  if (dropped) return { ok: false, info: dropped }
   const draft = (bugOf(task).case = { ...mergeCase(task, input), updatedAt: now })
   const list = task.bug?.diagnoses ?? []
   const tail = planApproved(list)
@@ -390,12 +394,21 @@ export function updateBugCase(
  * 交一版报告：草稿合上这次交的内容，按阶段、级别检查后冻结成新的一版，上一版作废，等用户（不跟「提问」开关走）。
  * 返回给 Agent 的话；不合格时 ok 为 false、什么都不改
  */
-/** 同一段（用户最近一条消息以来）连续退回几次就停下来交给用户（分析稿 B8） */
+/** 一次退回里有几处问题：编号列出来，让 Agent 一次改完 */
+const joinProblems = (xs: string[]) =>
+  xs.length === 1
+    ? xs[0]
+    : `这一版有 ${xs.length} 处要改，一次改完再交：\n${xs.map((x, i) => `${i + 1}. ${x}`).join('\n')}`
+
+/** 同一段（用户最近一条消息以来）原地打转几次就停下来交给用户（分析稿 B8） */
 export const REJECT_MAX = 3
+/** 同一段一共退回几次就停下（在往前改、每次问题都比上次少的兜底，免得无限来回） */
+export const REJECT_TOTAL = 6
 
 /**
  * 交诊断报告。被面板退回时记一次（rejects）：便宜模型交不出合格报告时会一直来回改，
- * 连续 REJECT_MAX 次就让它停下来、用 end_turn（blocked）交给用户换模型，不再无限重试。
+ * 原地打转 REJECT_MAX 次（问题没比上一次少）或这一段一共退回 REJECT_TOTAL 次就让它停下来、用 end_turn（blocked）交给用户。
+ * 实跑 2026-11-18：三个不同的小问题各退一次就停了，它其实每次都在往前改，所以问题变少的那次不算打转。
  * 次数从用户最近一条消息算起：用户换了模型、说了「继续」，重新给它机会；交成功清零
  */
 export function submitDiagnosis(
@@ -405,26 +418,48 @@ export function submitDiagnosis(
   now = new Date().toISOString(),
   src?: BugSource,
 ): { ok: boolean; info: string; version?: number } {
-  const r = submitOnce(task, input, newId, now, src)
+  const { problems, ...r } = submitOnce(task, input, newId, now, src)
   const closed = task.bug?.diagnoses?.at(-1)?.status === 'cancelled' && !reopenedAfterCancel(task)
   if (!(task.bug?.kind === 'report') || closed) return r
   const since = [...task.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
   const prev = task.bug?.case?.rejects
   const base = task.bug?.case ?? BugCase.parse({})
   if (r.ok) {
-    bugOf(task).case = { ...base, rejects: prev ? { ...prev, n: 0 } : undefined }
+    bugOf(task).case = { ...base, rejects: prev ? { ...prev, n: 0, size: undefined, last: undefined } : undefined }
     return r
   }
-  const n = prev && prev.since === since ? prev.n + 1 : 1
-  bugOf(task).case = { ...base, rejects: { n, total: (prev?.total ?? 0) + 1, since } }
-  if (n < REJECT_MAX)
-    return { ...r, info: `${r.info}\n\n（这是第 ${n} 次被退回，连续 ${REJECT_MAX} 次会停下来交给用户。）` }
+  const same = prev && prev.since === since
+  const size = problems ?? 1
+  // 问题比上一次少：在往前改，不算打转（第一次退回总算一次）
+  const progress = same && prev.size !== undefined && size < prev.size
+  const n = same ? prev.n + (progress ? 0 : 1) : 1
+  const total = (prev?.total ?? 0) + 1
+  const inRun = same ? (prev.run ?? prev.n) + 1 : 1
+  bugOf(task).case = { ...base, rejects: { n, total, since, run: inRun, size, last: r.info.slice(0, 4000) } }
+  if (n < REJECT_MAX && inRun < REJECT_TOTAL)
+    return {
+      ...r,
+      info: `${r.info}\n\n（这是这一段第 ${inRun} 次被退回${progress ? '，问题比上次少，不算原地打转' : ''}；同样的问题连着退回 ${REJECT_MAX} 次、或一共退回 ${REJECT_TOTAL} 次会停下来交给用户。）`,
+    }
   return {
     ...r,
     info:
-      `${r.info}\n\n这已经是连续第 ${n} 次被退回。不要再交了：调用 end_turn（outcome: blocked），` +
-      `need 写「诊断报告连续 ${n} 次没通过面板核对（最后一次：缺什么），建议换一个能力更强的模型接着查」，然后结束这一轮。`,
+      `${r.info}\n\n这一段已经被退回 ${inRun} 次${n >= REJECT_MAX ? `，其中 ${n} 次问题没有变少` : ''}。不要再交了：调用 end_turn（outcome: blocked），` +
+      `need 写「诊断报告没通过面板核对」和你卡在哪一条（面板会把退回原文一起交给用户和父对话，不用抄），然后结束这一轮。`,
   }
+}
+
+/**
+ * 因为诊断报告被面板退回太多次停下的：返回最后一次退回的原文，不是返回 undefined。
+ * 停下时的警告和给父对话的上报带上它（2026-11-18：以前只写「卡住了」，父对话看不到原文，只能泛泛地再列一遍报告要求）
+ */
+export function rejectStop(task: Pick<Task, 'bug' | 'messages'>): string | undefined {
+  const r = task.bug?.case?.rejects
+  if (!r?.last || !(r.n >= REJECT_MAX || (r.run ?? 0) >= REJECT_TOTAL)) return undefined
+  // 用户之后又发了话：已经重新给过机会，这次停下不是因为那几次退回
+  const since = [...task.messages].reverse().find((m) => m.role === 'user' && !m.panel)?.id ?? ''
+  if (r.since !== since) return undefined
+  return r.last.replace(/\n\n这一段已经被退回[\s\S]*$/, '').trim()
 }
 
 /** 回归测试命令的提醒（分析稿 B9）：面板这一轮结束后复核；对话里没跑过的命令面板不替它跑 */
@@ -448,7 +483,7 @@ function submitOnce(
   newId: () => string,
   now: string,
   src?: BugSource,
-): { ok: boolean; info: string; version?: number } {
+): { ok: boolean; info: string; version?: number; problems?: number } {
   if (!(task.bug?.kind === 'report'))
     return {
       ok: false,
@@ -465,15 +500,18 @@ function submitOnce(
   const chat = chatOf(task, input, list)
   if (chat && 'error' in chat) return { ok: false, info: chat.error }
   const bad = diagnosisProblem(c, list, answers, input, chatReplaces(prev, chat))
-  if (bad) return { ok: false, info: bad }
+  // 上一版还在等用户：只说这一句，别的不用核对
+  if (bad && prev?.status === 'pending' && !chatReplaces(prev, chat)) return { ok: false, info: bad }
   const phase = inputPhase(input, c, list)
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
-  if (sources.error) return { ok: false, info: sources.error }
   // 调用栈每一跳按工作区核对位置、出错点取快照，有报错堆栈时逐帧对上（stack-check.ts）
   const stackBad =
     checkStack(c, src, sources.notes, phase) || matchTrace(c, phase) || checkViews(c, src, sources.notes, phase)
-  if (stackBad) return { ok: false, info: stackBad }
+  // 几组核对的问题一次说完（实跑 2026-11-18：每次只报第一处，三处小问题各退一次，三次用完报告没交上去）；
+  // 写了却被 schema 丢掉的字段放最前面，后面编号对不上多半是它连带的（dropped.ts）
+  const problems = [droppedFields(BugCase.shape, picked(input)), bad, sources.error, stackBad].filter(Boolean)
+  if (problems.length) return { ok: false, info: joinProblems(problems), problems: problems.length }
   // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
   // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主）时不核对；
   // 不是 git 的工程拼 Agent 改文件时记下的改动，拼不出来的文件不算「没改」
@@ -497,9 +535,10 @@ function submitOnce(
       }
   }
   // 用户的决定（取消、同意、贴了日志）留着：那是用户做过的事，不是被新一版顶掉的
+  // 先按上一份的状态算第几版（提问后回退算补充，见 nextRev），再把它标成被取代
+  const { rev, overturned, back } = nextRev(list, phase)
   if (prev && (prev.status === 'pending' || prev.status === 'questioned')) moveDiagnosis(prev, 'superseded')
   const version = (prev?.version ?? 0) + 1
-  const { rev, overturned } = nextRev(list, phase)
   const { result, updatedAt: _u, rejects: _r, ...body } = c
   const files =
     phase === 'evidence'
@@ -586,7 +625,9 @@ function submitOnce(
     )
   const which = overturned
     ? `已交第 ${rev} 版（${PHASE_TEXT[phase]}）：回到了更早的阶段或换掉了确认过的方案，第 ${rev - 1} 版的结论作废`
-    : `已交第 ${label.ver} 版的${PHASE_TEXT[phase]}${label.ver.includes('.') ? '（按用户的意见重出的小版本，结论没被推翻不升大版本）' : label.round > 1 ? `（这一版的第 ${label.round} 轮）` : ''}`
+    : back
+      ? `已交第 ${label.ver} 版的${PHASE_TEXT[phase]}（从${PHASE_TEXT[back]}回到${PHASE_TEXT[phase]}补充，前面的结论先保留，补完照流程往下走、根因和方案要用户重新确认）`
+      : `已交第 ${label.ver} 版的${PHASE_TEXT[phase]}${label.ver.includes('.') ? '（按用户的意见重出的小版本，结论没被推翻不升大版本）' : label.round > 1 ? `（这一版的第 ${label.round} 轮）` : ''}`
   // 「报告 #n」是交报告的顺序号：对话里那一行按它认出是哪一份（web/src/lib/tasks.ts）
   return {
     ok: true,

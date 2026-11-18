@@ -217,4 +217,16 @@ export const EN_ALERTS: Record<string, string> = {
   '插件「{names}」这一轮没有挂上工具，这个对话暂时用不了它们。':
     'Plugin "{names}" did not attach its tools this turn, so they are unavailable in this chat for now.',
   '插件的 {what} 超过 {s} 秒没有返回': 'Plugin {what} did not return within {s} s',
+  // 诊断报告被核对退回太多次停下、它说了卡住（AlertKind 的 unfinished，按原始信息分）
+  诊断报告没通过核对: 'Diagnosis report failed checks',
+  '它交的诊断报告被面板的核对（字段上限、编号对不上、行号和原文对不上这类格式问题）退回了好几次，面板让它停下来等你。下面「原始信息」是最后一次退回的原文。':
+    'The panel\'s checks rejected its diagnosis report several times (field limits, mismatched IDs, line numbers not matching the source and similar format issues), so the panel stopped it to wait for you. "Raw details" below is the last rejection, word for word.',
+  '发「继续」让它照退回原文逐条改好再交；如果是核对本身不合理（明明写对了还被退），把原文发给开发者。':
+    'Send "continue" so it fixes each point in the rejection and submits again. If the check itself looks wrong (rejected although it was right), send the text to the developers.',
+  卡住了: 'Stuck',
+  '它说明了做不下去、需要你做什么（就是这一行写的），然后结束了这一轮。':
+    'It explained why it cannot go on and what it needs from you (the line above), then ended the turn.',
+  '按它说的补上信息或做完那一步，再发消息让它接着做；不认同就直接告诉它该怎么做。':
+    'Provide what it asked for or do that step, then send a message so it carries on. If you disagree, tell it what to do instead.',
+  '诊断报告没通过面板核对，停下等你：{need}': 'Diagnosis report failed the panel checks; waiting for you: {need}',
 }

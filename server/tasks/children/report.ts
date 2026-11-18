@@ -2,6 +2,7 @@ import { setChild } from '../../../shared/children/task-child.ts'
 import { childSelfDrives, childReport, type ConvState } from '../../../shared/task.ts'
 import type { Task } from '../../../shared/schema.ts'
 import { diagnosisInFlow } from '../../../shared/bug/phase.ts'
+import { rejectStop } from '../../../shared/bug/diagnosis.ts'
 import { childStatusLetter, fullSummaryAt, reportNextText } from '../../../shared/prompt/letters/child-report.ts'
 import { saveToHandoff } from '../inbox-file.ts'
 import { planProgressKey } from '../../../shared/drive.ts'
@@ -136,7 +137,7 @@ export async function reportChild(ctx: ChildrenCtx, childId: string) {
           last: stall!.n >= MERGE_STALL_REPORTS,
         }
       : r.state === 'unfinished' && diagnosisInFlow(tk)
-        ? { kind: 'diagnosis', id: tk.id, stuck }
+        ? { kind: 'diagnosis', id: tk.id, stuck, rejected: rejectStop(tk) }
         : r.state === 'unfinished'
           ? { kind: 'unfinished', id: tk.id, stuck }
           : r.state === 'stopped' && tk.stopReason === 'user'
