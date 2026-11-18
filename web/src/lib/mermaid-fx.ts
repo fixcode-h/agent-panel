@@ -405,17 +405,38 @@ export function enhanceMermaid(box: HTMLElement, opts: { replay?: boolean } = {}
   panZoom(box)
 }
 
-/** 全屏看图：把这张图复制一份放进遮罩，Esc、点遮罩、点「关闭」都能关 */
+/**
+ * 全屏看图：铺满整个窗口（不再是遮罩里的弹窗），顶栏中间「图形 / 源码」切换，Esc 或「关闭」退出。
+ * 把这张图复制一份放进去，源码页用收起的那份带行号的源码
+ */
 function fullscreen(box: HTMLElement) {
   const wrap = document.createElement('div')
   wrap.className = 'md-mmd-full'
+  wrap.dataset.view = 'graph'
   const panel = document.createElement('div')
   panel.className = 'chat-md'
   const copy = box.cloneNode(true) as HTMLElement
   copy.classList.remove('mx-in')
+  // 收起的源码挪成源码页：整页滚动、带行号，可以选中复制
+  const code = copy.querySelector('details pre')
   copy.querySelector('details')?.remove()
+  const src = document.createElement('div')
+  src.className = 'md-mmd-src'
+  if (code) src.append(code)
+  copy.append(src)
   const close = copy.querySelector<HTMLElement>('[data-mmd="full"]')
-  if (close) close.textContent = t('关闭')
+  if (close) {
+    close.textContent = t('关闭')
+    close.title = 'Esc'
+  }
+  const seg = (view: string, label: string) =>
+    `<button type="button" role="radio" data-mmd-view="${view}" aria-checked="${view === 'graph'}">${escape(label)}</button>`
+  copy
+    .querySelector('.md-code-lang')
+    ?.insertAdjacentHTML(
+      'afterend',
+      `<span class="md-mmd-views" role="radiogroup" aria-label="${escape(t('看图形还是源码'))}">${seg('graph', t('图形'))}${seg('src', t('源码'))}</span>`,
+    )
   panel.append(copy)
   wrap.append(panel)
   document.body.append(wrap)
@@ -424,15 +445,33 @@ function fullscreen(box: HTMLElement) {
   copy.querySelectorAll('.hot').forEach((x) => x.classList.remove('hot'))
   enhanceMermaid(copy, { replay: true })
   panZoom(copy, true)
+  const show = (view: string) => {
+    wrap.dataset.view = view
+    wrap.querySelectorAll<HTMLElement>('[data-mmd-view]').forEach((b) => {
+      b.setAttribute('aria-checked', String(b.dataset.mmdView === view))
+    })
+  }
   const done = () => {
     wrap.remove()
-    removeEventListener('keydown', onKey)
+    removeEventListener('keydown', onKey, true)
   }
-  const onKey = (e: KeyboardEvent) => e.key === 'Escape' && done()
-  addEventListener('keydown', onKey)
+  // 图在弹窗（诊断报告、Radix Dialog）里时，弹窗在 document 捕获阶段收 Esc、把 body 设成不可点、
+  // 把焦点和「点到外面」都拦回去：全屏挂在 body 上就点不动也退不出。这里在 window 捕获阶段先收 Esc，
+  // 并把按下、焦点事件留在全屏层里，不让弹窗以为点到了外面而关掉
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    e.stopImmediatePropagation()
+    e.preventDefault()
+    done()
+  }
+  addEventListener('keydown', onKey, true)
+  for (const type of ['pointerdown', 'focusin', 'focusout']) wrap.addEventListener(type, (e) => e.stopPropagation())
   wrap.addEventListener('click', (e) => {
-    const act = (e.target as Element).closest<HTMLElement>('[data-mmd]')
-    if (e.target === wrap || act?.dataset.mmd === 'full') return done()
+    const target = e.target as Element
+    const view = target.closest<HTMLElement>('[data-mmd-view]')?.dataset.mmdView
+    if (view) return show(view)
+    const act = target.closest<HTMLElement>('[data-mmd]')
+    if (act?.dataset.mmd === 'full') return done()
     if (act) mermaidAction(act)
   })
 }
