@@ -16,6 +16,7 @@ import type { TasksScope } from './scope.ts'
 import { previewCleanup } from './bug-cleanup.ts'
 import { applyDecision, queueCancel } from './diagnosis-decide.ts'
 import { readTask } from './read.ts'
+import { probeRoutes } from './probe-routes.ts'
 
 const Decision = z.object({
   approve: z.boolean(),
@@ -47,6 +48,8 @@ const CleanupAction = z.object({ action: z.enum(['retry', 'finish']) })
 
 export function diagnosisRoutes(s: TasksScope): Hono {
   const app = new Hono()
+  // 补排查（报告出来以后随时加临时代码）挂在诊断报告这组接口下
+  app.route('/', probeRoutes(s))
   // 诊断报告不挂在 CLI 进程上：子对话停着、不在内存里也能确认，改完落盘
   const taskOf = async (id: string) => ({ entry: s.live.get(id), task: await readTask(s, id) })
 

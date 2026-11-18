@@ -109,6 +109,8 @@ export interface TasksScope {
       shell?: import('../background.ts').BgJob['shell']
       /** 结果只报状态和日志路径（UE 编译，BgJob.brief） */
       brief?: boolean
+      /** 结果不推回对话（页面上点「重新运行」起的，BgJob.quiet） */
+      quiet?: boolean
     }):
       | {
           ok: boolean

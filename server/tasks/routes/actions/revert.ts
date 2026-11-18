@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { gitNumstat, gitRevertFile, undoSpans } from '../../../exec/git.ts'
-import { convChanges } from '../../../../shared/conv-changes.ts'
+import { parseScope, scopeChanges } from '../../../../shared/conv-changes.ts'
 import { taskLog } from '../../log.ts'
 import { taskChanges } from '../../../own-changes.ts'
 import { applyFixesInDir } from '../../../files.ts'
@@ -112,8 +112,11 @@ export function revertRoutes(s: TasksScope): Hono {
     if (tk.imported) return s.bad(c, s.READONLY, 409)
     if (tk.working || tk.steps.some((x) => x.status === 'running'))
       return s.bad(c, t('对话正在执行，等这一轮结束后再撤销'), 409)
-    const ch = convChanges(tk.messages)
-    if (!ch.files.length) return s.bad(c, t('这个对话没有要撤销的改动'), 404)
+    // scope=round：改动卡片切在「这一轮」时的「撤销这一轮」，只撤用户最后一次发话以后的几轮
+    const { scope } = (await c.req.json().catch(() => ({}))) as { scope?: unknown }
+    const round = parseScope(scope) === 'round'
+    const ch = scopeChanges(tk.messages, round ? 'round' : 'conv')
+    if (!ch.files.length) return s.bad(c, round ? t('这一轮没有要撤销的改动') : t('这个对话没有要撤销的改动'), 404)
     const dir = await s.taskDir(tk)
     if (!dir) return s.bad(c, t('任务没有工作目录'), 404)
     let r: Awaited<ReturnType<typeof undoSpans>>
@@ -127,7 +130,10 @@ export function revertRoutes(s: TasksScope): Hono {
       return s.bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
     }
     if (!r.ok) return c.json({ ok: false, conflicts: r.conflicts })
-    taskLog(id, '撤销了整个对话的改动', { turns: ch.turns.length, files: r.files.length })
+    taskLog(id, round ? '撤销了这一轮的改动' : '撤销了整个对话的改动', {
+      turns: ch.turns.length,
+      files: r.files.length,
+    })
     const at = new Date().toISOString()
     const live = s.live.get(id)?.task
     for (const x of [live, tk])

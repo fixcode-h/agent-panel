@@ -86,7 +86,7 @@ export function fnWord(fn: string): string {
 }
 const KEYWORD = /^(if|else|for|while|switch|return|catch|function|const|let|var|await|async|new|throw|typeof)$/
 
-const linesOf = (s: string) => s.replace(/\r\n?/g, '\n').split('\n')
+export const linesOf = (s: string) => s.replace(/\r\n?/g, '\n').split('\n')
 
 /**
  * 位置核对（有宿主时）：读文件，line 附近找函数名；偏了几行的改过去，写进 notes 告诉 Agent。
@@ -108,10 +108,7 @@ export function checkStack(c: BugCase, src: BugSource | undefined, notes: string
     }
     const lines = linesOf(text)
     const word = fnWord(h.fn)
-    // 出错点常写的是那一句代码：整句能在附近找到就按整句，不然按函数名里的词找
-    const found =
-      nearestText(lines, h.line!, h.fn) ||
-      (word ? nearest(lines, h.line!, word) : h.line! <= lines.length ? h.line! : 0)
+    const found = locateLine(lines, h.line!, h.fn)
     if (!found) {
       h.check = { ok: false, why: `第 ${h.line} 行附近没有 ${word || h.fn}`, code: '' }
       misses.push(`${h.id || h.fn} ${h.file}:${h.line}（附近没有 ${word || h.fn}）`)
@@ -122,19 +119,30 @@ export function checkStack(c: BugCase, src: BugSource | undefined, notes: string
       h.line = found
     }
     h.check = { ok: true, why: '', code: '' }
-    if (h.role === 'fault') {
+    // 出错点的几行直接画在树上；别的跳也留同样几行快照，界面上悬停才显示（设计稿 Bug 模式子对话体验 N6：
+    // 读调用栈时不用逐个打开文件）。没走到、旁支不留：前者那几行就是该执行没执行的，看出错点就够，后者不重要
+    if (h.role !== 'missed' && h.role !== 'side') {
       const start = Math.max(1, found - AROUND)
       h.check.start = start
       h.check.code = lines
         .slice(start - 1, found + AROUND)
         .join('\n')
-        .slice(0, 2000)
+        .slice(0, h.role === 'fault' ? 2000 : 600)
     }
   }
   if (placed.length >= 2 && misses.length * 2 > placed.length)
     return `调用栈有一半以上的跳在代码里对不上：${misses.join('；')}。先打开文件确认路径和行号再交。`
   if (misses.length) notes.push(`调用栈这几跳在代码里没对上，报告上会标出来：${misses.join('；')}。`)
   return ''
+}
+
+/**
+ * 那一行附近（上下 NEAR 行）找 fn：出错点常写的是那一句代码，整句能在附近找到就按整句，不然按函数名里的词找；
+ * 找不到返回 0。功能结构图的节点核对（views.ts）也用它
+ */
+export function locateLine(lines: string[], line: number, fn: string): number {
+  const word = fnWord(fn)
+  return nearestText(lines, line, fn) || (word ? nearest(lines, line, word) : line <= lines.length ? line : 0)
 }
 
 const squash = (s: string) => s.replace(/\s+/g, '')

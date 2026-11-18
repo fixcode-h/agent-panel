@@ -19,6 +19,10 @@ import { DiagnosisCard, ReportFold } from './DiagnosisCard'
 import { CleanupStatus, useCancelCleanup } from './DiagnosisCleanup'
 import { LogWatch, PatchReminder, usePatch, WorkspacePatch } from './DiagnosisEvidence'
 import { patchKindOf } from '@shared/bug/patch'
+import { probedReady } from '@shared/bug/probe'
+import { Button } from '@/components/ui/button'
+import { PROBE_ICON, ProbeForm } from './ProbeForm'
+import { ProbeCancelNote, ProbeLedger, ProbeRecords } from './ProbeLedger'
 import { compareBase, DiagnosisCompare, RedoBadge } from './DiagnosisCompare'
 import { ChatBasis, ChatStale } from './DiagnosisChat'
 
@@ -109,6 +113,8 @@ function versionsOf(
   changed: string[] | undefined,
   teamNames: Set<string>,
   status?: (d: Diagnosis) => ReactNode,
+  /** 决策卡下面的（临时排查改动清单，效果图 2） */
+  below?: (d: Diagnosis) => ReactNode,
 ) {
   return list.map((d, i) => {
     // 第几版带小版本（按你的提问重出的是 N.1，用户 2026-11-13 定）；同一版号只有论证多轮时写第几轮
@@ -132,6 +138,7 @@ function versionsOf(
           <RedoBadge d={d} list={list} />
           {status?.(d)}
         </>,
+        below?.(d),
       ),
       compare: base && <DiagnosisCompare d={d} base={base} list={list} author={author} />,
       status: statusOf(d),
@@ -146,6 +153,7 @@ function viewOf(
   teamNames: Set<string>,
   /** 卡片上面的一条（取消修复后删临时日志的进度） */
   status?: ReactNode,
+  below?: ReactNode,
 ) {
   const v = diagnosisView(d, prev, opts)
   return {
@@ -154,6 +162,7 @@ function viewOf(
       <>
         {status}
         <DiagnosisCard card={v.card} teamNames={teamNames} />
+        {below}
       </>
     ),
     after: v.background ? <ReportFold text={v.background} teamNames={teamNames} /> : undefined,
@@ -311,8 +320,11 @@ export function DiagnosisDialog({
   // 修复、验证这两步代码已经改了：取消时可以选连修复一起撤掉
   const cleanup = useCancelCleanup(task.id, !!last && (phaseOf(last) === 'fix' || phaseOf(last) === 'verify'))
   // 排查补丁（分析稿 B1）：等你复现 / 验证时能把独立分支里的日志或修复放到你的工作区；打开时查一次状态
-  const patchKind = patchKindOf(last)
+  const patchKind = patchKindOf(last, probedReady(task.bug))
   const patch = usePatch(task.id, open && !!last)
+  // 补排查（设计稿第 1 节）：报告在哪一步都能点，报告不重出；报告关了（不修了）就不能再加
+  const [probing, setProbing] = useState(false)
+  const canProbe = task.bug?.kind === 'report' && !!last && last.status !== 'cancelled'
   // 「后面几步没有要注意的就自动通过」（分析稿 B2）：默认沿用你上一次同意时的选择
   const [autoNext, setAutoNext] = useState(() => autoOn(list))
   if (!last) return null
@@ -352,158 +364,195 @@ export function DiagnosisDialog({
       kind: (n.kind || 'question') as 'question' | 'change' | 'info',
     }))
   return (
-    <ReviewDialog
-      req={req}
-      open={open}
-      onOpenChange={onOpenChange}
-      kinds={KINDS()}
-      versions={versionsOf(list, author, snippets, changed, teamNames, (d) => (
-        <>
-          {d === last && (
-            <ChatStale
-              task={task}
-              onSync={async () => {
-                const r = await api.syncDiagnosis(task.id)
-                await hand(r.message, [], r.task)
-              }}
-            />
-          )}
-          <ChatBasis
-            d={d}
-            list={list}
-            onJump={() => onOpenChange(false)}
-            onRetract={
-              d === last && d.status === 'approved' && d.approvedBy?.kind === 'chat'
-                ? async () => {
-                    const r = await api.decideDiagnosis(task.id, d.version, {
-                      approve: false,
-                      retract: true,
-                      notes: [],
-                      overall: '',
-                    })
+    <>
+      <ProbeForm
+        task={task}
+        open={probing}
+        onOpenChange={setProbing}
+        onDone={onDone}
+        canPatch={!!patch.status?.eligible}
+      />
+      <ReviewDialog
+        req={req}
+        open={open}
+        onOpenChange={onOpenChange}
+        kinds={KINDS()}
+        versions={versionsOf(
+          list,
+          author,
+          snippets,
+          changed,
+          teamNames,
+          (d) => (
+            <>
+              {d === last && (
+                <ChatStale
+                  task={task}
+                  onSync={async () => {
+                    const r = await api.syncDiagnosis(task.id)
                     await hand(r.message, [], r.task)
-                  }
-                : undefined
-            }
-          />
-          {d === last && <WorkspacePatch patch={patch} kind={patchKind} />}
-          <CleanupStatus task={task} d={d} onDone={onDone} />
-        </>
-      ))}
-      overallTools={
-        watchWhere ? (tools) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} tools={tools} /> : undefined
-      }
-      initialVersion={version ? String(version) : undefined}
-      dock={dock}
-      presets={presets}
-      readOnly={last.status !== 'pending'}
-      // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边
-      top={(key, show) => <DiagnosisStages list={list} shown={key} onShow={show} />}
-      texts={cfg.texts}
-      noApprove={cfg.noApprove}
-      feedbackFirst
-      attach
-      overallPlaceholder={cfg.placeholder}
-      supply={
-        cfg.supply && {
-          ...cfg.supply,
-          onSupply: async (raw) => {
-            // 贴的日志太长：存成一个文件交路径过去，提示词里只放短的，不截断用户给的内容
-            const long = raw.overall.length > MAX_PASTE
-            const files = long
-              ? [
-                  ...raw.files,
-                  await api.upload({
-                    name: 'pasted-log.txt',
-                    mime: 'text/plain',
-                    data: await readBase64(new Blob([raw.overall], { type: 'text/plain' })),
-                  }),
-                ]
-              : raw.files
+                  }}
+                />
+              )}
+              <ChatBasis
+                d={d}
+                list={list}
+                onJump={() => onOpenChange(false)}
+                onRetract={
+                  d === last && d.status === 'approved' && d.approvedBy?.kind === 'chat'
+                    ? async () => {
+                        const r = await api.decideDiagnosis(task.id, d.version, {
+                          approve: false,
+                          retract: true,
+                          notes: [],
+                          overall: '',
+                        })
+                        await hand(r.message, [], r.task)
+                      }
+                    : undefined
+                }
+              />
+              {d === last && <WorkspacePatch patch={patch} kind={patchKind} />}
+              <CleanupStatus task={task} d={d} onDone={onDone} />
+            </>
+          ),
+          (d) =>
+            d === last && (
+              <ProbeLedger
+                task={task}
+                onDone={onDone}
+                patch={patch}
+                onProbe={canProbe ? () => setProbing(true) : undefined}
+              />
+            ),
+        )}
+        overallTools={
+          watchWhere
+            ? (tools) => <LogWatch key={req.id} taskId={task.id} where={watchWhere} tools={tools} />
+            : undefined
+        }
+        initialVersion={version ? String(version) : undefined}
+        dock={dock}
+        slots={{
+          footer: canProbe && (
+            <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setProbing(true)}>
+              <PROBE_ICON className="h-3.5 w-3.5" />
+              {t('补排查')}
+            </Button>
+          ),
+          aside: <ProbeRecords task={task} />,
+        }}
+        presets={presets}
+        readOnly={last.status !== 'pending'}
+        // 阶段条按整份档案画走到哪一步，点走过的一步切到那一步的报告，正在看的那步描边
+        top={(key, show) => <DiagnosisStages list={list} shown={key} onShow={show} />}
+        texts={cfg.texts}
+        noApprove={cfg.noApprove}
+        feedbackFirst
+        attach
+        overallPlaceholder={cfg.placeholder}
+        supply={
+          cfg.supply && {
+            ...cfg.supply,
+            onSupply: async (raw) => {
+              // 贴的日志太长：存成一个文件交路径过去，提示词里只放短的，不截断用户给的内容
+              const long = raw.overall.length > MAX_PASTE
+              const files = long
+                ? [
+                    ...raw.files,
+                    await api.upload({
+                      name: 'pasted-log.txt',
+                      mime: 'text/plain',
+                      data: await readBase64(new Blob([raw.overall], { type: 'text/plain' })),
+                    }),
+                  ]
+                : raw.files
+              const r = await api.decideDiagnosis(task.id, last.version, {
+                approve: false,
+                supply: true,
+                logs: long ? '' : raw.overall,
+                // 图片不算日志文件：它的路径已经在整体意见的文字里
+                logFiles: files.filter((f) => attachChip(f) !== 'image').map((f) => f.path),
+                notes: notesOf(raw),
+                overall: '',
+              })
+              await hand(r.message, files, r.task)
+            },
+          }
+        }
+        cancel={{
+          label: t('取消修复'),
+          title: t('取消这次修复？'),
+          description: cleanup.description,
+          // 补丁还在你的工作区里：提醒先还原（取消后分支不合回，留在工作区的日志、修复没人管）
+          extra:
+            patch.status?.applied || cleanup.extra || task.bug?.probes?.length ? (
+              <div className="flex flex-col gap-3">
+                <PatchReminder patch={patch} />
+                <ProbeCancelNote task={task} />
+                {cleanup.extra}
+              </div>
+            ) : undefined,
+          onAsk: () => {
+            cleanup.ask()
+            patch.refresh()
+          },
+          confirm: t('不修了'),
+          // 代码里有临时日志：服务端返回叫它删日志的话，交给子对话（删完面板核对干净才关闭报告，用户 2026-11-10 定）；
+          // 没有日志就不发话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
+          onCancel: async (overall) => {
             const r = await api.decideDiagnosis(task.id, last.version, {
               approve: false,
-              supply: true,
-              logs: long ? '' : raw.overall,
-              // 图片不算日志文件：它的路径已经在整体意见的文字里
-              logFiles: files.filter((f) => attachChip(f) !== 'image').map((f) => f.path),
-              notes: notesOf(raw),
-              overall: '',
+              cancel: true,
+              drop: cleanup.drop,
+              revertFix: cleanup.revertFix,
+              notes: [],
+              overall,
             })
-            await hand(r.message, files, r.task)
+            // 它正在回复：取消先记下，这一轮说完由面板执行（不再报错让你等着再点）
+            if (r.queued) toast.info(t('它正在回复，这一轮说完后取消'))
+            if (r.message) await hand(r.message, [], r.task)
+            else onDone?.(r.task)
           },
+        }}
+        approveExtra={
+          // 验证那一步的「确认」是结束验证，等你复现的那一版没有确认：都不放
+          last.status === 'pending' && !last.awaiting && phaseOf(last) !== 'verify' ? (
+            <Checkbox
+              checked={autoNext}
+              onChange={setAutoNext}
+              label={<span className="text-xs text-muted">{t('后面几步没有要注意的就自动通过')}</span>}
+              tip={t(
+                '之后交上来的根因、修复方案、修复，决策卡上没有「要注意」的由面板直接通过，报告随时能打开回看；有「要注意」的、要你复现验证的照常停下等你',
+              )}
+            />
+          ) : undefined
         }
-      }
-      cancel={{
-        label: t('取消修复'),
-        title: t('取消这次修复？'),
-        description: cleanup.description,
-        // 补丁还在你的工作区里：提醒先还原（取消后分支不合回，留在工作区的日志、修复没人管）
-        extra:
-          patch.status?.applied || cleanup.extra ? (
-            <div className="flex flex-col gap-3">
-              <PatchReminder patch={patch} />
-              {cleanup.extra}
-            </div>
-          ) : undefined,
-        onAsk: () => {
-          cleanup.ask()
-          patch.refresh()
-        },
-        confirm: t('不修了'),
-        // 代码里有临时日志：服务端返回叫它删日志的话，交给子对话（删完面板核对干净才关闭报告，用户 2026-11-10 定）；
-        // 没有日志就不发话：交报告那一轮已经结束了，计划由服务端收口，它停着等你的下一句
-        onCancel: async (overall) => {
+        reject={
+          cfg.reject && {
+            ...cfg.reject,
+            onReject: async (raw) => {
+              const r = await api.decideDiagnosis(task.id, last.version, {
+                approve: false,
+                intent: 'reject',
+                notes: notesOf(raw),
+                overall: raw.overall,
+              })
+              await hand(r.message, raw.files, r.task)
+            },
+          }
+        }
+        onAnswer={async (allow, _text, raw) => {
           const r = await api.decideDiagnosis(task.id, last.version, {
-            approve: false,
-            cancel: true,
-            drop: cleanup.drop,
-            revertFix: cleanup.revertFix,
-            notes: [],
-            overall,
+            approve: allow,
+            notes: notesOf(raw),
+            overall: raw?.overall ?? '',
+            ...(allow ? { autoNext } : { intent: cfg.intent ?? 'ask' }),
           })
-          // 它正在回复：取消先记下，这一轮说完由面板执行（不再报错让你等着再点）
-          if (r.queued) toast.info(t('它正在回复，这一轮说完后取消'))
-          if (r.message) await hand(r.message, [], r.task)
-          else onDone?.(r.task)
-        },
-      }}
-      approveExtra={
-        // 验证那一步的「确认」是结束验证，等你复现的那一版没有确认：都不放
-        last.status === 'pending' && !last.awaiting && phaseOf(last) !== 'verify' ? (
-          <Checkbox
-            checked={autoNext}
-            onChange={setAutoNext}
-            label={<span className="text-xs text-muted">{t('后面几步没有要注意的就自动通过')}</span>}
-            tip={t(
-              '之后交上来的根因、修复方案、修复，决策卡上没有「要注意」的由面板直接通过，报告随时能打开回看；有「要注意」的、要你复现验证的照常停下等你',
-            )}
-          />
-        ) : undefined
-      }
-      reject={
-        cfg.reject && {
-          ...cfg.reject,
-          onReject: async (raw) => {
-            const r = await api.decideDiagnosis(task.id, last.version, {
-              approve: false,
-              intent: 'reject',
-              notes: notesOf(raw),
-              overall: raw.overall,
-            })
-            await hand(r.message, raw.files, r.task)
-          },
-        }
-      }
-      onAnswer={async (allow, _text, raw) => {
-        const r = await api.decideDiagnosis(task.id, last.version, {
-          approve: allow,
-          notes: notesOf(raw),
-          overall: raw?.overall ?? '',
-          ...(allow ? { autoNext } : { intent: cfg.intent ?? 'ask' }),
-        })
-        await hand(r.message, raw?.files ?? [], r.task)
-      }}
-    />
+          await hand(r.message, raw?.files ?? [], r.task)
+        }}
+      />
+    </>
   )
 }
 

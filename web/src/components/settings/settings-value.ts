@@ -74,6 +74,7 @@ export function buildSettings({
     notifyChannels: form.notifyChannels,
     askUserDefault: g.askUserDefault,
     bugAuthor: g.bugAuthor,
+    bugBar: g.bugBar,
     userName: g.userName.trim(),
     developerMode: g.developerMode,
     elementPicker: form.elementPicker,

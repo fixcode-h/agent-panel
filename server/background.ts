@@ -13,6 +13,7 @@ import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 import { createDigest, digestText, type LogDigest } from '../shared/log-digest.ts'
 import { openJobLog } from './bg/log.ts'
 import { notRunReason } from './bg/sanity.ts'
+import { sniffUrl } from './bg/url.ts'
 import { lostJobNote, type createBgPersist, type PersistedJob } from './bg/persist.ts'
 import {
   bgLastOutput,
@@ -86,6 +87,14 @@ export interface BgJob {
    * 用户 2026-11-15 要求成功只回状态、失败只回日志路径，要细节由 Agent 自己按路径去搜（ADR 0067）
    */
   brief?: boolean
+  /** 输出里认出、探活通过的本机地址（server/bg/url.ts）：本轮产出最上面「可浏览的地址」一行 */
+  url?: string
+  /** 认出来、正在探活的地址 */
+  urlProbing?: string
+  /**
+   * 用户在页面上点「重新运行」起的：结果不推回对话。对话没让它跑，推回去会把停着的对话拉起新的一轮
+   */
+  quiet?: boolean
 }
 
 /**
@@ -409,6 +418,7 @@ export function createBackground(
   function settle(j: BgJob, state: BgJob['state'], info: { code?: number | null; note?: string } = {}) {
     if (!finish(j, state, info)) return false
     if (state === 'stopped' && !(j.notifyOnStop && j.stopRequested)) return true
+    if (j.quiet) return true
     onDone(j, resultText(j))
     return true
   }
@@ -441,11 +451,16 @@ export function createBackground(
         heard(j)
         digest.add(l)
         file?.write(l)
+        void sniffUrl(j, l)
         j.lines.push(l)
         if (j.lines.length > KEEP_LINES) j.lines.splice(0, j.lines.length - KEEP_LINES)
       },
       // 进度条、下载进度多写在 stderr：也算有动静，不然下载着的命令会被当成卡住
-      onStderr: () => heard(j),
+      // Python 的 http.server、一些 Node 服务把启动地址写在 stderr：也要认
+      onStderr: (text) => {
+        heard(j)
+        for (const l of text.split('\n')) void sniffUrl(j, l)
+      },
     })
     aborts.delete(j.id)
     if (r.stderr.trim()) {
@@ -519,6 +534,8 @@ export function createBackground(
       shell?: BgJob['shell']
       /** 结果只报状态和日志路径（见 BgJob.brief） */
       brief?: boolean
+      /** 结果不推回对话（见 BgJob.quiet） */
+      quiet?: boolean
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
@@ -549,6 +566,7 @@ export function createBackground(
         // 没带就不写：普通后台命令被停下时结果照旧不推回
         ...(input.notifyOnStop ? { notifyOnStop: true } : {}),
         ...(input.brief ? { brief: true } : {}),
+        ...(input.quiet ? { quiet: true } : {}),
         state: 'queued',
         code: null,
         createdAt: iso(),

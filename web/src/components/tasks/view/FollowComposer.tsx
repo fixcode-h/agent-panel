@@ -20,6 +20,7 @@ import { continueHint } from '../composer-hint'
 import { RetryModelMenu } from '../RetryModelMenu'
 import { TaskContextRing } from '../TaskMeta'
 import { HandBackTag } from '../UserActionPanel'
+import { BugActionBar } from '../BugActionBar'
 
 export interface FollowComposerProps {
   task: TaskPage
@@ -78,7 +79,12 @@ export function FollowComposer(p: FollowComposerProps) {
       // 拖文件到页面任何位置都算引入到要求里；流程图视图里节点自己有自己的拖拽，不接管
       dropScope={p.dropScope}
       onDropOver={p.onDropOver}
-      above={<HandBackTag task={task} />}
+      above={
+        <>
+          <BugActionBar task={task} />
+          <HandBackTag task={task} />
+        </>
+      }
       menus={
         <>
           {mention.menu}

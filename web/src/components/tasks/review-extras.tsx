@@ -5,8 +5,22 @@ import { Segmented } from '@/components/ui/segmented'
 
 /**
  * 审阅弹窗（ReviewDialog）多出来的两个小部件，拆出来免得主函数再变长：
- * 顶栏的「报告 / 对比上一份」切换，底栏的「不认同」按钮（诊断报告，用户 2026-11-13 定）
+ * 顶栏的「报告 / 对比上一份」切换，标注栏的常用标注，底栏的「不认同」按钮（诊断报告，用户 2026-11-13 定）
  */
+
+/** 标注栏顶上的常用标注（点一下就加一条）：没有或只读时不画 */
+export function PresetRow<P extends { label: string }>({ presets, onPick }: { presets: P[]; onPick: (p: P) => void }) {
+  if (!presets.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 px-3 pb-2" data-review-presets>
+      {presets.map((p) => (
+        <Button key={p.label} size="sm" variant="secondary" onClick={() => onPick(p)}>
+          {p.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
 
 /** 「报告 / 对比上一份」：这一版有上一份可比时才画 */
 export function CompareSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {

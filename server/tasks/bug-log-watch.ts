@@ -7,6 +7,7 @@
 import { open, mkdir, readFile, realpath, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
+import { markerHits } from '../../shared/bug/probe.ts'
 import {
   isAbsPath,
   lineSpan,
@@ -171,6 +172,7 @@ export async function fetchWatch(where: string | undefined, d: WatchDirs, confir
       ...lineSpan({ ...scan, size: st.size }),
       bytes: range.total,
       related: related ? related.split('\n').length : 0,
+      hits: markerHits(related),
       truncated: range.truncated,
       rotated: range.rotated,
     }

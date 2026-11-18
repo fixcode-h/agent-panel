@@ -1,5 +1,5 @@
 import { isNewerPlugin, type PluginUpdate } from '../../shared/plugins/version.ts'
-import { readRepoVersion, type MarketEntry } from './github.ts'
+import { installable, readRepoVersion, type MarketEntry } from './github.ts'
 import { readMarketCached } from './market-cache.ts'
 import type { Installed } from './store.ts'
 import { checkWrapUpdate } from './wrap/updates.ts'
@@ -36,7 +36,7 @@ export async function checkPluginUpdates(list: Installed[], opts: { refresh?: bo
         let latest: string | undefined
         let install: PluginUpdate['install']
         if (market) {
-          latest = market.find((e) => e.id === p.manifest.id)?.version
+          latest = installable(market).find((e) => e.id === p.manifest.id)?.version
           install = { repo, id: p.manifest.id }
         } else {
           const ref = p.source.tag || 'HEAD'

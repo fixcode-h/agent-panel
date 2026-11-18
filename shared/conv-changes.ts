@@ -1,4 +1,5 @@
 import type { FileChange, TaskMessage, TurnChanges } from './schema.ts'
+import { currentRound } from './turn-outputs/pick.ts'
 
 /**
  * 整个对话改了哪些文件：把每一轮记在总结消息上的改动（turnChanges，见 server/turn/changes.ts）按先后合起来。
@@ -44,4 +45,16 @@ export function convChanges(messages: Pick<TaskMessage, 'id' | 'turnChanges'>[])
     }
   }
   return { spans, files: [...files.values()], turns, reverted, others: [...others].filter((p) => !files.has(p)) }
+}
+
+/**
+ * 改动卡片看哪一段（设计稿 designs/Bug模式子对话体验-设计稿.md 第 3 节）：
+ * round 是这一轮（用户最后一次发话以后到它停下，和本轮产出同一个口径 currentRound），conv 是整个对话
+ */
+export type ChangeScope = 'round' | 'conv'
+export const parseScope = (v: unknown): ChangeScope => (v === 'round' ? 'round' : 'conv')
+
+/** 按范围算改动：差异、撤销、卡片都调这一处，三边算的是同一批轮次 */
+export function scopeChanges(messages: Pick<TaskMessage, 'id' | 'role' | 'turnChanges'>[], scope: ChangeScope) {
+  return convChanges(scope === 'round' ? currentRound(messages) : messages)
 }

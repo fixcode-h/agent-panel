@@ -12,14 +12,36 @@ export const TEMP_LOG = '[排查-'
 /** 文件里的一行：行号从 1 起，text 是那一行原文（去掉行尾空白） */
 export type FileLine = { file: string; line: number; text: string }
 
-const linesOf = (s: string) => s.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n')
+export const linesOf = (s: string) => s.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n')
 
-/** 文件里所有含临时日志前缀的行 */
+/** 多行的临时代码用一对注释包起来：`// [排查-P2 开始]` … `// [排查-P2 结束]`（补排查，shared/bug/probe.ts） */
+const BLOCK_START = /\[排查-([^\]\s]+) 开始\]/
+const blockEnd = (tag: string) => `[排查-${tag} 结束]`
+
+/**
+ * 哪几行是临时代码（下标从 0 起）：带前缀的行，加上成对标记之间的行。只有开始没有结束的不往下吞：
+ * 只算开始那一行，免得把文件后半段都当成临时代码交给 Agent 删
+ */
+export function tempLineIndexes(lines: string[]): Set<number> {
+  const out = new Set<number>()
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].includes(TEMP_LOG)) continue
+    out.add(i)
+    const tag = BLOCK_START.exec(lines[i])?.[1]
+    if (!tag) continue
+    const end = lines.findIndex((l, j) => j > i && l.includes(blockEnd(tag)))
+    if (end < 0) continue
+    for (let j = i + 1; j <= end; j++) out.add(j)
+    i = end
+  }
+  return out
+}
+
+/** 文件里所有临时代码的行：含前缀的行和成对标记之间的行 */
 export function tempLogLines(file: string, content: string): FileLine[] {
   if (!content.includes(TEMP_LOG)) return []
-  return linesOf(content)
-    .map((text, i) => ({ file, line: i + 1, text: text.trimEnd() }))
-    .filter((x) => x.text.includes(TEMP_LOG))
+  const lines = linesOf(content)
+  return [...tempLineIndexes(lines)].sort((a, b) => a - b).map((i) => ({ file, line: i + 1, text: lines[i].trimEnd() }))
 }
 
 /** 逐行比较的一步：same 两边都有；add 只在新的里（at 是插在旧文件第几行之后，0 表示开头）；del 只在旧的里 */
@@ -154,6 +176,7 @@ export function cleanupPrompt(o: {
   return `用户在第 ${o.rev} 版点了「不修了」。结束前用改文件工具删掉你加的 [排查-] 临时日志：
 ${list || '- （面板没查到，按你加过的位置再看一遍）'}
 只删这些，不改别的代码：
+- 成对的 [排查-… 开始] … [排查-… 结束] 连同中间的行整段删；
 - 为打日志加的临时变量、import 一起删；
 - 加日志时一起加的空白行也删掉，删完文件要和加日志之前一样，不留空行；
 - 不要用 git checkout / git restore / p4 revert / svn revert 整个文件还原（会把文件里别的改动一起冲掉），一处一处删。${drop}${fix}${again}

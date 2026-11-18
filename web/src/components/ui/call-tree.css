@@ -283,6 +283,42 @@
   color: var(--md-coral);
 }
 
+/* 别的跳的代码快照：收成 meta 后面的一个小标签，点开在这一跳下面展开（出错点的代码照旧直接画出来） */
+.md-calltree .ct-peek > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 1px 0 2px;
+  padding: 0 6px;
+  line-height: 1.6;
+  border-radius: 4px;
+  font-size: var(--ct-small);
+  color: var(--subtle);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  cursor: pointer;
+  list-style: none;
+}
+.md-calltree .ct-peek > summary::-webkit-details-marker {
+  display: none;
+}
+.md-calltree .ct-peek > summary::before {
+  content: '▸';
+  font-size: 0.8em;
+}
+.md-calltree .ct-peek[open] > summary::before {
+  content: '▾';
+}
+.md-calltree .ct-peek > summary:hover {
+  color: var(--fg);
+}
+.md-calltree .ct-peek > summary small {
+  font-size: 1em;
+  color: var(--subtle);
+}
+.md-calltree .ct-peek > .ct-code {
+  display: block;
+}
+
 /* 边界（异步、事件、跨进程）：这一跳上面一个淡紫的小胶囊 */
 .md-calltree .ct-edge {
   display: flex;

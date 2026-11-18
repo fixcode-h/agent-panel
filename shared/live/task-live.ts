@@ -10,6 +10,7 @@
  */
 import { z } from 'zod'
 import { TaskJob, type Task } from '../schema.ts'
+import { LiveUrl } from '../turn-outputs/local-url.ts'
 import { convActive, taskFacts, taskTurnUnread, type TaskFactsInput } from '../task.ts'
 import { kindWord, stateKind, type StateKind } from '../tasks/word.ts'
 
@@ -45,6 +46,11 @@ export const TaskLive = z.object({
   cliAlive: z.boolean(),
   /** 还在跑或排队的后台命令：对话这一轮已经说完、命令还在后台跑时，界面靠它在回复上面转圈 */
   jobs: z.array(TaskJob),
+  /**
+   * 后台命令输出里认出、探活通过的本机地址（开发服务器这类）：本轮产出最上面「可浏览的地址」一行。
+   * 结束了的命令也留着（标已停止，能重新运行）；没有时不带
+   */
+  urls: z.array(LiveUrl).optional(),
   /** 名下还在运行的子对话数（只有顶层对话算，子对话页是 0） */
   childrenWorking: z.number().int().min(0),
   /** 名下有活着的 CLI 进程的子对话数（只有顶层对话算）：不点开也能看出子对话还开着 CLI */
@@ -55,7 +61,10 @@ export const TaskLive = z.object({
 export type TaskLive = z.infer<typeof TaskLive>
 
 /** 服务端才知道的那几项：进程登记、后台命令、名下子对话的计数 */
-export type LiveRuntime = Pick<TaskLive, 'cliAlive' | 'jobs' | 'childrenWorking' | 'childrenCli' | 'childrenNeeds'>
+export type LiveRuntime = Pick<
+  TaskLive,
+  'cliAlive' | 'jobs' | 'urls' | 'childrenWorking' | 'childrenCli' | 'childrenNeeds'
+>
 
 /** 判定状态要看的任务事实：和 taskFacts 同一份，再加第一条请求的种类（分辨「等你回答」和「等你确认」） */
 export type LiveFactsInput = Omit<TaskFactsInput, 'jobs' | 'childrenWorking' | 'childrenNeeds'>

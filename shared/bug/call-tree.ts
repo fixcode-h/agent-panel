@@ -12,7 +12,7 @@
  *       ? 现象：角标停在 1  web/src/cart/Badge.tsx:15
  *   --- 断在这里：L3 之后没有 L4
  * 行首记号：> 入口、! 出错点、~ 没走到、? 现象、- 旁支（不写就是路过）；=> 下一跳前面的边界说明；
- * | / |> 挂在上一跳下面的代码（|> 是出错那一行）；--- 一条分隔说明；% 开头的是树上方的说明。两个以上空格隔开的尾巴：
+ * | / |> 挂在上一跳下面的代码（|> 是出错那一行；|. / |.> 是悬停才显示的代码）；--- 一条分隔说明；% 开头的是树上方的说明。两个以上空格隔开的尾巴：
  * `— 说明`、`<条件 → 走了哪边>`、`[名字=实际 => 期望]`、`{编号}`（L1+ 打出来了、L3- 该打没打、L4? 还没复现）、
  * `#fix:A`（选定的方案 A 改这里）、`#alt:B`（没选的方案 B 改这里）、`#nomatch`（位置没对上代码）、`#frame`（对上了报错堆栈的一帧）
  */
@@ -21,7 +21,8 @@ import type { BugHop } from './diagnosis-schema.ts'
 export type CallRole = BugHop['role']
 export type CallRef = { id: string; hit?: boolean; wait?: boolean }
 export type CallValue = { name: string; actual: string; expected: string }
-export type CallCode = { line?: number; text: string; mark: boolean }
+/** peek：悬停才显示的代码（|. 开头），不占树上的位置 */
+export type CallCode = { line?: number; text: string; mark: boolean; peek?: boolean }
 
 /** 解析出来的一跳 */
 export interface CallNode {
@@ -135,8 +136,13 @@ export function parseCallTree(text: string): CallTree {
     }
     if (line.startsWith('|')) {
       if (!last) continue
-      const m = /^\|(>?)\s?(\d+)?\s?(.*)$/.exec(line)!
-      last.code.push({ mark: m[1] === '>', line: m[2] ? Number(m[2]) : undefined, text: m[3] })
+      const m = /^\|(\.?)(>?)\s?(\d+)?\s?(.*)$/.exec(line)!
+      last.code.push({
+        mark: m[2] === '>',
+        line: m[3] ? Number(m[3]) : undefined,
+        text: m[4],
+        ...(m[1] ? { peek: true } : {}),
+      })
       continue
     }
     if (line.startsWith('=>')) {
@@ -253,11 +259,13 @@ export function hopsToCallTree(hops: BugHop[], x: HopExtra = {}): string {
     if (x.cut && h.id === x.cut.before) out.push(`${pad}--- ${clean(x.cut.text)}`)
     if (depth && h.edge !== 'call') out.push(`${pad}=> ${clean(h.edgeNote) || EDGE_TEXT[h.edge]}`)
     out.push(pad + hopLine(h, x, depth))
-    const c = h.role === 'fault' ? h.check : undefined
+    // 出错点的代码写成 |（直接画出来）；别的跳写成 |.（悬停才显示），出错那一行都标 >
+    const c = h.check
+    const peek = h.role !== 'fault'
     if (c?.code)
       c.code.split('\n').forEach((l, i) => {
         const n = (c.start ?? 0) + i
-        out.push(`${pad}  |${c.start && n === h.line ? '>' : ' '}${c.start ? n : ''} ${l}`)
+        out.push(`${pad}  |${peek ? '.' : ''}${c.start && n === h.line ? '>' : ' '}${c.start ? n : ''} ${l}`)
       })
     for (const k of kids.get(h) ?? []) walk(k, depth + 1)
   }

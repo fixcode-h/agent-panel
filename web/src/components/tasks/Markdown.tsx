@@ -11,9 +11,12 @@ import { targetOf, useFileRef } from '@/components/files/FileRefLayer'
 import { useChildSummaryOpen } from './child-open'
 import { toast } from '@/lib/toast'
 import { useMdTables } from './md-table-layer'
+import { useStructureViews } from './structure-views'
 import { useHtmlCards } from './html-card-layer'
 import { htmlCardSlots } from '@/lib/markdown/html-cards'
 import '@/components/ui/call-tree.css'
+import '@/components/ui/call-tree-looks.css'
+import '@/components/ui/structure-views.css'
 import {
   enhanceMermaid,
   mermaidAction,
@@ -277,6 +280,8 @@ export function Markdown({
   const tables = useMdTables(ref, html, live)
   // 回复里的 HTML 文件卡片（设计稿 6.6）
   const htmlCards = useHtmlCards(ref, html, live)
+  // 诊断报告的功能结构页签（切页签、点图上的节点、装 Archify）
+  const structure = useStructureViews(ref, html)
 
   /** 行内代码里单独的文件名（不带目录，2026-11-07 起按代码显示）：悬停时去对话目录里找完整路径 */
   const nameAt = (e: React.SyntheticEvent) => {
@@ -315,7 +320,7 @@ export function Markdown({
       )
       return
     }
-    if (tables.onClick(e)) return
+    if (tables.onClick(e) || structure.onClick(e)) return
     const mmd = (e.target as HTMLElement).closest<HTMLElement>('[data-mmd]')
     if (mmd) return mermaidAction(mmd)
     // 折行：只切这一个代码块，不改设置
@@ -380,6 +385,7 @@ export function Markdown({
       />
       {tables.layer}
       {htmlCards}
+      {structure.layer}
     </>
   )
 }

@@ -7,7 +7,6 @@ export const EN_DONE_GUARD: Record<string, string> = {
     'Code was changed, but no test, type check or build command ran this turn; it says it is done, but the panel saw no verification',
   '退出码 0': 'Exit code 0',
   未报退出码: 'No exit code reported',
-  '另有 {n} 个文件没列出': '{n} more files not listed',
   查看全部: 'View all',
   // 项目设置 · 测试步骤
   改了代码要跑过测试步骤才能结束: 'Require test steps after code changes before finishing',

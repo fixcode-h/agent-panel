@@ -3,10 +3,11 @@ import { demoWebView } from './demo-web-view'
 import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
 import { demoCapabilities } from './demo-capabilities'
-import { demoJobStore, demoJobs, setDemoJobs } from './demo-jobs'
+import { demoJobAction, demoJobStore, demoJobs, demoUrlStore, setDemoJobs } from './demo-jobs'
+import type { LiveUrl } from '@shared/turn-outputs/local-url'
 import { demoChildCounts, demoWithLive } from './demo-task-live'
 import { demoDoneEvidence } from './demo-done-evidence'
-import { demoOutputChanges, demoTurnOutputs } from './demo-turn-outputs'
+import { demoConvRevert, demoOutputChanges, demoTurnOutputs } from './demo-turn-outputs'
 import { demoChildRows } from './demo-children'
 /**
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
@@ -17,6 +18,7 @@ import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis, diagnosisMessage } from '@shared/bug/diagnosis'
 import { retractChat, syncChat } from '@shared/bug/chat'
 import { demoEvidence } from './demo-evidence'
+import { demoProbe, demoProbeFound } from './demo-probe'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { bugBriefs } from '@shared/bug/overview'
@@ -219,6 +221,8 @@ interface Db {
   seenJobs?: Record<string, TaskJob>
   /** 对话上还在跑的后台命令（不属于任务记录，见 demo/demo-jobs.ts） */
   taskJobs?: Record<string, TaskJob[]>
+  /** 后台命令认出的本机地址（可浏览的地址，见 demo/demo-jobs.ts 的 demoUrlStore） */
+  taskUrls?: Record<string, LiveUrl[]>
 }
 
 /** 演示里的全局教训：一条从别的项目提取来的 */
@@ -821,6 +825,7 @@ function load(): Db {
     if (legacy) db.taskJobs[t.id] = legacy
   }
   demoJobStore.map = db.taskJobs
+  demoUrlStore.map = db.taskUrls ??= {}
   if (db.tasks) db.tasks = db.tasks.map((t) => Task.parse(t))
   // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
   const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
@@ -2284,6 +2289,12 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     }))
   // 演示没有真的 CLI 进程：保活列表一直是空的
   if (res === 'tasks' && id === 'keepalive') return sub === 'release' ? { released: [] } : []
+  // 本轮产出「可浏览的地址」的停止、重新运行（demo-jobs.ts）
+  if (res === 'tasks' && id && sub === 'jobs' && seg[3] && seg[4] && method === 'POST') {
+    const r = demoJobAction({ id }, seg[3], seg[4])
+    persist()
+    return r
+  }
   if (res === 'tasks') {
     // 和正式后端一样：回给界面的任务一律带上 live（server/tasks/index.ts 的中间件），停止、改名顺手回的也带
     const out = await tasksRoute(method, id, sub, query, body, seg[3])
@@ -2834,10 +2845,12 @@ function tasksRoute(
     persist()
     return task
   }
-  if (sub === 'diagnosis-patch' || sub === 'diagnosis-log') return demoEvidence(task, sub, method, body)
+  if (sub === 'diagnosis-patch' || sub === 'diagnosis-log') return demoEvidence(task, sub, method, body, persist)
+  if ((sub === 'bug-probe' || sub === 'bug-probe-action') && method === 'POST')
+    return demoProbe(task, sub, body, persist)
   // 演示里没有真的代码目录：取消修复时查不到临时日志，直接按「没有日志」关闭
   if (sub === 'diagnosis-cleanup')
-    return method === 'POST' ? { task, message: '' } : { found: [], created: [], isolated: false }
+    return method === 'POST' ? { task, message: '' } : { found: demoProbeFound(task), created: [], isolated: false }
   // 按对话更新报告、撤回在对话里的确认：和正式后端同一份逻辑（shared/bug/chat.ts）
   if (sub === 'diagnosis-sync' && method === 'POST') {
     const r = syncChat(task, (v, text) =>
@@ -3071,15 +3084,9 @@ function tasksRoute(
   // 整个对话的改动（对话停下后最后面那张卡片）：差异和一轮的共用样例（见上面），撤销把带改动的每一轮都记成已撤销
   if (sub === 'conv-revert' && method === 'POST') {
     if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
-    const at = new Date().toISOString()
-    const files = new Set<string>()
-    for (const m of task.messages.filter((x) => x.turnChanges?.files.length && !x.turnChanges.revertedAt)) {
-      for (const f of m.turnChanges!.files) files.add(f.path)
-      m.turnChanges = { ...m.turnChanges!, revertedAt: at }
-    }
-    if (!files.size) fail('这个对话没有要撤销的改动', 404)
+    const r = demoConvRevert(task, body)
     persist()
-    return { ok: true, task, files: [...files] }
+    return r
   }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行', 409)
@@ -3826,6 +3833,42 @@ async function seedTasks(d: Db) {
     const summary = [...task.messages].reverse().find((m) => m.role === 'agent' && !m.step && m.text.trim())
     // 回复里提到做好的示例页：停下后画成 HTML 卡片（设计稿 6.6）
     if (summary) summary.text += '\n\n示例页放在 `demo/cart-badge.html`，打开就能看到角标归零的效果。'
+    // 改动卡片的「这一轮 / 整个对话」（效果图 5）：最后一段回复前插一句用户的话，前面的一条回复记上两个文件，算上一轮的
+    const si = summary ? task.messages.indexOf(summary) : -1
+    const earlier = task.messages
+      .slice(0, Math.max(0, si))
+      .reverse()
+      .find((m) => m.role !== 'user' && !m.turnChanges)
+    if (summary && earlier) {
+      earlier.turnChanges = {
+        spans: [{ from: 'demo-before-1', to: 'demo-before' }],
+        files: [
+          { path: 'src/components/CartBadge.tsx', add: 3, del: 1 },
+          { path: 'src/store/session.ts', add: 12, del: 4 },
+        ],
+      }
+      task.messages.splice(si, 0, {
+        id: 'demo-round-ask',
+        role: 'user',
+        agentId: '',
+        step: '',
+        text: '按方案 A 改，改完跑一下测试',
+        tools: [],
+        at: new Date(Date.parse(summary.at) - 60_000).toISOString(),
+      })
+    }
+    // 这一轮起了开发服务器：本轮产出最上面一行「可浏览的地址」（效果图 6，demo-jobs.ts）
+    if (summary)
+      demoUrlStore.map[task.id] = [
+        {
+          job: 'demo-dev',
+          url: 'http://localhost:5173/',
+          name: '前端开发服务器',
+          command: 'npm run dev',
+          state: 'running',
+          startedAt: summary.at,
+        },
+      ]
     if (summary)
       summary.turnChanges = {
         spans: [{ from: 'demo-before', to: 'demo-after' }],

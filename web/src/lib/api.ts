@@ -64,6 +64,8 @@ import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run/usage'
 import type { DiagnosisDecision } from '@shared/bug/diagnosis'
 import type { PatchResult, PatchStatus } from '@shared/bug/patch'
+import { bugProbeContract } from '@shared/api-contract/bug-probe'
+import type { BodyOf } from '@shared/api-contract/define'
 import type { LogFetchResult, LogStartResult, LogWatchStatus } from '@shared/bug/log-watch'
 import type { StatsTotal } from '@shared/tasks/export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
@@ -107,9 +109,11 @@ import { tasksContract } from '@shared/api-contract/tasks'
 import { projectsContract } from '@shared/api-contract/projects'
 import { trashContract } from '@shared/api-contract/trash'
 import { turnOutputsContract } from '@shared/api-contract/turn-outputs'
+import { jobsContract } from '@shared/api-contract/jobs'
 import { skillsContract } from '@shared/api-contract/skills'
 import type { SkillActivationInput } from '@shared/skills/activation'
 import { call } from './api/call'
+import type { ChangeScope } from '@shared/conv-changes'
 
 /** 对话页打开时的那一份（带分页信息），定义在契约里 */
 export type { TaskPage } from '@shared/api-contract/tasks'
@@ -821,13 +825,19 @@ export const api = {
   turnOutputs: (id: string, msgs: string[], paths: string[]) =>
     call(turnOutputsContract.outputs, { params: { id }, body: { msgs, paths } }),
   /** 撤销一轮的改动：有文件撤不干净时 ok 为 false，列出冲突的文件，一个都没动 */
-  convDiff: (id: string, path: string) =>
-    request<{ path: string; diff: string }>(`/tasks/${id}/conv-diff?path=${encodeURIComponent(path)}`),
-  convRevert: (id: string) =>
+  /** 改动卡片的差异和撤销：scope 是 round 时只算这一轮（用户最后一次发话以后，见 shared/conv-changes.ts 的 scopeChanges） */
+  convDiff: (id: string, path: string, scope: ChangeScope = 'conv') =>
+    request<{ path: string; diff: string }>(
+      `/tasks/${id}/conv-diff?path=${encodeURIComponent(path)}${scope === 'round' ? '&scope=round' : ''}`,
+    ),
+  convRevert: (id: string, scope: ChangeScope = 'conv') =>
     request<{ ok: true; task: Task; files: string[] } | { ok: false; conflicts: { path: string; reason: string }[] }>(
       `/tasks/${id}/conv-revert`,
-      json('POST', {}),
+      json('POST', { scope }),
     ),
+  /** 本轮产出「可浏览的地址」那一行：停掉起它的后台命令、停了以后按原命令再起一次 */
+  stopJob: (id: string, jobId: string) => call(jobsContract.stop, { params: { id, jobId }, body: {} }),
+  rerunJob: (id: string, jobId: string) => call(jobsContract.rerun, { params: { id, jobId }, body: {} }),
   turnRevert: (id: string, msg: string) =>
     request<{ ok: true; task: Task; files: string[] } | { ok: false; conflicts: { path: string; reason: string }[] }>(
       `/tasks/${id}/turn-revert`,
@@ -896,6 +906,12 @@ export const api = {
   /** 临时日志没删干净：retry 让它再删一次（返回交给它的话），finish 不再删、直接关闭报告 */
   cleanupAction: (id: string, action: 'retry' | 'finish') =>
     request<{ task: Task; message: string }>(`/tasks/${id}/diagnosis-cleanup`, json('POST', { action })),
+  /** 补排查：马上加（返回交给子对话的话，页面再作为消息发给它） */
+  startProbe: (id: string, body: BodyOf<typeof bugProbeContract.start>) =>
+    call(bugProbeContract.start, { params: { id }, body }),
+  /** 临时排查改动清单上的撤掉 / 让它改：返回交给子对话的话 */
+  probeAction: (id: string, body: BodyOf<typeof bugProbeContract.action>) =>
+    call(bugProbeContract.action, { params: { id }, body }),
   /** 排查补丁（分析稿 B1）：独立分支里的临时日志 / 修复有没有放在你的工作区里；不是 Git 独立分支的对话 eligible 为 false */
   patchStatus: (id: string) => request<PatchStatus>(`/tasks/${id}/diagnosis-patch`),
   /** apply 放到工作区、restore 还原、forget 我自己处理（不再记）；ok 为 false 时什么都没动，reason 是说明 */

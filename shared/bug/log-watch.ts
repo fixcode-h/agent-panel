@@ -154,6 +154,8 @@ export type LogFetch = {
   /** 新增了多少字节 */
   bytes: number
   related: number
+  /** 新增里认出的 [排查-…] 标记（P3、L1、论证日志的主题）：记进复现记录，清单按它标「打出来了」 */
+  hits?: string[]
   /** 新增内容太大，related 只数了前 MAX_NEW_BYTES */
   truncated: boolean
   rotated: boolean

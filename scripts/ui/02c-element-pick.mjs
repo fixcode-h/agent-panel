@@ -303,8 +303,29 @@ await runShard(import.meta.filename, async (api) => {
           return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
         })
         if (!below) errors.push('本轮产出：应该在完成依据上面')
+        // 可浏览的地址（Bug模式子对话体验 第 4 节）：后台命令起的开发服务器在最上面一行，能停、停了能重新运行
+        const url = out.locator('[data-url-row]')
+        if ((await url.count()) !== 1) errors.push(`可浏览的地址：应该正好一行，实际 ${await url.count()} 行`)
+        else {
+          const row = (await url.textContent()) ?? ''
+          for (const want of ['localhost:5173', '运行中', 'npm run dev', '在右栏打开'])
+            if (!row.includes(want)) errors.push(`可浏览的地址：那一行里没有「${want}」`)
+        }
         await out.scrollIntoViewIfNeeded()
-        await check(p, '本轮产出', ['本轮产出', 'cart-badge.html'])
+        await check(p, '本轮产出', ['本轮产出', 'cart-badge.html', 'localhost:5173'])
+        if (await url.count()) {
+          await url.getByRole('button', { name: '停止' }).click()
+          await url
+            .getByRole('button', { name: '重新运行' })
+            .waitFor({ timeout: 5000 })
+            .catch(() => errors.push('可浏览的地址：点「停止」后应该变成已停止、能重新运行'))
+          await check(p, '可浏览的地址-已停止', ['已停止', '重新运行'])
+          await url.getByRole('button', { name: '重新运行' }).click()
+          await url
+            .getByRole('button', { name: '在右栏打开' })
+            .waitFor({ timeout: 5000 })
+            .catch(() => errors.push('可浏览的地址：重新运行后应该回到运行中'))
+        }
       }
       // 回复里提到的 HTML 文件换成卡片
       const reply = p.locator('.chat-md [data-html-card-slot] [data-html-card]').first()
@@ -323,6 +344,22 @@ await runShard(import.meta.filename, async (api) => {
           errors.push('HTML 卡片：点了之后右栏应该开一个 cart-badge.html 的网页页签')
         await check(p, 'HTML卡片-右栏打开', ['右栏正在显示', '购物车角标'])
       }
+    }
+
+    // 改动卡片默认「这一轮」（Bug模式子对话体验 第 3 节）：标题左边切「整个对话」，撤销跟着切
+    {
+      const text = (await card.textContent()) ?? ''
+      for (const want of ['这一轮 8', '整个对话 9', '这一轮改了 8 个文件', '撤销这一轮', '这一轮 = 你'])
+        if (!text.includes(want)) errors.push(`改动卡片：默认应该看这一轮，卡片里没有「${want}」`)
+      if (!(await card.getByText('新建').count())) errors.push('改动卡片：这一轮新建的文件应该标「新建」')
+      await card.scrollIntoViewIfNeeded()
+      await check(p, '改动卡片-这一轮', ['这一轮改了 8 个文件', '新建'])
+      await card.getByRole('radio', { name: /^整个对话/ }).click()
+      const conv = (await card.textContent()) ?? ''
+      if (!conv.includes('这个对话改了 9 个文件')) errors.push('改动卡片：切到「整个对话」后应该是 9 个文件')
+      if (conv.includes('撤销这一轮')) errors.push('改动卡片：切到「整个对话」后撤销应该跟着变')
+      await check(p, '改动卡片-整个对话', ['这个对话改了 9 个文件'])
+      await card.getByRole('radio', { name: /^这一轮/ }).click()
     }
 
     // 长 diff：62 行的删除，窗口应该长到视口上限、正文自己滚动

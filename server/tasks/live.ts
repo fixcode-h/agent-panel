@@ -1,6 +1,7 @@
 import type { Task } from '../../shared/schema.ts'
 import { taskLiveOf, type TaskLive } from '../../shared/live/task-live.ts'
 import { reapLostJobs, uiJobs } from '../background.ts'
+import { liveUrls } from '../bg/url.ts'
 import { taskCliAlive } from '../exec/process.ts'
 import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
@@ -29,9 +30,12 @@ export function createLive(sc: TasksScope, childCounts: ChildCounts) {
     // 子对话页只冒泡后代在等你的个数（它下面还有孙对话时也要显示「等你处理」）；
     // 在跑的子对话数、CLI 数只给顶层对话（和以前列表、详情带的口径一样）
     const top = !task.parentTaskId
+    const bg = sc.background.list(task.id)
+    const urls = liveUrls(bg)
     return taskLiveOf(task, {
       cliAlive: taskCliAlive(task.id),
-      jobs: uiJobs(sc.background.list(task.id)),
+      jobs: uiJobs(bg),
+      ...(urls.length ? { urls } : {}),
       childrenWorking: top ? kids.working : 0,
       childrenCli: top ? kids.cli : 0,
       childrenNeeds: kids.needs,

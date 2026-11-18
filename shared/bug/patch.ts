@@ -28,17 +28,22 @@ export type PatchState = {
  * 这一版报告现在能放哪种补丁：论证阶段等你复现（日志已加好）是 logs，验证等你确认是 fix；别的时候没有。
  * 只看报告的阶段和状态，不看 Agent 说了什么
  */
-export function patchKindOf(d: Pick<Diagnosis, 'phase' | 'confirmed' | 'status' | 'awaiting'> | undefined) {
-  if (!d || d.status !== 'pending') return undefined
+export function patchKindOf(
+  d: Pick<Diagnosis, 'phase' | 'confirmed' | 'status' | 'awaiting'> | undefined,
+  /** 补排查加好的临时代码（shared/bug/probe.ts）：报告在哪一步都能放过去复现，报告关了就不放 */
+  probed = false,
+) {
+  if (!d) return undefined
   const phase = phaseOf(d)
-  if (phase === 'evidence' && d.awaiting) return 'logs' as const
-  if (phase === 'verify') return 'fix' as const
+  if (d.status === 'pending' && phase === 'evidence' && d.awaiting) return 'logs' as const
+  if (d.status === 'pending' && phase === 'verify') return 'fix' as const
+  if (probed && d.status !== 'cancelled') return 'logs' as const
   return undefined
 }
 
 /** 补丁的文件范围：logs 是日志计划涉及的文件，fix 是确认过的方案里的文件 */
-export function patchFilesOf(list: Diagnosis[], kind: PatchKind): string[] {
-  const files = kind === 'logs' ? logFilesOf(list) : (lastPlan(list)?.files ?? [])
+export function patchFilesOf(list: Diagnosis[], kind: PatchKind, probed: string[] = []): string[] {
+  const files = kind === 'logs' ? [...logFilesOf(list), ...probed] : (lastPlan(list)?.files ?? [])
   return [...new Set(files.filter(Boolean))]
 }
 
