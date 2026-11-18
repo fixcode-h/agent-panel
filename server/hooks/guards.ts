@@ -14,6 +14,7 @@ import { outOfPlan, cleaning, editScope, revOf } from '../../shared/bug/phase.ts
 import { inPlaceBugClosed } from '../../shared/bug/in-place.ts'
 import { reopenedAfterCancel, reopenInfo } from '../../shared/bug/reopen.ts'
 import { chatDeny } from '../../shared/bug/chat.ts'
+import { openProbe, probeFiles } from '../../shared/bug/probe.ts'
 import { ASK_PUSH } from '../../shared/push-auth.ts'
 import { DATA_DIR, TASK_FILES_DIR } from '../store.ts'
 import { SECRET_RES } from './validate.ts'
@@ -90,8 +91,15 @@ export function bugDeny(c: GuardCtx, facts: HookFacts): string {
   // 插件的改文件类工具算不出要改哪些文件时没有路径：方案没确认前照样不许改，确认后没法按文件核对，放行
   const unknown = facts.tool?.kind === 'edit' && !raw.length
   if (!files.length && !unknown) return ''
+  // 补排查窗口开着（用户点了「补排查」或「撤掉」）：这一轮放行改文件，改了什么由面板这一轮结束后按快照逐行核对
+  // （shared/bug/probe.ts），不在这里按文件拦：加在哪本来就可以由它定
+  if (openProbe(c.task.bug)) return ''
   // 按阶段算能改哪些文件（bug-phase.ts）：同意加日志只放行日志计划里的文件，确认方案后放行方案里的文件和加过日志的文件
-  const scope = editScope(c.task.bug?.diagnoses ?? [], reopenedAfterCancel(c.task) ? reopenInfo : undefined)
+  const scope = editScope(
+    c.task.bug?.diagnoses ?? [],
+    reopenedAfterCancel(c.task) ? reopenInfo : undefined,
+    probeFiles(c.task.bug),
+  )
   // 报告在等确认、用户却在那之后直接在对话里说了话：告诉它把对话里定下的交回报告（shared/bug/chat.ts），不让它只能绕过拦截
   if ('deny' in scope) return `【面板】${chatDeny(c.task, scope.deny)}`
   if (unknown) return ''

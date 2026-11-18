@@ -23,6 +23,7 @@ import { cleanupPrompt, TEMP_LOG } from './cleanup.ts'
 import { editPatch, fixFilesOf } from './fix.ts'
 import { fixDiffs, resolveSources, type BugSource } from './quotes.ts'
 import { checkStack, matchTrace, stackProblem } from './stack-check.ts'
+import { checkViews, viewsProblem } from './views.ts'
 import {
   causeAgreed,
   closedOrCleaning,
@@ -286,6 +287,8 @@ export function diagnosisProblem(
   // 调用栈树的结构和编号（stack-check.ts）：根因、方案这一版必须有入口和出错点，只写 location 不算
   const bad =
     stackProblem(c, phase) ||
+    // 功能结构（时序图、类图、架构页，views.ts）：图的种类、节点名、默认页签有没有内容
+    viewsProblem(c) ||
     (phase === 'evidence'
       ? evidenceProblem(c, input, list)
       : phase === 'cause'
@@ -468,7 +471,8 @@ function submitOnce(
   const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
   if (sources.error) return { ok: false, info: sources.error }
   // 调用栈每一跳按工作区核对位置、出错点取快照，有报错堆栈时逐帧对上（stack-check.ts）
-  const stackBad = checkStack(c, src, sources.notes, phase) || matchTrace(c, phase)
+  const stackBad =
+    checkStack(c, src, sources.notes, phase) || matchTrace(c, phase) || checkViews(c, src, sources.notes, phase)
   if (stackBad) return { ok: false, info: stackBad }
   // 修复这一版的实际改动：每个文件和对话开始时比的 diff（去掉临时日志），面板取、不让 Agent 抄；
   // 改了的文件都要在 changes 里写为什么（用户对着代码看原因），取不到 diff（没有宿主）时不核对；

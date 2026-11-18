@@ -12,6 +12,7 @@ import type { LineMark } from '@shared/bug/quotes-md'
 import { markdownDiff } from './diff-html'
 import { tableHtml } from './markdown/table'
 import { callTreeHtml } from './markdown/call-tree'
+import { structureHtml } from './markdown/structure'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -219,6 +220,12 @@ const ENTITIES: Record<string, string> = {
 const decodeEntity = (e: string) =>
   ENTITIES[e] ?? (/^&#(\d+);$/.test(e) ? String.fromCodePoint(Number(e.slice(2, -1))) : e)
 
+/** mermaid 图的占位：先显示带行号的源码，Markdown.tsx 再画成图 */
+function mermaidSlot(text: string) {
+  const src = lineSpans(escape(text))
+  return `<div class="md-mermaid" data-src="${escape(text)}"><div class="md-code-bar"><span class="md-code-lang">mermaid <small>· ${t('正在绘制')}</small></span></div><pre><code>${src.html}</code></pre></div>`
+}
+
 /** 代码块顶栏：语言名 + 行数，右边折行和复制 */
 export function codeBar(name: string, count: number, extra = '') {
   const n = count > 1 ? ` <small>· ${escape(t('{n} 行', { n: count }))}</small>` : ''
@@ -228,12 +235,11 @@ export function codeBar(name: string, count: number, extra = '') {
 renderer.code = ({ text, lang }) => {
   const name = (lang ?? '').trim().split(/\s+/)[0].toLowerCase()
   // 画出来之前（流式输出中、mermaid 还在加载）先显示带行号的源码，上面扫过一道光表示「正在画」
-  if (name === 'mermaid') {
-    const src = lineSpans(escape(text))
-    return `<div class="md-mermaid" data-src="${escape(text)}"><div class="md-code-bar"><span class="md-code-lang">mermaid <small>· ${t('正在绘制')}</small></span></div><pre><code>${src.html}</code></pre></div>`
-  }
+  if (name === 'mermaid') return mermaidSlot(text)
   // 调用栈树（诊断报告、回复里的 calltree 代码块，markdown/call-tree.ts）
   if (name === 'calltree') return callTreeHtml(text)
+  // 诊断报告的功能结构四个页签（面板拼的 structure 代码块，markdown/structure.ts）
+  if (name === 'structure') return structureHtml(text, mermaidSlot)
   // diff 和界面里别处的 diff 一个画法（diff-html.ts）；夹着别的文字认不出时照普通代码块画
   if (name === 'diff' || name === 'patch') {
     const diff = markdownDiff(text, lang ?? '', liveRender ? null : hljs, codeBar)

@@ -19,6 +19,10 @@ import {
   type PatchStatus,
 } from '../../shared/bug/patch.ts'
 import { gitExec } from '../exec/git.ts'
+import type { Task } from '../../shared/schema.ts'
+import { TASK_FILES_DIR } from '../store.ts'
+import { isGit } from './helpers.ts'
+import type { TasksScope } from './scope.ts'
 
 /** 一条 git 最多等这么久；补丁再大也就是几个文件 */
 const GIT_OPTS = { timeoutMs: 20_000, maxBuffer: 64 << 20 } as const
@@ -213,4 +217,25 @@ export async function restorePatch(d: Pick<PatchDirs, 'project' | 'stateDir'>): 
 /** 用户选了自己处理：面板不再记这份补丁（不动任何文件） */
 export async function forgetPatch(stateDir: string) {
   await rm(stateDir, { recursive: true, force: true })
+}
+
+/** 取证的状态目录（对话数据目录下，不进任务数据）：patch 是排查补丁，log 是取日志的起点 */
+export const evidenceDir = (taskId: string, kind: 'patch' | 'log') =>
+  path.join(TASK_FILES_DIR, taskId, 'evidence', kind)
+
+/**
+ * 补丁要的几个目录：只对 Git 项目、对话在独立分支里时有补丁这回事（P4 / SVN / 共用目录：改动本来就在工作区，
+ * 或没法保证还原干净），别的情况返回 null。取证接口和补排查加好后自动放过去共用
+ */
+export async function patchDirsOf(s: Pick<TasksScope, 'deps'>, task: Task): Promise<PatchDirs | null> {
+  const wt = task.worktree?.state === 'active' ? task.worktree : null
+  const project = wt && !task.imported ? await s.deps.projects.get(task.projectId) : null
+  if (!wt || !project?.path || !(await isGit(project.path))) return null
+  return {
+    wt: wt.path,
+    project: project.path,
+    baseRef: task.baseRef,
+    baseBranch: wt.baseBranch,
+    stateDir: evidenceDir(task.id, 'patch'),
+  }
 }

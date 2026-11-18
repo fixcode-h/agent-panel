@@ -47,8 +47,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 插件页：只有一份卡片列表，分「已安装 / 可安装」；市场结果来自缓存（写着多久前更新），其他安装方式收进下拉
   await p.getByRole('button', { name: '插件', exact: true }).click()
   await check(p, '设置-插件', ['已安装', '可安装', '3 分钟前更新', '其他方式安装', '视频截帧'])
-  if ((await p.locator('[data-market-plugin]').count()) !== 4)
-    errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件')
+  if ((await p.locator('[data-market-plugin]').count()) !== 5)
+    errors.push('设置-插件：可安装里应该列出演示市场的 4 个插件和 Archify 配方')
+  // 官方包装配方（Archify）列在市场里，标「包装」，没有版本号
+  const archify = p.locator('[data-market-plugin="archify"]')
+  if (!(await archify.getByText('包装', { exact: true }).count()))
+    errors.push('设置-插件：市场里的 Archify 没有标「包装」')
   await p.getByRole('button', { name: '其他方式安装' }).click()
   await check(p, '设置-插件-其他方式安装', ['从 GitHub 链接包装…', '上传压缩包（.zip）', '链接本机目录（开发）'])
   // 从 GitHub 链接包装（ADR 0068）：先让贴链接，不贴不能读取
@@ -223,6 +227,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
   await p.getByRole('button', { name: '控件样式', exact: true }).click()
   await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
+  // 调用栈样例：报告里、对话里各一份，各按自己的整体样式画（用户 2026-11-18 定：报告默认调试器，对话默认树线）
+  {
+    const looks = await p.evaluate(() => {
+      const frame = (el) => (el ? getComputedStyle(el, '::before').content : '')
+      const report = document.querySelector('[data-ct-scope="report"] .md-calltree .ct-row')
+      const chat = [...document.querySelectorAll('.md-calltree .ct-row')].find((r) => !r.closest('[data-ct-scope]'))
+      return { attr: document.documentElement.dataset.ctReport, report: frame(report), chat: frame(chat) }
+    })
+    if (looks.attr !== 'ide') errors.push(`设置-组件-调用栈：报告里的样式默认应该是调试器，实际 ${looks.attr}`)
+    if (!/counter/.test(looks.report)) errors.push('设置-组件-调用栈：报告里那份没有按调试器样式画帧号')
+    if (/counter/.test(looks.chat)) errors.push('设置-组件-调用栈：对话里那份默认应该是树线，不画帧号')
+  }
   // 包装预览的样例：识别出的内容能勾选，按配方的写明配方文件
   await check(p, '设置-组件-插件包装', ['WrapPreviewBody', '识别出的内容', '按配方 wraps/tt-a1i__archify.json'])
   if ((await p.locator('[data-wrap-candidate]').count()) !== 3)

@@ -7,8 +7,9 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { pluginApi, type InstallPreview, type MarketEntry } from './api'
 import { pluginIcon } from './icon'
+import { openWrap } from './wrap-state'
 
-/** 「可安装」里的一张卡：和已安装的卡同样的头部，没有开关；底部「安装」和主页 */
+/** 「可安装」里的一张卡：和已安装的卡同样的头部，没有开关；底部「安装」和主页。包装配方标「包装」，安装打开包装弹窗 */
 export function MarketTile({
   repo,
   entry,
@@ -21,6 +22,8 @@ export function MarketTile({
 }) {
   const [busy, setBusy] = useState(false)
   const install = async () => {
+    // 包装配方没有插件包：打开包装弹窗，按插件仓库 wraps/ 里审核过的配方预览再装
+    if (entry?.wrap) return openWrap({ url: `https://github.com/${entry.wrap}` })
     setBusy(true)
     try {
       onPreview(await pluginApi.fromGithub({ repo, id: entry?.id }))
@@ -39,7 +42,12 @@ export function MarketTile({
         </span>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 pt-1.5">
           <span className="truncate text-prose font-semibold">{entry?.name ?? repo}</span>
-          {entry && <Badge>v{entry.version}</Badge>}
+          {entry?.version && <Badge>v{entry.version}</Badge>}
+          {entry?.wrap && (
+            <Badge tone="accent" title={t('官方包装配方：把 {repo} 包装成插件，版本跟着上游走', { repo: entry.wrap })}>
+              {t('包装')}
+            </Badge>
+          )}
         </div>
       </div>
       <p className="line-clamp-2 text-body leading-relaxed text-muted">
@@ -52,8 +60,12 @@ export function MarketTile({
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           {t('安装')}
         </Button>
-        {entry?.homepage && (
-          <Button size="sm" variant="ghost" onClick={() => window.open(entry.homepage, '_blank', 'noreferrer')}>
+        {(entry?.homepage || entry?.wrap) && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => window.open(entry.homepage ?? `https://github.com/${entry.wrap}`, '_blank', 'noreferrer')}
+          >
             <ExternalLink className="h-3.5 w-3.5" />
             {t('主页')}
           </Button>

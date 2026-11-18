@@ -25,6 +25,7 @@ import { envMd, envOf } from './env.ts'
 import { fileLead } from './log-watch.ts'
 import { recheckMd, recheckTag } from './recheck.ts'
 import { callTreeMd } from './call-tree-md.ts'
+import { hasViews, structureMd } from './views.ts'
 import {
   attributionDiffMd,
   codeRefsMd,
@@ -217,6 +218,9 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     : ''
   // 调用栈画成树（设计稿 2026-11-13）：日志点、假设挂在各自那一跳上，方案页标出各方案改在哪（call-tree-md.ts）
   const stack = callTreeMd(d, opts.list ?? [d])
+  // 写了时序图、类图或架构页时，调用栈那一节换成「功能结构」四个页签（设计稿 2026-11-18 第 2 节，views.ts）
+  const structSec = (title: string, level?: number) =>
+    hasViews(d) ? sec(t('功能结构'), structureMd(d, stack), level) : sec(title, stack, level)
   const kindText = { event: t('事件'), state: t('状态'), change: t('变更') }
   const timeline = table(
     [t('时间'), t('类别'), t('来源'), t('内容')],
@@ -346,7 +350,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       ...head,
       sec(t('怎么复现'), stepsOf(d.awaiting.collect ?? d.collect)),
       sec(t('加好的日志'), d.awaiting.added.map((x) => `- ${codeTerms(x)}`).join('\n')),
-      sec(t('调用路径和日志点'), stack),
+      structSec(t('调用路径和日志点')),
       sec(t('结果怎么判'), outcomesOf(d.awaiting.collect?.outcomes.length ? d.awaiting.collect : d.collect, d)),
     ]
     back = [
@@ -359,7 +363,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       again ? sec(t('上一轮日志说明了什么'), px(d.next)) : '',
-      sec(t('调用路径和日志点'), stack),
+      structSec(t('调用路径和日志点')),
       sec(t('假设'), hypotheses),
       sec(t('日志计划'), logPlan),
       sec(t('怎么复现'), stepsOf(d.collect)),
@@ -381,7 +385,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(rootTitle, root),
-      sec(t('调用栈'), stack),
+      structSec(t('调用栈')),
       // 不用改代码（分析稿 B5）：怎么处理放在根因下面，用户同意的就是这一段
       sec(t('怎么处理（不用改代码）'), noFixOf(d) ? `**${NOFIX_TEXT()[d.noFix!.kind]}**\n\n${px(d.noFix!.how)}` : ''),
       sec(t('期望和实际'), expectMd(d)),
@@ -415,7 +419,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
     main = [
       ...head,
       sec(t('候选方案'), optionsTable(d)),
-      sec(t('改在调用栈的哪里'), stack),
+      structSec(t('改在调用栈的哪里')),
       sec(t('为什么选这个方案'), chosen),
       sec(t('具体改动'), changesOf(d)),
       sec(t('影响面和验证'), impact),
@@ -450,7 +454,7 @@ export function diagnosisView(d: Diagnosis, prev?: Diagnosis, opts: DiagnosisVie
       ),
       earlySec,
     ]
-    back = [bg(rootTitle, root), bg(t('调用栈'), stack), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
+    back = [bg(rootTitle, root), structSec(t('调用栈'), 3), bg(t('原文'), quotes), bg(t('引入点'), attribution)]
   }
   // 环境由面板采集（分析稿 B4），每一步的「依据和背景」最后都带：旧报告没有就不出这一节
   back.push(bg(t('环境（面板自动采集）'), envMd(envOf(d, opts.list), { author: opts.author })))

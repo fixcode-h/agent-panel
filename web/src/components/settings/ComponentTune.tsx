@@ -48,6 +48,7 @@ export const compLabel = (c: CompName) =>
     empty: t('空状态'),
     grid: t('数据表格'),
     callTree: t('调用栈树'),
+    structure: t('功能结构'),
     capRow: t('能力行'),
     htmlCard: t('HTML 卡片'),
     changesCard: t('改动卡片'),
@@ -66,6 +67,13 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'empty' && prop === 'border') return t('边框线型')
   if (c === 'grid') return gridPropLabel(prop) ?? prop
   if (c === 'callTree') return callTreePropLabel(prop) ?? prop
+  if (c === 'structure' && prop !== 'radius')
+    return (
+      { diagramH: t('图的最大高度'), why: t('显示「它选的」理由'), nodes: t('列出节点在代码里的位置') } as Record<
+        string,
+        string
+      >
+    )[prop]
   if (c === 'htmlCard' && prop !== 'radius')
     return (
       { preview: t('缩略预览'), previewH: t('预览高度'), active: t('右栏正在显示的描边') } as Record<string, string>
@@ -131,6 +139,8 @@ const gridPropLabel = (prop: string): string | undefined =>
 /** 调用栈树的项 */
 const callTreePropLabel = (prop: string): string | undefined =>
   ({
+    report: t('诊断报告里的样式'),
+    chat: t('对话里的样式'),
     lines: t('连线'),
     indent: t('缩进'),
     gap: t('行距'),
@@ -193,6 +203,10 @@ const optionLabel = (v: string) =>
     tight: t('紧凑'),
     compact: t('紧凑'),
     loose: t('宽松'),
+    tree: t('树线'),
+    rail: t('时间轴'),
+    cards: t('卡片'),
+    ide: t('调试器'),
     fill: t('竖条 + 底色'),
     bar: t('只有竖条'),
     fade: t('变淡'),

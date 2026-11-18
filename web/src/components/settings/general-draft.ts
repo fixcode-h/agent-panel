@@ -21,6 +21,7 @@ export interface GeneralDraft {
   requireToken: boolean
   askUserDefault: boolean
   bugAuthor: boolean
+  bugBar: boolean
   userName: string
   developerMode: boolean
   shell: Settings['shell']
@@ -45,6 +46,7 @@ export const toGeneralDraft = (initial: Settings): GeneralDraft => ({
   requireToken: initial.requireToken,
   askUserDefault: initial.askUserDefault,
   bugAuthor: initial.bugAuthor,
+  bugBar: initial.bugBar,
   userName: initial.userName,
   developerMode: initial.developerMode,
   shell: initial.shell,

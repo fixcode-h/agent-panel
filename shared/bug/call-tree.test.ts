@@ -184,6 +184,19 @@ test('位置核对：附近找函数名，偏了几行校准过去；出错点�
   assert.equal(s3.check?.ok, true)
   assert.equal(s3.check?.start, 49)
   assert.match(s3.check!.code, /if \(left === 0\) return/)
+  // 别的跳也留几行快照（悬停 / 点开看），没走到的不留
+  assert.match(c.stack[1].check!.code, /removeItem/)
+  assert.equal(c.stack[3].check?.code ?? '', '', '没走到的一跳不留快照')
+  const tree = parseCallTree(hopsToCallTree(c.stack))
+  const all = nodes(tree.items)
+  const s2 = all.find((n) => n.fn === 'removeItem(id)')!
+  assert.ok(s2.code.length && s2.code.every((x) => x.peek), '非出错点的代码写成 |.，解析回来是 peek')
+  assert.ok(
+    s2.code.some((x) => x.mark && x.line === c.stack[1].line),
+    '那一跳所在行标 >',
+  )
+  const fault = all.find((n) => n.role === 'fault')!
+  assert.ok(fault.code.length && fault.code.every((x) => !x.peek), '出错点的代码照旧直接画')
   assert.equal(c.stack[5].check?.ok, false, 'persist 不在那一行附近')
   assert.ok(notes.some((n) => n.includes('没对上')))
   const bad = caseOf()

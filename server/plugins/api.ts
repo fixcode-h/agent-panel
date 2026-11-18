@@ -10,6 +10,7 @@ import {
   DEFAULT_MARKET,
   downloadEntry,
   downloadSource,
+  installable,
   parseRepo,
   readMarket,
   type MarketEntry,
@@ -136,7 +137,7 @@ export function pluginsApi() {
           const ref = body.ref || parsed.ref || 'HEAD'
           const sub = body.path ?? parsed.path ?? ''
           if (body.id) {
-            const entry = (await readMarket(parsed.repo, ref))?.find((x) => x.id === body.id)
+            const entry = installable((await readMarket(parsed.repo, ref)) ?? []).find((x) => x.id === body.id)
             if (!entry) return c.json({ error: `插件目录里没有 ${body.id}` }, 404)
             const got = await downloadEntry(parsed.repo, entry, ref)
             return c.json(

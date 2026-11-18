@@ -19,6 +19,7 @@ import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis, diagnosisMessage } from '@shared/bug/diagnosis'
 import { retractChat, syncChat } from '@shared/bug/chat'
 import { demoEvidence } from './demo-evidence'
+import { demoProbe, demoProbeFound } from './demo-probe'
 import { demoSpeech, demoTts } from './demo-speech'
 import { demoRestart } from './demo-restart'
 import { bugBriefs } from '@shared/bug/overview'
@@ -2845,10 +2846,12 @@ function tasksRoute(
     persist()
     return task
   }
-  if (sub === 'diagnosis-patch' || sub === 'diagnosis-log') return demoEvidence(task, sub, method, body)
+  if (sub === 'diagnosis-patch' || sub === 'diagnosis-log') return demoEvidence(task, sub, method, body, persist)
+  if ((sub === 'bug-probe' || sub === 'bug-probe-action') && method === 'POST')
+    return demoProbe(task, sub, body, persist)
   // 演示里没有真的代码目录：取消修复时查不到临时日志，直接按「没有日志」关闭
   if (sub === 'diagnosis-cleanup')
-    return method === 'POST' ? { task, message: '' } : { found: [], created: [], isolated: false }
+    return method === 'POST' ? { task, message: '' } : { found: demoProbeFound(task), created: [], isolated: false }
   // 按对话更新报告、撤回在对话里的确认：和正式后端同一份逻辑（shared/bug/chat.ts）
   if (sub === 'diagnosis-sync' && method === 'POST') {
     const r = syncChat(task, (v, text) =>

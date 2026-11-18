@@ -26,7 +26,7 @@ const CASE_PROPS = {
         id: text('编号：S1、S2…（证据链、方案、日志计划按它引用）'),
         parent: text('上一跳的 id；入口不写'),
         file: text('文件（相对项目根）'),
-        line: { type: 'number', description: '这一跳所在的行（面板交报告时按工作区核对）' },
+        line: { type: 'number', description: '这一跳所在的行（面板会核对）' },
         fn: text('函数名；出错点可以写出错的那一句代码'),
         note: text('这一跳做了什么'),
         role: {
@@ -71,6 +71,10 @@ const CASE_PROPS = {
       '调用栈从哪来：read 读代码推出、trace 来自报错堆栈（先把堆栈作为原文 Q 引用，trace 写它的编号；树上每一跳要是堆栈里的一帧，面板逐帧核对）、debugger 调试器',
     properties: { kind: { type: 'string', enum: ['read', 'trace', 'debugger'] }, trace: text('报错堆栈原文的编号 Q2') },
     required: ['kind'],
+  },
+  views: {
+    type: 'object',
+    description: '功能结构的时序图、类图、架构页：见方法「功能结构选哪种图」',
   },
   timeline: {
     type: 'array',
@@ -204,7 +208,7 @@ const CASE_PROPS = {
         verifiable: text('可验证：怎么证明修好了'),
         grades: {
           type: 'object',
-          description: '上面六项各自的判定：good 好、cost 有代价、bad 不满足（比较表里画成 ✓ ⚠ ✗）',
+          description: '上面六项各自的判定：good 好、cost 有代价、bad 不满足',
           properties: {
             covers: GRADE,
             misses: GRADE,
@@ -222,7 +226,7 @@ const CASE_PROPS = {
         hops: {
           type: 'array',
           items: { type: 'string' },
-          description: '改在调用栈的哪几跳（S3）：方案页把它画在树上，一眼看出各方案改在哪',
+          description: '改在调用栈的哪几跳（S3）',
         },
       },
       required: ['id', 'title', 'change'],
@@ -271,7 +275,7 @@ const CASE_PROPS = {
           description: 'fault 出错点、trigger 触发条件、caller 调用方、expected 对照的正确写法',
         },
         file: text('文件（相对项目根）'),
-        start: { type: 'number', description: '起始行（按现在的文件，加了临时日志的按加了之后的行号）' },
+        start: { type: 'number', description: '起始行（按现在的文件，含临时日志）' },
         end: { type: 'number', description: '结束行（一段最多 30 行，一般 5~15 行）' },
         marks: {
           type: 'array',
@@ -285,7 +289,7 @@ const CASE_PROPS = {
               level: {
                 type: 'string',
                 enum: ['fault', 'related', 'skipped'],
-                description: 'fault 出错（红）、related 相关的条件和变量（默认，琥珀）、skipped 没执行到（灰）',
+                description: 'fault 出错、related 相关的条件和变量（默认）、skipped 没执行到',
               },
             },
             required: ['line'],
@@ -315,14 +319,14 @@ const CASE_PROPS = {
         from: { type: 'number', description: 'log：用户在第几份报告（报告 #n）上贴的日志；不写取最近一次' },
         start: {
           type: 'number',
-          description: 'log：日志的第几行（报告里「你贴的日志」的行号；写了 file 是文件里的行号）',
+          description: 'log：第几行（「你贴的日志」的行号；写了 file 是文件里的行号）',
         },
         end: { type: 'number', description: 'log：到第几行（一条最多 30 行）' },
         text: text('run：原样复制的输出；log：可以不写，写了要和那几行逐字对上；note：描述'),
         highlight: {
           type: 'array',
           items: { type: 'string' },
-          description: '原文里的关键值（例如 left=0），要在原文里逐字出现，报告上高亮',
+          description: '原文里的关键值（例如 left=0），要在原文里逐字出现',
         },
       },
       required: ['id', 'kind'],

@@ -1,0 +1,215 @@
+/*
+ * 调用栈树的几套整体样式（设计稿 designs/Bug模式子对话体验-设计稿.md 第 5 节，用户 2026-11-18 定四套都要）：
+ * 树线（call-tree.css 本身，不加规则）、时间轴、卡片、调试器。只换 CSS、不改 HTML，按场合各选一套：
+ * 诊断报告里（[data-ct-scope='report'] 下面）看 html 的 data-ct-report，别处看 data-ct-chat，
+ * 两个属性由 web/src/lib/markdown-style.ts 按设置 → 组件 → 调用栈树写上；设置里的样张用 data-look 指定。
+ * 报告默认调试器：属性还没写上（设置没读回来）时也按调试器画，免得报告先闪一下树线。
+ */
+
+/* B 时间轴：展平成一条竖线，图标压在线上，层级只靠「↳」和一点缩进 */
+.md-calltree[data-look='rail'],
+:root[data-ct-report='rail'] [data-ct-scope='report'] .md-calltree:not([data-look]),
+:root[data-ct-chat='rail'] .md-calltree:not([data-look]):not([data-ct-scope='report'] .md-calltree) {
+  & .ct-body > .ct-ul {
+    position: relative;
+  }
+  & .ct-body > .ct-ul::before {
+    content: '';
+    position: absolute;
+    left: var(--ct-axis);
+    top: calc(var(--ct-row) / 2);
+    bottom: calc(var(--ct-row) / 2);
+    translate: -1px 0;
+    border-left: 2px solid color-mix(in srgb, var(--subtle) 30%, transparent);
+  }
+  & .ct-ul .ct-ul {
+    margin-left: 0;
+  }
+  & .ct-ul .ct-ul > .ct-li {
+    padding-left: 0;
+  }
+  & .ct-ul .ct-ul > .ct-li::before,
+  & .ct-ul .ct-ul > .ct-li::after {
+    display: none;
+  }
+  & .ct-ul .ct-ul .ct-main {
+    padding-left: calc(var(--c-callTree-indent) * 0.8);
+  }
+  & .ct-ul .ct-ul .ct-ul .ct-main {
+    padding-left: calc(var(--c-callTree-indent) * 1.6);
+  }
+  & .ct-ul .ct-ul .ct-ul .ct-ul .ct-main {
+    padding-left: calc(var(--c-callTree-indent) * 2.4);
+  }
+  & .ct-ul .ct-ul .ct-ul .ct-ul .ct-ul .ct-main {
+    padding-left: calc(var(--c-callTree-indent) * 3.2);
+  }
+  & .ct-ul .ct-ul .ct-head::before {
+    content: '↳';
+    margin-right: -4px;
+    font-size: var(--ct-small);
+    color: var(--subtle);
+  }
+  & .ct-ic {
+    z-index: 1;
+  }
+  /* 图标外面一圈底色，把竖线断开 */
+  & .ct-ic::before {
+    box-shadow: 0 0 0 3px var(--card);
+  }
+  & .ct-path::before {
+    width: 9px;
+    height: 9px;
+  }
+  & .ct-entry::before {
+    width: 12px;
+    height: 12px;
+    background: var(--card);
+    box-shadow:
+      inset 0 0 0 2.5px var(--accent),
+      0 0 0 3px var(--card);
+  }
+  & .ct-missed::before,
+  & .ct-side::before {
+    background: var(--card);
+  }
+  & .ct-edge,
+  & .ct-cut,
+  & .ct-more > summary {
+    padding-left: calc(var(--spacing) * 2 + 22px);
+  }
+  & .ct-fault-row {
+    border-radius: 10px;
+  }
+}
+
+/* C 卡片：每一跳一块浅底卡片，左边一道角色色条；连线照旧，图标由色条代替 */
+.md-calltree[data-look='cards'],
+:root[data-ct-report='cards'] [data-ct-scope='report'] .md-calltree:not([data-look]),
+:root[data-ct-chat='cards'] .md-calltree:not([data-look]):not([data-ct-scope='report'] .md-calltree) {
+  --ct-card-pad: 5px;
+  & .ct-row {
+    margin: 3px 0;
+    padding: var(--ct-card-pad) 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--fg) 3.5%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--subtle) 45%, transparent);
+  }
+  & .ct-row > .ct-ic {
+    display: none;
+  }
+  & .ct-fn {
+    font-weight: 600;
+  }
+  & .ct-entry-row {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  & .ct-symptom-row {
+    background: color-mix(in srgb, var(--md-gold) 8%, transparent);
+    box-shadow: inset 3px 0 0 var(--md-gold);
+  }
+  & .ct-missed-row {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--subtle) 35%, transparent);
+  }
+  & .ct-fault-row,
+  & .ct-fault-row:hover {
+    background: var(--c-callTree-fault);
+    box-shadow: inset 3px 0 0 var(--md-coral);
+  }
+  /* 卡片多了上边距和内边距：拐角对到卡片中间 */
+  & .ct-ul .ct-ul > .ct-li::after {
+    top: calc(var(--ct-row) / 2 + 3px + var(--ct-card-pad) + var(--edge-h, 0px));
+  }
+  & .ct-ul .ct-ul > .ct-li:last-child::before {
+    height: calc(var(--ct-row) / 2 + 3px + var(--ct-card-pad) + var(--edge-h, 0px));
+  }
+}
+
+/* D 调试器：像 IDE 的调用栈窗口，一跳一行带帧号，位置一列靠右，层级只缩一点，边界画成一条带名字的虚线 */
+.md-calltree[data-look='ide'],
+:root:not([data-ct-report]) [data-ct-scope='report'] .md-calltree:not([data-look]),
+:root[data-ct-report='ide'] [data-ct-scope='report'] .md-calltree:not([data-look]),
+:root[data-ct-chat='ide'] .md-calltree:not([data-look]):not([data-ct-scope='report'] .md-calltree) {
+  & .ct-body {
+    counter-reset: ct-frame;
+    padding: 4px 0 6px;
+  }
+  & .ct-ul .ct-ul {
+    margin-left: 0;
+  }
+  & .ct-ul .ct-ul > .ct-li {
+    padding-left: 0;
+  }
+  & .ct-ul .ct-ul > .ct-li::before,
+  & .ct-ul .ct-ul > .ct-li::after {
+    display: none;
+  }
+  & .ct-row {
+    counter-increment: ct-frame;
+    gap: 8px;
+    padding: 1px 14px 1px 10px;
+    border-radius: 0;
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--line) 70%, transparent);
+  }
+  & .ct-row::before {
+    content: '#' counter(ct-frame);
+    flex: none;
+    width: 26px;
+    font-family: var(--app-mono);
+    font-size: var(--ct-small);
+    line-height: var(--ct-row);
+    color: var(--subtle);
+  }
+  & .ct-ul .ct-ul .ct-ic {
+    margin-left: calc(var(--c-callTree-indent) * 0.5);
+  }
+  & .ct-ul .ct-ul .ct-ul .ct-ic {
+    margin-left: calc(var(--c-callTree-indent) * 1);
+  }
+  & .ct-ul .ct-ul .ct-ul .ct-ul .ct-ic {
+    margin-left: calc(var(--c-callTree-indent) * 1.5);
+  }
+  & .ct-ul .ct-ul .ct-ul .ct-ul .ct-ul .ct-ic {
+    margin-left: calc(var(--c-callTree-indent) * 2);
+  }
+  & .ct-head {
+    flex-wrap: nowrap;
+  }
+  & .ct-note {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  & .ct-fault-row,
+  & .ct-fault-row:hover {
+    box-shadow:
+      inset 3px 0 0 var(--md-coral),
+      inset 0 -1px 0 color-mix(in srgb, var(--line) 70%, transparent);
+  }
+  & .ct-edge {
+    gap: 8px;
+    height: 20px;
+    padding-left: 46px;
+  }
+  & .ct-edge::after {
+    content: '';
+    flex: 1;
+    margin-right: 14px;
+    border-top: 1px dashed color-mix(in srgb, var(--c-callTree-edge) 45%, transparent);
+  }
+  & .ct-cut,
+  & .ct-more > summary {
+    padding-left: 46px;
+  }
+  & .ct-code {
+    margin-left: 34px;
+  }
+  /* 窄的地方照样让位置换到下一行：一行放不下函数名和位置 */
+  @container (max-width: 520px) {
+    & .ct-head {
+      flex-wrap: wrap;
+    }
+  }
+}

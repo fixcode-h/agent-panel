@@ -6,6 +6,7 @@ import type { RealContext } from '../exec/real-context.ts'
 import { randomUUID } from 'node:crypto'
 import { waitingAfter } from '../../shared/children/after.ts'
 import { afterTurnCleanup } from './bug-cleanup.ts'
+import { afterTurnProbe } from './bug-probe.ts'
 import { afterTurnCancel } from './diagnosis-decide.ts'
 import { recheckAfterTurn } from './bug-recheck.ts'
 import {
@@ -69,7 +70,9 @@ export async function conversationCaps(c: TurnCapsCtx) {
           void sc.checkBudget(entry.task)
           // 用户取消修复后叫它删临时日志：这一轮结束就核对，通过了关闭诊断报告（shared/bug/cleanup.ts）
           // 它回复时用户点的取消排在核对之后执行：先执行的话会把刚开始的删日志当成这一轮没删干净
-          void afterTurnCleanup(sc, entry, randomUUID)
+          void afterTurnProbe(sc, entry)
+            .catch((e) => log.warn('task', '核对补排查失败', { task: task.id, error: (e as Error).message }))
+            .then(() => afterTurnCleanup(sc, entry, randomUUID))
             .catch((e) => log.warn('task', '核对临时日志失败', { task: task.id, error: (e as Error).message }))
             .then(() => afterTurnCancel(sc, entry))
             .catch((e) => log.warn('task', '执行排队的取消失败', { task: task.id, error: (e as Error).message }))
@@ -77,6 +80,11 @@ export async function conversationCaps(c: TurnCapsCtx) {
           recheckAfterTurn(sc, task.id, randomUUID)
         }
       : (turn) => {
+          // 普通对话里就地查的 Bug 也能补排查（shared/bug/in-place.ts）：窗口开着就核对
+          if (entry.task.bug?.probes?.length)
+            void afterTurnProbe(sc, entry).catch((e) =>
+              log.warn('task', '核对补排查失败', { task: task.id, error: (e as Error).message }),
+            )
           // 经验学习按「一轮结束」排，不等 run 返回：CLI 保活时进程停在等下一句，run 一直不返回，
           // 只在 run 收尾处排的话要等闲置回收才学，用户看到的就是「对话完成了却不学」。
           // 面板接着推它做（nudgePlan / nudgeWrapUp）会在几秒内让它跑起来，learn 到点见它没完成就不学，等下一轮结束再排

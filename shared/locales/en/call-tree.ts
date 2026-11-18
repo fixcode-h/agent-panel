@@ -39,4 +39,13 @@ export const EN_CALL_TREE: Record<string, string> = {
   很淡: 'Very faint',
   不变淡: 'Not faded',
   细线: 'Thin',
+  诊断报告里的样式: 'Style in diagnosis reports',
+  对话里的样式: 'Style in conversations',
+  诊断报告里: 'In diagnosis reports',
+  对话里: 'In conversations',
+  树线: 'Tree lines',
+  时间轴: 'Timeline',
+  卡片: 'Cards',
+  调试器: 'Debugger',
+  代码: 'Code',
 }

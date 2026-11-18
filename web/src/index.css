@@ -1138,6 +1138,8 @@ body,
   --c-sheet-bg: var(--bg);
   --c-popover-radius: 10px;
   --c-popover-bg: var(--pop);
+  --c-callTree-report: ide;
+  --c-callTree-chat: tree;
   --c-callTree-lines: 1.5px;
   --c-callTree-indent: 20px;
   --c-callTree-gap: 3px;
@@ -1147,6 +1149,10 @@ body,
   --c-callTree-dir: none;
   --c-callTree-legend: flex;
   --c-callTree-edge: var(--peer);
+  --c-structure-radius: 10px;
+  --c-structure-diagramH: 560px;
+  --c-structure-why: inline;
+  --c-structure-nodes: flex;
   --c-capRow-pad: 10px;
   --c-capRow-radius: 8px;
   --c-capRow-when: grid;

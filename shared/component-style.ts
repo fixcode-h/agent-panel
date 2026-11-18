@@ -57,6 +57,8 @@ const HUE: Record<string, string> = {
 }
 const hue = (def: string) => color(def, HUE)
 const BORDER = bool(true, '1px', '0px')
+/** 调用栈树的几套整体样式（值原样落成变量，也是 html 上 data-ct-report / data-ct-chat 的值） */
+const CT_LOOKS = { tree: 'tree', rail: 'rail', cards: 'cards', ide: 'ide' }
 
 /**
  * 部件 → 可调项。圆角上限按部件高度定：胶囊类（标签、状态、进度条）拉到最大就是全圆。
@@ -159,9 +161,14 @@ export const COMP_SPEC = {
   },
   /**
    * 调用栈树（诊断报告的调用栈、回复里的 calltree 代码块，web/src/components/ui/call-tree.css）：
-   * 连线粗细、缩进、行距、出错点底色、没走到的一跳多淡、出错点下面带不带代码、位置写不写目录、图例
+   * 连线粗细、缩进、行距、出错点底色、没走到的一跳多淡、出错点下面带不带代码、位置写不写目录、图例；
+   * 整体样式按场合各选一套（诊断报告里 / 对话里）：树线、时间轴、卡片、调试器（用户 2026-11-18 定四套都要，
+   * 报告默认调试器、对话默认树线）。样式不是 CSS 值，web/src/lib/markdown-style.ts 落成 html 上的 data-ct-*，
+   * 规则在 web/src/components/ui/call-tree-looks.css
    */
   callTree: {
+    report: pick('ide', CT_LOOKS),
+    chat: pick('tree', CT_LOOKS),
     lines: pick('normal', { normal: '1.5px', fine: '1px', none: '0px' }),
     indent: px(20, 12, 32),
     gap: pick('normal', { tight: '1px', normal: '3px', loose: '6px' }),
@@ -171,6 +178,16 @@ export const COMP_SPEC = {
     dir: bool(false, 'inline', 'none'),
     legend: bool(true, 'flex', 'none'),
     edge: hue('violet'),
+  },
+  /**
+   * 诊断报告的功能结构（调用栈 / 时序图 / 类图 / 架构页四个页签，web/src/components/ui/structure-views.css）：
+   * 架构页说明卡的圆角、图最高多高（超出在框里滚动）、显不显示「它选的」理由、图下面列不列节点对到的代码位置
+   */
+  structure: {
+    radius: px(10, 0, 20),
+    diagramH: px(560, 240, 900),
+    why: bool(true, 'inline', 'none'),
+    nodes: bool(true, 'flex', 'none'),
   },
   /**
    * 能力行（设置 →「MCP」的工具和动作，web/src/components/ui/capability-row.tsx）：

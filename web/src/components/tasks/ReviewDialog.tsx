@@ -20,7 +20,7 @@ import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
 import { OverallComposer, useLogFiles, type OverallTools } from './LogAttach'
 import { useChosenColumn } from './review-table'
-import { CompareSwitch, RejectButton } from './review-extras'
+import { CompareSwitch, PresetRow, RejectButton } from './review-extras'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -95,6 +95,7 @@ export function ReviewDialog({
   approveExtra,
   dock,
   reject,
+  slots,
 }: {
   req: Pick<TaskRequest, 'id' | 'title' | 'detail'>
   agent?: { name: string; icon: string; cli: string }
@@ -160,6 +161,8 @@ export function ReviewDialog({
    * 但交回去的意思是推翻，不是提问。次要按钮，放在「修改」前面
    */
   reject?: { label: string; hint: string; onReject: (raw: ReviewRaw) => Promise<void> }
+  /** 只读时也在的：footer 底栏左边的动作（诊断报告的「补排查」），aside 标注栏最上面（补排查记录） */
+  slots?: { footer?: ReactNode; aside?: ReactNode }
 }) {
   const { agents } = useData()
   // Markdown 按引用比较 teamNames，这里稳定下来，标注时父组件重画不会让文档重新解析（重新解析会让已有标注的位置失效）
@@ -431,7 +434,13 @@ export function ReviewDialog({
             {/* 对比放在 docRef 外面：选中对比里的文字不加标注（标注要对着报告原文）。
                 报告只藏起来不卸载：卸载了已有标注的选区就对不上了 */}
             {comparing && shown?.compare}
-            <div ref={docRef} onClick={onDocClick} data-review-doc className={cn(comparing && 'hidden')}>
+            <div
+              ref={docRef}
+              onClick={onDocClick}
+              data-review-doc
+              data-ct-scope="report"
+              className={cn(comparing && 'hidden')}
+            >
               {shown?.status && old && <p className="mb-3 text-xs text-subtle">{shown.status}</p>}
               {shown?.lead}
               {detail ? (
@@ -502,16 +511,9 @@ export function ReviewDialog({
                 />
               )}
             </div>
-            {presets && presets.length > 0 && !locked && (
-              <div className="flex flex-wrap gap-1.5 px-3 pb-2" data-review-presets>
-                {presets.map((p) => (
-                  <Button key={p.label} size="sm" variant="secondary" onClick={() => addPreset(p)}>
-                    {p.label}
-                  </Button>
-                ))}
-              </div>
-            )}
+            <PresetRow presets={quick} onPick={addPreset} />
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
+              {slots?.aside}
               {notes.length === 0 && (
                 <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">
                   {t('选中左边的文字，点「标注」写下要改的地方')}
@@ -608,6 +610,7 @@ export function ReviewDialog({
           docked ? 'flex-wrap px-4' : 'max-md:flex-wrap max-md:px-4',
         )}
       >
+        {slots?.footer}
         {!notesShown &&
           quick.map((p) => (
             <Button key={p.label} size="sm" variant="secondary" className="shrink-0" onClick={() => addPreset(p)}>
