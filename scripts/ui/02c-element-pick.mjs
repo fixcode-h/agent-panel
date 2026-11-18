@@ -356,6 +356,13 @@ await runShard(import.meta.filename, async (api) => {
       await check(p, '改动卡片-折起', ['这一轮改了 8 个文件'])
       await card.getByText('这一轮改了 8 个文件').click()
       if ((await bar.getAttribute('aria-expanded')) !== 'true') errors.push('改动卡片：点标题（整行）应该展开')
+      // Collapse 在 effect 里才挂上内容（先画收起的一帧再展开）：等文件列表画出来再读文字，CI 机器慢时会读到空卡片
+      await card
+        .locator('[data-collapse]')
+        .getByText('新建')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => {})
     }
     // 改动卡片默认「这一轮」（Bug模式子对话体验 第 3 节）：标题左边切「整个对话」，撤销跟着切
     {
