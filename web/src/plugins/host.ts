@@ -14,6 +14,14 @@ import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
 import { ProjectBackCard } from '@/components/projects/ProjectBackCard'
+import {
+  RailAction,
+  SectionRail,
+  SidePanel,
+  SidePanelLabel,
+  SidePanelRow,
+  StatusChip,
+} from '@/components/ui/section-rail'
 import { appendDraft } from '@/components/chat/ChatComposer'
 import { useNewAskUser } from '@/components/chat/AskToggle'
 import { TaskView } from '@/components/tasks/TaskView'
@@ -106,6 +114,16 @@ export function host(id: string, config: () => PluginConfig) {
       TaskComposer,
       /** 盖住侧栏的项目工具页（PluginPage.cover）导航栏顶上的项目卡片，点一下回到项目对话 */
       ProjectBackCard,
+      /**
+       * 分区导航（2026-11-18 加的）：图标轨 SectionRail / RailAction、二级面板 SidePanel / SidePanelLabel / SidePanelRow、
+       * 目标卡上的状态小块 StatusChip。设置 → 组件 →「分区导航」里能调，UE 页的左栏用它
+       */
+      SectionRail,
+      RailAction,
+      SidePanel,
+      SidePanelLabel,
+      SidePanelRow,
+      StatusChip,
       /**
        * 这个插件的参数（清单 settings）里挑几个分组画成表单、带保存（2026-11-17 加的）：插件自己的设置页用，
        * 和设置 →「插件参数」改的是同一份值。{ groups?: string[] }，不给画全部
