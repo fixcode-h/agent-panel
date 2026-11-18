@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Check, Undo2 } from 'lucide-react'
 import type { Diagnosis } from '@shared/bug/diagnosis-schema'
 import { causeInPlan, phaseOf } from '@shared/bug/phase'
 import { t } from '@shared/i18n'
@@ -54,6 +54,13 @@ export function DiagnosisStages({
         ? t('论证 · 第 {n} 轮', { n: rounds })
         : t('论证')
   const names = [evidence, t('根因'), t('修复方案'), t('修复'), t('验证')]
+  // 回退（用户 2026-11-18 提）：后面的阶段提问后 Agent 回到更早的阶段补充。最近一次往回走从哪步回到哪步，
+  // 回退前走到过、现在又没走到的几步虚线标出来，还能点开看当时的报告
+  const plain = [t('论证'), t('根因'), t('修复方案'), t('修复'), t('验证')]
+  const steps = list.map((x) => STEP[phaseOf(x)])
+  let drop = -1
+  for (let k = steps.length - 1; k > 0 && drop < 0; k--) if (steps[k] < steps[k - 1]) drop = k
+  const backFrom = drop > 0 && steps[drop - 1] > at ? steps[drop - 1] : -1
   // 每一步最后交的那份报告；根因没单独交过、合在快速级别的方案里时，点根因看那份方案
   const own = names.map((_, i) => [...list].reverse().find((x) => STEP[phaseOf(x)] === i))
   // 一上来就证实了、直接交根因（没有单独的论证报告）时，论证这一步照样算走过，
@@ -70,7 +77,8 @@ export function DiagnosisStages({
   return (
     <ol aria-label={t('排查阶段')} className="flex flex-wrap items-center gap-1.5">
       {names.map((n, i) => {
-        const hit = i <= at ? target[i] : undefined
+        const before = i > at && i <= backFrom
+        const hit = i <= at || before ? target[i] : undefined
         const key = hit && String(hit.version)
         return (
           <li key={i} className="flex items-center gap-1.5">
@@ -80,16 +88,18 @@ export function DiagnosisStages({
               aria-current={i === at ? 'step' : undefined}
               aria-pressed={key ? i === viewStep : undefined}
               title={
-                key
-                  ? i === 0 && borrowed
-                    ? t('没有单独的论证报告，证据写在这份报告里')
-                    : t('查看这一步的报告')
-                  : i === 3 && i <= at
-                    ? // 修完交的修复报告才能点；以前没有这一步的报告，改了什么写在验证报告里
-                      i < at
-                      ? t('这次修复没有单独的报告，改了什么写在验证报告里')
-                      : t('它在改代码，改完交上来给你看改了哪些代码、为什么这么改')
-                    : undefined
+                before
+                  ? t('回退前走到过这一步，点开看当时的报告')
+                  : key
+                    ? i === 0 && borrowed
+                      ? t('没有单独的论证报告，证据写在这份报告里')
+                      : t('查看这一步的报告')
+                    : i === 3 && i <= at
+                      ? // 修完交的修复报告才能点；以前没有这一步的报告，改了什么写在验证报告里
+                        i < at
+                        ? t('这次修复没有单独的报告，改了什么写在验证报告里')
+                        : t('它在改代码，改完交上来给你看改了哪些代码、为什么这么改')
+                      : undefined
               }
               onClick={() => key && key !== shown && onShow(key)}
               className={cn(
@@ -97,6 +107,7 @@ export function DiagnosisStages({
                 i < at && 'bg-success/10 text-success',
                 i === at && 'bg-warning/12 font-medium text-warning',
                 i > at && 'text-subtle',
+                before && 'border border-dashed border-line-strong text-muted',
                 key ? 'cursor-pointer' : 'cursor-default',
                 i < at && key && 'hover:bg-success/18',
                 i === at && key && 'hover:bg-warning/20',
@@ -111,6 +122,12 @@ export function DiagnosisStages({
           </li>
         )
       })}
+      {backFrom >= 0 && (
+        <li className="inline-flex items-center gap-1 text-xs text-warning">
+          <Undo2 className="h-3 w-3" />
+          {t('从{from}回到{to}', { from: plain[backFrom], to: plain[Math.min(at, 4)] })}
+        </li>
+      )}
     </ol>
   )
 }

@@ -9,7 +9,7 @@ export type ReportNext =
   /** 只剩合回却没请收尾：stops 是第几次停在这里，last 是面板最后一次转告 */
   | { kind: 'merge-only'; stops: number; nudged: boolean; isolated: boolean; last: boolean }
   /** 未完成且在走 Bug 诊断：stuck 是提醒过还停在原地 */
-  | { kind: 'diagnosis'; id: string; stuck: boolean }
+  | { kind: 'diagnosis'; id: string; stuck: boolean; rejected?: string }
   | { kind: 'unfinished'; id: string; stuck: boolean }
   /** 用户亲手停的 */
   | { kind: 'user-stopped' }
@@ -35,6 +35,10 @@ export function reportNextText(n: ReportNext | null): string {
       )
     case 'diagnosis':
       // 诊断报告的每一步都由用户确认（ADR 0045）：不能叫父对话「缺信息就回答它」，它会替用户拍板（摸底报告第 1 条）
+      // 诊断报告被面板退回太多次停下的：把退回原文带上，父对话照原文指出卡在哪一条，
+      // 不要泛泛地再列一遍报告要有哪些小节（实跑 2026-11-18：问题都在格式和编号上，列小节没用）
+      if (n.rejected)
+        return `\n它交的诊断报告被面板核对退回了好几次，停下来了。面板最后一次退回的原文：\n${n.rejected}\n下一步：请用户去它的对话里看一眼，用户发「继续」它会照原文改好再交；你要转交意见就指出卡在原文的哪一条，不要另列报告要求。${DIAG_PARENT_RULE}不要另建子对话重做。`
       return `\n下一步：${nudgeText(n.stuck)}。${DIAG_PARENT_RULE}要补的事实、你自己的意见可以用 send_to_conversation 交给它（id ${n.id}），写明是你的意见；不要另建子对话重做。`
     case 'unfinished':
       return `\n下一步：${nudgeText(n.stuck)}，看上面的结果判断卡在哪：缺信息就回答它，方向不对就改要求，都用 send_to_conversation 交回这个子对话（id ${n.id}），写清新的要求或答案；不要只发「继续」（它会自己接着做，催也没用），也不要另建一个子对话重做。确实做不下去就告诉用户。`

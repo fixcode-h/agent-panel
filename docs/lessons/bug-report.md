@@ -9,7 +9,8 @@ paths: shared/bug/diagnosis.ts, shared/bug/phase.ts, shared/bug/diagnosis-md.ts,
 - 规则：多份提交的文档（Bug 诊断报告这类）把「交的顺序号」和「给用户看的第几版」分开：顺序号做接口和记号（`Diagnosis.version`），第几版按阶段和用户的决定算（`shared/bug/phase.ts` 的 `nextRev`）——按意见修改、阶段往下走还是同一版，回到更早的阶段或换掉用户确认过的方案才升。界面、提示词、对话里那一行都用 `revOf`，工具返回里另写「报告 #n」给界面认。
 - 起因：用户 2026-11-06 报「第 2 版 · 修复方案」：只是按意见改了几句、或者从根因走到方案，版本号就往上加了。
 - 补充（用户 2026-11-13 定）：用户提问、补充或不认同后它在同一版里重出的，显示成小版本 N.1、N.2（`verOf`），让用户看得出是针对他的意见新出的；结论推翻才升大版本。
-- 防线：`shared/bug/diagnosis.test.ts`「第几版（用户 2026-11-06 定）」。、`shared/bug/diagnosis-ask.test.ts`「小版本」。
+- 补充（用户 2026-11-18 提）：后面的阶段用户提问、补充（没否定）后，Agent 自己判断回到哪一步、交那一阶段就是回退（例如方案阶段回论证加日志），这算补充，记小版本不升大版本（`nextRev` 的 `back`）；阶段条标「从 X 回到 Y」，回退前走到过的几步虚线标出、还能点开。
+- 防线：`shared/bug/diagnosis.test.ts`「第几版（用户 2026-11-06 定）」「回退：方案阶段用户提问后」、`shared/bug/diagnosis-ask.test.ts`「小版本」。
 
 ## 论证的日志一轮加够：列全假设、每个假设一处、每跳一个路标
 
@@ -29,9 +30,3 @@ paths: shared/bug/diagnosis.ts, shared/bug/phase.ts, shared/bug/diagnosis-md.ts,
 - 规则：用户取消修复时，面板只读地查出 `[排查-` 日志列给用户看，确认后交给 Agent 删（连加日志时带进来的空行），这一轮结束后按「加日志之前的快照」核对，通过才关闭报告、收口计划；没过列出还剩什么，由用户选再删一次或自己处理，不悄悄重试。面板不做一键删除，也不拿快照还原文件；删日志期间拦住 `git checkout -- / git restore / p4 revert / svn revert` 整文件还原（共用目录会冲掉文件里别的改动）。
 - 起因：用户 2026-11-10 定的做法；实跑时 Agent 用 `git checkout --` 还原了两个文件（F1），父对话收到的是「交付完了」（F4）。
 - 防线：`shared/bug/cleanup.test.ts`、`shared/bug/diagnosis.test.ts`「取消时代码里有临时日志」、`server/hooks/guards.test.ts`「取消后删临时日志」。
-
-## 交报告的核对：一次列全问题，schema 丢掉的字段要说出来，行号能校准就校准
-
-- 规则：Agent 交上来的结构化报告，核对不过时把各组问题一次列全（编号），不要只报第一处——连续退回有次数上限，三个独立的小问题各退一次就把额度用完了。schema 为容错写的 `.catch`（数组超上限变 `[]`、字符串超长变 `''`）不能静默：交报告和记档案时用 `shared/bug/dropped.ts` 对一遍原样输入和解析结果，丢了的按路径说清上限，排在最前面；否则后面的编号核对会把锅甩给别的字段。Agent 写的行号（代码、日志）能按原文或关键值在附近找到的就校准过去并告诉它，不退回。
-- 起因：用户 2026-11-18 导出的 Bug 对话：codeRefs 写了 8 条被 `.max(6).catch([])` 整组丢掉、hop 写成「S2 → S9」、日志行号按 `sed -n | rg -n` 的相对行号算错，三处各退一次，报告没交上去还被说成「换能力更强的模型」。见 [bugs/diagnosis-rejects-silent-drop](../modules/shared/bugs/diagnosis-rejects-silent-drop.md)。
-- 防线：`shared/bug/dropped.test.ts`、`shared/bug/quotes.test.ts`「日志引用行号偏了」。

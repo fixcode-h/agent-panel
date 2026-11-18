@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronRight, CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react'
 import type { Alert } from '@shared/schema'
-import { alertInfo } from '@shared/alerts'
+import { alertInfo, BLOCKED_LEAD } from '@shared/alerts'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { AiFixButton } from '@/components/ui/ai-fix'
@@ -35,7 +35,8 @@ export function AlertRow({
   const done = !!alert.resolved
   const error = !done && alert.level === 'error'
   const Icon = done ? CircleCheck : error ? CircleAlert : TriangleAlert
-  const detail = alert.detail.trim()
+  // 「它说的卡点」就是那一行写的话，不再当原始信息重复一遍（shared/alerts.ts）
+  const detail = alert.detail.startsWith(BLOCKED_LEAD) ? '' : alert.detail.trim()
   const body = text.trim()
   const report = [body, detail && detail !== body ? `${t('原始信息：')}\n${detail}` : ''].filter(Boolean).join('\n\n')
   return (

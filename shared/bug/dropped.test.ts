@@ -9,11 +9,14 @@ import type { Task } from '../schema.ts'
 setLang('zh')
 
 const ref = (i: number) => ({ id: `C${i}`, file: 'a.lua', start: i, end: i + 1 })
+const quotes = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `Q${i + 1}`, kind: 'note', text: 'x' }))
 
 // 实跑 2026-11-18：codeRefs 写了 8 条（上限 6），整组被丢，退回的话却是「stack 里的 C1… 在 codeRefs 里没有」
 test('写了却被 schema 丢掉的字段：按路径和上限说清楚', () => {
-  const over = droppedFields(BugCase.shape, { codeRefs: Array.from({ length: 8 }, (_, i) => ref(i + 1)) })
-  assert.match(over, /codeRefs：最多 6 条，交了 8 条，整组没收下/)
+  const over = droppedFields(BugCase.shape, { quotes: quotes(31) })
+  assert.match(over, /quotes：最多 30 条，交了 31 条，整组没收下/)
+  // codeRefs 不再限条数（用户 2026-11-18：上限去掉）
+  assert.equal(droppedFields(BugCase.shape, { codeRefs: Array.from({ length: 12 }, (_, i) => ref(i + 1)) }), '')
   // 某一项缺必填：整组丢，指出是第几项哪个字段
   const broken = droppedFields(BugCase.shape, { codeRefs: [ref(1), { id: 'C2', file: 'a.lua' }] })
   assert.match(broken, /codeRefs：第 2 项的 start/)
@@ -48,18 +51,19 @@ const cause = (over: Partial<DiagnosisInput> = {}): DiagnosisInput => ({
 
 test('交报告：几组问题一次说完，丢掉的字段排最前面', () => {
   const tk = bugTask()
-  const r = submitDiagnosis(tk, cause({ codeRefs: Array.from({ length: 8 }, (_, i) => ref(i + 1)) }), () => 'x')
+  const r = submitDiagnosis(tk, cause({ quotes: quotes(31) }), () => 'x')
   assert.equal(r.ok, false)
   assert.match(r.info, /这一版有 \d+ 处要改，一次改完再交/)
-  assert.match(r.info, /1\. 这些字段写了但没收下[\s\S]*codeRefs：最多 6 条/)
+  assert.match(r.info, /1\. 这些字段写了但没收下[\s\S]*quotes：最多 30 条/)
   assert.match(r.info, /一项只写一个编号（S2），不写范围或箭头/)
   assert.match(r.info, /第 1 次被退回/)
+  assert.match(r.info, /codeRefs 里没有：C1|在 quotes、codeRefs.*里没有：C1/)
 })
 
 test('记档案：会被丢掉的字段不记，免得冲掉原来那一组', () => {
   const tk = bugTask()
-  assert.equal(updateBugCase(tk, { codeRefs: [ref(1)] }).ok, true)
-  const r = updateBugCase(tk, { codeRefs: Array.from({ length: 8 }, (_, i) => ref(i + 1)) })
+  assert.equal(updateBugCase(tk, { quotes: quotes(1) }).ok, true)
+  const r = updateBugCase(tk, { quotes: quotes(31) })
   assert.equal(r.ok, false)
-  assert.equal(tk.bug?.case?.codeRefs.length, 1)
+  assert.equal(tk.bug?.case?.quotes.length, 1)
 })

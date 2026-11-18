@@ -42,6 +42,8 @@ export const EN_BUG_FLOW: Record<string, string> = {
   '论证 · 第 {n} 轮': 'Evidence · round {n}',
   排查阶段: 'Investigation stage',
   查看这一步的报告: "View this step's report",
+  '回退前走到过这一步，点开看当时的报告': 'Reached before going back; click to see that report',
+  '从{from}回到{to}': 'Back from {from} to {to}',
   '没有单独的论证报告，证据写在这份报告里': 'No separate evidence report; the evidence is in this report',
   '这次修复没有单独的报告，改了什么写在验证报告里':
     'This fix has no report of its own; the changes are in the verification report',
