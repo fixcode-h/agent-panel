@@ -289,6 +289,17 @@ export const COMP_SPEC = {
     }),
     ring: color('card', BG),
   },
+  /**
+   * 分区导航（web/src/components/ui/section-rail.tsx，UE 页这类插件页的图标轨 + 二级面板）：
+   * count 关掉后角标只画圆点、不写数字（数字盖在圆点上，display:none 就露出圆点）
+   */
+  sectionRail: {
+    width: px(52, 44, 64),
+    radius: px(10, 4, 18),
+    count: bool(true, 'inline-flex', 'none'),
+    bg: color('panel'),
+    panelBg: color('panel'),
+  },
   empty: {
     radius: px(10, 0, 24),
     bg: color('none'),

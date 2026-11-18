@@ -67,6 +67,7 @@ import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
 import { TurnCardSpecimens } from '@/components/settings/ChangesCardSpecimen'
 import { ReferenceSpecimens } from './StyleRefSpecimen'
 import { GraphCanvasSpecimens } from '@/components/settings/GraphCanvasSpecimen'
+import { SectionRailSpecimens } from '@/components/settings/SectionRailSpecimen'
 import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
@@ -956,6 +957,7 @@ function CardCanvasSpecimens() {
         </Specimen>
       </Group>
       <GraphCanvasSpecimens Specimen={Specimen} />
+      <SectionRailSpecimens Specimen={Specimen} />
     </>
   )
 }

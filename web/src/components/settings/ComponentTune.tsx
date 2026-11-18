@@ -58,6 +58,7 @@ export const compLabel = (c: CompName) =>
     scrollbar: t('滚动条'),
     canvas: t('流程图画布'),
     countBadge: t('数字角标'),
+    sectionRail: t('分区导航'),
   })[c]
 
 /** 项的显示名：同名的项在不同部件里意思一样，只有少数按部件改说法 */
@@ -92,6 +93,15 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'canvas') return ({ minimap: t('小地图'), minimapW: t('小地图宽度') } as Record<string, string>)[prop]
   if (c === 'countBadge')
     return ({ size: t('大小'), bg: t('底色'), ring: t('外圈颜色') } as Record<string, string>)[prop]
+  if (c === 'sectionRail')
+    return (
+      {
+        width: t('图标轨宽度'),
+        count: t('错误写数字（关掉只画圆点）'),
+        bg: t('图标轨底色'),
+        panelBg: t('二级面板底色'),
+      } as Record<string, string>
+    )[prop]
   if (c === 'modal' && prop === 'resizeEdge') return t('拖边缩放时的边线颜色')
   if (c === 'modal' && prop === 'resizeLine') return t('拖边缩放时的边线粗细')
   if (c === 'scrollbar')

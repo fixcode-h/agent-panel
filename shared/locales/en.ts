@@ -65,6 +65,7 @@ import { EN_SELECT_SEARCH } from './en/select-search.ts'
 import { EN_MODAL_RESIZE } from './en/modal-resize.ts'
 import { EN_TOAST } from './en/toast.ts'
 import { EN_SCROLLBAR } from './en/scrollbar.ts'
+import { EN_SECTION_RAIL } from './en/section-rail.ts'
 import { EN_GRAPH_CANVAS } from './en/graph-canvas.ts'
 import { EN_MODEL_CATALOG } from './en/model-catalog.ts'
 
@@ -136,6 +137,7 @@ export const EN: Record<string, string> = {
   ...EN_MODAL_RESIZE,
   ...EN_TOAST,
   ...EN_SCROLLBAR,
+  ...EN_SECTION_RAIL,
   ...EN_GRAPH_CANVAS,
   ...EN_MODEL_CATALOG,
   ...EN_SHEETS,
