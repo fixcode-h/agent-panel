@@ -12,8 +12,11 @@ export const EN_WEB_VIEW: Record<string, string> = {
   '取不到这个网页：{why}': "Couldn't fetch this page: {why}",
   '取不到这个网页：对方返回 {code}': "Couldn't fetch this page: the site returned {code}",
   '只能打开 http 或 https 的网址': 'Only http or https addresses can be opened',
-  '只能打开对话目录、项目目录和插件目录里的文件':
-    'Only files in the conversation folder, the project folder or the plugins folder can be opened',
+  '这个文件不在对话目录、项目目录、文档目录和插件目录里（{dir}）。':
+    "This file isn't in the conversation, project, docs or plugins folder ({dir}).",
+  '页面仍在沙箱里打开、碰不到面板，但能读到同一目录里的其他文件。':
+    "The page still opens in a sandbox and can't reach the panel, but it can read other files in the same folder.",
+  仍要打开: 'Open anyway',
   在新窗口打开: 'Open in new window',
   '地址已过期，请在页签里刷新': 'This address has expired. Refresh the tab',
   '对方的内容安全策略只允许 {v} 嵌入': "The site's content security policy only allows {v} to embed it",

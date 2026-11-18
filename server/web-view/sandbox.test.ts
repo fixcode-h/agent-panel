@@ -62,3 +62,40 @@ test('插件页面：包里的文件按插件目录发沙箱地址、不许越�
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('本机文件：文档根和这个对话写出的文件直接发，别处的先要用户点「仍要打开」', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'webfile-'))
+  try {
+    const project = path.join(base, 'Project')
+    const docs = path.join(base, 'ProjectDoc', 'docs')
+    const other = path.join(base, 'Other')
+    for (const d of [project, path.join(docs, 'm'), other]) await mkdir(d, { recursive: true })
+    await writeFile(path.join(docs, 'm', 'architecture.html'), '<title>架构</title>')
+    await writeFile(path.join(other, 'a.html'), '<p>a</p>')
+    await writeFile(path.join(other, 'b.html'), '<p>b</p>')
+    const deps = {
+      workDir: async () => project,
+      projectDir: async () => project,
+      docRoot: async () => docs,
+      outsideFiles: async () => [path.join(other, 'a.html')],
+      pluginDir: () => '',
+      serviceOrigin: async () => '',
+      touchService: () => {},
+    }
+    const doc = await webFile(deps, { path: path.join(docs, 'm', 'architecture.html'), taskId: 't', projectId: 'p' })
+    assert.match(doc.url, /\/m\/architecture\.html$/)
+    assert.equal(doc.title, '架构')
+    const written = await webFile(deps, { path: path.join(other, 'a.html'), taskId: 't', projectId: 'p' })
+    assert.ok(written.url && !written.confirm)
+    const ask = await webFile(deps, { path: path.join(other, 'b.html'), taskId: 't', projectId: 'p' })
+    assert.equal(ask.url, '')
+    assert.ok(ask.confirm?.includes(other))
+    const forced = await webFile(deps, { path: path.join(other, 'b.html'), taskId: 't', projectId: 'p', force: true })
+    assert.match(forced.url, /\/b\.html$/)
+    await assert.rejects(webFile(deps, { path: path.join(other, 'nope.html'), force: true }), (e: Error) =>
+      e.message.includes('nope.html'),
+    )
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})

@@ -15,6 +15,7 @@ import { webUrlOf } from '@shared/web-view/embed'
 import { call } from '@/lib/api/call'
 import { extensionAllows, targetAddress, type WebTarget } from '@/lib/web-view/tabs'
 import { cn } from '@/lib/utils'
+import { Button } from './button'
 
 /** 本机页面：能跑脚本、弹窗、下载、提交表单，不给同源 */
 const FILE_SANDBOX =
@@ -63,6 +64,8 @@ type Loaded =
   | { state: 'ready'; src: string; local: boolean; html?: string }
   | { state: 'blocked'; probe: WebProbeRes }
   | { state: 'error'; message: string }
+  /** 本机文件不在常用目录里：等用户点「仍要打开」 */
+  | { state: 'confirm'; message: string }
 
 /** 本机文件换地址、外部网址预检；reloadKey 变了重新来一遍（令牌过期、文件改了） */
 function useWebSource(
@@ -74,6 +77,9 @@ function useWebSource(
 ) {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
   const key = target.kind === 'html' ? `h:${target.html}` : `${target.kind}:${targetAddress(target)}`
+  // 用户对这个文件点过「仍要打开」：换了目标就不算了
+  const [forced, setForced] = useState('')
+  const force = forced === key
   useEffect(() => {
     if (!run) return
     let off = false
@@ -82,8 +88,10 @@ function useWebSource(
     const fail = (e: Error) => done({ state: 'error', message: e.message })
     if (target.kind === 'html') done({ state: 'ready', src: '', local: true, html: target.html })
     else if (target.kind === 'file')
-      call(W.file, { body: { path: target.path, taskId: target.taskId ?? taskId, projectId } }).then(
-        (r) => done({ state: 'ready', src: r.url, local: true }),
+      call(W.file, {
+        body: { path: target.path, taskId: target.taskId ?? taskId, projectId, ...(force && { force }) },
+      }).then(
+        (r) => done(r.confirm ? { state: 'confirm', message: r.confirm } : { state: 'ready', src: r.url, local: true }),
         fail,
       )
     else if (target.kind === 'plugin-file' || target.kind === 'plugin-service') {
@@ -110,7 +118,7 @@ function useWebSource(
     }
     // target 每次渲染可能是新对象，按 key 判断换没换
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, taskId, projectId, run, reloadKey])
+  }, [key, taskId, projectId, run, reloadKey, force])
   // 托管进程的页面开着时隔一会儿报一次「还有人在看」：页面自己的请求直接打到进程上，面板看不到，
   // 不报的话进程会按空闲停掉（server/plugins/services.ts 的 stopAfterIdleMin，按分钟算）
   const live = run && loaded.state === 'ready' && target.kind === 'plugin-service'
@@ -125,7 +133,7 @@ function useWebSource(
     // 按 key 判断目标换没换
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [live, key])
-  return loaded
+  return { loaded, openAnyway: () => setForced(key) }
 }
 
 /** 和面板同源的地址（例如在页签里开了面板自己）不给 allow-same-origin：同源加脚本等于没有沙箱 */
@@ -184,9 +192,9 @@ export function WebFrame({
       release.current?.()
     }
   }, [thumb])
-  const loaded = useWebSource(target, taskId, projectId, run, reloadKey)
+  const { loaded, openAnyway } = useWebSource(target, taskId, projectId, run, reloadKey)
   // 缩略图加载完（或者根本开不了）就把名额让给下一个
-  const settled = loaded.state === 'blocked' || loaded.state === 'error'
+  const settled = loaded.state === 'blocked' || loaded.state === 'error' || loaded.state === 'confirm'
   useEffect(() => {
     if (settled) release.current?.()
   }, [settled])
@@ -223,6 +231,21 @@ export function WebFrame({
           {!thumb && <span>{loaded.probe.reason ?? t('这个网站不允许被嵌入')}</span>}
         </div>
       )
+  else if (loaded.state === 'confirm')
+    body = (
+      <div className={center}>
+        <TriangleAlert className="h-5 w-5 text-warning" />
+        {!thumb && (
+          <>
+            <span className="max-w-md break-words">{loaded.message}</span>
+            <span className="max-w-md">{t('页面仍在沙箱里打开、碰不到面板，但能读到同一目录里的其他文件。')}</span>
+            <Button size="sm" variant="secondary" onClick={openAnyway}>
+              {t('仍要打开')}
+            </Button>
+          </>
+        )}
+      </div>
+    )
   else if (loaded.state === 'error')
     body = (
       <div className={cn(center, 'text-danger')}>
