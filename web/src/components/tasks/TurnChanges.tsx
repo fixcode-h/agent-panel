@@ -3,6 +3,7 @@ import { List, ListTree, Loader2, TriangleAlert } from 'lucide-react'
 import type { FileChange, Task, TaskMessage } from '@shared/schema'
 import { convChanges, scopeChanges, type ChangeScope, type ConvChanges } from '@shared/conv-changes'
 import { compValue } from '@shared/component-style'
+import { probeFiles } from '@shared/bug/probe'
 import { taskSummary } from '@shared/task'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -32,9 +33,12 @@ export function ConvChangesCard({
   task,
   tag,
 }: {
-  task: Pick<Task, 'id' | 'working' | 'messages'>
+  task: Pick<Task, 'id' | 'working' | 'messages' | 'bug'>
   tag?: (path: string) => ReactNode
 }) {
+  // 不给 tag 时：Bug 模式里补排查动过、还没撤掉的文件标「排查」（shared/bug/probe.ts 的 probeFiles），一眼分得出哪些是临时的
+  const probed = new Set(probeFiles(task.bug))
+  const tagOf = tag ?? (probed.size ? (p: string) => (probed.has(p) ? <ProbeTag /> : null) : undefined)
   const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
   const conv = convChanges(task.messages)
   const round = scopeChanges(task.messages, 'round')
@@ -112,7 +116,7 @@ export function ConvChangesCard({
       onAll={() => setAll(!all)}
       reverted={reverted}
       onOpen={setOpen}
-      tag={tag}
+      tag={tagOf}
       revert={{
         label: isRound ? t('撤销这一轮') : t('撤销'),
         title: task.working
@@ -183,6 +187,18 @@ export function ConvChangesCard({
         onConfirm={revert}
       />
     </ChangesCard>
+  )
+}
+
+/** 文件行上的「排查」标签：补排查加的临时代码，收尾、不修了时会一起删 */
+function ProbeTag() {
+  return (
+    <span
+      className="shrink-0 rounded-(--c-badge-radius) bg-accent-soft px-1.5 text-xs text-accent-text"
+      title={t('补排查加的临时代码，修好收尾或不修了时会一起删掉')}
+    >
+      {t('排查')}
+    </span>
   )
 }
 

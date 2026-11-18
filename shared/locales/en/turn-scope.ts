@@ -25,4 +25,6 @@ export const EN_TURN_SCOPE: Record<string, string> = {
   这条命令还在跑: 'This command is still running',
   已重新运行: 'Started again',
   这一轮没有要撤销的改动: 'Nothing to undo this turn',
+  '补排查加的临时代码，修好收尾或不修了时会一起删掉':
+    'Temporary probe code; removed together when the fix is wrapped up or dropped',
 }
