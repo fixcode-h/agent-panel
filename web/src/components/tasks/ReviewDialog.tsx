@@ -20,7 +20,7 @@ import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
 import { OverallComposer, useLogFiles, type OverallTools } from './LogAttach'
 import { useChosenColumn } from './review-table'
-import { CompareSwitch, RejectButton } from './review-extras'
+import { CompareSwitch, PresetRow, RejectButton } from './review-extras'
 
 /** range：标在正文哪段文字上；点「改用这个方案」这类预设加的标注没有选区 */
 type Note = { id: number; quote: string; comment: string; range?: Range; kind?: string }
@@ -511,15 +511,7 @@ export function ReviewDialog({
                 />
               )}
             </div>
-            {presets && presets.length > 0 && !locked && (
-              <div className="flex flex-wrap gap-1.5 px-3 pb-2" data-review-presets>
-                {presets.map((p) => (
-                  <Button key={p.label} size="sm" variant="secondary" onClick={() => addPreset(p)}>
-                    {p.label}
-                  </Button>
-                ))}
-              </div>
-            )}
+            <PresetRow presets={quick} onPick={addPreset} />
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
               {slots?.aside}
               {notes.length === 0 && (
