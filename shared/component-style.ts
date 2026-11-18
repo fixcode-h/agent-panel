@@ -228,6 +228,18 @@ export const COMP_SPEC = {
     radius: px(12, 0, 20),
     scope: pick('round', { round: 'round', conv: 'conv' }),
     first: pick('3', { '3': '3', '5': '5', '8': '8', '20': '20' }),
+    /** 一开始是折起成一行（只有标题、增删行数和按钮）还是直接展开（用户 2026-11-18 要默认折起） */
+    fold: pick('closed', { closed: 'closed', open: 'open' }),
+  },
+  /**
+   * 折叠条（web/src/components/ui/fold-bar.tsx）：回复收尾后「读取 3 个文件 · 运行 2 条命令」那一行，整行点都能展开收起；
+   * 圆角、底色、边框、右边要不要写「展开 / 收起」。改动卡片折起来的那一行用同一个部件，但外框跟改动卡片走
+   */
+  foldBar: {
+    radius: px(6, 0, 12),
+    bg: color('none', { default: tint(3.5), ...BG }),
+    border: bool(false, '1px', '0px'),
+    hint: bool(true, 'inline', 'none'),
   },
   /**
    * 风格参考图和风格选择（web/src/components/ui/style-thumb.tsx、style-picker.tsx）：

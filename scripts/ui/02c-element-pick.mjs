@@ -346,6 +346,17 @@ await runShard(import.meta.filename, async (api) => {
       }
     }
 
+    // 改动卡片默认折成一行（用户 2026-11-18）：只有标题、增删行数和按钮，点整行（标题）展开成完整卡片
+    {
+      const bar = card.locator('[role="button"][aria-expanded]').first()
+      if ((await bar.getAttribute('aria-expanded')) !== 'false') errors.push('改动卡片：默认应该折成一行')
+      if (await card.getByRole('radio', { name: /^整个对话/ }).count())
+        errors.push('改动卡片：折起来时不该画「这一轮 / 整个对话」切换')
+      await card.scrollIntoViewIfNeeded()
+      await check(p, '改动卡片-折起', ['这一轮改了 8 个文件'])
+      await card.getByText('这一轮改了 8 个文件').click()
+      if ((await bar.getAttribute('aria-expanded')) !== 'true') errors.push('改动卡片：点标题（整行）应该展开')
+    }
     // 改动卡片默认「这一轮」（Bug模式子对话体验 第 3 节）：标题左边切「整个对话」，撤销跟着切
     {
       const text = (await card.textContent()) ?? ''

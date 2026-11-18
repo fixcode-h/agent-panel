@@ -372,7 +372,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await spec.getByRole('radiogroup', { name: '默认显示' }).getByRole('radio', { name: '整个对话' }).click()
     if (!((await spec.textContent()) ?? '').includes('这个对话改了 9 个文件'))
       errors.push('设置-组件：改动卡片「默认显示」改成整个对话后样张应该跟着切')
-    await check(p, '设置-组件-改动卡片', ['这个对话改了 9 个文件', '默认显示', '先列几个文件'])
+    // 「一开始」改成展开：样张直接列出文件
+    await spec.getByRole('radiogroup', { name: '一开始' }).getByRole('radio', { name: '展开' }).click()
+    if (!((await spec.textContent()) ?? '').includes('store.test.ts'))
+      errors.push('设置-组件：改动卡片「一开始」改成展开后样张应该列出文件')
+    await check(p, '设置-组件-改动卡片', ['这个对话改了 9 个文件', '默认显示', '先列几个文件', '一开始'])
     await spec.getByRole('button', { name: '恢复本组' }).click()
   }
   await p.getByRole('button', { name: '风格库' }).click()
