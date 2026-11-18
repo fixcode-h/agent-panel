@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react'
+import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -12,7 +12,9 @@ import {
   type ReactFlowProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { compValue } from '@shared/component-style'
 import { t } from '@shared/i18n'
+import { componentsSnapshot, subscribeComponents } from '@/lib/appearance'
 import { cn } from '@/lib/utils'
 import { AutoFit, smartFit } from './auto-fit'
 
@@ -35,6 +37,9 @@ export function statusMiniColor(n: Node) {
  */
 export function CanvasMiniMap({ nodeColor = statusMiniColor }: { nodeColor?: (n: Node) => string }) {
   const rf = useReactFlow()
+  // 宽高要给数字：xyflow 按 style.width / height 算 viewBox，给 CSS 变量会算成 NaN（控制台报 path、viewBox 出错）
+  const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
+  const w = Number(compValue(style, 'canvas', 'minimapW')) || 180
   return (
     <MiniMap
       pannable
@@ -43,7 +48,7 @@ export function CanvasMiniMap({ nodeColor = statusMiniColor }: { nodeColor?: (n:
       ariaLabel={t('小地图')}
       onClick={(_, p) => void rf.setCenter(p.x, p.y, { zoom: rf.getZoom(), duration: 200 })}
       className="canvas-minimap !m-4 hidden overflow-hidden rounded-xl !bg-card shadow-pop @2xl:block"
-      style={{ width: 'var(--c-canvas-minimapW)', height: 'calc(var(--c-canvas-minimapW) * 0.61)' }}
+      style={{ width: w, height: Math.round(w * 0.61) }}
       maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"
       nodeColor={nodeColor}
       nodeBorderRadius={3}
