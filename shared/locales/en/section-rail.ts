@@ -7,6 +7,12 @@ export const EN_SECTION_RAIL: Record<string, string> = {
   分区导航: 'Section navigation',
   图标轨宽度: 'Rail width',
   '错误写数字（关掉只画圆点）': 'Show error counts (off: dots only)',
+  图标下面写名字: 'Show labels under icons',
+  返回: 'Back',
+  搜索: 'Search',
+  截图: 'Screenshot',
+  展开: 'Expand',
   图标轨底色: 'Rail background',
   二级面板底色: 'Side panel background',
+  '回到项目 · {name}': 'Back to project · {name}',
 }

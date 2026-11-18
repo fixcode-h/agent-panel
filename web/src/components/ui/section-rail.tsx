@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 /**
  * 分区导航（UE 页这类盖住侧栏的项目工具页用，设计稿 designs/UE页左侧导航重设计-设计稿.md 方案 B）：
  * 一条图标轨 + 旁边可收起的二级面板。图标轨一个分区一个图标，分组之间一道细线，徽标变成角标：
- * 要紧的（错误）写数字，其余是圆点。宽度、圆角、要不要写数字、二级面板底色在设置 → 组件 →「分区导航」里调（--c-sectionRail-*）。
+ * 要紧的（错误）写数字，其余是圆点；图标下面一行小字（可关）。宽度、圆角、要不要写数字、二级面板底色在设置 → 组件 →「分区导航」里调（--c-sectionRail-*）。
  * 经 host.ui 交给插件（SectionRail、SidePanel、StatusChip），旧面板没有时插件照旧画自己的左栏
  */
 
@@ -26,6 +26,23 @@ export interface SectionRailItem {
    * text 写进悬停提示（「22 错误」）
    */
   badge?: { count?: number; tone?: RailTone; text?: string }
+  /** 图标下面的小字，不给用 label（label 太长时给个短的） */
+  short?: string
+}
+
+/**
+ * 图标轨按钮：图标下面一行小字（用户 2026-11-18 要的，光看图标认不出），设置里能关掉（--c-sectionRail-labels）。
+ * 关掉文字时按钮缩回 36px 见方
+ */
+const RAIL_BTN =
+  'press relative flex min-h-9 w-full shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-(--c-sectionRail-radius) px-0.5 py-1.5 transition-colors max-md:w-auto max-md:px-2'
+
+function RailCaption({ children }: { children: ReactNode }) {
+  return (
+    <span className="max-w-full truncate text-caption leading-tight [display:var(--c-sectionRail-labels)]">
+      {children}
+    </span>
+  )
 }
 
 const DOT: Record<RailTone, string> = {
@@ -47,29 +64,32 @@ function RailButton({ item, on, onPick }: { item: SectionRailItem; on: boolean; 
       aria-label={item.label}
       aria-current={on ? 'page' : undefined}
       title={b?.text ? `${item.label} · ${b.text}` : item.label}
-      className={cn(
-        'press relative grid size-9 shrink-0 cursor-pointer place-items-center rounded-(--c-sectionRail-radius) transition-colors',
-        on ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-      )}
+      className={cn(RAIL_BTN, on ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg')}
     >
-      <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-      {b && (
-        <>
-          {/* 圆点总是在；写数字时数字盖在圆点上面（设置里关掉数字，数字 display:none 就只剩圆点） */}
-          <span
-            data-rail-dot=""
-            className={cn('absolute top-1.5 right-1.5 size-2 rounded-full ring-2 ring-(--c-sectionRail-bg)', DOT[tone])}
-          />
-          {num && (
+      <span className="relative grid size-5 place-items-center">
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        {b && (
+          <>
+            {/* 圆点总是在；写数字时数字盖在圆点上面（设置里关掉数字，数字 display:none 就只剩圆点） */}
             <span
-              data-rail-count=""
-              className="absolute -top-0.5 -right-0.5 h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-caption leading-none font-semibold text-(--on-danger) tabular-nums ring-2 ring-(--c-sectionRail-bg) [display:var(--c-sectionRail-count)]"
-            >
-              {num}
-            </span>
-          )}
-        </>
-      )}
+              data-rail-dot=""
+              className={cn(
+                'absolute -top-0.5 -right-1 size-2 rounded-full ring-2 ring-(--c-sectionRail-bg)',
+                DOT[tone],
+              )}
+            />
+            {num && (
+              <span
+                data-rail-count=""
+                className="absolute -top-1.5 -right-3 h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-caption leading-none font-semibold text-(--on-danger) tabular-nums ring-2 ring-(--c-sectionRail-bg) [display:var(--c-sectionRail-count)]"
+              >
+                {num}
+              </span>
+            )}
+          </>
+        )}
+      </span>
+      <RailCaption>{item.short ?? item.label}</RailCaption>
     </button>
   )
 }
@@ -138,9 +158,12 @@ export function RailAction({
   onClick,
   on,
   dot,
+  short,
 }: {
   icon: ComponentType<{ className?: string; strokeWidth?: number }>
   label: string
+  /** 图标下面的小字（label 是悬停提示，常常较长），不给就不写字 */
+  short?: string
   onClick: () => void
   on?: boolean
   /** 右上角的状态点（连接状态） */
@@ -153,20 +176,20 @@ export function RailAction({
       aria-label={label}
       title={label}
       aria-pressed={on}
-      className={cn(
-        'press relative grid size-9 shrink-0 cursor-pointer place-items-center rounded-(--c-sectionRail-radius) transition-colors',
-        on ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg',
-      )}
+      className={cn(RAIL_BTN, on ? 'bg-active text-fg' : 'text-muted hover:bg-hover hover:text-fg')}
     >
-      <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-      {dot && (
-        <span
-          className={cn(
-            'absolute top-1.5 right-1.5 size-2 rounded-full ring-2 ring-(--c-sectionRail-bg)',
-            dot === 'ok' ? 'bg-success' : DOT[dot],
-          )}
-        />
-      )}
+      <span className="relative grid size-5 place-items-center">
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        {dot && (
+          <span
+            className={cn(
+              'absolute -top-0.5 -right-1 size-2 rounded-full ring-2 ring-(--c-sectionRail-bg)',
+              dot === 'ok' ? 'bg-success' : DOT[dot],
+            )}
+          />
+        )}
+      </span>
+      {short && <RailCaption>{short}</RailCaption>}
     </button>
   )
 }

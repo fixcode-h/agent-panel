@@ -1174,9 +1174,10 @@ body,
   --c-toast-bar: 0px;
   --c-canvas-minimap: visible;
   --c-canvas-minimapW: 180px;
-  --c-sectionRail-width: 52px;
+  --c-sectionRail-width: 64px;
   --c-sectionRail-radius: 10px;
   --c-sectionRail-count: inline-flex;
+  --c-sectionRail-labels: block;
   --c-sectionRail-bg: var(--panel);
   --c-sectionRail-panelBg: var(--panel);
   --c-countBadge-size: 18px;

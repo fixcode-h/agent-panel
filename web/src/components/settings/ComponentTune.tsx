@@ -98,6 +98,7 @@ const propLabel = (c: CompName, prop: string) => {
       {
         width: t('图标轨宽度'),
         count: t('错误写数字（关掉只画圆点）'),
+        labels: t('图标下面写名字'),
         bg: t('图标轨底色'),
         panelBg: t('二级面板底色'),
       } as Record<string, string>

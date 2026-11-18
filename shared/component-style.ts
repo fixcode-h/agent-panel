@@ -291,12 +291,13 @@ export const COMP_SPEC = {
   },
   /**
    * 分区导航（web/src/components/ui/section-rail.tsx，UE 页这类插件页的图标轨 + 二级面板）：
-   * count 关掉后角标只画圆点、不写数字（数字盖在圆点上，display:none 就露出圆点）
+   * count 关掉后角标只画圆点、不写数字（数字盖在圆点上，display:none 就露出圆点）；labels 是图标下面的小字
    */
   sectionRail: {
-    width: px(52, 44, 64),
+    width: px(64, 44, 88),
     radius: px(10, 4, 18),
     count: bool(true, 'inline-flex', 'none'),
+    labels: bool(true, 'block', 'none'),
     bg: color('panel'),
     panelBg: color('panel'),
   },
