@@ -54,3 +54,25 @@ export function roleSkillDirNote(dir: string, names: string[]) {
   if (!names.length) return ''
   return `其中 ${names.join('、')} 这一轮放在 \`${dir}\`，路径是 \`${dir}/<名字>/SKILL.md\`。`
 }
+
+/** 说明太长时只取前面一段：提示里每个技能一行，够模型判断什么时候用就行，细节在 SKILL.md 里 */
+const clipDesc = (s: string) => {
+  const one = s.replace(/\s+/g, ' ').trim()
+  return one.length > 160 ? `${one.slice(0, 160)}…` : one
+}
+
+/**
+ * 开着的插件带的技能（server/skills/plugin-skills.ts）：列名字、哪个插件、什么时候用、SKILL.md 在哪。
+ * 不写清楚时模型只知道「装了个插件」，会自己 find 插件目录、which 命令行工具找半天（2026-11-18 用户截图）
+ */
+export function pluginSkillsNote(skills: { name: string; plugin: string; description: string; file: string }[]) {
+  if (!skills.length) return ''
+  const rows = skills.map(
+    (s) => `- \`${s.name}\`（插件「${s.plugin}」）：${clipDesc(s.description) || '（没有说明）'}。说明在 \`${s.file}\``,
+  )
+  return [
+    '## 装着的插件带的技能',
+    '这些技能已经交给你了：任务对得上、或者用户提到这个插件时，直接读对应的 SKILL.md 照做，不要再去搜索插件目录、技能目录或找命令行工具。用户在输入框里打「/名字 要求」就是点名要用这个技能。',
+    ...rows,
+  ].join('\n')
+}

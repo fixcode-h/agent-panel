@@ -2,15 +2,17 @@ import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import { checkOutput, type HookDef, type HookInput, type HooksData } from '../../shared/hooks/defs.ts'
 import { t } from '../../shared/i18n.ts'
-import { pluginEnabled } from '../../shared/plugins/index.ts'
+import { frontField } from '../../shared/library.ts'
+import { pluginById, pluginEnabled } from '../../shared/plugins/index.ts'
 import { pluginItemId, setProjectProbe } from '../../shared/plugins/contrib.ts'
 import { matchesGlob } from '../../shared/test-steps.ts'
+import { allPluginEntries } from '../bundled-skills.ts'
 import { runCommand, type HookRun } from '../hooks/run.ts'
 import { installedList } from './manager.ts'
 import { runningPlugin } from './runtime.ts'
 
 /**
- * 插件清单的钩子、测试步骤、「/」命令接进面板（插件接口 3，格式见 shared/plugins/contrib-schema.ts）。
+ * 插件清单的钩子、测试步骤、「/」命令（含插件技能）接进面板（插件接口 3，格式见 shared/plugins/contrib-schema.ts）。
  * 都按「现在开着的插件」现取：关掉、删除插件后下一次取就没有了，不用另外撤。
  * 测试步骤的现取在 shared/plugins/contrib.ts（前后端共用），这里只注入「项目根有没有这类文件」的探测
  */
@@ -139,4 +141,24 @@ export function pluginCommands() {
         ]
       }),
     )
+}
+
+/**
+ * 开着的插件带的技能也进「/」菜单：打「/archify 画个架构图」就是点名用它，由面板把 SKILL.md 展开成要求
+ * （和 CLI 自己的技能一样，见 server/slash.ts）。只带技能的包装插件没有别的入口，用户不知道怎么叫它
+ */
+export async function pluginSkillCommands() {
+  return (await allPluginEntries()).flatMap((e) => {
+    if (!e.plugin || !e.dir || !pluginEnabled(e.plugin)) return []
+    const md = e.files.get('SKILL.md')!.toString('utf8')
+    return [
+      {
+        name: e.name,
+        description: frontField(md, 'description').replace(/\s+/g, ' ').slice(0, 200),
+        kind: 'skill' as const,
+        source: t('插件 · {name}', { name: pluginById(e.plugin)?.name ?? e.plugin }),
+        path: path.join(e.dir, 'SKILL.md'),
+      },
+    ]
+  })
 }

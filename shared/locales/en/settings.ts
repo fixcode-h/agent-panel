@@ -1869,6 +1869,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '还没有参数，先在「运行」页里添加': 'No parameters yet. Add some on the “Run” tab',
   '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「运行」页的参数里添加，或者改成已有的参数名。':
     'The instructions reference parameters that don’t exist: {list}. They’ll be left as-is in the prompt. Add them under Parameters on the “Run” tab, or use an existing parameter name.',
+  '插件开着时每轮自动交给 Agent，不用安装；输入框打「/{name}」可以点名用它':
+    'Handed to the agent every turn while the plugin is on, no install needed; type “/{name}” in the input to call it by name',
   '随面板版本提供，只读；要改请复制一份到自己的技能目录':
     'Ships with the panel and is read-only; copy it into your own skills folder to change it',
   '先保存修改再装到别的 Agent': 'Save your changes before installing to another agent',

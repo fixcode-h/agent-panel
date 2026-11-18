@@ -15,6 +15,7 @@ import { promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.t
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { t } from '../../shared/i18n.ts'
 import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
+import { pluginSkillsFor } from '../skills/plugin-skills.ts'
 import { taskFiles } from '../task-files.ts'
 import { log } from '../log.ts'
 import type { RealContext } from './real-context.ts'
@@ -178,6 +179,8 @@ async function launchSkills(
       projectId: ctx.project.id,
       opened: ctx.project.capabilities?.skills,
       roleSkills,
+      // 开着的插件带的技能每轮都带，装上就能用，不用 Agent 自己去插件目录里找
+      plugins: await pluginSkillsFor(ctx.project),
     })
   } catch (err) {
     ctx.task.messages.push({
