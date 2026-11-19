@@ -84,7 +84,7 @@ export function createRun(sc: TasksScope) {
     if (!prewarm && entry.task.quotaResume?.until)
       entry.task.quotaResume = { ...entry.task.quotaResume, until: undefined }
     // 对话新的一轮从 0 开始显示速度，接口返回时页面不会还停在上一轮的数字上
-    const active = entry.task.mode === 'chat' ? entry.task.usage.agents[entry.task.agentId] : undefined
+    const active = entry.task.mode !== 'workflow' ? entry.task.usage.agents[entry.task.agentId] : undefined
     if (active) {
       active.tps = 0
       active.lastTps = 0
@@ -151,7 +151,7 @@ export function createRun(sc: TasksScope) {
     // 项目里用分派角色（协调器）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
     // UE 项目（目录里有 .uproject）的编译归父对话：子对话申请，父对话按申请占位编译
-    const ueProject = task.mode === 'chat' && !!found?.path && (await isBigProject(found.path).catch(() => false))
+    const ueProject = task.mode !== 'workflow' && !!found?.path && (await isBigProject(found.path).catch(() => false))
     const ueRole = !ueProject ? undefined : task.parentTaskId ? 'child' : coordinatorRole ? 'parent' : undefined
     let last = 0
     /**

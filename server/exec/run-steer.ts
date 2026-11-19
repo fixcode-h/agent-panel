@@ -97,7 +97,7 @@ export function createSteering(d: SteerDeps) {
         st.cur = undefined
         ctx.changed(true)
         return mine.map((m) =>
-          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat', m.peer?.rel === 'parent'),
+          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode !== 'workflow', m.peer?.rel === 'parent'),
         )
       },
     }

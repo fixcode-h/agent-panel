@@ -107,11 +107,11 @@ export async function settleRun(c: SettleCtx) {
     keepTime = true
   }
   // 工作流跑完一整轮才算完成；对话在 CLI 回复完时已经记了 turnDoneAt
-  if (!prewarm && entry.task.mode !== 'chat' && entry.task.status === 'done')
+  if (!prewarm && entry.task.mode === 'workflow' && entry.task.status === 'done')
     entry.task.turnDoneAt = new Date().toISOString()
   // 执行中用户换了 CLI/模型/强度：旧进程的命令和上下文不能留给新的选择
   const nowRun =
-    !prewarm && entry.task.mode === 'chat' && startAgent
+    !prewarm && entry.task.mode !== 'workflow' && startAgent
       ? agentRun(withTaskModel(startAgent, entry.task), settings)
       : undefined
   const switchedRun =
@@ -177,7 +177,7 @@ export async function settleRun(c: SettleCtx) {
     }
   }
   // 额度用完 / 被限流失败：按设置换备用模型或等到点继续（默认关；每一步都在对话里写一行）
-  if (!prewarm && entry.task.mode === 'chat' && entry.task.status === 'failed' && !sc.shuttingDown)
+  if (!prewarm && entry.task.mode !== 'workflow' && entry.task.status === 'failed' && !sc.shuttingDown)
     void sc.quotaAfterFail(task.id)
   // 没在等下一轮时按新的选择直接预热，下一条消息不会再交给旧 CLI；
   // PATCH 自己负责的重启不要在这里重复做

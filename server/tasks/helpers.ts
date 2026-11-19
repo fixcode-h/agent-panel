@@ -104,7 +104,7 @@ export async function wrapUpProbe(
   projectPath: string | undefined,
   policy: Project['gitPolicy'] | undefined,
 ): Promise<WrapProbe> {
-  if (tk.mode !== 'chat' || !projectPath || (!tk.parentTaskId && policy === 'deny')) return undefined
+  if (tk.mode === 'workflow' || !projectPath || (!tk.parentTaskId && policy === 'deny')) return undefined
   // 有没有远端、是不是 Git 都按真实工作区判断：SVN、没有远端的本地仓库加一步推送收尾，它永远做不了
   const [p4, git] = await Promise.all([isP4(projectPath), gitHasRemote(projectPath)])
   return { p4, git }
@@ -121,7 +121,7 @@ export function wrapUpFrom(
   probe: WrapProbe,
   policy: Project['gitPolicy'] | undefined,
 ): WrapUpAnswer | undefined {
-  if (tk.mode !== 'chat') return undefined
+  if (tk.mode === 'workflow') return undefined
   const child = !!tk.parentTaskId
   const isolatedChild = isolated(tk) || !!tk.wantsWorktree
   // 明确不推：项目设置不许推、或这个对话里用户拒绝过。这时才去掉计划里还挂着的推送收尾

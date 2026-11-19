@@ -22,7 +22,7 @@ async function idleTask(s: TasksScope, c: Context, chatOnly = true) {
   const task = await s.store.get(id)
   if (!task) return s.bad(c, t('任务不存在'), 404)
   if (task.imported) return s.bad(c, s.READONLY, 409)
-  if (chatOnly && task.mode !== 'chat') return s.bad(c, t('只有对话任务可以这样做'))
+  if (chatOnly && task.mode === 'workflow') return s.bad(c, t('只有对话任务可以这样做'))
   return task
 }
 

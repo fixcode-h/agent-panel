@@ -1,5 +1,6 @@
 import { setChild } from '@shared/children/task-child'
 import { migrateProjectShape, migrateTaskShape, migrateWorkflowShape } from '@shared/migrations/legacy-shapes'
+import { splitAgentMode } from '@shared/migrations/agent-mode'
 import { demoWebView } from './demo-web-view'
 import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
@@ -806,7 +807,11 @@ function load(): Db {
   // 先换成当前格式再按 schema 补齐默认值（schema 只认当前格式）
   for (const w of db.workflows) migrateWorkflowShape(w as unknown as Record<string, unknown>)
   for (const p of db.projects) migrateProjectShape(p as unknown as Record<string, unknown>)
-  for (const tk of db.tasks ?? []) migrateTaskShape(tk as unknown as Record<string, unknown>)
+  for (const tk of db.tasks ?? []) {
+    migrateTaskShape(tk as unknown as Record<string, unknown>)
+    // 迁移 0012：项目里的对话、子对话改存成 agent
+    splitAgentMode(tk as unknown as Record<string, unknown>)
+  }
   db.workflows = db.workflows.map((w) => Workflow.parse(w))
   db.categories = db.categories.map((c) => Category.parse(c))
   db.projects = db.projects.map((p) => Project.parse(p))
@@ -938,7 +943,7 @@ function demoDataMemory(d: Db, now = Date.now()): MemoryUsage {
     child: { processes: cliProcesses, bytes: memory.child },
     scale: {
       tasks: tasks.length,
-      chats: tasks.filter((x) => x.mode === 'chat').length,
+      chats: tasks.filter((x) => x.mode !== 'workflow').length,
       projects: d.projects.length,
       running,
     },
@@ -2427,7 +2432,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
 
 function createTask(d: Db, input: NewTaskInput, fast = false) {
   // 没有项目的是 Chat 模式的聊天，只能直接对话
-  if (!input.projectId && input.mode !== 'chat') fail('缺少项目')
+  if (!input.projectId && input.mode === 'workflow') fail('缺少项目')
   const project = input.projectId ? (d.projects.find((p) => p.id === input.projectId) ?? fail('项目不存在')) : undefined
   let workflow: Workflow | undefined
   if (input.mode === 'workflow' && project) {
@@ -2677,7 +2682,7 @@ function tasksRoute(
   }
   if (sub === 'rewind' || sub === 'fork') {
     if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
-    if (task.mode !== 'chat') fail('只有对话任务可以这样做')
+    if (task.mode === 'workflow') fail('只有对话任务可以这样做')
     const { messageId } = (body ?? {}) as { messageId?: string }
     const i = userMessageIndex(task, messageId)
     if (i < 0) fail('找不到这条消息')
@@ -2703,7 +2708,7 @@ function tasksRoute(
   if (sub === 'compact' || sub === 'review') {
     if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
     if (sub === 'compact') {
-      if (task.mode !== 'chat') fail('只有对话任务可以这样做')
+      if (task.mode === 'workflow') fail('只有对话任务可以这样做')
       const at = new Date().toISOString()
       // 和真实执行一样：压缩是回复里的一次工具调用，写明压缩了多少、现在占多少
       const last = [...task.messages].reverse().find((m) => m.role === 'agent')
@@ -3479,7 +3484,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       d,
       {
         projectId: parent.projectId,
-        mode: 'chat',
+        mode: 'agent',
         parentTaskId: parent.id,
         // 和真实后端一样：子对话记下整棵树的最上层，进程 pid 和关闭状态才和父对话共享
         rootTaskId: parent.rootTaskId || parent.id,
@@ -3806,7 +3811,7 @@ async function seedTasks(d: Db) {
       d,
       {
         projectId: shop.id,
-        mode: 'chat',
+        mode: 'agent',
         workflowId: '',
         agentId: fe.id,
         prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因',

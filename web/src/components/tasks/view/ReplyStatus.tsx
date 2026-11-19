@@ -42,7 +42,7 @@ export function ReplyStatus({
   return (
     <>
       {running &&
-        task.mode === 'chat' &&
+        task.mode !== 'workflow' &&
         working &&
         (lastIsTurn ? (
           <div className="flex items-center gap-2 text-body text-muted">
@@ -68,7 +68,7 @@ export function ReplyStatus({
       {/* 这一轮没在跑时先说清在等什么：等后台命令、等派出的子任务、等工作流，最后才是真的停在等下一句。
       以前只看 awaitingUser 就写「等待你的下一条消息」，子任务还在跑时也这么说
       （用户报的：子任务在跑、状态行却说在等你 + 空闲）。判定统一用 childWait，不另写一套 */}
-      {running && task.mode === 'chat' && !working && chatWait && (
+      {running && task.mode !== 'workflow' && !working && chatWait && (
         <ChatWaitLine wait={chatWait} awaiting={awaiting} task={task} onStatus={onStatus} />
       )}
       {working && task.mode === 'workflow' && noRunningSteps && (

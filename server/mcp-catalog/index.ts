@@ -51,8 +51,10 @@ export async function runCheck(input: McpCheckInput, deps: McpCatalogDeps): Prom
     ...(kind === 'child' && { parentTaskId: 'dry-run' }),
     projectId: input.projectId,
     cwd: project?.path ?? '',
-    // 和真跑时同一个口径（shared/conv-mode.ts 的 pluginRunMode）：项目里的父对话、子对话是 agent
+    // 和真跑时同一个口径（task.mode）：项目里的父对话、子对话是 agent
     mode: kind === 'chat' ? 'chat' : kind === 'parent' || kind === 'child' ? 'agent' : 'workflow',
+    // 自检按设置页选的对象给分类：派出的子任务跟着父对话，工作流节点是 workflow
+    kind: kind === 'node' ? 'workflow' : kind === 'helper' ? 'parent' : kind,
     conversation: kind === 'parent' || kind === 'child' || kind === 'chat',
     agentName: agent?.name ?? '',
     skills: agent

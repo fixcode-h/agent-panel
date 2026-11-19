@@ -68,7 +68,7 @@ export function RunChecklist({ task, run, onOpen }: { task: Task; run: number; o
     </div>
   )
   // 对话里 start_plan 跑的这一次还没结束：可以单独终止它，对话不停，收到结果后自己决定改动留不留
-  const canStop = task.mode === 'chat' && rec?.status === 'running' && task.status === 'running'
+  const canStop = task.mode !== 'workflow' && rec?.status === 'running' && task.status === 'running'
   const [stopping, setStopping] = useState(false)
   const stop = async () => {
     setStopping(true)

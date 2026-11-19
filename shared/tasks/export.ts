@@ -32,6 +32,7 @@ import {
   type ProbeFailures,
 } from '../tool-failures.ts'
 import { hhmm, pad2, ymd } from '../datetime.ts'
+import { convMode } from '../conv-mode.ts'
 
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 
@@ -850,6 +851,8 @@ function importedTask(
   return {
     ...body,
     id,
+    // 旧版导出的项目对话存的还是 chat：按导入到的项目重新定成哪一种对话（迁移 0012 同一个规则）
+    mode: body.mode === 'workflow' ? 'workflow' : convMode({ projectId, parentTaskId }),
     parentTaskId,
     rootTaskId,
     projectId,

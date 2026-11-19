@@ -410,7 +410,7 @@ test('只有 .messages.json、没有任务记录：从对话重建任务，列�
   assert.ok(task, '重建出任务，出现在列表里')
   assert.equal(task.projectId, project, '归回原来的项目')
   assert.equal(task.title, '帮我看一下这个问题', '标题取用户的第一句')
-  assert.equal(task.mode, 'chat')
+  assert.equal(task.mode, 'agent', '项目里的对话按 Agent 模式恢复')
   assert.equal(task.status, 'stopped')
   assert.equal(task.stopReason, 'restart', '当作被重启打断，用户可以继续')
   assert.equal(task.simulated, false, '真实数据不能标成演示')

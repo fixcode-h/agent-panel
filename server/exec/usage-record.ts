@@ -19,7 +19,7 @@ export function agentUsage(task: Task, agentId: string, model: string, window: n
 
 /** 对话里派出的子任务：上下文占用只记在节点自己身上（见 contextUsage） */
 export function ownContext(task: Task, owner: TaskStep | undefined): owner is TaskStep {
-  return !!owner && task.mode === 'chat'
+  return !!owner && task.mode !== 'workflow'
 }
 
 /**

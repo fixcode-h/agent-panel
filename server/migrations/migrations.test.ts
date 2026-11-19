@@ -470,3 +470,20 @@ test('0011：旧的阶段流程、单层工作流参数、runInParent、任务�
     '重跑不会再追加',
   )
 })
+
+test('0012：项目里的对话、子对话从 chat 改存成 agent；Chat 页的对话和工作流不碰', async () => {
+  const d = freshDir()
+  const proj = path.join(d, 'tasks', 'projects', 'p1')
+  const chats = path.join(d, 'tasks', 'chats')
+  write(path.join(proj, 'a.json'), task('a', { projectId: 'p1' }))
+  write(path.join(proj, 'k.json'), task('k', { projectId: 'p1', parentTaskId: 'a' }))
+  write(path.join(proj, 'w.json'), task('w', { projectId: 'p1', mode: 'workflow' }))
+  write(path.join(chats, 'c.json'), task('c'))
+  const keep = readFileSync(path.join(chats, 'c.json'), 'utf8')
+  write(path.join(d, 'data-version.json'), { version: 11 })
+  await runMigrations({ dataDir: d, log: quiet })
+  assert.equal(json(path.join(proj, 'a.json')).mode, 'agent', '项目里的父对话')
+  assert.equal(json(path.join(proj, 'k.json')).mode, 'agent', '子对话')
+  assert.equal(json(path.join(proj, 'w.json')).mode, 'workflow')
+  assert.equal(readFileSync(path.join(chats, 'c.json'), 'utf8'), keep, 'Chat 页的对话一个字节都没动')
+})

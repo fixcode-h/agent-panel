@@ -138,6 +138,12 @@ export interface PluginRun {
   /** 对话的模式（插件接口 2）：agent（项目里的对话和子对话）、chat（只有 Chat 页没有项目的对话）、workflow（工作流） */
   mode?: string
   /**
+   * 对话的统一分类（插件接口 14，见面板 shared/conv-mode.ts 的 convKind）：parent（项目里的顶层对话）、child（子对话）、
+   * bug（要交诊断报告的 Bug）、fix（直接修的 Bug）、analysis（AI 分析）、plugin（插件的设计模式对话）、chat（Chat 页）、
+   * workflow（工作流）、flow-run（父对话发起的工作流运行）。判断对话类型看它，不要拿 mode、parentTaskId 自己拼；旧面板没有这个字段
+   */
+  kind?: string
+  /**
    * 这一轮是不是用户直接在聊的对话（插件接口 6）：父对话、子对话、Chat 对话都是，派出的一次性子任务和工作流节点不是。
    * 和面板自己的「操控软件」工具同一个条件：只想给对话挂的工具（例如视频截帧）按它判断，不要按 mode 猜
    */

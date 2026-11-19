@@ -97,7 +97,7 @@ function renderBlock(ctx: TaskMessagesCtx, b: Block, i: number): React.ReactNode
         command={task.command}
         actions={
           // 最后一条回复下面：重新生成（撤回最后一条消息和这一轮改的文件，再原样发一次）
-          task.mode === 'chat' && !task.imported && !working && i + hidden === total - 1 ? (
+          task.mode !== 'workflow' && !task.imported && !working && i + hidden === total - 1 ? (
             <RegenerateButton
               task={task}
               onRewound={apply}
@@ -111,7 +111,7 @@ function renderBlock(ctx: TaskMessagesCtx, b: Block, i: number): React.ReactNode
       />
     )
   if (b.kind === 'run')
-    return task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
+    return task.mode !== 'workflow' && (task.runs?.length ?? 0) > 0 ? (
       // 和 AI 回复的正文对齐（缩进同 .reply-body）：对话里的工作流卡片、收发消息都在同一条竖线上
       <div key={b.key} className="reply-indent min-w-0">
         <RunChecklist task={task} run={b.run} onOpen={() => ctx.openRun(b.run)} />
@@ -168,7 +168,7 @@ function renderBlock(ctx: TaskMessagesCtx, b: Block, i: number): React.ReactNode
           }
           actions={
             <UserMessageMenu
-              chat={task.mode === 'chat' && !task.imported}
+              chat={task.mode !== 'workflow' && !task.imported}
               // 第一条也能撤：等于清空对话重新开始（服务端从头开会话）
               canRewind
               canLesson={ctx.hasProject && !task.imported}

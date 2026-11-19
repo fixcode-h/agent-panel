@@ -177,7 +177,7 @@ export async function runRealTurn(ctx: RealContext) {
     signal: ctx.signal,
     stopReason: ctx.stopReason,
     // 对话等子任务时用户发来的消息：马上开一轮回复
-    waitChat: ctx.task.mode === 'chat' ? (signal) => waitChat(ctx.task, signal, ctx.changed) : undefined,
+    waitChat: ctx.task.mode !== 'workflow' ? (signal) => waitChat(ctx.task, signal, ctx.changed) : undefined,
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {
       for (const s of steers.get(ctx.task.id) ?? [])

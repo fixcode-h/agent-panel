@@ -4,7 +4,7 @@
  * 总结下面留一根空横线，见模块文档）。
  *
  * 判定放在 lib 而不是组件里，是为了能单独测：工作流任务和「对话里 start_plan 起的计划」共用同一套，
- * 以前只认 `task.mode === 'chat'`，工作流任务自己跑的时候运行区什么也不列。
+ * 以前只认 `task.mode !== 'workflow'`，工作流任务自己跑的时候运行区什么也不列。
  */
 import type { Task, TaskMessage, TaskStep } from '@shared/schema'
 import { currentRun, topSteps } from '@shared/flow'

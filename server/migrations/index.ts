@@ -13,6 +13,7 @@ import { taskBudget } from './0008-task-budget.ts'
 import { taskAnalysis } from './0009-task-analysis.ts'
 import { taskChild } from './0010-task-child.ts'
 import { legacyShapes } from './0011-legacy-shapes.ts'
+import { agentMode } from './0012-agent-mode.ts'
 
 /**
  * 数据目录的一次性迁移（重构文档第 6 条，ADR 见 docs/adr）。
@@ -56,6 +57,7 @@ export const MIGRATIONS: Migration[] = [
   taskAnalysis,
   taskChild,
   legacyShapes,
+  agentMode,
 ]
 /** 当前代码认识的数据版本 */
 export const DATA_VERSION = MIGRATIONS.at(-1)!.version

@@ -55,13 +55,13 @@ export function useTaskComposer(c: TaskComposerCtx) {
   })
   const [dropOver, setDropOver] = useState(false)
   // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
-  const slashAgent = task?.mode === 'chat' ? c.agents.find((a) => a.id === task.agentId) : undefined
+  const slashAgent = !!task && task.mode !== 'workflow' ? c.agents.find((a) => a.id === task.agentId) : undefined
   const slashCli =
     task?.mode === 'workflow'
       ? defaultCli(settings ?? defaultSettings())
       : slashAgent && task
         ? agentRun(withTaskModel(slashAgent, task), settings ?? defaultSettings()).cli
-        : task?.mode === 'chat'
+        : task
           ? defaultCli(settings ?? defaultSettings())
           : ''
   const slash = useSlashMenu({

@@ -1008,10 +1008,13 @@ export interface DirListing {
 /**
  * 任务：在某个项目里执行的一次工作。
  * - workflow：按工作流的流程图执行，阶段依次推进，阶段内的节点并行
- * - chat：直接和一个 Agent 对话
+ * - agent：项目里的对话和它的子对话（Agent 模式，ADR 0037）
+ * - chat：Chat 页的对话，没有项目、不是子对话（Chat 模式，ADR 0038）
+ * 对话的两种存成不同的值，插件和各处判断不用再拿 projectId、parentTaskId 去猜（以前都存 chat，迁移 0012 分开）。
+ * 新建时传 chat 或 agent 都行，newTask 按有没有项目、父对话定成哪一种（shared/conv-mode.ts 的 convMode）。
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
-export const TaskMode = z.enum(['workflow', 'chat'])
+export const TaskMode = z.enum(['workflow', 'chat', 'agent'])
 export { AnalysisKind }
 
 /** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */

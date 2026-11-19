@@ -49,7 +49,7 @@ const CHAT_EARLIER_CHARS = 300
  */
 export function nodeRequests(task: Task): { original: string; extra: string[]; earlier: boolean } {
   const all = userRequests(task)
-  if (task.mode !== 'chat') return { ...all, earlier: false }
+  if (task.mode === 'workflow') return { ...all, earlier: false }
   const users = [all.original, ...all.extra].filter(Boolean)
   const latest = users.at(-1) ?? ''
   const first = users.length > 1 ? [clip(users[0].trim(), CHAT_FIRST_CHARS)] : []

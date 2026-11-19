@@ -113,7 +113,7 @@ export function createSpawnChild(sc: TasksScope) {
     if (relapse) message += relapse.note
     const input = NewTaskInput.parse({
       projectId: parent.projectId,
-      mode: 'chat',
+      mode: 'agent',
       parentTaskId: parent.id,
       rootTaskId: parent.rootTaskId || parent.id,
       agentId: agentId || worker?.id || project.defaultAgentId,

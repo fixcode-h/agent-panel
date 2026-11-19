@@ -123,13 +123,13 @@ export function lifeNext(f: LifeFacts, now = Date.now()): LifeNext | undefined {
           text: t('等额度恢复 · {time} 自动继续', { time: untilText(f.quotaUntil, now) }),
           tone: 'warning',
           action: { kind: 'resume', label: t('现在继续') },
-          retryModel: f.mode === 'chat',
+          retryModel: f.mode !== 'workflow',
         }
       return {
         text: join(t('这一轮失败了'), waited && t('{d}前', { d: waited })),
         tone: 'danger',
         action: { kind: 'resume', label: t('重试') },
-        retryModel: f.mode === 'chat',
+        retryModel: f.mode !== 'workflow',
       }
     case 'stopped':
       return {

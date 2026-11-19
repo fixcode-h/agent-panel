@@ -12,6 +12,7 @@ import { DATA_DIR, archiveBrokenFile, onReset, readJsonDetailed, writeJsonAtomic
 import { type MessagesFileState, stateFromRead, writeMessagesFile } from './messages-write.ts'
 import { MSG_JSONL, MSG_LEGACY, readMessagesFile, statMessagesFile } from './messages-file.ts'
 import { messageChars } from '../../shared/tasks/search.ts'
+import { convMode } from '../../shared/conv-mode.ts'
 
 /**
  * 任务按项目分目录存，每个任务两个文件：
@@ -442,8 +443,8 @@ export function createTaskStore() {
       projectId,
       // 标题用用户自己写的第一句，没有用户消息时给个能认出来的占位
       title: (users[0] && taskTitle(users[0].text)) || t('恢复的对话'),
-      // 工作流快照、节点、运行记录都在丢掉的记录里，只能按对话恢复
-      mode: 'chat',
+      // 工作流快照、节点、运行记录都在丢掉的记录里，只能按对话恢复；在项目里的是 Agent 模式的对话
+      mode: convMode({ projectId }),
       // 记录丢了就不知道它当时在干什么：启动后当作被重启打断的旧对话，让用户可以继续
       status: 'stopped',
       stopReason: 'restart',
