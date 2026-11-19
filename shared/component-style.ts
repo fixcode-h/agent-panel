@@ -289,11 +289,13 @@ export const COMP_SPEC = {
   },
   /**
    * 流程图画布（web/src/components/flow/GraphCanvas.tsx：工作流编辑器、插件的流程图共用）：
-   * minimap 是右下角小地图显不显示（落成 visibility，不和容器查询的 display 打架），minimapW 是小地图宽度
+   * minimap 是右下角小地图显不显示（落成 visibility，不和容器查询的 display 打架），minimapW 是小地图宽度，
+   * selectPad 是框选后虚线选框比节点外扩多少（要把两侧引脚也包进去）
    */
   canvas: {
     minimap: bool(true, 'visible', 'hidden'),
     minimapW: px(180, 120, 300),
+    selectPad: px(10, 0, 24),
   },
   /** 圆底数字角标（web/src/components/ui/count-badge.tsx）：size 是圆的直径，ring 是和底下卡片隔开的那圈颜色 */
   countBadge: {

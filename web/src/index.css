@@ -1179,6 +1179,7 @@ body,
   --c-toast-bar: 0px;
   --c-canvas-minimap: visible;
   --c-canvas-minimapW: 180px;
+  --c-canvas-selectPad: 10px;
   --c-sectionRail-width: 64px;
   --c-sectionRail-radius: 10px;
   --c-sectionRail-count: inline-flex;
@@ -3236,10 +3237,16 @@ html[data-modal-resizing] * {
       0 0 0 4px var(--run-soft);
   }
 }
-/* 选中多个节点后不画外框，只高亮节点本身；外框仍在（透明），按住拖动可以整体移动 */
-.react-flow__nodesselection-rect {
+/*
+ * 框选后的选框：比节点外扩一圈，把两侧引脚也包进去（用户 2026-11-19：选框贴着节点边，引脚露在外面）；
+ * 外扩量在设置 → 组件 →「流程图画布」调。前面加 .react-flow 压过 xyflow 自带样式（它的样式表后加载）
+ */
+.react-flow .react-flow__nodesselection-rect {
   background: transparent;
   border: none;
+  outline: 1px dashed color-mix(in oklab, var(--accent) 70%, transparent);
+  outline-offset: var(--c-canvas-selectPad);
+  border-radius: 8px;
   box-shadow: none;
 }
 /* 拖动框选时的选框：用主题色，不用 xyflow 默认的蓝色 */
