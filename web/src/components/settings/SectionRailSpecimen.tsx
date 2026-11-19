@@ -1,5 +1,6 @@
 import { useState, type ComponentType, type ReactNode } from 'react'
 import {
+  ArrowLeft,
   Blocks,
   Box,
   Braces,
@@ -10,7 +11,6 @@ import {
   Eye,
   FileCode2,
   FlaskConical,
-  Gamepad2,
   Gauge,
   LayoutGrid,
   List,
@@ -62,7 +62,6 @@ export function SectionRailSpecimens({
   Specimen: ComponentType<{ name: string; tune?: CompName[]; children: ReactNode }>
 }) {
   const [cur, setCur] = useState('logs')
-  const [open, setOpen] = useState(true)
   const [level, setLevel] = useState('Error')
   const label = ITEMS.find((x) => x.id === cur)?.label ?? ''
   return (
@@ -73,51 +72,41 @@ export function SectionRailSpecimens({
             items={ITEMS}
             current={cur}
             onPick={setCur}
-            top={
-              <RailAction
-                icon={Gamepad2}
-                label={t('展开二级面板')}
-                dot="ok"
-                on={open}
-                onClick={() => setOpen((o) => !o)}
-              />
-            }
-            bottom={<RailAction icon={Camera} label="截视口" onClick={() => {}} />}
+            top={<RailAction icon={ArrowLeft} short={t('返回')} label={t('返回')} onClick={() => {}} />}
+            bottom={<RailAction icon={Camera} short={t('截图')} label="截视口" onClick={() => {}} />}
           />
-          {open && (
-            <SidePanel title={label} onCollapse={() => setOpen(false)} className="w-56">
-              <div className="flex flex-col gap-1.5 rounded-xl bg-card p-2 shadow-card">
-                <div className="truncate text-body font-medium">{WORLD}</div>
-                <div className="flex flex-wrap gap-1">
-                  <StatusChip tone="ok">PIE 18616</StatusChip>
-                  <StatusChip tone="ok" icon={Bug}>
-                    VS 调试
-                  </StatusChip>
-                  <StatusChip onClick={() => {}} title="启动后台编辑器">
-                    后台
-                  </StatusChip>
-                </div>
+          <SidePanel title={label} className="w-56">
+            <div className="flex flex-col gap-1.5 rounded-xl bg-card p-2 shadow-card">
+              <div className="truncate text-body font-medium">{WORLD}</div>
+              <div className="flex flex-wrap gap-1">
+                <StatusChip tone="ok">PIE 18616</StatusChip>
+                <StatusChip tone="ok" icon={Bug}>
+                  VS 调试
+                </StatusChip>
+                <StatusChip onClick={() => {}} title="启动后台编辑器">
+                  后台
+                </StatusChip>
               </div>
-              <SidePanelLabel>{t('级别')}</SidePanelLabel>
-              <SidePanelRow icon={List} label="全部" meta="1,284" on={level === ''} onClick={() => setLevel('')} />
-              <SidePanelRow
-                icon={CircleAlert}
-                label="错误"
-                meta="22"
-                tone="danger"
-                on={level === 'Error'}
-                onClick={() => setLevel('Error')}
-              />
-              <SidePanelRow
-                icon={CircleAlert}
-                label="警告"
-                meta="140"
-                tone="warn"
-                on={level === 'Warning'}
-                onClick={() => setLevel('Warning')}
-              />
-            </SidePanel>
-          )}
+            </div>
+            <SidePanelLabel>{t('级别')}</SidePanelLabel>
+            <SidePanelRow icon={List} label="全部" meta="1,284" on={level === ''} onClick={() => setLevel('')} />
+            <SidePanelRow
+              icon={CircleAlert}
+              label="错误"
+              meta="22"
+              tone="danger"
+              on={level === 'Error'}
+              onClick={() => setLevel('Error')}
+            />
+            <SidePanelRow
+              icon={CircleAlert}
+              label="警告"
+              meta="140"
+              tone="warn"
+              on={level === 'Warning'}
+              onClick={() => setLevel('Warning')}
+            />
+          </SidePanel>
           <div className="flex-1" />
         </div>
       </Specimen>
