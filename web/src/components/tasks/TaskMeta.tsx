@@ -490,7 +490,7 @@ export function EnvChip({
   const s = settings ?? defaultSettings()
   const found = agents.find((a) => a.id === task.agentId)
   // 不用角色的对话按 CLI 显示：名字和模型跟着对话现在用的 CLI
-  const byCli = task.mode === 'chat' && !task.agentId
+  const byCli = task.mode !== 'workflow' && !task.agentId
   const chatAgent = found && withTaskModel(found, task)
   const name =
     task.mode === 'workflow'

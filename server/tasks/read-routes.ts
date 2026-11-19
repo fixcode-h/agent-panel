@@ -193,7 +193,7 @@ export function registerReadRoutes(s: TasksScope) {
       `# 参考会话：${task.title}`,
       [
         project ? `项目：${project.name}（${project.path}）` : '',
-        task.mode === 'chat' ? '方式：对话' : '方式：工作流',
+        task.mode !== 'workflow' ? '方式：对话' : '方式：工作流',
         `时间：${task.createdAt.slice(0, 16).replace('T', ' ')}`,
       ]
         .filter(Boolean)

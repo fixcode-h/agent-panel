@@ -90,7 +90,7 @@ export async function conversationCaps(c: TurnCapsCtx) {
           // 面板接着推它做（nudgePlan / nudgeWrapUp）会在几秒内让它跑起来，learn 到点见它没完成就不学，等下一轮结束再排
           if (entry.task.projectId) void sc.learnExperience(task.id)
           void sc.checkBudget(entry.task).then((over) => {
-            if (over || task.mode !== 'chat') return
+            if (over || task.mode === 'workflow') return
             // Chat 页只回答了一句、没动手的那一轮不推；项目里的对话按计划推（计划没做完、或动了手却没列计划，见 nudgePlan）
             if (turn.tools <= 0 && isChatMode(entry.task)) return
             // 有子对话在等它收尾时先推收尾：这时计划那一步写着「等子对话」，nudgePlan 会当成在等别人而不推

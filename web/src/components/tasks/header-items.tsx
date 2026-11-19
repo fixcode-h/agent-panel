@@ -96,7 +96,7 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
   const { task, pane, on } = c
   const items: HeaderItem[] = []
   // 项目里的父对话有自己的设置：目标、全局规则、子对话
-  if (task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported)
+  if (task.projectId && !task.parentTaskId && task.mode !== 'workflow' && !task.imported)
     items.push({ key: 'settings', icon: Settings2, label: t('对话设置'), onSelect: on.settings })
   items.push(
     { key: 'rename', icon: Pencil, label: t('重命名'), onSelect: on.rename },

@@ -8,6 +8,7 @@ import { makeAlert } from '../../shared/alerts.ts'
 import { t } from '../../shared/i18n.ts'
 import { includedAgents } from '../../shared/agents/role.ts'
 import { taskPlugin } from '../../shared/task.ts'
+import { convKind } from '../../shared/conv-mode.ts'
 import { pluginToolsForRun } from '../plugins/index.ts'
 import type { PluginConfirm } from '../plugins/sdk.ts'
 import type { PluginRunHooks } from '../plugins/mcp.ts'
@@ -49,7 +50,9 @@ export async function pluginRunTools(
       parentTaskId: task.parentTaskId,
       pluginTask: taskPlugin(task),
       projectId: task.projectId,
+      // agent（项目里的对话、子对话）、chat（Chat 页）、workflow，存的就是插件接口说的这三种
       mode: task.mode,
+      kind: convKind(task),
       conversation: run.conversation,
       cwd: run.cwd,
       agentName: run.agent.name,

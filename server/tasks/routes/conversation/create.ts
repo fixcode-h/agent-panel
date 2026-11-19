@@ -29,7 +29,7 @@ export async function createTask(
   raw: unknown,
 ): Promise<{ task: Task } | { error: string; status: 400 | 404 | 409 }> {
   // 没有项目的是 Chat 模式的聊天，只能直接对话
-  if (!input.projectId && input.mode !== 'chat') return { error: t('缺少项目'), status: 400 }
+  if (!input.projectId && input.mode === 'workflow') return { error: t('缺少项目'), status: 400 }
   const project = input.projectId ? await s.deps.projects.get(input.projectId) : s.chatProject('')
   if (!project) return { error: t('项目不存在'), status: 404 }
   const agents = await s.deps.agents.list()

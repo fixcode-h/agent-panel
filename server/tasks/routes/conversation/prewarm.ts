@@ -39,7 +39,7 @@ export async function prewarmChat(s: TasksScope, task: Task, force = false): Pro
   // 执行位收尾中（已经 done）时等它释放，别把没启动的 done 原样交回去
   const reused = await reusedPrewarmEntry(s, task.id)
   if (reused) return reused
-  if (task.imported || task.mode !== 'chat') return task
+  if (task.imported || task.mode === 'workflow') return task
   // 独立分支的工作区已经被回收（合并完、标记完成）：预热不了，也不自动去建分支，
   // 等用户真发消息时再重建（后台打开对话页面不应该多出一个分支）
   const wt = task.worktree

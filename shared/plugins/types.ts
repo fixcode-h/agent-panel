@@ -145,8 +145,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    风格选择和参考图组件、风格约束拼说明（shared/style/rules-text）。设计稿：Blender建模风格 第 8 节
  * 13：插件测试步骤的命令里能用 {dir}（插件包目录）、{data}（插件数据目录），插件可以带自己的脚本当测试步骤
  *    （UE 插件的「蓝图编译」按项目找引擎）；旧面板不换这两个占位符，命令跑不起来，所以加一
+ * 14：对话分开存成 chat（Chat 页）和 agent（项目里的对话、子对话），PluginRun.mode 照存的值给；
+ *    PluginRun.kind 给对话的统一分类（父对话、子对话、Bug、AI 分析……，shared/conv-mode.ts 的 convKind）
  */
-export const PLUGIN_API = 13
+export const PLUGIN_API = 14
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

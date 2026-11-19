@@ -45,7 +45,7 @@ export function reportMessage(
   task: Pick<Task, 'mode' | 'status' | 'working' | 'messages'>,
   test: (text: string) => boolean,
 ): TaskMessage | undefined {
-  if (task.mode !== 'chat') return undefined
+  if (task.mode === 'workflow') return undefined
   const msgs = task.messages
   let end = msgs.length
   if (task.status === 'running' && task.working) while (end > 0 && msgs[end - 1].role !== 'user') end--

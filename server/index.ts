@@ -981,7 +981,7 @@ const memory = memorySampler({
     const all = await tasks.list()
     return {
       tasks: all.length,
-      chats: all.filter((x) => x.mode === 'chat').length,
+      chats: all.filter((x) => x.mode !== 'workflow').length,
       projects: (await projects.list()).length,
     }
   },

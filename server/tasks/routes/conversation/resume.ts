@@ -58,7 +58,7 @@ export function resumeRoutes(s: TasksScope): Hono {
       }
       // 诊断报告还在等用户确认（ADR 0045）：继续就是回到等确认这一步，不拉起 CLI 让它自己往下跑；
       // 用户确认或提意见后，审阅弹窗发的消息才拉起它（用户 2026-11-04 要求）
-      if (task.mode === 'chat' && diagnosisPending(task)) {
+      if (task.mode !== 'workflow' && diagnosisPending(task)) {
         const saved = await s.store.update(id, rewaitDiagnosis(entry.task))
         s.release(entry)
         if (task.parentTaskId) await rearmInParent(s, task.parentTaskId, id)
@@ -75,7 +75,7 @@ export function resumeRoutes(s: TasksScope): Hono {
       // 再走下面同一条继续的路，失败的那一轮原样重发。放在这里而不是先 PATCH 再继续：PATCH 换模型会顺手预热一个进程，
       // 紧跟着的「继续」会撞上它被当成「任务正在执行」
       if (typeof model === 'string' && model.trim()) {
-        if (task.mode !== 'chat') {
+        if (task.mode === 'workflow') {
           s.release(entry)
           return s.bad(c, t('只有对话可以换模型重试'))
         }
@@ -121,12 +121,12 @@ export function resumeRoutes(s: TasksScope): Hono {
       }
       // 对话：一起被中断的子对话由面板连带拉起来（先拉，父对话的续接提示里才写得清哪些已经在接着做）。
       // 子对话被用户直接继续时也一样：它名下连带停下的孙对话一起拉起，它在父计划里的等待恢复成等待中（ADR 0042）
-      const kids = task.mode === 'chat' ? await resumeKids(s, entry.task) : undefined
-      if (task.mode === 'chat' && task.parentTaskId) await rearmInParent(s, task.parentTaskId, id)
+      const kids = task.mode !== 'workflow' ? await resumeKids(s, entry.task) : undefined
+      if (task.mode !== 'workflow' && task.parentTaskId) await rearmInParent(s, task.parentTaskId, id)
       // 名下随它停的工作流运行接着跑（design.md D4）；运行不是子对话，不在 resumeKids 里
-      if (task.mode === 'chat' && !task.parentTaskId) await s.flowRuns.resumeRunsOf(id)
+      if (task.mode !== 'workflow' && !task.parentTaskId) await s.flowRuns.resumeRunsOf(id)
       // 这次继续拉起了谁、没拉起谁、哪些子任务由面板接着跑：写进对话日志，「状态」诊断里看得到（ADR 0042）
-      if (task.mode === 'chat')
+      if (task.mode !== 'workflow')
         taskLog(id, '继续计划', {
           kids: kids?.resumed.join('、') || undefined,
           failed: kids?.failed.map((k) => k.title).join('、') || undefined,
@@ -173,7 +173,7 @@ function resumePrompt(
 ) {
   const last = users.at(-1)
   const text = withAttachments(last?.prompt || last?.text || '', last?.attachments)
-  if (task.mode !== 'chat') return text
+  if (task.mode === 'workflow') return text
   const note = [resumeNote(task, resumed, failed), ...notes].join('\n')
   // 会话接得上：原来的要求已经在会话里，不再原样发一遍，免得模型当成新要求从头重做（ADR 0042）。
   // 接不上（会话找不到、换了 CLI / 目录）时 runner 会把之前的对话整段带过去，原来的要求也在里面；

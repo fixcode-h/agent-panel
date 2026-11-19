@@ -159,6 +159,8 @@ export type LogFetch = {
   /** 新增内容太大，related 只数了前 MAX_NEW_BYTES */
   truncated: boolean
   rotated: boolean
+  /** 没点「开始复现」就取：交的是整个文件，不分哪些是新增的 */
+  whole?: boolean
 }
 
 /** 拒绝：error 是给用户看的说明；needConfirm 表示文件在项目目录外面，用户点了确认再发一次就读 */

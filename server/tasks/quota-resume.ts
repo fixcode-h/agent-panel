@@ -110,7 +110,7 @@ export function createQuotaResume(s: TasksScope) {
   async function afterFail(id: string) {
     if (s.shuttingDown || s.live.has(id)) return
     const task = await s.store.get(id)
-    if (!task || taskDeleted(task) || task.mode !== 'chat' || task.status !== 'failed' || task.imported) return
+    if (!task || taskDeleted(task) || task.mode === 'workflow' || task.status !== 'failed' || task.imported) return
     const fail = quotaFailure(task.messages)
     if (!fail) return
     const all = await getSettings()

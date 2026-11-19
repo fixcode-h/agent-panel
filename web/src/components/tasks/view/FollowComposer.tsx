@@ -157,7 +157,7 @@ export function FollowComposer(p: FollowComposerProps) {
             </Button>
           )}
           {/* 失败后换个模型重发这一轮（用户自己点的）；只给对话，工作流节点的模型跟着节点走 */}
-          {p.showResume && p.failed && task.mode === 'chat' && (
+          {p.showResume && p.failed && task.mode !== 'workflow' && (
             <RetryModelMenu task={task} agent={p.chatAgent} disabled={p.resuming} onDone={apply} />
           )}
         </>

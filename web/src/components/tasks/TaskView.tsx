@@ -259,12 +259,12 @@ export function TaskView({
   const noFiles = !task.projectId && !pluginHome && !webTabCount
   // Chat 页的聊天换成自己的标题栏和右栏（Chat.dc.html）；项目里的对话照旧用页签条。
   // 聊天派出了子对话或开着运行页签时也退回页签条，那些页签要有地方放
-  const chatPage = noFiles && !pane && !embed && task.mode === 'chat' && !children.length && !openRun
+  const chatPage = noFiles && !pane && !embed && task.mode !== 'workflow' && !children.length && !openRun
   // 这一轮没在跑时到底在等什么：等后台命令、等子任务、等工作流，还是真停在等下一句。
   // 统一用 shared/task 的 childWait（子对话栏、交给父对话的上报用的是同一个），不在这里另写一套
   // 「有没有东西在跑」——以前只看 awaitingUser，子任务还在跑也写「等待你的下一条消息」
   const chatWait =
-    task.mode === 'chat' && live
+    task.mode !== 'workflow' && live
       ? childWait(task, { background: live.jobs.length, cliAlive: live.cliAlive })
       : undefined
   // 子对话在右栏开一个页签（和项目文件、本对话改动并排），开着时右栏一定显示
@@ -312,14 +312,14 @@ export function TaskView({
   // 对话实际用的 CLI；Codex、Claude Code 能在执行中插话，Command Code 这类靠面板的工具取
   const chatCli = chatAgent
     ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli
-    : task.mode === 'chat'
+    : task.mode !== 'workflow'
       ? // 不用角色的对话：服务端按对话自己选的 CLI 跑，没选按会话所在的 CLI，都没有才用默认 CLI（见 withTaskModel）
         task.cli || task.sessionCli || defaultCli(settings ?? defaultSettings())
       : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
   const canSteer = working && (task.mode === 'workflow' || steerable(chatCli))
   // 不用角色的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
-  const byCli = task.mode === 'chat' && !task.agentId
+  const byCli = task.mode !== 'workflow' && !task.agentId
   const chatRun = { cli: task.cli || task.sessionCli || '', model: task.model, effort: task.effort }
   const chatLabel = (byCli ? getCli(chatCli)?.name : chatAgent?.name) || t('无角色')
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
@@ -738,7 +738,7 @@ export function TaskView({
                           />
                         }
                         onSettings={
-                          task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported
+                          task.projectId && !task.parentTaskId && task.mode !== 'workflow' && !task.imported
                             ? () => setDialog('convSettings', true)
                             : undefined
                         }
