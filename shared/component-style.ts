@@ -308,6 +308,24 @@ export const COMP_SPEC = {
     ring: color('card', BG),
   },
   /**
+   * 流程图节点卡片（插件的蓝图式画布，例如 UE 插件 GameTest 的节点）：bar 是左边按种类上色的竖条宽度（0 不画），
+   * tile 是图标外的小方块，divider 是标题和内容之间的分隔线，detail 是标题下面的内容区（细节、条件），rowH 是「是 / 否 / 每轮」出口行高
+   */
+  flowNode: {
+    radius: px(10, 4, 18),
+    bar: px(3, 0, 6),
+    tile: bool(true, 'inline-flex', 'none'),
+    divider: bool(true, '1px', '0px'),
+    detail: bool(true, 'flex', 'none'),
+    rowH: px(26, 20, 34),
+  },
+  /** 流程图引脚（骑在节点边框上的圆点）：ring 是和卡片隔开的那圈宽度，tone 开着时出口的圆点按出口上色（是 绿、否 红） */
+  flowPin: {
+    size: px(11, 7, 16),
+    ring: px(4, 0, 6),
+    tone: bool(true, 'currentColor', 'var(--subtle)'),
+  },
+  /**
    * 分区导航（web/src/components/ui/section-rail.tsx，UE 页这类插件页的图标轨 + 二级面板）：
    * count 关掉后角标只画圆点、不写数字（数字盖在圆点上，display:none 就露出圆点）；labels 是图标下面的小字
    */
