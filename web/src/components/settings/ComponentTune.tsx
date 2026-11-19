@@ -52,6 +52,7 @@ export const compLabel = (c: CompName) =>
     capRow: t('能力行'),
     htmlCard: t('HTML 卡片'),
     changesCard: t('改动卡片'),
+    versionDiff: t('版本差异'),
     foldBar: t('折叠条'),
     liveText: t('实时输出'),
     styleRef: t('风格参考图'),
@@ -86,6 +87,8 @@ const propLabel = (c: CompName, prop: string) => {
     )[prop]
   if (c === 'changesCard' && prop !== 'radius')
     return ({ scope: t('默认显示'), first: t('先列几个文件'), fold: t('一开始') } as Record<string, string>)[prop]
+  if (c === 'versionDiff')
+    return ({ navW: t('版本列表默认宽度'), msgLines: t('提交说明显示几行') } as Record<string, string>)[prop]
   if (c === 'foldBar' && prop === 'hint') return t('右边写「展开 / 收起」')
   if (c === 'liveText')
     return (

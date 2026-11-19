@@ -61,14 +61,13 @@ import { SourceLink } from '@/components/ui/source-link'
 import { NavRow, SidebarModeTabs } from '@/components/ui/sidebar'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
-import { SheetSpecimen } from '@/components/settings/SheetSpecimen'
+import { SheetGroupSpecimens } from '@/components/settings/VersionDiffSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
 import { TurnCardSpecimens } from '@/components/settings/ChangesCardSpecimen'
 import { ReferenceSpecimens } from './StyleRefSpecimen'
 import { GraphCanvasSpecimens } from '@/components/settings/GraphCanvasSpecimen'
 import { SectionRailSpecimens } from '@/components/settings/SectionRailSpecimen'
-import { DirListSpecimen } from '@/components/settings/DirListSpecimen'
 import { ProjectSidebarSpecimen } from '@/components/settings/ProjectSidebarSpecimen'
 import { ScanBadge, ScanFindings } from '@/components/ui/scan-findings'
 import { scanText } from '@shared/config-scan'
@@ -613,14 +612,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
           <ProjectSidebarSpecimen />
         </Specimen>
       </Group>
-      <Group title={t('表格')}>
-        <Specimen name="SheetTable · SheetHeaderBar" tune={['grid']}>
-          <SheetSpecimen />
-        </Specimen>
-        <Specimen name="DirList" tune={['input', 'button']}>
-          <DirListSpecimen />
-        </Specimen>
-      </Group>
+      <SheetGroupSpecimens Specimen={Specimen} />
       <ReferenceSpecimens Specimen={Specimen} />
       <TurnCardSpecimens Specimen={Specimen} />
       <Group title={t('MCP 能力')}>
