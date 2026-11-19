@@ -27,6 +27,7 @@ import { netFetch } from '../net.ts'
 import { downloadFile } from '../download.ts'
 import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './local.ts'
 import { log } from '../log.ts'
+import { moveDir, retryBusy as retry } from '../disk/busy-retry.ts'
 import { t } from '../../shared/i18n.ts'
 
 // 出包时由 esbuild 写入版本号；从源码运行时没有
@@ -220,32 +221,6 @@ async function backup(dir: string, to: string) {
   if (existsSync(path.join(dir, 'dist'))) await cp(path.join(dir, 'dist'), path.join(to, 'dist'), { recursive: true })
   for (const f of [...FILES, TRAY_EXE]) if (existsSync(path.join(dir, f))) await cp(path.join(dir, f), path.join(to, f))
   await writeFile(path.join(to, VERSION_FILE), currentVersion())
-}
-
-/**
- * Windows 上刚解压、刚复制的文件常被杀毒软件或索引服务短暂打开，这时改名、覆盖会报 EPERM / EBUSY；
- * 等一会儿再试通常就好了（和 npm 的 graceful-fs 一样的做法）
- */
-async function retry<T>(fn: () => Promise<T>, tries = 12): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await fn()
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code ?? ''
-      if (i >= tries || !['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY'].includes(code)) throw e
-      await new Promise((r) => setTimeout(r, Math.min(200 * i, 1500)))
-    }
-  }
-}
-
-/** 目录改名；一直改不了时（目录里有文件被占用）改成复制过去再删掉原来的 */
-async function moveDir(from: string, to: string) {
-  try {
-    await retry(() => rename(from, to), 8)
-  } catch {
-    await retry(() => cp(from, to, { recursive: true }))
-    await rm(from, { recursive: true, force: true, maxRetries: 5 }).catch(() => {})
-  }
 }
 
 /** 两个文件内容一样（托盘程序大多数版本没有变化，不用换） */

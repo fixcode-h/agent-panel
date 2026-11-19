@@ -17,6 +17,7 @@ import type { CliDefinition } from '../../shared/clis.ts'
 import { frontField } from '../../shared/library.ts'
 import { pluginSkillsNote, roleSkillDirNote, runSkillNames, runSkillsNote } from '../../shared/skills/activation.ts'
 import { entries, sharedRoot, writeSkill } from '../bundled-skills.ts'
+import { moveDir, retryBusy } from '../disk/busy-retry.ts'
 import { log } from '../log.ts'
 import { isProjectSkill, projectSkills, projectSkillStore, runSkillsRoot } from './config.ts'
 import type { PluginSkill } from './plugin-skills.ts'
@@ -66,6 +67,31 @@ async function sharedSkills(skip: string[]) {
     .sort()
 }
 
+/**
+ * 把写好的 staging 换成 root：先挪开旧的再改名，旧的删掉。同时开跑的另一个对话这时读到的是旧的或新的完整一份。
+ * Windows 上刚写好的文件常被杀毒软件、索引服务短暂占着，改名会报 EPERM（2026-11-19 用户看到「技能这一轮没能带上」）：
+ * 等一会儿重试，一直改不了就复制过去；实在换不上时把旧的挪回来，不留下一个没有技能目录、只剩 .old 的项目
+ */
+async function swapIn(staging: string, root: string) {
+  const old = `${root}.old-${process.pid}-${Date.now()}`
+  let moved = false
+  try {
+    if (existsSync(root)) {
+      await retryBusy(() => rename(root, old), 8)
+      moved = true
+    }
+    await moveDir(staging, root)
+  } catch (e) {
+    // 同一个项目的另一个对话恰好同时换上了它的那份：用它的（要带的技能一样），自己这份丢掉
+    if (!existsSync(root)) {
+      if (moved) await rename(old, root).catch(() => {})
+      throw e
+    }
+    await rm(staging, { recursive: true, force: true })
+  }
+  await rm(old, { recursive: true, force: true, maxRetries: 5 }).catch(() => {})
+}
+
 export async function prepareRunSkills(a: {
   def: Pick<CliDefinition, 'id' | 'runSkills'>
   projectId: string
@@ -109,17 +135,7 @@ export async function prepareRunSkills(a: {
       await cp(from, path.join(stagingDir, name), { recursive: true, verbatimSymlinks: true })
       placed.push({ name, description: frontField(await readFile(path.join(from, 'SKILL.md'), 'utf8'), 'description') })
     }
-    // 换上：先挪开旧的再改名，旧的删掉。同时开跑的另一个对话这时读到的是旧的或新的完整一份
-    const old = `${root}.old-${process.pid}-${Date.now()}`
-    try {
-      if (existsSync(root)) await rename(root, old)
-      await rename(staging, root)
-    } catch (e) {
-      // 同一个项目的另一个对话恰好同时换上了它的那份：用它的（要带的技能一样），自己这份丢掉
-      if (!existsSync(root)) throw e
-      await rm(staging, { recursive: true, force: true })
-    }
-    await rm(old, { recursive: true, force: true })
+    await swapIn(staging, root)
     const names = [...placed.map((x) => x.name), ...pluginPut.map((p) => p.entry.name)]
     if (!names.length) return EMPTY
     const roleNames = placed.map((x) => x.name).filter((n) => want.includes(n) && a.roleSkills.includes(n))
