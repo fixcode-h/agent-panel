@@ -802,6 +802,9 @@ const envMs = (name, def) => {
 const TURN_MS = envMs('FAKE_TURN_MS', 150)
 const SLOW_ROUND_MS = envMs('FAKE_SLOW_ROUND_MS', 250)
 const SLOW_ROUNDS = envMs('FAKE_SLOW_ROUNDS', 40)
+// SLOW_LONG 跑三倍久：要在多个对话「同时在跑」的窗口里断言时，CI 上逐个拉起会花掉好几秒，
+// 10 秒的 SLOW 可能第一个跑完了最后一个还没起来，窗口就没了
+const slowRounds = (text) => (text.includes('SLOW_LONG') ? SLOW_ROUNDS * 3 : SLOW_ROUNDS)
 // 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
 // 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
 /** 调用面板自己的工具（panel MCP）：地址从 CLI 参数里的 MCP 配置取，参数里没有时读这一轮写的配置文件 */
@@ -1077,10 +1080,10 @@ if (
     if (r?.isError) await panelCall('finish_workflow', { id: done, action: 'discard' })
   }
 }
-// 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
+// 父对话一次派 6 个子对话：每个都带 SLOW_LONG（约 30 秒），测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
   for (let i = 1; i <= 6; i++)
-    await panelCall('create_conversation', { title: `子对话 ${i}`, message: `SLOW 子对话 ${i} 的任务` })
+    await panelCall('create_conversation', { title: `子对话 ${i}`, message: `SLOW_LONG 子对话 ${i} 的任务` })
 }
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样先派「评审」（完整测试之前），
 // 最新一次评审通过之后才请父对话收尾；REVIEW_BLOCK 时第一次评审给 🛑，要先被面板拦下、改完复看才合回去
@@ -1425,7 +1428,7 @@ if (input.includes('HOLD_STEER')) {
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
-for (let i = 0; i < (slow ? SLOW_ROUNDS : 1) && !interrupted; i++) await sleep(slow ? SLOW_ROUND_MS : TURN_MS)
+for (let i = 0; i < (slow ? slowRounds(input) : 1) && !interrupted; i++) await sleep(slow ? SLOW_ROUND_MS : TURN_MS)
 // 被中断：像真的 CLI 一样结束这一轮，进程自己退出
 if (interrupted) {
   if (kind === 'codex') {
