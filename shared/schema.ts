@@ -921,6 +921,11 @@ const ProjectFields = z.object({
    */
   cherryPick: z.string().trim().max(500).optional(),
   /**
+   * cherry-pick 时按资源文件处理的扩展名（「.uasset」这样）：冲突时直接用搬过去的那一版覆盖目标，不解冲突。
+   * 没设时用默认清单（shared/projects/cherry-pick-assets.ts），设成空数组表示只按内容是不是二进制判断
+   */
+  cherryPickAssets: z.array(z.string().trim().max(40)).max(300).optional(),
+  /**
    * 插件按项目存的设置（插件接口 6，WebPlugin.projectSections）：键是插件 id，内容由插件自己定、自己校验，
    * 跟项目设置一起保存；面板不认识里面的东西，插件删了也原样留着，重装后接着用
    */
