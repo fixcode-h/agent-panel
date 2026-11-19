@@ -143,8 +143,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    设计稿：GitHub项目一键变插件与网页页签 第 5 节，ADR 0068
  * 12：一轮对话的角色参数（PluginRun.params）和续接的会话也带的说明（PluginRunTools.turnNote）；开放模块加了
  *    风格选择和参考图组件、风格约束拼说明（shared/style/rules-text）。设计稿：Blender建模风格 第 8 节
+ * 13：插件测试步骤的命令里能用 {dir}（插件包目录）、{data}（插件数据目录），插件可以带自己的脚本当测试步骤
+ *    （UE 插件的「蓝图编译」按项目找引擎）；旧面板不换这两个占位符，命令跑不起来，所以加一
  */
-export const PLUGIN_API = 12
+export const PLUGIN_API = 13
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

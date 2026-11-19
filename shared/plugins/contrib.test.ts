@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PluginManifest, type PluginManifest as Manifest } from './types.ts'
 import { setEnabledPlugins, setInstalledPlugins } from './index.ts'
-import { fillConfig, pluginTestSteps, setProjectProbe, stepPluginId } from './contrib.ts'
+import { fillConfig, pluginTestSteps, setPluginPaths, setProjectProbe, stepPluginId } from './contrib.ts'
 import { currentTestSteps, pickSteps } from '../test-steps.ts'
 import type { TestStep } from '../schema.ts'
 
@@ -91,6 +91,26 @@ test('currentTestSteps 把插件步骤接在项目步骤后面，按改动一样
     ['tc', 'plugin:ue:compile-bp'],
   )
   assert.deepEqual(currentTestSteps([own], null), [own])
+  setup(false)
+})
+
+test('插件测试步骤：{dir}、{data} 换成服务端注入的插件目录，没注入时原样留着', () => {
+  const withScript = PluginManifest.parse({
+    id: 'ue',
+    name: 'UE',
+    version: '1.0.0',
+    testSteps: [{ id: 'bp', name: '蓝图编译', command: 'node "{dir}/bin/x.mjs" --data "{data}" {config.nope}' }],
+  }) as unknown as Manifest
+  setProjectProbe(() => true)
+  setInstalledPlugins([withScript])
+  setEnabledPlugins({ ue: { enabled: true, config: {} } })
+  assert.equal(pluginTestSteps({ path: '/p' })[0].command, 'node "{dir}/bin/x.mjs" --data "{data}" {config.nope}')
+  setPluginPaths((id) => (id === 'ue' ? { dir: 'C:/ap/plugins/ue', data: 'C:/ap/plugin-data/ue' } : undefined))
+  assert.equal(
+    pluginTestSteps({ path: '/p' })[0].command,
+    'node "C:/ap/plugins/ue/bin/x.mjs" --data "C:/ap/plugin-data/ue" {config.nope}',
+  )
+  setPluginPaths(() => undefined)
   setup(false)
 })
 
