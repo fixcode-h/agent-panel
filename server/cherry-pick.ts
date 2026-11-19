@@ -1,15 +1,25 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import type { Task } from '../shared/schema.ts'
 import { gitRun } from './exec/git.ts'
-import { merge3 } from './exec/merge3.ts'
+import { isBinary, merge3 } from './exec/merge3.ts'
 import { DATA_DIR } from './store.ts'
 import { p4Runner, parseZtag, type P4Run } from './p4-split.ts'
 import { detectVcs } from './projects-analyze.ts'
 import { ownFiles, rel } from './own-changes.ts'
+import { DEFAULT_ASSET_EXTS, isAssetPath } from '../shared/projects/cherry-pick-assets.ts'
+import {
+  filesWithMarkers,
+  pickThrough,
+  picking,
+  resumePick,
+  unmergedFiles,
+  type PickLog,
+  type PickStop,
+} from './exec/cherry-pick-conflicts.ts'
 
 /**
  * cherry-pick 到项目设置的目标（Git 分支 / P4 目标项目路径），由面板执行（用户 2026-10-31 定的强制要求）：
@@ -19,13 +29,17 @@ import { ownFiles, rel } from './own-changes.ts'
  * - P4：搬指定 changelist 自己的改动（不要求是这个对话改的，用户 2026-11-02 定的），pending 以打开前的 have 版本、
  *   已提交的以提交前一版为基准，三方合并进目标（只带这次改的那几处）；只在目标建 pending，永远不 submit
  * 有一项不合格整次都不做，写清是哪个提交 / 文件、为什么。
- * 搬的过程中有冲突不撤回（用户 2026-11-03 定的）：Git 停在冲突那个提交上、P4 把冲突标记写进目标文件，
- * 写清冲突在哪、怎么接着做，由用户自己解决
+ * 有冲突的提交也要搬过去、不跳过（用户 2026-11-19 定的，取代 2026-11-03 的「冲突留给用户」）：
+ * - 资源文件（按项目设置的扩展名清单，或内容是二进制）冲突时不解冲突，直接用搬过去的版本覆盖目标
+ * - 代码这类文本文件冲突时交给 Agent 解：Git 停在那个提交上，Agent 解完用 resume 接着搬（exec/cherry-pick-conflicts.ts）；
+ *   P4 把冲突标记写进目标文件（已经打开在 pending 里），Agent 就地解掉
  */
 
 export interface CherryPickArgs {
   /** Git：要搬的提交（这个对话做的） */
   commits?: string[]
+  /** Git：解完上次停下的代码冲突后接着搬 */
+  resume?: boolean
   /** P4：要搬的 changelist（pending 或已经 submit 的） */
   changelist?: string
 }
@@ -39,11 +53,71 @@ export async function cherryPickGit(
   target: string,
   task: Pick<Task, 'messages' | 'changes' | 'createdAt'>,
   commits: string[],
+  opts: GitPickOpts = {},
 ): Promise<Result> {
-  if (!commits.length)
-    return { ok: false, info: 'commits 是空的：列出这个对话里你自己做的提交（git log 查到的哈希），按做的先后顺序。' }
+  const exts = opts.exts ?? DEFAULT_ASSET_EXTS
   if ((await git(root, 'rev-parse', '--verify', `refs/heads/${target}`)).code !== 0)
     return { ok: false, info: `本地没有分支「${target}」：请用户到项目设置里重新选 cherry-pick 目标。` }
+  if (opts.resume) return resumeGit(root, target, exts)
+  if (!commits.length)
+    return { ok: false, info: 'commits 是空的：列出这个对话里你自己做的提交（git log 查到的哈希），按做的先后顺序。' }
+  const checked = await checkCommits(root, target, task, commits)
+  if ('info' in checked) return checked
+  const picked = checked.picked
+  // 目标分支正好在某个目录里检出：就在那里做（要求干净）；否则在数据目录里给这个仓库 + 分支开一个固定的工作目录检出，
+  // 搬完删掉；停在文本冲突上时留着给 Agent 解（临时目录可能被系统清掉，所以不用 tmp）。不动当前目录
+  const holder = await holderOf(root, target)
+  let dir = holder ?? ''
+  let own = false
+  if (dir) {
+    if ((await git(dir, 'status', '--porcelain', '--untracked-files=no')).stdout.trim())
+      return {
+        ok: false,
+        info: (await picking(dir))
+          ? `目标分支「${target}」检出在 ${dir}，上次 cherry-pick 的冲突还没解完：解完冲突后用 resume: true 再调用 cherry_pick 接着搬。`
+          : `目标分支「${target}」检出在 ${dir}，那里有没提交的改动：请用户先处理掉再 cherry-pick。`,
+      }
+  } else {
+    dir = pickDir(root, target)
+    if (await picking(dir).catch(() => false))
+      return {
+        ok: false,
+        info: `上次 cherry-pick 到「${target}」的冲突还没解完（目录：${dir}）：解完冲突后用 resume: true 再调用 cherry_pick 接着搬。`,
+      }
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+    await git(root, 'worktree', 'prune')
+    await mkdir(path.dirname(dir), { recursive: true })
+    const add = await git(root, 'worktree', 'add', dir, target)
+    if (add.code !== 0) return { ok: false, info: `没能检出目标分支「${target}」：${add.stderr.trim()}` }
+    own = true
+  }
+  const log: PickLog = { assets: [], empty: [] }
+  const stop = await pickThrough(dir, await git(dir, 'cherry-pick', '-x', ...picked.map((p) => p.sha)), exts, log)
+  const done = `已把 ${picked.length} 个提交 cherry-pick 到「${target}」`
+  return finishGit(
+    root,
+    target,
+    dir,
+    own,
+    stop,
+    log,
+    `${done}：\n${picked.map((p) => `- ${p.sha.slice(0, 9)} ${p.subject}`).join('\n')}`,
+  )
+}
+
+/** Git 搬运的选项：exts 是按资源文件处理的扩展名（项目设置），resume 是解完文本冲突后接着搬 */
+export interface GitPickOpts {
+  exts?: readonly string[]
+  resume?: boolean
+}
+
+/** 逐个核对要搬的提交（只能搬这个对话自己做的、只含这次修改的普通提交），有一个不合格整次都不做 */
+async function checkCommits(
+  root: string,
+  target: string,
+  task: Pick<Task, 'messages' | 'changes' | 'createdAt'>,
+  commits: string[],
+): Promise<Result | { picked: { sha: string; at: number; subject: string }[] }> {
   const mine = ownFiles(task, root)
   const since = Date.parse(task.createdAt) / 1000
   const bad: string[] = []
@@ -87,68 +161,96 @@ export async function cherryPickGit(
       info: `没有 cherry-pick（只能搬这个对话自己做的提交，有一个不合格整次都不做）：\n${bad.map((x) => `- ${x}`).join('\n')}\n只列这个对话里你自己做的、只含这次修改的提交再调用；需要的话先把这次的改动单独提交。`,
     }
   // 按提交时间排：先做的先搬，后面的提交才能接得上
-  picked.sort((a, b) => a.at - b.at)
-  // 目标分支正好在某个目录里检出：就在那里做（要求干净）；否则在数据目录里给这个仓库 + 分支开一个固定的工作目录检出，
-  // 搬完没冲突就删掉；有冲突留着给用户解决（临时目录可能被系统清掉，所以不用 tmp）。不动当前目录
+  return { picked: picked.sort((a, b) => a.at - b.at) }
+}
+
+/** 目标分支检出在哪个目录（没检出时为空） */
+async function holderOf(root: string, target: string) {
   const listed = (await git(root, 'worktree', 'list', '--porcelain')).stdout
-  const holder = listed
+  return listed
     .split('\n\n')
     .find((b) => b.split('\n').includes(`branch refs/heads/${target}`))
     ?.match(/^worktree (.+)$/m)?.[1]
-  let dir = holder ?? ''
-  let own = false
-  if (dir) {
-    if ((await git(dir, 'status', '--porcelain', '--untracked-files=no')).stdout.trim())
-      return {
-        ok: false,
-        info: `目标分支「${target}」检出在 ${dir}，那里有没提交的改动（可能是上次 cherry-pick 的冲突还没解决）：请用户先处理掉再 cherry-pick。`,
-      }
-  } else {
-    dir = pickDir(root, target)
-    await rm(dir, { recursive: true, force: true }).catch(() => {})
-    await git(root, 'worktree', 'prune')
-    await mkdir(path.dirname(dir), { recursive: true })
-    const add = await git(root, 'worktree', 'add', dir, target)
-    if (add.code !== 0) return { ok: false, info: `没能检出目标分支「${target}」：${add.stderr.trim()}` }
-    own = true
-  }
-  let keep = false
-  try {
-    const r = await git(dir, 'cherry-pick', '-x', ...picked.map((p) => p.sha))
-    if (r.code !== 0) {
-      const conflicts = (await git(dir, 'diff', '--name-only', '--diff-filter=U')).stdout.split('\n').filter(Boolean)
-      // 没有冲突文件就不是冲突（例如没配提交身份）：照实写 git 的报错，撤回，别说成冲突
-      if (!conflicts.length) {
-        await git(dir, 'cherry-pick', '--abort')
-        return {
-          ok: false,
-          info: `cherry-pick 到「${target}」失败，已撤回、目标分支没动：${r.stderr.trim().slice(0, 400)}。把报错告诉用户。`,
-        }
-      }
-      // 有冲突：不撤回，停在冲突的那个提交上留给用户解决（用户 2026-11-03 定的）
-      keep = true
-      const at = (await git(dir, 'rev-parse', 'CHERRY_PICK_HEAD')).stdout.trim()
-      // 冲突的是第几个：前面的已经搬好，后面的等 --continue
-      const done = Math.max(
-        0,
-        picked.findIndex((p) => p.sha === at),
-      )
-      return {
-        ok: true,
-        info: `cherry-pick 到「${target}」有冲突，停在 ${at.slice(0, 9) || '冲突的提交'} 上，留给用户解决（没有撤回）：\n- 目录：${dir}\n- 冲突文件：${conflicts.join('、')}\n${done > 0 ? `- 前面 ${done} 个提交已经搬好\n` : ''}用户在这个目录里解决冲突、git add 后运行 git cherry-pick --continue 接着搬剩下的；想放弃就 git cherry-pick --abort。把这些告诉用户，不要自己解决冲突，也不要改用别的办法把整份差异搬过去。`,
-      }
+}
+
+/** 解完文本冲突后接着搬：冲突标记删干净了才记成已解决，再一路搬到底（中途的资源文件冲突照样直接覆盖） */
+async function resumeGit(root: string, target: string, exts: readonly string[]): Promise<Result> {
+  // 面板开的工作目录检出着目标分支，也会被当成 holder：按路径认出来，搬完照样删掉
+  const mineDir = pickDir(root, target)
+  const dir = (await holderOf(root, target)) ?? mineDir
+  const own = samePath(dir, mineDir)
+  if (!existsSync(dir) || !(await picking(dir)))
+    return {
+      ok: false,
+      info: `「${target}」没有停在冲突上的 cherry-pick，不用 resume：要搬新的提交就写 commits 再调用。`,
     }
-    const head = (await git(dir, 'rev-parse', '--short', 'HEAD')).stdout.trim()
+  const files = await unmergedFiles(dir)
+  const left = await filesWithMarkers(dir, files)
+  if (left.length)
+    return {
+      ok: false,
+      info: `这些文件里还有冲突标记（<<<<<<< / >>>>>>>），没有接着搬：\n${left.map((f) => `- ${path.join(dir, f)}`).join('\n')}\n解完冲突、删掉标记后再用 resume: true 调用。`,
+    }
+  const log: PickLog = { assets: [], empty: [] }
+  const stop = await resumePick(dir, files, exts, log)
+  return finishGit(root, target, dir, own, stop, log, `已接着把剩下的提交 cherry-pick 到「${target}」`)
+}
+
+/** 搬运停下后的收尾和说明：搬完就删掉面板开的工作目录；停在文本冲突上时留着，告诉 Agent 去哪解、解完怎么接着搬 */
+async function finishGit(
+  root: string,
+  target: string,
+  dir: string,
+  own: boolean,
+  stop: PickStop,
+  log: PickLog,
+  done: string,
+): Promise<Result> {
+  const lines = (xs: string[]) => xs.map((x) => `- ${x}`).join('\n')
+  const notes = [
+    log.assets.length ? `这些资源文件有冲突，没有解冲突，直接用搬过去的版本覆盖了目标：\n${lines(log.assets)}` : '',
+    log.empty.length ? `这些提交处理完冲突后和目标一样（目标里已经有了），没有生成新提交：${log.empty.join('、')}` : '',
+  ].filter(Boolean)
+  if (stop.kind === 'text')
     return {
       ok: true,
-      info: `已把 ${picked.length} 个提交 cherry-pick 到「${target}」（现在是 ${head}）：\n${picked.map((p) => `- ${p.sha.slice(0, 9)} ${p.subject}`).join('\n')}\n没有推送。`,
+      info: [
+        `cherry-pick 到「${target}」停在 ${stop.at.slice(0, 9) || '冲突的提交'} 上，有代码冲突要解决：`,
+        `- 目录：${dir}`,
+        `- 冲突文件：\n${lines(stop.files.map((f) => path.join(dir, f)))}`,
+        ...notes,
+        '去这个目录里把这些文件的冲突解掉：看清两边各改了什么，两边都要的都留着，删掉 <<<<<<< / ======= / >>>>>>> 标记（不要 git add，也不要自己跑 git cherry-pick），然后用 resume: true 再调用 cherry_pick 接着搬剩下的。实在判断不了怎么合的，把冲突的位置和两边的内容告诉用户，由用户决定。',
+      ].join('\n'),
     }
-  } finally {
-    if (own && !keep) {
-      await git(root, 'worktree', 'remove', '--force', dir)
-      await rm(dir, { recursive: true, force: true }).catch(() => {})
+  let info: Result
+  if (stop.kind === 'error') {
+    await git(dir, 'cherry-pick', '--abort')
+    // 没有冲突文件就不是冲突（例如没配提交身份）：照实写 git 的报错，撤回，别说成冲突
+    info = {
+      ok: false,
+      info: `cherry-pick 到「${target}」失败，已撤回、目标分支没动：${stop.stderr.trim().slice(0, 400)}。把报错告诉用户。`,
+    }
+  } else {
+    const head = (await git(dir, 'rev-parse', '--short', 'HEAD')).stdout.trim()
+    info = { ok: true, info: [`${done}\n现在是 ${head}，没有推送。`, ...notes].join('\n') }
+  }
+  if (own) {
+    await git(root, 'worktree', 'remove', '--force', dir)
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+  return info
+}
+
+/** 两个路径是不是同一个目录（git 列出的路径可能是解析过符号链接的） */
+function samePath(a: string, b: string) {
+  const real = (p: string) => {
+    try {
+      return realpathSync(p)
+    } catch {
+      return path.resolve(p)
     }
   }
+  return real(a) === real(b)
 }
 
 /** 目标分支没在哪里检出时，面板为它开的工作目录：按仓库和分支固定下来，有冲突时用户知道去哪解决 */
@@ -216,12 +318,28 @@ function describedFiles(rec: Record<string, string>) {
   return out
 }
 
+/**
+ * 三方合并进 theirs（目标文件的副本）：面板自己合（server/exec/merge3.ts），不借 git——P4 项目里不该跑 git，
+ * 二进制文件（.uasset 等）也没法按行合。只有一边改过时直接取改过的那边；两边都改过（冲突）时
+ * 资源文件和二进制不写冲突标记（会把文件写坏），直接用这次的版本覆盖，返回 overwrite（用户 2026-11-19 定）
+ */
+async function mergeOrOverwrite(theirs: string, base: string, mine: string, asset: boolean) {
+  const r = merge3(await readFile(theirs), await readFile(base), await readFile(mine))
+  if (r.kind === 'binary' || (asset && r.kind === 'conflict')) {
+    await copyFile(mine, theirs)
+    return 'overwrite'
+  }
+  await writeFile(theirs, r.out)
+  return r.kind
+}
+
 export async function cherryPickP4(
   root: string,
   target: string,
   _task: Pick<Task, 'messages' | 'changes'>,
   changelist: string,
   p4: (cwd: string) => P4Run,
+  exts: readonly string[] = DEFAULT_ASSET_EXTS,
 ): Promise<Result> {
   const cl = changelist.trim()
   if (!/^\d+$/.test(cl))
@@ -302,43 +420,41 @@ export async function cherryPickP4(
       }
       files.push({ rel: f.rel, action: f.action, depot: f.depot, base, mine: mineFile })
     }
-    // 合不上的不撤回（用户 2026-11-03 定的）：冲突标记写进目标文件照样搬过去，留给用户解决；
-    // 只有根本搬不了的（目标里没有这个文件、读不出版本）才跳过并写明
+    // 合不上的也搬过去、不跳过（用户 2026-11-19 定）：资源文件直接用这次的版本覆盖目标，
+    // 文本文件把冲突标记写进目标文件，交给 Agent 就地解；只有根本搬不了的（读不出版本）才跳过并写明
     const merged: { rel: string; file: string; conflict: boolean }[] = []
-    /**
-     * 三方合并进 theirs（目标文件的副本）：面板自己合（server/exec/merge3.ts），不借 git——P4 项目里不该跑 git，
-     * 二进制文件（.uasset 等）也没法按行合。二进制只在一边改过时直接取改过的那边，两边都改过返回 binary 由这里说明
-     */
-    const merge = async (theirs: string, base: string, mine: string) => {
-      const r = merge3(await readFile(theirs), await readFile(base), await readFile(mine))
-      if (r.kind === 'binary') return 'binary'
-      await writeFile(theirs, r.out)
-      return r.kind
-    }
-    /** 二进制文件两边都改过：不写冲突标记（会把文件写坏），跳过并写清楚 */
+    /** 资源文件冲突时直接用这次的版本覆盖了目标的 */
+    const overwritten: string[] = []
+    const merge = (theirs: string, base: string, mine: string, rel: string) =>
+      mergeOrOverwrite(theirs, base, mine, isAssetPath(rel, exts))
     /** 目标里已经和这次改完一样的文件：不打开、不算搬过 */
     const already: string[] = []
     const sameAs = async (a: string, b: string) => (await readFile(a)).equals(await readFile(b))
-    const binaryWhy = '是二进制文件，目标里的这个文件也改过，没法合并，跳过（需要用户在编辑器里自己对比处理）'
+    // 新增的文件（还有目标里没有的资源文件）：目标里已经有同名的以空文件为基准合并，两边的内容都留着、标成冲突
+    const adds: { rel: string; file: string; conflict: boolean; exists: boolean }[] = []
     for (const [i, f] of files.filter((x) => x.action === 'edit').entries()) {
       const there = path.join(target, f.rel)
-      if (!existsSync(there)) {
-        fail.push(`${f.rel}：目标里没有这个文件，跳过（整个文件搬过去会带上这次以外的内容）`)
-        continue
-      }
       // 打开了但没改（和改之前一样）：不是这次的修改，不搬
       if ((await readFile(f.base)).equals(await readFile(f.mine))) continue
+      if (!existsSync(there)) {
+        // 资源文件整个就是这次的内容，目标里没有就整份搬过去；文本文件整份搬会带上这次以外的内容
+        if (isAssetPath(f.rel, exts) || isBinary(await readFile(f.mine))) {
+          adds.push({ rel: f.rel, file: f.mine, conflict: false, exists: false })
+          overwritten.push(f.rel)
+        } else fail.push(`${f.rel}：目标里没有这个文件，跳过（整个文件搬过去会带上这次以外的内容）`)
+        continue
+      }
       const theirs = path.join(work, `${i}.target`)
       await copyFile(there, theirs)
-      const r = await merge(theirs, f.base, f.mine)
-      if (r === 'binary') fail.push(`${f.rel}：${binaryWhy}`)
+      const r = await merge(theirs, f.base, f.mine, f.rel)
       // 合完和目标一模一样：目标里已经有这次的改动，不用打开
-      else if (await sameAs(theirs, there)) already.push(f.rel)
-      // 结果写回在临时副本里：按字节读回来，换行符、结尾换行都和合并结果一致
-      else merged.push({ rel: f.rel, file: theirs, conflict: r === 'conflict' })
+      if (await sameAs(theirs, there)) already.push(f.rel)
+      else {
+        if (r === 'overwrite') overwritten.push(f.rel)
+        // 结果写回在临时副本里：按字节读回来，换行符、结尾换行都和合并结果一致
+        merged.push({ rel: f.rel, file: theirs, conflict: r === 'conflict' })
+      }
     }
-    // 新增的文件目标里已经有同名的：以空文件为基准合并，两边的内容都留着、标成冲突
-    const adds: { rel: string; file: string; conflict: boolean; exists: boolean }[] = []
     for (const [i, f] of files.filter((x) => x.action === 'add').entries()) {
       const there = path.join(target, f.rel)
       if (!existsSync(there)) {
@@ -349,10 +465,12 @@ export async function cherryPickP4(
       const empty = path.join(work, `${i}.empty`)
       await copyFile(there, theirs)
       await writeFile(empty, '')
-      const r = await merge(theirs, empty, f.mine)
-      if (r === 'binary') fail.push(`${f.rel}：这次是新增，目标里已经有内容不同的同名二进制文件，没法合并，跳过`)
-      else if (await sameAs(theirs, there)) already.push(f.rel)
-      else adds.push({ rel: f.rel, file: theirs, conflict: r === 'conflict', exists: true })
+      const r = await merge(theirs, empty, f.mine, f.rel)
+      if (await sameAs(theirs, there)) already.push(f.rel)
+      else {
+        if (r === 'overwrite') overwritten.push(f.rel)
+        adds.push({ rel: f.rel, file: theirs, conflict: r === 'conflict', exists: true })
+      }
     }
     if (!merged.length && !adds.length && !files.some((x) => x.action === 'delete'))
       return {
@@ -413,14 +531,17 @@ export async function cherryPickP4(
         done.length
           ? `已${submitted ? `把已提交的 changelist ${cl} ` : ''}在目标工作区的 changelist ${num} 里搬好 ${done.length} 个文件：\n${lines(done)}`
           : '',
+        overwritten.length
+          ? `其中 ${overwritten.length} 个资源文件和目标冲突，没有解冲突，直接用这次的版本覆盖了目标：\n${lines(overwritten)}`
+          : '',
         conflicts.length
-          ? `其中 ${conflicts.length} 个有冲突，冲突标记（<<<<<<< target / >>>>>>> mine）已经写在目标文件里，留给用户解决：\n${lines(conflicts.map((c) => path.join(target, c)))}`
+          ? `其中 ${conflicts.length} 个代码文件有冲突，冲突标记（<<<<<<< target / >>>>>>> mine）已经写在目标文件里（已打开在 changelist ${num}）：\n${lines(conflicts.map((c) => path.join(target, c)))}`
           : '',
         already.length ? `${already.length} 个目标里已经是这样，不用搬：\n${lines(already)}` : '',
         fail.length ? `跳过 ${fail.length} 个：\n${lines(fail)}` : '',
         errs.length ? `有 ${errs.length} 个没搬成：\n${lines(errs)}` : '',
         conflicts.length
-          ? '没有 submit。把冲突文件告诉用户，由用户自己解决后再提交，不要自己解决冲突。'
+          ? '没有 submit。去这些目标文件里把冲突解掉：看清两边各改了什么，两边都要的都留着，删掉 <<<<<<< / ======= / >>>>>>> 标记；实在判断不了怎么合的，把冲突的位置和两边的内容告诉用户，由用户决定。'
           : '没有 submit。',
       ]
         .filter(Boolean)
@@ -456,17 +577,25 @@ export function userAsked(task: Pick<Task, 'messages'>, target: string): boolean
  * 给这一轮的对话接上 cherry_pick：按项目目录的版本管理选 Git / P4，两种都不是时不给工具。
  * dir 是对话的工作目录（独立分支时是 worktree，提交和改过的文件都按它算）；task 取现值，工具调用时读最新的消息
  */
-export async function cherryPickFor(dir: string, projectPath: string, target: string, task: () => Task) {
+export async function cherryPickFor(
+  dir: string,
+  projectPath: string,
+  target: string,
+  task: () => Task,
+  exts: () => Promise<readonly string[]> = async () => DEFAULT_ASSET_EXTS,
+) {
   const vcs = (await detectVcs(projectPath).catch(() => null))?.vcs
   if (vcs !== 'git' && vcs !== 'p4') return undefined
-  return (input: CherryPickArgs): Promise<Result> => {
+  return async (input: CherryPickArgs): Promise<Result> => {
     if (!userAsked(task(), target))
-      return Promise.resolve({
+      return {
         ok: false,
         info: '用户最近没有要求 cherry-pick：这个工具只在用户要求把改动搬到目标时才能用，不能自己发起。需要的话问用户要不要搬过去（不用让用户按固定说法回复，用户说要搬就行）。',
-      })
+      }
+    // 资源文件清单在调用时现读项目设置：改了设置下一次搬就按新的
+    const list = await exts()
     return vcs === 'git'
-      ? cherryPickGit(dir, target, task(), input.commits ?? [])
-      : cherryPickP4(dir, target, task(), input.changelist ?? '', p4Runner)
+      ? cherryPickGit(dir, target, task(), input.commits ?? [], { exts: list, resume: input.resume })
+      : cherryPickP4(dir, target, task(), input.changelist ?? '', p4Runner, list)
   }
 }

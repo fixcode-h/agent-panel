@@ -6,6 +6,7 @@ import { holderState, ownP4Files, releaseUnchanged } from '../claims.ts'
 import { p4Runner, splitChangelists } from '../p4-split.ts'
 import { projectDocRoot } from '../docs/root.ts'
 import { cherryPickFor } from '../cherry-pick.ts'
+import { assetExtsOf } from '../../shared/projects/cherry-pick-assets.ts'
 import { currentBranch } from '../exec/worktree.ts'
 import { isGit, isolated, isP4 } from './helpers.ts'
 
@@ -33,7 +34,15 @@ export async function vcsCaps(c: TurnCapsCtx) {
     // 项目设了 cherry-pick 目标的顶层对话：由面板核对后搬，只收这个对话自己的提交 / 改动（用户 2026-10-31 定的强制要求）
     cherryPick:
       !task.parentTaskId && dir && project?.path && project.cherryPick?.trim()
-        ? await cherryPickFor(dir, project.path, project.cherryPick.trim(), () => entry.task)
+        ? await cherryPickFor(
+            dir,
+            project.path,
+            project.cherryPick.trim(),
+            () => entry.task,
+            async () =>
+              // 资源文件清单在搬的那一刻现读项目设置，读不到项目时用这一轮开始时的
+              assetExtsOf((task.projectId && (await sc.deps.projects.get(task.projectId))) || project),
+          )
         : undefined,
     // 不管用哪种版本管理，子对话都要请父对话收尾：评审、测试、交接和父对话验收挂在这一步上（独立分支还要合回）
     submitMerge:

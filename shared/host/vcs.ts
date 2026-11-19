@@ -79,7 +79,11 @@ export interface VcsHost {
   reviewDiff?: (since?: string, files?: string[]) => Promise<ReviewDiff | null>
   /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
   p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
-  cherryPick?: (input: { commits?: string[]; changelist?: string }) => Promise<{ ok: boolean; info: string }>
+  cherryPick?: (input: {
+    commits?: string[]
+    changelist?: string
+    resume?: boolean
+  }) => Promise<{ ok: boolean; info: string }>
   /** 弹推送授权卡等用户点（回答由宿主记进 task.remotePush，不受「提问」开关影响）；停止时 null */
   askPush?: (info: { branch?: string; summary?: string }) => Promise<{ allow: boolean; message?: string } | null>
 }

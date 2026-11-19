@@ -56,11 +56,15 @@ export const CHERRY_PICK: PanelTool = {
     name: 'cherry_pick',
     title: 'cherry-pick 到目标',
     description:
-      '用户要求把改动 cherry-pick 到项目设置的目标时用它，由面板核对后执行。Git 写 commits（这个对话做的提交，按先后顺序；有不是这次修改的提交整次不做）；P4 写 changelist（用户要搬的 pending，或已经 submit 的编号，别的 stream 上的也行；面板只搬这个 changelist 自己的改动，在目标工作区建一个对应的 pending，不 submit，用户明确要求前也不要自己 p4 submit）。不要自己跑 git cherry-pick / merge、p4 integrate / merge / copy 或复制文件过去；被拒绝时把原因告诉用户；有冲突时面板把冲突留在目标里，把冲突文件和位置告诉用户，由用户自己解决。',
+      '用户要求把改动 cherry-pick 到项目设置的目标时用它，由面板核对后执行。Git 写 commits（这个对话做的提交，按先后顺序；有不是这次修改的提交整次不做）；P4 写 changelist（用户要搬的 pending，或已经 submit 的编号，别的 stream 上的也行；面板只搬这个 changelist 自己的改动，在目标工作区建一个对应的 pending，不 submit，用户明确要求前也不要自己 p4 submit）。不要自己跑 git cherry-pick / merge、p4 integrate / merge / copy 或复制文件过去；被拒绝时把原因告诉用户。有冲突的提交也照样搬：资源文件（.uasset 这类、二进制）面板直接用搬过去的版本覆盖目标；代码文件的冲突由你解——Git 停在冲突的提交上，到返回的目录里解掉冲突、删掉标记后用 resume: true 再调用接着搬；P4 的冲突标记写在目标文件里，就地解掉。',
     inputSchema: {
       type: 'object',
       properties: {
         commits: { type: 'array', items: { type: 'string' }, description: 'Git：这个对话做的提交哈希' },
+        resume: {
+          type: 'boolean',
+          description: 'Git：上次停在代码冲突上、你已经解完冲突时写 true 接着搬（不用再写 commits）',
+        },
         changelist: {
           type: 'string',
           description: 'P4：要搬的 changelist 编号（还没提交的 pending，或已经 submit 的）',
@@ -71,6 +75,8 @@ export const CHERRY_PICK: PanelTool = {
   call: async (o, a) => {
     if (!o.cherryPick) return text('这个项目没有设置 cherry-pick 目标，请用户到项目设置里设', true)
     const commits = Array.isArray(a?.commits) ? a.commits.map(String) : undefined
-    return reply(await o.cherryPick({ commits, changelist: str(a?.changelist) || undefined }))
+    return reply(
+      await o.cherryPick({ commits, changelist: str(a?.changelist) || undefined, resume: a?.resume === true }),
+    )
   },
 }

@@ -10,6 +10,7 @@ import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { BudgetField } from '../BudgetField'
 import { CherryPickTarget } from '../CherryPickTarget'
+import { CherryPickAssets } from '../CherryPickAssets'
 import { DirPicker, type useDirInfo } from '../DirPicker'
 import { SearchExcludeField } from './SearchExcludeField'
 import { CodeIndexField } from './CodeIndexField'
@@ -110,6 +111,9 @@ export function GeneralPage({
           value={draft.cherryPick ?? ''}
           onChange={(v) => set('cherryPick', v)}
         />
+        {(vcs === 'git' || vcs === 'p4') && (
+          <CherryPickAssets value={draft.cherryPickAssets} onChange={(v) => set('cherryPickAssets', v)} />
+        )}
       </FormSection>
 
       <FormSection title={t('文件格式')}>
