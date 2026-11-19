@@ -1188,6 +1188,15 @@ body,
   --c-countBadge-size: 18px;
   --c-countBadge-bg: var(--danger);
   --c-countBadge-ring: var(--card);
+  --c-flowNode-radius: 10px;
+  --c-flowNode-bar: 3px;
+  --c-flowNode-tile: inline-flex;
+  --c-flowNode-divider: 1px;
+  --c-flowNode-detail: flex;
+  --c-flowNode-rowH: 26px;
+  --c-flowPin-size: 11px;
+  --c-flowPin-ring: 4px;
+  --c-flowPin-tone: currentColor;
   --c-empty-radius: 10px;
   --c-empty-bg: transparent;
   --c-empty-border: dashed;
