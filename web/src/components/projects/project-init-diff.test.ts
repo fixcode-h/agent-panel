@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_FILE_FORMAT, ProjectInput, Workflow } from '@shared/schema'
 import type { ProjectProposal } from '@shared/projects/init'
+import { newFlow } from '@shared/flow'
 import { buildGroups } from './ProjectInitPanel'
 
 const wf = Workflow.parse({
@@ -11,6 +12,7 @@ const wf = Workflow.parse({
   updatedAt: '',
   mainAgentId: '',
   expose: [],
+  flows: [newFlow('主流程', 'main')],
 })
 const draft = ProjectInput.parse({
   name: '商城',

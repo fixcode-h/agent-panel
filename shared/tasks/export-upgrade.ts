@@ -2,6 +2,7 @@ import { liftBugFields } from '../bug/task-bug.ts'
 import { liftChildFields } from '../children/task-child.ts'
 import { liftAnalysisFields } from './task-analysis.ts'
 import { liftBudgetFields } from './task-budget.ts'
+import { migrateTaskShape } from '../migrations/legacy-shapes.ts'
 
 /**
  * 每一版导出格式要对任务和子对话做的转换：[转到第几版, 就地改原始任务 JSON 的函数]，和数据目录的迁移一一对应。
@@ -12,6 +13,9 @@ const EXPORT_UPGRADES: [number, (tk: Record<string, unknown>) => unknown][] = [
   [3, liftBudgetFields], // 平铺的执行上限字段收进 task.budget（复查报告 A7，迁移 0008）
   [4, liftAnalysisFields], // 平铺的分析字段收进 task.analysis，modelDesign 转成 plugin（复查报告 A7，迁移 0009）
   [5, liftChildFields], // 只有子对话用的平铺字段收进 task.child（复查报告 A7，迁移 0010）
+  // 步骤补 id、消息的节点下标换成 id、旧 queue 并进对话、工作流快照的阶段换成流程图、测试步骤换算 scope（迁移 0011）。
+  // 以前读的时候由 schema 的 z.preprocess 转，导出时写出去的是转好的，但更早导出的文件里可能还是旧格式
+  [6, (tk) => migrateTaskShape(tk).changed],
 ]
 
 /** 导出文件的格式版本：最后一次转换转到的那一版 */

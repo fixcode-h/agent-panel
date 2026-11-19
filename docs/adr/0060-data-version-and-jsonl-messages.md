@@ -32,6 +32,6 @@
 
 ## 后果
 
-- `shared/schema.ts` 里的四个 `z.preprocess`（`migrateWorkflow`、`migrateTestStep`、`migrateProject`、`migrateTask`）、`server/settings.ts` 的默认值迁移、`server/verdict-migrate.ts` 还没有搬进来：它们也被导出导入、演示后端用，搬之前要确认那些入口都先跑过迁移。之后按版本号逐个搬。
+- `shared/schema.ts` 里的四个 `z.preprocess`（工作流阶段、测试步骤 runInParent、项目单层参数、任务节点下标和 queue）已搬成迁移 0011（2026-11-19）：转换在 `shared/migrations/legacy-shapes.ts`，数据目录、导出文件（第 6 版）、旧版工作流分享文件、演示版 localStorage 都在入口处先转一次，schema 只认当前格式。删掉角色的引用改写不是格式迁移（角色随时可能被合并删掉），留在字段上的 `AgentRef` 每次读都换。`server/settings.ts` 的默认值迁移、`server/verdict-migrate.ts` 还没有搬进来，之后按版本号逐个搬。
 - 内置角色和工作流的历史快照（`shared/builtin/legacy*.ts`）等用户定了「改过的要不要先备份」再处理。
 - 退回不认识 JSONL 的旧版本时，旧版本看不到完整对话（只剩任务记录里的用户消息）；转换前的 `.messages.json` 在 `backup/0003-messages-jsonl/` 里，手动挪回去能恢复。

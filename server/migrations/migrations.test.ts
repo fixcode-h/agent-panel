@@ -370,3 +370,103 @@ test('0010：只有子对话用的字段收进 task.child；空提问列表丢�
   assert.deepEqual(p.inbox, [], '父对话那一侧的字段不动')
   assert.equal(readFileSync(path.join(dir, 'n.json'), 'utf8'), fresh, '新格式一个字节都没动')
 })
+
+test('0011：旧的阶段流程、单层工作流参数、runInParent、任务的节点下标和 queue 换成当前格式；新格式的不碰', async () => {
+  const d = freshDir()
+  const stageWf = {
+    id: 'w-old',
+    name: '旧流程',
+    mainAgentId: 'default-agent',
+    members: [{ agentId: 'default-agent' }, { agentId: 'a1' }],
+    stages: [{ nodes: [{ id: 'n1', title: '一' }] }, { nodes: [{ id: 'n2', title: '二' }] }],
+  }
+  const newWf = { id: 'w-new', name: '新流程', flows: [{ id: 'main', name: '主流程', nodes: [], edges: [] }] }
+  write(path.join(d, 'config', 'workflows.json'), [stageWf, newWf])
+  write(path.join(d, 'projects', 'projects.json'), [
+    {
+      id: 'p-old',
+      name: '旧项目',
+      workflowId: 'w-old',
+      workflowParams: { docRoot: 'docs', tags: ['a'] },
+      testSteps: [{ id: 's', name: '端到端', command: 'npm run test:e2e', runInParent: false }],
+      initResult: { steps: [{ id: 'i', name: '编译', command: 'make', appliesTo: ['**/*.c'] }] },
+    },
+    { id: 'p-new', name: '新项目', workflowParams: { 'w-new': { docRoot: 'docs' } }, testSteps: [] },
+  ])
+  const dir = path.join(d, 'tasks', 'chats')
+  write(
+    path.join(dir, 'old.json'),
+    task('old', {
+      turnSeenAt: '',
+      steps: [{ title: '一' }, { id: 'x', title: '二' }],
+      messages: [{ ...message('u1', 'user', '要求'), step: 1 }],
+      queue: [
+        { id: 'q1', text: '再改一下', at: '2026-10-01T00:02:00.000Z' },
+        { id: 'q2', text: '等 CLI 取的补充', note: true },
+      ],
+      workflows: [stageWf],
+      testSteps: [{ id: 's', name: '编译', command: 'make', merge: true }],
+    }),
+  )
+  write(path.join(dir, 'old.messages.jsonl'), JSON.stringify(message('u1', 'user', '要求')) + '\n')
+  write(path.join(dir, 'new.json'), task('new', { turnSeenAt: '', steps: [{ id: 's0', nodeId: 'n' }] }))
+  const fresh = readFileSync(path.join(dir, 'new.json'), 'utf8')
+  write(path.join(d, 'trash', 'items', 'workflow-w-gone.json'), {
+    kind: 'workflow',
+    id: 'w-gone',
+    name: '删掉的',
+    deletedAt: '',
+    item: { id: 'w-gone', name: '删掉的', stages: [] },
+  })
+  write(path.join(d, 'data-version.json'), { version: 10 })
+  await runMigrations({ dataDir: d, log: quiet })
+
+  const [w, w2] = json(path.join(d, 'config', 'workflows.json'))
+  assert.ok(!('stages' in w), '阶段去掉了')
+  assert.deepEqual(w.flows[0].edges.map((e: { from: string; to: string }) => `${e.from}>${e.to}`).sort(), [
+    'n1>n2',
+    'n2>end',
+    'start>n1',
+  ])
+  assert.deepEqual(w.members, [{ agentId: 'a1' }], '指向默认 Agent 的旧成员去掉')
+  assert.deepEqual(w2, newWf, '新格式的工作流不动')
+  const [p, p2] = json(path.join(d, 'projects', 'projects.json'))
+  assert.deepEqual(p.workflowParams, { 'w-old': { docRoot: 'docs', tags: ['a'] } }, '单层参数归到 workflowId 下')
+  assert.equal(p.testSteps[0].scope, 'parent', '全量命令换算成 parent')
+  assert.ok(!('runInParent' in p.testSteps[0]))
+  assert.equal(p.initResult.steps[0].scope, 'changed', '保存的初始化推荐里的步骤也换')
+  assert.deepEqual(p2.workflowParams, { 'w-new': { docRoot: 'docs' } })
+
+  const t = json(path.join(dir, 'old.json'))
+  assert.deepEqual(
+    t.steps.map((s: { id: string; nodeId: string }) => `${s.id}/${s.nodeId}`),
+    ['s0/s0', 'x/x'],
+  )
+  assert.equal(t.messages[0].step, 'x', '节点下标换成节点 id')
+  assert.ok(!('queue' in t))
+  assert.deepEqual(
+    t.messages.map((m: { id: string }) => m.id),
+    ['u1', 'q1'],
+    '普通排队要求补进对话，等 CLI 取的补充丢掉',
+  )
+  assert.ok(Array.isArray(t.workflows[0].flows) && !('stages' in t.workflows[0]), '工作流快照一起换')
+  assert.equal(t.testSteps[0].scope, 'changed', '测试步骤快照一起换')
+  const conv = parseMessagesJsonl(readFileSync(path.join(dir, 'old.messages.jsonl'), 'utf8'))
+  assert.deepEqual(
+    conv.messages.map((m) => m.id),
+    ['u1', 'q1'],
+    '排队要求也追加进对话文件',
+  )
+  assert.equal(readFileSync(path.join(dir, 'new.json'), 'utf8'), fresh, '新格式一个字节都没动')
+  assert.ok(existsSync(path.join(d, 'backup', '0011-legacy-shapes', 'tasks', 'chats', 'old.json')), '改之前备份')
+  const trashed = json(path.join(d, 'trash', 'items', 'workflow-w-gone.json'))
+  assert.ok(Array.isArray(trashed.item.flows) && !('stages' in trashed.item), '回收站里的工作流也换')
+
+  // 重跑（导入旧备份后从 0 跑）不再改
+  await runMigrations({ dataDir: d, from: 10, log: quiet })
+  assert.deepEqual(
+    parseMessagesJsonl(readFileSync(path.join(dir, 'old.messages.jsonl'), 'utf8')).messages.map((m) => m.id),
+    ['u1', 'q1'],
+    '重跑不会再追加',
+  )
+})

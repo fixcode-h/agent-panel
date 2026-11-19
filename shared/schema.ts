@@ -221,8 +221,6 @@ export const defaultAgent = (): Agent => {
   }
 }
 
-const AGENT_REF_KEYS = new Set(['agentId', 'mainAgentId', 'defaultAgentId']) // 模块状态：常量，加载后不改
-
 /**
  * 已经不存在的角色 id → 现在该用的 id（空字符串表示不用角色）。读旧数据时按它改写引用：
  * 默认 Agent 固定在这里；合并后被删掉的内置副本由服务端启动时登记（见 setAgentAliases）。
@@ -237,43 +235,26 @@ export function setAgentAliases(map: Record<string, string>) {
 /** 这个角色 id 现在该用哪个（没登记过的原样返回） */
 export const aliasAgent = (id: string) => agentAliases.get(id) ?? id
 
-/** 旧数据里指向已去掉的角色的引用改成现在的（默认 Agent 改成空字符串，不用角色）；工作流成员里转成空的直接去掉 */
-function dropLegacyAgent(v: unknown): unknown {
-  if (Array.isArray(v)) {
-    const arr = v.map(dropLegacyAgent)
-    return arr.some((x, i) => x !== v[i]) ? arr : v
-  }
-  if (!v || typeof v !== 'object') return v
-  const o = v as Record<string, unknown>
-  let out: Record<string, unknown> | null = null
-  for (const [k, x] of Object.entries(o)) {
-    let next = x
-    if (AGENT_REF_KEYS.has(k) && typeof x === 'string' && agentAliases.has(x)) next = agentAliases.get(x)
-    else if (k === 'members' && Array.isArray(x))
-      next = dropLegacyAgent(
-        x.filter((m) => {
-          const id = (m as { agentId?: unknown })?.agentId
-          return typeof id !== 'string' || agentAliases.get(id) !== ''
-        }),
-      )
-    else if (x && typeof x === 'object') next = dropLegacyAgent(x)
-    if (next !== x) (out ??= { ...o })[k] = next
-  }
-  return out ?? o
-}
+/**
+ * 指向角色的字段（agentId、mainAgentId、defaultAgentId）：读出来时把已经删掉的角色换成接替它的。
+ * 这不是数据格式的迁移：角色在任何版本都可能被合并删掉（server/agent-aliases.ts 运行时登记），
+ * 所以按字段做、每次读都做；旧的「默认 Agent」读成空字符串（不用角色）
+ */
+const AgentRef = z.string().transform((id) => aliasAgent(id))
+const OptionalAgentRef = z
+  .string()
+  .default('')
+  .transform((id) => aliasAgent(id))
 
-/** 对话的 CLI 会话按角色 id 记：角色换了 id，会话跟着搬过去，接着原来的会话聊 */
-function moveSessions(v: unknown) {
-  const t = v as { sessions?: unknown }
-  if (!t?.sessions || typeof t.sessions !== 'object') return v
-  const cur = t.sessions as Record<string, unknown>
-  if (!Object.keys(cur).some((k) => agentAliases.has(k))) return v
-  const sessions: Record<string, unknown> = {}
+/** 对话的 CLI 会话按角色 id 记：角色换了 id，会话跟着搬过去，接着原来的会话聊（两份撞上时留角色自己那份） */
+function moveSessions(cur: Record<string, string>) {
+  if (!Object.keys(cur).some((k) => agentAliases.has(k))) return cur
+  const sessions: Record<string, string> = {}
   for (const [k, id] of Object.entries(cur)) {
     const to = aliasAgent(k)
     if (!(to in sessions) || to === k) sessions[to] = id
   }
-  return { ...t, sessions }
+  return sessions
 }
 
 /** Agent 和工作流的分类，例如「开发」「测试」「文档」，只用于组织列表；两边的分类各管各的 */
@@ -304,7 +285,7 @@ export type NodeTier = z.infer<typeof NodeTier>
 
 /** 工作流里的一个子 Agent，以及它在这个工作流中负责的内容 */
 export const WorkflowMember = z.object({
-  agentId: z.string(),
+  agentId: AgentRef,
   responsibility: z.string().trim().max(200).default(''),
 })
 export type WorkflowMember = z.infer<typeof WorkflowMember>
@@ -345,7 +326,7 @@ export const NodeStep = z.object({
   title: z.string().trim().max(60).default(''),
   /** agent：由 Agent 执行；flow：执行引用的流程 */
   kind: z.enum(['agent', 'flow']).default('agent'),
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
   flow: FlowRef.nullable().default(null),
   tier: NodeTier.default(''),
   params: z.record(z.string(), ParamValue).default({}),
@@ -368,7 +349,7 @@ export const FlowNode = z.object({
   /** agent：由 Agent 执行；flow：执行引用的流程 */
   kind: z.enum(['agent', 'flow']).default('agent'),
   /** 执行的 Agent；为空表示由主 Agent 执行 */
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
   /** kind 为 flow 时执行的流程 */
   flow: FlowRef.nullable().default(null),
   /** 用默认 CLI 的哪一档模型；为空时按 Agent 设的档位（Agent 不是档位时用中档） */
@@ -419,57 +400,6 @@ export const Flow = z.object({
 })
 export type Flow = z.infer<typeof Flow>
 
-const rid = () => Math.random().toString(36).slice(2, 10)
-
-/**
- * 旧版的「阶段」流程（阶段依次执行、阶段内并行）转换成连线：
- * 每个阶段的节点连到下一阶段的所有节点，位置按阶段排成列。
- */
-export function stagesToFlow(stages: { title?: string; nodes?: Record<string, unknown>[] }[]) {
-  const cols = stages.filter((s) => s.nodes?.length)
-  const nodes: Record<string, unknown>[] = []
-  const edges: { id: string; from: string; to: string }[] = []
-  let prev: string[] = [START]
-  const COL = 300
-  const ROW = 150
-  cols.forEach((c, ci) => {
-    const ids: string[] = []
-    c.nodes!.forEach((n, ni) => {
-      const id = String(n.id ?? `nd_${rid()}`)
-      ids.push(id)
-      nodes.push({
-        ...n,
-        id,
-        x: 240 + ci * COL,
-        y: (ni - (c.nodes!.length - 1) / 2) * ROW,
-      })
-      for (const p of prev) edges.push({ id: `e_${rid()}`, from: p, to: id })
-    })
-    prev = ids
-  })
-  for (const p of prev) if (p !== START || !cols.length) edges.push({ id: `e_${rid()}`, from: p, to: END })
-  return {
-    id: 'main',
-    name: t('主流程'),
-    nodes,
-    edges: cols.length ? edges : [],
-    startPos: { x: 0, y: 0 },
-    endPos: { x: 240 + cols.length * COL, y: 0 },
-    description: '',
-  }
-}
-
-/** 读旧数据时把阶段转换成流程 */
-function migrateWorkflow(raw: unknown) {
-  const v = dropLegacyAgent(raw)
-  if (!v || typeof v !== 'object') return v
-  const w = v as Record<string, unknown>
-  if (Array.isArray(w.flows) && w.flows.length) return w
-  const stages = Array.isArray(w.stages) ? (w.stages as { nodes?: Record<string, unknown>[] }[]) : []
-  const { stages: _, ...rest } = w
-  return { ...rest, flows: [stagesToFlow(stages)], entryFlowId: 'main' }
-}
-
 /**
  * 工作流对外暴露的配置项：项目设置里按它渲染表单，值存在项目的 workflowParams 里。
  * target 决定值作用到哪里，新建对话时解析成快照写进任务，之后改工作流不影响已开始的对话。
@@ -505,7 +435,7 @@ export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 默认执行角色：节点没单独指定角色时用它（字段名沿用旧的「主 Agent」，老数据照读）；为空表示还没选 */
-  mainAgentId: z.string().default(''),
+  mainAgentId: OptionalAgentRef,
   /** 旧版的「团队」：子 Agent 现在直接在节点上选，这里只为读旧数据保留 */
   members: z.array(WorkflowMember).default([]),
   /** 流程：第一个默认是主流程；entryFlowId 指定任务从哪个流程开始 */
@@ -536,10 +466,10 @@ export const WorkflowFields = z.object({
    */
   builtinHash: z.string().max(32).optional(),
 })
-export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
+export const WorkflowInput = WorkflowFields
 export type WorkflowInput = z.infer<typeof WorkflowFields>
 
-export const Workflow = z.preprocess(migrateWorkflow, WorkflowFields.extend(Meta.shape))
+export const Workflow = WorkflowFields.extend(Meta.shape)
 export type Workflow = z.infer<typeof WorkflowFields> & z.infer<typeof Meta>
 
 /** 账号额度：每个时间窗口用了多少（百分比）和什么时候重置 */
@@ -732,8 +662,12 @@ export function legacyTestStepScope(step: {
   return 'always'
 }
 
-/** 整条步骤的迁移：已经写了 scope 的不动，老数据按上面的规则换算并去掉 runInParent */
-export function migrateTestStep(input: unknown) {
+/**
+ * 没写 scope 的步骤按上面的规则推断，并去掉 runInParent（返回新对象，不改传入的）。
+ * 两处用：数据迁移 0011 换算老步骤；AI 给的步骤（shared/assist.ts 的 resolveTestSteps）不写 scope 时按命令推断。
+ * 已经写了 scope 的不动。schema 本身不再做这个换算：没写 scope 解析出来是 always
+ */
+export function inferStepScope(input: unknown) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input
   const s = input as Record<string, unknown>
   if (s.scope !== undefined) return s
@@ -765,7 +699,7 @@ export const TestStepShape = z.object({
    * scripts/changed-tests.mjs 做（单测文件、界面分片的定位也在这个脚本里）
    */
   appliesTo: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
-  /** 跑多大范围，见 TEST_STEP_SCOPES；老步骤解析时按 legacyTestStepScope 换算 */
+  /** 跑多大范围，见 TEST_STEP_SCOPES；老步骤由数据迁移 0011 按 legacyTestStepScope 换算过 */
   scope: z.enum(TEST_STEP_SCOPES).catch('always').default('always'),
   /** 超时（秒）；0 表示不限 */
   timeoutSec: z
@@ -786,15 +720,12 @@ export const TestStepShape = z.object({
   quick: z.boolean().default(false),
 })
 
-export const TestStepFields = z.preprocess(migrateTestStep, TestStepShape)
+export const TestStepFields = TestStepShape
 export type TestStepFields = z.infer<typeof TestStepShape>
 
-export const TestStep = z.preprocess(
-  migrateTestStep,
-  TestStepShape.extend({
-    id: z.string().trim().min(1).max(40),
-  }),
-)
+export const TestStep = TestStepShape.extend({
+  id: z.string().trim().min(1).max(40),
+})
 export type TestStep = z.infer<typeof TestStep>
 
 /**
@@ -904,19 +835,6 @@ export const GlobalLesson = z.object({
 export type GlobalLesson = z.infer<typeof GlobalLesson>
 export const GlobalLessons = z.array(GlobalLesson).max(100)
 
-/** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
-function migrateProject(input: unknown) {
-  const v = dropLegacyAgent(input)
-  if (!v || typeof v !== 'object') return v
-  const p = v as Record<string, unknown>
-  const raw = p.workflowParams
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return p
-  const vals = Object.values(raw)
-  const single = vals.length > 0 && vals.every((x) => x === null || typeof x !== 'object' || Array.isArray(x))
-  if (!single) return p
-  return { ...p, workflowParams: p.workflowId ? { [String(p.workflowId)]: raw } : {} }
-}
-
 /** 项目：本机上的一个目录，项目对话和子对话都在这个目录里执行 */
 const ProjectFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
@@ -929,7 +847,7 @@ const ProjectFields = z.object({
   /** 子对话可以挑选的其他工作流：默认工作流不合适时优先用更合适的那个 */
   workflowIds: z.array(z.string()).max(50).default([]),
   /** 默认对话 Agent：项目里新建对话时用它，可以设为无（空字符串） */
-  defaultAgentId: z.string().default(''),
+  defaultAgentId: OptionalAgentRef,
   /** 用户有没有设置过默认 Agent：升级时没设置过的旧项目自动指向协调 Agent，设过「无」的不再覆盖 */
   agentSet: z.boolean().default(false),
   /** 工作流暴露项的取值，每个工作流一份（key 是工作流 id） */
@@ -1038,10 +956,10 @@ const ProjectFields = z.object({
    */
   sortOrder: z.number().int().min(0).optional(),
 })
-export const ProjectInput = z.preprocess(migrateProject, ProjectFields)
+export const ProjectInput = ProjectFields
 export type ProjectInput = z.infer<typeof ProjectFields>
 
-export const Project = z.preprocess(migrateProject, ProjectFields.extend(Meta.shape))
+export const Project = ProjectFields.extend(Meta.shape)
 export type Project = z.infer<typeof ProjectFields> & z.infer<typeof Meta>
 
 /** 本地目录检测结果 */
@@ -1137,7 +1055,7 @@ export const NewTaskInput = z.object({
   /** workflow 模式：为空时用项目的工作流 */
   workflowId: z.string().default(''),
   /** chat 模式：对话的 Agent（旧客户端可能还传已经去掉的角色 id，按登记的换过去） */
-  agentId: z.string().default('').transform(aliasAgent),
+  agentId: OptionalAgentRef,
   /** chat 模式用的 CLI、模型和思考强度（只对默认 Agent 有效）；为空跟随默认 CLI 的设置 */
   cli: z.string().trim().max(40).default(''),
   model: z.string().trim().max(200).default(''),
@@ -1449,7 +1367,7 @@ export type TurnChanges = z.infer<typeof TurnChanges>
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
   /** 属于哪个任务节点（task.steps 的 id）；为空表示不属于任何节点（追问、对话） */
   step: z.string().default(''),
   text: z.string().default(''),
@@ -1617,7 +1535,7 @@ export const TaskStep = z.object({
   /** main：一个工作流这次执行的主 Agent（调度、评估子 Agent 的结果、整理最终结果），id 以 @main 结尾 */
   kind: z.enum(['agent', 'flow', 'main']).default('agent'),
   title: z.string(),
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
   status: StepStatus.default('pending'),
   startedAt: z.string().default(''),
   endedAt: z.string().default(''),
@@ -1706,7 +1624,7 @@ export const TaskTurn = z.object({
   id: z.string(),
   /** 这一轮要求的第一行（截短） */
   title: z.string(),
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
   status: TaskStatus,
   startedAt: z.string(),
   endedAt: z.string().default(''),
@@ -1755,7 +1673,7 @@ export type AgentUsage = z.infer<typeof AgentUsage>
 export const TaskTodo = z.object({
   text: z.string(),
   status: z.enum(['pending', 'running', 'done']),
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
 })
 export type TaskTodo = z.infer<typeof TaskTodo>
 
@@ -1975,7 +1893,7 @@ export const TaskData = z.object({
     )
     .default([]),
   workflowId: z.string().default(''),
-  agentId: z.string().default(''),
+  agentId: OptionalAgentRef,
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
   cli: z.string().default(''),
   model: z.string().default(''),
@@ -2026,7 +1944,7 @@ export const TaskData = z.object({
   /** 在线演示里的任务，输出是示例 */
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
-  sessions: z.record(z.string(), z.string()).default({}),
+  sessions: z.record(z.string(), z.string()).default({}).transform(moveSessions),
   /**
    * 每个会话最后一次带上的角色设定的指纹（键同 sessions）：没有系统提示词参数的 CLI 只在第一轮带角色，
    * 续接时角色变了就补发新版（见 server/exec/runner.ts）
@@ -2225,42 +2143,7 @@ export const TaskData = z.object({
 })
 export type TaskData = z.infer<typeof TaskData>
 
-/** 旧任务：消息的节点下标换成节点 id；旧 queue 里没处理的普通要求补到对话末尾（等 CLI 取走的补充丢掉） */
-function migrateTask(raw: unknown) {
-  const v = moveSessions(dropLegacyAgent(raw))
-  if (!v || typeof v !== 'object') return v
-  const t = v as {
-    steps?: { id?: string }[]
-    messages?: { step?: unknown; at?: string }[]
-    queue?: { id?: string; text?: unknown; attachments?: unknown; at?: unknown; note?: unknown }[]
-  }
-  const steps = (t.steps ?? []).map((s, i) => ({
-    ...s,
-    id: s.id ?? `s${i}`,
-    nodeId: (s as any).nodeId ?? s.id ?? `s${i}`,
-  }))
-  const messages = (t.messages ?? []).map((m) =>
-    typeof m.step === 'number' ? { ...m, step: m.step >= 0 ? (steps[m.step]?.id ?? '') : '' } : m,
-  )
-  const { queue, ...rest } = t
-  if (!Array.isArray(queue) || !queue.length) return { ...rest, steps, messages }
-  const now = new Date().toISOString()
-  const moved = queue
-    .filter((q) => q && q.note !== true && typeof q.text === 'string' && q.text.trim())
-    .map((q, i) => ({
-      id: typeof q.id === 'string' && q.id ? q.id : `q${i}`,
-      role: 'user' as const,
-      agentId: '',
-      step: '',
-      text: q.text as string,
-      tools: [],
-      ...(Array.isArray(q.attachments) && q.attachments.length ? { attachments: q.attachments } : {}),
-      at: typeof q.at === 'string' && q.at ? q.at : now,
-    }))
-  return { ...rest, steps, messages: [...messages, ...moved] }
-}
-
-export const Task = z.preprocess(migrateTask, TaskData.extend(Meta.shape))
+export const Task = TaskData.extend(Meta.shape)
 export type Task = z.infer<typeof TaskData> & z.infer<typeof Meta>
 
 /** 回答 Agent 的请求：允许 / 拒绝，问题的回答（一次问了几个时每个一条） */

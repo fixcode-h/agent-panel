@@ -135,7 +135,7 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 | `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话按改动筛出的那几条跑（一条都没命中就不跑） | 全量单测、全量界面检查、端到端测试 |
 
 **和原来的 `runInParent` 合并了**：勾「禁止子对话执行」就是 `scope: 'parent'`，不再保留两个字段。老数据解析时
-`migrateTestStep` 按原语义换算：`runInParent: true` → `parent`；命令明显是跑全量的（`test:unit`、`test:e2e`、`ui-check`、playwright 这类）→ `parent`，
+数据迁移 0011（`inferStepScope`）按原语义换算：`runInParent: true` → `parent`；命令明显是跑全量的（`test:unit`、`test:e2e`、`ui-check`、playwright 这类）→ `parent`，
 **这条优先于 `appliesTo`**——老默认步骤是「全量命令 + 适用改动」，先按 globs 判成 `changed` 会让存量项目照旧每个子对话跑全量；
 其余写了 `appliesTo` 的 → `changed`；`merge`（合并时编译）的步骤 → `changed`；剩下的是 `always`。
 appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会跑的步骤变成从不跑。

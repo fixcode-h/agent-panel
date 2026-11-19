@@ -29,7 +29,7 @@ import {
   START,
   TEST_STEP_ENVS,
   TestStepShape,
-  migrateTestStep,
+  inferStepScope,
   roleLayerDefaults,
   type Agent,
   type AgentInput,
@@ -896,23 +896,20 @@ function paramSpecFor(ctx: AssistContext) {
 
 /**
  * AI 给出的测试步骤：字段和项目里保存的那份是同一个定义（shared/schema.ts 的 TestStepFields），
- * 新加字段不会只在一边生效；AI 只是可以不给 id，由这里补。
+ * 新加字段不会只在一边生效；AI 只是可以不给 id，由这里补。没写 scope 的先按命令推断（resolveTestSteps 里）
  */
-const TEST_STEP_SHAPE = z.preprocess(
-  migrateTestStep,
-  TestStepShape.extend({
-    id: z.string().trim().max(40).optional(),
-    // AI 的输出严格校验：环境、超时写错就让它改，不悄悄回退。尤其 timeoutSec——schema 里的 catch(0)
-    // 会把非法值变成 0，而 0 是不限时，等于把写错的超时静默当成永不超时。只有保存下来的老数据才按 catch 回退
-    env: z.enum(TEST_STEP_ENVS).default('auto'),
-    timeoutSec: z
-      .number()
-      .int()
-      .min(0)
-      .max(24 * 3600)
-      .default(0),
-  }),
-)
+const TEST_STEP_SHAPE = TestStepShape.extend({
+  id: z.string().trim().max(40).optional(),
+  // AI 的输出严格校验：环境、超时写错就让它改，不悄悄回退。尤其 timeoutSec——schema 里的 catch(0)
+  // 会把非法值变成 0，而 0 是不限时，等于把写错的超时静默当成永不超时。只有保存下来的老数据才按 catch 回退
+  env: z.enum(TEST_STEP_ENVS).default('auto'),
+  timeoutSec: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .default(0),
+})
 
 /**
  * 校验 AI 给出的参数值：key 必须是派生出来的参数，值按类型校验。
@@ -962,7 +959,10 @@ export function resolveParamValues(json: unknown, spec: DerivedParam[]): { value
 export function resolveTestSteps(json: unknown): { steps?: TestStep[]; error?: string } {
   const obj = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
   const raw = Array.isArray(obj) ? obj : obj?.steps
-  const arr = z.array(TEST_STEP_SHAPE).max(40).safeParse(raw)
+  const arr = z
+    .array(TEST_STEP_SHAPE)
+    .max(40)
+    .safeParse(Array.isArray(raw) ? raw.map(inferStepScope) : raw)
   if (!arr.success) return { error: z.prettifyError(arr.error) }
   if (!arr.data.length) return { error: '至少要有一步；项目确实没有可执行的命令时就留在说明里，不要输出空列表' }
   const ids = new Set<string>()
