@@ -60,6 +60,8 @@ export const compLabel = (c: CompName) =>
     scrollbar: t('滚动条'),
     canvas: t('流程图画布'),
     countBadge: t('数字角标'),
+    flowNode: t('流程图节点'),
+    flowPin: t('流程图引脚'),
     sectionRail: t('分区导航'),
   })[c]
 
@@ -104,6 +106,7 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'canvas') return ({ minimap: t('小地图'), minimapW: t('小地图宽度') } as Record<string, string>)[prop]
   if (c === 'countBadge')
     return ({ size: t('大小'), bg: t('底色'), ring: t('外圈颜色') } as Record<string, string>)[prop]
+  if (c === 'flowNode' || c === 'flowPin') return flowPropLabel(c, prop) ?? prop
   if (c === 'sectionRail')
     return (
       {
@@ -146,6 +149,23 @@ const propLabel = (c: CompName, prop: string) => {
 }
 
 /** 数据表格的项：表头每种行一个颜色 */
+/** 流程图节点、引脚的项 */
+const flowPropLabel = (c: 'flowNode' | 'flowPin', prop: string): string | undefined =>
+  c === 'flowPin'
+    ? ({ size: t('圆点大小'), ring: t('和卡片隔开的外圈'), tone: t('出口的圆点按出口上色') } as Record<string, string>)[
+        prop
+      ]
+    : (
+        {
+          radius: t('圆角'),
+          bar: t('左侧色条宽度'),
+          tile: t('图标外的小方块'),
+          divider: t('标题下分隔线'),
+          detail: t('显示内容区（细节、条件）'),
+          rowH: t('出口行高'),
+        } as Record<string, string>
+      )[prop]
+
 const gridPropLabel = (prop: string): string | undefined =>
   ({
     rowH: t('行高'),
