@@ -168,6 +168,9 @@ export const EN_APP: Record<string, string> = {
   目标分支: 'Target branch',
   'Git 项目：让 Agent cherry-pick 时提交到这个本地分支（当前所在的分支不列出）。':
     'Git project: when asked to cherry-pick, the agent commits to this local branch (the current branch isn’t listed).',
+  资源文件类型: 'Asset file types',
+  '这些扩展名的文件 cherry-pick 冲突时不解冲突，直接用搬过去的版本覆盖目标；不在清单里的二进制文件也一样。代码等文本文件冲突时由 Agent 解。用空格或逗号分隔。':
+    'On a cherry-pick conflict, files with these extensions aren’t merged: the incoming version overwrites the target. Binary files not in the list are handled the same way. Conflicts in code and other text files are resolved by the agent. Separate with spaces or commas.',
   基本信息: 'Basics',
   '例如：官网前端': 'e.g. Website frontend',
   分类: 'Category',

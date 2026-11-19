@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Task } from '../shared/schema.ts'
@@ -308,29 +308,74 @@ test('cherry-pick：用户最近几条消息里要求过就算，不用按固定
   assert.equal(userAsked(msgs(['user', '你提到的那个问题再看看']), 'release'), false)
 })
 
-test('cherry-pick（Git）：有冲突不撤回，停在冲突的提交上留给用户解决，写清目录和冲突文件', async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'ap-pick-conflict-'))
+/** 建一个 main + release 两条分支的仓库：release 上先改过 a.txt，用来和 main 的提交撞冲突 */
+function conflictRepo(prefix: string) {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix))
+  sh(dir, 'init', '-q', '-b', 'main')
+  sh(dir, 'config', 'user.name', 't')
+  sh(dir, 'config', 'user.email', 't@t')
+  commit(dir, 'a.txt', 'a\n', 'base')
+  writeFileSync(path.join(dir, 'Hero.uasset'), Buffer.from([1, 0, 1]))
+  commit(dir, 'Logo.png', 'png-base', 'assets')
+  sh(dir, 'branch', 'release')
+  return dir
+}
+
+test('cherry-pick（Git）：代码冲突停在那个提交上交给 Agent 解，解完 resume 接着搬完剩下的', async () => {
+  const dir = conflictRepo('ap-pick-conflict-')
   try {
-    sh(dir, 'init', '-q', '-b', 'main')
-    sh(dir, 'config', 'user.name', 't')
-    sh(dir, 'config', 'user.email', 't@t')
-    commit(dir, 'a.txt', 'a\n', 'base')
-    sh(dir, 'branch', 'release')
     sh(dir, 'checkout', '-q', 'release')
     commit(dir, 'a.txt', 'release\n', 'release change')
     sh(dir, 'checkout', '-q', 'main')
     const mine = commit(dir, 'a.txt', 'mine\n', 'my fix')
-    const r = await cherryPickGit(dir, 'release', taskOf(['a.txt']), [mine])
+    const next = commit(dir, 'b.txt', 'b\n', 'my second')
+    const task = taskOf(['a.txt', 'b.txt'])
+    const r = await cherryPickGit(dir, 'release', task, [mine, next])
     assert.equal(r.ok, true, r.info)
-    assert.match(r.info, /有冲突[\s\S]*a\.txt[\s\S]*git cherry-pick --continue/)
+    assert.match(r.info, /有代码冲突[\s\S]*a\.txt[\s\S]*resume: true/)
     const at = /目录：(.+)/.exec(r.info)?.[1]?.trim() ?? ''
     assert.ok(at && at.startsWith(process.env.AGENT_PANEL_DATA!), '目标分支没检出时在数据目录里开工作目录')
-    assert.match(readFileSync(path.join(at, 'a.txt'), 'utf8'), /<<<<<<<[\s\S]*>>>>>>>/, '冲突留在文件里')
+    assert.match(readFileSync(path.join(at, 'a.txt'), 'utf8'), /<<<<<<<[\s\S]*>>>>>>>/, '冲突留在文件里给 Agent 解')
     assert.equal(sh(dir, 'branch', '--show-current'), 'main', '不动当前目录')
-    // 冲突没解决前再搬：那个目录不干净，说清楚
-    const again = await cherryPickGit(dir, 'release', taskOf(['a.txt']), [mine])
+    // 没解完就 resume：标记还在，不接着搬
+    const early = await cherryPickGit(dir, 'release', task, [], { resume: true })
+    assert.equal(early.ok, false)
+    assert.match(early.info, /还有冲突标记/)
+    // 冲突没解完时再发起新的搬运：提示先解完再 resume
+    const again = await cherryPickGit(dir, 'release', task, [mine])
     assert.equal(again.ok, false)
-    assert.match(again.info, /没提交的改动/)
+    assert.match(again.info, /resume: true/)
+    // Agent 解掉冲突后接着搬：两个提交都到了 release 上，面板开的工作目录删掉
+    writeFileSync(path.join(at, 'a.txt'), 'release\nmine\n')
+    const done = await cherryPickGit(dir, 'release', task, [], { resume: true })
+    assert.equal(done.ok, true, done.info)
+    assert.equal(sh(dir, 'show', 'release:a.txt'), 'release\nmine')
+    assert.equal(sh(dir, 'show', 'release:b.txt'), 'b')
+    assert.equal(sh(dir, 'log', '-1', '--format=%s', 'release'), 'my second')
+    assert.ok(!existsSync(at), '搬完删掉面板开的工作目录')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('cherry-pick（Git）：资源文件冲突不解冲突，直接用搬过去的版本覆盖，一路搬完', async () => {
+  const dir = conflictRepo('ap-pick-asset-')
+  try {
+    sh(dir, 'checkout', '-q', 'release')
+    commit(dir, 'Logo.png', 'png-release', 'release logo')
+    writeFileSync(path.join(dir, 'Hero.uasset'), Buffer.from([1, 0, 2]))
+    sh(dir, 'commit', '-q', '-am', 'release hero')
+    sh(dir, 'checkout', '-q', 'main')
+    writeFileSync(path.join(dir, 'Hero.uasset'), Buffer.from([1, 0, 3]))
+    const mine = commit(dir, 'Logo.png', 'png-mine', 'my assets')
+    const r = await cherryPickGit(dir, 'release', taskOf(['Logo.png', 'Hero.uasset']), [mine], {
+      exts: ['.png'],
+    })
+    assert.equal(r.ok, true, r.info)
+    assert.match(r.info, /已把 1 个提交[\s\S]*直接用搬过去的版本覆盖[\s\S]*Logo\.png/)
+    assert.match(r.info, /Hero\.uasset/, '清单外的二进制也按资源文件处理')
+    assert.equal(sh(dir, 'show', 'release:Logo.png'), 'png-mine')
+    assert.deepEqual([...execFileSync('git', ['show', 'release:Hero.uasset'], { cwd: dir })], [1, 0, 3])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -363,7 +408,7 @@ test('cherry-pick（P4）：和目标撞在一起时不撤回，冲突标记写�
       }
     const r = await cherryPickP4(root, target, taskOf([]), '8', p4)
     assert.equal(r.ok, true, r.info)
-    assert.match(r.info, /a\.lua（编辑，有冲突）[\s\S]*留给用户解决/)
+    assert.match(r.info, /a\.lua（编辑，有冲突）[\s\S]*把冲突解掉/)
     assert.match(readFileSync(path.join(target, 'src/a.lua'), 'utf8'), /<<<<<<< target[\s\S]*FIVE[\s\S]*>>>>>>> mine/)
     assert.ok(
       calls.some((c) => c[0] === 'dst' && c[1] === 'edit'),
@@ -376,7 +421,7 @@ test('cherry-pick（P4）：和目标撞在一起时不撤回，冲突标记写�
   }
 })
 
-test('cherry-pick（P4）：.uasset 这类二进制不按行合：目标没动过就直接换成这次的，目标也改过就跳过并说明，全程不调 git', async () => {
+test('cherry-pick（P4）：.uasset 这类二进制不按行合：目标没动过就直接换成这次的，目标也改过就用这次的覆盖，全程不调 git', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ap-pick-src-'))
   const target = mkdtempSync(path.join(tmpdir(), 'ap-pick-dst-'))
   const base = Buffer.from([0x9e, 0x2a, 0x83, 0xc1, 0, 0, 1, 2])
@@ -417,13 +462,10 @@ test('cherry-pick（P4）：.uasset 这类二进制不按行合：目标没动�
     assert.equal(r.ok, true, r.info)
     assert.ok(readFileSync(path.join(target, 'Content/A.uasset')).equals(mine), '目标没动过：直接是这次的版本')
     assert.match(r.info, /A\.uasset（编辑）/)
-    assert.match(r.info, /B\.uasset：是二进制文件，目标里的这个文件也改过，没法合并/)
+    assert.match(r.info, /资源文件和目标冲突[\s\S]*B\.uasset/)
     assert.doesNotMatch(r.info, /git merge-file/)
-    assert.ok(
-      readFileSync(path.join(target, 'Content/B.uasset')).equals(Buffer.from([0x9e, 0x2a, 0, 5])),
-      '两边都改过的不动',
-    )
-    assert.ok(!calls.some((c) => c[0] === 'dst' && c[1] === 'edit' && c.at(-1)!.endsWith('B.uasset')))
+    assert.ok(readFileSync(path.join(target, 'Content/B.uasset')).equals(mine), '两边都改过：用这次的覆盖目标')
+    assert.ok(calls.some((c) => c[0] === 'dst' && c[1] === 'edit' && c.at(-1)!.endsWith('B.uasset')))
   } finally {
     process.env.PATH = savedPath
     rmSync(root, { recursive: true, force: true })
