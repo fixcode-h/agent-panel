@@ -53,6 +53,7 @@ export const compLabel = (c: CompName) =>
     htmlCard: t('HTML 卡片'),
     changesCard: t('改动卡片'),
     foldBar: t('折叠条'),
+    liveText: t('实时输出'),
     styleRef: t('风格参考图'),
     toast: t('提示'),
     scrollbar: t('滚动条'),
@@ -86,6 +87,13 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'changesCard' && prop !== 'radius')
     return ({ scope: t('默认显示'), first: t('先列几个文件'), fold: t('一开始') } as Record<string, string>)[prop]
   if (c === 'foldBar' && prop === 'hint') return t('右边写「展开 / 收起」')
+  if (c === 'liveText')
+    return (
+      { maxH: t('正在输出时最多多高'), bar: t('左边竖线'), draft: t('「正在写」下面显示写到哪了') } as Record<
+        string,
+        string
+      >
+    )[prop]
   if (c === 'styleRef' && prop !== 'radius')
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')

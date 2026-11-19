@@ -379,6 +379,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await check(p, '设置-组件-改动卡片', ['这个对话改了 9 个文件', '默认显示', '先列几个文件', '一开始'])
     await spec.getByRole('button', { name: '恢复本组' }).click()
   }
+  // 实时输出（用户 2026-11-19）：思考和「正在写」工具入参下面写到哪了是同一个部件；关掉「显示写到哪了」只留那一行
+  {
+    const spec = p.getByText('LiveText · DraftRow', { exact: true }).locator('xpath=../..')
+    await spec.scrollIntoViewIfNeeded()
+    if (!((await spec.textContent()) ?? '').includes('symptom：加入购物车后'))
+      errors.push('设置-组件：实时输出样张「正在写」下面应该显示写到哪了')
+    await check(p, '设置-组件-实时输出', ['正在思考…', '正在写', 'hypotheses：'])
+    await spec.getByRole('button', { name: '微调', exact: true }).click()
+    await spec.getByRole('switch', { name: '「正在写」下面显示写到哪了' }).click()
+    if (((await spec.textContent()) ?? '').includes('symptom：加入购物车后'))
+      errors.push('设置-组件：关掉「显示写到哪了」后「正在写」下面不应该再有内容')
+    await spec.getByRole('button', { name: '恢复本组' }).click()
+  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新

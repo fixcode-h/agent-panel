@@ -242,6 +242,16 @@ export const COMP_SPEC = {
     hint: bool(true, 'inline', 'none'),
   },
   /**
+   * 实时输出（web/src/components/ui/live-text.tsx）：思考过程、模型正在写的工具入参（交诊断报告、建子对话、派子任务）
+   * 正在输出时那一块最多多高、左边竖线，以及要不要在「正在写」下面显示写到哪了（用户 2026-11-19）。
+   * 最后一项不是 CSS，DraftRow 读设置里的值；落成变量只为走同一套登记
+   */
+  liveText: {
+    maxH: px(160, 80, 480),
+    bar: bool(true, '2px', '0px'),
+    draft: bool(true, 'block', 'none'),
+  },
+  /**
    * 风格参考图和风格选择（web/src/components/ui/style-thumb.tsx、style-picker.tsx）：
    * 缩略图圆角、列表行里缩略图多宽、选中风格的描边颜色
    */

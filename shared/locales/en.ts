@@ -41,6 +41,7 @@ import { EN_WEB_VIEW } from './en/web-view.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_FOLD_BAR } from './en/fold-bar.ts'
+import { EN_LIVE_TEXT } from './en/live-text.ts'
 import { EN_BUG_OVERVIEW } from './en/bug-overview.ts'
 import { EN_FLOW_OVERVIEW } from './en/flow-overview.ts'
 import { EN_BUG_EVIDENCE } from './en/bug-evidence.ts'
@@ -91,6 +92,7 @@ export const EN: Record<string, string> = {
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
   ...EN_FOLD_BAR,
+  ...EN_LIVE_TEXT,
   ...EN_BUG_OVERVIEW,
   ...EN_FLOW_OVERVIEW,
   ...EN_BUG_EVIDENCE,

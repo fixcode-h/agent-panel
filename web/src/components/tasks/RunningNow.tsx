@@ -1,11 +1,14 @@
 import { useLiveById } from '@/lib/live/store'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import { CircleSlash, ClipboardCheck, Hand, Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
 import { stepMs, splitStepJobs, type ChildEntry } from '@shared/task'
 import { helperRunning, helperShown, sortHelpers } from '@shared/tasks/helpers'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
+import { componentsSnapshot, subscribeComponents } from '@/lib/appearance'
+import { compValue } from '@shared/component-style'
+import { LiveText } from '@/components/ui/live-text'
 import { jobLabel, toolView } from '@/lib/tasks'
 import { toolTitle } from '@shared/tool-names'
 import { useNow } from '@/lib/useNow'
@@ -97,13 +100,19 @@ export function activeHelpers(task: Task) {
 }
 
 /**
- * 模型正在写一个工具调用（入参整段写完才会报调用）：转圈、写明在写哪个工具、写了多久。
+ * 模型正在写一个工具调用（入参整段写完才会报调用）：转圈、写明在写哪个工具、写了多久，
+ * 下面像思考过程一样实时显示写到哪了（入参转成的文字，见 shared/live/draft-text.ts；用户 2026-11-19）。
+ * 所有工具都走这一行（交诊断报告、建子对话、派子任务、写文件……），点整行收起 / 展开下面的内容。
  * 面板工具按对话里那一行的叫法（交修复方案、记 Bug 档案），设计、插件的工具按 shared/tool-names.ts 的中文名，别家的工具照原名
  */
-function DraftRow({ tool, since, now }: { tool: string; since: string; now: number }) {
+export function DraftRow({ tool, since, text, now }: { tool: string; since: string; text?: string; now: number }) {
+  const [open, setOpen] = useState(true)
   const view = toolView({ kind: 'other', name: tool, label: '', detail: '' })
   const name = view?.tool.name && view.tool.name !== tool ? view.tool.name : toolTitle(tool)
   const at = Date.parse(since)
+  // 设置 → 组件 →「实时输出」能关掉下面的内容，只留这一行
+  const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
+  const has = !!text?.trim() && compValue(style, 'liveText', 'draft') !== false
   return (
     <RowShell
       glyph={spin}
@@ -111,10 +120,13 @@ function DraftRow({ tool, since, now }: { tool: string; since: string; now: numb
       title={name}
       titleClass={NAME_TITLE}
       detailStart
-      detail={<span className="truncate text-subtle">{t('内容较长时要写一会儿')}</span>}
+      detail={has ? undefined : <span className="truncate text-subtle">{t('内容较长时要写一会儿')}</span>}
       ms={at ? Math.max(0, now - at) : undefined}
-      open={false}
-    />
+      open={has && open}
+      onToggle={has ? () => setOpen(!open) : undefined}
+    >
+      {has && <LiveText text={text ?? ''} live className="my-2 ml-1 pr-2" />}
+    </RowShell>
   )
 }
 
@@ -365,7 +377,7 @@ export function RunningNow({
     // 过程行连成一组（见 index.css 的 proc-list）：每行默认浅底，行间留一点间距，不画分隔线
     <div className="proc-list flex flex-col" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
-      {drafting && <DraftRow tool={drafting.tool} since={drafting.at} now={now} />}
+      {drafting && <DraftRow tool={drafting.tool} since={drafting.at} text={drafting.text} now={now} />}
       {task && reports.length > 0 && <BugReportCards task={task} list={reports} />}
       {task &&
         helpers.map((s) => (

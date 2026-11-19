@@ -1,5 +1,5 @@
 import { useLiveById } from '@/lib/live/store'
-import { Fragment, memo, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useState } from 'react'
 import { ChevronRight, Brain, CircleAlert, Clock, Loader2, RotateCw, TriangleAlert } from 'lucide-react'
 import { LEAD_TAG, PANEL_KIND } from './panel-kind'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ import { agentIcon } from '@/lib/agent-icons'
 import { cliColor } from '@/lib/cli-style'
 import { ReplyHeader } from '@/components/ui/reply-header'
 import { FrostBarBg } from '@/components/ui/frost'
+import { LiveText } from '@/components/ui/live-text'
 import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows } from './RunningNow'
@@ -100,17 +101,14 @@ function ModelTime({ ms }: { ms: number }) {
 }
 
 /**
- * 思考过程：正在思考时展开并跟随最新内容，思考结束（开始输出回复）后自动收起成一行，可以点开看完整内容
+ * 思考过程：正在思考时展开并跟随最新内容，思考结束（开始输出回复、开始写工具调用）后自动收起成一行，可以点开看完整内容
  */
 function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean; ms?: number; thinkingMs?: number }) {
   const [open, setOpen] = useState<boolean | null>(null)
-  const box = useRef<HTMLDivElement>(null)
   const shown = open ?? live
-  useEffect(() => {
-    if (live && shown && box.current) box.current.scrollTop = box.current.scrollHeight
-  }, [text, live, shown])
   // 思考过程保持原来的样子（用户要求）：一行小字按钮，展开后左边一道竖线的正文，不做成过程行。
-  // AI 分析窗口里也用这一份（用户 2026-10-31 要求和对话一样），不再另画「思考 + 斜体摘要」
+  // AI 分析窗口里也用这一份（用户 2026-10-31 要求和对话一样），不再另画「思考 + 斜体摘要」。
+  // 正文用共用的实时输出块（ui/live-text.tsx），和「正在写」工具入参同一个样子
   return (
     <div className="flex flex-col gap-1.5">
       <button
@@ -124,17 +122,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
         {!live && !!ms && <ModelTime ms={ms} />}
         <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
       </button>
-      {shown && (
-        <div
-          ref={box}
-          className={cn(
-            'border-l-2 border-line-strong pl-3 text-body leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
-            live && 'max-h-40 overflow-y-auto',
-          )}
-        >
-          {text.trim()}
-        </div>
-      )}
+      {shown && <LiveText text={text} live={live} />}
     </div>
   )
 }
@@ -229,7 +217,7 @@ const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
  * 后台命令在 live 里，工具行自己订阅（ToolRow 的 useLiveById），不用经这里重画
  */
 type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> &
-  Partial<Pick<Task, 'analysis' | 'title' | 'bug' | 'projectId'>>
+  Partial<Pick<Task, 'analysis' | 'title' | 'bug' | 'projectId' | 'drafting'>>
 const jobsSig = (k?: ToolTask) => `${k?.bug?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {
@@ -346,7 +334,9 @@ const MessageBody = memo(
         {!hideProcess && m.thinking?.trim() && (
           <Thinking
             text={m.thinking}
-            live={!!live && !m.text.trim() && !m.tools.length}
+            // 思考完开始写工具入参（交诊断报告、建子对话这类要写一会儿）也算想完了：收起，
+            // 写到哪了在运行区「正在写」下面实时显示（用户 2026-11-19：想完了还卡在展开）
+            live={!!live && !m.text.trim() && !m.tools.length && !drafting(task)}
             ms={m.modelMs}
             thinkingMs={m.thinkingMs}
           />
@@ -396,8 +386,13 @@ const MessageBody = memo(
     a.task?.status === b.task?.status &&
     (a.task?.changes?.length ?? 0) === (b.task?.changes?.length ?? 0) &&
     // 后台命令跑完时这一行要停止转圈
-    jobsSig(a.task) === jobsSig(b.task),
+    jobsSig(a.task) === jobsSig(b.task) &&
+    // 开始写工具调用时思考要收起（见 Thinking 的 live）
+    drafting(a.task) === drafting(b.task),
 )
+
+/** 模型正在写工具调用的入参（对话不在跑时这条消息本来就不是 live，留下的旧记号不影响） */
+const drafting = (task?: ToolTask) => !!task?.drafting
 
 function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
   const [open, setOpen] = useState(false)

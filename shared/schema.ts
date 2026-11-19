@@ -2080,7 +2080,7 @@ export const TaskData = z.object({
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
   /** 模型正在写一个工具调用的入参（写大段报告、大文件时要一二十秒）：哪个工具、从什么时候开始。不存盘意义不大，调用到了就去掉 */
-  drafting: z.object({ tool: z.string(), at: z.string() }).optional(),
+  drafting: z.object({ tool: z.string(), at: z.string(), text: z.string().optional() }).optional(),
   /**
    * 对话停止（用户暂停、父对话结束时一起结束、归档）时被连带停掉的后台命令：存盘，
    * 下次继续时写进续接说明，让 Agent 知道哪些命令没跑完、要不要重新启动；续接后清空
