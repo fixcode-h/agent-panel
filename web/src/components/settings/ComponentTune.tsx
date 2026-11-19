@@ -103,7 +103,10 @@ const propLabel = (c: CompName, prop: string) => {
     return ({ thumbW: t('列表里缩略图宽度'), ring: t('选中风格的描边') } as Record<string, string>)[prop]
   if (c === 'toast' && prop !== 'radius' && prop !== 'bg' && prop !== 'border')
     return ({ position: t('位置'), duration: t('停留时长'), bar: t('左侧色条宽度') } as Record<string, string>)[prop]
-  if (c === 'canvas') return ({ minimap: t('小地图'), minimapW: t('小地图宽度') } as Record<string, string>)[prop]
+  if (c === 'canvas')
+    return ({ minimap: t('小地图'), minimapW: t('小地图宽度'), selectPad: t('选框外扩') } as Record<string, string>)[
+      prop
+    ]
   if (c === 'countBadge')
     return ({ size: t('大小'), bg: t('底色'), ring: t('外圈颜色') } as Record<string, string>)[prop]
   if (c === 'flowNode' || c === 'flowPin') return flowPropLabel(c, prop) ?? prop

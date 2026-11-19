@@ -3,6 +3,7 @@ export const EN_GRAPH_CANVAS: Record<string, string> = {
   流程图画布: 'Flow canvas',
   数字角标: 'Count badge',
   小地图宽度: 'Minimap width',
+  选框外扩: 'Selection box padding',
   外圈颜色: 'Ring color',
   流程图节点: 'Flow node',
   流程图引脚: 'Flow pin',
