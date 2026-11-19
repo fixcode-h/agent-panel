@@ -140,7 +140,8 @@ await runShard(import.meta.filename, async (api) => {
   else {
     if (!(await watch.getByText('logs/app.log').count())) errors.push('取证：没有显示认出来的日志文件路径')
     const fetchBtn = watch.getByRole('button', { name: '复现完了，取日志' })
-    if (!(await fetchBtn.isDisabled())) errors.push('取证：没点「开始复现」时「取日志」就能点')
+    // 没点「开始复现」也能取（交整个日志文件，818d983），这里接着走点过「开始复现」的那条路
+    if (await fetchBtn.isDisabled()) errors.push('取证：没点「开始复现」时「取日志」应该也能点（交整个文件）')
     await watch.getByRole('button', { name: '开始复现' }).click()
     await watch
       .getByText('已记下日志文件现在到哪了', { exact: false })
