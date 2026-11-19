@@ -68,6 +68,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/tasks/SystemNote': () => import('@/components/tasks/SystemNote'),
   'web/src/components/tasks/TaskComposer': () => import('@/components/tasks/TaskComposer'),
   'web/src/components/tasks/TaskView': () => import('@/components/tasks/TaskView'),
+  'web/src/components/ui/UnifiedDiff': () => import('@/components/ui/UnifiedDiff'),
   'web/src/components/ui/ai-fix': () => import('@/components/ui/ai-fix'),
   'web/src/components/ui/badge': () => import('@/components/ui/badge'),
   'web/src/components/ui/button': () => import('@/components/ui/button'),

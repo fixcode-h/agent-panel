@@ -62,6 +62,7 @@
     "web/src/components/tasks/SystemNote",
     "web/src/components/tasks/TaskComposer",
     "web/src/components/tasks/TaskView",
+    "web/src/components/ui/UnifiedDiff",
     "web/src/components/ui/ai-fix",
     "web/src/components/ui/badge",
     "web/src/components/ui/button",

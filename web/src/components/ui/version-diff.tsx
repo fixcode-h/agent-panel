@@ -36,6 +36,7 @@ export function VersionDiffShell({
   onClose,
   meta,
   list,
+  failed,
   pick,
   onPick,
   local,
@@ -50,6 +51,8 @@ export function VersionDiffShell({
   /** 标题后面的灰字：文件路径 · 工作表 / 资源类型 */
   meta: ReactNode
   list: VersionList | null
+  /** 版本记录取不到（接口出错）：左栏显示原因，不一直转圈 */
+  failed?: string
   pick: VersionPick
   onPick: (p: VersionPick) => void
   /** 「本地改动」那一项的说明；不传就不列这一项 */
@@ -82,7 +85,7 @@ export function VersionDiffShell({
             aria-label={t('版本记录')}
             className="thin-scroll flex min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2"
           >
-            <VersionNav list={list} pick={pick} onPick={onPick} local={local} tags={tags} />
+            <VersionNav list={list} failed={failed} pick={pick} onPick={onPick} local={local} tags={tags} />
           </nav>
           <ResizeHandle pane={pane} side="right" label={t('拖动调整版本列表宽度')} />
         </div>
@@ -98,17 +101,20 @@ export function VersionDiffShell({
 /** 左栏的列表本身（设置里的样张也用它） */
 export function VersionNav({
   list,
+  failed,
   pick,
   onPick,
   local,
   tags,
 }: {
   list: VersionList | null
+  failed?: string
   pick: VersionPick
   onPick: (p: VersionPick) => void
   local?: { meta: string; message: string }
   tags?: Record<string, ReactNode>
 }) {
+  if (!list && failed) return <p className="px-2 py-4 text-caption text-danger">{failed}</p>
   if (!list)
     return (
       <div className="flex justify-center p-6 text-subtle">
