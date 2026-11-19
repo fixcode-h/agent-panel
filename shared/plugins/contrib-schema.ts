@@ -41,7 +41,8 @@ export type PluginHook = z.infer<typeof PluginHook>
 
 /**
  * 插件带的测试步骤：字段和项目的测试步骤一样（同一个 TestStepShape），按改动筛、谁来跑的规则也一样。
- * 命令里的 {config.<参数>} 换成插件参数的当前值（引擎路径这类本机路径写在插件参数里，不写死在清单里）。
+ * 命令里的 {config.<参数>} 换成插件参数的当前值（引擎路径这类本机路径写在插件参数里，不写死在清单里），
+ * {dir} 换成插件包目录、{data} 换成插件数据目录（插件接口 13：插件带自己的脚本当测试步骤时用）。
  * detect 是项目根目录下要有的文件（glob，例如 *.uproject）：写了就只在这类项目里生效，免得 UE 的编译步骤出现在网页项目里
  */
 export const PluginTestStep = TestStepShape.extend({

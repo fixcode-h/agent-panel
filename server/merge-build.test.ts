@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { TestStep } from '../shared/schema.ts'
+import { TestStep, inferStepScope } from '../shared/schema.ts'
 import { verifyBlock } from '../shared/test-steps.ts'
 
 // 独立分支目录建在数据目录里：测试用临时目录，不碰本机真实的数据
@@ -26,7 +26,9 @@ function repo() {
   git(dir, 'commit', '-q', '-m', 'init')
   return dir
 }
-const step = (o: Partial<TestStep>) => TestStep.parse({ id: 's', name: '编译', command: 'true', merge: true, ...o })
+// 老步骤没有 scope：按数据迁移 0011 的换算（inferStepScope）补上再解析，和升级上来的项目一样
+const step = (o: Partial<TestStep>) =>
+  TestStep.parse(inferStepScope({ id: 's', name: '编译', command: 'true', merge: true, ...o }))
 
 test('子对话分支试合回原目录：撤回后原目录不变，提交后合进原分支', async () => {
   const dir = repo()
@@ -100,7 +102,7 @@ test('对话的验证说明：按改动大小分开，关掉时一律完整跑',
   const steps = [step({ id: 'tc', name: '类型检查', quick: true }), step({ id: 'e', name: '端到端', merge: false })]
   const on = verifyBlock(steps, { platform: 'linux', scaled: true })
   assert.match(on, /小改动.*只跑标「快速」的步骤（类型检查）/)
-  // 步骤行带上范围：merge 步骤迁移成 changed（命中适用改动才跑），老数据解析时不会变成 always 更不会变成 parent
+  // 步骤行带上范围：merge 步骤迁移成 changed（命中适用改动才跑），不会变成 always 更不会变成 parent
   assert.match(on, /类型检查（自动，快速，合并时编译，范围：命中适用改动才跑）/)
   const none = verifyBlock([step({ id: 'e', name: '端到端', merge: false })], {
     platform: 'linux',

@@ -65,6 +65,7 @@ await runShard('测试步骤筛选', async (api) => {
       cwd: '',
       when: '',
       appliesTo: ['**/*.cpp', '**/*.h', '**/*.cs', '**/*.uproject'],
+      scope: 'changed',
       timeoutSec: 0,
       note: '',
       enabled: true,
@@ -79,6 +80,7 @@ await runShard('测试步骤筛选', async (api) => {
       cwd: '',
       when: '',
       appliesTo: ['**/*.lua'],
+      scope: 'changed',
       timeoutSec: 0,
       note: '',
       enabled: true,
@@ -92,6 +94,7 @@ await runShard('测试步骤筛选', async (api) => {
       env: 'auto',
       cwd: '',
       when: '',
+      scope: 'parent',
       timeoutSec: 0,
       note: '',
       enabled: true,
@@ -148,8 +151,7 @@ await runShard('测试步骤筛选', async (api) => {
   assert.match(prompt, /适用改动（清单里一个都不匹配就跳过这一步）：未设置，总是执行/)
   assert.match(prompt, /同一时间仍然只编译一次/, 'merge 的编译仍然串行')
   assert.match(prompt, /名字后面标了「合并时编译」的步骤/, '步骤行会标「合并时编译」，规则不能悬空')
-  // 这里写的是迁移后的范围：UE 编译命令不匹配 FULL_SUITE_COMMAND，步骤走 legacyTestStepScope 时落到 changed；
-  // 改了那组全量命令的模式后这条断言要跟着看
+  // 范围按步骤上写的 scope（老步骤没有 scope 时由数据迁移 0011 按 legacyTestStepScope 换算，这里直接写成换算后的值）
   assert.match(
     prompt,
     /编译（cmd，合并时编译，范围：命中适用改动才跑）/,

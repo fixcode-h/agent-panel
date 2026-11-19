@@ -1,4 +1,5 @@
 import { setChild } from '@shared/children/task-child'
+import { migrateProjectShape, migrateTaskShape, migrateWorkflowShape } from '@shared/migrations/legacy-shapes'
 import { demoWebView } from './demo-web-view'
 import { demoPlugins } from './demo-plugins'
 import { demoMcpCatalog } from './demo-mcp-catalog'
@@ -801,6 +802,11 @@ function load(): Db {
   if (db.settings) migrateRemovedClis(db.settings)
   // 旧的演示数据、导入的数据缺新加的字段（标签、参数……）：按现在的结构补齐默认值
   db.agents = db.agents.map((a) => Agent.parse(a))
+  // 很早的演示数据里可能还是旧格式（阶段流程、单层工作流参数、queue）：和正式后端的迁移 0011 用同一份转换，
+  // 先换成当前格式再按 schema 补齐默认值（schema 只认当前格式）
+  for (const w of db.workflows) migrateWorkflowShape(w as unknown as Record<string, unknown>)
+  for (const p of db.projects) migrateProjectShape(p as unknown as Record<string, unknown>)
+  for (const tk of db.tasks ?? []) migrateTaskShape(tk as unknown as Record<string, unknown>)
   db.workflows = db.workflows.map((w) => Workflow.parse(w))
   db.categories = db.categories.map((c) => Category.parse(c))
   db.projects = db.projects.map((p) => Project.parse(p))

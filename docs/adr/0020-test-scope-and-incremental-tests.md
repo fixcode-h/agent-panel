@@ -49,7 +49,7 @@ ADR 0018 把「很吃资源的步骤」（e2e）挪到了合并后由父对话�
 
 - `parent` **就是原来的 `runInParent`**，不保留两个字段：「谁跑」和「跑多大范围」在实际使用里是同一件事，分成两个字段只会有
   「勾了但范围是 changed」这种没有意义的组合。
-- 迁移（`shared/schema.ts` 的 `migrateTestStep`，在 `TestStep` / `TestStepFields` 的 `preprocess` 上）：
+- 迁移（`shared/schema.ts` 的 `inferStepScope`；原来挂在 `TestStep` 的 `preprocess` 上，2026-11-19 起由数据迁移 0011 一次换完，AI 给的步骤没写 scope 时也按它推断）：
   `runInParent: true` → `parent`；**命令明显是跑全量的（`test:unit` / `test:e2e` / `ui-check` / playwright 这类）→ `parent`，
   这条判断放在 `appliesTo` 之前**——老默认步骤的形态就是「全量命令 + 适用改动」，先按 globs 判成 `changed`
   会让存量项目照旧每个子对话跑一遍全量，这次优化对老项目等于没生效；其余写了 `appliesTo` 的 → `changed`；

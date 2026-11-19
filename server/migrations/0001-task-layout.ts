@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { readdir, rmdir } from 'node:fs/promises'
 import path from 'node:path'
 import { Task } from '../../shared/schema.ts'
+import { migrateTaskShape } from '../../shared/migrations/legacy-shapes.ts'
 import { readJson, writeJsonAtomic, writeTextAtomic } from '../store.ts'
 import { head, safeTaskId } from '../tasks/store.ts'
 import { MSG_JSONL, messagesToJsonl } from '../tasks/messages-file.ts'
@@ -45,6 +46,8 @@ export const taskLayout: Migration = {
     const items = path.join(root, 'items')
     const olds: Task[] = []
     const take = (raw: unknown) => {
+      // 这么老的任务一定还是旧格式（步骤没 id、消息记节点下标、queue）：先换成当前格式再解析，schema 只认当前格式
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) migrateTaskShape(raw as Record<string, unknown>)
       const p = Task.safeParse(raw)
       if (!p.success || !safeTaskId(p.data.id)) return
       fillTurnSeen(raw, p.data)

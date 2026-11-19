@@ -4,11 +4,12 @@ import { checkOutput, type HookDef, type HookInput, type HooksData } from '../..
 import { t } from '../../shared/i18n.ts'
 import { frontField } from '../../shared/library.ts'
 import { pluginById, pluginEnabled } from '../../shared/plugins/index.ts'
-import { pluginItemId, setProjectProbe } from '../../shared/plugins/contrib.ts'
+import { pluginItemId, setPluginPaths, setProjectProbe } from '../../shared/plugins/contrib.ts'
 import { matchesGlob } from '../../shared/test-steps.ts'
 import { allPluginEntries } from '../bundled-skills.ts'
 import { runCommand, type HookRun } from '../hooks/run.ts'
 import { installedList } from './manager.ts'
+import { pluginDataDir } from './store.ts'
 import { runningPlugin } from './runtime.ts'
 
 /**
@@ -39,6 +40,12 @@ setProjectProbe((dir, globs) => {
     rootNames.set(dir, hit)
   }
   return hit.names.some((n) => globs.some((g) => matchesGlob(n, g)))
+})
+
+// 插件测试步骤命令里的 {dir}、{data}（插件接口 13）：包目录按现在装着的那一份取，升级、换成链接目录后跟着变
+setPluginPaths((id) => {
+  const p = installedList().find((x) => x.manifest.id === id)
+  return p ? { dir: p.dir, data: pluginDataDir(id) } : undefined
 })
 
 /** 插件钩子：用户钩子的形状加上它从哪个插件来、跑包里哪个脚本（空 = 交给服务端入口的 hook()） */

@@ -1,13 +1,20 @@
 /**
- * 旧任务里的 queue（以前执行中排队的追加要求）：读出来时并进对话、然后清掉字段；
- * 单条坏数据不能把整个任务丢掉。运行：npm run test:unit
+ * 旧任务里的 queue（以前执行中排队的追加要求）：数据迁移 0011 并进对话、然后清掉字段
+ * （shared/migrations/legacy-shapes.ts 的 migrateTaskShape）；单条坏数据不能把整个任务丢掉。运行：npm run test:unit
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
 import { Task } from '../../shared/schema.ts'
+import { migrateTaskShape } from '../../shared/migrations/legacy-shapes.ts'
 
 setLang('zh')
+
+/** 旧任务记录：先过迁移再按当前 schema 读，和升级后的数据目录一样 */
+const parseOld = (raw: Record<string, unknown>) => {
+  migrateTaskShape(raw)
+  return Task.parse(raw)
+}
 
 const base = (extra: Record<string, unknown>) => ({
   id: 't1',
@@ -25,7 +32,7 @@ const base = (extra: Record<string, unknown>) => ({
 })
 
 test('旧数据里的普通排队要求：补到对话末尾，原文、附件和时间都保留', () => {
-  const t = Task.parse(
+  const t = parseOld(
     base({
       queue: [
         {
@@ -48,7 +55,7 @@ test('旧数据里的普通排队要求：补到对话末尾，原文、附件�
 })
 
 test('旧数据里等 CLI 取走的补充（note）：已经不成立，丢弃', () => {
-  const t = Task.parse(
+  const t = parseOld(
     base({
       queue: [{ id: 'q1', text: '还没取走的补充', attachments: [], at: '2026-10-01T00:02:00.000Z', note: true }],
     }),
@@ -61,7 +68,7 @@ test('旧数据里等 CLI 取走的补充（note）：已经不成立，丢弃',
 })
 
 test('旧数据里有一条坏掉的排队消息：不要整个任务失败', () => {
-  const t = Task.parse(
+  const t = parseOld(
     base({
       queue: [
         { id: 'bad', text: 42 },
@@ -74,11 +81,11 @@ test('旧数据里有一条坏掉的排队消息：不要整个任务失败', ()
 })
 
 test('没有 queue 的旧任务照常读出来', () => {
-  const t = Task.parse(base({}))
+  const t = parseOld(base({}))
   assert.equal(t.messages.length, 2)
 })
 
 test('旧任务里已经去掉的 childLimit：读出来直接忽略，不报错', () => {
-  const t = Task.parse(base({ childLimit: 2 }))
+  const t = parseOld(base({ childLimit: 2 }))
   assert.equal('childLimit' in t, false, '清掉已删除的子对话并发上限')
 })

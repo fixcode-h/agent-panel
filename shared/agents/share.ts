@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { AgentInput, WorkflowFields, type Agent, type Workflow } from '../schema.ts'
 import { contentHash } from '../hash.ts'
 import { t } from '../i18n.ts'
+import { migrateWorkflowShape } from '../migrations/legacy-shapes.ts'
 
 /** 包的类型标记：读文件时先看它，别的 JSON 直接拒 */
 export const SHARE_FORMAT = 'agent-panel/share'
@@ -197,7 +198,10 @@ function cleanShare(pkg: SharePackage): SharePackage {
 function readLegacy(
   raw: Record<string, unknown>,
 ): { ok: true; pkg: SharePackage; legacy: true } | { ok: false; info: string } {
-  const w = WorkflowFields.safeParse(raw.workflow)
+  // 旧版导出的文件里可能还是「阶段」流程：先换成流程图（和数据迁移 0011 同一份转换），schema 只认当前格式
+  const body = structuredClone(raw.workflow) as unknown
+  if (body && typeof body === 'object' && !Array.isArray(body)) migrateWorkflowShape(body as Record<string, unknown>)
+  const w = WorkflowFields.safeParse(body)
   if (!w.success)
     return { ok: false, info: t('旧版导出的工作流文件格式不对：{error}', { error: z.prettifyError(w.error) }) }
   const agents = z.array(ShareAgentRef).safeParse(raw.agents ?? [])

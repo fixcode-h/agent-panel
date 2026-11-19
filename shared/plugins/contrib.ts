@@ -34,6 +34,21 @@ let probe: Probe = () => true // 模块状态：接线，启动时登记
 export const setProjectProbe = (p: Probe) => void (probe = p)
 
 /**
+ * 插件包目录和数据目录（插件接口 13）：命令里的 {dir}、{data} 换成它们，插件就能带一个自己的脚本当测试步骤
+ * （例如 UE 插件按项目找引擎再编译蓝图：引擎路径每个项目不一样，写进一个全局的 {config.xxx} 管不住 5.4、5.8 混用）。
+ * 只有服务端知道目录，所以由服务端注入；网页、单测不注入时原样显示 {dir}
+ */
+type PluginPaths = (id: string) => { dir: string; data: string } | undefined
+let pluginPaths: PluginPaths = () => undefined // 模块状态：接线，启动时登记
+export const setPluginPaths = (p: PluginPaths) => void (pluginPaths = p)
+
+/** 命令里的 {dir}、{data} 换成插件包目录、数据目录；不知道目录时原样留着 */
+export function fillPluginPaths(command: string, id: string) {
+  const p = pluginPaths(id)
+  return p ? command.replace(/\{(dir|data)\}/g, (_, k: 'dir' | 'data') => p[k]) : command
+}
+
+/**
  * 开着的插件给这个项目带来的测试步骤（已换好参数、id 加了插件前缀）。
  * 排在项目自己的步骤后面；项目设置里关掉的（pluginStepsOff）、detect 对不上的不算
  */
@@ -45,7 +60,7 @@ export function pluginTestSteps(project: Partial<Pick<Project, 'path' | 'pluginS
       if (off.has(id)) return []
       if (s.detect.length && !(project.path && probe(project.path, s.detect))) return []
       const { detect: _d, ...step } = s
-      return [{ ...step, id, command: fillConfig(step.command, activePluginConfig(p.id)) }]
+      return [{ ...step, id, command: fillPluginPaths(fillConfig(step.command, activePluginConfig(p.id)), p.id) }]
     }),
   )
 }

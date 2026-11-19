@@ -139,7 +139,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 要重排时一起做：定义里改 `category`，`install.ts` 加一次性的分类迁移（旧分类空了就删），再更新本表。
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，
-旧数据里的 `default-agent` 读出来就是空字符串（`shared/schema.ts` 的 `dropLegacyAgent`）。
+旧数据里的 `default-agent` 读出来就是空字符串（`shared/schema.ts` 指向角色的字段用的 `AgentRef`）。
 
 ### 已合并的 Agent
 
