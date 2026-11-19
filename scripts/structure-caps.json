@@ -28,7 +28,7 @@
     "web/src/components/files/FileTree.tsx::FileExplorer": 610,
     "web/src/components/files/FileViewDialog.tsx::FileViewDialog": 400,
     "web/src/components/files/SheetTable.tsx::SheetTable": 440,
-    "web/src/components/flow/FlowEditor.tsx::Editor": 720,
+    "web/src/components/flow/FlowEditor.tsx::Editor": 710,
     "web/src/components/flow/Inspector.tsx::NodeInspector": 420,
     "web/src/components/library/LibraryDetail.tsx::LibraryDetail": 340,
     "web/src/components/library/SkillFiles.tsx::SkillFiles": 420,
@@ -427,7 +427,7 @@
     ]
   },
   "taskFields": 91,
-  "preprocess": 10,
+  "preprocess": 2,
   "orchInlineTools": 0,
   "hostMembers": {
     "OrchSubmit": 3,

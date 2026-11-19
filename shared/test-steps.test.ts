@@ -33,6 +33,7 @@ import {
   verifyBlock,
 } from './test-steps.ts'
 import { type TaskTestRun, type TestStep, ProjectInput } from './schema.ts'
+import { migrateProjectShape } from './migrations/legacy-shapes.ts'
 
 const step = (appliesTo: string[], more: Partial<TestStep> = {}) => ({
   id: 's',
@@ -342,7 +343,8 @@ test('scope 三档：always 不看 globs、changed 命中才跑、parent 一律�
 })
 
 test('老数据的 runInParent 迁成 scope：勾了的转 parent，没勾的按原筛选语义还原', () => {
-  const saved = ProjectInput.parse({
+  // 数据迁移 0011 换算（shared/migrations/legacy-shapes.ts），换完再按当前 schema 读
+  const raw: Record<string, unknown> = {
     name: '项目',
     path: '/tmp/p',
     testSteps: [
@@ -359,7 +361,10 @@ test('老数据的 runInParent 迁成 scope：勾了的转 parent，没勾的按
       // 已经写了 scope 的不动
       { id: 'e', name: '格式检查', command: 'npx prettier --check .', scope: 'changed' },
     ],
-  })
+  }
+  assert.equal(migrateProjectShape(raw), true)
+  assert.equal(migrateProjectShape(raw), false, '重复跑不再改')
+  const saved = ProjectInput.parse(raw)
   const byId = Object.fromEntries(saved.testSteps.map((s) => [s.id, s]))
   assert.equal(byId.a.scope, 'parent')
   assert.equal(byId.b.scope, 'changed')
@@ -369,7 +374,7 @@ test('老数据的 runInParent 迁成 scope：勾了的转 parent，没勾的按
   assert.equal(byId.e.scope, 'changed', '写了 scope 的老数据不重新推断')
   // 迁移后不保留旧字段：同一份数据里不能再有两套「谁来跑」的说法
   for (const s of saved.testSteps) assert.equal('runInParent' in s, false)
-  // 旧字段不走迁移函数也照样能读（服务端可能直接解析旧步骤）：默认 always，不会漏跑
+  // 没走迁移的步骤照样能读（没写 scope）：默认 always，不会漏跑
   assert.equal(
     ProjectInput.parse({ name: 'p', path: '/tmp/p', testSteps: [{ id: 'x', name: 'x', command: 'x' }] }).testSteps[0]
       .scope,

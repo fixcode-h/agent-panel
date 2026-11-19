@@ -5,7 +5,6 @@
 import {
   END,
   START,
-  stagesToFlow,
   type Agent,
   type Flow,
   type FlowNode,
@@ -17,6 +16,7 @@ import {
   type WorkflowMember,
 } from '../schema.ts'
 import { t } from '../i18n.ts'
+import { stagesToFlow } from './stages.ts'
 
 const rand = () => Math.random().toString(36).slice(2, 10)
 export const flowId = (prefix: 'nd' | 'e' | 'fl' | 'st') => `${prefix}_${rand()}`

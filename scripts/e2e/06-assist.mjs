@@ -32,33 +32,7 @@ await runShard('AI 创建与风格库', async (api) => {
       ),
     ],
   })
-  // 旧格式（阶段）的工作流自动转换成连线
-  const old = await call('POST', '/workflows', {
-    name: '旧格式',
-    mainAgentId: A.id,
-    members: [],
-    document: '',
-    stages: [
-      { id: 's1', title: '', nodes: [{ id: 'o1', title: '一' }] },
-      {
-        id: 's2',
-        title: '',
-        nodes: [
-          { id: 'o2', title: '二' },
-          { id: 'o3', title: '三' },
-        ],
-      },
-    ],
-  })
-  assert.equal(old.flows.length, 1)
-  assert.deepEqual(old.flows[0].edges.map((e) => `${e.from}>${e.to}`).sort(), [
-    'o1>o2',
-    'o1>o3',
-    'o2>end',
-    'o3>end',
-    'start>o1',
-  ])
-  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型和思考强度；Agent 权限覆盖设置；旧格式工作流自动转换')
+  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型和思考强度；Agent 权限覆盖设置')
 
   // ---- AI 创建 / 优化 ----
   async function assistDone(job) {

@@ -2,10 +2,19 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildAssistPrompt, resolveProposal, type AssistContext } from '../assist.ts'
 import { ProjectInput, Workflow } from '../schema.ts'
+import { newFlow } from '../flow/index.ts'
 import { ProjectProposalSchema, readProjectProposal, withInitResult, type ProjectProposal } from './init.ts'
 
 const wf = (id: string, name: string, expose: unknown[] = []) =>
-  Workflow.parse({ id, name, createdAt: '', updatedAt: '', mainAgentId: '', expose })
+  Workflow.parse({
+    id,
+    name,
+    createdAt: '',
+    updatedAt: '',
+    mainAgentId: '',
+    expose,
+    flows: [newFlow('主流程', 'main')],
+  })
 const general = wf('w-general', '通用项目', [
   { key: 'docRoot', label: '文档根', type: 'text', target: 'agent', targetId: 'docRoot' },
   {
