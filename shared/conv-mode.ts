@@ -15,6 +15,14 @@ type ModeOf = Pick<Task, 'mode' | 'projectId'> & { parentTaskId?: string }
 export const isChatMode = (tk: ModeOf) => tk.mode === 'chat' && !tk.projectId && !tk.parentTaskId
 
 /**
+ * 交给插件的对话模式（PluginRun.mode，插件接口 2 写的是 agent / chat / workflow）。
+ * 项目里的对话和子对话存的 task.mode 也是 'chat'（TaskMode 只分对话和工作流），原样交出去插件会把它们当成 Chat 页的对话，
+ * UE 插件按「Chat 页不挂」就给所有项目对话都不挂工具了。所以这里按 isChatMode 换成 agent，只有 Chat 页的对话才是 chat
+ */
+export const pluginRunMode = (tk: ModeOf): 'agent' | 'chat' | 'workflow' =>
+  tk.mode === 'workflow' ? 'workflow' : isChatMode(tk) ? 'chat' : 'agent'
+
+/**
  * 同一个进度最多推几次（ADR 0037）：Agent 模式不限次数（用户 2026-11-05 定，设置里的「面板提醒次数」去掉了），
  * 靠 end_turn 交代结束、空转保护（shared/end-turn.ts 的 SPIN_MAX）收住；Chat 页一问一答只推一次
  */

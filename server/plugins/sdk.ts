@@ -135,7 +135,7 @@ export interface PluginRun {
   /** 对话所在的项目和工作目录（插件接口 2）：按项目挂工具的插件据此决定挂不挂、连哪个项目 */
   projectId?: string
   cwd?: string
-  /** 对话的模式：agent（项目里执行）、chat、workflow…（插件接口 2） */
+  /** 对话的模式（插件接口 2）：agent（项目里的对话和子对话）、chat（只有 Chat 页没有项目的对话）、workflow（工作流） */
   mode?: string
   /**
    * 这一轮是不是用户直接在聊的对话（插件接口 6）：父对话、子对话、Chat 对话都是，派出的一次性子任务和工作流节点不是。

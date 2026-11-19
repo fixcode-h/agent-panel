@@ -113,3 +113,11 @@ test('Chat 页能选的角色：自建的 Chat 角色；默认的「助手」和
   assert.ok(!pickableChatRole(role({ scope: 'agent' })), 'Agent 角色不在 Chat 页选')
   assert.ok(!pickableChatRole(role({ enabled: false })))
 })
+
+test('交给插件的模式：项目里的对话和子对话是 agent，只有 Chat 页的对话是 chat', async () => {
+  const { pluginRunMode } = await import('./conv-mode.ts')
+  assert.equal(pluginRunMode({ mode: 'chat', projectId: '' }), 'chat')
+  assert.equal(pluginRunMode({ mode: 'chat', projectId: 'p1' }), 'agent', '项目里的父对话')
+  assert.equal(pluginRunMode({ mode: 'chat', projectId: 'p1', parentTaskId: 'parent' }), 'agent', '子对话')
+  assert.equal(pluginRunMode({ mode: 'workflow', projectId: 'p1' }), 'workflow')
+})
