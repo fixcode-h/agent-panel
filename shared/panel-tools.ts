@@ -52,6 +52,7 @@ export const PANEL_TOOL_NAMES = [
   'p4_split_changelists',
   'cherry_pick',
   'ask_push',
+  'request_override',
   'use_capability',
   'begin_inline_edit',
   'end_inline_edit',
@@ -139,6 +140,7 @@ export const PANEL_TOOL_ROLE: Record<PanelToolName, ToolRole> = {
   p4_split_changelists: 'work',
   cherry_pick: 'work',
   ask_push: 'ask',
+  request_override: 'ask',
   use_capability: 'work',
   begin_inline_edit: 'dispatch',
   end_inline_edit: 'wrap',
@@ -236,6 +238,8 @@ export const DEFERRED_TOOLS: readonly string[] = [
   'p4_split_changelists',
   'app_actions',
   'app_do',
+  // 只在门禁拦下用户要求的操作时用，拦截说明里点了名（ADR 0070）
+  'request_override',
 ]
 
 interface McpTool {

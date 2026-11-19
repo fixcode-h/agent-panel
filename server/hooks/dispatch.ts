@@ -43,6 +43,8 @@ import { bigOutputHint, bigReadDeny } from './guards-context.ts'
 import { snapshotBeforeEdit } from '../tasks/bug-probe.ts'
 import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
 import { taskMap } from '../runtime/task-state.ts'
+import { gateDeny, targetOf } from './overrides.ts'
+import { userHookGate } from '../../shared/hooks/override.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -344,9 +346,11 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         detail: res.error ?? res.out?.reason ?? res.out?.context ?? '',
         ms: res.ms,
       })
-      if (failed === 'deny') out.deny ??= `【钩子「${h.name}」出错，按设置拒绝】${res.error}`
-      if (res.out?.deny) out.deny ??= res.out.reason
-      if (res.out?.block) out.block ??= res.out.reason
+      // 用户钩子拦下的也能请用户放行（ADR 0070）：放行过这个钩子就当它这次没拦
+      const gate = (why: string) => gateDeny(c.task.id, userHookGate(h.name), h.name, targetOf(facts), why)
+      if (failed === 'deny') out.deny ??= gate(`【钩子「${h.name}」出错，按设置拒绝】${res.error}`) || undefined
+      if (res.out?.deny && res.out.reason) out.deny ??= gate(res.out.reason) || undefined
+      if (res.out?.block && res.out.reason) out.block ??= gate(res.out.reason) || undefined
       if (res.out?.context) out.context.push(res.out.context)
       if (out.deny || out.block) break
     }
@@ -365,6 +369,26 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       detail,
       ms: 0,
     })
+
+  /**
+   * 门禁拦下时先看用户放没放行（ADR 0070）：放行过就当这个门禁这次没拦（返回空串）；
+   * 没放行时记下拦了什么，原因后面附上「用户要求的就请用户放行」
+   */
+  const gated = (id: string, facts: HookFacts | undefined, deny: string) =>
+    gateDeny(c.task.id, id, BUILTIN_HOOKS.find((h) => h.id === id)?.name() ?? id, targetOf(facts), deny)
+  /** 按顺序问工具前的守卫，第一个拦下（且用户没放行）的说了算；skip 是这个入口不问的守卫 */
+  const firstDeny = (facts: HookFacts, what: string, skip = ''): string => {
+    for (const [id, fn] of guards) {
+      if (id === skip) continue
+      const raw = fn(guard(id), facts)
+      const deny = raw && gated(id, facts, raw)
+      if (!deny) continue
+      taskLog(c.task.id, what, { guard: id, tool: facts.tool?.name, target: targetOf(facts).slice(0, 200) })
+      noteBuiltin(id, 'tool.before', 'deny', deny)
+      return deny
+    }
+    return ''
+  }
 
   const endOff = off.has('turn.beforeEnd')
   const builtinEnd = on('keep-going') && !endOff ? c.call.beforeEnd : undefined
@@ -391,6 +415,12 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           if (!d.block && userEnd) {
             const u = await runUser('turn.beforeEnd', {})
             if (u.block) d = { block: true, reason: u.block, why: 'user-hook' }
+          }
+          // 收尾门禁也能请用户放行（ADR 0070）：用户要先停、不用验证时，点了放行这一次就让它结束
+          const endGate = d.why === 'verify' ? 'verify-before-end' : d.why === 'user-hook' ? '' : 'keep-going'
+          if (d.block && d.reason && endGate) {
+            const reason = gated(endGate, undefined, d.reason)
+            d = reason ? { ...d, reason } : { block: false, why: 'override' }
           }
           if (d.block && d.reason) {
             c.mark(d.reason)
@@ -429,20 +459,15 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   let bigHints = 0
   const onHook = async (event: HookEventName, facts: HookFacts): Promise<HookAnswer> => {
     if (event === 'tool.before') {
-      for (const [id, fn] of guards) {
-        const deny = fn(guard(id), facts)
-        if (!deny) continue
-        taskLog(c.task.id, '工具前钩子：拒绝', { guard: id, tool: facts.tool?.name, path: facts.tool?.path })
-        noteBuiltin(id, event, 'deny', deny)
-        return { deny: true, reason: deny }
-      }
+      const deny = firstDeny(facts, '工具前钩子：拒绝')
+      if (deny) return { deny: true, reason: deny }
       const u = await runUser(event, facts)
       if (u.deny) return { deny: true, reason: u.deny }
       // 补排查窗口开着：放行的改文件先给文件拍「加之前」的快照，这一轮结束按它核对（server/tasks/bug-probe.ts）
       if (facts.tool?.kind === 'edit' && c.task.bug?.probes?.length)
         await snapshotBeforeEdit(c.task, c.cwd, facts.tool.paths.length ? facts.tool.paths : [facts.tool.path])
       // 用户升级成拦截的教训（ADR 0066）：对得上的命令直接拒绝，给出对的做法
-      const blocked = know ? await know.blocked(facts) : ''
+      const blocked = know ? gated('push-lessons', facts, await know.blocked(facts)) : ''
       if (blocked) {
         noteBuiltin('push-lessons', event, 'deny', blocked)
         return { deny: true, reason: blocked }
@@ -513,14 +538,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     const facts: HookFacts = {
       tool: { kind: 'shell', name: 'run_background', input: { command }, path: '', paths: [] },
     }
-    for (const [id, fn] of guards) {
-      if (id === 'long-command-guard') continue
-      const deny = fn(guard(id), facts)
-      if (!deny) continue
-      taskLog(c.task.id, '后台命令被守卫拒绝', { guard: id, command: command.slice(0, 200) })
-      noteBuiltin(id, 'tool.before', 'deny', deny)
-      return deny
-    }
+    const deny = firstDeny(facts, '后台命令被守卫拒绝', 'long-command-guard')
+    if (deny) return deny
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 
@@ -530,13 +549,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
    */
   const editGuard = async (tool: string, paths: string[], input: Record<string, unknown>): Promise<string> => {
     const facts: HookFacts = { tool: { kind: 'edit', name: tool, input, path: paths[0] ?? '', paths } }
-    for (const [id, fn] of guards) {
-      const deny = fn(guard(id), facts)
-      if (!deny) continue
-      taskLog(c.task.id, '插件工具被守卫拒绝', { guard: id, tool, paths: paths.slice(0, 5) })
-      noteBuiltin(id, 'tool.before', 'deny', deny)
-      return deny
-    }
+    const deny = firstDeny(facts, '插件工具被守卫拒绝')
+    if (deny) return deny
     return mine('tool.before').length ? ((await runUser('tool.before', facts)).deny ?? '') : ''
   }
 

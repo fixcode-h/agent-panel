@@ -42,6 +42,7 @@ export const AUDIENCE_REPS: Record<Audience, Orchestra> = {
     ueBuild: 'parent',
     cherryPick: ok,
     askPush: ok,
+    requestOverride: ok,
   },
   child: {
     ...base,
@@ -52,6 +53,7 @@ export const AUDIENCE_REPS: Record<Audience, Orchestra> = {
     claims: true,
     canBeginEdit: true,
     ueBuild: 'child',
+    requestOverride: ok,
   },
   helper: {
     ...base,

@@ -17,7 +17,7 @@ export function pushPolicyText(p: NonNullable<EngineHost['policy']>, wt: string,
   if (p.noRemote)
     return '推送：这个仓库没有配置远端（git remote 为空），没有地方可推：不 push、不建 PR、不合并主干，也不问用户要不要推送；结论里写「已在本地提交，仓库没有远端」。用户要推送时告诉他先给仓库加上远端。'
   if (p.push === 'deny')
-    return '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不合并主干、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
+    return '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不合并主干、不 P4 submit，也不问用户要不要推；用户在对话里明确要求推送时照做：git push 会被面板拦下，按拦截说明调用 request_override 请用户在卡片上放行这一次（要以后都推送，请用户到项目设置把「推送到远端」改掉）。'
   // 拒绝过以后：用户亲手在授权卡上点才算数，所以用户在对话里改口时也要再弹一次卡，不能凭一句话直接推
   if (p.answered === 'denied')
     return `推送：这个对话里用户已经拒绝过推送：不要推、不建 PR、不合并主干，也不要再问。用户之后在对话里明确要求推送时，调用 ${ASK_PUSH} 请用户在授权卡上确认一次，不要直接推。`

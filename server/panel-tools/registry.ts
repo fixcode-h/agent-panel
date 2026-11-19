@@ -7,6 +7,7 @@
  */
 import type { Orchestra } from '../../shared/engine/host.ts'
 import { ASK_PUSH_ENTRY } from './ask-push.ts'
+import { REQUEST_OVERRIDE_ENTRY } from './request-override.ts'
 import { BACKGROUND_TOOLS } from './background-tools.ts'
 import { DIAGNOSIS_TOOLS } from './diagnosis-tool.ts'
 import { END_TURN } from './end-turn-tool.ts'
@@ -47,6 +48,7 @@ export const PANEL_TOOLS: readonly PanelTool[] = [
   P4_SPLIT,
   CHERRY_PICK,
   ASK_PUSH_ENTRY,
+  REQUEST_OVERRIDE_ENTRY,
   END_TURN,
   USER_ACTION,
   ...DIAGNOSIS_TOOLS,

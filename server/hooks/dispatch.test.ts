@@ -156,7 +156,8 @@ test('用户钩子：真的跑脚本，拒绝原因交回；出错按设置放�
   assert.ok(o.hookEvents?.includes('tool.before'))
   const r = await o.onHook!('tool.before', edit('package-lock.json'))
   assert.equal(r.deny, true)
-  assert.equal(r.reason, '锁文件不要手改：Edit')
+  // 原因后面附上「用户要求的就请用户放行」（ADR 0070）
+  assert.match(r.reason!, /^锁文件不要手改：Edit\n.*request_override.*"hook:锁文件"/)
   assert.ok(!(await o.onHook!('tool.before', edit('src/a.ts'))).deny, '路径对不上不跑')
   assert.equal(recentTriggers()[0].result, 'deny')
   await putHook({
@@ -186,8 +187,8 @@ test('用户的结束前钩子：内置判断没拦时再问它，拦住就记�
   const o = await hookOptions(ctx())
   const d = await o.beforeEnd!({})
   assert.equal(d.block, true)
-  assert.equal(d.reason, '先写总结')
-  assert.deepEqual(marks, ['先写总结'])
+  assert.match(d.reason!, /^先写总结\n.*request_override/)
+  assert.deepEqual(marks, [d.reason])
 })
 
 test('保存前校验：语法错误、写死的密钥、给非工具事件配匹配都拦下', async () => {

@@ -1253,6 +1253,8 @@ function makeOrchestra(host: EngineHost, ctx: OrchOpts, self: TaskStep): Orchest
     p4Split: host.p4Split,
     cherryPick: helper || host.task.parentTaskId ? undefined : host.cherryPick,
     askPush: orchAskPush(host, !!ctx.chat, helper),
+    // 请用户放行（ADR 0070）：只给用户能直接对话的对话本身，子任务、工作流节点被拦就照门禁说的做
+    requestOverride: !helper && !!ctx.chat ? host.requestOverride : undefined,
     remember: !helper && isChatMode(task) ? host.chatMemory?.remember : undefined,
     status: () => statusTree(host, self.id),
     // 按派发 / 计划 / 对话 / 能力分组的工具（shared/orchestra/*.ts、本文件的 dispatchTools）

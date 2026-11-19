@@ -6,6 +6,7 @@ import {
   CircleAlert,
   ClipboardCheck,
   CloudUpload,
+  ShieldAlert,
   FilePen,
   Loader2,
   MessageCircleQuestion,
@@ -109,8 +110,8 @@ export function RequestCard({
   const [busy, setBusy] = useState('')
   if (!req) return null
   const a = agent
-  // 推送授权（ask_push）也是「允许 / 拒绝」卡片，换个图标和工具权限请求区分开
-  const Icon = req.purpose === 'push' ? CloudUpload : ICONS[req.kind]
+  // 推送授权（ask_push）、请用户放行（request_override，ADR 0070）也是「允许 / 拒绝」卡片，换个图标和工具权限请求区分开
+  const Icon = req.purpose === 'push' ? CloudUpload : req.purpose === 'override' ? ShieldAlert : ICONS[req.kind]
   const send = async (key: string, allow: boolean, text?: string, always?: boolean) => {
     if (busy) return
     setBusy(key)

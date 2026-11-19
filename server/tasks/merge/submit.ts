@@ -25,6 +25,9 @@ import { shrinkClaims } from '../../claims.ts'
 import { isolated } from '../helpers.ts'
 import { awaitedJob } from '../../background.ts'
 import type { MergeCtx } from './context.ts'
+import { gateDeny } from '../../hooks/overrides.ts'
+import { REVIEW_GATE } from '../../../shared/hooks/override.ts'
+import { t } from '../../../shared/i18n.ts'
 import { buildSigOf, buildSkip } from './build.ts'
 import { recheckWrapUp, wakeTask } from './wake.ts'
 import { wrapRequestLetter } from '../../../shared/prompt/letters/wrap.ts'
@@ -124,16 +127,29 @@ export async function submitMerge(
   if (!known) return { ok: false, info: '没有请求收尾：读取角色列表失败，稍后再试一次。' }
   // 改过文件才要评审：独立分支是 begin_edit 要改文件时才开的，开了就算交付代码；
   // 共用目录看这个对话记下的改动（Git 按差异算，P4 和没有版本管理时按 CLI 报的写文件）。只读排查不用评审
-  const review =
-    (own || tk.changes.length > 0) &&
+  const needReview = own || tk.changes.length > 0
+  const reviewOf = (o?: ReviewOverride) =>
+    needReview &&
     reviewGate(
       tk.steps,
       (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
       activePlan(tk)?.steps ?? [],
       triage,
-      override,
+      o,
     )
-  if (review && !review.ok) return review
+  // 以用户的名义放行（by: user）只认用户在 request_override 卡片上点的（ADR 0070）：以前是执行角色自报，
+  // 门禁真拦下时才去用掉放行，用户没点过就按拦下处理并说清怎么请用户放行
+  const plain = override?.by === 'user' ? reviewOf() : undefined
+  const blockedBy = plain && !plain.ok ? plain.info : ''
+  const userOk = !blockedBy || !gateDeny(childId, REVIEW_GATE, t('评审门禁'), '', blockedBy)
+  const review = override?.by === 'user' ? (userOk ? reviewOf(override) : plain) : reviewOf(override)
+  if (review && !review.ok)
+    return override?.by === 'user' && !userOk
+      ? {
+          ok: false,
+          info: `${review.info}\n\nreview_override 写了 by: "user"，但用户还没在卡片上放行：先调用面板工具 request_override（gate 填 "${REVIEW_GATE}"）请用户确认，同意后再调用 submit_merge。`,
+        }
+      : review
   // 放行记录的时间由面板记：调用方自报的时间挡不住「先传一个过去的时间」。
   // 这里只算出来、先不写回任务：后面还有几步校验，被拒时不留下一条没发起过收尾的「已放行」
   const bypass = review && review.bypass ? { ...review.bypass, at: new Date().toISOString() } : undefined
