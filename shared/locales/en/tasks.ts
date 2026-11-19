@@ -867,6 +867,7 @@ export const EN_TASKS: Record<string, string> = {
   '按类型分 changelist': 'Split changelists by type',
   'cherry-pick 改动': 'Cherry-pick changes',
   请用户授权推送: 'Ask to push',
+  请用户放行: 'Ask user to override',
   查看项目教训: 'Read project lessons',
   读取共享状态: 'Read shared state',
   写入共享状态: 'Write shared state',

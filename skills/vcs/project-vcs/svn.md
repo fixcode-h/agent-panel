@@ -16,6 +16,8 @@
 
 不得执行或变相执行：`svn update`（不带任务路径）、`svn revert`、`svn cleanup`、`svn switch`、`svn relocate`、`svn commit`（提交到远端服务器）、`svn lock/unlock`、`svn merge`、`svn add --force .`。`svn status`、`svn diff`、`svn info`、`svn log` 可以只读使用，但必须限定到任务路径。
 
+以上只是默认；用户点名要做的，照 SKILL.md「用户的指令优先」那条办。
+
 SVN 的 `commit` 直接写远端仓库，等同于推送：由父对话决定，子对话不执行、不询问用户、也不写进建议。默认收尾停在「工作副本已改、已纳管、已列清单」。
 
 ## 怎么收尾

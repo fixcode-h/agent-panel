@@ -24,7 +24,12 @@ export function orchHint(o: Orchestra) {
     ? `；可以派的通用 Agent：${o.common.map((a) => `「${a.name}」`).join('、')}（spawn_agents 的 agent 写名字）`
     : ''
   const state = h('read_state', 'conv')
-  const bg = h('set_plan', 'conv') + h('end_turn', 'conv') + h('begin_edit', 'conv') + h('run_background', 'conv')
+  const bg =
+    h('set_plan', 'conv') +
+    h('end_turn', 'conv') +
+    h('begin_edit', 'conv') +
+    h('run_background', 'conv') +
+    h('request_override', 'conv')
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
   const child =
     bg +

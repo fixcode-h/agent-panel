@@ -8,6 +8,7 @@ import type { EngineHost } from '../../shared/engine/host.ts'
 import type { RealContext } from './real-context.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan/index.ts'
 import { askPushRequest, dropOwnRequests, panelRequest } from './panel-requests.ts'
+import { overrideRequest } from '../hooks/overrides.ts'
 import { clip } from '../../shared/text.ts'
 import { noteConfirm, nodeTitle } from '../../shared/flow/run.ts'
 
@@ -215,6 +216,7 @@ export async function runRealTurn(ctx: RealContext) {
       return r
     },
     askPush: (info) => askPushRequest(ctx, info, ownAsks),
+    requestOverride: (input) => overrideRequest(ctx, input, ownAsks),
     // 先建模块文档再开子对话（ADR 0048）：只有项目顶层对话建子对话，文档根按项目设置算
     moduleDocs: ctx.task.parentTaskId
       ? undefined

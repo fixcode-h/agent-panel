@@ -30,9 +30,10 @@ export const TaskRequest = z.object({
   kind: z.enum(['command', 'file', 'tool', 'question', 'confirm']),
   /**
    * 面板自己发起的授权（不是 CLI 的权限请求）：push 是 ask_push 的推送授权卡，用户点的「允许 / 拒绝」
-   * 由面板记进 task.remotePush（见 server/exec/panel-requests.ts）。旧数据没有这个字段，照普通请求处理
+   * 由面板记进 task.remotePush（见 server/exec/panel-requests.ts）；override 是 request_override 的放行卡（ADR 0070），
+   * 用户同意后门禁放行一次（server/hooks/overrides.ts）。旧数据没有这个字段，照普通请求处理
    */
-  purpose: z.enum(['push']).optional(),
+  purpose: z.enum(['push', 'override']).optional(),
   title: z.string(),
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */

@@ -52,6 +52,7 @@ const PANEL_TOOLS = (): Record<string, string> => ({
   p4_split_changelists: t('按类型分 changelist'),
   cherry_pick: t('cherry-pick 改动'),
   ask_push: t('请用户授权推送'),
+  request_override: t('请用户放行'),
   use_capability: t('加载能力'),
   begin_inline_edit: t('开始就地改动'),
   end_inline_edit: t('结束就地改动'),

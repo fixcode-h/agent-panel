@@ -18,6 +18,7 @@ import type { OrchPlan, PlanHost } from '../host/plan.ts'
 import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 import type { SearchHost } from '../host/search.ts'
 import type { OrchSubmit } from '../host/submit.ts'
+import type { OrchOverride, OverrideHost } from '../host/override.ts'
 
 /** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
 export type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
@@ -148,7 +149,8 @@ export interface HelperBatch {
   take: () => string
 }
 
-export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuild, OrchKnowledge, OrchBug, OrchSubmit {
+export interface Orchestra
+  extends OrchPlan, OrchConversation, OrchVcs, OrchBuild, OrchKnowledge, OrchBug, OrchSubmit, OrchOverride {
   /** 调用者的节点 id */
   self: string
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
@@ -197,7 +199,8 @@ export interface Orchestra extends OrchPlan, OrchConversation, OrchVcs, OrchBuil
   inbox(): string[]
 }
 
-export interface EngineHost extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost, SearchHost {
+export interface EngineHost
+  extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost, SearchHost, OverrideHost {
   task: Task
   agents: Agent[]
   /** 所有工作流（节点可以引用其他工作流） */

@@ -290,6 +290,14 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
     group: G.edit,
     effects: ['ask'],
   },
+  request_override: {
+    title: '请用户放行',
+    summary: '门禁拦下了用户要求的操作时，弹卡请用户确认放行一次。',
+    useWhen: '面板的守卫、钩子、收尾检查或评审门禁拦下了用户明确要求你做的操作，拦截说明里给了 gate',
+    avoidWhen: '用户没要求过的事不要用；推送授权用 ask_push，要用户拿主意用提问',
+    group: G.edit,
+    effects: ['ask'],
+  },
   use_capability: {
     title: '加载能力',
     summary: '取你挂载的某个能力的完整做法，在当前对话里照做。',

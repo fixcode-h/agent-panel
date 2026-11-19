@@ -66,7 +66,7 @@ export function pushDeny(c: GuardCtx, facts: HookFacts): string {
   if (c.task.parentTaskId || c.helper)
     return '【面板】推送和合并主干只由项目里的父对话做：你把改动交回（子对话调用 submit_merge，子任务写进结果），不要 push、不要合并 PR。'
   if (c.project.gitPolicy === 'deny')
-    return '【面板】项目设置是「不推送，只做本地提交」：不要 push、不建 PR、不合并主干。用户要推送时，告诉他先到项目设置把「推送到远端」改掉。'
+    return '【面板】项目设置是「不推送，只做本地提交」：不要 push、不建 PR、不合并主干。用户在对话里明确要求这一次推送时，按下面说的请用户放行；要以后都推送，请用户到项目设置把「推送到远端」改掉。'
   if (c.task.remotePush === 'denied')
     return `【面板】这个对话里用户拒绝过推送：不要推。用户之后明确要求推送时，先调用 ${ASK_PUSH} 请他在授权卡上确认。`
   if (c.project.gitPolicy !== 'allow' && c.task.remotePush !== 'allowed')
@@ -128,8 +128,7 @@ const rel = (cwd: string, p: string) => {
 export function dangerDeny(c: GuardCtx, facts: HookFacts): string {
   for (const s of segs(facts)) {
     const why = dangerOf(c, s)
-    if (why)
-      return `【面板】这条命令${why}，面板拦下了：${s.slice(0, 120)}。换一个只影响具体文件的做法；确实需要，说明原因请用户自己执行。`
+    if (why) return `【面板】这条命令${why}，面板拦下了：${s.slice(0, 120)}。换一个只影响具体文件的做法。`
   }
   return ''
 }
