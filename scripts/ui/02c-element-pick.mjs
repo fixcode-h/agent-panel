@@ -1168,20 +1168,24 @@ await runShard(import.meta.filename, async (api) => {
     // 旧实现这会儿输入框里还满是字
     const leftover = (await p.locator('#follow-up').textContent()) ?? ''
     if (leftover.includes(text)) errors.push('输入框-连按两次回车：消息已经发出了，输入框里的字还在')
-    // 面板接收之前那条消息标「发送中」，服务端记下后换成实际的交付方式（下面断言）
-    await p
-      .locator('[data-delivery="pending"]', { hasText: '发送中' })
-      .first()
-      .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('发送时序：接口返回前那条消息没有标成「发送中」'))
-    const hint = await p
-      .getByText('上一条还在发送，稍等一下')
-      .first()
-      .waitFor({ timeout: 5000 })
-      .then(
-        () => true,
-        () => false,
-      )
+    // 面板接收之前那条消息标「发送中」，服务端记下后换成实际的交付方式（下面断言）。
+    // 「发送中」和「上一条还在发送」的提示同时在屏上（提示 4 秒后自己收起），两个一起等：
+    // 以前先等完「发送中」再等提示，CI 机器慢、前一个等得久时提示已经收起，偶发报「没有提示」
+    const [, hint] = await Promise.all([
+      p
+        .locator('[data-delivery="pending"]', { hasText: '发送中' })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('发送时序：接口返回前那条消息没有标成「发送中」')),
+      p
+        .getByText('上一条还在发送，稍等一下')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .then(
+          () => true,
+          () => false,
+        ),
+    ])
     if (!hint) errors.push('发送被拦下：没有提示为什么没发出去')
     await p
       .locator('.ml-auto', { hasText: text })

@@ -348,7 +348,7 @@ await runShard('子对话运行与监管', async (api) => {
       dispatched.every((x) => !x.isError && x.text.includes('它在后台执行') && !/排队|上限/.test(x.text)),
       '派出的子对话都立即开始，没有「排队」「到上限」的提示',
     )
-    // 子对话带 SLOW（每个跑十来秒）：要在这段时间里看到 6 个都在执行，才说明没有排队
+    // 子对话带 SLOW_LONG（每个跑约 30 秒，CI 上逐个拉起也留得出同时在跑的窗口）：要在这段时间里看到 6 个都在执行，才说明没有排队
     const kids = await waitFor(
       async () => {
         const list = await call('GET', `/tasks/${many.id}/children`)
