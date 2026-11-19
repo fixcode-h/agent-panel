@@ -32,7 +32,7 @@ export interface AnalysisHome {
  * 传进来的是顶层对话本身
  */
 const canHostChild = (root: Pick<Task, 'projectId' | 'mode' | 'imported'>) =>
-  !!root.projectId && root.mode === 'chat' && !root.imported
+  !!root.projectId && root.mode !== 'workflow' && !root.imported
 
 /**
  * 按归属规则定分析对话放哪。scope 是 task 时要传它的顶层对话（rootOf 取），

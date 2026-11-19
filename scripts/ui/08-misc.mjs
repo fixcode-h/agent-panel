@@ -1400,7 +1400,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 以前在页面里改完 localStorage 就 reload，当前页的演示后端偶尔抢先把内存里的旧数据写回去，提示就不出现（出包 #456）
     const made = await p.evaluate((k) => {
       const list = JSON.parse(localStorage.getItem(k) ?? '{}').tasks ?? []
-      const top = list.find((x) => !x.parentTaskId && x.mode === 'chat' && !x.archived && !x.deletedAt)
+      const top = list.find((x) => !x.parentTaskId && x.mode !== 'workflow' && !x.archived && !x.deletedAt)
       const kid = list.find((x) => x.parentTaskId)
       return top ? { title: top.title, kid: kid?.title ?? '' } : null
     }, KEY)
@@ -1409,7 +1409,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       // 和上面同样的挑法（patch 在浏览器里跑，引用不了外面的变量）
       await patchDemoOnce(p, 'restart-resume', (db) => {
         const list = db.tasks ?? []
-        const top = list.find((x) => !x.parentTaskId && x.mode === 'chat' && !x.archived && !x.deletedAt)
+        const top = list.find((x) => !x.parentTaskId && x.mode !== 'workflow' && !x.archived && !x.deletedAt)
         const kid = list.find((x) => x.parentTaskId)
         for (const x of [top, kid].filter(Boolean))
           Object.assign(x, { status: 'stopped', stopReason: 'restart', resolved: false })

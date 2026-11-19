@@ -44,8 +44,9 @@ export const EN_BUG_EVIDENCE: Record<string, string> = {
   // 面板自己取日志
   重新开始复现: 'Restart reproducing',
   开始复现: 'Start reproducing',
-  '先点「开始复现」，面板记下日志文件现在到哪了':
-    'Click "Start reproducing" first so the panel records where the log file is now',
+  '没点「开始复现」时交整个日志文件': 'Without "Start reproducing", the whole log file is handed over',
+  '这个日志文件是空的。': 'This log file is empty.',
+  '{file} 是这次的日志文件，整个文件都交给你看。': '{file} is the log file for this run; read the whole file. ',
   '复现完了，取日志': 'Done, fetch the log',
   '这个文件现在还不存在：复现时生成的整个文件都算新增。复现完回来点「复现完了，取日志」。':
     'This file does not exist yet: the whole file created while reproducing counts as new. Come back and click "Done, fetch the log".',
@@ -68,10 +69,6 @@ export const EN_BUG_EVIDENCE: Record<string, string> = {
   '{path} 在项目目录和对话目录外面：这是报告里写的日志位置，你确认后面板才读它':
     '{path} is outside the project and conversation folders: it is the log location written in the report, and the panel reads it only after you confirm',
   '{path} 不是文件': '{path} is not a file',
-  '还没有点「开始复现」：面板不知道从哪里开始算新增的日志':
-    'You haven\'t clicked "Start reproducing", so the panel doesn\'t know where the new log starts',
-  '日志文件的位置和开始复现时不一样了，请重新点「开始复现」':
-    'The log file location changed since you started; click "Start reproducing" again',
   '找不到日志文件 {path}：确认复现时确实写了日志，或者自己把日志贴进来':
     "Can't find the log file {path}: make sure reproducing wrote the log, or paste the log yourself",
   日志文件: 'Log file',

@@ -577,7 +577,7 @@ export const PARAM_TYPES: { id: AgentParam['type']; label: string }[] = [
 
 /** 新建对话时还没选的参数（要问用户的）：返回错误说明，都有了返回空 */
 export function chatMissingParams(input: { mode: string; agentId: string; params?: ParamValues }, agents: Agent[]) {
-  if (input.mode !== 'chat') return ''
+  if (input.mode === 'workflow') return ''
   const agent = agents.find((a) => a.id === input.agentId)
   const lack = agent ? resolveParams(agent.params, input.params ?? {}).missing : []
   return lack.length ? t('请先选择参数：{list}', { list: lack.map(paramLabel).join(t('、')) }) : ''

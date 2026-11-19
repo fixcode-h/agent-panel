@@ -66,7 +66,7 @@ function host(task: Task, log: AgentCall[], agents: Agent[]): EngineHost {
     agents,
     workflows: [w],
     workflow: task.mode === 'workflow' ? w : undefined,
-    prompt: task.mode === 'chat' ? '这个项目用什么框架' : '做功能',
+    prompt: task.mode !== 'workflow' ? '这个项目用什么框架' : '做功能',
     changed: () => {},
     newId: () => `id${++n}`,
     runAgent: async (call) => {

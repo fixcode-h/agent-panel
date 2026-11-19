@@ -6,7 +6,7 @@ import test from 'node:test'
 import type { Task } from '../../shared/schema.ts'
 import { createDrafting } from './drafting.ts'
 
-test('开始写工具调用时记下，调用到了就去掉；不带工具名的生成不动它', () => {
+test('开始写工具调用时记下、入参实时转成文字，调用到了就去掉；不带工具名的生成不动它', () => {
   const task: Pick<Task, 'drafting'> = {}
   let n = 0
   const d = createDrafting(task, () => n++)
@@ -16,7 +16,9 @@ test('开始写工具调用时记下，调用到了就去掉；不带工具名�
   assert.equal(task.drafting, undefined)
   d.see({ type: 'gen', text: '', tool: 'mcp__panel__submit_diagnosis' })
   assert.equal(cur()?.tool, 'mcp__panel__submit_diagnosis')
+  d.see({ type: 'gen', text: '{"pha' })
   d.see({ type: 'gen', text: 'se":"plan"' })
+  assert.equal(cur()?.text, 'phase：plan', '入参边收边转成能读的文字')
   d.see({ type: 'usage', addOutput: 3 })
   assert.ok(cur(), '写入参、用量这些事件不打断')
   d.see({ type: 'tool', tool: { kind: 'other', label: '', detail: '' } })

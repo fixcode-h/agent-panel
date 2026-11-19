@@ -34,7 +34,7 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
     modelOverride?: ModelOverride
   },
 ): A {
-  if (task.mode !== 'chat' || task.agentId !== agent.id) return agent
+  if (task.mode === 'workflow' || task.agentId !== agent.id) return agent
   const pinned = task.cli || task.sessionCli || ''
   if (!canPickRun(agent.id)) {
     const base = agent.cli || !pinned ? agent : { ...agent, cli: pinned }

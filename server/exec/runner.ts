@@ -118,7 +118,7 @@ async function runAgent(
   const { found, agent, cliId, def, cs, cwd, model, entries, requested, effort, manual, limits } = target
   const op = call.op
   // 对话（不属于节点的调用）才能插话、分叉、撤回
-  const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
+  const chat = !step && sessionKey === task.agentId && task.mode !== 'workflow'
   const prewarm = chat && !!call.prewarm
   // 子任务也查「没有响应」：以前只查对话，子任务卡在网关上只剩 30 分钟的空闲超时兜底，派它的对话一直干等
   const helperWatch = !!step && !!call.stallRetry && !op

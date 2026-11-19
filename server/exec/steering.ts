@@ -155,10 +155,10 @@ export async function steerTask(
   msg: TaskMessage,
 ): Promise<'steer' | 'notes' | 'next-node' | false> {
   // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
-  const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode === 'chat' && isHelperStep(task, s.step)))
+  const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode !== 'workflow' && isHelperStep(task, s.step)))
   const took: Steerer[] = []
   for (const s of all)
-    if (await s.steer(steerNote(text, task.mode === 'chat', msg.peer?.rel === 'parent'))) took.push(s)
+    if (await s.steer(steerNote(text, task.mode !== 'workflow', msg.peer?.rel === 'parent'))) took.push(s)
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]

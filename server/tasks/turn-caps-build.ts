@@ -18,7 +18,7 @@ export async function buildCaps(c: TurnCapsCtx) {
           : undefined,
     // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑
     verify:
-      task.mode === 'chat' && found?.id
+      task.mode !== 'workflow' && found?.id
         ? {
             // 按项目当前步骤拼这一轮的提示词（一次取一次，这一轮不再重读）；项目读不到才用任务快照
             steps: currentTestSteps(task.testSteps, found),
@@ -35,7 +35,7 @@ export async function buildCaps(c: TurnCapsCtx) {
         : undefined,
     // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
     runBackground:
-      task.mode === 'chat' && dir
+      task.mode !== 'workflow' && dir
         ? async (input) => {
             // UE 的编译归父对话、按编译目录占位（ADR 0004）。以前这里一律拒收、让它改用 request_build，
             // request_build 坏掉时 Agent 只能去前台硬跑（用户 2026-11-12 报）。现在不拒收，面板替它分流：

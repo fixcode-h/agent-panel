@@ -6,6 +6,7 @@ import { ChangesCard, ChangesCardNote, type ChangesScope } from '@/components/ui
 import { Group } from './parts'
 import { HtmlCardSpecimen } from './HtmlCardSpecimen'
 import { FoldBarSpecimen } from './FoldBarSpecimen'
+import { LiveTextSpecimen } from './LiveTextSpecimen'
 
 /** 样张数据（不翻译）：这一轮 3 个、整个对话 9 个 */
 const ROUND = [
@@ -93,6 +94,10 @@ export function TurnCardSpecimens({
       </Specimen>
       <Specimen name="ChangesCard" tune={['changesCard', 'segmented', 'badge']}>
         <ChangesCardSpecimen />
+      </Specimen>
+      {/* 实时输出：思考过程和「正在写」工具入参下面写到哪了，同一个部件 */}
+      <Specimen name="LiveText · DraftRow" tune={['liveText', 'row']}>
+        <LiveTextSpecimen />
       </Specimen>
     </Group>
   )

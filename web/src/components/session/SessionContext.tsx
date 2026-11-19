@@ -113,7 +113,7 @@ function BigResults({ big }: { big: ReturnType<typeof useSessionContext>['big'] 
  * Pi 的压缩会先把正在写的回复中止掉），所以要等这一轮结束；停在等下一句时可以点，服务端先关掉等着的进程再压缩
  */
 export function compactState(task: Task): null | { busy: boolean } {
-  if (task.mode !== 'chat' || task.simulated || task.imported) return null
+  if (task.mode === 'workflow' || task.simulated || task.imported) return null
   if (!Object.keys(task.sessions).length && !task.rewind) return null
   return { busy: !!task.working }
 }

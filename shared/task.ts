@@ -25,6 +25,7 @@ import { needsReason } from './children/needs.ts'
 import { pendingAction } from './user-action.ts'
 import { byStartedDesc, helpersWorking } from './tasks/helpers.ts'
 import { childFlowOf } from './children/flow.ts'
+import { convMode } from './conv-mode.ts'
 import { type ChildWait } from './children/activity.ts'
 import { lastFailureKind, transientKind } from './tasks/failure.ts'
 import type { AnalysisKind } from './tasks/task-analysis.ts'
@@ -110,7 +111,8 @@ export function newTask(
     title: taskTitle(input.prompt),
     // 子对话的标题是父对话起的，不用再换
     autoTitle: !input.parentTaskId,
-    mode: input.mode,
+    // 对话按有没有项目、父对话定成 Chat 模式还是 Agent 模式，调用方传哪个都一样
+    mode: input.mode === 'workflow' ? 'workflow' : convMode(input),
     parentTaskId: input.parentTaskId ?? '',
     rootTaskId: input.rootTaskId ?? '',
     summary: '',
@@ -119,18 +121,18 @@ export function newTask(
     wantsWorktree: false,
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
-    agentId: input.mode === 'chat' ? input.agentId : '',
+    agentId: input.mode !== 'workflow' ? input.agentId : '',
     // 不用角色的对话（agentId 为空）能选 CLI 和模型；用角色的只记 CLI：跟随默认 CLI 的角色按它跑（见 withTaskModel）
-    cli: input.mode === 'chat' ? (input.cli ?? '') : '',
-    model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
-    effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
+    cli: input.mode !== 'workflow' ? (input.cli ?? '') : '',
+    model: input.mode !== 'workflow' && canPickRun(input.agentId) ? (input.model ?? '') : '',
+    effort: input.mode !== 'workflow' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
     // 父对话的「子对话也提问」：之后新建的子对话默认问不问（设置里的全局默认由创建时填进来）
     childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: { kind: input.analysis, ...(input.analysisOf && { of: input.analysisOf }) } }),
     ...(input.plugin && { plugin: input.plugin }),
     ...(input.convBudget && (input.convBudget.tokens || input.convBudget.costUsd) && { convBudget: input.convBudget }),
-    params: input.mode === 'chat' ? (input.params ?? {}) : {},
+    params: input.mode !== 'workflow' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
     runStartedAt: now,

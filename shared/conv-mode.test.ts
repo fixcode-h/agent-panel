@@ -113,3 +113,35 @@ test('Chat 页能选的角色：自建的 Chat 角色；默认的「助手」和
   assert.ok(!pickableChatRole(role({ scope: 'agent' })), 'Agent 角色不在 Chat 页选')
   assert.ok(!pickableChatRole(role({ enabled: false })))
 })
+
+test('对话存成哪一种：有项目或者是子对话的是 agent，Chat 页的是 chat', async () => {
+  const { convMode, isConversation } = await import('./conv-mode.ts')
+  const { newTask } = await import('./task.ts')
+  const { NewTaskInput } = await import('./schema.ts')
+  assert.equal(convMode({ projectId: '' }), 'chat')
+  assert.equal(convMode({ projectId: 'p1' }), 'agent', '项目里的父对话')
+  assert.equal(convMode({ projectId: 'p1', parentTaskId: 'parent' }), 'agent', '子对话')
+  // 新建时传 chat 也按有没有项目定
+  const make = (over: Record<string, unknown>) =>
+    newTask(NewTaskInput.parse({ mode: 'chat', prompt: 'hi', ...over }), undefined, '2026-01-01T00:00:00Z', 'm1').mode
+  assert.equal(make({}), 'chat')
+  assert.equal(make({ projectId: 'p1' }), 'agent')
+  assert.equal(make({ mode: 'agent' }), 'chat', '没有项目的不能是 agent')
+  assert.ok(
+    isConversation({ mode: 'agent' }) && isConversation({ mode: 'chat' }) && !isConversation({ mode: 'workflow' }),
+  )
+})
+
+test('对话的统一分类：按存盘字段推出最具体的一类', async () => {
+  const { convKind } = await import('./conv-mode.ts')
+  const p = { mode: 'agent' as const, projectId: 'p1' }
+  assert.equal(convKind({ mode: 'chat', projectId: '' }), 'chat')
+  assert.equal(convKind(p), 'parent')
+  assert.equal(convKind({ ...p, parentTaskId: 'x' }), 'child')
+  assert.equal(convKind({ ...p, parentTaskId: 'x', bug: { kind: 'report' } }), 'bug')
+  assert.equal(convKind({ ...p, parentTaskId: 'x', bug: { kind: 'fix' } }), 'fix')
+  assert.equal(convKind({ ...p, plugin: 'blender.model' }), 'plugin')
+  assert.equal(convKind({ mode: 'chat', projectId: '', analysis: { kind: 'fix' } }), 'analysis')
+  assert.equal(convKind({ mode: 'workflow', projectId: 'p1' }), 'workflow')
+  assert.equal(convKind({ mode: 'workflow', projectId: 'p1', flowRun: {} }), 'flow-run')
+})

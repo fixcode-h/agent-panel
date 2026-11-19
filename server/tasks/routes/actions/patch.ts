@@ -67,7 +67,7 @@ export function patchRoute(s: TasksScope): Hono {
       p.data.effort !== undefined ||
       p.data.modelOverride !== undefined ||
       agentChanged
-    if (touchesRun && cur.mode !== 'chat') return s.bad(c, t('只有对话任务可以这样做'))
+    if (touchesRun && cur.mode === 'workflow') return s.bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await s.deps.agents.list() : undefined
     if (agentChanged && p.data.agentId && !agents?.some((a) => a.id === p.data.agentId))

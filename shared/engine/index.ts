@@ -2411,7 +2411,7 @@ export async function runEngineTurn(host: EngineHost) {
   host.changed(true)
 
   // 新架构里项目对话都是对话：父对话决定直接执行、交给子对话，还是用 start_workflow 启动工作流
-  if (task.mode === 'chat') return runConversationTurn(host, task.agentId)
+  if (task.mode !== 'workflow') return runConversationTurn(host, task.agentId)
 
   // 工作流运行（父对话 start_workflow 起的，不是子对话）：面板按流程图推着走，见 flow-run-turn.ts
   if (task.flowRun) return runFlowRunTurn(host, { runFlow, system, finish })

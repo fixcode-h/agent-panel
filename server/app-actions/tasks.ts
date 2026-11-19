@@ -114,7 +114,7 @@ export const taskActions = [
       if (!projectId) throw new ActionError('要写 projectId')
       const t = (await ctx.api('POST', '/tasks', {
         projectId,
-        mode: 'chat',
+        mode: 'agent',
         prompt: a.message,
         // 带上发件对话：新对话的第一条记成「对话 X 发来」，不当成用户说的话（ADR 0041）
         ...(ctx.caller?.taskId && { from: ctx.caller.taskId }),

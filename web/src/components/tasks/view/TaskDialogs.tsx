@@ -99,7 +99,7 @@ export function TaskDialogs(p: TaskDialogsProps) {
           taskTitle={task.title}
           onClose={() => set('lessonOf', '')}
           // 对话里的角色知道刚才哪里做错了，交给它整理；工作流任务和导入的任务没有能接话的角色
-          onAskAgent={task.mode === 'chat' ? p.askAgent : undefined}
+          onAskAgent={task.mode !== 'workflow' ? p.askAgent : undefined}
         />
       )}
       <RewindDialog task={task} messageId={s.rewindAsk} onClose={() => set('rewindAsk', '')} onDone={p.onRewound} />

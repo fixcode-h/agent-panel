@@ -9,10 +9,46 @@ import { t } from './i18n.ts'
 type ModeOf = Pick<Task, 'mode' | 'projectId'> & { parentTaskId?: string }
 
 /**
- * Chat 模式：Chat 页的对话（没有项目的顶层对话）。只用于模式规则（推进次数、一问一答、角色类别、能力上限：
+ * Chat 模式：Chat 页的对话（没有项目的顶层对话，存的 mode 是 chat）。迁移 0012 之后项目对话都存成 agent，
+ * 这里仍然顺带看 projectId、parentTaskId：导入的旧文件、手改的 JSON 万一还是 chat 也不会被当成 Chat 页的对话。只用于模式规则（推进次数、一问一答、角色类别、能力上限：
  * 不派子任务、不开子对话、不跑工作流）；推送授权、教训这类「有没有项目」的客观条件直接看 projectId（ADR 0038）
  */
 export const isChatMode = (tk: ModeOf) => tk.mode === 'chat' && !tk.projectId && !tk.parentTaskId
+
+/**
+ * 对话存成哪一种（TaskMode）：有项目或者是子对话的是 agent，Chat 页没有项目的顶层对话是 chat。
+ * 新建、从对话文件重建、导入都走这里，迁移 0012 也按同一个规则把旧数据分开
+ */
+export const convMode = (tk: { projectId?: string; parentTaskId?: string }): 'agent' | 'chat' =>
+  tk.projectId || tk.parentTaskId ? 'agent' : 'chat'
+
+/** 是不是对话（Chat 模式和 Agent 模式都算），工作流任务不是 */
+export const isConversation = (tk: Pick<Task, 'mode'>) => tk.mode !== 'workflow'
+
+/**
+ * 对话的统一分类（用户 2026-11-19 定）：以前各处各自拿 parentTaskId、bug.kind、analysis、plugin、flowRun 拼条件，插件只拿得到 mode。
+ * 从这些存盘字段推出来，不另存一份（存两份迟早对不上）。一个对话只归一类，按下面的先后取最具体的那一类：
+ * - workflow：工作流任务；flow-run：父对话发起的一次工作流运行（task.flowRun）
+ * - analysis：AI 分析开的对话（task.analysis，Chat 页、项目里都可能有）
+ * - plugin：插件的设计模式对话（task.plugin，例如 blender.model）
+ * - chat：Chat 页的普通对话
+ * - bug：要交诊断报告的 Bug 对话（task.bug.kind = report）；fix：直接修的 Bug（task.bug.kind = fix）
+ * - child：其余的子对话；parent：项目里的顶层对话
+ * 是不是子对话另看 parentTaskId（bug、fix、analysis 也可能是子对话）
+ */
+export type ConvKind = 'workflow' | 'flow-run' | 'analysis' | 'plugin' | 'chat' | 'bug' | 'fix' | 'child' | 'parent'
+
+export function convKind(
+  tk: ModeOf & { analysis?: unknown; plugin?: string; flowRun?: unknown; bug?: { kind: string } },
+): ConvKind {
+  if (tk.mode === 'workflow') return tk.flowRun ? 'flow-run' : 'workflow'
+  if (tk.analysis) return 'analysis'
+  if (tk.plugin) return 'plugin'
+  if (isChatMode(tk)) return 'chat'
+  if (tk.bug?.kind === 'report') return 'bug'
+  if (tk.bug?.kind === 'fix') return 'fix'
+  return tk.parentTaskId ? 'child' : 'parent'
+}
 
 /**
  * 同一个进度最多推几次（ADR 0037）：Agent 模式不限次数（用户 2026-11-05 定，设置里的「面板提醒次数」去掉了），

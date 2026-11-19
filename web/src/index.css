@@ -1163,6 +1163,9 @@ body,
   --c-foldBar-bg: transparent;
   --c-foldBar-border: 0px;
   --c-foldBar-hint: inline;
+  --c-liveText-maxH: 160px;
+  --c-liveText-bar: 2px;
+  --c-liveText-draft: block;
   --c-styleRef-radius: 6px;
   --c-styleRef-thumbW: 56px;
   --c-styleRef-ring: var(--accent);

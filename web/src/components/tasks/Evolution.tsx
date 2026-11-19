@@ -373,7 +373,7 @@ export function EvolutionReport({
       return n
     })
   // 能在这个对话里动手：项目里的对话，不是导入的只读记录
-  const canFix = !!project && !!task.projectId && !task.imported && task.mode === 'chat'
+  const canFix = !!project && !!task.projectId && !task.imported && task.mode !== 'workflow'
   const [panelSource, setPanelSource] = useState(false)
   const hasEvo = !!evo
   const projectId = project?.id ?? ''

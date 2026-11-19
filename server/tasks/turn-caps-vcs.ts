@@ -54,7 +54,7 @@ export async function vcsCaps(c: TurnCapsCtx) {
         : undefined,
     // 父对话（协调器）不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
     beginEdit:
-      task.mode === 'chat' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
+      task.mode !== 'workflow' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
         ? () => sc.beginEdit(entry, changed)
         : undefined,
     branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,

@@ -738,8 +738,8 @@ test('继续执行的续接说明：写清被打断的原因、连带拉起 / �
 
 test('Chat 页和 Agent 模式分开：Chat 页只推一次，Agent 模式不限次数，进度变了重新数', () => {
   const plain = { mode: 'chat' as const, projectId: '', parentTaskId: '' }
-  const agentConv = { mode: 'chat' as const, projectId: 'p1', parentTaskId: '' }
-  const child = { mode: 'chat' as const, projectId: 'p1', parentTaskId: 'parent' }
+  const agentConv = { mode: 'agent' as const, projectId: 'p1', parentTaskId: '' }
+  const child = { mode: 'agent' as const, projectId: 'p1', parentTaskId: 'parent' }
   assert.equal(isChatMode(plain), true)
   assert.equal(isChatMode(agentConv), false)
   assert.equal(isChatMode(child), false)

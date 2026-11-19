@@ -51,7 +51,7 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
   // 进程活着只认服务端给的 live.cliAlive（按真实进程登记算）
   const live = useLive(task)
   const agentAlive = live.cliAlive || task.prewarming || task.awaitingUser
-  const canActivate = !agentAlive && task.mode === 'chat' && !task.imported && !task.archived
+  const canActivate = !agentAlive && task.mode !== 'workflow' && !task.imported && !task.archived
   const showAgent = agentAlive || canActivate
   const [agentBusy, setAgentBusy] = useState(false)
   const toggleAgent = async () => {
