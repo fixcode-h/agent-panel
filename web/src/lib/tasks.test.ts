@@ -323,6 +323,21 @@ test('groupTools：相邻几次把同一段话交给不同子对话合成一行�
   )
 })
 
+test('groupTools：调同一个外部工具几次就是几行；批量调用的标题写「第一项 等 N 项」', () => {
+  const set = (path: string) =>
+    tool('MCP', 'ue · ue_set', { input: JSON.stringify({ path, prop: 'Mobility', value: 'Static' }) })
+  const get = tool('MCP', 'ue · ue_get', { input: JSON.stringify({ path: '/Game/A' }) })
+  const groups = groupTools([set('/Game/A'), set('/Game/B'), set('/Game/C'), get, set('/Game/D')])
+  assert.deepEqual(
+    groups.map((g) => g.length),
+    [1, 1, 1, 1, 1],
+  )
+  const batch = toolView(
+    tool('MCP', 'ue · ue_set', { input: JSON.stringify({ prop: 'Mobility', paths: ['/Game/A', '/Game/B'] }) }),
+  )
+  assert.equal(batch?.tool.label, '/Game/A 等 2 项')
+})
+
 /**
  * 截图上那个矛盾：左边写着「排队等 API 名额 · 下一个就是这里」，右边同一行显示 188.7 token/s。
  * 这一轮其实在输出，只是等完子任务拿回名额时排上了队 —— 不能显示成「还没开始」。

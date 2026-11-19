@@ -326,9 +326,15 @@ export function toolView(tool: ToolUse): ToolView | null {
   const a = toolArgs(tool)
   // execute_tool 这类代转工具：按参数里真正执行的工具显示（shared/mcp-catalog/proxy-tool.ts）
   const proxied = proxiedTool(mcp[2], a)
+  // 一次作用到多项（UE 的批量 paths 这类字符串数组）：标题写「第一项 等 N 项」，不只显示某个公共参数
+  const many = Object.values(a).find(
+    (v): v is string[] => Array.isArray(v) && v.length > 1 && v.every((x) => typeof x === 'string'),
+  )
   const arg = proxied
     ? proxied.arg
-    : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
+    : many
+      ? t('{first} 等 {n} 项', { first: many[0], n: many.length })
+      : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
   // 面板自己的设计、插件服务的工具换成中文名，服务名也换成中文；别家的工具用服务报的或面板备好的显示名，都没有照原名
   return {
     tool: {
@@ -350,7 +356,8 @@ export function groupTools(tools: ToolUse[]): ToolUse[][] {
   let key = ''
   for (const tool of tools) {
     const send = toolView(tool)?.send
-    // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方
+    // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方。
+    // 别的工具调几次就显示几次，不合并（用户 2026-11-19 定：批量是一次调用一行，不是批量的不替它合）
     const k = send && send.body && panelName(tool) === 'send_to_conversation' ? `${send.kind}\n${send.body}` : ''
     if (k && k === key) out[out.length - 1].push(tool)
     else out.push([tool])

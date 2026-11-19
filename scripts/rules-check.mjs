@@ -1,7 +1,7 @@
 // 把 docs/lessons/ 里能机器判断的教训变成检查，`npm run lint` 会跑。
 // 1. 不按 CLI 的名字写分支：CLI 的差异写进定义（shared/clis*），代码按字段走
 // 2. 文档里写的仓库路径必须存在，避免改名、删文件后文档还指着旧路径
-// 3. 教训分片的格式和大小：有 paths、每条有「规则」、单个分片不超过 6 KB、paths 至少命中一个文件
+// 3. 教训分片的格式：有 paths、每条有「规则」、paths 至少命中一个文件（大小不设上限，用户 2026-11-19 定）
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 4b. 文本文件里不能有裸 NUL 字节：写成 `` `\0` `` 的文本被误存成 0x00 时 grep / rg 会整份跳过、搜不到
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
@@ -87,13 +87,11 @@ for (const f of docs) {
 
 // 3. 教训分片
 // 分片按功能模块拆，拆出来的 paths 必须比原来窄：paths 一模一样的两个分片改同一个文件时照样都要读，
-// 等于只换了文件名、把 6 KB 的上限绕过去了（见 docs/lessons/README.md「怎么让它不越积越多」）
+// 等于只换了文件名、一个字没省（见 docs/lessons/README.md「怎么让它不越积越多」）
 const shardsByPaths = new Map()
 for (const s of readShards()) {
   const f = `docs/lessons/${s.name}`
   if (!s.globs.length) errors.push(`${f} 开头缺少 paths`)
-  if (Buffer.byteLength(s.text) > 6144)
-    errors.push(`${f} 超过 6 KB，把只和某个模块有关的几条拆进 paths 更窄的分片；拆不动再合并同类项或改成检查`)
   const key = [...new Set(s.globs)].sort().join(', ')
   if (key && shardsByPaths.has(key))
     errors.push(`${f} 的 paths 和 docs/lessons/${shardsByPaths.get(key)} 完全一样：拆分片要收窄 paths，否则合成一个`)

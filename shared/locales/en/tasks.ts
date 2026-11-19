@@ -1929,4 +1929,5 @@ export const EN_TASKS: Record<string, string> = {
   请你收尾: 'Asked you to wrap up',
   搜日志: 'Search log',
   '没有搜到「{q}」': 'No matches for "{q}"',
+  '{first} 等 {n} 项': '{first} ({n} items)',
 }

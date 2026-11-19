@@ -384,6 +384,11 @@ export function RowShell({
   )
 }
 
+/** 这次调用还在等结果：CLI 报着在跑，或者对话还在跑、这次还没有耗时 */
+export function toolPending(x: ToolUse, task?: Pick<Task, 'status'>) {
+  return !!x.running || (x.ms === undefined && !!x.startedAt && task?.status === 'running')
+}
+
 /**
  * 一次工具调用：收起时一行（图标、命令或文件、结果摘要），点开参照 Claude Code：
  * 命令显示 IN / OUT，改文件显示 diff，读文件和其他工具显示参数和输出
@@ -413,7 +418,7 @@ export function ToolRow({
         subject=""
         body={view.send.body}
         failed={raw.failed}
-        running={raw.running || (raw.ms === undefined && !!raw.startedAt && task?.status === 'running')}
+        running={toolPending(raw, task)}
         childId={view.child}
         receipt={raw.output?.trim()}
         ms={raw.ms}
@@ -493,7 +498,7 @@ function SendGroupRow({ tools, task }: { tools: ToolUse[]; task?: Pick<Task, 'st
     ...(tool.output?.trim() && { receipt: tool.output.trim() }),
     ...(tool.failed && { failed: true }),
   }))
-  const pending = (x: ToolUse) => x.running || (x.ms === undefined && !!x.startedAt && task?.status === 'running')
+  const pending = (x: ToolUse) => toolPending(x, task)
   const done = tools.filter((x) => x.ms !== undefined)
   return (
     <PeerLine
