@@ -232,6 +232,14 @@ export const COMP_SPEC = {
     fold: pick('closed', { closed: 'closed', open: 'open' }),
   },
   /**
+   * 版本差异弹窗（web/src/components/ui/version-diff.tsx，表格和 UE 资源共用）：左边版本列表的默认宽度（拖过就按拖的记）、
+   * 提交说明显示一行还是两行
+   */
+  versionDiff: {
+    navW: px(288, 200, 480),
+    msgLines: pick('1', { '1': '1', '2': '2' }),
+  },
+  /**
    * 折叠条（web/src/components/ui/fold-bar.tsx）：回复收尾后「读取 3 个文件 · 运行 2 条命令」那一行，整行点都能展开收起；
    * 圆角、底色、边框、右边要不要写「展开 / 收起」。改动卡片折起来的那一行用同一个部件，但外框跟改动卡片走
    */

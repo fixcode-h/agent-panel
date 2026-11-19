@@ -23,6 +23,8 @@ export interface GitOpts {
   workTree?: string
   /** gitRaw / gitExec / gitSync 的输出上限 */
   maxBuffer?: number
+  /** gitRaw：写进 git 标准输入的内容（git lfs smudge 从标准输入读指针文件） */
+  input?: Buffer
 }
 
 /** 拼出完整参数：-c core.quotepath=off、--work-tree 都要放在子命令前面 */
@@ -40,7 +42,7 @@ export const gitRun = (cwd: string, args: string[], o: GitOpts = {}) =>
 /** 二进制安全地跑一次 git：cat-file、merge-file 的输出不能按行拆；不抛，看 code */
 export function gitRaw(cwd: string, args: string[], o: GitOpts = {}) {
   return new Promise<{ code: number; stdout: Buffer; stderr: string }>((resolve) => {
-    execFile(
+    const child = execFile(
       'git',
       gitArgs(args, o.workTree),
       {
@@ -56,6 +58,7 @@ export function gitRaw(cwd: string, args: string[], o: GitOpts = {}) {
         resolve({ code, stdout: stdout ?? Buffer.alloc(0), stderr: stderr?.toString() ?? '' })
       },
     )
+    if (o.input) child.stdin?.end(o.input)
   })
 }
 

@@ -94,6 +94,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/ui/switch': () => import('@/components/ui/switch'),
   'web/src/components/ui/tab-bar': () => import('@/components/ui/tab-bar'),
   'web/src/components/ui/tool-group': () => import('@/components/ui/tool-group'),
+  'web/src/components/ui/version-diff': () => import('@/components/ui/version-diff'),
   'web/src/lib/ai-window': () => import('@/lib/ai-window'),
   'web/src/lib/api': () => import('@/lib/api'),
   'web/src/lib/assist-conv': () => import('@/lib/assist-conv'),
