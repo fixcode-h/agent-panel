@@ -326,9 +326,15 @@ export function toolView(tool: ToolUse): ToolView | null {
   const a = toolArgs(tool)
   // execute_tool 这类代转工具：按参数里真正执行的工具显示（shared/mcp-catalog/proxy-tool.ts）
   const proxied = proxiedTool(mcp[2], a)
+  // 一次作用到多项（UE 的批量 paths 这类字符串数组）：标题写「第一项 等 N 项」，不只显示某个公共参数
+  const many = Object.values(a).find(
+    (v): v is string[] => Array.isArray(v) && v.length > 1 && v.every((x) => typeof x === 'string'),
+  )
   const arg = proxied
     ? proxied.arg
-    : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
+    : many
+      ? t('{first} 等 {n} 项', { first: many[0], n: many.length })
+      : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
   // 面板自己的设计、插件服务的工具换成中文名，服务名也换成中文；别家的工具用服务报的或面板备好的显示名，都没有照原名
   return {
     tool: {
@@ -341,7 +347,7 @@ export function toolView(tool: ToolUse): ToolView | null {
 }
 
 /**
- * 一条消息里的工具行，相邻几次「同一段话发给不同子对话」合成一组：以前父对话会把用户的一条要求逐个转给
+ * 一条消息里的工具行，相邻几次「同一段话发给不同子对话」合成一组，相邻几次调同一个外部服务的同一个工具也合成一组：以前父对话会把用户的一条要求逐个转给
  * 四五个子对话（现在面板拒绝这么发，见 shared/peer-message.ts 的 sentToOther），旧记录里只画一行「发送消息」，展开看每个收件人，不再刷出四五行一模一样的标题。
  * 返回的每组画成一行；只有一个工具的组照常画
  */
@@ -349,9 +355,16 @@ export function groupTools(tools: ToolUse[]): ToolUse[][] {
   const out: ToolUse[][] = []
   let key = ''
   for (const tool of tools) {
-    const send = toolView(tool)?.send
-    // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方
-    const k = send && send.body && panelName(tool) === 'send_to_conversation' ? `${send.kind}\n${send.body}` : ''
+    const view = toolView(tool)
+    const send = view?.send
+    // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方。
+    // 外部服务（插件）的同一个工具连着调了几次（Agent 逐个改一批资源）：合成一行，展开看每一次（ToolGroupRow）
+    const k =
+      send && send.body && panelName(tool) === 'send_to_conversation'
+        ? `${send.kind}\n${send.body}`
+        : view?.server && !tool.alert
+          ? `mcp\n${tool.label}`
+          : ''
     if (k && k === key) out[out.length - 1].push(tool)
     else out.push([tool])
     key = k
