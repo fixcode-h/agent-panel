@@ -347,7 +347,7 @@ export function toolView(tool: ToolUse): ToolView | null {
 }
 
 /**
- * 一条消息里的工具行，相邻几次「同一段话发给不同子对话」合成一组，相邻几次调同一个外部服务的同一个工具也合成一组：以前父对话会把用户的一条要求逐个转给
+ * 一条消息里的工具行，相邻几次「同一段话发给不同子对话」合成一组：以前父对话会把用户的一条要求逐个转给
  * 四五个子对话（现在面板拒绝这么发，见 shared/peer-message.ts 的 sentToOther），旧记录里只画一行「发送消息」，展开看每个收件人，不再刷出四五行一模一样的标题。
  * 返回的每组画成一行；只有一个工具的组照常画
  */
@@ -355,16 +355,10 @@ export function groupTools(tools: ToolUse[]): ToolUse[][] {
   const out: ToolUse[][] = []
   let key = ''
   for (const tool of tools) {
-    const view = toolView(tool)
-    const send = view?.send
+    const send = toolView(tool)?.send
     // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方。
-    // 外部服务（插件）的同一个工具连着调了几次（Agent 逐个改一批资源）：合成一行，展开看每一次（ToolGroupRow）
-    const k =
-      send && send.body && panelName(tool) === 'send_to_conversation'
-        ? `${send.kind}\n${send.body}`
-        : view?.server && !tool.alert
-          ? `mcp\n${tool.label}`
-          : ''
+    // 别的工具调几次就显示几次，不合并（用户 2026-11-19 定：批量是一次调用一行，不是批量的不替它合）
+    const k = send && send.body && panelName(tool) === 'send_to_conversation' ? `${send.kind}\n${send.body}` : ''
     if (k && k === key) out[out.length - 1].push(tool)
     else out.push([tool])
     key = k

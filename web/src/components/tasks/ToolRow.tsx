@@ -34,7 +34,6 @@ import { useDiagnosisWindow } from './diagnosis-window'
 import { firstShow } from './ChildReport'
 import { PeerLine } from './PeerMessage'
 import { AlertRow } from './AlertRow'
-import { ToolGroupRow } from './ToolGroupRow'
 import { makeAlert } from '@shared/alerts'
 import { Collapse } from '@/components/ui/collapse'
 import { toolRole } from '@/lib/fold-roles'
@@ -449,7 +448,7 @@ export function ToolRow({
 
 /**
  * 一条消息里的一串工具调用：相邻几次把同一段话交给不同子对话的合成一行「发送消息」（见 groupTools），
- * 展开列出每个收件人；相邻几次调同一个外部工具合成一行（ToolGroupRow），展开列出每一次
+ * 展开列出每个收件人
  */
 export function ToolRows({ tools, task, msgId }: { tools: ToolUse[]; task?: ToolTask; msgId?: string }) {
   let at = 0
@@ -458,17 +457,7 @@ export function ToolRows({ tools, task, msgId }: { tools: ToolUse[]; task?: Tool
       {groupTools(tools).map((g, i) => {
         const k = at
         at += g.length
-        if (g.length > 1)
-          return toolView(g[0])?.send ? (
-            <SendGroupRow key={i} tools={g} task={task} />
-          ) : (
-            <ToolGroupRow
-              key={i}
-              tools={g}
-              task={task}
-              renderRow={(x, j) => <ToolRow key={j} tool={x} task={task} />}
-            />
-          )
+        if (g.length > 1) return <SendGroupRow key={i} tools={g} task={task} />
         const row = <ToolRow key={i} tool={g[0]} task={task} />
         // 派单（新开 / 交回子对话、就地微改动、派子任务失败）画成派单行，分诊说明并在里面；
         // 不在对话页（没有派单的数据）时照旧是工具行

@@ -1930,5 +1930,4 @@ export const EN_TASKS: Record<string, string> = {
   搜日志: 'Search log',
   '没有搜到「{q}」': 'No matches for "{q}"',
   '{first} 等 {n} 项': '{first} ({n} items)',
-  '{first} 等 {n} 次': '{first} ({n} calls)',
 }
