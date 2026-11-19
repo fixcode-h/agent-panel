@@ -117,12 +117,14 @@ test('取日志：开始复现记下大小，取回新增部分；项目外的�
     const log = path.join(r.dirs.project, 'logs', 'app.log')
     mkdirSync(path.dirname(log))
     writeFileSync(log, 'old line\n')
-    assert.equal((await fetchWatch('logs/app.log', dirs, false)).ok, false, '没点开始不能取')
+    // 没点开始复现也能取：整个文件交出去
+    const all = await fetchWatch('logs/app.log', dirs, false)
+    assert.ok(all.ok && all.whole && all.startLine === 1 && all.endLine === 1)
     const s = await startWatch('日志在 logs/app.log', dirs, false)
     assert.ok(s.ok && s.size === 9 && !s.missing)
     appendFileSync(log, 'noise\n[排查-支付] L1 total=1\nmore\n')
     const f = await fetchWatch('日志在 logs/app.log', dirs, false)
-    assert.ok(f.ok)
+    assert.ok(f.ok && !f.whole)
     // 不带内容，只说新增的在第 2 到第 4 行，交给页面做成文件引用
     assert.equal(f.abs, realpathSync(log))
     assert.equal(f.startLine, 2)

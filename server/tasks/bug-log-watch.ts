@@ -138,16 +138,14 @@ async function scanLines(fh: FileHandle, size: number, mark: number) {
 
 /**
  * 复现完了：算出从起点到现在新增的内容在第几行到第几行，交给页面做成文件引用，日志内容本身不读给页面。
- * 路径和能不能读都重新认一遍（期间文件被换成链接也按现在的算）；
- * 报告里写的位置和开始时不一样了（交了新一版）就要求重新开始
+ * 路径和能不能读都重新认一遍（期间文件被换成链接也按现在的算）。
+ * 没点过「开始复现」、或者记下的是别的文件（交了新一版报告）：整个文件交出去（whole），不再要求先开始（用户 2026-11-19 要的）
  */
 export async function fetchWatch(where: string | undefined, d: WatchDirs, confirm: boolean): Promise<LogFetchResult> {
-  const mark = await loadMark(d.stateDir)
-  if (!mark) return { ok: false, error: t('还没有点「开始复现」：面板不知道从哪里开始算新增的日志') }
   const r = await resolveLogPath(where, d, confirm)
   if (!r.ok) return r
-  if (r.path !== mark.path)
-    return { ok: false, path: r.path, error: t('日志文件的位置和开始复现时不一样了，请重新点「开始复现」') }
+  const saved = await loadMark(d.stateDir)
+  const mark = saved?.path === r.path ? saved : undefined
   const st = await stat(r.abs).catch(() => null)
   if (!st?.isFile())
     return {
@@ -155,7 +153,7 @@ export async function fetchWatch(where: string | undefined, d: WatchDirs, confir
       path: r.path,
       error: t('找不到日志文件 {path}：确认复现时确实写了日志，或者自己把日志贴进来', { path: r.path }),
     }
-  const range = newRange(mark.size, st.size)
+  const range = newRange(mark?.size ?? 0, st.size)
   const fh = await open(r.abs, 'r')
   try {
     const scan = await scanLines(fh, st.size, range.from)
@@ -175,6 +173,7 @@ export async function fetchWatch(where: string | undefined, d: WatchDirs, confir
       hits: markerHits(related),
       truncated: range.truncated,
       rotated: range.rotated,
+      ...(mark ? {} : { whole: true }),
     }
   } finally {
     await fh.close()

@@ -76,10 +76,12 @@ function log(task: Task, method: string, body: unknown): LogWatchStatus | LogSta
     started.set(task.id, { path, at: new Date().toISOString() })
     return { ok: true, path, size: 18_432, missing: false, outside: false }
   }
-  if (!started.has(task.id)) return { ok: false, error: '还没有点「开始复现」：面板不知道从哪里开始算新增的日志' }
+  // 没点开始复现：整个文件交出去（和正式后端一样，whole）
+  const whole = started.get(task.id)?.path !== path
   const text = sampleLog(task)
   // 演示里没有真文件：编一个绝对路径和行号，假装开始复现时文件有 411 行
   const n = text.split('\n').length
+  const base = whole ? 0 : 411
   const related = relatedLines(text).split('\n').filter(Boolean).length
   const abs = isAbsPath(path) ? path : `/home/demo/shop/${path}`
   return {
@@ -87,13 +89,14 @@ function log(task: Task, method: string, body: unknown): LogWatchStatus | LogSta
     path,
     abs,
     size: 18_432 + text.length,
-    startLine: 412,
-    endLine: 411 + n,
+    startLine: base + 1,
+    endLine: base + n,
     bytes: text.length,
     related,
     hits: markerHits(text),
     truncated: false,
     rotated: false,
+    ...(whole ? { whole: true } : {}),
   }
 }
 

@@ -156,6 +156,13 @@ export function PatchReminder({ patch }: { patch: ReturnType<typeof usePatch> })
  * 卡片要在最前面：报告和提示词按「开头是日志文件路径」认出这是引用的文件，不把这句话当日志正文（shared/bug/log-watch.ts 的 pastedLog）
  */
 function referText(file: string, got: LogFetch) {
+  if (got.whole)
+    return [
+      t('{file} 是这次的日志文件，整个文件都交给你看。', { file }),
+      got.related ? t('其中带 {prefix}…] 的有 {n} 行。', { prefix: TEMP_LOG, n: got.related }) : '',
+    ]
+      .filter(Boolean)
+      .join('')
   const span =
     got.endLine > got.startLine
       ? t('第 {from}–{to} 行', { from: got.startLine, to: got.endLine })
@@ -253,8 +260,8 @@ export function LogWatch({
         <Button
           size="sm"
           variant="secondary"
-          disabled={!!busy || !started}
-          title={started ? undefined : t('先点「开始复现」，面板记下日志文件现在到哪了')}
+          disabled={!!busy}
+          title={started ? undefined : t('没点「开始复现」时交整个日志文件')}
           onClick={() => void run('fetch')}
         >
           {busy === 'fetch' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -271,7 +278,11 @@ export function LogWatch({
       {got && !error && (!got.bytes || got.rotated) && (
         <div className="mt-2 flex flex-col gap-1.5 leading-relaxed">
           {/* 日志已经放进输入框，那里写明了从第几行看、带排查前缀的有几行，这里不再重复（用户 2026-11-13） */}
-          {!got.bytes && <p className="text-warning">{t('从开始复现到现在，这个文件没有新增内容。')}</p>}
+          {!got.bytes && (
+            <p className="text-warning">
+              {got.whole ? t('这个日志文件是空的。') : t('从开始复现到现在，这个文件没有新增内容。')}
+            </p>
+          )}
           {got.rotated && (
             <p className="text-warning">{t('日志文件比开始复现时还小（被清空或换了新文件），从第 1 行看。')}</p>
           )}
