@@ -93,9 +93,14 @@ const JETBRAINS: Record<string, string> = {
 const JETBRAINS_SERVER =
   /^(?:jetbrains|intellij|idea|rider|pycharm|webstorm|goland|clion|phpstorm|rubymine|datagrip|rustrover|android-?studio|aqua|fleet)(?:[-_ ][\w-]*)?$/i
 
+/** 是不是 JetBrains 系 IDE 自带的 MCP 服务（按条目名认） */
+export function isJetBrainsServer(server: string): boolean {
+  return JETBRAINS_SERVER.test(server.trim())
+}
+
 /** 服务没报中文名时，面板备好的显示名；不认识的服务或工具返回 undefined */
 export function knownToolTitle(server: string, tool: string): McpToolTitle | undefined {
-  if (!JETBRAINS_SERVER.test(server.trim())) return undefined
+  if (!isJetBrainsServer(server)) return undefined
   const zh = JETBRAINS[tool]
   return zh ? { titles: { zh } } : undefined
 }

@@ -336,3 +336,37 @@ export interface ExperienceInput {
   keywords: string[]
   paths: string[]
 }
+
+/** 学一次经验的结果（server/experience/learn.ts 的 learn 返回值）：自动学只写日志，手动点「立即学经验」时按它弹提示 */
+export const LearnResult = z.enum([
+  'learned',
+  'none',
+  'nothing',
+  'not-done',
+  'off',
+  'skip',
+  'no-project',
+  'full',
+  'error',
+  'gate',
+  'covered',
+  'limit',
+])
+export type LearnResult = z.infer<typeof LearnResult>
+
+/** 手动学完给用户看的一句话：学到了、失败了、满了的详情已经写进对话（LearnedCard），这里只说结论 */
+export const learnResultText = (r: LearnResult) =>
+  ({
+    learned: t('学到了经验，已经写进对话'),
+    none: t('这段对话里没提炼出值得记的经验'),
+    nothing: t('这段对话还没有工具调用，没什么可学'),
+    'not-done': t('对话还在执行，等这一轮结束再学'),
+    off: t('经验功能在设置里关掉了'),
+    skip: t('只有项目里的顶层对话能学经验'),
+    'no-project': t('项目不存在或没有目录'),
+    full: t('经验已经满了，先到项目设置的「经验」里清理一下'),
+    error: t('经验提炼失败，原因写在对话里'),
+    gate: t('这段对话没有绕路，不用学'),
+    covered: t('已有的经验已经覆盖这次的位置'),
+    limit: t('今天的经验提炼次数用完了'),
+  })[r]

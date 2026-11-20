@@ -7,6 +7,7 @@ import {
   Cpu,
   Download,
   FileCode2,
+  GraduationCap,
   History,
   ListPlus,
   PanelRight,
@@ -23,6 +24,7 @@ import type { Task } from '@shared/schema'
 import { IconButton } from '@/components/ui/icon-button'
 import type { HeaderItem } from './HeaderPins'
 import { ProcessMenu } from './ProcessPanel'
+import { learnNow } from './view/learn-now'
 
 /**
  * 对话页标题栏按钮和「更多操作」菜单的清单（钉没钉由 HeaderPins 管）。
@@ -130,6 +132,16 @@ export function taskHeaderItems(c: HeaderItemsCtx): { items: HeaderItem[]; railB
     // CLI 还连着、只是在等下一句时也能分析：只有真的在处理这一轮才不行
     { key: 'analyze', icon: Sparkles, label: t('AI 分析执行结果'), disabled: c.busy, onSelect: on.analyze },
   )
+  // 经验平时一轮结束自动学；想马上补学（自动学没学到、或关了自动学习）时手动点。只在项目的顶层对话上学，子对话的调用算进父对话
+  if (task.projectId && !task.parentTaskId && !task.imported)
+    items.push({
+      key: 'learn',
+      icon: GraduationCap,
+      label: t('立即学经验'),
+      title: c.busy ? t('对话还在执行，等这一轮结束再学') : t('现在就从这段对话里提炼经验，不等自动学习'),
+      disabled: c.busy,
+      onSelect: () => learnNow(task.id),
+    })
   // 停止只收这一轮，CLI 还留着等下一句；要连进程一起结束时用这一项
   if (!task.imported) items.push({ key: 'forceStop', icon: CircleStop, label: t('强制停止'), onSelect: on.forceStop })
   if (c.resumeLatest)

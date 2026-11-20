@@ -33,7 +33,8 @@ import { DEMO_DIFFS } from './demo-diffs'
 import { demoIntegrations } from './demo-integrations'
 import { demoHooks } from './demo-hooks'
 import { demoIsolate, demoSharedDir } from './demo-shared-dir'
-import { demoExperience, demoKnowledge, demoKnowledgeHits, demoLearnedNote } from './demo-experience'
+import { demoExperience, demoKnowledge, demoKnowledgeHits, demoLearnNow, demoLearnedNote } from './demo-experience'
+import { learnResultText } from '@shared/experience'
 import { demoChatMemory } from './demo-chat-memory'
 import { demoCliPackages } from './demo-packages'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -3088,6 +3089,12 @@ function tasksRoute(
   }
   if (sub === 'turn-outputs' && method === 'POST')
     return demoTurnOutputs(task, body as { msgs: string[]; paths: string[] })
+  // 「立即学经验」：结论和正式版同一份文案（shared/experience.ts），学到的照样挂一张经验卡片
+  if (sub === 'experience' && rid === 'learn' && method === 'POST') {
+    const result = demoLearnNow(task, live.has(task.id))
+    persist()
+    return { result, message: learnResultText(result) }
+  }
   if (sub === 'turn-revert' && method === 'POST') {
     if (live.has(task.id)) fail('对话正在执行，等这一轮结束后再撤销', 409)
     const m = task.messages.find((x) => x.id === (body as { msg?: string } | undefined)?.msg)

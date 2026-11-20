@@ -170,4 +170,23 @@ export const EN_EXPERIENCE: Record<string, string> = {
   '这条教训里认不出命令：先在教训里写上触发命令再转成钩子':
     'No command found in this lesson: add a trigger command before turning it into a hook',
   '已转成钩子：{name}': 'Turned into a hook: {name}',
+  // 手动学一次（对话标题栏「立即学经验」）
+  立即学经验: 'Learn now',
+  '现在就从这段对话里提炼经验，不等自动学习':
+    'Distill experience from this conversation now instead of waiting for auto-learn',
+  '对话还在执行，等这一轮结束再学': 'The conversation is still running. Learn after this turn ends',
+  '正在学，学完会写进对话': 'Already learning. The result will appear in the conversation',
+  '正在从这段对话里学经验，要调一次模型，稍等':
+    'Learning from this conversation. This calls the model once, please wait',
+  '学到了经验，已经写进对话': 'Learned experience and added it to the conversation',
+  这段对话里没提炼出值得记的经验: 'Nothing worth remembering was found in this conversation',
+  '这段对话还没有工具调用，没什么可学': 'This conversation has no tool calls yet, so there is nothing to learn',
+  经验功能在设置里关掉了: 'Experience is turned off in Settings',
+  只有项目里的顶层对话能学经验: 'Only top-level conversations in a project can learn experience',
+  '经验已经满了，先到项目设置的「经验」里清理一下':
+    'Experience is full. Clean it up under Experience in project settings first',
+  '经验提炼失败，原因写在对话里': 'Distilling experience failed. The reason is shown in the conversation',
+  '这段对话没有绕路，不用学': 'This conversation took no detours, so there is nothing to learn',
+  已有的经验已经覆盖这次的位置: 'Existing experience already covers these locations',
+  今天的经验提炼次数用完了: 'The daily experience distill limit has been reached',
 }

@@ -17,6 +17,7 @@ import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
 import type { OrchPlan, PlanHost } from '../host/plan.ts'
 import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 import type { SearchHost } from '../host/search.ts'
+import type { IdeMcpHost } from '../host/ide-mcp.ts'
 import type { OrchSubmit } from '../host/submit.ts'
 import type { OrchOverride, OverrideHost } from '../host/override.ts'
 
@@ -200,7 +201,7 @@ export interface Orchestra
 }
 
 export interface EngineHost
-  extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost, SearchHost, OverrideHost {
+  extends PlanHost, ConversationHost, VcsHost, BuildHost, KnowledgeHost, BugHost, SearchHost, IdeMcpHost, OverrideHost {
   task: Task
   agents: Agent[]
   /** 所有工作流（节点可以引用其他工作流） */

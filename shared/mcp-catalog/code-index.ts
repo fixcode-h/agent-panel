@@ -47,6 +47,35 @@ export function parseCodeIndexItem(item: string): Pick<CodeIndexTool, 'server' |
   return m ? { server: m[1], tool: m[2] } : undefined
 }
 
+/** 项目接的 JetBrains IDE MCP 服务；router：工具列表里有 execute_tool（IDE 开了「仅路由器」，别的工具要经它转调） */
+export interface IdeMcpServer {
+  server: string
+  router?: boolean
+}
+
+/**
+ * JetBrains IDE 服务的两条调用规矩，接在「搜索」一节第一步后面。
+ * 为什么要写：用户 2026-11-20 报 Agent 调 IDE 里的 lua_code 连着失败——
+ * 一是 projectPath 填了工作目录（P4 工作区根），IDE 打开的是它下面的 Project 子目录，IDE 只认项目目录之内的路径，整轮都报
+ * 「doesn't correspond to any open project」，Agent 换个查询词原样再调；
+ * 二是经 execute_tool 转调时把命令写成 `lua_code action=search`，IDE 只认 `--参数名 值`。
+ */
+export function ideMcpLines(servers: IdeMcpServer[] | undefined): string[] {
+  if (!servers?.length) return []
+  const names = servers.map((s) => `\`${s.server}\``).join('、')
+  const lines = [
+    `   ${names} 是 JetBrains IDE 自带的 MCP 服务，调它的工具时：`,
+    "   - `projectPath` 必须是 IDE 里打开的项目目录或它里面的路径。IDE 打开的常常是工作目录下的子目录，工作目录本身对不上，没把握就不传；报 `doesn't correspond to any open project` 或 `Unable to determine the target project` 时，从报错里的 `Currently open projects` 挑这次要查的那个路径重调，同一个失败过的路径不要再用，列表里没有合适的就停下问用户。",
+  ]
+  const routers = servers.filter((s) => s.router).map((s) => `\`${s.server}\``)
+  if (routers.length)
+    lines.push(
+      `   - ${routers.join('、')} 开了「仅路由器」：列表里看不到的工具经 \`execute_tool\` 转调，\`command\` 写成「工具名 --参数名 值」，例如 \`lua_code --action search --query OnButtonClicked --scope project\`；值有空格加引号，数组和对象传 JSON。不要写成 \`action=search\` 这种 key=value。`,
+    )
+  lines.push('   - 报参数格式错、找不到项目这类错时先照报错改参数，不要原样或只换查询词重试。')
+  return lines
+}
+
 /** 「搜索（这个项目）」一节的第一步：有认出的工具就逐个列出，没认出也提醒「工具列表里有就先用」 */
 export function codeIndexLines(tools: CodeIndexTool[] | undefined): string[] {
   const head =
