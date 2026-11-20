@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { Hono } from 'hono'
 import { makeAlert } from '../../shared/alerts.ts'
+import type { ResOf } from '../../shared/api-contract/define.ts'
+import type { experienceContract } from '../../shared/api-contract/experience.ts'
+import { type LearnResult, learnResultText } from '../../shared/experience.ts'
 import { createExperienceLearner } from '../experience/learn.ts'
 import type { TasksScope } from './scope.ts'
 import { readTask } from './read.ts'
@@ -37,5 +41,18 @@ export function createTaskLearner(sc: TasksScope) {
       else await sc.store.update(tk.id, tk).catch(() => {})
     },
   })
-  return { learnExperience: learner.schedule, learnNow: learner.learn }
+  return { learnExperience: learner.schedule, learnNow: (id: string) => learner.learn(id, { manual: true }) }
+}
+
+/**
+ * 对话标题栏「立即学经验」：手动学一次，等学完再回（要调一次模型，几十秒）。
+ * 学到的、失败的原因照旧由 learn 写进对话；这里只回结论，界面弹一句提示
+ */
+export function learnRoutes(learnNow: (id: string) => Promise<LearnResult>) {
+  const app = new Hono()
+  app.post('/:id/experience/learn', async (c) => {
+    const result = await learnNow(c.req.param('id'))
+    return c.json({ result, message: learnResultText(result) } satisfies ResOf<typeof experienceContract.learnNow>)
+  })
+  return app
 }

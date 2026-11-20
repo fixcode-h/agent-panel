@@ -79,7 +79,7 @@ import { createTaskFeed } from './page-feed.ts'
 import { sharedDirRoutes } from './shared-dir-routes.ts'
 import { createIdleAsk } from './idle-ask.ts'
 import { createBudget } from './budget.ts'
-import { createTaskLearner } from './experience.ts'
+import { createTaskLearner, learnRoutes } from './experience.ts'
 import { createKeepAlive } from './keepalive.ts'
 import { createRun } from './run.ts'
 import { createAsks } from './asks.ts'
@@ -657,7 +657,7 @@ export function tasksApi(deps: {
   const flowRuns = createFlowRuns(scope)
   const { armIdleAsk, disarmIdleAsk, childRecovering } = createIdleAsk(scope)
   const { checkBudget, holdWake } = createBudget(scope)
-  const { learnExperience } = createTaskLearner(scope)
+  const { learnExperience, learnNow } = createTaskLearner(scope)
   const { quotaAfterFail, armQuota, disarmQuota } = createQuotaResume(scope)
   const {
     allowedPids,
@@ -703,6 +703,7 @@ export function tasksApi(deps: {
   routes.route('/', lifecycleRoutes(scope))
   routes.route('/', diagnosisRoutes(scope))
   routes.route('/', evidenceRoutes(scope))
+  routes.route('/', learnRoutes(learnNow))
   routes.route('/', userActionRoutes(scope))
   registerReadRoutes(scope)
   routes.route('/', conversationRoutes(scope))

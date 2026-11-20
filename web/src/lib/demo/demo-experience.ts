@@ -3,6 +3,7 @@ import {
   experienceProblems,
   newExperienceId,
   type ExperienceEdit,
+  type LearnResult,
   type LearnedNote,
 } from '@shared/experience'
 import type { KnowledgeHitsView } from '@shared/knowledge-hits'
@@ -15,7 +16,7 @@ import {
 } from '@shared/knowledge/candidate'
 import { distill } from '@shared/knowledge/distill'
 import { lessonSuggestions } from '@shared/knowledge/lifecycle'
-import type { Project } from '@shared/schema'
+import type { Project, Task } from '@shared/schema'
 
 /**
  * 演示版的项目经验（对应 server/experience/routes.ts）：每个项目一份内存里的列表，带几条示例；
@@ -120,6 +121,28 @@ export function demoLearnedNote(): LearnedNote {
  * 演示版的命中记录（对应 GET /projects/:id/knowledge-hits）：两条经验、一条教训用上过，
  * 一条教训的路径标成已不在，设置页的「很久没用上」排序和过期标记能看出效果
  */
+/**
+ * 演示版的「立即学经验」（对应 POST /tasks/:id/experience/learn）：项目里的顶层对话停着时挂一张示例经验卡片，
+ * 判断条件和正式版 learn 的前几步一样（server/experience/learn.ts）
+ */
+export function demoLearnNow(task: Task, running: boolean): LearnResult {
+  if (task.parentTaskId || !task.projectId || task.archived) return 'skip'
+  if (running) return 'not-done'
+  if (!task.messages.some((m) => m.tools.length)) return 'nothing'
+  const learned = demoLearnedNote()
+  task.messages.push({
+    id: `demo-learned-${crypto.randomUUID()}`,
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: `学到经验：${learned.items.map((x) => x.snapshot.title).join('；')}`,
+    tools: [],
+    at: new Date().toISOString(),
+    learned: { ...learned, reason: '用户手动要求从这段对话里学经验' },
+  })
+  return 'learned'
+}
+
 export function demoKnowledgeHits(): KnowledgeHitsView {
   const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
   return {
