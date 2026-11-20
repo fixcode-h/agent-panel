@@ -11,7 +11,7 @@ import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agents/r
 import { fillSkills } from '../../shared/expose.ts'
 import { withSkillDir } from '../../shared/skill-guide.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
-import { promptLangRules, promptUserNameRules } from '../../shared/prompt-lang.ts'
+import { promptUserNameRules } from '../../shared/prompt-lang.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { t } from '../../shared/i18n.ts'
 import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
@@ -22,7 +22,6 @@ import type { RealContext } from './real-context.ts'
 import { resolveModelRun } from './model-run.ts'
 import { composeInput } from './compose-input.ts'
 import { launchOptions } from './launch-options.ts'
-import { ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { pluginRunTools } from './plugin-run.ts'
 import { systemNote } from './recovery.ts'
 import { makeAlert } from '../../shared/alerts.ts'
@@ -98,20 +97,12 @@ export async function prepareLaunch(
   ]
     .filter(Boolean)
     .join('\n\n')
-  // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
-  // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
+  // 回复语言规则不在这里拼：invokeCli 统一放进系统提示词（见 prompt-lang-inject.ts）。
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
   const taskDir = await taskFiles(task.id) // 对话目录：截图和临时文件放这里，规则进系统提示词（见 task-files.ts）
-  const instructions = [
-    role,
-    def.systemPromptFlag ? promptLangRules() : '',
-    promptUserNameRules(settings.userName),
-    def.systemPromptFlag ? taskDir.rule : '',
-  ]
+  const instructions = [role, promptUserNameRules(settings.userName), def.systemPromptFlag ? taskDir.rule : '']
     .filter(Boolean)
     .join('\n\n')
-  // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
-  const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
   // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
   // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
   const composed = await composeInput({
@@ -142,7 +133,6 @@ export async function prepareLaunch(
     op,
     chat,
     instructions,
-    systemPromptModPath,
     taskDir,
     cwd,
     windowFor,

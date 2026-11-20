@@ -71,3 +71,17 @@ export function revealPaths(root: unknown, query: string, caseSensitive: boolean
   walk(root, '')
   return hits > TREE_HIT_MAX ? null : out
 }
+
+/**
+ * MCP 工具的结果按紧凑 JSON 交给模型（一行，省 token，脚本好解析）：对话里显示时展开成缩进的样子，人才看得清。
+ * 不是一整段 JSON 的（纯文字、截断过的）原样返回；太长的不解析，免得大结果每次渲染都卡一下
+ */
+export function prettyJsonOutput(text: string) {
+  const s = text.trim()
+  if (s.length > 200_000 || s.includes('\n') || !/^[[{][\s\S]*[\]}]$/.test(s)) return text
+  try {
+    return JSON.stringify(JSON.parse(s), null, 1)
+  } catch {
+    return text
+  }
+}

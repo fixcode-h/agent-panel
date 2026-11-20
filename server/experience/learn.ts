@@ -5,6 +5,7 @@ import {
   type ExperienceInput,
   EXP_PATHS_MAX,
   ExperienceSettings,
+  type LearnResult,
   type LearnedEntry,
   type LearnedNote,
   MAX_EXPERIENCES,
@@ -188,17 +189,22 @@ export function createExperienceLearner(deps: LearnDeps) {
     return out
   }
 
-  async function learn(taskId: string): Promise<string> {
+  /**
+   * manual：用户在对话标题栏点了「立即学经验」。用户的指令优先（ADR 0070 的原则）：不看「自动学习」开关、
+   * 不过闸门、不看「已覆盖」和每天的次数上限，只要经验功能开着、这一轮不在跑就学；
+   * 上次学过之后没有新调用时整段对话重学一遍（合并按「同一件事」判重，不会重复加）
+   */
+  async function learn(taskId: string, opts: { manual?: boolean } = {}): Promise<LearnResult> {
     const task = await deps.getTask(taskId)
     if (!task || task.parentTaskId || !task.projectId || task.archived || task.deletedAt) return 'skip'
     const settings = await getSettings()
     const exp = ExperienceSettings.parse(settings.experience ?? {})
-    if (!exp.enabled || !exp.autoLearn) return 'off'
+    if (!exp.enabled || (!exp.autoLearn && !opts.manual)) return 'off'
     if (!(await deps.isDone(task))) return 'not-done'
     const project = await deps.projects.get(task.projectId)
     if (!project?.path) return 'no-project'
     const prev = running.get(project.id) ?? Promise.resolve()
-    const job = prev.catch(() => {}).then(() => learnIn(task, project, exp, settings))
+    const job = prev.catch(() => {}).then(() => learnIn(task, project, exp, settings, !!opts.manual))
     running.set(project.id, job)
     void job.finally(() => running.get(project.id) === job && running.delete(project.id)).catch(() => {})
     return job
@@ -209,24 +215,31 @@ export function createExperienceLearner(deps: LearnDeps) {
     project: Project,
     exp: ExperienceSettings,
     settings: Awaited<ReturnType<typeof getSettings>>,
-  ): Promise<string> {
+    manual: boolean,
+  ): Promise<LearnResult> {
     const st = await readState()
-    const since = st.learned[task.id] ?? ''
     const tasks = await treeOfTasks(task)
-    const trace: TraceTool[] = []
-    let last = since
-    for (const tk of tasks) {
-      const roots = [project.path, tk.worktree?.path ?? ''].filter(Boolean)
-      for (const m of tk.messages) {
-        if (!m.at || m.at <= since) continue
-        if (m.at > last) last = m.at
-        for (const tool of m.tools) trace.push({ tool, roots })
+    const collect = (since: string) => {
+      const trace: TraceTool[] = []
+      let last = since
+      for (const tk of tasks) {
+        const roots = [project.path, tk.worktree?.path ?? ''].filter(Boolean)
+        for (const m of tk.messages) {
+          if (!m.at || m.at <= since) continue
+          if (m.at > last) last = m.at
+          for (const tool of m.tools) trace.push({ tool, roots })
+        }
       }
+      return { trace, last }
     }
+    let { trace, last } = collect(st.learned[task.id] ?? '')
+    // 手动学时上次之后没有新调用：整段对话重来一遍（用户就是想补学已经学过的这段）
+    if (!trace.length && manual) ({ trace, last } = collect(''))
     if (!trace.length) return 'nothing'
     const mark = () => updateState((s) => void (s.learned[task.id] = last))
     const digest = digestOf(trace)
-    const reason = gateReason(digest, exp.sensitivity)
+    // 闸门原文是给模型看的「值得学的原因」，不翻译；手动学时没过闸门也照学，原因写成用户要求的
+    const reason = gateReason(digest, exp.sensitivity) || (manual ? '用户手动要求从这段对话里学经验' : '')
     if (!reason) {
       await mark()
       return 'gate'
@@ -235,6 +248,7 @@ export function createExperienceLearner(deps: LearnDeps) {
     const current = await loadProjectExperience(project, agents)
     // 已有的经验已经覆盖这次的落点：不用再花一次模型调用
     if (
+      !manual &&
       !digest.commands.length &&
       landingCovered(
         digest,
@@ -257,7 +271,7 @@ export function createExperienceLearner(deps: LearnDeps) {
       return 'full'
     }
     const used = st.daily[project.id]?.day === day ? st.daily[project.id].count : 0
-    if (exp.dailyLimit > 0 && used >= exp.dailyLimit) {
+    if (!manual && exp.dailyLimit > 0 && used >= exp.dailyLimit) {
       log.info('task', '今天的经验提炼次数用完了，这次不学', { task: task.id, project: project.id })
       await mark()
       return 'limit'

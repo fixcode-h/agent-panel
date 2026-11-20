@@ -9,7 +9,6 @@ import { agentPermission, type cliSettings } from '../../shared/settings.ts'
 import { limitEnvVars, longContextModel, type ModelLimits } from '../../shared/models/limits.ts'
 import { trustFor } from '../../shared/cli/trust.ts'
 import { pluginArgs } from '../../shared/role-plugins.ts'
-import { replyLang, PROMPT_LANG_ENV } from '../../shared/prompt-lang.ts'
 import { attachmentAddDirs } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { handoffDirOf } from '../store.ts'
@@ -34,7 +33,6 @@ export interface LaunchArgs {
   op: AgentCall['op']
   chat: boolean
   instructions: string
-  systemPromptModPath: string | undefined
   taskDir: Awaited<ReturnType<typeof taskFiles>>
   cwd: string
   windowFor: (model: string) => number
@@ -44,7 +42,7 @@ export interface LaunchArgs {
 
 export async function launchOptions(a: LaunchArgs) {
   const { ctx, def, cs, agent, model, effort, limits, resume, fork, op, chat, instructions } = a
-  const { systemPromptModPath, taskDir, cwd, windowFor, skills } = a
+  const { taskDir, cwd, windowFor, skills } = a
   const { task, settings } = ctx
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
   const pct = cs.autoCompact
@@ -64,7 +62,6 @@ export async function launchOptions(a: LaunchArgs) {
     // 审查走 CLI 自己的审查模式，压缩走协议；其余的已经换成普通的一轮
     op: (op?.kind === 'compact' ? def.compact : def.review) === 'native' ? op : undefined,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
-    systemPromptModPath,
     // 图片附件拷在对话目录的 attachments/ 下（对话目录在下面一并放行）；其余按原来的绝对路径交给 Agent，
     // 工作目录之外的那些要放行。交接的完整结果在数据目录里，启动前就建好目录并放行（见 handoffDirOf）
     addDirs: [
@@ -88,8 +85,6 @@ export async function launchOptions(a: LaunchArgs) {
   const env = childEnv([
     ...plugin.vars,
     ...cs.env,
-    // mod 按它选语言规则（见 prompt-lang-mod.ts）
-    ...(systemPromptModPath ? [{ key: PROMPT_LANG_ENV, value: replyLang() }] : []),
     ...(pct && def.autoCompact === 'env' && def.autoCompactEnv
       ? [{ key: def.autoCompactEnv, value: String(pct) }]
       : []),

@@ -45,3 +45,9 @@ paths: shared/builtin/**, shared/engine/index.ts, server/tasks/run.ts, shared/as
 - 规则：父对话提示词里写「把……转给用户」时，要写清在哪个对话、用哪个工具发；子对话要用户做的事（复现、抓日志、给文件）一律让子对话自己发（request_user_action / request_logs），父对话不代发。加新规则前搜一遍同一个提示词里有没有说法相反的旧句子。
 - 起因：统筹提示词一处写「它要用户复现并贴日志的，原样转给用户」，另一处写「子对话的等你操作不经过你」；统筹照前一句在父对话里发了等你操作，用户 2026-11-10 报卡片跑到父对话。
 - 防线：`server/core-agents.test.ts`（统筹提示词不再有「原样转给用户」）。
+
+## 回复语言只在 invokeCli 注入，保活的每一轮都要补
+
+- 规则：「回复正文和思考过程用哪种语言」的规则和末尾提醒只由 `server/exec/prompt-lang-inject.ts` 在 `invokeCli` 里补：系统提示词（有参数的接在角色设定后，Command Code 走语言 mod）、第一轮输入末尾、保活进程的每一个后续轮次（`keepAlive` / `waitUser` 拿到的文字）。新加调 CLI 的地方不自己拼语言规则；新加「把文字交给已经在跑的 CLI」的通道时，确认它经过 `withLangReminder`（插话走 `steerNote`，已带提醒）。
+- 起因：用户 2026-11-20 报父对话思考是中文、子对话是英文。以前语言规则只在 runner 起新进程时放进系统提示词和第一轮末尾；保活的子对话之后收到的父对话传话、子任务结果原样交给 CLI，一长串英文命令输出后思考就换成英文；经验提炼、AI 创建、插件这些直接调 `invokeCli` 的系统提示词里也没有规则。
+- 防线：`server/exec/prompt-lang-inject.test.ts`。
