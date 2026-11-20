@@ -14,6 +14,7 @@ import { taskAnalysis } from './0009-task-analysis.ts'
 import { taskChild } from './0010-task-child.ts'
 import { legacyShapes } from './0011-legacy-shapes.ts'
 import { agentMode } from './0012-agent-mode.ts'
+import { knowledgeInRepoDefault } from './0013-knowledge-in-repo-default.ts'
 
 /**
  * 数据目录的一次性迁移（重构文档第 6 条，ADR 见 docs/adr）。
@@ -58,6 +59,7 @@ export const MIGRATIONS: Migration[] = [
   taskChild,
   legacyShapes,
   agentMode,
+  knowledgeInRepoDefault,
 ]
 /** 当前代码认识的数据版本 */
 export const DATA_VERSION = MIGRATIONS.at(-1)!.version

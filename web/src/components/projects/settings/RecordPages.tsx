@@ -36,7 +36,7 @@ export function LessonsPage({
         onChange={(v) => set('knowledgeInRepo', v)}
         label={t('教训和经验随仓库存')}
         tip={t(
-          '默认存在面板的数据目录里，不往你的仓库里写文件。打开后存进项目的文档目录（Git 项目是 docs/lessons），随代码提交、团队都能看到。切换后保存时，现有的教训和经验会写到新位置，原来那份不删。',
+          '默认存进项目的文档目录（Git 项目是 docs/lessons），随代码提交、团队都能看到。关掉后存在面板的数据目录里（~/.agent-panel/knowledge/<项目 id>/），不往仓库里写文件。切换后保存时，现有的教训和经验会写到新位置，原来那份不删。',
         )}
       />
       <LessonsEditor lessons={draft.lessons} onChange={(v) => set('lessons', v)} project={project} initialOpen={item} />

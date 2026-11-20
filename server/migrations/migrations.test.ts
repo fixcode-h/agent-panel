@@ -8,7 +8,9 @@ import test from 'node:test'
 const root = mkdtempSync(path.join(tmpdir(), 'agent-panel-migrations-'))
 process.env.AGENT_PANEL_DATA = path.join(root, 'default')
 
-const { runMigrations, readDataVersion, DATA_VERSION } = await import('./index.ts')
+const { runMigrations, readDataVersion, DATA_VERSION, MIGRATIONS } = await import('./index.ts')
+/** 只跑到某个版本：后面的迁移（如 0013 给项目写上 knowledgeInRepo）会改同一份文件，挡住前面迁移「不动」的断言 */
+const upTo = (v: number) => MIGRATIONS.filter((m) => m.version <= v)
 const { parseMessagesJsonl } = await import('../tasks/messages-file.ts')
 
 let n = 0
@@ -167,7 +169,7 @@ test('0005：项目的表格设置挪进 plugins.tables；已经挪过的不覆�
     { id: 'b', name: 'B', path: '/b', tables: { dirs: ['旧'] }, plugins: { tables: cfg } },
     { id: 'c', name: 'C', path: '/c' },
   ])
-  await runMigrations({ dataDir: d, log: quiet })
+  await runMigrations({ dataDir: d, migrations: upTo(12), log: quiet })
   const [a, b, c] = json(path.join(d, 'projects', 'projects.json'))
   assert.deepEqual(a.plugins, { other: 1, tables: cfg })
   assert.ok(!('tables' in a) && !('tables' in b))
@@ -181,7 +183,7 @@ test('0005：项目的表格设置挪进 plugins.tables；已经挪过的不覆�
   const clean = freshDir()
   write(path.join(clean, 'projects', 'projects.json'), [{ id: 'c' }])
   const before = readFileSync(path.join(clean, 'projects', 'projects.json'), 'utf8')
-  await runMigrations({ dataDir: clean, log: quiet })
+  await runMigrations({ dataDir: clean, migrations: upTo(12), log: quiet })
   assert.equal(
     readFileSync(path.join(clean, 'projects', 'projects.json'), 'utf8'),
     before,
@@ -196,7 +198,7 @@ test('0006：项目里配置过的插件记进 capabilities.plugins；已经有�
     { id: 'b', name: 'B', plugins: { tables: {}, ue: {} }, capabilities: { plugins: ['tables'], mcp: ['x'] } },
     { id: 'c', name: 'C' },
   ])
-  await runMigrations({ dataDir: d, log: quiet })
+  await runMigrations({ dataDir: d, migrations: upTo(12), log: quiet })
   const [a, b, c] = json(path.join(d, 'projects', 'projects.json'))
   assert.deepEqual(a.capabilities, { plugins: ['tables'] })
   assert.deepEqual(b.capabilities, { plugins: ['tables', 'ue'], mcp: ['x'] }, '只补缺的，别的能力原样')
@@ -280,7 +282,7 @@ test('0007：仓库里已经有教训、经验的项目记成随仓库存，其�
   ])
   // 只跑 0007：版本号先记到 6
   write(path.join(d, 'data-version.json'), { version: 6 })
-  await runMigrations({ dataDir: d, log: quiet })
+  await runMigrations({ dataDir: d, migrations: upTo(12), log: quiet })
   const [a, b, c, e] = json(path.join(d, 'projects', 'projects.json'))
   assert.equal(a.knowledgeInRepo, true)
   assert.ok(!('knowledgeInRepo' in b), '只有 README 不算记过')
@@ -300,7 +302,7 @@ test('0008：平铺的执行上限字段收进 task.budget；0（不限）丢掉
   write(path.join(dir, 'n.json'), task('n', { turnSeenAt: '', budget: { tokens: 10 } }))
   const fresh = readFileSync(path.join(dir, 'n.json'), 'utf8')
   write(path.join(d, 'data-version.json'), { version: 7 })
-  await runMigrations({ dataDir: d, log: quiet })
+  await runMigrations({ dataDir: d, migrations: upTo(12), log: quiet })
   const a = json(path.join(dir, 'a.json'))
   assert.deepEqual(a.budget, { tokens: 5000, minutes: 30, from, notice: 'warn' })
   for (const k of ['budgetTokens', 'budgetMinutes', 'budgetFrom', 'budgetNotice']) assert.ok(!(k in a), `${k} 收进去了`)
@@ -486,4 +488,25 @@ test('0012：项目里的对话、子对话从 chat 改存成 agent；Chat 页�
   assert.equal(json(path.join(proj, 'k.json')).mode, 'agent', '子对话')
   assert.equal(json(path.join(proj, 'w.json')).mode, 'workflow')
   assert.equal(readFileSync(path.join(chats, 'c.json'), 'utf8'), keep, 'Chat 页的对话一个字节都没动')
+})
+
+test('0013 教训默认随仓库：数据目录里已经有的照旧存数据目录，没有的改成随仓库，已经随仓库的不动', async () => {
+  const { DATA_FILES } = await import('../store.ts')
+  const d = freshDir()
+  write(path.join(d, 'data-version.json'), { version: 12, history: [] })
+  const file = path.join(d, DATA_FILES['projects.json'])
+  write(file, [
+    { id: 'keep', path: '/w/a', knowledgeInRepo: false },
+    { id: 'old', path: '/w/b' },
+    { id: 'empty', path: '/w/c', knowledgeInRepo: false },
+    { id: 'repo', path: '/w/d', knowledgeInRepo: true },
+  ])
+  write(path.join(d, 'knowledge', 'keep', 'lessons', 'a.md'), '# a')
+  write(path.join(d, 'knowledge', 'old', 'experience', 'e.md'), '# e')
+  await runMigrations({ dataDir: d, log: quiet })
+  const by = Object.fromEntries((json(file) as { id: string; knowledgeInRepo: boolean }[]).map((p) => [p.id, p]))
+  assert.equal(by.keep.knowledgeInRepo, false)
+  assert.equal(by.old.knowledgeInRepo, false, '没写这一项、数据目录里有经验的：写明 false，默认值改了也读得到原来那份')
+  assert.equal(by.empty.knowledgeInRepo, true)
+  assert.equal(by.repo.knowledgeInRepo, true)
 })
