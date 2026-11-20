@@ -24,7 +24,7 @@ import { projectFormat } from '../file-format.ts'
 import { gitHasRemote, reviewDiff } from './git.ts'
 import { saveHandoffFile } from './handoff-file.ts'
 import { searchExcludeOf } from '../../shared/search-exclude.ts'
-import { codeIndexToolsFor } from '../mcp-catalog/code-index.ts'
+import { codeIndexToolsFor, ideMcpServersFor } from '../mcp-catalog/code-index.ts'
 import { currentTestSteps } from '../../shared/test-steps.ts'
 import { steers, waitChat } from './steering.ts'
 import { t } from '../../shared/i18n.ts'
@@ -124,6 +124,8 @@ export async function runRealTurn(ctx: RealContext) {
     searchInGit: ctx.isGit,
     // 项目能用的代码索引 MCP 工具（search_lua、search_symbols 这类）：写进搜索那一节，Agent 先按符号查再 rg
     codeIndexTools: await codeIndexToolsFor(ctx.project, workDirOf(ctx.task, ctx.project)).catch(() => []),
+    // 接了 JetBrains IDE 的 MCP 服务时补上 projectPath 和 execute_tool 的写法（IDE 只认项目目录之内的路径、只认 --参数名 值）
+    ideMcpServers: await ideMcpServersFor(ctx.project, workDirOf(ctx.task, ctx.project)).catch(() => []),
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦

@@ -9,7 +9,13 @@
  */
 import type { Project } from '../../shared/schema.ts'
 import { isOwnMcpServer } from '../../shared/tool-names.ts'
-import { isCodeIndexTool, parseCodeIndexItem, type CodeIndexTool } from '../../shared/mcp-catalog/code-index.ts'
+import {
+  isCodeIndexTool,
+  parseCodeIndexItem,
+  type CodeIndexTool,
+  type IdeMcpServer,
+} from '../../shared/mcp-catalog/code-index.ts'
+import { isJetBrainsServer } from '../../shared/mcp-catalog/known-titles.ts'
 import { scanProjectMcp } from '../projects/mcp.ts'
 import { mcpOverview } from '../mcp-store.ts'
 import { askExternalTools, externalToolsOf } from './external-titles.ts'
@@ -51,6 +57,26 @@ export async function codeIndexToolsFor(
     if (!known) continue
     for (const tool of known.names)
       if (isCodeIndexTool(tool)) out.push({ server: name, tool, ...(known.descs[tool] && { desc: known.descs[tool] }) })
+  }
+  return out
+}
+
+/**
+ * 项目能用的 JetBrains IDE MCP 服务（项目目录里的配置和 CLI 全局配置，按条目名认），以及它是不是开了「仅路由器」
+ * （缓存的工具表里有 execute_tool）。只读配置和缓存，不主动去问：codeIndexToolsFor 已经在同一轮问过项目里的服务
+ */
+export async function ideMcpServersFor(
+  project: Pick<Project, 'path'> | undefined,
+  cwd: string,
+): Promise<IdeMcpServer[]> {
+  if (!project) return []
+  const local = (await scanProjectMcp(cwd || project.path).catch(() => ({ detected: [] }))).detected
+  const global = (await mcpOverview().catch(() => ({ servers: [] }))).servers
+  const names = new Set([...local.map((d) => d.name), ...global.map((s) => s.name)].filter(isJetBrainsServer))
+  const out: IdeMcpServer[] = []
+  for (const server of names) {
+    const known = await externalToolsOf(server)
+    out.push({ server, ...(known?.names.includes('execute_tool') && { router: true }) })
   }
   return out
 }

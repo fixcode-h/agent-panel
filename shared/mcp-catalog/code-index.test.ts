@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { briefDesc, codeIndexLines, isCodeIndexTool, parseCodeIndexItem } from './code-index.ts'
+import { briefDesc, codeIndexLines, ideMcpLines, isCodeIndexTool, parseCodeIndexItem } from './code-index.ts'
 
 test('代码索引工具：按名字认出搜符号、搜 Lua 这类，写东西和跑东西的不算', () => {
   for (const n of ['search_lua', 'search_symbols', 'find_references', 'search_files', 'goto_definition', 'symbols'])
@@ -21,4 +21,15 @@ test('代码索引工具：认出了就逐个列出服务和工具名，没认�
   assert.match(listed, /uetovs 服务的 `search_lua`：按名字搜 Lua 符号/)
   assert.match(listed, /先加载它的说明/)
   assert.match(codeIndexLines(undefined).join('\n'), /没认出代码索引工具[^\n]*search_lua/)
+})
+
+test('JetBrains IDE 服务：写明 projectPath 只认 IDE 项目目录之内，开了仅路由器时写明 execute_tool 的 --参数名 值', () => {
+  assert.deepEqual(ideMcpLines(undefined), [])
+  const plain = ideMcpLines([{ server: 'idea' }]).join('\n')
+  assert.match(plain, /`idea` 是 JetBrains IDE/)
+  assert.match(plain, /Currently open projects/)
+  assert.doesNotMatch(plain, /execute_tool/)
+  const router = ideMcpLines([{ server: 'idea', router: true }]).join('\n')
+  assert.match(router, /lua_code --action search --query/)
+  assert.match(router, /不要写成 `action=search`/)
 })
