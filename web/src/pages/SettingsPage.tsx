@@ -231,6 +231,8 @@ function SettingsContent({ cur, inPlugin, ctx }: { cur: Section; inPlugin: boole
             setPart('networkProxyEnabled')(enabled)
             setPart('proxy')(url)
           }}
+          sources={form.githubSources}
+          onSourcesChange={setPart('githubSources')}
         />
       )}
       {cur.id === 'apis' && <ApiSection apis={form.apis} onChange={setPart('apis')} />}

@@ -41,6 +41,17 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - npm 子进程（`server/npm-env.ts`，安装 / 更新 / 卸载 CLI 和查最新版本）：不经过 `netFetch`，但用同一个 `defaultPlan` 对 npm 仓库地址选路；设置里的或系统代理先 `probeProxy` 握手确认，再写进 `HTTPS_PROXY` / `HTTP_PROXY` 交给 npm（`.npmrc` 里的代理仍然优先），连不上就直连并在输出里说明。2026-11-04 之前 npm 一直直连，见 [bugs/cli-install-slow-npm-no-proxy.md](bugs/cli-install-slow-npm-no-proxy.md)。
 - `server/update/index.ts` 和 `server/download.ts` 不再用 `AbortSignal.timeout`（触发一次后就永久处于中止状态，没法用同一条 signal 重试），改用 `netFetch` 的 `timeoutMs`；其它调用方（例如 `server/comfy-templates.ts`、`server/remote.ts`）仍可用自己的 signal，中止后按上面的规则停止回退。
 
+### GitHub 多来源兜底（2026-11-20）
+
+代理回退只能换「路」，换不了「地址」：国内 `raw.githubusercontent.com` 常被直接重置（用户读 UEKit 插件目录，代理和直连都 `ECONNRESET`），而 `github.com`、`api.github.com` 往往还能通。所以 `netFetch` 在上面的回退之外再套一层「换来源」：`netFetch` → `fetchViaSources`（`server/github-sources/index.ts`）→ 每个来源各自走一遍 `netFetchWith`（代理回退）。调用方不用改，插件目录、插件升级包（UE 插件经开放模块 `server/download.ts`）、插件仓库、面板自身更新、ComfyUI 模板这些 GitHub 地址都自动受益；不是 GitHub 的地址照原样取。
+
+- **来源注册表**：`shared/github-sources/registry.ts`。`parseGithubUrl` 把地址分成 raw（仓库文件，含 `github.com/o/r/raw/…`、`blob/…?raw=true`）、release、archive、page、api；每个来源的 `rewrite` 把解析结果换成自己的地址，不适用返回 null。内置：原地址 → GitHub API（`contents` + `Accept: application/vnd.github.raw`，不登录每小时 60 次）→ GitHub 网页（`blob` 网页里 `react-app.embeddedData` 的 `rawLines`，`web-blob.ts` 递归找，GitHub 改过好几次外层字段名；文件太大或二进制时没有内容）→ jsDelivr（按分支名可能晚几小时；ref 为 HEAD 时不用，jsDelivr 会取最新 tag）。用户自己加的「镜像前缀」= 前缀 + 原地址，不内置任何第三方站点。
+- **只有镜像能救的**：Release 附件、源码包、`github.com` 的跳转最后都落到 `release-assets.githubusercontent.com` / `codeload.github.com`，GitHub 自己的备用地址救不了，只能走代理或镜像前缀；没加镜像时失败信息里提示去加。
+- **什么时候换**：网络错误、5xx、429、API 的 403（限流）换下一个；404 等其它状态直接返回（文件真不存在）；全部失败时有 HTTP 响应就交回第一个，没有就抛一条「GitHub 的各个下载来源都没成功」，逐个列出来源和原因（原地址保留带「尝试过的路径」的全文，其余用 `netReason` 的一句话）。只剩一个来源可试时行为和以前完全一样，错误原样抛出。调用方取消后不再换来源。
+- **记住能用的来源**：换来源取成功后按地址种类记 10 分钟，下一次（例如分片下载的每一片）先走它，不用每次等原地址超时；它失败了就忘掉。
+- **设置**：`Settings.githubSources`（`{ id, enabled, prefix? }[]`，空 = 默认顺序全开，没列出的内置来源接在后面，新加的内置来源自动出现）。界面 `web/src/components/settings/GithubSourcesGroup.tsx`（「网络与代理 · GitHub 下载来源」）：开关、上移下移、加删镜像前缀、「检测」按当前列表逐个来源取样例文件（`SAMPLE_RAW_URL`，面板仓库的 package.json；接口契约 `shared/api-contract/net.ts`，路由在 `server/env-api.ts`，用 `netFetchDirect` 不经兜底）。
+- 测试：`shared/github-sources/registry.test.ts`（地址解析、默认顺序、设置展开、网页抽取）、`server/github-sources/index.test.ts`（换来源、记住来源、404 不换、全失败文案、镜像、取消、检测）。
+
 ## 版本更新（GitHub Releases）
 
 `server/update/index.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`、`/local-package`）。
