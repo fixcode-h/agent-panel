@@ -1,4 +1,5 @@
 import { tracedEvents } from './cli-trace.ts'
+import { withLangNextTurns, withLangReminder, withLangSystemPrompt } from './prompt-lang-inject.ts'
 import { effortEnv, getCli, isOffEffort, type BuildOptions, type CliDefinition } from '../../shared/clis.ts'
 import { apiModelIdFor } from '../../shared/accounts.ts'
 import { cliSettings } from '../../shared/settings.ts'
@@ -16,7 +17,6 @@ import type { LibraryEntry } from '../mcp-library/file.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
 import { claimPanelName, sweepPanelMcp } from '../panel/mcp-files.ts'
-import { promptLangReminder } from '../../shared/prompt-lang.ts'
 import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine/host.ts'
 import { supportedEffort } from '../models.ts'
@@ -126,6 +126,8 @@ export async function invokeCli(o: {
   askRedirect?: () => string | undefined
   /** 不给没有提问通道的 CLI 加提问工具（调用方自己带了提问的办法，例如 UI 设计的 ask_user） */
   noAskTool?: boolean
+  /** 不在输入末尾补语言提醒：压缩、审查这类参数另有含义的操作（见 prompt-lang-inject.ts） */
+  noLangReminder?: boolean
   /** 审批和要交给用户的提问；不给时作为 ask 事件交给 onEvent（任务页自己存在任务里） */
   onAsk?: (ev: Extract<CliEvent, { type: 'ask' }>) => void
   /** 拿到执行中控制 CLI 的方法 */
@@ -181,7 +183,8 @@ export async function invokeCli(o: {
   onHook?: (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 }): Promise<ProcessResult> {
   // 模型请求轨迹（见 cli-trace.ts）：每个事件先记一笔再交给调用方，状态诊断按它说清「等待模型」卡在哪
-  o = { ...o, onEvent: tracedEvents(o.owner?.taskId ?? '', o.owner?.step, o.onEvent) }
+  // 保活的后续每一轮也补语言提醒（见 prompt-lang-inject.ts）
+  o = { ...o, onEvent: tracedEvents(o.owner?.taskId ?? '', o.owner?.step, o.onEvent), ...withLangNextTurns(o) }
   const def = getCli(o.cliId)!
   // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
   const cs = cliSettings(await getSettings(), o.cliId)
@@ -200,9 +203,11 @@ export async function invokeCli(o: {
       ? req
       : { ...req, effort, extraArgs: [...(req.extraArgs ?? []), ...thinkArgs] }
   // 这一档要靠环境变量生效的（Claude Code 关思考），按最终用的强度加上
-  const env = effortEnv(def, effort, o.env)
-  // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
-  let build = picked.options ? picked : { ...picked, options: cs.options }
+  // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置。
+  // 回复语言规则在这里统一放进系统提示词，所有调用方都一样（见 prompt-lang-inject.ts）
+  const withLang = await withLangSystemPrompt(def, picked.options ? picked : { ...picked, options: cs.options }, o.env)
+  const env = effortEnv(def, effort, withLang.env)
+  let build = withLang.build
   // 角色说明（多行）不走参数：能传文件的 CLI 写进这一轮的临时目录，参数里只放路径。
   // Windows 上参数里的换行会把 cmd.exe 转发的整条命令行截断，后面的参数（Pi 的 -e 桥接扩展）就全丢了
   let promptDir = ''
@@ -291,12 +296,8 @@ export async function invokeCli(o: {
       // 工具照样挂着：打开对话页时的预热会明确让它调，模型真做完了也可以自己调
     }
   }
-  // 语言提醒由 runner 追加在提示词末尾，上面这些用法说明接在了它后面：挪回最后，
-  // 长提示词里夹在中间的规则容易被忽略（见 runner 的「末尾再提醒一次」）
-  const remind = promptLangReminder()
-  const at = input.lastIndexOf(`\n\n${remind}`)
-  if (at >= 0 && at + 2 + remind.length < input.length)
-    input = `${input.slice(0, at)}${input.slice(at + 2 + remind.length)}\n\n${remind}`
+  // 语言提醒放在最后（上面这些用法说明也在它前面）：长提示词里夹在中间的规则容易被忽略
+  input = withLangReminder(input, o.noLangReminder || !!build.op || !!build.textOnly)
   // 配置里写 {dir} 的文件（Pi 的桥接扩展）放进面板自己的临时目录，不进用户的项目：
   // 项目只读、目录被占用时也不受影响，进程崩溃后留下的也只在面板的缓存里
   const dir = def.mcp && servers.length ? scratchDir() : ''

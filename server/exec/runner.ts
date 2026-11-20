@@ -506,6 +506,7 @@ async function runAgent(
     cwd,
     env,
     input,
+    noLangReminder: !!op,
     // 进程面板按这个归属：子对话、子任务、工作流都是同一个任务树上的进程
     owner: { taskId: task.id, rootTaskId: task.rootTaskId || task.id, title: task.title, step },
     signal: ctx.signal,

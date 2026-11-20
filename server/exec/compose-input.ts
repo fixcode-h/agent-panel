@@ -9,7 +9,7 @@ import { NODE_PART } from '../../shared/engine/index.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { defaultChatPrompt } from '../../shared/agents/role.ts'
 import { trustFor } from '../../shared/cli/trust.ts'
-import { promptLangReminder } from '../../shared/prompt-lang.ts'
+import { withLangReminder } from './prompt-lang-inject.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
 import { experiencePrompt } from '../../shared/experience.ts'
 import { slashInput } from '../slash.ts'
@@ -112,8 +112,9 @@ export async function composeInput(a: ComposeInputArgs) {
   if (slash?.raw) input = slash.raw
   const setup = input.length - base.length
   // 末尾再提醒一次：长提示词里夹在中间的规则容易被忽略。原生 /命令（Claude Code 新会话开头要原样认出）
-  // 和压缩、审查（参数另有含义）不追加
-  if (!op && !(chat && ctx.prompt.trim().startsWith('/'))) input = `${input}\n\n${promptLangReminder()}`
+  // 和压缩、审查（参数另有含义）不追加。invokeCli 会再按同一规则确认一遍（保活的后续轮次也在那里补），
+  // 这里先补上是为了把它算进下面的输入构成
+  input = withLangReminder(input, !!op)
   // 输入构成：除了调用方给的提示，新会话开头补的角色设定（含系统提示词）、编排说明、项目教训也进了上下文；
   // 末尾的语言提醒每轮都有，算进面板规则
   call.onInput?.({
