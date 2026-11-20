@@ -17,6 +17,8 @@ const CONTEXT_TIMEOUT_MS = 3000
  */
 export function claudeAdapter(o: { cwd: string; input: string; images?: string[]; parse: Parser }): RpcAdapter {
   let steered = false
+  // 这一轮有没有在开头要过一次上下文细分（见 message）
+  let early = false
   const respond = (ctx: RpcContext, requestId: string, response: object) =>
     ctx.send({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })
 
@@ -31,6 +33,14 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
       if (m.type === 'control_response') return
       // 插过话：这一轮结束后 CLI 可能接着处理插进来的要求，有新输出就先不关
       ctx.hold()
+      // 这一轮第一次有输出时先要一次细分：没人看着的对话（子对话、后台跑的）回复完就关进程，
+      // 结尾那次请求一定落空，会话栏只能退回本地估算，Skill 只列得出项目目录里那几个、MCP 工具只算面板的
+      // （2026-11-20 用户看到子对话 Skill 只有 1 个、父对话 34 个）。开头这份里技能、工具、说明文件都是准的，
+      // 之后新增的消息由会话栏记成「上次细分以来」
+      if (!early) {
+        early = true
+        void contextSnapshot(ctx).then((snapshot) => snapshot && ctx.emit({ type: 'context', snapshot }))
+      }
       for (const ev of o.parse(m)) {
         // 结果由 finish 统一发，避免和解析出来的一条重复。
         // 进程留着（保活）时再要一次上下文细分，会话栏按它分块；一次性的执行这时 stdin 已经关了，请求直接落空。
@@ -72,6 +82,7 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
       // 这一轮结束后的下一轮：和插话一样是 user 消息，但不带 priority（那是执行中插到当前轮），
       // CLI 在这条消息到达时开新一轮
       steered = false
+      early = false
       ctx.send({ type: 'user', message: { role: 'user', content: text } })
       ctx.emit({ type: 'sent' })
     },

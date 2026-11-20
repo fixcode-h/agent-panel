@@ -132,3 +132,31 @@ test('Claude Code：只读规划做完的 ExitPlanMode 显示成方案审批，�
   assert.equal(ask.detail, '1. 改 a.ts\n2. 跑测试')
   assert.equal(ask.rule, undefined)
 })
+
+test('Claude Code：每轮第一次有输出时就要一次上下文细分，不靠结尾那次（没人看着的对话回复完就关进程）', async () => {
+  const { ctx, events } = fakeCtx()
+  const asked: any[] = []
+  ctx.request = (async (r: any) => {
+    asked.push(r)
+    return {
+      response: {
+        subtype: 'success',
+        response: { categories: [{ name: 'Skills', tokens: 4200 }], maxTokens: 1000, skills: { skillFrontmatter: [] } },
+      },
+    }
+  }) as RpcContext['request']
+  const a = claudeAdapter({ cwd: '/tmp', input: '第一句', parse: () => [] })
+  a.message(ctx, { type: 'system', subtype: 'init' })
+  a.message(ctx, { type: 'assistant', message: { content: [] } })
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(asked.length, 1, '一轮只在开头要一次')
+  assert.equal(asked[0].request.subtype, 'get_context_usage')
+  assert.ok(
+    events.some((e) => e.type === 'context'),
+    '细分交给了面板',
+  )
+  // 下一轮（保活时同一进程）开头再要一次
+  a.next!(ctx, '第二句')
+  a.message(ctx, { type: 'system', subtype: 'init' })
+  assert.equal(asked.length, 2)
+})
