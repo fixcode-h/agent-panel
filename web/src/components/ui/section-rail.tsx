@@ -1,4 +1,4 @@
-import type { ComponentType, CSSProperties, ReactNode } from 'react'
+import type { ComponentType, CSSProperties, MouseEvent, ReactNode } from 'react'
 import { PanelLeftClose } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -314,6 +314,7 @@ export function StatusChip({
   onClick,
   title,
   busy,
+  onContextMenu,
 }: {
   tone?: ChipTone
   icon?: ComponentType<{ className?: string; strokeWidth?: number }>
@@ -322,6 +323,8 @@ export function StatusChip({
   title?: string
   /** 在启动、编译：圆点换成转圈的点 */
   busy?: boolean
+  /** 右键菜单（UE 目标小块右键关闭编辑器） */
+  onContextMenu?: (e: MouseEvent) => void
 }) {
   const body = (
     <>
@@ -336,13 +339,14 @@ export function StatusChip({
     <button
       type="button"
       onClick={onClick}
+      onContextMenu={onContextMenu}
       title={title}
       className={cn(cls, 'cursor-pointer hover:bg-hover hover:text-fg disabled:opacity-50')}
     >
       {body}
     </button>
   ) : (
-    <span title={title} className={cls}>
+    <span title={title} onContextMenu={onContextMenu} className={cls}>
       {body}
     </span>
   )

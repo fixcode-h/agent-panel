@@ -47,6 +47,7 @@ import { InlineChip } from '@/components/ui/inline-chip'
 import { MessageChip } from '@/components/chat/AttachmentView'
 import { FieldSizeContext, Input, Select, Textarea } from '@/components/ui/input'
 import { cliColor } from '@/lib/cli-style'
+import { toast } from '@/lib/toast'
 import { ToggleChip } from '@/components/ui/toggle-chip'
 import { IssueBar } from '@/components/layout/Detail'
 import { Kbd } from '@/components/ui/kbd'
@@ -314,6 +315,8 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             value={longPick}
             onChange={(e) => setLongPick(e.target.value)}
             options={LONG_OPTIONS}
+            // onOptionContextMenu：选项上右键弹调用方自己的菜单（UE 目标下拉右键关闭编辑器用它），这里只提示一下
+            onOptionContextMenu={(o) => toast.success(t('右键了「{label}」', { label: o.label }))}
           />
         </Specimen>
         <Specimen name="Textarea">

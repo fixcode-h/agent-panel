@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import * as P from '@radix-ui/react-popover'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,12 @@ export const listItem =
   'outline-none data-[highlighted]:bg-hover data-[state=checked]:text-fg data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
 
 export type SelectOption = { value: string; label: string; group?: string; short?: string }
+
+/**
+ * 在下拉列表的一项（或组名）上右键：列表先关上再回调，调用方在鼠标处弹自己的菜单（UE 目标下拉右键关闭编辑器）。
+ * 列表开着时 Radix 会挡住页面别处的点击，不先关上弹出来的菜单点不动。组名上右键传这一组的第一项
+ */
+export type OptionContextMenu = (option: SelectOption, e: MouseEvent) => void
 
 /**
  * 选项多到几项以上时打开下拉带搜索框：读设置 → 组件 → 下拉菜单的「搜索框」（--c-menu-search，0 是不显示）。
@@ -45,6 +51,7 @@ export function SelectSearchPanel({
   onPick,
   label,
   returnFocus,
+  onOptionContextMenu,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -57,6 +64,7 @@ export function SelectSearchPanel({
   label?: string
   /** 关上后焦点回到下拉框（没有 Popover.Trigger，Radix 不知道该还给谁） */
   returnFocus: () => void
+  onOptionContextMenu?: OptionContextMenu
 }) {
   const [q, setQ] = useState('')
   const [hi, setHi] = useState(0)
@@ -89,6 +97,13 @@ export function SelectSearchPanel({
     onPick(v)
     onOpenChange(false)
   }
+  const menu = (o: SelectOption) =>
+    onOptionContextMenu &&
+    ((e: MouseEvent) => {
+      e.preventDefault()
+      onOpenChange(false)
+      onOptionContextMenu(o, e)
+    })
 
   return (
     <P.Root open={open} onOpenChange={onOpenChange}>
@@ -141,6 +156,7 @@ export function SelectSearchPanel({
               o.group && o.group !== list[i - 1]?.group && (
                 <div
                   key={`g:${o.group}`}
+                  onContextMenu={menu(o)}
                   className={cn(
                     'px-2.5 pt-1.5 pb-1 text-caption text-subtle',
                     i > 0 && 'mt-1 border-t border-line pt-2',
@@ -159,6 +175,7 @@ export function SelectSearchPanel({
                 tabIndex={-1}
                 onMouseMove={() => i !== hi && setHi(i)}
                 onClick={() => pick(o.value)}
+                onContextMenu={menu(o)}
                 className={listItem}
               >
                 <span className="min-w-0 truncate">{o.short ?? o.label}</span>

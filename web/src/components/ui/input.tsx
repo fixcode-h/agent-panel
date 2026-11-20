@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type InputHTMLAttributes,
+  type MouseEvent,
   type TextareaHTMLAttributes,
 } from 'react'
 import * as S from '@radix-ui/react-select'
@@ -13,7 +14,7 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { HelpTip } from './help-tip'
-import { listItem, SelectSearchPanel, wantSearch, type SelectOption } from './select-search'
+import { listItem, SelectSearchPanel, wantSearch, type OptionContextMenu, type SelectOption } from './select-search'
 
 export { listItem }
 
@@ -88,6 +89,7 @@ export function Select({
   placeholder,
   'aria-label': ariaLabel,
   size: sizeProp,
+  onOptionContextMenu,
 }: {
   /** sm：紧凑的下拉框，和 Input size="sm"、sm 按钮同高；xs：属性面板里的小号；不传时和原来一样 */
   size?: FieldSize
@@ -105,6 +107,8 @@ export function Select({
   'aria-label'?: string
   /** 强制带 / 不带搜索框；不传时按选项个数和设置决定 */
   search?: boolean
+  /** 选项（或组名）上右键：列表先关上再回调，见 OptionContextMenu */
+  onOptionContextMenu?: OptionContextMenu
 }) {
   const [searching, setSearching] = useState(false)
   const [radixOpen, setRadixOpen] = useState(false)
@@ -112,6 +116,14 @@ export function Select({
   const groups = [...new Set(options.map((o) => o.group ?? ''))]
   const current = options.find((o) => o.value === value)
   const ghost = useContext(SelectLook) === 'ghost'
+  const menu = (o: SelectOption | undefined) =>
+    onOptionContextMenu && o
+      ? (e: MouseEvent) => {
+          e.preventDefault()
+          setRadixOpen(false)
+          onOptionContextMenu(o, e)
+        }
+      : undefined
   const ctxSize = useContext(FieldSizeContext)
   const size = sizeProp ?? ctxSize
   const trigger = (
@@ -164,6 +176,7 @@ export function Select({
         onPick={(v) => onChange({ target: { value: v } })}
         label={ariaLabel ?? title}
         returnFocus={() => triggerRef.current?.focus()}
+        onOptionContextMenu={onOptionContextMenu}
       />
       <S.Portal>
         <S.Content position="popper" sideOffset={6} className={listPanel}>
@@ -176,13 +189,18 @@ export function Select({
                 {g && (
                   <>
                     {i > 0 && <S.Separator className="mx-1 my-1 h-px bg-line" />}
-                    <S.Label className="px-2.5 pt-1.5 pb-1 text-caption text-subtle">{g}</S.Label>
+                    <S.Label
+                      onContextMenu={menu(options.find((o) => (o.group ?? '') === g))}
+                      className="px-2.5 pt-1.5 pb-1 text-caption text-subtle"
+                    >
+                      {g}
+                    </S.Label>
                   </>
                 )}
                 {options
                   .filter((o) => (o.group ?? '') === g)
                   .map((o) => (
-                    <S.Item key={o.value} value={enc(o.value)} className={listItem}>
+                    <S.Item key={o.value} value={enc(o.value)} onContextMenu={menu(o)} className={listItem}>
                       <S.ItemText>{o.short ?? o.label}</S.ItemText>
                       <S.ItemIndicator className="absolute right-2.5">
                         <Check className="h-3.5 w-3.5 text-accent-text" />
