@@ -16,6 +16,8 @@ interface GateWiring {
   projects: () => Promise<Project[]>
   manifest: (id: string) => PluginManifest | undefined
   setCapabilities: (projectId: string, caps: ProjectCapabilities) => Promise<void>
+  /** 项目的文档根（插件接口 15）：index.ts 接到 module-map 的 docRootOf，这里不直接 import 角色列表 */
+  docRoot: (project: Project) => Promise<string>
 }
 let wiring: GateWiring | undefined // 模块状态：接线，启动时登记
 
@@ -62,6 +64,11 @@ export function pluginProjectsApi(id: string): PluginProjects {
       const next = toggleCapability(project.capabilities, 'plugins', id, on)
       if (next.plugins.join() === (project.capabilities?.plugins ?? []).join()) return
       await d.setCapabilities(projectId, next)
+    },
+    docRoot: async (projectId) => {
+      const project = await projectOf(projectId)
+      if (!wiring || !project?.path?.trim()) return undefined
+      return wiring.docRoot(project)
     },
   }
 }

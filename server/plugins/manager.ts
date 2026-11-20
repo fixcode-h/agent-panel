@@ -44,6 +44,8 @@ export interface PluginDeps {
   deleteWorkflow: (id: string) => Promise<unknown>
   /** 改项目打开了的能力（插件接口 9 的 PluginServerContext.projects.enable 用） */
   setCapabilities: (projectId: string, caps: ProjectCapabilities) => Promise<void>
+  /** 项目的文档根（插件接口 15 的 PluginServerContext.projects.docRoot 用） */
+  docRoot: (project: Project) => Promise<string>
 }
 
 let deps: PluginDeps | undefined // 模块状态：接线，启动时登记
@@ -138,6 +140,7 @@ export async function initPlugins(d: PluginDeps) {
     projects: d.projects,
     manifest: (id) => findInstalled(id)?.manifest,
     setCapabilities: d.setCapabilities,
+    docRoot: d.docRoot,
   })
   cachedPlugins = (await getSettings()).plugins
   await reloadPlugins()

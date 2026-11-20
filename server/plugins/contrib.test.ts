@@ -67,6 +67,7 @@ await initPlugins({
   deleteAgent: async () => undefined,
   deleteWorkflow: async () => undefined,
   setCapabilities: async () => undefined,
+  docRoot: async (p) => `${p.path}/docs`,
 })
 
 const project = { ...ProjectInput.parse({ name: 'p', path: dir }), id: 'p1' } as never

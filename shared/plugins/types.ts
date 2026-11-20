@@ -148,7 +148,7 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 14：对话分开存成 chat（Chat 页）和 agent（项目里的对话、子对话），PluginRun.mode 照存的值给；
  *    PluginRun.kind 给对话的统一分类（父对话、子对话、Bug、AI 分析……，shared/conv-mode.ts 的 convKind）
  */
-export const PLUGIN_API = 14
+export const PLUGIN_API = 15
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

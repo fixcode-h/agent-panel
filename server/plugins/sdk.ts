@@ -248,6 +248,13 @@ export interface PluginProjects {
   enabled: (projectId: string) => Promise<boolean>
   /** 在这个项目里打开 / 关掉这个插件；项目不存在时抛错 */
   enable: (projectId: string, on?: boolean) => Promise<void>
+  /**
+   * 这个项目的文档根（插件接口 15）：和「文档」角色、模块文档用的是同一个——P4 / SVN 项目是各分支共用的那一份
+   * （可能在项目外，项目设置里能改），Git 和没有版本管理的是项目里已有的 docs / doc，没有就是 docs。
+   * 插件要把只需分析一次、团队共用的结果（例如 UE 的 Lua GM 扫描脚本）存进项目文档时用它，不要自己按目录猜。
+   * 项目不存在或没有目录时返回 undefined；旧面板没有这个方法
+   */
+  docRoot?: (projectId: string) => Promise<string | undefined>
 }
 
 /** 插件的推送通道（PluginServerContext.pages） */
