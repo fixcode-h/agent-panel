@@ -24,6 +24,13 @@ export interface McpResult {
    * 不写时算覆盖这一轮插件改过的全部文件。isError 为真时按没通过算。不交给 Agent
    */
   verified?: { passed: boolean; name?: string; files?: string[] }
+  /**
+   * 结构化结果（MCP 的 structuredContent）：返回的是一个 JSON 对象时带上，脚本式调用（Pi 的 codemode、Claude Code 的代码模式）
+   * 可以直接拿字段用，不用解析文字。content 里放同一份对象的紧凑 JSON（一个 text 块），两边必须一致：
+   * Claude Code 2.1.329 有它时只把它（序列化后）交给模型、不看 content。所以 content 还有别的块（提示、图片）时面板会去掉它，
+   * 超过结果上限时也去掉（交回截断后的文字和完整文件路径）。不是对象（数组、纯文字）时不写
+   */
+  structuredContent?: Record<string, unknown>
 }
 
 /**
