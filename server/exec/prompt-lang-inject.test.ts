@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { PROMPT_LANG_ENV, promptLangReminder, promptLangRules } from '../../shared/prompt-lang.ts'
 import { withLangNextTurns, withLangReminder, withLangSystemPrompt } from './prompt-lang-inject.ts'
 
-const build = { permission: 'full', extraArgs: [] as string[] }
+const build = { model: 'm', permission: 'full', extraArgs: [] as string[] }
 
 test('有系统提示词参数的 CLI：语言规则接在角色设定后面，没有角色设定也补，不重复加', async () => {
   const def = { systemPromptFlag: true, systemPromptMod: false }
