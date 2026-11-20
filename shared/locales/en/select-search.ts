@@ -9,4 +9,5 @@ export const EN_SELECT_SEARCH: Record<string, string> = {
   '20 项起': '20+ items',
   不显示: 'Never',
   示例长下拉框: 'Sample long select',
+  '右键了「{label}」': 'Right-clicked "{label}"',
 }
