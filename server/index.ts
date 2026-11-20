@@ -41,6 +41,7 @@ import { schedulesApi } from './schedules.ts'
 import { cleanupDisabledPlugins, initPlugins } from './plugins/index.ts'
 import { bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
 import { docsApi } from './docs/index.ts'
+import { docRootOf } from './module-map.ts'
 import { isPanelSource } from './panel/source.ts'
 import { detectClis } from './detect.ts'
 import { syncCliAuths } from './accounts.ts'
@@ -77,6 +78,7 @@ import {
   isBuiltinAgent,
   isCoreAgent,
   syncCore,
+  withProjectParams,
 } from '../shared/builtin/core.ts'
 import {
   builtinProjectCategories,
@@ -229,6 +231,8 @@ async function ensureProjectWorkflows() {
       const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = p
       await projects.update(id, { ...rest, capabilities })
     },
+    // 和「文档」角色、模块文档同一个文档根：P4 / SVN 各分支共用的那一份，项目里填的「文档根」参数也算上
+    docRoot: async (p) => docRootOf(p.path, withProjectParams(await agents.list(), p)),
   })
   await removeLegacyDefaultAgent()
   const before = await loadSeededWorkflows()

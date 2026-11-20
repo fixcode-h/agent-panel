@@ -67,6 +67,7 @@
 19. **插件接口 13（2026-11-19，插件测试步骤带自己的脚本）**：UE 插件的「改了蓝图要编译通过」要按项目找引擎（`.uproject` 的 EngineAssociation、UE 页手填的引擎目录），用户同时有 5.4 和 5.8 的项目，第 8 条设想的「命令用 `{config.xxx}` 引用编辑器路径」是全局一个值，管不住；`.uproject` 的文件名每个项目也不一样，命令里写不死。所以插件测试步骤的命令里加两个占位符：`{dir}` 插件包目录、`{data}` 插件数据目录（和接口 11 声明式字段的同名占位符一个意思），插件可以带一个自己的 Node 脚本当步骤（`node "{dir}/bin/x.mjs" --data "{data}"`），脚本里按项目自己找引擎。目录只有服务端知道，由 `server/plugins/contrib.ts` 注入 `shared/plugins/contrib.ts` 的 `setPluginPaths`；网页上显示原样的 `{dir}`。旧面板不换这两个占位符、命令跑不起来，所以接口号加一，用到的插件写 `api: 13`，旧面板装它会提示先升级面板。
 
 20. **插件接口 14（2026-11-19，对话类型分开）**：用户报子对话里没有 `ue_*` 工具。根因是项目里的对话、子对话和 Chat 页的对话都存 `task.mode = chat`，面板原样交给 `PluginRun.mode`，UE 插件按「Chat 页不挂」把所有项目对话都跳过了（设置 →「MCP」的自检交的是 `workflow`，所以一直显示能挂）。用户定「普通的 Chat 模式和 Agent 的对话类型要分开」：`TaskMode` 加 `agent`，项目里的对话和子对话存 `agent`，只有 Chat 页没有项目的对话存 `chat`（迁移 0012，新建、重建、导入都走 `shared/conv-mode.ts` 的 `convMode`）。Agent 下各种对话的类型也统一成一个分类 `convKind`（parent、child、bug、fix、analysis、plugin、chat、workflow、flow-run），从存盘字段推出来、不另存；`PluginRun.kind` 给插件。插件判断对话类型看 `kind`，旧面板没有这个字段时退回看 `mode` 和 `projectId`。
+21. **插件接口 15（2026-11-20，插件拿项目的文档根）**：用户报 P4 项目的 UE 页 GM 一直提示「还没设置 Lua GM」，而扫描脚本早就让 AI 写过、存在项目文档里。根因是 UE 插件自己按「.uproject 所在目录的上一级有 ProjectDoc/docs 就用它」猜文档根，和面板的文档根对不上：P4 / SVN 项目各分支共用一个文档根（ADR 0052，可能在别的分支目录下，项目设置里还能改），UE 项目也常在面板项目的子目录里，换个分支或子目录插件就找不到。用户定「只需分析一次、存进项目 Docs、下次直接复用」。`PluginServerContext.projects.docRoot(projectId)` 返回面板算好的文档根（和「文档」角色、模块文档同一个，`server/module-map.ts` 的 `docRootOf`，项目里填的「文档根」参数也算上），插件要存团队共用的分析结果时用它，不再自己猜。方法是可选的，旧面板没有时插件退回自己的旧规则，所以插件清单不必写 `api: 15`。
 
 ## 影响与风险
 
