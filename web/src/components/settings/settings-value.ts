@@ -12,6 +12,7 @@ export type SettingsForm = Pick<
   | 'elementPicker'
   | 'proxy'
   | 'networkProxyEnabled'
+  | 'githubSources'
   | 'autoCheckUpdates'
   | 'speech'
   | 'readAloud'
@@ -30,6 +31,7 @@ export const toSettingsForm = (initial: Settings): SettingsForm => ({
   elementPicker: initial.elementPicker,
   proxy: initial.proxy,
   networkProxyEnabled: initial.networkProxyEnabled,
+  githubSources: initial.githubSources,
   autoCheckUpdates: initial.autoCheckUpdates,
   speech: initial.speech,
   readAloud: initial.readAloud,
@@ -81,6 +83,7 @@ export function buildSettings({
     shell: g.shell,
     proxy: form.proxy.trim(),
     networkProxyEnabled: form.networkProxyEnabled,
+    githubSources: form.githubSources,
     autoCheckUpdates: form.autoCheckUpdates,
     contentWidth: g.contentWidth,
     appearance: form.appearance,

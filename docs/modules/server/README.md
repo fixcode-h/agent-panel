@@ -18,7 +18,7 @@
 - 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训（存在项目文档目录的 `lessons/<id>.md`，一条一个文件，见 [features.md](features.md)、[ADR 0039](../../adr/0039-project-lessons-in-docs.md)、[ADR 0052](../../adr/0052-p4-shared-docs.md)）、P4 / SVN 各分支共用文档根（`server/docs/group.ts`）、导出、版本更新。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见 [library.md](library.md)「技能库的多文件管理」。
 - cherry-pick（`server/cherry-pick.ts`，工具 `cherry_pick`）：只搬这个对话自己的提交 / changelist。有冲突的提交也要搬过去、不跳过（用户 2026-11-19 定）：资源文件（项目设置「资源文件类型」的扩展名，没设时用 `shared/projects/cherry-pick-assets.ts` 的默认清单；清单外的二进制也算）冲突时不解冲突，直接用搬过去的版本覆盖目标；代码等文本文件冲突交给 Agent 解——Git 停在冲突的提交上（`server/exec/cherry-pick-conflicts.ts`），Agent 在返回的目录里解完、删干净标记后 `resume: true` 接着搬，标记没删干净会被拒；P4 把冲突标记写进目标文件（已打开在 pending 里），Agent 就地解。
-- 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见 [network.md](network.md)「GitHub 出网与代理回退」。
+- 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它；GitHub 地址原地址取不到时再按「下载来源」换 API、网页、jsDelivr、镜像前缀（`server/github-sources/`），见 [network.md](network.md)「GitHub 出网与代理回退」「GitHub 多来源兜底」。
 
 这份 README 只放概览、`server/tasks/index.ts` 的拆分表和入口，各块的细节在同目录的子页面里（2026-10-31 从这份 README 原样拆出）：
 

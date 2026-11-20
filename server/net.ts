@@ -8,6 +8,7 @@ import { request as httpRequest } from 'node:http'
 import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } from 'node:https'
 import { ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
 import { getSettings } from './settings.ts'
+import { fetchViaSources, type SourcesDeps } from './github-sources/index.ts'
 import { t } from '../shared/i18n.ts'
 import {
   DEFAULT_PROXY_PORT,
@@ -504,13 +505,24 @@ export async function netFetchWith(deps: NetDeps, url: string, init: NetInit = {
   throw failure(error, tried, probed, false)
 }
 
-/** 和 fetch 一样用；有代理时经过代理，连不上时自动换本机代理再试 */
+/** 和 fetch 一样用；有代理时经过代理，连不上时自动换本机代理再试；GitHub 的地址再按「下载来源」换地方取 */
 export async function netFetch(url: string, init: NetInit = {}): Promise<Response> {
+  return fetchViaSources(sourcesDeps, url, init)
+}
+
+/** 单个地址、只带代理回退的请求（设置页按来源逐个检测时用，不再换来源） */
+export function netFetchDirect(url: string, init: NetInit = {}): Promise<Response> {
   return netFetchWith(defaultDeps, url, init)
 }
 
-/** 把「fetch failed」换成能看懂的原因：真正的原因在 cause 里（连不上、超时、DNS 解析失败…） */
-export function netError(e: unknown, proxy = ''): string {
+const sourcesDeps: SourcesDeps = {
+  fetch: (url, init) => netFetchWith(defaultDeps, url, init),
+  sources: async () => (await getSettings()).githubSources,
+  reason: (e) => netReason((e as Error)?.cause ?? e),
+}
+
+/** 一句话原因，不带「去设置里填代理」的提示（多来源的失败信息里每个来源一条，提示只说一次） */
+export function netReason(e: unknown): string {
   const err = e as Error & { cause?: { code?: string; message?: string } }
   const code = err.cause?.code ?? (err as { code?: string }).code ?? ''
   const why =
@@ -528,7 +540,12 @@ export function netError(e: unknown, proxy = ''): string {
   const detail = [why, code, err.cause?.message && err.cause.message !== err.message ? err.cause.message : '']
     .filter(Boolean)
     .join(' · ')
-  const base = detail ? `${err.message}（${detail}）` : err.message
+  return detail ? `${err.message}（${detail}）` : err.message
+}
+
+/** 把「fetch failed」换成能看懂的原因：真正的原因在 cause 里（连不上、超时、DNS 解析失败…） */
+export function netError(e: unknown, proxy = ''): string {
+  const base = netReason(e)
   return proxy
     ? t('{error}。当前使用代理 {proxy}，请确认代理能访问 GitHub。', { error: base, proxy })
     : t('{error}。访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。', { error: base })

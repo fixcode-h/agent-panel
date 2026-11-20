@@ -15,6 +15,7 @@ import { NotifyChannels, ScheduleWebhook } from './notify-channels.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 import { DEFAULT_SPEECH_MODEL, SPEECH_MODEL_IDS } from './speech.ts'
 import { QuotaResumeSettings } from './quota-resume.ts'
+import { GithubSourceSetting } from './github-sources/registry.ts'
 import {
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_VOICE,
@@ -255,6 +256,11 @@ export const Settings = z.object({
    * 关掉只跳过设置里的地址，环境变量 HTTPS_PROXY 和本机代理自动探测照旧——那两条不是这里的配置
    */
   networkProxyEnabled: z.boolean().catch(true).default(true),
+  /**
+   * GitHub 下载来源的顺序和开关（shared/github-sources/registry.ts）：原地址失败后按这个顺序换来源再取。
+   * 空列表 = 默认顺序全开；没列出的内置来源接在后面。镜像前缀是用户自己加的，id 为 mirror
+   */
+  githubSources: z.array(GithubSourceSetting).catch([]).default([]),
   /**
    * 自动检查面板更新：打开后页面打开时检查一次、之后每小时问一次服务端。
    * 默认关：GitHub 偶尔限流，自动检查只能回旧结果，由用户点「检查更新」更可控（用户要求）
