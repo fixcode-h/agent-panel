@@ -43,7 +43,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 ### GitHub 多来源兜底（2026-11-20）
 
-代理回退只能换「路」，换不了「地址」：国内 `raw.githubusercontent.com` 常被直接重置（用户读 UEKit 插件目录，代理和直连都 `ECONNRESET`），而 `github.com`、`api.github.com` 往往还能通。所以 `netFetch` 在上面的回退之外再套一层「换来源」：`netFetch` → `fetchViaSources`（`server/github-sources/index.ts`）→ 每个来源各自走一遍 `netFetchWith`（代理回退）。调用方不用改，插件目录、插件升级包（UE 插件经开放模块 `server/download`）、插件仓库、面板自身更新、ComfyUI 模板这些 GitHub 地址都自动受益；不是 GitHub 的地址照原样取。
+代理回退只能换「路」，换不了「地址」：国内 `raw.githubusercontent.com` 常被直接重置（用户读 UEKit 插件目录，代理和直连都 `ECONNRESET`），而 `github.com`、`api.github.com` 往往还能通。所以 `netFetch` 在上面的回退之外再套一层「换来源」：`netFetch` → `fetchViaSources`（`server/github-sources/index.ts`）→ 每个来源各自走一遍 `netFetchWith`（代理回退）。调用方不用改，插件目录、插件升级包（UE 插件经开放模块 `server/download.ts`）、插件仓库、面板自身更新、ComfyUI 模板这些 GitHub 地址都自动受益；不是 GitHub 的地址照原样取。
 
 - **来源注册表**：`shared/github-sources/registry.ts`。`parseGithubUrl` 把地址分成 raw（仓库文件，含 `github.com/o/r/raw/…`、`blob/…?raw=true`）、release、archive、page、api；每个来源的 `rewrite` 把解析结果换成自己的地址，不适用返回 null。内置：原地址 → GitHub API（`contents` + `Accept: application/vnd.github.raw`，不登录每小时 60 次）→ GitHub 网页（`blob` 网页里 `react-app.embeddedData` 的 `rawLines`，`web-blob.ts` 递归找，GitHub 改过好几次外层字段名；文件太大或二进制时没有内容）→ jsDelivr（按分支名可能晚几小时；ref 为 HEAD 时不用，jsDelivr 会取最新 tag）。用户自己加的「镜像前缀」= 前缀 + 原地址，不内置任何第三方站点。
 - **只有镜像能救的**：Release 附件、源码包、`github.com` 的跳转最后都落到 `release-assets.githubusercontent.com` / `codeload.github.com`，GitHub 自己的备用地址救不了，只能走代理或镜像前缀；没加镜像时失败信息里提示去加。
