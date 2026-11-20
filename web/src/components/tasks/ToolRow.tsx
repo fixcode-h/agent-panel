@@ -21,6 +21,7 @@ import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
+import { prettyJsonOutput } from '@/lib/json-tree'
 import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
 import { api } from '@/lib/api'
 import { t } from '@shared/i18n'
@@ -585,11 +586,13 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
   const now = useNow(pending || bg)
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
-  const output = tool.output?.replace(/\s+$/, '') ?? ''
+  // MCP 工具的紧凑 JSON 结果展开成缩进的再显示
+  const shape = (s: string) => (view.server ? prettyJsonOutput(s) : s)
+  const output = shape(tool.output?.replace(/\s+$/, '') ?? '')
   // 后台命令行的标题是命令：被截断时悬停看完整命令，而不是「打开窗口」这类提示
   const titleTip = tool.name === t('后台命令') ? input || tool.label : undefined
   // 窗口里的完整输出：推送时省掉的后半段在打开窗口时取回来
-  const fullOutput = useFullOutput(tool, task?.id, win === 'run' || win === 'out').replace(/\s+$/, '')
+  const fullOutput = shape(useFullOutput(tool, task?.id, win === 'run' || win === 'out').replace(/\s+$/, ''))
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''

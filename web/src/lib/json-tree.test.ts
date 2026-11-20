@@ -1,7 +1,7 @@
 /** 文件弹窗的 JSON 树形视图：解析和搜索时自动展开 */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isJsonPath, parseJsonFile, revealPaths } from '@/lib/json-tree'
+import { isJsonPath, parseJsonFile, prettyJsonOutput, revealPaths } from '@/lib/json-tree'
 
 test('解析：json 整份解析，jsonl 一行一条；解析不了给出原因', () => {
   assert.deepEqual(parseJsonFile('﻿{"a":1}', 'a.json'), { ok: true, value: { a: 1 } })
@@ -42,4 +42,11 @@ test('revealPaths：命中的节点的每一层上级都要展开，并记下要
     ),
     null,
   )
+})
+
+test('MCP 结果的紧凑 JSON 展开显示；纯文字、截断过的、已经多行的原样', () => {
+  assert.equal(prettyJsonOutput('{"a":1,"b":[2]}'), '{\n "a": 1,\n "b": [\n  2\n ]\n}')
+  assert.equal(prettyJsonOutput('已停止'), '已停止')
+  assert.equal(prettyJsonOutput('{"a":1'), '{"a":1')
+  assert.equal(prettyJsonOutput('{\n "a": 1\n}'), '{\n "a": 1\n}')
 })

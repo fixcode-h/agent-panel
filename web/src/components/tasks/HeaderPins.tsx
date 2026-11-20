@@ -19,6 +19,7 @@ export type PinKey =
   | 'status'
   | 'collab'
   | 'analyze'
+  | 'learn'
   | 'forceStop'
   | 'resumeLatest'
   | 'delete'

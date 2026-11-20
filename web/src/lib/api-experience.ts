@@ -2,7 +2,9 @@ import type { ExperienceEdit, ExperienceListView, ExperienceReviewView, ProjectE
 import type { KnowledgeHitsView } from '@shared/knowledge-hits'
 import type { DistillRequest, DistillResult, KnowledgeStateView } from '@shared/knowledge/candidate'
 import type { Project } from '@shared/schema'
+import { experienceContract } from '@shared/api-contract/experience'
 import { json, request } from './api'
+import { call } from './api/call'
 
 /**
  * 项目经验的接口（server/experience/routes.ts）：列表、加、改、删一批 / 应用评审的精简写法、AI 评审。
@@ -23,6 +25,8 @@ export const experienceApi = {
   review: (id: string) => request<ExperienceReviewView>(`/projects/${id}/experience/review`, json('POST', {})),
   /** 经验和教训的命中记录、路径失效的条目（设置页按「很久没用上」排序、标过期） */
   hits: (id: string) => request<KnowledgeHitsView>(`/projects/${id}/knowledge-hits`),
+  /** 对话标题栏「立即学经验」：taskId 是顶层对话，学完才回 */
+  learnNow: (taskId: string) => call(experienceContract.learnNow, { params: { id: taskId }, body: {} }),
 }
 
 /** 收下 / 忽略一条候选的回执：收下的是教训时带上写好的项目（界面换掉项目列表里那一份） */
