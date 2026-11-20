@@ -875,11 +875,11 @@ const ProjectFields = z.object({
    */
   lessons: z.array(ProjectLesson).max(200).default([]),
   /**
-   * 项目教训和经验存在哪（用户 2026-11-15 定，复查报告 B5）：默认 false 存面板数据目录（<数据目录>/knowledge/<项目 id>/），
-   * 不往用户仓库里写面板自己的文件（摸底报告第 15 条：写进仓库的文件反过来拦住了派单）；
-   * true 时照旧存项目文档目录（随仓库提交，团队都能看到）
+   * 项目教训和经验存在哪：默认 true 存项目文档目录（Git 项目是 docs/lessons、docs/agent-knowledge/experience，随仓库提交，
+   * 团队都能看到；用户 2026-11-20 定，取代 2026-11-15 的「默认数据目录」）；
+   * false 存面板数据目录（<数据目录>/knowledge/<项目 id>/），不往仓库里写。旧项目由迁移 0013 写上明确的值
    */
-  knowledgeInRepo: z.boolean().default(false),
+  knowledgeInRepo: z.boolean().default(true),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
   /**

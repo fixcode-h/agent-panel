@@ -86,6 +86,6 @@ export const EN_KNOWLEDGE_UI: Record<string, string> = {
   这条候选已经不在了: 'This candidate no longer exists',
   '第 {n} 行的 triggers 要写成 JSON 对象': 'triggers on line {n} must be a JSON object',
   教训和经验随仓库存: 'Store lessons and experience with the repo',
-  '默认存在面板的数据目录里，不往你的仓库里写文件。打开后存进项目的文档目录（Git 项目是 docs/lessons），随代码提交、团队都能看到。切换后保存时，现有的教训和经验会写到新位置，原来那份不删。':
-    "By default they live in the panel's data directory and nothing is written to your repo. Turn this on to store them in the project's docs directory (docs/lessons for Git projects) so they're committed with the code and the team can see them. When you switch and save, existing lessons and experience are written to the new place; the old copy is kept.",
+  '默认存进项目的文档目录（Git 项目是 docs/lessons），随代码提交、团队都能看到。关掉后存在面板的数据目录里（~/.agent-panel/knowledge/<项目 id>/），不往仓库里写文件。切换后保存时，现有的教训和经验会写到新位置，原来那份不删。':
+    "By default they are stored in the project's docs directory (docs/lessons for Git projects), committed with the code so the team can see them. Turn this off to keep them in the panel's data directory (~/.agent-panel/knowledge/<project id>/) without writing anything to your repo. When you switch and save, existing lessons and experience are written to the new place; the old copy is kept.",
 }
