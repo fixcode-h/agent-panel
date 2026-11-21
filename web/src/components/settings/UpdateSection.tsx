@@ -264,6 +264,17 @@ export function UpdateSection({
               value={restarting ? 100 : job?.total ? Math.min(100, (job.received / job.total) * 90) : 5}
               label={t('更新进度')}
             />
+            {/* 下载时写出正在用的来源和放弃过的来源：卡住时看得出在等谁、之前为什么换掉 */}
+            {!restarting && job?.source && !job.waiting && (
+              <p className="text-xs text-subtle">
+                {t('下载来源：{source}', { source: job.source })}
+                {job.attempts?.map((a) => (
+                  <span key={a.source} className="block text-warning">
+                    {t('已换掉 {source}：{error}', { source: a.source, error: a.error })}
+                  </span>
+                ))}
+              </p>
+            )}
             {!restarting && job?.waiting && (
               // 下载完了却还有任务在执行：不用一个个去停，直接中断所有 CLI 立刻更新
               <div className="flex flex-wrap items-center justify-end gap-2">

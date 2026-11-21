@@ -21,6 +21,12 @@ export interface AppRelease {
   zipUrl: string
   /** 包的 SHA256 校验文件；早期的包没有 */
   sumsUrl?: string
+  /**
+   * 同一个安装包、校验文件在 GitHub API 上的地址（releases/assets/<id>）：下载时最先走它。
+   * 只有从 API 读到的列表有；从 Release feed 补上的版本下载前再按 tag 问一次 API
+   */
+  assetApiUrl?: string
+  sumsApiUrl?: string
   size: number
 }
 
@@ -84,6 +90,10 @@ export interface AppUpdateJob {
   /** 最近一次有进展的时间（ISO）：判断卡住了没有用 */
   updatedAt?: string
   error?: string
+  /** 正在从哪个来源下载（GitHub API、原地址、镜像 xx）：卡住时用户看得出在等谁 */
+  source?: string
+  /** 已经放弃的来源和原因，按尝试顺序 */
+  attempts?: { source: string; error: string }[]
 }
 
 /** 收下并检查过的本地安装包：页面拿它请用户确认，再按 id 安装 */

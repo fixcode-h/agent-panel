@@ -107,7 +107,7 @@ export const BUILTIN_SOURCES: SourceDef[] = [
   {
     id: 'origin',
     label: () => t('原地址'),
-    desc: () => t('按原来的地址取，经过「代理」里的设置和本机代理回退'),
+    desc: () => t('按原来的地址取；「使用代理」打开时经过代理和本机代理回退，关着时直连'),
     kinds: ['raw', 'release', 'archive', 'page', 'api'],
     rewrite: (u) => ({ url: u.url }),
   },

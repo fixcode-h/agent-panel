@@ -299,6 +299,16 @@ const atom = (tag: string, updated = '2026-01-01T00:00:00Z', content = '') => `<
   </entry>
 </feed>`
 
+/** 带多个版本的 feed（GitHub 给最近 10 个），新的在前 */
+const atomMany = (...tags: string[]) =>
+  atom(tags[0]).replace(
+    '</feed>',
+    tags
+      .slice(1)
+      .map((t) => /<entry>[\s\S]*<\/entry>/.exec(atom(t))![0])
+      .join('\n') + '</feed>',
+  )
+
 const makeUpdateApi = () =>
   updateApi({ running: () => 0, restart: () => {}, stopAll: async () => {}, interrupted: () => [] })
 
@@ -474,14 +484,18 @@ test('API 被限流时退到 Release feed：能判断新版本，冷却期内不
   const reset = Math.floor(Date.now() / 1000) + 10 * 60
   const gh = await stubGithubFeed(
     () => ({ status: 403, headers: { 'x-ratelimit-reset': String(reset) } }),
-    () => ({ body: atom('v9.9.9') }),
+    () => ({ body: atomMany('v9.9.9', 'v9.9.8', 'v9.9.7') }),
   )
   try {
     const first: any = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
     assert.equal(first.error, undefined, 'feed 能兜底时不算检查失败')
     assert.equal(first.source, 'feed')
     assert.equal(first.update?.tag, 'v9.9.9', 'feed 里的最新版本照常提示')
-    assert.equal(first.releases[0].tag, 'v9.9.9')
+    assert.deepEqual(
+      first.releases.slice(0, 3).map((r: any) => r.tag),
+      ['v9.9.9', 'v9.9.8', 'v9.9.7'],
+      'feed 里的每个版本都并进列表，不只最新一个（否则中间几版会不见）',
+    )
     assert.match(first.releases[0].tarUrl, /\/releases\/download\/v9\.9\.9\//, 'feed 结果也能下载和一键更新')
     assert.ok(first.feedCheckedAt, '要标出 feed 的检查时间')
     assert.equal(first.limitedUntil, new Date(reset * 1000).toISOString())

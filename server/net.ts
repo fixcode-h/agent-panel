@@ -352,20 +352,29 @@ export function planFor(
 
 /**
  * 设置里实际生效的代理地址。开关关着时按「没填」处理：只是不用这里的地址，
- * 环境变量 HTTPS_PROXY 和本机代理自动探测不受影响（那两条不是这一页的配置，界面上也讲明了）。
+ * defaultPlan 在开关关着时已经直接走 DIRECT_ONLY，这里的判断留给只看地址的调用方。
  */
 export function configuredProxy(s: { proxy: string; networkProxyEnabled: boolean }) {
   return s.networkProxyEnabled ? s.proxy.trim() : ''
 }
 
 /**
- * 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效）。
+ * 「使用代理」开关关着：一律直连，不用填的地址，也不用环境变量、系统代理和本机代理探测。
+ * 用户定（2026-11-21）：开关关了还偷偷走代理，代理软件没开时下载就卡在连不上的代理上。
+ */
+export const DIRECT_ONLY: ProxyPlan = { kind: 'direct', fallback: false }
+
+/**
+ * 开关打开时：设置里填的地址优先；没填时用环境变量（这时 NO_PROXY 也照常生效）、系统代理，失败后再找本机代理。
+ * 开关关着时只直连（DIRECT_ONLY）。
  * 导出给 npm 这类子进程用：子进程不经过 netFetch，要按同一个顺序把代理交给它（见 server/npm-env.ts）。
  */
 export async function defaultPlan(url: string): Promise<ProxyPlan> {
   let set = ''
   try {
-    set = configuredProxy(await getSettings())
+    const s = await getSettings()
+    if (!s.networkProxyEnabled) return DIRECT_ONLY
+    set = configuredProxy(s)
   } catch {
     // 设置读不出来时按没填处理，仍然可以走环境变量和自动检测
   }

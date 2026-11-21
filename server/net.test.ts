@@ -14,6 +14,7 @@ process.env.AGENT_PANEL_DATA = data
 const {
   attemptOrder,
   configuredProxy,
+  defaultPlan,
   isLocalUrl,
   localProxyCandidates,
   markProxyBad,
@@ -255,21 +256,26 @@ test('系统代理连不上：回退到探测到的本机代理和直连，报�
   assert.deepEqual(calls, [sys, 'direct'])
 })
 
-test('启用代理的开关：关着时不用设置里的地址，环境变量和自动探测照旧', () => {
+test('启用代理的开关：关着时一律直连，不用填的地址、环境变量和系统代理', async () => {
   // 开着：用设置里的地址，前后空格去掉
   assert.equal(configuredProxy({ proxy: ' 127.0.0.1:7890 ', networkProxyEnabled: true }), '127.0.0.1:7890')
-  // 关着：按没填处理，后面的回退逻辑（环境变量、本机探测、直连）照旧
   assert.equal(configuredProxy({ proxy: '127.0.0.1:7890', networkProxyEnabled: false }), '')
-  // 开关关掉、地址留空的组合也不需要特判
-  assert.equal(configuredProxy({ proxy: '', networkProxyEnabled: false }), '')
-  // 关掉之后，真的算出来的是「环境变量 → 直连」，不会再看设置里的地址
-  const set = configuredProxy({ proxy: 'http://127.0.0.1:7890', networkProxyEnabled: false })
-  assert.deepEqual(planFor(RELEASE_URL, set, 'http://127.0.0.1:10809', ''), {
-    kind: 'proxy',
-    key: 'http://127.0.0.1:10809',
-    shown: 'http://127.0.0.1:10809',
-  })
-  assert.deepEqual(planFor(RELEASE_URL, set, '', ''), { kind: 'direct', fallback: true })
+  // 关着：即使设了环境变量，算出来的也是直连且失败后不找本机代理（用户定 2026-11-21）
+  const { getSettings, saveSettings } = await import('./settings.ts')
+  const before = await getSettings()
+  const envBefore = process.env.HTTPS_PROXY
+  try {
+    await saveSettings({ ...before, networkProxyEnabled: false, proxy: 'http://127.0.0.1:10808' })
+    process.env.HTTPS_PROXY = 'http://127.0.0.1:10809'
+    assert.deepEqual(await defaultPlan(RELEASE_URL), { kind: 'direct', fallback: false })
+    // 开着：用填的地址
+    await saveSettings({ ...before, networkProxyEnabled: true, proxy: 'http://127.0.0.1:10808' })
+    assert.equal(((await defaultPlan(RELEASE_URL)) as { key?: string }).key, 'http://127.0.0.1:10808')
+  } finally {
+    if (envBefore === undefined) delete process.env.HTTPS_PROXY
+    else process.env.HTTPS_PROXY = envBefore
+    await saveSettings(before)
+  }
 })
 
 test('NO_PROXY 的写法：域名后缀、通配、端口和前缀点', () => {

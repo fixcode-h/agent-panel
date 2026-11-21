@@ -23,8 +23,9 @@ import {
 } from '../../shared/version.ts'
 import { capture } from '../exec/process.ts'
 import { recordInterrupted, type InterruptedEntry } from '../interrupted.ts'
-import { netFetch } from '../net.ts'
-import { downloadFile } from '../download.ts'
+import { netFetch, netFetchDirect } from '../net.ts'
+import { getSettings } from '../settings.ts'
+import { downloadRelease } from './fetch-package.ts'
 import { dropStaged, extractPackage, inspectPackage, saveBody, type LocalPackage } from './local.ts'
 import { log } from '../log.ts'
 import { moveDir, retryBusy as retry } from '../disk/busy-retry.ts'
@@ -79,6 +80,8 @@ const FEED_CACHE_MS = 15 * 60_000
 interface FeedLatest {
   at: number
   release: AppRelease
+  /** feed 里的全部版本（新的在前）；旧缓存只有 release */
+  releases?: AppRelease[]
 }
 
 interface ReleasesCache {
@@ -153,14 +156,26 @@ export function htmlToMarkdown(html: string): string {
     .trim()
 }
 
+/** 从 Release 的 Atom feed 里取最新版本（第一个能用的 <entry>） */
+export function parseFeed(xml: string, platform: string = process.platform): AppRelease | undefined {
+  return parseFeedAll(xml, platform)[0]
+}
+
 /**
- * 从 Release 的 Atom feed 里取最新版本：只看第一个 <entry>。
- * feed 里没有安装包列表，地址按发布的固定命名拼出来（releaseAssets）；更新说明取 <content> 里渲染好的 HTML。
+ * Release 的 Atom feed 里的全部版本（GitHub 给最近 10 个），新的在前。
+ * API 不可用时靠它补全列表：只取第一个的话，列表里最新版和上次缓存之间的几版都会不见
+ */
+export function parseFeedAll(xml: string, platform: string = process.platform): AppRelease[] {
+  return [...xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/g)]
+    .map((m) => parseFeedEntry(m[1], platform))
+    .filter((r): r is AppRelease => !!r)
+}
+
+/**
+ * 一个 <entry>：feed 里没有安装包列表，地址按发布的固定命名拼出来（releaseAssets）；更新说明取 <content> 里渲染好的 HTML。
  * 大小不知道（0），下载时按响应头补上
  */
-export function parseFeed(xml: string, platform: string = process.platform): AppRelease | undefined {
-  const entry = /<entry\b[^>]*>([\s\S]*?)<\/entry>/.exec(xml)?.[1]
-  if (!entry) return undefined
+function parseFeedEntry(entry: string, platform: string): AppRelease | undefined {
   const tag = decodeXml(/<title\b[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '').trim()
   const parsed = parseVersion(tag)
   if (!parsed) return undefined
@@ -399,12 +414,13 @@ export function updateApi(deps: {
         log.warn('update', `读取 Release feed 失败：${res.status}`)
         return cache?.feed
       }
-      const release = parseFeed(await res.text())
+      const releases = parseFeedAll(await res.text())
+      const release = releases[0]
       if (!release) {
         log.warn('update', 'Release feed 里没有可用的版本')
         return cache?.feed
       }
-      const feed = { at: Date.now(), release }
+      const feed = { at: Date.now(), release, releases }
       await saveCache({ ...(cache ?? { at: 0, list: [] }), feed })
       return feed
     } catch (e) {
@@ -413,9 +429,11 @@ export function updateApi(deps: {
     }
   }
 
-  /** 把 feed 里的最新版本并进列表：缓存里已经有同一版本时沿用缓存（它带安装包地址） */
-  const withFeed = (list: AppRelease[], release: AppRelease) =>
-    list.some((r) => r.tag === release.tag) ? list : [...list, release].sort(newestFirst)
+  /** 把 feed 里的版本并进列表：缓存里已经有同一版本时沿用缓存（它带安装包和 API 地址） */
+  const withFeed = (list: AppRelease[], feed: FeedLatest) => {
+    const add = (feed.releases ?? [feed.release]).filter((f) => !list.some((r) => r.tag === f.tag))
+    return add.length ? [...list, ...add].sort(newestFirst) : list
+  }
 
   async function releases(refresh: boolean): Promise<ReleasesResult> {
     const now = Date.now()
@@ -424,7 +442,7 @@ export function updateApi(deps: {
     // GitHub 说过要等到什么时候：这期间点「检查更新」也不撞 API，退到 Release feed 判断有没有新版本
     if (limited && limited.until > now) {
       const feed = await feedRelease()
-      if (feed) return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+      if (feed) return { list: withFeed(cache?.list ?? [], feed), source: 'feed', feedAt: feed.at }
       if (cache?.list.length) return { list: cache.list, source: 'api' }
       throw rateLimited(limited.status, limited.until)
     }
@@ -441,7 +459,7 @@ export function updateApi(deps: {
     } catch (e) {
       // 连不上 GitHub（网络 / 代理都不通）也算 API 不可用，先看 feed 能不能判断新版本
       const feed = await feedRelease()
-      if (feed) return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+      if (feed) return { list: withFeed(cache?.list ?? [], feed), source: 'feed', feedAt: feed.at }
       throw e
     }
     if (res.status === 304 && cache) {
@@ -459,7 +477,7 @@ export function updateApi(deps: {
         const feed = await feedRelease()
         if (feed) {
           await saveCache({ ...(cache ?? { at: 0, list: [] }), limitedUntil: until, feed })
-          return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+          return { list: withFeed(cache?.list ?? [], feed), source: 'feed', feedAt: feed.at }
         }
         // feed 也读不到时，有上次的完整结果就先给用户看；冷却期内不再请求 GitHub
         if (cache?.list.length) {
@@ -470,14 +488,14 @@ export function updateApi(deps: {
       }
       // 其他错误（5xx 等）也先试 feed：能判断有没有新版本就不算检查失败
       const feed = await feedRelease()
-      if (feed) return { list: withFeed(cache?.list ?? [], feed.release), source: 'feed', feedAt: feed.at }
+      if (feed) return { list: withFeed(cache?.list ?? [], feed), source: 'feed', feedAt: feed.at }
       throw new Error(t('GitHub 返回 {status}', { status: res.status }))
     }
     const data = (await res.json()) as any[]
     const list = data
       .filter((r) => !r.draft)
       .map((r): AppRelease => {
-        const assets = (r.assets ?? []) as { name: string; browser_download_url: string; size: number }[]
+        const assets = (r.assets ?? []) as { name: string; browser_download_url: string; size: number; url?: string }[]
         const main = platformAsset(assets, process.platform)
         return {
           tag: r.tag_name,
@@ -489,6 +507,9 @@ export function updateApi(deps: {
           tarUrl: main.url,
           zipUrl: assets.find((a) => a.name === main.zip)?.browser_download_url ?? '',
           sumsUrl: assets.find((a) => a.name === 'SHA256SUMS')?.browser_download_url ?? '',
+          // API 上的附件地址：下载时最先走它（见 fetch-package.ts）
+          assetApiUrl: assets.find((a) => a.browser_download_url === main.url)?.url,
+          sumsApiUrl: assets.find((a) => a.name === 'SHA256SUMS')?.url,
           size: main.size,
         }
       })
@@ -569,31 +590,26 @@ export function updateApi(deps: {
             '这个版本的发布里没有校验文件（SHA256SUMS），无法确认安装包完整、没被改过，已取消更新。可以到 GitHub Releases 手动下载',
           ),
         )
-      // 1. 下载
+      // 1. 下载：GitHub API → 原地址 → 镜像，哪个卡住就换下一个（见 fetch-package.ts）
       job.phase = t('下载中')
       job.total = rel.size
       touch(job)
       // 扩展名按实际下载的包来：Windows 是 zip，macOS / Linux 是 tar.gz
       const isZip = /\.zip$/i.test(new URL(rel.tarUrl).pathname)
       const file = path.join(work, isZip ? 'package.zip' : 'package.tar.gz')
-      await downloadFile(rel.tarUrl, file, {
-        headers: { 'User-Agent': 'agent-panel' },
-        onTotal: (n) => {
-          if (n) job.total = n
-        },
-        onBytes: (n) => {
-          job.received += n
-          touch(job)
-        },
+      const sources = (await getSettings().catch(() => undefined))?.githubSources ?? []
+      const sumsText = await downloadRelease(rel, file, job, {
+        fetch: netFetchDirect,
+        apiBase: API(),
+        sources,
+        touch: () => touch(job),
       })
 
       // 校验：和 Release 里的 SHA256SUMS 对一下，下载不完整或被改过就不装（没有这个文件的上面已经拒绝了）
       {
         job.phase = t('校验中')
-        const sums = await netFetch(rel.sumsUrl, { headers: { 'User-Agent': 'agent-panel' }, timeoutMs: 15_000 })
-        if (!sums.ok) throw new Error(t('下载校验文件失败：{status}', { status: sums.status }))
         const name = decodeURIComponent(new URL(rel.tarUrl).pathname.split('/').pop() ?? '')
-        const want = (await sums.text())
+        const want = sumsText
           .split('\n')
           .map((l) => l.trim().split(/\s+\*?/))
           .find(([, n]) => n === name)?.[0]

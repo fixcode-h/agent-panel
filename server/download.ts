@@ -32,6 +32,11 @@ export interface DownloadOptions {
   idleMs?: number
   /** 测试或调用方替换网络请求；默认是带代理回退的 netFetch */
   fetch?: NetFetch
+  /**
+   * 续传时认哪个标识：默认是地址。同一个文件换来源下载（GitHub API、原地址、镜像）时传同一个值，
+   * 已经下好的分片接着用；大小、etag 对不上照样从头下，装之前还有 SHA256 校验兜底
+   */
+  resumeKey?: string
 }
 
 const CONNECTIONS = 8
@@ -270,6 +275,7 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
   const connections = Math.max(1, o.connections ?? CONNECTIONS)
   const idleMs = o.idleMs ?? IDLE_MS
   const fetcher = o.fetch ?? netFetch
+  const key = o.resumeKey ?? url
   /** 这个文件已经报给调用方的净进度；退回单连接时要扣回去 */
   let reported = 0
   const report = (n: number) => {
@@ -291,12 +297,14 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
   const hasPart = existsSync(part)
   const state = await readState(meta)
   let done: Span[] = []
-  if (state && hasPart && state.url === url && state.size === total) {
+  if (state && hasPart && state.url === key && state.size === total) {
     // 文件被换过（etag / 修改时间变了）就重下，不然拼出来是新旧混杂的文件
     const same =
       (!state.etag || !info.etag || state.etag === info.etag) &&
       (!state.modified || !info.modified || state.modified === info.modified)
     if (same) done = state.done.filter(([a, b]) => a >= 0 && b <= total && a < b).reduce(addSpan, [])
+    // 续传先把已有的部分报一次（接口约定如此）：不报的话进度条从 0 起、到不了 100%
+    report(done.reduce((n, [a, b]) => n + (b - a), 0))
   }
   // 没有状态文件时按旧版连续 .part 处理：它的长度就是已经下好的前缀
   if (!done.length && hasPart) {
@@ -328,7 +336,7 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
   let failure: unknown
   let lastWrite = Date.now()
   const save = async () => {
-    await writeState(meta, { url, size: total, etag: info.etag, modified: info.modified, done: [...done] }).catch(
+    await writeState(meta, { url: key, size: total, etag: info.etag, modified: info.modified, done: [...done] }).catch(
       () => {},
     )
     lastWrite = Date.now()

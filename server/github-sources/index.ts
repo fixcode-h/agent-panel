@@ -38,9 +38,25 @@ const PREFER_TTL = 10 * 60_000
 /** 换来源取成功后记住的来源：按地址种类记 */
 const preferred = new Map<string, { key: string; at: number }>() // 模块状态：缓存，丢了重新试原地址
 
-/** 测试用：清掉记住的来源 */
+/**
+ * GitHub API 来源被限流到这一刻：不登录每小时只有 60 次，面板自己的版本列表、更新包也要用它，
+ * 限流后再拿它兜底取仓库文件只会白等、还把恢复时间往后推，冷却期内直接跳过
+ */
+let apiCooldownUntil = 0 // 模块状态：缓存，丢了大不了再撞一次限流
+
+/** 测试用：清掉记住的来源和 API 冷却 */
 export function resetPreferred() {
   preferred.clear()
+  apiCooldownUntil = 0
+}
+
+/** 限流响应里的恢复时间；没有就按 10 分钟 */
+function limitedUntil(res: Response, now: number) {
+  const reset = Number(res.headers.get('x-ratelimit-reset'))
+  const after = Number(res.headers.get('retry-after'))
+  if (reset > 0) return reset * 1000
+  if (after > 0) return now + after * 1000
+  return now + 10 * 60_000
 }
 
 /** 这个响应要不要换下一个来源：5xx、429；API 的 403 多半是限流 */
@@ -104,8 +120,14 @@ export async function fetchViaSources(
   let fallback: Response | undefined
   for (const [i, { source, candidate }] of tries.entries()) {
     if (init.signal?.aborted) break
+    if (source.def.id === 'api' && apiCooldownUntil > now) {
+      failures.push(`${sourceLabel(source)}：${t('限流中，暂时跳过')}`)
+      continue
+    }
     try {
       const res = await deps.fetch(candidate.url, withHeaders(init, candidate.headers))
+      if (source.def.id === 'api' && (res.status === 403 || res.status === 429))
+        apiCooldownUntil = limitedUntil(res, now)
       if (retryStatus(res, candidate)) {
         failures.push(`${sourceLabel(source)}：HTTP ${res.status}`)
         // 都不行时把第一个 HTTP 响应交回去，调用方照旧按状态码报错
