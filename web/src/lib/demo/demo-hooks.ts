@@ -3,6 +3,7 @@ import { BUILTIN_HOOKS, builtinOn, builtinParam, tierChanged, tierOn, type HookT
 import { CLIS } from '@shared/clis'
 import { hookEventsFor } from '@shared/hooks'
 import { t } from '@shared/i18n'
+import { ModelSupportData, patchSupport, supportView, type SupportPatch } from '@shared/models/support'
 
 /**
  * 在线演示里的「钩子」：内置钩子开关、用户钩子的增删改都存在浏览器内存里；
@@ -12,6 +13,8 @@ let builtins: Record<string, boolean> = {}
 // 演示里不分项目：档位只有全局一份
 let tier: HookTier = 'standard'
 const cliOff: Record<string, string[]> = {}
+// 按模型档位加强扶持：和服务端同一份 patchSupport / supportView
+let modelSupport: ModelSupportData = ModelSupportData.parse({})
 // 内置钩子的参数；演示里不分项目，按项目的开关也当成全局的
 const params: Record<string, Record<string, string[] | number>> = {}
 let hooks: HookDef[] = [
@@ -72,7 +75,14 @@ export function demoHooks(method: string, seg: string[], body: unknown) {
       hooks,
       support: CLIS.map((c) => ({ id: c.id, name: c.name, events: hookEventsFor(c.hooks), tooOld: [] })),
       cliOff,
+      modelSupport: supportView(modelSupport),
     }
+  if (id === 'model-support') {
+    const r = patchSupport(modelSupport, b as SupportPatch)
+    if (!r.ok) throw new Error(r.error)
+    modelSupport = r.data
+    return { ok: true }
+  }
   if (method === 'GET' && id === 'triggers')
     return [
       {

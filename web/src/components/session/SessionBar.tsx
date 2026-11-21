@@ -11,6 +11,7 @@ import { SessionCard, SessionRow } from './SessionCard'
 import { SessionContextBody, useSessionContext } from './SessionContext'
 import { StatusCard } from './StatusCard'
 import { LatencyCard } from './LatencyCard'
+import { SupportNote } from './SupportNote'
 import type { ChildEntry } from '@shared/task'
 
 /**
@@ -87,6 +88,8 @@ export function SessionBar({
                 </span>
               </SessionRow>
             )}
+            {/* 按弱模型加强了扶持：写一行，点开看加强了哪几项（设置 → 钩子 → 按模型档位加强扶持） */}
+            <SupportNote task={task} />
           </SessionCard>
         )}
 

@@ -3,7 +3,7 @@
  * 保存前的校验拦住语法错误和密钥。运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -426,4 +426,29 @@ test('推送项目教训和经验：默认开；跑命令、改文件、搜索�
     recentTriggers().some((x) => x.hookId === 'builtin:push-lessons'),
     '记进最近触发',
   )
+})
+
+test('按模型档位加强扶持：弱模型套严格档、第一次改文件前没计划推「先列实现计划」；强模型和以前一样', async () => {
+  resetHooksCache()
+  await setTier('standard')
+  const { resolveSupport, ModelSupportData } = await import('../../shared/models/support.ts')
+  const weak = resolveSupport(ModelSupportData.parse({}), 'low')
+  const strong = resolveSupport(ModelSupportData.parse({}), 'high')
+  const file = path.join(dir, 'b.ts')
+  writeFileSync(file, 'export {}\n')
+  const w = await hookOptions({ ...ctx({ task: task({ id: 'sup1' }), orch: { plans: {} } }), support: weak })
+  const first = await w.onHook!('tool.before', edit(file))
+  // 严格档的「改前先读」守卫开起来了：没读过就改会被拦，拦下的调用不推情境规则
+  assert.equal(first.deny, true)
+  assert.match(first.reason ?? '', /读/)
+  const s = await hookOptions({
+    ...ctx({ task: task({ id: 'sup2' }), orch: { plans: {} } }),
+    support: { ...weak, hookTier: 'standard' },
+  })
+  const pushed = await s.onHook!('tool.before', edit(file))
+  assert.match(pushed.context ?? '', /set_plan 列出实现计划/)
+  // 一个对话只推一次
+  assert.doesNotMatch((await s.onHook!('tool.before', edit(file))).context ?? '', /实现计划/)
+  const st = await hookOptions({ ...ctx({ task: task({ id: 'sup3' }), orch: { plans: {} } }), support: strong })
+  assert.doesNotMatch((await st.onHook!('tool.before', edit(file))).context ?? '', /实现计划/)
 })

@@ -1687,6 +1687,13 @@ export const AgentUsage = z.object({
   snapshot: ContextSnapshot.optional(),
   /** 模型首包的记录（见 shared/first-token.ts）；旧记录没有 */
   firstToken: FirstTokenStats.optional(),
+  /** 这一轮按模型档位加强了哪些扶持（shared/models/support.ts）：会话栏写「已按弱模型加强扶持」；没加强的不记 */
+  support: z
+    .object({
+      tier: z.enum(['high', 'medium', 'low']),
+      boosted: z.array(z.object({ key: z.string(), value: z.union([z.string(), z.number()]) })),
+    })
+    .optional(),
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
 

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { t } from '../i18n.ts'
 import { DEFAULT_TIER, HOOK_TIERS } from './builtins.ts'
 import { unwrapShell } from '../shell-command.ts'
+import { ModelSupportData } from '../models/support.ts'
 
 /**
  * 钩子的规范（ADR 0049 第二期，设计稿 docs/openspec/changes/agent-hooks 第 6 节）：设置页「钩子」里用户建的、
@@ -114,6 +115,8 @@ export const HooksData = z.object({
     .record(z.string(), z.record(z.string(), z.union([z.array(z.string().max(300)).max(50), z.number()])))
     .default({}),
   hooks: z.array(HookDef).default([]),
+  /** 按模型档位加强扶持（shared/models/support.ts）：总开关和按档位改过的值；旧数据没有，按默认（开） */
+  modelSupport: ModelSupportData.default({ enabled: true, values: {} }),
   /** 做过的一次性迁移：webhook 是设置里原来的「计划 Webhook」迁成钩子 */
   migrated: z.object({ webhook: z.boolean().default(false) }).default({ webhook: false }),
 })

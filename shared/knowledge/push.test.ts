@@ -134,5 +134,20 @@ test('预算：最多几条、合计字数有上限，第一条再长也给', ()
   assert.equal(budgetHits([hit(1, 900)]).length, 1)
   assert.equal(budgetHits([hit(1, 500), hit(2, 200)]).length, 1)
   assert.equal(budgetHits([1, 2, 3, 4, 5].map((i) => hit(i, 10))).length, PUSH_RULES.maxItems)
+  // 弱模型按档位多推：条数放宽，字数预算按条数同比放宽
+  assert.equal(
+    budgetHits(
+      [1, 2, 3, 4, 5, 6].map((i) => hit(i, 10)),
+      5,
+    ).length,
+    5,
+  )
+  assert.equal(
+    budgetHits(
+      [1, 2, 3, 4, 5].map((i) => hit(i, 190)),
+      5,
+    ).length,
+    5,
+  )
   assert.match(pushText([hit(1, 10)], 'error', ''), /以前遇到过类似的报错/)
 })
