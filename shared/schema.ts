@@ -1332,6 +1332,14 @@ export const PeerFrom = z.object({
   failed: z.boolean().optional(),
   /** 同一个子对话后来又交了一封汇报、这封还没被读就被替换掉了：对话流里这一行变淡（ADR 0034） */
   superseded: z.boolean().optional(),
+  /**
+   * 父对话转述用户的话时附上的用户原话（send_to_conversation 的 quote，面板按消息 id 从父对话里取原文，不让它转述）：
+   * 子对话的诊断报告把它算成用户说的话（shared/bug/chat.ts 的 chatSaid），能按它出新一版
+   */
+  said: z
+    .array(z.object({ id: z.string(), at: z.string(), text: z.string().max(2000) }))
+    .max(8)
+    .optional(),
 })
 export type PeerFrom = z.infer<typeof PeerFrom>
 

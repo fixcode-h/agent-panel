@@ -87,6 +87,12 @@ export const CONVERSATION_TOOLS: PanelTool[] = [
         properties: {
           id: { type: 'string', description: '子对话 id' },
           message: { type: 'string', description: '要交给它的消息，写清楚和原任务的关系' },
+          quote: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              '转述用户的话（尤其是用户对它方案、修法的意见）时写上用户那几条消息的 id（插话说明里给了 id；用户最近那一条写 "last"）：面板把原话原样附过去，子对话的诊断报告算成用户说的话。只是你自己的安排不写',
+          },
           ...upgradeBugFields,
           route: routeField(),
           ...(o.plans ? { step: stepField('这个子对话') } : {}),
@@ -98,7 +104,10 @@ export const CONVERSATION_TOOLS: PanelTool[] = [
       const id = str(a?.id).trim()
       const message = str(a?.message).trim()
       if (!id || !message) return text('id 和 message 都要写', true)
-      return reply(await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route), upgradeBugArg(a)))
+      const quote = Array.isArray(a?.quote) ? a.quote.map(String).filter(Boolean) : undefined
+      return reply(
+        await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route), upgradeBugArg(a), quote),
+      )
     },
   },
 ]

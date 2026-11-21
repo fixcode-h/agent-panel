@@ -5,7 +5,7 @@
  */
 import type { CliDefinition } from '../shared/clis.ts'
 import type { CliControl } from './exec/invoke.ts'
-import { steerNote } from './exec/steering.ts'
+import { steerNote } from './exec/steer-note.ts'
 
 export interface AssistSteer {
   /** 交给 invokeCli 的 onControl / readNotes */
@@ -23,9 +23,9 @@ export function assistSteer(def: Pick<CliDefinition, 'notes' | 'mcp'>): AssistSt
   const canNotes = !!def.notes && !!def.mcp
   return {
     onControl: (c) => (control = c),
-    readNotes: canNotes ? () => pending.splice(0).map((x) => steerNote(x, true)) : undefined,
+    readNotes: canNotes ? () => pending.splice(0).map((x) => steerNote(x, { chat: true })) : undefined,
     steer: async (text) => {
-      if (control && (await control.steer(steerNote(text, true)).catch(() => false))) return true
+      if (control && (await control.steer(steerNote(text, { chat: true })).catch(() => false))) return true
       if (!canNotes) return false
       pending.push(text)
       return true
