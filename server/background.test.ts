@@ -159,6 +159,21 @@ test('UE 编译（brief）：成功只报状态，失败只给日志路径和错
   assert.doesNotMatch(failed.text, /C2065|tail line|命令：/, '不带日志摘录和命令原文')
 })
 
+test('UE 编译（brief）失败：接口没对上的报错点出符号，提醒先查签名（shared/compile/hints.ts）', async () => {
+  const dir = repo()
+  const { bg, got, all } = collect(1, { logDir: path.join(dir, '.logs') })
+  const bad = nodeScript(
+    dir,
+    'bad2.cjs',
+    "console.log(\"src/a.cpp(12): error C2039: 'GetTop': is not a member of 'AHome'\")\nprocess.exitCode = 2\n",
+  )
+  bg.start({ taskId: 't-b3', name: 'UE 编译：失败', command: bad, cwd: '', root: dir, exclusive: false, brief: true })
+  await all
+  assert.match(got[0].text, /认出 1 条错误/)
+  assert.match(got[0].text, /`AHome::GetTop`（不是成员）/)
+  assert.doesNotMatch(got[0].text, /src\/a\.cpp\(12\)/, '只点出符号，不带日志摘录')
+})
+
 test('命令没能启动（跑命令之前就抛错）：照样置终态并把失败推回，不留一条永远「运行中」的记录', async () => {
   const dir = repo()
   const { bg, got, all } = collect(1, {

@@ -5,6 +5,8 @@
  * 成功时只给最后几行。认行只看格式（文件位置 + error / warning、错误码），不猜语义
  */
 
+import { compileHintText } from './compile/hints.ts'
+
 /** 错误行：MSVC / UBT（a.cpp(12): error C2065:）、gcc / clang（a.c:3:5: error:）、tsc（a.ts(1,2): error TS2322:）、
  * 链接（error LNK2019:）、rustc（error[E0308]:）、行首的 error: / ERROR、UE 日志（LogXxx: Error:）、测试框架的失败行 */
 const ERROR_RES = [
@@ -116,6 +118,9 @@ export function digestText(lines: string[], d: LogDigest, ok: boolean, logFile =
         `警告（${d.warningCount} 条${d.warningCount > d.warnings.length ? `，列前 ${d.warnings.length} 条` : ''}）：${fence(d.warnings.join('\n'))}`,
       )
   }
+  // 接口没对上的几类编译错误（不是成员、找不到、参数不对、链接找不到）：提醒先查真实签名（shared/compile/hints.ts）
+  const hint = ok ? '' : compileHintText(d.errors)
+  if (hint) parts.push(hint)
   if (tail.trim()) parts.push(`输出结尾：${fence(tail)}`)
   if (logFile) parts.push(`完整日志：${logFile}（要细节用 rg 搜这个文件，不要整份读进来）`)
   return parts.join('\n')
