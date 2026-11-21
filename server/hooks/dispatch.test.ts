@@ -239,6 +239,30 @@ test('原地打转提醒：同一条命令连续失败到设置的次数时补�
   await setBuiltinParam('loop-hint', 'times', 3, true)
 })
 
+test('参数传错时补参数表：默认开，工具后看任意工具，MCP 工具报参数错补一句，同一个工具只补一次', async () => {
+  resetHooksCache()
+  const o = await hookOptions(ctx({ task: task({ id: 'arg1' }) }))
+  assert.ok(o.hookTools?.['tool.after']?.includes('any'), '别家 MCP 工具不在 CLI 的工具类别里，要按任意工具装')
+  const mcp = (output: string, failed = true) => ({
+    tool: {
+      kind: 'any' as const,
+      name: 'mcp__nobody__lua_code',
+      input: { action: 'search', projectPath: '/w' },
+      path: '',
+      paths: [],
+      result: { output, failed },
+    },
+  })
+  assert.ok(!(await o.onHook!('tool.after', mcp('Found 3 symbols', false))).context)
+  // 缓存里没有这个服务：照报错改、先加载说明
+  assert.match(
+    (await o.onHook!('tool.after', mcp('Unknown argument: projectPath'))).context ?? '',
+    /参数不对[^\n]*先加载这个工具的说明/,
+  )
+  assert.ok(!(await o.onHook!('tool.after', mcp('Unknown argument: projectPath'))).context, '同一个工具只补一次')
+  assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:arg-table-hint' && x.result === 'context'))
+})
+
 test('改完没验证：改了文件、之后没跑命令才算；跑过命令或自检过的不算', () => {
   const m = (role: string, tools: string[] = [], panel?: string) => ({
     id: `${role}${tools.join('')}${panel ?? ''}`,
@@ -278,8 +302,9 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   const { applyPlan } = await import('../../shared/plan/index.ts')
   const tk = task({ id: 'pace1' })
   applyPlan(tk, { steps: [{ title: '改界面', status: 'running' }, { title: '跑测试' }] })
-  // 大输出提醒、推送项目知识默认也装工具后：这里只看计划提醒，先关掉它们
+  // 大输出提醒、参数传错提醒、推送项目知识默认也装工具后：这里只看计划提醒，先关掉它们
   await setBuiltin('big-output-hint', false, true)
+  await setBuiltin('arg-table-hint', false, true)
   await setBuiltin('push-lessons', false, true)
   const none = await hookOptions(ctx({ task: tk }))
   assert.ok(!none.hookEvents?.includes('tool.after'), '没有执行计划（子任务、Chat 页）不装')
@@ -293,6 +318,7 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   assert.ok(recentTriggers().some((x) => x.hookId === 'builtin:plan-pace' && x.result === 'context'))
   await setBuiltinParam('plan-pace', 'calls', 20, true)
   await setBuiltin('big-output-hint', true, true)
+  await setBuiltin('arg-table-hint', true, true)
   await setBuiltin('push-lessons', true, true)
 })
 

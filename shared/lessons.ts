@@ -268,7 +268,7 @@ export function lessonsPrompt(
   // 「所有改动都适用」的条目给全文（每条截到 CAP_ONE），按文件的只给标题
   const short = (l: ProjectLesson | GlobalLesson, withId: boolean) => {
     const x = lessonText(l, withId)
-    return x.length > CAP_ONE ? `${x.slice(0, CAP_ONE - 1)}…（全文用 knowledge_lookup 带 id 查）` : x
+    return x.length > CAP_ONE ? `${x.slice(0, CAP_ONE - 1)}…（全文用 knowledge_lookup 查，query 写这条的 id）` : x
   }
   const takeFull = <T extends ProjectLesson | GlobalLesson>(pool: T[], budget: number, withId: boolean) => {
     const out: T[] = []

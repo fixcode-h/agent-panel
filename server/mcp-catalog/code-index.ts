@@ -62,8 +62,8 @@ export async function codeIndexToolsFor(
 }
 
 /**
- * 项目能用的 JetBrains IDE MCP 服务（项目目录里的配置和 CLI 全局配置，按条目名认），以及它是不是开了「仅路由器」
- * （缓存的工具表里有 execute_tool）。只读配置和缓存，不主动去问：codeIndexToolsFor 已经在同一轮问过项目里的服务
+ * 项目能用的 JetBrains IDE MCP 服务（项目目录里的配置和 CLI 全局配置，按条目名认），它是不是开了「仅路由器」
+ * （缓存的工具表里有 execute_tool），以及缓存里各工具的参数表。只读配置和缓存，不主动去问：codeIndexToolsFor 已经在同一轮问过项目里的服务
  */
 export async function ideMcpServersFor(
   project: Pick<Project, 'path'> | undefined,
@@ -76,7 +76,12 @@ export async function ideMcpServersFor(
   const out: IdeMcpServer[] = []
   for (const server of names) {
     const known = await externalToolsOf(server)
-    out.push({ server, ...(known?.names.includes('execute_tool') && { router: true }) })
+    out.push({
+      server,
+      ...(known?.names.includes('execute_tool') && { router: true }),
+      // 参数表：提示词里「谁有 projectPath、谁用 project」照它写（shared/mcp-catalog/code-index.ts 的 ideMcpLines）
+      ...(known && Object.keys(known.params).length > 0 && { params: known.params }),
+    })
   }
   return out
 }

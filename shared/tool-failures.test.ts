@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ToolUse } from './schema.ts'
-import { NO_PROBES, addProbes, probeKind, probeTotal, toolFailures, toolsOutsideNodes } from './tool-failures.ts'
+import {
+  NO_PROBES,
+  addProbes,
+  argErrorIn,
+  probeKind,
+  probeTotal,
+  toolFailures,
+  toolsOutsideNodes,
+  type ProbeFailures,
+} from './tool-failures.ts'
 
 const tool = (over: Partial<ToolUse> = {}): ToolUse => ({ kind: 'run', label: 'ls', detail: '', ...over })
 
@@ -62,18 +71,22 @@ test('工具调用合计：总数、失败数、探路分类一次遍历算出',
   ])
   assert.equal(stats.calls, 5)
   assert.equal(stats.failed, 4)
-  assert.deepEqual(stats.probeBy, { tool: 1, path: 1, command: 1 })
+  assert.deepEqual(stats.probeBy, { tool: 1, arg: 0, path: 1, command: 1 })
   // 探路失败是「失败的调用」里的一部分，不是另一类调用
   assert.equal(probeTotal(stats.probeBy), 3)
 })
 
 test('工具调用合计：没有工具调用时全是 0，相加只合并计数', () => {
   assert.deepEqual(toolFailures([]), { calls: 0, failed: 0, probeBy: NO_PROBES })
-  assert.deepEqual(addProbes({ tool: 1, path: 0, command: 2 }, { tool: 0, path: 3, command: 0 }), {
+  assert.deepEqual(addProbes({ tool: 1, arg: 1, path: 0, command: 2 }, { tool: 0, arg: 0, path: 3, command: 0 }), {
     tool: 1,
+    arg: 1,
     path: 3,
     command: 2,
   })
+  // 旧记录里存的计数没有 arg：按 0 加，不出 NaN
+  const old = { tool: 1, path: 0, command: 0 } as unknown as ProbeFailures
+  assert.equal(addProbes(old, NO_PROBES).arg, 0)
   assert.equal(probeTotal(NO_PROBES), 0)
 })
 
@@ -84,18 +97,37 @@ test('节点外的工具调用：任务级总数减各节点合计，负数按 0
     tool({ failed: true, output: 'bash: line 1: nit: command not found' }),
     tool({ failed: true, output: 'Tool not found: spawn' }),
   ])
-  const node = { calls: 2, failed: 1, probeBy: { tool: 0, path: 1, command: 0 } }
+  const node = { calls: 2, failed: 1, probeBy: { tool: 0, arg: 0, path: 1, command: 0 } }
   assert.deepEqual(toolsOutsideNodes(all, [node]), {
     calls: 2,
     failed: 2,
-    probeBy: { tool: 1, path: 0, command: 1 },
+    probeBy: { tool: 1, arg: 0, path: 0, command: 1 },
   })
   // 节点合计比任务级还大时（手改过的数据）不能出现负数
   assert.deepEqual(toolsOutsideNodes(all, [all]), { calls: 0, failed: 0, probeBy: NO_PROBES })
   // 探路分类的差额比失败差额大时（手改过的数据）夹到失败数以内，不出现「失败 1 次、探路 2 次」
-  const odd = toolsOutsideNodes({ calls: 3, failed: 1, probeBy: { tool: 1, path: 1, command: 0 } }, [
+  const odd = toolsOutsideNodes({ calls: 3, failed: 1, probeBy: { tool: 1, arg: 0, path: 1, command: 0 } }, [
     { calls: 1, failed: 0, probeBy: NO_PROBES },
   ])
   assert.equal(odd.failed, 1)
   assert.equal(probeTotal(odd.probeBy), 1, '探路合计不能超过失败数')
+})
+
+test('参数传错：MCP 工具报未知参数、缺必填、zod 校验失败算探路的 arg，命令输出里的同样字样不算', () => {
+  const mcp = (output: string) => tool({ kind: 'other', name: 'MCP', label: 'idea · lua_code', failed: true, output })
+  // EmmyLua / UEToVS 按 ADR 0067 的错误码
+  assert.equal(
+    probeKind(mcp('{"error":"invalid_argument","message":"未知参数 projectPath，可用：action、query、project"}')),
+    'arg',
+  )
+  assert.equal(probeKind(mcp('Unknown argument: projectPath')), 'arg')
+  assert.equal(probeKind(mcp('MCP error -32602: Invalid arguments for tool search_symbols')), 'arg')
+  assert.equal(probeKind(mcp('[{"code": "invalid_type", "expected": "string", "path": ["query"]}]')), 'arg')
+  assert.equal(probeKind(mcp('missing required parameter: action')), 'arg')
+  // 工具不存在照旧先认成 tool
+  assert.equal(probeKind(mcp('Unknown tool: lua_codes')), 'tool')
+  // 跑测试的输出里有 zod 的 invalid_type：那是断言失败，不是探路
+  assert.equal(probeKind(tool({ failed: true, exitCode: 1, output: '"code": "invalid_type"' })), undefined)
+  assert.equal(argErrorIn('Found 3 symbols'), '')
+  assert.equal(argErrorIn("unexpected keyword argument 'scope'"), '多余参数')
 })

@@ -207,6 +207,9 @@ export const EN_HOOKS: Record<string, string> = {
     'When the same command fails several times in a row, adds a note to try another approach or say where it is stuck (needs a CLI that reports failures: Claude Code, Pi, Command Code)',
   连续失败几次提醒: 'Failures in a row before the hint',
   '1 到 100，默认 3': '1 to 100, default 3',
+  参数传错时补参数表: 'Parameter table on wrong arguments',
+  'MCP 工具报参数不对（未知参数、缺必填、取值不对）时，把这个工具真实的参数表（面板探测服务时存下的参数名、必填和取值）补给模型，让它照表改、不要换个值再试；同一个工具一个对话只补一次':
+    "When an MCP tool reports wrong arguments (unknown, missing required, or invalid values), gives the model that tool's real parameter table (names, required, and allowed values saved when the panel probed the server) so it fixes the call instead of retrying with another value; once per tool per conversation",
   计划没跟上提醒: 'Plan falling behind hint',
   '项目里的对话改文件、跑命令时，计划没有进行中的步骤，或者进行中的那一步动手多次还没更新，补一句让它先用 set_plan 标完成、标下一步（同一步提醒几次可以设置）':
     'When a project conversation edits files or runs commands while its plan has no step in progress, or the step in progress has gone many actions without an update, adds a note to mark it done and start the next one with set_plan first (how many times per step is configurable)',

@@ -10,6 +10,7 @@ import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/pan
 import { fmtDuration } from '../shared/duration.ts'
 import { failLostWaits } from '../shared/plan/lost.ts'
 import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
+import { compileHintText } from '../shared/compile/hints.ts'
 import { createDigest, digestText, type LogDigest } from '../shared/log-digest.ts'
 import { openJobLog } from './bg/log.ts'
 import { notRunReason } from './bg/sanity.ts'
@@ -181,9 +182,12 @@ export function jobBody(j: BgJob) {
   if (!j.brief) return jobDigestText(j)
   if (j.state === 'done') return ''
   const n = j.digest?.errorCount
-  return j.logFile
+  // UE 编译只给日志路径，但「接口没对上」那几类报错仍然点出来（几行），不然模型常是搜到一条就换个名字再编一次
+  const hint = compileHintText(j.digest?.errors ?? [])
+  const log = j.logFile
     ? `完整日志：${j.logFile}${n ? `（认出 ${n} 条错误）` : ''}。要细节用 rg 按 error 搜这个文件、只取需要的几行，不要整份读进来。`
     : ''
+  return [log, hint].filter(Boolean).join('\n')
 }
 
 /**
