@@ -398,7 +398,9 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const beforeEnd =
     builtinEnd || userEnd || verifyEnd
       ? async (input: BeforeEndInput): Promise<BeforeEndDecision> => {
-          let d: BeforeEndDecision = builtinEnd ? await builtinEnd(input) : { block: false, why: 'builtin-off' }
+          let d: BeforeEndDecision = builtinEnd
+            ? await builtinEnd({ ...input, steer: on('steer-handoff') })
+            : { block: false, why: 'builtin-off' }
           if (!d.block && verifyEnd) {
             const asked = unverifiedEdit(c.task)
             if (asked && verified.get(c.task.id) !== asked) {

@@ -60,6 +60,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     tier: 'minimal',
   },
   {
+    id: 'steer-handoff',
+    event: 'turn.beforeEnd',
+    name: () => t('插话要有着落'),
+    description: () =>
+      t(
+        '名下派过子对话的父对话，执行中收到用户插话后既没转给子对话（send_to_conversation 带上这条的 quote），也没在 end_turn 里交代是自己的事，就要结束时，拦一次问清楚（只问一次，随「没做完不收尾」一起生效）',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'restore-plan',
     event: 'context.restored',
     name: () => t('压缩后补回计划'),

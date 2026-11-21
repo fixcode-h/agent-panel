@@ -136,7 +136,15 @@ export function conversationTools(oc: OrchCtx) {
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
       const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''
       const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
-      if (r.ok) recordRoute(host, 'resend', [id.trim()], kidTitle || id.trim(), route)
+      if (r.ok)
+        recordRoute(
+          host,
+          'resend',
+          [id.trim()],
+          kidTitle || id.trim(),
+          route,
+          q.said.map((x) => x.id),
+        )
       if (r.ok) host.changed(true)
       // 送没送到、之后怎么做由返回自己说清（以前写在协调器设定里一整节教它读返回值，ADR 0048 删掉了那一节）
       const info = r.ok ? `${r.info}\n${SENT_NOTE}${wait ? `\n${wait}` : ''}` : r.info

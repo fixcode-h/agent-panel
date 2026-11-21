@@ -12,5 +12,7 @@ export const EndTurnRecord = z.object({
   need: z.string().optional(),
   /** done 时面板从这一轮的工具调用记录里整理的完成依据（shared/done-evidence.ts）；旧记录没有 */
   evidence: DoneEvidence.optional(),
+  /** 父对话交代「这几条插话是对我自己这件事的调整、不用转给子对话」的用户消息 id（shared/orchestra/steer-pending.ts） */
+  own: z.array(z.string()).max(20).optional(),
 })
 export type EndTurnRecord = z.infer<typeof EndTurnRecord>

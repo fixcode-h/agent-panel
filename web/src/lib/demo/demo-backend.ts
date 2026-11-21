@@ -1,4 +1,5 @@
 import { setChild } from '@shared/children/task-child'
+import { directToChildNote } from '@shared/children/direct-note'
 import { migrateProjectShape, migrateTaskShape, migrateWorkflowShape } from '@shared/migrations/legacy-shapes'
 import { splitAgentMode } from '@shared/migrations/agent-mode'
 import { demoWebView } from './demo-web-view'
@@ -2483,6 +2484,44 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
 }
 
 /** recorded：消息已经在对话里（执行中收到时就记下了），不再加一条 */
+
+/** POST /tasks/:id/messages：执行中记进对话、这一轮结束后接着处理，空闲时开新的一轮（从 tasksRoute 拆出来） */
+function postMessage(d: Db, task: Task, body: unknown) {
+  const f = parse(FollowUpInput, body)
+  if (f.userAction) settleAction(task, f.userAction, 'returned', { text: f.text })
+  // 父对话执行中点了「发给…」：和正式后端一样在父对话里留一行（shared/children/direct-note.ts）
+  const via = f.via && f.via === task.parentTaskId ? d.tasks?.find((x) => x.id === f.via) : undefined
+  if (via) via.messages.push(directToChildNote(task, f.text, `demo-${crypto.randomUUID()}`, new Date().toISOString()))
+  const cur = live.get(task.id)
+  // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
+  if (cur && !f.interrupt) {
+    const msg = {
+      // 和正式后端对齐：页面本地已经按这个 id 插了一条「待认领」的，沿用它
+      id: f.messageId ?? `demo-${crypto.randomUUID()}`,
+      role: 'user' as const,
+      agentId: '',
+      step: task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : '',
+      text: f.text,
+      tools: [],
+      ...(f.attachments.length ? { attachments: f.attachments } : {}),
+      // 和正式后端对齐：执行中发的消息记下交付结果（演示里这一轮收不下，结束后接着处理）
+      delivery: { how: 'held' as const, at: new Date().toISOString() },
+      at: new Date().toISOString(),
+    }
+    task.messages.push(msg)
+    ;(cur.held ??= []).push({ text: f.text, attachments: f.attachments })
+    persist()
+    return task
+  }
+  if (cur) {
+    cur.stop = true
+    void cur.done?.finally(() => followUp(d, task, f.text, false, f.attachments, false, f.messageId))
+    return task
+  }
+  void followUp(d, task, f.text, false, f.attachments, false, f.messageId)
+  return task
+}
+
 function followUp(
   d: Db,
   task: Task,
@@ -2799,38 +2838,7 @@ function tasksRoute(
     if (!stopHelper(task.id, step, '用户在界面上终止了这个子任务')) fail('这个子任务已经结束了', 409)
     return task
   }
-  if (sub === 'messages') {
-    const f = parse(FollowUpInput, body)
-    if (f.userAction) settleAction(task, f.userAction, 'returned', { text: f.text })
-    const cur = live.get(task.id)
-    // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
-    if (cur && !f.interrupt) {
-      const msg = {
-        // 和正式后端对齐：页面本地已经按这个 id 插了一条「待认领」的，沿用它
-        id: f.messageId ?? `demo-${crypto.randomUUID()}`,
-        role: 'user' as const,
-        agentId: '',
-        step: task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : '',
-        text: f.text,
-        tools: [],
-        ...(f.attachments.length ? { attachments: f.attachments } : {}),
-        // 和正式后端对齐：执行中发的消息记下交付结果（演示里这一轮收不下，结束后接着处理）
-        delivery: { how: 'held' as const, at: new Date().toISOString() },
-        at: new Date().toISOString(),
-      }
-      task.messages.push(msg)
-      ;(cur.held ??= []).push({ text: f.text, attachments: f.attachments })
-      persist()
-      return task
-    }
-    if (cur) {
-      cur.stop = true
-      void cur.done?.finally(() => followUp(d, task, f.text, false, f.attachments, false, f.messageId))
-      return task
-    }
-    void followUp(d, task, f.text, false, f.attachments, false, f.messageId)
-    return task
-  }
+  if (sub === 'messages') return postMessage(d, task, body)
   // 回答子对话的提问：演示里只把卡片标成已回答 / 已交给父对话决定
   if (sub === 'child-asks' && rid) {
     const m = task.messages.find((x) => x.id === rid && x.ask) ?? fail('找不到这个提问')

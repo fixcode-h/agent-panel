@@ -1,4 +1,5 @@
 import { setChild } from '../../shared/children/task-child.ts'
+import { directToChildNote } from '../../shared/children/direct-note.ts'
 import { randomUUID } from 'node:crypto'
 import { waitingAfter } from '../../shared/children/after.ts'
 import { Task, type PeerFrom, type PeerKind, type TaskMessage } from '../../shared/schema.ts'
@@ -186,7 +187,7 @@ export function createChildMessages(sc: TasksScope) {
    * 不挂的话子对话做完上报时父对话计划里没人在等它，上报只进收件箱，父对话收不到这个子对话的结果（用户报过）。
    * 父对话不用转交：子对话自己更新计划、自己做，做完由 reportChild 收口那一步并叫起父对话，汇报里带上用户的原话
    */
-  async function trackUserToChild(child: Task, text: string) {
+  async function trackUserToChild(child: Task, text: string, fromParent = false) {
     if (!child.parentTaskId) return
     const entry = sc.live.get(child.parentTaskId)
     const parent = entry?.task ?? (await sc.store.get(child.parentTaskId))
@@ -200,6 +201,8 @@ export function createChildMessages(sc: TasksScope) {
     // 要求原文记在子对话上，下一封汇报里带给父对话
     const brief = text.trim().replace(/\s+/g, ' ')
     if (wait || at) holdWait(parent, 'child', child.id, `你直接交代了新要求：${brief.slice(0, 80)}`, now)
+    // 在父对话输入框上点了「发给…」：用户是在父对话页上发的，父对话里记一行发去了哪（只是给人看的记录，不交给父对话的 CLI）
+    if (fromParent) parent.messages.push(directToChildNote(child, text, randomUUID(), now))
     parent.updatedAt = now
     if (entry) entry.rev++
     await sc.store.update(parent.id, parent)

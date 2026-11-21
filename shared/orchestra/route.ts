@@ -25,6 +25,8 @@ export function recordRoute(
   refs: string[],
   label: string,
   route: RouteInput | undefined,
+  /** quote 原样带过去的用户消息 id（父对话插话按它算已转，见 steer-pending.ts） */
+  quoted: string[] = [],
 ) {
   const { task } = host
   const str = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 500) : '')
@@ -40,6 +42,7 @@ export function recordRoute(
       reason: str(route?.reason),
       assumptions: str(route?.assumptions),
       messageId: ask?.id ?? '',
+      ...(quoted.length ? { quoted: quoted.slice(0, 8) } : {}),
       at: now(),
     },
   ]

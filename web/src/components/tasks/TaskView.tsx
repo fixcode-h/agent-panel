@@ -228,6 +228,7 @@ export function TaskView({
     go,
     loadChildren,
     setChildren,
+    children,
     closeDelete: () => setDialog('deleting', false),
   })
   // 总结卡「要你处理」的「处理」按钮（view/use-task-actions.ts）
@@ -379,6 +380,7 @@ export function TaskView({
       byCli={byCli}
       chatRun={chatRun}
       chatAgent={chatAgent}
+      kids={children}
       flowHint={
         task.mode === 'workflow'
           ? flowHint({

@@ -4,6 +4,9 @@ export const EN_HOOKS: Record<string, string> = {
   脚本不能为空: 'Script is required',
   地址不对: 'Invalid URL',
   没做完不收尾: "Don't stop half-done",
+  插话要有着落: 'Follow up on mid-run messages',
+  '名下派过子对话的父对话，执行中收到用户插话后既没转给子对话（send_to_conversation 带上这条的 quote），也没在 end_turn 里交代是自己的事，就要结束时，拦一次问清楚（只问一次，随「没做完不收尾」一起生效）':
+    'When a parent conversation that has delegated to child conversations gets a message from the user mid-run, and is about to stop without forwarding it to a child (send_to_conversation with that message in quote) or saying in end_turn that it was meant for itself, stop it once and ask (only once; works together with "Don\'t stop half-done")',
   压缩后补回计划: 'Restore the plan after compaction',
   '压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪':
     'After the context is compacted, give the model the current plan and progress, the task goal, and what it is waiting on, so it does not lose its place',

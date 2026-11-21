@@ -747,7 +747,7 @@ export interface TasksScope {
     platform: NodeJS.Platform
     wslDistro: string
   }
-  trackUserToChild: (child: Task, text: string) => Promise<void>
+  trackUserToChild: (child: Task, text: string, fromParent?: boolean) => Promise<void>
   wakeConv: (
     id: string,
     text: string,

@@ -1117,6 +1117,8 @@ export const TaskRoute = z.object({
   assumptions: z.string().max(500).default(''),
   /** 这条分诊出自哪条消息（用户消息的 id；找不到时为空） */
   messageId: z.string().default(''),
+  /** send_to_conversation 的 quote 原样带过去的用户消息 id：父对话执行中的插话按它算「已转」（shared/orchestra/steer-pending.ts） */
+  quoted: z.array(z.string()).max(8).optional(),
   at: z.string(),
   /** 用户点了「改派」的时间 */
   overriddenAt: z.string().optional(),
@@ -1157,6 +1159,8 @@ export const FollowUpInput = z.object({
   from: z.string().optional(), // 别的对话替它发的（task.send）：发件对话 id，记成 peer（ADR 0041）
   /** 这条是交回「等你操作」的结果（输入框上挂着「交回给」）：那件事的 id，服务端收口后给 CLI 的内容前面加一句说明 */
   userAction: z.string().max(100).optional(),
+  /** 父对话执行中在输入框上点了「发给…」直接发给这个子对话：父对话 id（服务端核对是它的父对话，在父对话里记一行） */
+  via: z.string().max(100).optional(),
 })
 /** 父对话发布的一条全局规则 */
 export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })

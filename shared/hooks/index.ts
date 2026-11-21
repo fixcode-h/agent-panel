@@ -121,6 +121,8 @@ export interface BeforeEndDecision {
 /** 转发时带上的原生输入里，面板唯一会看的字段：CLI 告诉面板这次是不是已经被钩子续过一次 */
 export interface BeforeEndInput {
   again?: boolean
+  /** 核对父对话执行中的用户插话有没有着落（内置钩子 steer-handoff 开着时由 dispatch 填，见 shared/orchestra/steer-pending.ts） */
+  steer?: boolean
 }
 
 /** 工具前、工具后、上下文恢复交给面板的事实：都从原生输入里按 CLI 定义取，不含模型回复的文字 */
