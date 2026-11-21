@@ -28,6 +28,8 @@ test('JetBrains IDE 服务：写明 projectPath 只认 IDE 项目目录之内，
   const plain = ideMcpLines([{ server: 'idea' }]).join('\n')
   assert.match(plain, /`idea` 是 JetBrains IDE/)
   assert.match(plain, /Currently open projects/)
+  // 插件工具（lua_code）没有 projectPath：写明只给参数表里有它的工具传，插件工具用 project
+  assert.match(plain, /`lua_code`、`lua_debug_\*` 这类）没有 `projectPath`[^\n]*`project`/)
   assert.doesNotMatch(plain, /execute_tool/)
   const router = ideMcpLines([{ server: 'idea', router: true }]).join('\n')
   assert.match(router, /lua_code --action search --query/)
