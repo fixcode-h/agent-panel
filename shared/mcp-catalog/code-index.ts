@@ -103,6 +103,17 @@ export function ideMcpLines(servers: IdeMcpServer[] | undefined): string[] {
   return lines
 }
 
+/**
+ * 「搜索」一节里常驻的只剩一行：服务是哪个、规矩由面板在第一次调它时给（情境规则 ide-mcp-rules，
+ * shared/hooks/situational.ts；ADR 0071）。完整的几条规矩只有用 IDE 服务的轮次才用得上，不再每轮都发
+ */
+export function ideMcpPointer(servers: IdeMcpServer[] | undefined): string[] {
+  if (!servers?.length) return []
+  return [
+    `   ${servers.map((s) => `\`${s.server}\``).join('、')} 是 JetBrains IDE 自带的 MCP 服务：参数照每个工具自己的参数表传，第一次调它时面板会补上调用规矩（项目路径、转调写法）；报参数错时照报错和面板给的参数表改，不要原样或只换查询词重试。`,
+  ]
+}
+
 /** 转调的例子从参数表里挑：第一个带枚举的必填参数的工具（lua_code 的 action），没有参数表就不举例 */
 function routerExample(routers: IdeMcpServer[]): string {
   for (const s of routers)

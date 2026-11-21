@@ -11,6 +11,7 @@ export const EN_MODEL_SUPPORT: Record<string, string> = {
   '只在某个情境才用得上的细则（例如弱模型第一次改文件前还没列计划），不常驻在角色设定里，到那一刻才推给模型；每条在一个对话里只推一次，只提醒不拦截':
     'Detailed rules that only matter in a certain situation (for example a weak model about to edit a file with no plan yet) are not kept in the role setup; the panel hands them to the model at that moment. Each is pushed once per conversation and only reminds, never blocks',
   先列实现计划: 'Plan before coding',
+  'IDE 服务的调用规矩': 'IDE service call rules',
   钩子档位: 'Hook tier',
   '和全局档位取更严的；项目里单独选了档位时以项目为准，钩子页逐个改过的开关也照旧优先':
     'The stricter of this and the global tier is used; a tier chosen for a project wins, and hooks switched one by one keep their setting',

@@ -7,15 +7,14 @@ import { z } from 'zod'
 import { HOOK_TIERS } from '../hooks/builtins.ts'
 import { HookDef, HookEventName, type HookDefInput } from '../hooks/defs.ts'
 import { endpoint, shaped } from './define.ts'
-import { MODEL_TIER_NAMES } from '../models/catalog.ts'
-import { SUPPORT_KEYS } from '../models/support.ts'
+import { SUPPORT_KEYS, SUPPORT_TIERS } from '../models/support.ts'
 
 const Tier = z.enum(HOOK_TIERS)
 const Ok = z.object({ ok: z.literal(true) })
 /** 钩子定义按界面编辑时的样子（z.input）传，服务端 checkHook 再逐项查 */
 const DefInput = shaped<HookDefInput>(z.looseObject({}))
 const ParamValue = z.union([z.array(z.string()), z.number()])
-const TierName = z.enum(MODEL_TIER_NAMES)
+const TierName = z.enum(SUPPORT_TIERS)
 const SupportKeyName = z.enum(SUPPORT_KEYS)
 const SupportValue = z.union([z.string(), z.number()])
 

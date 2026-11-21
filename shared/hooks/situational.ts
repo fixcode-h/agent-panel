@@ -1,6 +1,7 @@
 import { t } from '../i18n.ts'
 import type { Task } from '../schema.ts'
 import type { ResolvedSupport } from '../models/support.ts'
+import { ideMcpLines, type IdeMcpServer } from '../mcp-catalog/code-index.ts'
 import { activePlan } from '../plan/index.ts'
 import { globToRegExp } from '../lessons.ts'
 import type { ToolKind } from './defs.ts'
@@ -23,6 +24,8 @@ export interface SituationCtx {
   support?: ResolvedSupport
   /** 这个对话有计划工具（set_plan）：只给这样的对话推和计划有关的规则 */
   plans: boolean
+  /** 项目接的 JetBrains IDE MCP 服务（server/mcp-catalog/code-index.ts 的 ideMcpServersFor）；没有为空 */
+  ideMcp?: IdeMcpServer[]
 }
 
 export interface SituationalRule {
@@ -31,7 +34,7 @@ export interface SituationalRule {
   name: () => string
   when: {
     event: SituationCtx['event']
-    /** 工具的类别；不写是任意类别 */
+    /** 工具的类别；不写是改文件、跑命令、读文件，any 是任意工具（MCP 工具多半归在这里） */
     kinds?: ToolKind[]
     /** 工具名（去掉 MCP 前缀后的）匹配；不写不限 */
     tool?: RegExp
@@ -45,13 +48,22 @@ export interface SituationalRule {
    * 这一轮有没有可能用上（只看这一轮开跑时就定了的事：扶持档位、有没有计划工具）：一条都用不上时不装钩子，
    * 普通对话每次工具调用不多问一次面板。不写是一直可能
    */
-  active?: (c: Pick<SituationCtx, 'support' | 'plans'>) => boolean
+  active?: (c: Pick<SituationCtx, 'support' | 'plans' | 'ideMcp'>) => boolean
   /** 额外的条件：只看面板状态 */
   need?: (c: SituationCtx) => boolean
   /** 推给模型的一段话 */
   text: (c: SituationCtx) => string
   /** 一个对话里最多推几次，默认 1 */
   times?: number
+}
+
+/** 这次调的是不是某个 IDE 服务的工具：MCP 工具名是 mcp__<服务>__<工具>，服务名里的 - 可能被 CLI 换成 _ */
+function ideServerOf(c: SituationCtx): IdeMcpServer | undefined {
+  const name = c.facts.tool?.name ?? ''
+  if (!name.startsWith('mcp__')) return undefined
+  const server = name.slice(5, name.lastIndexOf('__'))
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, '_')
+  return c.ideMcp?.find((s) => norm(s.server) === norm(server))
 }
 
 export const SITUATIONAL_RULES: SituationalRule[] = [
@@ -65,6 +77,22 @@ export const SITUATIONAL_RULES: SituationalRule[] = [
     text: () =>
       '【面板】你要开始改文件了，但这个对话还没有计划。这一轮的模型按弱档加强扶持：不论几步，写代码前都先用 set_plan 列出实现计划（目标与验收、要改的文件、每步改完跑什么验证），再接着改。',
   },
+  {
+    // JetBrains IDE 服务的调用规矩（原来常驻在「搜索」一节，code-index.ts 的 ideMcpLines）：只在第一次调它的工具时推，
+    // 参数照它报的参数表生成。这次调用要是已经传错了，报错后「参数传错」提醒（arg-table-hint）会再给参数表
+    id: 'ide-mcp-rules',
+    name: () => t('IDE 服务的调用规矩'),
+    when: { event: 'tool.before', kinds: ['any'] },
+    active: (c) => !!c.ideMcp?.length,
+    need: (c) => !!ideServerOf(c),
+    text: (c) => {
+      const s = ideServerOf(c)
+      return [
+        '【面板】你第一次调 JetBrains IDE 的 MCP 服务，先看一遍调用规矩（之后不再重复）：',
+        ...ideMcpLines(s ? [s] : []).map((l) => l.replace(/^ {3}/, '')),
+      ].join('\n')
+    },
+  },
 ]
 
 // MCP 工具名是 mcp__<服务>__<工具>：按最后一段比
@@ -72,7 +100,7 @@ const toolName = (f: HookFacts) => f.tool?.panel || f.tool?.name.split('__').at(
 
 /** 这一轮可能用上的规则（见 SituationalRule.active） */
 export const activeSituational = (
-  c: Pick<SituationCtx, 'support' | 'plans'>,
+  c: Pick<SituationCtx, 'support' | 'plans' | 'ideMcp'>,
   rules: SituationalRule[] = SITUATIONAL_RULES,
 ) => rules.filter((r) => !r.active || r.active(c))
 
@@ -81,7 +109,7 @@ export function situationMatches(r: SituationalRule, c: SituationCtx): boolean {
   const w = r.when
   if (w.event !== c.event || !c.facts.tool) return false
   const tool = c.facts.tool
-  if (w.kinds && !w.kinds.includes(tool.kind)) return false
+  if (w.kinds && !w.kinds.includes('any') && !w.kinds.includes(tool.kind)) return false
   if (w.tool && !w.tool.test(toolName(c.facts))) return false
   if (w.paths) {
     const files = tool.paths.length ? tool.paths : [tool.path]

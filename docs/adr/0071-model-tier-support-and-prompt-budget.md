@@ -35,4 +35,4 @@
 - `server/hooks/dispatch.ts`：`on()` 带 `boost`；推送教训的条数、计划提醒的阈值按扶持取；情境规则和推送教训走同一个工具前补说明。
 - `server/hooks/situational.ts`：按对话记推过几次（`taskMap`）、记日志和「最近触发」。
 - 评测用例 `scripts/real-cli/eval-tasks.mjs` 的 `plan-first`：在弱模型上跑，只按 `task.plans` 判有没有先列计划。
-- 规则搬迁（`ideMcpLines` 的 JetBrains 调用规矩、「先用现成的」细则、Bug 修复方案的复用检查）是下一步：搬进情境规则后，基础提示词里只留一行原则，预算基线随之收紧。
+- 规则搬迁（2026-11-21，A、B 合进 dev 之后）：`ideMcpLines` 的 JetBrains 调用规矩改成情境规则 `ide-mcp-rules`（第一次调 IDE 服务的工具时推），「搜索」一节只留一行 `ideMcpPointer`；执行角色「先用现成的」里搜一次、写复用检查的细则交给模块入口推送（`server/hooks/module-push.ts` 的新增公开函数提醒），角色里只留找多远的原则。Bug 修复方案阶段的复用检查本来就只在那一阶段发，没有再搬。

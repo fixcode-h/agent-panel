@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { t } from '../i18n.ts'
 import type { ModelTier } from '../clis.ts'
 import { HOOK_TIERS, type HookTier } from '../hooks/builtins.ts'
-import { MODEL_TIER_NAMES } from './catalog.ts'
 
 /**
  * 按模型档位加强扶持（设计稿 designs/Agent写代码能力-提升与扩展分析.md 的 C1）：
@@ -94,7 +93,12 @@ export const SUPPORT_ITEMS: SupportItem[] = [
   },
 ]
 
-const ModelTierName = z.enum(MODEL_TIER_NAMES)
+/**
+ * 档位名单独写一份，不从 catalog.ts 取：hooks/defs.ts 引用这里，契约探查（e2e 17）用纯 node 加载，
+ * catalog.ts 会连带 import catalog.json，纯 node 没有 import 属性就报错
+ */
+export const SUPPORT_TIERS = ['high', 'medium', 'low'] as const satisfies readonly ModelTier[]
+const ModelTierName = z.enum(SUPPORT_TIERS)
 
 /** 存在 hooks.json 里：总开关，和用户按档位改过的值（没改过的不记，取 defaults） */
 export const ModelSupportData = z.object({
@@ -209,7 +213,7 @@ export function supportView(data: ModelSupportData | undefined) {
       choices: it.choices?.map((c) => ({ id: c.id, label: c.label() })),
       min: it.min,
       max: it.max,
-      values: Object.fromEntries(MODEL_TIER_NAMES.map((tier) => [tier, supportValue(data, tier, it.key)])) as Record<
+      values: Object.fromEntries(SUPPORT_TIERS.map((tier) => [tier, supportValue(data, tier, it.key)])) as Record<
         ModelTier,
         SupportValue
       >,

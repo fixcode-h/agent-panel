@@ -48,12 +48,15 @@ interface Scenario {
   sub?: boolean
   vcs?: 'git' | 'p4'
   ue?: boolean
+  /** 项目接了 JetBrains IDE 的 MCP 服务（Lua 项目常见） */
+  ide?: boolean
 }
 
 const SCENARIOS: Scenario[] = [
   { id: '顶层·Git' },
   { id: '顶层·P4', vcs: 'p4' },
   { id: '顶层·UE', ue: true },
+  { id: '顶层·UE·IDE', ue: true, ide: true },
   { id: '子对话·Git', sub: true },
   { id: '子对话·UE', sub: true, ue: true },
 ]
@@ -76,6 +79,17 @@ async function turnPrompt(agents: Agent[], agentId: string, s: Scenario): Promis
     newId: () => `id${++n}`,
     policy: { push: 'ask', tools: [], vcs: s.vcs ?? 'git' },
     ...(s.ue ? { ueBuild: { role: s.sub ? 'child' : 'parent', request: async () => ({ ok: true, info: '' }) } } : {}),
+    ...(s.ide
+      ? {
+          ideMcpServers: [
+            {
+              server: 'idea',
+              router: true,
+              params: { lua_code: [{ name: 'action', type: 'search | files | outline', required: true }] },
+            },
+          ],
+        }
+      : {}),
     runAgent: async (call) => {
       if (!prompt && !call.step) prompt = call.fresh ?? call.prompt
       return { ok: true, text: '好了' }

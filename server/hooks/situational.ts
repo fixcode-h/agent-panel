@@ -2,6 +2,7 @@ import type { Task } from '../../shared/schema.ts'
 import type { HookFacts } from '../../shared/hooks/index.ts'
 import type { ToolKind } from '../../shared/hooks/defs.ts'
 import type { ResolvedSupport } from '../../shared/models/support.ts'
+import type { IdeMcpServer } from '../../shared/mcp-catalog/code-index.ts'
 import { activeSituational, pickSituational } from '../../shared/hooks/situational.ts'
 import { taskMap } from '../runtime/task-state.ts'
 import { taskLog } from '../tasks/log.ts'
@@ -18,6 +19,7 @@ export interface SituationalCtx {
   task: Task
   support?: ResolvedSupport
   plans: boolean
+  ideMcp?: IdeMcpServer[]
   /** 一次最多推几条（按模型档位的「情境推送条数」） */
   limit: number
   note: (event: 'tool.before' | 'tool.after', detail: string) => void
@@ -28,7 +30,7 @@ export interface SituationalCtx {
  * kinds 是这几条规则关心的工具类别，按事件分开：能按类别过滤的 CLI 只对这几类触发
  */
 export function situationalPush(c: SituationalCtx) {
-  const rules = activeSituational({ support: c.support, plans: c.plans })
+  const rules = activeSituational({ support: c.support, plans: c.plans, ideMcp: c.ideMcp })
   if (!rules.length) return undefined
   const ALL: ToolKind[] = ['edit', 'shell', 'read']
   const kinds = (event: 'tool.before' | 'tool.after') => [
@@ -39,7 +41,7 @@ export function situationalPush(c: SituationalCtx) {
     const mine = told.get(c.task.id) ?? new Map<string, number>()
     told.set(c.task.id, mine)
     const hits = pickSituational(
-      { event, facts, task: c.task, support: c.support, plans: c.plans },
+      { event, facts, task: c.task, support: c.support, plans: c.plans, ideMcp: c.ideMcp },
       mine,
       c.limit,
       rules,

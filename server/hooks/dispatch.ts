@@ -26,6 +26,7 @@ import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts
 import { DATA_DIR } from '../store.ts'
 import { knowledgePush } from './knowledge-push.ts'
 import { situationalPush } from './situational.ts'
+import { ideMcpServersFor } from '../mcp-catalog/code-index.ts'
 import type { ResolvedSupport } from '../../shared/models/support.ts'
 import { PUSH_RULES } from '../../shared/knowledge/push.ts'
 import { readHooks } from './store.ts'
@@ -262,6 +263,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         task: c.task,
         support: sup,
         plans: !!c.call.orch.plans,
+        // 项目接的 IDE 服务：只读配置和缓存（这一轮拼提示词时已经问过）
+        ideMcp: c.project.id ? await ideMcpServersFor(c.project, c.cwd).catch(() => []) : [],
         limit: pushLimit,
         note: (event, detail) => noteBuiltin('situational-rules', event, 'context', detail),
       })

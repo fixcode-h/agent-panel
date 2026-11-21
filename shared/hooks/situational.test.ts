@@ -63,3 +63,20 @@ test('情境规则：按路径和报错匹配', () => {
   assert.equal(situationMatches(r, ctx({ event: 'tool.after', facts: f('Source/A.cpp', 'ok', false) })), false)
   assert.equal(situationMatches(r, ctx({ event: 'tool.after', facts: f('Source/A.cpp', 'error C3861') })), false)
 })
+
+test('情境规则：第一次调 JetBrains IDE 服务的工具时推它的调用规矩（参数照缓存的参数表），别的 MCP 不推', () => {
+  const ide = SITUATIONAL_RULES.find((r) => r.id === 'ide-mcp-rules')!
+  const call = (name: string): HookFacts => ({ tool: { kind: 'any', name, input: {}, path: '', paths: [] } })
+  const ideMcp = [
+    {
+      server: 'idea',
+      router: true,
+      params: { lua_code: [{ name: 'action', type: 'search | files', required: true }] },
+    },
+  ]
+  const c = ctx({ facts: call('mcp__idea__lua_code'), ideMcp: ideMcp as never })
+  assert.ok(situationMatches(ide, c))
+  assert.match(ide.text(c), /execute_tool[\s\S]*lua_code --action search/)
+  assert.equal(situationMatches(ide, ctx({ facts: call('mcp__uetovs__search_lua'), ideMcp: ideMcp as never })), false)
+  assert.equal(situationMatches(ide, ctx({ facts: call('mcp__idea__lua_code') })), false)
+})

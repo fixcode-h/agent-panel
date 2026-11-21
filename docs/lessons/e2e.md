@@ -43,3 +43,9 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, server/exec/worktre
 - 规则：假 CLI 连面板工具走 `panelMcpUrl()`（启动时记下，有 `AGENT_PANEL_HOOK_URL` 就按它认），别在一轮中途再读 `.mcp.json`：同目录里别的对话收尾、新加条目会让「最后一项」不是自己的。等状态的 waitFor 带 `describe`。
 - 起因：出包 CI `07-local`「预热完停在等下一句」偶发超时（PR #227），dev 上同一提交是过的。
 - 防线：`fake-cli.mjs` 的 `panelMcpUrl`。
+
+## 契约和钩子定义链上的 shared 文件不 import 带 JSON 的模块
+
+- 规则：e2e 17 用纯 node 加载 `shared/api-contract/` 的探查，链上的文件（`shared/hooks/defs.ts` 这类）只要有一个 import 了会连带 `import x from './*.json'` 的模块（`shared/models/catalog.ts`、`shared/clis.ts`），整个分片就报 `ERR_IMPORT_ATTRIBUTE_MISSING`。要用里面的常量（档位名之类）就在自己文件里写一份或只 `import type`；改了契约链上的 import 后本地跑一次 `node scripts/e2e.mjs 17-contracts`。
+- 起因：6cca237 让 `hooks/defs.ts` → `models/support.ts` → `models/catalog.ts`（带 catalog.json），dev 的 contracts 分片挂了，包 B 的线程发现的。
+- 防线：`scripts/e2e/17-contracts.mjs`。
