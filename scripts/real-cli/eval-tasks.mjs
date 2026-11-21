@@ -175,6 +175,33 @@ export const EVAL_TASKS = [
       ),
   },
   {
+    // 先用现成的接口（用户 2026-11-21）：仓库里已经有算单词数的函数，模块文档写了入口，看它会不会另写一份
+    id: 'reuse-existing',
+    title: '用现成的函数',
+    prompt:
+      '在 src/slug.js 加 slugStats(title)，返回 { slug, words }：slug 是 slugify 的结果，words 是标题里的单词数，补测试。',
+    files: {
+      'src/text.js': `/** 文本工具：别的模块要数单词、截断文本都从这里取 */
+export function wordCount(s) {
+  return s.trim() ? s.trim().split(/\\s+/).length : 0
+}
+`,
+      'docs/modules/text/README.md':
+        '# text：文本工具\n\n- 状态：documented\n- 职责：数单词、截断这类文本处理，别的模块都从这里取\n- 源码：`src/text.js`\n- 入口：`src/text.js` 的 `wordCount`\n',
+    },
+    check: (dir) => {
+      const slug = readFileSync(path.join(dir, 'src/slug.js'), 'utf8')
+      return all(
+        testsPass(dir),
+        probe(
+          dir,
+          "import { slugStats } from './src/slug.js'; const r = slugStats('Hello Big World'); if (r.slug !== 'hello-big-world' || r.words !== 3) process.exit(1)",
+        ),
+        /from ['"]\.\/text\.js['"]/.test(slug) || '没有用 src/text.js 的 wordCount，另写了一份',
+      )
+    },
+  },
+  {
     id: 'read-only',
     title: '只读问答',
     prompt: '解释一下 src/slug.js 的 slugify 是怎么处理空格和大小写的。只回答，不要改任何文件。',
