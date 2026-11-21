@@ -14,8 +14,8 @@ export const EN_HOOKS: Record<string, string> = {
   '往盘符根目录、面板的数据目录里写文件时拒绝，说明临时文件该放到项目的 .tmp/ 或系统临时目录':
     "Refuse writes to a drive's root folder or the panel's data folder, and point temp files to the project's .tmp/ or the system temp folder",
   推送项目教训和经验: 'Push project lessons and experience',
-  '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来':
-    'Before a command runs or a file is edited, give the model the project lessons that match it; before a search, hand over matching project experience (locations, names) directly; after a tool fails, look up fixes recorded for similar errors. Each entry is pushed once per conversation and tagged under that line in the conversation',
+  '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法；第一次读或改某个模块的文件时推这个模块的入口和模块文档，改文件要新增公开函数时提醒先搜有没有现成的。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来':
+    'Before a command runs or a file is edited, give the model the project lessons that match it; before a search, hand over matching project experience (locations, names) directly; after a tool fails, look up fixes recorded for similar errors; the first time a file of a module is read or edited, push the entry points and doc of that module, and when an edit adds a public function, remind it to search for an existing one first. Each entry is pushed once per conversation and tagged under that line in the conversation',
   '输出要是一个 JSON 对象': 'The output must be a JSON object',
   '{event} 不支持这些字段：{list}': '{event} does not support these fields: {list}',
   '{key} 要是字符串': '{key} must be a string',

@@ -6,6 +6,7 @@
  * 结果一律先 grep 整个目录（用户 2026-11-14 报：查 GM 为什么无效时先 grep 失败一次，追问后用 search_lua 一下定位）。
  * 所以面板认出项目里的这类工具，把服务名、工具名和一句说明直接写进提示词的「搜索（这个项目）」一节。
  */
+import { CODE_TOOL_USES, knownCodeTool } from './code-tools.ts'
 import { hasParam, type ParamBrief } from './tool-params.ts'
 
 /** 一个代码索引工具：服务名 + 工具名，desc 是工具说明的第一句（看得出管哪种语言） */
@@ -25,6 +26,8 @@ const WRITE_WORD = /(write|edit|create|delete|remove|rename|build|compile|run|ex
 const LSP_NAME = /^(get_?)?(symbols?|definitions?|references?|find_references|workspace_symbols?|document_symbols?)$/i
 
 export function isCodeIndexTool(name: string): boolean {
+  // 登记过用途的先认（code-tools.ts）：get_members、suggest_include、lua_code 这些名字正则认不出来
+  if (knownCodeTool(name)) return true
   if (WRITE_WORD.test(name)) return false
   if (LSP_NAME.test(name)) return true
   return SEARCH_WORD.test(name) && INDEX_WORD.test(name)
@@ -111,7 +114,24 @@ function routerExample(routers: IdeMcpServer[]): string {
   return ''
 }
 
-/** 「搜索（这个项目）」一节的第一步：有认出的工具就逐个列出，没认出也提醒「工具列表里有就先用」 */
+/** 一个工具在提示词里的那一行：登记过用途的写「什么时候用」，陌生服务的写它说明的第一句 */
+const toolLine = (t: CodeIndexTool) => {
+  const why = knownCodeTool(t.tool)?.when ?? t.desc
+  return `   - ${t.server} 服务的 \`${t.tool}\`${why ? `：${why}` : ''}`
+}
+
+/** 按用途分组排序：先找、再看签名、再查引用、最后 include 和配置；没登记的陌生工具归「找」一组 */
+function groupedLines(tools: CodeIndexTool[]): string[] {
+  const out: string[] = []
+  for (const g of CODE_TOOL_USES) {
+    const inGroup = tools.filter((t) => (knownCodeTool(t.tool)?.use ?? 'find') === g.use)
+    if (!inGroup.length) continue
+    out.push(`   ${g.label}：`, ...inGroup.map((t) => `  ${toolLine(t)}`))
+  }
+  return out
+}
+
+/** 「搜索（这个项目）」一节的第一步：有认出的工具就按用途分组列出，没认出也提醒「工具列表里有就先用」 */
 export function codeIndexLines(tools: CodeIndexTool[] | undefined): string[] {
   const head =
     '1. 先用代码索引 MCP 工具：按函数名、类名、变量名、GM 命令、报错里的标识符找代码时，先用它查到文件和行号，再直接读那一处；它没命中、不覆盖这种语言，或者要搜的是任意文本（日志原文、注释）时，才往下用 rg。'
@@ -120,9 +140,16 @@ export function codeIndexLines(tools: CodeIndexTool[] | undefined): string[] {
       head,
       '   这个项目没认出代码索引工具；工具列表里有名字像 `search_symbols`、`search_lua`、`find_references` 的 MCP 工具时照样先用（只看得到名字、看不到说明的，先加载它的说明再判断）。',
     ]
-  return [
+  const lines = [
     head,
     '   这个项目接了这些（只看得到名字、看不到说明的，先加载它的说明再用，不要因此改用 rg）：',
-    ...tools.map((t) => `   - ${t.server} 服务的 \`${t.tool}\`${t.desc ? `：${t.desc}` : ''}`),
+    ...groupedLines(tools),
   ]
+  // 有看签名 / include 类的工具时点明用途：写调用前核对，不凭记忆写接口（CODING_TEXT 的「不凭记忆写接口」落到具体工具上）
+  const uses = new Set(tools.map((t) => knownCodeTool(t.tool)?.use))
+  if (uses.has('shape') || uses.has('deps'))
+    lines.push(
+      '   写调用、加 include 之前先用「看结构和签名」「include 和模块依赖」里的工具核对函数名、参数和头文件，不凭记忆写。',
+    )
+  return lines
 }
