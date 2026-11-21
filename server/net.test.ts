@@ -551,3 +551,31 @@ test('代理探测：能转发的算可用，不握手的不算', async () => {
 test('收尾：删掉测试用的数据目录', async () => {
   await rm(data, { recursive: true, force: true })
 })
+
+test('GitHub API 自动带令牌：只给 api.github.com，调用方自己带了就不覆盖', async () => {
+  const { githubToken } = await import('./net.ts')
+  const old = process.env.GITHUB_TOKEN
+  process.env.GITHUB_TOKEN = 'env-token'
+  try {
+    assert.equal(await githubToken('https://api.github.com/repos/o/r/releases'), 'env-token')
+    assert.equal(await githubToken('https://cdn.jsdelivr.net/gh/o/r@main/a.json'), undefined, '第三方不给令牌')
+    assert.equal(await githubToken('https://mirror.example.com/https://api.github.com/x'), undefined, '镜像不给令牌')
+  } finally {
+    if (old === undefined) delete process.env.GITHUB_TOKEN
+    else process.env.GITHUB_TOKEN = old
+  }
+  const seen: (string | null)[] = []
+  const deps: NetDeps = {
+    direct: async (_url, init) => {
+      seen.push(new Headers(init.headers).get('authorization'))
+      return new Response('ok')
+    },
+    viaProxy: async () => new Response('ok'),
+    plan: async () => directPlan,
+    discover: async () => [],
+    token: async () => 'gh-token',
+  }
+  await netFetchWith(deps, 'https://api.github.com/x')
+  await netFetchWith(deps, 'https://api.github.com/x', { headers: { Authorization: 'Bearer mine' } })
+  assert.deepEqual(seen, ['Bearer gh-token', 'Bearer mine'])
+})

@@ -46,6 +46,11 @@ export interface Integration {
     ready?: RegExp
     /** 没登录时给用户看的一句话；工具自己的输出多半是英文 */
     hint?: string
+    /**
+     * 打印当前登录令牌的命令（stdout 一行令牌）和令牌能发往的主机：面板自己访问这些主机时带上它。
+     * 例：gh 授权后，面板查更新、下载更新包走 GitHub API 的配额从每小时 60 次升到 5000 次
+     */
+    printToken?: { args: string[]; hosts: string[] }
   }
   /** 每条命令都带上的环境变量（关掉分页器、更新提示等） */
   env?: Record<string, string>
@@ -151,6 +156,8 @@ const github: Integration = {
     login: ['auth', 'login', '--web', '--hostname', 'github.com', '--git-protocol', 'https'],
     token: ['auth', 'login', '--with-token', '--hostname', 'github.com'],
     logout: ['auth', 'logout', '--hostname', 'github.com', '--user', '{account}'],
+    // 只发给 API：镜像、jsDelivr 是第三方，原地址的下载也不需要令牌
+    printToken: { args: ['auth', 'token', '--hostname', 'github.com'], hosts: ['api.github.com'] },
     account: /Logged in to \S+ account (\S+)/,
     code: /one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i,
     ready: /Press Enter/i,

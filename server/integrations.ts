@@ -178,6 +178,8 @@ const findUrl = (text: string) =>
 const LOGIN_TIMEOUT = 5 * 60_000
 
 async function startLogin(id: string): Promise<IntegrationLoginJob> {
+  // 换了账号或退出：面板自己带的令牌也要重新取
+  clearIntegrationToken()
   const def = getIntegration(id)
   if (!def) throw new Error(t('没有这个授权工具'))
   const running = logins.get(id)
@@ -280,6 +282,8 @@ const cancelLogin = (id: string) => {
 // ---- 用 token 授权 / 退出 ----
 
 async function loginWithToken(id: string, token: string): Promise<IntegrationView> {
+  // 换了账号或退出：面板自己带的令牌也要重新取
+  clearIntegrationToken()
   const def = getIntegration(id)
   if (!def) throw new Error(t('没有这个授权工具'))
   if (!def.auth.token) throw new Error(t('{name} 不支持用 Token 授权', { name: def.name }))
@@ -311,6 +315,8 @@ async function loginWithToken(id: string, token: string): Promise<IntegrationVie
 }
 
 async function logout(id: string): Promise<IntegrationView> {
+  // 换了账号或退出：面板自己带的令牌也要重新取
+  clearIntegrationToken()
   const def = getIntegration(id)
   if (!def) throw new Error(t('没有这个授权工具'))
   const now = await detect(def).catch(() => null)
@@ -473,4 +479,41 @@ export function integrationsApi() {
       '/:id/logout',
       guard(async (c) => c.json(await logout(c.req.param('id')))),
     )
+}
+
+/** 令牌缓存：每次请求都起一个 gh 进程太慢；拿不到时短一点再试（用户可能刚授权） */
+const tokenCache = new Map<string, { at: number; token: string; account: string }>() // 模块状态：缓存，丢了重读
+const TOKEN_TTL = 10 * 60_000
+const TOKEN_MISS_TTL = 60_000
+
+/**
+ * 面板自己访问 host 时能带的令牌：取自声明了 printToken 且包含这个主机的已授权工具（如 gh）。
+ * 返回令牌和来自哪个工具、哪个账号；没有就是 undefined。令牌只在内存里，不落盘、不写日志。
+ */
+export async function integrationToken(host: string) {
+  const def = INTEGRATIONS.find((d) => d.auth.printToken?.hosts.includes(host))
+  if (!def?.auth.printToken) return undefined
+  const hit = tokenCache.get(def.id)
+  const now = Date.now()
+  if (hit && now - hit.at < (hit.token ? TOKEN_TTL : TOKEN_MISS_TTL))
+    return hit.token ? { token: hit.token, tool: def.name, account: hit.account } : undefined
+  let token = ''
+  let account = ''
+  const cmd = commandPath(def)
+  if (cmd) {
+    const r = await capture(cmd, def.auth.printToken.args, homedir(), quietEnv(def), 8_000).catch(() => null)
+    const line = r?.code === 0 ? r.stdout.trim().split('\n')[0].trim() : ''
+    // 只认像令牌的一行（没有空格），别把报错文字当令牌发出去
+    if (/^\S{20,}$/.test(line)) {
+      token = line
+      account = (await readAuth(def).catch(() => null))?.account ?? ''
+    }
+  }
+  tokenCache.set(def.id, { at: now, token, account })
+  return token ? { token, tool: def.name, account } : undefined
+}
+
+/** 退出登录、重新授权后马上生效 */
+export function clearIntegrationToken() {
+  tokenCache.clear()
 }

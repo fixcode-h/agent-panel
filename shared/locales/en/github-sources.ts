@@ -45,4 +45,10 @@ export const EN_GITHUB_SOURCES: Record<string, string> = {
   '下载来源：{source}': 'Downloading from: {source}',
   '已换掉 {source}：{error}': 'Gave up on {source}: {error}',
   超时: 'Timed out',
+  '经 api.github.com 取仓库文件；用环境变量里的令牌，每小时 5000 次':
+    'Fetch repository files through api.github.com; using the token from the environment, 5000 requests per hour',
+  '经 api.github.com 取仓库文件；已用 {tool} 登录（{account}），每小时 5000 次':
+    'Fetch repository files through api.github.com; signed in with {tool} ({account}), 5000 requests per hour',
+  '经 api.github.com 取仓库文件；已用 {tool} 登录，每小时 5000 次':
+    'Fetch repository files through api.github.com; signed in with {tool}, 5000 requests per hour',
 }

@@ -7,7 +7,8 @@ import { t } from '../shared/i18n.ts'
 import { detectProxies, netFetchDirect, netReason } from './net.ts'
 import { testSources } from './github-sources/index.ts'
 import { SAMPLE_RAW_URL } from '../shared/github-sources/registry.ts'
-import { netContract as N } from '../shared/api-contract/net.ts'
+import { netContract as N, type GithubAuth } from '../shared/api-contract/net.ts'
+import { integrationToken } from './integrations.ts'
 import { currentShell, detectShells } from './shells.ts'
 
 export function envApi(detect = detectProxies) {
@@ -17,6 +18,16 @@ export function envApi(detect = detectProxies) {
   // fresh=1 重新检测
   app.get('/shells', async (c) => c.json(await detectShells(c.req.query('fresh') === '1')))
   app.get('/net/proxy/detect', async (c) => c.json({ proxies: await detect() }))
+  // 只看本机：环境变量或跑一次 gh auth token（有缓存），不访问 GitHub
+  app.get(N.githubAuth.path, async (c) => {
+    if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) return c.json({ source: 'env' } satisfies GithubAuth)
+    const hit = await integrationToken('api.github.com').catch(() => undefined)
+    return c.json(
+      (hit
+        ? { source: 'tool', tool: hit.tool, account: hit.account || undefined }
+        : { source: 'none' }) satisfies GithubAuth,
+    )
+  })
   app.post(N.testGithubSources.path, async (c) => {
     const body = N.testGithubSources.body.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return c.json({ error: t('检测下载来源的参数不对') }, 400)

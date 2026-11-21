@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Loader2, Plus, Radar, Trash2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
@@ -10,7 +10,7 @@ import {
   type GithubSourceSetting,
   type ResolvedSource,
 } from '@shared/github-sources/registry'
-import { netContract as N, type GithubSourceTest } from '@shared/api-contract/net'
+import { netContract as N, type GithubAuth, type GithubSourceTest } from '@shared/api-contract/net'
 import { call } from '@/lib/api/call'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,24 @@ export function GithubSourcesGroup({
   const [draft, setDraft] = useState('')
   const [testing, setTesting] = useState(false)
   const [results, setResults] = useState<Record<string, GithubSourceTest>>({})
+  // GitHub API 带的是哪个令牌：只问本机（环境变量或 gh），不访问 GitHub，打开时问一次
+  const [auth, setAuth] = useState<GithubAuth>()
+  useEffect(() => {
+    call(N.githubAuth)
+      .then(setAuth)
+      .catch(() => setAuth(undefined))
+  }, [])
+  /** 「GitHub API」那一行的说明：登录了就写清用的哪个账号、配额多少 */
+  const descOf = (s: ResolvedSource) => {
+    if (s.def.id !== 'api' || !auth || auth.source === 'none') return s.def.desc()
+    if (auth.source === 'env') return t('经 api.github.com 取仓库文件；用环境变量里的令牌，每小时 5000 次')
+    return auth.account
+      ? t('经 api.github.com 取仓库文件；已用 {tool} 登录（{account}），每小时 5000 次', {
+          tool: auth.tool ?? '',
+          account: auth.account,
+        })
+      : t('经 api.github.com 取仓库文件；已用 {tool} 登录，每小时 5000 次', { tool: auth.tool ?? '' })
+  }
 
   const save = (next: ResolvedSource[]) => onChange(toSettingList(next))
   const move = (i: number, d: -1 | 1) => {
@@ -114,7 +132,7 @@ export function GithubSourcesGroup({
                   )}
                 </span>
                 <span className="truncate text-caption text-subtle" title={r && !r.ok ? r.error : undefined}>
-                  {r && !r.ok && r.error ? r.error : s.def.desc()}
+                  {r && !r.ok && r.error ? r.error : descOf(s)}
                 </span>
               </div>
               <div className="flex shrink-0 items-center">
