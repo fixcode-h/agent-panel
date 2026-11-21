@@ -269,7 +269,9 @@ async function runTask(task) {
   const end = await call('GET', `/tasks/${top.id}`)
   const err = (end.messages ?? []).findLast((m) => m.error)?.text?.split('\n')[0]
   const failed = end.status === 'failed' ? `对话失败：${err || '看面板里的报错'}` : ''
-  const ok = task.check(dir)
+  // 有的任务还要看面板记下的状态（计划、子对话），check 的第二个参数是这一组对话的完整记录
+  const full = task.needsTasks ? await Promise.all(briefs.map((b) => call('GET', `/tasks/${b.id}`))) : []
+  const ok = task.check(dir, { tasks: full })
   return {
     id: task.id,
     title: task.title,

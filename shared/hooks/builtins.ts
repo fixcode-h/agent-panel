@@ -303,6 +303,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
       ),
     tier: 'minimal',
   },
+  {
+    id: 'situational-rules',
+    event: 'tool.before',
+    name: () => t('情境规则'),
+    description: () =>
+      t(
+        '只在某个情境才用得上的细则（例如弱模型第一次改文件前还没列计划），不常驻在角色设定里，到那一刻才推给模型；每条在一个对话里只推一次，只提醒不拦截',
+      ),
+    tier: 'minimal',
+  },
 ]
 
 export const BUILTIN_HOOKS: BuiltinHook[] = DEFS.map((h) => ({ ...h, defaultOn: tierOn(DEFAULT_TIER, h) }))
@@ -311,14 +321,18 @@ type OnData = Pick<HooksData, 'builtins' | 'projects'> & Partial<Pick<HooksData,
 
 /**
  * 开关，按这个顺序取：这个项目单独设的 → 这个项目选的档位 → 全局单独设的 → 全局档位。
- * 项目选了档位就是「这个项目按这一档」，全局逐个改过的不再带进来
+ * 项目选了档位就是「这个项目按这一档」，全局逐个改过的不再带进来。
+ * boost 是按这一轮模型档位加强扶持给的档位（shared/models/support.ts）：只在落到全局档位时和它取更严的，
+ * 项目手动选的档位、逐个改过的开关都比它优先
  */
-export function builtinOn(data: OnData, h: BuiltinHook, projectId = '') {
+export function builtinOn(data: OnData, h: BuiltinHook, projectId = '', boost?: HookTier) {
   const mine = projectId ? data.projects[projectId]?.[h.id] : undefined
   if (mine !== undefined) return mine
   const pt = projectId ? data.projectTiers?.[projectId] : undefined
   if (pt) return tierOn(pt, h)
-  return data.builtins[h.id] ?? tierOn(data.tier ?? DEFAULT_TIER, h)
+  const global = data.tier ?? DEFAULT_TIER
+  const tier = boost && HOOK_TIERS.indexOf(boost) > HOOK_TIERS.indexOf(global) ? boost : global
+  return data.builtins[h.id] ?? tierOn(tier, h)
 }
 
 /** 不看逐个改过的开关时，这一层按档位该是什么：项目层看项目档位，没选跟全局 */

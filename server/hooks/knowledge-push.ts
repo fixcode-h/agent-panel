@@ -51,6 +51,8 @@ export interface KnowledgePushCtx {
   note: (event: 'tool.before' | 'tool.after', detail: string) => void
   /** 对话改了（标签加上了），推给页面 */
   changed: () => void
+  /** 一次最多推几条：按模型档位加强扶持时比默认多（shared/models/support.ts）；不给用 PUSH_RULES 的 */
+  maxItems?: number
 }
 
 const rel = (cwd: string, p: string) => {
@@ -83,7 +85,10 @@ export function knowledgePush(c: KnowledgePushCtx) {
   const deliver = (facts: HookFacts, event: 'tool.before' | 'tool.after', all: PushHit[], why: PushHit['why']) => {
     const seen = pushed.get(c.task.id) ?? new Set<string>()
     pushed.set(c.task.id, seen)
-    const hits = budgetHits(all.filter((h) => !seen.has(h.id)))
+    const hits = budgetHits(
+      all.filter((h) => !seen.has(h.id)),
+      c.maxItems,
+    )
     if (!hits.length) return ''
     for (const h of hits) seen.add(h.id)
     const ls = hits.filter((h) => h.kind === 'lesson').map((h) => h.id)

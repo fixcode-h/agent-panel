@@ -17,8 +17,10 @@ import {
   setBuiltinParam,
   setCliOff,
   setProjectBuiltin,
+  setModelSupport,
   setTier,
 } from './store.ts'
+import { supportView } from '../../shared/models/support.ts'
 import { watchTaskEvents } from './notify.ts'
 import { onTaskChange } from '../tasks/store.ts'
 import { getSettings } from '../settings.ts'
@@ -106,6 +108,7 @@ export function hooksApi(deps?: {
         })),
         // 按 CLI 关掉的事件
         cliOff: data.cliOff,
+        modelSupport: supportView(data.modelSupport),
       })
     })
     .put('/builtins/:id', async (c) => {
@@ -127,6 +130,12 @@ export function hooksApi(deps?: {
       if (tier === null && !projectId) return c.json({ error: t('参数不对') }, 400)
       await setTier(tier, projectId)
       return c.json({ ok: true })
+    })
+    .put('/model-support', async (c) => {
+      const p = await parse(c, H.setModelSupport.body)
+      if (!p.ok) return p.res
+      const error = await setModelSupport(p.data)
+      return error ? c.json({ error }, 400) : c.json({ ok: true })
     })
     .put('/plugins/:id', async (c) => {
       // 插件钩子的开关：默认开，只记关掉的（和内置钩子同一份 builtins，键是 plugin:<插件>:<钩子>）

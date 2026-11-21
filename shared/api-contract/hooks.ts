@@ -7,12 +7,17 @@ import { z } from 'zod'
 import { HOOK_TIERS } from '../hooks/builtins.ts'
 import { HookDef, HookEventName, type HookDefInput } from '../hooks/defs.ts'
 import { endpoint, shaped } from './define.ts'
+import { MODEL_TIER_NAMES } from '../models/catalog.ts'
+import { SUPPORT_KEYS } from '../models/support.ts'
 
 const Tier = z.enum(HOOK_TIERS)
 const Ok = z.object({ ok: z.literal(true) })
 /** 钩子定义按界面编辑时的样子（z.input）传，服务端 checkHook 再逐项查 */
 const DefInput = shaped<HookDefInput>(z.looseObject({}))
 const ParamValue = z.union([z.array(z.string()), z.number()])
+const TierName = z.enum(MODEL_TIER_NAMES)
+const SupportKeyName = z.enum(SUPPORT_KEYS)
+const SupportValue = z.union([z.string(), z.number()])
 
 export const BuiltinHookView = z.object({
   id: z.string(),
@@ -73,6 +78,25 @@ export const HooksView = z.object({
   ),
   /** 按 CLI 关掉的事件 */
   cliOff: z.record(z.string(), z.array(HookEventName)),
+  /** 按模型档位加强扶持（shared/models/support.ts 的 supportView）；老的服务端没有 */
+  modelSupport: z
+    .object({
+      enabled: z.boolean(),
+      items: z.array(
+        z.object({
+          key: SupportKeyName,
+          label: z.string(),
+          hint: z.string(),
+          kind: z.enum(['choice', 'number']),
+          choices: z.array(z.object({ id: z.string(), label: z.string() })).optional(),
+          min: z.number().optional(),
+          max: z.number().optional(),
+          values: z.record(TierName, SupportValue),
+          defaults: z.record(TierName, SupportValue),
+        }),
+      ),
+    })
+    .optional(),
 })
 
 export const HookCheckView = z.object({ errors: z.array(z.string()), warnings: z.array(z.string()) })
@@ -132,6 +156,18 @@ export const hooksContract = {
     method: 'PUT',
     path: '/hooks/builtins/:id/params',
     body: z.object({ key: z.string(), value: ParamValue }),
+    res: Ok,
+  }),
+  /** 按模型档位加强扶持：enabled 改总开关；tier + key 改一格，value 为 null 回到默认 */
+  setModelSupport: endpoint({
+    method: 'PUT',
+    path: '/hooks/model-support',
+    body: z.object({
+      enabled: z.boolean().optional(),
+      tier: TierName.optional(),
+      key: SupportKeyName.optional(),
+      value: SupportValue.nullable().optional(),
+    }),
     res: Ok,
   }),
   /** run：顺带真跑一次语法检查 */

@@ -25,6 +25,9 @@ import { isChatMode } from '../../shared/conv-mode.ts'
 import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts'
 import { DATA_DIR } from '../store.ts'
 import { knowledgePush } from './knowledge-push.ts'
+import { situationalPush } from './situational.ts'
+import type { ResolvedSupport } from '../../shared/models/support.ts'
+import { PUSH_RULES } from '../../shared/knowledge/push.ts'
 import { readHooks } from './store.ts'
 import { noteTrigger, runHook } from './run.ts'
 import { activePluginHooks, isPluginHook, runPluginHook } from '../plugins/contrib.ts'
@@ -80,6 +83,8 @@ export interface HookCallCtx {
   mark: (reason: string) => void
   /** 对话改了（推送项目知识时给工具行挂了标签），推给页面 */
   changed?: () => void
+  /** 按这一轮模型档位套用的扶持（shared/models/support.ts）；不给时和以前一样 */
+  support?: ResolvedSupport
 }
 
 const rel = (cwd: string, p: string) => {
@@ -208,13 +213,17 @@ export async function hookOptions(c: HookCallCtx): Promise<{
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
-  // 开关可以按项目单独设（覆盖全局，见 hook-builtins.ts）
+  // 开关可以按项目单独设（覆盖全局，见 hook-builtins.ts）；弱模型的扶持只在落到全局档位时往严里推
+  const sup = c.support
   const on = (id: string) =>
     builtinOn(
       data,
       BUILTIN_HOOKS.find((h) => h.id === id)!,
       c.project.id,
+      sup?.hookTier,
     )
+  // 一次最多推几条：按档位的「情境推送条数」，不少于面板默认
+  const pushLimit = Math.max(PUSH_RULES.maxItems, sup?.pushItems ?? 0)
   const who = identity(c)
   const base: Omit<HookInput, 'event'> = {
     task: { id: c.task.id, title: c.task.title, parent: !c.task.parentTaskId },
@@ -238,8 +247,19 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           experience: c.call.orch.experience ? () => c.call.orch!.experience!.list() : undefined,
           note: (event, detail) => noteBuiltin('push-lessons', event, 'context', detail),
           changed: () => c.changed?.(),
+          maxItems: pushLimit,
         })
       : undefined
+  // 情境规则（situational.ts）：到那一刻才推的细则
+  const situ = on('situational-rules')
+    ? situationalPush({
+        task: c.task,
+        support: sup,
+        plans: !!c.call.orch.plans,
+        limit: pushLimit,
+        note: (event, detail) => noteBuiltin('situational-rules', event, 'context', detail),
+      })
+    : undefined
   // 工具前的内置守卫，按这个顺序问，第一个拒绝的说了算（第四期的几个见 guards.ts）
   const guard = (id: string): GuardCtx => ({
     task: c.task,
@@ -269,11 +289,13 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   // 设置里按 CLI 关掉的事件（比如中转站上 Codex 的工具后）：内置的、自己的钩子都不装
   const off = new Set(data.cliOff[c.cliId] ?? [])
   const events: HookEventName[] = []
-  if (guards.length || know || mine('tool.before').length) events.push('tool.before')
+  if (guards.length || know || situ?.before.length || mine('tool.before').length) events.push('tool.before')
   // 计划没跟上提醒：只给有执行计划的对话（项目里的对话，不含子任务、Chat 页）
   const pace = on('plan-pace') && !!c.call.orch.plans
   const bigOut = on('big-output-hint') && builtinNumber(data, 'big-output-hint', 'chars') > 0
-  if (know || on('loop-hint') || pace || bigOut || mine('tool.after').length) events.push('tool.after')
+  // 情境规则里有工具后触发的（报了某类错）才装工具后
+  const situAfter = !!situ?.after.length
+  if (know || situAfter || on('loop-hint') || pace || bigOut || mine('tool.after').length) events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
   // 各事件关心哪几类工具：内置的守卫、提醒只看改文件和跑命令（guards.ts、plan-pace 的 WORK、loopHint、教训），
@@ -282,6 +304,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const hookTools: HookToolScope = {
     'tool.before': [
       ...(guards.length || know ? (['edit', 'shell'] as const) : []),
+      ...(situ?.before ?? []),
       // 读大文件守卫要看读文件工具；推送经验要看搜索（各家的搜索工具都归在读文件这一类）
       ...(guards.some(([id]) => id === 'big-read-guard') || know ? (['read'] as const) : []),
       ...userKinds('tool.before'),
@@ -289,6 +312,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     'tool.after': [
       // 推送教训：任何工具报错之后都看一眼报错
       ...(know ? (['edit', 'shell', 'read'] as const) : []),
+      ...(situ?.after ?? []),
       ...(bigOut ? (['shell', 'read'] as const) : []),
       ...(on('loop-hint') ? (['shell'] as const) : []),
       ...(pace ? (['edit', 'shell'] as const) : []),
@@ -474,13 +498,16 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       // 守卫和用户钩子都放行了才推送：被拒绝的调用不会执行，推了也白推
       const pushedText = know ? await know.before(facts) : ''
-      const ctx = [...(pushedText ? [pushedText] : []), ...u.context]
+      const situText = situ ? situ.push('tool.before', facts) : ''
+      const ctx = [...(pushedText ? [pushedText] : []), ...(situText ? [situText] : []), ...u.context]
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
     if (event === 'tool.after') {
       const ctx: string[] = []
       const lessonText = know ? await know.after(facts) : ''
       if (lessonText) ctx.push(lessonText)
+      const situHint = situ ? situ.push('tool.after', facts) : ''
+      if (situHint) ctx.push(situHint)
       const loop = on('loop-hint') ? loopHint(facts) : ''
       if (loop) ctx.push(loop)
       // 大输出提醒：每次调用最多两次，提醒多了就成了噪音
@@ -501,7 +528,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           c.task,
           facts.tool.kind,
           st,
-          builtinNumber(data, 'plan-pace', 'calls'),
+          // 弱模型的扶持把阈值往小里推（和参数取小的）
+          Math.min(builtinNumber(data, 'plan-pace', 'calls'), sup?.paceCalls ?? Infinity),
           builtinNumber(data, 'plan-pace', 'times'),
         )
         if (text) {

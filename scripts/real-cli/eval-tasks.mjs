@@ -175,6 +175,24 @@ export const EVAL_TASKS = [
       ),
   },
   {
+    // 按模型档位加强扶持（C1）+ 情境规则（D1）：弱模型（EVAL_MODEL 用 deepseek-flash 这类）改文件前要先列计划。
+    // 只看面板记下的计划（task.plans），不看回复里有没有写「实现计划」
+    id: 'plan-first',
+    title: '多处改动先列计划',
+    needsTasks: true,
+    prompt:
+      '在 src/math.js 加 median(xs)（空数组返回 0，偶数个取中间两个的平均），在 src/slug.js 加 isSlug(s) 判断是不是合法的 slug，两处都补测试，README 里各写一行用法。',
+    check: (dir, run) =>
+      all(
+        testsPass(dir),
+        probe(
+          dir,
+          "import { median } from './src/math.js'; import { isSlug } from './src/slug.js'; if (median([3,1,2]) !== 2 || median([1,2,3,4]) !== 2.5 || median([]) !== 0 || !isSlug('a-b') || isSlug('A B')) process.exit(1)",
+        ),
+        run.tasks.some((t) => t.plans?.length) || '没有一个对话列过计划',
+      ),
+  },
+  {
     id: 'read-only',
     title: '只读问答',
     prompt: '解释一下 src/slug.js 的 slugify 是怎么处理空格和大小写的。只回答，不要改任何文件。',

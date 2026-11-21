@@ -31,6 +31,7 @@ import { BuiltinParams } from './BuiltinParams'
 import { HookCliEvents } from './HookCliEvents'
 import { PluginHooksGroup } from './PluginHooksGroup'
 import { HookTierRow } from './HookTierRow'
+import { ModelSupportGroup } from './ModelSupportGroup'
 import { Select } from '@/components/ui/input'
 import { eventLabel } from './hook-labels'
 
@@ -176,6 +177,14 @@ export function HooksSection() {
           </Row>
         ))}
       </Group>
+      {/* 按模型档位加强扶持是全局的：看某个项目时不显示，免得以为能按项目设 */}
+      {!scope && view.modelSupport && (
+        <ModelSupportGroup
+          view={view.modelSupport}
+          busy={busy === 'support'}
+          onPatch={(p) => void act('support', () => hooksApi.setModelSupport(p))}
+        />
+      )}
       <PluginHooksGroup
         hooks={view.plugins ?? []}
         busy={busy}

@@ -24,6 +24,7 @@ import { EN_SHEETS } from './en/sheets.ts'
 import { EN_SHEET_LOOK } from './en/sheet-look.ts'
 import { EN_SPEECH } from './en/speech.ts'
 import { EN_HOOKS } from './en/hooks.ts'
+import { EN_MODEL_SUPPORT } from './en/model-support.ts'
 import { EN_CONFIG_SCAN } from './en/config-scan.ts'
 import { EN_PLUGIN_WRAP } from './en/plugin-wrap.ts'
 import { EN_CLI_MORE } from './en/cli-more.ts'
@@ -125,6 +126,7 @@ export const EN: Record<string, string> = {
   ...EN_ALERTS,
   ...EN_SPEECH,
   ...EN_HOOKS,
+  ...EN_MODEL_SUPPORT,
   ...EN_CONFIG_SCAN,
   ...EN_PLUGIN_WRAP,
   ...EN_CLI_MORE,

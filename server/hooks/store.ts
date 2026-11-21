@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { HookDef, HooksData, type HookDefInput, type HookEventName } from '../../shared/hooks/defs.ts'
 import { BUILTIN_HOOKS, tierDefault, type HookTier } from '../../shared/hooks/builtins.ts'
+import { patchSupport, type SupportPatch } from '../../shared/models/support.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 
@@ -104,6 +105,15 @@ export async function setBuiltinParam(id: string, key: string, value: string[] |
   if (Object.keys(mine).length) params[id] = mine
   else delete params[id]
   await save({ ...cur, params })
+}
+
+/** 按模型档位加强扶持（shared/models/support.ts）：改总开关或一格；值不对时返回错误说明 */
+export async function setModelSupport(p: SupportPatch): Promise<string> {
+  const cur = await readHooks()
+  const r = patchSupport(cur.modelSupport, p)
+  if (!r.ok) return r.error
+  await save({ ...cur, modelSupport: r.data })
+  return ''
 }
 
 /** 新建或更新一个用户钩子（id 为空时新建）；命令钩子的脚本同时写到它自己的文件 */
