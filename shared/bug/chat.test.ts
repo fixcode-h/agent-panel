@@ -229,3 +229,32 @@ test('「不是这个意思」：撤回在对话里的确认，这一版回到�
   assert.ok('deny' in editScope(tk.bug!.diagnoses!))
   assert.equal(retractChat(tk, d.version, line).ok, false, '撤回过的不能再撤')
 })
+
+test('父对话转述时附了用户原话（quote）：原话算用户说的，报告提示要跟上，fromChat 能按它出新一版', () => {
+  const tk = planPending()
+  const d = tk.bug!.diagnoses!.at(-1)!
+  tk.messages.push(
+    msg('user', '父对话的转述\n\n用户在父对话里的原话：\n> 直接改 GetDecorationActorTopLocation', {
+      peer: {
+        id: 'p',
+        title: '',
+        name: '',
+        rel: 'parent',
+        kind: 'task',
+        said: [
+          { id: 'u-parent-1', at: d.at.slice(0, 10) + 'T00:00:00.000Z', text: '直接改 GetDecorationActorTopLocation' },
+        ],
+      } as TaskMessage['peer'],
+    }),
+  )
+  // 用户在父对话里说的那一刻早于这一版报告，送到这里晚于它：按送到的时刻算
+  const said = chatSaid(tk.messages, d.at)
+  assert.deepEqual(
+    said.map((x) => [x.id, x.text]),
+    [['u-parent-1', '直接改 GetDecorationActorTopLocation']],
+  )
+  const part = bugChatPart({ task: tk })
+  assert.match(part, /含父对话转来的原话/)
+  assert.match(part, /点名了方案外的函数或文件/)
+  assert.match(part, /先读代码核实可行性/)
+})

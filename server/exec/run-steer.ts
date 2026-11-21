@@ -11,7 +11,8 @@ import type { RealContext } from './real-context.ts'
 import type { RunState } from './run-state.ts'
 import type { CliControl } from './invoke.ts'
 import { addNoteTaker, type NoteTaker } from './delivery.ts'
-import { steerNote, steers } from './steering.ts'
+import { steers } from './steering.ts'
+import { steerFrom, steerNote } from './steer-note.ts'
 import { REDIRECT_LIMITS, REDIRECT_NOTE, redirectWait } from './redirect.ts'
 
 export interface SteerDeps {
@@ -96,9 +97,7 @@ export function createSteering(d: SteerDeps) {
         // 拿到就算交出去了：之后的输出另起一条，排在用户消息后面
         st.cur = undefined
         ctx.changed(true)
-        return mine.map((m) =>
-          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode !== 'workflow', m.peer?.rel === 'parent'),
-        )
+        return mine.map((m) => steerNote(withAttachments(m.text, m.attachments ?? []), steerFrom(task, m)))
       },
     }
     addNoteTaker(task.id, taker)

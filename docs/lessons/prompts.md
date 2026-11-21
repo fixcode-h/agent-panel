@@ -51,3 +51,9 @@ paths: shared/builtin/**, shared/engine/index.ts, server/tasks/run.ts, shared/as
 - 规则：「回复正文和思考过程用哪种语言」的规则和末尾提醒只由 `server/exec/prompt-lang-inject.ts` 在 `invokeCli` 里补：系统提示词（有参数的接在角色设定后，Command Code 走语言 mod）、第一轮输入末尾、保活进程的每一个后续轮次（`keepAlive` / `waitUser` 拿到的文字）。新加调 CLI 的地方不自己拼语言规则；新加「把文字交给已经在跑的 CLI」的通道时，确认它经过 `withLangReminder`（插话走 `steerNote`，已带提醒）。
 - 起因：用户 2026-11-20 报父对话思考是中文、子对话是英文。以前语言规则只在 runner 起新进程时放进系统提示词和第一轮末尾；保活的子对话之后收到的父对话传话、子任务结果原样交给 CLI，一长串英文命令输出后思考就换成英文；经验提炼、AI 创建、插件这些直接调 `invokeCli` 的系统提示词里也没有规则。
 - 防线：`server/exec/prompt-lang-inject.test.ts`。
+
+## 执行中插话按收件的对话换说法，用户点名的修法要重新评估
+
+- 规则：插话说明只由 `server/exec/steer-note.ts` 的 `steerNote(text, steerFrom(task, msg))` 出，不在调用处拼。派过子对话的父对话收到用户的话，先分清是谁手上的事，子对话的事马上 `send_to_conversation` 转（`quote` 带用户消息 id，面板附原话，子对话的 `chatSaid` 算成用户说的），手上依赖旧方案的动作先停；走诊断流程的子对话把用户点名的修法、函数、文件当成对报告的意见：核实、和现方案比，换方案就交 `phase: plan` 出新一版。新加「把用户的话交给模型」的通道时照这三种身份挑说法，别回到一段通用的「相关就继续当前任务」。
+- 起因：用户 2026-11-21 报「管家头衔不随身高」：在父对话执行中说「直接改 GetDecorationActorTopLocation」，父对话回「我转给子对话」却先做完 changelist（还按旧方案写了描述），一直没转；子对话收到「用 PlotActor」只回「这正是方案 A 的方向」，照旧方案做。
+- 防线：`server/exec/steer-note.test.ts`、`shared/orchestra/quote.test.ts`、`shared/bug/chat.test.ts`（父对话转来的原话）。

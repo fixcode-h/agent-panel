@@ -242,6 +242,8 @@ export function createChildMessages(sc: TasksScope) {
      */
     kind?: PeerKind,
     failed = false,
+    /** 父对话转述时附的用户原话（send_to_conversation 的 quote）：记进 peer，子对话的诊断报告算成用户说的话 */
+    said?: PeerFrom['said'],
   ): Promise<{ ok: boolean; info: string }> {
     const child = await readTask(sc, id)
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
@@ -275,7 +277,8 @@ export function createChildMessages(sc: TasksScope) {
     const diagRule = kind && kind !== 'answer' && diagnosisInFlow(child) ? `\n${DIAG_PARENT_RULE}` : ''
     // 回答是「用户的决定：」换行再写答案：标题里接成一行
     const subject = kind === 'answer' ? message.replace(/：\n/, '：') : message
-    const peer = parent && kind ? await sc.peerOf(parent, 'parent', kind, subject, failed) : undefined
+    const base = parent && kind ? await sc.peerOf(parent, 'parent', kind, subject, failed) : undefined
+    const peer = base && said?.length ? { ...base, said } : base
     const running = sc.runningConv(id)
     if (running?.task.status === 'running') {
       // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理

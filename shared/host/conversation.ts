@@ -2,6 +2,7 @@
 // 从 shared/engine/host.ts 的 EngineHost / Orchestra 两个大接口里按能力拆出来（重构文档第 5 条），
 // 新能力加进对应的小接口或新开一个，不再往大接口上加；成员数由 scripts/structure-check.mjs 盯着
 import type { BugLevel } from '../bug/diagnosis-schema.ts'
+import type { UserQuote } from '../orchestra/quote.ts'
 import type { DocsFirstInput } from '../docs-first.ts'
 import type { HelperSpec, Orchestra, RouteInput } from '../engine/host.ts'
 import type { BeforeEndDecision, BeforeEndInput } from '../hooks/index.ts'
@@ -44,6 +45,8 @@ export interface OrchConversation {
     route?: RouteInput,
     /** 把这个子对话正在处理的问题升级成用户报的 Bug（send_to_conversation 写了 kind: "bug"，ADR 0057） */
     bug?: { level?: BugLevel },
+    /** 转述用户的话时附上的用户消息 id（send_to_conversation 的 quote，"last" 是最近一条） */
+    quote?: string[],
   ): Promise<{ ok: boolean; info: string }>
   /** 顶层对话：名下有子对话时收尾它们（finish_child，见 ADR 0005） */
   parentOf: boolean
@@ -121,6 +124,8 @@ export interface ConversationHost {
     id: string,
     message: string,
     bug?: { level?: BugLevel },
+    /** 用户原话（按 quote 从父对话取出的），子对话的诊断报告算成用户说的话 */
+    said?: UserQuote[],
   ) => Promise<{ ok: boolean; info: string }>
   /**
    * 顶层项目对话：收尾名下的子对话（子对话 submit_merge 请求后，父对话调用 finish_child）。

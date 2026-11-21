@@ -5,7 +5,7 @@
 import type { Attachment, Task, TaskMessage } from '../../shared/schema.ts'
 import { type Waiter, addWaiter, firstWaiter, removeWaiter, waitersOf } from './waiters.ts'
 import { hasHeld, heldMessage, markHeld, noteTakersOf, returnHeld, takeHeld } from './delivery.ts'
-import { promptLangReminder } from '../../shared/prompt-lang.ts'
+import { steerFrom, steerNote } from './steer-note.ts'
 import { taskLog } from '../tasks/log.ts'
 import { withAttachments } from '../../shared/task.ts'
 import { taskMap } from '../runtime/task-state.ts'
@@ -119,31 +119,6 @@ export function forgetNotes(taskId: string) {
 }
 
 /**
- * 交给 CLI 的补充。对话里先让模型判断这条补充和当前任务的关系：
- * 相关就调整方向；无关就先做完手上的事，再处理这条，别把当前任务丢在半路。
- * 工作流里交给正在跑的节点，按原来的说法结合当前任务处理。
- * fromParent：父对话 / 面板发来的（状态询问、收尾提醒），不是用户补充；用「用户补充」的措辞会让模型
- * 把它当成无关信息先放着，子对话就不会回答状态询问了。
- */
-export const steerNote = (text: string, chat: boolean, fromParent = false) => {
-  // 补充是一条新的用户消息，重复一次语言要求，别让模型接着上一段换成别的语言
-  const remind = promptLangReminder()
-  if (fromParent)
-    return (
-      '父对话 / 面板在你执行中发来一条消息（不是用户发的补充）：\n' +
-      '- 和当前任务有关（状态询问、交代任务、调整方向）：按它处理并回复；\n' +
-      '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事。\n\n' +
-      `${remind}\n\n内容：\n${text}`
-    )
-  return chat
-    ? '用户在你执行中补充了信息。先判断它和当前任务的关系：\n' +
-        '- 相关（对当前任务的调整、修改或补充）：按它调整方向，继续当前任务；\n' +
-        '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事，不要现在开始做它；当前任务做完后再处理这条内容。\n\n' +
-        `${remind}\n\n补充的内容：\n${text}`
-    : `用户在执行中补充了信息，请结合它继续当前的任务：\n${remind}\n\n${text}`
-}
-
-/**
  * 执行中的补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理。
  * 有插话协议的直接插话；没有协议但能用面板的工具取的（见 CLI 配置的 notes）登记给它取；
  * 工作流里交给所有正在跑的节点，它们都不支持（Command Code）时留给下一个开始的节点。
@@ -157,8 +132,7 @@ export async function steerTask(
   // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
   const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode !== 'workflow' && isHelperStep(task, s.step)))
   const took: Steerer[] = []
-  for (const s of all)
-    if (await s.steer(steerNote(text, task.mode !== 'workflow', msg.peer?.rel === 'parent'))) took.push(s)
+  for (const s of all) if (await s.steer(steerNote(text, steerFrom(task, msg)))) took.push(s)
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]

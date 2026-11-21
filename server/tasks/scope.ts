@@ -607,6 +607,8 @@ export interface TasksScope {
     panel?: import('../../shared/schema.ts').TaskMessage['panel'],
     kind?: PeerKind,
     failed?: boolean,
+    /** 父对话转述时附的用户原话：记进 peer.said */
+    said?: import('../../shared/schema.ts').PeerFrom['said'],
   ) => Promise<{
     ok: boolean
     info: string

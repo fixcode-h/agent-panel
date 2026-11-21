@@ -12,6 +12,7 @@ import { handedOff, SENT_NOTE, recordRoute } from './route.ts'
 import type { Orchestra } from '../engine/host.ts'
 import type { OrchCtx } from './ctx.ts'
 import { FIX_HEAD } from '../prompt/letters/fix.ts'
+import { quotesOf, withQuotes } from './quote.ts'
 
 /** 对话类工具：子对话的列表、创建、交代，给父对话传话，父对话之间协调，文件认领，共享状态 */
 export function conversationTools(oc: OrchCtx) {
@@ -111,9 +112,12 @@ export function conversationTools(oc: OrchCtx) {
           : ''
       return { ok: r.ok, id: r.id, info: [r.info, r.ok && docs.info, wait, level].filter(Boolean).join('\n') }
     },
-    async sendToConversation(id, message, step, route, bug) {
+    async sendToConversation(id, message, step, route, bug, quote) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
+      // 转述用户的话：按 id 取原话原样带过去（quote.ts），对不上就退回，不让它凭记忆转述
+      const q = quote?.length ? quotesOf(task.messages, quote) : { said: [] }
+      if ('error' in q) return { ok: false, info: q.error }
       // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
       // 父对话里刷出一排一模一样的「发送消息」，几个子对话还会各改各的同一处
       // 并行发出的几次调用可能还没记进对话：这一轮已经交出去的也记在内存里一起查
@@ -126,7 +130,7 @@ export function conversationTools(oc: OrchCtx) {
           info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
         }
       noteHandOff(task.messages, handed, id.trim(), message)
-      const r = await host.sendToConversation(id.trim(), message, bug)
+      const r = await host.sendToConversation(id.trim(), withQuotes(message, q.said), bug, q.said)
       if (!r.ok) handed.delete(message.trim())
       // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''

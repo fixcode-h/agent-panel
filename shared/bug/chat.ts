@@ -29,7 +29,7 @@ const FEEDBACK_GAP_MS = 15_000
 
 /**
  * 某个时间之后用户在这个对话里亲口说的话：不算别的对话转来的（peer）、面板推的（panel）、
- * 报告上做决定后交过去的那段话（紧跟在报告那一行后面的用户消息）
+ * 报告上做决定后交过去的那段话（紧跟在报告那一行后面的用户消息）；父对话转述时附的用户原话（peer.said）算
  */
 export function chatSaid(messages: TaskMessage[], since: string): ChatQuote[] {
   const out: ChatQuote[] = []
@@ -42,6 +42,14 @@ export function chatSaid(messages: TaskMessage[], since: string): ChatQuote[] {
     if (m.role !== 'user') continue
     const feedback = lineAt > 0 && Date.parse(m.at) - lineAt < FEEDBACK_GAP_MS
     lineAt = 0
+    // 父对话转述时附了用户原话（send_to_conversation 的 quote）：原话算用户说的，时间按转到这里的时刻算
+    // （用户在父对话里说的那一刻可能早于这一版报告，但这一版是在原话送到之前交的）
+    if (m.peer?.rel === 'parent' && m.peer.said?.length && m.at > since) {
+      for (const q of m.peer.said)
+        if (q.text.trim() && !out.some((x) => x.id === q.id))
+          out.push({ id: q.id, at: m.at, text: q.text.trim().slice(0, MAX_TEXT) })
+      continue
+    }
     if (feedback || m.peer || m.panel || !m.text.trim() || !(m.at > since)) continue
     out.push({ id: m.id, at: m.at, text: m.text.trim().slice(0, MAX_TEXT) })
   }
@@ -165,7 +173,7 @@ export function bugChatPart(host: { task: Pick<Task, 'bug' | 'messages'> & Parti
   const v = revOf(s.d)
   const state = s.d.status === 'pending' ? '还在等用户确认' : '用户已经确认'
   return `## 诊断报告要跟上对话
-第 ${v} 版报告（${PHASE_TEXT[phaseOf(s.d)]}，报告 #${s.d.version}）${state}，用户在那之后直接在对话里说了 ${s.said.length} 句话。用户的话改了报告里的结论、方案或做法（换了修法、让你照新的改、说已经修好了）时，先把它交回报告，再接着做；只是提问、闲聊，或者是已确认方案里的细节调整（改的还是方案里的文件），不用交。
+第 ${v} 版报告（${PHASE_TEXT[phaseOf(s.d)]}，报告 #${s.d.version}）${state}，用户在那之后直接在对话里说了 ${s.said.length} 句话（含父对话转来的原话）。用户的话改了报告里的结论、方案或做法（换了修法、点名了方案外的函数或文件、让你照新的改、说已经修好了）时，先读代码核实可行性、和现在的方案比较，再把它交回报告，然后才接着做；不要因为方向接近就当成现在的方案。只是提问、闲聊，或者是已确认方案里的细节调整（改的还是方案里的文件、做法不变），不用交。
 ${HOW}
 不要用脚本或命令绕过面板的改文件拦截。`
 }
