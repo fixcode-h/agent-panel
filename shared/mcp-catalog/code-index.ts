@@ -59,13 +59,16 @@ export interface IdeMcpServer {
  * 一是 projectPath 填了工作目录（P4 工作区根），IDE 打开的是它下面的 Project 子目录，IDE 只认项目目录之内的路径，整轮都报
  * 「doesn't correspond to any open project」，Agent 换个查询词原样再调；
  * 二是经 execute_tool 转调时把命令写成 `lua_code action=search`，IDE 只认 `--参数名 值`。
+ * 2026-11-21 又报：Agent 照「projectPath」那条给 lua_code 也传了 projectPath，被当成未知参数拒绝——
+ * projectPath 是 IDE 自带工具的参数，插件工具用的是 project（项目名），所以先写明「照工具自己的参数表传」。
  */
 export function ideMcpLines(servers: IdeMcpServer[] | undefined): string[] {
   if (!servers?.length) return []
   const names = servers.map((s) => `\`${s.server}\``).join('、')
   const lines = [
     `   ${names} 是 JetBrains IDE 自带的 MCP 服务，调它的工具时：`,
-    "   - `projectPath` 必须是 IDE 里打开的项目目录或它里面的路径。IDE 打开的常常是工作目录下的子目录，工作目录本身对不上，没把握就不传；报 `doesn't correspond to any open project` 或 `Unable to determine the target project` 时，从报错里的 `Currently open projects` 挑这次要查的那个路径重调，同一个失败过的路径不要再用，列表里没有合适的就停下问用户。",
+    '   - 参数照工具自己的说明传：只有参数表里列了 `projectPath` 的（IDE 自带的工具）才传它；插件挂上来的工具（`lua_code`、`lua_debug_*` 这类）没有 `projectPath`，开了多个项目时用 `project` 传项目名，一般不用传。报「未知参数」时照报错列出的可用参数改，不要换个值再试。',
+    "   - 传 `projectPath` 时必须是 IDE 里打开的项目目录或它里面的路径。IDE 打开的常常是工作目录下的子目录，工作目录本身对不上，没把握就不传；报 `doesn't correspond to any open project` 或 `Unable to determine the target project` 时，从报错里的 `Currently open projects` 挑这次要查的那个路径重调，同一个失败过的路径不要再用，列表里没有合适的就停下问用户。",
   ]
   const routers = servers.filter((s) => s.router).map((s) => `\`${s.server}\``)
   if (routers.length)
