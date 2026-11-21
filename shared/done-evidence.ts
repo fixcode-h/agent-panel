@@ -180,7 +180,7 @@ function lastBy(list: EvidenceCommand[], key: (c: EvidenceCommand) => string | u
 const exitText = (c: EvidenceCommand) => (c.exitCode !== undefined ? `，退出码 ${c.exitCode}` : '')
 
 const FAILED_TAIL =
-  '先修好再跑通，然后调用 end_turn；确实修不了（环境问题、要用户提供东西），用 end_turn 的 blocked 写明卡在哪、需要谁做什么。'
+  '先修好再跑通，然后调用 end_turn；确实修不了（环境问题、要用户提供东西），调用 end_turn 时 outcome 写 blocked，need 写明卡在哪、需要谁做什么。'
 
 /**
  * 打开了「改了代码要跑过测试步骤才能结束」时，这一轮能不能记成做完：返回拒绝的说明（交给 Agent，不翻译），能结束返回空。

@@ -12,7 +12,7 @@ import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
 import { summaryCardRules } from '../summary/card.ts'
 import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from '../search-exclude.ts'
-import { codeIndexLines, ideMcpLines } from '../mcp-catalog/code-index.ts'
+import { codeIndexLines, ideMcpPointer } from '../mcp-catalog/code-index.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
 import { subPolicy } from '../sub-policy.ts'
 import type { EngineHost } from './host.ts'
@@ -87,7 +87,8 @@ export function searchPart(host: EngineHost) {
   return [
     `## 搜索（这个项目）\n找代码按下面的顺序，前一种能答就不往下走。${line}，找 Bug 在这一层定位时也用同样的排除。`,
     ...codeIndexLines(host.codeIndexTools),
-    ...ideMcpLines(host.ideMcpServers),
+    // IDE 服务的完整规矩改成第一次调它时推（情境规则 ide-mcp-rules），这里只留一行
+    ...ideMcpPointer(host.ideMcpServers),
     `2. 搜文件内容用 rg：起点先限定到模块目录（CLI 自带的搜索工具也把路径参数设成模块目录），没命中再逐级扩大。面板给 rg 配好了上面的排除目录，还跳过了 .uasset、图片、模型、压缩包这类二进制文件，命中按行输出（超时被打断时已搜到的照样留下）。\`grep -r\`、\`Select-String\` 不认这份配置，不要拿它们扫大目录。`,
     `   ${rg}`,
     `3. 按名字找文件（含 rg 跳过的 .uasset 这类资源）用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,

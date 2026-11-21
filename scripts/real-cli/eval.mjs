@@ -237,6 +237,8 @@ async function runTask(task) {
   })
   let calm = 0
   let timedOut = false
+  // 执行中插话（task.steer）：等父对话派出子对话、自己还在跑时发一次，看这句话有没有送到子对话（分析稿 B1）
+  let steered = !task.steer
   // 面板停下后可能马上推它接着做：连续 3 次（15 秒）都没在跑、没有请求挂着才算真停了
   while (calm < 3) {
     if (Date.now() - started > timeoutMs) {
@@ -260,6 +262,15 @@ async function runTask(task) {
         }).catch((e) => console.warn(`  回答子对话的提问失败（${tk.title}）：${e.message}`))
       if (busy(tk)) anyBusy = true
     }
+    if (!steered) {
+      const fam = await family(top.id)
+      const parent = await call('GET', `/tasks/${top.id}`)
+      if (fam.some((b) => b.id !== top.id) && busy(parent)) {
+        await call('POST', `/tasks/${top.id}/messages`, { text: task.steer })
+        steered = true
+        anyBusy = true
+      }
+    }
     calm = anyBusy ? 0 : calm + 1
   }
   if (timedOut) await call('POST', `/tasks/${top.id}/stop`).catch(() => {})
@@ -269,7 +280,9 @@ async function runTask(task) {
   const end = await call('GET', `/tasks/${top.id}`)
   const err = (end.messages ?? []).findLast((m) => m.error)?.text?.split('\n')[0]
   const failed = end.status === 'failed' ? `对话失败：${err || '看面板里的报错'}` : ''
-  const ok = task.check(dir)
+  // 有的任务还要看面板记下的状态（计划、子对话），check 的第二个参数是这一组对话的完整记录
+  const full = task.needsTasks ? await Promise.all(briefs.map((b) => call('GET', `/tasks/${b.id}`))) : []
+  const ok = task.check(dir, { tasks: full })
   return {
     id: task.id,
     title: task.title,

@@ -50,6 +50,8 @@ import { createSteering } from './run-steer.ts'
 import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 // runAgent 里职责完整的几块拆在这些文件：模型和上限、选会话、拼输入、启动参数、进程没跑完一轮时交回什么
 import { windowLookup } from './model-run.ts'
+import { turnSupport } from '../hooks/support.ts'
+import { supportRecord } from '../../shared/models/support.ts'
 import { pickSession } from './session-pick.ts'
 import { exitResult, idleWarning } from './exit-result.ts'
 import { bugAskRedirect } from '../../shared/bug/no-ask.ts'
@@ -233,6 +235,9 @@ async function runAgent(
   /** 这个 Agent 的用量记录（速度、累计输出），没有就建一条；上下文占用记在 cu()（对话里的子任务不写角色那一条） */
   const au = () => agentUsage(task, agentId, model, windowFor(model))
   const cu = contextUsage(task, owner, au)
+  // 按这一轮模型的档位加强扶持（钩子档位、推送条数、计划提醒）：会话栏按这份写「已按弱模型加强扶持」
+  const support = await turnSupport(model, cs.api, entries)
+  if (chat) au().support = supportRecord(support)
   // 写入等结果成功才记成改动（被钩子拦下、失败的不算），见 file-events.ts
   const fileEvents = createFileEvents(
     cwd,
@@ -496,6 +501,7 @@ async function runAgent(
       ctx.changed(true)
     },
     changed: () => ctx.changed(),
+    support,
   })
   const r = await invokeCli({
     mcp: plugins?.servers.length ? plugins.servers : undefined,

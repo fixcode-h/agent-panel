@@ -20,6 +20,7 @@ import { recordKnowledgeHits } from '../knowledge-hits.ts'
 import { taskMap } from '../runtime/task-state.ts'
 import { taskLog } from '../tasks/log.ts'
 import { knowledgeCapture, notePushedCommand, ranFailed } from './knowledge-capture.ts'
+import { modulePush } from './module-push.ts'
 
 /**
  * 内置钩子「推送项目教训和经验」（push-lessons）：设计稿「经验与教训重新设计」一期 ②③④⑦。
@@ -51,6 +52,8 @@ export interface KnowledgePushCtx {
   note: (event: 'tool.before' | 'tool.after', detail: string) => void
   /** 对话改了（标签加上了），推给页面 */
   changed: () => void
+  /** 一次最多推几条：按模型档位加强扶持时比默认多（shared/models/support.ts）；不给用 PUSH_RULES 的 */
+  maxItems?: number
 }
 
 const rel = (cwd: string, p: string) => {
@@ -83,7 +86,10 @@ export function knowledgePush(c: KnowledgePushCtx) {
   const deliver = (facts: HookFacts, event: 'tool.before' | 'tool.after', all: PushHit[], why: PushHit['why']) => {
     const seen = pushed.get(c.task.id) ?? new Set<string>()
     pushed.set(c.task.id, seen)
-    const hits = budgetHits(all.filter((h) => !seen.has(h.id)))
+    const hits = budgetHits(
+      all.filter((h) => !seen.has(h.id)),
+      c.maxItems,
+    )
     if (!hits.length) return ''
     for (const h of hits) seen.add(h.id)
     const ls = hits.filter((h) => h.kind === 'lesson').map((h) => h.id)
@@ -120,6 +126,36 @@ export function knowledgePush(c: KnowledgePushCtx) {
     pushedIds: () => pushed.get(c.task.id) ?? new Set<string>(),
   })
 
+  // 模块入口推送挂在同一个开关上：碰到一个模块时推它的入口，新增公开函数时提醒先搜（server/hooks/module-push.ts）
+  const modules = modulePush({ taskId: c.task.id, project: c.project, agents: c.agents, cwd: c.cwd })
+
+  /** 工具前推教训和经验（搜索推经验，跑命令、改文件推教训） */
+  const lessonsBefore = async (facts: HookFacts): Promise<string> => {
+    const tool = facts.tool
+    if (!tool) return ''
+    await load()
+    const q = lessons.length || exps.length ? searchText(tool.kind, tool.input) : null
+    // 搜索：推经验（搜索命令本身不再按命令匹配教训，`rg xxx` 不会是教训要管的那种命令）
+    if (q !== null) {
+      if (!exps.length) return ''
+      const where = typeof tool.input.path === 'string' ? rel(c.cwd, tool.input.path) : ''
+      return deliver(facts, 'tool.before', searchExperience(exps, q, where), 'search')
+    }
+    if (!lessons.length) return ''
+    if (tool.kind === 'shell')
+      return deliver(facts, 'tool.before', commandLessons(lessons, String(tool.input.command ?? '')), 'command')
+    if (tool.kind === 'edit') {
+      const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p)).filter(Boolean)
+      return deliver(
+        facts,
+        'tool.before',
+        files.flatMap((f) => pathLessons(lessons, f)),
+        'path',
+      )
+    }
+    return ''
+  }
+
   return {
     /** 拦截档（用户升级成 block 的教训）：命令对得上就拒绝，返回拒绝理由；没有就是空串 */
     async blocked(facts: HookFacts): Promise<string> {
@@ -135,29 +171,11 @@ export function knowledgePush(c: KnowledgePushCtx) {
     },
     async before(facts: HookFacts): Promise<string> {
       flushTags()
-      const tool = facts.tool
-      if (!tool) return ''
-      await load()
-      const q = lessons.length || exps.length ? searchText(tool.kind, tool.input) : null
-      // 搜索：推经验（搜索命令本身不再按命令匹配教训，`rg xxx` 不会是教训要管的那种命令）
-      if (q !== null) {
-        if (!exps.length) return ''
-        const where = typeof tool.input.path === 'string' ? rel(c.cwd, tool.input.path) : ''
-        return deliver(facts, 'tool.before', searchExperience(exps, q, where), 'search')
-      }
-      if (!lessons.length) return ''
-      if (tool.kind === 'shell')
-        return deliver(facts, 'tool.before', commandLessons(lessons, String(tool.input.command ?? '')), 'command')
-      if (tool.kind === 'edit') {
-        const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p)).filter(Boolean)
-        return deliver(
-          facts,
-          'tool.before',
-          files.flatMap((f) => pathLessons(lessons, f)),
-          'path',
-        )
-      }
-      return ''
+      if (!facts.tool) return ''
+      const mod = await modules.before(facts)
+      // 教训和经验在 deliver 里记过「最近触发」了，这里只记模块入口那段
+      if (mod) c.note('tool.before', mod.slice(0, 120))
+      return [await lessonsBefore(facts), mod].filter(Boolean).join('\n\n')
     },
     async after(facts: HookFacts): Promise<string> {
       flushTags()

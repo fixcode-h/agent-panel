@@ -19,7 +19,7 @@ export interface OrchPlan {
   }): Promise<{ ok: boolean; info: string }>
   finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 对话（Agent 模式）交代这一轮怎么结束：done / blocked（shared/end-turn.ts）；其余身份没有这个工具 */
-  endTurn?: (outcome: string, need: string) => Promise<{ ok: boolean; info: string }>
+  endTurn?: (outcome: string, need: string, own?: string[]) => Promise<{ ok: boolean; info: string }>
   /** 等你操作：请用户离开对话去做一件事（shared/user-action.ts）；和 endTurn 同样只给对话 */
   requestUserAction?: (input: Record<string, unknown> | undefined) => { ok: boolean; info: string }
   /**

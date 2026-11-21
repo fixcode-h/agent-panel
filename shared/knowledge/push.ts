@@ -187,13 +187,17 @@ export const lessonLine = (l: Pick<ProjectLesson, 'id' | 'title' | 'rule'> & Par
 export const experienceLine = (e: Pick<ProjectExperience, 'id' | 'title' | 'body' | 'paths'>) =>
   `- [经验 ${e.id}] ${clip(e.title, 60)}${e.body ? `：${clip(e.body.replace(/\s+/g, ' '), 140)}` : ''}${e.paths.length ? `（位置：${e.paths.slice(0, 4).join('、')}）` : ''}`
 
-/** 按预算挑：最多 maxItems 条、合计不超过 maxChars 字（第一条再长也给） */
-export function budgetHits(hits: PushHit[]): PushHit[] {
+/**
+ * 按预算挑：最多 maxItems 条、合计不超过 maxChars 字（第一条再长也给）。
+ * 弱模型按档位多推几条时（maxItems 比默认大），字数预算按条数同比放宽，不然多给的条数被字数卡掉
+ */
+export function budgetHits(hits: PushHit[], maxItems: number = PUSH_RULES.maxItems): PushHit[] {
   const out: PushHit[] = []
+  const chars = Math.round((PUSH_RULES.maxChars * Math.max(maxItems, PUSH_RULES.maxItems)) / PUSH_RULES.maxItems)
   let used = 0
   for (const h of hits) {
-    if (out.length >= PUSH_RULES.maxItems) break
-    if (out.length && used + h.line.length > PUSH_RULES.maxChars) break
+    if (out.length >= maxItems) break
+    if (out.length && used + h.line.length > chars) break
     out.push(h)
     used += h.line.length
   }
@@ -209,7 +213,7 @@ export function pushText(hits: PushHit[], why: PushHit['why'], subject: string):
     error: '【面板】以前遇到过类似的报错，当时记下的做法（对不上就照常排查）：',
     search: '【面板】项目经验里记过这个位置，先去这里看，对不上再照常搜：',
   }[why]
-  return `${head}\n${hits.map((h) => h.line).join('\n')}${why === 'error' ? '' : '\n要看全文用 knowledge_lookup 带 id 查。'}`
+  return `${head}\n${hits.map((h) => h.line).join('\n')}${why === 'error' ? '' : '\n要看全文用 knowledge_lookup 查，query 写这条的 id。'}`
 }
 
 /**

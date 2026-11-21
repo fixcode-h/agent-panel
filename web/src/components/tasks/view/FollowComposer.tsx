@@ -21,6 +21,8 @@ import { RetryModelMenu } from '../RetryModelMenu'
 import { TaskContextRing } from '../TaskMeta'
 import { HandBackTag } from '../UserActionPanel'
 import { BugActionBar } from '../BugActionBar'
+import type { ChildSummary } from '../child-line'
+import { SendTargetPicker } from './SendTarget'
 
 export interface FollowComposerProps {
   task: TaskPage
@@ -50,6 +52,8 @@ export interface FollowComposerProps {
   byCli: boolean
   chatRun: ChatRun
   chatAgent?: Agent
+  /** 名下的子对话：父对话执行中输入框上能点名「发给…」其中一个 */
+  kids: ChildSummary[]
   /** 工作流对话：输入框左下角那一句说明 */
   flowHint?: string
   resumeTitle: string
@@ -131,6 +135,8 @@ export function FollowComposer(p: FollowComposerProps) {
           ) : (
             p.chatAgent && <RoleModelBadge agent={withTaskModel(p.chatAgent, task)} />
           )}
+          {/* 父对话执行中点名直接发给某个子对话（分析稿 B1）：不在跑时就是普通的追问，不显示 */}
+          {!task.parentTaskId && working && <SendTargetPicker taskId={task.id} kids={p.kids} />}
           {p.flowHint !== undefined && <span className="min-w-0 truncate pl-1 text-xs text-subtle">{p.flowHint}</span>}
         </>
       }

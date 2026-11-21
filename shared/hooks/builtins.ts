@@ -60,6 +60,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     tier: 'minimal',
   },
   {
+    id: 'steer-handoff',
+    event: 'turn.beforeEnd',
+    name: () => t('插话要有着落'),
+    description: () =>
+      t(
+        '名下派过子对话的父对话，执行中收到用户插话后既没转给子对话（send_to_conversation 带上这条的 quote），也没在 end_turn 里交代是自己的事，就要结束时，拦一次问清楚（只问一次，随「没做完不收尾」一起生效）',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'restore-plan',
     event: 'context.restored',
     name: () => t('压缩后补回计划'),
@@ -240,6 +250,17 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     ],
   },
   {
+    // A2（designs/Agent写代码能力-提升与扩展分析.md）：别家工具的参数名不再手写进提示词，传错时由面板补上真实的参数表
+    id: 'arg-table-hint',
+    event: 'tool.after',
+    name: () => t('参数传错时补参数表'),
+    description: () =>
+      t(
+        'MCP 工具报参数不对（未知参数、缺必填、取值不对）时，把这个工具真实的参数表（面板探测服务时存下的参数名、必填和取值）补给模型，让它照表改、不要换个值再试；同一个工具一个对话只补一次',
+      ),
+    tier: 'standard',
+  },
+  {
     id: 'big-output-hint',
     event: 'tool.after',
     name: () => t('大输出提醒'),
@@ -299,7 +320,17 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     name: () => t('推送项目教训和经验'),
     description: () =>
       t(
-        '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来',
+        '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法；第一次读或改某个模块的文件时推这个模块的入口和模块文档，改文件要新增公开函数时提醒先搜有没有现成的。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来',
+      ),
+    tier: 'minimal',
+  },
+  {
+    id: 'situational-rules',
+    event: 'tool.before',
+    name: () => t('情境规则'),
+    description: () =>
+      t(
+        '只在某个情境才用得上的细则（例如弱模型第一次改文件前还没列计划），不常驻在角色设定里，到那一刻才推给模型；每条在一个对话里只推一次，只提醒不拦截',
       ),
     tier: 'minimal',
   },
@@ -311,14 +342,18 @@ type OnData = Pick<HooksData, 'builtins' | 'projects'> & Partial<Pick<HooksData,
 
 /**
  * 开关，按这个顺序取：这个项目单独设的 → 这个项目选的档位 → 全局单独设的 → 全局档位。
- * 项目选了档位就是「这个项目按这一档」，全局逐个改过的不再带进来
+ * 项目选了档位就是「这个项目按这一档」，全局逐个改过的不再带进来。
+ * boost 是按这一轮模型档位加强扶持给的档位（shared/models/support.ts）：只在落到全局档位时和它取更严的，
+ * 项目手动选的档位、逐个改过的开关都比它优先
  */
-export function builtinOn(data: OnData, h: BuiltinHook, projectId = '') {
+export function builtinOn(data: OnData, h: BuiltinHook, projectId = '', boost?: HookTier) {
   const mine = projectId ? data.projects[projectId]?.[h.id] : undefined
   if (mine !== undefined) return mine
   const pt = projectId ? data.projectTiers?.[projectId] : undefined
   if (pt) return tierOn(pt, h)
-  return data.builtins[h.id] ?? tierOn(data.tier ?? DEFAULT_TIER, h)
+  const global = data.tier ?? DEFAULT_TIER
+  const tier = boost && HOOK_TIERS.indexOf(boost) > HOOK_TIERS.indexOf(global) ? boost : global
+  return data.builtins[h.id] ?? tierOn(tier, h)
 }
 
 /** 不看逐个改过的开关时，这一层按档位该是什么：项目层看项目档位，没选跟全局 */

@@ -1,0 +1,82 @@
+/**
+ * 情境规则（D1）：按工具调用和面板状态匹配，每条一个对话只推一次，条数有上限。
+ * 运行：npm run test:unit
+ */
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { ModelSupportData, resolveSupport } from '../models/support.ts'
+import type { HookFacts } from './index.ts'
+import { pickSituational, situationMatches, SITUATIONAL_RULES, type SituationCtx } from './situational.ts'
+
+const edit: HookFacts = { tool: { kind: 'edit', name: 'Edit', input: {}, path: 'src/a.ts', paths: ['src/a.ts'] } }
+const read: HookFacts = { tool: { kind: 'read', name: 'Read', input: {}, path: 'src/a.ts', paths: ['src/a.ts'] } }
+const weak = resolveSupport(ModelSupportData.parse({}), 'low')
+const strong = resolveSupport(ModelSupportData.parse({}), 'high')
+const ctx = (o: Partial<SituationCtx> = {}): SituationCtx => ({
+  event: 'tool.before',
+  facts: edit,
+  task: { plans: [] },
+  support: weak,
+  plans: true,
+  ...o,
+})
+const rule = SITUATIONAL_RULES.find((r) => r.id === 'impl-plan-first')!
+
+test('情境规则：弱模型第一次改文件前没计划才推「先列实现计划」', () => {
+  assert.ok(situationMatches(rule, ctx()))
+  // 强模型、读文件、没有计划工具、已经有计划：都不推
+  assert.equal(situationMatches(rule, ctx({ support: strong })), false)
+  assert.equal(situationMatches(rule, ctx({ facts: read })), false)
+  assert.equal(situationMatches(rule, ctx({ plans: false })), false)
+  const plan = { id: 'p', steps: [], createdAt: '', updatedAt: '' }
+  assert.equal(situationMatches(rule, ctx({ task: { plans: [plan] as never } })), false)
+})
+
+test('情境规则：每条一个对话只推一次，一次最多推 limit 条', () => {
+  const told = new Map<string, number>()
+  assert.equal(pickSituational(ctx(), told, 3).length, 1)
+  assert.equal(pickSituational(ctx(), told, 3).length, 0)
+  const many = ['a', 'b', 'c'].map((id) => ({
+    id,
+    name: () => id,
+    when: { event: 'tool.before' as const },
+    text: () => id,
+  }))
+  assert.deepEqual(
+    pickSituational(ctx(), new Map(), 2, many).map((x) => x.id),
+    ['a', 'b'],
+  )
+})
+
+test('情境规则：按路径和报错匹配', () => {
+  const r = {
+    id: 'cpp',
+    name: () => 'cpp',
+    when: { event: 'tool.after' as const, paths: ['**/*.cpp'], failed: true, error: /C2039/ },
+    text: () => 'x',
+  }
+  const f = (path: string, output: string, failed = true): HookFacts => ({
+    tool: { kind: 'shell', name: 'Bash', input: {}, path, paths: [path], result: { output, failed } },
+  })
+  assert.ok(situationMatches(r, ctx({ event: 'tool.after', facts: f('Source/A.cpp', 'error C2039: x') })))
+  assert.equal(situationMatches(r, ctx({ event: 'tool.after', facts: f('Source/A.h', 'error C2039') })), false)
+  assert.equal(situationMatches(r, ctx({ event: 'tool.after', facts: f('Source/A.cpp', 'ok', false) })), false)
+  assert.equal(situationMatches(r, ctx({ event: 'tool.after', facts: f('Source/A.cpp', 'error C3861') })), false)
+})
+
+test('情境规则：第一次调 JetBrains IDE 服务的工具时推它的调用规矩（参数照缓存的参数表），别的 MCP 不推', () => {
+  const ide = SITUATIONAL_RULES.find((r) => r.id === 'ide-mcp-rules')!
+  const call = (name: string): HookFacts => ({ tool: { kind: 'any', name, input: {}, path: '', paths: [] } })
+  const ideMcp = [
+    {
+      server: 'idea',
+      router: true,
+      params: { lua_code: [{ name: 'action', type: 'search | files', required: true }] },
+    },
+  ]
+  const c = ctx({ facts: call('mcp__idea__lua_code'), ideMcp: ideMcp as never })
+  assert.ok(situationMatches(ide, c))
+  assert.match(ide.text(c), /execute_tool[\s\S]*lua_code --action search/)
+  assert.equal(situationMatches(ide, ctx({ facts: call('mcp__uetovs__search_lua'), ideMcp: ideMcp as never })), false)
+  assert.equal(situationMatches(ide, ctx({ facts: call('mcp__idea__lua_code') })), false)
+})

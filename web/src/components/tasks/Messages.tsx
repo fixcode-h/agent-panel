@@ -430,7 +430,14 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
       glyph={<Icon className={cn('h-3.5 w-3.5 shrink-0', glyphClass)} />}
       // 提醒行用强调色浅底，和其余过程行的灰底分开；只覆盖这一行，不动全局 --c-row-bg
       className={nudge ? '[--c-row-bg:var(--accent-soft)]' : undefined}
-      verb={m.panel === 'child' && !m.child ? t('对话消息') : kind.verb()}
+      // 父对话执行中用户点了「发给…」留下的那一行（shared/children/direct-note.ts）：写「你发给子对话」，不是「设置」
+      verb={
+        m.panel === 'child' && !m.child
+          ? t('对话消息')
+          : m.panel === 'note' && m.child
+            ? t('你发给子对话')
+            : kind.verb()
+      }
       title={head}
       open={open}
       detail={

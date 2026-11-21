@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { HookDefInput, HookEventName } from '@shared/hooks/defs'
 import type { HookTier } from '@shared/hooks/builtins'
+import type { SupportPatch } from '@shared/models/support'
 import {
   hooksContract as H,
   type BuiltinHookView as BuiltinHookViewSchema,
@@ -34,6 +35,8 @@ export const hooksApi = {
     call(H.setTier, { body: projectId ? { tier, projectId } : { tier } }),
   setPlugin: (id: string, on: boolean) => call(H.setPlugin, { params: { id }, body: { on } }),
   setCliOff: (cli: string, events: HookEventName[]) => call(H.setCliOff, { params: { cli }, body: { events } }),
+  /** 按模型档位加强扶持：改总开关，或改一档的一项（value 为 null 回到默认） */
+  setModelSupport: (body: SupportPatch) => call(H.setModelSupport, { body }),
   setParam: (id: string, key: string, value: string[] | number) =>
     call(H.setParam, { params: { id }, body: { key, value } }),
   check: (def: HookDefInput, run = false) => call(H.check, { body: { def, run } }),

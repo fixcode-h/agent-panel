@@ -21,6 +21,7 @@ import type { useSlashMenu } from '@/components/chat/SlashMenu'
 import type { ChatRun } from '../ChatModelPicker'
 import type { ChildSummary } from '../child-line'
 import { handBackFor } from '../UserActionPanel'
+import { clearSendTarget, sendTargetFor } from './SendTarget'
 
 export interface TaskActionsCtx {
   taskId: string
@@ -41,6 +42,8 @@ export interface TaskActionsCtx {
   go: (r: Route) => void
   loadChildren: (id: string) => Promise<ChildSummary[]>
   setChildren: (list: ChildSummary[]) => void
+  /** 名下的子对话：执行中输入框上点了「发给…」时直接发给其中一个（SendTarget.tsx） */
+  children: ChildSummary[]
   closeDelete: () => void
 }
 
@@ -87,6 +90,9 @@ export function useTaskActions(c: TaskActionsCtx) {
     const said = withWorkflow(expandQuotes(framed, files.attachments), c.workflows)
     const content = forSend(said, files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && c.slash.intercept(content)) return
+    // 执行中点名了「发给…」某个子对话：直接发过去（交回「等你操作」的不改道）
+    const kid = handBackFor(task) ? undefined : sendTargetFor(task.id, working, c.children)
+    if (kid) return sendToKid(kid, content, text)
     // 发出去的这一刻就清空输入框、把消息插进对话。清空不能等接口返回：服务端这条的响应要等
     // settings、项目、git/p4 探测、CLI 拉起这一串（消息本身早已经 SSE 到界面），
     // 以前就是在这里 await 完才清空，于是出现「气泡已经标了已交给 Agent、输入框还满着」
@@ -137,6 +143,29 @@ export function useTaskActions(c: TaskActionsCtx) {
       // 没发出去（或服务端自己标了「没送出去」）：本地那条撤回，原文和附件放回输入框，
       // 不能既没发出又把用户写的字弄丢
       setPendingMsgs((xs) => xs.filter((m) => m.id !== messageId))
+      restoreDraft(text, attachments)
+      toast.error((e as Error).message)
+    } finally {
+      setSending(false)
+    }
+  }
+  /**
+   * 直接发给子对话：消息记在子对话里，服务端在父对话里留一行「直接发给…」（via 是父对话 id），
+   * 所以这里不在父对话页本地插待认领的那条。发出一条就回到「父对话」，失败把原文和附件放回输入框
+   */
+  async function sendToKid(kid: ChildSummary, content: string, text: string) {
+    if (!task) return
+    const attachments = files.attachments
+    taRef.current?.setText('')
+    files.clear()
+    attachmentsNow.current = []
+    setSending(true)
+    try {
+      await api.sendMessage(kid.id, content, attachments, false, '', '', task.id)
+      clearSendTarget(task.id)
+      toast.info(t('已直接发给「{title}」', { title: kid.title || kid.id }))
+      apply(await api.task(task.id))
+    } catch (e) {
       restoreDraft(text, attachments)
       toast.error((e as Error).message)
     } finally {

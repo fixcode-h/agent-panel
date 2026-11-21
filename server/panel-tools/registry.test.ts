@@ -75,7 +75,7 @@ const TOOL_COUNT_CAP: Record<string, number> = { parent: 43, child: 31, helper: 
 /** 一个工具的定义（名字 + 说明 + 参数 schema 的 JSON）最多多少字 */
 const DEF_CAP = 3000
 /** 规范之前就超了的：只许变短，变短了把数改小 */
-const DEF_OVER: Record<string, number> = { submit_diagnosis: 14966, update_bug_case: 14270, spawn_agents: 3598 }
+const DEF_OVER: Record<string, number> = { submit_diagnosis: 14966, update_bug_case: 14270, spawn_agents: 3362 }
 
 test('MCP 工具规范：面板工具的名字、个数、定义长度不超规范（ADR 0067）', () => {
   for (const [aud, o] of Object.entries(AUDIENCE_REPS)) {

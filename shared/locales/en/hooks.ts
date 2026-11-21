@@ -4,6 +4,9 @@ export const EN_HOOKS: Record<string, string> = {
   脚本不能为空: 'Script is required',
   地址不对: 'Invalid URL',
   没做完不收尾: "Don't stop half-done",
+  插话要有着落: 'Follow up on mid-run messages',
+  '名下派过子对话的父对话，执行中收到用户插话后既没转给子对话（send_to_conversation 带上这条的 quote），也没在 end_turn 里交代是自己的事，就要结束时，拦一次问清楚（只问一次，随「没做完不收尾」一起生效）':
+    'When a parent conversation that has delegated to child conversations gets a message from the user mid-run, and is about to stop without forwarding it to a child (send_to_conversation with that message in quote) or saying in end_turn that it was meant for itself, stop it once and ask (only once; works together with "Don\'t stop half-done")',
   压缩后补回计划: 'Restore the plan after compaction',
   '压缩上下文之后，把当前计划和进度、派单的目标、在等什么补给模型，免得它忘了做到哪':
     'After the context is compacted, give the model the current plan and progress, the task goal, and what it is waiting on, so it does not lose its place',
@@ -14,8 +17,8 @@ export const EN_HOOKS: Record<string, string> = {
   '往盘符根目录、面板的数据目录里写文件时拒绝，说明临时文件该放到项目的 .tmp/ 或系统临时目录':
     "Refuse writes to a drive's root folder or the panel's data folder, and point temp files to the project's .tmp/ or the system temp folder",
   推送项目教训和经验: 'Push project lessons and experience',
-  '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来':
-    'Before a command runs or a file is edited, give the model the project lessons that match it; before a search, hand over matching project experience (locations, names) directly; after a tool fails, look up fixes recorded for similar errors. Each entry is pushed once per conversation and tagged under that line in the conversation',
+  '跑命令、改文件之前，把命令或文件对得上的项目教训补给模型；搜索之前把关键词对得上的项目经验（位置、叫法）直接给它；工具报错之后按报错内容找以前记下的解法；第一次读或改某个模块的文件时推这个模块的入口和模块文档，改文件要新增公开函数时提醒先搜有没有现成的。同一条在一个对话里只推一次，推了的在对话里那一行下面标出来':
+    'Before a command runs or a file is edited, give the model the project lessons that match it; before a search, hand over matching project experience (locations, names) directly; after a tool fails, look up fixes recorded for similar errors; the first time a file of a module is read or edited, push the entry points and doc of that module, and when an edit adds a public function, remind it to search for an existing one first. Each entry is pushed once per conversation and tagged under that line in the conversation',
   '输出要是一个 JSON 对象': 'The output must be a JSON object',
   '{event} 不支持这些字段：{list}': '{event} does not support these fields: {list}',
   '{key} 要是字符串': '{key} must be a string',
@@ -207,6 +210,9 @@ export const EN_HOOKS: Record<string, string> = {
     'When the same command fails several times in a row, adds a note to try another approach or say where it is stuck (needs a CLI that reports failures: Claude Code, Pi, Command Code)',
   连续失败几次提醒: 'Failures in a row before the hint',
   '1 到 100，默认 3': '1 to 100, default 3',
+  参数传错时补参数表: 'Parameter table on wrong arguments',
+  'MCP 工具报参数不对（未知参数、缺必填、取值不对）时，把这个工具真实的参数表（面板探测服务时存下的参数名、必填和取值）补给模型，让它照表改、不要换个值再试；同一个工具一个对话只补一次':
+    "When an MCP tool reports wrong arguments (unknown, missing required, or invalid values), gives the model that tool's real parameter table (names, required, and allowed values saved when the panel probed the server) so it fixes the call instead of retrying with another value; once per tool per conversation",
   计划没跟上提醒: 'Plan falling behind hint',
   '项目里的对话改文件、跑命令时，计划没有进行中的步骤，或者进行中的那一步动手多次还没更新，补一句让它先用 set_plan 标完成、标下一步（同一步提醒几次可以设置）':
     'When a project conversation edits files or runs commands while its plan has no step in progress, or the step in progress has gone many actions without an update, adds a note to mark it done and start the next one with set_plan first (how many times per step is configurable)',

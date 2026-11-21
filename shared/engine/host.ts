@@ -10,6 +10,7 @@ import type { DocRootInfo } from '../doc-root.ts'
 import type { BeforeEndDecision, BeforeEndInput } from '../hooks/index.ts'
 import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from '../schema.ts'
 import type { Picks } from '../flow/stage-report.ts'
+import type { ReuseCheck } from '../review/reuse.ts'
 import type { BugHost, OrchBug } from '../host/bug.ts'
 import type { BuildHost, OrchBuild } from '../host/build.ts'
 import type { ConversationHost, OrchConversation } from '../host/conversation.ts'
@@ -130,6 +131,8 @@ export interface ReviewBrief {
   context?: string
   /** 要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件 */
   files?: string[]
+  /** 新增公开函数的复用检查（shared/review/reuse.ts）：加了什么、看了哪里、为什么不用现成的 */
+  reuse?: ReuseCheck[]
 }
 
 /** 子 Agent 的状态（wait_agents 的结果） */
