@@ -14,6 +14,7 @@ import { META_CHIP } from './chip'
  */
 const PROBE_TEXT: Record<keyof ProbeFailures, string> = {
   tool: t('工具不存在'),
+  arg: t('参数传错'),
   path: t('路径不存在'),
   command: t('命令不存在'),
 }

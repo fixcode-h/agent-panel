@@ -220,11 +220,11 @@ test('统计：节点级工具调用、探路失败和缓存写入进导出与�
   assert.equal(n.costUsd, 0.01, '节点费用读 StepUsage，不另算一份')
   assert.equal(n.toolCalls, 3, '节点里的工具调用总数')
   assert.equal(n.failedTools, 2)
-  assert.deepEqual(n.probeBy, { tool: 0, path: 1, command: 0 }, '只有路径不存在是探路失败')
+  assert.deepEqual(n.probeBy, { tool: 0, arg: 0, path: 1, command: 0 }, '只有路径不存在是探路失败')
   // 合计和节点对得上：探路失败是失败工具调用的一部分，不是另一个指标
   assert.equal(s.toolCalls, 4, '节点外那次调用也算任务合计')
   assert.equal(s.failedTools, 3)
-  assert.deepEqual(s.probeBy, { tool: 1, path: 1, command: 0 })
+  assert.deepEqual(s.probeBy, { tool: 1, arg: 0, path: 1, command: 0 })
 
   const md = taskReport(exportTask(rec, [coder], '', new Date(at)))
   assert.match(md, /\| 费用 \|/, '节点表要能直接看到费用')

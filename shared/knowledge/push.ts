@@ -209,7 +209,7 @@ export function pushText(hits: PushHit[], why: PushHit['why'], subject: string):
     error: '【面板】以前遇到过类似的报错，当时记下的做法（对不上就照常排查）：',
     search: '【面板】项目经验里记过这个位置，先去这里看，对不上再照常搜：',
   }[why]
-  return `${head}\n${hits.map((h) => h.line).join('\n')}${why === 'error' ? '' : '\n要看全文用 knowledge_lookup 带 id 查。'}`
+  return `${head}\n${hits.map((h) => h.line).join('\n')}${why === 'error' ? '' : '\n要看全文用 knowledge_lookup 查，query 写这条的 id。'}`
 }
 
 /**

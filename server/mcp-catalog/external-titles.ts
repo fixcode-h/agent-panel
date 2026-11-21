@@ -5,6 +5,9 @@
  *
  * 只在真用到时才问：这个服务 Agent 刚刚调用过，说明配置是用户自己装、CLI 已经在跑的，再起一份只是为了读工具表。
  * 同一个服务一天最多问一次（服务升级后新加的显示名第二天就能看到），碰到缓存里没有的工具时也会重问，但十分钟内不重复。
+ *
+ * 同一次问到的工具说明第一句、参数表也存进缓存：代码索引工具的提示词（code-index.ts）、IDE 服务的参数规矩（ideMcpLines）
+ * 和「参数传错」的工具后提醒（server/hooks/arg-hint.ts）都从这里取，不在提示词里手写别家工具的参数名。
  */
 import path from 'node:path'
 import {
@@ -15,6 +18,7 @@ import {
 } from '../../shared/mcp-catalog/tool-titles.ts'
 import { isOwnMcpServer } from '../../shared/tool-names.ts'
 import { briefDesc } from '../../shared/mcp-catalog/code-index.ts'
+import { briefParams, parseParams, type KnownServer, type ParamBrief } from '../../shared/mcp-catalog/tool-params.ts'
 import type { McpServer } from '../../shared/library.ts'
 import { CACHE_DIR, readJson, writeJsonAtomic } from '../store.ts'
 import { mcpOverview, testMcp } from '../mcp-store.ts'
@@ -35,6 +39,8 @@ interface Entry {
   tools: Record<string, McpToolTitle>
   /** 每个工具说明的第一句：认代码索引工具时写进提示词（code-index.ts），旧缓存没有这一项 */
   descs?: Record<string, string>
+  /** 每个工具的参数表（名字、类型、必填，见 shared/mcp-catalog/tool-params.ts）：提示词的参数规矩和「参数传错」提醒照它写，旧缓存没有这一项 */
+  params?: Record<string, ParamBrief[]>
 }
 let entries: Record<string, Entry> | undefined // 模块状态：缓存副本，第一次用到时读缓存文件
 const tried = new Map<string, number>() // 模块状态：会话，记每个服务上次去问的时间，免得一轮里反复起进程
@@ -51,10 +57,20 @@ async function load() {
         names: Array.isArray(e.names) ? e.names.map(String) : [],
         tools: tools.data.x,
         ...(e.descs && typeof e.descs === 'object' && { descs: e.descs }),
+        ...(e.params && typeof e.params === 'object' && { params: readParams(e.params) }),
       }
   }
   publish(false)
   return entries
+}
+
+function readParams(raw: object): Record<string, ParamBrief[]> {
+  const out: Record<string, ParamBrief[]> = {}
+  for (const [tool, v] of Object.entries(raw)) {
+    const p = parseParams(v)
+    if (p) out[tool] = p
+  }
+  return out
 }
 
 function publish(push: boolean) {
@@ -81,13 +97,15 @@ async function refresh(name: string, cwd: string, known?: McpServer) {
   }
   const tools: Record<string, McpToolTitle> = {}
   const descs: Record<string, string> = {}
+  const params: Record<string, ParamBrief[]> = {}
   for (const x of r.tools) {
     if (x.shown) tools[x.name] = x.shown
     const d = briefDesc(x.description)
     if (d) descs[x.name] = d
+    if (x.params) params[x.name] = briefParams(x.params)
   }
   const all = await load()
-  all[name] = { at: Date.now(), names: r.tools.map((x) => x.name), tools, descs }
+  all[name] = { at: Date.now(), names: r.tools.map((x) => x.name), tools, descs, params }
   publish(true)
   await writeJsonAtomic(FILE, all)
 }
@@ -99,7 +117,8 @@ async function refresh(name: string, cwd: string, known?: McpServer) {
 export function noteMcpToolUse(server: string, tool: string, cwd: string) {
   if (!server || isOwnMcpServer(server)) return
   const e = entries?.[server]
-  if (e && e.names.includes(tool) && Date.now() - e.at < FRESH_MS) return
+  // 没存参数表的旧缓存也重问一次：「参数传错」提醒要用
+  if (e && e.names.includes(tool) && e.params && Date.now() - e.at < FRESH_MS) return
   // 缓存还没读（服务刚启动）：读完再按缓存判断一次
   if (!entries) {
     void load().then(() => entries && noteMcpToolUse(server, tool, cwd))
@@ -111,10 +130,25 @@ export function noteMcpToolUse(server: string, tool: string, cwd: string) {
   refresh(server, cwd).catch((err) => log.warn('mcp', `问 MCP 服务 ${server} 的工具显示名出错`, { error: String(err) }))
 }
 
-/** 缓存里这个服务的工具名和说明；没问过返回 undefined */
+/**
+ * 缓存里这个服务的工具名、说明和参数表；没问过返回 undefined。
+ * fresh 要求参数表也在：只存了名字和说明的旧缓存当过期，项目里的服务下一轮会重问一遍补上参数表
+ */
 export async function externalToolsOf(server: string) {
   const e = (await load())[server]
-  return e && { names: e.names, descs: e.descs ?? {}, fresh: Date.now() - e.at < FRESH_MS && !!e.descs }
+  return (
+    e && {
+      names: e.names,
+      descs: e.descs ?? {},
+      params: e.params ?? {},
+      fresh: Date.now() - e.at < FRESH_MS && !!e.descs && !!e.params,
+    }
+  )
+}
+
+/** 缓存里问过的全部服务和它们的工具名：按 CLI 报上来的工具名认是哪个服务的哪个工具（resolveMcpTool） */
+export async function knownExternalServers(): Promise<KnownServer[]> {
+  return Object.entries(await load()).map(([server, e]) => ({ server, names: e.names }))
 }
 
 /**

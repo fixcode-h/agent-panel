@@ -99,6 +99,95 @@ const gitStatus = (dir) => execFileSync('git', ['status', '--porcelain'], { cwd:
 const all = (...xs) => xs.find((x) => x !== true) ?? true
 
 /**
+ * 参数传错评测（A2）用的代码索引 MCP 服务：stdio、不依赖任何包。find_symbol 只认 name 一个参数，
+ * 多传任何参数都按 ADR 0067 报 invalid_argument 并列出合法参数；每次调用记一行到 .tmp/mcp-calls.log，check 照它判断
+ */
+const INDEX_MCP = `import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { createInterface } from 'node:readline'
+mkdirSync('.tmp', { recursive: true })
+const log = (s) => appendFileSync('.tmp/mcp-calls.log', s + '\\n')
+const tool = {
+  name: 'find_symbol',
+  description: 'Find where a function is declared in src/. Returns file and line.',
+  inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'function name' } }, required: ['name'], additionalProperties: false },
+}
+const send = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n')
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const m = JSON.parse(line)
+  if (m.method === 'initialize') send(m.id, { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'sample-index', version: '1' } })
+  else if (m.method === 'tools/list') send(m.id, { tools: [tool] })
+  else if (m.method === 'tools/call') {
+    const args = m.params?.arguments ?? {}
+    const extra = Object.keys(args).filter((k) => k !== 'name')
+    if (extra.length || typeof args.name !== 'string') {
+      log('bad ' + JSON.stringify(args))
+      return send(m.id, { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'invalid_argument', message: '未知参数 ' + extra.join('、') + '；可用参数：name' }) }] })
+    }
+    const hits = readdirSync('src').flatMap((f) => readFileSync(path.join('src', f), 'utf8').split('\\n').map((l, i) => (l.includes('function ' + args.name + '(') ? 'src/' + f + ':' + (i + 1) : '')).filter(Boolean))
+    log('ok ' + args.name)
+    send(m.id, { content: [{ type: 'text', text: JSON.stringify({ count: hits.length, items: hits }) }] })
+  } else if (m.id !== undefined) send(m.id, {})
+})
+`
+
+/**
+ * 「编译报错找签名」（Agent 写代码能力分析 A4）用的假引擎和假编译：engine/Home.h 当引擎头文件，build.mjs 按 MSVC 的格式
+ * 报「不是成员」（C2039）。凭记忆换个名字再编是错的，要去头文件里查到真实的函数名
+ */
+const ENGINE_FILES = {
+  'engine/Home.h': `#pragma once
+// 假的引擎头文件：评测里当引擎源码，不许改
+class AHome
+{
+public:
+	/** 房子顶部的世界坐标（含屋顶装饰的高度） */
+	FVector GetActorTopLocation() const;
+	/** 只算墙体的高度，不含屋顶装饰 */
+	float GetWallHeight() const;
+};
+`,
+  'src/home.cpp': `#include "engine/Home.h"
+
+// 头衔要放在房子最高处（含屋顶装饰）
+FVector PlaceTitle(const AHome* Home)
+{
+	return Home->GetTopLocation();
+}
+`,
+  'build.mjs': `// 假编译：src 里对 Home-> 的调用，名字不在 engine/Home.h 里就按 MSVC 的格式报 C2039
+import { readFileSync } from 'node:fs'
+const members = [...readFileSync('engine/Home.h', 'utf8').matchAll(/\\b(\\w+)\\s*\\(/g)].map((m) => m[1])
+let bad = 0
+readFileSync('src/home.cpp', 'utf8').split('\\n').forEach((line, i) => {
+  for (const m of line.matchAll(/Home->(\\w+)\\s*\\(/g))
+    if (!members.includes(m[1])) {
+      console.log(\`src/home.cpp(\${i + 1}): error C2039: '\${m[1]}': is not a member of 'AHome'\`)
+      bad++
+    }
+})
+if (bad) {
+  console.log('Build failed')
+  process.exit(1)
+}
+console.log('Build succeeded')
+`,
+}
+
+const buildPass = (dir) => {
+  try {
+    execFileSync(process.execPath, ['build.mjs'], { cwd: dir, stdio: 'pipe', timeout: 30_000 })
+    return true
+  } catch (e) {
+    return `node build.mjs 没过：${
+      String(e.stdout || '')
+        .trim()
+        .split('\n')[0]
+    }`
+  }
+}
+
+/**
  * 固定任务。prompt 原样发给项目里的新对话（角色是项目工作流的统筹）；
  * answer 是它提问时评测替用户回答的话（没写就答「按你推荐的做」）；steer 是派出子对话后在父对话执行中插的一句话；
  * check 跑完后在项目目录里判断结果
@@ -189,6 +278,75 @@ export const EVAL_TASKS = [
           "const m = await import('./src/math.js'); if (typeof m.times !== 'function' || m.times(3,4) !== 12 || 'mul' in m) process.exit(1)",
         ),
       ),
+  },
+  {
+    id: 'mcp-arg-table',
+    title: 'MCP 工具参数传错后照参数表改',
+    prompt:
+      '用项目里 sample-index 这个 MCP 服务的 find_symbol 工具查 slugify 声明在哪个文件哪一行，把「文件:行号」写进 answer.txt。不要用 rg、grep 或读目录去找。',
+    // README 里故意写一句别家工具的参数规矩（#398 的样子）：模型照抄就会多传 projectPath，看它报错后能不能照真实参数表改对
+    files: {
+      '.mcp.json': JSON.stringify(
+        { mcpServers: { 'sample-index': { command: 'node', args: ['tools/index-mcp.mjs'] } } },
+        null,
+        2,
+      ),
+      'tools/index-mcp.mjs': INDEX_MCP,
+      'README.md': `${SAMPLE['README.md']}\n调代码索引工具时传 projectPath（项目根目录）。\n`,
+    },
+    check: (dir) => {
+      const logFile = path.join(dir, '.tmp/mcp-calls.log')
+      const calls = existsSync(logFile) ? readFileSync(logFile, 'utf8').trim().split('\n') : []
+      const bad = calls.filter((l) => l.startsWith('bad')).length
+      const answer = existsSync(path.join(dir, 'answer.txt')) ? readFileSync(path.join(dir, 'answer.txt'), 'utf8') : ''
+      return all(
+        calls.some((l) => l.startsWith('ok')) || `find_symbol 一次都没调成功（调了 ${calls.length} 次）`,
+        bad <= 2 || `参数传错 ${bad} 次：报错后没照参数表改，换个值又试`,
+        /src\/slug\.js:2\b/.test(answer) || `answer.txt 不对：${answer.trim().slice(0, 80)}`,
+      )
+    },
+  },
+  {
+    id: 'compile-signature',
+    title: '编译报错找签名',
+    prompt:
+      '跑 node build.mjs 编译 C++，现在报错了，请修好让它编过。engine/ 下是引擎的头文件，不能改；头衔要放在含屋顶装饰的最高处。',
+    files: ENGINE_FILES,
+    // 只看结果：编得过、引擎头文件没动、用的是头文件里那个真实的函数（不是另写一个或改成只算墙体的）
+    check: (dir) =>
+      all(
+        buildPass(dir),
+        readFileSync(path.join(dir, 'engine/Home.h'), 'utf8') === ENGINE_FILES['engine/Home.h'] || '引擎头文件被改了',
+        /Home->GetActorTopLocation\(\)/.test(readFileSync(path.join(dir, 'src/home.cpp'), 'utf8')) ||
+          '没有改用头文件里的 GetActorTopLocation',
+      ),
+  },
+  {
+    // 先用现成的接口（用户 2026-11-21）：仓库里已经有算单词数的函数，模块文档写了入口，看它会不会另写一份
+    id: 'reuse-existing',
+    title: '用现成的函数',
+    prompt:
+      '在 src/slug.js 加 slugStats(title)，返回 { slug, words }：slug 是 slugify 的结果，words 是标题里的单词数，补测试。',
+    files: {
+      'src/text.js': `/** 文本工具：别的模块要数单词、截断文本都从这里取 */
+export function wordCount(s) {
+  return s.trim() ? s.trim().split(/\\s+/).length : 0
+}
+`,
+      'docs/modules/text/README.md':
+        '# text：文本工具\n\n- 状态：documented\n- 职责：数单词、截断这类文本处理，别的模块都从这里取\n- 源码：`src/text.js`\n- 入口：`src/text.js` 的 `wordCount`\n',
+    },
+    check: (dir) => {
+      const slug = readFileSync(path.join(dir, 'src/slug.js'), 'utf8')
+      return all(
+        testsPass(dir),
+        probe(
+          dir,
+          "import { slugStats } from './src/slug.js'; const r = slugStats('Hello Big World'); if (r.slug !== 'hello-big-world' || r.words !== 3) process.exit(1)",
+        ),
+        /from ['"]\.\/text\.js['"]/.test(slug) || '没有用 src/text.js 的 wordCount，另写了一份',
+      )
+    },
   },
   {
     id: 'read-only',

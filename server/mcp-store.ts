@@ -7,6 +7,7 @@ import type { McpStore } from '../shared/cli-spec.ts'
 import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
 import { splitZhTitleLine, titleOfTool } from '../shared/mcp-catalog/tool-titles.ts'
+import { paramsOf } from '../shared/mcp-catalog/describe.ts'
 import { mcpServerObject, sameServer, type McpActivation } from '../shared/mcp-library/inject.ts'
 import { loadProjectMcp, saveProjectMcp } from './mcp-library/file.ts'
 import { expandHome } from './cli/extras.ts'
@@ -474,7 +475,8 @@ export async function testMcp(sv: McpServer, cwd = process.cwd()): Promise<McpTe
       const shown = titleOfTool(x)
       // 说明里给面板认中文名的「Title (zh): …」那一行不显示
       const { description } = splitZhTitleLine(String(x.description ?? ''))
-      return { name: String(x.name), description, ...(shown && { shown }) }
+      // 参数表也带上：外部工具缓存（mcp-catalog/external-titles.ts）存下来，提示词和「参数传错」提醒照它写
+      return { name: String(x.name), description, ...(shown && { shown }), params: paramsOf(x.inputSchema) }
     })
   try {
     if (sv.transport === 'http') {
