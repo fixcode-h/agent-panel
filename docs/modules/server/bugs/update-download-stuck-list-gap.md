@@ -23,3 +23,4 @@
 - Release feed 解析全部条目（`parseFeedAll`），全部并进列表；API 列表记下附件的 API 地址。
 - `github-sources`：API 来源 403/429 后按恢复时间冷却，期间跳过。
 - `downloadFile` 续传时先报已有的字节数。
+- 「使用代理」开关关着时也会用系统代理、环境变量和本机代理探测，用户关了开关、代理软件没开时还去连 127.0.0.1:10808；改成开关关着一律直连（`defaultPlan` → `DIRECT_ONLY`）。

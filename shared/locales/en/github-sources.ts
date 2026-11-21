@@ -17,8 +17,8 @@ export const EN_GITHUB_SOURCES: Record<string, string> = {
     'Enter the prefix the mirror gives you, e.g. https://mirror.example.com/ . Files are fetched from "prefix + original address". Mirrors are third-party services and none is built in, so only add ones you trust.',
   镜像前缀: 'Mirror prefix',
   原地址: 'Original address',
-  '按原来的地址取，经过「代理」里的设置和本机代理回退':
-    'Fetch from the original address, using the proxy settings and local proxy fallback',
+  '按原来的地址取；「使用代理」打开时经过代理和本机代理回退，关着时直连':
+    'Fetch from the original address; through the proxy and local proxy fallback when "Use a proxy" is on, directly when it is off',
   '经 api.github.com 取仓库文件；不登录每小时限 60 次':
     'Fetch repository files via api.github.com; limited to 60 requests an hour without signing in',
   'GitHub 网页': 'GitHub web page',
