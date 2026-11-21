@@ -34,4 +34,15 @@ export const EN_GITHUB_SOURCES: Record<string, string> = {
   '网页上没有文件内容（文件太大或不是文本）': 'The page has no file content (the file is too large or not text)',
   'GitHub 的各个下载来源都没成功（{url}）。{list}': 'None of the GitHub download sources worked ({url}). {list}',
   返回的不是文件内容: 'The response is not the file content',
+  // 面板更新包按来源下载（server/update/fetch-package.ts）
+  '镜像 {host}': 'Mirror {host}',
+  'GitHub API 限流（HTTP {status}）': 'GitHub API rate limited (HTTP {status})',
+  'GitHub API 没有给出下载地址（HTTP {status}）': 'GitHub API returned no download address (HTTP {status})',
+  '{n} 秒没有收到数据': 'No data received for {n} seconds',
+  '下载安装包失败，试过的来源都不行：{list}。可以在「设置 · 网络与代理」里配代理或加镜像前缀，或先下载好安装包再用「用本地安装包更新」。':
+    'Failed to download the package; every source failed: {list}. Set a proxy or add a mirror prefix in "Settings · Network & proxy", or download the package yourself and use "Update from local package".',
+  '限流中，暂时跳过': 'Rate limited, skipped for now',
+  '下载来源：{source}': 'Downloading from: {source}',
+  '已换掉 {source}：{error}': 'Gave up on {source}: {error}',
+  超时: 'Timed out',
 }
