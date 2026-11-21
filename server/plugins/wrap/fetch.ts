@@ -32,8 +32,7 @@ const API = 'https://api.github.com'
 const HEADERS = (): Record<string, string> => ({
   'User-Agent': 'agent-panel',
   Accept: 'application/vnd.github+json',
-  // 匿名每小时 60 次，设了 GITHUB_TOKEN 的用它（和面板自己查更新同一个变量）
-  ...(process.env.GITHUB_TOKEN && { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }),
+  // 令牌（环境变量 GITHUB_TOKEN 或已授权的 gh）由 netFetch 统一带上
 })
 
 async function api<T>(path: string, what: string, allow404 = false): Promise<T | undefined> {
@@ -46,7 +45,7 @@ async function api<T>(path: string, what: string, allow404 = false): Promise<T |
   if (res.status === 404 && allow404) return undefined
   if (res.status === 404) throw new Error(`${what}失败：仓库不存在或不是公开仓库`)
   if (res.status === 403 || res.status === 429)
-    throw new Error(`${what}失败：GitHub 接口限流了（匿名每小时 60 次），稍后再试，或设置环境变量 GITHUB_TOKEN`)
+    throw new Error(`${what}失败：GitHub 接口限流了（匿名每小时 60 次），稍后再试，或在设置「授权」里登录 GitHub CLI`)
   if (!res.ok) throw new Error(`${what}失败：HTTP ${res.status}`)
   return (await res.json()) as T
 }

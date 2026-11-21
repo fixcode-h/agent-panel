@@ -449,7 +449,8 @@ export function updateApi(deps: {
     const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' }
     // 带上上次的 ETag：列表没变化时 GitHub 回 304，conditional request 不计入配额
     if (cache?.etag) headers['If-None-Match'] = cache.etag
-    // 有 token 就用认证请求：配额从 60 次/小时提到 5000 次/小时。只读环境变量，不落盘
+    // 有 token 就用认证请求：配额从 60 次/小时提到 5000 次/小时。环境变量在这里带（测试会把地址换成本机）；
+    // 没设环境变量时，netFetch 对 api.github.com 自动带上已授权 gh 的令牌
     const token = process.env.GITHUB_TOKEN
     if (token) headers.Authorization = `Bearer ${token}`
     let res: Response

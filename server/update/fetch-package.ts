@@ -26,11 +26,9 @@ export const STALL_MS = 60_000
 
 const UA = { 'User-Agent': 'agent-panel' }
 
+/** 令牌（环境变量或已授权的 gh）由 netFetch 对 api.github.com 统一带上，这里不用管 */
 function apiHeaders(): Record<string, string> {
-  const h: Record<string, string> = { ...UA, Accept: 'application/octet-stream' }
-  // 有令牌时配额大得多；只读环境变量，不落盘
-  if (process.env.GITHUB_TOKEN) h.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
-  return h
+  return { ...UA, Accept: 'application/octet-stream' }
 }
 
 /** 列出这个文件可以从哪些地方取，按优先级排；同一个地址只出现一次 */

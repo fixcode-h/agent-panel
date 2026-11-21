@@ -16,7 +16,21 @@ export const GithubSourceTest = z.object({
 })
 export type GithubSourceTest = z.infer<typeof GithubSourceTest>
 
+/** GitHub API 用的是哪个令牌：设置页「GitHub API」那一行据此说明配额 */
+export const GithubAuth = z.object({
+  /** env：环境变量 GITHUB_TOKEN / GH_TOKEN；tool：已授权的命令行工具（gh）；none：没有，匿名 */
+  source: z.enum(['env', 'tool', 'none']),
+  tool: z.string().optional(),
+  account: z.string().optional(),
+})
+export type GithubAuth = z.infer<typeof GithubAuth>
+
 export const netContract = {
+  githubAuth: endpoint({
+    method: 'GET',
+    path: '/net/github-auth',
+    res: GithubAuth,
+  }),
   /** 按页面上当前的列表（还没自动保存也行）逐个来源取一次样例文件 */
   testGithubSources: endpoint({
     method: 'POST',

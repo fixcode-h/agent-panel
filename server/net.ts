@@ -58,6 +58,8 @@ export interface NetDeps {
   plan: (url: string) => Promise<ProxyPlan>
   discover: () => Promise<string[]>
   proxyFailed?: (key: string) => void
+  /** 这个地址能带的令牌（GitHub API 用环境变量或已授权的 gh）；没有返回空 */
+  token?: (url: string) => Promise<string | undefined>
 }
 
 /** 本机地址永远直连：面板自己、本机模型服务都不该经过代理 */
@@ -391,6 +393,38 @@ const defaultDeps: NetDeps = {
   plan: defaultPlan,
   discover: localProxies,
   proxyFailed: markProxyBad,
+  token: githubToken,
+}
+
+/**
+ * GitHub API 的令牌：环境变量 GITHUB_TOKEN / GH_TOKEN 优先，没有就用设置「授权」里已登录的 gh。
+ * 不登录每小时只有 60 次，查更新、下载更新包、兜底取仓库文件很快就用完；带上令牌是 5000 次。
+ * 只给 api.github.com：镜像、jsDelivr 是第三方，令牌不能发过去（跟随跳转到别的主机时 fetch 也会去掉它）。
+ */
+export async function githubToken(url: string): Promise<string | undefined> {
+  let host = ''
+  try {
+    host = new URL(url).hostname.toLowerCase()
+  } catch {
+    return undefined
+  }
+  if (host !== 'api.github.com') return undefined
+  const env = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+  if (env) return env
+  // 动态引入：integrations 依赖链较长，网络层不在模块加载时就拉进来
+  const { integrationToken } = await import('./integrations.ts')
+  return (await integrationToken(host).catch(() => undefined))?.token
+}
+
+/** 已有 Authorization 时不动（调用方自己带了令牌） */
+async function withToken(deps: NetDeps, url: string, init: RequestInit): Promise<RequestInit> {
+  if (!deps.token) return init
+  const headers = new Headers(init.headers)
+  if (headers.has('authorization')) return init
+  const token = await deps.token(url).catch(() => undefined)
+  if (!token) return init
+  headers.set('Authorization', `Bearer ${token}`)
+  return { ...init, headers }
 }
 
 type TryResult = { ok: true; response: Response } | { ok: false; error: unknown; cancelled: boolean }
@@ -479,7 +513,8 @@ function failure(error: unknown, tried: Attempt[], probed: boolean, stop: boolea
 }
 
 export async function netFetchWith(deps: NetDeps, url: string, init: NetInit = {}): Promise<Response> {
-  const { timeoutMs, onAttempt, ...request } = init
+  const { timeoutMs, onAttempt, ...rest } = init
+  const request = await withToken(deps, url, rest)
   const plan = await deps.plan(url).catch((): ProxyPlan => ({ kind: 'direct', fallback: true }))
   const first: Attempt =
     plan.kind === 'proxy'
