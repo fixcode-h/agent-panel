@@ -3,6 +3,7 @@ import { kidsOf } from '../children/lookup.ts'
 import { pickFlow } from '../flow/run.ts'
 import { isChatMode } from '../conv-mode.ts'
 import { endTurnCheck, pushTurnEnd } from '../end-turn.ts'
+import { ownSteerIds } from './steer-pending.ts'
 import { requestAction } from '../user-action.ts'
 import { activePlan, applyPlan, bindWait, finishPlan, runningStepId } from '../plan/index.ts'
 import type { Orchestra } from '../engine/host.ts'
@@ -64,11 +65,13 @@ export function planTools(oc: OrchCtx) {
     // 只给对话（不含 Chat 页一问一答、子任务和工作流节点）：结束前钩子只认它交代的结束，不读回复文字
     ...(ctx.chat && !helper && !isChatMode(task)
       ? {
-          async endTurn(outcome: string, need: string) {
+          async endTurn(outcome: string, need: string, own?: string[]) {
             // 命令改的文件、插件工具报的改动和验证：只在要记成做完时现取（拍快照有开销）
             const extra = outcome === 'done' ? await host.turnExtra?.().catch(() => undefined) : undefined
             const r = endTurnCheck(task, outcome, need, host.verifyGate, extra)
-            if (r.end) pushTurnEnd(task, r.end)
+            // 父对话交代「这几条插话是对我自己的调整」：记在这次结束上，插话核对按它收口（steer-pending.ts）
+            const mine = coordinator && own?.length ? ownSteerIds(task.messages, own) : []
+            if (r.end) pushTurnEnd(task, { ...r.end, ...(mine.length ? { own: mine } : {}) })
             if (r.end) host.changed(true)
             return { ok: r.ok, info: r.info }
           },

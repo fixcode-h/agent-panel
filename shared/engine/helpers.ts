@@ -11,6 +11,8 @@ import { approvedBrief, requestLogs, submitDiagnosis, updateBugCase, type Diagno
 import { resultLine, resultOf } from '../helper-summary.ts'
 import { changedFilesPart } from '../wrapup-prompt.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from '../review/limits.ts'
+import { userWordsPart } from '../review/user-words.ts'
+import { reusePart } from '../review/reuse.ts'
 import type { HelperSpec, ReviewBrief, HelperReport, HelperBatch, EngineHost } from './host.ts'
 import { activePlan, settleWait } from '../plan/index.ts'
 import { SLOT_PROMPT } from './prompt-parts.ts'
@@ -150,7 +152,10 @@ export function briefPart(b: ReviewBrief | undefined) {
 export async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   const agent = host.agents.find((a) => a.id === step.agentId)
   if (agent?.origin !== 'builtin:reviewer') return ''
-  const brief = [briefPart(spec.review), approvedBrief(host.task)].filter(Boolean).join('\n\n')
+  // 用户说过的话由面板按消息记录附上，不靠派评审的对话自己转述（分析稿 B2）
+  const brief = [briefPart(spec.review), approvedBrief(host.task), userWordsPart(host.task)]
+    .filter(Boolean)
+    .join('\n\n')
   if (!host.reviewDiff)
     return [brief, changedFilesPart(host.task.changes.map((c) => c.path))].filter(Boolean).join('\n\n')
   const key = step.session || ''
@@ -174,7 +179,8 @@ export async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperS
       ? `差异太长，没有放进来：完整差异在文件 ${d.file}，先读它。`
       : '差异太长，没有放进来：按上面的文件列表自己取 diff。'
   const part = `## 要评审的改动\n面板已经取好了${what}，不用再自己取 diff。每处改动前后带几行没改的代码，只是帮你看懂改动接在哪里：**只评以 + / - 开头的行**，上下文里没改的代码不评。锁文件、压缩产物这类生成的文件只在列表里，不用评。\n\n改动文件：\n\`\`\`\n${d.stat}\n\`\`\`\n\n${body}`
-  return [brief, part, d.semantic].filter(Boolean).join('\n\n')
+  // 差异里新增的公开函数和交接单的复用检查对一遍（分析稿 B3）：差异只存成文件时取不到，不标
+  return [brief, part, d.semantic, reusePart(d.diff ?? '', spec.review?.reuse)].filter(Boolean).join('\n\n')
 }
 
 /** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */

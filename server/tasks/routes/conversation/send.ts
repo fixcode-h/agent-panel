@@ -24,7 +24,7 @@ export function sendRoute(s: TasksScope): Hono {
     // 入参按前后端共用的契约校验（shared/api-contract/tasks.ts）
     const p = tasksContract.send.body.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
-    const { text, attachments, interrupt, messageId, from, userAction } = p.data
+    const { text, attachments, interrupt, messageId, from, userAction, via } = p.data
     const cur = await currentTask(s, id)
     // 别的对话替它发的：按「同项目的其他对话」记来源；发件对话找不到（被删了）就当用户消息，不丢这条
     const sender = from && from !== id ? await currentTask(s, from) : undefined
@@ -90,7 +90,7 @@ export function sendRoute(s: TasksScope): Hono {
         )
     // 用户直接给子对话发消息：父对话计划里挂上等它，做完的状态才会报到父对话并叫起它（不打断这次发送）
     if (cur?.parentTaskId && !peer)
-      await s.trackUserToChild(cur, text).catch((e) => {
+      await s.trackUserToChild(cur, text, via === cur.parentTaskId).catch((e) => {
         log.warn('task', '用户直接发给子对话的要求没能登记到父对话', { task: id, error: (e as Error).message })
         s.alertOn(id, 'delivery', t('这条消息没能登记到父对话的计划里，做完后父对话可能收不到状态'))(e)
       })

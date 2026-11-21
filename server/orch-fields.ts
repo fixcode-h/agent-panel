@@ -3,6 +3,7 @@
  * 以及把它们从工具参数里取出来的函数。从 orch-mcp.ts 按功能拆出来（行数上限，见 docs/lessons/file-caps.md）
  */
 import type { HelperSpec, Orchestra, RouteInput } from '../shared/engine/host.ts'
+import { reuseInput } from '../shared/review/reuse.ts'
 
 /** 交给哪个 Agent：列出通用 Agent，模型不用猜名字 */
 export function agentField(o: Orchestra) {
@@ -23,6 +24,7 @@ export function briefOf(v: unknown): HelperSpec['review'] {
   const b = v as Record<string, unknown>
   const s = (k: string) => (typeof b[k] === 'string' && (b[k] as string).trim() ? (b[k] as string) : undefined)
   const files = Array.isArray(b.files) ? b.files.filter((f): f is string => typeof f === 'string' && !!f.trim()) : []
+  const reuse = reuseInput(b.reuse)
   return {
     goal: s('goal'),
     changes: s('changes'),
@@ -30,6 +32,7 @@ export function briefOf(v: unknown): HelperSpec['review'] {
     focus: s('focus'),
     context: s('context'),
     ...(files.length ? { files } : {}),
+    ...(reuse.length ? { reuse } : {}),
   }
 }
 
@@ -112,6 +115,16 @@ export const reviewField = () => ({
       items: { type: 'string' },
       description: '要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件',
     },
+    reuse: {
+      type: 'array',
+      description:
+        '新增了别的模块能调的公开函数时逐个写复用检查（面板会从差异里核对，没写到的标给评审）：added 函数名、looked 看了哪里有没有现成的、why 为什么不用现成的',
+      items: {
+        type: 'object',
+        properties: { added: { type: 'string' }, looked: { type: 'string' }, why: { type: 'string' } },
+        required: ['added', 'looked', 'why'],
+      },
+    },
   },
 })
 
@@ -135,7 +148,8 @@ export const tasksField = (o: Orchestra) => ({
       tier: tierField(),
       resume: resumeField(),
       params: paramsField(),
-      review: reviewField(),
+      // 字段说明只在顶层写一份：两处各写一整份，spawn_agents 的定义每轮多占八百多字（ADR 0067 的定义长度）
+      review: { type: 'object', description: '这一项单独的评审交接单，字段和顶层 review 一样' },
     },
     // title 不必填：缺了引擎取 instructions 第一行（见 engine.ts 的 spawn），因为漏写标题被拒、白费一次调用不值
     required: ['instructions'],

@@ -6,6 +6,16 @@ import type { Orchestra } from '../../shared/engine/host.ts'
 import { END_TURN_TOOL } from '../../shared/end-turn.ts'
 import type { PanelTool } from './types.ts'
 
+/** 父对话才有的 own：执行中用户插话里是对它自己这件事的调整、不用转给子对话的那几条（shared/orchestra/steer-pending.ts） */
+const OWN_FIELD = {
+  own: {
+    type: 'array',
+    items: { type: 'string' },
+    description:
+      '只有父对话写：执行中用户插的话里，是对你自己这件事的调整、不用转给子对话的那几条消息 id（插话说明里给了 id；最近一条写 "last"）。转给子对话的用 send_to_conversation 的 quote，不写在这里',
+  },
+}
+
 const END_TURN_DEF = {
   name: END_TURN_TOOL,
   title: '结束这一轮',
@@ -26,10 +36,11 @@ const END_TURN_DEF = {
 }
 
 /** 执行一次 end_turn：没有这个工具（子任务、工作流节点、Chat 页）时报错 */
-async function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown } | undefined) {
+async function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown; own?: unknown } | undefined) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const own = Array.isArray(a?.own) ? a.own.map(String).filter(Boolean) : undefined
   const r = o.endTurn
-    ? await o.endTurn(str(a?.outcome).trim(), str(a?.need))
+    ? await o.endTurn(str(a?.outcome).trim(), str(a?.need), own)
     : { ok: false, info: '这里不用 end_turn：做完直接结束这一轮（子任务、工作流节点按各自的 submit_* 交结果）' }
   return { content: [{ type: 'text', text: r.info }], ...(!r.ok && { isError: true }) }
 }
@@ -37,7 +48,16 @@ async function callEndTurn(o: Orchestra, a: { outcome?: unknown; need?: unknown 
 export const END_TURN: PanelTool = {
   name: END_TURN_TOOL,
   when: (o) => !!o.endTurn,
-  def: () => END_TURN_DEF,
+  def: (o) =>
+    o.coordinator
+      ? {
+          ...END_TURN_DEF,
+          inputSchema: {
+            ...END_TURN_DEF.inputSchema,
+            properties: { ...END_TURN_DEF.inputSchema.properties, ...OWN_FIELD },
+          },
+        }
+      : END_TURN_DEF,
   // 结束只认 end_turn（shared/end-turn.ts）：不写明的话模型照旧说完就停，面板只能再提醒一次
   hint: (_o, at) =>
     at === 'conv'

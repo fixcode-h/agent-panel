@@ -24,6 +24,7 @@ import { isolated } from './helpers.ts'
 import { freshTask, readTask } from './read.ts'
 import { mergeOwedBlock, wrapWaitingBlock } from '../../shared/prompt/letters/wrap.ts'
 import { CHECK_REMINDER, planBlock } from '../../shared/prompt/letters/nudge.ts'
+import { pendingSteers, steerPendingBlock } from '../../shared/orchestra/steer-pending.ts'
 
 /**
  * 对话（顶层对话、子对话）的结束前判断（ADR 0049）：模型准备结束这一轮时 CLI 问到这里，
@@ -134,6 +135,14 @@ export function createBeforeEnd(
       sc.mergeNudged.add(tk.id)
       return block(tk, 'merge-owed', `merge:${inputOf(tk)}`, mergeOwedBlock(isolated(tk)), { merge })
     }
+
+    // 父对话执行中用户插了话、还没转给子对话也没交代是自己的事：交代了结束也问一次（分析稿 B1）。
+    // 放在「交代了结束」前面：弱模型常是说一句「我转给它」就 end_turn，用户的话一直没送到
+    const steers = input.steer ? pendingSteers(tk) : []
+    if (steers.length)
+      return block(tk, 'steer-pending', `steer:${steers.map((m) => m.id).join(',')}`, steerPendingBlock(steers), {
+        steers: steers.length,
+      })
 
     // 它用 end_turn 交代做完了（计划没做完时 end_turn 会被拒，走不到这里）
     if (end) return allowEnd('declared')

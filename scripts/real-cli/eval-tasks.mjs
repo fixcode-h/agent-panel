@@ -189,7 +189,8 @@ const buildPass = (dir) => {
 
 /**
  * 固定任务。prompt 原样发给项目里的新对话（角色是项目工作流的统筹）；
- * answer 是它提问时评测替用户回答的话（没写就答「按你推荐的做」）；check 跑完后在项目目录里判断结果
+ * answer 是它提问时评测替用户回答的话（没写就答「按你推荐的做」）；steer 是派出子对话后在父对话执行中插的一句话；
+ * check 跑完后在项目目录里判断结果
  */
 export const EVAL_TASKS = [
   {
@@ -260,6 +261,21 @@ export const EVAL_TASKS = [
         probe(
           dir,
           "import { toCsv } from './src/export.js'; const s = toCsv([{a:1,b:'x,y'}]); if (!/^a,b\\r?\\n1,\"x,y\"/.test(s)) process.exit(1)",
+        ),
+      ),
+  },
+  {
+    id: 'steer-forward',
+    title: '执行中插话要转给子对话',
+    prompt: '开一个子对话去做：在 src/math.js 加 mul(a, b) 返回两数相乘，补测试。子对话合回之后再结束。',
+    // 子对话派出去、父对话还在跑时插这一句：父对话要把它转给子对话（或用户直接发过去），最后函数名得是 times
+    steer: '乘法函数改名叫 times，不要叫 mul。',
+    check: (dir) =>
+      all(
+        testsPass(dir),
+        probe(
+          dir,
+          "const m = await import('./src/math.js'); if (typeof m.times !== 'function' || m.times(3,4) !== 12 || 'mul' in m) process.exit(1)",
         ),
       ),
   },
