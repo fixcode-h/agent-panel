@@ -53,7 +53,7 @@ export const FlowRun = z.object({
   input: z.string().default(''),
   phase: FlowRunPhase.default('running'),
   decisions: z.array(FlowDecision).default([]),
-  /** 运行级说明：之后每个节点都带上（message_workflow 的 later、运行面板里的「之后的节点都要知道」） */
+  /** 运行级说明：之后每个节点都带上（message_workflow 的 to 写 later、运行面板里的「之后的节点都要知道」） */
   notes: z.array(z.string()).default([]),
   /** 同一节点修改几轮以后在结尾提示（不强制终止，用户 2026-11-05 定）；取自工作流设置，0 表示不提示 */
   reviseLimit: z.number().int().min(0).default(3),

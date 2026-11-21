@@ -240,6 +240,17 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     ],
   },
   {
+    // A2（designs/Agent写代码能力-提升与扩展分析.md）：别家工具的参数名不再手写进提示词，传错时由面板补上真实的参数表
+    id: 'arg-table-hint',
+    event: 'tool.after',
+    name: () => t('参数传错时补参数表'),
+    description: () =>
+      t(
+        'MCP 工具报参数不对（未知参数、缺必填、取值不对）时，把这个工具真实的参数表（面板探测服务时存下的参数名、必填和取值）补给模型，让它照表改、不要换个值再试；同一个工具一个对话只补一次',
+      ),
+    tier: 'standard',
+  },
+  {
     id: 'big-output-hint',
     event: 'tool.after',
     name: () => t('大输出提醒'),

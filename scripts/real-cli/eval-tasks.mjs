@@ -99,6 +99,39 @@ const gitStatus = (dir) => execFileSync('git', ['status', '--porcelain'], { cwd:
 const all = (...xs) => xs.find((x) => x !== true) ?? true
 
 /**
+ * 参数传错评测（A2）用的代码索引 MCP 服务：stdio、不依赖任何包。find_symbol 只认 name 一个参数，
+ * 多传任何参数都按 ADR 0067 报 invalid_argument 并列出合法参数；每次调用记一行到 .tmp/mcp-calls.log，check 照它判断
+ */
+const INDEX_MCP = `import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { createInterface } from 'node:readline'
+mkdirSync('.tmp', { recursive: true })
+const log = (s) => appendFileSync('.tmp/mcp-calls.log', s + '\\n')
+const tool = {
+  name: 'find_symbol',
+  description: 'Find where a function is declared in src/. Returns file and line.',
+  inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'function name' } }, required: ['name'], additionalProperties: false },
+}
+const send = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n')
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const m = JSON.parse(line)
+  if (m.method === 'initialize') send(m.id, { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'sample-index', version: '1' } })
+  else if (m.method === 'tools/list') send(m.id, { tools: [tool] })
+  else if (m.method === 'tools/call') {
+    const args = m.params?.arguments ?? {}
+    const extra = Object.keys(args).filter((k) => k !== 'name')
+    if (extra.length || typeof args.name !== 'string') {
+      log('bad ' + JSON.stringify(args))
+      return send(m.id, { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'invalid_argument', message: '未知参数 ' + extra.join('、') + '；可用参数：name' }) }] })
+    }
+    const hits = readdirSync('src').flatMap((f) => readFileSync(path.join('src', f), 'utf8').split('\\n').map((l, i) => (l.includes('function ' + args.name + '(') ? 'src/' + f + ':' + (i + 1) : '')).filter(Boolean))
+    log('ok ' + args.name)
+    send(m.id, { content: [{ type: 'text', text: JSON.stringify({ count: hits.length, items: hits }) }] })
+  } else if (m.id !== undefined) send(m.id, {})
+})
+`
+
+/**
  * 固定任务。prompt 原样发给项目里的新对话（角色是项目工作流的统筹）；
  * answer 是它提问时评测替用户回答的话（没写就答「按你推荐的做」）；check 跑完后在项目目录里判断结果
  */
@@ -173,6 +206,33 @@ export const EVAL_TASKS = [
           "import { toCsv } from './src/export.js'; const s = toCsv([{a:1,b:'x,y'}]); if (!/^a,b\\r?\\n1,\"x,y\"/.test(s)) process.exit(1)",
         ),
       ),
+  },
+  {
+    id: 'mcp-arg-table',
+    title: 'MCP 工具参数传错后照参数表改',
+    prompt:
+      '用项目里 sample-index 这个 MCP 服务的 find_symbol 工具查 slugify 声明在哪个文件哪一行，把「文件:行号」写进 answer.txt。不要用 rg、grep 或读目录去找。',
+    // README 里故意写一句别家工具的参数规矩（#398 的样子）：模型照抄就会多传 projectPath，看它报错后能不能照真实参数表改对
+    files: {
+      '.mcp.json': JSON.stringify(
+        { mcpServers: { 'sample-index': { command: 'node', args: ['tools/index-mcp.mjs'] } } },
+        null,
+        2,
+      ),
+      'tools/index-mcp.mjs': INDEX_MCP,
+      'README.md': `${SAMPLE['README.md']}\n调代码索引工具时传 projectPath（项目根目录）。\n`,
+    },
+    check: (dir) => {
+      const logFile = path.join(dir, '.tmp/mcp-calls.log')
+      const calls = existsSync(logFile) ? readFileSync(logFile, 'utf8').trim().split('\n') : []
+      const bad = calls.filter((l) => l.startsWith('bad')).length
+      const answer = existsSync(path.join(dir, 'answer.txt')) ? readFileSync(path.join(dir, 'answer.txt'), 'utf8') : ''
+      return all(
+        calls.some((l) => l.startsWith('ok')) || `find_symbol 一次都没调成功（调了 ${calls.length} 次）`,
+        bad <= 2 || `参数传错 ${bad} 次：报错后没照参数表改，换个值又试`,
+        /src\/slug\.js:2\b/.test(answer) || `answer.txt 不对：${answer.trim().slice(0, 80)}`,
+      )
+    },
   },
   {
     id: 'read-only',

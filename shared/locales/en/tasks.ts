@@ -1248,6 +1248,7 @@ export const EN_TASKS: Record<string, string> = {
   '失败 {n}': '{n} failed',
   '其中探路失败 {n} 次': '{n} of them were probing failures',
   工具不存在: 'Tool not found',
+  参数传错: 'Wrong tool arguments',
   路径不存在: 'Path not found',
   命令不存在: 'Command not found',
   '返工 {n} 次': '{n} reworks',
