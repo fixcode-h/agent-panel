@@ -1230,7 +1230,8 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     }
     const t0 = await call('POST', '/mcp-tools/test', server)
     assert.equal(t0.ok, true, JSON.stringify(t0))
-    assert.deepEqual(t0.tools, [{ name: 'hello', description: '打招呼' }])
+    // 参数表也带上（外部工具缓存存它，「参数传错」提醒照它写）：这个假服务的 hello 不带参数
+    assert.deepEqual(t0.tools, [{ name: 'hello', description: '打招呼', params: [] }])
     assert.equal((await call('POST', '/mcp-tools/test', { ...server, command: 'no-such-cmd-xyz' })).ok, false)
     let ov = await call('GET', '/mcp-tools')
     assert.deepEqual(
