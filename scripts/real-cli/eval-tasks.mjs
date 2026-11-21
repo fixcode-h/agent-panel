@@ -132,6 +132,62 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 `
 
 /**
+ * 「编译报错找签名」（Agent 写代码能力分析 A4）用的假引擎和假编译：engine/Home.h 当引擎头文件，build.mjs 按 MSVC 的格式
+ * 报「不是成员」（C2039）。凭记忆换个名字再编是错的，要去头文件里查到真实的函数名
+ */
+const ENGINE_FILES = {
+  'engine/Home.h': `#pragma once
+// 假的引擎头文件：评测里当引擎源码，不许改
+class AHome
+{
+public:
+	/** 房子顶部的世界坐标（含屋顶装饰的高度） */
+	FVector GetActorTopLocation() const;
+	/** 只算墙体的高度，不含屋顶装饰 */
+	float GetWallHeight() const;
+};
+`,
+  'src/home.cpp': `#include "engine/Home.h"
+
+// 头衔要放在房子最高处（含屋顶装饰）
+FVector PlaceTitle(const AHome* Home)
+{
+	return Home->GetTopLocation();
+}
+`,
+  'build.mjs': `// 假编译：src 里对 Home-> 的调用，名字不在 engine/Home.h 里就按 MSVC 的格式报 C2039
+import { readFileSync } from 'node:fs'
+const members = [...readFileSync('engine/Home.h', 'utf8').matchAll(/\\b(\\w+)\\s*\\(/g)].map((m) => m[1])
+let bad = 0
+readFileSync('src/home.cpp', 'utf8').split('\\n').forEach((line, i) => {
+  for (const m of line.matchAll(/Home->(\\w+)\\s*\\(/g))
+    if (!members.includes(m[1])) {
+      console.log(\`src/home.cpp(\${i + 1}): error C2039: '\${m[1]}': is not a member of 'AHome'\`)
+      bad++
+    }
+})
+if (bad) {
+  console.log('Build failed')
+  process.exit(1)
+}
+console.log('Build succeeded')
+`,
+}
+
+const buildPass = (dir) => {
+  try {
+    execFileSync(process.execPath, ['build.mjs'], { cwd: dir, stdio: 'pipe', timeout: 30_000 })
+    return true
+  } catch (e) {
+    return `node build.mjs 没过：${
+      String(e.stdout || '')
+        .trim()
+        .split('\n')[0]
+    }`
+  }
+}
+
+/**
  * 固定任务。prompt 原样发给项目里的新对话（角色是项目工作流的统筹）；
  * answer 是它提问时评测替用户回答的话（没写就答「按你推荐的做」）；check 跑完后在项目目录里判断结果
  */
@@ -233,6 +289,21 @@ export const EVAL_TASKS = [
         /src\/slug\.js:2\b/.test(answer) || `answer.txt 不对：${answer.trim().slice(0, 80)}`,
       )
     },
+  },
+  {
+    id: 'compile-signature',
+    title: '编译报错找签名',
+    prompt:
+      '跑 node build.mjs 编译 C++，现在报错了，请修好让它编过。engine/ 下是引擎的头文件，不能改；头衔要放在含屋顶装饰的最高处。',
+    files: ENGINE_FILES,
+    // 只看结果：编得过、引擎头文件没动、用的是头文件里那个真实的函数（不是另写一个或改成只算墙体的）
+    check: (dir) =>
+      all(
+        buildPass(dir),
+        readFileSync(path.join(dir, 'engine/Home.h'), 'utf8') === ENGINE_FILES['engine/Home.h'] || '引擎头文件被改了',
+        /Home->GetActorTopLocation\(\)/.test(readFileSync(path.join(dir, 'src/home.cpp'), 'utf8')) ||
+          '没有改用头文件里的 GetActorTopLocation',
+      ),
   },
   {
     // 先用现成的接口（用户 2026-11-21）：仓库里已经有算单词数的函数，模块文档写了入口，看它会不会另写一份
