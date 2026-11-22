@@ -58,7 +58,7 @@ test('来源顺序：GitHub API 在最前，其次原地址，再是打开的镜
   })
   assert.deepEqual(
     list.map((s) => s.label),
-    ['GitHub API', '原地址', '镜像 m.example.com'],
+    ['GitHub API', '原地址', '镜像 m.example.com', 'gh-proxy 加速（IPv6）'],
   )
   assert.equal(list[2].url, 'https://m.example.com/https://github.com/o/r/releases/download/v1/a.zip')
 })

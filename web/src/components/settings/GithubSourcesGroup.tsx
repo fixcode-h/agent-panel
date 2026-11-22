@@ -46,6 +46,7 @@ export function GithubSourcesGroup({
   }, [])
   /** 「GitHub API」那一行的说明：登录了就写清用的哪个账号、配额多少 */
   const descOf = (s: ResolvedSource) => {
+    if (s.preset) return `${s.prefix} · ${s.preset.desc()}`
     if (s.def.id !== 'api' || !auth || auth.source === 'none') return s.def.desc()
     if (auth.source === 'env') return t('经 api.github.com 取仓库文件；用环境变量里的令牌，每小时 5000 次')
     return auth.account
@@ -123,7 +124,7 @@ export function GithubSourcesGroup({
               />
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex min-w-0 items-center gap-2 text-body font-medium">
-                  <span className="truncate">{s.prefix ? s.prefix : s.def.label()}</span>
+                  <span className="truncate">{s.preset ? s.preset.label() : s.prefix ? s.prefix : s.def.label()}</span>
                   {r?.ok && <StatusPill tone="ok">{t('可用 · {ms} 毫秒', { ms: String(r.ms ?? 0) })}</StatusPill>}
                   {r && !r.ok && !r.skipped && (
                     <StatusPill tone="err" title={r.error}>
@@ -150,7 +151,7 @@ export function GithubSourcesGroup({
                   disabled={i === list.length - 1}
                   onClick={() => move(i, 1)}
                 />
-                {s.prefix && (
+                {s.prefix && !s.preset && (
                   <IconButton
                     icon={Trash2}
                     size="sm"
@@ -175,7 +176,7 @@ export function GithubSourcesGroup({
           )
         }
         hint={t(
-          '填镜像站给的前缀，例如 https://mirror.example.com/ ，取文件时用「前缀 + 原地址」。镜像是第三方服务，面板不内置任何一个，请只填信得过的站点。',
+          '填镜像站给的前缀，例如 https://mirror.example.com/ ，取文件时用「前缀 + 原地址」。镜像是第三方服务，请只填信得过的站点；列表里预置的 gh-proxy 可以关掉，不能删。',
         )}
       >
         <div className="flex items-center gap-1.5">

@@ -41,6 +41,7 @@ import { EN_CALL_TREE } from './en/call-tree.ts'
 import { EN_STRUCTURE_VIEWS } from './en/structure-views.ts'
 import { EN_WEB_VIEW } from './en/web-view.ts'
 import { EN_GITHUB_SOURCES } from './en/github-sources.ts'
+import { EN_TOOLS } from './en/tools.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_FOLD_BAR } from './en/fold-bar.ts'
@@ -94,6 +95,7 @@ export const EN: Record<string, string> = {
   ...EN_STRUCTURE_VIEWS,
   ...EN_WEB_VIEW,
   ...EN_GITHUB_SOURCES,
+  ...EN_TOOLS,
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
   ...EN_FOLD_BAR,

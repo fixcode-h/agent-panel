@@ -90,6 +90,7 @@ import { WebFrameSpecimen } from './WebFrameSpecimen'
 import { ToastSpecimen } from './ToastSpecimen'
 import { ScrollbarSpecimen } from './ScrollbarSpecimen'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
+import { DownloadRowSpecimen } from './DownloadRowSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
 const SUMMARY_SAMPLE = `### 未完成｜前置检查不通过，两项环境问题挡住后续节点
@@ -293,6 +294,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
               <Progress key={tone} tone={tone} value={22 + i * 18} size={i % 2 ? 'xs' : 'sm'} label={t('示例进度')} />
             ))}
           </div>
+        </Specimen>
+        <Specimen name="DownloadRow" tune={['progress', 'statusPill']}>
+          <DownloadRowSpecimen />
         </Specimen>
       </Group>
       <Group title={t('输入')}>

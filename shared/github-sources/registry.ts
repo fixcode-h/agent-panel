@@ -6,8 +6,8 @@
  * 失败后按这里的顺序换来源再取，插件目录、插件升级包、面板自身更新都自动受益，调用方不用改。
  *
  * 加一种来源：在 BUILTIN_SOURCES 里加一项（rewrite 把解析好的地址换成这个来源的地址，不适用返回 null），
- * 设置页「网络与代理 · GitHub 下载来源」会自动列出、可调顺序和开关。镜像前缀（第三方加速站）是用户自己加的，
- * 不内置任何站点。
+ * 设置页「网络与代理 · GitHub 下载来源」会自动列出、可调顺序和开关。镜像前缀（第三方加速站）由用户自己加，
+ * 另有 PRESET_MIRRORS 里用户点名要的几个预置（能关、不能删）。
  */
 import { z } from 'zod'
 import { t } from '../i18n.ts'
@@ -166,6 +166,28 @@ export const MIRROR_SOURCE: SourceDef = {
   },
 }
 
+/**
+ * 预置的镜像前缀：用户 2026-11-22 点名要的 gh-proxy（Cloudflare 优选线路，网络好时能跑满千兆）。
+ * 它是普通的镜像前缀，只是第一次用时自动排在列表最后、默认打开；用户能关、能调顺序，不能删（删了下次又会补回来）。
+ * v6 是 IPv6 节点：本机没有 IPv6 时连不上，按顺序换下一个来源，不用用户管。
+ */
+export interface PresetMirror {
+  prefix: string
+  label: () => string
+  desc: () => string
+}
+export const PRESET_MIRRORS: PresetMirror[] = [
+  {
+    prefix: 'https://v6.gh-proxy.org/',
+    label: () => t('gh-proxy 加速（IPv6）'),
+    desc: () => t('gh-proxy 的 IPv6 节点，走 Cloudflare 优选线路；本机没有 IPv6 时连不上，会自动换下一个来源'),
+  },
+]
+
+/** 这个前缀是不是预置的镜像 */
+export const presetOf = (prefix?: string) =>
+  prefix ? PRESET_MIRRORS.find((p) => p.prefix === normalizePrefix(prefix)) : undefined
+
 const BUILTIN_IDS = BUILTIN_SOURCES.map((s) => s.id)
 
 /** 展开后的一项：key 在列表里唯一（镜像是 mirror:<前缀>） */
@@ -174,6 +196,8 @@ export interface ResolvedSource {
   def: SourceDef
   enabled: boolean
   prefix?: string
+  /** 预置的镜像（PRESET_MIRRORS）：设置页不给删、显示它自己的名字和说明 */
+  preset?: PresetMirror
 }
 
 /**
@@ -189,7 +213,7 @@ export function resolveSources(list: GithubSourceSetting[] = []): ResolvedSource
       const key = `mirror:${prefix}`
       if (!prefix || seen.has(key)) continue
       seen.add(key)
-      out.push({ key, def: MIRROR_SOURCE, enabled: e.enabled, prefix })
+      out.push({ key, def: MIRROR_SOURCE, enabled: e.enabled, prefix, preset: presetOf(prefix) })
       continue
     }
     const def = BUILTIN_SOURCES.find((s) => s.id === e.id)
@@ -200,6 +224,12 @@ export function resolveSources(list: GithubSourceSetting[] = []): ResolvedSource
   for (const id of BUILTIN_IDS) {
     if (seen.has(id)) continue
     out.push({ key: id, def: BUILTIN_SOURCES.find((s) => s.id === id)!, enabled: true })
+  }
+  // 预置镜像排在最后：GitHub 自己的几条路都不通时才走第三方
+  for (const p of PRESET_MIRRORS) {
+    const key = `mirror:${p.prefix}`
+    if (seen.has(key)) continue
+    out.push({ key, def: MIRROR_SOURCE, enabled: true, prefix: p.prefix, preset: p })
   }
   return out
 }
@@ -227,6 +257,7 @@ export function candidatesFor(u: GithubUrl, list: ResolvedSource[]) {
 
 /** 来源显示名：镜像带上它的主机名，失败信息里分得清是哪一个 */
 export function sourceLabel(s: ResolvedSource) {
+  if (s.preset) return s.preset.label()
   if (!s.prefix) return s.def.label()
   let host = s.prefix
   try {

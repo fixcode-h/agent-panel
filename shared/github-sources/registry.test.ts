@@ -28,11 +28,11 @@ test('认得各种 GitHub 地址，别的地址不管', () => {
   assert.equal(parseGithubUrl('不是地址'), null)
 })
 
-test('默认顺序：原地址 → API → 网页 → jsDelivr；仓库文件四个都能试', () => {
+test('默认顺序：原地址 → API → 网页 → jsDelivr → 预置的 gh-proxy；仓库文件都能试', () => {
   const list = resolveSources([])
   assert.deepEqual(
     list.map((s) => s.key),
-    ['origin', 'api', 'web', 'jsdelivr'],
+    ['origin', 'api', 'web', 'jsdelivr', 'mirror:https://v6.gh-proxy.org/'],
   )
   const urls = candidatesFor(parseGithubUrl(CATALOG)!, list).map((c) => c.candidate.url)
   assert.deepEqual(urls, [
@@ -40,7 +40,16 @@ test('默认顺序：原地址 → API → 网页 → jsDelivr；仓库文件四
     'https://api.github.com/repos/fixcode-h/UEKit/contents/catalog.json?ref=main',
     'https://github.com/fixcode-h/UEKit/blob/main/catalog.json',
     'https://cdn.jsdelivr.net/gh/fixcode-h/UEKit@main/catalog.json',
+    `https://v6.gh-proxy.org/${CATALOG}`,
   ])
+})
+
+test('预置的 gh-proxy：关掉后记住、不会再被补成打开，调过的顺序也照存的来', () => {
+  const list = resolveSources([{ id: 'mirror', enabled: false, prefix: 'https://v6.gh-proxy.org' }])
+  assert.equal(list[0].key, 'mirror:https://v6.gh-proxy.org/')
+  assert.equal(list[0].enabled, false)
+  assert.ok(list[0].preset)
+  assert.equal(list.filter((s) => s.def.id === 'mirror').length, 1)
 })
 
 test('分支写 HEAD 时不用 jsDelivr，API 不带 ref', () => {
@@ -63,13 +72,20 @@ test('设置里的顺序、开关、镜像：认不得的丢掉，缺的内置�
   ])
   assert.deepEqual(
     list.map((s) => `${s.key}:${s.enabled}`),
-    ['mirror:https://m.example.com/:true', 'web:true', 'origin:false', 'api:true', 'jsdelivr:true'],
+    [
+      'mirror:https://m.example.com/:true',
+      'web:true',
+      'origin:false',
+      'api:true',
+      'jsdelivr:true',
+      'mirror:https://v6.gh-proxy.org/:true',
+    ],
   )
   // Release 附件只有镜像能换；关掉的原地址不试
   const release = 'https://github.com/o/r/releases/download/v1/a.zip'
   assert.deepEqual(
     candidatesFor(parseGithubUrl(release)!, list).map((c) => c.candidate.url),
-    [`https://m.example.com/${release}`],
+    [`https://m.example.com/${release}`, `https://v6.gh-proxy.org/${release}`],
   )
   assert.deepEqual(toSettingList(list)[0], { id: 'mirror', enabled: true, prefix: 'https://m.example.com/' })
   assert.equal(normalizePrefix(' https://a.b '), 'https://a.b/')

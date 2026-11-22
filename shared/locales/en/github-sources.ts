@@ -13,8 +13,11 @@ export const EN_GITHUB_SOURCES: Record<string, string> = {
   '要写成 http(s):// 开头的地址': 'Must start with http(s)://',
   已经加过这个镜像: 'This mirror is already in the list',
   '第三方加速站，原地址前面加上它再取': 'A third-party mirror, put in front of the original address',
-  '填镜像站给的前缀，例如 https://mirror.example.com/ ，取文件时用「前缀 + 原地址」。镜像是第三方服务，面板不内置任何一个，请只填信得过的站点。':
-    'Enter the prefix the mirror gives you, e.g. https://mirror.example.com/ . Files are fetched from "prefix + original address". Mirrors are third-party services and none is built in, so only add ones you trust.',
+  '填镜像站给的前缀，例如 https://mirror.example.com/ ，取文件时用「前缀 + 原地址」。镜像是第三方服务，请只填信得过的站点；列表里预置的 gh-proxy 可以关掉，不能删。':
+    'Enter the prefix the mirror gives you, e.g. https://mirror.example.com/ . Files are fetched from "prefix + original address". Mirrors are third-party services, so only add ones you trust; the preset gh-proxy in the list can be turned off but not removed.',
+  'gh-proxy 加速（IPv6）': 'gh-proxy accelerator (IPv6)',
+  'gh-proxy 的 IPv6 节点，走 Cloudflare 优选线路；本机没有 IPv6 时连不上，会自动换下一个来源':
+    "gh-proxy's IPv6 node on optimized Cloudflare routes; if this machine has no IPv6 it cannot connect and the next source is tried automatically",
   镜像前缀: 'Mirror prefix',
   原地址: 'Original address',
   '按原来的地址取；「使用代理」打开时经过代理和本机代理回退，关着时直连':

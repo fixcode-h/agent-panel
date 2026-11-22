@@ -181,6 +181,7 @@ import { FixApplyInput, fixApplicable, replaceFix, type FixApplyResult } from '@
 import { t } from '@shared/i18n'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoLessonDrafts, demoSummary } from './demo-summary'
+import { demoTools } from './demo-tools'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import { demoBrowserExt, demoStyles } from './demo-styles'
@@ -2008,6 +2009,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
+  if (res === 'tools') return demoTools(method, seg, body, d.settings?.githubSources ?? [])
   if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
   if (res === 'lesson-drafts') return demoLessonDrafts(method, id, body)
   if (res === 'ai-fix') return demoFixStart(body)
