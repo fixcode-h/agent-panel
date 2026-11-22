@@ -77,6 +77,23 @@ test('被拒的、blocked 的 end_turn 不隐藏之后的话；面板提醒不�
   assert.equal(v.msgs.at(-1)!.tools.length, 0, 'end_turn 这一行不画')
 })
 
+test('收尾自检之后只有思考的那条先不画：调了 end_turn 一起藏掉，动了手照常显示思考', () => {
+  const think = (s: number, tools: ToolUse[] = []) => msg('agent', s, { thinking: '该调 end_turn 收尾了', tools })
+  const base = [user(0), agent(1, '你好'), hook(2)]
+  const live = visibleMessages([...base, think(3)])
+  assert.deepEqual(
+    live.msgs.map((m) => m.text),
+    ['查一下', '你好'],
+    '正在想、还没调工具：思考不闪出来',
+  )
+  const ended = visibleMessages([...base, think(3, [end()]), agent(4, '已回复完毕')])
+  assert.equal(ended.msgs.length, 2)
+  const work = visibleMessages([...base, think(3, [tool('Read')])])
+  assert.equal(work.msgs.at(-1)!.thinking, '该调 end_turn 收尾了', '提醒之后接着干活：思考照常显示')
+  // 没有提醒时只有思考的照常显示（正在思考的实时输出）
+  assert.equal(visibleMessages([user(0), think(1)]).msgs.length, 2)
+})
+
 test('交代过的结束只算这条输入以来的；面板提醒、警告行不算新的输入', () => {
   const tk = { messages: [user(0), agent(1, '总结')], turnEnds: [] as never[] }
   assert.equal(turnEndSince(tk), undefined)
