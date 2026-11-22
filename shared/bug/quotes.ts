@@ -31,6 +31,11 @@ export interface BugSource {
   commit?(rev: string): { author: string; date: string; title: string } | undefined
   /** 这个文件现在和对话开始时比的 diff（unified diff，新文件和空文件比）；取不到返回 undefined */
   diff?(file: string): string | undefined
+  /**
+   * 现在和对话开始时比改了哪些文件（含没跟踪的新文件），按对话目录现查；取不到返回 undefined。
+   * 面板记的改动（Task.changes）只认改文件工具和每轮结束时的快照，这一轮里用命令写的文件、中途换了目录写的文件都不在里面
+   */
+  changed?(): string[] | undefined
   /** 环境（操作系统、分支、最近提交…，shared/bug/env.ts）：交第一份报告时取一次；取不到返回 undefined */
   env?(): BugEnv | undefined
 }

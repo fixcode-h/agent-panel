@@ -40,12 +40,22 @@ const gitSync = (dir: string, args: string[]) => runGit(dir, args, { timeoutMs: 
 
 /**
  * baseRef：对话开始时的提交（Task.baseRef），没有或找不到时和 HEAD 比；
- * env：采集环境（server/exec/bug-env.ts），交第一份报告时才调
+ * env：采集环境（server/exec/bug-env.ts），交第一份报告时才调。
+ * dir 可以给函数：这一轮中途 begin_edit 开了独立分支时，之后交的修复要按分支目录取（实跑 2026-11-22：
+ * 一轮开头定死成原目录，改动全在分支里，交 phase: fix 被回「还没有改任何代码」，模型去翻面板源码 25 分钟）
  */
-export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): BugSource | undefined {
-  if (!dir) return undefined
+export function bugSource(dirOf: string | (() => string), baseRef = '', env?: BugSource['env']): BugSource | undefined {
+  const first = typeof dirOf === 'function' ? dirOf() : dirOf
+  if (!first) return undefined
+  let dir = first
   let base: string | undefined
   let inRepo: boolean | undefined
+  // 每次取原文前对一下目录：换了目录，按目录缓存的「是不是 git」「和哪个提交比」重新算
+  const at = () => {
+    const now = typeof dirOf === 'function' ? dirOf() || dir : dir
+    if (now !== dir) [dir, base, inRepo] = [now, undefined, undefined]
+    return dir
+  }
   // 不是 git 工作区（P4、SVN 的工程）：没有对话开始时的版本可比，diff 返回 undefined，
   // 由调用方改用 Agent 改文件时记下的改动（shared/bug/fix.ts 的 editPatch）。
   // 不能退回「和空文件比」：那样整个文件都画成新增（用户 2026-11-11 报）
@@ -60,6 +70,7 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
   return {
     env,
     diff(file) {
+      at()
       if (!repo()) return undefined
       const b = baseOf()
       let out = b ? gitSync(dir, ['diff', '--no-color', b, '--', file])?.out : ''
@@ -69,9 +80,25 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
         out = gitSync(dir, ['diff', '--no-color', '--no-index', '--', '/dev/null', file])?.out ?? ''
       return out
     },
+    changed() {
+      at()
+      if (!repo()) return undefined
+      const b = baseOf()
+      const tracked = b ? gitSync(dir, ['diff', '--name-only', b])?.out : ''
+      const fresh = gitSync(dir, ['ls-files', '--others', '--exclude-standard'])?.out
+      if (tracked === undefined || fresh === undefined) return undefined
+      return [
+        ...new Set(
+          `${tracked}\n${fresh}`
+            .split('\n')
+            .map((x) => x.trim())
+            .filter(Boolean),
+        ),
+      ]
+    },
     read(file) {
       try {
-        const p = path.resolve(dir, file)
+        const p = path.resolve(at(), file)
         if (statSync(p).size > MAX) return undefined
         return readFileSync(p, 'utf8')
       } catch {
@@ -80,12 +107,13 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
     },
     lines(file, start, end) {
       try {
-        return readLines(path.resolve(dir, file), start, end)
+        return readLines(path.resolve(at(), file), start, end)
       } catch {
         return undefined
       }
     },
     commit(rev) {
+      at()
       // 提交号是 Agent 写的：先确认它确实是一个提交（写成选项、路径的在这里就不成立），再取作者
       if (gitSync(dir, ['cat-file', '-e', `${rev}^{commit}`])?.code !== 0) return undefined
       const out = gitSync(dir, ['show', '-s', '--date=short', '--format=%an%x00%ad%x00%s', rev])
@@ -94,7 +122,7 @@ export function bugSource(dir: string, baseRef = '', env?: BugSource['env']): Bu
       return author ? { author, date, title } : undefined
     },
     show(rev, file) {
-      const r = runGit(dir, ['show', '--format=', '--no-color', rev, '--', file], {
+      const r = runGit(at(), ['show', '--format=', '--no-color', rev, '--', file], {
         timeoutMs: 5000,
         maxBuffer: 1 << 20,
       })

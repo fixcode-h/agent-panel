@@ -253,6 +253,21 @@ test('独立分支越界：子对话改分支目录以外的文件拒绝；自�
   assert.equal(worktreeDeny(ctx(), edit(path.join(proj, 'src/a.ts'))), '')
 })
 
+test('这一轮中途开了独立分支：还在原目录里跑时改文件、跑命令都拦下，只让它结束（实跑 2026-11-22）', () => {
+  const wtDir = path.join(tmpdir(), 'wt-2')
+  const worktree = { path: wtDir, branch: 'agent-panel/x', state: 'active' } as never
+  // 父对话、子对话都一样：CLI 的目录还是原目录
+  for (const parentTaskId of ['', 'par']) {
+    const c = ctx({ cwd: proj, task: { parentTaskId, worktree } })
+    assert.match(worktreeDeny(c, edit(path.join(wtDir, 'src/a.ts'))), /结束这一轮/)
+    assert.match(worktreeDeny(c, sh(`cd ${wtDir} && node --test`)), /结束这一轮/)
+  }
+  // 下一轮已经在分支目录里跑：照常
+  const next = ctx({ cwd: wtDir, task: { parentTaskId: 'par', worktree } })
+  assert.equal(worktreeDeny(next, edit('src/a.ts')), '')
+  assert.equal(worktreeDeny(next, sh('node --test')), '')
+})
+
 test('取消后删临时日志：不许整文件还原，一处一处删', () => {
   const task = {
     bug: {
@@ -290,4 +305,11 @@ test('长命令转后台：这个项目里实测跑过一分钟以上的命令�
   )
   assert.equal(longDeny({ ...ctx(), slowKnown: slow }, sh('npm run lint')), '')
   assert.equal(longDeny({ ...ctx(), slowKnown: slow }, sh('cat package.json')), '', '快命令不看用时')
+})
+
+test('rg 带 -r（照 grep 习惯写的 -rn）拦下：那是替换不是递归', () => {
+  assert.match(longDeny(ctx(), sh('rg -rn "begin_edit" src')), /默认就递归/)
+  assert.match(longDeny({ ...ctx(), canBackground: false }, sh('cd src && rg -ri foo')), /-r/)
+  assert.equal(longDeny(ctx(), sh('rg -n "begin_edit" src')), '')
+  assert.equal(longDeny(ctx(), sh('grep -rn foo src')), '')
 })

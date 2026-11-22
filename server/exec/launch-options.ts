@@ -70,6 +70,8 @@ export async function launchOptions(a: LaunchArgs) {
         { cwd, uploadsRoot: UPLOADS_DIR },
       ),
       handoffDirOf(task.id),
+      // 这一轮中途开了独立分支（begin_edit）、还在原目录跑：读独立分支里的文件不再每次弹确认
+      ...(task.worktree?.state === 'active' && task.worktree.path !== cwd ? [task.worktree.path] : []),
       // 对话目录在工作目录外：放行，Agent 才能读到拷进来的图片、把截图和临时文件写进去
       taskDir.dir,
     ],

@@ -223,6 +223,13 @@ const helperDone = (kid: TaskStep) =>
 const RETRY_HINT = (id: string) =>
   `（要重试就调用 spawn_agents，resume 写「${id}」：在原来这个子任务里接着做，不要另派一个新的）`
 
+/**
+ * 用工具交的总结放在原文前面：弱模型的原文开头多是「I'll start by reading…」这类过程话，
+ * 真正的结论在后面、被截掉了就看不到（DeepSeek 实跑 2026-11-22）
+ */
+const summaryHead = (k: TaskStep) =>
+  k.submitted?.summary?.trim() ? `总结：${clip(k.submitted.summary.trim(), 1500)}\n\n过程和原文：\n` : ''
+
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 export async function settleHelpers(host: EngineHost, step: TaskStep) {
   return (await settleHelperBatch(host, step)).text
@@ -245,7 +252,7 @@ export async function settleHelperBatch(host: EngineHost, step: TaskStep): Promi
   const text = late
     .map((k) =>
       k.status === 'done'
-        ? `### ${k.title}${k.submitted?.verdict ? '' : resultLine(k)}\n${outputs.get(k.id) ?? (k.output || '（没有文字输出）')}`
+        ? `### ${k.title}${k.submitted?.verdict ? '' : resultLine(k)}\n${summaryHead(k)}${outputs.get(k.id) ?? (k.output || '（没有文字输出）')}`
         : (k.status === 'skipped' && st.errors.get(k.id)
             ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
             : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`) +

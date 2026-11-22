@@ -79,7 +79,11 @@ const SUBMIT_REPORT = {
         },
       },
       details: { type: 'string', description: '方案详情（Markdown）：依据、方案正文、风险。过程中的自言自语不要写' },
-      next: { type: 'string', description: '确认后还要接着做的，例如下一轮要问的问题；没有就不写' },
+      next: {
+        type: 'string',
+        description:
+          '确认后这个节点还要问用户的下一轮问题；没有就不写。实现、测试、提交这些交给后面节点的事不要写进来，写了也不会回到你这里',
+      },
     },
     required: ['summary'],
   },

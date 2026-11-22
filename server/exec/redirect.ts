@@ -61,6 +61,15 @@ const READ_ONLY_HEADS = [
   'ag',
   'ack',
   'jq',
+  // 只换目录、只排序截取输出：组合在只读命令里常见（`cd x && rg … | sort | uniq -c`）
+  'cd',
+  'sort',
+  'uniq',
+  'cut',
+  'nl',
+  'basename',
+  'dirname',
+  'realpath',
 ]
 
 /** 只读的 git 子命令：git 要单独看子命令，`git log` 和 `git commit` 差别太大 */
@@ -92,7 +101,7 @@ const READ_ONLY_GIT: { cmd: string; allow: (args: string[]) => boolean }[] = [
 ]
 
 /** 这些出现在任何位置都说明命令会写盘或者会派生新的命令，一律不当只读 */
-const WRITE_HINTS = ['>', '-delete', '-exec', '-execdir', '--write', '--fix', '--output', '-o ']
+const WRITE_HINTS = ['>', '-delete', '-exec', '-execdir', '-fprint', '-fls', '--write', '--fix', '--output', '-o ']
 
 /** 命令分段后的每一段都得是只读的：`ls && rm -rf x` 不能算 */
 function readOnlyPart(part: string): boolean {

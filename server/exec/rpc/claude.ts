@@ -184,6 +184,7 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
       title: t('运行命令：{cmd}', { cmd: oneLine(str(input.command)) }),
       detail: str(input.description),
       rule: commandRule(str(input.command)),
+      command: str(input.command),
     }
   if (kind === 'edit') {
     const file = str(input.file_path || input.notebook_path)

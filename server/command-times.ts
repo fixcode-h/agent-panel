@@ -52,7 +52,7 @@ function save() {
  */
 export function noteCommandTime(projectId: string, command: string, ms: number) {
   if (!projectId || !command.trim() || !(ms > 0)) return
-  const keys = [...new Set(runSegments(command).map(commandKey).filter(Boolean))]
+  const keys = [...new Set(runSegments(blankMultiline(command)).map(commandKey).filter(Boolean))]
   if (keys.length !== 1) return
   const all = load()
   const mine = (all[projectId] ??= {})
@@ -62,6 +62,14 @@ export function noteCommandTime(projectId: string, command: string, ms: number) 
   const names = Object.keys(mine)
   for (const k of names.slice(0, Math.max(0, names.length - MAX_KEYS))) delete mine[k]
   save()
+}
+
+/**
+ * 跨行的引号内容（`git commit -m "…多行说明…"`、`node -e "…多行脚本…"`）整段换成空引号：
+ * 按行拆段时这些正文会被当成一条条「命令」，实跑里记出过 `b`、`path`、`co-authored-by: claude code` 这种键
+ */
+export function blankMultiline(cmd: string) {
+  return cmd.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, (m) => (m.includes('\n') ? '""' : m))
 }
 
 /** 这一段命令在这个项目里上次跑了多久，超过 SLOW_MS 才返回（长命令守卫用） */

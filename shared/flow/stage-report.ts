@@ -36,7 +36,10 @@ export const StageReport = z.object({
   decisions: z.array(Decision).default([]),
   /** 方案详情（Markdown）：依据、方案正文、风险 */
   details: z.string().default(''),
-  /** 确认后还要接着做什么（例如下一轮要问的问题）；有它时确认后回到 Agent 接着做，不直接往下走 */
+  /**
+   * 确认后这个节点还要问用户的（下一轮的问题）；有它、而且这一版确实问了新问题时，确认后回到 Agent 接着问，不直接往下走。
+   * 实现、提交、合并这些交给后面节点的事不算（见 nextRound）
+   */
   next: z.string().default(''),
 })
 export type StageReport = z.infer<typeof StageReport>
@@ -103,19 +106,38 @@ export function changesText(rep: StageReport, picks?: Picks) {
     .join('\n')
 }
 
+/** 同一个节点最多这么多版报告还按 next 回到 Agent：再多交给用户在确认卡上决定（退回写意见） */
+export const MAX_REPORT_ROUNDS = 8
+
 /**
- * 确认后要不要回到 Agent：用户改了决策（方案要按用户的选择更新）或者报告写了接下来还要做的（下一轮问题），
+ * 这一版的 next 算不算「还有下一轮」：这一版要问出至少一个前面几版没问过的、要用户拍板的决策。
+ * 实跑 2026-11-22（DeepSeek V4.1 Flash）：方案节点第一版 next 写「确认后按顺序实现」，面板回「接着做」，它把实现全做了；
+ * 之后每版 next 都写一句「没有待办，交给父对话」，决策还是那几个，节点确认 5 次不往下走。
+ * 逐轮追问（grilling）每一轮都有新问题，照常接着问
+ */
+export function nextRound(list: StageReportVersion[] | undefined, v: StageReportVersion): boolean {
+  if (!v.report.next.trim()) return false
+  const all = list ?? [v]
+  if (all.length >= MAX_REPORT_ROUNDS) return false
+  const before = new Set(all.slice(0, all.indexOf(v)).flatMap((x) => x.report.decisions.map((d) => d.id)))
+  return v.report.decisions.some((d) => !d.self && !before.has(d.id))
+}
+
+/**
+ * 确认后要不要回到 Agent：用户改了决策（方案要按用户的选择更新）或者还有下一轮问题（nextRound），
  * 返回交给 Agent 的话；都没有返回空串，照常往下走
  */
-export function reportFollowUp(rep: StageReport, picks?: Picks) {
+export function reportFollowUp(rep: StageReport, picks?: Picks, more = !!rep.next.trim()) {
   const diff = changesText(rep, picks)
-  if (!diff && !rep.next.trim()) return ''
+  if (!diff && !more) return ''
   return [
     diff
       ? `用户确认了这一步的决策，但改了下面几项（没列出的都按你的推荐）：\n${diff}\n\n按用户的选择更新方案，被改动牵连的其他决策和结论一起调整。`
       : '用户确认了这一步的决策，全部按你的推荐。',
-    rep.next.trim() ? `你在报告里说确认后还要：${rep.next.trim()}\n接着做。` : '',
-    '做完后同样用 submit_report 交新的阶段报告（已经定下的决策照样列出，pick 写用户定的那项）。',
+    more
+      ? `你在报告里说还有下一轮要问：${rep.next.trim()}\n只接着问这些（这个节点的事）；实现、测试、提交这些后面节点的事不要做。`
+      : '',
+    '做完后同样用 submit_report 交新的阶段报告（已经定下的决策照样列出，pick 写用户定的那项；没有新问题时 next 留空）。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -136,7 +158,7 @@ export function settleReport(
     v.result = 'revised'
     return { follow: '' }
   }
-  const follow = reportFollowUp(v.report, c.picks)
+  const follow = reportFollowUp(v.report, c.picks, nextRound(list, v))
   v.result = !follow ? 'confirmed' : reportChanges(v.report, c.picks).length ? 'changed' : 'next'
   return { follow, output: follow ? undefined : reportOutput(v.report, c.picks) }
 }

@@ -193,7 +193,7 @@ function dangerOf(c: GuardCtx, s: string): string {
  * 结果写文件、查文件都跑去了后台（用户 2026-11-05 报）：现在只看段开头真正运行的程序
  */
 export function longDeny(c: GuardCtx, facts: HookFacts): string {
-  if (!c.canBackground) return ''
+  if (!c.canBackground) return rgReplaceDeny(facts)
   const extra = c.list('extra').filter(Boolean)
   const slow = slowStep(c, facts)
   if (slow)
@@ -215,7 +215,21 @@ export function longDeny(c: GuardCtx, facts: HookFacts): string {
       return `${head} 在这个项目里上次跑了 ${fmtDuration(k.ms ?? 0)}，放在前台会挡着对话、还可能撞上命令的超时被杀掉：${hand}`
     if (k.kind === 'suite') return `${head} 是要跑很久的完整检查：${hand}`
   }
-  return wideSearchDeny(c, facts)
+  return wideSearchDeny(c, facts) || rgReplaceDeny(facts)
+}
+
+/**
+ * rg 的 -r 是「把匹配换成后面的文字再输出」，不是递归（rg 默认就递归）。照 grep 的习惯写 `rg -rn foo`，
+ * 输出里每个 foo 都变成了 n，模型读到坏的结果又多查几轮（DeepSeek 实跑 2026-11-22）
+ */
+function rgReplaceDeny(facts: HookFacts): string {
+  for (const s of segs(facts)) {
+    if (!/^rg\s/.test(s)) continue
+    const flag = s.split(/\s+/).find((w) => /^-[a-zA-Z]*r[a-zA-Z]*$/.test(w))
+    if (flag)
+      return `【面板】${s.slice(0, 80)}：rg 默认就递归，${flag} 里的 -r 是「把匹配换成后面的文字再输出」，结果会被改坏。去掉 -r 再跑（例如 rg -n）。`
+  }
+  return ''
 }
 
 /**
@@ -294,10 +308,24 @@ export function secretDeny(c: GuardCtx, facts: HookFacts): string {
 }
 
 /**
+ * 这一轮中途调了 begin_edit：独立分支开好了，CLI 却还在原目录里跑（改文件工具的开关、改动核对都按原目录算）。
+ * 提示词说「马上结束这一轮」，弱模型照样接着在分支目录里用命令改（实跑 2026-11-22：DeepSeek V4.1 Flash
+ * 用 heredoc 改完，交修复被回「还没改代码」，又翻了 25 分钟面板源码）。这一轮里改文件、跑命令一律拦下，只让它结束
+ */
+function staleTurnDeny(c: GuardCtx, facts: HookFacts): string {
+  const wt = c.task.worktree
+  if (wt?.state !== 'active' || !c.cwd || inside(wt.path, c.cwd)) return ''
+  if (facts.tool?.kind !== 'edit' && facts.tool?.kind !== 'shell') return ''
+  return `【面板】独立分支 ${wt.branch} 已经开好（目录 ${wt.path}），但这一轮还在原目录 ${c.cwd} 里跑：这一轮不要再改文件、跑命令。用一两句写下查到的情况和打算怎么改，然后结束这一轮，面板马上在分支目录里接着做（那时改文件工具也能用）。`
+}
+
+/**
  * 独立分支越界：子对话在自己的 worktree 里干活，父对话交代里的绝对路径却指向原仓库，照抄就会直接改原分支的文件，
  * 绕过隔离和合并。改的文件不在自己的目录、也不在系统临时目录里就拒绝
  */
 export function worktreeDeny(c: GuardCtx, facts: HookFacts): string {
+  const stale = staleTurnDeny(c, facts)
+  if (stale) return stale
   if (!inWorktree(c)) return ''
   const root = c.task.worktree!.path
   const original = c.project?.path

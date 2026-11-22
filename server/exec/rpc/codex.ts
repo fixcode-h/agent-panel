@@ -225,6 +225,7 @@ export function codexAdapter(
           .filter(Boolean)
           .join('\n\n'),
         rule: commandRule(cmd),
+        command: cmd,
         reply: (r) =>
           decided(ctx, r, () =>
             answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
