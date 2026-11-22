@@ -246,20 +246,29 @@ export interface HiddenText {
 
 /**
  * 对话里显示的消息：面板提醒不画、end_turn 这一行不画，end_turn(done) 之后的那一次输出也不画
- * （用户 2026-11-05：允许它说一句收尾，但默认隐藏，免得总结后面再跟一句「我已经完成了」）。
+ * （用户 2026-11-05：允许它说一句收尾，但默认隐藏，免得总结后面再跟一句「我已经完成了」）；
+ * 提醒之后只有思考、还没动手的那条也先不画。
  * 只按位置判断（在 end_turn 之后、下一条输入之前的第一段文字），不看写了什么
  */
 export function visibleMessages(msgs: TaskMessage[]): { msgs: TaskMessage[]; hidden: HiddenText[] } {
   const out: TaskMessage[] = []
   const hidden: HiddenText[] = []
   let after = false
+  // 面板提醒（收尾自检）之后还没动手、也没写字：这时只有思考，多半是想着调 end_turn 收尾，
+  // 先不画，免得思考过程闪一下又随 end_turn 一起藏掉（用户 2026-11-22 报）；动了手或写了字再照常显示
+  let reminded = false
   for (const m of msgs) {
-    if (isReminder(m)) continue
+    if (isReminder(m)) {
+      reminded = true
+      continue
+    }
     if (m.role !== 'agent') {
-      if (m.role === 'user' || (m.panel && m.panel !== 'note')) after = false
+      if (m.role === 'user' || (m.panel && m.panel !== 'note')) after = reminded = false
       out.push(m)
       continue
     }
+    if (reminded && !m.tools.length && !m.text.trim()) continue
+    reminded = false
     const ends = m.tools.filter(isEndTurnTool)
     if (!ends.length && !after) {
       out.push(m)
