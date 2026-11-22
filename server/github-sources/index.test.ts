@@ -89,7 +89,11 @@ test('全都失败：一条错误里列出每个来源的原因', async () => {
 test('Release 附件：没有镜像时只试原地址、错误原样；加了镜像就换镜像', async () => {
   resetPreferred()
   const url = 'https://github.com/o/r/releases/download/v1/a.zip'
-  const only = deps([['https://github.com/', reset]])
+  // 预置的 gh-proxy 也是镜像：关掉它才是「没有镜像」
+  const only = deps(
+    [['https://github.com/', reset]],
+    [{ id: 'mirror', enabled: false, prefix: 'https://v6.gh-proxy.org/' }],
+  )
   await assert.rejects(fetchViaSources(only.d, url), (e: Error) => e === reset)
   const mirrored = deps(
     [
@@ -102,6 +106,14 @@ test('Release 附件：没有镜像时只试原地址、错误原样；加了镜
     ],
   )
   assert.equal(await (await fetchViaSources(mirrored.d, url)).text(), 'zip')
+  // 原地址和自己加的镜像都不通时，最后走预置的 gh-proxy（IPv6 不通也只是再换下一个）
+  resetPreferred()
+  const preset = deps([
+    ['https://github.com/', reset],
+    ['https://v6.gh-proxy.org/', 'zip6'],
+  ])
+  assert.equal(await (await fetchViaSources(preset.d, url)).text(), 'zip6')
+  assert.equal(preset.calls.at(-1)?.url, `https://v6.gh-proxy.org/${url}`)
   assert.equal(mirrored.calls[1].url, `https://m.example.com/${url}`)
 })
 

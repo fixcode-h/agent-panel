@@ -41,6 +41,7 @@ import {
 } from './SidebarTasks'
 import {
   McpIcon,
+  ToolsIcon,
   OverviewIcon,
   RoleIcon,
   ScheduleIcon,
@@ -105,6 +106,7 @@ export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
   { id: 'workflows', label: t('工作流'), icon: WorkflowIcon },
   { id: 'library', label: t('Skills'), icon: SkillIcon },
   { id: 'mcp', label: t('MCP 工具'), icon: McpIcon },
+  { id: 'tools', label: t('小工具'), icon: ToolsIcon },
 ]
 
 /** 新建任务的快捷键（见 CommandPalette：浏览器不让网页占 Ctrl+N），行尾悬停时提示 */

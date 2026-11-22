@@ -19,6 +19,8 @@ export interface PackageSource {
   url: string
   /** GitHub API 的附件地址：先取跳转地址再下载 */
   api?: boolean
+  /** 这个来源要额外带的请求头（GitHub API 取仓库文件要 Accept: raw） */
+  headers?: Record<string, string>
 }
 
 /** 一段时间没收到数据就换来源：要够 netFetch 试完代理、本机代理、直连几条路（每条 20 秒） */
@@ -47,7 +49,7 @@ export function packageSources(o: { apiUrl?: string; url: string; sources: Githu
       } catch {
         // 前缀已经校验过，解析不了时原样显示
       }
-      out.push({ label: t('镜像 {host}', { host }), url: prefix + o.url })
+      out.push({ label: s.preset ? s.preset.label() : t('镜像 {host}', { host }), url: prefix + o.url })
     }
   return out.filter((s, i) => out.findIndex((x) => x.url === s.url) === i)
 }
@@ -73,6 +75,8 @@ export interface FetchPackageHooks {
   /** 每个来源用的请求：只带代理回退、不再换来源（来源由这里管） */
   fetch: NetFetch
   stallMs?: number
+  /** 全都失败时的报错（list 是每个来源的原因）；不传是面板更新包的那句 */
+  failText?: (list: string) => string
 }
 
 /**
@@ -99,7 +103,7 @@ export async function fetchPackage(sources: PackageSource[], to: string, resumeK
     try {
       const url = s.api ? await resolveApiAsset(h.fetch, s.url, ac.signal) : s.url
       await downloadFile(url, to, {
-        headers: { ...UA },
+        headers: { ...UA, ...s.headers },
         signal: ac.signal,
         fetch: h.fetch,
         resumeKey,
@@ -121,13 +125,13 @@ export async function fetchPackage(sources: PackageSource[], to: string, resumeK
       if (timer) clearTimeout(timer)
     }
   }
+  const list = failures.join('；')
   throw new Error(
-    t(
-      '下载安装包失败，试过的来源都不行：{list}。可以在「设置 · 网络与代理」里配代理或加镜像前缀，或先下载好安装包再用「用本地安装包更新」。',
-      {
-        list: failures.join('；'),
-      },
-    ),
+    h.failText?.(list) ??
+      t(
+        '下载安装包失败，试过的来源都不行：{list}。可以在「设置 · 网络与代理」里配代理或加镜像前缀，或先下载好安装包再用「用本地安装包更新」。',
+        { list },
+      ),
   )
 }
 

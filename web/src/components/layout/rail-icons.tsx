@@ -113,6 +113,11 @@ export const McpIcon = icon(
   </>,
 )
 
+/** 小工具：扳手 */
+const WRENCH =
+  'M14.7 6.3a4 4 0 0 1 5-1.4l-2.6 2.6 1.4 1.4 2.6-2.6a4 4 0 0 1-5.3 5.3l-6.9 6.9a1.9 1.9 0 0 1-2.7-2.7l6.9-6.9a4 4 0 0 1 1.6-2.6z'
+export const ToolsIcon = icon(<path d={WRENCH} />, <path d={WRENCH} />)
+
 /** 收起 / 展开会话侧栏：左边一栏实心 */
 export const PanelIcon = icon(
   <path d="M7 4.5h2.5v15H7A3.5 3.5 0 0 1 3.5 16V8A3.5 3.5 0 0 1 7 4.5z" />,

@@ -326,6 +326,7 @@ export type PageId =
   | 'mcp'
   | 'summary'
   | 'overview'
+  | 'tools'
 export interface Route {
   page: PageId
   id?: string
