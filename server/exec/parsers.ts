@@ -129,6 +129,8 @@ export type CliEvent =
       diff?: string
       /** 「一直允许这类」的规则键（shared/allow-rules.ts） */
       rule?: string
+      /** 运行命令的请求：命令原文。整条都是只读命令、或是项目的测试步骤时面板直接允许（ask-request.ts） */
+      command?: string
       reply: (r: AskReply) => void
     }
 

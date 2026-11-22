@@ -186,6 +186,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     tier: 'minimal',
   },
   {
+    id: 'panel-files-guard',
+    event: 'tool.before',
+    name: () => t('面板文件守卫'),
+    description: () =>
+      t(
+        '读写面板自己的源码、数据目录里的设置和对话记录时拒绝，让它照工具返回的说明做；项目本身就是面板仓库时只拦数据目录',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'temp-file-guard',
     event: 'tool.before',
     name: () => t('临时文件位置守卫'),

@@ -11,6 +11,7 @@ import { decisionsText, overLimit, RUN_ENDED, RUN_NO } from './run.ts'
 import { t } from '../i18n.ts'
 import { ensureTaskRun } from '../run/state.ts'
 import { clip } from '../text.ts'
+import type { TaskStep } from '../schema.ts'
 
 export interface FlowRunDeps {
   runFlow: (host: EngineHost, inv: Invocation) => Promise<FlowResult>
@@ -88,7 +89,7 @@ export async function runFlowRunTurn(host: EngineHost, d: FlowRunDeps): Promise<
     }
     rec.status = 'done'
     rec.endedAt = now()
-    f.summary = clip(r.output, 4000)
+    f.summary = clip(lastSubmittedSummary(task.steps) || r.output, 4000)
     // 流程停在某个节点的结论上，没走到结束：不算做完，等父对话决定（带意见重跑或终止）
     const blocked = blockedStep(task, flow)
     if (blocked) {
@@ -115,4 +116,17 @@ export async function runFlowRunTurn(host: EngineHost, d: FlowRunDeps): Promise<
     )
   task.status = 'done'
   host.changed(true)
+}
+
+/**
+ * 交回父对话的结论优先用最后做完的节点用工具交的总结（submit_result、submit_report 的 summary）：
+ * 节点原文开头多是「I'll start by checking…」这类过程话，父对话拿到的「结论」全是过程（DeepSeek 实跑 2026-11-22）。
+ * 都没交时照旧用最后节点的原文
+ */
+export function lastSubmittedSummary(steps: readonly TaskStep[]): string {
+  const done = steps
+    .filter((s) => s.status === 'done' && !s.parentId)
+    .sort((a, b) => (a.endedAt ?? '').localeCompare(b.endedAt ?? ''))
+  const sub = done.at(-1)?.submitted
+  return (sub?.summary || sub?.reports?.at(-1)?.report.summary || '').trim()
 }

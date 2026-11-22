@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
 import type { Task } from '../../shared/schema.ts'
-import { autoAllowed } from './ask-request.ts'
+import { autoAllowed, safeCommand } from './ask-request.ts'
 
 setLang('zh')
 
@@ -50,4 +50,20 @@ test('只有不确认的那一档标了 autoAllow', () => {
   assert.deepEqual(on('claude'), ['bypassPermissions'])
   assert.deepEqual(on('codex'), ['danger-full-access'])
   assert.deepEqual(on('commandcode'), ['yolo'])
+})
+
+test('只读的复合命令、项目测试步骤命令不用人点；藏得下别的命令的照常问', () => {
+  const task = { testSteps: [{ command: 'node --test' }] } as unknown as Pick<Task, 'testSteps'>
+  const cmd = (command: string) => safeCommand(task, { kind: 'command', command })
+  assert.equal(cmd('cd src && ls -la && git status --short; rg -n "quote" bin | head -20'), 'readonly')
+  assert.equal(cmd('cat -n bin/shopkit.js 2>/dev/null | wc -l'), 'readonly')
+  assert.equal(cmd('node --test'), 'test')
+  assert.equal(cmd('node --test && rm -rf dist'), '')
+  assert.equal(cmd('ls && rm -rf dist'), '')
+  assert.equal(cmd('echo $(rm -rf x)'), '')
+  assert.equal(cmd('cat ~/.ssh/id_rsa'), '')
+  assert.equal(cmd('echo hi > a.txt'), '')
+  assert.equal(cmd('find . -name x -delete'), '')
+  assert.equal(cmd('rg --pre ./x.sh foo'), '')
+  assert.equal(safeCommand(task, { kind: 'file', command: 'ls' }), '')
 })

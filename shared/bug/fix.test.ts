@@ -82,6 +82,17 @@ const changes = [
   { file: 'web/src/lib/login.test.ts', what: '加超时用例', why: '改前失败、改后通过，防回归', isNew: true },
 ]
 
+// 实跑 2026-11-22：中途开了独立分支、用命令改的文件不在 Task.changes 里，交修复被回「还没有改任何代码」
+test('交修复：在独立分支里时按分支目录现查改了哪些文件；共用目录不查（可能是用户自己的改动）', () => {
+  const tk = { ...bugTask(), changes: [] } as unknown as Task
+  ok(submitDiagnosis(tk, input({ phase: 'plan' }), id))
+  ok(decideDiagnosis(tk, 1, yes, id))
+  const live: BugSource = { ...src(fixed), changed: () => Object.keys(fixed) }
+  assert.match(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, live).info, /还没有改任何代码/)
+  tk.worktree = { path: '/wt', branch: 'b', state: 'active' } as Task['worktree']
+  ok(submitDiagnosis(tk, input({ phase: 'fix', changes }), id, undefined, live))
+})
+
 test('交修复：改了的文件都要写改了什么、为什么；报告上是原因和实际 diff，确认了才能验证', () => {
   const tk = bugTask()
   ok(submitDiagnosis(tk, input({ phase: 'plan' }), id))

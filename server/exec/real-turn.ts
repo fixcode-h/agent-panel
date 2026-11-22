@@ -113,8 +113,10 @@ export async function runRealTurn(ctx: RealContext) {
     // 环境（操作系统、分支、最近提交…）取用户的项目目录，交第一份报告时面板自己采集（shared/bug/env.ts）
     bugSource:
       ctx.task.bug?.kind === 'report'
-        ? bugSource(workDirOf(ctx.task, ctx.project), ctx.task.baseRef, () =>
-            collectBugEnv(ctx.project.path, bugWho(ctx)),
+        ? bugSource(
+            () => workDirOf(ctx.task, ctx.project),
+            ctx.task.baseRef,
+            () => collectBugEnv(ctx.project.path, bugWho(ctx)),
           )
         : undefined,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF

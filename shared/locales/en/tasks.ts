@@ -1886,6 +1886,9 @@ export const EN_TASKS: Record<string, string> = {
   '工具 {name}': 'the tool {name}',
   '…（还有 {n} 行没显示）': '… ({n} more lines not shown)',
   '权限是「{mode}」，自动允许：{title}': 'Permission is "{mode}", allowed automatically: {title}',
+  '整条都是只读命令，自动允许：{title}': 'Every part is a read-only command, allowed automatically: {title}',
+  '是这个项目的测试步骤命令，自动允许：{title}':
+    "It's one of this project's test-step commands, allowed automatically: {title}",
   '按这个对话的放行规则自动允许（{rule}）：{title}':
     "Allowed automatically by this conversation's rule ({rule}): {title}",
   '你允许了：{title}，这个对话里之后的{rule}都自动允许':

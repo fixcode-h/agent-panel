@@ -452,3 +452,29 @@ test('按模型档位加强扶持：弱模型套严格档、第一次改文件�
   const st = await hookOptions({ ...ctx({ task: task({ id: 'sup3' }), orch: { plans: {} } }), support: strong })
   assert.doesNotMatch((await st.onHook!('tool.before', edit(file))).context ?? '', /实现计划/)
 })
+
+// 实跑 2026-11-22：「识别现场与方案」节点确认后，规划角色把实现、测试全做了，后面的实现节点只能复核
+test('工作流里规划角色的节点：改代码被拒绝，方案文档照写；不在节点里（就地用）不拦', async () => {
+  resetHooksCache()
+  const node = await hookOptions(ctx({ origin: 'builtin:analyst', step: true }))
+  const a = await node.onHook!('tool.before', edit(path.join(dir, 'src/catalog.js')))
+  assert.equal(a.deny, true)
+  assert.match(a.reason!, /不改代码/)
+  assert.ok(!(await node.onHook!('tool.before', edit(path.join(dir, 'docs/design.md')))).deny, '方案文档照写')
+  const free = await hookOptions(ctx({ origin: 'builtin:analyst' }))
+  assert.ok(!(await free.onHook?.('tool.before', edit(path.join(dir, 'src/catalog.js'))))?.deny)
+})
+
+// 实跑 2026-11-22：派出去写模块文档的「文档」把文档直接提交到主分支，同目录的 Bug 子对话发现 HEAD 变了
+test('派出去的「文档」：文档照写，提交被拒绝', async () => {
+  resetHooksCache()
+  const docs = await hookOptions(ctx({ origin: 'builtin:docsync', orch: { helper: true } }))
+  assert.ok(!(await docs.onHook!('tool.before', edit(path.join(dir, 'docs/modules/a/README.md')))).deny)
+  const shell = (command: string) => ({
+    tool: { kind: 'shell' as const, name: 'Bash', input: { command }, path: '', paths: [] },
+  })
+  const c = await docs.onHook!('tool.before', shell('git add docs && git commit -m "docs"'))
+  assert.equal(c.deny, true)
+  assert.match(c.reason!, /不要提交/)
+  assert.ok(!(await docs.onHook!('tool.before', shell('git status'))).deny)
+})

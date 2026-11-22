@@ -44,6 +44,7 @@ import {
   type GuardCtx,
 } from './guards.ts'
 import { bigOutputHint, bigReadDeny } from './guards-context.ts'
+import { panelFilesDeny } from './guards-panel.ts'
 import { snapshotBeforeEdit } from '../tasks/bug-probe.ts'
 import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
 import { taskMap } from '../runtime/task-state.ts'
@@ -51,6 +52,7 @@ import { argHint, loopHint, type ArgHintDeps } from './tool-after-hints.ts'
 import { externalToolsOf, knownExternalServers } from '../mcp-catalog/external-titles.ts'
 import { gateDeny, targetOf } from './overrides.ts'
 import { userHookGate } from '../../shared/hooks/override.ts'
+import { CODE_FILE } from '../../shared/docs-first.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -60,6 +62,10 @@ import { userHookGate } from '../../shared/hooks/override.ts'
 
 /** 只读的内置角色：调研、评审、排查分析（方案设计要写规范文件，不算只读） */
 const READ_ONLY_ORIGINS = new Set(['builtin:explorer', 'builtin:reviewer', 'builtin:analyzer']) // 模块状态：常量，加载后不改
+/** 规划角色（方案设计）：在工作流节点里只出方案，不改代码 */
+const PLANNER_ORIGIN = 'builtin:analyst'
+/** 「文档」角色：派出去写模块文档时只写不提交（实跑 2026-11-22：小项目里它把文档直接提交到主分支，和同目录的 Bug 子对话撞了 HEAD） */
+const DOCS_ORIGIN = 'builtin:docsync'
 /** 只读角色在命令行里也不该做的事：按命令前缀判断（不是按回复文字） */
 const WRITE_COMMANDS = [
   'git commit',
@@ -100,11 +106,14 @@ const inside = (dir: string, p: string) => {
   return r === '' || (!r.startsWith('..') && !path.isAbsolute(r))
 }
 
-/** 这次调用是哪种身份：只读角色、只统筹不动手的父对话，或者都不是 */
-function identity(c: HookCallCtx): 'read-only' | 'coordinator' | '' {
+/** 这次调用是哪种身份：只读角色、只统筹不动手的父对话、工作流里出方案的节点，或者都不是 */
+function identity(c: HookCallCtx): 'read-only' | 'coordinator' | 'planner' | 'docs' | '' {
   const orch = c.call.orch
   if (!orch) return ''
   if (READ_ONLY_ORIGINS.has(c.agent.origin)) return 'read-only'
+  // 工作流里规划角色跑的节点：只出方案、写方案文档，代码归后面的实现节点（实跑 2026-11-22：方案节点确认后把实现全做了）
+  if (c.agent.origin === PLANNER_ORIGIN && c.call.step && !c.call.orch?.helper) return 'planner'
+  if (c.agent.origin === DOCS_ORIGIN && orch.helper) return 'docs'
   if (orch.coordinator && !orch.helper && !c.call.step && !c.task.parentTaskId && !isChatMode(c.task))
     return 'coordinator'
   return ''
@@ -125,10 +134,17 @@ function scratchPath(c: HookCallCtx, f: string): boolean {
 function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: string[] = []): string {
   const tool = facts.tool
   if (!tool) return ''
+  if (who === 'docs') return docsCommitDeny(facts)
   if (tool.kind === 'edit') {
     const all = (tool.paths.length ? tool.paths : [tool.path]).filter(Boolean)
     // 一次性的临时脚本、草稿（项目的 .tmp/、系统临时目录）不算改项目：以前一律拦，模型只好改用 stdin 喂脚本
     if (all.length && all.every((p) => scratchPath(c, p))) return ''
+    if (who === 'planner') {
+      // 方案文档、规范文件照写，只拦代码
+      const code = all.find((p) => CODE_FILE.test(p))
+      if (!code) return ''
+      return `【面板】你在工作流的「${c.call.step?.title ?? ''}」节点里，只出方案、写方案文档，不改代码（${rel(c.cwd, code) || code}）：实现交给后面的节点。方案交了、用户确认了就结束这一轮，流程会往下走。`
+    }
     if (who === 'coordinator') {
       // 补丁一次能改好几个文件：每个都登记过才放行
       const files = (tool.paths.length ? tool.paths : [tool.path]).map((p) => rel(c.cwd, p))
@@ -146,6 +162,16 @@ function readOnlyDeny(c: HookCallCtx, who: string, facts: HookFacts, extra: stri
       return `【面板】你是只读的角色，不跑会改仓库或装依赖的命令（${hit.trim()}）：需要的话写进结果，由派你的对话安排。`
   }
   return ''
+}
+
+/** 派出去的「文档」：文档照写，提交、推送拦下（文档留在工作区，面板开子对话的独立分支时带过去，随改动一起合回） */
+function docsCommitDeny(facts: HookFacts): string {
+  if (facts.tool?.kind !== 'shell') return ''
+  const segs = commandSegments(String(facts.tool.input.command ?? ''))
+  const hit = ['git commit', 'git push', 'p4 submit', 'svn commit'].find((w) => segs.some((s) => s.startsWith(w)))
+  return hit
+    ? `【面板】文档写好留在工作区就行，不要提交（${hit}）：面板开子对话的独立分支时会把它带过去、随改动一起合回；直接提交到当前分支会和同目录正在跑的对话撞上。`
+    : ''
 }
 
 /** 临时文件位置守卫：写到盘符根目录下一两层、或面板的数据目录里时拒绝（项目目录、系统临时目录里照常） */
@@ -289,6 +315,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['long-command-guard', longDeny],
     ['big-read-guard', (_g, f) => bigReadDeny(c.cwd, c.task.id, builtinNumber(data, 'big-read-guard', 'kb'), f)],
     ['secret-guard', secretDeny],
+    ['panel-files-guard', (_g, f) => panelFilesDeny({ cwd: c.cwd, projectPath: c.project.path }, f)],
     ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
     // 借鉴 ECC 的两个（严格档）：放在最后，前面的守卫说了不许改的不必再提醒先读
     ['check-config-guard', (g, f) => checkConfigDeny(c.cwd, c.task.id, g.list('extra'), f)],
@@ -316,7 +343,9 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       ...(guards.length || know ? (['edit', 'shell'] as const) : []),
       ...(situ?.before ?? []),
       // 读大文件守卫要看读文件工具；推送经验要看搜索（各家的搜索工具都归在读文件这一类）
-      ...(guards.some(([id]) => id === 'big-read-guard') || know ? (['read'] as const) : []),
+      ...(guards.some(([id]) => id === 'big-read-guard' || id === 'panel-files-guard') || know
+        ? (['read'] as const)
+        : []),
       ...userKinds('tool.before'),
     ],
     'tool.after': [

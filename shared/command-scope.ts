@@ -284,19 +284,45 @@ export const endlessSegment = (seg: string) => !quickSegment(seg) && ENDLESS.som
 /** 整条命令里有不会自己结束的那一段 */
 export const endlessCommand = (cmd: string) => runSegments(cmd).some(endlessSegment)
 
+// 模块状态：常量，加载后不改
+const SHELL_WORDS = new Set([
+  'function',
+  'if',
+  'then',
+  'else',
+  'elif',
+  'fi',
+  'for',
+  'while',
+  'until',
+  'do',
+  'done',
+  'case',
+  'esac',
+])
+
 /**
  * 按实测用时归档用的命令「名字」：程序名加前两个不是选项的参数（`npm run build`、`cargo build`、`node scripts/x.mjs`），
  * 选项、重定向和更后面的参数不算，路径的反斜杠统一成 /。同一个名字下次再跑，按上次的用时判断该不该放后台
  * （server/command-times.ts）。快命令（读写文件、查找、git 本地操作）没有名字，不记
  */
 export function commandKey(seg: string): string {
-  if (quickSegment(seg)) return ''
-  const s = seg.trim().replace(/^&\s*/, '').replace(PREFIX, '')
+  // 子 shell 的括号拆段后留在头尾：`( cd web && make dist )` 记成 make dist
+  const bare = seg
+    .trim()
+    .replace(/^&\s*/, '')
+    .replace(/^\(\s*/, '')
+    .replace(/\s*\)$/, '')
+  if (quickSegment(bare)) return ''
+  const s = bare.replace(PREFIX, '')
+  // 不像程序名的开头（子 shell 的括号、function / if 这类关键字）不记：弱模型实跑里记出过 `(`、`function taskchanges 30` 这种键
+  const head = segHead(s)
+  if (!/^[a-z0-9_][\w.+-]*$/.test(head) || SHELL_WORDS.has(head)) return ''
   const words = segArgs(s)
     .split(/\s+/)
     .filter((w) => w && !/^[-/]{1,2}\w/.test(w) && !/^\d*[<>|&]/.test(w))
     .slice(0, 2)
-  return [segHead(s), ...words].join(' ').replace(/["']/g, '').replace(/\\/g, '/').toLowerCase().slice(0, 120)
+  return [head, ...words].join(' ').replace(/["']/g, '').replace(/\\/g, '/').toLowerCase().slice(0, 120)
 }
 
 /**

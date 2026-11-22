@@ -23,3 +23,15 @@ test('跑过一分钟以上的才算慢；按项目分开；分不清哪段慢�
   noteCommandTime('p1', 'npm run build', 3_000)
   assert.equal(knownSlow('p1', 'npm run build'), undefined)
 })
+
+test('多行引号正文、子 shell 括号、shell 关键字不当成命令名记', () => {
+  resetCommandTimes()
+  noteCommandTime('p3', 'git commit -m "改了 quote\n\nb\nCo-Authored-By: Claude Code"', 90_000)
+  assert.equal(knownSlow('p3', 'b'), undefined)
+  assert.equal(knownSlow('p3', 'co-authored-by: claude code'), undefined)
+  noteCommandTime('p3', 'node -e "const x = 1\nfunction taskChanges(n) { return 30 }\nconsole.log(x)"', 90_000)
+  assert.equal(knownSlow('p3', 'function taskChanges 30'), undefined)
+  noteCommandTime('p3', '( cd web && make dist )', 90_000)
+  assert.equal(knownSlow('p3', '('), undefined)
+  assert.equal(knownSlow('p3', 'make dist'), 90_000)
+})

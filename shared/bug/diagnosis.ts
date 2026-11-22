@@ -55,7 +55,7 @@ import { applyChat, chatOf, chatReplaces } from './chat.ts'
 import { reopenedAfterCancel, reopenInfo } from './reopen.ts'
 import { moveDiagnosis } from './transition.ts'
 
-type DiagTask = Pick<Task, 'bug' | 'messages' | 'changes'>
+type DiagTask = Pick<Task, 'bug' | 'messages' | 'changes'> & Partial<Pick<Task, 'worktree'>>
 
 /**
  * submit_diagnosis / update_bug_case 交上来的内容：工具的原始参数，按 BugCase 解析（字段写坏的当没写，不让一个字段挡住整份）。
@@ -518,7 +518,12 @@ function submitOnce(
   const { files: fixFiles, blind } =
     (phase === 'fix' || phase === 'verify') && src
       ? fixFilesOf(
-          (task.changes ?? []).map((x) => x.path),
+          // 在独立分支里时加上分支目录里现查的：这一轮用命令写的、中途换到分支后写的都算上。
+          // 共用目录不查：那里没提交的改动可能是用户自己的，不能算成这次的修复
+          [
+            ...(task.changes ?? []).map((x) => x.path),
+            ...(task.worktree?.state === 'active' ? (src.changed?.() ?? []) : []),
+          ],
           src,
           (file) => editPatch(task.messages, file),
         )

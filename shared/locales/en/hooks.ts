@@ -181,6 +181,9 @@ export const EN_HOOKS: Record<string, string> = {
   可以写凭据的文件: 'Files that may hold credentials',
   '相对项目根的路径通配，一行一个；.env、.env.* 已经放行':
     'Path globs relative to the project root, one per line; .env and .env.* are already allowed',
+  面板文件守卫: 'Panel files guard',
+  '读写面板自己的源码、数据目录里的设置和对话记录时拒绝，让它照工具返回的说明做；项目本身就是面板仓库时只拦数据目录':
+    "Refuses reading or editing the panel's own source code and the settings and conversation records in its data folder, and points the agent back to what the tool results say; when the project is the panel repository itself, only the data folder is guarded",
   独立分支越界守卫: 'Branch boundary guard',
   '子对话在自己的独立分支里，要改分支目录以外的文件（比如原仓库里的）时拒绝':
     "Denies a child working in its own branch editing files outside that branch's directory (such as the original repository)",

@@ -49,3 +49,29 @@ test('按行号取日志文件的那几行：CRLF 归一、末尾换行不多算
   assert.equal(src.lines!('game.log', 6, 6)!.text, '')
   assert.equal(src.lines!('nope.log', 1, 1), undefined)
 })
+
+// 实跑 2026-11-22：这一轮中途开了独立分支，修复全改在分支目录里，按一轮开头的目录取改动就成了「还没改代码」
+test('目录给函数时按当时的目录取：中途换到独立分支后 changed / diff 读分支里的', (t) => {
+  const make = () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-bugsrc-'))
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' })
+    git('init', '-q')
+    writeFileSync(path.join(dir, 'a.js'), 'export const a = 1\n')
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    return dir
+  }
+  const main = make()
+  const branch = make()
+  let dir = main
+  const src = bugSource(() => dir)!
+  assert.deepEqual(src.changed!(), [])
+  dir = branch
+  writeFileSync(path.join(branch, 'a.js'), 'export const a = 2\n')
+  writeFileSync(path.join(branch, 'b.js'), 'export const b = 1\n')
+  assert.deepEqual(src.changed!()!.sort(), ['a.js', 'b.js'])
+  assert.match(src.diff!('a.js')!, /^\+export const a = 2$/m)
+  assert.equal(src.read('b.js'), 'export const b = 1\n')
+})

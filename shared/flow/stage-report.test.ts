@@ -59,3 +59,24 @@ test('阶段报告：没改就往下走并交最终决策；改了写清差异�
   assert.equal(settleReport(nx, { allow: true }).follow, '')
   assert.match(reportOutput(r.report, { Q1: 'B' }), /乙（用户改选，原推荐「甲」）/)
 })
+
+// 实跑 2026-11-22（DeepSeek V4.1 Flash）：每版 next 都写一句「没有待办」，决策还是那几个，方案节点确认 5 次不往下走
+test('阶段报告：next 只在这一版问了新问题时才回到 Agent；同样的决策再写 next 就直接往下走', () => {
+  const r = parseStageReport(base)
+  assert.ok(r.ok)
+  const v1: StageReportVersion = { report: { ...r.report, next: '确认后按顺序实现' }, at: '' }
+  const list: StageReportVersion[] = [v1]
+  assert.match(settleReport(list, { allow: true }).follow, /只接着问这些/)
+  assert.equal(v1.result, 'next')
+  // 第二版：决策还是 Q1、M1，next 写了一句交接的话
+  const v2: StageReportVersion = { report: { ...r.report, next: '没有待办，交给父对话提交' }, at: '' }
+  list.push(v2)
+  const end = settleReport(list, { allow: true })
+  assert.equal(end.follow, '')
+  assert.equal(v2.result, 'confirmed')
+  // 逐轮追问：这一版问了新的 Q2，照常接着下一轮
+  const q2 = { ...r.report.decisions[0], id: 'Q2', title: '存储' }
+  const v3 = { report: { ...r.report, decisions: [...r.report.decisions, q2], next: '问 Q3' }, at: '' }
+  list.push(v3)
+  assert.match(settleReport(list, { allow: true }).follow, /问 Q3/)
+})

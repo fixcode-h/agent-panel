@@ -308,7 +308,7 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         const perm = def.permissions.find((p) => p.id === d.permission)
         if (autoAllowed(task, ev, { id, step, agentId }, perm?.autoAllow ? perm.label : '')) return ctx.changed(true)
         asked.push(id)
-        replies.set(id, ev.reply)
+        replies.set(id, ev.kind === 'question' ? ev.reply : afterApproval(ev.reply, toolStart))
         task.requests.push(requestOf(ev, { id, step, agentId }))
         // 新的请求马上落盘，侧栏的铃铛和任务页立刻能看到
         ctx.changed(true)
@@ -316,5 +316,21 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
       }
     }
     ctx.changed()
+  }
+}
+
+/**
+ * 授权请求答完才算命令开始跑：等用户点允许的时间不算进耗时。
+ * 不然等了十几分钟才批准的命令会被记成「跑了十几分钟」，下次长命令守卫就逼它挪到后台（command-times.ts）
+ */
+export function afterApproval<R>(reply: (r: R) => void, toolStart: Map<ToolUse, number>) {
+  return (r: R) => {
+    const now = Date.now()
+    // toolStart 里都是还没出结果的调用：在等的就是这个批准
+    for (const x of toolStart.keys()) {
+      toolStart.set(x, now)
+      x.startedAt = now
+    }
+    reply(r)
   }
 }
