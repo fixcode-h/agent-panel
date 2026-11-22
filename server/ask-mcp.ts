@@ -217,6 +217,18 @@ const toolChars = (x: { name: string; title?: string; description?: string; inpu
     x.name.length + (x.title?.length ?? 0) + (x.description?.length ?? 0) + JSON.stringify(x.inputSchema ?? {}).length,
 })
 
+/**
+ * 面板直接列出的工具都标「始终加载」（MCP 工具的 _meta，不认的 CLI 忽略）：
+ * Claude Code 打开工具搜索时默认把所有 MCP 工具藏到 ToolSearch 后面，连每轮收尾的 end_turn 也要先搜一次才能调，
+ * 对话里就多出一条莫名的「查询 MCP 工具」。用户设置、托管配置都可能把 ENABLE_TOOL_SEARCH 重新打开，
+ * 只靠启动环境变量关不住，所以在工具上标。不常用的本来就收在 more_tools 后面，这里只有面板挑过的那些
+ */
+const ALWAYS_LOAD = 'anthropic/alwaysLoad'
+const alwaysLoad = <T extends object>(t: T) => ({
+  ...t,
+  _meta: { ...(t as { _meta?: Record<string, unknown> })._meta, [ALWAYS_LOAD]: true },
+})
+
 async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any, signal?: AbortSignal) {
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
@@ -266,7 +278,7 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
       s.onTools?.(tools.map(toolChars), deferred.map(toolChars))
       // 设置 →「MCP」的总览显示上一次真实对话挂上了几个（只有对话才带调用者）
       if (s.app) noteMounted(s.app.taskId, 'agent-panel', tools.length + deferred.length - (deferred.length ? 1 : 0))
-      return reply({ tools })
+      return reply({ tools: tools.map(alwaysLoad) })
     case 'tools/call': {
       const name = String(msg.params?.name ?? '')
       const args = msg.params?.arguments ?? {}

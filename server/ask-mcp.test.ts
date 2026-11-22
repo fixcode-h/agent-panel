@@ -42,6 +42,8 @@ test('执行中补充的通道：挂上 read_user_notes 取走补充，取过的
     list.result.tools.map((t: { name: string }) => t.name),
     ['read_user_notes'],
   )
+  // 面板列出的工具标成始终加载：Claude Code 开着工具搜索时也不用先 ToolSearch 才能调
+  assert.equal(list.result.tools[0]._meta['anthropic/alwaysLoad'], true)
   const got = await rpc(token, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'read_user_notes' } })
   assert.match(got.result.content[0].text, /先别改配置/)
   const again = await rpc(token, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read_user_notes' } })
