@@ -9,7 +9,7 @@ paths: shared/engine/prompt-parts.ts, shared/mcp-catalog/code-index.ts, shared/m
 - 规则：给 Agent 的提示词不能只教 rg / grep。通用约束「工具选择」写明先用专门的 MCP 工具，只看得到名字的先加载说明；找代码的具体顺序（代码索引 MCP → 带排除的 rg → find）只写在引擎注入的「搜索（这个项目）」一节（`shared/engine/prompt-parts.ts` 的 `searchPart`），角色、Skill 里只引用它，不另写一份 rg 用法。项目接的索引工具由 `server/mcp-catalog/code-index.ts` 认出来，把服务名和工具名写进那一节，项目设置「代码索引工具」可手动指定。
 - 起因：2026-11-14 用户报协调器查 GM 无效时先 grep 整个目录（还失败一次），追问后用 UEToVS 的 `search_lua` 一下就定位；C++ 也一样。搜索规则散在 7 处、都只写 rg，UEToVS 的工具名从没出现在提示词里，Claude Code 还把 MCP 工具延迟加载。
 - 规则：常见服务的代码查找工具（UEToVS、JetBrains IDE、EmmyLua 的 `lua_code`）按用途登记在 `shared/mcp-catalog/code-tools.ts`，名字正则只给陌生服务兜底；新认一个工具只加一行，不再改正则（2026-11-21：正则认不出 `get_members`、`suggest_include`、`lua_code`，写 C++ 时「看签名」「该 include 哪个头」从没进过提示词）。
-- 规则：一个工具兼管两类事（`lua_code` 既找声明又查引用）时，用 `also` 在另一组里再列一行、写那一类的用法；只列在「找」一组时，Agent 找调用点想不到它，会在 search 之后再全文 grep 一遍（2026-11-23 用户截图）。查引用的写法是「先用引用工具，查不到或怀疑动态调用再 rg 并说明原因」，不做硬拦截。
+- 规则：一个工具兼管两类事（`lua_code` 既找声明又查引用）时，用 `also` 在另一组里再列一行、写那一类的用法；只列在「找」一组时，Agent 找调用点想不到它，会在 search 之后再全文 grep 一遍（2026-11-23 用户截图）。查引用的写法是「有结果就直接用、不再 grep 核对；返回空或已经看到动态调用才 rg 并说明原因」，不做硬拦截；写成「怀疑是动态调用才 rg」时 haiku 实跑 3 次里 2 次照样再 grep 一遍「排除动态调用」。
 - 防线：`server/engine-steps.test.ts`「搜索一节先列代码索引 MCP 工具」、`shared/mcp-catalog/code-index.test.ts`。（含按用途分组）
 
 ## 别家工具的参数名不手写进提示词，从探测到的参数表生成
