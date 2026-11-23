@@ -156,3 +156,43 @@ export function clearEnded() {
   for (const [id, e] of jobs) if (e.job.status !== 'running') jobs.delete(id)
   changed()
 }
+
+/**
+ * 已经有自己状态对象的作业（模型下载、本机生图安装……）登记进来：不改它们原来的状态和接口，
+ * 每秒按 read() 同步一次阶段和进度（变了才推），阶段换了顺手记一行日志；work 结束时收尾（失败把原因放 info）
+ */
+export function followJob(
+  o: JobStart,
+  work: Promise<unknown>,
+  read: () => { phase?: string; done?: number; total?: number },
+): JobHandle {
+  const h = startJob(o)
+  let last = ''
+  let phase = ''
+  const sync = () => {
+    const p = read()
+    if (p.phase && p.phase !== phase) h.log((phase = p.phase))
+    const key = JSON.stringify(p)
+    if (key === last) return
+    last = key
+    h.progress(p)
+  }
+  sync()
+  const timer = setInterval(sync, 1000)
+  timer.unref?.()
+  work.then(
+    () => {
+      clearInterval(timer)
+      sync()
+      h.end(true)
+    },
+    (e: unknown) => {
+      clearInterval(timer)
+      sync()
+      const msg = e instanceof Error ? e.message : String(e)
+      h.log(msg)
+      h.end(false, msg)
+    },
+  )
+  return h
+}

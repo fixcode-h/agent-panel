@@ -6,6 +6,7 @@
  * speech/sherpa-onnx-<版本>/node_modules/ 下，再用 createRequire 从那里加载。两个包是兄弟目录，
  * 它的 addon.js 就是按 ../sherpa-onnx-<平台>/ 找原生库的。
  */
+import { followJob } from './jobs/registry.ts'
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -133,7 +134,7 @@ export function downloadSpeechModel(id: string) {
     abort: new AbortController(),
   }
   job = j
-  void (async () => {
+  const work = (async () => {
     const { mirror } = (await getSettings()).speech
     await installRuntime(mirror, j)
     for (const f of m.files) {
@@ -148,6 +149,18 @@ export function downloadSpeechModel(id: string) {
     }
     j.step = t('{name} 下载完成', { name: m.name })
   })()
+  // 也登记进面板的后台任务列表（ADR 0075）：侧栏能看到在下什么、能取消；设置页照旧读自己的状态
+  followJob(
+    {
+      source: 'panel',
+      kind: 'speech',
+      title: t('下载语音模型 {name}', { name: m.name }),
+      cancel: async () => j.abort.abort(),
+    },
+    work,
+    () => ({ phase: j.step, done: j.progress?.done, total: j.progress?.total }),
+  )
+  void work
     .then(() => {
       j.status = 'done'
       j.progress = undefined

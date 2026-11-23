@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Download, Loader2, Trash2, X } from 'lucide-react'
 import { SPEECH_MODELS, speechModel, speechModelMb, type SpeechModel, type SpeechStatus } from '@shared/speech'
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { usePolling } from '@/lib/polling'
+import { useBgJobsKey } from '@/lib/live/bg-jobs'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -16,11 +16,16 @@ import { Group, Row } from './parts'
 
 type SpeechSettings = Settings['speech']
 
-/** 下载状态；有下载在跑时问得勤一些 */
+/** 下载状态：进来取一次，之后跟着后台任务的推送（面板的下载作业变了）再取，不轮询 */
 function useSpeechStatus() {
   const [st, setSt] = useState<SpeechStatus>()
-  const running = st?.job?.status === 'running'
-  usePolling(() => api.speech().then(setSt), running ? 1000 : 6000)
+  const jobs = useBgJobsKey((j) => j.source === 'panel' && j.kind === 'speech')
+  useEffect(() => {
+    api
+      .speech()
+      .then(setSt)
+      .catch(() => undefined)
+  }, [jobs])
   return [st, setSt] as const
 }
 

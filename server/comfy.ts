@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { followJob } from './jobs/registry.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -225,7 +226,19 @@ function begin(kind: LocalJob['kind'], step: string, run: (j: Job) => Promise<vo
   if (job?.status === 'running') throw new Error(t('还有操作在进行：{step}', { step: job.step }))
   const j: Job = { id: randomUUID(), kind, status: 'running', step, log: '', abort: new AbortController() }
   job = j
-  void run(j)
+  const work = run(j)
+  // 也登记进面板的后台任务列表（ADR 0075）：侧栏能看到在装、在下什么，能取消；设置页照旧读自己的状态
+  followJob(
+    {
+      source: 'panel',
+      kind: 'local-image',
+      title: t('本机生图：{step}', { step }),
+      cancel: async () => j.abort.abort(),
+    },
+    work,
+    () => ({ phase: j.step, done: j.progress?.done, total: j.progress?.total }),
+  )
+  void work
     .then(() => {
       j.status = 'done'
       j.progress = undefined

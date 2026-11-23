@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { followJob } from './jobs/registry.ts'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { getCli } from '../shared/clis.ts'
@@ -240,10 +241,22 @@ export function installApi() {
     // 页面只用每个 CLI 最近一次的记录，这个 CLI 以前结束的记录可以丢掉，免得一直攒在内存里
     for (const [id, j] of jobs) if (j.cli === def.id && j.status !== 'running') jobs.delete(id)
     jobs.set(job.id, job)
-    void run(job, def.npmPackage).catch((e) => {
+    const work = run(job, def.npmPackage).catch((e) => {
       job.status = 'failed'
       job.error = (e as Error).message
     })
+    // 也登记进面板的后台任务列表（ADR 0075）：装 / 卸 CLI 时侧栏看得到；设置页照旧读这里的记录
+    followJob(
+      {
+        source: 'panel',
+        kind: `cli-${action}`,
+        title: action === 'install' ? t('安装 {name}', { name: def.name }) : t('卸载 {name}', { name: def.name }),
+      },
+      work.then(() => {
+        if (job.status === 'failed') throw new Error(job.error || t('失败'))
+      }),
+      () => ({ phase: job.command }),
+    )
     return c.json(job, 202)
   })
 

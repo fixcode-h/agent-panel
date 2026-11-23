@@ -42,3 +42,15 @@ export function useBgJobs() {
   }, [])
   return [jobs, setJobs] as const
 }
+
+/**
+ * 一组后台作业的「变化签名」：状态、阶段、进度变了它就变。页面自己的状态（模型列表、安装状态）
+ * 跟着它重取一次，作业在跑时不用再自己 1 秒轮询一遍（推送本来就到了）
+ */
+export function useBgJobsKey(pick: (j: BgJob) => boolean) {
+  const [jobs] = useBgJobs()
+  return jobs
+    .filter(pick)
+    .map((j) => `${j.id}:${j.status}:${j.phase ?? ''}:${j.done ?? ''}`)
+    .join('|')
+}

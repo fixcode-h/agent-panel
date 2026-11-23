@@ -93,4 +93,6 @@ export const EN_FILE_INDEX: Record<string, string> = {
   没有后台任务: 'No background jobs',
   还没有日志: 'No log yet',
   '结束后 {n} 秒还没退出': 'Still running {n}s after being stopped',
+  '下载语音模型 {name}': 'Download speech model {name}',
+  '下载朗读模型 {name}': 'Download read-aloud model {name}',
 }

@@ -4,7 +4,7 @@ import { TTS_MODELS, TTS_VOICES, ttsVoiceGroupLabel, type TtsEngine, type TtsMod
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { usePolling } from '@/lib/polling'
+import { useBgJobsKey } from '@/lib/live/bg-jobs'
 import { browserVoices, readAloud, readAloudSupported, stopReading, useReadAloud } from '@/lib/read-aloud'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -17,11 +17,16 @@ import { Group, Row } from './parts'
 
 type ReadAloudSettings = Settings['readAloud']
 
-/** 下载状态；有下载在跑时问得勤一些 */
+/** 下载状态：进来取一次，之后跟着后台任务的推送（面板的下载作业变了）再取，不轮询 */
 function useTtsStatus() {
   const [st, setSt] = useState<TtsStatus>()
-  const running = st?.job?.status === 'running'
-  usePolling(() => api.tts().then(setSt), running ? 1000 : 6000)
+  const jobs = useBgJobsKey((j) => j.source === 'panel' && j.kind === 'tts')
+  useEffect(() => {
+    api
+      .tts()
+      .then(setSt)
+      .catch(() => undefined)
+  }, [jobs])
   return [st, setSt] as const
 }
 

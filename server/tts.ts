@@ -4,6 +4,7 @@
  * 识别库和语音输入共用（server/speech.ts 的 installRuntime / sherpaLib）。模型是 sherpa-onnx 发布的
  * tar.bz2（里面有词典、espeak 数据等一百多个文件），整包下载后用系统的 tar 解开，解完才算装好。
  */
+import { followJob } from './jobs/registry.ts'
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -63,7 +64,7 @@ export function downloadTtsModel(id: string) {
     abort: new AbortController(),
   }
   job = j
-  void (async () => {
+  const work = (async () => {
     // 识别库的镜像跟着语音输入的设置走（npmmirror）；模型只在 GitHub 发布
     await installRuntime((await getSettings()).speech.mirror, j)
     const work = path.join(ttsDir(), '.download')
@@ -91,6 +92,18 @@ export function downloadTtsModel(id: string) {
     if (!modelReady(m)) throw new Error(t('模型包里缺文件，解压后没有 {file}', { file: m.model }))
     j.step = t('{name} 下载完成', { name: m.name })
   })()
+  // 也登记进面板的后台任务列表（ADR 0075）：侧栏能看到在下什么、能取消；设置页照旧读自己的状态
+  followJob(
+    {
+      source: 'panel',
+      kind: 'tts',
+      title: t('下载朗读模型 {name}', { name: m.name }),
+      cancel: async () => j.abort.abort(),
+    },
+    work,
+    () => ({ phase: j.step, done: j.progress?.done, total: j.progress?.total }),
+  )
+  void work
     .then(() => {
       j.status = 'done'
       j.progress = undefined

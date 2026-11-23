@@ -1,7 +1,7 @@
 // 后台作业注册表（server/jobs/registry.ts，ADR 0075）：进度、日志按行号增量取、取消后记成已取消、清除已结束的
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cancelJob, clearEnded, jobLog, listJobs, onJobs, startJob } from './registry.ts'
+import { cancelJob, clearEnded, followJob, jobLog, listJobs, onJobs, startJob } from './registry.ts'
 
 test('作业从开始到取消：日志增量取，取消调回调并记成已取消，推送合并成一次整份，清除只清结束的', async () => {
   const pushed: number[] = []
@@ -37,4 +37,20 @@ test('作业从开始到取消：日志增量取，取消调回调并记成已�
   )
   c.end(true)
   off()
+})
+
+test('followJob：已有状态对象的作业照 read() 同步阶段（换阶段记一行日志），失败把原因放 info', async () => {
+  const st = { step: '下载 a.bin', done: 1, total: 4 }
+  let fail!: (e: Error) => void
+  const h = followJob(
+    { source: 'panel', kind: 'speech', title: '下载模型' },
+    new Promise((_, rej) => (fail = rej)),
+    () => ({ phase: st.step, done: st.done, total: st.total }),
+  )
+  st.step = '解压'
+  fail(new Error('磁盘满了'))
+  await new Promise((r) => setTimeout(r, 10))
+  const j = listJobs().find((x) => x.id === h.id)!
+  assert.deepEqual([j.status, j.phase, j.info], ['failed', '解压', '磁盘满了'])
+  assert.deepEqual(jobLog(h.id)?.lines, ['下载 a.bin', '解压', '磁盘满了'])
 })
