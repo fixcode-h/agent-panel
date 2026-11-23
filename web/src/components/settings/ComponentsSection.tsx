@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { MenuSpecimen } from '@/components/ui/item-menu'
+import { LoadingMaskSpecimen } from '@/components/ui/loading-mask'
+import { TreeSearchSpecimen } from '@/components/ui/tree/tree-search'
 import {
   Code2,
   Diff,
@@ -807,6 +810,15 @@ function OverlaySpecimens() {
   const bare = modal === 'bare'
   return (
     <Group title={t('弹层')}>
+      <Specimen name="ItemMenu · openMenu（右键菜单、子菜单、菜单内搜索）" tune={['menu']}>
+        <MenuSpecimen />
+      </Specimen>
+      <Specimen name="TreeSearch · TreeList · Caret" tune={['input']}>
+        <TreeSearchSpecimen />
+      </Specimen>
+      <Specimen name="LoadingMask">
+        <LoadingMaskSpecimen />
+      </Specimen>
       <Specimen name="Modal · size · bare" tune={['modal']}>
         {MODAL_SIZES.map((s) => (
           <Button key={s} variant="secondary" size="sm" onClick={() => setModal(s)}>

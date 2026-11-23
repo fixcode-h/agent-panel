@@ -95,4 +95,18 @@ export const EN_FILE_INDEX: Record<string, string> = {
   '结束后 {n} 秒还没退出': 'Still running {n}s after being stopped',
   '下载语音模型 {name}': 'Download speech model {name}',
   '下载朗读模型 {name}': 'Download read-aloud model {name}',
+  没有对上的: 'No matches',
+  '复制失败：浏览器不让写剪贴板': 'Copy failed: the browser blocked clipboard access',
+  '搜索…': 'Search…',
+  新录制: 'New recording',
+  在这里点右键: 'Right-click here',
+  揭开: 'Reveal',
+  盖上: 'Cover',
+  内容画完后才揭开遮罩: 'The mask is removed only after the content has finished drawing',
+  '{n} 个匹配': '{n} matches',
+  没有匹配的: 'No matches',
+  '只搜已经展开过的层，没展开的层先展开再搜':
+    'Only levels already expanded are searched; expand a level first to search inside it',
+  按名字或类名筛: 'Filter by name or class',
+  'UObject 树': 'UObject tree',
 }

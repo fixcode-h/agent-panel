@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePageSignals } from '@/lib/page-signal'
 import { AppToaster } from '@/components/ui/toaster'
+import { MenuHost } from '@/components/ui/item-menu'
 import { DataProvider, NavCtx, useData, useNav, type Route, useTasks } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
 import { useTaskDoneUnread } from '@/lib/task-unread'
@@ -344,6 +345,8 @@ export function App() {
         <UpdateResumeDialog />
         {/* 提示统一走 web/src/lib/toast.ts；位置、停留时长读设置 → 组件 →「提示」（默认右下角），细节见 ui/toaster.tsx */}
         <AppToaster dark={dark} />
+        {/* 按项目列表打开的菜单（openMenu）整个应用挂一个：页面和插件不用各自挂 */}
+        <MenuHost />
       </NavCtx.Provider>
     </DataProvider>
   )
