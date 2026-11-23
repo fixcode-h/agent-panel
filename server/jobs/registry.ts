@@ -46,8 +46,8 @@ interface Entry {
 
 const jobs = new Map<string, Entry>() // 模块状态：运行时，面板重启后跑着的作业也没了
 const listeners = new Set<(list: BgJob[]) => void>() // 模块状态：会话，订阅方自己撤
-let pushTimer: ReturnType<typeof setTimeout> | undefined
-let seq = 0
+let pushTimer: ReturnType<typeof setTimeout> | undefined // 模块状态：运行时，合并推送的定时器
+let seq = 0 // 模块状态：运行时，作业编号计数，重启从 0 数（编号带时间前缀不会撞）
 
 export const listJobs = (f: { projectId?: string; source?: string } = {}) =>
   [...jobs.values()]

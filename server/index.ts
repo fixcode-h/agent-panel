@@ -43,6 +43,7 @@ import { bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.
 import { docsApi } from './docs/index.ts'
 import { docRootOf } from './module-map.ts'
 import { cachedDocRoot } from './docs/root-cache.ts'
+import { initProjectData } from './project-data/index.ts'
 import { isPanelSource } from './panel/source.ts'
 import { detectClis } from './detect.ts'
 import { syncCliAuths } from './accounts.ts'
@@ -220,10 +221,10 @@ const builtinOps: BuiltinOps = {
   updateWorkflow: (id, input) => workflows.update(id, input),
   updateAgent: (id, input) => agents.update(id, input),
 }
+/** 和「文档」角色、模块文档同一个文档根：P4 / SVN 各分支共用的那一份，项目里填的「文档根」参数也算上 */
+const docRootNow = async (p: Project) => docRootOf(p.path, withProjectParams(await agents.list(), p))
 async function ensureProjectWorkflows() {
   // 插件（ADR 0059）先读进来：开着的插件带的角色和工作流算进内置列表，下面一起安装、升级
-  // 和「文档」角色、模块文档同一个文档根：P4 / SVN 各分支共用的那一份，项目里填的「文档根」参数也算上
-  const docRootNow = async (p: Project) => docRootOf(p.path, withProjectParams(await agents.list(), p))
   await initPlugins({
     state: builtinState,
     projects: () => projects.list(),
@@ -238,6 +239,11 @@ async function ensureProjectWorkflows() {
       await projects.update(id, { ...rest, capabilities })
     },
     // 算一次就记住（docs/root-cache.ts）：P4 项目现算要几秒，插件的每个接口都要它
+    docRoot: async (p) => (await cachedDocRoot(p, docRootNow)) ?? docRootNow(p),
+  })
+  // 按项目存数据的统一入口（project-data/，开放给插件）：共享的放文档根/AgentPanel/<名字>，本机的放数据目录
+  initProjectData({
+    getProject: (id) => projects.get(id),
     docRoot: async (p) => (await cachedDocRoot(p, docRootNow)) ?? docRootNow(p),
   })
   // 项目文件索引：项目用到时才建（找文件、文件面板、插件），这里只接线
@@ -812,6 +818,8 @@ catalogRoutes.put('/projects/:id', async (c) => {
   r.data!.lessons = (await projects.get(id))?.lessons ?? []
   const x = await projects.update(id, r.data!)
   if (!x) return bad(c, t('项目不存在'), 404)
+  // 项目设置可能改了文档根：马上重算一次，变了会通知插件（docs/root-cache.ts 的 onDocRootChange）
+  void cachedDocRoot(x, docRootNow).catch(() => undefined)
   return c.json({ ...x, lessons: (await loadProjectLessons(x, await agents.list())).lessons })
 })
 

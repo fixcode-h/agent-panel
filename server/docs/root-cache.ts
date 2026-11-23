@@ -3,7 +3,10 @@
  * 只有项目设置改了、或在项目设置里换了共用文档根时才变。以前每分钟重新算一遍——判断版本管理、读文档组记录，
  * P4 慢的时候几秒，UE 插件的每个接口取项目都要等它，Forge、测试页「打开要加载好久」（用户 2026-11-23：
  * 「不是直接就知道文档路径在哪里么」「直接 docs 纳入 index，建立缓存」）。
- * 现在算一次就记住并落盘（<数据目录>/doc-roots.json），重启也直接用；项目改了（updatedAt 变了）或文档根换了（forgetDocRoots）才重算
+ * 现在算一次就记住并落盘（<数据目录>/doc-roots.json），重启也直接用；项目改了（updatedAt 变了）或文档根换了（forgetDocRoots）才重算。
+ *
+ * 重算出来和上次不一样时发 onDocRootChange（开放给插件）：插件自己记着文档根的（UE 插件）马上跟上，
+ * 不用再按 TTL 隔一分钟重问（「可统一能力盘点」第 7 项）。项目保存后服务端主动重算一次（index.ts 的 PUT /projects/:id）
  */
 import { readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -19,6 +22,24 @@ interface Saved {
 }
 let saved: Record<string, Saved> | undefined // 模块状态：缓存，落盘一份
 const pending = new Map<string, { sig: string; root: Promise<string | undefined> }>() // 模块状态：运行时
+/** root 为 undefined：可能变了但还没重算（共用文档根换了位置），收到的一方自己重新问 */
+type Listener = (projectId: string, root: string | undefined) => void
+const listeners = new Set<Listener>() // 模块状态：运行时，订阅方自己退订
+
+/** 项目的文档根变了（或可能变了）时调 fn；返回退订函数 */
+export function onDocRootChange(fn: Listener) {
+  listeners.add(fn)
+  return () => void listeners.delete(fn)
+}
+
+function emit(projectId: string, root: string | undefined) {
+  for (const fn of listeners)
+    try {
+      fn(projectId, root)
+    } catch {
+      // 一个订阅方出错不影响别的
+    }
+}
 
 function load() {
   if (saved) return saved
@@ -54,6 +75,7 @@ export function cachedDocRoot(
       load()[p.id] = { sig, root: r }
       persist()
       pending.delete(p.id)
+      if (hit && hit.root !== r) emit(p.id, r)
       return r
     },
     (e: unknown) => {
@@ -68,7 +90,10 @@ export function cachedDocRoot(
 
 /** 共用文档根换了位置（项目设置里改的）：所有项目下次重算 */
 export function forgetDocRoots() {
-  saved = {}
+  // 只作废签名、留着旧的根：下次重算出来能和旧的比，变了才发事件
+  const all = load()
+  for (const v of Object.values(all)) v.sig = ''
   pending.clear()
   persist()
+  for (const id of Object.keys(all)) emit(id, undefined)
 }

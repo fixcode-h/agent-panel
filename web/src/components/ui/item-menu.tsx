@@ -233,7 +233,7 @@ function Menu({ s, inline }: { s: State; inline?: boolean }) {
       ox: flipX ? 'right' : 'left',
       oy: flipY ? 'bottom' : 'top',
     })
-  }, [s])
+  }, [s, inline])
 
   // 子菜单贴着那一行的右边展开，右边放不下翻到主菜单左边；上下夹在窗口里
   useLayoutEffect(() => {
