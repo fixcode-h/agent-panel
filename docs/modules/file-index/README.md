@@ -28,7 +28,7 @@
 
 - 服务端代码：`projectIndex(projectId)` 拿到 `ProjectIndex`（关着返回 undefined，调用方走老路）；先 `ready(ms)` 再 `find` / `list`。项目里的路径是相对项目根的写法，其他根是绝对路径。
 - 自己写了文件：`touchFiles([绝对路径], 'panel')`，返回时已经进索引。
-- 插件：用开放模块 `server/file-index/indexed` 的 `indexedTree(ctx.files, root, { ext })` / `indexedDirs`，取不到（旧面板、关了索引、没建好）返回 undefined 时退回自己走目录；写了文件 `touchIndexed(ctx.files, [...])`。不要自己再写一份等就绪、换相对路径的适配（UE、表格以前各有一份）。
+- 插件：用开放模块 `server/file-index/indexed.ts` 的 `indexedTree(ctx.files, root, { ext })` / `indexedDirs`，取不到（旧面板、关了索引、没建好）返回 undefined 时退回自己走目录；写了文件 `touchIndexed(ctx.files, [...])`。不要自己再写一份等就绪、换相对路径的适配（UE、表格以前各有一份）。
 - 取整棵子树一定带 `ext` 或 `dirsOnly`：大项目整棵几十万个路径，几个请求一起就是几个 GB（2026-11-23 面板内存耗尽）。表格的列表另有 `list-index.ts` 记修改时间和大小（索引只记名字），不是重复。
 
 ## 注意
