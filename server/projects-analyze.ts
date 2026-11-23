@@ -142,12 +142,11 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
 
 /**
  * 版本控制：目录里有 .git / .p4config / .svn，或者上层目录里有（P4 的工作区根常常在上面）。
- * P4 的连接也常常不写文件：用 p4 set（Windows 注册表）或环境变量配，P4CONFIG 也可能叫别的名字。
- * 这些情况下按文件认不出来（用户报过「明明是 P4 项目」却被当成没有版本控制），最后问一次 p4 本身（见 p4Mapped）
+ * P4CONFIG 也可能叫别的名字、设在 p4 set（Windows 注册表）里：用 p4 set 读出名字再按文件找。
+ * 不跑 p4 where：要连服务器，慢的时候几秒，每次判断版本管理都卡住（用户 2026-11-23：「p4 where 不要用这个」）
  */
 export async function detectVcs(dir: string) {
-  // P4 的配置文件：常见的几种名字，加上环境变量 P4CONFIG 指定的。用户的工作区里是 p4config.txt，
-  // P4CONFIG 设在 p4 set（Windows 注册表）里，面板进程的环境变量读不到，所以常见名字直接认
+  // P4 的配置文件：常见的几种名字，加上环境变量和 p4 set 里的 P4CONFIG
   const p4Names = [
     '.p4config',
     '.p4ignore',
@@ -156,6 +155,7 @@ export async function detectVcs(dir: string) {
     'p4config',
     'P4CONFIG',
     process.env.P4CONFIG?.trim(),
+    await p4ConfigName(),
   ].filter((x): x is string => !!x)
   let cur = dir
   for (let i = 0; i < 6; i++) {
@@ -166,39 +166,30 @@ export async function detectVcs(dir: string) {
     if (up === cur) break
     cur = up
   }
-  if (await p4Mapped(dir)) return { vcs: 'p4' as const, root: dir }
   return { vcs: 'none' as const, root: dir }
 }
 
-/** p4 的问询结果缓存一分钟：每轮对话都要判断一次版本控制，不能每次都起一个 p4 进程 */
-const P4_PROBE_MS = 60_000
-const p4Probes = new Map<string, { at: number; got: Promise<boolean> }>() // 模块状态：缓存，丢了重算
+let p4Config: Promise<string | undefined> | undefined // 模块状态：缓存，进程里只问一次
 
-/**
- * 这个目录在当前 P4 client 的映射里：在目录里跑 p4 where（PWD 跟着改，p4 按它找配置）。
- * 没装 p4、连不上、不在映射里都算不是；目录不存在时不问
- */
-function p4Mapped(dir: string): Promise<boolean> {
-  const hit = p4Probes.get(dir)
-  if (hit && Date.now() - hit.at < P4_PROBE_MS) return hit.got
-  const got = (async () => {
-    if (!(await exists(dir))) return false
-    // 问整个子目录（dir/...）：「不在 client 映射里」时 p4 照样退出 0、只在 stderr 里说，所以按有没有映射出本地路径判断
-    let mapped = false
+/** p4 set 里的 P4CONFIG（只读本机设置，不连服务器）；没装 p4、没设都返回 undefined */
+function p4ConfigName() {
+  p4Config ??= (async () => {
+    let name: string | undefined
     await runProcess({
       command: 'p4',
-      args: ['-ztag', 'where', path.join(dir, '...')],
-      cwd: dir,
-      env: { ...process.env, PWD: dir },
-      timeoutMs: 5000,
+      args: ['set', '-q', 'P4CONFIG'],
+      cwd: process.cwd(),
+      env: process.env,
+      timeoutMs: 3000,
       onLine: (l) => {
-        if (l.startsWith('... path ')) mapped = true
+        // P4CONFIG=p4config.txt (set)
+        const m = /^P4CONFIG=([^\s(]+)/.exec(l.trim())
+        if (m) name = m[1]
       },
     }).catch(() => null)
-    return mapped
+    return name
   })()
-  p4Probes.set(dir, { at: Date.now(), got })
-  return got
+  return p4Config
 }
 
 /** 文档目录：已有的 docs / doc / documentation 优先 */

@@ -73,4 +73,7 @@ export const EN_FILE_INDEX: Record<string, string> = {
   '文件索引出错，点开看原因': 'File index error, click for details',
   正在建立文件索引: 'Building file index',
   正在核对文件索引: 'Checking file index',
+  文档根: 'Docs root',
+  额外目录: 'Extra folder',
+  '插件 {id}': 'Plugin {id}',
 }

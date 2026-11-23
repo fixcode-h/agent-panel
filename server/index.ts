@@ -42,6 +42,7 @@ import { cleanupDisabledPlugins, initPlugins } from './plugins/index.ts'
 import { bridgePaired, bundledExtensionVersion, PAIRING_HEADER } from './bridge.ts'
 import { docsApi } from './docs/index.ts'
 import { docRootOf } from './module-map.ts'
+import { cachedDocRoot } from './docs/root-cache.ts'
 import { isPanelSource } from './panel/source.ts'
 import { detectClis } from './detect.ts'
 import { syncCliAuths } from './accounts.ts'
@@ -220,6 +221,8 @@ const builtinOps: BuiltinOps = {
 }
 async function ensureProjectWorkflows() {
   // 插件（ADR 0059）先读进来：开着的插件带的角色和工作流算进内置列表，下面一起安装、升级
+  // 和「文档」角色、模块文档同一个文档根：P4 / SVN 各分支共用的那一份，项目里填的「文档根」参数也算上
+  const docRootNow = async (p: Project) => docRootOf(p.path, withProjectParams(await agents.list(), p))
   await initPlugins({
     state: builtinState,
     projects: () => projects.list(),
@@ -233,15 +236,15 @@ async function ensureProjectWorkflows() {
       const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = p
       await projects.update(id, { ...rest, capabilities })
     },
-    // 和「文档」角色、模块文档同一个文档根：P4 / SVN 各分支共用的那一份，项目里填的「文档根」参数也算上
-    docRoot: async (p) => docRootOf(p.path, withProjectParams(await agents.list(), p)),
+    // 算一次就记住（docs/root-cache.ts）：P4 项目现算要几秒，插件的每个接口都要它
+    docRoot: async (p) => (await cachedDocRoot(p, docRootNow)) ?? docRootNow(p),
   })
   // 项目文件索引：项目用到时才建（找文件、文件面板、插件），这里只接线
   initFileIndex({
     getProject: (id) => projects.get(id),
     listProjects: () => projects.list(),
     docRoot: async (p) => {
-      const d = await docRootOf(p.path, withProjectParams(await agents.list(), p))
+      const d = await cachedDocRoot(p, docRootNow)
       return d && path.resolve(d) !== path.resolve(p.path) ? d : undefined
     },
     pluginRoots: pluginIndexRoots,
