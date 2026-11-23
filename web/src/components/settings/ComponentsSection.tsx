@@ -60,6 +60,7 @@ import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { SourceLink } from '@/components/ui/source-link'
 import { NavRow, SidebarModeTabs } from '@/components/ui/sidebar'
+import { BackgroundStatusSpecimen } from './BackgroundStatusSpecimen'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetGroupSpecimens } from '@/components/settings/VersionDiffSpecimen'
@@ -611,6 +612,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={2.2} />} label={t('工作流')} on />
           </div>
         </Specimen>
+        <BackgroundStatusSpecimen Specimen={Specimen} />
       </Group>
       <Group title={t('侧栏 · 项目')}>
         <Specimen

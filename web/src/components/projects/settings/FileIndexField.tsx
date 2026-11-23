@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { FileIndexSettings, type FileIndexWatch } from '@shared/file-index/types'
 import { t } from '@shared/i18n'
 import { ParamRow } from '@/components/agents/ParamFields'
@@ -19,7 +20,10 @@ export function FileIndexField({
   value,
   onChange,
   vcs,
+  focus,
 }: {
+  /** 打开设置时滚到这里（侧栏底部的索引状态点进来） */
+  focus?: boolean
   /** 新建项目时没有：不显示状态卡 */
   projectId?: string
   value: Value
@@ -35,9 +39,13 @@ export function FileIndexField({
       if (JSON.stringify(next[key]) === JSON.stringify(def[key])) delete next[key]
     onChange(Object.keys(next).length ? next : undefined)
   }
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (focus) box.current?.scrollIntoView({ block: 'start' })
+  }, [focus])
   const vcsName = vcs === 'git' ? 'Git' : vcs === 'p4' ? 'P4' : vcs === 'svn' ? 'SVN' : ''
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={box} className="flex scroll-mt-4 flex-col gap-4">
       <div className="flex items-start gap-4">
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-body font-medium">{t('文件索引')}</span>

@@ -7,8 +7,11 @@ import path from 'node:path'
 import { skipDir, type SkipRule } from '../../shared/file-index/rules.ts'
 import type { NameTable, TableDelta } from '../../shared/file-index/table.ts'
 
-/** 同时读的目录数：太多会把文件句柄占满，太少在机械盘上慢 */
-export const WALK_CONCURRENCY = 32
+/**
+ * 同时读的目录数：太多会把 Node 的文件线程池（默认 4 个线程）长时间占满，面板别的读写（页面文件、数据）
+ * 都排在后面，整个面板变慢（用户 2026-11-23 建引擎索引时反馈）；8 个在 19 万文件上和 32 个差不多快
+ */
+export const WALK_CONCURRENCY = 8
 
 export interface Level {
   mtime: number
@@ -119,8 +122,9 @@ export async function verifyTree(
   if (opts.limit !== undefined && list.length > opts.limit)
     list = list.sort((a, b) => a.rel.length - b.rel.length).slice(0, opts.limit)
   const stale: string[] = []
-  for (let i = 0; i < list.length; i += 64) {
-    const batch = list.slice(i, i + 64)
+  // 一批不要太大：理由同 WALK_CONCURRENCY
+  for (let i = 0; i < list.length; i += 16) {
+    const batch = list.slice(i, i + 16)
     const sts = await Promise.all(batch.map((d) => stat(d.rel ? path.join(root, d.rel) : root).catch(() => null)))
     sts.forEach((s, k) => {
       if (opts.force || !s || s.mtimeMs !== batch[k].mtime) stale.push(batch[k].rel)

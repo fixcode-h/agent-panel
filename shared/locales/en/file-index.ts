@@ -69,4 +69,7 @@ export const EN_FILE_INDEX: Record<string, string> = {
   这个项目没有开文件索引: 'File index is turned off for this project',
   '索引里没有这个目录（不存在，或在排除目录里）':
     'This folder is not in the index (it does not exist, or it is excluded)',
+  '文件索引出错，点开看原因': 'File index error, click for details',
+  正在建立文件索引: 'Building file index',
+  正在核对文件索引: 'Checking file index',
 }

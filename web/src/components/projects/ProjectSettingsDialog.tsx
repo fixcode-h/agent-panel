@@ -408,5 +408,5 @@ function FormPage({
   if (section === 'candidates' && project) return <CandidatesPage project={project} />
   if (section === 'distill' && project) return <DistillPage project={project} />
   if (section === 'tests') return <TestsPage draft={draft} set={set} gitRepo={vcs === 'git'} onAssist={onAssist} />
-  return <GeneralPage project={project} draft={draft} set={set} vcs={vcs} {...general} />
+  return <GeneralPage project={project} draft={draft} set={set} vcs={vcs} item={item} {...general} />
 }

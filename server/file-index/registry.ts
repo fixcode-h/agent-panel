@@ -47,6 +47,54 @@ export function initFileIndex(d: RegistryDeps) {
   idleTimer.unref?.()
 }
 
+/** 文档根、插件报的外部目录多久重问一次：问一次要跑 P4 / 读插件登记，慢的机器上好几秒 */
+const OUTER_TTL_MS = 5 * 60_000
+
+interface OuterRoots {
+  doc?: string
+  plugins: PluginRoot[]
+}
+/**
+ * 文档根和插件目录的缓存（按项目 + 设置）：查询路径上不能每次现问（P4 项目问文档根要跑 p4，
+ * UE 插件取项目又要问一遍文档根，一次查找卡 10 秒，用户 2026-11-23 实测）。
+ * 过期了先用旧的回答，后台重问，下次查询换上
+ */
+const outerCache = new Map<string, { sig: string; at: number; roots?: OuterRoots; pending?: Promise<OuterRoots> }>() // 模块状态：缓存，丢了重问
+
+async function askOuter(p: Project, pluginRoots: boolean): Promise<OuterRoots> {
+  const [doc, plugins] = await Promise.all([
+    deps!.docRoot(p).catch(() => undefined),
+    pluginRoots ? deps!.pluginRoots(p).catch(() => [] as PluginRoot[]) : Promise.resolve([] as PluginRoot[]),
+  ])
+  return { doc, plugins }
+}
+
+async function outerOf(p: Project, pluginRoots: boolean): Promise<OuterRoots> {
+  const sig = `${p.path}|${pluginRoots}`
+  let c = outerCache.get(p.id)
+  if (!c || c.sig !== sig) {
+    c = { sig, at: 0 }
+    outerCache.set(p.id, c)
+  }
+  const entry = c
+  if (!entry.pending && Date.now() - entry.at > OUTER_TTL_MS) {
+    entry.pending = askOuter(p, pluginRoots).then(
+      (r) => {
+        entry.roots = r
+        entry.at = Date.now()
+        entry.pending = undefined
+        return r
+      },
+      () => {
+        entry.pending = undefined
+        return entry.roots ?? { plugins: [] }
+      },
+    )
+  }
+  // 有旧的就先用旧的，不等重问
+  return entry.roots ?? (await entry.pending!)
+}
+
 /** 这个项目的根清单（按设置算；关着返回空） */
 async function specsOf(p: Project): Promise<UnitSpec[]> {
   const s = fileIndexSettingsOf(p)
@@ -54,13 +102,12 @@ async function specsOf(p: Project): Promise<UnitSpec[]> {
   const base = { vcsOnly: s.vcsOnly, watch: s.watch }
   const exclude = searchExcludeOf(p)
   const out: UnitSpec[] = [{ root: p.path, source: 'project', exclude, ...base }]
-  const doc = await deps.docRoot(p).catch(() => undefined)
-  if (doc) out.push({ root: doc, source: 'doc', exclude, ...base, vcsOnly: false })
+  const outer = await outerOf(p, s.pluginRoots)
+  if (outer.doc) out.push({ root: outer.doc, source: 'doc', exclude, ...base, vcsOnly: false })
   for (const r of s.extraRoots)
     out.push({ root: path.resolve(p.path, r), source: 'extra', exclude, ...base, vcsOnly: false })
-  if (s.pluginRoots)
-    for (const r of await deps.pluginRoots(p).catch(() => [] as PluginRoot[]))
-      out.push({ root: r.root, source: `plugin:${r.plugin}`, exclude: r.exclude ?? exclude, ...base, vcsOnly: false })
+  for (const r of outer.plugins)
+    out.push({ root: r.root, source: `plugin:${r.plugin}`, exclude: r.exclude ?? exclude, ...base, vcsOnly: false })
   // 同一个根只留第一个；落在项目目录里面的额外目录不另建（项目那份已经包含）
   const seen: string[] = []
   return out.filter((x) => {
@@ -128,8 +175,8 @@ function sweepIdle() {
   for (const [id, p] of projects) if (now - p.usedAt > IDLE_MS && !pinned.get(id)) release(id)
 }
 
-const pushTimers = new Map<string, ReturnType<typeof setTimeout>>() // 模块状态：运行时，300 毫秒后自己清掉
-/** 状态推给页面：同一个项目 300 毫秒内只推一次（建立进度一秒好几下） */
+const pushTimers = new Map<string, ReturnType<typeof setTimeout>>() // 模块状态：运行时，1 秒后自己清掉
+/** 状态推给页面：同一个项目一秒内只推一次（建立进度一秒好几下；每推一次要算一遍整个项目的状态） */
 function pushStatus(key: string) {
   const u = units.get(key)
   if (!u || !deps) return
@@ -140,7 +187,7 @@ function pushStatus(key: string) {
       setTimeout(() => {
         pushTimers.delete(pid)
         void statusOf(pid).then((s) => s && deps!.push(pid, s))
-      }, 300),
+      }, 1000),
     )
   }
 }
@@ -205,6 +252,7 @@ export async function dropUnit(key: string) {
 
 /** 全部停掉（清理全部索引时） */
 export function closeAll() {
+  outerCache.clear()
   for (const u of units.values()) u.unit.close()
   units.clear()
   projects.clear()
