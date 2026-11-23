@@ -11,6 +11,7 @@ import { pluginDataDir, type Installed } from './store.ts'
 import { pluginPages } from './pages.ts'
 import { noteMountError } from '../mcp-catalog/last-run.ts'
 import { pluginGate, pluginProjectsApi } from './project-gate.ts'
+import { pluginFilesApi } from '../file-index/plugin-files.ts'
 
 /**
  * 插件的服务端部分在面板进程里跑（ADR 0059）：插件打开时 import 包里的 server 入口、调 activate，
@@ -64,6 +65,7 @@ async function start(p: Installed, config: () => PluginConfig) {
       t,
       pages: pages.api,
       projects: pluginProjectsApi(id),
+      files: pluginFilesApi(id),
     }),
   ).catch((e) => {
     pages.dispose()

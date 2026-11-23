@@ -10,6 +10,7 @@ import { projectDocRoot } from './docs/root.ts'
 import { parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
 import { CODE_FILE, SMALL_PROJECT_FILES } from '../shared/docs-first.ts'
 import { gitRun } from './exec/git.ts'
+import { indexedFiles } from './file-index/name-search.ts'
 import { checkSources } from './docs/source-path.ts'
 
 /**
@@ -87,6 +88,9 @@ export async function lookupModuleDocs(projectPath: string, agents: Agent[], mod
 
 /** 项目的源文件不超过 SMALL_PROJECT_FILES 个时返回它们（git 跟踪的和没忽略的新文件）；多了或不是 git 仓库返回 undefined */
 async function smallProjectFiles(projectPath: string) {
+  // 项目开着文件索引时直接取（不起 git，P4 / SVN 项目也有）；没开再用 git ls-files
+  const listed = await indexedFiles(projectPath, CODE_FILE, SMALL_PROJECT_FILES).catch(() => undefined)
+  if (listed !== undefined) return listed ?? undefined
   const r = await gitRun(projectPath, ['ls-files', '--cached', '--others', '--exclude-standard']).catch(() => null)
   if (!r || r.code !== 0) return undefined
   const files = String(r.stdout)

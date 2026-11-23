@@ -136,8 +136,6 @@ export const EN_SETTINGS: Record<string, string> = {
     "When the agent looks for functions, classes, GM commands and similar code, it queries these MCP tools by symbol first and only falls back to rg when they find nothing. Leave empty to let the panel detect tools like search_lua and search_symbols from the project's MCP servers; list tools here only if detection is wrong or misses one — once listed, only these are used.",
   '例如 uetovs/search_lua，回车添加': 'e.g. uetovs/search_lua, press Enter to add',
   相对项目根: 'Relative to the project root',
-  'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。':
-    'Agents skip these folders when looking for files or searching code. Searching a whole large project takes minutes and matches a pile of build output, so agents read the project docs first, narrow down to a module, then search only that folder. In Git projects, folders already in .gitignore are skipped automatically; only add the ones it does not cover.',
   '目录名，回车添加': 'Folder name, press Enter to add',
   '填入 UE 排除清单': 'Fill in the UE exclusion list',
   清空: 'Clear',

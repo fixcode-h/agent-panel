@@ -9,10 +9,14 @@ import { chatMemoryApi } from '../chat-memory.ts'
 import { notifyChannelsApi } from '../notify-channels.ts'
 import { awayApi, loadAway } from '../away.ts'
 import { ghDownloadApi } from '../tools/gh-download.ts'
+import { fileIndexApi } from '../file-index/api.ts'
 import type { ApiModule } from './module.ts'
 
 export function extraModules(deps: {
-  projects: { get: (id: string) => Promise<{ name: string } | null> }
+  projects: {
+    get: (id: string) => Promise<{ name: string } | null>
+    list: () => Promise<{ id: string; name: string }[]>
+  }
 }): ApiModule[] {
   const list: ApiModule[] = [
     { prefix: '/local-image', app: comfyApi() },
@@ -24,6 +28,13 @@ export function extraModules(deps: {
     { prefix: '/away', app: awayApi() },
     // 「小工具」页：契约里的路径已经带着 /tools/<工具>
     { prefix: '/', app: ghDownloadApi() },
+    // 项目文件索引：数据页（/file-index）和项目设置的状态卡（/projects/:id/file-index）
+    {
+      prefix: '/',
+      app: fileIndexApi({
+        projectNames: async () => new Map((await deps.projects.list()).map((p) => [p.id, p.name])),
+      }),
+    },
   ]
   // 「我不在」开关和自动选过的记录（server/away.ts）：启动时先读进内存，执行时同步查
   void loadAway()

@@ -61,28 +61,9 @@ export function searchExcludePrompt(project: { searchExclude?: string[] } | unde
 }
 
 /**
- * 提示词里能直接照抄的 rg 排除参数（同样按实际生效的清单生成）：`-g '!Saved/' -g '!Intermediate/'`。
- * 末尾带斜杠只排除目录（rg 的 glob 按 .gitignore 语义）：不带斜杠时连叫 `build` 的脚本文件也一起排掉。
- * 名字不带路径，所以 `Plugins/X/Intermediate` 这种任意深度的同名目录也会跳过；
- * 显式把被排除的目录当搜索起点（`rg 关键字 Saved/Logs`）时仍然会搜，看日志不受影响。
- *
- * onlyProject：Git 仓库里 rg / git grep 本来就跳过 .gitignore 里的产物，内置默认清单再列一遍只是噪声，
- * 还会误伤真叫 build / out / logs 的源码目录（比如 Java 包 `com/x/build/`）。这时只给项目自己填的那几项
- */
-export function searchExcludeGlobs(
-  project: { searchExclude?: string[] } | undefined,
-  opts: { onlyProject?: boolean } = {},
-): string {
-  const list = searchExcludeOf(project)
-  return (opts.onlyProject ? list.filter((d) => !DEFAULT_SEARCH_EXCLUDE.includes(d)) : list)
-    .map((d) => `-g '!${d}/'`)
-    .join(' ')
-}
-
-/**
  * ripgrep 配置文件的内容（每行一个参数）：面板用 RIPGREP_CONFIG_PATH 交给 CLI，
  * Agent 自己跑的 rg 和 CLI 内置的搜索（底下也是 rg）不靠提示词也会跳过这些目录。
- * 和 searchExcludeGlobs 同样只排除目录、显式把排除目录当起点时照样能搜；Git 仓库里只给项目自己填的
+ * 只排除目录（末尾带斜杠，同名文件不受影响）、显式把排除目录当起点时照样能搜；Git 仓库里只给项目自己填的
  */
 export function searchExcludeRgConfig(
   project: { searchExclude?: string[] } | undefined,
