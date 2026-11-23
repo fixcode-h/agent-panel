@@ -28,6 +28,18 @@ export function wantSearch(count: number, force?: boolean): boolean {
   return min > 0 && count >= min
 }
 
+/**
+ * 下拉列表关上时焦点要不要还给下拉框：选项的回调里已经打开了别的弹窗（例如「＋ 新建文件夹…」弹出输入框，
+ * 输入框已经自动聚焦）时不还，否则焦点被抢回下拉框，打的字进不了输入框。
+ * 判断看焦点是不是落进了另一个弹窗：正常关上时焦点在 body 上，或者被下拉框所在弹窗的焦点陷阱收回到这个弹窗
+ */
+export function focusMovedAway(trigger: Element | null): boolean {
+  const a = document.activeElement
+  if (!a || a === document.body || a.closest('[data-radix-popper-content-wrapper]')) return false
+  const dialog = a.closest('[role="dialog"],[role="alertdialog"]')
+  return !!dialog && dialog !== trigger?.closest('[role="dialog"],[role="alertdialog"]')
+}
+
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '')
 
 /** 搜索命中：显示的文字、短说法、值和组名都算（日志分类这类值和显示一样的，组名能把一整组筛出来）；空格忽略 */

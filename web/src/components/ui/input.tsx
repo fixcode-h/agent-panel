@@ -14,7 +14,14 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { HelpTip } from './help-tip'
-import { listItem, SelectSearchPanel, wantSearch, type OptionContextMenu, type SelectOption } from './select-search'
+import {
+  focusMovedAway,
+  listItem,
+  SelectSearchPanel,
+  wantSearch,
+  type OptionContextMenu,
+  type SelectOption,
+} from './select-search'
 
 export { listItem }
 
@@ -175,11 +182,17 @@ export function Select({
         value={value}
         onPick={(v) => onChange({ target: { value: v } })}
         label={ariaLabel ?? title}
-        returnFocus={() => triggerRef.current?.focus()}
+        returnFocus={() => !focusMovedAway(triggerRef.current) && triggerRef.current?.focus()}
         onOptionContextMenu={onOptionContextMenu}
       />
       <S.Portal>
-        <S.Content position="popper" sideOffset={6} className={listPanel}>
+        <S.Content
+          position="popper"
+          sideOffset={6}
+          className={listPanel}
+          // 选项回调里打开了别的弹窗时，不把焦点抢回下拉框（见 focusMovedAway）
+          onCloseAutoFocus={(e) => focusMovedAway(triggerRef.current) && e.preventDefault()}
+        >
           <S.ScrollUpButton className="grid h-5 place-items-center text-subtle">
             <ChevronUp className="h-3.5 w-3.5" />
           </S.ScrollUpButton>
