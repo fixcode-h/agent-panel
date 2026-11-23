@@ -1,6 +1,7 @@
 import type { GlobalLesson, ProjectLesson } from './schema.ts'
 // 循环引用（push.ts 也用这里的 globToRegExp）：两边都只在调用时用，模块加载时不取值，没问题
 import { lessonCommands } from './knowledge/push.ts'
+import { globRe } from './text-match/index.ts'
 
 /**
  * 项目教训怎么交给 Agent：条目会越积越多，全文塞进每次的提示太费 token。
@@ -25,31 +26,12 @@ export const MAX_TAG_LEN = 20
 /** 提示里列出的已有标签数：让 Agent 记新条目时复用，不另造近义词 */
 const MAX_TAG_HINT = 30
 
-/** `paths` 里的 glob 转成正则：`**` 跨目录，`*` 不跨；不带通配符的写法同时匹配这个目录下的文件 */
+/** `paths` 里的 glob 转成正则：`**` 跨目录，`*` 不跨；不带通配符的写法同时匹配这个目录下的文件（写法统一在 shared/text-match） */
 export function globToRegExp(g: string) {
-  const body = norm(g)
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\/?/g, '\u0000')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '[^/]')
-    // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
-    .replace(/\u0000/g, '.*')
-  return new RegExp(/[*?]/.test(g) ? `^${body}$` : `^${body}(/.*)?$`)
+  return globRe(g, { dirPrefix: true })
 }
 
 const norm = (p: string) => p.trim().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/+$/, '')
-
-// 同一批 glob 每次查找都要用：编译一次缓存起来（上万条时省掉大半耗时）。条目都是用户和 Agent 写的，数量有限，超了清空重来即可
-const globCache = new Map<string, RegExp>() // 模块状态：缓存，丢了重算
-function globRe(g: string) {
-  let re = globCache.get(g)
-  if (!re) {
-    if (globCache.size > 5000) globCache.clear()
-    re = globToRegExp(g)
-    globCache.set(g, re)
-  }
-  return re
-}
 
 /**
  * 这条教训和这些文件有多相关：0 不相关；没写 paths 的对所有改动都适用，算最低的 1；
@@ -60,7 +42,7 @@ function matchScore(l: { paths: string[] }, files: string[]) {
   let best = 0
   for (const g of l.paths) {
     const score = g.includes('**') ? 2 : /[*?]/.test(g) ? 3 : 4
-    if (score > best && files.some((f) => globRe(g).test(f))) best = score
+    if (score > best && files.some((f) => globToRegExp(g).test(f))) best = score
   }
   return best
 }

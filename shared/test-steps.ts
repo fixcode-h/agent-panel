@@ -2,6 +2,7 @@ import { TEST_STEP_ENVS, type Project, type TaskTestRun, type TestStep } from '.
 import { t } from './i18n.ts'
 import { fmtDuration } from './duration.ts'
 import { pluginTestSteps } from './plugins/contrib.ts'
+import { globMatch } from './text-match/index.ts'
 
 /**
  * 项目级测试步骤：项目设置里维护，新建对话时快照进任务，测试 Agent 按它执行。
@@ -17,49 +18,10 @@ export const ENV_LABEL: Record<TestStep['env'], string> = {
   bash: 'bash',
 }
 
-/**
- * 把一条 glob 转成正则。支持 `**`（跨目录；`**` 后面接斜杠还能匹配零层目录）、`*`、`?`；
- * 以 / 结尾的写法按目录算（`web/` 等于 `web/**`）。没写通配符的也按目录前缀算（`web/src` 等于 `web/src/**`）：
- * 项目教训里的 glob 就是这么写的（`shared/lessons.ts` 的 `web/src` 能匹配 `web/src/App.tsx`），
- * 用户照抄进「适用改动」时不能变成一条永远匹配不上的规则、把步骤静默跳掉。
- * 路径统一用 /，Windows 传来的反斜杠先换掉。
- */
-function globToRegExp(glob: string) {
-  let g = glob.trim().replace(/\\/g, '/')
-  if (!g) return null
-  while (g.endsWith('/')) g = g.slice(0, -1)
-  // 没有通配符的写法（`web/src`、`web/`）按「精确命中或作为目录前缀」算，两种写法都认
-  const plain = !!g && !/[*?]/.test(g)
-  let re = ''
-  for (let i = 0; i < g.length; i++) {
-    const c = g[i]
-    if (c === '*') {
-      if (g[i + 1] === '*') {
-        i++
-        // `**/` 可以匹配零层目录，`**/*.cpp` 才认得出仓库根下的 a.cpp
-        if (g[i + 1] === '/') {
-          i++
-          re += '(?:.*/)?'
-        } else re += '.*'
-      } else re += '[^/]*'
-    } else if (c === '?') re += '[^/]'
-    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  }
-  return new RegExp(`^${re}${plain ? '(?:/.*)?' : ''}$`, 'i')
-}
-
-const GLOB_CACHE = new Map<string, RegExp | null>() // 模块状态：缓存，丢了重算
-
 /** 一个改动文件是否匹配这条 glob（相对项目根，两侧都按 / 比） */
 export function matchesGlob(file: string, glob: string) {
-  const f = file.trim().replace(/\\/g, '/')
-  if (!f) return false
-  let re = GLOB_CACHE.get(glob)
-  if (re === undefined) {
-    re = globToRegExp(glob)
-    GLOB_CACHE.set(glob, re)
-  }
-  return !!re?.test(f)
+  // 不带通配的按目录前缀（`web/src` 等于 `web/src/**`），不分大小写：用户照抄教训里的写法时不能变成永远匹配不上、把步骤静默跳掉
+  return !!glob.trim() && globMatch(glob, file, { dirPrefix: true, ignoreCase: true })
 }
 
 /**

@@ -23,6 +23,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'shared/local-prompts': () => import('@shared/local-prompts'),
   'shared/moss': () => import('@shared/moss'),
   'shared/pinyin': () => import('@shared/pinyin'),
+  'shared/text-match/index': () => import('@shared/text-match/index'),
   'shared/prompt-lang': () => import('@shared/prompt-lang'),
   'shared/raster': () => import('@shared/raster'),
   'shared/restore/thresholds': () => import('@shared/restore/thresholds'),

@@ -28,6 +28,7 @@
     "shared/style/rules-text",
     "shared/styles",
     "shared/task",
+    "shared/text-match/index",
     "shared/text",
     "web/src/components/chat/AskToggle",
     "web/src/components/chat/Attachments",
@@ -188,6 +189,7 @@
     "shared/style/rules-text",
     "shared/styles",
     "shared/task",
+    "shared/text-match/index",
     "shared/text"
   ],
   "webPackages": ["@radix-ui/react-dialog", "@radix-ui/react-popover", "@xyflow/react", "zod"],

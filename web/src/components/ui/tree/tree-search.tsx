@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { t } from '@shared/i18n'
 import { TreeList, type TreeLine } from './tree-list'
 import { SearchBox } from '../search-box'
+import { queryWords, textHit } from '@shared/text-match/index'
 
 /**
  * 树的即时搜索（用户 2026-11-15「加个搜索框」）：UObject 树、控件树共用。
@@ -10,11 +11,9 @@ import { SearchBox } from '../search-box'
  * 只筛网页上已经读到的节点（懒加载的树没展开过的层不在里面），所以不发请求、边打字边筛
  */
 
-/** 关键词出现在任一字段里（不分大小写）；空关键词算全都命中 */
+/** 空格分开的几个词都出现在某个字段里（不分大小写，字母词也认拼音首字母，shared/text-match）；空关键词算全都命中 */
 export function hitText(q: string, ...fields: (string | undefined)[]) {
-  const k = q.trim().toLowerCase()
-  if (!k) return true
-  return fields.some((f) => !!f && f.toLowerCase().includes(k))
+  return textHit(fields, q)
 }
 
 /**
@@ -43,17 +42,19 @@ export function keepSet<N>(roots: N[], kidsOf: (n: N) => N[], keyOf: (n: N) => s
 
 /** 命中的字标成强调色底（和面板设置搜索的高亮一样） */
 export function Hit({ text, q }: { text: string; q: string }) {
-  const k = q.trim().toLowerCase()
-  if (!k) return <>{text}</>
+  const words = queryWords(q)
+  if (!words.length) return <>{text}</>
+  // 每个词出现的地方都标上（多个词时各标各的；拼音首字母命中的不标）
   const low = text.toLowerCase()
+  const mark = new Array<boolean>(text.length).fill(false)
+  for (const w of words)
+    for (let i = low.indexOf(w); i >= 0; i = low.indexOf(w, i + w.length)) mark.fill(true, i, i + w.length)
   const parts: { s: string; hit: boolean }[] = []
-  let at = 0
-  for (let i = low.indexOf(k); i >= 0; i = low.indexOf(k, at)) {
-    if (i > at) parts.push({ s: text.slice(at, i), hit: false })
-    parts.push({ s: text.slice(i, i + k.length), hit: true })
-    at = i + k.length
+  for (let i = 0; i < text.length; i++) {
+    const last = parts[parts.length - 1]
+    if (last && last.hit === mark[i]) last.s += text[i]
+    else parts.push({ s: text[i], hit: mark[i] })
   }
-  if (at < text.length) parts.push({ s: text.slice(at), hit: false })
   return (
     <>
       {parts.map((p, i) =>

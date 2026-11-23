@@ -54,6 +54,7 @@ import * as sharedLocalPrompts from '../../shared/local-prompts.ts'
 import * as sharedMcpDescribe from '../../shared/mcp-catalog/describe.ts'
 import * as sharedMoss from '../../shared/moss.ts'
 import * as sharedPinyin from '../../shared/pinyin.ts'
+import * as sharedTextMatch from '../../shared/text-match/index.ts'
 import * as sharedPromptLang from '../../shared/prompt-lang.ts'
 import * as sharedRaster from '../../shared/raster.ts'
 import * as sharedRestoreThresholds from '../../shared/restore/thresholds.ts'
@@ -131,6 +132,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'shared/mcp-catalog/describe': sharedMcpDescribe,
   'shared/moss': sharedMoss,
   'shared/pinyin': sharedPinyin,
+  'shared/text-match/index': sharedTextMatch,
   'shared/prompt-lang': sharedPromptLang,
   'shared/raster': sharedRaster,
   'shared/restore/thresholds': sharedRestoreThresholds,
