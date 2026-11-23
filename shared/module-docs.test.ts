@@ -3,9 +3,12 @@ import assert from 'node:assert/strict'
 import {
   MAP_BEGIN,
   MAP_END,
+  isAbsoluteSource,
   legacyRows,
   migrateModuleHead,
   parseModuleDoc,
+  relativeCandidates,
+  sourcePathOf,
   withModuleBranch,
   withModuleTable,
 } from './module-docs.ts'
@@ -90,4 +93,18 @@ test('模块文档的「分支」：读得出来；补分支时插在「更新�
   assert.equal(withModuleBranch('# x：y\n\n## 正文\n- 分支：Main\n', 'Dev'), '# x：y\n\n## 正文\n- 分支：Main\n')
   // Windows 换行保留
   assert.match(withModuleBranch(NEW.replace(/\n/g, '\r\n'), 'Dev'), /\r\n- 分支：Dev\r\n- 更新：/)
+})
+
+test('源码路径规整：去掉「:行号」、反斜杠换成 /，绝对路径按项目目录名和后缀猜相对写法', () => {
+  assert.equal(sourcePathOf('Source\\Foo\\Bar.cpp:120'), 'Source/Foo/Bar.cpp')
+  assert.equal(sourcePathOf('src/a.ts:12-30'), 'src/a.ts')
+  assert.equal(sourcePathOf('./src/a.ts#L5'), 'src/a.ts')
+  assert.equal(isAbsoluteSource(sourcePathOf('G:\\Project\\a')), true)
+  assert.equal(isAbsoluteSource('Plugins/a'), false)
+  // 本机项目根下：直接截掉
+  assert.equal(relativeCandidates('D:\\ws\\me\\Project\\Plugins\\X', 'd:\\WS\\me\\Project')[0], 'Plugins/X')
+  // 别人的工作区：按项目目录名截，再退到更短的后缀
+  const c = relativeCandidates('G:\\Project\\qimei_dev\\Project\\Plugins\\SP\\A.cpp:12', 'E:\\p4\\mine\\Project')
+  assert.equal(c[0], 'Plugins/SP/A.cpp')
+  assert.ok(c.includes('SP/A.cpp'))
 })

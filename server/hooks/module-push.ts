@@ -4,6 +4,7 @@ import type { HookFacts } from '../../shared/hooks/index.ts'
 import type { ModuleDoc } from '../../shared/module-docs.ts'
 import { moduleEntryText, moduleOfFile, newPublicFns, newPublicFnText } from '../../shared/knowledge/module-entry.ts'
 import { docRootOf, readModuleDocs } from '../module-map.ts'
+import { checkSources } from '../docs/source-path.ts'
 import { taskMap } from '../runtime/task-state.ts'
 import { taskLog } from '../tasks/log.ts'
 
@@ -34,7 +35,9 @@ export function modulePush(c: ModulePushCtx) {
     if (Date.now() - at < RELOAD_MS) return
     at = Date.now()
     const root = await docRootOf(c.project.path, c.agents).catch(() => '')
-    docs = root ? await readModuleDocs(root).catch(() => []) : []
+    // 源码写成绝对路径或带「:行号」的老文档：按本机项目根换成相对写法再匹配，不然这个模块永远对不上
+    const raw = root ? await readModuleDocs(root).catch(() => []) : []
+    docs = raw.map((d) => ({ ...d, sources: checkSources(c.project.path, d.sources).map((x) => x.rel || x.raw) }))
     docRel = root ? path.relative(c.project.path, root).split(path.sep).join('/') || '.' : 'docs'
   }
   const relOf = (p: string) => {

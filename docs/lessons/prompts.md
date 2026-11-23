@@ -57,3 +57,9 @@ paths: shared/builtin/**, shared/engine/index.ts, server/tasks/run.ts, shared/as
 - 规则：插话说明只由 `server/exec/steer-note.ts` 的 `steerNote(text, steerFrom(task, msg))` 出，不在调用处拼。派过子对话的父对话收到用户的话，先分清是谁手上的事，子对话的事马上 `send_to_conversation` 转（`quote` 带用户消息 id，面板附原话，子对话的 `chatSaid` 算成用户说的），手上依赖旧方案的动作先停；走诊断流程的子对话把用户点名的修法、函数、文件当成对报告的意见：核实、和现方案比，换方案就交 `phase: plan` 出新一版。新加「把用户的话交给模型」的通道时照这三种身份挑说法，别回到一段通用的「相关就继续当前任务」。
 - 起因：用户 2026-11-21 报「管家头衔不随身高」：在父对话执行中说「直接改 GetDecorationActorTopLocation」，父对话回「我转给子对话」却先做完 changelist（还按旧方案写了描述），一直没转；子对话收到「用 PlotActor」只回「这正是方案 A 的方向」，照旧方案做。
 - 防线：`server/exec/steer-note.test.ts`、`shared/orchestra/quote.test.ts`、`shared/bug/chat.test.ts`（父对话转来的原话）。
+
+## 文档里的路径一律相对项目根，面板按本机项目根核对
+
+- 规则：提示词、Skill、模板里让 Agent 写进文档的路径（模块文档的「源码」「入口」、证据里的文件）都写相对项目根，不写盘符或 `/` 开头的绝对路径、P4 depot 路径和「:行号」。面板读文档里的路径时先过 `shared/module-docs.ts` 的 `sourcePathOf`（剥行号、换斜杠），按本机项目根查（`server/docs/source-path.ts`）；老文档里的绝对路径认出相对写法后交「文档」改，不当成「不在了」。
+- 起因：用户 2026-11-23 报「文档」子任务核对 10 个模块的源码路径全是误报：文档写的是 `G:\Project\<某人的工作区>\...:行号`，P4 共用文档时换人就找不到，`path.join(项目根, 绝对路径)` 也拼不出来。
+- 防线：`server/module-map.test.ts`、`shared/module-docs.test.ts`。

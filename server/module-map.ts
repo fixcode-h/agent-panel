@@ -10,6 +10,7 @@ import { projectDocRoot } from './docs/root.ts'
 import { parseModuleDoc, withModuleTable, type ModuleDoc } from '../shared/module-docs.ts'
 import { CODE_FILE, SMALL_PROJECT_FILES } from '../shared/docs-first.ts'
 import { gitRun } from './exec/git.ts'
+import { checkSources } from './docs/source-path.ts'
 
 /**
  * 项目的文档根：P4 / SVN 项目按「文档」角色的设置算（可能在项目外）；Git 和没有版本管理的项目 projectDocRoot 不给，
@@ -95,19 +96,46 @@ async function smallProjectFiles(projectPath: string) {
   return files.length <= SMALL_PROJECT_FILES ? files : undefined
 }
 
+/** 这个模块文档的源码在本机项目里一个都找不到（绝对路径、带「:行号」的先按本机项目根规整再查） */
+const allGone = (projectPath: string, d: ModuleDoc) =>
+  d.sources.length > 0 && checkSources(projectPath, d.sources).every((c) => !c.exists)
+
+/** 给协调器看的源码列：绝对路径换成本机认出的相对写法，免得协调器照抄绝对路径进派单 */
+const shownSources = (projectPath: string, d: ModuleDoc) =>
+  checkSources(projectPath, d.sources).map((c) => (c.absolute ? c.rel || c.raw : c.raw))
+
+/** 绝对路径最多列几条：多了只给个数，「文档」自己逐个读 */
+const ABS_LIST_MAX = 12
+
 /**
- * 子对话合回后查一遍：模块文档里写的「源码」路径是不是全都不在了（模块被删、移走或并进别的模块）。
+ * 子对话合回后查一遍：模块文档里写的「源码」路径是不是全都不在了（模块被删、移走或并进别的模块），
+ * 以及有没有写成绝对路径的（P4 共用文档时别人的工作区根不同，会被误判成路径不对）。
  * 面板只负责发现，删目录还是改路径由「文档」判断（task=清理）；返回给父对话的一段说明，没有就是空串
  */
 export async function goneModulesNote(projectPath: string, agents: Agent[]) {
   const { root, branch } = await docInfoOf(projectPath, agents)
+  const docs = await readModuleDocs(root)
   // 别的分支写的模块文档：本分支没有这些源码不代表模块删了（可能只在那个分支上有），不让「文档」去删（ADR 0052）
-  const gone = (await readModuleDocs(root)).filter(
-    (d) =>
-      !otherBranch(d, branch) && d.sources.length && d.sources.every((src) => !existsSync(path.join(projectPath, src))),
+  const gone = docs.filter((d) => !otherBranch(d, branch) && allGone(projectPath, d))
+  const abs = docs.flatMap((d) =>
+    checkSources(projectPath, d.sources)
+      .filter((c) => c.absolute)
+      .map((c) => `「${d.name}」\`${c.raw}\` → ${c.rel ? `\`${c.rel}\`` : '（本机对不上，按代码核对）'}`),
   )
-  if (!gone.length) return ''
-  return `模块文档对不上了：${gone.map((d) => `「${d.name}」（源码 ${d.sources.join('、')}）`).join('、')}的源码已经不在了。用 spawn_agents 派「文档」，params 写 {"task": "清理"}，instructions 写这几个模块和这次合回的改动：真删了就删模块文档目录，移走、改名的改路径。`
+  if (!gone.length && !abs.length) return ''
+  const parts: string[] = []
+  if (gone.length)
+    parts.push(
+      `模块文档对不上了：${gone.map((d) => `「${d.name}」（源码 ${d.sources.join('、')}）`).join('、')}的源码已经不在了。`,
+    )
+  if (abs.length)
+    parts.push(
+      `模块文档的「源码」写了绝对路径（共用文档时各人的工作区根不同，换台机器就找不到），要改成相对项目根的路径、去掉「:行号」：${abs.slice(0, ABS_LIST_MAX).join('；')}${abs.length > ABS_LIST_MAX ? `；另有 ${abs.length - ABS_LIST_MAX} 条` : ''}。`,
+    )
+  parts.push(
+    '用 spawn_agents 派「文档」，params 写 {"task": "清理"}，instructions 写这几个模块和这次合回的改动：真删了就删模块文档目录，移走、改名的改路径，绝对路径改成相对项目根的写法。',
+  )
+  return parts.join('')
 }
 
 /**
@@ -126,7 +154,7 @@ export async function moduleIndexText(projectPath: string, agents: Agent[]) {
   // 别的分支写的：标出来源分支，本分支没有它的源码时也说一声，协调器照常引用、不重新分析
   const from = (d: ModuleDoc) => {
     if (!otherBranch(d, branch)) return ''
-    const missing = d.sources.length > 0 && d.sources.every((src) => !existsSync(path.join(projectPath, src)))
+    const missing = allGone(projectPath, d)
     return `（来自 ${d.branch} 分支${missing ? '，本分支没有这些源码' : ''}）`
   }
   return `## 已有模块文档（模块名｜职责｜源码｜关键词）\n按关键词、职责对上模块后读 \`${rel(root)}/modules/<模块>/README.md\`；这里没有的模块还没写文档。${
@@ -136,7 +164,7 @@ export async function moduleIndexText(projectPath: string, agents: Agent[]) {
   }\n${shown
     .map(
       (d) =>
-        `- ${d.name}｜${d.role || d.title}｜${d.sources.join('、')}｜${d.keywords.slice(0, 12).join('、')}${d.status === 'stale' ? '（文档可能过期）' : ''}${from(d)}`,
+        `- ${d.name}｜${d.role || d.title}｜${shownSources(projectPath, d).join('、')}｜${d.keywords.slice(0, 12).join('、')}${d.status === 'stale' ? '（文档可能过期）' : ''}${from(d)}`,
     )
     .join(
       '\n',

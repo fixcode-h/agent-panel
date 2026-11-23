@@ -44,3 +44,31 @@ test('合回后查模块的源码还在不在：全都不在了才提醒派「�
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('源码写成别人工作区的绝对路径、带「:行号」：按本机项目根认出来，不误报不在了，提醒改成相对路径', async () => {
+  const base = mkdtempSync(path.join(tmpdir(), 'module-abs-'))
+  const root = path.join(base, 'Project')
+  try {
+    mkdirSync(path.join(root, 'Plugins/SP/Source'), { recursive: true })
+    writeFileSync(path.join(root, 'Plugins/SP/Source/A.cpp'), '')
+    mkdirSync(path.join(root, 'docs/modules/sp'), { recursive: true })
+    mkdirSync(path.join(root, 'docs/modules/rel'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'docs/modules/sp/README.md'),
+      '# sp：x\n\n- 源码：`G:\\Project\\other_dev\\Project\\Plugins\\SP\\Source\\A.cpp:120`\n',
+    )
+    writeFileSync(path.join(root, 'docs/modules/rel/README.md'), '# rel：x\n\n- 源码：`Plugins/SP/Source/A.cpp:12`\n')
+    const note = await goneModulesNote(root, [])
+    assert.doesNotMatch(note, /已经不在了/)
+    assert.match(note, /写了绝对路径/)
+    assert.match(
+      note,
+      /「sp」`G:\\Project\\other_dev\\Project\\Plugins\\SP\\Source\\A\.cpp:120` → `Plugins\/SP\/Source\/A\.cpp`/,
+    )
+    assert.doesNotMatch(note, /「rel」/)
+    const index = await moduleIndexText(root, [])
+    assert.match(index, /- sp｜x｜Plugins\/SP\/Source\/A\.cpp｜/)
+  } finally {
+    rmSync(base, { recursive: true, force: true })
+  }
+})
