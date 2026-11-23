@@ -183,6 +183,7 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoTools } from './demo-tools'
 import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
+import { demoMemo } from './demo-memo'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import { demoBrowserExt, demoStyles } from './demo-styles'
@@ -1801,6 +1802,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   // 配置安全扫描的「这条没问题」：演示里不记，界面上那一条照样拿掉
   if (res === 'config-scan') return { ok: true }
   if (res === 'file-index' || sub === 'file-index') return demoFileIndex(method, seg, query, d.projects)
+  if (res === 'memo') return demoMemo(method, id, body)
   if (res === 'projects' && id && sub === 'experience') return demoExperience(id, method, seg, body)
   if (res === 'projects' && id && sub === 'knowledge-hits') return demoKnowledgeHits()
   if (res === 'projects' && id && sub === 'knowledge')

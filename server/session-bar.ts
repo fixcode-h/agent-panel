@@ -3,6 +3,7 @@
  * 环境（目录、仓库、分支）、上下文细分里的说明文件和 Skill、这个对话新建的文件（输出内容）。
  * 上下文的总占用、面板工具这些在任务上（AgentUsage），不在这里读。
  */
+import { createMemo } from './memo/index.ts'
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { getCli } from '../shared/clis.ts'
@@ -17,22 +18,20 @@ const git = (cwd: string, ...args: string[]) => gitRun(cwd, args)
 const DOC_READ_MAX = 512 * 1024
 
 /** Skill 列表要起 CLI（Codex 走 app-server）或扫目录：同一个 CLI + 目录一分钟内复用 */
-const SKILL_TTL = 60_000
-const skillCache = new Map<string, { at: number; list: Promise<{ name: string; chars: number }[]> }>() // 模块状态：缓存，丢了重算
-
-async function skillsOf(cli: string, cwd: string) {
-  const key = `${cli}\n${cwd}`
-  const hit = skillCache.get(key)
-  if (hit && Date.now() - hit.at < SKILL_TTL) return hit.list
+const skills = createMemo<{ cli: string; cwd: string }, { name: string; chars: number }[]>({
+  name: 'session-bar.skills',
+  keyOf: (k) => `${k.cli}\n${k.cwd}`,
   // CLI 只把 Skill 的名字和描述放进上下文，正文用到时才读
-  const list = listSkills(cli, cwd)
-    .then((xs) =>
-      xs.filter((s) => s.enabled).map((s) => ({ name: s.name, chars: s.name.length + s.description.length })),
-    )
-    .catch(() => [])
-  skillCache.set(key, { at: Date.now(), list })
-  return list
-}
+  load: (k) =>
+    listSkills(k.cli, k.cwd)
+      .then((xs) =>
+        xs.filter((s) => s.enabled).map((s) => ({ name: s.name, chars: s.name.length + s.description.length })),
+      )
+      .catch(() => []),
+  ttlMs: 60_000,
+})
+
+const skillsOf = (cli: string, cwd: string) => skills.get({ cli, cwd })
 
 /** 读一个说明文件：不存在返回 null；Claude Code 的 @引用（单独一行的 @路径）展开一层 */
 async function docFile(full: string, shown: string, imports: boolean) {

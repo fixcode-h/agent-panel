@@ -23,6 +23,7 @@
 
 ## 硬规则
 
+- **先找能共用的，没有就做成能共用的**（用户 2026-11-23）：开发需求前先查已有的共用能力——`docs/MODULE-MAP.md`、开放给插件的模块（`shared/plugins/host-modules.json`）、`web/src/components/ui/`、插件 SDK（`server/plugins/sdk.ts`、`web/src/plugins/sdk.ts`）——有就直接用，不另写一份，也不照着抄一份改改。没有时按「接口 + 注册表」做在所属模块里：只有一个页面或插件用的也写成能复用的形状；插件也会用到的放面板并开放给插件，不写死在某个插件里。版本管理、后台作业、缓存和文件监听、外部进程、本机偏好这些通用能力只走面板的统一入口。
 - **CLI 的差异写进 CLI 定义**（`shared/clis.ts`、`shared/clis/*.json`），代码按定义里的字段走，不按 CLI 的名字写分支（`scripts/rules-check.mjs` 会拦）。
 - **界面文案用 `t('中文原文')`**，英文同一个提交写进 `shared/locales/en/`；漏翻 `npm run typecheck` 会失败。发给 Agent 的提示词、注释、演示数据不翻译。
 - **界面参考 Claude Code 的风格，视觉质量很重要**。界面细则见 `docs/lessons/ui.md`。

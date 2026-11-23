@@ -9,7 +9,7 @@ import { t } from '../../shared/i18n.ts'
 import { ProjectLesson, type Agent, type Project } from '../../shared/schema.ts'
 import { sharedDocRoot } from '../docs/root.ts'
 import { log } from '../log.ts'
-import { detectVcs } from '../projects-analyze.ts'
+import { detectVcs } from '../vcs/detect.ts'
 import { knowledgeBase, type KnowledgeProject } from './knowledge-place.ts'
 
 /**

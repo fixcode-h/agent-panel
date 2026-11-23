@@ -1,3 +1,4 @@
+import { createMemo } from '../memo/index.ts'
 import { homedir } from 'node:os'
 import type { CommandsQuery } from '../../shared/cli/commands-query.ts'
 import { buildFromRules } from '../../shared/cli-spec.ts'
@@ -50,19 +51,17 @@ export function parseQueried(q: CommandsQuery, reply: unknown): QueriedCommand[]
 }
 
 // 问一次要起一个 CLI 进程（Pi 还要加载插件，几秒）：同一个目录、同样的信任选择 5 分钟内用上次的；装删插件后清掉
-const cache = new Map<string, { at: number; list: Promise<QueriedCommand[]> }>() // 模块状态：缓存，丢了重算
-const TTL = 5 * 60_000
-export const clearQueriedCommands = () => cache.clear()
+const asked = createMemo<{ cli: string; cwd: string; trust?: TrustChoice }, QueriedCommand[]>({
+  name: 'cli.commands',
+  keyOf: (k) => `${k.cli}\n${k.cwd}\n${k.trust ?? ''}`,
+  load: (k) => ask(k.cli, k.cwd, k.trust),
+  ttlMs: 5 * 60_000,
+})
+export const clearQueriedCommands = () => asked.invalidate()
 
 /** 问 CLI：没写 commandsQuery 的 CLI、起不来、超时都当没有（「/」菜单照常列扫到的） */
 export async function queryCliCommands(cli: string, cwd: string, trust?: TrustChoice): Promise<QueriedCommand[]> {
-  const key = `${cli}\n${cwd}\n${trust ?? ''}`
-  const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < TTL) return hit.list
-  const list = ask(cli, cwd, trust)
-  cache.set(key, { at: Date.now(), list })
-  list.catch(() => cache.delete(key))
-  return list
+  return asked.get({ cli, cwd, trust })
 }
 
 async function ask(cli: string, cwd: string, trust?: TrustChoice): Promise<QueriedCommand[]> {

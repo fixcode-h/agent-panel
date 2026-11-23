@@ -12,7 +12,7 @@ import { overrideRequest } from '../hooks/overrides.ts'
 import { clip } from '../../shared/text.ts'
 import { noteConfirm, nodeTitle } from '../../shared/flow/run.ts'
 
-import { detectVcs } from '../projects-analyze.ts'
+import { detectVcs } from '../vcs/detect.ts'
 import { gatedRunAgent } from './runner.ts'
 import { listIntegrations } from '../integrations.ts'
 import { log } from '../log.ts'

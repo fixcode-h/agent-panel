@@ -10,6 +10,7 @@ import { notifyChannelsApi } from '../notify-channels.ts'
 import { awayApi, loadAway } from '../away.ts'
 import { ghDownloadApi } from '../tools/gh-download.ts'
 import { fileIndexApi } from '../file-index/api.ts'
+import { memoApi } from '../memo/api.ts'
 import type { ApiModule } from './module.ts'
 
 export function extraModules(deps: {
@@ -35,6 +36,8 @@ export function extraModules(deps: {
         projectNames: async () => new Map((await deps.projects.list()).map((p) => [p.id, p.name])),
       }),
     },
+    // 派生缓存：数据页的「缓存」一节（/memo）
+    { prefix: '/', app: memoApi() },
   ]
   // 「我不在」开关和自动选过的记录（server/away.ts）：启动时先读进内存，执行时同步查
   void loadAway()

@@ -6,7 +6,7 @@
  * 事件只记「哪个目录脏了」，停 300 毫秒没有新事件再批量交出去；监听出错（缓冲溢出、目录被删）交给 onLost，
  * 由调用方做一次整体核对
  */
-import { watch, type FSWatcher } from 'node:fs'
+import { watchTree as sharedTree } from '../watch/tree.ts'
 import type { FileIndexWatch } from '../../shared/file-index/types.ts'
 
 export const SETTLE_MS = 300
@@ -25,7 +25,6 @@ export function watchTree(
   onLost: (why: string) => void,
   skip: (rel: string) => boolean,
 ): TreeWatch | undefined {
-  let w: FSWatcher
   const dirty = new Set<string>()
   let timer: ReturnType<typeof setTimeout> | undefined
   const flush = () => {
@@ -35,14 +34,15 @@ export function watchTree(
     dirty.clear()
     onDirty(batch)
   }
-  try {
-    w = watch(root, { recursive: true, persistent: false }, (_e, name) => {
-      if (!name) {
+  // 系统监听和别的订阅者（表格枚举扫描、Lua GM 扫描）共用一个（server/watch/，ADR 0074）
+  const w = sharedTree(
+    root,
+    (rel) => {
+      if (rel === null) {
         // 没给文件名（溢出时会这样）：整体核对
         onLost('监听没给出文件名')
         return
       }
-      const rel = String(name).replace(/\\/g, '/')
       if (skip(rel)) return
       // 变化的是这一项；它所在的目录要重读，它自己是目录时也重读它（新建的目录、改名进来的目录）
       const cut = rel.lastIndexOf('/')
@@ -50,12 +50,13 @@ export function watchTree(
       dirty.add(rel)
       if (timer) clearTimeout(timer)
       timer = setTimeout(flush, SETTLE_MS)
-    })
-  } catch (e) {
-    onLost((e as Error).message)
+    },
+    { onLost, skipDir: (name) => skip(name) || name.startsWith('.') },
+  )
+  if (!w) {
+    onLost('盯不了这个目录')
     return undefined
   }
-  w.on('error', (e) => onLost((e as Error).message))
   return {
     close: () => {
       if (timer) clearTimeout(timer)

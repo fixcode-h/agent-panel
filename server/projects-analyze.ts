@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { ProjectSuggestion } from '../shared/projects/scan.ts'
 import { defaultTestSteps } from '../shared/test-steps.ts'
 import { resolvePath } from './fs.ts'
-import { runProcess } from './exec/process.ts'
+import { detectVcs } from './vcs/detect.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -16,10 +16,6 @@ import { t } from '../shared/i18n.ts'
 
 /** 只看这一层，不递归整个源码树 */
 const MAX_ENTRIES = 200
-
-async function exists(p: string) {
-  return !!(await stat(p).catch(() => null))
-}
 
 async function readJson<T = unknown>(p: string): Promise<T | null> {
   try {
@@ -140,57 +136,8 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
   }
 }
 
-/**
- * 版本控制：目录里有 .git / .p4config / .svn，或者上层目录里有（P4 的工作区根常常在上面）。
- * P4CONFIG 也可能叫别的名字、设在 p4 set（Windows 注册表）里：用 p4 set 读出名字再按文件找。
- * 不跑 p4 where：要连服务器，慢的时候几秒，每次判断版本管理都卡住（用户 2026-11-23：「p4 where 不要用这个」）
- */
-export async function detectVcs(dir: string) {
-  // P4 的配置文件：常见的几种名字，加上环境变量和 p4 set 里的 P4CONFIG
-  const p4Names = [
-    '.p4config',
-    '.p4ignore',
-    'p4config.txt',
-    '.p4config.txt',
-    'p4config',
-    'P4CONFIG',
-    process.env.P4CONFIG?.trim(),
-    await p4ConfigName(),
-  ].filter((x): x is string => !!x)
-  let cur = dir
-  for (let i = 0; i < 6; i++) {
-    if (await exists(path.join(cur, '.git'))) return { vcs: 'git' as const, root: cur }
-    for (const name of p4Names) if (await exists(path.join(cur, name))) return { vcs: 'p4' as const, root: cur }
-    if (await exists(path.join(cur, '.svn'))) return { vcs: 'svn' as const, root: cur }
-    const up = path.dirname(cur)
-    if (up === cur) break
-    cur = up
-  }
-  return { vcs: 'none' as const, root: dir }
-}
-
-let p4Config: Promise<string | undefined> | undefined // 模块状态：缓存，进程里只问一次
-
-/** p4 set 里的 P4CONFIG（只读本机设置，不连服务器）；没装 p4、没设都返回 undefined */
-function p4ConfigName() {
-  p4Config ??= (async () => {
-    let name: string | undefined
-    await runProcess({
-      command: 'p4',
-      args: ['set', '-q', 'P4CONFIG'],
-      cwd: process.cwd(),
-      env: process.env,
-      timeoutMs: 3000,
-      onLine: (l) => {
-        // P4CONFIG=p4config.txt (set)
-        const m = /^P4CONFIG=([^\s(]+)/.exec(l.trim())
-        if (m) name = m[1]
-      },
-    }).catch(() => null)
-    return name
-  })()
-  return p4Config
-}
+/** 判断版本管理在 server/vcs/detect.ts；这里留一个导出给旧版插件（开放模块 server/projects-analyze 里一直有它） */
+export { detectVcs }
 
 /** 文档目录：已有的 docs / doc / documentation 优先 */
 async function detectDocs(dir: string, dirs: string[]) {

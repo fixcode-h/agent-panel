@@ -22,6 +22,7 @@ import { KeepAliveList } from '@/components/settings/KeepAliveList'
 import { StaleProcesses } from '@/components/settings/StaleProcesses'
 import { TaskDiskUsage } from '@/components/settings/TaskDiskUsage'
 import { FileIndexData } from '@/components/settings/FileIndexData'
+import { MemoData } from '@/components/settings/MemoData'
 import { t } from '@shared/i18n'
 
 /** 和共享的格式化保持一致：数据占用、内存都按同一套单位显示 */
@@ -295,6 +296,9 @@ export function DataSection() {
 
       {/* 各项目的文件索引：逐份重建、删除，项目删了留下的标「无主」 */}
       <FileIndexData key={`fi-${loadedAt}`} onChanged={load} />
+
+      {/* 算出来记住的东西（类表、头文件……）：依赖的文件改了会自己重算，看着不对时可以清空 */}
+      <MemoData key={`memo-${loadedAt}`} />
 
       {/* 对话记录按项目、父子对话的磁盘占用，很久没动的可以批量删（进回收站） */}
       {!demo && (

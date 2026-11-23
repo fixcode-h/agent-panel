@@ -76,4 +76,11 @@ export const EN_FILE_INDEX: Record<string, string> = {
   文档根: 'Docs root',
   额外目录: 'Extra folder',
   '插件 {id}': 'Plugin {id}',
+  // 数据页「内存缓存」（ADR 0074）
+  内存缓存: 'In-memory caches',
+  '{n} 份，盯着 {w} 个目录；依赖的文件改了会自己重算':
+    '{n} caches, watching {w} folders; rebuilt automatically when the files they depend on change',
+  全部清空: 'Clear all',
+  '已清空，下次用到时重算': 'Cleared; rebuilt the next time it is needed',
+  '已清空全部缓存，下次用到时重算': 'All caches cleared; rebuilt the next time they are needed',
 }

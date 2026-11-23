@@ -4,7 +4,7 @@ import { DOC_PLACE_SIBLING, isDocVcs, isInside, resolveDocRoot, type DocRootInfo
 import type { Agent } from '../../shared/schema.ts'
 import { resolveDocGroup } from './group.ts'
 import { log } from '../log.ts'
-import { detectVcs } from '../projects-analyze.ts'
+import { detectVcs } from '../vcs/detect.ts'
 
 /**
  * 这个项目的文档根（只算 P4 / SVN 项目，见 shared/doc-root.ts）：按「文档」角色的参数（agents 已经套上项目里填的值）

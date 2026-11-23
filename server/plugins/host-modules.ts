@@ -25,6 +25,13 @@ import * as serverStore from '../store.ts'
 import * as serverStyles from '../styles.ts'
 import * as serverTaskFiles from '../task-files.ts'
 import * as serverUploads from '../uploads.ts'
+import * as serverVcsDetect from '../vcs/detect.ts'
+import * as serverVcsP4Plan from '../vcs/p4-plan.ts'
+import * as serverVcsRun from '../vcs/run.ts'
+import * as serverMemo from '../memo/index.ts'
+import * as serverWatchDir from '../watch/dir.ts'
+import * as serverWatchFiles from '../watch/files.ts'
+import * as serverWatchTree from '../watch/tree.ts'
 import * as serverXlsx from '../xlsx.ts'
 import * as serverZip from '../zip.ts'
 import * as sharedAssist from '../../shared/assist.ts'
@@ -90,6 +97,13 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/styles': serverStyles,
   'server/task-files': serverTaskFiles,
   'server/uploads': serverUploads,
+  'server/vcs/detect': serverVcsDetect,
+  'server/vcs/p4-plan': serverVcsP4Plan,
+  'server/vcs/run': serverVcsRun,
+  'server/memo/index': serverMemo,
+  'server/watch/dir': serverWatchDir,
+  'server/watch/files': serverWatchFiles,
+  'server/watch/tree': serverWatchTree,
   'server/xlsx': serverXlsx,
   'server/zip': serverZip,
   'shared/assist': sharedAssist,

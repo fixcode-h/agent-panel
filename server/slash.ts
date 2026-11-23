@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { createMemo } from './memo/index.ts'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { CliSkill, SlashCommand } from '../shared/schema.ts'
@@ -110,50 +111,49 @@ async function rawCommands(cli: string, cwd: string): Promise<Found[]> {
   return lists.flat().map((c) => ({ ...c, name: prefix + c.name }))
 }
 
-// Codex 列 Skill 要起一次 app-server：短时间内的重复查询用缓存
-const cache = new Map<string, { at: number; list: Promise<Found[]> }>() // 模块状态：缓存，丢了重算
+// Codex 列 Skill 要起一次 app-server：短时间内的重复查询用缓存（面板派生缓存，ADR 0074）
+const found = createMemo<{ cli: string; cwd: string; trust?: TrustChoice }, Found[]>({
+  name: 'slash.commands',
+  keyOf: (k) => `${k.cli}\n${k.cwd}\n${k.trust ?? ''}`,
+  load: (k) => collect(k.cli, k.cwd, k.trust),
+  ttlMs: 30_000,
+})
 
-async function all(cli: string, cwd: string, trust?: TrustChoice): Promise<Found[]> {
-  const key = `${cli}\n${cwd}\n${trust ?? ''}`
-  const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < 30_000) return hit.list
-  const list = (async () => {
-    const skills: CliSkill[] = await listSkills(cli, cwd).catch(() => [])
-    const cmds = await rawCommands(cli, cwd)
-    // 插件里的命令、模板和 Skill 只能问 CLI（Pi 的 get_commands）；问不到就只用扫到的
-    const queried = await queryCliCommands(cli, cwd, trust).catch(() => [])
-    const seen = new Set(cmds.map((c) => c.name))
-    // 共用的命令排在 CLI 自己的后面：同名时以 CLI 自己的为准
-    const panel = [
-      ...(await scanCommands(panelCommandDir(), t('所有 Agent'), 'md')),
-      // 开着的插件带的命令（插件接口 3）：和共用命令一样由面板展开，排在共用命令后面，同名让给前面的
-      ...pluginCommands(),
-      // 开着的插件带的技能：插件技能不一定装进了 CLI 读的目录，CLI 列不出来，由面板列、面板展开
-      ...(await pluginSkillCommands()),
-    ].filter((c) => !seen.has(c.name) && seen.add(c.name))
-    return [
-      ...cmds,
-      ...panel.map((c) => ({ ...c, panel: true })),
-      ...skills
-        .filter((s) => s.enabled && !seen.has(s.name) && seen.add(s.name))
-        .map((s): Found => ({
-          name: s.name,
-          description: s.description,
-          kind: 'skill',
-          source: s.source || s.scope,
-          path: s.path,
-        })),
-      // 同名的以扫到的为准：扫到的面板自己展开，问出来的只补插件里的
-      ...queried.filter((c) => !seen.has(c.name) && seen.add(c.name)),
-    ]
-  })()
-  cache.set(key, { at: Date.now(), list })
-  list.catch(() => cache.delete(key))
-  return list
+const all = (cli: string, cwd: string, trust?: TrustChoice) => found.get({ cli, cwd, trust })
+
+async function collect(cli: string, cwd: string, trust?: TrustChoice): Promise<Found[]> {
+  const skills: CliSkill[] = await listSkills(cli, cwd).catch(() => [])
+  const cmds = await rawCommands(cli, cwd)
+  // 插件里的命令、模板和 Skill 只能问 CLI（Pi 的 get_commands）；问不到就只用扫到的
+  const queried = await queryCliCommands(cli, cwd, trust).catch(() => [])
+  const seen = new Set(cmds.map((c) => c.name))
+  // 共用的命令排在 CLI 自己的后面：同名时以 CLI 自己的为准
+  const panel = [
+    ...(await scanCommands(panelCommandDir(), t('所有 Agent'), 'md')),
+    // 开着的插件带的命令（插件接口 3）：和共用命令一样由面板展开，排在共用命令后面，同名让给前面的
+    ...pluginCommands(),
+    // 开着的插件带的技能：插件技能不一定装进了 CLI 读的目录，CLI 列不出来，由面板列、面板展开
+    ...(await pluginSkillCommands()),
+  ].filter((c) => !seen.has(c.name) && seen.add(c.name))
+  return [
+    ...cmds,
+    ...panel.map((c) => ({ ...c, panel: true })),
+    ...skills
+      .filter((s) => s.enabled && !seen.has(s.name) && seen.add(s.name))
+      .map((s): Found => ({
+        name: s.name,
+        description: s.description,
+        kind: 'skill',
+        source: s.source || s.scope,
+        path: s.path,
+      })),
+    // 同名的以扫到的为准：扫到的面板自己展开，问出来的只补插件里的
+    ...queried.filter((c) => !seen.has(c.name) && seen.add(c.name)),
+  ]
 }
 
 /** 共用命令改过之后，「/」菜单和展开马上用新的 */
-export const clearSlashCache = () => cache.clear()
+export const clearSlashCache = () => found.invalidate()
 
 /** 页面列「/」菜单用：不带本机路径 */
 export async function listCommands(cli: string, cwd: string, trust?: TrustChoice): Promise<SlashCommand[]> {

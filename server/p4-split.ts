@@ -1,4 +1,4 @@
-import { childEnv, runProcess } from './exec/process.ts'
+import { vcsExec, vcsWhy } from './vcs/run.ts'
 import { isInside } from '../shared/doc-root.ts'
 
 /**
@@ -31,23 +31,14 @@ export function p4Bucket(file: string): P4Bucket {
 export type P4Run = (args: string[], stdin?: string) => Promise<{ ok: boolean; out: string; err: string }>
 
 /**
- * 在项目目录里跑 p4。PWD 要跟着改：p4 在 Unix 上按 PWD（不是进程的 cwd）找 .p4config，
- * 不改的话用的是面板启动目录的配置，连到别的 client 上
+ * 在项目目录里跑 p4：走版本管理服务的统一入口（server/vcs/run.ts，设 PWD、限流、计数）
  */
 export function p4Runner(cwd: string): P4Run {
   return async (args, stdin) => {
-    const lines: string[] = []
-    const r = await runProcess({
-      command: 'p4',
-      args,
-      cwd,
-      env: { ...childEnv([]), PWD: cwd },
-      stdin,
-      timeoutMs: 60_000,
-      onLine: (l) => lines.push(l),
-    })
-    const err = r.spawnError ? `p4 启动失败：${r.spawnError}` : r.stderr.trim()
-    return { ok: r.code === 0 && !r.spawnError, out: lines.join('\n'), err }
+    const r = await vcsExec('p4', args, cwd, { stdin })
+    const out = r.stdout.toString('utf8').replace(/\r\n/g, '\n').replace(/\n$/, '')
+    const err = r.spawnError || r.timedOut ? vcsWhy('p4', args, r) : r.stderr.trim()
+    return { ok: r.ok, out, err }
   }
 }
 
