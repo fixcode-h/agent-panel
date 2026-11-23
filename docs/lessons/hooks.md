@@ -27,3 +27,9 @@ paths: shared/hooks/index.ts, shared/hooks/defs.ts, shared/hooks/mod.ts, server/
 - 规则：用户明确不许 Agent 自己跑的命令（例如 UE 的 Automation RunTests），提示词里写了也要加工具前守卫拦下（拦截原因里写改用什么），用户亲口要求时走 `request_override` 放行。新守卫若拦的是长命令，放在 `long-command-guard` 后面：前台跑先被转后台，到 `run_background` 再拦，放行卡只弹一次；排在前面时放行用在前台那次，转后台又要再点一次。
 - 起因：用户 2026-11-23 报 UE 项目里 Agent 老自己跑 `UnrealEditor-Cmd -ExecCmds="Automation RunTests …"`，测不出东西还费时间；默认测试步骤、项目分析的「测试：Automation RunTests」和 ue-project-structure 技能都在引它去跑。实跑时守卫排在长命令守卫前，用户要求跑也得点两次放行卡。
 - 防线：`server/hooks/guards.test.ts`「UE 自动化测试守卫」。
+
+## 能由面板执行的版本管理动作不要只写进提示词，也不要按只读属性猜
+
+- 规则：P4 改前签出、新文件 add 这类「每次改文件都必须做」的事由面板钩子做（`server/hooks/p4-open.ts`），提示词里的说法只作补充；要不要签出看 `p4 fstat` 的结果（在库里没打开才 edit、已在 pending 里不动、库里没有写完再 add），不按文件只不只读猜：client 设了 allwrite 或文件被去掉过只读时，按只读判断会整批漏掉。
+- 起因：用户 2026-11-23 报 P4 项目里 Agent 改的代码和 UE 资源不进默认 Changelist。
+- 防线：`server/hooks/p4-open.test.ts`；插件仓库 `ue/server/p4-checkout.test.ts`。

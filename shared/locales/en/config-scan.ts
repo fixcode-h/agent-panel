@@ -40,6 +40,9 @@ export const EN_CONFIG_SCAN: Record<string, string> = {
     'Looks like a real key, token or private key; anyone or any model that can read the file gets it',
   '用 npx / uvx 运行没有固定版本的包，每次启动都可能拉到别人新发的代码':
     'Runs an unpinned package with npx / uvx; every start may pull newly published code',
+  'P4 改前自动签出': 'Auto check-out in P4',
+  'P4 项目里 Agent 改已有文件前，面板先 p4 edit 进默认 changelist；新建的文件写完后 p4 add 进默认 changelist。已经在你某个 pending 里的文件留在原处，项目外的文件不管':
+    'In P4 projects the panel runs p4 edit into the default changelist before the agent edits an existing file, and p4 add after it writes a new one. Files already in one of your pending changelists stay there; files outside the project are left alone',
   改之前先看过: 'Read before editing',
   '要改一个已有的文件，这个对话（压缩之后算起）却没读过、没搜到过它时拦一次，让它先看要改的位置；同一个文件再改一次就放行。改文件工具和 sed -i 都算':
     'Blocks once when editing an existing file this conversation has not read or found in a search (since the last compaction), so it looks at the spot first; editing the same file again is allowed. Covers edit tools and sed -i',

@@ -54,6 +54,9 @@ import { externalToolsOf, knownExternalServers } from '../mcp-catalog/external-t
 import { gateDeny, targetOf } from './overrides.ts'
 import { userHookGate } from '../../shared/hooks/override.ts'
 import { CODE_FILE } from '../../shared/docs-first.ts'
+import { isP4 } from '../tasks/helpers.ts'
+import { p4Runner } from '../p4-split.ts'
+import { p4AutoOpen } from './p4-open.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -296,6 +299,11 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         note: (event, detail) => noteBuiltin('situational-rules', event, 'context', detail),
       })
     : undefined
+  // P4 改前自动签出（p4-open.ts）：只在 P4 项目里装；只读身份改不了文件，不用装
+  const p4 =
+    on('p4-auto-open') && who !== 'read-only' && c.project.path && (await isP4(c.project.path))
+      ? p4AutoOpen(c.cwd, p4Runner(c.cwd), c.task.id)
+      : undefined
   // 工具前的内置守卫，按这个顺序问，第一个拒绝的说了算（第四期的几个见 guards.ts）
   const guard = (id: string): GuardCtx => ({
     task: c.task,
@@ -328,13 +336,13 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   // 设置里按 CLI 关掉的事件（比如中转站上 Codex 的工具后）：内置的、自己的钩子都不装
   const off = new Set(data.cliOff[c.cliId] ?? [])
   const events: HookEventName[] = []
-  if (guards.length || know || situ?.before.length || mine('tool.before').length) events.push('tool.before')
+  if (guards.length || know || p4 || situ?.before.length || mine('tool.before').length) events.push('tool.before')
   // 计划没跟上提醒：只给有执行计划的对话（项目里的对话，不含子任务、Chat 页）
   const pace = on('plan-pace') && !!c.call.orch.plans
   const bigOut = on('big-output-hint') && builtinNumber(data, 'big-output-hint', 'chars') > 0
   // 情境规则里有工具后触发的（报了某类错）才装工具后
   const situAfter = !!situ?.after.length
-  if (know || situAfter || on('loop-hint') || on('arg-table-hint') || pace || bigOut || mine('tool.after').length)
+  if (know || p4 || situAfter || on('loop-hint') || on('arg-table-hint') || pace || bigOut || mine('tool.after').length)
     events.push('tool.after')
   if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
@@ -343,7 +351,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const userKinds = (event: HookEventName) => mine(event).map((h) => h.match.tool)
   const hookTools: HookToolScope = {
     'tool.before': [
-      ...(guards.length || know ? (['edit', 'shell'] as const) : []),
+      ...(guards.length || know || p4 ? (['edit', 'shell'] as const) : []),
       ...(situ?.before ?? []),
       // 读大文件守卫要看读文件工具；推送经验要看搜索（各家的搜索工具都归在读文件这一类）
       ...(guards.some(([id]) => id === 'big-read-guard' || id === 'panel-files-guard') || know
@@ -359,7 +367,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       ...(on('loop-hint') ? (['shell'] as const) : []),
       // 参数传错提醒看别家 MCP 工具：它们不在 CLI 的工具类别里，只能按任意工具算
       ...(on('arg-table-hint') ? (['any'] as const) : []),
-      ...(pace ? (['edit', 'shell'] as const) : []),
+      ...(pace || p4 ? (['edit', 'shell'] as const) : []),
       ...userKinds('tool.after'),
     ],
   }
@@ -522,13 +530,23 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       // 守卫和用户钩子都放行了才推送：被拒绝的调用不会执行，推了也白推
       const pushedText = know ? await know.before(facts) : ''
       const situText = situ ? situ.push('tool.before', facts) : ''
-      const ctx = [...(pushedText ? [pushedText] : []), ...(situText ? [situText] : []), ...u.context]
+      // 守卫都放行了才签出：被拒绝的改动不会发生，签出了反而在 changelist 里留一个没改的文件
+      const p4r = p4 ? await p4.before(facts) : {}
+      if (p4r.deny) {
+        noteBuiltin('p4-auto-open', event, 'deny', p4r.deny)
+        return { deny: true, reason: p4r.deny }
+      }
+      const opened = p4r.context ?? ''
+      if (opened) noteBuiltin('p4-auto-open', event, 'context', opened)
+      const ctx = [opened, pushedText, situText, ...u.context].filter(Boolean)
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
     if (event === 'tool.after') {
       const ctx: string[] = []
       const lessonText = know ? await know.after(facts) : ''
       if (lessonText) ctx.push(lessonText)
+      const added = p4 ? await p4.after(facts) : ''
+      if (added) ctx.push(added)
       const situHint = situ ? situ.push('tool.after', facts) : ''
       if (situHint) ctx.push(situHint)
       const loop = on('loop-hint') ? loopHint(c.task.id, facts, builtinNumber(data, 'loop-hint', 'times')) : ''
