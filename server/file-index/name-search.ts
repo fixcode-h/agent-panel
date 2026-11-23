@@ -16,11 +16,20 @@ export async function indexedNames(dir: string, q: string, cap: number): Promise
   const rel = path.relative(idx.projectPath, dir)
   if (rel.startsWith('..') || path.isAbsolute(rel)) return undefined
   const prefix = rel ? `${rel.split(path.sep).join('/')}/` : ''
-  return idx
-    .find(q, { under: prefix ? [prefix] : undefined, cap, roots: 'project' })
-    .map((h) => h.path)
-    .filter((p) => !path.isAbsolute(p) && p.startsWith(prefix) && !p.endsWith('/'))
-    .map((p) => p.slice(prefix.length))
+  const search = () =>
+    idx
+      .find(q, { under: prefix ? [prefix] : undefined, cap, roots: 'project' })
+      .map((h) => h.path)
+      .filter((p) => !path.isAbsolute(p) && p.startsWith(prefix) && !p.endsWith('/'))
+      .map((p) => p.slice(prefix.length))
+  const hits = search()
+  if (hits.length) return hits
+  // 没找到：先按目录核对这棵子树再查（面板外刚建的文件、没有系统通知的 Linux）；核对太久就照老路扫
+  const verified = await Promise.race([
+    idx.refresh(prefix.replace(/\/$/, '')).then(() => true),
+    new Promise<false>((r) => setTimeout(() => r(false), READY_MS).unref?.()),
+  ])
+  return verified ? search() : undefined
 }
 
 /**
