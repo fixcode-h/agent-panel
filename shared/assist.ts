@@ -776,7 +776,7 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
     `## 写步骤的规则
 - 按执行顺序排：先静态检查和单元测试，再端到端和构建；编译类放在需要它之前。
 - 只写项目里真的有的命令：先看 package.json 的 scripts，没有脚本就不要编 \`npm run xxx\`。
-- UE 项目给编译（\`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`）、Lua 语法检查、可选的 AutomationTest；需要 Editor 的标成 enabled: false 并在 note 里说明。
+- UE 项目只给编译（\`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`）和 Lua 语法检查：UE 的验证默认编译通过就行。不加 Automation RunTests 这类启动编辑器的自动化测试，用户在对话里明确要了才加。
 - 每条 id 用简短的英文标识（例如 node-typecheck），同一份里不要重复。
 - 编译和构建类步骤要填 appliesTo：改到源码或构建清单（Build.cs、Cargo.toml、.uproject 等）才跑；只改文档、资源、配置时不跑。
   测试类步骤同样按时它真正覆盖的源码来填。

@@ -162,6 +162,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     tier: 'minimal',
   },
   {
+    id: 'ue-automation-guard',
+    event: 'tool.before',
+    name: () => t('UE 自动化测试守卫'),
+    description: () =>
+      t(
+        'UE 项目不跑引擎的 Automation RunTests、Gauntlet 自动化测试：Agent 跑时拒绝，让它验证到编译为止，要看功能是否正常先问用户再写 GameTest 脚本跑；用户要求跑时 Agent 会弹卡请用户放行一次',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'secret-guard',
     event: 'tool.before',
     name: () => t('凭据守卫'),

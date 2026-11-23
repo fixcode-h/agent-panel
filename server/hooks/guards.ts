@@ -7,7 +7,7 @@ import type { HookFacts } from '../../shared/hooks/index.ts'
 import { globMatch } from '../../shared/hooks/defs.ts'
 import { pluginTestSteps } from '../../shared/plugins/contrib.ts'
 import { classifySegment, runSegments } from '../../shared/command-scope.ts'
-import { isUeBuildCommand } from '../../shared/test-steps.ts'
+import { isUeAutomationCommand, isUeBuildCommand } from '../../shared/test-steps.ts'
 import { fullScanStarts } from '../../shared/wide-search.ts'
 import { latestDiagnosis } from '../../shared/bug/diagnosis.ts'
 import { outOfPlan, cleaning, editScope, revOf } from '../../shared/bug/phase.ts'
@@ -278,6 +278,17 @@ export function testScopeDeny(c: GuardCtx, facts: HookFacts): string {
       return `【面板】测试步骤「${hit.name}」在项目里设成了合回后由父对话跑，子对话不跑：在 submit_merge 的 tests 里写清你跑了哪些快速检查，父对话合回后会跑它。`
   }
   return ''
+}
+
+/**
+ * UE 自动化测试（Automation RunTests、Gauntlet）不许跑：启动编辑器跑一次要几分钟，多半测不出这次改动的问题，
+ * 用户 2026-11-23 定 UE 项目不再跑，验证到编译为止、要看功能是否正常改写 GameTest 脚本（先问用户）。
+ * 项目测试步骤里配了也一样拦；用户在对话里亲口要求时走 request_override 放行一次（ADR 0070）
+ */
+export function ueAutomationDeny(_c: GuardCtx, facts: HookFacts): string {
+  const hit = segs(facts).find(isUeAutomationCommand)
+  if (!hit) return ''
+  return `【面板】${hit.slice(0, 80)} 是 UE 引擎的自动化测试（Automation / Gauntlet），这个面板里的 UE 项目不跑它：启动编辑器跑一次要几分钟，又测不出这次改动的问题。不要换个写法再跑。验证到编译通过为止；想确认功能在游戏里是否正常、并且有 ue_gametest 工具时，先用提问工具问用户要不要写一份 GameTest 测试脚本，同意了再按 ue-gametest-authoring 技能写脚本、用 ue_gametest 跑，不同意就只编译。`
 }
 
 /** 凭据可以写进去的文件（本机的环境变量文件，一般不进仓库）：设置里可以再加 */

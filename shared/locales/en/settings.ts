@@ -66,11 +66,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'Compile one at a time; replace <Target> and <.uproject> with the real names in the project',
   '有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令':
     'Runs when Lua changed; syntax check only, no .luac output; adjust the command for the Lua version the project uses',
-  '可选；需要 Editor 的验证登记为延期验证':
-    'Optional; checks that need the Editor are registered as deferred verification',
   编译: 'Compile',
   'Lua 语法检查': 'Lua syntax check',
-  自动化测试: 'Automation tests',
   格式检查: 'Format check',
   静态检查: 'Static analysis',
   单元测试: 'Unit tests',
