@@ -7,11 +7,13 @@ import * as serverDownload from '../download.ts'
 import * as serverExecGit from '../exec/git.ts'
 import * as serverExecInvoke from '../exec/invoke.ts'
 import * as serverExecProcess from '../exec/process.ts'
+import * as serverExecTracked from '../exec/tracked.ts'
 import * as serverExecRetryPolicy from '../exec/retry-policy.ts'
 import * as serverExecVcsHistory from '../exec/vcs-history.ts'
 import * as serverExecVcsRun from '../exec/vcs-run.ts'
 import * as serverFileIndexIndexed from '../file-index/indexed.ts'
 import * as serverFs from '../fs.ts'
+import * as serverJobsRegistry from '../jobs/registry.ts'
 import * as serverImage from '../image.ts'
 import * as serverLog from '../log.ts'
 import * as serverMergeBuild from '../merge-build.ts'
@@ -80,11 +82,13 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/exec/git': serverExecGit,
   'server/exec/invoke': serverExecInvoke,
   'server/exec/process': serverExecProcess,
+  'server/exec/tracked': serverExecTracked,
   'server/exec/retry-policy': serverExecRetryPolicy,
   'server/exec/vcs-history': serverExecVcsHistory,
   'server/exec/vcs-run': serverExecVcsRun,
   'server/file-index/indexed': serverFileIndexIndexed,
   'server/fs': serverFs,
+  'server/jobs/registry': serverJobsRegistry,
   'server/image': serverImage,
   'server/log': serverLog,
   'server/merge-build': serverMergeBuild,

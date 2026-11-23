@@ -83,4 +83,14 @@ export const EN_FILE_INDEX: Record<string, string> = {
   全部清空: 'Clear all',
   '已清空，下次用到时重算': 'Cleared; rebuilt the next time it is needed',
   '已清空全部缓存，下次用到时重算': 'All caches cleared; rebuilt the next time they are needed',
+  // 后台作业（ADR 0075）
+  '没有这条作业（可能面板重启过）': 'No such job (the panel may have restarted)',
+  这条作业已经结束了: 'This job has already finished',
+  这条作业不能取消: 'This job cannot be canceled',
+  '{n} 个后台任务在跑': '{n} background jobs running',
+  后台任务: 'Background jobs',
+  清除已结束的: 'Clear finished',
+  没有后台任务: 'No background jobs',
+  还没有日志: 'No log yet',
+  '结束后 {n} 秒还没退出': 'Still running {n}s after being stopped',
 }

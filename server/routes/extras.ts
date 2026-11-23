@@ -11,6 +11,7 @@ import { awayApi, loadAway } from '../away.ts'
 import { ghDownloadApi } from '../tools/gh-download.ts'
 import { fileIndexApi } from '../file-index/api.ts'
 import { memoApi } from '../memo/api.ts'
+import { bgJobsApi } from '../jobs/api.ts'
 import type { ApiModule } from './module.ts'
 
 export function extraModules(deps: {
@@ -38,6 +39,8 @@ export function extraModules(deps: {
     },
     // 派生缓存：数据页的「缓存」一节（/memo）
     { prefix: '/', app: memoApi() },
+    // 后台作业：侧栏底部的作业列表（/bg-jobs）
+    { prefix: '/', app: bgJobsApi() },
   ]
   // 「我不在」开关和自动选过的记录（server/away.ts）：启动时先读进内存，执行时同步查
   void loadAway()
