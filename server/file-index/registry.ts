@@ -175,8 +175,8 @@ function sweepIdle() {
   for (const [id, p] of projects) if (now - p.usedAt > IDLE_MS && !pinned.get(id)) release(id)
 }
 
-const pushTimers = new Map<string, ReturnType<typeof setTimeout>>() // 模块状态：运行时，300 毫秒后自己清掉
-/** 状态推给页面：同一个项目 300 毫秒内只推一次（建立进度一秒好几下） */
+const pushTimers = new Map<string, ReturnType<typeof setTimeout>>() // 模块状态：运行时，1 秒后自己清掉
+/** 状态推给页面：同一个项目一秒内只推一次（建立进度一秒好几下；每推一次要算一遍整个项目的状态） */
 function pushStatus(key: string) {
   const u = units.get(key)
   if (!u || !deps) return
@@ -187,7 +187,7 @@ function pushStatus(key: string) {
       setTimeout(() => {
         pushTimers.delete(pid)
         void statusOf(pid).then((s) => s && deps!.push(pid, s))
-      }, 300),
+      }, 1000),
     )
   }
 }

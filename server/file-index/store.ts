@@ -39,6 +39,8 @@ export const indexKey = (root: string, rules: string) =>
     .slice(0, 16)
 
 const fileOf = (key: string) => path.join(INDEX_DIR, `${key}.idx.gz`)
+/** 头单独存一份：数据页列清单只读这个小文件，不用解压整份（引擎那份解压出来几十兆，会拖慢整个面板） */
+const headOf = (key: string) => path.join(INDEX_DIR, `${key}.head.json`)
 
 export async function saveIndex(key: string, head: IndexHead, table: NameTable): Promise<number> {
   await mkdir(INDEX_DIR, { recursive: true })
@@ -48,6 +50,7 @@ export async function saveIndex(key: string, head: IndexHead, table: NameTable):
   const tmp = `${file}.${process.pid}.tmp`
   await writeFile(tmp, buf)
   await rename(tmp, file)
+  await writeFile(headOf(key), JSON.stringify(head)).catch(() => {})
   return buf.length
 }
 
@@ -73,9 +76,10 @@ export async function loadIndex(
 
 export async function dropIndex(key: string) {
   await rm(fileOf(key), { force: true })
+  await rm(headOf(key), { force: true })
 }
 
-/** 数据页列出所有落盘的索引：只读头（解压整份才拿得到头；文件不大，几十毫秒） */
+/** 数据页列出所有落盘的索引：只读旁边的头文件；没有头文件的（旧版写的）才解压整份取头 */
 export async function listIndexFiles(): Promise<{ key: string; head?: IndexHead; bytes: number }[]> {
   const names = await readdir(INDEX_DIR).catch(() => [] as string[])
   const out: { key: string; head?: IndexHead; bytes: number }[] = []
@@ -83,15 +87,20 @@ export async function listIndexFiles(): Promise<{ key: string; head?: IndexHead;
     if (!n.endsWith('.idx.gz')) continue
     const key = n.slice(0, -'.idx.gz'.length)
     const file = path.join(INDEX_DIR, n)
-    const [buf, st] = await Promise.all([readFile(file).catch(() => null), stat(file).catch(() => null)])
-    let head: IndexHead | undefined
-    try {
-      if (buf) {
-        const text = (await gunz(buf)).toString('utf8')
-        head = JSON.parse(text.slice(0, text.indexOf('\n') >= 0 ? text.indexOf('\n') : undefined)) as IndexHead
+    const st = await stat(file).catch(() => null)
+    let head = await readFile(headOf(key), 'utf8')
+      .then((x) => JSON.parse(x) as IndexHead)
+      .catch(() => undefined)
+    if (!head) {
+      const buf = await readFile(file).catch(() => null)
+      try {
+        if (buf) {
+          const text = (await gunz(buf)).toString('utf8')
+          head = JSON.parse(text.slice(0, text.indexOf('\n') >= 0 ? text.indexOf('\n') : undefined)) as IndexHead
+        }
+      } catch {
+        head = undefined
       }
-    } catch {
-      head = undefined
     }
     out.push({ key, head, bytes: st?.size ?? 0 })
   }

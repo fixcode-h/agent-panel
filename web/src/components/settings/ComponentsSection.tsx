@@ -60,7 +60,7 @@ import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { SourceLink } from '@/components/ui/source-link'
 import { NavRow, SidebarModeTabs } from '@/components/ui/sidebar'
-import { BackgroundStatus } from '@/components/ui/background-status'
+import { BackgroundStatusSpecimen } from './BackgroundStatusSpecimen'
 import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetGroupSpecimens } from '@/components/settings/VersionDiffSpecimen'
@@ -612,14 +612,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={2.2} />} label={t('工作流')} on />
           </div>
         </Specimen>
-        {/* 侧栏底部的后台状态：建文件索引时的进度、不知道总数时的不定进度、出错 */}
-        <Specimen name="BackgroundStatus" tune={['nav', 'progress']}>
-          <div className="flex w-64 flex-col gap-2 rounded-lg bg-rail px-2.5 py-2.5">
-            <BackgroundStatus label={t('正在建立文件索引')} detail="42%" value={42} max={100} />
-            <BackgroundStatus label={t('正在建立文件索引')} detail={t('{n} 个文件', { n: '3.2 万' })} />
-            <BackgroundStatus error label={t('文件索引出错，点开看原因')} />
-          </div>
-        </Specimen>
+        <BackgroundStatusSpecimen Specimen={Specimen} />
       </Group>
       <Group title={t('侧栏 · 项目')}>
         <Specimen
