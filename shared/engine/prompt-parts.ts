@@ -11,7 +11,7 @@ import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
 import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
 import { summaryCardRules } from '../summary/card.ts'
 import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
-import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from '../search-exclude.ts'
+import { searchExcludeFindPrune, searchExcludePrompt } from '../search-exclude.ts'
 import { codeIndexLines, ideMcpPointer } from '../mcp-catalog/code-index.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
 import { subPolicy } from '../sub-policy.ts'
@@ -76,12 +76,15 @@ export function searchPart(host: EngineHost) {
   const project = { searchExclude: host.searchExclude }
   const line = searchExcludePrompt(project)
   if (!line) return ''
-  const extra = searchExcludeGlobs(project, { onlyProject: true })
-  // Git 仓库里内置默认清单靠 .gitignore 就挡住了，rg 再列一遍只会误伤真叫 build / out 的源码目录；
-  // 最常见的漏网是 Agent 自己加 --no-ignore / -uu，所以明说不要加
+  // 排除目录面板已经经 rg 的配置文件交给 rg（server/exec/search-exclude-env.ts），提示词里不再教 -g '!目录'（用户 2026-11-23）；
+  // Git 仓库里最常见的漏网是 Agent 自己加 --no-ignore / -uu，所以仍明说不要加
   const rg = host.searchInGit
-    ? `这是 Git 仓库：rg、\`git grep\` 和 CLI 自带的搜索工具默认已经跳过 .gitignore 里的文件和隐藏目录，不要加 \`--no-ignore\`、\`-u\` / \`-uu\`、\`--hidden\` 把它们扫回来；rg 只需${extra ? `再排除 .gitignore 没覆盖的：\`rg ${extra} <关键字> <目录>\`` : `限定目录：\`rg <关键字> <目录>\``}。`
-    : `这里没有 .gitignore 可依赖，rg 要带上整份排除：\`rg ${searchExcludeGlobs(project)} <关键字> <目录>\`。`
+    ? '这是 Git 仓库：rg、`git grep` 和 CLI 自带的搜索工具默认已经跳过 .gitignore 里的文件和隐藏目录，不要加 `--no-ignore`、`-u` / `-uu`、`--hidden` 把它们扫回来。'
+    : ''
+  // 按名字找文件先查面板的文件索引（用户 2026-11-23）：不拦截 find / rg --files，只讲清楚先用哪个、索引没有的去哪找
+  const byName = host.fileIndex
+    ? `3. 按名字找文件、看某个目录下有什么（含 rg 跳过的 .uasset 这类资源）先用面板的 file_index：action=find 按名字、action=list 按目录，不扫磁盘、秒回，代替 \`rg --files\`、\`find\`、Glob、\`dir /s\`。C++ 源码按上面第 1 步先用 VS 的工具、Lua 先用 IDEA 的工具。索引不收上面的排除目录：要找那些目录里的文件（例如 Saved/Logs 下的日志）直接用 find / ls；索引里没找到、又确信文件在时，先 action=refresh 再查，或直接 find。`
+    : `3. 按名字找文件（含 rg 跳过的 .uasset 这类资源）用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`
   // 找代码只有这一个入口（用户 2026-11-14）：先代码索引 MCP、再 rg、按名字找文件才 find。
   // 通用约束、各角色、Skill 里只引用这一节，不各写一份 rg 用法，免得哪处只教 rg 让 Agent 绕过更好的工具
   return [
@@ -90,8 +93,8 @@ export function searchPart(host: EngineHost) {
     // IDE 服务的完整规矩改成第一次调它时推（情境规则 ide-mcp-rules），这里只留一行
     ...ideMcpPointer(host.ideMcpServers),
     `2. 搜文件内容用 rg：起点先限定到模块目录（CLI 自带的搜索工具也把路径参数设成模块目录），没命中再逐级扩大。面板给 rg 配好了上面的排除目录，还跳过了 .uasset、图片、模型、压缩包这类二进制文件，命中按行输出（超时被打断时已搜到的照样留下）。\`grep -r\`、\`Select-String\` 不认这份配置，不要拿它们扫大目录。`,
-    `   ${rg}`,
-    `3. 按名字找文件（含 rg 跳过的 .uasset 这类资源）用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
+    ...(rg ? [`   ${rg}`] : []),
+    byName,
     `- 确实要扫整个大项目（几十秒以上）时，有面板的 run_background 就放后台跑，别在前台等到超时。`,
     `- 要看被排除目录里的内容（例如 Saved/Logs 下的日志）时，直接把那个目录当起点去读或搜，不要因此去掉整份排除。`,
   ].join('\n')

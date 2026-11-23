@@ -182,6 +182,7 @@ import { t } from '@shared/i18n'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoTools } from './demo-tools'
+import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import { demoBrowserExt, demoStyles } from './demo-styles'
@@ -1009,6 +1010,7 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
         return { id: k.id, files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) }
       }
       if (k.id === 'cache') return { id: k.id, files: 0, bytes: 0 }
+      if (k.id === 'file-index') return { id: k.id, ...demoFileIndexUsage() }
       // 工作目录和下面的清理清单用同一份演示数据，两个数字对得上
       if (k.id === 'workspace') {
         const c = demoCleanup()
@@ -1035,6 +1037,7 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
     if (k === 'projects') d.projects = []
     if (k === 'projects' || k === 'tasks') d.tasks = []
     if (k === 'uploads') demoUploads.clear()
+    if (k === 'file-index') demoFileIndexOverview('DELETE', undefined, d.projects)
     persist()
     return { ok: true }
   }
@@ -1797,6 +1800,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'hooks') return demoHooks(method, seg, body ?? {})
   // 配置安全扫描的「这条没问题」：演示里不记，界面上那一条照样拿掉
   if (res === 'config-scan') return { ok: true }
+  if (res === 'file-index' || sub === 'file-index') return demoFileIndex(method, seg, query, d.projects)
   if (res === 'projects' && id && sub === 'experience') return demoExperience(id, method, seg, body)
   if (res === 'projects' && id && sub === 'knowledge-hits') return demoKnowledgeHits()
   if (res === 'projects' && id && sub === 'knowledge')

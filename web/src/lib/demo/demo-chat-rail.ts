@@ -79,4 +79,37 @@ export async function seedChatRail(
     ].join('\n')
   }
   back(task, 20)
+
+  // 只有联网来源、没有代码和附件的聊天：来源一多右栏默认不自动打开（点标题栏的右栏开关再看）
+  const news = await make('这周 AI 圈有什么新闻？')
+  news.title = '这周的 AI 新闻'
+  const newsReply = news.messages.find((m) => m.role === 'agent')
+  if (newsReply) {
+    const hosts = [
+      'news.example.com/ai/week-47',
+      'tech.example.org/2026/11/20/agents',
+      'blog.example.net/posts/model-release',
+      'research.example.edu/papers/long-context',
+      'dev.example.io/changelog/cli',
+      'press.example.com/releases/2026-11',
+      'forum.example.dev/t/benchmarks',
+      'weekly.example.co/issue-212',
+      'podcast.example.fm/episodes/ai-roundup',
+      'mag.example.com/features/coding-agents',
+      'data.example.ai/reports/usage',
+      'open.example.org/projects/eval-suite',
+    ]
+    newsReply.tools = [
+      {
+        kind: 'web',
+        name: '网页搜索',
+        label: 'AI news this week',
+        detail: '',
+        output: hosts.map((h, i) => `${i + 1}. ${h.split('/')[0]}\nhttps://${h}`).join('\n'),
+        ms: 2100,
+      },
+    ]
+    newsReply.text = '这周值得看的几条：新模型发布、长上下文评测和几款编码 Agent 的更新，来源见右栏。'
+  }
+  back(news, 35)
 }

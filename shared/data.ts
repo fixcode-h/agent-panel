@@ -20,6 +20,12 @@ export const DATA_KINDS = [
   },
   { id: 'uploads', label: t('附件'), hint: t('任务里附上的文件和图片'), clearable: true },
   { id: 'cache', label: t('缓存'), hint: t('下载的更新包、损坏文件的备份，可以随时清理'), clearable: true },
+  {
+    id: 'file-index',
+    label: t('文件索引'),
+    hint: t('各项目的文件名索引（只记文件名，不含内容）；清理后项目用到时自动重建'),
+    clearable: true,
+  },
 ] as const
 
 export type DataKind = (typeof DATA_KINDS)[number]['id']
@@ -29,7 +35,7 @@ export type DataKind = (typeof DATA_KINDS)[number]['id']
  * 塞进备份文件会让导出没法用。独立分支（worktrees/）连 DATA_KINDS 都不进：四 GB、十几万个文件，
  * 每次打开设置都递归一遍太慢，它只在清理面板里按需统计
  */
-export const NOT_EXPORTED: DataKind[] = ['workspace']
+export const NOT_EXPORTED: DataKind[] = ['workspace', 'file-index']
 
 /** 能导出 / 导入的分类：缓存是下载的更新包，工作目录和独立分支是执行时产生的中间产物 */
 export const EXPORTABLE_KINDS = DATA_KINDS.filter((k) => k.id !== 'cache' && !NOT_EXPORTED.includes(k.id))

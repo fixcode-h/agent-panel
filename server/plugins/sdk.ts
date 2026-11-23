@@ -247,6 +247,43 @@ export interface PluginServerContext {
    * 把已经在 UE 页接入过的项目都打开，升级后行为不变；用户在 UE 页新接入一个项目时也顺手打开
    */
   projects: PluginProjects
+  /**
+   * 项目文件索引（插件接口 16）：按名字找文件、按文件夹取、订阅增删，不要再自己递归走目录。
+   * 旧面板没有它：插件按 undefined 退回自己原来的走法
+   */
+  files?: PluginFiles
+}
+
+/** 插件用的文件索引（PluginServerContext.files）：路径一律绝对路径进出，/ 或系统分隔符都行 */
+export interface PluginFiles {
+  /**
+   * 拿一个项目的索引：参数是面板项目 id，或一个绝对路径（找包含它的那个项目）。
+   * 项目没开文件索引、找不到项目时返回 undefined，插件退回自己的走法
+   */
+  index: (projectIdOrDir: string) => Promise<PluginFileIndex | undefined>
+  /** 插件自己写了文件（新建表格、导出资产、存场景）：报给面板，马上进索引 */
+  touch: (absPaths: string[]) => void
+}
+
+export interface PluginFileIndex {
+  /** 面板项目目录 */
+  projectPath: string
+  /** 第一次建好（timeoutMs 到了还没好返回 false，可以先用已有的部分） */
+  ready: (timeoutMs?: number) => Promise<boolean>
+  /** 按名字找：空格分隔的词都要命中，带 * ? 的按通配；under 限定目录（绝对路径）；返回绝对路径 */
+  find: (q: string, opts?: { under?: string[]; ext?: string[]; dirs?: boolean; limit?: number }) => string[]
+  /** 按文件夹取（返回前现场核对这一层，结果和磁盘一致）；不在索引里返回 undefined */
+  list: (
+    dir: string,
+    opts?: { recursive?: boolean; ext?: string[] },
+  ) => Promise<{ files: string[]; dirs: string[] } | undefined>
+  /** 按通配一次拿全：patterns 相对 dir，`**` 跨层、`*` 不跨层；返回绝对路径 */
+  glob: (dir: string, patterns: string[]) => string[]
+  has: (abs: string) => 'file' | 'dir' | undefined
+  /** 订阅这些目录（绝对路径，空数组是全部）下的文件增删；返回撤掉订阅的函数 */
+  onChange: (dirs: string[], cb: (d: { added: string[]; removed: string[] }) => void) => () => void
+  /** 核对一遍（dir 给了只核对那棵子树）：插件知道外面批量改过文件时用 */
+  refresh: (dir?: string) => Promise<void>
 }
 
 /** 插件能用的项目能力接口（PluginServerContext.projects） */
@@ -373,6 +410,11 @@ export interface ServerPlugin {
     path: string
     plugins?: Record<string, unknown>
   }) => string | undefined | Promise<string | undefined>
+  /**
+   * 项目外要一起收进文件索引的目录（插件接口 16，例如 UE 引擎目录）：只对打开了这个插件的项目问。
+   * exclude 不给时用项目的排除目录。只读目录，不要起进程
+   */
+  fileIndexRoots?: (project: { id: string; path: string }) => Promise<{ root: string; exclude?: string[] }[]>
   /** 关掉、删除、重启前：停后台进程、清定时器 */
   stop?: () => void | Promise<void>
 }

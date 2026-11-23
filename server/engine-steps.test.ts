@@ -644,8 +644,8 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
   assert.equal(prompts.length, 1)
   assert.match(prompts[0], /## 搜索（这个项目）/, '通用约束后面带上这个项目的排除清单')
   assert.match(prompts[0], /搜索时排除：[^\n]*Saved/)
-  assert.match(prompts[0], /-g '!Saved\/'/, 'rg 的排除写法直接给出来')
-  assert.match(prompts[0], /-g '!node_modules\/'/, '不是 Git 仓库时 rg 要带整份清单')
+  // 排除目录经 rg 的配置文件交给 rg，提示词不再教 -g（用户 2026-11-23）
+  assert.doesNotMatch(prompts[0], /-g '!Saved\/'/)
   assert.match(prompts[0], /find <目录> -maxdepth 4 \\\( -type d \\\( -name 'Saved'/, 'find 的剪枝也直接给出来')
   assert.match(prompts[0], /找 Bug 在这一层定位时也用同样的排除/, '找 Bug 那段用同一份清单')
   assert.match(
@@ -654,6 +654,33 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
     '告诉它 rg 跳过二进制、按名字找资源用 find（用户 2026-11-11 报搜索超时）',
   )
   assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
+})
+
+test('项目开着文件索引：按名字找文件先用 file_index，排除目录里的直接 find（用户 2026-11-23：不拦截，只讲清楚）', async () => {
+  const prompts: string[] = []
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '找一下配置文件' } as never, undefined, '', 's1'),
+    id: 's1',
+  } as Task
+  await runEngineTurn({
+    task,
+    agents,
+    workflows: [],
+    prompt: '找一下配置文件',
+    searchExclude: ['Saved'],
+    fileIndex: async () => ({ text: 'a.ts' }),
+    changed: () => {},
+    newId: () => 'x',
+    runAgent: async (call) => {
+      autoSubmit(call)
+      prompts.push(call.prompt)
+      return { ok: true, text: '好了' }
+    },
+  })
+  const part = prompts[0].slice(prompts[0].indexOf('## 搜索（这个项目）')).split('\n## ')[0]
+  assert.match(part, /先用面板的 file_index/)
+  assert.match(part, /索引不收上面的排除目录[^\n]*直接用 find/)
+  assert.doesNotMatch(part, /-maxdepth 4/, '有索引时不再教 find 的整套剪枝')
 })
 
 test('搜索一节先列代码索引 MCP 工具，再 rg（用户 2026-11-14：有 search_lua 不用、先 grep 整个目录）', async () => {
@@ -709,8 +736,7 @@ test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并
   })
   const part = prompts[0].slice(prompts[0].indexOf('## 搜索（这个项目）'))
   assert.match(part, /不要加 `--no-ignore`/)
-  assert.match(part, /`rg -g '!Saved\/' <关键字> <目录>`/, 'rg 只带项目填的，内置默认交给 .gitignore')
-  assert.doesNotMatch(part.split('\n## ')[0], /-g '!node_modules\/'/)
+  assert.doesNotMatch(part.split('\n## ')[0], /-g '!/, '排除目录经 rg 的配置文件交给 rg，提示词不再教 -g')
   // find 不读 .gitignore，Git 仓库里也要整份剪枝
   assert.match(part, /-name 'node_modules'/)
 })

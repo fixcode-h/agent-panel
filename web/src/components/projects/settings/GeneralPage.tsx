@@ -14,6 +14,8 @@ import { CherryPickAssets } from '../CherryPickAssets'
 import { DirPicker, type useDirInfo } from '../DirPicker'
 import { SearchExcludeField } from './SearchExcludeField'
 import { CodeIndexField } from './CodeIndexField'
+import { FileIndexField } from './FileIndexField'
+import { NameSearchSplit } from './NameSearchSplit'
 import type { SetField, Vcs } from './project-draft'
 
 /**
@@ -164,8 +166,15 @@ export function GeneralPage({
       </FormSection>
 
       <FormSection title={t('搜索')}>
+        <FileIndexField
+          projectId={project?.id}
+          value={draft.fileIndex}
+          onChange={(v) => set('fileIndex', v)}
+          vcs={vcs}
+        />
         <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
         <CodeIndexField value={draft.codeIndexTools} onChange={(v) => set('codeIndexTools', v)} />
+        <NameSearchSplit />
       </FormSection>
 
       {gitRepo && (

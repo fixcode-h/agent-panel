@@ -250,6 +250,14 @@ export const COMP_SPEC = {
     hint: bool(true, 'inline', 'none'),
   },
   /**
+   * 来源列表（Chat 页右栏「来源」页签，web/src/components/ui/source-link.tsx）：联网搜索一次能带出几十条来源，
+   * 默认不因为只有来源就把右栏打开占一大块（用户 2026-11-23），点标题栏的右栏开关再看；打开这项恢复自动打开。
+   * 不是 CSS，ChatRail 读设置里的值；落成变量只为走同一套登记
+   */
+  sourceList: {
+    autoOpen: bool(false, '1', '0'),
+  },
+  /**
    * 实时输出（web/src/components/ui/live-text.tsx）：思考过程、模型正在写的工具入参（交诊断报告、建子对话、派子任务）
    * 正在输出时那一块最多多高、左边竖线，以及要不要在「正在写」下面显示写到哪了（用户 2026-11-19）。
    * 最后一项不是 CSS，DraftRow 读设置里的值；落成变量只为走同一套登记

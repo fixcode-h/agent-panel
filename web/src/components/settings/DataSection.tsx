@@ -21,6 +21,7 @@ import { CleanupSection } from '@/components/settings/CleanupSection'
 import { KeepAliveList } from '@/components/settings/KeepAliveList'
 import { StaleProcesses } from '@/components/settings/StaleProcesses'
 import { TaskDiskUsage } from '@/components/settings/TaskDiskUsage'
+import { FileIndexData } from '@/components/settings/FileIndexData'
 import { t } from '@shared/i18n'
 
 /** 和共享的格式化保持一致：数据占用、内存都按同一套单位显示 */
@@ -44,11 +45,14 @@ export function DataSection() {
   const [memoryError, setMemoryError] = useState('')
   /** 刷新一次就换一个值：定时刷新的 effect 依赖它，点「刷新占用」能重新开始（失败后定时器已经停了） */
   const [memoryRestart, setMemoryRestart] = useState(0)
+  /** 占用每刷新一次换一个值：文件索引那块跟着重读（清理了「文件索引」那一类后列表要变空） */
+  const [loadedAt, setLoadedAt] = useState(0)
 
   const load = async () => {
     setLoading(true)
     try {
       setUsage(await api.dataUsage())
+      setLoadedAt(Date.now())
       // 这次拉成功了就清掉上次的错误，并让下面的定时刷新重新起来：否则失败一次后定时器一直停着、错误也永远留着
       setMemoryError('')
       setMemoryRestart((n) => n + 1)
@@ -289,6 +293,9 @@ export function DataSection() {
         </Card>
       </section>
 
+      {/* 各项目的文件索引：逐份重建、删除，项目删了留下的标「无主」 */}
+      <FileIndexData key={`fi-${loadedAt}`} onChanged={load} />
+
       {/* 对话记录按项目、父子对话的磁盘占用，很久没动的可以批量删（进回收站） */}
       {!demo && (
         <TaskDiskUsage
@@ -421,7 +428,9 @@ export function DataSection() {
               ? t('会删除所有任务记录，包括输出和用量。删除后不能恢复，需要的话先导出。')
               : clearing === 'uploads'
                 ? t('会删除任务里附上的文件和图片，任务记录里的附件就打不开了。')
-                : t('会删除下载的更新包和损坏文件的备份。')
+                : clearing === 'file-index'
+                  ? t('会删除所有项目的文件索引。项目用到时会自动重建，大项目第一次重建要几秒到几十秒。')
+                  : t('会删除下载的更新包和损坏文件的备份。')
         }
         onConfirm={() => clearing && clear(clearing)}
       />

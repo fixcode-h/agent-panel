@@ -43,6 +43,8 @@ import { revealItem } from './open.ts'
 import { IMAGE_TYPES } from './uploads.ts'
 import { sheetsOf } from './xlsx.ts'
 import { t } from '../shared/i18n.ts'
+import { indexedNames } from './file-index/name-search.ts'
+import { touchFiles } from './file-index/registry.ts'
 import { fixApplicable, replaceFix, type FixApplyItem, type FixApplyResult } from '../shared/diagnosis.ts'
 
 /** 内容搜索最多扫这么多文件、这么多命中 */
@@ -357,7 +359,10 @@ export async function searchNameInDir(dir: string, q: string): Promise<NameSearc
   const repo = await repoInfo(dir, false)
   let all: string[]
   let truncated = false
-  if (repo.isGit) {
+  // 项目开着文件索引时直接查它（不扫磁盘，也不受 2 万个文件的上限）
+  const indexed = await indexedNames(dir, q, MAX_NAME_HITS + 1).catch(() => undefined)
+  if (indexed) all = indexed
+  else if (repo.isGit) {
     const r = await git(dir, 'ls-files', '--cached', '--others', '--exclude-standard', '-z')
     all = r.stdout
       .split('\0')
@@ -552,6 +557,7 @@ export async function createInDir(
   const full = path.join(base, n)
   if (await exists(full)) throw Object.assign(new Error(t('已经有一个同名的文件或目录了')), { status: 409 })
   await writeTextFile(full, content, format)
+  await touchFiles([full], 'panel')
   const after = await stat(full)
   return { path: relOf(dir, full), size: after.size }
 }
@@ -586,6 +592,7 @@ export async function mkdirInDir(dir: string, relDir: string, name: string): Pro
   const full = path.join(base, n)
   if (await exists(full)) throw Object.assign(new Error(t('已经有一个同名的文件或目录了')), { status: 409 })
   await mkdir(full)
+  await touchFiles([full], 'panel')
   return { path: relOf(dir, full) }
 }
 
@@ -601,6 +608,7 @@ export async function renameInDir(dir: string, want: string, name: string): Prom
   // 改成本身那个名字也算同名，直接当没改
   if (await exists(target)) throw Object.assign(new Error(t('已经有一个同名的文件或目录了')), { status: 409 })
   await rename(full, target)
+  await touchFiles([full, target], 'panel')
   return { path: relOf(dir, target) }
 }
 
@@ -618,6 +626,7 @@ export async function deleteInDir(dir: string, want: string): Promise<{ ok: true
     if (items.length) throw new Error(t('目录里还有内容，不能删除'))
     await rmdir(full)
   } else throw new Error(t('只能删除文件或目录'))
+  await touchFiles([full], 'panel')
   return { ok: true }
 }
 

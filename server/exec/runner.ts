@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
@@ -31,6 +32,7 @@ import { seenWhileWatched } from '../presence.ts'
 import { ApiSlot } from '../cli/api-slots.ts'
 import { beginTurnChanges, endTurnChanges, settleTurnChanges, summaryMessage } from '../turn/changes.ts'
 import { noteEdit } from '../turn/owners.ts'
+import { touchFiles } from '../file-index/registry.ts'
 import { canKeepAlive, envStallTimeout, forgetPromptSent, silentTurn } from './retry-policy.ts'
 import { anySignal, apiSlots, callApi, inToolWait, slotKey, takeApiSlot } from './api-gate.ts'
 import { speedMeter } from './speed-meter.ts'
@@ -243,6 +245,8 @@ async function runAgent(
     cwd,
     (file) => {
       touched.add(file.path.replaceAll('\\', '/'))
+      // 新建的文件马上进项目文件索引（Linux 上不盯系统通知，等定时核对会晚一分钟）
+      void touchFiles([path.resolve(cwd, file.path)], 'agent')
       // 非 git 项目没有 git 差异可统计：项目内的并进 changes，项目外的记进 outsideChanges
       if (!ctx.isGit) trackFileWrite(task, owner, cwd, file)
       refreshChanges()

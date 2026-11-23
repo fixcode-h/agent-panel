@@ -277,7 +277,7 @@ export function TaskView({
   // Chat 页（不属于项目）也有会话栏，只是不显示环境那些和项目有关的块（见 SessionBar 的 noProject）
   const sessionAllowed = !pane && !embed && !showOther
   // Chat 页的右栏（代码、来源、附件）：和项目对话的文件栏一样参与「并排放不放得下」
-  const chatRailWanted = chatPage && panes.chatRailOn && !chatRail.empty && !reportOn && !reportCover
+  const chatRailWanted = chatPage && panes.chatRailOpen(chatRail.quiet) && !chatRail.empty && !reportOn && !reportCover
   const { sessionFits, sessionShown, filesYield, chatRailShown, filesHidden } = railLayout({
     rowW,
     sessionAllowed,
@@ -481,7 +481,7 @@ export function TaskView({
         go(minimizeBackRoute({ projectId: task.projectId || undefined }))
       },
       // 会话栏、功能面板、文件面板、Chat 右栏的开关（view/rail-toggles.ts）
-      ...railToggles({ panes, filesYield, chatRailWanted, chatRailShown, reportOn, closeReport }),
+      ...railToggles({ panes, filesYield, chatRailWanted, chatRailShown, chatRail, reportOn, closeReport }),
       filesCover: () => setPanel(true),
     },
   })

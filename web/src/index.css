@@ -1165,6 +1165,7 @@ body,
   --c-foldBar-bg: transparent;
   --c-foldBar-border: 0px;
   --c-foldBar-hint: inline;
+  --c-sourceList-autoOpen: 0;
   --c-liveText-maxH: 160px;
   --c-liveText-bar: 2px;
   --c-liveText-draft: block;

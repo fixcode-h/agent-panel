@@ -573,8 +573,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             ]}
           />
         </Specimen>
-        <Specimen name="SourceLink">
-          {/* Chat 右栏「来源」页签的一行：域名首字母方块 + 域名，路径和搜索词是小字 */}
+        <Specimen name="SourceLink" tune={['sourceList']}>
+          {/* Chat 右栏「来源」页签的一行：域名首字母方块 + 域名，路径和搜索词是小字；
+              微调里是「只有来源时也自动打开右栏」（默认关：来源不默认展开） */}
           <div className="flex w-80 flex-col gap-px">
             <SourceLink
               url="https://react.dev/reference/react/use"

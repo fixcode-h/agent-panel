@@ -147,8 +147,11 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    （UE 插件的「蓝图编译」按项目找引擎）；旧面板不换这两个占位符，命令跑不起来，所以加一
  * 14：对话分开存成 chat（Chat 页）和 agent（项目里的对话、子对话），PluginRun.mode 照存的值给；
  *    PluginRun.kind 给对话的统一分类（父对话、子对话、Bug、AI 分析……，shared/conv-mode.ts 的 convKind）
+ * 15：PluginServerContext.projects.docRoot（项目的文档根）
+ * 16：项目文件索引（设计稿：项目文件索引）：PluginServerContext.files 按名字找文件、按文件夹取、订阅增删，
+ *    插件不再各自走目录；ServerPlugin.fileIndexRoots 报项目外要一起收的目录（UE 引擎目录）
  */
-export const PLUGIN_API = 15
+export const PLUGIN_API = 16
 
 /** 插件从哪来 */
 export const PluginSource = z.object({
