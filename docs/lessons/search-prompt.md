@@ -16,3 +16,9 @@ paths: shared/engine/prompt-parts.ts, shared/mcp-catalog/code-index.ts, shared/m
 - 规则：提示词里要说某个别家 MCP 工具该传什么参数时，从缓存的参数表生成（`shared/mcp-catalog/tool-params.ts`，`ideMcpLines` 的写法），没有参数表就只写「照工具自己的参数表传」，不点名参数。面板自己工具的参数名写进提示词、说明、报错时，用真实的参数名（「`knowledge_lookup` 的 query 写 id」，不写「带 id」）。
 - 起因：9545c4d（#398）提示词里手写了「传 `projectPath`」，Agent 照着给 `lua_code` 也传了，被当成未知参数整次失败；A2 的扫描又查出面板自己的提示词里三处写了不存在的参数（`knowledge_lookup` 带 id、`end_turn` 的 blocked、`message_workflow` 的 later）。
 - 防线：`server/panel-tools/prompt-params.test.ts`、`shared/mcp-catalog/code-index.test.ts`；运行时由内置提醒「参数传错时补参数表」兜底。
+
+## IDE 的 projectPath 是 IDE 定项目用的，不按工具参数表决定传不传
+
+- 规则：JetBrains IDE 的 MCP 服务器在调任何工具（含插件的 `lua_code`）之前先按调用里的 `projectPath`、请求头 `IJ_MCP_SERVER_PROJECT_PATH`、客户端 roots 定项目，开着多个项目又都没有时直接报 `Unable to determine the target project`，工具跑不到。提示词不再写「只有参数表里列了 projectPath 的工具才传」；报这个错时由工具后提醒（`server/hooks/tool-after-hints.ts` 的 `ideProjectHint`）按工作目录从报错的 `Currently open projects` 挑出路径让 Agent 带上重调，并记下来写进之后每轮的调用规矩，挑不出来就列编号让用户选。
+- 起因：#398 之后提示词按参数表只让带 projectPath 的工具传它，`lua_code` 的参数表里没有，Agent 不传，IDE 开着两个项目时整次失败（2026-11-23 用户截图）。
+- 防线：`server/hooks/tool-after-hints.test.ts`、`shared/mcp-catalog/ide-project.test.ts`、`shared/mcp-catalog/code-index.test.ts`。

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { HookFacts } from '../../shared/hooks/index.ts'
-import { argHint, loopHint, type ArgHintDeps } from './tool-after-hints.ts'
+import { argHint, ideProjectHint, loopHint, type ArgHintDeps } from './tool-after-hints.ts'
+import { ideProjectOf } from '../mcp-catalog/ide-project.ts'
 
 const LUA_CODE = [
   { name: 'action', type: 'search | files | outline | references', required: true as const },
@@ -67,4 +68,34 @@ test('原地打转：同一条命令连续失败到次数提醒一次，成功�
   assert.match(loopHint('l1', sh(true), 2), /连续失败 2 次/)
   loopHint('l1', sh(false), 2)
   assert.equal(loopHint('l1', sh(true), 2), '')
+})
+
+const noProject = (paths: string[]) =>
+  'Unable to determine the target project for the current MCP tool call.\n Currently open projects: ' +
+  JSON.stringify({ projects: paths.map((path) => ({ path })) })
+
+test('IDE 定不了项目：按工作目录挑出 projectPath 让 Agent 带上重调并记下；挑不出来列编号问用户', async () => {
+  const d = { servers: deps.servers, projectId: 'p1', dirs: ['G:/P4/ws', 'G:/P4/ws'] }
+  const out = noProject(['G:/P4/ws/Project', 'D:/Other'])
+  const text = await ideProjectHint('i1', call('mcp__idea__lua_code', out, { action: 'search' }), d)
+  assert.match(text, /对上的是 `G:\/P4\/ws\/Project`[^\n]*`projectPath`=`G:\/P4\/ws\/Project` 原样重调/)
+  assert.equal(ideProjectOf('p1', 'idea'), 'G:/P4/ws/Project')
+  // 同一句一个对话只说一次
+  assert.equal(await ideProjectHint('i1', call('mcp__idea__lua_code', out), d), '')
+  // 经 execute_tool 转调：写明 command 里加 --projectPath
+  assert.match(
+    await ideProjectHint('i2', call('mcp__idea__execute_tool', out, { command: 'lua_code --action search' }), d),
+    /command 里加 `--projectPath "G:\/P4\/ws\/Project"`/,
+  )
+  // 带着挑出来的路径还失败：忘掉，交给用户选，不让它重试同一个
+  const again = await ideProjectHint('i3', call('mcp__idea__lua_code', out, { projectPath: 'G:/P4/ws/Project' }), d)
+  assert.match(again, /停下来把这个编号列表给用户/)
+  assert.match(again, /1\. D:\/Other/)
+  assert.equal(ideProjectOf('p1', 'idea'), undefined)
+  // 工作目录下有两个项目：列这两个问用户
+  const many = await ideProjectHint('i4', call('mcp__idea__lua_code', noProject(['G:/P4/ws/A', 'G:/P4/ws/B'])), d)
+  assert.match(many, /1\. G:\/P4\/ws\/A\n2\. G:\/P4\/ws\/B/)
+  // 别的报错、成功的结果不管
+  assert.equal(await ideProjectHint('i5', call('mcp__idea__lua_code', '{"error":"indexing"}'), d), '')
+  assert.equal(await ideProjectHint('i6', call('mcp__idea__lua_code', out, {}, false), d), '')
 })

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { briefDesc, codeIndexLines, ideMcpLines, isCodeIndexTool, parseCodeIndexItem } from './code-index.ts'
+import {
+  briefDesc,
+  codeIndexLines,
+  ideMcpLines,
+  ideMcpPointer,
+  isCodeIndexTool,
+  parseCodeIndexItem,
+} from './code-index.ts'
 
 test('代码索引工具：按名字认出搜符号、搜 Lua 这类，写东西和跑东西的不算', () => {
   for (const n of ['search_lua', 'search_symbols', 'find_references', 'search_files', 'goto_definition', 'symbols'])
@@ -43,11 +50,23 @@ test('JetBrains IDE 服务：参数规矩按缓存的参数表写，没有参数
     ],
   }
   const known = ideMcpLines([{ server: 'idea', params }]).join('\n')
+  // projectPath 是 IDE 调任何工具前定项目用的：不再写「只有列了它的才传」（2026-11-23 lua_code 没带它，IDE 定不了项目）
   assert.match(
     known,
-    /`projectPath` 只有参数表里列了它的工具才传（`search_in_files_by_text`）；`lua_code` 没有它[^\n]*`project`/,
+    /调任何工具（`search_in_files_by_text` 这类自带工具和插件工具都一样）之前要靠 `projectPath` 定项目/,
   )
+  assert.doesNotMatch(known, /只有参数表里列了它的工具才传/)
+  assert.match(known, /`lua_code` 另有 `project`/)
   assert.match(known, /Currently open projects/)
+  // 面板挑出过 IDE 项目路径：直接写出来，规矩和常驻那一行都有
+  const picked = ideMcpLines([{ server: 'idea', params, projectPath: 'G:/P4/Project' }]).join('\n')
+  assert.match(picked, /调 `idea` 的工具都带 `projectPath`=`G:\/P4\/Project`/)
+  assert.doesNotMatch(picked, /没把握就先不传/)
+  assert.match(
+    ideMcpPointer([{ server: 'idea', projectPath: 'G:/P4/Project' }]).join(''),
+    /`projectPath`=`G:\/P4\/Project`/,
+  )
+  assert.doesNotMatch(ideMcpPointer([{ server: 'idea' }]).join(''), /projectPath/)
   // 参数表里谁都没有 projectPath：不提它
   assert.doesNotMatch(
     ideMcpLines([{ server: 'idea', params: { lua_code: params.lua_code } }]).join('\n'),

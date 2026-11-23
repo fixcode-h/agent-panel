@@ -48,7 +48,7 @@ import { panelFilesDeny } from './guards-panel.ts'
 import { snapshotBeforeEdit } from '../tasks/bug-probe.ts'
 import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
 import { taskMap } from '../runtime/task-state.ts'
-import { argHint, loopHint, type ArgHintDeps } from './tool-after-hints.ts'
+import { argHint, ideProjectHint, loopHint, type ArgHintDeps } from './tool-after-hints.ts'
 import { externalToolsOf, knownExternalServers } from '../mcp-catalog/external-titles.ts'
 import { gateDeny, targetOf } from './overrides.ts'
 import { userHookGate } from '../../shared/hooks/override.ts'
@@ -533,7 +533,16 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       // 参数传错：MCP 工具报参数错时把它真实的参数表补给模型（tool-after-hints.ts）
       const arg = on('arg-table-hint') ? await argHint(c.task.id, facts, ARG_DEPS) : ''
       if (arg) noteBuiltin('arg-table-hint', event, 'context', arg)
-      ctx.push(...[loop, arg].filter(Boolean))
+      // IDE 开着多个项目、调用里没定下项目：按工作目录挑出该传的 projectPath（同一个开关）
+      const proj = on('arg-table-hint')
+        ? await ideProjectHint(c.task.id, facts, {
+            servers: ARG_DEPS.servers,
+            projectId: c.project.id ?? '',
+            dirs: [c.cwd, c.project.path ?? ''],
+          })
+        : ''
+      if (proj) noteBuiltin('arg-table-hint', event, 'context', proj)
+      ctx.push(...[loop, arg, proj].filter(Boolean))
       // 大输出提醒：每次调用最多两次，提醒多了就成了噪音
       const big =
         bigOut && bigHints < 2
