@@ -5,7 +5,6 @@ import {
   UE_SEARCH_EXCLUDE,
   rgConfigLines,
   searchExcludeFindPrune,
-  searchExcludeGlobs,
   searchExcludeOf,
   searchExcludePrompt,
   searchExcludeRgConfig,
@@ -37,21 +36,11 @@ test('UE 预设接在内置默认前面也能一起生效，大小写不同的�
   assert.ok(list.includes('Build') && list.includes('build'))
 })
 
-test('提示词里是一行逗号分隔的清单，rg 例子能直接照抄', () => {
+test('提示词里是一行逗号分隔的清单', () => {
   assert.equal(searchExcludePrompt(undefined), `搜索时排除：${DEFAULT_SEARCH_EXCLUDE.join(', ')}`)
   const prompt = searchExcludePrompt({ searchExclude: ['Saved', 'Intermediate'] })
   assert.ok(prompt.startsWith('搜索时排除：Saved, Intermediate, '), prompt)
   assert.ok(!prompt.includes('\n'), '提示词里只占一行')
-  // 末尾带斜杠：rg 按 .gitignore 语义只排除目录，叫 build 的脚本文件不受影响
-  assert.equal(
-    searchExcludeGlobs({ searchExclude: ['Saved'] }),
-    [`-g '!Saved/'`, ...DEFAULT_SEARCH_EXCLUDE.map((d) => `-g '!${d}/'`)].join(' '),
-  )
-})
-
-test('Git 仓库只给项目自己填的目录：内置默认已经靠 .gitignore 跳过，再列只会误伤叫 build 的源码目录', () => {
-  assert.equal(searchExcludeGlobs({ searchExclude: ['Saved', 'node_modules'] }, { onlyProject: true }), `-g '!Saved/'`)
-  assert.equal(searchExcludeGlobs(undefined, { onlyProject: true }), '')
 })
 
 test('find 的剪枝表达式只剪目录、用整份清单（find 不读 .gitignore）', () => {

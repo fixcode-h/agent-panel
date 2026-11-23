@@ -52,6 +52,8 @@ import { getLimits, isSharedSkill, listSkills } from './cli/extras.ts'
 import { autoResumeAfterRestart } from './restart-interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update/index.ts'
 import { addPageFeed, parseTrayCommand, signalPages } from './page-events.ts'
+import { initFileIndex } from './file-index/registry.ts'
+import { pluginIndexRoots } from './plugins/file-roots.ts'
 import { installMcpToolTitles } from './mcp-catalog/external-titles.ts'
 import { setActionHost } from './app-actions/index.ts'
 import { callApi } from './app-actions/registry.ts'
@@ -233,6 +235,17 @@ async function ensureProjectWorkflows() {
     },
     // 和「文档」角色、模块文档同一个文档根：P4 / SVN 各分支共用的那一份，项目里填的「文档根」参数也算上
     docRoot: async (p) => docRootOf(p.path, withProjectParams(await agents.list(), p)),
+  })
+  // 项目文件索引：项目用到时才建（找文件、文件面板、插件），这里只接线
+  initFileIndex({
+    getProject: (id) => projects.get(id),
+    listProjects: () => projects.list(),
+    docRoot: async (p) => {
+      const d = await docRootOf(p.path, withProjectParams(await agents.list(), p))
+      return d && path.resolve(d) !== path.resolve(p.path) ? d : undefined
+    },
+    pluginRoots: pluginIndexRoots,
+    push: (projectId, status) => signalPages({ type: 'file-index', projectId, status }),
   })
   await removeLegacyDefaultAgent()
   const before = await loadSeededWorkflows()

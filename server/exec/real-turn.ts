@@ -32,6 +32,8 @@ import { ownFiles, taskChanges } from '../own-changes.ts'
 import { p4ReviewDiff } from '../p4-review-diff.ts'
 import { gitSemantic, p4Semantic } from './review-semantic.ts'
 import { yieldApiSlot } from './api-gate.ts'
+import { fileIndexRun } from '../file-index/agent-tool.ts'
+import { fileIndexSettingsOf } from '../../shared/file-index/types.ts'
 import { turnExtra } from './turn-extra.ts'
 
 /**
@@ -128,6 +130,16 @@ export async function runRealTurn(ctx: RealContext) {
     codeIndexTools: await codeIndexToolsFor(ctx.project, workDirOf(ctx.task, ctx.project)).catch(() => []),
     // 接了 JetBrains IDE 的 MCP 服务时补上 projectPath 和 execute_tool 的写法（IDE 只认项目目录之内的路径、只认 --参数名 值）
     ideMcpServers: await ideMcpServersFor(ctx.project, workDirOf(ctx.task, ctx.project)).catch(() => []),
+    // 项目文件索引（file_index 工具）：项目开着索引才给
+    fileIndex:
+      ctx.project?.id && ctx.project.path && fileIndexSettingsOf(ctx.project).enabled
+        ? fileIndexRun({
+            projectId: ctx.project.id,
+            projectPath: ctx.project.path,
+            workDir: workDirOf(ctx.task, ctx.project),
+            exclude: searchExcludeOf(ctx.project),
+          })
+        : undefined,
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦

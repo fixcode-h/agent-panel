@@ -16,6 +16,7 @@ const G = {
   edit: '改文件与版本管理',
   bg: '后台命令',
   know: '教训与经验',
+  find: '找文件',
   ask: '提问与等你操作',
   bug: 'Bug 诊断',
   flow: '工作流运行',
@@ -329,6 +330,18 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
     useWhen: '确认它卡住、跑偏，或开发服务器用完了',
     group: G.bg,
     effects: ['danger'],
+  },
+
+  // ---- 找文件 ----
+  file_index: {
+    title: '查文件索引',
+    summary: '按名字找项目里的文件、列某个文件夹，查的是面板维护的文件名索引，不扫磁盘。',
+    useWhen:
+      '要按文件名、路径片段、扩展名找文件，或看某个目录下有什么文件时，先用它，代替 rg --files、find、Glob、dir /s；刚在外面批量生成或删除了文件、结果对不上时用 action=refresh',
+    avoidWhen:
+      'C++ 源码先用 VS 的 uetovs/search_files，Lua 先用 IDEA 的 lua_code files；按内容搜代码用 rg；要找排除目录（Saved、Intermediate 这类）里的文件时索引里没有，直接 find / rg --files',
+    group: G.find,
+    effects: ['read'],
   },
 
   // ---- 教训与经验 ----

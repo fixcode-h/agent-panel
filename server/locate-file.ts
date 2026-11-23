@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process'
 import { readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { locateInIndexes } from './file-index/locate.ts'
 
 export interface Wanted {
   name: string
@@ -222,10 +223,23 @@ export async function locateFiles(wanted: Wanted[], extraDirs: string[] = [], cl
       if (w) out.set(w, file)
     }
   }
-  const rest = wanted.filter((w) => !out.has(w))
+  let rest = wanted.filter((w) => !out.has(w))
+  // 项目目录先查文件索引：时间也对得上的直接用，查过索引的项目目录不再逐层走
+  const idx = rest.length
+    ? await locateInIndexes(rest, extraDirs.filter(Boolean), loose)
+    : { found: new Map<Wanted, { path: string; diff: number }>(), indexed: new Set<string>(), exact: () => false }
+  for (const w of rest) if (idx.exact(w)) out.set(w, idx.found.get(w)!.path)
+  rest = rest.filter((w) => !out.has(w))
   if (rest.length) {
-    const found = await searchFiles(rest, [...extraDirs.filter(Boolean), ...commonDirs()], 4, 4000, loose)
-    for (const [w, hit] of found) out.set(w, hit.path)
+    const walkDirs = extraDirs.filter((d) => d && !idx.indexed.has(path.resolve(d)))
+    const found = await searchFiles(rest, [...walkDirs, ...commonDirs()], 4, 4000, loose)
+    for (const w of rest) {
+      // 走目录找到的和索引里时间没对上的，挑时间更接近的那个
+      const a = found.get(w)
+      const b = idx.found.get(w)
+      const best = a && b ? (a.diff <= b.diff ? a : b) : (a ?? b)
+      if (best) out.set(w, best.path)
+    }
   }
   return out
 }

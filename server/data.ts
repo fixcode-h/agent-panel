@@ -11,6 +11,7 @@ import { runMigrations } from './migrations/index.ts'
 import type { MemorySampler } from './memory.ts'
 import { revealDir } from './open.ts'
 import { logDir, logFile } from './log.ts'
+import { closeAll } from './file-index/registry.ts'
 import { t } from '../shared/i18n.ts'
 
 /** 每类数据包含数据目录里的哪些路径（相对路径，目录或文件） */
@@ -23,6 +24,8 @@ const PATHS: Record<DataKind, string[]> = {
   workspace: ['chats'],
   uploads: ['uploads'],
   cache: ['cache'],
+  // 项目文件索引（server/file-index/store.ts）：随时能从磁盘重建，不导出
+  'file-index': ['file-index'],
 }
 
 /** 递归列出文件：相对数据目录的路径和大小 */
@@ -186,12 +189,16 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
   })
 
   routes.post('/clear', async (c) => {
-    const body = z.object({ kind: z.enum(['projects', 'tasks', 'uploads', 'cache']) }).safeParse(await c.req.json())
+    const body = z
+      .object({ kind: z.enum(['projects', 'tasks', 'uploads', 'cache', 'file-index']) })
+      .safeParse(await c.req.json())
     if (!body.success) return c.json({ error: t('这类数据不能清理') }, 400)
     if (busy()) return c.json({ error: busy() }, 409)
     const k = body.data.kind
     // 清理项目时任务记录也一起清掉，否则任务挂在不存在的项目下
     const kinds: DataKind[] = k === 'projects' ? ['projects', 'tasks'] : [k]
+    // 在用的索引先停掉，免得清完又被存盘写回来
+    if (k === 'file-index') closeAll()
     for (const kind of kinds)
       for (const p of PATHS[kind]) await rm(path.join(DATA_DIR, p), { recursive: true, force: true })
     if (k === 'cache') await mkdir(CACHE_DIR, { recursive: true })

@@ -23,6 +23,7 @@ import { PanelKind } from './panel-kind.ts'
 import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan/schema.ts'
 import { FileFormat } from './settings-schema.ts'
 import { ProjectCapabilities } from './projects/capabilities.ts'
+import { FileIndexSettings } from './file-index/types.ts'
 
 /** 全局设置（含文件格式、外观、CLI 设置）拆在 settings-schema.ts，进程面板的结构拆在 process-schema.ts：从这里原样转出，引用处不用改 */
 export * from './settings-schema.ts'
@@ -898,6 +899,8 @@ const ProjectFields = z.object({
    * 没设或为空时面板按项目里装的 MCP 服务自动认（server/mcp-catalog/code-index.ts）
    */
   codeIndexTools: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
+  /** 项目文件索引（只记文件名，见 shared/file-index/）：没写时按默认值（开、按磁盘 + 排除目录收、收插件报的外部目录） */
+  fileIndex: FileIndexSettings.partial().optional(),
   /** 每个 CLI 信不信任项目里它的配置（ADR 0050，见 shared/cli/trust.ts）；没写就跟随 CLI 自己的决定 */
   cliTrust: ProjectCliTrust,
   /**
