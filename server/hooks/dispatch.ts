@@ -40,6 +40,7 @@ import {
   pushDeny,
   secretDeny,
   testScopeDeny,
+  ueAutomationDeny,
   worktreeDeny,
   type GuardCtx,
 } from './guards.ts'
@@ -313,6 +314,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['danger-guard', dangerDeny],
     ['test-scope-guard', testScopeDeny],
     ['long-command-guard', longDeny],
+    // 排在长命令守卫后面：前台跑先被转去后台，到 run_background 再拦、请用户放行，用户只用点一次（先拦这个的话放行用在前台那次，转后台又要再点）
+    ['ue-automation-guard', ueAutomationDeny],
     ['big-read-guard', (_g, f) => bigReadDeny(c.cwd, c.task.id, builtinNumber(data, 'big-read-guard', 'kb'), f)],
     ['secret-guard', secretDeny],
     ['panel-files-guard', (_g, f) => panelFilesDeny({ cwd: c.cwd, projectPath: c.project.path }, f)],

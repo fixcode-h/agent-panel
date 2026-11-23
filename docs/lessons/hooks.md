@@ -21,3 +21,9 @@ paths: shared/hooks/index.ts, shared/hooks/defs.ts, shared/hooks/mod.ts, server/
 - 规则：模型常写 `cd 项目 && npm test`、`npm test 2>&1 | tail`。用户钩子的命令前缀、只读守卫的写命令都按 `commandSegments`（按 `&&`、`||`、`;`、`|`、换行拆开）逐段比。
 - 起因：第三期真实测试里 Pi 跑 `cd … && npm test`，「不许跑 npm test」的钩子按整条开头比没拦住。
 - 防线：`shared/hooks/defs.test.ts`「范围和匹配」。
+
+## 用户说「不许跑」的命令要在守卫里拦，不只写提示词；守卫排在长命令守卫后面
+
+- 规则：用户明确不许 Agent 自己跑的命令（例如 UE 的 Automation RunTests），提示词里写了也要加工具前守卫拦下（拦截原因里写改用什么），用户亲口要求时走 `request_override` 放行。新守卫若拦的是长命令，放在 `long-command-guard` 后面：前台跑先被转后台，到 `run_background` 再拦，放行卡只弹一次；排在前面时放行用在前台那次，转后台又要再点一次。
+- 起因：用户 2026-11-23 报 UE 项目里 Agent 老自己跑 `UnrealEditor-Cmd -ExecCmds="Automation RunTests …"`，测不出东西还费时间；默认测试步骤、项目分析的「测试：Automation RunTests」和 ue-project-structure 技能都在引它去跑。实跑时守卫排在长命令守卫前，用户要求跑也得点两次放行卡。
+- 防线：`server/hooks/guards.test.ts`「UE 自动化测试守卫」。

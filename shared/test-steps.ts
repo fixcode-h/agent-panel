@@ -493,6 +493,12 @@ export const CHANGED_FILES_RULE = `先取本次实际改了什么，再按改动
 export const FLAKY_TEST_RULE = `单测里计时类用例偶发失败（\`pi-rpc\`、\`process\`、\`task-store\` 这类）时，**单跑失败的那个测试文件**最多 3 次确认，不要为此重跑整套单测；3 次仍失败按真失败处理，把失败用例和输出写进结果。`
 
 /**
+ * UE 项目验证到编译为止（用户 2026-11-23：Agent 老自己跑 Automation RunTests，跑一次几分钟、测不出东西，
+ * UE 项目不许再跑；命令层面由 ue-automation-guard 拦）。要看功能对不对，先问用户再写 GameTest 脚本跑
+ */
+export const UE_VERIFY_RULE = `UE 项目的验证：编译通过就算完成。不跑引擎的 Automation RunTests、Gauntlet 自动化测试（面板会拦下），也不为验证新写 Automation 测试用例、不自己搭替身代码去编译运行。编译通过后，这次改的东西能在游戏里用到（玩法、界面、背包这类游戏数据），或者用户让你验证功能是否正常，并且有 ue_gametest 工具时：用提问工具问用户一次「要不要写一份 GameTest 测试脚本来跑」，写明打算测什么；用户同意才按 ue-gametest-authoring 技能写脚本、validate、用 ue_gametest 跑，不同意或没回答就到此为止。用户已经要求写测试时不用再问。`
+
+/**
  * 子对话只跑增量测试：always + 命中改动的 changed；全量（parent）由父对话合并后跑。
  * 测试步骤再多，子对话也不用每次把整套跑一遍——真正的全量放在合并之后。
  * 提示词里必须写死，只加脚本不改提示词，Agent 还是会“保险起見”全跑一遍
@@ -569,8 +575,8 @@ export function verifyParts(
   const incremental = o.parentRun === 'child' ? `\n${CHILD_INCREMENTAL_RULE}` : `\n${FLAKY_TEST_RULE}`
   const list = active.length
     ? `项目的测试步骤（当前系统：${o.platform || '未知'}${o.scaled ? '；标「快速」的是小改动也要跑的' : ''}）:
-${testStepsText(shown, o.platform, o.wslDistro, o.parentRun ?? '')}`
-    : '项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。'
+${testStepsText(shown, o.platform, o.wslDistro, o.parentRun ?? '')}${active.some((s) => isUeBuildCommand(s.command)) ? `\n${UE_VERIFY_RULE}` : ''}`
+    : `项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。${UE_VERIFY_RULE}`
   // 按改动清单算好的结论：有了它 Agent 不用自己再筛，也不会“为了保险全跑一遍”
   const picked = o.changedFiles
     ? pickStepsText(pickSteps(active, o.changedFiles), {
@@ -660,18 +666,8 @@ export function defaultTestSteps(
         appliesTo: [...LUA_GLOBS],
         note: t('有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令'),
       }),
-      step(
-        'ue-automation',
-        t('自动化测试'),
-        'UnrealEditor-Cmd.exe <项目>.uproject -ExecCmds="Automation RunTests <测试名>; Quit" -unattended -nullrhi',
-        {
-          // 自动化测试本身是 C++ 写的（AutomationTest），只有源码变了才需要重跑
-          scope: 'changed',
-          appliesTo: ['**/*.cpp', '**/*.h'],
-          note: t('可选；需要 Editor 的验证登记为延期验证'),
-          enabled: false,
-        },
-      ),
+      // 不再默认带「自动化测试」（Automation RunTests）：启动编辑器跑一次要几分钟，多半测不出这次改动的问题，
+      // UE 项目的验证默认只要编译通过（用户 2026-11-23 定）。项目确实要跑的，用户在项目设置的测试步骤里自己加
     ]
   if (kind === 'rust')
     return [
@@ -820,4 +816,15 @@ export function isUeBuildCommand(command: string) {
   return /(^|[\s"'\\/&|;(])(Build\.(bat|sh|command)|RunUAT\.(bat|sh)|UnrealBuildTool(\.exe|\.dll)?|UnrealHeaderTool(\.exe)?|UnrealEditor(-Cmd)?(\.exe)?|UE4Editor(-Cmd)?(\.exe)?)(?=$|[\s"'])/i.test(
     command,
   )
+}
+
+/**
+ * UE 自动化测试命令：编辑器带 `Automation RunTests` / `-run=Automation`，或 RunUAT 的 RunUnreal（Gauntlet）、
+ * `-RunAutomationTests`。UE 项目默认只验证编译，Agent 自己跑这些时守卫拦下（server/hooks/guards.ts 的 ueAutomationDeny）
+ */
+export function isUeAutomationCommand(command: string) {
+  const editor = /(^|[\s"'\\/&|;(])(UnrealEditor|UE4Editor)(-Cmd)?(\.exe)?(?=$|[\s"'])/i.test(command)
+  if (editor && /\bAutomation\s+(RunTests|RunAll|RunFilter|RunAllTests)\b|-run=Automation\b/i.test(command)) return true
+  const uat = /(^|[\s"'\\/&|;(])RunUAT\.(bat|sh)(?=$|[\s"'])/i.test(command)
+  return uat && /\bRunUnreal\b|-RunAutomationTests?\b/i.test(command)
 }
