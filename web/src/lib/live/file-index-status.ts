@@ -10,6 +10,19 @@ import { call } from '@/lib/api/call'
 import { openPageStream } from './page-stream'
 
 const demo = !!import.meta.env.VITE_DEMO
+
+/**
+ * 界面上显示的阶段：状态卡和侧栏都从这里取，不各自判断（用户 2026-11-23：卡片写「已就绪」、侧栏还在「正在核对」）。
+ * 核对中（verifying）索引照常能用，但两处都如实显示在核对，核对完一起变回就绪
+ */
+export type FileIndexPhase = 'off' | 'building' | 'checking' | 'error' | 'ready'
+export function fileIndexPhase(s: FileIndexStatus | undefined): FileIndexPhase {
+  if (!s?.enabled || s.state === 'off') return 'off'
+  if (s.state === 'error') return 'error'
+  if (s.state === 'building') return 'building'
+  if (s.state === 'verifying') return 'checking'
+  return 'ready'
+}
 /** 演示后端在页面里发的事件名（detail 和推送的数据一样） */
 export const DEMO_FILE_INDEX_EVENT = 'agent-panel:file-index'
 

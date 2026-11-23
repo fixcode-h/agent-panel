@@ -59,19 +59,24 @@ export class IndexUnit {
   private watcher?: TreeWatch
   private first: Promise<void>
   private running?: Promise<unknown>
+  /** 正在跑的整体核对（同时再要核对就等这一次） */
+  private whole?: Promise<{ checked: number; added: number; removed: number }>
+  /** 上次整体核对用了多久：定时核对按它拉开间隔，大目录不会一次接一次地核对 */
+  verifyMs?: number
   private saveTimer?: ReturnType<typeof setTimeout>
   private listeners = new Set<DeltaListener>()
   private onStatus: () => void
 
   readonly spec: UnitSpec
-  constructor(spec: UnitSpec, onStatus: () => void) {
+  /** gate：先等它再开始（外部大目录等项目自己的建好再建，两份同时建内存和磁盘都吃紧） */
+  constructor(spec: UnitSpec, onStatus: () => void, gate?: Promise<unknown>) {
     this.spec = spec
     this.root = path.resolve(spec.root)
     this.rules = rulesOf(spec)
     this.key = indexKey(this.root, this.rules)
     this.rule = skipRule(spec.exclude, CI)
     this.onStatus = onStatus
-    this.first = this.open()
+    this.first = gate ? gate.catch(() => undefined).then(() => this.open()) : this.open()
   }
 
   /** 第一次可查（读回落盘或第一次建好）；timeoutMs 到了还没好返回 false */
@@ -171,6 +176,7 @@ export class IndexUnit {
           this.ignored = this.vcs === 'git' ? await gitIgnored(this.root).catch(() => undefined) : undefined
           let last = 0
           await readTree(fresh, this.root, this.rule, {
+            noDelta: true,
             extra: this.extraSkip(),
             onProgress: (dirs, files) => {
               this.progress = { dirs, files, ...(expect ? { expect } : {}) }
@@ -312,6 +318,9 @@ export class IndexUnit {
     by: string
     limit?: number
   }): Promise<{ checked: number; added: number; removed: number }> {
+    // 整体核对正在跑就等那一次：定时、Agent 没找到、监听出错可能同时要核对，几十万个目录的根叠着跑几遍，
+    // 磁盘和内存都翻倍，状态也会被先跑完的那次改回「就绪」、后跑的还在核对（用户 2026-11-23 看到两处状态对不上）
+    if (!opts.under && this.whole) return this.whole
     const run = (async () => {
       if (this.state === 'building' || this.state === 'error') return { checked: 0, added: 0, removed: 0 }
       if (this.spec.vcsOnly && (this.vcs === 'git' || this.vcs === 'p4')) {
@@ -319,33 +328,46 @@ export class IndexUnit {
         return { checked: this.table.size.dirs, added: 0, removed: 0 }
       }
       const whole = !opts.under
+      const t0 = Date.now()
       if (whole) {
         this.state = 'verifying'
         this.onStatus()
       }
-      // P4：sync 过就强制整体重读（系统通知溢出时漏的也补上）
-      let force = false
-      if (whole && this.vcs === 'p4' && Date.now() - this.p4At > P4_PROBE_MS) {
-        this.p4At = Date.now()
-        const now = await p4HaveChange(this.root).catch(() => undefined)
-        if (now && this.p4Change && now !== this.p4Change) force = true
-        if (now) this.p4Change = now
+      try {
+        // P4：sync 过就强制整体重读（系统通知溢出时漏的也补上）
+        let force = false
+        if (whole && this.vcs === 'p4' && Date.now() - this.p4At > P4_PROBE_MS) {
+          this.p4At = Date.now()
+          const now = await p4HaveChange(this.root).catch(() => undefined)
+          if (now && this.p4Change && now !== this.p4Change) force = true
+          if (now) this.p4Change = now
+        }
+        const r = await verifyTree(this.table, this.root, this.rule, {
+          under: opts.under,
+          extra: this.extraSkip(),
+          force,
+          limit: opts.limit,
+        })
+        await this.settle(r, opts.by)
+        return { checked: r.checked, added: r.added.length, removed: r.removed.length }
+      } finally {
+        // 出错也要回到「就绪」：不然状态一直停在核对中，侧栏一直转
+        if (whole) {
+          this.verifiedAt = Date.now()
+          this.verifyMs = Date.now() - t0
+          if (this.state === 'verifying') this.state = 'ready'
+          this.onStatus()
+        }
       }
-      const r = await verifyTree(this.table, this.root, this.rule, {
-        under: opts.under,
-        extra: this.extraSkip(),
-        force,
-        limit: opts.limit,
-      })
-      if (whole) {
-        this.verifiedAt = Date.now()
-        this.state = 'ready'
-      }
-      await this.settle(r, opts.by)
-      if (whole) this.onStatus()
-      return { checked: r.checked, added: r.added.length, removed: r.removed.length }
     })()
-    if (!opts.under) this.running = run
+    if (!opts.under) {
+      this.running = run
+      this.whole = run
+      void run.then(
+        () => (this.whole = undefined),
+        () => (this.whole = undefined),
+      )
+    }
     return run
   }
 
@@ -419,11 +441,13 @@ export class IndexUnit {
   }
 
   /** 按文件夹取：先现场核对这一层（递归时这棵子树，最多 2000 个目录），结果总是和磁盘一致（设计稿 5.6） */
-  async list(rel: string, recursive: boolean, ext?: string[]) {
+  async list(rel: string, recursive: boolean, ext?: string[], dirsOnly?: boolean) {
     const r = rel.replace(/^\.?\/+|\/+$/g, '')
-    if (this.state === 'ready' || this.state === 'verifying')
-      await this.verify({ under: r, by: 'verify', limit: recursive ? 2000 : 1 })
-    return this.table.list(r, recursive, ext)
+    // 只取一层时现场核对这一层（一次 stat，很便宜）；整棵子树不现场核对：插件（GameTest、跳转索引）一打开页面就并发要好几棵，
+    // 每棵都 stat 上千个目录会把页面拖慢（用户 2026-11-23 反馈 GameTest 页一直转圈）；整棵靠系统通知和定时核对跟上
+    if (!recursive && (this.state === 'ready' || this.state === 'verifying'))
+      await this.verify({ under: r, by: 'verify', limit: 1 })
+    return this.table.list(r, recursive, ext, dirsOnly)
   }
 
   glob(patterns: string[]) {

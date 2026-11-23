@@ -33,6 +33,8 @@ const IDLE_MS = 30 * 60_000
 /** 一个根多久没核对就在查询时后台核对：有系统通知时 10 分钟，没有时 60 秒（设计稿 5.4） */
 const STALE_WATCHED_MS = 10 * 60_000
 const STALE_UNWATCHED_MS = 60_000
+/** 两次定时核对之间至少隔上次核对耗时的这么多倍 */
+const VERIFY_GAP_TIMES = 20
 
 let deps: RegistryDeps | undefined // 模块状态：接线，启动时 initFileIndex 设一次
 const units = new Map<string, { unit: IndexUnit; users: Set<string> }>() // 模块状态：缓存，丢了从落盘读回
@@ -135,11 +137,19 @@ export async function projectIndex(projectId: string): Promise<ProjectIndex | un
   if (!cur || cur.sig !== sig) {
     release(projectId)
     const keys: string[] = []
+    const own: Promise<boolean>[] = []
     for (const spec of specs) {
       const key = unitKey(spec)
       const had = units.get(key)
+      const mine = spec.source === 'project' || spec.source === 'doc'
       if (had) had.users.add(projectId)
-      else units.set(key, { unit: new IndexUnit(spec, () => pushStatus(key)), users: new Set([projectId]) })
+      else
+        units.set(key, {
+          // 引擎这类外部目录等项目自己的建好再开始：几份同时第一次建，内存峰值叠在一起
+          unit: new IndexUnit(spec, () => pushStatus(key), mine ? undefined : Promise.all(own)),
+          users: new Set([projectId]),
+        })
+      if (mine) own.push(units.get(key)!.unit.ready())
       keys.push(key)
     }
     projects.set(projectId, { sig, keys, usedAt: Date.now() })
@@ -290,10 +300,19 @@ export class ProjectIndex {
     this.units = units
   }
 
-  /** 都可查了（第一次建好）；timeoutMs 到了还没好返回 false */
-  async ready(timeoutMs = Infinity) {
-    const r = await Promise.all(this.units.map((u) => u.ready(timeoutMs)))
+  /**
+   * 都可查了（第一次建好）；timeoutMs 到了还没好返回 false。
+   * own 为 true 时只等项目目录和文档根：引擎这种外部大目录第一次建要好几分钟，查项目里的文件不该陪它等
+   */
+  async ready(timeoutMs = Infinity, own = false) {
+    const list = own ? this.units.filter((u) => u.spec.source === 'project' || u.spec.source === 'doc') : this.units
+    const r = await Promise.all(list.map((u) => u.ready(timeoutMs)))
     return r.every(Boolean)
+  }
+
+  /** 这个目录所在的那份索引还在第一次建立（表里只有一部分）：按目录取全的调用方应该自己走磁盘 */
+  partialAt(dir: string) {
+    return this.locate(dir)?.unit.state === 'building'
   }
 
   get building() {
@@ -310,7 +329,9 @@ export class ProjectIndex {
   private freshen() {
     for (const u of this.units) {
       if (u.state !== 'ready') continue
-      const limit = u.status().watching === 'system' ? STALE_WATCHED_MS : STALE_UNWATCHED_MS
+      // 核对一次要几十秒的大根（引擎目录几十万个目录）按耗时拉开间隔：不然没装监听时一分钟一次，几乎一直在核对
+      const base = u.status().watching === 'system' ? STALE_WATCHED_MS : STALE_UNWATCHED_MS
+      const limit = Math.max(base, (u.verifyMs ?? 0) * VERIFY_GAP_TIMES)
       if (Date.now() - (u.verifiedAt ?? 0) > limit) void u.verify({ by: 'verify' })
     }
   }
@@ -353,11 +374,17 @@ export class ProjectIndex {
     return out.sort((a, b) => a.score - b.score || a.path.length - b.path.length)
   }
 
-  async list(dir: string, opts: { recursive?: boolean; ext?: string[] } = {}) {
+  /** abs：直接给绝对路径（/ 分隔），不先转成相对项目根的写法再转回来（插件用，大目录上省一轮字符串） */
+  async list(dir: string, opts: { recursive?: boolean; ext?: string[]; dirsOnly?: boolean; abs?: boolean } = {}) {
     const at = this.locate(dir)
     if (!at) return undefined
-    const r = await at.unit.list(at.rel, !!opts.recursive, opts.ext)
+    const r = await at.unit.list(at.rel, !!opts.recursive, opts.ext, opts.dirsOnly)
     if (!r) return undefined
+    if (opts.abs) {
+      const pre = at.unit.root.split(path.sep).join('/').replace(/\/$/, '')
+      const absOf = (rel: string) => (rel ? `${pre}/${rel}` : pre)
+      return { files: r.files.map(absOf), dirs: r.dirs.map(absOf) }
+    }
     return {
       files: r.files.map((f) => this.show(at.unit, f).shown),
       dirs: r.dirs.map((d) => this.show(at.unit, d).shown),

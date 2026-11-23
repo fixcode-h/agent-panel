@@ -75,6 +75,15 @@ test('面板写了文件：touch 返回时已经能查到；外面删的文件 r
   )
 })
 
+test('同时要整体核对时只跑一次，核对完状态回到就绪', async () => {
+  const idx = (await projectIndex('p1'))!
+  const [a, b] = [idx.refresh(), idx.refresh()]
+  assert.equal((await statusOf('p1'))!.state, 'verifying')
+  const [ra, rb] = await Promise.all([a, b])
+  assert.deepEqual(ra, rb, '第二次等的是同一次核对')
+  assert.equal((await statusOf('p1'))!.state, 'ready')
+})
+
 test('file_index 工具：找到的给相对路径，没找到时说明排除目录', async () => {
   const run = fileIndexRun({ projectId: 'p1', projectPath: root, workDir: root, exclude: ['Saved'] })
   const hit = await run({ action: 'find', query: 'wbp' })

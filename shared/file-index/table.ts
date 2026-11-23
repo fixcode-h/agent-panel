@@ -152,21 +152,26 @@ export class NameTable {
     this.dirs.delete(rel)
   }
 
-  /** 按文件夹取：一层（文件和子目录名），或整棵子树的文件 */
-  list(rel: string, recursive: boolean, ext?: string[]): { files: string[]; dirs: string[] } | undefined {
+  /** 按文件夹取：一层（文件和子目录名），或整棵子树的文件；dirsOnly 只要目录（不拼文件路径，大目录省很多内存） */
+  list(
+    rel: string,
+    recursive: boolean,
+    ext?: string[],
+    dirsOnly = false,
+  ): { files: string[]; dirs: string[] } | undefined {
     const root = this.dir(rel)
     if (!root) return undefined
     const exts = normExt(ext)
     const okExt = (n: string) => !exts || exts.some((e) => n.toLowerCase().endsWith(e))
     if (!recursive)
       return {
-        files: root.files.filter(okExt).map((f) => join(root.rel, f)),
+        files: dirsOnly ? [] : root.files.filter(okExt).map((f) => join(root.rel, f)),
         dirs: root.subdirs.map((d) => join(root.rel, d)),
       }
     const files: string[] = []
     const dirs: string[] = []
     const walk = (d: DirRec) => {
-      for (const f of d.files) if (okExt(f)) files.push(join(d.rel, f))
+      if (!dirsOnly) for (const f of d.files) if (okExt(f)) files.push(join(d.rel, f))
       for (const s of d.subdirs) {
         const kid = this.dirs.get(join(d.rel, s))
         if (!kid) continue
@@ -264,23 +269,37 @@ export class NameTable {
   // ---------- 落盘（文本：一行一个目录 `mtime\t相对路径\t文件名\0文件名…\t子目录\0子目录…`） ----------
 
   toLines(): string[] {
-    const out: string[] = []
-    for (const d of this.dirs.values()) out.push(`${d.mtime}\t${d.rel}\t${d.files.join('\0')}\t${d.subdirs.join('\0')}`)
-    return out
+    return [...this.dirs.values()].map(lineOf)
   }
 
   static fromLines(lines: string[]): NameTable {
-    const t = new NameTable()
+    const recs: DirRec[] = []
     for (const line of lines) {
       if (!line) continue
       const [m, rel, files, subdirs] = line.split('\t')
-      const fl = files ? files.split('\0') : []
-      t.dirs.set(rel, { rel, mtime: Number(m) || 0, files: fl, subdirs: subdirs ? subdirs.split('\0') : [] })
-      t.fileCount += fl.length
+      recs.push({
+        rel,
+        mtime: Number(m) || 0,
+        files: files ? files.split('\0') : [],
+        subdirs: subdirs ? subdirs.split('\0') : [],
+      })
+    }
+    return NameTable.fromDirs(recs)
+  }
+
+  /** 按已经拆好的目录记录建（落盘读回用：服务端直接从解压出的字节里拆，不经过整份大字符串） */
+  static fromDirs(recs: Iterable<DirRec>): NameTable {
+    const t = new NameTable()
+    for (const d of recs) {
+      t.dirs.set(d.rel, d)
+      t.fileCount += d.files.length
     }
     return t
   }
 }
+
+/** 落盘的一行：`mtime\t相对路径\t文件名\0文件名…\t子目录\0子目录…` */
+export const lineOf = (d: DirRec) => `${d.mtime}\t${d.rel}\t${d.files.join('\0')}\t${d.subdirs.join('\0')}`
 
 function normExt(ext: string[] | undefined) {
   const list = (ext ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean)
