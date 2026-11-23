@@ -19,7 +19,7 @@ export interface ModuleDoc {
   status: ModuleDocStatus
   /** 一句话职责 */
   role: string
-  /** 源码路径（相对项目根，原样保留反引号外的写法） */
+  /** 源码路径（应写相对项目根的路径；原样保留文档里的写法，查文件前用 sourcePathOf 规整） */
   sources: string[]
   entry: string[]
   keywords: string[]
@@ -95,6 +95,41 @@ export function parseModuleDoc(name: string, text: string): ModuleDoc | null {
     else if (key === 'sources' || key === 'entry' || key === 'keywords' || key === 'deps') doc[key] = items(v)
   }
   return doc
+}
+
+/**
+ * 源码一项里的路径部分：去掉结尾的位置后缀（「:120」「:12-30」「#L12」），反斜杠换成 /，去掉开头的 ./。
+ * 为什么：文档规范不让写行号，但模型照样会写成 `Foo.cpp:120`，原样拿去查文件就成了「源码不在了」的误报
+ */
+export function sourcePathOf(src: string): string {
+  return src
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/(?:#L\d+(?:-L?\d+)?|(?::\d+(?:[-:]\d+)?)+)$/, '')
+    .replace(/^\.\//, '')
+}
+
+/** 已经过 sourcePathOf 的路径是不是绝对路径（盘符、UNC、/ 或 ~ 开头）：模块文档的「源码」应该写相对项目根的路径 */
+export const isAbsoluteSource = (p: string) => /^(?:[A-Za-z]:\/|\/|~\/)/.test(p)
+
+/**
+ * 绝对路径可能对应的相对项目根写法，最可能的在前：
+ * 1. 就在本机项目根下：直接截掉项目根；
+ * 2. 别人的工作区（P4 共用文档时各人的工作区根不同）：路径里出现项目目录名，就截它后面的部分；
+ * 3. 再从长到短试后缀（至少两段），由调用方逐个看本机有没有。
+ * 只做字符串处理，文件在不在由 server/docs/source-path.ts 查
+ */
+export function relativeCandidates(abs: string, projectRoot: string): string[] {
+  const p = sourcePathOf(abs).replace(/\/+$/, '')
+  const root = sourcePathOf(projectRoot).replace(/\/+$/, '')
+  const out: string[] = []
+  if (root && p.toLowerCase().startsWith(`${root.toLowerCase()}/`)) out.push(p.slice(root.length + 1))
+  const segs = p.split('/').filter((x) => x && !/^[A-Za-z]:$/.test(x) && x !== '~')
+  const base = root.split('/').pop()?.toLowerCase()
+  const at = base ? segs.map((x) => x.toLowerCase()).lastIndexOf(base) : -1
+  if (at >= 0 && at < segs.length - 1) out.push(segs.slice(at + 1).join('/'))
+  for (let i = 1; i <= segs.length - 2; i++) out.push(segs.slice(i).join('/'))
+  return [...new Set(out)]
 }
 
 /** 表格单元格里的 `|` 要转义，不然列数对不上 */
