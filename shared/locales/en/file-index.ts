@@ -30,6 +30,7 @@ export const EN_FILE_INDEX: Record<string, string> = {
   '核对了 {n} 个目录：新增 {a} 个、删除 {r} 个文件': 'Checked {n} folders: {a} files added, {r} removed',
   建立中: 'Building',
   已就绪: 'Ready',
+  核对中: 'Checking',
   '{files} 个文件': '{files} files',
   '{dirs} 个目录': '{dirs} folders',
   文件索引建立进度: 'File index build progress',

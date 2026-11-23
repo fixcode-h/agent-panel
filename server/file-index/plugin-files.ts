@@ -15,18 +15,19 @@ export function pluginFilesApi(pluginId: string): PluginFiles {
       if (!id) return undefined
       const idx = await projectIndex(id)
       if (!idx) return undefined
-      const absOf = (p: string) => slash(path.isAbsolute(p) ? p : path.join(idx.projectPath, p))
       const view: PluginFileIndex = {
         projectPath: idx.projectPath,
-        ready: (ms) => idx.ready(ms),
+        // 只等项目自己的根：引擎目录还在建时项目里的文件已经能查（引擎目录的 list 在下面单独判断）
+        ready: (ms) => idx.ready(ms, true),
         find: (q, o = {}) =>
           idx.find(q, { under: o.under, ext: o.ext, dirs: o.dirs, cap: o.limit ?? 5000 }).map((h) => slash(h.abs)),
         list: async (dir, o) => {
-          const r = await idx.list(dir, o)
-          return r && { files: r.files.map(absOf), dirs: r.dirs.map(absOf) }
+          // 那份索引还没建完：给 undefined，插件照旧自己走目录，别拿半份当全的
+          if (idx.partialAt(dir)) return undefined
+          return idx.list(dir, { ...o, abs: true })
         },
         glob: (dir, patterns) => idx.glob(dir, patterns).map(slash),
-        has: (abs) => idx.has(abs),
+        has: (abs) => (idx.partialAt(abs) ? undefined : idx.has(abs)),
         onChange: (dirs, cb) =>
           idx.onChange(
             dirs.map((d) => path.resolve(d)),

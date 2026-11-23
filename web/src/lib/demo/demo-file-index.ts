@@ -12,6 +12,8 @@ import { DEMO_FILE_INDEX_EVENT } from '@/lib/live/file-index-status'
 interface DemoIndex {
   /** 演示的重建：开始的时间，建完清掉（进度按过去了多久算） */
   buildingSince?: number
+  /** 演示的「增量更新」：核对中，核对完清掉（状态卡和侧栏都显示核对中） */
+  verifying?: boolean
   table: NameTable
   builtAt: number
   buildMs: number
@@ -21,6 +23,8 @@ const indexes = new Map<string, DemoIndex>() // 演示的索引只在这一页�
 const BYTES_PER_FILE = 18
 /** 演示的重建用这么久：侧栏底部的进度和状态卡的「建立中」看得见 */
 const DEMO_BUILD_MS = 4000
+/** 演示的核对用这么久：超过侧栏的 1.5 秒门槛，看得见两处一起显示核对中、核对完一起收 */
+const DEMO_VERIFY_MS = 5000
 /** 演示的「目录」规模：进度条上的数假装是个中等项目 */
 const DEMO_DIRS = 3200
 const DEMO_FILES_SHOWN = 41_000
@@ -66,7 +70,7 @@ function statusOf(p: Project): FileIndexStatus {
   return {
     projectId: p.id,
     enabled: true,
-    state: 'ready',
+    state: x.verifying ? 'verifying' : 'ready',
     files,
     dirs,
     bytes,
@@ -76,7 +80,7 @@ function statusOf(p: Project): FileIndexStatus {
         root: p.path,
         source: 'project',
         vcs: 'git',
-        state: 'ready',
+        state: x.verifying ? 'verifying' : 'ready',
         files,
         dirs,
         bytes,
@@ -104,10 +108,12 @@ const csv = (v: string | null) =>
     .map((x) => x.trim())
     .filter(Boolean)
 
+const emitOf = (p: Project) => () =>
+  window.dispatchEvent(new CustomEvent(DEMO_FILE_INDEX_EVENT, { detail: { projectId: p.id, status: statusOf(p) } }))
+
 function simulateBuild(p: Project, x: DemoIndex) {
   x.buildingSince = Date.now()
-  const emit = () =>
-    window.dispatchEvent(new CustomEvent(DEMO_FILE_INDEX_EVENT, { detail: { projectId: p.id, status: statusOf(p) } }))
+  const emit = emitOf(p)
   const timer = setInterval(() => {
     if (Date.now() - (x.buildingSince ?? 0) >= DEMO_BUILD_MS) {
       clearInterval(timer)
@@ -156,8 +162,18 @@ export function demoProjectFileIndex(
     return r ?? fail('索引里没有这个目录（不存在，或在排除目录里）', 404)
   }
   if (action === 'refresh' && method === 'POST') {
-    x.changedAt = Date.now()
-    return { checked: x.table.size.dirs, added: 0, removed: 0 }
+    // 和正式版一样：核对期间推「核对中」，核对完推「就绪」再回结果
+    const emit = emitOf(p)
+    x.verifying = true
+    emit()
+    return new Promise((done) =>
+      setTimeout(() => {
+        x.verifying = false
+        x.changedAt = Date.now()
+        emit()
+        done({ checked: x.table.size.dirs, added: 0, removed: 0 })
+      }, DEMO_VERIFY_MS),
+    )
   }
   // 演示没有推送通道：重建假装建几秒，进度在页面里发窗口事件（和正式版的推送同一种数据）
   if (action === 'rebuild' && method === 'POST') {

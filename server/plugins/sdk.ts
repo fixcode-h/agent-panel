@@ -272,10 +272,13 @@ export interface PluginFileIndex {
   ready: (timeoutMs?: number) => Promise<boolean>
   /** 按名字找：空格分隔的词都要命中，带 * ? 的按通配；under 限定目录（绝对路径）；返回绝对路径 */
   find: (q: string, opts?: { under?: string[]; ext?: string[]; dirs?: boolean; limit?: number }) => string[]
-  /** 按文件夹取（返回前现场核对这一层，结果和磁盘一致）；不在索引里返回 undefined */
+  /**
+   * 按文件夹取（只取一层时返回前现场核对这一层）；不在索引里、那份索引还在第一次建立时返回 undefined。
+   * 整棵子树尽量带 ext 或 dirsOnly：大项目整棵几十万个文件，全拿出来很占内存
+   */
   list: (
     dir: string,
-    opts?: { recursive?: boolean; ext?: string[] },
+    opts?: { recursive?: boolean; ext?: string[]; dirsOnly?: boolean },
   ) => Promise<{ files: string[]; dirs: string[] } | undefined>
   /** 按通配一次拿全：patterns 相对 dir，`**` 跨层、`*` 不跨层；返回绝对路径 */
   glob: (dir: string, patterns: string[]) => string[]

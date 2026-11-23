@@ -6,7 +6,7 @@ import { fmtDuration } from '@shared/duration'
 import { timeAgo } from '@shared/children/activity'
 import { t } from '@shared/i18n'
 import { call } from '@/lib/api/call'
-import { useFileIndexStatus } from '@/lib/live/file-index-status'
+import { fileIndexPhase, useFileIndexStatus } from '@/lib/live/file-index-status'
 import { useNav } from '@/lib/data'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
@@ -57,7 +57,8 @@ export function FileIndexStatusCard({ projectId }: { projectId: string }) {
 
   if (!s || !s.enabled) return null
   const main = s.roots.find((r) => r.source === 'project') ?? s.roots[0]
-  const building = s.state === 'building'
+  const phase = fileIndexPhase(s)
+  const building = phase === 'building'
   const prog = s.roots.find((r) => r.progress)?.progress
   const latest = Math.max(0, ...s.roots.map((r) => r.changedAt ?? 0))
   const latestBy = s.roots.find((r) => r.changedAt === latest)?.lastBy
@@ -68,8 +69,12 @@ export function FileIndexStatusCard({ projectId }: { projectId: string }) {
           <StatusPill tone="run" spin>
             {t('建立中')}
           </StatusPill>
-        ) : s.state === 'error' ? (
+        ) : phase === 'error' ? (
           <StatusPill tone="err">{t('出错')}</StatusPill>
+        ) : phase === 'checking' ? (
+          <StatusPill tone="run" spin>
+            {t('核对中')}
+          </StatusPill>
         ) : (
           <StatusPill tone="ok">{t('已就绪')}</StatusPill>
         )}
@@ -114,7 +119,7 @@ export function FileIndexStatusCard({ projectId }: { projectId: string }) {
           : t('盯着改动：不用系统通知，查询时超过 1 分钟没核对就先按目录核对')}
       </span>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="secondary" size="sm" onClick={refresh} disabled={!!busy || building}>
+        <Button variant="secondary" size="sm" onClick={refresh} disabled={!!busy || building || phase === 'checking'}>
           <RefreshCw className={busy === 'refresh' ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
           {t('增量更新')}
         </Button>

@@ -64,6 +64,8 @@ export async function readTree(
     extra?: ExtraSkip
     onProgress?: (dirs: number, files: number) => void
     signal?: AbortSignal
+    /** 第一次整份建时不记增删：几十万条路径只为了扔掉，大目录（引擎）上白占几百兆 */
+    noDelta?: boolean
   } = {},
 ): Promise<TableDelta> {
   const queue = [...(opts.start ?? [''])]
@@ -80,12 +82,14 @@ export async function readTree(
         void readLevel(root, rel, rule, opts.extra)
           .then((lv) => {
             if (!lv) {
-              delta.removed.push(...table.removeDir(rel))
+              for (const f of table.removeDir(rel)) delta.removed.push(f)
               return
             }
             const d = table.setDir(rel, lv.mtime, lv.files, lv.subdirs)
-            delta.added.push(...d.added)
-            delta.removed.push(...d.removed)
+            if (!opts.noDelta) {
+              for (const f of d.added) delta.added.push(f)
+              for (const f of d.removed) delta.removed.push(f)
+            }
             queue.push(...d.newDirs)
             dirs++
             files += lv.files.length
@@ -117,7 +121,9 @@ export async function verifyTree(
   opts: { under?: string; extra?: ExtraSkip; force?: boolean; limit?: number } = {},
 ): Promise<TableDelta & { checked: number; changedDirs: number }> {
   const under = opts.under?.replace(/^\/+|\/+$/g, '') ?? ''
-  let list = [...table.allDirs()].filter((d) => !under || d.rel === under || d.rel.startsWith(`${under}/`))
+  // 只收要核对的那些：不先把全部目录摊成数组（引擎几十万个目录，每次核对一棵小子树都摊一遍很费内存）
+  let list: { rel: string; mtime: number }[] = []
+  for (const d of table.allDirs()) if (!under || d.rel === under || d.rel.startsWith(`${under}/`)) list.push(d)
   // 只核对前几个时先核对浅的（按文件夹取只核对它自己这一层）
   if (opts.limit !== undefined && list.length > opts.limit)
     list = list.sort((a, b) => a.rel.length - b.rel.length).slice(0, opts.limit)
