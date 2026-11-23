@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { t, templateOf } from '@shared/i18n'
 import {
   clampDialogSize,
   modalSizeBounds,
@@ -140,4 +141,13 @@ test('恢复记忆值时要重新过一遍当前视口约束', () => {
   assert.ok(restored)
   // 窗口缩到 1000x700：恢复的尺寸收进 940x640
   assert.deepEqual(clampDialogSize(restored, bounds(1000, 700)), { w: 940, h: 640 })
+})
+
+test('标题带变量的弹窗按原句模板记尺寸：换个名字还是同一份记忆', () => {
+  const a = t('删除「{name}」？', { name: 'A' })
+  const b = t('删除「{name}」？', { name: 'B' })
+  assert.notEqual(a, b)
+  assert.equal(modalSizeKey(undefined, templateOf(a), 'md'), modalSizeKey(undefined, templateOf(b), 'md'))
+  // 不带变量的标题原样
+  assert.equal(templateOf('设置'), '设置')
 })

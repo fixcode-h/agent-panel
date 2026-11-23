@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { cn } from '@/lib/utils'
-import { t } from '@shared/i18n'
+import { t, templateOf } from '@shared/i18n'
 import {
   clampDialogSize,
   modalSizeBounds,
@@ -84,7 +84,8 @@ export function useModalResize({
   // 最新的 title 放 ref：可能每次渲染都是新的 JSX，放进 effect 依赖会让拖拽过程中反复重算并重置尺寸
   const titleRef = useRef(title)
   titleRef.current = title
-  const key = modalSizeKey(resizeKey, typeof title === 'string' ? title : domTitle, tier)
+  // 按标题的原句模板记：标题里带名字、参数（「参数 {p} 关联表格」）时同一种弹窗共用一份尺寸
+  const key = modalSizeKey(resizeKey, templateOf(typeof title === 'string' ? title : domTitle), tier)
   const contentRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<DialogSize | null>(null)
   const [cursor, setCursor] = useState<string | null>(null)
@@ -114,7 +115,7 @@ export function useModalResize({
       return
     }
     const store = localStore()
-    const stored = store ? readModalSize(store, modalSizeKey(resizeKey, text, tier)) : null
+    const stored = store ? readModalSize(store, modalSizeKey(resizeKey, templateOf(text), tier)) : null
     setSize(stored ? clampDialogSize(stored, viewportBounds()) : null)
   }, [open, key, domTitle, resizeKey, tier])
 
