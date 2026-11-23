@@ -32,7 +32,10 @@ export function GeneralPage({
   globalFormat,
   analyzing,
   onStartInit,
+  item,
 }: {
+  /** 打开时要滚到的那一项：file-index（侧栏底部的索引状态点进来） */
+  item?: string
   project?: Project
   draft: ProjectInput
   set: SetField
@@ -171,6 +174,7 @@ export function GeneralPage({
           value={draft.fileIndex}
           onChange={(v) => set('fileIndex', v)}
           vcs={vcs}
+          focus={item === 'file-index'}
         />
         <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
         <CodeIndexField value={draft.codeIndexTools} onChange={(v) => set('codeIndexTools', v)} />

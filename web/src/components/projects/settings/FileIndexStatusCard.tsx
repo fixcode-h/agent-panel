@@ -1,20 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ArrowRight, Database, Eye, RefreshCw } from 'lucide-react'
 import { fileIndexContract as C } from '@shared/api-contract/file-index'
-import type { FileIndexStatus } from '@shared/file-index/types'
 import { formatBytes } from '@shared/memory'
 import { fmtDuration } from '@shared/duration'
 import { timeAgo } from '@shared/children/activity'
 import { t } from '@shared/i18n'
 import { call } from '@/lib/api/call'
-import { openPageStream } from '@/lib/live/page-stream'
+import { useFileIndexStatus } from '@/lib/live/file-index-status'
 import { useNav } from '@/lib/data'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { StatusPill } from '@/components/ui/status-pill'
 
-const demo = !!import.meta.env.VITE_DEMO
 const ago = (ms?: number) => (ms ? timeAgo(new Date(ms).toISOString()) : '')
 
 const BY: Record<string, () => string> = {
@@ -31,24 +29,8 @@ const BY: Record<string, () => string> = {
  */
 export function FileIndexStatusCard({ projectId }: { projectId: string }) {
   const { openSettings } = useNav()
-  const [s, setS] = useState<FileIndexStatus>()
+  const [s, setS] = useFileIndexStatus(projectId, (e) => toast.error(e.message))
   const [busy, setBusy] = useState<'refresh' | 'rebuild'>()
-  useEffect(() => {
-    call(C.status, { params: { id: projectId } })
-      .then(setS)
-      .catch((e) => toast.error((e as Error).message))
-    if (demo) return
-    const stream = openPageStream()
-    stream.on('file-index', (e) => {
-      try {
-        const m = JSON.parse(e.data) as { projectId: string; status: FileIndexStatus }
-        if (m.projectId === projectId) setS(m.status)
-      } catch {
-        // 坏的一条推送不影响下一条
-      }
-    })
-    return () => stream.close()
-  }, [projectId])
 
   const refresh = async () => {
     setBusy('refresh')

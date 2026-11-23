@@ -59,6 +59,7 @@ import { rememberProjectRoute } from '@/lib/projects/return-route'
 import type { PluginPage } from '@/plugins/sdk'
 import { ProjectPicker } from './sidebar/ProjectPicker'
 import { ProjectTools } from './sidebar/ProjectTools'
+import { FileIndexSidebarStatus } from './sidebar/FileIndexSidebarStatus'
 import { ProjectTasks } from './sidebar/ProjectTasks'
 import { useProjectActions } from './sidebar/project-actions'
 import { projectStats } from './sidebar/project-stats'
@@ -510,6 +511,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               />
             )
           )}
+        </div>
+      )}
+
+      {/* 后台在建文件索引时侧栏底部给个进度（用户 2026-11-23），就绪就不画 */}
+      {!chatMode && current && (
+        <div className="shrink-0 px-2.5 pb-2 empty:hidden">
+          <FileIndexSidebarStatus projectId={current.id} />
         </div>
       )}
 

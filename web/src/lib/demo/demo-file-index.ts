@@ -7,8 +7,11 @@ import { fileIndexPage, fileIndexSettingsOf, type FileIndexStatus } from '@share
 import type { Project } from '@shared/schema'
 import { DEMO_FILES } from './demo-project-files'
 import { fail } from './demo-http'
+import { DEMO_FILE_INDEX_EVENT } from '@/lib/live/file-index-status'
 
 interface DemoIndex {
+  /** 演示的重建：开始的时间，建完清掉（进度按过去了多久算） */
+  buildingSince?: number
   table: NameTable
   builtAt: number
   buildMs: number
@@ -16,6 +19,11 @@ interface DemoIndex {
 }
 const indexes = new Map<string, DemoIndex>() // 演示的索引只在这一页里
 const BYTES_PER_FILE = 18
+/** 演示的重建用这么久：侧栏底部的进度和状态卡的「建立中」看得见 */
+const DEMO_BUILD_MS = 4000
+/** 演示的「目录」规模：进度条上的数假装是个中等项目 */
+const DEMO_DIRS = 3200
+const DEMO_FILES_SHOWN = 41_000
 
 function indexOf(projectId: string): DemoIndex {
   let x = indexes.get(projectId)
@@ -31,6 +39,28 @@ function statusOf(p: Project): FileIndexStatus {
   const s = fileIndexSettingsOf(p)
   if (!s.enabled) return { projectId: p.id, enabled: false, state: 'off', files: 0, dirs: 0, bytes: 0, roots: [] }
   const x = indexOf(p.id)
+  if (x.buildingSince) {
+    const f = Math.min(1, (Date.now() - x.buildingSince) / DEMO_BUILD_MS)
+    const progress = { dirs: Math.round(DEMO_DIRS * f), files: Math.round(DEMO_FILES_SHOWN * f) }
+    const root = {
+      key: `demo-${p.id}`,
+      root: p.path,
+      source: 'project',
+      vcs: 'git' as const,
+      files: progress.files,
+      dirs: progress.dirs,
+      bytes: 0,
+    }
+    return {
+      projectId: p.id,
+      enabled: true,
+      state: 'building',
+      files: progress.files,
+      dirs: progress.dirs,
+      bytes: 0,
+      roots: [{ ...root, state: 'building' as const, progress, watching: 'none' as const }],
+    }
+  }
   const { files, dirs } = x.table.size
   const bytes = files * BYTES_PER_FILE + 64
   return {
@@ -74,6 +104,23 @@ const csv = (v: string | null) =>
     .map((x) => x.trim())
     .filter(Boolean)
 
+function simulateBuild(p: Project, x: DemoIndex) {
+  x.buildingSince = Date.now()
+  const emit = () =>
+    window.dispatchEvent(new CustomEvent(DEMO_FILE_INDEX_EVENT, { detail: { projectId: p.id, status: statusOf(p) } }))
+  const timer = setInterval(() => {
+    if (Date.now() - (x.buildingSince ?? 0) >= DEMO_BUILD_MS) {
+      clearInterval(timer)
+      x.buildingSince = undefined
+      x.table = tableFromPaths(DEMO_FILES)
+      x.builtAt = x.changedAt = Date.now()
+      x.buildMs = DEMO_BUILD_MS
+    }
+    emit()
+  }, 300)
+  emit()
+}
+
 /** /projects/:id/file-index[/find|list|refresh|rebuild] */
 export function demoProjectFileIndex(
   method: string,
@@ -112,11 +159,9 @@ export function demoProjectFileIndex(
     x.changedAt = Date.now()
     return { checked: x.table.size.dirs, added: 0, removed: 0 }
   }
-  // 演示没有推送通道：重建当场做完（文件就二十几个），直接回建好的状态
+  // 演示没有推送通道：重建假装建几秒，进度在页面里发窗口事件（和正式版的推送同一种数据）
   if (action === 'rebuild' && method === 'POST') {
-    x.table = tableFromPaths(DEMO_FILES)
-    x.builtAt = x.changedAt = Date.now()
-    x.buildMs = 12
+    if (!x.buildingSince) simulateBuild(p, x)
     return statusOf(p)
   }
   return fail('没有这个接口', 404)
