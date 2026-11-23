@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import {
   Code2,
   Copy,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { Attachment, TaskMessage } from '@shared/schema'
 import { attachChip } from '@shared/composer'
+import { compValue } from '@shared/component-style'
 import { t } from '@shared/i18n'
 import {
   chatAttachments,
@@ -21,6 +22,7 @@ import {
   codeFileName,
   type ChatCode,
 } from '@/lib/chat-rail'
+import { componentsSnapshot, subscribeComponents } from '@/lib/appearance'
 import { copyText } from '@/lib/copy-text'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
@@ -41,15 +43,29 @@ import { Markdown } from './Markdown'
 
 export type ChatRailTab = 'code' | 'sources' | 'files' | 'written'
 
-/** 三个页签各有几项：标题栏的右栏开关按它判断有没有东西可看（都没有时禁用） */
+/**
+ * 三个页签各有几项：标题栏的右栏开关按它判断有没有东西可看（都没有时禁用）。
+ * quiet：只有联网来源、没有代码和文件时不自动打开右栏（来源动辄几十条，默认展开占一大块，用户 2026-11-23），
+ * 点标题栏的右栏开关再看；设置 → 组件 →「来源列表」能改回自动打开
+ */
 export function useChatRail(messages: readonly TaskMessage[]) {
+  const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
+  const autoOpen = compValue(style, 'sourceList', 'autoOpen') === true
   return useMemo(() => {
     const code = chatCodeBlocks(messages)
     const sources = chatSources(messages)
     const files = chatAttachments(messages)
     const written = chatWrittenFiles(messages)
-    return { code, sources, files, written, empty: !code.length && !sources.length && !files.length && !written.length }
-  }, [messages])
+    const others = code.length + files.length + written.length
+    return {
+      code,
+      sources,
+      files,
+      written,
+      empty: !others && !sources.length,
+      quiet: !others && sources.length > 0 && !autoOpen,
+    }
+  }, [messages, autoOpen])
 }
 
 const NO_TEAM = new Set<string>()

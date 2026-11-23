@@ -1225,6 +1225,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .and(c.locator('[disabled]'))
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('Chat 右栏：什么都没有的聊天右栏开关没有禁用'))
+    // 只有联网来源的聊天：右栏默认不打开（来源不默认展开），点开关才显示来源，再点收起
+    await list.getByTitle('这周的 AI 新闻', { exact: true }).click()
+    await c.getByText('这周值得看的几条').first().waitFor({ timeout: 5000 })
+    if (await rail.count()) errors.push('Chat 右栏：只有来源的聊天默认就打开了右栏')
+    const railBtn = c.getByRole('button', { name: '开关右栏' })
+    if (await railBtn.isDisabled()) errors.push('Chat 右栏：只有来源的聊天右栏开关被禁用了')
+    await railBtn.click()
+    await rail.waitFor({ timeout: 5000 }).catch(() => errors.push('Chat 右栏：只有来源时点开关右栏没打开'))
+    if ((await rail.locator('a[href^="https://"]').count()) !== 12)
+      errors.push('Chat 右栏：只有来源时打开的右栏没列出全部 12 条来源')
+    await check(c, 'Chat-右栏-只有来源', ['news.example.com'])
+    await railBtn.click()
+    await rail
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('Chat 右栏：只有来源时再点开关没收起'))
     // Chat 模式用 CLI 自带的待办（ADR 0038）：输入框上方一行「待办 1/3 · 当前步骤」，点开看全部步骤
     await list.getByTitle('整理一份 Claude Code 和 Codex 的能力对照', { exact: true }).click()
     const todoRow = c.locator('[data-status-row="todos"]')

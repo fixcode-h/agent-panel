@@ -63,6 +63,11 @@ export function useTaskPanes(c: TaskPanesCtx) {
   // run 为 0 是认不回来是哪次运行（调用失败、还没开始），按「没有启动运行」显示原因
   const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse; tab?: RunTab } | null>(null)
   const [chatRailOn, setChatRailOn] = useState(() => readStored(CHAT_RAIL_KEY) !== 'closed')
+  // 只有来源时右栏默认不开（useChatRail 的 quiet）：点开关看一眼只算这段聊天，不改上面那个全局开关；换对话就复原
+  const [chatRailPeek, setChatRailPeek] = useState(false)
+  useEffect(() => setChatRailPeek(false), [taskId])
+  /** Chat 右栏这时该不该开：只有来源（quiet）时看这段聊天里点没点开，否则跟全局开关 */
+  const chatRailOpen = (quiet: boolean) => (quiet ? chatRailPeek : chatRailOn)
   const toggleChatRail = () =>
     setChatRailOn((v) => {
       writeStored(CHAT_RAIL_KEY, v ? 'closed' : '')
@@ -207,6 +212,8 @@ export function useTaskPanes(c: TaskPanesCtx) {
     setPaneRun,
     chatRailOn,
     toggleChatRail,
+    chatRailOpen,
+    setChatRailPeek,
     openChildIn,
     openChildRow,
     childSummaryAt,

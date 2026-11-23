@@ -54,6 +54,7 @@ export const compLabel = (c: CompName) =>
     changesCard: t('改动卡片'),
     versionDiff: t('版本差异'),
     foldBar: t('折叠条'),
+    sourceList: t('来源列表'),
     liveText: t('实时输出'),
     styleRef: t('风格参考图'),
     toast: t('提示'),
@@ -92,6 +93,7 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'versionDiff')
     return ({ navW: t('版本列表默认宽度'), msgLines: t('提交说明显示几行') } as Record<string, string>)[prop]
   if (c === 'foldBar' && prop === 'hint') return t('右边写「展开 / 收起」')
+  if (c === 'sourceList' && prop === 'autoOpen') return t('只有来源时也自动打开右栏')
   if (c === 'liveText')
     return (
       { maxH: t('正在输出时最多多高'), bar: t('左边竖线'), draft: t('「正在写」下面显示写到哪了') } as Record<

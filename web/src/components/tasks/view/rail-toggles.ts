@@ -12,6 +12,8 @@ export interface RailTogglesCtx {
   filesYield: boolean
   chatRailWanted: boolean
   chatRailShown: boolean
+  /** 只有来源：右栏开关只管这段聊天里看一眼（panes.chatRailPeek），不动全局开关 */
+  chatRail: { quiet: boolean }
   reportOn: boolean
   closeReport: () => void
 }
@@ -21,9 +23,11 @@ export function railToggles({
   filesYield,
   chatRailWanted,
   chatRailShown,
+  chatRail,
   reportOn,
   closeReport,
 }: RailTogglesCtx) {
+  const toggleChat = () => (chatRail.quiet ? panes.setChatRailPeek((v) => !v) : panes.toggleChatRail())
   return {
     session: (v: boolean) => {
       panes.setSessionOpen(v)
@@ -32,7 +36,7 @@ export function railToggles({
       // 放不下时右侧那一栏是给会话栏让开、只是没显示：收起会话栏时一起记成收起，
       // 不然它会立刻补回原位，看起来像右边的面板没收起来（用户报「收起面板点击无效」）
       else if (filesYield) panes.toggleFiles()
-      else if (chatRailWanted && !chatRailShown) panes.toggleChatRail()
+      else if (chatRailWanted && !chatRailShown) toggleChat()
     },
     reportWide: () => {
       if (reportOn) return closeReport()
@@ -55,7 +59,7 @@ export function railToggles({
       panes.setLastRail('files')
       // 给会话栏让开了位置的：点了就换回右栏，不是收起
       if (chatRailWanted && !chatRailShown) return
-      panes.toggleChatRail()
+      toggleChat()
     },
   }
 }

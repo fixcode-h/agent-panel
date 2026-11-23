@@ -10,4 +10,6 @@ export const EN_FOLD_BAR: Record<string, string> = {
   '派子对话 · 发消息': 'Started a sub-chat · sent a message',
   收起改动: 'Hide changes',
   展开改动: 'Show changes',
+  来源列表: 'Source list',
+  只有来源时也自动打开右栏: 'Open the right panel automatically when it only has sources',
 }
