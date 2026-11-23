@@ -21,6 +21,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'shared/i18n': () => import('@shared/i18n'),
   'shared/local-image': () => import('@shared/local-image'),
   'shared/local-prompts': () => import('@shared/local-prompts'),
+  'shared/mirrors/registry': () => import('@shared/mirrors/registry'),
   'shared/moss': () => import('@shared/moss'),
   'shared/pinyin': () => import('@shared/pinyin'),
   'shared/text-match/index': () => import('@shared/text-match/index'),

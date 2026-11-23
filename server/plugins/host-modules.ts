@@ -19,6 +19,7 @@ import * as serverJobsRegistry from '../jobs/registry.ts'
 import * as serverImage from '../image.ts'
 import * as serverLog from '../log.ts'
 import * as serverMergeBuild from '../merge-build.ts'
+import * as serverNet from '../net.ts'
 import * as serverOpen from '../open.ts'
 import * as serverP4Split from '../p4-split.ts'
 import * as serverPluginsMcp from './mcp.ts'
@@ -51,6 +52,7 @@ import * as sharedFix from '../../shared/fix.ts'
 import * as sharedI18n from '../../shared/i18n.ts'
 import * as sharedLocalImage from '../../shared/local-image.ts'
 import * as sharedLocalPrompts from '../../shared/local-prompts.ts'
+import * as sharedMirrors from '../../shared/mirrors/registry.ts'
 import * as sharedMcpDescribe from '../../shared/mcp-catalog/describe.ts'
 import * as sharedMoss from '../../shared/moss.ts'
 import * as sharedPinyin from '../../shared/pinyin.ts'
@@ -96,6 +98,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/image': serverImage,
   'server/log': serverLog,
   'server/merge-build': serverMergeBuild,
+  'server/net': serverNet,
   'server/open': serverOpen,
   'server/p4-split': serverP4Split,
   'server/plugins/mcp': serverPluginsMcp,
@@ -129,6 +132,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'shared/i18n': sharedI18n,
   'shared/local-image': sharedLocalImage,
   'shared/local-prompts': sharedLocalPrompts,
+  'shared/mirrors/registry': sharedMirrors,
   'shared/mcp-catalog/describe': sharedMcpDescribe,
   'shared/moss': sharedMoss,
   'shared/pinyin': sharedPinyin,
