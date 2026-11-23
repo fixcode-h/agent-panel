@@ -28,6 +28,8 @@ const DEMO_VERIFY_MS = 5000
 /** 演示的「目录」规模：进度条上的数假装是个中等项目 */
 const DEMO_DIRS = 3200
 const DEMO_FILES_SHOWN = 41_000
+/** 演示的项目外文档根里有几个文件 */
+const DEMO_DOC_FILES = 12
 
 function indexOf(projectId: string): DemoIndex {
   let x = indexes.get(projectId)
@@ -71,9 +73,9 @@ function statusOf(p: Project): FileIndexStatus {
     projectId: p.id,
     enabled: true,
     state: x.verifying ? 'verifying' : 'ready',
-    files,
-    dirs,
-    bytes,
+    files: files + DEMO_DOC_FILES,
+    dirs: dirs + 4,
+    bytes: bytes + DEMO_DOC_FILES * BYTES_PER_FILE,
     roots: [
       {
         key: `demo-${p.id}`,
@@ -90,6 +92,18 @@ function statusOf(p: Project): FileIndexStatus {
         verifiedAt: x.changedAt,
         lastBy: 'verify',
         // 演示按 Windows / macOS 的情形：选了「不盯」才不用系统通知
+        watching: s.watch === 'off' ? 'none' : 'system',
+      },
+      // P4 项目各分支共用的文档根在项目外面，也收进索引（状态卡分开列出来）
+      {
+        key: `demo-doc-${p.id}`,
+        root: p.path.replace(/[^/]+$/, 'ProjectDoc/docs'),
+        source: 'doc',
+        vcs: 'none',
+        state: 'ready',
+        files: DEMO_DOC_FILES,
+        dirs: 4,
+        bytes: DEMO_DOC_FILES * BYTES_PER_FILE,
         watching: s.watch === 'off' ? 'none' : 'system',
       },
     ],

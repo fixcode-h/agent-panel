@@ -6,6 +6,7 @@ import { DOC_PLACE_SIBLING, resolveDocRoot, type DocGroupView } from '../../shar
 import { t } from '../../shared/i18n.ts'
 import type { Agent, Project } from '../../shared/schema.ts'
 import { resolveDocGroup, setDocGroupRoot } from './group.ts'
+import { forgetDocRoots } from './root-cache.ts'
 import { detectVcs } from '../projects-analyze.ts'
 
 /**
@@ -38,7 +39,10 @@ export function docGroupApi(deps: {
       const g = await groupOf(c.req.param('id'))
       if (!g) return c.json({ error: t('只有文档放在项目外的 P4 / SVN 项目能改共用文档根') }, 400)
       try {
-        return c.json((await setDocGroupRoot(g.path, g.vcs, body.data.root)) satisfies DocGroupView)
+        const view = await setDocGroupRoot(g.path, g.vcs, body.data.root)
+        // 记住的文档根作废：插件和文件索引下次重算
+        forgetDocRoots()
+        return c.json(view satisfies DocGroupView)
       } catch (e) {
         return c.json({ error: t('改文档根失败：{error}', { error: (e as Error).message }) }, 400)
       }

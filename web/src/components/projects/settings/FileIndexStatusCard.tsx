@@ -12,6 +12,7 @@ import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { StatusPill } from '@/components/ui/status-pill'
+import { FileIndexRoots } from './FileIndexRoots'
 
 const ago = (ms?: number) => (ms ? timeAgo(new Date(ms).toISOString()) : '')
 
@@ -83,6 +84,7 @@ export function FileIndexStatusCard({ projectId }: { projectId: string }) {
           {t('{dirs} 个目录', { dirs: s.dirs.toLocaleString() })} · {formatBytes(s.bytes)}
         </span>
       </div>
+      <FileIndexRoots roots={s.roots} />
       {building && prog && (
         <div className="flex items-center gap-3">
           <Progress
