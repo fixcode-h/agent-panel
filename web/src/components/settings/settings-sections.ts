@@ -29,6 +29,7 @@ import {
   Heading,
   BellRing,
   Plug,
+  RotateCcw,
 } from 'lucide-react'
 import type { CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
@@ -57,6 +58,8 @@ export const sectionsFor = (clis: CliDefinition[], plugins: Section[], mcp: Sect
   { id: 'fonts', label: t('主题与字体'), icon: Type, group: t('外观'), aliases: ['外观', '配色'] },
   { id: 'markdown', label: t('正文排版'), icon: Heading, group: t('外观'), aliases: ['Markdown 样式', 'Markdown'] },
   { id: 'components', label: t('控件样式'), icon: Component, group: t('外观'), aliases: ['组件'] },
+  // 本机记住的界面状态（lib/prefs 登记的族）：按项重置
+  { id: 'ui-state', label: t('界面状态'), icon: RotateCcw, group: t('外观'), aliases: ['记住的界面状态', '重置布局'] },
   { id: 'models', label: t('默认 Agent'), icon: Cpu, group: t('Agent 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('说明与技能'), icon: Rocket, aliases: ['部署', '全局说明'] },

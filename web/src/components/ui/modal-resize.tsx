@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { cn } from '@/lib/utils'
 import { t, templateOf } from '@shared/i18n'
+import { local } from '@/lib/prefs'
 import {
   clampDialogSize,
   modalSizeBounds,
@@ -23,12 +24,8 @@ import {
  * 弹窗尺寸的本地记忆：隐私模式下连访问 localStorage 都可能抛错，统一在这里兜住。
  * 写不进去时静默跳过——尺寸照样能拖，只是下次不恢复。
  */
-function localStore(): Storage | null {
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
+function localStore() {
+  return { getItem: local.get, setItem: local.set }
 }
 
 /** 当前视口能放的弹窗尺寸（四周各留 30px） */

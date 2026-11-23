@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { local } from '@/lib/prefs'
 
 /**
  * 图标栏展没展开成带字的（分析稿 U4）：只有图标时 8 个入口都要悬停才知道是什么，
@@ -6,22 +7,13 @@ import { useSyncExternalStore } from 'react'
  */
 const KEY = 'activity-bar'
 
-let wideNow = (() => {
-  try {
-    return localStorage.getItem(KEY) === 'wide'
-  } catch {
-    return false
-  }
-})()
+let wideNow = local.get(KEY) === 'wide'
 const subs = new Set<() => void>()
 
 export function toggleActivityBar() {
   wideNow = !wideNow
-  try {
-    localStorage.setItem(KEY, wideNow ? 'wide' : 'narrow')
-  } catch {
-    // 隐私模式禁用本地存储时只是不记住，这次打开里照样生效
-  }
+  // 隐私模式禁用本地存储时只是不记住，这次打开里照样生效（local 兜住）
+  local.set(KEY, wideNow ? 'wide' : 'narrow')
   for (const f of subs) f()
 }
 

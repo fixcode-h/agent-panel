@@ -75,6 +75,7 @@ export function measure(root) {
     uiLiveFields: {},
     intervals: {},
     requests: {},
+    localStorage: {},
     unreadable: [],
   }
   for (const dir of FLAT_DIRS) m.flatFiles[dir] = []
@@ -139,6 +140,11 @@ export function measure(root) {
       if (n) m.intervals[f] = n
       // 手写的 request<T>(url) / request(url)：返回类型和服务端没有编译期关联，新接口按契约走 call（ADR 0062）。
       // call.ts 是契约调用自己的出口，不算
+      // 直接读写 localStorage：键没登记，设置 →「界面状态」列不出也重置不了；读写走 web/src/lib/prefs 的 local.*
+      if (!f.startsWith('web/src/lib/prefs/')) {
+        const s = (code.match(/\blocalStorage\b/g) ?? []).length
+        if (s) m.localStorage[f] = s
+      }
       if (f !== 'web/src/lib/api/call.ts') {
         const r = (code.match(/\brequest\s*[<(]/g) ?? []).length
         if (r) m.requests[f] = r
@@ -163,6 +169,8 @@ const CAPPED_MAPS = {
     `${f}：直接读对话的 status / working / cliAlive 这类运行时字段 ${n} 处（基线 ${cap}）。界面上的对话状态只从 convState 派生（shared/task.ts、web/src/lib 里的工具函数），缺的显示加进那里`,
   intervals: (f, n, cap) =>
     `${f}：setInterval ${n} 处（基线 ${cap}）。走表用 web/src/lib/useNow.ts；拉数据不要再加轮询，用已有的推送（task-stream）；确实要定时的写 interval-ok: 原因`,
+  localStorage: (f, n, cap) =>
+    `${f}：直接用 localStorage ${n} 处（基线 ${cap}）。读写走 web/src/lib/prefs 的 local.get / set / json / setJson（带兜底），新键在 web/src/lib/prefs/builtin.ts 登记族（插件用 registerPrefs），设置 →「界面状态」才列得出、重置得了`,
   requests: (f, n, cap) =>
     `${f}：手写 request<T>() / request() ${n} 处（基线 ${cap}）。新接口和改到的接口在 shared/api-contract/<模块>.ts 写契约、前端用 web/src/lib/api/call.ts 的 call(ep, …) 调，并加进 shared/api-contract/probe.ts（docs/lessons/structure.md，ADR 0062）`,
 }

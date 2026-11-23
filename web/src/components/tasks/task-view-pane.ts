@@ -7,6 +7,7 @@ import type { TaskMessage } from '@shared/schema'
 import { usePaneWidth } from '@/components/ui/resize'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { paneChildKey, paneFilesKey, paneReportKey, paneRunKey } from '@/lib/ai-window'
+import { local } from '@/lib/prefs'
 
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 export const BLOCK_LIMIT = 30
@@ -85,20 +86,13 @@ export function useHalfPane(
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
 
 export function readStored(key: string) {
-  try {
-    return localStorage.getItem(key) ?? ''
-  } catch {
-    return ''
-  }
+  return local.get(key) ?? ''
 }
 
 export function writeStored(key: string, value: string) {
-  try {
-    if (value) localStorage.setItem(key, value)
-    else localStorage.removeItem(key)
-  } catch {
-    // 隐私模式禁用本地存储时只是不记住，不影响使用
-  }
+  // 隐私模式禁用本地存储时只是不记住，不影响使用（local 兜住）
+  if (value) local.set(key, value)
+  else local.remove(key)
 }
 
 /** Chat 页右栏（代码 / 来源 / 附件）收起过就记一笔：所有聊天共用一个开关，默认开着 */

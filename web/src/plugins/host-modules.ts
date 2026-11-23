@@ -114,6 +114,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/lib/copy-text': () => import('@/lib/copy-text'),
   'web/src/lib/data': () => import('@/lib/data'),
   'web/src/lib/polling': () => import('@/lib/polling'),
+  'web/src/lib/prefs/index': () => import('@/lib/prefs/index'),
   'web/src/lib/save-file': () => import('@/lib/save-file'),
   'web/src/lib/sheet': () => import('@/lib/sheet'),
   'web/src/lib/sheet-diff-async': () => import('@/lib/sheet-diff-async'),

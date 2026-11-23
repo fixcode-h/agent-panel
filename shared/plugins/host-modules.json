@@ -108,6 +108,7 @@
     "web/src/lib/copy-text",
     "web/src/lib/data",
     "web/src/lib/polling",
+    "web/src/lib/prefs/index",
     "web/src/lib/save-file",
     "web/src/lib/sheet",
     "web/src/lib/sheet-diff-async",

@@ -1,18 +1,15 @@
 import { useRef, useState, type CSSProperties } from 'react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { local } from '@/lib/prefs'
 
 /**
  * 可拖动的分栏宽度（照面板 web/src/components/ui/resize.tsx 的 usePaneWidth / ResizeHandle，插件不能 import 面板源码，
- * 这里按同样的手感和样式写一份）。宽度记在本机 localStorage，下次打开还是这个宽度；没拖过时用 def（可以是百分比），
+ * 这里按同样的手感和样式写一份）。宽度记在本机（lib/prefs 的 local，设置里「记住的界面状态」能重置），下次打开还是这个宽度；没拖过时用 def（可以是百分比），
  * 窗口多宽都按比例分。双击拖动条恢复默认。
  */
 function stored(key: string) {
-  try {
-    return Number(localStorage.getItem(`pane:${key}`)) || 0
-  } catch {
-    return 0
-  }
+  return Number(local.get(`pane:${key}`)) || 0
 }
 
 /** 记住的尺寸（设置 →「资源查看布局」列出、重置用）：没拖过是 0 */
@@ -20,9 +17,7 @@ export const storedPane = stored
 
 /** 清掉记住的尺寸（设置页「重置」）：已经打开的页面下次挂载时回到默认 */
 export function forgetPane(key: string) {
-  try {
-    localStorage.removeItem(`pane:${key}`)
-  } catch {}
+  local.remove(`pane:${key}`)
 }
 
 /**
@@ -33,10 +28,8 @@ export function usePane(key: string, def: string, min: number, axis: 'x' | 'y' =
   const [w, setW] = useState(() => stored(key) || undefined)
   const [dragging, setDragging] = useState(false)
   const save = (n: number | undefined) => {
-    try {
-      if (n) localStorage.setItem(`pane:${key}`, String(Math.round(n)))
-      else localStorage.removeItem(`pane:${key}`)
-    } catch {}
+    if (n) local.set(`pane:${key}`, String(Math.round(n)))
+    else local.remove(`pane:${key}`)
   }
   /** 写进 CSS 变量的宽度：拖过用像素，没拖过用默认值 */
   const size = w ? `${w}px` : def

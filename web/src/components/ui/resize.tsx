@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { local } from '@/lib/prefs'
 
 /** 设置里的内容宽度（--content-w）：中间至少要留出这么多，输入框才不会跟着栏宽变窄 */
 export function contentPaneWidth() {
@@ -10,11 +11,7 @@ export function contentPaneWidth() {
 
 /** 本机记着的栏宽（没记过或不是数就是 0） */
 function storedWidth(key: string) {
-  try {
-    return Number(localStorage.getItem(`pane:${key}`)) || 0
-  } catch {
-    return 0
-  }
+  return Number(local.get(`pane:${key}`)) || 0
 }
 
 /**
@@ -31,9 +28,7 @@ export function usePaneWidth(key: string, initial: number | (() => number), min:
   /** 正在拖动：拖动时不要给宽度加过渡，否则跟不上鼠标 */
   const [dragging, setDragging] = useState(false)
   const save = (n: number) => {
-    try {
-      localStorage.setItem(`pane:${key}`, String(n))
-    } catch {}
+    local.set(`pane:${key}`, String(n))
     setSaved(Math.round(n))
   }
   return {
