@@ -157,9 +157,12 @@ export class IndexUnit {
   build(): Promise<void> {
     const run = (async () => {
       const t0 = Date.now()
-      const fresh = new NameTable()
+      // 第一次建（手里没有能用的）直接往当前表里读：边读边能查，建立中查找也能先回读到的部分；
+      // 已经有能用的就另建一份、建好再换上，建的时候旧的照常回答
+      const firstTime = this.state !== 'ready' && this.state !== 'verifying'
+      const fresh = firstTime ? (this.table = new NameTable()) : new NameTable()
       const expect = this.table.size.dirs || undefined
-      if (this.state !== 'ready') this.state = 'building'
+      if (firstTime) this.state = 'building'
       this.progress = { dirs: 0, files: 0, ...(expect ? { expect } : {}) }
       this.onStatus()
       try {

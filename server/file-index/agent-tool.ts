@@ -7,10 +7,29 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { FileIndexArgs, FileIndexRun } from '../../shared/host/file-index.ts'
-import { projectIndex, statusOf } from './registry.ts'
+import { projectIndex, statusOf, type ProjectIndex } from './registry.ts'
 
 const BUDGET = 4000
 const WAIT_MS = 60_000
+/** 等建立时多久查一次：第一次建立时边读边能查，读到了就先回 */
+const POLL_MS = 400
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((r) => {
+    const t = setTimeout(r, ms)
+    signal?.addEventListener('abort', () => (clearTimeout(t), r()), { once: true })
+  })
+
+/** 各个根的建立状态，一行写给 Agent：哪个还在建、读到多少了 */
+function buildingNote(idx: ProjectIndex, waitedMs: number) {
+  const b = idx.units.filter((u) => u.state === 'building')
+  if (!b.length) return ''
+  const parts = b.map((u) => {
+    const pr = u.progress
+    return `${u.spec.source === 'project' ? '项目目录' : u.root.split(path.sep).join('/')}（已读 ${pr?.dirs ?? 0} 个目录、${pr?.files ?? 0} 个文件）`
+  })
+  return `索引还在建立：${parts.join('；')}，已等 ${Math.round(waitedMs / 1000)} 秒。下面是已经读到的部分，没找到的过一会儿再查，或直接用 find。\n`
+}
 
 /** 按字数预算分页：至少给一条，保证能往下翻 */
 function pageOut(items: string[], offset: number, limit: number) {
@@ -36,14 +55,20 @@ export function fileIndexRun(opts: {
   const keep = (p: string) => !inWorktree || path.isAbsolute(p) || existsSync(path.join(opts.workDir, p))
   const missNote = () =>
     [
-      `索引不收这些排除目录：${opts.exclude.join('、')}，要找那里的文件直接用 find / rg --files。`,
+      opts.exclude.length
+        ? `索引不收这些排除目录：${opts.exclude.join('、')}，要找那里的文件直接用 find / rg --files。`
+        : '',
       '刚在面板外批量生成的文件可能还没进索引：先 action=refresh（可以带 dir 只核对那个目录）再查，或直接用 find。',
       inWorktree ? '这个对话在独立分支目录里：这里新建、还没合回的文件不在索引里，直接用 find 找。' : '',
     ]
       .filter(Boolean)
       .join('\n')
 
-  return async (a: FileIndexArgs) => {
+  // 对话一开始就把索引拉起来（读回落盘、问文档根和插件目录），第一次查找不用现等这些
+  void projectIndex(opts.projectId).catch(() => undefined)
+
+  const run = async (a: FileIndexArgs, signal?: AbortSignal): Promise<{ text: string; error?: boolean }> => {
+    const t0 = Date.now()
     const idx = await projectIndex(opts.projectId)
     if (!idx) return { text: '项目设置里关了文件索引：直接用 rg --files / find 找', error: true }
     const limit = Math.min(Math.max(Math.floor(a.limit ?? 50), 1), 500)
@@ -55,15 +80,15 @@ export function fileIndexRun(opts: {
       return { text: '已开始整份重建：期间 find / list 会等它建好再回答（最多一分钟）。' }
     }
     if (a.action === 'refresh') {
-      if (!(await idx.ready(WAIT_MS))) return { text: '索引第一次建立还没完成，建好后已经是最新的，不用 refresh' }
+      if (!(await idx.ready(WAIT_MS)))
+        return { text: `${buildingNote(idx, Date.now() - t0)}第一次建立还没完成，建好后就是最新的，不用 refresh。` }
       const r = await idx.refresh(a.dir)
       return { text: `核对了 ${r.checked} 个目录：新增 ${r.added} 个文件，删掉 ${r.removed} 个。` }
     }
 
-    const ready = await idx.ready(WAIT_MS)
-    const partial = ready ? '' : '（索引还在建立，下面是已经读到的部分；没找到的稍后再查）\n'
-
     if (a.action === 'list') {
+      await idx.ready(WAIT_MS)
+      const partial = buildingNote(idx, Date.now() - t0)
       const r = await idx.list(a.dir ?? '', { recursive: a.recursive, ext: a.ext })
       if (!r)
         return {
@@ -83,10 +108,34 @@ export function fileIndexRun(opts: {
     // find
     const q = (a.query ?? '').trim()
     if (!q && !a.ext?.length) return { text: 'find 要给 query（文件名里的词）或 ext', error: true }
-    const hits = idx
-      .find(q, { under: a.under, ext: a.ext, dirs: a.dirs, cap: offset + limit + 500 })
-      .map((h) => h.path)
-      .filter(keep)
+    const search = () =>
+      idx
+        .find(q, { under: a.under, ext: a.ext, dirs: a.dirs, cap: offset + limit + 500 })
+        .map((h) => h.path)
+        .filter(keep)
+    // 还在建立时边等边查：项目目录建好且找到了就回，全都建好了也回；最多等一分钟（ADR 0067 第 5 节，不让 Agent 轮询）
+    let hits = search()
+    while (idx.building && Date.now() - t0 < WAIT_MS && !signal?.aborted) {
+      const projectReady = idx.units.every((u) => u.spec.source !== 'project' || u.state !== 'building')
+      if (hits.length && projectReady) break
+      await sleep(POLL_MS, signal)
+      hits = search()
+    }
+    // 建好了还是没找到：先按目录核对一遍（只 stat 目录，几万个目录一两秒）再查，刚在面板外生成的文件也能找到
+    let verified = ''
+    if (!hits.length && !idx.building && !signal?.aborted) {
+      const left = Math.max(WAIT_MS - (Date.now() - t0), 1000)
+      // 等核对的计时器用完要撤掉：不然每次没找到都留一个一分钟的计时器
+      const stop = new AbortController()
+      signal?.addEventListener('abort', () => stop.abort(), { once: true })
+      const r = await Promise.race([idx.refresh(), sleep(left, stop.signal).then(() => undefined)])
+      stop.abort()
+      if (r) {
+        hits = search()
+        verified = `（已按目录核对一遍：${r.checked} 个目录，新增 ${r.added}、删掉 ${r.removed} 个文件）\n`
+      }
+    }
+    const partial = buildingNote(idx, Date.now() - t0) + verified
     if (!hits.length) return { text: `${partial}没找到「${q}」。\n${missNote()}` }
     const { out, next } = pageOut(hits, offset, limit)
     const total = hits.length >= offset + limit + 500 ? `${hits.length}+` : String(hits.length)
@@ -98,6 +147,15 @@ export function fileIndexRun(opts: {
       ]
         .filter(Boolean)
         .join('\n'),
+    }
+  }
+
+  // 出什么错都回一句话：Agent 那边看到「没有输出」不知道该怎么办
+  return async (a, signal) => {
+    try {
+      return await run(a, signal)
+    } catch (e) {
+      return { text: `查文件索引出错：${(e as Error).message}。先用 find / rg --files 找。`, error: true }
     }
   }
 }

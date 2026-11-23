@@ -27,11 +27,13 @@ const { listIndexFiles } = await import('./store.ts')
 
 const project = { id: 'p1', name: '测试', path: root, searchExclude: ['Saved'] } as never
 const pushes: string[] = []
+let askDelay = 0
+const slow = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), askDelay))
 initFileIndex({
   getProject: async (id) => (id === 'p1' ? project : undefined),
   listProjects: async () => [project],
-  docRoot: async () => undefined,
-  pluginRoots: async () => [],
+  docRoot: () => slow(undefined),
+  pluginRoots: () => slow([]),
   push: (id, s) => pushes.push(`${id}:${s.state}`),
 })
 
@@ -84,6 +86,28 @@ test('file_index 工具：找到的给相对路径，没找到时说明排除目
   assert.match(ls.text, /Source\/Game\/Enemy\.cpp/)
   const bad = await run({ action: 'list', dir: 'Saved' })
   assert.ok(bad.error)
+})
+
+test('file_index：没找到时先按目录核对再查，面板外刚生成的文件也能找到', async () => {
+  const run = fileIndexRun({ projectId: 'p1', projectPath: root, workDir: root, exclude: ['Saved'] })
+  put('Content/UI/WBP_Shop.uasset')
+  const r = await run({ action: 'find', query: 'wbp_shop' })
+  assert.match(r.text, /WBP_Shop\.uasset/)
+  assert.match(r.text, /已按目录核对一遍/)
+})
+
+test('文档根、插件目录问得慢（P4 项目）：只在第一次等，之后的查询不再现问', async () => {
+  closeAll()
+  askDelay = 1500
+  const t0 = Date.now()
+  await projectIndex('p1')
+  assert.ok(Date.now() - t0 >= 1400, '第一次要问')
+  const run = fileIndexRun({ projectId: 'p1', projectPath: root, workDir: root, exclude: ['Saved'] })
+  const t1 = Date.now()
+  const hit = await run({ action: 'find', query: 'enemy' })
+  assert.match(hit.text, /Enemy\.cpp/)
+  assert.ok(Date.now() - t1 < 1000, `查一次用了 ${Date.now() - t1}ms`)
+  askDelay = 0
 })
 
 test('落盘：关掉后重新打开从盘上读回，不用重建', async () => {
