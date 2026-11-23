@@ -53,7 +53,8 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       workflow: 'ue' as const,
       kind: 'ue' as const,
       build: 'Build.bat <Target> Win64 Development -Project=<项目>.uproject -WaitMutex',
-      test: 'Automation RunTests（编辑器或 -game 模式）',
+      // 不给测试命令：UE 项目的验证默认只要编译通过，写上 Automation RunTests 会引着 Agent 自己去跑（用户 2026-11-23）
+      test: '',
     }
   }
   const pkg = has('package.json')

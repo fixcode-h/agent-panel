@@ -10,7 +10,8 @@ import test from 'node:test'
 const data = mkdtempSync(path.join(tmpdir(), 'agent-panel-guards-'))
 process.env.AGENT_PANEL_DATA = data
 
-const { bugDeny, dangerDeny, longDeny, pushDeny, secretDeny, testScopeDeny, worktreeDeny } = await import('./guards.ts')
+const { bugDeny, dangerDeny, longDeny, pushDeny, secretDeny, testScopeDeny, ueAutomationDeny, worktreeDeny } =
+  await import('./guards.ts')
 type Ctx = import('./guards.ts').GuardCtx
 
 const proj = path.join(tmpdir(), 'proj-x')
@@ -312,4 +313,22 @@ test('rg 带 -r（照 grep 习惯写的 -rn）拦下：那是替换不是递归'
   assert.match(longDeny({ ...ctx(), canBackground: false }, sh('cd src && rg -ri foo')), /-r/)
   assert.equal(longDeny(ctx(), sh('rg -n "begin_edit" src')), '')
   assert.equal(longDeny(ctx(), sh('grep -rn foo src')), '')
+})
+
+test('UE 自动化测试守卫：Automation RunTests / Gauntlet 一律拦，项目测试步骤里配了也拦；编译和别的编辑器命令放行', () => {
+  const user =
+    '"G:/UE_5.4/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" G:/P/SPGame.uproject -ExecCmds="Automation RunTests SPGame;Quit" -unattended -nop4 -nosplash -nullrhi -testexit="Automation Test Queue Empty" -log'
+  assert.match(ueAutomationDeny(ctx(), sh(user)), /GameTest/)
+  assert.match(ueAutomationDeny(ctx(), sh(`& ${user}`)), /自动化测试/, 'PowerShell 的 & 调用')
+  assert.ok(ueAutomationDeny(ctx(), sh('UnrealEditor-Cmd G.uproject -run=Automation -filter=Smoke')))
+  assert.ok(ueAutomationDeny(ctx(), sh('RunUAT.bat RunUnreal -project=G.uproject -test=MyTest')))
+  const steps = [{ name: '自动化测试', command: user, enabled: true, scope: 'always' }] as never
+  assert.ok(ueAutomationDeny(ctx({ project: { testSteps: steps } }), sh(user)), '配进测试步骤也拦（用户要跑走放行卡）')
+  for (const ok of [
+    'Build.bat SPGameEditor Win64 Development -Project=G:/P/SPGame.uproject -WaitMutex',
+    'UnrealEditor-Cmd.exe G.uproject -run=CompileAllBlueprints -nullrhi',
+    'rg -n "Automation RunTests" Source',
+    'git commit -m "去掉 Automation RunTests"',
+  ])
+    assert.equal(ueAutomationDeny(ctx(), sh(ok)), '', ok)
 })

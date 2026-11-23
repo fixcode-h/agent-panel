@@ -172,6 +172,9 @@ export const EN_HOOKS: Record<string, string> = {
     "Denies full test suites, end-to-end and UI checks, dev servers, UE builds and packaging, full dependency installs, project test steps marked build-on-merge or with a timeout of 3 minutes or more, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands: messages sent meanwhile don't wait, and only errors, warnings and the end come back while the full log is saved to a file",
   另外算长命令的命令前缀: 'Extra long-command prefixes',
   '一行一个，例如 npm run build、cargo test': 'One per line, e.g. npm run build, cargo test',
+  'UE 自动化测试守卫': 'UE automation test guard',
+  'UE 项目不跑引擎的 Automation RunTests、Gauntlet 自动化测试：Agent 跑时拒绝，让它验证到编译为止，要看功能是否正常先问用户再写 GameTest 脚本跑；用户要求跑时 Agent 会弹卡请用户放行一次':
+    'UE projects do not run the engine Automation RunTests or Gauntlet tests: denies them so the agent verifies by compiling, and asks the user before writing a GameTest script to check behavior; when the user asks for them, the agent asks the user to allow it once',
   测试步骤归属守卫: 'Test step ownership guard',
   '项目里设成「合回后由父对话跑」的测试步骤，子对话在独立分支里跑时拒绝':
     'Denies test steps the project runs in the parent after merging when a child runs them in its own branch',

@@ -85,9 +85,10 @@ find Source -maxdepth 4 -type f \( -name '*.h' -o -name '*.cpp' \) -print
 
 ## 测试
 
+- **验证到编译为止**：改完代码编译通过就算验证完成。不要自己用 `UnrealEditor-Cmd ... -ExecCmds="Automation RunTests ..."` 或 Gauntlet 跑引擎自动化测试（面板会拦下）；要确认功能在游戏里是否正常、并且有 `ue_gametest` 工具时，先问用户要不要写 GameTest 测试脚本，同意了再按 ue-gametest-authoring 写、跑。下面几条是读懂项目里已有测试用的。
 - **AutomationTest**（`IMPLEMENT_SIMPLE_AUTOMATION_TEST`）：纯逻辑、无编辑器依赖的优先用它，命令行能跑，适合 CI。
 - **FunctionalTest**：需要世界、Actor、玩家输入的场景测试；在编辑器或 `-game` 模式下跑。
-- 命令行跑测试用 `-ExecCmds="Automation RunTests <Filter>;Quit"`，加 `-unattended -nopause -nullrhi`。
+- 项目 CI 里命令行跑测试的写法是 `-ExecCmds="Automation RunTests <Filter>;Quit"`；面板里的 Agent 不跑它，用户亲口要求时按拦截说明请用户放行。
 - 需要编辑器界面、PIE 交互、真机或特定渲染的验证登记为延期验证，写明步骤。
 - 测试代码放在对应模块的 `Private/Tests/` 下，用 `WITH_DEV_AUTOMATION_TESTS` 包住。
 
