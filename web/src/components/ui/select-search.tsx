@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { MenuSearch } from './menu-search'
+import { textHit } from '@shared/text-match/index'
 
 /** 下拉列表的一项：Radix 版和带搜索的版本共用，两种列表看起来一样 */
 export const listItem =
@@ -40,13 +41,11 @@ export function focusMovedAway(trigger: Element | null): boolean {
   return !!dialog && dialog !== trigger?.closest('[role="dialog"],[role="alertdialog"]')
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '')
-
 /** 搜索命中：显示的文字、短说法、值和组名都算（日志分类这类值和显示一样的，组名能把一整组筛出来）；空格忽略 */
+/** 搜索：空格分开的几个词都要命中，字母词也认拼音首字母（和其他列表搜索同一套，shared/text-match） */
 export function filterOptions(options: SelectOption[], q: string): SelectOption[] {
-  const k = norm(q)
-  if (!k) return options
-  return options.filter((o) => [o.label, o.short, o.value, o.group].some((s) => s && norm(s).includes(k)))
+  if (!q.trim()) return options
+  return options.filter((o) => textHit([o.label, o.short, o.value, o.group], q))
 }
 
 /**

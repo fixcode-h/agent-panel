@@ -16,6 +16,7 @@ import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { usePolling } from '@/lib/polling'
+import { useBgJobsKey } from '@/lib/live/bg-jobs'
 import { cn } from '@/lib/utils'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { Button } from '@/components/ui/button'
@@ -29,11 +30,14 @@ import { Advanced, Group, Row } from './parts'
 
 type LocalSettings = Settings['imageGen']['local']
 
-/** 本机生图的状态；有操作在跑（或 fast）时问得勤一些 */
+/**
+ * 本机生图的状态。安装、下载的进度跟着后台任务的推送重取（ADR 0075），不再 1 秒轮询；
+ * 服务启停、显卡这些不走作业的状态照旧 6 秒问一次（fast 时 1 秒：等服务起来）
+ */
 export function useLocalImage(fast = false) {
   const [st, setSt] = useState<LocalStatus>()
-  const running = st?.job?.status === 'running'
-  usePolling(() => api.localImage().then(setSt), running || fast ? 1000 : 6000)
+  const jobs = useBgJobsKey((j) => j.source === 'panel' && j.kind === 'local-image')
+  usePolling(() => api.localImage().then(setSt), fast ? 1000 : 6000, jobs)
   return [st, setSt] as const
 }
 

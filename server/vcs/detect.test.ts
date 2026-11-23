@@ -3,7 +3,7 @@ import test from 'node:test'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { detectVcs } from './projects-analyze.ts'
+import { detectVcs } from './detect.ts'
 
 test('P4 工作区：p4config.txt 这类配置文件认得出，p4 set 里的 P4CONFIG 名字也认；不跑 p4 where', async (t) => {
   if (process.platform === 'win32') return t.skip('假 p4 用 sh 脚本')

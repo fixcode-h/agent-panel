@@ -7,7 +7,7 @@ import { t } from '../../shared/i18n.ts'
 import type { Agent, Project } from '../../shared/schema.ts'
 import { resolveDocGroup, setDocGroupRoot } from './group.ts'
 import { forgetDocRoots } from './root-cache.ts'
-import { detectVcs } from '../projects-analyze.ts'
+import { detectVcs } from '../vcs/detect.ts'
 
 /**
  * 项目设置「文档」一栏看、改各分支共用的文档根（server/docs/group.ts）。

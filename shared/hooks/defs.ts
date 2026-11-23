@@ -3,6 +3,7 @@ import { t } from '../i18n.ts'
 import { DEFAULT_TIER, HOOK_TIERS } from './builtins.ts'
 import { unwrapShell } from '../shell-command.ts'
 import { ModelSupportData } from '../models/support.ts'
+import { globMatch as matchGlob } from '../text-match/index.ts'
 
 /**
  * 钩子的规范（ADR 0049 第二期，设计稿 docs/openspec/changes/agent-hooks 第 6 节）：设置页「钩子」里用户建的、
@@ -184,22 +185,9 @@ export function checkOutput(event: HookEventName, raw: unknown): { out: HookOutp
   }
 }
 
-/** 简单的路径通配：** 跨目录，* 不跨目录，? 一个字符 */
+/** 简单的路径通配：** 跨目录，* 不跨目录，? 一个字符（写法统一在 shared/text-match） */
 export function globMatch(glob: string, file: string): boolean {
-  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '')
-  const f = file.replace(/\\/g, '/').replace(/^\.\//, '')
-  let re = ''
-  for (let i = 0; i < g.length; i++) {
-    const c = g[i]
-    if (c === '*' && g[i + 1] === '*') {
-      re += '.*'
-      i++
-      if (g[i + 1] === '/') i++
-    } else if (c === '*') re += '[^/]*'
-    else if (c === '?') re += '[^/]'
-    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  }
-  return new RegExp(`^${re}$`).test(f)
+  return matchGlob(glob, file)
 }
 
 /**

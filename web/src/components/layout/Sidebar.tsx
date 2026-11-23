@@ -60,6 +60,7 @@ import type { PluginPage } from '@/plugins/sdk'
 import { ProjectPicker } from './sidebar/ProjectPicker'
 import { ProjectTools } from './sidebar/ProjectTools'
 import { FileIndexSidebarStatus } from './sidebar/FileIndexSidebarStatus'
+import { BgJobsSidebarStatus } from './sidebar/BgJobsSidebarStatus'
 import { ProjectTasks } from './sidebar/ProjectTasks'
 import { useProjectActions } from './sidebar/project-actions'
 import { projectStats } from './sidebar/project-stats'
@@ -514,10 +515,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         </div>
       )}
 
-      {/* 后台在建文件索引时侧栏底部给个进度（用户 2026-11-23），就绪就不画 */}
-      {!chatMode && current && (
-        <div className="shrink-0 px-2.5 pb-2 empty:hidden">
-          <FileIndexSidebarStatus projectId={current.id} />
+      {/* 后台在建文件索引时侧栏底部给个进度（用户 2026-11-23），就绪就不画；后台作业有在跑的也在这一处（ADR 0075） */}
+      {!chatMode && (
+        <div className="flex shrink-0 flex-col gap-1.5 px-2.5 pb-2 empty:hidden">
+          {current && <FileIndexSidebarStatus projectId={current.id} />}
+          <BgJobsSidebarStatus />
         </div>
       )}
 

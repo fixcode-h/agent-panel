@@ -1,4 +1,5 @@
 import { t } from './i18n.ts'
+import { mirrorUrl } from './mirrors/registry.ts'
 
 /**
  * 本机语音输入：用 sherpa-onnx 在本机把录音转成文字，不联网识别。
@@ -22,8 +23,7 @@ export function sherpaPlatformPackage(platform: string, arch: string) {
 
 /** npm 包的 tgz 地址；镜像用 npmmirror（国内打不开 registry.npmjs.org 时） */
 export function npmTarball(name: string, version: string, mirror: boolean) {
-  const base = mirror ? 'https://registry.npmmirror.com' : 'https://registry.npmjs.org'
-  return `${base}/${name}/-/${name}-${version}.tgz`
+  return mirrorUrl('npm', `${name}/-/${name}-${version}.tgz`, mirror)
 }
 
 export type SpeechModelKind = 'sense-voice' | 'paraformer' | 'whisper'
@@ -128,8 +128,7 @@ export const speechModel = (id: string) => SPEECH_MODELS.find((m) => m.id === id
 
 /** 模型文件的下载地址；镜像换成 hf-mirror.com，路径不变 */
 export function speechFileUrl(m: SpeechModel, file: string, mirror: boolean) {
-  const host = mirror ? 'https://hf-mirror.com' : 'https://huggingface.co'
-  return `${host}/${m.repo}/resolve/main/${file}`
+  return mirrorUrl('huggingface', `${m.repo}/resolve/main/${file}`, mirror)
 }
 
 /** 一个模型的下载量（MB） */

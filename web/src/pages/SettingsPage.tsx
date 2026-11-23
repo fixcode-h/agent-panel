@@ -16,6 +16,7 @@ import { TagsSection } from '@/components/settings/TagsSection'
 import { GlobalLessonsSection } from '@/components/projects/Lessons'
 import { NetworkSection } from '@/components/settings/NetworkSection'
 import { FontSection } from '@/components/settings/FontSection'
+import { UiStateSection } from '@/components/settings/UiStateSection'
 import { ShortcutsSection } from '@/components/settings/ShortcutsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/ui/dialog-nav'
@@ -218,6 +219,7 @@ function SettingsContent({ cur, inPlugin, ctx }: { cur: Section; inPlugin: boole
       {cur.id === 'fonts' && <FontSection value={appearance} onChange={setPart('appearance')} />}
       {cur.id === 'markdown' && <MarkdownSection value={appearance} onChange={setPart('appearance')} />}
       {cur.id === 'components' && <ComponentsSection value={appearance} onChange={setPart('appearance')} />}
+      {cur.id === 'ui-state' && <UiStateSection />}
       {cur.id === 'shortcuts' && <ShortcutsSection value={form.elementPicker} onChange={setPart('elementPicker')} />}
       {cur.id === 'remote' && <RemoteSection value={form.remoteAccess} onChange={setPart('remoteAccess')} />}
       {cur.id === 'notify-channels' && (

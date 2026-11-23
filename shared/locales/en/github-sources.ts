@@ -54,4 +54,12 @@ export const EN_GITHUB_SOURCES: Record<string, string> = {
     'Fetch repository files through api.github.com; signed in with {tool} ({account}), 5000 requests per hour',
   '经 api.github.com 取仓库文件；已用 {tool} 登录，每小时 5000 次':
     'Fetch repository files through api.github.com; signed in with {tool}, 5000 requests per hour',
+  国内镜像: 'Mirrors in China',
+  官方: 'Official',
+  '开了「用国内镜像」的功能先从镜像站取，取不到再回官方站；没开的只从官方站取。':
+    'Features with "Use mirrors in China" turned on download from the mirror first and fall back to the official site; the others only use the official site.',
+  '语音输入的识别库、UE 插件的文字识别（OCR）': 'Speech input runtime, OCR in the UE plugin',
+  '语音输入、本机生图的模型': 'Models for speech input and local image generation',
+  '本机生图的 Python 依赖': 'Python dependencies for local image generation',
+  '视频插件的 FFmpeg': 'FFmpeg for the video plugin',
 }

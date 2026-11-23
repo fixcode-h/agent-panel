@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { followJob } from './jobs/registry.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -59,6 +60,7 @@ import { appDir } from './update/index.ts'
 import { templateApi } from './comfy-templates.ts'
 import type { ComfyNodeInfo, TemplateAsset } from '../shared/comfy-templates.ts'
 import { ComfyChain, chainGraph, chainNeedsImage, chainPrefix, checkChain } from '../shared/comfy-chain.ts'
+import { mirrorDef } from '../shared/mirrors/registry.ts'
 
 /**
  * 本机生图：在软件目录的 comfyui/ 下装 ComfyUI（源码 + 独立的 Python 虚拟环境），按需启动，
@@ -67,7 +69,7 @@ import { ComfyChain, chainGraph, chainNeedsImage, chainPrefix, checkChain } from
 
 const isWin = platform() === 'win32'
 const REPO = 'https://github.com/comfyanonymous/ComfyUI'
-const PYPI_MIRROR = 'https://pypi.tuna.tsinghua.edu.cn/simple'
+const PYPI_MIRROR = mirrorDef('pypi').mirror
 /** 大包（torch 就有 2.7GB）断一次整个安装就白等：网络抖动时多试几次、单次超时放长 */
 const PIP_NET = ['--retries', '10', '--timeout', '60']
 
@@ -225,7 +227,19 @@ function begin(kind: LocalJob['kind'], step: string, run: (j: Job) => Promise<vo
   if (job?.status === 'running') throw new Error(t('还有操作在进行：{step}', { step: job.step }))
   const j: Job = { id: randomUUID(), kind, status: 'running', step, log: '', abort: new AbortController() }
   job = j
-  void run(j)
+  const work = run(j)
+  // 也登记进面板的后台任务列表（ADR 0075）：侧栏能看到在装、在下什么，能取消；设置页照旧读自己的状态
+  followJob(
+    {
+      source: 'panel',
+      kind: 'local-image',
+      title: t('本机生图：{step}', { step }),
+      cancel: async () => j.abort.abort(),
+    },
+    work,
+    () => ({ phase: j.step, done: j.progress?.done, total: j.progress?.total }),
+  )
+  void work
     .then(() => {
       j.status = 'done'
       j.progress = undefined

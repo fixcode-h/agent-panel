@@ -397,6 +397,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新
   await p.getByRole('button', { name: '数据', exact: true }).click()
   await check(p, '设置-数据', ['内存', 'AI 分析', '每 30 秒采样一次', '最近一次采样'])
+  // 缓存（ADR 0074）：每份一行、各几项；单独清空后那一行变 0 项且按钮变灰，全部清空后都是 0 项
+  await check(p, '设置-数据-缓存', ['内存缓存', 'ue.class-tree', 'slash.commands', '全部清空'])
+  {
+    const row = p.getByText('ue.class-tree', { exact: true }).locator('xpath=..')
+    await row.getByRole('button', { name: '清空' }).click()
+    await p.getByText('已清空，下次用到时重算').first().waitFor()
+    if (!(await row.getByRole('button', { name: '清空' }).isDisabled()))
+      errors.push('设置-数据-缓存：清空一行之后这一行应该是 0 项、按钮变灰')
+    await p.getByRole('button', { name: '全部清空' }).click()
+    await p.getByText('已清空全部缓存，下次用到时重算').first().waitFor()
+    const left = await p.getByText('slash.commands', { exact: true }).locator('xpath=..').textContent()
+    if (!left?.includes('0 项')) errors.push(`设置-数据-缓存：全部清空后应该都是 0 项，实际「${left}」`)
+  }
   // 清理：对话工作目录（回收站的那行不能清）、失效的独立分支、构建产物
   await check(p, '设置-数据-清理', [
     '对话工作目录',

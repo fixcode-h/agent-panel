@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { Group, Row } from './parts'
 import { GithubSourcesGroup } from './GithubSourcesGroup'
+import { MirrorsGroup } from './MirrorsGroup'
 
 /**
  * 设置里的「网络与代理」：访问不了 GitHub 时（检查更新、下载新版本）走哪条路。
@@ -134,6 +135,7 @@ export function NetworkSection({
         </Row>
       </Group>
       <GithubSourcesGroup value={sources} onChange={onSourcesChange} />
+      <MirrorsGroup />
     </>
   )
 }

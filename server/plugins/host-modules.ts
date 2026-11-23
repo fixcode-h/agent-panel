@@ -3,17 +3,23 @@ import * as serverAttachments from '../attachments.ts'
 import * as serverAuth from '../auth.ts'
 import * as serverBridge from '../bridge.ts'
 import * as serverComfy from '../comfy.ts'
+import * as serverDocsRootCache from '../docs/root-cache.ts'
 import * as serverDownload from '../download.ts'
+import * as serverProjectData from '../project-data/index.ts'
 import * as serverExecGit from '../exec/git.ts'
 import * as serverExecInvoke from '../exec/invoke.ts'
 import * as serverExecProcess from '../exec/process.ts'
+import * as serverExecTracked from '../exec/tracked.ts'
 import * as serverExecRetryPolicy from '../exec/retry-policy.ts'
 import * as serverExecVcsHistory from '../exec/vcs-history.ts'
 import * as serverExecVcsRun from '../exec/vcs-run.ts'
+import * as serverFileIndexIndexed from '../file-index/indexed.ts'
 import * as serverFs from '../fs.ts'
+import * as serverJobsRegistry from '../jobs/registry.ts'
 import * as serverImage from '../image.ts'
 import * as serverLog from '../log.ts'
 import * as serverMergeBuild from '../merge-build.ts'
+import * as serverNet from '../net.ts'
 import * as serverOpen from '../open.ts'
 import * as serverP4Split from '../p4-split.ts'
 import * as serverPluginsMcp from './mcp.ts'
@@ -25,6 +31,13 @@ import * as serverStore from '../store.ts'
 import * as serverStyles from '../styles.ts'
 import * as serverTaskFiles from '../task-files.ts'
 import * as serverUploads from '../uploads.ts'
+import * as serverVcsDetect from '../vcs/detect.ts'
+import * as serverVcsP4Plan from '../vcs/p4-plan.ts'
+import * as serverVcsRun from '../vcs/run.ts'
+import * as serverMemo from '../memo/index.ts'
+import * as serverWatchDir from '../watch/dir.ts'
+import * as serverWatchFiles from '../watch/files.ts'
+import * as serverWatchTree from '../watch/tree.ts'
 import * as serverXlsx from '../xlsx.ts'
 import * as serverZip from '../zip.ts'
 import * as sharedAssist from '../../shared/assist.ts'
@@ -39,9 +52,11 @@ import * as sharedFix from '../../shared/fix.ts'
 import * as sharedI18n from '../../shared/i18n.ts'
 import * as sharedLocalImage from '../../shared/local-image.ts'
 import * as sharedLocalPrompts from '../../shared/local-prompts.ts'
+import * as sharedMirrors from '../../shared/mirrors/registry.ts'
 import * as sharedMcpDescribe from '../../shared/mcp-catalog/describe.ts'
 import * as sharedMoss from '../../shared/moss.ts'
 import * as sharedPinyin from '../../shared/pinyin.ts'
+import * as sharedTextMatch from '../../shared/text-match/index.ts'
 import * as sharedPromptLang from '../../shared/prompt-lang.ts'
 import * as sharedRaster from '../../shared/raster.ts'
 import * as sharedRestoreThresholds from '../../shared/restore/thresholds.ts'
@@ -68,20 +83,26 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/auth': serverAuth,
   'server/bridge': serverBridge,
   'server/comfy': serverComfy,
+  'server/docs/root-cache': serverDocsRootCache,
   'server/download': serverDownload,
   'server/exec/git': serverExecGit,
   'server/exec/invoke': serverExecInvoke,
   'server/exec/process': serverExecProcess,
+  'server/exec/tracked': serverExecTracked,
   'server/exec/retry-policy': serverExecRetryPolicy,
   'server/exec/vcs-history': serverExecVcsHistory,
   'server/exec/vcs-run': serverExecVcsRun,
+  'server/file-index/indexed': serverFileIndexIndexed,
   'server/fs': serverFs,
+  'server/jobs/registry': serverJobsRegistry,
   'server/image': serverImage,
   'server/log': serverLog,
   'server/merge-build': serverMergeBuild,
+  'server/net': serverNet,
   'server/open': serverOpen,
   'server/p4-split': serverP4Split,
   'server/plugins/mcp': serverPluginsMcp,
+  'server/project-data/index': serverProjectData,
   'server/projects-analyze': serverProjectsAnalyze,
   'server/settings': serverSettings,
   'server/shells': serverShells,
@@ -90,6 +111,13 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/styles': serverStyles,
   'server/task-files': serverTaskFiles,
   'server/uploads': serverUploads,
+  'server/vcs/detect': serverVcsDetect,
+  'server/vcs/p4-plan': serverVcsP4Plan,
+  'server/vcs/run': serverVcsRun,
+  'server/memo/index': serverMemo,
+  'server/watch/dir': serverWatchDir,
+  'server/watch/files': serverWatchFiles,
+  'server/watch/tree': serverWatchTree,
   'server/xlsx': serverXlsx,
   'server/zip': serverZip,
   'shared/assist': sharedAssist,
@@ -104,9 +132,11 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'shared/i18n': sharedI18n,
   'shared/local-image': sharedLocalImage,
   'shared/local-prompts': sharedLocalPrompts,
+  'shared/mirrors/registry': sharedMirrors,
   'shared/mcp-catalog/describe': sharedMcpDescribe,
   'shared/moss': sharedMoss,
   'shared/pinyin': sharedPinyin,
+  'shared/text-match/index': sharedTextMatch,
   'shared/prompt-lang': sharedPromptLang,
   'shared/raster': sharedRaster,
   'shared/restore/thresholds': sharedRestoreThresholds,

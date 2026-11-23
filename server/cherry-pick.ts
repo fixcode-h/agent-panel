@@ -8,7 +8,7 @@ import { gitRun } from './exec/git.ts'
 import { isBinary, merge3 } from './exec/merge3.ts'
 import { DATA_DIR } from './store.ts'
 import { p4Runner, parseZtag, type P4Run } from './p4-split.ts'
-import { detectVcs } from './projects-analyze.ts'
+import { detectVcs } from './vcs/detect.ts'
 import { ownFiles, rel } from './own-changes.ts'
 import { DEFAULT_ASSET_EXTS, isAssetPath } from '../shared/projects/cherry-pick-assets.ts'
 import {

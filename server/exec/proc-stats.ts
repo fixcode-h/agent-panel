@@ -6,7 +6,7 @@ import type { MemoryPoint } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { DATA_DIR } from '../store.ts'
-import { looksLikePanelCli, trackedClis, type TrackedCli } from './orphans.ts'
+import { stillOurs, trackedClis, type TrackedCli } from './orphans.ts'
 
 /**
  * 对话进程的内存统计：一次系统快照（pid、父 pid、RSS、命令行、启动时刻），按 ppid 拼成进程树，
@@ -315,7 +315,7 @@ export function cleanableClis(o: {
     }
     // 有快照时以进程当下的命令行为准（pid 可能被别的进程复用了）；没有快照时只能信登记
     const liveArgv = o.map?.get(e.pid)?.argv ?? e.argv
-    if (o.map && !looksLikePanelCli(liveArgv)) {
+    if (o.map && !stillOurs(e, liveArgv)) {
       skipped.push({ pid: e.pid, reason: t('命令行不像面板起的进程（pid 可能已被复用）') })
       continue
     }

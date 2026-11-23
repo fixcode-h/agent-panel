@@ -6,9 +6,10 @@
 import path from 'node:path'
 import { t } from '../../shared/i18n.ts'
 import { childEnv } from './process.ts'
-import { VCS_MAX_BYTES, vcsRun } from './vcs-run.ts'
+import { vcsRun } from './vcs-run.ts'
+import { VCS_MAX_BYTES } from '../vcs/run.ts'
 import { gitRaw } from './git.ts'
-import { detectVcs } from '../projects-analyze.ts'
+import { detectVcs } from '../vcs/detect.ts'
 import { parseZtag } from '../p4-split.ts'
 
 export interface FileRev {

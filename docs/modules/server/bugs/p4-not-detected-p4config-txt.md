@@ -1,6 +1,6 @@
 # P4 项目被认成「不是 Git 仓库或 P4 工作区」
 
-- 状态：已修复（`server/detect-vcs.test.ts` 通过）
+- 状态：已修复（`server/vcs/detect.test.ts` 通过）
 - 症状：项目设置的「Cherry-pick 目标」显示「项目目录不是 Git 仓库或 P4 工作区，不能设置」，而项目明明是 P4 工作区，工作区根上有 `p4config.txt`
 - 入口：`server/projects-analyze.ts` 的 `detectVcs`（`/fs/vcs`、`isP4`、对话的 cherry-pick 和 P4 分 changelist 都读它）
 - 根因类型：版本控制识别只认固定文件名
@@ -18,4 +18,4 @@
 
 ## 防线
 
-- `server/detect-vcs.test.ts`：`p4config.txt` 认得出（子目录也算）、没有文件时用假 p4 的 `where` 认出、不在映射里的仍是没有版本控制。
+- `server/vcs/detect.test.ts`：`p4config.txt` 认得出（子目录也算）、没有文件时用假 p4 的 `where` 认出、不在映射里的仍是没有版本控制。

@@ -47,6 +47,21 @@ export type TrackedCli = {
   owner?: TrackedOwner
   /** 最后一次有输出的时刻（只留在内存里，不写盘）：判断「很久没有输出」 */
   lastOutputAt?: number
+  /**
+   * 不是 CLI 对话的外部进程（exec/tracked.ts 的 spawnTracked：UE 编译、ffmpeg……）才有：
+   * tag 是认进程用的片段（命令行里没有面板痕迹，只能认它），source / title 给进程面板和日志看
+   */
+  extra?: TrackedExtra
+}
+
+export type TrackedExtra = { tag: string; source: string; title: string }
+
+/**
+ * 登记的这条现在还是不是我们起的那个进程（pid 可能被复用）：CLI 看面板痕迹，外部进程看登记时的 tag
+ */
+export function stillOurs(e: Pick<TrackedCli, 'extra'>, liveArgv: string) {
+  if (e.extra) return !!e.extra.tag && liveArgv.toLowerCase().includes(e.extra.tag.toLowerCase())
+  return looksLikePanelCli(liveArgv)
 }
 
 const run = promisify(execFile)
@@ -172,10 +187,19 @@ function commit(own: TrackedCli[]) {
 }
 
 /** 面板起了一个带自己痕迹的 CLI：记下来，面板被强杀后下次启动能认出来 */
-export function trackCliProcess(pid: number, argv: string, cwd: string, owner?: TrackedOwner) {
+export function trackCliProcess(pid: number, argv: string, cwd: string, owner?: TrackedOwner, extra?: TrackedExtra) {
   const now = Date.now()
   const list = tracked().filter((x) => x.pid !== pid)
-  list.push({ pid, argv, cwd, startedAt: now, lastOutputAt: now, panelPid: PANEL_PID, ...(owner ? { owner } : {}) })
+  list.push({
+    pid,
+    argv,
+    cwd,
+    startedAt: now,
+    lastOutputAt: now,
+    panelPid: PANEL_PID,
+    ...(owner ? { owner } : {}),
+    ...(extra ? { extra } : {}),
+  })
   commit(list)
 }
 
@@ -322,7 +346,7 @@ export async function cleanStaleCliProcesses(kill: (pid: number) => void): Promi
       const argv = all.get(e.pid)
       // 已经结束了（或 pid 被复用、命令行不像面板起的）：条目直接丢弃，只记日志
       if (argv === undefined) continue
-      if (!looksLikePanelCli(argv)) {
+      if (!stillOurs(e, argv)) {
         log.warn('exec', '登记的 pid 现在跑的进程不像面板起的，跳过（pid 可能被复用）', {
           pid: e.pid,
           argv: argv.slice(0, 300),
@@ -400,7 +424,7 @@ async function killTracked(
       forgetAny(e.pid, all)
       continue
     }
-    if (!looksLikePanelCli(argv)) {
+    if (!stillOurs(e, argv)) {
       log.warn('exec', '登记的 pid 现在跑的进程不像面板起的，跳过（pid 可能被复用）', {
         pid: e.pid,
         argv: argv.slice(0, 300),
@@ -468,7 +492,7 @@ export async function reapSettledTaskClis(o: {
       forgetAny(e.pid, procs)
       continue
     }
-    if (!looksLikePanelCli(argv)) continue
+    if (!stillOurs(e, argv)) continue
     const aliveMs = Math.max(0, now - e.startedAt)
     if (aliveMs < grace) continue
     let settled = false

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { t } from './i18n.ts'
 import { RESTORE_FILES, RESTORE_MODELS, restoreWorkflowDefs } from './comfy-restore.ts'
+import { toMirror } from './mirrors/registry.ts'
 
 /**
  * 本机生图：用 ComfyUI 跑开源图片模型。
@@ -365,8 +366,7 @@ export const modelGb = (m: LocalModel, have: (id: string) => boolean = () => fal
   m.files.reduce((n, id) => n + (have(id) ? 0 : (localFile(id)?.gb ?? 0)), 0)
 
 /** 国内访问 Hugging Face 慢或打不开：换成镜像站，路径一样 */
-export const mirrorUrl = (url: string, mirror: boolean) =>
-  mirror ? url.replace('https://huggingface.co/', 'https://hf-mirror.com/') : url
+export const mirrorUrl = (url: string, mirror: boolean) => toMirror('huggingface', url, mirror)
 
 /**
  * 装 ComfyUI 的依赖时备用的 PyPI 索引：清华的同步会滞后几个小时，刚发布的子包
