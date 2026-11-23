@@ -59,6 +59,8 @@ export interface IdeMcpServer {
   server: string
   router?: boolean
   params?: Record<string, ParamBrief[]>
+  /** 面板按当前项目挑出的 IDE 项目路径（IDE 报过「定不了项目」后记下的，server/mcp-catalog/ide-project.ts）；没挑过时没有 */
+  projectPath?: string
 }
 
 /** 提示词里点名的工具最多几个：只为说清「谁有 projectPath、谁用 project」，不是把工具表抄一遍 */
@@ -90,9 +92,16 @@ export function ideMcpLines(servers: IdeMcpServer[] | undefined): string[] {
     `   ${all} 是 JetBrains IDE 自带的 MCP 服务，调它的工具时：`,
     '   - 参数照这个工具自己的参数表传（只看得到名字的先加载它的说明），不要把一个工具的参数照搬到另一个工具上。报「未知参数」时照报错列出的可用参数改，不要换个值再试。',
   ]
-  if (withPath.length)
+  // projectPath 是 IDE 自己的参数：它在调任何工具（插件的 lua_code 也一样）之前先按它定项目，开着多个项目时不传就直接报
+  // 「Unable to determine the target project」，工具跑不到（2026-11-23）。所以不再写「只有参数表里列了它的才传」
+  const known = servers.filter((s) => s.projectPath)
+  if (known.length)
     lines.push(
-      `   - \`projectPath\` 只有参数表里列了它的工具才传（${names(withPath)}）${withProject.length ? `；${names(withProject)} 没有它，开了多个项目时用 \`project\` 传项目名，一般不用传` : ''}。传的时候必须是 IDE 里打开的项目目录或它里面的路径：IDE 打开的常常是工作目录下的子目录，工作目录本身对不上，没把握就不传；报 \`doesn't correspond to any open project\` 或 \`Unable to determine the target project\` 时，从报错里的 \`Currently open projects\` 挑这次要查的那个路径重调，同一个失败过的路径不要再用，列表里没有合适的就停下问用户。`,
+      `   - 调${known.map((s) => ` \`${s.server}\` 的工具都带 \`projectPath\`=\`${s.projectPath}\``).join('；')}（面板按当前项目对上的 IDE 项目，插件工具也带）。个别插件工具报「未知参数 projectPath」时，那个工具去掉它。`,
+    )
+  else if (withPath.length)
+    lines.push(
+      `   - IDE 开着多个项目时，它在调任何工具（${names(withPath)} 这类自带工具和插件工具都一样）之前要靠 \`projectPath\` 定项目，没传会报 \`Unable to determine the target project\`。传的必须是 IDE 里打开的项目目录或它里面的路径：IDE 打开的常常是工作目录下的子目录，工作目录本身对不上，没把握就先不传；报了这个错时面板会按当前项目挑出该传的路径，照它重调；挑不出来就把报错里 \`Currently open projects\` 的路径列成编号列表问用户。同一个失败过的路径不要再用。${withProject.length ? `${names(withProject)} 另有 \`project\`（项目名），一般不用传。` : ''}`,
     )
   const routers = servers.filter((s) => s.router)
   if (routers.length)
@@ -109,8 +118,13 @@ export function ideMcpLines(servers: IdeMcpServer[] | undefined): string[] {
  */
 export function ideMcpPointer(servers: IdeMcpServer[] | undefined): string[] {
   if (!servers?.length) return []
+  // 挑出过 IDE 项目路径的常驻写出来：每轮第一次调就带上，不再先失败一次
+  const paths = servers
+    .filter((s) => s.projectPath)
+    .map((s) => `调 \`${s.server}\` 的工具都带 \`projectPath\`=\`${s.projectPath}\`；`)
+    .join('')
   return [
-    `   ${servers.map((s) => `\`${s.server}\``).join('、')} 是 JetBrains IDE 自带的 MCP 服务：参数照每个工具自己的参数表传，第一次调它时面板会补上调用规矩（项目路径、转调写法）；报参数错时照报错和面板给的参数表改，不要原样或只换查询词重试。`,
+    `   ${servers.map((s) => `\`${s.server}\``).join('、')} 是 JetBrains IDE 自带的 MCP 服务：${paths}参数照每个工具自己的参数表传，第一次调它时面板会补上调用规矩（项目路径、转调写法）；报参数错时照报错和面板给的参数表改，不要原样或只换查询词重试。`,
   ]
 }
 

@@ -19,6 +19,7 @@ import { isJetBrainsServer } from '../../shared/mcp-catalog/known-titles.ts'
 import { scanProjectMcp } from '../projects/mcp.ts'
 import { mcpOverview } from '../mcp-store.ts'
 import { askExternalTools, externalToolsOf } from './external-titles.ts'
+import { ideProjectOf } from './ide-project.ts'
 
 const WAIT_MS = 4000
 
@@ -66,7 +67,7 @@ export async function codeIndexToolsFor(
  * （缓存的工具表里有 execute_tool），以及缓存里各工具的参数表。只读配置和缓存，不主动去问：codeIndexToolsFor 已经在同一轮问过项目里的服务
  */
 export async function ideMcpServersFor(
-  project: Pick<Project, 'path'> | undefined,
+  project: (Pick<Project, 'path'> & { id?: string }) | undefined,
   cwd: string,
 ): Promise<IdeMcpServer[]> {
   if (!project) return []
@@ -81,6 +82,8 @@ export async function ideMcpServersFor(
       ...(known?.names.includes('execute_tool') && { router: true }),
       // 参数表：提示词里「谁有 projectPath、谁用 project」照它写（shared/mcp-catalog/code-index.ts 的 ideMcpLines）
       ...(known && Object.keys(known.params).length > 0 && { params: known.params }),
+      // IDE 报过「定不了项目」后面板挑出的路径（server/hooks/tool-after-hints.ts 的 ideProjectHint）
+      ...(ideProjectOf(project.id, server) && { projectPath: ideProjectOf(project.id, server) }),
     })
   }
   return out
