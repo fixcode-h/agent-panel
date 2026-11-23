@@ -25,6 +25,11 @@ export interface KnownCodeTool {
   use: CodeToolUse
   /** 什么时候用：一句话，写给模型看 */
   when: string
+  /**
+   * 一个工具兼管两类事时，在另一组里再列一行（lua_code 既找声明又查引用）。
+   * 只写在「找」一组时 Agent 找调用点想不到它，会在 search 之后再全文 grep 一遍（用户 2026-11-23 截图）
+   */
+  also?: { use: CodeToolUse; when: string }
 }
 
 /**
@@ -55,7 +60,11 @@ export const KNOWN_CODE_TOOLS: Record<string, KnownCodeTool> = {
   // IntelliJ-EmmyLua 挂在 IDE MCP 服务上的 Lua 查找
   lua_code: {
     use: 'find',
-    when: 'Lua 代码：`action: search` 按名字找声明，`files` 找文件或 require 路径，`outline` 看文件大纲，`references` 查引用',
+    when: 'Lua 代码：`action: search` 按名字找声明，`files` 找文件或 require 路径，`outline` 看文件大纲',
+    also: {
+      use: 'refs',
+      when: 'Lua 代码：`action: references` 查谁在调用、谁在用。找调用点先用它，有结果就直接用，不要再全文 grep 核对一遍；只有它返回空，或者已经看到用字符串拼方法名、`self[name]()` 这类动态调用时，才用 rg 补，并说明原因',
+    },
   },
   // JetBrains IDE 自带
   search_symbol: { use: 'find', when: 'IDE 索引里按名字找符号' },
