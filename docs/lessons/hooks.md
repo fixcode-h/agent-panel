@@ -21,3 +21,9 @@ paths: shared/hooks/index.ts, shared/hooks/defs.ts, shared/hooks/mod.ts, server/
 - 规则：模型常写 `cd 项目 && npm test`、`npm test 2>&1 | tail`。用户钩子的命令前缀、只读守卫的写命令都按 `commandSegments`（按 `&&`、`||`、`;`、`|`、换行拆开）逐段比。
 - 起因：第三期真实测试里 Pi 跑 `cd … && npm test`，「不许跑 npm test」的钩子按整条开头比没拦住。
 - 防线：`shared/hooks/defs.test.ts`「范围和匹配」。
+
+## 能由面板执行的版本管理动作不要只写进提示词，也不要按只读属性猜
+
+- 规则：P4 改前签出、新文件 add 这类「每次改文件都必须做」的事由面板钩子做（`server/hooks/p4-open.ts`），提示词里的说法只作补充；要不要签出看 `p4 fstat` 的结果（在库里没打开才 edit、已在 pending 里不动、库里没有写完再 add），不按文件只不只读猜：client 设了 allwrite 或文件被去掉过只读时，按只读判断会整批漏掉。
+- 起因：用户 2026-11-23 报 P4 项目里 Agent 改的代码和 UE 资源不进默认 Changelist。
+- 防线：`server/hooks/p4-open.test.ts`；插件仓库 `ue/server/p4-checkout.test.ts`。

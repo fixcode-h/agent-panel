@@ -212,6 +212,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     ],
   },
   {
+    id: 'p4-auto-open',
+    event: 'tool.before',
+    name: () => t('P4 改前自动签出'),
+    description: () =>
+      t(
+        'P4 项目里 Agent 改已有文件前，面板先 p4 edit 进默认 changelist；新建的文件写完后 p4 add 进默认 changelist。已经在你某个 pending 里的文件留在原处，项目外的文件不管',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'read-before-edit',
     event: 'tool.before',
     name: () => t('改之前先看过'),
