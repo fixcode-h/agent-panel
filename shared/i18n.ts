@@ -84,8 +84,29 @@ export function extendDict(l: Lang, dict: Record<string, string>) {
   if (d) for (const k in dict) d[k] ??= dict[k]
 }
 
+/**
+ * 带变量的文案算出来的句子 → 原句模板（中文原文）。弹窗按标题记尺寸时用它：
+ * 「参数 {p} 关联表格」这类标题每个参数都不一样，按算出来的句子记就永远对不上（用户 2026-11-23）。
+ * 只留最近的一批，防止长时间运行越攒越多
+ */
+// 模块状态：缓存，丢了没事（只影响弹窗尺寸记忆对不对得上）
+const TEMPLATES = new Map<string, string>()
+const TEMPLATE_CAP = 2000
+
 /** 翻译一句文案；{name} 换成 vars 里的值 */
 export function t(zh: string, vars?: Record<string, string | number>): string {
   const s = DICTS[lang]?.[zh] ?? zh
-  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s
+  if (!vars) return s
+  const out = s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m))
+  if (out !== zh) {
+    TEMPLATES.delete(out)
+    TEMPLATES.set(out, zh)
+    if (TEMPLATES.size > TEMPLATE_CAP) TEMPLATES.delete(TEMPLATES.keys().next().value as string)
+  }
+  return out
+}
+
+/** 一句界面文字的原句模板：经 t() 带变量算出来的给模板，其它原样返回 */
+export function templateOf(text: string): string {
+  return TEMPLATES.get(text) ?? text
 }
