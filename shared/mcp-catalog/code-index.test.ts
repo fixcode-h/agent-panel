@@ -109,3 +109,15 @@ test('代码索引工具：按用途分组列出，登记过的写什么时候�
   assert.match(text, /不凭记忆写/)
   assert.doesNotMatch(codeIndexLines([{ server: 'uetovs', tool: 'search_symbols' }]).join('\n'), /不凭记忆写/)
 })
+
+test('代码索引工具：lua_code 也列进「查引用和调用」，写明找调用点先用 references、查不到再 rg', () => {
+  const text = codeIndexLines([{ server: 'idea', tool: 'lua_code' }]).join('\n')
+  const find = text.indexOf('找声明和文件')
+  const refs = text.indexOf('查引用和调用')
+  assert.ok(find >= 0 && find < refs, text)
+  assert.match(text.slice(find, refs), /`lua_code`：Lua 代码：`action: search`/)
+  assert.match(
+    text.slice(refs),
+    /`lua_code`：Lua 代码：`action: references`[^\n]*有结果就直接用，不要再全文 grep[^\n]*返回空[^\n]*动态调用/,
+  )
+})

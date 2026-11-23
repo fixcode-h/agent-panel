@@ -6,7 +6,7 @@
  * 结果一律先 grep 整个目录（用户 2026-11-14 报：查 GM 为什么无效时先 grep 失败一次，追问后用 search_lua 一下定位）。
  * 所以面板认出项目里的这类工具，把服务名、工具名和一句说明直接写进提示词的「搜索（这个项目）」一节。
  */
-import { CODE_TOOL_USES, knownCodeTool } from './code-tools.ts'
+import { CODE_TOOL_USES, knownCodeTool, type CodeToolUse } from './code-tools.ts'
 import { hasParam, type ParamBrief } from './tool-params.ts'
 
 /** 一个代码索引工具：服务名 + 工具名，desc 是工具说明的第一句（看得出管哪种语言） */
@@ -140,8 +140,9 @@ function routerExample(routers: IdeMcpServer[]): string {
 }
 
 /** 一个工具在提示词里的那一行：登记过用途的写「什么时候用」，陌生服务的写它说明的第一句 */
-const toolLine = (t: CodeIndexTool) => {
-  const why = knownCodeTool(t.tool)?.when ?? t.desc
+const toolLine = (t: CodeIndexTool, use?: CodeToolUse) => {
+  const known = knownCodeTool(t.tool)
+  const why = (use && known?.also?.use === use ? known.also.when : known?.when) ?? t.desc
   return `   - ${t.server} 服务的 \`${t.tool}\`${why ? `：${why}` : ''}`
 }
 
@@ -149,9 +150,12 @@ const toolLine = (t: CodeIndexTool) => {
 function groupedLines(tools: CodeIndexTool[]): string[] {
   const out: string[] = []
   for (const g of CODE_TOOL_USES) {
-    const inGroup = tools.filter((t) => (knownCodeTool(t.tool)?.use ?? 'find') === g.use)
+    const inGroup = tools.filter((t) => {
+      const k = knownCodeTool(t.tool)
+      return (k?.use ?? 'find') === g.use || k?.also?.use === g.use
+    })
     if (!inGroup.length) continue
-    out.push(`   ${g.label}：`, ...inGroup.map((t) => `  ${toolLine(t)}`))
+    out.push(`   ${g.label}：`, ...inGroup.map((t) => `  ${toolLine(t, g.use)}`))
   }
   return out
 }
