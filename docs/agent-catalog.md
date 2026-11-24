@@ -190,16 +190,16 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 判定规则只写在 `shared/flow/run.ts` 的 `WORKFLOW_PICK_RULES`：用户点名 → 命中适用场景 → 问答 / 排查 / Bug / 小改动一律不起 → 拿不准交子对话。
 新增内置工作流必须写这三项，写不出「什么时候用」的说明它不是固定剧本，不该做成工作流。
 
-| key               | 名称                 | 适用场景                               | 默认执行角色   | 节点                                                                                   |
-| ----------------- | -------------------- | -------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
-| `project-general` | 通用项目             | 项目默认、边界清楚的功能和改动         | `orchestrator` | analyst（识别现场与方案，确认）→ developer → docsync                                   |
-| `project-ue`      | UE 项目              | UE 的 C++ / Lua 改动                   | `orchestrator` | explorer（ue 侦察）→ analyst（确认）→ developer（不编译）→ docsync                     |
-| `openspec`        | 功能开发（OpenSpec） | 需要完整规范的复杂功能                 | `developer`    | spec → analyst → spec（门禁）→ developer → tester（延期验证项）→ spec（归档）→ docsync |
-| `migration`       | 数据与配置迁移       | 改 schema / 数据格式 / 配置结构        | `developer`    | analyst（含读写方）→ developer → tester（旧数据验证）→ docsync                         |
-| `architecture`    | 方案设计             | 出方案、设计稿、定口径，或架构取舍     | `analyst`      | analyst（出方案，影响架构时给候选和契约）→ analyst（压测，确认）→ docsync（ADR 自动）  |
-| `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                   |
-| `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                             |
-| `release`         | 发布与回滚           | 出包前的范围、产物验证和回滚预案       | `vcs`          | vcs（发布范围）→ tester（产物验证）→ docsync（发布说明 + 回滚）；发布由父对话做        |
+| key               | 名称                 | 适用场景                               | 默认执行角色   | 节点                                                                                                                       |
+| ----------------- | -------------------- | -------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `project-general` | 通用项目             | 项目默认、边界清楚的功能和改动         | `orchestrator` | analyst（识别现场与方案，确认）→ developer → docsync                                                                       |
+| `project-ue`      | UE 项目              | UE 的 C++ / Lua 改动                   | `orchestrator` | explorer（ue 侦察）→ analyst（确认）→ developer（不编译）→ docsync                                                         |
+| `openspec`        | 功能开发（OpenSpec） | 需要完整规范的复杂功能                 | `developer`    | spec → analyst → spec（门禁）→ developer → tester（延期验证项）→ spec（归档）→ docsync                                     |
+| `migration`       | 数据与配置迁移       | 改 schema / 数据格式 / 配置结构        | `developer`    | analyst（含读写方）→ developer → tester（旧数据验证）→ docsync                                                             |
+| `architecture`    | 方案设计             | 出方案、设计稿、定口径，或架构取舍     | `analyst`      | analyst（出方案，影响架构时给候选和契约）→ analyst（压测，确认）→ docsync（文档定稿，确认）→ docsync（原样落盘，ADR 自动） |
+| `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                                                       |
+| `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                                                                 |
+| `release`         | 发布与回滚           | 出包前的范围、产物验证和回滚预案       | `vcs`          | vcs（发布范围）→ tester（产物验证）→ docsync（发布说明 + 回滚）；发布由父对话做                                            |
 
 ### 已合并的工作流
 
