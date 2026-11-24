@@ -28,6 +28,16 @@ export interface Integration {
   auth: {
     /** 检测是否已登录：退出码 0 表示已登录；凭据是文件时不用这个 */
     status?: string[]
+    /**
+     * 退出码 0 之外还要输出里有这个才算已登录：有的 CLI 查状态总是返回 0，只在输出里写登录着谁
+     * （例如 lark-cli auth status 没登录也是 0，输出 "identity": "none"）
+     */
+    authed?: RegExp
+    /**
+     * 登录前要先做的一步：检测输出匹配 when 时先跑 args（例如 lark-cli 没建应用时先 config init --new，
+     * 它也打印一个网址、等浏览器里完成），跑完再跑 login
+     */
+    prepare?: { args: string[]; when: RegExp }
     /** 凭据文件（相对用户目录）：文件在就算已登录，没有查状态的命令时用它 */
     file?: string
     /** 浏览器授权 */
@@ -52,6 +62,13 @@ export interface Integration {
      */
     printToken?: { args: string[]; hosts: string[] }
   }
+  /**
+   * 不装 CLI 时的备用登录信息（例如飞书的 user_access_token）：面板加密存在本机数据目录（server/secrets/store.ts，
+   * 命名空间 integration:<id>），网页只看得到末 4 位；用它的插件经 ctx.integrations.credentials(id) 读写（插件接口 19）
+   */
+  credentials?: IntegrationCredential[]
+  /** 备用登录信息给谁用、什么时候用的一句话（界面文案） */
+  credentialsNote?: string
   /** 每条命令都带上的环境变量（关掉分页器、更新提示等） */
   env?: Record<string, string>
   /** 检测、退出、用 token 授权时额外带上的环境变量（关掉交互提示） */
@@ -59,6 +76,19 @@ export interface Integration {
 }
 
 export type Platform = 'win32' | 'darwin' | 'linux'
+
+/** 备用登录信息里的一项 */
+export interface IntegrationCredential {
+  key: string
+  label: string
+  /** 一句话说明（界面文案，定义里用 t() 包好） */
+  desc?: string
+  placeholder?: string
+  /** 令牌、密钥：只给末 4 位；不是保密的（例如选哪个平台）界面上照原样显示 */
+  secret: boolean
+  /** 给了就是下拉选择，第一个是默认 */
+  options?: { value: string; label: string }[]
+}
 
 /** 设置页和接口里的授权状态 */
 export interface IntegrationView {
@@ -87,6 +117,10 @@ export interface IntegrationView {
   hint: string
   /** 检测输出的末尾几行：没登录、多个账号时给用户看 */
   detail: string
+  /** 备用登录信息的定义（没有时为空数组），值另走 integrationCredentialsContract */
+  credentials: IntegrationCredential[]
+  /** 备用登录信息给谁用、什么时候用的一句话 */
+  credentialsNote: string
 }
 
 /** 正在进行的授权 */
@@ -270,8 +304,92 @@ const vercel: Integration = {
   env: { NO_UPDATE_NOTIFIER: '1', VERCEL_TELEMETRY_DISABLED: '1' },
 }
 
+/** npm 全局装的 CLI 的一键安装：npm 不在时依次回退到 pnpm、yarn；Linux 多一条 sudo -n（没有免密 sudo 时直接失败，不卡在输密码上） */
+const npmSetup = (pkg: string): Integration['setup'] => {
+  const common: string[][] = [
+    ['npm', 'i', '-g', pkg],
+    ['pnpm', 'add', '-g', pkg],
+    ['yarn', 'global', 'add', pkg],
+  ]
+  return {
+    win32: common,
+    darwin: common,
+    linux: [common[0], ['sudo', '-n', 'npm', 'i', '-g', pkg], ...common.slice(1)],
+  }
+}
+
+/**
+ * 飞书 CLI（lark-cli，飞书官方）：飞书插件经它读写飞书文档、表格、多维表格和评论（用户 2026-11-24 要在账号授权里加飞书）。
+ * 命令行为按 github.com/larksuite/cli v1.0.100 的源码核对（cmd/auth/status.go、login.go、cmd/config/init.go），
+ * 没在真实账号上跑过：
+ * - auth status 总是退出 0，输出 JSON 的 "identity" 是 user / bot / none，用户名在 identities.user.userName；
+ *   还没建应用时报错 not configured（退出码非 0）
+ * - 没建应用要先 config init --new（不在终端里时打印网址后等浏览器里建好），再 auth login --recommend（打印网址、轮询等授权）
+ * - 不装 lark-cli 时飞书插件可以改用 token（备用登录信息），能做的事少一些（见插件 README）
+ */
+const feishu: Integration = {
+  id: 'feishu',
+  name: t('飞书 CLI'),
+  description: t(
+    '授权后飞书插件可以经 lark-cli 读写你的飞书文档、表格、多维表格和评论；每次读写都按插件的授权卡来，Agent 不能在终端里直接调 lark-cli。',
+  ),
+  command: 'lark-cli',
+  versionArgs: ['--version'],
+  docsUrl: 'https://github.com/larksuite/cli',
+  install: {
+    win32: 'npm i -g @larksuite/cli',
+    darwin: 'npm i -g @larksuite/cli',
+    linux: 'npm i -g @larksuite/cli',
+  },
+  setup: npmSetup('@larksuite/cli'),
+  auth: {
+    status: ['auth', 'status'],
+    authed: /"identity"\s*:\s*"user"/,
+    prepare: { args: ['config', 'init', '--new', '--lang', 'zh'], when: /not configured|config init/i },
+    login: ['auth', 'login', '--recommend'],
+    logout: ['auth', 'logout'],
+    account: /"userName"\s*:\s*"([^"]+)"/,
+    hint: t('还没有登录飞书。点「浏览器授权」：第一次会先在浏览器里建一个飞书应用，再登录授权。'),
+  },
+  credentialsNote: t(
+    '不装 lark-cli 时，飞书插件可以用这里填的 token 登录（加密存在本机数据目录，网页只显示末 4 位）。token 方式改不了文档正文，也不能新建文档。',
+  ),
+  credentials: [
+    {
+      key: 'brand',
+      label: t('开放平台'),
+      secret: false,
+      options: [
+        { value: 'feishu', label: t('飞书（open.feishu.cn）') },
+        { value: 'lark', label: t('Lark 国际版（open.larksuite.com）') },
+      ],
+    },
+    {
+      key: 'userToken',
+      label: 'user_access_token',
+      desc: t('用户身份的令牌（u- 开头），大约 2 小时过期'),
+      placeholder: 'u-xxxx',
+      secret: true,
+    },
+    {
+      key: 'refreshToken',
+      label: 'refresh_token',
+      desc: t('选填：和 App ID、App Secret 一起填，token 过期时自动换新的'),
+      secret: true,
+    },
+    {
+      key: 'appId',
+      label: 'App ID',
+      desc: t('选填：拿 token 用的飞书应用（cli_ 开头）'),
+      placeholder: 'cli_xxxx',
+      secret: false,
+    },
+    { key: 'appSecret', label: 'App Secret', desc: t('选填：同一个应用的 App Secret'), secret: true },
+  ],
+}
+
 /** 内置的授权工具；以后加 GitLab 之类只管往这里加一份定义 */
-export const INTEGRATIONS: Integration[] = [github, cloudflared, vercel]
+export const INTEGRATIONS: Integration[] = [github, cloudflared, vercel, feishu]
 
 export const getIntegration = (id: string) => INTEGRATIONS.find((x) => x.id === id)
 
@@ -281,7 +399,7 @@ export const getIntegration = (id: string) => INTEGRATIONS.find((x) => x.id === 
  * 抽成纯函数，服务端检测和单元测试走同一份判断，测试不用起进程、不用连网。
  */
 export function authState(def: Integration, code: number | null, output: string) {
-  const authed = code === 0
+  const authed = code === 0 && (!def.auth.authed || def.auth.authed.test(output))
   const account = authed && def.auth.account ? (output.match(def.auth.account)?.[1] ?? '') : ''
   return { authed, account }
 }

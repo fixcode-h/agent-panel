@@ -288,6 +288,36 @@ export interface PluginServerContext {
    * 插件也能自己写（例如令牌续期后存新的）。旧面板没有它：插件按 undefined 提示用户升级面板
    */
   secrets?: PluginSecrets
+  /**
+   * 设置 →「账号授权」里的工具（插件接口 19）：插件要用的命令行工具（例如飞书的 lark-cli）的安装、登录状态和
+   * 实际路径，以及不装工具时的备用登录信息。登录归账号授权管，插件不再自己放登录参数。
+   * 旧面板没有它：插件按 undefined 退回自己原来的做法或提示升级面板
+   */
+  integrations?: PluginIntegrations
+}
+
+/** 账号授权里一个工具的状态（PluginIntegrations.get） */
+export interface PluginIntegrationState {
+  installed: boolean
+  /** 工具自己报告已登录 */
+  authed: boolean
+  /** 登录着的账号；认不出时为空 */
+  account: string
+  /** 版本行；没装时为空 */
+  version: string
+  /** 实际跑的可执行文件完整路径（PATH、npm 全局目录、常见安装目录里找到的）；没装时为空 */
+  path: string
+}
+
+/** 插件用的账号授权（PluginServerContext.integrations） */
+export interface PluginIntegrations {
+  /** 一个工具（shared/integrations.ts 的 id，例如 feishu）的状态；refresh 为 true 时跳过几秒的检测缓存。没有这个工具返回 undefined */
+  get: (id: string, refresh?: boolean) => Promise<PluginIntegrationState | undefined>
+  /**
+   * 这个工具的备用登录信息（定义里 credentials 声明的键，例如飞书的 userToken）：加密存本机，和设置页填的是同一份。
+   * 插件续期令牌后用 set 写回；没声明的键读出空串、写入报错
+   */
+  credentials: (id: string) => PluginSecrets
 }
 
 /** 插件的保密项（PluginServerContext.secrets）：只能读写自己这个插件的 */

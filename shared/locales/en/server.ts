@@ -706,4 +706,6 @@ export const EN_SERVER: Record<string, string> = {
     'This package is for {pkg}, but this computer runs {os}. Pick {name} instead',
   没有收到安装包: 'No package was received',
   '这个安装包已经失效，请重新选择': 'This package is no longer available. Please pick it again',
+  '{name} 登录前的准备没有完成（退出码 {code}）': '{name} did not finish preparing for sign-in (exit code {code})',
+  登录信息的格式不对: 'The sign-in details are in the wrong format',
 }
