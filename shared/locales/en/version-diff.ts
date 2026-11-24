@@ -15,4 +15,7 @@ export const EN_VERSION_DIFF: Record<string, string> = {
   本地改动: 'Local changes',
   版本号格式不对: 'Invalid revision',
   这个项目没有版本控制: 'This project has no version control',
+  'UE 读取超过几秒算忙': 'Seconds before a UE read counts as busy',
+  属性来历往回读几版: 'Versions to read back for property history',
+  同一次提交改的资源: 'Assets changed in the same commit',
 }

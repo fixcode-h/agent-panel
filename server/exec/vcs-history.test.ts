@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileAt, fileHistory, VcsInputError } from './vcs-history.ts'
+import { changedFiles, fileAt, fileHistory, VcsInputError } from './vcs-history.ts'
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: dir })
@@ -37,4 +37,20 @@ test('没有版本控制：空列表，取内容报错', async () => {
   assert.equal(h.vcs, 'none')
   assert.deepEqual(h.revs, [])
   await assert.rejects(fileAt(dir, 'a.uasset', 'HEAD'), VcsInputError)
+})
+
+test('git：一次提交里改了哪些文件，路径相对传入的目录', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'agent-panel-vcs-changed-'))
+  git(root, 'init', '-q')
+  const dir = path.join(root, 'Game')
+  mkdirSync(path.join(dir, 'Content'), { recursive: true })
+  writeFileSync(path.join(dir, 'Content/A.uasset'), 'a')
+  writeFileSync(path.join(dir, 'Content/B.uasset'), 'b')
+  writeFileSync(path.join(root, 'outside.txt'), 'x')
+  git(root, 'add', '.')
+  git(root, 'commit', '-q', '-m', '一起改')
+  const h = await fileHistory(dir, 'Content/A.uasset')
+  assert.equal(h.revs[0].change, h.revs[0].id)
+  assert.deepEqual((await changedFiles(dir, h.revs[0].id)).sort(), ['Content/A.uasset', 'Content/B.uasset'])
+  await assert.rejects(changedFiles(dir, '--output=x'), VcsInputError)
 })
