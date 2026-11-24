@@ -4,6 +4,7 @@ import { X, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { ModalResizeHandles, useModalResize } from './modal-resize'
+import { menuIsOpen } from './item-menu'
 
 /**
  * 弹窗遮罩：Modal、Sheet 和各处手写的 D.Overlay 用同一个，透明度只在 index.css 的 --scrim 定义。
@@ -203,9 +204,16 @@ export function Modal({
           ref={resize.contentRef}
           style={resize.contentStyle}
           aria-describedby={undefined}
-          onInteractOutside={closeOnOutside ? undefined : (e) => e.preventDefault()}
+          onInteractOutside={(e) => {
+            // 弹窗里右键开的菜单画在 body 上，点菜单项对弹窗来说是「点到外面」，不能因此关掉弹窗
+            if (!closeOnOutside || (e.target as Element | null)?.closest?.('[role=menu]')) e.preventDefault()
+          }}
           onOpenAutoFocus={onOpenAutoFocus}
-          onEscapeKeyDown={onEscapeKeyDown}
+          onEscapeKeyDown={(e) => {
+            // 弹窗里开着右键菜单时 Esc 只关菜单（菜单自己听 keydown 关掉），弹窗留着（用户 2026-11-24，GM 参数关联右键菜单）
+            if (menuIsOpen()) return e.preventDefault()
+            onEscapeKeyDown?.(e)
+          }}
           className={cn(
             'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-3.75rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 anim-dialog focus:outline-none',
             MODAL_SURFACE,
