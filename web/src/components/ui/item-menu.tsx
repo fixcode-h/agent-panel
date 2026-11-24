@@ -111,6 +111,9 @@ export function openMenuAt(el: HTMLElement, items: (MenuItem | false | '' | unde
   )
 }
 
+/** 现在有没有菜单开着：弹窗按 Esc、点外面时先看它，菜单开着就只关菜单（Modal 用） */
+export const menuIsOpen = () => !!state
+
 export function closeMenu() {
   if (!state) return
   const old = state
@@ -374,7 +377,8 @@ function Menu({ s, inline }: { s: State; inline?: boolean }) {
         // 弹出的那个（设置里的示例是画在页里的同一个组件）：蓝图画布拖线弹菜单时按它找菜单摆在哪
         data-floating={inline ? undefined : ''}
         onContextMenu={(e) => e.preventDefault()}
-        className={cn(inline ? 'relative' : 'fixed z-[1000]', box)}
+        // pointer-events-auto：Radix 弹窗开着时给 body 设了 pointer-events: none，画在 body 上的菜单不加就点不到（弹窗里右键的菜单）
+        className={cn(inline ? 'relative' : 'pointer-events-auto fixed z-[1000]', box)}
         style={
           inline ? undefined : { left: pos.left, top: pos.top, maxHeight: maxH, transformOrigin: `${pos.oy} ${pos.ox}` }
         }
@@ -400,7 +404,7 @@ function Menu({ s, inline }: { s: State; inline?: boolean }) {
             clearTimeout(timer.current)
             setAct(open)
           }}
-          className={cn('fixed z-[1001]', box, !subPos && 'invisible')}
+          className={cn('pointer-events-auto fixed z-[1001]', box, !subPos && 'invisible')}
           style={{
             left: subPos?.left ?? 0,
             top: subPos?.top ?? 0,
