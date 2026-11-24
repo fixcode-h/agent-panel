@@ -283,6 +283,19 @@ export interface PluginServerContext {
    * 旧面板没有它：插件按 undefined 退回自己原来的走法
    */
   files?: PluginFiles
+  /**
+   * 保密项（插件接口 18）：清单里 type 为 secret 的参数，加密存在本机，不进 config()、不进环境变量。
+   * 插件也能自己写（例如令牌续期后存新的）。旧面板没有它：插件按 undefined 提示用户升级面板
+   */
+  secrets?: PluginSecrets
+}
+
+/** 插件的保密项（PluginServerContext.secrets）：只能读写自己这个插件的 */
+export interface PluginSecrets {
+  /** 没设置返回空串 */
+  get: (key: string) => Promise<string>
+  /** 空串表示清掉 */
+  set: (key: string, value: string) => Promise<void>
 }
 
 /** 插件用的文件索引（PluginServerContext.files）：路径一律绝对路径进出，/ 或系统分隔符都行 */

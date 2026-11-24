@@ -12,6 +12,7 @@ import { pluginPages } from './pages.ts'
 import { noteMountError } from '../mcp-catalog/last-run.ts'
 import { pluginGate, pluginProjectsApi } from './project-gate.ts'
 import { pluginFilesApi } from '../file-index/plugin-files.ts'
+import { getSecret, setSecret } from '../secrets/store.ts'
 
 /**
  * 插件的服务端部分在面板进程里跑（ADR 0059）：插件打开时 import 包里的 server 入口、调 activate，
@@ -66,6 +67,10 @@ async function start(p: Installed, config: () => PluginConfig) {
       pages: pages.api,
       projects: pluginProjectsApi(id),
       files: pluginFilesApi(id),
+      secrets: {
+        get: (k) => getSecret(`plugin:${id}`, k),
+        set: (k, v) => setSecret(`plugin:${id}`, k, v),
+      },
     }),
   ).catch((e) => {
     pages.dispose()
