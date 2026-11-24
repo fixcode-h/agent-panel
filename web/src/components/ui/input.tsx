@@ -360,6 +360,38 @@ export function ComboInput({
   )
 }
 
+/** 控件自己的点击：label 不会再去激活别的控件，放过 */
+const FIELD_INTERACTIVE =
+  'button,input,select,textarea,a[href],[role=button],[role=checkbox],[role=switch],[role=combobox],[contenteditable=true]'
+
+/**
+ * Field 外层是 <label>：浏览器会把 label 里任何空白处、说明文字上的点击转给它里面第一个可交互元素。
+ * 一个 Field 里放了好几个控件时（例如 GM 关联表格的「辅助描述列」：每个 chip 带删除按钮、后面一个下拉），
+ * 点控件旁边的空白就等于点了第一个 chip 的删除按钮，刚加的列被删掉（用户 2026-11-24）。
+ * 所以只有点标题文字才转给控件：输入框、复选框照浏览器默认（聚焦、切换），只有一个按钮类控件时照旧点它，
+ * 有好几个控件时按钮只聚焦不点；点空白和说明文字什么都不做。弹出层（Portal）里的点击经 React 冒泡上来，不在 label 的 DOM 里，不管。
+ */
+function guardLabelClick(e: React.MouseEvent<HTMLLabelElement>) {
+  const label = e.currentTarget
+  const target = e.target as Element
+  if (e.defaultPrevented || !label.contains(target)) return
+  const hit = target.closest(FIELD_INTERACTIVE)
+  if (hit && label.contains(hit)) return
+  const control = label.control
+  if (target.closest('[data-field-caption]') && control) {
+    // 只有一个控件时照旧（点标题打开下拉、切开关）；有好几个时第一个不一定是主控件（可能是删除按钮），只聚焦
+    const several =
+      label.querySelectorAll(FIELD_INTERACTIVE).length >
+      1 + (label.querySelector('[data-field-caption] button') ? 1 : 0)
+    if (control instanceof HTMLButtonElement && several) {
+      e.preventDefault()
+      control.focus()
+    }
+    return
+  }
+  e.preventDefault()
+}
+
 export function Field({
   label,
   hint,
@@ -377,8 +409,8 @@ export function Field({
   className?: string
 }) {
   return (
-    <label className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <span className="flex items-center gap-1 text-xs text-muted">
+    <label className={cn('flex min-w-0 flex-col gap-1.5', className)} onClick={guardLabelClick}>
+      <span data-field-caption="" className="flex items-center gap-1 text-xs text-muted">
         {label}
         {tip && <HelpTip>{tip}</HelpTip>}
       </span>

@@ -39,3 +39,9 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts
 - 规则：运行区、工具行、子对话行这类会跟着一轮输出、子任务结果重挂或收进折叠的行，打开的弹窗不能用行自己的 state 渲染，要交给任务页顶层（`PaneNav` 里的 `job`、`diagnosis`，见 `web/src/components/tasks/diagnosis-window.tsx`）；弹窗只由用户关。自动弹的不顶掉别的对话已经开着的弹窗。
 - 起因：用户 2026-11-05 报诊断报告弹窗在对话输出完、子任务做完时被自动关掉——弹窗挂在运行区的「诊断报告」行和交报告那一行里，行一卸载就跟着没了（后台命令窗口早先因同样原因挪到了顶层）。
 - 防线：人工（`scripts/ui/02b-subagent.mjs` 只覆盖弹出和手动关闭）。
+
+## Field 外层是 label，点空白会转给第一个控件
+
+- 规则：`Field` 渲染成 `<label>`，浏览器会把 label 里空白处、说明文字上的点击转给里面第一个可交互元素。一个 Field 里放好几个控件（带删除按钮的 chip + 下拉）时，第一个往往是删除按钮。共用 `Field` 已经拦住（`web/src/components/ui/input.tsx` 的 `guardLabelClick`：只有点标题才转，多控件时只聚焦），自己写 `<label>` 包多个控件时也要照这样拦，或者外层改用 `div`。
+- 起因：用户 2026-11-24 报 GM「参数关联表格」弹窗里点「加一列」右边的空白，刚加的辅助描述列被删掉。
+- 防线：人工。
