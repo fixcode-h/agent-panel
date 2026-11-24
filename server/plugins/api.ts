@@ -28,6 +28,7 @@ import {
 } from './manager.ts'
 import { pluginMcpApi } from './mcp.ts'
 import { pluginServicesApi } from './services-api.ts'
+import { pluginSecretsApi } from './secrets-api.ts'
 import { pluginError, pluginStatus, runningPlugin } from './runtime.ts'
 import { linkPackage, packageRoot, parseManifest, writePackage, type Installed } from './store.ts'
 import { checkPluginUpdates } from './updates.ts'
@@ -91,6 +92,7 @@ export function pluginsApi() {
       .route('/wrap', wrapApi())
       // 插件接口 11 的托管进程：状态、起、停
       .route('/', pluginServicesApi())
+      .route('/', pluginSecretsApi())
       .get('/', async (c) => {
         const s = await getSettings()
         return c.json({

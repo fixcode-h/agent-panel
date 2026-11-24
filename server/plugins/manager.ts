@@ -27,6 +27,7 @@ import { pluginConfigChanged, stopPlugin, syncRuntime } from './runtime.ts'
 import { configureProjectGate } from './project-gate.ts'
 import { syncDeclared } from './declared-sync.ts'
 import { listInstalled, removePackage, rollbackPackage, type Installed } from './store.ts'
+import { dropSecrets } from '../secrets/store.ts'
 
 /**
  * 插件的装、删、开、关（ADR 0059）。核心数据（角色、工作流、项目）的读写由 server/index.ts 在启动时交进来，
@@ -210,6 +211,7 @@ export async function uninstallPlugin(id: string) {
   if (p) out = await turnOff(p, `插件 ${p.manifest.name} 已删除，清掉它的内容`)
   else await stopPlugin(id)
   await removePackage(id)
+  await dropSecrets(`plugin:${id}`)
   const s = await getSettings()
   if (s.plugins[id]) {
     const { [id]: _gone, ...rest } = s.plugins

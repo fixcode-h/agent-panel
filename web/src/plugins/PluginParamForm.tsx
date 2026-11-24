@@ -9,6 +9,7 @@ import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Group, Row } from '@/components/settings/parts'
 import { pluginApi } from './api'
+import { SecretField, useSecrets } from './SecretField'
 import { loadPlugins, usePlugins, type PluginRow } from './registry'
 
 /**
@@ -31,16 +32,23 @@ export function ParamForm({
   const [saving, setSaving] = useState(false)
   useEffect(() => setDraft(row.config), [row.config])
   const settings = row.manifest.settings.filter((s) => !only || only.includes(s.group ?? ''))
+  const plain = settings.filter((s) => s.type !== 'secret')
+  const secret = useSecrets(
+    row.manifest.id,
+    settings.some((s) => s.type === 'secret'),
+  )
   // 只比这里画出来的几项：别处改了没画出来的参数，这里不该亮「保存」
-  const dirty = settings.some((s) => draft[s.key] !== row.config[s.key])
+  const dirty = plain.some((s) => draft[s.key] !== row.config[s.key]) || secret.dirty
   const set = (k: string, v: string | number | boolean) => setDraft((d) => ({ ...d, [k]: v }))
   const save = async () => {
     setSaving(true)
     try {
       // 只交这里画出来的几项：服务端按键合并，别的参数保持服务端那份
       await pluginApi.update(row.manifest.id, {
-        config: Object.fromEntries(settings.filter((s) => s.key in draft).map((s) => [s.key, draft[s.key]])),
+        config: Object.fromEntries(plain.filter((s) => s.key in draft).map((s) => [s.key, draft[s.key]])),
       })
+      // 保密项单独存（插件接口 18）：普通参数存好再存它，失败时普通参数已经生效、提示里写原因
+      await secret.save()
       await loadPlugins()
       toast.success(t('插件参数已保存'))
     } catch (e) {
@@ -50,6 +58,7 @@ export function ParamForm({
     }
   }
   const field = (s: PluginSetting) => {
+    if (s.type === 'secret') return <SecretField s={s} state={secret} />
     const v = draft[s.key] ?? s.default
     if (s.type === 'boolean')
       return <Switch checked={!!v} onCheckedChange={(c) => set(s.key, c)} aria-label={t(s.label)} />
@@ -98,7 +107,7 @@ export function ParamForm({
       title={t(s.label)}
       desc={s.desc ? t(s.desc) : undefined}
       hint={s.env ? t('对应环境变量 {env}', { env: s.env }) : undefined}
-      stack={s.type === 'path' || s.type === 'text'}
+      stack={s.type === 'path' || s.type === 'text' || s.type === 'secret'}
     >
       {field(s)}
     </Row>
@@ -106,7 +115,15 @@ export function ParamForm({
   const actions = (
     <div className={cn('flex justify-end gap-2', bare ? 'py-2.5' : 'mt-3')}>
       {dirty && (
-        <Button size="sm" variant="ghost" onClick={() => setDraft(row.config)} disabled={saving}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setDraft(row.config)
+            secret.reset()
+          }}
+          disabled={saving}
+        >
           {t('还原')}
         </Button>
       )}
