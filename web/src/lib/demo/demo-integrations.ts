@@ -12,12 +12,27 @@ const VERSION: Record<string, string> = {
   github: 'gh version 2.97.0（演示）',
   cloudflared: 'cloudflared version 2026.1.0（演示）',
   vercel: 'Vercel CLI 65.2.0（演示）',
+  feishu: 'lark-cli version 1.0.100（演示）',
 }
 
 /** 演示里授权后显示的账号：和真实后端的 account 一样，认不出时留空 */
 const ACCOUNT: Record<string, string> = {
   github: 'demo-user',
   vercel: 'demo-vercel',
+  feishu: '演示用户',
+}
+
+/** 演示里的备用登录信息：只在内存里，和真实后端一样只回末 4 位 */
+const creds = new Map<string, Record<string, string>>()
+const credHints = (id: string) => {
+  const def = getIntegration(id)
+  const cur = creds.get(id) ?? {}
+  const out: Record<string, { tail: string; value?: string }> = {}
+  for (const f of def?.credentials ?? []) {
+    const v = cur[f.key]
+    if (v) out[f.key] = f.secret ? { tail: v.length > 8 ? v.slice(-4) : '' } : { tail: '', value: v }
+  }
+  return out
 }
 
 const view = (id: string): IntegrationView => {
@@ -40,6 +55,8 @@ const view = (id: string): IntegrationView => {
     canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
     hint: on ? '' : (def.auth.hint ?? ''),
     detail: on ? '' : '演示：还没有授权',
+    credentials: def.credentials ?? [],
+    credentialsNote: def.credentialsNote ?? '',
   }
 }
 
@@ -54,21 +71,27 @@ function start(id: string): IntegrationLoginJob {
   const cloudflare = def.id === 'cloudflared'
   // vercel 的 device code flow：打印一条带 user_code 的授权链接，在链接里输码
   const vercel = def.id === 'vercel'
+  // lark-cli auth login：不在终端里时把授权网址打到 stderr，没有单独的授权码
+  const feishu = def.id === 'feishu'
   const job: IntegrationLoginJob = {
     id: `demo-${crypto.randomUUID()}`,
     integration: def.id,
     status: 'running',
-    url: cloudflare
-      ? 'https://dash.cloudflare.com/argotunnel'
-      : vercel
-        ? 'https://vercel.com/oauth/device?user_code=ABCD-1234'
-        : 'https://github.com/login/device',
-    code: cloudflare ? '' : 'ABCD-1234',
-    output: cloudflare
-      ? 'A browser window should have opened at the following URL. If it failed to open, visit it manually.'
-      : vercel
-        ? 'Visit https://vercel.com/oauth/device?user_code=ABCD-1234'
-        : '! First copy your one-time code: ABCD-1234\nPress Enter to open github.com in your browser…',
+    url: feishu
+      ? 'https://accounts.feishu.cn/oauth/v1/device/verify?user_code=DEMO-CODE'
+      : cloudflare
+        ? 'https://dash.cloudflare.com/argotunnel'
+        : vercel
+          ? 'https://vercel.com/oauth/device?user_code=ABCD-1234'
+          : 'https://github.com/login/device',
+    code: cloudflare || feishu ? '' : 'ABCD-1234',
+    output: feishu
+      ? 'Open the following URL in your browser to authorize:\n  https://accounts.feishu.cn/oauth/v1/device/verify?user_code=DEMO-CODE'
+      : cloudflare
+        ? 'A browser window should have opened at the following URL. If it failed to open, visit it manually.'
+        : vercel
+          ? 'Visit https://vercel.com/oauth/device?user_code=ABCD-1234'
+          : '! First copy your one-time code: ABCD-1234\nPress Enter to open github.com in your browser…',
     startedAt: Date.now(),
   }
   jobs.set(id, job)
@@ -104,6 +127,19 @@ export function demoIntegrations(method: string, seg: string[], body: any): unkn
     }
     if (method === 'POST') return start(id)
     return loginView(id)
+  }
+  if (action === 'credentials') {
+    if (method === 'PUT') {
+      const keys = new Set((getIntegration(id)?.credentials ?? []).map((f) => f.key))
+      const cur = { ...creds.get(id) }
+      for (const [k, v] of Object.entries((body ?? {}) as Record<string, string>)) {
+        if (!keys.has(k)) continue
+        if (String(v).trim()) cur[k] = String(v).trim()
+        else delete cur[k]
+      }
+      creds.set(id, cur)
+    }
+    return credHints(id)
   }
   // 演示里都当已安装，不会走到一键安装
   if (action === 'install') return null

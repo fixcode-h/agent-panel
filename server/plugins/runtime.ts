@@ -13,6 +13,7 @@ import { noteMountError } from '../mcp-catalog/last-run.ts'
 import { pluginGate, pluginProjectsApi } from './project-gate.ts'
 import { pluginFilesApi } from '../file-index/plugin-files.ts'
 import { getSecret, setSecret } from '../secrets/store.ts'
+import { credentialStore } from '../secrets/integration-credentials.ts'
 
 /**
  * 插件的服务端部分在面板进程里跑（ADR 0059）：插件打开时 import 包里的 server 入口、调 activate，
@@ -70,6 +71,11 @@ async function start(p: Installed, config: () => PluginConfig) {
       secrets: {
         get: (k) => getSecret(`plugin:${id}`, k),
         set: (k, v) => setSecret(`plugin:${id}`, k, v),
+      },
+      integrations: {
+        // 用到时再加载：integrations.ts 连带加载设置和界面语言，静态引入会让只测插件运行时的单测换了语言
+        get: async (iid, refresh) => (await import('../integrations.ts')).integrationState(iid, refresh),
+        credentials: credentialStore,
       },
     }),
   ).catch((e) => {
