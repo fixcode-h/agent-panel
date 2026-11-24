@@ -33,6 +33,8 @@ export interface PluginRunHooks {
   progress?: (server: string, tool: string, text: string) => void
   /** 交给面板的后台命令跑（ctx.background，插件框架改进 G1）：和 Agent 的 run_background 同一套监管 */
   background?: McpCallContext['background']
+  /** 用户在这个对话里亲口说过的话（ctx.userWords，插件接口 17） */
+  userWords?: McpCallContext['userWords']
 }
 
 interface Session {
@@ -121,7 +123,10 @@ async function callTool(s: Session, tool: McpTool, args: Record<string, unknown>
       tool.call(args, {
         taskId: s.taskId,
         callId,
-        confirm: s.confirm,
+        // 插件定的授权键加上插件 id：不同插件起了同名的键也不会互相放行
+        confirm:
+          s.confirm &&
+          ((req) => s.confirm!({ ...req, rule: req.rule?.trim() ? `${s.pluginId}:${req.rule.trim()}` : undefined })),
         signal: ctl.signal,
         ...(s.hooks?.progress && {
           progress: (text: string) => {
@@ -130,6 +135,7 @@ async function callTool(s: Session, tool: McpTool, args: Record<string, unknown>
           },
         }),
         ...(s.hooks?.background && { background: s.hooks.background }),
+        ...(s.hooks?.userWords && { userWords: s.hooks.userWords }),
       }),
       stopped,
     ])

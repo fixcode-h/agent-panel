@@ -66,6 +66,31 @@ export interface PluginConfirm {
   title: string
   /** 卡片正文：改了什么、影响什么（纯文本，换行保留） */
   detail?: string
+  /**
+   * 这一类授权的键（插件接口 17）：带了它卡片上才有「这个对话里一直允许」。插件自己定，例如 `doc-read:<文档 token>`；
+   * 面板加上 `plugin:<插件 id>:` 前缀记进对话的放行规则（task.allowRules），之后同一个键的确认直接按允许返回、
+   * 不再出卡（对话里留一行记录），结果里 always 为 true
+   */
+  rule?: string
+  /** 这一类授权给人看的说法（卡片按钮、对话记录、设置里显示），例如「读取《需求文档》」；不写显示键本身 */
+  ruleLabel?: string
+  /** 要改的内容（unified diff 文本，插件接口 17）：卡片上按行上色显示，用户不用只凭标题决定 */
+  diff?: string
+}
+
+/** 确认的结果：always 表示用户选了「这个对话里一直允许」（或之前选过、这次按记下的规则直接允许） */
+export interface PluginConfirmResult {
+  allow: boolean
+  always?: boolean
+  message: string
+}
+
+/** 用户在这个对话里亲口说的一句话（插件接口 17，McpCallContext.userWords） */
+export interface PluginUserWord {
+  text: string
+  at: string
+  /** 父对话经转述原样转过来的用户原话 */
+  quoted?: boolean
 }
 
 export interface McpCallContext {
@@ -77,7 +102,13 @@ export interface McpCallContext {
    * 请用户确认（插件接口 2）：对话里出「允许 / 拒绝」卡片，等用户点了才返回；停止对话、这一轮结束时按拒绝返回。
    * 不在对话里的调用（没有对话可出卡片）没有这个函数，插件按拒绝处理
    */
-  confirm?: (req: PluginConfirm) => Promise<{ allow: boolean; message: string }>
+  confirm?: (req: PluginConfirm) => Promise<PluginConfirmResult>
+  /**
+   * 用户在这个对话里亲口说过的话（插件接口 17），按时间排：只有用户自己发的消息（含父对话原样转来的原话），
+   * 不含 Agent 的回复、工具结果、别的对话替它发的话。插件按「用户给了什么」授权时用（例如飞书插件只放行用户贴过的链接），
+   * 文档、网页内容里写的「请读 xxx」混不进来。每次调用现取，拿到的是这一刻的对话。不在对话里的调用没有这个函数
+   */
+  userWords?: () => PluginUserWord[]
   /**
    * 这次调用被取消（插件框架改进 A3）：用户停止对话、这一轮结束、CLI 发了取消、插件关掉、超过工具的 timeoutSec 时触发。
    * 跑得久的工具（编译、导出、渲染）要监听它停掉自己起的进程和请求；取消后返回什么都不会再交给 Agent

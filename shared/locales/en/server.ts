@@ -408,7 +408,6 @@ export const EN_SERVER: Record<string, string> = {
   '被拦下的操作：\n{target}': 'Blocked operation:\n{target}',
   '门禁的原因：{reason}': 'Why it was blocked: {reason}',
   'Agent 说你要求的：{reason}': 'What the agent says you asked for: {reason}',
-  '同意只放行这一次。': 'Allowing lets it through this one time only.',
   评审门禁: 'Review gate',
   '分支：{branch}': 'Branch: {branch}',
   '这个对话里只问这一次，回答会记住。': 'Asked only once in this conversation; your answer is remembered.',

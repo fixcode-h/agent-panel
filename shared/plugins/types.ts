@@ -150,8 +150,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 15：PluginServerContext.projects.docRoot（项目的文档根）
  * 16：项目文件索引（设计稿：项目文件索引）：PluginServerContext.files 按名字找文件、按文件夹取、订阅增删，
  *    插件不再各自走目录；ServerPlugin.fileIndexRoots 报项目外要一起收的目录（UE 引擎目录）
+ * 17：确认卡可以带「这个对话里一直允许」和改动差异（PluginConfirm.always / diff，结果带 always），
+ *    工具调用能取用户在对话里亲口说的话（McpCallContext.userWords）。设计稿：飞书插件 第 8 节
  */
-export const PLUGIN_API = 16
+export const PLUGIN_API = 17
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

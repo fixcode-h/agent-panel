@@ -1897,6 +1897,20 @@ if (kind === 'pi') {
 
 if (kind === 'claude') {
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
+  // 门禁放行（ADR 0070）和「本对话不再询问」：任务里有 GATE_TRY:<一行 JSON 数组> 时，对每一项 {tool, input, gate}
+  // 先跑工具前钩子；被拦就像真的 Agent 那样调 request_override 请用户放行，再跑一次钩子。每项的结果记进 .gate
+  const gateTry = /GATE_TRY:(\[.*\])/.exec(input)?.[1]
+  if (gateTry)
+    for (const [i, g] of JSON.parse(gateTry).entries()) {
+      const first = claudePreTool(`gate${i}`, g.tool, g.input)
+      const got = first ? await panelCall('request_override', { gate: g.gate, reason: '用户说：照做' }) : null
+      const again = first ? claudePreTool(`gate${i}b`, g.tool, g.input) : null
+      if (process.env.FAKE_CLI_LOG)
+        appendFileSync(
+          process.env.FAKE_CLI_LOG + '.gate',
+          JSON.stringify({ i, gate: g.gate, blocked: !!first, got, again: !!again }) + '\n',
+        )
+    }
   // 空回合：这一轮只说一句准备语就结束，不调任何工具（零工具 + 零改动才能触发面板的空回合判定）
   if (emptyTurn) {
     out({

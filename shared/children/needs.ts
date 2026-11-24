@@ -51,6 +51,9 @@ export interface ChildRequest {
   detail: string
   /** 只是允许 / 拒绝一个操作（命令、改文件、工具、推送授权）：行上直接给两个按钮；提问、节点确认要点进子对话答 */
   quick: boolean
+  /** 同一类授权的规则键和说法：行上也给「本对话不再询问」（shared/grants/kinds.ts），记进子对话自己的 allowRules */
+  rule?: string
+  ruleLabel?: string
 }
 
 /** 说明在行上只用来悬停看，留这么多字够看清命令；完整内容在子对话的确认卡上 */
@@ -66,6 +69,8 @@ export function pendingRequest(tk: Pick<Task, 'requests'>): ChildRequest | undef
     title: r.title,
     detail: r.detail.slice(0, REQUEST_DETAIL_MAX),
     quick: r.kind === 'command' || r.kind === 'file' || r.kind === 'tool',
+    ...(r.rule ? { rule: r.rule } : {}),
+    ...(r.ruleLabel ? { ruleLabel: r.ruleLabel } : {}),
   }
 }
 

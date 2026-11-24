@@ -16,6 +16,7 @@ export type SettingsForm = Pick<
   | 'autoCheckUpdates'
   | 'speech'
   | 'readAloud'
+  | 'grantRemember'
   | 'appearance'
   | 'apis'
   | 'assist'
@@ -35,6 +36,7 @@ export const toSettingsForm = (initial: Settings): SettingsForm => ({
   autoCheckUpdates: initial.autoCheckUpdates,
   speech: initial.speech,
   readAloud: initial.readAloud,
+  grantRemember: initial.grantRemember,
   appearance: initial.appearance,
   apis: initial.apis,
   assist: initial.assist,
@@ -99,6 +101,7 @@ export function buildSettings({
     webhook: initial.webhook,
     speech: form.speech,
     readAloud: form.readAloud,
+    grantRemember: form.grantRemember,
     presenceGraceMinutes: c.presence.ok ? c.presence.n : initial.presenceGraceMinutes,
     childDoneKeepMinutes: c.childKeep.ok ? c.childKeep.n : initial.childDoneKeepMinutes,
     autoArchiveDays: c.archive.ok ? c.archive.n : initial.autoArchiveDays,

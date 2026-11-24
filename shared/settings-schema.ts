@@ -286,6 +286,11 @@ export const Settings = z.object({
     })
     .prefault({}),
   /**
+   * 授权卡上给不给「本对话不再询问」，按授权类型记（shared/grants/kinds.ts 的 id → 开关）。
+   * 只记和注册表默认不一样的；没记的按默认，以后新加的类型不用迁移
+   */
+  grantRemember: z.record(z.string(), z.boolean()).catch({}).default({}),
+  /**
    * 语音朗读（见 shared/tts.ts），和语音输入分开设置：回复下面的朗读按钮念没折叠的总结。
    * 默认用浏览器自带的语音，开箱就能念；在设置里下载开源的 Kokoro 模型后自动换成本机模型
    */

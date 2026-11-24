@@ -52,6 +52,7 @@ import {
   ChatMemorySection,
   NotifyChannelsSection,
   HooksSection,
+  GrantsSection,
   IntegrationsSection,
   DeploySection,
   MarkdownSection,
@@ -242,6 +243,7 @@ function SettingsContent({ cur, inPlugin, ctx }: { cur: Section; inPlugin: boole
       {cur.id === 'read-aloud' && <ReadAloudSection value={form.readAloud} onChange={setPart('readAloud')} />}
       {cur.id === 'integrations' && <IntegrationsSection />}
       {cur.id === 'hooks' && <HooksSection />}
+      {cur.id === 'grants' && <GrantsSection value={form.grantRemember} onChange={setPart('grantRemember')} />}
       {cur.id === 'chat-memory' && <ChatMemorySection />}
       {cur.id === 'general' && (
         <GeneralSection

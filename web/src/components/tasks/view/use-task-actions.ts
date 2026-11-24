@@ -258,9 +258,9 @@ export function useTaskActions(c: TaskActionsCtx) {
       .then(c.setChildren)
       .catch(() => {})
   // 在父对话页直接允许 / 拒绝子对话的请求：回答后马上读回子对话列表，那一行跟着消失；出错照实提示
-  const answerChild = async (childId: string, rid: string, allow: boolean) => {
+  const answerChild = async (childId: string, rid: string, allow: boolean, always?: boolean) => {
     try {
-      await api.answerRequest(childId, rid, { allow })
+      await api.answerRequest(childId, rid, { allow, ...(always ? { always } : {}) })
     } catch (e) {
       toast.error((e as Error).message)
     }

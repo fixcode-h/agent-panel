@@ -1,6 +1,6 @@
 /**
  * 一轮对话开始时问开着的插件要不要挂工具（ADR 0059）。从 runner.ts 拆出（那个文件到了行数上限）。
- * 插件工具要用户确认时（McpCallContext.confirm，插件接口 2）走面板自己的请求卡片：和推送授权一样是「允许 / 拒绝」，
+ * 插件工具要用户确认时（McpCallContext.confirm，插件接口 2）走面板自己的请求卡片（plugin-confirm.ts），
  * 这一轮结束还没回答的跟着作废，停止对话时也一起收起
  */
 import type { Agent } from '../../shared/schema.ts'
@@ -12,7 +12,9 @@ import { convKind } from '../../shared/conv-mode.ts'
 import { pluginToolsForRun } from '../plugins/index.ts'
 import type { PluginConfirm } from '../plugins/sdk.ts'
 import type { PluginRunHooks } from '../plugins/mcp.ts'
-import { dropOwnRequests, panelRequest } from './panel-requests.ts'
+import { dropOwnRequests } from './panel-requests.ts'
+import { pluginConfirm } from './plugin-confirm.ts'
+import { userWordsOf } from '../../shared/review/user-words.ts'
 import { systemNote } from './recovery.ts'
 import { pluginProgress } from '../plugins/progress.ts'
 import type { RealContext } from './real-context.ts'
@@ -35,15 +37,7 @@ export async function pluginRunTools(
 ) {
   const { task } = ctx
   const own = new Set<string>()
-  const confirm = async (req: PluginConfirm) => {
-    const r = await panelRequest(
-      ctx,
-      { step: run.step, agentId: run.agentId, kind: 'tool', title: req.title, detail: req.detail ?? '' },
-      own,
-    )
-    // 停止对话时请求作废（null）：按拒绝处理，插件那边不会写入
-    return { allow: !!r?.allow, message: r?.message ?? r?.answer ?? '' }
-  }
+  const confirm = (req: PluginConfirm) => pluginConfirm(ctx, run, req, own)
   const r = await pluginToolsForRun(
     {
       taskId: task.id,
@@ -68,6 +62,9 @@ export async function pluginRunTools(
       progress: (server, tool, text) => {
         if (pluginProgress(task, server, tool, text)) ctx.changed()
       },
+      // 每次调用现取：用户在这一轮里插的话也算（插件接口 17）
+      userWords: () =>
+        userWordsOf(task).map((w) => ({ text: w.text, at: w.at, ...(w.quoted ? { quoted: true } : {}) })),
       ...hooks,
     },
   )

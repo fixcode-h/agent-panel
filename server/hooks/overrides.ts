@@ -4,6 +4,9 @@
  * 只在内存里：放行只管这一回合附近的那一次操作，服务重启后 CLI 进程也不在了，不用存盘（Task 上只放要存盘的数据）
  */
 import type { HookFacts } from '../../shared/hooks/index.ts'
+import { ruleAllowed } from '../../shared/allow-rules.ts'
+import { gateRule } from '../../shared/grants/kinds.ts'
+import type { Task } from '../../shared/schema.ts'
 import { AFTER_GRANT, overrideTip } from '../../shared/hooks/override.ts'
 import { t } from '../../shared/i18n.ts'
 import { panelRequest, type RequestCtx } from '../exec/panel-requests.ts'
@@ -43,12 +46,20 @@ export function targetOf(facts: HookFacts | undefined): string {
   return paths.length ? paths.join('\n') : tool.name
 }
 
+/** 门禁拦下时要看的对话：id 认放行登记，allowRules 认「本对话不再询问」（存盘的，重启后照样有效） */
+type GateTask = Pick<Task, 'id'> & { allowRules?: readonly string[] }
+
 /**
- * 门禁拦下时调：用户放行过这个门禁（还没用掉、没过期）就用掉这次放行、返回空串（放行）；
- * 否则记下拦了什么，返回原因加上「用户要求的就请用户放行」那一句
+ * 门禁拦下时调：用户在卡片上选过「本对话不再询问」就一直放行；放行过一次（还没用掉、没过期）就用掉这次放行。
+ * 放行都返回空串；否则记下拦了什么，返回原因加上「用户要求的就请用户放行」那一句
  */
-export function gateDeny(taskId: string, gate: string, name: string, target: string, reason: string): string {
+export function gateDeny(task: GateTask, gate: string, name: string, target: string, reason: string): string {
   if (!reason) return ''
+  const taskId = task.id
+  if (ruleAllowed(task.allowRules ?? [], gateRule(gate))) {
+    taskLog(taskId, '用户选过本对话不再询问，门禁不拦', { gate, target: target.slice(0, 200) })
+    return ''
+  }
   const mine = grants.get(taskId)
   const at = mine?.get(gate)
   if (at !== undefined) {
@@ -98,10 +109,13 @@ export async function overrideRequest(
         b.target ? t('被拦下的操作：\n{target}', { target: b.target.slice(0, 2000) }) : '',
         t('门禁的原因：{reason}', { reason: b.reason.replace(/^【面板】/, '').slice(0, 600) }),
         t('Agent 说你要求的：{reason}', { reason: input.reason.trim().slice(0, 600) }),
-        t('同意只放行这一次。'),
+        t('「允许一次」只放行这一次；「本对话不再询问」之后这个对话里这个门禁都不再拦。'),
       ]
         .filter(Boolean)
         .join('\n\n'),
+      // 同一类 = 同一个门禁（shared/grants/kinds.ts）；卡上给不给「本对话不再询问」由页面按设置决定
+      rule: gateRule(gate),
+      ruleLabel: t('「{name}」拦下的操作', { name: b.name }),
     },
     own,
   )
@@ -111,10 +125,21 @@ export async function overrideRequest(
       ok: false,
       info: `用户没有放行${r.message ? `，说：${r.message}` : ''}。按门禁说的做，不要绕开。`,
     }
-  mapOf(grants, ctx.task.id).set(gate, Date.now())
   blocked.get(ctx.task.id)?.delete(gate)
-  taskLog(ctx.task.id, '用户同意放行', { gate, target: b.target.slice(0, 200) })
   const extra = AFTER_GRANT[gate] ? ` ${AFTER_GRANT[gate]}` : ''
+  // 本对话不再询问：规则记进对话（回答接口的 applyAnswer 也会记，这里再记一次，不依赖回答从哪条路进来）
+  if (r.always) {
+    const rule = gateRule(gate)
+    const rules = ctx.task.allowRules ?? []
+    if (!rules.includes(rule)) ctx.task.allowRules = [...rules, rule]
+    taskLog(ctx.task.id, '用户选了本对话不再询问', { gate, target: b.target.slice(0, 200) })
+    return {
+      ok: true,
+      info: `用户同意放行「${b.name}」，并且这个对话里之后都不再拦${r.message ? `（用户补充：${r.message}）` : ''}：现在重试刚才被拦下的那个操作。${extra}`,
+    }
+  }
+  mapOf(grants, ctx.task.id).set(gate, Date.now())
+  taskLog(ctx.task.id, '用户同意放行', { gate, target: b.target.slice(0, 200) })
   return {
     ok: true,
     info: `用户同意放行「${b.name}」这一次${r.message ? `（用户补充：${r.message}）` : ''}：现在重试刚才被拦下的那个操作，10 分钟内有效，只放行一次。${extra}`,

@@ -34,7 +34,7 @@ export interface ConversationDockProps {
   openChild: string
   onOpenChild: (id: string) => void
   onResumeChild: (id: string) => void
-  onAnswerChild: (childId: string, rid: string, allow: boolean) => Promise<void>
+  onAnswerChild: (childId: string, rid: string, allow: boolean, always?: boolean) => Promise<void>
   onFloatHeight: (h: number) => void
   /** 输入框（没有时是 false：导入的、已收尾的、在提问的） */
   composer: React.ReactNode

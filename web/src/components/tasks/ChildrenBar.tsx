@@ -52,7 +52,7 @@ export function ChildrenBar({
 }: {
   kids: ChildSummary[]
   /** 在父对话页直接允许 / 拒绝子对话的请求（见 ChildRequestBar） */
-  onAnswer?: (childId: string, requestId: string, allow: boolean) => Promise<void>
+  onAnswer?: (childId: string, requestId: string, allow: boolean, always?: boolean) => Promise<void>
   /** 派出的子任务：单独占子任务那一行，点开看它的实时对话流 */
   helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
