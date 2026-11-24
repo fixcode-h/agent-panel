@@ -344,7 +344,7 @@ await runShard(import.meta.filename, async (api) => {
     await backToTask()
   }
 
-  // 改文件的审批卡：带要改的内容（按行上色），「这个对话里一直允许」按目录放行（设计报告 Agent P0-3）
+  // 改文件的审批卡：带要改的内容（按行上色），「本对话不再询问」按目录放行（设计报告 Agent P0-3）
   {
     const KEY = 'agent-panel-demo-v3'
     await p.evaluate((k) => {
@@ -379,7 +379,7 @@ await runShard(import.meta.filename, async (api) => {
       errors.push('改文件审批卡：没有出现')
     else {
       await settle(p)
-      await check(p, '审批卡-改文件带差异', ['CartBadge.tsx', 'items.reduce', '这个对话里一直允许'])
+      await check(p, '审批卡-改文件带差异', ['CartBadge.tsx', 'items.reduce', '本对话不再询问', '允许一次'])
       // 等你确认的卡浮在输入框上方（FloatAbove），不排在停靠区里把输入框往下顶（用户 2026-11-10）
       if (!(await p.locator('[data-float-above]').getByRole('alertdialog', { name: 'Agent 请求确认' }).count()))
         errors.push('改文件审批卡：没有浮在输入框上方（应该在 FloatAbove 里）')
@@ -395,7 +395,7 @@ await runShard(import.meta.filename, async (api) => {
       // diff 统一画法（web/src/lib/diff-html.ts）：删除的行整行红底（.cdiff-del），记号和代码分开，不带开头的 -
       if (!(await card.locator('.cdiff-del').filter({ hasText: 'const count = items.length' }).count()))
         errors.push('改文件审批卡：删除行没有标红')
-      const always = card.getByRole('button', { name: '这个对话里一直允许', exact: true })
+      const always = card.getByRole('button', { name: '本对话不再询问', exact: true })
       if (!(await always.getAttribute('title'))?.includes('目录 src/components/ 里的文件'))
         errors.push('改文件审批卡：「一直允许」的说明没写清放行的范围')
     }

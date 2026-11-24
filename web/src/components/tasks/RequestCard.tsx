@@ -1,5 +1,4 @@
 import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
-import { requestRuleText } from '@shared/allow-rules'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -8,7 +7,6 @@ import {
   CloudUpload,
   ShieldAlert,
   FilePen,
-  Loader2,
   MessageCircleQuestion,
   SquareTerminal,
   Wrench,
@@ -19,6 +17,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmReview } from './ConfirmReview'
+import { GrantActions } from './GrantActions'
 import type { Picks } from '@shared/flow/stage-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
@@ -123,7 +122,6 @@ export function RequestCard({
       setBusy('')
     }
   }
-  const spin = (key: string) => busy === key && <Loader2 className="h-3.5 w-3.5 animate-spin" />
 
   // 问题：换掉输入框显示，一次问了几个时全部回答完一起交回去
   if (req.kind === 'question')
@@ -234,33 +232,11 @@ export function RequestCard({
           </pre>
         )}
         {req.diff && <RequestDiff diff={req.diff} />}
-        {
-          <div className="flex flex-wrap justify-end gap-2">
-            {req.rule && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="mr-auto"
-                disabled={!!busy}
-                title={t('允许这一次，并且这个对话里之后的{rule}都自动允许（对话里会留一行记录）', {
-                  rule: requestRuleText(req),
-                })}
-                onClick={() => send('always', true, undefined, true)}
-              >
-                {spin('always')}
-                {t('这个对话里一直允许')}
-              </Button>
-            )}
-            <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => send('deny', false)}>
-              {spin('deny')}
-              {t('拒绝')}
-            </Button>
-            <Button size="sm" disabled={!!busy} onClick={() => send('allow', true)}>
-              {spin('allow')}
-              {t('允许')}
-            </Button>
-          </div>
-        }
+        <GrantActions
+          req={req}
+          busy={busy === 'deny' || busy === 'once' || busy === 'always' ? busy : ''}
+          onPick={(c) => send(c, c !== 'deny', undefined, c === 'always')}
+        />
       </div>
     </div>
   )

@@ -423,7 +423,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         ms: res.ms,
       })
       // 用户钩子拦下的也能请用户放行（ADR 0070）：放行过这个钩子就当它这次没拦
-      const gate = (why: string) => gateDeny(c.task.id, userHookGate(h.name), h.name, targetOf(facts), why)
+      const gate = (why: string) => gateDeny(c.task, userHookGate(h.name), h.name, targetOf(facts), why)
       if (failed === 'deny') out.deny ??= gate(`【钩子「${h.name}」出错，按设置拒绝】${res.error}`) || undefined
       if (res.out?.deny && res.out.reason) out.deny ??= gate(res.out.reason) || undefined
       if (res.out?.block && res.out.reason) out.block ??= gate(res.out.reason) || undefined
@@ -451,7 +451,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
    * 没放行时记下拦了什么，原因后面附上「用户要求的就请用户放行」
    */
   const gated = (id: string, facts: HookFacts | undefined, deny: string) =>
-    gateDeny(c.task.id, id, BUILTIN_HOOKS.find((h) => h.id === id)?.name() ?? id, targetOf(facts), deny)
+    gateDeny(c.task, id, BUILTIN_HOOKS.find((h) => h.id === id)?.name() ?? id, targetOf(facts), deny)
   /** 按顺序问工具前的守卫，第一个拦下（且用户没放行）的说了算；skip 是这个入口不问的守卫 */
   const firstDeny = (facts: HookFacts, what: string, skip = ''): string => {
     for (const [id, fn] of guards) {

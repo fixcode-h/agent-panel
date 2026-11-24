@@ -16,6 +16,7 @@ import {
   Globe,
   Network,
   ShieldCheck,
+  ShieldQuestion,
   Webhook,
   GraduationCap,
   Lightbulb,
@@ -68,6 +69,14 @@ export const sectionsFor = (clis: CliDefinition[], plugins: Section[], mcp: Sect
   // 面板自己的 AI 功能（AI 创建角色 / 工作流、AI 补全模型、AI 处理装环境等）用哪个 Agent
   { id: 'assist', label: t('AI 辅助'), icon: Sparkles, group: t('Agent 与 AI'), aliases: ['AI 创建'] },
   { id: 'hooks', label: t('钩子'), icon: Webhook, group: t('Agent 与 AI') },
+  // 所有授权卡按类型给不给「本对话不再询问」（shared/grants/kinds.ts）
+  {
+    id: 'grants',
+    label: t('授权卡'),
+    icon: ShieldQuestion,
+    group: t('Agent 与 AI'),
+    aliases: ['本对话不再询问', '一直允许', '放行'],
+  },
   // 面板和插件给 Agent 的 MCP 能力：左栏一项，二级列表里是各来源（web/src/components/settings/mcp/McpNav.tsx）
   { id: 'mcp', label: 'MCP', icon: Plug, group: t('Agent 与 AI') },
   ...mcp,

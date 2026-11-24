@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { CircleAlert, Loader2 } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { stageConfirm, type ChildSummary } from './child-line'
+import { GrantActions, type GrantChoice } from './GrantActions'
 
 /** 一次最多列几行：再多就在最后一行写「还有 N 个」，点开子对话列表看全部 */
 const MAX_ROWS = 3
@@ -40,19 +41,19 @@ export function ChildRequestBar({
   kids: ChildSummary[]
   onOpen: (id: string) => void
   /** 允许 / 拒绝子对话的请求：出错由调用方提示（错误要显示给用户），这里只管按钮的转圈 */
-  onAnswer?: (childId: string, requestId: string, allow: boolean) => Promise<void>
+  onAnswer?: (childId: string, requestId: string, allow: boolean, always?: boolean) => Promise<void>
 }) {
-  // 正在提交的是哪一个按钮（请求 id + 允许 / 拒绝）：提交期间两个按钮都不能再点，免得重复回答
+  // 正在提交的是哪一个按钮（请求 id + 选的哪个）：提交期间几个按钮都不能再点，免得重复回答
   const [busy, setBusy] = useState('')
   const list = childrenConfirming(kids)
   if (!list.length) return null
   const shown = list.slice(0, MAX_ROWS)
   const rest = list.length - shown.length
-  const send = async (c: ChildSummary, allow: boolean) => {
+  const send = async (c: ChildSummary, pick: GrantChoice) => {
     if (!c.request || !onAnswer || busy) return
-    setBusy(`${c.request.id}:${allow}`)
+    setBusy(`${c.request.id}:${pick}`)
     try {
-      await onAnswer(c.id, c.request.id, allow)
+      await onAnswer(c.id, c.request.id, pick !== 'deny', pick === 'always')
     } finally {
       setBusy('')
     }
@@ -62,8 +63,7 @@ export function ChildRequestBar({
       {shown.map((c, i) => {
         const req = c.request
         const more = (c.requests ?? 0) - 1
-        const spin = (allow: boolean) =>
-          req && busy === `${req.id}:${allow}` ? <Loader2 className="h-3 w-3 animate-spin" /> : null
+        const mine = req && busy.startsWith(`${req.id}:`) ? (busy.slice(req.id.length + 1) as GrantChoice) : ''
         return (
           <div
             key={c.id}
@@ -88,22 +88,15 @@ export function ChildRequestBar({
               <span className="shrink-0 text-subtle">{t('另有 {n} 个子对话在等', { n: rest })}</span>
             )}
             {req?.quick && onAnswer ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!!busy}
-                  onClick={() => void send(c, false)}
-                  className="h-6 px-2 text-xs"
-                >
-                  {spin(false)}
-                  {t('拒绝')}
-                </Button>
-                <Button size="sm" disabled={!!busy} onClick={() => void send(c, true)} className="h-6 px-2 text-xs">
-                  {spin(true)}
-                  {t('允许')}
-                </Button>
-              </>
+              <GrantActions
+                compact
+                req={req}
+                busy={mine}
+                // 别的行在提交时这一行也不能点
+                disabled={!!busy}
+                onPick={(p) => void send(c, p)}
+                className="shrink-0 flex-nowrap"
+              />
             ) : (
               <Button size="sm" variant="secondary" onClick={() => onOpen(c.id)} className="h-6 px-2 text-xs">
                 {t('去处理')}

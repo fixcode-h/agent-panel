@@ -141,7 +141,7 @@ export async function submitMerge(
   // 门禁真拦下时才去用掉放行，用户没点过就按拦下处理并说清怎么请用户放行
   const plain = override?.by === 'user' ? reviewOf() : undefined
   const blockedBy = plain && !plain.ok ? plain.info : ''
-  const userOk = !blockedBy || !gateDeny(childId, REVIEW_GATE, t('评审门禁'), '', blockedBy)
+  const userOk = !blockedBy || !gateDeny(tk, REVIEW_GATE, t('评审门禁'), '', blockedBy)
   const review = override?.by === 'user' ? (userOk ? reviewOf(override) : plain) : reviewOf(override)
   if (review && !review.ok)
     return override?.by === 'user' && !userOk

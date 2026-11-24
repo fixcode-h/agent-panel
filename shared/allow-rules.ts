@@ -67,6 +67,9 @@ export function ruleText(rule: string): string {
   const v = rest.join(':')
   if (kind === 'command') return t('命令 {cmd}', { cmd: v })
   if (kind === 'file') return v.endsWith('/') ? t('目录 {dir} 里的文件', { dir: v }) : t('文件 {file}', { file: v })
+  // 门禁放行、插件操作一般带着 ruleLabel（requestRuleText 优先用它），这里是没给时的兜底
+  if (kind === 'gate') return t('门禁 {name} 拦下的操作', { name: v })
+  if (kind === 'plugin') return t('插件操作 {name}', { name: v })
   return t('工具 {name}', { name: v })
 }
 

@@ -30,6 +30,9 @@ export const RemoteSection = lazy(() =>
 export const SpeechSection = lazy(() =>
   import('@/components/settings/SpeechSection').then((m) => ({ default: m.SpeechSection })),
 )
+export const GrantsSection = lazy(() =>
+  import('@/components/settings/GrantsSection').then((m) => ({ default: m.GrantsSection })),
+)
 export const ReadAloudSection = lazy(() =>
   import('@/components/settings/ReadAloudSection').then((m) => ({ default: m.ReadAloudSection })),
 )
