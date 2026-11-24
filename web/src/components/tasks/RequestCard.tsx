@@ -1,5 +1,5 @@
 import { UnifiedDiff } from '@/components/ui/UnifiedDiff'
-import { ruleText } from '@shared/allow-rules'
+import { requestRuleText } from '@shared/allow-rules'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
@@ -243,7 +243,7 @@ export function RequestCard({
                 className="mr-auto"
                 disabled={!!busy}
                 title={t('允许这一次，并且这个对话里之后的{rule}都自动允许（对话里会留一行记录）', {
-                  rule: ruleText(req.rule),
+                  rule: requestRuleText(req),
                 })}
                 onClick={() => send('always', true, undefined, true)}
               >

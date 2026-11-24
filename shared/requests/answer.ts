@@ -3,7 +3,7 @@
  * 等待时间结算、「一直允许这类」记成规则。正式后端（server/exec/requests.ts）和演示后端都调这一份（重构文档第 10 条）；
  * 把答案交回还在等的 CLI、连续拒绝的提醒这些只有真进程才有的，在正式后端做
  */
-import { ruleText } from '../allow-rules.ts'
+import { requestRuleText } from '../allow-rules.ts'
 import { t } from '../i18n.ts'
 import type { Task, TaskRequest } from '../schema.ts'
 import { pendingReport, reportChanges, type Picks } from '../flow/stage-report.ts'
@@ -48,7 +48,7 @@ export function answerText(task: Pick<Task, 'steps'>, req: TaskRequest, r: Reque
         : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
   if (!r.allow) return denied ?? t('你拒绝了：{title}', { title: req.title })
   return r.always && req.rule
-    ? t('你允许了：{title}，这个对话里之后的{rule}都自动允许', { title: req.title, rule: ruleText(req.rule) })
+    ? t('你允许了：{title}，这个对话里之后的{rule}都自动允许', { title: req.title, rule: requestRuleText(req) })
     : t('你允许了：{title}', { title: req.title })
 }
 

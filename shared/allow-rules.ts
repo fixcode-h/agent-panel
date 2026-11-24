@@ -70,6 +70,10 @@ export function ruleText(rule: string): string {
   return t('工具 {name}', { name: v })
 }
 
+/** 请求上的规则给人看的说法：带了 ruleLabel（插件确认）用它，否则按规则本身 */
+export const requestRuleText = (req: { rule?: string; ruleLabel?: string }) =>
+  req.ruleLabel?.trim() || (req.rule ? ruleText(req.rule) : '')
+
 /** diff 最多带这么多行：审批卡只要让人看清改了什么，整份大文件不用全塞进任务记录 */
 const DIFF_LINES = 300
 
