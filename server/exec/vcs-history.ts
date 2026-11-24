@@ -20,6 +20,8 @@ export interface FileRev {
   author: string
   time: string
   message: string
+  /** 这一版所在的提交：git 是提交号（同 id），p4 是变更列表号（id 是文件的 #rev）；查「同一次提交还改了哪些文件」用 */
+  change?: string
 }
 
 export interface FileHistory {
@@ -65,7 +67,7 @@ export async function fileHistory(dir: string, rel: string, max = DEFAULT_REVS):
         .filter(Boolean)
         .map((l) => {
           const [id, author, time, message] = l.split('\x1f')
-          return { id, label: id.slice(0, 8), author, time, message }
+          return { id, label: id.slice(0, 8), author, time, message, change: id }
         })
       return { vcs, base: 'HEAD', revs }
     }
@@ -80,6 +82,7 @@ export async function fileHistory(dir: string, rel: string, max = DEFAULT_REVS):
           author: rec[`user${i}`] ?? '',
           time: rec[`time${i}`] ? new Date(Number(rec[`time${i}`]) * 1000).toISOString() : '',
           message: (rec[`desc${i}`] ?? '').trim(),
+          ...(rec[`change${i}`] ? { change: rec[`change${i}`] } : {}),
         })
       return { vcs, base: '#have', revs }
     }
@@ -133,4 +136,35 @@ export async function fileAt(dir: string, rel: string, rev: string): Promise<Buf
     throw e
   }
   throw new VcsInputError(t('这个项目没有版本控制'))
+}
+
+const CHANGED_MAX = 500
+
+/**
+ * 一次提交（git 提交号 / p4 变更列表号）里改了的文件，路径相对 dir，只列 dir 下面的（UE 资源版本差异的「同一次提交里一起改的资源」用）。
+ * p4 的 describe 给的是仓库路径：先问一次 dir 在仓库里对应哪里（p4 where），再换成相对路径。svn 暂不支持，返回空
+ */
+export async function changedFiles(dir: string, change: string): Promise<string[]> {
+  if (!/^[\w.^~@-]{1,80}$/.test(change)) throw new VcsInputError(t('版本号格式不对'))
+  const { vcs } = await detectVcs(dir)
+  if (vcs === 'git') {
+    const out = text(await gitVcs(['show', '--name-only', '--relative', '--format=', change, '--'], dir))
+    return out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, CHANGED_MAX)
+  }
+  if (vcs === 'p4') {
+    const where = parseZtag(text(await vcsRun('p4', ['-ztag', 'where', path.join(dir, '...')], dir)))[0] ?? {}
+    const depotRoot = String(where.depotFile ?? '').replace(/\/\.\.\.$/, '/')
+    const rec = parseZtag(text(await vcsRun('p4', ['-ztag', 'describe', '-s', change], dir)))[0] ?? {}
+    const out: string[] = []
+    for (let i = 0; rec[`depotFile${i}`] !== undefined && out.length < CHANGED_MAX; i++) {
+      const f = rec[`depotFile${i}`]
+      if (depotRoot && f.toLowerCase().startsWith(depotRoot.toLowerCase())) out.push(f.slice(depotRoot.length))
+    }
+    return out
+  }
+  return []
 }

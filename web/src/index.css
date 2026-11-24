@@ -1161,6 +1161,9 @@ body,
   --c-changesCard-fold: closed;
   --c-versionDiff-navW: 288px;
   --c-versionDiff-msgLines: 1;
+  --c-versionDiff-busySec: 60;
+  --c-versionDiff-historyMax: 20;
+  --c-versionDiff-sameCommit: open;
   --c-foldBar-radius: 6px;
   --c-foldBar-bg: transparent;
   --c-foldBar-border: 0px;
