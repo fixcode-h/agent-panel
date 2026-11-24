@@ -238,6 +238,10 @@ export const COMP_SPEC = {
   versionDiff: {
     navW: px(288, 200, 480),
     msgLines: pick('1', { '1': '1', '2': '2' }),
+    /** UE 资源：读一版超过多少秒提示 UE 在忙；属性来历一次往回读几版；「同一次提交改的资源」默认展开还是收起（不是 CSS，UE 插件读） */
+    busySec: pick('60', { '30': '30', '60': '60', '120': '120' }),
+    historyMax: pick('20', { '10': '10', '20': '20', '40': '40' }),
+    sameCommit: pick('open', { open: 'open', closed: 'closed' }),
   },
   /**
    * 折叠条（web/src/components/ui/fold-bar.tsx）：回复收尾后「读取 3 个文件 · 运行 2 条命令」那一行，整行点都能展开收起；

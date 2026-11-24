@@ -23,6 +23,19 @@ export interface VersionList {
   error?: string
 }
 
+/**
+ * 设置 → 组件「版本差异」里不是 CSS 的几项（UE 插件的资源版本差异读）：读取超过几秒提示 UE 在忙、
+ * 属性来历一次往回读几版、「同一次提交改的资源」默认展开还是收起
+ */
+export function useVersionDiffPrefs() {
+  const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
+  return {
+    busySec: Number(compValue(style, 'versionDiff', 'busySec')) || 60,
+    historyMax: Number(compValue(style, 'versionDiff', 'historyMax')) || 20,
+    sameCommitOpen: compValue(style, 'versionDiff', 'sameCommit') !== 'closed',
+  }
+}
+
 /** 选中的是「本地改动」还是第几个提交 */
 export type VersionPick = 'local' | number
 

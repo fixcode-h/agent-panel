@@ -91,7 +91,15 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'changesCard' && prop !== 'radius')
     return ({ scope: t('默认显示'), first: t('先列几个文件'), fold: t('一开始') } as Record<string, string>)[prop]
   if (c === 'versionDiff')
-    return ({ navW: t('版本列表默认宽度'), msgLines: t('提交说明显示几行') } as Record<string, string>)[prop]
+    return (
+      {
+        navW: t('版本列表默认宽度'),
+        msgLines: t('提交说明显示几行'),
+        busySec: t('UE 读取超过几秒算忙'),
+        historyMax: t('属性来历往回读几版'),
+        sameCommit: t('同一次提交改的资源'),
+      } as Record<string, string>
+    )[prop]
   if (c === 'foldBar' && prop === 'hint') return t('右边写「展开 / 收起」')
   if (c === 'sourceList' && prop === 'autoOpen') return t('只有来源时也自动打开右栏')
   if (c === 'liveText')
