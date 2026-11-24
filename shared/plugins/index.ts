@@ -40,6 +40,8 @@ export function pluginConfig(plugins: PluginsSetting | undefined, id: string): P
   const saved = plugins?.[id]?.config ?? {}
   const out: PluginConfig = {}
   for (const s of pluginById(id)?.settings ?? []) {
+    // 保密项不在设置里，插件经 ctx.secrets 取
+    if (s.type === 'secret') continue
     const v = saved[s.key]
     const ok =
       (s.type === 'boolean' && typeof v === 'boolean') ||

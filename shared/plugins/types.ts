@@ -10,10 +10,14 @@ import { PluginRuntimeFields } from './runtime-schema.ts'
  * 文案写中文原文，界面上用 t() 取，英文在包里的 locales/en.json。
  */
 
-/** 插件参数的一项：插件页按声明生成表单，值存在 Settings.plugins[id].config[key] */
+/**
+ * 插件参数的一项：插件页按声明生成表单，值存在 Settings.plugins[id].config[key]。
+ * secret（插件接口 18）是令牌、密钥：不进设置，加密存在本机（server/secrets/store.ts），插件用 ctx.secrets 取，
+ * 网页只看得到设没设和末 4 位
+ */
 export const PluginSetting = z.object({
   key: z.string().min(1),
-  type: z.enum(['text', 'path', 'number', 'boolean', 'select']),
+  type: z.enum(['text', 'path', 'number', 'boolean', 'select', 'secret']),
   label: z.string(),
   desc: z.string().optional(),
   /** 表单里分组的小标题 */
@@ -152,8 +156,9 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    插件不再各自走目录；ServerPlugin.fileIndexRoots 报项目外要一起收的目录（UE 引擎目录）
  * 17：确认卡可以带「这个对话里一直允许」和改动差异（PluginConfirm.always / diff，结果带 always），
  *    工具调用能取用户在对话里亲口说的话（McpCallContext.userWords）。设计稿：飞书插件 第 8 节
+ * 18：参数类型 secret（令牌、密钥加密存本机、网页打码）和 PluginServerContext.secrets
  */
-export const PLUGIN_API = 17
+export const PLUGIN_API = 18
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

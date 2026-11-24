@@ -4,7 +4,7 @@
 - 职责：插件包的安装、删除、开关、参数，插件服务端和网页部分的加载，插件给 Agent 的 MCP 工具
 - 源码：`server/plugins/`, `shared/plugins/`, `shared/builtin/plugin-content.ts`, `web/src/plugins/`
 - 入口：`server/plugins/index.ts`
-- 关键词：插件、包装插件、GitHub 链接包装、包装配方、wraps、archify、插件接口 11、插件接口 8、能力目录、MCP 能力、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、视频插件、表格插件、开放模块、插件钩子、插件测试步骤、插件命令、附件认领
+- 关键词：插件、保密项、插件令牌、secret、包装插件、GitHub 链接包装、包装配方、wraps、archify、插件接口 11、插件接口 8、能力目录、MCP 能力、插件市场、安装插件、删除插件、插件更新、升级插件、plugin.json、agent-plugins、Blender 插件、UI 设计插件、视频插件、表格插件、开放模块、插件钩子、插件测试步骤、插件命令、附件认领
 - 更新：2026-11-13
 
 ## 职责
@@ -62,6 +62,7 @@
 - 更新：`GET /api/plugins/updates` 只读不装，返回有新版本的插件和去哪儿装（`install`）；点「升级」用它调 `/install/github` 拿预览，确认后同安装。装好后 `loadPlugins` 按装着的版本去掉过期的提示。
 - 开关、参数：`PUT /api/plugins/:id`。设置页整份保存（`PUT /settings`）不改 `plugins`，免得自动保存盖掉插件页的改动。
 - 开关、参数：`PUT /api/plugins/:id`（开关在「插件」页，参数在「插件参数」页）。设置页整份保存（`PUT /settings`）不改 `plugins`，免得自动保存盖掉插件页的改动。
+- 保密项（接口 18）：参数类型 `secret`（令牌、密钥）不进 `Settings.plugins[id].config`，走 `GET/PUT /api/plugins/:id/secrets`（契约 `shared/api-contract/plugin-secrets.ts`，`server/plugins/secrets-api.ts`），加密存在数据目录 `secrets/`（`server/secrets/store.ts`，AES-256-GCM，密钥同目录 `key`）。网页只拿到设没设和末 4 位（`web/src/plugins/SecretField.tsx`），插件服务端用 `ctx.secrets.get/set`（续期后存新令牌）；不进环境变量模板、不随数据导出，删除插件时一起删。挡的是 Agent 顺手 cat 设置文件和备份外传，挡不住专门来解密的本机进程。
 - 对话：`runner` 在 `def.mcp` 的 CLI 上调 `pluginRunTools`（`server/exec/plugin-run.ts` → `pluginToolsForRun`），插件按项目、模式返回 MCP 服务和提示，面板开令牌地址传给 CLI，这一轮结束关掉；插件工具调 `confirm` 时出请求卡片，这一轮结束还没回答的作废。插件 `tools(run)` 返回的 `notices` 在新会话开头写成一行提示（续接的会话不重复）；工具要跑几分钟的外部进程时用 `ctx.background({ name, command, cwd?, exclusive?, timeoutMinutes? })` 交给面板的后台命令（插件框架改进 G1，和 Agent 的 `run_background` 同一套名额、排队、提醒、限时和结果推回；把返回的 `info` 原样放进工具结果，那一行转圈到命令结束；工作流节点里没有这个函数）；工具用 `ctx.progress(text)` 报进度，写进对话里标签为「<服务> · <工具>」、还在跑的那一行的输出（`server/plugins/progress.ts`，别的 CLI 标签对不上时不显示）。工具调用带取消信号 `ctx.signal`：这一轮结束、插件关掉、CLI 发 `notifications/cancelled`、超过工具声明的 `timeoutSec` 时触发，面板不等插件返回直接回出错。各插件的 `tools(run)` 同时问、各自限时（`limit.ts`）；出错或超时的插件这一轮不挂工具，对话里写一行警告（`AlertKind` 的 `plugin`），不只记日志。
 - 工具的作用（接口 3）：插件工具在解析层一律是「其他」，面板的守卫、完成依据、改动归属都按工具类别判断，所以工具要自己声明 `effect`。`edit` 的工具执行前由 `mcp.ts` 交 `targets(args)` 算出的路径给工具前守卫（`dispatch.ts` 的 `editGuard`：只读身份、Bug 先诊断、独立分支越界、凭据、用户钩子），结果里的 `changed` 记成这一轮的改动（`file-events` 同一条路，进改动卡片和归属）；`verify` 的结果 `verified` 进完成依据，通过的文件不再要求走项目的测试步骤，失败时验证门禁拒绝 end_turn。`changed` / `verified` 不交给 Agent。记录只在内存里，面板重启后进行中那一轮的插件改动不再补进完成依据。
 - 钩子、测试步骤、命令（接口 3）：`hooks/dispatch.ts` 把 `activePluginHooks` 和用户钩子并在一起按范围、匹配跑；`currentTestSteps` 现取开着的插件的步骤；`slash.ts` 把 `pluginCommands` 排在「所有 Agent」的命令后面。开关插件时 `manager.ts` 清掉「/」菜单的缓存，其余两处每次现取。
