@@ -587,11 +587,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '角色-设定', ['能开启子对话', '能启动工作流', '基本信息'])
   await p.getByRole('tab', { name: /^运行/ }).click()
   await check(p, '角色-运行', ['运行环境', '额外参数', '对话范围'])
-  // 角色分层：必备的「协调器」是高级角色，「能力」页列出挂载的基本角色和各自的用法（ADR 0048 起不挂「评审」，「方案设计」只能派出）
+  // 角色分层：必备的「协调器」是高级角色，「能力」页列出挂载的基本角色和各自的用法（ADR 0048 起不挂「评审」；2026-11-24 起也不挂「方案设计」，出方案走「方案设计」工作流）
   await search.fill('协调器')
   await p.getByText('协调器', { exact: true }).first().click()
   await p.getByRole('tab', { name: /^能力/ }).click()
-  await check(p, '角色-能力挂载', ['高级角色', '挂载的能力', '方案设计', '派成子任务', '父对话可以就地微改动'])
+  await check(p, '角色-能力挂载', ['高级角色', '挂载的能力', '版本控制', '派成子任务', '父对话可以就地微改动'])
   await search.fill('')
   // 技能页：左列表 + 右详情。左边按 Agent 分组，点一项右边换成它的详情（不再是弹窗）
   await p.goto(base + '#/library')
