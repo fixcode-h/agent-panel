@@ -72,6 +72,11 @@ export interface BuiltinWorkflow {
   document: string
   /** 对外暴露给项目的配置项 */
   expose?: WorkflowExpose[]
+  /**
+   * 每个项目的父对话都能启动，不用在项目设置里加进可选工作流：分诊表直接点名要用它的（「方案设计」），
+   * 不这样的话项目没勾它时协调器只能退回派「文档」或子任务
+   */
+  everyProject?: boolean
   /** 父对话挑工作流看的（ADR 0044）：什么时候用、什么时候不用、改不改代码。旧定义（legacy-*.ts）没有 */
   when?: string
   notFor?: string
@@ -459,20 +464,26 @@ ${CHILD_RULES}`,
     ],
   },
   {
+    // key 沿用 architecture：已装的副本按 origin 认，改 key 会多出一份。原来只管架构级，扩成所有「出方案」的事（用户 2026-11-24：方案设计不用文档子任务，走工作流）
     key: 'architecture',
-    name: '架构设计',
-    description: '识别现场并出候选方案 → 压测并确认 → 写成架构文档和 ADR',
+    name: '方案设计',
+    description: '识别现场并出方案 → 压测并等你确认 → 写进文档（影响架构时给候选方案和架构契约，写 ADR）',
     category: '规划',
-    when: '要出候选方案、做取舍、写 ADR',
-    notFor: '已经定了方案的实现',
+    when: '要出方案、设计稿、定口径（数据模型、跨模块契约），或要做架构取舍、写 ADR，先不写代码',
+    notFor: '已经定了方案的实现；只是查一个事实或对比两个方向（派调研子任务）',
     kind: 'change',
+    everyProject: true,
     main: 'analyst',
     members: [
-      ['analyst', '识别现场，读已有的架构文档，给候选方案和架构契约，再压测方案'],
-      ['docsync', '写架构文档和 ADR'],
+      ['analyst', '识别现场，读已有的文档，出方案；影响架构时给候选方案和架构契约，再压测方案'],
+      ['docsync', '把确认的方案写进文档，长期决策写 ADR'],
     ],
     document: `## 适用
-新项目、新模块的架构，或者现有架构的评审和调整。只出设计和文档，不写实现代码。`,
+出方案、设计稿、定口径，或者新模块的架构、现有架构的评审和调整。只出设计和文档，不写实现代码。
+
+## 规则
+- 方案由「方案设计」角色出，用户在「压测并确认」节点确认后才写文档；「文档」只负责把确认的方案落盘，不自己出方案。
+- 边界清楚的方案给简短设计；影响架构（新模块、跨模块契约、长期决策）时给 2–4 个候选方案和推荐方案的架构契约。`,
     flows: [
       {
         id: 'main',
@@ -480,30 +491,31 @@ ${CHILD_RULES}`,
         nodes: [
           {
             id: 'arch',
-            title: '识别现场与候选方案',
+            title: '识别现场与方案',
             agent: 'analyst',
             tier: 'high',
-            params: { scene: true, scale: 'architectural' },
+            params: { scene: true, scale: 'bounded' },
             instructions:
-              '先识别现场，读已有的架构文档、ADR 和相关模块的 README；再给出 2–4 个候选方案和推荐方案的架构契约。',
+              '先识别现场，读已有的架构文档、ADR 和相关模块的 README，定位到模块和代码。再出方案：边界清楚的给简短设计（做法、改动的文件、验证方式、验收标准）；影响架构（新模块、跨模块契约、长期决策）时给 2–4 个候选方案，每个写清结构、依赖方向、失败处理、代价，推荐一个写成架构契约（模块边界、对外接口、不变量和每条约束怎么验证）。关键步骤画类图和时序图（mermaid），按方案摘要里的要求画。',
           },
           {
             id: 'grill',
             title: '压测并确认',
             agent: 'analyst',
             tier: 'high',
-            params: { scale: 'architectural', grill: true },
+            params: { scale: 'bounded', grill: true },
             confirm: true,
-            instructions: '用 grilling 压测推荐方案，把决策点整理好，请用户确认最终方案。',
+            instructions: '用 grilling 压测上一步的推荐方案，把决策点整理好，请用户确认最终方案。',
           },
           {
             id: 'docs',
             title: '写文档',
             agent: 'docsync',
             tier: 'medium',
-            // 架构流程定下来的都是长期决策，ADR 一律写
-            params: { adr: '总是' },
-            instructions: '把确认的方案写进架构文档；长期决策写成 ADR 并登记索引；新术语更新 CONTEXT.md。',
+            // 只有改了长期决策（影响架构的方案）才写 ADR，日常方案只写进模块文档或设计文档
+            params: { adr: '自动' },
+            instructions:
+              '把确认的方案写进文档：影响架构的写进架构文档并写 ADR、登记索引；边界清楚的方案写进相关模块文档或 openspec/changes/<change>/design.md。方案里的类图和时序图原样带进文档。新术语更新 CONTEXT.md。',
           },
         ],
         edges: chain(START, 'arch', 'grill', 'docs', END),

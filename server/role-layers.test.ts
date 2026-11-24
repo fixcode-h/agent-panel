@@ -336,9 +336,9 @@ test('内置定义：协调器、执行、排查分析是高级角色，挂载�
   assert.equal(orch.inlineEdit, 'tiny')
   const names = mountedAgents(orch, agents).map((m) => m.agent.name)
   assert.ok(names.includes('文档') && names.includes('版本控制'), names.join('、'))
-  // 协调器不再挂「评审」复核大方案（大方案只保留先给用户确认一道），「方案设计」只能派出（ADR 0048）
+  // 协调器不再挂「评审」复核大方案（大方案只保留先给用户确认一道）；「方案设计」也不挂：出方案走「方案设计」工作流，要等用户确认（2026-11-24）
   assert.ok(!names.includes('评审'), names.join('、'))
-  assert.equal(mountedAgents(orch, agents).find((m) => m.agent.name === '方案设计')?.mode, 'subtask')
+  assert.ok(!names.includes('方案设计'), names.join('、'))
   const worker = findCore(agents, 'worker')!
   assert.equal(mountedAgents(worker, agents).find((m) => m.agent.name === '评审')?.mode, 'subtask')
   // 再同步一遍不变（不写盘）

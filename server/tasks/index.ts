@@ -17,8 +17,8 @@ import {
 import { type LessonDraft } from '../lessons.ts'
 import { restartDoing } from '../interrupted.ts'
 import { recordRestart } from '../restart-interrupted.ts'
-import { entryFlow, topoOrder } from '../../shared/flow/index.ts'
 import { taskSnapshot } from '../../shared/builtin/default.ts'
+import { workflowCatalog } from './workflow-catalog.ts'
 import { projectDefaultWorkflow } from '../../shared/projects/workflow.ts'
 import { exposeSlots } from '../../shared/expose.ts'
 import {
@@ -467,25 +467,6 @@ export function tasksApi(deps: {
 
   /** 项目设置里这个工作流的暴露项取值（每个工作流一份） */
   const paramsOf = (p: Project, workflowId: string) => p.workflowParams[workflowId] ?? {}
-
-  /** 父对话能启动的工作流（ADR 0044）：项目默认 + 可选列表，按名称、说明、适用场景和节点概览交给它挑 */
-  function workflowCatalog(project: Project, all: Workflow[], fallback?: Workflow) {
-    const picked = [fallback, ...project.workflowIds.map((id) => all.find((w) => w.id === id))]
-      .filter((w): w is Workflow => !!w)
-      .filter((w, i, list) => list.findIndex((x) => x.id === w.id) === i)
-    return picked.map((w) => ({
-      id: w.id,
-      name: w.name,
-      description: w.description,
-      when: w.when,
-      notFor: w.notFor,
-      kind: w.kind,
-      steps: topoOrder(entryFlow(w))
-        .map((n) => n.title.trim())
-        .filter(Boolean)
-        .slice(0, 8),
-    }))
-  }
 
   /** 对话 Agent 启动计划时按 id 取工作流；id 为空用项目默认工作流 */
   function planWorkflow(project: Project, all: Workflow[], fallback: Workflow | undefined, id: string) {

@@ -13,3 +13,11 @@ export const builtinWorkflows = (): BuiltinWorkflow[] => [
   ...BUILTIN_WORKFLOWS,
   ...activePlugins().flatMap((p) => p.workflows),
 ]
+
+/** 每个项目的父对话都能启动的工作流（定义上标了 everyProject），按副本的 origin 认 */
+export const everyProjectOrigins = () =>
+  new Set(
+    builtinWorkflows()
+      .filter((w) => w.everyProject)
+      .map((w) => `builtin:${w.key}`),
+  )
