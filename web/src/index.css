@@ -2022,6 +2022,16 @@ body,
 .chat-md .md-code[data-wrap] pre code {
   white-space: pre-wrap;
 }
+/* markdown 文档块（lib/markdown/doc-block.ts）：默认显示渲染好的正文，「源码」切到带行号的原文 */
+.chat-md .md-docblock-body {
+  @apply px-4 py-3;
+}
+.chat-md .md-docblock[data-view='doc'] > pre,
+.chat-md .md-docblock[data-view='src'] > .md-docblock-body,
+.chat-md .md-docblock[data-view='doc'] .md-docblock-to-doc,
+.chat-md .md-docblock[data-view='src'] .md-docblock-to-src {
+  display: none;
+}
 /*
  * 每行一个 .md-ln（workflow-doc.ts 的 lineSpans）：行号是 ::before，选中复制时不会带上；只有一行的代码块不画行号。
  * 行号横向滚动时钉在左边（sticky），代码从它下面滚过去：所以它要有不透明的底（代码块底色），
