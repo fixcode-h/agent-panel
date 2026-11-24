@@ -347,8 +347,6 @@ export const EN_SERVER: Record<string, string> = {
   '「{name}」超过 {size} MB': '“{name}” exceeds {size} MB',
   不是附件: 'Not an attachment',
   附件已经不在了: 'The attachment no longer exists',
-  '只能打开对话里的附件：这个路径不是面板记录过的附件':
-    'Only attachments from conversations can be opened: the panel has no record of this path as an attachment',
   '工作流已经被删除，只能按任务创建时的工作流继续':
     'The workflow was deleted; you can only resume with the workflow the task was created with',
   这个文件不在任务的改动里: "This file is not among the task's changes",

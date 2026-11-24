@@ -829,15 +829,6 @@ export function tasksApi(deps: {
       }
       return reapSettledTaskClis({ settled, kill: killTree, graceMs: REAP_GRACE_MS })
     },
-    /** 这个本机路径是不是某个对话里用户发过的附件（/uploads/open 只打开这些）；列表里带着全部用户消息，不用读对话文件 */
-    async hasAttachment(file: string) {
-      const want = path.resolve(file)
-      return (await store.list()).some((t) =>
-        t.messages.some((m) =>
-          (m.attachments ?? []).some((a) => path.isAbsolute(a.path) && path.resolve(a.path) === want),
-        ),
-      )
-    },
     /** 启动时清理没有任务在用的附件 */
     async cleanupUploads() {
       const all = await store.list()

@@ -16,7 +16,6 @@ import {
   mkdirInDir,
   readInDir,
   renameInDir,
-  revealInDir,
   saveInDir,
   searchInDir,
   searchNameInDir,
@@ -97,12 +96,17 @@ test('目录不存在时给错误，不是空列表', async () => {
   await assert.rejects(() => listLevel(dir, 'nope'), /目录已经不在了/)
 })
 
-test('路径不能逃出项目目录', async () => {
+test('项目外的目录也能列（用户 2026-11-24 定）：子项给绝对路径，不看 git 状态', async () => {
   const dir = project()
-  await assert.rejects(() => listLevel(dir, '..'), /只能查看项目目录里的文件/)
-  await assert.rejects(() => listLevel(dir, 'src/../../..'), /只能查看项目目录里的文件/)
-  await assert.rejects(() => listLevel(dir, tmp), /只能查看项目目录里的文件/)
-  await assert.rejects(() => listLevel(dir, path.resolve(tmp, 'x')), /只能查看项目目录里的文件/)
+  const out = outsideDir('a.txt')
+  const level = await listLevel(dir, out)
+  assert.equal(level.path, out.replace(/\\/g, '/'))
+  assert.deepEqual(
+    level.entries.map((e) => [e.name, e.path]),
+    [['a.txt', `${out.replace(/\\/g, '/')}/a.txt`]],
+  )
+  // .. 出去的同样能列
+  assert.ok((await listLevel(dir, '..')).entries.some((e) => e.name === path.basename(dir)))
 })
 
 /**
@@ -120,17 +124,10 @@ const OUTSIDE = [
   ['上一级的写法', '../outside'],
 ]
 
-test('列目录拒绝各种绝对路径和越权路径', async () => {
+test('写文件仍拒绝各种绝对路径和越权路径（只读的列目录、打开所在文件夹、看改动已放开）', async () => {
   const dir = project()
-  for (const [label, bad] of OUTSIDE) await assert.rejects(() => listLevel(dir, bad), /只能查看项目目录里的文件/, label)
-})
-
-test('在系统里打开时同样拒绝绝对路径和越权路径', async () => {
-  const dir = project()
-  // 校验在 stat 和打开文件管理器之前就失败，不会真的弹出窗口
   for (const [label, bad] of OUTSIDE)
-    await assert.rejects(() => revealInDir(dir, bad), /只能查看项目目录里的文件/, label)
-  await assert.rejects(() => revealInDir(dir, `${dir}/src`), /只能查看项目目录里的文件/)
+    await assert.rejects(() => writeInDir(dir, bad, 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/, label)
 })
 
 test('项目里的合法路径照常能用（中文、空格、点开头的约定目录）', async () => {
@@ -264,15 +261,19 @@ function outsideDir(name: string): string {
   return dir
 }
 
-test('项目里指向外面的链接：列目录、往里写都被拒绝，只读查看放开', async (t) => {
+test('项目里指向外面的链接：往里写被拒绝，只读查看和列目录放开', async (t) => {
   const dir = project()
   const outside = outsideDir('secret.txt')
   if (!linkTo(outside, path.join(dir, 'link'))) return t.skip('这个系统建不了链接')
-  // 字面路径在项目里，真实位置在项目外：只读查看放开（哪里都能看），列目录、写仍限项目目录
+  // 字面路径在项目里，真实位置在项目外：只读查看、列目录放开（哪里都能看），写仍限项目目录
   assert.equal((await readInDir(dir, 'link/secret.txt')).content, 'top secret\n')
   // 项目外的绝对路径（例如数据目录里的交接文件）也能直接看
   assert.equal((await readInDir(dir, path.join(outside, 'secret.txt'))).content, 'top secret\n')
-  await assert.rejects(() => listLevel(dir, 'link'), /只能查看项目目录里的文件/)
+  // 列目录也放开了（只读）
+  assert.deepEqual(
+    (await listLevel(dir, 'link')).entries.map((e) => e.name),
+    ['secret.txt'],
+  )
   await assert.rejects(() => createInDir(dir, 'link', 'evil.txt', 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/)
   await assert.rejects(() => writeInDir(dir, 'link/secret.txt', 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/)
   // 「存到项目」会补建中间目录：经过链接或用 .. 跳出去的都拒绝，外面不会多出目录
@@ -445,8 +446,10 @@ test('差异：git 仓库给和 HEAD 的对比，不是仓库时给说明', asyn
   assert.equal(fresh.before, false)
   assert.ok(fresh.note)
   assert.match(fresh.diff, /new/)
-  // 项目外的东西仍然拒绝
-  await assert.rejects(() => diffInDir(dir, '../x'), /只能查看项目目录里的文件/)
+  // 项目外的文件也能看（不在 git 仓库里时只有说明），路径原样给绝对路径
+  const far = path.join(outsideDir('far.txt'), 'far.txt')
+  const farDiff = await diffInDir(dir, far)
+  assert.deepEqual([farDiff.git, farDiff.path], [false, far.replace(/\\/g, '/')])
   // 不是 git 仓库：git 为 false，diff 为空，附说明
   const plain = path.join(tmp, `plain${Math.random().toString(36).slice(2, 8)}`)
   mkdirSync(plain, { recursive: true })

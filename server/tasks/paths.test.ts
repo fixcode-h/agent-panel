@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { mentioned, openable, resolvePath, searchRoots } from './paths.ts'
+import { resolvePath, searchRoots } from './paths.ts'
 
 function fixture() {
   // <根>/Main/Project/Client 是项目目录；表格在 <根>/Main/Project/Designer 下，Agent 写的是相对 Main 的路径
@@ -76,31 +76,6 @@ test('resolvePath：目录、绝对路径、找不到的', async () => {
     assert.equal(gone.exists, false)
     // 找不到时按第一个根拼出完整路径，复制路径能复制到它本该在的位置
     assert.equal(gone.abs, path.join(f.project, 'src', '没有.ts'))
-  } finally {
-    f.done()
-  }
-})
-
-test('mentioned / openable：对话里提到过（正反斜杠都算）或在项目里才能打开', async () => {
-  const f = fixture()
-  try {
-    const task = {
-      messages: [
-        { text: '表在 `Project\\Designer\\Excel\\NPC.xlsx`', tools: [] },
-        { text: '', tools: [{ label: 'src/a.cpp', input: '', output: '' }] },
-      ],
-    } as never
-    assert.equal(mentioned(task, 'Project/Designer/Excel/NPC.xlsx'), true)
-    assert.equal(mentioned(task, 'Project/Designer/Excel/Other.xlsx'), false)
-    const roots = searchRoots(f.project, f.project)
-    const xlsx = await resolvePath('Project/Designer/Excel/NPC.xlsx', roots, [f.project])
-    assert.equal(openable(task, xlsx, [f.project]), true)
-    // 项目外、对话里没提到的：不能凭一段路径就打开
-    const other = await resolvePath(path.join(f.root, 'Main', 'Project', 'Designer'), roots, [f.project])
-    assert.equal(openable({ messages: [] } as never, other, [f.project]), false)
-    // 项目里的文件不用提到也能打开
-    const cpp = await resolvePath('src/a.cpp', roots, [f.project])
-    assert.equal(openable({ messages: [] } as never, cpp, [f.project]), true)
   } finally {
     f.done()
   }

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { openable, openPath, resolvePath, searchRoots } from './paths.ts'
+import { openPath, resolvePath, searchRoots } from './paths.ts'
 import { t } from '../../shared/i18n.ts'
 import type { TasksScope } from './scope.ts'
 import { currentTask } from './read.ts'
@@ -22,7 +22,7 @@ export function pathRoutes(s: TasksScope): Hono {
     const tk = (await currentTask(s, id))!
     const project = tk.projectId ? await s.deps.projects.get(tk.projectId) : null
     const homes = [dir, project?.path ?? ''].filter(Boolean)
-    return { tk, homes, roots: searchRoots(dir, project?.path ?? '') }
+    return { homes, roots: searchRoots(dir, project?.path ?? '') }
   }
   const fail = (e: unknown) => ({ error: (e as Error).message, status: (e as { status?: 400 | 404 }).status ?? 400 })
 
@@ -43,10 +43,11 @@ export function pathRoutes(s: TasksScope): Hono {
     const p = OpenInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return s.bad(c, t('缺少文件路径'))
     try {
-      const { tk, roots, homes } = await rootsOf(c.req.param('id'))
+      const { roots, homes } = await rootsOf(c.req.param('id'))
       const info = await resolvePath(p.data.path, roots, homes)
       if (!info.exists) return s.bad(c, t('文件不存在，可能已删除或路径写错：{path}', { path: info.abs }), 404)
-      if (!openable(tk, info, homes)) return s.bad(c, t('只能打开项目里的文件或对话里提到过的文件'))
+      // 存在就能打开（用户 2026-11-24 定）：以前只开项目里的或对话里提到过的，文档根这类项目外的文件打不开。
+      // 会被执行的类型照样只在文件夹里选中，不运行（见 openPath）
       return c.json({ ok: true, ...(await openPath(info, p.data.reveal)), abs: info.abs })
     } catch (e) {
       const f = fail(e)
