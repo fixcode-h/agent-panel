@@ -6,6 +6,7 @@ import * as serverComfy from '../comfy.ts'
 import * as serverDocsRootCache from '../docs/root-cache.ts'
 import * as serverDownload from '../download.ts'
 import * as serverProjectData from '../project-data/index.ts'
+import * as serverExecFindCommand from '../exec/find-command.ts'
 import * as serverExecGit from '../exec/git.ts'
 import * as serverExecInvoke from '../exec/invoke.ts'
 import * as serverExecProcess from '../exec/process.ts'
@@ -85,6 +86,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/comfy': serverComfy,
   'server/docs/root-cache': serverDocsRootCache,
   'server/download': serverDownload,
+  'server/exec/find-command': serverExecFindCommand,
   'server/exec/git': serverExecGit,
   'server/exec/invoke': serverExecInvoke,
   'server/exec/process': serverExecProcess,
