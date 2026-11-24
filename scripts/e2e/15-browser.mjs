@@ -127,6 +127,7 @@ await runShard('浏览器连真实服务端', async (api) => {
     const docDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-doc-'))
     const docFile = path.join(docDir, 'design.md')
     writeFileSync(docFile, '# y\n')
+    const errorsBefore = errors.length
     let edit = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -141,15 +142,31 @@ await runShard('浏览器连真实服务端', async (api) => {
         revealed.push({ status: r.status(), body: await r.json().catch(() => ({})) })
     })
     await page.getByText('展开过程').first().click({ timeout: 20_000 })
-    await page.getByText(docFile).last().click()
     const more = page.getByRole('dialog').getByRole('button', { name: '更多操作', exact: true })
+    // 打开这一行的改动弹窗、点「更多操作」里的一项。弹窗刚打开时还在入场动画、内容加载完会重排，
+    // 偶尔点到正在变的元素（CI 上见过点了菜单后弹窗被换掉）：没点成就重新打开再点
+    const menuOf = async (row, item) => {
+      for (let i = 0; ; i++) {
+        try {
+          if (!(await page.getByRole('dialog').count())) await row.click({ timeout: 5_000 })
+          await page.getByRole('dialog').waitFor({ timeout: 5_000 })
+          await sleep(300)
+          await more.click({ timeout: 5_000 })
+          await page.getByRole('menuitem', { name: item }).click({ timeout: 5_000 })
+          return
+        } catch (e) {
+          if (i >= 3) throw e
+          await page.keyboard.press('Escape')
+          await sleep(500)
+        }
+      }
+    }
+    const docRow = page.getByText(docFile).last()
     // 复制路径：复制的是项目外文件的完整路径
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-    await more.click()
-    await page.getByRole('menuitem', { name: '复制路径' }).click()
+    await menuOf(docRow, '复制路径')
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), docFile)
-    await more.click()
-    await page.getByRole('menuitem', { name: '打开所在文件夹' }).click()
+    await menuOf(docRow, '打开所在文件夹')
     for (let i = 0; i < 100 && !revealed.length; i++) await sleep(100)
     // 机器上没有文件管理器（CI、WSL）时回带原因的失败；不能是项目目录的限制
     const r0 = revealed[0]
@@ -159,17 +176,22 @@ await runShard('浏览器连真实服务端', async (api) => {
     )
     assert.equal(await page.getByText('只能查看项目目录里的文件').count(), 0)
     // 项目里的文件照旧能打开
+    // 先等上一个弹窗关干净（菜单、弹窗都有退场动画），否则「更多操作」可能点到正在退场的旧弹窗上
     await page.keyboard.press('Escape')
-    await page.getByText('claude-output.txt', { exact: true }).locator('visible=true').first().click()
-    await more.click()
-    await page.getByRole('menuitem', { name: '打开所在文件夹' }).click()
+    await page.getByRole('dialog').waitFor({ state: 'detached' })
+    await menuOf(page.getByText('claude-output.txt', { exact: true }).locator('visible=true').first(), '打开所在文件夹')
     for (let i = 0; i < 100 && revealed.length < 2; i++) await sleep(100)
     const r1 = revealed[1]
     assert.ok(
       r1 && (r1.status === 200 || /没能在文件夹中显示/.test(r1.body.error ?? '')),
       `项目里的文件照旧能打开所在文件夹：${JSON.stringify(r1)}`,
     )
-    assert.deepEqual(errors, [], '浏览器里没有报错')
+    // 没有文件管理器时打开接口回 400，浏览器会记一条资源加载失败：只放过这一种
+    const failed = revealed.filter((r) => r.status === 400).length
+    const extra = errors.splice(errorsBefore)
+    const bad = extra.filter((e) => !/status of 400/.test(e))
+    assert.deepEqual(bad, [], '浏览器里没有报错')
+    assert.ok(extra.length - bad.length <= failed, JSON.stringify(extra))
     step('改动弹窗里项目外的文件（文档根）、项目里的文件：复制路径、打开所在文件夹都能用')
   } finally {
     await browser.close()
