@@ -131,6 +131,7 @@
     "server/comfy",
     "server/docs/root-cache",
     "server/download",
+    "server/exec/find-command",
     "server/exec/git",
     "server/exec/invoke",
     "server/exec/process",
