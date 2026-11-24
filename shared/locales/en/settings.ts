@@ -894,8 +894,8 @@ export const EN_SETTINGS: Record<string, string> = {
 
   // 授权（外部 CLI）
   授权: 'Authorizations',
-  '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。':
-    'After authorizing a local command-line tool, roles can use it directly on remote repositories, e.g. merge branches, view and create PRs, or file issues. The tool stores the credentials itself; the panel never keeps them.',
+  '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据；只有你在「备用登录」里填的 token 由面板加密存在本机。':
+    'After authorizing a local command-line tool, roles can use it directly on remote repositories, e.g. merge branches, view and create PRs, or file issues. The tool stores the credentials itself; the panel never keeps them, except tokens you enter under "Backup sign-in", which the panel stores encrypted on this computer.',
   '授权后 Agent 可以直接用 gh 操作 GitHub 远端：合并分支、查看和创建 PR、提交 issue 等。':
     'Once authorized, agents can use gh directly on GitHub: merge branches, view and create PRs, file issues and more.',
   '授权后 Agent 可以用 cloudflared 把本机服务通过 Cloudflare Tunnel 暴露到外网，例如给远程电脑看正在开发的面板。':
@@ -1935,4 +1935,22 @@ export const EN_SETTINGS: Record<string, string> = {
   '自己加一条，例如：我的电脑是 Windows，命令要能在 PowerShell 里跑':
     'Add one yourself, e.g. My computer runs Windows, so commands must work in PowerShell',
   '新建任务（在 Chat 页时新建聊天）': 'New task (a new chat when on the Chat page)',
+  '备用登录：不装 {command} 时用 token': 'Backup sign-in: use a token when {command} is not installed',
+  已填: 'Filled in',
+  没填: 'Not filled in',
+  '飞书 CLI': 'Feishu CLI',
+  '授权后飞书插件可以经 lark-cli 读写你的飞书文档、表格、多维表格和评论；每次读写都按插件的授权卡来，Agent 不能在终端里直接调 lark-cli。':
+    "Once authorized, the Feishu plugin can read and write your Feishu docs, sheets, Bases and comments through lark-cli. Every read or write follows the plugin's approval cards; the Agent cannot call lark-cli directly in the terminal.",
+  '还没有登录飞书。点「浏览器授权」：第一次会先在浏览器里建一个飞书应用，再登录授权。':
+    'Not signed in to Feishu yet. Click "Authorize in browser": the first time you will create a Feishu app in the browser, then sign in.',
+  '不装 lark-cli 时，飞书插件可以用这里填的 token 登录（加密存在本机数据目录，网页只显示末 4 位）。token 方式改不了文档正文，也不能新建文档。':
+    'Without lark-cli, the Feishu plugin can sign in with the token entered here (stored encrypted in the local data folder; the page only shows the last 4 characters). With a token it cannot edit document bodies or create documents.',
+  开放平台: 'Open platform',
+  '飞书（open.feishu.cn）': 'Feishu (open.feishu.cn)',
+  'Lark 国际版（open.larksuite.com）': 'Lark international (open.larksuite.com)',
+  '用户身份的令牌（u- 开头），大约 2 小时过期': 'User token (starts with u-), expires in about 2 hours',
+  '选填：和 App ID、App Secret 一起填，token 过期时自动换新的':
+    'Optional: fill in with App ID and App Secret to renew the token automatically when it expires',
+  '选填：拿 token 用的飞书应用（cli_ 开头）': 'Optional: the Feishu app used to get the token (starts with cli_)',
+  '选填：同一个应用的 App Secret': 'Optional: the App Secret of the same app',
 }

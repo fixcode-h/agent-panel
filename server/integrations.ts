@@ -15,6 +15,9 @@ import {
 } from '../shared/integrations.ts'
 import { t } from '../shared/i18n.ts'
 import { resolveCommand } from './cli/source.ts'
+import { findCommand } from './exec/find-command.ts'
+import { integrationCredentialsContract as credentialsContract } from '../shared/api-contract/integration-credentials.ts'
+import { credentialHints, saveCredentials } from './secrets/integration-credentials.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { DATA_DIR } from './store.ts'
@@ -24,6 +27,7 @@ import { expandWinVars, refreshWinPath } from './win-path.ts'
 /**
  * 外部 CLI 的授权：检测是否装了、是否已经登录，在面板里跑一次浏览器授权或 token 授权。
  * 登录状态由这些 CLI 自己保存（例如 gh 存在自己的配置目录里），面板不保存也不经手凭据。
+ * 例外是定义里的备用登录信息（credentials，例如飞书不装 lark-cli 时的 token）：用户自己填的，加密存本机（./secrets/integration-credentials.ts）。
  */
 
 const platform: 'win32' | 'darwin' | 'linux' =
@@ -59,13 +63,30 @@ const winDirFile = (def: Integration) => {
   return undefined
 }
 
+/**
+ * 面板的 PATH 里没有、但 npm 全局目录 / 常见安装目录里找到的（findCommand，检测时找一次）。
+ * 面板常常从托盘启动，PATH 和用户终端里的不一样；npm 装的 lark-cli、vercel 多半在这种目录里
+ */
+const foundElsewhere = new Map<string, string>() // 模块状态：缓存，丢了下次检测重找
+
 /** 实际用来跑命令的文件：PATH 里找到的优先，再找常见安装目录，最后用数据目录里下载的 */
 function commandPath(def: Integration) {
   return (
     resolveCommand(def.command) ??
     winDirFile(def) ??
+    foundElsewhere.get(def.id) ??
     (dataBin(def) && existsSync(dataBin(def)) ? dataBin(def) : undefined)
   )
+}
+
+/** commandPath 找不到时再按 findCommand 找一遍（npm 全局目录、常见安装目录），找到的记下来 */
+async function locate(def: Integration) {
+  const known = foundElsewhere.get(def.id)
+  if (known && !existsSync(known)) foundElsewhere.delete(def.id)
+  if (commandPath(def)) return commandPath(def)
+  const found = await findCommand(def.command).catch(() => undefined)
+  if (found) foundElsewhere.set(def.id, found.path)
+  return found?.path
 }
 
 /** 当前平台的一键安装方式 */
@@ -110,9 +131,12 @@ async function detect(def: Integration): Promise<IntegrationView> {
     canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
     hint: def.auth.hint ?? '',
     detail: '',
+    credentials: def.credentials ?? [],
+    credentialsNote: def.credentialsNote ?? '',
   }
-  if (!commandPath(def)) return view
-  const v = await capture(commandPath(def)!, def.versionArgs, homedir(), baseEnv(def), 8_000)
+  const bin = await locate(def)
+  if (!bin) return view
+  const v = await capture(bin, def.versionArgs, homedir(), baseEnv(def), 8_000)
   view.installed = !v.spawnError
   view.version = (v.stdout || v.stderr).split('\n')[0]?.trim().slice(0, 160) ?? ''
   if (!view.installed) return view
@@ -142,6 +166,8 @@ function fallback(def: Integration, error: string): IntegrationView {
     canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
     hint: def.auth.hint ?? '',
     detail: error,
+    credentials: def.credentials ?? [],
+    credentialsNote: def.credentialsNote ?? '',
   }
 }
 
@@ -149,15 +175,16 @@ function fallback(def: Integration, error: string): IntegrationView {
 export async function listIntegrations(refresh = false): Promise<IntegrationView[]> {
   // 在面板外面装好的工具（winget、安装包）只改了注册表里的 PATH，先补进来再检测
   if (await refreshWinPath(refresh)) invalidate()
-  return Promise.all(
-    INTEGRATIONS.map(async (def) => {
-      const hit = cache.get(def.id)
-      if (!refresh && hit && Date.now() - hit.at < CACHE_MS) return hit.view
-      const view = await detect(def).catch((e) => fallback(def, (e as Error).message))
-      cache.set(def.id, { at: Date.now(), view })
-      return view
-    }),
-  )
+  return Promise.all(INTEGRATIONS.map((def) => viewOf(def, refresh)))
+}
+
+/** 一个工具的状态，几秒内的检测结果直接用 */
+async function viewOf(def: Integration, refresh: boolean) {
+  const hit = cache.get(def.id)
+  if (!refresh && hit && Date.now() - hit.at < CACHE_MS) return hit.view
+  const view = await detect(def).catch((e) => fallback(def, (e as Error).message))
+  cache.set(def.id, { at: Date.now(), view })
+  return view
 }
 
 // ---- 浏览器授权 ----
@@ -186,6 +213,9 @@ async function startLogin(id: string): Promise<IntegrationLoginJob> {
   if (running?.status === 'running') return view(running)
   const now = await detect(def).catch(() => null)
   if (!now?.installed) throw new Error(t('没有检测到 {name}，先安装再授权', { name: def.name }))
+  // 登录前要先做的一步（lark-cli 还没建应用时先 config init --new）：看检测输出决定
+  const prepare = def.auth.prepare
+  const needPrepare = !!prepare && prepare.when.test((await readAuth(def).catch(() => null))?.output ?? '')
 
   const job: Login = {
     id: randomUUID(),
@@ -235,22 +265,49 @@ async function startLogin(id: string): Promise<IntegrationLoginJob> {
     else if (Date.now() - job.startedAt > LOGIN_TIMEOUT) finish(false, t('超过 5 分钟没有完成授权，已取消'))
   }, 1_200)
 
-  void runProcess({
-    command: commandPath(def) ?? def.command,
-    args: def.auth.login,
-    cwd: homedir(),
-    env: baseEnv(def),
-    signal: job.abort.signal,
-    keepStdinOpen: true,
-    timeoutMs: LOGIN_TIMEOUT + 10_000,
-    onSpawn: (io) => {
-      job.write = io.write
-    },
-    onLine: take,
-    onStderr: (s) => take(s.trimEnd()),
-  }).then(async (r) => {
+  const spawn = (args: string[]) =>
+    runProcess({
+      command: commandPath(def) ?? def.command,
+      args,
+      cwd: homedir(),
+      env: baseEnv(def),
+      signal: job.abort.signal,
+      keepStdinOpen: true,
+      timeoutMs: LOGIN_TIMEOUT + 10_000,
+      onSpawn: (io) => {
+        job.write = io.write
+      },
+      onLine: take,
+      onStderr: (s) => take(s.trimEnd()),
+    })
+
+  void (async () => {
+    if (prepare && needPrepare) {
+      const p = await spawn(prepare.args)
+      if (settled) return null
+      if (p.code !== 0) {
+        finish(
+          false,
+          p.spawnError ||
+            [
+              t('{name} 登录前的准备没有完成（退出码 {code}）', { name: def.name, code: String(p.code) }),
+              ...lines(job.output, 3),
+            ]
+              .filter(Boolean)
+              .join('\n'),
+        )
+        return null
+      }
+      // 第二步打印新的网址：清掉上一步的输出和网址（网址是从输出里找的），界面上换成登录用的那个
+      job.output = ''
+      job.url = ''
+      job.code = ''
+      pressed = false
+    }
+    return spawn(def.auth.login)
+  })().then(async (r) => {
     clearTimeout(readyTimer)
-    if (settled) return
+    if (settled || !r) return
     // 刚写完凭据就退出时，给读取状态留一点时间，别把成功判成失败
     if (r.code === 0) await new Promise((ok) => setTimeout(ok, 600))
     const s = await detect(def).catch(() => null)
@@ -479,6 +536,36 @@ export function integrationsApi() {
       '/:id/logout',
       guard(async (c) => c.json(await logout(c.req.param('id')))),
     )
+    .get(
+      '/:id/credentials',
+      guard(async (c) => c.json(await credentialHints(c.req.param('id')))),
+    )
+    .put(
+      '/:id/credentials',
+      guard(async (c) => {
+        const patch = credentialsContract.save.body.safeParse(await c.req.json().catch(() => null))
+        if (!patch.success) throw new Error(t('登录信息的格式不对'))
+        return c.json(await saveCredentials(c.req.param('id'), patch.data))
+      }),
+    )
+}
+
+/**
+ * 给插件看的一个授权工具的状态（PluginServerContext.integrations.get，插件接口 19）：
+ * 装没装、登没登录、账号、实际跑的那个文件。没有这个工具时返回 undefined
+ */
+export async function integrationState(id: string, refresh = false) {
+  const def = getIntegration(id)
+  if (!def) return undefined
+  if (refresh && (await refreshWinPath(true))) invalidate()
+  const v = await viewOf(def, refresh)
+  return {
+    installed: v.installed,
+    authed: v.authed,
+    account: v.account,
+    version: v.version,
+    path: v.installed ? (commandPath(def) ?? '') : '',
+  }
 }
 
 /** 令牌缓存：每次请求都起一个 gh 进程太慢；拿不到时短一点再试（用户可能刚授权） */

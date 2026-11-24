@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CopyText } from './parts'
+import { IntegrationCredentials } from './IntegrationCredentials'
 
 /**
  * 设置里的「授权」：列出需要授权的外部 CLI，检测安装和登录状态，
@@ -172,7 +173,7 @@ export function IntegrationsSection() {
     <div className="flex flex-col gap-3">
       <p className="text-body leading-relaxed text-subtle">
         {t(
-          '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。',
+          '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据；只有你在「备用登录」里填的 token 由面板加密存在本机。',
         )}
       </p>
       {list.map((v) => {
@@ -329,6 +330,7 @@ export function IntegrationsSection() {
             )}
 
             {job && <LoginBox job={job} onCancel={() => void cancel(v.id)} />}
+            {v.credentials.length > 0 && <IntegrationCredentials v={v} />}
           </Card>
         )
       })}

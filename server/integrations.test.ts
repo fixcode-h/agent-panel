@@ -80,3 +80,26 @@ test('vercel：命令、授权方式和环境变量按 CLI 的实际能力配', 
   const output = '  Visit https://vercel.com/oauth/device?user_code=ABCD-1234\n'
   assert.equal(output.match(def.auth.code!)?.[1], 'ABCD-1234')
 })
+
+/** lark-cli v1.0.100（cmd/auth/status.go）：auth status 总是退出 0，看 "identity"；没建应用时报 not configured */
+test('飞书：auth status 退出 0 也要 identity 是 user 才算登录，没建应用时先建应用', () => {
+  const def = getIntegration('feishu')
+  if (!def) throw new Error('没有 feishu 定义')
+  const state = (output: string, code: number) => authState(def, code, output)
+  const user = `{\n  "appId": "cli_x",\n  "identities": {\n    "bot": { "status": "ready", "available": true },\n    "user": { "status": "ready", "available": true, "userName": "张三" }\n  },\n  "identity": "user"\n}`
+  assert.deepEqual(state(user, 0), { authed: true, account: '张三' })
+  // 只有机器人身份（应用建好了、用户没登录）：退出码 0 但不算登录
+  assert.deepEqual(state(user.replace('"identity": "user"', '"identity": "bot"'), 0), { authed: false, account: '' })
+  const notConfigured = 'Error: not configured\nrun `lark-cli config init --new` in the background.'
+  assert.deepEqual(state(notConfigured, 1), { authed: false, account: '' })
+  assert.match(notConfigured, def.auth.prepare!.when)
+  // 应用建好了只是没登录：不再建一次应用
+  const botOnly =
+    '{ "note": "User identity is not logged in; bot identity is ready. Run `lark-cli auth login` to enable user identity.", "identity": "bot" }'
+  assert.doesNotMatch(botOnly, def.auth.prepare!.when)
+  assert.deepEqual(def.auth.login, ['auth', 'login', '--recommend'])
+  assert.ok(
+    def.credentials?.some((c) => c.key === 'userToken' && c.secret),
+    '备用 token 要按保密项存',
+  )
+})
