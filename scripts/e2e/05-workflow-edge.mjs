@@ -986,18 +986,22 @@ await runShard('工作流条件与失败', async (api) => {
       found.files.map((f) => f.path),
       ['src/api/deep-cart.ts'],
     )
-    // 未跟踪的文件带 ? 状态；越权路径按错误返回
+    // 未跟踪的文件带 ? 状态
     assert.equal(found.files[0].status, '?')
     const level = await call('GET', `/project-files/${project.id}/list?path=src`)
     assert.equal(level.entries.find((e) => e.path === 'src/api').kind, 'dir')
-    const escaped = await fetch(`${base}/project-files/${project.id}/list?path=${encodeURIComponent('../..')}`)
-    assert.equal(escaped.status, 404, '不能列到项目目录外面')
+    // 项目外的目录也能列（用户 2026-11-24 定）：子项给绝对路径
+    const outer = await call('GET', `/project-files/${project.id}/list?path=${encodeURIComponent('..')}`)
+    assert.ok(
+      outer.entries.some((e) => e.name === path.basename(projectDir) && path.isAbsolute(e.path)),
+      JSON.stringify(outer.entries),
+    )
     // 任务目录同样按层读
     const tLevel = await call('GET', `/tasks/${tAtt.id}/files/list`)
     assert.ok(tLevel.entries.some((e) => e.name === 'README.md'))
     const tInfo = await call('GET', `/tasks/${tAtt.id}/files`)
     assert.deepEqual(Object.keys(tInfo).sort(), ['branch', 'dir', 'isGit'])
-    // 在系统里打开：文件、目录、空路径（项目目录）都接受，越权路径被拒绝
+    // 在系统里打开：文件、目录、空路径（项目目录）、项目外的路径（文档根这类）都接受
     // 机器上没有文件管理器（WSL 默认没有 xdg-open）时必须回带原因的失败，不能静默回 ok
     const revealPost = async (url, body = {}) => {
       const r = await fetch(base + url, {
@@ -1015,14 +1019,15 @@ await runShard('工作流条件与失败', async (api) => {
     assert.ok(revealOk(dirReveal), JSON.stringify(dirReveal))
     const rootReveal = await revealPost(`/project-files/${project.id}/reveal`)
     assert.ok(revealOk(rootReveal), JSON.stringify(rootReveal))
-    // 越权路径要带 JSON 请求体：不带 content-type 的写请求会先被全局中间件以 415 拒掉
-    const badReveal = await fetch(`${base}/project-files/${project.id}/reveal?path=${encodeURIComponent('../..')}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    })
-    assert.equal(badReveal.status, 404, '不能打开项目目录外面的路径')
-    assert.match((await badReveal.json()).error, /只能查看项目目录里的文件/)
+    const upReveal = await revealPost(`/project-files/${project.id}/reveal?path=${encodeURIComponent('../..')}`)
+    assert.ok(revealOk(upReveal), `项目外的路径也能打开：${JSON.stringify(upReveal)}`)
+    // 改动弹窗里「打开所在文件夹」传的是绝对路径：P4 项目的文档根在项目外
+    const docRoot = path.join(path.dirname(projectDir), `ProjectDoc-${Date.now()}`, 'docs', 'modules')
+    mkdirSync(docRoot, { recursive: true })
+    writeFileSync(path.join(docRoot, 'design.md'), '# x\n')
+    const docReveal = await revealPost(`/tasks/${tAtt.id}/reveal`, { path: path.join(docRoot, 'design.md') })
+    assert.ok(revealOk(docReveal), `文档根里的文件能打开所在文件夹：${JSON.stringify(docReveal)}`)
+    assert.doesNotMatch(docReveal.error ?? '', /只能查看项目目录里的文件/)
     const tReveal = await revealPost(`/tasks/${tAtt.id}/reveal`, { path: 'README.md' })
     assert.ok(revealOk(tReveal), JSON.stringify(tReveal))
     const tRootReveal = await revealPost(`/tasks/${tAtt.id}/reveal`)

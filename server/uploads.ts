@@ -53,11 +53,8 @@ const UploadInput = z.object({
 // oxlint-disable-next-line no-control-regex -- 故意匹配控制字符（ANSI 转义序列、不可见字符）
 const safeName = (n: string) => path.basename(n).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'file'
 
-/**
- * dirs：找大文件原路径时额外翻的目录（各个项目的目录）。
- * known：这个本机路径是不是某个对话里用户发过的附件（/open 用：重启后 confirmed 清空了，旧消息里的附件照样要能打开）
- */
-export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file: string) => Promise<boolean> } = {}) {
+/** dirs：找大文件原路径时额外翻的目录（各个项目的目录） */
+export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
   const routes = new Hono()
   routes.post('/', async (c) => {
     const p = UploadInput.safeParse(await c.req.json().catch(() => null))
@@ -220,9 +217,9 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]>; known?: (file
       .object({ path: z.string().min(1).max(4096), reveal: z.boolean().default(false) })
       .safeParse(await c.req.json().catch(() => null))
     if (!p.success || !path.isAbsolute(p.data.path)) return c.json({ error: t('不是附件') }, 400)
+    // 存在就能打开（用户 2026-11-24 定）：以前只开面板记录过的附件，项目外的文件点了报错。
+    // 会被执行的类型照样只在文件夹里选中，不运行（openWithSystem 的白名单）
     const file = path.resolve(p.data.path)
-    const allowed = !!uploadDirOf(file) || isConfirmed(file) || !!(await opts.known?.(file).catch(() => false))
-    if (!allowed) return c.json({ error: t('只能打开对话里的附件：这个路径不是面板记录过的附件') }, 403)
     if (!(await stat(file).catch(() => null))) return c.json({ error: t('附件已经不在了') }, 404)
     if (p.data.reveal) {
       try {

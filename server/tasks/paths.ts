@@ -1,7 +1,6 @@
 import { open as openFd, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { Task } from '../../shared/schema.ts'
 import { openWithSystem, revealDir, revealItem } from '../open.ts'
 
 /**
@@ -99,29 +98,6 @@ export async function resolvePath(want: string, roots: string[], homes: string[]
   const inTask = !!homes[0] && inside(homes[0], abs)
   return { path: raw, abs, rel: relOf(abs, homes), inTask, exists: false, dir: false, text: false }
 }
-
-/** 统一成 / 再比：Windows 上 Agent 写的路径正反斜杠都有 */
-const slash = (s: string) => s.replace(/\\/g, '/')
-
-/**
- * 这个路径在对话里出现过：消息正文、工具行的标题、输入和输出。
- * 打开接口只打开对话里真的提到过的文件，本机服务谁都能往 127.0.0.1 发请求，不能凭一段任意路径就让系统去打开
- */
-export function mentioned(task: Pick<Task, 'messages'>, want: string) {
-  const needle = slash(want.trim())
-  if (!needle) return false
-  const has = (s?: string) => !!s && slash(s).includes(needle)
-  return task.messages.some(
-    (m) =>
-      has(m.text) ||
-      m.attachments?.some((a) => has(a.path)) ||
-      m.tools.some((x) => has(x.label) || has(x.input) || has(x.output)),
-  )
-}
-
-/** 能不能打开：在对话目录 / 项目目录里面，或者对话里提到过 */
-export const openable = (task: Pick<Task, 'messages'>, info: PathInfo, homes: string[]) =>
-  info.exists && (homes.some((h) => inside(h, info.abs)) || mentioned(task, info.path))
 
 /**
  * 打开解析好的路径：目录在文件管理器里打开；文件交给系统默认程序，

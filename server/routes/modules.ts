@@ -211,7 +211,6 @@ export function workModules(d: Omit<ModuleDeps, 'memory' | 'updater'>): ApiModul
       prefix: '/uploads',
       app: uploadsApi({
         dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean),
-        known: (file) => tasks.hasAttachment(file),
       }),
     },
     // 文件浏览页：项目里的文件树、内容搜索、看单个文件

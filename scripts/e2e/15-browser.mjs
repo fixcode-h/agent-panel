@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -28,7 +28,7 @@ const TYPES = {
 
 await runShard('浏览器连真实服务端', async (api) => {
   const { baseUrl, root, call, waitDone, step, setupBase, sleep } = api
-  const { project, C } = await setupBase()
+  const { project, A, C } = await setupBase()
 
   // 正式版前端：构建到临时目录，不碰仓库里的 dist/
   const dist = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-dist-'))
@@ -122,6 +122,55 @@ await runShard('浏览器连真实服务端', async (api) => {
     await page.getByText(second.slice(0, 20)).last().waitFor({ timeout: 20_000 })
     assert.deepEqual(errors, [], '浏览器里没有报错')
     step('在页面输入框里发消息：真实接口收下、执行，回复经 SSE 推到页面')
+
+    // 改动弹窗的「打开所在文件夹」：改的是项目外的文件（P4 项目的文档根）时以前报「只能查看项目目录里的文件」
+    const docDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-doc-'))
+    const docFile = path.join(docDir, 'design.md')
+    writeFileSync(docFile, '# y\n')
+    let edit = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: A.id,
+      prompt: `EDIT_AT:${docFile}`,
+    })
+    edit = await waitDone(edit.id)
+    await page.goto(`${site}/#/projects/${encodeURIComponent(project.id)}/${encodeURIComponent(edit.id)}`)
+    const revealed = []
+    page.on('response', async (r) => {
+      if (r.url().endsWith(`/tasks/${edit.id}/reveal`))
+        revealed.push({ status: r.status(), body: await r.json().catch(() => ({})) })
+    })
+    await page.getByText('展开过程').first().click({ timeout: 20_000 })
+    await page.getByText(docFile).last().click()
+    const more = page.getByRole('dialog').getByRole('button', { name: '更多操作', exact: true })
+    // 复制路径：复制的是项目外文件的完整路径
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await more.click()
+    await page.getByRole('menuitem', { name: '复制路径' }).click()
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), docFile)
+    await more.click()
+    await page.getByRole('menuitem', { name: '打开所在文件夹' }).click()
+    for (let i = 0; i < 100 && !revealed.length; i++) await sleep(100)
+    // 机器上没有文件管理器（CI、WSL）时回带原因的失败；不能是项目目录的限制
+    const r0 = revealed[0]
+    assert.ok(
+      r0 && (r0.status === 200 || /没能在文件夹中显示/.test(r0.body.error ?? '')),
+      `项目外的文件能打开所在文件夹：${JSON.stringify(r0)}`,
+    )
+    assert.equal(await page.getByText('只能查看项目目录里的文件').count(), 0)
+    // 项目里的文件照旧能打开
+    await page.keyboard.press('Escape')
+    await page.getByText('claude-output.txt', { exact: true }).locator('visible=true').first().click()
+    await more.click()
+    await page.getByRole('menuitem', { name: '打开所在文件夹' }).click()
+    for (let i = 0; i < 100 && revealed.length < 2; i++) await sleep(100)
+    const r1 = revealed[1]
+    assert.ok(
+      r1 && (r1.status === 200 || /没能在文件夹中显示/.test(r1.body.error ?? '')),
+      `项目里的文件照旧能打开所在文件夹：${JSON.stringify(r1)}`,
+    )
+    assert.deepEqual(errors, [], '浏览器里没有报错')
+    step('改动弹窗里项目外的文件（文档根）、项目里的文件：复制路径、打开所在文件夹都能用')
   } finally {
     await browser.close()
     server.close()

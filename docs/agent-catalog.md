@@ -128,7 +128,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 还不动就按没送到处理（做到一半卡住的由面板自动问、重启、接手）。通用约束的「执行纪律」同批加了一条：工具回成功不等于已生效，
 对外的异步动作以推回结果为准、同步的回读一次，不为此轮询。
 2026-11-03 起（[ADR 0048](adr/0048-coordinator-docs-first.md)）这些说法不再写在协调器设定里：`send_to_conversation` 送到后的返回自带一句（`shared/engine/index.ts` 的 `SENT_NOTE`）。
-同批：协调器先提炼关键词再读模块文档定位；「方案设计」只能派出、不再挂「评审」复核大方案；给 Agent 的规则每条只有一个出处（`scripts/rules-check.mjs` 第 20 条）。
+同批：协调器先提炼关键词再读模块文档定位；「方案设计」只能派出、不再挂「评审」复核大方案（2026-11-24 起协调器不再挂「方案设计」，出方案一律走「方案设计」工作流，不派「文档」或子任务写方案）；给 Agent 的规则每条只有一个出处（`scripts/rules-check.mjs` 第 20 条）。
 
 ### 角色分类
 
@@ -196,7 +196,7 @@ Chat 类角色只按 Chat 模式的需要增删（回答、读写文件、跑命
 | `project-ue`      | UE 项目              | UE 的 C++ / Lua 改动                   | `orchestrator` | explorer（ue 侦察）→ analyst（确认）→ developer（不编译）→ docsync                     |
 | `openspec`        | 功能开发（OpenSpec） | 需要完整规范的复杂功能                 | `developer`    | spec → analyst → spec（门禁）→ developer → tester（延期验证项）→ spec（归档）→ docsync |
 | `migration`       | 数据与配置迁移       | 改 schema / 数据格式 / 配置结构        | `developer`    | analyst（含读写方）→ developer → tester（旧数据验证）→ docsync                         |
-| `architecture`    | 架构设计             | 新模块架构或现有架构评审               | `analyst`      | analyst（architectural）→ analyst（压测）→ docsync（ADR 一律写）                       |
+| `architecture`    | 方案设计             | 出方案、设计稿、定口径，或架构取舍     | `analyst`      | analyst（出方案，影响架构时给候选和契约）→ analyst（压测，确认）→ docsync（ADR 自动）  |
 | `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                   |
 | `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                             |
 | `release`         | 发布与回滚           | 出包前的范围、产物验证和回滚预案       | `vcs`          | vcs（发布范围）→ tester（产物验证）→ docsync（发布说明 + 回滚）；发布由父对话做        |

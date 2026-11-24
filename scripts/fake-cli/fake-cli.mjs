@@ -1959,6 +1959,23 @@ if (kind === 'claude') {
       content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: `${process.cwd()}/README.md` } }],
     },
   })
+  // 任务描述里有 EDIT_AT:<绝对路径>：改一个项目外的文件（P4 项目的文档根这类），界面上那一行的「打开所在文件夹」要能用
+  const editAt = /EDIT_AT:(\S+)/.exec(input)?.[1]
+  if (editAt)
+    out({
+      type: 'assistant',
+      message: {
+        id: 'm1',
+        content: [
+          {
+            type: 'tool_use',
+            id: 't1e',
+            name: 'Edit',
+            input: { file_path: editAt, old_string: '# x', new_string: '# y' },
+          },
+        ],
+      },
+    })
   out({
     type: 'assistant',
     message: {

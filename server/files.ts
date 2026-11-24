@@ -243,12 +243,17 @@ async function into(dir: string, rel: string) {
 
 /**
  * 只读的接口（看文件内容、看图片）用的路径：哪里都能看（用户 2026-10-31 定的：交接文件、对话目录、数据目录里的文件
- * 都要能在对话里点开）。绝对路径直接用，相对路径接在项目目录后面。写、新建、删除仍走 into，只限项目目录。
+ * 都要能在对话里点开）。绝对路径直接用，相对路径接在项目目录后面。写、新建、改名、删除仍走 into，只限项目目录。
+ * 2026-11-24 用户要求列目录、打开所在文件夹、看改动也一样放开：P4 项目的文档根（ProjectDoc/docs）在项目外，
+ * 改动弹窗里「打开所在文件夹」报「只能查看项目目录里的文件」。
  * 面板只监听本机，接口按 Host / Origin 拦掉外部网页（见 server/index.ts），放开读不会被网页借去读本机文件
  */
 function readable(dir: string, want: string) {
   return path.isAbsolute(want) || absoluteLike(want) ? path.resolve(want) : path.resolve(dir, want)
 }
+
+/** 项目外的路径（绝对路径、.. 出去的）：回给界面时给绝对路径，项目里的照旧给相对路径 */
+const outside = (dir: string, full: string) => !inside(path.resolve(dir), full)
 
 /** 链接（符号链接、Windows 的 junction）都不跟：lstat 才看得到，Dirent 在 Windows 上不一定标出来 */
 const isLink = (full: string) =>
@@ -277,14 +282,15 @@ const byEntry = (a: DirEntry, b: DirEntry) =>
  * 点开头的项照常列出，只有 .git 不列。
  */
 export async function listLevel(dir: string, rel: string, opts: { refresh?: boolean } = {}): Promise<DirLevel> {
-  // 先校验原始路径：只统一分隔符，不能先剥掉开头的 /，否则绝对路径会变成项目里的相对路径
-  const full = await into(dir, norm(rel))
-  // 校验通过后再去掉结尾的分隔符，用于拼 pathspec 和子项路径
-  const want = norm(rel).replace(/\/+$/, '')
+  // 项目外的目录也能列（只读，见 readable）：子项路径给绝对路径，不看 git 状态
+  const full = readable(dir, norm(rel))
+  const out = outside(dir, full)
+  // 去掉结尾的分隔符，用于拼 pathspec 和子项路径；项目外的给绝对路径，根目录 / 保留
+  const want = out ? norm(full).replace(/(.)\/+$/, '$1') : norm(rel).replace(/\/+$/, '')
   const info = await stat(full).catch(() => null)
   if (!info?.isDirectory()) throw new Error(t('目录已经不在了'))
 
-  const repo = await repoInfo(dir, !!opts.refresh)
+  const repo = out ? { isGit: false, prefix: '' } : await repoInfo(dir, !!opts.refresh)
   const [items, status] = await Promise.all([
     readdir(full, { withFileTypes: true }),
     repo.isGit ? statusCached(dir, want, repo.prefix, !!opts.refresh) : Promise.resolve(null),
@@ -293,7 +299,7 @@ export async function listLevel(dir: string, rel: string, opts: { refresh?: bool
   const entries: DirEntry[] = []
   for (const it of items) {
     if (hiddenInList(it.name)) continue
-    const r = want ? `${want}/${it.name}` : it.name
+    const r = want ? `${want.replace(/\/$/, '')}/${it.name}` : it.name
     // 符号链接按目标判断是不是目录，读不出来就当文件，点进去时再报错
     const kind: DirEntry['kind'] | null = it.isDirectory()
       ? 'dir'
@@ -632,7 +638,12 @@ export async function deleteInDir(dir: string, want: string): Promise<{ ok: true
 
 /** 和 git 比一个文件的差异；新文件给整份内容，不是 git 仓库时只有说明 */
 export async function diffInDir(dir: string, want: string): Promise<FileDiff> {
-  const full = await into(dir, norm(want))
+  const full = readable(dir, norm(want))
+  // 项目外的文件（只读，见 readable）：按它所在的目录找 git 仓库，路径原样回给界面
+  if (outside(dir, full)) {
+    const near = path.dirname(full)
+    return { ...(await diffInDir(near, path.basename(full))), path: norm(full) }
+  }
   const rel = relOf(dir, full)
   if (!(await isGitRepo(dir)))
     return {
@@ -718,8 +729,9 @@ export async function rawInDir(dir: string, want: string): Promise<{ type: strin
  * 传空路径时打开项目目录本身；不存在的路径退回打开它的上一级，不让整个操作失败。
  */
 export async function revealInDir(dir: string, want: string): Promise<void> {
-  // 原始路径直接校验：剥掉结尾的分隔符会把 '/' 变成空串，当成项目根，绝对路径的语义就丢了
-  const full = await into(dir, norm(want))
+  // 哪里都能打开（只读，见 readable）：文档根、数据目录这些项目外的文件也要能在文件夹里找到。
+  // 原始路径直接解析：剥掉结尾的分隔符会把 '/' 变成空串，当成项目根，绝对路径的语义就丢了
+  const full = readable(dir, norm(want))
   const info = await stat(full).catch(() => null)
   if (info?.isDirectory()) {
     await revealItem(full)
