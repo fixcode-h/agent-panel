@@ -212,6 +212,10 @@ export function Modal({
           onEscapeKeyDown={(e) => {
             // 弹窗里开着右键菜单时 Esc 只关菜单（菜单自己听 keydown 关掉），弹窗留着（用户 2026-11-24，GM 参数关联右键菜单）
             if (menuIsOpen()) return e.preventDefault()
+            // 弹窗里的搜索框有字时 Esc 只清搜索框（框自己清）：Radix 在 document 上先收到 Esc，框里 stopPropagation 拦不住
+            const el = e.target
+            if (el instanceof HTMLInputElement && el.hasAttribute('data-esc-clears') && el.value)
+              return e.preventDefault()
             onEscapeKeyDown?.(e)
           }}
           className={cn(

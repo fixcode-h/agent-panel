@@ -81,6 +81,8 @@ export function SearchBox({
             onBlur={onFocusChange && (() => onFocusChange(false))}
             placeholder={placeholder}
             aria-label={placeholder}
+            // 弹窗按它认：有字时 Esc 只清搜索框、不关弹窗（modal.tsx）
+            data-esc-clears=""
             className="min-w-0 flex-1 bg-transparent text-body text-fg outline-none placeholder:text-subtle"
           />
           {hint && <span className="shrink-0 text-caption text-subtle">{hint}</span>}
