@@ -323,6 +323,13 @@ export function Markdown({
     if (tables.onClick(e) || structure.onClick(e)) return
     const mmd = (e.target as HTMLElement).closest<HTMLElement>('[data-mmd]')
     if (mmd) return mermaidAction(mmd)
+    // markdown 文档块：文档 / 源码切换（只切这一块，lib/markdown/doc-block.ts）
+    const view = (e.target as HTMLElement).closest<HTMLElement>('[data-mdview]')
+    if (view) {
+      const box = view.closest<HTMLElement>('.md-docblock')
+      if (box) box.dataset.view = box.dataset.view === 'src' ? 'doc' : 'src'
+      return
+    }
     // 折行：只切这一个代码块，不改设置
     const wrap = (e.target as HTMLElement).closest<HTMLElement>('[data-wrap]')
     if (wrap) {

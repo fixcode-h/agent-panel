@@ -13,6 +13,7 @@ import { markdownDiff } from './diff-html'
 import { tableHtml } from './markdown/table'
 import { callTreeHtml } from './markdown/call-tree'
 import { structureHtml } from './markdown/structure'
+import { DOC_LANGS, docBlockHtml, widenDocFences } from './markdown/doc-block'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -267,8 +268,16 @@ renderer.code = ({ text, lang }) => {
   const digits = String(start + lines.count - 1).length
   const style = [start > 1 ? `counter-reset: md-ln ${start - 1}` : '', digits > 3 ? `--ln-digits: ${digits}ch` : '']
   const reset = style.some(Boolean) ? ` style="${style.filter(Boolean).join('; ')}"` : ''
-  return `<div class="md-code" data-lines="${lines.count}">${codeBar(name || 'text', lines.count)}<pre><code class="hljs"${reset}>${html}</code></pre></div>`
+  const pre = `<pre><code class="hljs"${reset}>${html}</code></pre>`
+  // markdown 代码块默认按文档画，「源码」切回这段带行号的原文（markdown/doc-block.ts）；流式输出中先照源码显示
+  if (DOC_LANGS.has(name) && !liveRender)
+    return docBlockHtml(text, parseMd, (extra) => codeBar(name, lines.count, extra), pre)
+  return `<div class="md-code" data-lines="${lines.count}">${codeBar(name || 'text', lines.count)}${pre}</div>`
 }
+
+/** 同一套渲染器解析一段 Markdown（文档块里嵌套调用也走它） */
+const parseMd = (doc: string) =>
+  marked.parse(widenDocFences(doc), { renderer, async: false, gfm: true, breaks: true }) as string
 
 /**
  * 渲染结果缓存。组件里的 useMemo 挡不住这些：切走再切回、blocks 重算、长对话滚回去重新挂载，
@@ -328,7 +337,7 @@ function renderUncached(doc: string, teamNames: Set<string>, live: boolean) {
   liveRender = live
   let html: string
   try {
-    html = marked.parse(doc, { renderer, async: false, gfm: true, breaks: true }) as string
+    html = parseMd(doc)
   } finally {
     // 解析抛错时也要恢复，不能让后面的渲染一直以为在流式输出
     liveRender = false
