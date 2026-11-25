@@ -138,7 +138,12 @@ export async function fileAt(dir: string, rel: string, rev: string): Promise<Buf
   throw new VcsInputError(t('这个项目没有版本控制'))
 }
 
-const CHANGED_MAX = 500
+/**
+ * 一次最多列几个文件：P4 整批 merge / copy 一次就能带进几百上千个文件（用户 2026-11-25 截图正好被 500 截住），
+ * UE 插件那边是虚拟滚动的列表，列几千个不卡。导出给插件：列满了就提示「只列了前 N 个」
+ */
+export const CHANGED_FILES_MAX = 5000
+const CHANGED_MAX = CHANGED_FILES_MAX
 
 /**
  * 一次提交（git 提交号 / p4 变更列表号）里改了的文件，路径相对 dir，只列 dir 下面的（UE 资源版本差异的「同一次提交里一起改的资源」用）。

@@ -46,6 +46,13 @@ export function answerText(task: Pick<Task, 'steps'>, req: TaskRequest, r: Reque
       : !r.allow
         ? t('你没有回答「{title}」', { title: req.title })
         : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
+  // 自建工具的保存弹窗（ADR 0082）：保存了由服务端另记一行存在哪；这里只记取消和「让 Agent 再改」
+  if (req.purpose === 'custom-tool')
+    return r.allow
+      ? t('你确认了：{title}', { title: req.title })
+      : r.answer?.trim()
+        ? t('你让 Agent 再改：{answer}', { answer: r.answer.trim() })
+        : t('你取消了：{title}', { title: req.title })
   if (!r.allow) return denied ?? t('你拒绝了：{title}', { title: req.title })
   return r.always && req.rule
     ? t('你允许了：{title}，这个对话里之后的{rule}都自动允许', { title: req.title, rule: requestRuleText(req) })

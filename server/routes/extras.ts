@@ -12,6 +12,7 @@ import { ghDownloadApi } from '../tools/gh-download.ts'
 import { fileIndexApi } from '../file-index/api.ts'
 import { memoApi } from '../memo/api.ts'
 import { bgJobsApi } from '../jobs/api.ts'
+import { customToolsApi } from '../custom-tools/api.ts'
 import type { ApiModule } from './module.ts'
 
 export function extraModules(deps: {
@@ -41,6 +42,8 @@ export function extraModules(deps: {
     { prefix: '/', app: memoApi() },
     // 后台作业：侧栏底部的作业列表（/bg-jobs）
     { prefix: '/', app: bgJobsApi() },
+    // 自建工具（ADR 0082）：「技能与 MCP」页的「工具」页签（/custom-tools）
+    { prefix: '/', app: customToolsApi() },
   ]
   // 「我不在」开关和自动选过的记录（server/away.ts）：启动时先读进内存，执行时同步查
   void loadAway()

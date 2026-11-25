@@ -1,3 +1,4 @@
+import { TOOL_COMMAND_PREFIX, toolCommandPrompt } from '../shared/custom-tools/text.ts'
 import { existsSync } from 'node:fs'
 import { createMemo } from './memo/index.ts'
 import { readdir, readFile } from 'node:fs/promises'
@@ -177,6 +178,8 @@ export async function expandSlash(
   const args = rest.trim()
   if (native && getCli(cli)?.nativeCommands?.includes(name)) return text
   const c = (await all(cli, cwd, trust).catch(() => [])).find((x) => x.name === name)
+  // 「/」菜单里的自建工具（ADR 0082）：不是 CLI 的命令，展开成让 Agent 用 custom_tool 跑它
+  if (!c && name.startsWith(TOOL_COMMAND_PREFIX)) return toolCommandPrompt(name.slice(TOOL_COMMAND_PREFIX.length), args)
   if (!c) return builtinPrompt(name, args) || text
   if (c.native || (native && !c.panel)) return text
   if (c.kind === 'skill') {

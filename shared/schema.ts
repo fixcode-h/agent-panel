@@ -343,6 +343,13 @@ export const NodeStep = z.object({
 })
 export type NodeStep = z.infer<typeof NodeStep>
 
+/** 工作流自带的一条授权：规则键（同 task.allowRules）和给人看的说法 */
+export const WorkflowGrant = z.object({
+  rule: z.string().trim().min(1).max(120),
+  label: z.string().trim().max(80).default(''),
+})
+export type WorkflowGrant = z.infer<typeof WorkflowGrant>
+
 /** 流程里的一个节点：交给某个 Agent 完成的一件事，或者执行另一个流程 */
 export const FlowNode = z.object({
   id: z.string().min(1),
@@ -366,6 +373,11 @@ export const FlowNode = z.object({
   x: z.number().default(0),
   y: z.number().default(0),
   hooks: NodeHooks.default({ start: null, review: null, end: null, maxRounds: 3 }),
+  /**
+   * 只在这个节点里自带的授权（复盘 2026-11-25 C1：用户在「延期验证项」选了立即验证，执行验证的节点里跑游戏内测试、
+   * 执行 Lua 又弹了 19 张卡）。和工作流的 grants 同一套规则键，只在跑这个节点（含它派的子任务）时按「本对话不再询问」算
+   */
+  grants: z.array(WorkflowGrant).max(10).optional(),
 })
 export type FlowNode = z.infer<typeof FlowNode>
 
@@ -432,13 +444,6 @@ export type WorkflowExpose = z.infer<typeof WorkflowExpose>
  * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow/run.ts）。
  * 没有主 Agent（workflow-runs 设计 D1）：节点按连线执行，没指定角色的节点用默认执行角色。
  */
-/** 工作流自带的一条授权：规则键（同 task.allowRules）和给人看的说法 */
-export const WorkflowGrant = z.object({
-  rule: z.string().trim().min(1).max(120),
-  label: z.string().trim().max(80).default(''),
-})
-export type WorkflowGrant = z.infer<typeof WorkflowGrant>
-
 export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),

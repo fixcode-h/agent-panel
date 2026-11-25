@@ -37,6 +37,7 @@ export const PANEL_TOOL_NAMES = [
   // 随查随记的 Bug 档案草稿（ADR 0046）：只在 Bug 对话里挂，没登记时对话里露出 update_bug_case 原名
   'update_bug_case',
   'remember',
+  'custom_tool',
   'set_plan',
   'finish_plan',
   // Agent 用它交代这一轮怎么结束（做完 / 卡住），见 shared/end-turn.ts
@@ -149,6 +150,7 @@ export const PANEL_TOOL_ROLE: Record<PanelToolName, ToolRole> = {
   knowledge_lookup: 'work',
   knowledge_record: 'wrap',
   find: 'work',
+  custom_tool: 'work',
   file_index: 'work',
   project_lessons: 'work',
   record_lesson: 'wrap',

@@ -68,7 +68,7 @@ import { RowShell } from '@/components/tasks/ToolRow'
 import { Group } from '@/components/settings/parts'
 import { SheetGroupSpecimens } from '@/components/settings/VersionDiffSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
-import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
+import { CapsSpecimens } from '@/components/settings/CustomToolSpecimen'
 import { TurnCardSpecimens } from '@/components/settings/ChangesCardSpecimen'
 import { ReferenceSpecimens } from './StyleRefSpecimen'
 import { GraphCanvasSpecimens } from '@/components/settings/GraphCanvasSpecimen'
@@ -634,9 +634,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
         </Specimen>
       </Group>
       <Group title={t('项目能力')}>
-        <Specimen name="CapabilityCard · CapabilityItem · AgentLoadSummary" tune={['card', 'switch', 'badge']}>
-          <CapsSpecimen />
-        </Specimen>
+        <CapsSpecimens Specimen={Specimen} />
       </Group>
       <PluginSpecimens Specimen={Specimen} />
       <Group title={t('空状态')}>

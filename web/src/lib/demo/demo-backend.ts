@@ -182,6 +182,7 @@ import { t } from '@shared/i18n'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoTools } from './demo-tools'
+import { demoCustomTools } from './demo-custom-tools'
 import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
 import { demoMemo } from './demo-memo'
 import { demoBgJobs } from './demo-bg-jobs'
@@ -2017,6 +2018,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
+  if (res === 'custom-tools') return demoCustomTools(method, seg, body)
   if (res === 'tools') return demoTools(method, seg, body, d.settings?.githubSources ?? [])
   if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
   if (res === 'lesson-drafts') return demoLessonDrafts(method, id, body)

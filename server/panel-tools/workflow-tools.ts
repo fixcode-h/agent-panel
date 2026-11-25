@@ -42,6 +42,12 @@ function workflowDefs(o: Orchestra): ToolDef[] {
             items: { type: 'string' },
             description: '这次运行负责的文件或目录（相对项目根），只用来提醒节点范围',
           },
+          skip: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              '用户明确说已经做过、不要重做的主流程节点（节点名）；只在用户说了时写，input 里写明哪些产物已经有了',
+          },
           ...(o.plans ? { step: stepField('这个工作流') } : {}),
         },
         required: ['input'],
@@ -186,6 +192,7 @@ export async function callStartWorkflow(o: Orchestra, a: Record<string, unknown>
   if (!picked.ok) return out(picked.info, true)
   const title = str(a?.title).trim() || `${picked.flow.workflowName}：${clip(input.replace(/\s+/g, ' '), 24)}`
   const files = Array.isArray(a?.files) ? a.files.map(String).filter(Boolean) : undefined
-  const r = await o.runs.startWorkflow(picked.flow, input, title, files, str(a?.step).trim())
+  const skip = Array.isArray(a?.skip) ? a.skip.map(String).filter(Boolean) : undefined
+  const r = await o.runs.startWorkflow(picked.flow, input, title, files, str(a?.step).trim(), skip)
   return out(r.id ? `${r.info}（id: ${r.id}）` : r.info, !r.ok)
 }

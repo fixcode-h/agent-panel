@@ -3,10 +3,10 @@
  * 记在一个 mode=workflow 的任务上（Task.flowRun），不是子对话。这里是不依赖引擎的纯函数：
  * 进度怎么说、父对话每轮看到的那一节、决定记录怎么拼进节点提示、父对话挑工作流的目录和判定规则。
  */
-import type { Task, TaskStep } from '../schema.ts'
+import type { Task, TaskStep, Workflow } from '../schema.ts'
 import type { Picks } from './stage-report.ts'
 import type { FlowDecision, FlowRun, FlowRunPhase, FlowWrap } from '../tasks/flow-schema.ts'
-import { topSteps } from './index.ts'
+import { entryFlow, topSteps } from './index.ts'
 import { WRAP_NODE } from './run-wrap.ts'
 import { clip } from '../text.ts'
 import { takeWorkflow } from '../composer.ts'
@@ -296,4 +296,30 @@ export function withWorkflow(value: string, workflows: readonly { id: string; na
 export function namedWorkflow(text: string): { name: string; rest: string } | undefined {
   const m = /^用工作流「([^」\n]+)」(?:（id [^）\n]*）)?做：\n/.exec(text)
   return m ? { name: m[1], rest: text.slice(m[0].length) } : undefined
+}
+
+/**
+ * 起运行时要跳过的节点（start_workflow 的 skip）：按主流程节点的标题或 id 认，返回节点 id。
+ * 认不出的直接报错并列出能写的名字，免得写错了悄悄不跳、照样重做
+ */
+export function skipNodes(
+  w: Pick<Workflow, 'flows' | 'entryFlowId'>,
+  names: string[],
+): { ok: true; ids: string[] } | { ok: false; info: string } {
+  const list = names.map((x) => x.trim()).filter(Boolean)
+  if (!list.length) return { ok: true, ids: [] }
+  const nodes = entryFlow(w).nodes
+  const ids: string[] = []
+  const miss: string[] = []
+  for (const k of list) {
+    const n = nodes.find((x) => x.id === k || x.title.trim() === k)
+    if (n) ids.push(n.id)
+    else miss.push(k)
+  }
+  if (miss.length)
+    return {
+      ok: false,
+      info: `skip 里的「${miss.join('、')}」不是这个工作流主流程的节点，能写：${nodes.map((x) => x.title || x.id).join('、')}`,
+    }
+  return { ok: true, ids: [...new Set(ids)] }
 }

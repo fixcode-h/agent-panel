@@ -27,6 +27,12 @@ export function initProjectData(d: ProjectDataDeps) {
   deps = d
 }
 
+/** 按 id 取项目（自建工具这类按项目存数据、又要项目目录的功能用，不另接一份线） */
+export async function projectOf(projectId: string): Promise<Project | undefined> {
+  if (!deps) throw new Error('项目数据入口还没初始化')
+  return (await deps.getProject(projectId)) ?? undefined
+}
+
 /** 名字只许字母数字和 - _ .：插件 id 或功能名，拼进路径不能跳出目录 */
 const SAFE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 

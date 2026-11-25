@@ -414,6 +414,9 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       await new Promise((r) => setTimeout(r, 300))
     }
   }
+  // 演示 /createtool：弹出保存弹窗（ADR 0082），用户选完再接着输出
+  if (!call.step && ctx.first && /\/createtool|做成工具|自建工具/.test(ctx.prompt) && !(await demoSaveTool(ctx, call)))
+    return { ok: false, stopped: true, error: '已停止' }
   // 演示提问：对话里说「问我」时，先问你一个问题（换掉输入框），回答、不回答或关掉（暂停）后才接着输出
   if (!call.step && /问我|ask me/i.test(ctx.prompt)) {
     const id = ctx.newId()
@@ -593,6 +596,49 @@ function demoNext(document: string, task: Task) {
     prompt: `按上面的分析结果继续处理：${origin.slice(0, 200)}`,
   }))
   return '```next-workflows\n' + JSON.stringify(recs, null, 2) + '\n```'
+}
+
+/** 演示 /createtool：Agent 写好草稿、试跑过，弹出保存弹窗；用户点完返回 true，停止了返回 false */
+async function demoSaveTool(ctx: RunContext, call: AgentCall): Promise<boolean> {
+  const task = ctx.task
+  const id = ctx.newId()
+  ;(task.requests ??= []).push({
+    id,
+    step: '',
+    agentId: call.agentId,
+    kind: 'tool',
+    purpose: 'custom-tool',
+    title: '保存工具「打包资源」',
+    detail: '按 docs/打包说明.md 和 tools/pack.py 总结（在线演示，不会真的保存到磁盘）',
+    options: [],
+    customTool: {
+      draft: {
+        id: 'pack-assets',
+        name: '打包资源',
+        summary: '把 Content 下的资源打成 pak，输出到 Build/Paks',
+        useWhen: '要出测试包、或者改了资源要给 QA 时',
+        run: { command: 'python tools/pack.py --platform {{platform}}', cwd: '.', timeoutSec: 900 },
+        params: [{ name: 'platform', label: '平台', type: 'enum', options: ['Win64', 'Android'], default: 'Win64' }],
+        effect: 'write',
+        writes: ['Build/Paks/**'],
+        sources: ['docs/打包说明.md', 'tools/pack.py'],
+      },
+      dups: [],
+      test: { ok: true, text: 'python tools/pack.py --platform Win64', dryRun: true },
+      inProject: true,
+      problems: [],
+    },
+    at: new Date().toISOString(),
+  })
+  ctx.changed(true)
+  while (task.requests.some((r) => r.id === id)) {
+    if (ctx.stopped()) {
+      task.requests = task.requests.filter((r) => r.id !== id)
+      return false
+    }
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  return true
 }
 
 /** 在线演示里用户对「完成后等我确认」的回答：请求 id → 决定（演示后端回答请求时写进来） */

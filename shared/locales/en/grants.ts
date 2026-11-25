@@ -48,4 +48,6 @@ export const EN_GRANTS: Record<string, string> = {
     'Revise once more sends this feedback back to the node for one more pass and asks you again if it still fails. To stop and look yourself, press Stop.',
   按现状通过: 'Accept as is',
   再改一轮: 'Revise once more',
+  '跑这个节点（含它派出的子任务）时，下面这几类操作直接允许、不弹确认卡，对话里会留一行记录。':
+    'While this node runs (including subtasks it starts), these kinds of operations are allowed without an approval card, and a line is left in the conversation.',
 }

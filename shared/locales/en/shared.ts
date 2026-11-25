@@ -155,4 +155,5 @@ export const EN_SHARED: Record<string, string> = {
     '"{title}" failed review round {round}; you chose one more revision.',
   '「{title}」第 {round} 轮验收仍未通过，你选了按现状通过，继续往下执行。':
     '"{title}" still failed review round {round}; you chose to accept it as is and continue.',
+  '按启动时的要求跳过节点「{title}」': 'Skipped node "{title}" as requested when the run started',
 }
