@@ -14,7 +14,7 @@ export type RunTarget = 'current' | 'later' | (string & {})
 
 /** 宿主实现的运行操作：都返回给模型看的一句话 */
 export interface FlowRunHost {
-  start(input: PickedFlow & { input: string; title: string; files?: string[] }): Promise<{
+  start(input: PickedFlow & { input: string; title: string; files?: string[]; skip?: string[] }): Promise<{
     ok: boolean
     id?: string
     info: string
@@ -34,6 +34,7 @@ export interface RunTools {
     title: string,
     files?: string[],
     step?: string,
+    skip?: string[],
   ): Promise<{ ok: boolean; id?: string; info: string }>
   listWorkflows(): Promise<string>
   messageWorkflow(id: string, text: string, to: RunTarget): Promise<{ ok: boolean; info: string }>
@@ -50,11 +51,11 @@ export function runTools(task: Task, runs: FlowRunHost | undefined, allowed: boo
   const ok = allowed && !!runs
   const need = (s: string, what: string) => (s.trim() ? '' : `${what}不能为空`)
   return {
-    async startWorkflow(picked, input, title, files, step) {
+    async startWorkflow(picked, input, title, files, step, skip) {
       if (!ok) return NO
       const bad = need(input, 'input')
       if (bad) return { ok: false, info: `${bad}：写清楚这次要做什么、范围和验收标准` }
-      const r = await runs!.start({ ...picked, input: input.trim(), title, files })
+      const r = await runs!.start({ ...picked, input: input.trim(), title, files, ...(skip?.length && { skip }) })
       if (!r.ok || !r.id) return r
       // 运行挂到计划里的一步：父对话的计划看得到「在等工作流」，运行结束时由宿主结算（settleWait kind workflow）
       const at = step?.trim() || ensureChildStep(task, r.id, title)

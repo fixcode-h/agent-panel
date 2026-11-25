@@ -219,3 +219,24 @@ test('收尾：入口流程连到结束的线改连到收尾节点，验收流�
     },
   )
 })
+
+test('skipNodes：按主流程节点的标题或 id 认，认不出的报错并列出能写的', async () => {
+  const { skipNodes } = await import('./run.ts')
+  const w = {
+    entryFlowId: 'main',
+    flows: [
+      {
+        id: 'main',
+        nodes: [
+          { id: 'pre', title: '识别现场与前置检查' },
+          { id: 'design', title: '设计与压测' },
+        ],
+      },
+    ],
+  } as unknown as Parameters<typeof skipNodes>[0]
+  assert.deepEqual(skipNodes(w, ['设计与压测', 'design']), { ok: true, ids: ['design'] })
+  assert.deepEqual(skipNodes(w, []), { ok: true, ids: [] })
+  const bad = skipNodes(w, ['写规范'])
+  assert.equal(bad.ok, false)
+  assert.match(bad.ok ? '' : bad.info, /写规范.*设计与压测/)
+})

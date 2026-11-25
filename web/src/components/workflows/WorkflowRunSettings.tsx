@@ -1,16 +1,14 @@
-import { ShieldCheck, X } from 'lucide-react'
 import type { WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { Field, FormSection, Input } from '@/components/ui/input'
-import { IconButton } from '@/components/ui/icon-button'
+import { GrantList } from './GrantList'
 import { Switch } from '@/components/ui/switch'
 
 type Set = <K extends keyof WorkflowInput>(k: K, v: WorkflowInput[K]) => void
 
 /**
  * 工作流详情里和「怎么跑」有关的几项：修改轮次、自带的授权、直接在父对话目录里跑。
- * 从 WorkflowDetail 拆出来（那边的函数已到结构检查的上限），自带授权（用户 2026-11-25）只能删不能加：
- * 加哪些由工作流的作者（插件）定，用户复制一份改的时候可以去掉不想自动放行的
+ * 从 WorkflowDetail 拆出来（那边的函数已到结构检查的上限），自带授权（用户 2026-11-25）的列表见 GrantList
  */
 export function WorkflowRunSettings({ draft, set }: { draft: WorkflowInput; set: Set }) {
   const grants = draft.grants ?? []
@@ -49,34 +47,13 @@ export function WorkflowRunSettings({ draft, set }: { draft: WorkflowInput; set:
               </span>
             </label>
           )}
-          {grants.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted">{t('自带的授权')}</span>
-              <p className="text-xs leading-relaxed text-subtle">
-                {t(
-                  '运行这个工作流时，下面这几类操作直接允许、不弹确认卡，对话里会留一行记录。不想自动放行的可以去掉。',
-                )}
-              </p>
-              <ul className="flex flex-col gap-1">
-                {grants.map((g) => (
-                  <li key={g.rule} className="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" />
-                    <span className="min-w-0 flex-1 truncate text-sm text-fg">{g.label || g.rule}</span>
-                    <code className="truncate font-mono text-footnote text-subtle">{g.rule}</code>
-                    <IconButton
-                      icon={X}
-                      size="xs"
-                      label={t('去掉这条授权')}
-                      onClick={() => {
-                        const next = grants.filter((x) => x.rule !== g.rule)
-                        set('grants', next)
-                      }}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <GrantList
+            grants={grants}
+            hint={t(
+              '运行这个工作流时，下面这几类操作直接允许、不弹确认卡，对话里会留一行记录。不想自动放行的可以去掉。',
+            )}
+            onChange={(next) => set('grants', next)}
+          />
         </FormSection>
       )}
     </>

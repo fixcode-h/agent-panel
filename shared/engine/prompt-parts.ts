@@ -71,6 +71,19 @@ function requestParts(task: Task) {
   }
 }
 
+/**
+ * 工作流运行的节点：父对话还能起哪些工作流（复盘 2026-11-25 D2：「延期验证项」节点要判断「父对话的可选工作流里有没有在游戏里测试的」，
+ * Agent 只好去翻面板的数据目录，被守卫拦了一次）。面板直接列出来，节点要别的流程接着做时在结果里点名，由父对话去起
+ */
+export function parentFlowsPart(host: EngineHost, w: Workflow) {
+  if (host.task.mode !== 'workflow') return ''
+  const list = (host.workflowCatalog?.() ?? []).filter((x) => x.id !== w.id && x.name !== w.name)
+  if (!list.length) return '## 父对话能起的工作流\n没有别的：要别的流程接着做的事写进结果，交给父对话决定。'
+  return `## 父对话能起的工作流\n这次运行做完后，要别的流程接着做时（例如在游戏里测试），在结果里点名请父对话起哪个（写名字和要做的事），你自己不起：\n${list
+    .map((x) => `- ${x.name}（id ${x.id}）${x.when ? `：${clip(x.when, 90)}` : ''}`)
+    .join('\n')}`
+}
+
 export function searchPart(host: EngineHost) {
   const project = { searchExclude: host.searchExclude }
   const line = searchExcludePrompt(project)
@@ -361,6 +374,7 @@ export function commonPart(host: EngineHost, w?: Workflow, chat = false, helper 
     [policy, docRootText(host.policy?.docs) || plainDocRootText(host.policy?.docRoot)].filter(Boolean).join('\n\n'),
     goalPart(host),
     rulesPart(host),
+    w ? parentFlowsPart(host, w) : '',
     searchPart(host),
     // UE 项目里子任务也不能编译（整台机器共用 UBT / DDC，见 uePart），只留这一句
     helper
@@ -377,7 +391,9 @@ export function commonPart(host: EngineHost, w?: Workflow, chat = false, helper 
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
       '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。\n' +
       // 用户明确要求：所有命令静默跑。弹出来的窗口既把结果带走（对话拿不到输出），也打断用户手上的事
-      '所有命令都在当前会话里静默执行，不要新开命令行或终端窗口（start、cmd /k、Start-Process、wt、open -a Terminal 这类），除非用户明确要求打开窗口。',
+      '所有命令都在当前会话里静默执行，不要新开命令行或终端窗口（start、cmd /k、Start-Process、wt、open -a Terminal 这类），除非用户明确要求打开窗口。\n' +
+      // 复盘 2026-11-25 D3：一个节点 223 条命令里 203 条以 cd "<项目根>" && 开头，每条输出都多一句「Shell cwd was reset」
+      '命令默认就在工作目录里执行，不用每条都先 cd 到项目根；要在别的目录跑时才 cd（或用命令自己的目录参数）。',
   ]
 }
 

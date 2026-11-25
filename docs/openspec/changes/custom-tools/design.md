@@ -42,7 +42,7 @@
 
 ## 3. 工具定义
 
-一个工具一个 JSON 文件，文件名就是工具 id。zod 契约放 `shared/custom-tools/schema.ts`（新接口在 shared 写契约，AGENTS.md）。
+一个工具一个 JSON 文件，文件名就是工具 id。zod 契约放 shared/custom-tools/schema.ts（新）（新接口在 shared 写契约，AGENTS.md）。
 
 ```jsonc
 {
@@ -274,9 +274,9 @@ ADR 0081 把「同一件事有几条路」交给面板选。自建工具在这�
 
 **一期（和 /build、/run、/merge 一起）**
 
-- `shared/custom-tools/`（schema、参数校验、命令展开和按 shell 转义、重复检测）+ 单测。
-- `server/custom-tools/`（存储走 `projectData` 和数据目录、注册表 + 文件监听、执行：守卫 / 授权 / 签出 / `spawnTracked` / 转后台、运行记录）。
-- 面板工具 `server/panel-tools/custom-tool.ts`（五个 action），名字登记进 `shared/panel-tools.ts`，`ToolGuide` 写进 `panel-guides.ts`；提示词一行清单。
+- shared/custom-tools/（新）（schema、参数校验、命令展开和按 shell 转义、重复检测）+ 单测。
+- server/custom-tools/（新）（存储走 `projectData` 和数据目录、注册表 + 文件监听、执行：守卫 / 授权 / 签出 / `spawnTracked` / 转后台、运行记录）。
+- 面板工具 server/panel-tools/custom-tool.ts（新）（五个 action），名字登记进 `shared/panel-tools.ts`，`ToolGuide` 写进 `panel-guides.ts`；提示词一行清单。
 - 授权类型 `ctool:`；内置命令 `/createtool`、`/build`、`/run`、`/merge`。
 - 界面：保存弹窗、对话里的运行结果卡片、「技能与 MCP」的「工具」页签、编辑抽屉和试运行；四个共用组件和样张。
 - 演示版：`web/src/lib/demo-*` 里放两三个示例工具，演示后端调 shared 里同一份校验和展开逻辑。

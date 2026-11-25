@@ -88,6 +88,9 @@ export function parseManifest(raw: unknown): Manifest {
       if (!g.rule.startsWith(`plugin:${m.id}:`))
         throw new Error(`工作流「${w.key}」的授权 ${g.rule} 不是这个插件自己的（要以 plugin:${m.id}: 开头）`)
     }
+  // 节点自带的授权（FlowNode.grants）先只给面板内置工作流用：插件要用时再按插件接口加版本并核对规则前缀
+  const nodeGrant = m.workflows.find((w) => w.flows.some((f) => f.nodes.some((n) => n.grants?.length)))
+  if (nodeGrant) throw new Error(`工作流「${nodeGrant.key}」的节点带了 grants：插件工作流只能在工作流上写 grants`)
   if (m.api < 20 && m.workflows.some((w) => w.inPlace))
     throw new Error('工作流带 grants / inPlace 的插件要写 "api": 20')
   for (const f of [m.server, m.web, m.css]) if (f && !safeRel(f)) throw new Error(`入口路径不对：${f}`)

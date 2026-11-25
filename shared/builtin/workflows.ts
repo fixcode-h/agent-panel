@@ -50,6 +50,8 @@ interface NodeSpec {
   /** 完成后等用户确认 */
   confirm?: boolean
   retries?: number
+  /** 只在这个节点里自带的授权（FlowNode.grants） */
+  grants?: { rule: string; label?: string }[]
 }
 interface FlowSpec {
   id: string
@@ -283,7 +285,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     key: 'openspec',
     name: '功能开发（OpenSpec）',
     description:
-      '复杂功能的完整链路：识别与前置检查 → 设计压测 → 规范门禁 → 按 tasks 实现 → 延期验证项 → 归档 → 同步文档',
+      '复杂功能的完整链路：识别与前置检查 → 设计压测 → 规范门禁 → 按 tasks 实现（同时同步文档）→ 延期验证项 → 执行立即验证 → 归档（没过请你决定）',
     category: '开发',
     when: '用户要求按规范走，或者项目用 OpenSpec 管需求',
     notFor: '没有规范要求的日常功能',
@@ -293,7 +295,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
       ['spec', '识别现场与前置检查、写规范、规范门禁、归档'],
       ['analyst', '收敛需求并压测设计'],
       ['developer', '按 tasks 实现'],
-      ['tester', '整理延期验证项，请你决定'],
+      ['tester', '整理延期验证项请你决定，执行你选了立即验证的项'],
       ['docsync', '同步项目文档'],
     ],
     document: `## 适用
@@ -303,8 +305,10 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
 - 前置检查不通过就停下，先把 OpenSpec 环境准备好。
 - 设计共识和承载方式（新建规范 / 增补已有规范）一次确认。
 - 规范要过门禁：openspec validate 通过、每条需求都有 task 覆盖验证、design 没有「待定」。
-- tasks 每条验证通过才勾选，证据写进 acceptance；设计假设被证伪时停下回到设计。
-- 归档前：没有未勾选项，每个勾选都有证据；做不了的验证列成延期验证项，由用户决定立即验证还是暂缓。
+- tasks 每条验证通过才勾选，证据写进 acceptance；验证只能延期的勾成「- [x] …（延期 Dn）」；设计假设被证伪时停下回到设计。
+- 新代码依赖这次没生成的东西（要导表的枚举、表、生成代码）时，生成、判空兜底或按阻断交回，不留给别人的环境。
+- 做不了的验证列成延期验证项，由用户决定立即验证还是暂缓；选了立即验证的由「执行立即验证」去做（UE 项目里自带游戏内测试和执行 Lua 的授权）。
+- 归档前：没有未勾选项，每个勾选都有证据或有用户定过的延期项；没过时请你决定补齐、接受风险还是先不归档。
 
 ## 约定
 ${CHILD_RULES}`,
@@ -349,7 +353,16 @@ ${CHILD_RULES}`,
             params: { records: false },
             retries: 1,
             instructions:
-              '先按 specs 和 tasks 看清这次波及的模块、入口和契约；再按 tasks.md 依次实现：每条先查相关历史 Bug，改完跑这条的验证和项目的快速检查，通过才勾选并把证据写进 acceptance。互不依赖、不改同一批文件的 tasks 可以用 spawn_agents 派子任务并行做，勾选和证据由你统一核对后再写。做不了的验证登记为延期验证。发现设计假设不成立时停下，写明哪条假设、证据和受影响的 tasks。',
+              '按 openspec 技能的 stage-3.md 做（只读这一份和 SKILL.md）。先按 specs 和 tasks 看清这次波及的模块、入口和契约；再按 tasks.md 依次实现：每条先查相关历史 Bug，改完跑这条的验证和项目的快速检查，通过才勾选并把证据写进 acceptance；验证只能延期的登记延期项，勾成「- [x] …（延期 Dn）」。\n' +
+              '- tasks 有 3 组以上、组间不改同一批文件时，每组用 spawn_agents 派一个子任务，你只核对结果、统一勾选和写证据，不要一个会话从头做到尾。\n' +
+              '- 新代码在运行时依赖这次还没生成的东西（要导表的枚举和表、生成的代码、蓝图），或改了全局共用的入口：能生成就生成，生成不了就判空兜底，两样都做不到就按阻断交回，不要登记成延期验证（stage-3.md「运行期依赖」）。\n' +
+              '- 在项目目录里直接改、改动不用编译就生效、运行中的 UE 编辑器连得上时，tasks 做完做一次加载冒烟（stage-3.md 最后一节）。\n' +
+              '发现设计假设不成立时停下，写明哪条假设、证据和受影响的 tasks。',
+          },
+          {
+            ...DOCS_NODE,
+            instructions:
+              '把这次变更涉及的模块文档同步好（主 specs 由归档同步，不用再抄一遍）；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。这一步和延期验证、归档同时进行，只写模块文档，不碰 openspec/changes 下的文件。',
           },
           {
             id: 'deferred',
@@ -359,7 +372,27 @@ ${CHILD_RULES}`,
             params: { scope: '本次改动', regress: false },
             confirm: true,
             instructions:
-              '不重跑整套测试（评审后由执行角色统一跑）：把实现中登记的延期验证项列出来，每项写怎么验证、需要什么环境，请用户决定立即验证还是暂缓（暂缓的标为「待用户完成」）。UE 项目里有能在游戏里操作到的改动、并且父对话的可选工作流里有在游戏里测试的时，多列一项「游戏内验证」：选立即验证就在结果里写明请父对话合回、编译通过后起那个工作流（写上测试点），不在这里自己写测试脚本。',
+              '不重跑整套测试（评审后由执行角色统一跑），这一步只列清单、不做验证：把实现中登记的延期验证项列出来（读 acceptance.md，按 openspec 技能 stage-4.md 第 3 步），用 submit_report 交阶段报告，每项一个决策（D1、D2…），选项「立即验证」「暂缓（待用户完成）」，details 写每项怎么验证、需要什么环境。你自己能做的（命令、连得上的运行中程序）推荐立即验证，只能用户做的推荐暂缓。\n' +
+              '- UE 项目里有能在游戏里操作到的改动时，多列一项「游戏内验证」，写上测试点和该在哪张地图测。\n' +
+              '- 用户选了立即验证的由下一步「执行立即验证」去做，这里不做。',
+          },
+          {
+            id: 'verify',
+            title: '执行立即验证',
+            agent: 'tester',
+            tier: 'medium',
+            params: { scope: '本次改动', regress: false },
+            // 用户在上一步选了「立即验证」就是同意在游戏里测（复盘 2026-11-25 C1：归档节点 8 分钟弹了 19 张授权卡）。
+            // 规则键是 UE 插件的，其他项目碰不到这两类操作，不起作用
+            grants: [
+              { rule: 'plugin:ue:self-test', label: '自己跑游戏内测试（PIE、GameTest、GM）' },
+              { rule: 'plugin:ue:lua-exec', label: '在 UE 里执行 Lua 代码' },
+            ],
+            instructions:
+              '只做上一步用户选了「立即验证」的项（看「输入」里用户确认的决策）；一项都没有就直接写「没有要立即验证的」结束。\n' +
+              '- 逐项按清单里的步骤验证，结果写回 acceptance.md 对应的 Dn：通过记 passed 和证据；没通过记失败、实际现象和日志行，不要改代码修（修是实现的事，写清楚交给归档和父对话决定）。\n' +
+              '- 游戏内验证：在项目目录里跑（不是独立分支）、UE 编辑器连得上时就在这里做：ue_editor action=pie_start map=<要测的地图>（等 PIE 起来才返回，不用 sleep，编辑器里的图不动），用 ue_lua、ue_get / ue_call、ue_gametest 检查，ue_log 只看这次 PIE 之后的错误，做完 pie_stop。这一步自带游戏内测试和执行 Lua 的授权，不会弹卡。在独立分支里（编辑器看不到这些改动）或编辑器没开、要编译 C++ 时不硬来：在结果里写明请父对话合回、编译通过后起「父对话能起的工作流」里在游戏里测试的那个，并写上测试点。\n' +
+              '- PIE 里出过错（脚本报错、模块取不到）先 pie_stop 再重开，不要在坏掉的会话上接着查。',
           },
           {
             id: 'archive',
@@ -367,18 +400,36 @@ ${CHILD_RULES}`,
             agent: 'spec',
             tier: 'medium',
             params: { stage: '归档' },
-            instructions: '检查归档门禁后归档这次变更。',
+            instructions: '检查归档门禁，过了就归档；没过交不通过，blockers 写清缺口。',
           },
           {
-            ...DOCS_NODE,
-            instructions:
-              '把这次变更涉及的模块文档同步好（归档后的主 specs 不用再抄一遍）；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。',
+            id: 'blocked',
+            title: '归档受阻，请你决定',
+            agent: 'spec',
+            tier: 'low',
+            params: { stage: '归档受阻' },
+            confirm: true,
+            instructions: '把上一步列出的缺口整理成阶段报告，请用户决定怎么处理。',
+          },
+          {
+            id: 'settle',
+            title: '按决定归档',
+            agent: 'spec',
+            tier: 'medium',
+            params: { stage: '按决定归档' },
+            instructions: '按上一步用户的决定补齐、归档，或者记下停在哪。',
           },
         ],
+        // 文档同步不等归档：和延期验证、归档并行（复盘 B3、B5：延期节点等用户 62 分钟时文档一直没动；归档没过时运行停住，文档也没同步）
         edges: [
           ['start', 'pre'],
           ['pre', 'design', 'pass'],
-          ...chain('design', 'propose', 'impl', 'deferred', 'archive', 'docs', END),
+          ...chain('design', 'propose', 'impl', 'deferred', 'verify', 'archive'),
+          ['impl', 'docs'],
+          ['docs', END],
+          ['archive', END, 'pass'],
+          ['archive', 'blocked', 'fail'],
+          ...chain('blocked', 'settle', END),
         ],
       },
       {
@@ -800,6 +851,7 @@ export function buildFlow(f: FlowSpec, agentId: (key: string) => string): Flow {
           maxRounds: n.maxRounds ?? 3,
           ...(!steps.length && n.confirm && { confirm: true }),
         } satisfies NodeHooks,
+        ...(n.grants?.length && { grants: n.grants.map((g) => ({ rule: g.rule, label: g.label ?? '' })) }),
       }
     }),
     edges: f.edges.map(([from, to, when], i): FlowEdge => ({ id: `e${i + 1}`, from, to, ...(when && { when }) })),

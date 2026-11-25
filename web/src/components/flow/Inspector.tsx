@@ -36,6 +36,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
+import { GrantList } from '@/components/workflows/GrantList'
 import { HOOK_LABEL, type HookSlot } from './FlowCanvas'
 import { parseRef, refOptions, refValue } from './views'
 
@@ -437,6 +438,16 @@ export function NodeInspector({
           </p>
         )}
       </section>
+
+      {!!node.grants?.length && (
+        <section className="flex flex-col gap-2 rounded-xl bg-sel/40 p-3.5">
+          <GrantList
+            grants={node.grants}
+            hint={t('跑这个节点（含它派出的子任务）时，下面这几类操作直接允许、不弹确认卡，对话里会留一行记录。')}
+            onChange={(next) => setNode({ grants: next })}
+          />
+        </section>
+      )}
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-subtle">{t('上游')}</dt>

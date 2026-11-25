@@ -232,6 +232,10 @@ export interface Invocation {
 
 export type FlowResult = { ok: true; output: string } | Fail
 
+/** 跳过的节点交给下游的话：下游知道这一步没跑，相关的东西去运行的输入和已有文档里找 */
+const SKIPPED_OUTPUT =
+  '（这一步按父对话启动时的要求跳过了：用户说已经做过。需要它的结果时看运行的输入和项目里已有的文档、产物，不要重做这一步。）'
+
 export function system(host: EngineHost, text: string, step = '', error = false, transient = false, kind?: AlertKind) {
   host.task.messages.push({
     id: host.newId(),
@@ -453,6 +457,16 @@ async function runNode(
   index: number,
   outputs: Map<string, { title: string; text: string }>,
 ): Promise<FlowResult> {
+  // 起运行时说好跳过的主流程节点（FlowRun.skip）：直接记成完成，有条件分支的按通过走
+  if (!inv.parentId && host.task.flowRun?.skip.includes(node.id)) {
+    const step = ensureStep(host, inv, node, index)
+    if (step.status !== 'done') {
+      step.status = 'done'
+      step.output = SKIPPED_OUTPUT
+      system(host, t('按启动时的要求跳过节点「{title}」', { title: step.title }), step.id)
+    }
+    return { ok: true, output: step.output }
+  }
   if (node.steps.length) return runNodeSteps(host, inv, node, index, outputs)
   return runNodeSingle(host, inv, node, index, outputs)
 }

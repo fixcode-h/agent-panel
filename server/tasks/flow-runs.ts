@@ -12,7 +12,7 @@ import { NewTaskInput } from '../../shared/schema.ts'
 import { FlowRun } from '../../shared/tasks/flow-schema.ts'
 import type { FlowRunHost, RunTarget } from '../../shared/flow/run-orch.ts'
 import type { PickedFlow } from '../../shared/flow/run.ts'
-import { RUN_ENDED, runEntry, runLine, runNodes, rewindTo } from '../../shared/flow/run.ts'
+import { RUN_ENDED, runEntry, runLine, runNodes, rewindTo, skipNodes } from '../../shared/flow/run.ts'
 import { newTask } from '../../shared/task.ts'
 import { settleWait } from '../../shared/plan/index.ts'
 import { clip } from '../../shared/text.ts'
@@ -104,7 +104,7 @@ export function createFlowRuns(sc: TasksScope) {
   async function start(
     owner: Task,
     project: Project,
-    p: PickedFlow & { input: string; title: string; files?: string[] },
+    p: PickedFlow & { input: string; title: string; files?: string[]; skip?: string[] },
   ): Promise<{ ok: boolean; id?: string; info: string }> {
     // 改代码的运行在流程图末尾接上固定收尾（评审 → 测试 → 修复，见 shared/flow/run-wrap.ts）：先接再拍快照，
     // 测试步骤才会按项目设置注入到收尾的测试节点里
@@ -114,6 +114,8 @@ export function createFlowRuns(sc: TasksScope) {
     const found = (await sc.projectWorkflow(project)) ?? undefined
     const plan = sc.planWorkflow(project, all, found && wrap(found), p.workflowId)
     if (!plan) return bad(`找不到工作流「${p.workflowName || p.workflowId}」`)
+    const skip = skipNodes(plan.workflow, p.skip ?? [])
+    if (!skip.ok) return bad(skip.info)
     const id = randomUUID()
     const at = now()
     const scope = p.files?.length ? `\n\n## 负责的文件\n${p.files.map((f) => `- ${f}`).join('\n')}` : ''
@@ -131,6 +133,7 @@ export function createFlowRuns(sc: TasksScope) {
         kind: p.kind,
         input: p.input + scope,
         reviseLimit: plan.workflow.reviseLimit ?? 3,
+        skip: skip.ids,
       }),
     } as Task
     // 第一条是父对话交代的：运行里画成「接收消息 · 交代任务」
