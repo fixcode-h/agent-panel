@@ -55,9 +55,10 @@ export function ToolRunResult({
 
 const EFFECT_TONE = { read: 'success', write: 'warning', external: 'danger' } as const
 type Effect = keyof typeof EFFECT_TONE
-export const effectLabel = (e: Effect) => (e === 'read' ? t('只读') : e === 'write' ? t('会改文件') : t('影响外部'))
+export const commandEffectLabel = (e: Effect) =>
+  e === 'read' ? t('只读') : e === 'write' ? t('会改文件') : t('影响外部')
 
-/** 命令会不会改东西的小标签：只读绿、改文件黄、影响外部红（自建工具的列表、保存弹窗） */
-export function EffectBadge({ effect }: { effect: Effect }) {
-  return <Badge tone={EFFECT_TONE[effect]}>{effectLabel(effect)}</Badge>
+/** 一条命令会不会改东西的小标签：只读绿、改文件黄、影响外部红（自建工具的列表、保存弹窗）。和 MCP 工具的 EffectBadge（capability-row）分开：那套是工具对外界做什么的七类，这里只分三档 */
+export function CommandEffectBadge({ effect }: { effect: Effect }) {
+  return <Badge tone={EFFECT_TONE[effect]}>{commandEffectLabel(effect)}</Badge>
 }

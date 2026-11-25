@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Copy, Hammer, MoreHorizontal, MoveRight, Pencil, Play, RefreshCw, Trash2, TriangleAlert } from 'lucide-react'
 import type { ToolEntry, ToolScope } from '@shared/custom-tools/schema'
 import { t } from '@shared/i18n'
-import { EffectBadge } from '@/components/ui/tool-run-result'
+import { CommandEffectBadge } from '@/components/ui/tool-run-result'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { IconButton } from '@/components/ui/icon-button'
 import { openMenuAt } from '@/components/ui/item-menu'
@@ -156,7 +156,7 @@ function ToolRow({
         muted={e.shadowed}
         trailing={
           <>
-            <EffectBadge effect={x.effect} />
+            <CommandEffectBadge effect={x.effect} />
             <IconButton
               icon={MoreHorizontal}
               size="xs"

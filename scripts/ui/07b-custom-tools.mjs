@@ -76,4 +76,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .waitFor({ state: 'detached', timeout: 8000 })
     .catch(() => errors.push('工具：保存后保存入口还在'))
   await check(p, '工具-保存完', ['你确认了'])
+
+  // 设置 → 控件样式：三个共用部件的样例
+  await p.goto(base)
+  await p.getByRole('button', { name: '设置' }).first().click()
+  await p.getByRole('button', { name: '控件样式', exact: true }).click()
+  await p.getByText('ScopePicker · ToolParamForm · ToolRunResult（自建工具）').scrollIntoViewIfNeeded()
+  await check(p, '工具-组件样例', ['ScopePicker · ToolParamForm', '缺列 ID', '影响外部'])
 })

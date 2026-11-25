@@ -11,7 +11,7 @@ import { Field, Input, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { ScopePicker } from '@/components/ui/scope-picker'
 import { Switch } from '@/components/ui/switch'
-import { EffectBadge, ToolRunResult } from '@/components/ui/tool-run-result'
+import { CommandEffectBadge, ToolRunResult } from '@/components/ui/tool-run-result'
 
 type Answer = (allow: boolean, text?: string) => Promise<void>
 
@@ -148,7 +148,7 @@ function SaveDialog({ req, onClose, answer }: { req: TaskRequest; onClose: () =>
                   <Field label="id">
                     <span className="flex h-9 items-center gap-2 font-mono text-body">
                       {tool.id}
-                      <EffectBadge effect={tool.effect} />
+                      <CommandEffectBadge effect={tool.effect} />
                     </span>
                   </Field>
                 </div>

@@ -69,6 +69,7 @@ import { Group } from '@/components/settings/parts'
 import { SheetGroupSpecimens } from '@/components/settings/VersionDiffSpecimen'
 import { CapabilitySpecimen } from '@/components/settings/CapabilitySpecimen'
 import { CapsSpecimen } from '@/components/settings/CapsSpecimen'
+import { CustomToolSpecimen } from '@/components/settings/CustomToolSpecimen'
 import { TurnCardSpecimens } from '@/components/settings/ChangesCardSpecimen'
 import { ReferenceSpecimens } from './StyleRefSpecimen'
 import { GraphCanvasSpecimens } from '@/components/settings/GraphCanvasSpecimen'
@@ -636,6 +637,9 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
       <Group title={t('项目能力')}>
         <Specimen name="CapabilityCard · CapabilityItem · AgentLoadSummary" tune={['card', 'switch', 'badge']}>
           <CapsSpecimen />
+        </Specimen>
+        <Specimen name="ScopePicker · ToolParamForm · ToolRunResult（自建工具）" tune={['card', 'input', 'badge']}>
+          <CustomToolSpecimen />
         </Specimen>
       </Group>
       <PluginSpecimens Specimen={Specimen} />
