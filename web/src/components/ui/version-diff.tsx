@@ -44,6 +44,9 @@ export type VersionPick = 'local' | number
  * 右边上面一行是调用方的头部（标题、摘要、和哪一版比、切换、只看变化），下面是调用方自己的差异视图。
  * 列表项的样子（默认宽度、提交说明显示几行）在设置 → 组件「版本差异」里调
  */
+/** 插件用来判断面板的 VersionDiffShell 认不认 navExtra（旧面板没有就照旧挂在右边） */
+export const VERSION_DIFF_NAV_EXTRA = true
+
 export function VersionDiffShell({
   open,
   onClose,
@@ -57,6 +60,7 @@ export function VersionDiffShell({
   header,
   children,
   paneKey,
+  navExtra,
   className,
 }: {
   open: boolean
@@ -76,6 +80,8 @@ export function VersionDiffShell({
   children: ReactNode
   /** 左栏宽度记在本机的键：表格和资源各记各的 */
   paneKey: string
+  /** 左栏版本记录下面再挂一块（UE 资源「同一次提交里一起改的资源」展开后的列表）：左栏往往很空，放这里不挤右边的差异 */
+  navExtra?: ReactNode
   className?: string
 }) {
   const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
@@ -93,13 +99,14 @@ export function VersionDiffShell({
       <ModalHeader icon={History} title={t('版本差异')} meta={meta} />
       <div className="flex min-h-0 flex-1">
         {/* 拖动条放在不滚动的外层：放进滚动的列表里，列表一滚它就跟着滚走了 */}
-        <div style={{ width: pane.width }} className="relative flex shrink-0 border-r">
+        <div style={{ width: pane.width }} className="relative flex shrink-0 flex-col border-r">
           <nav
             aria-label={t('版本记录')}
-            className="thin-scroll flex min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2"
+            className="thin-scroll flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2"
           >
             <VersionNav list={list} failed={failed} pick={pick} onPick={onPick} local={local} tags={tags} />
           </nav>
+          {navExtra}
           <ResizeHandle pane={pane} side="right" label={t('拖动调整版本列表宽度')} />
         </div>
         <section aria-label={t('差异')} className="flex min-w-0 flex-1 flex-col">
