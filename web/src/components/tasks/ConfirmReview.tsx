@@ -25,18 +25,26 @@ export function ConfirmReview({
   open,
   onOpenChange,
   onAnswer,
+  view,
 }: {
-  req: TaskRequest
+  req: Pick<TaskRequest, 'id' | 'title' | 'detail' | 'reports'>
   agent?: { name: string; icon: string; cli: string }
   open: boolean
   onOpenChange: (open: boolean) => void
   /** 出错时抛出：弹窗留着并提示错误，标注和勾选不会白做 */
   onAnswer: (allow: boolean, answer?: string, picks?: Picks) => Promise<void>
+  /**
+   * 只看不答（流程图节点详情里常驻的报告入口，StageReportBar）：每一版都锁住、勾选按当时交的显示，
+   * 打开时停在 version 那一版（从 1 数，不给是最新一版）；hint 是底栏那句说明
+   */
+  view?: { version?: number; hint: string }
 }) {
   const { agents } = useData()
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const list = useMemo(() => req.reports ?? [], [req.reports])
-  const cur = pendingReport(list)
+  // 只看时没有「这一版正在等你」：每一版都按当时交的样子锁住
+  const viewing = !!view
+  const cur = viewing ? undefined : pendingReport(list)
   // 勾选从 Agent 推荐的开始；换了请求（重出了一版）从新一版的推荐重新开始
   const [picks, setPicks] = useState<Picks>({})
   useEffect(() => setPicks({}), [req.id])
@@ -67,9 +75,10 @@ export function ConfirmReview({
       }
     })
     // 退回后 Agent 没交新报告：这次要审的是它的文字输出，排在最后
-    if (!cur) out.push({ key: 'text', label: t('第 {n} 版 · 没交报告', { n: list.length + 1 }), detail: req.detail })
+    if (!cur && !viewing)
+      out.push({ key: 'text', label: t('第 {n} 版 · 没交报告', { n: list.length + 1 }), detail: req.detail })
     return out
-  }, [list, cur, picks, req.detail, teamNames])
+  }, [list, cur, viewing, picks, req.detail, teamNames])
 
   // 有好几版时正文上面吸顶一条：这是第几版、怎么来的；版本下拉和「对比上一份」放在这条右边（和诊断报告一样）
   const top =
@@ -112,6 +121,9 @@ export function ConfirmReview({
       onOpenChange={onOpenChange}
       versions={versions}
       top={top}
+      readOnly={!!view}
+      readOnlyHint={view?.hint}
+      initialVersion={view?.version ? String(view.version) : undefined}
       texts={texts || undefined}
       onAnswer={async (allow, answer) => {
         // 退回修改时，改了的决策也写进意见里：Agent 看得到改了哪几项（这是发给 Agent 的提示词，不翻译）
