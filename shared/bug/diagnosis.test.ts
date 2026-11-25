@@ -894,6 +894,19 @@ test('连续退回：问题比上次少算在往前改，不算打转；一共�
   assert.match(last, /这一段已经被退回 6 次.*end_turn/s)
 })
 
+// 实跑 2026-11-25：先退「行号不存在」、改了又退「编号对不上」，各一处，被算成「3 次问题没有变少」停下
+test('连续退回：换了一处问题不算同样的问题，从 1 重新数', () => {
+  const tk = bugTask({ messages: [{ id: 'u1', role: 'user', text: '查一下' }] as Task['messages'] })
+  const a = () => submitDiagnosis(tk, input({ phase: 'cause', symptom: '' }), id).info
+  const b = () => submitDiagnosis(tk, input({ phase: 'cause', rootCause: '' }), id).info
+  a()
+  a()
+  assert.match(b(), /第 3 次被退回，和上次不是同样的问题/)
+  assert.equal(tk.bug?.case?.rejects?.n, 1)
+  b()
+  assert.match(b(), /其中 3 次问题没有变少.*end_turn/s, '同样的问题连退 3 次照样停')
+})
+
 test('不用改代码（分析稿 B5）：根因带 noFix，同意后不交方案、只放行删临时日志，没改代码就能收尾', () => {
   const tk = bugTask()
   agreeCause(tk, { noFix: { kind: 'config', how: '把 retry.max 改成 3' } } as Partial<DiagnosisInput>)

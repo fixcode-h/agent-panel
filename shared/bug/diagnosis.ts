@@ -407,7 +407,7 @@ export const REJECT_TOTAL = 6
 
 /**
  * 交诊断报告。被面板退回时记一次（rejects）：便宜模型交不出合格报告时会一直来回改，
- * 原地打转 REJECT_MAX 次（问题没比上一次少）或这一段一共退回 REJECT_TOTAL 次就让它停下来、用 end_turn（blocked）交给用户。
+ * 原地打转 REJECT_MAX 次（同样的问题、没比上一次少）或这一段一共退回 REJECT_TOTAL 次就让它停下来、用 end_turn（blocked）交给用户。
  * 实跑 2026-11-18：三个不同的小问题各退一次就停了，它其实每次都在往前改，所以问题变少的那次不算打转。
  * 次数从用户最近一条消息算起：用户换了模型、说了「继续」，重新给它机会；交成功清零
  */
@@ -430,16 +430,22 @@ export function submitDiagnosis(
   }
   const same = prev && prev.since === since
   const size = problems ?? 1
-  // 问题比上一次少：在往前改，不算打转（第一次退回总算一次）
-  const progress = same && prev.size !== undefined && size < prev.size
-  const n = same ? prev.n + (progress ? 0 : 1) : 1
+  // 问题比上一次少、或换了一处问题：在往前改，不算打转（第一次退回总算一次）。
+  // 实跑 2026-11-25：先退「行号不存在」、改了又退「编号对不上」，各一处，被算成三次没变少停下；
+  // 退回时说的是「同样的问题连着退回 3 次」，只有原话一样才算同样的问题
+  const last = r.info.slice(0, 4000)
+  const fewer = same && prev.size !== undefined && size < prev.size
+  const changed = same && !!prev.last && prev.last !== last
+  const progress = fewer || changed
+  // 换了问题从 1 重新数「连着同样的问题」；只是变少的接着上次的数
+  const n = !same || changed ? 1 : prev.n + (fewer ? 0 : 1)
   const total = (prev?.total ?? 0) + 1
   const inRun = same ? (prev.run ?? prev.n) + 1 : 1
-  bugOf(task).case = { ...base, rejects: { n, total, since, run: inRun, size, last: r.info.slice(0, 4000) } }
+  bugOf(task).case = { ...base, rejects: { n, total, since, run: inRun, size, last } }
   if (n < REJECT_MAX && inRun < REJECT_TOTAL)
     return {
       ...r,
-      info: `${r.info}\n\n（这是这一段第 ${inRun} 次被退回${progress ? '，问题比上次少，不算原地打转' : ''}；同样的问题连着退回 ${REJECT_MAX} 次、或一共退回 ${REJECT_TOTAL} 次会停下来交给用户。）`,
+      info: `${r.info}\n\n（这是这一段第 ${inRun} 次被退回${progress ? '，和上次不是同样的问题，不算原地打转' : ''}；同样的问题连着退回 ${REJECT_MAX} 次、或一共退回 ${REJECT_TOTAL} 次会停下来交给用户。）`,
     }
   return {
     ...r,
@@ -504,7 +510,14 @@ function submitOnce(
   if (bad && prev?.status === 'pending' && !chatReplaces(prev, chat)) return { ok: false, info: bad }
   const phase = inputPhase(input, c, list)
   // 原文：代码取快照、日志和命令输出逐字核对（bug-quotes.ts），对不上拒收，Agent 照原文重交
-  const sources = resolveSources(c, { list, messages: task.messages, phase, src, now })
+  const sources = resolveSources(c, {
+    list,
+    messages: task.messages,
+    phase,
+    src,
+    now,
+    given: new Set(Object.keys(input)),
+  })
   // 调用栈每一跳按工作区核对位置、出错点取快照，有报错堆栈时逐帧对上（stack-check.ts）
   const stackBad =
     checkStack(c, src, sources.notes, phase) || matchTrace(c, phase) || checkViews(c, src, sources.notes, phase)
