@@ -865,6 +865,44 @@ async function panelCall(name, params) {
     )
   return res.result
 }
+/**
+ * 调插件的 MCP 工具（插件确认卡、「本对话不再询问」的实测用）：任务里有 PLUGIN_TRY:<一行 JSON 数组>，每项 {tool, args}，
+ * 在命令行 MCP 配置里逐个服务找列出这个工具的那个去调，结果记进 .plugin
+ */
+async function pluginTry(list) {
+  // 面板和每个插件各给一份 --mcp-config，都要看
+  const urls = args
+    .filter((a) => a.startsWith('{"mcpServers"'))
+    .flatMap((a) => Object.values(JSON.parse(a).mcpServers))
+    .map((s) => s.url)
+    .filter(Boolean)
+  const rpc = (url, id, method, params) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    }).then(async (r) => {
+      const text = await r.text()
+      const data = text.split('\n').filter((l) => l.startsWith('data:'))
+      return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+    })
+  for (const [i, c] of list.entries()) {
+    let res = { error: `没有服务列出 ${c.tool}` }
+    for (const url of urls) {
+      await rpc(url, 1, 'initialize', {})
+      const tools = (await rpc(url, 2, 'tools/list', {})).result?.tools ?? []
+      if (!tools.some((x) => x.name === c.tool)) continue
+      res = (await rpc(url, 3, 'tools/call', { name: c.tool, arguments: c.args })).result
+      break
+    }
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(
+        `${process.env.FAKE_CLI_LOG}.plugin`,
+        JSON.stringify({ i, tool: c.tool, isError: !!res?.isError, text: res?.content?.[0]?.text ?? res?.error }) +
+          '\n',
+      )
+  }
+}
 // 交结论（ADR 0041 第 16 节）：面板只认 submit_verdict 工具，不看回复里的字。提示词点名要结论时像真的 Agent 那样调一次：
 // 验收第 1 轮不通过、之后通过；条件分支有 BRANCHNO（没补 GATEFIXED）时不通过；子对话收尾前派的评审按 REVIEW_MARK 给。
 // 补问（「你还没有用 submit_verdict」）也照这个规则交。NO_VERDICT 模拟漏调工具（补问也不交）
@@ -1902,6 +1940,8 @@ if (kind === 'claude') {
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
   // 门禁放行（ADR 0070）和「本对话不再询问」：任务里有 GATE_TRY:<一行 JSON 数组> 时，对每一项 {tool, input, gate}
   // 先跑工具前钩子；被拦就像真的 Agent 那样调 request_override 请用户放行，再跑一次钩子。每项的结果记进 .gate
+  const plugTry = /PLUGIN_TRY:(\[.*\])/.exec(input)?.[1]
+  if (plugTry) await pluginTry(JSON.parse(plugTry))
   const gateTry = /GATE_TRY:(\[.*\])/.exec(input)?.[1]
   if (gateTry)
     for (const [i, g] of JSON.parse(gateTry).entries()) {

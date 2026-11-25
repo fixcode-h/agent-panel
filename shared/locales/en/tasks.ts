@@ -1881,6 +1881,7 @@ export const EN_TASKS: Record<string, string> = {
   '目录 {dir} 里的文件': 'files in {dir}',
   '文件 {file}': 'the file {file}',
   '工具 {name}': 'the tool {name}',
+  '越过沙箱：{what}': 'going outside the sandbox: {what}',
   '…（还有 {n} 行没显示）': '… ({n} more lines not shown)',
   '权限是「{mode}」，自动允许：{title}': 'Permission is "{mode}", allowed automatically: {title}',
   '整条都是只读命令，自动允许：{title}': 'Every part is a read-only command, allowed automatically: {title}',
