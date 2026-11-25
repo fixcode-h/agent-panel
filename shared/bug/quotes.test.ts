@@ -179,6 +179,44 @@ test('引用编号要存在；构造数据的复现不能当排除假设的依�
   )
 })
 
+// 实跑 2026-11-25：修完验证后再出第 2 版方案，修复删掉临时日志、代码挪了几十行，日志也轮转了；
+// 档案里沿用的 codeRefs / quotes 按现在的文件重核对不上，Agent 不传也照样退回，连退三次停下
+test('沿用上一版的引用：核对过的不按现在的文件重核；换了 quotes 而 chain 沿用的，说清要一起重写', () => {
+  const ref = {
+    id: 'C1',
+    role: 'fault',
+    file: 'src/load.js',
+    start: 40,
+    end: 42,
+    marks: [{ line: 41, text: 'o.shipping ?? 0', level: 'fault' }],
+    snapshot: { text: '    shipping: o.shipping ?? 0,', at: now },
+  }
+  const q1 = { id: 'Q1', kind: 'log', file: 'x.log', start: 51622, end: 51622, text: '[排查-金额] L1 shipping=10' }
+  const list = [Diagnosis.parse({ version: 1, at: now, phase: 'cause', quotes: [q1], codeRefs: [ref] })]
+  const chain = [{ step: 'fault', text: 'shipping 没转数字', proof: '', refs: ['C1', 'Q1'] }]
+  const carried = () => base({ codeRefs: [ref], quotes: [q1], chain })
+  const rotated: BugSource = { ...src, read: (f) => (f === 'x.log' ? 'short\n' : files[f]) }
+  // 这次只传了方案相关的字段：沿用的都不重核
+  const given = new Set(['phase', 'options', 'chosen'])
+  const r = resolveSources(carried(), ctx({ phase: 'plan', list, src: rotated, given }))
+  assert.equal(r.error, '')
+  // 这次自己传了 codeRefs：照常按现在的文件核对
+  assert.match(
+    resolveSources(carried(), ctx({ phase: 'plan', list, src: rotated, given: new Set(['codeRefs']) })).error,
+    /只有 19 行，第 40 行不存在/,
+  )
+  // 没快照的沿用引用对不上：说清不传就是沿用
+  const noSnap = base({ codeRefs: [{ ...ref, snapshot: undefined }] })
+  assert.match(resolveSources(noSnap, ctx({ phase: 'plan', given })).error, /沿用上一版的.*codeRefs: \[\]/)
+  // 只换了 quotes、chain 沿用旧编号
+  const q2 = { id: 'Q2', kind: 'note', text: '新日志里 Z 已贴地' }
+  const mixed = base({ codeRefs: [ref], quotes: [q2], chain })
+  assert.match(
+    resolveSources(mixed, ctx({ phase: 'plan', list, src: rotated, given: new Set(['quotes']) })).error,
+    /Q1。[\s\S]*chain 这次没传，是档案里沿用上一版的/,
+  )
+})
+
 test('提醒：已证实的根因用了猜测的词、出错点没有代码和日志原文', () => {
   const c = base({ rootCause: '可能是 shipping 没转数字', chain: [{ step: 'fault', text: '应该是这里', proof: 'x' }] })
   const r = resolveSources(c, ctx())

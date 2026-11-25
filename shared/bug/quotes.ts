@@ -184,17 +184,28 @@ function fileLines(file: string, start: number, end: number, src?: BugSource) {
 const outputsOf = (messages: TaskMessage[]) =>
   messages.flatMap((m) => (m.tools ?? []).map((x) => x.output ?? '').filter(Boolean)).map(norm)
 
+/** 这条引用在之前交过的某一版里原样出现过（那时已核对、取过原文） */
+const acceptedBefore = (q: BugQuote, list: Diagnosis[]) =>
+  !!q.text.trim() &&
+  list.some((d) =>
+    d.quotes.some(
+      (x) => x.id === q.id && x.kind === q.kind && x.text === q.text && x.file === q.file && x.start === q.start,
+    ),
+  )
+
 function resolveQuotes(
   c: BugCase,
   list: Diagnosis[],
   messages: TaskMessage[],
   notes: string[],
   src?: BugSource,
+  carried = false,
 ): string {
   let outputs: string[] | undefined
   for (const q of c.quotes) {
     if (!q.id.trim()) return 'quotes 每一条都要写 id（Q1、Q2…），正文和证据链用编号引用。'
     if (q.kind === 'note') continue
+    if (carried && acceptedBefore(q, list)) continue
     if (q.kind === 'run') {
       if (!q.text.trim()) return `${q.id} 是命令输出：text 原样复制实际跑出来的那几行。`
       outputs ??= outputsOf(messages)
@@ -237,6 +248,24 @@ function resolveQuotes(
         : `${q.id} 的原文里没有「${short(miss, 40)}」：highlight 写原文里逐字出现的关键值。`
   }
   return ''
+}
+
+/** 沿用的 codeRefs 没有快照、按现在的文件又对不上时补一句：不传不等于去掉 */
+const CARRIED_REF =
+  '这一段是档案里沿用上一版的（这次没传 codeRefs，不传就是照旧沿用）：按现在的文件重写整组 codeRefs，不需要了传 codeRefs: []。'
+
+/** 编号对不上、而引用它的那组是沿用上一版的：说清是哪组没传、要一起改 */
+function carriedRefsHint(c: BugCase, carried: (k: string) => boolean): string {
+  const old = (
+    [
+      ['chain', c.chain.length],
+      ['hypotheses', c.hypotheses.length],
+    ] as const
+  )
+    .filter(([k, n]) => n && carried(k))
+    .map(([k]) => k)
+  if (!old.length) return ''
+  return `（${old.join('、')} 这次没传，是档案里沿用上一版的，还引用着旧编号：换了 quotes / codeRefs 就把 ${old.join('、')} 按新编号整组重写一起传。）`
 }
 
 /** 证据链、假设引用的编号要存在；构造数据复现时，已排除的假设要有日志或命令输出原文（F8） */
@@ -359,25 +388,40 @@ export function fixDiffs(list: Diagnosis[], src: BugSource): Diagnosis['fixDiffs
  */
 export function resolveSources(
   c: BugCase,
-  ctx: { list: Diagnosis[]; messages: TaskMessage[]; phase: string; src?: BugSource; now: string },
+  ctx: {
+    list: Diagnosis[]
+    messages: TaskMessage[]
+    phase: string
+    src?: BugSource
+    now: string
+    /** 这次工具参数里写了的档案字段；没给时当全写了（单测、导入）。没写的是档案里沿用上一版的 */
+    given?: ReadonlySet<string>
+  },
 ): Resolved {
   const notes: string[] = []
   const src = ctx.src
+  const carried = (k: string) => !!ctx.given && !ctx.given.has(k)
   if (ctx.phase === 'fix' || ctx.phase === 'verify') {
     // 已经修完：出错点那几行变了，代码沿用根因那一版的快照（marks.text 在现在的文件里多半找不到了）
     const cause = causeRefs(ctx.list)
     c.codeRefs = cause ? structuredClone(cause.codeRefs) : c.codeRefs.map((r) => ({ ...r, snapshot: undefined }))
   } else if (src) {
     c.codeRefs = legacyRef(c)
+    // 档案里沿用的、早先交报告时已经核对过取了快照的：不按现在的文件重核。
+    // 实跑 2026-11-25：修完验证后再出第 2 版方案，修复删掉了临时日志、行号挪了 29 行，
+    // 沿用的 C2 按现在的文件对不上，Agent 不传 codeRefs 也照样被退回，连退三次停下
+    const keep = carried('codeRefs') && carried('codeRef')
     for (const r of c.codeRefs) {
+      if (keep && r.snapshot) continue
       const bad = resolveRef(r, src, notes, ctx.now)
-      if (bad) return { error: bad, notes }
+      if (bad) return { error: keep ? `${bad}${CARRIED_REF}` : bad, notes }
     }
   } else for (const r of c.codeRefs) r.snapshot = undefined
-  const q = resolveQuotes(c, ctx.list, ctx.messages, notes, src)
+  // 沿用的日志引用同理：早先某一版里原样交过（已核对）的不再按现在的日志文件重核（日志会轮转、被覆盖）
+  const q = resolveQuotes(c, ctx.list, ctx.messages, notes, src, carried('quotes'))
   if (q) return { error: q, notes }
   const refs = refsProblem(c)
-  if (refs) return { error: refs, notes }
+  if (refs) return { error: refs + carriedRefsHint(c, carried), notes }
   if (c.attribution) {
     c.attribution.diff = (src && attributionDiff(c, src)) || undefined
     verifyAuthor(c.attribution, src)
