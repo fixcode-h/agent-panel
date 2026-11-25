@@ -160,8 +160,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  * 19：PluginServerContext.integrations：设置 →「账号授权」里工具的状态、路径和备用登录信息（飞书插件的登录搬过去）
  * 20：清单里的工作流能自带授权（grants，只能是插件自己的 plugin:<id>: 规则，运行时不弹确认卡）、
  *    标 inPlace 直接在父对话目录里跑（不开独立分支）。设计稿：UE 写完代码自动测试
+ * 21：ServerPlugin.findSources：插件登记别家 MCP 工具（VS 的 UEToVS、IDEA 的 lua_code）当查找的路，
+ *    面板的 find 工具按语言挑路、自己去调，Agent 不再直接用这些工具。ADR 0081 能力路由
  */
-export const PLUGIN_API = 20
+export const PLUGIN_API = 21
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

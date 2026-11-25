@@ -1,6 +1,16 @@
 import type { z } from 'zod'
 import type { HookInput, HookOutput } from '../../shared/hooks/defs.ts'
 import type { PluginConfig } from '../../shared/plugins/types.ts'
+import type { ExternalFindSource } from '../../shared/capability-router/find/types.ts'
+
+export type {
+  ExternalFindSource,
+  FindHit,
+  FindKind,
+  FindLang,
+  FindOutcome,
+  FindRequest,
+} from '../../shared/capability-router/find/types.ts'
 
 /**
  * 插件服务端 SDK（ADR 0059）：插件包里 server 入口的约定。只有类型，插件仓库（fixcode-h/agent-plugins）里有一份副本，
@@ -492,6 +502,12 @@ export interface ServerPlugin {
    * exclude 不给时用项目的排除目录。只读目录，不要起进程
    */
   fileIndexRoots?: (project: { id: string; path: string }) => Promise<{ root: string; exclude?: string[] }[]>
+  /**
+   * 查找能力的外部路（插件接口 21，能力路由 ADR 0081）：这个项目里哪些别家 MCP 工具能查符号、引用、大纲……
+   * 面板的 find 工具按语言和种类挑路、自己当客户端去调（IDE 的 projectPath、仅路由器、建索引时等待都由面板处理），
+   * Agent 看不到这些工具。只描述怎么调、怎么读结果，不要起进程；只对打开了这个插件的项目问
+   */
+  findSources?: (project: { id: string; path: string }) => ExternalFindSource[] | Promise<ExternalFindSource[]>
   /** 关掉、删除、重启前：停后台进程、清定时器 */
   stop?: () => void | Promise<void>
 }

@@ -1,7 +1,7 @@
 # file-index：项目文件索引
 
 - 状态：documented
-- 职责：按项目维护只记文件名的索引：按名字找、按文件夹取、跟上改动；文件面板、Agent 的 file_index、插件共用
+- 职责：按项目维护只记文件名的索引：按名字找、按文件夹取、跟上改动；文件面板、Agent 的 find（旧名 file_index）、插件共用
 - 源码：`server/file-index/`、`shared/file-index/`、`shared/api-contract/file-index.ts`
 - 入口：`server/file-index/registry.ts`
 - 关键词：文件索引、file_index、按名字找文件、NameTable、fileIndexRoots、ctx.files
@@ -19,7 +19,7 @@
 | `server/file-index/registry.ts`     | 按项目算根清单（项目、文档根、额外目录、插件报的），同根共用 `IndexUnit`，空闲卸下，推状态                                     |
 | `server/file-index/unit.ts`         | 一个根：读回落盘或全量建、目录核对、系统通知、touch、写盘                                                                      |
 | `server/file-index/api.ts`          | `/api/file-index`（数据页）和 `/api/projects/:id/file-index…`（状态卡、查、核对、重建）                                        |
-| `server/file-index/agent-tool.ts`   | `file_index` 工具的服务端：等索引、分页、4000 字上限、独立分支现场核对                                                         |
+| `server/file-index/agent-tool.ts`   | `find` 工具找文件那一半（旧名 `file_index`）的服务端：等索引、分页、4000 字上限、独立分支现场核对                              |
 | `server/file-index/plugin-files.ts` | 插件接口 16 的 `ctx.files`                                                                                                     |
 | `server/file-index/indexed.ts`      | 开放给插件的帮助函数：`readyIndex`（等就绪最多 3 秒）、`indexedTree`（带 ext 取整棵、换相对路径）、`indexedDirs`、`extsOfGlob` |
 | `server/plugins/file-roots.ts`      | 问打开了的插件要 `fileIndexRoots`                                                                                              |

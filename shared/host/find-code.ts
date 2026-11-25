@@ -1,0 +1,16 @@
+/**
+ * 引擎宿主里的「查代码」（find 工具的 symbol / refs / outline / members / include / text，ADR 0081 能力路由）：
+ * 服务端按语言挑路（VS、IDEA、面板文本兜底）、合并结果、拼好文字，引擎只转交。找文件那一半在 file-index.ts
+ */
+import type { FindRequest } from '../capability-router/find/types.ts'
+
+export type FindCodeRun = (req: FindRequest, signal?: AbortSignal) => Promise<{ text: string; error?: boolean }>
+
+export interface FindCodeHost {
+  /** 在项目里就有（项目关了文件索引时只有外部路，没有文本兜底）；提示词里「找文件、找代码」一节也按它写 */
+  findCode?: FindCodeRun
+}
+
+export interface OrchFindCode {
+  findCode?: FindCodeRun
+}

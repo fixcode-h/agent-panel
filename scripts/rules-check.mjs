@@ -26,6 +26,7 @@
 // 20. 给 Agent 的规则每条只有一个出处：内置角色设定、面板提示词、方法类技能之间，同一句（30 字以上）不许出现在两个文件里（ADR 0048）
 // 21. 代码结构只许变好：函数长度、平铺目录、Task 字段、读时迁移、内联工具、大接口、git 包装、模块状态、界面拼状态、轮询（scripts/structure-check.mjs）
 // 22. 页面不自己推对话状态：web/src 里（演示后端除外）不调用 taskState / taskBusy / taskActive / taskDoneDot 等，改读服务端给的 live
+// 24. 找文件、找代码只有面板的 find 一个入口（ADR 0081）：内置角色、工作流、Skill、提示词里不点名各家查找工具
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -615,6 +616,30 @@ for (const f of files.filter((x) => /^(shared|server|web\/src)\/.*\.tsx?$/.test(
     errors.push(
       'web/src/index.css 缺少全局 ::-webkit-scrollbar-corner { background: transparent; }，滚动条交汇角落会出现白块',
     )
+}
+
+// 24. 找文件、找代码只有一个入口：面板的 find（ADR 0081 能力路由，用户 2026-11-25）。走 VS、IDEA 还是文本由面板定，
+// 给 Agent 的规则里再点名 search_symbols、lua_code 这类工具，就又回到「各处各写一份、互相打架」（设计稿：统一查找方式 第 1 节）。
+// 查的是写给 Agent 的文字：内置角色和工作流、自带 Skill、提示词拼装；确实要提的行写 `find-route-ok: 原因`
+{
+  const named =
+    /\b(search_lua|search_lua_files|get_lua_outline|search_symbols|search_files|lua_code|find_references|get_file_outline|get_members|suggest_include|file_index)\b|代码索引 MCP/
+  const scoped = (f) =>
+    /^shared\/builtin\/.+\.ts$/.test(f) ||
+    /^skills\/.+\.md$/.test(f) ||
+    f === 'shared/engine/prompt-parts.ts' ||
+    f === 'shared/engine/index.ts'
+  for (const f of files) {
+    if (!scoped(f) || /\.test\.ts$/.test(f)) continue
+    read(f)
+      .split('\n')
+      .forEach((l, i) => {
+        if (named.test(l) && !/find-route-ok/.test(l))
+          errors.push(
+            `${f}:${i + 1} 给 Agent 的规则点名了查找工具，改成「用面板的 find」（走哪条路由面板定，ADR 0081）：${l.trim().slice(0, 120)}`,
+          )
+      })
+  }
 }
 
 if (errors.length) {

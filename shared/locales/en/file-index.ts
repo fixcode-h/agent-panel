@@ -45,9 +45,9 @@ export const EN_FILE_INDEX: Record<string, string> = {
     'Watching: no system notifications; a query first checks folders if they were not checked in the last minute',
   增量更新: 'Incremental update',
   '在「数据」里管理': 'Manage in Data',
-  按名字找文件的分工: 'Who finds files by name',
-  'C++ 源码先用 VS 的 uetovs/search_files，Lua 先用 IDEA 的 lua_code files，其他文件先查文件索引（file_index）。都没装或查不到时 Agent 才用 rg --files / find；排除目录里的文件不在索引里，直接用原命令找。':
-    'C++ sources go to uetovs/search_files in VS first, Lua to lua_code files in IDEA first, and everything else to the file index (file_index). Only when those are not installed or find nothing do agents use rg --files / find. Files in excluded folders are not in the index, so agents use those commands directly for them.',
+  '找文件、找代码的分工': 'How files and code are found',
+  'Agent 找文件、找代码都调面板的 find：找文件查这份索引，找 C++ 代码走 VS、Lua 走 IDEA，都用不了时面板自己按文本找。排除目录里的文件不在索引里，Agent 直接用 rg / ls 找。':
+    "Agents call the panel's find for both files and code: files come from this index, C++ code goes to VS and Lua to IDEA, and when neither is available the panel searches the text itself. Files in excluded folders are not in the index, so agents use rg / ls for them.",
   '不收录、也不搜索的目录': 'Folders not indexed or searched',
   '文件索引不收这些目录，Agent 用 rg 搜代码时也跳过它们（编译产物、缓存这类）。AI 初始化分析项目时会填好；Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。要找这些目录里的文件时 Agent 直接用 rg / find。':
     'The file index leaves these folders out, and agents skip them when searching code with rg (build output, caches and the like). AI setup fills them in when it analyzes the project; in Git projects, folders already in .gitignore are skipped automatically, so only add the ones it does not cover. To find files in these folders, agents use rg / find directly.',
@@ -64,6 +64,7 @@ export const EN_FILE_INDEX: Record<string, string> = {
   '各项目的文件名索引（只记文件名，不含内容）；清理后项目用到时自动重建':
     'File name indexes of each project (names only, no contents); rebuilt automatically when a project needs them after clearing',
   查文件索引: 'Look up file index',
+  查找: 'Find',
   '这份索引现在没有项目在用，删掉即可；项目用到时会自动重建':
     'No project is using this index right now; just delete it. It is rebuilt when a project needs it',
   找不到这个项目: 'Project not found',
