@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
 import { FolderGit2, Globe } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { ToolParam } from '@shared/custom-tools/schema'
 import { ScopePicker } from '@/components/ui/scope-picker'
 import { paramDefaults, ToolParamForm } from '@/components/ui/tool-param-form'
 import { CommandEffectBadge, ToolRunResult } from '@/components/ui/tool-run-result'
+import type { CompName } from '@shared/component-style'
+import { CapsSpecimen } from './CapsSpecimen'
 
 /** 设置 → 组件里的自建工具部件样例（ADR 0082）：示例数据不翻译 */
 const PARAMS: ToolParam[] = [
@@ -64,5 +66,23 @@ export function CustomToolSpecimen() {
         output={['读取 Item.xlsx…', 'Item.xlsx:12: 缺列 ID']}
       />
     </div>
+  )
+}
+
+/** 「项目能力」一组：能力条目和自建工具的部件（从 ComponentsSection 拆出来，那边只留调用） */
+export function CapsSpecimens({
+  Specimen,
+}: {
+  Specimen: ComponentType<{ name: string; tune?: CompName[]; children: ReactNode }>
+}) {
+  return (
+    <>
+      <Specimen name="CapabilityCard · CapabilityItem · AgentLoadSummary" tune={['card', 'switch', 'badge']}>
+        <CapsSpecimen />
+      </Specimen>
+      <Specimen name="ScopePicker · ToolParamForm · ToolRunResult（自建工具）" tune={['card', 'input', 'badge']}>
+        <CustomToolSpecimen />
+      </Specimen>
+    </>
   )
 }
