@@ -65,7 +65,7 @@ import { docRootText, plainDocRootText } from '../doc-root.ts'
 import { makeAlert } from '../alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from '../prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from '../summary/card.ts'
-import { ensureVerdict, reviewVerdict, submitOn, verdictOf, type Blocker } from '../submitted.ts'
+import { ensureVerdict, submitOn, verdictOf, type Blocker } from '../submitted.ts'
 import { settleReport, type StageReport } from '../flow/stage-report.ts'
 
 import { beginTurn, endTurn, pauseStep, stopReasonText } from '../task.ts'
@@ -78,6 +78,7 @@ import { childAskPrompt } from '../children/ask.ts'
 import { topPush } from '../sub-policy.ts'
 import { vcsOwnOnly, vcsReadCmds } from './vcs-text.ts'
 import { overBudget } from './budget.ts'
+import { carriedFeedback, runReviewLoop } from './review-loop.ts'
 // 各节点共用的提示词段落拆在 engine-prompt-parts.ts，编排工具背后的状态和子任务收口拆在 engine-helpers.ts
 import {
   SLOT_PROMPT,
@@ -239,7 +240,7 @@ export function system(host: EngineHost, text: string, step = '', error = false,
     step,
     text,
     tools: [],
-    ...(error && { error, alert: makeAlert('error', text) }),
+    ...(error && { error, alert: makeAlert('error', text, kind) }),
     // 不是错误但要提醒的（例如超过自己设的预算上限）：按传入的类别画成一条警告
     ...(!error && kind && { alert: makeAlert('warn', text, kind) }),
     ...(transient && { transient }),
@@ -439,7 +440,7 @@ function prevRoundSession(host: EngineHost, inv: Invocation, kind: NodeStep['kin
 function nextRoundPrompt(inv: Invocation, step: TaskStep, input: string) {
   const what =
     inv.slot === 'review'
-      ? `这是第 ${inv.round} 轮验收：被验收的节点按上一轮的意见修改过了，下面是修改后的结果。请在上一轮检查的基础上重新逐条验收，确认上一轮提出的问题都已解决、没有引入新的问题。最后${VERDICT_LINE.review}。`
+      ? `这是第 ${inv.round} 轮验收：被验收的节点按上一轮的意见修改过了，下面是修改后的结果。请在上一轮检查的基础上重新逐条验收，确认上一轮提出的问题都已解决、没有引入新的问题。新的不通过理由只限这次修改引出的、或上一轮漏看的阻断问题；同一类问题（例如任务之间的先后依赖）要把全部地方一次查完、一次列全，不要留到下一轮再报。最后${VERDICT_LINE.review}。`
       : `上一轮的结果需要修改，下面是这一轮的输入。请在你上一轮工作的基础上继续完善本节点「${step.title}」，完成后同样简要总结。`
   return [what, input ? `## 输入\n${input}` : ''].filter(Boolean).join('\n\n')
 }
@@ -469,6 +470,8 @@ async function runNodeSingle(
   if (host.halted) return { ok: false, halted: true, error: '' }
   // 做完了、停在等确认时被停下：结果原样还在，继续时直接回到确认，不重跑节点、不重新验收
   const atConfirm = !!step.awaitConfirm && !!node.hooks.confirm && !!host.confirm
+  // 上一次最后一轮验收没通过：重新执行时带上那轮的意见（重跑会清掉验收子步骤，所以先取）
+  const carry = atConfirm ? '' : carriedFeedback(host.task.steps, step)
   // 上次执行到一半被打断、CLI 会话还在：续接会话接着做，不从头再来
   const half = step.interrupted
   const resumeHalf = !atConfirm && half && !!host.task.sessions[step.id] && node.kind === 'agent'
@@ -515,7 +518,7 @@ async function runNodeSingle(
     step.endedAt = now()
     // 错误写进出错的节点里，打开节点就能看到；外层节点和整个任务的结尾只提一句，不重复整段
     if (!r.stopped && !r.halted && !r.reported) {
-      system(host, r.error || t('执行失败'), step.id, true)
+      system(host, r.error || t('执行失败'), step.id, true, false, r.kind)
       r = { ...r, reported: true }
     }
     host.changed(true)
@@ -634,66 +637,32 @@ async function runNodeSingle(
     return late ? { ok: true, text: `${r.text}\n\n## 子 Agent 的结果\n${late}` } : r
   }
   const rework = (agentText: string, flowText: string) => body(++bodyRound, node.kind === 'flow' ? flowText : agentText)
-  const r = atConfirm ? { ok: true as const, text: step.output } : await body(0, '')
+  const r = atConfirm ? { ok: true as const, text: step.output } : await body(0, carry)
   if (!r.ok) return fail(r)
   let text = r.text
 
-  // 验收：不通过就把意见交回节点，每次最多 maxRounds 轮；用户退回后重新验收，轮次接着编号
+  // 验收：不通过就把意见交回节点（shared/engine/review-loop.ts）；用户退回后重新验收，轮次接着编号
   let reviewRound = 0
   const review = async (): Promise<Fail | null> => {
     if (!node.hooks.review) return null
-    for (let n = 1; ; n++) {
-      const round = ++reviewRound
-      const rv = await sub(
-        node.hooks.review,
-        'review',
-        round,
-        `被验收的节点：${step.title}\n\n## 这个节点要做的事\n${node.instructions.trim() || '（没有写）'}\n\n## 它的结果\n${text || '（没有文字输出）'}`,
-      )
-      if (!rv.ok)
-        return {
-          ...rv,
-          error: rv.stopped
-            ? rv.error
-            : t('「{title}」的验收流程失败：{error}', { title: step.title, error: rv.error }),
-        }
-      // 结论只认验收流程里用 submit_verdict 交的（ADR 0041 第 16 节）；没交不算通过，按出错停下给用户看
-      const verdict = reviewVerdict(host.task.steps, step.id, round)
-      step.rounds = round
-      if (!verdict)
-        return {
-          ok: false,
-          error: t('「{title}」的验收流程没有用 submit_verdict 交结论，不能算通过', { title: step.title }),
-        }
-      step.verdict = verdict
-      host.changed(true)
-      if (verdict !== 'fail') return null
-      // 不通过、要带着意见重做这一轮：单独累加，重新执行节点时 rounds 会清零，从 rounds 反推会少算
-      step.reviews = (step.reviews ?? 0) + 1
-      if (host.halted) return { ok: false, halted: true, error: '' }
-      if (n >= node.hooks.maxRounds)
-        return {
-          ok: false,
-          error: t('「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}', {
-            title: step.title,
-            round: n,
-            feedback: await clipToFile(host.saveHandoff, step, rv.output, 1500, '先读完。'),
-          }),
-        }
-      system(
-        host,
-        t('「{title}」第 {round} 轮验收未通过，已把意见交回节点继续完善。', { title: step.title, round }),
-        step.id,
-      )
-      const again = overBudget(host)
-      if (again) return { ok: false, stopped: true, budget: true, error: again }
-      const fb = await rework(
-        `验收没有通过（第 ${round} 轮）。验收意见：\n${rv.output}\n\n请按意见继续完善本节点「${step.title}」的工作，完成后同样简要总结。`,
-        `上一轮的结果没有通过验收，意见：\n${rv.output}`,
-      )
-      if (!fb.ok) return fb
-      text = fb.text
-    }
+    const ref = node.hooks.review
+    return runReviewLoop({
+      host,
+      target: step,
+      handoff: step,
+      maxRounds: node.hooks.maxRounds,
+      nextRound: () => ++reviewRound,
+      run: (round) =>
+        sub(
+          ref,
+          'review',
+          round,
+          `被验收的节点：${step.title}\n\n## 这个节点要做的事\n${node.instructions.trim() || '（没有写）'}\n\n## 它的结果\n${text || '（没有文字输出）'}`,
+        ),
+      rework: (agentText, flowText) => rework(agentText, flowText),
+      done: (next) => (text = next),
+      note: (msg, id) => system(host, msg, id),
+    })
   }
 
   // 已经验收过的结果（回到确认、追问之后）不再验收一遍
@@ -838,7 +807,7 @@ async function runNodeSteps(
     if (r.stopped || r.halted) pauseStep(step)
     step.endedAt = now()
     if (!r.stopped && !r.halted && !r.reported) {
-      system(host, r.error || t('执行失败'), (target ?? step).id, true)
+      system(host, r.error || t('执行失败'), (target ?? step).id, true, false, r.kind)
       r = { ...r, reported: true }
     }
     host.changed(true)
@@ -986,58 +955,30 @@ async function runNodeSteps(
   const reworkText = (i: number, agentText: string, flowText: string) =>
     body(i, ++bodyRounds[i], units[i].kind === 'flow' ? flowText : agentText)
 
-  /** 这一步的验收：不通过就带着意见重做这一步，轮次独立 */
+  /** 这一步的验收：不通过就带着意见重做这一步，轮次独立（shared/engine/review-loop.ts） */
   const reviewUnit = async (i: number): Promise<Fail | null> => {
     const unit = units[i]
     const r = recordOf(i)
-    if (!unit.review) return null
-    for (let n = 1; ; n++) {
-      const round = ++r.rounds
-      const rv = await runRef(host, inv, unit.review, {
-        parentId: r.id,
-        slot: 'review',
-        round,
-        input: `被验收的节点：${r.title}\n\n## 这一步要做的事\n${unit.instructions.trim() || '（没有写）'}\n\n## 它的结果\n${texts[i] || '（没有文字输出）'}`,
-        owner: r.title,
-      })
-      if (!rv.ok)
-        return {
-          ...rv,
-          error: rv.stopped ? rv.error : t('「{title}」的验收流程失败：{error}', { title: r.title, error: rv.error }),
-        }
-      const verdict = reviewVerdict(host.task.steps, r.id, round)
-      r.rounds = round
-      if (!verdict)
-        return {
-          ok: false,
-          error: t('「{title}」的验收流程没有用 submit_verdict 交结论，不能算通过', { title: r.title }),
-        }
-      r.verdict = verdict
-      host.changed(true)
-      if (verdict !== 'fail') return null
-      // 同 runNodeSingle：验收不通过要重做的次数单独累加
-      r.reviews = (r.reviews ?? 0) + 1
-      if (host.halted) return { ok: false, halted: true, error: '' }
-      if (n >= unit.maxRounds)
-        return {
-          ok: false,
-          error: t('「{title}」验收 {round} 轮仍未通过。最后一轮的意见：\n{feedback}', {
-            title: r.title,
-            round: n,
-            feedback: await clipToFile(host.saveHandoff, step, rv.output, 1500, '先读完。'),
-          }),
-        }
-      system(host, t('「{title}」第 {round} 轮验收未通过，已把意见交回节点继续完善。', { title: r.title, round }), r.id)
-      const again = overBudget(host)
-      if (again) return { ok: false, stopped: true, budget: true, error: again }
-      const fb = await reworkText(
-        i,
-        `验收没有通过（第 ${round} 轮）。验收意见：\n${rv.output}\n\n请按意见继续完善这一步「${r.title}」的工作，完成后同样简要总结。`,
-        `上一轮的结果没有通过验收，意见：\n${rv.output}`,
-      )
-      if (!fb.ok) return fb
-      texts[i] = fb.text
-    }
+    const ref = unit.review
+    if (!ref) return null
+    return runReviewLoop({
+      host,
+      target: r,
+      handoff: step,
+      maxRounds: unit.maxRounds,
+      nextRound: () => ++r.rounds,
+      run: (round) =>
+        runRef(host, inv, ref, {
+          parentId: r.id,
+          slot: 'review',
+          round,
+          input: `被验收的节点：${r.title}\n\n## 这一步要做的事\n${unit.instructions.trim() || '（没有写）'}\n\n## 它的结果\n${texts[i] || '（没有文字输出）'}`,
+          owner: r.title,
+        }),
+      rework: (agentText, flowText) => reworkText(i, agentText, flowText),
+      done: (next) => (texts[i] = next),
+      note: (msg, id) => system(host, msg, id),
+    })
   }
 
   /** 这一步完成后等用户确认：退回时只重做这一步 */
@@ -1827,7 +1768,7 @@ async function runHelper(
       else {
         step.status = 'failed'
         st.errors.set(step.id, r.error)
-        system(host, r.error || t('执行失败'), step.id, true)
+        system(host, r.error || t('执行失败'), step.id, true, false, r.kind)
       }
     }
     step.endedAt = now()

@@ -23,7 +23,7 @@ export function GrantActions({
   compact,
   className,
 }: {
-  req: { rule?: string; ruleLabel?: string }
+  req: { rule?: string; ruleLabel?: string; allowLabel?: string; denyLabel?: string }
   /** 正在提交的那一个（转圈，其余按钮禁用）；空串表示没在提交 */
   busy: GrantChoice | ''
   onPick: (c: GrantChoice) => void
@@ -51,7 +51,7 @@ export function GrantActions({
         onClick={() => onPick('deny')}
       >
         {spin('deny')}
-        {t('拒绝')}
+        {req.denyLabel || t('拒绝')}
       </Button>
       <Button
         size="sm"
@@ -63,7 +63,7 @@ export function GrantActions({
         onClick={() => onPick('once')}
       >
         {spin('once')}
-        {remember ? t('允许一次') : t('允许')}
+        {req.allowLabel || (remember ? t('允许一次') : t('允许'))}
       </Button>
       {remember && (
         <Button

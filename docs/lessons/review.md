@@ -1,5 +1,5 @@
 ---
-paths: shared/review/gate.ts, server/review-gate.test.ts, shared/builtin/agents.ts, shared/verdict.ts, server/orch-mcp.ts, server/exec/git.ts
+paths: shared/engine/review-loop.ts, shared/review/gate.ts, server/review-gate.test.ts, shared/builtin/agents.ts, shared/verdict.ts, server/orch-mcp.ts, server/exec/git.ts
 ---
 
 # 收尾评审
@@ -27,3 +27,9 @@ paths: shared/review/gate.ts, server/review-gate.test.ts, shared/builtin/agents.
 - 规则：评审只评改动的行；需求、改动、检查结果由派它的对话写进交接单 `review`（第一次 `goal`、`checks` 必填），读代码次数、时限放 `shared/review/limits.ts`，差异只取该评的文件、不带整个函数，提示词开头不带搜索排除、编译收尾这些写给动手角色的段落（[ADR 0013](../adr/0013-review-diff-only-with-brief.md)）。
 - 起因：ADR 0010 之后一次评审仍要二十多分钟：`-W` 把几千行组件整个带进差异，「全部改动」混进别人的提交，设定又要它先读模块地图、模块文档和 bugs.md 再去找调用方。
 - 防线：`server/core-agents.test.ts`、`server/engine-steps.test.ts`（没带交接单拒绝派、只取点名的文件）、`server/exec/review-diff.test.ts`。
+
+## 节点验收退回时交回 submit_verdict 的意见清单，按进展计轮，到上限问用户
+
+- 规则：工作流节点的验收循环只走 `shared/engine/review-loop.ts`：返工提示和停下提示都带 `submit_verdict` 交的 blockers 原文（必须改 / 建议分开），不能只转验收 Agent 回复里的文字（回执叫它别在回复里重复结论）；轮次只数必须改的问题没比上一轮少的，另有 maxRounds 两倍的总兜底；到上限用 `reviewLimit` 弹卡让用户选按现状通过 / 再改一轮，不直接按失败停下；重新执行没通过的节点用 `carriedFeedback` 带上最后一轮意见。门禁角色的不通过只认出口门禁，其余写成建议。
+- 起因：2026-11-25 用户导出的「碰杯玩法」任务：「写规范」被规范门禁连退 3 轮停下，必须改的问题 6 → 3 → 1 一直在收敛，节点却每轮都说「F7–F9 原文没看到」，最后一轮的意见在重跑时也丢了。
+- 防线：`shared/engine/review-loop.test.ts`、`scripts/e2e/05-workflow-edge.mjs`（轮数用完弹卡、两种选择）。

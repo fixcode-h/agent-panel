@@ -1087,8 +1087,8 @@ ${SCENE_TEXT}
 3. DOC_ROOT 下没有 openspec/（未初始化），或找不到当前 CLI 的 OpenSpec 指令文件（propose、apply、archive 三个指令或 openspec-propose 等同名技能），就在 DOC_ROOT 下运行 openspec init --tools <当前 CLI> --no-animation . 补装；--tools 取 claude、codex、command-code、pi 里对应你自己的那个（openspec init --help 列出全部可选值）。已初始化的项目重跑这条命令只补指令文件，不动已有的 specs 和 changes。指令文件装在 DOC_ROOT 下（例如 .claude/、.agents/skills/、.pi/、.commandcode/ 下的 opsx 指令和 openspec-* 技能），斜杠菜单里看不到不算缺失：后面阶段用 /opsx 指令时读这些文件照着做。
 4. 扫描 openspec/changes/ 下缺 .openspec.yaml 的目录，只报告不修改。
 写明这次装了什么（命令和版本）。安装或初始化失败、或第 4 步有缺 .openspec.yaml 的目录时，写出命令和完整报错或目录清单，按不通过交；否则按通过交。${VERDICT_TOOL_TEXT}{{/if}}
-{{#if stage=落规范}}根据已确认的设计和压测记录创建变更：proposal（含非目标和可核对的验收）、specs、design、tasks（3–7 组，每条写验证方式和对应的需求）、acceptance 骨架；读相关模块的 README 和 bugs.md，命中的历史 Bug 写进 design。{{/if}}
-{{#if stage=规范门禁}}检查上面的规范：openspec validate 通过；每条 spec 需求都有 task 覆盖验证；design 里没有「待定」。逐条列出问题。${VERDICT_TOOL_TEXT}{{/if}}
+{{#if stage=落规范}}根据已确认的设计和压测记录创建变更：proposal（含非目标和可核对的验收）、specs、design、tasks（3–7 组，每条写验证方式和对应的需求）、acceptance 骨架；读相关模块的 README 和 bugs.md，命中的历史 Bug 写进 design。上游没落盘 grilling.md 就按已确认的决策补建；每条 task 的验证只依赖它前面的 task。{{/if}}
+{{#if stage=规范门禁}}检查上面的规范：openspec validate 通过；每条 spec 需求都有 task 覆盖验证；design 里没有「待定」。只有这三条不满足才判不通过（must: true），其他要求列成建议（must: false）；逐条列出问题，同类问题一次列全。${VERDICT_TOOL_TEXT}{{/if}}
 {{#if stage=归档}}归档前检查：tasks 没有未勾选的项，每个勾选都在 acceptance 里有证据；满足后执行归档（先归档，再做版本控制收尾）。不满足就列出缺口并停下。{{/if}}`,
   }),
 

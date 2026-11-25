@@ -229,4 +229,9 @@ export const EN_ALERTS: Record<string, string> = {
   '按它说的补上信息或做完那一步，再发消息让它接着做；不认同就直接告诉它该怎么做。':
     'Provide what it asked for or do that step, then send a message so it carries on. If you disagree, tell it what to do instead.',
   '诊断报告没通过面板核对，停下等你：{need}': 'Diagnosis report failed the panel checks; waiting for you: {need}',
+  验收没有通过: 'Review did not pass',
+  '这个节点的验收流程连着几轮都判不通过，问题没有变少，面板按工作流设的验收轮数停下了。下面是最后一轮的意见。':
+    "This node's review failed several rounds in a row without the issues getting fewer, so the panel stopped at the workflow's review round limit. The last round's feedback is below.",
+  '看意见判断：点「继续执行」会带上这些意见重做这个节点；意见不合理就调整工作流里验收的说明或「验收最多轮数」。':
+    'Judge the feedback: Continue reruns this node with it; if the feedback is unreasonable, adjust the review instructions or "Max review rounds" in the workflow.',
 }

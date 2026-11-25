@@ -1227,6 +1227,7 @@ export const AlertKind = z.enum([
   'unfinished', // 计划没做完就停下，面板推满了还这样
   'panel', // 面板自己出错
   'plugin', // 插件出错、超时（挂工具、启动），这一轮用不了它的工具
+  'review', // 工作流节点验收到上限还没通过
 ])
 export type AlertKind = z.infer<typeof AlertKind>
 
