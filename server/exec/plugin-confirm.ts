@@ -23,8 +23,8 @@ export async function pluginConfirm(
   const { task } = ctx
   const rule = req.rule ? pluginRule(req.rule) : ''
   const label = req.ruleLabel?.trim() || ''
-  // 工作流自带的授权（WorkflowFields.grants）：运行里不弹卡，和「一直允许」一样留一行，写明是哪个工作流给的
-  const preset = presetFor(task, rule)
+  // 工作流或正在跑的节点自带的授权（WorkflowFields.grants / FlowNode.grants）：运行里不弹卡，和「一直允许」一样留一行，写明是哪个工作流给的
+  const preset = presetFor(task, rule, run.step)
   if (preset) {
     task.messages.push(
       systemNote(

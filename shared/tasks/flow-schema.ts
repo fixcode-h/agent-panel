@@ -67,5 +67,10 @@ export const FlowRun = z.object({
   preAnswer: z.object({ allow: z.boolean(), answer: z.string().default('') }).optional(),
   /** 已经就哪个阶段给父对话写过信（同一阶段只写一次，面板重启后也不重写） */
   told: z.string().default(''),
+  /**
+   * 起运行时说好跳过的主流程节点（节点 id；复盘 2026-11-25 B2：用户说「设计已经做完了，不要重做」，设计节点照样核对了一遍）。
+   * 跳过的节点直接记成完成，输出写明是跳过的，后面的节点照常拿到运行的输入往下走
+   */
+  skip: z.array(z.string()).default([]),
 })
 export type FlowRun = z.infer<typeof FlowRun>
