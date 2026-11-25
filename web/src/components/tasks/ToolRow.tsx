@@ -40,6 +40,7 @@ import { Collapse } from '@/components/ui/collapse'
 import { toolRole } from '@/lib/fold-roles'
 import { DispatchSlot } from './route-context'
 import { LearnedCard } from './LearnedCard'
+import { StopJobsButton } from './StopJobsButton'
 import { useProjectExperience } from '@/lib/experience-store'
 import type { ProjectExperience } from '@shared/experience'
 
@@ -690,6 +691,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         openTip={target?.tip}
         titleTip={titleTip}
         failed={tool.failed}
+        // 还在后台跑的命令（run_background、申请编译）：行尾给终止，和运行区那一行同一个按钮
+        action={bg && task?.id ? <StopJobsButton taskId={task.id} jobs={mine} compact /> : undefined}
       >
         {
           <div className="divide-y divide-pop-edge">

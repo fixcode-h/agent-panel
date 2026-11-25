@@ -29,6 +29,7 @@ import {
 } from './child-line'
 import { BugStepDots } from './BugStepDots'
 import { ChildConfirmButton } from './ChildConfirm'
+import { StopJobsButton } from './StopJobsButton'
 import { Button } from '@/components/ui/button'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
@@ -157,7 +158,7 @@ function childMs(
  * 窗口按 jobId 自己轮询，见 JobDialog）。窗口挂在任务页顶层而不是这一行里：命令跑完这一行就消失了，
  * 跟着行卸载的话用户正好看不到最终输出
  */
-function JobRow({ job, now }: { job: TaskJob; now: number }) {
+function JobRow({ job, now, taskId }: { job: TaskJob; now: number; taskId?: string }) {
   const [open, setOpen] = useState(false)
   const openJob = useJobOpen()
   const started = job.startedAt ? Date.parse(job.startedAt) : 0
@@ -180,6 +181,7 @@ function JobRow({ job, now }: { job: TaskJob; now: number }) {
           : undefined
       }
       openTip={t('打开命令行窗口')}
+      action={taskId ? <StopJobsButton taskId={taskId} jobs={[job]} compact /> : undefined}
     >
       <pre className="border-t bg-card/60 px-3.5 py-2.5 font-mono text-footnote leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
         {job.command}
@@ -192,7 +194,7 @@ function JobRow({ job, now }: { job: TaskJob; now: number }) {
  * 子任务起的后台命令：一个子任务只占一行（行首「子任务」、标题是它的名字），后面写命令名或「n 条后台命令」，
  * 展开看每条命令。计时从最早开始的那条算，和父对话的后台命令同一个口径
  */
-function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now: number }) {
+function StepJobsRow({ title, jobs, now, taskId }: { title: string; jobs: TaskJob[]; now: number; taskId?: string }) {
   const [open, setOpen] = useState(false)
   const starts = jobs.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter((x) => x > 0)
   const started = starts.length ? Math.min(...starts) : 0
@@ -215,6 +217,7 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
       ms={started ? now - started : undefined}
       open={open}
       onToggle={() => setOpen(!open)}
+      action={taskId ? <StopJobsButton taskId={taskId} jobs={jobs} compact /> : undefined}
     >
       <div className="flex flex-col divide-y border-t bg-card/60">
         {jobs.map((j) => (
@@ -391,10 +394,10 @@ export function RunningNow({
           />
         ))}
       {restJobs.map(({ step, jobs }) => (
-        <StepJobsRow key={step.id} title={step.title || t('未命名')} jobs={jobs} now={now} />
+        <StepJobsRow key={step.id} title={step.title || t('未命名')} jobs={jobs} now={now} taskId={task?.id} />
       ))}
       {ownJobs.map((j) => (
-        <JobRow key={j.id} job={j} now={now} />
+        <JobRow key={j.id} job={j} now={now} taskId={task?.id} />
       ))}
       {rows.map((k) => (
         <ChildLiveRow key={k.id} k={k} now={now} openChild={openChild} />

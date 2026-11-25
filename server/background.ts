@@ -6,7 +6,8 @@ import { currentShell } from './shells.ts'
 import type { ShellInfo } from '../shared/shells.ts'
 import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
-import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/panel-tools.ts'
+import { bgPendingIds, bgResultHead, opensWindow } from '../shared/panel-tools.ts'
+import { settleJobRow } from '../shared/jobs/job-row.ts'
 import { fmtDuration } from '../shared/duration.ts'
 import { failLostWaits } from '../shared/plan/lost.ts'
 import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
@@ -22,6 +23,7 @@ import {
   bgSlowNotice,
   bgStallNotice,
   bgTimeoutLine,
+  bgUserStopHead,
 } from '../shared/prompt/letters/background.ts'
 
 /**
@@ -71,6 +73,11 @@ export interface BgJob {
    * 面板退出、归档、删除这些生命周期停（stop(taskId)）不回调，父对话测试由重启后的 recoverParentTests 重排
    */
   stopRequested?: boolean
+  /**
+   * 用户在页面上点「终止」停的（运行区、工具行、命令行窗口的终止按钮）：结果要推回对话，写明是用户终止的，
+   * 不然 Agent 一直等一个不会来的结果，或者把停下当成失败去排查、自己重跑。常驻服务不推（对话没在等它）
+   */
+  byUser?: boolean
   /** 额外的环境变量（子对话的独立分支禁止推送） */
   env?: { key: string; value: string }[]
   /**
@@ -164,6 +171,7 @@ const STATE_TEXT: Record<BgJob['state'], string> = {
 export const jobMs = (j: BgJob) => Math.max(0, Date.parse(j.endedAt) - Date.parse(j.startedAt || j.createdAt))
 
 function headText(j: BgJob) {
+  if (j.state === 'stopped' && j.byUser) return bgUserStopHead(j.name, fmtDuration(jobMs(j)))
   return j.state === 'stopped'
     ? `后台命令「${j.name}」被停止了（跑了 ${fmtDuration(jobMs(j))}）`
     : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${fmtDuration(jobMs(j))}）`
@@ -410,7 +418,13 @@ export function createBackground(
   // 只给提炼后的日志（错误和警告行、结尾几十行、完整日志路径；成功只给最后几行），不再整段 6000 字进上下文；
   // brief 的（UE 编译）只报状态，失败带日志路径
   const resultText = (j: BgJob) =>
-    bgResultLetter({ head: headText(j), changed: !!j.changed, command: j.brief ? '' : j.command, body: jobBody(j) })
+    bgResultLetter({
+      head: headText(j),
+      changed: !!j.changed,
+      command: j.brief ? '' : j.command,
+      body: jobBody(j),
+      ...(j.state === 'stopped' && j.byUser ? { byUser: true } : {}),
+    })
 
   /**
    * 置终态并把结果交给发起方：除了「被停止且不需要通知」的命令，其余都走这里收口。
@@ -421,7 +435,7 @@ export function createBackground(
    */
   function settle(j: BgJob, state: BgJob['state'], info: { code?: number | null; note?: string } = {}) {
     if (!finish(j, state, info)) return false
-    if (state === 'stopped' && !(j.notifyOnStop && j.stopRequested)) return true
+    if (state === 'stopped' && !(j.stopRequested && (j.notifyOnStop || (j.byUser && !j.service)))) return true
     if (j.quiet) return true
     onDone(j, resultText(j))
     return true
@@ -658,13 +672,19 @@ export function createBackground(
         })
         .join('\n')
     },
-    /** 停掉这个对话的一条后台命令（对话判断它卡住了）：结果照常推回，说明是被停止的 */
-    stopOne(taskId: string, id: string) {
+    /**
+     * 停掉这个对话的一条后台命令。对话自己停（stop_background）的不推回结果；
+     * byUser（用户在页面上点终止）的推回「已被用户终止」，Agent 才知道不用再等、也别自己重跑
+     */
+    stopOne(taskId: string, id: string, o: { byUser?: boolean } = {}) {
       const j = jobs.get(id)
       if (!j || j.taskId !== taskId) return { ok: false, info: `没有编号 ${id} 的后台命令` }
       if (j.endedAt) return { ok: false, info: `编号 ${id} 已经结束了（${STATE_TEXT[j.state]}）` }
+      // 重复点终止（进程还在退出、记录没置终态）：已经在停了，不再重复发信号，也不算失败
+      if (j.stopRequested) return { ok: true, info: `后台命令「${j.name}」正在停止` }
       // 记下是「明确停这一条」：父对话测试靠它判断要不要把结论交回子对话（见 settle）
       j.stopRequested = true
+      if (o.byUser) j.byUser = true
       if (j.state === 'queued') settle(j, 'stopped')
       else {
         aborts.get(j.id)?.abort()
@@ -756,29 +776,10 @@ export function createBackground(
 
 /** 结束时那一行旁边的小字：成功不写，被停止、失败写清楚 */
 export const jobDetail = (j: BgJob) =>
-  j.state === 'done' ? '' : j.state === 'stopped' ? '已停止' : `退出码 ${j.code ?? '无'}`
+  j.state === 'done' ? '' : j.state === 'stopped' ? (j.byUser ? '用户终止' : '已停止') : `退出码 ${j.code ?? '无'}`
 
-/**
- * 把一条后台命令的结果接到对话里发起它的那一行（run_background、request_build）后面。
- * 只认还在等这条结果的那一行；那一行交出去的编号全有结果了才记用时和小字，界面从这时起不再转圈。
- * 返回有没有改到
- */
-export function settleJobRow(task: Task, id: string, text: string, ok: boolean, ms: number, detail: string) {
-  for (let i = task.messages.length - 1; i >= 0; i--) {
-    const tool = task.messages[i].tools.find((x) => bgPendingIds(x.output ?? '').includes(id))
-    if (!tool) continue
-    tool.output = `${(tool.output ?? '').replace(/\s+$/, '')}\n\n${text}`
-    if (!ok) tool.failed = true
-    if (!bgPendingIds(tool.output).length) {
-      tool.running = undefined
-      // 一行一条命令时用时就是这条命令的；申请的编译有几条，按最后一条的算（它们按目录排队一条接一条）
-      tool.ms = bgJobIds(tool.output).length > 1 ? (tool.ms ?? 0) + ms : ms
-      tool.detail = tool.failed ? detail || tool.detail : ''
-    }
-    return true
-  }
-  return false
-}
+// 那一行收口的逻辑在 shared（演示后端终止命令时也要同样收口）
+export { settleJobRow }
 
 /**
  * 对话里还在等结果、但面板已经不认识的后台命令（面板被强杀、崩溃后重启，记录只在内存里）：

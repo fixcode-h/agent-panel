@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
+import { ListTree, Loader2, Sparkles, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
@@ -12,13 +12,12 @@ import { useNow } from '@/lib/useNow'
 import { type ScrollStart, useStickToBottom } from '@/lib/useStickToBottom'
 import { helperBriefView } from '@/lib/helper-brief'
 import { useEscape } from '@/lib/useEscape'
-import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import { StopButton } from '@/components/ui/stop-button'
 import { type StatusTone } from '@/components/ui/status-pill'
 import { ChatWindow, WIN_BTN } from '@/components/ai-window/ChatWindow'
 import { ComposerPopover } from '@/components/ui/composer-popover'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
@@ -40,8 +39,10 @@ async function stopHelper(task: Task, step: TaskStep) {
   try {
     await api.stopSubtask(task.id, step.id)
     toast.success(t('已终止子任务「{title}」', { title: step.title }))
+    return true
   } catch (e) {
     toast.error((e as Error).message)
+    return false
   }
 }
 
@@ -67,42 +68,15 @@ export function StopHelper({
   label?: boolean
   compact?: boolean
 }) {
-  const [busy, setBusy] = useState(false)
   if (!stoppable(step)) return null
-  const stop = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setBusy(true)
-    await stopHelper(task, step)
-    setBusy(false)
-  }
-  const tip = t('终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话')
-  if (!label)
-    return (
-      <IconButton
-        size={compact ? '2xs' : 'sm'}
-        tone="danger"
-        icon={busy ? undefined : Square}
-        label={t('终止子任务')}
-        title={tip}
-        disabled={busy}
-        onClick={stop}
-      >
-        {busy ? <Loader2 className={cn('animate-spin', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} /> : undefined}
-      </IconButton>
-    )
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={busy}
-      aria-label={t('终止子任务')}
-      title={tip}
-      onClick={stop}
-      className="shrink-0 text-subtle hover:text-danger"
-    >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-      {t('终止')}
-    </Button>
+    <StopButton
+      onStop={() => stopHelper(task, step)}
+      label={t('终止子任务')}
+      tip={t('终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话')}
+      compact={compact}
+      withText={label}
+    />
   )
 }
 

@@ -132,6 +132,7 @@ export function CommandDialog({
   code,
   /** 拉输出失败的原因（后台命令的窗口轮询接口）：失败也要看到，不能只当没输出 */
   error,
+  stop,
   open,
   onOpenChange,
 }: {
@@ -148,6 +149,8 @@ export function CommandDialog({
   /** 退出码（后台命令结束后有）：失败、被停止时要看得到是退出码几还是被信号杀掉 */
   code?: number | null
   error?: string
+  /** 还在跑时标题栏上的终止按钮（后台命令窗口传 StopJobsButton）；结束了就不显示 */
+  stop?: React.ReactNode
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -190,6 +193,7 @@ export function CommandDialog({
         }
         actions={
           <>
+            {jobLive(phase) && stop}
             <ModalButton icon={Copy} label={t('复制命令')} onClick={() => copy(command, t('已复制命令'))} />
             <ModalButton
               icon={Copy}
