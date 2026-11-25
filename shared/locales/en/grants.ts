@@ -32,4 +32,10 @@ export const EN_GRANTS: Record<string, string> = {
   '「允许一次」只放行这一次；「本对话不再询问」之后这个对话里这个门禁都不再拦。':
     "Allow once lets it through this one time; Don't ask again stops this gate from blocking for the rest of this conversation.",
   '「{name}」拦下的操作': 'operations blocked by "{name}"',
+  '「{title}」验收 {round} 轮还没通过：按现状通过往下走，还是再改一轮？':
+    '"{title}" has not passed review after {round} rounds: accept it as is and continue, or revise once more?',
+  '「再改一轮」把这些意见交回节点改一次，改完还不过会再问你；要停下自己看，点停止。':
+    'Revise once more sends this feedback back to the node for one more pass and asks you again if it still fails. To stop and look yourself, press Stop.',
+  按现状通过: 'Accept as is',
+  再改一轮: 'Revise once more',
 }

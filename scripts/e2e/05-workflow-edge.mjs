@@ -725,20 +725,41 @@ await runShard('工作流条件与失败', async (api) => {
           },
     ),
   })
+  // 验收轮数用完仍不通过：弹卡问用户「按现状通过 / 再改一轮」（用户指令优先），不再直接按失败停下
+  const limitReq = async (id) => {
+    for (let i = 0; i < 100; i++) {
+      const t = await call('GET', `/tasks/${id}`)
+      if (t.requests.length) return t.requests[0]
+      await sleep(100)
+    }
+    throw new Error('没有等到验收到上限的卡片')
+  }
+  const before3 = calls().length
   let h2 = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '只验收一轮' })
+  const lr = await limitReq(h2.id)
+  assert.equal(lr.purpose, 'override')
+  assert.equal(lr.allowLabel, '按现状通过')
+  assert.equal(lr.denyLabel, '再改一轮')
+  assert.match(lr.title, /验收 1 轮还没通过/)
+  // 卡上和返工提示里都是 submit_verdict 交的意见原文
+  assert.match(lr.detail, /必须改（1 条[\s\S]*R1：child-done\.txt 只写了一行/)
+  await call('POST', `/tasks/${h2.id}/requests/${lr.id}`, { allow: false })
   h2 = await waitDone(h2.id)
-  assert.equal(h2.status, 'failed')
-  assert.match(
-    h2.messages
-      .filter((m) => m.error)
-      .map((m) => m.text)
-      .join('\n'),
-    /验收 1 轮仍未通过/,
+  assert.equal(h2.status, 'done', JSON.stringify(h2.messages.filter((m) => m.role === 'system')))
+  assert.ok(h2.messages.some((m) => m.role === 'system' && /你选了再改一轮/.test(m.text)))
+  assert.ok(
+    calls()
+      .slice(before3)
+      .some((k) => /验收没有通过（第 1 轮）[\s\S]*必须改（1 条[\s\S]*R1：/.test(k.input)),
+    '返工提示带上意见清单',
   )
-  assert.deepEqual(
-    h2.steps.filter((s) => !s.parentId).map((s) => s.status),
-    ['failed', 'pending'],
-  )
+  let h3 = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '只验收一轮，按现状过' })
+  const lr3 = await limitReq(h3.id)
+  await call('POST', `/tasks/${h3.id}/requests/${lr3.id}`, { allow: true })
+  h3 = await waitDone(h3.id)
+  assert.equal(h3.status, 'done')
+  assert.equal(h3.steps.find((s) => s.id === 'x').verdict, 'pass')
+  assert.ok(h3.messages.some((m) => m.role === 'system' && /你选了按现状通过/.test(m.text)))
   // 保存时拦下有问题的流程图：自己调用自己、节点连成环
   await assert.rejects(
     call('POST', '/workflows', {
@@ -784,7 +805,9 @@ await runShard('工作流条件与失败', async (api) => {
     /连成了环/,
   )
   await call('PUT', `/projects/${project.id}`, { ...project, workflowId: wf.id })
-  step('节点入口：开始流程的结果交给节点，验收不通过退回完善、轮数用完失败，结束流程、流程节点、引用其他工作流都能执行')
+  step(
+    '节点入口：开始流程的结果交给节点，验收不通过带着意见清单退回完善、轮数用完问用户放行或再改，结束流程、流程节点、引用其他工作流都能执行',
+  )
 
   // ---- 系统默认 CLI 和模型档位 ----
   await call('PUT', '/settings', {

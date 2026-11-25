@@ -82,6 +82,15 @@ export const reviewVerdict = (
   round: number,
 ) => verdictOf(latestVerdict(steps.filter((s) => s.parentId === parentId && s.slot === 'review' && s.round === round)))
 
+/** 同一轮验收最后交结论时列的意见（返工时原文交回节点，shared/engine/review-loop.ts） */
+export const reviewBlockers = (
+  steps: (WithSubmitted & { parentId: string; slot: string; round: number })[],
+  parentId: string,
+  round: number,
+): Blocker[] =>
+  latestVerdict(steps.filter((s) => s.parentId === parentId && s.slot === 'review' && s.round === round))?.submitted
+    ?.blockers ?? []
+
 /**
  * 要交结论的这一轮结束了却没调 submit_verdict：在同一个会话里补问一次，两次的输出合在一起。
  * 补问后还没交，由调用方按「没交结论」处理（不再默认通过）

@@ -151,4 +151,8 @@ export const EN_SHARED: Record<string, string> = {
   '计划还没做完，这一轮停下了': 'The plan is not finished yet; this turn has stopped',
   '卡住 {done}/{total}': 'Stuck {done}/{total}',
   '未完成 {done}/{total}': 'Unfinished {done}/{total}',
+  '「{title}」第 {round} 轮验收未通过，你选了再改一轮。':
+    '"{title}" failed review round {round}; you chose one more revision.',
+  '「{title}」第 {round} 轮验收仍未通过，你选了按现状通过，继续往下执行。':
+    '"{title}" still failed review round {round}; you chose to accept it as is and continue.',
 }

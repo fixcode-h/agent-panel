@@ -46,6 +46,9 @@ export const TaskRequest = z.object({
   rule: z.string().optional(),
   /** 规则给人看的说法：插件确认的规则（plugin:<键>）键是插件起的，按钮和记录用插件给的这句（插件接口 17） */
   ruleLabel: z.string().optional(),
+  /** 「允许 / 拒绝」卡片换成这件事自己的说法（例如验收到上限：「按现状通过」「再改一轮」）；不写用默认的 */
+  allowLabel: z.string().optional(),
+  denyLabel: z.string().optional(),
   /**
    * 节点确认：Agent 用 submit_report 交的各版阶段报告，最后一版没处理过时就是这次要审的。
    * 审阅弹窗按它分区排版、决策画成勾选、能切版本和对比上一版；没交的旧节点只有 detail
