@@ -50,13 +50,14 @@ export type Picks = Record<string, string>
 /**
  * 报告的一版（用户 2026-11-15 定：改了决策就重出一版，有版本号，参照诊断报告）。
  * 最后一版没有 result 时就是正在等确认的那一版；result 记用户怎么处理的：
- * confirmed 确认往下走、changed 改了决策退回重出、revised 写了修改意见退回、next 确认了这一轮接着下一轮
+ * confirmed 确认往下走、changed 改了决策退回重出、revised 写了修改意见退回、next 确认了这一轮接着下一轮、
+ * auto 接着问的这一版没有新问题，面板直接按通过记下（见 autoSettle）
  */
 export const StageReportVersion = z.object({
   report: StageReport,
   at: z.string().default(''),
   picks: z.record(z.string(), z.string()).optional(),
-  result: z.enum(['confirmed', 'changed', 'revised', 'next']).optional(),
+  result: z.enum(['confirmed', 'changed', 'revised', 'next', 'auto']).optional(),
 })
 export type StageReportVersion = z.infer<typeof StageReportVersion>
 
@@ -183,4 +184,19 @@ export function reportOutput(rep: StageReport, picks?: Picks, plain = false) {
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/**
+ * 用户确认了上一版（没改决策）、因为报告里写了 next 回到 Agent 接着问，交上来的这一版却没有新的、要用户拍板的决策：
+ * 只是把上一版重述一遍，不再停下来让用户什么都没改又确认一次（用户 2026-11-25：「完全没有调整选项确认还会再出一个报告确认，是不是多余」）。
+ * 这时把这一版记成 auto，返回交给下游的结果；要停下来给用户看时返回空串。用户改了决策重出的那版照常给用户看
+ */
+export function autoSettle(list: StageReportVersion[] | undefined): string {
+  const v = pendingReport(list)
+  const prev = list?.at(-2)
+  if (!list || !v || prev?.result !== 'next') return ''
+  const before = new Set(list.slice(0, -1).flatMap((x) => x.report.decisions.filter((d) => !d.self).map((d) => d.id)))
+  if (v.report.decisions.some((d) => !d.self && !before.has(d.id))) return ''
+  v.result = 'auto'
+  return reportOutput(v.report)
 }

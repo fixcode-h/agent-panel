@@ -66,7 +66,7 @@ import { makeAlert } from '../alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from '../prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from '../summary/card.ts'
 import { ensureVerdict, submitOn, verdictOf, type Blocker } from '../submitted.ts'
-import { settleReport, type StageReport } from '../flow/stage-report.ts'
+import { autoSettle, settleReport, type StageReport } from '../flow/stage-report.ts'
 
 import { beginTurn, endTurn, pauseStep, stopReasonText } from '../task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from '../conv-mode.ts'
@@ -667,12 +667,14 @@ async function runNodeSingle(
 
   // 已经验收过的结果（回到确认、追问之后）不再验收一遍
   let reviewed = atConfirm
+  // 按 next 接着问出来的一版没有新问题：验收完直接往下走，不再停下等确认（stage-report.ts 的 autoSettle）
+  let autoPass = false
   for (;;) {
     const rf = reviewed ? null : await review()
     reviewed = false
     if (rf) return fail(rf)
     // 完成后等用户确认：通过就往下走；退回时带着意见返工，再验收、再确认
-    if (!node.hooks.confirm || !host.confirm) break
+    if (!node.hooks.confirm || !host.confirm || autoPass) break
     if (host.halted) return fail({ ok: false, halted: true, error: '' })
     // 先把结果和「停在等确认」落盘：这时被停下，继续时直接回到确认（见开头的 atConfirm）
     step.output = text
@@ -688,7 +690,9 @@ async function runNodeSingle(
       host.changed(true)
       const nx = await rework(settled.follow, `用户确认了决策：\n${settled.follow}`)
       if (!nx.ok) return fail(nx)
-      text = nx.text
+      const auto = autoSettle(step.submitted?.reports)
+      autoPass = !!auto
+      text = auto || nx.text
       continue
     }
     if (c.allow) break
@@ -982,7 +986,7 @@ async function runNodeSteps(
   }
 
   /** 这一步完成后等用户确认：退回时只重做这一步 */
-  const confirmUnit = async (i: number): Promise<Fail | 'rework' | 'ask' | null> => {
+  const confirmUnit = async (i: number): Promise<Fail | 'rework' | 'ask' | 'auto' | null> => {
     const unit = units[i]
     const r = recordOf(i)
     if (!unit.confirm || !host.confirm) return null
@@ -1000,8 +1004,10 @@ async function runNodeSteps(
       host.changed(true)
       const nx = await reworkText(i, settled.follow, `用户确认了决策：\n${settled.follow}`)
       if (!nx.ok) return nx
-      texts[i] = nx.text
-      return 'rework'
+      // 接着问出来的一版没有新问题：验收完直接往下走（stage-report.ts 的 autoSettle）
+      const auto = autoSettle(r.submitted?.reports)
+      texts[i] = auto || nx.text
+      return auto ? 'auto' : 'rework'
     }
     if (c.allow) return null
     if (c.ask) {
@@ -1045,6 +1051,11 @@ async function runNodeSteps(
       if (cf === 'ask') {
         reviewed = true
         continue
+      }
+      if (cf === 'auto') {
+        const ra = await reviewUnit(i)
+        if (ra) return fail(ra, recordOf(i))
+        break
       }
       if (cf && cf !== 'rework') return fail(cf, recordOf(i))
       if (cf === 'rework') continue

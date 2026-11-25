@@ -83,12 +83,13 @@ test('同一目录的订阅共用一个系统监听；watchFiles 一次保存只
     const f = path.join(dir, 'gm.json')
     await writeFile(f, '{}')
     const calls: string[][] = []
-    const w = watchFiles([f], (c) => calls.push(c.map((x) => path.basename(x.file))), { settleMs: 50 })
+    // 停手时间用默认的 300 毫秒：CI 机器忙时两次写之间、事件送达之间能隔出 50 毫秒以上，settleMs 太短会被拆成两次回调
+    const w = watchFiles([f], (c) => calls.push(c.map((x) => path.basename(x.file))))
     await sleep(50)
     await writeFile(f, '{"a":1}')
     await writeFile(f, '{"a":2}')
     for (let i = 0; i < 40 && !calls.length; i++) await sleep(50)
-    await sleep(150)
+    await sleep(400)
     w.close()
     assert.deepEqual(calls, [['gm.json']])
   } finally {

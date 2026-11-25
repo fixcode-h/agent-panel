@@ -1,6 +1,6 @@
 ---
 name: lua-code-style
-description: 编写或修改 Lua 代码时使用；规定换行（非必要不换行、不按字数或列宽换行，只在代码块、多行 table、回调函数体、多行字符串处换行，日志调用写一行）、常用写法（local、`:` 与 `.`、拼接）、校验与防御（什么时候判空、什么时候做类型校验，避免过度防御）和日志（格式 `[模块名称] 类名/模块名=>函数名  具体日志内容`，避免高频日志），缩进、命名、引号沿用项目既有约定。触发：写或改 Lua 代码、Lua 排版、Lua 日志。不用于 C++/UE 或 C#。
+description: 编写或修改 Lua 代码时使用；规定换行（非必要不换行、不按字数或列宽换行，只在代码块、多行 table、回调函数体、多行字符串处换行，日志调用写一行）、常用写法（local、`:` 与 `.`、拼接）、校验与防御（什么时候判空、什么时候做类型校验，避免过度防御）和日志（格式 `[模块英文名] 类名/模块名=>函数名  具体日志内容`，标签用所属模块的英文名、不用中文，避免高频日志），缩进、命名、引号沿用项目既有约定。触发：写或改 Lua 代码、Lua 排版、Lua 日志。不用于 C++/UE 或 C#。
 user-invocable: true
 ---
 
@@ -107,7 +107,7 @@ end
 function ZoneMgr:EnterZone(zoneId)
     local cfg = ZoneConfig[zoneId]
     if not cfg then
-        LogError("[区域] ZoneMgr=>EnterZone  缺少区域配置 zoneId=" .. tostring(zoneId))
+        LogError("[Zone] ZoneMgr=>EnterZone  缺少区域配置 zoneId=" .. tostring(zoneId))
         return
     end
     self:SetState(cfg.InitState)
@@ -119,11 +119,12 @@ end
 格式不变：
 
 ```text
-类/对象方法：  [模块名称] 类名=>函数名  具体日志内容
-模块函数：     [模块名称] 模块名=>函数名  具体日志内容
+类/对象方法：  [模块英文名] 类名=>函数名  具体日志内容
+模块函数：     [模块英文名] 模块名=>函数名  具体日志内容
 ```
 
-- 函数标识必须带定位，不能只写函数名；`[模块名称]` 后一个空格，函数标识和内容之间固定**两个**空格。
+- **`[模块英文名]` 用日志所在模块的英文名**（模块目录 / 模块类名去掉 `System`、`Module`、`Mgr` 这类后缀，如 `ClinkGlassesSystem` 写 `[ClinkGlasses]`；项目里同模块已有日志标签就沿用那一个），**不用中文**（不写 `[碰杯]`、`[家园装饰]`）：英文标签能直接按模块名搜代码、在日志里过滤，也不怕编码问题。日志内容本身可以写中文。
+- 函数标识必须带定位，不能只写函数名；`[模块英文名]` 后一个空格，函数标识和内容之间固定**两个**空格。
 - 先确认日志所在的类 / 对象和函数，不根据文件名或日志内容去猜。
 - 级别由已有日志接口表达（如 `LogError`、`LogWarn`），消息里不加 `Error=>` 之类的前缀；不新增日志函数或包装器。
 - **避免高频日志，只在必要路径加必要的日志**：必要路径指失败 / 异常分支、重要状态切换、关键流程的结果。Tick、每帧回调、循环体、频繁调用的函数里一律不打；不给每一步打「开始 / 结束」；成功的常规路径默认不打；排查用的临时日志改完删掉。一条日志写清一件事，只带定位需要的关键参数。
@@ -133,7 +134,7 @@ end
 function HomeDecoration:ApplyMaterial(materialId)
     local material = self:FindMaterial(materialId)
     if not material then
-        LogError("[家园装饰] HomeDecoration=>ApplyMaterial  找不到材质 materialId=" .. tostring(materialId))
+        LogError("[HomeDecoration] HomeDecoration=>ApplyMaterial  找不到材质 materialId=" .. tostring(materialId))
         return false
     end
     return self:SetMaterial(material)
@@ -141,7 +142,7 @@ end
 
 -- 模块函数：模块名=>函数名
 local function RefreshList()
-    LogWarn("[家园装饰] HomeDecorationModule=>RefreshList  列表为空，跳过刷新")
+    LogWarn("[HomeDecoration] HomeDecorationModule=>RefreshList  列表为空，跳过刷新")
 end
 ```
 
@@ -152,5 +153,5 @@ end
 1. 没有过度防御：来源明确的参数没做类型判断和判空，只在找不到 / 可选 / 异步 / 外部数据处检查，检查失败没有悄悄吞掉。
 2. 新变量和函数都是 `local`，`:` / `.` 没混用，拼接的值不会是 `nil`。
 3. 新写的条件、`return`、赋值、函数调用、日志调用没有被拆成续行，换行只出现在上面列出的几种情况（项目格式化配置规定了列宽的除外）。
-4. 日志是 `[模块名称] 类名/模块名=>函数名  具体日志内容`，定位完整、两个空格、没有级别前缀，只打在必要路径、没有高频日志。
+4. 日志是 `[模块英文名] 类名/模块名=>函数名  具体日志内容`，标签是模块英文名不是中文，定位完整、两个空格、没有级别前缀，只打在必要路径、没有高频日志。
 5. 用的是项目已有日志接口，没有新增包装器；没动范围外的旧代码。

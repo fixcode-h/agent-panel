@@ -216,6 +216,7 @@ export function redoLabel(prev: StageReportVersion | undefined) {
     revised: t('按你的修改意见重出'),
     next: t('确认上一轮后接着问'),
     confirmed: '',
+    auto: '',
   }[prev.result]
 }
 
