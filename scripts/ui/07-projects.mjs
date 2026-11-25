@@ -602,6 +602,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
     await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
     await footSpace('常规')
+    // 文件索引那一块的分工说明（ADR 0081）：Agent 只调面板的 find，说明里不再列各家工具名
+    await dlg.getByText('找文件、找代码的分工').scrollIntoViewIfNeeded()
+    await check(p, '项目设置-常规-查找分工', ['找文件、找代码的分工', '都调面板的 find'])
     // 能力（设计稿：Agent侧栏与项目管理重设计 6.3）：按项目生效的插件卡片（演示给表格、UE 两个示例）、
     // MCP 和技能列表、右栏「交给 Agent 的」；项目目录里的技能和 MCP 配置挪到了项目工具的「技能与 MCP」页（下面单独测）
     await dlg.getByRole('button', { name: /^能力/ }).click()

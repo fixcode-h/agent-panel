@@ -11,7 +11,7 @@ import { paramsOf } from '../shared/mcp-catalog/describe.ts'
 import { mcpServerObject, sameServer, type McpActivation } from '../shared/mcp-library/inject.ts'
 import { loadProjectMcp, saveProjectMcp } from './mcp-library/file.ts'
 import { expandHome } from './cli/extras.ts'
-import { childEnv, runProcess } from './exec/process.ts'
+import { openMcp, type McpSession } from './mcp-client/session.ts'
 import { writeCliConfigJson, writeCliConfigText } from './cli/config-write.ts'
 import { getSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
@@ -462,14 +462,6 @@ export const fallbackClis = () =>
  * cwd 给了就在那个目录里启动（项目里的配置常写相对路径，例如 UEToVS 的 --solution-dir .），不给用面板自己的目录
  */
 export async function testMcp(sv: McpServer, cwd = process.cwd()): Promise<McpTestResult> {
-  const init = {
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'agent-panel', version: '1' } },
-  }
-  const listTools = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }
-  const initialized = { jsonrpc: '2.0', method: 'notifications/initialized' }
   const tools = (r: any) =>
     (r?.tools ?? []).map((x: any) => {
       const shown = titleOfTool(x)
@@ -478,70 +470,15 @@ export async function testMcp(sv: McpServer, cwd = process.cwd()): Promise<McpTe
       // 参数表也带上：外部工具缓存（mcp-catalog/external-titles.ts）存下来，提示词和「参数传错」提醒照它写
       return { name: String(x.name), description, ...(shown && { shown }), params: paramsOf(x.inputSchema) }
     })
+  // 连接和握手走面板统一的 MCP 客户端（server/mcp-client/session.ts），这里只问一次工具表就关掉
+  let s: McpSession | undefined
   try {
-    if (sv.transport === 'http') {
-      let session = ''
-      const post = async (body: object) => {
-        const res = await fetch(sv.url, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            accept: 'application/json, text/event-stream',
-            ...(session && { 'mcp-session-id': session }),
-            ...sv.headers,
-          },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(15_000),
-        })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        session = res.headers.get('mcp-session-id') ?? session
-        const text = await res.text()
-        if (!('id' in body)) return null
-        // 服务可能用 SSE 回答：取 data: 行里 id 对得上的那条
-        const msgs = res.headers.get('content-type')?.includes('event-stream')
-          ? text
-              .split('\n')
-              .filter((l) => l.startsWith('data:'))
-              .map((l) => JSON.parse(l.slice(5)))
-          : [JSON.parse(text)]
-        const m = msgs.find((x) => x.id === (body as any).id)
-        if (m?.error) throw new Error(String(m.error.message ?? 'error'))
-        return m?.result
-      }
-      const i = await post(init)
-      await post(initialized)
-      return { ok: true, server: i?.serverInfo?.name, tools: tools(await post(listTools)) }
-    }
-    const ac = new AbortController()
-    const got: Record<number, any> = {}
-    let error = ''
-    const line = (o: object) => JSON.stringify(o) + '\n'
-    const r = await runProcess({
-      command: sv.command,
-      args: sv.args,
-      cwd,
-      env: childEnv(Object.entries(sv.env).map(([key, value]) => ({ key, value }))),
-      signal: ac.signal,
-      timeoutMs: 20_000,
-      keepStdinOpen: true,
-      stdin: line(init) + line(initialized) + line(listTools),
-      onLine: (l) => {
-        let m: any
-        try {
-          m = JSON.parse(l)
-        } catch {
-          return
-        }
-        if (typeof m.id !== 'number' || m.method) return
-        if (m.error) error = String(m.error.message ?? '')
-        got[m.id] = m.result ?? null
-        if (m.id === 2 || m.error) ac.abort()
-      },
-    })
-    if (!got[2]) throw new Error(error || r.spawnError || r.stderr.trim().split('\n').at(-1) || t('没有回应'))
-    return { ok: true, server: got[1]?.serverInfo?.name, tools: tools(got[2]) }
+    s = await openMcp(sv, cwd)
+    return { ok: true, server: s.serverName, tools: tools(await s.request('tools/list', {}, 20_000)) }
   } catch (e) {
-    return { ok: false, error: (e as Error).message, tools: [] }
+    return { ok: false, error: (e as Error).message || t('没有回应'), tools: [] }
+  } finally {
+    s?.close()
   }
 }
 

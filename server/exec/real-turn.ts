@@ -33,6 +33,7 @@ import { p4ReviewDiff } from '../p4-review-diff.ts'
 import { gitSemantic, p4Semantic } from './review-semantic.ts'
 import { yieldApiSlot } from './api-gate.ts'
 import { fileIndexRun } from '../file-index/agent-tool.ts'
+import { findCodeRun } from '../capability-router/find/run.ts'
 import { fileIndexSettingsOf } from '../../shared/file-index/types.ts'
 import { turnExtra } from './turn-extra.ts'
 
@@ -126,11 +127,11 @@ export async function runRealTurn(ctx: RealContext) {
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
     searchExclude: searchExcludeOf(ctx.project),
     searchInGit: ctx.isGit,
-    // 项目能用的代码索引 MCP 工具（search_lua、search_symbols 这类）：写进搜索那一节，Agent 先按符号查再 rg
+    // 项目能用的代码索引 MCP 工具：提示词不再列它们（find 由面板路由），这里顺带把各服务的工具表问进缓存，第一次 find 不用现等
     codeIndexTools: await codeIndexToolsFor(ctx.project, workDirOf(ctx.task, ctx.project)).catch(() => []),
     // 接了 JetBrains IDE 的 MCP 服务时补上 projectPath 和 execute_tool 的写法（IDE 只认项目目录之内的路径、只认 --参数名 值）
     ideMcpServers: await ideMcpServersFor(ctx.project, workDirOf(ctx.task, ctx.project)).catch(() => []),
-    // 项目文件索引（file_index 工具）：项目开着索引才给
+    // 项目文件索引（find 工具找文件那一半）：项目开着索引才给
     fileIndex:
       ctx.project?.id && ctx.project.path && fileIndexSettingsOf(ctx.project).enabled
         ? fileIndexRun({
@@ -138,6 +139,17 @@ export async function runRealTurn(ctx: RealContext) {
             projectPath: ctx.project.path,
             workDir: workDirOf(ctx.task, ctx.project),
             exclude: searchExcludeOf(ctx.project),
+          })
+        : undefined,
+    // find 工具查代码（ADR 0081 能力路由）：在项目里就给；关了文件索引时只有插件登记的外部路，没有文本兜底
+    findCode:
+      ctx.project?.id && ctx.project.path
+        ? findCodeRun({
+            projectId: ctx.project.id,
+            projectPath: ctx.project.path,
+            workDir: workDirOf(ctx.task, ctx.project),
+            taskId: ctx.task.id,
+            indexOn: fileIndexSettingsOf(ctx.project).enabled,
           })
         : undefined,
     workflowCatalog: ctx.workflowCatalog,

@@ -656,34 +656,7 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
   assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
 })
 
-test('项目开着文件索引：按名字找文件先用 file_index，排除目录里的直接 find（用户 2026-11-23：不拦截，只讲清楚）', async () => {
-  const prompts: string[] = []
-  const task = {
-    ...newTask({ projectId: 'p', mode: 'chat', prompt: '找一下配置文件' } as never, undefined, '', 's1'),
-    id: 's1',
-  } as Task
-  await runEngineTurn({
-    task,
-    agents,
-    workflows: [],
-    prompt: '找一下配置文件',
-    searchExclude: ['Saved'],
-    fileIndex: async () => ({ text: 'a.ts' }),
-    changed: () => {},
-    newId: () => 'x',
-    runAgent: async (call) => {
-      autoSubmit(call)
-      prompts.push(call.prompt)
-      return { ok: true, text: '好了' }
-    },
-  })
-  const part = prompts[0].slice(prompts[0].indexOf('## 搜索（这个项目）')).split('\n## ')[0]
-  assert.match(part, /先用面板的 file_index/)
-  assert.match(part, /索引不收上面的排除目录[^\n]*直接用 find/)
-  assert.doesNotMatch(part, /-maxdepth 4/, '有索引时不再教 find 的整套剪枝')
-})
-
-test('搜索一节先列代码索引 MCP 工具，再 rg（用户 2026-11-14：有 search_lua 不用、先 grep 整个目录）', async () => {
+test('在项目里：找文件、找代码只有一句「用面板的 find」，不列各家工具（ADR 0081，用户 2026-11-25：面板决定走哪条路）', async () => {
   const prompts: string[] = []
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', prompt: '这个 GM 为啥没效果' } as never, undefined, '', 's1'),
@@ -695,10 +668,9 @@ test('搜索一节先列代码索引 MCP 工具，再 rg（用户 2026-11-14：�
     workflows: [],
     prompt: '这个 GM 为啥没效果',
     searchExclude: ['Saved'],
-    codeIndexTools: [
-      { server: 'uetovs', tool: 'search_lua', desc: '按名字搜 Lua 函数' },
-      { server: 'uetovs', tool: 'search_symbols' },
-    ],
+    fileIndex: async () => ({ text: 'a.ts' }),
+    findCode: async () => ({ text: '没有找到。' }),
+    codeIndexTools: [{ server: 'uetovs', tool: 'search_lua', desc: '按名字搜 Lua 函数' }],
     changed: () => {},
     newId: () => 'x',
     runAgent: async (call) => {
@@ -707,10 +679,11 @@ test('搜索一节先列代码索引 MCP 工具，再 rg（用户 2026-11-14：�
       return { ok: true, text: '好了' }
     },
   })
-  const part = prompts[0].slice(prompts[0].indexOf('## 搜索（这个项目）')).split('\n## ')[0]
-  assert.match(part, /uetovs 服务的 `search_lua`：按名字搜 Lua 函数/)
-  assert.match(part, /uetovs 服务的 `search_symbols`/)
-  assert.ok(part.indexOf('search_lua') < part.indexOf('搜文件内容用 rg'), '索引工具排在 rg 前面')
+  const part = prompts[0].slice(prompts[0].indexOf('## 找文件、找代码（这个项目）')).split('\n## ')[0]
+  assert.match(part, /用面板的 find/)
+  assert.match(part, /搜索时排除：[^\n]*Saved/, '排除目录还在：自己用 rg 时照样知道')
+  assert.doesNotMatch(part, /search_lua|lua_code|uetovs|-maxdepth/, '不再列各家工具和 find 的剪枝')
+  assert.ok(part.length < 600, '只有几行')
 })
 
 test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并提醒别加 --no-ignore', async () => {

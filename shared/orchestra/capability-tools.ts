@@ -97,8 +97,9 @@ export function capabilityTools(oc: OrchCtx) {
           propose: helper ? host.lessons.propose : undefined,
         }
       : undefined,
-    // 项目文件索引（file_index）：服务端查好、拼好文字，这里原样转交
+    // 面板的 find 工具：找文件查索引、查代码走能力路由，都在服务端查好、拼好文字，这里原样转交
     fileIndex: host.fileIndex,
+    findCode: host.findCode,
     experience: host.experience
       ? {
           find: async (query, files) =>

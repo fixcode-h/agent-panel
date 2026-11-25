@@ -1,5 +1,5 @@
 /**
- * file_index 工具在服务端的那一半（设计稿：项目文件索引 第 6 节）：查项目的索引、拼成给 Agent 的文字。
+ * find 工具找文件那一半（旧名 file_index）在服务端（设计稿：项目文件索引 第 6 节）：查项目的索引、拼成给 Agent 的文字。
  * 返回默认不超过 4000 字（ADR 0067），超了截断并给 nextOffset；索引没建好时在这里等（最多一分钟），不让 Agent 轮询。
  *
  * 独立分支（worktree）不另建索引（用户 2026-11-23 按推荐定）：查项目目录那份，再在对话自己的目录里现场核对一下在不在
@@ -28,7 +28,7 @@ function buildingNote(idx: ProjectIndex, waitedMs: number) {
     const pr = u.progress
     return `${u.spec.source === 'project' ? '项目目录' : u.root.split(path.sep).join('/')}（已读 ${pr?.dirs ?? 0} 个目录、${pr?.files ?? 0} 个文件）`
   })
-  return `索引还在建立：${parts.join('；')}，已等 ${Math.round(waitedMs / 1000)} 秒。下面是已经读到的部分，没找到的过一会儿再查，或直接用 find。\n`
+  return `索引还在建立：${parts.join('；')}，已等 ${Math.round(waitedMs / 1000)} 秒。下面是已经读到的部分，没找到的过一会儿再查，或直接用 rg --files。\n`
 }
 
 /** 按字数预算分页：至少给一条，保证能往下翻 */
@@ -56,10 +56,10 @@ export function fileIndexRun(opts: {
   const missNote = () =>
     [
       opts.exclude.length
-        ? `索引不收这些排除目录：${opts.exclude.join('、')}，要找那里的文件直接用 find / rg --files。`
+        ? `索引不收这些排除目录：${opts.exclude.join('、')}，要找那里的文件直接用 rg --files / ls。`
         : '',
-      '刚在面板外批量生成的文件可能还没进索引：先 action=refresh（可以带 dir 只核对那个目录）再查，或直接用 find。',
-      inWorktree ? '这个对话在独立分支目录里：这里新建、还没合回的文件不在索引里，直接用 find 找。' : '',
+      '刚在面板外批量生成的文件可能还没进索引：先 action=refresh（可以带 dir 只核对那个目录）再查，或直接用 rg --files。',
+      inWorktree ? '这个对话在独立分支目录里：这里新建、还没合回的文件不在索引里，直接用 rg --files 找。' : '',
     ]
       .filter(Boolean)
       .join('\n')
@@ -70,14 +70,14 @@ export function fileIndexRun(opts: {
   const run = async (a: FileIndexArgs, signal?: AbortSignal): Promise<{ text: string; error?: boolean }> => {
     const t0 = Date.now()
     const idx = await projectIndex(opts.projectId)
-    if (!idx) return { text: '项目设置里关了文件索引：直接用 rg --files / find 找', error: true }
+    if (!idx) return { text: '项目设置里关了文件索引：直接用 rg --files 找', error: true }
     const limit = Math.min(Math.max(Math.floor(a.limit ?? 50), 1), 500)
     const offset = Math.max(Math.floor(a.offset ?? 0), 0)
 
     if (a.action === 'status') return { text: JSON.stringify(await statusOf(opts.projectId)) }
     if (a.action === 'rebuild') {
       void idx.rebuild()
-      return { text: '已开始整份重建：期间 find / list 会等它建好再回答（最多一分钟）。' }
+      return { text: '已开始整份重建：期间 action=file / list 会等它建好再回答（最多一分钟）。' }
     }
     if (a.action === 'refresh') {
       if (!(await idx.ready(WAIT_MS)))
@@ -92,7 +92,7 @@ export function fileIndexRun(opts: {
       const r = await idx.list(a.dir ?? '', { recursive: a.recursive, ext: a.ext })
       if (!r)
         return {
-          text: `索引里没有目录「${a.dir}」：不存在，或在排除目录里（${opts.exclude.join('、')}）。要看排除目录直接用 ls / find。`,
+          text: `索引里没有目录「${a.dir}」：不存在，或在排除目录里（${opts.exclude.join('、')}）。要看排除目录直接用 ls。`,
           error: true,
         }
       const items = [...r.dirs.map((d) => `${d}/`), ...r.files].filter((p) => keep(p.replace(/\/$/, '')))
@@ -107,7 +107,7 @@ export function fileIndexRun(opts: {
 
     // find
     const q = (a.query ?? '').trim()
-    if (!q && !a.ext?.length) return { text: 'find 要给 query（文件名里的词）或 ext', error: true }
+    if (!q && !a.ext?.length) return { text: 'action=file 要给 query（文件名里的词）或 ext', error: true }
     const search = () =>
       idx
         .find(q, { under: a.under, ext: a.ext, dirs: a.dirs, cap: offset + limit + 500 })
@@ -155,7 +155,7 @@ export function fileIndexRun(opts: {
     try {
       return await run(a, signal)
     } catch (e) {
-      return { text: `查文件索引出错：${(e as Error).message}。先用 find / rg --files 找。`, error: true }
+      return { text: `查文件索引出错：${(e as Error).message}。先用 rg --files 找。`, error: true }
     }
   }
 }

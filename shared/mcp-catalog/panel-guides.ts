@@ -333,14 +333,22 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
   },
 
   // ---- 找文件 ----
-  file_index: {
-    title: '查文件索引',
-    summary: '按名字找项目里的文件、列某个文件夹，查的是面板维护的文件名索引，不扫磁盘。',
+  find: {
+    title: '查找',
+    summary:
+      '找文件、找代码的唯一入口：按名字找文件、列目录，查符号声明、引用、文件大纲、类成员、头文件、任意文本。面板按语言自动挑最好的路（C++ 走 VS、Lua 走 IDEA，都用不了时面板自己按文本找）。',
     useWhen:
-      '要按文件名、路径片段、扩展名找文件，或看某个目录下有什么文件时，先用它，代替 rg --files、find、Glob、dir /s；刚在外面批量生成或删除了文件、结果对不上时用 action=refresh',
+      '要找文件（action=file / list）或找代码时先用它：找函数、类在哪定义用 symbol，谁调用了它用 refs，一个文件里有哪些函数用 outline，代替 rg、grep、find、Glob、dir /s',
     avoidWhen:
-      'C++ 源码先用 VS 的 uetovs/search_files，Lua 先用 IDEA 的 lua_code files；按内容搜代码用 rg；要找排除目录（Saved、Intermediate 这类）里的文件时索引里没有，直接 find / rg --files',
+      '已经知道文件路径、要看内容时直接读文件；排除目录（Saved、Intermediate 这类）里的文件不在索引里，action=file 找不到时直接 ls',
     group: G.find,
+    effects: ['read'],
+  },
+  file_index: {
+    title: '查文件索引（旧名）',
+    summary: 'find 的旧名字，照样执行。',
+    useWhen: '不要用，改用 find',
+    group: G.old,
     effects: ['read'],
   },
 

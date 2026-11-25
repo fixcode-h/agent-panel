@@ -3,7 +3,8 @@
  * 走完整链路：CLI 调面板 MCP 的 app_do → 动作表 → 进程内调面板接口，和用户点按钮是同一段代码
  */
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { runShard } from './harness.mjs'
 
 await runShard('Agent 操控软件', async (api) => {
@@ -65,6 +66,31 @@ await runShard('Agent 操控软件', async (api) => {
     assert.match(refused.text, /父对话/)
     assert.ok(await call('GET', `/tasks/${parent.id}`), '父对话还在')
     step('边界：子对话不能删自己的父对话')
+  }
+
+  // ---- 找代码（ADR 0081 能力路由）：没有 VS、IDEA 时面板自己按文本找，声明排在引用前面，路由记进日志 ----
+  {
+    mkdirSync(path.join(project.path, 'Script'), { recursive: true })
+    writeFileSync(path.join(project.path, 'Script/Player.lua'), 'local M = {}\nfunction M:OnInit()\nend\nreturn M\n')
+    writeFileSync(path.join(project.path, 'Script/Main.lua'), 'local P = require("Player")\nP:OnInit()\n')
+    const n = panelLog().length
+    await chat('找一下 OnInit 在哪 FIND:{"action":"refs","query":"M:OnInit"}')
+    await waitFor(
+      () =>
+        panelLog()
+          .slice(n)
+          .some((x) => x.name === 'find'),
+      { label: '对话调了 find', timeout: 70000 },
+    )
+    const got = panelLog()
+      .slice(n)
+      .find((x) => x.name === 'find')
+    assert.equal(got.isError, false, `find 执行成功：${got.text}`)
+    const lines = got.text.split('\n')
+    assert.match(lines[0], /^2 条/, got.text)
+    assert.match(lines[1], /^Script\/Player\.lua:2: function M:OnInit\(\)/, '声明排第一')
+    assert.match(lines[2], /^Script\/Main\.lua:2: P:OnInit\(\)/, '引用在后')
+    step('find：没有 VS / IDEA 时面板按文本找 Lua 引用，声明在前')
   }
 
   // ---- 人和脚本的 HTTP 入口是同一份动作表 ----

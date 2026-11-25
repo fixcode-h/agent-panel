@@ -24,7 +24,7 @@ user-invocable: true
 
 ## 怎么找代码
 
-**先用代码索引 MCP 工具**：接了 UEToVS 这类索引服务时，C++ 符号用 `search_symbols`、Lua 函数和 GM 命令用 `search_lua`（以提示词「搜索（这个项目）」一节列的为准）直接查到文件和行号，比 grep 快得多；查不到再按下面在模块目录里搜。
+**用面板的 `find`**：C++ 类、函数、`#include` 用 `action=symbol` / `refs` / `members` / `include`，Lua 函数和 GM 命令用 `action=symbol` / `refs`，资产按名字找路径用 `action=file`（`ext` 写 `uasset`）。面板按语言自动走 VS 的 UEToVS 或 IDEA 的 EmmyLua，都没开时自己按文本找；不用自己挑工具。下面讲的是范围和排除，只有不在面板项目里（没有 `find`）时才用后面的命令。
 
 UE 工程根目录下有几十万文件，在根目录全仓 grep 会把 `Saved/`、`Intermediate/`、`Binaries/` 里的产物一起扫出来，几分钟才停。搜索前先定位模块：按项目文档（模块地图、模块 README）或 `Source/<模块>/` 的目录名缩小范围，再在模块目录里搜；报错指到具体文件时直接读那个文件。通用的收敛顺序（先文档、再最小目录、已知文件直接读）见 `project-structure`。
 
@@ -41,7 +41,7 @@ UE 工程根目录下有几十万文件，在根目录全仓 grep 会把 `Saved/
 
 `Content/` 里的 `.uasset` / `.umap` 是二进制：只能按文件名找路径，**不要 grep 内容**——搜不到可读文本，还会拖慢整个搜索。要看资产引用了谁，用编辑器的 Reference Viewer（右键资产 → Reference Viewer），不要靠 grep。
 
-可照抄的命令：
+没有面板的 `find` 时可照抄的命令：
 
 ```bash
 # 只在某个游戏模块里搜 C++
