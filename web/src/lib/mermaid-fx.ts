@@ -346,6 +346,12 @@ function setZoom(box: HTMLElement, next: Zoom) {
 const zoomOf = (box: HTMLElement) => zooms.get(box) ?? { z: 1, x: 0, y: 0 }
 const clampZ = (z: number) => Math.min(4, Math.max(0.4, z))
 
+const noSelect = (e: Event) => e.preventDefault()
+const clearSelection = () => {
+  const sel = window.getSelection()
+  if (sel && !sel.isCollapsed) sel.removeAllRanges()
+}
+
 /** 画布：拖动平移，Ctrl / ⌘ + 滚轮缩放（全屏里直接滚轮），双击复位 */
 function panZoom(box: HTMLElement, wheelAlways = false) {
   const canvas = box.querySelector<HTMLElement>('.md-mmd-canvas')
@@ -374,12 +380,17 @@ function panZoom(box: HTMLElement, wheelAlways = false) {
         moved = true
         canvas.dataset.drag = ''
         canvas.setPointerCapture(e.pointerId)
+        document.addEventListener('selectstart', noSelect, true)
       }
+      // 按下时浏览器已经开始选文字，前几个像素里选区就起头了；认定是拖动后每次都清掉，
+      // 否则平移画布时会把图里的文字大片选中（蓝底）
+      clearSelection()
       setZoom(box, { ...start, x: start.x + ev.clientX - sx, y: start.y + ev.clientY - sy })
     }
     const up = () => {
       delete canvas.dataset.drag
       canvas.removeEventListener('pointermove', move)
+      document.removeEventListener('selectstart', noSelect, true)
     }
     canvas.addEventListener('pointermove', move)
     canvas.addEventListener('pointerup', up, { once: true })

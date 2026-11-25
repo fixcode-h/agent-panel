@@ -2267,7 +2267,7 @@ body,
     var(--md-mermaid-grid) 0 0 / 16px 16px;
 }
 .chat-md .md-mmd-canvas[data-drag] {
-  @apply cursor-grabbing;
+  @apply cursor-grabbing select-none;
 }
 .chat-md .md-mermaid-svg {
   @apply flex justify-center overflow-visible p-5;
