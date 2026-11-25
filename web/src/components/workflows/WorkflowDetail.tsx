@@ -36,6 +36,7 @@ import { TeamEditor } from './TeamEditor'
 import { CategoryPicker } from '@/components/agents/CategoryPicker'
 import { TagPicker } from '@/components/tags/Tags'
 import { DocEditor } from './DocEditor'
+import { WorkflowRunSettings } from './WorkflowRunSettings'
 import { FlowEditor } from '@/components/flow/FlowEditor'
 import { AnalyzeDialog } from '@/components/tasks/Evolution'
 
@@ -286,18 +287,7 @@ export function WorkflowDetail({
               </div>
             </FormSection>
 
-            <FormSection title={t('修改轮次')}>
-              <p className="-mt-2 text-xs leading-relaxed text-subtle">
-                {t('同一个节点被要求修改超过这么多轮时，运行结尾提示一句（不会强制停下）。0 表示不提示。')}
-              </p>
-              <Field label={t('最多几轮')} className="max-w-60">
-                <Input
-                  inputMode="numeric"
-                  value={String(draft.reviseLimit ?? 3)}
-                  onChange={(e) => set('reviseLimit', Math.min(50, Number(e.target.value.replace(/[^\d]/g, '')) || 0))}
-                />
-              </Field>
-            </FormSection>
+            <WorkflowRunSettings draft={draft} set={set} />
 
             <FormSection title={t('工作流说明')}>
               <p className="-mt-2 text-xs leading-relaxed text-subtle">

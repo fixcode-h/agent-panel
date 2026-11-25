@@ -56,3 +56,34 @@ test('插件确认：一直允许记成对话规则，同一个 key 之后不再
   answerRequest(task, task.requests[0].id, { allow: false }, () => 'm3')
   assert.equal((await plain).allow, false)
 })
+
+test('工作流自带的授权：运行里不出卡、留一行；普通对话照常出卡', async () => {
+  const wf = { id: 'w1', name: 'UE 游戏内测试', grants: [{ rule: 'plugin:ue:self-test', label: '自己测' }] }
+  const task = {
+    id: 'pw',
+    mode: 'workflow',
+    workflowId: 'w1',
+    workflowName: 'UE 游戏内测试',
+    workflows: [wf],
+    projectId: 'p',
+    messages: [],
+    steps: [],
+    requests: [],
+    allowRules: [],
+  } as unknown as Task
+  let n = 0
+  const ctx = { task, signal: new AbortController().signal, newId: () => `r${++n}`, changed: () => {} }
+  const run = { step: '', agentId: 'a' }
+  const r = await pluginConfirm(ctx, run, { title: '跑 GameTest', rule: 'ue:self-test' }, new Set())
+  assert.deepEqual(r, { allow: true, always: true, message: '' })
+  assert.equal(task.requests.length, 0)
+  assert.match(task.messages.at(-1)!.text, /工作流「UE 游戏内测试」自带授权，自动允许（自己测）/)
+
+  // 同一份快照、但不是工作流运行的对话：照常出卡
+  const chat = { ...task, id: 'pa', mode: 'agent', messages: [], requests: [] } as unknown as Task
+  const c2 = { ...ctx, task: chat }
+  const p = pluginConfirm(c2, run, { title: '跑 GameTest', rule: 'ue:self-test' }, new Set())
+  assert.equal(chat.requests.length, 1)
+  answerRequest(chat, chat.requests[0].id, { allow: false }, () => 'm9')
+  assert.equal((await p).allow, false)
+})

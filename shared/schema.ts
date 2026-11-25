@@ -432,6 +432,13 @@ export type WorkflowExpose = z.infer<typeof WorkflowExpose>
  * 工作流：用流程图编排节点的执行顺序，由父对话启动成一次工作流运行（shared/flow/run.ts）。
  * 没有主 Agent（workflow-runs 设计 D1）：节点按连线执行，没指定角色的节点用默认执行角色。
  */
+/** 工作流自带的一条授权：规则键（同 task.allowRules）和给人看的说法 */
+export const WorkflowGrant = z.object({
+  rule: z.string().trim().min(1).max(120),
+  label: z.string().trim().max(80).default(''),
+})
+export type WorkflowGrant = z.infer<typeof WorkflowGrant>
+
 export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
@@ -459,6 +466,17 @@ export const WorkflowFields = z.object({
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
   budgetUsd: z.number().min(0).max(100000).optional(),
   budgetTokens: z.number().int().min(0).optional(),
+  /**
+   * 工作流自带的授权（用户 2026-11-25：普通对话里 Agent 自己在游戏里测试要先弹授权卡，对应的工作流不用）：
+   * 运行时这些规则键按「本对话不再询问」算，卡片不再弹，对话里留一行记录。只认能预授权的类型（shared/grants/kinds.ts 的
+   * presettable，目前只有插件操作），插件的工作流只能带自己的 plugin:<插件 id>: 规则（server/plugins/store.ts 核对）
+   */
+  grants: z.array(WorkflowGrant).max(10).optional(),
+  /**
+   * 改代码的运行不开独立分支、直接在父对话的目录里跑：要连本机正在运行的程序验证改动时（UE 编辑器读的是项目目录，
+   * 独立分支里写的测试脚本和代码它看不到）
+   */
+  inPlace: z.boolean().optional(),
   /** 从内置模板建出来的工作流记下来源（builtin:<key>），内置工作流列表里据此显示「删除」 */
   origin: z.string().max(80).optional(),
   /**

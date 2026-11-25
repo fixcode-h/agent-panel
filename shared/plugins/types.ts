@@ -158,8 +158,10 @@ export type PluginManifest = Omit<z.infer<typeof PluginManifest>, 'agents' | 'wo
  *    工具调用能取用户在对话里亲口说的话（McpCallContext.userWords）。设计稿：飞书插件 第 8 节
  * 18：参数类型 secret（令牌、密钥加密存本机、网页打码）和 PluginServerContext.secrets
  * 19：PluginServerContext.integrations：设置 →「账号授权」里工具的状态、路径和备用登录信息（飞书插件的登录搬过去）
+ * 20：清单里的工作流能自带授权（grants，只能是插件自己的 plugin:<id>: 规则，运行时不弹确认卡）、
+ *    标 inPlace 直接在父对话目录里跑（不开独立分支）。设计稿：UE 写完代码自动测试
  */
-export const PLUGIN_API = 19
+export const PLUGIN_API = 20
 
 /** 插件从哪来 */
 export const PluginSource = z.object({

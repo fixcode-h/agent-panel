@@ -28,6 +28,11 @@ export interface GrantKind {
   remember: boolean
   /** 不能在设置里改（写原因）：推送授权卡本来就记住回答 */
   fixed?: () => string
+  /**
+   * 工作流能不能在定义里自带这一类授权（WorkflowFields.grants，用户 2026-11-25）：插件自己定的一类操作可以，
+   * CLI 的命令、改文件和门禁放行不行（那些要用户在对话里当场看）
+   */
+  presettable?: boolean
 }
 
 /** 门禁放行的规则键 */
@@ -61,6 +66,7 @@ const BASE: GrantKind[] = [
     name: () => t('插件操作'),
     scope: () => t('插件自己定的一类（例如同一篇文档、同一种资源操作）；插件没给的每次都问'),
     remember: true,
+    presettable: true,
   },
   {
     id: 'push',
@@ -120,3 +126,6 @@ export function rememberOn(rule: string | undefined, prefs: Readonly<Record<stri
   if (set !== undefined) return set
   return grantKinds().find((k) => k.id === id)?.remember ?? true
 }
+
+/** 工作流能不能自带这条授权 */
+export const canPreset = (rule: string) => !!grantKinds().find((k) => k.id === grantKindOf(rule))?.presettable
