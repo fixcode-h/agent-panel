@@ -81,6 +81,15 @@ export function parseManifest(raw: unknown): Manifest {
   if (agentHit) throw new Error(`插件的角色 key「${agentHit.key}」和面板内置角色重名`)
   const wfHit = m.workflows.find((w) => BUILTIN_WORKFLOWS.some((b) => b.key === w.key))
   if (wfHit) throw new Error(`插件的工作流 key「${wfHit.key}」和面板内置工作流重名`)
+  // 工作流自带的授权（插件接口 20）：插件只能给自己的操作预授权，免得一个插件的工作流替别的插件放行
+  for (const w of m.workflows)
+    for (const g of w.grants ?? []) {
+      if (m.api < 20) throw new Error('工作流带 grants / inPlace 的插件要写 "api": 20')
+      if (!g.rule.startsWith(`plugin:${m.id}:`))
+        throw new Error(`工作流「${w.key}」的授权 ${g.rule} 不是这个插件自己的（要以 plugin:${m.id}: 开头）`)
+    }
+  if (m.api < 20 && m.workflows.some((w) => w.inPlace))
+    throw new Error('工作流带 grants / inPlace 的插件要写 "api": 20')
   for (const f of [m.server, m.web, m.css]) if (f && !safeRel(f)) throw new Error(`入口路径不对：${f}`)
   // 钩子脚本、命令文件也只能在包里（插件接口 3）
   for (const f of [...m.hooks.map((h) => h.script), ...m.commands.map((c) => c.file)])

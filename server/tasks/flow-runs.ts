@@ -135,8 +135,9 @@ export function createFlowRuns(sc: TasksScope) {
     // 第一条是父对话交代的：运行里画成「接收消息 · 交代任务」
     if (draft.messages[0]) draft.messages[0].peer = await sc.peerOf(owner, 'parent', 'task', p.input)
     // 改代码的在自己的独立分支里跑：几个运行、父对话自己的改动互不干扰，跑完由父对话决定合不合回
+    // 工作流标了 inPlace（要连本机正在运行的程序验证，例如 UE 编辑器读的是项目目录）：不开独立分支，直接在父对话目录里改
     let shared = ''
-    if (p.kind === 'change') {
+    if (p.kind === 'change' && !plan.workflow.inPlace) {
       const base = await sc.taskDir(owner)
       try {
         draft.worktree = await createWorktree(base, id, draft.title)
@@ -155,6 +156,9 @@ export function createFlowRuns(sc: TasksScope) {
       info: [
         `已起工作流运行「${tk.title}」（工作流「${plan.workflow.name}」）。它在后台按流程图执行，等决定、待合回、完成时会来信叫你；进度用 list_workflows 看。`,
         shared ? `注意：开不了独立分支（${shared}），它直接在你的目录里改，合回时不用再合。` : '',
+        p.kind === 'change' && plan.workflow.inPlace
+          ? '这个工作流直接在你的目录里改（不开独立分支），合回时不用再合。'
+          : '',
       ]
         .filter(Boolean)
         .join('\n'),

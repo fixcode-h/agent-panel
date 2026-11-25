@@ -206,6 +206,8 @@ export function workflowFingerprint(w: WorkflowInput) {
     ...(x.when && { when: x.when }),
     ...(x.notFor && { notFor: x.notFor }),
     ...(x.kind && { kind: x.kind }),
+    ...(x.grants?.length && { grants: x.grants }),
+    ...(x.inPlace && { inPlace: true }),
     flows: x.flows.map(({ startPos: _s, endPos: _e, ...f }) => ({
       ...f,
       nodes: f.nodes.map(({ x: _x, y: _y, ...n }) => n),
@@ -383,6 +385,8 @@ export async function upgradeBuiltinWorkflows(state: BuiltinState, api: BuiltinO
       when: built.when,
       notFor: built.notFor,
       kind: built.kind,
+      grants: built.grants,
+      inPlace: built.inPlace,
       flows,
     }
     const latest = workflowFingerprint(input)

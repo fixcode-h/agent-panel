@@ -458,7 +458,7 @@ export const FLAKY_TEST_RULE = `单测里计时类用例偶发失败（\`pi-rpc\
  * UE 项目验证到编译为止（用户 2026-11-23：Agent 老自己跑 Automation RunTests，跑一次几分钟、测不出东西，
  * UE 项目不许再跑；命令层面由 ue-automation-guard 拦）。要看功能对不对，先问用户再写 GameTest 脚本跑
  */
-export const UE_VERIFY_RULE = `UE 项目的验证：编译通过就算完成。不跑引擎的 Automation RunTests、Gauntlet 自动化测试（面板会拦下），也不为验证新写 Automation 测试用例、不自己搭替身代码去编译运行。编译通过后，这次改的东西能在游戏里用到（玩法、界面、背包这类游戏数据），或者用户让你验证功能是否正常，并且有 ue_gametest 工具时：用提问工具问用户一次「要不要写一份 GameTest 测试脚本来跑」，写明打算测什么；用户同意才按 ue-gametest-authoring 技能写脚本、validate、用 ue_gametest 跑，不同意或没回答就到此为止。用户已经要求写测试时不用再问。`
+export const UE_VERIFY_RULE = `UE 项目的验证：编译通过就算完成。不跑引擎的 Automation RunTests、Gauntlet 自动化测试（面板会拦下），也不为验证新写 Automation 测试用例、不自己搭替身代码去编译运行。编译通过后，这次改的东西能在游戏里用到（玩法、界面、背包这类游戏数据），或者用户让你验证功能是否正常，并且有 ue_gametest 工具时：可以按 ue-gametest-authoring 技能写 GameTest 脚本（能用 GM、对象引用、项目接口准备状态）、validate、用 ue_gametest 跑。第一次跑测试、执行 GM 或开 PIE 时工具会弹授权卡请用户确认，不用自己先问；用户不同意就到编译为止，不要换别的工具绕过去。要完整地测一遍（定测试点、写脚本、跑、修、进回归）时，可选工作流里有在游戏里测试的（看它的「适用」），由父对话起它。`
 
 /**
  * 子对话只跑增量测试：always + 命中改动的 changed；全量（parent）由父对话合并后跑。

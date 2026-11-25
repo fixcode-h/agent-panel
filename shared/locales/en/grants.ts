@@ -32,4 +32,14 @@ export const EN_GRANTS: Record<string, string> = {
   '「允许一次」只放行这一次；「本对话不再询问」之后这个对话里这个门禁都不再拦。':
     "Allow once lets it through this one time; Don't ask again stops this gate from blocking for the rest of this conversation.",
   '「{name}」拦下的操作': 'operations blocked by "{name}"',
+  运行方式: 'How it runs',
+  直接在父对话的目录里改: "Edit directly in the parent conversation's folder",
+  '不开独立分支。要连本机正在运行的程序验证时打开（例如 UE 编辑器读的是项目目录，独立分支里的改动它看不到）':
+    "No separate branch. Turn on when changes are verified against a program running on this machine (for example, the UE editor reads the project folder and can't see changes in a separate branch).",
+  自带的授权: 'Built-in approvals',
+  '运行这个工作流时，下面这几类操作直接允许、不弹确认卡，对话里会留一行记录。不想自动放行的可以去掉。':
+    "When this workflow runs, these kinds of operations are allowed without an approval card, and a line is left in the conversation. Remove any you don't want allowed automatically.",
+  去掉这条授权: 'Remove this approval',
+  '工作流「{name}」自带授权，自动允许（{rule}）：{title}':
+    'Allowed by the built-in approval of workflow "{name}" ({rule}): {title}',
 }

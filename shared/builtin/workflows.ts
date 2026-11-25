@@ -81,6 +81,10 @@ export interface BuiltinWorkflow {
   when?: string
   notFor?: string
   kind?: 'change' | 'readonly'
+  /** 工作流自带的授权（WorkflowFields.grants） */
+  grants?: { rule: string; label?: string }[]
+  /** 改代码但直接在父对话目录里跑（WorkflowFields.inPlace） */
+  inPlace?: boolean
   flows: FlowSpec[]
 }
 
@@ -223,7 +227,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动，Git、P4 或没有版本控�
 ## 约定
 - 目录、模块、Build.cs / Target.cs、UHT/UBT、资产和 Cook 的规则按 project-structure 和它的 UE 特化 ue-project-structure。
 - 版本控制在「识别现场与侦察」自动识别，后面的节点按识别结果操作：Git 只处理本次任务的文件；P4 修改前先 p4 edit / add，最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
-- 验证到编译为止：不跑引擎的 Automation RunTests / Gauntlet（面板会拦）。能在游戏里操作到的新功能，实现节点先问你要不要写 GameTest 测试脚本，你同意才派「游戏测试」（装了 UE 插件才有）写一份放进 regression/，验收时「测试验收」用 ue_gametest 跑 tag=regression 的回归；不同意就只编译。
+- 验证到编译为止：不跑引擎的 Automation RunTests / Gauntlet（面板会拦）。能在游戏里操作到的新功能，合回并编译通过后由父对话接着起在游戏里测试的工作流（装了 UE 插件才有，看可选工作流的「适用」），在游戏里定测试点、写 GameTest 脚本、跑、修、通过的进回归；这个工作流里不写测试脚本。
 - 编译归父对话：子对话和工作流节点都不编译、不 Cook、不启动 Editor，只做不需要编译的检查（Lua 语法、静态检查、对照调用方自查）；评审之后由执行角色向父对话申请编译（独立分支里是 submit_merge 带 build，共用目录是 request_build），编译报错交回来再修。需要 Editor、PIE 或设备的验证登记为延期验证。
 ${CHILD_RULES}`,
   expose: [{ ...STRUCTURE, default: 'ue-project-structure' }, DOC_ROOT],
@@ -259,7 +263,7 @@ ${CHILD_RULES}`,
           params: { lang: '多种', tdd: false },
           retries: 1,
           instructions:
-            '按已确认的方案实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子任务并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要编译（子任务也不要），有 Lua 改动时做语法检查，记下做了哪些检查；编译由执行角色在评审之后向父对话申请。做的是能在游戏里操作到的玩法或界面、并且可用角色里有「游戏测试」时，先用提问工具问用户要不要写一份 GameTest 测试脚本（写明要测什么），用户同意才用 spawn_agents 派它照 ue-gametest-authoring 技能写，放进场景根的 regression/<模块>/（编辑器没开就不跑，登记为延期验证）；用户不同意或没回答就不写，只靠编译验证。不跑引擎的 Automation RunTests。',
+            '按已确认的方案实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子任务并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要编译（子任务也不要），有 Lua 改动时做语法检查，记下做了哪些检查；编译由执行角色在评审之后向父对话申请。不写 GameTest 测试脚本：在游戏里测试由合回、编译通过后父对话起的测试工作流做，这里在结果里写明这次改动在游戏里能怎么验证（入口界面、操作、该看到什么），交给它当测试点。不跑引擎的 Automation RunTests。',
         },
         {
           ...DOCS_NODE,
@@ -355,7 +359,7 @@ ${CHILD_RULES}`,
             params: { scope: '本次改动', regress: false },
             confirm: true,
             instructions:
-              '不重跑整套测试（评审后由执行角色统一跑）：把实现中登记的延期验证项列出来，每项写怎么验证、需要什么环境，请用户决定立即验证还是暂缓（暂缓的标为「待用户完成」）。',
+              '不重跑整套测试（评审后由执行角色统一跑）：把实现中登记的延期验证项列出来，每项写怎么验证、需要什么环境，请用户决定立即验证还是暂缓（暂缓的标为「待用户完成」）。UE 项目里有能在游戏里操作到的改动、并且父对话的可选工作流里有在游戏里测试的时，多列一项「游戏内验证」：选立即验证就在结果里写明请父对话合回、编译通过后起那个工作流（写上测试点），不在这里自己写测试脚本。',
           },
           {
             id: 'archive',
@@ -744,6 +748,8 @@ export function buildWorkflow(
     when: w.when,
     notFor: w.notFor,
     kind: w.kind,
+    ...(w.grants?.length && { grants: w.grants.map((g) => ({ rule: g.rule, label: g.label ?? '' })) }),
+    ...(w.inPlace && { inPlace: true }),
     flows: w.flows.map((f) => buildFlow(f, agentId)),
   }
 }
