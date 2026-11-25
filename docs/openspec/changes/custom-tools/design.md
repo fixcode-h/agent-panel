@@ -42,7 +42,7 @@
 
 ## 3. 工具定义
 
-一个工具一个 JSON 文件，文件名就是工具 id。zod 契约放 `shared/custom-tools/schema.ts`（新接口在 shared 写契约，AGENTS.md）。
+一个工具一个 JSON 文件，文件名就是工具 id。zod 契约放 shared/custom-tools/schema.ts（新）（新接口在 shared 写契约，AGENTS.md）。
 
 ```jsonc
 {
@@ -91,7 +91,7 @@
 
 占位符：`{{参数名}}`；面板自带 `{{projectRoot}}`、`{{docRoot}}`、`{{workDir}}`（独立分支时是分支目录）、`{{dataDir}}`。可选参数为空时连同它的 `flag` 一起去掉，不留空引号。
 
-**转义由面板做**：参数值按目标 shell 的规则加引号（cmd、PowerShell、bash 各一套，放 `shared/custom-tools/quote.ts`；现在只有 `shared/clis.ts` 的 `quoteArg` 一个简单版本，做成按 shell 区分的共用函数后它也改用这一份），不做字符串拼接。不允许参数值里出现换行；`raw: true`（原样拼进去）只能用户在编辑页手动打开，打开时页面上标黄提示。
+**转义由面板做**：参数值按目标 shell 的规则加引号（cmd、PowerShell、bash 各一套，放 shared/custom-tools/quote.ts（新）；现在只有 `shared/clis.ts` 的 `quoteArg` 一个简单版本，做成按 shell 区分的共用函数后它也改用这一份），不做字符串拼接。不允许参数值里出现换行；`raw: true`（原样拼进去）只能用户在编辑页手动打开，打开时页面上标黄提示。
 
 ## 4. 存在哪
 
@@ -211,7 +211,7 @@ custom_tool run → 找定义（项目优先）→ 校验参数（类型、必�
 
 ADR 0081 把「同一件事有几条路」交给面板选。自建工具在这套里有两层：
 
-1. **注册表同构**：`server/custom-tools/registry.ts` 和插件的 `findSources` 一样是「谁登记、面板统一用」。面板工具清单、设置 →「MCP」的「Agent 拿得到什么」、能力路由都从这一份读，不各自扫文件。
+1. **注册表同构**：server/custom-tools/registry.ts（新） 和插件的 `findSources` 一样是「谁登记、面板统一用」。面板工具清单、设置 →「MCP」的「Agent 拿得到什么」、能力路由都从这一份读，不各自扫文件。
 2. **当成能力的一条路**：工具写了 `capability`（例如 `apply-change:lua`），等「改动生效」能力（设计稿第 8 节的下一个能力）做的时候，路由把它当一条 `RouteSource`：项目自己的 Lua 编译脚本排在插件的 Lua 热重载之后、文本兜底之前，Agent 只说「让改动生效」，不用知道背后是哪个。第一期只把字段和注册表留好，不改路由。
 
 另外两处顺手接上：
@@ -274,9 +274,9 @@ ADR 0081 把「同一件事有几条路」交给面板选。自建工具在这�
 
 **一期（和 /build、/run、/merge 一起）**
 
-- `shared/custom-tools/`（schema、参数校验、命令展开和按 shell 转义、重复检测）+ 单测。
-- `server/custom-tools/`（存储走 `projectData` 和数据目录、注册表 + 文件监听、执行：守卫 / 授权 / 签出 / `spawnTracked` / 转后台、运行记录）。
-- 面板工具 `server/panel-tools/custom-tool.ts`（五个 action），名字登记进 `shared/panel-tools.ts`，`ToolGuide` 写进 `panel-guides.ts`；提示词一行清单。
+- shared/custom-tools/（新）（schema、参数校验、命令展开和按 shell 转义、重复检测）+ 单测。
+- server/custom-tools/（新）（存储走 `projectData` 和数据目录、注册表 + 文件监听、执行：守卫 / 授权 / 签出 / `spawnTracked` / 转后台、运行记录）。
+- 面板工具 server/panel-tools/custom-tool.ts（新）（五个 action），名字登记进 `shared/panel-tools.ts`，`ToolGuide` 写进 `panel-guides.ts`；提示词一行清单。
 - 授权类型 `ctool:`；内置命令 `/createtool`、`/build`、`/run`、`/merge`。
 - 界面：保存弹窗、对话里的运行结果卡片、「技能与 MCP」的「工具」页签、编辑抽屉和试运行；四个共用组件和样张。
 - 演示版：`web/src/lib/demo-*` 里放两三个示例工具，演示后端调 shared 里同一份校验和展开逻辑。
