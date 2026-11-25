@@ -17,7 +17,7 @@ import {
   removeNoteTaker,
   takeHeld,
 } from './delivery.ts'
-import { steerTask } from './steering.ts'
+import { steerTask, steers, type Steerer } from './steering.ts'
 
 setLang('zh')
 
@@ -121,4 +121,26 @@ test('能用面板工具取补充的 CLI：登记后取走，取过的不会再�
   }
   // 通道没了：消息交给调用方，由它记进对话并等这一轮结束后接着处理
   assert.equal(await steerTask(task, '通道已经关了', msg('m3', '通道已经关了')), false)
+})
+
+test('流程图里点名节点：只插给这个节点（含它下面的步骤），它收不下就交回调用方，不改给别的节点', async () => {
+  const task = { id: 'task-node', mode: 'workflow', messages: [], steps: [] } as unknown as Task
+  const got: string[] = []
+  const steerer = (step: string, ok = true): Steerer => ({
+    step,
+    agentId: 'a',
+    steer: async () => (got.push(step), ok),
+    accepted: () => {},
+  })
+  steers.set(task.id, new Set([steerer('plan'), steerer('impl/step/a'), steerer('check', false)]))
+  try {
+    assert.equal(await steerTask(task, '改用订阅', msg('m1', '改用订阅'), 'impl'), 'steer')
+    assert.deepEqual(got, ['impl/step/a'], '并行在跑的「方案」收不到')
+    assert.equal(task.messages.at(-1)?.step, 'impl/step/a', '消息记在节点上')
+    got.length = 0
+    assert.equal(await steerTask(task, '别动接口', msg('m2', '别动接口'), 'check'), false)
+    assert.deepEqual(got, ['check'])
+  } finally {
+    steers.delete(task.id)
+  }
 })

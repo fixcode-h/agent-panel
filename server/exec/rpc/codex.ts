@@ -1,4 +1,4 @@
-import { commandRule, fileRule } from '../../../shared/allow-rules.ts'
+import { commandRule, fileRule, toolRule } from '../../../shared/allow-rules.ts'
 import path from 'node:path'
 import type { BuildOptions } from '../../../shared/clis.ts'
 import { t } from '../../../shared/i18n.ts'
@@ -262,6 +262,8 @@ export function codexAdapter(
         kind: 'command',
         title: t('需要额外权限：{what}', { what: what.join(t('，')) || t('越过沙箱') }),
         detail: String(p.reason ?? ''),
+        // 同样的额外权限（联网、同一批目录）可以「本对话不再询问」（用户 2026-11-25：漏接的确认卡一并接上）
+        rule: toolRule(`sandbox:${[want.network?.enabled ? 'network' : '', ...fsPaths].filter(Boolean).join(',')}`),
         reply: (r) =>
           decided(ctx, r, () => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} })),
       })

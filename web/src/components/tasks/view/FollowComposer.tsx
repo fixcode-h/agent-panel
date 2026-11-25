@@ -23,6 +23,7 @@ import { HandBackTag } from '../UserActionPanel'
 import { BugActionBar } from '../BugActionBar'
 import type { ChildSummary } from '../child-line'
 import { SendTargetPicker } from './SendTarget'
+import { NodeTargetPicker, useNodeTargetHint } from './NodeTarget'
 
 export interface FollowComposerProps {
   task: TaskPage
@@ -69,6 +70,8 @@ export interface FollowComposerProps {
 
 export function FollowComposer(p: FollowComposerProps) {
   const { task, working, waitText, files, mention, slash, apply } = p
+  // 流程图里选中了节点、这句话要直接发给它：提示写清会怎么交（插话 / 修改 / 开始时带上 / 退回重跑）
+  const nodeHint = useNodeTargetHint(task, p.node)
   return (
     <ChatComposer
       // 设计稿的追问框：深一档的细线、圆角 12；附件、模型、提问开关这些照旧留在下面一行
@@ -137,6 +140,8 @@ export function FollowComposer(p: FollowComposerProps) {
           )}
           {/* 父对话执行中点名直接发给某个子对话（分析稿 B1）：不在跑时就是普通的追问，不显示 */}
           {!task.parentTaskId && working && <SendTargetPicker taskId={task.id} kids={p.kids} />}
+          {/* 工作流运行的流程图里选中了节点：可以直接发给这个节点（NodeTarget.tsx） */}
+          <NodeTargetPicker task={task} node={p.node} />
           {p.flowHint !== undefined && <span className="min-w-0 truncate pl-1 text-xs text-subtle">{p.flowHint}</span>}
         </>
       }
@@ -170,7 +175,8 @@ export function FollowComposer(p: FollowComposerProps) {
       }
       label={t('继续输入要求')}
       placeholder={
-        p.aiLook && !working && !waitText
+        nodeHint ||
+        (p.aiLook && !working && !waitText
           ? t('追问，或让它换个方向查…')
           : !working
             ? waitText
@@ -178,7 +184,7 @@ export function FollowComposer(p: FollowComposerProps) {
               : continueHint(task)
             : p.canSteer
               ? t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
-              : t('执行中也可以输入，这一轮结束后接着处理')
+              : t('执行中也可以输入，这一轮结束后接着处理'))
       }
     />
   )

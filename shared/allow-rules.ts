@@ -70,6 +70,15 @@ export function ruleText(rule: string): string {
   // 门禁放行、插件操作一般带着 ruleLabel（requestRuleText 优先用它），这里是没给时的兜底
   if (kind === 'gate') return t('门禁 {name} 拦下的操作', { name: v })
   if (kind === 'plugin') return t('插件操作 {name}', { name: v })
+  // Codex 沙箱外的额外权限（rpc/codex.ts）：network 是联网，其余是目录
+  if (v.startsWith('sandbox:'))
+    return t('越过沙箱：{what}', {
+      what: v
+        .slice(8)
+        .split(',')
+        .map((x) => (x === 'network' ? t('联网') : x))
+        .join(t('、')),
+    })
   return t('工具 {name}', { name: v })
 }
 

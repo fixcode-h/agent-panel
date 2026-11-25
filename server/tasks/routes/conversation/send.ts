@@ -24,7 +24,7 @@ export function sendRoute(s: TasksScope): Hono {
     // 入参按前后端共用的契约校验（shared/api-contract/tasks.ts）
     const p = tasksContract.send.body.safeParse(await c.req.json())
     if (!p.success) return s.bad(c, z.prettifyError(p.error))
-    const { text, attachments, interrupt, messageId, from, userAction, via } = p.data
+    const { text, attachments, interrupt, messageId, from, userAction, via, node } = p.data
     const cur = await currentTask(s, id)
     // 别的对话替它发的：按「同项目的其他对话」记来源；发件对话找不到（被删了）就当用户消息，不丢这条
     const sender = from && from !== id ? await currentTask(s, from) : undefined
@@ -51,6 +51,11 @@ export function sendRoute(s: TasksScope): Hono {
     // 进了回收站的对话和 GET /tasks/:id 一样当不存在：不能再往它里面发消息（否则会被重新拉起来跑一轮）
     if (cur?.deletedAt) return s.bad(c, t('任务不存在'), 404)
     if (cur?.imported) return s.bad(c, s.READONLY, 409)
+    // 流程图里选中节点直接发给它：按节点状态插话、答确认、留给它开始时、或带意见退回重跑（flow-node-message.ts）
+    if (node && !from) {
+      const r = await s.flowRuns.toNode(id, { node, text, attachments, messageId })
+      return 'error' in r ? s.bad(c, r.error, 409) : c.json(replied(`node-${r.kind}`, r.task))
+    }
     // 「/rule」：父对话发布全局规则，面板自己处理，不发给 CLI
     if (RULE_CMD.test(text.trim())) {
       const r = await s.ruleCommand(id, text.trim())
