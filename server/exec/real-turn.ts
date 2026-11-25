@@ -233,6 +233,30 @@ export async function runRealTurn(ctx: RealContext) {
     },
     askPush: (info) => askPushRequest(ctx, info, ownAsks),
     requestOverride: (input) => overrideRequest(ctx, input, ownAsks),
+    // 节点验收到上限还没通过（shared/engine/review-loop.ts）：用户的指令优先，问用户放行还是再改一轮
+    reviewLimit: async (step, info) => {
+      const r = await panelRequest(
+        ctx,
+        {
+          step: step.id,
+          agentId: step.agentId,
+          kind: 'tool',
+          purpose: 'override',
+          title: t('「{title}」验收 {round} 轮还没通过：按现状通过往下走，还是再改一轮？', {
+            title: step.title,
+            round: info.round,
+          }),
+          detail: [
+            clip(info.feedback, 6000),
+            t('「再改一轮」把这些意见交回节点改一次，改完还不过会再问你；要停下自己看，点停止。'),
+          ].join('\n\n'),
+          allowLabel: t('按现状通过'),
+          denyLabel: t('再改一轮'),
+        },
+        ownAsks,
+      )
+      return r ? (r.allow ? 'pass' : 'again') : null
+    },
     // 先建模块文档再开子对话（ADR 0048）：只有项目顶层对话建子对话，文档根按项目设置算
     moduleDocs: ctx.task.parentTaskId
       ? undefined

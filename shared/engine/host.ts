@@ -8,10 +8,11 @@
 import type { ReviewTarget } from '../clis.ts'
 import type { DocRootInfo } from '../doc-root.ts'
 import type { BeforeEndDecision, BeforeEndInput } from '../hooks/index.ts'
-import type { Agent, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from '../schema.ts'
+import type { Agent, AlertKind, NodeTier, ParamValues, StopReason, Task, TaskStep, Workflow } from '../schema.ts'
 import type { Picks } from '../flow/stage-report.ts'
 import type { ReuseCheck } from '../review/reuse.ts'
 import type { BugHost, OrchBug } from '../host/bug.ts'
+import type { ReviewLimitHost } from '../host/review-limit.ts'
 import type { BuildHost, OrchBuild } from '../host/build.ts'
 import type { ConversationHost, OrchConversation } from '../host/conversation.ts'
 import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
@@ -24,7 +25,15 @@ import type { OrchSubmit } from '../host/submit.ts'
 import type { OrchOverride, OverrideHost } from '../host/override.ts'
 
 /** stopped：用户停止；halted：别的节点失败了没再继续（续跑时重来）；stalled：子任务卡住被 runner 停掉（runStalled 重试） */
-export type FailFlags = { stopped?: boolean; halted?: boolean; reported?: boolean; budget?: boolean; stalled?: boolean }
+export type FailFlags = {
+  stopped?: boolean
+  halted?: boolean
+  reported?: boolean
+  budget?: boolean
+  stalled?: boolean
+  /** 报错行的类别：不写时按文字归类（验收意见里常有「超时」「网络」这类字眼，会被错归成 CLI 出错） */
+  kind?: AlertKind
+}
 
 export type AgentResult = { ok: true; text: string } | ({ ok: false; error: string } & FailFlags)
 
@@ -224,6 +233,7 @@ export interface EngineHost
     SearchHost,
     IdeMcpHost,
     OverrideHost,
+    ReviewLimitHost,
     FileIndexHost {
   task: Task
   agents: Agent[]
