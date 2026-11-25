@@ -3,6 +3,7 @@ import type { TaskJob, TaskJobView } from '@shared/schema'
 import { api } from '@/lib/api'
 import { mergeJobView, nextPollMs, type JobViewState } from '@/lib/job-poll'
 import { CommandDialog, type CommandPhase } from './ToolDialog'
+import { StopJobsButton } from './StopJobsButton'
 
 /**
  * 窗口要显示哪条后台命令：id + 打开那一刻行上的信息（命令、状态）。
@@ -80,6 +81,7 @@ export function JobDialog({
       status={phase}
       code={view?.code}
       error={error}
+      stop={<StopJobsButton taskId={taskId} jobs={[{ id: target.id, name: view?.name || target.command }]} withText />}
       startedAt={
         view?.startedAt ? Date.parse(view.startedAt) : target.startedAt ? Date.parse(target.startedAt) : undefined
       }

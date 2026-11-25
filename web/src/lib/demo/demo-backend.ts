@@ -2320,7 +2320,9 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'tasks' && id === 'keepalive') return sub === 'release' ? { released: [] } : []
   // 本轮产出「可浏览的地址」的停止、重新运行（demo-jobs.ts）
   if (res === 'tasks' && id && sub === 'jobs' && seg[3] && seg[4] && method === 'POST') {
-    const r = demoJobAction({ id }, seg[3], seg[4])
+    // 运行区、工具行的「终止」也走这里：还在跑的命令要整份任务（记推回给 Agent 的那条），见 demo-jobs.ts
+    const tk = (d.tasks ?? []).find((x) => x.id === id) ?? { id }
+    const r = demoJobAction(tk, seg[3], seg[4], body)
     persist()
     return r
   }

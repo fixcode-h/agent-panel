@@ -1,4 +1,8 @@
-import type { Task, TaskJob } from '@shared/schema'
+import type { Task, TaskJob, TaskMessage } from '@shared/schema'
+import { bgResultHead } from '@shared/panel-tools'
+import { fmtDuration } from '@shared/duration'
+import { bgResultLetter, bgUserStopHead } from '@shared/prompt/letters/background'
+import { settleJobRow } from '@shared/jobs/job-row'
 import type { LiveUrl } from '@shared/turn-outputs/local-url'
 
 /**
@@ -25,8 +29,50 @@ export const demoUrlStore: { map: Record<string, LiveUrl[]> } = { map: {} }
 
 export const demoUrls = (t: Pick<Task, 'id'>): LiveUrl[] => demoUrlStore.map[t.id] ?? []
 
-/** POST /tasks/:id/jobs/:jobId/stop|rerun：演示里没有进程，只把那一行改成已停止 / 运行中 */
-export function demoJobAction(t: Pick<Task, 'id'>, jobId: string, action: string) {
+/**
+ * 运行区、工具行的「终止」（POST …/stop 带 tellAgent）：演示里没有进程，把这条命令从还在跑的里拿掉，
+ * 并像正式后端一样往对话里记一条推回给 Agent 的结果（措辞和 server/background.ts 用的是同一份 shared 里的信）。
+ * 不认识的编号返回 undefined，交给下面「可浏览的地址」那张表
+ */
+function demoStopLiveJob(task: Task, jobId: string, tellAgent: boolean) {
+  const list = demoJobs(task)
+  const job = list.find((j) => j.id === jobId)
+  if (!job) return undefined
+  setDemoJobs(
+    task,
+    list.filter((j) => j.id !== jobId),
+  )
+  const ms = Math.max(0, Date.now() - Date.parse(job.startedAt || new Date().toISOString()))
+  const head = bgUserStopHead(job.name, fmtDuration(ms))
+  // 发起它的那一行（run_background）接上结果、不再转圈：和正式后端同一份收口逻辑
+  settleJobRow(task, job.id, `${bgResultHead(job.id)}${head}`, false, ms, '用户终止')
+  if (tellAgent) {
+    const msg: TaskMessage = {
+      id: `demo-stop-${jobId}-${Date.now()}`,
+      role: 'system',
+      agentId: '',
+      step: '',
+      text:
+        bgResultHead(job.id) + bgResultLetter({ head, changed: false, command: job.command, body: '', byUser: true }),
+      tools: [],
+      panel: 'background',
+      at: new Date().toISOString(),
+    }
+    task.messages.push(msg)
+    task.updatedAt = msg.at
+  }
+  return { ok: true, info: '已停止' }
+}
+
+/**
+ * POST /tasks/:id/jobs/:jobId/stop|rerun：演示里没有进程。还在跑的命令（运行区那一行）停了就拿掉；
+ * 「可浏览的地址」那张表只把那一行改成已停止 / 运行中
+ */
+export function demoJobAction(t: Task | Pick<Task, 'id'>, jobId: string, action: string, body?: unknown) {
+  if (action === 'stop' && 'messages' in t) {
+    const live = demoStopLiveJob(t, jobId, !!(body as { tellAgent?: boolean } | null)?.tellAgent)
+    if (live) return live
+  }
   const u = demoUrls(t).find((x) => x.job === jobId)
   if (!u) return { ok: false, info: '没有这条后台命令' }
   if (action === 'stop') {

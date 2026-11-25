@@ -835,8 +835,12 @@ export const api = {
       `/tasks/${id}/conv-revert`,
       json('POST', { scope }),
     ),
-  /** 本轮产出「可浏览的地址」那一行：停掉起它的后台命令、停了以后按原命令再起一次 */
-  stopJob: (id: string, jobId: string) => call(jobsContract.stop, { params: { id, jobId }, body: {} }),
+  /**
+   * 停一条后台命令。tellAgent：运行区、工具行、命令行窗口的「终止」，把「已被用户终止」推回对话；
+   * 不带的是本轮产出「可浏览的地址」停开发服务器，不推回。rerunJob 是那一行停了以后按原命令再起一次
+   */
+  stopJob: (id: string, jobId: string, tellAgent?: boolean) =>
+    call(jobsContract.stop, { params: { id, jobId }, body: tellAgent ? { tellAgent } : {} }),
   rerunJob: (id: string, jobId: string) => call(jobsContract.rerun, { params: { id, jobId }, body: {} }),
   turnRevert: (id: string, msg: string) =>
     request<{ ok: true; task: Task; files: string[] } | { ok: false; conflicts: { path: string; reason: string }[] }>(

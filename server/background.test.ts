@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { awaitedJob, createBackground, uiJobs, type BgJob, type BgTimers } from './background.ts'
+import { awaitedJob, createBackground, jobDetail, jobOutput, uiJobs, type BgJob, type BgTimers } from './background.ts'
 import { bgJobIds } from '../shared/panel-tools.ts'
 import { childHoldsOf } from '../shared/task.ts'
 
@@ -743,4 +743,66 @@ test('父对话测试命令被停止也要把结果交回去；普通命令照�
   assert.equal(bg.list('p3').find((j) => j.id === lifecycle.id)!.state, 'stopped', '记录照旧置终态')
   assert.equal(done.length, before, '生命周期停不回传结果')
   void bg.stop('p')
+})
+
+test('用户在页面上点终止：结果写成「已被用户终止」推回对话，重复点不重复停；常驻服务不推', async () => {
+  const ends: ((r: unknown) => void)[] = []
+  let aborts = 0
+  const fake = ((_line: string, _cwd: string, o: { onLine: (l: string) => void; signal?: AbortSignal }) =>
+    new Promise((resolve) => {
+      ends.push(resolve)
+      o.signal?.addEventListener('abort', () => {
+        aborts++
+        resolve({ code: null, killed: 'stopped', stderr: '' })
+      })
+    })) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const done: { job: BgJob; text: string }[] = []
+  const bg = createBackground((j, text) => done.push({ job: { ...j }, text }), { run: fake })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-user-stop-'))
+
+  const r = bg.start({ taskId: 'u', name: '编译 Demo', command: 'build.bat', cwd: '', root: dir, exclusive: false })
+  assert.ok(r.ok)
+  await until(() => ends.length === 1, '命令跑起来')
+  assert.equal(bg.stopOne('u', r.id!, { byUser: true }).ok, true)
+  // 进程还在退出时再点一次：照样回 ok（按钮不报错），也不再发第二次停止
+  const again = bg.stopOne('u', r.id!, { byUser: true })
+  assert.equal(again.ok, true)
+  await until(() => done.length === 1, '用户终止的结果推回对话')
+  assert.equal(aborts, 1, '重复点终止只停一次')
+  assert.equal(done[0].job.state, 'stopped')
+  assert.match(done[0].text, /已被用户终止/)
+  assert.match(done[0].text, /不要自己重新运行/)
+  assert.equal(jobDetail(done[0].job as BgJob), '用户终止')
+  assert.match(jobOutput(done[0].job as BgJob), /已被用户终止/, '对话里那一行也写明是用户终止的')
+  // 已经结束了再点：说清已经结束
+  assert.equal(bg.stopOne('u', r.id!, { byUser: true }).ok, false)
+
+  // 排队中被用户终止：同样推回
+  const qdir = mkdtempSync(path.join(tmpdir(), 'bg-user-stop-q-'))
+  const a = bg.start({ taskId: 'u', name: '占位', command: 'x', cwd: '', root: qdir, exclusive: true })
+  const b = bg.start({ taskId: 'u', name: '排队的编译', command: 'x', cwd: '', root: qdir, exclusive: true })
+  assert.ok(a.ok && b.ok)
+  assert.equal(bg.stopOne('u', b.id!, { byUser: true }).ok, true)
+  await until(() => done.some((x) => x.job.id === b.id), '排队中被用户终止也推回')
+
+  // 常驻服务（开发服务器）：对话没在等它，用户停了也不推回
+  const before = done.length
+  const svc = bg.start({
+    taskId: 'u2',
+    name: '开发服务器',
+    command: 'x',
+    cwd: '',
+    root: dir,
+    exclusive: false,
+    service: true,
+  })
+  assert.ok(svc.ok)
+  await until(() => bg.list('u2').some((j) => j.state === 'running'), '服务跑起来')
+  assert.equal(bg.stopOne('u2', svc.id!, { byUser: true }).ok, true)
+  await until(() => bg.list('u2').some((j) => j.state === 'stopped'), '服务置终态')
+  await tick()
+  await tick()
+  assert.equal(done.length, before, '常驻服务被停不推回')
+  void bg.stop('u')
+  void bg.stop('u2')
 })

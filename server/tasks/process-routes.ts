@@ -22,6 +22,7 @@ import { invokeCli } from '../exec/invoke.ts'
 import { tmpdir } from 'node:os'
 import type { TasksScope } from './scope.ts'
 import { currentTask } from './read.ts'
+import { jobsContract } from '../../shared/api-contract/jobs.ts'
 
 /**
  * 停子任务和后台命令、看后台命令输出、对话名下的进程（列出、结束、清理残留、AI 建议）和内存曲线。
@@ -114,13 +115,17 @@ export function registerProcessRoutes(sc: TasksScope) {
   })
 
   /**
-   * 本轮产出里「可浏览的地址」那一行的停止：只停这一条（开发服务器），对话本身不停；
-   * 结果按后台命令的老规矩不推回对话（停下的命令推回去会把对话拉起新的一轮）
+   * 页面上停一条后台命令，对话本身不停。两个入口：
+   * - 运行区、工具行、命令行窗口的「终止」（tellAgent）：结果写成「已被用户终止」推回对话，Agent 不再干等、也不自己重跑；
+   * - 本轮产出里「可浏览的地址」的停止：开发服务器，按老规矩不推回（推回去会把停着的对话拉起新的一轮）
    */
   sc.routes.post('/:id/jobs/:jobId/stop', async (c) => {
     const id = c.req.param('id')
     if (!(await currentTask(sc, id))) return sc.bad(c, t('任务不存在'), 404)
-    const r = sc.background.stopOne(id, c.req.param('jobId'))
+    const body = jobsContract.stop.body.safeParse(await c.req.json().catch(() => ({})))
+    const byUser = body.success && !!body.data.tellAgent
+    const r = sc.background.stopOne(id, c.req.param('jobId'), { byUser })
+    if (r.ok && byUser) log.info('background', '用户在页面上终止了后台命令', { task: id, job: c.req.param('jobId') })
     return c.json({ ok: r.ok, info: r.ok ? t('已停止') : r.info })
   })
 

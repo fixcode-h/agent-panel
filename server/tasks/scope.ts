@@ -127,6 +127,7 @@ export interface TasksScope {
     stopOne(
       taskId: string,
       id: string,
+      o?: { byUser?: boolean },
     ): {
       ok: boolean
       info: string

@@ -37,10 +37,28 @@ export const bgSlowNotice = (j: BgNoticeJob, next: string) =>
  * 但只能要求「结束这一轮时」再总结：以前写「处理完这个结果后，重新总结整段工作」，模型一收到结果就先写一段总结，
  * 没有工具调用的回复会直接结束这一轮，计划还没做完就停（用户 2026-11-06 报结束前钩子反复拦住，一半紧跟在推回结果之后）
  */
-export function bgResultLetter(r: { head: string; changed: boolean; command?: string; body: string }): string {
+export function bgResultLetter(r: {
+  head: string
+  changed: boolean
+  command?: string
+  body: string
+  /** 用户在面板上点「终止」停的：换掉结尾那句，不让模型把它当失败排查、自己重跑（见 bgUserStopAsk） */
+  byUser?: boolean
+}): string {
   const warn = r.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
   const cmd = r.command ? `\n命令：${r.command}` : ''
+  if (r.byUser) return `【面板】${r.head}${cmd}${r.body ? `\n${r.body}` : ''}${bgUserStopAsk}`
   const ask =
     '\n按这个结果接着做，不用先写总结；要结束这一轮时，最后那条回复再重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
   return `【面板】${r.head}${warn}${cmd}${r.body ? `\n${r.body}` : ''}${ask}`
 }
+
+/** 用户在面板上点「终止」停掉的后台命令：状态那一行（正式后端 server/background.ts 和演示后端共用） */
+export const bgUserStopHead = (name: string, ran: string) => `后台命令「${name}」已被用户终止（跑了 ${ran}）`
+
+/**
+ * 用户终止的结果信结尾：用户是有意停的，不是命令出了错。不要自己重跑、也不要当失败排查；
+ * 只要求「结束这一轮时」再总结（同 bgResultLetter 的说明，收到就总结会让这一轮直接结束）
+ */
+export const bgUserStopAsk =
+  '\n这是用户在面板上手动终止的，不是命令出错：不要自己重新运行它，也不要当作失败去排查。不依赖它的事接着做；接下来要不要重跑、改成别的做法不清楚时先问用户。要结束这一轮时，最后那条回复再重新总结整段工作。'
