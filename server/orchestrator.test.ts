@@ -230,6 +230,51 @@ test('阶段报告：确认节点有 submit_report；改了决策就带着差异
   assert.doesNotMatch(down.prompt, /边做边说的话/)
 })
 
+test('阶段报告：没改决策确认后按 next 接着问，新的一版没有新问题就直接往下走，不再让用户确认一次（用户 2026-11-25）', async () => {
+  const w = workflow()
+  w.flows[0].nodes[0].hooks.confirm = true
+  const task = flowRun('r-report-auto')
+  const log: AgentCall[] = []
+  let round = 0
+  const h = host(task, log, async (call) => {
+    if (call.step?.id === 'a') {
+      round++
+      call.orch!.submitReport!({
+        summary: round === 1 ? '用方案 A' : '用方案 A（压测过）',
+        decisions: [
+          {
+            id: 'Q1',
+            title: '路线',
+            question: '',
+            options: [
+              { id: 'A', label: '订阅 store', note: '' },
+              { id: 'B', label: '手动刷新', note: '' },
+            ],
+            pick: 'A',
+            why: '',
+            self: false,
+          },
+        ],
+        details: '',
+        next: round === 1 ? '再压测一下边界' : '',
+      })
+    }
+    return { ok: true, text: '好了' }
+  })
+  h.workflow = w
+  let asks = 0
+  h.confirm = async () => (++asks, { allow: true, picks: { Q1: 'A' } })
+  await runEngineTurn(h)
+  const a = task.steps.find((s) => s.id === 'a')!
+  assert.equal(asks, 1, '只确认了一次')
+  assert.deepEqual(
+    a.submitted?.reports?.map((v) => v.result),
+    ['next', 'auto'],
+  )
+  const down = log.find((c) => c.step?.id === 'b')!
+  assert.match(down.prompt, /用方案 A（压测过）/)
+})
+
 test('改代码的运行的收尾：评审不通过意见交回收尾节点修，修完再评审、测试都过了才待合回', async () => {
   const w = withWrapUp(workflow(), { worker: 'w', reviewer: 'rv', tester: 'ts' })
   const task = flowRun('r-wrap', { steps: planTask(w).steps })

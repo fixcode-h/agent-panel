@@ -12,6 +12,7 @@ const RESULT = () => ({
   changed: t('这一版你改了决策，已交给 Agent 重出'),
   revised: t('这一版你提了修改意见，已退回'),
   next: t('这一版你已确认，Agent 接着问下一轮'),
+  auto: t('这一版没有新问题，已自动通过'),
 })
 
 /**

@@ -4,6 +4,8 @@ export const EN_STAGE_REPORT: Record<string, string> = {
   '这一版你改了决策，已交给 Agent 重出': 'You changed decisions in this version; sent back to the Agent to redo',
   '这一版你提了修改意见，已退回': 'You asked for changes to this version; sent back',
   '这一版你已确认，Agent 接着问下一轮': 'You approved this version; the Agent moved on to the next round',
+  '这一版没有新问题，已自动通过': 'No new questions in this version, so it passed automatically',
+  '没有新问题，自动通过': 'No new questions, passed automatically',
   '第 {n} 版 · 没交报告': 'Version {n} · no report submitted',
   '改了 {n} 项决策：点「确认」交给 Agent 按你的选择重出一版；还有别的要改，写标注或整体意见再点「修改」':
     'Changed {n} decision(s): "Approve" sends it back to the Agent to redo with your choices; for anything else, add notes or comments and click "Revise"',

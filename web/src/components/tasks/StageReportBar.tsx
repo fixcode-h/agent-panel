@@ -16,6 +16,7 @@ const STATE = (): Record<NonNullable<StageReportVersion['result']> | 'pending', 
   changed: [t('改了决策，重出中'), 'idle'],
   revised: [t('已退回修改'), 'idle'],
   next: [t('已确认，接着下一轮'), 'idle'],
+  auto: [t('没有新问题，自动通过'), 'ok'],
 })
 
 /** 节点（含多步节点的每一步）交过的阶段报告：一步一份，按执行顺序 */
