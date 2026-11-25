@@ -36,6 +36,7 @@ import { fileIndexRun } from '../file-index/agent-tool.ts'
 import { findCodeRun } from '../capability-router/find/run.ts'
 import { fileIndexSettingsOf } from '../../shared/file-index/types.ts'
 import { turnExtra } from './turn-extra.ts'
+import { customToolsFor } from '../custom-tools/agent.ts'
 
 /**
  * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
@@ -152,6 +153,17 @@ export async function runRealTurn(ctx: RealContext) {
             indexOn: fileIndexSettingsOf(ctx.project).enabled,
           })
         : undefined,
+    // 自建工具（ADR 0082）：项目的和全局的；不在项目里只有全局的。授权卡、保存弹窗跟着这一轮
+    customTools: await customToolsFor(
+      ctx,
+      {
+        projectId: ctx.project?.id || undefined,
+        projectRoot: ctx.project?.path || undefined,
+        workDir: ctx.project?.path ? workDirOf(ctx.task, ctx.project) : undefined,
+        docRoot: ctx.project?.path ? await docRootOf(ctx.project.path, ctx.agents).catch(() => undefined) : undefined,
+      },
+      ownAsks,
+    ).catch(() => undefined),
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦

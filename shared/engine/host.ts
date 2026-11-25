@@ -21,6 +21,7 @@ import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 import type { SearchHost } from '../host/search.ts'
 import type { FileIndexHost, OrchFileIndex } from '../host/file-index.ts'
 import type { FindCodeHost, OrchFindCode } from '../host/find-code.ts'
+import type { CustomToolsHost, OrchCustomTools } from '../host/custom-tools.ts'
 import type { IdeMcpHost } from '../host/ide-mcp.ts'
 import type { OrchSubmit } from '../host/submit.ts'
 import type { OrchOverride, OverrideHost } from '../host/override.ts'
@@ -175,7 +176,8 @@ export interface Orchestra
     OrchSubmit,
     OrchOverride,
     OrchFileIndex,
-    OrchFindCode {
+    OrchFindCode,
+    OrchCustomTools {
   /** 调用者的节点 id */
   self: string
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
@@ -237,7 +239,8 @@ export interface EngineHost
     OverrideHost,
     ReviewLimitHost,
     FileIndexHost,
-    FindCodeHost {
+    FindCodeHost,
+    CustomToolsHost {
   task: Task
   agents: Agent[]
   /** 所有工作流（节点可以引用其他工作流） */

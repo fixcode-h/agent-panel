@@ -100,6 +100,8 @@ export function capabilityTools(oc: OrchCtx) {
     // 面板的 find 工具：找文件查索引、查代码走能力路由，都在服务端查好、拼好文字，这里原样转交
     fileIndex: host.fileIndex,
     findCode: host.findCode,
+    // 自建工具（ADR 0082）：清单、执行、授权都在服务端，这里原样转交
+    customTools: host.customTools,
     experience: host.experience
       ? {
           find: async (query, files) =>

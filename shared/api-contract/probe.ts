@@ -4,7 +4,7 @@
  * 两边跑的是同一份流程：哪边少了字段、多了一层包装，报错里直接写出是哪个接口。
  *
  * 只给测试用，正式代码不要引入。会建一个分类、一个标签、一个角色副本，走完都删掉；
- * 给第一个项目记一条教训，删一个对话再从回收站恢复；建一个风格再删掉；工作总结的项目配置原样存回去。
+ * 建一个全局的自建工具再删掉；给第一个项目记一条教训，删一个对话再从回收站恢复；建一个风格再删掉；工作总结的项目配置原样存回去。
  * 钩子只读列表、最近触发和校验，不建钩子（建了会在真机的对话里触发）。
  */
 import { catalogContract as C } from './catalog.ts'
@@ -16,6 +16,7 @@ import { mcpCatalogContract as M } from './mcp-catalog.ts'
 import { hooksContract as H } from './hooks.ts'
 import { browserExtContract as B, stylesContract as S } from './styles.ts'
 import { lessonDraftsContract as L, summaryContract as W } from './summary.ts'
+import { customToolsContract as K } from './custom-tools.ts'
 
 /** 发一个请求、拿回解析好的 JSON（204 时是 undefined）；失败直接抛 */
 export type ProbeFetch = (method: string, url: string, body?: unknown) => Promise<unknown>
@@ -133,6 +134,18 @@ export async function probeContracts(send: ProbeFetch): Promise<ProbeReport> {
   const summaryConfig = await hit(W.config)
   await hit(W.saveConfig, { body: summaryConfig })
   await hit(L.list)
+
+  // 自建工具：建一个全局的、只展开命令试一下、再删掉（不真的执行）
+  await hit(K.list)
+  const draft = {
+    id: 'contract-probe',
+    name: '契约探查工具',
+    run: { command: 'echo {{word}}' },
+    params: [{ name: 'word' }],
+  }
+  await hit(K.save, { body: { scope: 'global', tool: draft, replace: true, note: '', by: '' } })
+  await hit(K.run, { body: { scope: 'global', id: 'contract-probe', args: { word: 'hi' }, dryRun: true } })
+  await hit(K.remove, { params: { scope: 'global', id: 'contract-probe' } })
 
   return { checked, problems }
 }
