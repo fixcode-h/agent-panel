@@ -26,4 +26,18 @@ export const EN_STAGE_REPORT: Record<string, string> = {
   按你的修改意见重出: 'Redone with your feedback',
   确认上一轮后接着问: 'Next round after approval',
   '上一版你改了：{list}': 'Last version you changed: {list}',
+  // 流程图节点详情里常驻的报告入口（StageReportBar）
+  等你确认: 'Waiting for you',
+  已确认: 'Approved',
+  '改了决策，重出中': 'Decisions changed, redoing',
+  已退回修改: 'Sent back for changes',
+  '已确认，接着下一轮': 'Approved, next round',
+  阶段报告: 'Stage report',
+  '「{title}」的阶段报告': 'Stage report of "{title}"',
+  '看第 {n} 版': 'View version {n}',
+  查看报告: 'View report',
+  '报告已经处理过了，只能查看；切版本看每一轮':
+    'This report has been handled, view only; switch versions to see each round',
+  '只能查看；要确认或修改，点确认卡片上的「查看结果」':
+    'View only; to approve or revise, click "View result" on the confirmation card',
 }

@@ -1336,6 +1336,30 @@ await runShard(import.meta.filename, async (api) => {
       // 演示里「方案」节点交了阶段报告（web/src/lib/demo/demo-stage-report.ts）：按报告分区画，第 2 版在等确认
       await check(p, '工作流栏-查看结果', ['需要你决定', '这次要不要补单测', '第 2 版'])
       await p.keyboard.press('Escape')
+      // 流程图节点详情底部常驻的阶段报告入口（用户 2026-11-25 要求：确认后也能随时看每一版）
+      await row.getByText('角标订阅购物车数据').first().click()
+      await p
+        .getByRole('tab', { name: '流程图' })
+        .last()
+        .click()
+        .catch(() => {})
+      const bar = p.locator('[data-stage-report]').first()
+      if (
+        !(await bar.waitFor({ timeout: 5000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('阶段报告入口：流程图节点详情里没有常驻的报告入口')
+      else {
+        await bar.getByRole('button', { name: '第 1 版', exact: true }).click()
+        const dlg = p.getByRole('dialog')
+        await dlg.waitFor()
+        await check(p, '阶段报告入口-看第 1 版', ['这一版你改了决策', '只能查看'])
+        if (await dlg.getByRole('button', { name: '确认', exact: true }).isVisible())
+          errors.push('阶段报告入口：只看的弹窗里不该有「确认」按钮')
+        await p.keyboard.press('Escape')
+      }
     }
   }
 })

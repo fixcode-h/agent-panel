@@ -82,6 +82,7 @@ export function ReviewDialog({
   versions,
   texts,
   readOnly,
+  readOnlyHint,
   presets,
   cancel,
   top,
@@ -110,6 +111,8 @@ export function ReviewDialog({
   texts?: { approve: string; revise: string; hintApprove: string; hintRevise: string; changed?: boolean }
   /** 只看不审（已经确认过的报告） */
   readOnly?: boolean
+  /** 只读时底栏那句说明：不给时是「这一版已经处理过了」 */
+  readOnlyHint?: string
   /** 右栏上方的快捷标注按钮（只在能审的时候出现） */
   presets?: PresetNote[]
   /**
@@ -625,7 +628,7 @@ export function ReviewDialog({
         >
           {locked
             ? readOnly
-              ? t('这一版已经处理过了，只能查看')
+              ? (readOnlyHint ?? t('这一版已经处理过了，只能查看'))
               : t('这是旧的一版，只能查看；切回最新一版再标注')
             : supply?.primary
               ? supply.hint

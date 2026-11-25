@@ -12,6 +12,7 @@ import { fmtTokens, stepDuration } from '@/lib/tasks'
 import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/FlowCanvas'
 import { nodeViews } from '@/components/flow/views'
 import { StepSection } from './StepSection'
+import { StageReportBar } from './StageReportBar'
 import { RouteProvider } from './route-context'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
@@ -212,6 +213,8 @@ export function TaskFlow({
                 <MessageSquareText className="h-3.5 w-3.5" />
                 {openLabel ?? t('在对话中查看完整过程')}
               </Button>
+              {/* 交过阶段报告的节点：报告入口常驻在底部，确认之后也能随时点开看每一版 */}
+              <StageReportBar task={task} root={step} />
             </div>
           </div>
         </div>

@@ -46,7 +46,14 @@ export function demoOwnedRun(parent: Task, id: string): Task {
     ],
   })
   const steps = planTask(wf).steps
-  Object.assign(steps[0], { status: 'running', startedAt: now, awaitConfirm: true, output: PLAN })
+  // 报告同时记在节点上（和正式后端 submit_report 一样）：流程图节点详情底部的报告入口按它画（StageReportBar）
+  Object.assign(steps[0], {
+    status: 'running',
+    startedAt: now,
+    awaitConfirm: true,
+    output: PLAN,
+    submitted: { blockers: [], summary: '', left: '', at: now, reports: structuredClone(DEMO_STAGE_REPORTS) },
+  })
   return {
     ...parent,
     id,
