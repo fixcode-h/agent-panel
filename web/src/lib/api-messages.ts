@@ -17,6 +17,8 @@ export const messagesApi = {
     userAction = '',
     /** 父对话执行中点了「发给…」直接发给这个子对话：父对话 id，服务端在父对话里留一行记录 */
     via = '',
+    /** 工作流运行的流程图里选中节点直接发给它：节点的步骤 id（shared/flow/node-message.ts） */
+    node = '',
   ) =>
     request<Task>(
       `/tasks/${id}/messages`,
@@ -27,6 +29,7 @@ export const messagesApi = {
         ...(messageId ? { messageId } : {}),
         ...(userAction ? { userAction } : {}),
         ...(via ? { via } : {}),
+        ...(node ? { node } : {}),
       }),
     ),
   /** 等你操作：完成了（没有要交回的）/ 做不了（写原因）/ 跳过；交回内容走 sendMessage */

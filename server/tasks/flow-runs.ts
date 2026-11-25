@@ -26,6 +26,7 @@ import { log } from '../log.ts'
 import type { TasksScope } from './scope.ts'
 import { freshTask, readTask } from './read.ts'
 import { flowDelegateLetter, flowRunLetter } from '../../shared/prompt/letters/notice.ts'
+import { messageNode, type NodeMessageInput } from './flow-node-message.ts'
 
 const now = () => new Date().toISOString()
 const bad = (info: string) => ({ ok: false, info })
@@ -400,7 +401,10 @@ export function createFlowRuns(sc: TasksScope) {
     }
   }
 
-  return { hostFor, afterTurn, delegate, pauseRunsOf, resumeRunsOf, resume, halt }
+  /** 用户在流程图里选中节点直接发的消息（flow-node-message.ts） */
+  const toNode = (id: string, m: NodeMessageInput) => messageNode({ sc, edit, halt, resume }, id, m)
+
+  return { hostFor, afterTurn, delegate, pauseRunsOf, resumeRunsOf, resume, halt, toNode }
 }
 
 /** 运行卡片上的操作（父对话的工作流栏用）：确认、修改、追问走通用的回答请求接口，暂停、重启走 stop / resume */

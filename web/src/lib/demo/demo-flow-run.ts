@@ -1,5 +1,6 @@
 import { FlowRun } from '@shared/tasks/flow-schema'
-import { Workflow, type NewTaskInput, type Task } from '@shared/schema'
+import { Workflow, type Attachment, type DeliveryHow, type NewTaskInput, type Task } from '@shared/schema'
+import { nodeMessagePlan, noteForNode, rerunFromNode } from '@shared/flow/node-message'
 import { planTask } from '@shared/flow'
 import { DEMO_STAGE_REPORTS } from './demo-stage-report'
 
@@ -97,4 +98,44 @@ export function demoOwnedRun(parent: Task, id: string): Task {
       phase: 'confirm',
     }),
   } as Task
+}
+
+/**
+ * 演示里在流程图上选中节点直接发消息（POST /tasks/:id/messages 带 node）：判定和对运行的改动用正式后端同一份
+ * （shared/flow/node-message.ts）；演示没有常驻 CLI，插话只记在节点上，答确认、重跑交给演示后端现成的做法
+ */
+export function demoNodeMessage(
+  task: Task,
+  m: { node: string; text: string; attachments: Attachment[]; messageId?: string },
+  h: { answer: (reqId: string, a: { allow: boolean; answer: string }) => void; rerun: () => void },
+): { error: string } | undefined {
+  const plan = nodeMessagePlan(task, m.node)
+  if ('error' in plan) return plan
+  const at = new Date().toISOString()
+  const push = (how: DeliveryHow) =>
+    task.messages.push({
+      id: m.messageId ?? `demo-${crypto.randomUUID()}`,
+      role: 'user',
+      agentId: '',
+      step: plan.step.id,
+      text: m.text,
+      tools: [],
+      ...(m.attachments.length ? { attachments: m.attachments } : {}),
+      delivery: { how, at },
+      at,
+    })
+  const req = task.requests.find((r) => r.kind === 'confirm')
+  if (plan.kind === 'revise' && req) {
+    push('steer')
+    h.answer(req.id, { allow: false, answer: m.text })
+  } else if (plan.kind === 'steer') push('steer')
+  else if (plan.kind === 'rerun') {
+    if (!rerunFromNode(task, plan.step, m.text, at)) return { error: '这次运行里没有这个节点' }
+    push('next')
+    h.rerun()
+  } else {
+    noteForNode(task, plan.step, m.text, at)
+    push('next-node')
+  }
+  return undefined
 }

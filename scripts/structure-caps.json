@@ -50,7 +50,7 @@
     "web/src/components/tasks/TaskFiles.tsx::TaskFiles": 370,
     "web/src/components/tasks/TaskView.tsx::TaskView": 780,
     "web/src/components/usage/UsageSection.tsx::UsageSection": 580,
-    "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 370,
+    "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 360,
     "web/src/lib/demo/demo-backend.ts::seed": 500,
     "web/src/lib/demo/demo-backend.ts::route": 590,
     "web/src/lib/demo/demo-backend.ts::tasksRoute": 600,
@@ -429,6 +429,8 @@
   "preprocess": 2,
   "orchInlineTools": 0,
   "hostMembers": {
+    "FindCodeHost": 1,
+    "OrchFindCode": 1,
     "ReviewLimitHost": 1,
     "FileIndexHost": 1,
     "OrchFileIndex": 1,

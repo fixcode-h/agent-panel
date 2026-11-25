@@ -17,7 +17,7 @@ import { demoChildRows } from './demo-children'
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { seedChatRail } from './demo-chat-rail'
-import { demoOwnedRun, demoFlowRun } from './demo-flow-run'
+import { demoNodeMessage, demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis, diagnosisMessage } from '@shared/bug/diagnosis'
 import { retractChat, syncChat } from '@shared/bug/chat'
 import { demoEvidence } from './demo-evidence'
@@ -2498,6 +2498,30 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
 /** POST /tasks/:id/messages：执行中记进对话、这一轮结束后接着处理，空闲时开新的一轮（从 tasksRoute 拆出来） */
 function postMessage(d: Db, task: Task, body: unknown) {
   const f = parse(FollowUpInput, body)
+  // 流程图里选中节点直接发给它（demo-flow-run.ts，判定和正式后端同一份）
+  if (f.node) {
+    const r = demoNodeMessage(
+      task,
+      { ...f, node: f.node },
+      {
+        answer: (rid, a) => {
+          simAnswers.set(rid, a)
+          const req = task.requests.find((x) => x.id === rid)
+          if (req) applyAnswer(task, req, a, { newId: () => `demo-${crypto.randomUUID()}` })
+          trackWait(task)
+        },
+        rerun: () => {
+          const cur = live.get(task.id)
+          if (!cur) return void startTurn(d, task, '', false, false, true)
+          cur.stop = true
+          void cur.done?.finally(() => startTurn(d, task, '', false, false, true))
+        },
+      },
+    )
+    if (r) fail(r.error)
+    persist()
+    return task
+  }
   if (f.userAction) settleAction(task, f.userAction, 'returned', { text: f.text })
   // 父对话执行中点了「发给…」：和正式后端一样在父对话里留一行（shared/children/direct-note.ts）
   const via = f.via && f.via === task.parentTaskId ? d.tasks?.find((x) => x.id === f.via) : undefined

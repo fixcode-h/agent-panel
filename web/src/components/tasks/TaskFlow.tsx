@@ -162,9 +162,8 @@ export function TaskFlow({
   }
 
   const step = tops.find((s) => s.nodeId === sel)
-  const msgs = step
-    ? task.messages.filter((m) => m.role !== 'user' && (m.step === step.id || m.step.startsWith(step.id + '/')))
-    : []
+  // 用户发给这个节点的话（执行中插给它的、选中节点直接发的）记在节点上，和节点输出一起按时间显示
+  const msgs = step ? task.messages.filter((m) => m.step === step.id || m.step.startsWith(step.id + '/')) : []
 
   return (
     <div ref={box} className="flex min-h-0 flex-1 flex-col">

@@ -128,9 +128,13 @@ export async function steerTask(
   task: Task,
   text: string,
   msg: TaskMessage,
+  /** 用户在流程图里点名的节点：只交给这个节点（含它下面的步骤），它收不下就返回 false，由调用方另作安排 */
+  node = '',
 ): Promise<'steer' | 'notes' | 'next-node' | false> {
   // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
-  const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode !== 'workflow' && isHelperStep(task, s.step)))
+  const all = [...(steers.get(task.id) ?? [])]
+    .filter((s) => !(task.mode !== 'workflow' && isHelperStep(task, s.step)))
+    .filter((s) => !node || s.step === node || s.step.startsWith(`${node}/`))
   const took: Steerer[] = []
   for (const s of all) if (await s.steer(steerNote(text, steerFrom(task, msg)))) took.push(s)
   if (took.length) {
@@ -140,6 +144,8 @@ export async function steerTask(
     for (const s of took) s.accepted(msg)
     return 'steer'
   }
+  // 点名的节点收不下（CLI 没有插话协议）：不改交给别的节点，调用方记成给它的说明
+  if (node) return false
   const takers = noteTakersOf(task.id)
   if (takers?.size) {
     // 对话的 CLI 没有插话协议：登记给正在跑的它，下一次调用 read_user_notes 时交给模型；

@@ -1182,6 +1182,8 @@ export const FollowUpInput = z.object({
   userAction: z.string().max(100).optional(),
   /** 父对话执行中在输入框上点了「发给…」直接发给这个子对话：父对话 id（服务端核对是它的父对话，在父对话里记一行） */
   via: z.string().max(100).optional(),
+  /** 工作流运行里，用户在流程图上选中节点直接发给它：节点的步骤 id（shared/flow/node-message.ts 按节点状态决定怎么交） */
+  node: z.string().max(200).optional(),
 })
 /** 父对话发布的一条全局规则 */
 export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })

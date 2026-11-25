@@ -70,24 +70,24 @@
 
 `server/exec/real-turn.ts` 的 `runRealTurn` 是一轮真实执行的入口（把宿主能力交给 `shared/engine/index.ts`），调用 Agent 时经 `runner.ts` 的 `gatedRunAgent` 启动 CLI。`runner.ts` 只留一次 CLI 调用本身（`runAgent`：拼参数、收事件、写消息、保活等下一句），周边按功能拆在：
 
-| 文件                    | 内容                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `real-context.ts`       | `RealContext`：一轮执行的宿主上下文                                                                         |
-| `steering.ts`           | 执行中的补充（插话、`read_user_notes`、留给下一个节点）、`deliverWait` 交消息给等下一句的进程、`cancelWait` |
-| `waiters.ts`            | 等下一句 / 等子任务的登记和摘除（每个等待只摘自己，见 `bugs/keepalive-double-wait.md`）                     |
-| `requests.ts`           | CLI 的提问和授权请求：自动作答、作废、回答后交回                                                            |
-| `api-gate.ts`           | API 并发名额：拿名额、排队标记、等别人时让出再拿回                                                          |
-| `retry-policy.ts`       | 断线续接、环境性卡住重试的次数和判定，`failureHints`                                                        |
-| `speed-meter.ts`        | 实时输出速度                                                                                                |
-| `search-exclude-env.ts` | 搜索排除写成 ripgrep 配置交给 CLI                                                                           |
-| `handoff-file.ts`       | 交接内容存成文件                                                                                            |
-| `run-state.ts`          | `RunState`：`runAgent` 一次调用里各阶段共享的可变状态（见下面「runAgent 的共享状态」）                      |
-| `run-setup.ts`          | 开跑前的准备：`resolveTarget` 定角色 / CLI / 目录 / 模型，`prepareLaunch` 拼输入和启动参数，`attachPlugins` |
-| `run-events.ts`         | `createApply`：收 CLI 的流式事件，写消息、思考、用量、改动                                                  |
-| `run-steer.ts`          | `createSteering`：插话的登记、到点停下长命令、延迟取走的补充                                                |
-| `run-wait.ts`           | `createWaiting`：保活等下一句（`waitUser`）和等子任务                                                       |
-| `run-finish.ts`         | `afterProcess`：CLI 进程结束后的清理；`finishTurn`：空回合、用量提示、压缩和自动压缩                        |
-| `run-recover.ts`        | `recoverFailure`：失败后的各种重跑（断线、上下文满、环境卡住、会话续不上），`RetryState` 跨重跑带着走       |
+| 文件                    | 内容                                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `real-context.ts`       | `RealContext`：一轮执行的宿主上下文                                                                                                                   |
+| `steering.ts`           | 执行中的补充（插话、`read_user_notes`、留给下一个节点；带 `node` 时只插给流程图里点名的那个节点）、`deliverWait` 交消息给等下一句的进程、`cancelWait` |
+| `waiters.ts`            | 等下一句 / 等子任务的登记和摘除（每个等待只摘自己，见 `bugs/keepalive-double-wait.md`）                                                               |
+| `requests.ts`           | CLI 的提问和授权请求：自动作答、作废、回答后交回                                                                                                      |
+| `api-gate.ts`           | API 并发名额：拿名额、排队标记、等别人时让出再拿回                                                                                                    |
+| `retry-policy.ts`       | 断线续接、环境性卡住重试的次数和判定，`failureHints`                                                                                                  |
+| `speed-meter.ts`        | 实时输出速度                                                                                                                                          |
+| `search-exclude-env.ts` | 搜索排除写成 ripgrep 配置交给 CLI                                                                                                                     |
+| `handoff-file.ts`       | 交接内容存成文件                                                                                                                                      |
+| `run-state.ts`          | `RunState`：`runAgent` 一次调用里各阶段共享的可变状态（见下面「runAgent 的共享状态」）                                                                |
+| `run-setup.ts`          | 开跑前的准备：`resolveTarget` 定角色 / CLI / 目录 / 模型，`prepareLaunch` 拼输入和启动参数，`attachPlugins`                                           |
+| `run-events.ts`         | `createApply`：收 CLI 的流式事件，写消息、思考、用量、改动                                                                                            |
+| `run-steer.ts`          | `createSteering`：插话的登记、到点停下长命令、延迟取走的补充                                                                                          |
+| `run-wait.ts`           | `createWaiting`：保活等下一句（`waitUser`）和等子任务                                                                                                 |
+| `run-finish.ts`         | `afterProcess`：CLI 进程结束后的清理；`finishTurn`：空回合、用量提示、压缩和自动压缩                                                                  |
+| `run-recover.ts`        | `recoverFailure`：失败后的各种重跑（断线、上下文满、环境卡住、会话续不上），`RetryState` 跨重跑带着走                                                 |
 
 ## 依赖
 

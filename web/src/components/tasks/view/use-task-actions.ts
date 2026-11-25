@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import type { Attachment, Project, Task, TaskMessage, Workflow } from '@shared/schema'
+import type { Attachment, Project, Task, TaskMessage, TaskStep, Workflow } from '@shared/schema'
 import { taskSummary, TRASH_RETENTION_DAYS } from '@shared/task'
 import { withWorkflow } from '@shared/flow/run'
 import { forSend } from '@shared/composer'
@@ -22,6 +22,7 @@ import type { ChatRun } from '../ChatModelPicker'
 import type { ChildSummary } from '../child-line'
 import { handBackFor } from '../UserActionPanel'
 import { clearSendTarget, sendTargetFor } from './SendTarget'
+import { afterNodeSend, nodeTargetFor } from './NodeTarget'
 
 export interface TaskActionsCtx {
   taskId: string
@@ -44,6 +45,8 @@ export interface TaskActionsCtx {
   setChildren: (list: ChildSummary[]) => void
   /** 名下的子对话：执行中输入框上点了「发给…」时直接发给其中一个（SendTarget.tsx） */
   children: ChildSummary[]
+  /** 流程图里选中的节点：输入框上选了「发给」它时直接发给这个节点（NodeTarget.tsx） */
+  flowNode?: TaskStep
   closeDelete: () => void
 }
 
@@ -93,6 +96,9 @@ export function useTaskActions(c: TaskActionsCtx) {
     // 执行中点名了「发给…」某个子对话：直接发过去（交回「等你操作」的不改道）
     const kid = handBackFor(task) ? undefined : sendTargetFor(task.id, working, c.children)
     if (kid) return sendToKid(kid, content, text)
+    // 流程图里选中了节点、选了直接发给它：消息记在节点上，回执按节点此刻的状态说（插话 / 修改 / 带上 / 重跑）
+    const target = handBackFor(task) ? undefined : nodeTargetFor(task, c.flowNode)
+    const node = target?.step.id ?? ''
     // 发出去的这一刻就清空输入框、把消息插进对话。清空不能等接口返回：服务端这条的响应要等
     // settings、项目、git/p4 探测、CLI 拉起这一串（消息本身早已经 SSE 到界面），
     // 以前就是在这里 await 完才清空，于是出现「气泡已经标了已交给 Agent、输入框还满着」
@@ -102,7 +108,8 @@ export function useTaskActions(c: TaskActionsCtx) {
       id: messageId,
       role: 'user',
       agentId: '',
-      step: '',
+      // 发给节点的记在节点上：流程图下面的节点详情里马上看得到
+      step: node,
       text: content,
       tools: [],
       ...(attachments.length ? { attachments } : {}),
@@ -118,8 +125,9 @@ export function useTaskActions(c: TaskActionsCtx) {
     c.stickToBottom()
     setSending(true)
     try {
-      const sent = await api.sendMessage(task.id, content, attachments, false, messageId, handBackFor(task))
+      const sent = await api.sendMessage(task.id, content, attachments, false, messageId, handBackFor(task), '', node)
       apply(sent)
+      if (target) afterNodeSend(task.id, c.flowNode, target, sent, messageId)
       // 面板自己处理的命令（例如 /rule 发布全局规则）不把这条记进对话：服务端返回的对话里没有这个 id，
       // 本地那条「待认领」要撤掉，否则会一直挂在对话里（只有切走或刷新才消失）
       if (!messageRecorded(sent.messages, messageId)) setPendingMsgs((xs) => xs.filter((m) => m.id !== messageId))
@@ -135,7 +143,7 @@ export function useTaskActions(c: TaskActionsCtx) {
       // 请求失败不等于没发出去：服务端可能已经收下并推到了界面（消息上已经写着「已交给 Agent」），
       // 只是响应因连接中断没回来。先确认这条有没有被服务端记下，记下了就别把原文又放回输入框
       // （那正是用户报的「消息发出去了、输入框里字还在」，用户再回车会再发一条一样的）
-      const landed = await landedMessage(task.id, messageId)
+      const landed = await landedMessage(c.lastTask, task.id, messageId)
       if (deliveredToCli(landed)) {
         toast.error((e as Error).message)
         return
@@ -171,18 +179,6 @@ export function useTaskActions(c: TaskActionsCtx) {
     } finally {
       setSending(false)
     }
-  }
-  /**
-   * 这条消息服务端记下来没有：先看本地（SSE 可能已经推到了），再问一次服务端。
-   * 请求报错时用它决定是把原文放回输入框还是只提醒一次
-   */
-  async function landedMessage(id: string, messageId: string) {
-    const local = c.lastTask.current?.messages.find((m) => m.id === messageId)
-    if (local) return local
-    return api
-      .task(id)
-      .then((t) => t.messages.find((m) => m.id === messageId))
-      .catch(() => undefined)
   }
   // 发送失败时把原文、附件放回输入框：输入框已经空了就原样放回，用户已经接着写了就接在他写的内容后面，
   // 两种情况都不能让他刚写的东西丢掉。用函数声明：send 在上面引用它，事件触发时它已经定义
@@ -358,4 +354,17 @@ export function useHandleNeeds(say: (text: string) => Promise<void>) {
   const needsRef = useRef<(text: string) => Promise<void>>(async () => {})
   needsRef.current = say
   return useCallback((text: string) => needsRef.current(text), [])
+}
+
+/**
+ * 这条消息服务端记下来没有：先看本地（SSE 可能已经推到了），再问一次服务端。
+ * 请求报错时用它决定是把原文放回输入框还是只提醒一次
+ */
+async function landedMessage(lastTask: React.RefObject<Task | null>, id: string, messageId: string) {
+  const local = lastTask.current?.messages.find((m) => m.id === messageId)
+  if (local) return local
+  return api
+    .task(id)
+    .then((t) => t.messages.find((m) => m.id === messageId))
+    .catch(() => undefined)
 }

@@ -64,6 +64,7 @@ import { ChatHeader, HeaderActions, HeaderBadges, HeaderNav, TaskTitle } from '.
 import { TaskMessages } from './view/TaskMessages'
 import { ReplyStatus } from './view/ReplyStatus'
 import { FollowComposer, flowHint } from './view/FollowComposer'
+import { flowNodeOf, withPending } from './view/NodeTarget'
 import { ConversationDock } from './view/ConversationDock'
 import { TaskSideRail } from './view/TaskSideRail'
 import { WebHostCtx, useWebTabFocus, useWebTabs } from '@/lib/web-view/tabs'
@@ -229,6 +230,7 @@ export function TaskView({
     loadChildren,
     setChildren,
     children,
+    flowNode: flowNodeOf(task, view === 'flow', flowSel),
     closeDelete: () => setDialog('deleting', false),
   })
   // 总结卡「要你处理」的「处理」按钮（view/use-task-actions.ts）
@@ -325,7 +327,7 @@ export function TaskView({
   const chatLabel = (byCli ? getCli(chatCli)?.name : chatAgent?.name) || t('无角色')
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const isFlow = task.mode === 'workflow' && view === 'flow'
-  const flowNode = isFlow ? task.steps.find((s) => s.id === flowSel) : undefined
+  const flowNode = flowNodeOf(task, isFlow, flowSel)
   // 点了任务进度里的某一步：切到流程图并定位到那一步（view/use-task-scroll.ts）
   const openStep =
     task.mode === 'workflow' ? stepJumper({ scroll, hidden, setLimit, closePanel: () => setPanel(false) }) : undefined
@@ -637,12 +639,10 @@ export function TaskView({
                         isFlow ? (
                           <Suspense fallback={null}>
                             <TaskFlow
-                              task={task}
+                              task={withPending(task, act.pendingMsgs)}
                               focus={focus}
                               onSelect={setFlowSel}
-                              onOpenChat={() => {
-                                setView('chat')
-                              }}
+                              onOpenChat={() => setView('chat')}
                             />
                           </Suspense>
                         ) : undefined
