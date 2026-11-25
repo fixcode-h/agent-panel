@@ -15,3 +15,9 @@ paths: shared/markdown-style.ts, web/src/index.css, web/src/components/settings/
 - 规则：自己 `document.body.append` 的浮层（Mermaid 全屏这类），所在内容可能开在 Radix Dialog 里：弹窗打开时 body 是 `pointer-events: none`、焦点被锁在弹窗里、Esc 在 document 捕获阶段被弹窗先收走。浮层自己加 `pointer-events-auto`，Esc 在 window 捕获阶段收并 `stopImmediatePropagation`，`pointerdown` / `focusin` / `focusout` 在浮层上 `stopPropagation`，免得弹窗以为点到了外面而关掉。能用 React 的就直接用 `Modal` / Radix 的 Portal。
 - 起因：用户 2026-11-18 反馈诊断报告里的时序图点「全屏」后退不出去。
 - 防线：`scripts/ui/02k-bug-structure.mjs` 的「全屏看图」（在诊断报告弹窗里开全屏、切源码、Esc 和「关闭」退出）。
+
+## 按住拖动平移的画布要清掉浏览器起的选区
+
+- 规则：在带文字的内容上做「按住拖动平移」（Mermaid 画布这类），按下时不 `preventDefault`（要保住单击、选字），浏览器在挪够阈值之前就已经开始选字；认定是拖动后清掉选区（`getSelection().removeAllRanges()`）、拖动期间在 document 捕获阶段拦 `selectstart`，画布再加 `select-none`。光加 `user-select: none` 拦不住已经起头的选区。
+- 起因：用户 2026-11-25 截图，拖动时序图时整片文字被选成蓝底（拖动平移在 5f4bff7 前后加进 `web/src/lib/mermaid-fx.ts`）。
+- 防线：`scripts/ui/02k-bug-structure.mjs` 的「全屏看图」前后，从文字上、文字旁空白拖动，断言没有选区且画布挪了。

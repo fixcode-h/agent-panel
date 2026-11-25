@@ -172,6 +172,34 @@ await runShard(import.meta.filename, async (api) => {
   // 全屏看图：铺满整个窗口（不是弹窗），「图形 / 源码」能切；图在弹窗里时 Esc、「关闭」都要退得出来，诊断报告弹窗还开着
   const seqBox = sv.locator('[data-sv-panel="sequence"] .md-mermaid')
   const full = p.locator('.md-mmd-full')
+  // 从图里的文字上按下拖动平移：画布要跟着挪，文字不能被选中（用户 2026-11-25 截图：拖动时整片文字蓝底）
+  // 从文字上、从文字旁边的空白按下拖动平移：画布要跟着挪，文字不能被选中
+  // （用户 2026-11-25 截图：拖动时整片文字蓝底；按下后前几像素浏览器就开始选字了）
+  const dragOnText = async (box, where) => {
+    const text = box.locator('.md-mermaid-svg text.messageText').first()
+    const tb = await text.boundingBox()
+    if (!tb) return errors.push(`${where}拖动：找不到消息文字`)
+    const svg = box.locator('.md-mermaid-svg')
+    for (const [name, x0] of [
+      ['文字上', tb.x + 2],
+      ['文字左边空白', tb.x - 15],
+    ]) {
+      const y0 = tb.y + tb.height / 2
+      const before = await svg.evaluate((el) => getComputedStyle(el).transform)
+      await p.mouse.move(x0, y0)
+      await p.mouse.down()
+      for (let i = 1; i <= 12; i++) await p.mouse.move(x0 + i * 3, y0 + i * 6, { steps: 2 })
+      const selected = await p.evaluate(() => String(window.getSelection() ?? ''))
+      await p.mouse.up()
+      const after = await svg.evaluate((el) => getComputedStyle(el).transform)
+      if (selected.trim()) errors.push(`${where}从${name}拖动：选中了文字「${selected.slice(0, 30)}」`)
+      if (before === after) errors.push(`${where}从${name}拖动：画布没跟着挪`)
+      await box.locator('.md-mmd-canvas').dblclick()
+      // 等复位动画放完，也免得下一次按下被算成三击
+      await p.waitForTimeout(600)
+    }
+  }
+  await dragOnText(seqBox, '时序图')
   await seqBox.locator('[data-mmd="full"]').click()
   await full.waitFor({ timeout: 5000 }).catch(() => errors.push('全屏看图：点「全屏」没打开'))
   const fb = await full.boundingBox()
@@ -180,6 +208,15 @@ await runShard(import.meta.filename, async (api) => {
   // 时序消息按行依次出场，等放完再截图
   await p.waitForTimeout(2500)
   await check(p, '全屏看图-图形', ['图形', '源码', '关闭', '提前 return'])
+  await dragOnText(full, '全屏看图')
+  // 拖完缩放照常：全屏里直接滚轮放大，双击复位
+  const fullSvg = full.locator('.md-mermaid-svg')
+  const z0 = await fullSvg.evaluate((el) => el.style.getPropertyValue('--mz') || '1')
+  await full.locator('.md-mmd-canvas').hover()
+  await p.mouse.wheel(0, -200)
+  const z1 = await fullSvg.evaluate((el) => el.style.getPropertyValue('--mz') || '1')
+  if (!(Number(z1) > Number(z0))) errors.push(`全屏看图：拖动后滚轮缩放没反应（${z0} → ${z1}）`)
+  await full.locator('.md-mmd-canvas').dblclick()
   await full.locator('[data-mmd-view="src"]').click()
   if (!(await full.locator('.md-mmd-src').isVisible())) errors.push('全屏看图：切到源码后看不到源码')
   if (await full.locator('.md-mmd-canvas').isVisible()) errors.push('全屏看图：切到源码后图还在')
