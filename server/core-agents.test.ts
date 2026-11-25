@@ -534,6 +534,7 @@ test('交付契约：方案摘要、实现计划、排查报告、自测清单�
   assert.match(DESIGN_BRIEF_TEXT, /标测试层级（单测 \/ 集成 \/ 端到端 \/ 界面走查 \/ 手测）/)
   assert.ok(renderTemplate(role('analyst'), { scale: 'bounded' }).includes(DESIGN_BRIEF_TEXT))
   assert.match(role('analyst'), /「功能正常」「体验更好」这类不算/, '验收标准要能执行')
+  assert.match(DESIGN_BRIEF_TEXT, /sequenceDiagram[\s\S]*激活条/, '时序图要带激活条（用户 2026-11-25）')
   // 执行接单先复述再写实现计划；开发的「实现」「重构」也先写计划，「修 Bug」不用（它走排查报告）
   const worker = renderTemplate(role('worker'), { mode: '自动' })
   assert.match(worker, /## 接单：先复述，再计划/)
