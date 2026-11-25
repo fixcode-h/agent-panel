@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { changesText, parseStageReport, reportOutput, settleReport, type StageReportVersion } from './stage-report.ts'
+import {
+  autoSettle,
+  changesText,
+  parseStageReport,
+  reportOutput,
+  settleReport,
+  type StageReportVersion,
+} from './stage-report.ts'
 
 const base = {
   summary: '结论',
@@ -79,4 +86,31 @@ test('阶段报告：next 只在这一版问了新问题时才回到 Agent；同
   const v3 = { report: { ...r.report, decisions: [...r.report.decisions, q2], next: '问 Q3' }, at: '' }
   list.push(v3)
   assert.match(settleReport(list, { allow: true }).follow, /问 Q3/)
+})
+
+// 用户 2026-11-25：没改选项直接确认，还会再出一版一样的报告等确认，多余
+test('阶段报告：确认后按 next 接着问出来的一版没有新问题就自动通过；有新问题或用户改过决策照常停下', () => {
+  const r = parseStageReport(base)
+  assert.ok(r.ok)
+  const list: StageReportVersion[] = [{ report: { ...r.report, next: '再压测一下边界' }, at: '' }]
+  settleReport(list, { allow: true })
+  const same: StageReportVersion = { report: { ...r.report, summary: '结论（压测过）' }, at: '' }
+  list.push(same)
+  assert.match(autoSettle(list), /结论（压测过）/)
+  assert.equal(same.result, 'auto')
+  // 接着问出了新的 Q2：要停下来给用户看
+  const q2 = { ...r.report.decisions[0], id: 'Q2', title: '存储' }
+  const ask: StageReportVersion[] = [{ report: { ...r.report, next: '问存储' }, at: '' }]
+  settleReport(ask, { allow: true })
+  ask.push({ report: { ...r.report, decisions: [...r.report.decisions, q2] }, at: '' })
+  assert.equal(autoSettle(ask), '')
+  assert.equal(ask[1].result, undefined)
+  // 用户改了决策重出的那版：照常给用户看
+  const changed: StageReportVersion[] = [{ report: r.report, at: '' }]
+  settleReport(changed, { allow: true, picks: { Q1: 'B' } })
+  changed.push({
+    report: { ...r.report, decisions: [{ ...r.report.decisions[0], pick: 'B' }, r.report.decisions[1]] },
+    at: '',
+  })
+  assert.equal(autoSettle(changed), '')
 })
