@@ -429,6 +429,8 @@
   "preprocess": 2,
   "orchInlineTools": 0,
   "hostMembers": {
+    "CustomToolsHost": 1,
+    "OrchCustomTools": 1,
     "FindCodeHost": 1,
     "OrchFindCode": 1,
     "ReviewLimitHost": 1,

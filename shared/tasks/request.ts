@@ -31,9 +31,10 @@ export const TaskRequest = z.object({
   /**
    * 面板自己发起的授权（不是 CLI 的权限请求）：push 是 ask_push 的推送授权卡，用户点的「允许 / 拒绝」
    * 由面板记进 task.remotePush（见 server/exec/panel-requests.ts）；override 是 request_override 的放行卡（ADR 0070），
-   * 用户同意后门禁放行一次（server/hooks/overrides.ts）。旧数据没有这个字段，照普通请求处理
+   * 用户同意后门禁放行一次（server/hooks/overrides.ts）；custom-tool 是自建工具的保存弹窗（ADR 0082，customTool 里是草稿）。
+   * 旧数据没有这个字段，照普通请求处理
    */
-  purpose: z.enum(['push', 'override']).optional(),
+  purpose: z.enum(['push', 'override', 'custom-tool']).optional(),
   title: z.string(),
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */
@@ -54,6 +55,32 @@ export const TaskRequest = z.object({
    * 审阅弹窗按它分区排版、决策画成勾选、能切版本和对比上一版；没交的旧节点只有 detail
    */
   reports: z.array(StageReportVersion).optional(),
+  /**
+   * 自建工具的保存弹窗（purpose 'custom-tool'）：Agent 交的草稿、和已有工具撞了哪些、最近一次试跑。
+   * 用户点保存时 answer 是 JSON：{ scope, replace }；点「让 Agent 再改」是拒绝并带话
+   */
+  customTool: z
+    .object({
+      draft: z.record(z.string(), z.unknown()),
+      dups: z
+        .array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            scope: z.enum(['project', 'global']),
+            version: z.number(),
+            why: z.string(),
+            sameId: z.boolean(),
+          }),
+        )
+        .default([]),
+      test: z.object({ ok: z.boolean(), text: z.string(), dryRun: z.boolean().default(false) }).optional(),
+      /** 不在项目里时只能存全局 */
+      inProject: z.boolean().default(true),
+      /** 草稿本身的问题（占位符对不上参数这类）：有的话不能保存 */
+      problems: z.array(z.string()).default([]),
+    })
+    .optional(),
   at: z.string(),
 })
 export type TaskRequest = z.infer<typeof TaskRequest>

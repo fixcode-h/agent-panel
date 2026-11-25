@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BookOpen, Loader2, SquareSlash, Terminal } from 'lucide-react'
+import { BookOpen, Hammer, Loader2, SquareSlash, Terminal } from 'lucide-react'
 import type { SlashCommand } from '@shared/schema'
 import { getCli } from '@shared/clis'
 import { api } from '@/lib/api'
@@ -7,6 +7,9 @@ import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { chipMarker, commandChip, type ChipKind } from '@shared/composer'
 import { builtinCommands } from '@shared/commands'
+import { customToolsContract } from '@shared/api-contract/custom-tools'
+import { TOOL_COMMAND_PREFIX, usable } from '@shared/custom-tools/text'
+import { call } from '@/lib/api/call'
 import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
 import { ComposerPopover } from '@/components/ui/composer-popover'
@@ -23,7 +26,7 @@ export type SlashScope = 'task' | 'new' | 'skills'
 interface Item {
   name: string
   description: string
-  group: 'builtin' | 'command' | 'skill'
+  group: 'builtin' | 'command' | 'skill' | 'tool'
   hint?: string
   source?: string
   action?: SlashAction
@@ -63,6 +66,24 @@ function loadCommands(cli: string, projectId: string) {
   return list
 }
 
+// 自建工具（ADR 0082）：同一个项目一分钟内用缓存，和 CLI 命令一样只在开始输入「/」时读
+// 模块状态：按项目缓存的读取结果（Promise），过期或失败时删掉重读
+const toolCache = new Map<string, { at: number; list: Promise<Item[]> }>()
+function loadTools(projectId: string) {
+  const hit = toolCache.get(projectId)
+  if (hit && Date.now() - hit.at < 60_000) return hit.list
+  const list = call(customToolsContract.list, { query: projectId ? { projectId } : {} }).then((r) =>
+    usable(r.entries).map((e): Item => ({
+      name: `${TOOL_COMMAND_PREFIX}${e.tool!.id}`,
+      description: `${e.tool!.name} · ${e.tool!.useWhen || e.tool!.summary}`,
+      group: 'tool',
+    })),
+  )
+  toolCache.set(projectId, { at: Date.now(), list })
+  list.catch(() => toolCache.delete(projectId))
+  return list
+}
+
 /**
  * 输入「/」弹出命令菜单：内置命令、CLI 自己带的命令、Skill，随选的 CLI 变化。
  * 选中后在光标处插入一张行内卡片（面板执行的命令直接执行），发送时由 forSend 把「/名字」提到要求
@@ -87,6 +108,7 @@ export function useSlashMenu({
 }) {
   const [query, setQuery] = useState<string | null>(null)
   const [cmds, setCmds] = useState<SlashCommand[] | null>(null)
+  const [tools, setTools] = useState<Item[]>([])
   const [active, setActive] = useState(0)
   const [closed, setClosed] = useState(false)
 
@@ -106,6 +128,11 @@ export function useSlashMenu({
     loadCommands(cli, projectId)
       .then((l) => !off && setCmds(l))
       .catch(() => !off && setCmds([]))
+    // 读不到自建工具不影响别的命令（演示版、旧服务端），菜单里只是没有这一组
+    if (scope !== 'skills')
+      loadTools(projectId)
+        .then((l) => !off && setTools(l))
+        .catch(() => !off && setTools([]))
     return () => {
       off = true
     }
@@ -125,6 +152,7 @@ export function useSlashMenu({
       hint: c.hint,
       source: c.source,
     })),
+    ...tools,
   ]
   const items = all
     .filter((x) => x.name.toLowerCase().includes(kw))
@@ -200,6 +228,7 @@ export function useSlashMenu({
     { id: 'builtin', label: t('内置命令'), icon: SquareSlash },
     { id: 'command', label: t('自定义命令'), icon: Terminal },
     { id: 'skill', label: t('Skill'), icon: BookOpen },
+    { id: 'tool', label: t('自建工具'), icon: Hammer },
   ]
   const menu = open ? (
     <ComposerPopover ref={box} role="listbox" aria-label={t('命令')} stretch scroll>

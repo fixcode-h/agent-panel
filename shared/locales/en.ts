@@ -79,6 +79,7 @@ import { EN_SECTION_RAIL } from './en/section-rail.ts'
 import { EN_GRAPH_CANVAS } from './en/graph-canvas.ts'
 import { EN_MODEL_CATALOG } from './en/model-catalog.ts'
 import { EN_GRANTS } from './en/grants.ts'
+import { EN_CUSTOM_TOOLS } from './en/custom-tools.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -164,4 +165,5 @@ export const EN: Record<string, string> = {
   ...EN_SHEETS,
   ...EN_SHEET_LOOK,
   ...EN_GRANTS,
+  ...EN_CUSTOM_TOOLS,
 }

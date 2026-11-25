@@ -58,6 +58,7 @@ const PANEL_TOOLS = (): Record<string, string> => ({
   end_inline_edit: t('结束就地改动'),
   knowledge_lookup: t('查项目知识'),
   find: t('查找'),
+  custom_tool: t('自建工具'),
   file_index: t('查文件索引'),
   knowledge_record: t('记下项目知识'),
   project_lessons: t('查看项目教训'),

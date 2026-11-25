@@ -17,6 +17,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmReview } from './ConfirmReview'
+import { CustomToolSaveEntry } from './CustomToolSaveCard'
 import { GrantActions } from './GrantActions'
 import type { Picks } from '@shared/flow/stage-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -188,6 +189,17 @@ export function RequestCard({
         agent={a}
         more={requests.length - 1}
         answer={(allow, text, picks) => onAnswer(req.id, { allow, answer: text, ...(picks && { picks }) })}
+        className={className}
+      />
+    )
+
+  // 自建工具的保存弹窗（ADR 0082）：选存到项目还是全局、改名字说明、让 Agent 再改
+  if (req.purpose === 'custom-tool' && req.customTool)
+    return (
+      <CustomToolSaveEntry
+        req={req}
+        more={requests.length - 1}
+        answer={(allow, text) => onAnswer(req.id, { allow, answer: text })}
         className={className}
       />
     )

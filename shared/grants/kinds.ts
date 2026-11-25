@@ -8,7 +8,8 @@ import { REVIEW_GATE } from '../hooks/override.ts'
  * 卡片上的「同一类」就是请求带的规则键（TaskRequest.rule，记进 task.allowRules），键的前缀决定它是哪一种授权：
  * - command: / file: / tool:：CLI 的权限请求（shared/allow-rules.ts 生成）；
  * - plugin:<插件 id>:<键>：插件工具的确认（插件接口 17，server/exec/plugin-confirm.ts）；
- * - gate:<门禁>：门禁拦下后请用户放行（request_override，ADR 0070，server/hooks/overrides.ts）。
+ * - gate:<门禁>：门禁拦下后请用户放行（request_override，ADR 0070，server/hooks/overrides.ts）；
+ * - ctool:<范围>:<id>：运行自建工具（ADR 0082，server/custom-tools/agent.ts）。
  * 推送授权卡（ask_push）本来就是「这个对话里只问一次」，不走规则键，只在设置里列出来说明。
  *
  * 这里只管「某一类卡上给不给『本对话不再询问』」：设置 →「授权卡」里能逐类开关（settings.grantRemember 记和默认不同的），
@@ -65,6 +66,14 @@ const BASE: GrantKind[] = [
     group: 'plugin',
     name: () => t('插件操作'),
     scope: () => t('插件自己定的一类（例如同一篇文档、同一种资源操作）；插件没给的每次都问'),
+    remember: true,
+    presettable: true,
+  },
+  {
+    id: 'ctool',
+    group: 'other',
+    name: () => t('自建工具'),
+    scope: () => t('同一个工具（项目的和全局的分开算）；只读的工具不弹卡'),
     remember: true,
     presettable: true,
   },
