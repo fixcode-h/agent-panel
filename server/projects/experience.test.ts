@@ -61,3 +61,12 @@ test('按「同一件事」合并时种类不变，点名更新时才换；并�
   assert.equal(r.item.title, '表格相关的代码和配置在哪')
   assert.equal(mergeLearned([sample], add, 't2', 'e1').items[0].kind, 'flow')
 })
+
+test('点名更新的那条和新内容毫不相干时不覆盖它，按新的一条加', () => {
+  const soft = { ...sample, id: 'e9', title: '软装配置在哪', keywords: ['软装'], paths: ['Content/SoftDeco'] }
+  const add = { ...sample, id: 'e2', title: 'CheckConfig 怎么跑', keywords: ['CheckConfig'], paths: ['Tools/Check'] }
+  const r = mergeLearned([soft], add, 't2', 'e9')
+  assert.equal(r.added, true)
+  assert.equal(r.items.length, 2)
+  assert.equal(r.items[0].title, '软装配置在哪')
+})

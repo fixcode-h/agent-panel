@@ -7,7 +7,8 @@
  * - 已经在当前 client 某个 pending 里的：不动，留在原 changelist；
  * - 库里没有的、库里已删除的、本地没有的：写完以后 p4 add 进 default；
  * - 不在这个 client 视图里的：不归 P4 管，跳过；
- * - 不管远端有没有更新、不 sync；只有没法合并的资源（二进制）本地落后时列进 stale，由调用方先问用户
+ * - 不管远端有没有更新、不 sync；只有没法合并的资源（二进制）本地落后、或别人也打开着时列进 stale，由调用方先问用户
+ *   （2026-11-26 复盘 P0-1：库里新了两版、别人还开着的 xlsx 被 Agent 直接改了，提交时只能二选一丢掉一边）
  */
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -22,11 +23,13 @@ const IGNORED = /ignored file can't be added|ignored file/i
 /** 没法合并的文件类型（p4 的 headType：binary、binary+l、ubinary、apple、resource） */
 const UNMERGEABLE = /binary|apple|resource/i
 
-/** 本地版本落后于 P4 最新版的没法合并的资源 */
+/** 本地版本落后于 P4 最新版、或别人也打开着的没法合并的资源 */
 export interface P4Stale {
   file: string
   have: number
   head: number
+  /** 别的 client 也打开着这个文件的人数（p4 fstat 的 otherOpen）；没有时不带 */
+  others?: number
 }
 
 export interface P4WritePlan {
@@ -59,7 +62,13 @@ export async function p4WritePlan(
 ): Promise<P4WritePlan> {
   const plan: P4WritePlan = { edit: [], add: [], opened: [], stale: [] }
   if (!files.length) return plan
-  const st = await run(['-ztag', 'fstat', '-T', 'clientFile,headAction,headType,headRev,haveRev,action', ...files])
+  const st = await run([
+    '-ztag',
+    'fstat',
+    '-T',
+    'clientFile,headAction,headType,headRev,haveRev,action,otherOpen',
+    ...files,
+  ])
   const recs = new Map(
     parseZtag(st.out)
       .filter((r) => r.clientFile)
@@ -82,7 +91,9 @@ export async function p4WritePlan(
       plan.edit.push(f)
       const have = Number(r.haveRev || 0)
       const head = Number(r.headRev || 0)
-      if (UNMERGEABLE.test(r.headType ?? '') && have < head) plan.stale.push({ file: f, have, head })
+      const others = Number(r.otherOpen || 0)
+      if (UNMERGEABLE.test(r.headType ?? '') && (have < head || others > 0))
+        plan.stale.push({ file: f, have, head, ...(others > 0 ? { others } : {}) })
     }
   }
   return plan

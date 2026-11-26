@@ -2,7 +2,13 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { joinPath } from '../../shared/doc-root.ts'
-import { EXP_KEYWORDS_MAX, EXP_PATHS_MAX, ProjectExperience, sameExperience } from '../../shared/experience.ts'
+import {
+  EXP_KEYWORDS_MAX,
+  EXP_PATHS_MAX,
+  ProjectExperience,
+  relatedExperience,
+  sameExperience,
+} from '../../shared/experience.ts'
 import { hash53 } from '../../shared/hash.ts'
 import { t } from '../../shared/i18n.ts'
 import type { Agent } from '../../shared/schema.ts'
@@ -224,7 +230,10 @@ export function unionKeep(old: string[], add: string[], max: number) {
  * before 是并入前的样子：对话里的卡片用它算「这次加了什么」，也用来撤回这次合并
  */
 export function mergeLearned(items: ProjectExperience[], add: ProjectExperience, taskId: string, into = '') {
-  const named = into ? items.find((x) => x.id === into) : undefined
+  // 点名要更新的那条和新内容毫不相干（标题、关键词、路径都不沾）时不覆盖它，按新的一条加：
+  // 2026-11-26 复盘 P1-10，模型点名更新「软装」那条，写进去的却是 CheckConfig，旧内容整个没了
+  const pick = into ? items.find((x) => x.id === into) : undefined
+  const named = pick && relatedExperience(pick, add) ? pick : undefined
   const same = named || items.find((x) => sameExperience(x, add))
   if (!same) return { items: [...items, add], added: true, id: add.id, item: add }
   const merged: ProjectExperience = {
