@@ -63,3 +63,9 @@ paths: shared/builtin/**, shared/engine/index.ts, server/tasks/run.ts, shared/as
 - 规则：提示词、Skill、模板里让 Agent 写进文档的路径（模块文档的「源码」「入口」、证据里的文件）都写相对项目根，不写盘符或 `/` 开头的绝对路径、P4 depot 路径和「:行号」。面板读文档里的路径时先过 `shared/module-docs.ts` 的 `sourcePathOf`（剥行号、换斜杠），按本机项目根查（`server/docs/source-path.ts`）；老文档里的绝对路径认出相对写法后交「文档」改，不当成「不在了」。
 - 起因：用户 2026-11-23 报「文档」子任务核对 10 个模块的源码路径全是误报：文档写的是 `G:\Project\<某人的工作区>\...:行号`，P4 共用文档时换人就找不到，`path.join(项目根, 绝对路径)` 也拼不出来。
 - 防线：`server/module-map.test.ts`、`shared/module-docs.test.ts`。
+
+## 外部工具的写作建议不当门禁，文档长短按内容定
+
+- 规则：门禁、出口条件里引用外部工具的校验（`openspec validate` 这类）时只认 ERROR，写明 WARNING 不算、不加 `--strict`；字数、长度这类写作建议最多列成建议，不让 Agent 为了消警告挪内容、删内容。
+- 起因：用户 2026-11-26 报 OpenSpec 子对话跑 `openspec validate --strict`，被「需求正文超过 500 字符」的 WARNING 判失败，Agent 把接口表和引导边界从需求正文挪进 scenario；用户要「不限制文档大小，按情况而定」。
+- 防线：`skills/workflow/openspec/SKILL.md`「OpenSpec 命令怎么用」、`shared/builtin/agents.ts` 规范门禁。

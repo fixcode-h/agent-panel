@@ -517,11 +517,7 @@ export function ReviewDialog({
             <PresetRow presets={quick} onPick={addPreset} />
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
               {slots?.aside}
-              {notes.length === 0 && (
-                <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">
-                  {t('选中左边的文字，点「标注」写下要改的地方')}
-                </p>
-              )}
+              {notes.length === 0 && <EmptyNotes locked={locked} />}
               {notes.map((n, i) => (
                 <div
                   key={n.id}
@@ -581,7 +577,8 @@ export function ReviewDialog({
                 </div>
               ))}
             </div>
-            <div className="border-t px-3 py-3">
+            {/* 只读时没写过整体意见就不摆输入框：摆着一个点不动的框，像是能写意见 */}
+            <div className={cn('border-t px-3 py-3', locked && !overall && 'hidden')}>
               {!locked && overallTools?.({ fill: setOverall, refer: logs.refer })}
               {attach ? (
                 <OverallComposer
@@ -759,5 +756,14 @@ export function ReviewDialog({
     <Modal open={open} onOpenChange={onOpenChange} title={null} bare size="xl">
       {body}
     </Modal>
+  )
+}
+
+/** 标注栏还空着时的提示：只读（已处理过的报告、旧的一版）时不再教人选文字标注，选了也不会出「标注」按钮 */
+function EmptyNotes({ locked }: { locked: boolean }) {
+  return (
+    <p className="px-1 py-6 text-center text-xs leading-relaxed text-subtle">
+      {locked ? t('这一版只能查看，不能标注') : t('选中左边的文字，点「标注」写下要改的地方')}
+    </p>
   )
 }

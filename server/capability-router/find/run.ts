@@ -76,7 +76,8 @@ export function findCodeRun(opts: {
         },
       })
       const hits = mergeHits(r.outs.map((x) => x.out.hits))
-      const notes = r.outs.map((x) => x.out.note).filter((n): n is string => !!n)
+      // 没给结果的路也可能带说明（文本兜底超时只查了一部分）：不转告的话 Agent 会把「没有找到」当成查全了
+      const notes = [...r.outs, ...r.empties].map((x) => x.out.note).filter((n): n is string => !!n)
       // 外部路都用不了、文本也没查到时，说一句哪些路没走成：Agent 能判断是真没有还是工具没开
       if (!hits.length) {
         const down = r.steps.filter((s) => s.outcome === 'skipped' || s.outcome === 'failed')

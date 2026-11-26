@@ -168,8 +168,10 @@ export const MD_SPEC = {
     tools: bool(true),
     /** 点表头按这一列排序（只改显示） */
     sort: bool(true),
-    /** 超过约这么多行时表格限高、表内滚动、表头钉在顶上；0 表示不限高 */
-    rows: num(15, 0, 60, 1),
+    /** 短列（编号、状态这类每格都只有几个字的列）不折行：表格挤窄时别把 Q10 折成 Q1 / 0 */
+    nowrap: bool(true),
+    /** 超过约这么多行时表格限高、表内滚动、表头钉在顶上；0 表示不限高。默认全量展示（用户 2026-11-26：表格不要内部滚动） */
+    rows: num(0, 0, 60, 1),
   },
   hr: {
     style: pick('fade', ['fade', 'solid', 'dashed', 'dotted'] as const),
@@ -331,6 +333,7 @@ const BOOL_CSS: Record<string, [on: string, off: string]> = {
   outer: ['1px', '0px'],
   caption: ['block', 'none'],
   tools: ['flex', 'none'],
+  nowrap: ['nowrap', 'normal'],
   tint: ['7%', '0%'],
   grid: ['radial-gradient(var(--md-dot) 1px, transparent 1px)', 'none'],
 }

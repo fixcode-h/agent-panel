@@ -1093,7 +1093,7 @@ ${SCENE_TEXT}
 4. 扫描 openspec/changes/ 下缺 .openspec.yaml 的目录，只报告不修改。
 写明这次装了什么（命令和版本）。安装或初始化失败、或第 4 步有缺 .openspec.yaml 的目录时，写出命令和完整报错或目录清单，按不通过交；否则按通过交。${VERDICT_TOOL_TEXT}{{/if}}
 {{#if stage=落规范}}根据已确认的设计和压测记录创建变更：proposal（含非目标和可核对的验收）、specs、design、tasks（3–7 组，每条写验证方式和对应的需求）、acceptance 骨架；读相关模块的 README 和 bugs.md，命中的历史 Bug 写进 design。上游没落盘 grilling.md 就按已确认的决策补建；每条 task 的验证只依赖它前面的 task。{{/if}}
-{{#if stage=规范门禁}}检查上面的规范：openspec validate 通过；每条 spec 需求都有 task 覆盖验证；design 里没有「待定」。只有这三条不满足才判不通过（must: true），其他要求列成建议（must: false）；逐条列出问题，同类问题一次列全。${VERDICT_TOOL_TEXT}{{/if}}
+{{#if stage=规范门禁}}检查上面的规范：openspec validate 没有 ERROR（WARNING 不算，例如需求正文超过 500 字的字数提醒，文档长短按内容需要定，最多列成建议）；每条 spec 需求都有 task 覆盖验证；design 里没有「待定」。只有这三条不满足才判不通过（must: true），其他要求列成建议（must: false）；逐条列出问题，同类问题一次列全。${VERDICT_TOOL_TEXT}{{/if}}
 {{#if stage=归档}}按 openspec 技能 stage-4.md 第 4–6 步做。归档前门禁：tasks.md 没有 - [ ]；每条 - [x] 要么在 acceptance 里有证据，要么带「（延期 Dn）」且 acceptance 里 Dn 有用户的决定（accepted-risk、待用户完成，或立即验证后已通过）。满足就归档（先归档，再做版本控制收尾），交通过。不满足时不问用户、也不自己决定算了：交不通过，blockers 逐条写缺口（哪条 task、缺什么、要谁做什么），面板会请用户决定。${VERDICT_TOOL_TEXT}{{/if}}
 {{#if stage=归档受阻}}上面「输入」是归档门禁没过的缺口。这一步不改文件，用 submit_report 交阶段报告请用户决定：summary 写缺什么、为什么没法归档；decisions 只放一项 Q1「怎么处理」，选项三个：「补齐后归档」（写清你能补哪些、要用户先做什么，例如在工具里导表）、「接受风险归档」（缺口在 acceptance 记成 accepted-risk）、「先不归档」（change 保持未完成，写进交付记录）；按缺口的性质推荐一个：会让别人环境坏掉的运行期问题推荐「先不归档」或「补齐后归档」，只是缺人工验证的推荐「接受风险归档」。{{/if}}
 {{#if stage=按决定归档}}按上一步用户定的处理：「补齐后归档」先补（你能做的做掉，要用户做的确认已经做了），再按 stage-4.md 的门禁逐条核对后归档；「接受风险归档」在 acceptance 把这些缺口记成 accepted-risk（写明是用户定的），再归档；「先不归档」不归档，在 acceptance 和 handoff.md 写清停在哪、还缺什么、恢复时从哪接着做。归档了就照常做版本控制收尾。{{/if}}`,

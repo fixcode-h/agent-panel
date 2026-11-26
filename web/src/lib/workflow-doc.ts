@@ -10,7 +10,7 @@ import type { Agent } from '@shared/schema'
 import { getLang, t } from '@shared/i18n'
 import type { LineMark } from '@shared/bug/quotes-md'
 import { markdownDiff } from './diff-html'
-import { tableHtml } from './markdown/table'
+import { narrowColumns, tableHtml } from './markdown/table'
 import { callTreeHtml } from './markdown/call-tree'
 import { structureHtml } from './markdown/structure'
 import { DOC_LANGS, docBlockHtml, widenDocFences } from './markdown/doc-block'
@@ -82,10 +82,19 @@ renderer.image = ({ href, text }) => {
   return text.trim() ? `<span class="md-fig">${img}<span class="md-cap">${escape(text)}</span></span>` : img
 }
 
-// 表格包一层：悬停工具条（复制、全屏）、点表头排序（web/src/lib/markdown/table.ts）
+// 表格包一层：悬停工具条（复制、全屏）、点表头排序（web/src/lib/markdown/table.ts）。
+// 短列的格子记进 narrowCells，renderer.tablecell 给它们标 data-nw（不折行）：marked 渲染格子时只给格子本身，不给列号
+const narrowCells = new WeakSet<object>()
 const tableDefault = renderer.table
 renderer.table = function (token) {
+  const narrow = narrowColumns([token.header, ...token.rows].map((r) => r.map((c) => c.text)))
+  for (const row of token.rows) row.forEach((c, i) => narrow[i] && narrowCells.add(c))
   return tableHtml(tableDefault.call(this, token), token.raw, token.rows.length)
+}
+const cellDefault = renderer.tablecell
+renderer.tablecell = function (cell) {
+  const html = cellDefault.call(this, cell)
+  return narrowCells.has(cell) ? html.replace(/^<td/, '<td data-nw') : html
 }
 
 /** > [!NOTE] 这类提示块（GitHub 的写法）：五种类型，标题按界面语言显示 */

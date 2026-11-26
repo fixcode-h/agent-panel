@@ -35,6 +35,8 @@ export function TaskFlow({
   onOpenChat,
   openLabel,
   onSelect,
+  onAnswered,
+  floatPad = 0,
 }: {
   task: Task
   /** 画第几次运行（工作流子对话的运行页切到流程图时给，ADR 0044）；不给是任务现在这一次 */
@@ -46,6 +48,10 @@ export function TaskFlow({
   openLabel?: string
   /** 选中的节点变了：右栏跟着只看这个节点 */
   onSelect?: (id: string) => void
+  /** 节点详情的报告栏里确认或退回后换成新的任务；不给（运行记录）时报告栏只能看 */
+  onAnswered?: (t: Task) => void
+  /** 输入框上方浮着的卡片有多高：节点详情底部让出这一段，吸底的报告栏不被盖住 */
+  floatPad?: number
 }) {
   const data = useData()
   const { agents } = data
@@ -194,7 +200,10 @@ export function TaskFlow({
             }}
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
           >
-            <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
+            <div
+              className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6"
+              style={floatPad ? { paddingBottom: `calc(1.5rem + ${floatPad}px)` } : undefined}
+            >
               {/* 节点派出的子任务画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
               <RouteProvider task={task}>
                 <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
@@ -213,7 +222,7 @@ export function TaskFlow({
                 {openLabel ?? t('在对话中查看完整过程')}
               </Button>
               {/* 交过阶段报告的节点：报告入口常驻在底部，确认之后也能随时点开看每一版 */}
-              <StageReportBar task={task} root={step} />
+              <StageReportBar task={task} root={step} onAnswered={onAnswered} bottom={floatPad} />
             </div>
           </div>
         </div>

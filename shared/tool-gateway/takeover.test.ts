@@ -111,12 +111,12 @@ test('接不接、怎么接按 CLI 定义的 takeover 走：能改写的改写�
   assert.equal(planTakeover(shell('rg -n OnSellAll src | grep -v test'), claude)?.how, 'pass', '再过滤')
   assert.notEqual(planTakeover(shell('cat a.lua | grep OnSellAll'), claude)?.how, 'rewrite', '读标准输入')
   assert.equal(planTakeover(shell('rg -n OnSellAll src | head -5'), plain)?.how, 'pass', '代答跑不准多段')
-  // 模型常把看文件、打印分隔和搜索串成一条：只有一个搜索段、输出不再过滤、不换目录就接（类别按第一段是 read 也接）
+  // 模型常把看文件、打印分隔和搜索串成一条：只有一个搜索段、输出不再过滤、不中途换目录就接（类别按第一段是 read 也接）
   const tk = (c: string) => planTakeover(shell(c), claude)
   assert.equal(tk('wc -l a.lua && grep -n "SellAll" -r scripts | head -20')?.how, 'rewrite')
   assert.equal(tk('cat Log.lua && echo "=== grep ===" && grep -rn "GetGold" . --exclude-dir=.git')?.how, 'rewrite')
   assert.equal(tk('rg -n "Foo|Bar" src; echo "---"; ls -R scripts')?.how, 'rewrite', '引号里的 | 不是管道')
-  assert.notEqual(tk('cd web && rg -n OnSellAll src')?.how, 'rewrite', '换了目录')
+  assert.notEqual(tk('rg -n OnSellAll src; cd web && rg -n Foo src')?.how, 'rewrite', '中途换了目录')
   // 几个搜索段各接各的，插在各自前面；循环、子 shell 里的整条不接
   const two = tk('rg -n Foo src; echo "---"; grep -rn Bar . | head')
   assert.equal(two?.how, 'rewrite')
@@ -135,6 +135,19 @@ test('接不接、怎么接按 CLI 定义的 takeover 走：能改写的改写�
     ]),
     'node "a.mjs" && rg -n Foo src; echo "---"; node "C:/t/b.mjs" && grep -rn Bar . | head',
   )
+  // 开头一句 `cd <写死的目录> &&`（Claude Code 几乎每条搜索都这么起头）：路径按 cd 的目录算
+  const cdRg = tk(
+    `cd "G:/P/Content/Script" && rg -n --no-heading "StartGuide" --glob '!Intermediate_UpLoad/**' | head -40`,
+  )
+  assert.equal(cdRg?.how, 'rewrite', 'cd + rg + head')
+  assert.deepEqual(cdRg?.how === 'rewrite' ? cdRg.units[0].search.paths : [], ['G:/P/Content/Script'])
+  const cdRel = searchUnits('cd src/ui && grep -rn Foo lib a.lua')
+  assert.deepEqual(cdRel?.[0].search.paths, ['src/ui/lib', 'src/ui/a.lua'])
+  assert.equal(searchUnits('cd src; grep -rn Foo .'), undefined, '; 连的 cd 失败了还在原目录跑')
+  assert.equal(searchUnits('cd $ROOT && grep -rn Foo .'), undefined, '变量')
+  assert.equal(searchUnits('cd - && grep -rn Foo .'), undefined, '回上个目录')
+  assert.equal(searchUnits('cd a && cd b && grep -rn Foo .'), undefined, '后面又换目录')
+  assert.equal(searchUnits('ls && cd a && grep -rn Foo .'), undefined, '不在开头的 cd')
   assert.notEqual(tk('for f in a b; do grep -n Foo $f; done')?.how, 'rewrite', '循环')
   assert.notEqual(tk('(grep -rn Foo .; ls)')?.how, 'rewrite', '子 shell')
   assert.equal(searchUnits('cat a | grep Foo; grep -rn Bar . | wc -l'), undefined, '一个都接不住')

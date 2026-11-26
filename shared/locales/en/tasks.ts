@@ -547,6 +547,7 @@ export const EN_TASKS: Record<string, string> = {
   查看结果: 'Review result',
   这一步没有输出内容: 'This step produced no output',
   标注: 'Annotate',
+  '这一版只能查看，不能标注': 'This version is view only and cannot be annotated',
   '选中左边的文字，点「标注」写下要改的地方': 'Select text on the left and click "Annotate" to note what should change',
   这里要怎么改: 'What should change here',
   '标注 {n} 的意见': 'Comment for annotation {n}',

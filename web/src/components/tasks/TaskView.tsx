@@ -643,6 +643,8 @@ export function TaskView({
                               focus={focus}
                               onSelect={setFlowSel}
                               onOpenChat={() => setView('chat')}
+                              onAnswered={apply}
+                              floatPad={scroll.floatPad}
                             />
                           </Suspense>
                         ) : undefined

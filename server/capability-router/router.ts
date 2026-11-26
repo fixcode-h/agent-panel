@@ -39,6 +39,8 @@ export interface RouteOptions<Req, Out> {
 
 export interface RouteResult<Out> {
   outs: { source: string; out: Out }[]
+  /** 跑了但没给结果的路的输出：结果为空也可能带说明（只查了一部分、超时），调用方要转告，不然「没有找到」像是查全了 */
+  empties: { source: string; out: Out }[]
   steps: RouteStep[]
   ms: number
 }
@@ -86,6 +88,7 @@ export async function route<Req, Out>(o: RouteOptions<Req, Out>): Promise<RouteR
   const t0 = Date.now()
   const steps: RouteStep[] = []
   const outs: { source: string; out: Out }[] = []
+  const empties: { source: string; out: Out }[] = []
   const sources = o.sources.filter((s) => s.accepts(o.req)).sort((a, b) => a.rank - b.rank)
   const deadline = t0 + (o.waitMs ?? 60_000)
   for (const s of sources) {
@@ -100,7 +103,10 @@ export async function route<Req, Out>(o: RouteOptions<Req, Out>): Promise<RouteR
       const out = await s.run(o.req, o.signal)
       const empty = o.isEmpty(out)
       steps.push({ source: s.id, outcome: empty ? 'empty' : 'used', ms: Date.now() - t1 })
-      if (empty) continue
+      if (empty) {
+        empties.push({ source: s.id, out })
+        continue
+      }
       outs.push({ source: s.id, out })
       if (o.enough(s, out)) break
     } catch (e) {
@@ -119,5 +125,5 @@ export async function route<Req, Out>(o: RouteOptions<Req, Out>): Promise<RouteR
     ...(outs[0] && { served: outs.map((x) => x.source).join(' + ') }),
     ms,
   })
-  return { outs, steps, ms }
+  return { outs, empties, steps, ms }
 }

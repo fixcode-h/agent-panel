@@ -35,6 +35,7 @@ user-invocable: true
   - `openspec list`：列出没归档的 change。
   - `openspec status --change <名字>`：一个 change 的进度。**change 名要用 `--change` 传**，写成 `openspec status <名字>` 会报 `too many arguments`。
   - `openspec validate <名字>`、`openspec archive <名字>`、`openspec new change <名字>`、`openspec instructions <产物>`。
+  - **`openspec validate` 只看 ERROR，不加 `--strict`**（指令文件里写了也去掉）：WARNING 是 OpenSpec 的写作建议，不算门禁失败。像「Requirement text is very long (>500 characters)」这种字数提醒，文档写多长按内容需要定（用户 2026-11-26 定）：不要为了消警告把接口表、边界条件从需求正文挪进 scenario，也不要删减内容；只有一条需求里真的写了几件互不相关的行为时才拆成几条。
   - 拿不准时先 `openspec <命令> --help`，不要连试几种写法。
 - **斜杠指令**：`/opsx-explore`、`/opsx-propose`、`/opsx-apply`、`/opsx-archive`（`/opsx:propose` 写法是同一指令；也可能装成 `openspec-propose` 等同名技能）。它们不是 CLI，也不是 shell 命令，按当前 CLI 的指令规范执行；指令正文里提到的工具名（提问、清单、子 Agent 等）映射到当前 CLI 的等价能力，不要照字面调用不存在的工具。
 - **直接改文件**：`proposal.md` / `design.md` 正文、specs 的需求条目、`tasks.md` 的勾选、`acceptance.md`、`handoff.md`。不得手工创建缺少 `.openspec.yaml` 的 change 目录，也不得手工移动目录归档。

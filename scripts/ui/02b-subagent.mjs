@@ -1358,7 +1358,59 @@ await runShard(import.meta.filename, async (api) => {
         await check(p, '阶段报告入口-看第 1 版', ['这一版你改了决策', '只能查看'])
         if (await dlg.getByRole('button', { name: '确认', exact: true }).isVisible())
           errors.push('阶段报告入口：只看的弹窗里不该有「确认」按钮')
+        // 只读时不再教人「选中左边的文字点标注」，也不摆点不动的整体意见框（用户 2026-11-26）
+        if (await dlg.getByText('选中左边的文字，点「标注」写下要改的地方').count())
+          errors.push('阶段报告入口：只看的弹窗里还提示选中文字标注')
+        if (await dlg.getByPlaceholder('整体意见（可选）').isVisible())
+          errors.push('阶段报告入口：只看的弹窗里还摆着整体意见框')
         await p.keyboard.press('Escape')
+        // 等确认的那一版：报告栏上就是「查看结果」，点开能标注、能确认；同一份确认不再浮在输入框上方叠住报告栏
+        const go = bar.getByRole('button', { name: '查看结果', exact: true })
+        if (!(await go.count())) errors.push('阶段报告入口：等确认时报告栏上没有「查看结果」')
+        if (await p.locator('[role="alertdialog"]').filter({ hasText: '看一下结果再继续' }).count())
+          errors.push('阶段报告入口：节点详情里有报告栏时，同一份确认还浮在输入框上方')
+        await bar.scrollIntoViewIfNeeded()
+        await check(p, '阶段报告入口-报告栏等确认', ['等你确认', '查看结果'])
+        if (await go.count()) {
+          await go.click()
+          const review = p.getByRole('dialog')
+          await review
+            .getByRole('button', { name: '确认', exact: true })
+            .waitFor({ timeout: 5000 })
+            .catch(() => errors.push('阶段报告入口：点「查看结果」打开的弹窗不能确认'))
+          // 选中正文里的一段文字：浮出「标注」按钮，点了右栏多一条
+          const target = review.locator('[data-review-doc] p').first()
+          await target.scrollIntoViewIfNeeded()
+          const box = await target.boundingBox()
+          if (box) {
+            await p.mouse.move(box.x + 4, box.y + box.height / 2)
+            await p.mouse.down()
+            await p.mouse.move(box.x + Math.min(box.width - 4, 160), box.y + box.height / 2, { steps: 8 })
+            await p.mouse.up()
+          }
+          const mark = review.getByRole('button', { name: '标注', exact: true })
+          await mark
+            .waitFor({ timeout: 3000 })
+            .catch(() => errors.push('阶段报告入口：在等确认的报告里选中文字没有浮出「标注」'))
+          if (await mark.count()) {
+            await mark.click()
+            await review
+              .getByLabel('标注 1 的意见')
+              .waitFor({ timeout: 3000 })
+              .catch(() => errors.push('阶段报告入口：点「标注」后右栏没有多一条'))
+          }
+          await check(p, '阶段报告入口-等确认可标注', ['修改'])
+          await p.keyboard.press('Escape')
+          // 关了再点一次照样打开；在报告栏里确认后弹窗关掉，按钮回到只看的「查看报告」
+          await go.click()
+          await review.getByRole('button', { name: '确认', exact: true }).click()
+          await bar
+            .getByRole('button', { name: '查看报告', exact: true })
+            .waitFor({ timeout: 8000 })
+            .catch(() => errors.push('阶段报告入口：在报告栏里确认后，报告栏没有回到只看的「查看报告」'))
+          if (await review.isVisible().catch(() => false)) errors.push('阶段报告入口：确认后审阅弹窗还开着')
+          await check(p, '阶段报告入口-报告栏已确认', ['查看报告'])
+        }
       }
     }
   }

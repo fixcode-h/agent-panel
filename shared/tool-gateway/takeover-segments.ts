@@ -3,7 +3,8 @@
  * 改写时只在每个搜索段前面原地插一句「打印面板这段的结果」，别的段、连接符、顺序一字不动，shell 照原样跑整条。
  *
  * 插的是 `node "<脚本>" && `：脚本只打印、退出码 0，所以 `a && 搜索`、`a; 搜索`、`搜索 | head` 的语义都不变
- * （管道比 && 绑得紧，面板那段不会被 head 截掉）。拿不准的段不接，整条拿不准的（换目录、循环、子 shell）一段都不接
+ * （管道比 && 绑得紧，面板那段不会被 head 截掉）。拿不准的段不接，整条拿不准的（换目录、循环、子 shell）一段都不接。
+ * 例外是开头一句 `cd <写死的目录> && …`：模型（Claude Code 尤其）几乎每条搜索都这么起头，之后的相对路径按这个目录算就对得上
  */
 import { categoryOf } from './commands.ts'
 import { parseSearchCommand, type SearchSpec } from './search-args.ts'
@@ -30,6 +31,30 @@ export const firstWord = (seg: string) =>
 
 /** 换目录的段：之后的相对路径就不是按工作目录算了，面板查的范围对不上 */
 const MOVE_DIR = /^(?:cd|pushd|popd|set-location|sl)$/
+/**
+ * 开头的 `cd <目录>`：目录是写死的（不带变量、~、-），cmd 的 `cd /d` 不认。
+ * 只认第一段、且后面是 `&&`（cd 失败就不往下跑，搜索一定在这个目录里）；`;` 连的 cd 失败了搜索还在原目录跑，对不上
+ */
+const LEAD_CD = /^cd\s+(?:"([^"$`]+)"|'([^']+)'|([^\s"'$`;&|]+))$/i
+function leadDir(text: string): string | undefined {
+  const m = LEAD_CD.exec(text.trim())
+  const dir = m?.[1] ?? m?.[2] ?? m?.[3]
+  if (!dir || /^[-~]|^\/d$|[$%]/i.test(dir)) return undefined
+  return dir
+}
+
+/** 绝对路径（/x、C:\x、C:/x、\\server） */
+const isAbs = (p: string) => /^(?:[A-Za-z]:)?[\\/]/.test(p)
+
+/** 搜索的路径换成「cd 的目录 + 原路径」：空表示 cd 的目录本身；绝对路径不动。服务端按 CLI 的工作目录再换成相对的 */
+function underDir(s: SearchSpec, dir: string): SearchSpec {
+  const d = dir.replace(/[\\/]+$/, '')
+  const paths = s.paths.length ? s.paths.map((p) => (isAbs(p) ? p : `${d}/${p}`)) : [d]
+  // 照原样跑（代答）的跑法不在 cd 的目录里，去掉：逐段改写用不到它
+  const { run: _run, ...rest } = s
+  return { ...rest, paths }
+}
+
 /** 循环、条件、函数：里面的搜索可能跑多次、参数要运行时才知道 */
 const KEYWORDS = /^(?:for|while|until|if|then|else|elif|fi|do|done|case|esac|function|foreach|select)$/
 
@@ -38,12 +63,20 @@ const KEYWORDS = /^(?:for|while|until|if|then|else|elif|fi|do|done|case|esac|fun
  * - 读得懂的按内容搜（parseSearchCommand 认得、不是按名字找文件）；
  * - 不是被管道喂进来的（那样搜的是上一段的输出），前面不是 `||`（可能根本不跑），自己不放后台；
  * - 输出再管道下去只接 PIPE_TAILS。
- * 整条拿不准：有换目录、循环条件关键字、子 shell 或花括号组
+ * 整条拿不准：有换目录（开头一句 `cd <目录> &&` 除外，见 leadDir）、循环条件关键字、子 shell 或花括号组
  */
 export function searchUnits(command: string): SearchUnit[] | undefined {
   const parts = splitTop(command)
   if (!parts) return undefined
-  if (parts.some((p) => MOVE_DIR.test(firstWord(p.text)) || KEYWORDS.test(firstWord(p.text)) || /^[({]/.test(p.text)))
+  const dir = parts.length > 1 && parts[1].op === '&&' ? leadDir(parts[0].text) : undefined
+  if (
+    parts.some(
+      (p, i) =>
+        (MOVE_DIR.test(firstWord(p.text)) && !(i === 0 && dir)) ||
+        KEYWORDS.test(firstWord(p.text)) ||
+        /^[({]/.test(p.text),
+    )
+  )
     return undefined
   const units: SearchUnit[] = []
   parts.forEach((p, i) => {
@@ -53,7 +86,7 @@ export function searchUnits(command: string): SearchUnit[] | undefined {
     // 后台跑的（`grep … &`）：面板那段先打印完，搜索结果什么时候出来说不准
     if (parts[i + 1]?.op === '&') return
     const search = parseSearchCommand(p.text)
-    if (search?.mode === 'content') units.push({ search, at: p.start })
+    if (search?.mode === 'content') units.push({ search: dir ? underDir(search, dir) : search, at: p.start })
   })
   return units.length ? units : undefined
 }
