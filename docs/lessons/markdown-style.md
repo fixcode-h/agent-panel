@@ -21,3 +21,9 @@ paths: shared/markdown-style.ts, web/src/index.css, web/src/components/settings/
 - 规则：在带文字的内容上做「按住拖动平移」（Mermaid 画布这类），按下时不 `preventDefault`（要保住单击、选字），浏览器在挪够阈值之前就已经开始选字；认定是拖动后清掉选区（`getSelection().removeAllRanges()`）、拖动期间在 document 捕获阶段拦 `selectstart`，画布再加 `select-none`。光加 `user-select: none` 拦不住已经起头的选区。
 - 起因：用户 2026-11-25 截图，拖动时序图时整片文字被选成蓝底（拖动平移在 5f4bff7 前后加进 `web/src/lib/mermaid-fx.ts`）。
 - 防线：`scripts/ui/02k-bug-structure.mjs` 的「全屏看图」前后，从文字上、文字旁空白拖动，断言没有选区且画布挪了。
+
+## 对话里的表格默认全量展示，不在表格里滚动
+
+- 规则：回复里的 Markdown 表格默认整张展开（`table.rows` 默认 0），限高只做成设置里的可选项；表格单元格不跟正文的 `overflow-wrap: anywhere`，单词保持完整、放不下就整张横滚，编号、状态这类短列标 `data-nw` 不折行（`narrowColumns`）。改表格排版时别为了「长表别太占地方」默认收起内容。
+- 起因：用户 2026-11-26 截图问「这个表格为什么改成可滚动的，全量展示不就好了」：表格交互那批改动默认限 15 行、表内滚动，编号列 Q10 还被折成两行。
+- 防线：`web/src/lib/markdown/table.test.ts` 的「短列不折行」；`scripts/ui/05-settings.mjs` 的「长表限高」仍测设了行数时的限高。

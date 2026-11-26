@@ -8,8 +8,11 @@ export const EN_MD_TABLE: Record<string, string> = {
   '点一下升序、再点降序、第三下回到原顺序，只改显示。':
     'Click once for ascending, again for descending, a third time for the original order. Only the display changes.',
   长表限高: 'Long table height',
-  '超过约这么多行时表格限高、在表格里滚动，表头钉在顶上。0 表示不限高。':
-    'Tables longer than about this many rows get a fixed height and scroll inside, with the header pinned. 0 means no limit.',
+  '超过约这么多行时表格限高、在表格里滚动，表头钉在顶上。默认 0：不限高，表格全部展开。':
+    'Tables longer than about this many rows get a fixed height and scroll inside, with the header pinned. Default 0: no limit, the whole table is shown.',
+  短列不折行: "Don't wrap short columns",
+  '编号、状态这类每格都只有几个字的列不换行，表格挤窄时也不会把 Q10 折成两行。':
+    "Columns where every cell is only a few characters (IDs, status) stay on one line, so Q10 isn't split in two when the table is squeezed.",
   长表限高行数: 'Long table row limit',
   '{shown} / {n} 行 · {cols} 列': '{shown} / {n} rows · {cols} columns',
   '{n} 行 · {cols} 列': '{n} rows · {cols} columns',

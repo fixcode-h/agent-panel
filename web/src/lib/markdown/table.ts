@@ -30,6 +30,27 @@ export function tableHtml(table: string, raw: string, rows: number) {
   return `<div class="md-table" data-rows="${rows}" data-src="${escape(raw.replace(/\s+$/, ''))}">${tools}${table}</div>`
 }
 
+/** 一格文字的显示宽度：中日韩和全角字符算 2 */
+const textWidth = (s: string) => {
+  let w = 0
+  for (const ch of s)
+    w += /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(ch)
+      ? 2
+      : 1
+  return w
+}
+/** 每格（含表头）显示宽度都不超过这么多的列算「短列」：编号、状态、版本号这类 */
+export const NARROW_WIDTH = 10
+
+/**
+ * 哪几列是短列（按列给 true / false）：表格挤窄时浏览器会把每列都压到能折的最窄，
+ * 编号列的 Q10 被折成 Q1 / 0。短列标 data-nw 不折行（设置里「短列不折行」可关），长的说明列照常换行
+ */
+export function narrowColumns(rows: string[][]) {
+  const cols = Math.max(0, ...rows.map((r) => r.length))
+  return Array.from({ length: cols }, (_, i) => rows.every((r) => textWidth((r[i] ?? '').trim()) <= NARROW_WIDTH))
+}
+
 /** 一行行的格子写成 TSV：粘进 Excel / WPS 正好一格一格；格子里有制表符、换行、引号的加引号（和 Excel 复制出来的一样） */
 export const toTsv = (rows: string[][]) =>
   writeCsv(rows, { delimiter: '\t', eol: 'lf', bom: false, trailingEol: false })

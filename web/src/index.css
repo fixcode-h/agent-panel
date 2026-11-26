@@ -1429,7 +1429,8 @@ body,
   --md-table-tools: flex;
   --md-table-sort: pointer;
   --md-table-sort-mark: inline-block;
-  --md-table-rows: 16;
+  --md-table-rows: 100000;
+  --md-table-nowrap: nowrap;
   --md-hr-style: none;
   --md-hr-style-fade: linear-gradient(90deg, transparent, var(--md-hr-color) 20%, var(--md-hr-color) 80%, transparent);
   --md-hr-width: 1px;
@@ -2750,6 +2751,9 @@ body,
 }
 .chat-md table {
   @apply block w-max max-w-full overflow-auto;
+  /* 正文是 overflow-wrap: anywhere（长网址别撑破气泡），表格里不跟：那样每列都能压到一个字宽，
+     英文标识符被逐字折开、Q10 折成两行。表格自己能横向滚动，单词保持完整、放不下就横滚 */
+  overflow-wrap: break-word;
   /* 长表限高：约「设置里的行数 + 表头」那么高（一行 = 字高 + 上下内边距） */
   max-height: calc(var(--md-table-rows) * (1.6em + 0.86 * var(--md-base) * var(--md-table-pad) * var(--md-k)) + 2px);
   border-collapse: separate;
@@ -2804,6 +2808,10 @@ body,
 }
 .chat-md td {
   @apply align-top;
+}
+/* 短列不折行（renderer.table 按每列最长的格子标 data-nw，见 web/src/lib/markdown/table.ts 的 narrowColumns） */
+.chat-md td[data-nw] {
+  white-space: var(--md-table-nowrap);
 }
 /* | :-: | --: | 写的对齐：marked 写在 align 属性上，要盖过上面表头的左对齐 */
 .chat-md :is(th, td)[align='center'] {
