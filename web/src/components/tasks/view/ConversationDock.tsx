@@ -17,6 +17,7 @@ import { ImportedBar, ResolvedBar } from '../InputBars'
 import { LoadTracePill } from '../LoadTrace'
 import { PlanButton } from '../PlanPanel'
 import { TaskRequestCard, asksQuestion } from '../RequestCard'
+import { stepConfirms } from '../StageReportBar'
 import { SharedDirNotice } from '../SharedDirNotice'
 import { TaskMeta } from '../TaskMeta'
 import { FlowBar, WorktreeBar } from '../TaskViewParts'
@@ -113,7 +114,7 @@ export function ConversationDock(p: ConversationDockProps) {
           )}
           {composer && <UserActionPanel task={task} onChanged={apply} />}
           {!asksQuestion(task.requests) && (
-            <TaskRequestCard task={task} onAnswered={apply} className="w-full shadow-pop" />
+            <TaskRequestCard task={floatRequests(task, p.node)} onAnswered={apply} className="w-full shadow-pop" />
           )}
         </FloatAbove>
         {/* 提问照旧换掉输入框，不浮 */}
@@ -141,4 +142,14 @@ export function ConversationDock(p: ConversationDockProps) {
       </div>
     </>
   )
+}
+
+/**
+ * 浮在输入框上方的请求：流程图里选中的节点自己的报告栏已经能打开确认（StageReportBar），
+ * 同一份确认就不再浮一张卡片叠在报告栏上（用户 2026-11-26）；别的请求照旧浮着
+ */
+function floatRequests(task: TaskPage, node?: TaskStep): TaskPage {
+  if (!node || !task.requests?.length) return task
+  const skip = new Set(stepConfirms(task, node).map((r) => r.id))
+  return skip.size ? { ...task, requests: task.requests.filter((r) => !skip.has(r.id)) } : task
 }
