@@ -73,9 +73,9 @@ export function RoutesTab() {
       </p>
       {error && <p className="pt-2 text-body text-danger">{error}</p>}
       <Group title={t('网关')}>
-        <Row title={t('改道')} desc={cur?.hint}>
+        <Row title={t('网关模式')} desc={cur?.hint}>
           <Select
-            aria-label={t('改道')}
+            aria-label={t('网关模式')}
             value={settings?.mode ?? ''}
             onChange={(e) => void setMode(e.target.value)}
             options={(settings?.modes ?? []).filter((m) => m.available).map((m) => ({ value: m.id, label: m.label }))}

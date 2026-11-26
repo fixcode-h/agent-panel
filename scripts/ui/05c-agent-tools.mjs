@@ -53,10 +53,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('tab', { name: '工具路由' }).click()
   await check(p, '设置-Agent工具-工具路由', ['各 CLI 能做到哪一步', '只用面板的 MCP'])
   // 改道（ADR 0084 第二期）能选了：选上后说明换成改道的，再换回观察（默认）
-  await p.getByRole('combobox', { name: '改道' }).click()
+  await p.getByRole('combobox', { name: '网关模式' }).click()
   await p.getByRole('option', { name: '改道', exact: true }).click()
   await check(p, '设置-Agent工具-改道模式', ['结果是面板和原命令的并集'])
-  await p.getByRole('combobox', { name: '改道' }).click()
+  await p.getByRole('combobox', { name: '网关模式' }).click()
   await p.getByRole('option', { name: '观察（只记录）' }).click()
   if (!(await p.locator('[data-takeover="claude"] >> text=改写').count()))
     errors.push('设置-Agent工具：各 CLI 那一组没列出 Claude Code 的接管能力')

@@ -33,6 +33,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, '设置-工具路由-关掉代理', ['设置里关了代理，照旧直接挂在 CLI 上'])
   if (await p.locator('text=lua_code → find').count()) errors.push('关掉代理后不该再有被接管没给的工具')
   await p.getByRole('switch', { name: '外部服务经面板代理' }).click()
+  // 连点两下回到原样：开关先跟着点击变，不等接口（以前第二下算的是旧值，两次都存成「关」）
+  const sw = p.getByRole('switch', { name: '外部服务经面板代理' })
+  await sw.click()
+  await sw.click()
+  await p.waitForTimeout(800)
+  if ((await sw.getAttribute('aria-checked')) !== 'true') errors.push('给 Agent 的工具：连点代理开关两下后没有回到打开')
 
   // 调用记录里代理调用按外部工具记
   await p.getByRole('tab', { name: '调用记录' }).click()

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { mcpProxyContract as P, type ExposureView } from '@shared/api-contract/mcp-proxy'
 import { EXPOSURE_WHY_TEXT, type ExposureRun, type ServerExposure } from '@shared/mcp-proxy/types'
@@ -21,10 +21,20 @@ export function ExposureGroup({ projectId }: { projectId: string }) {
       .then(setView)
       .catch((e: Error) => setError(e.message))
   }, [projectId])
-  const toggle = (enabled: boolean) =>
+  // 开关先跟着点击变：等接口回来再变的话，回来前连点第二下算的还是旧值，两次都存成「关」（2026-11-26 演示版实测）。
+  // 只认最后一次点击的回答，前面的回来晚了也不覆盖
+  const seq = useRef(0)
+  const toggle = (enabled: boolean) => {
+    const n = ++seq.current
+    setView((v) => v && { ...v, enabled })
     call(P.setSettings, { body: { enabled } })
-      .then((r) => setView((v) => v && { ...v, enabled: r.enabled }))
-      .catch((e: Error) => setError(e.message))
+      .then((r) => n === seq.current && setView((v) => v && { ...v, enabled: r.enabled }))
+      .catch((e: Error) => {
+        if (n !== seq.current) return
+        setView((v) => v && { ...v, enabled: !enabled })
+        setError(e.message)
+      })
+  }
   const claimed = view?.claims.flatMap((c) => c.tools.map((x) => ({ tool: x, use: c.use, by: c.by }))) ?? []
   return (
     <Group title={t('给 Agent 的工具')}>

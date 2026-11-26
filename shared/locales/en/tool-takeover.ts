@@ -11,4 +11,5 @@ export const EN_TOOL_TAKEOVER: Record<string, string> = {
   '{to}（{decision}，按 {by} 认的；没有真的改）': '{to} ({decision}, matched by {by}; not actually changed)',
   照原样跑: 'Ran as is',
   路由: 'Route',
+  网关模式: 'Gateway mode',
 }
