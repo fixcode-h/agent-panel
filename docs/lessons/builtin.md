@@ -38,7 +38,7 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 技能装在哪，要核对每个 CLI 真的会读
 
-- 规则：面板把技能装进某个目录前，先确认每个 CLI 定义的 `skills.user` / `repo` 里有这个目录；不读的 CLI 要在 CLI 定义里写出怎么每轮带给它（`runSkills`，Claude Code 用 `shared: true` 把 `~/.agents/skills` 一起带上）。验证看 CLI 自己报的技能清单（Claude Code 的 init 事件 `skills`、上下文面板的 Skill 数），不看文件在不在。
+- 规则：面板把技能装进某个目录前，先确认每个 CLI 定义的 `skills.user` / `repo` 里有这个目录；不读的 CLI 要在 CLI 定义里写出怎么每轮带给它（`runSkills`）。ADR 0083 起自带技能装在面板数据目录、每轮只带角色的技能，`shared: true` 已去掉。验证看 CLI 自己报的技能清单（Claude Code 的 init 事件 `skills`、上下文面板的 Skill 数），不看文件在不在。
 - 起因：自带技能统一装到 `~/.agents/skills`，注释写「各 CLI 共用」，但 Claude Code 只读 `~/.claude/skills`，用户在上下文面板看到 Skill 是 0（2026-11-15）。
 - 防线：`server/skills/run-skills.test.ts`「每轮带技能」。
 
@@ -49,12 +49,12 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 必须守的技能规则不能只靠模型自己去读
 
-- 规则：CLI 只把技能的名字和描述放进上下文，正文要模型自己决定去读，弱模型常常整轮都不读。改某类文件时必须守的规则（代码风格这类），登记进 `shared/skills/code-style.ts`，由情境规则在第一次改这类文件前把要点推给模型；角色设定里常驻的那几句也从同一张表取，不另写一份。新加一种语言的风格技能就在表里加一行。
+- 规则：CLI 只把技能的名字和描述放进上下文，正文要模型自己决定去读，弱模型常常整轮都不读。技能什么时候用写成技能目录 `shared/skills/catalog.ts` 里的条件（改什么文件、跑什么命令、失败、收尾、项目特征、参数），由面板在对上的那一刻把正文推给模型（ADR 0083）；角色设定里不再常驻某个技能的要点。新加自带技能就在目录里加一行写好默认条件，入口不超过 8000 字。
 - 起因：2026-11-26 子对话（「执行」角色，没点名 lua-code-style）整轮改 Lua 一次也没读这个技能，日志调用被拆成三行。
-- 防线：`shared/hooks/situational.test.ts`「第一次改 Lua / C++ 文件前推对应的代码风格要点」。
+- 防线：`shared/skills/catalog.test.ts`（每个自带技能都有一行、Windows 路径也认）、`server/skills/push.test.ts`（推一次、压缩后补推、上限）。
 
 ## 自带技能装过就不自动更新，要记下装进去的那份
 
-- 规则：面板往 `~/.agents/skills` 装自带技能时记下那份的指纹（`server/skills/installed-record.ts`）；副本和记录对得上（没人改过）的，自带技能更新后在 `ensureBundled` 里自动换成新版，对不上的（用户改过）不动。新加写入用户技能目录的入口时同样记一笔。
+- 规则：面板往数据目录 `bundled-skills/` 装自带技能时记下那份的指纹（`server/skills/installed-record.ts`）；副本和记录对得上（没人改过）的，自带技能更新后在 `ensureBundled` 里自动换成新版，对不上的（用户改过）不动。新加写入用户技能目录的入口时同样记一笔。
 - 起因：2026-11-26 lua-code-style 改了日志标签规则，用户本机还是旧版，要到「自带 Skill」页手动点更新。
-- 防线：`server/builtin.test.ts`「面板装进去后没人改过的副本自动跟上新版」。
+- 防线：`server/skills/bundled-store.test.ts`「面板装进去后没人改过的副本自动跟上新版」。

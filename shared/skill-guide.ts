@@ -1,28 +1,11 @@
 import { pluginSkillGuide } from './plugins/index.ts'
+import { builtinGuide, skillBase } from './skills/catalog.ts'
 
 /**
- * 技能的触发说明：交给 CLI 的提示词里，每个技能写一句「什么时候用」。
- * 只列名字时模型常常不知道什么时候该读；写清触发条件才会在合适的时机用上。
- *
- * 这里的是核心的自带技能，插件带的技能写在插件清单里（skillGuide）；用户自己装的技能没有说明时只列名字。
+ * 技能名的整理和角色设定里那一行：「什么时候用」写在技能目录（shared/skills/catalog.ts 的 guide），
+ * 插件带的写在插件清单里（skillGuide）；用户自己装的技能没有说明时只列名字。
+ * 只列名字时模型常常不知道什么时候该读；写清触发条件才会在合适的时机用上
  */
-const GUIDE: Record<string, string> = {
-  'project-vcs': '任务开始时识别 Git / P4 / SVN / 无版本控制，保护已有改动；改完文件后做收尾、合并与工作区清理',
-  'project-documentation': '读写项目文档、维护模块 README 和 bugs.md、确定文档根目录时',
-  'project-structure': '第一次接触这个项目、需要弄清目录结构、构建命令、测试命令、运行方式时',
-  'ue-project-structure':
-    'UE 项目在 project-structure 之外的引擎规则：模块与插件、UHT/UBT 编译、自动化测试、Gameplay 框架、资产与 Cook',
-  'project-testing': '写新功能或修 Bug 要先写失败的测试、写或改测试、决定跑哪些测试、写验收证据时',
-  'coding-standards': '写或改代码、搭新模块时：跟随已有写法、数值和配置不写死、按真实变化留扩展点、交付前自查差异',
-  brainstorming: '需求或方案还不清楚，要先澄清意图、比较方案、取得确认时',
-  grilling: '要在动手前压测设计树、逐轮追问决策时',
-  openspec: '按 OpenSpec 流程写 proposal / specs / design / tasks 和验收归档时',
-  'task-records': '任务较大、需要 tasks / design / acceptance / handoff 记录和跨会话恢复时',
-  'systematic-debugging': '遇到 Bug、测试失败或意外行为，要先找根因再改时',
-  'verification-before-completion': '准备宣布完成、提交或创建 PR 之前，要先跑验证拿新鲜证据时',
-  'cpp-code-style': '写或改 C++ / UE C++ 代码时',
-  'lua-code-style': '写或改 Lua 代码时',
-}
 
 /**
  * 下线的自带技能 → 接替它的技能（没有就是空串）：本机已装的角色副本里可能还点着旧名字（用户改过的副本不会被升级），
@@ -44,14 +27,9 @@ export const RETIRED_SKILL_MAP: Record<string, string> = {
 export const RETIRED_SKILLS = new Set(Object.keys(RETIRED_SKILL_MAP)) // 模块状态：常量，加载后不改
 
 /**
- * 特化技能 → 它扩展的通用技能：特化的只补差异，用到它时通用的那份必须一起给，
- * 例如 UE 项目用 ue-project-structure，也要有 project-structure
+ * 换掉下线的技能名、补上特化技能依赖的通用技能（技能目录的 base：特化的只补差异，用到它时通用的那份必须一起给，
+ * 例如 UE 项目用 ue-project-structure，也要有 project-structure），去重后保持原顺序（通用的排在特化的前面）
  */
-export const SKILL_BASE: Record<string, string> = {
-  'ue-project-structure': 'project-structure',
-}
-
-/** 换掉下线的技能名、补上特化技能依赖的通用技能，去重后保持原顺序（通用的排在特化的前面） */
 export function resolveSkills(names: string[]) {
   const out: string[] = []
   const add = (n: string) => {
@@ -60,7 +38,8 @@ export function resolveSkills(names: string[]) {
   for (const raw of names) {
     const n = raw in RETIRED_SKILL_MAP ? RETIRED_SKILL_MAP[raw] : raw
     if (!n) continue
-    if (SKILL_BASE[n]) add(SKILL_BASE[n])
+    const base = skillBase(n)
+    if (base) add(base)
     add(n)
   }
   return out
@@ -68,7 +47,7 @@ export function resolveSkills(names: string[]) {
 
 /** 提示词里的一行：`- \`名字\`：什么时候用` */
 export function skillLine(name: string) {
-  const guide = GUIDE[name] ?? pluginSkillGuide(name)
+  const guide = builtinGuide(name) ?? pluginSkillGuide(name)
   return guide ? `- \`${name}\`：${guide}` : `- \`${name}\``
 }
 
@@ -82,7 +61,7 @@ export function retiredWithoutSuccessor(names: string[]) {
 }
 
 /**
- * 角色设定里「要用的 Skill」那一节补上技能装在哪：面板把自带技能统一装在一个目录（server/bundled-skills.ts 的 sharedRoot），
+ * 角色设定里「要用的 Skill」那一节补上技能装在哪：角色自带的技能每轮放进这一轮的技能目录（server/skills/run-skills.ts），
  * 只写「~/.agents/skills」时模型会自己猜 ~ 是哪里——CLI 的用户目录和工作目录对不上时猜错，读到不存在的路径再弹权限卡卡住
  * （2026-11-03 真实 API 实测：「文档」子任务两次猜成 /home/user/... 和项目目录下的 .agents/skills）。没有这一节时原样返回
  */

@@ -24,6 +24,7 @@ import { PlanItem, PlanStatus, PlanStep, PlanWait, TaskPlan } from './plan/schem
 import { FileFormat } from './settings-schema.ts'
 import { ProjectCapabilities } from './projects/capabilities.ts'
 import { FileIndexSettings } from './file-index/types.ts'
+import { ToolRoute } from './capability-router/tool-route.ts'
 
 /** 全局设置（含文件格式、外观、CLI 设置）拆在 settings-schema.ts，进程面板的结构拆在 process-schema.ts：从这里原样转出，引用处不用改 */
 export * from './settings-schema.ts'
@@ -1319,6 +1320,8 @@ export const ToolUse = z.object({
       }),
     )
     .optional(),
+  /** 这次调用最终实际走的路（面板的 find 经能力路由、以后网关改写的调用）：卡片耗时旁的小标，字段见 tool-route.ts */
+  route: ToolRoute.optional(),
   /**
    * 推给页面时省掉了输出的后半段（只出现在推送里，不存盘，见 shared/task.ts 的 liteMessages）：
    * 原来的长度、行数，和取全文用的消息 id、第几个工具。页面打开窗口看全部时再按这个去取
@@ -1727,6 +1730,11 @@ export const AgentUsage = z.object({
       boosted: z.array(z.object({ key: z.string(), value: z.union([z.string(), z.number()]) })),
     })
     .optional(),
+  /**
+   * 技能（ADR 0083）：这一轮带进技能目录的（角色自带、每个对话都带的）和面板按情境推过正文的。
+   * 会话栏「环境 → 技能」那一行按它写；旧记录没有
+   */
+  skills: z.object({ carried: z.array(z.string()).default([]), pushed: z.array(z.string()).default([]) }).optional(),
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
 

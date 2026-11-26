@@ -34,6 +34,7 @@ import { gitSemantic, p4Semantic } from './review-semantic.ts'
 import { yieldApiSlot } from './api-gate.ts'
 import { fileIndexRun } from '../file-index/agent-tool.ts'
 import { findCodeRun } from '../capability-router/find/run.ts'
+import { noteRouteOn } from '../capability-router/tag-route.ts'
 import { fileIndexSettingsOf } from '../../shared/file-index/types.ts'
 import { turnExtra } from './turn-extra.ts'
 import { customToolsFor } from '../custom-tools/agent.ts'
@@ -153,6 +154,8 @@ export async function runRealTurn(ctx: RealContext) {
             indexOn: fileIndexSettingsOf(ctx.project).enabled,
           })
         : undefined,
+    // find 实际走的路挂到工具行上（卡片耗时旁的小标）
+    noteRoute: noteRouteOn(ctx.task, () => ctx.changed()),
     // 自建工具（ADR 0082）：项目的和全局的；不在项目里只有全局的。授权卡、保存弹窗跟着这一轮
     customTools: await customToolsFor(
       ctx,

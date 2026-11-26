@@ -11,7 +11,7 @@ export const categoryLabel = (id: string) => BUNDLED_CATEGORIES.find((c) => c.id
 
 /**
  * 面板自带的 Skill 列表（左栏）：按分类分组，点一项右边看详情。
- * 这些技能统一装在 ~/.agents/skills，所有 Agent 共用；源是仓库 skills/ 下随版本发布的那一份。
+ * 这些技能统一装在面板数据目录的 bundled-skills/，所有 Agent 共用（ADR 0083）；源是仓库 skills/ 下随版本发布的那一份。
  */
 export function BundledSkills({
   query,
@@ -90,15 +90,15 @@ export function BundledBulkBar({
 }) {
   const outdated = (items ?? []).filter((i) => i.status.shared === 'changed')
   const missing = (items ?? []).some((i) => i.status.shared === 'missing')
-  // 一次只跑一个批量操作（都在写 ~/.agents/skills）：另一个按钮变灰时说明为什么点不了
+  // 一次只跑一个批量操作（都在写数据目录的 bundled-skills/）：另一个按钮变灰时说明为什么点不了
   // 只在「别的操作在跑」时提示——自己正在跑的时候按钮是转圈的，不需要再解释
   const waitTitle = (key: string) => (busy && busy !== key ? t('等当前操作完成') : undefined)
   return (
     <div className="flex flex-col gap-2">
       <p className="flex flex-wrap items-center gap-x-1.5 text-caption text-subtle">
         {t('装到')}
-        <span className="font-mono">~/.agents/skills</span>
-        {t('，所有 Agent 共用')}
+        <span className="font-mono">bundled-skills/</span>
+        {t('（面板数据目录），所有 Agent 共用；每轮只带角色用到的，其余由面板按情境推')}
       </p>
       <div className="flex items-center gap-1.5">
         <Button

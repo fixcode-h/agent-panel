@@ -23,7 +23,10 @@ import { parseArgs } from 'node:util'
 import { agentStats } from '../../shared/agents/stats.ts'
 import { fmtDuration } from '../lib/duration.mjs'
 import { startServer } from '../e2e/spawn-server.mjs'
-import { EVAL_TASKS, makeSample } from './eval-tasks.mjs'
+import { EVAL_TASKS as BASE_TASKS, makeSample } from './eval-tasks.mjs'
+import { SKILL_TASKS, skillStats } from './eval-tasks-skills.mjs'
+
+const EVAL_TASKS = [...BASE_TASKS, ...SKILL_TASKS]
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const { values: opt } = parseArgs({
@@ -227,6 +230,9 @@ async function runTask(task) {
     workflowId: general.id,
     testSteps: [{ id: 'unit', name: '单元测试', command: 'node --test', quick: true }],
   })
+  // 任务自带的自建工具：和用户 /createtool 建的一样存进项目
+  for (const tool of task.tools ?? [])
+    await call('PUT', '/custom-tools', { projectId: project.id, scope: 'project', tool, by: 'eval' })
   const started = Date.now()
   const top = await call('POST', '/tasks', {
     projectId: project.id,
@@ -299,6 +305,8 @@ async function runTask(task) {
     tokens: s.tokens,
     costUsd: s.costUsd,
     ms: Date.now() - started,
+    // 技能、自建工具有没有用上（只看工具调用记录）
+    ...(task.needsTasks ? { use: skillStats(full) } : {}),
     briefs,
   }
 }
@@ -311,6 +319,7 @@ try {
     const r = await runTask(task).catch((e) => ({ id: task.id, title: task.title, ok: false, why: e.message }))
     results.push(r)
     console.log(`  ${r.ok ? '✓' : '✗'} ${r.why || ''}`.trimEnd())
+    if (r.use) console.log(`  用上：${JSON.stringify(r.use)}`)
   }
 } finally {
   await cleanup()

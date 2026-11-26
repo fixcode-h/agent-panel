@@ -12,6 +12,7 @@ import { SessionContextBody, useSessionContext } from './SessionContext'
 import { StatusCard } from './StatusCard'
 import { LatencyCard } from './LatencyCard'
 import { SupportNote } from './SupportNote'
+import { SkillsNote } from './SkillsNote'
 import type { ChildEntry } from '@shared/task'
 
 /**
@@ -90,6 +91,8 @@ export function SessionBar({
             )}
             {/* 按弱模型加强了扶持：写一行，点开看加强了哪几项（设置 → 钩子 → 按模型档位加强扶持） */}
             <SupportNote task={task} />
+            {/* 这一轮带了哪些技能、面板推过哪些（设置 → Agent 工具 → 技能） */}
+            <SkillsNote task={task} />
           </SessionCard>
         )}
 

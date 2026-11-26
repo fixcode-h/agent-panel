@@ -795,7 +795,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.waitForFunction(() => location.hash.includes('#/library/coding-standards'), { timeout: 5000 }).catch(() => {})
   if (!(await p.evaluate(() => location.hash)).includes('#/library/coding-standards'))
     errors.push('自带Skill-详情：点卡片后地址里没有记下选中项')
-  await check(p, '自带Skill-详情', ['编码', '文件结构', '~/.agents/skills'])
+  await check(p, '自带Skill-详情', ['编码', '文件结构', 'bundled-skills'])
   if (!(await p.getByText('随面板版本提供', { exact: false }).count()))
     errors.push('自带Skill-详情：没有说明这里不能编辑')
   if (await p.getByLabel('内容', { exact: true }).count()) errors.push('自带Skill-详情：自带技能不该有可编辑的正文框')

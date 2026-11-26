@@ -8,6 +8,7 @@ import { EN_FLOW } from './en/flow.ts'
 import { EN_LOCAL_IMAGE } from './en/local-image.ts'
 import { EN_MCP } from './en/mcp.ts'
 import { EN_MCP_CATALOG } from './en/mcp-catalog.ts'
+import { EN_AGENT_TOOLS } from './en/agent-tools.ts'
 import { EN_PROJECT_SKILLS } from './en/project-skills.ts'
 import { EN_PROJECT_SIDEBAR } from './en/project-sidebar.ts'
 import { EN_PROJECT_CAPS } from './en/project-caps.ts'
@@ -45,6 +46,7 @@ import { EN_GITHUB_SOURCES } from './en/github-sources.ts'
 import { EN_PREFS } from './en/prefs.ts'
 import { EN_FILE_INDEX } from './en/file-index.ts'
 import { EN_TOOLS } from './en/tools.ts'
+import { EN_TOOL_GATEWAY } from './en/tool-gateway.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_FOLD_BAR } from './en/fold-bar.ts'
@@ -104,6 +106,7 @@ export const EN: Record<string, string> = {
   ...EN_PREFS,
   ...EN_FILE_INDEX,
   ...EN_TOOLS,
+  ...EN_TOOL_GATEWAY,
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
   ...EN_FOLD_BAR,
@@ -130,6 +133,7 @@ export const EN: Record<string, string> = {
   ...EN_LOCAL_IMAGE,
   ...EN_MCP,
   ...EN_MCP_CATALOG,
+  ...EN_AGENT_TOOLS,
   ...EN_PROJECT_SKILLS,
   ...EN_PROJECT_SIDEBAR,
   ...EN_PROJECT_CAPS,

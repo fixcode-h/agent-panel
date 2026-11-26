@@ -26,6 +26,7 @@ import { newPace, planPaceHint, type PaceState } from '../../shared/plan/pace.ts
 import { DATA_DIR } from '../store.ts'
 import { knowledgePush } from './knowledge-push.ts'
 import { situationalPush } from './situational.ts'
+import { skillHookCtx } from '../skills/hook-ctx.ts'
 import { ideMcpServersFor } from '../mcp-catalog/code-index.ts'
 import type { ResolvedSupport } from '../../shared/models/support.ts'
 import { PUSH_RULES } from '../../shared/knowledge/push.ts'
@@ -59,6 +60,7 @@ import { p4Runner } from '../p4-split.ts'
 import { p4AutoOpen } from './p4-open.ts'
 import { customToolSigs } from '../../shared/custom-tools/match.ts'
 import { listTools } from '../custom-tools/store.ts'
+import { gatewayForCall } from '../tool-gateway/for-call.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -252,6 +254,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
+  // 工具网关（ADR 0084）：开着时每次工具调用都过它、记一条；关着时为空，下面照旧
+  const gw = gatewayForCall(c, data)
   // 开关可以按项目单独设（覆盖全局，见 hook-builtins.ts）；弱模型的扶持只在落到全局档位时往严里推
   const sup = c.support
   const on = (id: string) =>
@@ -289,20 +293,25 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           maxItems: pushLimit,
         })
       : undefined
-  // 情境规则（situational.ts）：到那一刻才推的细则
-  const situ = on('situational-rules')
-    ? situationalPush({
-        task: c.task,
-        support: sup,
-        plans: !!c.call.orch.plans,
-        // 项目接的 IDE 服务：只读配置和缓存（这一轮拼提示词时已经问过）
-        ideMcp: c.project.id ? await ideMcpServersFor(c.project, c.cwd).catch(() => []) : [],
-        // 自建工具认得出的程序名：Agent 自己拼命令跑同一个程序时提醒改用 custom_tool
-        customTools: customToolSigs((await listTools(c.project.id || undefined).catch(() => undefined))?.entries ?? []),
-        limit: pushLimit,
-        note: (event, detail) => noteBuiltin('situational-rules', event, 'context', detail),
-      })
-    : undefined
+  // 情境规则（situational.ts）：到那一刻才推的细则；技能按技能目录的条件推正文（ADR 0083，不看档位、不算条数）
+  const situ =
+    on('situational-rules') || on('skill-push')
+      ? situationalPush({
+          task: c.task,
+          support: sup,
+          plans: !!c.call.orch.plans,
+          // 项目接的 IDE 服务：只读配置和缓存（这一轮拼提示词时已经问过）
+          ideMcp: c.project.id ? await ideMcpServersFor(c.project, c.cwd).catch(() => []) : [],
+          // 自建工具认得出的程序名：Agent 自己拼命令跑同一个程序时提醒改用 custom_tool
+          customTools: customToolSigs(
+            (await listTools(c.project.id || undefined).catch(() => undefined))?.entries ?? [],
+          ),
+          limit: pushLimit,
+          rules: on('situational-rules'),
+          skills: on('skill-push') ? await skillHookCtx(data, c.task, c.agent.id, c.project, c.changed) : undefined,
+          note: (hook, event, detail) => noteBuiltin(hook, event, 'context', detail),
+        })
+      : undefined
   // P4 改前自动签出（p4-open.ts）：只在 P4 项目里装；只读身份改不了文件，不用装
   const p4 =
     on('p4-auto-open') && who !== 'read-only' && c.project.path && (await isP4(c.project.path))
@@ -348,7 +357,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   const situAfter = !!situ?.after.length
   if (know || p4 || situAfter || on('loop-hint') || on('arg-table-hint') || pace || bigOut || mine('tool.after').length)
     events.push('tool.after')
-  if ((on('restore-plan') && !c.call.orch.helper) || mine('context.restored').length) events.push('context.restored')
+  if ((on('restore-plan') && !c.call.orch.helper) || on('skill-push') || mine('context.restored').length)
+    events.push('context.restored')
   for (const e of [...events]) if (off.has(e)) events.splice(events.indexOf(e), 1)
   // 各事件关心哪几类工具：内置的守卫、提醒只看改文件和跑命令（guards.ts、plan-pace 的 WORK、loopHint、教训），
   // 用户钩子按自己的匹配范围（任意工具就是全部）。读文件、搜索没人管时，能过滤的 CLI 就不再为它们跑钩子
@@ -533,7 +543,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       }
       // 守卫和用户钩子都放行了才推送：被拒绝的调用不会执行，推了也白推
       const pushedText = know ? await know.before(facts) : ''
-      const situText = situ ? situ.push('tool.before', facts) : ''
+      const situText = situ ? await situ.push('tool.before', facts) : ''
       // 守卫都放行了才签出：被拒绝的改动不会发生，签出了反而在 changelist 里留一个没改的文件
       const p4r = p4 ? await p4.before(facts) : {}
       if (p4r.deny) {
@@ -551,7 +561,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       if (lessonText) ctx.push(lessonText)
       const added = p4 ? await p4.after(facts) : ''
       if (added) ctx.push(added)
-      const situHint = situ ? situ.push('tool.after', facts) : ''
+      const situHint = situ ? await situ.push('tool.after', facts) : ''
       if (situHint) ctx.push(situHint)
       const loop = on('loop-hint') ? loopHint(c.task.id, facts, builtinNumber(data, 'loop-hint', 'times')) : ''
       if (loop) noteBuiltin('loop-hint', event, 'context', loop)
@@ -609,6 +619,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           noteBuiltin('restore-plan', event, 'context', text.slice(0, 200))
         }
       }
+      // 推过的技能再推一次（ADR 0083）：压缩后正文没了，模型照样要按它做
+      if (facts.source === 'compact' && situ) ctx.push(...[await situ.restored()].filter(Boolean))
       ctx.push(...(await runUser(event, facts)).context)
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
@@ -644,9 +656,11 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   c.call.orch.guardCommand = commandGuard
   // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
   c.call.orch.guardEdit = editGuard
+  const evs = gw ? gw.events(events, off) : events
+  const hooked = gw ? { hookTools: gw.tools(hookTools), onHook: gw.wrap(onHook) } : { hookTools, onHook }
   return {
     ...(beforeEnd ? { beforeEnd } : {}),
-    ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),
+    ...(evs.length ? { hookEvents: evs, ...hooked } : {}),
   }
 }
 

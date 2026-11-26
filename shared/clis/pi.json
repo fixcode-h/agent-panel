@@ -1080,6 +1080,7 @@
       "edit": ["write", "edit"],
       "read": ["read", "grep", "find", "ls"]
     },
+    "searchTools": ["grep", "find"],
     "toolFields": {
       "name": "tool_name",
       "input": "tool_input",

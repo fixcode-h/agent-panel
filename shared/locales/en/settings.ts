@@ -718,7 +718,8 @@ export const EN_SETTINGS: Record<string, string> = {
   'AI 创建 Skill': 'Create Skill with AI',
   '还没有，点右上角的 ＋ 新建。': 'Nothing yet — click ＋ at the top right.',
   '还没有自带 Skill。': 'No bundled skills yet.',
-  '，所有 Agent 共用': ', shared by all agents',
+  '（面板数据目录），所有 Agent 共用；每轮只带角色用到的，其余由面板按情境推':
+    ' (panel data folder), shared by all agents; each turn carries only what the role uses, the panel pushes the rest when needed',
   '（所有 Agent 共用）': ' (shared by all agents)',
   '这个技能还有一份部署在「设置 → Agent → 说明与技能」，那份要覆盖部署一次才会更新。':
     'This skill is also deployed from Settings → Agent → Instructions & skills; redeploy there to update that copy.',

@@ -17,6 +17,7 @@ import { demoChildRows } from './demo-children'
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { seedChatRail } from './demo-chat-rail'
+import { demoFindRows, demoSkillUsage } from './demo-tool-route'
 import { demoNodeMessage, demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis, diagnosisMessage } from '@shared/bug/diagnosis'
 import { retractChat, syncChat } from '@shared/bug/chat'
@@ -183,9 +184,11 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoTools } from './demo-tools'
 import { demoCustomTools } from './demo-custom-tools'
+import { demoAgentTools } from './demo-agent-tools'
 import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
 import { demoMemo } from './demo-memo'
 import { demoBgJobs } from './demo-bg-jobs'
+import { demoToolGateway } from './demo-tool-gateway'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import { demoBrowserExt, demoStyles } from './demo-styles'
@@ -1749,6 +1752,80 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   return fail('不支持的操作')
 }
 
+/** 演示的附件接口（/uploads/…）：从 route 里拆出来，route 只留一行调用；对不上的返回 undefined 让 route 接着找 */
+async function demoUploadsRoute(method: string, id: string, sub: string, body: unknown, query: URLSearchParams) {
+  // 粘贴回来的路径：演示里只认得这次页面里上传过的附件
+  if (id === 'resolve') return { files: demoResolve((body as { paths: string[] }).paths) }
+  // 演示没有本机磁盘：图片（截图、复制的图）没有原路径，照旧走上传；其它文件假装找回了原路径，
+  // 好把「后台拷贝」的状态走一遍
+  if (id === 'locate') {
+    const wanted = (body as { files: { name: string; size: number }[] }).files
+    return {
+      files: wanted.flatMap((f, index) => {
+        if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) return []
+        const path = `/demo/local/${crypto.randomUUID()}/${f.name}`
+        demoLocated.set(path, { name: f.name, size: f.size, mime: '' })
+        return [{ index, name: f.name, path, size: f.size, mime: '', ref: true }]
+      }),
+    }
+  }
+  // 后台拷贝：延迟一下能看见「拷贝中」；名字以「占用」开头的模拟拷不了，页面降级成引用路径
+  if (id === 'copy') {
+    const files: (Attachment & { from: string })[] = []
+    for (const from of (body as { paths: string[] }).paths) {
+      const src = demoLocated.get(from)
+      if (!src || src.name.startsWith(DEMO_LOCKED_PREFIX)) continue
+      await new Promise((r) => setTimeout(r, DEMO_COPY_MS))
+      const path = `/demo/uploads/${crypto.randomUUID()}/${src.name}`
+      demoUploads.set(path, `data:${src.mime || 'application/octet-stream'};base64,`)
+      files.push({ from, name: src.name, path, size: src.size, mime: src.mime })
+    }
+    return { files }
+  }
+  if (id === 'discard') {
+    for (const p of (body as { paths: string[] }).paths) {
+      demoLocated.delete(p)
+      demoUploads.delete(p)
+    }
+    return { ok: true }
+  }
+  if (id === 'open') fail('在线演示不能打开本机的文件，下载到本机运行后可以用')
+  if (id === 'raw' && sub === 'file') {
+    const p = query.get('path') ?? ''
+    const text = demoUploadText(p)
+    return { path: p, dir: p.replace(/\/[^/]*$/, ''), exists: text !== null, content: text ?? '', truncated: false }
+  }
+  // 附件：演示没有本机磁盘，内容留在页面内存里给缩略图用，路径是假的
+  if (method === 'POST') {
+    const u = body as { name: string; mime: string; data: string }
+    const a: Attachment = {
+      name: u.name,
+      path: `/demo/uploads/${crypto.randomUUID()}/${u.name}`,
+      size: Math.floor((u.data.length * 3) / 4),
+      mime: u.mime,
+    }
+    demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
+    return a
+  }
+  return undefined
+}
+
+/** 模型目录：演示不能联网补全、检查新模型，也不能改目录（从 route 挪出，route 到了函数长度基线） */
+function demoModelCatalog(method: string, id: string | undefined, saved: unknown) {
+  if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
+  if (method === 'POST' && id === 'discover') fail('在线演示不能联网检查新模型')
+  if (method === 'POST' && id === 'entries') fail('在线演示不能改模型目录')
+  const settings = Settings.parse(saved ?? {})
+  return {
+    entries: BUILTIN_MODEL_CATALOG,
+    file: '~/.agent-panel/config/models.json',
+    dir: '~/.agent-panel/config',
+    aiLookup: settings.modelCatalog.aiLookup,
+    builtinUpdated: BUILTIN_CATALOG_UPDATED,
+    userKeys: [],
+  }
+}
+
 async function route(method: string, url: string, body: unknown): Promise<unknown> {
   const d = load()
   const [path, qs] = url.split('?')
@@ -1772,20 +1849,8 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     persist()
     return Settings.parse(d.settings ?? {})
   }
-  if (res === 'model-catalog') {
-    if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
-    if (method === 'POST' && id === 'discover') fail('在线演示不能联网检查新模型')
-    if (method === 'POST' && id === 'entries') fail('在线演示不能改模型目录')
-    const settings = Settings.parse(d.settings ?? {})
-    return {
-      entries: BUILTIN_MODEL_CATALOG,
-      file: '~/.agent-panel/config/models.json',
-      dir: '~/.agent-panel/config',
-      aiLookup: settings.modelCatalog.aiLookup,
-      builtinUpdated: BUILTIN_CATALOG_UPDATED,
-      userKeys: [],
-    }
-  }
+  if (res === 'model-catalog') return demoModelCatalog(method, id, d.settings)
+  if (res === 'tool-gateway') return demoToolGateway(method, seg, query, body)
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
   if (res === 'tts') return demoTts(method, seg)
@@ -1957,58 +2022,9 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
     return demoAssistJob(id) ?? fail('找不到这次生成，可能已过期')
   }
-  // 粘贴回来的路径：演示里只认得这次页面里上传过的附件
-  if (res === 'uploads' && id === 'resolve') return { files: demoResolve((body as { paths: string[] }).paths) }
-  // 演示没有本机磁盘：图片（截图、复制的图）没有原路径，照旧走上传；其它文件假装找回了原路径，
-  // 好把「后台拷贝」的状态走一遍
-  if (res === 'uploads' && id === 'locate') {
-    const wanted = (body as { files: { name: string; size: number }[] }).files
-    return {
-      files: wanted.flatMap((f, index) => {
-        if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) return []
-        const path = `/demo/local/${crypto.randomUUID()}/${f.name}`
-        demoLocated.set(path, { name: f.name, size: f.size, mime: '' })
-        return [{ index, name: f.name, path, size: f.size, mime: '', ref: true }]
-      }),
-    }
-  }
-  // 后台拷贝：延迟一下能看见「拷贝中」；名字以「占用」开头的模拟拷不了，页面降级成引用路径
-  if (res === 'uploads' && id === 'copy') {
-    const files: (Attachment & { from: string })[] = []
-    for (const from of (body as { paths: string[] }).paths) {
-      const src = demoLocated.get(from)
-      if (!src || src.name.startsWith(DEMO_LOCKED_PREFIX)) continue
-      await new Promise((r) => setTimeout(r, DEMO_COPY_MS))
-      const path = `/demo/uploads/${crypto.randomUUID()}/${src.name}`
-      demoUploads.set(path, `data:${src.mime || 'application/octet-stream'};base64,`)
-      files.push({ from, name: src.name, path, size: src.size, mime: src.mime })
-    }
-    return { files }
-  }
-  if (res === 'uploads' && id === 'discard') {
-    for (const p of (body as { paths: string[] }).paths) {
-      demoLocated.delete(p)
-      demoUploads.delete(p)
-    }
-    return { ok: true }
-  }
-  if (res === 'uploads' && id === 'open') fail('在线演示不能打开本机的文件，下载到本机运行后可以用')
-  if (res === 'uploads' && id === 'raw' && sub === 'file') {
-    const p = query.get('path') ?? ''
-    const text = demoUploadText(p)
-    return { path: p, dir: p.replace(/\/[^/]*$/, ''), exists: text !== null, content: text ?? '', truncated: false }
-  }
-  // 附件：演示没有本机磁盘，内容留在页面内存里给缩略图用，路径是假的
-  if (res === 'uploads' && method === 'POST') {
-    const u = body as { name: string; mime: string; data: string }
-    const a: Attachment = {
-      name: u.name,
-      path: `/demo/uploads/${crypto.randomUUID()}/${u.name}`,
-      size: Math.floor((u.data.length * 3) / 4),
-      mime: u.mime,
-    }
-    demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
-    return a
+  if (res === 'uploads') {
+    const r = await demoUploadsRoute(method, id, sub, body, query)
+    if (r !== undefined) return r
   }
   if (res === 'data') return demoData(d, [id, sub].filter(Boolean).join('/'), method, body, query)
   if (res === 'project-docs') {
@@ -2019,6 +2035,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
   if (res === 'custom-tools') return demoCustomTools(method, seg, body)
+  if (res === 'agent-tools') return demoAgentTools(method, seg, body, d.agents)
   if (res === 'tools') return demoTools(method, seg, body, d.settings?.githubSources ?? [])
   if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
   if (res === 'lesson-drafts') return demoLessonDrafts(method, id, body)
@@ -3890,6 +3907,8 @@ async function seedTasks(d: Db) {
       note: '',
     }
     demoHelper(task, fe)
+    demoFindRows(task, fe.id)
+    demoSkillUsage(task, fe.id)
     await demoChildren(d, task, fe)
     d.tasks?.push(demoOwnedRun(task, 'demo-flow-run'))
     // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看

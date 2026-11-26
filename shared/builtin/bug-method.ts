@@ -322,7 +322,13 @@ export function bugCommandPrompt(where: BugCommandWhere, args: string, withMetho
   return `${head}${issue}${withMethod ? `\n\n${BUG_FULL_TEXT}` : ''}`
 }
 
-/** systematic-debugging 技能的正文：方法细节都在这里，角色设定只放要点 */
+const GENERATED = `<!-- 由 shared/builtin/bug-method.ts 生成（node scripts/gen-debug-skill.mjs），不要手改：改方法只改那个文件，再重新生成 -->`
+
+/**
+ * systematic-debugging 技能的入口：方法细节都在这里，角色设定只放要点。
+ * 入口只放分流、简易版和调用栈写法（面板按情境推正文时整份推，ADR 0083 要求入口不超过 8000 字），
+ * 用户报的 Bug 的完整流程放子文件 full-flow.md（debugSkillFullMd），入口里写明什么时候读
+ */
 export function debugSkillMd() {
   return `---
 name: systematic-debugging
@@ -330,7 +336,7 @@ description: 系统化调试：用户报的 Bug 走完整流程（立案、定�
 user-invocable: true
 ---
 
-<!-- 由 shared/builtin/bug-method.ts 生成（node scripts/gen-debug-skill.mjs），不要手改：改方法只改那个文件，再重新生成 -->
+${GENERATED}
 
 # 系统化调试
 
@@ -340,19 +346,30 @@ user-invocable: true
 
 | 情况 | 走哪条 |
 | --- | --- |
-| 用户报的、要查原因的 Bug：父对话派单写了 kind: "bug"（有 submit_diagnosis 工具），或用户发了 /bug | 完整流程（下面的「用户报的 Bug：完整查找流程」） |
-| 自己写代码、自测、跑测试、评审或测试验收报出的问题 | 简易版（下面的「修自己发现的问题」） |
-| 只读的排查分析（分析角色） | 完整流程的前五个阶段，改代码的部分写成建议 |
+| 用户报的、要查原因的 Bug：父对话派单写了 kind: "bug"（有 submit_diagnosis 工具），或用户发了 /bug | 完整流程：先读同目录的 \`full-flow.md\`，按里面八个阶段做 |
+| 自己写代码、自测、跑测试、评审或测试验收报出的问题 | 简易版（下面的「修自己发现的问题」），不用读 \`full-flow.md\` |
+| 只读的排查分析（分析角色） | \`full-flow.md\` 的前五个阶段，改代码的部分写成建议 |
 
 ${BUG_SIMPLE_TEXT}
 
-${BUG_FULL_TEXT}
+## 子文件：什么时候读哪个
 
-## 附录
-
+- \`full-flow.md\`：用户报的 Bug 的完整查找流程（级别、立案、定位、时间线、归因含版本归因、修复设计、分阶段交报告、修复验证、防复发、排查记录、排查报告的小节）。走完整流程或做只读排查分析时先读完再动手；简易版用不上。
 - \`root-cause-tracing.md\`：错误出现在调用栈深处时，怎么沿调用链往回追到坏值的来源。
 - \`defense-in-depth.md\`：根因修好之后，什么时候值得在别的层再加一道校验（不能代替修根因）。
 - \`condition-based-waiting.md\`：测试里的等待别用固定时长，按条件等；偶发失败常常出在这里。
 - \`find-polluter.sh\`：找出是哪个测试污染了共享状态，让别的测试偶发失败。
+`
+}
+
+/** systematic-debugging 的子文件 full-flow.md：用户报的 Bug 的完整流程，和面板派 Bug 子对话、/bug 展开给的是同一份 */
+export function debugSkillFullMd() {
+  return `${GENERATED}
+
+# 系统化调试 · 完整流程
+
+入口 \`SKILL.md\` 的「走哪条路」指到这里时读：用户报的 Bug，或只读的排查分析（做前五个阶段）。
+
+${BUG_FULL_TEXT}
 `
 }

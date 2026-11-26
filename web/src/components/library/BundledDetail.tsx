@@ -14,13 +14,13 @@ import { categoryLabel } from '@/components/library/BundledSkills'
 import { SkillBrowser } from '@/components/library/SkillBrowser'
 import { SkillActivation } from '@/components/library/SkillActivation'
 
-/** 装到用户目录里的位置：所有 Agent 共用这一份 */
-const SHARED_DIR = '~/.agents/skills'
+/** 服务端没给 dir 时（旧接口）的说法：默认数据目录下的 bundled-skills */
+const STORE_DIR = '~/.agent-panel/bundled-skills'
 
 /**
  * 自带 Skill 的详情页：名称、分类、说明、装在哪、文件结构和文件内容。
  * 内容只读——它是随面板版本发布的那一份（仓库 skills/），改了既会被下次更新覆盖、
- * 也不影响真正生效的 ~/.agents/skills 那份，所以这里只展示、不给编辑框。
+ * 也不影响真正生效的数据目录 bundled-skills/ 那份（ADR 0083），所以这里只展示、不给编辑框。
  */
 export function BundledDetail({
   item,
@@ -99,15 +99,13 @@ export function BundledDetail({
         <Fact label={t('分类')}>{categoryLabel(item.category)}</Fact>
         {!project && (
           <Fact label={t('装在')}>
-            <span className="font-mono">
-              {SHARED_DIR}/{item.name}
-            </span>
+            <span className="font-mono">{item.dir ?? `${STORE_DIR}/${item.name}`}</span>
             <span className="text-subtle">{t('（所有 Agent 共用）')}</span>
             <IconButton
               icon={Copy}
               size="2xs"
               label={t('复制路径')}
-              onClick={() => void copyText(`${SHARED_DIR}/${item.name}`, { done: t('已复制') })}
+              onClick={() => void copyText(item.dir ?? `${STORE_DIR}/${item.name}`, { done: t('已复制') })}
             />
           </Fact>
         )}

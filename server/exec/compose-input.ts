@@ -19,6 +19,7 @@ import type { taskFiles } from '../task-files.ts'
 import { notes } from './steering.ts'
 import { SUMMARY_PROMPT, reviewPrompt } from './op-prompts.ts'
 import { bugMethodPrompt, bugSlash } from './bug-prompt.ts'
+import { launchSkillPush } from '../skills/launch-push.ts'
 import type { RealContext } from './real-context.ts'
 
 export interface ComposeInputArgs {
@@ -38,6 +39,8 @@ export interface ComposeInputArgs {
   taskDir: Awaited<ReturnType<typeof taskFiles>>
   /** 执行这一轮的角色 */
   found: Agent
+  /** 开跑时推了一个技能（ADR 0083）：会话栏记下来 */
+  onSkillPushed?: (name: string) => void
 }
 
 export async function composeInput(a: ComposeInputArgs) {
@@ -72,11 +75,16 @@ export async function composeInput(a: ComposeInputArgs) {
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
   // Chat 模式没有后台命令时说明是空的，不拼空行
-  const hint = orch && !resume ? orchHint(orch) : ''
+  const hint = orch && !resume ? orchHint(orch, def) : ''
   if (hint) input = `${input}\n\n${hint}`
   // 用户报的 Bug：新会话第一轮带上完整查找流程（ADR 0046）
   const bugMethod = !op && bugMethodPrompt(task, ctx.prompt, !resume)
   if (bugMethod) input = `${input}\n\n${bugMethod}`
+  // 开跑时就对得上的技能（项目特征、消息里的文件、节点参数、Bug 模式）：正文接在后面，同一技能一个对话只推一次（ADR 0083）
+  const skillText = op
+    ? ''
+    : await launchSkillPush({ ctx, cwd, params: call.params ?? (step ? {} : task.params), onPushed: a.onSkillPushed })
+  if (skillText) input = `${input}\n\n${skillText}`
   // 升级成 Bug 后补带的完整流程只带一次（这一轮是 /bug 时展开里已经带了，一样算带过）
   if (!op && task.bug?.methodPending) task.bug.methodPending = undefined
   // 项目教训：新会话开头带一次（整段不超过 1500 字），其余的执行中由面板按命令、文件、报错推送，或 Agent 用 knowledge_lookup 自己取；

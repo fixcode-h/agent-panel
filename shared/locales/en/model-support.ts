@@ -17,7 +17,6 @@ export const EN_MODEL_SUPPORT: Record<string, string> = {
     'Detailed rules that only matter in a certain situation (for example a weak model about to edit a file with no plan yet) are not kept in the role setup; the panel hands them to the model at that moment. Each is pushed once per conversation and only reminds, never blocks',
   先列实现计划: 'Plan before coding',
   'IDE 服务的调用规矩': 'IDE service call rules',
-  '{lang} 代码风格要点': '{lang} code style essentials',
   改用自建工具: 'Use the custom tool instead',
   钩子档位: 'Hook tier',
   '和全局档位取更严的；项目里单独选了档位时以项目为准，钩子页逐个改过的开关也照旧优先':

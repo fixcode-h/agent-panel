@@ -8,8 +8,21 @@ import type { Orchestra } from '../shared/engine/host.ts'
 import { hasTool, toolHint } from './panel-tools/registry.ts'
 import type { HintAt } from './panel-tools/types.ts'
 
-/** 交给 CLI 的一句用法说明：工具列表模型自己看得到，这里说什么时候用 */
-export function orchHint(o: Orchestra) {
+/**
+ * 各身份共用的一句（设计稿「技能与自建工具按情境加载」15.3 方案 A）：每个工具调用都要多一轮模型请求，弱模型常常一个一个调；
+ * 互不依赖的放在同一条回复里一起发就省掉这些回合。CLI 定义里标了不支持并行工具调用（features.parallelTools 为 no）的不说
+ */
+const PARALLEL = '互不依赖的调用（读几个文件、查几个名字）放在同一条回复里一起发。'
+
+/** 交给 CLI 的一句用法说明；cli 给了且不是「不支持并行调用」时末尾加上并行发的那一句 */
+export function orchHint(o: Orchestra, cli?: { parallelTools?: string }) {
+  const s = identityHint(o)
+  if (!s || !cli || cli.parallelTools === 'no') return s
+  return `${s.slice(0, -1)}${PARALLEL}）`
+}
+
+/** 按身份排的说明：工具列表模型自己看得到，这里说什么时候用 */
+function identityHint(o: Orchestra) {
   const h = (name: string, at: HintAt) => toolHint(o, name, at)
   // 没有并行节点和子任务的对话（Chat 模式）：只讲计划和后台命令；都没有时返回空，runner 不拼空行
   if (!o.team) {

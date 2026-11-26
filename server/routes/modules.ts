@@ -22,6 +22,7 @@ import { accountsApi } from '../accounts.ts'
 import { apiSpeedApi } from '../cli/api-speed.ts'
 import { integrationsApi } from '../integrations.ts'
 import { hooksApi } from '../hooks/api.ts'
+import { toolGatewayApi } from '../tool-gateway/api.ts'
 import { configScanApi } from '../config-scan.ts'
 import { libraryApi } from '../library.ts'
 import { mcpApi } from '../mcp-store.ts'
@@ -51,6 +52,7 @@ import { asksApi } from '../asks.ts'
 import { pluginsApi } from '../plugins/index.ts'
 import { mcpCatalogApi } from '../mcp-catalog/index.ts'
 import { askMcpApi } from '../ask-mcp.ts'
+import { agentToolsApi } from '../skills/api.ts'
 import type { docsApi } from '../docs/index.ts'
 import { fixApi } from '../fix.ts'
 import { projectSkillsApi } from '../projects/skills.ts'
@@ -107,6 +109,8 @@ export function toolModules({ projects, agents }: Pick<ModuleDeps, 'projects' | 
     { prefix: '/accounts', app: apiSpeedApi() },
     { prefix: '/integrations', app: integrationsApi() },
     { prefix: '/hooks', app: hooksApi({ projects, agents }) },
+    // 工具网关：调用记录、统计、模式和能力表（ADR 0084）
+    { prefix: '/tool-gateway', app: toolGatewayApi({ projects }) },
     { prefix: '/config-scan', app: configScanApi() },
     { prefix: '/library', app: libraryApi() },
     { prefix: '/mcp-tools', app: mcpApi() },
@@ -181,6 +185,8 @@ export function workModules(d: Omit<ModuleDeps, 'memory' | 'updater'>): ApiModul
       app: mcpCatalogApi({ agents, projects, taskTitle: async (id) => (await tasks.get(id))?.title ?? '' }),
     },
     { prefix: '/mcp', app: askMcpApi() },
+    // 设置「Agent 工具 → 技能」（ADR 0083）：技能目录、条件和开关、最近推送、推送上限
+    { prefix: '/', app: agentToolsApi({ agents, taskTitle: async (id) => (await tasks.get(id))?.title ?? '' }) },
     { prefix: '/project-docs', app: docs.routes },
     { prefix: '/doc-jobs', app: docs.jobRoutes },
     { prefix: '/ai-fix', app: fixApi() },

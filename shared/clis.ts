@@ -223,6 +223,8 @@ export interface CliDefinition {
   limits: 'query' | 'push' | 'none'
   /** CLI 自己报费用；不报的要在模型目录里填单价才算得出费用（见 cli-spec 的 features.cost） */
   cost: boolean
+  /** 一条回复里的几个工具调用能不能照收（见 cli-spec 的 features.parallelTools）；不是 no 的提示词里提一句并行发 */
+  parallelTools?: 'yes' | 'no' | 'unknown'
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
   docs: string[]
   /** 项目设置里说明文件那一页的说明 */

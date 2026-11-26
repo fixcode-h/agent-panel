@@ -5,6 +5,7 @@ import type { McpToolTitles } from '../shared/mcp-catalog/tool-titles.ts'
 import type { GhDownloadJob } from '../shared/tools/gh-download.ts'
 import type { FileIndexStatus } from '../shared/file-index/types.ts'
 import type { BgJob } from '../shared/jobs/types.ts'
+import type { CallRecord } from '../shared/tool-gateway/types.ts'
 
 /**
  * 托盘要页面做的事：点图标时把已经打开的面板切到前台（focus），右键「设置」时顺便打开设置（view）。
@@ -24,6 +25,8 @@ export type PageSignal =
   | { type: 'file-index'; projectId: string; status: FileIndexStatus }
   /** 后台作业有变化（server/jobs/registry.ts），整份推给页面，侧栏底部的作业列表跟着变 */
   | { type: 'bg-jobs'; jobs: BgJob[] }
+  /** 工具网关记了一条调用、或给某条补上了执行结果（server/tool-gateway/call-log.ts），设置「调用记录」页跟着变 */
+  | { type: 'tool-call'; call: CallRecord }
 
 /** 每条连接一个 id（连上时随 hello 发给页面）：插件按它只推给订阅了的页面，连接断了按它清掉订阅 */
 const pages = new Map<string, (s: PageSignal) => void>() // 模块状态：会话，跟着进程或连接一起没

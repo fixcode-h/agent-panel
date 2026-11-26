@@ -1169,6 +1169,7 @@ body,
   --c-foldBar-border: 0px;
   --c-foldBar-hint: inline;
   --c-sourceList-autoOpen: 0;
+  --c-routeBadge-show: inline-flex;
   --c-liveText-maxH: 160px;
   --c-liveText-bar: 2px;
   --c-liveText-draft: block;

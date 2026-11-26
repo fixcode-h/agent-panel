@@ -8,9 +8,13 @@
  * 一个能力（Capability）= 请求的形状 + 结果怎么合；一条路（RouteSource）= 能不能用 + 怎么查。
  * 新能力只加类型和几条路，路由主流程（server/capability-router/router.ts）不按能力名写分支
  */
+import type { CAPABILITY_IDS } from '../tool-gateway/types.ts'
 
-/** 现在有的能力：查找是第一个，「改动生效」等按设计稿第 8.5 节往后加 */
-export type CapabilityId = 'find'
+/**
+ * 现在有的能力：查找是第一个；校验、读资源、改动生效先登记「接管哪些调用」（shared/capability-router/capabilities.ts），
+ * 工具网关的观察模式按它推算能改到哪，真正的路第三、四期再接（设计稿「技能与自建工具按情境加载」6.2）
+ */
+export type CapabilityId = (typeof CAPABILITY_IDS)[number]
 
 /** 这条路现在能不能用：只读路由维护的状态，不在查的时候现问 */
 export type Readiness =
