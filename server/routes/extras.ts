@@ -13,6 +13,7 @@ import { fileIndexApi } from '../file-index/api.ts'
 import { memoApi } from '../memo/api.ts'
 import { bgJobsApi } from '../jobs/api.ts'
 import { customToolsApi } from '../custom-tools/api.ts'
+import { localProgramsApi } from '../local-programs/api.ts'
 import type { ApiModule } from './module.ts'
 
 export function extraModules(deps: {
@@ -44,6 +45,8 @@ export function extraModules(deps: {
     { prefix: '/', app: bgJobsApi() },
     // 自建工具（ADR 0082）：「技能与 MCP」页的「工具」页签（/custom-tools）
     { prefix: '/', app: customToolsApi() },
+    // 面板要用的本机程序没装时输入框上方的「安装 / 拒绝」（/local-programs）
+    { prefix: '/', app: localProgramsApi() },
   ]
   // 「我不在」开关和自动选过的记录（server/away.ts）：启动时先读进内存，执行时同步查
   void loadAway()

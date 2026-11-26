@@ -1250,7 +1250,6 @@ export const AlertKind = z.enum([
   'cli_exit', // CLI 没做完这一轮就退出、执行失败
   'no_response', // 交给 CLI 后迟迟没有任何输出
   'mcp_slow', // 项目里配的 MCP 服务连不上或不响应，CLI 第一轮可能先等它
-  'tool_missing', // 面板要用的本机程序没装（例如 find 按文本找用的 rg），功能降级在跑
   'idle', // 执行中很久没有输出
   'timeout', // 超过单步时限被停掉
   'empty_turn', // CLI 报这一轮结束，却什么都没返回

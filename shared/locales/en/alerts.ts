@@ -199,13 +199,6 @@ export const EN_ALERTS: Record<string, string> = {
     'Starting the agent ahead of time failed. It will start again when you send a message, and any failure will show here',
   // 项目里的 MCP 没有响应（AlertKind 的 mcp_slow，server/exec/mcp-probe.ts）
   'MCP 服务没有响应': 'MCP server not responding',
-  缺少本机程序: 'Missing local program',
-  '本机没装 {list}，这次只能降级执行，点开看怎么装':
-    '{list} is not installed here, so this ran in a degraded way; open for how to install',
-  '面板要用的本机程序没有装，相关功能只能用慢一些、不一定查得全的办法顶上（例如 find 按文本找没有 rg 时只能逐个读文件）。':
-    'A local program the panel relies on is not installed, so the feature falls back to a slower way that may not cover everything (for example, without rg the find text search reads files one by one).',
-  '按下面原始信息里的命令装上它（装完不用重启面板，下次调用就会用上）。':
-    'Install it with the command in the details below (no panel restart needed; the next call picks it up).',
   '项目里配的 MCP 服务连不上或在限定时间内没有回应。有的 Agent 第一轮前会先等所有 MCP 握手，等到超时才开始，所以首字会慢；它连上之前这个对话用不了它的工具。':
     'An MCP server configured in this project could not be reached or did not answer in time. Some agents wait for every MCP handshake before the first turn and only start after it times out, so the first reply is slow; its tools are unavailable in this chat until it connects.',
   '确认这个 MCP 服务在运行、没被别的工作占住（例如编辑器正在做耗时操作）；用不上它时可以从项目的 MCP 配置里去掉。Claude Code 第一轮最多等多久由设置里的环境变量 CLAUDE_CODE_MCP_STARTUP_WAIT_MS（毫秒）决定。':

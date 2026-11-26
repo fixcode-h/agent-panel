@@ -249,9 +249,11 @@ test('文本兜底先用 rg 查全（不靠索引、跳过排除目录）；没�
       '像正则的原文照样按原文找到',
     )
     const noRg = textSource(async () => idx, undefined, { root: dir, exclude: [], program: 'rg-not-here-xyz' })
-    const fallback = await noRg.run(req('text', 'ChairStateEventKeyOptions'))
-    assert.deepEqual(fallback.hits, [], '没有 rg 走索引（这里是空的）')
-    assert.match(fallback.missing?.[0]?.program ?? '', /rg/, '报出缺 rg，界面提醒装')
+    assert.deepEqual(
+      (await noRg.run(req('text', 'ChairStateEventKeyOptions'))).hits,
+      [],
+      '没有 rg 走索引（这里是空的）',
+    )
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

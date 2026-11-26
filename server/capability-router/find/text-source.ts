@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises'
 import type { FindHit, FindOutcome, FindRequest } from '../../../shared/capability-router/find/types.ts'
 import { declRe, lastName, LANG_EXT, looksRegex, textRe } from '../../../shared/capability-router/find/text-patterns.ts'
 import type { ProjectIndex } from '../../file-index/registry.ts'
-import { RG_MISSING, rgScan } from './rg-scan.ts'
+import { rgScan } from './rg-scan.ts'
 import type { RouteSource } from '../router.ts'
 import { t } from '../../../shared/i18n.ts'
 
@@ -67,12 +67,10 @@ export function textSource(
     run: async (req, signal) => {
       // 有 rg 先用它查全（项目外的 wide 还按索引的根逐个读）；没有 rg 才逐个读索引里的文件
       const fast = rg && !req.wide ? await viaRg(rg, req, signal) : undefined
-      if (fast && fast !== 'missing') return fast
-      const missing = fast === 'missing' ? { missing: [RG_MISSING] } : {}
+      if (fast) return fast
       const idx = await getIndex()
-      if (!idx) return { hits: [], note: '本机没有 rg（ripgrep），项目也关了文件索引，没法按文本找。', ...missing }
-      const { partial, ...scanned } = await scan(idx, req, relocate, signal)
-      const out = { ...scanned, ...missing }
+      if (!idx) return { hits: [], note: '本机没有 rg（ripgrep），项目也关了文件索引，没法按文本找。' }
+      const { partial, ...out } = await scan(idx, req, relocate, signal)
       // 只查了一部分（超时、超个数）的再核对目录重查也是一样查不完，只会让 Agent 多等一轮：直接把「只查了一部分」交回去
       if (out.hits.length || partial || idx.building || signal?.aborted) return out
       // 一条都没有：可能是刚在面板外新建的文件还没进索引（没装监听、监听还没报上来），按目录核对一遍再查一次。
@@ -80,7 +78,7 @@ export function textSource(
       const r = await idx.refresh(req.under?.length === 1 ? req.under[0] : undefined)
       if (!r.added) return out
       const { partial: _p, ...again } = await scan(idx, req, relocate, signal)
-      return { ...again, ...missing }
+      return again
     },
   }
 }
@@ -97,7 +95,7 @@ function lineMatcher(req: FindRequest) {
   }
 }
 
-async function viaRg(o: RgOpts, req: FindRequest, signal?: AbortSignal): Promise<FindOutcome | 'missing' | undefined> {
+async function viaRg(o: RgOpts, req: FindRequest, signal?: AbortSignal): Promise<FindOutcome | undefined> {
   const ext = req.ext?.length ? req.ext : (LANG_EXT[req.lang] ?? TEXT_EXT)
   const want = req.kind === 'refs' ? MAX_REFS : req.offset + req.limit + 200
   const regex = req.kind === 'text' && looksRegex(req.query)
@@ -113,7 +111,7 @@ async function viaRg(o: RgOpts, req: FindRequest, signal?: AbortSignal): Promise
     signal,
     program: o.program,
   })
-  if (!r || r === 'missing') return r
+  if (!r) return undefined
   const hit = lineMatcher(req)
   const hits = r.lines.flatMap((l) => hit(l.file, l.line, l.text) ?? []).slice(0, want)
   const note = [

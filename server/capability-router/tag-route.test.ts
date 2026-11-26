@@ -77,14 +77,3 @@ test('按查询词挂到最近那一行 find 上：已经挂过的、别的工�
   const old = row({ query: 'a.lua' }, 'panel · file_index')
   assert.ok(tagRoute({ messages: [{ role: 'agent', tools: [old] }] } as never, route, 'a.lua'))
 })
-// 缺本机程序（rg）：调用行后面插一行提示，同一个对话只插一次；调用行本身不变成警告
-const d = row({ action: 'text', query: 'X' })
-const e = row({ action: 'text', query: 'X' })
-const tools = [d, e]
-const t2 = { messages: [{ role: 'agent', tools }] } as never
-const warn = { kind: 'tool_missing' as const, level: 'warn' as const, detail: 'rg（ripgrep）：winget install x' }
-assert.ok(tagRoute(t2, route, 'X', warn))
-assert.equal(tools[2].alert?.kind, 'tool_missing', '最近的 e 后面插了提示')
-assert.equal(e.alert, undefined)
-assert.ok(tagRoute(t2, route, 'X', warn))
-assert.equal(tools.filter((x) => x.alert).length, 1, '提醒过就不再插')

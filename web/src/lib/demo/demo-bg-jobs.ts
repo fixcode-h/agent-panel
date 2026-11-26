@@ -82,6 +82,25 @@ function tick() {
   emit()
 }
 
+/** 别的演示模块开一条作业（演示的「安装 rg」）：返回追加日志、改状态的办法 */
+export function demoStartJob(job: Omit<BgJob, 'startedAt' | 'lines' | 'status' | 'cancelable'>) {
+  const j: BgJob = { ...job, status: 'running', startedAt: Date.now(), cancelable: false, lines: 0 }
+  jobs.unshift(j)
+  logs[j.id] = []
+  emit()
+  return {
+    step(phase: string) {
+      logs[j.id].push(`> ${phase}`)
+      Object.assign(j, { phase, lines: logs[j.id].length })
+      emit()
+    },
+    end(ok: boolean, info?: string) {
+      Object.assign(j, { status: ok ? 'done' : 'failed', endedAt: Date.now(), ...(info ? { info } : {}) })
+      emit()
+    },
+  }
+}
+
 export function demoBgJobs(method: string, id: string | undefined, sub: string | undefined, query: URLSearchParams) {
   if (method === 'GET' && !id) {
     startTicker()

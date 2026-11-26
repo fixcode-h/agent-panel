@@ -73,6 +73,7 @@ import { EN_RESTORE_FLOW } from './en/restore-flow.ts'
 import { EN_REMOTE } from './en/remote.ts'
 import { EN_PLUGINS } from './en/plugins.ts'
 import { EN_SHARED_DIR } from './en/shared-dir.ts'
+import { EN_LOCAL_PROGRAMS } from './en/local-programs.ts'
 import { EN_DONE_GUARD } from './en/done-guard.ts'
 import { EN_UI_POLISH } from './en/ui-polish.ts'
 import { EN_SELECT_SEARCH } from './en/select-search.ts'
@@ -162,6 +163,7 @@ export const EN: Record<string, string> = {
   ...EN_SHEET,
   ...EN_PLUGINS,
   ...EN_SHARED_DIR,
+  ...EN_LOCAL_PROGRAMS,
   ...EN_STATE_WORD,
   ...EN_DONE_GUARD,
   ...EN_UI_POLISH,
