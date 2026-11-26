@@ -304,7 +304,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
 ## 关键门禁
 - 前置检查不通过就停下，先把 OpenSpec 环境准备好。
 - 设计共识和承载方式（新建规范 / 增补已有规范）一次确认。
-- 规范要过门禁：openspec validate 通过、每条需求都有 task 覆盖验证、design 没有「待定」。
+- 规范要过门禁：openspec validate 没有 ERROR（字数这类 WARNING 不算）、每条需求都有 task 覆盖验证、design 没有「待定」。
 - tasks 每条验证通过才勾选，证据写进 acceptance；验证只能延期的勾成「- [x] …（延期 Dn）」；设计假设被证伪时停下回到设计。
 - 新代码依赖这次没生成的东西（要导表的枚举、表、生成代码）时，生成、判空兜底或按阻断交回，不留给别人的环境。
 - 做不了的验证列成延期验证项，由用户决定立即验证还是暂缓；选了立即验证的由「执行立即验证」去做（UE 项目里自带游戏内测试和执行 Lua 的授权）。

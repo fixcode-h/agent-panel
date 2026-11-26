@@ -184,3 +184,24 @@ test('「或」拆成几个原文分开查、合起来补；串在多段命令�
     'rg -n Refresh Content/Script; echo "---"; node "C:/Temp/agent-panel-takeover/1.mjs" && rg -n OnSellAll Content/Script',
   )
 })
+
+test('开头 cd 到工作目录里的子目录再搜：按 cd 的目录换成相对工作目录的范围去查，cd 到工作目录外的放行', async () => {
+  clearCalls()
+  const asked: unknown[] = []
+  const { d } = deps({
+    findCode: async (req: unknown) => (asked.push(req), { text: '', route: ROUTE, hits: HITS }),
+  })
+  const gw = openGateway(ctx('enforce', d))!
+  const dir = path.join(cwd, 'Content', 'Script').replace(/\\/g, '/')
+  const cmd = `cd "${dir}" && rg -n --no-heading "OnSellAll" | head -40`
+  const a = await gw.wrap(inner)('tool.before', bash(cmd))
+  assert.equal(
+    a.rewrite?.command,
+    `cd "${dir}" && node "C:/Temp/agent-panel-takeover/1.mjs" && rg -n --no-heading "OnSellAll" | head -40`,
+  )
+  assert.deepEqual((asked[0] as { under?: string[] }).under, ['Content/Script'])
+
+  const out = `cd "${path.dirname(cwd).replace(/\\/g, '/')}/other" && rg -n "OnSellAll"`
+  const b = await gw.wrap(inner)('tool.before', bash(out))
+  assert.equal(b.rewrite, undefined, '工作目录外照原命令跑')
+})

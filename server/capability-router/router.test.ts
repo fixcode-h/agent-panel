@@ -138,6 +138,32 @@ test('路由：用不了的跳过并记原因、正在启动的等它、出错�
   assert.match(routeLog('p-route')[0].steps[1].why ?? '', /炸了/)
 })
 
+test('路由：没给结果的路也交回它的输出（带「只查了一部分」这类说明），调用方才能转告', async () => {
+  const r = await route<string, { hits: string[]; note?: string }>({
+    capability: 'find',
+    projectId: 'p-route-empty',
+    entry: 'test',
+    what: 'x',
+    req: 'x',
+    sources: [
+      {
+        id: 'text',
+        rank: 1000,
+        accepts: () => true,
+        ready: () => ({ state: 'ready' }),
+        run: async () => ({ hits: [], note: '只查了 3 个文件' }),
+      },
+    ],
+    isEmpty: (o) => !o.hits.length,
+    enough: () => true,
+  })
+  assert.equal(r.outs.length, 0)
+  assert.deepEqual(
+    r.empties.map((x) => x.out.note),
+    ['只查了 3 个文件'],
+  )
+})
+
 test('文本兜底：候选文件从索引取、声明排前，独立分支里读对话目录那份', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'route-text-'))
   const wt = await mkdtemp(path.join(os.tmpdir(), 'route-wt-'))

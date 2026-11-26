@@ -31,6 +31,16 @@ const TEXT_EXT = [
 
 type Cand = { path: string; abs: string }
 
+/**
+ * 语言不明时先读代码、后读数据和文档：大项目（UE 工程几万个 json / csv / md）里一次读不完，
+ * 到时间上限时被截掉的应该是数据文件，不是要找的代码
+ */
+const DATA_EXT: readonly string[] = ['json', 'csv', 'md', 'txt', 'xml', 'ini', 'yaml', 'yml', 'toml', 'cfg']
+const dataLast = (files: Cand[]) => {
+  const ext = (f: Cand) => f.path.slice(f.path.lastIndexOf('.') + 1).toLowerCase()
+  return [...files.filter((f) => !DATA_EXT.includes(ext(f))), ...files.filter((f) => DATA_EXT.includes(ext(f)))]
+}
+
 /** relocate：独立分支里把项目目录的路径换到对话目录（那边删了的返回 undefined） */
 export function textSource(
   getIndex: () => Promise<ProjectIndex | undefined>,
@@ -45,12 +55,15 @@ export function textSource(
     ready: async () => ((await getIndex()) ? { state: 'ready' } : { state: 'down', why: '项目关了文件索引' }),
     run: async (req, signal) => {
       const idx = (await getIndex())!
-      const out = await scan(idx, req, relocate, signal)
-      if (out.hits.length || idx.building || signal?.aborted) return out
+      const { partial, ...out } = await scan(idx, req, relocate, signal)
+      // 只查了一部分（超时、超个数）的再核对目录重查也是一样查不完，只会让 Agent 多等一轮：直接把「只查了一部分」交回去
+      if (out.hits.length || partial || idx.building || signal?.aborted) return out
       // 一条都没有：可能是刚在面板外新建的文件还没进索引（没装监听、监听还没报上来），按目录核对一遍再查一次。
       // 只核对目录的修改时间，几万个目录一两秒；和 action=file 没找到时的做法一样
       const r = await idx.refresh(req.under?.length === 1 ? req.under[0] : undefined)
-      return r.added ? scan(idx, req, relocate, signal) : out
+      if (!r.added) return out
+      const { partial: _p, ...again } = await scan(idx, req, relocate, signal)
+      return again
     },
   }
 }
@@ -60,14 +73,15 @@ async function scan(
   req: FindRequest,
   relocate: (f: Cand) => Cand | undefined,
   signal?: AbortSignal,
-): Promise<FindOutcome> {
+): Promise<FindOutcome & { partial: boolean }> {
   await idx.ready(60_000, !req.wide)
   const ext = req.ext?.length ? req.ext : (LANG_EXT[req.lang] ?? TEXT_EXT)
-  const files = idx
+  const found = idx
     // 「*」：所有文件名（空查询索引不回结果），按 under、ext 筛
     .find('*', { under: req.under, ext, cap: MAX_FILES, roots: req.wide ? 'all' : 'project' })
     .map(relocate)
     .filter((f): f is Cand => !!f)
+  const files = req.ext?.length || LANG_EXT[req.lang] ? found : dataLast(found)
   const match = textRe(req)
   const decl = req.kind === 'text' ? undefined : declRe(lastName(req.query), req.lang)
   const want = req.offset + req.limit + 200
@@ -109,5 +123,5 @@ async function scan(
     : files.length >= MAX_FILES
       ? `候选文件超过 ${MAX_FILES} 个，只查了前面这些；用 under / ext 缩小范围。`
       : undefined
-  return { hits, ...(note && { note }) }
+  return { hits, ...(note && { note }), partial: partial || files.length >= MAX_FILES }
 }

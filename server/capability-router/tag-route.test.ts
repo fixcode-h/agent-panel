@@ -25,6 +25,7 @@ test('路由结果换成卡片上的路：给出结果的、跳过的（为什�
     [src('ue:idea.lua_code', 'idea · lua_code', 'mcp'), src('panel.text', '面板按文本找', 'panel')],
     {
       outs: [{ source: 'panel.text', out: 0 }],
+      empties: [],
       steps: [
         { source: 'ue:idea.lua_code', outcome: 'skipped', why: '没有接 lua_code 所在的服务' },
         { source: 'panel.text', outcome: 'used', ms: 380 },
