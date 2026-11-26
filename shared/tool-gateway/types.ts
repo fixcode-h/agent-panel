@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { t } from '../i18n.ts'
+import { VerifyRun } from './verify/types.ts'
 
 /** 统一的调用类别：由 CLI 定义的 hooks.toolNames 归类，面板工具、别家 MCP 工具另认 */
 export const CALL_KINDS = ['read', 'edit', 'shell', 'mcp', 'panel', 'other'] as const
@@ -130,5 +131,7 @@ export const CallRecord = z.object({
   serial: z.boolean().optional(),
   /** 网关自己出错（已放行） */
   error: z.string().optional(),
+  /** 面板替 Agent 跑的校验（ADR 0086）：改完自动跑的那一行，或改道代答时跑的自建工具 */
+  verify: VerifyRun.optional(),
 })
 export type CallRecord = z.infer<typeof CallRecord>

@@ -16,11 +16,12 @@ import { paramArgs, paramDefaults, ToolParamForm, type ParamValues } from '@/com
 import { ToolRunResult } from '@/components/ui/tool-run-result'
 import { toast, toastError } from '@/lib/toast'
 import type { CustomTools } from './use-custom-tools'
+import { RoleTab } from './RoleTab'
 
-type Tab = 'basic' | 'run' | 'effect' | 'history' | 'try'
+type Tab = 'basic' | 'run' | 'effect' | 'role' | 'history' | 'try'
 
 /**
- * 自建工具的编辑抽屉（ADR 0082，效果图 5）：基本 / 运行和参数 / 影响和输出 / 版本 / 试运行。
+ * 自建工具的编辑抽屉（ADR 0082，效果图 5）：基本 / 运行和参数 / 影响和输出 / 用途（ADR 0086）/ 版本 / 试运行。
  * 保存直接写回原来的范围（版本 +1）；id 是 Agent 调用的名字，改了等于换了个工具，所以这里不让改
  */
 export function ToolEditor({
@@ -83,6 +84,7 @@ export function ToolEditor({
             { id: 'basic', label: t('基本') },
             { id: 'run', label: t('运行和参数') },
             { id: 'effect', label: t('影响和输出') },
+            { id: 'role', label: t('用途') },
             { id: 'history', label: t('版本') },
             { id: 'try', label: t('试运行') },
           ]}
@@ -90,6 +92,7 @@ export function ToolEditor({
         {tab === 'basic' && <BasicTab d={d} set={set} note={note} setNote={setNote} />}
         {tab === 'run' && <RunTab d={d} setRun={setRun} set={set} />}
         {tab === 'effect' && <EffectTab d={d} set={set} />}
+        {tab === 'role' && <RoleTab d={d} set={(v) => set('role', v)} />}
         {tab === 'history' && <HistoryTab tool={tool} />}
         {tab === 'try' && <TryTab entry={entry} d={d} dirty={dirty} ct={ct} />}
       </div>

@@ -1,13 +1,13 @@
 # tool-gateway：工具网关
 
 - 状态：documented
-- 职责：所有 Agent 工具调用都过面板：认调用、按能力表推算能改到哪（第一期只观察）、记调用记录和统计；工具卡片上显示经面板路由的调用实际走的路
+- 职责：所有 Agent 工具调用都过面板：认调用、按能力表推算能改到哪（第一期只观察）、记调用记录和统计；改完对得上的文件面板自己跑校验工具、只推报错；工具卡片上显示经面板路由的调用实际走的路
 - 源码：`server/tool-gateway/`、`shared/tool-gateway/`、`shared/capability-router/capabilities.ts`、`shared/capability-router/tool-route.ts`、`shared/api-contract/tool-gateway.ts`、`web/src/components/settings/agent-tools/`、`web/src/components/ui/route-badge.tsx`
 - 入口：`server/tool-gateway/gateway.ts`
-- 关键词：工具网关、调用记录、CallLog、wouldRoute、观察模式、改道、能力表、本可以并行、网关耗时、路由小标、ToolUse.route、parallelTools、searchTools
+- 关键词：工具网关、调用记录、CallLog、wouldRoute、观察模式、改道、能力表、本可以并行、网关耗时、路由小标、ToolUse.route、parallelTools、searchTools、改完自动校验、verify、apply、replaces、request_build
 - 更新：2026-11-26
 
-为什么这么定见 [ADR 0084](../../adr/0084-tool-gateway.md)。这里只写现在怎么工作、怎么接。
+为什么这么定见 [ADR 0084](../../adr/0084-tool-gateway.md)；校验和改动生效见 [ADR 0086](../../adr/0086-verify-and-apply.md)。这里只写现在怎么工作、怎么接。
 
 ## 一次调用怎么走
 
@@ -30,7 +30,14 @@
 
 ## 能力表
 
-`shared/capability-router/capabilities.ts`：一个能力 = id、显示名、说明、接管哪些调用（`takes`）、第几期改道、`claims(call, ctx)`。现在有 find（搜索命令 → rewrite 到 find，Grep / Glob 和外部查找 MCP → serve）、verify（和自建工具同一个程序的命令 → `custom_tool:<名>`）、read-asset（.uasset / .umap → ue_asset）、apply（UE 编译 → request_build）。加能力：在表里加一项，不改网关。设置页上每条路的状态在 `routes-state.ts`。
+`shared/capability-router/capabilities.ts`：一个能力 = id、显示名、说明、接管哪些调用（`takes`）、第几期改道、`claims(call, ctx)`。现在有 find（搜索命令 → rewrite 到 find，Grep / Glob 和外部查找 MCP → serve）、verify（和自建工具同一个程序、或工具 `role.replaces` 登记的程序 → `custom_tool:<id>`，只读且参数填得上 serve、否则 redirect）、read-asset（.uasset / .umap → ue_asset）、apply（UE 编译 → redirect 到 request_build，没挂时到 `role=build` 的工具）。verify、apply 的判定在 `shared/capability-router/verify-apply.ts`。加能力：在表里加一项，不改网关。设置页上每条路的状态在 `routes-state.ts`。
+
+## 改完自动校验和 verify / apply 的改道（ADR 0086）
+
+- `gateway.ts` 在原来的回答和推算之后调 `server/tool-gateway/verify/index.ts` 的 `before`：改文件时按校验工具的 `role.paths` 记进这一批（`shared/tool-gateway/verify/batch.ts`）；下一个不是改文件的调用前整批取走、每个工具跑一次（`verify/run.ts`，走 `server/custom-tools/run.ts` 的 prepare + execute，整次限时 45 秒），报错写成补充说明（`shared/tool-gateway/verify/text.ts` 的 `verifyNote`），通过时为空。每次跑记一行 `CallRecord.verify`（`verify/record.ts`）。
+- 收尾前：`dispatch.ts` 把收尾前判断交给 `gw.wrapEnd`，还有没查的改动先跑，有报错拦下收尾。
+- 改道模式：`shared/tool-gateway/verify/plan.ts` 的 `takeoverPlan` 定 serve（改用自建工具跑，拒绝说明开头「结果（面板）」）还是 redirect（说明改用哪个工具）；只管 verify、apply 两个能力，find 的改写 / 代答是改道模式的通用部分，另做。
+- 演示：`web/src/lib/demo/demo-tool-gateway.ts` 用同一份批次和记录逻辑，检查结果写死。
 
 ## 工具卡片的路由小标
 

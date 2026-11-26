@@ -170,7 +170,9 @@ export function expandCommand(
 }
 
 /** 草稿本身的问题（保存前查）：占位符对不上参数、参数重名、正则写错 */
-export function draftProblems(tool: Pick<CustomTool, 'params' | 'run' | 'output'>): string[] {
+export function draftProblems(
+  tool: Pick<CustomTool, 'params' | 'run' | 'output'> & Partial<Pick<CustomTool, 'role' | 'effect'>>,
+): string[] {
   const out: string[] = []
   const names = tool.params.map((p) => p.name)
   const dup = names.filter((n, i) => names.indexOf(n) !== i)
@@ -187,5 +189,20 @@ export function draftProblems(tool: Pick<CustomTool, 'params' | 'run' | 'output'
   }
   if (tool.output.errorPattern && !safeRegex(tool.output.errorPattern))
     out.push(`报错格式的正则写错了：${tool.output.errorPattern}`)
+  out.push(...roleProblems(tool))
   return [...new Set(out)]
+}
+
+/** 用途（ADR 0086）写得对不对：校验工具由面板自己跑、不弹授权卡，所以必须只读，也要写清管哪些文件 */
+function roleProblems(tool: Pick<CustomTool, 'params'> & Partial<Pick<CustomTool, 'role' | 'effect'>>): string[] {
+  const r = tool.role
+  if (!r) return []
+  const out: string[] = []
+  if (r.kind === 'verify' && tool.effect && tool.effect !== 'read')
+    out.push('标成校验（role.kind=verify）的工具要是只读的（effect: read）：面板改完文件后自己跑它，不弹授权卡')
+  if (r.kind === 'verify' && !r.paths.length) out.push('校验工具要写 role.paths：改了哪些文件才跑它，例如 **/*.lua')
+  if (r.arg && !tool.params.some((p) => p.name === r.arg)) out.push(`role.arg 写的 ${r.arg} 不是参数`)
+  if (r.replaces.some((x) => !/^[a-z0-9][a-z0-9._-]*$/.test(x)))
+    out.push('role.replaces 只写程序名（小写，不带路径和 .exe），例如 luac')
+  return out
 }

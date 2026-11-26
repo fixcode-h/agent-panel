@@ -53,6 +53,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, '设置-Agent工具-工具路由')
   await p.getByRole('tab', { name: '调用记录' }).click()
   await check(p, '设置-Agent工具-调用记录', ['网关自身耗时', '实际走的'])
+  // 改完 Lua 面板自动检查的那一行（ADR 0086）：点开看查了哪些文件
+  const verifyRow = p.getByText('校验 · lua-check · 1 处报错').first()
+  if (!(await verifyRow.count())) errors.push('调用记录：没有改完 Lua 自动校验的那一行')
+  else {
+    await verifyRow.click()
+    await check(p, '设置-Agent工具-校验行', ['面板自己跑（改完自动校验）', '2 个文件', 'Content/Script/UI/Shop.lua'])
+  }
   await p.keyboard.press('Escape')
 
   await p.getByText('购物车右上角的数量角标').first().click()

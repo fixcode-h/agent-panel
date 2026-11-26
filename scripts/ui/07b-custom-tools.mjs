@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：自建工具（ADR 0082）。「技能与 MCP → 工具」页签的列表、编辑抽屉（改名保存、试运行）、行尾菜单复制到全局，
+ * 界面检查分片：自建工具（ADR 0082）。「技能与 MCP → 工具」页签的列表、编辑抽屉（改名保存、用途、试运行）、行尾菜单复制到全局，
  * 「/」菜单里的「自建工具」一组，以及 /createtool 在对话里弹出的保存弹窗（选项目、保存后卡片消失）
  */
 import { runShard } from './harness.mjs'
@@ -26,6 +26,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
   await check(p, '工具-保存后', ['已保存为 v4', '导表工具'])
   if (await p.getByRole('dialog').count()) errors.push('工具：保存后编辑抽屉没关')
+
+  // 用途（ADR 0086）：校验工具列表行上有「校验」徽标，编辑抽屉的「用途」页看得到管哪些文件、顶替哪些程序
+  await p.getByText('Lua 语法检查', { exact: true }).first().click()
+  await p.getByRole('dialog').getByRole('radio', { name: '用途' }).click()
+  await check(p, '工具-用途', [
+    '校验：改完对得上的文件后面板自己跑',
+    '改了哪些文件要查',
+    '**/*.lua',
+    '顶替的程序',
+    'luac',
+  ])
+  await p.keyboard.press('Escape')
+  await settle(p)
 
   // 试运行：从行尾菜单进，先只展开命令，再「运行」
   await p.getByText('导表工具', { exact: true }).first().click({ button: 'right' })

@@ -111,6 +111,8 @@ export const builtinCommands = (): BuiltinCommand[] => [
       '3. 写草稿：id 用小写英文和 -；中文名简短；summary 一句话；useWhen 写成具体场景（「改了 Design/Excel 下的表之后」），avoidWhen 写容易用错的情况；' +
       '参数写中文 label 和说明，能用 enum 的用 enum，路径用 path；命令里用 {{参数名}}，不要自己加引号；effect 和 writes 如实写，拿不准的往严了写；' +
       '能从输出认出报错行的写 output.errorPattern（命名分组 file、line、msg）；sources 写依据的文件。' +
+      '检查类工具（Lua 语法检查、lint 这类只读的）写 role: {kind: "verify", paths: ["**/*.lua"], replaces: ["luac"]}：面板在 Agent 改完对得上 paths 的文件后自己跑它、只把报错推回去，Agent 自己跑 replaces 里的程序时也改用它；' +
+      '项目自己的编译脚本写 role: {kind: "build"}；别的工具不写 role。' +
       '4. 用 custom_tool action=test dryRun=true 看展开后的命令对不对；effect 是 read 的真跑一次（action=test 不带 dryRun），会改文件或影响外部的先问用户要不要真跑。' +
       '5. 用 custom_tool action=save 交给用户，用户在弹窗里选存到项目还是全局；用户要你再改就改了再 save。最后用一两句告诉用户做了什么工具、什么时候用。' +
       ONE_TURN +
