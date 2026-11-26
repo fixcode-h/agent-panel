@@ -12,6 +12,8 @@ import type { TraceStep } from '@/lib/load-trace'
 import { ParentAskPanel } from '../ChildAskCard'
 import { ParentBar } from '../ChildMail'
 import { ChildrenBar, plainRow } from '../ChildrenBar'
+import { GrantRulesButton, hasGrants } from '../GrantRulesButton'
+import { TaskApplyCtx } from '../task-apply'
 import type { ChildSummary } from '../child-line'
 import { ImportedBar, ResolvedBar } from '../InputBars'
 import { LoadTracePill } from '../LoadTrace'
@@ -63,7 +65,8 @@ export function ConversationDock(p: ConversationDockProps) {
   const showChildren = !p.pane && !task.parentTaskId && p.kids.length > 0
   const helpers = p.helperIds.length ? { task, ids: p.helperIds, teamNames: p.teamNames } : undefined
   return (
-    <>
+    // 放行规则浮层里的「撤销」改完对话直接用返回值刷新（task-apply.ts）
+    <TaskApplyCtx.Provider value={apply}>
       {/* 面板收起后还在跑的后台步骤（实时更新、子对话列表）：留一个小胶囊，失败时写错误原文 */}
       {p.traceSteps && <LoadTracePill steps={p.traceSteps} />}
       {task.plans?.length > 0 && (
@@ -72,6 +75,7 @@ export function ConversationDock(p: ConversationDockProps) {
           <div className="mx-auto max-w-(--content-w)">
             <div data-status-row="plan" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
               <PlanButton task={task} kids={p.kids} />
+              <GrantRulesButton task={task} />
             </div>
           </div>
         </div>
@@ -82,6 +86,17 @@ export function ConversationDock(p: ConversationDockProps) {
           <div className="mx-auto max-w-(--content-w)">
             <div data-status-row="todos" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
               <TodoButton task={task} />
+              <GrantRulesButton task={task} />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 放行规则（GrantRulesButton）：上面有计划、待办那一行时跟在它后面，没有时自己一行 */}
+      {!task.plans?.length && !(isChatMode(task) && task.todos?.length > 0) && hasGrants(task) && (
+        <div className="shrink-0 px-3 md:px-6">
+          <div className="mx-auto max-w-(--content-w)">
+            <div data-status-row="grants" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
+              <GrantRulesButton task={task} />
             </div>
           </div>
         </div>
@@ -140,7 +155,7 @@ export function ConversationDock(p: ConversationDockProps) {
           onOpenChild={p.pane ? undefined : p.onOpenChild}
         />
       </div>
-    </>
+    </TaskApplyCtx.Provider>
   )
 }
 

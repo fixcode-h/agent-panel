@@ -9,7 +9,7 @@ import { t } from '../../shared/i18n.ts'
 import { presetFor } from '../../shared/grants/preset.ts'
 import type { PluginConfirm, PluginConfirmResult } from '../plugins/sdk.ts'
 import { panelRequest, type RequestCtx } from './panel-requests.ts'
-import { systemNote } from './recovery.ts'
+import { recordGrant } from '../grants/record.ts'
 
 /** 插件确认的放行规则：和 CLI 的 command: / file: / tool: 分开，`<插件 id>:<插件定的键>` 原样接在后面 */
 export const pluginRule = (key: string) => (key.trim() ? `plugin:${key.trim()}` : '')
@@ -25,33 +25,32 @@ export async function pluginConfirm(
   const label = req.ruleLabel?.trim() || ''
   // 工作流或正在跑的节点自带的授权（WorkflowFields.grants / FlowNode.grants）：运行里不弹卡，和「一直允许」一样留一行，写明是哪个工作流给的
   const preset = presetFor(task, rule, run.step)
+  // 插件工具请确认时这次 MCP 调用一定还没结束：放行小标挂到最近一张还在执行的工具卡片上（server/grants/record.ts）
+  const match = { kinds: ['other' as const], running: true }
   if (preset) {
-    task.messages.push(
-      systemNote(
-        ctx.newId(),
-        run.agentId,
-        run.step,
-        t('工作流「{name}」自带授权，自动允许（{rule}）：{title}', {
-          name: task.workflowName || task.flowRun?.workflowName || '',
-          rule: preset.label || label || rule,
-          title: req.title,
-        }),
-      ),
-    )
-    ctx.changed()
+    const name = task.workflowName || task.flowRun?.workflowName || ''
+    recordGrant(ctx, {
+      agentId: run.agentId,
+      step: run.step,
+      text: t('工作流「{name}」自带授权，自动允许（{rule}）：{title}', {
+        name,
+        rule: preset.label || label || rule,
+        title: req.title,
+      }),
+      grant: { via: 'preset', rule, label: name, title: req.title },
+      match,
+    })
     return { allow: true, always: true, message: '' }
   }
   // 用户之前在这个对话里选过「一直允许」：直接允许，自动允许的也要看得见，对话里留一行
   if (rule && ruleAllowed(task.allowRules ?? [], rule)) {
-    task.messages.push(
-      systemNote(
-        ctx.newId(),
-        run.agentId,
-        run.step,
-        t('按这个对话的放行规则自动允许（{rule}）：{title}', { rule: label || rule, title: req.title }),
-      ),
-    )
-    ctx.changed()
+    recordGrant(ctx, {
+      agentId: run.agentId,
+      step: run.step,
+      text: t('按这个对话的放行规则自动允许（{rule}）：{title}', { rule: label || rule, title: req.title }),
+      grant: { via: 'rule', rule, label: label || rule, title: req.title },
+      match,
+    })
     return { allow: true, always: true, message: '' }
   }
   const r = await panelRequest(
