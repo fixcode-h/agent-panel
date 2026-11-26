@@ -23,7 +23,9 @@ export function hintText(entries: ToolEntry[]): string {
   let size = 0
   for (const e of list.slice(0, HINT_MAX_TOOLS)) {
     const t = e.tool!
-    const l = `${t.name} ${t.id}：${(t.useWhen || t.summary).slice(0, 60)}`
+    // 顶替哪些程序也写上（ADR 0086）：Agent 一开始就知道该用它而不是自己拼 luac，不用等面板代答一次才知道
+    const rep = t.role?.replaces.length ? `（代替 ${t.role.replaces.join('、')}）` : ''
+    const l = `${t.name} ${t.id}${rep}：${(t.useWhen || t.summary).slice(0, 60)}`
     if (size + l.length > 600) break
     lines.push(l)
     size += l.length

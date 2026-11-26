@@ -54,10 +54,16 @@ export function verifyNote(outs: VerifyOutput[]): string {
   )
 }
 
-/** 改道代答：Agent 自己跑的命令由面板改用自建工具跑了，结果放在拒绝说明里，开头只写「结果（面板）」（设计稿 5.2） */
-export function serveText(command: string, outs: VerifyOutput[]): string {
+/**
+ * 改道代答：Agent 自己跑的命令由面板改用自建工具跑了，结果放在拒绝说明里，开头只写「结果（面板）」（设计稿 5.2）。
+ * 顺带把这个工具什么时候用、怎么调写给 Agent（用户 2026-11-26 提）：只说「以后用它」时 Agent 记不住参数，下次照样拼 luac
+ */
+export function serveText(command: string, outs: VerifyOutput[], how: { useWhen?: string; arg?: string } = {}): string {
   const r = outs[0]?.run
-  const head = `结果（面板）：你要跑的 ${command.trim().slice(0, 200)} 由面板改用项目的${r ? who(r) : '自建工具'}跑了，不用再跑原命令；以后直接用 custom_tool action=run id=${r?.tool ?? ''}。`
+  const id = r?.tool ?? ''
+  const call = `custom_tool action=run id=${id}${how.arg ? ` args={"${how.arg}": "<要查的文件>"}` : ''}`
+  const when = how.useWhen ? `（${how.useWhen.slice(0, 80)}）` : ''
+  const head = `结果（面板）：你要跑的 ${command.trim().slice(0, 200)} 由面板改用项目的${r ? who(r) : '自建工具'}跑了，不用再跑原命令。以后遇到同样的事${when}直接调 ${call}，改完对得上的文件面板也会自动跑它。`
   const body = outs.map((o) =>
     o.run.outcome === 'ok' ? `查了 ${o.run.files.join('、') || '项目'}：通过，没有报错。` : oneNote(o),
   )

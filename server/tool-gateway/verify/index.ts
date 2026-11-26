@@ -19,6 +19,7 @@ import { verifyRecord, type VerifyRecordBase } from '../../../shared/tool-gatewa
 import { serveText, verifyNote, type VerifyOutput } from '../../../shared/tool-gateway/verify/text.ts'
 import type { VerifyRun } from '../../../shared/tool-gateway/verify/types.ts'
 import type { GatewayDecision, GatewayMode, ToolCall, WouldRoute } from '../../../shared/tool-gateway/types.ts'
+import { fileParamOf } from '../../../shared/custom-tools/match.ts'
 import { addCall } from '../call-log.ts'
 import { log } from '../../log.ts'
 import { runVerify, type VerifyTool, type VerifyWhere } from './run.ts'
@@ -106,7 +107,13 @@ export function openVerify(c: VerifyGateCtx): VerifyGate {
     const o = await runVerify(t, files, 'replaces', c.deps.where, budget)
     const command = String(x.call.input.command ?? '')
     if (o.run.outcome === 'spawn') return { o, answer: undefined }
-    return { o, answer: { deny: true, reason: serveText(command, [o]) } satisfies HookAnswer }
+    return {
+      o,
+      answer: {
+        deny: true,
+        reason: serveText(command, [o], { useWhen: t.tool.useWhen || t.tool.summary, arg: fileParamOf(t.tool) }),
+      } satisfies HookAnswer,
+    }
   }
 
   const before = async (x: VerifyBeforeIn): Promise<VerifyStep> => {
