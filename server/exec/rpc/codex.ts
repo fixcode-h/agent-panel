@@ -577,7 +577,7 @@ export function codexAdapter(
         if (r?.error)
           ctx.emit({
             type: 'notice',
-            text: t('这个项目打开的技能没能交给 Codex（{error}），这一轮用不了它们', {
+            text: t('这一轮要带的技能没能交给 Codex（{error}），这一轮用不了它们', {
               error: String(r.error.message),
             }),
             failed: true,

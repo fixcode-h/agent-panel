@@ -29,7 +29,7 @@ import {
   entries,
   refreshCopy,
   retireBundled,
-  sharedRoot,
+  bundledStore,
   statusIn,
   writeSkill,
   type Entry,
@@ -110,7 +110,7 @@ export async function skillUpdates(picked?: string[]): Promise<SkillUpdates> {
   // 部署只更新勾选的技能；没勾选、改过的留给用户，算进来提示点就永远消不掉
   const on = new Set(picked ?? (await loadConfig()).skills)
   const deployed = (await changed((e) => path.join(root, e.category))).filter((n) => on.has(n))
-  return { shared: await changed(() => sharedRoot()), deployed }
+  return { shared: await changed(() => bundledStore()), deployed }
 }
 
 export async function deploy(run: DeployRun): Promise<DeployResult> {
@@ -126,7 +126,7 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
     const s = await statusIn(e, dir)
     if (run.skills.includes(e.name)) {
       // 勾了覆盖：「自带 Skill」页装的那份装过又旧了的一起换掉，不然那边的提示点还亮着
-      if (run.overwrite && (await refreshCopy(e, sharedRoot()))) out.skills.push(e.name)
+      if (run.overwrite && (await refreshCopy(e, bundledStore()))) out.skills.push(e.name)
       if (s === 'same') continue
       if (s === 'changed' && !run.overwrite) {
         out.kept.push(e.name)

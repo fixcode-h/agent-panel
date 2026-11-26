@@ -17,6 +17,13 @@ const cliOff: Record<string, string[]> = {}
 let modelSupport: ModelSupportData = ModelSupportData.parse({})
 // 内置钩子的参数；演示里不分项目，按项目的开关也当成全局的
 const params: Record<string, Record<string, string[] | number>> = {}
+/** 「Agent 工具 → 技能」的推送上限也是内置钩子 skill-push 的参数：两页读写同一份（demo-agent-tools.ts） */
+export const demoHookParams = () => params
+/** 「按情境推技能」开没开 */
+export const demoBuiltinOn = (id: string) => {
+  const h = BUILTIN_HOOKS.find((x) => x.id === id)
+  return !!h && builtinOn({ builtins, projects: {}, tier }, h)
+}
 let hooks: HookDef[] = [
   HookDef.parse({
     id: 'demo-lock',

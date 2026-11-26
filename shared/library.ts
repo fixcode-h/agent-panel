@@ -196,7 +196,7 @@ export interface McpTestResult {
   tools: { name: string; description: string; shown?: McpToolTitle; params?: CatalogParam[] }[]
 }
 
-/** 面板自带的 Skill（仓库的 skills/<分类>/<名字>/），统一装到用户目录 ~/.agents/skills，各 CLI 共用 */
+/** 面板自带的 Skill（仓库的 skills/<分类>/<名字>/），统一装到面板数据目录 bundled-skills/（ADR 0083），各 CLI 共用 */
 export interface BundledSkill {
   name: string
   /** 分类文件夹名，显示名见 BUNDLED_CATEGORIES */
@@ -209,7 +209,9 @@ export interface BundledSkill {
    * 详情页用它画出「这个技能带哪些文件」，不自带目录时没有这一项。
    */
   tree?: LibraryTree
-  /** 在用户共享目录里的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
+  /** 装在哪（数据目录 bundled-skills/<名字>，/ 分隔）：详情页显示、复制用 */
+  dir?: string
+  /** 在数据目录里那份的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
   status: Record<string, 'missing' | 'same' | 'changed'>
   /** 插件带的技能：插件 id（界面上标「来自插件」，ADR 0059） */
   plugin?: string

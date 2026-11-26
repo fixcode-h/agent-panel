@@ -177,6 +177,13 @@ export const UI_SHARD_COVERS = {
   ],
   '04-design': ['web/src/plugins/PluginPage.tsx', 'web/src/components/ai-window/', 'web/src/App.tsx'],
   '05-settings': ['web/src/components/settings/', 'web/src/components/usage/', 'web/src/pages/SettingsPage.tsx'],
+  // 设置「Agent 工具」（ADR 0083）：页签、技能目录和详情，演示数据在 demo-agent-tools.ts
+  '05c-agent-tools': [
+    'web/src/components/settings/agent-tools/',
+    'web/src/lib/demo/demo-agent-tools.ts',
+    'shared/skills/',
+    'shared/api-contract/agent-tools.ts',
+  ],
   '06-settings-agent': [
     'web/src/components/settings/',
     'web/src/components/ai-window/',

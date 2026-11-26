@@ -193,7 +193,7 @@ export const EN_HOOKS: Record<string, string> = {
   另外允许写的目录: 'Also allowed directories',
   '绝对路径，一行一个': 'Absolute paths, one per line',
   没有这个参数: 'No such parameter',
-  '要是 1 到 100 之间的整数': 'Must be a whole number from 1 to 100',
+  '要是 {min} 到 {max} 之间的整数': 'Must be a whole number from {min} to {max}',
   '各 CLI 的事件': 'Events per CLI',
   '{event}要 {min} 以上': '{event} needs {min} or later',
   '本机版本 {v}': 'Installed version {v}',

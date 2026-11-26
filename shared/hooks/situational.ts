@@ -4,7 +4,6 @@ import type { ResolvedSupport } from '../models/support.ts'
 import { ideMcpLines, type IdeMcpServer } from '../mcp-catalog/code-index.ts'
 import { activePlan } from '../plan/index.ts'
 import { globToRegExp } from '../lessons.ts'
-import { CODE_STYLE_SKILLS, codeStylePush } from '../skills/code-style.ts'
 import { customToolFor, type CustomToolSig } from '../custom-tools/match.ts'
 import type { ToolKind } from './defs.ts'
 import type { HookFacts } from './index.ts'
@@ -30,6 +29,8 @@ export interface SituationCtx {
   ideMcp?: IdeMcpServer[]
   /** 这个对话能用的自建工具认得出的程序名（shared/custom-tools/match.ts）；没有为空 */
   customTools?: CustomToolSig[]
+  /** 这个对话改过文件（技能条件 phase: finishing-edited 用） */
+  edited?: boolean
 }
 
 /** 这一轮开跑时就定了的事：决定装不装钩子 */
@@ -62,6 +63,11 @@ export interface SituationalRule {
   text: (c: SituationCtx) => string
   /** 一个对话里最多推几次，默认 1 */
   times?: number
+  /**
+   * 技能目录生成的规则（shared/skills/rules.ts）：推的是这个技能的正文，由服务端读文件拼（text 不用），
+   * 不受「情境推送条数」限制、不看扶持档位，同一技能推没推过由服务端的推送记录管
+   */
+  skill?: string
 }
 
 /** 这次调的是不是某个 IDE 服务的工具：MCP 工具名是 mcp__<服务>__<工具>，服务名里的 - 可能被 CLI 换成 _ */
@@ -114,14 +120,6 @@ export const SITUATIONAL_RULES: SituationalRule[] = [
     },
     times: 2,
   },
-  // 第一次改某种语言的文件前推它的代码风格要点（shared/skills/code-style.ts）：模型常常不去读风格技能的正文，
-  // 不管是父对话、子对话、工作流节点还是子任务，也不管角色点没点名这个技能，到改文件这一刻都给到
-  ...CODE_STYLE_SKILLS.map((s): SituationalRule => ({
-    id: `code-style:${s.skill}`,
-    name: () => t('{lang} 代码风格要点', { lang: s.label }),
-    when: { event: 'tool.before', kinds: ['edit'], paths: s.paths },
-    text: () => codeStylePush(s),
-  })),
 ]
 
 // MCP 工具名是 mcp__<服务>__<工具>：按最后一段比
@@ -152,21 +150,27 @@ export function situationMatches(r: SituationalRule, c: SituationCtx): boolean {
 }
 
 /**
- * 这次该推的规则：对得上、还没推够次数的，最多 limit 条。told 记着每条推过几次（调用方按对话保存），这里会更新它
+ * 这次该推的规则：对得上、还没推够次数的，最多 limit 条（技能规则不算条数：用户要的是不漏）。
+ * told 记着每条推过几次（调用方按对话保存），这里会更新它
  */
 export function pickSituational(
   c: SituationCtx,
   told: Map<string, number>,
   limit: number,
   rules: SituationalRule[] = SITUATIONAL_RULES,
-): { id: string; text: string }[] {
-  const out: { id: string; text: string }[] = []
+): { id: string; text: string; skill?: string }[] {
+  const out: { id: string; text: string; skill?: string }[] = []
+  let counted = 0
   for (const r of rules) {
-    if (out.length >= Math.max(1, limit)) break
+    if (!r.skill && counted >= Math.max(1, limit)) continue
     const n = told.get(r.id) ?? 0
     if (n >= (r.times ?? 1) || !situationMatches(r, c)) continue
     told.set(r.id, n + 1)
-    out.push({ id: r.id, text: r.text(c) })
+    if (r.skill) out.push({ id: r.id, text: '', skill: r.skill })
+    else {
+      counted++
+      out.push({ id: r.id, text: r.text(c) })
+    }
   }
   return out
 }

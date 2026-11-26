@@ -18,12 +18,16 @@ import { expandHome } from './cli/extras.ts'
 import { log } from './log.ts'
 import { pluginEnabled } from '../shared/plugins/index.ts'
 import { isProjectSkill } from './skills/config.ts'
-import { installedHash, recordInstalled, treeHash } from './skills/installed-record.ts'
+import { installedHash, recordInstalled, treeHash, untouchedHash } from './skills/installed-record.ts'
+import { dataPath } from './store.ts'
+import { moveFromLegacyRoot } from './skills/store-move.ts'
 
 /**
  * 面板自带的 Skill：仓库里的 skills/<分类>/<名字>/。
- * 统一装到用户目录 ~/.agents/skills（<目录>/<名字>/SKILL.md），Codex、Pi、Command Code 自己读这一份，Claude Code 不读，由每轮的技能目录带上（server/skills/run-skills.ts）；分类只用于面板里展示。
- * 出包时整个目录由 esbuild 写进 server.mjs（同浏览器扩展：旧版的「版本更新」不会复制新目录）。
+ * 统一装到面板数据目录的 bundled-skills/<名字>/（ADR 0083）：不再装进 ~/.agents/skills，那里 Codex、Pi、Command Code
+ * 会自己全部读进去，启动时就看到所有技能。每轮只把角色自带的复制进这一轮的技能目录（server/skills/run-skills.ts），
+ * 其余由面板按情境推正文（server/hooks/situational.ts）。以前装在 ~/.agents/skills 的副本第一次用到时搬过来（server/skills/store-move.ts）。
+ * 分类只用于面板里展示。出包时整个目录由 esbuild 写进 server.mjs（同浏览器扩展：旧版的「版本更新」不会复制新目录）。
  */
 declare const __BUNDLED_SKILLS__: Record<string, string> | undefined
 const EMBEDDED = typeof __BUNDLED_SKILLS__ === 'object' ? __BUNDLED_SKILLS__ : undefined
@@ -51,7 +55,7 @@ export interface Entry {
 let cache: Promise<Entry[]> | null = null // 模块状态：缓存，丢了重算
 const pluginCache = new Map<string, Promise<Entry[]>>()
 
-async function readTree(dir: string, rel = ''): Promise<[string, Buffer][]> {
+export async function readTree(dir: string, rel = ''): Promise<[string, Buffer][]> {
   const out: [string, Buffer][] = []
   for (const e of await readdir(path.join(dir, rel), { withFileTypes: true }).catch(() => [])) {
     const r = rel ? `${rel}/${e.name}` : e.name
@@ -112,8 +116,10 @@ export async function entries(): Promise<Entry[]> {
   return [...(await coreEntries()), ...plugins]
 }
 
-/** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
-export const sharedRoot = () => expandHome('~/.agents/skills')
+/** 自带 Skill 装在面板数据目录，各 CLI 共用这一份，每轮按需复制进这一轮的技能目录 */
+export const bundledStore = () => dataPath('bundled-skills')
+/** 以前装自带 Skill 的用户目录：各 CLI 自己会读，现在只剩「部署」往它的分类子目录里放（server/deploy.ts） */
+export const legacySharedRoot = () => expandHome('~/.agents/skills')
 
 /** 并入 project-testing 的「测试先行」和 writing-tests.md */
 const OLD_TDD: Record<string, string> = {
@@ -182,7 +188,7 @@ const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex')
  * 清掉下线的自带 Skill 的旧副本，返回删掉的目录名。
  * 判定不看目录名就删：目录里每个文件都要和记录的旧版一致、且没有多出来的文件，才认定是当初装进去的那份。
  */
-export async function retireBundled(root = sharedRoot(), retired = RETIRED_BUNDLED) {
+export async function retireBundled(root = bundledStore(), retired = RETIRED_BUNDLED) {
   const removed: string[] = []
   for (const [name, files] of Object.entries(retired)) {
     const dir = path.join(root, name)
@@ -211,7 +217,7 @@ export async function statusIn(e: Entry, root: string): Promise<BundledSkill['st
 
 /**
  * 一个自带 Skill 的文件结构（SKILL.md 以外的文件）：详情页要能列出它带哪些文件。
- * 条目全都来自内存里的 e.files，不读磁盘：自带技能在仓库 skills/ 下，跟用户装到 ~/.agents/skills 的那份无关。
+ * 条目全都来自内存里的 e.files，不读磁盘：自带技能在仓库 skills/ 下，跟装到数据目录的那份无关。
  */
 export function treeOf(e: Entry): LibraryTree {
   return treeFromPaths(
@@ -237,7 +243,8 @@ export async function readBundledEntry(name: string, raw: string): Promise<Libra
 }
 
 export async function listBundled(): Promise<BundledSkill[]> {
-  const root = sharedRoot()
+  await moveFromLegacyRoot(await entries())
+  const root = bundledStore()
   const out: BundledSkill[] = []
   for (const e of await entries()) {
     const text = e.files.get('SKILL.md')!.toString('utf8')
@@ -248,6 +255,7 @@ export async function listBundled(): Promise<BundledSkill[]> {
       description: frontField(text, 'description'),
       files: tree.entries.filter((x) => x.type === 'file').length,
       tree,
+      dir: path.join(root, e.name).replaceAll('\\', '/'),
       status: { shared: await statusIn(e, root) },
       ...(e.plugin && { plugin: e.plugin }),
       activation: isProjectSkill(e.name) ? 'project' : 'global',
@@ -267,7 +275,7 @@ export async function writeSkill(e: Entry, root: string) {
   }
 }
 
-/** 「设置 → 部署」放这个技能的目录：~/.agents/skills/<分类>（「自带 Skill」页装的是 ~/.agents/skills/<名字>） */
+/** 「设置 → 部署」放这个技能的目录：~/.agents/skills/<分类>（「自带 Skill」页装的是数据目录 bundled-skills/<名字>） */
 export const deployedRoot = (e: Entry) => path.join(expandHome(SKILL_TARGET), e.category)
 
 /**
@@ -283,10 +291,11 @@ export async function refreshCopy(e: Entry, root: string): Promise<boolean> {
   return true
 }
 
-/** 装到用户共享目录；已经装了的只有 overwrite 时才覆盖（用户可能改过）。clis 只为接口兼容保留 */
+/** 装到面板数据目录；已经装了的只有 overwrite 时才覆盖（用户可能改过）。clis 只为接口兼容保留 */
 export async function installBundled(names: string[], _clis: string[], overwrite: boolean) {
   const all = await entries()
-  const root = sharedRoot()
+  await moveFromLegacyRoot(all)
+  const root = bundledStore()
   const done: string[] = []
   const skipped: string[] = []
   for (const name of names) {
@@ -311,9 +320,9 @@ export async function installBundled(names: string[], _clis: string[], overwrite
   return { done, skipped }
 }
 
-/** 记下面板装进 root 的这一份（server/skills/installed-record.ts）：只记用户共享目录那份，「部署」的分类目录不管 */
+/** 记下面板装进 root 的这一份（server/skills/installed-record.ts）：只记数据目录那份，「部署」的分类目录不管 */
 async function rememberInstalled(e: Entry, root: string) {
-  if (root !== sharedRoot()) return
+  if (root !== bundledStore()) return
   await recordInstalled(e.name, treeHash(await readTree(path.join(root, e.name))))
 }
 
@@ -321,7 +330,7 @@ async function rememberInstalled(e: Entry, root: string) {
  * 已装的自带技能跟上新版：副本和面板当初装进去的一模一样（没人改过）就换成这一版；和这一版一样的顺手记下来，
  * 下次更新就能自动换。用户改过的、没有记录的不动（「自带 Skill」页照旧亮提示点，用户点更新才换）。返回换了的名字
  */
-export async function refreshUntouched(list: Entry[], root = sharedRoot()) {
+export async function refreshUntouched(list: Entry[], root = bundledStore()) {
   const updated: string[] = []
   for (const e of list) {
     if (isProjectSkill(e.name)) continue
@@ -331,8 +340,7 @@ export async function refreshUntouched(list: Entry[], root = sharedRoot()) {
       if (!installedHash(e.name)) await rememberInstalled(e, root)
       continue
     }
-    const was = installedHash(e.name)
-    if (!was || was !== treeHash(await readTree(path.join(root, e.name)))) continue
+    if (!untouchedHash(e.name, treeHash(await readTree(path.join(root, e.name))))) continue
     await rm(path.join(root, e.name), { recursive: true, force: true })
     await writeSkill(e, root)
     await rememberInstalled(e, root)
@@ -343,16 +351,18 @@ export async function refreshUntouched(list: Entry[], root = sharedRoot()) {
 }
 
 /**
- * 执行前补齐 Agent 要用的自带 Skill：统一装到 ~/.agents/skills，已有的不动。
+ * 执行前补齐 Agent 要用的自带 Skill：统一装到面板数据目录，已有的不动。
  * 失败只记日志，不影响执行（CLI 找不到 Skill 时会按自己的方式做）。
  */
 export async function ensureBundled(names: string[]) {
   try {
-    const root = sharedRoot()
+    const root = bundledStore()
+    const all = await entries()
+    // 以前装在 ~/.agents/skills 的副本搬过来（只搬一次）
+    await moveFromLegacyRoot(all)
     // 先清下线的旧技能：它们的内容已经并进 project-vcs，留着会让 CLI 看到两个入口
     await retireBundled(root)
-    const all = await entries()
-    // 装过的先跟上新版（没被改过的才换）：Claude Code 每轮带的是这个目录里的全部技能，不只角色点名的
+    // 装过的先跟上新版（没被改过的才换）：角色自带的从这里复制进每轮目录，推的正文也读这里的
     await refreshUntouched(all, root)
     if (!names.length) return []
     const added: string[] = []
@@ -387,7 +397,7 @@ export async function removeCopies(list: Entry[]) {
   const removed: string[] = []
   const kept: string[] = []
   for (const e of list) {
-    for (const root of [sharedRoot(), deployedRoot(e)]) {
+    for (const root of [bundledStore(), deployedRoot(e)]) {
       const dir = path.join(root, e.name)
       if (!existsSync(path.join(dir, 'SKILL.md'))) continue
       const found = await readTree(dir)

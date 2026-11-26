@@ -246,6 +246,7 @@ function bundledList(): BundledSkill[] {
         description: frontField(text, 'description'),
         files: tree.entries.filter((e) => e.type === 'file').length,
         tree,
+        dir: `/home/demo/.agent-panel/bundled-skills/${name}`,
         status,
         activation: activationOf(name),
       }

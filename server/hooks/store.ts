@@ -5,6 +5,7 @@ import { DATA_DIR, writeJsonAtomic } from '../store.ts'
 import { HookDef, HooksData, type HookDefInput, type HookEventName } from '../../shared/hooks/defs.ts'
 import { BUILTIN_HOOKS, tierDefault, type HookTier } from '../../shared/hooks/builtins.ts'
 import { patchSupport, type SupportPatch } from '../../shared/models/support.ts'
+import type { SkillOverride } from '../../shared/skills/schema.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
 
@@ -105,6 +106,15 @@ export async function setBuiltinParam(id: string, key: string, value: string[] |
   if (Object.keys(mine).length) params[id] = mine
   else delete params[id]
   await save({ ...cur, params })
+}
+
+/** 一个技能的用户改动（ADR 0083，设置「Agent 工具 → 技能」）：undefined 是恢复默认，删掉这一条 */
+export async function setSkillOverride(name: string, o: SkillOverride | undefined) {
+  const cur = await readHooks()
+  const skills = { ...cur.skills }
+  if (o) skills[name] = o
+  else delete skills[name]
+  await save({ ...cur, skills })
 }
 
 /** 按模型档位加强扶持（shared/models/support.ts）：改总开关或一格；值不对时返回错误说明 */

@@ -12,6 +12,8 @@ import { DATA_DIR } from './store.ts'
 import type { TrustChoice } from '../shared/cli/trust.ts'
 import { queryCliCommands } from './cli/commands.ts'
 import { pluginCommands, pluginSkillCommands } from './plugins/contrib.ts'
+import { coreSkillCommands } from './skills/slash-skills.ts'
+import { ensureBundled } from './bundled-skills.ts'
 
 /**
  * 输入框里的「/」命令：列出 CLI 自己带的命令和 Skill、「所有 Agent」共用的命令，发出去之前按 CLI 展开。
@@ -135,6 +137,8 @@ async function collect(cli: string, cwd: string, trust?: TrustChoice): Promise<F
     ...pluginCommands(),
     // 开着的插件带的技能：插件技能不一定装进了 CLI 读的目录，CLI 列不出来，由面板列、面板展开
     ...(await pluginSkillCommands()),
+    // 面板自带的技能（ADR 0083）：装在面板数据目录，CLI 读不到，同样由面板列、面板展开
+    ...(await coreSkillCommands()),
   ].filter((c) => !seen.has(c.name) && seen.add(c.name))
   return [
     ...cmds,
@@ -183,7 +187,9 @@ export async function expandSlash(
   if (!c) return builtinPrompt(name, args) || text
   if (c.native || (native && !c.panel)) return text
   if (c.kind === 'skill') {
-    // 说明直接放进要求里：Skill 多在工作目录外，CLI 不一定有权限去读；目录也告诉它，里面的脚本、参考文件需要时再读
+    // 说明直接放进要求里：Skill 多在工作目录外，CLI 不一定有权限去读；目录也告诉它，里面的脚本、参考文件需要时再读。
+    // 面板自带的还没装进数据目录时先装上（子文件要读得到）
+    if (c.panel && !existsSync(c.path)) await ensureBundled([c.name])
     const { body } = splitFrontMatter(await readFile(c.path, 'utf8').catch(() => ''))
     return [
       `请按 Skill「${c.name}」的说明完成${args ? '下面的要求' : '它描述的工作'}。`,

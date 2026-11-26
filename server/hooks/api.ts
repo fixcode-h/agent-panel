@@ -167,8 +167,9 @@ export function hooksApi(deps?: {
               .map((x) => String(x).trim())
               .filter(Boolean)
               .slice(0, 50)
-      if (p.kind === 'number' && (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 100))
-        return c.json({ error: t('要是 1 到 100 之间的整数') }, 400)
+      const [min, max] = [p.min ?? 1, p.max ?? 100]
+      if (p.kind === 'number' && (!Number.isInteger(value) || (value as number) < min || (value as number) > max))
+        return c.json({ error: t('要是 {min} 到 {max} 之间的整数', { min, max }) }, 400)
       const isDefault = JSON.stringify(value) === JSON.stringify(p.default)
       await setBuiltinParam(h.id, p.key, value, isDefault)
       return c.json({ ok: true })
