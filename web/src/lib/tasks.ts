@@ -16,6 +16,7 @@ import {
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
 import { panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
 import { proxiedTool } from '@shared/mcp-catalog/proxy-tool'
+import { unwrapProxied } from '@shared/mcp-proxy/names'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -407,6 +408,10 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   if (name === 'more_tools') {
     const u = unwrapMoreTools(tool.input ?? '')
     if (u) return panelTool({ ...tool, name: '', label: `panel · ${u.name}`, input: JSON.stringify(u.args) })
+    // 经面板代理的外部工具（ADR 0085）：按外部工具显示，和直接挂在 CLI 上时一样是「服务 · 工具」
+    const x = unwrapProxied(tool.input ?? '')
+    if (x)
+      return { ...tool, kind: 'other', name: 'MCP', label: `${x.server} · ${x.tool}`, input: JSON.stringify(x.args) }
   }
   const a = toolArgs(tool)
   const quoted = /「([^」]+)」/.exec(tool.output ?? '')?.[1] ?? ''

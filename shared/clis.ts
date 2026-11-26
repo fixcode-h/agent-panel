@@ -269,6 +269,8 @@ export interface CliDefinition {
   mcpStore?: import('./cli-spec.ts').McpStore
   /** 启动新会话前探测项目里的远程 MCP（见 server/exec/mcp-probe.ts）；没有时不探测 */
   mcpProbe?: import('./cli-spec.ts').McpProbe
+  /** 面板接管工具调用时能做到哪一步（见 shared/cli/takeover.ts）；没有时都做不到 */
+  takeover?: import('./cli/takeover.ts').CliTakeover
   packages?: import('./cli-spec.ts').CliPackages
   /** 每轮怎么带上按项目的技能（见 cli-spec.ts 的 RunSkills）；没有时在提示里列出技能路径 */
   runSkills?: import('./cli-spec.ts').RunSkills

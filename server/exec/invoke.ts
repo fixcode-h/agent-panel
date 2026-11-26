@@ -17,6 +17,7 @@ import type { LibraryEntry } from '../mcp-library/file.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
 import { claimPanelName, sweepPanelMcp } from '../panel/mcp-files.ts'
+import { proxyForRun } from '../mcp-proxy/launch.ts'
 import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine/host.ts'
 import { supportedEffort } from '../models.ts'
@@ -250,6 +251,8 @@ export async function invokeCli(o: {
       )
   const hookSpec = hookActive.length ? def.hooks : undefined
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
+  // 外部 MCP 服务改由面板代理（ADR 0085）：算好这一轮哪些代理、哪些照旧直接挂；算不出来照旧
+  const proxy = def.mcp && o.orch ? await proxyForRun(def, proxyOpts(o, servers)) : undefined
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
   // 常驻 RPC 有真正的插话通道（turn/steer、Pi 的 steer），补充不用再靠 MCP 工具拉取；
@@ -272,6 +275,7 @@ export async function invokeCli(o: {
       ...(o.orch && o.app ? { app: o.app } : {}),
       ...(o.onTools ? { onTools: o.onTools } : {}),
       ...(hookSpec ? { hook: { spec: hookSpec, beforeEnd: o.beforeEnd, on: o.onHook } } : {}),
+      ...(proxy?.session ? { proxy: proxy.session } : {}),
     })
     // 钩子命令、Command Code 的 mod 从环境变量取转发地址（Pi 的扩展用 {url}/hook）
     // 写在扩展里的钩子（Pi、Command Code）按 HOOK_EVENTS_ENV 决定问哪些事件
@@ -354,7 +358,12 @@ export async function invokeCli(o: {
       o.onEvent({ type: 'notice', text: message, failed: true })
     }
   }
-  const libArgs = projectMcpArgs(def, o.projectMcp, servers)
+  // 面板服务接上了（参数换过）才只挂面板：没接上时 CLI 照旧自己读配置，不能一个外部服务都没有
+  const proxied = proxy?.args(
+    run.build !== build,
+    servers.map((x) => x.name),
+  )
+  const libArgs = proxied ?? projectMcpArgs(def, o.projectMcp, servers)
   if (libArgs.length) run = { ...run, build: { ...run.build, extraArgs: [...(run.build.extraArgs ?? []), ...libArgs] } }
   const restoreLimits = await applyLimitFile(def, o.cwd, model, cs.api ? undefined : o.limits)
   try {
@@ -369,6 +378,16 @@ export async function invokeCli(o: {
     if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => {})
   }
 }
+
+/** 代理开跑要的几样：项目、对话标题取自调用者和进程归属 */
+const proxyOpts = (o: Parameters<typeof invokeCli>[0], servers: { name: string }[]) => ({
+  cwd: o.cwd,
+  projectId: o.app?.projectId ?? '',
+  taskTitle: o.owner?.title ?? '',
+  orch: o.orch,
+  projectMcp: o.projectMcp,
+  own: servers.map((x) => x.name),
+})
 
 /** 按项目的 MCP 条目换成这个 CLI 的参数；和面板、插件的服务同名的跳过（那几个是这一轮自己的） */
 function projectMcpArgs(def: CliDefinition, entries: LibraryEntry[] | undefined, taken: { name: string }[]) {

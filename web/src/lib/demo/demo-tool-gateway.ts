@@ -5,6 +5,7 @@
  */
 import type { CapabilityId } from '@shared/capability-router/types'
 import { classifyCall, callSummary, readOnlyCall } from '@shared/tool-gateway/classify'
+import { proxiedCallOf } from '@shared/mcp-proxy/names'
 import { decide } from '@shared/tool-gateway/decide'
 import { gatewayStats, isSerial } from '@shared/tool-gateway/stats'
 import { GatewaySettings, type CallRecord, type GatewayMode } from '@shared/tool-gateway/types'
@@ -18,6 +19,8 @@ type Sample = {
   tool: string
   kind: 'shell' | 'edit' | 'read' | 'panel' | 'any'
   input: Record<string, unknown>
+  /** 面板工具去掉前缀的名字（默认 find） */
+  panel?: string
   deny?: string
   skills?: [string, number][]
   pushes?: [string, number][]
@@ -70,22 +73,32 @@ const SAMPLES: Sample[] = [
   { task: MAIN, tool: 'Read', kind: 'read', input: { file_path: 'Content/UI/WBP_Bag.uasset' }, dur: 230 },
   { task: MAIN, tool: 'Bash', kind: 'shell', input: { command: 'git status --short | head -20' }, dur: 60 },
   { task: MAIN, tool: 'mcp__panel__find', kind: 'panel', input: { kind: 'refs', query: 'OnSellAll' }, dur: 140 },
+  // 经面板代理的外部工具（ADR 0085）：Agent 调的是 more_tools，记录里按 idea 的 lua_debug_inspect 记
+  {
+    task: SHOP,
+    tool: 'mcp__panel__more_tools',
+    kind: 'panel',
+    panel: 'more_tools',
+    input: { name: 'idea/lua_debug_inspect', arguments: { action: 'stack' } },
+    dur: 85,
+  },
 ]
 
 const CUSTOM = [{ id: 'lua-check', name: 'Lua 检查', sigs: ['luac'] }]
 
 function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord {
-  const call = classifyCall(
+  const raw = classifyCall(
     {
       kind: s.kind,
       name: s.tool,
       input: s.input,
       path: String(s.input.file_path ?? ''),
       paths: [],
-      panel: s.kind === 'panel' ? 'find' : '',
+      panel: s.kind === 'panel' ? (s.panel ?? 'find') : '',
     },
     { cli: 'claude', spec: { searchTools: ['Grep', 'Glob'] } },
   )
+  const call = proxiedCallOf(raw) ?? raw
   const d = decide(call, { customTools: CUSTOM }, !!s.deny)
   const readOnly = readOnlyCall(call)
   const r: CallRecord = {
@@ -100,6 +113,9 @@ function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord
     kind: call.kind,
     summary: callSummary(call),
     input: JSON.stringify(s.input),
+    ...(call.kind === 'mcp' && call.server
+      ? { mcp: { server: call.server, tool: call.mcpTool ?? '', ...(call.proxied ? { proxied: true } : {}) } }
+      : {}),
     ...(call.command?.category ? { category: call.command.category } : {}),
     ...(call.command ? { segments: call.command.segments } : {}),
     ...d,

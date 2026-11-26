@@ -7,8 +7,11 @@ import type { ToolRoute } from '../../shared/capability-router/tool-route.ts'
 
 /** 面板 find 的工具行：标题是「服务 · 工具名」（parsers.ts 的 otherTool），旧名 file_index 照样认 */
 const FIND_ROW = /·\s*(find|file_index)$/
+/** 经面板代理的外部工具（ADR 0085）：Agent 调的是 more_tools，needle 是「服务/工具」 */
+const PROXY_ROW = /·\s*more_tools$/
+const rowRe = (route: ToolRoute) => (route.capability === 'mcp' ? PROXY_ROW : FIND_ROW)
 
-function rowOf(task: Pick<Task, 'messages'>, needle: string): ToolUse | undefined {
+function rowOf(task: Pick<Task, 'messages'>, needle: string, row: RegExp): ToolUse | undefined {
   let seenAgent = 0
   for (let i = task.messages.length - 1; i >= 0 && seenAgent < 3; i--) {
     const m = task.messages[i]
@@ -16,7 +19,7 @@ function rowOf(task: Pick<Task, 'messages'>, needle: string): ToolUse | undefine
     seenAgent++
     for (let j = m.tools.length - 1; j >= 0; j--) {
       const t = m.tools[j]
-      if (t.route || !FIND_ROW.test(t.label.trim())) continue
+      if (t.route || !row.test(t.label.trim())) continue
       // 输入是 JSON：查询词按 JSON 字符串比（带引号），免得短词撞上别的字段
       if (!needle || (t.input ?? '').includes(JSON.stringify(needle))) return t
     }
@@ -26,7 +29,7 @@ function rowOf(task: Pick<Task, 'messages'>, needle: string): ToolUse | undefine
 
 /** 挂上了返回 true；调用方挂上后推送一次（ctx.changed） */
 export function tagRoute(task: Pick<Task, 'messages'>, route: ToolRoute, needle: string): boolean {
-  const row = rowOf(task, needle)
+  const row = rowOf(task, needle, rowRe(route))
   if (!row) return false
   row.route = route
   return true

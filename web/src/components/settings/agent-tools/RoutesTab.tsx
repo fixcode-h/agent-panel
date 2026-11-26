@@ -12,6 +12,7 @@ import { useData } from '@/lib/data'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Select } from '@/components/ui/input'
 import { Group, Row } from '../parts'
+import { ExposureGroup } from './ExposureGroup'
 
 const STATE_LOOK: Record<
   CapabilityView['routes'][number]['state'],
@@ -124,6 +125,7 @@ export function RoutesTab() {
           </Row>
         ))}
       </Group>
+      <ExposureGroup projectId={projectId} />
     </div>
   )
 }

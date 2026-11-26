@@ -5,7 +5,7 @@
  *
  * 只给测试用，正式代码不要引入。会建一个分类、一个标签、一个角色副本，走完都删掉；
  * 建一个全局的自建工具再删掉；技能改一下再恢复默认；给第一个项目记一条教训，删一个对话再从回收站恢复；建一个风格再删掉；工作总结的项目配置原样存回去。
- * 钩子只读列表、最近触发和校验，不建钩子（建了会在真机的对话里触发）。工具网关只读记录和能力表，模式原样存回去。
+ * 钩子只读列表、最近触发和校验，不建钩子（建了会在真机的对话里触发）。工具网关只读记录和能力表，模式原样存回去；外部服务代理的开关原样存回去。
  */
 import { catalogContract as C } from './catalog.ts'
 import { contractProblems, urlOf, type Endpoint, type Query } from './define.ts'
@@ -19,6 +19,7 @@ import { lessonDraftsContract as L, summaryContract as W } from './summary.ts'
 import { customToolsContract as K } from './custom-tools.ts'
 import { agentToolsContract as A } from './agent-tools.ts'
 import { toolGatewayContract as TG } from './tool-gateway.ts'
+import { mcpProxyContract as MP } from './mcp-proxy.ts'
 
 /** 发一个请求、拿回解析好的 JSON（204 时是 undefined）；失败直接抛 */
 export type ProbeFetch = (method: string, url: string, body?: unknown) => Promise<unknown>
@@ -128,6 +129,9 @@ export async function probeContracts(send: ProbeFetch): Promise<ProbeReport> {
   await hit(TG.capabilities)
   const gw = (await hit(TG.settings)) as { mode: 'off' | 'observe' | 'enforce' }
   await hit(TG.setSettings, { body: { mode: gw.mode } })
+  // 外部服务代理：给 Agent 的工具（不带项目），开关原样存回去
+  const px = (await hit(MP.exposure)) as { enabled: boolean }
+  await hit(MP.setSettings, { body: { enabled: px.enabled } })
   await hit(H.check, { body: { def: { name: '契约探查', event: 'task.done', action: { type: 'http', url: '' } } } })
 
   // 风格库：建一个、改个名、删掉；浏览器扩展只读连接状态（装、刷新会打开浏览器和文件夹）

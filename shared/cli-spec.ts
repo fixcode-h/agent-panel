@@ -6,6 +6,7 @@
  * 以及 Skill、自定义命令、项目说明文件在哪。面板的代码按这些能力走，不再按 CLI 的名字分支。
  */
 import { z } from 'zod'
+import { CliTakeover } from './cli/takeover.ts'
 import type { BuildOptions, CliDefinition, ModelTier } from './clis.ts'
 import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
@@ -721,6 +722,8 @@ export const CliSpec = z.object({
   mcpStore: McpStore.optional(),
   /** 启动新会话前探测项目里的远程 MCP，卡住时在对话里提示；不写表示不探测 */
   mcpProbe: McpProbe.optional(),
+  /** 面板接管工具调用时能做到哪一步（shared/cli/takeover.ts）；不写表示都做不到 */
+  takeover: CliTakeover.optional(),
   packages: CliPackages.optional(),
   runSkills: RunSkills.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
@@ -941,6 +944,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     trust: spec.trust,
     mcpStore: spec.mcpStore,
     mcpProbe: spec.mcpProbe,
+    takeover: spec.takeover,
     runSkills: spec.runSkills,
     packages: spec.packages && {
       ...spec.packages,

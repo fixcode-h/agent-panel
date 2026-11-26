@@ -52,6 +52,23 @@ export function demoFindRows(task: Task, agentId: string) {
           ms: 406,
         },
       },
+      // 经面板代理的外部工具（ADR 0085）：调的是 more_tools，卡片按 idea · lua_debug_inspect 显示，小标写 via MCP
+      {
+        kind: 'other',
+        name: 'MCP',
+        label: 'panel · more_tools',
+        detail: '',
+        input: JSON.stringify({ name: 'idea/lua_debug_inspect', arguments: { action: 'stack' } }, null, 2),
+        output:
+          '{"count":2,"items":[{"frame":0,"fn":"BagPanel:OnSellAll","line":212},{"frame":1,"fn":"Button:OnClick","line":40}]}',
+        ms: 85,
+        route: {
+          capability: 'mcp',
+          served: [{ source: 'proxy:idea', label: 'idea · lua_debug_inspect', via: 'mcp' }],
+          steps: [{ source: 'proxy:idea', label: 'idea · lua_debug_inspect', via: 'mcp', outcome: 'used', ms: 80 }],
+          ms: 85,
+        },
+      },
     ],
     at: new Date().toISOString(),
   })
