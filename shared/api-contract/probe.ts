@@ -104,6 +104,8 @@ export async function probeContracts(send: ProbeFetch): Promise<ProbeReport> {
     }
   }
   if (parent) await hit(T.page, { params: { id: parent }, query: { limit: 40 } })
+  // 撤销一条不存在的放行规则：什么都不改，只看返回形状
+  if (parent) await hit(T.revokeRule, { params: { id: parent }, body: { revokeRule: 'contract:probe' } })
 
   // 回收站：删一个顶层对话、列出来、再恢复
   const first = projects[0]

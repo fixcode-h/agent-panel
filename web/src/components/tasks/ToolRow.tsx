@@ -1,5 +1,6 @@
 import { KnowledgeTags } from '@/components/ui/knowledge-tag'
 import { RouteBadge, RouteSteps } from '@/components/ui/route-badge'
+import { GrantBadge, GrantSection } from '@/components/ui/grant-badge'
 import { useLiveById } from '@/lib/live/store'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -547,7 +548,8 @@ function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean)
 }
 
 /** 工具行要的任务字段：诊断报告那一行还要标题和各版报告（ADR 0045） */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> & Partial<Pick<Task, 'title' | 'bug' | 'projectId'>>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> &
+  Partial<Pick<Task, 'title' | 'bug' | 'projectId' | 'messages' | 'allowRules' | 'imported'>>
 
 /** 不在任务里的工具行（AI 创建 / 分析）打开差异窗口时的占位：没有 id，窗口里就不给按任务找文件的操作 */
 const NO_TASK: Pick<Task, 'id' | 'status' | 'changes'> = { id: '', status: 'done', changes: [] }
@@ -689,7 +691,14 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         title={tool.label}
         fileRef={fileRef}
         detail={detail}
-        tail={tool.route && <RouteBadge route={tool.route} />}
+        tail={
+          (tool.route || tool.grant) && (
+            <>
+              {tool.route && <RouteBadge route={tool.route} />}
+              {tool.grant && <GrantBadge grant={tool.grant} />}
+            </>
+          )
+        }
         ms={bg ? (jobStart ? now - jobStart : undefined) : pending ? now - tool.startedAt! : tool.ms}
         open={open}
         onToggle={() => setOpen(!open)}
@@ -702,6 +711,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
       >
         {
           <div className="divide-y divide-pop-edge">
+            {tool.grant && <GrantSection grant={tool.grant} task={task ?? {}} />}
             {tool.route && <RouteSteps route={tool.route} />}
             {isDiff ? (
               <div className="relative">

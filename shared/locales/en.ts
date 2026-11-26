@@ -83,6 +83,7 @@ import { EN_SECTION_RAIL } from './en/section-rail.ts'
 import { EN_GRAPH_CANVAS } from './en/graph-canvas.ts'
 import { EN_MODEL_CATALOG } from './en/model-catalog.ts'
 import { EN_GRANTS } from './en/grants.ts'
+import { EN_GRANT_NOTES } from './en/grant-notes.ts'
 import { EN_CUSTOM_TOOLS } from './en/custom-tools.ts'
 import { EN_VERIFY_APPLY } from './en/verify-apply.ts'
 
@@ -174,6 +175,7 @@ export const EN: Record<string, string> = {
   ...EN_SHEETS,
   ...EN_SHEET_LOOK,
   ...EN_GRANTS,
+  ...EN_GRANT_NOTES,
   ...EN_CUSTOM_TOOLS,
   ...EN_VERIFY_APPLY,
 }

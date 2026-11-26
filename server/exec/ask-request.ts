@@ -8,6 +8,7 @@ import { t } from '../../shared/i18n.ts'
 import type { CliEvent } from './parsers.ts'
 import { awayPicked } from './away-pick.ts'
 import { readOnlyCommand } from './redirect.ts'
+import { commandNeedle, recordGrant } from '../grants/record.ts'
 
 type AskEvent = Extract<CliEvent, { type: 'ask' }>
 
@@ -20,7 +21,8 @@ type AskEvent = Extract<CliEvent, { type: 'ask' }>
 export function autoAllowed(
   task: Task,
   ev: AskEvent,
-  meta: { id: string; step: string; agentId: string },
+  /** changed：认工具行晚了一步、过一会儿才挂上小标时推送一次 */
+  meta: { id: string; step: string; agentId: string; changed?: () => void },
   /** 不确认的那一档权限的名字（CLI 定义里 autoAllow 的权限）；不是这一档时为空 */
   skipAll = '',
 ): boolean {
@@ -29,21 +31,27 @@ export function autoAllowed(
   const byRule = ruleAllowed(task.allowRules ?? [], ev.rule)
   const safe = byRule ? '' : safeCommand(task, ev)
   if (!byRule && !safe && !skipAll) return false
-  task.messages.push({
-    id: meta.id,
-    role: 'system',
-    agentId: meta.agentId,
-    step: meta.step,
-    text: byRule
-      ? t('按这个对话的放行规则自动允许（{rule}）：{title}', { rule: ruleText(ev.rule!), title: ev.title })
-      : safe === 'readonly'
-        ? t('整条都是只读命令，自动允许：{title}', { title: ev.title })
-        : safe === 'test'
-          ? t('是这个项目的测试步骤命令，自动允许：{title}', { title: ev.title })
-          : t('权限是「{mode}」，自动允许：{title}', { mode: skipAll, title: ev.title }),
-    tools: [],
-    at: new Date().toISOString(),
-  })
+  const via = byRule ? 'rule' : safe || 'mode'
+  const label = byRule ? ruleText(ev.rule!) : via === 'mode' ? skipAll : ''
+  // 放行小标挂到这次调用的工具卡片上（server/grants/record.ts）：命令按开头认，改文件、其他工具按标题认
+  const needle = commandNeedle(ev.command || ev.title)
+  recordGrant(
+    { task, newId: () => meta.id, changed: meta.changed ?? (() => {}) },
+    {
+      id: meta.id,
+      agentId: meta.agentId,
+      step: meta.step,
+      text: byRule
+        ? t('按这个对话的放行规则自动允许（{rule}）：{title}', { rule: label, title: ev.title })
+        : safe === 'readonly'
+          ? t('整条都是只读命令，自动允许：{title}', { title: ev.title })
+          : safe === 'test'
+            ? t('是这个项目的测试步骤命令，自动允许：{title}', { title: ev.title })
+            : t('权限是「{mode}」，自动允许：{title}', { mode: skipAll, title: ev.title }),
+      grant: { via, label, title: ev.command || ev.title, ...(byRule ? { rule: ev.rule } : {}) },
+      match: { kinds: ev.kind === 'file' ? ['edit'] : ev.kind === 'command' ? ['run', 'search'] : ['other'], needle },
+    },
+  )
   ev.reply({ allow: true })
   return true
 }

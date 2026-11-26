@@ -93,7 +93,7 @@ export function patchRoute(s: TasksScope): Hono {
       if (agent && settings) cur.sessionCli = agentRun(withTaskModel(agent, cur), settings).cli
     }
     const task = cur
-    const { childRun, applyChildAsk, ...rest } = p.data
+    const { childRun, applyChildAsk, revokeRule, ...rest } = p.data
     // 「提问」联动（见 shared/children/ask.ts）：按钮关父对话时已有子对话一起关，右键菜单改的是「之后新建」的默认值，
     // 勾上时再按用户选的「应用到已创建」决定已有的要不要一起开。先算出结论，下面一起应用
     const askEffect = childAskEffect({
@@ -102,6 +102,8 @@ export function patchRoute(s: TasksScope): Hono {
       applyExisting: applyChildAsk,
     })
     Object.assign(task, rest)
+    // 撤销放行规则（shared/grants/notes.ts 卡片上的「撤销这条规则」）：之后同一类调用重新弹卡
+    if (revokeRule) task.allowRules = (task.allowRules ?? []).filter((r) => r !== revokeRule)
     if (askEffect.askUser !== undefined) task.askUser = askEffect.askUser
     if (askEffect.childAskUser !== undefined) task.childAskUser = askEffect.childAskUser
     // null 表示改回按执行角色自己的配置

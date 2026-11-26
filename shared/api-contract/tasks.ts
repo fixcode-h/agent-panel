@@ -6,7 +6,7 @@
  */
 import { z } from 'zod'
 import type { ChildRow } from '../children/row.ts'
-import { FollowUpInput, NewTaskInput, TaskMessage, TaskMode, TaskStatus, type Task } from '../schema.ts'
+import { FollowUpInput, NewTaskInput, TaskMessage, TaskPatch, TaskMode, TaskStatus, type Task } from '../schema.ts'
 import { TaskLive } from '../live/task-live.ts'
 import { endpoint, shaped } from './define.ts'
 
@@ -107,4 +107,11 @@ export const tasksContract = {
     res: shaped<Task>(SendMessageContract),
   }),
   create: endpoint({ method: 'POST', path: '/tasks', body: NewTaskInput, res: shaped<Task>(TaskShape) }),
+  /** 撤销对话里的一条放行规则（工具卡片、「放行规则」浮层上的「撤销」）：PATCH 的一次性动作，只能删不能加 */
+  revokeRule: endpoint({
+    method: 'PATCH',
+    path: '/tasks/:id',
+    body: TaskPatch.pick({ revokeRule: true }).required(),
+    res: shaped<Task>(TaskShape),
+  }),
 }

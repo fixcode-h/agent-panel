@@ -306,7 +306,10 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         const id = ctx.newId()
         // 审批卡上点过「一直允许」的同类请求、权限是「跳过所有确认」这类一档：直接允许，留一行说明（ask-request.ts）
         const perm = def.permissions.find((p) => p.id === d.permission)
-        if (autoAllowed(task, ev, { id, step, agentId }, perm?.autoAllow ? perm.label : '')) return ctx.changed(true)
+        if (
+          autoAllowed(task, ev, { id, step, agentId, changed: () => ctx.changed() }, perm?.autoAllow ? perm.label : '')
+        )
+          return ctx.changed(true)
         asked.push(id)
         replies.set(id, ev.kind === 'question' ? ev.reply : afterApproval(ev.reply, toolStart))
         task.requests.push(requestOf(ev, { id, step, agentId }))

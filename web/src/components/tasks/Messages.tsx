@@ -217,7 +217,7 @@ const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
  * 后台命令在 live 里，工具行自己订阅（ToolRow 的 useLiveById），不用经这里重画
  */
 type ToolTask = Pick<Task, 'id' | 'status' | 'changes'> &
-  Partial<Pick<Task, 'analysis' | 'title' | 'bug' | 'projectId' | 'drafting'>>
+  Partial<Pick<Task, 'analysis' | 'title' | 'bug' | 'projectId' | 'drafting' | 'allowRules'>>
 const jobsSig = (k?: ToolTask) => `${k?.bug?.diagnoses?.map((d) => d.status)}`
 
 type BodyProps = {
@@ -388,8 +388,12 @@ const MessageBody = memo(
     // 后台命令跑完时这一行要停止转圈
     jobsSig(a.task) === jobsSig(b.task) &&
     // 开始写工具调用时思考要收起（见 Thinking 的 live）
-    drafting(a.task) === drafting(b.task),
+    drafting(a.task) === drafting(b.task) &&
+    // 撤销放行规则后卡片上的「撤销这条规则」要收掉（ui/grant-badge.tsx）
+    rulesSig(a.task) === rulesSig(b.task),
 )
+
+const rulesSig = (task?: ToolTask) => task?.allowRules?.join('\n') ?? ''
 
 /** 模型正在写工具调用的入参（对话不在跑时这条消息本来就不是 live，留下的旧记号不影响） */
 const drafting = (task?: ToolTask) => !!task?.drafting
@@ -533,7 +537,8 @@ export function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: S
 }
 
 /** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字）：面板结果和派出子任务的那条 */
-const transparent = (m: TaskMessage) => !!m.panel || !!m.peer || !!m.spawned?.length
+const transparent = (m: TaskMessage) =>
+  !!m.panel || !!m.peer || !!m.spawned?.length || (m.role === 'system' && !!m.grant)
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
 export function Msgs({

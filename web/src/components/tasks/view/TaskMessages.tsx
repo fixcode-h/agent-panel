@@ -13,6 +13,7 @@ import type { ChatRun } from '../ChatModelPicker'
 import { InlineRoutes } from '../route-context'
 import { AgentMessage, DeliveryLine } from '../Messages'
 import { NoteMessage } from '../SystemNote'
+import { TaskApplyCtx } from '../task-apply'
 import { ReceivedRow } from '../PeerMessage'
 import { RunCard } from '../RunCard'
 import { RegenerateButton } from '../RewindDialog'
@@ -76,7 +77,8 @@ export function TaskMessages({ ctx }: { ctx: TaskMessagesCtx }) {
     )
     i = end - 1
   }
-  return <>{out}</>
+  // 卡片上的「撤销这条规则」改完对话直接用返回值刷新（task-apply.ts）
+  return <TaskApplyCtx.Provider value={ctx.apply}>{out}</TaskApplyCtx.Provider>
 }
 
 function renderBlock(ctx: TaskMessagesCtx, b: Block, i: number): React.ReactNode {
