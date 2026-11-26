@@ -8,6 +8,7 @@ import { readFile, stat } from 'node:fs/promises'
 import type { FindHit, FindOutcome, FindRequest } from '../../../shared/capability-router/find/types.ts'
 import { declRe, lastName, LANG_EXT, textRe } from '../../../shared/capability-router/find/text-patterns.ts'
 import type { ProjectIndex } from '../../file-index/registry.ts'
+import { rgScan } from './rg-scan.ts'
 import type { RouteSource } from '../router.ts'
 import { t } from '../../../shared/i18n.ts'
 
@@ -41,10 +42,19 @@ const dataLast = (files: Cand[]) => {
   return [...files.filter((f) => !DATA_EXT.includes(ext(f))), ...files.filter((f) => DATA_EXT.includes(ext(f)))]
 }
 
+/** 用 ripgrep 的快路（./rg-scan.ts）：在哪个目录查（对话的工作目录）、排除哪些目录。不给就只逐个读文件 */
+export interface RgOpts {
+  root: string
+  exclude: string[]
+  /** 测试替换程序名 */
+  program?: string
+}
+
 /** relocate：独立分支里把项目目录的路径换到对话目录（那边删了的返回 undefined） */
 export function textSource(
   getIndex: () => Promise<ProjectIndex | undefined>,
   relocate: (f: Cand) => Cand | undefined = (f) => f,
+  rg?: RgOpts,
 ): RouteSource<FindRequest, FindOutcome> {
   return {
     id: TEXT_SOURCE_ID,
@@ -52,9 +62,14 @@ export function textSource(
     via: 'panel',
     rank: TEXT_SOURCE_RANK,
     accepts: (req) => req.kind === 'symbol' || req.kind === 'refs' || req.kind === 'text',
-    ready: async () => ((await getIndex()) ? { state: 'ready' } : { state: 'down', why: '项目关了文件索引' }),
+    // 有 rg 时不靠索引也能查；都没有才算这条路不通
+    ready: async () => (rg || (await getIndex()) ? { state: 'ready' } : { state: 'down', why: '项目关了文件索引' }),
     run: async (req, signal) => {
-      const idx = (await getIndex())!
+      // 有 rg 先用它查全（项目外的 wide 还按索引的根逐个读）；没有 rg 才逐个读索引里的文件
+      const fast = rg && !req.wide ? await viaRg(rg, req, signal) : undefined
+      if (fast) return fast
+      const idx = await getIndex()
+      if (!idx) return { hits: [], note: '本机没有 rg（ripgrep），项目也关了文件索引，没法按文本找。' }
       const { partial, ...out } = await scan(idx, req, relocate, signal)
       // 只查了一部分（超时、超个数）的再核对目录重查也是一样查不完，只会让 Agent 多等一轮：直接把「只查了一部分」交回去
       if (out.hits.length || partial || idx.building || signal?.aborted) return out
@@ -66,6 +81,39 @@ export function textSource(
       return again
     },
   }
+}
+
+/** 每行认成命中（不是命中返回 undefined）：逐个读文件和 rg 用同一套规则 */
+function lineMatcher(req: FindRequest) {
+  const match = textRe(req)
+  const decl = req.kind === 'text' ? undefined : declRe(lastName(req.query), req.lang)
+  return (file: string, line: number, raw: string): FindHit | undefined => {
+    if (!match.test(raw)) return undefined
+    const isDecl = !!decl?.test(raw)
+    if (req.kind === 'symbol' && !isDecl) return undefined
+    return { file, line, text: raw.trim().slice(0, MAX_LINE), rank: isDecl ? 0 : req.kind === 'text' ? 2 : 1 }
+  }
+}
+
+async function viaRg(o: RgOpts, req: FindRequest, signal?: AbortSignal): Promise<FindOutcome | undefined> {
+  const ext = req.ext?.length ? req.ext : (LANG_EXT[req.lang] ?? TEXT_EXT)
+  const want = req.kind === 'refs' ? MAX_REFS : req.offset + req.limit + 200
+  const r = await rgScan({
+    root: o.root,
+    needle: req.kind === 'text' ? req.query : lastName(req.query),
+    ...(req.under?.length && { under: req.under }),
+    ext,
+    exclude: o.exclude,
+    // rg 按原文不分大小写找，声明、整词还要再筛：多拿一些行
+    maxLines: want * 5,
+    signal,
+    program: o.program,
+  })
+  if (!r) return undefined
+  const hit = lineMatcher(req)
+  const hits = r.lines.flatMap((l) => hit(l.file, l.line, l.text) ?? []).slice(0, want)
+  const note = r.partial ? '这次只查了一部分（命中太多或超过时间上限）；用 under / ext 缩小范围再查。' : undefined
+  return { hits, ...(note && { note }) }
 }
 
 async function scan(
@@ -82,8 +130,7 @@ async function scan(
     .map(relocate)
     .filter((f): f is Cand => !!f)
   const files = req.ext?.length || LANG_EXT[req.lang] ? found : dataLast(found)
-  const match = textRe(req)
-  const decl = req.kind === 'text' ? undefined : declRe(lastName(req.query), req.lang)
+  const hit = lineMatcher(req)
   const want = req.offset + req.limit + 200
   const hits: FindHit[] = []
   const t0 = Date.now()
@@ -100,16 +147,8 @@ async function scan(
     read++
     const lines = body.split('\n')
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      if (!match.test(line)) continue
-      const isDecl = !!decl?.test(line)
-      if (req.kind === 'symbol' && !isDecl) continue
-      hits.push({
-        file: f.path,
-        line: i + 1,
-        text: line.trim().slice(0, MAX_LINE),
-        rank: isDecl ? 0 : req.kind === 'text' ? 2 : 1,
-      })
+      const h = hit(f.path, i + 1, lines[i])
+      if (h) hits.push(h)
     }
   }
   const worker = async () => {

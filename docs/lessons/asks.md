@@ -1,5 +1,5 @@
 ---
-paths: server/asks.ts, server/exec/panel-requests.ts, shared/push-auth.ts, web/src/components/chat/QuestionPanel.tsx, web/src/components/tasks/ChildAskCard.tsx, web/src/components/tasks/RequestCard.tsx, scripts/ui/02c-element-pick.mjs
+paths: server/asks.ts, server/custom-tools/agent.ts, shared/custom-tools/expand.ts, server/exec/panel-requests.ts, shared/push-auth.ts, web/src/components/chat/QuestionPanel.tsx, web/src/components/tasks/ChildAskCard.tsx, web/src/components/tasks/RequestCard.tsx, scripts/ui/02c-element-pick.mjs
 ---
 
 # 提问窗口
@@ -15,3 +15,9 @@ paths: server/asks.ts, server/exec/panel-requests.ts, shared/push-auth.ts, web/s
 - 规则：要用户授权才能做的事（推送并合并主干这类）由面板工具发 `kind: 'tool'` 的授权卡、`purpose` 标明用途（见 `server/exec/panel-requests.ts`），回答由面板记下；不让模型用 ask_user / AskUserQuestion 问：提问的回答面板认不出用途、记不下，「提问」关着时还会被自动答成「按你的判断继续」，等于模型自己决定。自动作答只管 `kind: 'question'`。
 - 起因：c5e5c5d8 起项目推送策略「第一次需要推送时问一次」靠提问工具问，「提问」默认关着，推不推实际由模型自己定。
 - 防线：`server/exec/panel-requests.test.ts`、`scripts/e2e/07-local.mjs`「推送授权」。
+
+## 用户自己存下、看过的东西，Agent 调用时默认不弹授权卡；要确认的做成可选开关
+
+- 规则：用户审过并保存的能力（自建工具这类）默认和普通工具调用一样直接跑，不按「会改文件」「影响外部」自动弹卡；需要每次过目的给一个按项开的开关（默认关），保存弹窗和管理页都能改。Agent 刚拼、用户还没看过的（草稿试跑）才默认问。
+- 起因：自建工具一期按影响弹卡（ADR 0082），用户 2026-11-26 问「为何调用自建工具弹这个窗口，默认调用不就好了」，改成 `confirm` 字段默认关。
+- 防线：`shared/custom-tools/custom-tools.test.ts`（needsConfirm）、界面检查 `scripts/ui/07b-custom-tools.mjs`。

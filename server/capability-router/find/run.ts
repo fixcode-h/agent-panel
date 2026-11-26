@@ -27,8 +27,10 @@ export function findCodeRun(opts: {
   taskId?: string
   /** 入口：记录里显示（find 工具、第二期接管的 rg） */
   entry?: string
-  /** 项目开着文件索引才有文本兜底（候选文件从索引取） */
+  /** 项目开着文件索引时，没有 rg 也能逐个读索引里的文件兜底 */
   indexOn: boolean
+  /** 按文本找时排除的目录（项目设置 + 默认产物目录，searchExcludeOf）：交给 rg */
+  exclude: string[]
 }): FindCodeRun {
   const dirs = [...new Set([opts.workDir, opts.projectPath].map((d) => path.resolve(d)))]
   const inWorktree = dirs.length > 1
@@ -51,7 +53,7 @@ export function findCodeRun(opts: {
       const external = specs.map((spec) => ({ spec, src: externalSource(spec, servers, ctx) }))
       const sources: RouteSource<FindRequest, FindOutcome>[] = [
         ...external.map((x) => x.src),
-        textSource(getIndex, relocate),
+        textSource(getIndex, relocate, { root: opts.workDir, exclude: opts.exclude }),
       ]
       // 语言不明时外部路都管（语言对不上的服务查不到就是空，不算错）
       if (req.lang === 'other')

@@ -1,7 +1,7 @@
 /**
  * 执行一个自建工具（ADR 0082）：校验参数 → 展开命令（按 shell 转义）→ P4 签出会改的文件 → 起进程等结果。
  * 守卫和授权卡由调用方（Agent 的 custom_tool、管理页试运行）在这之前做：人在管理页点试运行不用再弹卡，
- * Agent 调用要按影响弹卡。完整输出写日志文件，结果只回尾部和报错（ADR 0067）
+ * Agent 调用只在工具设了 confirm 或是草稿试跑时弹卡。完整输出写日志文件，结果只回尾部和报错（ADR 0067）
  */
 import { createWriteStream } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'

@@ -21,11 +21,25 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await check(p, '工具-编辑', ['运行和参数', '影响和输出', '什么时候用'])
   const name = p.getByRole('dialog').getByLabel('中文名')
   await name.fill('导表工具')
+  // 「运行前先问我」默认关（用户 2026-11-26：自建工具默认直接跑），打开后保存要记住
+  await p.getByRole('dialog').getByRole('radio', { name: '影响和输出' }).click()
+  const ask = p.getByRole('dialog').getByRole('switch', { name: '运行前先问我' })
+  if ((await ask.getAttribute('aria-checked')) !== 'false') errors.push('工具：「运行前先问我」默认应是关')
+  await ask.click()
   await p.getByRole('dialog').getByRole('radio', { name: '版本' }).click()
   await check(p, '工具-版本', ['v3', 'v2', '加了输出目录参数'])
   await p.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
   await check(p, '工具-保存后', ['已保存为 v4', '导表工具'])
   if (await p.getByRole('dialog').count()) errors.push('工具：保存后编辑抽屉没关')
+  await p.getByText('导表工具', { exact: true }).first().click()
+  await p.getByRole('dialog').getByRole('radio', { name: '影响和输出' }).click()
+  await check(p, '工具-运行前先问我', ['运行前先问我', '默认关：Agent 调用时直接跑'])
+  if (
+    (await p.getByRole('dialog').getByRole('switch', { name: '运行前先问我' }).getAttribute('aria-checked')) !== 'true'
+  )
+    errors.push('工具：「运行前先问我」保存后没记住')
+  await p.keyboard.press('Escape')
+  await settle(p)
 
   // 用途（ADR 0086）：校验工具列表行上有「校验」徽标，编辑抽屉的「用途」页看得到管哪些文件、顶替哪些程序
   await p.getByText('Lua 语法检查', { exact: true }).first().click()
@@ -81,7 +95,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .first()
     .waitFor({ timeout: 20000 })
     .catch(() => errors.push('工具：/createtool 没弹出保存弹窗'))
-  await check(p, '工具-保存弹窗', ['加入项目', '全局', 'python tools/pack.py --platform {{platform}}', '让 Agent 再改'])
+  await check(p, '工具-保存弹窗', [
+    '加入项目',
+    '全局',
+    'python tools/pack.py --platform {{platform}}',
+    '让 Agent 再改',
+    '运行前先问我',
+  ])
+  if (
+    (await p.getByRole('dialog').getByRole('switch', { name: '运行前先问我' }).getAttribute('aria-checked')) !== 'false'
+  )
+    errors.push('工具：保存弹窗里「运行前先问我」默认应是关')
   // 关掉弹窗不算回答：入口还在，点「查看并保存」再打开；保存连点两下也只收一次
   await p.keyboard.press('Escape')
   await settle(p)

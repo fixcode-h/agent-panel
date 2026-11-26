@@ -143,7 +143,7 @@ export async function runRealTurn(ctx: RealContext) {
             exclude: searchExcludeOf(ctx.project),
           })
         : undefined,
-    // find 工具查代码（ADR 0081 能力路由）：在项目里就给；关了文件索引时只有插件登记的外部路，没有文本兜底
+    // find 工具查代码（ADR 0081 能力路由）：在项目里就给；文本兜底先用本机 rg，没有 rg 时项目开着文件索引才逐个读文件
     findCode:
       ctx.project?.id && ctx.project.path
         ? findCodeRun({
@@ -152,6 +152,7 @@ export async function runRealTurn(ctx: RealContext) {
             workDir: workDirOf(ctx.task, ctx.project),
             taskId: ctx.task.id,
             indexOn: fileIndexSettingsOf(ctx.project).enabled,
+            exclude: searchExcludeOf(ctx.project),
           })
         : undefined,
     // find 实际走的路挂到工具行上（卡片耗时旁的小标）

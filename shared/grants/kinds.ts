@@ -73,7 +73,8 @@ const BASE: GrantKind[] = [
     id: 'ctool',
     group: 'other',
     name: () => t('自建工具'),
-    scope: () => t('同一个工具（项目的和全局的分开算）；只读的工具不弹卡'),
+    scope: () =>
+      t('同一个工具（项目的和全局的分开算）；默认不弹卡，只有设了「运行前先问我」的工具和还没保存的草稿试跑才问'),
     remember: true,
     presettable: true,
   },
