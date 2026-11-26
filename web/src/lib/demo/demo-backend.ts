@@ -184,6 +184,7 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoTools } from './demo-tools'
 import { demoCustomTools } from './demo-custom-tools'
+import { demoProgramPaths } from './demo-program-paths'
 import { demoAgentTools } from './demo-agent-tools'
 import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
 import { demoMemo } from './demo-memo'
@@ -2039,6 +2040,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
   if (res === 'custom-tools') return demoCustomTools(method, seg, body)
+  if (res === 'program-paths') return demoProgramPaths(method, seg, body)
   if (res === 'agent-tools') return demoAgentTools(method, seg, body, d.agents)
   if (res === 'tools') return demoTools(method, seg, body, d.settings?.githubSources ?? [])
   if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)

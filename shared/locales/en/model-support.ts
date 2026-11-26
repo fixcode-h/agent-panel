@@ -18,6 +18,7 @@ export const EN_MODEL_SUPPORT: Record<string, string> = {
   先列实现计划: 'Plan before coding',
   'IDE 服务的调用规矩': 'IDE service call rules',
   改用自建工具: 'Use the custom tool instead',
+  程序位置已登记: 'Program location already registered',
   钩子档位: 'Hook tier',
   '和全局档位取更严的；项目里单独选了档位时以项目为准，钩子页逐个改过的开关也照旧优先':
     'The stricter of this and the global tier is used; a tier chosen for a project wins, and hooks switched one by one keep their setting',

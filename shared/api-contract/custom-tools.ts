@@ -4,6 +4,7 @@
  */
 import { z } from 'zod'
 import { ToolEntry, ToolScope } from '../custom-tools/schema.ts'
+import { ProgramPathView } from '../custom-tools/programs.ts'
 import { endpoint } from './define.ts'
 
 export const ToolList = z.object({
@@ -48,6 +49,8 @@ export const ToolRunRes = z.object({
 })
 export type ToolRunRes = z.infer<typeof ToolRunRes>
 
+const ProgramResult = z.object({ ok: z.boolean(), info: z.string().default('') })
+
 export const customToolsContract = {
   list: endpoint({ method: 'GET', path: '/custom-tools', res: ToolList }),
   save: endpoint({ method: 'PUT', path: '/custom-tools', body: ToolSaveBody, res: ToolEntry }),
@@ -65,4 +68,22 @@ export const customToolsContract = {
   }),
   /** 试运行：和 Agent 调用同一套校验、守卫和签出（授权卡不弹：人自己点的） */
   run: endpoint({ method: 'POST', path: '/custom-tools/run', body: ToolRunBody, res: ToolRunRes }),
+  /** 项目程序在本机的位置（shared/custom-tools/programs.ts）：列出、登记或改、删掉。projectId 不写是不在项目里的 */
+  programs: endpoint({
+    method: 'GET',
+    path: '/program-paths',
+    res: z.object({ items: z.array(ProgramPathView), file: z.string() }),
+  }),
+  setProgram: endpoint({
+    method: 'PUT',
+    path: '/program-paths',
+    body: z.object({
+      projectId: z.string().default(''),
+      name: z.string(),
+      path: z.string(),
+      note: z.string().default(''),
+    }),
+    res: ProgramResult,
+  }),
+  removeProgram: endpoint({ method: 'DELETE', path: '/program-paths/:name', res: ProgramResult }),
 }
