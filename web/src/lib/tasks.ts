@@ -179,6 +179,12 @@ export function panelCallName(tool: ToolUse) {
 /** 别的 MCP 工具：解析器记成 name「MCP」、label「服务名 · 工具名」 */
 const MCP_LABEL = /^(.+?) · (.+)$/
 
+/** MCP 工具调用的服务名和工具名（不是 MCP 调用返回 undefined）：插件的工具卡片按工具名认（plugins/tool-cards.ts） */
+export function mcpToolOf(tool: Pick<ToolUse, 'name' | 'label'>): { server: string; tool: string } | undefined {
+  const m = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null
+  return m ? { server: m[1], tool: m[2] } : undefined
+}
+
 /** 工具调用的参数：多数 CLI 给的是 JSON，解析不了就当没有 */
 export function toolArgs(tool: ToolUse): Record<string, unknown> {
   try {
