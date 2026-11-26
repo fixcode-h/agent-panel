@@ -8,6 +8,6 @@
  * 每个工具的条件、定义、用法说明和执行都在注册表里（server/panel-tools/registry.ts），这里只是对外的入口，
  * 调用方照旧从这里取
  */
-export { callOrchTool, orchTools } from './panel-tools/registry.ts'
+export { callOrchTool, orchTools, waitsLong } from './panel-tools/registry.ts'
 export { WAIT_AGENTS_S } from './panel-tools/spawn.ts'
 export { orchHint } from './orch-hint.ts'

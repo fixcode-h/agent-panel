@@ -28,6 +28,12 @@ paths: server/orch-mcp.ts, shared/panel-tools.ts, server/ask-mcp.ts
 - 起因：审计发现（df820f2 起）`MAX_WAIT_S=50` 加上每次重交全部结果，12 个子任务分 8 次取完回包约 21 万字。
 - 防线：`server/orch-mcp.test.ts`「wait_agents：一直等到做完…」。
 
+## 会等用户点卡片的面板工具在注册表标 `waits`，卡片跟着这次调用的 signal 收
+
+- 规则：工具里会等用户（`panelRequest` 弹的保存弹窗、授权卡、放行卡）或等很久的，在 `PanelTool` 上写 `waits: true`，面板 MCP（`server/ask-mcp.ts`）对它们走 SSE 心跳；不再在 `LONG_TOOLS` 里手写名字。等用户的卡片除了跟着这一轮的 signal，还要跟着这次调用的 signal（`AbortSignal.any`），CLI 断开或取消时卡片收掉，不留没人等的卡。
+- 起因：v0.29.158 的 `custom_tool` 没进 `LONG_TOOLS`，保存弹窗等了几分钟 CLI 的 HTTP 客户端没收到数据就断开，Agent 当成失败重调 save，页面上叠出第二张一样的保存弹窗，用户报「要点两次」（2026-11-26）。
+- 防线：`server/ask-mcp.test.ts`「custom_tool 的保存弹窗走 SSE 心跳…」。
+
 ## 面板代做的版本管理操作，按用户实际怎么用来设计输入，被拒时提示词要堵住原生命令
 
 - 规则：`cherry_pick` 这类替 Agent 执行的版本管理操作，输入要覆盖用户的真实来源：P4 的 changelist 可能是 pending，也可能是用户自己在 P4V 里提交的、提交在另一条 stream 上（当前工作区映射不到）。路径对不上时按 stream 层级换算（`server/cherry-pick.ts` 的 `streamMapper`）。P4 只守一条：面板只在目标建 pending、永远不 submit，Agent 也不能自己 p4 submit，除非用户明确要求；不再要求文件是「这个对话改过的」（用户 2026-11-02 定的，搬的只是这个 changelist 自己的改动，不会带上两条流本来的差异）。提示词里禁止的原生命令要按版本管理列全（git 的 cherry-pick / merge、p4 的 integrate / merge / copy / populate），否则工具一拒绝 Agent 就自己去做 stream copy。

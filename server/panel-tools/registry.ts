@@ -89,6 +89,9 @@ export function toolHint(o: Orchestra, name: string, at: HintAt) {
 }
 
 /** 按名字（或旧名字）找条目：同名的几份执行相同，取第一份 */
+/** 会等很久的工具（PanelTool.waits）：面板 MCP 对它们走流式响应带心跳 */
+export const waitsLong = (name: string) => !!findTool(name)?.waits
+
 export const findTool = (name: string) => PANEL_TOOLS.find((t) => t.name === name || t.aliases?.includes(name))
 
 /**

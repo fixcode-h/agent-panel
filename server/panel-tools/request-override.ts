@@ -34,6 +34,8 @@ async function callRequestOverride(o: Orchestra, a: { gate?: unknown; reason?: u
 export const REQUEST_OVERRIDE_ENTRY: PanelTool = {
   name: REQUEST_OVERRIDE,
   when: (o) => !!o.requestOverride,
+  // 等用户在放行卡上点
+  waits: true,
   def: () => REQUEST_OVERRIDE_DEF,
   hint: (_o, at) =>
     at === 'conv'
