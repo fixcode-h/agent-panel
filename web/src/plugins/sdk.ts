@@ -235,6 +235,35 @@ export interface AnalysisReportProps {
   text: string
 }
 
+/**
+ * 对话里一次工具调用下面的卡片（2026-11-26 加的，旧面板没有这一项时只画面板自己的工具行）：
+ * 插件给自己的 MCP 工具画「这次做了什么、现在怎样」，例如 UE 插件的 ue_gametest 跑脚本时显示跑的哪个脚本、跑到第几步、通过没有，
+ * 展开看每步结果。实时状态由插件自己订阅推送，不轮询
+ */
+export interface ToolCard {
+  /** 插件里唯一 */
+  id: string
+  /** 工具名（不带 MCP 服务前缀），例如 ue_gametest */
+  tool: string
+  /** 这次调用归不归它画（参数已解析成对象）；不写就是这个工具的每次调用 */
+  match?: (args: Record<string, unknown>) => boolean
+  Card: ComponentType<ToolCardProps>
+}
+
+export interface ToolCardProps {
+  /** 调用参数 */
+  args: Record<string, unknown>
+  /** 工具返回的原文（还在跑时是空的） */
+  output: string
+  /** 这次调用还在等结果 */
+  running: boolean
+  /** 工具报错了 */
+  failed: boolean
+  /** 所在对话和项目（不在对话里时没有） */
+  taskId?: string
+  projectId?: string
+}
+
 export interface WebPlugin {
   pages?: PluginPage[]
   taskTabs?: TaskTab[]
@@ -247,6 +276,8 @@ export interface WebPlugin {
   specimens?: Specimen[]
   /** AI 分析对话右侧功能面板里的报告（2026-11-14 加的） */
   reports?: AnalysisReport[]
+  /** 对话里自己的 MCP 工具调用下面画的卡片（2026-11-26 加的） */
+  toolCards?: ToolCard[]
   /** 插件页上参数表单下面的运行状态面板：status 是服务端 ServerPlugin.status 的结果 */
   Status?: ComponentType<{ status: Record<string, unknown> | undefined; config: PluginConfig; reload: () => void }>
 }
