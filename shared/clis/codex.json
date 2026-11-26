@@ -390,6 +390,11 @@
       "不使用沙箱、不确认，只在信任的项目里用": "No sandbox, no confirmations. Use only in trusted projects"
     }
   },
+  "takeover": {
+    "rewrite": false,
+    "serve": true,
+    "why": "钩子能 deny 并带原因（serve）；PreToolUse 改写输入、关自带工具、只用面板的 MCP 还没实测"
+  },
   "hooks": {
     "trust": "rpc",
     "beforeEnd": {

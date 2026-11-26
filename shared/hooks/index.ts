@@ -49,6 +49,11 @@ export const EventSpec = z.object({
   deny: z.unknown().optional(),
   /** 补给模型的一段说明（{text}）；没有这一项表示这个事件不能补说明 */
   context: z.unknown().optional(),
+  /**
+   * 换掉工具输入后照常执行时 CLI 要的输出（tool.before，工具网关的「改写」，ADR 0084 第二期）：
+   * 值正好是 "{input}" 的那一项换成改写后的整份输入，{text} 换成同时补给模型的说明。没有这一项表示这个 CLI 不能改写
+   */
+  rewrite: z.unknown().optional(),
   why: z.string().default(''),
 })
 export type EventSpec = z.infer<typeof EventSpec>
@@ -155,6 +160,8 @@ export interface HookAnswer {
   deny?: boolean
   reason?: string
   context?: string
+  /** 工具前：换成这份输入后照常执行（工具网关改写，CLI 定义里有 rewrite 模板时才交得出去） */
+  rewrite?: Record<string, unknown>
 }
 
 /** 放行：不表态 */
@@ -183,8 +190,15 @@ export const HOOK_TIMEOUT_MS = 5000
 /** 转发脚本最多等面板这么久：用户钩子的超时上限 60 秒再留一点余量 */
 export const FORWARD_TIMEOUT_MS = 65_000
 
-/** 按模板填 {reason} / {text}：模板里的字符串原样替换，对象、数组逐层替换 */
-export function fillTpl(tpl: unknown, vars: { reason?: string; text?: string; event?: string }): unknown {
+/**
+ * 按模板填 {reason} / {text}：模板里的字符串原样替换，对象、数组逐层替换。
+ * 值正好是 "{input}" 的换成 vars.input 这个对象（改写后的工具输入，不能当字符串拼）
+ */
+export function fillTpl(
+  tpl: unknown,
+  vars: { reason?: string; text?: string; event?: string; input?: Record<string, unknown> },
+): unknown {
+  if (tpl === '{input}' && vars.input) return vars.input
   if (typeof tpl === 'string')
     return tpl
       .replace(/\{reason\}/g, () => vars.reason ?? '')

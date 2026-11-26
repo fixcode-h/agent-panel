@@ -3,8 +3,9 @@
  * 认调用（shared/tool-gateway/classify.ts）→ 交给原来的守卫、推送、用户钩子（照旧决定拒绝还是放行）→
  * 推算打开改道会改到哪（shared/tool-gateway/decide.ts）→ 记一条调用记录（./call-log.ts）。
  *
- * 第一期只观察：回给 CLI 的是原来那一份回答，网关不改道。例外是校验（ADR 0086，./verify/）：改完对得上的文件后面板自己跑检查、
- * 把报错补进这次的说明；改道模式下它还接管 luac、编译命令。网关自己出错一律放行（原回答照样返回），记一条 error。
+ * 观察模式（默认）：回给 CLI 的是原来那一份回答，网关不改道。例外是校验（ADR 0086，./verify/）：改完对得上的文件后面板自己跑检查、
+ * 把报错补进这次的说明。改道模式（第二期）多两步：查找接管（./takeover/）和校验接管 luac、编译命令。
+ * 网关自己出错一律放行（原回答照样返回），记一条 error。
  * 一次 CLI 调用（一轮）开一个网关：同一轮里的调用才比「本可以并行」，工具前和工具后按工具名 + 输入配对
  */
 import { performance } from 'node:perf_hooks'
@@ -21,6 +22,7 @@ import { log } from '../log.ts'
 import { addCall, callDone, lastInTurn } from './call-log.ts'
 import { withSink, type CallSink } from './sink.ts'
 import { openVerify, type VerifyDeps, type VerifyGate } from './verify/index.ts'
+import { enforceTakeover, type TakeoverDeps } from './takeover/index.ts'
 
 type OnHook = (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 
@@ -36,10 +38,12 @@ export interface GatewayCtx {
   resolveMcp?: (name: string, input: Record<string, unknown>) => Promise<{ server: string; tool: string } | undefined>
   /** 改完自动校验、改道接管 luac / 编译（ADR 0086，./verify/）；不给时不做 */
   verify?: VerifyDeps
+  /** 改道模式下查找接管要的（ADR 0084 第二期）；没有查找的路时也给，接管自己判断放行 */
+  takeover?: TakeoverDeps
 }
 
 const INPUT_MAX = 2000
-const keyOf = (facts: HookFacts) => `${facts.tool!.name}\u0000${JSON.stringify(facts.tool!.input).slice(0, 4000)}`
+const keyOf = (name: string, input: Record<string, unknown>) => `${name}\u0000${JSON.stringify(input).slice(0, 4000)}`
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 export interface Gateway {
@@ -134,11 +138,23 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
         ...(error ? { error } : {}),
       }
       if (isSerial(lastInTurn(c.projectId, turn), r)) r.serial = true
-      // ms：网关自己（认调用、推算、记录）；hookMs：整个工具前回答（守卫、推送、用户钩子加网关）
-      r.ms = round2(own0 + performance.now() - t2 - (t4 - t3))
+      // 改道模式：查找接管（搜索命令、自带的按内容搜）。校验已经接管了这次（luac 改走自建工具）就不再接；它自己兜住所有错误
+      let tk = 0
+      let pendingInput = facts.tool!.input
+      if (c.mode === 'enforce' && call && !denied && c.takeover && !v?.decision) {
+        const t5 = performance.now()
+        const x = await enforceTakeover(c.takeover, call, out)
+        tk = performance.now() - t5
+        Object.assign(r, x.patch)
+        out = x.answer
+        pendingInput = x.input ?? pendingInput
+      }
+      // ms：网关自己（认调用、推算、记录；校验、接管去查、跑原命令的时间不算）；hookMs：整个工具前回答（守卫、推送、用户钩子加网关）
+      r.ms = round2(own0 + performance.now() - t2 - (t4 - t3) - tk)
       r.hookMs = round2(performance.now() - t0)
+      // 被拒绝、被代答的不会执行，等不到工具后；改写的按改写后的输入配对（CLI 工具后报的是它真正跑的那份）
       if (!out.deny) {
-        const k = keyOf(facts)
+        const k = keyOf(facts.tool!.name, pendingInput)
         pending.set(k, [...(pending.get(k) ?? []), r])
       }
       addCall(r)
@@ -179,7 +195,7 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
     const skillsBefore = skillPushes(c.task.id).length
     const answer = await withSink(sink, () => inner('tool.after', facts))
     try {
-      const k = keyOf(facts)
+      const k = keyOf(facts.tool!.name, facts.tool!.input)
       const list = pending.get(k)
       const r = list?.shift()
       if (list && !list.length) pending.delete(k)

@@ -86,6 +86,7 @@ export function findCodeRun(opts: {
       return {
         text: formatHits(hits, req, notes),
         route: toolRouteOf('find', sources as RouteSource<never, unknown>[], r),
+        hits,
       }
     } catch (e) {
       return { text: `查找出错：${(e as Error).message}`, error: true }

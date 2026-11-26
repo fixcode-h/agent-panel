@@ -10,6 +10,7 @@ import type { FileIndexArgs } from '../../shared/host/file-index.ts'
 import type { ToolRoute } from '../../shared/capability-router/tool-route.ts'
 import { t } from '../../shared/i18n.ts'
 import { str, text, type PanelTool } from './types.ts'
+import { joinGroups, MULTI_MAX, multiQueries } from './find-multi.ts'
 
 const FILE_ACTIONS = ['file', 'list', 'refresh', 'status'] as const
 const CODE_ACTIONS = ['symbol', 'refs', 'outline', 'members', 'include', 'text'] as const
@@ -54,15 +55,17 @@ export const FIND: PanelTool = {
       '索引不收排除目录（Saved、Intermediate 这类）。action=refresh 让索引按目录核对（dir 只核对那棵子树，full=true 整份重建），action=status 看状态。' +
       '找代码：action=symbol 找声明（函数、类、变量，query 可写 A::B、A.B、A:B），refs 找引用（同名多时带 file、line 指明哪一个），outline 列文件大纲（query 写文件），' +
       'members 列类成员，include 查类该 include 哪个头文件，text 按原文搜内容。under、ext 限定范围；lang（cpp / lua）一般不用给，面板按扩展名、目录、写法推。' +
-      '结果分页：limit 默认 50，按结果末尾给的 offset 往下翻。服务在启动或建索引时面板会等它（最多一分钟），不用重试。',
+      '结果分页：limit 默认 50，按结果末尾给的 offset 往下翻；query 给数组时每个词一组，几组共用 4000 字，没列完的那组单独再查。' +
+      '服务在启动或建索引时面板会等它（最多一分钟），不用重试。',
     inputSchema: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: [...ACTIONS], description: '默认 file' },
         query: {
-          type: 'string',
+          anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, maxItems: MULTI_MAX }],
           description:
-            'file：文件名里的词；symbol / refs / members / include：名字；outline：文件路径；text：要搜的文本',
+            'file：文件名里的词；symbol / refs / members / include：名字；outline：文件路径；text：要搜的文本。' +
+            `要查几个互不相关的名字时给数组（最多 ${MULTI_MAX} 个），一次查完、按词分组返回`,
         },
         dir: { type: 'string', description: 'list / refresh：目录，相对项目根或绝对路径' },
         under: { type: 'array', items: { type: 'string' }, description: '只在这些目录里找' },
@@ -79,7 +82,18 @@ export const FIND: PanelTool = {
       },
     },
   }),
-  call: async (o, a, signal) => {
+  call: async (o, args, signal) => {
+    // query 给数组：几个词同时查、按词分组（find-multi.ts）；只有一个词的数组照单个查
+    const qs = multiQueries(args?.query)
+    if (typeof qs === 'string') return text(qs, true)
+    if (qs) {
+      const rs = await Promise.all(qs.map((q) => FIND.call(o, { ...args, query: q }, signal)))
+      return text(
+        joinGroups(rs.map((r, i) => ({ query: qs[i], text: r.content.map((c) => c.text).join('\n') }))),
+        rs.every((r) => r.isError),
+      )
+    }
+    const a = Array.isArray(args?.query) ? { ...args, query: String(args.query[0] ?? '') } : args
     const raw = str(a?.action) || 'file'
     const action = OLD[raw] ?? raw
     if (!(ACTIONS as string[]).includes(action)) return text(`action 只能是 ${ACTIONS.join(' / ')}`, true)

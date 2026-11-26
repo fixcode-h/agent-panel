@@ -19,6 +19,7 @@ import type { VerifyRun } from '@shared/tool-gateway/verify/types'
 import { DEMO_TOOL_CALL_EVENT } from '@/lib/live/tool-calls'
 import { demoProjectTools } from './demo-custom-tools'
 import { fail } from './demo-http'
+import { CPP_GREP, LUA_REFS, demoTakeover, type DemoTakeover } from './demo-takeover'
 
 type Sample = {
   task: [string, string]
@@ -28,6 +29,8 @@ type Sample = {
   deny?: string
   skills?: [string, number][]
   pushes?: [string, number][]
+  /** 改道模式下被查找接管的（第二期）：面板查到了什么 */
+  takeover?: DemoTakeover
   dur: number
 }
 
@@ -45,7 +48,14 @@ const SAMPLES: Sample[] = [
     dur: 3,
   },
   { task: SHOP, tool: 'Edit', kind: 'edit', input: { file_path: 'Content/Script/UI/Shop.lua' }, dur: 4 },
-  { task: SHOP, tool: 'Bash', kind: 'shell', input: { command: 'rg -n "OnSellAll" Content/Script' }, dur: 182 },
+  {
+    task: SHOP,
+    tool: 'Bash',
+    kind: 'shell',
+    input: { command: 'rg -n "OnSellAll" Content/Script' },
+    takeover: LUA_REFS,
+    dur: 182,
+  },
   { task: SHOP, tool: 'Bash', kind: 'shell', input: { command: 'luac -p Content/Script/UI/Bag.lua' }, dur: 410 },
   {
     task: SHOP,
@@ -58,7 +68,9 @@ const SAMPLES: Sample[] = [
   { task: FLOW, tool: 'mcp__uetovs__search_symbols', kind: 'any', input: { query: 'BagPanel' }, dur: 96 },
   { task: FLOW, tool: 'Read', kind: 'read', input: { file_path: 'Source/Shop/BagPanel.h' }, dur: 12 },
   { task: FLOW, tool: 'Read', kind: 'read', input: { file_path: 'Source/Shop/BagPanel.cpp' }, dur: 15 },
-  { task: FLOW, tool: 'Grep', kind: 'read', input: { pattern: 'UBagPanel::Refresh' }, dur: 40 },
+  { task: FLOW, tool: 'Grep', kind: 'read', input: { pattern: 'UBagPanel::Refresh' }, takeover: CPP_GREP, dur: 40 },
+  // 改道模式下拿不准的照原样跑：管道接 head 是两段，不接管
+  { task: FLOW, tool: 'Bash', kind: 'shell', input: { command: 'grep -rn "TODO" Source | head -20' }, dur: 35 },
   {
     task: FLOW,
     tool: 'Bash',
@@ -130,6 +142,7 @@ function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord
     ...(call.command?.category ? { category: call.command.category } : {}),
     ...(call.command ? { segments: call.command.segments } : {}),
     ...d,
+    ...(s.takeover ? demoTakeover(call, s.takeover) : {}),
     ...(s.deny ? { denyBy: s.deny } : {}),
     ...(s.pushes ? { pushes: s.pushes.map(([id, chars]) => ({ id, chars })) } : {}),
     ...(s.skills
@@ -137,7 +150,8 @@ function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord
       : {}),
     ms: 0.08 + (i % 4) * 0.03,
     hookMs: 1.2 + (i % 3),
-    ...(s.deny ? {} : { durMs: s.dur }),
+    // 代答的不会执行，没有工具后
+    ...(s.deny || s.takeover?.output !== undefined ? {} : { durMs: s.dur }),
     ...(readOnly ? { readOnly } : {}),
   }
   if (isSerial(prev, r)) r.serial = true

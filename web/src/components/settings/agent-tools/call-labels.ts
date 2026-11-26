@@ -6,6 +6,7 @@ import { BUILTIN_HOOKS } from '@shared/hooks/builtins'
 import { CAPABILITIES } from '@shared/capability-router/capabilities'
 import type { CallKind, CallRecord, CommandCategory, GatewayDecision } from '@shared/tool-gateway/types'
 import type { VerifyOutcome, VerifyRun } from '@shared/tool-gateway/verify/types'
+import { routeText } from '@/components/ui/route-badge'
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
 
@@ -65,12 +66,14 @@ export function verifyLabel(v: VerifyRun): string {
   return t('校验 · {tool} · {result}', { tool: v.tool, result })
 }
 
-/** 「实际走的」那一格：拒绝写是谁拒绝的，其余写这次调用实际在哪执行 */
+/** 「实际走的」那一格：拒绝写是谁拒绝的，改道的写改走了哪个能力、哪几条路，其余写这次调用实际在哪执行 */
 export function actualRoute(r: CallRecord): string {
   if (r.verify?.trigger === 'auto') return t('面板自己跑（改完自动校验）')
   if (r.decision === 'serve' && r.wouldRoute) return t('面板改用 {to} 代答', { to: r.wouldRoute.to })
   if (r.decision === 'redirect' && r.wouldRoute) return t('没执行，让 Agent 改用 {to}', { to: r.wouldRoute.to })
   if (r.decision === 'deny') return t('守卫：{name}', { name: r.denyBy ? hookLabel(r.denyBy) : t('拒绝') })
+  if ((r.decision === 'rewrite' || r.decision === 'serve') && r.route)
+    return t('面板改走 {cap} · {via}', { cap: r.route.capability, via: routeText(r.route) })
   if (r.kind === 'panel') return t('面板工具')
   if (r.kind === 'mcp') return t('外部 MCP')
   return t('CLI 自带')

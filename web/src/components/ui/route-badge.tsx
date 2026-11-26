@@ -20,7 +20,7 @@ export function routeText(route: ToolRoute): string {
 
 /**
  * 工具卡片标题行耗时旁的小标：这次调用最终实际走的路（「· 面板按文本找」「· idea · lua_code」），后面淡淡标出是 MCP 还是面板自带。
- * 网关改写过的写「改走」（以后第二期）。设置 → 组件微调「路由小标」能关掉（--c-routeBadge-show）；点开那一行看 RouteSteps
+ * 网关改道过的（Agent 调的是 rg、Grep，面板改走 find，ADR 0084 第二期）前面写「面板改走 find ·」。设置 → 组件微调「路由小标」能关掉（--c-routeBadge-show）；点开那一行看 RouteSteps
  */
 export function RouteBadge({ route, className }: { route: ToolRoute; className?: string }) {
   const via = route.served[0]?.via
@@ -39,7 +39,7 @@ export function RouteBadge({ route, className }: { route: ToolRoute; className?:
       <span aria-hidden className="text-subtle/60">
         ·
       </span>
-      {route.from && <span className="shrink-0">{t('改走')}</span>}
+      {route.from && <span className="shrink-0">{t('面板改走 {cap} ·', { cap: route.capability })}</span>}
       <span className={cn('min-w-0 truncate', !route.served.length && 'text-warning')}>{routeText(route)}</span>
       {via && (
         <span className="chip-lift shrink-0 rounded-sm bg-sel px-1 text-micro leading-4 text-subtle">

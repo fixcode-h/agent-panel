@@ -4,6 +4,7 @@ import { hhmm } from '@shared/datetime'
 import type { CallRecord } from '@shared/tool-gateway/types'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { RouteSteps } from '@/components/ui/route-badge'
 import {
   CATEGORY_LABEL,
   DECISION_LOOKS,
@@ -16,7 +17,10 @@ import {
   verifyLabel,
 } from './call-labels'
 
-/** 调用记录的表格：一行一次调用，点开看原调用、认成什么、守卫和补充说明来源 */
+/** 改道模式下真的改写 / 代答了：「会改到哪」不用再写，改写前后和路由步骤在详情里 */
+const rerouted = (r: CallRecord) => r.decision === 'rewrite' || r.decision === 'serve'
+
+/** 调用记录的表格：一行一次调用，点开看原调用（改写的还有改写后的）、认成什么、走过的路、守卫和补充说明来源 */
 export function CallTable({ items }: { items: CallRecord[] }) {
   const [open, setOpen] = useState('')
   const th = 'px-3 py-2 text-left font-normal whitespace-nowrap'
@@ -68,7 +72,7 @@ export function CallTable({ items }: { items: CallRecord[] }) {
                 </td>
                 <td className="max-w-64 truncate px-3 py-2 text-footnote text-subtle">
                   {actualRoute(r)}
-                  {r.wouldRoute && (
+                  {r.wouldRoute && !rerouted(r) && (
                     <span className="text-accent-text">
                       {' → '}
                       {r.wouldRoute.to}
@@ -123,8 +127,13 @@ function CallDetail({ r }: { r: CallRecord }) {
           {r.tool} · {r.input}
         </span>
       </Line>
+      {r.rewritten && (
+        <Line k={t('改写成')}>
+          <span className="font-mono">{r.rewritten}</span>
+        </Line>
+      )}
       <Line k={t('认成')}>{what.join(' · ')}</Line>
-      {r.wouldRoute && (
+      {r.wouldRoute && !rerouted(r) && (
         <Line k={t('会改到')}>
           {r.decision === r.wouldRoute.decision
             ? t('{to}（{decision}，按 {by} 认的；改道模式，真的改了）', {
@@ -149,6 +158,14 @@ function CallDetail({ r }: { r: CallRecord }) {
           ]
             .filter(Boolean)
             .join(' · ')}
+        </Line>
+      )}
+      {r.takeoverWhy && <Line k={t('照原样跑')}>{r.takeoverWhy}</Line>}
+      {r.route && (
+        <Line k={t('路由')}>
+          <span className="-mx-3 -my-2 block">
+            <RouteSteps route={r.route} />
+          </span>
         </Line>
       )}
       {r.denyBy && <Line k={t('拒绝')}>{hookLabel(r.denyBy)}</Line>}
