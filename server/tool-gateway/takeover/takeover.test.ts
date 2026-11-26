@@ -162,8 +162,25 @@ test('「或」拆成几个原文分开查、合起来补；串在多段命令�
   const gw = openGateway(ctx('enforce', d))!
   const a = await gw.wrap(inner)('tool.before', bash(cmd))
   assert.deepEqual(asked.sort(), ['OnBuyAll', 'OnSellAll'])
-  assert.equal(a.rewrite?.command, `node "C:/Temp/agent-panel-takeover/1.mjs"; ${cmd}`)
+  // 面板那段插在搜索段前面（&&：前面的段失败时照样不跑；管道比 && 绑得紧，head 截不到面板那段）
+  assert.equal(
+    a.rewrite?.command,
+    'cat a.lua && echo "===" && node "C:/Temp/agent-panel-takeover/1.mjs" && grep -rn "OnSellAll\\|OnBuyAll" Content/Script | head -20',
+  )
   const r = recentCalls('p1')[0]
   assert.equal(r.decision, 'rewrite')
   assert.equal(r.route?.served.length, 1, '同一条路只列一次')
+
+  // 一条里两个搜索：各查各的、各插各的，没有可补的那段不插
+  let n = 0
+  const two = deps({
+    findCode: async (q: { query: string }) => ({ text: '', route: ROUTE, hits: q.query === 'OnSellAll' ? HITS : [] }),
+    writeScript: async () => `C:/Temp/agent-panel-takeover/${++n}.mjs`,
+  }).d
+  const cmd2 = 'rg -n Refresh Content/Script; echo "---"; rg -n OnSellAll Content/Script'
+  const b = await openGateway(ctx('enforce', two))!.wrap(inner)('tool.before', bash(cmd2))
+  assert.equal(
+    b.rewrite?.command,
+    'rg -n Refresh Content/Script; echo "---"; node "C:/Temp/agent-panel-takeover/1.mjs" && rg -n OnSellAll Content/Script',
+  )
 })

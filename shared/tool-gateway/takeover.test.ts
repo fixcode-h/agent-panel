@@ -8,6 +8,7 @@ import type { FindHit } from '../capability-router/find/types.ts'
 import { classifyCall } from './classify.ts'
 import { parseGrepTool, parseSearchCommand } from './search-args.ts'
 import { CliTakeover } from './takeover-spec.ts'
+import { rewriteAt, searchUnits } from './takeover-segments.ts'
 import {
   covered,
   findRequestOfSearch,
@@ -116,7 +117,27 @@ test('接不接、怎么接按 CLI 定义的 takeover 走：能改写的改写�
   assert.equal(tk('cat Log.lua && echo "=== grep ===" && grep -rn "GetGold" . --exclude-dir=.git')?.how, 'rewrite')
   assert.equal(tk('rg -n "Foo|Bar" src; echo "---"; ls -R scripts')?.how, 'rewrite', '引号里的 | 不是管道')
   assert.notEqual(tk('cd web && rg -n OnSellAll src')?.how, 'rewrite', '换了目录')
-  assert.notEqual(tk('rg -n Foo src; grep -rn Bar .')?.how, 'rewrite', '两个搜索段')
+  // 几个搜索段各接各的，插在各自前面；循环、子 shell 里的整条不接
+  const two = tk('rg -n Foo src; echo "---"; grep -rn Bar . | head')
+  assert.equal(two?.how, 'rewrite')
+  const units = two?.how === 'rewrite' ? two.units : []
+  assert.deepEqual(
+    units.map((u) => [u.search.pattern, u.at]),
+    [
+      ['Foo', 0],
+      ['Bar', 27],
+    ],
+  )
+  assert.equal(
+    rewriteAt('rg -n Foo src; echo "---"; grep -rn Bar . | head', [
+      { at: 0, script: 'a.mjs' },
+      { at: 27, script: 'C:\\t\\b.mjs' },
+    ]),
+    'node "a.mjs" && rg -n Foo src; echo "---"; node "C:/t/b.mjs" && grep -rn Bar . | head',
+  )
+  assert.notEqual(tk('for f in a b; do grep -n Foo $f; done')?.how, 'rewrite', '循环')
+  assert.notEqual(tk('(grep -rn Foo .; ls)')?.how, 'rewrite', '子 shell')
+  assert.equal(searchUnits('cat a | grep Foo; grep -rn Bar . | wc -l'), undefined, '一个都接不住')
   assert.notEqual(tk('test -f a || grep -rn Foo .')?.how, 'rewrite', '前面是 ||，可能不跑')
   assert.notEqual(tk('cat a && grep -rn Foo . | wc -l')?.how, 'rewrite', '数行数')
   assert.equal(planTakeover(shell('find . -name "*.lua"'), claude)?.how, 'pass', '按名字找文件不改道')
