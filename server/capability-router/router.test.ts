@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { spawnSync } from 'node:child_process'
 import { findRequestOf, inferLang } from '../../shared/capability-router/find/request.ts'
 import { formatHits, mergeHits, parseFindJson } from '../../shared/capability-router/find/hits.ts'
 import { declRe } from '../../shared/capability-router/find/text-patterns.ts'
@@ -210,6 +211,37 @@ test('文本兜底：候选文件从索引取、声明排前，独立分支里�
   } finally {
     await rm(dir, { recursive: true, force: true })
     await rm(wt, { recursive: true, force: true })
+  }
+})
+
+test('文本兜底先用 rg 查全（不靠索引、跳过排除目录）；没有 rg 时照旧逐个读索引里的文件', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'route-rg-'))
+  try {
+    await mkdir(path.join(dir, 'Src'))
+    await mkdir(path.join(dir, 'Intermediate'))
+    await writeFile(path.join(dir, 'Src/opts.lua'), 'local M = {}\nM.ChairStateEventKeyOptions = {}\n')
+    await writeFile(path.join(dir, 'Src/use.cpp'), 'Parse(TEXT("ChairStateEventKeyOptions"));\n')
+    await writeFile(path.join(dir, 'Intermediate/gen.lua'), 'ChairStateEventKeyOptions\n')
+    // 索引是空的（还没收进这些文件）：只靠索引会「没有找到」
+    const idx = { ready: async () => true, find: () => [], building: false, refresh: async () => ({}) } as never
+    const withRg = textSource(async () => idx, undefined, { root: dir, exclude: ['Intermediate'] })
+    if (spawnSync('rg', ['--version']).error) return t.skip('本机没有 rg')
+    const probe = await withRg.run(req('text', 'ChairStateEventKeyOptions'))
+    assert.deepEqual(probe.hits.map((h) => h.file).sort(), ['Src/opts.lua', 'Src/use.cpp'])
+    const sym = await withRg.run(req('symbol', 'ChairStateEventKeyOptions', { lang: 'lua' }))
+    assert.deepEqual(
+      sym.hits.map((h) => [h.file, h.line]),
+      [['Src/opts.lua', 2]],
+      '声明照旧按语言的写法认',
+    )
+    const noRg = textSource(async () => idx, undefined, { root: dir, exclude: [], program: 'rg-not-here-xyz' })
+    assert.deepEqual(
+      (await noRg.run(req('text', 'ChairStateEventKeyOptions'))).hits,
+      [],
+      '没有 rg 走索引（这里是空的）',
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
 })
 
