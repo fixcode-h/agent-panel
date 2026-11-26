@@ -140,6 +140,13 @@ const CHILD_RULES = `- 这个工作流由父对话启动成一次工作流运行
 - 只改任务范围内的文件，不覆盖、不认领用户已有的改动。`
 
 /** 文档同步节点：放在改代码的工作流最后，评审之前做完 */
+/**
+ * 理解需求的节点把用户原话拆成需求对照（2026-11-26 复盘 §5-1，shared/run/needs.ts）：之后每个节点的提示词里都带着它，
+ * 做完逐条标落地、延期或不做，界面上看得出哪条没落地
+ */
+const NEEDS_SPLIT =
+  '\n- 动手出方案之前，用 write_state 的 needs 把用户原话拆成需求对照：每条一句、用用户的说法（只写 text），不加你推断的需求；方案确认后照样以这几条为准。'
+
 const DOCS_NODE: NodeSpec = {
   id: 'docs',
   title: '文档同步',
@@ -188,7 +195,8 @@ ${CHILD_RULES}`,
           params: { scene: true, scale: 'bounded' },
           confirm: true,
           instructions:
-            '先识别现场（版本控制、文档根、已有改动），读 MODULE-MAP 和相关模块文档定位到模块和代码；再用一两句复述这次要做什么，给出简短方案：做法、要改的文件、验证方式、验收标准。不清楚的地方问用户，确认后再进入实现。',
+            '先识别现场（版本控制、文档根、已有改动），读 MODULE-MAP 和相关模块文档定位到模块和代码；再用一两句复述这次要做什么，给出简短方案：做法、要改的文件、验证方式、验收标准。不清楚的地方问用户，确认后再进入实现。' +
+            NEEDS_SPLIT,
         },
         {
           id: 'impl',
@@ -257,7 +265,8 @@ ${CHILD_RULES}`,
           params: { scale: 'bounded' },
           confirm: true,
           instructions:
-            '结合侦察结果给出方案：改动的模块和文件、C++ / Lua 分工、导出和反射边界、验证方式。等用户确认。',
+            '结合侦察结果给出方案：改动的模块和文件、C++ / Lua 分工、导出和反射边界、验证方式。等用户确认。' +
+            NEEDS_SPLIT,
         },
         {
           id: 'impl',
@@ -335,7 +344,8 @@ ${CHILD_RULES}`,
             params: { scale: 'architectural', grill: true },
             confirm: true,
             instructions:
-              '收敛需求，写一次性的设计摘要（目标、非目标、路线、验收初稿），再用 grilling 压测。最后请用户一次确认两件事：设计共识，以及承载方式（新建规范 / 增补已有的强关联规范）。',
+              '收敛需求，写一次性的设计摘要（目标、非目标、路线、验收初稿），再用 grilling 压测。最后请用户一次确认两件事：设计共识，以及承载方式（新建规范 / 增补已有的强关联规范）。' +
+              NEEDS_SPLIT,
           },
           {
             id: 'propose',
@@ -411,7 +421,8 @@ ${CHILD_RULES}`,
             agent: 'spec',
             tier: 'medium',
             params: { stage: '归档' },
-            instructions: '检查归档门禁，过了就归档；没过交不通过，blockers 写清缺口。',
+            instructions:
+              '检查归档门禁，过了就归档；没过交不通过，blockers 写清缺口。需求对照里还有没落地、也没标延期或不做的条目，同样算没过。',
           },
           {
             id: 'blocked',
@@ -498,7 +509,8 @@ ${CHILD_RULES}`,
             params: { scene: true, scale: 'architectural' },
             confirm: true,
             instructions:
-              '识别现场后确认：要迁哪些数据结构、所有读写这些数据的路径（含外部调用方和已有数据文件）、能不能停服、选哪种兼容策略（一次性 / 双写 / 懒迁移）。给出迁移和回滚的步骤，等用户确认。',
+              '识别现场后确认：要迁哪些数据结构、所有读写这些数据的路径（含外部调用方和已有数据文件）、能不能停服、选哪种兼容策略（一次性 / 双写 / 懒迁移）。给出迁移和回滚的步骤，等用户确认。' +
+              NEEDS_SPLIT,
           },
           {
             id: 'impl',

@@ -17,6 +17,7 @@ import type { BuildHost, OrchBuild } from '../host/build.ts'
 import type { ConversationHost, OrchConversation } from '../host/conversation.ts'
 import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
 import type { OrchPlan, PlanHost } from '../host/plan.ts'
+import type { OrchNeeds } from '../host/needs.ts'
 import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 import type { SearchHost } from '../host/search.ts'
 import type { FileIndexHost, OrchFileIndex } from '../host/file-index.ts'
@@ -181,7 +182,8 @@ export interface Orchestra
     OrchFindCode,
     OrchToolRoute,
     OrchCustomTools,
-    OrchVcsStatus {
+    OrchVcsStatus,
+    OrchNeeds {
   /** 调用者的节点 id */
   self: string
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */

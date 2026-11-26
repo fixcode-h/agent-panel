@@ -75,6 +75,9 @@ function host(task: Task, log: AgentCall[]): EngineHost {
         assert.match(text(r), /a\/sub\/h1、a\/sub\/h2/)
         assert.match(text(await callOrchTool(o, 'write_state', { key: 'interface', value: '接口改名了' })), /v1/)
         assert.match(text(await callOrchTool(o, 'read_state', {})), /interface（v1/)
+        // 需求对照并在 write_state 里：只写 needs 也行，read_state 能读回
+        assert.match(text(await callOrchTool(o, 'write_state', { needs: [{ text: '接口改名' }] })), /新拆 N1/)
+        assert.match(text(await callOrchTool(o, 'read_state', {})), /N1 \[未落地\] 接口改名/)
         // 超长的值和消息拒绝写入并说明，不悄悄截断（ADR 0041 开放问题）
         const huge = 'x'.repeat(20001)
         const big = await callOrchTool(o, 'write_state', { key: 'interface', value: huge })
@@ -93,6 +96,11 @@ function host(task: Task, log: AgentCall[]): EngineHost {
         // 子任务不能再派子任务、不能启动工作流，工具列表里也没有这些
         if (call.step.id === 'a/sub/h1') {
           assert.equal(o.helper, true)
+          // 子任务不标需求对照：结果交回节点，由节点对照原话标
+          assert.match(
+            text(await callOrchTool(o, 'write_state', { needs: [{ id: 'N1', state: 'done' }] })),
+            /子任务不标需求对照/,
+          )
           assert.match(
             text(await callOrchTool(o, 'spawn_agents', { tasks: [{ title: '更细', instructions: '拆得更细' }] })),
             /不能再派子任务/,

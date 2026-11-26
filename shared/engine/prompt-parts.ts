@@ -5,7 +5,8 @@
 import type { Task, Workflow } from '../schema.ts'
 import { clip } from '../text.ts'
 import { withAttachments } from '../task.ts'
-import { statePart } from '../run/state.ts'
+import { runRecord, statePart } from '../run/state.ts'
+import { needsPart } from '../run/needs.ts'
 import { pushPolicyText } from '../push-auth.ts'
 import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
 import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
@@ -375,6 +376,8 @@ export function commonPart(host: EngineHost, w?: Workflow, chat = false, helper 
     // 对话（含它派出的子任务）用不到共享状态：对话里跑过工作流后 task.runs 会留着上一次运行，
     // 注入旧状态会让模型去调根本没注册的 read_state / write_state
     chat ? '' : statePart(host.task),
+    // 需求对照（shared/run/needs.ts）只交给节点：子任务不标，结果交回节点由它标
+    chat || helper ? '' : needsPart(runRecord(host.task)),
     [policy, docRootText(host.policy?.docs) || plainDocRootText(host.policy?.docRoot)].filter(Boolean).join('\n\n'),
     goalPart(host),
     rulesPart(host),

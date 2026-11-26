@@ -3,7 +3,8 @@ import { kidTitleOf, retryTarget } from '../children/lookup.ts'
 import { docsFirst } from '../docs-first.ts'
 import { roleKind } from '../agents/role.ts'
 import { clip } from '../text.ts'
-import { runState, writeRunState } from '../run/state.ts'
+import { runRecord, runState, writeRunState } from '../run/state.ts'
+import { applyNeeds, needsText } from '../run/needs.ts'
 import { handedToOther, noteHandOff } from '../peer-message.ts'
 import { timeAgo } from '../task.ts'
 import { findRole, modeScope, scopeOf } from '../conv-mode.ts'
@@ -211,11 +212,27 @@ export function conversationTools(oc: OrchCtx) {
     },
     readState() {
       const entries = Object.entries(runState(task))
-      if (!entries.length) return '（共享状态还是空的）'
-      return entries
-        .map(([k, v]) => `- ${k}（v${v.version}，${v.by || '未知节点'} 写入，${v.at}）：\n${clip(v.value, 4000)}`)
+      const needs = needsText(runRecord(task)?.needs ?? [])
+      if (!entries.length && !needs) return '（共享状态还是空的）'
+      return [
+        ...entries.map(
+          ([k, v]) => `- ${k}（v${v.version}，${v.by || '未知节点'} 写入，${v.at}）：\n${clip(v.value, 4000)}`,
+        ),
+        needs,
+      ]
+        .filter(Boolean)
         .join('\n\n')
     },
     writeState: (key, value) => writeRunState(host, self.id, key, value),
+    // 需求对照只由节点自己标：子任务做的是节点的一部分，结果交回节点，由节点对照原话标
+    trackNeeds(raw: unknown) {
+      const rec = runRecord(task)
+      if (helper)
+        return { ok: false, info: '子任务不标需求对照：在 submit_result 的 summary 里写清做了哪几条，由派你的节点标' }
+      if (!rec) return { ok: false, info: '这次运行没有需求对照（可能是旧版对话）' }
+      const r = applyNeeds(rec, self.title || self.id, raw)
+      if (r.ok) host.changed(true)
+      return r
+    },
   } satisfies Partial<Orchestra>
 }
