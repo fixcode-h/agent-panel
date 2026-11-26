@@ -71,7 +71,8 @@ test('面板工具注册表：名字都登记过、定义的名字和条目一�
  * 加一个工具前先过 ADR 0067 的准入；真要加，在同一个提交里改下面的数，并在提交说明里写清准入理由
  */
 // 含 knowledge_lookup / knowledge_record 取代的四个旧名字（保留一个版本，ADR 0066）：旧名字删掉时这几个数跟着减
-const TOOL_COUNT_CAP: Record<string, number> = { parent: 43, child: 31, helper: 13, node: 23, chat: 4 }
+// vcs_status（2026-11-26 复盘 §5-5）给对话和节点各加 1：准入理由见 server/panel-tools/vcs-status.ts 开头
+const TOOL_COUNT_CAP: Record<string, number> = { parent: 44, child: 32, helper: 13, node: 24, chat: 4 }
 /** 一个工具的定义（名字 + 说明 + 参数 schema 的 JSON）最多多少字 */
 const DEF_CAP = 3000
 /** 规范之前就超了的：只许变短，变短了把数改小 */

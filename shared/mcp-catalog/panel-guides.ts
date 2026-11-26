@@ -285,6 +285,15 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
     group: G.edit,
     effects: ['edit'],
   },
+  vcs_status: {
+    title: '版本管理状态',
+    summary: '一次列出这个对话改过和打开着的文件：加减行数、和库里最新比落没落后、别人是不是也开着、是不是二进制。',
+    useWhen:
+      '提交、分 changelist、收尾交接前，或要确认改动有没有和别人冲突时先调一次，代替逐个 p4 opened / fstat / diff、git status / diff',
+    avoidWhen: '要看某个文件改了什么内容直接用 git diff / p4 diff；分 changelist 用 p4_split_changelists',
+    group: G.edit,
+    effects: ['read'],
+  },
   cherry_pick: {
     title: 'cherry-pick 到目标',
     summary: '把改动搬到项目设置的目标分支或 stream，由面板核对后执行。',

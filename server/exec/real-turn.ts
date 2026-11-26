@@ -38,6 +38,7 @@ import { noteRouteOn } from '../capability-router/tag-route.ts'
 import { fileIndexSettingsOf } from '../../shared/file-index/types.ts'
 import { turnExtra } from './turn-extra.ts'
 import { customToolsFor } from '../custom-tools/agent.ts'
+import { vcsStatusFor } from '../vcs/status.ts'
 
 /**
  * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
@@ -168,6 +169,8 @@ export async function runRealTurn(ctx: RealContext) {
       },
       ownAsks,
     ).catch(() => undefined),
+    // 版本管理状态一览（vcs_status，server/vcs/status.ts）：项目里才有，每次现问 Git / P4
+    vcsStatus: ctx.project?.path ? vcsStatusFor(ctx.task, workDirOf(ctx.task, ctx.project)) : undefined,
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     // 项目要求改了代码先跑测试步骤再结束（A3）：end_turn 记成做完前核对；没开只记完成依据、不拦

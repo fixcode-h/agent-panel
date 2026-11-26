@@ -25,6 +25,7 @@ const conv = {
   requestUserAction: ok,
   capabilities: true,
   p4Split: ok,
+  vcsStatus: { call: async () => '' },
   diagnose: ok,
 }
 
@@ -77,6 +78,7 @@ export const AUDIENCE_REPS: Record<Audience, Orchestra> = {
     lessons,
     experience,
     submitVerdict: ok,
+    vcsStatus: { call: async () => '' },
     // 工作流子对话跑的节点：和子对话一样能回报父对话、认领文件
     child: true,
     canSubmit: true,
