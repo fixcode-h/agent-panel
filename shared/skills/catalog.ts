@@ -89,7 +89,7 @@ export const BUILTIN_SKILLS: SkillEntry[] = [
   core({
     name: 'project-vcs',
     guide: '任务开始时识别 Git / P4 / SVN / 无版本控制，保护已有改动；改完文件后做收尾、合并与工作区清理',
-    when: [w('command', 'vcs'), w('phase', 'finishing-edited')],
+    when: [w('command', 'vcs-write'), w('phase', 'finishing-edited')],
   }),
   core({
     name: 'project-documentation',

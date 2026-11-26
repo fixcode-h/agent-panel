@@ -26,7 +26,7 @@ export const whenPlaceholder = (k: SkillWhenKind): string =>
   ({
     edit: '**/*.lua',
     read: '**/*.md',
-    command: t('vcs、test、build、search 或程序名'),
+    command: t('vcs、vcs-write、test、build、search 或程序名'),
     tool: 'blender_*',
     failed: 'test',
     phase: '',

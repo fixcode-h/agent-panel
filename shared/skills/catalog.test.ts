@@ -3,7 +3,7 @@
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
 import { ModelSupportData, resolveSupport } from '../models/support.ts'
@@ -61,6 +61,11 @@ test('技能条件：命令按类别认（程序名带路径、.exe、环境变�
   assert.ok(commandMatches('test', 'npx vitest run'))
   assert.equal(commandMatches('test', 'npm install'), false)
   assert.equal(commandMatches('vcs', 'echo git'), false)
+  // project-vcs 只在改版本库的命令上推：开工看状态不推
+  assert.equal(commandMatches('vcs-write', 'git status --short && git rev-parse HEAD && ls'), false)
+  assert.equal(commandMatches('vcs-write', 'git log --oneline -3 && git diff'), false)
+  assert.ok(commandMatches('vcs-write', 'git add -A && git commit -m x'))
+  assert.ok(commandMatches('vcs-write', 'p4 edit a.lua'))
   assert.ok(commandMatches('cargo|make', 'make -j8'))
 
   const failed = { kind: 'failed' as const, value: 'test' }
@@ -174,8 +179,19 @@ test('推送文字：开头一句说明是面板按情境给的正文、照它�
   assert.match(skillPathText(p), /先读 `\/d\/lua-code-style\/SKILL\.md`/)
 })
 
-test('瘦身过的技能入口不超过 8000 字，细节在子文件里', () => {
-  for (const rel of ['coding/systematic-debugging', 'docs/project-documentation']) {
+test('技能入口都不超过 8000 字（整份推给模型），瘦身过的细节在子文件里', () => {
+  // 面板按情境把入口整份推进上下文：任何一个自带技能入口超了都拦下来，细节挪进子文件
+  for (const dir of readdirSync(path.join(root, 'skills'), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)) {
+    for (const name of readdirSync(path.join(root, 'skills', dir))) {
+      const file = path.join(root, 'skills', dir, name, 'SKILL.md')
+      if (!existsSync(file)) continue
+      const n = readFileSync(file, 'utf8').length
+      assert.ok(n < 8000, `skills/${dir}/${name} 入口 ${n} 字`)
+    }
+  }
+  for (const rel of ['coding/systematic-debugging', 'docs/project-documentation', 'ue/cpp-code-style']) {
     const md = readFileSync(path.join(root, 'skills', rel, 'SKILL.md'), 'utf8')
     assert.ok(md.length < 8000, `${rel} 入口 ${md.length} 字`)
     const subs = readdirSync(path.join(root, 'skills', rel), { recursive: true }).map(String)
