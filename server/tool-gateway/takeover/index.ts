@@ -22,7 +22,9 @@ import {
   planTakeover,
   rewriteCommand,
   serveText,
+  type TakeoverPlan,
 } from '../../../shared/tool-gateway/takeover.ts'
+import { rewriteAt } from '../../../shared/tool-gateway/takeover-segments.ts'
 import type { CallRecord, ToolCall } from '../../../shared/tool-gateway/types.ts'
 import { log } from '../../log.ts'
 import { runOriginal } from './original.ts'
@@ -73,15 +75,9 @@ const withTimeout = <T>(p: Promise<T>, ms: number) =>
 
 type FindOut = Awaited<ReturnType<FindCodeRun>>
 
-/**
- * 「或」拆成的几个原文分开查、一起等，命中合起来，路合成一条（走过的步骤都列上、给出结果的路去重）。
- * 任一个出错或没带路由就整条按出错算：只补一半会让面板那段看着像全部
- */
-async function findAll(run: FindCodeRun, reqs: FindRequest[], signal: AbortSignal): Promise<FindOut | undefined> {
-  const outs = await withTimeout(Promise.all(reqs.map((q) => run(q, signal))), ROUTE_MS)
-  if (!outs) return undefined
-  const bad = outs.find((o) => o.error || !o.route)
-  if (bad || outs.length === 1) return bad ?? outs[0]
+/** 几次查找的结果合成一条：命中按文件和行去重，走过的步骤都列上，给出结果的路去重，耗时取最长（是并发跑的） */
+function mergeOuts(outs: FindOut[]): FindOut {
+  if (outs.length === 1) return outs[0]
   const hits: FindHit[] = []
   const seen = new Set<string>()
   for (const h of outs.flatMap((o) => o.hits ?? [])) {
@@ -100,34 +96,79 @@ async function findAll(run: FindCodeRun, reqs: FindRequest[], signal: AbortSigna
   }
 }
 
+/**
+ * 「或」拆成的几个原文分开查、一起等，命中合起来。
+ * 任一个出错或没带路由就整条按出错算：只补一半会让面板那段看着像全部
+ */
+async function findAll(run: FindCodeRun, reqs: FindRequest[], signal: AbortSignal): Promise<FindOut | undefined> {
+  const outs = await withTimeout(Promise.all(reqs.map((q) => run(q, signal))), ROUTE_MS)
+  if (!outs) return undefined
+  return outs.find((o) => o.error || !o.route) ?? mergeOuts(outs)
+}
+
+/** 一个搜索段查一次：查到了给命中和面板能补的，没查成给放行的原因 */
+type Looked = { out: FindOut; decls: FindHit[]; extras: FindHit[] } | { why: string }
+
+async function lookup(d: TakeoverDeps, run: FindCodeRun, s: SearchSpec): Promise<Looked> {
+  const paths = relPaths(s.paths, d.cwd)
+  if (!paths) return { why: '搜的目录不在对话的工作目录里，照原命令跑' }
+  const ctl = new AbortController()
+  const r = await findAll(run, findRequestsOfSearch(s, paths), ctl.signal)
+  if (!r) ctl.abort()
+  if (!r || r.error || !r.route) return { why: r?.text ?? `查找 ${ROUTE_MS / 1000} 秒没回来，照原命令跑` }
+  return { out: r, ...panelExtras(r.hits ?? [], s, paths) }
+}
+
+const servedOf = (route: ToolRoute) => route.served.map((x) => x.label).join(' + ')
+
+/**
+ * 改写：每个搜索段各查各的（一起查，查找批量并发），有可补的段在它前面原地插一句打印；
+ * 一段都没有可补的就放行。单段命令插在开头（rewriteCommand，和以前一样）
+ */
+async function rewrite(
+  d: TakeoverDeps,
+  run: FindCodeRun,
+  plan: Extract<TakeoverPlan, { how: 'rewrite' }>,
+  call: ToolCall,
+  inner: HookAnswer,
+): Promise<TakeoverOut> {
+  const original = String(call.input.command ?? '')
+  const looked = await Promise.all(plan.units.map((u) => lookup(d, run, u.search)))
+  const ok = looked.flatMap((l, i) => ('out' in l ? [{ ...l, at: plan.units[i].at }] : []))
+  if (!ok.length) return { decision: 'pass', why: (looked[0] as { why: string }).why }
+  const route: ToolRoute = { ...mergeOuts(ok.map((x) => x.out)).route!, from: original }
+  const sections = ok
+    .map((x) => ({
+      at: x.at,
+      text: panelSection({ decls: x.decls, extras: x.extras, served: servedOf(x.out.route!) }),
+    }))
+    .filter((x) => x.text)
+  if (!sections.length) return { decision: 'pass', why: PASS_WHY.nothing, route }
+  const write = d.writeScript ?? writePrintScript
+  const inserts = await Promise.all(sections.map(async (x) => ({ at: x.at, script: await write(x.text) })))
+  const command =
+    plan.units.length === 1 && inserts[0].at === 0
+      ? rewriteCommand(original, inserts[0].script)
+      : rewriteAt(original, inserts)
+  const input = { ...call.input, command }
+  d.noteRoute?.(route, original)
+  return { decision: 'rewrite', answer: { ...inner, rewrite: input }, input, route }
+}
+
 export async function takeover(d: TakeoverDeps, call: ToolCall, inner: HookAnswer): Promise<TakeoverOut | undefined> {
   const plan = planTakeover(call, { takeover: d.takeover, rewriteTpl: d.rewriteTpl })
   if (!plan) return undefined
   if (plan.how === 'pass') return { decision: 'pass', why: plan.why }
   if (!d.findCode) return { decision: 'pass', why: PASS_WHY.noFind }
+  if (plan.how === 'rewrite') return rewrite(d, d.findCode, plan, call, inner)
+
   const s = plan.search
-  const paths = relPaths(s.paths, d.cwd)
-  if (!paths) return { decision: 'pass', why: '搜的目录不在对话的工作目录里，照原命令跑' }
-
-  const ctl = new AbortController()
-  const r = await findAll(d.findCode, findRequestsOfSearch(s, paths), ctl.signal)
-  if (!r) ctl.abort()
-  if (!r || r.error || !r.route)
-    return { decision: 'pass', why: r?.text ?? `查找 ${ROUTE_MS / 1000} 秒没回来，照原命令跑` }
+  const l = await lookup(d, d.findCode, s)
+  if (!('out' in l)) return { decision: 'pass', why: l.why }
   const original = String(call.input.command ?? '')
-  const from = call.kind === 'shell' ? original : `${call.tool} ${s.pattern}`
-  const route: ToolRoute = { ...r.route, from }
-  const { decls, extras } = panelExtras(r.hits ?? [], s, paths)
-  const served = route.served.map((x) => x.label).join(' + ')
-
-  if (plan.how === 'rewrite') {
-    const section = panelSection({ decls, extras, served })
-    if (!section) return { decision: 'pass', why: PASS_WHY.nothing, route }
-    const script = await (d.writeScript ?? writePrintScript)(section)
-    const input = { ...call.input, command: rewriteCommand(original, script) }
-    d.noteRoute?.(route, original)
-    return { decision: 'rewrite', answer: { ...inner, rewrite: input }, input, route }
-  }
+  const route: ToolRoute = { ...l.out.route!, from: call.kind === 'shell' ? original : `${call.tool} ${s.pattern}` }
+  const { decls, extras } = l
+  const served = servedOf(route)
 
   const output = await (d.runOriginal ?? runOriginal)(s.run!, d.cwd, ORIGINAL_MS)
   if (output === undefined) return { decision: 'pass', why: PASS_WHY.original, route }

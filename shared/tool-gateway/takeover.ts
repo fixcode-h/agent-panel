@@ -10,58 +10,27 @@
  * 补的那段是给 Agent 看的，不翻译
  */
 import type { FindHit, FindRequest } from '../capability-router/find/types.ts'
-import { categoryOf } from './commands.ts'
-import { splitTop } from './shell-split.ts'
+import { searchUnits, type SearchUnit } from './takeover-segments.ts'
 import { inferLang } from '../capability-router/find/request.ts'
 import { hitLine } from '../capability-router/find/hits.ts'
 import { parseGrepTool, parseSearchCommand, type SearchSpec } from './search-args.ts'
 import type { CliTakeover } from './takeover-spec.ts'
 import type { ToolCall } from './types.ts'
 
+/**
+ * 改写时 units 是每个要补面板那段的搜索段（单段命令就一个、插在开头）；search 是第一个，代答、记录用。
+ * 多段命令逐段改写见 takeover-segments.ts
+ */
 export type TakeoverPlan =
-  { how: 'rewrite' | 'serve'; search: SearchSpec; by: string } | { how: 'pass'; why: string; by: string }
-
-/**
- * 多段命令里跟在搜索后面、不改变「搜了什么」的段：截前后几行、排序去重、打印分隔和退出码（模型常写 `grep … ; echo "exit:$?"`、`rg … | head -50`）。
- * 改写是「先打印面板那段，再原样跑原命令」，原命令一字不动，所以这些段不影响并集；数行数（wc）、再过滤（grep -v）会让面板那段和原输出对不上，不算
- */
-const TAIL_SEGMENTS = ['head', 'tail', 'sort', 'uniq', 'echo', 'printf', 'true']
-const firstWord = (seg: string) =>
-  seg
-    .trim()
-    .split(/\s+/)[0]
-    ?.replace(/^.*[\\/]/, '')
-    .toLowerCase() ?? ''
-
-/** 换目录的段：之后的相对路径就不是按工作目录算了，面板查的范围对不上 */
-const MOVE_DIR = /^(?:cd|pushd|popd|set-location|sl)$/
-
-/**
- * 多段命令能不能改写，能就返回那个搜索段的参数。模型常把看文件、打印分隔和搜索串成一条
- * （`cat a.lua && echo === && grep -rn Foo scripts | head`），这些都接；条件是：
- * - 整条里只有一个搜索段（别的段不是搜索）：面板那段说的就是它，不会张冠李戴；
- * - 搜索段不是被管道喂进来的（那样搜的是上一段的输出，不是文件），前面没有 `||`（可能根本不跑），整条没有换目录；
- * - 搜索段的输出再管道下去只接 TAIL_SEGMENTS（截行、排序、打印），不接再过滤和数行数。
- * 原命令照样整条跑、一字不动，面板只在前面补自己那段，所以别的段是什么都不影响结果
- */
-function searchOfMulti(command: string): SearchSpec | undefined {
-  const parts = splitTop(command)
-  if (!parts || parts.length < 2) return undefined
-  if (parts.some((p) => MOVE_DIR.test(firstWord(p.text)))) return undefined
-  const found = parts.flatMap((p, i) => (categoryOf(p.text) === 'search' ? [i] : []))
-  if (found.length !== 1) return undefined
-  const i = found[0]
-  if (parts[i].op === '|' || parts[i].op === '||') return undefined
-  for (let j = i + 1; j < parts.length && parts[j].op === '|'; j++)
-    if (!TAIL_SEGMENTS.includes(firstWord(parts[j].text))) return undefined
-  return parseSearchCommand(parts[i].text)
-}
+  | { how: 'rewrite'; search: SearchSpec; units: SearchUnit[]; by: string }
+  | { how: 'serve'; search: SearchSpec; by: string }
+  | { how: 'pass'; why: string; by: string }
 
 /** 按名字找文件的程序：认出来但不接管（文件索引不收排除目录，只会比原命令少） */
 const NAME_FINDERS = ['find', 'fd', 'dir', 'where', 'get-childitem', 'gci']
 
 export const PASS_WHY = {
-  multi: '多段命令（管道、&&、;）只接「只有一个搜索段、它的输出不再过滤、不换目录」的，其余照原命令跑',
+  multi: '多段命令（管道、&&、;）只接输出不再过滤的搜索段，有换目录、循环、子 shell 的整条不接，照原命令跑',
   files: '按名字找文件不改道：文件索引不收排除目录，结果不会比原命令多',
   args: '参数拿不准（不认识的参数、正则、变量、要 shell 展开的通配或读标准输入），照原命令跑',
   cli: '这个 CLI 不能改写命令，面板也没法照原样跑这一条，照原命令跑',
@@ -83,20 +52,20 @@ export function planTakeover(
     const by = call.command.program
     if (NAME_FINDERS.includes(by)) return { how: 'pass', why: PASS_WHY.files, by }
     if (call.command.segments !== 1) {
-      // 多段只在能改写时接：原命令照样整条跑，面板只在前面补一段；代答要面板自己跑原命令，多段跑不准
-      const multi = o.takeover.rewrite && o.rewriteTpl ? searchOfMulti(String(call.input.command ?? '')) : undefined
-      return multi ? { how: 'rewrite', search: multi, by } : { how: 'pass', why: PASS_WHY.multi, by }
+      // 多段只在能改写时接：原命令照样整条跑，面板在每个搜索段前面原地补；代答要面板自己跑原命令，多段跑不准
+      const units = o.takeover.rewrite && o.rewriteTpl ? searchUnits(String(call.input.command ?? '')) : undefined
+      return units ? { how: 'rewrite', search: units[0].search, units, by } : { how: 'pass', why: PASS_WHY.multi, by }
     }
     const search = parseSearchCommand(String(call.input.command ?? ''))
     if (!search) return { how: 'pass', why: PASS_WHY.args, by }
-    if (o.takeover.rewrite && o.rewriteTpl) return { how: 'rewrite', search, by }
+    if (o.takeover.rewrite && o.rewriteTpl) return { how: 'rewrite', search, units: [{ search, at: 0 }], by }
     if (o.takeover.serve && search.run) return { how: 'serve', search, by }
     return { how: 'pass', why: PASS_WHY.cli, by }
   }
-  // 类别按第一段认（`cat a && grep Foo .` 是 read）：多段里夹着一个搜索的也接，只在能改写时
+  // 类别按第一段认（`cat a && grep Foo .` 是 read）：多段里夹着搜索的也接，只在能改写时
   if (call.kind === 'shell' && (call.command?.segments ?? 0) > 1 && o.takeover.rewrite && o.rewriteTpl) {
-    const multi = searchOfMulti(String(call.input.command ?? ''))
-    if (multi) return { how: 'rewrite', search: multi, by: multi.program }
+    const units = searchUnits(String(call.input.command ?? ''))
+    if (units) return { how: 'rewrite', search: units[0].search, units, by: units[0].search.program }
   }
   if (call.kind === 'read' && call.search) {
     const by = call.tool

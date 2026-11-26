@@ -49,9 +49,13 @@ return ShopPanel
 `
 
 /** 自建工具「Lua 检查」：一个只用 node 的小脚本（云端没有 luac），每次运行记一行到 .git/lua-check.log（放 .git 里不算改动：放在工作区时 Agent 会把它当成越界改动删掉），check 照它判断有没有被用上 */
+// 记录写在主仓库的 .git 里：子对话在独立分支（git worktree）里跑时 .git 是个文件，写不进去，工具会报错、Agent 去修工具（2026-11-26 实测）
 export const LUA_CHECK = `import { appendFileSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import path from 'node:path'
 const files = process.argv.slice(2)
-appendFileSync('.git/lua-check.log', files.join(' ') + '\\n')
+const gitDir = execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim()
+appendFileSync(path.join(gitDir, 'lua-check.log'), files.join(' ') + '\\n')
 let bad = 0
 for (const f of files) {
   const text = readFileSync(f, 'utf8')

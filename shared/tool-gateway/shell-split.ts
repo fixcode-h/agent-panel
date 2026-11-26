@@ -9,6 +9,9 @@ export interface ShellPart {
   text: string
   /** 这一段前面的连接符；第一段为空 */
   op: '' | '&&' | '||' | ';' | '|' | '&' | '\n'
+  /** 这一段（去掉首尾空白后）在原命令里的起止位置：逐段原地改写时按它换 */
+  start: number
+  end: number
 }
 
 export function splitTop(command: string): ShellPart[] | undefined {
@@ -17,10 +20,14 @@ export function splitTop(command: string): ShellPart[] | undefined {
   let cur = ''
   let op: ShellPart['op'] = ''
   let quote = ''
-  const push = (next: ShellPart['op']) => {
-    parts.push({ text: cur.trim(), op })
+  let from = 0
+  const push = (next: ShellPart['op'], at: number, width: number) => {
+    const lead = cur.length - cur.trimStart().length
+    const text = cur.trim()
+    parts.push({ text, op, start: from + lead, end: from + lead + text.length })
     cur = ''
     op = next
+    from = at + width
   }
   for (let i = 0; i < command.length; i++) {
     const c = command[i]
@@ -36,7 +43,7 @@ export function splitTop(command: string): ShellPart[] | undefined {
       cur += c + (command[++i] ?? '')
       continue
     } else if ((c === '&' || c === '|') && command[i + 1] === c) {
-      push(c === '&' ? '&&' : '||')
+      push(c === '&' ? '&&' : '||', i, 2)
       i++
       continue
     } else if (c === '>' && command[i + 1] === '&') {
@@ -45,12 +52,12 @@ export function splitTop(command: string): ShellPart[] | undefined {
       i++
       continue
     } else if (c === ';' || c === '|' || c === '&' || c === '\n') {
-      push(c)
+      push(c, i, 1)
       continue
     }
     cur += c
   }
   if (quote) return undefined
-  push('')
+  push('', command.length, 0)
   return parts.filter((p) => p.text)
 }
