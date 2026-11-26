@@ -354,11 +354,16 @@ ${CHILD_RULES}`,
             tier: 'high',
             params: { records: false },
             retries: 1,
+            // 加载冒烟要起 PIE、热重载 Lua（复盘 2026-11-26 P1-12：没授权时卡在等授权卡），和「执行立即验证」一样自带
+            grants: [
+              { rule: 'plugin:ue:self-test', label: '自己跑游戏内测试（PIE、GameTest、GM）' },
+              { rule: 'plugin:ue:lua-exec', label: '在 UE 里执行 Lua 代码' },
+            ],
             instructions:
               '按 openspec 技能的 stage-3.md 做（只读这一份和 SKILL.md）。先按 specs 和 tasks 看清这次波及的模块、入口和契约；再按 tasks.md 依次实现：每条先查相关历史 Bug，改完跑这条的验证和项目的快速检查，通过才勾选并把证据写进 acceptance；验证只能延期的登记延期项，勾成「- [x] …（延期 Dn）」。\n' +
               '- tasks 有 3 组以上、组间不改同一批文件时，每组用 spawn_agents 派一个子任务，你只核对结果、统一勾选和写证据，不要一个会话从头做到尾。\n' +
               '- 新代码在运行时依赖这次还没生成的东西（要导表的枚举和表、生成的代码、蓝图），或改了全局共用的入口：能生成就生成，生成不了就判空兜底，两样都做不到就按阻断交回，不要登记成延期验证（stage-3.md「运行期依赖」）。\n' +
-              '- 在项目目录里直接改、改动不用编译就生效、运行中的 UE 编辑器连得上时，tasks 做完做一次加载冒烟（stage-3.md 最后一节）。\n' +
+              '- 在项目目录里直接改、改动不用编译就生效、运行中的 UE 编辑器连得上时，tasks 做完做一次加载冒烟（stage-3.md 最后一节）：先 ue_editor action=pie_start 带 map，PIE 起来后再 ue_lua action=reload；离线测试的桩不能代替它。\n' +
               '发现设计假设不成立时停下，写明哪条假设、证据和受影响的 tasks。',
           },
           {
