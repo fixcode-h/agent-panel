@@ -110,6 +110,8 @@ export type ModelSupportData = z.infer<typeof ModelSupportData>
 /** 这一轮实际套用的扶持 */
 export interface ResolvedSupport {
   tier: ModelTier
+  /** 怎么算出 tier 的：模型本身的档、角色选的档（没选档时没有），会话栏写出来 */
+  from?: { model: ModelTier; slot?: ModelTier }
   /** 模型目录里认不出这个模型时按中档，界面上写「没认出」 */
   matched: boolean
   enabled: boolean
@@ -135,6 +137,16 @@ export function validSupportValue(key: SupportKey, v: unknown): v is SupportValu
 export function supportValue(data: ModelSupportData | undefined, tier: ModelTier, key: SupportKey): SupportValue {
   const v = data?.values[tier]?.[key]
   return validSupportValue(key, v) ? v : item(key).defaults[tier]
+}
+
+/**
+ * 这一轮按哪一档扶持：角色或节点选了高 / 中 / 低档就以选的档为准，只有没选档（直接写了模型名）时才看模型目录里这个模型的档。
+ * 同一个模型可能三档都用（例如三档都配 deepseek-flash，只是思考强度不同），只看模型就分不出用户要的是哪一档，
+ * 用户 2026-11-26 定：以所选档位为准。模型目录认不出、也没选档的按中档
+ */
+export function supportTierFor(model: ModelTier, matched: boolean, slot?: ModelTier): ModelTier {
+  if (slot) return slot
+  return matched ? model : 'medium'
 }
 
 /** 按这一轮的模型档位算出要套用的扶持；关掉总开关时每项都是面板原来的值 */
@@ -225,5 +237,9 @@ export function supportView(data: ModelSupportData | undefined) {
 /** 记进会话用量的那一份：加强了哪几项、各是多少（会话栏照着列出来）；没加强时为 undefined */
 export function supportRecord(s: ResolvedSupport) {
   if (!s.boosted.length) return undefined
-  return { tier: s.tier, boosted: s.boosted.map((key) => ({ key, value: s[key] as SupportValue })) }
+  return {
+    tier: s.tier,
+    ...(s.from && { from: s.from }),
+    boosted: s.boosted.map((key) => ({ key, value: s[key] as SupportValue })),
+  }
 }

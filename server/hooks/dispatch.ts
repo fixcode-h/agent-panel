@@ -57,6 +57,8 @@ import { CODE_FILE } from '../../shared/docs-first.ts'
 import { isP4 } from '../tasks/helpers.ts'
 import { p4Runner } from '../p4-split.ts'
 import { p4AutoOpen } from './p4-open.ts'
+import { customToolSigs } from '../../shared/custom-tools/match.ts'
+import { listTools } from '../custom-tools/store.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -295,6 +297,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
         plans: !!c.call.orch.plans,
         // 项目接的 IDE 服务：只读配置和缓存（这一轮拼提示词时已经问过）
         ideMcp: c.project.id ? await ideMcpServersFor(c.project, c.cwd).catch(() => []) : [],
+        // 自建工具认得出的程序名：Agent 自己拼命令跑同一个程序时提醒改用 custom_tool
+        customTools: customToolSigs((await listTools(c.project.id || undefined).catch(() => undefined))?.entries ?? []),
         limit: pushLimit,
         note: (event, detail) => noteBuiltin('situational-rules', event, 'context', detail),
       })

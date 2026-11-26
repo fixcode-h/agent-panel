@@ -7,7 +7,7 @@ import { aliasAgent } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { withTaskModel } from '../../shared/tasks/run.ts'
-import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agents/role.ts'
+import { composeRole, nodeAgentRun, roleSkillNames } from '../../shared/agents/role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { withSkillDir } from '../../shared/skill-guide.ts'
 import { turnRole } from '../../shared/conv-mode.ts'
@@ -81,10 +81,7 @@ export async function prepareLaunch(
   const { found, agent, cliId, def, cs, cwd, model, effort, limits } = target
   const { step, chat, op, resume, fork, carry, windowFor } = o
   // 角色点名要用的技能；按项目的那些和项目能力里打开的一起放进这一轮的技能目录（server/skills/run-skills.ts）
-  const roleSkills = fillSkills(
-    [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
-    task.skillSlots,
-  )
+  const roleSkills = fillSkills(roleSkillNames(agent, ctx.agents), task.skillSlots)
   // 角色要用的全局自带技能先补到 ~/.agents/skills：不读那里的 CLI（Claude Code）由下面每轮一起带上
   await ensureBundled(roleSkills)
   const skills = await launchSkills(ctx, def, roleSkills, step, call.agentId)

@@ -411,6 +411,22 @@ export function mountedAgents(agent: Pick<Agent, 'id' | 'mounts'>, agents: Agent
   })
 }
 
+/**
+ * 这一轮可能用到的技能名（没换技能槽）：自己的、引入的 Agent 的，以及能就地用的挂载能力的。
+ * 就地用的能力经 use_capability 拿到的做法里会点名它的技能，启动前就要装好、放进这一轮的技能目录，
+ * 不然模型照着点名去读时文件不在（以前只算自己的和引入的）。只能派出的能力由它自己那一轮再算
+ */
+export function roleSkillNames(agent: Agent, agents: Agent[]): string[] {
+  const inline = mountedAgents(agent, agents).filter((m) => m.mode !== 'subtask' && m.mode !== 'parent')
+  return [
+    ...new Set([
+      ...agent.skills,
+      ...includedAgents(agent, agents).flatMap((x) => x.agent.skills),
+      ...inline.flatMap((m) => m.agent.skills),
+    ]),
+  ]
+}
+
 /** 用法写成给模型看的一句话 */
 function mountUsage(m: MountedCap) {
   const name = m.agent.name

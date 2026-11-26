@@ -1441,3 +1441,15 @@ test('create_conversation 的 edits：说明要改代码时交给面板，开工
   ).properties
   assert.ok(props.edits, '模型看得到这个参数')
 })
+
+test('自建工具：父对话、子对话、工作流节点、子任务、Chat 的用法说明里都列出项目的自建工具', () => {
+  // 以前 custom_tool 只定义了这一句、orchHint 从没拼进来，Agent 不知道有哪些自建工具（2026-11-26 用户报 Lua 检查工具没被用上）
+  const customTools = {
+    hint: '项目的自建工具（…）：Lua 检查 lua-check：改完 Lua 后；',
+    call: async () => ({ text: '' }),
+  }
+  for (const [who, o] of IDENTITIES) {
+    const hint = orchHint({ self: 'a', ...o, common: [], customTools } as unknown as Orchestra)
+    assert.match(hint, /lua-check/, who)
+  }
+})
