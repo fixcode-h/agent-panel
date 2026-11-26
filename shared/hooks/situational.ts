@@ -5,6 +5,7 @@ import { ideMcpLines, type IdeMcpServer } from '../mcp-catalog/code-index.ts'
 import { activePlan } from '../plan/index.ts'
 import { globToRegExp } from '../lessons.ts'
 import { customToolFor, type CustomToolSig } from '../custom-tools/match.ts'
+import { searchedProgram, type ProgramPathView } from '../custom-tools/programs.ts'
 import type { ToolKind } from './defs.ts'
 import type { HookFacts } from './index.ts'
 
@@ -29,12 +30,14 @@ export interface SituationCtx {
   ideMcp?: IdeMcpServer[]
   /** 这个对话能用的自建工具认得出的程序名（shared/custom-tools/match.ts）；没有为空 */
   customTools?: CustomToolSig[]
+  /** 这个项目登记过的程序位置（shared/custom-tools/programs.ts）；没有为空 */
+  programs?: ProgramPathView[]
   /** 这个对话改过文件（技能条件 phase: finishing-edited 用） */
   edited?: boolean
 }
 
 /** 这一轮开跑时就定了的事：决定装不装钩子 */
-type ActiveCtx = Pick<SituationCtx, 'support' | 'plans' | 'ideMcp' | 'customTools'>
+type ActiveCtx = Pick<SituationCtx, 'support' | 'plans' | 'ideMcp' | 'customTools' | 'programs'>
 
 export interface SituationalRule {
   id: string
@@ -117,6 +120,20 @@ export const SITUATIONAL_RULES: SituationalRule[] = [
     text: (c) => {
       const hit = customToolFor(String(c.facts.tool?.input.command ?? ''), c.customTools ?? [])!
       return `【面板】这件事用户做成了自建工具「${hit.name}」（id ${hit.id}）：以后改用 custom_tool action=run id=${hit.id} 调它（参数不清楚先 action=show），不要自己拼命令；面板会替它校验参数、过授权、只回报错和输出尾部。`
+    },
+    times: 2,
+  },
+  {
+    // 登记过位置的程序又被全盘找（复盘 2026-11-26 P2-4：luac 有登记，收尾和测试节点照样 Get-ChildItem 全项目找，各超时 2 分钟）：
+    // 对话开头那一行可能没被注意到，到它要找的那一刻把路径直接给它。命令照常执行，只提醒不拦
+    id: 'program-located',
+    name: () => t('程序位置已登记'),
+    when: { event: 'tool.before', kinds: ['shell'] },
+    active: (c) => !!c.programs?.some((p) => !p.missing),
+    need: (c) => !!searchedProgram(String(c.facts.tool?.input.command ?? ''), c.programs ?? []),
+    text: (c) => {
+      const hit = searchedProgram(String(c.facts.tool?.input.command ?? ''), c.programs ?? [])!
+      return `【面板】${hit.name} 的位置已经登记过：${hit.path}。直接用这个路径，不用再找；这个位置不对了就找到新位置后用 custom_tool action=locate program=${hit.name} path=<完整路径> 改掉。`
     },
     times: 2,
   },

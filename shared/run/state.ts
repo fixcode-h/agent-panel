@@ -59,6 +59,7 @@ export function ensureTaskRun(host: EngineHost, workflow: Workflow, run: number,
     endedAt: '',
     state: {},
     messages: [],
+    needs: [],
   }
   host.task.runs.push(rec)
   return rec

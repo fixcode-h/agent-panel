@@ -184,6 +184,7 @@ import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } fr
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoTools } from './demo-tools'
 import { demoCustomTools } from './demo-custom-tools'
+import { demoProgramPaths } from './demo-program-paths'
 import { demoAgentTools } from './demo-agent-tools'
 import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
 import { demoMemo } from './demo-memo'
@@ -211,6 +212,7 @@ import {
   demoSuggest,
 } from './demo-processes'
 import { demoAlerts, demoPlans, seedDemoUsage } from './demo-task-samples'
+import { demoNeeds } from './demo-needs'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -2039,6 +2041,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
   if (res === 'custom-tools') return demoCustomTools(method, seg, body)
+  if (res === 'program-paths') return demoProgramPaths(method, seg, body)
   if (res === 'agent-tools') return demoAgentTools(method, seg, body, d.agents)
   if (res === 'tools') return demoTools(method, seg, body, d.settings?.githubSources ?? [])
   if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
@@ -4056,6 +4059,7 @@ async function seedTasks(d: Db) {
     )
     // 工作流运行跑完就结束了（补充要求从父对话交），不再追加一轮
     await done
+    demoNeeds(task)
     back(task, 25)
   }
   // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的

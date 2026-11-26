@@ -4,8 +4,12 @@
  */
 
 export interface CustomToolCall {
-  action: 'list' | 'show' | 'run' | 'test' | 'save'
+  action: 'list' | 'show' | 'run' | 'test' | 'save' | 'locate'
   id?: string
+  /** locate：程序名（luac）、本机完整路径；forget 为 true 时删掉这条登记 */
+  program?: string
+  path?: string
+  forget?: boolean
   query?: string
   args?: Record<string, unknown>
   draft?: Record<string, unknown>
@@ -26,7 +30,7 @@ export interface CustomToolCallCtx {
 }
 
 export interface CustomToolsApi {
-  /** 提示词里那一行清单（这一轮开始时算好）；没有工具时是空串 */
+  /** 提示词里那一行清单和已登记的程序位置（这一轮开始时算好）；都没有时是空串 */
   hint: string
   call: (req: CustomToolCall, ctx: CustomToolCallCtx) => Promise<{ text: string; error?: boolean }>
 }

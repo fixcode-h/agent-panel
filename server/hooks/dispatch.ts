@@ -59,6 +59,7 @@ import { isP4 } from '../tasks/helpers.ts'
 import { p4Runner } from '../p4-split.ts'
 import { p4AutoOpen } from './p4-open.ts'
 import { customToolSigs } from '../../shared/custom-tools/match.ts'
+import { listPrograms } from '../custom-tools/programs.ts'
 import { listTools } from '../custom-tools/store.ts'
 import { gatewayForCall } from '../tool-gateway/for-call.ts'
 
@@ -306,6 +307,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
           customTools: customToolSigs(
             (await listTools(c.project.id || undefined).catch(() => undefined))?.entries ?? [],
           ),
+          // 登记过位置的程序：Agent 又全盘找它时直接给路径（shared/custom-tools/programs.ts）
+          programs: await listPrograms(c.project.id || '').catch(() => []),
           limit: pushLimit,
           rules: on('situational-rules'),
           skills: on('skill-push') ? await skillHookCtx(data, c.task, c.agent.id, c.project, c.changed) : undefined,

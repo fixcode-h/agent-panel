@@ -1,7 +1,8 @@
 /** 操作前后的改动对比：P4 diff -ds 解析、相减、大量删除告警。运行：npm run test:unit */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { bigDeletes, changeDelta, changeSummary, parseP4DiffSummary } from './change-stat.ts'
+import { changeDelta, parseP4DiffSummary } from './change-stat.ts'
+import { bigDeletes, changeSummary } from '../../shared/vcs/change-summary.ts'
 
 const P4_OUT = [
   '==== //depot/G/Script/DBConfigIntermediate.lua#12 - D:\\P\\Script\\DBConfigIntermediate.lua ====',

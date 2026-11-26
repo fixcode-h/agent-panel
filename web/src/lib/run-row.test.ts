@@ -53,6 +53,7 @@ function run(status: TaskRun['status'], overrides: Partial<TaskRun> = {}): TaskR
     endedAt: status === 'running' ? '' : at,
     state: {},
     messages: [],
+    needs: [],
     ...overrides,
   }
 }

@@ -4,6 +4,7 @@ import type { ToolKind } from '../../shared/hooks/defs.ts'
 import type { ResolvedSupport } from '../../shared/models/support.ts'
 import type { IdeMcpServer } from '../../shared/mcp-catalog/code-index.ts'
 import type { CustomToolSig } from '../../shared/custom-tools/match.ts'
+import type { ProgramPathView } from '../../shared/custom-tools/programs.ts'
 import { activeSituational, pickSituational, type SituationCtx } from '../../shared/hooks/situational.ts'
 import { skillHitCall, skillRules } from '../../shared/skills/rules.ts'
 import { whenReason } from '../../shared/skills/when.ts'
@@ -31,6 +32,8 @@ export interface SituationalCtx {
   ideMcp?: IdeMcpServer[]
   /** 这个对话能用的自建工具（认程序名用） */
   customTools?: CustomToolSig[]
+  /** 这个项目登记过的程序位置（认「又在全盘找它」用） */
+  programs?: ProgramPathView[]
   /** 一次最多推几条（按模型档位的「情境推送条数」）；技能不算条数 */
   limit: number
   /** 情境规则开着（内置钩子 situational-rules） */
@@ -51,7 +54,13 @@ export interface SituationalCtx {
  */
 export function situationalPush(c: SituationalCtx) {
   const base = c.rules
-    ? activeSituational({ support: c.support, plans: c.plans, ideMcp: c.ideMcp, customTools: c.customTools })
+    ? activeSituational({
+        support: c.support,
+        plans: c.plans,
+        ideMcp: c.ideMcp,
+        customTools: c.customTools,
+        programs: c.programs,
+      })
     : []
   const rules = [...base, ...(c.skills ? skillRules(c.skills.catalog) : [])]
   if (!rules.length && !c.skills) return undefined
@@ -72,6 +81,7 @@ export function situationalPush(c: SituationalCtx) {
       plans: c.plans,
       ideMcp: c.ideMcp,
       customTools: c.customTools,
+      programs: c.programs,
       edited: edited.has(c.task.id),
     }
     // 推过的技能不再参与匹配（开跑时推的、用户「/名字」点名的也算推过）

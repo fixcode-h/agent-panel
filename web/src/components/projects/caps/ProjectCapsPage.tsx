@@ -17,6 +17,7 @@ import { itemOn, pluginMcpItems, type CapItem } from './caps-items'
 import { panelMcpItem, useCapsLists, usePluginAttach } from './use-caps-data'
 import { ScopeTrailing } from './CapabilitiesPage'
 import { CustomToolsBlock } from './tools/CustomToolsBlock'
+import { ProgramPathsBlock } from './tools/ProgramPathsBlock'
 import { useCustomTools } from './tools/use-custom-tools'
 
 type View = 'all' | 'skill' | 'mcp' | 'tool'
@@ -139,6 +140,7 @@ function Overview({
         </div>
       </div>
       {view === 'tool' && <CustomToolsBlock ct={ct} q={q} inProject />}
+      {view === 'tool' && <ProgramPathsBlock projectId={project.id} q={q} />}
       {view !== 'tool' && (
         <OwnBlock
           s={s}
@@ -175,6 +177,7 @@ function Overview({
         </section>
       )}
       {view === 'all' && <CustomToolsBlock ct={ct} q={q} inProject />}
+      {view === 'all' && <ProgramPathsBlock projectId={project.id} q={q} />}
     </div>
   )
 }

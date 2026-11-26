@@ -103,6 +103,8 @@ export function capabilityTools(oc: OrchCtx) {
     noteRoute: host.noteRoute,
     // 自建工具（ADR 0082）：清单、执行、授权都在服务端，这里原样转交
     customTools: host.customTools,
+    // 版本管理状态一览（server/vcs/status.ts）：子任务不给，收尾、提交前由对话和节点自己看
+    vcsStatus: helper ? undefined : host.vcsStatus,
     experience: host.experience
       ? {
           find: async (query, files) =>

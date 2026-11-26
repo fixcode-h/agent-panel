@@ -93,3 +93,21 @@ test('情境规则：自己拼命令跑自建工具包好的程序时提醒改�
   assert.equal(situationMatches(r, ctx({ facts: sh('luac -p a.lua') })), false)
   assert.match(r.text(ctx({ facts: sh('luac -p a.lua'), customTools })), /custom_tool action=run id=lua-check/)
 })
+
+test('情境规则：又在全盘找已登记位置的程序时直接给路径', () => {
+  const r = SITUATIONAL_RULES.find((x) => x.id === 'program-located')!
+  const sh = (command: string): HookFacts => ({
+    tool: { kind: 'shell', name: 'Bash', input: { command }, path: '', paths: [] },
+  })
+  const programs = [
+    { name: 'luac', path: 'D:/Proj/Tools/luac.exe', note: '', at: '', by: '' },
+    { name: 'texconv', path: '/gone/texconv', note: '', at: '', by: '', missing: true },
+  ]
+  assert.ok(situationMatches(r, ctx({ facts: sh('Get-ChildItem -Recurse -Filter luac.exe D:/Proj'), programs })))
+  assert.ok(situationMatches(r, ctx({ facts: sh('cd D:/Proj && find . -name "luac*"'), programs })))
+  // 直接跑它、找别的程序、找的是已经不在了的那条，都不推
+  assert.equal(situationMatches(r, ctx({ facts: sh('luac -p a.lua'), programs })), false)
+  assert.equal(situationMatches(r, ctx({ facts: sh('find . -name luacheck'), programs })), false)
+  assert.equal(situationMatches(r, ctx({ facts: sh('find / -name texconv'), programs })), false)
+  assert.match(r.text(ctx({ facts: sh('where luac'), programs })), /D:\/Proj\/Tools\/luac\.exe/)
+})

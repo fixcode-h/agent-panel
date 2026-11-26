@@ -167,8 +167,9 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
   write_state: {
     title: '写入共享状态',
     summary: '写一个共享键，并行节点都能看到。',
-    useWhen: '同步接口约定、文件分工、进度和结论时',
-    avoidWhen: '不要覆盖别人刚写的，先 read_state',
+    useWhen:
+      '同步接口约定、文件分工、进度和结论时；理解需求的节点把用户原话拆成需求对照（needs），之后每个节点做完逐条标落地、延期或不做',
+    avoidWhen: '不要覆盖别人刚写的，先 read_state；子任务不标需求对照，写进 submit_result',
     group: G.dispatch,
     effects: ['edit'],
   },
@@ -284,6 +285,15 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
     avoidWhen: '不要自己建一个混着几类文件的 changelist',
     group: G.edit,
     effects: ['edit'],
+  },
+  vcs_status: {
+    title: '版本管理状态',
+    summary: '一次列出这个对话改过和打开着的文件：加减行数、和库里最新比落没落后、别人是不是也开着、是不是二进制。',
+    useWhen:
+      '提交、分 changelist、收尾交接前，或要确认改动有没有和别人冲突时先调一次，代替逐个 p4 opened / fstat / diff、git status / diff',
+    avoidWhen: '要看某个文件改了什么内容直接用 git diff / p4 diff；分 changelist 用 p4_split_changelists',
+    group: G.edit,
+    effects: ['read'],
   },
   cherry_pick: {
     title: 'cherry-pick 到目标',

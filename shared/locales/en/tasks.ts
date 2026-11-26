@@ -866,6 +866,7 @@ export const EN_TASKS: Record<string, string> = {
   结束就地改动: 'Finish in-place edit',
   释放文件: 'Release files',
   '按类型分 changelist': 'Split changelists by type',
+  看版本管理状态: 'Check version control status',
   'cherry-pick 改动': 'Cherry-pick changes',
   请用户授权推送: 'Ask to push',
   请用户放行: 'Ask user to override',

@@ -1,6 +1,6 @@
 /**
  * 界面检查分片：自建工具（ADR 0082）。「技能与 MCP → 工具」页签的列表、编辑抽屉（改名保存、用途、试运行）、行尾菜单复制到全局，
- * 「/」菜单里的「自建工具」一组，以及 /createtool 在对话里弹出的保存弹窗（选项目、保存后卡片消失）
+ * 「程序位置」一块（登记、改、删、名字不对的报错），「/」菜单里的「自建工具」一组，以及 /createtool 在对话里弹出的保存弹窗（选项目、保存后卡片消失）
  */
 import { runShard } from './harness.mjs'
 
@@ -15,6 +15,37 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.evaluate((id) => (location.hash = `#/projects/${id}/capabilities`), projectId)
   await p.getByRole('radio', { name: /^工具 \d+$/ }).click()
   await check(p, '工具-列表', ['项目的工具', '全局的工具', '导表', 'Lua 语法检查', '查端口占用', '会改文件', '只读'])
+
+  // 程序位置（复盘 2026-11-26 §5 第 4 项）：Agent 登记的、找不到了的；自己登记、改、删
+  const progs = p.locator('[data-program-paths]')
+  await progs.scrollIntoViewIfNeeded()
+  await check(p, '工具-程序位置', ['程序位置', 'luac', 'TableExporter', '找不到了', '只在本机'])
+  await progs.getByRole('button', { name: '登记程序' }).click()
+  const dlg = p.getByRole('dialog')
+  await dlg.getByLabel('程序名').fill('texture tool')
+  await dlg.getByLabel('完整路径').fill('/opt/tools/texconv2')
+  await dlg.getByRole('button', { name: '保存', exact: true }).click()
+  await check(p, '工具-程序位置-名字不对', ['程序名不对'])
+  await dlg.getByLabel('程序名').fill('texconv2')
+  await dlg.getByRole('button', { name: '保存', exact: true }).dblclick()
+  await p
+    .getByRole('dialog')
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('程序位置：保存后弹窗没关'))
+  if ((await p.getByText('已登记 texconv2').count()) !== 1) errors.push('程序位置：双击保存应该只登记一次')
+  if ((await progs.getByText('texconv2', { exact: true }).count()) !== 1)
+    errors.push('程序位置：登记后列表里应该正好一条 texconv2（双击保存不该登记两次）')
+  await progs.getByRole('button', { name: '修改 luac' }).click()
+  await p.getByRole('dialog').getByLabel('完整路径').fill('/home/demo/tools/luac54')
+  await p.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
+  await check(p, '工具-程序位置-改路径', ['/home/demo/tools/luac54'])
+  await progs.getByRole('button', { name: '删掉 texconv2' }).click()
+  await settle(p)
+  if (await progs.getByText('texconv2', { exact: true }).count()) errors.push('程序位置：删掉后还在列表里')
+  // 顶上的搜索框也筛程序位置
+  await p.getByPlaceholder('搜索能力').fill('Exporter')
+  if (await progs.getByText('luac', { exact: true }).count()) errors.push('程序位置：搜 Exporter 不该还列 luac')
+  await p.getByPlaceholder('搜索能力').fill('')
 
   // 编辑抽屉：改中文名保存，版本 +1，列表跟着变
   await p.getByText('导表', { exact: true }).first().click()

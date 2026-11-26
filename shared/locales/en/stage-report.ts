@@ -50,4 +50,15 @@ export const EN_STAGE_REPORT: Record<string, string> = {
     'For you to decide: the agent wanted to ask "{q}". Questions are off, so it was not shown to you and the workflow keeps going; anything that cannot be undone is left undone and goes into the report for you to decide.',
   '上一步没有选「{label}」的项，这一步不用做。':
     'Nothing was set to "{label}" in the previous step, so this step is skipped.',
+  // 需求原话对照表（web/src/components/tasks/RunNeeds.tsx）
+  需求对照: 'Requirements check',
+  '{by} 拆出，还没有节点标记': 'Split out by {by}, not marked by any node yet',
+  未落地: 'Not done',
+  已落地: 'Done',
+  延期: 'Deferred',
+  不做: 'Dropped',
+  '{n}/{total} 已落地': '{n}/{total} done',
+  '{n} 条未落地': '{n} not done',
+  '{n} 条延期': '{n} deferred',
+  '{n} 条不做': '{n} dropped',
 }

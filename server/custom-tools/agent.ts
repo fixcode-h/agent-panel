@@ -18,6 +18,8 @@ import { systemNote } from '../exec/recovery.ts'
 import { recordGrant } from '../grants/record.ts'
 import { execute, prepare, type Prepared } from './run.ts'
 import { findTool, listTools, noteRun, saveTool } from './store.ts'
+import { programsHint } from '../../shared/custom-tools/programs.ts'
+import { listPrograms, removeProgram, setProgram } from './programs.ts'
 
 /** 自建工具授权的规则键：同一个工具（分范围）算一类 */
 export const toolRule = (scope: ToolScope, id: string) => `ctool:${scope}:${id}`
@@ -41,8 +43,10 @@ export async function customToolsFor(
   own: Set<string>,
 ): Promise<CustomToolsApi> {
   const { entries } = await listTools(where.projectId).catch(() => ({ entries: [] as ToolEntry[] }))
+  // 登记过的程序位置跟着清单进每个对话开头：节点不用再全盘找 luac、导表工具（复盘 2026-11-26 P2-4）
+  const programs = await listPrograms(where.projectId ?? '').catch(() => [])
   return {
-    hint: hintText(entries),
+    hint: hintText(entries) + programsHint(programs),
     call: (req, c) => dispatch(ctx, where, own, req, c),
   }
 }
@@ -71,7 +75,8 @@ async function dispatch(
     return runOne(ctx, where, own, d.tool, 'draft', req.args, c, !!req.dryRun)
   }
   if (req.action === 'save') return save(ctx, where, own, req)
-  return fail(`没有 action=${String(req.action)}：可用 list / show / run / test / save`)
+  if (req.action === 'locate') return locate(ctx, where, req)
+  return fail(`没有 action=${String(req.action)}：可用 list / show / run / test / save / locate`)
 }
 
 function parseDraft(raw: Record<string, unknown> | undefined): { tool: CustomTool } | { error: string } {
@@ -284,4 +289,34 @@ async function save(
   } catch (e) {
     return fail(`保存失败：${(e as Error).message}`)
   }
+}
+
+/**
+ * locate：登记项目要用的程序在本机的位置（shared/custom-tools/programs.ts）。登记不改项目、不跑命令，不弹卡；
+ * 对话里记一行，用户看得到 Agent 记了什么，记错了到「技能与 MCP」页的「工具」里改
+ */
+async function locate(ctx: RequestCtx, where: CustomToolsWhere, req: CustomToolCall) {
+  const name = (req.program ?? '').trim()
+  if (!name) return fail('要写 program（程序名，例如 luac）和 path（这台电脑上的完整路径）')
+  const projectId = where.projectId ?? ''
+  if (req.forget) {
+    const r = await removeProgram(projectId, name)
+    return r.ok ? { text: r.info } : fail(r.info)
+  }
+  if (!req.path) {
+    const hit = (await listPrograms(projectId)).find((p) => p.name.toLowerCase() === name.toLowerCase())
+    if (hit && !hit.missing) return { text: `${hit.name}：${hit.path}` }
+    return fail(
+      hit
+        ? `${name} 登记的 ${hit.path} 已经不在了：找到新位置后用 action=locate program=${name} path=<完整路径> 重新登记`
+        : `还没登记 ${name}：找到后用 action=locate program=${name} path=<完整路径> 登记`,
+    )
+  }
+  const r = await setProgram(projectId, { name, path: req.path, note: req.note, by: ctx.task.title || 'Agent' })
+  if (!r.ok) return fail(r.info)
+  ctx.task.messages.push(
+    systemNote(ctx.newId(), '', '', t('记下了程序位置：{name} → {path}', { name, path: req.path.trim() })),
+  )
+  ctx.changed(true)
+  return { text: `${r.info}。之后这个项目的对话开头都会带上这个位置。` }
 }

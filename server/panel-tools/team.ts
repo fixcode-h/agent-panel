@@ -42,20 +42,44 @@ export const SHARED_STATE: PanelTool[] = [
       name: 'write_state',
       title: '写入共享状态',
       description:
-        '写共享状态的一个键：并发节点都能看到，后写的覆盖先写的。用来同步接口、文件分工、进度和结论，写之前先读一遍别覆盖别人刚写的。',
+        '写共享状态的一个键：并发节点都能看到，后写的覆盖先写的。用来同步接口、文件分工、进度和结论，写之前先读一遍别覆盖别人刚写的。' +
+        '也用 needs 维护需求原话对照：理解需求的节点把用户原话拆成条（只写 text），之后每个节点做完把涉及的条目标上落地、延期或不做。',
       inputSchema: {
         type: 'object',
         properties: {
           key: { type: 'string', description: '键名，例如 interface、progress、api-changed' },
           value: { type: 'string', description: '值，写清楚别人需要知道的内容' },
+          needs: {
+            type: 'array',
+            description: '需求对照（可以和 key 分开单独写）：新拆一条只写 text；标已有的写 id + state + note',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '已有条目的编号 N1、N2…；新拆的不写' },
+                text: { type: 'string', description: '新拆的一条：用户的说法，一句话' },
+                state: {
+                  type: 'string',
+                  enum: ['done', 'deferred', 'dropped'],
+                  description: 'done 落地，deferred 延期，dropped 不做',
+                },
+                note: { type: 'string', description: '落地写在哪（文件、接口、测试）；延期、不做写理由' },
+              },
+            },
+          },
         },
-        required: ['key', 'value'],
       },
     }),
     call: (o, a) => {
       const key = str(a?.key).trim()
-      if (!key) return text('key 不能为空', true)
-      return reply(o.writeState(key, str(a?.value)))
+      const needs = a?.needs
+      if (!key && needs === undefined) return text('key 不能为空（只更新需求对照时写 needs）', true)
+      const out: { ok: boolean; info: string }[] = []
+      if (needs !== undefined) out.push(o.trackNeeds?.(needs) ?? { ok: false, info: '这里没有需求对照' })
+      if (key) out.push(o.writeState(key, str(a?.value)))
+      return text(
+        out.map((r) => r.info).join('\n'),
+        out.some((r) => !r.ok),
+      )
     },
   },
 ]

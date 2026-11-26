@@ -136,4 +136,20 @@ export const EN_CUSTOM_TOOLS: Record<string, string> = {
   范围不对: 'Invalid scope',
   没有这个工具: 'No such tool',
   '实际会跑的命令：\n{line}': 'Command that will run:\n{line}',
+  // 程序位置（shared/custom-tools/programs.ts）
+  程序位置: 'Program locations',
+  '{n} 个 · 只在本机，对话开头都会带上': '{n} · this computer only, given to every conversation at the start',
+  登记程序: 'Register program',
+  '{by} · {at}': '{by} · {at}',
+  找不到了: 'Missing',
+  '修改 {name}': 'Edit {name}',
+  '删掉 {name}': 'Remove {name}',
+  '没有符合筛选的程序。': 'No programs match the filter.',
+  '还没有登记的程序。Agent 找到 luac、导表工具这类不在 PATH 里的程序后会记在这里，之后的对话直接用，不再全盘找。':
+    'No programs registered yet. When an agent finds a program that is not on PATH (luac, a table exporter), it records it here, and later conversations use it directly instead of searching the whole disk.',
+  修改程序位置: 'Edit program location',
+  程序名: 'Program name',
+  '命令里写的名字，例如 luac': 'The name used in commands, for example luac',
+  '用途（可选）': 'Purpose (optional)',
+  '记下了程序位置：{name} → {path}': 'Recorded program location: {name} → {path}',
 }

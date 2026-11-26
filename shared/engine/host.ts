@@ -17,12 +17,14 @@ import type { BuildHost, OrchBuild } from '../host/build.ts'
 import type { ConversationHost, OrchConversation } from '../host/conversation.ts'
 import type { KnowledgeHost, OrchKnowledge } from '../host/knowledge.ts'
 import type { OrchPlan, PlanHost } from '../host/plan.ts'
+import type { OrchNeeds } from '../host/needs.ts'
 import type { OrchVcs, VcsHost } from '../host/vcs.ts'
 import type { SearchHost } from '../host/search.ts'
 import type { FileIndexHost, OrchFileIndex } from '../host/file-index.ts'
 import type { FindCodeHost, OrchFindCode } from '../host/find-code.ts'
 import type { OrchToolRoute, ToolRouteHost } from '../host/tool-route.ts'
 import type { CustomToolsHost, OrchCustomTools } from '../host/custom-tools.ts'
+import type { OrchVcsStatus, VcsStatusHost } from '../host/vcs-status.ts'
 import type { IdeMcpHost } from '../host/ide-mcp.ts'
 import type { OrchSubmit } from '../host/submit.ts'
 import type { OrchOverride, OverrideHost } from '../host/override.ts'
@@ -179,7 +181,9 @@ export interface Orchestra
     OrchFileIndex,
     OrchFindCode,
     OrchToolRoute,
-    OrchCustomTools {
+    OrchCustomTools,
+    OrchVcsStatus,
+    OrchNeeds {
   /** 调用者的节点 id */
   self: string
   /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
@@ -243,7 +247,8 @@ export interface EngineHost
     FileIndexHost,
     FindCodeHost,
     ToolRouteHost,
-    CustomToolsHost {
+    CustomToolsHost,
+    VcsStatusHost {
   task: Task
   agents: Agent[]
   /** 所有工作流（节点可以引用其他工作流） */
