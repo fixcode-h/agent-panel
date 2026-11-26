@@ -1170,6 +1170,9 @@ body,
   --c-foldBar-hint: inline;
   --c-sourceList-autoOpen: 0;
   --c-routeBadge-show: inline-flex;
+  --c-grantBadge-show: inline-flex;
+  --c-grantBadge-text: inline;
+  --c-grantBadge-runOpen: 0;
   --c-liveText-maxH: 160px;
   --c-liveText-bar: 2px;
   --c-liveText-draft: block;

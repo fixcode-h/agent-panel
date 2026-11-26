@@ -1,4 +1,7 @@
+import { useSyncExternalStore } from 'react'
 import { Info } from 'lucide-react'
+import { compValue } from '@shared/component-style'
+import { componentsSnapshot, subscribeComponents } from '@/lib/appearance'
 import type { Alert, Task, TaskMessage } from '@shared/schema'
 import type { AnalysisScope } from '@shared/analysis-home'
 import { makeAlert } from '@shared/alerts'
@@ -9,6 +12,8 @@ import { AnswerMessage } from '@/components/chat/ChatMessage'
 import { AlertRow } from './AlertRow'
 import { BugReportLine } from './DiagnosisDialog'
 import { LearnedCard } from './LearnedCard'
+import { grantNotes } from '@shared/grants/notes'
+import { DecisionLine, GrantRunRow } from '@/components/ui/grant-badge'
 
 /**
  * 对话里的系统消息：报错、警告的卡片和居中的一行说明。
@@ -56,13 +61,27 @@ export function SystemNote({
     return indent ? <div className="reply-indent min-w-0">{row}</div> : row
   }
   return (
-    <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
-      <span className="flex h-[1.625em] shrink-0 items-center">
-        <Info className="h-3.5 w-3.5" />
-      </span>
-      <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
+    // 图标放进文字的同一行里：居中显示时图标跟着第一行字走，不再一个贴最左、一个居中（用户 2026-11-26 截图）
+    <div className={cn('text-xs leading-relaxed whitespace-pre-wrap text-subtle [overflow-wrap:anywhere]', className)}>
+      <Info className="mr-1.5 inline-block h-3.5 w-3.5 align-[-0.2em]" />
+      {text}
     </div>
   )
+}
+
+/** 放行记录画成什么：null 是不单独显示，undefined 是照旧画成一行说明 */
+function grantNode(m: TaskMessage, msgs: TaskMessage[], task?: Task) {
+  const g = m.grant!
+  if (g.via === 'user') return <DecisionLine m={m} task={task ?? {}} />
+  const view = grantNotes(msgs)
+  if (view.hidden.has(m.id)) return null
+  const run = view.runs.get(m.id)
+  return run ? <GrantRun run={run} task={task} /> : undefined
+}
+
+function GrantRun({ run, task }: { run: TaskMessage[]; task?: Task }) {
+  const style = useSyncExternalStore(subscribeComponents, componentsSnapshot)
+  return <GrantRunRow run={run} task={task ?? {}} open={compValue(style, 'grantBadge', 'runOpen') === true} />
 }
 
 /**
@@ -89,6 +108,11 @@ export function NoteMessage({
   if (m.planStart) return null // 计划启动的那条提示只是把计划输入又抄了一遍，不画出来（按标记判断，不看文案）
   if (m.bugReport) return <BugReportLine text={m.text} />
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
+  // 放行记录（shared/grants/notes.ts）：挂到工具卡片上的不再单独显示；挂不上的同一规则连续几条合成一行；你自己点的允许 / 拒绝画成一行
+  if (m.grant) {
+    const node = grantNode(m, msgs ?? [], task)
+    if (node !== undefined) return node && (indent ? <div className="reply-indent min-w-0">{node}</div> : node)
+  }
   // 学到经验：按条展示的卡片（旧消息没有 learned，照旧是下面那一行字）
   if (m.learned) {
     const card = <LearnedCard projectId={task?.projectId} note={m.learned} />

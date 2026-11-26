@@ -10,7 +10,7 @@ import { proxiedCallOf } from '@shared/mcp-proxy/names'
 import { decide } from '@shared/tool-gateway/decide'
 import { gatewayStats, isSerial } from '@shared/tool-gateway/stats'
 import { GatewaySettings, type CallRecord, type GatewayMode } from '@shared/tool-gateway/types'
-import { callPage, callQueryOf, capabilityViews, settingsView } from '@shared/tool-gateway/views'
+import { callPage, callQueryOf, capabilityViews, patchGatewaySettings, settingsView } from '@shared/tool-gateway/views'
 import type { CapabilityView } from '@shared/api-contract/tool-gateway'
 import { customToolSigs } from '@shared/custom-tools/match'
 import { newBatch, noteEdits, takeBatch } from '@shared/tool-gateway/verify/batch'
@@ -174,7 +174,7 @@ function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord
   return r
 }
 
-let mode: GatewayMode = GatewaySettings.parse({}).mode
+let gw: { mode: GatewayMode; projects: Record<string, GatewayMode> } = GatewaySettings.parse({})
 const records: CallRecord[] = []
 // 改完自动校验的一批（按对话记）：改 Lua 时记下，这个对话下一个不是改文件的调用前跑一次
 const batches = new Map<string, ReturnType<typeof newBatch>>()
@@ -257,8 +257,12 @@ export function demoToolGateway(method: string, seg: string[], query: URLSearchP
   }
   if (sub === 'stats') return gatewayStats(list, Number(query.get('n')) || 200)
   if (sub === 'settings') {
-    if (method === 'PUT') mode = GatewaySettings.parse(body).mode
-    return settingsView(mode)
+    if (method === 'PUT') {
+      const r = patchGatewaySettings(gw, (body ?? {}) as Parameters<typeof patchGatewaySettings>[1])
+      if ('error' in r) return fail(r.error)
+      gw = r.next
+    }
+    return settingsView(gw.mode, gw.projects)
   }
   if (sub === 'capabilities')
     return capabilityViews(list, (id) => ROUTES[id] ?? [{ id: `${id}:planned`, label: '还没接上', state: 'planned' }])

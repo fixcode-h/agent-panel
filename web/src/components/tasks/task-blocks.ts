@@ -4,6 +4,7 @@
  */
 import { visibleMessages } from '@shared/end-turn'
 import { MAIN_STEP, rootStepId } from '@shared/flow'
+import { grantNotes } from '@shared/grants/notes'
 import type { Task, TaskMessage } from '@shared/schema'
 
 export type Block =
@@ -54,6 +55,7 @@ export function toBlocks(task: Task): Block[] {
   }
   // 对话里派出的子角色：它们的输出收进派出时那张子任务卡片，不平铺在父对话里打断父对话的回复
   const helpers = byRun ? [] : msgs.flatMap((m) => m.spawned ?? [])
+  const grants = grantNotes(msgs)
   const inHelper = (step: string) => helpers.some((id) => step === id || step.startsWith(`${id}/`))
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i]
@@ -68,7 +70,9 @@ export function toBlocks(task: Task): Block[] {
       blocks.push({ kind: 'msg', m })
       continue
     }
-    if (!m.step && ((!byRun && m.spawned?.length) || m.panel || m.peer)) {
+    // 放行记录（shared/grants/notes.ts）：挂到工具卡片上的不再单独成段；挂不上的、你点的允许 / 拒绝归进这一轮回复，不把一轮打断成几段
+    if (m.role === 'system' && m.grant && !m.step && grants.tagged.has(m.id)) continue
+    if (!m.step && ((!byRun && m.spawned?.length) || m.panel || m.peer || (m.role === 'system' && m.grant))) {
       const b = blocks.at(-1)
       if (b?.kind === 'turn') b.msgs.push(m)
       else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })

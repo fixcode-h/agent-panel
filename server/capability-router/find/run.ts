@@ -86,8 +86,13 @@ export function findCodeRun(opts: {
         if (down.length && !order.some((s) => s.id === TEXT_SOURCE_ID))
           notes.push(`没有能查的路：${down.map((s) => s.why ?? s.outcome).join('；')}`)
       }
+      // 缺的本机程序（rg）：几条路报的去重，find 工具据此在工具行上提醒用户装
+      const missing = [...r.outs, ...r.empties]
+        .flatMap((x) => x.out.missing ?? [])
+        .filter((m, i, a) => a.findIndex((y) => y.program === m.program) === i)
       return {
         text: formatHits(hits, req, notes),
+        ...(missing.length && { missing }),
         route: toolRouteOf('find', sources as RouteSource<never, unknown>[], r),
         hits,
       }

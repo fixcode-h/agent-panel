@@ -3,11 +3,14 @@
  *
  * 为什么：只靠面板逐个读索引里的文件，UE 工程（几万个 json / csv / md）20 秒都读不完，查不完就回「没有找到」，
  * Agent 以为不存在、又自己跑一遍 rg 才找到（用户 2026-11-26：「兜底的不就是 rg 么，find 失败那么就是不存在」）。
- * rg 多线程、跳过二进制，同一个工程一两秒查全；没有 rg（启动失败）时返回 undefined，调用方照旧逐个读文件。
+ * rg 多线程、跳过二进制，同一个工程一两秒查全；没有 rg（启动失败）时返回 'missing'，调用方照旧逐个读文件并提醒用户装。
+ * rg 出错（不是没装）返回 undefined，同样逐个读。
  * 排除目录和 Agent 自己跑的 rg 一样（项目设置的排除 + 默认产物目录 + 二进制资源，shared/search-exclude.ts）
  */
 import path from 'node:path'
 import { runProcess } from '../../exec/process.ts'
+import { refreshWinPath } from '../../win-path.ts'
+import type { MissingProgram } from '../../../shared/capability-router/find/types.ts'
 import { SEARCH_SKIP_FILES } from '../../../shared/search-exclude.ts'
 
 /** 一行命中：路径相对 root、正斜杠 */
@@ -24,6 +27,17 @@ export interface RgScan {
 }
 
 const TIME_MS = 20_000
+
+/** 本机没装 rg 时提醒用户装的那条命令（按平台） */
+const RG_INSTALL: Record<string, string> = {
+  win32: 'winget install --id BurntSushi.ripgrep.MSVC -e',
+  darwin: 'brew install ripgrep',
+  linux: 'sudo apt install ripgrep',
+}
+export const RG_MISSING: MissingProgram = {
+  program: 'rg（ripgrep）',
+  install: RG_INSTALL[process.platform] ?? RG_INSTALL.linux,
+}
 const MAX_COLS = 400
 
 /**
@@ -33,6 +47,8 @@ const MAX_COLS = 400
 export async function rgScan(o: {
   root: string
   needle: string
+  /** needle 写成了正则：同时按正则和原文找（不加 -F） */
+  regex?: boolean
   under?: string[]
   ext?: string[]
   exclude: string[]
@@ -40,14 +56,14 @@ export async function rgScan(o: {
   signal?: AbortSignal
   /** 测试替换程序名 */
   program?: string
-}): Promise<RgScan | undefined> {
+}): Promise<RgScan | 'missing' | undefined> {
   const args = [
     '--no-config',
     '-n',
     '--no-heading',
     '--with-filename',
     '--color=never',
-    '-F',
+    ...(o.regex ? [] : ['-F']),
     '-i',
     `--max-columns=${MAX_COLS}`,
     '--max-filesize=2M',
@@ -55,8 +71,7 @@ export async function rgScan(o: {
     ...(o.ext ?? []).map((e) => `--glob=*.${e}`),
     ...o.exclude.map((d) => `--glob=!${d}/`),
     ...SEARCH_SKIP_FILES.map((f) => `--glob=!${f}`),
-    '--',
-    o.needle,
+    ...(o.regex ? ['-e', o.needle, '-e', o.needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')] : ['--', o.needle]),
     // 一定写出起点：不写时 rg 发现标准输入是管道，会去搜标准输入
     ...(o.under?.length ? o.under : ['.']),
   ]
@@ -83,8 +98,11 @@ export async function rgScan(o: {
       }
     },
   }).finally(() => o.signal?.removeEventListener('abort', onAbort))
-  // 没有 rg：交回逐个读文件那条路
-  if (r.spawnError) return undefined
+  // 没有 rg：交回逐个读文件那条路，并让调用方提醒装。Windows 上刚用 winget 装的只写进了注册表的 PATH，补进来下次就能用
+  if (r.spawnError) {
+    void refreshWinPath().catch(() => 0)
+    return 'missing'
+  }
   // 0 有命中、1 没有命中；2 是有的文件读不了（权限、坏链接），已经找到的照样算
   if (!r.killed && r.code !== 0 && r.code !== 1 && !lines.length) return undefined
   return { lines, partial: full || r.killed === 'timeout' || (r.killed === 'stopped' && !o.signal?.aborted) }

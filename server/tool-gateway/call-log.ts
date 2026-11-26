@@ -7,7 +7,7 @@
  * 写盘失败只记日志，不影响工具调用：记录是给人看的，丢了不该让 Agent 停下
  */
 import path from 'node:path'
-import { appendFile, mkdir, readdir, unlink } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import type { CallRecord } from '../../shared/tool-gateway/types.ts'
 import { DATA_DIR } from '../store.ts'
 import { log } from '../log.ts'
@@ -82,6 +82,31 @@ export function recentCalls(projectId?: string): CallRecord[] {
   const all = projectId !== undefined ? (byProject.get(projectId) ?? []) : [...byProject.values()].flat()
   // 先倒过来再排：同一毫秒里的几条也是后记的在前（sort 是稳定的）
   return [...all].reverse().sort((a, b) => b.at - a.at)
+}
+
+/**
+ * 这几个对话的调用记录（导出任务时带上，复盘看改道情况）：读 since 那天起的落盘记录，补上工具后那一行，
+ * 再并上内存里还没落盘的。最多 max 条，按时间排
+ */
+export async function callsOfTasks(ids: Set<string>, since: number, max = 3000): Promise<CallRecord[]> {
+  const byId = new Map<string, CallRecord>()
+  const first = day(since)
+  const files = await readdir(dir()).catch(() => [] as string[])
+  for (const f of files.filter((x) => /^\d{4}-\d\d-\d\d\.jsonl$/.test(x) && x.slice(0, 10) >= first).sort()) {
+    const text = await readFile(path.join(dir(), f), 'utf8').catch(() => '')
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const { t, ...row } = JSON.parse(line) as { t: string; id: string; taskId?: string }
+        if (t === 'call' && ids.has(row.taskId ?? '')) byId.set(row.id, row as CallRecord)
+        else if (t === 'done' && byId.has(row.id)) Object.assign(byId.get(row.id)!, row)
+      } catch {
+        // 写到一半的行：跳过
+      }
+    }
+  }
+  for (const r of [...byProject.values()].flat()) if (ids.has(r.taskId) && !byId.has(r.id)) byId.set(r.id, r)
+  return [...byId.values()].sort((a, b) => a.at - b.at).slice(-max)
 }
 
 /** 测试用：清空内存里的记录 */

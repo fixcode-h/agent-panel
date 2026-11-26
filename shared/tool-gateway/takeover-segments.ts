@@ -14,6 +14,11 @@ import { splitTop } from './shell-split.ts'
 export interface SearchUnit {
   search: SearchSpec
   at: number
+  /**
+   * 开头是 `cd <目录>;`（分号连的）时的那个目录：cd 失败时搜索还在原目录跑，所以只有这个目录就是 CLI 的工作目录时
+   * 两边才一致，服务端核对后才接（复盘 2026-11-26：`cd <项目根>;` 有 59 条，约 13 条真正的目录搜索被漏掉）
+   */
+  sameDir?: string
 }
 
 /**
@@ -33,7 +38,8 @@ export const firstWord = (seg: string) =>
 const MOVE_DIR = /^(?:cd|pushd|popd|set-location|sl)$/
 /**
  * 开头的 `cd <目录>`：目录是写死的（不带变量、~、-），cmd 的 `cd /d` 不认。
- * 只认第一段、且后面是 `&&`（cd 失败就不往下跑，搜索一定在这个目录里）；`;` 连的 cd 失败了搜索还在原目录跑，对不上
+ * 只认第一段、后面是 `&&`（cd 失败就不往下跑，搜索一定在这个目录里）；`;` 连的 cd 失败了搜索还在原目录跑，
+ * 所以 `;` 只在目录就是工作目录时接（SearchUnit.sameDir，服务端核对）
  */
 const LEAD_CD = /^cd\s+(?:"([^"$`]+)"|'([^']+)'|([^\s"'$`;&|]+))$/i
 function leadDir(text: string): string | undefined {
@@ -68,7 +74,9 @@ const KEYWORDS = /^(?:for|while|until|if|then|else|elif|fi|do|done|case|esac|fun
 export function searchUnits(command: string): SearchUnit[] | undefined {
   const parts = splitTop(command)
   if (!parts) return undefined
-  const dir = parts.length > 1 && parts[1].op === '&&' ? leadDir(parts[0].text) : undefined
+  const op = parts.length > 1 ? parts[1].op : undefined
+  const dir = op === '&&' || op === ';' ? leadDir(parts[0].text) : undefined
+  const semi = op === ';' && dir ? dir : undefined
   if (
     parts.some(
       (p, i) =>
@@ -86,7 +94,8 @@ export function searchUnits(command: string): SearchUnit[] | undefined {
     // 后台跑的（`grep … &`）：面板那段先打印完，搜索结果什么时候出来说不准
     if (parts[i + 1]?.op === '&') return
     const search = parseSearchCommand(p.text)
-    if (search?.mode === 'content') units.push({ search: dir ? underDir(search, dir) : search, at: p.start })
+    if (search?.mode === 'content')
+      units.push({ search: dir ? underDir(search, dir) : search, at: p.start, ...(semi && { sameDir: semi }) })
   })
   return units.length ? units : undefined
 }

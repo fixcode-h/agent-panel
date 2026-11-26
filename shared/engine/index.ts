@@ -66,7 +66,7 @@ import { makeAlert } from '../alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from '../prompt-lang.ts'
 import { summaryCardRules, summaryDetailRules } from '../summary/card.ts'
 import { ensureVerdict, submitOn, verdictOf, type Blocker } from '../submitted.ts'
-import { autoSettle, settleReport, type StageReport } from '../flow/stage-report.ts'
+import { autoSettle, reportPicked, settleReport, type StageReport } from '../flow/stage-report.ts'
 
 import { beginTurn, endTurn, pauseStep, stopReasonText } from '../task.ts'
 import { chatRoleFor, findRole, isChatMode, modeScope, scopeOf, turnRole } from '../conv-mode.ts'
@@ -253,6 +253,23 @@ export function system(host: EngineHost, text: string, step = '', error = false,
 }
 
 // 执行上限（花费 / token / 时长）的判定在 engine-budget.ts
+
+/**
+ * 节点设了 runIfPicked、上游确认的报告里没有一项选了它：不起 Agent，返回记下的结果；要跑时返回空串。
+ * 上游没交报告（旧数据、节点改过）时照常跑
+ */
+function pickSkip(host: EngineHost, inv: Invocation, n: FlowNode): string {
+  const need = n.runIfPicked
+  if (!need) return ''
+  const from = host.task.steps.find((s) => s.id === stepPath(inv, need.from))
+  if (reportPicked(from?.submitted?.reports, need.label) !== false) return ''
+  const step = ensureStep(host, inv, n, inv.flow.nodes.indexOf(n))
+  const text = t('上一步没有选「{label}」的项，这一步不用做。', { label: need.label })
+  step.status = 'done'
+  step.output = text
+  host.changed(true)
+  return text
+}
 
 const stepPath = (inv: Invocation, nodeId: string) =>
   inv.parentId
@@ -1848,6 +1865,13 @@ async function runFlow(host: EngineHost, inv: Invocation): Promise<FlowResult> {
           skipped.add(n.id)
           const step = ensureStep(host, inv, n, inv.flow.nodes.indexOf(n))
           if (step.status !== 'done') step.status = 'skipped'
+          progressed = true
+          continue
+        }
+        // 按上游用户的选择不用跑的（runIfPicked）：直接记成完成，下游照常往下走
+        const idle = pickSkip(host, inv, n)
+        if (idle) {
+          outputs.set(n.id, { title: title(n), text: idle })
           progressed = true
           continue
         }

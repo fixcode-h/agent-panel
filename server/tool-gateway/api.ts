@@ -5,10 +5,14 @@
 import { Hono } from 'hono'
 import { toolGatewayContract as G } from '../../shared/api-contract/tool-gateway.ts'
 import { gatewayStats } from '../../shared/tool-gateway/stats.ts'
-import { GATEWAY_MODE_DEFS } from '../../shared/tool-gateway/types.ts'
-import { callPage, callQueryOf, capabilityViews, settingsView } from '../../shared/tool-gateway/views.ts'
-import { t } from '../../shared/i18n.ts'
-import { readHooks, setGatewayMode } from '../hooks/store.ts'
+import {
+  callPage,
+  callQueryOf,
+  capabilityViews,
+  patchGatewaySettings,
+  settingsView,
+} from '../../shared/tool-gateway/views.ts'
+import { readHooks, saveGateway } from '../hooks/store.ts'
 import { recentCalls } from './call-log.ts'
 import { routesOf } from './routes-state.ts'
 
@@ -30,15 +34,18 @@ export function toolGatewayApi(deps: {
       const n = Math.min(500, Math.max(1, Number(c.req.query('n')) || 200))
       return c.json(gatewayStats(records(c.req.query('projectId')), n))
     })
-    .get('/settings', async (c) => c.json(settingsView((await readHooks()).gateway.mode)))
+    .get('/settings', async (c) => {
+      const g = (await readHooks()).gateway
+      return c.json(settingsView(g.mode, g.projects))
+    })
     .put('/settings', async (c) => {
       const body = G.setSettings.body.safeParse(await c.req.json().catch(() => ({})))
       if (!body.success) return c.json({ error: body.error.message }, 400)
-      // 改道（enforce）这一期还没开放：只给选注册表里开放了的
-      if (!GATEWAY_MODE_DEFS.find((m) => m.id === body.data.mode)?.available)
-        return c.json({ error: t('这个模式还没开放') }, 400)
-      await setGatewayMode(body.data.mode)
-      return c.json(settingsView(body.data.mode))
+      // 只给选注册表里开放了的模式（全局和按项目同一个判断，shared/tool-gateway/views.ts）
+      const r = patchGatewaySettings((await readHooks()).gateway, body.data)
+      if ('error' in r) return c.json({ error: r.error }, 400)
+      await saveGateway(r.next)
+      return c.json(settingsView(r.next.mode, r.next.projects))
     })
     .get('/capabilities', async (c) => {
       const id = c.req.query('projectId') ?? ''

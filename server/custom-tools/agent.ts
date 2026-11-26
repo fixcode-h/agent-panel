@@ -15,6 +15,7 @@ import { presetFor } from '../../shared/grants/preset.ts'
 import { t } from '../../shared/i18n.ts'
 import { panelRequest, type RequestCtx } from '../exec/panel-requests.ts'
 import { systemNote } from '../exec/recovery.ts'
+import { recordGrant } from '../grants/record.ts'
 import { execute, prepare, type Prepared } from './run.ts'
 import { findTool, listTools, noteRun, saveTool } from './store.ts'
 
@@ -157,15 +158,16 @@ async function grant(
   const label = t('自建工具「{name}」', { name: tool.name })
   const auto = rule && (presetFor(task, rule) || ruleAllowed(task.allowRules ?? [], rule))
   if (auto) {
-    task.messages.push(
-      systemNote(
-        ctx.newId(),
-        '',
-        '',
-        t('按这个对话的放行规则自动允许（{rule}）：{line}', { rule: label, line: p.line }),
-      ),
-    )
-    ctx.changed()
+    // 放行小标挂到这次 custom_tool 调用的工具卡片上（server/grants/record.ts）
+    recordGrant(ctx, {
+      agentId: '',
+      step: '',
+      text: t('按这个对话的放行规则自动允许（{rule}）：{line}', { rule: label, line: p.line }),
+      grant: presetFor(task, rule)
+        ? { via: 'preset', rule, label: task.workflowName || task.flowRun?.workflowName || '', title: p.line }
+        : { via: 'rule', rule, label, title: p.line },
+      match: { kinds: ['other'], label: /custom_tool/, running: true },
+    })
     return { allow: true, info: '' }
   }
   const params = Object.entries(p.values)

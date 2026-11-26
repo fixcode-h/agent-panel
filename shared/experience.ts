@@ -298,6 +298,18 @@ export function sameExperience(a: ProjectExperience, b: Pick<ProjectExperience, 
   return shareKw && sharePath
 }
 
+/** 两条说的沾不沾边：标题相同、或有共同的关键词、或路径有重叠，任一条就算（比 sameExperience 宽，只用来挡「点名更新却写了别的事」） */
+export function relatedExperience(a: ProjectExperience, b: Pick<ProjectExperience, 'title' | 'keywords' | 'paths'>) {
+  const key = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+  if (key(a.title) === key(b.title)) return true
+  const kw = new Set(a.keywords.map((k) => k.toLowerCase()))
+  if (b.keywords.some((k) => kw.has(k.toLowerCase()))) return true
+  const bases = a.paths.map(globBase).filter(Boolean)
+  return b.paths
+    .map(globBase)
+    .some((p) => !!p && bases.some((x) => x === p || x.startsWith(`${p}/`) || p.startsWith(`${x}/`)))
+}
+
 /** 界面上加 / 改一条时交给服务端的字段（id、来源、时间由面板定） */
 export type ExperienceEdit = Pick<ProjectExperience, 'kind' | 'title' | 'body' | 'keywords' | 'paths' | 'enabled'>
 

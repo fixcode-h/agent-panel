@@ -23,7 +23,7 @@ function fakeP4(
   openedIn: Record<string, string> = {},
   fail: Record<string, string> = {},
   /** 本地落后的文件：类型和本地 / 最新版本号 */
-  revs: Record<string, { type: string; have: number; head: number }> = {},
+  revs: Record<string, { type: string; have: number; head: number; others?: number }> = {},
 ) {
   const calls: string[][] = []
   const opened = new Map(Object.entries(openedIn).map(([f, cl]) => [abs(f), cl]))
@@ -42,6 +42,7 @@ function fakeP4(
         const rv = revs[path.relative(dir, f)] ?? { type: 'text', have: 3, head: 3 }
         out.push(`... clientFile ${f}`, '... headAction edit', `... headType ${rv.type}`)
         out.push(`... headRev ${rv.head}`, `... haveRev ${rv.have}`)
+        if (rv.others) out.push(`... otherOpen0 someone@ws`, `... otherOpen ${rv.others}`)
         if (opened.has(f)) out.push(`... action edit`)
         out.push('')
       }
@@ -125,6 +126,57 @@ test('代码文件不管远端有没有更新直接签出；没法合并的资�
   const again = await p4AutoOpen(dir, p4.run, 'stale-task').before(edit(abs('Content/Hero.uasset')))
   assert.ok(!again.deny)
   assert.deepEqual(p4.calls.at(-1), ['edit', '-c', 'default', abs('Content/Hero.uasset')])
+})
+
+test('命令行里改资源也要过同一道：p4 edit 落后的表格、python .save 别人开着的表格都先拦下问用户', async () => {
+  mkdirSync(path.join(dir, 'Data'), { recursive: true })
+  for (const f of ['Data/Npc.xlsx', 'Data/Func.xlsx', 'Data/Ok.xlsx']) writeFileSync(abs(f), 'x')
+  const p4 = fakeP4(
+    ['Data/Npc.xlsx', 'Data/Func.xlsx', 'Data/Ok.xlsx'],
+    {},
+    {},
+    {
+      'Data/Npc.xlsx': { type: 'binary', have: 720, head: 722 },
+      'Data/Func.xlsx': { type: 'binary', have: 5, head: 5, others: 1 },
+      'Data/Ok.xlsx': { type: 'binary', have: 5, head: 5 },
+    },
+  )
+  const sh = (command: string) => ({
+    tool: { kind: 'shell' as const, name: 'Bash', input: { command }, path: '', paths: [] },
+  })
+  const o = p4AutoOpen(dir, p4.run, 'shell-task')
+  const a = await o.before(sh(`p4 edit -c default ${abs('Data/Npc.xlsx')}`))
+  assert.match(a.deny ?? '', /Data\/Npc\.xlsx（本地 #720，最新 #722）/)
+  const b = await o.before(
+    sh(
+      `python -c "import openpyxl; wb=openpyxl.load_workbook(r'${abs('Data/Func.xlsx')}'); wb.save(r'${abs('Data/Func.xlsx')}')"`,
+    ),
+  )
+  assert.match(b.deny ?? '', /Data\/Func\.xlsx（另有 1 处打开着）/)
+  // 只读一下（没有写动作）不管；最新的、没人开着的直接签出
+  assert.deepEqual(await o.before(sh(`python read.py ${abs('Data/Ok.xlsx')}`)), {})
+  const ok = await o.before(sh(`python fix.py && cp out.xlsx ${abs('Data/Ok.xlsx')}`))
+  assert.ok(!ok.deny)
+  assert.ok(p4.calls.some((c) => c[0] === 'edit' && c.includes(abs('Data/Ok.xlsx'))))
+})
+
+test('命令行自己 p4 edit 时 P4 报「不是最新 / 别人打开着」：工具后补一句先问用户，同一行只补一次', async () => {
+  const p4 = fakeP4([])
+  const o = p4AutoOpen(dir, p4.run, 'after-task')
+  const out =
+    '//d/C_Npc.xlsx#720 - opened for edit\n... //d/C_Npc.xlsx - must sync/resolve #721,#722 before submitting\n... //d/C_Npc.xlsx - also opened by someone@ws'
+  const facts = {
+    tool: {
+      kind: 'shell' as const,
+      name: 'Bash',
+      input: { command: 'p4 edit //d/C_Npc.xlsx' },
+      path: '',
+      paths: [],
+      result: { output: out },
+    },
+  }
+  assert.match(await o.after(facts), /不是最新或别人也打开着.*must sync\/resolve.*问用户/)
+  assert.equal(await o.after(facts), '')
 })
 
 test('项目外的文件和项目的 .tmp/ 不管', async () => {

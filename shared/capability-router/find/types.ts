@@ -49,6 +49,14 @@ export interface FindOutcome {
   hits: FindHit[]
   more?: boolean
   note?: string
+  /** 本机缺的程序（例如 rg）：这次只能降级查，界面上提醒用户装 */
+  missing?: MissingProgram[]
+}
+
+/** 面板要用、本机没装的程序：名字和当前平台的安装命令 */
+export interface MissingProgram {
+  program: string
+  install: string
 }
 
 /**

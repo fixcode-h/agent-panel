@@ -5,7 +5,7 @@
  */
 import { requestRuleText } from '../allow-rules.ts'
 import { t } from '../i18n.ts'
-import type { Task, TaskRequest } from '../schema.ts'
+import type { NoteGrant, Task, TaskRequest } from '../schema.ts'
 import { pendingReport, reportChanges, type Picks } from '../flow/stage-report.ts'
 import { questionAnswers, resumeRun } from '../task.ts'
 
@@ -59,6 +59,24 @@ export function answerText(task: Pick<Task, 'steps'>, req: TaskRequest, r: Reque
     : t('你允许了：{title}', { title: req.title })
 }
 
+/**
+ * 授权卡（允许 / 拒绝）的回答：对话里画成「你允许了」那一行（web DecisionLine），按结构化字段画、不解析文案。
+ * 节点确认、提问、自建工具保存弹窗不算
+ */
+function decisionGrant(req: TaskRequest, r: RequestAnswer): { grant: NoteGrant } | undefined {
+  if (req.kind === 'confirm' || req.kind === 'question' || req.purpose === 'custom-tool') return undefined
+  const always = !!(r.allow && r.always && req.rule)
+  return {
+    grant: {
+      via: 'user',
+      label: always ? requestRuleText(req) : '',
+      title: req.title,
+      ...(always ? { rule: req.rule, always: true } : {}),
+      ...(r.allow ? {} : { denied: true }),
+    },
+  }
+}
+
 /** 把回答落到对话上（原地改 task）：调用方先确认这个请求还在 */
 export function applyAnswer(
   task: Task,
@@ -83,5 +101,6 @@ export function applyAnswer(
     tools: [],
     at: new Date().toISOString(),
     ...(answers ? { answers } : {}),
+    ...(decisionGrant(req, r) ?? {}),
   })
 }

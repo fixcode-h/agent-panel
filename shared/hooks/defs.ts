@@ -123,7 +123,7 @@ export const HooksData = z.object({
   /** 技能推送（ADR 0083）：用户在「Agent 工具 → 技能」里对每个技能的改动（开关、每个对话都带、条件），没改过的不记 */
   skills: z.record(z.string(), SkillOverride).default({}),
   /** 工具网关（ADR 0084）：模式存在这里，和内置钩子的开关一起导出、备份；旧数据没有，按默认（观察） */
-  gateway: GatewaySettings.default({ mode: DEFAULT_GATEWAY_MODE, mcpProxy: true }),
+  gateway: GatewaySettings.default({ mode: DEFAULT_GATEWAY_MODE, mcpProxy: true, projects: {} }),
   /** 做过的一次性迁移：webhook 是设置里原来的「计划 Webhook」迁成钩子 */
   migrated: z.object({ webhook: z.boolean().default(false) }).default({ webhook: false }),
 })

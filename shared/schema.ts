@@ -379,6 +379,11 @@ export const FlowNode = z.object({
    * 执行 Lua 又弹了 19 张卡）。和工作流的 grants 同一套规则键，只在跑这个节点（含它派的子任务）时按「本对话不再询问」算
    */
   grants: z.array(WorkflowGrant).max(10).optional(),
+  /**
+   * 只在上游 from 节点确认过的阶段报告里有决策最终选了 label 这项时才跑；一项都没有就直接记成完成、不起 Agent
+   * （2026-11-26 复盘 P2-3：用户把延期验证项都改成了暂缓，「执行立即验证」照样起了一个 Agent 只为说一句没有要做的）
+   */
+  runIfPicked: z.object({ from: z.string().min(1), label: z.string().min(1) }).optional(),
 })
 export type FlowNode = z.infer<typeof FlowNode>
 
@@ -1223,6 +1228,8 @@ export const TaskPatch = z
     goal: z.string().trim().max(4000),
     rules: z.array(TaskRule).max(50),
     childRun: z.object({ cli: z.string().max(40), model: z.string().max(200), effort: z.string().max(40) }).nullable(),
+    // 一次性动作：撤销这个对话里的一条放行规则（task.allowRules 的键，卡片上的「撤销这条规则」）；只能删、不能加
+    revokeRule: z.string().max(500),
   })
   .partial()
 export type TaskPatch = z.infer<typeof TaskPatch>
@@ -1243,6 +1250,7 @@ export const AlertKind = z.enum([
   'cli_exit', // CLI 没做完这一轮就退出、执行失败
   'no_response', // 交给 CLI 后迟迟没有任何输出
   'mcp_slow', // 项目里配的 MCP 服务连不上或不响应，CLI 第一轮可能先等它
+  'tool_missing', // 面板要用的本机程序没装（例如 find 按文本找用的 rg），功能降级在跑
   'idle', // 执行中很久没有输出
   'timeout', // 超过单步时限被停掉
   'empty_turn', // CLI 报这一轮结束，却什么都没返回
@@ -1267,6 +1275,36 @@ export const Alert = z.object({
   resolved: z.string().optional(),
 })
 export type Alert = z.infer<typeof Alert>
+
+/**
+ * 一次调用是怎么被允许的（shared/grants/sources.ts 的注册表按它显示）：按这个对话的放行规则、工作流自带授权、
+ * 整条只读命令、项目测试步骤命令、不确认的那一档权限，或用户自己在授权卡上点的
+ */
+export const GrantVia = z.enum(['rule', 'preset', 'readonly', 'test', 'mode', 'user'])
+export type GrantVia = z.infer<typeof GrantVia>
+
+/**
+ * 面板替用户放行（或用户自己点允许 / 拒绝）留在对话里的那条系统消息的结构化内容：
+ * 对话页按它挂到工具卡片上、合并连续的放行、画「你允许了」那一行，不解析文案
+ */
+export const NoteGrant = z.object({
+  via: GrantVia,
+  /** 放行规则的键（task.allowRules 里的）：撤销规则用；只读、测试步骤这类面板默认放行的没有 */
+  rule: z.string().optional(),
+  /** 给人看的说法：规则的说法、工作流名、权限名 */
+  label: z.string().default(''),
+  /** 放行的是什么：命令原文、请求标题 */
+  title: z.string().default(''),
+  /** via 为 user：用户拒绝了 */
+  denied: z.boolean().optional(),
+  /** via 为 user：用户选了「本对话不再询问」 */
+  always: z.boolean().optional(),
+})
+export type NoteGrant = z.infer<typeof NoteGrant>
+
+/** 挂在工具卡片上的放行小标：note 是对话里那条放行记录的消息 id（卡片挂上后那条不再单独显示） */
+export const ToolGrant = z.object({ via: GrantVia, label: z.string().default(''), note: z.string() })
+export type ToolGrant = z.infer<typeof ToolGrant>
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
@@ -1322,6 +1360,8 @@ export const ToolUse = z.object({
     .optional(),
   /** 这次调用最终实际走的路（面板的 find 经能力路由、以后网关改写的调用）：卡片耗时旁的小标，字段见 tool-route.ts */
   route: ToolRoute.optional(),
+  /** 这次调用是面板替用户放行的（或用户在卡片上允许的）：卡片耗时旁画小标，点开看规则（ui/grant-badge.tsx） */
+  grant: ToolGrant.optional(),
   /**
    * 推给页面时省掉了输出的后半段（只出现在推送里，不存盘，见 shared/task.ts 的 liteMessages）：
    * 原来的长度、行数，和取全文用的消息 id、第几个工具。页面打开窗口看全部时再按这个去取
@@ -1452,6 +1492,7 @@ export const TaskMessage = z.object({
   planStart: z.boolean().optional(),
   bugReport: z.number().int().optional(), // Bug 诊断报告第几版（ADR 0045）：对话里画成可点开报告的一行
   learned: LearnedNote.optional(), // 学到经验的那条系统消息：对话里画成按条展示的卡片（旧消息没有，照旧一行字）
+  grant: NoteGrant.optional(), // 放行 / 允许 / 拒绝的那条系统消息：挂到工具卡片上或合并成一行（旧消息没有，照旧一行字）
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /** panel 为 helpers 时：这次交回结果的是哪几个子任务（步骤 id）。旧数据没有，按正文的「### 」标题数 */
@@ -2085,6 +2126,8 @@ export const TaskData = z.object({
       /** 输入里写入缓存的部分 */
       cacheWriteTokens: z.number().default(0),
       costUsd: z.number().default(0),
+      /** CLI 报的会话累计费用（按会话 id）：续接会话的新进程从这里接着做差，不重复记（server/exec/run-cost.ts） */
+      sessionCost: z.record(z.string(), z.number()).optional(),
     })
     .default({ agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }),
   /** CLI 维护的待办清单（Claude Code 的 TodoWrite、Codex 的计划），对话任务的进度看它 */

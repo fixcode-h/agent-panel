@@ -51,7 +51,7 @@ export interface PanelTool {
    * Agent 当成失败再调一次，页面上叠出第二张卡（server/ask-mcp.ts）。CLI 断开时 signal 触发，工具要跟着把卡片收掉
    */
   waits?: boolean
-  call: (o: Orchestra, a: ToolArgs, signal?: AbortSignal) => ToolResult | Promise<ToolResult>
+  call: (o: Orchestra, a: ToolArgs, signal?: AbortSignal, ctx?: ToolCallCtx) => ToolResult | Promise<ToolResult>
 }
 
 export const text = (s: string, isError = false): ToolResult => ({
@@ -63,3 +63,9 @@ export const str = (v: unknown) => (typeof v === 'string' ? v : '')
 export const reply = (r: { ok: boolean; info: string }) => text(r.info, !r.ok)
 /** 不带参数的工具（每次新给一份，免得哪个调用方改了它影响别的工具） */
 export const noArgs = () => ({ type: 'object', properties: {} })
+
+/** 一次工具调用的连接信息：长等待的工具按它决定一次最多等多久 */
+export interface ToolCallCtx {
+  /** CLI 带了 progressToken：等待期间面板会发 notifications/progress，CLI 不会因为「没有进度」掐断 */
+  progress?: boolean
+}

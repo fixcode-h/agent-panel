@@ -32,6 +32,7 @@ const decisions = (q2pick: string) => [
     options: options.q1,
     pick: 'A',
     why: '根因是有两份数量，只有改成订阅同一份才能根治；B 和 C 都是绕过去。',
+    deviates: '你说「只改角标，别动 store」；订阅同一份要给 store 加一个广播，所以还是推荐它。',
     self: false,
   },
   {

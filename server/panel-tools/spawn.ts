@@ -22,6 +22,11 @@ import { reply, str, text, type PanelTool } from './types.ts'
 // wait_agents 等到子任务全部结束或有人传话才回（每回一次 CLI 就带整份上下文再请求一次），这是兜底上限：
 // 要短于 CLI 一次工具调用的超时（Codex 的 tool_timeout_sec 在定义里放宽到 1 小时），等待期间写 SSE 心跳（ask-mcp.ts）
 export const WAIT_AGENTS_S = 1500
+/**
+ * CLI 没带进度令牌时一次最多等这么久：Claude Code 对 MCP 工具 300 秒没有回应也没有进度就掐断（复盘 2026-11-26 P1-4），
+ * 注释心跳不算进度，留一分钟余量；到点还没做完就照常回「还在执行，接着调 wait_agents」
+ */
+export const WAIT_AGENTS_NO_PROGRESS_S = 240
 
 function reportText(r: HelperReport) {
   const head = `### ${r.id}｜${r.title}（${r.status === 'done' ? '完成' : r.status === 'failed' ? '失败' : r.status === 'running' ? '执行中' : '没有执行'}）`
@@ -150,11 +155,12 @@ export const SPAWN_TOOLS: PanelTool[] = [
         },
       },
     }),
-    call: async (o, a, signal) => {
+    call: async (o, a, signal, ctx) => {
       const ids = Array.isArray(a?.ids) ? a.ids.map(String) : []
+      const cap = ctx?.progress === false ? WAIT_AGENTS_NO_PROGRESS_S : WAIT_AGENTS_S
       // 对话里结果会自动交回：老会话里模型还记得这个工具时不陪它等，告诉它结束这一轮。
       // 老会话的模型还会带 seconds：不再理它，短等待只会让它每隔几十秒带着整份上下文再请求一次
-      const r = await o.wait(ids, o.autoReturn ? 0 : WAIT_AGENTS_S * 1000, signal)
+      const r = await o.wait(ids, o.autoReturn ? 0 : cap * 1000, signal)
       if (!r.done.length && !r.running.length)
         return text(r.taken ? `派出的 ${r.taken} 个子任务都已经交回过了，结果在前面。` : '你还没有派出子任务')
       // 没做完的只列 id：标题在派出时的返回里有，每次都重列一遍没有新信息

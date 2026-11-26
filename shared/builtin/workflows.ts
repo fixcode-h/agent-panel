@@ -52,6 +52,8 @@ interface NodeSpec {
   retries?: number
   /** 只在这个节点里自带的授权（FlowNode.grants） */
   grants?: { rule: string; label?: string }[]
+  /** 上游确认的报告里选了这项才跑（FlowNode.runIfPicked） */
+  runIfPicked?: { from: string; label: string }
 }
 interface FlowSpec {
   id: string
@@ -352,17 +354,24 @@ ${CHILD_RULES}`,
             tier: 'high',
             params: { records: false },
             retries: 1,
+            // 加载冒烟要起 PIE、热重载 Lua（复盘 2026-11-26 P1-12：没授权时卡在等授权卡），和「执行立即验证」一样自带
+            grants: [
+              { rule: 'plugin:ue:self-test', label: '自己跑游戏内测试（PIE、GameTest、GM）' },
+              { rule: 'plugin:ue:lua-exec', label: '在 UE 里执行 Lua 代码' },
+            ],
             instructions:
               '按 openspec 技能的 stage-3.md 做（只读这一份和 SKILL.md）。先按 specs 和 tasks 看清这次波及的模块、入口和契约；再按 tasks.md 依次实现：每条先查相关历史 Bug，改完跑这条的验证和项目的快速检查，通过才勾选并把证据写进 acceptance；验证只能延期的登记延期项，勾成「- [x] …（延期 Dn）」。\n' +
               '- tasks 有 3 组以上、组间不改同一批文件时，每组用 spawn_agents 派一个子任务，你只核对结果、统一勾选和写证据，不要一个会话从头做到尾。\n' +
               '- 新代码在运行时依赖这次还没生成的东西（要导表的枚举和表、生成的代码、蓝图），或改了全局共用的入口：能生成就生成，生成不了就判空兜底，两样都做不到就按阻断交回，不要登记成延期验证（stage-3.md「运行期依赖」）。\n' +
-              '- 在项目目录里直接改、改动不用编译就生效、运行中的 UE 编辑器连得上时，tasks 做完做一次加载冒烟（stage-3.md 最后一节）。\n' +
+              '- 在项目目录里直接改、改动不用编译就生效、运行中的 UE 编辑器连得上时，tasks 做完做一次加载冒烟（stage-3.md 最后一节）：先 ue_editor action=pie_start 带 map，PIE 起来后再 ue_lua action=reload；离线测试的桩不能代替它。\n' +
               '发现设计假设不成立时停下，写明哪条假设、证据和受影响的 tasks。',
           },
           {
             ...DOCS_NODE,
             instructions:
-              '把这次变更涉及的模块文档同步好（主 specs 由归档同步，不用再抄一遍）；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。这一步和延期验证、归档同时进行，只写模块文档，不碰 openspec/changes 下的文件。',
+              '把这次变更涉及的模块文档同步好（主 specs 由归档同步，不用再抄一遍）；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。这一步和延期验证、归档同时进行，只写模块文档，不碰 openspec/changes 下的文件。\n' +
+              '- 文档和 ADR 里不要链到 openspec/changes/<变更名>/ 下的文件：归档会把整个目录移走，链接就断了；要引用就链主 specs（openspec/specs/<能力>/spec.md），写变更名即可。\n' +
+              '- 先看这次已经改过哪些模块文档（实现和子任务常会顺手改 README），只补缺的，不重写一遍。',
           },
           {
             id: 'deferred',
@@ -382,6 +391,8 @@ ${CHILD_RULES}`,
             agent: 'tester',
             tier: 'medium',
             params: { scope: '本次改动', regress: false },
+            // 用户一项都没选立即验证时不起 Agent（复盘 2026-11-26 P2-3）
+            runIfPicked: { from: 'deferred', label: '立即验证' },
             // 用户在上一步选了「立即验证」就是同意在游戏里测（复盘 2026-11-25 C1：归档节点 8 分钟弹了 19 张授权卡）。
             // 规则键是 UE 插件的，其他项目碰不到这两类操作，不起作用
             grants: [
@@ -852,6 +863,7 @@ export function buildFlow(f: FlowSpec, agentId: (key: string) => string): Flow {
           ...(!steps.length && n.confirm && { confirm: true }),
         } satisfies NodeHooks,
         ...(n.grants?.length && { grants: n.grants.map((g) => ({ rule: g.rule, label: g.label ?? '' })) }),
+        ...(n.runIfPicked && { runIfPicked: n.runIfPicked }),
       }
     }),
     edges: f.edges.map(([from, to, when], i): FlowEdge => ({ id: `e${i + 1}`, from, to, ...(when && { when }) })),

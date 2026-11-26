@@ -234,12 +234,24 @@ test('文本兜底先用 rg 查全（不靠索引、跳过排除目录）；没�
       [['Src/opts.lua', 2]],
       '声明照旧按语言的写法认',
     )
-    const noRg = textSource(async () => idx, undefined, { root: dir, exclude: [], program: 'rg-not-here-xyz' })
+    // 正则写法（grep 的习惯）：按正则和原文各查一遍，不再因为按原文找不到就回「没有找到」
+    await writeFile(path.join(dir, 'Src/tr.lua'), 'function M:NewTransform(a)\nlocal arr = x[0]\n')
+    const re = await withRg.run(req('text', 'function.*NewTransform'))
     assert.deepEqual(
-      (await noRg.run(req('text', 'ChairStateEventKeyOptions'))).hits,
-      [],
-      '没有 rg 走索引（这里是空的）',
+      re.hits.map((h) => [h.file, h.line]),
+      [['Src/tr.lua', 1]],
     )
+    assert.match(re.note ?? '', /按正则和原文各查了一遍/)
+    const lit = await withRg.run(req('text', 'x[0]'))
+    assert.deepEqual(
+      lit.hits.map((h) => [h.file, h.line]),
+      [['Src/tr.lua', 2]],
+      '像正则的原文照样按原文找到',
+    )
+    const noRg = textSource(async () => idx, undefined, { root: dir, exclude: [], program: 'rg-not-here-xyz' })
+    const fallback = await noRg.run(req('text', 'ChairStateEventKeyOptions'))
+    assert.deepEqual(fallback.hits, [], '没有 rg 走索引（这里是空的）')
+    assert.match(fallback.missing?.[0]?.program ?? '', /rg/, '报出缺 rg，界面提醒装')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

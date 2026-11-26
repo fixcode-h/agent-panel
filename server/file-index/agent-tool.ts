@@ -10,7 +10,14 @@ import type { FileIndexArgs, FileIndexRun } from '../../shared/host/file-index.t
 import { projectIndex, statusOf, type ProjectIndex } from './registry.ts'
 
 const BUDGET = 4000
-const WAIT_MS = 60_000
+/**
+ * 最多等这么久：留出余量，一分钟内一定回（复盘 2026-11-26 P1-8：find 两次在 60 秒左右被 CLI 掐成「The operation timed out」）
+ */
+const WAIT_MS = 45_000
+/** 没找到时整个项目的核对，同一个项目这么久内只做一次（复盘 P1-6：每次没找到都核对 26 万个目录，并发的几次排队到 26 秒） */
+const FULL_VERIFY_GAP_MS = 120_000
+// 模块状态：缓存，索引 → 上次整份核对的时间（按索引对象记：索引关掉重开就重新算）；丢了只是多核对一次
+const lastFullVerify = new WeakMap<object, number>()
 /** 等建立时多久查一次：第一次建立时边读边能查，读到了就先回 */
 const POLL_MS = 400
 
@@ -121,14 +128,27 @@ export function fileIndexRun(opts: {
       await sleep(POLL_MS, signal)
       hits = search()
     }
-    // 建好了还是没找到：先按目录核对一遍（只 stat 目录，几万个目录一两秒）再查，刚在面板外生成的文件也能找到
+    // 建好了还是没找到：先按目录核对一遍（只 stat 目录）再查，刚在面板外生成的文件也能找到。
+    // 给了 under 只核对那几个目录；整个项目的核对同一个项目两分钟内只做一次
     let verified = ''
-    if (!hits.length && !idx.building && !signal?.aborted) {
+    const dirs = (a.under ?? []).map((u) => u.replace(/[\\/]+$/, '')).filter(Boolean)
+    const fullOk = Date.now() - (lastFullVerify.get(idx) ?? 0) > FULL_VERIFY_GAP_MS
+    if (!hits.length && !idx.building && !signal?.aborted && (dirs.length || fullOk)) {
       const left = Math.max(WAIT_MS - (Date.now() - t0), 1000)
       // 等核对的计时器用完要撤掉：不然每次没找到都留一个一分钟的计时器
       const stop = new AbortController()
       signal?.addEventListener('abort', () => stop.abort(), { once: true })
-      const r = await Promise.race([idx.refresh(), sleep(left, stop.signal).then(() => undefined)])
+      if (!dirs.length) lastFullVerify.set(idx, Date.now())
+      const verify = dirs.length
+        ? Promise.all(dirs.map((d) => idx.refresh(d))).then((rs) =>
+            rs.reduce((x, y) => ({
+              checked: x.checked + y.checked,
+              added: x.added + y.added,
+              removed: x.removed + y.removed,
+            })),
+          )
+        : idx.refresh()
+      const r = await Promise.race([verify, sleep(left, stop.signal).then(() => undefined)])
       stop.abort()
       if (r) {
         hits = search()
@@ -136,7 +156,11 @@ export function fileIndexRun(opts: {
       }
     }
     const partial = buildingNote(idx, Date.now() - t0) + verified
-    if (!hits.length) return { text: `${partial}没找到「${q}」。\n${missNote()}` }
+    // 带空格的多个词：文件名里一般没有空格，多半是代码里的名字（复盘 P1-6：几次多词查询都落空）
+    const words = /\s/.test(q)
+      ? '查询里有空格：文件名一般不带空格，要找代码里的类、函数用 find action=symbol；找文件就只写文件名里的一个词。\n'
+      : ''
+    if (!hits.length) return { text: `${partial}没找到「${q}」。\n${words}${missNote()}` }
     const { out, next } = pageOut(hits, offset, limit)
     const total = hits.length >= offset + limit + 500 ? `${hits.length}+` : String(hits.length)
     return {

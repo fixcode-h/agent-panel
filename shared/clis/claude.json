@@ -252,7 +252,8 @@
     "BASH_MAX_TIMEOUT_MS": "600000",
     "BASH_MAX_OUTPUT_LENGTH": "30000",
     "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": "16000",
-    "MAX_MCP_OUTPUT_TOKENS": "25000"
+    "MAX_MCP_OUTPUT_TOKENS": "25000",
+    "MCP_TOOL_TIMEOUT": "1800000"
   },
   "envNotes": {
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": {
@@ -294,6 +295,10 @@
     "MAX_MCP_OUTPUT_TOKENS": {
       "label": "MCP 工具结果上限（token）",
       "hint": "面板工具、插件工具这类 MCP 工具一次结果最多这么多 token，超过就截掉；插件工具的结果面板另外存文件、只回开头结尾（MAX_MCP_OUTPUT_TOKENS）"
+    },
+    "MCP_TOOL_TIMEOUT": {
+      "label": "MCP 工具超时（毫秒）",
+      "hint": "一次 MCP 工具调用最多等多久；等子任务、等你回答这类工具会等很久，放宽到 30 分钟，等待期间面板发进度通知保活（MCP_TOOL_TIMEOUT）"
     }
   },
   "options": [
@@ -636,6 +641,8 @@
       "读文件单次上限（token）": "File read limit per call (tokens)",
       "读文件时一次最多读进这么多 token，超过就报错让模型分段读；调大能少读几次，但每次占的上下文更多。面板默认 16000（约 64 KB，Claude Code 自己默认 25000），和「读大文件前拦一下」守卫的默认大小对齐（CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS）": "The most tokens a single file read may return; larger reads fail and the model reads in parts. A higher value means fewer reads but more context per read. The panel defaults to 16000 (about 64 KB; Claude Code's own default is 25000), matching the default size of the large-file read guard (CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS)",
       "MCP 工具结果上限（token）": "MCP tool result limit (tokens)",
+      "MCP 工具超时（毫秒）": "MCP tool timeout (ms)",
+      "一次 MCP 工具调用最多等多久；等子任务、等你回答这类工具会等很久，放宽到 30 分钟，等待期间面板发进度通知保活（MCP_TOOL_TIMEOUT）": "How long one MCP tool call may take. Tools that wait for subtasks or for your answer can take a long time, so this is raised to 30 minutes and the panel sends progress notifications while waiting (MCP_TOOL_TIMEOUT)",
       "面板工具、插件工具这类 MCP 工具一次结果最多这么多 token，超过就截掉；插件工具的结果面板另外存文件、只回开头结尾（MAX_MCP_OUTPUT_TOKENS）": "The most tokens one result of an MCP tool (panel tools, plugin tools) may return; longer results are cut. Long plugin tool results are also saved to a file by the panel, which returns only the start and end (MAX_MCP_OUTPUT_TOKENS)"
     }
   }

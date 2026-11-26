@@ -68,15 +68,31 @@ const NOTES_HINT =
  * 提问不交出去、就地回答的话：调用方给了改道（例如用户报的 Bug 要写进诊断报告，见 shared/bug/no-ask.ts）按它答；
  * 「提问」关着让 CLI 自己选；返回 undefined 才交给用户
  */
-function selfAnswer(o: { askUser?: () => boolean; askRedirect?: () => string | undefined }): AskReply | undefined {
+function selfAnswer(
+  o: {
+    askUser?: () => boolean
+    askRedirect?: () => string | undefined
+    autoAnswer?: (q: AskBrief) => string | undefined
+  },
+  q: AskBrief,
+): AskReply | undefined {
   const to = o.askRedirect?.()
   if (to) return { allow: false, message: to }
-  return o.askUser?.() ? undefined : AUTO_ANSWER
+  if (o.askUser?.()) return undefined
+  const alt = o.autoAnswer?.(q)
+  return alt ? { allow: false, message: alt } : AUTO_ANSWER
+}
+
+/** 提问的内容：「提问」关着时调用方可以把它记下来给用户看（工作流节点的「待你决定」） */
+export interface AskBrief {
+  title: string
+  detail: string
+  questions?: { question: string }[]
 }
 
 /** 能就地回答的提问就地回答，返回答没答 */
-function answerHere(o: Parameters<typeof selfAnswer>[0], ev: { reply: (r: AskReply) => void }) {
-  const self = selfAnswer(o)
+function answerHere(o: Parameters<typeof selfAnswer>[0], ev: AskBrief & { reply: (r: AskReply) => void }) {
+  const self = selfAnswer(o, ev)
   if (self) ev.reply(self)
   return !!self
 }
@@ -125,6 +141,8 @@ export async function invokeCli(o: {
   askUser?: () => boolean
   /** 提问改道：返回一句话时 CLI 的提问不交给用户，用这句话回答（开关开着也一样）；审批不受影响 */
   askRedirect?: () => string | undefined
+  /** 「提问」关着时的回答换成这句（返回空就用通用的 AUTO_ANSWER）；调用方顺便把问题记下来给用户看 */
+  autoAnswer?: (q: AskBrief) => string | undefined
   /** 不给没有提问通道的 CLI 加提问工具（调用方自己带了提问的办法，例如 UI 设计的 ask_user） */
   noAskTool?: boolean
   /** 不在输入末尾补语言提醒：压缩、审查这类参数另有含义的操作（见 prompt-lang-inject.ts） */

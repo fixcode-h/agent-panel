@@ -1,6 +1,7 @@
 import { useState, type ComponentType, type ReactNode } from 'react'
 import type { CompName } from '@shared/component-style'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
+import { GrantBadgeSpecimen } from './GrantBadgeSpecimen'
 import { Search } from 'lucide-react'
 import type { ToolRoute } from '@shared/capability-router/tool-route'
 import { t } from '@shared/i18n'
@@ -58,7 +59,7 @@ export function RouteBadgeSpecimen() {
   )
 }
 
-/** 工具行上挂的两种小字：下面一行的教训、经验，耗时旁的路由小标。Specimen 由组件页传进来，这里只管内容 */
+/** 工具行上挂的几种小字（放行小标见 GrantBadgeSpecimen）：下面一行的教训、经验，耗时旁的路由小标。Specimen 由组件页传进来，这里只管内容 */
 export function ToolRowTagSpecimens({
   Specimen,
 }: {
@@ -71,6 +72,9 @@ export function ToolRowTagSpecimens({
       </Specimen>
       <Specimen name="RouteBadge · RouteSteps" tune={['routeBadge']}>
         <RouteBadgeSpecimen />
+      </Specimen>
+      <Specimen name="GrantBadge · GrantSection · GrantRunRow" tune={['grantBadge']}>
+        <GrantBadgeSpecimen />
       </Specimen>
     </>
   )

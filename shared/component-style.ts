@@ -269,6 +269,16 @@ export const COMP_SPEC = {
     show: bool(true, 'inline-flex', 'none'),
   },
   /**
+   * 放行小标（web/src/components/ui/grant-badge.tsx，用户 2026-11-26）：面板替你放行的调用在工具卡片耗时旁标「规则放行」这类小字。
+   * 关掉 show 只是不显示小标，点开卡片照样看得到怎么放行的；text 关掉只留盾牌图标；
+   * runOpen（挂不上卡片、合成一行的放行记录一开始展不展开）不是 CSS，SystemNote 读设置里的值
+   */
+  grantBadge: {
+    show: bool(true, 'inline-flex', 'none'),
+    text: bool(true, 'inline', 'none'),
+    runOpen: bool(false, '1', '0'),
+  },
+  /**
    * 实时输出（web/src/components/ui/live-text.tsx）：思考过程、模型正在写的工具入参（交诊断报告、建子对话、派子任务）
    * 正在输出时那一块最多多高、左边竖线，以及要不要在「正在写」下面显示写到哪了（用户 2026-11-19）。
    * 最后一项不是 CSS，DraftRow 读设置里的值；落成变量只为走同一套登记

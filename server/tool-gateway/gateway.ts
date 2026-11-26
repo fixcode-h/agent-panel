@@ -23,7 +23,7 @@ import { log } from '../log.ts'
 import { addCall, callDone, lastInTurn } from './call-log.ts'
 import { withSink, type CallSink } from './sink.ts'
 import { openVerify, type VerifyDeps, type VerifyGate } from './verify/index.ts'
-import { enforceTakeover, type TakeoverDeps } from './takeover/index.ts'
+import { enforceTakeover, wouldTakeover, type TakeoverDeps } from './takeover/index.ts'
 
 type OnHook = (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 
@@ -150,6 +150,7 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
       // 改道模式：查找接管（搜索命令、自带的按内容搜）。校验已经接管了这次（luac 改走自建工具）就不再接；它自己兜住所有错误
       let tk = 0
       let pendingInput = facts.tool!.input
+      if (c.mode === 'observe' && call && !denied && c.takeover && !v?.decision) wouldTakeover(r, call, c.takeover)
       if (c.mode === 'enforce' && call && !denied && c.takeover && !v?.decision) {
         const t5 = performance.now()
         const x = await enforceTakeover(c.takeover, call, out)

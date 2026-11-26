@@ -3208,7 +3208,7 @@ function tasksRoute(
   }
   if (method === 'PATCH') {
     const p = parse(TaskPatch, body)
-    const { childRun, applyChildAsk, ...rest } = p
+    const { childRun, applyChildAsk, revokeRule, ...rest } = p
     // 「提问」联动和正式后端同一份规则（shared/children/ask.ts）：按钮只管父对话自己，菜单选了才动已有子对话
     const askEffect = childAskEffect({
       askUser: p.askUser,
@@ -3216,6 +3216,8 @@ function tasksRoute(
       applyExisting: applyChildAsk,
     })
     Object.assign(task, rest)
+    // 撤销放行规则（shared/grants/notes.ts 卡片上的「撤销这条规则」）：之后同一类调用重新弹卡
+    if (revokeRule) task.allowRules = (task.allowRules ?? []).filter((r) => r !== revokeRule)
     if (askEffect.askUser !== undefined) task.askUser = askEffect.askUser
     if (askEffect.childAskUser !== undefined) task.childAskUser = askEffect.childAskUser
     // 演示里没有引擎，已创建的子对话只改记录——界面上的按钮和菜单勾选都读它
