@@ -197,6 +197,8 @@ export function RequestCard({
   if (req.purpose === 'custom-tool' && req.customTool)
     return (
       <CustomToolSaveEntry
+        // 换了一个请求就是新的保存弹窗：重新挂载，弹窗默认打开（不沿用上一张卡关掉弹窗的状态）
+        key={req.id}
         req={req}
         more={requests.length - 1}
         answer={(allow, text) => onAnswer(req.id, { allow, answer: text })}

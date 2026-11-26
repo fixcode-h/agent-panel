@@ -16,7 +16,10 @@ import { t } from '../../shared/i18n.ts'
  * runProcess 是给 CLI 对话设计的（stdin 写任务、空闲检测），套过来反而要绕
  */
 
-export type TrackedSpawnOptions = Pick<SpawnOptions, 'cwd' | 'env' | 'shell' | 'detached' | 'stdio' | 'windowsHide'> & {
+export type TrackedSpawnOptions = Pick<
+  SpawnOptions,
+  'cwd' | 'env' | 'shell' | 'detached' | 'stdio' | 'windowsHide' | 'windowsVerbatimArguments'
+> & {
   cwd: string
   /** 哪个插件或模块起的（进程面板和日志里显示） */
   source: string

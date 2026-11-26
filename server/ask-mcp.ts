@@ -9,7 +9,7 @@ import { askMeta } from '../shared/away.ts'
 import { ASK_FORMAT } from '../shared/tasks/ask-layout.ts'
 import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine/host.ts'
-import { callOrchTool, orchTools } from './orch-mcp.ts'
+import { callOrchTool, orchTools, waitsLong } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
 import { MORE_TOOLS, moreTools, ORCH_CORE_TOOLS, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
@@ -43,8 +43,12 @@ export type Ask = (ev: AskEvent) => void
 
 /** 长等待（提问、等下一句）期间定期往流里写一行注释当心跳，免得 HTTP 客户端判定连接空闲 */
 const HEARTBEAT_MS = 20_000
-/** 会等很久的工具：走流式响应带心跳（wait_agents 一次可能等到子任务全部结束，见 orch-mcp.ts 的 WAIT_AGENTS_S） */
-const LONG_TOOLS = ['ask_user', 'wait_user_message', 'wait_agents']
+/**
+ * 会等很久的工具：走流式响应带心跳。这里两个是本文件自己的；面板工具在注册表上标 waits
+ * （wait_agents 一次可能等到子任务全部结束，custom_tool 的保存弹窗、ask_push 等用户点卡片）
+ */
+const LONG_TOOLS = ['ask_user', 'wait_user_message']
+const isLong = (name: unknown) => typeof name === 'string' && (LONG_TOOLS.includes(name) || waitsLong(name))
 
 // 模块状态：会话，跟着进程或连接一起没
 const sessions = new Map<
@@ -343,7 +347,7 @@ export function askMcpApi() {
       const msgs = Array.isArray(body) ? body : [body]
       // 提问、等下一句都可能很久：HTTP 客户端（undici 的 bodyTimeout、Node 的 http 客户端）会因为长时间没有数据
       // 断开请求，所以这些用流式响应，等待期间定期写心跳，有结果后再写回去
-      if (msgs.some((m) => m?.method === 'tools/call' && LONG_TOOLS.includes(m?.params?.name)))
+      if (msgs.some((m) => m?.method === 'tools/call' && isLong(m?.params?.name)))
         return streamSSE(c, async (stream) => {
           // CLI 断开（工具超时、进程被停）：wait_agents 不再把结果算成已取走，留给下一次或节点结束时交回
           const ac = new AbortController()

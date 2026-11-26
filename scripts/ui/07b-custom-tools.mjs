@@ -69,7 +69,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .waitFor({ timeout: 20000 })
     .catch(() => errors.push('工具：/createtool 没弹出保存弹窗'))
   await check(p, '工具-保存弹窗', ['加入项目', '全局', 'python tools/pack.py --platform {{platform}}', '让 Agent 再改'])
-  await p.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
+  // 关掉弹窗不算回答：入口还在，点「查看并保存」再打开；保存连点两下也只收一次
+  await p.keyboard.press('Escape')
+  await settle(p)
+  if (!(await p.getByText('查看并保存').count())) errors.push('工具：关掉保存弹窗后入口没了')
+  await p.getByRole('button', { name: '查看并保存' }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).dblclick()
   await settle(p)
   await p
     .getByText('查看并保存')

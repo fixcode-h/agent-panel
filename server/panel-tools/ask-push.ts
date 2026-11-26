@@ -35,6 +35,8 @@ async function callAskPush(o: Orchestra, a: { branch?: unknown; summary?: unknow
 export const ASK_PUSH_ENTRY: PanelTool = {
   name: ASK_PUSH,
   when: (o) => !!o.askPush,
+  // 等用户点「允许 / 拒绝」
+  waits: true,
   def: () => ASK_PUSH_TOOL,
   call: (o, a) => callAskPush(o, a),
 }

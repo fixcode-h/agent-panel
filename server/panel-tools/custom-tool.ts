@@ -22,6 +22,8 @@ const obj = (v: unknown): Record<string, unknown> | undefined => {
 export const CUSTOM_TOOL: PanelTool = {
   name: 'custom_tool',
   when: (o) => !!o.customTools,
+  // save 等用户在保存弹窗里点完、run 可能等授权卡和两分钟内的执行
+  waits: true,
   // 清单那一行由服务端按工具的「什么时候用」生成；一个工具都没有时不出现
   hint: (o, at) => (at === 'conv' || at === 'chat' || at === 'helper' ? (o.customTools?.hint ?? '') : ''),
   def: () => ({

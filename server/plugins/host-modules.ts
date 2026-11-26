@@ -3,6 +3,7 @@ import * as serverAttachments from '../attachments.ts'
 import * as serverAuth from '../auth.ts'
 import * as serverBridge from '../bridge.ts'
 import * as serverComfy from '../comfy.ts'
+import * as serverCustomToolsHost from '../custom-tools/host.ts'
 import * as serverDocsRootCache from '../docs/root-cache.ts'
 import * as serverDownload from '../download.ts'
 import * as serverProjectData from '../project-data/index.ts'
@@ -84,6 +85,7 @@ export const SERVER_HOST_MODULES: Record<string, object> = {
   'server/auth': serverAuth,
   'server/bridge': serverBridge,
   'server/comfy': serverComfy,
+  'server/custom-tools/host': serverCustomToolsHost,
   'server/docs/root-cache': serverDocsRootCache,
   'server/download': serverDownload,
   'server/exec/find-command': serverExecFindCommand,

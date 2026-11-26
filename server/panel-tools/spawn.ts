@@ -137,6 +137,7 @@ export const SPAWN_TOOLS: PanelTool[] = [
   {
     name: 'wait_agents',
     when: (o) => o.canSpawn && !o.autoReturn,
+    waits: true,
     def: () => ({
       name: 'wait_agents',
       title: '等待子任务',
