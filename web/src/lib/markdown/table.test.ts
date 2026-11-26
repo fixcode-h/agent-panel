@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { renderDoc } from '@/lib/workflow-doc'
-import { reorderMarkdown, sortKey, sortedOrder, tableHtml, toTsv } from '@/lib/markdown/table'
+import { narrowColumns, reorderMarkdown, sortKey, sortedOrder, tableHtml, toTsv } from '@/lib/markdown/table'
 
 test('表格外面包一层 .md-table：带原文、行数和工具条，表格本身照旧', () => {
   const html = renderDoc('| 名字 | 数量 |\n| --- | --: |\n| a | 2 |\n| b | 10 |', new Set())
@@ -47,4 +47,18 @@ test('排序顺序：数字按大小、文字按自然顺序、空格子在最�
   assert.deepEqual(sortedOrder(['10%', '9%', '1,000%'], true), [2, 0, 1])
   assert.deepEqual(sortedOrder(['item10', 'item2', 'item2'], false), [1, 2, 0])
   assert.deepEqual(sortedOrder(['b', 'a'], undefined), [0, 1])
+})
+
+test('短列不折行：每格都只有几个字的列标 data-nw，中文按两格宽算，长说明列不标', () => {
+  assert.deepEqual(
+    narrowColumns([
+      ['#', '旧决策', '结论'],
+      ['Q10', '对外事件形态', '统一 OnClinkGlassesEvent(EventType, Payload) + 枚举'],
+      ['Q11', '玩家移动输入锁', '本次不处理'],
+    ]),
+    [true, false, false],
+  )
+  const html = renderDoc('| # | 说明 |\n| --- | --- |\n| Q10 | 一段很长很长很长的说明文字，挤窄时要换行 |', new Set())
+  assert.match(html, /<td data-nw>Q10<\/td>/)
+  assert.doesNotMatch(html, /<td data-nw>一段/)
 })

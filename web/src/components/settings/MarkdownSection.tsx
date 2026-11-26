@@ -737,7 +737,16 @@ export function MarkdownSection({ value, onChange }: { value: Appearance; onChan
         <Row title={t('点表头排序')} desc={t('点一下升序、再点降序、第三下回到原顺序，只改显示。')}>
           <F el="table" prop="sort" label={t('点表头排序')} />
         </Row>
-        <Row title={t('长表限高')} desc={t('超过约这么多行时表格限高、在表格里滚动，表头钉在顶上。0 表示不限高。')}>
+        <Row
+          title={t('短列不折行')}
+          desc={t('编号、状态这类每格都只有几个字的列不换行，表格挤窄时也不会把 Q10 折成两行。')}
+        >
+          <F el="table" prop="nowrap" label={t('短列不折行')} />
+        </Row>
+        <Row
+          title={t('长表限高')}
+          desc={t('超过约这么多行时表格限高、在表格里滚动，表头钉在顶上。默认 0：不限高，表格全部展开。')}
+        >
           <F el="table" prop="rows" label={t('长表限高行数')} />
         </Row>
       </Group>
