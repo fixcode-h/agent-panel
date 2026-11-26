@@ -63,3 +63,34 @@ test('等什么、短词：等子对话、等后台命令、子对话等你处�
   assert.equal(liveWaitText(done), '')
   assert.ok(!liveBusy(undefined) && !liveActive(undefined), '还没拿到 live 时不算在跑')
 })
+
+test('名下工作流运行（不是子对话）：在跑算「工作流执行中」归进进行中，等你确认算等你处理', () => {
+  // 计划没做完、这一轮说完了：以前只剩「未完成」，侧栏归到日期组里（用户 2026-11-26 报）
+  const plan = {
+    plans: [
+      {
+        id: 'p1',
+        createdAt: '',
+        doneAt: '',
+        steps: [
+          { id: 'a', title: '设计', status: 'done' },
+          { id: 'b', title: '实现', status: 'running' },
+        ],
+      },
+    ],
+  }
+  assert.equal(taskLiveOf(task(plan), rt()).state, 'unfinished')
+  const running = taskLiveOf(task(plan), rt({ runsWorking: 1 }))
+  assert.equal(running.state, 'waiting')
+  assert.equal(running.wait, 'workflow')
+  assert.equal(liveWord(running), '工作流执行中')
+  assert.ok(liveBusy(running))
+  TaskLive.parse(running)
+
+  const confirm = taskLiveOf(task(plan), rt({ runsNeeds: 1 }))
+  assert.equal(confirm.state, 'needs')
+  assert.equal(confirm.need, 'workflow')
+  assert.equal(liveWord(confirm), '工作流等你确认')
+  assert.equal(liveWaitText(confirm), '工作流等你确认')
+  TaskLive.parse(confirm)
+})

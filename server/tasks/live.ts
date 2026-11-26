@@ -11,7 +11,9 @@ import type { ChildCounts as ScanCounts } from '../../shared/children/row.ts'
 export type TaskWithLive = Task & { live: TaskLive }
 
 /** 名下子对话的计数（server/tasks/children/count.ts 的 childCountsOf，结果按 1 秒缓存） */
-type ChildCounts = (parentId: string) => Promise<{ working: number; cli: number; needs: number }>
+type ChildCounts = (
+  parentId: string,
+) => Promise<{ working: number; cli: number; needs: number; runs: number; runNeeds: number }>
 
 /** 调用方刚扫好的一份计数（shared/children/row.ts 的 childCountsScan）：列表接口用它，不读 1 秒缓存 */
 type FreshCounts = (parentId: string) => ScanCounts
@@ -25,7 +27,13 @@ export function createLive(sc: TasksScope, childCounts: ChildCounts) {
   async function liveOf(task: Task, fresh?: FreshCounts): Promise<TaskLive> {
     const f = fresh?.(task.id)
     const kids = f
-      ? { working: f.childrenWorking, cli: f.childrenCli, needs: f.childrenNeeds }
+      ? {
+          working: f.childrenWorking,
+          cli: f.childrenCli,
+          needs: f.childrenNeeds,
+          runs: f.runsWorking,
+          runNeeds: f.runsNeeds,
+        }
       : await childCounts(task.id)
     // 子对话页只冒泡后代在等你的个数（它下面还有孙对话时也要显示「等你处理」）；
     // 在跑的子对话数、CLI 数只给顶层对话（和以前列表、详情带的口径一样）
@@ -39,6 +47,9 @@ export function createLive(sc: TasksScope, childCounts: ChildCounts) {
       childrenWorking: top ? kids.working : 0,
       childrenCli: top ? kids.cli : 0,
       childrenNeeds: kids.needs,
+      // 名下的工作流运行（不是子对话）：在跑的算「工作流执行中」，等你确认的算「等你处理」；没有时不带
+      ...(kids.runs ? { runsWorking: kids.runs } : {}),
+      ...(kids.runNeeds ? { runsNeeds: kids.runNeeds } : {}),
     })
   }
 

@@ -77,6 +77,7 @@ const GO_LABEL: Record<NonNullable<LifeFacts['need']>, () => string> = {
   confirm: () => t('去确认'),
   stage: () => t('去确认'),
   action: () => t('去操作'),
+  workflow: () => t('去确认'),
   children: () => t('去处理'),
 }
 

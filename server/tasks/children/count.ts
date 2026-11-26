@@ -41,7 +41,13 @@ export async function childCountsOf(ctx: ChildrenCtx, parentId: string) {
     }
   }
   const c = ctx.counts.scan.counts(parentId)
-  return { working: c.childrenWorking, cli: c.childrenCli, needs: c.childrenNeeds }
+  return {
+    working: c.childrenWorking,
+    cli: c.childrenCli,
+    needs: c.childrenNeeds,
+    runs: c.runsWorking,
+    runNeeds: c.runsNeeds,
+  }
 }
 
 /** 名下还在运行的子对话数（见 childActive） */

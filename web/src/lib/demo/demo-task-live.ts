@@ -31,6 +31,8 @@ export function demoLive(
     childrenWorking: top ? c.childrenWorking : 0,
     childrenCli: top ? c.childrenCli : 0,
     childrenNeeds: c.childrenNeeds,
+    ...(c.runsWorking ? { runsWorking: c.runsWorking } : {}),
+    ...(c.runsNeeds ? { runsNeeds: c.runsNeeds } : {}),
   })
 }
 
