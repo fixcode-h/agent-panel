@@ -4,6 +4,7 @@ import {
   autoSettle,
   changesText,
   parseStageReport,
+  reportPicked,
   reportOutput,
   settleReport,
   type StageReportVersion,
@@ -113,4 +114,72 @@ test('阶段报告：确认后按 next 接着问出来的一版没有新问题�
     at: '',
   })
   assert.equal(autoSettle(changed), '')
+})
+
+test('阶段报告：next 写「没有新问题」按空算；只问「确认还是要改」的决策不收；M 开头的按自己定的算', () => {
+  for (const next of ['无新问题，可以进入实现', '没有待办，交给父对话', '无', 'none'])
+    assert.equal((parseStageReport({ ...base, next }) as { report: { next: string } }).report.next, '')
+  assert.equal(
+    (parseStageReport({ ...base, next: 'Q3 存档格式' }) as { report: { next: string } }).report.next,
+    'Q3 存档格式',
+  )
+  const confirm = parseStageReport({
+    ...base,
+    decisions: [
+      ...base.decisions,
+      {
+        id: 'C1',
+        title: '方案是否确认',
+        options: [
+          { id: 'A', label: '确认' },
+          { id: 'B', label: '还有要改' },
+        ],
+        pick: 'A',
+      },
+    ],
+  })
+  assert.ok(!confirm.ok && /C1 只是在问「确认还是要改」/.test(confirm.error))
+  const m = parseStageReport({ ...base, decisions: [{ ...base.decisions[1], id: 'M3', self: false }] })
+  assert.ok(m.ok && m.report.decisions[0].self)
+})
+
+test('阶段报告：没选的那项写着和用户原话一致时，要么改推荐、要么写清为什么偏离', () => {
+  const d = {
+    id: 'Q1',
+    title: '事件什么时候抛',
+    options: [
+      { id: 'A', label: 'StartGameplay 之后', note: '更稳' },
+      { id: 'B', label: '黑屏结束时', note: '与「黑屏结束」字面一致' },
+    ],
+    pick: 'A',
+  }
+  const bad = parseStageReport({ summary: 's', decisions: [d] })
+  assert.ok(!bad.ok && /选项 B 写着和用户原话一致.*deviates/.test(bad.error))
+  assert.ok(parseStageReport({ summary: 's', decisions: [{ ...d, pick: 'B' }] }).ok)
+  assert.ok(parseStageReport({ summary: 's', decisions: [{ ...d, deviates: '黑屏结束时玩家还不能操作' }] }).ok)
+})
+
+test('上游报告里有没有决策最终选了某项：用户改选的算用户的；没交报告是 undefined', () => {
+  const rep = {
+    summary: 's',
+    decisions: [
+      {
+        id: 'D1',
+        title: '枚举导表',
+        options: [
+          { id: 'A', label: '立即验证', note: '' },
+          { id: 'B', label: '暂缓（待用户完成）', note: '' },
+        ],
+        pick: 'A',
+        why: '',
+        self: false,
+        question: '',
+      },
+    ],
+    details: '',
+    next: '',
+  }
+  assert.equal(reportPicked(undefined, '立即验证'), undefined)
+  assert.equal(reportPicked([{ report: rep, at: '', result: 'confirmed' }], '立即验证'), true)
+  assert.equal(reportPicked([{ report: rep, at: '', result: 'confirmed', picks: { D1: 'B' } }], '立即验证'), false)
 })

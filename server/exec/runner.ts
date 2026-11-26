@@ -17,6 +17,7 @@ import { effortRejected } from '../models.ts'
 import type { AgentCall, AgentResult } from '../../shared/engine/host.ts'
 
 import { CONTEXT_CARRY_SHARE, MIN_CLIP_TOKENS, restartCarry } from './transcript.ts'
+import { flowAutoAnswer } from './flow-ask.ts'
 import { cliSwitchedText, systemNote, firstNoEffortTell, noEffortSkippedText } from './recovery.ts'
 import { awaitingCompact, CompactTracker, settleCompactRow } from './compaction.ts'
 
@@ -559,6 +560,8 @@ async function runAgent(
     askUser: () => task.askUser,
     // 用户报的 Bug：提问不交给用户，改成交诊断报告（shared/bug/no-ask.ts）
     askRedirect: () => bugAskRedirect(task),
+    // 工作流节点：提问关着时问题记成「待你决定」，收不回的事先不做（flow-ask.ts，复盘 P1-9）
+    autoAnswer: flowAutoAnswer({ task, agentId, step, newId: ctx.newId, changed: ctx.changed }),
     // 对话、工作流节点和工作流跑完后的追加要求都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (!op && (step || task.mode === 'workflow')) ? (c) => register(c) : undefined,
     readNotes: taker ? () => taker.read() : undefined,

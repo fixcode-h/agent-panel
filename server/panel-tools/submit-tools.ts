@@ -74,6 +74,10 @@ const SUBMIT_REPORT = {
             pick: { type: 'string', description: '你选的那项的 id' },
             why: { type: 'string', description: '为什么选它' },
             self: { type: 'boolean', description: '按规则自己定的、不必用户拍板' },
+            deviates: {
+              type: 'string',
+              description: '推荐项和用户原话不一致时必填：哪里不一致、为什么还推荐它；一致就不写',
+            },
           },
           required: ['id', 'title', 'options', 'pick'],
         },
@@ -82,7 +86,7 @@ const SUBMIT_REPORT = {
       next: {
         type: 'string',
         description:
-          '确认后这个节点还要问用户的下一轮问题；没有就不写。实现、测试、提交这些交给后面节点的事不要写进来，写了也不会回到你这里',
+          '确认后这个节点还要问用户的下一轮问题；没有就不写（不要写「无新问题」这类话）。实现、测试、提交这些交给后面节点的事不要写进来，写了也不会回到你这里。「确认还是要改」由确认卡做，不要写成决策',
       },
     },
     required: ['summary'],

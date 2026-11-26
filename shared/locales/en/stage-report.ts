@@ -16,6 +16,8 @@ export const EN_STAGE_REPORT: Record<string, string> = {
   已改: 'Changed',
   'Agent 推荐': 'Recommended',
   '推荐理由：{why}': 'Why: {why}',
+  偏离原话: 'Differs from your words',
+  '和你的原话不一致：{why}': 'Differs from what you said: {why}',
   '{n} 项 · 改了 {k} 项': '{n} items · {k} changed',
   需要你决定: 'Your decisions',
   我按规则定的: 'Decided by the Agent',
@@ -44,4 +46,7 @@ export const EN_STAGE_REPORT: Record<string, string> = {
     'View only; to approve or revise, click "View result" on the confirmation card',
   '只能查看；要确认或修改，点报告栏上的「查看结果」':
     'View only; to approve or revise, click "View result" on the report bar',
+  '待你决定：Agent 想问「{q}」。提问关着没有弹给你，流程照常往下走；收不回的事它先不做，会写进报告交给你定。':
+    'For you to decide: the agent wanted to ask "{q}". Questions are off, so it was not shown to you and the workflow keeps going; anything that cannot be undone is left undone and goes into the report for you to decide.',
+  '上一步没有选「{label}」的项，这一步不用做。': 'Nothing was set to "{label}" in the previous step, so this step is skipped.',
 }

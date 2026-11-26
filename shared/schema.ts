@@ -379,6 +379,11 @@ export const FlowNode = z.object({
    * 执行 Lua 又弹了 19 张卡）。和工作流的 grants 同一套规则键，只在跑这个节点（含它派的子任务）时按「本对话不再询问」算
    */
   grants: z.array(WorkflowGrant).max(10).optional(),
+  /**
+   * 只在上游 from 节点确认过的阶段报告里有决策最终选了 label 这项时才跑；一项都没有就直接记成完成、不起 Agent
+   * （2026-11-26 复盘 P2-3：用户把延期验证项都改成了暂缓，「执行立即验证」照样起了一个 Agent 只为说一句没有要做的）
+   */
+  runIfPicked: z.object({ from: z.string().min(1), label: z.string().min(1) }).optional(),
 })
 export type FlowNode = z.infer<typeof FlowNode>
 

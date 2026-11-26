@@ -66,6 +66,7 @@ function DecisionCard({
           {d.id}
         </span>
         <span className={cn('min-w-0 flex-1 font-medium text-fg', dense ? 'text-body' : 'text-prose')}>{d.title}</span>
+        {d.deviates?.trim() && <StatusPill tone="wait">{t('偏离原话')}</StatusPill>}
         {changed && <StatusPill tone="wait">{t('已改')}</StatusPill>}
       </div>
       {d.question.trim() && (
@@ -113,6 +114,12 @@ function DecisionCard({
       {d.why.trim() && (
         <p className="mt-2 border-t border-line pt-2 text-footnote leading-relaxed text-subtle">
           {t('推荐理由：{why}', { why: d.why.trim() })}
+        </p>
+      )}
+      {/* 推荐项和用户原话不一致：单独一行写出来，用户确认前一眼能看到（复盘 P1-2） */}
+      {d.deviates?.trim() && (
+        <p className="mt-2 text-footnote leading-relaxed text-warning">
+          {t('和你的原话不一致：{why}', { why: d.deviates?.trim() })}
         </p>
       )}
     </div>

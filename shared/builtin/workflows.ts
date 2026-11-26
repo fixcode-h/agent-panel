@@ -52,6 +52,8 @@ interface NodeSpec {
   retries?: number
   /** 只在这个节点里自带的授权（FlowNode.grants） */
   grants?: { rule: string; label?: string }[]
+  /** 上游确认的报告里选了这项才跑（FlowNode.runIfPicked） */
+  runIfPicked?: { from: string; label: string }
 }
 interface FlowSpec {
   id: string
@@ -362,7 +364,9 @@ ${CHILD_RULES}`,
           {
             ...DOCS_NODE,
             instructions:
-              '把这次变更涉及的模块文档同步好（主 specs 由归档同步，不用再抄一遍）；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。这一步和延期验证、归档同时进行，只写模块文档，不碰 openspec/changes 下的文件。',
+              '把这次变更涉及的模块文档同步好（主 specs 由归档同步，不用再抄一遍）；没有要更新的写明原因。这次修的是用户报的 Bug 才写 Bug 记录。这一步和延期验证、归档同时进行，只写模块文档，不碰 openspec/changes 下的文件。\n' +
+              '- 文档和 ADR 里不要链到 openspec/changes/<变更名>/ 下的文件：归档会把整个目录移走，链接就断了；要引用就链主 specs（openspec/specs/<能力>/spec.md），写变更名即可。\n' +
+              '- 先看这次已经改过哪些模块文档（实现和子任务常会顺手改 README），只补缺的，不重写一遍。',
           },
           {
             id: 'deferred',
@@ -382,6 +386,8 @@ ${CHILD_RULES}`,
             agent: 'tester',
             tier: 'medium',
             params: { scope: '本次改动', regress: false },
+            // 用户一项都没选立即验证时不起 Agent（复盘 2026-11-26 P2-3）
+            runIfPicked: { from: 'deferred', label: '立即验证' },
             // 用户在上一步选了「立即验证」就是同意在游戏里测（复盘 2026-11-25 C1：归档节点 8 分钟弹了 19 张授权卡）。
             // 规则键是 UE 插件的，其他项目碰不到这两类操作，不起作用
             grants: [
@@ -852,6 +858,7 @@ export function buildFlow(f: FlowSpec, agentId: (key: string) => string): Flow {
           ...(!steps.length && n.confirm && { confirm: true }),
         } satisfies NodeHooks,
         ...(n.grants?.length && { grants: n.grants.map((g) => ({ rule: g.rule, label: g.label ?? '' })) }),
+        ...(n.runIfPicked && { runIfPicked: n.runIfPicked }),
       }
     }),
     edges: f.edges.map(([from, to, when], i): FlowEdge => ({ id: `e${i + 1}`, from, to, ...(when && { when }) })),
