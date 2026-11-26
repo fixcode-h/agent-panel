@@ -3,6 +3,7 @@
  * 一行按文本找时 VS 的服务没开、跳过后面板按文本找。工具卡片耗时旁的小标和点开后的路由步骤都要有东西看
  */
 import type { Task } from '@shared/schema'
+import { noteSkillUsage } from '@shared/skills/usage'
 
 export function demoFindRows(task: Task, agentId: string) {
   task.messages.push({
@@ -53,5 +54,13 @@ export function demoFindRows(task: Task, agentId: string) {
       },
     ],
     at: new Date().toISOString(),
+  })
+}
+
+/** 会话栏「环境 → 技能」（ADR 0083）：开跑带上的两个、面板按情境推过正文的一个，演示里也要能点开看 */
+export function demoSkillUsage(task: Task, agentId: string) {
+  noteSkillUsage(task.usage.agents[agentId], {
+    carried: ['frontend-design', 'project-vcs'],
+    pushed: ['systematic-debugging'],
   })
 }

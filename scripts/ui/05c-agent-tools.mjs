@@ -1,6 +1,7 @@
 /**
  * 界面检查分片：设置 →「Agent 工具」→「技能」（ADR 0083）：技能目录按来源分组、搜索、开关自动推送，
- * 详情里改条件、「每个对话都带」、恢复默认、最近推送。演示数据由 web/src/lib/demo/demo-agent-tools.ts 给。
+ * 详情里改条件、「每个对话都带」、恢复默认、最近推送；
+ * 工具路由、调用记录页签（ADR 0084），对话页卡片上实际走的路和会话栏「技能」。演示数据由 web/src/lib/demo/demo-agent-tools.ts 给。
  */
 import { runShard } from './harness.mjs'
 
@@ -46,4 +47,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, '设置-Agent工具-每个对话都带', ['每个对话都带'])
   if (!(await p.locator('[data-skill="lua-code-style"] >> text=每个对话都带').count()))
     errors.push('设置-Agent工具：设成每个对话都带后列表行没有徽标')
+
+  // 工具路由、调用记录两个页签（ADR 0084）和对话页：卡片上实际走的路、会话栏「技能」一行
+  await p.getByRole('tab', { name: '工具路由' }).click()
+  await check(p, '设置-Agent工具-工具路由')
+  await p.getByRole('tab', { name: '调用记录' }).click()
+  await check(p, '设置-Agent工具-调用记录', ['网关自身耗时', '实际走的'])
+  await p.keyboard.press('Escape')
+
+  await p.getByText('购物车右上角的数量角标').first().click()
+  await p
+    .locator('[data-route-badge]')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('对话页：查找卡片上没有实际走的路'))
+  const skills = p.locator('[data-session-skills]')
+  await skills.locator('button').first().click()
+  await check(p, '对话-会话栏技能', ['推过', 'systematic-debugging', '开跑带上'])
 })
