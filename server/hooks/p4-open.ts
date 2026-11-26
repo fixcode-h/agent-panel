@@ -4,6 +4,7 @@ import type { HookFacts } from '../../shared/hooks/index.ts'
 import type { P4Run } from '../p4-split.ts'
 import { p4Open, p4WritePlan } from '../vcs/p4-plan.ts'
 import { editTargets } from './guards-edit.ts'
+import { p4ConflictLines, shellWriteTargets } from './shell-write-targets.ts'
 import { taskMap } from '../runtime/task-state.ts'
 
 /**
@@ -41,7 +42,10 @@ export function p4AutoOpen(cwd: string, run: P4Run, taskId = ''): P4AutoOpen {
     const root = path.resolve(cwd)
     return [
       ...new Set(
-        editTargets(facts)
+        [
+          ...editTargets(facts),
+          ...(facts.tool?.kind === 'shell' ? shellWriteTargets(String(facts.tool.input.command ?? '')) : []),
+        ]
           .map((p) => path.resolve(cwd, p))
           .filter((abs) => {
             const r = path.relative(root, abs)
@@ -67,9 +71,9 @@ export function p4AutoOpen(cwd: string, run: P4Run, taskId = ''): P4AutoOpen {
     if (stale.length) {
       for (const f of plan.edit) mine.add(key(f))
       asked.set(taskId, mine)
-      const list = stale.map((s) => `${rel(s.file)}（本地 #${s.have}，最新 #${s.head}）`)
+      const list = stale.map((s) => `${rel(s.file)}（${staleWhy(s)}）`)
       return {
-        deny: `【面板】这些是没法合并的资源文件，本地版本落后于 P4 上的最新版：${list.join('、')}。先不要改：问用户是先更新再改（只 p4 sync 这几个文件，不同步别的），还是不更新直接改（之后提交会和别人的版本冲突）。用户回答后再改，面板不再拦这几个文件。`,
+        deny: `【面板】这些是没法合并的资源文件，本地不是最新或别人也打开着：${list.join('、')}。先不要改（命令行里用 python 等改也一样）：问用户是先更新再改（只 p4 sync 这几个文件，不同步别的）、等别人提交，还是不管直接改（之后提交会和别人的版本冲突，只能二选一）。用户回答后再改，面板不再拦这几个文件。`,
       }
     }
     if (!plan.edit.length) return {}
@@ -85,17 +89,40 @@ export function p4AutoOpen(cwd: string, run: P4Run, taskId = ''): P4AutoOpen {
   }
 
   const after = async (facts: HookFacts) => {
+    // 兜底：命令行里自己 p4 edit 的、钩子之前没认出来的，P4 报了「不是最新 / 别人打开着」就补一句（同一对话同一行只补一次）
+    const out = facts.tool?.kind === 'shell' ? (facts.tool.result?.output ?? '') : ''
+    const mine = asked.get(taskId) ?? new Set<string>()
+    const lines = p4ConflictLines(out).filter((l) => !mine.has(l))
+    let note = ''
+    if (lines.length) {
+      for (const l of lines) mine.add(l)
+      asked.set(taskId, mine)
+      note = `【面板】P4 说这些文件本地不是最新或别人也打开着：${lines.join('；')}。如果是没法合并的资源（表格、UE 资源、图片），先别改，问用户是先只 sync 这几个文件、等别人提交，还是直接改。`
+    }
     const files = targets(facts)
       .map((f) => toAdd.get(key(f)))
       .filter((f): f is string => !!f && existsSync(f))
-    if (!files.length) return ''
+    if (!files.length) return note
     for (const f of files) toAdd.delete(key(f))
     const bad = await p4Open(run, 'add', files)
     if (bad)
-      return `【面板】新文件自动 p4 add 失败（${bad}）：先自己 p4 add 进 default changelist，失败原因原样告诉用户。`
+      return [
+        note,
+        `【面板】新文件自动 p4 add 失败（${bad}）：先自己 p4 add 进 default changelist，失败原因原样告诉用户。`,
+      ]
+        .filter(Boolean)
+        .join('\n')
     for (const f of files) opened.add(key(f))
-    return ''
+    return note
   }
 
   return { before, after }
+}
+
+/** 拦下原因里每个文件的一句说明：落后几版、几个人打开着 */
+function staleWhy(s: { have: number; head: number; others?: number }) {
+  const parts = []
+  if (s.have < s.head) parts.push(`本地 #${s.have}，最新 #${s.head}`)
+  if (s.others) parts.push(`另有 ${s.others} 处打开着`)
+  return parts.join('，')
 }

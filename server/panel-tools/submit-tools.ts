@@ -150,6 +150,14 @@ function callSubmitTool(o: Orchestra, name: string, a: ToolArgs) {
         must: b.must === true,
       }))
       .filter((b: { text: string }) => b.text)
+    // 通过却带着必须处置的意见：两个说法自相矛盾，面板不替它选一个（2026-11-26 复盘 P1-3，评审交 pass 时 R1、R2 都是 must）
+    const must = blockers.filter((b: { must: boolean }) => b.must)
+    if (v === 'pass' && must.length)
+      return text(
+        `结论自相矛盾，没有收下：verdict=pass，但 ${must.map((b: { id: string; text: string }) => b.id || b.text.slice(0, 20)).join('、')} 标了 must（必须处置）。` +
+          '真有必须改的就交 verdict=fail；只是建议就把这几条的 must 改成 false，并在 text 里写清为什么可以不改。',
+        true,
+      )
     const r = o.submitVerdict({ verdict: v, blockers })
     return text(r.info, !r.ok)
   }

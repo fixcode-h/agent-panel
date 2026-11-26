@@ -183,7 +183,9 @@ async function launchSkills(
       alert: makeAlert('warn', (err as Error).message, 'panel'),
     })
     ctx.changed(true)
-    return { names: [], args: [], note: '', dir: '' }
+    // 也告诉 Agent：不然它以为技能都在，照着技能目录去找、找不到才发现（复盘 P1-5 子任务 h2）
+    const note = `【面板】这一轮要带的技能没能准备好（${(err as Error).message}），技能目录里可能没有它们；要用到技能里的做法时先告诉用户，不要自己猜。`
+    return { names: [], args: [], note, dir: '' }
   }
 }
 
