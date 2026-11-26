@@ -60,6 +60,12 @@ export async function setGatewayMode(mode: GatewayMode) {
   await save({ ...cur, gateway: { ...cur.gateway, mode } })
 }
 
+/** 外部 MCP 服务代理的开关（ADR 0085），和网关模式存在一起 */
+export async function setMcpProxy(on: boolean) {
+  const cur = await readHooks()
+  await save({ ...cur, gateway: { ...cur.gateway, mcpProxy: on } })
+}
+
 const isBuiltinKey = (k: string) => BUILTIN_HOOKS.some((h) => h.id === k)
 
 /**

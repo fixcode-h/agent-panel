@@ -48,6 +48,7 @@ import { EN_FILE_INDEX } from './en/file-index.ts'
 import { EN_TOOLS } from './en/tools.ts'
 import { EN_TOOL_GATEWAY } from './en/tool-gateway.ts'
 import { EN_TOOL_TAKEOVER } from './en/tool-takeover.ts'
+import { EN_MCP_PROXY } from './en/mcp-proxy.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_FOLD_BAR } from './en/fold-bar.ts'
@@ -110,6 +111,7 @@ export const EN: Record<string, string> = {
   ...EN_TOOLS,
   ...EN_TOOL_GATEWAY,
   ...EN_TOOL_TAKEOVER,
+  ...EN_MCP_PROXY,
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
   ...EN_FOLD_BAR,

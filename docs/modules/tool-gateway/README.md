@@ -41,6 +41,8 @@
 - 磁盘：`<数据目录>/logs/tool-calls/<YYYY-MM-DD>.jsonl`，一行 `{"t":"call",…}` 或 `{"t":"done","id",…}`，只追加，留 14 天。写不进去后本次运行不再试，只记日志。
 - 推送：`signalPages({ type: 'tool-call', call })`；页面用 `web/src/lib/live/tool-calls.ts` 的 `useToolCallFeed`，演示版发 `agent-panel:tool-call` 事件。
 
+外部 MCP 工具记 `mcp: { server, tool, proxied? }`：经面板代理的（Agent 经 `more_tools` 写「服务/工具」调的，ADR 0085）在认调用时先由 `proxiedCallOf`（`shared/mcp-proxy/names.ts`）换成真正的服务和工具，`kind` 是 `mcp`、能力表按外部工具认；代理那一侧见 [mcp-proxy](../mcp-proxy/README.md)。
+
 字段要点：`ms` 网关自己（认调用 + 推算 + 记录），`hookMs` 整个工具前回答，`durMs` 工具前到工具后；`pushes` 钩子补的说明（id + 字数），`skills` 推的技能（`server/skills/push-ledger.ts`）；`serial` 本可以并行（判定见 `stats.ts` 的 `isSerial`）。
 
 ## 能力表
@@ -62,7 +64,7 @@
 
 ## 设置「Agent 工具」
 
-`web/src/components/settings/agent-tools/`：页签登记在 `tabs.tsx`（技能 10、工具路由 20、调用记录 30，新页签加一项）。「调用记录」：搜索 + 项目 / 对话 / 决定 / 能力筛选、五张统计卡、可展开的表格；「工具路由」：模式（关闭 / 观察 / 改道，默认观察）、每个能力接管什么和几条路的状态、各 CLI 支不支持一条回复发几个调用（CLI 定义 `features.parallelTools`）和查找接管能做到哪一步（CLI 定义 `takeover`）。调用记录展开后改写过的显示「改写成」、放行的显示原因、走过的路。
+`web/src/components/settings/agent-tools/`：页签登记在 `tabs.tsx`（技能 10、工具路由 20、调用记录 30，新页签加一项）。「调用记录」：搜索 + 项目 / 对话 / 决定 / 能力筛选、五张统计卡、可展开的表格；「工具路由」：模式（关闭 / 观察 / 改道，默认观察）、每个能力接管什么和几条路的状态、各 CLI 支不支持一条回复发几个调用（CLI 定义 `features.parallelTools`）和查找接管能做到哪一步（CLI 定义 `takeover`）。最下面「给 Agent 的工具」（代理开关和每个外部服务怎么给，见 [mcp-proxy](../mcp-proxy/README.md)）。调用记录展开后改写过的显示「改写成」、放行的显示原因、走过的路。
 
 ## 耗时
 

@@ -58,7 +58,9 @@ export function RouteSteps({ route }: { route: ToolRoute }) {
         <Waypoints className="h-3 w-3 shrink-0" />
         {route.from
           ? t('面板把 {from} 改走 {cap}', { from: route.from, cap: route.capability })
-          : t('面板按顺序试了这几条路')}
+          : route.capability === 'mcp'
+            ? t('面板代为调用外部服务')
+            : t('面板按顺序试了这几条路')}
         {route.ms !== undefined && <span className="tabular-nums">· {fmtDuration(route.ms)}</span>}
       </span>
       {route.steps.map((s, i) => (

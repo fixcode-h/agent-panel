@@ -141,7 +141,7 @@ function CallDetail({ r }: { r: CallRecord }) {
                 decision: DECISION_LOOKS[r.wouldRoute.decision].label(),
                 by: r.wouldRoute.by,
               })
-            : t('{to}（{decision}，按 {by} 认的；观察模式没有真的改）', {
+            : t('{to}（{decision}，按 {by} 认的；没有真的改）', {
                 to: r.wouldRoute.to,
                 decision: DECISION_LOOKS[r.wouldRoute.decision].label(),
                 by: r.wouldRoute.by,

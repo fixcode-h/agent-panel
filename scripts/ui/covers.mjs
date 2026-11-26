@@ -192,6 +192,13 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/CustomToolSaveCard.tsx',
     'web/src/lib/demo/demo-custom-tools.ts',
   ],
+  // 设置「工具路由」的「给 Agent 的工具」、对话里代理的外部工具（ADR 0085），演示数据在 demo-mcp-proxy.ts
+  '05d-mcp-proxy': [
+    'web/src/components/settings/agent-tools/ExposureGroup.tsx',
+    'web/src/lib/demo/demo-mcp-proxy.ts',
+    'shared/mcp-proxy/',
+    'shared/api-contract/mcp-proxy.ts',
+  ],
   '06-settings-agent': [
     'web/src/components/settings/',
     'web/src/components/ai-window/',

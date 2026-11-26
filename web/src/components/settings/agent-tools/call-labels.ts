@@ -75,6 +75,9 @@ export function actualRoute(r: CallRecord): string {
   if ((r.decision === 'rewrite' || r.decision === 'serve') && r.route)
     return t('面板改走 {cap} · {via}', { cap: r.route.capability, via: routeText(r.route) })
   if (r.kind === 'panel') return t('面板工具')
+  // 经面板代理的外部工具（ADR 0085）写出服务和工具：Agent 调的那一格只看得到 more_tools
+  if (r.kind === 'mcp' && r.mcp?.proxied)
+    return t('面板代理 {server} · {tool}', { server: r.mcp.server, tool: r.mcp.tool })
   if (r.kind === 'mcp') return t('外部 MCP')
   return t('CLI 自带')
 }

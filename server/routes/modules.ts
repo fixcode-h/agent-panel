@@ -23,6 +23,7 @@ import { apiSpeedApi } from '../cli/api-speed.ts'
 import { integrationsApi } from '../integrations.ts'
 import { hooksApi } from '../hooks/api.ts'
 import { toolGatewayApi } from '../tool-gateway/api.ts'
+import { mcpProxyApi } from '../mcp-proxy/api.ts'
 import { configScanApi } from '../config-scan.ts'
 import { libraryApi } from '../library.ts'
 import { mcpApi } from '../mcp-store.ts'
@@ -111,6 +112,8 @@ export function toolModules({ projects, agents }: Pick<ModuleDeps, 'projects' | 
     { prefix: '/hooks', app: hooksApi({ projects, agents }) },
     // 工具网关：调用记录、统计、模式和能力表（ADR 0084）
     { prefix: '/tool-gateway', app: toolGatewayApi({ projects }) },
+    // 外部 MCP 服务代理：给 Agent 的工具、代理开关（ADR 0085）
+    { prefix: '/mcp-proxy', app: mcpProxyApi({ projects }) },
     { prefix: '/config-scan', app: configScanApi() },
     { prefix: '/library', app: libraryApi() },
     { prefix: '/mcp-tools', app: mcpApi() },

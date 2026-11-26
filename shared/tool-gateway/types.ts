@@ -42,6 +42,8 @@ export interface ToolCall {
   /** mcp 才有：服务名和去掉前缀的工具名 */
   server?: string
   mcpTool?: string
+  /** 经面板代理的外部工具（Agent 通过 more_tools 调的，ADR 0085） */
+  proxied?: boolean
   /** 面板工具去掉前缀的名字 */
   panel?: string
 }
@@ -82,7 +84,11 @@ export const GATEWAY_MODE_DEFS: { id: GatewayMode; label: () => string; hint: ()
 ]
 
 /** 数据目录 hooks.json 里网关这一段（和内置钩子的开关存在一起，见 shared/hooks/defs.ts 的 HooksData） */
-export const GatewaySettings = z.object({ mode: z.enum(GATEWAY_MODES).default(DEFAULT_GATEWAY_MODE) })
+export const GatewaySettings = z.object({
+  mode: z.enum(GATEWAY_MODES).default(DEFAULT_GATEWAY_MODE),
+  /** 外部 MCP 服务改由面板代理（ADR 0085）：默认开，关掉时外部服务照旧直接挂在 CLI 上 */
+  mcpProxy: z.boolean().default(true),
+})
 export type GatewaySettings = z.infer<typeof GatewaySettings>
 
 /** 打开改道时会改到哪（只是推算，观察模式不执行） */
@@ -112,6 +118,8 @@ export const CallRecord = z.object({
   kind: z.enum(CALL_KINDS),
   /** 命令或路径（截短） */
   summary: z.string(),
+  /** 外部 MCP 工具：服务名、工具名；proxied 是经面板代理调的（ADR 0085），没有是 CLI 直接调的 */
+  mcp: z.object({ server: z.string(), tool: z.string(), proxied: z.boolean().optional() }).optional(),
   /** 原调用的输入（JSON，截短），点开一行时看 */
   input: z.string(),
   category: z.enum(COMMAND_CATEGORIES).optional(),

@@ -6,7 +6,8 @@
  *   （hooks.events['tool.before'].rewrite），两样都有才改写；
  * - serve：拒绝说明能带结果（面板执行，结果交回）；
  * - hideBuiltin：能关掉自带的工具（Claude Code 的 --disallowedTools、Pi 的 --exclude-tools），第二期只登记；
- * - mcpOnlyPanel：能只用面板给的 MCP 服务（Claude Code 的 --strict-mcp-config），外部服务经面板代理时用（ADR 0085）；
+ * - mcpOnlyPanel：能只用面板给的 MCP 服务，外部服务经面板代理时用（ADR 0085）；mcpOnlyArgs 是做到这一点的启动参数
+ *   （Claude Code 的 --strict-mcp-config），开着代理、面板服务接上时才加；
  * - tools：CLI 自带搜索工具的输入形状。grep 是 ripgrep 形状（pattern / path / glob / type / output_mode），
  *   glob 是按名字找文件（pattern / path）。没登记的自带搜索工具网关不接管
  */
@@ -19,6 +20,7 @@ export const CliTakeover = z.object({
   serve: z.boolean().default(true),
   hideBuiltin: z.boolean().default(false),
   mcpOnlyPanel: z.boolean().default(false),
+  mcpOnlyArgs: z.array(z.string()).default([]),
   tools: z.record(z.string(), z.enum(TAKEOVER_TOOL_SHAPES)).default({}),
   why: z.string().default(''),
 })

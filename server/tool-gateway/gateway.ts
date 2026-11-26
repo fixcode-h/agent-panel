@@ -14,6 +14,7 @@ import type { HookAnswer, HookFacts, HookToolScope, HooksSpec } from '../../shar
 import type { HookEventName } from '../../shared/hooks/defs.ts'
 import { callSummary, classifyCall, readOnlyCall } from '../../shared/tool-gateway/classify.ts'
 import { decide } from '../../shared/tool-gateway/decide.ts'
+import { proxiedCallOf } from '../../shared/mcp-proxy/names.ts'
 import { isSerial } from '../../shared/tool-gateway/stats.ts'
 import type { CallRecord, GatewayMode, ToolCall } from '../../shared/tool-gateway/types.ts'
 import type { ClaimCtx } from '../../shared/capability-router/capabilities.ts'
@@ -45,6 +46,11 @@ export interface GatewayCtx {
 const INPUT_MAX = 2000
 const keyOf = (name: string, input: Record<string, unknown>) => `${name}\u0000${JSON.stringify(input).slice(0, 4000)}`
 const round2 = (n: number) => Math.round(n * 100) / 100
+const mcpOf = (call: ToolCall) => ({
+  server: call.server ?? '',
+  tool: call.mcpTool ?? '',
+  ...(call.proxied ? { proxied: true } : {}),
+})
 
 export interface Gateway {
   /** 套在原来的钩子回答外面 */
@@ -73,7 +79,9 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
     : undefined
 
   const classify = async (facts: HookFacts): Promise<ToolCall> => {
-    const call = classifyCall(facts.tool!, { cli: c.cliId, spec: c.spec })
+    const raw = classifyCall(facts.tool!, { cli: c.cliId, spec: c.spec })
+    // 经 more_tools 调代理的外部工具（ADR 0085）：按真正的服务和工具记，能力表也按外部工具认
+    const call = proxiedCallOf(raw) ?? raw
     if (call.kind !== 'other' || !c.resolveMcp) return call
     const mcp = await c.resolveMcp(facts.tool!.name, facts.tool!.input)
     return mcp ? { ...call, kind: 'mcp', server: mcp.server, mcpTool: mcp.tool } : call
@@ -125,6 +133,7 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
         kind: call?.kind ?? 'other',
         summary: call ? callSummary(call) : '',
         input: JSON.stringify(facts.tool!.input).slice(0, INPUT_MAX),
+        ...(call?.kind === 'mcp' && call.server ? { mcp: mcpOf(call) } : {}),
         ...(call?.command?.category ? { category: call.command.category } : {}),
         ...(call?.command ? { segments: call.command.segments } : {}),
         ...d,
