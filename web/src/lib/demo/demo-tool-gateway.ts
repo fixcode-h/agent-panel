@@ -1,7 +1,8 @@
 /**
  * 演示：工具网关（ADR 0084）。演示没有真的 CLI 钩子，放一组示例调用记录（按真的网关同一套认调用、推算改道算出来，
  * 不手写 wouldRoute），列表、统计、能力表调 shared/tool-gateway 里和服务端同一份逻辑；几条路的状态是本机才有的事实，演示里写死。
- * 隔一会儿「来」一条新调用，发 tool-call 窗口事件（演示没有推送通道），调用记录页跟着变
+ * 隔一会儿「来」一条新调用，发 tool-call 窗口事件（演示没有推送通道），调用记录页跟着变。
+ * 改完 Lua 面板自动检查（ADR 0086）：一批改动怎么记、什么时候跑、那一行长什么样也用 shared 的同一份；只有检查结果是写好的（演示不起进程）
  */
 import type { CapabilityId } from '@shared/capability-router/types'
 import { classifyCall, callSummary, readOnlyCall } from '@shared/tool-gateway/classify'
@@ -10,7 +11,13 @@ import { gatewayStats, isSerial } from '@shared/tool-gateway/stats'
 import { GatewaySettings, type CallRecord, type GatewayMode } from '@shared/tool-gateway/types'
 import { callPage, callQueryOf, capabilityViews, settingsView } from '@shared/tool-gateway/views'
 import type { CapabilityView } from '@shared/api-contract/tool-gateway'
+import { customToolSigs } from '@shared/custom-tools/match'
+import { newBatch, noteEdits, takeBatch } from '@shared/tool-gateway/verify/batch'
+import { verifyRecord } from '@shared/tool-gateway/verify/record'
+import { verifyNote } from '@shared/tool-gateway/verify/text'
+import type { VerifyRun } from '@shared/tool-gateway/verify/types'
 import { DEMO_TOOL_CALL_EVENT } from '@/lib/live/tool-calls'
+import { demoProjectTools } from './demo-custom-tools'
 import { fail } from './demo-http'
 
 type Sample = {
@@ -37,6 +44,7 @@ const SAMPLES: Sample[] = [
     skills: [['lua-code-style', 2400]],
     dur: 3,
   },
+  { task: SHOP, tool: 'Edit', kind: 'edit', input: { file_path: 'Content/Script/UI/Shop.lua' }, dur: 4 },
   { task: SHOP, tool: 'Bash', kind: 'shell', input: { command: 'rg -n "OnSellAll" Content/Script' }, dur: 182 },
   { task: SHOP, tool: 'Bash', kind: 'shell', input: { command: 'luac -p Content/Script/UI/Bag.lua' }, dur: 410 },
   {
@@ -72,7 +80,26 @@ const SAMPLES: Sample[] = [
   { task: MAIN, tool: 'mcp__panel__find', kind: 'panel', input: { kind: 'refs', query: 'OnSellAll' }, dur: 140 },
 ]
 
-const CUSTOM = [{ id: 'lua-check', name: 'Lua 检查', sigs: ['luac'] }]
+const claimCtx = () => ({
+  customTools: customToolSigs(demoProjectTools().map((tool) => ({ scope: 'project' as const, file: '', tool }))),
+  // 演示的父对话是 UE 项目：挂着 request_build
+  build: 'parent' as const,
+})
+
+/** 演示的检查结果（不起进程）：Shop.lua 第 42 行少了 end，别的通过 */
+function demoVerify(
+  tool: string,
+  files: string[],
+): { run: VerifyRun; errors: { file: string; line: number; msg: string }[] } {
+  const bad = files
+    .filter((f) => f.endsWith('Shop.lua'))
+    .map((file) => ({ file, line: 42, msg: "'end' expected near <eof>" }))
+  const name = demoProjectTools().find((x) => x.id === tool)?.name ?? tool
+  return {
+    run: { trigger: 'auto', tool, name, files, outcome: bad.length ? 'errors' : 'ok', errors: bad.length, ms: 380 },
+    errors: bad,
+  }
+}
 
 function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord {
   const call = classifyCall(
@@ -86,7 +113,7 @@ function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord
     },
     { cli: 'claude', spec: { searchTools: ['Grep', 'Glob'] } },
   )
-  const d = decide(call, { customTools: CUSTOM }, !!s.deny)
+  const d = decide(call, claimCtx(), !!s.deny)
   const readOnly = readOnlyCall(call)
   const r: CallRecord = {
     id: `demo-call-${i}`,
@@ -119,9 +146,48 @@ function record(s: Sample, i: number, at: number, prev?: CallRecord): CallRecord
 
 let mode: GatewayMode = GatewaySettings.parse({}).mode
 const records: CallRecord[] = []
+// 改完自动校验的一批（按对话记）：改 Lua 时记下，这个对话下一个不是改文件的调用前跑一次
+const batches = new Map<string, ReturnType<typeof newBatch>>()
+
+/** 记一条示例调用；改完 Lua 后的第一个别的调用前，先记一行面板自己跑的校验，报错推给这次调用 */
+function push(s: Sample, i: number, at: number) {
+  const b = batches.get(s.task[0]) ?? newBatch()
+  batches.set(s.task[0], b)
+  const r = record(s, i, at, records[0])
+  if (s.kind === 'edit') {
+    const verifiers = demoProjectTools().filter((x) => x.role?.kind === 'verify')
+    noteEdits(
+      b,
+      [String(s.input.file_path ?? '')],
+      verifiers.map((x) => ({ id: x.id, paths: x.role!.paths })),
+    )
+  } else if (!s.deny) {
+    const outs = takeBatch(b).map((x) => ({ ...demoVerify(x.tool, x.files), tail: [] }))
+    for (const o of outs)
+      records.unshift(
+        verifyRecord(
+          {
+            id: `demo-verify-${i}-${o.run.tool}`,
+            at: at - 400,
+            projectId: r.projectId,
+            taskId: r.taskId,
+            taskTitle: r.taskTitle,
+            turn: r.turn,
+            cli: r.cli,
+          },
+          o.run,
+        ),
+      )
+    const note = verifyNote(outs)
+    if (note) r.pushes = [...(r.pushes ?? []), { id: 'verify:lua-check', chars: note.length }]
+  }
+  records.unshift(r)
+  return r
+}
+
 {
   const t0 = Date.now() - SAMPLES.length * 40_000
-  SAMPLES.forEach((s, i) => records.unshift(record(s, i, t0 + i * 40_000, records[0])))
+  SAMPLES.forEach((s, i) => push(s, i, t0 + i * 40_000))
 }
 let next = SAMPLES.length
 let ticking = false
@@ -134,8 +200,7 @@ function tick() {
   setTimeout(() => {
     ticking = false
     const s = SAMPLES[next % SAMPLES.length]
-    const r = record(s, next++, Date.now(), records[0])
-    records.unshift(r)
+    const r = push(s, next++, Date.now())
     window.dispatchEvent(new CustomEvent(DEMO_TOOL_CALL_EVENT, { detail: { call: r } }))
   }, 8000)
 }

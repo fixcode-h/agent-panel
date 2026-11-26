@@ -91,8 +91,6 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
   '读 .uasset / .umap：编辑器开着在编辑器里读，没开时不开编辑器读文件。':
     'Read .uasset / .umap: through the editor when it is open, otherwise from the file without opening the editor.',
   改动生效: 'Apply changes',
-  '按改了哪些文件、编辑器和 VS 的状态选 Live Coding、VS 编译、UBT 或 Lua 热重载。':
-    'Pick Live Coding, a VS build, UBT or a Lua hot reload based on which files changed and the state of the editor and VS.',
   '不经过网关：不记录，也不算能改到哪': 'Bypass the gateway: nothing is recorded or inferred',
   '观察（只记录）': 'Observe (record only)',
   '只记录「能改到哪」，不真的改；看过调用记录再打开':

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Copy, Hammer, MoreHorizontal, MoveRight, Pencil, Play, RefreshCw, Trash2, TriangleAlert } from 'lucide-react'
 import type { ToolEntry, ToolScope } from '@shared/custom-tools/schema'
 import { t } from '@shared/i18n'
+import { Badge } from '@/components/ui/badge'
 import { CommandEffectBadge } from '@/components/ui/tool-run-result'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { IconButton } from '@/components/ui/icon-button'
@@ -156,6 +157,11 @@ function ToolRow({
         muted={e.shadowed}
         trailing={
           <>
+            {x.role && (
+              <Badge tone="accent" title={x.role.paths.join('、') || undefined}>
+                {x.role.kind === 'verify' ? t('校验') : t('编译')}
+              </Badge>
+            )}
             <CommandEffectBadge effect={x.effect} />
             <IconButton
               icon={MoreHorizontal}

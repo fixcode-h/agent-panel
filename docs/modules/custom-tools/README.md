@@ -4,10 +4,10 @@
 - 职责：/createtool 做出来的项目和全局工具：存取、版本、参数校验和命令展开、运行（守卫、授权、P4 签出、长任务放后台）、保存弹窗、管理页和「/」菜单
 - 源码：`shared/custom-tools/`、`server/custom-tools/`、`server/panel-tools/custom-tool.ts`、`shared/api-contract/custom-tools.ts`、`web/src/components/projects/caps/tools/`
 - 入口：`server/custom-tools/agent.ts`
-- 关键词：自建工具、createtool、custom_tool、导表、项目工具、全局工具、ctool
+- 关键词：自建工具、createtool、custom_tool、导表、项目工具、全局工具、ctool、role、校验工具、replaces
 - 更新：2026-11-26
 
-为什么这么定见 [ADR 0082](../../adr/0082-custom-tools.md)，设计稿 `docs/openspec/changes/custom-tools/design.md`。
+为什么这么定见 [ADR 0082](../../adr/0082-custom-tools.md)（用途 `role` 见 [ADR 0086](../../adr/0086-verify-and-apply.md)），设计稿 `docs/openspec/changes/custom-tools/design.md`。
 
 ## 入口
 
@@ -33,3 +33,10 @@
 - 插件的按钮要跑一条命令时，不在插件里另配命令行，绑一个项目工具：`server/custom-tools/host.ts` 的 `projectTools` 给下拉选、`spawnProjectTool` 起进程（例：UE 插件 Lua 页的增量编译、全编译，2026-11-26）。只认项目工具，全局的只在本机、同事那边找不到。
 - 新的「存到项目还是全局」的东西用 `ScopePicker`；要按参数定义出表单用 `ToolParamForm`。
 - 演示后端 `web/src/lib/demo/demo-custom-tools.ts` 调 shared 里同一份校验和展开，命令不真的执行。
+
+## 用途 role（ADR 0086）
+
+- `role: { kind: 'verify' | 'build', paths, replaces, arg?, listFile }`，可选，编辑抽屉「用途」页（`RoleTab.tsx`）能改，列表行上有「校验」「编译」徽标。
+- verify：工具网关在 Agent 改完对得上 `paths` 的文件、去做别的事时自己跑它（`server/tool-gateway/verify/`），只推报错；必须 `effect: read`，`draftProblems` 会拦。改过的文件填进 `arg`（不写用第一个 path 参数），`listFile` 写成清单一次跑完。
+- `replaces`：`customToolSigs` 收进 `CustomToolSig.replaces`，网关改道时 Agent 跑这些程序改走这个工具，观察模式下情境规则 `custom-tool-instead` 也认它。
+- build：能力「改动生效」的一条路，UE 编译命令在没挂 `request_build` 的对话里改用它。

@@ -181,8 +181,16 @@ export const UI_SHARD_COVERS = {
   '05c-agent-tools': [
     'web/src/components/settings/agent-tools/',
     'web/src/lib/demo/demo-agent-tools.ts',
+    // 调用记录（ADR 0084）和其中改完自动校验那一行（ADR 0086）的演示数据
+    'web/src/lib/demo/demo-tool-gateway.ts',
     'shared/skills/',
     'shared/api-contract/agent-tools.ts',
+  ],
+  // 自建工具（ADR 0082、0086）：「技能与 MCP → 工具」页签、编辑抽屉（含用途页）、保存弹窗
+  '07b-custom-tools': [
+    'web/src/components/projects/caps/tools/',
+    'web/src/components/tasks/CustomToolSaveCard.tsx',
+    'web/src/lib/demo/demo-custom-tools.ts',
   ],
   '06-settings-agent': [
     'web/src/components/settings/',

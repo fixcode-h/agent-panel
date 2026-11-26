@@ -8,10 +8,12 @@ import {
   CATEGORY_LABEL,
   DECISION_LOOKS,
   KIND_LABEL,
+  VERIFY_TONE,
   actualRoute,
   capabilityLabel,
   hookLabel,
   msText,
+  verifyLabel,
 } from './call-labels'
 
 /** 调用记录的表格：一行一次调用，点开看原调用、认成什么、守卫和补充说明来源 */
@@ -49,8 +51,15 @@ export function CallTable({ items }: { items: CallRecord[] }) {
                   {r.tool}
                   {r.summary && <span className="text-subtle"> · {r.summary}</span>}
                 </td>
-                <td className="px-3 py-2">
-                  <Badge tone={DECISION_LOOKS[r.decision].tone}>{DECISION_LOOKS[r.decision].label()}</Badge>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {r.verify?.trigger !== 'auto' && (
+                    <Badge tone={DECISION_LOOKS[r.decision].tone}>{DECISION_LOOKS[r.decision].label()}</Badge>
+                  )}
+                  {r.verify && (
+                    <Badge tone={VERIFY_TONE[r.verify.outcome]} className={r.verify.trigger === 'auto' ? '' : 'ml-1'}>
+                      {verifyLabel(r.verify)}
+                    </Badge>
+                  )}
                   {r.error && (
                     <Badge tone="danger" className="ml-1">
                       {t('网关出错')}
@@ -117,11 +126,29 @@ function CallDetail({ r }: { r: CallRecord }) {
       <Line k={t('认成')}>{what.join(' · ')}</Line>
       {r.wouldRoute && (
         <Line k={t('会改到')}>
-          {t('{to}（{decision}，按 {by} 认的；观察模式没有真的改）', {
-            to: r.wouldRoute.to,
-            decision: DECISION_LOOKS[r.wouldRoute.decision].label(),
-            by: r.wouldRoute.by,
-          })}
+          {r.decision === r.wouldRoute.decision
+            ? t('{to}（{decision}，按 {by} 认的；改道模式，真的改了）', {
+                to: r.wouldRoute.to,
+                decision: DECISION_LOOKS[r.wouldRoute.decision].label(),
+                by: r.wouldRoute.by,
+              })
+            : t('{to}（{decision}，按 {by} 认的；观察模式没有真的改）', {
+                to: r.wouldRoute.to,
+                decision: DECISION_LOOKS[r.wouldRoute.decision].label(),
+                by: r.wouldRoute.by,
+              })}
+        </Line>
+      )}
+      {r.verify && (
+        <Line k={t('校验')}>
+          {[
+            verifyLabel(r.verify),
+            t('{n} 个文件：{files}', { n: r.verify.files.length, files: r.verify.files.join('、') || '—' }),
+            r.verify.note,
+            r.verify.logFile && t('日志 {file}', { file: r.verify.logFile }),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </Line>
       )}
       {r.denyBy && <Line k={t('拒绝')}>{hookLabel(r.denyBy)}</Line>}

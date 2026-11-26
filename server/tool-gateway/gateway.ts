@@ -3,7 +3,8 @@
  * 认调用（shared/tool-gateway/classify.ts）→ 交给原来的守卫、推送、用户钩子（照旧决定拒绝还是放行）→
  * 推算打开改道会改到哪（shared/tool-gateway/decide.ts）→ 记一条调用记录（./call-log.ts）。
  *
- * 第一期只观察：回给 CLI 的永远是原来那一份回答，网关不改一个字。网关自己出错一律放行（原回答照样返回），记一条 error。
+ * 第一期只观察：回给 CLI 的是原来那一份回答，网关不改道。例外是校验（ADR 0086，./verify/）：改完对得上的文件后面板自己跑检查、
+ * 把报错补进这次的说明；改道模式下它还接管 luac、编译命令。网关自己出错一律放行（原回答照样返回），记一条 error。
  * 一次 CLI 调用（一轮）开一个网关：同一轮里的调用才比「本可以并行」，工具前和工具后按工具名 + 输入配对
  */
 import { performance } from 'node:perf_hooks'
@@ -19,6 +20,7 @@ import { skillPushes } from '../skills/push-ledger.ts'
 import { log } from '../log.ts'
 import { addCall, callDone, lastInTurn } from './call-log.ts'
 import { withSink, type CallSink } from './sink.ts'
+import { openVerify, type VerifyDeps, type VerifyGate } from './verify/index.ts'
 
 type OnHook = (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
 
@@ -32,6 +34,8 @@ export interface GatewayCtx {
   claimCtx: () => Promise<ClaimCtx>
   /** 不是 mcp__ 写法的 MCP 工具名按已知服务认 */
   resolveMcp?: (name: string, input: Record<string, unknown>) => Promise<{ server: string; tool: string } | undefined>
+  /** 改完自动校验、改道接管 luac / 编译（ADR 0086，./verify/）；不给时不做 */
+  verify?: VerifyDeps
 }
 
 const INPUT_MAX = 2000
@@ -45,6 +49,8 @@ export interface Gateway {
   events: (events: HookEventName[], off: Set<HookEventName>) => HookEventName[]
   /** 所有类别的工具都要进网关：读文件、MCP、面板工具也记 */
   tools: (scope: HookToolScope) => HookToolScope
+  /** 收尾前先把没校验的改动跑一次（ADR 0086）；没接校验时原样返回 */
+  wrapEnd: VerifyGate['wrapEnd']
 }
 
 /** 关着时返回 undefined：dispatch 照旧，不多装一个钩子 */
@@ -54,6 +60,13 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
   // 工具前建的、还没等到工具后的记录：同一个工具名 + 输入按先后配对（同样的调用连发两次也按顺序对上）
   const pending = new Map<string, CallRecord[]>()
   let claim: Promise<ClaimCtx> | undefined
+  const verify = c.verify
+    ? openVerify({
+        mode: c.mode,
+        deps: c.verify,
+        base: () => ({ projectId: c.projectId, taskId: c.task.id, taskTitle: c.task.title, turn, cli: c.cliId }),
+      })
+    : undefined
 
   const classify = async (facts: HookFacts): Promise<ToolCall> => {
     const call = classifyCall(facts.tool!, { cli: c.cliId, spec: c.spec })
@@ -78,9 +91,19 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
     const sink: CallSink = { pushes: [] }
     const answer = await withSink(sink, () => inner('tool.before', facts))
     const t2 = performance.now()
+    let out = answer
     try {
       const denied = !!answer.deny
       const d = call ? decide(call, await claim!, denied) : { decision: denied ? ('deny' as const) : ('pass' as const) }
+      // 校验和改动生效（ADR 0086）：改完自动跑检查只补说明；改道模式下接管 luac、编译命令。它自己用时不算网关的 ms
+      const t3 = performance.now()
+      const v =
+        call && verify
+          ? await verify.before({ call, denied, route: d.wouldRoute, claim: await claim!, answer })
+          : undefined
+      const t4 = performance.now()
+      if (v) out = v.answer
+      if (v?.pushes.length) sink.pushes.push(...v.pushes)
       const skills = skillPushes(c.task.id)
         .slice(skillsBefore)
         .map((s) => ({ skill: s.skill, chars: s.chars, tokens: s.tokens }))
@@ -101,6 +124,8 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
         ...(call?.command?.category ? { category: call.command.category } : {}),
         ...(call?.command ? { segments: call.command.segments } : {}),
         ...d,
+        ...(v?.decision ? { decision: v.decision } : {}),
+        ...(v?.verify ? { verify: v.verify } : {}),
         ...(denied && sink.denyBy ? { denyBy: sink.denyBy } : {}),
         ...(sink.pushes.length ? { pushes: sink.pushes } : {}),
         ...(skills.length ? { skills } : {}),
@@ -110,9 +135,9 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
       }
       if (isSerial(lastInTurn(c.projectId, turn), r)) r.serial = true
       // ms：网关自己（认调用、推算、记录）；hookMs：整个工具前回答（守卫、推送、用户钩子加网关）
-      r.ms = round2(own0 + performance.now() - t2)
+      r.ms = round2(own0 + performance.now() - t2 - (t4 - t3))
       r.hookMs = round2(performance.now() - t0)
-      if (!denied) {
+      if (!out.deny) {
         const k = keyOf(facts)
         pending.set(k, [...(pending.get(k) ?? []), r])
       }
@@ -120,8 +145,9 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
     } catch (e) {
       // 网关出错放行：原来的回答照样返回，调用记录里记一条「网关出错」
       noteError(facts, (e as Error).message, answer)
+      out = answer
     }
-    return answer
+    return out
   }
 
   const noteError = (facts: HookFacts, message: string, answer: HookAnswer) => {
@@ -185,5 +211,7 @@ export function openGateway(c: GatewayCtx): Gateway | undefined {
       'tool.before': [...(scope['tool.before'] ?? []), 'any'],
       'tool.after': [...(scope['tool.after'] ?? []), 'any'],
     }),
+    wrapEnd: (inner, mark) =>
+      verify ? verify.wrapEnd(inner, mark) : (inner ?? (async () => ({ block: false, why: '' }))),
   }
 }

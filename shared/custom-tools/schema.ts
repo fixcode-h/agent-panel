@@ -70,6 +70,26 @@ export const ToolOutput = z.object({
   errorPattern: z.string().optional(),
 })
 
+/**
+ * 工具在能力路由里的用途（ADR 0086）：不写就照旧只在工具表里、由 Agent 自己调。
+ * - verify：能力「校验」的一条路。Agent 改了对得上 paths 的文件、去做别的事时面板自己跑它，只把报错推回去；
+ *   要求只读（effect: read），因为面板自己跑、不弹授权卡；
+ * - build：能力「改动生效」的一条路（项目自己的编译脚本），Agent 自己拼编译命令时指到它。
+ * replaces：Agent 自己跑这些程序（如 luac）时，改道模式下改走这个工具；观察模式只记「会改到哪」
+ */
+export const ToolRole = z.object({
+  kind: z.enum(['verify', 'build']),
+  /** verify：改了哪些文件要跑它（相对项目根的通配，** 任意层），例如 **∕*.lua */
+  paths: z.array(z.string()).default([]),
+  /** 认作同一件事的程序名（小写、不带 .exe），例如 luac */
+  replaces: z.array(z.string()).default([]),
+  /** 改过的文件填进哪个参数；不写用第一个 path 类型的参数，没有就不带文件跑一次 */
+  arg: z.string().optional(),
+  /** 改过的文件写成清单文件（一行一个）再把清单路径填进参数：一次查完，不按文件一个个跑 */
+  listFile: z.boolean().default(false),
+})
+export type ToolRole = z.infer<typeof ToolRole>
+
 export const ToolVersion = z.object({
   version: z.number().int(),
   at: z.string(),
@@ -96,6 +116,8 @@ export const CustomTool = z.object({
   output: ToolOutput.default({ okExit: [0] }),
   /** 属于能力路由的哪个能力（ADR 0081），例如 apply-change:lua；路由接上之前只是标记 */
   capability: z.string().optional(),
+  /** 在能力路由里的用途（校验、编译）；可选字段，旧文件没有它照常读 */
+  role: ToolRole.optional(),
   /** 从哪些文件总结出来的（相对项目根） */
   sources: z.array(z.string()).default([]),
   version: z.number().int().min(1).default(1),
