@@ -11,6 +11,7 @@ import { t } from '../../shared/i18n.ts'
 import { projectOf } from '../project-data/index.ts'
 import { copyTool, findTool, GLOBAL_TOOLS_DIR, listTools, noteRun, removeTool, saveTool } from './store.ts'
 import { execute, prepare } from './run.ts'
+import { listPrograms, PROGRAMS_FILE, removeProgram, setProgram } from './programs.ts'
 
 const scopeOf = (v: string) => ToolScope.safeParse(v).data
 
@@ -95,5 +96,17 @@ export function customToolsApi() {
       })
     return c.json({ ok: result.ok, text: runText(tool, result), line: p.line, output })
   })
+  app.get(C.programs.path, async (c) =>
+    c.json({ items: await listPrograms(c.req.query('projectId') || ''), file: PROGRAMS_FILE }),
+  )
+  app.put(C.setProgram.path, async (c) => {
+    const body = C.setProgram.body.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return c.json({ error: t('参数不对') }, 400)
+    const { projectId, ...input } = body.data
+    return c.json(await setProgram(projectId, { ...input, by: t('我') }))
+  })
+  app.delete(C.removeProgram.path, async (c) =>
+    c.json(await removeProgram(c.req.query('projectId') || '', c.req.param('name'))),
+  )
   return app
 }
