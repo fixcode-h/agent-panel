@@ -42,4 +42,6 @@ export const EN_STAGE_REPORT: Record<string, string> = {
     'This report has been handled, view only; switch versions to see each round',
   '只能查看；要确认或修改，点确认卡片上的「查看结果」':
     'View only; to approve or revise, click "View result" on the confirmation card',
+  '只能查看；要确认或修改，点报告栏上的「查看结果」':
+    'View only; to approve or revise, click "View result" on the report bar',
 }
