@@ -135,6 +135,37 @@ export function demoAlerts(task: Task) {
       detail:
         'Claude Code 在 90 秒里没有任何输出（没有思考、正文或工具调用）。\n交给它的最后一条内容：\n后台命令「等待 CI」跑完了：成功',
     }),
+    // find 按文本找时本机没装 rg：调用行照常显示，后面跟一行提示让用户装（server/capability-router/tag-route.ts）
+    {
+      id: `demo-${crypto.randomUUID()}`,
+      role: 'agent',
+      agentId: task.agentId,
+      step: '',
+      text: '',
+      tools: [
+        {
+          kind: 'other',
+          name: 'MCP',
+          label: 'panel · find',
+          detail: '',
+          input: '{"action":"text","query":"ChairStateEventKeyOptions"}',
+          output: '2 条：\nSource/Chair/ChairOptions.lua:12: M.ChairStateEventKeyOptions = {',
+          ms: 6200,
+        },
+        {
+          kind: 'other',
+          name: '提示',
+          label: '本机没装 rg（ripgrep），这次只能降级执行，点开看怎么装',
+          detail: '',
+          alert: {
+            kind: 'tool_missing',
+            level: 'warn',
+            detail: 'rg（ripgrep）：winget install --id BurntSushi.ripgrep.MSVC -e',
+          },
+        },
+      ],
+      at,
+    },
     note('Claude Code 执行失败（退出码 1）：', {
       kind: 'quota',
       level: 'error',
