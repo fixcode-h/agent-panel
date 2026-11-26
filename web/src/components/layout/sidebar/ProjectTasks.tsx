@@ -2,19 +2,19 @@ import { useState } from 'react'
 import { ChevronDown, MessageSquarePlus } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import type { TaskLive } from '@shared/live/task-live'
-import { liveBusy } from '@shared/live/task-live'
 import { t } from '@shared/i18n'
 import { askedAt } from '@shared/task'
 import { useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { SIDEBAR_GROUP_LABEL, TaskRow } from '../SidebarTasks'
 import { projectDayBuckets } from './project-day-buckets'
+import { inProgress } from './in-progress'
 
 /** 「更早」展开过就记住，下次打开面板还是展开的；默认收起，只露最近三天 */
 const OLDER_OPEN_KEY = 'sidebar-project-older-open'
 
 /**
- * 当前项目的对话（方案 B，效果图 B）：「进行中」是在执行、等你处理的，其余的按最近发言分成
+ * 当前项目的对话（方案 B，效果图 B）：「进行中」是在执行、等你处理、失败和计划卡住的（见 inProgress），其余的按最近发言分成
  * 「今天 / 昨天 / 前天」各一组，再早的收进一个可展开的「更早」，组内都按最近发言排。
  * 只列这一个项目；看别的项目用顶上的项目下拉，看全部用「全部项目」或对话总览
  */
@@ -46,10 +46,7 @@ export function ProjectTasks({
       return !v
     })
   const active = (tk: Task) => route.page === 'projects' && route.sub === tk.id
-  const live = tasks.filter((tk) => {
-    const l = liveOf(tk)
-    return liveBusy(l) || l.state === 'needs'
-  })
+  const live = tasks.filter((tk) => inProgress(tk, liveOf(tk)))
   const days = projectDayBuckets(
     tasks.filter((tk) => !live.includes(tk)),
     askedAt,
