@@ -102,9 +102,7 @@ export const GATEWAY_TASKS = [
         summary: '检查 Lua 文件的语法（块配对），改完 Lua 后用',
         useWhen: '改完 .lua 文件后检查语法',
         effect: 'read',
-        role: 'verify',
-        paths: ['**/*.lua'],
-        replaces: ['luac'],
+        role: { kind: 'verify', paths: ['**/*.lua'], replaces: ['luac'], arg: 'files' },
         params: [
           { name: 'files', label: '文件', type: 'string', desc: '要检查的 .lua 文件，空格分隔', required: true },
         ],
