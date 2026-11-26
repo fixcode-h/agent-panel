@@ -1582,6 +1582,8 @@ export const EN_TASKS: Record<string, string> = {
   去处理: 'Handle',
   子对话需要你确认: 'A sub-conversation needs your approval',
   子对话等你处理: 'A sub-conversation needs you',
+  工作流等你确认: 'A workflow needs your confirmation',
+  '{n} 个工作流等你确认': '{n} workflow(s) need your confirmation',
   // 首页：面板重启后问要不要全部继续（RestartResumeBar）
   被面板重启打断的对话: 'Conversations interrupted by panel restart',
   '上次面板关闭时有 {n} 个对话在运行，已经中断':

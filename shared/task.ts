@@ -512,8 +512,10 @@ export interface ConvFacts {
   asking?: number
   /** 还在跑、排队的后台命令数 */
   background?: number
-  /** 工作流运行还没跑完（见 runRunning） */
+  /** 工作流运行还没跑完（见 runRunning；父对话名下在跑的工作流运行也算，见 TaskFactsInput.runsWorking） */
   workflow?: boolean
+  /** 名下工作流运行停在等用户确认的个数（没交给父对话代答的）：有它自己也是「等你处理」 */
+  runNeeds?: number
   /** 派出去的子任务还在跑（见 helpersWorking） */
   helpers?: boolean
   /** 名下还在动的子对话数（它们的 convState 是执行中、等结果、等你处理，见 convActive） */
@@ -592,7 +594,7 @@ export function convState(x: ConvFacts): ConvState {
   // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
   // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
   if (x.gone && !x.working && !diag && !pending) return 'done'
-  if (x.requests || x.asking || x.childNeeds || x.action) return 'needs'
+  if (x.requests || x.asking || x.childNeeds || x.runNeeds || x.action) return 'needs'
   // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
   // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
@@ -1532,6 +1534,12 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
      */
     childrenWorking?: number
     childrenNeeds?: number
+    /**
+     * 名下工作流运行（start_workflow 起的，不是子对话、没有 parentTaskId）：在跑的个数、停在等你确认的个数。
+     * 不算的话运行在跑时父对话只剩「未完成 1/4」，侧栏不归进「进行中」（用户 2026-11-26 报）
+     */
+    runsWorking?: number
+    runsNeeds?: number
     jobs?: TaskJob[]
     runs?: Task['runs']
     archived?: Task['archived']
@@ -1555,10 +1563,11 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     asking: x.child?.parentAsks?.length ?? 0,
     // 常驻服务（开发服务器、监听）一直跑到被停掉，不算「还在等后台结果」
     background: x.jobs?.filter((j) => !j.service).length ?? 0,
-    workflow: runRunning(x),
+    workflow: runRunning(x) || (x.runsWorking ?? 0) > 0,
     helpers: helpersWorking(x),
     children: x.childrenWorking ?? 0,
     childNeeds: x.childrenNeeds ?? 0,
+    runNeeds: x.runsNeeds ?? 0,
     stopReason: x.stopReason,
     gone: taskGone(x),
     // 计划没做完（ADR 0041 P4）：这一轮停了、也不在等结果时显示「未完成」，不再显示成「已完成」画橙点

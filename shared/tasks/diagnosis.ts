@@ -73,6 +73,9 @@ type DiagTask = Pick<
   jobs?: TaskJob[]
   childrenWorking?: number
   childrenNeeds?: number
+  /** 名下工作流运行：在跑的、等你确认的个数（见 TaskFactsInput.runsWorking） */
+  runsWorking?: number
+  runsNeeds?: number
   archived?: boolean
   deletedAt?: string
   userActions?: Task['userActions']
@@ -109,6 +112,9 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
       childNeeds: task.childrenNeeds ?? 0,
     }),
     children: busyKids.length || (task.childrenWorking ?? 0),
+    // 名下工作流运行（不是子对话）：在跑算等结果，等你确认算等你处理，和侧栏、标题栏同一口径
+    workflow: runRunning(task) || (task.runsWorking ?? 0) > 0,
+    runNeeds: task.runsNeeds ?? 0,
   }
   const state = convState(facts)
   // 短词按同一份事实取（shared/tasks/word.ts）：标题和状态不会各说各的
@@ -172,7 +178,9 @@ export function diagnoseTask(task: DiagTask, children: (ChildEntry & { title: st
         j.state === 'queued' ? t('排队中') : j.startedAt ? t('已运行 {ago}', { ago: timeAgo(j.startedAt, now) }) : '',
       tone: 'accent',
     })
-  if (runRunning(task)) items.push({ kind: 'workflow', text: t('工作流运行中'), tone: 'accent' })
+  if (runRunning(task) || task.runsWorking) items.push({ kind: 'workflow', text: t('工作流运行中'), tone: 'accent' })
+  if (task.runsNeeds)
+    items.push({ kind: 'ask', text: t('{n} 个工作流等你确认', { n: task.runsNeeds }), tone: 'warning' })
 
   // 计划：还剩几步、下一步做什么；面板推过它之后还停着要标出来（ADR 0032）
   const open = openPlan(task)

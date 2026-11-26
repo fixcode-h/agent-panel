@@ -29,7 +29,7 @@ export const TaskLive = z.object({
   /** 对外的状态：侧栏、标题栏、项目首页、标签页、运行区都只认它（见 shared/task.ts 的 convState） */
   state: ConvStateSchema,
   /** 等你处理的是哪一类（state 为 needs 时） */
-  need: z.enum(['answer', 'confirm', 'stage', 'action', 'children']).optional(),
+  need: z.enum(['answer', 'confirm', 'stage', 'action', 'workflow', 'children']).optional(),
   /** 等结果时在等什么（state 为 waiting 时） */
   wait: z.enum(['children', 'helpers', 'background', 'workflow']).optional(),
   /** 交了 Bug 诊断报告等你确认（ADR 0045）：状态仍是执行中，短词写「报告待确认」 */
@@ -57,24 +57,41 @@ export const TaskLive = z.object({
   childrenCli: z.number().int().min(0),
   /** 后代对话里在等用户确认、回答的个数：有它时这个对话也是「等你处理」 */
   childrenNeeds: z.number().int().min(0),
+  /**
+   * 名下在跑的工作流运行数（start_workflow 起的，不是子对话）：有它时父对话是「等结果 · 工作流执行中」，侧栏归进「进行中」。
+   * 没有时不带
+   */
+  runsWorking: z.number().int().min(0).optional(),
+  /** 名下停在等用户确认的工作流运行数（交给父对话代答的不算）：有它时父对话是「等你处理」。没有时不带 */
+  runsNeeds: z.number().int().min(0).optional(),
 })
 export type TaskLive = z.infer<typeof TaskLive>
 
 /** 服务端才知道的那几项：进程登记、后台命令、名下子对话的计数 */
 export type LiveRuntime = Pick<
   TaskLive,
-  'cliAlive' | 'jobs' | 'urls' | 'childrenWorking' | 'childrenCli' | 'childrenNeeds'
+  'cliAlive' | 'jobs' | 'urls' | 'childrenWorking' | 'childrenCli' | 'childrenNeeds' | 'runsWorking' | 'runsNeeds'
 >
 
 /** 判定状态要看的任务事实：和 taskFacts 同一份，再加第一条请求的种类（分辨「等你回答」和「等你确认」） */
-export type LiveFactsInput = Omit<TaskFactsInput, 'jobs' | 'childrenWorking' | 'childrenNeeds'>
+export type LiveFactsInput = Omit<
+  TaskFactsInput,
+  'jobs' | 'childrenWorking' | 'childrenNeeds' | 'runsWorking' | 'runsNeeds'
+>
 
 /**
  * 运行时状态的唯一算法：任务记录 + 服务端的运行时事实 → TaskLive。
  * 服务端（server/tasks/live.ts）和演示后端都只调它，页面不自己算
  */
 export function taskLiveOf(task: LiveFactsInput, rt: LiveRuntime): TaskLive {
-  const facts = { ...task, jobs: rt.jobs, childrenWorking: rt.childrenWorking, childrenNeeds: rt.childrenNeeds }
+  const facts = {
+    ...task,
+    jobs: rt.jobs,
+    childrenWorking: rt.childrenWorking,
+    childrenNeeds: rt.childrenNeeds,
+    runsWorking: rt.runsWorking,
+    runsNeeds: rt.runsNeeds,
+  }
   const next = rt.cliAlive && task.status === 'running' && !task.working
   return { ...liveKind(facts), next, ...rt }
 }
@@ -89,6 +106,8 @@ export const withLiveFacts = <T extends object>(task: T, live: LiveRuntime) => (
   jobs: live.jobs,
   childrenWorking: live.childrenWorking,
   childrenNeeds: live.childrenNeeds,
+  runsWorking: live.runsWorking,
+  runsNeeds: live.runsNeeds,
 })
 
 /** 状态分类：和 taskWord 同一份事实（shared/tasks/word.ts），只是不带文字 */
@@ -127,7 +146,7 @@ export const liveDot = (live: Pick<TaskLive, 'state'>, unread: boolean, viewing 
 
 /** 「等结果」时在等什么、名下子对话在等你时也写出来；别的状态是空串（和 taskWaitText 同一口径） */
 export const liveWaitText = (l: Pick<TaskLive, 'state' | 'need' | 'wait' | 'report'> | undefined) =>
-  l && (l.wait || l.need === 'children') ? liveWord(l) : ''
+  l && (l.wait || l.need === 'children' || l.need === 'workflow') ? liveWord(l) : ''
 
 /**
  * 不落盘的字段：运行时的那几项（以后只在 TaskLive 里）、列表摘要才带的 askedAt、

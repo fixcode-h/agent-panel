@@ -20,8 +20,8 @@ import {
   type TaskFactsInput,
 } from '../task.ts'
 
-/** 等你处理的是哪一类：提问、权限确认、工作流阶段确认、等你去做的事、名下子对话在等 */
-export type NeedKind = 'answer' | 'confirm' | 'stage' | 'action' | 'children'
+/** 等你处理的是哪一类：提问、权限确认、工作流阶段确认、等你去做的事、名下工作流运行在等你确认、名下子对话在等 */
+export type NeedKind = 'answer' | 'confirm' | 'stage' | 'action' | 'workflow' | 'children'
 /** 等结果时在等什么：名下子对话、派出的子任务、后台命令、工作流运行 */
 export type WaitKind = 'children' | 'helpers' | 'background' | 'workflow'
 
@@ -56,6 +56,7 @@ export function stateKind(f: WordFacts): StateKind {
       return { state, need: 'confirm' }
     }
     if (f.action) return { state, need: 'action' }
+    if (f.runNeeds && !f.childNeeds) return { state, need: 'workflow' }
     return { state, need: 'children' }
   }
   if (state === 'running' && f.diagnosis && !f.working) return { state, report: true }
@@ -80,6 +81,8 @@ export function kindWord(k: StateKind): string {
       return t('等你确认')
     case 'action':
       return t('等你操作')
+    case 'workflow':
+      return t('工作流等你确认')
     case 'children':
       return t('子对话等你处理')
   }
@@ -123,5 +126,5 @@ export function childWord(x: ChildEntry & { request?: { kind: Task['requests'][n
  */
 export function taskWaitText(x: TaskFactsInput): string {
   const w = taskWord(x)
-  return w.wait || w.need === 'children' ? w.word : ''
+  return w.wait || w.need === 'children' || w.need === 'workflow' ? w.word : ''
 }

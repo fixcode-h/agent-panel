@@ -6,7 +6,7 @@
  */
 import { bugStage } from '../bug/diagnosis.ts'
 import { childBugStep, lastToolCall } from './doing.ts'
-import { descendantNeeds, pendingRequest } from './needs.ts'
+import { descendantNeeds, ownNeeds, pendingRequest } from './needs.ts'
 import { openPlan } from '../plan/index.ts'
 import type { Task } from '../schema.ts'
 import {
@@ -126,11 +126,15 @@ export type ChildRow = ReturnType<typeof childRow>
  */
 export const childRecordActive = (tk: Task, background: number) => convActive(convState(childFacts(tk, { background })))
 
-/** 父对话上的三项子对话计数：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
+/** 父对话上的三项子对话计数（加上名下工作流运行的两项）：侧栏、子对话刷新信号、输入框「在等什么」都读它们 */
 export interface ChildCounts {
   childrenWorking: number
   childrenCli: number
   childrenNeeds: number
+  /** 名下还在跑的工作流运行（不含停在等你确认的） */
+  runsWorking: number
+  /** 名下停在等你确认的工作流运行（交给父对话代答的不算：那是父对话的事） */
+  runsNeeds: number
 }
 
 /**
@@ -148,8 +152,37 @@ export function childCountsScan(all: Task[], probe: { active: (k: Task) => boole
   }
   // 子对话在等你确认时父对话（以及更上层）也是「等你处理」（见 shared/children/needs.ts）
   const needs = descendantNeeds(all)
+  const runs = flowRunCounts(all, probe.active)
   return (parentId: string): ChildCounts => {
     const c = byParent.get(parentId)
-    return { childrenWorking: c?.working ?? 0, childrenCli: c?.cli ?? 0, childrenNeeds: needs.get(parentId) ?? 0 }
+    const r = runs.get(parentId)
+    return {
+      childrenWorking: c?.working ?? 0,
+      childrenCli: c?.cli ?? 0,
+      childrenNeeds: needs.get(parentId) ?? 0,
+      runsWorking: r?.working ?? 0,
+      runsNeeds: r?.needs ?? 0,
+    }
   }
+}
+
+/**
+ * 父对话名下的工作流运行（start_workflow 起的，记在 flowRun.owner 上、没有 parentTaskId，所以不在上面的子对话计数里）：
+ * 在跑的、停在等你确认的各几个。以前不算，运行在跑时父对话这一轮说完了只剩「未完成 1/4」，
+ * 侧栏不归进「进行中」、也不转圈（用户 2026-11-26 报）。
+ * 「在不在跑」和子对话同一个判定（probe.active：在跑、等结果、等回答）；暂停、等决定、待合回、已结束的不算——
+ * 它们不会自己往下走，父对话会被信叫醒或由用户点继续
+ */
+function flowRunCounts(all: Task[], active: (k: Task) => boolean) {
+  const out = new Map<string, { working: number; needs: number }>()
+  for (const k of all) {
+    const owner = k.flowRun?.owner
+    if (!owner || taskGone(k)) continue
+    const c = out.get(owner) ?? { working: 0, needs: 0 }
+    if (ownNeeds(k) && !k.flowRun?.delegated) c.needs++
+    else if (active(k)) c.working++
+    else continue
+    out.set(owner, c)
+  }
+  return out
 }
