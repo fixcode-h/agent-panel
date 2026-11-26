@@ -575,7 +575,7 @@ export function redactSecrets(s: string) {
 }
 
 /** 递归处理所有字符串 */
-function redactDeep<T>(v: T): T {
+export function redactDeep<T>(v: T): T {
   if (typeof v === 'string') return redactSecrets(v) as T
   if (Array.isArray(v)) return v.map(redactDeep) as T
   if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, redactDeep(x)])) as T
@@ -656,6 +656,8 @@ export const TaskExport = z.object({
   agents: z.array(Agent).default([]),
   /** 导出时算好的统计，分析时不用再算；导入时会重新算 */
   stats: z.unknown().optional(),
+  /** 工具网关的调用记录和改道汇总（复盘看改道情况用，ADR 0084）；导入时不用 */
+  gateway: z.object({ summary: z.unknown(), calls: z.array(z.unknown()) }).optional(),
 })
 export type TaskExport = z.infer<typeof TaskExport>
 

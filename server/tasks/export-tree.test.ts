@@ -109,3 +109,43 @@ test('导出接口带出整棵树，导入接口还原成同一个只读结构',
     ['g1-s'],
   )
 })
+
+test('导出带上这棵树的网关调用记录和改道汇总，别的对话的不带', async () => {
+  const { addCall } = await import('../tool-gateway/call-log.ts')
+  await make('r2')
+  await make('c2', { parentTaskId: 'r2', rootTaskId: 'r2' })
+  const rec = (id: string, taskId: string, extra: Record<string, unknown>) =>
+    addCall({
+      id,
+      at: Date.parse(at) + 1000,
+      projectId: '',
+      taskId,
+      taskTitle: taskId,
+      turn: 't',
+      cli: 'claude',
+      tool: 'Bash',
+      kind: 'shell',
+      summary: 'rg Foo',
+      input: '{}',
+      decision: 'pass',
+      ms: 0,
+      ...extra,
+    } as never)
+  rec('k1', 'r2', { wouldTakeover: 'rewrite' })
+  rec('k2', 'c2', { wouldTakeover: 'pass', takeoverWhy: '只搜一个个文件' })
+  rec('k3', 'other', { wouldTakeover: 'rewrite' })
+  const { bundle } = (await (await api().routes.request('/r2/export')).json()) as {
+    bundle: {
+      gateway?: {
+        calls: { id: string }[]
+        summary: { wouldTakeover: Record<string, number>; passWhy: Record<string, number> }
+      }
+    }
+  }
+  assert.deepEqual(
+    bundle.gateway?.calls.map((c) => c.id),
+    ['k1', 'k2'],
+  )
+  assert.deepEqual(bundle.gateway?.summary.wouldTakeover, { rewrite: 1, pass: 1 })
+  assert.deepEqual(bundle.gateway?.summary.passWhy, { 只搜一个个文件: 1 })
+})

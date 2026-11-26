@@ -13,7 +13,15 @@ import {
 import { clipTranscript, saveTextUpload } from '../uploads.ts'
 import { log } from '../log.ts'
 import { t } from '../../shared/i18n.ts'
-import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../../shared/tasks/export.ts'
+import {
+  importTaskTree,
+  parseTaskExport,
+  exportTaskTree,
+  checkExportSize,
+  redactDeep,
+} from '../../shared/tasks/export.ts'
+import { callsOfTasks } from '../tool-gateway/call-log.ts'
+import { takeoverSummary } from '../../shared/tool-gateway/stats.ts'
 import { runTree } from '../../shared/run/usage.ts'
 import type { TasksScope } from './scope.ts'
 import { currentTask } from './read.ts'
@@ -238,6 +246,9 @@ export function registerReadRoutes(s: TasksScope) {
       const ids = runTree(root, await s.store.list()).map((x) => x.id)
       const tree = (await Promise.all(ids.map((x) => (x === id ? root : s.store.get(x))))).filter((x): x is Task => !!x)
       const bundle = exportTaskTree(root, tree, await s.deps.agents.list(), c.req.query('app') ?? '')
+      // 带上这棵树的网关调用记录：复盘时能看出改道了多少、观察模式下会改道多少（复盘 2026-11-26 P1-13）
+      const calls = await callsOfTasks(new Set(ids), Date.parse(root.createdAt) || 0).catch(() => [])
+      if (calls.length) bundle.gateway = { summary: takeoverSummary(calls), calls: redactDeep(calls) }
       return c.json({ bundle, bytes: checkExportSize(bundle) })
     } catch (e) {
       return s.bad(c, (e as Error).message)

@@ -14,6 +14,7 @@ import {
   findRequestOfSearch,
   findRequestsOfSearch,
   panelExtras,
+  PASS_WHY,
   panelSection,
   planTakeover,
   rewriteCommand,
@@ -143,7 +144,14 @@ test('接不接、怎么接按 CLI 定义的 takeover 走：能改写的改写�
   assert.deepEqual(cdRg?.how === 'rewrite' ? cdRg.units[0].search.paths : [], ['G:/P/Content/Script'])
   const cdRel = searchUnits('cd src/ui && grep -rn Foo lib a.lua')
   assert.deepEqual(cdRel?.[0].search.paths, ['src/ui/lib', 'src/ui/a.lua'])
-  assert.equal(searchUnits('cd src; grep -rn Foo .'), undefined, '; 连的 cd 失败了还在原目录跑')
+  // ; 连的 cd 失败了还在原目录跑：标上 sameDir，服务端只在这个目录就是工作目录时接
+  assert.equal(searchUnits('cd src; grep -rn Foo .')?.[0].sameDir, 'src')
+  assert.equal(searchUnits('cd src && grep -rn Foo .')?.[0].sameDir, undefined)
+  // 只搜一个个文件：面板补不出这次要的，放行
+  const one = tk('grep -n Foo src/a.lua')
+  assert.equal(one?.how === 'pass' && one.why, PASS_WHY.single)
+  const oneMulti = tk('cd G:/P && grep -n Foo a.lua | head')
+  assert.equal(oneMulti?.how, 'pass')
   assert.equal(searchUnits('cd $ROOT && grep -rn Foo .'), undefined, '变量')
   assert.equal(searchUnits('cd - && grep -rn Foo .'), undefined, '回上个目录')
   assert.equal(searchUnits('cd a && cd b && grep -rn Foo .'), undefined, '后面又换目录')

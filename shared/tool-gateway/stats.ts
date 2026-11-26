@@ -46,6 +46,11 @@ export const GatewayStats = z.object({
   }),
   errors: z.number(),
   /**
+   * 改道就绪度：搜索类调用里，改道模式会改写或代答的有多少（观察模式记 wouldTakeover，改道模式记实际的决定）。
+   * 够多（ready）时界面提示可以给这个项目打开改道（用户 2026-11-26 定：统计达标后提示按项目打开）
+   */
+  takeover: z.object({ searches: z.number(), would: z.number(), ready: z.boolean() }),
+  /**
    * 网关自己多花的时间（毫秒；认调用 + 推算改道 + 记录，不含守卫、推送、用户钩子）：平均、中位数、P95、最慢一次（是哪条调用）。
    * hook 是整个工具前回答（守卫、钩子、网关合计）的中位数和 P95，两个对着看才知道网关占了多少
    */
@@ -59,6 +64,9 @@ export const GatewayStats = z.object({
   }),
 })
 export type GatewayStats = z.infer<typeof GatewayStats>
+
+/** 观察到这么多次搜索、其中这么大比例改道能接，就算可以打开改道了 */
+export const TAKEOVER_READY = { searches: 50, share: 0.3 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 /** 排好序的数取分位（最近秩）；空的为 0 */
@@ -75,7 +83,12 @@ export function gatewayStats(records: CallRecord[], n: number): GatewayStats {
   let readOnly = 0
   let serial = 0
   let errors = 0
+  let searches = 0
+  let would = 0
   for (const r of list) {
+    const tk = r.wouldTakeover ?? (r.decision === 'rewrite' || r.decision === 'serve' ? r.decision : undefined)
+    if (tk || r.takeoverWhy) searches++
+    if (tk === 'rewrite' || tk === 'serve') would++
     byDecision[r.decision]++
     if (r.wouldRoute) {
       routable++
@@ -111,6 +124,11 @@ export function gatewayStats(records: CallRecord[], n: number): GatewayStats {
       byTask,
     },
     errors,
+    takeover: {
+      searches,
+      would,
+      ready: searches >= TAKEOVER_READY.searches && would / searches >= TAKEOVER_READY.share,
+    },
     ms: {
       avg: ms.length ? round2(ms.reduce((a, x) => a + x, 0) / ms.length) : 0,
       median: round2(quantile(ms, 0.5)),
@@ -145,4 +163,24 @@ export function filterCalls(records: CallRecord[], o: CallQuery): { items: CallR
   const offset = Math.max(0, o.offset ?? 0)
   const limit = Math.min(200, Math.max(1, o.limit ?? 50))
   return { items: hit.slice(offset, offset + limit), total: hit.length }
+}
+
+/**
+ * 改道情况汇总（导出任务时带上）：实际怎么决定的、观察模式下改道会怎么做、放行都因为什么。
+ * 观察模式攒一阵看这份，「会改写 / 代答」占得多、放行原因里没有大块拿不准的，就可以按项目打开改道
+ */
+export function takeoverSummary(records: CallRecord[]) {
+  const count = (keys: (string | undefined)[]) => {
+    const out: Record<string, number> = {}
+    for (const k of keys) if (k) out[k] = (out[k] ?? 0) + 1
+    return out
+  }
+  return {
+    total: records.length,
+    decision: count(records.map((r) => r.decision)),
+    wouldTakeover: count(records.map((r) => r.wouldTakeover)),
+    passWhy: count(
+      records.map((r) => (r.decision === 'pass' || r.wouldTakeover === 'pass' ? r.takeoverWhy : undefined)),
+    ),
+  }
 }

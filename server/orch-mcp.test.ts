@@ -1491,3 +1491,19 @@ test('submit_verdict：pass 却带 must 的意见不收，写清改交 fail 或�
   assert.equal(got.length, 1)
   s.close()
 })
+
+test('wait_agents：CLI 没带进度令牌时一次最多等 240 秒，带了照旧等到做完', async () => {
+  const waits: number[] = []
+  const o = {
+    self: 'a',
+    canSpawn: true,
+    wait: async (_ids: string[], ms: number) => {
+      waits.push(ms)
+      return { done: [], running: [{ id: 'h1' }], taken: 0 }
+    },
+  } as never
+  const r = await callOrchTool(o, 'wait_agents', {}, undefined, { progress: false })
+  assert.match(r.content[0].text, /还在执行：h1/)
+  await callOrchTool(o, 'wait_agents', {}, undefined, { progress: true })
+  assert.deepEqual(waits, [240_000, 1_500_000])
+})

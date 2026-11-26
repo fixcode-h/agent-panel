@@ -6,7 +6,7 @@
  */
 import { readFile, stat } from 'node:fs/promises'
 import type { FindHit, FindOutcome, FindRequest } from '../../../shared/capability-router/find/types.ts'
-import { declRe, lastName, LANG_EXT, textRe } from '../../../shared/capability-router/find/text-patterns.ts'
+import { declRe, lastName, LANG_EXT, looksRegex, textRe } from '../../../shared/capability-router/find/text-patterns.ts'
 import type { ProjectIndex } from '../../file-index/registry.ts'
 import { RG_MISSING, rgScan } from './rg-scan.ts'
 import type { RouteSource } from '../router.ts'
@@ -100,9 +100,11 @@ function lineMatcher(req: FindRequest) {
 async function viaRg(o: RgOpts, req: FindRequest, signal?: AbortSignal): Promise<FindOutcome | 'missing' | undefined> {
   const ext = req.ext?.length ? req.ext : (LANG_EXT[req.lang] ?? TEXT_EXT)
   const want = req.kind === 'refs' ? MAX_REFS : req.offset + req.limit + 200
+  const regex = req.kind === 'text' && looksRegex(req.query)
   const r = await rgScan({
     root: o.root,
     needle: req.kind === 'text' ? req.query : lastName(req.query),
+    regex,
     ...(req.under?.length && { under: req.under }),
     ext,
     exclude: o.exclude,
@@ -114,7 +116,12 @@ async function viaRg(o: RgOpts, req: FindRequest, signal?: AbortSignal): Promise
   if (!r || r === 'missing') return r
   const hit = lineMatcher(req)
   const hits = r.lines.flatMap((l) => hit(l.file, l.line, l.text) ?? []).slice(0, want)
-  const note = r.partial ? '这次只查了一部分（命中太多或超过时间上限）；用 under / ext 缩小范围再查。' : undefined
+  const note = [
+    regex ? `query 按正则和原文各查了一遍（「${req.query}」里有正则写法）。` : '',
+    r.partial ? '这次只查了一部分（命中太多或超过时间上限）；用 under / ext 缩小范围再查。' : '',
+  ]
+    .filter(Boolean)
+    .join('')
   return { hits, ...(note && { note }) }
 }
 

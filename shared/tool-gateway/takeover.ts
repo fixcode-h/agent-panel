@@ -38,7 +38,14 @@ export const PASS_WHY = {
   noFind: '这个对话不在项目里，没有查找的路',
   nothing: '面板没有多出来的结果（声明、原命令按原文搜不到的都没有），照原命令跑',
   original: '面板没能照原样跑一遍原命令（找不到程序、出错、超时、输出太长或是二进制），照原命令跑',
+  single: '只搜一个个文件：面板补不出原命令没有的（声明、动态引用都在这个文件里），照原命令跑',
 } as const
+
+/**
+ * 只搜指定文件（路径都带扩展名）：find 只能按所在目录查，补出来的都是别的文件，对这次搜索没用，
+ * 反而在执行前多等一次（复盘 2026-11-26：48 次改写里约 30 次是单文件 grep 或项目外）
+ */
+const onlyFiles = (s: SearchSpec) => s.paths.length > 0 && s.paths.every((p) => hasExt(p.replace(/[\\/]+$/, '')))
 
 /**
  * 这次调用接不接、怎么接；不归查找接管的返回 undefined（网关照旧只推算）。
@@ -53,19 +60,24 @@ export function planTakeover(
     if (NAME_FINDERS.includes(by)) return { how: 'pass', why: PASS_WHY.files, by }
     if (call.command.segments !== 1) {
       // 多段只在能改写时接：原命令照样整条跑，面板在每个搜索段前面原地补；代答要面板自己跑原命令，多段跑不准
-      const units = o.takeover.rewrite && o.rewriteTpl ? searchUnits(String(call.input.command ?? '')) : undefined
-      return units ? { how: 'rewrite', search: units[0].search, units, by } : { how: 'pass', why: PASS_WHY.multi, by }
+      const all = o.takeover.rewrite && o.rewriteTpl ? searchUnits(String(call.input.command ?? '')) : undefined
+      const units = all?.filter((u) => !onlyFiles(u.search))
+      if (all?.length && !units?.length) return { how: 'pass', why: PASS_WHY.single, by }
+      return units?.length
+        ? { how: 'rewrite', search: units[0].search, units, by }
+        : { how: 'pass', why: PASS_WHY.multi, by }
     }
     const search = parseSearchCommand(String(call.input.command ?? ''))
     if (!search) return { how: 'pass', why: PASS_WHY.args, by }
+    if (onlyFiles(search)) return { how: 'pass', why: PASS_WHY.single, by }
     if (o.takeover.rewrite && o.rewriteTpl) return { how: 'rewrite', search, units: [{ search, at: 0 }], by }
     if (o.takeover.serve && search.run) return { how: 'serve', search, by }
     return { how: 'pass', why: PASS_WHY.cli, by }
   }
   // 类别按第一段认（`cat a && grep Foo .` 是 read）：多段里夹着搜索的也接，只在能改写时
   if (call.kind === 'shell' && (call.command?.segments ?? 0) > 1 && o.takeover.rewrite && o.rewriteTpl) {
-    const units = searchUnits(String(call.input.command ?? ''))
-    if (units) return { how: 'rewrite', search: units[0].search, units, by: units[0].search.program }
+    const units = searchUnits(String(call.input.command ?? ''))?.filter((u) => !onlyFiles(u.search))
+    if (units?.length) return { how: 'rewrite', search: units[0].search, units, by: units[0].search.program }
   }
   if (call.kind === 'read' && call.search) {
     const by = call.tool
@@ -74,6 +86,7 @@ export function planTakeover(
     if (shape === 'glob') return { how: 'pass', why: PASS_WHY.files, by }
     const search = parseGrepTool(call.input)
     if (!search) return { how: 'pass', why: PASS_WHY.args, by }
+    if (onlyFiles(search)) return { how: 'pass', why: PASS_WHY.single, by }
     // 自带工具换不成 shell 命令：只能代答
     return o.takeover.serve ? { how: 'serve', search, by } : { how: 'pass', why: PASS_WHY.cli, by }
   }

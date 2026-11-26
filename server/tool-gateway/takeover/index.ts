@@ -133,6 +133,9 @@ async function rewrite(
   inner: HookAnswer,
 ): Promise<TakeoverOut> {
   const original = String(call.input.command ?? '')
+  // `cd <目录>;` 起头的：目录就是工作目录才接（cd 失败时搜索在原目录跑，两边也一致），不是就整条照原命令跑
+  if (plan.units.some((u) => u.sameDir && path.resolve(d.cwd, u.sameDir) !== path.resolve(d.cwd)))
+    return { decision: 'pass', why: PASS_WHY.multi }
   const looked = await Promise.all(plan.units.map((u) => lookup(d, run, u.search)))
   const ok = looked.flatMap((l, i) => ('out' in l ? [{ ...l, at: plan.units[i].at }] : []))
   if (!ok.length) return { decision: 'pass', why: (looked[0] as { why: string }).why }
@@ -181,6 +184,21 @@ export async function takeover(d: TakeoverDeps, call: ToolCall, inner: HookAnswe
 }
 
 const INPUT_MAX = 2000
+
+/**
+ * 观察模式：只按纯逻辑推一下改道模式会怎么做，记进调用记录（不去查、不跑原命令，不多花时间）。
+ * 工作目录外、`cd 子目录;` 这些要到服务端才知道的不算，记成计划里的样子
+ */
+export function wouldTakeover(r: CallRecord, call: ToolCall, d: TakeoverDeps) {
+  try {
+    const p = planTakeover(call, { takeover: d.takeover, rewriteTpl: d.rewriteTpl })
+    if (!p) return
+    r.wouldTakeover = p.how
+    if (p.how === 'pass') r.takeoverWhy = p.why
+  } catch {
+    // 推算出错不影响调用：这一条就不记
+  }
+}
 
 /**
  * 网关调这一个：接管不出错地跑完，返回交回 CLI 的回答和要并进调用记录的几项。

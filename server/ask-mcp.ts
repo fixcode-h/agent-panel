@@ -237,6 +237,12 @@ const alwaysLoad = <T extends object>(t: T) => ({
   _meta: { ...(t as { _meta?: Record<string, unknown> })._meta, [ALWAYS_LOAD]: true },
 })
 
+/** 请求里 CLI 给的进度令牌（MCP 的 params._meta.progressToken）；没给返回 undefined */
+const progressTokenOf = (m: any): string | number | undefined => {
+  const t = m?.params?._meta?.progressToken
+  return typeof t === 'string' || typeof t === 'number' ? t : undefined
+}
+
 async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any, signal?: AbortSignal) {
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
@@ -255,7 +261,8 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
   const call = async (name: string, args: any): Promise<unknown> => {
     if (name === TOOL.name && s.ask) return callAsk(s, args)
     if (name === NOTES_TOOL.name && s.notes) return callNotes(s)
-    if (s.orch && orch.some((x) => x.name === name)) return callOrchTool(s.orch, name, args, signal)
+    if (s.orch && orch.some((x) => x.name === name))
+      return callOrchTool(s.orch, name, args, signal, { progress: progressTokenOf(msg) !== undefined })
     if (s.app && APP_TOOLS.some((x) => x.name === name)) return callAppTool(s.app, name, args)
     if (name === WAIT_TOOL.name && s.wait) {
       const text = await s.wait()
@@ -369,9 +376,24 @@ export function askMcpApi() {
           // CLI 断开（工具超时、进程被停）：wait_agents 不再把结果算成已取走，留给下一次或节点结束时交回
           const ac = new AbortController()
           stream.onAbort(() => ac.abort())
+          // 带了 progressToken 的调用发真正的进度通知：Claude Code 对 MCP 工具「300 秒没有回应也没有进度」就掐断，
+          // SSE 注释行不算进度（2026-11-26 复盘 P1-4：wait_agents 被掐断）。没带的只能写注释保活，由工具自己少等一会儿
+          const tokens = msgs.map(progressTokenOf).filter((x) => x !== undefined)
+          let ticks = 0
           const beat = setInterval(() => {
+            ticks++
             try {
-              stream.write(': ping\n\n').catch(() => {})
+              if (!tokens.length) stream.write(': ping\n\n').catch(() => {})
+              for (const progressToken of tokens)
+                stream
+                  .writeSSE({
+                    data: JSON.stringify({
+                      jsonrpc: '2.0',
+                      method: 'notifications/progress',
+                      params: { progressToken, progress: ticks, message: '还在等' },
+                    }),
+                  })
+                  .catch(() => {})
             } catch {}
           }, HEARTBEAT_MS)
           try {

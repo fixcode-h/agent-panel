@@ -48,5 +48,6 @@ export const EN_STAGE_REPORT: Record<string, string> = {
     'View only; to approve or revise, click "View result" on the report bar',
   '待你决定：Agent 想问「{q}」。提问关着没有弹给你，流程照常往下走；收不回的事它先不做，会写进报告交给你定。':
     'For you to decide: the agent wanted to ask "{q}". Questions are off, so it was not shown to you and the workflow keeps going; anything that cannot be undone is left undone and goes into the report for you to decide.',
-  '上一步没有选「{label}」的项，这一步不用做。': 'Nothing was set to "{label}" in the previous step, so this step is skipped.',
+  '上一步没有选「{label}」的项，这一步不用做。':
+    'Nothing was set to "{label}" in the previous step, so this step is skipped.',
 }

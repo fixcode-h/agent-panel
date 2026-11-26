@@ -13,6 +13,7 @@ import { Badge, StatusDot } from '@/components/ui/badge'
 import { Select } from '@/components/ui/input'
 import { Group, Row } from '../parts'
 import { ExposureGroup } from './ExposureGroup'
+import { ProjectModeRow } from './ProjectModeRow'
 
 const STATE_LOOK: Record<
   CapabilityView['routes'][number]['state'],
@@ -89,6 +90,9 @@ export function RoutesTab() {
             options={[{ value: '', label: t('不选项目') }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           />
         </Row>
+        {projectId && settings && (
+          <ProjectModeRow projectId={projectId} settings={settings} onSaved={setSettings} onError={setError} />
+        )}
       </Group>
       {(caps ?? []).map((c) => (
         <Group

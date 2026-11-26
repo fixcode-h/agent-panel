@@ -27,7 +27,15 @@ import { CUSTOM_TOOL } from './custom-tool.ts'
 import { PLAN_TOOLS, START_PLAN } from './plan.ts'
 import { SPAWN_TOOLS } from './spawn.ts'
 import { GET_STATUS, MESSAGES, SHARED_STATE } from './team.ts'
-import { text, type HintAt, type PanelTool, type ToolArgs, type ToolDef, type ToolResult } from './types.ts'
+import {
+  text,
+  type HintAt,
+  type PanelTool,
+  type ToolArgs,
+  type ToolCallCtx,
+  type ToolDef,
+  type ToolResult,
+} from './types.ts'
 import { CHERRY_PICK, P4_SPLIT } from './vcs.ts'
 
 export const PANEL_TOOLS: readonly PanelTool[] = [
@@ -98,7 +106,13 @@ export const findTool = (name: string) => PANEL_TOOLS.find((t) => t.name === nam
  * 执行一个工具调用：不看 when（ask-mcp.ts 只把清单里有的交过来；测试和旧会话会直接按名字调，
  * 用不了的由各工具自己说清楚为什么）
  */
-export async function callOrchTool(o: Orchestra, name: string, a: ToolArgs, signal?: AbortSignal): Promise<ToolResult> {
+export async function callOrchTool(
+  o: Orchestra,
+  name: string,
+  a: ToolArgs,
+  signal?: AbortSignal,
+  ctx?: ToolCallCtx,
+): Promise<ToolResult> {
   const t = findTool(name)
-  return t ? t.call(o, a, signal) : text(`没有这个工具：${name}`, true)
+  return t ? t.call(o, a, signal, ctx) : text(`没有这个工具：${name}`, true)
 }

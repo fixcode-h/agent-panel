@@ -88,8 +88,17 @@ export const GatewaySettings = z.object({
   mode: z.enum(GATEWAY_MODES).default(DEFAULT_GATEWAY_MODE),
   /** 外部 MCP 服务改由面板代理（ADR 0085）：默认开，关掉时外部服务照旧直接挂在 CLI 上 */
   mcpProxy: z.boolean().default(true),
+  /**
+   * 按项目单独设的模式（项目 id → 模式），没设的跟随 mode。观察一阵、改道统计达标的项目单独打开改道，
+   * 不用全局一刀切（用户 2026-11-26 定）
+   */
+  projects: z.record(z.string(), z.enum(GATEWAY_MODES)).default({}),
 })
 export type GatewaySettings = z.infer<typeof GatewaySettings>
+
+/** 这个项目实际用哪个模式：单独设了用它的，否则跟随全局 */
+export const projectGatewayMode = (s: Pick<GatewaySettings, 'mode' | 'projects'>, projectId: string) =>
+  (projectId && s.projects?.[projectId]) || s.mode
 
 /** 打开改道时会改到哪（只是推算，观察模式不执行） */
 export const WouldRoute = z.object({
@@ -135,6 +144,11 @@ export const CallRecord = z.object({
   route: ToolRoute.optional(),
   /** 改道模式下这次为什么照原样放行（拿不准、面板没有多出来的……） */
   takeoverWhy: z.string().optional(),
+  /**
+   * 观察模式下按改道模式会怎么做（rewrite 改写 / serve 代答 / pass 放行）：攒一阵看「会改道多少、放行都因为什么」，
+   * 再决定要不要按项目打开改道（复盘 2026-11-26 P1-13：导出里看不出观察模式下会改道多少）
+   */
+  wouldTakeover: z.enum(['rewrite', 'serve', 'pass']).optional(),
   /** 哪个守卫或钩子拒绝的（builtin:<id> 或用户钩子 id） */
   denyBy: z.string().optional(),
   /** 这次补充说明来自哪些钩子（builtin:<id> 或用户钩子 id）和字数 */

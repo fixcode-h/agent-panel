@@ -97,4 +97,10 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
   项目没开文件索引: 'File index is off for this project',
   '自建工具 · {name}': 'Custom tool · {name}',
   '第 {n} 期接上': 'Connected in phase {n}',
+  这个项目的模式: 'Mode for this project',
+  '这个项目最近还没有搜索类的调用，攒一阵再看改道能接多少':
+    'No search calls in this project yet; check back later to see how many rerouting would take',
+  '最近 {n} 次搜索里改道能接 {m} 次，可以给这个项目打开改道了':
+    'Rerouting could take {m} of the last {n} searches; you can turn on rerouting for this project',
+  '最近 {n} 次搜索里改道能接 {m} 次': 'Rerouting could take {m} of the last {n} searches',
 }

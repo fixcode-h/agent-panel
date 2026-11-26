@@ -4,13 +4,33 @@
 import { CAPABILITIES } from '../capability-router/capabilities.ts'
 import type { CapabilityId } from '../capability-router/types.ts'
 import type { CallPage, CapabilityView, GatewaySettingsView } from '../api-contract/tool-gateway.ts'
+import { t } from '../i18n.ts'
 import { filterCalls, type CallQuery } from './stats.ts'
 import { GATEWAY_MODE_DEFS, type CallRecord, type GatewayMode } from './types.ts'
 
-export const settingsView = (mode: GatewayMode): GatewaySettingsView => ({
+export const settingsView = (mode: GatewayMode, projects: Record<string, GatewayMode> = {}): GatewaySettingsView => ({
   mode,
+  projects,
   modes: GATEWAY_MODE_DEFS.map((m) => ({ id: m.id, label: m.label(), hint: m.hint(), available: m.available })),
 })
+
+/**
+ * 改网关设置（服务端和演示共用）：全局模式或某个项目的模式；选的模式没开放时返回原因。
+ * 项目的 mode 为 null 是删掉单独设置、回到跟随全局
+ */
+export function patchGatewaySettings<S extends { mode: GatewayMode; projects: Record<string, GatewayMode> }>(
+  cur: S,
+  body: { mode?: GatewayMode; project?: { id: string; mode: GatewayMode | null } },
+): { next: S } | { error: string } {
+  const want = [body.mode, body.project?.mode].filter((m): m is GatewayMode => !!m)
+  if (want.some((m) => !GATEWAY_MODE_DEFS.find((d) => d.id === m)?.available)) return { error: t('这个模式还没开放') }
+  const projects = { ...cur.projects }
+  if (body.project) {
+    if (body.project.mode) projects[body.project.id] = body.project.mode
+    else delete projects[body.project.id]
+  }
+  return { next: { ...cur, ...(body.mode && { mode: body.mode }), projects } }
+}
 
 /** 能力表：几条路由调用方给（routes），其余按注册表和最近的记录算 */
 export function capabilityViews(

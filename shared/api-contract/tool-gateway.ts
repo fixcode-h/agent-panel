@@ -19,6 +19,8 @@ export type CallPage = z.infer<typeof CallPage>
 
 export const GatewaySettingsView = z.object({
   mode: z.enum(GATEWAY_MODES),
+  /** 按项目单独设的模式 */
+  projects: z.record(z.string(), z.enum(GATEWAY_MODES)).default({}),
   modes: z.array(z.object({ id: z.enum(GATEWAY_MODES), label: z.string(), hint: z.string(), available: z.boolean() })),
 })
 export type GatewaySettingsView = z.infer<typeof GatewaySettingsView>
@@ -54,7 +56,11 @@ export const toolGatewayContract = {
   setSettings: endpoint({
     method: 'PUT',
     path: '/tool-gateway/settings',
-    body: z.object({ mode: z.enum(GATEWAY_MODES) }),
+    /** 改全局模式，或改某个项目的（mode 为 null 是回到跟随全局） */
+    body: z.object({
+      mode: z.enum(GATEWAY_MODES).optional(),
+      project: z.object({ id: z.string().min(1), mode: z.enum(GATEWAY_MODES).nullable() }).optional(),
+    }),
     res: GatewaySettingsView,
   }),
   /** 查询参数 projectId：查找的路按这个项目问（插件登记的路、项目接的服务） */

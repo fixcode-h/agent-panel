@@ -60,6 +60,12 @@ export async function setGatewayMode(mode: GatewayMode) {
   await save({ ...cur, gateway: { ...cur.gateway, mode } })
 }
 
+/** 整份换掉网关设置（全局模式和按项目的模式一起，见 patchGatewaySettings） */
+export async function saveGateway(gateway: HooksData['gateway']) {
+  const cur = await readHooks()
+  await save({ ...cur, gateway })
+}
+
 /** 外部 MCP 服务代理的开关（ADR 0085），和网关模式存在一起 */
 export async function setMcpProxy(on: boolean) {
   const cur = await readHooks()

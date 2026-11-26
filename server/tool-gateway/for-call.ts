@@ -12,6 +12,7 @@ import { resolveMcpTool } from '../../shared/mcp-catalog/tool-params.ts'
 import type { OrchFindCode } from '../../shared/host/find-code.ts'
 import type { OrchToolRoute } from '../../shared/host/tool-route.ts'
 import { DEFAULT_TAKEOVER } from '../../shared/tool-gateway/takeover-spec.ts'
+import { projectGatewayMode } from '../../shared/tool-gateway/types.ts'
 import { listTools } from '../custom-tools/store.ts'
 import { knownExternalServers } from '../mcp-catalog/external-titles.ts'
 import { openGateway, type Gateway } from './gateway.ts'
@@ -36,7 +37,8 @@ export function gatewayForCall(
       .catch(() => []))
   const cli = getCli(c.cliId)
   return openGateway({
-    mode: data.gateway.mode,
+    // 项目单独设了模式就用项目的（观察够了的项目单独打开改道），否则跟随全局
+    mode: projectGatewayMode(data.gateway, projectId),
     task: { id: c.task.id, title: c.task.title },
     projectId,
     cliId: c.cliId,

@@ -205,3 +205,14 @@ test('开头 cd 到工作目录里的子目录再搜：按 cd 的目录换成相
   const b = await gw.wrap(inner)('tool.before', bash(out))
   assert.equal(b.rewrite, undefined, '工作目录外照原命令跑')
 })
+
+test('`cd <目录>;` 起头：目录就是工作目录才接（cd 失败时搜索也在这里跑），是子目录就照原命令跑', async () => {
+  clearCalls()
+  const { d } = deps()
+  const gw = openGateway(ctx('enforce', d))!
+  const root = cwd.replace(/\\/g, '/')
+  const a = await gw.wrap(inner)('tool.before', bash(`cd "${root}"; rg -n "OnSellAll" Content`))
+  assert.match(String(a.rewrite?.command ?? ''), /node "C:\/Temp\/agent-panel-takeover\/1\.mjs" && rg -n/)
+  const b = await gw.wrap(inner)('tool.before', bash(`cd "${root}/Content"; rg -n "OnSellAll" Script`))
+  assert.equal(b.rewrite, undefined)
+})

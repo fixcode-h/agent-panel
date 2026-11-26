@@ -47,6 +47,8 @@ const MAX_COLS = 400
 export async function rgScan(o: {
   root: string
   needle: string
+  /** needle 写成了正则：同时按正则和原文找（不加 -F） */
+  regex?: boolean
   under?: string[]
   ext?: string[]
   exclude: string[]
@@ -61,7 +63,7 @@ export async function rgScan(o: {
     '--no-heading',
     '--with-filename',
     '--color=never',
-    '-F',
+    ...(o.regex ? [] : ['-F']),
     '-i',
     `--max-columns=${MAX_COLS}`,
     '--max-filesize=2M',
@@ -69,8 +71,7 @@ export async function rgScan(o: {
     ...(o.ext ?? []).map((e) => `--glob=*.${e}`),
     ...o.exclude.map((d) => `--glob=!${d}/`),
     ...SEARCH_SKIP_FILES.map((f) => `--glob=!${f}`),
-    '--',
-    o.needle,
+    ...(o.regex ? ['-e', o.needle, '-e', o.needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')] : ['--', o.needle]),
     // 一定写出起点：不写时 rg 发现标准输入是管道，会去搜标准输入
     ...(o.under?.length ? o.under : ['.']),
   ]

@@ -31,9 +31,26 @@ export function declRe(name: string, lang: FindLang): RegExp {
   )
 }
 
-/** 文本搜索用的匹配：symbol / refs 按整词找名字，text 按原文（不分大小写）找 */
+/**
+ * text 的查询是不是写成了正则：Agent 常把 grep 的习惯带过来（`function.*NewTransform`）。
+ * 以前一律按原文找，正则写法永远找不到、却回「没有找到」，Agent 以为真没有（2026-11-26 复盘 P1-7）。
+ * 只认明确的正则写法；认成正则时也同时按原文找（arr[0] 这类既像正则又是原文的不会漏）
+ */
+const REGEX_HINT = /\.[*+]|\\[bdwsBDWS]|\(\?[:=!]|\[\^?[^\]\s]+\]|^\^|\$$|\w\|\w|\\[.()[\]{}|*+?]/
+export function looksRegex(q: string) {
+  if (!REGEX_HINT.test(q)) return false
+  try {
+    new RegExp(q)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 文本搜索用的匹配：symbol / refs 按整词找名字，text 按原文（不分大小写）找，写成正则的同时按正则找 */
 export function textRe(req: Pick<FindRequest, 'kind' | 'query'>): RegExp {
-  if (req.kind === 'text') return new RegExp(esc(req.query), 'i')
+  if (req.kind === 'text')
+    return new RegExp(looksRegex(req.query) ? `(?:${req.query})|${esc(req.query)}` : esc(req.query), 'i')
   return new RegExp(`\\b${esc(lastName(req.query))}\\b`)
 }
 

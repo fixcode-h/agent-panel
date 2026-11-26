@@ -218,3 +218,37 @@ test('统计口径：各决定数、能改道比例、本可以并行（同一�
   assert.equal(filterCalls(list, { q: 'GIT PUSH' }).total, 1)
   assert.equal(filterCalls(list, { decision: 'deny', limit: 1 }).items.length, 1)
 })
+
+test('按项目设网关模式：单独设了用项目的，null 回到跟随全局；没开放的模式不收；改道统计够了标 ready', async () => {
+  const { patchGatewaySettings } = await import('./views.ts')
+  const { projectGatewayMode } = await import('./types.ts')
+  const { gatewayStats, TAKEOVER_READY } = await import('./stats.ts')
+  const cur = { mode: 'observe' as const, projects: {} as Record<string, 'observe' | 'enforce' | 'off'> }
+  const a = patchGatewaySettings(cur, { project: { id: 'p1', mode: 'enforce' } })
+  assert.ok('next' in a)
+  assert.equal(projectGatewayMode(a.next, 'p1'), 'enforce')
+  assert.equal(projectGatewayMode(a.next, 'p2'), 'observe')
+  const b = patchGatewaySettings(a.next, { project: { id: 'p1', mode: null } })
+  assert.ok('next' in b && !('p1' in b.next.projects))
+  const rec = (i: number, would: 'rewrite' | 'pass') =>
+    ({
+      id: `r${i}`,
+      at: i,
+      projectId: 'p1',
+      taskId: 't',
+      taskTitle: '',
+      turn: '',
+      cli: 'claude',
+      tool: 'Bash',
+      kind: 'shell',
+      summary: '',
+      input: '',
+      decision: 'pass',
+      ms: 0,
+      wouldTakeover: would,
+    }) as never
+  const few = gatewayStats([rec(1, 'rewrite')], 200)
+  assert.deepEqual(few.takeover, { searches: 1, would: 1, ready: false })
+  const many = Array.from({ length: TAKEOVER_READY.searches }, (_, i) => rec(i, i % 2 ? 'rewrite' : 'pass'))
+  assert.equal(gatewayStats(many, 200).takeover.ready, true)
+})
