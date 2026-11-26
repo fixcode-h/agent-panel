@@ -10,7 +10,8 @@
  * 补的那段是给 Agent 看的，不翻译
  */
 import type { FindHit, FindRequest } from '../capability-router/find/types.ts'
-import { commandSegments } from '../hooks/defs.ts'
+import { categoryOf } from './commands.ts'
+import { splitTop } from './shell-split.ts'
 import { inferLang } from '../capability-router/find/request.ts'
 import { hitLine } from '../capability-router/find/hits.ts'
 import { parseGrepTool, parseSearchCommand, type SearchSpec } from './search-args.ts'
@@ -32,18 +33,35 @@ const firstWord = (seg: string) =>
     ?.replace(/^.*[\\/]/, '')
     .toLowerCase() ?? ''
 
-/** 多段命令能不能改写：第一段是认得的搜索，后面每段都是 TAIL_SEGMENTS 里的；能就返回第一段的搜索参数 */
+/** 换目录的段：之后的相对路径就不是按工作目录算了，面板查的范围对不上 */
+const MOVE_DIR = /^(?:cd|pushd|popd|set-location|sl)$/
+
+/**
+ * 多段命令能不能改写，能就返回那个搜索段的参数。模型常把看文件、打印分隔和搜索串成一条
+ * （`cat a.lua && echo === && grep -rn Foo scripts | head`），这些都接；条件是：
+ * - 整条里只有一个搜索段（别的段不是搜索）：面板那段说的就是它，不会张冠李戴；
+ * - 搜索段不是被管道喂进来的（那样搜的是上一段的输出，不是文件），前面没有 `||`（可能根本不跑），整条没有换目录；
+ * - 搜索段的输出再管道下去只接 TAIL_SEGMENTS（截行、排序、打印），不接再过滤和数行数。
+ * 原命令照样整条跑、一字不动，面板只在前面补自己那段，所以别的段是什么都不影响结果
+ */
 function searchOfMulti(command: string): SearchSpec | undefined {
-  const [head, ...rest] = commandSegments(command)
-  if (!head || !rest.length || !rest.every((x) => TAIL_SEGMENTS.includes(firstWord(x)))) return undefined
-  return parseSearchCommand(head)
+  const parts = splitTop(command)
+  if (!parts || parts.length < 2) return undefined
+  if (parts.some((p) => MOVE_DIR.test(firstWord(p.text)))) return undefined
+  const found = parts.flatMap((p, i) => (categoryOf(p.text) === 'search' ? [i] : []))
+  if (found.length !== 1) return undefined
+  const i = found[0]
+  if (parts[i].op === '|' || parts[i].op === '||') return undefined
+  for (let j = i + 1; j < parts.length && parts[j].op === '|'; j++)
+    if (!TAIL_SEGMENTS.includes(firstWord(parts[j].text))) return undefined
+  return parseSearchCommand(parts[i].text)
 }
 
 /** 按名字找文件的程序：认出来但不接管（文件索引不收排除目录，只会比原命令少） */
 const NAME_FINDERS = ['find', 'fd', 'dir', 'where', 'get-childitem', 'gci']
 
 export const PASS_WHY = {
-  multi: '多段命令（管道、&&、;）不改道：只有「搜索 + 截行 / 排序 / 打印」这种能改写的才接，其余照原命令跑',
+  multi: '多段命令（管道、&&、;）只接「只有一个搜索段、它的输出不再过滤、不换目录」的，其余照原命令跑',
   files: '按名字找文件不改道：文件索引不收排除目录，结果不会比原命令多',
   args: '参数拿不准（不认识的参数、正则、变量、要 shell 展开的通配或读标准输入），照原命令跑',
   cli: '这个 CLI 不能改写命令，面板也没法照原样跑这一条，照原命令跑',
@@ -75,6 +93,11 @@ export function planTakeover(
     if (o.takeover.serve && search.run) return { how: 'serve', search, by }
     return { how: 'pass', why: PASS_WHY.cli, by }
   }
+  // 类别按第一段认（`cat a && grep Foo .` 是 read）：多段里夹着一个搜索的也接，只在能改写时
+  if (call.kind === 'shell' && (call.command?.segments ?? 0) > 1 && o.takeover.rewrite && o.rewriteTpl) {
+    const multi = searchOfMulti(String(call.input.command ?? ''))
+    if (multi) return { how: 'rewrite', search: multi, by: multi.program }
+  }
   if (call.kind === 'read' && call.search) {
     const by = call.tool
     const shape = o.takeover.tools[call.tool]
@@ -103,19 +126,26 @@ const hasExt = (p: string) => /\.[A-Za-z0-9]+$/.test(p.split('/').pop() ?? '')
  * 交给 find 的请求：像名字的（标识符、A.B、A::B）查引用（外部服务给声明和静态引用，文本补动态的），其余按原文找。
  * paths 已换成相对工作目录的（服务端换），文件路径取它所在的目录做范围，扩展名从 -t / *.ext 来
  */
-export function findRequestOfSearch(s: SearchSpec, paths: string[]): FindRequest {
+export function findRequestOfSearch(s: SearchSpec, paths: string[], query = s.pattern): FindRequest {
   const under = [...new Set(paths.map((p) => (hasExt(p) ? p.split('/').slice(0, -1).join('/') : p)))].filter(Boolean)
   const ext = [...new Set([...s.exts, ...s.include.flatMap((g) => /^\*\.([A-Za-z0-9]+)$/.exec(g)?.[1] ?? [])])].map(
     (e) => e.toLowerCase(),
   )
   const base = {
-    kind: IDENT.test(s.pattern) ? ('refs' as const) : ('text' as const),
-    query: s.pattern,
+    kind: IDENT.test(query) ? ('refs' as const) : ('text' as const),
+    query,
     ...(under.length && !paths.includes('') ? { under } : {}),
     ...(ext.length ? { ext } : {}),
   }
   return { ...base, lang: inferLang(base), limit: 200, offset: 0 }
 }
+
+/** 要找的几个原文：「或」拆开的每一段，没有就是关键词本身 */
+export const searchTerms = (s: SearchSpec) => s.alts ?? [s.pattern]
+
+/** 每个原文一个 find 请求（「或」的几段分开查，结果合起来） */
+export const findRequestsOfSearch = (s: SearchSpec, paths: string[]) =>
+  searchTerms(s).map((q) => findRequestOfSearch(s, paths, q))
 
 /** 文件名通配 → 正则：** 跨目录，* ? 不跨，{a,b} 任选 */
 export function globRe(g: string): RegExp {
@@ -148,10 +178,10 @@ export function inScope(file: string, s: SearchSpec, paths: string[]): boolean {
   return !s.exts.length || s.exts.includes(ext)
 }
 
-/** 原命令按原文搜得到这一行吗（那一行里有关键词）：搜得到的不用面板再补 */
+/** 原命令按原文搜得到这一行吗（那一行里有任一个关键词）：搜得到的不用面板再补 */
 export function covered(h: FindHit, s: SearchSpec): boolean {
-  const text = h.text ?? ''
-  return s.ignoreCase ? text.toLowerCase().includes(s.pattern.toLowerCase()) : text.includes(s.pattern)
+  const text = s.ignoreCase ? (h.text ?? '').toLowerCase() : (h.text ?? '')
+  return searchTerms(s).some((t) => text.includes(s.ignoreCase ? t.toLowerCase() : t))
 }
 
 /** 面板能补的：范围里的声明（排最前，原命令里也有但分不出哪行是声明），和原命令按原文搜不到的 */

@@ -144,3 +144,26 @@ test('拿不准、面板跑不出原命令、没有多出来的、网关出错�
   }
   assert.equal(recentCalls('p1')[0].error, '炸了')
 })
+
+test('「或」拆成几个原文分开查、合起来补；串在多段命令里的搜索也改写，原命令一字不动', async () => {
+  clearCalls()
+  const asked: string[] = []
+  const { d } = deps({
+    findCode: async (q: { query: string }) => {
+      asked.push(q.query)
+      const hits =
+        q.query === 'OnSellAll'
+          ? HITS
+          : [{ file: 'Content/Script/UI/MailPanel.lua', line: 9, text: 'Bag:Call(name)', rank: 1 as const }]
+      return { text: '', route: ROUTE, hits }
+    },
+  })
+  const cmd = 'cat a.lua && echo "===" && grep -rn "OnSellAll\\|OnBuyAll" Content/Script | head -20'
+  const gw = openGateway(ctx('enforce', d))!
+  const a = await gw.wrap(inner)('tool.before', bash(cmd))
+  assert.deepEqual(asked.sort(), ['OnBuyAll', 'OnSellAll'])
+  assert.equal(a.rewrite?.command, `node "C:/Temp/agent-panel-takeover/1.mjs"; ${cmd}`)
+  const r = recentCalls('p1')[0]
+  assert.equal(r.decision, 'rewrite')
+  assert.equal(r.route?.served.length, 1, '同一条路只列一次')
+})

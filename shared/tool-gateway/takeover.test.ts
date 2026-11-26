@@ -8,7 +8,16 @@ import type { FindHit } from '../capability-router/find/types.ts'
 import { classifyCall } from './classify.ts'
 import { parseGrepTool, parseSearchCommand } from './search-args.ts'
 import { CliTakeover } from './takeover-spec.ts'
-import { findRequestOfSearch, panelExtras, panelSection, planTakeover, rewriteCommand, serveText } from './takeover.ts'
+import {
+  covered,
+  findRequestOfSearch,
+  findRequestsOfSearch,
+  panelExtras,
+  panelSection,
+  planTakeover,
+  rewriteCommand,
+  serveText,
+} from './takeover.ts'
 import { getCli } from '../clis.ts'
 
 const shell = (command: string, name = 'Bash') =>
@@ -101,8 +110,24 @@ test('接不接、怎么接按 CLI 定义的 takeover 走：能改写的改写�
   assert.equal(planTakeover(shell('rg -n OnSellAll src | grep -v test'), claude)?.how, 'pass', '再过滤')
   assert.notEqual(planTakeover(shell('cat a.lua | grep OnSellAll'), claude)?.how, 'rewrite', '读标准输入')
   assert.equal(planTakeover(shell('rg -n OnSellAll src | head -5'), plain)?.how, 'pass', '代答跑不准多段')
+  // 模型常把看文件、打印分隔和搜索串成一条：只有一个搜索段、输出不再过滤、不换目录就接（类别按第一段是 read 也接）
+  const tk = (c: string) => planTakeover(shell(c), claude)
+  assert.equal(tk('wc -l a.lua && grep -n "SellAll" -r scripts | head -20')?.how, 'rewrite')
+  assert.equal(tk('cat Log.lua && echo "=== grep ===" && grep -rn "GetGold" . --exclude-dir=.git')?.how, 'rewrite')
+  assert.equal(tk('rg -n "Foo|Bar" src; echo "---"; ls -R scripts')?.how, 'rewrite', '引号里的 | 不是管道')
+  assert.notEqual(tk('cd web && rg -n OnSellAll src')?.how, 'rewrite', '换了目录')
+  assert.notEqual(tk('rg -n Foo src; grep -rn Bar .')?.how, 'rewrite', '两个搜索段')
+  assert.notEqual(tk('test -f a || grep -rn Foo .')?.how, 'rewrite', '前面是 ||，可能不跑')
+  assert.notEqual(tk('cat a && grep -rn Foo . | wc -l')?.how, 'rewrite', '数行数')
   assert.equal(planTakeover(shell('find . -name "*.lua"'), claude)?.how, 'pass', '按名字找文件不改道')
   assert.equal(planTakeover(shell('rg "On.*" src'), claude)?.how, 'pass', '正则')
+  // 只有「或」的正则拆成几个原文：grep 不加 -E 是 \|，rg 和 grep -E 是 |；\. 是原文的点
+  assert.deepEqual(parseSearchCommand('grep -rn "GetGold\\|AddGold" .')?.alts, ['GetGold', 'AddGold'])
+  assert.deepEqual(parseSearchCommand('rg -n "ShopPanel|\\.items" .')?.alts, ['ShopPanel', '.items'])
+  assert.deepEqual(parseSearchCommand('grep -rnE "Foo|Bar" .')?.alts, ['Foo', 'Bar'])
+  assert.equal(parseSearchCommand('grep -rn "Foo|Bar" .')?.alts, undefined, 'BRE 里 | 是原文')
+  assert.equal(parseSearchCommand('rg -n "Log\\.Info" .')?.pattern, 'Log.Info')
+  assert.equal(parseSearchCommand('rg -n "Foo|B.*r" .'), undefined, '有别的元字符')
   assert.equal(planTakeover(shell('npm test'), claude), undefined, '不归查找的不管')
   // 自带工具：Grep 只能代答，Glob 放行；没登记形状的放行
   assert.equal(planTakeover(grepTool({ pattern: 'OnSellAll' }), claude)?.how, 'serve')
@@ -117,6 +142,12 @@ test('并集：面板只补声明和原命令按原文搜不到的，范围外�
   const req = findRequestOfSearch(s, ['Content/Script'])
   assert.deepEqual([req.kind, req.query, req.under, req.lang], ['refs', 'OnSellAll', ['Content/Script'], 'lua'])
   assert.equal(findRequestOfSearch(parseSearchCommand('rg -F "Sell all" src')!, ['src']).kind, 'text')
+  const alt = parseSearchCommand('rg -n "GetGold|AddGold" src')!
+  assert.deepEqual(
+    findRequestsOfSearch(alt, ['src']).map((r) => r.query),
+    ['GetGold', 'AddGold'],
+  )
+  assert.ok(covered(hit('a.lua', 1, 'x:AddGold(1)'), alt), '任一个出现就算原命令搜得到')
   const hits = [
     hit('Content/Script/UI/BagPanel.lua', 212, 'function BagPanel:OnSellAll()', 0),
     hit('Content/Script/UI/BagPanel.lua', 88, 'self.BtnSell.OnClicked:Add(self, self.OnSellAll)'),

@@ -16,6 +16,11 @@ export interface SearchSpec {
   mode: 'content' | 'files'
   /** content：要找的原文（已确认不是正则）；files：名字的通配或片段 */
   pattern: string
+  /**
+   * 正则里只有「或」的（grep 'A\|B'、rg 'A|B'）：拆开后的几个原文，任一个出现就算命中。
+   * 模型搜几个名字时几乎总这么写，不认它改道就接不到；有它时 pattern 是原样的正则，只用来显示
+   */
+  alts?: string[]
   ignoreCase: boolean
   /** 在哪些目录 / 文件里找（原样，相对 CLI 的工作目录）；空表示当前目录 */
   paths: string[]
@@ -126,6 +131,8 @@ interface Draft {
   exclude: string[]
   exts: string[]
   files: boolean
+  /** grep 的 -E / egrep：「或」写成 |（不加 -E 时写成 \|） */
+  ere: boolean
   /** grep 的 -r：不带它又没给路径时 grep 读的是标准输入，不是在搜目录 */
   recursive: boolean
   /** 认得但会让结果和普通搜索不一样的（-v 反选、-L 没匹配的文件）：整条放行 */
@@ -141,6 +148,7 @@ const draft = (): Draft => ({
   exclude: [],
   exts: [],
   files: false,
+  ere: false,
   recursive: false,
   odd: false,
 })
@@ -226,7 +234,8 @@ const GREP = table(
     '--ignore-case': (s) => (s.ignoreCase = true),
     '-F': (s) => (s.fixed = true),
     '--fixed-strings': (s) => (s.fixed = true),
-    '-E': noop,
+    '-E': (s) => (s.ere = true),
+    '--extended-regexp': (s) => (s.ere = true),
     '-w': noop,
     '-l': noop,
     '--files-with-matches': noop,
@@ -307,12 +316,23 @@ function readFlags(args: Tok[], t: FlagTable): Draft | undefined {
   return s.odd ? undefined : s
 }
 
-/** 几种程序读出来之后都一样收尾：关键词要是原文、不能太短 */
-function finish(program: string, d: Draft, args: Tok[], posix: boolean): SearchSpec | undefined {
+/**
+ * 正则里只有「或」和转义的点：拆成几个原文。ere 的「或」是 |，bre（grep 不加 -E、git grep）是 \|；
+ * 拆出来的每段都得是原文（不含别的元字符、不太短），否则整条拿不准
+ */
+function alternatives(pattern: string, ere: boolean): string[] | undefined {
+  const parts = (ere ? pattern.split('|') : pattern.split('\\|')).map((x) => x.replace(/\\\./g, '.'))
+  if (parts.some((x) => x.trim().length < 2 || REGEX_META.test(x))) return undefined
+  return parts
+}
+
+/** 几种程序读出来之后都一样收尾：关键词要是原文（或只有「或」的正则，alt 给出写法）、不能太短 */
+function finish(program: string, d: Draft, args: Tok[], posix: boolean, alt?: 'ere' | 'bre'): SearchSpec | undefined {
   if (d.files) return undefined
   const pattern = d.pattern ?? ''
   if (pattern.trim().length < 2) return undefined
-  if (!d.fixed && REGEX_META.test(pattern)) return undefined
+  const alts = !d.fixed && alt && REGEX_META.test(pattern) ? alternatives(pattern, alt === 'ere') : undefined
+  if (!d.fixed && REGEX_META.test(pattern) && !alts) return undefined
   // smart-case：全小写才不分大小写（rg 的规则）
   const ignoreCase = d.ignoreCase || (d.smart && pattern === pattern.toLowerCase())
   // 没加引号的 * ? 交给 shell 展开（bash 下 rg foo *.lua），面板直接起进程时拿不到展开后的样子
@@ -320,7 +340,9 @@ function finish(program: string, d: Draft, args: Tok[], posix: boolean): SearchS
   return {
     program,
     mode: 'content',
-    pattern,
+    // 只有转义的点、没有「或」：就是一段原文
+    pattern: alts?.length === 1 ? alts[0] : pattern,
+    ...(alts && alts.length > 1 ? { alts } : {}),
     ignoreCase,
     paths: d.paths,
     include: d.include,
@@ -333,18 +355,18 @@ function finish(program: string, d: Draft, args: Tok[], posix: boolean): SearchS
 const READERS: Record<string, Reader> = {
   rg: (args) => {
     const d = readFlags(args, RG)
-    return d && finish('rg', d, args, true)
+    return d && finish('rg', d, args, true, 'ere')
   },
   grep: (args, p) => {
     const d = readFlags(args, GREP)
     if (!d || (!d.recursive && !d.paths.length)) return undefined
     if (p === 'fgrep') d.fixed = true
-    return finish(p, d, args, true)
+    return finish(p, d, args, true, d.ere || p === 'egrep' ? 'ere' : 'bre')
   },
   git: (args) => {
     if (args[0]?.v !== 'grep') return undefined
     const d = readFlags(args.slice(1), GIT_GREP)
-    const spec = d && finish('git', d, args.slice(1), true)
+    const spec = d && finish('git', d, args.slice(1), true, 'bre')
     return spec?.run && 'argv' in spec.run ? { ...spec, run: { argv: ['git', ...args.map((a) => a.v)] } } : spec
   },
   'select-string': (args, p) => selectString(args, p),

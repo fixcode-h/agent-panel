@@ -12,8 +12,9 @@ import type { NoteToolRoute } from '../../../shared/host/tool-route.ts'
 import type { ToolRoute } from '../../../shared/capability-router/tool-route.ts'
 import type { SearchSpec } from '../../../shared/tool-gateway/search-args.ts'
 import type { CliTakeover } from '../../../shared/tool-gateway/takeover-spec.ts'
+import type { FindHit, FindRequest } from '../../../shared/capability-router/find/types.ts'
 import {
-  findRequestOfSearch,
+  findRequestsOfSearch,
   normPath,
   panelExtras,
   panelSection,
@@ -70,6 +71,35 @@ function relPaths(paths: string[], cwd: string): string[] | undefined {
 const withTimeout = <T>(p: Promise<T>, ms: number) =>
   Promise.race([p, new Promise<undefined>((r) => setTimeout(() => r(undefined), ms).unref?.())])
 
+type FindOut = Awaited<ReturnType<FindCodeRun>>
+
+/**
+ * 「或」拆成的几个原文分开查、一起等，命中合起来，路合成一条（走过的步骤都列上、给出结果的路去重）。
+ * 任一个出错或没带路由就整条按出错算：只补一半会让面板那段看着像全部
+ */
+async function findAll(run: FindCodeRun, reqs: FindRequest[], signal: AbortSignal): Promise<FindOut | undefined> {
+  const outs = await withTimeout(Promise.all(reqs.map((q) => run(q, signal))), ROUTE_MS)
+  if (!outs) return undefined
+  const bad = outs.find((o) => o.error || !o.route)
+  if (bad || outs.length === 1) return bad ?? outs[0]
+  const hits: FindHit[] = []
+  const seen = new Set<string>()
+  for (const h of outs.flatMap((o) => o.hits ?? [])) {
+    const k = `${h.file}:${h.line ?? ''}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    hits.push(h)
+  }
+  const routes = outs.map((o) => o.route!)
+  const served = routes.flatMap((r) => r.served).filter((x, i, a) => a.findIndex((y) => y.source === x.source) === i)
+  const ms = Math.max(...routes.map((r) => r.ms ?? 0))
+  return {
+    text: outs.map((o) => o.text).join('\n'),
+    hits,
+    route: { ...routes[0], served, steps: routes.flatMap((r) => r.steps), ms },
+  }
+}
+
 export async function takeover(d: TakeoverDeps, call: ToolCall, inner: HookAnswer): Promise<TakeoverOut | undefined> {
   const plan = planTakeover(call, { takeover: d.takeover, rewriteTpl: d.rewriteTpl })
   if (!plan) return undefined
@@ -80,7 +110,7 @@ export async function takeover(d: TakeoverDeps, call: ToolCall, inner: HookAnswe
   if (!paths) return { decision: 'pass', why: '搜的目录不在对话的工作目录里，照原命令跑' }
 
   const ctl = new AbortController()
-  const r = await withTimeout(d.findCode(findRequestOfSearch(s, paths), ctl.signal), ROUTE_MS)
+  const r = await findAll(d.findCode, findRequestsOfSearch(s, paths), ctl.signal)
   if (!r) ctl.abort()
   if (!r || r.error || !r.route)
     return { decision: 'pass', why: r?.text ?? `查找 ${ROUTE_MS / 1000} 秒没回来，照原命令跑` }

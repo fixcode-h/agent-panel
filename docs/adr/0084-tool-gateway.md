@@ -78,6 +78,7 @@
 7. **CLI 定义 `takeover`**（`shared/tool-gateway/takeover-spec.ts`，字段表见 [cli-config](../cli-config.md)）：Claude Code `rewrite` / `serve` / `hideBuiltin` / `mcpOnlyPanel` 都为真，`tools` 登记 `Grep`（grep）、`Glob`（glob）；改写用 PreToolUse 钩子的 `permissionDecision: allow` + `updatedInput`（模板在 `hooks.events.tool.before.rewrite`），不用 `can_use_tool`：跳过确认时 CLI 不发 `can_use_tool`，钩子每次都过。Codex、Command Code 只填 `serve`，Pi 另有 `hideBuiltin`；没实测的按保守值。`hideBuiltin`、`mcpOnlyPanel` 这一期只登记，外部服务经面板代理（ADR 0085）用后者。
 8. **`find` 收数组**（设计稿 15.3 方案 B）：`query` 可以给数组（最多 10 个），每个词同时查、按词分组，几组平分 4000 字，没列完的那组写清怎么单独查（`server/panel-tools/find-multi.ts`）。共用身份提示里「互不依赖的调用一起发」改成「读几个文件、跑几条只读命令」，查几个名字改说「find 的 query 给数组」（有 find 时才说，不看 `parallelTools`）。
 9. **能改写时也接「搜索 + 截行 / 打印」的多段命令**（2026-11-26 Flash 实测后加）：模型常写 `grep -rn X . ; echo "exit:$?"`、`rg X src | head -50`，单段才接的话改道一次都没触发。第一段是认得的搜索、后面每段都是 `head` / `tail` / `sort` / `uniq` / `echo` / `printf` / `true` 时，改写照样是「先打印面板那段、再原样跑整条原命令」，并集不变；数行数（`wc`）、再过滤（`grep -v`）、读标准输入的、代答的仍然放行。
+10. **多段命令只要「一个搜索段、输出不再过滤、不换目录」就接；「或」的正则拆开查**（2026-11-26 第二轮 Flash 实测后加）：Flash 几乎总把看文件、打印分隔和搜索串成一条（`cat a.lua && echo === && grep -rn X scripts | head`），也几乎总用 `grep 'A\|B'`、`rg 'A|B'` 一次搜几个名字，第 9 条下改道仍是 0 次。现在按引号切命令（`shared/tool-gateway/shell-split.ts`，引号里的 `|` 不算管道），整条里只有一个搜索段、它不是被管道喂进来的、前面不是 `||`、整条没有 `cd`、它的输出只再管道给截行类时就改写（类别按第一段认成 read 的也接）；原命令仍一字不动地整条跑。只有「或」和转义点的正则拆成几个原文分开查、命中合起来，任一个出现就算原命令搜得到；有别的元字符的照旧放行。
 
 候选方案：
 
