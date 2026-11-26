@@ -18,6 +18,7 @@ import { expandHome } from './cli/extras.ts'
 import { log } from './log.ts'
 import { pluginEnabled } from '../shared/plugins/index.ts'
 import { isProjectSkill } from './skills/config.ts'
+import { installedHash, recordInstalled, treeHash } from './skills/installed-record.ts'
 
 /**
  * 面板自带的 Skill：仓库里的 skills/<分类>/<名字>/。
@@ -278,6 +279,7 @@ export async function refreshCopy(e: Entry, root: string): Promise<boolean> {
   if ((await statusIn(e, root)) !== 'changed') return false
   await rm(path.join(root, e.name), { recursive: true, force: true })
   await writeSkill(e, root)
+  await rememberInstalled(e, root)
   return true
 }
 
@@ -303,9 +305,41 @@ export async function installBundled(names: string[], _clis: string[], overwrite
       continue
     }
     await writeSkill(e, root)
+    await rememberInstalled(e, root)
     if (!done.includes(name)) done.push(name)
   }
   return { done, skipped }
+}
+
+/** 记下面板装进 root 的这一份（server/skills/installed-record.ts）：只记用户共享目录那份，「部署」的分类目录不管 */
+async function rememberInstalled(e: Entry, root: string) {
+  if (root !== sharedRoot()) return
+  await recordInstalled(e.name, treeHash(await readTree(path.join(root, e.name))))
+}
+
+/**
+ * 已装的自带技能跟上新版：副本和面板当初装进去的一模一样（没人改过）就换成这一版；和这一版一样的顺手记下来，
+ * 下次更新就能自动换。用户改过的、没有记录的不动（「自带 Skill」页照旧亮提示点，用户点更新才换）。返回换了的名字
+ */
+export async function refreshUntouched(list: Entry[], root = sharedRoot()) {
+  const updated: string[] = []
+  for (const e of list) {
+    if (isProjectSkill(e.name)) continue
+    const s = await statusIn(e, root)
+    if (s === 'missing') continue
+    if (s === 'same') {
+      if (!installedHash(e.name)) await rememberInstalled(e, root)
+      continue
+    }
+    const was = installedHash(e.name)
+    if (!was || was !== treeHash(await readTree(path.join(root, e.name)))) continue
+    await rm(path.join(root, e.name), { recursive: true, force: true })
+    await writeSkill(e, root)
+    await rememberInstalled(e, root)
+    updated.push(e.name)
+  }
+  if (updated.length) log.info('skills', `自带 Skill 跟上新版（副本没被改过）：${updated.join('、')}`)
+  return updated
 }
 
 /**
@@ -317,14 +351,17 @@ export async function ensureBundled(names: string[]) {
     const root = sharedRoot()
     // 先清下线的旧技能：它们的内容已经并进 project-vcs，留着会让 CLI 看到两个入口
     await retireBundled(root)
-    if (!names.length) return []
     const all = await entries()
+    // 装过的先跟上新版（没被改过的才换）：Claude Code 每轮带的是这个目录里的全部技能，不只角色点名的
+    await refreshUntouched(all, root)
+    if (!names.length) return []
     const added: string[] = []
     for (const name of names) {
       const e = all.find((x) => x.name === name)
       // 按项目的由这一轮的技能目录带上（server/skills/run-skills.ts），不往用户目录补
       if (!e || isProjectSkill(name) || existsSync(path.join(root, name, 'SKILL.md'))) continue
       await writeSkill(e, root)
+      await rememberInstalled(e, root)
       added.push(name)
     }
     return added

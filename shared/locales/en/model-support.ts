@@ -1,9 +1,14 @@
 /** 英文词典的一部分，键是中文原文：按模型档位加强扶持、情境规则（shared/models/support.ts、shared/hooks/situational.ts） */
 export const EN_MODEL_SUPPORT: Record<string, string> = {
   '已按{tier}模型加强扶持': 'Extra support for a {tier} model',
+  '已按{tier}档加强扶持': 'Extra support at the {tier} tier',
+  按哪一档: 'Based on',
+  '选了{slot}档': 'Picked {slot}',
+  '模型本身{tier}': 'Model is {tier}',
+  '角色或节点选了高、中、低档时按选的档套用下面这一列；直接写了模型名的按模型目录里的档':
+    "When a role or node picks the high, medium or low tier, that tier's column applies; a model named directly uses its tier in the model catalog",
   按模型档位加强扶持: 'Extra support by model tier',
   自动加强: 'Auto boost',
-  按这一轮模型在模型目录里的档位套用下面这一列: "Applies the column for this turn's model tier in the model catalog",
   '弱模型（例如 deepseek-flash）守不住长规则，面板替它多做几件事：严格档钩子、先列计划、多推几条情境规则、计划没跟上早点提醒。只往严里推，项目里手动选的钩子档位优先；对话的会话栏会写「已按弱模型加强扶持」':
     'Weak models (such as deepseek-flash) do not keep long rules well, so the panel does more for them: strict hooks, a plan first, more situational rules, and earlier plan reminders. It only ever makes things stricter; a hook tier chosen for a project wins. The session panel shows "Extra support for a weak model"',
   '{min} 到 {max}': '{min} to {max}',
@@ -12,6 +17,8 @@ export const EN_MODEL_SUPPORT: Record<string, string> = {
     'Detailed rules that only matter in a certain situation (for example a weak model about to edit a file with no plan yet) are not kept in the role setup; the panel hands them to the model at that moment. Each is pushed once per conversation and only reminds, never blocks',
   先列实现计划: 'Plan before coding',
   'IDE 服务的调用规矩': 'IDE service call rules',
+  '{lang} 代码风格要点': '{lang} code style essentials',
+  改用自建工具: 'Use the custom tool instead',
   钩子档位: 'Hook tier',
   '和全局档位取更严的；项目里单独选了档位时以项目为准，钩子页逐个改过的开关也照旧优先':
     'The stricter of this and the global tier is used; a tier chosen for a project wins, and hooks switched one by one keep their setting',

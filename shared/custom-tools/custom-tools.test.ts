@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { checkArgs, commandTemplate, draftProblems, expandCommand, insideRoot, quoteFor } from './expand.ts'
 import { commandPrint, findDups } from './dup.ts'
+import { customToolFor, programOf } from './match.ts'
 import { CustomTool, nextVersion, type ToolEntry } from './schema.ts'
 import { hintText, listText, parseErrors, runText, toolCommandPrompt } from './text.ts'
 
@@ -110,4 +111,16 @@ test('自建工具：提示词清单、列表、运行结果都按长度上限',
     toolCommandPrompt('export-tables', '只导 Item'),
     /custom_tool action=show id=export-tables[\s\S]*只导 Item/,
   )
+})
+
+test('自建工具：按命令里的程序名或脚本名认出对应的工具', () => {
+  assert.equal(programOf('luac -p {{file}}'), 'luac')
+  assert.equal(programOf('"C:\\Tools\\luac.exe" -p {{file}}'), 'luac')
+  assert.equal(programOf('python Tools/check_lua.py {{dir}}'), 'check_lua.py')
+  assert.equal(programOf('cmd /c build.bat {{x}}'), 'build')
+  assert.equal(programOf('{{script}}'), '')
+  assert.equal(programOf('python {{script}}'), '')
+  const tools = [{ id: 'check', name: '检查', sigs: ['check_lua.py'] }]
+  assert.equal(customToolFor('python3 .\\Tools\\check_lua.py Script', tools)?.id, 'check')
+  assert.equal(customToolFor('python other.py', tools), undefined)
 })

@@ -7,7 +7,14 @@ import test from 'node:test'
 import { BUILTIN_HOOKS, builtinOn, tierOn } from '../hooks/builtins.ts'
 import { HooksData } from '../hooks/defs.ts'
 import { matchModel } from './catalog.ts'
-import { ModelSupportData, patchSupport, resolveSupport, supportRecord, supportView } from './support.ts'
+import {
+  ModelSupportData,
+  patchSupport,
+  resolveSupport,
+  supportRecord,
+  supportTierFor,
+  supportView,
+} from './support.ts'
 
 test('扶持：弱档默认加强四项，中强档就是面板原来的值，关掉总开关全回原样', () => {
   const data = ModelSupportData.parse({})
@@ -67,4 +74,13 @@ test('扶持：设置页改格子，等于默认就不记，越界报错', () =>
   const off = patchSupport(data, { enabled: false })
   assert.ok(off.ok)
   assert.equal(off.data.enabled, false)
+})
+
+test('扶持：选了档位以选的档为准，没选档才看模型本身，认不出的按中档（用户 2026-11-26 定）', () => {
+  // 三档都配 deepseek-flash：选高档就按强档
+  assert.equal(supportTierFor('low', true, 'high'), 'high')
+  assert.equal(supportTierFor('high', true, 'low'), 'low')
+  assert.equal(supportTierFor('low', true), 'low')
+  assert.equal(supportTierFor('high', false), 'medium')
+  assert.equal(supportTierFor('medium', false, 'low'), 'low')
 })

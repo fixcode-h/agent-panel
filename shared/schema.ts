@@ -1720,6 +1720,10 @@ export const AgentUsage = z.object({
   support: z
     .object({
       tier: z.enum(['high', 'medium', 'low']),
+      /** 怎么算出来的：模型本身的档、角色选的档；旧记录没有 */
+      from: z
+        .object({ model: z.enum(['high', 'medium', 'low']), slot: z.enum(['high', 'medium', 'low']).optional() })
+        .optional(),
       boosted: z.array(z.object({ key: z.string(), value: z.union([z.string(), z.number()]) })),
     })
     .optional(),
