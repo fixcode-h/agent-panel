@@ -72,6 +72,9 @@ export type CliEvent =
       addCacheRead?: number
       addCacheWrite?: number
       addCost?: number
+      /** CLI 报的会话累计费用和它属于哪个会话：续接的会话在新进程里从上次的累计接着算（./run-cost.ts） */
+      costTotal?: number
+      costSession?: string
     }
   /** CLI 自己报的上下文细分（Claude Code 的 get_context_usage）：会话栏按它分块 */
   | { type: 'context'; snapshot: ContextSnapshot }
@@ -601,6 +604,7 @@ export function claudeParser(cwd: string): Parser {
         addCacheWrite: gap(c.write, live.write),
         addOutput: gap(o.usage?.output_tokens ?? 0, live.output),
         addCost,
+        ...(o.total_cost_usd !== undefined && { costTotal: totalCost, costSession: o.session_id }),
         // modelUsage 里每个用到的模型都有 contextWindow；子 Agent 可能用了别的小模型，取最大的那个
         window:
           Math.max(0, ...Object.values(o.modelUsage ?? {}).map((m: any) => Number(m?.contextWindow) || 0)) || undefined,

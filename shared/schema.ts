@@ -2126,6 +2126,8 @@ export const TaskData = z.object({
       /** 输入里写入缓存的部分 */
       cacheWriteTokens: z.number().default(0),
       costUsd: z.number().default(0),
+      /** CLI 报的会话累计费用（按会话 id）：续接会话的新进程从这里接着做差，不重复记（server/exec/run-cost.ts） */
+      sessionCost: z.record(z.string(), z.number()).optional(),
     })
     .default({ agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }),
   /** CLI 维护的待办清单（Claude Code 的 TodoWrite、Codex 的计划），对话任务的进度看它 */

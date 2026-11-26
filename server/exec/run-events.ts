@@ -9,7 +9,7 @@ import type { AgentCall } from '../../shared/engine/host.ts'
 import { addFirstToken } from '../../shared/first-token-stats.ts'
 import { stripLongContext } from '../../shared/models/limits.ts'
 import { modelLimitsFor } from '../../shared/models/catalog.ts'
-import { priceCost } from '../../shared/models/price.ts'
+import { turnCost } from './run-cost.ts'
 import { compactedSilently } from '../../shared/prompt/delta.ts'
 import { stepUsage } from '../../shared/task.ts'
 import { setLimits } from '../cli/extras.ts'
@@ -187,14 +187,15 @@ export function createApply(d: EventDeps): (ev: CliEvent) => void {
         if (ev.context !== undefined) compaction.measured(ev.context, u.window)
         au().outputTokens = (au().outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
+        // 非 Anthropic 模型按面板单价算、续接的会话接着上次的累计做差（./run-cost.ts）
+        const cost = turnCost(task, ev, modelLimitsFor(u.model || model, { entries }).entry)
         // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
         for (const t of owner ? [task.usage, stepUsage(owner)] : [task.usage]) {
           t.inputTokens += ev.addInput ?? 0
           t.outputTokens += ev.addOutput ?? 0
           t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
           t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
-          // CLI 不报费用（Codex、Command Code）时按模型目录里填的单价折算（shared/models/price.ts）
-          t.costUsd += ev.addCost ?? priceCost(modelLimitsFor(u.model || model, { entries }).entry?.price, ev)
+          t.costUsd += cost
         }
         if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })
         break
