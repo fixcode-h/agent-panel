@@ -45,7 +45,7 @@ export function segHead(seg: string): string {
 }
 
 /** 段里程序后面的部分（参数），用来区分 `git status` 和 `git clone` 这类同一程序的快慢子命令 */
-const segArgs = (seg: string) =>
+export const segArgs = (seg: string) =>
   seg
     .trim()
     .replace(PREFIX, '')

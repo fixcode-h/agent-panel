@@ -75,7 +75,7 @@ export async function composeInput(a: ComposeInputArgs) {
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
   // Chat 模式没有后台命令时说明是空的，不拼空行
-  const hint = orch && !resume ? orchHint(orch) : ''
+  const hint = orch && !resume ? orchHint(orch, def) : ''
   if (hint) input = `${input}\n\n${hint}`
   // 用户报的 Bug：新会话第一轮带上完整查找流程（ADR 0046）
   const bugMethod = !op && bugMethodPrompt(task, ctx.prompt, !resume)

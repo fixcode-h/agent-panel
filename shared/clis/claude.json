@@ -201,6 +201,7 @@
   "output": "claude",
   "features": {
     "cost": true,
+    "parallelTools": "yes",
     "steer": true,
     "notes": false,
     "keepAlive": true,
@@ -547,6 +548,7 @@
       "edit": ["Edit", "Write", "MultiEdit", "NotebookEdit"],
       "read": ["Read", "Grep", "Glob", "LS"]
     },
+    "searchTools": ["Grep", "Glob"],
     "toolFields": {
       "name": "tool_name",
       "input": "tool_input",

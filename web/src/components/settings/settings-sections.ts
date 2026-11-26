@@ -81,8 +81,14 @@ export const sectionsFor = (clis: CliDefinition[], plugins: Section[], mcp: Sect
   // 面板和插件给 Agent 的 MCP 能力：左栏一项，二级列表里是各来源（web/src/components/settings/mcp/McpNav.tsx）
   { id: 'mcp', label: 'MCP', icon: Plug, group: t('Agent 与 AI') },
   ...mcp,
-  // 面板替 Agent 管的技能和工具调用（ADR 0083）：页签在 agent-tools/AgentToolsSection.tsx 的注册表里
-  { id: 'agent-tools', label: t('Agent 工具'), icon: Wrench, group: t('Agent 与 AI'), aliases: ['技能', '技能推送'] },
+  // 面板替 Agent 管的技能和工具调用（ADR 0083、0084）：页签在 agent-tools/AgentToolsSection.tsx 的注册表里
+  {
+    id: 'agent-tools',
+    label: t('Agent 工具'),
+    icon: Wrench,
+    group: t('Agent 与 AI'),
+    aliases: ['技能', '技能推送', '调用记录', '工具路由'],
+  },
   { id: 'chat-memory', label: t('关于我'), icon: Brain, group: t('记忆与经验'), aliases: ['关于我与记忆', '记忆'] },
   { id: 'experience', label: t('经验'), icon: Lightbulb, group: t('记忆与经验') },
   { id: 'global-lessons', label: t('教训'), icon: GraduationCap, group: t('记忆与经验'), aliases: ['全局教训'] },

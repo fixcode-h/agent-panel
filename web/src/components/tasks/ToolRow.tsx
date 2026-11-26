@@ -1,4 +1,5 @@
 import { KnowledgeTags } from '@/components/ui/knowledge-tag'
+import { RouteBadge, RouteSteps } from '@/components/ui/route-badge'
 import { useLiveById } from '@/lib/live/store'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -172,6 +173,7 @@ export function RowShell({
    * 传了 rowOpen 时详情区也算入口，不再挡点击
    */
   detailStart,
+  tail,
   ms,
   open,
   onToggle,
@@ -210,6 +212,8 @@ export function RowShell({
   titleClass?: string
   detail?: React.ReactNode
   detailStart?: boolean
+  /** 耗时前面的小标（经面板路由的调用实际走的路，ui/route-badge.tsx） */
+  tail?: React.ReactNode
   /** 跑了多久（毫秒）：显示在最右边，还在跑的每秒更新 */
   ms?: number
   open: boolean
@@ -354,6 +358,7 @@ export function RowShell({
         ) : (
           detail
         )}
+        {tail}
         {ms !== undefined && <span className="shrink-0 text-caption text-subtle tabular-nums">{fmtDuration(ms)}</span>}
         {action && (
           <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
@@ -684,6 +689,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         title={tool.label}
         fileRef={fileRef}
         detail={detail}
+        tail={tool.route && <RouteBadge route={tool.route} />}
         ms={bg ? (jobStart ? now - jobStart : undefined) : pending ? now - tool.startedAt! : tool.ms}
         open={open}
         onToggle={() => setOpen(!open)}
@@ -696,6 +702,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
       >
         {
           <div className="divide-y divide-pop-edge">
+            {tool.route && <RouteSteps route={tool.route} />}
             {isDiff ? (
               <div className="relative">
                 <DiffView diff={input} file={tool.label} />

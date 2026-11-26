@@ -253,6 +253,7 @@
       "edit": ["write_file", "edit_file"],
       "read": ["read_file", "grep", "glob"]
     },
+    "searchTools": ["grep", "glob"],
     "toolFields": {
       "name": "tool_name",
       "input": "tool_input",

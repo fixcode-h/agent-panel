@@ -73,6 +73,11 @@ export const HooksSpec = z.object({
   dropInput: z.array(z.string()).default([]),
   /** 各家工具名对照到面板的工具类别（用户钩子按类别匹配） */
   toolNames: z.record(z.string(), z.array(z.string())).default({}),
+  /**
+   * toolNames.read 里其实是「搜索」的那几个（Claude Code 的 Grep / Glob 这类）：工具网关按它认 CLI 自带的搜索，
+   * 记进能力 find 的接管范围（shared/tool-gateway/classify.ts）。没写的 CLI 自带搜索当普通读文件
+   */
+  searchTools: z.array(z.string()).default([]),
   /** 以这些开头的 shell 命令算改文件（Codex 的模型有时用 shell 跑 apply_patch，钩子收到的工具名是 Bash） */
   editCommands: z.array(z.string()).default([]),
   /** 原生输入里工具名、参数、文件路径在哪个字段 */

@@ -1,7 +1,6 @@
 /** 英文词典的一部分：设置「Agent 工具 → 技能」、会话栏「技能」、钩子「按情境推技能」（ADR 0083） */
 export const EN_AGENT_TOOLS: Record<string, string> = {
   'Agent 工具': 'Agent tools',
-  'Agent 工具页签': 'Agent tools tabs',
   按情境推技能: 'Push skills by situation',
   '启动时只带角色自带的技能，其他技能在用得上的那一刻（要改 Lua 文件、跑测试失败、要收尾……）由面板把 SKILL.md 正文直接推给模型；同一个技能一个对话只推一次，上下文压缩后再推一次。每个技能的条件和开关在「Agent 工具 → 技能」里改':
     "Agents start with only their role's skills. Other skills are pushed by the panel the moment they matter (about to edit a Lua file, a test run failed, wrapping up…): the SKILL.md body goes straight to the model. Each skill is pushed once per conversation, and again after the context is compacted. Change each skill's conditions and switch in Agent tools → Skills",

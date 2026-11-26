@@ -405,6 +405,7 @@ CLI 在自己的全局配置里按项目目录另存的 MCP 写在 `mcpStore.pro
 | `notes` | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句 |
 | `limitEnv` | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明 |
 | `longContext` | 长上下文要靠模型名后缀开（只在 API 方式下）：这一轮的上下文窗口（手动设的或按映射 / 模型目录自动算的）不小于 `min` 时，交给 CLI 的模型名加上 `suffix`，CLI 报回来的模型名去掉后缀再用。`models` 是 CLI 认得出的自家模型名（正则），只给它们加后缀。Claude Code 写 `{"suffix": "[1m]", "min": 1000000, "models": "claude                                                                     | …"}`：它认得出的自家模型只按模型名定窗口，不看 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`（2.1.317 实测）；网关里别家的模型按这个环境变量走，加了后缀反而每次报 `unrecognized_model`（2.1.318 实测） |
+| `parallelTools` | 一条回复里能不能发几个工具调用（`yes` / `no` / `unknown`，默认 `unknown`）：不是 `no` 时共用身份提示里加一句「互不依赖的调用放在同一条回复里一起发」，设置「Agent 工具 → 工具路由」照实显示（ADR 0083）。Claude Code `yes`；Codex、Command Code、Pi 还没实测，写 `unknown` |
 | `limitFile` | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名 |
 
 设置里「自动压缩上下文」这一项的默认值是 70%（`shared/schema.ts` 的 `AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；

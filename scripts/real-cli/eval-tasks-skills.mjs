@@ -73,7 +73,7 @@ function luaLogProblems(text) {
     const close = (line.match(/\)/g) || []).length
     if (open !== close) out.push(`第 ${i + 1} 行的日志调用拆成了多行`)
     const tag = line.match(/\[([^\]]+)\]/)
-    if (tag && /[^\x00-\x7f]/.test(tag[1])) out.push(`第 ${i + 1} 行的日志标签是中文：[${tag[1]}]`)
+    if (tag && /[^ -~]/.test(tag[1])) out.push(`第 ${i + 1} 行的日志标签是中文：[${tag[1]}]`)
   })
   return out
 }
@@ -97,7 +97,8 @@ export const SKILL_TASKS = [
     id: 'lua-tool',
     title: '改完 Lua 用自建的检查工具',
     needsTasks: true,
-    prompt: '改一下 scripts/Shop/ShopPanel.lua：Refresh 里 self.items 为空（nil 或没有元素）时直接 return。改完确认 Lua 没有语法问题。',
+    prompt:
+      '改一下 scripts/Shop/ShopPanel.lua：Refresh 里 self.items 为空（nil 或没有元素）时直接 return。改完确认 Lua 没有语法问题。',
     files: { 'scripts/Shop/ShopPanel.lua': SHOP_LUA, 'tools/lua-check.mjs': LUA_CHECK },
     // 项目里先建好自建工具（和用户 /createtool 建的一样存进项目）：看 Agent 改完会不会用它，而不是自己找 luac
     tools: [
@@ -107,7 +108,9 @@ export const SKILL_TASKS = [
         summary: '检查 Lua 文件的语法（块配对），改完 Lua 后用',
         useWhen: '改完 .lua 文件后检查语法',
         effect: 'read',
-        params: [{ name: 'files', label: '文件', type: 'string', desc: '要检查的 .lua 文件，空格分隔', required: true }],
+        params: [
+          { name: 'files', label: '文件', type: 'string', desc: '要检查的 .lua 文件，空格分隔', required: true },
+        ],
         run: { command: 'node tools/lua-check.mjs {{files}}', cwd: '.' },
       },
     ],

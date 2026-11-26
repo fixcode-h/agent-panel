@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { checkOutput, type HookDef, type HookInput, type HookOutput } from '../../shared/hooks/defs.ts'
 import { hookScriptFile } from './store.ts'
 import { t } from '../../shared/i18n.ts'
+import { noteToSink } from '../tool-gateway/sink.ts'
 
 /**
  * 跑一个用户钩子（ADR 0049 第二期）：命令钩子用面板自己的 Node 跑脚本，stdin 进统一格式的 JSON；
@@ -30,6 +31,8 @@ const triggers: HookTrigger[] = []
 export const recentTriggers = () => [...triggers].reverse()
 
 export function noteTrigger(t: HookTrigger) {
+  // 工具网关的调用记录要知道这次是谁拒绝的、补充说明来自哪些钩子（server/tool-gateway/sink.ts）
+  noteToSink(t.hookId, t.result, t.detail)
   triggers.push(t)
   if (triggers.length > TRIGGERS_MAX) triggers.splice(0, triggers.length - TRIGGERS_MAX)
 }
