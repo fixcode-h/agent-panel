@@ -46,6 +46,11 @@ export interface PanelTool {
   def?: (o: Orchestra) => ToolDef
   /** 这个工具在用法说明里那一句（见 HintAt）；只在 when 为真时取 */
   hint?: (o: Orchestra, at: HintAt) => string
+  /**
+   * 会等很久（等用户点卡片、等子任务做完）：面板 MCP 用流式响应带心跳，免得 CLI 的 HTTP 客户端几分钟没数据就断开、
+   * Agent 当成失败再调一次，页面上叠出第二张卡（server/ask-mcp.ts）。CLI 断开时 signal 触发，工具要跟着把卡片收掉
+   */
+  waits?: boolean
   call: (o: Orchestra, a: ToolArgs, signal?: AbortSignal) => ToolResult | Promise<ToolResult>
 }
 

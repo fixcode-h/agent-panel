@@ -225,3 +225,47 @@ test('HTTP 钩子：CLI 直接 POST 原生输入，回的就是按模板填好�
   s.close()
   assert.deepEqual(await post('tool.before', { tool_name: 'Bash' }), {}, '通道关掉后不表态')
 })
+
+test('custom_tool 的保存弹窗走 SSE 心跳；CLI 断开时这次调用的卡片跟着收掉，不叠出第二张', async () => {
+  // 只验证接线：工具收到的 signal 在 CLI 断开时触发（卡片怎么收在 server/custom-tools/agent.ts 跟着这个 signal）
+  let seen: AbortSignal | undefined
+  let release: (() => void) | undefined
+  const orch = {
+    self: '@conv',
+    common: [],
+    customTools: {
+      hint: '',
+      call: (_req: unknown, c: { signal?: AbortSignal }) => {
+        seen = c.signal
+        return new Promise<{ text: string }>((resolve) => (release = () => resolve({ text: '用户已保存' })))
+      },
+    },
+  } as unknown as Orchestra
+  const s = openAskBridge({ orch })
+  const token = tokenOf(s.url)
+  const ac = new AbortController()
+  const res = await askMcpApi().request(`/ask/${token}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'custom_tool', arguments: { action: 'save', draft: { id: 'x' } } },
+    }),
+    headers: { 'content-type': 'application/json' },
+    signal: ac.signal,
+  })
+  assert.match(
+    res.headers.get('content-type') ?? '',
+    /text\/event-stream/,
+    '等用户点保存时不能是一次性 JSON（会被 CLI 断开重试）',
+  )
+  for (let i = 0; i < 100 && !seen; i++) await new Promise((r) => setTimeout(r, 10))
+  assert.ok(seen, '工具拿到了这次调用的 signal')
+  assert.equal(seen!.aborted, false)
+  await res.body?.cancel()
+  for (let i = 0; i < 100 && !seen!.aborted; i++) await new Promise((r) => setTimeout(r, 10))
+  assert.equal(seen!.aborted, true, 'CLI 断开后工具的 signal 触发')
+  release?.()
+  s.close()
+})

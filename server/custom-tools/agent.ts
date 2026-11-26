@@ -53,6 +53,9 @@ async function dispatch(
   req: CustomToolCall,
   c: CustomToolCallCtx,
 ): Promise<{ text: string; error?: boolean }> {
+  // 卡片（保存弹窗、授权卡）跟着这次调用：CLI 断开或取消了这次调用就收掉，不留一张没人等的卡。
+  // 以前只跟着这一轮，CLI 等久了断开重试时页面上叠出两张一样的保存弹窗，用户要点两次（2026-11-26）
+  if (c.signal) ctx = { ...ctx, signal: AbortSignal.any([ctx.signal, c.signal]) }
   if (req.action === 'list') return { text: listText((await listTools(where.projectId)).entries, req.query) }
   if (req.action === 'show' || req.action === 'run') {
     if (!req.id) return fail('要写 id：先用 action=list 看有哪些工具')
@@ -191,7 +194,7 @@ async function grant(
     },
     own,
   )
-  if (!r) return { allow: false, info: '请求作废了（对话被停止）：没有执行。' }
+  if (!r) return { allow: false, info: '请求作废了（对话被停止，或这次调用断开了）：没有执行。' }
   if (!r.allow)
     return {
       allow: false,
@@ -232,7 +235,7 @@ async function save(
     },
     own,
   )
-  if (!r) return fail('保存弹窗作废了（对话被停止）：没有保存。')
+  if (!r) return fail('保存弹窗作废了（对话被停止，或这次调用断开了）：没有保存。')
   if (!r.allow)
     return r.answer?.trim()
       ? fail(`用户要你再改一改：${r.answer.trim()}\n改好后再调一次 action=save。`)
