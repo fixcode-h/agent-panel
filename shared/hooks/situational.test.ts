@@ -81,23 +81,6 @@ test('情境规则：第一次调 JetBrains IDE 服务的工具时推它的调�
   assert.equal(situationMatches(ide, ctx({ facts: call('mcp__idea__lua_code') })), false)
 })
 
-test('情境规则：第一次改 Lua / C++ 文件前推对应的代码风格要点（Windows 绝对路径也认）', () => {
-  const lua = SITUATIONAL_RULES.find((r) => r.id === 'code-style:lua-code-style')!
-  const cpp = SITUATIONAL_RULES.find((r) => r.id === 'code-style:cpp-code-style')!
-  const at = (p: string, kind: 'edit' | 'read' = 'edit'): HookFacts => ({
-    tool: { kind, name: 'Edit', input: {}, path: p, paths: [p] },
-  })
-  const winLua = 'G:\\Project\\Content\\Script\\Module\\s_BW_CG_ClinkGlassesSystem.lua'
-  assert.ok(situationMatches(lua, ctx({ facts: at(winLua), support: strong })))
-  assert.ok(situationMatches(lua, ctx({ facts: at('Script/a.lua'), support: strong, plans: false })))
-  assert.equal(situationMatches(lua, ctx({ facts: at('Script/a.lua', 'read') })), false)
-  assert.equal(situationMatches(lua, ctx({ facts: at('src/a.ts') })), false)
-  assert.ok(situationMatches(cpp, ctx({ facts: at('Source/Foo/Private/Foo.cpp') })))
-  const text = lua.text(ctx({ facts: at(winLua) }))
-  assert.match(text, /lua-code-style/)
-  assert.match(text, /日志调用都不拆成续行/)
-})
-
 test('情境规则：自己拼命令跑自建工具包好的程序时提醒改用 custom_tool', () => {
   const r = SITUATIONAL_RULES.find((x) => x.id === 'custom-tool-instead')!
   const sh = (command: string): HookFacts => ({

@@ -64,9 +64,9 @@ export const EN_PROJECT_SKILLS: Record<string, string> = {
   '放在用户目录，所有项目、所有对话都读得到': 'Kept in your home folder, so every project and conversation can read it',
   '；{clis} 不能按会话加载技能，改成在提示里列出它的路径':
     '; {clis} cannot load skills per session, so its path is listed in the prompt instead',
-  '这个项目打开的技能没能交给 Codex（{error}），这一轮用不了它们':
-    'The skills turned on for this project could not be given to Codex ({error}); they are unavailable this turn',
-  '这个项目打开的技能这一轮没能带上，Agent 暂时用不了它们。':
-    'The skills turned on for this project could not be added this turn, so the agent cannot use them for now.',
+  '这一轮要带的技能没能交给 Codex（{error}），这一轮用不了它们':
+    "This turn's skills could not be given to Codex ({error}); they are unavailable this turn",
+  '这一轮要带的技能没能带上，Agent 暂时用不了它们。':
+    "This turn's skills could not be added, so the agent cannot use them for now.",
   '没有这个技能：{name}': 'No such skill: {name}',
 }

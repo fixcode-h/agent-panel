@@ -63,3 +63,6 @@ export const ComponentsSection = lazy(() =>
 export const McpSection = lazy(() =>
   import('@/components/settings/mcp/McpSection').then((m) => ({ default: m.McpSection })),
 )
+export const AgentToolsSection = lazy(() =>
+  import('@/components/settings/agent-tools/AgentToolsSection').then((m) => ({ default: m.AgentToolsSection })),
+)

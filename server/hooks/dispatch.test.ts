@@ -82,8 +82,9 @@ test('只读的角色改文件被拒绝，跑写仓库的命令也被拒绝；�
   const plain = await hookOptions(ctx())
   assert.ok(plain.hookEvents?.includes('tool.before'))
   assert.ok(!(await plain.onHook!('tool.before', edit(path.join(dir, 'a.ts')))).deny, '普通角色改文件照常')
-  // 内置守卫只看改文件、跑命令和读文件（读大文件守卫）：能按工具名过滤的 CLI 不再为搜索这类工具跑钩子（没有用户钩子时）
-  assert.deepEqual([...new Set(plain.hookTools?.['tool.before'])].sort(), ['edit', 'read', 'shell'])
+  // 内置守卫只看改文件、跑命令和读文件（读大文件守卫）：能按工具名过滤的 CLI 不再为搜索这类工具跑钩子（没有用户钩子时）；
+  // 按情境推技能（ADR 0083）还要看面板工具（收尾时推 verification-before-completion）
+  assert.deepEqual([...new Set(plain.hookTools?.['tool.before'])].sort(), ['edit', 'panel', 'read', 'shell'])
 })
 
 test('只统筹的父对话改文件被拒绝；就地微改动登记过的文件放行', async () => {
@@ -306,6 +307,8 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   await setBuiltin('big-output-hint', false, true)
   await setBuiltin('arg-table-hint', false, true)
   await setBuiltin('push-lessons', false, true)
+  // 按情境推技能有工具后的条件（测试命令失败后推 systematic-debugging），也先关掉
+  await setBuiltin('skill-push', false, true)
   const none = await hookOptions(ctx({ task: tk }))
   assert.ok(!none.hookEvents?.includes('tool.after'), '没有执行计划（子任务、Chat 页）不装')
   await setBuiltinParam('plan-pace', 'calls', 2, false)
@@ -320,6 +323,7 @@ test('计划没跟上提醒：默认开、只给有执行计划的对话，动�
   await setBuiltin('big-output-hint', true, true)
   await setBuiltin('arg-table-hint', true, true)
   await setBuiltin('push-lessons', true, true)
+  await setBuiltin('skill-push', true, true)
 })
 
 test('大输出提醒：默认开，一次结果超过字数补一句，每次调用最多两次', async () => {

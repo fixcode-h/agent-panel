@@ -229,7 +229,7 @@
     "docsImports": true
   },
   "docsNote": "Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。",
-  "runSkills": { "subdir": ".claude/skills", "args": ["--add-dir", "{root}"], "shared": true },
+  "runSkills": { "subdir": ".claude/skills", "args": ["--add-dir", "{root}"] },
   "skills": {
     "user": ["~/.claude/skills"],
     "repo": [".claude/skills"]

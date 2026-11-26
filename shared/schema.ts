@@ -1727,6 +1727,11 @@ export const AgentUsage = z.object({
       boosted: z.array(z.object({ key: z.string(), value: z.union([z.string(), z.number()]) })),
     })
     .optional(),
+  /**
+   * 技能（ADR 0083）：这一轮带进技能目录的（角色自带、每个对话都带的）和面板按情境推过正文的。
+   * 会话栏「环境 → 技能」那一行按它写；旧记录没有
+   */
+  skills: z.object({ carried: z.array(z.string()).default([]), pushed: z.array(z.string()).default([]) }).optional(),
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
 

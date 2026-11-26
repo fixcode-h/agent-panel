@@ -14,8 +14,11 @@ import { turnRole } from '../../shared/conv-mode.ts'
 import { promptUserNameRules } from '../../shared/prompt-lang.ts'
 import type { AgentCall } from '../../shared/engine/host.ts'
 import { t } from '../../shared/i18n.ts'
-import { ensureBundled, sharedRoot } from '../bundled-skills.ts'
-import { pluginSkillsFor } from '../skills/plugin-skills.ts'
+import { ensureBundled } from '../bundled-skills.ts'
+import { readHooks } from '../hooks/store.ts'
+import { alwaysSkills } from '../../shared/skills/catalog.ts'
+import { noteSkillUsage } from '../../shared/skills/usage.ts'
+import { agentUsage } from './usage-record.ts'
 import { taskFiles } from '../task-files.ts'
 import { log } from '../log.ts'
 import type { RealContext } from './real-context.ts'
@@ -80,15 +83,20 @@ export async function prepareLaunch(
   const { task, settings } = ctx
   const { found, agent, cliId, def, cs, cwd, model, effort, limits } = target
   const { step, chat, op, resume, fork, carry, windowFor } = o
-  // 角色点名要用的技能；按项目的那些和项目能力里打开的一起放进这一轮的技能目录（server/skills/run-skills.ts）
+  // 这一轮只带角色自带的技能（ADR 0083）：角色点名的、用户设成每个对话都带的，放进这一轮的技能目录（server/skills/run-skills.ts）；
+  // 其余的由面板按情境推正文
   const roleSkills = fillSkills(roleSkillNames(agent, ctx.agents), task.skillSlots)
-  // 角色要用的全局自带技能先补到 ~/.agents/skills：不读那里的 CLI（Claude Code）由下面每轮一起带上
-  await ensureBundled(roleSkills)
-  const skills = await launchSkills(ctx, def, roleSkills, step, call.agentId)
+  const always = alwaysSkills(await readHooks())
+  // 要带的自带技能先补进面板数据目录，再从那里复制进这一轮的目录
+  await ensureBundled([...roleSkills, ...always])
+  const skills = await launchSkills(ctx, def, roleSkills, always, step, call.agentId)
+  // 会话栏「环境 → 技能」：这一轮带的（对话自己的会话；子任务的不记在角色那一条上）
+  const skillUse = step ? undefined : agentUsage(task, call.agentId, model, windowFor(model))
+  noteSkillUsage(skillUse, { carried: skills.names })
   const role = [
     withSkillDir(
       composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim(),
-      sharedRoot(),
+      skills.dir,
     ),
     skills.note,
   ]
@@ -100,7 +108,6 @@ export async function prepareLaunch(
   const instructions = [role, promptUserNameRules(settings.userName), def.systemPromptFlag ? taskDir.rule : '']
     .filter(Boolean)
     .join('\n\n')
-  // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
   // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
   const composed = await composeInput({
     ctx,
@@ -115,6 +122,7 @@ export async function prepareLaunch(
     instructions,
     taskDir,
     found,
+    onSkillPushed: (name) => noteSkillUsage(skillUse, { pushed: [name] }),
   })
   // 启动参数和环境变量（自动压缩、上下文上限、放行的目录这些）在 launch-options.ts
   const { pct, build, env } = await launchOptions({
@@ -150,13 +158,14 @@ export async function prepareLaunch(
 }
 
 /**
- * 这一轮带上的按项目技能（工作包 W4）：准备失败时在对话里写一行警告，这一轮不带它们照常跑
+ * 这一轮带上的技能（角色自带的、每个对话都带的、项目打开的按项目技能）：准备失败时在对话里写一行警告，这一轮不带它们照常跑
  * （不悄悄吞掉：Agent 说找不到技能时用户要知道为什么）
  */
 async function launchSkills(
   ctx: RealContext,
   def: RunTarget['def'],
   roleSkills: string[],
+  always: string[],
   step: string,
   agentId: string,
 ): Promise<RunSkills> {
@@ -166,16 +175,15 @@ async function launchSkills(
       projectId: ctx.project.id,
       opened: ctx.project.capabilities?.skills,
       roleSkills,
-      // 开着的插件带的技能每轮都带，装上就能用，不用 Agent 自己去插件目录里找
-      plugins: await pluginSkillsFor(ctx.project),
+      always,
     })
   } catch (err) {
     ctx.task.messages.push({
-      ...systemNote(ctx.newId(), agentId, step, t('这个项目打开的技能这一轮没能带上，Agent 暂时用不了它们。')),
+      ...systemNote(ctx.newId(), agentId, step, t('这一轮要带的技能没能带上，Agent 暂时用不了它们。')),
       alert: makeAlert('warn', (err as Error).message, 'panel'),
     })
     ctx.changed(true)
-    return { names: [], args: [], note: '' }
+    return { names: [], args: [], note: '', dir: '' }
   }
 }
 

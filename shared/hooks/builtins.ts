@@ -13,6 +13,9 @@ export interface BuiltinParam {
   label: () => string
   hint: () => string
   default: string[] | number
+  /** number 的取值范围，不写是 1 到 100 */
+  min?: number
+  max?: number
 }
 
 /**
@@ -363,6 +366,28 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
         '只在某个情境才用得上的细则（例如弱模型第一次改文件前还没列计划），不常驻在角色设定里，到那一刻才推给模型；每条在一个对话里只推一次，只提醒不拦截',
       ),
     tier: 'minimal',
+  },
+  {
+    // 技能由面板推送（ADR 0083）：精简档也开，不看扶持档位——用户要的是不漏用技能；条件和每个技能的开关在「Agent 工具 → 技能」
+    id: 'skill-push',
+    event: 'tool.before',
+    name: () => t('按情境推技能'),
+    description: () =>
+      t(
+        '启动时只带角色自带的技能，其他技能在用得上的那一刻（要改 Lua 文件、跑测试失败、要收尾……）由面板把 SKILL.md 正文直接推给模型；同一个技能一个对话只推一次，上下文压缩后再推一次。每个技能的条件和开关在「Agent 工具 → 技能」里改',
+      ),
+    tier: 'minimal',
+    params: [
+      {
+        key: 'tokens',
+        kind: 'number',
+        label: () => t('一个对话最多推多少 token 的正文'),
+        hint: () => t('超过后只推一行路径；默认 20000，0 表示只推路径'),
+        default: 20000,
+        min: 0,
+        max: 200000,
+      },
+    ],
   },
 ]
 

@@ -58,6 +58,7 @@ import {
   MarkdownSection,
   ComponentsSection,
   McpSection,
+  AgentToolsSection,
 } from '@/components/settings/lazy-sections'
 
 /** 改 SettingsForm 里的一块：各分区只拿到自己那一块的 setter */
@@ -295,6 +296,7 @@ function SettingsContent({ cur, inPlugin, ctx }: { cur: Section; inPlugin: boole
       {cur.id === 'plugins' && <PluginsSection />}
       {inPlugin && <PluginParamsSection section={cur.id} />}
       {mcpPage(cur.id) && <McpSection section={cur.id} onSection={onSection} />}
+      {cur.id === 'agent-tools' && <AgentToolsSection />}
       {cur.id === 'data' && <DataSection />}
       {cur.id === 'usage' && (
         <UsageSection pricingModel={form.usagePricingModel} onPricingModel={setPart('usagePricingModel')} />

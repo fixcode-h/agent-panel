@@ -54,6 +54,9 @@ export const userSkillDir = (d: CliDefinition) => {
 /** 按项目的自己的技能挪到这里：数据目录 project-skills/<CLI>/<名字>/ */
 export const projectSkillStore = (cli: string) => path.join(dataPath('project-skills'), cli)
 
-/** 每轮带技能的目录：数据目录 run-skills/<项目>/<CLI>/，每轮开始时按这一轮要带的重建 */
-export const runSkillsRoot = (projectId: string, cli: string) =>
-  path.join(dataPath('run-skills'), projectId || '_', cli)
+/**
+ * 每轮带技能的目录：数据目录 run-skills/<项目>/<CLI>-<这组技能的指纹>/，每轮开始时按这一轮要带的重建。
+ * 按要带的那组技能分开：同一个项目里不同角色的对话同时在跑，不会互相把对方的技能换掉
+ */
+export const runSkillsRoot = (projectId: string, cli: string, key = '') =>
+  path.join(dataPath('run-skills'), projectId || '_', key ? `${cli}-${key}` : cli)

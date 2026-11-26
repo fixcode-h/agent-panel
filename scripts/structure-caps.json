@@ -52,7 +52,7 @@
     "web/src/components/usage/UsageSection.tsx::UsageSection": 580,
     "web/src/components/workflows/WorkflowDetail.tsx::WorkflowDetail": 360,
     "web/src/lib/demo/demo-backend.ts::seed": 500,
-    "web/src/lib/demo/demo-backend.ts::route": 590,
+    "web/src/lib/demo/demo-backend.ts::route": 570,
     "web/src/lib/demo/demo-backend.ts::tasksRoute": 600,
     "web/src/lib/demo/demo-backend.ts::demoChildren": 330,
     "web/src/pages/AgentsPage.tsx::AgentsPage": 430,

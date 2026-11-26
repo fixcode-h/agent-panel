@@ -4,8 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { composeAgentsMd, DeployRun } from '../shared/deploy.ts'
-import { deploy, skillUpdates } from './deploy.ts'
-import { installBundled } from './bundled-skills.ts'
+
+// 自带技能装在数据目录（ADR 0083）：store.ts 在模块顶层就算数据目录，import 之前换成临时的，不碰真正的 ~/.agent-panel
+process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'deploy-data-'))
+const { deploy, skillUpdates } = await import('./deploy.ts')
+const { bundledStore, installBundled } = await import('./bundled-skills.ts')
 
 /**
  * 按键还原环境变量。不能写 process.env = old：换成普通对象后再设 HOME，os.homedir() 读不到，
@@ -70,14 +73,14 @@ test('没有选技能时全局说明原样输出', () => {
   assert.equal(composeAgentsMd('', []), '')
 })
 
-test('同一个技能的两份（自带 Skill 页装的、部署放的）：一处更新（覆盖）另一份也换成这一版，两边的提示一起消；另一处没装的不顺手装', async () => {
+test('同一个技能的两份（自带 Skill 页装进数据目录的、部署放的）：一处更新（覆盖）另一份也换成这一版，两边的提示一起消；另一处没装的不顺手装', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'deploy-sync-'))
   const old = { ...process.env }
   process.env.HOME = home
   process.env.USERPROFILE = home
   for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR']) delete process.env[k]
   try {
-    const shared = path.join(home, '.agents/skills/grilling/SKILL.md')
+    const shared = path.join(bundledStore(), 'grilling/SKILL.md')
     const deployed = path.join(home, '.agents/skills/workflow/grilling/SKILL.md')
     const run = DeployRun.parse({ agentsMd: '', skills: ['grilling'], clis: [] })
     await installBundled(['grilling'], [], false)

@@ -5,7 +5,6 @@ import { CHAT_AGENTS } from './chat-agents.ts'
 import { BACKGROUND_WAIT_RULE, TURN_PROGRESS_RULES } from '../turn-rules.ts'
 import { ASK_FORMAT } from '../tasks/ask-layout.ts'
 import { BUG_ANALYSIS_TEXT, BUG_SIMPLE_TEXT } from './bug-method.ts'
-import { codeStyleRules } from '../skills/code-style.ts'
 
 /**
  * 内置 Agent：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」和美术资产链整理的一套角色，
@@ -1174,7 +1173,7 @@ ${BUG_SIMPLE_TEXT}
 3. 只做单点修复，不顺手重构。连续三次修复失败就停下来质疑设计，写明理由。
 4. 性能问题先建立基线：固定输入、测量方式（benchmark / profile / 计时日志）和当前数值，写清测量环境；没有基线的优化不算数。定位到瓶颈后只改证据指向的那一处，改完用同样的方式复测并给出前后对比。{{/if}}
 {{/if}}
-- 语言：{{lang}}。{{#if lang=cpp|多种}}写 C++ 时严格遵守 cpp-code-style，${codeStyleRules('cpp')}{{/if}}{{#if lang=lua|多种}}写 Lua 时遵守 lua-code-style：${codeStyleRules('lua')}{{/if}}
+- 语言：{{lang}}。{{#if lang=cpp|多种}}写 C++ 时遵守 cpp-code-style（包括 UE 插件的模块导出规则）。{{/if}}{{#if lang=lua|多种}}写 Lua 时遵守 lua-code-style。{{/if}}
 
 ${SELF_CHECK_TEXT}
 

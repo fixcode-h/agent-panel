@@ -31,8 +31,7 @@ import {
 } from '../shared/builtin/install.ts'
 import { coreDefinition, keepParamValues, upgradeParamDefaults } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
-import { ensureBundled, installBundled, listBundled, retireBundled } from './bundled-skills.ts'
-import { recordInstalled, resetInstalledRecordCache, treeHash } from './skills/installed-record.ts'
+import { retireBundled } from './bundled-skills.ts'
 
 const root = path.resolve(import.meta.dirname, '..', 'skills')
 const skillDirs = readdirSync(root, { withFileTypes: true })
@@ -239,57 +238,6 @@ test('内置工作流：结构合法，节点的 Agent、验收流程和参数�
         }
       }
     }
-  }
-})
-
-test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行前自动补齐缺的', async () => {
-  const home = mkdtempSync(path.join(tmpdir(), 'bundled-'))
-  const old = { ...process.env }
-  process.env.HOME = home
-  process.env.USERPROFILE = home
-  try {
-    const list = await listBundled()
-    assert.equal(list.length, skillDirs.length)
-    assert.ok(list.every((s) => s.status.shared === 'missing'))
-    const one = list.find((s) => s.name === 'task-records')!
-    assert.ok(one.files >= 4, '带上了模板')
-    // 详情页要能列出它带哪些文件：树里不含 SKILL.md，目录排在文件前，files 和树里的文件数一致
-    assert.ok(one.tree, '自带 Skill 要带文件树')
-    assert.equal(
-      one.tree.entries.some((x) => x.path.toLowerCase() === 'skill.md'),
-      false,
-    )
-    assert.equal(one.tree.entries.filter((x) => x.type === 'file').length, one.files)
-    assert.ok(one.tree.entries.some((x) => x.path === 'templates' && x.type === 'dir'))
-    // 父目录一定排在子项前面（前端的 toTree 依赖这个顺序）
-    const at = (p: string) => one.tree!.entries.findIndex((x) => x.path === p)
-    assert.ok(at('templates') < at('templates/design.md'))
-
-    const r = await installBundled(['task-records'], [], false)
-    assert.deepEqual(r.done, ['task-records'])
-    const dir = path.join(home, '.agents/skills/task-records')
-    assert.ok(existsSync(path.join(dir, 'SKILL.md')))
-    assert.ok(existsSync(path.join(dir, 'templates/design.md')))
-    assert.equal((await listBundled()).find((s) => s.name === 'task-records')!.status.shared, 'same')
-
-    // 用户改过的：不覆盖，状态是「不同」；明确覆盖时换回自带的
-    writeFileSync(path.join(dir, 'SKILL.md'), '改过')
-    assert.equal((await listBundled()).find((s) => s.name === 'task-records')!.status.shared, 'changed')
-    assert.deepEqual((await installBundled(['task-records'], [], false)).skipped, ['task-records'])
-    assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
-    await installBundled(['task-records'], [], true)
-    assert.notEqual(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
-
-    // 执行前补齐：只装缺的、只装自带的，用户的同名 Skill 不动
-    writeFileSync(path.join(dir, 'SKILL.md'), '用户的')
-    const added = await ensureBundled(['task-records', 'grilling', '不存在的'])
-    assert.deepEqual(added, ['grilling'])
-    assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
-  } finally {
-    // 按键还原：process.env = old 会换成普通对象，之后再设 HOME，os.homedir() 读不到（rules-check 第 17 条）
-    for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]
-    Object.assign(process.env, old)
-    rmSync(home, { recursive: true, force: true })
   }
 })
 
@@ -686,39 +634,4 @@ test('内置角色：本机改过的设定按当前定义直接覆盖，参数�
   assert.equal(up.length, 1, '改过的也覆盖')
   assert.equal(up[0].instructions.trim(), def.instructions.trim())
   assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, ops)).length, 0, '再启动不再改')
-})
-
-test('自带 Skill：面板装进去后没人改过的副本自动跟上新版，用户改过的不动', async () => {
-  const home = mkdtempSync(path.join(tmpdir(), 'bundled-fresh-'))
-  const old = { ...process.env }
-  process.env.HOME = home
-  process.env.USERPROFILE = home
-  resetInstalledRecordCache()
-  try {
-    await installBundled(['grilling', 'task-records'], [], false)
-    const root = path.join(home, '.agents/skills')
-    const g = path.join(root, 'grilling', 'SKILL.md')
-    const fresh = readFileSync(g, 'utf8')
-    // 模拟面板当初装的是旧版：副本是旧内容，记录也是那份的指纹
-    writeFileSync(g, '旧版')
-    const tree = (dir: string): [string, Buffer][] =>
-      readdirSync(dir, { recursive: true, withFileTypes: true })
-        .filter((e) => e.isFile())
-        .map((e) => {
-          const full = path.join(e.parentPath, e.name)
-          return [path.relative(dir, full).split(path.sep).join('/'), readFileSync(full)]
-        })
-    await recordInstalled('grilling', treeHash(tree(path.join(root, 'grilling'))))
-    // 用户自己改过的（和记录对不上）
-    const tr = path.join(root, 'task-records', 'SKILL.md')
-    writeFileSync(tr, '用户改的')
-    await ensureBundled([])
-    assert.equal(readFileSync(g, 'utf8'), fresh, '没人改过的旧副本换成新版')
-    assert.equal(readFileSync(tr, 'utf8'), '用户改的', '用户改过的不动')
-  } finally {
-    for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]
-    Object.assign(process.env, old)
-    resetInstalledRecordCache()
-    rmSync(home, { recursive: true, force: true })
-  }
 })

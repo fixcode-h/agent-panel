@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { t } from '../i18n.ts'
 import { DEFAULT_TIER, HOOK_TIERS } from './builtins.ts'
+import { SkillOverride } from '../skills/schema.ts'
 import { unwrapShell } from '../shell-command.ts'
 import { ModelSupportData } from '../models/support.ts'
 import { globMatch as matchGlob } from '../text-match/index.ts'
@@ -118,6 +119,8 @@ export const HooksData = z.object({
   hooks: z.array(HookDef).default([]),
   /** 按模型档位加强扶持（shared/models/support.ts）：总开关和按档位改过的值；旧数据没有，按默认（开） */
   modelSupport: ModelSupportData.default({ enabled: true, values: {} }),
+  /** 技能推送（ADR 0083）：用户在「Agent 工具 → 技能」里对每个技能的改动（开关、每个对话都带、条件），没改过的不记 */
+  skills: z.record(z.string(), SkillOverride).default({}),
   /** 做过的一次性迁移：webhook 是设置里原来的「计划 Webhook」迁成钩子 */
   migrated: z.object({ webhook: z.boolean().default(false) }).default({ webhook: false }),
 })

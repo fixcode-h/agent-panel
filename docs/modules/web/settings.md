@@ -14,6 +14,11 @@
   - 结构：第一页是总览，含「检查 Agent 能拿到什么」和来源卡片；每个来源一个二级页，在左栏缩进列出（`McpNav.tsx`，页 id 是 `mcp:<来源 id>`，`SettingsNav` 不把它们当一级页）。
   - 数据：来自 `GET /mcp-catalog` 和 `POST /mcp-catalog/check`（契约在 `shared/api-contract/mcp-catalog.ts`），演示版在 `web/src/lib/demo/demo-mcp-catalog.ts`。
   - 组件：工具行 `CapabilityRow` 和服务头 `CapabilityServerHeader` 是 `components/ui/` 的共用组件，设置 →「组件」的「MCP 能力」里可以调（`capRow`：内边距、圆角、是否显示使用时机和工具名）。
+- 设置 →「Agent 工具」（「Agent 与 AI」组，MCP 后面，ADR 0083）：面板替 Agent 管的技能和工具调用，一页一个页签。代码在 `web/src/components/settings/agent-tools/`。
+  - 页签是注册表 `AGENT_TOOLS_TABS`（`AgentToolsSection.tsx`），加一页只加一行，页面不按页签名写分支。
+  - 「技能」页签（`SkillsTab.tsx`、`SkillDetail.tsx`）：左边技能目录按来源分组、可搜，每行写条件摘要、最近推了几次、自动推开关；右边详情能改条件（一行一个类型下拉加一个值）、「每个对话都带」、单个对话推送上限、恢复默认，看最近推送（点开跳到那个对话）。条件的说法在 `when-text.ts`。
+  - 数据：`shared/api-contract/agent-tools.ts`（服务端 `server/skills/api.ts`，演示 `web/src/lib/demo/demo-agent-tools.ts`，都用 `shared/skills/` 的同一份目录和合并逻辑）。
+- 会话栏「环境」的「技能」一行（`web/src/components/session/SkillsNote.tsx`）：这一轮开跑带了哪些技能、面板推过哪些，读会话用量的 `skills`。
 - 设置页的用量统计（`web/src/components/usage/UsageSection.tsx`）：工具条上先选分组（`USAGE_GROUPS`：按时间 / 按项目 / 按对话），按时间时再选粒度（按天 / 按周 / 按月）和时间区间；按项目 / 对话固定汇总近 `USAGE_LOOKBACK_DAYS` 天、隐藏区间选择器，表格第一列换成项目名（被删或不属于项目时写清）或对话标题，其余列和表尾合计口径不变——同一份聚合、同一个 `usageCost`，不出现第二个叫「费用」的数字（教训 `lmvkw5gib0c5n`）。分组报表单独请求，切回按时间不用重新取。回归：`shared/usage.test.ts`（三种分组合计一致、空项目归到空 key、窗口过滤）、`scripts/ui/05-settings.mjs` 的「设置-用量统计-按项目 / 按对话」。
 - 回收站（设置 →「数据」→ `web/src/components/settings/TrashSection.tsx`，接口见 [server README](../server/README.md)「对话回收站」）：列出已删除的对话（标题、删除时间、剩余天数由服务端按同一个保留期算好、含几个子对话），两个操作——恢复（`api.restoreTask`；返回 `worktreeCleared` 时用 toast 明确说「独立分支目录已经清理，恢复后需要重新执行」）和永久删除（点两次确认：第一次把按钮换成「再点一次」，鼠标移出这一行就撤回）。恢复 / 永久删除后重新拉回收站列表并 `reloadTasks()`，侧栏、标题计数立刻跟着变。侧栏右键菜单、任务页的删除按钮和「批量删除未运行的对话」都走同一个 `DELETE /tasks/:id`，所以都是先进回收站；三处确认框的文案也都写清了「{days} 天内可以在设置 →「数据」→ 回收站里恢复」，天数取自 `TRASH_RETENTION_DAYS`，不写死。
 - 设置页（`web/src/pages/SettingsPage.tsx`）「运行」里不再有「面板提醒次数」（2026-11-05 起提醒不限次数，`Settings.nudgeMax` 只为兼容旧文件留着）；「同时运行的后台命令」取 `Settings.backgroundLimit`（默认 64，范围 1–64）；对话设置弹窗（`web/src/components/tasks/ConversationSettingsDialog.tsx`）管名称、目标、全局规则、子对话用的 Agent / 模型和「停止全部子对话」，没有再放并发数设置（也没有「同时执行的子对话」）。

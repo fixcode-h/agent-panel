@@ -10,6 +10,7 @@ import {
   BUG_REPORT_TEXT,
   BUG_SIMPLE_TEXT,
   debugSkillMd,
+  debugSkillFullMd,
   HYPOTHESIS_KINDS_TEXT,
   LOG_SCOPE_TEXT,
 } from './bug-method.ts'
@@ -67,10 +68,14 @@ test('分析角色：只读，前五个阶段，修复写成建议', () => {
 })
 
 test('systematic-debugging 技能由方法生成，和方法一致（改了方法跑 node scripts/gen-debug-skill.mjs）', async () => {
-  const file = 'skills/coding/systematic-debugging/SKILL.md'
-  const config = await resolveConfig(file, { config: 'config/.prettierrc.json' })
-  const want = await format(debugSkillMd(), { ...config, filepath: file })
-  assert.equal(readFileSync(file, 'utf8'), want)
+  for (const [file, make] of [
+    ['skills/coding/systematic-debugging/SKILL.md', debugSkillMd],
+    ['skills/coding/systematic-debugging/full-flow.md', debugSkillFullMd],
+  ] as const) {
+    const config = await resolveConfig(file, { config: 'config/.prettierrc.json' })
+    const want = await format(make(), { ...config, filepath: file })
+    assert.equal(readFileSync(file, 'utf8'), want, file)
+  }
 })
 
 test('假设表按现象类型各给一份提醒：数据、状态、界面、环境、偶发（分析稿 B12）', () => {

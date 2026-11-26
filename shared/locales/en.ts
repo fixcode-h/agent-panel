@@ -8,6 +8,7 @@ import { EN_FLOW } from './en/flow.ts'
 import { EN_LOCAL_IMAGE } from './en/local-image.ts'
 import { EN_MCP } from './en/mcp.ts'
 import { EN_MCP_CATALOG } from './en/mcp-catalog.ts'
+import { EN_AGENT_TOOLS } from './en/agent-tools.ts'
 import { EN_PROJECT_SKILLS } from './en/project-skills.ts'
 import { EN_PROJECT_SIDEBAR } from './en/project-sidebar.ts'
 import { EN_PROJECT_CAPS } from './en/project-caps.ts'
@@ -130,6 +131,7 @@ export const EN: Record<string, string> = {
   ...EN_LOCAL_IMAGE,
   ...EN_MCP,
   ...EN_MCP_CATALOG,
+  ...EN_AGENT_TOOLS,
   ...EN_PROJECT_SKILLS,
   ...EN_PROJECT_SIDEBAR,
   ...EN_PROJECT_CAPS,
