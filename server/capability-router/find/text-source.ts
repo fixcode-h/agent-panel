@@ -9,6 +9,7 @@ import type { FindHit, FindOutcome, FindRequest } from '../../../shared/capabili
 import { declRe, lastName, LANG_EXT, textRe } from '../../../shared/capability-router/find/text-patterns.ts'
 import type { ProjectIndex } from '../../file-index/registry.ts'
 import type { RouteSource } from '../router.ts'
+import { t } from '../../../shared/i18n.ts'
 
 export const TEXT_SOURCE_ID = 'panel.text'
 export const TEXT_SOURCE_RANK = 1000
@@ -37,6 +38,8 @@ export function textSource(
 ): RouteSource<FindRequest, FindOutcome> {
   return {
     id: TEXT_SOURCE_ID,
+    label: t('面板按文本找'),
+    via: 'panel',
     rank: TEXT_SOURCE_RANK,
     accepts: (req) => req.kind === 'symbol' || req.kind === 'refs' || req.kind === 'text',
     ready: async () => ((await getIndex()) ? { state: 'ready' } : { state: 'down', why: '项目关了文件索引' }),

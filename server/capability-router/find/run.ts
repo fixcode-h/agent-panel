@@ -15,7 +15,7 @@ import type { FindOutcome, FindRequest } from '../../../shared/capability-router
 import type { FindCodeRun } from '../../../shared/host/find-code.ts'
 import { projectIndex, type ProjectIndex } from '../../file-index/registry.ts'
 import { pluginFindSources } from '../../plugins/find-sources.ts'
-import { route, type RouteSource } from '../router.ts'
+import { route, toolRouteOf, type RouteSource } from '../router.ts'
 import { routeServers } from '../servers.ts'
 import { externalFinal, externalSource } from './external.ts'
 import { TEXT_SOURCE_ID, textSource } from './text-source.ts'
@@ -83,7 +83,10 @@ export function findCodeRun(opts: {
         if (down.length && !order.some((s) => s.id === TEXT_SOURCE_ID))
           notes.push(`没有能查的路：${down.map((s) => s.why ?? s.outcome).join('；')}`)
       }
-      return { text: formatHits(hits, req, notes) }
+      return {
+        text: formatHits(hits, req, notes),
+        route: toolRouteOf('find', sources as RouteSource<never, unknown>[], r),
+      }
     } catch (e) {
       return { text: `查找出错：${(e as Error).message}`, error: true }
     }

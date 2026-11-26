@@ -22,6 +22,7 @@ import { accountsApi } from '../accounts.ts'
 import { apiSpeedApi } from '../cli/api-speed.ts'
 import { integrationsApi } from '../integrations.ts'
 import { hooksApi } from '../hooks/api.ts'
+import { toolGatewayApi } from '../tool-gateway/api.ts'
 import { configScanApi } from '../config-scan.ts'
 import { libraryApi } from '../library.ts'
 import { mcpApi } from '../mcp-store.ts'
@@ -107,6 +108,8 @@ export function toolModules({ projects, agents }: Pick<ModuleDeps, 'projects' | 
     { prefix: '/accounts', app: apiSpeedApi() },
     { prefix: '/integrations', app: integrationsApi() },
     { prefix: '/hooks', app: hooksApi({ projects, agents }) },
+    // 工具网关：调用记录、统计、模式和能力表（ADR 0083）
+    { prefix: '/tool-gateway', app: toolGatewayApi({ projects }) },
     { prefix: '/config-scan', app: configScanApi() },
     { prefix: '/library', app: libraryApi() },
     { prefix: '/mcp-tools', app: mcpApi() },

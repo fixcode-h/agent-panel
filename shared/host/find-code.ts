@@ -3,8 +3,13 @@
  * 服务端按语言挑路（VS、IDEA、面板文本兜底）、合并结果、拼好文字，引擎只转交。找文件那一半在 file-index.ts
  */
 import type { FindRequest } from '../capability-router/find/types.ts'
+import type { ToolRoute } from '../capability-router/tool-route.ts'
 
-export type FindCodeRun = (req: FindRequest, signal?: AbortSignal) => Promise<{ text: string; error?: boolean }>
+/** route：这次实际走了哪几条路（工具卡片上的小标）；出错前没走成路由时没有 */
+export type FindCodeRun = (
+  req: FindRequest,
+  signal?: AbortSignal,
+) => Promise<{ text: string; error?: boolean; route?: ToolRoute }>
 
 export interface FindCodeHost {
   /** 在项目里就有（项目关了文件索引时只有外部路，没有文本兜底）；提示词里「找文件、找代码」一节也按它写 */

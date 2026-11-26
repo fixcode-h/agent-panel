@@ -110,6 +110,9 @@ export function externalSource(
   const sv = servers.find((s) => howToCall(s, spec.tool) === 'direct') ?? servers.find((s) => howToCall(s, spec.tool))
   return {
     id: spec.id,
+    // 卡片上写「服务 · 工具」（idea · lua_code）：用户认的是 IDE / VS 和工具名，不是插件登记的 id
+    label: sv ? `${sv.name} · ${spec.tool}` : spec.tool,
+    via: 'mcp',
     rank: spec.rank,
     accepts: (req) => spec.kinds.includes(req.kind) && spec.langs.includes(req.lang) && spec.args(req) !== null,
     ready: (): Readiness =>

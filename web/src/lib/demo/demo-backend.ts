@@ -17,6 +17,7 @@ import { demoChildRows } from './demo-children'
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { seedChatRail } from './demo-chat-rail'
+import { demoFindRows } from './demo-tool-route'
 import { demoNodeMessage, demoOwnedRun, demoFlowRun } from './demo-flow-run'
 import { decideDiagnosis, diagnosisMessage } from '@shared/bug/diagnosis'
 import { retractChat, syncChat } from '@shared/bug/chat'
@@ -186,6 +187,7 @@ import { demoCustomTools } from './demo-custom-tools'
 import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo-file-index'
 import { demoMemo } from './demo-memo'
 import { demoBgJobs } from './demo-bg-jobs'
+import { demoToolGateway } from './demo-tool-gateway'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import { demoBrowserExt, demoStyles } from './demo-styles'
@@ -1749,6 +1751,22 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   return fail('不支持的操作')
 }
 
+/** 模型目录：演示不能联网补全、检查新模型，也不能改目录（从 route 挪出，route 到了函数长度基线） */
+function demoModelCatalog(method: string, id: string | undefined, saved: unknown) {
+  if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
+  if (method === 'POST' && id === 'discover') fail('在线演示不能联网检查新模型')
+  if (method === 'POST' && id === 'entries') fail('在线演示不能改模型目录')
+  const settings = Settings.parse(saved ?? {})
+  return {
+    entries: BUILTIN_MODEL_CATALOG,
+    file: '~/.agent-panel/config/models.json',
+    dir: '~/.agent-panel/config',
+    aiLookup: settings.modelCatalog.aiLookup,
+    builtinUpdated: BUILTIN_CATALOG_UPDATED,
+    userKeys: [],
+  }
+}
+
 async function route(method: string, url: string, body: unknown): Promise<unknown> {
   const d = load()
   const [path, qs] = url.split('?')
@@ -1772,20 +1790,8 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     persist()
     return Settings.parse(d.settings ?? {})
   }
-  if (res === 'model-catalog') {
-    if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
-    if (method === 'POST' && id === 'discover') fail('在线演示不能联网检查新模型')
-    if (method === 'POST' && id === 'entries') fail('在线演示不能改模型目录')
-    const settings = Settings.parse(d.settings ?? {})
-    return {
-      entries: BUILTIN_MODEL_CATALOG,
-      file: '~/.agent-panel/config/models.json',
-      dir: '~/.agent-panel/config',
-      aiLookup: settings.modelCatalog.aiLookup,
-      builtinUpdated: BUILTIN_CATALOG_UPDATED,
-      userKeys: [],
-    }
-  }
+  if (res === 'model-catalog') return demoModelCatalog(method, id, d.settings)
+  if (res === 'tool-gateway') return demoToolGateway(method, seg, query, body)
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
   if (res === 'tts') return demoTts(method, seg)
@@ -3890,6 +3896,7 @@ async function seedTasks(d: Db) {
       note: '',
     }
     demoHelper(task, fe)
+    demoFindRows(task, fe.id)
     await demoChildren(d, task, fe)
     d.tasks?.push(demoOwnedRun(task, 'demo-flow-run'))
     // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看

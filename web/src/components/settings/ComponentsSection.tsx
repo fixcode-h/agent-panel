@@ -93,7 +93,7 @@ import { ChatQuotesSpecimen } from './ChatQuotesSpecimen'
 import { WebFrameSpecimen } from './WebFrameSpecimen'
 import { ToastSpecimen } from './ToastSpecimen'
 import { ScrollbarSpecimen } from './ScrollbarSpecimen'
-import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
+import { ToolRowTagSpecimens } from './RouteBadgeSpecimen'
 import { DownloadRowSpecimen } from './DownloadRowSpecimen'
 
 /** 总结卡样例：「未完成」那一类，带「要你处理」一行，能调的项都看得到 */
@@ -521,9 +521,7 @@ export function ComponentsSection({ value, onChange }: { value: Appearance; onCh
             />
           </div>
         </Specimen>
-        <Specimen name="KnowledgeTags" tune={['row']}>
-          <KnowledgeTagsSpecimen />
-        </Specimen>
+        <ToolRowTagSpecimens Specimen={Specimen} />
         <Specimen name="ReportCompare" tune={['statusPill']}>
           <ReportCompareSpecimen />
         </Specimen>

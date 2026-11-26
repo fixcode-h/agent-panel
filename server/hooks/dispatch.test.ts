@@ -14,12 +14,23 @@ process.env.AGENT_PANEL_DATA = dir
 const { setLang } = await import('../../shared/i18n.ts')
 const { Task, ProjectInput } = await import('../../shared/schema.ts')
 const { hookOptions, unverifiedEdit } = await import('./dispatch.ts')
-const { putHook, readHooks, setBuiltin, resetHooksCache, setBuiltinParam, setCliOff, setProjectBuiltin, setTier } =
-  await import('./store.ts')
+const {
+  putHook,
+  readHooks,
+  setBuiltin,
+  resetHooksCache,
+  setBuiltinParam,
+  setCliOff,
+  setProjectBuiltin,
+  setTier,
+  setGatewayMode,
+} = await import('./store.ts')
 const { checkHook } = await import('./validate.ts')
 const { recentTriggers } = await import('./run.ts')
 
 setLang('zh')
+// 这里核对内置钩子各自装不装哪类工具：工具网关开着时所有类别都装（server/tool-gateway/gateway.test.ts 另测），先关掉
+await setGatewayMode('off')
 
 const project = { ...ProjectInput.parse({ name: 'p', path: dir }), id: 'p1' } as never
 const at = '2026-11-04T00:00:00.000Z'

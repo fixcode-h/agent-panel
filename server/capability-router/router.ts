@@ -5,10 +5,14 @@
  * 不按能力名写分支：新能力只给 sources 和 isFinal
  */
 import type { CapabilityId, Readiness, RouteStep } from '../../shared/capability-router/types.ts'
+import type { ToolRoute } from '../../shared/capability-router/tool-route.ts'
 import { recordRoute } from './log.ts'
 
 export interface RouteSource<Req, Out> {
   id: string
+  /** 工具卡片上显示的名字和是外部 MCP 还是面板自带（ToolUse.route）；不给时显示 id、算面板自带 */
+  label?: string
+  via?: 'mcp' | 'panel'
   rank: number
   /** 这个请求它管不管（语言、种类对不上的不进记录） */
   accepts(req: Req): boolean
@@ -36,6 +40,30 @@ export interface RouteOptions<Req, Out> {
 export interface RouteResult<Out> {
   outs: { source: string; out: Out }[]
   steps: RouteStep[]
+  ms: number
+}
+
+/** 路由结果换成工具卡片上的「实际走的路」（ToolUse.route）：名字和是不是 MCP 按 sources 上登记的 */
+export function toolRouteOf(
+  capability: CapabilityId,
+  sources: RouteSource<never, unknown>[],
+  r: RouteResult<unknown>,
+): ToolRoute {
+  const hop = (id: string) => {
+    const s = sources.find((x) => x.id === id)
+    return { source: id, label: s?.label ?? id, via: s?.via ?? ('panel' as const) }
+  }
+  return {
+    capability,
+    served: r.outs.map((x) => hop(x.source)),
+    steps: r.steps.map((s) => ({
+      ...hop(s.source),
+      outcome: s.outcome,
+      ...(s.why && { why: s.why }),
+      ...(s.ms !== undefined && { ms: s.ms }),
+    })),
+    ms: r.ms,
+  }
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -79,6 +107,7 @@ export async function route<Req, Out>(o: RouteOptions<Req, Out>): Promise<RouteR
       steps.push({ source: s.id, outcome: 'failed', why: (e as Error).message, ms: Date.now() - t1 })
     }
   }
+  const ms = Date.now() - t0
   recordRoute({
     at: t0,
     capability: o.capability,
@@ -88,7 +117,7 @@ export async function route<Req, Out>(o: RouteOptions<Req, Out>): Promise<RouteR
     what: o.what,
     steps,
     ...(outs[0] && { served: outs.map((x) => x.source).join(' + ') }),
-    ms: Date.now() - t0,
+    ms,
   })
-  return { outs, steps }
+  return { outs, steps, ms }
 }

@@ -564,6 +564,11 @@ export const CliSpec = z.object({
        * 没填单价就算不了费用：新建对话设费用上限时界面据此写明「只有 token 上限生效」（分析稿 A6）
        */
       cost: z.boolean().default(false),
+      /**
+       * 模型在一条回复里发好几个工具调用时 CLI 能不能照收（并行工具调用）：yes 能、no 不能、unknown 没实测过。
+       * 不是 no 的，面板在编排说明里加一句「互不依赖的调用放在同一条回复里一起发」（server/orch-hint.ts，设计稿 15.3 方案 A）
+       */
+      parallelTools: z.enum(['yes', 'no', 'unknown']).default('unknown'),
       /** 参数规则里会写成参数的手动上限（{contextWindow}、{maxOutput}），面板据此知道这两项能交给 CLI */
       limitArgs: z.array(z.enum(['context', 'maxOutput'])).default([]),
       autoCompactEnv: z.string().default(''),
@@ -612,6 +617,7 @@ export const CliSpec = z.object({
       resumeAnyDir: false,
       review: 'prompt',
       cost: false,
+      parallelTools: 'unknown',
       limits: 'none',
       limitArgs: [],
     }),
@@ -898,6 +904,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     limitArgs: f.limitArgs.length ? f.limitArgs : undefined,
     modelSwitch: f.modelSwitch,
     resumeAnyDir: f.resumeAnyDir,
+    parallelTools: f.parallelTools,
     limits: f.limits,
     cost: f.cost,
     docs: spec.docs,

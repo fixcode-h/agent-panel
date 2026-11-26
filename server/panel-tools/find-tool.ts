@@ -7,6 +7,8 @@
  */
 import { findRequestOf, isFindKind } from '../../shared/capability-router/find/request.ts'
 import type { FileIndexArgs } from '../../shared/host/file-index.ts'
+import type { ToolRoute } from '../../shared/capability-router/tool-route.ts'
+import { t } from '../../shared/i18n.ts'
 import { str, text, type PanelTool } from './types.ts'
 
 const FILE_ACTIONS = ['file', 'list', 'refresh', 'status'] as const
@@ -26,6 +28,18 @@ const list = (v: unknown) =>
       : undefined
 const num = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v))
 const yes = (v: unknown) => v === true || v === 'true'
+/** 在对话里认出是哪一行 find 调用用的词：查询词，没有就是文件或目录 */
+const needleOf = (a: Record<string, unknown> | undefined) => str(a?.query) || str(a?.file) || str(a?.dir) || ''
+
+function fileIndexRoute(ms: number, failed: boolean): ToolRoute {
+  const hop = { source: 'panel.files', label: t('文件索引'), via: 'panel' as const }
+  return {
+    capability: 'find',
+    served: failed ? [] : [hop],
+    steps: [{ ...hop, outcome: failed ? 'failed' : 'used', ms }],
+    ms,
+  }
+}
 
 export const FIND: PanelTool = {
   name: 'find',
@@ -75,6 +89,7 @@ export const FIND: PanelTool = {
       const req = findRequestOf(action, a ?? {})
       if (typeof req === 'string') return text(req, true)
       const r = await o.findCode(req, signal)
+      if (r.route) o.noteRoute?.(r.route, needleOf(a))
       return text(r.text, !!r.error)
     }
 
@@ -85,6 +100,7 @@ export const FIND: PanelTool = {
         : action === 'refresh' && (yes(a?.full) || raw === 'rebuild')
           ? 'rebuild'
           : (action as FileIndexArgs['action'])
+    const t0 = Date.now()
     const r = await o.fileIndex(
       {
         action: fileAction,
@@ -99,6 +115,8 @@ export const FIND: PanelTool = {
       },
       signal,
     )
+    // 找文件只有一条路（面板的文件名索引），卡片上照样写出来：用户一眼分得清是查代码还是找文件
+    o.noteRoute?.(fileIndexRoute(Date.now() - t0, !!r.error), needleOf(a))
     return text(r.text, !!r.error)
   },
 }

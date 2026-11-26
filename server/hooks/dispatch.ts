@@ -59,6 +59,7 @@ import { p4Runner } from '../p4-split.ts'
 import { p4AutoOpen } from './p4-open.ts'
 import { customToolSigs } from '../../shared/custom-tools/match.ts'
 import { listTools } from '../custom-tools/store.ts'
+import { gatewayForCall } from '../tool-gateway/for-call.ts'
 
 /**
  * 一次 CLI 调用要装哪些钩子、各事件怎么回答（ADR 0049 第二期）。runner 只调这里，判断都在这里：
@@ -252,6 +253,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
 }> {
   if (!c.call.orch) return {}
   const data: HooksData = await readHooks()
+  // 工具网关（ADR 0083）：开着时每次工具调用都过它、记一条；关着时为空，下面照旧
+  const gw = gatewayForCall(c, data)
   // 开关可以按项目单独设（覆盖全局，见 hook-builtins.ts）；弱模型的扶持只在落到全局档位时往严里推
   const sup = c.support
   const on = (id: string) =>
@@ -644,9 +647,11 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   c.call.orch.guardCommand = commandGuard
   // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
   c.call.orch.guardEdit = editGuard
+  const evs = gw ? gw.events(events, off) : events
+  const hooked = gw ? { hookTools: gw.tools(hookTools), onHook: gw.wrap(onHook) } : { hookTools, onHook }
   return {
     ...(beforeEnd ? { beforeEnd } : {}),
-    ...(events.length ? { hookEvents: events, hookTools, onHook } : {}),
+    ...(evs.length ? { hookEvents: evs, ...hooked } : {}),
   }
 }
 

@@ -1,0 +1,52 @@
+# tool-gateway：工具网关
+
+- 状态：documented
+- 职责：所有 Agent 工具调用都过面板：认调用、按能力表推算能改到哪（第一期只观察）、记调用记录和统计；工具卡片上显示经面板路由的调用实际走的路
+- 源码：`server/tool-gateway/`、`shared/tool-gateway/`、`shared/capability-router/capabilities.ts`、`shared/capability-router/tool-route.ts`、`shared/api-contract/tool-gateway.ts`、`web/src/components/settings/agent-tools/`、`web/src/components/ui/route-badge.tsx`
+- 入口：`server/tool-gateway/gateway.ts`
+- 关键词：工具网关、调用记录、CallLog、wouldRoute、观察模式、改道、能力表、本可以并行、网关耗时、路由小标、ToolUse.route、parallelTools、searchTools
+- 更新：2026-11-26
+
+为什么这么定见 [ADR 0083](../../adr/0083-tool-gateway.md)。这里只写现在怎么工作、怎么接。
+
+## 一次调用怎么走
+
+1. `server/hooks/dispatch.ts` 的 `hookOptions` 调 `gatewayForCall`（`for-call.ts`）：模式不是 off 就开一个网关，把 `onHook` 包起来、工具前 / 工具后都装、`hookTools` 加 `any`。
+2. 工具前（`gateway.ts`）：
+   - `classifyCall`（`shared/tool-gateway/classify.ts`）认成 read / edit / shell / mcp / panel / other，shell 再按 `parseCommand`（`commands.ts`）认程序、类别（search / lint / test / build / vcs / read / long）和段数；CLI 自带搜索工具名来自 CLI 定义 `hooks.searchTools`；
+   - 原来的守卫、推送、用户钩子照旧跑，跑的时候 `noteTrigger` 把谁拒绝、补了哪些说明交给收集器（`sink.ts`）；
+   - `decide`（`decide.ts`）按能力表 `CAPABILITIES` 的 `claims(call)` 推算：实际决定 pass / deny，`wouldRoute` 写打开改道后去哪；多段命令、被拒绝的不推算；
+   - 记一条 `CallRecord`（`shared/tool-gateway/types.ts`），回原来的回答。
+3. 工具后：按工具名 + 输入配对，补 `durMs`、`failed`、工具后推的东西，再落盘、推送一次。
+4. 网关里任何一步出错：原回答照样返回，记一条带 `error` 的记录。
+
+## 调用记录（call-log.ts）
+
+- 内存：每个项目最近 500 条；`recentCalls(projectId?)` 新的在前。
+- 磁盘：`<数据目录>/logs/tool-calls/<YYYY-MM-DD>.jsonl`，一行 `{"t":"call",…}` 或 `{"t":"done","id",…}`，只追加，留 14 天。写不进去后本次运行不再试，只记日志。
+- 推送：`signalPages({ type: 'tool-call', call })`；页面用 `web/src/lib/live/tool-calls.ts` 的 `useToolCallFeed`，演示版发 `agent-panel:tool-call` 事件。
+
+字段要点：`ms` 网关自己（认调用 + 推算 + 记录），`hookMs` 整个工具前回答，`durMs` 工具前到工具后；`pushes` 钩子补的说明（id + 字数），`skills` 推的技能（`server/skills/push-ledger.ts`）；`serial` 本可以并行（判定见 `stats.ts` 的 `isSerial`）。
+
+## 能力表
+
+`shared/capability-router/capabilities.ts`：一个能力 = id、显示名、说明、接管哪些调用（`takes`）、第几期改道、`claims(call, ctx)`。现在有 find（搜索命令 → rewrite 到 find，Grep / Glob 和外部查找 MCP → serve）、verify（和自建工具同一个程序的命令 → `custom_tool:<名>`）、read-asset（.uasset / .umap → ue_asset）、apply（UE 编译 → request_build）。加能力：在表里加一项，不改网关。设置页上每条路的状态在 `routes-state.ts`。
+
+## 工具卡片的路由小标
+
+- 数据：`ToolUse.route`（`shared/capability-router/tool-route.ts`）：`capability`、`served`（给出结果的路，`{source, label, via: mcp | panel}`）、`steps`（每条路的结果、原因、用时）、`ms`、`from`（网关改写时原来的调用，第二期）。是这次调用的事实记录，跟着消息存盘。
+- 写入：`find` 工具执行完调 `o.noteRoute(route, 查询词)`（`shared/host/tool-route.ts`），`server/exec/real-turn.ts` 接到 `server/capability-router/tag-route.ts`：在最近 3 条回复里按「`· find` 标题 + 输入里有这个查询词」找没挂过的那一行，挂上后推送；没找到等 1.5 秒再认一次。路由结果换成 route 用 `router.ts` 的 `toolRouteOf`，路的显示名和 via 登记在 `RouteSource.label` / `via`。找文件那一半写一条「文件索引」。
+- 显示：`RouteBadge`（耗时前面，`RowShell` 的 `tail`）+ `RouteSteps`（点开最上面）。设置 → 组件微调「路由小标」能关（`--c-routeBadge-show`），示例在 `RouteBadgeSpecimen.tsx`。
+
+## 设置「Agent 工具」
+
+`web/src/components/settings/agent-tools/`：页签登记在 `tabs.tsx`（技能 10、工具路由 20、调用记录 30，新页签加一项）。「调用记录」：搜索 + 项目 / 对话 / 决定 / 能力筛选、五张统计卡、可展开的表格；「工具路由」：模式、每个能力接管什么和几条路的状态、各 CLI 支不支持一条回复发几个调用（CLI 定义 `features.parallelTools`）。
+
+## 耗时
+
+`node scripts/bench-tool-gateway.mjs [条数] [往返次数]`：网关自身（几百条样例调用的 `ms`）和三种钩子往返（HTTP 直连、起 curl、起 node 转发脚本）。
+
+## 注意
+
+- 观察模式下回给 CLI 的回答网关不改；`wouldRoute` 不上工具卡片，只在调用记录里看。
+- 测内置钩子装不装哪类工具时先 `setGatewayMode('off')`（`server/hooks/dispatch.test.ts`），网关行为在 `server/tool-gateway/gateway.test.ts` 测。

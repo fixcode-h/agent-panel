@@ -262,6 +262,13 @@ export const COMP_SPEC = {
     autoOpen: bool(false, '1', '0'),
   },
   /**
+   * 工具卡片的路由小标（web/src/components/ui/route-badge.tsx）：find 这类经面板路由的调用，在耗时旁写最终实际走的路
+   * （「面板按文本找」「idea · lua_code」），关掉只是不显示小标，点开那一行照样能看路由步骤
+   */
+  routeBadge: {
+    show: bool(true, 'inline-flex', 'none'),
+  },
+  /**
    * 实时输出（web/src/components/ui/live-text.tsx）：思考过程、模型正在写的工具入参（交诊断报告、建子对话、派子任务）
    * 正在输出时那一块最多多高、左边竖线，以及要不要在「正在写」下面显示写到哪了（用户 2026-11-19）。
    * 最后一项不是 CSS，DraftRow 读设置里的值；落成变量只为走同一套登记

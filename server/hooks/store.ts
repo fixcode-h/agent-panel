@@ -6,6 +6,7 @@ import { HookDef, HooksData, type HookDefInput, type HookEventName } from '../..
 import { BUILTIN_HOOKS, tierDefault, type HookTier } from '../../shared/hooks/builtins.ts'
 import { patchSupport, type SupportPatch } from '../../shared/models/support.ts'
 import { log } from '../log.ts'
+import type { GatewayMode } from '../../shared/tool-gateway/types.ts'
 import { t } from '../../shared/i18n.ts'
 
 /**
@@ -50,6 +51,12 @@ export async function setBuiltin(id: string, on: boolean, defaultOn?: boolean) {
   if (on === def) delete builtins[id]
   else builtins[id] = on
   await save({ ...cur, builtins })
+}
+
+/** 工具网关的模式（ADR 0083）：enforce 还没开放，接口那一层拦 */
+export async function setGatewayMode(mode: GatewayMode) {
+  const cur = await readHooks()
+  await save({ ...cur, gateway: { ...cur.gateway, mode } })
 }
 
 const isBuiltinKey = (k: string) => BUILTIN_HOOKS.some((h) => h.id === k)
