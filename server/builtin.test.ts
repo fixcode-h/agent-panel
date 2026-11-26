@@ -32,6 +32,7 @@ import {
 import { coreDefinition, keepParamValues, upgradeParamDefaults } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled, retireBundled } from './bundled-skills.ts'
+import { recordInstalled, resetInstalledRecordCache, treeHash } from './skills/installed-record.ts'
 
 const root = path.resolve(import.meta.dirname, '..', 'skills')
 const skillDirs = readdirSync(root, { withFileTypes: true })
@@ -685,4 +686,39 @@ test('内置角色：本机改过的设定按当前定义直接覆盖，参数�
   assert.equal(up.length, 1, '改过的也覆盖')
   assert.equal(up[0].instructions.trim(), def.instructions.trim())
   assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, ops)).length, 0, '再启动不再改')
+})
+
+test('自带 Skill：面板装进去后没人改过的副本自动跟上新版，用户改过的不动', async () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'bundled-fresh-'))
+  const old = { ...process.env }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
+  resetInstalledRecordCache()
+  try {
+    await installBundled(['grilling', 'task-records'], [], false)
+    const root = path.join(home, '.agents/skills')
+    const g = path.join(root, 'grilling', 'SKILL.md')
+    const fresh = readFileSync(g, 'utf8')
+    // 模拟面板当初装的是旧版：副本是旧内容，记录也是那份的指纹
+    writeFileSync(g, '旧版')
+    const tree = (dir: string): [string, Buffer][] =>
+      readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile())
+        .map((e) => {
+          const full = path.join(e.parentPath, e.name)
+          return [path.relative(dir, full).split(path.sep).join('/'), readFileSync(full)]
+        })
+    await recordInstalled('grilling', treeHash(tree(path.join(root, 'grilling'))))
+    // 用户自己改过的（和记录对不上）
+    const tr = path.join(root, 'task-records', 'SKILL.md')
+    writeFileSync(tr, '用户改的')
+    await ensureBundled([])
+    assert.equal(readFileSync(g, 'utf8'), fresh, '没人改过的旧副本换成新版')
+    assert.equal(readFileSync(tr, 'utf8'), '用户改的', '用户改过的不动')
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]
+    Object.assign(process.env, old)
+    resetInstalledRecordCache()
+    rmSync(home, { recursive: true, force: true })
+  }
 })

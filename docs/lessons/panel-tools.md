@@ -46,3 +46,9 @@ paths: server/orch-mcp.ts, shared/panel-tools.ts, server/ask-mcp.ts
 - 规则：搬的过程中有冲突不撤回：Git 停在冲突的提交上（目标分支没检出时在数据目录里开固定的工作目录，不用会被清掉的 tmp），P4 把冲突标记写进目标文件并打开在 pending 里；结果写清目录、冲突文件和怎么接着做（`git cherry-pick --continue` / `--abort`），Agent 不替用户解决冲突。只有校验不合格（不是这个对话的提交、读不出版本）才整次拒绝或跳过。
 - 起因：用户 2026-11-03 报「cherry-pick 强制要求回复『cherry-pick 1267576, 只要 lua』这么一句」「有冲突也弄过去，等用户自行解决」——原来只看最后一条用户消息、有冲突整次撤回。
 - 防线：`server/cherry-pick.test.ts` 的「用户最近几条消息里要求过就算」「有冲突不撤回」两组。
+
+## 工具定义了用法那一句（hint），就要在 orchHint 里拼进来
+
+- 规则：`PanelTool.hint` 只是给出那一句，拼不拼进用法说明由 `server/orch-hint.ts` 决定；新工具写了 hint 就同时在 orchHint 对应身份的那一段里调用 `h('<工具名>', …)`，并在 `server/orch-mcp.test.ts` 按 IDENTITIES 断言每个该看到的身份都看得到。
+- 起因：5c8f909 起 custom_tool 的清单那一句（项目有哪些自建工具、什么时候用）从没拼进任何对话，用户做的 Lua 检查工具没被用上，Agent 照样自己跑 luac（2026-11-26）。
+- 防线：`server/orch-mcp.test.ts`「自建工具：……的用法说明里都列出项目的自建工具」。

@@ -4,6 +4,8 @@ import type { ResolvedSupport } from '../models/support.ts'
 import { ideMcpLines, type IdeMcpServer } from '../mcp-catalog/code-index.ts'
 import { activePlan } from '../plan/index.ts'
 import { globToRegExp } from '../lessons.ts'
+import { CODE_STYLE_SKILLS, codeStylePush } from '../skills/code-style.ts'
+import { customToolFor, type CustomToolSig } from '../custom-tools/match.ts'
 import type { ToolKind } from './defs.ts'
 import type { HookFacts } from './index.ts'
 
@@ -26,7 +28,12 @@ export interface SituationCtx {
   plans: boolean
   /** 项目接的 JetBrains IDE MCP 服务（server/mcp-catalog/code-index.ts 的 ideMcpServersFor）；没有为空 */
   ideMcp?: IdeMcpServer[]
+  /** 这个对话能用的自建工具认得出的程序名（shared/custom-tools/match.ts）；没有为空 */
+  customTools?: CustomToolSig[]
 }
+
+/** 这一轮开跑时就定了的事：决定装不装钩子 */
+type ActiveCtx = Pick<SituationCtx, 'support' | 'plans' | 'ideMcp' | 'customTools'>
 
 export interface SituationalRule {
   id: string
@@ -48,7 +55,7 @@ export interface SituationalRule {
    * 这一轮有没有可能用上（只看这一轮开跑时就定了的事：扶持档位、有没有计划工具）：一条都用不上时不装钩子，
    * 普通对话每次工具调用不多问一次面板。不写是一直可能
    */
-  active?: (c: Pick<SituationCtx, 'support' | 'plans' | 'ideMcp'>) => boolean
+  active?: (c: ActiveCtx) => boolean
   /** 额外的条件：只看面板状态 */
   need?: (c: SituationCtx) => boolean
   /** 推给模型的一段话 */
@@ -93,16 +100,36 @@ export const SITUATIONAL_RULES: SituationalRule[] = [
       ].join('\n')
     },
   },
+  {
+    // 自己拼命令跑一个自建工具已经包好的程序（用户做了 Lua 检查工具，Agent 照样自己跑 luac -p，2026-11-26）：
+    // 提示词里的清单不一定被注意到，到它要跑的那一刻提醒改用 custom_tool。命令照常执行，只提醒不拦
+    id: 'custom-tool-instead',
+    name: () => t('改用自建工具'),
+    when: { event: 'tool.before', kinds: ['shell'] },
+    active: (c) => !!c.customTools?.length,
+    need: (c) => !!customToolFor(String(c.facts.tool?.input.command ?? ''), c.customTools ?? []),
+    text: (c) => {
+      const hit = customToolFor(String(c.facts.tool?.input.command ?? ''), c.customTools ?? [])!
+      return `【面板】这件事用户做成了自建工具「${hit.name}」（id ${hit.id}）：以后改用 custom_tool action=run id=${hit.id} 调它（参数不清楚先 action=show），不要自己拼命令；面板会替它校验参数、过授权、只回报错和输出尾部。`
+    },
+    times: 2,
+  },
+  // 第一次改某种语言的文件前推它的代码风格要点（shared/skills/code-style.ts）：模型常常不去读风格技能的正文，
+  // 不管是父对话、子对话、工作流节点还是子任务，也不管角色点没点名这个技能，到改文件这一刻都给到
+  ...CODE_STYLE_SKILLS.map((s): SituationalRule => ({
+    id: `code-style:${s.skill}`,
+    name: () => t('{lang} 代码风格要点', { lang: s.label }),
+    when: { event: 'tool.before', kinds: ['edit'], paths: s.paths },
+    text: () => codeStylePush(s),
+  })),
 ]
 
 // MCP 工具名是 mcp__<服务>__<工具>：按最后一段比
 const toolName = (f: HookFacts) => f.tool?.panel || f.tool?.name.split('__').at(-1) || ''
 
 /** 这一轮可能用上的规则（见 SituationalRule.active） */
-export const activeSituational = (
-  c: Pick<SituationCtx, 'support' | 'plans' | 'ideMcp'>,
-  rules: SituationalRule[] = SITUATIONAL_RULES,
-) => rules.filter((r) => !r.active || r.active(c))
+export const activeSituational = (c: ActiveCtx, rules: SituationalRule[] = SITUATIONAL_RULES) =>
+  rules.filter((r) => !r.active || r.active(c))
 
 /** 这条规则在这次工具调用上对不对得上（不看推过几次） */
 export function situationMatches(r: SituationalRule, c: SituationCtx): boolean {
