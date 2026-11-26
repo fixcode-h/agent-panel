@@ -91,7 +91,16 @@ test('接不接、怎么接按 CLI 定义的 takeover 走：能改写的改写�
   assert.equal(planTakeover(shell('rg -n OnSellAll src'), plain)?.how, 'serve', '没实测的 CLI 按保守值：代答')
   assert.equal(planTakeover(shell('rg -n OnSellAll *.lua'), plain)?.how, 'pass', '代答时照原样跑不了的放行')
   assert.equal(planTakeover(shell('rg -n OnSellAll src'), none)?.how, 'pass')
-  assert.equal(planTakeover(shell('rg -n OnSellAll src | head -5'), claude)?.how, 'pass', '多段')
+  // 多段：「搜索 + 截行 / 打印」能改写时接（原命令照样整条跑），数行数、再过滤、代答时都放行
+  assert.equal(planTakeover(shell('rg -n OnSellAll src | head -5'), claude)?.how, 'rewrite')
+  assert.equal(
+    planTakeover(shell('grep -rn "RemoveItem" --exclude-dir=.git . ; echo "---exit:$?"'), claude)?.how,
+    'rewrite',
+  )
+  assert.equal(planTakeover(shell('rg -n OnSellAll src | wc -l'), claude)?.how, 'pass', '数行数')
+  assert.equal(planTakeover(shell('rg -n OnSellAll src | grep -v test'), claude)?.how, 'pass', '再过滤')
+  assert.notEqual(planTakeover(shell('cat a.lua | grep OnSellAll'), claude)?.how, 'rewrite', '读标准输入')
+  assert.equal(planTakeover(shell('rg -n OnSellAll src | head -5'), plain)?.how, 'pass', '代答跑不准多段')
   assert.equal(planTakeover(shell('find . -name "*.lua"'), claude)?.how, 'pass', '按名字找文件不改道')
   assert.equal(planTakeover(shell('rg "On.*" src'), claude)?.how, 'pass', '正则')
   assert.equal(planTakeover(shell('npm test'), claude), undefined, '不归查找的不管')

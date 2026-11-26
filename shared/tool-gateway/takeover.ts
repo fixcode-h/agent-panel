@@ -10,6 +10,7 @@
  * 补的那段是给 Agent 看的，不翻译
  */
 import type { FindHit, FindRequest } from '../capability-router/find/types.ts'
+import { commandSegments } from '../hooks/defs.ts'
 import { inferLang } from '../capability-router/find/request.ts'
 import { hitLine } from '../capability-router/find/hits.ts'
 import { parseGrepTool, parseSearchCommand, type SearchSpec } from './search-args.ts'
@@ -19,11 +20,30 @@ import type { ToolCall } from './types.ts'
 export type TakeoverPlan =
   { how: 'rewrite' | 'serve'; search: SearchSpec; by: string } | { how: 'pass'; why: string; by: string }
 
+/**
+ * 多段命令里跟在搜索后面、不改变「搜了什么」的段：截前后几行、排序去重、打印分隔和退出码（模型常写 `grep … ; echo "exit:$?"`、`rg … | head -50`）。
+ * 改写是「先打印面板那段，再原样跑原命令」，原命令一字不动，所以这些段不影响并集；数行数（wc）、再过滤（grep -v）会让面板那段和原输出对不上，不算
+ */
+const TAIL_SEGMENTS = ['head', 'tail', 'sort', 'uniq', 'echo', 'printf', 'true']
+const firstWord = (seg: string) =>
+  seg
+    .trim()
+    .split(/\s+/)[0]
+    ?.replace(/^.*[\\/]/, '')
+    .toLowerCase() ?? ''
+
+/** 多段命令能不能改写：第一段是认得的搜索，后面每段都是 TAIL_SEGMENTS 里的；能就返回第一段的搜索参数 */
+function searchOfMulti(command: string): SearchSpec | undefined {
+  const [head, ...rest] = commandSegments(command)
+  if (!head || !rest.length || !rest.every((x) => TAIL_SEGMENTS.includes(firstWord(x)))) return undefined
+  return parseSearchCommand(head)
+}
+
 /** 按名字找文件的程序：认出来但不接管（文件索引不收排除目录，只会比原命令少） */
 const NAME_FINDERS = ['find', 'fd', 'dir', 'where', 'get-childitem', 'gci']
 
 export const PASS_WHY = {
-  multi: '多段命令（管道、&&、;）不改道：拆开改写会改变语义，照原命令跑',
+  multi: '多段命令（管道、&&、;）不改道：只有「搜索 + 截行 / 排序 / 打印」这种能改写的才接，其余照原命令跑',
   files: '按名字找文件不改道：文件索引不收排除目录，结果不会比原命令多',
   args: '参数拿不准（不认识的参数、正则、变量、要 shell 展开的通配或读标准输入），照原命令跑',
   cli: '这个 CLI 不能改写命令，面板也没法照原样跑这一条，照原命令跑',
@@ -43,8 +63,12 @@ export function planTakeover(
 ): TakeoverPlan | undefined {
   if (call.kind === 'shell' && call.command?.category === 'search') {
     const by = call.command.program
-    if (call.command.segments !== 1) return { how: 'pass', why: PASS_WHY.multi, by }
     if (NAME_FINDERS.includes(by)) return { how: 'pass', why: PASS_WHY.files, by }
+    if (call.command.segments !== 1) {
+      // 多段只在能改写时接：原命令照样整条跑，面板只在前面补一段；代答要面板自己跑原命令，多段跑不准
+      const multi = o.takeover.rewrite && o.rewriteTpl ? searchOfMulti(String(call.input.command ?? '')) : undefined
+      return multi ? { how: 'rewrite', search: multi, by } : { how: 'pass', why: PASS_WHY.multi, by }
+    }
     const search = parseSearchCommand(String(call.input.command ?? ''))
     if (!search) return { how: 'pass', why: PASS_WHY.args, by }
     if (o.takeover.rewrite && o.rewriteTpl) return { how: 'rewrite', search, by }

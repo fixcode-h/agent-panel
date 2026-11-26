@@ -123,7 +123,7 @@ test('不能改写的 CLI、自带 Grep 走代答：拒绝说明开头只写「�
 test('拿不准、面板跑不出原命令、没有多出来的、网关出错：都放行，原回答原样交回并记下原因', async () => {
   clearCalls()
   const cases: [Record<string, unknown>, string, RegExp][] = [
-    [{}, 'rg -n OnSellAll src | head', /多段命令/],
+    [{}, 'rg -n OnSellAll src | wc -l', /多段命令/],
     [{}, 'rg "On.*All" src', /参数拿不准/],
     [{ findCode: async () => ({ text: '', route: ROUTE, hits: [] }) }, 'rg -n OnSellAll src', /没有多出来的/],
     [

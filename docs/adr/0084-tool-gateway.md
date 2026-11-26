@@ -77,6 +77,7 @@
 6. **记录和卡片**：`CallRecord` 记真实决定（`rewrite` / `serve`）、改写后的输入（`rewritten`）、走过的路（`route`，和卡片同一份）、放行原因（`takeoverWhy`）。被改道的那张卡片（Bash、Grep）也挂 `ToolUse.route`，`from` 写原调用，小标前面写「面板改走 find ·」；`tag-route.ts` 对带 `from` 的路按输入原文认行（命令行的输入就是命令原文，自带搜索按带引号的关键词）。
 7. **CLI 定义 `takeover`**（`shared/tool-gateway/takeover-spec.ts`，字段表见 [cli-config](../cli-config.md)）：Claude Code `rewrite` / `serve` / `hideBuiltin` / `mcpOnlyPanel` 都为真，`tools` 登记 `Grep`（grep）、`Glob`（glob）；改写用 PreToolUse 钩子的 `permissionDecision: allow` + `updatedInput`（模板在 `hooks.events.tool.before.rewrite`），不用 `can_use_tool`：跳过确认时 CLI 不发 `can_use_tool`，钩子每次都过。Codex、Command Code 只填 `serve`，Pi 另有 `hideBuiltin`；没实测的按保守值。`hideBuiltin`、`mcpOnlyPanel` 这一期只登记，外部服务经面板代理（ADR 0085）用后者。
 8. **`find` 收数组**（设计稿 15.3 方案 B）：`query` 可以给数组（最多 10 个），每个词同时查、按词分组，几组平分 4000 字，没列完的那组写清怎么单独查（`server/panel-tools/find-multi.ts`）。共用身份提示里「互不依赖的调用一起发」改成「读几个文件、跑几条只读命令」，查几个名字改说「find 的 query 给数组」（有 find 时才说，不看 `parallelTools`）。
+9. **能改写时也接「搜索 + 截行 / 打印」的多段命令**（2026-11-26 Flash 实测后加）：模型常写 `grep -rn X . ; echo "exit:$?"`、`rg X src | head -50`，单段才接的话改道一次都没触发。第一段是认得的搜索、后面每段都是 `head` / `tail` / `sort` / `uniq` / `echo` / `printf` / `true` 时，改写照样是「先打印面板那段、再原样跑整条原命令」，并集不变；数行数（`wc`）、再过滤（`grep -v`）、读标准输入的、代答的仍然放行。
 
 候选方案：
 
