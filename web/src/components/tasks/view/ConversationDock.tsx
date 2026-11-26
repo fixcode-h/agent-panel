@@ -17,6 +17,7 @@ import { TaskApplyCtx } from '../task-apply'
 import type { ChildSummary } from '../child-line'
 import { ImportedBar, ResolvedBar } from '../InputBars'
 import { LoadTracePill } from '../LoadTrace'
+import { LocalProgramOffers } from '../LocalProgramOffer'
 import { PlanButton } from '../PlanPanel'
 import { TaskRequestCard, asksQuestion } from '../RequestCard'
 import { stepConfirms } from '../StageReportBar'
@@ -124,6 +125,8 @@ export function ConversationDock(p: ConversationDockProps) {
             自己这个对话要你点头的请求离输入框最近。子对话的请求不在这里弹，留在子对话栏那一行 */}
         <FloatAbove onHeight={p.onFloatHeight}>
           {composer && <SharedDirNotice task={task} onChange={apply} />}
+          {/* 面板要用的本机程序没装（例如 rg）：问装不装，点安装直接装 */}
+          {composer && <LocalProgramOffers />}
           {p.flowLeft && !task.imported && (
             <FlowBar task={task} blocked={p.blocked} resuming={p.resuming} onResume={p.onResume} onChange={apply} />
           )}

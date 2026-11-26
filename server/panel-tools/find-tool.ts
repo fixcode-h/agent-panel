@@ -9,7 +9,6 @@ import { findRequestOf, isFindKind } from '../../shared/capability-router/find/r
 import type { FileIndexArgs } from '../../shared/host/file-index.ts'
 import type { ToolRoute } from '../../shared/capability-router/tool-route.ts'
 import { t } from '../../shared/i18n.ts'
-import { missingProgramAlert as missingAlert } from '../../shared/alerts.ts'
 import { str, text, type PanelTool } from './types.ts'
 import { joinGroups, MULTI_MAX, multiQueries } from './find-multi.ts'
 
@@ -104,7 +103,7 @@ export const FIND: PanelTool = {
       const req = findRequestOf(action, a ?? {})
       if (typeof req === 'string') return text(req, true)
       const r = await o.findCode(req, signal)
-      if (r.route) o.noteRoute?.(r.route, needleOf(a), missingAlert(r.missing))
+      if (r.route) o.noteRoute?.(r.route, needleOf(a))
       return text(r.text, !!r.error)
     }
 
