@@ -206,3 +206,10 @@ function roleProblems(tool: Pick<CustomTool, 'params'> & Partial<Pick<CustomTool
     out.push('role.replaces 只写程序名（小写，不带路径和 .exe），例如 luac')
   return out
 }
+
+/**
+ * Agent 调用前要不要弹授权卡。已保存的工具默认不问，和普通工具调用一样（用户 2026-11-26），设了 confirm 才问；
+ * 还没保存的草稿是 Agent 刚拼的命令、用户没看过，不是只读的照旧问
+ */
+export const needsConfirm = (tool: Pick<CustomTool, 'effect' | 'confirm'>, draft: boolean) =>
+  draft ? tool.effect !== 'read' : tool.confirm

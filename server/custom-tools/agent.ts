@@ -1,12 +1,12 @@
 /**
  * Agent 的 custom_tool（ADR 0082）在服务端的那一半：list / show / run / test / save。
- * - run / test：校验参数、展开命令 → 守卫（和 CLI 跑命令同一套）→ 按影响弹授权卡（ctool:<范围>:<id>，带「本对话不再询问」）
+ * - run / test：校验参数、展开命令 → 守卫（和 CLI 跑命令同一套）→ 工具设了 confirm（或草稿试跑）才弹授权卡（ctool:<范围>:<id>，带「本对话不再询问」）
  *   → P4 签出 → 跑。限时不超过两分钟的在工具里等结果，更长的交给后台命令、跑完推回（ADR 0067 第 5 节）。
  * - save：弹保存弹窗（purpose 'custom-tool'），等用户选存到项目还是全局、撞了已有的更新还是另存。
  * 交给 Agent 的文字是提示词，不翻译；对话里留给人看的记录用 t()
  */
 import { CustomTool, INLINE_MAX_SEC, type ToolEntry, type ToolScope } from '../../shared/custom-tools/schema.ts'
-import { draftProblems, showValue } from '../../shared/custom-tools/expand.ts'
+import { draftProblems, needsConfirm, showValue } from '../../shared/custom-tools/expand.ts'
 import { findDups } from '../../shared/custom-tools/dup.ts'
 import { hintText, listText, runText, showText } from '../../shared/custom-tools/text.ts'
 import type { CustomToolCall, CustomToolCallCtx, CustomToolsApi } from '../../shared/host/custom-tools.ts'
@@ -105,7 +105,7 @@ async function runOne(
   }
   const why = c.guard ? await c.guard(p.line) : ''
   if (why) return fail(`面板的守卫拦下了这条命令，没有执行：${why}`)
-  if (tool.effect !== 'read') {
+  if (needsConfirm(tool, scope === 'draft')) {
     const ok = await grant(ctx, own, tool, scope, p)
     if (!ok.allow) return fail(ok.info)
   }
@@ -143,7 +143,7 @@ function textPatch(p: Record<string, unknown> | undefined) {
 
 const testKey = (ctx: RequestCtx, id: string) => `${ctx.task.id}:${id}`
 
-/** 授权：工作流自带的、这个对话放行过的直接过（留一行记录），否则弹卡 */
+/** 授权（只在草稿试跑和设了 confirm 的工具上走）：工作流自带的、这个对话放行过的直接过（留一行记录），否则弹卡 */
 async function grant(
   ctx: RequestCtx,
   own: Set<string>,
@@ -240,7 +240,7 @@ async function save(
     return r.answer?.trim()
       ? fail(`用户要你再改一改：${r.answer.trim()}\n改好后再调一次 action=save。`)
       : fail('用户取消了保存。不用再问，告诉用户草稿内容就行。')
-  let pick: { scope?: ToolScope; replace?: boolean; patch?: Record<string, unknown> } = {}
+  let pick: { scope?: ToolScope; replace?: boolean; confirm?: boolean; patch?: Record<string, unknown> } = {}
   try {
     pick = JSON.parse(r.answer ?? '{}')
   } catch {
@@ -251,7 +251,12 @@ async function save(
     const saved = await saveTool({
       projectId: where.projectId,
       scope,
-      draft: { ...d.tool, ...textPatch(pick.patch) },
+      // 「运行前先问我」以弹窗上用户选的为准（旧页面不带就按草稿的，默认不问）
+      draft: {
+        ...d.tool,
+        ...textPatch(pick.patch),
+        ...(typeof pick.confirm === 'boolean' ? { confirm: pick.confirm } : {}),
+      },
       replace: !!pick.replace,
       by: 'Agent',
       note: req.note,

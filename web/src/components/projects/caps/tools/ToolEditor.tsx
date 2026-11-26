@@ -318,7 +318,7 @@ function RunTab({
 function EffectTab({ d, set }: { d: CustomTool; set: SetFn }) {
   return (
     <div className="flex flex-col gap-3">
-      <Field label={t('影响')} hint={t('只读的工具 Agent 调用时不弹授权卡；会改文件、影响外部的第一次会问你')}>
+      <Field label={t('影响')} hint={t('只读、会改项目文件、影响外部：Agent 和你都靠它判断这个工具会不会改东西')}>
         <Select
           value={d.effect}
           onChange={(e) => set('effect', e.target.value as CustomTool['effect'])}
@@ -329,6 +329,13 @@ function EffectTab({ d, set }: { d: CustomTool; set: SetFn }) {
           ]}
         />
       </Field>
+      <label className="flex items-center gap-2 text-body">
+        <Switch checked={d.confirm} onCheckedChange={(v) => set('confirm', v)} aria-label={t('运行前先问我')} />
+        <span className="shrink-0 whitespace-nowrap">{t('运行前先问我')}</span>
+        <span className="text-footnote text-subtle">
+          {t('默认关：Agent 调用时直接跑，和普通工具一样。打开后每次先弹授权卡（可选本对话不再询问）')}
+        </span>
+      </label>
       <Field label={t('会改的文件')} hint={t('相对项目根，** 表示任意层；P4 项目运行前会先签出')}>
         <ChipListInput
           value={d.writes}

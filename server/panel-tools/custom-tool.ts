@@ -30,7 +30,7 @@ export const CUSTOM_TOOL: PanelTool = {
     name: 'custom_tool',
     title: '自建工具',
     description:
-      '调用用户做好的自建工具（导表、Lua 检查、打包这类项目自己的命令，带中文说明和参数）：面板按参数定义校验、转义，过守卫，会改文件的先请用户授权，P4 项目先签出，结果只回报错和输出尾部，完整日志给路径。' +
+      '调用用户做好的自建工具（导表、Lua 检查、打包这类项目自己的命令，带中文说明和参数）：面板按参数定义校验、转义，过守卫，用户设了「运行前先问我」的先请用户授权，P4 项目先签出，结果只回报错和输出尾部，完整日志给路径。' +
       'action=list 看有哪些（query 过滤），show 看一个的参数和命令，run 执行（id + args）。' +
       '做新工具（用户用 /createtool 要求时）：先 list 看有没有同类的，再读文档和脚本写草稿 draft，test 试跑（dryRun=true 只展开命令不执行），最后 save 交给用户选存到项目还是全局，用户点完才返回。' +
       'draft 的格式：{id: 小写英文和-, name: 中文名, summary, useWhen, avoidWhen, run: {command: "python x.py {{sheet}}", win?, posix?, script?: {ext, text}, cwd: ".", timeoutSec}, params: [{name, label, type: string|number|boolean|enum|path, desc, required, default, options, flag}], effect: read|write|external, writes: ["Content/Config/**"], output: {okExit: [0], errorPattern?: "(?<file>..):(?<line>\\\\d+): (?<msg>.*)"}, role?: {kind: verify|build, paths: ["**/*.lua"], replaces: ["luac"]}, sources: [依据的文件]}；' +

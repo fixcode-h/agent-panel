@@ -111,6 +111,11 @@ export const CustomTool = z.object({
   run: ToolRun,
   params: z.array(ToolParam).default([]),
   effect: ToolEffect.default('write'),
+  /**
+   * Agent 调用前要不要先弹授权卡问用户。用户 2026-11-26：自建工具是用户自己存下、看过的命令，默认和普通工具一样直接跑；
+   * 个别想每次过目的（发版、上传这类）在管理页的「影响和输出」里打开。还没保存的草稿试跑不看这一项，总是问
+   */
+  confirm: z.boolean().default(false),
   /** 会改的文件（相对项目根的通配，** 任意层）：执行前在 P4 里签出，授权卡上写出来 */
   writes: z.array(z.string()).default([]),
   output: ToolOutput.default({ okExit: [0] }),

@@ -46,8 +46,11 @@ export const EN_CUSTOM_TOOLS: Record<string, string> = {
   '这个工具没有参数。': 'This tool has no parameters.',
   删掉这个参数: 'Remove this parameter',
   '可选值，用逗号隔开': 'Options, separated by commas',
-  '只读的工具 Agent 调用时不弹授权卡；会改文件、影响外部的第一次会问你':
-    'Read-only tools run without an approval card; tools that change files or affect external systems ask you the first time',
+  '只读、会改项目文件、影响外部：Agent 和你都靠它判断这个工具会不会改东西':
+    'Read-only, changes project files, or affects external systems: tells the agent and you whether this tool changes anything',
+  运行前先问我: 'Ask me before running',
+  '默认关：Agent 调用时直接跑，和普通工具一样。打开后每次先弹授权卡（可选本对话不再询问）':
+    'Off by default: the agent runs it directly, like any other tool. When on, an approval card appears first (with "don\'t ask again in this chat")',
   会改项目里的文件: 'Changes files in the project',
   '影响外部（提交、上传、发消息）': 'Affects external systems (submit, upload, send messages)',
   会改的文件: 'Files it changes',
@@ -110,8 +113,8 @@ export const EN_CUSTOM_TOOLS: Record<string, string> = {
   按提交整理更新说明: 'Write release notes from commits',
   '检查本机环境：CLI、MCP、IDE 和编辑器连接、文档根、版本管理登录':
     'Check the local setup: CLIs, MCP, IDE and editor connections, docs folder, version control login',
-  '同一个工具（项目的和全局的分开算）；只读的工具不弹卡':
-    'The same tool (project and global counted separately); read-only tools never ask',
+  '同一个工具（项目的和全局的分开算）；默认不弹卡，只有设了「运行前先问我」的工具和还没保存的草稿试跑才问':
+    'The same tool (project and global counted separately); no card by default, only tools set to "Ask me before running" and test runs of unsaved drafts ask',
   '你确认了：{title}': 'You confirmed: {title}',
   '你让 Agent 再改：{answer}': 'You asked the agent to revise: {answer}',
   '你取消了：{title}': 'You cancelled: {title}',

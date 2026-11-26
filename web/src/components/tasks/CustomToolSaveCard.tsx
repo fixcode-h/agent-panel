@@ -18,7 +18,7 @@ type Answer = (allow: boolean, text?: string) => Promise<void>
 /**
  * 自建工具的保存弹窗（ADR 0082，效果图 2）：Agent 调 custom_tool action=save 时弹出，用户点完工具调用才返回。
  * 输入框上方留一条入口，弹窗默认打开；关掉弹窗不算回答，入口还在。
- * 回答格式和服务端约好：保存 = allow + JSON {scope, replace, patch}；让 Agent 再改 = 拒绝 + 意见；取消 = 拒绝不带话
+ * 回答格式和服务端约好：保存 = allow + JSON {scope, replace, confirm, patch}；让 Agent 再改 = 拒绝 + 意见；取消 = 拒绝不带话
  */
 export function CustomToolSaveEntry({
   req,
@@ -71,6 +71,8 @@ function SaveDialog({ req, onClose, answer }: { req: TaskRequest; onClose: () =>
   const [name, setName] = useState(tool?.name ?? '')
   const [summary, setSummary] = useState(tool?.summary ?? '')
   const [useWhen, setUseWhen] = useState(tool?.useWhen ?? '')
+  // 默认不问：Agent 调用时直接跑（用户 2026-11-26），想每次过目的在这里或之后的管理页打开
+  const [confirm, setConfirm] = useState(tool?.confirm ?? false)
   const [revise, setRevise] = useState<string>()
   const [busy, setBusy] = useState(false)
   const problems = tool
@@ -89,7 +91,8 @@ function SaveDialog({ req, onClose, answer }: { req: TaskRequest; onClose: () =>
       setBusy(false)
     }
   }
-  const save = () => go(true, JSON.stringify({ scope, replace: !!clash && replace, patch: { name, summary, useWhen } }))
+  const save = () =>
+    go(true, JSON.stringify({ scope, replace: !!clash && replace, confirm, patch: { name, summary, useWhen } }))
   return (
     <Modal
       open
@@ -182,6 +185,13 @@ function SaveDialog({ req, onClose, answer }: { req: TaskRequest; onClose: () =>
                     <span className="font-mono text-footnote text-muted">{tool.writes.join('、')}</span>
                   </Field>
                 )}
+                <label className="flex items-center gap-2 text-body">
+                  <Switch checked={confirm} onCheckedChange={setConfirm} aria-label={t('运行前先问我')} />
+                  <span className="shrink-0 whitespace-nowrap">{t('运行前先问我')}</span>
+                  <span className="text-footnote text-subtle">
+                    {t('默认关：Agent 调用时直接跑，和普通工具一样。打开后每次先弹授权卡（可选本对话不再询问）')}
+                  </span>
+                </label>
                 {ct.test && (
                   <ToolRunResult
                     ok={ct.test.ok}

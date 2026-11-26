@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkArgs, commandTemplate, draftProblems, expandCommand, insideRoot, quoteFor } from './expand.ts'
+import {
+  checkArgs,
+  commandTemplate,
+  draftProblems,
+  expandCommand,
+  insideRoot,
+  needsConfirm,
+  quoteFor,
+} from './expand.ts'
 import { commandPrint, findDups } from './dup.ts'
 import { customToolFor, programOf } from './match.ts'
 import { CustomTool, nextVersion, type ToolEntry } from './schema.ts'
@@ -131,4 +139,14 @@ test('自建工具：按命令里的程序名或脚本名认出对应的工具',
   const tools = [{ id: 'check', name: '检查', sigs: ['check_lua.py'] }]
   assert.equal(customToolFor('python3 .\\Tools\\check_lua.py Script', tools)?.id, 'check')
   assert.equal(customToolFor('python other.py', tools), undefined)
+})
+
+test('自建工具：已保存的默认不弹授权卡（会改文件、影响外部的也一样），设了 confirm 才问；草稿不是只读的照旧问', () => {
+  const tool = (x: Record<string, unknown>) =>
+    CustomTool.parse({ id: 'pack', name: '打包', run: { command: 'pack' }, ...x })
+  assert.equal(tool({}).confirm, false, '旧文件没有这个字段，读进来是不问')
+  for (const effect of ['read', 'write', 'external']) assert.equal(needsConfirm(tool({ effect }), false), false)
+  assert.equal(needsConfirm(tool({ effect: 'read', confirm: true }), false), true)
+  assert.equal(needsConfirm(tool({ effect: 'write' }), true), true)
+  assert.equal(needsConfirm(tool({ effect: 'read', confirm: true }), true), false)
 })
