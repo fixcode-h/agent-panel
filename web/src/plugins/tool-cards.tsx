@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { mcpToolOf, toolArgs } from '@/lib/tasks'
 import type { ToolUse } from '@shared/schema'
 import { usePlugins } from './registry'
@@ -19,29 +20,40 @@ export function pickToolCard(
   return undefined
 }
 
-/** 工具行下面插件画的卡片；没有插件认领时不画 */
-export function PluginToolCard({
+/**
+ * 有插件认领的工具调用：工具那一行和插件的卡片画成一个整体（同一个外框、左右对齐），
+ * 一眼看出卡片就是这次调用的详情，不是另一件事（用户 2026-11-26 指出分成两个框还缩进一截看着不对）。
+ * 没有插件认领时原样画那一行
+ */
+export function WithToolCard({
   tool,
   running,
   taskId,
   projectId,
+  children,
 }: {
   tool: ToolUse
   running: boolean
   taskId?: string
   projectId?: string
+  children: ReactNode
 }) {
   const card = pickToolCard(usePlugins().web, tool)
-  if (!card) return null
+  if (!card) return <>{children}</>
   const { Card } = card
   return (
-    <Card
-      args={toolArgs(tool)}
-      output={tool.output ?? ''}
-      running={running}
-      failed={!!tool.failed}
-      taskId={taskId || undefined}
-      projectId={projectId}
-    />
+    <div data-tool-card={card.tool} className="my-0.5 overflow-hidden rounded-md border border-line">
+      {children}
+      <div className="border-t border-line">
+        <Card
+          args={toolArgs(tool)}
+          output={tool.output ?? ''}
+          running={running}
+          failed={!!tool.failed}
+          taskId={taskId || undefined}
+          projectId={projectId}
+        />
+      </div>
+    </div>
   )
 }

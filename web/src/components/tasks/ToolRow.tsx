@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { PluginToolCard } from '@/plugins/tool-cards'
+import { WithToolCard } from '@/plugins/tool-cards'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { prettyJsonOutput } from '@/lib/json-tree'
@@ -447,10 +447,11 @@ export function ToolRow({
     )
   return (
     <>
-      <ToolLine view={view} task={task} />
+      {/* 插件给自己的工具画的卡片（ue_gametest 跑的哪个脚本、跑到哪了）和这一行画成一个整体；没有插件认领时只有这一行 */}
+      <WithToolCard tool={raw} running={toolPending(raw, task)} taskId={task?.id} projectId={task?.projectId}>
+        <ToolLine view={view} task={task} />
+      </WithToolCard>
       {known}
-      {/* 插件给自己的工具画的卡片（ue_gametest 跑的哪个脚本、跑到哪了），没有插件认领时不画 */}
-      <PluginToolCard tool={raw} running={toolPending(raw, task)} taskId={task?.id} projectId={task?.projectId} />
     </>
   )
 }
