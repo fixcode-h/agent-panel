@@ -14,6 +14,7 @@ import { DATA_DIR } from '../store.ts'
 import { currentShell } from '../shells.ts'
 import { runShell } from '../merge-build.ts'
 import { checkoutWrites } from './checkout.ts'
+import { changeDelta, changeStat, changeSummary } from '../vcs/change-stat.ts'
 
 export const TOOL_RUN_DIR = path.join(DATA_DIR, 'tool-runs')
 const TAIL = 40
@@ -65,6 +66,8 @@ export async function execute(
   o: { projectRoot?: string; signal?: AbortSignal; timeoutSec?: number },
 ): Promise<{ result: ToolRunResult; output: string[] }> {
   const checkout = o.projectRoot && tool.writes.length ? await checkoutWrites(o.projectRoot, tool.writes) : ''
+  // 跑前记一次版本管理里的改动，跑完相减：工具改了什么、有没有把共享文件清空，都摆给 Agent（复盘 P0-2）
+  const before = o.projectRoot ? await changeStat(o.projectRoot).catch(() => null) : null
   await mkdir(TOOL_RUN_DIR, { recursive: true })
   const logFile = path.join(TOOL_RUN_DIR, `${tool.id}-${Date.now()}.log`)
   const log = createWriteStream(logFile)
@@ -86,6 +89,8 @@ export async function execute(
   for (const l of err) log.write(`${l}\n`)
   await new Promise((res) => log.end(res))
   const all = [...lines, ...err]
+  const after = before && o.projectRoot ? await changeStat(o.projectRoot).catch(() => null) : null
+  const changes = before && after ? changeSummary(changeDelta(before, after)) : ''
   const ok = !r.spawnError && !r.killed && r.code !== null && tool.output.okExit.includes(r.code)
   return {
     result: {
@@ -98,6 +103,7 @@ export async function execute(
       totalLines: total + err.length,
       logFile,
       ...(checkout ? { checkout } : {}),
+      ...(changes ? { changes } : {}),
       ...(r.killed === 'timeout' ? { timedOut: true } : {}),
       ...(r.spawnError ? { spawnError: r.spawnError } : {}),
     },

@@ -74,6 +74,10 @@ const SUBMIT_REPORT = {
             pick: { type: 'string', description: '你选的那项的 id' },
             why: { type: 'string', description: '为什么选它' },
             self: { type: 'boolean', description: '按规则自己定的、不必用户拍板' },
+            deviates: {
+              type: 'string',
+              description: '推荐项和用户原话不一致时必填：哪里不一致、为什么还推荐它；一致就不写',
+            },
           },
           required: ['id', 'title', 'options', 'pick'],
         },
@@ -82,7 +86,7 @@ const SUBMIT_REPORT = {
       next: {
         type: 'string',
         description:
-          '确认后这个节点还要问用户的下一轮问题；没有就不写。实现、测试、提交这些交给后面节点的事不要写进来，写了也不会回到你这里',
+          '确认后这个节点还要问用户的下一轮问题；没有就不写（不要写「无新问题」这类话）。实现、测试、提交这些交给后面节点的事不要写进来，写了也不会回到你这里。「确认还是要改」由确认卡做，不要写成决策',
       },
     },
     required: ['summary'],
@@ -150,6 +154,14 @@ function callSubmitTool(o: Orchestra, name: string, a: ToolArgs) {
         must: b.must === true,
       }))
       .filter((b: { text: string }) => b.text)
+    // 通过却带着必须处置的意见：两个说法自相矛盾，面板不替它选一个（2026-11-26 复盘 P1-3，评审交 pass 时 R1、R2 都是 must）
+    const must = blockers.filter((b: { must: boolean }) => b.must)
+    if (v === 'pass' && must.length)
+      return text(
+        `结论自相矛盾，没有收下：verdict=pass，但 ${must.map((b: { id: string; text: string }) => b.id || b.text.slice(0, 20)).join('、')} 标了 must（必须处置）。` +
+          '真有必须改的就交 verdict=fail；只是建议就把这几条的 must 改成 false，并在 text 里写清为什么可以不改。',
+        true,
+      )
     const r = o.submitVerdict({ verdict: v, blockers })
     return text(r.info, !r.ok)
   }

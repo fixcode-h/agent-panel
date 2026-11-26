@@ -22,6 +22,7 @@ import type { Agent, Project, Task } from '../../shared/schema.ts'
 import { askOnce, experienceRun, learnPrompt, parseLearned, type LearnedItem } from './ai.ts'
 import { loadProjectExperience, mergeLearned, mutateProjectExperience } from '../projects/experience.ts'
 import { detectVcs } from '../vcs/detect.ts'
+import { projectDocRoot } from '../docs/root.ts'
 import { getSettings } from '../settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from '../store.ts'
 import { log } from '../log.ts'
@@ -106,24 +107,41 @@ async function treeOf(root: string, dirs: string[]) {
 }
 
 /** 路径还在不在：命令类的不查；glob 查它的固定前缀 */
-async function pathExists(root: string, p: string) {
+/**
+ * 路径在不在：绝对路径（项目外的文档根 G:/Project/ProjectDoc/...）直接看；相对路径按项目根、文档根依次找。
+ * 以前一律 path.join(项目根, 路径)，绝对路径拼出来永远不存在，文档根下的 adr/、modules/ 也被当成不存在丢掉（2026-11-26 复盘 P1-10）
+ */
+async function pathExists(roots: string[], p: string) {
   const base = globBase(p)
   if (!base) return false
-  return stat(path.join(root, base))
-    .then(() => true)
-    .catch(() => false)
+  const abs = path.isAbsolute(base) || /^[A-Za-z]:[\\/]/.test(base)
+  for (const f of abs ? [base] : roots.map((r) => path.join(r, base)))
+    if (
+      await stat(f).then(
+        () => true,
+        () => false,
+      )
+    )
+      return true
+  return false
+}
+
+/** 经验里的路径按哪些目录找：项目根，再加文档根（在项目外时） */
+async function pathRoots(project: Project, agents: Agent[], vcs?: string) {
+  const doc = await projectDocRoot(project.path, agents, vcs).catch(() => undefined)
+  return [project.path, ...(doc?.root && doc.root !== project.path ? [doc.root] : [])]
 }
 
 /** 学到的一条按规矩整理：裁掉超长的、去掉不存在的路径；不合格返回原因 */
 export async function shapeLearned(
   item: LearnedItem,
-  root: string,
+  roots: string[],
   extra: Pick<ProjectExperience, 'branch'> & { taskId: string },
 ): Promise<{ item?: ProjectExperience; why?: string }> {
   let paths = item.paths.slice(0, EXP_PATHS_MAX)
   if (item.kind !== 'command') {
     const ok: string[] = []
-    for (const p of paths) if (await pathExists(root, p)) ok.push(p)
+    for (const p of paths) if (await pathExists(roots, p)) ok.push(p)
     if (paths.length && !ok.length) return { why: t('路径都不存在：{paths}', { paths: paths.join('、') }) }
     paths = ok
   }
@@ -310,8 +328,9 @@ export function createExperienceLearner(deps: LearnDeps) {
     const branch = vcs === 'p4' || vcs === 'svn' ? branchNameOf(project.path) : ''
     const shaped: { item: ProjectExperience; update?: string }[] = []
     const dropped: { title: string; why: string }[] = []
+    const roots = await pathRoots(project, agents, vcs)
     for (const it of parsed.items) {
-      const r = await shapeLearned(it, project.path, { branch, taskId: task.id })
+      const r = await shapeLearned(it, roots, { branch, taskId: task.id })
       if (r.item) shaped.push({ item: r.item, update: it.op === 'update' ? it.id : undefined })
       else dropped.push({ title: it.title.slice(0, 60), why: r.why ?? '' })
     }
@@ -370,7 +389,7 @@ export async function recordExperience(
       keywords: input.keywords,
       paths: input.paths,
     },
-    project.path,
+    await pathRoots(project, agents, vcs),
     { branch, taskId },
   )
   if (!r.item) return { ok: false, info: `没记下：${r.why}。按「经验记什么」改好再记` }

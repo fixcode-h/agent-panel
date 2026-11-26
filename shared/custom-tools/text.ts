@@ -117,6 +117,8 @@ export interface ToolRunResult {
   logFile?: string
   /** 签出的文件或签出失败的原因 */
   checkout?: string
+  /** 这次运行在版本管理里改了哪些文件、加减多少行（大量删除时带告警）；没改或不是 git / P4 项目时不带 */
+  changes?: string
   timedOut?: boolean
   /** 没跑起来 */
   spawnError?: string
@@ -153,6 +155,8 @@ export function runText(t: Pick<CustomTool, 'id' | 'name'>, r: ToolRunResult): s
   const head = `${t.name} ${t.id} · ${r.spawnError ? '没跑起来' : `退出码 ${r.code ?? '无'}`} · ${sec(r.ms)} · ${r.ok ? '成功' : '失败'}${r.timedOut ? '（超过限时，面板已停止）' : ''}`
   const parts = [head, `命令：${r.line}`]
   if (r.spawnError) parts.push(`原因：${r.spawnError}`)
+  // 改动摘要放在输出尾部前面：结果超长被截时也不丢（大量删除的告警最要紧）
+  if (r.changes) parts.push(r.changes)
   if (r.errors.length)
     parts.push(
       `报错 ${r.errors.length} 处：\n` +

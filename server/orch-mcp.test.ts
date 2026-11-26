@@ -1453,3 +1453,41 @@ test('自建工具：父对话、子对话、工作流节点、子任务、Chat 
     assert.match(hint, /lua-check/, who)
   }
 })
+
+test('submit_verdict：pass 却带 must 的意见不收，写清改交 fail 或把 must 改掉', async () => {
+  const got: unknown[] = []
+  const s = openAskBridge({
+    orch: {
+      self: 'r',
+      submitVerdict: (v: unknown) => {
+        got.push(v)
+        return { ok: true, info: '已收到' }
+      },
+    } as never,
+  })
+  const app = askMcpApi()
+  const p = new URL(s.url).pathname.replace('/api/mcp', '')
+  const call = async (args: unknown) => {
+    const r: any = await (
+      await app.request(p, {
+        method: 'POST',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'submit_verdict', arguments: args },
+        }),
+        headers: { 'content-type': 'application/json' },
+      })
+    ).json()
+    return r.result
+  }
+  const bad = await call({ verdict: 'pass', blockers: [{ id: 'R1', text: '违背需求原话', must: true }] })
+  assert.ok(bad.isError)
+  assert.match(bad.content[0].text, /自相矛盾.*R1.*verdict=fail/)
+  assert.equal(got.length, 0)
+  const ok = await call({ verdict: 'pass', blockers: [{ id: 'R2', text: '建议改名', must: false }] })
+  assert.ok(!ok.isError)
+  assert.equal(got.length, 1)
+  s.close()
+})

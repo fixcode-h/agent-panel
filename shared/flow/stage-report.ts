@@ -27,6 +27,11 @@ export const Decision = z.object({
   why: z.string().default(''),
   /** 机械决策：Agent 按规则自己定了，不需要用户拍板，但用户可以改 */
   self: z.boolean().default(false),
+  /**
+   * 推荐项和用户原话不一致时：哪里不一致、为什么还推荐它。界面上把这条标出来让用户留意
+   * （2026-11-26 复盘 P1-2：用户说「黑屏结束抛事件」，推荐的却是另一个时机，而没选的那项自己写着「与原话字面一致」）
+   */
+  deviates: z.string().optional(),
 })
 export type Decision = z.infer<typeof Decision>
 
@@ -67,12 +72,49 @@ export const pendingReport = (list: StageReportVersion[] | undefined) => {
   return v && !v.result ? v : undefined
 }
 
+/**
+ * next 写的其实是「没有下一轮」：按空处理。2026-11-26 复盘 P1-1：第 2 版 next 写「无新问题…」，
+ * 字段不空，面板照样开了下一轮，设计节点确认了 4 次
+ */
+const NO_NEXT =
+  /^(?:无|没有|暂无|不需要|无需|none|n\/a|nothing|-+|—+)[。.!！，,\s]*$|(?:无|没有|暂无)(?:新的?|其他|别的|更多|待办|后续|下一轮)|交给(?:父对话|下游|后面的?节点)|直接(?:进入|往下|继续)/i
+
+/**
+ * 只是在问「确认还是要改」的决策：确认本来就是确认卡的事，写成决策会让面板以为有新问题、再开一轮
+ * （复盘 P1-1：第 3 版加了 C1/C2，选项只有「确认 / 还有要改」）
+ */
+const CONFIRM_ONLY =
+  /^(?:确认|同意|通过|没问题|可以|ok|yes|是|否|no|继续|还有要改|有要改的|需要修改|要修改|有修改|不确认|不同意|有意见|再改改?|退回)/i
+const confirmOnly = (d: Decision) => d.options.length <= 3 && d.options.every((o) => CONFIRM_ONLY.test(o.label.trim()))
+
+/** 选项说明里自称「和用户原话一致」的写法 */
+const MATCHES_WORDS =
+  /(?:原话|字面|用户(?:的)?(?:原文|要求|说法|描述))[^。；;，,]{0,6}(?:一致|相符|吻合|对应)|(?:一致|相符|吻合)[^。；;，,]{0,4}(?:原话|字面)/
+
 /** 工具参数校验成报告：选项编号重复、pick 不在选项里这类错直接报回给 Agent 改 */
 export function parseStageReport(a: unknown): { ok: true; report: StageReport } | { ok: false; error: string } {
   const r = StageReport.safeParse(a)
   if (!r.success) return { ok: false, error: `报告格式不对：${z.prettifyError(r.error)}` }
   const rep = r.data
   if (!rep.summary.trim()) return { ok: false, error: 'summary 是空的：写这一步的结论' }
+  if (NO_NEXT.test(rep.next.trim())) rep.next = ''
+  const confirm = rep.decisions.filter(confirmOnly)
+  if (confirm.length)
+    return {
+      ok: false,
+      error: `${confirm.map((d) => d.id).join('、')} 只是在问「确认还是要改」：确认由面板的确认卡做，不要写成决策。删掉它们再交；真有要用户选的，写成具体的方案选项。`,
+    }
+  // 没选的那项自己写着「和用户原话一致」，推荐的却是别的：要么改推荐，要么写清为什么偏离
+  for (const d of rep.decisions) {
+    const literal = d.options.find((o) => o.id !== d.pick && MATCHES_WORDS.test(`${o.label} ${o.note}`))
+    if (literal && !d.deviates?.trim())
+      return {
+        ok: false,
+        error: `${d.id} 的选项 ${literal.id} 写着和用户原话一致，你推荐的却是 ${d.pick}：要么改推荐 ${literal.id}，要么在 deviates 里写清哪里和原话不一致、为什么还这样推荐（界面会把它标出来给用户看）。`,
+      }
+  }
+  // 约定「自己定的写 M1、M2…」：编号是 M 开头却没标 self 的按自己定的算，不当成要用户拍板的新问题
+  for (const d of rep.decisions) if (/^M\d+$/i.test(d.id)) d.self = true
   const ids = new Set<string>()
   for (const d of rep.decisions) {
     if (ids.has(d.id)) return { ok: false, error: `决策编号 ${d.id} 重复了` }
@@ -199,4 +241,16 @@ export function autoSettle(list: StageReportVersion[] | undefined): string {
   if (v.report.decisions.some((d) => !d.self && !before.has(d.id))) return ''
   v.result = 'auto'
   return reportOutput(v.report)
+}
+
+/**
+ * 用户确认的报告里，有没有决策最终选了这项（按选项文字比，包含即算）。
+ * 没交过报告时返回 undefined（调用方照常跑，不替它猜）
+ */
+export function reportPicked(list: StageReportVersion[] | undefined, label: string): boolean | undefined {
+  const v = [...(list ?? [])].reverse().find((x) => x.result === 'confirmed' || x.result === 'auto') ?? list?.at(-1)
+  if (!v) return undefined
+  return v.report.decisions.some((d) =>
+    (d.options.find((o) => o.id === finalPick(d, v.picks))?.label ?? '').includes(label),
+  )
 }

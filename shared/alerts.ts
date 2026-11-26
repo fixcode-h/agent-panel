@@ -84,6 +84,13 @@ const INFO: Record<AlertKind, (detail?: string) => AlertInfo> = {
       '确认这个 MCP 服务在运行、没被别的工作占住（例如编辑器正在做耗时操作）；用不上它时可以从项目的 MCP 配置里去掉。Claude Code 第一轮最多等多久由设置里的环境变量 CLAUDE_CODE_MCP_STARTUP_WAIT_MS（毫秒）决定。',
     ),
   }),
+  tool_missing: () => ({
+    title: t('缺少本机程序'),
+    what: t(
+      '面板要用的本机程序没有装，相关功能只能用慢一些、不一定查得全的办法顶上（例如 find 按文本找没有 rg 时只能逐个读文件）。',
+    ),
+    fix: t('按下面原始信息里的命令装上它（装完不用重启面板，下次调用就会用上）。'),
+  }),
   idle: () => ({
     title: t('长时间没有输出'),
     what: t('执行中的 Agent 很久没有任何输出，可能卡在登录、网络重连或交互式确认上。'),
@@ -263,3 +270,12 @@ export const makeAlert = (level: Alert['level'], detail: string, kind?: AlertKin
   level,
   detail,
 })
+
+/**
+ * 缺本机程序的提醒（tool_missing）：原始信息里写缺哪个、当前平台怎么装。没有缺的返回 undefined。
+ * 程序名、安装命令是命令行原文，不翻译
+ */
+export function missingProgramAlert(missing: { program: string; install: string }[] | undefined): Alert | undefined {
+  if (!missing?.length) return undefined
+  return makeAlert('warn', missing.map((m) => `${m.program}：${m.install}`).join('\n'), 'tool_missing')
+}

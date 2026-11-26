@@ -8,7 +8,7 @@
  * 每轮按这一轮要带的重建：关掉的技能下一轮就不在了。目录按要带的那组技能分开（角色不同、要带的不同就不共用），
  * 要带的一样的几个对话共用一份，先在旁边写好再换上，不会读到写了一半的技能
  */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -69,8 +69,14 @@ async function place(name: string, cli: string, dir: string, bundled: Awaited<Re
  * Windows 上刚写好的文件常被杀毒软件、索引服务短暂占着，改名会报 EPERM（2026-11-19 用户看到「技能这一轮没能带上」）：
  * 等一会儿重试，一直改不了就复制过去；实在换不上时把旧的挪回来，不留下一个没有技能目录、只剩 .old 的项目
  */
+/**
+ * 临时目录的后缀：同一个进程同一毫秒里并发派好几个子任务时，只用 pid + 时间会撞名，
+ * 一个刚建的目录被另一个清掉、mkdir 报 EEXIST，子任务就没带上技能（2026-11-26 复盘 P1-5）
+ */
+const uniq = () => `${process.pid}-${Date.now()}-${randomUUID().slice(0, 8)}`
+
 async function swapIn(staging: string, root: string) {
-  const old = `${root}.old-${process.pid}-${Date.now()}`
+  const old = `${root}.old-${uniq()}`
   let moved = false
   try {
     if (existsSync(root)) {
@@ -104,7 +110,7 @@ export async function prepareRunSkills(a: {
   const key = createHash('sha1').update(want.join('\n')).digest('hex').slice(0, 10)
   const root = runSkillsRoot(a.projectId, a.def.id, key)
   const dir = path.join(root, a.def.runSkills?.subdir ?? '')
-  const staging = `${root}.next-${process.pid}-${Date.now()}`
+  const staging = `${root}.next-${uniq()}`
   const stagingDir = path.join(staging, a.def.runSkills?.subdir ?? '')
   try {
     await rm(staging, { recursive: true, force: true })
