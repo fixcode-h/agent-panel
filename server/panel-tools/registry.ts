@@ -37,6 +37,7 @@ import {
   type ToolResult,
 } from './types.ts'
 import { CHERRY_PICK, P4_SPLIT } from './vcs.ts'
+import { VCS_STATUS } from './vcs-status.ts'
 
 export const PANEL_TOOLS: readonly PanelTool[] = [
   GET_STATUS,
@@ -56,6 +57,7 @@ export const PANEL_TOOLS: readonly PanelTool[] = [
   REQUEST_BUILD_CHILD,
   ...CLAIM_TOOLS,
   P4_SPLIT,
+  VCS_STATUS,
   CHERRY_PICK,
   ASK_PUSH_ENTRY,
   REQUEST_OVERRIDE_ENTRY,

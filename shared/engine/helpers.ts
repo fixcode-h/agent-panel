@@ -10,6 +10,7 @@ import { layeredBatch } from '../helper-batch.ts'
 import { approvedBrief, requestLogs, submitDiagnosis, updateBugCase, type DiagnosisInput } from '../bug/diagnosis.ts'
 import { resultLine, resultOf } from '../helper-summary.ts'
 import { changedFilesPart } from '../wrapup-prompt.ts'
+import { changeSummary } from '../vcs/change-summary.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from '../review/limits.ts'
 import { userWordsPart } from '../review/user-words.ts'
 import { reusePart } from '../review/reuse.ts'
@@ -227,8 +228,18 @@ const RETRY_HINT = (id: string) =>
  * 用工具交的总结放在原文前面：弱模型的原文开头多是「I'll start by reading…」这类过程话，
  * 真正的结论在后面、被截掉了就看不到（DeepSeek 实跑 2026-11-22）
  */
-const summaryHead = (k: TaskStep) =>
-  k.submitted?.summary?.trim() ? `总结：${clip(k.submitted.summary.trim(), 1500)}\n\n过程和原文：\n` : ''
+const summaryHead = (k: TaskStep) => {
+  // 子任务改了哪些文件、各加减多少行，大量删除时告警（复盘 2026-11-26 §5-3）：派它的对话不用自己再 diff 一遍才发现被写坏的共享文件。
+  // 只有 Git 项目按快照记了子任务自己的改动（server/exec/runner.ts），P4 没有就不写
+  const changes = changeSummary(
+    (k.changes ?? []).map((c) => ({ file: c.path, add: c.add, del: c.del })),
+    8,
+    '这个子任务改了',
+  )
+  const summary = k.submitted?.summary?.trim() ? `总结：${clip(k.submitted.summary.trim(), 1500)}` : ''
+  const head = [summary, changes].filter(Boolean).join('\n')
+  return head ? `${head}\n\n过程和原文：\n` : ''
+}
 
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 export async function settleHelpers(host: EngineHost, step: TaskStep) {

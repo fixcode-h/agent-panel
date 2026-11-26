@@ -200,11 +200,15 @@ function p4Rules(host: EngineHost) {
 - [XLSX]（表格）：.xlsx / .xlsm / .xlsb / .xls / .csv
 - [Lua]：.lua（只提交源码，不编译成 .luac，也不提交 .luac）
 - [Other]：其余要提交的代码、资源和配置
-${p4DocsSkip(host.policy?.docs)}`
+${p4DocsSkip(host.policy?.docs)}${host.vcsStatus ? VCS_STATUS_HINT : ''}`
   if (host.p4Split)
     return `${head}调用 p4_split_changelists 分：面板按上面的类型建 pending 并挪文件，你只在 descriptions 里给这次有文件的每一类写一句中文描述（25 字以内，只说改了什么，不带标签；超长会被退回）。default 里有不属于这次任务的文件时用 files 只列本次的；已经混在一个 pending 里的用 from 写它的编号拆开。本来就在你已有 pending 里的文件留在原处。看它返回的编号和回读结果，`
   return `${head}只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（25 字以内，只说改了什么）。用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，`
 }
+
+/** 分 changelist、提交前先看一遍状态（vcs_status，复盘 2026-11-26 §5-5：收尾节点手工排查 P4 花了约 6 分钟） */
+const VCS_STATUS_HINT =
+  '分 changelist 之前先调 vcs_status 看一遍这次的文件：落后于库里、别人也开着、二进制的一次列全，标了「要先问用户」的先问用户再动，不要逐个 p4 fstat / diff 去查。'
 
 /** 不是子对话收尾的场合（父对话、工作流节点）：P4 项目里也要按类型分 changelist */
 export function p4Part(host: EngineHost) {

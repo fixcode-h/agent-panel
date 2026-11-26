@@ -50,6 +50,7 @@ const PANEL_TOOLS = (): Record<string, string> => ({
   claim_files: t('认领文件'),
   release_files: t('释放文件'),
   p4_split_changelists: t('按类型分 changelist'),
+  vcs_status: t('看版本管理状态'),
   cherry_pick: t('cherry-pick 改动'),
   ask_push: t('请用户授权推送'),
   request_override: t('请用户放行'),

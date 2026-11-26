@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { gitRun } from './exec/git.ts'
 import { runShell as runShellIn } from './merge-build.ts'
 import { currentShell } from './shells.ts'
 import type { ShellInfo } from '../shared/shells.ts'
@@ -16,6 +15,8 @@ import { createDigest, digestText, type LogDigest } from '../shared/log-digest.t
 import { openJobLog } from './bg/log.ts'
 import { notRunReason } from './bg/sanity.ts'
 import { sniffUrl } from './bg/url.ts'
+import { jobChanges, jobChangesText, jobSnapshot } from './bg/changes.ts'
+import type { ChangeDelta } from '../shared/vcs/change-summary.ts'
 import { lostJobNote, type createBgPersist, type PersistedJob } from './bg/persist.ts'
 import {
   bgLastOutput,
@@ -62,6 +63,8 @@ export interface BgJob {
   logFile?: string
   /** 跑的期间工作目录里的文件变了：结果可能已经不准 */
   changed: boolean
+  /** 跑的期间版本管理里变了的文件和加减行数（server/bg/changes.ts）：推回结果里列出、大量删除要告警 */
+  changes?: ChangeDelta[]
   /**
    * 被停止时也要把结果交回发起方：面板代子对话跑的父对话测试带它。
    * 不带的命令（对话自己起的）被停下时不推回——对话自己停了，一条结果会把它重新拉起。
@@ -205,7 +208,8 @@ export function jobBody(j: BgJob) {
  */
 export function jobOutput(j: BgJob) {
   const body = jobBody(j)
-  return `${bgResultHead(j.id)}${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${body ? `\n${body}` : ''}`
+  const changes = jobChangesText(j.changes)
+  return `${bgResultHead(j.id)}${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${changes ? `\n${changes}` : ''}${body ? `\n${body}` : ''}`
 }
 
 /**
@@ -234,16 +238,6 @@ const realTimers: BgTimers = {
  * 只用只读命令：git stash create 会写 index.lock，同一个目录并发跑后台命令时两边抢锁，失败一侧被 catch 成空指纹，
  * 于是「跑的期间文件被改过」这个提醒会偶发漏报。
  */
-async function fingerprint(dir: string) {
-  // --no-optional-locks：status 默认会顺手刷新索引并加锁，这里禁止它写
-  const status = await gitRun(dir, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'], {
-    timeoutMs: 30_000,
-  })
-  if (status.code !== 0) return ''
-  const head = await gitRun(dir, ['rev-parse', 'HEAD'], { timeoutMs: 10_000 })
-  return createHash('sha1').update(`${head.stdout.trim()}\n${status.stdout}`).digest('hex')
-}
-
 export function createBackground(
   onDone: (job: BgJob, text: string) => void,
   /** 测试用：换掉真正跑命令的实现、缩短停止后的等待上限、换成假时钟 */
@@ -422,7 +416,7 @@ export function createBackground(
       head: headText(j),
       changed: !!j.changed,
       command: j.brief ? '' : j.command,
-      body: jobBody(j),
+      body: [jobChangesText(j.changes), jobBody(j)].filter(Boolean).join('\n'),
       ...(j.state === 'stopped' && j.byUser ? { byUser: true } : {}),
     })
 
@@ -449,7 +443,7 @@ export function createBackground(
     j.lastOutputAt = j.startedAt
     j.nextCheckMs = checkFirstMs
     watch(j)
-    const before = await fingerprint(root).catch(() => '')
+    const before = await jobSnapshot(root)
     // 算指纹的时候对话可能已经被删了：不再启动
     if (ac.signal.aborted) {
       aborts.delete(j.id)
@@ -492,8 +486,7 @@ export function createBackground(
     }
     file?.flush()
     j.digest = digest.digest()
-    const after = before ? await fingerprint(root).catch(() => '') : ''
-    j.changed = !!before && !!after && before !== after
+    Object.assign(j, await jobChanges(root, before))
     if (r.spawnError) j.lines.push(r.spawnError)
     if (r.killed === 'timeout') j.lines.push(`（跑满 ${fmtDuration(j.timeoutMs)} 的限时还没结束，面板已停止它）`)
     let state: BgJob['state'] = r.killed === 'stopped' ? 'stopped' : r.code === 0 && !r.spawnError ? 'done' : 'failed'

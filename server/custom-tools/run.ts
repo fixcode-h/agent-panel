@@ -14,7 +14,8 @@ import { DATA_DIR } from '../store.ts'
 import { currentShell } from '../shells.ts'
 import { runShell } from '../merge-build.ts'
 import { checkoutWrites } from './checkout.ts'
-import { changeDelta, changeStat, changeSummary } from '../vcs/change-stat.ts'
+import { changeDelta, changeStat } from '../vcs/change-stat.ts'
+import { changeSummary } from '../../shared/vcs/change-summary.ts'
 
 export const TOOL_RUN_DIR = path.join(DATA_DIR, 'tool-runs')
 const TAIL = 40
