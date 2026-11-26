@@ -1,0 +1,146 @@
+/**
+ * 查找接管（ADR 0084 第二期，改道模式才跑）：搜索命令、CLI 自带的按内容搜交给 find 能力路由，
+ * 结果和原命令的结果并在一起交回。怎么认、补什么、拼成什么样在 shared/tool-gateway/takeover.ts，这里只做有副作用的几步：
+ * 查（findCode，带时限）、改写时写打印脚本、代答时照原样跑原命令、把实际走的路挂到工具卡片上。
+ *
+ * 任何一步出错、超时、拿不准都返回 pass（带原因），网关就把原来那份回答原样交回，CLI 照原命令跑
+ */
+import path from 'node:path'
+import type { HookAnswer } from '../../../shared/hooks/index.ts'
+import type { FindCodeRun } from '../../../shared/host/find-code.ts'
+import type { NoteToolRoute } from '../../../shared/host/tool-route.ts'
+import type { ToolRoute } from '../../../shared/capability-router/tool-route.ts'
+import type { SearchSpec } from '../../../shared/tool-gateway/search-args.ts'
+import type { CliTakeover } from '../../../shared/tool-gateway/takeover-spec.ts'
+import {
+  findRequestOfSearch,
+  normPath,
+  panelExtras,
+  panelSection,
+  PASS_WHY,
+  planTakeover,
+  rewriteCommand,
+  serveText,
+} from '../../../shared/tool-gateway/takeover.ts'
+import type { CallRecord, ToolCall } from '../../../shared/tool-gateway/types.ts'
+import { log } from '../../log.ts'
+import { runOriginal } from './original.ts'
+import { writePrintScript } from './script.ts'
+
+/** 查找最多等多久：钩子在每次调用的路上，等不到就照原命令跑（能力路由自己能等一分钟，这里不能） */
+const ROUTE_MS = 4000
+/** 代答时照原样跑原命令最多等多久 */
+const ORIGINAL_MS = 15_000
+
+export interface TakeoverDeps {
+  takeover: CliTakeover
+  /** CLI 定义的钩子里有没有改写模板（hooks.events['tool.before'].rewrite） */
+  rewriteTpl: boolean
+  /** CLI 的工作目录：命令里的相对路径按它算，代答时原命令在这里跑 */
+  cwd: string
+  findCode?: FindCodeRun
+  noteRoute?: NoteToolRoute
+  /** 测试替换：照原样跑原命令、写打印脚本 */
+  runOriginal?: (run: NonNullable<SearchSpec['run']>, cwd: string, timeoutMs: number) => Promise<string | undefined>
+  writeScript?: (text: string) => Promise<string>
+}
+
+/** 接管的结果：answer 是交回 CLI 的回答；pass 时没有，网关用原来那份 */
+export interface TakeoverOut {
+  decision: 'rewrite' | 'serve' | 'pass'
+  why?: string
+  answer?: HookAnswer
+  /** 改写后的输入：工具后按它配对 */
+  input?: Record<string, unknown>
+  route?: ToolRoute
+}
+
+/** 命令里的路径换成相对工作目录的；工作目录外的（绝对路径、..）返回 undefined：范围对不上 find 的索引 */
+function relPaths(paths: string[], cwd: string): string[] | undefined {
+  const out: string[] = []
+  for (const p of paths) {
+    const abs = path.resolve(cwd, p)
+    const r = path.relative(cwd, abs)
+    if (r.startsWith('..') || path.isAbsolute(r)) return undefined
+    out.push(normPath(r))
+  }
+  return out
+}
+
+const withTimeout = <T>(p: Promise<T>, ms: number) =>
+  Promise.race([p, new Promise<undefined>((r) => setTimeout(() => r(undefined), ms).unref?.())])
+
+export async function takeover(d: TakeoverDeps, call: ToolCall, inner: HookAnswer): Promise<TakeoverOut | undefined> {
+  const plan = planTakeover(call, { takeover: d.takeover, rewriteTpl: d.rewriteTpl })
+  if (!plan) return undefined
+  if (plan.how === 'pass') return { decision: 'pass', why: plan.why }
+  if (!d.findCode) return { decision: 'pass', why: PASS_WHY.noFind }
+  const s = plan.search
+  const paths = relPaths(s.paths, d.cwd)
+  if (!paths) return { decision: 'pass', why: '搜的目录不在对话的工作目录里，照原命令跑' }
+
+  const ctl = new AbortController()
+  const r = await withTimeout(d.findCode(findRequestOfSearch(s, paths), ctl.signal), ROUTE_MS)
+  if (!r) ctl.abort()
+  if (!r || r.error || !r.route)
+    return { decision: 'pass', why: r?.text ?? `查找 ${ROUTE_MS / 1000} 秒没回来，照原命令跑` }
+  const original = String(call.input.command ?? '')
+  const from = call.kind === 'shell' ? original : `${call.tool} ${s.pattern}`
+  const route: ToolRoute = { ...r.route, from }
+  const { decls, extras } = panelExtras(r.hits ?? [], s, paths)
+  const served = route.served.map((x) => x.label).join(' + ')
+
+  if (plan.how === 'rewrite') {
+    const section = panelSection({ decls, extras, served })
+    if (!section) return { decision: 'pass', why: PASS_WHY.nothing, route }
+    const script = await (d.writeScript ?? writePrintScript)(section)
+    const input = { ...call.input, command: rewriteCommand(original, script) }
+    d.noteRoute?.(route, original)
+    return { decision: 'rewrite', answer: { ...inner, rewrite: input }, input, route }
+  }
+
+  const output = await (d.runOriginal ?? runOriginal)(s.run!, d.cwd, ORIGINAL_MS)
+  if (output === undefined) return { decision: 'pass', why: PASS_WHY.original, route }
+  const text = serveText({ output, decls, extras, served })
+  // 守卫、推送补的说明照样交给模型：代答时它们跟在结果后面
+  const reason = [text, inner.context].filter(Boolean).join('\n\n')
+  // 工具卡片上按输入认是哪一行：命令按原文，自带搜索按关键词（输入是 JSON，带引号比）
+  d.noteRoute?.(route, call.kind === 'shell' ? original : JSON.stringify(s.pattern))
+  return { decision: 'serve', answer: { deny: true, reason }, route }
+}
+
+const INPUT_MAX = 2000
+
+/**
+ * 网关调这一个：接管不出错地跑完，返回交回 CLI 的回答和要并进调用记录的几项。
+ * 网关出错放行（用户 2026-11-26 定）：接管里抛出的任何错都按放行处理，记进 error 和 takeoverWhy
+ */
+export async function enforceTakeover(
+  d: TakeoverDeps,
+  call: ToolCall,
+  inner: HookAnswer,
+): Promise<{
+  answer: HookAnswer
+  input?: Record<string, unknown>
+  patch: Partial<Pick<CallRecord, 'decision' | 'rewritten' | 'route' | 'takeoverWhy' | 'error'>>
+}> {
+  try {
+    const tk = await takeover(d, call, inner)
+    if (!tk) return { answer: inner, patch: {} }
+    const base = { ...(tk.route ? { route: tk.route } : {}), ...(tk.why ? { takeoverWhy: tk.why } : {}) }
+    if (tk.decision === 'pass' || !tk.answer) return { answer: inner, patch: base }
+    return {
+      answer: tk.answer,
+      input: tk.input,
+      patch: {
+        ...base,
+        decision: tk.decision,
+        ...(tk.input ? { rewritten: JSON.stringify(tk.input).slice(0, INPUT_MAX) } : {}),
+      },
+    }
+  } catch (e) {
+    const msg = (e as Error).message
+    log.warn('gateway', '查找接管出错，已放行', { tool: call.tool, error: msg })
+    return { answer: inner, patch: { error: msg, takeoverWhy: '网关出错，照原命令跑' } }
+  }
+}

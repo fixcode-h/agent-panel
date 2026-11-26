@@ -39,8 +39,6 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
   原调用: 'Original call',
   认成: 'Classified as',
   会改到: 'Would route to',
-  '{to}（{decision}，按 {by} 认的；观察模式没有真的改）':
-    '{to} ({decision}, recognized by {by}; not applied in observe mode)',
   '{name} {n} 字': '{name} {n} chars',
   '{name} {n} token': '{name} {n} tokens',
   '网关 {g} · 工具前 {h} · 执行 {d}': 'gateway {g} · pre-tool {h} · run {d}',
@@ -63,7 +61,6 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
     '{n} recent calls belong to it; {m} could be rerouted once rerouting is on',
   选一个项目看这个能力的几条路: 'Pick a project to see the routes for this capability',
   '各 CLI 能做到哪一步': 'What each CLI supports',
-  一条回复里发几个工具调用: 'Several tool calls in one reply',
   代答: 'Serve',
   改用: 'Redirect',
   读文件: 'Read file',
@@ -78,7 +75,6 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
   用了: 'Used',
   没查到: 'Nothing found',
   都没查到: 'Nothing found anywhere',
-  改走: 'Rerouted to',
   '面板把 {from} 改走 {cap}': 'The panel rerouted {from} to {cap}',
   面板按顺序试了这几条路: 'The panel tried these routes in order',
   '找文件、找符号、查引用。结果是「索引 + 原命令」的并集，不会比原命令少。':
@@ -97,7 +93,6 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
   '观察（只记录）': 'Observe (record only)',
   '只记录「能改到哪」，不真的改；看过调用记录再打开':
     'Only records where calls could be rerouted, without changing them; review the call log before turning it on',
-  '按能力表真的改道（第二期开放）': 'Actually reroute by the capability table (available in phase 2)',
   面板按文本找: 'Panel text search',
   这个模式还没开放: 'This mode is not available yet',
   '面板按文本找（兜底）': 'Panel text search (fallback)',

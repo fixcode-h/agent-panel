@@ -12,13 +12,19 @@ import type { HintAt } from './panel-tools/types.ts'
  * 各身份共用的一句（设计稿「技能与自建工具按情境加载」15.3 方案 A）：每个工具调用都要多一轮模型请求，弱模型常常一个一个调；
  * 互不依赖的放在同一条回复里一起发就省掉这些回合。CLI 定义里标了不支持并行工具调用（features.parallelTools 为 no）的不说
  */
-const PARALLEL = '互不依赖的调用（读几个文件、查几个名字）放在同一条回复里一起发。'
+const PARALLEL = '互不依赖的调用（读几个文件、跑几条只读命令）放在同一条回复里一起发。'
+/**
+ * find 收数组之后（方案 B），「查几个名字」不再靠并行发几次 find：一次调用给数组就够，结果按词分组、总长有预算。
+ * 不支持并行的 CLI 也说这一句：它不靠 CLI 能不能一次收几个调用
+ */
+const MULTI_FIND = '查几个名字时 find 的 query 给数组，一次查完。'
 
-/** 交给 CLI 的一句用法说明；cli 给了且不是「不支持并行调用」时末尾加上并行发的那一句 */
+/** 交给 CLI 的一句用法说明；cli 给了且不是「不支持并行调用」时末尾加上并行发的那一句，有 find 时再加收数组的一句 */
 export function orchHint(o: Orchestra, cli?: { parallelTools?: string }) {
   const s = identityHint(o)
-  if (!s || !cli || cli.parallelTools === 'no') return s
-  return `${s.slice(0, -1)}${PARALLEL}）`
+  if (!s || !cli) return s
+  const add = (cli.parallelTools === 'no' ? '' : PARALLEL) + (hasTool(o, 'find') ? MULTI_FIND : '')
+  return add ? `${s.slice(0, -1)}${add}）` : s
 }
 
 /** 按身份排的说明：工具列表模型自己看得到，这里说什么时候用 */

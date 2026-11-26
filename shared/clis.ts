@@ -263,6 +263,8 @@ export interface CliDefinition {
   mcp?: import('./cli-spec.ts').McpSpec
   /** 钩子：结束前怎么问面板（见 shared/hooks/index.ts）；没有时只用一轮结束后的提醒兜底 */
   hooks?: import('./hooks/index.ts').HooksSpec
+  /** 工具网关能接管到哪一步（见 shared/tool-gateway/takeover-spec.ts）；没有时按保守值（不改写、能代答） */
+  takeover?: import('./tool-gateway/takeover-spec.ts').CliTakeover
   /** 项目信任：只在信任后才读的项目文件（见 shared/cli/trust.ts）；没有时项目设置里不显示信任选项 */
   trust?: import('./cli/trust.ts').CliTrust
   /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */

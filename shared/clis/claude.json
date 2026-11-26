@@ -414,6 +414,14 @@
     "vars": {},
     "extras": []
   },
+  "takeover": {
+    "rewrite": true,
+    "serve": true,
+    "hideBuiltin": true,
+    "mcpOnlyPanel": true,
+    "tools": { "Grep": "grep", "Glob": "glob" },
+    "why": "rewrite：PreToolUse 钩子回 permissionDecision=allow + updatedInput 换掉命令后照常执行（模板见 hooks.events.tool.before.rewrite；can_use_tool 的 updatedInput 面板也在用，但跳过确认时不发 can_use_tool，钩子每次都过）。serve：钩子 deny 的 permissionDecisionReason 原样交给模型。hideBuiltin：--disallowedTools（已在用）。mcpOnlyPanel：--strict-mcp-config。Grep 是 ripgrep 形状的输入，Glob 按名字找文件"
+  },
   "hooks": {
     "args": ["--settings", "{dir}/agent-panel-hooks.json"],
     "beforeEnd": {
@@ -471,6 +479,14 @@
         "context": {
           "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
+            "additionalContext": "{text}"
+          }
+        },
+        "rewrite": {
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": "{input}",
             "additionalContext": "{text}"
           }
         }

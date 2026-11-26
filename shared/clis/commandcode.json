@@ -228,6 +228,11 @@
       }
     }
   },
+  "takeover": {
+    "rewrite": false,
+    "serve": true,
+    "why": "mod 的 beforeToolCall 能 block 并带说明（serve）；改写输入、自带 grep / glob 的输入形状还没实测，不登记 tools"
+  },
   "hooks": {
     "beforeEnd": {
       "via": "extension",
