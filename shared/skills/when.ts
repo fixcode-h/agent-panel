@@ -4,7 +4,7 @@
  *
  * 一条条件只有 kind + value 两个字段，设置页一行一个下拉加一个输入框就能改；一个技能可以写几条，任意一条对上就推。
  * - edit / read：要改 / 读的文件对得上通配（相对、绝对、Windows 路径都认），例如 `**\/*.lua`
- * - command：跑的命令属于某一类（vcs / test / build / search，见 ./commands.ts）或者就是某个程序，多个用 | 分开
+ * - command：跑的命令属于某一类（vcs / vcs-write / test / build / search，见 ./commands.ts）或者就是某个程序，多个用 | 分开
  * - tool：调了某个工具（去掉 MCP 前缀的名字），通配，例如 `blender_*`
  * - failed：某类命令失败之后（值同 command）
  * - phase：面板状态。finishing = 调收尾工具（end_turn、submit_*）时；finishing-edited = 同上且这个对话改过文件；

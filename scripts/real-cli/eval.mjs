@@ -25,8 +25,10 @@ import { fmtDuration } from '../lib/duration.mjs'
 import { startServer } from '../e2e/spawn-server.mjs'
 import { EVAL_TASKS as BASE_TASKS, makeSample } from './eval-tasks.mjs'
 import { SKILL_TASKS, skillStats } from './eval-tasks-skills.mjs'
+import { GATEWAY_TASKS } from './eval-tasks-gateway.mjs'
+import { gatewayStats } from './eval-gateway.mjs'
 
-const EVAL_TASKS = [...BASE_TASKS, ...SKILL_TASKS]
+const EVAL_TASKS = [...BASE_TASKS, ...SKILL_TASKS, ...GATEWAY_TASKS]
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const { values: opt } = parseArgs({
@@ -36,6 +38,8 @@ const { values: opt } = parseArgs({
     out: { type: 'string', default: '' },
     compare: { type: 'boolean', default: false },
     keep: { type: 'boolean', default: false },
+    // 工具网关模式（off / observe / enforce）：不给就用面板默认
+    gateway: { type: 'string', default: '' },
   },
   allowPositionals: true,
   strict: false,
@@ -180,6 +184,7 @@ await call('PUT', '/settings', {
     },
   },
 })
+if (opt.gateway) await call('PUT', '/tool-gateway/settings', { mode: opt.gateway })
 // 自带工作流是服务起来后在后台装的：等它装上，最多一分钟
 let general
 for (let i = 0; i < 120 && !general; i++) {
@@ -307,6 +312,8 @@ async function runTask(task) {
     ms: Date.now() - started,
     // 技能、自建工具有没有用上（只看工具调用记录）
     ...(task.needsTasks ? { use: skillStats(full) } : {}),
+    // 工具网关记下的这一题（决定、改道、耗时分位、校验）
+    gw: gatewayStats(dataDir, project.id),
     briefs,
   }
 }
@@ -320,6 +327,7 @@ try {
     results.push(r)
     console.log(`  ${r.ok ? '✓' : '✗'} ${r.why || ''}`.trimEnd())
     if (r.use) console.log(`  用上：${JSON.stringify(r.use)}`)
+    if (r.gw) console.log(`  网关：${JSON.stringify(r.gw)}`)
   }
 } finally {
   await cleanup()

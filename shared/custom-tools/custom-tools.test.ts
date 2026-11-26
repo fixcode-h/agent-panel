@@ -99,6 +99,14 @@ test('自建工具：提示词清单、列表、运行结果都按长度上限',
   const hint = hintText(entries)
   assert.match(hint, /导表 export-tables：改了 Excel 配置表之后/)
   assert.equal(hintText([]), '')
+  // 顶替的程序写进清单：一开始就知道别自己拼 luac
+  const lua = {
+    ...tool(),
+    id: 'lua-check',
+    name: 'Lua 检查',
+    role: { kind: 'verify' as const, paths: ['**/*.lua'], replaces: ['luac'], listFile: false },
+  }
+  assert.match(hintText([{ scope: 'project', file: 'c', tool: lua }]), /Lua 检查 lua-check（代替 luac）：/)
   assert.match(listText(entries, 'excel'), /export-tables「导表」\[项目/)
   assert.match(listText(entries, 'zzz'), /没有和「zzz」相关/)
   const errs = parseErrors(['ok', 'Item.xlsx:12: 缺列 ID'], '^(?<file>[^:]+):(?<line>\\d+): (?<msg>.*)$')

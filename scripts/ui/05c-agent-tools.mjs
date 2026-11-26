@@ -1,7 +1,8 @@
 /**
  * 界面检查分片：设置 →「Agent 工具」→「技能」（ADR 0083）：技能目录按来源分组、搜索、开关自动推送，
  * 详情里改条件、「每个对话都带」、恢复默认、最近推送；
- * 工具路由、调用记录页签（ADR 0084），对话页卡片上实际走的路和会话栏「技能」。演示数据由 web/src/lib/demo/demo-agent-tools.ts 给。
+ * 工具路由、调用记录页签（ADR 0084；第二期的改道模式、改写的那一行），对话页卡片上实际走的路（含被改道的 rg）和会话栏「技能」。
+ * 演示数据由 web/src/lib/demo/demo-agent-tools.ts、demo-tool-gateway.ts、demo-takeover.ts 给。
  */
 import { runShard } from './harness.mjs'
 
@@ -50,9 +51,29 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
 
   // 工具路由、调用记录两个页签（ADR 0084）和对话页：卡片上实际走的路、会话栏「技能」一行
   await p.getByRole('tab', { name: '工具路由' }).click()
-  await check(p, '设置-Agent工具-工具路由')
+  await check(p, '设置-Agent工具-工具路由', ['各 CLI 能做到哪一步', '只用面板的 MCP'])
+  // 改道（ADR 0084 第二期）能选了：选上后说明换成改道的，再换回观察（默认）
+  await p.getByRole('combobox', { name: '网关模式' }).click()
+  await p.getByRole('option', { name: '改道', exact: true }).click()
+  await check(p, '设置-Agent工具-改道模式', ['结果是面板和原命令的并集'])
+  await p.getByRole('combobox', { name: '网关模式' }).click()
+  await p.getByRole('option', { name: '观察（只记录）' }).click()
+  if (!(await p.locator('[data-takeover="claude"] >> text=改写').count()))
+    errors.push('设置-Agent工具：各 CLI 那一组没列出 Claude Code 的接管能力')
   await p.getByRole('tab', { name: '调用记录' }).click()
-  await check(p, '设置-Agent工具-调用记录', ['网关自身耗时', '实际走的'])
+  await check(p, '设置-Agent工具-调用记录', ['网关自身耗时', '实际走的', '面板改走 find'])
+  // 改完 Lua 面板自动检查的那一行（ADR 0086）：点开看查了哪些文件
+  const verifyRow = p.getByText('校验 · lua-check · 1 处报错').first()
+  if (!(await verifyRow.count())) errors.push('调用记录：没有改完 Lua 自动校验的那一行')
+  else {
+    await verifyRow.click()
+    await check(p, '设置-Agent工具-校验行', ['面板自己跑（改完自动校验）', '2 个文件', 'Content/Script/UI/Shop.lua'])
+  }
+  // 被改写的那一行点开：改写成什么、面板走过的路
+  await p.locator('tr', { hasText: 'rg -n "OnSellAll"' }).first().click()
+  // 这一行在表格最下面：滚到展开的详情，截图里才看得到改写和路由
+  await p.getByText('面板把 rg -n').first().scrollIntoViewIfNeeded()
+  await check(p, '设置-Agent工具-改写详情', ['改写成', 'agent-panel-takeover', '面板把 rg -n'])
   await p.keyboard.press('Escape')
 
   await p.getByText('购物车右上角的数量角标').first().click()
@@ -61,6 +82,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
     .first()
     .waitFor({ timeout: 5000 })
     .catch(() => errors.push('对话页：查找卡片上没有实际走的路'))
+  if (!(await p.locator('[data-route-badge]', { hasText: '面板改走 find' }).count()))
+    errors.push('对话页：被改道的 rg 卡片上没有「面板改走 find」')
   const skills = p.locator('[data-session-skills]')
   await skills.locator('button').first().click()
   await check(p, '对话-会话栏技能', ['推过', 'systematic-debugging', '开跑带上'])

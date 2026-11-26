@@ -658,8 +658,10 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   c.call.orch.guardEdit = editGuard
   const evs = gw ? gw.events(events, off) : events
   const hooked = gw ? { hookTools: gw.tools(hookTools), onHook: gw.wrap(onHook) } : { hookTools, onHook }
+  // 改完自动校验（ADR 0086）：要收尾时还有没查的改动先跑一次，有报错拦下收尾；Chat 页一问一答不拦
+  const end = gw && !endOff && c.call.beforeEnd && !isChatMode(c.task) ? gw.wrapEnd(beforeEnd, c.mark) : beforeEnd
   return {
-    ...(beforeEnd ? { beforeEnd } : {}),
+    ...(end ? { beforeEnd: end } : {}),
     ...(evs.length ? { hookEvents: evs, ...hooked } : {}),
   }
 }

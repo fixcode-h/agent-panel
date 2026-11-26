@@ -7,7 +7,7 @@
  * 程序名：命令第一个词的文件名（去掉 .exe 这类后缀）；第一个词是解释器（python、node、cmd、powershell……）时取它跑的脚本文件名。
  * 拿不准的（第一个词是占位符、只用面板写出的 {{script}}）不认，宁可漏提醒也不乱提醒
  */
-import type { ToolEntry } from './schema.ts'
+import type { CustomTool, ToolEffect, ToolEntry, ToolRole } from './schema.ts'
 import { usable } from './text.ts'
 
 /** 只是用来跑别的脚本的程序：认它后面那个脚本 */
@@ -33,6 +33,17 @@ export interface CustomToolSig {
   name: string
   /** 小写的程序名或脚本文件名 */
   sigs: string[]
+  /** 用途（ADR 0086）：校验、编译；不写是普通工具 */
+  role?: ToolRole['kind']
+  /** verify：改了哪些文件要跑它 */
+  paths?: string[]
+  /** 认作同一件事的别的程序（luac 这类）：Agent 自己跑它们时也算在做这个工具的事 */
+  replaces?: string[]
+  effect?: ToolEffect
+  /** 改过的文件填进哪个参数（没有就是不带文件跑） */
+  fileParam?: string
+  /** 除了文件参数还有必填、又没默认值的参数：面板替它跑时填不上，只能让 Agent 自己调 */
+  needsArgs?: boolean
 }
 
 const base = (word: string) =>
@@ -64,9 +75,32 @@ export function customToolSigs(entries: ToolEntry[]): CustomToolSig[] {
     const sigs = [...new Set([t.run.command, t.run.win, t.run.posix].flatMap((c) => (c ? [programOf(c)] : [])))].filter(
       (s) => s.length >= 3,
     )
-    return sigs.length ? [{ id: t.id, name: t.name, sigs }] : []
+    const replaces = (t.role?.replaces ?? []).map(base).filter(Boolean)
+    if (!sigs.length && !replaces.length) return []
+    return [{ id: t.id, name: t.name, sigs, ...roleSig(t, replaces) }]
   })
 }
+
+/** 改过的文件填进哪个参数：role.arg，没写时第一个 path 类型的参数 */
+export const fileParamOf = (t: Pick<CustomTool, 'params' | 'role'>) =>
+  (t.role?.arg && t.params.some((p) => p.name === t.role!.arg) ? t.role.arg : undefined) ??
+  t.params.find((p) => p.type === 'path')?.name
+
+function roleSig(t: CustomTool, replaces: string[]): Partial<CustomToolSig> {
+  const fileParam = fileParamOf(t)
+  const needsArgs = t.params.some((p) => p.name !== fileParam && p.required && p.default === undefined)
+  return {
+    effect: t.effect,
+    ...(t.role ? { role: t.role.kind, paths: t.role.paths } : {}),
+    ...(replaces.length ? { replaces } : {}),
+    ...(fileParam ? { fileParam } : {}),
+    ...(needsArgs ? { needsArgs } : {}),
+  }
+}
+
+/** 这个工具认不认这个程序名：自己的命令里的程序，或 role.replaces 里登记的 */
+export const sigMatches = (t: Pick<CustomToolSig, 'sigs' | 'replaces'>, prog: string) =>
+  !!prog && (t.sigs.includes(prog) || !!t.replaces?.includes(prog))
 
 /** 这条命令在做的事有对应的自建工具：按命令里出现的程序名或脚本名认 */
 export function customToolFor(command: string, tools: CustomToolSig[]): CustomToolSig | undefined {
@@ -76,5 +110,5 @@ export function customToolFor(command: string, tools: CustomToolSig[]): CustomTo
       .filter(Boolean)
       .map(base),
   )
-  return tools.find((t) => t.sigs.some((s) => words.has(s)))
+  return tools.find((t) => [...t.sigs, ...(t.replaces ?? [])].some((s) => words.has(s)))
 }

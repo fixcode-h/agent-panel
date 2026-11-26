@@ -76,6 +76,8 @@ const store: Record<ToolScope, CustomTool[]> = {
       params: [{ name: 'file', label: '文件', type: 'path', desc: '', required: true, options: [], inProject: true }],
       effect: 'read',
       output: { okExit: [0], errorPattern: '^luac: (?<file>[^:]+):(?<line>\\d+): (?<msg>.*)$' },
+      // 校验工具（ADR 0086）：改完 Lua 面板自己跑，Agent 自己跑 luac 时改道到这里
+      role: { kind: 'verify', paths: ['**/*.lua'], replaces: ['luac'], listFile: false },
     }),
   ],
   global: [
@@ -185,6 +187,9 @@ function run(body: {
 }
 
 /** /custom-tools 下的接口（契约见 shared/api-contract/custom-tools.ts） */
+/** 演示的项目工具（工具网关的演示按它认程序名，和管理页同一份） */
+export const demoProjectTools = () => store.project
+
 export function demoCustomTools(method: string, seg: string[], body: unknown) {
   const [, scopeRaw, id, action] = seg
   if (method === 'GET' && !scopeRaw) return { entries: entries(), projectDir: PROJECT_DIR, globalDir: GLOBAL_DIR }

@@ -12,11 +12,14 @@ import { t } from '../i18n.ts'
 import type { CustomToolSig } from '../custom-tools/match.ts'
 import type { GatewayDecision, ToolCall } from '../tool-gateway/types.ts'
 import type { CapabilityId } from './types.ts'
+import { applyClaims, verifyClaims } from './verify-apply.ts'
 
 /** 推算时用到的、调用以外的事实（由服务端按项目取好） */
 export interface ClaimCtx {
   /** 这个项目能用的自建工具认得出的程序名 */
   customTools: CustomToolSig[]
+  /** 这一轮挂没挂 request_build（UE 项目：父对话占位编译、子对话向父对话申请）；空或不写是没挂 */
+  build?: '' | 'child' | 'parent'
 }
 
 export interface Claim {
@@ -77,17 +80,9 @@ export const CAPABILITIES: Capability[] = [
     id: 'verify',
     label: () => t('校验'),
     summary: () => t('改完对得上的文件后面板自己跑检查，只把报错推给 Agent；Agent 自己跑同类命令时也改走这里。'),
-    takes: ['luac -p', t('自建工具里程序名相同的命令')],
+    takes: ['luac -p', t('自建工具里程序名相同的命令'), t('自建工具 role.replaces 登记的程序')],
     phase: 3,
-    claims(c, ctx) {
-      if (c.kind === 'panel' && c.panel === 'custom_tool') return { by: 'custom_tool' }
-      if (c.kind !== 'shell' || !c.command) return undefined
-      const prog = c.command.program
-      const tool = prog ? ctx.customTools.find((x) => x.sigs.includes(prog)) : undefined
-      if (tool && single(c)) return { by: prog, route: { to: `custom_tool:${tool.name}`, decision: 'serve' } }
-      if (tool || (c.command.category === 'lint' && prog === 'luac')) return { by: prog }
-      return undefined
-    },
+    claims: verifyClaims,
   },
   {
     id: 'read-asset',
@@ -112,19 +107,11 @@ export const CAPABILITIES: Capability[] = [
   {
     id: 'apply',
     label: () => t('改动生效'),
-    summary: () => t('按改了哪些文件、编辑器和 VS 的状态选 Live Coding、VS 编译、UBT 或 Lua 热重载。'),
-    takes: ['Build.bat', 'UnrealBuildTool', 'RunUAT', 'msbuild', 'request_build'],
+    summary: () =>
+      t('UE 的编译命令改用 request_build 或项目自己的编译工具；Live Coding、Lua 热重载等插件接口 22（第四期）再接。'),
+    takes: ['Build.bat', 'UnrealBuildTool', 'RunUAT', 'msbuild', 'request_build', t('自建工具 role=build')],
     phase: 3,
-    claims(c) {
-      if (c.kind === 'panel' && c.panel === 'request_build') return { by: 'request_build' }
-      if (c.kind !== 'shell' || c.command?.category !== 'build') return undefined
-      // 只接 UE 的编译：npm run build、cargo build 这类不归面板的编译申请
-      const ue = /^(?:build|unrealbuildtool|ubt|runuat|msbuild|devenv)$/.test(c.command.program)
-      if (!ue) return undefined
-      return single(c)
-        ? { by: c.command.program, route: { to: 'request_build', decision: 'serve' } }
-        : { by: c.command.program }
-    },
+    claims: applyClaims,
   },
 ]
 

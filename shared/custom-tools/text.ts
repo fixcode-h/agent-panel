@@ -23,7 +23,9 @@ export function hintText(entries: ToolEntry[]): string {
   let size = 0
   for (const e of list.slice(0, HINT_MAX_TOOLS)) {
     const t = e.tool!
-    const l = `${t.name} ${t.id}：${(t.useWhen || t.summary).slice(0, 60)}`
+    // 顶替哪些程序也写上（ADR 0086）：Agent 一开始就知道该用它而不是自己拼 luac，不用等面板代答一次才知道
+    const rep = t.role?.replaces.length ? `（代替 ${t.role.replaces.join('、')}）` : ''
+    const l = `${t.name} ${t.id}${rep}：${(t.useWhen || t.summary).slice(0, 60)}`
     if (size + l.length > 600) break
     lines.push(l)
     size += l.length
@@ -79,12 +81,21 @@ export function showText(e: ToolEntry): string {
       t.run.script && `脚本（.${t.run.script.ext}，${t.run.script.text.split('\n').length} 行）`,
       `目录：${t.run.cwd} · 限时 ${t.run.timeoutSec} 秒`,
       t.writes.length && `会改：${t.writes.join('、')}`,
+      t.role && roleText(t.role),
       `调用：custom_tool action=run id=${t.id} args={${t.params.map((p) => `"${p.name}": …`).join(', ')}}`,
     ]
       .filter(Boolean)
       .join('\n'),
     4000,
   )
+}
+
+/** show 里的用途一行：Agent 要知道改完这些文件面板会自己跑它，不用再手动跑 */
+function roleText(r: NonNullable<CustomTool['role']>) {
+  const rep = r.replaces.length ? `；顶替 ${r.replaces.join('、')}` : ''
+  return r.kind === 'verify'
+    ? `用途：校验（改完 ${r.paths.join('、') || '对得上的文件'} 后面板自己跑，只推报错${rep}）`
+    : `用途：编译${rep}`
 }
 
 export function clipText(s: string, max: number) {

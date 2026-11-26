@@ -18,6 +18,8 @@ import { withPanelGuides } from './mcp-catalog/guides.ts'
 import { noteMounted } from './mcp-catalog/last-run.ts'
 import { PANEL_SUMMARY } from '../shared/mcp-catalog/panel-guides.ts'
 import { answerHook, type BridgeHook } from './hooks/bridge.ts'
+import { proxiedTools, type ProxySession } from './mcp-proxy/session.ts'
+import { serveProxied } from './mcp-proxy/serve.ts'
 
 /** 这一轮的清单里三件核心编排工具都在：Pi 桥接据此核对清单完整 */
 export const orchCore = (orch: { name: string }[]) => ORCH_CORE_TOOLS.every((n) => orch.some((x) => x.name === n))
@@ -65,6 +67,8 @@ const sessions = new Map<
     onTools?: (listed: { name: string; chars: number }[], deferred: { name: string; chars: number }[]) => void
     /** 钩子（ADR 0049）：CLI 经 /ask/:token/hook 问；没有时一律放行 */
     hook?: BridgeHook
+    /** 外部服务代理（ADR 0085）：代理的外部工具收在 more_tools 后面 */
+    proxy?: ProxySession
     pending: Set<(r: AskReply) => void>
   }
 >()
@@ -247,7 +251,7 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
   ])
   // 不常用的工具不直接列出，收进 more_tools（见 shared/panel-tools.ts 的 DEFERRED_TOOLS）：
   // 工具说明每个会话都要整份带着，父对话一次二十多个、上万字，大多数一轮都用不到
-  const { listed: tools, deferred } = splitDeferred(all)
+  const { listed: tools, deferred } = splitDeferred(all, s.proxy ? proxiedTools(s.proxy) : [])
   const call = async (name: string, args: any): Promise<unknown> => {
     if (name === TOOL.name && s.ask) return callAsk(s, args)
     if (name === NOTES_TOOL.name && s.notes) return callNotes(s)
@@ -298,6 +302,18 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any,
           }
         }
       }
+      // 经 more_tools 调代理的外部工具（ADR 0085）：由代理回答，不是的交回面板自己的 more_tools
+      const px =
+        name === MORE_TOOLS
+          ? serveProxied(
+              s.proxy,
+              deferred.map((t) => t.name),
+              args,
+              signal,
+              s.orch?.noteRoute,
+            )
+          : undefined
+      if (px) return reply(await px)
       if (name === MORE_TOOLS && deferred.length) {
         const r = moreTools(deferred, args)
         return reply('call' in r ? await safe(r.call, r.args) : r)
@@ -324,6 +340,7 @@ export function openAskBridge(o: {
   /** CLI 取了工具清单：直接列出的和收进 more_tools 的各自多少字 */
   onTools?: (listed: ToolChars[], deferred: ToolChars[]) => void
   hook?: BridgeHook
+  proxy?: ProxySession
 }) {
   const token = randomUUID()
   const s = { ...o, pending: new Set<(r: AskReply) => void>() }

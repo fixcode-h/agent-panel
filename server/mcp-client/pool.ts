@@ -89,6 +89,33 @@ export async function callMcpTool(
   }
 }
 
+/** 一个工具的定义（tools/list 的一项，原样转给 Agent 看用法） */
+export interface McpToolDef {
+  name: string
+  title?: string
+  description?: string
+  inputSchema?: unknown
+}
+
+/** 问工具表（外部服务代理开跑前用，ADR 0085）：和调用共用连接，下一次调用不用再握手；连不上、超时抛出原因 */
+export async function listMcpTools(sv: McpServer, cwd: string, timeoutMs = 15_000): Promise<McpToolDef[]> {
+  const { key, s } = await sessionFor(sv, cwd)
+  try {
+    const r = await s.request('tools/list', {}, timeoutMs)
+    return (Array.isArray(r?.tools) ? r.tools : [])
+      .filter((x: any) => x && typeof x.name === 'string')
+      .map((x: any) => ({
+        name: String(x.name),
+        ...(typeof x.title === 'string' && { title: x.title }),
+        ...(typeof x.description === 'string' && { description: x.description }),
+        ...(x.inputSchema && { inputSchema: x.inputSchema }),
+      }))
+  } catch (e) {
+    drop(key)
+    throw e
+  }
+}
+
 /** 面板退出、测试收尾时关掉全部连接 */
 export function closeMcpPool() {
   for (const k of [...slots.keys()]) drop(k)

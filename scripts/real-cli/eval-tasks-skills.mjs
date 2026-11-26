@@ -36,7 +36,7 @@ end
 return BagPanel
 `
 
-const SHOP_LUA = `local ShopPanel = {}
+export const SHOP_LUA = `local ShopPanel = {}
 
 function ShopPanel:Refresh()
     for index, item in ipairs(self.items) do
@@ -49,7 +49,7 @@ return ShopPanel
 `
 
 /** 自建工具「Lua 检查」：一个只用 node 的小脚本（云端没有 luac），每次运行记一行到 .git/lua-check.log（放 .git 里不算改动：放在工作区时 Agent 会把它当成越界改动删掉），check 照它判断有没有被用上 */
-const LUA_CHECK = `import { appendFileSync, readFileSync } from 'node:fs'
+export const LUA_CHECK = `import { appendFileSync, readFileSync } from 'node:fs'
 const files = process.argv.slice(2)
 appendFileSync('.git/lua-check.log', files.join(' ') + '\\n')
 let bad = 0

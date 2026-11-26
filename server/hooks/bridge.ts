@@ -47,6 +47,16 @@ export async function answerHook(h: BridgeHook, event: string, native: unknown):
       return { deny: true, reason: a.reason, ...(es?.deny ? { output: fillTpl(es.deny, { reason: a.reason }) } : {}) }
     // {event}：同一个面板事件可能来自 CLI 的几个原生事件（Claude Code 的 PostToolUse / PostToolUseFailure），回答要对上
     const nativeEvent = String((native as { hook_event_name?: unknown })?.hook_event_name ?? '')
+    // 工具网关改写（ADR 0084 第二期）：CLI 定义里有 rewrite 模板才交得出去，同时补的说明一起带上
+    if (a.rewrite && ev.data === 'tool.before' && es?.rewrite)
+      return {
+        rewrite: a.rewrite,
+        ...(a.context ? { context: a.context } : {}),
+        output: dropEmpty(
+          fillTpl(es.rewrite, { input: a.rewrite, text: a.context ?? '', event: nativeEvent }),
+          a.rewrite,
+        ),
+      }
     if (a.context && es?.context)
       return { context: a.context, output: fillTpl(es.context, { text: a.context, event: nativeEvent }) }
     return {}
@@ -54,6 +64,19 @@ export async function answerHook(h: BridgeHook, event: string, native: unknown):
     log.warn('agent', '钩子出错，不表态', { event, error: (e as Error).message })
     return {}
   }
+}
+
+/**
+ * 模板里没填上的说明（空字符串）去掉：不补说明时 CLI 也不会收到一段空的说明。
+ * keep 是改写后的工具输入，原样交出去，里面的空字段（命令的 description 为空）不动
+ */
+function dropEmpty(v: unknown, keep: unknown): unknown {
+  if (v === keep || !v || typeof v !== 'object' || Array.isArray(v)) return v
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .filter(([, x]) => x !== '')
+      .map(([k, x]) => [k, dropEmpty(x, keep)]),
+  )
 }
 
 /** 原生输入去掉回复文字：面板这一侧再丢一遍，转发脚本漏了也不会进到判断里 */

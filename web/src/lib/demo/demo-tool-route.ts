@@ -1,9 +1,11 @@
 /**
  * 演示版：对话里两行面板 find，带上「实际走的路」（ToolUse.route）——一行 Lua 查符号走 IDEA 的 lua_code（MCP），
- * 一行按文本找时 VS 的服务没开、跳过后面板按文本找。工具卡片耗时旁的小标和点开后的路由步骤都要有东西看
+ * 一行按文本找时 VS 的服务没开、跳过后面板按文本找；再加一行 Agent 自己跑的 rg，改道模式下面板改走 find（ADR 0084 第二期，
+ * 卡片上写「面板改走 find ·」）。工具卡片耗时旁的小标和点开后的路由步骤都要有东西看
  */
 import type { Task } from '@shared/schema'
 import { noteSkillUsage } from '@shared/skills/usage'
+import { LUA_REFS } from './demo-takeover'
 
 export function demoFindRows(task: Task, agentId: string) {
   task.messages.push({
@@ -51,6 +53,47 @@ export function demoFindRows(task: Task, agentId: string) {
           ],
           ms: 406,
         },
+      },
+      // 经面板代理的外部工具（ADR 0085）：调的是 more_tools，卡片按 idea · lua_debug_inspect 显示，小标写 via MCP
+      {
+        kind: 'other',
+        name: 'MCP',
+        label: 'panel · more_tools',
+        detail: '',
+        input: JSON.stringify({ name: 'idea/lua_debug_inspect', arguments: { action: 'stack' } }, null, 2),
+        output:
+          '{"count":2,"items":[{"frame":0,"fn":"BagPanel:OnSellAll","line":212},{"frame":1,"fn":"Button:OnClick","line":40}]}',
+        ms: 85,
+        route: {
+          capability: 'mcp',
+          served: [{ source: 'proxy:idea', label: 'idea · lua_debug_inspect', via: 'mcp' }],
+          steps: [{ source: 'proxy:idea', label: 'idea · lua_debug_inspect', via: 'mcp', outcome: 'used', ms: 80 }],
+          ms: 85,
+        },
+      },
+    ],
+    at: new Date().toISOString(),
+  })
+  const rg = 'rg -n "OnSellAll" Content/Script'
+  task.messages.push({
+    id: 'demo-find-rerouted',
+    role: 'agent',
+    agentId,
+    step: '',
+    text: '',
+    tools: [
+      {
+        kind: 'run',
+        label: rg,
+        detail: '',
+        input: rg,
+        output:
+          '[面板 find · idea · lua_code + 面板按文本找]\n声明：\nContent/Script/UI/BagPanel.lua:212: function BagPanel:OnSellAll()\n' +
+          '原命令按原文搜不到、面板另外找到 1 处：\nContent/Script/UI/ShopPanel.lua:41: Bag:Call("On" .. action)\n\n' +
+          'Content/Script/UI/BagPanel.lua:88:    self.BtnSell.OnClicked:Add(self, self.OnSellAll)\n' +
+          'Content/Script/UI/BagPanel.lua:212:function BagPanel:OnSellAll()',
+        ms: 240,
+        route: { ...LUA_REFS.route, from: rg },
       },
     ],
     at: new Date().toISOString(),

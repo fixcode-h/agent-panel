@@ -45,7 +45,7 @@ export const EN_AGENT_TOOLS: Record<string, string> = {
   开始收尾时: 'When wrapping up',
   收尾且改过文件: 'Wrapping up after edits',
   'Bug 模式开跑': 'Bug mode launch',
-  'vcs、test、build、search 或程序名': 'vcs, test, build, search or a program name',
+  'vcs、vcs-write、test、build、search 或程序名': 'vcs, vcs-write, test, build, search or a program name',
   '改 {v} 前': 'Before editing {v}',
   '读 {v} 前': 'Before reading {v}',
   '跑 {v} 命令': 'Running {v} commands',

@@ -189,6 +189,7 @@ import { demoFileIndex, demoFileIndexOverview, demoFileIndexUsage } from './demo
 import { demoMemo } from './demo-memo'
 import { demoBgJobs } from './demo-bg-jobs'
 import { demoToolGateway } from './demo-tool-gateway'
+import { demoMcpProxy } from './demo-mcp-proxy'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import { demoBrowserExt, demoStyles } from './demo-styles'
@@ -1851,6 +1852,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   }
   if (res === 'model-catalog') return demoModelCatalog(method, id, d.settings)
   if (res === 'tool-gateway') return demoToolGateway(method, seg, query, body)
+  if (res === 'mcp-proxy') return demoMcpProxy(method, seg, query, body)
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'speech') return demoSpeech(method, seg)
   if (res === 'tts') return demoTts(method, seg)

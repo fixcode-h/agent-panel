@@ -17,6 +17,17 @@ interface CommandCategory {
 /** 内置的几类：类别名就是条件里写的值 */
 export const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
   vcs: { programs: ['git', 'p4', 'svn', 'hg'] },
+  // 会改版本库或工作区的版本管理命令：project-vcs 只在这时推。开工先跑的 git status / log / diff 不算，
+  // 不然每个对话第一条命令就把整份 project-vcs 推进去（2026-11-26 Flash 实测：6 个对话全在 git status 上推了）
+  'vcs-write': {
+    programs: [],
+    subs: {
+      git: /^(commit|push|merge|rebase|reset|checkout|switch|stash|cherry-pick|revert|tag|am|apply|restore|rm|mv|clean|pull|worktree)\b/,
+      p4: /^(edit|add|delete|submit|revert|shelve|unshelve|integrate|resolve|move|reopen|sync|change)\b/,
+      svn: /^(commit|ci|update|up|revert|switch|merge|add|delete|rm|move|mv)\b/,
+      hg: /^(commit|ci|push|pull|merge|update|up|rebase|revert|strip|shelve)\b/,
+    },
+  },
   test: {
     programs: ['jest', 'vitest', 'mocha', 'pytest', 'ctest', 'phpunit', 'rspec', 'busted', 'playwright'],
     subs: {

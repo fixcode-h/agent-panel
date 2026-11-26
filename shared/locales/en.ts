@@ -47,6 +47,8 @@ import { EN_PREFS } from './en/prefs.ts'
 import { EN_FILE_INDEX } from './en/file-index.ts'
 import { EN_TOOLS } from './en/tools.ts'
 import { EN_TOOL_GATEWAY } from './en/tool-gateway.ts'
+import { EN_TOOL_TAKEOVER } from './en/tool-takeover.ts'
+import { EN_MCP_PROXY } from './en/mcp-proxy.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_FOLD_BAR } from './en/fold-bar.ts'
@@ -82,6 +84,7 @@ import { EN_GRAPH_CANVAS } from './en/graph-canvas.ts'
 import { EN_MODEL_CATALOG } from './en/model-catalog.ts'
 import { EN_GRANTS } from './en/grants.ts'
 import { EN_CUSTOM_TOOLS } from './en/custom-tools.ts'
+import { EN_VERIFY_APPLY } from './en/verify-apply.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -107,6 +110,8 @@ export const EN: Record<string, string> = {
   ...EN_FILE_INDEX,
   ...EN_TOOLS,
   ...EN_TOOL_GATEWAY,
+  ...EN_TOOL_TAKEOVER,
+  ...EN_MCP_PROXY,
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
   ...EN_FOLD_BAR,
@@ -170,4 +175,5 @@ export const EN: Record<string, string> = {
   ...EN_SHEET_LOOK,
   ...EN_GRANTS,
   ...EN_CUSTOM_TOOLS,
+  ...EN_VERIFY_APPLY,
 }

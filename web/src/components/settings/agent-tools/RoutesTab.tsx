@@ -12,6 +12,7 @@ import { useData } from '@/lib/data'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Select } from '@/components/ui/input'
 import { Group, Row } from '../parts'
+import { ExposureGroup } from './ExposureGroup'
 
 const STATE_LOOK: Record<
   CapabilityView['routes'][number]['state'],
@@ -29,9 +30,17 @@ const PARALLEL_LABEL: Record<string, () => string> = {
   unknown: () => t('没实测'),
 }
 
+/** CLI 定义 takeover 的几项（shared/tool-gateway/takeover-spec.ts）：能做到的标绿，做不到或没实测的灰 */
+const TAKEOVER_LABELS: { id: 'rewrite' | 'serve' | 'hideBuiltin' | 'mcpOnlyPanel'; label: () => string }[] = [
+  { id: 'rewrite', label: () => t('改写') },
+  { id: 'serve', label: () => t('代答') },
+  { id: 'hideBuiltin', label: () => t('关自带工具') },
+  { id: 'mcpOnlyPanel', label: () => t('只用面板的 MCP') },
+]
+
 /**
- * 「工具路由」页签（最小版）：网关模式（关闭 / 观察）、能力表只读显示接管哪些调用和各条路的状态，
- * 以及各 CLI 支不支持一条回复里发几个调用。改道、拖动排序、停用某条路第二期再做
+ * 「工具路由」页签：网关模式（关闭 / 观察 / 改道，默认观察）、能力表只读显示接管哪些调用和各条路的状态，
+ * 以及各 CLI 能做到哪一步（一条回复发几个调用、CLI 定义的 takeover）。拖动排序、停用某条路以后再做
  */
 export function RoutesTab() {
   const { projects, clis } = useData()
@@ -64,9 +73,9 @@ export function RoutesTab() {
       </p>
       {error && <p className="pt-2 text-body text-danger">{error}</p>}
       <Group title={t('网关')}>
-        <Row title={t('改道')} desc={cur?.hint}>
+        <Row title={t('网关模式')} desc={cur?.hint}>
           <Select
-            aria-label={t('改道')}
+            aria-label={t('网关模式')}
             value={settings?.mode ?? ''}
             onChange={(e) => void setMode(e.target.value)}
             options={(settings?.modes ?? []).filter((m) => m.available).map((m) => ({ value: m.id, label: m.label }))}
@@ -118,12 +127,27 @@ export function RoutesTab() {
         </Group>
       ))}
       <Group title={t('各 CLI 能做到哪一步')}>
-        {clis.map((c) => (
-          <Row key={c.id} title={c.name} desc={t('一条回复里发几个工具调用')}>
-            <span className="text-body text-muted">{PARALLEL_LABEL[getCli(c.id)?.parallelTools ?? 'unknown']()}</span>
-          </Row>
-        ))}
+        {clis.map((c) => {
+          const def = getCli(c.id)
+          return (
+            <Row
+              key={c.id}
+              title={c.name}
+              desc={t('一条回复里发几个工具调用：{v}', { v: PARALLEL_LABEL[def?.parallelTools ?? 'unknown']() })}
+            >
+              <span className="flex flex-wrap justify-end gap-1.5" data-takeover={c.id}>
+                {TAKEOVER_LABELS.map((x) => (
+                  <Badge key={x.id} tone={def?.takeover?.[x.id] ? 'success' : 'neutral'}>
+                    {x.label()}
+                    {!def?.takeover?.[x.id] && <span className="text-subtle"> · {t('否')}</span>}
+                  </Badge>
+                ))}
+              </span>
+            </Row>
+          )
+        })}
       </Group>
+      <ExposureGroup projectId={projectId} />
     </div>
   )
 }

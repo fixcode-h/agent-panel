@@ -11,6 +11,7 @@ import { getLang, t } from './i18n.ts'
 import { CliAuth } from './accounts.ts'
 import { CliContextBase } from './context-breakdown.ts'
 import { HooksSpec } from './hooks/index.ts'
+import { CliTakeover, DEFAULT_TAKEOVER } from './tool-gateway/takeover-spec.ts'
 import { CliTrust } from './cli/trust.ts'
 import { GalleryOverlap, GallerySpec } from './cli/gallery.ts'
 import { ConfigSetting } from './cli/config-settings.ts'
@@ -717,6 +718,8 @@ export const CliSpec = z.object({
   trust: CliTrust.optional(),
   /** 钩子（ADR 0049）：结束前怎么问面板（见 shared/hooks/index.ts）；不写表示这个 CLI 只用一轮结束后的提醒兜底 */
   hooks: HooksSpec.optional(),
+  /** 工具网关能接管到哪一步（改写、代答、关自带工具、只用面板的 MCP，见 shared/tool-gateway/takeover-spec.ts）；没实测的按保守值 */
+  takeover: CliTakeover.default(DEFAULT_TAKEOVER),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),
   /** 启动新会话前探测项目里的远程 MCP，卡住时在对话里提示；不写表示不探测 */
@@ -938,6 +941,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     })),
     mcp: spec.mcp,
     hooks: spec.hooks,
+    takeover: spec.takeover,
     trust: spec.trust,
     mcpStore: spec.mcpStore,
     mcpProbe: spec.mcpProbe,

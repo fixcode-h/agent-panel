@@ -7,6 +7,8 @@
  */
 import { z } from 'zod'
 import { t } from '../i18n.ts'
+import { VerifyRun } from './verify/types.ts'
+import { ToolRoute } from '../capability-router/tool-route.ts'
 
 /** 统一的调用类别：由 CLI 定义的 hooks.toolNames 归类，面板工具、别家 MCP 工具另认 */
 export const CALL_KINDS = ['read', 'edit', 'shell', 'mcp', 'panel', 'other'] as const
@@ -40,11 +42,16 @@ export interface ToolCall {
   /** mcp 才有：服务名和去掉前缀的工具名 */
   server?: string
   mcpTool?: string
+  /** 经面板代理的外部工具（Agent 通过 more_tools 调的，ADR 0085） */
+  proxied?: boolean
   /** 面板工具去掉前缀的名字 */
   panel?: string
 }
 
-/** 网关的决定（设计稿 5.2）：观察模式下真实决定只有 pass / deny，其余三种只出现在 wouldRoute 里 */
+/**
+ * 网关的决定（设计稿 5.2）：观察模式下真实决定只有 pass / deny，其余三种只出现在 wouldRoute 里；
+ * 改道模式（第二期）下查找会真的 rewrite / serve
+ */
 export const GATEWAY_DECISIONS = ['pass', 'rewrite', 'serve', 'redirect', 'deny'] as const
 export type GatewayDecision = (typeof GATEWAY_DECISIONS)[number]
 
@@ -53,7 +60,7 @@ export const CAPABILITY_IDS = ['find', 'verify', 'read-asset', 'apply'] as const
 
 /**
  * 网关模式：off 不装钩子也不记；observe 每次调用都过网关、记录、算 wouldRoute，但不真的改道；
- * enforce（真的改道）第二期再开放，枚举先预留，设置页不给选
+ * enforce 真的改道（第二期：搜索命令和 CLI 自带的按内容搜改走 find）。默认仍是 observe：用户要先看一阵调用记录再打开（2026-11-26）
  */
 export const GATEWAY_MODES = ['off', 'observe', 'enforce'] as const
 export type GatewayMode = (typeof GATEWAY_MODES)[number]
@@ -68,11 +75,20 @@ export const GATEWAY_MODE_DEFS: { id: GatewayMode; label: () => string; hint: ()
     hint: () => t('只记录「能改到哪」，不真的改；看过调用记录再打开'),
     available: true,
   },
-  { id: 'enforce', label: () => t('改道'), hint: () => t('按能力表真的改道（第二期开放）'), available: false },
+  {
+    id: 'enforce',
+    label: () => t('改道'),
+    hint: () => t('搜索命令和自带的按内容搜改走面板的查找，结果是面板和原命令的并集；拿不准的照原样跑'),
+    available: true,
+  },
 ]
 
 /** 数据目录 hooks.json 里网关这一段（和内置钩子的开关存在一起，见 shared/hooks/defs.ts 的 HooksData） */
-export const GatewaySettings = z.object({ mode: z.enum(GATEWAY_MODES).default(DEFAULT_GATEWAY_MODE) })
+export const GatewaySettings = z.object({
+  mode: z.enum(GATEWAY_MODES).default(DEFAULT_GATEWAY_MODE),
+  /** 外部 MCP 服务改由面板代理（ADR 0085）：默认开，关掉时外部服务照旧直接挂在 CLI 上 */
+  mcpProxy: z.boolean().default(true),
+})
 export type GatewaySettings = z.infer<typeof GatewaySettings>
 
 /** 打开改道时会改到哪（只是推算，观察模式不执行） */
@@ -102,15 +118,23 @@ export const CallRecord = z.object({
   kind: z.enum(CALL_KINDS),
   /** 命令或路径（截短） */
   summary: z.string(),
+  /** 外部 MCP 工具：服务名、工具名；proxied 是经面板代理调的（ADR 0085），没有是 CLI 直接调的 */
+  mcp: z.object({ server: z.string(), tool: z.string(), proxied: z.boolean().optional() }).optional(),
   /** 原调用的输入（JSON，截短），点开一行时看 */
   input: z.string(),
   category: z.enum(COMMAND_CATEGORIES).optional(),
   segments: z.number().optional(),
   /** 这次调用归哪个能力（直接调 find、request_build 也算），筛选用 */
   capability: z.enum(CAPABILITY_IDS).optional(),
-  /** 实际的决定：观察模式下只有 pass / deny */
+  /** 实际的决定：观察模式下只有 pass / deny；改道模式下查找可能是 rewrite / serve */
   decision: z.enum(GATEWAY_DECISIONS),
   wouldRoute: WouldRoute.optional(),
+  /** 改写后的输入（JSON，截短）：decision 为 rewrite 时才有，原输入在 input */
+  rewritten: z.string().optional(),
+  /** 改道时面板实际走的路（和工具卡片上的 ToolUse.route 同一份）；改道模式下拿不准放行的也记走过的路 */
+  route: ToolRoute.optional(),
+  /** 改道模式下这次为什么照原样放行（拿不准、面板没有多出来的……） */
+  takeoverWhy: z.string().optional(),
   /** 哪个守卫或钩子拒绝的（builtin:<id> 或用户钩子 id） */
   denyBy: z.string().optional(),
   /** 这次补充说明来自哪些钩子（builtin:<id> 或用户钩子 id）和字数 */
@@ -130,5 +154,7 @@ export const CallRecord = z.object({
   serial: z.boolean().optional(),
   /** 网关自己出错（已放行） */
   error: z.string().optional(),
+  /** 面板替 Agent 跑的校验（ADR 0086）：改完自动跑的那一行，或改道代答时跑的自建工具 */
+  verify: VerifyRun.optional(),
 })
 export type CallRecord = z.infer<typeof CallRecord>

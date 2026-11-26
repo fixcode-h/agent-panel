@@ -98,7 +98,7 @@ const tool = (
   paths: [],
   panel,
 })
-const ctx = { customTools: [{ id: 'lua-check', name: 'Lua 检查', sigs: ['luac'] }] }
+const ctx = { customTools: [{ id: 'lua-check', name: 'Lua 检查', sigs: ['luac'] }], build: 'parent' as const }
 const cli = { cli: 'claude', spec: { searchTools: ['Grep', 'Glob'] } }
 
 test('认调用和能力推算：搜索改走 find，管道不改道，自建工具、读资源、UE 编译各归其位，被拒绝的不算', () => {
@@ -121,7 +121,7 @@ test('认调用和能力推算：搜索改走 find，管道不改道，自建工
   assert.equal(bare.kind, 'mcp')
   assert.equal(classifyCall(tool('any', 'whatever', {}), cli).kind, 'other')
   // 自建工具同一个程序 → custom_tool；没有对应自建工具的 luac -p 只归 verify
-  assert.equal(route(tool('shell', 'Bash', { command: 'luac -p a.lua' })).wouldRoute?.to, 'custom_tool:Lua 检查')
+  assert.equal(route(tool('shell', 'Bash', { command: 'luac -p a.lua' })).wouldRoute?.to, 'custom_tool:lua-check')
   const noTool = decide(
     classifyCall(tool('shell', 'Bash', { command: 'luac -p a.lua' }), cli),
     { customTools: [] },

@@ -32,7 +32,9 @@ const SAMPLE: Record<string, { taskId: string; title: string; at: string; trigge
   'verification-before-completion': [
     { taskId: 'demo-task-1', title: '背包出售按钮没反应', at: AT(1), trigger: 'phase finishing', tokens: 1010 },
   ],
-  'project-vcs': [{ taskId: 'demo-task-3', title: '提交前整理改动', at: AT(40), trigger: 'command vcs', tokens: 1690 }],
+  'project-vcs': [
+    { taskId: 'demo-task-3', title: '提交前整理改动', at: AT(40), trigger: 'command vcs-write', tokens: 1690 },
+  ],
 }
 
 const catalog = () => skillCatalog([builtinSkillSource, PLUGIN], overrides)
