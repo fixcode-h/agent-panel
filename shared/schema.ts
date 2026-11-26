@@ -8,6 +8,7 @@ import { EndTurnRecord } from './turn-end.ts'
 import { ConvBudget, TaskRuntimeFields } from './tasks/runtime-schema.ts'
 import { RolePlugins } from './role-plugins.ts'
 import { ModelOverride } from './tasks/run.ts'
+import { NeedItem } from './run/need-item.ts'
 import { ContextParts, ContextSnapshot } from './context-breakdown.ts'
 import type { ProjectProposal } from './projects/init.ts'
 import { AskQuestion, TaskRequest } from './tasks/request.ts'
@@ -1850,6 +1851,8 @@ export const TaskRun = z.object({
   state: z.record(z.string(), RunStateEntry).default({}),
   /** 节点之间的消息 */
   messages: z.array(RunMessage).default([]),
+  /** 需求原话对照表：用户原话拆成的条目和各节点的标记（shared/run/needs.ts） */
+  needs: z.array(NeedItem).default([]),
 })
 export type TaskRun = z.infer<typeof TaskRun>
 

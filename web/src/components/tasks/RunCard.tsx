@@ -19,6 +19,7 @@ import { RouteProvider } from './route-context'
 import { StepSection } from './StepSection'
 import { Segmented } from '@/components/ui/segmented'
 import { t } from '@shared/i18n'
+import { NeedsButton, RunNeeds } from './RunNeeds'
 
 // 流程图画布（@xyflow）只在切到「流程图」时才加载，看输出的时候不拖慢打开
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -92,9 +93,14 @@ export function runState(task: Task, run: number) {
 
 /** 这张卡片用到的内容：节点状态、结论和时间变了才需要重画 */
 const runSig = (task: Task, run: number) =>
-  `${task.status}|${topSteps(task, run)
+  `${task.status}|${runNeeds(task, run)
+    .map((n) => `${n.id}${n.marks.length}`)
+    .join(',')}|${topSteps(task, run)
     .map((s) => `${s.id}:${s.status}:${s.verdict}:${s.endedAt}:${s.title}`)
     .join(',')}`
+
+/** 这次运行的需求原话对照表（shared/run/needs.ts） */
+const runNeeds = (task: Task, run: number) => task.runs?.find((r) => r.id === run)?.needs ?? []
 
 /** 这次运行花的工夫：各个节点的执行时间相加 */
 function runDuration(task: Task, run: number, now: number) {
@@ -126,6 +132,7 @@ function RunCardBase({
   const state = runState(task, run)
   const done = steps.filter((s) => s.status === 'done' || s.status === 'skipped').length
   const time = runDuration(task, run, now)
+  const needs = runNeeds(task, run)
   // 组件库「计划 · 工作流」：浅底卡片，头一行写工作流和进度，下面一排节点胶囊（完成绿、运行中强调、没开始灰）
   const nodes: FlowNode[] = steps.map((s) => ({
     id: s.id,
@@ -171,6 +178,7 @@ function RunCardBase({
         </span>
       </span>
       {nodes.length > 0 && <FlowStrip nodes={nodes} onPick={onStep} />}
+      {needs.length > 0 && <NeedsButton needs={needs} name={name} />}
     </div>
   )
 }
@@ -196,6 +204,7 @@ export function RunFlow({ task, run }: { task: Task; run: number }) {
       {/* 节点派出的子任务画成和对话里一样的派单行（只读：工作流里没有分诊可改派） */}
       <RouteProvider task={task}>
         <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
+          <RunNeeds needs={runNeeds(task, run)} />
           {steps.map((s) => {
             const msgs = task.messages.filter(
               (m) => m.role !== 'user' && (m.step === s.id || m.step.startsWith(s.id + '/')),

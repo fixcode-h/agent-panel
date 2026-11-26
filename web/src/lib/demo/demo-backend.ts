@@ -210,6 +210,7 @@ import {
   demoSuggest,
 } from './demo-processes'
 import { demoAlerts, demoPlans, seedDemoUsage } from './demo-task-samples'
+import { demoNeeds } from './demo-needs'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -4054,6 +4055,7 @@ async function seedTasks(d: Db) {
     )
     // 工作流运行跑完就结束了（补充要求从父对话交），不再追加一轮
     await done
+    demoNeeds(task)
     back(task, 25)
   }
   // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的

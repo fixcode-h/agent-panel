@@ -167,8 +167,9 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
   write_state: {
     title: '写入共享状态',
     summary: '写一个共享键，并行节点都能看到。',
-    useWhen: '同步接口约定、文件分工、进度和结论时',
-    avoidWhen: '不要覆盖别人刚写的，先 read_state',
+    useWhen:
+      '同步接口约定、文件分工、进度和结论时；理解需求的节点把用户原话拆成需求对照（needs），之后每个节点做完逐条标落地、延期或不做',
+    avoidWhen: '不要覆盖别人刚写的，先 read_state；子任务不标需求对照，写进 submit_result',
     group: G.dispatch,
     effects: ['edit'],
   },

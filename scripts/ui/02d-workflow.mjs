@@ -94,6 +94,46 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
+  // 需求原话对照表（复盘 2026-11-26 §5-1）：演示里「到货提醒」的运行拆了 3 条，落地 2 条、1 条没落地。
+  // 卡片底下一行写进度（有没落地的标黄），点开弹窗看整张表；点这一行只开弹窗，不顺带切到流程图
+  {
+    const info = await p.evaluate(() => {
+      const db = JSON.parse(localStorage.getItem('agent-panel-demo-v3') ?? '{}')
+      const task = (db.tasks ?? []).find((x) => x.mode === 'workflow' && x.title.includes('商品详情页增加'))
+      return task ? { id: task.id, projectId: task.projectId } : null
+    })
+    if (!info) errors.push('需求对照：演示数据里没有「到货提醒」工作流任务，用例前提不成立')
+    else {
+      await p.goto(`${base}#/projects/${encodeURIComponent(info.projectId)}/${encodeURIComponent(info.id)}`)
+      await settle(p)
+      const line = p.locator('[data-needs-line]').first()
+      const shown = await line.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!shown) errors.push('需求对照：工作流卡片底下没有需求对照那一行')
+      else {
+        const text = ((await line.innerText()) || '').replace(/\s+/g, ' ')
+        if (!text.includes('2/3 已落地') || !text.includes('1 条未落地'))
+          errors.push(`需求对照：卡片上的进度不对，实际「${text}」`)
+        await check(p, '需求对照-卡片', ['需求对照'])
+        await line.click()
+        await check(p, '需求对照-弹窗', [
+          '到货时发短信通知',
+          '未落地',
+          'ProductDetail.tsx 缺货分支显示按钮',
+          '识别现场与方案',
+        ])
+        const flowTab = p.getByRole('tab', { name: '流程图' }).first()
+        if ((await flowTab.getAttribute('aria-selected').catch(() => null)) === 'true')
+          errors.push('需求对照：点需求那一行顺带切到了流程图')
+        await p.keyboard.press('Escape')
+        await settle(p)
+      }
+      await backToTask()
+    }
+  }
+
   // 对话里的工作流卡片：点它和标题栏点「流程图」一样就地切到流程图，不另开运行页（用户 2026-10-30 要求）
   {
     const card = p.locator('[role="button"][data-run]').filter({ hasText: '查看流程图' }).first()
