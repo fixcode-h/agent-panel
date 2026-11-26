@@ -52,6 +52,7 @@ export const EN_STAGE_REPORT: Record<string, string> = {
     'Nothing was set to "{label}" in the previous step, so this step is skipped.',
   // 需求原话对照表（web/src/components/tasks/RunNeeds.tsx）
   需求对照: 'Requirements check',
+  '{by} 拆出，还没有节点标记': 'Split out by {by}, not marked by any node yet',
   未落地: 'Not done',
   已落地: 'Done',
   延期: 'Deferred',

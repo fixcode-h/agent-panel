@@ -97,6 +97,10 @@ function NeedList({ needs }: { needs: readonly NeedItem[] }) {
             <span className="mt-0.5 shrink-0 font-mono text-xs text-subtle">{n.id}</span>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className={cn('text-body text-fg', st === 'dropped' && 'text-subtle line-through')}>{n.text}</span>
+              {/* 还没人标过的：写清是哪个节点拆出来的，用户知道该去问谁 */}
+              {!last && n.by && (
+                <span className="text-footnote text-subtle">{t('{by} 拆出，还没有节点标记', { by: n.by })}</span>
+              )}
               {last && (
                 <span className="text-footnote text-subtle" title={n.marks.map((m) => `${m.by}：${m.note}`).join('\n')}>
                   {last.by}
