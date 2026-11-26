@@ -129,6 +129,7 @@
     "server/auth",
     "server/bridge",
     "server/comfy",
+    "server/custom-tools/host",
     "server/docs/root-cache",
     "server/download",
     "server/exec/find-command",
