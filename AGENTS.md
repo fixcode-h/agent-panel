@@ -108,7 +108,7 @@ npm run format       # 格式化（配置在 config/.prettierrc.json；只格式
 - 如果在 `main` 上发现未提交改动，先确认这些改动是谁的、要不要带走；不要用 `git checkout .`、`git reset --hard` 或覆盖式 stash 把它们清掉。
 - **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。多个助手可能同时往 `dev` 推，推送前先 `git fetch origin dev && git merge origin/dev`。**禁止 rebase**（含 `git pull --rebase`），除非用户明确要求。
 - **收尾默认推送 `dev` 并合并到主干**：开发完成、验证通过后推送 `dev`；推送成功后用 GitHub CLI 建 PR（`gh pr create --base main --head dev`，已有 PR 就复用），等 PR 上的检查通过后普通合并（`gh pr merge <PR> --merge`）。PR 冲突、检查失败或分支保护拦截时停下来报告，不 `--admin`、不绕过检查、不直接往 `main` 推。项目设置「推送到远端」选了不推送时不推送、也不合并。
-- 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、代码检查、解析测试、端到端测试、构建、界面检查；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
+- 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、代码检查、解析测试、端到端测试、构建、界面检查；`dev` → `main` 的 PR 不再重跑，PR 上显示的就是推送 `dev` 时那次检查的结果（同一个提交）；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
   - 推送到 `dev`：**只检查，不出包**，不会出现出包的步骤。
   - 合并到 `main`：检查通过后出包，发布正式版（Latest）到 GitHub Releases，标签 `v<主>.<次>.<修订号>`，修订号每发一版 +1（`scripts/next-version.mjs`），提升次版本号后从 0 重新数
   - 包由 `scripts/package.mjs` 生成：正式版前端 + 打成单文件的服务端 `server.mjs` + 启动脚本，解压后只需要 Node.js 22+。
