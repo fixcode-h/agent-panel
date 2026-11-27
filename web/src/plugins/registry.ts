@@ -3,7 +3,7 @@ import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import * as jsxRuntime from 'react/jsx-runtime'
 import { extendDict, getLang } from '@shared/i18n'
-import { setEnabledPlugins, setInstalledPlugins } from '@shared/plugins/index'
+import { setEnabledPlugins, setInstalledPlugins, setPluginActions } from '@shared/plugins/index'
 import type { PluginConfig, PluginInfo } from '@shared/plugins/types'
 import { taskPlugin } from '@shared/task'
 import type { Task } from '@shared/schema'
@@ -110,6 +110,7 @@ export async function loadPlugins() {
   const r = await request<{ plugins: PluginRow[]; broken: State['broken']; market: string }>('/plugins')
   setInstalledPlugins(r.plugins.map((p) => p.manifest))
   setEnabledPlugins(Object.fromEntries(r.plugins.map((p) => [p.manifest.id, { enabled: p.enabled, config: p.config }])))
+  setPluginActions(r.plugins.map((p) => ({ id: p.manifest.id, actions: p.actions })))
   const web = new Map<string, WebPlugin>()
   const webErrors = new Map<string, string>()
   await Promise.all(r.plugins.map(loadDict))

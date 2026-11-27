@@ -192,4 +192,6 @@ export interface PluginInfo {
   hasCode: boolean
   /** 能退回的上一版的版本号（升级时留着旧版），没有为空 */
   rollback: string
+  /** 开着时登记的面板动作（经 app_do 调）：对话里那一行按它显示插件名，关着时为空 */
+  actions?: { name: string; title: string }[]
 }

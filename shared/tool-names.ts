@@ -1,5 +1,5 @@
 import { t } from './i18n.ts'
-import { mcpPlugin, pluginById, pluginToolNames } from './plugins/index.ts'
+import { actionPlugin, mcpPlugin, pluginById, pluginToolNames } from './plugins/index.ts'
 import { externalToolTitle } from './mcp-catalog/tool-titles.ts'
 
 /**
@@ -139,4 +139,24 @@ export function toolListTitle(label: string): string {
   const zh = parts.map((s) => (s ? toolTitle(s) : s))
   // 一个都不认识（关键词搜索、别家的工具）就原样显示，不改分隔符
   return zh.some((s, i) => s !== parts[i]) ? zh.join(t('、')) : label
+}
+
+/**
+ * 面板自己的动作组（server/app-actions 下的文件名，server/app-actions/app-actions.test.ts 核对）。
+ * 只有这几组算「操作软件」：插件登记的动作（表格的 table.query 等）也走 app_do，但不是操作面板本身，要单独标插件名
+ */
+export const PANEL_ACTION_GROUPS = ['task', 'project', 'settings', 'ui']
+
+/**
+ * app_do / app_actions 那一行的标题和副标题：面板自己的动作叫「操作软件」「查看软件操作」；
+ * 插件的动作标题写插件名（「表格」），副标题写动作的显示名，认不出插件（关着、没装）时写「插件操作」和动作名
+ */
+export function appActionTitle(tool: 'app_do' | 'app_actions', action: string): { title: string; label: string } {
+  const group = action.split('.')[0]
+  if (!action || PANEL_ACTION_GROUPS.includes(group)) return { title: panelToolTitle(tool), label: action }
+  const owner = actionPlugin(action)
+  const name = owner?.plugin ? t(owner.plugin.name) : ''
+  if (tool === 'app_actions')
+    return { title: name ? t('查看{name}的操作', { name }) : t('查看插件操作'), label: name ? '' : action }
+  return { title: name || t('插件操作'), label: owner?.title ? t(owner.title) : action }
 }
