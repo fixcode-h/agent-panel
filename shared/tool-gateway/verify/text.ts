@@ -5,6 +5,7 @@
 import { clipText, type ToolRunResult } from '../../custom-tools/text.ts'
 import type { ClaimCtx } from '../../capability-router/capabilities.ts'
 import type { VerifyRun } from './types.ts'
+import { SERVED_HEAD } from '../takeover-spec.ts'
 
 /** 一次校验跑完：记录里的那份 + 给 Agent 看的报错和尾部 */
 export interface VerifyOutput {
@@ -63,7 +64,7 @@ export function serveText(command: string, outs: VerifyOutput[], how: { useWhen?
   const id = r?.tool ?? ''
   const call = `custom_tool action=run id=${id}${how.arg ? ` args={"${how.arg}": "<要查的文件>"}` : ''}`
   const when = how.useWhen ? `（${how.useWhen.slice(0, 80)}）` : ''
-  const head = `结果（面板）：你要跑的 ${command.trim().slice(0, 200)} 由面板改用项目的${r ? who(r) : '自建工具'}跑了，不用再跑原命令。以后遇到同样的事${when}直接调 ${call}，改完对得上的文件面板也会自动跑它。`
+  const head = `${SERVED_HEAD}：你要跑的 ${command.trim().slice(0, 200)} 由面板改用项目的${r ? who(r) : '自建工具'}跑了，不用再跑原命令。以后遇到同样的事${when}直接调 ${call}，改完对得上的文件面板也会自动跑它。`
   const body = outs.map((o) =>
     o.run.outcome === 'ok' ? `查了 ${o.run.files.join('、') || '项目'}：通过，没有报错。` : oneNote(o),
   )

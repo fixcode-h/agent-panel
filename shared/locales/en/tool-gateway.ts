@@ -103,4 +103,22 @@ export const EN_TOOL_GATEWAY: Record<string, string> = {
   '最近 {n} 次搜索里改道能接 {m} 次，可以给这个项目打开改道了':
     'Rerouting could take {m} of the last {n} searches; you can turn on rerouting for this project',
   '最近 {n} 次搜索里改道能接 {m} 次': 'Rerouting could take {m} of the last {n} searches',
+  '外部服务（VS / IDEA）': 'External services (VS / IDEA)',
+  面板按文本补: 'Panel text search fills in',
+  '文件索引 + rg': 'File index + rg',
+  '没查到再问 VS / IDEA': 'Ask VS / IDEA only if nothing found',
+  查找按类型分流: 'Search routing by file type',
+  '例如：': 'e.g.',
+  '扩展名：': 'Extensions:',
+  等所有不是代码的扩展名: 'and every other non-code extension',
+  'Lua 代码': 'Lua code',
+  '先问 IDEA 的 lua_code（EmmyLua 按语义查），再用面板按文本补字符串调用':
+    "Ask IDEA's lua_code first (EmmyLua, semantic), then panel text search fills in string calls",
+  'C++ 代码（项目和引擎）': 'C++ code (project and engine)',
+  '先问 VS 的 UEToVS（项目和引擎的符号索引），查到就不再按文本扫':
+    'Ask UEToVS in VS first (symbol index of project and engine); no text scan once it answers',
+  '其他文件（配置、数据、文档、资源）': 'Other files (config, data, docs, assets)',
+  '只走面板：先查文件索引，再用 rg；不问 VS、IDEA': 'Panel only: file index first, then rg; never asks VS or IDEA',
+  看不出类型: 'Unknown type',
+  '先走面板（索引 + rg），一条都没查到才问 VS、IDEA': 'Panel first (index + rg); asks VS / IDEA only if nothing found',
 }

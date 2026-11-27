@@ -5,13 +5,12 @@
  * 什么时候停（设计稿第 3.5 节）：
  * - 外部路查到了、且它说够了（符号、大纲默认够）就停；
  * - 引用（refs）外部路查到的是静态引用，还要用文本补一遍动态调用（Lua 的字符串调用、反射），两边合并，结果不比原来少；
- * - 语言推不出来（other）时外部路都试一遍再决定要不要文本补：C++ 和 Lua 里可能都有同名的
+ * - 先走哪条按类别定（categories.ts）：C++、Lua 先外部后文本；其他文件只走文本；看不出类型的先文本，没查到才挨个问外部路
  */
 import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { describeFind } from '../../../shared/capability-router/find/request.ts'
 import { formatHits, mergeHits } from '../../../shared/capability-router/find/hits.ts'
-import type { FindOutcome, FindRequest } from '../../../shared/capability-router/find/types.ts'
 import type { FindCodeRun } from '../../../shared/host/find-code.ts'
 import { projectIndex, type ProjectIndex } from '../../file-index/registry.ts'
 import { pluginFindSources } from '../../plugins/find-sources.ts'
@@ -19,6 +18,8 @@ import { route, toolRouteOf, type RouteSource } from '../router.ts'
 import { routeServers } from '../servers.ts'
 import { externalFinal, externalSource } from './external.ts'
 import { TEXT_SOURCE_ID, textSource } from './text-source.ts'
+import { findCategory } from '../../../shared/capability-router/find/categories.ts'
+import { orderSources } from './order.ts'
 
 export function findCodeRun(opts: {
   projectId: string
@@ -51,14 +52,10 @@ export function findCodeRun(opts: {
       ])
       const ctx = { projectId: opts.projectId, dirs }
       const external = specs.map((spec) => ({ spec, src: externalSource(spec, servers, ctx) }))
-      const sources: RouteSource<FindRequest, FindOutcome>[] = [
-        ...external.map((x) => x.src),
-        textSource(getIndex, relocate, { root: opts.workDir, exclude: opts.exclude }),
-      ]
-      // 语言不明时外部路都管（语言对不上的服务查不到就是空，不算错）
-      if (req.lang === 'other')
-        for (const x of external) x.src.accepts = (r) => x.spec.kinds.includes(r.kind) && x.spec.args(r) !== null
-      const order = sources.filter((s) => s.accepts(req)).sort((a, b) => a.rank - b.rank)
+      const text = textSource(getIndex, relocate, { root: opts.workDir, exclude: opts.exclude })
+      // 按这次查找的类别排路（shared/capability-router/find/categories.ts，用户 2026-11-27 定）：
+      // C++、Lua 先问登记了这一类的外部服务；其他文件只走面板；看不出类型的先走面板、没查到再问外部服务
+      const order = orderSources(findCategory(req.lang).order, external, text, req)
       const lastExternal = order.filter((s) => s.id !== TEXT_SOURCE_ID).at(-1)?.id
       const r = await route({
         capability: 'find',
@@ -67,14 +64,16 @@ export function findCodeRun(opts: {
         entry: opts.entry ?? 'find',
         what: describeFind(req),
         req,
-        sources,
+        sources: order,
         signal,
         isEmpty: (o) => !o.hits.length,
         enough: (s) => {
+          // 面板有结果就够了：外部路在它前面的已经查过，在它后面的（先走面板时）不用再问
           if (s.id === TEXT_SOURCE_ID) return true
-          const spec = external.find((x) => x.src === s)?.spec
+          const spec = external.find((x) => x.src.id === s.id)?.spec
           if (!spec || !externalFinal(spec, req)) return false
-          return req.lang !== 'other' || s.id === lastExternal
+          // 先走面板、面板没查到时外部服务挨个问：C++ 和 Lua 里都可能有同名的，问完再停
+          return findCategory(req.lang).order !== 'panel-first' || s.id === lastExternal
         },
       })
       const hits = mergeHits(r.outs.map((x) => x.out.hits))
@@ -88,7 +87,7 @@ export function findCodeRun(opts: {
       }
       return {
         text: formatHits(hits, req, notes),
-        route: toolRouteOf('find', sources as RouteSource<never, unknown>[], r),
+        route: toolRouteOf('find', order as RouteSource<never, unknown>[], r),
         hits,
       }
     } catch (e) {

@@ -14,7 +14,7 @@ import { searchUnits, type SearchUnit } from './takeover-segments.ts'
 import { inferLang } from '../capability-router/find/request.ts'
 import { hitLine } from '../capability-router/find/hits.ts'
 import { parseGrepTool, parseSearchCommand, type SearchSpec } from './search-args.ts'
-import type { CliTakeover } from './takeover-spec.ts'
+import { SERVED_HEAD, type CliTakeover } from './takeover-spec.ts'
 import type { ToolCall } from './types.ts'
 
 /**
@@ -104,15 +104,22 @@ export const normPath = (p: string) =>
 const IDENT = /^[A-Za-z_]\w*(?:(?:::|[.:])[A-Za-z_]\w*)*$/
 const hasExt = (p: string) => /\.[A-Za-z0-9]+$/.test(p.split('/').pop() ?? '')
 
+/** 通配末尾的扩展名：*.json、**\/*.lua、*.{h,cpp}；别的写法（a*.txt 也算 txt）取不准就不取 */
+function globExtsOf(g: string): string[] {
+  const m = /\*\.(\{[A-Za-z0-9,]+\}|[A-Za-z0-9]+)$/.exec(g)
+  return m ? m[1].replace(/[{}]/g, '').split(',').filter(Boolean) : []
+}
+
 /**
  * 交给 find 的请求：像名字的（标识符、A.B、A::B）查引用（外部服务给声明和静态引用，文本补动态的），其余按原文找。
  * paths 已换成相对工作目录的（服务端换），文件路径取它所在的目录做范围，扩展名从 -t / *.ext 来
  */
 export function findRequestOfSearch(s: SearchSpec, paths: string[], query = s.pattern): FindRequest {
   const under = [...new Set(paths.map((p) => (hasExt(p) ? p.split('/').slice(0, -1).join('/') : p)))].filter(Boolean)
-  const ext = [...new Set([...s.exts, ...s.include.flatMap((g) => /^\*\.([A-Za-z0-9]+)$/.exec(g)?.[1] ?? [])])].map(
-    (e) => e.toLowerCase(),
-  )
+  // 扩展名从 -t / *.ext 来，搜的是单个文件时也算它的扩展名：搜 a.json 不该先问 C++、Lua 的服务
+  const fileExts = paths.filter(hasExt).map((p) => p.split('.').pop()!)
+  const globExts = s.include.flatMap(globExtsOf)
+  const ext = [...new Set([...s.exts, ...globExts, ...fileExts].map((e) => e.toLowerCase()))]
   const base = {
     kind: IDENT.test(query) ? ('refs' as const) : ('text' as const),
     query,
@@ -221,5 +228,5 @@ export function serveText(o: { output: string; decls: FindHit[]; extras: FindHit
   const seen = (h: FindHit) => (h.line ? o.output.includes(`${h.file}:${h.line}`) : o.output.includes(h.file))
   const section = panelSection({ ...o, extras: o.extras.filter((h) => !seen(h)) })
   const body = o.output.trim() ? o.output.replace(/\s+$/, '') : '（原命令没有找到）'
-  return ['结果（面板）', section, body].filter(Boolean).join('\n')
+  return [SERVED_HEAD, section, body].filter(Boolean).join('\n')
 }

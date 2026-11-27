@@ -272,7 +272,7 @@ async function runAgent(
     if (x.kind === 'run' && task.projectId) noteCommandTime(task.projectId, x.input ?? x.label, x.ms)
   }
   // 按调用 id 找工具行，补晚到的结果和边跑边来的输出（tool-rows.ts）
-  const toolRows = createToolRows(endTool)
+  const toolRows = createToolRows(endTool, def.takeover?.denyMark)
   // 刚压缩完、还不知道压缩后多大：下一次报告上下文用量时补到这次压缩的工具调用上
   // 压缩那一行：一开始就转圈，压缩完成换成前后大小；不知道压缩后多大时等用量或细分补上
   const compaction = new CompactTracker(endTool, awaitingCompact(task.messages, agentId, step))

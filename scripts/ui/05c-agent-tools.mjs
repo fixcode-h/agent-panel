@@ -51,7 +51,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
 
   // 工具路由、调用记录两个页签（ADR 0084）和对话页：卡片上实际走的路、会话栏「技能」一行
   await p.getByRole('tab', { name: '工具路由' }).click()
-  await check(p, '设置-Agent工具-工具路由', ['各 CLI 能做到哪一步', '只用面板的 MCP'])
+  await check(p, '设置-Agent工具-工具路由', [
+    '各 CLI 能做到哪一步',
+    '只用面板的 MCP',
+    '查找按类型分流',
+    'C++ 代码（项目和引擎）',
+  ])
   // 一级页签（技能 / 工具路由 / 调用记录）要在「本页小节」（网关、查找……）上面，不能被挤到下面（2026-11-27）
   const top = async (name) => (await p.getByRole('tablist', { name }).boundingBox())?.y ?? -1
   const [pageTabs, toc] = [await top('Agent 工具'), await top('本页小节')]

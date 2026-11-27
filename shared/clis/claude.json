@@ -425,8 +425,9 @@
     "hideBuiltin": true,
     "mcpOnlyPanel": true,
     "mcpOnlyArgs": ["--strict-mcp-config"],
+    "denyMark": "^\\s*(?:Error:\\s*)?PreToolUse:\\S+ hook error:\\s*",
     "tools": { "Grep": "grep", "Glob": "glob" },
-    "why": "rewrite：PreToolUse 钩子回 permissionDecision=allow + updatedInput 换掉命令后照常执行（模板见 hooks.events.tool.before.rewrite；can_use_tool 的 updatedInput 面板也在用，但跳过确认时不发 can_use_tool，钩子每次都过）。serve：钩子 deny 的 permissionDecisionReason 原样交给模型。hideBuiltin：--disallowedTools（已在用）。mcpOnlyPanel：--strict-mcp-config。Grep 是 ripgrep 形状的输入，Glob 按名字找文件"
+    "why": "rewrite：PreToolUse 钩子回 permissionDecision=allow + updatedInput 换掉命令后照常执行（模板见 hooks.events.tool.before.rewrite；can_use_tool 的 updatedInput 面板也在用，但跳过确认时不发 can_use_tool，钩子每次都过）。serve：钩子 deny 的 permissionDecisionReason 原样交给模型。hideBuiltin：--disallowedTools（已在用）。mcpOnlyPanel：--strict-mcp-config。Grep 是 ripgrep 形状的输入，Glob 按名字找文件。denyMark：拒绝说明交回模型时前面带「PreToolUse:<工具> hook error: 」，工具结果标 is_error（2026-11-27 用户截图）"
   },
   "hooks": {
     "args": ["--settings", "{dir}/agent-panel-hooks.json"],

@@ -4,13 +4,17 @@
  */
 import type { ToolUse } from '../../shared/schema.ts'
 import type { CliEvent } from './parsers.ts'
+import { servedResult } from '../../shared/tool-gateway/takeover-spec.ts'
 
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
 
-/** endTool：结果到了，收掉运行中标记、记下耗时（runAgent 的那个） */
-export function createToolRows(endTool: (x: ToolUse) => void) {
+/**
+ * endTool：结果到了，收掉运行中标记、记下耗时（runAgent 的那个）。
+ * denyMark：CLI 交回钩子拒绝说明时加的前缀（CLI 定义 takeover.denyMark），面板代答的结果按它去掉、不标出错
+ */
+export function createToolRows(endTool: (x: ToolUse) => void, denyMark = '') {
   const toolsById = new Map<string, ToolUse>()
   /**
    * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
@@ -33,8 +37,11 @@ export function createToolRows(endTool: (x: ToolUse) => void) {
       // 工具的输出晚于调用到达，补到对应的那一行上
       const t = toolsById.get(ev.id)
       if (t) {
-        if (ev.output) t.output = ev.output
-        if (ev.failed) t.failed = true
+        // 面板代答（查找、校验）走的是钩子拒绝，CLI 报成出错：内容其实是结果，按正常输出显示（用户 2026-11-27 截图里标红）
+        const served = ev.failed && ev.output ? servedResult(ev.output, denyMark) : undefined
+        if (served !== undefined) t.output = served
+        else if (ev.output) t.output = ev.output
+        if (ev.failed && served === undefined) t.failed = true
         if (ev.exitCode !== undefined) t.exitCode = ev.exitCode
         if (ev.patch) t.input = ev.patch
         if (ev.detail !== undefined) t.detail = ev.detail

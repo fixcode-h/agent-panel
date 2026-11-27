@@ -1,5 +1,5 @@
 ---
-paths: shared/engine/prompt-parts.ts, shared/mcp-catalog/code-index.ts, shared/mcp-catalog/tool-params.ts, server/hooks/tool-after-hints.ts, server/mcp-catalog/code-index.ts, server/mcp-catalog/external-titles.ts, skills/project/**
+paths: shared/engine/prompt-parts.ts, shared/capability-router/find/**, server/capability-router/find/**, server/tool-gateway/takeover/**, shared/mcp-catalog/code-index.ts, shared/mcp-catalog/tool-params.ts, server/hooks/tool-after-hints.ts, server/mcp-catalog/code-index.ts, server/mcp-catalog/external-titles.ts, skills/project/**
 ---
 
 # 找代码的提示词（MCP 优先）
@@ -23,3 +23,15 @@ paths: shared/engine/prompt-parts.ts, shared/mcp-catalog/code-index.ts, shared/m
 - 规则：JetBrains IDE 的 MCP 服务器在调任何工具（含插件的 `lua_code`）之前先按调用里的 `projectPath`、请求头 `IJ_MCP_SERVER_PROJECT_PATH`、客户端 roots 定项目，开着多个项目又都没有时直接报 `Unable to determine the target project`，工具跑不到。提示词不再写「只有参数表里列了 projectPath 的工具才传」；报这个错时由工具后提醒（`server/hooks/tool-after-hints.ts` 的 `ideProjectHint`）按工作目录从报错的 `Currently open projects` 挑出路径让 Agent 带上重调，并记下来写进之后每轮的调用规矩，挑不出来就列编号让用户选。
 - 起因：#398 之后提示词按参数表只让带 projectPath 的工具传它，`lua_code` 的参数表里没有，Agent 不传，IDE 开着两个项目时整次失败（2026-11-23 用户截图）。
 - 防线：`server/hooks/tool-after-hints.test.ts`、`shared/mcp-catalog/ide-project.test.ts`、`shared/mcp-catalog/code-index.test.ts`。
+
+## 能力路由按目标类别选路，不一条路挨个试到底
+
+- 规则：查找按目标类别走（`shared/capability-router/find/categories.ts`）：项目和引擎的 C++ 先问 VS、Lua 先问 IDEA，给了扩展名但不是代码的（json、ini、csv……）只走面板（文件索引 + rg），看不出类型的先走面板、没查到才问外部服务。新能力有几条路时同样先按目标认类别再排路，不把所有外部服务挨个试一遍。
+- 起因：2026-11-27 用户截图：Grep `glob=*.json` 被改道成 find 后先调了 `uetovs·find_references` 和 `idea·lua_code` 才走面板，白等一秒多；当时语言推不出（other）就把外部路都试一遍。
+- 防线：`shared/capability-router/find/categories.test.ts`、`server/capability-router/find/order.test.ts`。
+
+## 代答结果走钩子拒绝，CLI 会标成出错
+
+- 规则：面板代答（拒绝说明里带结果）的开头统一用 `SERVED_HEAD`；CLI 加的拒绝前缀登记在 CLI 定义 `takeover.denyMark`，工具行按 `servedResult` 去掉前缀、不标红。
+- 起因：同一张截图里 OUT 显示成红色「PreToolUse:Grep hook error: 结果（面板）…」。
+- 防线：`shared/tool-gateway/served-result.test.ts`。

@@ -13,6 +13,7 @@ import { Badge, StatusDot } from '@/components/ui/badge'
 import { Select } from '@/components/ui/input'
 import { Group, Row } from '../parts'
 import { ExposureGroup } from './ExposureGroup'
+import { FindCategoriesGroup } from './FindCategoriesGroup'
 import { ProjectModeRow } from './ProjectModeRow'
 
 const STATE_LOOK: Record<
@@ -130,6 +131,7 @@ export function RoutesTab() {
           )}
         </Group>
       ))}
+      <FindCategoriesGroup />
       <Group title={t('各 CLI 能做到哪一步')}>
         {clis.map((c) => {
           const def = getCli(c.id)
