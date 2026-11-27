@@ -118,11 +118,14 @@ function RunCardBase({
   name,
   onOpen,
   onStep,
+  strip = true,
 }: {
   task: Task
   run: number
   /** 工作流名字，显示在标题旁边 */
   name?: string
+  /** 下面一排节点胶囊：对话里节点已经按段铺开（RunStepCards）时不再重复 */
+  strip?: boolean
   onOpen: () => void
   /** 点了某个节点胶囊 */
   onStep?: (id: string) => void
@@ -177,7 +180,7 @@ function RunCardBase({
           {steps.length > 0 && ` · ${done}/${steps.length}`} ›
         </span>
       </span>
-      {nodes.length > 0 && <FlowStrip nodes={nodes} onPick={onStep} />}
+      {strip && nodes.length > 0 && <FlowStrip nodes={nodes} onPick={onStep} />}
       {needs.length > 0 && <NeedsButton needs={needs} name={name} />}
     </div>
   )
@@ -186,7 +189,11 @@ function RunCardBase({
 export const RunCard = memo(
   RunCardBase,
   (a, b) =>
-    a.run === b.run && a.name === b.name && !a.onStep === !b.onStep && runSig(a.task, a.run) === runSig(b.task, b.run),
+    a.run === b.run &&
+    a.name === b.name &&
+    a.strip === b.strip &&
+    !a.onStep === !b.onStep &&
+    runSig(a.task, a.run) === runSig(b.task, b.run),
 )
 
 /**
