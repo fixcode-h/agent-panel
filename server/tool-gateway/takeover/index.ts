@@ -70,6 +70,19 @@ function relPaths(paths: string[], cwd: string): string[] | undefined {
   return out
 }
 
+/**
+ * 交给 find 的请求。工作目录外的目录（引擎源码常常在项目外）只在认得出是 C++ 时接：
+ * 项目和引擎的 C++ 都先走 VS（用户 2026-11-27 定），VS 按整个解决方案查（wide）；别的类型照原命令跑，索引里没有那些目录
+ */
+function requestsOf(s: SearchSpec, cwd: string): { paths: string[]; list: FindRequest[] } | undefined {
+  const rel = relPaths(s.paths, cwd)
+  if (rel) return { paths: rel, list: findRequestsOfSearch(s, rel) }
+  const abs = s.paths.map((p) => normPath(path.resolve(cwd, p)))
+  const list = findRequestsOfSearch(s, abs)
+  if (!list.every((q) => q.lang === 'cpp')) return undefined
+  return { paths: abs, list: list.map((q) => ({ ...q, wide: true })) }
+}
+
 const withTimeout = <T>(p: Promise<T>, ms: number) =>
   Promise.race([p, new Promise<undefined>((r) => setTimeout(() => r(undefined), ms).unref?.())])
 
@@ -110,10 +123,11 @@ async function findAll(run: FindCodeRun, reqs: FindRequest[], signal: AbortSigna
 type Looked = { out: FindOut; decls: FindHit[]; extras: FindHit[] } | { why: string }
 
 async function lookup(d: TakeoverDeps, run: FindCodeRun, s: SearchSpec): Promise<Looked> {
-  const paths = relPaths(s.paths, d.cwd)
-  if (!paths) return { why: '搜的目录不在对话的工作目录里，照原命令跑' }
+  const reqs = requestsOf(s, d.cwd)
+  if (!reqs) return { why: '搜的目录不在对话的工作目录里，照原命令跑' }
+  const { paths } = reqs
   const ctl = new AbortController()
-  const r = await findAll(run, findRequestsOfSearch(s, paths), ctl.signal)
+  const r = await findAll(run, reqs.list, ctl.signal)
   if (!r) ctl.abort()
   if (!r || r.error || !r.route) return { why: r?.text ?? `查找 ${ROUTE_MS / 1000} 秒没回来，照原命令跑` }
   return { out: r, ...panelExtras(r.hits ?? [], s, paths) }

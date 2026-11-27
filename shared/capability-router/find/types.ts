@@ -6,8 +6,11 @@
 export const FIND_KINDS = ['symbol', 'refs', 'outline', 'members', 'include', 'text'] as const
 export type FindKind = (typeof FIND_KINDS)[number]
 
-/** 按语言分路：cpp 走 VS（UEToVS）、lua 走 IDEA（lua_code），都由插件登记；other 只有通用的路 */
-export const FIND_LANGS = ['cpp', 'lua', 'other'] as const
+/**
+ * 按目标分类分路（./categories.ts）：cpp 先走 VS（UEToVS）、lua 先走 IDEA（lua_code），都由插件登记；
+ * data（json、配置、数据、文档）只走面板；other（看不出）先走面板，没查到再问外部服务
+ */
+export const FIND_LANGS = ['cpp', 'lua', 'data', 'other'] as const
 export type FindLang = (typeof FIND_LANGS)[number]
 
 export interface FindRequest {

@@ -58,5 +58,6 @@ export function textRe(req: Pick<FindRequest, 'kind' | 'query'>): RegExp {
 export const LANG_EXT: Record<FindLang, string[] | undefined> = {
   lua: ['lua'],
   cpp: ['h', 'hpp', 'hh', 'hxx', 'inl', 'c', 'cc', 'cpp', 'cxx', 'ipp'],
+  data: undefined,
   other: undefined,
 }

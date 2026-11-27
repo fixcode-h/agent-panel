@@ -4,7 +4,7 @@
 - 职责：所有 Agent 工具调用都过面板：认调用、按能力表推算能改到哪，改道模式下查找真的改走 find（结果是面板和原命令的并集）、记调用记录和统计；改完对得上的文件面板自己跑校验工具、只推报错；工具卡片上显示经面板路由的调用实际走的路
 - 源码：`server/tool-gateway/`、`shared/tool-gateway/`、`shared/capability-router/capabilities.ts`、`shared/capability-router/tool-route.ts`、`shared/api-contract/tool-gateway.ts`、`web/src/components/settings/agent-tools/`、`web/src/components/ui/route-badge.tsx`
 - 入口：`server/tool-gateway/gateway.ts`
-- 关键词：工具网关、调用记录、CallLog、wouldRoute、观察模式、改道、查找接管、takeover、updatedInput、代答、并集、能力表、本可以并行、网关耗时、路由小标、ToolUse.route、parallelTools、searchTools、改完自动校验、verify、apply、replaces、request_build
+- 关键词：工具网关、调用记录、CallLog、wouldRoute、观察模式、改道、查找接管、takeover、updatedInput、代答、并集、能力表、本可以并行、网关耗时、路由小标、ToolUse.route、查找分类、categories、denyMark、parallelTools、searchTools、改完自动校验、verify、apply、replaces、request_build
 - 更新：2026-11-26
 
 为什么这么定见 [ADR 0084](../../adr/0084-tool-gateway.md)；校验和改动生效见 [ADR 0086](../../adr/0086-verify-and-apply.md)。这里只写现在怎么工作、怎么接。
@@ -30,6 +30,18 @@
 - 记录：`decision` 是真实决定（rewrite / serve），`rewritten` 改写后的输入，`route` 走过的路（`from` 是原调用）；`ms` 不含查找和跑原命令的时间，那部分在 `route.ms`。被接管的那张卡片也挂路由小标（`tag-route.ts` 对带 `from` 的按输入原文认行）。
 - 演示：`web/src/lib/demo/demo-takeover.ts` 用同一份 `planTakeover` / `panelExtras` / `rewriteCommand` 算。
 - 测试：`shared/tool-gateway/takeover.test.ts`（命令解析、并集、选改写还是代答）、`server/tool-gateway/takeover/takeover.test.ts`（接进网关、钩子输出、放行和出错）。
+
+## 查找按类型分流
+
+用户 2026-11-27 定：不是所有查找都先问 VS、IDEA。分类表在 `shared/capability-router/find/categories.ts`（一类一行：扩展名、目录、名字写法、走法 `order`），`FindRequest.lang` 就是类别：
+
+- `cpp`（项目和引擎的 C++，含工作目录外的引擎目录，按 `wide` 查）、`lua`：`specialist`，先问插件登记了这一类的外部服务，不够再用面板按文本补；
+- `data`（给了扩展名但不是代码的：json、ini、csv、md、uasset……）：`panel`，只走面板（文件索引 + rg）；
+- `other`（看不出）：`panel-first`，面板先查，一条没有才挨个问外部服务。
+
+`server/capability-router/find/order.ts` 按 order 排路，`run.ts` 不按类别名写分支。搜索命令的扩展名从 `-t`、`*.ext` / `**/*.ext` / `*.{a,b}` 和单个文件路径来。设置「工具路由」页的「查找按类型分流」照这张表只读显示。
+
+代答（钩子拒绝里带结果，开头 `SERVED_HEAD`「结果（面板）」）CLI 会报成出错：CLI 定义 `takeover.denyMark` 是它加的前缀（Claude Code「PreToolUse:Grep hook error: 」），`server/exec/tool-rows.ts` 按 `servedResult` 去掉前缀、不标红。
 
 ## find 收数组
 

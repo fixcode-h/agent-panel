@@ -1,31 +1,23 @@
 /**
  * 把 find 工具的参数翻成 FindRequest，并推出语言：Agent 不用说「这是 Lua」，按扩展名、目录、名字的写法推。
- * 推不出来时是 other：只走通用的路（文本搜索），不会把 C++ 名字错交给 Lua 的服务
+ * 推不出来时是 other：先走面板按文本找，没查到才问外部服务，不会把 C++ 名字先交给 Lua 的服务
  */
-import { FIND_KINDS, type FindKind, type FindLang, type FindRequest } from './types.ts'
-
-const LUA_EXT = /^lua$/
-const CPP_EXT = /^(h|hpp|hh|hxx|inl|c|cc|cpp|cxx|ipp|cs)$/
+import { FIND_KINDS, FIND_LANGS, type FindKind, type FindLang, type FindRequest } from './types.ts'
+import { categoryOf } from './categories.ts'
 
 const extOf = (p: string) => p.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? ''
-const norm = (p: string) => p.replace(/\\/g, '/')
 
-/** 按扩展名、目录、名字写法推语言；拿不准返回 other */
+/**
+ * 按扩展名、目录、名字写法推是哪一类（规则在 ./categories.ts 的分类表）；拿不准返回 other。
+ * include / members 只有 C++ 有
+ */
 export function inferLang(r: Pick<FindRequest, 'query' | 'under' | 'ext' | 'file' | 'kind'>): FindLang {
-  const exts = [...(r.ext ?? []).map((e) => e.replace(/^\./, '').toLowerCase())]
+  const exts = [...(r.ext ?? [])]
   if (r.file) exts.push(extOf(r.file))
   if (r.kind === 'outline') exts.push(extOf(r.query))
-  if (exts.some((e) => LUA_EXT.test(e))) return 'lua'
-  if (exts.some((e) => CPP_EXT.test(e))) return 'cpp'
-  const dirs = (r.under ?? []).map((d) => norm(d).toLowerCase())
-  // UnLua / slua 的脚本目录、C++ 的 Source 目录：UE 项目最常见的两种限定
-  if (dirs.some((d) => /(^|\/)(content\/script|script|scripts|lua)(\/|$)/.test(d))) return 'lua'
-  if (dirs.some((d) => /(^|\/)(source|plugins\/[^/]+\/source)(\/|$)/.test(d))) return 'cpp'
-  // A:B 只有 Lua 有；A::B 只有 C++ 有；UE 的类型前缀（AActor、UObject、FVector、ECollision…）按 C++ 算
-  if (/^[A-Za-z_]\w*:[A-Za-z_]\w*$/.test(r.query)) return 'lua'
-  if (/::/.test(r.query)) return 'cpp'
-  if (r.kind === 'include' || r.kind === 'members') return 'cpp'
-  return 'other'
+  const lang = categoryOf({ query: r.query, exts: exts.filter(Boolean), dirs: r.under ?? [] })
+  if (lang === 'other' && (r.kind === 'include' || r.kind === 'members')) return 'cpp'
+  return lang
 }
 
 const list = (v: unknown): string[] | undefined => {
@@ -53,7 +45,9 @@ export function findRequestOf(kind: FindKind, a: Record<string, unknown>): FindR
     line: a.line === undefined ? undefined : int(a.line, 0, 1, 1e7) || undefined,
   }
   const lang =
-    typeof a.lang === 'string' && ['cpp', 'lua', 'other'].includes(a.lang) ? (a.lang as FindLang) : inferLang(base)
+    typeof a.lang === 'string' && (FIND_LANGS as readonly string[]).includes(a.lang)
+      ? (a.lang as FindLang)
+      : inferLang(base)
   return {
     ...base,
     lang,
@@ -65,7 +59,7 @@ export function findRequestOf(kind: FindKind, a: Record<string, unknown>): FindR
 
 /** 记录里一句话说清要什么 */
 export function describeFind(r: FindRequest): string {
-  const lang = r.lang === 'cpp' ? 'C++ ' : r.lang === 'lua' ? 'Lua ' : ''
+  const lang = r.lang === 'cpp' ? 'C++ ' : r.lang === 'lua' ? 'Lua ' : r.lang === 'data' ? '文件 ' : ''
   const what = { symbol: '声明', refs: '引用', outline: '大纲', members: '成员', include: '头文件', text: '文本' }[
     r.kind
   ]
