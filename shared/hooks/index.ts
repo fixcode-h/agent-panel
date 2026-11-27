@@ -100,6 +100,11 @@ export const HooksSpec = z.object({
        * 没写的 CLI 不知道它的读文件怎么分段，守卫不管它的读文件工具（只管 shell 里的 cat）
        */
       range: z.array(z.string()).default([]),
+      /**
+       * 工具调用的 id（和输出流里报的调用 id 是同一个）：工具前钩子到了说明这个工具真的开始跑了，工具行从这时起计时。
+       * 同一条回复里的几个调用会排队（前一个不能并行的跑完才轮到下一个），按报出调用的时间算会把排队也算进耗时。没写的 CLI 照旧从报出调用时算
+       */
+      id: z.string().optional(),
     })
     .default({ name: 'tool_name', input: 'tool_input', path: ['file_path'], output: [], failed: [], range: [] }),
   /**
@@ -150,6 +155,8 @@ export interface HookFacts {
     result?: { output: string; size?: number; failed?: boolean }
     /** 读文件工具带了「只读一段」的参数（CLI 定义的 toolFields.range）；定义里没写分段参数时不带 */
     ranged?: boolean
+    /** 工具调用的 id（CLI 定义的 toolFields.id），和输出流里的调用 id 对得上；定义里没写时不带 */
+    id?: string
   }
   /** 上下文恢复的来由：compact（压缩之后）、resume（续接）、startup（新开） */
   source?: string
@@ -419,6 +426,8 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
   if (panel) kind = 'panel'
   const result = toolResult(spec, o)
   // 定义里没写分段参数的 CLI：ranged 留空（不知道），读大文件守卫不管它的读文件工具
+  const idField = spec.toolFields.id ? o[spec.toolFields.id] : undefined
+  const id = typeof idField === 'string' && idField ? idField : undefined
   const ranged = spec.toolFields.range.length
     ? spec.toolFields.range.some((k) => input[k] !== undefined && input[k] !== null)
     : undefined
@@ -432,6 +441,7 @@ export function hookFacts(spec: HooksSpec, native: unknown): HookFacts {
       panel,
       ...(result ? { result } : {}),
       ...(ranged !== undefined ? { ranged } : {}),
+      ...(id ? { id } : {}),
     },
     ...(source ? { source } : {}),
   }

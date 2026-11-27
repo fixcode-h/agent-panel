@@ -12,9 +12,10 @@ const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_L
 
 /**
  * endTool：结果到了，收掉运行中标记、记下耗时（runAgent 的那个）。
- * denyMark：CLI 交回钩子拒绝说明时加的前缀（CLI 定义 takeover.denyMark），面板代答的结果按它去掉、不标出错
+ * denyMark：CLI 交回钩子拒绝说明时加的前缀（CLI 定义 takeover.denyMark），面板代答的结果按它去掉、不标出错。
+ * toolStart：还在跑的工具从什么时候开始计时（runAgent 的那个），工具真正开始跑时（started）改成那一刻
  */
-export function createToolRows(endTool: (x: ToolUse) => void, denyMark = '') {
+export function createToolRows(endTool: (x: ToolUse) => void, denyMark = '', toolStart?: Map<ToolUse, number>) {
   const toolsById = new Map<string, ToolUse>()
   /**
    * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
@@ -32,6 +33,19 @@ export function createToolRows(endTool: (x: ToolUse) => void, denyMark = '') {
         tool.output = tail(early)
         tool.running = true
       }
+    },
+    /**
+     * 工具前钩子到了：这个调用真的开始跑了，从现在起计时。同一条回复里的几个调用会排队（前一个不能并行的跑完才轮到下一个），
+     * 从报出调用时算会把排队也算进去：读一个文件排在 5 秒的命令后面就显示 5 秒（用户 2026-11-27 截图）。
+     * 返回 true 表示改了开始时间，要推一次给页面
+     */
+    started(id: string) {
+      const t = toolsById.get(id)
+      if (!t || !toolStart?.has(t)) return false
+      const now = Date.now()
+      toolStart.set(t, now)
+      t.startedAt = now
+      return true
     },
     result(ev: Extract<CliEvent, { type: 'tool_result' }>) {
       // 工具的输出晚于调用到达，补到对应的那一行上

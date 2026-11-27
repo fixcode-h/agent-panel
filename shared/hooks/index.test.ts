@@ -59,6 +59,15 @@ test('工具前 / 工具后：工具名按定义对照到类别，文件路径�
   assert.deepEqual(hookFacts(getCli('claude')!.hooks!, { source: 'compact' }), { source: 'compact' })
 })
 
+test('工具前带上调用 id：工具行按它从工具真正开始跑时计时，不算排队', () => {
+  const claude = getCli('claude')!.hooks!
+  const f = hookFacts(claude, { tool_name: 'Read', tool_input: { file_path: '/p/a.lua' }, tool_use_id: 'toolu_1' })
+  assert.equal(f.tool?.id, 'toolu_1')
+  // 定义里没写 id 字段的 CLI 不带
+  const pi = { ...claude, toolFields: { ...claude.toolFields, id: undefined } }
+  assert.equal(hookFacts(pi, { tool_name: 'Read', tool_input: {}, tool_use_id: 'x' }).tool?.id, undefined)
+})
+
 test('拦住、拒绝、补说明都按定义里的模板填好', () => {
   const spec = getCli('claude')!.hooks!
   assert.deepEqual(fillTpl(spec.beforeEnd!.block, { reason: '接着做「跑检查」' }), {
