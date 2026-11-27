@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { t } from '@shared/i18n'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { activeIndex, atBottom, jumpTop, sortByDocument } from '@/lib/section-nav'
@@ -166,4 +167,36 @@ export function SectionToc() {
       ))}
     </TabBar>
   )
+}
+
+/**
+ * 页面自己的一级页签（例如「Agent 工具」的技能 / 工具路由 / 调用记录）要排在「本页小节」上面：
+ * 小节菜单挂在标题下、滚动区外面，页面内容里的页签会被挤到它下面，看起来主次颠倒。
+ * 所以标题下先留一个槽（PageTabsSlot），页面用 PageTabs 把自己的页签渲染进去，小节菜单跟在后面。
+ */
+let tabsSlot: HTMLDivElement | null = null
+const slotListeners = new Set<() => void>()
+const subscribeSlot = (fn: () => void) => {
+  slotListeners.add(fn)
+  return () => {
+    slotListeners.delete(fn)
+  }
+}
+const getSlot = () => tabsSlot
+/** 固定引用的回调 ref：每次渲染新写一个会先回 null 再回元素，页签跟着闪一下 */
+const setSlot = (el: HTMLDivElement | null) => {
+  if (el === tabsSlot) return
+  tabsSlot = el
+  for (const l of slotListeners) l()
+}
+
+/** 设置页标题下、小节菜单上面的槽 */
+export function PageTabsSlot() {
+  return <div className="contents" ref={setSlot} />
+}
+
+/** 页面的一级页签：渲染到 PageTabsSlot 里；槽还没挂上时先不显示（下一帧就有） */
+export function PageTabs({ children }: { children: ReactNode }) {
+  const slot = useSyncExternalStore(subscribeSlot, getSlot)
+  return slot ? createPortal(children, slot) : null
 }
