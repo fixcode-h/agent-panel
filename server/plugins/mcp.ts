@@ -5,6 +5,7 @@ import { log } from '../log.ts'
 import { notePluginEffect } from './effects.ts'
 import { clipPluginResult, saveToHandoff } from './mcp-clip.ts'
 import { describeTool } from '../../shared/mcp-catalog/describe.ts'
+import { withIntent } from '../../shared/mcp-catalog/intent.ts'
 import { noteMounted } from '../mcp-catalog/last-run.ts'
 
 /**
@@ -169,11 +170,12 @@ async function handle(s: Session, msg: any) {
       // 设置 →「MCP」的总览里显示上一次真实对话挂上了几个
       noteMounted(s.taskId, s.server, tools.length)
       return reply({
-        tools: tools.map(({ name, description, inputSchema, effect, guide }) => ({
+        tools: tools.map(({ name, description, inputSchema, effect, guide, intent }) => ({
           name,
           // 声明了使用时机的补在说明后面（插件接口 8），和设置页显示的同一份
           description: describeTool(description, guide),
-          inputSchema,
+          // 执行代码类工具补上 intent 参数（shared/mcp-catalog/intent.ts）
+          inputSchema: withIntent(inputSchema, intent),
           // 声明了作用的按 MCP 的工具注解告诉 CLI：只读的不改环境，改文件的会改
           ...(effect && { annotations: { readOnlyHint: effect !== 'edit' } }),
         })),

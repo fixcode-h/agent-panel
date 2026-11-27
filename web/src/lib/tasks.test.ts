@@ -109,6 +109,15 @@ test('IDE 的 execute_tool 按参数里真正执行的工具显示中文名和�
   assert.equal(toolView(tool('MCP', 'notion · search_text', { input: '{}' }))?.tool.name, 'search_text')
 })
 
+test('执行代码类工具带了中文意图就显示意图，不显示 exec', () => {
+  const input = JSON.stringify({ action: 'exec', code: 'return 1', intent: '查看背包里第一件道具的数量\n多余的行' })
+  const view = toolView(tool('MCP', 'ue · ue_lua', { input }))
+  assert.equal(view?.tool.label, '查看背包里第一件道具的数量')
+  // 没给意图的旧调用照旧显示第一个参数
+  const old = toolView(tool('MCP', 'ue · ue_lua', { input: '{"action":"exec","code":"return 1"}' }))
+  assert.equal(old?.tool.label, 'exec')
+})
+
 test('别的 MCP 服务里的同名工具不会被当成面板工具', () => {
   // 带服务名的才会被当成那家的工具，显示服务名 + 原始工具名
   const other = toolView(tool('MCP', 'notion · record_lesson', { input: '{"title":"x"}' }))

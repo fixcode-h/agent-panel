@@ -7,6 +7,7 @@
 import { activePlugins, pluginToolNames } from '../../shared/plugins/index.ts'
 import type { PluginManifest } from '../../shared/plugins/types.ts'
 import { describeTool, paramsOf } from '../../shared/mcp-catalog/describe.ts'
+import { withIntent } from '../../shared/mcp-catalog/intent.ts'
 import type {
   CatalogServer,
   CatalogSource,
@@ -38,7 +39,7 @@ export function pluginToolRow(m: PluginManifest, x: ToolDef): CatalogTool {
     ...(x.guide && { guide: x.guide }),
     effects: effectsOf(x),
     description: describeTool(x.description, x.guide),
-    params: paramsOf(x.inputSchema),
+    params: paramsOf(withIntent(x.inputSchema, x.intent)),
   }
 }
 

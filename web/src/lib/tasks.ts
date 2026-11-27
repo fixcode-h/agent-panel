@@ -16,6 +16,7 @@ import {
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
 import { appActionTitle, panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
 import { proxiedTool } from '@shared/mcp-catalog/proxy-tool'
+import { intentOf } from '@shared/mcp-catalog/intent'
 import { unwrapProxied } from '@shared/mcp-proxy/names'
 
 export const statusLabel: Record<TaskStatus, string> = {
@@ -337,11 +338,15 @@ export function toolView(tool: ToolUse): ToolView | null {
   const many = Object.values(a).find(
     (v): v is string[] => Array.isArray(v) && v.length > 1 && v.every((x) => typeof x === 'string'),
   )
-  const arg = proxied
-    ? proxied.arg
-    : many
-      ? t('{first} 等 {n} 项', { first: many[0], n: many.length })
-      : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
+  // 执行代码类工具带了中文意图（shared/mcp-catalog/intent.ts）就显示它，不显示 exec 或代码第一行
+  const intent = intentOf(a)
+  const arg = intent
+    ? intent
+    : proxied
+      ? proxied.arg
+      : many
+        ? t('{first} 等 {n} 项', { first: many[0], n: many.length })
+        : (Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined)
   // 面板自己的设计、插件服务的工具换成中文名，服务名也换成中文；别家的工具用服务报的或面板备好的显示名，都没有照原名
   return {
     tool: {
