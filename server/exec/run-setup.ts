@@ -22,6 +22,9 @@ import { agentUsage } from './usage-record.ts'
 import { taskFiles } from '../task-files.ts'
 import { log } from '../log.ts'
 import type { RealContext } from './real-context.ts'
+import type { RunState } from './run-state.ts'
+import { hookMarker } from '../../shared/hooks/index.ts'
+import type { Task } from '../../shared/schema.ts'
 import { resolveModelRun } from './model-run.ts'
 import { composeInput } from './compose-input.ts'
 import { launchOptions } from './launch-options.ts'
@@ -247,4 +250,13 @@ export async function attachPlugins(
     lib.map((e) => e.server.name),
   )
   return { ...tools, projectMcp: [...lib, ...fromPlugins] }
+}
+
+/** 钩子拦住、让它接着做时记一行「面板让它接着做」，之后的输出另起一条（runAgent 交给 hookOptions 的 mark） */
+export function hookMark(c: { ctx: RealContext; task: Task; st: RunState; agentId: string; step: string }) {
+  return (reason: string) => {
+    c.st.cur = undefined
+    c.task.messages.push(hookMarker(reason, c.ctx.newId(), c.agentId, c.step))
+    c.ctx.changed(true)
+  }
 }

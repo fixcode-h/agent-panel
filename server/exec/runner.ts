@@ -3,7 +3,6 @@ import { noteCommandTime } from '../command-times.ts'
 import { turnInfo } from './turn-info.ts'
 
 import { type Task, type TaskMessage, type ToolUse } from '../../shared/schema.ts'
-import { hookMarker } from '../../shared/hooks/index.ts'
 import { hookOptions } from '../hooks/dispatch.ts'
 
 import { changesSince, mergeChanges, ownedChanges, stepUsage } from '../../shared/task.ts'
@@ -48,7 +47,7 @@ import { newRunState } from './run-state.ts'
 import { createApply } from './run-events.ts'
 import { createWaiting } from './run-wait.ts'
 import { afterProcess, finishTurn } from './run-finish.ts'
-import { attachPlugins, prepareLaunch, resolveTarget } from './run-setup.ts'
+import { attachPlugins, hookMark, prepareLaunch, resolveTarget } from './run-setup.ts'
 import { createSteering } from './run-steer.ts'
 import { freshRetry, recoverFailure, type RetryState } from './run-recover.ts'
 // runAgent 里职责完整的几块拆在这些文件：模型和上限、选会话、拼输入、启动参数、进程没跑完一轮时交回什么
@@ -272,7 +271,7 @@ async function runAgent(
     if (x.kind === 'run' && task.projectId) noteCommandTime(task.projectId, x.input ?? x.label, x.ms)
   }
   // 按调用 id 找工具行，补晚到的结果和边跑边来的输出（tool-rows.ts）
-  const toolRows = createToolRows(endTool, def.takeover?.denyMark)
+  const toolRows = createToolRows(endTool, def.takeover?.denyMark, toolStart)
   // 刚压缩完、还不知道压缩后多大：下一次报告上下文用量时补到这次压缩的工具调用上
   // 压缩那一行：一开始就转圈，压缩完成换成前后大小；不知道压缩后多大时等用量或细分补上
   const compaction = new CompactTracker(endTool, awaitingCompact(task.messages, agentId, step))
@@ -501,13 +500,10 @@ async function runAgent(
     cliId,
     cwd,
     call,
-    mark: (reason) => {
-      st.cur = undefined
-      task.messages.push(hookMarker(reason, ctx.newId(), agentId, step))
-      ctx.changed(true)
-    },
+    mark: hookMark({ ctx, task, st, agentId, step }),
     changed: () => ctx.changed(),
     support,
+    toolStarted: toolRows.started,
   })
   const r = await invokeCli({
     mcp: plugins?.servers.length ? plugins.servers : undefined,

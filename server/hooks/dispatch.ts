@@ -104,6 +104,8 @@ export interface HookCallCtx {
   changed?: () => void
   /** 按这一轮模型档位套用的扶持（shared/models/support.ts）；不给时和以前一样 */
   support?: ResolvedSupport
+  /** 工具前钩子到了（工具真的开始跑了）：按调用 id 把工具行的计时起点挪到现在，改了返回 true（server/exec/tool-rows.ts 的 started） */
+  toolStarted?: (id: string) => boolean
 }
 
 const rel = (cwd: string, p: string) => {
@@ -667,12 +669,29 @@ export async function hookOptions(c: HookCallCtx): Promise<{
   // 插件 MCP 会话执行改文件类工具前调它（server/plugins/mcp.ts）
   c.call.orch.guardEdit = editGuard
   const evs = gw ? gw.events(events, off) : events
-  const hooked = gw ? { hookTools: gw.tools(hookTools), onHook: gw.wrap(onHook) } : { hookTools, onHook }
+  const hooked = {
+    hookTools: gw ? gw.tools(hookTools) : hookTools,
+    onHook: timedHook(c, gw ? gw.wrap(onHook) : onHook),
+  }
   // 改完自动校验（ADR 0086）：要收尾时还有没查的改动先跑一次，有报错拦下收尾；Chat 页一问一答不拦
   const end = gw && !endOff && c.call.beforeEnd && !isChatMode(c.task) ? gw.wrapEnd(beforeEnd, c.mark) : beforeEnd
   return {
     ...(end ? { beforeEnd: end } : {}),
     ...(evs.length ? { hookEvents: evs, ...hooked } : {}),
+  }
+}
+
+/**
+ * 工具前钩子一到就告诉工具行「开始跑了」，再交给守卫和网关：工具行的耗时只算工具真正跑的时间（含钩子自己），
+ * 不算在同一条回复里排队等前面调用的时间。CLI 定义里没写调用 id（toolFields.id）的照旧从报出调用时算
+ */
+type OnHook = (event: HookEventName, facts: HookFacts) => Promise<HookAnswer>
+
+function timedHook(c: HookCallCtx, inner: OnHook): OnHook {
+  return (event, facts) => {
+    const id = event === 'tool.before' ? facts.tool?.id : undefined
+    if (id && c.toolStarted?.(id)) c.changed?.()
+    return inner(event, facts)
   }
 }
 

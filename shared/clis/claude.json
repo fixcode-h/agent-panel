@@ -578,7 +578,8 @@
       "path": ["file_path", "notebook_path"],
       "output": ["tool_response", "error"],
       "failed": ["error"],
-      "range": ["offset", "limit", "pages"]
+      "range": ["offset", "limit", "pages"],
+      "id": "tool_use_id"
     },
     "http": {
       "minVersion": "2.1.318",
