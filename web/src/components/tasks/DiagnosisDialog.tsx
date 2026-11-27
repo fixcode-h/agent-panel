@@ -448,7 +448,6 @@ export function DiagnosisDialog({
         top={(key, show) => <DiagnosisStages list={list} shown={key} onShow={show} />}
         texts={cfg.texts}
         noApprove={cfg.noApprove}
-        feedbackFirst
         attach
         overallPlaceholder={cfg.placeholder}
         supply={

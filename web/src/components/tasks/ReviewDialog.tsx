@@ -70,7 +70,8 @@ const canHighlight = () => typeof CSS !== 'undefined' && 'highlights' in CSS && 
 
 /**
  * 阶段确认的审阅弹窗：左边按统一的 Markdown 样式渲染这一步的结果，选中文字可以标注，标注列在右栏。
- * 「修改」把标注整理成意见退回给 Agent 返工，「确认」表示没有要改的，工作流往下走
+ * 底部只有一个「确认」（用户 2026-11-27 定）：还有标注或整体意见时点它就是把标注整理成意见退回给 Agent 返工，
+ * 标注全删掉、意见清空后再点才是真正确认，工作流往下走
  */
 export function ReviewDialog({
   req,
@@ -88,7 +89,6 @@ export function ReviewDialog({
   top,
   supply,
   noApprove,
-  feedbackFirst,
   attach,
   overallPlaceholder,
   initialVersion,
@@ -107,8 +107,11 @@ export function ReviewDialog({
   kinds?: NoteKind[]
   /** 多版文档：最后一项是这次要审的（就是 req.detail），前面的只读 */
   versions?: ReviewVersion[]
-  /** 按钮和提示的说法：诊断报告是「确认方案，开始修」「有疑问，再查」 */
-  texts?: { approve: string; revise: string; hintApprove: string; hintRevise: string; changed?: boolean }
+  /**
+   * 唯一那个按钮和提示的说法：没有标注时用 approve / hintApprove，有标注或整体意见时用 revise / hintRevise
+   * （诊断报告是「确认方案，开始修」「提问 / 补充，出新一版」）；revise 不给时是「确认 · 交回 N 条标注」
+   */
+  texts?: { approve: string; revise?: string; hintApprove: string; hintRevise: string; changed?: boolean }
   /** 只看不审（已经确认过的报告） */
   readOnly?: boolean
   /** 只读时底栏那句说明：不给时是「这一版已经处理过了」 */
@@ -141,10 +144,8 @@ export function ReviewDialog({
    * primary：它是主按钮（等你复现、验证）；否则是次按钮，写了整体意见或附了文件才能点
    */
   supply?: { label: string; primary?: boolean; hint: string; onSupply: (raw: ReviewRaw) => Promise<void> }
-  /** 不放「确认」按钮（等你复现时只有交日志和提疑问） */
+  /** 没有「确认通过」这条路（等你复现时只有交日志和提疑问）：按钮只在有标注或整体意见时能点 */
   noApprove?: boolean
-  /** 有标注时「修改」变成主按钮、「确认」退成次要（诊断报告：标了疑问就是要接着探讨） */
-  feedbackFirst?: boolean
   /** 整体意见框用对话的输入框：能引入日志文件、图片（粘贴、拖进来、点「+」），大文件引用路径、小文件拷一份 */
   attach?: boolean
   overallPlaceholder?: string
@@ -316,9 +317,14 @@ export function ReviewDialog({
     overall: said,
     files: attach ? logs.list : [],
   })
-  // 有标注（feedbackFirst）或在等日志（supply.primary）时，主按钮换人。补充信息也算（用户 2026-11-13 定：
-  // 补充了信息就是要它据此重出一版再评估，不是附带一句就确认）
-  const revisePrimary = !!feedbackFirst && notes.length > 0 && !supply?.primary
+  // 只有一个按钮：有标注或整体意见就是交回修改，全清空了才是确认（用户 2026-11-27 定）。
+  // 整体意见也算（用户 2026-11-13 定：补充了信息就是要它据此重出一版再评估，不是附带一句就确认）
+  // 在等日志（supply.primary）时整体意见框是贴日志的地方，不算修改意见，只看标注
+  const asks = supply?.primary ? notes.length > 0 : hasFeedback
+  const reviseMode = asks || !!noApprove
+  const mainLabel = reviseMode
+    ? (texts?.revise ?? (notes.length ? t('确认 · 交回 {n} 条标注', { n: notes.length }) : t('确认 · 交回意见')))
+    : (texts?.approve ?? t('确认'))
   const submit = async (allow: boolean | 'supply' | 'reject') => {
     if (busy || logs.busy) return
     setBusy(allow === 'supply' ? 'supply' : allow === 'reject' ? 'reject' : allow ? 'allow' : 'deny')
@@ -629,8 +635,8 @@ export function ReviewDialog({
               : t('这是旧的一版，只能查看；切回最新一版再标注')
             : supply?.primary
               ? supply.hint
-              : hasFeedback
-                ? (texts?.hintRevise ?? t('「修改」会把标注和意见交给 Agent 按意见调整'))
+              : asks
+                ? (texts?.hintRevise ?? t('有标注时「确认」会把标注和意见交给 Agent 修改；标注全删掉再点才是确认通过'))
                 : (texts?.hintApprove ?? t('没有要改的地方就点「确认」继续'))}
         </span>
         {/* 窄时按钮组也能折行，「自动通过」勾选框独占一行：不然多出的勾选框会把主按钮挤出屏幕 */}
@@ -675,18 +681,7 @@ export function ReviewDialog({
               {supply.label}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant={revisePrimary ? 'primary' : 'secondary'}
-            disabled={!!busy || !(hasFeedback || texts?.changed)}
-            title={hasFeedback || texts?.changed ? undefined : t('先标注要改的地方')}
-            onClick={() => void submit(false)}
-            className={cn(revisePrimary && 'order-last')}
-          >
-            {busy === 'deny' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {texts?.revise ?? t('修改')}
-          </Button>
-          {!noApprove && approveExtra && (
+          {approveExtra && !reviseMode && (
             <div
               className={cn(
                 'flex items-center',
@@ -696,18 +691,16 @@ export function ReviewDialog({
               {approveExtra}
             </div>
           )}
-          {!noApprove && (
-            <Button
-              size="sm"
-              variant={revisePrimary || supply?.primary ? 'secondary' : 'primary'}
-              disabled={!!busy || logs.busy}
-              title={revisePrimary ? t('还有没交回的标注：确认后它就不再回应这些标注') : undefined}
-              onClick={() => void submit(true)}
-            >
-              {busy === 'allow' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {texts?.approve ?? t('确认')}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant={supply?.primary ? 'secondary' : 'primary'}
+            disabled={!!busy || logs.busy || (!!noApprove && !asks)}
+            title={noApprove && !asks ? t('先标注要改的地方') : undefined}
+            onClick={() => void submit(!reviseMode)}
+          >
+            {(busy === 'allow' || busy === 'deny') && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {mainLabel}
+          </Button>
           {supply?.primary && (
             <Button
               size="sm"

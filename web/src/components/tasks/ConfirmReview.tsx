@@ -96,22 +96,19 @@ export function ConfirmReview({
         }
       : undefined
 
-  // 改了决策时「确认」「修改」都会把改动交回 Agent 重出：「确认」只交改了的决策（是常用的那条路），
-  // 「修改」再带上标注和整体意见；所以只改了决策、没写标注时「修改」也要能点（用户 2026-11-16 报它一直是灰的）
+  // 只有一个「确认」（用户 2026-11-27 定）：有标注或整体意见时它把标注、意见连同改了的决策交回 Agent 修改；
+  // 全清空了才是确认，这时改了决策也会交回 Agent 按新选择重出一版（后端 shared/flow/stage-report.ts）
   const texts = cur && {
     approve: t('确认'),
-    revise: t('修改'),
     changed: changed.length > 0,
     hintApprove: changed.length
-      ? t('改了 {n} 项决策：点「确认」交给 Agent 按你的选择重出一版；还有别的要改，写标注或整体意见再点「修改」', {
-          n: changed.length,
-        })
+      ? t('改了 {n} 项决策：点「确认」交给 Agent 按你的选择重出一版', { n: changed.length })
       : cur.report.next.trim()
         ? t('确认后 Agent 按报告接着做下一轮')
         : t('都按推荐：没有要改的地方就点「确认」继续'),
     hintRevise: changed.length
-      ? t('「修改」把标注、意见和改了的决策一起交给 Agent；「确认」只交改了的决策，不带标注')
-      : t('「修改」会把标注和意见交给 Agent 按意见调整'),
+      ? t('有标注时「确认」会把标注、意见和改了的决策一起交给 Agent 修改；标注全删掉再点才是确认通过')
+      : t('有标注时「确认」会把标注和意见交给 Agent 修改；标注全删掉再点才是确认通过'),
   }
 
   return (

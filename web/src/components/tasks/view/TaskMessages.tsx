@@ -16,6 +16,7 @@ import { NoteMessage } from '../SystemNote'
 import { TaskApplyCtx } from '../task-apply'
 import { ReceivedRow } from '../PeerMessage'
 import { RunCard } from '../RunCard'
+import { RunStepCards } from '../run-steps/RunStepCards'
 import { RegenerateButton } from '../RewindDialog'
 import { StepSection } from '../StepSection'
 import { UserMessageMenu } from '../UserMessageMenu'
@@ -118,14 +119,25 @@ function renderBlock(ctx: TaskMessagesCtx, b: Block, i: number): React.ReactNode
       <div key={b.key} className="reply-indent min-w-0">
         <RunChecklist task={task} run={b.run} onOpen={() => ctx.openRun(b.run)} />
       </div>
+    ) : task.mode === 'workflow' ? (
+      // 工作流对话：卡片只留标题和进度，节点在下面按段铺开（方案 A「节点分段」，用户 2026-11-27 定）
+      <div key={b.key} className="reply-indent flex min-w-0 flex-col gap-3">
+        <RunCard
+          task={task}
+          run={b.run}
+          name={task.workflowName || ctx.workflowName}
+          onOpen={() => ctx.openFlow()}
+          strip={false}
+        />
+        <RunStepCards task={task} run={b.run} teamNames={ctx.teamNames} onStep={ctx.openFlow} />
+      </div>
     ) : (
       <div key={b.key} className="reply-indent min-w-0">
         <RunCard
           task={task}
           run={b.run}
           name={task.workflowName || ctx.workflowName}
-          onOpen={() => (task.mode === 'workflow' ? ctx.openFlow() : ctx.openRun(b.run))}
-          onStep={task.mode === 'workflow' ? ctx.openFlow : undefined}
+          onOpen={() => ctx.openRun(b.run)}
         />
       </div>
     )

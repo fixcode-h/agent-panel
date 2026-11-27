@@ -21,8 +21,6 @@ export const EN_BUG_ASK: Record<string, string> = {
   看报告还是对比: 'Report or comparison',
   对比上一份: 'Compare with previous',
   '先标注哪里不认同，或写整体意见': 'Annotate what you disagree with, or write an overall comment first',
-  '还有没交回的标注：确认后它就不再回应这些标注':
-    'Some notes have not been sent back: approving means it will not respond to them',
   '按你的提问和补充重出，对比第 {v} 版': 'Redone from your questions and info; compared with version {v}',
   '按你的不认同重出，对比第 {v} 版': 'Redone after you disagreed; compared with version {v}',
   结论已改: 'Conclusion changed',

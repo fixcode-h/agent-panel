@@ -52,6 +52,7 @@ import { EN_MCP_PROXY } from './en/mcp-proxy.ts'
 import { EN_TURN_OUTPUTS } from './en/turn-outputs.ts'
 import { EN_TURN_SCOPE } from './en/turn-scope.ts'
 import { EN_FOLD_BAR } from './en/fold-bar.ts'
+import { EN_RUN_STEPS } from './en/run-steps.ts'
 import { EN_STOP_BUTTON } from './en/stop-button.ts'
 import { EN_VERSION_DIFF } from './en/version-diff.ts'
 import { EN_LIVE_TEXT } from './en/live-text.ts'
@@ -117,6 +118,7 @@ export const EN: Record<string, string> = {
   ...EN_TURN_OUTPUTS,
   ...EN_TURN_SCOPE,
   ...EN_FOLD_BAR,
+  ...EN_RUN_STEPS,
   ...EN_STOP_BUTTON,
   ...EN_VERSION_DIFF,
   ...EN_LIVE_TEXT,
