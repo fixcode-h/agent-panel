@@ -14,6 +14,8 @@ interface DemoIndex {
   buildingSince?: number
   /** 演示的「增量更新」：核对中，核对完清掉（状态卡和侧栏都显示核对中） */
   verifying?: boolean
+  /** 核对开始的时间：核对进度按过去了多久算（和正式版一样核对也报进度） */
+  verifySince?: number
   table: NameTable
   builtAt: number
   buildMs: number
@@ -69,6 +71,10 @@ function statusOf(p: Project): FileIndexStatus {
   }
   const { files, dirs } = x.table.size
   const bytes = files * BYTES_PER_FILE + 64
+  const vf = x.verifySince ? Math.min(1, (Date.now() - x.verifySince) / DEMO_VERIFY_MS) : 0
+  const verifyProgress = x.verifying
+    ? { progress: { dirs: Math.round(DEMO_DIRS * vf), files: 0, expect: DEMO_DIRS } }
+    : {}
   return {
     projectId: p.id,
     enabled: true,
@@ -83,6 +89,7 @@ function statusOf(p: Project): FileIndexStatus {
         source: 'project',
         vcs: 'git',
         state: x.verifying ? 'verifying' : 'ready',
+        ...verifyProgress,
         files,
         dirs,
         bytes,
@@ -179,10 +186,19 @@ export function demoProjectFileIndex(
     // 和正式版一样：核对期间推「核对中」，核对完推「就绪」再回结果
     const emit = emitOf(p)
     x.verifying = true
+    x.verifySince = Date.now()
     emit()
+    // 核对期间每半秒推一次进度（演示没有推送通道，和建立时一样发窗口事件）
+    const tick = () => {
+      if (!x.verifying) return
+      emit()
+      setTimeout(tick, 500)
+    }
+    setTimeout(tick, 500)
     return new Promise((done) =>
       setTimeout(() => {
         x.verifying = false
+        x.verifySince = undefined
         x.changedAt = Date.now()
         emit()
         done({ checked: x.table.size.dirs, added: 0, removed: 0 })

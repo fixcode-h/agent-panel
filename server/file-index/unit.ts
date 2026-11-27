@@ -27,6 +27,13 @@ export interface UnitSpec {
 const SAVE_DELAY_MS = 30_000
 /** P4 多久问一次「sync 到哪了」 */
 const P4_PROBE_MS = 5 * 60_000
+/**
+ * 系统通知溢出（编译、sync、编辑器开着时 Intermediate / Saved 一直在写，Windows 的通知缓冲很快就满）后
+ * 等这么久没有新的溢出再整体核对；两次整体核对之间至少隔上次耗时的这么多倍。
+ * 以前每溢出一次就马上整体核对：大项目一次核对几十秒到几分钟，核对完下一次溢出又来了，侧栏一直「正在核对」（用户 2026-11-27）
+ */
+const LOST_QUIET_MS = 30_000
+const LOST_GAP_TIMES = 5
 
 const rulesOf = (spec: UnitSpec) => ruleKey(spec.exclude, spec.vcsOnly ? 'vcs' : 'disk')
 /** 不用建出来就知道它的键（几个项目共用同一个根时，第二个项目不再新建一份） */
@@ -57,6 +64,8 @@ export class IndexUnit {
   private p4Change?: string
   private p4At = 0
   private watcher?: TreeWatch
+  /** 通知溢出后排着的那次整体核对 */
+  private lostTimer?: ReturnType<typeof setTimeout>
   private first: Promise<void>
   private running?: Promise<unknown>
   /** 正在跑的整体核对（同时再要核对就等这一次） */
@@ -104,7 +113,9 @@ export class IndexUnit {
       files: size.files,
       dirs: size.dirs,
       bytes: this.bytes,
-      ...(this.state === 'building' && this.progress ? { progress: this.progress } : {}),
+      ...((this.state === 'building' || this.state === 'verifying') && this.progress
+        ? { progress: this.progress }
+        : {}),
       ...(this.builtAt ? { builtAt: this.builtAt } : {}),
       ...(this.buildMs !== undefined ? { buildMs: this.buildMs } : {}),
       ...(this.changedAt ? { changedAt: this.changedAt } : {}),
@@ -247,13 +258,30 @@ export class IndexUnit {
     this.watcher = watchTree(
       this.root,
       (dirs) => void this.refreshDirs([...dirs], 'watch'),
-      (why) => {
-        log.warn('file-index', `监听出问题，整体核对一遍：${this.root}`, why)
-        void this.verify({ by: 'verify' })
+      (why, dead) => {
+        // 监听断了（目录被删、句柄出错）：核对完重新盯上，不然之后的改动一直收不到、状态还写着在盯
+        if (dead) {
+          log.warn('file-index', `监听断了，核对后重新盯：${this.root}`, why)
+          this.watcher?.close()
+          this.watcher = undefined
+        }
+        this.verifyLater()
       },
       (rel) => this.skipped(rel),
     )
     if (this.watcher) this.onStatus()
+  }
+
+  /** 通知漏了（溢出）或监听断了：等安静下来再整体核对一次，溢出一阵只核对一次（理由见 LOST_QUIET_MS） */
+  private verifyLater() {
+    if (this.lostTimer) clearTimeout(this.lostTimer)
+    const since = Date.now() - (this.verifiedAt ?? 0)
+    const wait = Math.max(LOST_QUIET_MS, (this.verifyMs ?? 0) * LOST_GAP_TIMES - since)
+    this.lostTimer = setTimeout(() => {
+      this.lostTimer = undefined
+      void this.verify({ by: 'verify' }).finally(() => this.startWatch())
+    }, wait)
+    this.lostTimer.unref?.()
   }
 
   /** 路径落在排除目录里（任意一层） */
@@ -267,6 +295,8 @@ export class IndexUnit {
   close() {
     this.watcher?.close()
     this.watcher = undefined
+    if (this.lostTimer) clearTimeout(this.lostTimer)
+    this.lostTimer = undefined
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
       this.saveTimer = undefined
@@ -331,6 +361,7 @@ export class IndexUnit {
       const t0 = Date.now()
       if (whole) {
         this.state = 'verifying'
+        this.progress = { dirs: 0, files: 0, expect: this.table.size.dirs }
         this.onStatus()
       }
       try {
@@ -342,11 +373,22 @@ export class IndexUnit {
           if (now && this.p4Change && now !== this.p4Change) force = true
           if (now) this.p4Change = now
         }
+        let last = 0
         const r = await verifyTree(this.table, this.root, this.rule, {
           under: opts.under,
           extra: this.extraSkip(),
           force,
           limit: opts.limit,
+          // 整体核对报进度：大目录核对要几十秒，侧栏和状态卡画百分比，不再只转圈
+          onProgress: whole
+            ? (done, total) => {
+                this.progress = { dirs: done, files: 0, expect: total }
+                if (Date.now() - last > 300) {
+                  last = Date.now()
+                  this.onStatus()
+                }
+              }
+            : undefined,
         })
         await this.settle(r, opts.by)
         return { checked: r.checked, added: r.added.length, removed: r.removed.length }
@@ -355,7 +397,10 @@ export class IndexUnit {
         if (whole) {
           this.verifiedAt = Date.now()
           this.verifyMs = Date.now() - t0
-          if (this.state === 'verifying') this.state = 'ready'
+          if (this.state === 'verifying') {
+            this.state = 'ready'
+            this.progress = undefined
+          }
           this.onStatus()
         }
       }

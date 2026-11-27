@@ -118,7 +118,14 @@ export async function verifyTree(
   table: NameTable,
   root: string,
   rule: SkipRule,
-  opts: { under?: string; extra?: ExtraSkip; force?: boolean; limit?: number } = {},
+  opts: {
+    under?: string
+    extra?: ExtraSkip
+    force?: boolean
+    limit?: number
+    /** 进度：已做的步数 / 总步数（stat 每个目录算一步，要重读的目录再各算一步）；整体核对时状态条按它画 */
+    onProgress?: (done: number, total: number) => void
+  } = {},
 ): Promise<TableDelta & { checked: number; changedDirs: number }> {
   const under = opts.under?.replace(/^\/+|\/+$/g, '') ?? ''
   // 只收要核对的那些：不先把全部目录摊成数组（引擎几十万个目录，每次核对一棵小子树都摊一遍很费内存）
@@ -128,18 +135,33 @@ export async function verifyTree(
   if (opts.limit !== undefined && list.length > opts.limit)
     list = list.sort((a, b) => a.rel.length - b.rel.length).slice(0, opts.limit)
   const stale: string[] = []
-  // 一批不要太大：理由同 WALK_CONCURRENCY
-  for (let i = 0; i < list.length; i += 16) {
-    const batch = list.slice(i, i + 16)
-    const sts = await Promise.all(batch.map((d) => stat(d.rel ? path.join(root, d.rel) : root).catch(() => null)))
-    sts.forEach((s, k) => {
-      if (opts.force || !s || s.mtimeMs !== batch[k].mtime) stale.push(batch[k].rel)
-    })
+  // 强制重读时不用 stat，直接全部重读
+  if (opts.force) for (const d of list) stale.push(d.rel)
+  else {
+    // 固定几个并发一直拉活（以前一批 16 个等最慢的那个，几十万个目录的引擎根核对一遍要好几分钟）；
+    // 并发数理由同 WALK_CONCURRENCY：别把 Node 的文件线程池长时间占满
+    let next = 0
+    const worker = async () => {
+      while (next < list.length) {
+        const d = list[next++]
+        const s = await stat(d.rel ? path.join(root, d.rel) : root).catch(() => null)
+        if (!s || s.mtimeMs !== d.mtime) stale.push(d.rel)
+        if (next % 500 === 0) opts.onProgress?.(next, list.length)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(WALK_CONCURRENCY, list.length) }, worker))
   }
   // 核对的起点自己还没进表（新建的子目录）：也读一遍
   if (under && !table.dir(under)) stale.push(under)
+  const base = opts.force ? 0 : list.length
+  const total = base + stale.length
+  opts.onProgress?.(base, total)
   const delta = stale.length
-    ? await readTree(table, root, rule, { start: stale, extra: opts.extra })
+    ? await readTree(table, root, rule, {
+        start: stale,
+        extra: opts.extra,
+        onProgress: (dirs) => opts.onProgress?.(base + Math.min(dirs, stale.length), total),
+      })
     : { added: [], removed: [] }
   return { ...delta, checked: list.length, changedDirs: stale.length }
 }

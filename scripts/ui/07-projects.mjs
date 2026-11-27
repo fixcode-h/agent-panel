@@ -605,6 +605,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 文件索引那一块的分工说明（ADR 0081）：Agent 只调面板的 find，说明里不再列各家工具名
     await dlg.getByText('找文件、找代码的分工').scrollIntoViewIfNeeded()
     await check(p, '项目设置-常规-查找分工', ['找文件、找代码的分工', '都调面板的 find'])
+    // 文件索引「增量更新」：核对中状态卡和侧栏都画进度（用户 2026-11-27：一直「正在核对」又看不出进度）
+    await dlg.getByRole('button', { name: '增量更新' }).click()
+    const checkLine = dlg.getByText(/已核对 [\d,]+ \/ [\d,]+ 个目录/)
+    if (
+      !(await checkLine.waitFor({ timeout: 3000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('文件索引核对：状态卡没有「已核对 n / 总数 个目录」')
+    // 弹窗开着时侧栏被标成 aria-hidden，按文字找不按角色找
+    const sideBar = p.locator('[data-sidebar] button').filter({ hasText: /正在核对文件索引\s*\d+%/ })
+    if (
+      !(await sideBar.waitFor({ timeout: 4000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('文件索引核对：侧栏底部没有带百分比的「正在核对文件索引」')
+    await check(p, '项目设置-文件索引核对中', ['核对中'])
+    if (
+      !(await dlg
+        .getByText('已就绪', { exact: true })
+        .waitFor({ timeout: 8000 })
+        .then(
+          () => true,
+          () => false,
+        ))
+    )
+      errors.push('文件索引核对：核对完没有回到「已就绪」')
+    // 两处跟着同一条推送收：状态卡回到就绪后侧栏也不再显示（给一次渲染的时间）
+    if (
+      !(await sideBar.waitFor({ state: 'detached', timeout: 1500 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('文件索引核对：核对完侧栏还在「正在核对」')
     // 能力（设计稿：Agent侧栏与项目管理重设计 6.3）：按项目生效的插件卡片（演示给表格、UE 两个示例）、
     // MCP 和技能列表、右栏「交给 Agent 的」；项目目录里的技能和 MCP 配置挪到了项目工具的「技能与 MCP」页（下面单独测）
     await dlg.getByRole('button', { name: /^能力/ }).click()
