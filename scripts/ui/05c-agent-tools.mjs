@@ -52,6 +52,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 工具路由、调用记录两个页签（ADR 0084）和对话页：卡片上实际走的路、会话栏「技能」一行
   await p.getByRole('tab', { name: '工具路由' }).click()
   await check(p, '设置-Agent工具-工具路由', ['各 CLI 能做到哪一步', '只用面板的 MCP'])
+  // 一级页签（技能 / 工具路由 / 调用记录）要在「本页小节」（网关、查找……）上面，不能被挤到下面（2026-11-27）
+  const top = async (name) => (await p.getByRole('tablist', { name }).boundingBox())?.y ?? -1
+  const [pageTabs, toc] = [await top('Agent 工具'), await top('本页小节')]
+  if (!(pageTabs >= 0 && toc > pageTabs))
+    errors.push(`设置-Agent工具：一级页签应在本页小节上面（${pageTabs} / ${toc}）`)
+  // 点小节跳过去，一级页签还在、还是工具路由
+  await p.getByRole('tablist', { name: '本页小节' }).getByRole('tab', { name: '各 CLI 能做到哪一步' }).click()
+  await p.waitForTimeout(400)
+  if ((await p.getByRole('tab', { name: '工具路由', selected: true }).count()) !== 1)
+    errors.push('设置-Agent工具：点本页小节后一级页签不在了或换了页')
   // 改道（ADR 0084 第二期）能选了：选上后说明换成改道的，再换回观察（默认）
   await p.getByRole('combobox', { name: '网关模式' }).click()
   await p.getByRole('option', { name: '改道', exact: true }).click()

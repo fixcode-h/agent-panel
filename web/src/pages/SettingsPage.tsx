@@ -21,7 +21,7 @@ import { ShortcutsSection } from '@/components/settings/ShortcutsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/ui/dialog-nav'
 import { deployedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
-import { SectionToc, setSectionScroll } from '@/components/settings/section-nav'
+import { PageTabsSlot, SectionToc, setSectionScroll } from '@/components/settings/section-nav'
 import { SettingsSearchResults } from '@/components/settings/SettingsSearch'
 import { CliSection } from '@/components/settings/CliSection'
 import { GeneralSection } from '@/components/settings/GeneralSection'
@@ -181,7 +181,9 @@ function SettingsBody({
           <SaveIndicator {...save} invalid={checks.timeout.ok ? undefined : t('超时时间需要是 0 到 1440 的整数')} />
           <DialogCloseButton label={t('关闭设置')} />
         </header>
-        {/* 这一节有多个小节时，标题下面多一条页内导航（见 section-nav.tsx） */}
+        {/* 页面自己的一级页签先排（PageTabs 渲染进这个槽），再是本页小节导航（见 section-nav.tsx） */}
+        {!searching && <PageTabsSlot />}
+        {/* 这一节有多个小节时，标题下面多一条页内导航 */}
         {!searching && <SectionToc />}
         {/* 改这里的 pb-12 / px-5 / md:px-9 时要同步 DeploySection 吸底操作栏的偏移，不然栏下面会漏出列表 */}
         <div

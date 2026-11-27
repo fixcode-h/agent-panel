@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { t } from '@shared/i18n'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
+import { PageTabs } from '../section-nav'
 import { agentToolsTabs } from './tabs'
 
 /**
@@ -12,13 +13,16 @@ export function AgentToolsSection() {
   const tab = tabs.find((x) => x.id === cur) ?? tabs[0]
   return (
     <div className="flex flex-col gap-4" data-agent-tools={tab?.id}>
-      <TabBar label={t('Agent 工具')} variant="underline">
-        {tabs.map((x) => (
-          <TabItem key={x.id} active={x.id === tab?.id} onSelect={() => setCur(x.id)}>
-            {x.label()}
-          </TabItem>
-        ))}
-      </TabBar>
+      {/* 页签放到标题下的槽里，排在工具路由各小节的导航上面（section-nav.tsx 的 PageTabs） */}
+      <PageTabs>
+        <TabBar label={t('Agent 工具')} variant="underline" className="mb-4 px-5 md:px-9">
+          {tabs.map((x) => (
+            <TabItem key={x.id} active={x.id === tab?.id} onSelect={() => setCur(x.id)}>
+              {x.label()}
+            </TabItem>
+          ))}
+        </TabBar>
+      </PageTabs>
       {tab?.render()}
     </div>
   )
