@@ -12,6 +12,7 @@ export const SEARCH_BY_TYPE: Record<FindLang, { title: string; lines: string[] }
   lua: {
     title: 'Lua（*.lua；UE 项目一般在 Content/Script 下）',
     lines: [
+      '有面板的 find 时，找声明、引用、大纲用它并写 lang=lua：`find action=symbol query="Foo" lang=lua under=["<模块目录>"]`',
       '按内容：`rg -n "词" <模块目录> -g \'*.lua\'`',
       '找函数声明：`rg -n "function\\s+[\\w.:]*Foo\\b" <目录> -g \'*.lua\'`；找表字段赋值：`rg -n "[.:]Foo\\s*=" -g \'*.lua\'`',
       '找调用：`A:B(` 和 `A.B(` 两种写法都要搜：`rg -n "[.:]Foo\\(" <目录> -g \'*.lua\'`；按 require 路径找：`rg -n "require.*Module\\.Foo" -g \'*.lua\'`',
@@ -20,6 +21,7 @@ export const SEARCH_BY_TYPE: Record<FindLang, { title: string; lines: string[] }
   cpp: {
     title: 'C++（*.h、*.hpp、*.cpp、*.inl；项目在 Source 和插件的 Source 下）',
     lines: [
+      '有面板的 find 时，找声明、引用、类成员、头文件用它并写 lang=cpp：`find action=symbol query="UFoo::Bar" lang=cpp`',
       '按内容：`rg -n -w "Foo" Source -g \'*.{h,hpp,cpp,inl}\'`',
       '找类、结构体：`rg -n "(class|struct)\\s+(\\w+_API\\s+)?Foo\\b" <目录> -g \'*.h\'`；找成员函数定义：`rg -n "Foo::Bar\\(" -g \'*.cpp\'`',
       '引擎源码在工作目录外：起点写引擎 Engine/Source 下具体的子目录（绝对路径），不从引擎根目录搜',
@@ -28,6 +30,7 @@ export const SEARCH_BY_TYPE: Record<FindLang, { title: string; lines: string[] }
   data: {
     title: '配置、数据、文档（json、ini、csv、xml、yaml、md、txt）和资源',
     lines: [
+      '有面板的 find 时可写 lang=data：`find action=text query="990001" lang=data under=["<表目录>"]`',
       '带上扩展名：`rg -n "词" <目录> -g \'*.json\'`；ID、数字、键名按原文整词找：`rg -n -F -w "990001" <表目录>`',
       'ini 的键：`rg -n "^\\s*Key\\s*=" <Config 目录> -g \'*.ini\'`',
       "资源（.uasset、.umap 这类二进制，搜内容时面板已跳过）按名字找：`rg --files Content -g '*名字*.uasset'`（显式写了 -g 照样列得出来）",
@@ -35,7 +38,9 @@ export const SEARCH_BY_TYPE: Record<FindLang, { title: string; lines: string[] }
   },
   other: {
     title: '看不出类型',
-    lines: ['先 `rg -l "词" <模块目录>` 看哪些文件命中，再按上面对应的类型缩小起点、带上 -g 搜'],
+    lines: [
+      '先 `rg -l "词" <模块目录>` 看哪些文件命中，从扩展名定类型，再按上面对应的类型缩小起点、带上 -g 搜（find 写上对应的 lang）',
+    ],
   },
 }
 

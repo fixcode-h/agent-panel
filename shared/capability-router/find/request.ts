@@ -30,6 +30,42 @@ const int = (v: unknown, dflt: number, min: number, max: number) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.floor(n))) : dflt
 }
 
+/**
+ * Agent 写的 lang：除了 lua / cpp / data，也认常见的叫法（c++、h、json、ini……），省得为一个写法退回一轮。
+ * 认不出返回 undefined（由调用方按扩展名、目录、写法推）
+ */
+const LANG_ALIASES: Record<string, FindLang> = {
+  'c++': 'cpp',
+  c: 'cpp',
+  h: 'cpp',
+  hpp: 'cpp',
+  cs: 'cpp',
+  json: 'data',
+  ini: 'data',
+  csv: 'data',
+  xml: 'data',
+  yaml: 'data',
+  yml: 'data',
+  md: 'data',
+  txt: 'data',
+  config: 'data',
+}
+export function langOf(v: unknown): FindLang | undefined {
+  if (typeof v !== 'string') return undefined
+  const k = v.trim().toLowerCase().replace(/^\./, '')
+  if ((FIND_LANGS as readonly string[]).includes(k) && k !== 'other') return k as FindLang
+  return LANG_ALIASES[k]
+}
+
+/**
+ * 找代码时 lang 是规范里必填的（用户 2026-11-27：搜 Lua 就填 lua，按类型直接走那一路，不按固定顺序挨个试）。
+ * 没写、也推不出来（看不出是 Lua 还是 C++ 的名字）时退回，告诉它怎么写；按原文搜（text）照样能走面板
+ */
+export function missingLang(r: FindRequest): string {
+  if (r.lang !== 'other' || r.kind === 'text') return ''
+  return `找代码要写 lang，面板按它直接走对应的那一路（不再挨个试）：lua（Lua 脚本，走 IDEA）、cpp（C++，项目和引擎，走 VS）、data（json、ini、csv、文档这类其他文件，走面板）。例如 find action=${r.kind} query="${r.query}" lang=lua`
+}
+
 export const isFindKind = (v: string): v is FindKind => (FIND_KINDS as readonly string[]).includes(v)
 
 /** 工具参数 → 请求；参数不对返回说明（写清怎么改） */
@@ -44,10 +80,7 @@ export function findRequestOf(kind: FindKind, a: Record<string, unknown>): FindR
     file: typeof a.file === 'string' && a.file.trim() ? a.file.trim() : undefined,
     line: a.line === undefined ? undefined : int(a.line, 0, 1, 1e7) || undefined,
   }
-  const lang =
-    typeof a.lang === 'string' && (FIND_LANGS as readonly string[]).includes(a.lang)
-      ? (a.lang as FindLang)
-      : inferLang(base)
+  const lang = langOf(a.lang) ?? inferLang(base)
   return {
     ...base,
     lang,

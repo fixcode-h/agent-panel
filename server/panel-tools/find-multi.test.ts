@@ -21,7 +21,7 @@ test('find 的 query 给数组：每个词各查一遍、按词分组，总长�
       }
     },
   } as never
-  const r = await FIND.call(o, { action: 'refs', query: ['OnSellAll', 'Big', 'Refresh'] })
+  const r = await FIND.call(o, { action: 'refs', lang: 'lua', query: ['OnSellAll', 'Big', 'Refresh'] })
   const text = r.content[0].text
   assert.deepEqual(asked.map((x) => x.query).sort(), ['Big', 'OnSellAll', 'Refresh'])
   assert.ok(text.length <= 4000 + 200, `总长 ${text.length}`)
@@ -30,11 +30,18 @@ test('find 的 query 给数组：每个词各查一遍、按词分组，总长�
   assert.match(text, /这一组没列完：单独查 query="Big"/)
 
   asked.length = 0
-  await FIND.call(o, { action: 'refs', query: ['OnSellAll'] })
+  await FIND.call(o, { action: 'refs', lang: 'lua', query: ['OnSellAll'] })
   assert.equal(asked[0].query, 'OnSellAll', '一个词的数组照单个查')
   const over = await FIND.call(o, {
     action: 'refs',
+    lang: 'lua',
     query: Array.from({ length: MULTI_MAX + 1 }, (_, i) => `Name${i}`),
   })
   assert.equal(over.isError, true)
+
+  asked.length = 0
+  const bare = await FIND.call(o, { action: 'symbol', query: 'lt_BW_InteractingCondition_UIAction_Angle' })
+  assert.equal(bare.isError, true, '找代码没写 lang 又推不出：退回，不挨个试')
+  assert.match(bare.content[0].text, /lang=lua/)
+  assert.equal(asked.length, 0)
 })

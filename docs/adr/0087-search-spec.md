@@ -17,7 +17,8 @@
 2. **对话开始时交给 Agent**：`server/exec/run-setup.ts` 把规范和角色设定拼在一起进系统提示词（没有系统提示词参数的 CLI 按原来的规矩拼进任务描述），所有经 runner 跑的对话、子对话、工作流节点、子任务都带。引擎提示词里的「搜索（这个项目）」只留这个项目的事实（有没有 find、排除哪些目录），不再教 `find -prune`。
 3. **守卫退回**（内置钩子 `search-spec-guard`，精简档起就开）：`shared/search-spec/` 按引号切段、跟着 `cd` 换算起点，逐段问规则注册表（`rules.ts`，一条规则一行）。不是 rg 的搜索按 `to-rg.ts` 换算成等价的 rg 写进退回说明；换算不全的（按修改时间找、`-exec`）只给该怎么做；rg 本身的问题（`-r`、`\|`、`--no-ignore`、吞报错、项目根不带类型）给改好的命令。起点在哪由服务端按真实目录判断（`searchScope`）。在别的命令输出里过滤（`p4 opened | grep x`）不算搜索。
 4. **用户指令优先**：退回走 `gateDeny`，说明后面带 `request_override`；设置里能关这个守卫。
-5. rg 配置再加 `--max-columns=500 --max-columns-preview`：配表、压缩脚本一行几十 KB，命中一次就撑满输出。
+5. **有面板 find 时按类型走**（2026-11-27 补）：每类写法开头写 find 带哪个 `lang`；find 找代码不写 lang 又推不出时退回（ADR 0081 补充），不再先面板文本后挨个试。
+6. rg 配置再加 `--max-columns=500 --max-columns-preview`：配表、压缩脚本一行几十 KB，命中一次就撑满输出。
 
 候选方案：
 

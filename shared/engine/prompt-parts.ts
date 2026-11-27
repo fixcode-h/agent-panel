@@ -94,7 +94,7 @@ export function searchPart(host: EngineHost) {
   if (host.findCode)
     return [
       '## 找文件、找代码（这个项目）',
-      '找函数、类、变量的声明 / 引用 / 文件大纲用面板的 find（action=symbol / refs / outline；按内容 text、按名字 file、列目录 list）：面板按语言自动用 VS、IDEA 的索引，都用不了时自己按文本找。',
+      '找函数、类、变量的声明 / 引用 / 文件大纲用面板的 find（action=symbol / refs / outline；按内容 text、按名字 file、列目录 list）。找代码必须写 lang：Lua 写 lua（走 IDEA）、C++ 写 cpp（走 VS）、json / ini / 文档这类写 data（走面板），面板按它直接走那一路；under 写模块目录。例如 `find action=symbol query="Foo" lang=lua under=["Content/Script/Module/X"]`。',
       `自己搜时照「搜索规范」用 rg${line ? `（${line}；要搜这些目录里的东西就把那个目录写成起点）` : ''}。`,
     ].join('\n')
   if (!line) return ''

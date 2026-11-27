@@ -32,3 +32,7 @@
 ## 补充：文本兜底先用 rg（2026-11-26）
 
 用户看到 find 按文本找 23 秒后回「没有找到」，Agent 又自己跑 rg 才找到，问「兜底的不就是 rg 么，find 失败那么就是不存在」。原因是文本兜底只逐个读索引里的文件，UE 工程 20 秒读不完就停，「只查了一部分」的说明还被路由丢掉。现在文本兜底先用本机的 rg 查全（`server/capability-router/find/rg-scan.ts`，排除目录和 Agent 自己跑的 rg 一致，再按同一套规则认声明、引用），不靠索引；没有 rg 才逐个读索引里的文件，查不完时说明只查了一部分。这样 find 回「没有找到」就是真的没有。
+
+## 补充：找代码要写 lang（2026-11-27）
+
+用户看到 Lua 符号先走面板文本（20 秒）、再试 VS、最后才到 IDEA，要求按类型直接走。find 的 `lang`（lua / cpp / data，常见叫法 c++、json、ini… 也认）对找声明、引用、大纲、类成员、头文件是必填：写了就按 `shared/capability-router/find/categories.ts` 直接走那一路（Lua 先 IDEA、C++ 先 VS、数据只走面板）；没写时先按起点扩展名、目录、名字写法推（`inferLang`），推不出就退回并给出带 lang 的写法（`missingLang`），不再先面板后挨个试。按原文搜（`text`）看不出类型照旧先走面板。搜索规范（ADR 0087）每类开头写明 find 带哪个 lang。
