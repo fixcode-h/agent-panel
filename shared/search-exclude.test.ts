@@ -4,7 +4,6 @@ import {
   DEFAULT_SEARCH_EXCLUDE,
   UE_SEARCH_EXCLUDE,
   rgConfigLines,
-  searchExcludeFindPrune,
   searchExcludeOf,
   searchExcludePrompt,
   searchExcludeRgConfig,
@@ -43,13 +42,6 @@ test('提示词里是一行逗号分隔的清单', () => {
   assert.ok(!prompt.includes('\n'), '提示词里只占一行')
 })
 
-test('find 的剪枝表达式只剪目录、用整份清单（find 不读 .gitignore）', () => {
-  const prune = searchExcludeFindPrune({ searchExclude: ['Saved'] })
-  assert.ok(prune.startsWith(`\\( -type d \\( -name 'Saved' -o `), prune)
-  assert.ok(prune.endsWith(`\\) \\) -prune -o`), prune)
-  for (const d of DEFAULT_SEARCH_EXCLUDE) assert.ok(prune.includes(`-name '${d}'`), d)
-})
-
 test('搜索排除配置能存进项目并读回来（序列化往返）', () => {
   const input = { name: '项目', searchExclude: ['Saved', 'Intermediate', 'DerivedDataCache'] }
   const saved = ProjectInput.parse(input)
@@ -71,7 +63,8 @@ test('rg 配置：排除目录之外再跳过二进制资源、按行输出（�
   const ue = rgConfigLines({ searchExclude: ['Saved'] })
   assert.ok(ue.includes('--glob=!Saved/') && ue.includes('--glob=!node_modules/'))
   assert.ok(ue.includes('--glob=!*.uasset') && ue.includes('--glob=!*.png'))
-  assert.equal(ue.at(-1), '--line-buffered', '超时被杀前搜到的命中要已经写出来')
+  assert.ok(ue.includes('--line-buffered'), '超时被杀前搜到的命中要已经写出来')
+  assert.ok(ue.includes('--max-columns=500') && ue.includes('--max-columns-preview'), '超长的行只给预览')
   // Git 仓库里没填项目排除：目录交给 .gitignore，二进制和按行输出照样要
   const git = rgConfigLines({}, { onlyProject: true })
   assert.ok(!git.some((l) => l.endsWith('/')))

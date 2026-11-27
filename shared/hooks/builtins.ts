@@ -120,12 +120,22 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     params: [extraCommands(() => t('另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune'))],
   },
   {
+    id: 'search-spec-guard',
+    event: 'tool.before',
+    name: () => t('搜索规范'),
+    description: () =>
+      t(
+        '不按面板搜索规范写的搜索命令直接退回、不执行，并告诉 Agent 按规范该怎么写：只用 rg（grep 搜文件、find、Get-ChildItem -Recurse、Select-String、findstr 这类不认面板的排除配置）；起点不是盘符根、用户目录或项目上层；从项目根搜要带文件类型；不加 -r、--no-ignore、2>/dev/null；不在磁盘上翻找程序。规范正文在每个对话开始时跟角色设定一起交给 Agent；用户要求用别的写法时 Agent 会弹卡请用户放行一次',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'long-command-guard',
     event: 'tool.before',
     name: () => t('长命令转后台'),
     description: () =>
       t(
-        '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件',
+        '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件',
       ),
     tier: 'standard',
     params: [

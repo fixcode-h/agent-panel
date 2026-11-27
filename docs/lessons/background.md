@@ -30,9 +30,9 @@ paths: server/background.ts, server/panel-tools/background-tools.ts, server/exec
 
 ## 全项目的 grep -r 是长命令，不是快命令
 
-- 规则：grep、findstr、find 在快命令清单里，但 `grep -r`、`findstr /s`、`find … | xargs grep`、`gci -Recurse | sls` 从项目根（或更上层）起扫时不读 .gitignore、也不认项目的搜索排除目录（那份清单只经 `RIPGREP_CONFIG_PATH` 交给 rg），长命令守卫按 `shared/wide-search.ts` 的起点判断拦下，让它放后台或改用 rg 限定子目录。往快命令清单加程序时，想一下它扫全项目时还快不快；拆段要认引号（grep 模式常写成 `"a\|b"`）。
+- 规则：grep、findstr、find 在快命令清单里，但 `grep -r`、`findstr /s`、`find … | xargs grep`、`gci -Recurse | sls` 从项目根（或更上层）起扫时不读 .gitignore、也不认项目的搜索排除目录（那份清单只经 `RIPGREP_CONFIG_PATH` 交给 rg），2026-11-27 起由搜索规范守卫（`shared/search-spec/`，ADR 0087）统一退回、给出改好的 rg。往快命令清单加程序时，想一下它扫全项目时还快不快；拆段要认引号（grep 模式常写成 `"a\|b"`）。
 - 起因：用户 2026-11-07 报 Agent 前台跑 `grep -rl … "G:/…/Project"` 扫整个 UE 项目 2 分钟，没用后台命令：守卫把 grep 当快命令放过，面板工具说明也只把编译、测试、安装、下载列成长命令。
-- 防线：`shared/wide-search.test.ts`、`server/hooks/guards.test.ts`「全项目 grep -r」。
+- 防线：`shared/search-spec/search-spec.test.ts`。
 
 ## 推回结果的提示只要求「结束时」总结，不要求「收到就总结」
 

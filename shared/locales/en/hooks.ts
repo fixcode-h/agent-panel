@@ -167,9 +167,12 @@ export const EN_HOOKS: Record<string, string> = {
     'Blocks irreversible commands: recursive deletes of the root, home, project or panel data directory; reset --hard / clean / reverting the whole working tree on the original branch; force pushes; deleting the main branch',
   '另外当成危险命令拦下的命令前缀，一行一个，例如 docker system prune':
     'Extra command prefixes to block as dangerous, one per line, e.g. docker system prune',
+  搜索规范: 'Search rules',
+  '不按面板搜索规范写的搜索命令直接退回、不执行，并告诉 Agent 按规范该怎么写：只用 rg（grep 搜文件、find、Get-ChildItem -Recurse、Select-String、findstr 这类不认面板的排除配置）；起点不是盘符根、用户目录或项目上层；从项目根搜要带文件类型；不加 -r、--no-ignore、2>/dev/null；不在磁盘上翻找程序。规范正文在每个对话开始时跟角色设定一起交给 Agent；用户要求用别的写法时 Agent 会弹卡请用户放行一次':
+    "Rejects search commands that don't follow the panel's search rules without running them, and tells the agent how to write them: rg only (grep over files, find, Get-ChildItem -Recurse, Select-String, findstr and the like ignore the panel's exclude config); never start from a drive root, the home folder or above the project; searches from the project root must name a file type; no -r, --no-ignore or 2>/dev/null; no hunting for programs on disk. The rules are handed to the agent with its role at the start of every conversation; when the user asks for another form, the agent asks the user on a card to allow it once",
   长命令转后台: 'Long commands to background',
-  '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令、从项目根起的全项目 grep -r 这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件':
-    "Denies full test suites, end-to-end and UI checks, dev servers, UE builds and packaging, full dependency installs, project test steps marked build-on-merge or with a timeout of 3 minutes or more, and whole-project grep -r scans from the project root in the foreground and has them run as the panel's background commands: messages sent meanwhile don't wait, and only errors, warnings and the end come back while the full log is saved to a file",
+  '完整测试、端到端、界面检查、开发服务器、UE 编译打包、整份装依赖、项目测试步骤里标了合并时编译或超时 3 分钟以上的命令这类长命令放在前台跑时拒绝，让它交给面板的后台命令：执行中发来的消息不用等它跑完，跑完只推回错误、警告和结尾，完整日志存文件':
+    "Denies full test suites, end-to-end and UI checks, dev servers, UE builds and packaging, full dependency installs, project test steps marked build-on-merge or with a timeout of 3 minutes or more in the foreground and has them run as the panel's background commands: messages sent meanwhile don't wait, and only errors, warnings and the end come back while the full log is saved to a file",
   另外算长命令的命令前缀: 'Extra long-command prefixes',
   '一行一个，例如 npm run build、cargo test': 'One per line, e.g. npm run build, cargo test',
   'UE 自动化测试守卫': 'UE automation test guard',

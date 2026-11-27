@@ -89,7 +89,7 @@
 
 用户报 Agent 在前台跑 `grep -rl … "G:/…/Project"` 扫整个 UE 项目 2 分钟，没用后台命令。grep 在快命令清单里，长命令守卫放过；面板工具说明只把编译、测试、安装、下载列成长命令，「大范围搜索放后台」只写在 project-structure skill 里。而 `grep -r` 不读 .gitignore、不认项目的搜索排除目录，会把编译产物和缓存全读一遍。
 
-决策：长命令守卫再认一种——从项目根（或更上层）起的全文递归搜索（`grep -r`、`findstr /s`、`find … | xargs grep`、`gci -Recurse | sls`，判断在 `shared/wide-search.ts`），放前台时拒绝，让它放后台或改用 rg 限定子目录；起点是子目录、自己带了 `--exclude-dir` / `-prune` 的、rg、git grep 照常放行。面板工具说明和聊天约束把这类搜索列进 `run_background` 的用途。
+决策：长命令守卫再认一种——从项目根（或更上层）起的全文递归搜索（`grep -r`、`findstr /s`、`find … | xargs grep`、`gci -Recurse | sls`），放前台时拒绝，让它放后台或改用 rg 限定子目录；起点是子目录、自己带了 `--exclude-dir` / `-prune` 的、rg、git grep 照常放行。面板工具说明和聊天约束把这类搜索列进 `run_background` 的用途。（2026-11-27 起由搜索规范接管：非 rg 的搜索一律退回改写成 rg，见 ADR 0087，原来的起点判断已删。）
 
 没选：把 grep 整个移出快命令清单。查单个文件、子目录的 grep 几秒就完，一律拦会把正常查找也推到后台，回到 11-05 的老问题。
 

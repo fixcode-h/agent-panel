@@ -12,7 +12,7 @@ import { docRootText, plainDocRootText, p4DocsSkip } from '../doc-root.ts'
 import { promptLangRules, promptLangWord } from '../prompt-lang.ts'
 import { summaryCardRules } from '../summary/card.ts'
 import { sharedWrapPart, uePart } from '../wrapup-prompt.ts'
-import { searchExcludeFindPrune, searchExcludePrompt } from '../search-exclude.ts'
+import { searchExcludePrompt } from '../search-exclude.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyParts } from '../test-steps.ts'
 import { subPolicy } from '../sub-policy.ts'
 import type { EngineHost } from './host.ts'
@@ -88,25 +88,17 @@ export function parentFlowsPart(host: EngineHost, w: Workflow) {
 export function searchPart(host: EngineHost) {
   const project = { searchExclude: host.searchExclude }
   const line = searchExcludePrompt(project)
-  // 找文件、找代码只有一个入口：面板的 find（ADR 0081 能力路由，用户 2026-11-25）。走 VS、IDEA 还是文本由面板按语言和服务状态定，
-  // 提示词里不再列各家工具和调用规矩，也不让角色、Skill、工作流各写一份（scripts/rules-check.mjs 会拦）
+  // 怎么写搜索命令（只用 rg、起点、参数、按文件类型）是「搜索规范」，每个对话开始时随角色设定进系统提示词
+  // （shared/search-spec/guide.ts，用户 2026-11-27），守卫按同一份规范退回不合规范的命令。这里只补这个项目的事实：
+  // 有没有面板的 find（ADR 0081，走 VS、IDEA 还是文本由面板定，角色、Skill 不各写一份，scripts/rules-check.mjs 会拦）、排除哪些目录
   if (host.findCode)
     return [
       '## 找文件、找代码（这个项目）',
-      '用面板的 find：找文件 action=file（按名字）/ list（按目录），找代码 action=symbol（声明）/ refs（引用）/ outline（大纲）/ text（按内容）。面板按语言自动用 VS、IDEA 的索引，都用不了时自己按文本找，你不用管走哪条路。',
-      `只有 find 查不到又确信有、或要看排除目录里的内容时才自己用 rg / ls${line ? `（${line}）` : ''}。`,
+      '找函数、类、变量的声明 / 引用 / 文件大纲用面板的 find（action=symbol / refs / outline；按内容 text、按名字 file、列目录 list）：面板按语言自动用 VS、IDEA 的索引，都用不了时自己按文本找。',
+      `自己搜时照「搜索规范」用 rg${line ? `（${line}；要搜这些目录里的东西就把那个目录写成起点）` : ''}。`,
     ].join('\n')
   if (!line) return ''
-  const rg = host.searchInGit
-    ? '这是 Git 仓库：rg 默认已经跳过 .gitignore 里的文件和隐藏目录，不要加 `--no-ignore`、`-u` / `-uu`、`--hidden` 把它们扫回来。'
-    : ''
-  return [
-    `## 搜索（这个项目）\n${line}，找 Bug 在这一层定位时也用同样的排除。`,
-    `1. 搜文件内容用 rg：起点先限定到模块目录，没命中再逐级扩大。面板给 rg 配好了上面的排除目录，还跳过了 .uasset、图片、模型、压缩包这类二进制文件。\`grep -r\`、\`Select-String\` 不认这份配置，不要拿它们扫大目录。`,
-    ...(rg ? [`   ${rg}`] : []),
-    `2. 按名字找文件用 \`find\`，它不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
-    `- 确实要扫整个大项目（几十秒以上）时，有面板的 run_background 就放后台跑，别在前台等到超时。`,
-  ].join('\n')
+  return `## 搜索（这个项目）\n照「搜索规范」用 rg。${line}，找 Bug 在这一层定位时也用同样的排除；要搜这些目录里的东西就把那个目录写成起点。`
 }
 
 /**
