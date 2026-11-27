@@ -5,7 +5,11 @@ name: 检查
 on:
   push:
     branches: [dev]
+  # 合主干的 PR（dev → main）不再跑：PR 的头提交就是 dev 的最新提交，推送到 dev 时已经检查过，
+  # 那次的结果直接显示在 PR 上（检查结果按提交挂），PR 再跑一遍等于同一个提交检查两次、白花 Actions 分钟数。
+  # 合进 main 后出包流程还会再完整检查一遍才出包，所以从别的分支直接提到 main 的 PR 也不会不经检查就发布。
   pull_request:
+    branches-ignore: [main]
   workflow_dispatch:
   workflow_call:
 
@@ -139,7 +143,7 @@ jobs:
           retention-days: 7
 
   # 推送到 dev 时看这次改了哪些文件：Windows 托盘那一步最慢，只在托盘程序、服务端或出包相关的文件变了时才跑。
-  # 主干出包（release.yml 调用本文件）、PR、手动运行时总是跑
+  # 主干出包（release.yml 调用本文件）、PR（合 dev 的）、手动运行时总是跑
   # 插件仓库（fixcode-h/agent-plugins，子仓库 plugins/）用这一版面板构建和冒烟（插件框架改进 B2）：插件直接 import 面板开放的模块，
   # 面板改了这些模块的导出形状，以前要到插件仓库下次构建、甚至用户那边运行时才发现。这里用当前面板代码跑插件的
   # 类型检查、构建、冒烟和单测，坏了就在面板这边红。SDK 副本没同步只提醒：两个仓库总有一边先推，不拦。
