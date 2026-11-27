@@ -28,7 +28,8 @@ function rowText(c: ChildSummary) {
 }
 
 /**
- * 子对话在等你确认：贴在输入框上方子对话栏的最前面，一个子对话一行（实测报告问题 1）。
+ * 子对话在等你确认：和自己的授权卡一样浮在输入框上方（FloatAbove，用户 2026-11-27），一个子对话一行（实测报告问题 1）。
+ * 以前夹在计划行和子对话栏之间，离输入框远、不像要你处理的东西。
  * 卡在权限确认上的子对话不转圈，运行区和子对话小块都不列它，以前只有点进子对话才看得到「需要你确认」。
  * 只是允许 / 拒绝一个操作（命令、改文件、工具）的，行上直接给两个按钮，不用点进子对话；
  * 提问、孙对话在等的要看完整内容，点「去处理」在右栏打开它
@@ -37,8 +38,10 @@ export function ChildRequestBar({
   kids,
   onOpen,
   onAnswer,
+  className,
 }: {
   kids: ChildSummary[]
+  className?: string
   onOpen: (id: string) => void
   /** 允许 / 拒绝子对话的请求：出错由调用方提示（错误要显示给用户），这里只管按钮的转圈 */
   onAnswer?: (childId: string, requestId: string, allow: boolean, always?: boolean) => Promise<void>
@@ -59,7 +62,15 @@ export function ChildRequestBar({
     }
   }
   return (
-    <div data-status-row="child-requests" aria-label={t('子对话等你确认')} className="mb-1 flex flex-col gap-1">
+    <div
+      data-child-requests=""
+      aria-label={t('子对话等你确认')}
+      // 浮在消息上面：底色不透明，边框和投影跟自己的授权卡（RequestCard）一致
+      className={cn(
+        'mx-auto mb-2 flex w-full max-w-(--content-w) flex-col gap-1 rounded-xl border border-warning/50 bg-card p-1 shadow-pop animate-[pop-in_160ms_ease-out]',
+        className,
+      )}
+    >
       {shown.map((c, i) => {
         const req = c.request
         const more = (c.requests ?? 0) - 1

@@ -443,8 +443,9 @@ await runShard(import.meta.filename, async (api) => {
         return f && rows.length ? f.bottom - Math.max(...rows) : 0
       })
       if (gap < 0) errors.push('改文件审批卡：悬浮层浮到了计划、子对话那几行的上面，应该紧贴输入框')
-      if (await p.locator('[data-float-above] [data-child-request]').count())
-        errors.push('悬浮层里不该有子对话等你确认的条：它留在子对话栏那一行')
+      // 子对话等你确认的条也浮在输入框上方（用户 2026-11-27），不夹在计划行和子对话栏之间
+      if (await p.locator('[data-child-request]:not([data-float-above] [data-child-request])').count())
+        errors.push('子对话等你确认的条：应该浮在输入框上方，不该留在子对话栏上面')
       // diff 统一画法（web/src/lib/diff-html.ts）：删除的行整行红底（.cdiff-del），记号和代码分开，不带开头的 -
       if (!(await card.locator('.cdiff-del').filter({ hasText: 'const count = items.length' }).count()))
         errors.push('改文件审批卡：删除行没有标红')
