@@ -7,7 +7,7 @@ import test from 'node:test'
 import { parseGrepTool } from '../../tool-gateway/search-args.ts'
 import { findRequestOfSearch } from '../../tool-gateway/takeover.ts'
 import { categoryOf, findCategory } from './categories.ts'
-import { findRequestOf } from './request.ts'
+import { findRequestOf, missingLang } from './request.ts'
 
 test('按扩展名认：代码归 C++ / Lua，别的扩展名都归其他文件', () => {
   assert.equal(categoryOf({ query: 'Foo', exts: ['lua'], dirs: [] }), 'lua')
@@ -47,4 +47,23 @@ test('find 工具：lang 可以写 data；include / members 看不出时按 C++'
   assert.ok(typeof b !== 'string' && b.lang === 'cpp')
   const c = findRequestOf('refs', { query: 'Foo' })
   assert.ok(typeof c !== 'string' && c.lang === 'other' && findCategory(c.lang).order === 'panel-first')
+})
+
+test('find 找代码要写 lang（用户 2026-11-27）：常见叫法也认；没写又推不出时退回并说清怎么写，按原文搜不退', () => {
+  const lang = (v: string) => {
+    const r = findRequestOf('symbol', { query: 'Foo', lang: v })
+    return typeof r === 'string' ? r : r.lang
+  }
+  assert.equal(lang('lua'), 'lua')
+  assert.equal(lang('C++'), 'cpp')
+  assert.equal(lang('json'), 'data')
+  const bare = findRequestOf('symbol', { query: 'lt_BW_InteractingCondition_UIAction_Angle' })
+  assert.ok(typeof bare !== 'string')
+  assert.match(missingLang(bare), /lang=lua/)
+  const typed = findRequestOf('symbol', { query: 'lt_BW_InteractingCondition_UIAction_Angle', lang: 'lua' })
+  assert.ok(typeof typed !== 'string' && missingLang(typed) === '' && findCategory(typed.lang).order === 'specialist')
+  const text = findRequestOf('text', { query: 'x' })
+  assert.ok(typeof text !== 'string' && missingLang(text) === '', '按原文搜看不出类型也照常走面板')
+  const inferred = findRequestOf('refs', { query: 'M:OnInit' })
+  assert.ok(typeof inferred !== 'string' && missingLang(inferred) === '', '写法看得出是 Lua 的不退')
 })

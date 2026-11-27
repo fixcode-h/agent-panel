@@ -5,7 +5,7 @@
  *   （server/capability-router/find/run.ts）。Agent 只说要找什么，不用知道哪个服务开着、参数怎么拼。
  * 只管参数和定义；一个工具不超过 10 个 action（ADR 0067）：rebuild 并进 refresh 的 full
  */
-import { findRequestOf, isFindKind } from '../../shared/capability-router/find/request.ts'
+import { findRequestOf, isFindKind, missingLang } from '../../shared/capability-router/find/request.ts'
 import type { FileIndexArgs } from '../../shared/host/file-index.ts'
 import type { ToolRoute } from '../../shared/capability-router/tool-route.ts'
 import { t } from '../../shared/i18n.ts'
@@ -54,7 +54,7 @@ export const FIND: PanelTool = {
       '找文件：action=file 按名字（query 里空格分隔的词都要命中文件名，带 / 按路径，带 * ? 按通配），action=list 列目录（dir，recursive 取整棵子树）；' +
       '索引不收排除目录（Saved、Intermediate 这类）。action=refresh 让索引按目录核对（dir 只核对那棵子树，full=true 整份重建），action=status 看状态。' +
       '找代码：action=symbol 找声明（函数、类、变量，query 可写 A::B、A.B、A:B），refs 找引用（同名多时带 file、line 指明哪一个），outline 列文件大纲（query 写文件），' +
-      'members 列类成员，include 查类该 include 哪个头文件，text 按原文搜内容。under、ext 限定范围；lang（cpp / lua）一般不用给，面板按扩展名、目录、写法推。' +
+      'members 列类成员，include 查类该 include 哪个头文件，text 按原文搜内容。找代码必须写 lang（lua / cpp / data）：面板按它直接走那一路（Lua 走 IDEA、C++ 走 VS、其他文件走面板），没写又推不出时退回；under、ext 限定范围。' +
       '结果分页：limit 默认 50，按结果末尾给的 offset 往下翻；query 给数组时每个词一组，几组共用 4000 字，没列完的那组单独再查。' +
       '服务在启动或建索引时面板会等它（最多一分钟），不用重试。',
     inputSchema: {
@@ -72,7 +72,11 @@ export const FIND: PanelTool = {
         ext: { type: 'array', items: { type: 'string' }, description: '只要这些扩展名，例如 ["lua"]' },
         file: { type: 'string', description: 'refs：符号所在文件' },
         line: { type: 'number', description: 'refs：符号所在行' },
-        lang: { type: 'string', enum: ['cpp', 'lua'], description: '代码语言，推不准时才给' },
+        lang: {
+          type: 'string',
+          enum: ['lua', 'cpp', 'data'],
+          description: '找代码必填：lua（Lua 脚本）/ cpp（C++，含引擎）/ data（json、ini、csv、文档等其他文件）',
+        },
         wide: { type: 'boolean', description: '代码查找把引擎、库这些项目外的也算上' },
         dirs: { type: 'boolean', description: 'file：找目录而不是文件' },
         recursive: { type: 'boolean', description: 'list：整棵子树的文件' },
@@ -102,6 +106,8 @@ export const FIND: PanelTool = {
       if (!o.findCode) return text('这个对话不在项目里，没法按代码查找：用 rg 搜内容', true)
       const req = findRequestOf(action, a ?? {})
       if (typeof req === 'string') return text(req, true)
+      const noLang = missingLang(req)
+      if (noLang) return text(noLang, true)
       const r = await o.findCode(req, signal)
       if (r.route) o.noteRoute?.(r.route, needleOf(a))
       return text(r.text, !!r.error)

@@ -24,7 +24,7 @@ user-invocable: true
 
 ## 怎么找代码
 
-**用面板的 `find`**：C++ 类、函数、`#include` 用 `action=symbol` / `refs` / `members` / `include`，Lua 函数和 GM 命令用 `action=symbol` / `refs`，资产按名字找路径用 `action=file`（`ext` 写 `uasset`）。面板按语言自动走 VS 的 UEToVS 或 IDEA 的 EmmyLua，都没开时自己按文本找；不用自己挑工具。下面讲的是范围和排除，只有不在面板项目里（没有 `find`）时才用后面的命令。
+**用面板的 `find`**：C++ 类、函数、`#include` 用 `action=symbol` / `refs` / `members` / `include`，Lua 函数和 GM 命令用 `action=symbol` / `refs`，资产按名字找路径用 `action=file`（`ext` 写 `uasset`）。找代码时写 `lang`（C++ 写 `cpp`、Lua 写 `lua`、配置数据写 `data`），面板按它直接走 VS 的 UEToVS、IDEA 的 EmmyLua 或文本搜索；不用自己挑工具。下面讲的是范围和排除，只有不在面板项目里（没有 `find`）时才用后面的命令。
 
 UE 工程根目录下有几十万文件，在根目录全仓 grep 会把 `Saved/`、`Intermediate/`、`Binaries/` 里的产物一起扫出来，几分钟才停。搜索前先定位模块：按项目文档（模块地图、模块 README）或 `Source/<模块>/` 的目录名缩小范围，再在模块目录里搜；报错指到具体文件时直接读那个文件。通用的收敛顺序（先文档、再最小目录、已知文件直接读）见 `project-structure`。
 

@@ -32,7 +32,7 @@ user-invocable: true
 
 大项目全仓搜一次要几分钟，还会命中几万行编译产物。按下面的顺序收敛，能在前四步停下就不要全仓搜：
 
-1. **找文件、找代码用面板的 `find`**：按名字找文件 `action=file`、看目录 `action=list`，找函数、类、变量的定义 `action=symbol`、谁调用了它 `action=refs`、文件大纲 `action=outline`、任意文本 `action=text`，都带 `under` 限定到模块目录。走 VS、IDEA 的符号索引还是文本搜索由面板按语言定，不用自己挑工具。下面几步讲怎么缩小范围；只有不在面板项目里（没有 `find`）时才用后面的命令。
+1. **找文件、找代码用面板的 `find`**：按名字找文件 `action=file`、看目录 `action=list`，找函数、类、变量的定义 `action=symbol`、谁调用了它 `action=refs`、文件大纲 `action=outline`、任意文本 `action=text`，都带 `under` 限定到模块目录。找代码时写 `lang`（Lua 写 `lua`、C++ 写 `cpp`、json / ini / 文档写 `data`），面板按它直接走 IDEA、VS 或文本搜索，不用自己挑工具。下面几步讲怎么缩小范围；只有不在面板项目里（没有 `find`）时才用后面的命令。
 2. **已知具体文件就直接读**：报错、堆栈、别人点名给了路径或文件名时，直接读那个文件；不知道路径就用 find 的 `action=file` 按名字找。有明确目标时不做搜索。
 3. **先读项目文档定位模块**：`DOC_ROOT` 的模块地图（`docs/MODULE-MAP.md`）、模块 README（`docs/modules/<模块>/README.md`）、`AGENTS.md` / `CLAUDE.md`、构建配置。文档里通常已经写了「这个功能在哪个目录」，比搜代码快得多；文档缺失或过期时才往下走。
 4. **从入口 / 构建配置反推目录**：路由表、`package.json` 的 `scripts` 和 `workspaces`、`CMakeLists.txt`、`.uproject` 的模块列表，能确定该看哪几个目录。
