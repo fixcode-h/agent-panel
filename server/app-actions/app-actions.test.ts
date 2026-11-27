@@ -6,6 +6,7 @@ import { appActions, runAppAction, setActionHost } from './index.ts'
 import { callApi, catalogText, createRegistry, defineAction, type ActionCaller } from './registry.ts'
 import { mergePatch, VISIBLE_SETTINGS } from './settings.ts'
 import { Settings } from '../../shared/schema.ts'
+import { PANEL_ACTION_GROUPS } from '../../shared/tool-names.ts'
 import { askMcpApi, openAskBridge } from '../ask-mcp.ts'
 
 /** 假宿主：记下调了哪些接口、推了哪些界面操作；pages 是开着几个页面 */
@@ -229,4 +230,8 @@ test('MCP：对话的调用多两个工具（收在 more_tools 里，按名字�
   const l2 = await rpc(plain.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
   assert.ok(!l2.result.tools.some((t: { name: string }) => t.name.startsWith('app_')))
   plain.close()
+})
+
+test('面板自己的动作组和网页认「操作软件」用的组表一致（插件动作要单独标插件名）', () => {
+  assert.deepEqual([...appActions.groups()].sort(), [...PANEL_ACTION_GROUPS].sort())
 })

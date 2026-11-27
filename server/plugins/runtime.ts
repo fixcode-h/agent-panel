@@ -163,6 +163,10 @@ export function pluginActions(): PluginAction[] {
   return [...active.values()].flatMap((a) => a.plugin.actions ?? [])
 }
 
+/** 一个插件登记的动作名和显示名：网页按它把 app_do 那一行标成插件自己的名字，不和「操作软件」混在一起 */
+export const pluginActionsOf = (id: string) =>
+  (active.get(id)?.plugin.actions ?? []).map((a) => ({ name: a.name, title: a.title }))
+
 /** 插件页上的运行状态 */
 export async function pluginStatus(id: string) {
   const p = active.get(id)?.plugin

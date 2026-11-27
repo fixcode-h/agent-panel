@@ -29,7 +29,7 @@ import {
 import { pluginMcpApi } from './mcp.ts'
 import { pluginServicesApi } from './services-api.ts'
 import { pluginSecretsApi } from './secrets-api.ts'
-import { pluginError, pluginStatus, runningPlugin } from './runtime.ts'
+import { pluginActionsOf, pluginError, pluginStatus, runningPlugin } from './runtime.ts'
 import { linkPackage, packageRoot, parseManifest, writePackage, type Installed } from './store.ts'
 import { checkPluginUpdates } from './updates.ts'
 import { dependentsBlock, enableRequires, installRequires } from './requires-install.ts'
@@ -66,6 +66,7 @@ const info = (p: Installed): PluginInfo => {
     error: pluginError(p.manifest.id),
     hasCode: !!(p.manifest.server || p.manifest.web || p.manifest.hooks.some((h) => h.script)),
     rollback: p.rollback,
+    actions: pluginActionsOf(p.manifest.id),
   }
 }
 

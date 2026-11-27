@@ -14,7 +14,7 @@ import {
   unwrapMoreTools,
 } from '@shared/panel-tools'
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
-import { panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
+import { appActionTitle, panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
 import { proxiedTool } from '@shared/mcp-catalog/proxy-tool'
 import { unwrapProxied } from '@shared/mcp-proxy/names'
 
@@ -604,16 +604,20 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       )
     case 'wait_user_message':
       return as(title, '')
-    // 操控软件：标题写动作名，展开看参数和结果
-    case 'app_actions':
-      return as(title, firstLine(a.group), 'read')
-    case 'app_do':
+    // 插件登记的动作也走这两个工具：按动作名标成插件自己的名字，「操作软件」只留给面板本身
+    case 'app_actions': {
+      const head = appActionTitle(name, firstLine(a.group))
+      return as(head.title, head.label, 'read')
+    }
+    case 'app_do': {
+      const head = appActionTitle(name, firstLine(a.action))
       return as(
-        t('操作软件'),
-        firstLine(a.action),
+        head.title,
+        head.label,
         'other',
         a.args && typeof a.args === 'object' && Object.keys(a.args).length ? JSON.stringify(a.args, null, 2) : '',
       )
+    }
   }
   // 没有专门写法的面板工具（记 Bug 档案、记住一件事……）：中文名 + 第一个参数，不露出英文原名和 panel 标签
   const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined

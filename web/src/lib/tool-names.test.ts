@@ -4,7 +4,7 @@ import { toolView } from './tasks.ts'
 import { PANEL_TOOL_NAMES } from '../../../shared/panel-tools.ts'
 import { panelToolTitle, serverTitle, toolTitle } from '../../../shared/tool-names.ts'
 import { setLang } from '../../../shared/i18n.ts'
-import { setInstalledPlugins } from '../../../shared/plugins/index.ts'
+import { setInstalledPlugins, setPluginActions } from '../../../shared/plugins/index.ts'
 import { PluginManifest } from '../../../shared/plugins/types.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -64,4 +64,26 @@ test('「正在写」那一行用的原始名字也能查到中文名', () => {
   assert.equal(toolTitle('mcp__panel-142a58__update_bug_case'), '记 Bug 档案')
   assert.equal(toolTitle('mcp__notion__search'), 'search')
   assert.equal(toolTitle('Bash'), 'Bash')
+})
+
+test('经 app_do 调的插件动作标插件名，「操作软件」只留给面板自己的动作', () => {
+  // 用户报的：表格插件的 table.query 也显示成「操作软件」，以为在操作面板本身
+  setInstalledPlugins([PluginManifest.parse({ id: 'tables', name: '表格', version: '1.0.0' }) as never])
+  setPluginActions([{ id: 'tables', actions: [{ name: 'table.query', title: '查表' }] }])
+  const view = (name: string, input: unknown) =>
+    toolView(tool('MCP', `panel · ${name}`, { input: JSON.stringify(input) }))
+  const q = view('app_do', { action: 'table.query', args: { table: 'Item' } })
+  assert.deepEqual([q?.tool.name, q?.tool.label], ['表格', '查表'])
+  // 同组没登记显示名的动作按组认插件，副标题照原名
+  const e = view('app_do', { action: 'table.export' })
+  assert.deepEqual([e?.tool.name, e?.tool.label], ['表格', 'table.export'])
+  assert.equal(view('app_actions', { group: 'table' })?.tool.name, '查看表格的操作')
+  // 面板自己的动作照旧
+  const stop = view('app_do', { action: 'task.stop_children' })
+  assert.deepEqual([stop?.tool.name, stop?.tool.label], ['操作软件', 'task.stop_children'])
+  assert.equal(view('app_actions', {})?.tool.name, '查看软件操作')
+  // 插件关着、没装：认不出是谁的，也不算操作软件
+  setPluginActions([])
+  const off = view('app_do', { action: 'table.query' })
+  assert.deepEqual([off?.tool.name, off?.tool.label], ['插件操作', 'table.query'])
 })

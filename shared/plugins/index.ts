@@ -87,6 +87,23 @@ export const pluginSkillGuide = (name: string) => installed.find((p) => p.skillG
 /** MCP 服务名属于哪个插件（对话里工具那一行按它显示名字） */
 export const mcpPlugin = (server: string) => installed.find((p) => p.mcpServers.includes(server))
 
+/** 开着的插件登记的面板动作：动作名 → 插件 id 和动作显示名（网页拿到 /api/plugins 时更新） */
+let actionOwners = new Map<string, { plugin: string; title: string }>() // 模块状态：配置副本，重启时重读
+export function setPluginActions(rows: { id: string; actions?: { name: string; title: string }[] }[]) {
+  actionOwners = new Map(rows.flatMap((r) => (r.actions ?? []).map((a) => [a.name, { plugin: r.id, title: a.title }])))
+}
+
+/**
+ * 经 app_do 调的动作（或 app_actions 的组）是哪个插件的：先按动作名认，认不出按组名认（组名一个插件一个）。
+ * 插件关着、没装时认不出插件，返回空的 plugin，调用方按「插件动作」显示，不算进面板自己的「操作软件」
+ */
+export function actionPlugin(action: string): { plugin?: PluginManifest; title: string } | undefined {
+  const group = action.split('.')[0]
+  const hit = actionOwners.get(action) ?? [...actionOwners].find(([name]) => name.split('.')[0] === group)?.[1]
+  if (hit) return { plugin: pluginById(hit.plugin), title: actionOwners.get(action)?.title ?? '' }
+  return undefined
+}
+
 /** 所有装着的插件的工具显示名（界面语言） */
 export const pluginToolNames = (p?: PluginManifest): Record<string, string> =>
   Object.fromEntries(
