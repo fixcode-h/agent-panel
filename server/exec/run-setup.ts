@@ -115,7 +115,8 @@ export async function prepareLaunch(
   const instructions = [
     role,
     promptUserNameRules(settings.userName),
-    searchSpec,
+    // 没有系统提示词参数的 CLI 不放进角色段：接在新会话任务描述的后面（compose-input.ts），角色段只放角色
+    def.systemPromptFlag ? searchSpec : '',
     def.systemPromptFlag ? taskDir.rule : '',
   ]
     .filter(Boolean)
@@ -132,6 +133,7 @@ export async function prepareLaunch(
     resume,
     carry,
     instructions,
+    searchSpec,
     taskDir,
     found,
     onSkillPushed: (name) => noteSkillUsage(skillUse, { pushed: [name] }),
