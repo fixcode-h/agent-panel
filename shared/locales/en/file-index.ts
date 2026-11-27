@@ -35,6 +35,8 @@ export const EN_FILE_INDEX: Record<string, string> = {
   '{dirs} 个目录': '{dirs} folders',
   文件索引建立进度: 'File index build progress',
   '已读 {dirs} 个目录': '{dirs} folders read',
+  文件索引核对进度: 'File index check progress',
+  '已核对 {n} / {total} 个目录': '{n} / {total} folders checked',
   '最后更新 {ago}': 'Last updated {ago}',
   '（{by}）': ' ({by})',
   '上次全量 {ago}': 'Last full build {ago}',

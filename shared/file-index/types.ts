@@ -46,7 +46,7 @@ export const FileIndexRootStatus = z.object({
   dirs: z.number(),
   /** 落盘大小（字节）；还没写过盘是 0 */
   bytes: z.number(),
-  /** 建立中：已读的目录数，和上次全量的目录数（第一次建时没有） */
+  /** 建立中：已读的目录数，和上次全量的目录数（第一次建时没有）；整体核对中：已核对的步数和总步数（files 为 0） */
   progress: z.object({ dirs: z.number(), files: z.number(), expect: z.number().optional() }).optional(),
   builtAt: z.number().optional(),
   buildMs: z.number().optional(),

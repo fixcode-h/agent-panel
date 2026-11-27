@@ -22,7 +22,8 @@ export interface TreeWatch {
 export function watchTree(
   root: string,
   onDirty: (dirs: Set<string>) => void,
-  onLost: (why: string) => void,
+  /** 通知漏了要整体核对；dead 为 true 时监听已经断了，要重新盯 */
+  onLost: (why: string, dead: boolean) => void,
   skip: (rel: string) => boolean,
 ): TreeWatch | undefined {
   const dirty = new Set<string>()
@@ -40,7 +41,7 @@ export function watchTree(
     (rel) => {
       if (rel === null) {
         // 没给文件名（溢出时会这样）：整体核对
-        onLost('监听没给出文件名')
+        onLost('监听没给出文件名', false)
         return
       }
       if (skip(rel)) return
@@ -51,12 +52,10 @@ export function watchTree(
       if (timer) clearTimeout(timer)
       timer = setTimeout(flush, SETTLE_MS)
     },
-    { onLost, skipDir: (name) => skip(name) || name.startsWith('.') },
+    { onLost: (why) => onLost(why, true), skipDir: (name) => skip(name) || name.startsWith('.') },
   )
-  if (!w) {
-    onLost('盯不了这个目录')
-    return undefined
-  }
+  // 盯不了（网络盘、权限）：不报 onLost，状态写「不盯」，靠查询时的定时核对跟上（报了会核对完又来重盯，一直循环）
+  if (!w) return undefined
   return {
     close: () => {
       if (timer) clearTimeout(timer)

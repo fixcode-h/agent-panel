@@ -61,6 +61,7 @@ export function FileIndexStatusCard({ projectId }: { projectId: string }) {
   const phase = fileIndexPhase(s)
   const building = phase === 'building'
   const prog = s.roots.find((r) => r.progress)?.progress
+  const checkProg = s.roots.find((r) => r.state === 'verifying' && r.progress?.expect)?.progress
   const latest = Math.max(0, ...s.roots.map((r) => r.changedAt ?? 0))
   const latestBy = s.roots.find((r) => r.changedAt === latest)?.lastBy
   return (
@@ -96,6 +97,17 @@ export function FileIndexStatusCard({ projectId }: { projectId: string }) {
           />
           <span className="shrink-0 font-mono text-xs text-subtle">
             {t('已读 {dirs} 个目录', { dirs: prog.dirs.toLocaleString() })}
+          </span>
+        </div>
+      )}
+      {phase === 'checking' && checkProg?.expect && (
+        <div className="flex items-center gap-3">
+          <Progress value={checkProg.dirs} max={checkProg.expect} label={t('文件索引核对进度')} className="flex-1" />
+          <span className="shrink-0 font-mono text-xs text-subtle">
+            {t('已核对 {n} / {total} 个目录', {
+              n: checkProg.dirs.toLocaleString(),
+              total: checkProg.expect.toLocaleString(),
+            })}
           </span>
         </div>
       )}

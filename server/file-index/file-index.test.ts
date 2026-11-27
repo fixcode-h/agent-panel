@@ -78,10 +78,15 @@ test('面板写了文件：touch 返回时已经能查到；外面删的文件 r
 test('同时要整体核对时只跑一次，核对完状态回到就绪', async () => {
   const idx = (await projectIndex('p1'))!
   const [a, b] = [idx.refresh(), idx.refresh()]
-  assert.equal((await statusOf('p1'))!.state, 'verifying')
+  const during = (await statusOf('p1'))!
+  assert.equal(during.state, 'verifying')
+  // 核对也报进度（总数是表里的目录数），侧栏和状态卡按它画百分比
+  assert.ok((during.roots[0].progress?.expect ?? 0) > 0, '核对中带进度')
   const [ra, rb] = await Promise.all([a, b])
   assert.deepEqual(ra, rb, '第二次等的是同一次核对')
-  assert.equal((await statusOf('p1'))!.state, 'ready')
+  const done = (await statusOf('p1'))!
+  assert.equal(done.state, 'ready')
+  assert.equal(done.roots[0].progress, undefined, '核对完不再带进度')
 })
 
 test('file_index 工具：找到的给相对路径，没找到时说明排除目录', async () => {
