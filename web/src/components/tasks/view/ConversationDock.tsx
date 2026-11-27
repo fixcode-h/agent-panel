@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { FloatAbove } from '@/components/chat/FloatAbove'
 import type { TraceStep } from '@/lib/load-trace'
 import { ParentAskPanel } from '../ChildAskCard'
+import { ChildRequestBar } from '../ChildRequestBar'
 import { ParentBar } from '../ChildMail'
 import { ChildrenBar, plainRow } from '../ChildrenBar'
 import { GrantRulesButton, hasGrants } from '../GrantRulesButton'
@@ -116,13 +117,12 @@ export function ConversationDock(p: ConversationDockProps) {
           onOpen={p.onOpenChild}
           onClose={() => p.onOpenChild('')}
           onResume={p.onResumeChild}
-          onAnswer={p.onAnswerChild}
         />
       )}
       <div className="relative shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
         {/* 等你确认、等你操作、流程没走完这些提醒紧贴着输入框上方悬浮（用户 2026-11-10）：不把输入框往下顶、
             也不挤掉消息区；盖住上面的计划、子对话那几行没关系，不要浮到消息区里去。越往下越要紧，
-            自己这个对话要你点头的请求离输入框最近。子对话的请求不在这里弹，留在子对话栏那一行 */}
+            自己这个对话要你点头的请求离输入框最近。子对话等你确认的也浮在这里（用户 2026-11-27），排在自己的请求上面 */}
         <FloatAbove onHeight={p.onFloatHeight}>
           {composer && <SharedDirNotice task={task} onChange={apply} />}
           {/* 面板要用的本机程序没装（例如 rg）：问装不装，点安装直接装 */}
@@ -131,6 +131,7 @@ export function ConversationDock(p: ConversationDockProps) {
             <FlowBar task={task} blocked={p.blocked} resuming={p.resuming} onResume={p.onResume} onChange={apply} />
           )}
           {composer && <UserActionPanel task={task} onChanged={apply} />}
+          {showChildren && <ChildRequestBar kids={p.kids} onOpen={p.onOpenChild} onAnswer={p.onAnswerChild} />}
           {!asksQuestion(task.requests) && (
             <TaskRequestCard task={floatRequests(task, p.node)} onAnswered={apply} className="w-full shadow-pop" />
           )}
