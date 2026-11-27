@@ -46,6 +46,7 @@ import {
   type GuardCtx,
 } from './guards.ts'
 import { bigOutputHint, bigReadDeny } from './guards-context.ts'
+import { skillRereadGuard } from './skill-reread.ts'
 import { panelFilesDeny } from './guards-panel.ts'
 import { snapshotBeforeEdit } from '../tasks/bug-probe.ts'
 import { checkConfigDeny, readBeforeEditDeny } from './guards-edit.ts'
@@ -330,6 +331,7 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     list: (key) => builtinList(data, id, key),
     slowKnown: (seg) => knownSlow(c.task.projectId ?? '', seg),
   })
+  const reread = skillRereadGuard()
   const GUARDS: [string, (g: GuardCtx, f: HookFacts) => string][] = [
     ['read-only-guard', (g, f) => (who ? readOnlyDeny(c, who, f, g.list('extra')) : '')],
     ['worktree-guard', worktreeDeny],
@@ -341,6 +343,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     // 排在长命令守卫后面：前台跑先被转去后台，到 run_background 再拦、请用户放行，用户只用点一次（先拦这个的话放行用在前台那次，转后台又要再点）
     ['ue-automation-guard', ueAutomationDeny],
     ['big-read-guard', (_g, f) => bigReadDeny(c.cwd, c.task.id, builtinNumber(data, 'big-read-guard', 'kb'), f)],
+    // 同一会话里技能文件整份重读（按内容认，同一份技能的两处副本也算）：记录跟着这次调用走（./skill-reread.ts）
+    ['skill-reread-guard', (_g, f) => reread.before(c.cwd, f)],
     ['secret-guard', secretDeny],
     ['panel-files-guard', (_g, f) => panelFilesDeny({ cwd: c.cwd, projectPath: c.project.path }, f)],
     ['temp-file-guard', (g, f) => tempFileDeny(c, f, g.list('allow'))],
@@ -371,7 +375,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       ...(guards.length || know || p4 ? (['edit', 'shell'] as const) : []),
       ...(situ?.before ?? []),
       // 读大文件守卫要看读文件工具；推送经验要看搜索（各家的搜索工具都归在读文件这一类）
-      ...(guards.some(([id]) => id === 'big-read-guard' || id === 'panel-files-guard') || know
+      ...(guards.some(([id]) => id === 'big-read-guard' || id === 'panel-files-guard' || id === 'skill-reread-guard') ||
+      know
         ? (['read'] as const)
         : []),
       ...userKinds('tool.before'),
@@ -613,6 +618,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
       return ctx.length ? { context: ctx.join('\n\n') } : {}
     }
     if (event === 'context.restored') {
+      // 压缩后读过的技能文件已经不在上下文里：重复读取的记录清掉
+      if (facts.source === 'compact') reread.restored()
       const ctx: string[] = []
       if (on('restore-plan') && !c.call.orch?.helper && facts.source === 'compact') {
         const text = restoreText(c.task)

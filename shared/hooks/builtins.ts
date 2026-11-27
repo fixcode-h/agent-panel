@@ -139,6 +139,16 @@ const DEFS: Omit<BuiltinHook, 'defaultOn'>[] = [
     ],
   },
   {
+    id: 'skill-reread-guard',
+    event: 'tool.before',
+    name: () => t('技能不重复读'),
+    description: () =>
+      t(
+        '同一个会话里把已经完整读过、内容没变的技能文件再整份读一遍时拒绝一次（同一份技能的两处副本也算），说明内容还在上下文里；压缩上下文后、再读一次就放行',
+      ),
+    tier: 'minimal',
+  },
+  {
     id: 'big-read-guard',
     event: 'tool.before',
     name: () => t('读大文件前拦一下'),

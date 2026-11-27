@@ -202,6 +202,9 @@ export const EN_HOOKS: Record<string, string> = {
     'This CLI has no hook events to install; only the end-of-turn reminder applies',
   '版本太老，这些事件不装：{list}': 'Version too old, these events are not installed: {list}',
   读大文件前拦一下: 'Large file read guard',
+  技能不重复读: 'Skill re-read guard',
+  '同一个会话里把已经完整读过、内容没变的技能文件再整份读一遍时拒绝一次（同一份技能的两处副本也算），说明内容还在上下文里；压缩上下文后、再读一次就放行':
+    'Blocks once when the same session reads an unchanged skill file in full again (two copies of the same skill count too), saying the content is still in context. Allowed after context compaction or on a second try',
   '整份读超过大小的文本文件（读文件工具不带分段参数，或单独一条 cat / Get-Content）时拒绝一次，让它先搜再按行读、只读结尾，或派子任务去读；同一个文件再读一次就放行':
     'Refuses once when a whole text file over the size is read (a file read without range parameters, or a lone cat / Get-Content), asking to search first and read by lines, read only the end, or send a subtask to read it; reading the same file again is allowed',
   '超过多少 KB 算大文件': 'Large file threshold (KB)',
