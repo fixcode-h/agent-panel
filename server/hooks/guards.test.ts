@@ -10,8 +10,17 @@ import test from 'node:test'
 const data = mkdtempSync(path.join(tmpdir(), 'agent-panel-guards-'))
 process.env.AGENT_PANEL_DATA = data
 
-const { bugDeny, dangerDeny, longDeny, pushDeny, secretDeny, testScopeDeny, ueAutomationDeny, worktreeDeny } =
-  await import('./guards.ts')
+const {
+  bugDeny,
+  dangerDeny,
+  longDeny,
+  pushDeny,
+  searchSpecDeny,
+  secretDeny,
+  testScopeDeny,
+  ueAutomationDeny,
+  worktreeDeny,
+} = await import('./guards.ts')
 type Ctx = import('./guards.ts').GuardCtx
 
 const proj = path.join(tmpdir(), 'proj-x')
@@ -209,20 +218,18 @@ test('长命令转后台：UE 编译打包、整份装依赖放前台时拒绝�
   assert.equal(longDeny(ctx({ canBackground: false }), sh('npm ci')), '', '没有后台工具时不拦')
 })
 
-test('长命令转后台：从项目根起的全项目 grep -r 放前台时拒绝，子目录、rg 放行（用户 2026-11-07 报前台 grep 跑了 2 分钟）', () => {
-  assert.match(longDeny(ctx(), sh(`grep -rl "Win-UE5" "${proj}" --include="*.ini"`)), /run_background/)
-  assert.match(longDeny(ctx(), sh('grep -rn foo .')), /rg/)
-  assert.match(longDeny(ctx(), sh(`grep -r foo ${path.dirname(proj)}`)), /run_background/, '项目根的上层也算')
-  assert.match(longDeny(ctx(), sh('find . -type f | xargs grep -l foo')), /run_background/)
-  for (const cmd of [
-    'grep -rn foo src',
-    'rg -n foo .',
-    'git grep foo',
-    'grep -n foo a.ts',
-    `grep -r foo ${proj}/Source`,
-  ])
-    assert.equal(longDeny(ctx(), sh(cmd)), '', cmd)
-  assert.equal(longDeny(ctx({ canBackground: false }), sh('grep -rn foo .')), '', '没有后台工具时不拦')
+test('搜索规范：不合规范的搜索整条退回并给出 rg 写法，rg 也要合规范（用户 2026-11-27）', () => {
+  assert.match(searchSpecDeny(ctx(), sh(`grep -rl "Win-UE5" "${proj}" --include="*.ini"`)), /改成：`rg -n/)
+  assert.match(searchSpecDeny(ctx(), sh('grep -rn foo src')), /rg -n foo src/, '子目录的 grep 也退回')
+  assert.match(searchSpecDeny(ctx(), sh(`rg -n foo ${path.dirname(proj)}`)), /范围太大/, '项目根的上层')
+  assert.match(searchSpecDeny(ctx(), sh(`rg -n foo ${homedir()}`)), /范围太大/, '用户目录')
+  assert.match(searchSpecDeny(ctx(), sh('rg -n foo .')), /项目根搜没写文件类型/)
+  assert.match(searchSpecDeny(ctx(), sh('cd src && rg -ri foo')), /-r/)
+  assert.match(searchSpecDeny(ctx(), sh('find . -type f | xargs grep -l foo')), /find/)
+  for (const cmd of ['rg -n foo src', "rg -n foo . -g '*.lua'", 'ls src', 'git log --oneline | grep fix', 'npm ci'])
+    assert.equal(searchSpecDeny(ctx(), sh(cmd)), '', cmd)
+  // 长命令守卫不再管搜索
+  assert.equal(longDeny(ctx(), sh('grep -rn foo .')), '')
 })
 
 test('测试步骤归属：独立分支里的子对话跑「合回后由父对话跑」的步骤时拒绝，共用目录照常', () => {
@@ -306,13 +313,6 @@ test('长命令转后台：这个项目里实测跑过一分钟以上的命令�
   )
   assert.equal(longDeny({ ...ctx(), slowKnown: slow }, sh('npm run lint')), '')
   assert.equal(longDeny({ ...ctx(), slowKnown: slow }, sh('cat package.json')), '', '快命令不看用时')
-})
-
-test('rg 带 -r（照 grep 习惯写的 -rn）拦下：那是替换不是递归', () => {
-  assert.match(longDeny(ctx(), sh('rg -rn "begin_edit" src')), /默认就递归/)
-  assert.match(longDeny({ ...ctx(), canBackground: false }, sh('cd src && rg -ri foo')), /-r/)
-  assert.equal(longDeny(ctx(), sh('rg -n "begin_edit" src')), '')
-  assert.equal(longDeny(ctx(), sh('grep -rn foo src')), '')
 })
 
 test('UE 自动化测试守卫：Automation RunTests / Gauntlet 一律拦，项目测试步骤里配了也拦；编译和别的编辑器命令放行', () => {

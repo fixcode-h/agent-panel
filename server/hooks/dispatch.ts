@@ -38,6 +38,7 @@ import {
   bugDeny,
   dangerDeny,
   longDeny,
+  searchSpecDeny,
   pushDeny,
   secretDeny,
   testScopeDeny,
@@ -341,6 +342,8 @@ export async function hookOptions(c: HookCallCtx): Promise<{
     ['push-guard', pushDeny],
     ['danger-guard', dangerDeny],
     ['test-scope-guard', testScopeDeny],
+    // 搜索规范排在长命令前面：不合规范的搜索先按规范退回，不再被转去后台跑
+    ['search-spec-guard', searchSpecDeny],
     ['long-command-guard', longDeny],
     // 排在长命令守卫后面：前台跑先被转去后台，到 run_background 再拦、请用户放行，用户只用点一次（先拦这个的话放行用在前台那次，转后台又要再点）
     ['ue-automation-guard', ueAutomationDeny],

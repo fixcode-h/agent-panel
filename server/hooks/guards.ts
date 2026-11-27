@@ -8,7 +8,8 @@ import { globMatch } from '../../shared/hooks/defs.ts'
 import { pluginTestSteps } from '../../shared/plugins/contrib.ts'
 import { classifySegment, runSegments } from '../../shared/command-scope.ts'
 import { isUeAutomationCommand, isUeBuildCommand } from '../../shared/test-steps.ts'
-import { fullScanStarts } from '../../shared/wide-search.ts'
+import { checkSearchCommand, searchSpecDenyText, type Scope } from '../../shared/search-spec/index.ts'
+import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { latestDiagnosis } from '../../shared/bug/diagnosis.ts'
 import { outOfPlan, cleaning, editScope, revOf } from '../../shared/bug/phase.ts'
 import { inPlaceBugClosed } from '../../shared/bug/in-place.ts'
@@ -28,7 +29,9 @@ import { scratchPath } from '../exec/file-events.ts'
 export interface GuardCtx {
   task: Pick<Task, 'id' | 'parentTaskId' | 'projectId' | 'bug' | 'remotePush' | 'worktree' | 'testSteps'> &
     Partial<Pick<Task, 'messages'>>
-  project: (Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> & Partial<Pick<Project, 'pluginStepsOff'>>) | null
+  project:
+    | (Pick<Project, 'path' | 'gitPolicy' | 'testSteps'> & Partial<Pick<Project, 'pluginStepsOff' | 'searchExclude'>>)
+    | null
   cwd: string
   /** 子任务、工作流节点这类辅助调用（不是对话本身） */
   helper: boolean
@@ -193,7 +196,7 @@ function dangerOf(c: GuardCtx, s: string): string {
  * 结果写文件、查文件都跑去了后台（用户 2026-11-05 报）：现在只看段开头真正运行的程序
  */
 export function longDeny(c: GuardCtx, facts: HookFacts): string {
-  if (!c.canBackground) return rgReplaceDeny(facts)
+  if (!c.canBackground) return ''
   const extra = c.list('extra').filter(Boolean)
   const slow = slowStep(c, facts)
   if (slow)
@@ -215,20 +218,6 @@ export function longDeny(c: GuardCtx, facts: HookFacts): string {
       return `${head} 在这个项目里上次跑了 ${fmtDuration(k.ms ?? 0)}，放在前台会挡着对话、还可能撞上命令的超时被杀掉：${hand}`
     if (k.kind === 'suite') return `${head} 是要跑很久的完整检查：${hand}`
   }
-  return wideSearchDeny(c, facts) || rgReplaceDeny(facts)
-}
-
-/**
- * rg 的 -r 是「把匹配换成后面的文字再输出」，不是递归（rg 默认就递归）。照 grep 的习惯写 `rg -rn foo`，
- * 输出里每个 foo 都变成了 n，模型读到坏的结果又多查几轮（DeepSeek 实跑 2026-11-22）
- */
-function rgReplaceDeny(facts: HookFacts): string {
-  for (const s of segs(facts)) {
-    if (!/^rg\s/.test(s)) continue
-    const flag = s.split(/\s+/).find((w) => /^-[a-zA-Z]*r[a-zA-Z]*$/.test(w))
-    if (flag)
-      return `【面板】${s.slice(0, 80)}：rg 默认就递归，${flag} 里的 -r 是「把匹配换成后面的文字再输出」，结果会被改坏。去掉 -r 再跑（例如 rg -n）。`
-  }
   return ''
 }
 
@@ -248,17 +237,51 @@ function slowStep(c: GuardCtx, facts: HookFacts) {
 }
 
 /**
- * 全项目全文搜索转后台：grep -r、findstr /s 这类从项目根起的递归搜索不跳过编译产物和缓存目录，大项目要扫几分钟
- * （用户 2026-11-07 报前台 grep -rl 整个 UE 项目跑了 2 分钟，shared/wide-search.ts）。起点是项目根或更上层时拒绝，
- * 让它放后台、或换成已经配好排除目录的 rg 并限定子目录；起点是子目录的照常放行
+ * 搜索规范（用户 2026-11-27 定：不按面板规范写的搜索全部直接退回，并告诉怎么写）：规范正文和检查规则在 shared/search-spec/，
+ * 这里只按真实目录判断起点落在哪。以前的「全项目 grep -r 转后台」「rg -r 拦一下」都并进了规范的规则里
  */
-function wideSearchDeny(c: GuardCtx, facts: HookFacts): string {
+export function searchSpecDeny(c: GuardCtx, facts: HookFacts): string {
   if (facts.tool?.kind !== 'shell') return ''
   const cmd = String(facts.tool.input.command ?? '')
-  const roots = [c.cwd, c.project?.path].filter((x): x is string => !!x)
-  const wide = fullScanStarts(cmd).some((s) => roots.some((r) => inside(path.resolve(c.cwd, s), r)))
-  if (!wide) return ''
-  return `【面板】${cmd.trim().split('\n')[0].slice(0, 80)} 会把整个项目（连编译产物、缓存目录）逐个文件读一遍，大项目要跑几分钟，放在前台会一直挡着对话：确实要扫全项目就用面板工具 run_background 放后台跑（跑完结果推回来，交出去后做不依赖它的事）；只是找个东西就改用 rg（它跳过 .gitignore 和项目设置里的排除目录）并限定到具体子目录，几秒就完。`
+  const root = c.project?.path || c.cwd
+  const v = checkSearchCommand(cmd, {
+    cwd: c.cwd,
+    excludes: searchExcludeOf(c.project ?? undefined),
+    resolve: resolveSearchPath,
+    scopeOf: (abs) => searchScope(abs, root),
+  })
+  return v.length ? searchSpecDenyText(v) : ''
+}
+
+/** 命令里的路径换成绝对路径：~ 是用户目录；Windows 上 Git Bash 的 /g/x 是 G:/x */
+export function resolveSearchPath(base: string, p: string): string {
+  let q = p.replace(/^~(?=[\\/]|$)/, homedir())
+  if (process.platform === 'win32') q = q.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:')
+  return path.resolve(base, q)
+}
+
+/** 程序、编辑器扩展、面板数据所在的目录：在这里面翻找的多半是在找程序 */
+function toolDirs(): string[] {
+  const home = homedir()
+  return [
+    path.join(home, '.vscode'),
+    path.join(home, '.cursor'),
+    path.join(home, 'AppData'),
+    DATA_DIR,
+    ...['ProgramFiles', 'ProgramFiles(x86)', 'ProgramData'].map((k) => process.env[k] ?? '').filter(Boolean),
+  ]
+}
+
+/** 起点落在哪：盘符根、用户目录和它的上层、项目的上层算太大；项目根要带文件类型 */
+export function searchScope(abs: string, root: string): Scope {
+  const p = path.resolve(abs)
+  const home = homedir()
+  if (path.parse(p).root === p) return 'too-wide'
+  if (inside(p, home) && !inside(path.resolve(root), p)) return 'too-wide'
+  if (path.resolve(root) === p) return 'project-root'
+  if (inside(p, path.resolve(root))) return 'too-wide'
+  if (toolDirs().some((d) => inside(d, p))) return 'tool-dir'
+  return 'ok'
 }
 
 /**

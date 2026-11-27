@@ -36,6 +36,8 @@ export interface ComposeInputArgs {
   carry: string
   /** 角色设定（含进系统提示词的规则） */
   instructions: string
+  /** 搜索规范（shared/search-spec）：有系统提示词参数的已经在 instructions 里，没有的接在新会话的任务描述后面 */
+  searchSpec?: string
   taskDir: Awaited<ReturnType<typeof taskFiles>>
   /** 执行这一轮的角色 */
   found: Agent
@@ -44,7 +46,7 @@ export interface ComposeInputArgs {
 }
 
 export async function composeInput(a: ComposeInputArgs) {
-  const { ctx, call, def, cliId, cwd, chat, step, resume, carry, instructions, taskDir, found } = a
+  const { ctx, call, def, cliId, cwd, chat, step, resume, carry, instructions, searchSpec, taskDir, found } = a
   const { task, settings, project } = ctx
   const { agentId, prompt, sessionKey, op } = call
   // 调用方只发了增量（续接时省掉会话里已有的规则段落）、这次却没接上原来的会话（换了 CLI / 目录、回退、续不上）：
@@ -99,7 +101,7 @@ export async function composeInput(a: ComposeInputArgs) {
     for (const part of [lessons, exp]) if (part) input = `${input}\n\n${part}`
   }
   // 没有系统提示词参数的 CLI：对话目录的规则接在新会话的任务描述后面（有参数的已经放进系统提示词）
-  if (!resume && !op && !def.systemPromptFlag) input = `${input}\n\n${taskDir.rule}`
+  if (!resume && !op && !def.systemPromptFlag) input = [input, taskDir.rule, searchSpec].filter(Boolean).join('\n\n')
   // 没有系统提示词参数的 CLI 只在会话第一轮带角色设定。续接旧会话时角色变了（内置角色随版本更新、用户改了设定），
   // 把新版补发一次，旧对话再聊也按新角色做；以前开的会话没记过，按变了处理补一次
   const roleHash = instructions ? createHash('sha1').update(instructions).digest('hex').slice(0, 16) : ''

@@ -74,15 +74,6 @@ export function searchExcludeRgConfig(
 }
 
 /**
- * find 的剪枝表达式：`\( -type d \( -name A -o -name B \) \) -prune -o`，拼在起点目录和条件之间。
- * find 不读 .gitignore，Git 仓库里也要用完整清单；只剪目录，不会把同名文件一起吞掉
- */
-export function searchExcludeFindPrune(project: { searchExclude?: string[] } | undefined): string {
-  const names = searchExcludeOf(project).map((d) => `-name '${d}'`)
-  return names.length ? `\\( -type d \\( ${names.join(' -o ')} \\) \\) -prune -o` : ''
-}
-
-/**
  * rg 额外跳过的文件：图片、模型、音视频、压缩包、编译产物和 UE 的资源包。它们是二进制，搜不出文字，
  * 可 rg 照样要逐个打开、读到第一个空字节才知道——UE 项目 Content 下动辄十几万个 .uasset，光这一步就能把搜索拖到超时
  * （用户 2026-11-11 报大项目搜索超时没结果）。命令行里显式写 `-g '*.uasset'` 时后写的优先，照样能搜到；
@@ -133,5 +124,12 @@ export function rgConfigLines(
   project: { searchExclude?: string[] } | undefined,
   opts: { onlyProject?: boolean } = {},
 ): string[] {
-  return [...searchExcludeRgConfig(project, opts), ...SEARCH_SKIP_FILES.map((f) => `--glob=!${f}`), '--line-buffered']
+  return [
+    ...searchExcludeRgConfig(project, opts),
+    ...SEARCH_SKIP_FILES.map((f) => `--glob=!${f}`),
+    '--line-buffered',
+    // 配表、压缩过的脚本一行几十 KB：命中一次就把输出撑满，超长的行只给开头预览（搜索规范，用户 2026-11-27）
+    '--max-columns=500',
+    '--max-columns-preview',
+  ]
 }

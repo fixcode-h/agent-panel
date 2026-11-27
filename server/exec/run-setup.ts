@@ -2,6 +2,8 @@
 // resolveTarget 定下这次用哪个角色、哪个 CLI、哪个模型和目录（不能跑就给出原因），
 // prepareLaunch 拼角色设定、这一轮的输入和启动参数，并把启动命令记到任务 / 节点上。
 // 这两步只读任务和设置、不碰 RunState，失败也不会留下半截状态。
+import { searchSpecPrompt } from '../../shared/search-spec/index.ts'
+import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { stat } from 'node:fs/promises'
 import { aliasAgent } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
@@ -108,7 +110,15 @@ export async function prepareLaunch(
   // 回复语言规则不在这里拼：invokeCli 统一放进系统提示词（见 prompt-lang-inject.ts）。
   // 设置里的「称呼」也跟角色设定一起走：没有系统提示词参数的 CLI 改了称呼时角色段的哈希变了，会补发一次
   const taskDir = await taskFiles(task.id) // 对话目录：截图和临时文件放这里，规则进系统提示词（见 task-files.ts）
-  const instructions = [role, promptUserNameRules(settings.userName), def.systemPromptFlag ? taskDir.rule : '']
+  // 搜索规范跟角色设定一起在对话开始时交给 Agent（像 AGENTS.md 一样，用户 2026-11-27）：守卫按同一份规范退回不合规范的搜索
+  const searchSpec = searchSpecPrompt({ excludes: searchExcludeOf(ctx.project), git: ctx.isGit })
+  const instructions = [
+    role,
+    promptUserNameRules(settings.userName),
+    // 没有系统提示词参数的 CLI 不放进角色段：接在新会话任务描述的后面（compose-input.ts），角色段只放角色
+    def.systemPromptFlag ? searchSpec : '',
+    def.systemPromptFlag ? taskDir.rule : '',
+  ]
     .filter(Boolean)
     .join('\n\n')
   // 这一轮交给 CLI 的输入（补充、/命令、带过去的对话、编排说明、教训、角色设定）在 compose-input.ts 里拼
@@ -123,6 +133,7 @@ export async function prepareLaunch(
     resume,
     carry,
     instructions,
+    searchSpec,
     taskDir,
     found,
     onSkillPushed: (name) => noteSkillUsage(skillUse, { pushed: [name] }),
