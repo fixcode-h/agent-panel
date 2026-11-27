@@ -7,12 +7,12 @@ export const EN_STAGE_REPORT: Record<string, string> = {
   '这一版没有新问题，已自动通过': 'No new questions in this version, so it passed automatically',
   '没有新问题，自动通过': 'No new questions, passed automatically',
   '第 {n} 版 · 没交报告': 'Version {n} · no report submitted',
-  '改了 {n} 项决策：点「确认」交给 Agent 按你的选择重出一版；还有别的要改，写标注或整体意见再点「修改」':
-    'Changed {n} decision(s): "Approve" sends it back to the Agent to redo with your choices; for anything else, add notes or comments and click "Revise"',
+  '改了 {n} 项决策：点「确认」交给 Agent 按你的选择重出一版':
+    'Changed {n} decision(s): "Approve" sends it back to the Agent to redo with your choices',
   '确认后 Agent 按报告接着做下一轮': 'After you approve, the Agent continues with the next round',
   '都按推荐：没有要改的地方就点「确认」继续': 'All as recommended: click "Approve" if nothing needs changing',
-  '「修改」把标注、意见和改了的决策一起交给 Agent；「确认」只交改了的决策，不带标注':
-    '"Revise" sends your notes, comments and changed decisions to the Agent; "Approve" sends only the changed decisions, without notes',
+  '有标注时「确认」会把标注、意见和改了的决策一起交给 Agent 修改；标注全删掉再点才是确认通过':
+    'While there are notes, "Approve" sends your notes, comments and changed decisions to the Agent to revise; delete all notes to really approve',
   已改: 'Changed',
   'Agent 推荐': 'Recommended',
   '推荐理由：{why}': 'Why: {why}',

@@ -1399,7 +1399,13 @@ await runShard(import.meta.filename, async (api) => {
               .waitFor({ timeout: 3000 })
               .catch(() => errors.push('阶段报告入口：点「标注」后右栏没有多一条'))
           }
-          await check(p, '阶段报告入口-等确认可标注', ['修改'])
+          await check(p, '阶段报告入口-等确认可标注', ['确认 · 交回 1 条标注'])
+          // 只有一个「确认」：标注全删掉后它才是真正确认（用户 2026-11-27 定）
+          if (await review.getByRole('button', { name: '删除标注' }).count()) {
+            await review.getByRole('button', { name: '删除标注' }).first().click()
+            if (!(await review.getByRole('button', { name: '确认', exact: true }).count()))
+              errors.push('阶段报告入口：删掉全部标注后按钮没回到「确认」')
+          }
           await p.keyboard.press('Escape')
           // 关了再点一次照样打开；在报告栏里确认后弹窗关掉，按钮回到只看的「查看报告」
           await go.click()

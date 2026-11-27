@@ -156,7 +156,8 @@ await runShard(import.meta.filename, async (api) => {
   }
 
   // 阶段确认（节点完成后等你确认）改成审阅弹窗：输入框上方只有一条入口，弹窗里按 Markdown 渲染结果，
-  // 选中文字标注、右栏列标注，「修改」把标注整理成意见退回。只改这一种请求，其他提问照旧
+  // 选中文字标注、右栏列标注。底部只有一个「确认」（用户 2026-11-27 定）：有标注时它把标注整理成意见退回，
+  // 标注全删掉才是真正确认。只改这一种请求，其他提问照旧
   {
     const KEY = 'agent-panel-demo-v3'
     await p.evaluate((k) => {
@@ -210,16 +211,22 @@ await runShard(import.meta.filename, async (api) => {
       else {
         await mark.click()
         await p.keyboard.type('标签放到名字右边')
-        await check(p, '阶段确认-审阅弹窗', ['标注', '修改', '确认'])
-        await dlg.getByRole('button', { name: '修改', exact: true }).click()
+        await check(p, '阶段确认-审阅弹窗', ['标注', '确认 · 交回 1 条标注'])
+        if (await dlg.getByRole('button', { name: '修改', exact: true }).count())
+          errors.push('阶段确认：还有单独的「修改」按钮，应只剩一个「确认」')
+        if (await dlg.getByRole('button', { name: '确认', exact: true }).count())
+          errors.push('阶段确认：有标注时按钮还叫「确认」，应提示会交回标注')
+        // 连点两下只交一次：第二下落在 busy 上被挡掉
+        const send = dlg.getByRole('button', { name: '确认 · 交回 1 条标注', exact: true })
+        await send.dblclick()
         await dlg
           .waitFor({ state: 'detached', timeout: 5000 })
-          .catch(() => errors.push('阶段确认：点「修改」后弹窗没关'))
+          .catch(() => errors.push('阶段确认：有标注点「确认」后弹窗没关'))
         const sent = await p.evaluate((k) => {
           const task = JSON.parse(localStorage.getItem(k) ?? '{}').tasks.find((x) => x.title.startsWith('购物车右上角'))
           return { left: task.requests.length, text: task.messages.at(-1)?.text ?? '' }
         }, KEY)
-        if (sent.left) errors.push('阶段确认：点「修改」后请求还在')
+        if (sent.left) errors.push('阶段确认：有标注点「确认」后请求还在')
         else if (!sent.text.includes('原文：「列表行加上模型标签」') || !sent.text.includes('意见：标签放到名字右边'))
           errors.push(`阶段确认：退回的意见没带上标注：${sent.text}`)
       }
@@ -309,6 +316,12 @@ await runShard(import.meta.filename, async (api) => {
       await card.getByRole('checkbox', { name: /手动刷新角标/ }).click()
       if (!(await card.getAttribute('data-changed'))) errors.push('阶段报告：改了勾选后卡片没有标成已改')
       await check(p, '阶段报告-改了一项', ['已改', '改了 1 项决策'])
+      // 只写整体意见也算要改：按钮变成「确认 · 交回意见」；清空后回到真正的「确认」
+      const overall = dlg.getByLabel('整体意见')
+      await overall.fill('窄屏再想想')
+      if (!(await dlg.getByRole('button', { name: '确认 · 交回意见', exact: true }).count()))
+        errors.push('阶段报告：只写整体意见时按钮没变成「确认 · 交回意见」')
+      await overall.fill('')
       await dlg.getByRole('button', { name: '确认', exact: true }).click()
       await dlg.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('阶段报告：点「确认」后弹窗没关'))
       const said = await p.evaluate((k) => {
