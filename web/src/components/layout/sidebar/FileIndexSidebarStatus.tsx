@@ -47,6 +47,18 @@ export function FileIndexSidebarStatus({ projectId }: { projectId: string }) {
       />
     )
   }
-  if (verifying && slowVerify) return <BackgroundStatus label={t('正在核对文件索引')} onClick={open} />
+  if (verifying && slowVerify) {
+    // 核对也报进度（用户 2026-11-27：只有一条转圈的条，不知道在干什么、还要多久）
+    const p = s.roots.find((r) => r.state === 'verifying' && r.progress?.expect)?.progress
+    return (
+      <BackgroundStatus
+        label={t('正在核对文件索引')}
+        detail={p?.expect ? `${Math.min(99, Math.round((p.dirs / p.expect) * 100))}%` : undefined}
+        value={p?.dirs}
+        max={p?.expect}
+        onClick={open}
+      />
+    )
+  }
   return null
 }
