@@ -553,7 +553,10 @@ export const EN_TASKS: Record<string, string> = {
   '标注 {n} 的意见': 'Comment for annotation {n}',
   '整体意见（可选）': 'Overall comments (optional)',
   整体意见: 'Overall comments',
-  '「修改」会把标注和意见交给 Agent 按意见调整': '"Edit" sends the annotations and comments to the agent to adjust',
+  '有标注时「确认」会把标注和意见交给 Agent 修改；标注全删掉再点才是确认通过':
+    'While there are notes, "Confirm" sends the annotations and comments to the agent to revise; delete all notes to really confirm',
+  '确认 · 交回 {n} 条标注': 'Confirm · send back {n} note(s)',
+  '确认 · 交回意见': 'Confirm · send back comments',
   '没有要改的地方就点「确认」继续': 'Nothing to change? Click "Confirm" to continue',
   先标注要改的地方: 'Annotate what should change first',
   '停止这个任务？': 'Stop this task?',
