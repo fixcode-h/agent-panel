@@ -1,6 +1,7 @@
 import { KnowledgeTags } from '@/components/ui/knowledge-tag'
 import { RouteBadge, RouteSteps } from '@/components/ui/route-badge'
 import { GrantBadge, GrantSection } from '@/components/ui/grant-badge'
+import { GenBadge, GEN_BADGE_MIN_MS } from '@/components/ui/gen-badge'
 import { useLiveById } from '@/lib/live/store'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -694,10 +695,11 @@ function ToolLine({ view, task }: { view: ToolView; task?: ToolTask }) {
         fileRef={fileRef}
         detail={detail}
         tail={
-          (tool.route || tool.grant) && (
+          (tool.route || tool.grant || (tool.genMs ?? 0) >= GEN_BADGE_MIN_MS) && (
             <>
               {tool.route && <RouteBadge route={tool.route} />}
               {tool.grant && <GrantBadge grant={tool.grant} />}
+              <GenBadge ms={tool.genMs} />
             </>
           )
         }

@@ -1173,6 +1173,7 @@ body,
   --c-grantBadge-show: inline-flex;
   --c-grantBadge-text: inline;
   --c-grantBadge-runOpen: 0;
+  --c-genBadge-show: inline-flex;
   --c-liveText-maxH: 160px;
   --c-liveText-bar: 2px;
   --c-liveText-draft: block;

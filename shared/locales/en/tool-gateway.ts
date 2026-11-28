@@ -2,6 +2,15 @@
 export const EN_TOOL_GATEWAY: Record<string, string> = {
   路由小标: 'Route badge',
   在工具卡片上显示实际走的路: 'Show the route actually taken on tool cards',
+  // 写参数小标（ui/gen-badge.tsx）和「正在写」实时显示的字段名（shared/live/draft-tools.ts）
+  写参数小标: 'Argument-writing badge',
+  在工具卡片上标出写参数用了多久: 'Show how long the model spent writing arguments on tool cards',
+  '写参数 {gen}': 'Writing args {gen}',
+  '模型写这次调用的参数用了 {gen}，右边的耗时是工具执行用的':
+    'The model spent {gen} writing the arguments for this call; the time on the right is tool execution',
+  短标题: 'Title',
+  任务说明: 'Brief',
+  补充要求: 'Extra requirements',
   'Agent 工具': 'Agent tools',
   搜索命令或工具: 'Search commands or tools',
   全部决定: 'All decisions',

@@ -57,6 +57,7 @@ export const compLabel = (c: CompName) =>
     sourceList: t('来源列表'),
     routeBadge: t('路由小标'),
     grantBadge: t('放行小标'),
+    genBadge: t('写参数小标'),
     liveText: t('实时输出'),
     styleRef: t('风格参考图'),
     toast: t('提示'),
@@ -105,6 +106,7 @@ const propLabel = (c: CompName, prop: string) => {
   if (c === 'foldBar' && prop === 'hint') return t('右边写「展开 / 收起」')
   if (c === 'sourceList' && prop === 'autoOpen') return t('只有来源时也自动打开右栏')
   if (c === 'routeBadge' && prop === 'show') return t('在工具卡片上显示实际走的路')
+  if (c === 'genBadge' && prop === 'show') return t('在工具卡片上标出写参数用了多久')
   if (c === 'grantBadge')
     return (
       {
