@@ -181,10 +181,19 @@ export const PANEL_TOOL_ROLE: Record<PanelToolName, ToolRole> = {
  * 从 CLI 报上来的工具名里认出面板工具，返回裸名字；认不出返回空。各家写法不一样：
  * 裸名字（Pi）、「mcp__panel-xxxx__run_background」「panel_run_background」「mcp_panel-xxxx_run_background」
  */
-export const PANEL_TOOL_RE = new RegExp(`panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
+export const PANEL_TOOL_RE = new RegExp(
+  `panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')}|tool_[a-z][a-z0-9_]+)\\b`,
+)
+/**
+ * 直接调的自建工具 tool_<id>（shared/custom-tools/direct.ts）认作 custom_tool：显示、分类、能力路由都按同一个面板工具算，
+ * 不用每处再认一遍名字。只认带面板服务名前缀的写法：裸名字 tool_xxx 可能是别家 CLI 自己的工具
+ */
+const canonical = (n: string) => (n.startsWith('tool_') ? 'custom_tool' : n)
+/** 一段文字（工具名、「服务 · 工具名」标题）里的面板工具名，认不出返回空串 */
+export const panelToolIn = (text: string) => canonical(PANEL_TOOL_RE.exec(text)?.[1] ?? '')
 export function panelToolName(name: string): string {
   if ((PANEL_TOOL_NAMES as readonly string[]).includes(name)) return name
-  return PANEL_TOOL_RE.exec(name)?.[1] ?? ''
+  return panelToolIn(name)
 }
 
 /**

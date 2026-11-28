@@ -105,7 +105,8 @@ test('自建工具：提示词清单、列表、运行结果都按长度上限',
     { scope: 'global', file: 'b', tool: tool(), shadowed: true },
   ]
   const hint = hintText(entries)
-  assert.match(hint, /导表 export-tables：改了 Excel 配置表之后/)
+  assert.match(hint, /tool_export_tables（导表）：改了 Excel 配置表之后/)
+  assert.doesNotMatch(hint, /action=show/)
   assert.equal(hintText([]), '')
   // 顶替的程序写进清单：一开始就知道别自己拼 luac
   const lua = {
@@ -114,7 +115,7 @@ test('自建工具：提示词清单、列表、运行结果都按长度上限',
     name: 'Lua 检查',
     role: { kind: 'verify' as const, paths: ['**/*.lua'], replaces: ['luac'], listFile: false },
   }
-  assert.match(hintText([{ scope: 'project', file: 'c', tool: lua }]), /Lua 检查 lua-check（代替 luac）：/)
+  assert.match(hintText([{ scope: 'project', file: 'c', tool: lua }]), /tool_lua_check（Lua 检查，代替 luac）：/)
   assert.match(listText(entries, 'excel'), /export-tables「导表」\[项目/)
   assert.match(listText(entries, 'zzz'), /没有和「zzz」相关/)
   const errs = parseErrors(['ok', 'Item.xlsx:12: 缺列 ID'], '^(?<file>[^:]+):(?<line>\\d+): (?<msg>.*)$')
@@ -123,10 +124,7 @@ test('自建工具：提示词清单、列表、运行结果都按长度上限',
   assert.match(text, /退出码 1 · 1\.2s · 失败/)
   assert.match(text, /Item\.xlsx:12: 缺列 ID/)
   assert.ok(text.length <= 4000)
-  assert.match(
-    toolCommandPrompt('export-tables', '只导 Item'),
-    /custom_tool action=show id=export-tables[\s\S]*只导 Item/,
-  )
+  assert.match(toolCommandPrompt('export-tables', '只导 Item'), /直接调 tool_export_tables[\s\S]*只导 Item/)
 })
 
 test('自建工具：按命令里的程序名或脚本名认出对应的工具', () => {

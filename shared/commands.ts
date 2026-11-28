@@ -123,7 +123,7 @@ export const builtinCommands = (): BuiltinCommand[] => [
     description: t('编译并把报错修到通过：优先用项目的编译工具'),
     hint: t('[目标]'),
     prompt:
-      '请把$ARGUMENTS编译通过：先找编译方式——自建工具（custom_tool action=list）、插件的编译工具、项目说明（AGENTS.md / README）里的命令，按这个顺序用现成的，不要自己猜命令；' +
+      '请把$ARGUMENTS编译通过：先找编译方式——自建工具（工具清单里 tool_ 开头的，直接调）、插件的编译工具、项目说明（AGENTS.md / README）里的命令，按这个顺序用现成的，不要自己猜命令；' +
       '编译失败就读报错，定位到代码改根因（不注释掉、不跳过、不放宽检查），改完再编，直到通过。编译久的交给后台命令。最后说明改了什么、编译结果。' +
       ONE_TURN,
   },

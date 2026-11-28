@@ -10,7 +10,12 @@ export interface ToolDef {
   name: string
   title?: string
   description: string
-  inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] }
+  inputSchema: {
+    type: string
+    properties: Record<string, unknown>
+    required?: string[]
+    additionalProperties?: boolean
+  }
 }
 
 /** MCP 工具调用的结果 */
@@ -52,6 +57,20 @@ export interface PanelTool {
    */
   waits?: boolean
   call: (o: Orchestra, a: ToolArgs, signal?: AbortSignal, ctx?: ToolCallCtx) => ToolResult | Promise<ToolResult>
+}
+
+/**
+ * 按这一轮的数据生成的工具（自建工具各自一项 tool_<id>）：名字不固定，不进 PANEL_TOOLS，也不受面板工具个数上限管
+ * （是用户自己做给 Agent 用的）。清单、等待、执行都在注册表里接上（registry.ts 的 DYNAMIC_TOOLS）
+ */
+export interface DynamicTools {
+  /** 这个调用者这一轮列出的定义 */
+  defs: (o: Orchestra) => ToolDef[]
+  /** 这个名字归不归它管（执行时认名字，不看这一轮有没有列出） */
+  owns: (name: string) => boolean
+  /** 见 PanelTool.waits */
+  waits?: boolean
+  call: (o: Orchestra, name: string, a: ToolArgs, signal?: AbortSignal) => ToolResult | Promise<ToolResult>
 }
 
 export const text = (s: string, isError = false): ToolResult => ({

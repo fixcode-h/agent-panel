@@ -3,6 +3,7 @@
  * 长度按 ADR 0067（默认不超过 4000 字）。没报错时自动校验什么都不说（用户 2026-11-26 定：没报错不打扰）
  */
 import { clipText, type ToolRunResult } from '../../custom-tools/text.ts'
+import { callHint } from '../../custom-tools/direct.ts'
 import type { ClaimCtx } from '../../capability-router/capabilities.ts'
 import type { VerifyRun } from './types.ts'
 import { SERVED_HEAD } from '../takeover-spec.ts'
@@ -62,7 +63,7 @@ export function verifyNote(outs: VerifyOutput[]): string {
 export function serveText(command: string, outs: VerifyOutput[], how: { useWhen?: string; arg?: string } = {}): string {
   const r = outs[0]?.run
   const id = r?.tool ?? ''
-  const call = `custom_tool action=run id=${id}${how.arg ? ` args={"${how.arg}": "<要查的文件>"}` : ''}`
+  const call = callHint(id, how.arg ? `{"${how.arg}": "<要查的文件>"}` : '')
   const when = how.useWhen ? `（${how.useWhen.slice(0, 80)}）` : ''
   const head = `${SERVED_HEAD}：你要跑的 ${command.trim().slice(0, 200)} 由面板改用项目的${r ? who(r) : '自建工具'}跑了，不用再跑原命令。以后遇到同样的事${when}直接调 ${call}，改完对得上的文件面板也会自动跑它。`
   const body = outs.map((o) =>
@@ -80,6 +81,6 @@ export function redirectText(to: string, ctx: Pick<ClaimCtx, 'build' | 'customTo
       : `【面板】UE 的编译交给面板（${cmd}）：改用 request_build，note 写为什么编译、包含哪些改动，替子对话编时 children 写它们的 id。面板按编译目录排队、同一目录同时只编一次，结果推回来；不要自己跑 Build.bat / UBT。`
   const id = to.startsWith('custom_tool:') ? to.slice('custom_tool:'.length) : to
   const t = ctx.customTools.find((x) => x.id === id)
-  const arg = t?.fileParam ? ` args={"${t.fileParam}": "<文件>"}` : ''
-  return `【面板】这件事项目做成了自建工具「${t?.name ?? id}」（${id}），面板没有替你跑原命令（${cmd}）：改用 custom_tool action=run id=${id}${arg}（参数不清楚先 action=show id=${id}）；会改文件的工具会先请用户授权。`
+  const arg = t?.fileParam ? `{"${t.fileParam}": "<文件>"}` : ''
+  return `【面板】这件事项目做成了自建工具「${t?.name ?? id}」（${id}），面板没有替你跑原命令（${cmd}）：改用 ${callHint(id, arg)}；设了「运行前先问我」的工具会先请用户授权。`
 }

@@ -183,7 +183,5 @@ export function nextVersion(
     updatedAt: o.now,
   }
 }
-/** 提示词里最多列几个工具 */
-export const HINT_MAX_TOOLS = 8
 /** 「auto」在工具里等的上限：限时更长的交给后台命令 */
 export const INLINE_MAX_SEC = 120

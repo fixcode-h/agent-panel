@@ -238,10 +238,11 @@ export const PANEL_TOOL_GUIDE: Record<PanelToolName, PanelGuide> = {
   custom_tool: {
     title: '自建工具',
     summary:
-      '调用用户用 /createtool 做好的项目工具（导表、Lua 检查、打包这类），面板校验参数、授权、P4 签出，结果只回报错和输出尾部；也用来试跑和保存新工具。',
+      '自建工具的管理入口：看全部工具、跑清单里没列出的、做新工具（试跑、保存）、登记程序位置。每个自建工具本身已经各自列成 tool_<id> 工具。',
     useWhen:
-      '要做的事和提示词里列的某个自建工具的「什么时候用」对得上时，先用 action=run 调它，不要自己拼同样的命令；用户用 /createtool 要求做新工具时按 list → test → save 的顺序做',
-    avoidWhen: '一次性的命令、几秒的查看命令直接用 CLI 的命令工具；插件已经有的能力（UE 编译、Lua 热重载）用插件工具',
+      '要跑某个自建工具时直接调对应的 tool_<id>；这里只在工具清单里没有那个 tool_ 名字时用 action=run，用户用 /createtool 要求做新工具时按 list → test → save 的顺序做，找到不在 PATH 里的程序用 locate 登记',
+    avoidWhen:
+      '清单里已有 tool_<id> 的不要再经这里 list / show / run；一次性的命令、几秒的查看命令直接用 CLI 的命令工具；插件已经有的能力（UE 编译、Lua 热重载）用插件工具',
     group: G.bg,
     effects: ['edit', 'confirm'],
   },

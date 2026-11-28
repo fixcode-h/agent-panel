@@ -143,7 +143,11 @@ export function skillStats(tasks) {
           .filter(Boolean),
       ),
     ],
-    customTool: tools.filter((x) => /custom_tool/.test(text(x))).length,
+    customTool: tools.filter((x) => /custom_tool|\btool_[a-z]/.test(text(x))).length,
+    // 直接调的（tool_<id>，ADR 0082 修订）和先查用法的（custom_tool list / show）分开数：目标是一步调用、不先查
+    directTool: tools.filter((x) => /\btool_[a-z]/.test(text(x))).length,
+    toolLookups: tools.filter((x) => /custom_tool/.test(text(x)) && /"action":\s*"(list|show)"/.test(x.input ?? ''))
+      .length,
     luac: tools.filter((x) => /\bluac\b/.test(text(x))).length,
   }
 }

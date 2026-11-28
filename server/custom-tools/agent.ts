@@ -8,6 +8,7 @@
 import { CustomTool, INLINE_MAX_SEC, type ToolEntry, type ToolScope } from '../../shared/custom-tools/schema.ts'
 import { draftProblems, needsConfirm, showValue } from '../../shared/custom-tools/expand.ts'
 import { findDups } from '../../shared/custom-tools/dup.ts'
+import { directName, directTools } from '../../shared/custom-tools/direct.ts'
 import { hintText, listText, runText, showText } from '../../shared/custom-tools/text.ts'
 import type { CustomToolCall, CustomToolCallCtx, CustomToolsApi } from '../../shared/host/custom-tools.ts'
 import { ruleAllowed } from '../../shared/allow-rules.ts'
@@ -47,6 +48,7 @@ export async function customToolsFor(
   const programs = await listPrograms(where.projectId ?? '').catch(() => [])
   return {
     hint: hintText(entries) + programsHint(programs),
+    tools: directTools(entries),
     call: (req, c) => dispatch(ctx, where, own, req, c),
   }
 }
@@ -171,7 +173,8 @@ async function grant(
       grant: presetFor(task, rule)
         ? { via: 'preset', rule, label: task.workflowName || task.flowRun?.workflowName || '', title: p.line }
         : { via: 'rule', rule, label, title: p.line },
-      match: { kinds: ['other'], label: /custom_tool/, running: true },
+      // 直接调的（tool_<id>）工具卡片标题是「<面板服务名> · tool_<id>」
+      match: { kinds: ['other'], label: /custom_tool|\btool_[a-z]/, running: true },
     })
     return { allow: true, info: '' }
   }
@@ -284,7 +287,7 @@ async function save(
     )
     ctx.changed()
     return {
-      text: `用户已保存：${saved.tool!.id}「${saved.tool!.name}」存成${scope === 'project' ? '项目工具（跟仓库走，大家共用）' : '全局工具（只在这台电脑）'}，v${saved.tool!.version}，文件 ${saved.file}。之后所有对话都能用 custom_tool action=run id=${saved.tool!.id} 调它。用一两句告诉用户就行。`,
+      text: `用户已保存：${saved.tool!.id}「${saved.tool!.name}」存成${scope === 'project' ? '项目工具（跟仓库走，大家共用）' : '全局工具（只在这台电脑）'}，v${saved.tool!.version}，文件 ${saved.file}。之后的对话里它会作为工具 ${directName(saved.tool!.id)} 直接出现在工具清单里（这一轮还没有，现在要跑就用 custom_tool action=run id=${saved.tool!.id}）。用一两句告诉用户就行。`,
     }
   } catch (e) {
     return fail(`保存失败：${(e as Error).message}`)
