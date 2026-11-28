@@ -54,3 +54,11 @@ test('太长只留尾巴', () => {
   assert.ok(tail.startsWith('…'))
   assert.equal(draftTail('短'), '短')
 })
+
+test('fields 只转出这几个顶层字段，labels 换字段名（嵌套的同名字段也换）', () => {
+  const r = createDraftReader({ fields: ['tasks'], labels: { title: '标题', instructions: '任务说明' } })
+  const out = ['{"agent":"x","tas', 'ks":[{"title":"查","instructions":"看\\n代码"}],"tier":"hi"}']
+    .map((c) => r.feed(c))
+    .join('')
+  assert.equal(out.trimStart(), 'tasks：\n  - \n    标题：查\n    任务说明：看\n      代码')
+})

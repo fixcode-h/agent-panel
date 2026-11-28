@@ -1326,6 +1326,11 @@ export const ToolUse = z.object({
   running: z.boolean().optional(),
   /** 这次调用跑了多久（毫秒）：跑完才有 */
   ms: z.number().optional(),
+  /**
+   * 模型写这次调用的入参用了多久（毫秒）：只有报「开始写哪个工具」的 CLI 才有（server/exec/drafting.ts）。
+   * 和 ms 分开记：入参写了几秒、工具只跑了几百毫秒时，卡片两段都标出来（用户 2026-11-28）
+   */
+  genMs: z.number().optional(),
   /** 还在等结果的调用从什么时候开始（毫秒时间戳）：界面边跑边显示已经用了多久，跑完换成 ms */
   startedAt: z.number().optional(),
   /**

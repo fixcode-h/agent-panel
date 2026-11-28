@@ -15,8 +15,14 @@ export type DraftReader = {
   feed(chunk: string): string
 }
 
-export function createDraftReader(): DraftReader {
+/**
+ * fields：只转出这几个顶层字段（别的字段写的时候不显示，开子对话只看标题和任务说明）；
+ * labels：字段名换成界面上的叫法（任意一层的同名字段都换）。见 ./draft-tools.ts
+ */
+export function createDraftReader(opts: { fields?: string[]; labels?: Record<string, string> } = {}): DraftReader {
   const stack: Frame[] = []
+  /** 正在写的顶层字段：按 fields 决定这一段转出的文字要不要 */
+  let topKey = ''
   let inString = false
   let isKey = false
   let escape = false
@@ -63,8 +69,9 @@ export function createDraftReader(): DraftReader {
         isKey = false
         const k = key
         key = ''
+        if (stack.length <= 1) topKey = k
         // 顶层字段之间空一行，嵌套的字段只换行缩进
-        return `${stack.length <= 1 ? '\n\n' : '\n'}${indent()}${k}：`
+        return `${stack.length <= 1 ? '\n\n' : '\n'}${indent()}${opts.labels?.[k] ?? k}：`
       }
       const s = decoded(c)
       if (isKey) {
@@ -115,7 +122,7 @@ export function createDraftReader(): DraftReader {
       for (const c of chunk) {
         const s = step(c)
         prevLiteral = !inString && /[\w.+-]/.test(c) ? c : ''
-        out += s
+        if (!opts.fields || opts.fields.includes(topKey)) out += s
       }
       return out
     },

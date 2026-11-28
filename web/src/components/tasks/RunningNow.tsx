@@ -102,8 +102,9 @@ export function activeHelpers(task: Task) {
 
 /**
  * 模型正在写一个工具调用（入参整段写完才会报调用）：转圈、写明在写哪个工具、写了多久，
- * 下面像思考过程一样实时显示写到哪了（入参转成的文字，见 shared/live/draft-text.ts；用户 2026-11-19）。
- * 所有工具都走这一行（交诊断报告、建子对话、派子任务、写文件……），点整行收起 / 展开下面的内容。
+ * 所有工具都走这一行；开子对话、派子任务、交诊断报告这类登记过的（shared/live/draft-tools.ts）下面像思考过程一样
+ * 实时显示写到哪了（入参转成的文字，见 shared/live/draft-text.ts；用户 2026-11-19），点整行收起 / 展开下面的内容；
+ * 别的工具（更新计划、写文件……）只转圈计时，不看写的过程（用户 2026-11-28）。
  * 面板工具按对话里那一行的叫法（交修复方案、记 Bug 档案），设计、插件的工具按 shared/tool-names.ts 的中文名，别家的工具照原名
  */
 export function DraftRow({ tool, since, text, now }: { tool: string; since: string; text?: string; now: number }) {

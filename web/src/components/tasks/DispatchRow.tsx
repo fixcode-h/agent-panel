@@ -19,6 +19,7 @@ import { toolArgs, toolView } from '@/lib/tasks'
 import { rerouteTag, type Dispatch, type DispatchState } from '@/lib/fold-dispatch'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { RowShell } from './ToolRow'
+import { GenBadge } from '@/components/ui/gen-badge'
 import { HelperWindow } from './HelperCards'
 import { useChildOpen } from './child-open'
 import type { ChildSummary } from './child-line'
@@ -224,6 +225,8 @@ export function DispatchRow({
       </Menu>
     ) : null
   const transparent = '[--c-row-bg:transparent]'
+  // 模型写这次派单的参数（任务说明）用了多久：和工具卡片一样标在行尾（ui/gen-badge.tsx）
+  const genMs = d && d.tool >= 0 ? task?.messages.find((m) => m.id === d.msgId)?.tools[d.tool]?.genMs : undefined
   // 主行只写派单本身和状态胶囊：实时状态、去操作、终止都在输入框上方的运行区（用户 2026-11-09 要求运行中的固定显示在那里）
   const main = (
     <RowShell
@@ -233,6 +236,7 @@ export function DispatchRow({
       title={title || undefined}
       titleClass={cn('font-sans text-footnote', rerouted && 'line-through decoration-subtle')}
       detail={status && <StatusChip status={status} />}
+      tail={<GenBadge ms={genMs} />}
       open={open}
       onToggle={canOpen ? () => setOpen(!open) : undefined}
       onOpen={openTarget}

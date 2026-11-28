@@ -2,10 +2,11 @@ import { useState, type ComponentType, type ReactNode } from 'react'
 import type { CompName } from '@shared/component-style'
 import { KnowledgeTagsSpecimen } from './KnowledgeTagsSpecimen'
 import { GrantBadgeSpecimen } from './GrantBadgeSpecimen'
-import { Search } from 'lucide-react'
+import { ListChecks, Search } from 'lucide-react'
 import type { ToolRoute } from '@shared/capability-router/tool-route'
 import { t } from '@shared/i18n'
 import { RouteBadge, RouteSteps } from '@/components/ui/route-badge'
+import { GenBadge } from '@/components/ui/gen-badge'
 import { RowShell } from '@/components/tasks/ToolRow'
 
 // 示例数据（路的名字、原因照真实的写，不翻译）
@@ -75,6 +76,19 @@ export function ToolRowTagSpecimens({
       </Specimen>
       <Specimen name="GrantBadge · GrantSection · GrantRunRow" tune={['grantBadge']}>
         <GrantBadgeSpecimen />
+      </Specimen>
+      {/* 写参数小标：模型写入参用了几秒、工具只跑了几百毫秒，两段分开标 */}
+      <Specimen name="GenBadge" tune={['genBadge']}>
+        <div className="proc-list flex w-full flex-col">
+          <RowShell
+            glyph={<ListChecks className="h-3.5 w-3.5" />}
+            verb={t('更新计划')}
+            title="碰杯玩法黑屏切换第五人"
+            tail={<GenBadge ms={3200} />}
+            ms={352}
+            open={false}
+          />
+        </div>
       </Specimen>
     </>
   )
