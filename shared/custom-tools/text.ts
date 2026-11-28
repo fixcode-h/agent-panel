@@ -2,7 +2,8 @@
  * 自建工具交给 Agent 的文字：提示词里那一行清单、list / show 的结果、一次运行的结果。
  * 都是提示词，不翻译；长度按 ADR 0067（默认不超过 4000 字）
  */
-import { HINT_MAX_TOOLS, type CustomTool, type ToolEntry } from './schema.ts'
+import { type CustomTool, type ToolEntry } from './schema.ts'
+import { callHint, directEntries, directName } from './direct.ts'
 
 const EFFECT: Record<CustomTool['effect'], string> = { read: '只读', write: '会改文件', external: '影响外部' }
 const SCOPE = { project: '项目', global: '全局' } as const
@@ -15,25 +16,31 @@ const paramBrief = (t: CustomTool) =>
     ? t.params.map((p) => `${p.name}${p.required ? '' : '?'}${p.label ? `（${p.label}）` : ''}`).join(' ')
     : '无参数'
 
-/** 提示词里的清单：按最近用过的排，最多 8 行、600 字；一个都没有时是空串 */
+/**
+ * 提示词里的清单：和直接列出的工具同一份（directEntries），最多 600 字；一个都没有时是空串。
+ * 直接写工具名 tool_<id>（ADR 0082 第 9 节）：它们就在工具清单里、带着参数 schema，Agent 一步调用，
+ * 不再像以前那样写「参数不清楚先 action=show」把模型引去先查用法
+ */
 export function hintText(entries: ToolEntry[]): string {
-  const list = usable(entries).sort((a, b) => (b.last?.at ?? '').localeCompare(a.last?.at ?? ''))
-  if (!list.length) return ''
+  const total = usable(entries).length
+  if (!total) return ''
   const lines: string[] = []
   let size = 0
-  for (const e of list.slice(0, HINT_MAX_TOOLS)) {
+  for (const e of directEntries(entries)) {
     const t = e.tool!
     // 顶替哪些程序也写上（ADR 0086）：Agent 一开始就知道该用它而不是自己拼 luac，不用等面板代答一次才知道
-    const rep = t.role?.replaces.length ? `（代替 ${t.role.replaces.join('、')}）` : ''
-    const l = `${t.name} ${t.id}${rep}：${(t.useWhen || t.summary).slice(0, 60)}`
+    const rep = t.role?.replaces.length ? `，代替 ${t.role.replaces.join('、')}` : ''
+    const l = `${directName(t.id)}（${t.name}${rep}）：${(t.useWhen || t.summary).slice(0, 50)}`
     if (size + l.length > 600) break
     lines.push(l)
     size += l.length
   }
-  const more = list.length - lines.length
+  const more = total - lines.length
+  if (!lines.length)
+    return `项目有 ${total} 个自建工具：custom_tool action=list 看、action=run 调，不要自己拼同样的命令；`
   return (
-    `项目的自建工具（要做的事和下面某个对得上时用 custom_tool 调它，不要自己拼命令；参数不清楚先 action=show）：${lines.join('；')}` +
-    (more > 0 ? `；还有 ${more} 个，action=list 看全部` : '') +
+    `项目的自建工具已经在你的工具清单里（tool_ 开头），要做的事对得上时直接调它，按参数说明填、有默认值的可以不填，不要先查用法、也不要自己拼同样的命令：${lines.join('；')}` +
+    (more > 0 ? `；还有 ${more} 个没列出，custom_tool action=list 看、action=run 调` : '') +
     '；'
   )
 }
@@ -82,7 +89,7 @@ export function showText(e: ToolEntry): string {
       `目录：${t.run.cwd} · 限时 ${t.run.timeoutSec} 秒`,
       t.writes.length && `会改：${t.writes.join('、')}`,
       t.role && roleText(t.role),
-      `调用：custom_tool action=run id=${t.id} args={${t.params.map((p) => `"${p.name}": …`).join(', ')}}`,
+      `调用：直接调 ${directName(t.id)}（参数 {${t.params.map((p) => `"${p.name}": …`).join(', ')}}）；工具清单里没有这个名字时用 custom_tool action=run id=${t.id} args={…}`,
     ]
       .filter(Boolean)
       .join('\n'),
@@ -180,7 +187,7 @@ export const TOOL_COMMAND_PREFIX = 'tool:'
 /** 用户在「/」菜单里选了自建工具：展开成让 Agent 照参数跑它的要求（仍由 Agent 跑，出错了它能接着处理） */
 export function toolCommandPrompt(id: string, args: string) {
   return (
-    `用户用 /${TOOL_COMMAND_PREFIX}${id} 要你运行自建工具 ${id}：先用 custom_tool action=show id=${id} 看参数，按用户下面的话填参数（没说的用默认值，必填的说不清就问），再用 action=run 执行；` +
+    `用户用 /${TOOL_COMMAND_PREFIX}${id} 要你运行自建工具 ${id}：直接调 ${callHint(id)}，参数按工具说明和用户下面的话填（没说的用默认值，必填的说不清就问）；` +
     '失败了按报错处理，不要换成自己拼的命令绕开。最后用一两句说明结果。' +
     (args ? `\n\n## 用户的话\n${args}` : '')
   )

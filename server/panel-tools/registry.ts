@@ -24,11 +24,13 @@ import { KNOWLEDGE_LOOKUP } from './knowledge-lookup.ts'
 import { KNOWLEDGE_RECORD } from './knowledge-record.ts'
 import { FIND } from './find-tool.ts'
 import { CUSTOM_TOOL } from './custom-tool.ts'
+import { CUSTOM_TOOL_DIRECT } from './custom-tool-direct.ts'
 import { PLAN_TOOLS, START_PLAN } from './plan.ts'
 import { SPAWN_TOOLS } from './spawn.ts'
 import { GET_STATUS, MESSAGES, SHARED_STATE } from './team.ts'
 import {
   text,
+  type DynamicTools,
   type HintAt,
   type PanelTool,
   type ToolArgs,
@@ -80,10 +82,18 @@ export const PANEL_TOOLS: readonly PanelTool[] = [
   START_PLAN,
 ]
 
+/** 按这一轮的数据生成的工具（见 DynamicTools）：排在固定的面板工具后面 */
+export const DYNAMIC_TOOLS: readonly DynamicTools[] = [CUSTOM_TOOL_DIRECT]
+
 /** 按能力给工具（ADR 0038）：这个调用者这一轮的面板工具清单 */
 export function orchTools(o: Orchestra): ToolDef[] {
-  return PANEL_TOOLS.flatMap((t) => (t.def && t.when(o) ? [t.def(o)] : []))
+  return [
+    ...PANEL_TOOLS.flatMap((t) => (t.def && t.when(o) ? [t.def(o)] : [])),
+    ...DYNAMIC_TOOLS.flatMap((d) => d.defs(o)),
+  ]
 }
+
+const dynamicFor = (name: string) => DYNAMIC_TOOLS.find((d) => d.owns(name))
 
 /** 这个调用者有没有这个工具（和清单同一个判断） */
 export const hasTool = (o: Orchestra, name: string) => PANEL_TOOLS.some((t) => t.name === name && !!t.def && t.when(o))
@@ -100,7 +110,7 @@ export function toolHint(o: Orchestra, name: string, at: HintAt) {
 
 /** 按名字（或旧名字）找条目：同名的几份执行相同，取第一份 */
 /** 会等很久的工具（PanelTool.waits）：面板 MCP 对它们走流式响应带心跳 */
-export const waitsLong = (name: string) => !!findTool(name)?.waits
+export const waitsLong = (name: string) => !!(findTool(name)?.waits ?? dynamicFor(name)?.waits)
 
 export const findTool = (name: string) => PANEL_TOOLS.find((t) => t.name === name || t.aliases?.includes(name))
 
@@ -116,5 +126,7 @@ export async function callOrchTool(
   ctx?: ToolCallCtx,
 ): Promise<ToolResult> {
   const t = findTool(name)
-  return t ? t.call(o, a, signal, ctx) : text(`没有这个工具：${name}`, true)
+  if (t) return t.call(o, a, signal, ctx)
+  const d = dynamicFor(name)
+  return d ? d.call(o, name, a, signal) : text(`没有这个工具：${name}`, true)
 }

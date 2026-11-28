@@ -1,6 +1,6 @@
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import type { EndTurnRecord } from './turn-end.ts'
-import { PANEL_TOOL_RE, panelToolName } from './panel-tools.ts'
+import { PANEL_TOOL_RE, panelToolIn, panelToolName } from './panel-tools.ts'
 import { activePlan, openWork } from './plan/index.ts'
 import { panelWrap } from './wrap-up.ts'
 import { stepApplies } from './test-steps.ts'
@@ -62,7 +62,7 @@ export function isCliTool(x: Pick<ToolUse, 'name' | 'label'>) {
 
 /** 这条工具调用是不是 end_turn（各家 CLI 报上来的名字写法不同，同 fold.ts 的 wrapTool） */
 export function isEndTurnTool(x: Pick<ToolUse, 'name' | 'label'>) {
-  const n = panelToolName(x.name ?? '') || PANEL_TOOL_RE.exec(`${x.name ?? ''} ${x.label}`)?.[1] || ''
+  const n = panelToolName(x.name ?? '') || panelToolIn(`${x.name ?? ''} ${x.label}`)
   return n === END_TURN_TOOL
 }
 

@@ -6,7 +6,7 @@ import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/tasks/export'
 import { tokenCount, type RunUsage } from '@shared/run/usage'
 import {
-  PANEL_TOOL_RE,
+  panelToolIn,
   bgJobIds,
   bgPendingIds,
   isToolLookup,
@@ -14,6 +14,7 @@ import {
   unwrapMoreTools,
 } from '@shared/panel-tools'
 import { peerOfMessage, subjectLine } from '@shared/peer-message'
+import { customToolView } from '@shared/custom-tools/direct'
 import { appActionTitle, panelToolTitle, serverTitle, toolListTitle, toolTitle } from '@shared/tool-names'
 import { proxiedTool } from '@shared/mcp-catalog/proxy-tool'
 import { intentOf } from '@shared/mcp-catalog/intent'
@@ -160,8 +161,8 @@ const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任
 export function panelName(tool: ToolUse) {
   // 加载工具定义的那一步（新记录是 kind search，旧记录名字还是 ToolSearch）：参数里写着面板工具名，但不是在调用它
   if (tool.kind === 'search' || isToolLookup(tool.name ?? '')) return ''
-  const hit = PANEL_TOOL_RE.exec(`${tool.name ?? ''} ${tool.label}`)
-  if (hit) return hit[1]
+  const hit = panelToolIn(`${tool.name ?? ''} ${tool.label}`)
+  if (hit) return hit
   // 旧数据：带服务名前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板给的回复认回来
   if (tool.kind === 'run' && /已放到后台（编号 [0-9a-f]{8}）/.test(tool.output ?? '')) return 'run_background'
   return tool.kind === 'agent' && !tool.name && !tool.label && OLD_WAIT.test(tool.output ?? '') ? 'wait_agents' : ''
@@ -437,6 +438,10 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   // 中文名统一在 shared/tool-names.ts 里维护；下面按工具不同的只是标题后面跟什么、展开看什么
   const title = panelToolTitle(name) || name
   switch (name) {
+    case 'custom_tool': {
+      const v = customToolView(`${tool.name ?? ''} ${tool.label}`, a, tool.output)
+      return as(title, v.label, 'other', v.input)
+    }
     case 'create_conversation':
       return as(title, firstLine(a.title) || quoted, 'agent', text(a.message))
     // 交诊断报告（ADR 0045）：报告本身在对话里有可点开的一行，这里只写根因

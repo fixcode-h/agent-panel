@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { Orchestra } from '../../shared/engine/host.ts'
 import { PANEL_TOOL_NAMES } from '../../shared/panel-tools.ts'
 import { AUDIENCE_REPS } from '../mcp-catalog/audiences.ts'
-import { callOrchTool, findTool, orchTools, PANEL_TOOLS, toolHint } from './registry.ts'
+import { callOrchTool, findTool, orchTools, PANEL_TOOLS, toolHint, waitsLong } from './registry.ts'
 
 const ok = () => ({ ok: true, info: '' })
 // 能力全开的调用者：每个条目的 when 都至少在一种身份下为真，这里用来核对定义本身
@@ -92,4 +92,32 @@ test('MCP 工具规范：面板工具的名字、个数、定义长度不超规�
       assert.ok(len <= cap, `${d.name} 的定义 ${len} 字，超过 ${cap}：说明只写作用和时机，细节放进返回或用法查询`)
     }
   }
+})
+
+test('自建工具各自列成 tool_<id>：跟在面板工具后面，按名字执行时走 custom_tool 的运行，等待照 custom_tool', async () => {
+  const calls: unknown[] = []
+  const o = {
+    ...ALL,
+    customTools: {
+      hint: '',
+      tools: [
+        {
+          name: 'tool_lua_check',
+          title: 'Lua 检查',
+          description: 'x',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ],
+      call: async (req: unknown) => (calls.push(req), { text: 'Lua 检查 lua-check · 退出码 0 · 1s · 成功' }),
+    },
+  } as unknown as Orchestra
+  const names = orchTools(o).map((x) => x.name)
+  assert.equal(names.at(-1), 'tool_lua_check')
+  assert.ok(names.includes('custom_tool'))
+  const r = await callOrchTool(o, 'tool_lua_check', { files: 'a.lua' })
+  assert.match(r.content[0].text, /成功/)
+  assert.deepEqual(calls, [{ action: 'run', id: 'lua-check', args: { files: 'a.lua' } }])
+  assert.ok(waitsLong('tool_lua_check'))
+  // 没挂自建工具的调用者：说清楚用不了，不当成没有这个工具
+  assert.match((await callOrchTool(ALL, 'tool_lua_check', {})).content[0].text, /用不了自建工具/)
 })

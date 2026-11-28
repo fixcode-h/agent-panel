@@ -5,6 +5,7 @@ import { ideMcpLines, type IdeMcpServer } from '../mcp-catalog/code-index.ts'
 import { activePlan } from '../plan/index.ts'
 import { globToRegExp } from '../lessons.ts'
 import { customToolFor, type CustomToolSig } from '../custom-tools/match.ts'
+import { callHint } from '../custom-tools/direct.ts'
 import { searchedProgram, type ProgramPathView } from '../custom-tools/programs.ts'
 import type { ToolKind } from './defs.ts'
 import type { HookFacts } from './index.ts'
@@ -111,7 +112,7 @@ export const SITUATIONAL_RULES: SituationalRule[] = [
   },
   {
     // 自己拼命令跑一个自建工具已经包好的程序（用户做了 Lua 检查工具，Agent 照样自己跑 luac -p，2026-11-26）：
-    // 提示词里的清单不一定被注意到，到它要跑的那一刻提醒改用 custom_tool。命令照常执行，只提醒不拦
+    // 提示词里的清单不一定被注意到，到它要跑的那一刻提醒直接调它（tool_<id>）。命令照常执行，只提醒不拦
     id: 'custom-tool-instead',
     name: () => t('改用自建工具'),
     when: { event: 'tool.before', kinds: ['shell'] },
@@ -119,7 +120,7 @@ export const SITUATIONAL_RULES: SituationalRule[] = [
     need: (c) => !!customToolFor(String(c.facts.tool?.input.command ?? ''), c.customTools ?? []),
     text: (c) => {
       const hit = customToolFor(String(c.facts.tool?.input.command ?? ''), c.customTools ?? [])!
-      return `【面板】这件事用户做成了自建工具「${hit.name}」（id ${hit.id}）：以后改用 custom_tool action=run id=${hit.id} 调它（参数不清楚先 action=show），不要自己拼命令；面板会替它校验参数、过授权、只回报错和输出尾部。`
+      return `【面板】这件事用户做成了自建工具「${hit.name}」（id ${hit.id}）：以后直接调 ${callHint(hit.id)}，不要自己拼命令；面板会替它校验参数、过授权、只回报错和输出尾部。`
     },
     times: 2,
   },

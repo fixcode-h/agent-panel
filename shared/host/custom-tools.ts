@@ -2,6 +2,7 @@
  * 引擎宿主里的「自建工具」（custom_tool，ADR 0082）：工具清单、执行、授权、P4 签出、保存弹窗都在服务端
  * （server/custom-tools/agent.ts），引擎只转交调用、把清单那一行放进用法说明
  */
+import type { DirectToolDef } from '../custom-tools/direct.ts'
 
 export interface CustomToolCall {
   action: 'list' | 'show' | 'run' | 'test' | 'save' | 'locate'
@@ -32,6 +33,8 @@ export interface CustomToolCallCtx {
 export interface CustomToolsApi {
   /** 提示词里那一行清单和已登记的程序位置（这一轮开始时算好）；都没有时是空串 */
   hint: string
+  /** 直接列进工具清单的自建工具（tool_<id>，shared/custom-tools/direct.ts），这一轮开始时算好 */
+  tools?: DirectToolDef[]
   call: (req: CustomToolCall, ctx: CustomToolCallCtx) => Promise<{ text: string; error?: boolean }>
 }
 

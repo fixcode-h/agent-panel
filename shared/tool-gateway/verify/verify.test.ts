@@ -144,7 +144,7 @@ test('只推报错：通过时什么都不说；报错、超时、起不来都�
   // 代答时把什么时候用、怎么调写给 Agent，下次不再自己拼 luac
   assert.match(
     serveText('luac -p Shop.lua', [out({})], { useWhen: '改完 .lua 文件后', arg: 'files' }),
-    /以后遇到同样的事（改完 \.lua 文件后）直接调 custom_tool action=run id=\S+ args=\{"files": "<要查的文件>"\}/,
+    /以后遇到同样的事（改完 \.lua 文件后）直接调 tool_lua_check（参数 \{"files": "<要查的文件>"\}）/,
   )
   // 校验工具必须只读、写 paths
   assert.ok(draftProblems({ ...luaCheck, effect: 'write' }).some((p) => p.includes('要是只读的')))
