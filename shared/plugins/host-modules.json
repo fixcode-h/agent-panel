@@ -72,6 +72,7 @@
     "web/src/components/ui/checkbox",
     "web/src/components/ui/count-badge",
     "web/src/components/ui/chip-group",
+    "web/src/components/ui/code-field",
     "web/src/components/ui/dialog",
     "web/src/components/ui/dialog-nav",
     "web/src/components/ui/empty-panel",

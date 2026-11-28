@@ -28,6 +28,7 @@ import { TaskView } from '@/components/tasks/TaskView'
 import { TaskComposer } from '@/components/tasks/TaskComposer'
 import { pluginEvents } from './events'
 import { PluginParams } from './PluginParamForm'
+import { CodeField } from '@/components/ui/code-field'
 
 /**
  * 交给插件网页部分的宿主（ADR 0059，类型见 sdk.ts 的 WebHost）：面板的数据、导航、界面组件和插件自己的接口。
@@ -130,6 +131,8 @@ export function host(id: string, config: () => PluginConfig) {
        * 这个插件的参数（清单 settings）里挑几个分组画成表单、带保存（2026-11-17 加的）：插件自己的设置页用，
        * 和设置 →「插件参数」改的是同一份值。{ groups?: string[] }，不给画全部
        */
+      /** 表单里的代码框（2026-11-28 加的）：{ value, onChange, lang, height?, placeholder?, label? }，高亮和文件弹窗同一套 */
+      CodeField,
       PluginParams: (p: { groups?: string[] }) => React.createElement(PluginParams, { pluginId: id, groups: p.groups }),
     },
     toast,

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MenuSpecimen } from '@/components/ui/item-menu'
 import { LoadingMaskSpecimen } from '@/components/ui/loading-mask'
+import { CodeFieldSpecimen } from '@/components/ui/code-field'
 import { TreeSearchSpecimen } from '@/components/ui/tree/tree-search'
 import {
   Code2,
@@ -814,6 +815,9 @@ function OverlaySpecimens() {
       </Specimen>
       <Specimen name="LoadingMask">
         <LoadingMaskSpecimen />
+      </Specimen>
+      <Specimen name="CodeField">
+        <CodeFieldSpecimen />
       </Specimen>
       <Specimen name="Modal · size · bare" tune={['modal']}>
         {MODAL_SIZES.map((s) => (

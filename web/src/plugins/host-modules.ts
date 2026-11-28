@@ -78,6 +78,7 @@ export const WEB_HOST_MODULES: Record<string, () => Promise<object>> = {
   'web/src/components/ui/checkbox': () => import('@/components/ui/checkbox'),
   'web/src/components/ui/count-badge': () => import('@/components/ui/count-badge'),
   'web/src/components/ui/chip-group': () => import('@/components/ui/chip-group'),
+  'web/src/components/ui/code-field': () => import('@/components/ui/code-field'),
   'web/src/components/ui/dialog': () => import('@/components/ui/dialog'),
   'web/src/components/ui/dialog-nav': () => import('@/components/ui/dialog-nav'),
   'web/src/components/ui/empty-panel': () => import('@/components/ui/empty-panel'),

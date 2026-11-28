@@ -14,7 +14,8 @@ import { t } from '@shared/i18n'
 import { highlightLines, htmlSpans, langOf, type Hljs } from '@/lib/file-highlight'
 import { HIT_CLASS, HIT_CURRENT_CLASS, type Hit } from '@/lib/file-search'
 import { indentEdit, indentUnit } from '@/lib/text-indent'
-import type { FileEditing } from './file-edit'
+
+const NO_HITS: Hit[] = []
 
 /** 高亮从可见区往上多带这么多行：块注释、多行字符串从上面开始时，可见的这几行颜色也对 */
 const CONTEXT = 300
@@ -109,18 +110,25 @@ export default function CodeEditor({
   line,
   path,
   hl,
-  hits,
-  current,
-  seq,
+  hits = NO_HITS,
+  current = 0,
+  seq = 0,
+  autoFocus = true,
+  label,
 }: {
-  ed: FileEditing
+  /** 只用到内容、改内容、保存：文件弹窗传整个 FileEditing（file-edit.tsx），代码框（ui/code-field）传自己的一小份 */
+  ed: { text: string; setText: (text: string) => void; save: () => Promise<unknown> }
   line?: number
   path: string
   hl: Hljs | null
   /** 搜索命中和当前第几处；seq 每按一次上一个 / 下一个加一 */
-  hits: Hit[]
-  current: number
-  seq: number
+  hits?: Hit[]
+  current?: number
+  seq?: number
+  /** 挂上时把光标放进来（文件弹窗切到编辑时要；表单里的代码框不要，免得一打开就抢走焦点） */
+  autoFocus?: boolean
+  /** 读屏用的名字，不给时是「文件内容」 */
+  label?: string
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -160,7 +168,7 @@ export default function CodeEditor({
         ...defaultKeymap,
         ...historyKeymap,
       ]),
-      EditorView.contentAttributes.of({ 'aria-label': t('文件内容'), spellcheck: 'false' }),
+      EditorView.contentAttributes.of({ 'aria-label': label ?? t('文件内容'), spellcheck: 'false' }),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return
         const text = u.state.doc.toString()
@@ -182,7 +190,7 @@ export default function CodeEditor({
       const at = view.state.doc.line(line).from
       view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'center' }) })
     }
-    view.focus()
+    if (autoFocus) view.focus()
     return () => {
       view.destroy()
       viewRef.current = null
